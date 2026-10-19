@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any, Literal, Protocol
 
-from ..discovery.ytdlp_sidecars import is_real_playlist
+from ..discovery.ytdlp_sidecars import is_real_playlist, parse_upload_date
 
 __all__ = [
     "BOT_MARKERS",
@@ -32,9 +32,12 @@ __all__ = [
     "FetchError",
     "PlaylistListing",
     "VideoEntry",
+    "VideoInfo",
+    "VideoInfoFetcher",
     "YouTubeFetcher",
     "YtDlpFetcher",
     "classify_error",
+    "exact_info",
     "list_channel",
 ]
 
@@ -71,6 +74,16 @@ class YouTubeFetcher(Protocol):
         Returns None when the page has no such tab (a channel without shorts).
         Raises :class:`FetchError` for every other failure.
         """
+        ...
+
+
+class VideoInfoFetcher(Protocol):
+    def video_info(
+        self, youtube_id: str, *, lang: str, cookies_from_browser: str | None = None
+    ) -> dict[str, Any] | None:
+        """yt-dlp's page-level info for one video (``upload_date``, ``description`` ...), or
+        None when the video cannot be read (private, removed). Raises :class:`BotCheck`
+        on YouTube's bot check."""
         ...
 
 
@@ -111,6 +124,41 @@ class YtDlpFetcher:
             raise FetchError(msg) from exc
         return info if isinstance(info, dict) else None
 
+    def video_info(
+        self, youtube_id: str, *, lang: str, cookies_from_browser: str | None = None
+    ) -> dict[str, Any] | None:
+        opts: dict[str, Any] = {
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+            "ignoreerrors": False,
+            "extractor_args": {
+                "youtube": {"lang": [lang], "skip": ["dash", "hls", "translated_subs"]}
+            },
+            "socket_timeout": 30,
+            "retries": 5,
+        }
+        if cookies_from_browser:
+            opts["cookiesfrombrowser"] = (cookies_from_browser,)
+        try:
+            with self._yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(
+                    f"https://www.youtube.com/watch?v={youtube_id}", download=False, process=False
+                )
+        except self._yt_dlp.utils.DownloadError as exc:
+            if classify_error(str(exc)) == "bot_check":
+                raise BotCheck(str(exc)) from exc
+            return None
+        return info if isinstance(info, dict) else None
+
+
+@dataclass(frozen=True, slots=True)
+class VideoInfo:
+    """What a per-video fetch gives: the exact upload date and the description."""
+
+    upload_date: date | None
+    description: str | None
+
 
 @dataclass(frozen=True, slots=True)
 class VideoEntry:
@@ -140,6 +188,15 @@ class ChannelListing:
     playlists: list[PlaylistListing] = field(default_factory=list)
     #: playlist entries are also videos (tab ``playlist``), kept apart from the tabs
     playlist_videos: list[VideoEntry] = field(default_factory=list)
+
+
+def exact_info(info: dict[str, Any]) -> VideoInfo:
+    """The exact upload date and the description out of :meth:`VideoInfoFetcher.video_info`."""
+    desc = info.get("description")
+    return VideoInfo(
+        parse_upload_date(info.get("upload_date")),
+        desc if isinstance(desc, str) and desc else None,
+    )
 
 
 def classify_error(message: str) -> Literal["bot_check", "gone", "error"]:

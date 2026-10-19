@@ -3,6 +3,8 @@ package guide
 import (
 	"database/sql"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -235,12 +237,18 @@ type ChannelHeader struct {
 	Name   string `json:"name"`
 	Slug   string `json:"slug"`
 	Logo   string `json:"logo,omitempty"`
+	// LogoURL is the servable logo (GET /api/channels/{id}/logo).
+	LogoURL string `json:"logo_url,omitempty"`
 }
 
 func toHeader(c ChannelMeta) ChannelHeader {
 	h := ChannelHeader{ID: c.ID, Number: c.Number, Name: c.Name, Slug: c.Slug}
-	if c.LogoPath != nil {
-		h.Logo = *c.LogoPath
+	if c.LogoPath != nil && strings.TrimSpace(*c.LogoPath) != "" {
+		// a file logo is only ever named by its URL, never its server path
+		if p := strings.TrimSpace(*c.LogoPath); isURL(p) {
+			h.Logo = p
+		}
+		h.LogoURL = "/api/channels/" + url.PathEscape(c.ID) + "/logo"
 	}
 	return h
 }

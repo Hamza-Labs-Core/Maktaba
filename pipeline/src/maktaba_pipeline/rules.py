@@ -23,11 +23,20 @@ from typing import Any
 
 from . import settings
 from .classify import settings_help as _detect_help  # noqa: F401 — registers the help
+from .classify.books import BooksConfig
 from .classify.clip_groups import GroupConfig
 from .classify.series_detector import DetectorConfig
+from .classify.tag_check import TagCheckConfig
 from .classify.topic_tags import TaggerConfig
 from .schedule import settings_help as _planner_help  # noqa: F401
 from .schedule.channel_planner import PlannerConfig
+from .schedule.tv_settings import (
+    ChannelAuditConfig,
+    DizqueExportConfig,
+    ExactDatesConfig,
+    MaktabaTvConfig,
+    RepairConfig,
+)
 
 __all__ = ["SECTIONS", "config", "read", "schema"]
 
@@ -55,6 +64,19 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
     "detect": (DetectorConfig, "Detection", "how shows, seasons and talk shows are found"),
     "tag": (TaggerConfig, "Tagging", "topic, format, audience and occasion tags, and what "
             "transcripts add to them"),
+    "tagcheck": (TagCheckConfig, "Tag check", "a language model checks what each series is "
+                 "about"),
+    "books": (BooksConfig, "Books", "the book a lesson series explains decides its topics"),
+    "dizquetv": (DizqueExportConfig, "dizqueTV export", "how the planned channels are written "
+                 "into dizqueTV: removing what the plan dropped, rewriting a channel that is "
+                 "on air"),
+    "tv": (MaktabaTvConfig, "Maktaba TV", "how Maktaba's own channels air: filler between "
+           "programmes, the Ramadan grids, live broadcasts, loudness"),
+    "exactdates": (ExactDatesConfig, "Exact dates", "exact upload dates fetched from YouTube "
+                   "for series members (off until switched on)"),
+    "audit": (ChannelAuditConfig, "Channel audit", "is what each channel airs about the channel"),
+    "repair": (RepairConfig, "Broken files", "downloads that cannot be read are fetched from "
+               "YouTube again (off until switched on)"),
 }  # fmt: skip
 
 

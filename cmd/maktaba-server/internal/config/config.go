@@ -40,6 +40,10 @@ type ServerSection struct {
 	WebListen  string `toml:"web_listen"`  // embedded SPA bind, e.g. "0.0.0.0:8088"
 	AdminAddr  string `toml:"admin_addr"`  // api admin/metrics bind, e.g. ":9100"
 	StreamAddr string `toml:"stream_addr"` // streaming public bind, e.g. ":8081"
+	// PublicURL is how other devices reach the streaming service, e.g.
+	// "http://192.168.1.20:8081" (Plex's HDHomeRun address, XMLTV/M3U
+	// links). Empty derives it from stream_addr + the LAN IP.
+	PublicURL string `toml:"public_url"`
 }
 
 // DatabaseSection selects the storage backend via a single DSN. The

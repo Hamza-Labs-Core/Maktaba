@@ -116,6 +116,36 @@ type Client interface {
 	TestModel(ctx context.Context, id string) (ModelTestResult, error)
 }
 
+// PlanPreviewStatus mirrors Pipeline.PlanPreviewStatus: the state of the
+// control centre's background plan preview (a dry run of the channel
+// planner, or the stored plan rendered as a page).
+type PlanPreviewStatus struct {
+	Running    bool           `json:"running"`
+	Kind       string         `json:"kind"` // preview | stored | ""
+	Phase      string         `json:"phase"`
+	Error      string         `json:"error,omitempty"`
+	StartedAt  *float64       `json:"started_at"`
+	FinishedAt *float64       `json:"finished_at"`
+	Summary    map[string]any `json:"summary"`
+	Log        []string       `json:"log"`
+	Ready      struct {
+		Preview bool `json:"preview"`
+		Plan    bool `json:"plan"`
+	} `json:"ready"`
+}
+
+// PlanPreviewer is the optional slice of the pipeline behind the Reports
+// page's "preview channels". It is a separate interface (the real client
+// implements it; the test fakes of Client need not) and handlers reach it
+// by type assertion on the configured Client.
+type PlanPreviewer interface {
+	// PlanPreviewStart begins a background run. kind is "preview" (plan with
+	// the current settings, write nothing) or "stored" (render the latest
+	// stored plan). busy is true when one is already running.
+	PlanPreviewStart(ctx context.Context, kind string) (busy bool, err error)
+	PlanPreviewStatus(ctx context.Context) (PlanPreviewStatus, error)
+}
+
 // Config bundles dial + retry knobs.
 type Config struct {
 	Addr              string

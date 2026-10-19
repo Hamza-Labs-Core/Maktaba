@@ -18,6 +18,7 @@ Commands (each reads/writes the same SQLite cache, ``--db``):
   report                      HTML page per folder to review the grouping visually
   export-plex                 one Plex collection per season (dry run unless --apply)
   plan-channels               suggest live TV channels + time-slot grids + filler pools
+  audit-channels              is what each channel airs about the channel? (report)
   dizquetv-shows              dizqueTV custom shows per series and per season (dry run unless --apply)
   export-dizquetv  PLAN.json  what a channel plan would write to dizqueTV (dry run)
   status                      what the cache knows, per folder
@@ -89,8 +90,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-youtube", action="store_true", help="local + Plex evidence only")
     p.add_argument("--from-step", default="scan", metavar="STEP",
                    help="start at this step, keeping what earlier steps cached: scan, plex, "
-                        "youtube, link, detect, signatures, exact, tag, group, export-plex, "
-                        "dizquetv-shows, report, scan-visual, plan-channels, export-dizquetv")  # fmt: skip
+                        "youtube, link, detect, signatures, exact, tag, check-tags, check-clips, books, group, "
+                        "export-plex, "
+                        "dizquetv-shows, report, scan-visual, plan-channels, export-dizquetv, "
+                        "audit-channels")  # fmt: skip
     p.add_argument("--skip", action="append", default=[], metavar="STEP",
                    help="leave this step out (repeatable), e.g. scan-visual while the NAS is slow")  # fmt: skip
     p.add_argument("--exact", action="store_true",
@@ -252,6 +255,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--diff", action="store_true",
                    help="list the episodes each change adds or takes out")  # fmt: skip
 
+    p = sub.add_parser(
+        "audit-channels", help="is what each channel airs about the channel? (report)"
+    )
+    p.add_argument("--url", default="http://localhost:8002", help="dizqueTV")
+    p.add_argument("--out", type=Path, default=Path("reports"), help="output directory")
+
+    p = sub.add_parser(
+        "repair-broken", help="download again the broken files (unfinished downloads)"
+    )
+    p.add_argument("--cookies-from-browser", metavar="BROWSER",
+                   help="sign yt-dlp in with this browser's YouTube cookies")  # fmt: skip
+
     p = sub.add_parser("report", help="HTML review page per folder")
     p.add_argument("--folder", help="only folders whose path contains this")
     p.add_argument("--out", type=Path, default=Path("reports"), help="output directory")
@@ -326,6 +341,20 @@ def main(argv: list[str] | None = None) -> int:
         from . import group_clips
 
         group_clips.run(conn, a.folder)
+    elif a.cmd == "repair-broken":
+        import time
+
+        from . import repair_broken
+
+        when = time.strftime("%H:%M:%S")
+        print()
+        print(f"##### repair-broken (download broken files again)  ({when})", flush=True)
+        repair_broken.run(conn, a.cookies_from_browser)
+        print("done", flush=True)
+    elif a.cmd == "audit-channels":
+        from . import audit_channels
+
+        audit_channels.run(conn, a.url, a.out)
     elif a.cmd == "plan-channels":
         plan_channels.run(conn, a.out, review=a.review, focus=a.focus)
     elif a.cmd == "export-dizquetv":

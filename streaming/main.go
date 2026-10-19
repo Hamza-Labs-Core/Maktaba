@@ -39,6 +39,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/grpcsrv"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/handlers"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/hdhr"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pathmap"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/probe"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/server"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/session"
@@ -374,12 +375,24 @@ func buildPublicHandler(logger *slog.Logger, backend probe.Backend, transcripts 
 	if pool != nil {
 		hostname, _ := os.Hostname()
 		chRepo := channel.NewPGRepo(pool, hostname)
-		runner := channel.NewExecRunner(ffmpeg.DefaultBinary())
-		engine := channel.NewEngine(chRepo, runner, layout, cfg.Transcode.MaxConcurrent, time.Now)
-		engine.Ladder = ffmpeg.DefaultLadder(6000)
-		engine.HWAccel = string(hw)
+		profile, encPref := channel.ProfileFromEnv()
+		profile.Encoder = channel.DetectEncoder(context.Background(), cfg.FFmpeg.Binary, encPref)
+		logger.Info("channels: output profile", "encoder", profile.Encoder,
+			"width", profile.Width, "height", profile.Height, "fps", profile.FPS,
+			"audio", profile.AudioCodec, "event", "channel_profile")
+		ytdlp := os.Getenv("MAKTABA_YTDLP")
+		start := channel.StationStarter(channel.StationConfig{
+			FFmpeg:   cfg.FFmpeg.Binary,
+			Profile:  profile,
+			Repo:     chRepo,
+			Prober:   channel.NewFFprobe(cfg.FFmpeg.ProbeBinary),
+			Resolver: channel.NewYtDlp(ytdlp),
+			PathMap:  pathmap.FromEnv(),
+			FontFile: channel.FindFont(),
+			Logger:   logger,
+		})
+		engine := channel.NewEngine(chRepo, layout, start, envIntDefault("MAKTABA_CHANNEL_MAX_ACTIVE", channel.DefaultPerHostCap), time.Now)
 		engine.Host = hostname
-		engine.TS = runner
 		chHandler := &channel.HTTPHandler{Engine: engine}
 		extraMounts = append(extraMounts, chHandler.Mount)
 
@@ -398,7 +411,14 @@ func buildPublicHandler(logger *slog.Logger, backend probe.Backend, transcripts 
 		// silent while disabled.
 		hdhrRepo := hdhr.NewPGRepo(pool)
 		hdhrHandler := hdhr.New(hdhrRepo, engine)
+		hdhrHandler.PublicBase = os.Getenv("MAKTABA_PUBLIC_BASE_URL")
 		extraMounts = append(extraMounts, hdhrHandler.Mount)
+
+		// Plex/IPTV guide + playlist, unauthenticated on this port
+		// (/xmltv.xml, /lineup.m3u, /channel/{id}/logo).
+		guideHandler := &hdhr.GuideHandler{Repo: hdhrRepo, PathMap: pathmap.FromEnv(),
+			PublicBase: os.Getenv("MAKTABA_PUBLIC_BASE_URL"), WebBase: os.Getenv("MAKTABA_PUBLIC_WEB_BASE")}
+		extraMounts = append(extraMounts, guideHandler.Mount)
 		startSSDPIfEnabled(logger, hdhrRepo)
 	}
 

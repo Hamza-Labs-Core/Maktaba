@@ -350,8 +350,9 @@ def test_quran_reciter_resumes_where_he_stopped() -> None:
 def test_quran_filler_is_only_short_recitation_or_dua_never_talk() -> None:
     loose = [
         clip(1, genre="quran_recitation"),
-        clip(2, genre="dua_dhikr"),
+        clip(2, genre="dua_dhikr", fmt="recitation"),  # a dua read out
         clip(3, genre="dua_dhikr", fmt="lecture"),  # a talk about dua: not on the Quran channel
+        clip(5, genre="dua_dhikr"),  # nor a clip about dua that is not recited
         clip(4, genre="seerah"),
     ]
     p = plan(quran_library(), loose)

@@ -51,7 +51,7 @@ func (h *Handler) XMLTV(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	bw := bufio.NewWriter(w)
 	defer bw.Flush()
-	writeXMLTV(bw, chans, rows)
+	writeXMLTV(bw, baseURL(r), chans, rows)
 }
 
 // xmlWriter is the minimal surface writeXMLTV needs (an *bufio.Writer or
@@ -63,15 +63,15 @@ type xmlWriter interface {
 // writeXMLTV streams a valid XMLTV document: <channel> headers then
 // <programme> bodies. Filler/bumper blocks are collapsed into generic
 // "Up Next" programmes (AC10).
-func writeXMLTV(w xmlWriter, chans []ChannelMeta, rows []ProgramRow) {
+func writeXMLTV(w xmlWriter, base string, chans []ChannelMeta, rows []ProgramRow) {
 	_, _ = w.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
 	_, _ = w.WriteString(`<tv generator-info-name="Maktaba">` + "\n")
 	for _, c := range chans {
 		_, _ = w.WriteString(`  <channel id="` + xmlEscape(c.Slug) + `">` + "\n")
 		_, _ = w.WriteString(`    <display-name>` + xmlEscape(c.Name) + `</display-name>` + "\n")
 		_, _ = w.WriteString(`    <display-name>` + itoa(c.Number) + `</display-name>` + "\n")
-		if c.LogoPath != nil && *c.LogoPath != "" {
-			_, _ = w.WriteString(`    <icon src="` + xmlEscape(*c.LogoPath) + `"/>` + "\n")
+		if logo := logoRef(base, c); logo != "" {
+			_, _ = w.WriteString(`    <icon src="` + xmlEscape(logo) + `"/>` + "\n")
 		}
 		_, _ = w.WriteString(`  </channel>` + "\n")
 	}

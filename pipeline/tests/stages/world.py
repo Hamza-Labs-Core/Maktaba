@@ -16,7 +16,7 @@ from maktaba_pipeline.engine.claim import claim_for_pool
 from maktaba_pipeline.engine.dispatch import EngineRuntime, dispatch_job
 from maktaba_pipeline.engine.graph import GRAPH
 from maktaba_pipeline.engine.media import ProcResult, set_runner
-from maktaba_pipeline.engine.sql import dumps, is_pg, to_date
+from maktaba_pipeline.engine.sql import dumps, is_pg, now, to_date, to_ts
 from maktaba_pipeline.engine.sync import sync_graph
 from tests.engine.factory import make_library, make_video
 
@@ -142,8 +142,28 @@ async def set_playlist(db: Any, pid: str, title: str, members: list[tuple[UUID, 
 # --------------------------------------------------------------------------- engine
 
 
-async def core_runtime(db: Any) -> EngineRuntime:
+async def set_rules(db: Any, section: str, changes: dict[str, Any]) -> None:
+    await db.execute(
+        "INSERT INTO app_settings (key, value, updated_at) VALUES ($1,$2,$3)"
+        " ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at",
+        f"rules.{section}",
+        dumps(changes),
+        to_ts(db, now()),
+    )
+
+
+async def models_off(db: Any) -> None:
+    """Switch the language model and book checks off (as a library without them would)."""
+    await set_rules(db, "tagcheck", {"enabled": False})
+    await set_rules(db, "books", {"enabled": False})
+
+
+async def core_runtime(db: Any, *, models: bool = False) -> EngineRuntime:
+    """The engine with the core graph. The language model and book checks are off unless
+    ``models``: a test that turns them on stands in for the model server itself."""
     await sync_graph(db, GRAPH)
+    if not models:
+        await models_off(db)
     from maktaba_pipeline.engine.graph import bound_graph
 
     return EngineRuntime(graph={s.name: s for s in bound_graph()})

@@ -15,7 +15,14 @@ from maktaba_pipeline.extensions.plex import extension as plex
 from maktaba_pipeline.extensions.store import ExtensionState
 from maktaba_pipeline.runtime import Database
 
-EXT_STAGES = {"plex_index", "plex_collection", "plex_groups", "dizquetv_show", "dizquetv_channels"}
+EXT_STAGES = {
+    "plex_index",
+    "plex_collection",
+    "plex_groups",
+    "dizquetv_show",
+    "dizquetv_channels",
+    "dizquetv_audit",
+}
 
 
 def edges(graph: tuple[StageDef, ...], name: str) -> set[tuple[str, str]]:
@@ -62,7 +69,11 @@ def test_register_adds_stages_and_edges_and_validates() -> None:
 
 def test_dizquetv_alone_has_no_plex_edge() -> None:
     graph = build_full_graph([dizquetv])
-    assert {s.name for s in graph if s.extension} == {"dizquetv_show", "dizquetv_channels"}
+    assert {s.name for s in graph if s.extension} == {
+        "dizquetv_show",
+        "dizquetv_channels",
+        "dizquetv_audit",
+    }
     assert not any(e.to == "plex_collection" for s in graph for e in s.edges)
 
 

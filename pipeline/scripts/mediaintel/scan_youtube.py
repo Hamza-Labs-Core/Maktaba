@@ -30,6 +30,8 @@ from typing import Any
 import yt_dlp  # type: ignore[import-untyped]
 
 from maktaba_pipeline.discovery.ytdlp_sidecars import is_real_playlist, parse_upload_date
+from maktaba_pipeline.integrations.youtube import BotCheck as BotCheck
+from maktaba_pipeline.integrations.youtube import YtDlpFetcher
 
 TABS = ("videos", "shorts", "streams")
 
@@ -184,13 +186,6 @@ def scan_channel(
     return "ok"
 
 
-class BotCheck(RuntimeError):
-    """YouTube asked to sign in ("confirm you're not a bot"): stop and back off."""
-
-
-_BOT_MARKERS = ("not a bot", "روبوت", "Sign in to confirm")
-
-
 def exact_dates(
     conn: sqlite3.Connection,
     video_ids: list[str],
@@ -209,21 +204,18 @@ def exact_dates(
     """
     stop = threading.Event()
 
+    fetcher = YtDlpFetcher()
+
     def one(vid: str) -> tuple[str, dict[str, Any] | None]:
         if stop.is_set():
             return vid, None
         time.sleep(delay_s * (0.5 + random.random()))
-        y = _ydl(lang, flat=False)
-        if cookies_from_browser:
-            y.params["cookiesfrombrowser"] = (cookies_from_browser,)
         try:
-            info = y.extract_info(
-                f"https://www.youtube.com/watch?v={vid}", download=False, process=False
+            return vid, fetcher.video_info(
+                vid, lang=lang, cookies_from_browser=cookies_from_browser
             )
-            return vid, info if isinstance(info, dict) else None
-        except yt_dlp.utils.DownloadError as e:
-            if any(m in str(e) for m in _BOT_MARKERS):
-                stop.set()
+        except BotCheck:
+            stop.set()
             return vid, None
 
     done = 0

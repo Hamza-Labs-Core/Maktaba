@@ -1,26 +1,31 @@
 // Package channel implements Story 27.3 — the live stream engine.
 //
-// A live channel is a long-lived virtual streaming session whose input
-// is a schedule (slot 0082 channel_programs), not one file. The engine:
+// A live channel is a long-lived virtual broadcast whose input is a
+// schedule (slot 0082 channel_programs), not one file. Per channel the
+// engine runs one Station (station.go):
 //
-//   - reads the schedule and computes the wall-clock join point
-//     (join.go): at absolute time T, program P plays at offset
-//     T − P.start_at, so every viewer who tunes at the same second sees
-//     the same frame;
-//   - feeds the upcoming program files to one FFmpeg via the concat
-//     demuxer (concat.go), the first seeked to the join offset;
-//   - emits a sliding live HLS window (args.go), or a continuous MPEG-TS
-//     for HDHomeRun (mpegts.go, Story 27.5);
-//   - activates lazily: spawns on first tune, keeps a warm grace window
-//     for instant re-tune while surfing, and is reaped after zero
-//     viewers (engine.go + registry.go), bounded by a per-host cap.
-//
-// The pure pieces (join, concat, args, registry) are unit-tested with a
-// fake clock + fake runner; no ffmpeg is exec'd in tests.
+//   - a Feeder (feeder.go) walks the schedule block by block, re-reading
+//     channel_programs as time advances, and plans each block against
+//     the wall clock (plan.go + join.go): a viewer tuning mid-block joins
+//     at offset now − start_at, every block plays exactly its scheduled
+//     span, schedule gaps and failed blocks become slates;
+//   - each block is one ffmpeg (blockargs.go) that normalises the source
+//     to the channel's fixed output profile (resolution / fps / H.264 via
+//     NVENC or libx264 / AAC-or-AC3 48 kHz stereo), paced with -re, with
+//     the channel look (watermark, loudness) applied, writing MPEG-TS
+//     whose timestamps continue the channel timeline (-output_ts_offset);
+//   - all blocks are written into ONE persistent muxer ffmpeg per channel
+//     (stream copy) that feeds the sliding live HLS window and a fan-out
+//     hub (broadcast.go) serving every HDHomeRun / raw-TS client — one
+//     encode per channel no matter how many viewers;
+//   - stations start lazily on the first HLS/TS request, stay warm for a
+//     grace window after the last viewer, and are reaped after that
+//     (engine.go + registry.go), bounded by a per-host cap.
 package channel
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -38,6 +43,9 @@ type ProgramBlock struct {
 	SourceOffsetMS   int
 	SourceDurationMS int
 	Path             string
+	// SourceURL is the stream/page URL of a `live` block (nullable
+	// channel_programs.source_url; empty before that migration lands).
+	SourceURL string
 }
 
 // Duration is the wall-clock length of the block.
@@ -52,6 +60,11 @@ type Repo interface {
 	// `from`, ordered by start_at — the current block plus the
 	// look-ahead tail used to build the concat input.
 	ProgramsFrom(ctx context.Context, channelID uuid.UUID, from time.Time, limit int) ([]ProgramBlock, error)
+
+	// Look loads the channel's presentation settings (logo, watermark,
+	// loading picture, loudness). ErrChannelNotFound when there is no
+	// such channel or it is disabled (disabled channels never stream).
+	Look(ctx context.Context, channelID uuid.UUID) (Look, error)
 
 	// SetRuntime upserts the channel_runtime row (state machine +
 	// viewer count) for observability and cross-replica host pinning.
@@ -78,4 +91,16 @@ const (
 	StateWarming  = "warming"
 	StateLive     = "live"
 	StateDraining = "draining"
+)
+
+// ErrChannelNotFound is returned by Repo.Look for an unknown channel.
+var ErrChannelNotFound = errors.New("channel: not found")
+
+// Block kinds (channel_programs.kind).
+const (
+	KindProgram = "program"
+	KindFiller  = "filler"
+	KindBumper  = "bumper"
+	KindSlate   = "slate"
+	KindLive    = "live"
 )

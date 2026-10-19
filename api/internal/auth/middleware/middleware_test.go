@@ -273,3 +273,36 @@ func TestRequireAdmin_AllowsAdmin(t *testing.T) {
 		t.Error("inner handler should have run")
 	}
 }
+
+func TestIsPublicChannelArt(t *testing.T) {
+	public := []string{
+		"/api/channels/c1/logo",
+		"/api/channels/c1/art/logo",
+		"/api/channels/c1/art/watermark",
+		"/api/channels/c1/art/loading",
+	}
+	for _, p := range public {
+		if !IsPublicChannelArt(httptest.NewRequest("GET", p, nil)) {
+			t.Errorf("GET %s should be public", p)
+		}
+		if IsPublicChannelArt(httptest.NewRequest("POST", p, nil)) {
+			t.Errorf("POST %s must not be public", p)
+		}
+	}
+	for _, p := range []string{
+		"/api/channels/c1", "/api/channels", "/api/channels//logo", "/api/channels/c1/art/other",
+		"/api/channels/c1/art/logo/x", "/api/channels/c1/guide", "/api/videos/c1/logo",
+	} {
+		if IsPublicChannelArt(httptest.NewRequest("GET", p, nil)) {
+			t.Errorf("GET %s must not be public", p)
+		}
+	}
+	gate := RequireAuthExcept(DefaultPublicAllowlist())(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	rec := httptest.NewRecorder()
+	gate.ServeHTTP(rec, httptest.NewRequest("GET", "/api/channels/c1/art/watermark", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("anonymous art GET: %d", rec.Code)
+	}
+}

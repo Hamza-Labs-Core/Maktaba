@@ -36,6 +36,8 @@ from maktaba_pipeline.classify.topic_tags import (
     TAGGER_VERSION,
     Tag,
     boilerplate_phrases,
+    branding,
+    chapter_tags,
     tag_series,
     tag_video,
 )
@@ -115,6 +117,12 @@ def _tag_folder(conn: sqlite3.Connection, folder: str) -> None:
         for r in conn.execute("SELECT id, name, metadata FROM series")
     ]
     series = [s for s in series if s[2].get("folder") == folder]
+    # a playlist holding several shows («رمضان 1437», «غزة») names a collection, not
+    # each show in it: only a show's own playlists are evidence of its topic
+    shows_in: dict[str, set[str]] = {}
+    for _sid, nm, md in series:
+        for p in md.get("playlists", []):
+            shows_in.setdefault(p, set()).add(md.get("series_key") or nm)
     conn.executemany("DELETE FROM series_tags WHERE series_id=?", [(s[0],) for s in series])
 
     print(f"\n=== tags v{TAGGER_VERSION}: {Path(folder.replace(chr(92), '/')).name}: "
@@ -137,7 +145,11 @@ def _tag_folder(conn: sqlite3.Connection, folder: str) -> None:
         ]
         tags = tag_series(
             name,
-            playlist_titles=[pl_titles[p] for p in meta.get("playlists", []) if p in pl_titles],
+            playlist_titles=[
+                pl_titles[p]
+                for p in meta.get("playlists", [])
+                if p in pl_titles and len(shows_in.get(p, ())) <= 1
+            ],  # fmt: skip
             episode_titles=[e["title"] for e in eps],
             descriptions=[e["description"] or "" for e in eps],
             channel=channel,
@@ -165,15 +177,37 @@ def _tag_folder(conn: sqlite3.Connection, folder: str) -> None:
     }
     conn.execute("DELETE FROM episode_tags WHERE path IN (SELECT path FROM files WHERE folder=?)",
                  (folder,))  # fmt: skip
+    # an episode in a show's own chapter playlist («كتاب الصيام» of a hadith course) is
+    # about that chapter, whatever its own title says («المجلس 14»)
+    yt_of = dict(conn.execute("SELECT path, youtube_id FROM files WHERE folder=? "
+                              "AND youtube_id IS NOT NULL", (folder,)).fetchall())  # fmt: skip
+    pls_of: dict[str, list[str]] = {}
+    for pl, yid in conn.execute(
+        "SELECT i.playlist_id, i.youtube_id FROM yt_playlist_items i JOIN files f "
+        "ON f.youtube_id=i.youtube_id WHERE f.folder=?",
+        (folder,),
+    ):
+        pls_of.setdefault(yid, []).append(pl)
+    strip = branding(channel)
+    chapter: dict[str, dict[str, float]] = {}  # playlist → its chapter tags
     ep_rows: list[tuple[str, str, float]] = []
     for p in in_series:
         r = by_path.get(p)
         if r is None:
             continue
+        own: dict[str, float] = {}
         for t in tag_video(r["title"], r["description"] or "", r["dur"], channel=channel,
                            noise=noise):  # fmt: skip
             if t.tag.startswith(_EPISODE_NAMESPACES) and t.tag != "audience:general":
-                ep_rows.append((p, t.tag, t.score))
+                own[t.tag] = t.score
+        for pl in pls_of.get(yt_of.get(p, ""), ()):
+            if len(shows_in.get(pl, ())) > 1 or pl not in pl_titles:
+                continue  # a playlist holding several shows is a collection, not a chapter
+            if pl not in chapter:
+                chapter[pl] = chapter_tags(pl_titles[pl], strip=strip)
+            for tag, sc in chapter[pl].items():
+                own[tag] = max(own.get(tag, 0.0), sc)
+        ep_rows.extend((p, tag, sc) for tag, sc in own.items())
     conn.executemany("INSERT OR REPLACE INTO episode_tags (path, tag, score) VALUES (?,?,?)",
                      ep_rows)  # fmt: skip
     print(f"  episodes tagged by their own titles: {len(in_series)} ({len(ep_rows)} tags)")

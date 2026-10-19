@@ -2,6 +2,7 @@ package guide
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
@@ -36,10 +37,7 @@ func buildM3U(base string, chans []ChannelMeta) string {
 	xmltvURL := base + "/api/channels/xmltv"
 	b.WriteString(`#EXTM3U url-tvg="` + xmltvURL + `" x-tvg-url="` + xmltvURL + `"` + "\n")
 	for _, c := range chans {
-		logo := ""
-		if c.LogoPath != nil {
-			logo = *c.LogoPath
-		}
+		logo := logoRef(base, c)
 		b.WriteString("#EXTINF:-1")
 		b.WriteString(` tvg-id="` + m3uAttr(c.Slug) + `"`)
 		b.WriteString(` tvg-name="` + m3uAttr(c.Name) + `"`)
@@ -52,6 +50,28 @@ func buildM3U(base string, chans []ChannelMeta) string {
 		b.WriteString(base + "/stream/channel/" + c.ID + "/manifest.m3u8\n")
 	}
 	return b.String()
+}
+
+// logoRef is the channel's logo as a client can fetch it: an http(s)
+// logo_path as is, a file on this server as base + /api/channels/{id}/logo
+// (never the server's filesystem path); "" when the channel has none.
+func logoRef(base string, c ChannelMeta) string {
+	if c.LogoPath == nil {
+		return ""
+	}
+	p := strings.TrimSpace(*c.LogoPath)
+	switch {
+	case p == "":
+		return ""
+	case isURL(p):
+		return p
+	}
+	return base + "/api/channels/" + url.PathEscape(c.ID) + "/logo"
+}
+
+func isURL(p string) bool {
+	u, err := url.Parse(p)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
 
 // baseURL derives the public base from the inbound request (scheme +

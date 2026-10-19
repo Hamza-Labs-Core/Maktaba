@@ -180,7 +180,7 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
             # run the queue worker on its own.
             from .grpc_server import serve_grpc
 
-            grpc_server, grpc_task = await serve_grpc(addr=grpc_addr)
+            grpc_server, grpc_task = await serve_grpc(addr=grpc_addr, database=database)
             log.info("pipeline_grpc_listening", addr=grpc_addr)
         except Exception as exc:  # noqa: BLE001 — startup-only branch
             log.warning("pipeline_grpc_disabled", reason=str(exc))

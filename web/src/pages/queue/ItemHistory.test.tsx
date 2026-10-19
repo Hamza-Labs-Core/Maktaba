@@ -159,4 +159,66 @@ describe("ItemHistory", () => {
     );
     await vi.waitFor(() => expect(calls()).toBeGreaterThanOrEqual(1), { timeout: 2500 });
   });
+  it("shows the library's topics, clip groups and promos and links its review page", async () => {
+    routeGet(get, {
+      "/api/queues": snapshotFixture,
+      "/api/items/library/lib-1/history": libraryHistoryFixture,
+      "/api/extensions": { extensions: extensionsFixture },
+      "/api/items/library/lib-1/collections": {
+        topics: [
+          { id: "t1", name: "السيرة", items: 12, collection: "Islamic lectures - ملف - السيرة" },
+        ],
+        clip_groups: [
+          { id: "g1", kind: "clips", basis: "topic", title: "مقاطع", items: 40, collection: null },
+        ],
+        promos: [
+          {
+            video_id: "v1",
+            title: "برومو الحبيب",
+            show: "الحبيب",
+            season_id: "s1",
+            season: 2,
+            evidence: "title names the show",
+          },
+        ],
+      },
+      "/api/reports": {
+        reports: [
+          {
+            name: "lib-1.html",
+            kind: "review",
+            title: "Islamic lectures",
+            library_id: "lib-1",
+            size: 1,
+            updated_at: "2026-05-18T11:00:00Z",
+          },
+        ],
+      },
+    });
+    renderAt(<ItemHistory />, "/queue/items/library/lib-1", "/queue/items/:kind/:id");
+    const panel = (
+      await screen.findByRole("heading", { name: "Topics, clips and promos" })
+    ).closest("section")!;
+    expect(await within(panel).findByText(/Islamic lectures - ملف - السيرة/)).toBeInTheDocument();
+    expect(within(panel).getByText("not written")).toBeInTheDocument();
+    expect(within(panel).getByRole("link", { name: /الحبيب.? S2/ })).toHaveAttribute(
+      "href",
+      "/queue/items/season/s1"
+    );
+    expect(within(panel).getByRole("link", { name: /برومو الحبيب/ })).toHaveAttribute(
+      "href",
+      "/videos/v1"
+    );
+    expect(await screen.findByRole("link", { name: "Review page" })).toHaveAttribute(
+      "href",
+      "/queue/reports?open=lib-1.html"
+    );
+  });
+
+  it("has no collections panel or review link when there is nothing to show", async () => {
+    setup();
+    await screen.findByRole("heading", { level: 1, name: /Islamic lectures/ });
+    expect(screen.queryByRole("heading", { name: "Topics, clips and promos" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Review page" })).toBeNull();
+  });
 });

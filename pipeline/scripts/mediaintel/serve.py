@@ -76,6 +76,21 @@ STEPS: list[tuple[str, str, str]] = [
     ),
     ("tag", "Tag topics", "seerah, tafsir, hadith, Quran …, format and occasion"),
     (
+        "check-tags",
+        "Check tags with a language model",
+        "a local model reads each series' name and episode titles and corrects its topics",
+    ),
+    (
+        "check-clips",
+        "Check clips with a language model",
+        "a local model reads each clip's title and keeps only the topics it is about",
+    ),
+    (
+        "books",
+        "Look up the books",
+        "the book a lesson series explains (Wikipedia) decides its topics",
+    ),
+    (
         "group (",
         "Group clips and promos",
         "shorts and clips into filler collections, stand-alone videos by topic, promos to shows",
@@ -90,6 +105,16 @@ STEPS: list[tuple[str, str, str]] = [
     ),
     ("plan-channels", "Plan TV channels", "themed / mix / presenter channels, time slots, fillers"),
     ("export-dizquetv", "Create the TV channels", "in dizqueTV, with schedules and fillers"),
+    (
+        "repair-broken",
+        "Repair broken files",
+        "unfinished downloads are fetched from YouTube again, checked, then swapped in",
+    ),
+    (
+        "audit-channels",
+        "Audit the channels",
+        "is what each channel airs about the channel? (channel-audit.html)",
+    ),
 ]
 
 STAGE_NAMES = {
@@ -234,14 +259,38 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
             return out, _dz_shows_progress(body, n_lib)
         elif STEPS[current][0] == "signatures":
             return out, _sig_progress(body)
-        else:  # no counter: say so instead of counting log lines
-            return out, {"done": 0, "total": None, "unit": "",
-                         "phase": "working (this step has no counter)"}  # fmt: skip
+        else:
+            return out, _generic_progress(body, STEPS[current][0])
         progress = {"done": n, "total": int(total_m.group(1)) if total_m else None, "unit": unit}
     return out, progress
 
 
 _DETAILS_RE = re.compile(r"^\s*\[(\d+)/(\d+)\] episode details from Plex")
+
+
+#: what a step's "[n/N]" lines count
+_UNITS = {"check-tags": "series", "check-clips": "questions", "books": "books", "repair-broken": "files", "plan-channels": "channels", "export-dizquetv": "items",
+          "audit-channels": "channels"}  # fmt: skip
+_PHASE_RE = re.compile(r"^phase: (.+)$")
+_N_OF_RE = re.compile(r"^\s*\[(\d+)/(\d+)\] ")
+
+
+def _generic_progress(body: list[str], step: str) -> dict[str, Any]:
+    """Any step: its last "phase: …" line names what it is doing, and the "[n/N]" lines
+    after it count that part. A step printing neither says so."""
+    last_phase = max((i for i, ln in enumerate(body) if _PHASE_RE.match(ln)), default=-1)
+    phase = _PHASE_RE.match(body[last_phase]).group(1) if last_phase >= 0 else None  # type: ignore[union-attr]
+    counts = [m for ln in body[last_phase + 1 :] if (m := _N_OF_RE.match(ln))]
+    if not counts and phase is None:
+        return {"done": 0, "total": None, "unit": "", "phase": "working (this step has no counter)"}
+    prog: dict[str, Any] = {
+        "done": int(counts[-1].group(1)) if counts else 0,
+        "total": int(counts[-1].group(2)) if counts else None,
+        "unit": _UNITS.get(step, "") if counts else "",
+    }
+    if phase:
+        prog["phase"] = phase
+    return prog
 
 
 def _counted(body: list[str], total_re: str) -> dict[str, Any]:
@@ -409,18 +458,22 @@ def normalize_cause(error: str | None) -> str:
     return text[:80] or "unknown error"
 
 
-def attention_groups(rows: list[tuple[str, str | None, int, int | None]]) -> list[dict[str, Any]]:
-    """Merge ``(stage, error, count, retrying)`` rows into groups by stage and cause,
-    biggest first. ``retrying`` is how many of ``count`` still have tries left."""
+def attention_groups(rows: list[tuple[Any, ...]]) -> list[dict[str, Any]]:
+    """Merge ``(stage, error, count, retrying[, last])`` rows into groups by stage and
+    cause, biggest first. ``retrying`` is how many of ``count`` still have tries left;
+    ``last`` when one of them last failed (an old failure is from an old run)."""
     groups: dict[tuple[str, str], dict[str, Any]] = {}
-    for stage, error, n, retrying in rows:
+    for stage, error, n, retrying, *rest in rows:
         key = (stage, normalize_cause(error))
         g = groups.setdefault(
             key,
-            {"stage": stage, "cause": key[1], "count": 0, "retrying": 0, "example": error or ""},
-        )
+            {"stage": stage, "cause": key[1], "count": 0, "retrying": 0, "example": error or "",
+             "last": None},
+        )  # fmt: skip
         g["count"] += n
         g["retrying"] += retrying or 0
+        if rest and rest[0] and (g["last"] is None or rest[0] > g["last"]):
+            g["last"] = rest[0]
     out = sorted(groups.values(), key=lambda g: (-g["count"], g["stage"], g["cause"]))
     for g in out:
         g["given_up"] = g["count"] - g["retrying"]
@@ -619,10 +672,10 @@ def stage_detail(
     ]
     groups = attention_groups(
         [
-            (r[0], r[1], r[2], r[3])
+            (r[0], r[1], r[2], r[3], r[4])
             for r in conn.execute(
-                """SELECT stage, error, COUNT(*), SUM(attempts < max_attempts) FROM index_jobs
-                   WHERE state = 'failed' AND stage = ? GROUP BY stage, error""",
+                """SELECT stage, error, COUNT(*), SUM(attempts < max_attempts), MAX(updated_at)
+                   FROM index_jobs WHERE state = 'failed' AND stage = ? GROUP BY stage, error""",
                 (name,),
             )
         ]
@@ -950,9 +1003,10 @@ def status(db_path: str, log_path: Path | None) -> dict[str, Any]:
         out["totals"]["length not known yet"] = unknown
         out["attention"] = attention_groups(
             [
-                (r[0], r[1], r[2], r[3])
+                (r[0], r[1], r[2], r[3], r[4])
                 for r in conn.execute(
-                    """SELECT stage, error, COUNT(*), SUM(attempts < max_attempts)
+                    """SELECT stage, error, COUNT(*), SUM(attempts < max_attempts),
+                              MAX(updated_at)
                        FROM index_jobs WHERE state = 'failed' GROUP BY stage, error"""
                 )
             ]
@@ -1126,6 +1180,18 @@ def _run_args(
         args.append("--exact")
     if not body.get("youtube", True):
         args.append("--no-youtube")
+    from .pipeline import STEPS as RUN_STEPS
+
+    start = body.get("from_step") or ""
+    if start:
+        if start not in RUN_STEPS:
+            raise ValueError(f"Unknown step to start at: {start!r}.")
+        args += ["--from-step", start]
+    skip = body.get("skip") or []
+    if not isinstance(skip, list) or any(s not in RUN_STEPS for s in skip):
+        raise ValueError(f"The steps to leave out must be among: {', '.join(RUN_STEPS)}.")
+    for s in dict.fromkeys(skip):
+        args += ["--skip", s]
     if folders:
         args += ["--", *folders]
     return args
@@ -1308,6 +1374,9 @@ def serve(
                         cache["st"], cache["at"] = status(db_path, log), time.time()
                     st = dict(cache["st"])
                 st["running_pid"] = _running_pid(db_path)
+                from .pipeline import STEPS as RUN_STEPS
+
+                st["run_steps"] = list(RUN_STEPS)  # what "Start at" / "Leave out" offer
                 self._json(200, st)
             elif url.path == "/api/live":
                 # Server-Sent Events: one small update a second, until the page closes

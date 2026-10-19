@@ -62,6 +62,17 @@ PLANNER_HELP: dict[str, Help] = {
         "follows in the same slot, else one on the same topic.",
         choices=("presenter", "show"),
     ),
+    "show_reuse_to_fill": Help(
+        CH,
+        "Short channel takes back shows",
+        "A channel left short of its month by the one-channel-per-show rule takes back "
+        "shows it also matches (its own topic's first) until it has enough.",
+    ),
+    "quran_filler_recited_topics": Help(
+        CH,
+        "Quran channel: topics that must be recited",
+        "Dua clips fill the Quran channel only when the dua is recited, not talked about.",
+    ),
     "show_max_channels": Help(
         CH,
         "Channels per show (most)",
@@ -89,9 +100,17 @@ PLANNER_HELP: dict[str, Help] = {
         "Themed channels",
         "One channel per theme, in priority order: its number, names, and the "
         "topics / audiences / formats / occasions whose shows it takes, and the tags it "
-        "never takes (exclude, e.g. audience:adults). Min hours: this theme's own minimum "
+        "never takes (exclude, e.g. audience:adults). Libraries: the libraries the channel is "
+        "mainly made of (their shows join it, live there and come first); exclude libraries: "
+        "never on it. Series: the shows the channel is made of (part of the show's name; "
+        "with libraries, only those shows of those libraries). Kind: theme (a show grid of "
+        "the shows its tags take), quran (recitation non-stop by reciter), nonstop (only its "
+        "own libraries / series in order all day, the first again after the last; no show "
+        "grid). Slot minutes (nonstop): an episode every this many minutes, filler between; "
+        "0: back to back. Filler topics / with / libraries: its second-choice breaks. "
+        "Filler off: programmes only, no clips. Min hours: this theme's own minimum "
         "instead of the days-without-a-repeat rule (the Quran channel repeats by nature); "
-        "empty: the rule.",
+        "empty: the rule (a nonstop channel: none).",
     ),
     "topic_min_score": Help(
         CH,
@@ -110,6 +129,61 @@ PLANNER_HELP: dict[str, Help] = {
         "lesson in a lecture series): one collection per presenter, in air order.",
     ),
     "theme_episode_min_score": Help(CH, "Single episode: topic score"),
+    "theme_show_min_episode_share": Help(
+        CH,
+        "Whole show: share of its own episodes on the theme",
+        "A show a theme channel takes by a topic or occasion tag (not by its genre) joins "
+        "whole only when at least this share of its hours are episodes about the theme "
+        "themselves; otherwise only those episodes join, as a special run. 0: off.",
+    ),
+    "theme_core_first": Help(
+        CH,
+        "Topic channels: their topic's shows first",
+        "On a topic channel (Hadith, Fiqh …) the shows of that topic take the time slots "
+        "before shows that joined by a tag or a few episodes; variety there means another "
+        "presenter, not another topic.",
+    ),
+    "theme_specialists_first": Help(
+        CH,
+        "Topic channels: specialists first",
+        "Among a topic channel's shows, the presenters whose library is mostly that topic "
+        "(a hadith scholar on the Hadith channel) take the slots first.",
+    ),
+    "theme_general_filler": Help(
+        CH,
+        "Theme channels: also general filler",
+        "Off: a theme channel fills its gaps only with clips on its own topic and its "
+        "shows' promos. On: also with the library's clips on any topic.",
+    ),
+    "break_filler": Help(
+        CH,
+        "Breaks: nasheeds and short clips",
+        "Every channel's breaks between shows (like a TV channel's ads) also play the "
+        "library's break filler, besides its shows' promos and its own topic's clips.",
+    ),
+    "break_filler_topics": Help(
+        CH, "Breaks: clips on these topics", "Topic keys, e.g. nasheed, dua_dhikr."
+    ),
+    "break_filler_libraries": Help(
+        CH,
+        "Breaks: any short clip of these libraries",
+        "Part of the library's (or presenter's) name.",
+    ),
+    "break_filler_max_minutes": Help(CH, "Breaks: clips up to (min)"),
+    "break_related_min_score": Help(
+        CH,
+        "Breaks: a clip's topic score on a topic channel",
+        "A break clip plays only where it clearly belongs: on a "
+        "topic channel scored at least this on its topic; on an "
+        "audience channel (Kids) among its own filler.",
+        minimum=0,
+    ),
+    "break_nasheed_channels": Help(
+        CH,
+        "Breaks: channels that may play nasheeds",
+        "Channel keys (kids, history, stories …); the nasheed must "
+        "still be related to the channel.",
+    ),
     "theme_episode_min_minutes": Help(CH, "Single episode: from (min)"),
     "theme_episode_min_count": Help(
         CH,
@@ -322,10 +396,41 @@ PLANNER_HELP: dict[str, Help] = {
     "ramadan_exclusive": Help(RAM, "Ramadan shows only in Ramadan"),
     # dizqueTV
     "timezone": Help(DZ, "Time zone", "IANA name (Asia/Riyadh); empty: the server's."),
-    "dz_lateness_ms": Help(DZ, "Allowed lateness (ms)"),
+    "dz_lateness_ms": Help(
+        DZ,
+        "Allowed lateness (ms)",
+        "How late a slot may start and still play its show: an episode that runs past the "
+        "next slot's start pushes it back. Past this, dizqueTV gives the whole slot to "
+        "filler (an hour and more of clips, no programme). A day: every slot plays its "
+        "next episode, the schedule is programmes around the clock.",
+    ),
+    "slot_max_filler_minutes": Help(
+        DZ,
+        "Most filler at a slot's end (minutes)",
+        "When the next episode does not fit what is left of its slot, the rest is filler; "
+        "past this many minutes the episode plays anyway, running past the slot's end (the "
+        "next slot starts late). 0: never. A nonstop channel keeps its filler to the hour.",
+    ),
     "dz_max_days": Help(DZ, "Schedule length (days)"),
     "dz_pad_ms": Help(DZ, "Pad (ms)"),
     "dz_filler_cooldown_ms": Help(DZ, "Filler cooldown (ms)"),
+    "dz_weight_topic": Help(DZ, "Filler weight: the channel's topic clips"),
+    "dz_weight_promos": Help(DZ, "Filler weight: its shows' promos"),
+    "dz_weight_breaks": Help(DZ, "Filler weight: breaks (nasheeds, short clips)"),
+    "dz_weight_general": Help(DZ, "Filler weight: general clips"),
+    "dz_guide_min_program_s": Help(
+        DZ,
+        "Guide: shortest programme listed (s)",
+        "Programmes at least this long have their own entry in the guide; shorter ones "
+        "count as filler.",
+    ),
+    "dz_guide_max_padding_s": Help(
+        DZ,
+        "Guide: filler shown from (s)",
+        "Filler time at least this long gets its own guide entry (the filler title below); "
+        "shorter filler is added to the programme before it. dizqueTV's own default is 1800.",
+    ),
+    "dz_guide_filler_title": Help(DZ, "Guide: title of filler time"),
     "dz_logo_dir": Help(
         DZ,
         "Channel logos folder",
@@ -337,6 +442,12 @@ PLANNER_HELP: dict[str, Help] = {
         "Corner logo (watermark)",
         "A picture shown in a corner of the video on every "
         "channel, like a TV station's logo; an animated GIF loops. Empty: none.",
+    ),
+    "dz_watermark_dir": Help(
+        DZ,
+        "Corner logos folder (per channel)",
+        "Each channel's own corner logo: <channel key>.gif (quran.gif, palestine.gif …) or "
+        ".png; a channel without one uses the corner logo above. Empty: that one everywhere.",
     ),
     "dz_watermark_position": Help(
         DZ, "Corner logo position", choices=("top-right", "top-left", "bottom-right", "bottom-left")
@@ -379,10 +490,14 @@ _MINIMUM: dict[str, float] = {
     "promote_min_episodes": 1, "extra_min_weeks_left": 0, "show_member_min_share": 0,
     "rank_size_full_hours": 0.1, "quran_rotation_hours": 1, "quran_max_reciters_per_day": 1,
     "quran_library_min_share": 0, "dz_lateness_ms": 0, "dz_max_days": 1, "dz_pad_ms": 0,
+    "slot_max_filler_minutes": 0,
     "dz_filler_cooldown_ms": 0, "dz_filler_max_items": 1, "max_channels": 1,
     "dz_watermark_width": 1, "dz_watermark_margin": 0,
+    "dz_guide_min_program_s": 0, "dz_guide_max_padding_s": 0,
     "channel_min_days": 0, "channel_day_hours": 0.5, "presenter_max_channels": 0,
     "theme_episode_min_minutes": 0, "theme_episode_min_count": 1, "show_max_channels": 0,
+    "break_filler_max_minutes": 0, "dz_weight_topic": 0, "dz_weight_promos": 0,
+    "dz_weight_breaks": 0, "dz_weight_general": 0,
 }  # fmt: skip
 for _name, _min in _MINIMUM.items():
     PLANNER_HELP[_name] = dataclasses.replace(PLANNER_HELP[_name], minimum=_min)

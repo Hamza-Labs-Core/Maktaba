@@ -71,6 +71,19 @@ type Handler struct {
 
 	ringMu sync.Mutex
 	ring   backlogRing
+
+	// PlexTVURL overrides https://plex.tv (tests); PlexHTTP is the
+	// client for it (default 15 s timeout).
+	PlexTVURL string
+	PlexHTTP  *http.Client
+	plexPins  plexSignins
+
+	// extMu serialises the read-modify-write of an extension row's
+	// settings (PUT, the Plex client id, the Plex sign-in's server pick)
+	// so one cannot overwrite the other's keys.
+	extMu sync.Mutex
+	// plexID caches the stored Plex client identifier (guarded by extMu).
+	plexID string
 }
 
 // Mount wires the routes. Static segments (graph, libraries, health,
@@ -81,6 +94,8 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/queues/graph", h.Graph)
 	r.Get("/api/queues/libraries", h.Libraries)
 	r.Get("/api/queues/health", h.Health)
+	r.Get("/api/queues/insights", h.Insights)
+	r.Get("/api/queues/pulse", h.Pulse)
 	r.Post("/api/queues/pause-all", h.PauseAll)
 	r.Post("/api/queues/resume-all", h.ResumeAll)
 	r.Get("/api/queues/{stage}", h.Detail)
@@ -96,6 +111,9 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/extensions", h.Extensions)
 	r.Put("/api/extensions/{name}", h.PutExtension)
 	r.Post("/api/extensions/{name}/test", h.TestExtension)
+	r.Post("/api/extensions/plex/signin", h.PlexSignin)
+	r.Get("/api/extensions/plex/signin/{id}", h.PlexSigninStatus)
+	r.Post("/api/extensions/plex/signin/{id}/use", h.PlexSigninUse)
 	r.Get("/api/pools", h.ListPools)
 	r.Put("/api/pools/{pool}", h.PutPool)
 	r.Post("/api/queue/retrigger", h.Retrigger)
@@ -103,6 +121,12 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/activity", h.Activity)
 	r.Get("/api/jobs/{id}/events", h.JobEvents)
 	r.Get("/api/items/{kind}/{id}/history", h.ItemHistory)
+	r.Get("/api/items/library/{id}/collections", h.LibraryCollections)
+	// Parity with the stand-alone control centre (see explain.go, style.go, insights.go).
+	r.Get("/api/explain", h.Explain)
+	r.Get("/api/seasons/styles", h.SeasonStyles)
+	r.Put("/api/seasons/{id}/style", h.PutSeasonStyle)
+	r.Put("/api/series/{id}/style", h.PutSeriesStyle)
 }
 
 func (h *Handler) now() time.Time {

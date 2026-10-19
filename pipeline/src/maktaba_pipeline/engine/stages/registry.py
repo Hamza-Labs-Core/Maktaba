@@ -46,9 +46,14 @@ CORE_MODULES: dict[str, str] = {
     "detect": "maktaba_pipeline.engine.stages.detect",
     "fp_gate": "maktaba_pipeline.engine.stages.fp_gate",
     "tag": "maktaba_pipeline.engine.stages.tag",
+    "check_tags": "maktaba_pipeline.engine.stages.check_tags",
+    "check_clips": "maktaba_pipeline.engine.stages.check_clips",
+    "books": "maktaba_pipeline.engine.stages.books",
     "rate_style": "maktaba_pipeline.engine.stages.rate_style",
     "plan_channels": "maktaba_pipeline.engine.stages.plan_channels",
     "write_channels": "maktaba_pipeline.engine.stages.write_channels",
+    "exact_dates": "maktaba_pipeline.engine.stages.exact_dates",
+    "repair_broken": "maktaba_pipeline.engine.stages.repair_broken",
 }
 _LEGACY_MODULE = "maktaba_pipeline.engine.stages.legacy"
 

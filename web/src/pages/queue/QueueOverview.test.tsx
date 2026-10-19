@@ -48,6 +48,32 @@ function setup(over: Partial<typeof snapshotFixture> = {}) {
     "/api/workers": { workers: workersFixture },
     "/api/extensions": { extensions: extensionsFixture },
     "/api/activity": { items: logFixture, next: null },
+    "/api/queues/pulse": {
+      state: "working",
+      running: 2,
+      waiting: 4,
+      paused_all: false,
+      last_activity_at: "2026-05-18T11:59:50Z",
+      age_sec: 9,
+      stuck: [],
+    },
+    "/api/queues/insights": {
+      totals: {
+        libraries: 2,
+        videos: 321,
+        videos_with_length: 300,
+        series: 5,
+        seasons: 9,
+        plex_collections: 4,
+        dizquetv_shows: 1,
+        channels: 3,
+        style_pinned: 0,
+        youtube_videos: 0,
+        videos_without_exact_date: 0,
+      },
+      styles: { talk: 6 },
+      genres: [{ genre: "fiqh", seasons: 4 }],
+    },
   });
   post.mockResolvedValue(undefined);
   return renderAt(<QueueOverview />, "/queue");
@@ -336,5 +362,42 @@ describe("QueueOverview", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+  it("carries the stand-alone control centre's panels: heartbeat, counters, run, explain, style", async () => {
+    setup();
+    expect(await screen.findByText("Last activity 9 s ago")).toBeInTheDocument();
+    const insights = await screen.findByRole("region", { name: "Library at a glance" });
+    expect(within(insights).getByText("321")).toBeInTheDocument();
+    expect(screen.getByText("Start a run", { selector: "summary" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Explain a video" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Pin a show's style" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/queue/reports");
+  });
+
+  it("Start a run queues every library through the retrigger call", async () => {
+    setup();
+    const panel = (await screen.findByText("Start a run", { selector: "summary" })).closest(
+      "details"
+    )!;
+    panel.setAttribute("open", "");
+    post.mockResolvedValue({
+      results: [
+        {
+          subject_kind: "library",
+          subject_id: "x",
+          stage: "detect",
+          job_id: 1,
+          outcome: "inserted",
+        },
+      ],
+    });
+    await userEvent.click(within(panel).getByRole("button", { name: "Start run" }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        "/api/queue/retrigger",
+        expect.objectContaining({ mode: "queue" })
+      )
+    );
+    expect(await within(panel).findByRole("status")).toHaveTextContent("1 queued");
   });
 });

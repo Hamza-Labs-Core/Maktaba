@@ -31,13 +31,17 @@ from .registry import StageImpl
 __all__ = ["IMPL", "incomplete"]
 
 
-def incomplete(duration_s: float, head: str | None, tail: str | None, frames: str) -> str | None:
-    """Why a fingerprint is partial, or None (port of ``signatures._incomplete``)."""
+def incomplete(
+    duration_s: float, head: str | None, tail: str | None, frames: str, unread: int | None = None
+) -> str | None:
+    """Why a fingerprint is partial, or None (port of ``signatures._incomplete``).
+
+    ``unread``: frames ffmpeg could not read. A flat frame (black, a fade) is read but
+    carries no hash, so fewer hashes than frame times is not a failed read; without
+    ``unread`` (a stored fingerprint) only the audio windows are judged."""
     missing = [w for w, _, _ in windows(duration_s) if not (head if w == "head" else tail)]
-    got = len([h for h in frames.split(",") if h])
-    expected = len(frame_times(duration_s))
-    if got < expected:
-        missing.append(f"{expected - got} frames")
+    if unread:
+        missing.append(f"{unread} frames")
     return f"read failed: {', '.join(missing)}" if missing else None
 
 
@@ -52,8 +56,8 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
 
 async def read_signature(
     ctx: StageContext, path: str, duration_s: float
-) -> tuple[str | None, str | None, str]:
-    """``(audio head, audio tail, frame hashes)`` of one episode-length video."""
+) -> tuple[str | None, str | None, str, int]:
+    """``(audio head, audio tail, frame hashes, frames not read)`` of one video."""
     audio: dict[str, str | None] = {"head": None, "tail": None}
     for which, start, length in windows(duration_s):
         async with ctx.nas.timed(path):
@@ -66,14 +70,17 @@ async def read_signature(
         else:
             ctx.nas.record_stderr(res.text_err)
     raw = b""
+    unread = 0
     for t in frame_times(duration_s):
         res = await run_media(ffmpeg_frame_args(path, t, binary=FFMPEG), timeout=60.0)
-        if res.returncode == 0:
+        if res.returncode == 0 and len(res.stdout) >= 72:
             raw += res.stdout[:72]
         else:
-            ctx.nas.record_stderr(res.text_err)
+            unread += 1
+            if res.returncode != 0:
+                ctx.nas.record_stderr(res.text_err)
     frames = ",".join(f"{h:016x}" for h in dhashes_from_frames(raw))
-    return audio["head"], audio["tail"], frames
+    return audio["head"], audio["tail"], frames, unread
 
 
 async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
@@ -81,8 +88,8 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     if not v.duration_s:
         # the length is probed first; probe's output change re-queues the requesters
         return StageResult(output_hash=canonical_hash("no-duration"), outcome="waiting_inputs")
-    head, tail, frames = await read_signature(ctx, ctx.local_path(v.path), v.duration_s)
-    why = incomplete(v.duration_s, head, tail, frames)
+    head, tail, frames, unread = await read_signature(ctx, ctx.local_path(v.path), v.duration_s)
+    why = incomplete(v.duration_s, head, tail, frames, unread)
     await upsert_signals(
         db,
         v.id,

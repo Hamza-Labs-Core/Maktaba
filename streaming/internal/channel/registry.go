@@ -56,18 +56,22 @@ func (r *registry) get(id uuid.UUID) (*entry, bool) {
 // evicted (all slots have viewers) it returns ErrAtCapacity.
 func (r *registry) admit(id uuid.UUID) error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if _, ok := r.entries[id]; ok {
+		r.mu.Unlock()
 		return nil
 	}
 	if len(r.entries) < r.cap {
+		r.mu.Unlock()
 		return nil
 	}
 	victim := r.lruWarmLocked()
 	if victim == nil {
+		r.mu.Unlock()
 		return ErrAtCapacity
 	}
-	r.evictLocked(victim)
+	stop := r.evictLocked(victim)
+	r.mu.Unlock()
+	runStops(stop) // never under the registry lock
 	return nil
 }
 
@@ -76,6 +80,21 @@ func (r *registry) put(id uuid.UUID, stop StopFunc) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.entries[id] = &entry{channelID: id, stop: stop, viewers: 1, lastTouch: r.now()}
+}
+
+// putWith records an active channel with an initial viewer count (HLS
+// stations start at 0 viewers and live on segment-fetch touches).
+func (r *registry) putWith(id uuid.UUID, stop StopFunc, viewers int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.entries[id] = &entry{channelID: id, stop: stop, viewers: viewers, lastTouch: r.now()}
+}
+
+// remove drops a channel without calling its stop (it already ended).
+func (r *registry) remove(id uuid.UUID) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.entries, id)
 }
 
 // attach increments the viewer count (a re-tune or a new viewer) and
@@ -122,12 +141,16 @@ func (r *registry) reapIdle(grace time.Duration) []uuid.UUID {
 	defer r.mu.Unlock()
 	cutoff := r.now().Add(-grace)
 	var reaped []uuid.UUID
+	var stops []StopFunc
 	for id, e := range r.entries {
 		if e.viewers == 0 && e.lastTouch.Before(cutoff) {
-			r.evictLocked(e)
+			stops = append(stops, r.evictLocked(e))
 			reaped = append(reaped, id)
 		}
 	}
+	r.mu.Unlock()
+	runStops(stops...)
+	r.mu.Lock() // re-taken for the deferred unlock
 	return reaped
 }
 
@@ -144,11 +167,20 @@ func (r *registry) lruWarmLocked() *entry {
 	return victim
 }
 
-func (r *registry) evictLocked(e *entry) {
-	if e.stop != nil {
-		e.stop()
-	}
+// evictLocked removes e and returns its stop func; the caller runs it
+// after releasing the lock (a stop may take time and must never be able
+// to wedge the registry).
+func (r *registry) evictLocked(e *entry) StopFunc {
 	delete(r.entries, e.channelID)
+	return e.stop
+}
+
+func runStops(stops ...StopFunc) {
+	for _, s := range stops {
+		if s != nil {
+			s()
+		}
+	}
 }
 
 // len reports the active-channel count (for tests/metrics).

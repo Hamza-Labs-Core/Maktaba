@@ -1,9 +1,10 @@
-// Story 27.7 — live channel player tests. The player tunes via
-// POST /api/channels/{id}/tune, shows a LIVE indicator + tune banner, a
-// mini-guide overlay, and resolves an unknown channel number to a
-// not-found state.
+// Story 27.7 — live channel player tests. The player plays the channel's
+// HLS playlist through the web port (/stream/channel/{id}/index.m3u8 —
+// tuning is lazy, there is no tune call), shows a LIVE indicator + tune
+// banner, a mini-guide overlay, retries a failing stream before showing a
+// slate, and resolves an unknown channel number to a not-found state.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 
 const { get, post, del } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), del: vi.fn() }));
@@ -12,7 +13,7 @@ vi.mock("../../lib/api", async () => {
   return { ...actual, api: { ...actual.api, get, post, delete: del } };
 });
 
-import { Player } from "./Player";
+import { LIVE_RETRIES, LIVE_RETRY_MS, Player } from "./Player";
 import { I18nProvider } from "../../lib/i18n";
 
 const NOW = Date.now();
@@ -20,7 +21,15 @@ const iso = (ms: number) => new Date(NOW + ms).toISOString();
 
 const lineup = {
   items: [
-    { id: "c1", number: 1, name: "Movies", mode: "shuffle", enabled: true, sort_order: 0 },
+    {
+      id: "c1",
+      number: 1,
+      name: "Movies",
+      mode: "shuffle",
+      enabled: true,
+      sort_order: 0,
+      logo_url: "/api/channels/c1/logo",
+    },
     { id: "c2", number: 2, name: "Kids", mode: "shuffle", enabled: true, sort_order: 1 },
   ],
 };
@@ -76,18 +85,51 @@ describe("Player (live channel)", () => {
     get.mockReset();
     post.mockReset();
     del.mockReset();
-    post.mockResolvedValue({ session_id: "s1", manifest_url: "http://x/m.m3u8", channel_id: "c1" });
-    del.mockResolvedValue(undefined);
   });
 
-  // TC1 — distinct live mode: a LIVE indicator + a video element.
-  it("shows a LIVE indicator and plays the tuned manifest", async () => {
+  // TC1 — distinct live mode: a LIVE indicator + a video element playing
+  // the channel's HLS through the web port, with no tune/session calls.
+  it("shows a LIVE indicator and plays the channel HLS through the web port", async () => {
     mockGet();
     renderPlayer("1");
     expect(await screen.findByText(/LIVE/)).toBeInTheDocument();
-    await waitFor(() => expect(post).toHaveBeenCalledWith("/api/channels/c1/tune"));
     const video = (await screen.findByTestId("live-video")) as HTMLVideoElement;
-    expect(video.getAttribute("src")).toBe("http://x/m.m3u8");
+    expect(video.getAttribute("src")).toBe("/stream/channel/c1/index.m3u8");
+    expect(post).not.toHaveBeenCalled();
+    expect(del).not.toHaveBeenCalled();
+  });
+
+  it("shows the channel logo in the tune banner", async () => {
+    mockGet();
+    renderPlayer("1");
+    const banner = await screen.findByTestId("tune-banner");
+    expect(banner.querySelector("img")?.getAttribute("src")).toBe("/api/channels/c1/logo");
+  });
+
+  // Lazy tuning: the first playlist request can fail while the encoder
+  // starts, so the player retries before giving up with a slate + link.
+  it("retries a failing stream, then shows a slate with a direct link", async () => {
+    mockGet();
+    renderPlayer("1");
+    let video = (await screen.findByTestId("live-video")) as HTMLVideoElement;
+    vi.useFakeTimers();
+    try {
+      for (let i = 1; i < LIVE_RETRIES; i++) {
+        fireEvent.error(video);
+        await act(async () => {
+          vi.advanceTimersByTime(LIVE_RETRY_MS);
+        });
+        video = screen.getByTestId("live-video") as HTMLVideoElement;
+        expect(video.getAttribute("src")).toBe(`/stream/channel/c1/index.m3u8?retry=${i}`);
+      }
+      fireEvent.error(video);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(await screen.findByTestId("live-slate")).toBeInTheDocument();
+    expect(screen.getByTestId("live-direct-link").getAttribute("href")).toBe(
+      "/stream/channel/c1/index.m3u8"
+    );
   });
 
   // TC4 — the tune banner shows the current + next program.

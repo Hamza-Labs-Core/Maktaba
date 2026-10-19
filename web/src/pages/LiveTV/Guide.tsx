@@ -23,6 +23,7 @@ import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { useI18n } from "../../lib/i18n";
 import {
+  channelLogo,
   channelsApi,
   isAiring,
   isFiller,
@@ -202,6 +203,7 @@ export function Guide() {
             return (
               <div className="mkt-guide__row" key={channel.id}>
                 <div className="mkt-guide__chanhead">
+                  <ChannelLogo src={channelLogo(channel)} />
                   <span className="mkt-guide__channum">{channel.number}</span>
                   <span className="mkt-guide__channame">{channel.name}</span>
                 </div>
@@ -322,6 +324,7 @@ function WhatsOnNowList({
               onClick={() => onTune(channel.number)}
             >
               <div className="mkt-nowcard__head">
+                <ChannelLogo src={channelLogo(channel)} />
                 <span className="mkt-guide__channum">{channel.number}</span>
                 <span className="mkt-guide__channame">{channel.name}</span>
               </div>
@@ -339,5 +342,22 @@ function WhatsOnNowList({
         );
       })}
     </div>
+  );
+}
+
+// ChannelLogo shows a channel's logo, hiding itself if the image fails
+// (a moved file, an unreachable URL) so the row keeps its number + name.
+function ChannelLogo({ src }: { src: string | null }) {
+  const [broken, setBroken] = useState(false);
+  if (!src || broken) return null;
+  return (
+    <img
+      className="mkt-guide__logo"
+      src={src}
+      alt=""
+      loading="lazy"
+      data-testid="channel-logo"
+      onError={() => setBroken(true)}
+    />
   );
 }

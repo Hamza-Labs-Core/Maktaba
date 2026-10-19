@@ -178,6 +178,23 @@ def test_a_show_goes_to_its_topics_channel_before_an_audience_one() -> None:
     assert "100 سؤال في التاريخ" not in on["kids"]
 
 
+def test_a_short_channel_takes_back_a_show_rather_than_dropping_out() -> None:
+    hist = ThemeSpec("history", "History", "التاريخ", 108, ("islamic_history",))
+    kids = ThemeSpec("kids", "Kids", "الأطفال", 110, ("seerah",), audiences=("beginners",),
+                     min_hours=70)  # fmt: skip
+    lib = [season("h1", "100 سؤال في التاريخ", genre="islamic_history", n=40, minutes=60,
+                  tags={"audience:beginners": 1.0}),
+           season("k1", "سيرة", genre="seerah", n=40, minutes=60)]  # fmt: skip
+    kw = dict(themes=(hist, kids), mix_channel=False, presenter_channels=False,
+              show_max_channels=1, channel_min_days=1, channel_day_hours=1)  # fmt: skip
+    p = plan(lib, **kw)
+    on = {c.key: {u.name for k in c.lanes for u in p.lanes[k].units} for c in p.channels}
+    assert on["kids"] == {"سيرة", "100 سؤال في التاريخ"}  # 40 h of its own + the history show
+    assert "100 سؤال في التاريخ" in on["history"]
+    off = plan(lib, **{**kw, "show_reuse_to_fill": False})
+    assert "kids" not in {c.key for c in off.channels}
+
+
 def test_talk_shows_give_up_a_special_runs_episodes_a_topic_channel_keeps_its_show() -> None:
     from dataclasses import replace
 
@@ -245,10 +262,90 @@ def test_a_khutbah_is_never_on_the_quran_lane() -> None:
     sermon = season("k1", "نظرات في سورة الأنفال", genre="quran_recitation",
                     presenter="القارئ", n=9,
                     tags={"format:recitation": 1.0, "format:khutbah": 0.9})  # fmt: skip
-    p = plan([*reciter, sermon], themes=(ThemeSpec("quran", "Quran", "القرآن", 101,
-             ("quran_recitation",)),), mix_channel=False, presenter_channels=False)  # fmt: skip
+    quran_theme = ThemeSpec("quran", "Quran", "القرآن", 101, ("quran_recitation",), kind="quran")
+    p = plan([*reciter, sermon], themes=(quran_theme,), mix_channel=False,
+             presenter_channels=False)  # fmt: skip
     sermon_paths = {e.path for e in sermon.episodes}
     quran = next(c for c in p.channels if c.key == "quran")
     on_quran = {e.path for k in quran.lanes for u in p.lanes[k].units for e in u.episodes}
     assert {e.path for e in reciter[0].episodes} <= on_quran
     assert not sermon_paths & on_quran
+
+
+def test_a_topic_channel_puts_its_specialists_in_the_slots_first() -> None:
+    """On the Hadith channel the hadith scholars' lessons take the weekday evening slots;
+    a talk show tagged hadith, from a presenter who mostly does other things, comes after."""
+    hadith = ThemeSpec("hadith", "Hadith", "الحديث", 102, ("hadith",))
+    books = (
+        "البخاري",
+        "مسلم",
+        "أبي داود",
+        "الترمذي",
+        "النسائي",
+        "ابن ماجه",
+        "الموطأ",
+        "بلوغ المرام",
+        "عمدة الأحكام",
+        "رياض الصالحين",
+        "الأربعين",
+        "مسند أحمد",
+    )
+    lib = [season(f"a{i}", f"شرح {b}", genre="hadith", presenter=("العدوي", "الحويني")[i % 2],
+                  n=60, minutes=60) for i, b in enumerate(books)]  # fmt: skip
+    lib += [
+        season("m1", "حوار", genre="current_affairs", presenter="منصور", n=200, minutes=60,
+               tags={"topic:hadith": 0.9, "format:program": 0.9}),
+        season("m2", "بلا حدود", genre="current_affairs", presenter="منصور", n=200, minutes=60),
+    ]  # fmt: skip
+
+    def evening() -> list[str]:
+        p = plan(lib, themes=(hadith,), mix_channel=False, presenter_channels=False)
+        ch = next(c for c in p.channels if c.key == "hadith")
+        return [p.lanes[s.lane].shows[0] for s in ch.slots
+                if s.lane and s.kind == "program" and 17 * 60 <= s.start < 23 * 60
+                and len(s.days) >= 4]  # fmt: skip
+
+    got = evening()
+    assert got and not {"حوار", "بلا حدود"} & set(got)  # the evening is the scholars'
+
+
+def test_a_chapter_playlist_names_its_episodes_topic() -> None:
+    from maktaba_pipeline.classify.topic_tags import chapter_tags
+
+    assert chapter_tags("كتاب الصيام").get("topic:fasting", 0) > 0.8
+    assert chapter_tags("كتاب الصلاة من صحيح البخاري").get("topic:salah", 0) > 0.8
+    assert not chapter_tags("مجالس 1436")  # nothing named: nothing inherited
+
+
+def test_a_channel_is_mainly_its_libraries_and_never_an_excluded_one() -> None:
+    news = ThemeSpec("news", "News", "الأخبار", 124, ("current_affairs",),
+                     libraries=("أحمد منصور",), exclude_libraries=("محمد إلهامي",))  # fmt: skip
+    talk = ThemeSpec("talk", "Talk", "البرامج الحوارية", 126, formats=("program",),
+                     libraries=("محمد إلهامي",))  # fmt: skip
+    lib = [
+        season("m1", "شاهد على العصر", genre="islamic_history", presenter="أحمد منصور",
+               n=40, minutes=60),
+        season("e1", "قراءات في التاريخ", genre="current_affairs", presenter="محمد إلهامي",
+               n=40, minutes=60),
+        season("o1", "أخبار وتعليقات", genre="current_affairs", presenter="آخر", n=40,
+               minutes=60),
+    ]  # fmt: skip
+    from dataclasses import replace
+
+    # its episodes are about current affairs too: still never a News special run
+    lib[1] = replace(lib[1], episodes=tuple(
+        replace(e, tags={"topic:current_affairs": 0.95}) for e in lib[1].episodes))  # fmt: skip
+    p = plan(lib, themes=(news, talk), mix_channel=False, presenter_channels=False,
+             show_max_channels=1, channel_min_days=1, channel_day_hours=1)  # fmt: skip
+    on = {c.key: {u.name for k in c.lanes for u in p.lanes[k].units} for c in p.channels}
+    assert "شاهد على العصر" in on["news"]  # its library, though tagged history
+    assert "قراءات في التاريخ" not in on["news"]  # never on News
+    news_paths = {e.path for c in p.channels if c.key == "news" for k in c.lanes
+                  for u in p.lanes[k].units for e in u.episodes}  # fmt: skip
+    assert not any("/e1/" in path for path in news_paths)  # not even single episodes
+    assert "قراءات في التاريخ" in on["talk"]
+    news_ch = next(c for c in p.channels if c.key == "news")
+    first = p.lanes[news_ch.slots[0].lane] if news_ch.slots[0].lane else None
+    prime = [p.lanes[s.lane].units[0].presenter for s in news_ch.slots
+             if s.lane and s.kind == "program" and s.daypart == "prime"]  # fmt: skip
+    assert prime and prime.count("أحمد منصور") >= len(prime) / 2, (first, prime)

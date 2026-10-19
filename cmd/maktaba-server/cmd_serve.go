@@ -172,12 +172,28 @@ func startWebServer(cfg config.Config) *http.Server {
 	// Reverse-proxy /api/* to the API service so the SPA can talk to a
 	// same-origin backend. Best-effort: if the target is unparseable we
 	// simply don't mount the proxy and the SPA points elsewhere.
-	if target := apiOrigin(cfg.Server.Listen); target != nil {
-		proxy := httputil.NewSingleHostReverseProxy(target)
+	api := apiOrigin(cfg.Server.Listen)
+	if api != nil {
+		proxy := httputil.NewSingleHostReverseProxy(api)
 		mux.Handle("/api/", proxy)
 	}
 
-	mux.Handle("/", webui.Handler("/api/"))
+	// Live TV through the web port: the channel HLS the player loads
+	// (/stream/...) and the XMLTV guide + M3U lineup, proxied to the
+	// streaming service so the browser stays on one origin. The guide
+	// and lineup are public; /stream/ needs a signed-in session and only
+	// the paths the web app loads (stream_gate.go).
+	streamProxy := newStreamProxy(cfg.Server.StreamAddr)
+	for _, p := range publicStreamPaths {
+		mux.Handle(p, streamProxy)
+	}
+	if api != nil {
+		mux.Handle("/stream/", newStreamGate(streamProxy, api))
+	} else {
+		mux.Handle("/stream/", http.NotFoundHandler())
+	}
+
+	mux.Handle("/", webui.Handler("/api/", "/stream/"))
 
 	srv := &http.Server{
 		Addr:              cfg.Server.WebListen,
@@ -190,6 +206,30 @@ func startWebServer(cfg config.Config) *http.Server {
 		}
 	}()
 	return srv
+}
+
+// publicStreamPaths are the web-port paths the streaming service serves
+// without a session (/stream/ goes through the streamGate).
+var publicStreamPaths = []string{"/xmltv.xml", "/lineup.m3u"}
+
+// newStreamProxy reverse-proxies to the streaming service on this host.
+// FlushInterval -1 flushes every write: live playlists and MPEG-TS must
+// not sit in a buffer.
+func newStreamProxy(streamAddr string) http.Handler {
+	target := &url.URL{Scheme: "http", Host: supervisor.LocalAddr(streamAddr, "8081")}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	director := proxy.Director
+	proxy.Director = func(r *http.Request) {
+		director(r)
+		// the web session is for the API only, never the streaming service
+		r.Header.Del("Cookie")
+		r.Header.Del("Authorization")
+	}
+	proxy.FlushInterval = -1
+	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
+		http.Error(w, "live TV is not reachable: "+err.Error(), http.StatusBadGateway)
+	}
+	return proxy
 }
 
 // apiOrigin turns the API bind spec into a dialable loopback URL for the

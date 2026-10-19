@@ -20,6 +20,8 @@ from ...engine.stages.registry import StageImpl
 from ...integrations.dizquetv import DizqueTV, tz_offset_minutes
 from ...integrations.plex import PlexClient
 from ..base import Manifest, SettingField
+from .audit import AuditService, run_audit
+from .audit import fingerprint as audit_fingerprint
 from .channels import ChannelsService, run_channels
 from .channels import fingerprint as channels_fingerprint
 from .exporter import EXPORT_NAME, export_channel
@@ -27,6 +29,7 @@ from .shows import ShowsService, run_show
 from .shows import fingerprint as show_fingerprint
 
 __all__ = [
+    "DZ_AUDIT_VERSION",
     "DZ_CHANNELS_VERSION",
     "DZ_SHOW_VERSION",
     "DizqueTVExtension",
@@ -36,13 +39,14 @@ __all__ = [
 
 DZ_SHOW_VERSION = 1
 DZ_CHANNELS_VERSION = 1
+DZ_AUDIT_VERSION = 1
 
 MANIFEST = Manifest(
     name="dizquetv",
     version="1",
     description="Keep dizqueTV custom shows and channels in step with the library and the plan.",
     settings=(SettingField("url", "dizqueTV URL", required=True, env="MAKTABA_DIZQUETV_URL"),),
-    stages=("dizquetv_show", "dizquetv_channels"),
+    stages=("dizquetv_show", "dizquetv_channels", "dizquetv_audit"),
 )
 
 
@@ -65,6 +69,7 @@ class DizqueTVExtension:
     ) -> None:
         self.shows = ShowsService(dz_factory, plex_factory)
         self.channels = ChannelsService(dz_factory, plex_factory, tz_offset)
+        self.audit = AuditService(dz_factory)
         self._dz_factory = dz_factory
 
     # ------------------------------------------------------------------ contract
@@ -97,8 +102,27 @@ class DizqueTVExtension:
                 version=DZ_CHANNELS_VERSION,
                 external_write=True,
                 entry_for=("catalog",),
+                # uploads the logo / watermark files from the home's folders
+                placement="home",
             )
         )
+        graph.add_stage(
+            StageDef(
+                name="dizquetv_audit",
+                label="Channel audit",
+                subject_kinds=("catalog",),
+                pool="audits",
+                lane="channels",
+                lane_order=4,
+                version=DZ_AUDIT_VERSION,
+                entry_for=("catalog",),
+                debounce_sec=60,
+                debounce_max_sec=900,
+                # writes its report into the home's reviews folder
+                placement="home",
+            )
+        )
+        graph.add_edge("dizquetv_channels", Edge("dizquetv_audit", "same"))
         graph.add_edge("detect", Edge("dizquetv_show", "seasons_changed"))
         if graph.has_stage("plex_collection"):
             graph.add_edge("plex_collection", Edge("dizquetv_show", "same"))
@@ -118,6 +142,11 @@ class DizqueTVExtension:
                 input_fingerprint=self._channels_fingerprint,
                 output_fingerprint=None,
             ),
+            "dizquetv_audit": StageImpl(
+                run=self._run_audit,
+                input_fingerprint=audit_fingerprint,
+                output_fingerprint=None,
+            ),
         }
 
     def plan_exporters(self) -> dict[str, Callable[[Any, Any], dict[str, Any]]]:
@@ -131,6 +160,9 @@ class DizqueTVExtension:
 
     async def _run_channels(self, db: Any, job: Any, ctx: Any) -> StageResult:
         return await run_channels(db, job, ctx, self.channels)
+
+    async def _run_audit(self, db: Any, job: Any, ctx: Any) -> StageResult:
+        return await run_audit(db, job, ctx, self.audit)
 
     @staticmethod
     async def _write_mode(db: Any, stage: str) -> str:

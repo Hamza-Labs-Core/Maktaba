@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ...integrations.dizquetv_export import filler_collections
 from ...schedule.channel_planner import (
     ChannelSuggestion,
     PlanResult,
@@ -28,9 +29,6 @@ def export_channel(channel: ChannelSuggestion, plan: PlanResult) -> dict[str, An
         "ramadan_schedule": (
             dizquetv_time_slots(channel, plan, ramadan=True) if channel.ramadan_slots else None
         ),
-        "fillerCollections": [
-            {"pool": p, "weight": w, "cooldown": 0}
-            for p, w in zip(channel.filler_pools, (300, 100, 50), strict=False)
-        ],
+        "fillerCollections": filler_collections(channel, plan.config),
         "fillerRepeatCooldown": plan.config.dz_filler_cooldown_ms,
     }
