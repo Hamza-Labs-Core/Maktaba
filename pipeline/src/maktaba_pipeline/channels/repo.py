@@ -18,6 +18,7 @@ reuse hook (Plan 27.2 §6) — until then resolution is library-scoped.
 from __future__ import annotations
 
 import json
+import random
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field, replace
 from datetime import datetime
@@ -183,26 +184,80 @@ class SqlRepo:
         """Each slot's own content, by index: a ``lane`` source (what the TV-grid
         planner writes) is that lane's episodes, in queue order, from the latest
         channel plan (which also holds the planner's synthetic "loose" shows, so
-        it, not ``series_episodes``, is the source); any other slot is None (the
-        channel-wide content). None when no slot names a lane. The Ramadan grid's slots
+        it, not ``series_episodes``, is the source); a ``series`` source (one a person
+        picked in the channel editor) is that series' episodes in season / episode
+        order; a ``collection`` source is the collection's items in their order. With
+        ``order: "shuffle"`` the queue is shuffled once, the same way every time (so a
+        top-up carries on the same queue). Any other slot is None (the channel-wide
+        content). None when no slot has a source of its own. The Ramadan grid's slots
         follow the regular ones (the planner indexes both grids so)."""
         slots = all_slots(channel.mode_config)
         names = [slot_lane(slot) for slot in slots]
+        refs = [slot_ref(slot) for slot in slots]
         wanted = sorted({n for n in names if n})
-        if not wanted:
+        if not wanted and not any(refs):
             return None
-        queues = {name: lane_episodes(lane) for name, lane in (await self._lanes(wanted)).items()}
+        queues = (
+            {name: lane_episodes(lane) for name, lane in (await self._lanes(wanted)).items()}
+            if wanted
+            else {}
+        )
         ids = sorted({str(c.video_id) for q in queues.values() for c in q})
         live = await self._live_videos(ids)  # id -> title (the plan's is the file name)
+        own: dict[tuple[str, str], list[ContentItem]] = {}
+        for want in {r for r in refs if r}:
+            own[want] = await self._ref_items(*want)
+        out: list[list[ContentItem] | None] = []
+        for slot, n, ref in zip(slots, names, refs, strict=True):
+            items: list[ContentItem] | None
+            if n:
+                items = [
+                    ContentItem(c.video_id, c.duration_ms, live[str(c.video_id)] or _bare(c.title))
+                    for c in queues.get(n, [])
+                    if str(c.video_id) in live
+                ]
+            elif ref:
+                items = list(own.get(ref, []))
+            else:
+                out.append(None)
+                continue
+            if slot_order(slot) == "shuffle":
+                random.Random(f"{channel.id}:{n or ':'.join(ref or ())}").shuffle(items)
+            out.append(items)
+        return out
+
+    async def _ref_items(self, kind: str, ref_id: str) -> list[ContentItem]:
+        """A ``series`` or ``collection`` slot source's playable videos, in order."""
+        try:
+            UUID(ref_id)
+        except ValueError:
+            return []
+        cast = "::uuid" if self._pg else ""
+        if kind == "series":
+            sql = (
+                "SELECT v.id, v.title, v.duration_sec FROM series_episodes se"
+                " JOIN videos v ON v.id = se.video_id"
+                f" WHERE se.series_id = $1{cast} AND v.deleted_at IS NULL"
+                " AND v.duration_sec IS NOT NULL AND v.duration_sec > 0"
+                " ORDER BY COALESCE(se.season_override, se.season, 0),"
+                " COALESCE(se.episode_override, se.episode, se.absolute_number, 0), v.title"
+            )
+        else:
+            sql = (
+                "SELECT v.id, v.title, v.duration_sec FROM collection_items ci"
+                " JOIN videos v ON v.id = ci.video_id"
+                f" WHERE ci.collection_id = $1{cast} AND v.deleted_at IS NULL"
+                " AND v.duration_sec IS NOT NULL AND v.duration_sec > 0"
+                " ORDER BY ci.position, v.title"
+            )
+        rows = await self._c.fetch(sql, ref_id)
         return [
-            [
-                ContentItem(c.video_id, c.duration_ms, live[str(c.video_id)] or _bare(c.title))
-                for c in queues.get(n, [])
-                if str(c.video_id) in live
-            ]
-            if n
-            else None
-            for n in names
+            ContentItem(
+                video_id=UUID(str(r["id"])),
+                duration_ms=int(float(r["duration_sec"]) * 1000),
+                title=r["title"] or "",
+            )
+            for r in rows
         ]
 
     @property
@@ -494,6 +549,25 @@ def slot_lane(slot: dict[str, Any]) -> str | None:
     if not isinstance(src, dict) or src.get("type") != "lane" or not src.get("lane"):
         return None
     return str(src["lane"])
+
+
+def slot_ref(slot: dict[str, Any]) -> tuple[str, str] | None:
+    """``(kind, id)`` of a slot's ``series`` / ``collection`` source, if it has one."""
+    src = slot.get("source") or {}
+    if not isinstance(src, dict):
+        return None
+    kind = src.get("type")
+    key = {"series": "series_id", "collection": "collection_id"}.get(str(kind))
+    if key is None or not src.get(key):
+        return None
+    return str(kind), str(src[key])
+
+
+def slot_order(slot: dict[str, Any]) -> str:
+    """How a slot plays its own queue: ``next`` (in order, the default) or ``shuffle``."""
+    src = slot.get("source") or {}
+    order = src.get("order") if isinstance(src, dict) else None
+    return "shuffle" if order == "shuffle" else "next"
 
 
 def _bare(name: str) -> str:

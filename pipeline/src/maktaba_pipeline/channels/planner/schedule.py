@@ -181,6 +181,11 @@ class SchedulePlanner:
         src = self._all[slot_idx].get("source")
         if isinstance(src, dict) and src.get("lane"):
             return f"lane:{src['lane']}"
+        # a series / collection picked in the channel editor: one queue too, whichever
+        # slots play it
+        for kind, key in (("series", "series_id"), ("collection", "collection_id")):
+            if isinstance(src, dict) and src.get("type") == kind and src.get(key):
+                return f"{kind}:{src[key]}"
         return str(slot_idx)
 
     def _in_ramadan(self, day: date) -> bool:
