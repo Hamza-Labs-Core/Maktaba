@@ -40,3 +40,32 @@ model = "large-v3"
 # Optional cloud-link enrolment.
 enabled = false
 # claim_code = "ABCD1234"
+
+[supervisor]
+# How `serve` keeps its child processes (api, streaming, pipeline) running.
+# Every key is optional; these are the defaults.
+# "always" restarts a child whenever it exits; "on-failure" leaves a clean
+# exit (code 0) stopped; "never" stops the whole stack when any child exits
+# (use it when systemd, launchd or compose restarts the service instead).
+# restart = "always"
+# Restart delay: starts at backoff_initial and doubles up to backoff_max;
+# a child that stays up for healthy_after starts again from backoff_initial.
+# backoff_initial = "1s"
+# backoff_max = "60s"
+# healthy_after = "5m"
+# max_restarts exits inside max_restarts_window mark a child failed (a
+# crash loop). The others keep running; it is retried every failed_retry.
+# max_restarts = 5
+# max_restarts_window = "10m"
+# failed_retry = "5m"
+# Liveness probes catch a hung child: probe_failures failed /healthz
+# checks in a row (every probe_interval, each timing out after
+# probe_timeout) kill and restart it. Failures only count after
+# startup_grace, unless a probe has already answered.
+# probe_interval = "10s"
+# probe_timeout = "3s"
+# probe_failures = 3
+# startup_grace = "60s"
+# Loopback address of the supervisor state endpoint (GET /processes). The
+# API shows it at /api/system/processes. "off" disables it.
+# admin_addr = "127.0.0.1:9103"

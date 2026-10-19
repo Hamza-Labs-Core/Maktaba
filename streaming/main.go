@@ -129,9 +129,12 @@ func runServe() error {
 		grpcAddr = ":9050"
 	}
 
-	checks := buildChecks()
+	// Liveness (Story 22.9): /healthz fails once the watchdog heartbeat
+	// stalls (the channel engine lock is wedged), so the supervisor
+	// restarts the process; the database only affects /readyz.
+	checks := append(buildChecks(), procWatchdog.ReadyCheck("db"), procWatchdog.ReadyCheck("channel_engine"))
 	warm := warmPeriod()
-	adminMux := health.AdminMux("streaming", checks, warm)
+	adminMux := health.AdminMuxWithLiveness("streaming", []health.Check{procWatchdog.LiveCheck()}, checks, warm)
 
 	// Recent-logs endpoint on the admin port (already firewalled in
 	// production), drained by the API's diagnostics-export proxy.
@@ -162,6 +165,7 @@ func runServe() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	go procWatchdog.Run(ctx)
 
 	errCh := make(chan error, 3)
 	go func() {
@@ -425,6 +429,7 @@ func buildPublicHandler(logger *slog.Logger, backend probe.Backend, transcripts 
 		clearCancel()
 		chHandler := &channel.HTTPHandler{Engine: engine}
 		extraMounts = append(extraMounts, chHandler.Mount)
+		watchChannels(engine, pool)
 
 		// Reap idle channel encoders on the same cadence as the session
 		// reaper (warm grace + zero viewers → teardown), and keep each

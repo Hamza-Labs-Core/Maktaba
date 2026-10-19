@@ -35,6 +35,7 @@ import (
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/logs"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/processes"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/watch"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
@@ -272,6 +273,17 @@ func runServe() error {
 		Peers:              buildLogPeers(),
 	})
 	logger.Info("logs: diagnostics export surface mounted", "event", "logs_mounted")
+
+	// Process supervision (Story 22.9): the supervisor's per-process
+	// state at /api/system/processes, and its crash/hang events copied
+	// into health_samples for the control centre's health history.
+	supervisorURL := os.Getenv("MAKTABA_SUPERVISOR_URL")
+	router.MountProcesses(r, router.ProcessesDeps{SupervisorURL: supervisorURL})
+	if supervisorURL != "" && statsDB != nil {
+		host, _ := os.Hostname()
+		recorder := &processes.Recorder{SupervisorURL: supervisorURL, DB: statsDB, Host: host, Logger: logger}
+		go recorder.Run(context.Background())
+	}
 
 	// Epic 28 (Auto-Update) — the update-check service (Story 28.2) and
 	// the admin self-update endpoint (Story 28.3). Mounted independent of
