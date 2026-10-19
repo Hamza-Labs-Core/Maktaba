@@ -18,7 +18,7 @@ from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.tvrelease.build import Release
 from maktaba_pipeline.tvrelease.commit import commit_change
 from maktaba_pipeline.tvrelease.gc import collect
-from maktaba_pipeline.tvrelease.generation import boundary, reanchor
+from maktaba_pipeline.tvrelease.generation import boundary, build_generation, reanchor
 from maktaba_pipeline.tvrelease.stage import stage_change
 from maktaba_pipeline.tvrelease.store import create_change, get_change, update_change
 from tests.tvrelease.helpers import NOW, add_channel, blocks, channel_def, library_with
@@ -230,7 +230,7 @@ async def test_edit_saved_while_staging_is_not_lost(
         db, state="draft", title="t", source={"kind": "editor"},
         pending={"channels": {a: {**da, "name": "First edit"}}},
     )  # fmt: skip
-    real = stage_mod.build_generation
+    real = build_generation
     calls = {"n": 0}
 
     async def build_and_edit(*args: Any, **kw: Any) -> Any:
@@ -277,7 +277,7 @@ async def test_second_change_cannot_go_in_flight_while_one_builds(
         db, state="draft", title="u", source={"kind": "manual"},
         pending={"channels": {b: {**db_, "name": "B"}}},
     )  # fmt: skip
-    real = stage_mod.build_generation
+    real = build_generation
     done = {"x": False}
 
     async def build_and_race(*args: Any, **kw: Any) -> Any:
