@@ -205,6 +205,7 @@ class SeasonTagging:
     scores: dict[str, float]
     #: episode (video id) -> its own tags, for the episodes that have any
     episodes: dict[str, dict[str, float]]
+    library_id: UUID | None = None
 
     def digest(self) -> str:
         """The output hash: the keyword tags of the season and of its episodes."""
@@ -259,6 +260,54 @@ async def _playlists_of(db: Any, youtube_ids: Sequence[str]) -> dict[str, list[s
         ):
             out[str(r["youtube_id"])].append(str(r["playlist_id"]))
     return out
+
+
+async def _youtube_ids(db: Any, video_ids: Sequence[UUID]) -> list[str]:
+    """The YouTube ids of these videos (the ones that have one)."""
+    out: list[str] = []
+    for i in range(0, len(video_ids), _CHUNK):
+        part = [str(v) for v in video_ids[i : i + _CHUNK]]
+        marks = ",".join(f"${n + 1}" for n in range(len(part)))
+        for r in await db.fetch(
+            "SELECT external_id FROM media_metadata_enrichment"
+            f" WHERE provider = 'youtube' AND video_id IN ({marks}) ORDER BY external_id",
+            *part,
+        ):
+            out.append(str(r["external_id"]))
+    return out
+
+
+@dataclass(slots=True)
+class _Playlists:
+    """The playlist evidence of a season: its own playlists, each episode's playlists (by
+    YouTube id), how many shows each is on and their titles."""
+
+    own: list[str]
+    by_episode: dict[str, list[str]]
+    shows: dict[str, int]
+    titles: dict[str, str]
+
+    def fingerprint(self) -> list[Any]:
+        every = sorted({*self.own, *self.titles, *self.shows})
+        return [
+            sorted(self.own),
+            sorted([yid, sorted(pls)] for yid, pls in self.by_episode.items()),
+            [[p, self.titles.get(p), self.shows.get(p, 0)] for p in every],
+        ]
+
+
+async def _season_playlists(
+    db: Any, library_id: UUID, metadata: Mapping[str, Any], youtube_ids: Sequence[str]
+) -> _Playlists:
+    own = [str(p) for p in metadata.get("playlists") or []]
+    by_episode = await _playlists_of(db, list(youtube_ids))
+    every = sorted({*own, *(p for pls in by_episode.values() for p in pls)})
+    return _Playlists(
+        own,
+        dict(by_episode),
+        await _shows_in(db, library_id, every),
+        await _playlist_titles(db, every),
+    )
 
 
 def _episode_tags(
@@ -331,11 +380,10 @@ async def _season_tags(db: Any, season_id: UUID, cfg: TaggerConfig) -> SeasonTag
     folder = _library_noise_key(str(eps[0]["path"])) if eps else ""
     noise = boilerplate_phrases(await _folder_descriptions(db, s.library_id, folder))
     channel = await _channel_names(db, s.library_id, folder)
-    own_pls = [str(p) for p in s.metadata.get("playlists") or []]
-    by_episode = await _playlists_of(db, [str(e["yid"]) for e in eps if e["yid"]])
-    every = sorted({*own_pls, *(p for pls in by_episode.values() for p in pls)})
-    shows = await _shows_in(db, s.library_id, every)
-    pl_titles = await _playlist_titles(db, every)
+    pls = await _season_playlists(
+        db, s.library_id, s.metadata, [str(e["yid"]) for e in eps if e["yid"]]
+    )
+    own_pls, by_episode, shows, pl_titles = pls.own, pls.by_episode, pls.shows, pls.titles
     dates = [
         d if isinstance(d, date) else date.fromisoformat(str(d)[:10])
         for e in eps
@@ -361,6 +409,7 @@ async def _season_tags(db: Any, season_id: UUID, cfg: TaggerConfig) -> SeasonTag
         tags,
         {t.tag: float(t.score) for t in tags},
         _episode_tags(eps, channel, noise, by_episode, pl_titles, shows, cfg),
+        s.library_id,
     )
 
 
@@ -393,6 +442,26 @@ async def _write_episode_tags(
                 tag,
                 score,
             )
+
+
+_DEPARTED_SQL = """
+DELETE FROM episode_tags WHERE video_id IN (
+  SELECT v.id FROM videos v
+   WHERE v.library_id = $1
+     AND NOT EXISTS (
+       SELECT 1 FROM series_episodes e
+         JOIN series_seasons ss ON ss.series_id = e.series_id
+          AND ss.season = COALESCE(e.season_override, e.season)
+        WHERE e.video_id = v.id AND ss.retired_at IS NULL))
+"""
+
+
+async def _drop_departed_episode_tags(db: Any, library_id: UUID | None) -> None:
+    """Remove the episode tags of the library's videos that are an episode of no season
+    any more (they left theirs): a season only rewrites its own members' tags, so these
+    would stay. A video that moved to another season is that season's to rewrite."""
+    if library_id is not None:
+        await db.execute(_DEPARTED_SQL, uid(library_id))
 
 
 async def _run_season(db: Any, job: Job, ctx: StageContext) -> StageResult:
@@ -435,6 +504,7 @@ async def _run_season(db: Any, job: Job, ctx: StageContext) -> StageResult:
                     dumps({"why": evidence.get(t, "")}),
                 )
             await _write_episode_tags(db, old_eps, res.episodes)
+            await _drop_departed_episode_tags(db, res.library_id)
 
     mode = await apply_or_review(ctx, changes, apply)
     if mode == "review":
@@ -442,6 +512,7 @@ async def _run_season(db: Any, job: Job, ctx: StageContext) -> StageResult:
     if mode == "noop":
         async with db.transaction():  # the season's tags stand; its episodes' own may have moved
             await _write_episode_tags(db, old_eps, res.episodes)
+            await _drop_departed_episode_tags(db, res.library_id)
     genre = next((t[6:] for t in sorted(new) if t.startswith("genre:")), None)
     return StageResult(
         output_hash=out,
@@ -493,7 +564,15 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
         s = await load_season(db, subject.id)
         if s is None:
             return canonical_hash("gone")
-        by_video = await _season_transcript_ids(db, await season_episode_ids(db, subject.id))
+        ids = await season_episode_ids(db, subject.id)
+        by_video = await _season_transcript_ids(db, ids)
+        # the playlists are evidence too (chapter playlists tag episodes): a playlist sync
+        # that adds, drops or renames one tags the season again
+        pls = (
+            await _season_playlists(db, s.library_id, s.metadata, await _youtube_ids(db, ids))
+            if s.library_id is not None
+            else None
+        )
         return canonical_hash(
             {
                 "membership": s.membership_hash,
@@ -501,6 +580,7 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
                 "v": TAGGER_VERSION,
                 "transcripts": _ids_hash(by_video),
                 "rules": rules,
+                "playlists": pls.fingerprint() if pls is not None else None,
             }
         )
     rows = await db.fetch(_LOOSE_SQL, uid(subject.id))

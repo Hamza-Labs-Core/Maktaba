@@ -7,7 +7,8 @@ clip (``dz_filler_cooldown_ms``). A gap is filled clip after clip: a list is dra
 weight among those off cooldown with a clip that fits what is left, then one of its
 fitting clips not played within the repeat cooldown. A slot that names its own pool
 (``filler_pool``) tries that pool first (the ``tv`` rule ``slot_filler_first``). What no
-clip fits, or what is left after ``max_filler_per_gap`` clips, is the slate.
+clip fits, or what is left after ``max_filler_per_gap`` clips (never more than
+``MAX_CLIPS_PER_GAP``), is the slate.
 
 The picker remembers when each clip and list last played (``export_state``), so a
 horizon top-up keeps the cooldowns. Pure: no clock, no DB.
@@ -24,7 +25,12 @@ from typing import Any
 
 from .base import FillerItem
 
-__all__ = ["FillerList", "FillerPicker", "FillerSet"]
+__all__ = ["MAX_CLIPS_PER_GAP", "FillerList", "FillerPicker", "FillerSet"]
+
+# A hard ceiling on the clips of one gap, whatever ``max_filler_per_gap`` says (0 = no
+# rule): a long gap of very short clips would otherwise write thousands of rows; the slate
+# covers the rest.
+MAX_CLIPS_PER_GAP = 500
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
@@ -79,7 +85,8 @@ class FillerPicker:
         elif not isinstance(filler, FillerSet):
             filler = FillerSet.of(list(filler))
         self.set = filler
-        self.max_per_gap = max(0, int(max_per_gap))
+        cap = max(0, int(max_per_gap))
+        self.max_per_gap = min(cap, MAX_CLIPS_PER_GAP) if cap else MAX_CLIPS_PER_GAP
         self.slot_first = slot_first
         self._rng = random.Random(seed)
         state = state or {}
@@ -100,7 +107,7 @@ class FillerPicker:
         out: list[tuple[FillerItem, datetime]] = []
         t = start
         own = self.set.pools.get(pool) if pool and self.slot_first else None
-        while self.max_per_gap == 0 or len(out) < self.max_per_gap:
+        while len(out) < self.max_per_gap:
             left = int((end - t) / timedelta(milliseconds=1))
             if left <= 0:
                 break

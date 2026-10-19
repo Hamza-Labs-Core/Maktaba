@@ -214,6 +214,10 @@ class StageDef:
     #: local directory the home's API or search reads: the vector index, thumbnails,
     #: review pages)
     placement: Literal["any", "home"] = "any"
+    #: a home-only stage that asks a language model at ``rules.<this>.url``: a node may
+    #: run it too when that address is not the machine itself (localhost), since every
+    #: machine then asks the same model server
+    model_rules: str | None = None
 
     def edges_json(self) -> list[dict[str, Any]]:
         return [e.to_json() for e in self.edges]
@@ -426,6 +430,10 @@ GRAPH: tuple[StageDef, ...] = (
         version=TAG_CHECK_VERSION,
         edges=(Edge("books", "same"), Edge("plan_channels", "catalog")),
         entry_for=("season",),
+        # the model server defaults to localhost: the home's own (a node would ask
+        # another model, or none) unless the settings name a shared one
+        placement="home",
+        model_rules="tagcheck",
     ),
     StageDef(
         name="check_clips",
@@ -439,6 +447,10 @@ GRAPH: tuple[StageDef, ...] = (
         entry_for=("library",),
         debounce_sec=30,
         debounce_max_sec=300,
+        # the model server defaults to localhost: the home's own (a node would ask
+        # another model, or none) unless the settings name a shared one
+        placement="home",
+        model_rules="tagcheck",
     ),
     StageDef(
         name="books",
@@ -532,6 +544,9 @@ GRAPH: tuple[StageDef, ...] = (
         entry_for=("catalog",),
         debounce_sec=300,
         debounce_max_sec=3600,
+        # the logo / watermark / loading pictures are files on the home (dz_logo_dir,
+        # dz_watermark_*), and the plan page is written there
+        placement="home",
     ),
     # Core write_channels writes Maktaba Live TV only (a cpu-bound DB write);
     # the dizqueTV channel export is the dizquetv extension's own stage.
@@ -543,6 +558,9 @@ GRAPH: tuple[StageDef, ...] = (
         lane="channels",
         lane_order=2,
         version=CH_WRITE_VERSION,
+        # the art it stores is looked up as files on the home (dz_logo_dir,
+        # dz_watermark_*): on a node the paths would not exist
+        placement="home",
     ),
     # ---- media lane (legacy) -------------------------------------------
     _legacy(

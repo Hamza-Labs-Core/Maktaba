@@ -6,7 +6,8 @@ to the horizon; each slot window is filled with that slot's content and
 padded to its boundary, so the laid-out timeline aligns to the grid. A
 period with no active slot is padded (filler/slate). Times are
 interpreted in the datetimes handed in — the pass localises before
-calling, so DST is the caller's concern (EC3).
+calling (EC3); durations are measured in elapsed time (UTC), so a slot across a DST
+change is as long as it really is.
 
 What the dizqueTV grid does, this does too:
 
@@ -32,7 +33,7 @@ from __future__ import annotations
 
 import random
 from collections.abc import Sequence
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -241,7 +242,9 @@ class SchedulePlanner:
     ) -> list[PlanItem]:
         if not self._all:
             return []
-        lives = live_windows(self._live, self.channel.number, start_at, until)
+        # the last slot is planned to its end, past ``until`` (the pass runs the timeline
+        # to it), so a broadcast in that overhang must cut it too: look a day further
+        lives = live_windows(self._live, self.channel.number, start_at, until + timedelta(days=1))
         out: list[PlanItem] = []
         t = start_at
         li = 0
@@ -297,7 +300,7 @@ class SchedulePlanner:
             # items play back to back: an episode that ran past the slot (by the
             # overrun tolerance) delays the next slot's start, which absorbs it, so
             # the grid never drifts from the clock
-            t = max(window_end, t + timedelta(milliseconds=used))
+            t = max(window_end, _after(t, used))
         return out
 
     def _fill_window(
@@ -410,4 +413,15 @@ class SchedulePlanner:
 
 
 def _span(a: datetime, b: datetime) -> int:
-    return int((b - a) / _MS)
+    """Elapsed ms from ``a`` to ``b``. Subtracting two datetimes of one zone compares
+    their wall clocks (a DST change is not counted), so both go to UTC first."""
+    if a.tzinfo is None or b.tzinfo is None:
+        return int((b - a) / _MS)
+    return int((b.astimezone(UTC) - a.astimezone(UTC)) / _MS)
+
+
+def _after(t: datetime, ms: int) -> datetime:
+    """``t`` plus ``ms`` of elapsed time, in ``t``'s zone (DST-aware, unlike ``+``)."""
+    if t.tzinfo is None:
+        return t + timedelta(milliseconds=ms)
+    return (t.astimezone(UTC) + timedelta(milliseconds=ms)).astimezone(t.tzinfo)

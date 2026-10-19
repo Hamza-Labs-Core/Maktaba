@@ -102,6 +102,8 @@ class DizqueTVExtension:
                 version=DZ_CHANNELS_VERSION,
                 external_write=True,
                 entry_for=("catalog",),
+                # uploads the logo / watermark files from the home's folders
+                placement="home",
             )
         )
         graph.add_stage(
@@ -116,6 +118,8 @@ class DizqueTVExtension:
                 entry_for=("catalog",),
                 debounce_sec=60,
                 debounce_max_sec=900,
+                # writes its report into the home's reviews folder
+                placement="home",
             )
         )
         graph.add_edge("dizquetv_channels", Edge("dizquetv_audit", "same"))

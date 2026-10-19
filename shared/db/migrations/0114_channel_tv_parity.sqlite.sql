@@ -8,7 +8,21 @@
 -- copy, drop the old table, rebuild its indexes). The column list mirrors the slot-0082
 -- SQLite definition. filler_pools only gains a column.
 --
+-- A RENAME keeps the old indexes under their names (now attached to the renamed table),
+-- so they are dropped before the rebuild; otherwise the CREATE INDEX IF NOT EXISTS below
+-- would be no-ops and the DROP TABLE would leave the new table without indexes. A
+-- leftover aside table from an interrupted earlier attempt is cleared first.
+--
+DROP TABLE IF EXISTS channel_programs_old_0113;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 ALTER TABLE channel_programs RENAME TO channel_programs_old_0113;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+DROP INDEX IF EXISTS channel_programs_channel_time_idx;
+DROP INDEX IF EXISTS channel_programs_channel_seq_uniq;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
@@ -73,7 +87,16 @@ DROP INDEX IF EXISTS filler_pools_external_key_uniq;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
+DROP TABLE IF EXISTS channel_programs_new_0113;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 ALTER TABLE channel_programs RENAME TO channel_programs_new_0113;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+DROP INDEX IF EXISTS channel_programs_channel_time_idx;
+DROP INDEX IF EXISTS channel_programs_channel_seq_uniq;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
