@@ -39,6 +39,7 @@ ENV CGO_ENABLED=0 \
 COPY api/go.mod api/go.sum ./api/
 COPY tools/healthcheck/go.mod ./tools/healthcheck/
 COPY shared/errrpt/go/go.mod  ./shared/errrpt/go/
+COPY shared/go/releaseverify/go.mod ./shared/go/releaseverify/
 COPY shared/health/go/go.mod  ./shared/health/go/
 COPY shared/log/go/go.mod     ./shared/log/go/
 COPY shared/metrics/go/go.mod ./shared/metrics/go/

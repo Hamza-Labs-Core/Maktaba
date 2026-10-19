@@ -772,6 +772,21 @@ GRAPH: tuple[StageDef, ...] = (
         external_write=True,
         max_attempts=1,
     ),
+    # Story 31.3: the home converts the stored paths to canonical share paths by itself
+    # (sharepath/auto.py). Its own agent enqueues it (catalog subject) when there may be
+    # work, an admin asks for it on the Machines page, or a run was cut short; the home's
+    # mounts decide the mapping, so it never runs on a node.
+    StageDef(
+        name="storage_canonicalize",
+        label="Canonical share paths",
+        subject_kinds=("catalog",),
+        pool="cpu",
+        lane="media",
+        lane_order=11,
+        version=1,
+        placement="home",
+        max_attempts=1,
+    ),
     _legacy("categorize", "Categorize", ("video",), "cpu", 8),
 )
 

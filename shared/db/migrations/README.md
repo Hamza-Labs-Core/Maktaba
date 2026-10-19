@@ -58,7 +58,16 @@ DATABASE_URL=... make migrate-status
    `CREATE OR REPLACE`s `maktaba_min_node_schema() RETURNS integer` to
    return the oldest node schema it still works with, and its MANIFEST row
    says "Breaking for older nodes". Nodes below that pause until updated.
-   Additive migrations need neither.
+   Additive migrations need neither. The release's `release.json`
+   `min_node_schema` is the highest value these rows name (Epic 35 story
+   35.1; the release workflow fails if they disagree).
+10. **Breaking for the previous release.** A contract step (drop a column,
+   tighten a constraint the previous release's code violates) comes at
+   least one release after the code stopped relying on it. A migration
+   that cannot wait says "Breaking for the previous release" in its
+   MANIFEST row: the release is then `breaks_previous_home` in its
+   `release.json` and is held for approval instead of updating by itself
+   (Epic 35 design §6.3).
 
 ## File naming
 

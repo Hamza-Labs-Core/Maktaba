@@ -1,10 +1,6 @@
 package system
 
 import (
-	"archive/tar"
-	"archive/zip"
-	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -16,72 +12,6 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 )
-
-func TestMatchServerAsset(t *testing.T) {
-	assets := []Asset{
-		{Name: "maktaba-server-1.4.2-linux-amd64.tar.gz"},
-		{Name: "maktaba-server-1.4.2-darwin-arm64.tar.gz"},
-		{Name: "maktaba-server-1.4.2-windows-amd64.zip"},
-		{Name: "checksums.txt"},
-	}
-	got := matchServerAsset(assets)
-	if got == nil {
-		t.Fatalf("expected a match for %s", PlatformToken())
-	}
-	if !strings.Contains(got.Name, PlatformToken()) {
-		t.Fatalf("matched wrong asset: %s (token %s)", got.Name, PlatformToken())
-	}
-}
-
-func TestLookupChecksum(t *testing.T) {
-	manifest := "abc123  ./maktaba-server-1.4.2-linux-amd64.tar.gz\n" +
-		"def456  ./checksums.txt\n"
-	if got := lookupChecksum(manifest, "maktaba-server-1.4.2-linux-amd64.tar.gz"); got != "abc123" {
-		t.Fatalf("checksum = %q, want abc123", got)
-	}
-	if got := lookupChecksum(manifest, "missing.tar.gz"); got != "" {
-		t.Fatalf("missing entry should return empty, got %q", got)
-	}
-}
-
-func TestExtractFromTarGz(t *testing.T) {
-	want := []byte("\x7fELF fake binary")
-	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gz)
-	files := map[string][]byte{"README.md": []byte("hi"), "maktaba-server": want}
-	for name, body := range files {
-		_ = tw.WriteHeader(&tar.Header{Name: name, Mode: 0o755, Size: int64(len(body)), Typeflag: tar.TypeReg})
-		_, _ = tw.Write(body)
-	}
-	_ = tw.Close()
-	_ = gz.Close()
-
-	got, err := extractServerBinary("maktaba-server-1.4.2-linux-amd64.tar.gz", buf.Bytes())
-	if err != nil {
-		t.Fatalf("extract: %v", err)
-	}
-	if !bytes.Equal(got, want) {
-		t.Fatalf("extracted bytes mismatch")
-	}
-}
-
-func TestExtractFromZip(t *testing.T) {
-	want := []byte("MZ fake exe")
-	var buf bytes.Buffer
-	zw := zip.NewWriter(&buf)
-	w, _ := zw.Create("maktaba-server.exe")
-	_, _ = w.Write(want)
-	_ = zw.Close()
-
-	got, err := extractServerBinary("maktaba-server-1.4.2-windows-amd64.zip", buf.Bytes())
-	if err != nil {
-		t.Fatalf("extract: %v", err)
-	}
-	if !bytes.Equal(got, want) {
-		t.Fatalf("extracted zip bytes mismatch")
-	}
-}
 
 func TestSwapBinaryKeepsBakAndRollback(t *testing.T) {
 	dir := t.TempDir()
@@ -103,15 +33,6 @@ func TestSwapBinaryKeepsBakAndRollback(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(target); string(b) != "OLD" {
 		t.Fatalf("rollback did not restore OLD: %q", b)
-	}
-}
-
-func TestSha256HexAndVerify(t *testing.T) {
-	data := []byte("hello")
-	// echo -n hello | sha256sum
-	const want = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
-	if got := sha256hex(data); got != want {
-		t.Fatalf("sha256hex = %s want %s", got, want)
 	}
 }
 

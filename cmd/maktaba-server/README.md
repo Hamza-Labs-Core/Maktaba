@@ -41,7 +41,7 @@ maktaba-server serve
 |--------------|----------------------------------------------------------------|
 | `serve`      | Start all roles (or one with `--role api\|streaming\|pipeline\|web`) |
 | `setup`      | Interactive first-run wizard → writes `server.toml`, migrates  |
-| `update`     | Self-update from the release manifest (`--check` for dry-run)  |
+| `update`     | Self-update from GitHub Releases, verified in process (Sigstore bundle, exact release-workflow identity, `release.json`, no downgrade); `--check`, `--version`, `--rollback` |
 | `uninstall`  | Guided teardown (`--purge` for non-interactive full removal)   |
 | `models`     | Whisper model management (`list`, `download <name>`, `active`) |
 | `migrate`    | Database migrations (delegates to `maktaba-api`)               |
