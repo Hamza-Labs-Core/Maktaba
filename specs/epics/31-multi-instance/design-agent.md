@@ -37,6 +37,7 @@ The owner's phase 2 requirements, in the order they were given (2026-10-18/19; 1
 | 8 | The Processing page talks to a central hub on the main node over a WebSocket; all jobs on all machines talk to that hub | §6.4 `/api/cluster/ws`; §6.5 Processing page; §5.3 every job reports to the hub |
 | 9 | Not stages: the work is split into queues on the main node and each machine's workers pull jobs from those queues | §3 queues and pulling |
 | 10 | "Keep a database, but it will be like a cache" | §7.9 the database cache: `health_samples` and three cache tables, written only by the hub, bounded, refilled from the files |
+| 11 | "Should have long term log archive on main node as well" | §7.10 the archive on the home: every closed day's logs, jobs, LLM usage and hub events, compressed on the home's own disk, kept a year (or to a size cap), readable from the Machines page and the CLI |
 
 ## 1. Words used here
 
@@ -726,6 +727,48 @@ Postgres-only there, and the Go health readers need Postgres anyway.
 rules require). PR 57 uses slots 0104–0115 on its own branch; whichever merges second
 renumbers. Built by track C1 (package `api/internal/cluster/cache`).
 
+### 7.10 The archive on the home
+
+Owner (2026-10-19): "should have long term log archive on main node as well." The share
+keeps 14 days (§7.7) and the database a day (§7.9); the **home keeps the long-term archive on
+its own disk**.
+
+- **What.** Every machine's `logs`, `jobs` and `llm` files and the hub's `events` files: the
+  record of what happened, plain text that compresses about ten to one. Metrics, queue and
+  library snapshots are not archived (large, and the share and the cache serve them).
+  `MAKTABA_ARCHIVE_KINDS` changes the list.
+- **Where.** `MAKTABA_ARCHIVE_DIR` on the home, default `~/.maktaba/archive` of the user that
+  runs the API (with Docker, a volume); never on the share. The layout mirrors the share,
+  each file gzip-compressed:
+
+  ```
+  <archive>/<ip>/<kind>/<YYYY-MM-DD>/<worker>.jsonl.gz     (the hub's: hub.jsonl.gz)
+  <archive>/<ip>/<kind>/<YYYY-MM-DD>/.manifest.json        source file → size archived
+  ```
+
+- **When.** Once a UTC day has closed. Every hour (and at start) the hub looks at every day
+  folder of an archived kind on the share that is older than today: a file not in the day's
+  manifest, or larger than the size recorded there (a late record of that day), is compressed
+  into the archive whole — to a temporary file, then renamed over the old one — and the
+  manifest is rewritten the same way. A day is therefore archived within the hour after it
+  closes, about two weeks before the share's retention removes it; after a long outage the
+  hub archives, at start, every day the share still holds (a day the share has already
+  removed is not in the archive).
+- **How long.** `MAKTABA_ARCHIVE_DAYS` (default 365; `0`: no age limit) and
+  `MAKTABA_ARCHIVE_MAX_GB` (default 20): past either, whole days go, oldest first, once a
+  day.
+- **Reading.** `GET /api/cluster/files/{ip}/{kind}?date=` reads a day from the share while it
+  is there, else from the archive (`X-Maktaba-Source: archive`); the answer is the same.
+  `GET /api/cluster/files` lists each machine's archived days beside the share's, so the
+  Machines page's logs, jobs and LLM history reach back as far as the archive. On the home,
+  `maktaba-pipeline cluster logs|jobs|llm|events --archive [DIR]` reads it the same way.
+- **Safety.** Only the hub writes the archive. It reads the share through the same
+  link-refusing readers as everything else (§7.8) and writes the archive through an
+  `os.Root` at the archive directory: directories `0750`, files `0640`, never through a link.
+- **Failure.** The archive never blocks the hub. A failure (disk full, share unreadable) is
+  logged at most once an hour, and the `processes` snapshot carries `archive`: the last run,
+  days and bytes archived, the oldest day held, the size, the last error.
+
 ## 8. LLMs across the cluster
 
 ### 8.1 Runtimes
@@ -810,6 +853,10 @@ level live.
 | `MAKTABA_API_URL` | home workers | `http://127.0.0.1:8080` | where a home process finds the hub |
 | `MAKTABA_CLUSTER_AGENT` | any process | `1` | `0` runs the worker without an agent (tests, debugging); it then sends no metrics, so no health numbers are recorded for it (§7.9) |
 | `MAKTABA_CLUSTER_CACHE_HOURS` | home API | `24` | hours kept in the database cache tables; `0` disables them (§7.9) |
+| `MAKTABA_ARCHIVE_DIR` | home API | `~/.maktaba/archive` | the home's long-term archive (§7.10) |
+| `MAKTABA_ARCHIVE_KINDS` | home API | `logs,jobs,llm,events` | the kinds archived |
+| `MAKTABA_ARCHIVE_DAYS` | home API | `365` | days archived; `0`: no age limit |
+| `MAKTABA_ARCHIVE_MAX_GB` | home API | `20` | the archive's size cap; past it the oldest days go |
 | `MAKTABA_OLLAMA_URL` | any process | `http://127.0.0.1:11434` | the local Ollama |
 | `MAKTABA_LLM_ENDPOINTS` | any process | empty | comma-separated OpenAI-compatible base URLs |
 | `MAKTABA_LLM_MAX_PARALLEL` | any process | `1` | requests at once per runtime |
