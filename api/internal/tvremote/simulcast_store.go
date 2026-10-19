@@ -134,6 +134,9 @@ func (s *store) destinations(ctx context.Context) ([]Destination, error) {
 }
 
 func (s *store) destination(ctx context.Context, id string) (Destination, error) {
+	if !isUUID(id) {
+		return Destination{}, sql.ErrNoRows
+	}
 	return scanDest(s.db.QueryRowContext(ctx, `SELECT `+destCols+` FROM tv_simulcast_destinations WHERE id = $1`, id))
 }
 
@@ -203,6 +206,9 @@ func (s *store) attachments(ctx context.Context, channel string) ([]Attachment, 
 }
 
 func (s *store) attachment(ctx context.Context, id string) (Attachment, error) {
+	if !isUUID(id) {
+		return Attachment{}, sql.ErrNoRows
+	}
 	return scanAtt(s.db.QueryRowContext(ctx, `SELECT `+attCols+` FROM tv_simulcast_attachments WHERE id = $1`, id))
 }
 

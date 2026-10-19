@@ -397,3 +397,84 @@ func (p *stuckProc) Wait() error           { <-p.done; return nil }
 func (p *stuckProc) Kill()                 { p.once.Do(func() { _ = p.pr.Close(); close(p.done) }) }
 func (p *stuckProc) PID() int              { return 1 }
 func (p *stuckProc) Tail() string          { return "" }
+
+// stallOnceRunner: the first ffmpeg never reads (one stall), the next ones do.
+type stallOnceRunner struct {
+	fakeRunner
+	stuck *stuckProc
+}
+
+func (r *stallOnceRunner) Start(bin string, args []string) (Proc, error) {
+	r.mu.Lock()
+	if r.stuck == nil {
+		pr, pw := io.Pipe()
+		r.stuck = &stuckProc{pr: pr, pw: pw, done: make(chan struct{})}
+		r.procs = append(r.procs, nil)
+		r.mu.Unlock()
+		return r.stuck, nil
+	}
+	r.mu.Unlock()
+	return r.fakeRunner.Start(bin, args)
+}
+
+// Post-merge review: one stall restarts ffmpeg once. The stall watchdog used to
+// leave a restart token behind after killing the stuck ffmpeg, which ended the
+// next ffmpeg at once (an extra RTMPS/SRT reconnect per stall).
+func TestRelayOneStallOneRestart(t *testing.T) {
+	src := &fakeSource{gens: []*tsGen{newGen(0x1000, 0x100, 0x101, 0)}, frames: []int{1 << 20}, block: make(chan struct{}),
+		pace: 200 * time.Microsecond}
+	run := &stallOnceRunner{}
+	s := &Session{PushID: "p1", Channel: uuid.New(), Creds: Credentials{URL: "rtmps://x/live/", Key: "k", Ingest: "rtmps"},
+		Source: src, Runner: run, Stall: 30 * time.Millisecond, Restart: 5 * time.Millisecond, KillGrace: 10 * time.Millisecond}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	waitUntil(t, "a second ffmpeg", func() bool { return run.count() >= 2 })
+	time.Sleep(300 * time.Millisecond)
+	if n := run.count(); n != 2 {
+		t.Errorf("one stall started ffmpeg %d times, want 2", n)
+	}
+	cancel()
+	<-done
+}
+
+// Post-merge review: Kick before Run (Ctl registers the session first) is safe.
+func TestRelayKickBeforeRun(_ *testing.T) {
+	src := &fakeSource{gens: []*tsGen{newGen(0x1000, 0x100, 0x101, 0)}, frames: []int{10}, block: make(chan struct{})}
+	s := &Session{PushID: "p1", Channel: uuid.New(), Source: src, Runner: &fakeRunner{}, Restart: 5 * time.Millisecond}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	s.Kick()
+	cancel()
+	<-done
+}
+
+// Post-merge review: a new source whose 33-bit clock wraps between its first
+// video keyframe and its first audio packet keeps its audio. Each PID used to be
+// unwrapped from its own first value, so the audio landed 2^33 behind the video
+// and every audio PES of the source was dropped as "before the last audio".
+func TestRetimerSwitchAcrossWrapKeepsAudio(t *testing.T) {
+	r := NewRetimer()
+	a := newGen(0x1000, 0x100, 0x101, 900_000)
+	o, err := r.Process(a.frames(60))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := append([]byte(nil), o...)
+	before := len(readTrack(t, out).dts[0x101])
+	r.Switch()
+	b := newGen(0x1000, 0x100, 0x101, ptsWrap-3000) // the IDR just before the wrap
+	b.apts = ptsWrap + 100                          // its audio just after it
+	o, err = r.Process(b.frames(60))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out = append(out, o...)
+	tr := readTrack(t, out)
+	if got := len(tr.dts[0x101]) - before; got < 50 {
+		t.Fatalf("only %d audio packets of the new source reached the output", got)
+	}
+	monotonic(t, "video", tr.dts[0x100], 6000)
+	monotonic(t, "audio", tr.dts[0x101], 12000)
+}

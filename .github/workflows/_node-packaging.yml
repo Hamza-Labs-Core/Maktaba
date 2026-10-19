@@ -1,0 +1,255 @@
+# Reusable node-packaging gate (Epic 31): a machine joins a home from a release archive,
+# without a git checkout. Builds the release's node assets the way release.yml does
+# (deploy/packaging/node/build-release.sh), installs the wheel into clean environments,
+# runs the installers' tests, and installs a worker for real from the archive on Linux,
+# macOS and Windows (not joined, not started).
+
+name: Node packaging
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  wheel:
+    name: wheel + archive
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    env:
+      # a dev version per run: what a tag would stamp, without a tag
+      NODE_VERSION: 0.0.1.dev${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version-file: pipeline/.python-version
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+
+      - name: Build the node release assets
+        run: deploy/packaging/node/build-release.sh --version "v${NODE_VERSION}" --out dist
+
+      # The wheel alone, in a clean environment, as a machine without the checkout gets
+      # it: once with uv, once with plain pip (what the installers fall back to).
+      - name: Wheel in a clean venv (uv)
+        run: |
+          set -euo pipefail
+          # hash-checking mode, as the installers install: the wheel by its SHA-256, every
+          # dependency by the constraints file's hashes
+          cons="$PWD/dist/maktaba-pipeline-${NODE_VERSION}-constraints.txt"
+          whl="$PWD/dist/maktaba_pipeline-${NODE_VERSION}-py3-none-any.whl"
+          printf 'maktaba-pipeline @ file://%s --hash=sha256:%s\n' "$whl" "$(sha256sum "$whl" | awk '{print $1}')" \
+            >"$RUNNER_TEMP/req.txt"
+          uv venv --python 3.12 "$RUNNER_TEMP/uv-venv"
+          # dependencies that do not match their hashes are refused
+          sed -E "s/sha256:[0-9a-f]{64}/sha256:$(printf '0%.0s' $(seq 64))/g" "$cons" >"$RUNNER_TEMP/bad-constraints.txt"
+          if uv pip install --python "$RUNNER_TEMP/uv-venv/bin/python" --require-hashes \
+              --constraint "$RUNNER_TEMP/bad-constraints.txt" -r "$RUNNER_TEMP/req.txt"; then
+            echo "::error::dependencies with wrong hashes were installed"; exit 1
+          fi
+          uv pip install --python "$RUNNER_TEMP/uv-venv/bin/python" --require-hashes \
+            --constraint "$cons" -r "$RUNNER_TEMP/req.txt"
+          cd "$RUNNER_TEMP"   # not the checkout: nothing on sys.path but the venv
+          bin="$RUNNER_TEMP/uv-venv/bin/maktaba-pipeline"
+          got="$("$bin" --version)"
+          echo "maktaba-pipeline --version: $got"
+          [ "$got" = "$NODE_VERSION" ] || { echo "::error::--version says '$got', the wheel is $NODE_VERSION"; exit 1; }
+          "$bin" run --help | tee run-help.txt
+          grep -q -- '--node' run-help.txt || { echo "::error::run --help does not list --node"; exit 1; }
+
+      - name: Wheel in a clean venv (pip)
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/pip-venv"
+          # the venv's own pip, hash-checked, as install-node.sh falls back to it
+          "$RUNNER_TEMP/pip-venv/bin/python" -m pip install --quiet --require-hashes --no-deps \
+            -r "dist/maktaba-pipeline-${NODE_VERSION}-constraints.txt"
+          "$RUNNER_TEMP/pip-venv/bin/python" -m pip install --quiet --require-hashes --no-deps \
+            -r "$RUNNER_TEMP/req.txt"
+          "$RUNNER_TEMP/pip-venv/bin/python" -m pip check
+          cd "$RUNNER_TEMP"
+          [ "$("$RUNNER_TEMP/pip-venv/bin/maktaba-pipeline" --version)" = "$NODE_VERSION" ]
+          "$RUNNER_TEMP/pip-venv/bin/maktaba-pipeline" run --help | grep -q -- '--node'
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: node-release
+          path: dist/*
+          retention-days: 3
+
+  installer-tests:
+    name: installer tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: astral-sh/setup-uv@v8.1.0
+      - name: shellcheck
+        if: runner.os == 'Linux'
+        run: |
+          shellcheck deploy/packaging/node/install-node.sh deploy/packaging/node/uninstall-node.sh \
+            deploy/packaging/node/build-release.sh deploy/packaging/node/tests/install-node-dry-run.sh
+      - name: install-node.sh dry runs
+        run: deploy/packaging/node/tests/install-node-dry-run.sh
+
+  install-linux:
+    name: install from the archive (linux, --system)
+    needs: [wheel]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: astral-sh/setup-uv@v8.1.0
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: node-release
+          path: dist
+      # No checkout: the archive is all the machine has. System scope, because a CI
+      # runner has no systemd user session; enabled, not started, not joined.
+      - name: Install
+        run: |
+          set -euo pipefail
+          tar -xzf dist/maktaba-node-*.tar.gz -C "$RUNNER_TEMP"
+          bundle="$(ls -d "$RUNNER_TEMP"/maktaba-node-*/)"
+          sudo env "PATH=$PATH" "${bundle}install-node.sh" --system --no-join --no-start --extras none
+          ver="$(sed -n 's/^VERSION=//p' "${bundle}release.conf")"
+          got="$(sudo -u maktaba -H /opt/maktaba/node/bin/maktaba-pipeline --version)"
+          [ "$got" = "$ver" ] || { echo "::error::installed --version '$got', expected $ver"; exit 1; }
+          grep -qx 'FROM=release' /opt/maktaba/node/install.conf
+          systemctl is-enabled maktaba-node.service
+          sudo env "PATH=$PATH" "${bundle}uninstall-node.sh" --system --purge
+          test ! -e /opt/maktaba/node
+
+  install-macos:
+    name: install from the archive (macos)
+    needs: [wheel]
+    runs-on: macos-14
+    timeout-minutes: 15
+    steps:
+      - uses: astral-sh/setup-uv@v8.1.0
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: node-release
+          path: dist
+      - name: Install
+        run: |
+          set -euo pipefail
+          tar -xzf dist/maktaba-node-*.tar.gz -C "$RUNNER_TEMP"
+          bundle="$(ls -d "$RUNNER_TEMP"/maktaba-node-*/)"
+          "${bundle}install-node.sh" --no-join --no-start --extras none
+          node="$HOME/Library/Application Support/Maktaba/node"
+          ver="$(sed -n 's/^VERSION=//p' "${bundle}release.conf")"
+          got="$("$node/bin/maktaba-pipeline" --version)"
+          [ "$got" = "$ver" ] || { echo "::error::installed --version '$got', expected $ver"; exit 1; }
+          plutil -lint "$HOME/Library/LaunchAgents/com.maktaba.node.plist"
+          # an update: the same archive again keeps FROM=release and reinstalls
+          "${bundle}install-node.sh" --no-join --no-start
+          grep -qx 'FROM=release' "$node/install.conf"
+          "${bundle}uninstall-node.sh" --purge
+          test ! -e "$node"
+
+      # --from-wheel URL outside a release: pinned to its first download, so a changed
+      # file at the same URL is refused at the next update. Under ~/Library/Application
+      # Support, a path with a space (uv splits a --constraint path at spaces).
+      - name: Install from a wheel URL, then refuse a changed one
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/srv"
+          cp dist/maktaba_pipeline-*.whl dist/maktaba-pipeline-*-constraints.txt "$RUNNER_TEMP/srv/"
+          (cd "$RUNNER_TEMP/srv" && exec python3 -m http.server 18765 --bind 127.0.0.1) &
+          sleep 2
+          bundle="$(ls -d "$RUNNER_TEMP"/maktaba-node-*/)"
+          node="$HOME/Library/Application Support/Maktaba/node"
+          wheel="$(basename "$RUNNER_TEMP"/srv/maktaba_pipeline-*.whl)"
+          cons="$(basename "$RUNNER_TEMP"/srv/maktaba-pipeline-*-constraints.txt)"
+          "${bundle}install-node.sh" --no-join --no-start --extras none \
+            --from-wheel "http://127.0.0.1:18765/$wheel" --constraints "http://127.0.0.1:18765/$cons"
+          want="$(shasum -a 256 "$RUNNER_TEMP/srv/$wheel" | awk '{print $1}')"
+          grep -qx "WHEEL_SHA256=$want" "$node/install.conf"
+          test -f "$node/dist/$wheel" && test -f "$node/dist/$cons"
+          [ "$(find "$node/dist" -type f | wc -l | tr -d ' ')" = 2 ]
+          printf 'x' >>"$RUNNER_TEMP/srv/$wheel"
+          if "${bundle}install-node.sh" --no-join --no-start 2>err.txt; then
+            echo "::error::a changed wheel at the pinned URL was installed"; exit 1
+          fi
+          grep -q 'pinned at the first install' err.txt
+          test ! -e "$node/dist/$wheel"
+          "$node/bin/maktaba-pipeline" --version
+          "${bundle}uninstall-node.sh" --purge
+
+  install-windows:
+    name: install from the archive (windows)
+    needs: [wheel]
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          sparse-checkout: deploy/packaging/node
+      - uses: astral-sh/setup-uv@v8.1.0
+      - name: node-origin tests (Windows PowerShell 5.1)
+        shell: powershell
+        run: .\deploy\packaging\node\tests\node-origin.Tests.ps1
+      - name: node-origin tests (PowerShell 7)
+        shell: pwsh
+        run: .\deploy\packaging\node\tests\node-origin.Tests.ps1
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: node-release
+          path: dist
+      # From the archive alone (Windows PowerShell 5.1, what a stock PC has): a scheduled
+      # task, registered and not started, not joined.
+      - name: Install
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Get-ChildItem dist -Filter 'maktaba-node-*.zip' | Select-Object -First 1
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $env:RUNNER_TEMP
+          $bundle = Join-Path $env:RUNNER_TEMP $zip.BaseName
+          & (Join-Path $bundle 'windows\install-node.ps1') -NoJoin -NoStart
+          $exe = Join-Path $env:LOCALAPPDATA 'Maktaba\node\venv\Scripts\maktaba-pipeline.exe'
+          $ver = ((Get-Content (Join-Path $bundle 'release.conf')) | Where-Object { $_ -like 'VERSION=*' }).Substring(8)
+          $got = (& $exe --version).Trim()
+          if ($got -ne $ver) { throw "installed --version '$got', expected $ver" }
+          if (-not ((Get-Content (Join-Path $env:LOCALAPPDATA 'Maktaba\node\install.conf')) -contains 'FROM=release')) { throw 'install.conf: no FROM=release' }
+          Get-ScheduledTask -TaskName maktaba-node | Out-Null
+          & (Join-Path $bundle 'windows\uninstall-node.ps1') -Purge
+          if (Get-ScheduledTask -TaskName maktaba-node -ErrorAction SilentlyContinue) { throw 'the task is still registered' }
+
+      # --from-wheel URL outside a release: pinned to its first download, so a changed
+      # file at the same URL is refused at the next update.
+      - name: Install from a wheel URL, then refuse a changed one
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $srv = Join-Path $env:RUNNER_TEMP 'srv'
+          New-Item -ItemType Directory -Force -Path $srv | Out-Null
+          Copy-Item dist\maktaba_pipeline-*.whl, dist\maktaba-pipeline-*-constraints.txt -Destination $srv
+          $server = Start-Process -FilePath python -ArgumentList '-m', 'http.server', '18765', '--bind', '127.0.0.1' -WorkingDirectory $srv -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 3
+          $zip = Get-ChildItem dist -Filter 'maktaba-node-*.zip' | Select-Object -First 1
+          $bundle = Join-Path $env:RUNNER_TEMP $zip.BaseName
+          $wheel = (Get-ChildItem $srv -Filter 'maktaba_pipeline-*.whl').Name
+          $cons = (Get-ChildItem $srv -Filter 'maktaba-pipeline-*-constraints.txt').Name
+          & (Join-Path $bundle 'windows\install-node.ps1') -NoJoin -NoStart -FromWheel "http://127.0.0.1:18765/$wheel" -Constraints "http://127.0.0.1:18765/$cons"
+          $node = Join-Path $env:LOCALAPPDATA 'Maktaba\node'
+          $want = (Get-FileHash (Join-Path $srv $wheel) -Algorithm SHA256).Hash.ToLowerInvariant()
+          if (-not ((Get-Content (Join-Path $node 'install.conf')) -contains "WHEEL_SHA256=$want")) { throw 'install.conf: the wheel is not pinned' }
+          [System.IO.File]::AppendAllText((Join-Path $srv $wheel), 'x')
+          $refused = $false
+          try { & (Join-Path $bundle 'windows\install-node.ps1') -NoJoin -NoStart } catch {
+            if ($_.Exception.Message -like '*pinned at the first install*') { $refused = $true } else { throw }
+          }
+          if (-not $refused) { throw 'a changed wheel at the pinned URL was installed' }
+          if (Test-Path (Join-Path $node "dist\$wheel")) { throw 'the refused download was left behind' }
+          & (Join-Path $bundle 'windows\uninstall-node.ps1') -Purge
+          Stop-Process -Id $server.Id -Force

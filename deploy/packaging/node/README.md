@@ -17,9 +17,9 @@ restarts when it fails, and keeps its logs:
 
 Each installer:
 
-1. builds the pipeline's Python environment (a snapshot of `pipeline/`, with uv when it is
-   installed, else Python 3.12+ and pip), and checks that its `maktaba-pipeline run`
-   has `--node`;
+1. builds the pipeline's Python environment (with uv when it is installed, else Python
+   3.12+ and pip) from [the release's wheel](#where-the-pipeline-comes-from), or from a
+   checkout's `pipeline/`, and checks that its `maktaba-pipeline run` has `--node`;
 2. writes `node.env` (optional settings) the first time, recording `MAKTABA_FFMPEG` /
    `MAKTABA_FFPROBE` when ffmpeg is installed somewhere the service would not look;
 3. runs `maktaba-pipeline join` when the machine has not joined a home yet
@@ -40,6 +40,86 @@ macOS and Linux link it as `<node dir>/bin/maktaba-pipeline`, and into `~/.local
 `%LOCALAPPDATA%\Maktaba\node\venv\Scripts\maktaba-pipeline.exe`. For a pipeline without
 that entry point, the installers write a stand-in that runs `python -m maktaba_pipeline`.
 
+## Getting the installer
+
+Every release attaches the node's assets next to the server archives:
+
+| Asset | What |
+|---|---|
+| `maktaba-node-<version>.tar.gz` | this directory for macOS and Linux, with the wheel, its constraints and `release.conf` |
+| `maktaba-node-<version>.zip` | the same, for Windows |
+| `maktaba_pipeline-<version>-py3-none-any.whl` | the pipeline, stamped with the release's version |
+| `maktaba-pipeline-<version>-constraints.txt` | the pipeline's dependencies as `uv.lock` pins them (every extra but `dev`) |
+
+They are in the release's `checksums.txt`, signed with cosign like the rest (how to check
+the archive: [join a machine](../../../docs/cluster/join-a-machine.md#the-easy-way-the-node-installer)).
+On the machine:
+
+```sh
+v=1.4.0   # the home's version: a node and its home run the same release
+curl -fsSLO "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v$v/maktaba-node-$v.tar.gz"
+tar -xzf "maktaba-node-$v.tar.gz"
+"./maktaba-node-$v/install-node.sh" --home http://192.168.1.20:8080
+```
+
+```powershell
+$v = '1.4.0'
+Invoke-WebRequest "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v$v/maktaba-node-$v.zip" -OutFile "maktaba-node-$v.zip" -UseBasicParsing
+Expand-Archive "maktaba-node-$v.zip" -DestinationPath .
+powershell -ExecutionPolicy Bypass -File ".\maktaba-node-$v\windows\install-node.ps1" -HomeUrl http://192.168.1.20:8080
+```
+
+A git checkout works too: `deploy/packaging/node/` of the checkout is the same directory,
+and its installer builds the checkout's `pipeline/`. The examples below use the archive's
+`./maktaba-node-<version>/` path; in a checkout it is `deploy/packaging/node/`.
+
+### Where the pipeline comes from
+
+The first of these that applies:
+
+| | Installs |
+|---|---|
+| `--from-wheel URL\|PATH` (`-FromWheel`) | that wheel, a file or an http(s) URL (downloaded into `<node dir>/dist/`); `--constraints URL\|PATH` (`-Constraints`) pins its dependencies |
+| `--source DIR` (`-Source`) | a build of that source directory, pinned by its `uv.lock` |
+| the last install's choice | the same as last time (`<node dir>/install.conf`: `FROM=release`, `wheel` or `source`) |
+| `release.conf` beside the installer | **the release's wheel**: the one in the archive (its SHA-256 checked), else downloaded from the release; pinned by the release's constraints file; uv gives the environment the release's Python (3.12) |
+| neither | the checkout's `pipeline/` (`uv sync --frozen` of its `uv.lock`) |
+
+`--from-wheel` and `--source` exclude each other. A wheel given without constraints still
+installs, with a warning: its dependencies then resolve to the newest versions its
+metadata allows, not the tested ones.
+
+**Digests.** A wheel or constraints file whose SHA-256 is known is checked before it is
+installed; one that does not match is refused (a refused download is deleted):
+
+| File | Checked against |
+|---|---|
+| a release's wheel and constraints | `release.conf`'s `WHEEL_SHA256` / `CONSTRAINTS_SHA256` |
+| `--from-wheel` / `--constraints` with `--sha256 HEX` / `--constraints-sha256 HEX` (`-Sha256`, `-ConstraintsSha256`) | that digest, remembered in `install.conf` |
+| a URL given without a digest | nothing the first time; its SHA-256 is then pinned in `install.conf` (`WHEEL_SHA256`, `CONSTRAINTS_SHA256`), so an update that downloads a different file from the same URL is refused |
+| a local file given without a digest | not pinned: a wheel rebuilt at the same path installs on the next update |
+
+To take a new file from a pinned URL, pass `--from-wheel` (and `--constraints`) again: an
+explicit flag starts a new pin. The digest comes from `sha256sum`, else `shasum`, else
+Python's `hashlib` (Windows: `Get-FileHash`); with none of them the installer stops
+rather than install unchecked.
+
+**Dependencies, hash-checked.** A release's constraints file carries every pinned
+dependency's hashes from `uv.lock` (`build-release.sh` refuses to publish one without), and
+the installers install with `--require-hashes`: each package downloaded from PyPI must match
+one of its hashes, and the wheel its own SHA-256. A constraints file without hashes is
+refused. Without uv, the venv's own pip installs the constraints' pins (hash-checked, every
+extra's) and then the wheel; it is not upgraded from PyPI first.
+
+**URLs with credentials are refused.** A `--from-wheel` / `--constraints` URL is printed
+while it downloads and remembered in `install.conf`, so one with user info
+(`https://user:token@host/...`) or a query string (`?token=...`, a signed URL) is refused,
+shown redacted. Use a plain URL pinned with `--sha256` / `--constraints-sha256`, or download
+the file and pass its path.
+
+Downloads go to `<node dir>/dist/`; after a successful install only the files that
+install used are kept there.
+
 ## Before you start
 
 - **The home** accepts machines: on the home, Admin → Machines → "Accept new machines"
@@ -47,17 +127,19 @@ that entry point, the installers write a stand-in that runs `python -m maktaba_p
 - **The share** is mounted on this machine the way you use it every day (Finder, `/etc/fstab`,
   a mapped drive or `\\nas\share`). The worker works out where the library is mounted by
   itself; you can correct the path map on the home.
-- **A checkout of this repository** (the installers build the worker from `pipeline/`).
+- **The release's node archive** ([above](#getting-the-installer)), or a checkout of this
+  repository.
 - **uv** (recommended: <https://docs.astral.sh/uv/>), or Python 3.12+. uv installs the
-  right Python by itself and installs exactly the locked versions.
+  right Python by itself; both install the release's pinned versions (a checkout: its
+  `uv.lock`).
 - **ffmpeg** (`brew install ffmpeg`, `apt install ffmpeg`, `winget install Gyan.FFmpeg`).
 
 ## macOS
 
 ```sh
-deploy/packaging/node/install-node.sh                       # finds the home on the LAN
-deploy/packaging/node/install-node.sh --home http://192.168.1.20:8080 --name studio-2
-deploy/packaging/node/install-node.sh --instances 2         # + 2 transcription workers
+./maktaba-node-1.4.0/install-node.sh                       # finds the home on the LAN
+./maktaba-node-1.4.0/install-node.sh --home http://192.168.1.20:8080 --name studio-2
+./maktaba-node-1.4.0/install-node.sh --instances 2         # + 2 transcription workers
 ```
 
 Run it as yourself, from a logged-in desktop session (not `sudo`). The worker is a
@@ -95,9 +177,12 @@ happens when a worker (re)starts.
 ## Linux
 
 ```sh
-deploy/packaging/node/install-node.sh --home http://192.168.1.20:8080      # user units
-sudo deploy/packaging/node/install-node.sh --system --run-as alice         # system units
+./maktaba-node-1.4.0/install-node.sh --home http://192.168.1.20:8080      # user units
+sudo ./maktaba-node-1.4.0/install-node.sh --system --run-as alice         # system units
 ```
+
+With `--system`, `sudo` resets `PATH`: the installer also looks for uv in the invoking
+user's `~/.local/bin` and `~/.cargo/bin`.
 
 **User units (default).** Run it as the user the worker should run as, logged in directly
 (desktop or ssh, not `su`). The units go to `~/.config/systemd/user/`, and the installer
@@ -148,8 +233,8 @@ From a normal (not elevated) PowerShell, as the user whose drives and share cred
 the worker should use:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File deploy\packaging\node\windows\install-node.ps1 -HomeUrl http://192.168.1.20:8080
-powershell -ExecutionPolicy Bypass -File deploy\packaging\node\windows\install-node.ps1 -Ffmpeg C:\tools\ffmpeg\bin\ffmpeg.exe
+powershell -ExecutionPolicy Bypass -File .\maktaba-node-1.4.0\windows\install-node.ps1 -HomeUrl http://192.168.1.20:8080
+powershell -ExecutionPolicy Bypass -File .\maktaba-node-1.4.0\windows\install-node.ps1 -Ffmpeg C:\tools\ffmpeg\bin\ffmpeg.exe
 ```
 
 **Scheduled task (default).** One task per worker, "At log on" of this user (30 s delay so
@@ -221,31 +306,38 @@ its database from its node config, and that variable would make it a home worker
 
 ## Updating
 
+When the home moves to a new release, run the new release's installer (same scope flags
+as before, `--system`). Until then the worker pauses by itself when its pipeline needs
+migrations the home has not applied, or when a home migration declares it too old (the
+schema guard; the Machines page shows the reason), and resumes once they match:
+
 ```sh
-git pull
-deploy/packaging/node/install-node.sh            # same scope flags as before (--system)
+./maktaba-node-1.5.0/install-node.sh
 ```
 
 ```powershell
-git pull
-powershell -ExecutionPolicy Bypass -File deploy\packaging\node\windows\install-node.ps1
+powershell -ExecutionPolicy Bypass -File .\maktaba-node-1.5.0\windows\install-node.ps1
 ```
 
-The installer remembers the extras, the source directory, the account (`--run-as`) and the
-Windows mode; it rebuilds the environment (the pipeline package is always reinstalled,
-the dependencies follow `uv.lock`), re-renders the units, and restarts the workers. The
-node config is untouched: the machine stays joined.
+From a checkout: `git pull`, then its `deploy/packaging/node/install-node.sh`.
+
+The installer remembers the extras, where the pipeline came from (a release: the archive
+you run now decides which; a wheel; a source directory), the account (`--run-as`) and the
+Windows mode. It reinstalls the pipeline package (always, even at the same version) with
+its pinned dependencies, re-renders the units, and restarts the workers. The node config
+is untouched: the machine stays joined. To move a checkout install to releases, pass
+`--from-wheel` once, or remove `<node dir>/install.conf` and run the archive's installer.
 
 ## Removing
 
 ```sh
-deploy/packaging/node/uninstall-node.sh              # or: install-node.sh --uninstall
-sudo deploy/packaging/node/uninstall-node.sh --system
-deploy/packaging/node/uninstall-node.sh --purge      # also logs and node*.env
+./maktaba-node-1.4.0/uninstall-node.sh              # or: install-node.sh --uninstall
+sudo ./maktaba-node-1.4.0/uninstall-node.sh --system
+./maktaba-node-1.4.0/uninstall-node.sh --purge      # also logs and node*.env
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File deploy\packaging\node\windows\uninstall-node.ps1 [-Purge]
+powershell -ExecutionPolicy Bypass -File .\maktaba-node-1.4.0\windows\uninstall-node.ps1 [-Purge]
 ```
 
 This stops and removes the services and the Python environment. The **node config is
@@ -285,7 +377,10 @@ The worker's exit status decides what the service does:
 | `systemd/user/maktaba-node{,@}.service` | user units (main, template for extra workers) |
 | `systemd/system/maktaba-node{,@}.service` | system units (`User=` set by a drop-in) |
 | `windows/install-node.ps1`, `uninstall-node.ps1` | Windows installer (Windows PowerShell 5.1+) |
-| `windows/run-node.ps1`, `node-common.ps1` | the task's / service's supervisor (restarts, 77 / 78), shared helpers |
+| `windows/run-node.ps1`, `node-common.ps1` | the task's / service's supervisor (restarts, 77 / 78), shared helpers (including where the pipeline comes from) |
+| `build-release.sh` | builds the release's node assets (wheel, constraints, archives); the release workflow and CI run it. Not in the archive |
+| `tests/install-node-dry-run.sh`, `tests/node-origin.Tests.ps1` | the installers' tests: where the pipeline comes from and the commands that install it. Not in the archive |
+| `release.conf`, the wheel, the constraints | in a release archive only: written by `build-release.sh` |
 
 ## Checks
 
@@ -296,12 +391,57 @@ systemd-analyze verify deploy/packaging/node/systemd/system/*.service      # on 
 systemd-analyze --user verify deploy/packaging/node/systemd/user/*.service
 deploy/packaging/node/install-node.sh --dry-run --instances 2              # renders + lints the plists
 MAKTABA_NODE_OS=linux deploy/packaging/node/install-node.sh --dry-run --system   # Linux files, from any host
+deploy/packaging/node/tests/install-node-dry-run.sh                        # where the pipeline comes from
+deploy/packaging/node/build-release.sh --version v0.0.1.dev1 --out /tmp/node-dist   # the release's assets, locally
 ```
 
+CI's `node-packaging` gate (`.github/workflows/_node-packaging.yml`) builds those assets
+on every PR, installs the wheel into clean uv and pip environments (`--version` must be
+the stamped version, `run --help` must list `--node`), runs both installers' tests, and
+installs a worker from the archive alone on Linux (`--system`), macOS and Windows.
+
 ```powershell
+pwsh -NoProfile -File deploy\packaging\node\tests\node-origin.Tests.ps1
 foreach ($f in Get-ChildItem deploy\packaging\node\windows\*.ps1) {
     $errors = $null
     [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$errors)
     if ($errors) { $errors } else { "$($f.Name): OK" }
 }
 ```
+
+## Packaging: Homebrew and .deb (not done yet)
+
+The archive and its installer are the one way in today. A Homebrew formula or a .deb
+would wrap the same installer and the same wheel; neither changes how a node works.
+
+**Homebrew tap formula** (`maktaba-node`, beside the server's
+[`homebrew/maktaba.rb`](../homebrew/maktaba.rb), published to the tap by the same
+release step). The formula's `url` is the release's `maktaba-node-<version>.tar.gz` with
+its SHA-256 (the "Generate Homebrew formula" step already fills these for the server). It
+`depends_on "uv"` and `"ffmpeg"`, and installs the archive into `libexec` with a
+`bin/maktaba-node-install` wrapper that runs `libexec/install-node.sh "$@"`. It does
+**not** build the venv in `install`: Homebrew's sandbox forbids the network and writing to
+`~/Library`, and the worker must be a LaunchAgent of the user (not `brew services`, which
+would run it without the user's mounted share). So `caveats` tells the user to run
+`maktaba-node-install --home ...` once, and again after `brew upgrade` (`post_install`
+cannot write the user's `~/Library` either). A `test do` block runs
+`install-node.sh --dry-run --no-join` and the wheel's `--version` in a `uv venv`. Work:
+the formula template, one more `sed` in the release workflow, a `brew audit` /
+`brew test` CI job on macOS. About a day.
+
+**.deb** (`maktaba-node_<version>_all.deb`, built by nfpm like the server's packages; the
+pipeline is pure Python, so one package for every architecture). Contents: the archive
+under `/usr/lib/maktaba-node/` and a `/usr/sbin/maktaba-node-install` wrapper;
+`Depends: python3 (>= 3.12) | uv, ffmpeg`. Debian/Ubuntu releases older than 24.04 have no
+Python 3.12, so the wrapper uses uv (which installs its own Python) when present. The
+`postinst` runs `install-node.sh --system --no-join --no-start` (it creates the `maktaba`
+account and the system units) and prints how to join: joining needs the admin to type a
+code on the home, which an unattended `apt install` cannot wait for. The `prerm` runs
+`install-node.sh --uninstall --system` on `remove` (not on `upgrade`, so an upgrade
+keeps the units and restarts the workers in `postinst`). Building the venv in `postinst`
+downloads the dependencies from PyPI; a fully offline .deb would ship a wheelhouse of
+every dependency per architecture (`uv pip download` / `pip wheel` against the
+constraints for linux amd64 and arm64), which is the larger part of the work. Work: an
+`nfpm-node.yaml`, the maintainer scripts, a `package-nfpm` step, and a CI job that
+installs the .deb in a Debian container and checks the unit. About two days; the
+offline wheelhouse another one or two.

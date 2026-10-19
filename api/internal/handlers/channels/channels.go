@@ -658,6 +658,9 @@ func validateReorder(entries []ReorderEntry) error {
 		if strings.TrimSpace(e.ID) == "" {
 			return errors.New("each entry requires an id")
 		}
+		if !isUUID(e.ID) {
+			return errors.New("each id must be a channel id (a UUID)")
+		}
 		if e.Number <= 0 {
 			return errors.New("number must be positive")
 		}

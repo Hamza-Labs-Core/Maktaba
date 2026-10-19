@@ -143,6 +143,43 @@ async def test_revert_leaves_a_value_changed_since(db: Any) -> None:
     assert await _path(db, ids["v1"]) == "smb://home-nas/x.mp4"
 
 
+async def test_two_roots_of_one_folder_collide_instead_of_failing_the_apply(db: Any) -> None:
+    """``(library_id, path_canonical)`` is unique: a root whose canonical form another
+    root of the library already holds (or is given in the same plan) is left as it is
+    and counted, and the rest of the apply goes through."""
+    import uuid
+
+    lib = await _library(db, [ROOT])
+    canon = "smb://home-nas/Originals/Backup/Youtube"
+    nfd_root = unicodedata.normalize("NFD", "/Volumes/Originals/Backup/Café")
+    rows = [
+        (canon, canon),  # added after 31.3: already canonical
+        (nfd_root, nfd_root),  # the Mac's NFD spelling of the next one
+        (unicodedata.normalize("NFC", nfd_root),) * 2,
+    ]
+    for path, path_canonical in rows:
+        await db.execute(
+            "INSERT INTO library_roots (id, library_id, path, path_canonical) VALUES ($1,$2,$3,$4)",
+            str(uuid.uuid4()),
+            lib,
+            path,
+            path_canonical,
+        )
+    # another library may hold the same folder
+    await _library(db, [ROOT])
+    server = await save_server(db, StorageServer(name="home-nas", addresses=("192.168.50.94",)))
+    resolver = build_resolver(servers=[server], mounts=MAC_MOUNTS, system="Darwin", probe=False)
+    p = await mig.plan(db, resolver, verify=0)
+    pc = next(c for c in p.columns if (c.table, c.column) == ("library_roots", "path_canonical"))
+    # ROOT of the first library meets the canonical row; one Café spelling meets the other
+    assert (pc.converted, pc.collisions) == (2, 2)
+    assert await mig.apply(db, p) is not None
+    got = await db.fetch(
+        "SELECT library_id, path_canonical FROM library_roots ORDER BY library_id, path_canonical"
+    )
+    assert len({(str(r["library_id"]), r["path_canonical"]) for r in got}) == len(got)
+
+
 async def test_include_local_writes_file_urls(db: Any) -> None:
     ids = await _seed(db)
     server = await save_server(db, StorageServer(name="home-nas", addresses=("192.168.50.94",)))

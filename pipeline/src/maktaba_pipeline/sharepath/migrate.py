@@ -44,12 +44,15 @@ class Column:
     column: str
     key_type: str  #: Postgres cast of the key (``uuid`` | ``bigint``)
     array: bool = False  #: ``libraries.roots`` (TEXT[] on Postgres, JSON text on SQLite)
+    #: the column the value is unique together with (``library_roots``: ``UNIQUE
+    #: (library_id, path_canonical)``): two rows must not be given one value
+    unique_with: str | None = None
 
 
 COLUMNS: tuple[Column, ...] = (
     Column("libraries", "id", "roots", "uuid", array=True),
     Column("library_roots", "id", "path", "uuid"),
-    Column("library_roots", "id", "path_canonical", "uuid"),
+    Column("library_roots", "id", "path_canonical", "uuid", unique_with="library_id"),
     Column("videos", "id", "path", "uuid"),
     Column("subtitle_files", "id", "path", "bigint"),
     Column("video_repairs", "video_id", "backup_path", "uuid"),
@@ -132,8 +135,10 @@ def convert(value: str, resolver: Resolver, *, include_local: bool = False) -> s
     return n if n != value else None
 
 
-async def _rows(db: Any, col: Column) -> list[tuple[str, Any]]:
-    out: list[tuple[str, Any]] = []
+async def _rows(db: Any, col: Column) -> list[tuple[str, Any, str | None]]:
+    """``(key, value, unique_with value)`` of every row with a value, in key order."""
+    out: list[tuple[str, Any, str | None]] = []
+    group = f", {col.unique_with} AS g" if col.unique_with else ""
     last: Any = None
     while True:
         cast = f"::{col.key_type}" if is_pg(db) else ""
@@ -141,14 +146,14 @@ async def _rows(db: Any, col: Column) -> list[tuple[str, Any]]:
             f" AND {col.key} > $1{cast}" if last is not None else ""
         )
         sql = (
-            f"SELECT {col.key} AS k, {col.column} AS v FROM {col.table} {where}"
+            f"SELECT {col.key} AS k, {col.column} AS v{group} FROM {col.table} {where}"
             f" ORDER BY {col.key} LIMIT {CHUNK}"
         )
         rows = await (db.fetch(sql, last) if last is not None else db.fetch(sql))
         if not rows:
             return out
         for r in rows:
-            out.append((str(r["k"]), r["v"]))
+            out.append((str(r["k"]), r["v"], str(r["g"]) if col.unique_with else None))
         last = rows[-1]["k"]
         if not isinstance(last, int):
             last = str(last)
@@ -190,8 +195,15 @@ async def plan(
         result.columns.append(rep)
         if not await _table_exists(db, col.table):
             continue
-        seen_new: dict[tuple[str, str], str] = {}
-        for key, raw in await _rows(db, col):
+        rows = await _rows(db, col)
+        # (group, value) -> the row holding it: a unique column's values as they stand,
+        # so a change onto a value another row keeps (or already took) is a collision,
+        # left as it is, rather than a constraint error that stops the apply mid-way
+        taken: dict[tuple[str, str], str] = {}
+        if col.unique_with:
+            for key, raw, grp in rows:
+                taken.setdefault((grp or "", nfc(str(raw)).lower()), key)
+        for key, raw, grp in rows:
             rep.rows += 1
             values = _array(raw) if col.array else [str(raw)]
             new_values: list[str] = []
@@ -220,13 +232,14 @@ async def plan(
                 continue
             old_text = json.dumps(values, ensure_ascii=False) if col.array else values[0]
             new_text = json.dumps(new_values, ensure_ascii=False) if col.array else new_values[0]
-            if col.table == "library_roots" and col.column == "path_canonical":
+            if col.unique_with:
                 # (library_id, path_canonical) is unique: two spellings of one folder
-                ident = (key, nfc(new_text).lower())
-                if ident in seen_new:
+                ident = (grp or "", nfc(new_text).lower())
+                holder = taken.get(ident)
+                if holder is not None and holder != key:
                     rep.collisions += 1
                     continue
-                seen_new[ident] = key
+                taken[ident] = key
             rep.converted += 1
             result.changes.append((col, key, old_text, new_text))
         samples = [c for c in result.changes if c[0] is col and not col.array]

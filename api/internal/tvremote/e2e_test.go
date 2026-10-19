@@ -116,9 +116,7 @@ func TestRemoteEndToEnd(t *testing.T) {
 	if os.Getenv("MAKTABA_TEST_PG_URL") == "" || testing.Short() {
 		t.Skip("MAKTABA_TEST_PG_URL unset (or -short): skipping the remote end-to-end test")
 	}
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.Skip("ffmpeg not on PATH")
-	}
+	rtmptest.NeedFFmpeg(t)
 	db, dsn := clustertest.ScratchDB(t)
 	ctx := context.Background()
 

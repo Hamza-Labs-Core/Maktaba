@@ -345,7 +345,7 @@ type AttachmentInput struct {
 // needs the rights confirmation (AC3): 409 rights_confirmation_required.
 func (c *Controller) SetChannelSimulcast(ctx context.Context, actor, channel string, in []AttachmentInput) ([]Attachment, error) {
 	c.init()
-	if _, err := uuid.Parse(channel); err != nil {
+	if !isUUID(channel) {
 		return nil, refuse(http.StatusNotFound, "no_such_channel", "no such channel")
 	}
 	if _, err := c.st.channel(ctx, channel); errors.Is(err, sql.ErrNoRows) {
@@ -1195,6 +1195,9 @@ type SimulcastView struct {
 // SimulcastStatus answers the admin page (every channel, or one).
 func (c *Controller) SimulcastStatus(ctx context.Context, channel string) (SimulcastView, error) {
 	c.init()
+	if channel != "" && !isUUID(channel) {
+		return SimulcastView{}, refuse(http.StatusNotFound, "no_such_channel", "no such channel")
+	}
 	now := c.now()
 	s := c.settings(ctx)
 	ss := LoadSimulcastSettings(ctx, c.DB)

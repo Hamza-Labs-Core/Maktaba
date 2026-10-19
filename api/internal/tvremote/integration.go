@@ -149,7 +149,7 @@ func (in *Integration) load(ctx context.Context) (config, error) {
 	if err != nil {
 		return c, err
 	}
-	c.account, c.code = str(settings, "account_id"), str(settings, "customer_code")
+	c.account, c.code = str(settings, "account_id"), cf.NormalizeCustomerCode(str(settings, "customer_code"))
 	if in.Secrets == nil {
 		c.tokenErr = secrets.ErrNoKey
 		return c, nil
@@ -624,9 +624,14 @@ func (in *Integration) Remove(ctx context.Context) (RemoveResult, error) {
 	return res, nil
 }
 
-// ValidateSettings refuses an account change while Maktaba has inputs or a
-// signing key on the current account (EC2): remove the integration first.
+// ValidateSettings refuses a customer code that is not one, and an account
+// change while Maktaba has inputs or a signing key on the current account
+// (EC2): remove the integration first.
 func (in *Integration) ValidateSettings(ctx context.Context, cur, next map[string]any, _ []string) error {
+	if code := str(next, "customer_code"); code != "" && cf.NormalizeCustomerCode(code) == "" {
+		return httperror.BadRequest("customer_code: enter the customer subdomain code, the <code> of " +
+			"customer-<code>.cloudflarestream.com (lower-case letters and digits)")
+	}
 	was, now := str(cur, "account_id"), str(next, "account_id")
 	if was == "" || was == now {
 		return nil

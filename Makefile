@@ -37,6 +37,7 @@ UNIT_PACKAGE_BUDGET     ?= 30s
 UNIT_PER_TEST_SOFT_CAP  ?= 400ms
 INTEGRATION_TIER_BUDGET ?= 2m
 E2E_TIER_BUDGET         ?= 5m
+MEDIA_E2E_TIER_BUDGET   ?= 5m
 PERF_CI_TIER_BUDGET     ?= 2m
 
 ARTIFACT_DIR ?= artifacts
@@ -268,7 +269,16 @@ test-unit-web:
 # ---------------------------------------------------------------------------
 # Integration tests (gate 3; Story 20.1 integration tier)
 # Needs Postgres + Chroma reachable.
+#
+# INTEGRATION_GO_PG_URL names a Postgres server (its user may create
+# databases and roles) for the Go tests gated on MAKTABA_TEST_PG_URL:
+# each makes, migrates and drops its own scratch database there. It
+# is handed to the Go tests only (the pipeline's pytest reads the same
+# variable); empty leaves MAKTABA_TEST_PG_URL as the environment has
+# it. CI's integration job points it at its Postgres service.
 # ---------------------------------------------------------------------------
+
+INTEGRATION_GO_PG_URL ?=
 
 .PHONY: test-integration
 test-integration:  ## Integration tier (Story 20.1, Epic 20.4).
@@ -279,7 +289,8 @@ test-integration:  ## Integration tier (Story 20.1, Epic 20.4).
 test-integration-inner:
 	@for mod in $(GO_MODULES); do \
 		echo "==> go test -tags=integration ./... ($$mod)"; \
-		(cd $$mod && go test -tags=integration -count=1 ./...); \
+		(cd $$mod && $(if $(INTEGRATION_GO_PG_URL),MAKTABA_TEST_PG_URL='$(INTEGRATION_GO_PG_URL)') \
+			go test -tags=integration -count=1 ./...); \
 	done
 	@# pytest exits 5 when no tests match the marker — that's the
 	@# normal state until Story 20.4 lands real integration tests.
@@ -303,6 +314,18 @@ migrate-status:  ## Show applied vs. pending migrations against $$DATABASE_URL.
 		echo "DATABASE_URL is required"; exit 1; \
 	fi
 	cd api && go run . migrate status --dir $(CURDIR)/$(MIGRATIONS_DIR)
+
+# ---------------------------------------------------------------------------
+# Media e2e tests — the Go tests that need a real ffmpeg/ffprobe (remote
+# end to end, simulcast, two hosts, the channel engine and strip). Needs
+# ffmpeg + ffprobe, fonts-noto-core and MAKTABA_TEST_PG_URL; fails on any
+# skip. See tools/media-e2e.sh.
+# ---------------------------------------------------------------------------
+
+.PHONY: test-media-e2e
+test-media-e2e:  ## Media e2e tier (real ffmpeg + Postgres; CI job media-e2e).
+	@bash tools/test-budget.sh wall media-e2e $(MEDIA_E2E_TIER_BUDGET) -- \
+		bash tools/media-e2e.sh
 
 # ---------------------------------------------------------------------------
 # E2E tests (gate 4) — drives the compose stack.

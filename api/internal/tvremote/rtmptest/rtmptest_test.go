@@ -11,9 +11,7 @@ func TestFFmpegPublishes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("-short")
 	}
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.Skip("ffmpeg not on PATH")
-	}
+	NeedFFmpeg(t)
 	for _, tlsOn := range []bool{true, false} {
 		s, err := Listen(tlsOn)
 		if err != nil {
