@@ -1,12 +1,12 @@
 // Self-service auth surface (web-pages-batch2): registration, the
-// forgot/reset-password flow, the signed-in user's own session list,
-// and account profile / password changes.
+// signed-in user's own session list, and account profile / password
+// changes. There is no mailer, so there is no self-service password
+// reset: an admin resets a forgotten password on the Users page
+// (POST /api/users/{id}/reset-password, passwordreset.go).
 //
 // Routes (wired in auth.go Mount):
 //
 //	POST  /api/auth/register         (public)  — open-registration or first-user bootstrap
-//	POST  /api/auth/forgot-password  (public)  — always 200 (no email enumeration)
-//	POST  /api/auth/reset-password   (public)  — exchange a reset token for a new password
 //	GET   /api/me/sessions           (gated)   — the caller's active web sessions
 //	DELETE /api/me/sessions/{id}     (gated)   — revoke one of the caller's sessions
 //	PATCH /api/me                    (gated)   — update display name / email
@@ -15,14 +15,12 @@ package auth
 
 import (
 	"errors"
-	"log/slog"
 	"net/http"
 	"net/mail"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/passwordreset"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/securityaudit"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/sessions"
@@ -152,92 +150,6 @@ func (h *Handler) openRegistration(r *http.Request) bool {
 	// text on SQLite; trim quotes/space and compare.
 	v := strings.Trim(strings.TrimSpace(string(raw)), `"`)
 	return strings.EqualFold(v, "true")
-}
-
-// ---------- Forgot / Reset password ----------
-
-type forgotRequest struct {
-	Email string `json:"email"`
-}
-
-// ForgotPassword implements POST /api/auth/forgot-password. It ALWAYS
-// responds 200 regardless of whether the email exists, so an attacker
-// can't enumerate accounts. When the email maps to a user a single-use
-// reset token is minted; delivery (email) is an operator concern, so we
-// log the token server-side for now.
-func (h *Handler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
-	var req forgotRequest
-	if e := common.ReadJSON(r, &req, 4<<10); e != nil {
-		httperror.Write(w, r, e)
-		return
-	}
-	req.Email = strings.TrimSpace(req.Email)
-	// Only act when we have a deliverable address AND a backing store.
-	if req.Email != "" && h.PasswordReset != nil {
-		if userID, err := h.Users.IDByEmail(r.Context(), req.Email); err == nil {
-			if token, terr := h.PasswordReset.Create(r.Context(), userID); terr == nil {
-				// Delivery is out of scope; surface the token to the
-				// operator log so a self-hoster can complete the flow.
-				slog.Default().Info("password reset requested",
-					"event", "password_reset_requested",
-					"user_id", userID,
-					"reset_token", token)
-			}
-		}
-	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]bool{"ok": true})
-}
-
-type resetRequest struct {
-	Token    string `json:"token"`
-	Password string `json:"password"`
-}
-
-// ResetPassword implements POST /api/auth/reset-password. It consumes a
-// reset token, sets the new password, and revokes the user's existing
-// sessions + refresh families so a compromised credential can't ride
-// the reset.
-func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
-	if h.PasswordReset == nil {
-		httperror.Write(w, r, httperror.Unavailable(0))
-		return
-	}
-	var req resetRequest
-	if e := common.ReadJSON(r, &req, 8<<10); e != nil {
-		httperror.Write(w, r, e)
-		return
-	}
-	if req.Token == "" {
-		httperror.Write(w, r, httperror.BadRequest("token is required"))
-		return
-	}
-	if len(req.Password) < minPasswordLen {
-		httperror.Write(w, r, httperror.BadRequest("password must be at least 8 characters"))
-		return
-	}
-	userID, err := h.PasswordReset.Consume(r.Context(), req.Token)
-	if err != nil {
-		if errors.Is(err, passwordreset.ErrInvalid) {
-			httperror.Write(w, r, httperror.BadRequest("reset token is invalid or expired"))
-			return
-		}
-		httperror.Write(w, r, httperror.Internal("reset password"))
-		return
-	}
-	if _, err := h.Users.Update(r.Context(), userID, users.UpdateInput{Password: &req.Password}); err != nil {
-		httperror.Write(w, r, httperror.Internal("update password"))
-		return
-	}
-	// Invalidate everything issued before the reset.
-	_, _ = h.Sessions.RevokeAllForUser(r.Context(), userID)
-	_, _ = h.RefreshTokens.RevokeAllForUser(r.Context(), userID)
-	h.audit(r.Context(), securityaudit.Entry{
-		Event:       securityaudit.EventPasswordChanged,
-		ActorUserID: userID,
-		TargetID:    userID,
-		Payload:     map[string]any{"ip": remoteIP(r), "via": "reset"},
-	})
-	common.WriteNoContent(w)
 }
 
 // ---------- Self-service sessions ----------
@@ -425,11 +337,27 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	if _, err := h.Users.Update(r.Context(), p.UserID, users.UpdateInput{Password: &req.NewPassword}); err != nil {
+	if req.NewPassword == req.CurrentPassword {
+		httperror.Write(w, r, httperror.BadRequest("new password must differ from the current one"))
+		return
+	}
+	// Choosing a new password ends an admin reset's "change it at the
+	// next sign-in" requirement.
+	cleared := false
+	if _, err := h.Users.Update(r.Context(), p.UserID, users.UpdateInput{
+		Password:           &req.NewPassword,
+		MustChangePassword: &cleared,
+	}); err != nil {
 		httperror.Write(w, r, httperror.Internal("update password"))
 		return
 	}
 	sessions.NotifyRevoked(sessions.Revocation{UserID: p.UserID, Reason: "password_changed"})
+	h.audit(r.Context(), securityaudit.Entry{
+		Event:       securityaudit.EventPasswordChanged,
+		ActorUserID: p.UserID,
+		TargetID:    p.UserID,
+		Payload:     map[string]any{"ip": remoteIP(r), "via": "self", "was_required": u.MustChangePassword},
+	})
 	common.WriteNoContent(w)
 }
 

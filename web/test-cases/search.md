@@ -3,11 +3,13 @@
 - **Route:** `/search`, optional `?q=<term>` (seeded by the header search box in `src/components/AppShell.tsx`, which navigates to `/search?q=<encoded term>`; also the global `/` shortcut focuses that box).
 - **Component:** `src/pages/Search.tsx` (inner `renderSnippet`, `YouTubeSection`); uses `@ds` `Button`, `Badge`, `EmptyState`, `ErrorState`, `useToast`.
 - **API calls (all via `api` in `src/lib/api.ts`):**
-  - `POST /api/search { q, mode, limit: 50[, include: ["youtube"]] }` → `{ hits: [{ segment_id, video_id, start_sec, end_sec, snippet, score }], videos?: [{ video_id, title, duration_sec? }], total, youtube?: { items: [{ youtube_id, title, channel, description_snippet, thumbnail, published_at?, view_count?, match: { state, video_id? } }], reason? } }`.
+  - `POST /api/search { q, mode, limit: 50 }` → `{ hits: [{ segment_id, video_id, start_sec, end_sec, snippet, score }], videos?: [{ video_id, title, duration_sec? }], total }`.
+  - `GET /api/search/youtube/status` (on mount) → `{ available }`: whether the server can run yt-dlp. False ⇒ no "Also search YouTube" toggle and no "From YouTube" section.
+  - `GET /api/search/youtube?q=<encoded>` (after the local results, when the toggle is on) → `{ items: [{ youtube_id, title, channel, description_snippet, thumbnail, published_at?, duration_sec?, view_count?, match: { state: in_library | imported | importable, video_id? } }], reason? }` (yt-dlp search, no API key).
   - `GET /api/search/suggest?q=<encoded>` (200 ms debounce) → `{ suggestions: string[] }` → `<datalist id="mkt-suggest">`.
   - `GET /api/search/saved` → `{ items: [{ id, q, mode }] }` on mount and after save/delete.
   - `POST /api/search/save { q, mode }`; `DELETE /api/search/saved/{id}`.
-  - `POST /api/videos/{target}/import-youtube { youtube_id }` (YouTube "Import metadata to…", target from `window.prompt`).
+  - `POST /api/videos/{target}/import-youtube { youtube_id, title, channel, description, thumbnail, published_at?, duration_sec? }` (the Import button, admins only; the target video is picked in a dialog). Stages an enrichment candidate; the results are then refetched.
 - **State in URL / storage:** `?q=` (written with `replace: true` on submit; read once on mount); mode in `localStorage["mkt:search:mode"]` (`hybrid` | `fts` | `semantic`, default `hybrid`). YouTube toggle is component state only.
 - **Access:** signed-in user (`RequireAuth`). Server scopes hits to libraries the user can access.
 - **Existing tests:** `src/pages/Search.test.tsx` — covers: submit POSTs `{ q, mode, limit }` and renders a `<mark>` snippet; empty hits show "No results"; Arabic title match renders as a link to `/videos/vid-9`. Gaps: `?q=` deep link, Back/Forward, errors, null fields, suggestions, saved searches, YouTube block, mode persistence, crash fallback, a11y.
@@ -37,7 +39,7 @@
 | SRC-19 | Suggestions debounce, encode, and drop stale answers         | Happy path    | P2       | Yes (`Search.test.tsx`)                             |
 | SRC-20 | Save, run and delete saved searches                          | Happy path    | P2       | Yes (`Search.test.tsx`; it.todo: save confirmation) |
 | SRC-21 | YouTube block: results, in-library link, reason text         | Happy path    | P2       | Yes (`Search.test.tsx`)                             |
-| SRC-22 | YouTube import prompt: cancel, success, error                | Happy path    | P2       | Yes (`Search.test.tsx`)                             |
+| SRC-22 | YouTube import dialog: pick, look up, success, error         | Happy path    | P2       | Yes (`Search.youtube.test.tsx`)                     |
 | SRC-23 | Arabic query text, Arabic results and Arabic UI              | RTL           | P2       | Yes (`Search.test.tsx`)                             |
 | SRC-24 | Many hits: window cap and `total`                            | Happy path    | P3       | No                                                  |
 | SRC-25 | Keyboard and a11y: labels, saved delete name, status updates | Accessibility | P3       | No                                                  |
@@ -121,7 +123,7 @@
     List fields: `youtube.items`.
 - **Steps:**
   1. Search "x".
-- **Expected:** (a) section "From YouTube" with "No YouTube results."; (b) "YouTube search is off."; (c) the card renders with an "Import metadata to…" button; (d) the hit renders with an empty snippet. Today (a)(b) crash on `block.items.length`, (c) crashes on `it.match.state`, (d) crashes on `snippet.split` — the page goes blank (likely bugs, same class as Live TV `hosts: null`).
+- **Expected:** (a) section "From YouTube" with "No YouTube results."; (b) "YouTube search is off."; (c) the card renders with an "Import" button; (d) the hit renders with an empty snippet. Today (a)(b) crash on `block.items.length`, (c) crashes on `it.match.state`, (d) crashes on `snippet.split` — the page goes blank (likely bugs, same class as Live TV `hosts: null`).
 
 ### SRC-08 — Saved `items: null` and suggest `suggestions: null`
 
@@ -272,19 +274,19 @@
 - **Preconditions / data:** tick "Also search YouTube"; search → `{ "hits": [], "youtube": { "items": [ { "youtube_id": "abc&x", "title": "عنوان", "channel": "Chan", "description_snippet": "", "thumbnail": "https://i.ytimg.com/vi/abc/hq.jpg", "view_count": 12345, "match": { "state": "in_library", "video_id": "v5" } }, { "youtube_id": "def", "title": "Other", "channel": "C2", "thumbnail": "", "match": { "state": "none" } } ] } }`. Also `{ "youtube": { "items": [], "reason": "error" } }` and an unknown reason "quota".
 - **Steps:**
   1. Search "x".
-- **Expected:** body includes `include: ["youtube"]`. Section named "From YouTube". First card links to `https://www.youtube.com/watch?v=abc%26x` with `target="_blank"` and `rel="noopener noreferrer"`, shows "Chan · 12,345", and a link to `/videos/v5` with badge "In your library →". Second card has no img and an "Import metadata to…" button. Reason "error" shows "YouTube is unavailable right now."; unknown reason must not show a raw key `search.youtube.reason.quota` (wanted: fall back to "No YouTube results."). Unticked toggle: no YouTube section.
+- **Expected:** the local `POST /api/search` has no `include`; `GET /api/search/youtube?q=x` follows it. Section named "From YouTube". First card links to `https://www.youtube.com/watch?v=abc%26x` with `target="_blank"` and `rel="noopener noreferrer"`, shows "Chan · 12,345", and a link to `/videos/v5` with badge "In your library →". Second card has no img and an "Import" button. Reason "error" shows "YouTube is unavailable right now."; unknown reason must not show a raw key `search.youtube.reason.quota` (wanted: fall back to "No YouTube results."). Unticked toggle: no YouTube section.
 
-### SRC-22 — YouTube import prompt: cancel, success, error
+### SRC-22 — YouTube import dialog: pick, look up, success, error
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Yes (`Search.test.tsx`)
-- **Preconditions / data:** SRC-21 data; stub `window.prompt`; `POST /api/videos/v7/import-youtube` → 204, then 404 `{ "title": "video not found" }`. Render within `ToastProvider`.
+- **Covered by existing test?** Yes (`Search.youtube.test.tsx`).
+- **Preconditions / data:** signed in as an admin; SRC-21 data with local `videos: [{ "video_id": "v7", "title": "Lesson" }]`; `POST /api/videos/v7/import-youtube` → 200 `{ "staged": true }`, then 404 `{ "title": "video not found" }`. Render within `ToastProvider`.
 - **Steps:**
-  1. Click "Import metadata to…"; prompt returns `null`.
-  2. Prompt returns " v7 ".
-  3. Prompt returns "v7" and the POST fails.
-- **Expected:** step 1: no request. Step 2: `POST /api/videos/v7/import-youtube { youtube_id: "def" }`, toast "Metadata imported.". Step 3: error toast "video not found". Non-admin: wanted the import button hidden (server requires an editor; today shown to all).
+  1. Click "Import" on the second card; Cancel.
+  2. Import again, pick "Lesson", click "Import".
+  3. Import again, type a title in "Find a video by title", Search, pick a result; the POST fails.
+- **Expected:** no `window.prompt`. Step 1: no request. Step 2: the dialog's Import is disabled until a video is picked; `POST /api/videos/v7/import-youtube` with the result's `youtube_id`, title, channel, description, thumbnail (and date/length when known); toast "Metadata staged for “Lesson”…"; the dialog closes and the search runs again, the card now showing "Imported →" linking to `/videos/v7`. Step 3: the lookup is `POST /api/search { q, mode: "fts", limit: 20 }`; error toast "video not found", the dialog stays open. Non-admin: no Import button (the server answers 403).
 
 ### SRC-23 — Arabic query text, Arabic results and Arabic UI
 

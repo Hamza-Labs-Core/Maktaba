@@ -139,7 +139,7 @@ const hit = (id: number, video: string, snippet: string | null, start = 72.5, en
 /** Routes api.post / api.get by path. `search` may be a function of the body. */
 function serveSearch(
   search: Answer,
-  opts: { saved?: Answer; suggest?: Answer; other?: Answer } = {}
+  opts: { saved?: Answer; suggest?: Answer; other?: Answer; ytAvailable?: boolean } = {}
 ) {
   const pick = (v: Answer, arg: Record<string, unknown>) => {
     try {
@@ -153,7 +153,16 @@ function serveSearch(
   post.mockImplementation((url: string, body: Record<string, unknown>) =>
     url === "/api/search" ? pick(search, body) : pick(opts.other ?? undefined, { url })
   );
+  // Story 26.8: the YouTube block comes from its own GET after the local
+  // search, and only when the server reports yt-dlp available.
+  const ytBlock =
+    search && typeof search === "object" && "youtube" in (search as Record<string, unknown>)
+      ? (search as { youtube: unknown }).youtube
+      : { items: [] };
   get.mockImplementation((url: string) => {
+    if (url === "/api/search/youtube/status")
+      return Promise.resolve({ available: opts.ytAvailable !== false });
+    if (url.startsWith("/api/search/youtube?")) return pick(ytBlock, { url });
     if (url.startsWith("/api/search/saved")) return pick(opts.saved ?? { items: [] }, { url });
     if (url.startsWith("/api/search/suggest"))
       return pick(opts.suggest ?? { suggestions: [] }, { url });
@@ -302,22 +311,44 @@ describe("Search (test-cases/search.md)", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it.each([
-    ["items null", { hits: [], youtube: { items: null } }, "No YouTube results."],
-    [
-      "items missing, reason disabled",
-      { hits: [], youtube: { reason: "disabled" } },
-      "YouTube search is off.",
-    ],
-  ])("SRC-07: YouTube %s shows the note", async (_l, answer, note) => {
-    serveSearch(answer);
+  it("SRC-07: YouTube reason disabled (yt-dlp went away) shows no section", async () => {
+    serveSearch({ hits: [], youtube: { reason: "disabled" } });
     renderSearchPage();
-    await userEvent.setup().click(screen.getByRole("checkbox", { name: "Also search YouTube" }));
+    await userEvent
+      .setup()
+      .click(await screen.findByRole("checkbox", { name: "Also search YouTube" }));
     await submit("x");
-    const section = await screen.findByRole("region", { name: "From YouTube" });
-    expect(section).toHaveTextContent(note);
-    expect(screen.queryByRole("alert")).toBeNull();
+    await screen.findByText(/No results/);
+    await waitFor(() =>
+      expect(get.mock.calls.some(([u]) => String(u).startsWith("/api/search/youtube?"))).toBe(true)
+    );
+    expect(screen.queryByRole("region", { name: "From YouTube" })).toBeNull();
   });
+
+  it("SRC-07: without yt-dlp there is no toggle and no YouTube search", async () => {
+    serveSearch({ hits: [], youtube: { items: [] } }, { ytAvailable: false });
+    renderSearchPage();
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/api/search/youtube/status"));
+    expect(screen.queryByRole("checkbox", { name: "Also search YouTube" })).toBeNull();
+    await submit("x");
+    await screen.findByText(/No results/);
+    expect(get.mock.calls.some(([u]) => String(u).startsWith("/api/search/youtube?"))).toBe(false);
+  });
+
+  it.each([["items null", { hits: [], youtube: { items: null } }, "No YouTube results."]])(
+    "SRC-07: YouTube %s shows the note",
+    async (_l, answer, note) => {
+      serveSearch(answer);
+      renderSearchPage();
+      await userEvent
+        .setup()
+        .click(await screen.findByRole("checkbox", { name: "Also search YouTube" }));
+      await submit("x");
+      const section = await screen.findByRole("region", { name: "From YouTube" });
+      expect(section).toHaveTextContent(note);
+      expect(screen.queryByRole("alert")).toBeNull();
+    }
+  );
 
   it("SRC-07: a YouTube item with match null renders with the import button (admin)", async () => {
     serveSearch({
@@ -327,10 +358,12 @@ describe("Search (test-cases/search.md)", () => {
       },
     });
     renderSearchPage("/search", { user: adminUser });
-    await userEvent.setup().click(screen.getByRole("checkbox", { name: "Also search YouTube" }));
+    await userEvent
+      .setup()
+      .click(await screen.findByRole("checkbox", { name: "Also search YouTube" }));
     await submit("x");
     expect(await screen.findByText("T")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Import metadata to…" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Import" })).toBeInTheDocument();
   });
 
   it("SRC-07: a hit with snippet null renders with an empty snippet", async () => {
@@ -656,9 +689,11 @@ describe("Search (test-cases/search.md)", () => {
     });
     renderSearchPage("/search", { user: adminUser });
     const user = userEvent.setup();
-    await user.click(screen.getByRole("checkbox", { name: "Also search YouTube" }));
+    await user.click(await screen.findByRole("checkbox", { name: "Also search YouTube" }));
     await submit("x");
-    expect(searchCalls()[0][1]).toMatchObject({ include: ["youtube"] });
+    // the local search no longer carries the YouTube leg
+    expect(searchCalls()[0][1]).not.toHaveProperty("include");
+    expect(get).toHaveBeenCalledWith("/api/search/youtube?q=x");
     const section = await screen.findByRole("region", { name: "From YouTube" });
     const first = within(section).getByRole("link", { name: /عنوان/ });
     expect(first).toHaveAttribute("href", "https://www.youtube.com/watch?v=abc%26x");
@@ -671,7 +706,7 @@ describe("Search (test-cases/search.md)", () => {
     );
     const second = within(section).getByRole("link", { name: /Other/ });
     expect(second.querySelector("img")).toBeNull();
-    expect(within(section).getAllByRole("button", { name: "Import metadata to…" })).toHaveLength(1);
+    expect(within(section).getAllByRole("button", { name: "Import" })).toHaveLength(1);
   });
 
   it.each([
@@ -680,7 +715,9 @@ describe("Search (test-cases/search.md)", () => {
   ])("SRC-21: reason %s shows readable text", async (reason, text) => {
     serveSearch({ hits: [], youtube: { items: [], reason } });
     renderSearchPage();
-    await userEvent.setup().click(screen.getByRole("checkbox", { name: "Also search YouTube" }));
+    await userEvent
+      .setup()
+      .click(await screen.findByRole("checkbox", { name: "Also search YouTube" }));
     await submit("x");
     expect(await screen.findByText(text)).toBeInTheDocument();
     expect(document.body.textContent).not.toContain("search.youtube.reason");
@@ -694,15 +731,17 @@ describe("Search (test-cases/search.md)", () => {
     expect(screen.queryByRole("region", { name: "From YouTube" })).toBeNull();
   });
 
-  it("SRC-22: YouTube import prompt: cancel, success, error; hidden for non-admins", async () => {
+  it("SRC-22: YouTube import dialog: cancel, success, error; hidden for non-admins", async () => {
     const yt = {
       hits: [],
+      videos: [{ video_id: "v7", title: "Lesson" }],
       youtube: {
         items: [
           {
-            youtube_id: "def",
+            youtube_id: "defdefdefde",
             title: "Other",
             channel: "C2",
+            description_snippet: "d",
             thumbnail: "",
             match: { state: "none" },
           },
@@ -714,27 +753,43 @@ describe("Search (test-cases/search.md)", () => {
     const prompt = vi.spyOn(window, "prompt");
     const r = renderSearchPage("/search", { user: adminUser });
     const user = userEvent.setup();
-    await user.click(screen.getByRole("checkbox", { name: "Also search YouTube" }));
+    await user.click(await screen.findByRole("checkbox", { name: "Also search YouTube" }));
     await submit("x");
-    const btn = await screen.findByRole("button", { name: "Import metadata to…" });
-    prompt.mockReturnValueOnce(null);
+    const btn = await screen.findByRole("button", { name: "Import" });
+
     await user.click(btn);
+    let dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(importPost).not.toHaveBeenCalled();
-    prompt.mockReturnValueOnce(" v7 ");
-    importPost.mockResolvedValueOnce(undefined);
+
+    importPost.mockResolvedValueOnce({ staged: true });
     await user.click(btn);
-    expect(post).toHaveBeenCalledWith("/api/videos/v7/import-youtube", { youtube_id: "def" });
-    expect(await screen.findByText("Metadata imported.")).toBeInTheDocument();
-    prompt.mockReturnValueOnce("v7");
+    dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByLabelText(/Lesson/));
+    await user.click(within(dialog).getByRole("button", { name: "Import" }));
+    expect(post).toHaveBeenCalledWith(
+      "/api/videos/v7/import-youtube",
+      expect.objectContaining({ youtube_id: "defdefdefde", title: "Other", channel: "C2" })
+    );
+    expect(await screen.findByText(/Metadata staged for “Lesson”/)).toBeInTheDocument();
+
     importPost.mockRejectedValueOnce(problem(404, "video not found"));
-    await user.click(btn);
+    await user.click(await screen.findByRole("button", { name: "Import" }));
+    dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByLabelText(/Lesson/));
+    await user.click(within(dialog).getByRole("button", { name: "Import" }));
     expect(await screen.findByText("video not found")).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(prompt).not.toHaveBeenCalled();
+
     r.unmount();
     renderSearchPage();
-    await userEvent.setup().click(screen.getByRole("checkbox", { name: "Also search YouTube" }));
+    await userEvent
+      .setup()
+      .click(await screen.findByRole("checkbox", { name: "Also search YouTube" }));
     await submit("x");
     await screen.findByText("Other");
-    expect(screen.queryByRole("button", { name: "Import metadata to…" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Import" })).toBeNull();
   });
 
   it("SRC-23: Arabic query, results and UI", async () => {

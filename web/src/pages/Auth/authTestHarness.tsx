@@ -1,7 +1,6 @@
-// Test harness for the public auth pages (login, register, forgot and reset
-// password). They sit outside AppShell and RequireAuth in App.tsx, so this
+// Test harness for the public auth pages (login and register). They sit outside AppShell and RequireAuth in App.tsx, so this
 // mounts them the same way: the real AuthProvider (its /api/auth/me probe and
-// login/register/logout go through the mocked lib/api), the four public
+// login/register/logout go through the mocked lib/api), the public
 // routes, and one protected route that stands in for the signed-in app.
 //
 // The test file mocks "../lib/api" (or "../../lib/api") itself; this file only
@@ -14,8 +13,6 @@ import { ApiError } from "../../lib/api";
 import { AuthProvider, RequireAuth, useAuth, type User } from "../../lib/auth";
 import { Login } from "../Login";
 import { Register } from "./Register";
-import { ForgotPassword } from "./ForgotPassword";
-import { ResetPassword } from "./ResetPassword";
 
 type InitialEntry = NonNullable<ComponentProps<typeof MemoryRouter>["initialEntries"]>[number];
 
@@ -78,8 +75,6 @@ export function renderAuth(entries: InitialEntry[], extra?: ReactElement) {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
             <Route
               path="*"
               element={

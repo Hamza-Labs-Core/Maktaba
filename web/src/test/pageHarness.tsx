@@ -33,6 +33,7 @@ export function authState(user: User | null, over: Partial<AuthState> = {}): Aut
     register: vi.fn(async () => {}),
     logout: vi.fn(async () => {}),
     logoutAll: vi.fn(async () => {}),
+    passwordChanged: vi.fn(),
     ...over,
   };
 }

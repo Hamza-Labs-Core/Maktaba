@@ -86,7 +86,7 @@
 - **Preconditions / data:** password and confirm `short`.
 - **Steps:**
   1. Fill all fields; click "Create account".
-- **Expected:** No POST; the user is told the password must be at least 8 characters. (Only the native `minLength={8}` guards this; the component's `valid` check does not, so the button is enabled and in jsdom/tests the request is sent — currently unhandled in code — likely bug. `ResetPassword` checks `password.length >= 8` in JS; Register should match.)
+- **Expected:** No POST; the user is told the password must be at least 8 characters. (Only the native `minLength={8}` guards this; the component's `valid` check does not, so the button is enabled and in jsdom/tests the request is sent — currently unhandled in code — likely bug. Register should check `password.length >= 8` in JS.)
 
 ### REG-06 — Invalid email format is not sent
 

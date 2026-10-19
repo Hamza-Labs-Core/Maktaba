@@ -109,7 +109,8 @@ func TestUsersAdmin_CreateOK(t *testing.T) {
 	if fa.created == nil || fa.created.Username != "bob" || !fa.created.IsAdmin {
 		t.Fatalf("create input = %+v", fa.created)
 	}
-	if strings.Contains(rec.Body.String(), "pw_hash") || strings.Contains(rec.Body.String(), "password") {
+	if strings.Contains(rec.Body.String(), "pw_hash") || strings.Contains(rec.Body.String(), `"password"`) ||
+		strings.Contains(rec.Body.String(), "pw-correct-horse") {
 		t.Fatalf("response leaked secret material: %s", rec.Body.String())
 	}
 }

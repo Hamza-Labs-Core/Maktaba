@@ -11,11 +11,14 @@ import { Navigate, useLocation } from "react-router-dom";
 import { api, ApiError } from "./api";
 import { useI18n } from "./i18n";
 import { purgeApiCacheOnLogout } from "./sw";
+import { ChangePasswordRequired } from "../pages/Auth/ChangePasswordRequired";
 
 export interface User {
   id: string;
   username: string;
   is_admin: boolean;
+  /** An admin reset the password to a temporary one: it must be changed first. */
+  must_change_password?: boolean;
 }
 
 export interface AuthState {
@@ -25,6 +28,8 @@ export interface AuthState {
   register: (username: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   logoutAll: () => Promise<void>;
+  /** The required password change is done: lift the gate. */
+  passwordChanged: () => void;
 }
 
 // Exported so page tests can sign a user in without the /api/auth/me probe
@@ -104,6 +109,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await purgeApiCacheOnLogout();
         setUser(null);
       },
+      passwordChanged() {
+        setUser((u) => (u ? { ...u, must_change_password: false } : u));
+      },
     }),
     [user, loading]
   );
@@ -137,5 +145,8 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   // Keep the query too, so /search?q=x comes back to the same search.
   if (!user)
     return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
+  // After an admin reset the server refuses everything but the password
+  // change, so the app shows only that form until it is done.
+  if (user.must_change_password) return <ChangePasswordRequired />;
   return <>{children}</>;
 }

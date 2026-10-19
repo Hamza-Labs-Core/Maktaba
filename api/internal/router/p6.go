@@ -12,6 +12,7 @@ import (
 	"context"
 	"database/sql"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -169,6 +170,10 @@ func MountP6(r chi.Router, d P6Deps) {
 		EmbedCache:     embedCache,
 		SemanticBudget: d.SearchSemanticBudget,
 		Settings:       runtimeSettings,
+		// Story 26.8: "From YouTube" runs yt-dlp's own search (no API key),
+		// the binary the TV live slots use. Without yt-dlp the Search page
+		// hides the section.
+		YouTube: search.NewYtDlpSearcher(os.Getenv("MAKTABA_YTDLP")),
 	}
 	searchHandler.Mount(r)
 

@@ -181,9 +181,7 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		"/api/auth/refresh":          {},
 		// web-pages-batch2 — self-service entry points the caller reaches
 		// before holding any credential.
-		"/api/auth/register":        {},
-		"/api/auth/forgot-password": {},
-		"/api/auth/reset-password":  {},
+		"/api/auth/register": {},
 		// Epic 31 — a machine's join request and its poll.
 		"/api/cluster/join":   {},
 		"/api/cluster/join/*": {},

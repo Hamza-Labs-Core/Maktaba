@@ -9,6 +9,7 @@
   - `POST /api/users/{id}/unlock` → 204
   - `DELETE /api/users/{id}/sessions/{session_id}` → 204
   - `DELETE /api/users/{id}/refresh-tokens/{family_id}` → 204
+  - `POST /api/users/{id}/reset-password` body `{ mode: "temporary" }` or `{ mode: "set", password, must_change? }` → `{ user_id, mode, must_change_password, sessions_revoked, temporary_password? }` (the temporary password only in this response; there is no mailer and no self-service reset)
   - Server errors are RFC 9457 problems; relevant ones from `api/internal/handlers/auth/usersadmin.go`: 409 `{type:".../problems/last-admin", title:"conflict", detail:"operation would leave the system with no admin"}`, 409 username exists (`detail:"username already exists"`), 404 user not found.
   - Roster: the table is read from / written to `localStorage["mkt:admin:knownUsers"]` (JSON array of `{id, username, is_admin}`).
 - **Access:** admin only. `RequireAuth` (redirect to `/login`) then `AdminGate` (shows `common.forbidden.title` "Admins only" / `common.forbidden.desc`). Server re-checks and returns 403.
@@ -16,35 +17,36 @@
 
 ## Summary
 
-| ID     | Title                                                        | Category      | Priority | Covered by existing test? |
-| ------ | ------------------------------------------------------------ | ------------- | -------- | ------------------------- |
-| USR-01 | Empty roster shows empty state                               | Empty state   | P2       | Yes (`Users.test.tsx`)    |
-| USR-02 | Roster loads from localStorage                               | Happy path    | P1       | Yes (`Users.test.tsx`)    |
-| USR-03 | Create user (happy path) adds row and persists               | Happy path    | P1       | Yes (`Users.test.tsx`)    |
-| USR-04 | Create form validation (username/password required)          | Validation    | P2       | Yes (`Users.test.tsx`)    |
-| USR-05 | Create fails with 409 username exists                        | Error         | P2       | Yes (`Users.test.tsx`)    |
-| USR-06 | Create/edit fails with network error or non-JSON 500         | Error         | P2       | Yes (`Users.test.tsx`)    |
-| USR-07 | Edit sends only changed fields                               | Happy path    | P1       | Yes (`Users.test.tsx`)    |
-| USR-08 | Promote user to admin / demote to user                       | Happy path    | P1       | Yes (`Users.test.tsx`)    |
-| USR-09 | Last-admin protection on demote (409)                        | Permissions   | P1       | Yes (`Users.test.tsx`)    |
-| USR-10 | Last-admin protection on delete (409)                        | Permissions   | P1       | Yes (`Users.test.tsx`)    |
-| USR-11 | Admin demotes themself                                       | Permissions   | P1       | No (it.fails: bug)        |
-| USR-12 | Admin deletes themself                                       | Permissions   | P1       | No (it.fails: bug)        |
-| USR-13 | Delete user (confirm, cancel, error)                         | Happy path    | P1       | Yes (`Users.test.tsx`)    |
-| USR-14 | Unlock account (success, 404)                                | Happy path    | P2       | Yes (`Users.test.tsx`)    |
-| USR-15 | Revoke session / token family                                | Happy path    | P2       | Yes (`Users.test.tsx`)    |
-| USR-16 | Session expired (401) during a mutation                      | Error         | P2       | No (it.fails: bug)        |
-| USR-17 | Corrupt or `null` roster in localStorage does not blank page | Empty state   | P1       | Yes (`Users.test.tsx`)    |
-| USR-18 | Create response missing / malformed                          | Error         | P2       | Yes (`Users.test.tsx`)    |
-| USR-19 | Page crash shows route error fallback; Back works            | Navigation    | P1       | Yes (`Users.test.tsx`)    |
-| USR-20 | Non-admin sees "Admins only"                                 | Permissions   | P1       | Yes (`Users.test.tsx`)    |
-| USR-21 | Signed-out user redirected to /login                         | Permissions   | P1       | Yes (`Users.test.tsx`)    |
-| USR-22 | Deep link and Back/Forward                                   | Navigation    | P2       | Yes (`Users.test.tsx`)    |
-| USR-23 | localStorage unavailable                                     | Error         | P3       | No                        |
-| USR-24 | Phone width (375px)                                          | Responsive    | P3       | No                        |
-| USR-25 | Arabic / RTL                                                 | RTL           | P3       | No                        |
-| USR-26 | Light and dark theme                                         | Theme         | P3       | No                        |
-| USR-27 | Modals: focus trap, Escape, labels, toasts announced         | Accessibility | P2       | Yes (`Users.test.tsx`)    |
+| ID     | Title                                                        | Category      | Priority | Covered by existing test?    |
+| ------ | ------------------------------------------------------------ | ------------- | -------- | ---------------------------- |
+| USR-01 | Empty roster shows empty state                               | Empty state   | P2       | Yes (`Users.test.tsx`)       |
+| USR-02 | Roster loads from localStorage                               | Happy path    | P1       | Yes (`Users.test.tsx`)       |
+| USR-03 | Create user (happy path) adds row and persists               | Happy path    | P1       | Yes (`Users.test.tsx`)       |
+| USR-04 | Create form validation (username/password required)          | Validation    | P2       | Yes (`Users.test.tsx`)       |
+| USR-05 | Create fails with 409 username exists                        | Error         | P2       | Yes (`Users.test.tsx`)       |
+| USR-06 | Create/edit fails with network error or non-JSON 500         | Error         | P2       | Yes (`Users.test.tsx`)       |
+| USR-07 | Edit sends only changed fields                               | Happy path    | P1       | Yes (`Users.test.tsx`)       |
+| USR-08 | Promote user to admin / demote to user                       | Happy path    | P1       | Yes (`Users.test.tsx`)       |
+| USR-09 | Last-admin protection on demote (409)                        | Permissions   | P1       | Yes (`Users.test.tsx`)       |
+| USR-10 | Last-admin protection on delete (409)                        | Permissions   | P1       | Yes (`Users.test.tsx`)       |
+| USR-11 | Admin demotes themself                                       | Permissions   | P1       | No (it.fails: bug)           |
+| USR-12 | Admin deletes themself                                       | Permissions   | P1       | No (it.fails: bug)           |
+| USR-13 | Delete user (confirm, cancel, error)                         | Happy path    | P1       | Yes (`Users.test.tsx`)       |
+| USR-14 | Unlock account (success, 404)                                | Happy path    | P2       | Yes (`Users.test.tsx`)       |
+| USR-15 | Revoke session / token family                                | Happy path    | P2       | Yes (`Users.test.tsx`)       |
+| USR-16 | Session expired (401) during a mutation                      | Error         | P2       | No (it.fails: bug)           |
+| USR-17 | Corrupt or `null` roster in localStorage does not blank page | Empty state   | P1       | Yes (`Users.test.tsx`)       |
+| USR-18 | Create response missing / malformed                          | Error         | P2       | Yes (`Users.test.tsx`)       |
+| USR-19 | Page crash shows route error fallback; Back works            | Navigation    | P1       | Yes (`Users.test.tsx`)       |
+| USR-20 | Non-admin sees "Admins only"                                 | Permissions   | P1       | Yes (`Users.test.tsx`)       |
+| USR-21 | Signed-out user redirected to /login                         | Permissions   | P1       | Yes (`Users.test.tsx`)       |
+| USR-22 | Deep link and Back/Forward                                   | Navigation    | P2       | Yes (`Users.test.tsx`)       |
+| USR-23 | localStorage unavailable                                     | Error         | P3       | No                           |
+| USR-24 | Phone width (375px)                                          | Responsive    | P3       | No                           |
+| USR-25 | Arabic / RTL                                                 | RTL           | P3       | No                           |
+| USR-26 | Light and dark theme                                         | Theme         | P3       | No                           |
+| USR-27 | Modals: focus trap, Escape, labels, toasts announced         | Accessibility | P2       | Yes (`Users.test.tsx`)       |
+| USR-28 | Reset password: temporary (shown once) or typed              | Happy path    | P1       | Yes (`Users.reset.test.tsx`) |
 
 ## Cases
 
@@ -331,3 +333,16 @@
   2. Press Escape. 3. Open Delete dialog, press Escape.
   3. Trigger a success and an error toast.
 - **Expected:** `role="dialog"` `aria-modal="true"` named by its title; focus moves into the dialog and stays trapped; Escape closes and focus returns to the button that opened it. Delete dialog also closes on Escape (only the backdrop is disabled) — confirm this is wanted. Inputs have labels ("Username", "Password", "Administrator"); close button labelled "Close". Toasts are announced (success polite, error assertive). Axe reports no violations.
+
+### USR-28 — Reset password: temporary (shown once) or typed
+
+- **Priority:** P1
+- **Category:** Happy path
+- **Covered by existing test?** Yes (`src/pages/Admin/Users.reset.test.tsx` for the dialog, `api/internal/handlers/auth/passwordreset_test.go` for the server).
+- **Preconditions / data:** roster with bob. `POST /api/users/{bob}/reset-password` → `{ "temporary_password": "abcd-EFGH-jkmn-PQRS", "must_change_password": true, "sessions_revoked": 2 }`; for mode set → `{ "must_change_password": false, "sessions_revoked": 0 }`; then a 404.
+- **Steps:**
+  1. Click "Reset password" on bob; keep "Make a temporary password"; Reset password.
+  2. Copy; Done.
+  3. Again, choose "Type the new password", type 5 characters, then 8+; tick "Ask them to change it…"; Reset password.
+  4. Again with the 404.
+- **Expected:** Step 1: body `{ "mode": "temporary" }`; the password is shown read-only with "It is shown only now"; toast "Password reset. 2 sign-ins ended."; the backdrop does not close the dialog. Step 2: the clipboard holds it; after Done it is gone from the page. Step 3: the button is disabled under 8 characters; body `{ "mode": "set", "password": "...", "must_change": true }`; the dialog closes. Step 4: error toast "user not found"; the dialog stays. bob's sessions on other browsers are signed out; bob signing in with the temporary password sees only "Choose a new password" (login LGN-18). The audit log has a `password.changed` row with `action: user.password_reset` and no password.
