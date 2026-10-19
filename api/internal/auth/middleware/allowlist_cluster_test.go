@@ -18,6 +18,11 @@ func TestRequireAuthExcept_ClusterJoinWildcardIsOneSegment(t *testing.T) {
 		"/api/cluster":                  http.StatusUnauthorized,
 		"/api/cluster/settings":         http.StatusUnauthorized,
 		"/api/cluster/nodes/abc/revoke": http.StatusUnauthorized,
+		"/api/cluster/agent":            http.StatusOK,
+		"/api/cluster/agent/x":          http.StatusUnauthorized,
+		"/api/cluster/ws":               http.StatusUnauthorized,
+		"/api/cluster/files":            http.StatusUnauthorized,
+		"/api/cluster/llm/v1/models":    http.StatusUnauthorized,
 	} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
@@ -25,7 +30,7 @@ func TestRequireAuthExcept_ClusterJoinWildcardIsOneSegment(t *testing.T) {
 			t.Errorf("%s anonymous: status = %d, want %d", path, rec.Code, want)
 		}
 	}
-	if reached != 2 {
-		t.Errorf("reached = %d, want 2", reached)
+	if reached != 3 {
+		t.Errorf("reached = %d, want 3", reached)
 	}
 }

@@ -49,6 +49,17 @@ func (s *statusRecorder) WriteHeader(code int) {
 	s.ResponseWriter.WriteHeader(code)
 }
 
+// Flush passes through so streaming responses (SSE) reach the client.
+func (s *statusRecorder) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Unwrap lets http.ResponseController (and WebSocket upgrades, which
+// hijack the connection) reach the underlying writer.
+func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
 // HTTP is a chi-compatible middleware that:
 //   - extracts inbound W3C trace context via the OTel propagator,
 //   - starts a real server span (SpanKindServer) on the global tracer;
