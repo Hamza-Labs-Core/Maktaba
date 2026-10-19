@@ -1,6 +1,7 @@
 package supervisor
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -41,5 +42,29 @@ func TestStreamingNodeEnvFromNodeConfig(t *testing.T) {
 	nodeConfig = func() config.NodeConfig { return config.NodeConfig{NodeID: "x"} }
 	if m := envMap(ChildEnv(RoleStreaming, cfg)); m["MAKTABA_TV_HOST_ROLE"] != "" || m["DATABASE_URL"] != "postgresql://local/ignored" {
 		t.Fatalf("unjoined machine got node env: %v", m)
+	}
+}
+
+// TestStreamingCacheUnderDataDir: streaming's cache defaults to /var/maktaba (the
+// containers' path), which a user cannot create on macOS or Windows, and every
+// channel request failed with "mkdir /var/maktaba: permission denied". The
+// supervisor puts it under the install's data directory on every OS.
+func TestStreamingCacheUnderDataDir(t *testing.T) {
+	prev := nodeConfig
+	t.Cleanup(func() { nodeConfig = prev })
+	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
+	var cfg config.Config
+	cfg.Server.DataDir = filepath.Join("C:", "Users", "x", "AppData", "Local", "Maktaba")
+	m := envMap(ChildEnv(RoleStreaming, cfg))
+	if want := filepath.Join(cfg.Server.DataDir, "cache", "streaming"); m["MAKTABA_CACHE_ROOT"] != want {
+		t.Fatalf("MAKTABA_CACHE_ROOT = %q, want %q", m["MAKTABA_CACHE_ROOT"], want)
+	}
+	// an operator's own (inherited with the rest of the environment) is not overridden
+	t.Setenv("MAKTABA_CACHE_ROOT", "/srv/own")
+	if v, ok := envMap(ChildEnv(RoleStreaming, cfg))["MAKTABA_CACHE_ROOT"]; ok {
+		t.Fatalf("overrode the operator's cache root with %q", v)
+	}
+	if _, ok := envMap(ChildEnv(RoleAPI, cfg))["MAKTABA_CACHE_ROOT"]; ok {
+		t.Fatalf("only streaming gets the streaming cache root")
 	}
 }
