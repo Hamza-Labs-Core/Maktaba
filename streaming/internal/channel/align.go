@@ -2,7 +2,6 @@ package channel
 
 import (
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -42,17 +41,6 @@ var BuildDefect = ""
 
 // ptsShiftTicks is BuildDefect's timestamp shift (0: none).
 var ptsShiftTicks int64
-
-func applyBuildDefect(d string) {
-	switch {
-	case d == "pids":
-		TSPMTPID, TSVideoPID, TSAudioPID = 0x1100, 0x200, 0x201
-	case strings.HasPrefix(d, "pts:"):
-		if ms, err := strconv.Atoi(strings.TrimPrefix(d, "pts:")); err == nil {
-			ptsShiftTicks = int64(ms) * 90
-		}
-	}
-}
 
 // PTSWrapTicks is the 33-bit PTS modulus.
 const PTSWrapTicks = int64(1) << 33

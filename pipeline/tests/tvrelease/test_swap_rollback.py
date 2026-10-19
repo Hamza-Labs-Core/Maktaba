@@ -142,3 +142,32 @@ async def test_no_rollback_before_the_swap_commit(db: Database) -> None:
     route = await db.fetchrow("SELECT * FROM tv_routing WHERE scope = 'cluster'")
     assert int(route["epoch"]) == 3 and route["previous_release_id"] is not None
     assert (await channel_def(db, a))["number"] == 101
+
+
+@pytest.mark.asyncio
+async def test_commit_refuses_a_change_whose_base_moved(db: Database) -> None:
+    """The change was staged on one live release and another went on the air since (a
+    second change, a rollback): its lineup and generation were built against the old
+    base, so the commit refuses it (back to ready, swap_failed) and applies nothing."""
+    from maktaba_pipeline.tvrelease.commit import BaseMovedError
+
+    cid, a, _, rel = await _staged(db)
+    ch = await get_change(db, cid)
+    assert ch is not None
+    await db.execute("DELETE FROM tv_routing WHERE scope = 'cluster'")
+    await db.execute(
+        "INSERT INTO tv_routing (scope, live_release_id, live_gen, epoch)"
+        " VALUES ('cluster', $1, 0, 7)",
+        rel.id if ch.row.get("base_release_id") is None else None,
+    )
+    with pytest.raises(BaseMovedError):
+        await commit_change(db, cid, clock=NOW + timedelta(minutes=1))
+    ch = await get_change(db, cid)
+    assert ch is not None and ch.state == "ready"
+    route = await db.fetchrow("SELECT * FROM tv_routing WHERE scope = 'cluster'")
+    assert int(route["epoch"]) == 7
+    assert (await channel_def(db, a))["number"] == 101
+    ev = await db.fetchval(
+        "SELECT count(*) FROM tv_change_events WHERE change_id = $1 AND action = 'swap_failed'", cid
+    )
+    assert ev == 1

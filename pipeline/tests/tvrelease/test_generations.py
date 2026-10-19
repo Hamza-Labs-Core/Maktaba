@@ -292,3 +292,31 @@ async def test_second_change_cannot_go_in_flight_while_one_builds(
         await stage_change(db, first, clock=NOW)
     ch = await get_change(db, first)
     assert ch is not None and ch.state == "draft"
+
+
+@pytest.mark.asyncio
+async def test_boundary_capped_by_max_wait(db: Database) -> None:
+    """``boundary_max_wait_minutes``: a programme running past the cap ends there in
+    N+1 and the new schedule starts at the cap - the instant the Changes page shows
+    (store.Boundaries) and the front door switches at (commit's switch plan)."""
+    from tests.tvrelease.helpers import set_staging
+
+    a, _, other = await _two_channels(db)
+    await set_staging(db, boundary_max_wait_minutes=5)
+    d = await channel_def(db, a)
+    _, rel = await _stage(db, {"channels": {a: {**d, "library_id": str(other)}}})
+    old = await blocks(db, a, 0)
+    # a little after a programme started, well before it ends (30 min programmes)
+    start = next(parse_ts(x[1]) for x in old if parse_ts(x[1]) > NOW + timedelta(hours=2))  # type: ignore[operator]
+    assert start is not None
+    at = start + timedelta(minutes=1)
+    cap = at + timedelta(minutes=5)
+    assert await boundary(db, a, 0, at) > cap
+    moved = await reanchor(db, rel, at=at, clock=NOW)
+    assert moved == {a: cap.isoformat()}
+    new = await blocks(db, a, rel.sched_gen)
+    ends = {parse_ts(x[2]) for x in new}
+    starts = {parse_ts(x[1]) for x in new}
+    assert cap in ends and cap in starts  # cut at the cap, the new schedule from it
+    for _, s, e in new:  # no block spans the cap
+        assert not (parse_ts(s) < cap < parse_ts(e))  # type: ignore[operator]

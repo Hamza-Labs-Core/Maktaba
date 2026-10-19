@@ -31,11 +31,11 @@ from .. import rules
 from ..engine.sql import dumps, is_pg, loads, now, to_ts
 from ..log import get_logger
 from .build import Release, filler_item_id, load_release
-from .generation import boundary, reanchor
+from .generation import reanchor, swap_boundary
 from .snapshot import DEF_COLUMNS, SETTINGS_SECTIONS, live_snapshot
 from .store import event, get_change, transition, update_change
 
-__all__ = ["commit_change", "readback", "slots_runtime", "write_swap_op"]
+__all__ = ["BaseMovedError", "commit_change", "readback", "slots_runtime", "write_swap_op"]
 
 _log = get_logger()
 _ART_TABLE = "channel_art_overrides"
@@ -312,8 +312,9 @@ async def _switch_plan(
         removed = cid not in rel.defs
         at = clock
         if cid in old_live and wait != "immediate":
-            b = await boundary(db, cid, old_gen, clock)
-            at = min(b, clock + max_wait) if max_wait > timedelta(0) else b
+            # the instant generation N+1 diverges at (re-anchored at the commit, capped
+            # the same way): the stream switches where its schedule changes
+            at, _ = await swap_boundary(db, cid, old_gen, clock, max_wait)
         plan[cid] = (at, removed)
     return plan
 
@@ -329,6 +330,22 @@ async def readback(db: Any, rel: Release) -> dict[str, Any]:
     ]
     extra = sorted(set(snap["defs"]) - set(rel.defs))
     return {"ok": not bad and not extra, "mismatch": sorted(bad), "unexpected": extra}
+
+
+class BaseMovedError(RuntimeError):
+    """The live release is no longer the one the change was staged on (another change,
+    or a rollback, went on the air since): its lineup and generation were built against
+    another base, so applying it would undo what went live. Re-stage it."""
+
+
+def _check_base(ch: Any, route: Any) -> None:
+    base = ch.row.get("base_release_id")
+    live = None if route is None else route["live_release_id"]
+    if str(base or "") != str(live or ""):
+        raise BaseMovedError(
+            f"base_release_moved: the change was staged on release {base or 'none'}, the live"
+            f" release is {live or 'none'}; stage it again"
+        )
 
 
 async def commit_change(
@@ -350,11 +367,14 @@ async def commit_change(
     wait = str(ch.row.get("swap_wait") or cfg.swap_wait or "boundary")
     max_wait = timedelta(minutes=int(cfg.boundary_max_wait_minutes))
     try:
+        # before the re-anchor writes anything (and again under the lock below)
+        _check_base(ch, await db.fetchrow("SELECT * FROM tv_routing WHERE scope = 'cluster'"))
         moved = await reanchor(db, rel, at=clock, pending=pending, clock=clock)
         stamp = to_ts(db, clock)
         async with db.transaction():
             await _lock(db)
             route = await db.fetchrow("SELECT * FROM tv_routing WHERE scope = 'cluster'")
+            _check_base(ch, route)  # again under the swap lock
             old_rel = None if route is None else route["live_release_id"]
             old_gen = 0 if route is None else int(route["live_gen"] or 0)
             epoch = 0 if route is None else int(route["epoch"] or 0)

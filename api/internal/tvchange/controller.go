@@ -344,10 +344,40 @@ func (c *Controller) startSwap(ctx context.Context, ch *Change, action string, d
 		if action == ActionAutoPromote {
 			prev = StateReady
 		}
-		_, _ = c.DB.ExecContext(ctx, `UPDATE tv_changes SET state = $2 WHERE id = $1 AND state = 'swapping'`, ch.ID, prev)
+		c.revertSwapStart(ctx, ch.ID, prev, action, nil, err)
 		return err
 	}
 	return nil
+}
+
+// ActionSwapNotStarted: the swap job could not be enqueued; the change went back
+// to where it was (the event reverts the swapping one in the history and the
+// notification feed: nothing went on the air).
+const ActionSwapNotStarted = "swap_not_started"
+
+// revertSwapStart puts a change whose swap job could not be enqueued back to
+// prev, with an event that says so (the swapping event before it stays in the
+// history, followed by this one: the feed sees swapping -> prev, never a swap).
+func (c *Controller) revertSwapStart(ctx context.Context, id, prev, action string, actor *string, cause error) {
+	tx, err := c.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.ExecContext(ctx, `UPDATE tv_changes SET state = $2 WHERE id = $1 AND state = 'swapping'`, id, prev)
+	if err != nil {
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return
+	}
+	from, to := StateSwapping, prev
+	if err := c.Store.Event(ctx, tx, id, Event{ActorUserID: actor, ActorSource: actorSource(actor, "controller"),
+		FromState: &from, ToState: &to, Action: ActionSwapNotStarted,
+		Detail: map[string]any{"reverts": action, "error": cause.Error()}}); err != nil {
+		return
+	}
+	_ = tx.Commit()
 }
 
 // Promote is Swap now: an approved change (or a ready one whose rule allows it).
@@ -377,7 +407,7 @@ func (c *Controller) startSwapBy(ctx context.Context, ch *Change, action string,
 		return err
 	}
 	if err := c.Enqueue(ctx, StageTVSwap, map[string]any{"change_id": ch.ID}, "swap TV change"); err != nil {
-		_, _ = c.DB.ExecContext(ctx, `UPDATE tv_changes SET state = $2 WHERE id = $1 AND state = 'swapping'`, ch.ID, prev)
+		c.revertSwapStart(ctx, ch.ID, prev, action, actor, err)
 		return err
 	}
 	return nil
