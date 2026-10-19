@@ -195,3 +195,21 @@ async def test_gc_retention(db: Database) -> None:
     assert out["staged_channels"] == 1 and out["retired_channels"] == 1
     assert out["generations"] >= 1 and await blocks(db, a, rel.sched_gen) == []
     assert await db.fetchval("SELECT count(*) FROM channels WHERE id = $1", new_id) == 0
+
+
+@pytest.mark.asyncio
+async def test_a_new_channel_takes_a_removed_ones_number(db: Database) -> None:
+    """The swap retires removals before it writes additions: a plan that replaces
+    channel 102 by a new 102 goes on the air in one commit."""
+    a, b, _ = await _two_channels(db)
+    new_id = "00000000-0000-0000-0000-00000000a0d2"
+    d = {**await channel_def(db, b), "id": new_id, "slug": "ch-102-new"}
+    cid, rel = await _stage(db, {"channels": {b: None, new_id: d}})
+    await update_change(db, cid, state="swapping")
+    report = await commit_change(db, cid, clock=NOW + timedelta(minutes=1))
+    assert report["lineup"] == {"channels": 2, "added": 1, "retired": 1}
+    assert await db.fetchval("SELECT lifecycle FROM channels WHERE id = $1", b) == "retired"
+    assert await db.fetchval("SELECT number FROM channels WHERE id = $1", new_id) == 102
+    assert await db.fetchval("SELECT lifecycle FROM channels WHERE id = $1", new_id) == "live"
+    assert await blocks(db, new_id, rel.sched_gen)
+    assert a in rel.defs

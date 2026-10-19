@@ -57,6 +57,18 @@ async def _apply_lineup(db: Any, rel: Release, stamp: Any) -> dict[str, int]:
                 -(i + 1),
                 f"~swap-{cid}",
             )
+    # removals first: a new channel may take a removed one's number
+    retired = 0
+    for cid, life in have.items():
+        if life == "live" and cid not in rel.defs:
+            retired += 1
+            await db.execute(
+                "UPDATE channels SET lifecycle = 'retired', retired_at = $2, enabled = $3,"
+                " updated_at = $2 WHERE id = $1",
+                cid,
+                stamp,
+                False if is_pg(db) else 0,
+            )
     added = 0
     for cid in ids:
         d = rel.defs[cid]
@@ -89,17 +101,6 @@ async def _apply_lineup(db: Any, rel: Release, stamp: Any) -> dict[str, int]:
                 " $14,'live')",
                 cid,
                 *vals,
-            )
-    retired = 0
-    for cid, life in have.items():
-        if life == "live" and cid not in rel.defs:
-            retired += 1
-            await db.execute(
-                "UPDATE channels SET lifecycle = 'retired', retired_at = $2, enabled = $3,"
-                " updated_at = $2 WHERE id = $1",
-                cid,
-                stamp,
-                False if is_pg(db) else 0,
             )
     return {"channels": len(ids), "added": added, "retired": retired}
 
