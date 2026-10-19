@@ -213,7 +213,11 @@ describe("VideoDetail (test-cases/video-detail.md)", () => {
     renderVideo();
     await openTab("Metadata");
     expect(await screen.findByText("No suggestions")).toBeInTheDocument();
-    expect(screen.getByText("Nothing found yet. Search with your own words, or search again from what Maktaba knows about this video.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Nothing found yet. Search with your own words, or search again from what Maktaba knows about this video."
+      )
+    ).toBeInTheDocument();
   });
 
   it("VID-04: a candidate with fields null shows the headline but no diff; search null is empty", async () => {
