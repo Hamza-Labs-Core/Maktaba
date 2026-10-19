@@ -2,12 +2,15 @@ package queues
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lib/pq"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
@@ -33,6 +36,8 @@ type logFilter struct {
 	Before    int64 // keyset: only rows with id < Before
 	Limit     int   // rows to fetch (callers add 1 to detect "more")
 	Asc       bool
+	// Scope limits the rows to these libraries (libraryScope: nil = all).
+	Scope any
 }
 
 // logLines reads job_events with subject labels.
@@ -54,6 +59,10 @@ func (h *Handler) logLines(ctx context.Context, f logFilter) ([]LogLine, error) 
 	}
 	if f.JobID > 0 {
 		add(`e.job_id = $`, f.JobID)
+	}
+	if f.Scope != nil {
+		args = append(args, f.Scope)
+		q += ` AND e.library_id = ANY($` + strconv.Itoa(len(args)) + `::uuid[])`
 	}
 	if levels, ok := levelsFrom(f.MinLevel); ok && f.MinLevel != "debug" {
 		args = append(args, pq.Array(levels))
@@ -124,6 +133,11 @@ func (h *Handler) Activity(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.InvalidQuery("library_id must be a uuid"))
 		return
 	}
+	p := principal.FromContext(r.Context())
+	if lib != "" && !canReadLibrary(p, lib) {
+		httperror.Write(w, r, httperror.NotFound("library "+lib))
+		return
+	}
 	before, ok := parseCursor(q.Get("cursor"))
 	if !ok {
 		httperror.Write(w, r, httperror.InvalidQuery("cursor must be an event id"))
@@ -131,6 +145,7 @@ func (h *Handler) Activity(w http.ResponseWriter, r *http.Request) {
 	}
 	items, err := h.logLines(r.Context(), logFilter{
 		Stage: q.Get("stage"), LibraryID: lib, MinLevel: level, Before: before, Limit: limit + 1,
+		Scope: libraryScope(p),
 	})
 	if err != nil {
 		writeErr(w, r, "activity", err)
@@ -156,6 +171,25 @@ func (h *Handler) JobEvents(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || id <= 0 {
 		httperror.Write(w, r, httperror.InvalidQuery("job id must be a positive integer"))
+		return
+	}
+	// The job's library decides, as for GET /api/jobs/{id}: unknown,
+	// another library's or a library-less job (admin only) is 404.
+	var lib sql.NullString
+	if err := h.DB.QueryRowContext(r.Context(), `SELECT library_id::text FROM processing_jobs WHERE id = $1`, id).Scan(&lib); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			httperror.Write(w, r, httperror.NotFound("job "+strconv.FormatInt(id, 10)))
+			return
+		}
+		writeErr(w, r, "job events", err)
+		return
+	}
+	var libPtr *string
+	if lib.Valid {
+		libPtr = &lib.String
+	}
+	if !canSeeLibraryOf(principal.FromContext(r.Context()), libPtr) {
+		httperror.Write(w, r, httperror.NotFound("job "+strconv.FormatInt(id, 10)))
 		return
 	}
 	items, err := h.logLines(r.Context(), logFilter{JobID: id, MinLevel: "debug", Limit: jobEventsCap, Asc: true})

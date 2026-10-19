@@ -110,8 +110,13 @@ type AddItemsRequest struct {
 }
 
 // ListPools returns every pool (optionally scoped to a channel) with its
-// items. A nil channel_id query returns all pools.
+// items. A nil channel_id query returns all pools. Admin-only, like the
+// pool writes: it lists videos of every library and the TV change draft,
+// and only the admin pages (filler pools, channel editor) read it.
 func (h *Handler) ListPools(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
 	channelID := strings.TrimSpace(r.URL.Query().Get("channel_id"))
 	if h.staging(r.Context()) {
 		if dr := h.editorDraft(r.Context()); dr != nil {

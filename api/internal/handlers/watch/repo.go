@@ -342,13 +342,13 @@ func (r *repo) setPrefs(ctx context.Context, userID string, enabled bool, now ti
 	return err
 }
 
-// videoExists reports whether a video id is present (start validation).
-func (r *repo) videoExists(ctx context.Context, videoID string) (bool, error) {
-	var one int
-	err := r.db.QueryRowContext(ctx,
-		`SELECT 1 FROM videos WHERE id = $1`, videoID).Scan(&one)
+// videoLibrary returns the library of a video (start validation); found
+// is false for an unknown id.
+func (r *repo) videoLibrary(ctx context.Context, videoID string) (libraryID string, found bool, err error) {
+	err = r.db.QueryRowContext(ctx,
+		`SELECT library_id FROM videos WHERE id = $1`, videoID).Scan(&libraryID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
+		return "", false, nil
 	}
-	return err == nil, err
+	return libraryID, err == nil, err
 }

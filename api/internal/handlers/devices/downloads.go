@@ -30,6 +30,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
@@ -137,6 +138,21 @@ func (h *Handler) SetDownloaded(w http.ResponseWriter, r *http.Request) {
 	vid, ok := videoID(r)
 	if !ok {
 		httperror.Write(w, r, httperror.BadRequest("malformed video_id"))
+		return
+	}
+	// The video must exist and sit in a library the caller can read; a
+	// hidden one is not found, like an unknown one.
+	var libraryID string
+	if err := h.DB.QueryRowContext(r.Context(), `SELECT library_id FROM videos WHERE id = $1`, vid).Scan(&libraryID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			httperror.Write(w, r, httperror.NotFound("video "+vid))
+			return
+		}
+		httperror.Write(w, r, httperror.Internal("load video"))
+		return
+	}
+	if !videos.CanRead(principal.FromContext(r.Context()), libraryID) {
+		httperror.Write(w, r, httperror.NotFound("video "+vid))
 		return
 	}
 	var req DownloadedRequest

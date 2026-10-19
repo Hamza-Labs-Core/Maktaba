@@ -11,10 +11,13 @@ package speakers
 
 import (
 	"database/sql"
+	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
@@ -47,13 +50,55 @@ func (h *Handler) Mount(r chi.Router) {
 }
 
 // List returns speakers, optionally filtered by ?video_id.
+//
+// Library visibility (the videos rule): ?video_id of a video the caller
+// cannot read is 404; without it, a caller who does not read every
+// library sees only the speakers of videos in its libraries.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
+	p := principal.FromContext(r.Context())
+	if p == nil {
+		httperror.Write(w, r, httperror.Forbidden("", "auth required"))
+		return
+	}
+	full := p.IsAdmin || p.AccessAllLibraries
 	q := r.URL.Query()
 	args := []any{}
-	where := ""
+	conds := []string{}
 	if v := q.Get("video_id"); v != "" {
-		where = " WHERE video_id = $1"
+		if _, err := uuid.Parse(v); err != nil {
+			httperror.Write(w, r, httperror.BadRequest("video_id must be a uuid"))
+			return
+		}
+		if !full {
+			var lib string
+			err := h.DB.QueryRowContext(r.Context(), `SELECT library_id FROM videos WHERE id = $1`, v).Scan(&lib)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				httperror.Write(w, r, httperror.Internal("load video"))
+				return
+			}
+			if err != nil || !p.HasLibrary(lib) {
+				httperror.Write(w, r, httperror.NotFound("video "+v))
+				return
+			}
+		}
 		args = append(args, v)
+		conds = append(conds, "video_id = $"+strconv.Itoa(len(args)))
+	}
+	if !full {
+		if len(p.Libraries) == 0 {
+			common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": []Speaker{}})
+			return
+		}
+		ph := make([]string, len(p.Libraries))
+		for i, l := range p.Libraries {
+			args = append(args, l)
+			ph[i] = "$" + strconv.Itoa(len(args))
+		}
+		conds = append(conds, "video_id IN (SELECT id FROM videos WHERE library_id IN ("+strings.Join(ph, ",")+"))")
+	}
+	where := ""
+	if len(conds) > 0 {
+		where = " WHERE " + strings.Join(conds, " AND ")
 	}
 	rows, err := h.DB.QueryContext(r.Context(),
 		"SELECT id, video_id, cluster_label, name FROM speakers"+where+" ORDER BY name", args...)

@@ -159,7 +159,8 @@ func (e *pgEnv) seed() {
 	e.exec(`INSERT INTO speakers (id, video_id, name, cluster_label) VALUES ($1,$2,'Shaykh','c1'), ($3,$2,'Unknown 2','c2')`, spkKeep, videoA1, spkDrop)
 	e.exec(`INSERT INTO playback_state (user_id, video_id, position_sec, completed, updated_at) VALUES ($1,$2,30,false,$3)`, memberID, videoA1, now)
 	e.exec(`INSERT INTO streaming_sessions (id, user_id, video_id, mode, opened_at, last_seen_at) VALUES ($1,$2,$3,'direct',$4,$4)`, sessID, memberID, videoA1, now)
-	e.exec(`INSERT INTO search_history (query, query_norm) VALUES ('patience','patience')`)
+	// the member's own search history (suggestions are per user)
+	e.exec(`INSERT INTO search_history (user_id, query, query_norm) VALUES ($1,'patience','patience')`, memberID)
 }
 
 // gql posts one operation as who and returns the HTTP status and body.
@@ -348,7 +349,10 @@ func cases() []fieldCase {
 		{"searchSuggest", func(t *testing.T, e *pgEnv) {
 			q := `{ searchSuggest(q: "pat") }`
 			unauthorized(t, e, q, nil)
-			// REST serves suggestions to every signed-in user.
+			// REST serves each signed-in user their own suggestions.
+			if got := e.ok(admin, "searchSuggest", q, nil).([]any); len(got) != 0 {
+				t.Fatalf("admin sees the member's history: %v", got)
+			}
 			if got := e.ok(member, "searchSuggest", q, nil).([]any); len(got) != 1 || got[0] != "patience" {
 				t.Fatalf("suggest = %v", got)
 			}

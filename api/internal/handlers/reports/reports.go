@@ -35,6 +35,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -358,6 +359,13 @@ func (h *Handler) Thumbnail(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.NotFound("thumbnail not found"))
 		return
 	}
+	// The hash is a video's content_hash, which is not secret: a caller
+	// who does not read every library needs a video with that hash in one
+	// of its libraries.
+	if !h.thumbVisible(r, hash) {
+		httperror.Write(w, r, httperror.NotFound("thumbnail not found"))
+		return
+	}
 	path := filepath.Join(root, hash, "small.jpg")
 	info, err := os.Lstat(path)
 	if err != nil || !info.Mode().IsRegular() {
@@ -376,14 +384,46 @@ func (h *Handler) Thumbnail(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, "small.jpg", info.ModTime(), f)
 }
 
+// thumbVisible reports whether the caller may see the thumbnail of the
+// videos whose content_hash is hash.
+func (h *Handler) thumbVisible(r *http.Request, hash string) bool {
+	p := principal.FromContext(r.Context())
+	if p == nil {
+		return false
+	}
+	if p.IsAdmin || p.AccessAllLibraries {
+		return true
+	}
+	if h.DB == nil || len(p.Libraries) == 0 {
+		return false
+	}
+	args := []any{hash}
+	ph := make([]string, len(p.Libraries))
+	for i, l := range p.Libraries {
+		args = append(args, l)
+		ph[i] = "$" + strconv.Itoa(len(args))
+	}
+	var one int
+	err := h.DB.QueryRowContext(r.Context(),
+		`SELECT 1 FROM videos WHERE content_hash = $1 AND library_id IN (`+strings.Join(ph, ",")+`) LIMIT 1`,
+		args...).Scan(&one)
+	return err == nil
+}
+
 func (h *Handler) previewer() pipeline.PlanPreviewer {
 	p, _ := h.Pipeline.(pipeline.PlanPreviewer)
 	return p
 }
 
-// PreviewStatus implements GET /api/reports/channel-plan/preview.
+// PreviewStatus implements GET /api/reports/channel-plan/preview. The
+// channel plan spans every library, so (as canSee rules for the plan
+// pages) only an admin or an all-libraries caller sees it; others 404.
 func (h *Handler) PreviewStatus(w http.ResponseWriter, r *http.Request) {
 	if !requireAuth(w, r) {
+		return
+	}
+	if pr := principal.FromContext(r.Context()); !pr.IsAdmin && !pr.AccessAllLibraries {
+		httperror.Write(w, r, httperror.NotFound("channel plan preview"))
 		return
 	}
 	p := h.previewer()

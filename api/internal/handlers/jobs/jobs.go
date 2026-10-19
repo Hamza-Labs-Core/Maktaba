@@ -101,7 +101,25 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal(err.Error()))
 		return
 	}
+	// A job of a library the caller cannot read (or of no library: a
+	// catalog job, admin only) is not found, like an unknown id.
+	if !canSeeJob(principal.FromContext(r.Context()), j.LibraryID) {
+		httperror.Write(w, r, httperror.NotFound("job "+id))
+		return
+	}
 	common.WriteJSON(w, r, http.StatusOK, j)
+}
+
+// canSeeJob: admins and all-library callers see every job; others only
+// jobs of a library they were granted (never a library-less job).
+func canSeeJob(p *principal.Principal, libraryID *string) bool {
+	if p == nil {
+		return false
+	}
+	if p.IsAdmin || p.AccessAllLibraries {
+		return true
+	}
+	return libraryID != nil && p.HasLibrary(*libraryID)
 }
 
 // List supports a thin filter set for the queue UI:
@@ -122,8 +140,27 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	if limit > 200 {
 		limit = 200
 	}
+	p := principal.FromContext(r.Context())
+	if p == nil {
+		httperror.Write(w, r, httperror.Forbidden("", "auth required"))
+		return
+	}
 	conds := []string{}
 	args := []any{}
+	// Library scope: a caller without every library sees only the jobs of
+	// the libraries granted to it (no library-less jobs).
+	if !p.IsAdmin && !p.AccessAllLibraries {
+		if len(p.Libraries) == 0 {
+			common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": []Job{}, "next": nil})
+			return
+		}
+		ph := make([]string, len(p.Libraries))
+		for i, l := range p.Libraries {
+			ph[i] = "$" + strconv.Itoa(len(args)+1)
+			args = append(args, l)
+		}
+		conds = append(conds, "library_id IN ("+strings.Join(ph, ",")+")")
+	}
 	if v := r.URL.Query().Get("stage"); v != "" {
 		conds = append(conds, "stage = $"+strconv.Itoa(len(args)+1))
 		args = append(args, v)

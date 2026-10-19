@@ -74,6 +74,11 @@ func (h *Handler) StatsCached(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.BadRequest("malformed id"))
 		return
 	}
+	// a library the caller cannot read is not found, like an unknown one
+	if !canSeeLibrary(r, id) {
+		httperror.Write(w, r, httperror.NotFound("library "+id))
+		return
+	}
 	if _, err := h.loadLibrary(r.Context(), id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httperror.Write(w, r, httperror.NotFound("library "+id))

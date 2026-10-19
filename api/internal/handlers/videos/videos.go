@@ -116,9 +116,62 @@ type JobControl interface {
 	RollbackToStage(ctx context.Context, videoID, fromStage string, priority int) (jobIDs []string, err error)
 }
 
-// AuditWriter records destructive actions to audit_log.
+// AuditWriter records the video mutations to audit_log.
 type AuditWriter interface {
 	Write(ctx context.Context, category, action, actorUser, targetID string, payload map[string]any) error
+}
+
+// Video audit actions (category 'library', target = the video id, the
+// video's library_id in the payload).
+const (
+	AuditVideoPatched     = "video-patched"
+	AuditVideoDeleted     = "video-deleted"
+	AuditVideoPurged      = "video-purge"
+	AuditVideoProcessed   = "video-process"
+	AuditVideoReprocessed = "video-reprocess"
+)
+
+// DBAudit is the production AuditWriter: one best-effort audit_log row.
+type DBAudit struct{ DB *sql.DB }
+
+// Write inserts the row. A non-UUID actor is stored as NULL (the column
+// references users).
+func (a DBAudit) Write(ctx context.Context, category, action, actorUser, targetID string, payload map[string]any) error {
+	if a.DB == nil {
+		return nil
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	var actor any
+	if _, perr := uuid.Parse(actorUser); perr == nil {
+		actor = actorUser
+	}
+	_, err = a.DB.ExecContext(ctx, `
+		INSERT INTO audit_log (category, action, actor_user_id, target_id, payload)
+		VALUES ($1, $2, $3, $4, $5)
+	`, category, action, actor, targetID, string(b))
+	return err
+}
+
+// audit writes one video audit row; a failed write never fails the
+// request (it is logged).
+func (h *Handler) audit(r *http.Request, action string, v Video, payload map[string]any) {
+	if h.Audit == nil {
+		return
+	}
+	actor := ""
+	if p := principal.FromContext(r.Context()); p != nil {
+		actor = p.UserID
+	}
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	payload["library_id"] = v.LibraryID
+	if err := h.Audit.Write(r.Context(), "library", action, actor, v.ID, payload); err != nil {
+		slog.Warn("videos: audit row not written", "video", v.ID, "action", action, "err", err.Error())
+	}
 }
 
 // Mount attaches the routes on r.
@@ -407,6 +460,14 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	fields := []string{}
+	for _, k := range []string{"title", "description", "display_title", "tags"} {
+		if _, ok := raw[k]; ok {
+			fields = append(fields, k)
+		}
+	}
+	h.audit(r, AuditVideoPatched, v, map[string]any{"fields": fields})
+
 	v2, _ := h.loadVideo(r.Context(), id)
 	h.loadDisplay(r.Context(), &v2)
 	common.WriteJSON(w, r, http.StatusOK, v2)
@@ -461,13 +522,9 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 				warn = "file-not-found"
 			}
 		}
-		if h.Audit != nil {
-			actor := ""
-			if p := principal.FromContext(r.Context()); p != nil {
-				actor = p.UserID
-			}
-			_ = h.Audit.Write(r.Context(), "library", "video-purge", actor, id, map[string]any{"path": v.Path})
-		}
+		h.audit(r, AuditVideoPurged, v, map[string]any{"path": v.Path, "file_missing": warn != ""})
+	} else {
+		h.audit(r, AuditVideoDeleted, v, map[string]any{"path": v.Path})
 	}
 	if warn != "" {
 		w.Header().Set("Maktaba-Warning", warn)
@@ -511,6 +568,7 @@ func (h *Handler) Process(w http.ResponseWriter, r *http.Request) {
 		prio = 50
 	}
 	if h.JobQ == nil {
+		h.audit(r, AuditVideoProcessed, v, map[string]any{"stage": stage, "priority": prio, "job_id": ""})
 		common.WriteJSON(w, r, http.StatusOK, map[string]any{"job_id": "", "note": "no-op (no enqueuer)"})
 		return
 	}
@@ -519,6 +577,7 @@ func (h *Handler) Process(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("enqueue: "+err.Error()))
 		return
 	}
+	h.audit(r, AuditVideoProcessed, v, map[string]any{"stage": stage, "priority": prio, "job_id": jobID})
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"job_id": jobID})
 }
 
@@ -561,6 +620,7 @@ func (h *Handler) Reprocess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.JobQ == nil {
+		h.audit(r, AuditVideoReprocessed, v, map[string]any{"from_stage": req.FromStage, "job_ids": []string{}})
 		common.WriteJSON(w, r, http.StatusOK, map[string]any{"job_ids": []string{}})
 		return
 	}
@@ -569,6 +629,7 @@ func (h *Handler) Reprocess(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("reprocess: "+err.Error()))
 		return
 	}
+	h.audit(r, AuditVideoReprocessed, v, map[string]any{"from_stage": req.FromStage, "job_ids": ids})
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"job_ids": ids})
 }
 

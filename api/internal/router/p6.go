@@ -11,6 +11,7 @@ package router
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"os"
 	"time"
@@ -147,7 +148,8 @@ func MountP6(r chi.Router, d P6Deps) {
 	// Phase 8 / Story 9.17: surfaced library audit feed.
 	libHandler.MountAudit(r)
 
-	videoHandler := &videos.Handler{DB: d.DB}
+	// Video patch, delete, process and reprocess write audit rows.
+	videoHandler := &videos.Handler{DB: d.DB, Audit: videos.DBAudit{DB: d.DB}}
 	// Story 27.11: a display title set by hand reaches the channels' future
 	// blocks through the library's display_title stage.
 	videoHandler.DisplayTitleRefresh = func(ctx context.Context, libraryID string) error {
@@ -268,6 +270,17 @@ func MountP6(r chi.Router, d P6Deps) {
 	devHandler.MountDownloads(r)
 
 	wsHandler := &ws.Handler{Hub: hub, Settings: runtimeSettings}
+	// Per-subscriber visibility: /ws/jobs and /ws/queues frames are kept to
+	// the caller's libraries, /ws/playback/{video_id} needs the video's.
+	wsHandler.Filter = queues.FilterEvent
+	wsHandler.VideoLibrary = func(ctx context.Context, id string) (string, error) {
+		var lib string
+		err := d.DB.QueryRowContext(ctx, `SELECT library_id FROM videos WHERE id = $1`, id).Scan(&lib)
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil
+		}
+		return lib, err
+	}
 	// Cross-replica WS event bus (Epic 19 Story 19.2 / HLB-353).
 	// When a DSN + ctx are supplied, every replica appends events to
 	// the durable slot-0061 `events` table; the slot-0061 trigger
@@ -317,6 +330,13 @@ func MountP6(r chi.Router, d P6Deps) {
 	// subscriptions read this hub. GET /graphql is the
 	// graphql-transport-ws upgrade.
 	gqlHandler := graphql.NewHandlerFromEnv(graphql.NewResolvers(r, d.DB, hub))
+	// Persisted queries (AC-5): the slot-0140 store; allowlist mode is the
+	// graphql.persisted_only runtime setting (default off).
+	gqlHandler.Persisted = graphql.NewPersistedStore(d.DB)
+	gqlHandler.PersistedOnly = func(ctx context.Context) bool {
+		on, _ := runtimeSettings.Bool(ctx, runtimecfg.GraphQLPersistedOnly)
+		return on
+	}
 	r.Method(http.MethodPost, "/graphql", gqlHandler)
 	r.Method(http.MethodGet, "/graphql", gqlHandler)
 	r.Method(http.MethodGet, "/graphql/schema", gqlHandler)

@@ -18,7 +18,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 
@@ -60,11 +59,34 @@ func (h *Handler) LiveItems(
 	cursor int,
 	limit int,
 ) ([]CollectionItem, int, error) {
+	return h.LiveItemsFor(ctx, &principal.Principal{AccessAllLibraries: true}, c, cursor, limit)
+}
+
+// LiveItemsFor is LiveItems for caller p: a smart query may name another
+// library (smart_query.library_id), so the items are kept to the
+// libraries p can read, the rule videos use.
+func (h *Handler) LiveItemsFor(
+	ctx context.Context,
+	p *principal.Principal,
+	c Collection,
+	cursor int,
+	limit int,
+) ([]CollectionItem, int, error) {
 	filter, err := parseSmartQuery(c.SmartQuery, c.LibraryID)
 	if err != nil {
 		return nil, 0, err
 	}
 	q, args := buildSmartSQL(filter, cursor, limit)
+	frag, fargs, none := libraryScope(p, "library_id", len(args)+1)
+	if none {
+		return []CollectionItem{}, 0, nil
+	}
+	if frag != "" {
+		// the scope wraps the ranked query so ROW_NUMBER positions stay
+		// the smart query's own
+		q = "SELECT id, rn FROM (SELECT ranked.*, v.library_id FROM (" + q + ") AS ranked(id, rn) JOIN videos v ON v.id = ranked.id) AS scoped WHERE " + frag + " ORDER BY rn"
+		args = append(args, fargs...)
+	}
 	rows, err := h.DB.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, 0, err
@@ -88,25 +110,14 @@ func (h *Handler) LiveItems(
 // Freeze implements AC-3: materialise the smart query's current items
 // into “collection_items“ and flip “is_smart=false“.
 func (h *Handler) Freeze(w http.ResponseWriter, r *http.Request) {
-	p := principal.FromContext(r.Context())
-	if p == nil || !p.IsAdmin {
-		httperror.Write(w, r, httperror.Forbidden("", "admin-only"))
+	id := chi.URLParam(r, "id")
+	c, p, ok := h.writableCollection(w, r, id)
+	if !ok {
 		return
 	}
-	id := chi.URLParam(r, "id")
 	freeze := strings.EqualFold(r.URL.Query().Get("freeze"), "true")
 	if !freeze {
 		httperror.Write(w, r, httperror.BadRequest("missing ?freeze=true"))
-		return
-	}
-
-	c, err := h.loadCollection(r, id)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			httperror.Write(w, r, httperror.NotFound("collection "+id))
-			return
-		}
-		httperror.Write(w, r, httperror.Internal("load: "+err.Error()))
 		return
 	}
 	if !c.IsSmart {
@@ -114,7 +125,7 @@ func (h *Handler) Freeze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, _, err := h.LiveItems(r.Context(), c, 0, 10000)
+	items, _, err := h.LiveItemsFor(r.Context(), p, c, 0, 10000)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("evaluate: "+err.Error()))
 		return
@@ -149,6 +160,7 @@ func (h *Handler) Freeze(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("commit"))
 		return
 	}
+	h.audit(r, p, "collection-frozen", c.LibraryID, map[string]any{"collection_id": id, "item_count": len(items)})
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{
 		"frozen":     true,
 		"item_count": len(items),

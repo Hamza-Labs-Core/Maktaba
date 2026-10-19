@@ -39,7 +39,10 @@ func newFixture(rules ...*queuestest.Rule) *fixture {
 	return f
 }
 
-func viewer() *principal.Principal { return &principal.Principal{UserID: "u2"} }
+// viewer reads every library (the summary is then unfiltered).
+func viewer() *principal.Principal {
+	return &principal.Principal{UserID: "u2", AccessAllLibraries: true}
+}
 
 func (f *fixture) get(p *principal.Principal) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, "/api/transcription/summary", nil)
@@ -88,7 +91,7 @@ func rateRule(jobs10 int64, sec10 float64, rtf10 any, jobs60 int64, sec60 float6
 }
 
 func failuresRule(rows ...[]driver.Value) *queuestest.Rule {
-	return &queuestest.Rule{Match: "j.state = 'failed'", Cols: []string{"id", "vid", "title", "lib", "stage", "cause", "err", "fin", "attempts"}, Rows: rows}
+	return &queuestest.Rule{Match: "j.state = 'failed'", Cols: []string{"id", "vid", "title", "lib", "stage", "cause", "err", "fin", "attempts", "lib_id"}, Rows: rows}
 }
 
 func fullRules() []*queuestest.Rule {
@@ -109,8 +112,8 @@ func fullRules() []*queuestest.Rule {
 		liveRule(0, 0, 0),
 		failuresRule(
 			[]driver.Value{int64(901), vid1, "Lesson 1", "Lectures", "transcribe", "gpu_oom",
-				`{"kind":"gpu_oom","message":"CUDA out of memory"}`, t0.Add(-time.Minute), int64(3)},
-			[]driver.Value{int64(902), vid1, "Lesson 1", nil, "index", nil, nil, nil, int64(1)},
+				`{"kind":"gpu_oom","message":"CUDA out of memory"}`, t0.Add(-time.Minute), int64(3), libA},
+			[]driver.Value{int64(902), vid1, "Lesson 1", nil, "index", nil, nil, nil, int64(1), nil},
 		),
 	}
 }
@@ -122,6 +125,23 @@ func TestSummary_NeedsAuth(t *testing.T) {
 	}
 	if n := len(f.db.Calls()); n != 0 {
 		t.Fatalf("anonymous call ran %d statements", n)
+	}
+}
+
+// A caller granted only library A sees A's row and A's failures; a
+// failure with no library is for all-library callers only.
+func TestSummary_ScopedToCallerLibraries(t *testing.T) {
+	f := newFixture(fullRules()...)
+	s := decode(t, f.get(&principal.Principal{UserID: "u3", Libraries: []string{libA}}))
+	if len(s.Libraries) != 1 || s.Libraries[0].LibraryID != libA {
+		t.Errorf("libraries = %+v, want only A", s.Libraries)
+	}
+	if len(s.Failures) != 1 || s.Failures[0].JobID != 901 {
+		t.Errorf("failures = %+v, want only job 901", s.Failures)
+	}
+	none := decode(t, f.get(&principal.Principal{UserID: "u4"}))
+	if len(none.Libraries) != 0 || len(none.Failures) != 0 {
+		t.Errorf("no-library caller sees %+v / %+v", none.Libraries, none.Failures)
 	}
 }
 

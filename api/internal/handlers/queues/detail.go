@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/lib/pq"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
@@ -56,6 +57,7 @@ func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	p := principal.FromContext(ctx)
 	stage := chi.URLParam(r, "stage")
 	info, ok := h.stageOr404(w, r, stage)
 	if !ok {
@@ -96,7 +98,7 @@ func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, "kpis", err)
 		return
 	}
-	lines, err := h.logLines(ctx, logFilter{Stage: stage, MinLevel: "info", Limit: 100})
+	lines, err := h.logLines(ctx, logFilter{Stage: stage, MinLevel: "info", Limit: 100, Scope: libraryScope(p)})
 	if err != nil {
 		writeErr(w, r, "log", err)
 		return
@@ -105,9 +107,10 @@ func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 	if run == nil {
 		run = []JobRef{}
 	}
+	summary.RunningJobs = filterRefs(p, summary.RunningJobs)
 	common.WriteJSON(w, r, http.StatusOK, QueueDetail{
-		Info: info, Summary: summary, KPIs: kpis, Running: run, NextUp: nextUp,
-		Failures: failures, Log: lines,
+		Info: info, Summary: summary, KPIs: kpis, Running: filterRefs(p, run), NextUp: filterRefs(p, nextUp),
+		Failures: scopeFailures(p, failures), Log: lines,
 	})
 }
 
@@ -178,6 +181,11 @@ func (h *Handler) Jobs(w http.ResponseWriter, r *http.Request) {
 
 	args := []any{stage}
 	q := jobRefQuery("") + ` WHERE j.stage = $1`
+	if scope := libraryScope(principal.FromContext(r.Context())); scope != nil {
+		// a caller without every library lists only its libraries' jobs
+		args = append(args, scope)
+		q += ` AND j.library_id = ANY($` + strconv.Itoa(len(args)) + `::uuid[])`
+	}
 	if len(states) > 0 {
 		args = append(args, pq.Array(states))
 		q += ` AND j.state = ANY($` + strconv.Itoa(len(args)) + `::text[])`

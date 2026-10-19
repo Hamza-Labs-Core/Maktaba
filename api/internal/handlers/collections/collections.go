@@ -28,6 +28,8 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/libraries"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
@@ -106,7 +108,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			continue
 		}
-		if !p.AccessAllLibraries && !p.HasLibrary(c.LibraryID) {
+		if !videos.CanRead(p, c.LibraryID) {
 			continue
 		}
 		items = append(items, c)
@@ -135,6 +137,15 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{{Field: "library_id", Message: "required"}}))
 		return
 	}
+	var libExists int
+	if err := h.DB.QueryRowContext(r.Context(), `SELECT 1 FROM libraries WHERE id = $1`, req.LibraryID).Scan(&libExists); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{{Field: "library_id", Message: "unknown library"}}))
+			return
+		}
+		httperror.Write(w, r, httperror.Internal("load library"))
+		return
+	}
 	id := uuid.NewString()
 	now := h.now()
 	smartQ := req.SmartQuery
@@ -157,39 +168,117 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("create: "+err.Error()))
 		return
 	}
+	h.audit(r, p, "collection-created", req.LibraryID, map[string]any{"collection_id": id, "name": req.Name, "is_smart": req.IsSmart})
 	common.WriteJSON(w, r, http.StatusCreated, Collection{
 		ID: id, LibraryID: req.LibraryID, Name: req.Name,
 		IsSmart: req.IsSmart, SmartQuery: smartQ, CreatedAt: now, UpdatedAt: now,
 	})
 }
 
-// Get returns one collection.
+// Get returns one collection. A collection in a library the caller
+// cannot read is 404, the same as an unknown id.
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	c, err := h.loadCollection(r, id)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			httperror.Write(w, r, httperror.NotFound("collection "+id))
-			return
-		}
-		httperror.Write(w, r, httperror.Internal("load: "+err.Error()))
+	c, ok := h.visibleCollection(w, r, chi.URLParam(r, "id"))
+	if !ok {
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, c)
 }
 
-// Patch updates fields + optionally replaces the items list.
-func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
+// visibleCollection loads the collection and checks the caller may read
+// its library (videos.CanRead, the rule videos use). It writes the
+// 400/404/500 and returns false when not.
+func (h *Handler) visibleCollection(w http.ResponseWriter, r *http.Request, id string) (Collection, bool) {
+	p := principal.FromContext(r.Context())
+	if p == nil {
+		httperror.Write(w, r, httperror.Forbidden("", "auth required"))
+		return Collection{}, false
+	}
+	if _, err := uuid.Parse(id); err != nil {
+		httperror.Write(w, r, httperror.BadRequest("malformed id"))
+		return Collection{}, false
+	}
+	c, err := h.loadCollection(r, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			httperror.Write(w, r, httperror.NotFound("collection "+id))
+			return Collection{}, false
+		}
+		httperror.Write(w, r, httperror.Internal("load: "+err.Error()))
+		return Collection{}, false
+	}
+	if !videos.CanRead(p, c.LibraryID) {
+		httperror.Write(w, r, httperror.NotFound("collection "+id))
+		return Collection{}, false
+	}
+	return c, true
+}
+
+// writableCollection is the admin role check (collection writes are
+// admin-only, Story 10.13 v1) plus visibleCollection.
+func (h *Handler) writableCollection(w http.ResponseWriter, r *http.Request, id string) (Collection, *principal.Principal, bool) {
 	p := principal.FromContext(r.Context())
 	if p == nil || !p.IsAdmin {
 		httperror.Write(w, r, httperror.Forbidden("", "admin-only"))
+		return Collection{}, nil, false
+	}
+	c, ok := h.visibleCollection(w, r, id)
+	return c, p, ok
+}
+
+// checkItemsVisible refuses video ids that are malformed, unknown or in a
+// library the caller cannot read: one 422 field error each, worded the
+// same for unknown and hidden so a hidden video does not leak.
+func (h *Handler) checkItemsVisible(r *http.Request, p *principal.Principal, ids []string) *httperror.Error {
+	var bad []httperror.FieldError
+	for i, vid := range ids {
+		field := "items[" + itoa(i) + "].video_id"
+		if _, err := uuid.Parse(vid); err != nil {
+			bad = append(bad, httperror.FieldError{Field: field, Message: "malformed id"})
+			continue
+		}
+		var lib string
+		err := h.DB.QueryRowContext(r.Context(), `SELECT library_id FROM videos WHERE id = $1`, vid).Scan(&lib)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return httperror.Internal("load video")
+		}
+		if err != nil || !videos.CanRead(p, lib) {
+			bad = append(bad, httperror.FieldError{Field: field, Message: "unknown video"})
+		}
+	}
+	if len(bad) > 0 {
+		return httperror.Unprocessable(bad)
+	}
+	return nil
+}
+
+// audit writes a best-effort category='library' audit row for a
+// collection mutation, targeted at the collection's library.
+func (h *Handler) audit(r *http.Request, p *principal.Principal, event, libraryID string, payload map[string]any) {
+	libraries.WriteAudit(r.Context(), h.DB, event, libraries.ActorOf(p), libraryID, payload)
+}
+
+// Patch updates fields + optionally replaces the items list.
+func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	c0, p, ok := h.writableCollection(w, r, id)
+	if !ok {
 		return
 	}
-	id := chi.URLParam(r, "id")
 	var req PatchRequest
 	if e := common.ReadJSON(r, &req, 64<<10); e != nil {
 		httperror.Write(w, r, e)
 		return
+	}
+	if req.Items != nil {
+		vids := make([]string, len(req.Items))
+		for i, it := range req.Items {
+			vids[i] = it.VideoID
+		}
+		if e := h.checkItemsVisible(r, p, vids); e != nil {
+			httperror.Write(w, r, e)
+			return
+		}
 	}
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
@@ -249,22 +338,26 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("commit"))
 		return
 	}
+	h.audit(r, p, "collection-patched", c0.LibraryID, map[string]any{
+		"collection_id": id, "name": req.Name != nil, "description": req.Description != nil,
+		"smart_query": len(req.SmartQuery) > 0, "items": len(req.Items),
+	})
 	c, _ := h.loadCollection(r, id)
 	common.WriteJSON(w, r, http.StatusOK, c)
 }
 
 // Delete drops the row + cascade.
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
-	p := principal.FromContext(r.Context())
-	if p == nil || !p.IsAdmin {
-		httperror.Write(w, r, httperror.Forbidden("", "admin-only"))
+	id := chi.URLParam(r, "id")
+	c, p, ok := h.writableCollection(w, r, id)
+	if !ok {
 		return
 	}
-	id := chi.URLParam(r, "id")
 	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM collections WHERE id=$1`, id); err != nil {
 		httperror.Write(w, r, httperror.Internal("delete"))
 		return
 	}
+	h.audit(r, p, "collection-deleted", c.LibraryID, map[string]any{"collection_id": id, "name": c.Name})
 	common.WriteNoContent(w)
 }
 
@@ -280,15 +373,11 @@ type CollectionItem struct {
 // (Epic 9 Story 9.14 owns the live evaluation).
 func (h *Handler) GetItems(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	c, err := h.loadCollection(r, id)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			httperror.Write(w, r, httperror.NotFound("collection "+id))
-			return
-		}
-		httperror.Write(w, r, httperror.Internal("load: "+err.Error()))
+	c, ok := h.visibleCollection(w, r, id)
+	if !ok {
 		return
 	}
+	p := principal.FromContext(r.Context())
 	if c.IsSmart {
 		// Story 9.14 AC-2: live evaluation via the shared resolver.
 		// `smart_query` is the same filter shape as a saved search, so
@@ -305,7 +394,7 @@ func (h *Handler) GetItems(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, e)
 			return
 		}
-		items, next, err := h.LiveItems(r.Context(), c, cursor, limit)
+		items, next, err := h.LiveItemsFor(r.Context(), p, c, cursor, limit)
 		if err != nil {
 			common.WriteJSON(w, r, http.StatusOK, map[string]any{
 				"items":   []CollectionItem{},
@@ -320,10 +409,23 @@ func (h *Handler) GetItems(w http.ResponseWriter, r *http.Request) {
 		common.WriteJSON(w, r, http.StatusOK, out)
 		return
 	}
-	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT video_id, position, added_at FROM collection_items
-		WHERE collection_id=$1 ORDER BY position ASC, video_id ASC
-	`, id)
+	// Only the items whose video sits in a library the caller can read: a
+	// collection may hold videos of other libraries.
+	q := `SELECT ci.video_id, ci.position, ci.added_at FROM collection_items ci
+		JOIN videos v ON v.id = ci.video_id
+		WHERE ci.collection_id = $1`
+	args := []any{id}
+	frag, fargs, none := libraryScope(p, "v.library_id", len(args)+1)
+	if none {
+		common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": []CollectionItem{}})
+		return
+	}
+	if frag != "" {
+		q += " AND " + frag
+		args = append(args, fargs...)
+	}
+	q += " ORDER BY ci.position ASC, ci.video_id ASC"
+	rows, err := h.DB.QueryContext(r.Context(), q, args...)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("items: "+err.Error()))
 		return
@@ -342,14 +444,17 @@ func (h *Handler) GetItems(w http.ResponseWriter, r *http.Request) {
 
 // AddItem implements single-item POST.
 func (h *Handler) AddItem(w http.ResponseWriter, r *http.Request) {
-	p := principal.FromContext(r.Context())
-	if p == nil || !p.IsAdmin {
-		httperror.Write(w, r, httperror.Forbidden("", "admin-only"))
+	id := chi.URLParam(r, "id")
+	c, p, ok := h.writableCollection(w, r, id)
+	if !ok {
 		return
 	}
-	id := chi.URLParam(r, "id")
 	var req ItemEntry
 	if e := common.ReadJSON(r, &req, 4<<10); e != nil {
+		httperror.Write(w, r, e)
+		return
+	}
+	if e := h.checkItemsVisible(r, p, []string{req.VideoID}); e != nil {
 		httperror.Write(w, r, e)
 		return
 	}
@@ -362,16 +467,16 @@ func (h *Handler) AddItem(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("add item: "+err.Error()))
 		return
 	}
+	h.audit(r, p, "collection-item-added", c.LibraryID, map[string]any{"collection_id": id, "video_id": req.VideoID})
 	common.WriteJSON(w, r, http.StatusOK, req)
 }
 
 func (h *Handler) RemoveItem(w http.ResponseWriter, r *http.Request) {
-	p := principal.FromContext(r.Context())
-	if p == nil || !p.IsAdmin {
-		httperror.Write(w, r, httperror.Forbidden("", "admin-only"))
+	id := chi.URLParam(r, "id")
+	c, p, ok := h.writableCollection(w, r, id)
+	if !ok {
 		return
 	}
-	id := chi.URLParam(r, "id")
 	vid := chi.URLParam(r, "video_id")
 	_, err := h.DB.ExecContext(r.Context(), `
 		DELETE FROM collection_items WHERE collection_id=$1 AND video_id=$2
@@ -380,6 +485,7 @@ func (h *Handler) RemoveItem(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("remove item"))
 		return
 	}
+	h.audit(r, p, "collection-item-removed", c.LibraryID, map[string]any{"collection_id": id, "video_id": vid})
 	common.WriteNoContent(w)
 }
 
@@ -389,6 +495,24 @@ func (h *Handler) loadCollection(r *http.Request, id string) (Collection, error)
 		FROM collections WHERE id = $1
 	`, id)
 	return scanCollection(row)
+}
+
+// libraryScope is the SQL fragment that keeps rows to the libraries p can
+// read: "" for a caller who reads every library, none=true for a caller
+// who reads none. Placeholders start at $next.
+func libraryScope(p *principal.Principal, col string, next int) (frag string, args []any, none bool) {
+	if p != nil && p.AccessAllLibraries {
+		return "", nil, false
+	}
+	if p == nil || len(p.Libraries) == 0 {
+		return "", nil, true
+	}
+	ph := make([]string, len(p.Libraries))
+	for i, l := range p.Libraries {
+		ph[i] = "$" + itoa(next+i)
+		args = append(args, l)
+	}
+	return col + " IN (" + strings.Join(ph, ",") + ")", args, false
 }
 
 type rowScanner interface {

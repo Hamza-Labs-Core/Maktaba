@@ -551,7 +551,15 @@ func (h *Handler) runFTSFallback(ctx context.Context, q string, limit int, f Fil
 
 // Suggest implements AC-4: prefix lookup on the search_history corpus,
 // up to 10 results, sourced from the lowercased+unaccented column.
+//
+// Suggestions come from the caller's own history only: another user's
+// searches never leak through the prefix lookup.
 func (h *Handler) Suggest(w http.ResponseWriter, r *http.Request) {
+	p := principal.FromContext(r.Context())
+	if p == nil {
+		httperror.Write(w, r, httperror.Forbidden("", "auth required"))
+		return
+	}
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if q == "" {
 		common.WriteJSON(w, r, http.StatusOK, map[string]any{"suggestions": []string{}})
@@ -560,9 +568,9 @@ func (h *Handler) Suggest(w http.ResponseWriter, r *http.Request) {
 	prefix := normaliseSuggestQuery(q)
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT query FROM search_history
-		WHERE query_norm LIKE $1
+		WHERE query_norm LIKE $1 AND user_id = $2
 		ORDER BY hits DESC, last_used_at DESC LIMIT 10
-	`, prefix+"%")
+	`, prefix+"%", p.UserID)
 	if err != nil {
 		// No history table or empty — degrade gracefully.
 		common.WriteJSON(w, r, http.StatusOK, map[string]any{"suggestions": []string{}})

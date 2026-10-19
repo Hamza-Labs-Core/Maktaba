@@ -670,6 +670,15 @@ func (h *Handler) AdminRevokeRefreshFamily(w http.ResponseWriter, r *http.Reques
 		httperror.Write(w, r, httperror.BadRequest("missing id"))
 		return
 	}
+	// The family must be this user's (as AdminRevokeSession checks the
+	// session's owner): another user's or an unknown family is 404.
+	var one int
+	if err := h.RefreshTokens.DB.QueryRowContext(r.Context(),
+		`SELECT 1 FROM refresh_tokens WHERE family_id = $1 AND user_id = $2 LIMIT 1`, fam, userID).Scan(&one); err != nil {
+		// no rows, or ids that are not uuids
+		httperror.Write(w, r, httperror.NotFound("refresh token family "+fam))
+		return
+	}
 	if err := h.RefreshTokens.RevokeFamily(r.Context(), fam); err != nil {
 		httperror.Write(w, r, httperror.Internal("revoke"))
 		return

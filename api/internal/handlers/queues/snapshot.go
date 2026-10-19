@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 )
 
@@ -403,5 +404,5 @@ func (h *Handler) Snapshot(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, "snapshot", err)
 		return
 	}
-	common.WriteJSON(w, r, http.StatusOK, snap)
+	common.WriteJSON(w, r, http.StatusOK, scopeSnapshot(principal.FromContext(r.Context()), snap))
 }

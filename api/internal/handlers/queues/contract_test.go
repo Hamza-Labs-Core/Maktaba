@@ -21,7 +21,10 @@ func TestWorkersJSON_MatchesQueueAPI(t *testing.T) {
 		&queuestest.Rule{Match: "from workers w left join cluster_nodes",
 			Cols: []string{"id", "host", "stages", "pools", "started_at", "last_seen_at", "version", "node_id", "node_name", "role"},
 			Rows: [][]driver.Value{{"mac-1", "Mac", "{transcribe,probe,x1,x2,x3}", nil, t0, t0, "1", nil, nil, "home"}}})
-	rec := f.do("GET", "/api/workers", "", viewer())
+	if rec := f.do("GET", "/api/workers", "", viewer()); rec.Code != 403 {
+		t.Fatalf("workers for a non-admin: %d (host detail is admin-only)", rec.Code)
+	}
+	rec := f.do("GET", "/api/workers", "", admin())
 	var raw struct {
 		Workers []map[string]any `json:"workers"`
 	}
@@ -59,7 +62,7 @@ func TestQueueSummaryJSON_ServedByIsHostList(t *testing.T) {
 
 func TestExtensionJSON_MatchesQueueAPI(t *testing.T) {
 	f := newFixture()
-	rec := f.do("GET", "/api/extensions", "", viewer())
+	rec := f.do("GET", "/api/extensions", "", admin())
 	var out struct {
 		Extensions []map[string]any `json:"extensions"`
 	}
@@ -96,7 +99,7 @@ func TestTimelineChanges(t *testing.T) {
 		&queuestest.Rule{Match: "kind in ('applied', 'review')", Cols: []string{"job_id", "data"}, Rows: [][]driver.Value{
 			{int64(3), `{"changes":[{"action":"created","what":"collection","target":"Show S1"}]}`}}},
 	)
-	rec := f.do("GET", "/api/items/video/"+uidA+"/history", "", viewer())
+	rec := f.do("GET", "/api/items/video/"+uidA+"/history", "", admin())
 	var h ItemHistory
 	decode(t, rec, &h)
 	if len(h.Timeline) != 2 {

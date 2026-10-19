@@ -13,6 +13,7 @@ package tags
 import (
 	"database/sql"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -48,9 +49,33 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Patch("/api/videos/{id}/tags", h.PatchVideoTags)
 }
 
-// List returns every tag.
+// List returns the tags the caller can see: every tag for an all-library
+// caller, else only tags on at least one video in a library it can read
+// (a tag name can say what a hidden library holds).
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.DB.QueryContext(r.Context(), `SELECT id, name FROM tags ORDER BY name`)
+	p := principal.FromContext(r.Context())
+	if p == nil {
+		httperror.Write(w, r, httperror.Forbidden("", "auth required"))
+		return
+	}
+	q := `SELECT id, name FROM tags ORDER BY name`
+	var args []any
+	if !p.AccessAllLibraries {
+		if len(p.Libraries) == 0 {
+			common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": []Tag{}})
+			return
+		}
+		ph := make([]string, len(p.Libraries))
+		for i, lib := range p.Libraries {
+			args = append(args, lib)
+			ph[i] = "$" + strconv.Itoa(i+1)
+		}
+		q = `SELECT t.id, t.name FROM tags t
+			WHERE EXISTS (SELECT 1 FROM video_tags vt JOIN videos v ON v.id = vt.video_id
+			              WHERE vt.tag_id = t.id AND v.library_id IN (` + strings.Join(ph, ",") + `))
+			ORDER BY t.name`
+	}
+	rows, err := h.DB.QueryContext(r.Context(), q, args...)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("list tags"))
 		return

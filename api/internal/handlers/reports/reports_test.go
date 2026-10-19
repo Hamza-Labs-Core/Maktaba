@@ -237,12 +237,17 @@ func TestThumbnail(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(f.thumbs, h, "small.jpg"), []byte("\xff\xd8jpeg"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	rec := f.do("GET", "/api/thumbnails/"+h+"/small.jpg", "", viewer())
+	rec := f.do("GET", "/api/thumbnails/"+h+"/small.jpg", "", admin())
 	if rec.Code != 200 || rec.Header().Get("Content-Type") != "image/jpeg" {
 		t.Fatalf("%d %v", rec.Code, rec.Header())
 	}
+	// a caller without the video's library (here: no video, no database)
+	// does not get it: the content hash is not a secret
+	if rec := f.do("GET", "/api/thumbnails/"+h+"/small.jpg", "", viewer()); rec.Code != http.StatusNotFound {
+		t.Fatalf("viewer without the library: %d", rec.Code)
+	}
 	for _, bad := range []string{"..", "short", "a%2Fb12345678", "%2e%2e%2f%2e%2e", "unknownhash12345"} {
-		if rec := f.do("GET", "/api/thumbnails/"+bad+"/small.jpg", "", viewer()); rec.Code != http.StatusNotFound {
+		if rec := f.do("GET", "/api/thumbnails/"+bad+"/small.jpg", "", admin()); rec.Code != http.StatusNotFound {
 			t.Errorf("%q -> %d", bad, rec.Code)
 		}
 	}
@@ -280,13 +285,17 @@ func TestPreview_BusyOfflineAndStatus(t *testing.T) {
 	}
 	f.planner.busy = false
 	f.planner.statusIn = pipeline.PlanPreviewStatus{Running: true, Phase: "writing the page", Log: []string{"a"}}
-	rec := f.do("GET", "/api/reports/channel-plan/preview", "", viewer())
+	// the plan spans every library: a library-scoped viewer gets 404
+	if rec := f.do("GET", "/api/reports/channel-plan/preview", "", viewer()); rec.Code != http.StatusNotFound {
+		t.Fatalf("viewer: %d", rec.Code)
+	}
+	rec := f.do("GET", "/api/reports/channel-plan/preview", "", admin())
 	var st pipeline.PlanPreviewStatus
 	if err := json.Unmarshal(rec.Body.Bytes(), &st); err != nil || !st.Running || st.Phase != "writing the page" {
 		t.Fatalf("%d %s %v", rec.Code, rec.Body.String(), err)
 	}
 	f.planner.err = errors.New("dial failed")
-	if rec = f.do("GET", "/api/reports/channel-plan/preview", "", viewer()); rec.Code != http.StatusBadGateway {
+	if rec = f.do("GET", "/api/reports/channel-plan/preview", "", admin()); rec.Code != http.StatusBadGateway {
 		t.Fatalf("pipeline error: %d", rec.Code)
 	}
 	// no pipeline client at all
@@ -294,7 +303,7 @@ func TestPreview_BusyOfflineAndStatus(t *testing.T) {
 	r := chi.NewRouter()
 	h.Mount(r)
 	req := httptest.NewRequest("GET", "/api/reports/channel-plan/preview", nil)
-	req = req.WithContext(principal.WithPrincipal(req.Context(), viewer()))
+	req = req.WithContext(principal.WithPrincipal(req.Context(), admin()))
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadGateway {

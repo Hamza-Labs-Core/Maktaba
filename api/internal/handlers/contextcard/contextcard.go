@@ -95,7 +95,8 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !p.AccessAllLibraries && !p.HasLibrary(libraryID) {
-		httperror.Write(w, r, httperror.Forbidden("", ""))
+		// hidden library: not found, like an unknown video (no existence leak)
+		httperror.Write(w, r, httperror.NotFound("video "+id))
 		return
 	}
 

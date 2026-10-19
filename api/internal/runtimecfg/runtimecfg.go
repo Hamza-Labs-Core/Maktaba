@@ -29,6 +29,9 @@ const (
 	PauseGrace           = "pause.grace_sec"
 	WSHeartbeat          = "ws.heartbeat_interval_sec"
 	OpenRegistration     = "auth.open_registration"
+	// GraphQLPersistedOnly turns on persisted-query allowlist mode (Story
+	// 7.17 AC-5): non-admins run only stored GraphQL operations. Default off.
+	GraphQLPersistedOnly = "graphql.persisted_only"
 )
 
 // DefaultTTL is how long a read is cached.
@@ -138,4 +141,28 @@ func (r *Reader) Seconds(ctx context.Context, key string) (time.Duration, bool) 
 		return 0, false
 	}
 	return time.Duration(f * float64(time.Second)), true
+}
+
+// Bool reads a boolean setting (a JSON true/false, or the strings
+// "true"/"false"). Unset or unreadable reads as (false, false).
+func (r *Reader) Bool(ctx context.Context, key string) (bool, bool) {
+	raw, ok := r.raw(ctx, key)
+	if !ok {
+		return false, false
+	}
+	var b bool
+	if json.Unmarshal(raw, &b) == nil {
+		return b, true
+	}
+	var s string
+	if json.Unmarshal(raw, &s) != nil {
+		s = string(raw)
+	}
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "true":
+		return true, true
+	case "false":
+		return false, true
+	}
+	return false, false
 }

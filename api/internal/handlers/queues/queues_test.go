@@ -44,6 +44,12 @@ func admin() *principal.Principal {
 }
 func viewer() *principal.Principal { return &principal.Principal{UserID: "u2"} }
 
+// allViewer is a signed-in non-admin who reads every library: it sees
+// every item of the control centre, but not the admin-only reads.
+func allViewer() *principal.Principal {
+	return &principal.Principal{UserID: "u5", AccessAllLibraries: true}
+}
+
 func (f *fixture) do(method, target, body string, p *principal.Principal) *httptest.ResponseRecorder {
 	var req *http.Request
 	if body == "" {
@@ -405,7 +411,7 @@ func snapshotRules() []*queuestest.Rule {
 
 func TestSnapshot(t *testing.T) {
 	f := newFixture(snapshotRules()...)
-	rec := f.do(http.MethodGet, "/api/queues", "", viewer())
+	rec := f.do(http.MethodGet, "/api/queues", "", allViewer())
 	if rec.Code != 200 {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
@@ -93,12 +94,14 @@ func (h *Handler) Start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	exists, err := h.repo().videoExists(r.Context(), req.VideoID)
+	// A video in a library the caller cannot read is not found, like an
+	// unknown one (no existence oracle, no stats for hidden videos).
+	libraryID, exists, err := h.repo().videoLibrary(r.Context(), req.VideoID)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("verify video"))
 		return
 	}
-	if !exists {
+	if !exists || !videos.CanRead(p, libraryID) {
 		httperror.Write(w, r, httperror.NotFound("video "+req.VideoID))
 		return
 	}

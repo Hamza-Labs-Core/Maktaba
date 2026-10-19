@@ -28,7 +28,7 @@ func TestRunning_FiltersByHost(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(runningRule())
-			rec := f.do(http.MethodGet, tc.target, "", viewer())
+			rec := f.do(http.MethodGet, tc.target, "", allViewer())
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d: %s", rec.Code, rec.Body)
 			}
@@ -66,7 +66,7 @@ func TestRunning_FiltersByHost(t *testing.T) {
 
 func TestRunning_RejectsBadHostAndAnonymous(t *testing.T) {
 	f := newFixture(runningRule())
-	if rec := f.do(http.MethodGet, "/api/queues/running?host=not-a-node", "", viewer()); rec.Code != http.StatusBadRequest {
+	if rec := f.do(http.MethodGet, "/api/queues/running?host=not-a-node", "", allViewer()); rec.Code != http.StatusBadRequest {
 		t.Errorf("bad host status = %d", rec.Code)
 	}
 	if rec := f.do(http.MethodGet, "/api/queues/running", "", nil); rec.Code != http.StatusForbidden {

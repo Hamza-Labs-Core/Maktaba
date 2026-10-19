@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 )
 
@@ -85,7 +86,7 @@ func (h *Handler) Libraries(w http.ResponseWriter, r *http.Request) {
 	if h.libCache.items != nil && now.Sub(h.libCache.at) < libraryCacheTTL {
 		items := h.libCache.items
 		h.libMu.Unlock()
-		common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": items})
+		common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": visibleLibraryRows(principal.FromContext(r.Context()), items)})
 		return
 	}
 	h.libMu.Unlock()
@@ -98,7 +99,21 @@ func (h *Handler) Libraries(w http.ResponseWriter, r *http.Request) {
 	h.libMu.Lock()
 	h.libCache = libraryCache{at: now, items: items}
 	h.libMu.Unlock()
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": items})
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": visibleLibraryRows(principal.FromContext(r.Context()), items)})
+}
+
+// visibleLibraryRows keeps the libraries p may read (the cache is global).
+func visibleLibraryRows(p *principal.Principal, items []LibraryQueueRow) []LibraryQueueRow {
+	if fullView(p) {
+		return items
+	}
+	out := []LibraryQueueRow{}
+	for _, it := range items {
+		if canReadLibrary(p, it.LibraryID) {
+			out = append(out, it)
+		}
+	}
+	return out
 }
 
 func (h *Handler) countsByLibrary(ctx context.Context, q string) (map[string]int, error) {

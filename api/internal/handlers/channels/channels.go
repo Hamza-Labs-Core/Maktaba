@@ -256,7 +256,8 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !h.canRead(p, c.LibraryID) {
-		httperror.Write(w, r, httperror.Forbidden("", "no access to this channel"))
+		// not found, like an unknown id: the channel's existence does not leak
+		httperror.Write(w, r, httperror.NotFound("channel "+id))
 		return
 	}
 	if np, err := h.repo().nowPlaying(r.Context(), c.ID, h.now()); err == nil && np != nil {

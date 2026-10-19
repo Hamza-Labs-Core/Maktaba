@@ -17,6 +17,7 @@ package series
 
 import (
 	"database/sql"
+	"errors"
 	"net/http"
 	"sort"
 	"strings"
@@ -27,6 +28,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
@@ -137,8 +139,8 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	items := []Item{}
 	for _, hd := range headers {
 		group := eps[hd.ID]
-		if len(group) == 0 && hd.LibraryID != "" && !p.AccessAllLibraries && !p.HasLibrary(hd.LibraryID) {
-			continue
+		if len(group) == 0 && !videos.CanRead(p, hd.LibraryID) {
+			continue // no visible episode and not in a readable library (or in none)
 		}
 		item := hd
 		seasons := map[int]bool{}
@@ -169,29 +171,61 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": items})
 }
 
-// Get returns a single series header.
+// Get returns a single series header. A series the caller cannot see
+// (the List rule) is 404, like an unknown id.
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if _, err := uuid.Parse(id); err != nil {
 		httperror.Write(w, r, httperror.BadRequest("malformed id"))
 		return
 	}
+	p := principal.FromContext(r.Context())
+	if p == nil {
+		httperror.Write(w, r, httperror.Forbidden("", "auth required"))
+		return
+	}
 	if h.DB == nil {
 		httperror.Write(w, r, httperror.NotFound("series "+id))
 		return
 	}
-	headers, err := h.loadSeriesHeaders(r, "")
+	hd, ok, err := h.visibleSeries(r, p, id)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("load series"))
 		return
 	}
-	for _, hd := range headers {
-		if hd.ID == id {
-			common.WriteJSON(w, r, http.StatusOK, hd)
-			return
-		}
+	if !ok {
+		httperror.Write(w, r, httperror.NotFound("series "+id))
+		return
 	}
-	httperror.Write(w, r, httperror.NotFound("series "+id))
+	common.WriteJSON(w, r, http.StatusOK, hd)
+}
+
+// visibleSeries loads series id and reports whether p may see it: the
+// rule List applies — it has an episode in a library p can read, or it
+// sits in a library p can read.
+func (h *Handler) visibleSeries(r *http.Request, p *principal.Principal, id string) (Item, bool, error) {
+	var it Item
+	var poster, lib sql.NullString
+	var year sql.NullInt64
+	err := h.DB.QueryRowContext(r.Context(),
+		`SELECT id, COALESCE(NULLIF(name_override,''), name), poster_path, library_id, year, numbering FROM series WHERE id = $1`, id).
+		Scan(&it.ID, &it.Name, &poster, &lib, &year, &it.Numbering)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Item{}, false, nil
+	}
+	if err != nil {
+		return Item{}, false, err
+	}
+	it.PosterPath = poster.String
+	it.LibraryID = lib.String
+	if year.Valid {
+		y := int(year.Int64)
+		it.Year = &y
+	}
+	if videos.CanRead(p, it.LibraryID) {
+		return it, true, nil
+	}
+	return it, len(h.loadEpisodes(r, p, id, "")[id]) > 0, nil
 }
 
 // Episode is one cell in the season→episode grid.
@@ -229,6 +263,13 @@ func (h *Handler) Episodes(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{"seasons": []Season{}, "numbering": "season"}
 	if h.DB == nil {
 		common.WriteJSON(w, r, http.StatusOK, resp)
+		return
+	}
+	if _, ok, err := h.visibleSeries(r, p, id); err != nil {
+		httperror.Write(w, r, httperror.Internal("load series"))
+		return
+	} else if !ok {
+		httperror.Write(w, r, httperror.NotFound("series "+id))
 		return
 	}
 	numbering := h.numbering(r, id)
@@ -291,6 +332,13 @@ func (h *Handler) Missing(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{"gaps": []Gap{}}
 	if h.DB == nil {
 		common.WriteJSON(w, r, http.StatusOK, resp)
+		return
+	}
+	if _, ok, err := h.visibleSeries(r, p, id); err != nil {
+		httperror.Write(w, r, httperror.Internal("load series"))
+		return
+	} else if !ok {
+		httperror.Write(w, r, httperror.NotFound("series "+id))
 		return
 	}
 	numbering := h.numbering(r, id)
