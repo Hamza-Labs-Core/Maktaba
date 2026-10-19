@@ -27,15 +27,17 @@ EnvironmentFile=-%h/.config/maktaba/node.env
 # A node takes its database from the node config; MAKTABA_DATABASE_URL would turn the
 # worker into a home worker on that database.
 UnsetEnvironment=MAKTABA_DATABASE_URL
-# Refuse to start (exit 78) until the machine has joined: `run` without a joined config
-# would fall back to an in-memory database. Restart= retries, so the worker starts by
-# itself once `maktaba-pipeline join` completes.
-ExecStartPre=%h/.local/share/maktaba/node/venv/bin/python %h/.local/share/maktaba/node/node_check.py
-ExecStart=%h/.local/share/maktaba/node/venv/bin/python -m maktaba_pipeline run
-# Crash, failed start, home unreachable: restart. A clean exit (stopped, or revoked on
-# the home) is final.
+# `run --node`: work as this machine's node, or exit 78 when it has not joined a home
+# (never fall back to another database). bin/maktaba-pipeline is the venv's own
+# command (a stand-in only for a pipeline without that entry point).
+ExecStart=%h/.local/share/maktaba/node/bin/maktaba-pipeline run --node
+# Crash, home unreachable, not joined yet (78): start again after 30 s, for as long as it
+# takes, so the worker also starts by itself once `maktaba-pipeline join` completes.
+# A clean exit (stopped) is final, and so is 77: the home removed this machine (revoked,
+# not a member, database login refused), which no restart can fix.
 Restart=on-failure
 RestartSec=30
+RestartPreventExitStatus=77
 # SIGTERM to the worker first so it hands its jobs back; SIGKILL to what is left.
 KillMode=mixed
 TimeoutStopSec=60

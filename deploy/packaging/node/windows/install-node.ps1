@@ -13,6 +13,10 @@
          shows a pairing code that the admin types on the home);
       4. registers the worker so it starts at logon and restarts when it fails.
 
+    Each worker runs the venv's `maktaba-pipeline run --node` through run-node.ps1:
+    exit 78 (not joined yet) is retried every 30 s, exit 77 (the home removed this
+    machine) leaves it stopped.
+
     Default (-Mode Task): a scheduled task per worker, "At log on" of this user, run as
     this user. Mapped drive letters and saved share credentials (net use, Credential
     Manager) belong to the logged-on user, and so does the node config in %APPDATA%, so
@@ -230,14 +234,33 @@ if ($uv) {
     Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList @('-m', 'pip', 'install', '--quiet', '--force-reinstall', '--no-deps', $Source)) 'pip reinstall'
 }
 
-# --- the scripts the task runs, and maktaba-pipeline.cmd ----------------------------------
+# --- the scripts the task runs; the pipeline command ---------------------------------------
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'run-node.ps1') -Destination $script:NodeDir -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'node-common.ps1') -Destination $script:NodeDir -Force
 Copy-Item -LiteralPath (Join-Path $PackagingDir 'node_check.py') -Destination $script:NodeDir -Force
 Get-ChildItem -LiteralPath $script:NodeDir -File | Unblock-File
-$shim = "@echo off`r`nrem maktaba-pipeline for this Maktaba node (written by install-node.ps1)`r`n" +
-    "`"%LOCALAPPDATA%\Maktaba\node\venv\Scripts\python.exe`" -m maktaba_pipeline %*`r`n"
-[System.IO.File]::WriteAllText((Join-Path $script:NodeDir 'maktaba-pipeline.cmd'), $shim, [System.Text.Encoding]::ASCII)
+# The venv's maktaba-pipeline.exe is the command (the workers run it too). Only for a
+# pipeline without that entry point, a stand-in maktaba-pipeline.cmd beside the venv.
+$standIn = Join-Path $script:NodeDir 'maktaba-pipeline.cmd'
+if (Test-Path -LiteralPath $script:NodeCli -PathType Leaf) {
+    $NodeCommandPath = $script:NodeCli
+    Remove-Item -LiteralPath $standIn -Force -ErrorAction SilentlyContinue
+} else {
+    Write-Warning "the pipeline has no maktaba-pipeline entry point: using a stand-in ($standIn)"
+    $NodeCommandPath = $standIn
+    $shim = "@echo off`r`nrem Stand-in for the venv's maktaba-pipeline entry point (written by install-node.ps1)`r`n" +
+        "`"%LOCALAPPDATA%\Maktaba\node\venv\Scripts\python.exe`" -m maktaba_pipeline %*`r`n"
+    [System.IO.File]::WriteAllText($standIn, $shim, [System.Text.Encoding]::ASCII)
+}
+
+# The workers run `maktaba-pipeline run --node` (exit 78 until the machine has joined,
+# 77 once the home has removed it); a pipeline without that option would fail on every
+# start, so refuse it here.
+$nodeCommand = Get-NodeCommand
+$help = Invoke-NativeCapture -FilePath $nodeCommand.File -ArgumentList (@($nodeCommand.Prefix) + @('run', '--help'))
+if ($help.StdOut -notmatch '--node') {
+    throw "the pipeline at $Source has no 'run --node' yet: update the checkout and run this again"
+}
 $conf = "# install-node.ps1 remembers these for updates`r`nEXTRAS=$Extras`r`nSOURCE=$Source`r`nMODE=$Mode`r`n"
 [System.IO.File]::WriteAllText($script:NodeInstallConf, $conf)
 
@@ -296,10 +319,10 @@ if (Test-NodeJoined) {
     Write-Warning 'Not joined yet (-NoJoin): the worker waits until you run: maktaba-pipeline join'
 } else {
     Write-NodeStep "Joining a Maktaba home. On the home: Admin -> Machines, turn on 'Accept new machines', then type the code shown below."
-    $joinArgs = @('-m', 'maktaba_pipeline', 'join')
+    $joinArgs = @($nodeCommand.Prefix) + @('join')
     if ($HomeUrl) { $joinArgs += @('--home', $HomeUrl) }
     if ($Name) { $joinArgs += @('--name', $Name) }
-    Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList $joinArgs) 'join'
+    Assert-ExitCode (Invoke-NativeCommand -FilePath $nodeCommand.File -ArgumentList $joinArgs) 'join'
     if (-not (Test-NodeJoined)) { throw 'the join did not complete; run this again (or pass -NoJoin to install anyway)' }
 }
 
@@ -351,7 +374,8 @@ function Register-NodeService {
     Set-NssmValue $service @('Description', 'Works for the Maktaba home this machine joined.')
     Set-NssmValue $service @('Start', 'SERVICE_DELAYED_AUTO_START')
     # run-node.ps1 restarts the worker itself; NSSM restarts run-node.ps1 if it dies,
-    # but not after a clean exit (stopped, or revoked on the home).
+    # but not after it ends with 0: the worker stopped, or the home removed this machine
+    # (run-node.ps1 turns the worker's 77 into 0).
     Set-NssmValue $service @('AppExit', 'Default', 'Restart')
     Set-NssmValue $service @('AppExit', '0', 'Exit')
     Set-NssmValue $service @('AppRestartDelay', '30000')
@@ -404,7 +428,7 @@ Write-NodeStep 'Done.'
 Write-Host "  Node config:  $(Join-Path $script:NodeConfDir 'node.json')"
 Write-Host "  Settings:     $envFile (node@<N>.env per extra worker)"
 Write-Host "  Python:       $($script:NodeVenv)"
-Write-Host "  Command:      $(Join-Path $script:NodeDir 'maktaba-pipeline.cmd') (join, cluster logs, ...)"
+Write-Host "  Command:      $NodeCommandPath (join, cluster logs, ...)"
 Write-Host "  Logs:         Get-Content -Wait '$(Join-Path $script:NodeLogDir 'node.log')'"
 if ($Mode -eq 'Task') {
     Write-Host "  Status:       Get-ScheduledTask -TaskName 'maktaba-node*' | Get-ScheduledTaskInfo"

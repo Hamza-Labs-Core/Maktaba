@@ -18,16 +18,27 @@ restarts when it fails, and keeps its logs:
 Each installer:
 
 1. builds the pipeline's Python environment (a snapshot of `pipeline/`, with uv when it is
-   installed, else Python 3.12+ and pip);
+   installed, else Python 3.12+ and pip), and checks that its `maktaba-pipeline run`
+   has `--node`;
 2. writes `node.env` (optional settings) the first time, recording `MAKTABA_FFMPEG` /
    `MAKTABA_FFPROBE` when ffmpeg is installed somewhere the service would not look;
-3. runs `maktaba-pipeline join` when the machine has not joined a home yet: it finds the
-   home on the LAN (or takes `--home`), shows a 6-digit code, and waits while the admin
-   types that code on the home (Admin → Machines, with "Accept new machines" on);
+3. runs `maktaba-pipeline join` when the machine has not joined a home yet
+   (`node_check.py` decides): it finds the home on the LAN (or takes `--home`), shows a
+   6-digit code, and waits while the admin types that code on the home (Admin → Machines,
+   with "Accept new machines" on);
 4. registers the main worker and any extra workers, and starts them.
 
-It also puts a `maktaba-pipeline` command beside the environment (`join`, `cluster logs`,
-...), linked into `~/.local/bin` (Linux system units: `/usr/local/bin`) when that exists.
+Every worker runs **`maktaba-pipeline run --node`**, the venv's own `maktaba-pipeline`:
+in node mode it works for the home in its node config, or exits **78** when the machine
+has not joined (it never falls back to another database), and exits **77** when the home
+has removed the machine for good. The services retry a 78 every 30 s and stop on a 77
+(see [the failure table](#when-the-home-is-unreachable-removed-or-not-joined)).
+
+The venv's `maktaba-pipeline` is also the command you use (`join`, `cluster logs`, ...):
+macOS and Linux link it as `<node dir>/bin/maktaba-pipeline`, and into `~/.local/bin`
+(Linux system units: `/usr/local/bin`) when that exists; Windows uses
+`%LOCALAPPDATA%\Maktaba\node\venv\Scripts\maktaba-pipeline.exe`. For a pipeline without
+that entry point, the installers write a stand-in that runs `python -m maktaba_pipeline`.
 
 ## Before you start
 
@@ -75,8 +86,11 @@ tail -f ~/Library/Logs/Maktaba/node.log ~/Library/Logs/Maktaba/node.err.log  # l
 
 The plist runs `maktaba-node-run`, which reads `node.env` (then `node@<N>.env`) at every
 start, rotates the instance's log files past 50 MB (`MAKTABA_NODE_LOG_MAX_MB`; three old
-files kept), checks that the machine has joined, and `exec`s the worker. launchd itself
-never rotates files, so rotation happens when a worker (re)starts.
+files kept), runs `maktaba-pipeline run --node` (passing launchd's SIGTERM on to it), and
+turns its exit status into what `KeepAlive` should do: a 77 becomes 0 with a line in
+`node.err.log`, so launchd leaves the worker stopped; a 78 or a failure stays non-zero,
+so launchd starts it again after 30 s. launchd itself never rotates files, so rotation
+happens when a worker (re)starts.
 
 ## Linux
 
@@ -96,7 +110,13 @@ and you want everything owned by a normal account.
 after `network-online.target` and `remote-fs.target`, carry systemd hardening, and run as
 `--run-as USER` (default `maktaba`, created when missing). That account must be able to
 read and write the share; the installer joins as that account, so the node config is
-`~USER/.config/maktaba/node.json`.
+`~USER/.config/maktaba/node.json`. Run the pipeline command as that account too
+(`sudo -u maktaba -H maktaba-pipeline join`): run as root it would read and write root's
+node config, which the service never sees.
+
+Every unit has `Restart=on-failure`, `RestartSec=30`, no start limit, and
+`RestartPreventExitStatus=77`: a worker the home removed stays down (the unit shows
+*failed* with status 77), anything else is started again.
 
 A user manager cannot wait for the system's `network-online.target` / `remote-fs.target`,
 so a user unit started before the network or the share is up fails its first database
@@ -134,8 +154,11 @@ powershell -ExecutionPolicy Bypass -File deploy\packaging\node\windows\install-n
 
 **Scheduled task (default).** One task per worker, "At log on" of this user (30 s delay so
 mapped drives reconnect), running as this user, hidden, with no time limit, normal
-priority, and restart when the task fails. It runs `run-node.ps1`, which restarts the
-worker itself after a crash (5 s, doubling to 30 s) and stops for good after a clean exit.
+priority, and restart when the task fails. It runs `run-node.ps1`, which runs
+`maktaba-pipeline run --node` and restarts it itself: after a crash or an unreachable home
+in 5 s, doubling to 30 s; after a 78 (not joined yet) every 30 s. It stops for good, with
+exit 0 and a line in `node.err.log`, after a clean exit or a 77 (the home removed the
+machine), so neither Task Scheduler nor NSSM starts it again.
 Mapped drive letters, `net use` and Credential Manager entries are per user, and so is the
 node config in `%APPDATA%`: the per-user task runs where they are. It needs no
 administrator rights. It runs only while the user is logged on: on a dedicated worker PC,
@@ -162,7 +185,7 @@ Get-ScheduledTask -TaskName 'maktaba-node*' | Get-ScheduledTaskInfo         # st
 Stop-ScheduledTask -TaskName maktaba-node; Start-ScheduledTask -TaskName maktaba-node   # restart
 Get-Content -Wait "$env:LOCALAPPDATA\Maktaba\Logs\node.log"                  # logs
 Get-Content -Tail 50 "$env:LOCALAPPDATA\Maktaba\Logs\node.err.log"           # errors + run-node's own lines
-& "$env:LOCALAPPDATA\Maktaba\node\maktaba-pipeline.cmd" join                 # the pipeline command
+& "$env:LOCALAPPDATA\Maktaba\node\venv\Scripts\maktaba-pipeline.exe" join   # the pipeline command
 ```
 
 Stopping a task kills `run-node.ps1`; the worker goes with it (a job object ties them).
@@ -230,15 +253,24 @@ kept**: it is the machine's identity and holds the home's database credentials. 
 with the home, remove the machine there (Admin → Machines → Revoke, then Remove), then
 delete `node.json`. Linux: lingering and the `maktaba` account are left as they are.
 
-## When the home is unreachable, revoked, or not joined
+## When the home is unreachable, removed, or not joined
 
-| Situation | What the service does |
+The worker's exit status decides what the service does:
+
+| Exit | Meaning | systemd | launchd (`maktaba-node-run`) | Windows (`run-node.ps1`) |
+|---|---|---|---|---|
+| 0 | stopped | stays stopped | stays stopped | ends; not restarted |
+| 77 | the home removed this machine for good: revoked, not a member, database login refused | stays stopped (`RestartPreventExitStatus=77`; unit *failed*, status 77) | logged, runner exits 0: stays stopped | logged, ends with 0: not restarted |
+| 78 | not joined to a home yet (`run --node` without a joined node config) | started again in 30 s | started again in 30 s | tried again every 30 s |
+| other | home unreachable, crash | started again in 30 s | started again in 30 s | started again in 5 s, doubling to 30 s |
+
+| Situation | What happens |
 |---|---|
-| The home (its database) is down or not reachable at start: boot before the network, home rebooting | The worker fails its first connect and exits non-zero; the service manager starts it again after 30 s (systemd `Restart=on-failure`, `RestartSec=30`, no start limit; launchd `KeepAlive` on failure, `ThrottleInterval` 30; Windows `run-node.ps1` 5 s doubling to 30 s), for as long as it takes. |
+| The home (its database) is down or not reachable at start: boot before the network, home rebooting | The worker fails its first connect and exits non-zero; the service starts it again (30 s; Windows 5 s doubling to 30 s), with no limit on attempts, until the home answers. |
 | The home goes away while the worker runs | The worker keeps running: its heartbeat failures are logged, the database pool reconnects when the home is back. Jobs it had claimed may be handed to other workers by the home's reaper; transcriptions resume from their checkpoints. The cluster channel buffers logs and retries every few seconds up to 30 s. |
 | The share is not mounted yet | The worker starts and stops claiming the stages that need the share (its storage check, every 5 min, says why on the home's Machines page); they come back when the share is. |
-| The admin revokes the machine | The worker sees it at its next heartbeat (within 10 s) and exits 0: a clean exit, so it is **not** restarted. At the next boot or login it starts again and its database login is refused, so it keeps failing every 30 s: uninstall a revoked machine (or join again). |
-| The machine has not joined (or `node.json` was deleted) | The service does not start the worker (`node_check.py`, exit 78) and checks again every 30 s, so it starts by itself once `maktaba-pipeline join` completes. Without this check `maktaba-pipeline run` would fall back to an in-memory database. |
+| The admin revokes or removes the machine | The worker notices at its next heartbeat (within 10 s), or at its next start when its database login is refused, and exits 77: the service leaves it stopped and logs why (launchd: `node.err.log`; Windows: `node.err.log`; systemd: the journal and `systemctl status`). After a reboot or login it starts once, gets 77 again, and stops: no retry loop. To work for the home again, join again (`maktaba-pipeline join`) and restart the service; otherwise uninstall. |
+| The machine has not joined (or `node.json` was deleted, or `--no-join`) | `run --node` exits 78 instead of falling back to another database; the service tries again every 30 s, so the worker starts by itself once `maktaba-pipeline join` completes. |
 | Drain on the home | The worker finishes what it has and claims nothing new; it stays up. |
 
 ## Files
@@ -246,14 +278,14 @@ delete `node.json`. Linux: lingering and the `maktaba` account are left as they 
 | Path | What |
 |---|---|
 | `install-node.sh`, `uninstall-node.sh` | macOS + Linux installer (`--help`; `--dry-run` prints the commands and renders the files under a temporary directory) |
-| `node_check.py` | "has this machine joined?" (exit 0 / 78), run before every start and by the installers |
+| `node_check.py` | "has this machine joined?" (exit 0 / 78): the installers' "join first?" check |
 | `node.env.example` | the settings file, all commented |
 | `launchd/com.maktaba.node.plist` | LaunchAgent template (`__PLACEHOLDERS__` filled by the installer) |
-| `launchd/maktaba-node-run` | the agent's runner: settings, log rotation, join check, `exec` |
+| `launchd/maktaba-node-run` | the agent's runner: settings, log rotation, `run --node`, exit 77 → 0 for `KeepAlive` |
 | `systemd/user/maktaba-node{,@}.service` | user units (main, template for extra workers) |
 | `systemd/system/maktaba-node{,@}.service` | system units (`User=` set by a drop-in) |
 | `windows/install-node.ps1`, `uninstall-node.ps1` | Windows installer (Windows PowerShell 5.1+) |
-| `windows/run-node.ps1`, `node-common.ps1` | the task's / service's supervisor, shared helpers |
+| `windows/run-node.ps1`, `node-common.ps1` | the task's / service's supervisor (restarts, 77 / 78), shared helpers |
 
 ## Checks
 

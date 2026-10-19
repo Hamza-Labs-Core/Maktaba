@@ -10,6 +10,9 @@
 #   Linux  systemd user units maktaba-node.service + maktaba-node@<N>.service
 #          (--system: system units that run as --run-as USER)
 #
+# Each worker runs the venv's `maktaba-pipeline run --node`: exit 78 (not joined yet)
+# is retried every 30 s, exit 77 (the home removed this machine) leaves it stopped.
+#
 # Running it again updates in place: rebuilds the environment from --source (after a
 # `git pull`), re-renders the units and restarts the workers. See README.md.
 #
@@ -217,6 +220,7 @@ case "$OS/$SCOPE" in
 esac
 VENV="$NODE_DIR/venv"
 PY="$VENV/bin/python"
+CLI="$NODE_DIR/bin/maktaba-pipeline"
 INSTALL_CONF="$NODE_DIR/install.conf"
 
 # read_kv FILE KEY: a KEY=VALUE line's value (never sourced).
@@ -405,30 +409,28 @@ install_helpers() {
     if [ "$OS" = darwin ]; then
         copy_file "$SCRIPT_DIR/launchd/maktaba-node-run" "$NODE_DIR/bin/maktaba-node-run" 0755
     fi
-    # `maktaba-pipeline` on PATH, as the docs name it (join, cluster logs, ...). With
-    # system units, root running it becomes the worker's account, whose node config
-    # the service reads.
-    local as_worker=""
-    if [ "$SCOPE" = system ]; then
-        as_worker="if [ \"\$(id -u)\" -eq 0 ]; then
-    if command -v sudo >/dev/null 2>&1; then exec sudo -u $(sq "$RUN_AS") -H \"\$0\" \"\$@\"; fi
-    exec runuser -u $(sq "$RUN_AS") -- \"\$0\" \"\$@\"
-fi
-"
-    fi
-    write_file "$NODE_DIR/bin/maktaba-pipeline" 0755 <<EOF
+    # $CLI is what the services run (`maktaba-pipeline run --node`) and what PATH gets:
+    # the venv's own maktaba-pipeline, or a stand-in for a pipeline without that entry
+    # point.
+    run mkdir -p "$NODE_DIR/bin"
+    if [ -x "$VENV/bin/maktaba-pipeline" ] || [ "$DRY_RUN" = 1 ]; then
+        run ln -sfn "$VENV/bin/maktaba-pipeline" "$CLI"
+    else
+        warn "the pipeline has no maktaba-pipeline entry point: using a stand-in ($CLI)"
+        write_file "$CLI" 0755 <<EOF
 #!/bin/sh
-# maktaba-pipeline for this Maktaba node (written by install-node.sh)
-${as_worker}exec $(sq "$PY") -m maktaba_pipeline "\$@"
+# Stand-in for the venv's maktaba-pipeline entry point (written by install-node.sh)
+exec $(sq "$PY") -m maktaba_pipeline "\$@"
 EOF
+    fi
     if [ -d "$LINK_DIR" ]; then
         local link="$LINK_DIR/maktaba-pipeline"
         if [ ! -e "$link" ] && [ ! -L "$link" ]; then
-            run ln -s "$NODE_DIR/bin/maktaba-pipeline" "$link"
-        elif [ -L "$link" ] && [ "$(readlink "$link")" = "$NODE_DIR/bin/maktaba-pipeline" ]; then
+            run ln -s "$CLI" "$link"
+        elif [ -L "$link" ] && [ "$(readlink "$link")" = "$CLI" ]; then
             :
         else
-            warn "$link exists and is not this node's; use $NODE_DIR/bin/maktaba-pipeline"
+            warn "$link exists and is not this node's; use $CLI"
         fi
     fi
     write_file "$INSTALL_CONF" 0644 <<EOF
@@ -437,6 +439,19 @@ EXTRAS=$EXTRAS
 SOURCE=$SOURCE
 RUN_AS=$RUN_AS
 EOF
+}
+
+# The services run `maktaba-pipeline run --node` (exit 78 until the machine has joined,
+# 77 once the home has removed it); a pipeline without that option would fail on every
+# start, so refuse it here.
+check_node_mode() {
+    local help
+    [ "$DRY_RUN" = 1 ] && return 0
+    help="$("$CLI" run --help 2>/dev/null || true)"
+    case "$help" in
+        *--node*) ;;
+        *) die "the pipeline at $SOURCE has no 'run --node' yet: update the checkout and run this again" ;;
+    esac
 }
 
 service_path() {
@@ -492,10 +507,15 @@ join_if_needed() {
         return 0
     fi
     if [ "$DO_JOIN" = 0 ]; then
-        warn "Not joined yet (--no-join): the worker waits until you run: maktaba-pipeline join"
+        if [ "$SCOPE" = system ]; then
+            warn "Not joined yet (--no-join): the worker waits until you run, as its account:"
+            warn "  sudo -u $RUN_AS -H $CLI join"
+        else
+            warn "Not joined yet (--no-join): the worker waits until you run: maktaba-pipeline join"
+        fi
         return 0
     fi
-    local args=(-m maktaba_pipeline join)
+    local args=(join)
     if [ -n "$HOME_URL" ]; then args+=(--home "$HOME_URL"); fi
     if [ -n "$NODE_NAME" ]; then args+=(--name "$NODE_NAME"); fi
     info "Joining a Maktaba home. On the home: Admin -> Machines, turn on 'Accept new"
@@ -503,9 +523,9 @@ join_if_needed() {
     # join asks which home when it finds several: give it the terminal even when this
     # script's stdin is a pipe.
     if [ -t 0 ] || [ "$DRY_RUN" = 1 ] || ! (exec </dev/tty) 2>/dev/null; then
-        as_service "$PY" "${args[@]}"
+        as_service "$CLI" "${args[@]}"
     else
-        as_service "$PY" "${args[@]}" </dev/tty
+        as_service "$CLI" "${args[@]}" </dev/tty
     fi
     if [ "$DRY_RUN" != 1 ] && ! is_joined; then
         die "the join did not complete; run this again (or pass --no-join to install anyway)"
@@ -698,7 +718,11 @@ summary() {
     fi
     echo "  Settings:     $CONF_DIR/node.env (node@<N>.env per extra worker)"
     echo "  Python:       $VENV"
-    echo "  Command:      $NODE_DIR/bin/maktaba-pipeline (join, cluster logs, ...)"
+    if [ "$SCOPE" = system ]; then
+        echo "  Command:      sudo -u $RUN_AS -H $CLI ... (as the worker's account: join, cluster logs, ...)"
+    else
+        echo "  Command:      $CLI (join, cluster logs, ...)"
+    fi
     if [ "$OS" = darwin ]; then
         echo "  Status:       launchctl print $GUI_DOMAIN/com.maktaba.node | grep -E 'state|last exit'"
         echo "  Logs:         tail -f \"$LOG_DIR/node.log\" \"$LOG_DIR/node.err.log\""
@@ -738,6 +762,7 @@ do_install() {
     ensure_run_as
     build_venv
     install_helpers
+    check_node_mode
     ensure_env_file
     join_if_needed
     if [ "$OS" = darwin ]; then install_launchd; else install_systemd; fi
@@ -747,7 +772,7 @@ do_install() {
 do_uninstall() {
     if [ "$OS" = darwin ]; then uninstall_launchd; else uninstall_systemd; fi
     local link="$LINK_DIR/maktaba-pipeline"
-    if [ -L "$link" ] && [ "$(readlink "$link")" = "$NODE_DIR/bin/maktaba-pipeline" ]; then
+    if [ -L "$link" ] && [ "$(readlink "$link")" = "$CLI" ]; then
         remove "$link"
     fi
     info "Removing the worker's Python environment ($NODE_DIR)"

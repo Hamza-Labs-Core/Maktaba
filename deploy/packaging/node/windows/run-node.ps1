@@ -11,14 +11,18 @@
          node@<instance>.env (KEY=VALUE lines, which win over the defaults);
       2. rotates the instance's log files in %LOCALAPPDATA%\Maktaba\Logs past
          MAKTABA_NODE_LOG_MAX_MB (default 50; three old files kept);
-      3. checks the machine has joined a home (node_check.py) and, until it has,
-         checks again every 30 s, so the worker starts by itself after
-         `maktaba-pipeline join`;
-      4. runs `python -m maktaba_pipeline run`, appending its output to the log files.
+      3. runs `maktaba-pipeline run --node` (the venv's maktaba-pipeline.exe), appending
+         its output to the log files.
 
-    A worker that exits 0 (stopped, or revoked on the home) is not started again; any
-    other exit restarts it after 5 s, doubling to at most 30 s (reset after a run of
-    10 minutes), which is how a home that is unreachable at logon is ridden out.
+    Then, by the worker's exit code:
+
+      0   stopped                                  -> this script ends; no restart
+      77  the home removed this machine for good   -> logged; this script ends (exit 0)
+          (revoked, not a member, database login refused)
+      78  not joined to a home yet                 -> tried again every 30 s, so the worker
+                                                      starts by itself after `join`
+      any other (home unreachable, crash)          -> started again after 5 s, doubling
+                                                      to 30 s (reset after a 10-minute run)
 
     The worker processes join a job object that closes with this script, so stopping
     the task (which kills only this script) also stops the worker.
@@ -47,7 +51,6 @@ if (-not (Test-NodeInstanceName $Instance)) { throw "bad instance name '$Instanc
 $base = Get-NodeLogBase $Instance
 $outLog = Join-Path $script:NodeLogDir "$base.log"
 $errLog = Join-Path $script:NodeLogDir "$base.err.log"
-$checkScript = Join-Path $script:NodeDir 'node_check.py'
 $cmdExe = Join-Path $env:SystemRoot 'System32\cmd.exe'
 New-Item -ItemType Directory -Force -Path $script:NodeLogDir | Out-Null
 
@@ -197,26 +200,29 @@ while ($true) {
         Write-Supervisor "log rotation failed: $($_.Exception.Message)"
     }
 
-    if (-not (Test-Path -LiteralPath $script:NodePython -PathType Leaf)) {
-        Write-Supervisor "no Python at $($script:NodePython); run install-node.ps1 again"
+    $command = Get-NodeCommand
+    if (-not (Test-Path -LiteralPath $command.File -PathType Leaf)) {
+        Write-Supervisor "no $($command.File); run install-node.ps1 again"
         exit 78
     }
-
-    $code = Invoke-Cmd ('"{0}" "{1}" >> "{2}" 2>> "{3}"' -f $script:NodePython, $checkScript, $outLog, $errLog)
-    if ($code -ne 0) {
-        Write-Supervisor "not joined to a home yet (node_check exit $code); checking again in 30 s"
-        Start-Sleep -Seconds 30
-        continue
-    }
+    $commandLine = '"{0}" {1}' -f $command.File, ((@($command.Prefix) + @('run', '--node')) -join ' ')
 
     $started = Get-Date
     Write-Supervisor 'starting the worker'
-    # -X maktaba_node=<instance> marks the process (Python keeps unknown -X options), so
-    # the installers can find it.
-    $code = Invoke-Cmd ('"{0}" -X maktaba_node={1} -m maktaba_pipeline run >> "{2}" 2>> "{3}"' -f $script:NodePython, $Instance, $outLog, $errLog)
+    $code = Invoke-Cmd ('{0} >> "{1}" 2>> "{2}"' -f $commandLine, $outLog, $errLog)
     if ($code -eq 0) {
-        Write-Supervisor 'the worker stopped cleanly (stopped, or revoked on the home); not restarting'
+        Write-Supervisor 'the worker stopped cleanly; not restarting'
         exit 0
+    }
+    if ($code -eq 77) {
+        Write-Supervisor ('the home removed this machine (revoked, not a member, or its database ' +
+            'login refused): not starting it again. Join again (maktaba-pipeline join) or run uninstall-node.ps1.')
+        exit 0
+    }
+    if ($code -eq 78) {
+        Write-Supervisor 'this machine has not joined a home yet (exit 78); trying again in 30 s. Run: maktaba-pipeline join'
+        Start-Sleep -Seconds 30
+        continue
     }
     $ran = ((Get-Date) - $started).TotalSeconds
     if ($ran -ge 600) { $delay = 5 }
