@@ -582,6 +582,7 @@ async def test_the_welcome_names_the_folder_and_the_share(tmp_path: Path) -> Non
     from maktaba_pipeline.cluster.agent.service import _settings_hook
 
     hub, key = node_hub()
+    (tmp_path / "nas").mkdir()  # the share root exists: only folders below it are made
     hub.settings = {"ip": "192.168.50.20", "share_root": str(tmp_path / "nas"),
                     "retention_days": 3, "file_mb": 7}  # fmt: skip
     files = ClusterFiles(None, "10.0.0.5", "w", fallback_dir=tmp_path / "local")

@@ -245,6 +245,7 @@ def _legacy(
     *,
     edges: tuple[Edge, ...] = (),
     lane: Literal["media", "episodes"] = "media",
+    placement: Literal["any", "home"] = "any",
 ) -> StageDef:
     return StageDef(
         name=name,
@@ -256,6 +257,7 @@ def _legacy(
         version=1,
         edges=edges,
         legacy=True,
+        placement=placement,
     )
 
 
@@ -706,6 +708,10 @@ GRAPH: tuple[StageDef, ...] = (
         debounce_sec=1800,
         debounce_max_sec=6 * 3600,
     ),
+    # The poster and sprites go to the thumbnail cache of the machine that makes them
+    # and their paths into videos.poster_path / sprite_path, which the home serves:
+    # the per-machine caches stay on the home (Epic 31 R3.4, R4.2; moving them to the
+    # share is out of scope), so a node never claims it (as thumb_small after it).
     _legacy(
         "thumbnail",
         "Poster and sprites",
@@ -713,6 +719,7 @@ GRAPH: tuple[StageDef, ...] = (
         "nas_read",
         5,
         edges=(Edge("thumb_small", "same"),),
+        placement="home",
     ),
     # Files whose probe failed, fetched from YouTube again and swapped in on the share
     # (mediaintel repair-broken). Writes to the share: off until the "repair" rules enable it.
