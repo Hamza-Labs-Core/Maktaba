@@ -239,19 +239,19 @@ func TestBackfillRateIsBounded(t *testing.T) {
 	db := sqliteDB(t)
 	dir := t.TempDir()
 	var lines []string
-	for i := 0; i < 1200; i++ {
+	for i := 0; i < 60; i++ {
 		lines = append(lines, logLineJSON(time.Date(2026, 10, 19, 8, 0, 0, i*1000, time.UTC).Format(time.RFC3339Nano), "info", "e", `{}`))
 	}
 	writeFile(t, filepath.Join(dir, "10.0.0.1", "logs", "2026-10-19", "w.jsonl"), lines...)
 	clk := newClock("2026-10-19T12:00:00Z")
-	c := New(db, Options{Window: 24 * time.Hour, Driver: "sqlite", Now: clk.Now, Logger: quietLogger(), ReadRate: 1000})
+	c := New(db, Options{Window: 24 * time.Hour, Driver: "sqlite", Now: clk.Now, Logger: quietLogger(), ReadRate: 50})
 	began := time.Now()
 	must(t, c.Backfill(bg, dir))
-	// a burst of 1000 lines, then 200 more at 1000 a second
+	// a burst of 50 lines, then 10 more at 50 a second
 	if took := time.Since(began); took < 150*time.Millisecond {
-		t.Fatalf("1200 lines at 1000/s took %s", took)
+		t.Fatalf("60 lines at 50/s took %s", took)
 	}
-	if n := count(t, db, `SELECT count(*) FROM cluster_log_cache`); n != 1200 {
+	if n := count(t, db, `SELECT count(*) FROM cluster_log_cache`); n != 60 {
 		t.Fatalf("rows = %d", n)
 	}
 }

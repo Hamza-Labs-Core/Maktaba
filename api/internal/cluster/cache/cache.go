@@ -122,7 +122,7 @@ type Cache struct {
 	wake       chan struct{}        // a final health set is waiting
 	dir        string               // the last Backfill's directory
 	passAt     map[string]time.Time // kind → start of the last complete pass
-	checked    bool                 // stale read positions cleared (first pass)
+	checked    bool                 // stale read positions cleared (clearStale)
 	counts     map[string]*counter
 	edges      map[string][2]time.Time // kind → oldest, newest row
 	fold       FoldStats
@@ -135,6 +135,7 @@ type Cache struct {
 	metricsMu sync.Mutex // one metrics/health flush at a time; guards usedAt
 	usedAt    map[hostAt]usedBy
 	passMu    sync.Mutex // one pass over the files at a time
+	staleMu   sync.Mutex
 	pruneMu   sync.Mutex
 }
 
@@ -199,7 +200,7 @@ func New(db *sql.DB, opts Options) *Cache {
 	if r <= 0 {
 		r = defaultRate
 	}
-	c.limiter = rate.NewLimiter(rate.Limit(r), max(r, batchRows))
+	c.limiter = rate.NewLimiter(rate.Limit(r), r)
 	return c
 }
 
@@ -285,7 +286,7 @@ func procKey(p agent.Proc) string {
 func hostOf(p agent.Proc) string {
 	switch {
 	case p.Host != "":
-		return p.Host
+		return clean(p.Host)
 	case p.IP != "":
 		return agent.IPDir(p.IP)
 	}

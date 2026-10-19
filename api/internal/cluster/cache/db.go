@@ -42,12 +42,13 @@ func (c *Cache) healthTS(t time.Time) any {
 	return t.UTC()
 }
 
-// rowRef names a row for batched deletes.
-func (c *Cache) rowRef() string {
+// batchDelete deletes at most 5000 rows of table whose col is before $1:
+// by ctid on Postgres (a TID scan), by rowid on SQLite.
+func (c *Cache) batchDelete(table, col string) string {
 	if c.sqlite {
-		return "rowid"
+		return `DELETE FROM ` + table + ` WHERE rowid IN (SELECT rowid FROM ` + table + ` WHERE ` + col + ` < $1 LIMIT 5000)`
 	}
-	return "ctid"
+	return `DELETE FROM ` + table + ` WHERE ctid = ANY (ARRAY(SELECT ctid FROM ` + table + ` WHERE ` + col + ` < $1 LIMIT 5000))`
 }
 
 type execer interface {

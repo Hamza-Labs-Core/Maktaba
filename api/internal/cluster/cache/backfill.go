@@ -157,20 +157,26 @@ func (c *Cache) pass(ctx context.Context, dir string) error {
 }
 
 // clearStale forgets the read positions of a kind whose table is empty
-// (the first pass only): the rows they stand for are gone, so the files
-// are read again from their start.
+// (once, before the first pass and, from Run, before the first write):
+// the rows they stand for are gone, so the files are read again from
+// their start. A crash empties both (UNLOGGED); this covers a table
+// emptied by hand.
 func (c *Cache) clearStale(ctx context.Context) error {
+	c.staleMu.Lock()
+	defer c.staleMu.Unlock()
 	c.mu.Lock()
 	done := c.checked
 	c.mu.Unlock()
-	if done {
+	if done || c.window <= 0 {
 		return nil
 	}
 	for _, t := range []struct{ kind, table string }{
 		{KindMetrics, "cluster_metrics_cache"}, {KindLogs, "cluster_log_cache"},
 	} {
 		var n int
-		err := c.db.QueryRowContext(ctx, `SELECT count(*) FROM (SELECT 1 FROM `+t.table+` LIMIT 1) s`).Scan(&n)
+		qctx, cancel := context.WithTimeout(ctx, c.timeout)
+		err := c.db.QueryRowContext(qctx, `SELECT count(*) FROM (SELECT 1 FROM `+t.table+` LIMIT 1) s`).Scan(&n)
+		cancel()
 		if err != nil {
 			return dbError{err}
 		}
@@ -187,6 +193,8 @@ func (c *Cache) clearStale(ctx context.Context) error {
 }
 
 func (c *Cache) readPositions(ctx context.Context, kind string) (map[fileKey]readPos, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
 	rows, err := c.db.QueryContext(ctx, `SELECT ip, day, worker, root, read_to FROM cluster_cache_files WHERE kind = $1`, kind)
 	if err != nil {
 		return nil, err
@@ -396,9 +404,15 @@ func (c *Cache) parseLine(ch *chunk, kind string, k fileKey, line []byte, low ti
 // commit writes a chunk's rows and its read position in one transaction,
 // after waiting for the read rate.
 func (c *Cache) commit(ctx context.Context, ch *chunk) error {
-	if err := c.limiter.WaitN(ctx, max(min(ch.lines, c.limiter.Burst()), 1)); err != nil {
-		return err
+	for n := ch.lines; n > 0; {
+		k := min(n, c.limiter.Burst())
+		if err := c.limiter.WaitN(ctx, k); err != nil {
+			return err
+		}
+		n -= k
 	}
+	ctx, cancel := context.WithTimeout(ctx, 3*c.timeout) // the transaction's; each statement has its own
+	defer cancel()
 	tx, err := c.db.BeginTx(ctx, nil)
 	if err != nil {
 		return dbError{err}

@@ -33,15 +33,15 @@ OUT = Path(__file__).resolve().parent / "health_fold.json"
 
 
 def rows() -> list[tuple[datetime, str, str, float]]:
-    """Raw samples from 56 h to 46 h ago (every 211 s, three hosts, four metrics, values
+    """Raw samples from 50 h to 47 h ago (every 211 s, three hosts, four metrics, values
     with fractions) and a few recent ones, the 48 h edge's neighbours, and rollups: one
     31 days old (pruned), one 29 days old (kept), one for a bucket the fold rewrites."""
     out: list[tuple[datetime, str, str, float]] = []
-    start = NOW - timedelta(hours=56)
+    start = NOW - timedelta(hours=50)
     metrics = ("cpu.pct", "nas.timeouts", "nas.open_ms_p95", "stt.audio_sec:mlx-0")
     times: list[datetime] = []
     t = start
-    while t < NOW - timedelta(hours=46):
+    while t < NOW - timedelta(hours=47):
         times.append(t)
         t += timedelta(seconds=211)
     t = NOW - timedelta(minutes=5)
@@ -61,7 +61,7 @@ def rows() -> list[tuple[datetime, str, str, float]]:
         out.append((edge + d, "edge-host", "cpu.pct", v))
     out.append((NOW - timedelta(days=31), "*rollup*", "cpu.pct", 1.0))
     out.append((NOW - timedelta(days=29), "*rollup*", "cpu.pct", 2.0))
-    rewritten = (NOW - timedelta(hours=55)).replace(second=0, microsecond=0)
+    rewritten = (NOW - timedelta(hours=49)).replace(second=0, microsecond=0)
     rewritten = rewritten.replace(minute=rewritten.minute - rewritten.minute % 10)
     out.append((rewritten, "*rollup*", "cpu.pct", 999.0))
     return out

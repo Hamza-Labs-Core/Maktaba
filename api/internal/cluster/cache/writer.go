@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -14,6 +15,11 @@ import (
 // window is on and a cluster directory is known). At the end it flushes
 // what is queued, for a few seconds at most.
 func (c *Cache) Run(ctx context.Context) {
+	// before the channel's first rows land: read positions that outlived
+	// their rows are dropped (a failure here is retried by the first pass)
+	if err := c.clearStale(ctx); err != nil && ctx.Err() == nil {
+		c.fail("check the cache tables", err)
+	}
 	var wg sync.WaitGroup
 	loop := func(every time.Duration, now bool, f func(context.Context), wake <-chan struct{}, onWake func(context.Context)) {
 		wg.Add(1)
@@ -80,22 +86,27 @@ func (c *Cache) flushLogs(ctx context.Context) {
 	if len(items) == 0 {
 		return
 	}
+	low := c.now().Add(-c.window)
 	rows := make([]logRow, 0, len(items))
+	invalid := 0
 	for _, it := range items {
 		ts, ok := parseTime(it.rec.TS)
-		if !ok {
+		if ok && ts.Before(low) {
+			continue // older than the window (a resend after a long outage)
+		}
+		r, ok2 := logRowOf(it.ip, it.worker, it.node, ts, it.rec.Level, it.rec.Event, it.rec.Logger, it.rec.Fields)
+		if !ok || !ok2 {
+			invalid++
 			continue
 		}
-		if r, ok := logRowOf(it.ip, it.worker, it.node, ts, it.rec.Level, it.rec.Event, it.rec.Logger, it.rec.Fields); ok {
-			rows = append(rows, r)
-		}
+		rows = append(rows, r)
 	}
 	sortLogs(rows)
 	added, done, err := c.insertLogs(ctx, c.db, rows)
 	c.mu.Lock()
 	k := c.counts[KindLogs]
 	k.written += added
-	k.dropped += int64(len(items) - done)
+	k.dropped += int64(invalid + len(rows) - done)
 	c.logsBusy = 0
 	for _, r := range rows[:done] {
 		c.seen(KindLogs, r.ts)
@@ -145,18 +156,26 @@ func (c *Cache) flushMetrics(ctx context.Context) {
 	if len(items) == 0 {
 		return
 	}
+	low := now.Add(-c.window)
 	rows := make([]frameRow, 0, len(items))
+	invalid := 0
 	for _, it := range items {
-		if frame, ok := canonJSON(it.frame, false); ok {
-			rows = append(rows, frameRow{worker: it.worker, slot: it.slot, at: it.at, ip: it.ip, node: it.node, frame: frame})
+		if it.at.Before(low) {
+			continue
 		}
+		frame, ok := canonJSON(it.frame, false)
+		if !ok {
+			invalid++
+			continue
+		}
+		rows = append(rows, frameRow{worker: it.worker, slot: it.slot, at: it.at, ip: it.ip, node: it.node, frame: frame})
 	}
 	sortFrames(rows)
 	added, done, err := c.insertFrames(ctx, c.db, rows)
 	c.mu.Lock()
 	k := c.counts[KindMetrics]
 	k.written += added
-	k.dropped += int64(len(items) - done)
+	k.dropped += int64(invalid + len(rows) - done)
 	c.framesBusy = 0
 	for _, r := range rows[:done] {
 		c.seen(KindMetrics, r.at)
@@ -281,7 +300,7 @@ func dedupeHealth(rows []healthRow) []healthRow {
 // validMetric: a health number health_samples can hold and the readers
 // can render (no NaN or infinity).
 func validMetric(name string, v float64) bool {
-	return name != "" && len(name) <= 200 && !math.IsNaN(v) && !math.IsInf(v, 0)
+	return name != "" && len(name) <= 200 && strings.IndexByte(name, 0) < 0 && !math.IsNaN(v) && !math.IsInf(v, 0)
 }
 
 // sortLogs orders rows by their key, so concurrent writers (the channel's

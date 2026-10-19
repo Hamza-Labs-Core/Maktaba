@@ -37,8 +37,7 @@ func (c *Cache) prune(ctx context.Context) {
 		for _, t := range []struct{ table, col string }{
 			{"cluster_metrics_cache", "at"}, {"cluster_log_cache", "ts"},
 		} {
-			if _, err := c.deleteBatches(ctx, `DELETE FROM `+t.table+` WHERE `+c.rowRef()+` IN (SELECT `+c.rowRef()+
-				` FROM `+t.table+` WHERE `+t.col+` < $1 LIMIT 5000)`, c.ts(cut)); err != nil {
+			if _, err := c.deleteBatches(ctx, c.batchDelete(t.table, t.col), c.ts(cut)); err != nil {
 				c.fail("prune "+t.table, err)
 			}
 		}

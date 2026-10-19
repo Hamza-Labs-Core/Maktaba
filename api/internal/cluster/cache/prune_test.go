@@ -109,7 +109,11 @@ func TestHealthFoldMatchesThePipeline(t *testing.T) {
 			t.Fatalf("a second fold folded %+v", st)
 		}
 
-		// two folds at once over fresh raw rows: each row folded once
+		if driver != "postgres" {
+			return // one SQLite connection: folds cannot overlap
+		}
+		// two folds at once (two hubs, or a restart mid-fold) over fresh raw
+		// rows: each row folded once
 		must2(t, db, `DELETE FROM health_samples`)
 		if _, err := c.upsertHealth(bg, db, rows); err != nil {
 			t.Fatal(err)
@@ -122,13 +126,13 @@ func TestHealthFoldMatchesThePipeline(t *testing.T) {
 		go func() { defer wg.Done(); _, n1, e1 = c.foldHealth(bg, clk.Now()) }()
 		go func() { defer wg.Done(); _, n2, e2 = other.foldHealth(bg, clk.Now()) }()
 		wg.Wait()
-		if driver == "postgres" && (e1 != nil || e2 != nil) {
+		if e1 != nil || e2 != nil {
 			t.Fatalf("concurrent folds: %v / %v", e1, e2)
 		}
-		if e1 == nil && e2 == nil && n1+n2 != f.Folded {
-			t.Fatalf("concurrent folds took %d + %d rows, want %d", n1, n2, f.Folded)
+		c.prune(bg) // a fold that met the other's rows stops early; the next one finishes
+		if st := c.Snapshot().Rollups; n1+n2+st.Folded != f.Folded {
+			t.Fatalf("concurrent folds took %d + %d (+ %d) rows, want %d", n1, n2, st.Folded, f.Folded)
 		}
-		c.prune(bg) // finishes whatever a failed (SQLite: busy) fold left
 		check("concurrent folds")
 	})
 }

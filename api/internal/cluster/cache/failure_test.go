@@ -89,7 +89,7 @@ func TestNeverBlocksOnAHungDatabase(t *testing.T) {
 	db, f := fakeDBOf("hang")
 	clk := newClock("2026-10-19T12:00:00Z")
 	c := New(db, Options{Window: 24 * time.Hour, QueueSize: 100, Now: clk.Now, Logger: quietLogger()})
-	c.timeout = 300 * time.Millisecond
+	c.timeout = 150 * time.Millisecond
 	p := agent.Proc{WorkerID: "w", IP: "10.0.0.1", Host: "h"}
 	recs := make([]agent.LogRecord, 10)
 	for i := range recs {
