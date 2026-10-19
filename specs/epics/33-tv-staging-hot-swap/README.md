@@ -65,7 +65,7 @@ draft (**accepted default**). Full list under "Decisions on the open questions" 
 | Seamless splicing | Both slots stamp **wall-clock-anchored timestamps on a fixed GOP grid** (story 33.4), so the same instant has the same PTS and an IDR in both slots: the TS splice is exact and continuous. A re-timestamping splicer covers the cases where that does not hold. |
 | Who owns the Cloudflare push | The **front door's push relay** (moves Epic 32 §7.4's pusher off the encoding slot). It holds one RTMPS/SRT session per channel and switches its *source* at a GOP boundary with continuous timestamps. Staging never pushes. |
 | Rollback | Warm (instant, while the previous slot is kept warm, default 15 min) or cold (re-stage the previous release, minutes; retention 24 h — accepted default). A LIVE crash or crash loop inside the grace period rolls back automatically. |
-| Approval (**owner**) | **Every change needs an admin's approval**: lineup, settings, schedule, art, live slots, upgrades. The auto-promote rules exist as settings but are all `approval` by default. Routine top-ups that only extend the existing grid with the same lineup and rules are **not** TV changes (they flow into every open generation); a *schedule change* is a change to grids, rules or content selection. |
+| Approval (**owner**) | **Every change needs an admin's approval**: lineup, settings, schedule, art, live slots, upgrades. The auto-promote rules exist as settings but are all `approval` by default. Routine top-ups that only extend the existing grid with the same lineup and rules are **not** TV changes (they flow into every open generation); a *schedule change* is a change to grids, rules or content selection. **Amended by Epic 35 (owner, 2026-10-19):** a `binary` change made by the cluster updater (`source.kind = auto_update`) is promoted without approval (`auto_rule = immediate`, still at programme boundaries); every other kind, and a binary change made by hand, still needs approval. |
 | Defaults (**owner**) | `tv_staging.enabled = true` by default once built (the owner's call overrides the usual "defaults = current behaviour"); the setting stays so it can be turned off (then: direct writes, one live slot plus the hot standby). Phases A–B ship behind a build flag until the epic is complete. |
 | Swap timing (**owner**) | At each channel's programme boundary (`swap_wait = boundary`), as designed. |
 
@@ -292,6 +292,9 @@ draft (**accepted default**). Full list under "Decisions on the open questions" 
 - R12.3 A hook (`notify(kind, payload)`) for the general review/notification system to subscribe.
 
 ### R13 — Upgrades
+- R13.0 *Amended by [Epic 35](../35-cluster-full-nodes-and-updates/README.md):* updates are fully automatic;
+  the updater's `binary` change (`source.kind = auto_update`) does not wait for approval (R13.1 below
+  applies to binary changes made by hand).
 - R13.1 A Maktaba upgrade (Epic 28) installs side by side and creates a `binary` TV change, which is
   staged and verified and then waits for an admin's approval like every change; the TV swap happens
   first; the API and pipeline roles restart afterwards; the front door restarts only
@@ -625,6 +628,8 @@ capacity (future).
    settings, all `approval`. Routine top-ups that only extend the existing grid with the same lineup,
    rules and content selection are **not** TV changes; a *schedule change* is a change to grids, rules
    or content selection (R9.7).
+   *Amended by Epic 35 (owner, 2026-10-19):* the `binary` kind is exempt when the change comes from the
+   cluster updater (`source.kind = auto_update`); all other kinds keep needing approval.
 3. **Swap timing — owner.** At each channel's programme boundary (`swap_wait = boundary`), as designed.
 4. **Encoder-parameter changes and Cloudflare — accepted default.** A resolution/fps change on a pushed
    channel needs explicit acknowledgement in the approval, or that channel waits for its push to end
