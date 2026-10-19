@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useI18n } from "../../lib/i18n";
 import { PRODUCTION_STYLES, queueApi } from "../../lib/queueApi";
 import type { Insights } from "../../lib/queueApi";
+import { StatGrid, StatTile } from "./StatTile";
 
 const REFRESH_MS = 60_000;
 
@@ -77,14 +78,11 @@ export function InsightsPanel() {
       <h2 className="mkt-q-section-title" id="mkt-q-insights-h">
         {t("queue.insights.title")}
       </h2>
-      <div className="mkt-q-kpis">
+      <StatGrid>
         {counters.map(([k, v]) => (
-          <div key={k} className="mkt-q-kpi">
-            <span className="mkt-q-kpi__label">{t(`queue.insights.${k}`)}</span>
-            <span className="mkt-q-kpi__value">{n(v)}</span>
-          </div>
+          <StatTile key={k} label={t(`queue.insights.${k}`)} value={n(v)} />
         ))}
-      </div>
+      </StatGrid>
       {(styles.length > 0 || genres.length > 0) && (
         <div className="mkt-q-cols">
           {styles.length > 0 && (
