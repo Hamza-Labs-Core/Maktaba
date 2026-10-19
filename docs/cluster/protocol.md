@@ -256,7 +256,7 @@ on the machine overrides `retention_days` and `file_mb`.
 | `undrain` | — | resume pulling |
 | `reload_stages` | — | re-evaluate now which queues it pulls from |
 | `log_level` | `{"level": "debug"\|"info"\|"warning"\|"error"}` | ship and write records at or above it |
-| `disconnect` | `{"reason": "..."}` | close; if `reason` is `"revoked"`, stop the worker gracefully and not reconnect |
+| `disconnect` | `{"reason": "..."}` | close; if `reason` is `"revoked"`, stop the worker gracefully and not reconnect (exit code 77) — this sealed command, not the `4010` close after it, is the authority |
 
 Every `cmd` is answered with `cmd.result`. Unknown names are answered `ok: false`.
 
@@ -374,11 +374,11 @@ Each side sends `ping` every 15 s.
 | 1001 | `going_away` | hub | API restarting | reconnect with backoff |
 | 4000 | `protocol_error` | either | bad JSON, unexpected frame, text after `welcome` | reconnect with backoff |
 | 4001 | `unsupported_version` | hub | `hello.v` not served (version 1 never is); reason lists served versions, e.g. `unsupported_version 2` | retry at the longest delay (with a common version if any); log once an hour |
-| 4003 | `not_member` | hub | node unknown, pending, rejected or revoked | retry at the longest delay |
+| 4003 | `not_member` | hub | node unknown, pending, rejected or revoked | retry at the longest delay; check membership through the database at once; never stop for good on this close alone |
 | 4004 | `auth_failed` | either | hub: wrong client proof; agent: `welcome` does not open or its proof is wrong; either: an all-zero DH result | retry at the longest delay; if the hub failed, log "this is not the home I joined" |
 | 4008 | `timeout` | either | handshake over 10 s, or 45 s of silence | reconnect |
 | 4009 | `replaced` | hub | a newer session with the same `worker_id` | retry at the longest delay; log an error |
-| 4010 | `revoked` | hub | the machine was revoked | **do not reconnect**; stop the worker gracefully |
+| 4010 | `revoked` | hub | the machine was revoked | retry at the longest delay; check membership through the database at once (stop for good only on the sealed `disconnect` `revoked` or the database's answer) |
 | 4011 | `seal_error` | either | failed tag, counter gap or repeat (after `welcome`) | reconnect |
 | 4012 | `too_large` | either | frame over 4 MiB | reconnect |
 | 4013 | `rate_limited` | hub | over 30 handshakes a minute from one address | retry at the longest delay |
@@ -386,6 +386,13 @@ Each side sends `ping` every 15 s.
 
 The close reason (at most 123 bytes of UTF-8) is the name, optionally followed by a space and
 a short detail.
+
+Close codes are **hints**: a WebSocket close frame is not authenticated (`4003` comes before
+any proof; after `welcome` a close is still outside the sealed stream). An agent MUST NOT
+stop for good on a close code. The authorities are the sealed `cmd disconnect`
+`{"reason": "revoked"}` (the hub sends it before closing `4010`) and the database (the
+machine's cluster row, its database login). On `4003` / `4010` the reference agent waits
+the longest delay and checks membership through the database at once.
 
 ## 11. Versioning and compatibility
 

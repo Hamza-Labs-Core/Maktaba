@@ -224,11 +224,11 @@ vectors and is a new protocol version (§4.7).
 | 1001 | `going_away` | hub | the API is restarting | reconnects with backoff |
 | 4000 | `protocol_error` | either | malformed JSON, an unexpected frame, text after `welcome` | reconnects with backoff |
 | 4001 | `unsupported_version` | hub | `hello.v` is not served (version 1 never is); the close reason lists the versions served, e.g. `unsupported_version 2` | retries at the longest delay; logs it once an hour |
-| 4003 | `not_member` | hub | the machine is unknown, pending, rejected or revoked | retries at the longest delay |
+| 4003 | `not_member` | hub | the machine is unknown, pending, rejected or revoked | retries at the longest delay and checks its membership through the database at once (the node heartbeat); never stops for good on this close alone |
 | 4004 | `auth_failed` | either | hub: wrong client proof (wrong pairing key or home agent key); agent: a `welcome` that does not open or carries a wrong hub proof; either: an all-zero DH result | retries at the longest delay; when the hub failed to prove itself, logs "this is not the home I joined" |
 | 4008 | `timeout` | either | handshake over 10 s, or 45 s of silence | reconnects |
 | 4009 | `replaced` | hub | a newer session with the same `worker_id` authenticated | retries at the longest delay; logs an error (two processes share a worker id) |
-| 4010 | `revoked` | hub | the admin revoked this machine | **does not reconnect**; the worker stops gracefully (phase 1 revocation) |
+| 4010 | `revoked` | hub | the admin revoked this machine | retries at the longest delay and checks its membership through the database at once; the worker stops for good (exit 77) only on the sealed `cmd disconnect {reason: "revoked"}` that precedes this close, or when the database says revoked / removed or refuses its login |
 | 4011 | `seal_error` | either | after `welcome`: a tag failed, or a counter gap or repeat (a `welcome` that does not open is `4004`) | reconnects (new keys) |
 | 4012 | `too_large` | either | a frame over the size limit (§4.7) | reconnects |
 | 4013 | `rate_limited` | hub | too many handshakes from this address | retries at the longest delay |
@@ -236,6 +236,16 @@ vectors and is a new protocol version (§4.7).
 | 1013 | `try_again_later` | hub | the agent did not keep up: its outgoing queue to the hub overflowed | reconnects with backoff |
 
 The close reason (at most 123 bytes) carries the name and an optional short detail.
+
+**Close codes are hints, not authority.** A WebSocket close frame is not authenticated:
+`4003` is sent before any proof, and even after `welcome` a close frame travels outside the
+sealed stream, so anyone who can answer as the home on the LAN could send one. A process
+therefore stops for good (exit code 77, which services do not restart) only on an
+authenticated signal: the sealed `cmd disconnect {reason: "revoked"}` (the hub sends it
+before closing `4010`), or the database — the node heartbeat finding the machine revoked,
+rejected or removed, or its database login refused (phase 1). On a bare `4003` or `4010` the
+agent waits the longest delay and runs the heartbeat's membership check at once: approved,
+it keeps working; revoked, that path stops it.
 
 A machine whose node config has no `home.cluster_pub` (joined before version 2) does not try
 to connect at all: it logs "re-join this machine" once an hour and keeps working.

@@ -13,10 +13,17 @@ channel for as long as the worker runs:
 - ``ping`` / ``pong`` every 15 s both ways; 45 s without a frame closes the channel.
 
 Reconnects: 1 s doubling to 30 s, ±20 % jitter, reset once a session lasted 60 s; the
-close codes of section 4.6 decide the rest (``4010 revoked``: no reconnect, the worker
-stops). Nothing here ever blocks or fails the worker: collection runs in threads, files
-are written by their own thread, and every error is logged (``warning`` at most once a
-minute per kind) and retried.
+close codes of section 4.6 pick the delay. Close codes are **hints**: a WebSocket close
+frame is not authenticated (``4003`` comes before any proof, and even after ``welcome`` a
+close frame travels outside the sealed stream), so anyone who can answer as the home could
+send one. The worker stops for good only on an authenticated signal — the sealed
+``cmd disconnect {reason: "revoked"}``, or the database (the node heartbeat finding the
+machine revoked, or its login refused). A ``4003`` or ``4010`` close makes the agent wait
+the longest delay and ask the database at once (:attr:`Commands.check_membership`).
+
+Nothing here ever blocks or fails the worker: collection runs in threads, files are
+written by their own thread, and every error is logged (``warning`` at most once a minute
+per kind) and retried.
 """
 
 from __future__ import annotations
@@ -85,7 +92,7 @@ LOG_BATCH_BYTES = 3 * 1024 * 1024
 MAX_FRAME = 4 * 1024 * 1024  #: a sealed frame's limit (section 4.7)
 
 #: close codes after which the agent waits the longest delay (section 4.6)
-LONG_WAIT_CODES = frozenset({4001, 4003, 4004, 4009, 4013})
+LONG_WAIT_CODES = frozenset({4001, 4003, 4004, 4009, 4010, 4013})
 CLOSE_REVOKED = 4010
 CLOSE_NOT_MEMBER = 4003
 CLOSE_NAMES = {
@@ -196,9 +203,12 @@ class Commands:
 
     drain: Callable[[bool], Awaitable[str]] | None = None
     reload_stages: Callable[[], Awaitable[str]] | None = None
-    #: the home refused this machine for good (revoked, not a member): the worker
-    #: stops gracefully (exit code 77); called with the reason
+    #: the home revoked this machine, said in a sealed frame (``cmd disconnect
+    #: {reason: "revoked"}``): the worker stops gracefully (exit code 77); with the reason
     revoked: Callable[[str], None] | None = None
+    #: a membership check through the database, now (the node heartbeat): run when the
+    #: hub's close says "not a member" / "revoked", which alone proves nothing
+    check_membership: Callable[[], Awaitable[None]] | None = None
 
 
 class _Session:
@@ -386,10 +396,15 @@ class ChannelAgent:
                     _log.exception("cluster_agent_error")
             code = self.last_close[0] if self.last_close else None
             self.last_close = None
-            if code == CLOSE_REVOKED:
-                self._revoked("closed by the home (4010 revoked)")
-            elif code == CLOSE_NOT_MEMBER and self.identity.kind == "node":
-                self._revoked("the home does not know this machine (4003 not_member)")
+            if code in (CLOSE_REVOKED, CLOSE_NOT_MEMBER):
+                # unauthenticated: a hint only. The database decides (the heartbeat stops
+                # the worker if the machine really was revoked or removed).
+                self._warn(
+                    "cluster_agent_membership_doubt",
+                    code=code,
+                    detail="checking this machine's membership with the database",
+                )
+                await self._check_membership()
             if self._stop.is_set() or self._no_reconnect:
                 return
             if code == 4009:
@@ -712,6 +727,15 @@ class ChannelAgent:
         await s.send({"t": "cmd.result", "id": cmd_id, "ok": ok, "detail": detail})
         if close is not None:
             await s.ws.close(*close)
+
+    async def _check_membership(self) -> None:
+        check = self.commands.check_membership
+        if check is None:
+            return
+        try:
+            await asyncio.wait_for(check(), 30)
+        except Exception as exc:  # noqa: BLE001 - the regular heartbeat tries again
+            self._warn("cluster_agent_membership_check_failed", error=str(exc))
 
     def _revoked(self, why: str) -> None:
         if self.revoked:

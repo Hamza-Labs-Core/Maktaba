@@ -300,7 +300,9 @@ Then open **Task Scheduler**, find *Maktaba worker*, and on its **Settings** tab
 the task fails, restart every 1 minute**, and untick **Stop the task if it runs longer
 than**.
 
-A worker stops for good when you revoke its machine: it exits with code 77. The
+A worker stops for good when you revoke its machine — the home's sealed revocation on the
+live connection, or its database, says so (a bare closed connection never does): it exits
+with code 77. The
 installer's services and the systemd example (`RestartPreventExitStatus=77`) do not restart
 it then; the hand-made launchd and Task Scheduler entries above do, and keep being refused —
 unload them when you remove the machine.

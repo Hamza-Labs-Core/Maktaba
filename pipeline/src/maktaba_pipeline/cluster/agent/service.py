@@ -156,7 +156,7 @@ def _settings_hook(files: ClusterFiles) -> Callable[[Mapping[str, Any]], None]:
 
 
 def _refused(shutdown: asyncio.Event) -> Callable[[str], None]:
-    """The home refused this machine for good: the worker stops, exit code 77."""
+    """The home revoked this machine, in a sealed frame: the worker stops, exit code 77."""
 
     def stop(reason: str) -> None:
         exitcodes.mark_refused(reason)
@@ -181,6 +181,7 @@ async def run_agent(
     drain: Callable[[bool], Awaitable[str]] | None = None,
     reload_stages: Callable[[], Awaitable[str]] | None = None,
     health: Callable[[bool], Mapping[str, Any]] | None = None,
+    check_membership: Callable[[], Awaitable[None]] | None = None,
     job_tracker: JobTracker | None = None,
 ) -> None:
     files: ClusterFiles | None = None
@@ -239,7 +240,12 @@ async def run_agent(
             collector=collector,
             files=files,
             llm=local,
-            commands=Commands(drain=drain, reload_stages=reload_stages, revoked=_refused(shutdown)),
+            commands=Commands(
+                drain=drain,
+                reload_stages=reload_stages,
+                revoked=_refused(shutdown),
+                check_membership=check_membership,
+            ),
             on_settings=_settings_hook(files),
             status_path=status_dir() / f"{safe_name(worker_id)}.json",
         )
@@ -311,4 +317,6 @@ async def run_for_worker(
         drain=drain,
         reload_stages=reload_stages,
         health=None if health is None else (lambda final: health_frame(health, final=final)),
+        # a node's heartbeat reads its cluster row: revoked or removed -> stop (exit 77)
+        check_membership=worker.beat,
     )

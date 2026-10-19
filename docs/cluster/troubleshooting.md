@@ -189,6 +189,13 @@ WebSocket upgrades on `/api/cluster/ws` in the proxy.
 A revoked machine's database login is disabled at once, its live connection is closed, its
 unfinished jobs go back to the queue and its worker stops; it does not restart by itself.
 
+A worker stops for good (exit code 77) only when the home says so in a way that cannot be
+faked: the home's sealed "revoked" message on the live connection, or the home's database
+(the machine's record revoked or removed, or its database login refused). A connection that
+is merely closed with "not a member" or "revoked" — which anyone posing as the home on the
+network could send — is treated as a hint: the worker logs `cluster_agent_membership_doubt`,
+asks the database at once, and keeps working if the machine is still approved there.
+
 To bring the same computer back: on the home, **Remove** the revoked machine, then run
 `maktaba-pipeline join` on the computer again and approve the new code.
 

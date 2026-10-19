@@ -232,21 +232,61 @@ async def test_backoff_doubles_with_jitter_and_caps() -> None:
     assert all(24.0 <= agent._backoff(n) <= 30.0 for n in (6, 9, 20))
 
 
-@pytest.mark.parametrize("code", [4010, 4003])
-async def test_refused_for_good_stops_the_worker(code: int) -> None:
+@pytest.mark.parametrize("code", [4003, 4010])
+async def test_a_close_code_alone_never_stops_the_worker(code: int) -> None:
+    """A close frame is not authenticated (4003 comes before any proof; any close travels
+    outside the sealed stream): the agent asks the database and keeps retrying."""
     hub, key = node_hub()
     reasons: list[str] = []
+    checks: list[float] = []
+
+    async def check_membership() -> None:
+        checks.append(asyncio.get_running_loop().time())
+
+    commands = Commands(revoked=reasons.append, check_membership=check_membership)
     async with running_hub(hub):
-        if code == 4003:
+        if code == 4003:  # refused before any proof
             hub.refuse, hub.refuse_code = "not_member", 4003
-        agent = make_agent(hub, node_key=key, commands=Commands(revoked=reasons.append))
+        agent = make_agent(hub, node_key=key, commands=commands, backoff_max=0.2)
         async with running(agent) as task:
-            if code == 4010:
+            if code == 4010:  # after welcome, with no sealed disconnect before it
                 s = await hub.wait_session(1)
                 await s.ws.close(4010, "revoked")
-            await asyncio.wait_for(task, 3)  # it does not reconnect
-            assert agent.revoked and reasons and str(code) in reasons[0]
-            assert len(hub.hellos) == 1
+            await until(lambda: len(checks) >= 1)  # such a close: the database, at once
+            await until(lambda: len(hub.hellos) >= 2)  # and it came back (longest delay)
+            assert not task.done() and not agent.revoked and reasons == []
+            if code == 4003:
+                await until(lambda: len(checks) >= 2)  # every time
+                hub.refuse = None  # the home knows it again: the channel works
+                await hub.wait_session(1)
+            else:
+                await hub.wait_session(2)
+
+
+async def test_the_sealed_revocation_stops_the_worker_with_77() -> None:
+    from maktaba_pipeline.cluster import exitcodes
+    from maktaba_pipeline.cluster.agent.service import _refused
+
+    hub, key = node_hub()
+    shutdown = asyncio.Event()
+    checks: list[int] = []
+
+    async def check_membership() -> None:
+        checks.append(1)
+
+    commands = Commands(revoked=_refused(shutdown), check_membership=check_membership)
+    async with running_hub(hub):
+        agent = make_agent(hub, node_key=key, commands=commands)
+        async with running(agent) as task:
+            s = await hub.wait_session(1)
+            await s.send({"t": "cmd", "id": "x", "name": "disconnect",
+                          "args": {"reason": "revoked"}})  # fmt: skip
+            assert (await s.next("cmd.result"))["ok"]
+            await s.ws.close(4010, "revoked")
+            await asyncio.wait_for(task, 3)  # no reconnect
+    assert agent.revoked and shutdown.is_set()
+    assert exitcodes.exit_code(0) == exitcodes.EX_NOPERM == 77
+    assert len(hub.hellos) == 1
 
 
 async def test_a_gap_in_the_counter_closes_the_channel() -> None:

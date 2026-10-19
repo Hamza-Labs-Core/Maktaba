@@ -1,8 +1,10 @@
 """Exit codes a service manager can act on (sysexits.h).
 
-- ``EX_NOPERM`` (77): the home refused this machine for good — the channel closed with
-  ``4010 revoked`` or ``4003 not_member``, or the database login is refused (revoked
-  credentials). Restarting will not help; a service unit should stop restarting.
+- ``EX_NOPERM`` (77): the home refused this machine for good, said by an authenticated
+  source only — the sealed ``cmd disconnect {reason: "revoked"}`` on the channel, or the
+  database (the node's row revoked, rejected or removed; its login refused). A bare
+  WebSocket close (``4003``, ``4010``) is not authenticated and never leads here.
+  Restarting will not help; a service unit should stop restarting.
 - ``EX_CONFIG`` (78): ``run --node`` on a machine that has not joined a home.
 
 The worker marks the refusal (:func:`mark_refused`) where it sees it and stops gracefully;
