@@ -81,3 +81,7 @@ rate-limited/cached `WebClient` and YouTube adapter from
   no library contents are sent. The feature is off by default.
 - **Mixed-language queries.** Arabic queries are passed through; YouTube
   relevance is the provider's, but local results remain primary.
+
+## Implementation note
+
+The search runs `yt-dlp ytsearchN:<query>` in flat-playlist mode on the server (the binary the TV live slots use, `MAKTABA_YTDLP` or `yt-dlp` on PATH), so no YouTube Data API key is needed. Without yt-dlp the Search page shows neither the toggle nor the section (`GET /api/search/youtube/status`). Each search has a timeout and results are cached for 10 minutes. Import stages the title, channel, description, thumbnail, date and length as a `youtube` enrichment candidate on the chosen video.

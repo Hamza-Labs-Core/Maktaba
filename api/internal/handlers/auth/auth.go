@@ -32,7 +32,6 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/authz"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/jwt"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/passwordreset"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/refresh"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/securityaudit"
@@ -94,9 +93,10 @@ type Handler struct {
 	// registration as closed (safe default).
 	DB *sql.DB
 
-	// PasswordReset backs the forgot/reset-password flow
-	// (web-pages-batch2). Nil ⇒ those endpoints return 503.
-	PasswordReset *passwordreset.Store
+	// Credentials revokes every web session and refresh family of a user
+	// when an admin resets their password. Nil ⇒ the Sessions and
+	// RefreshTokens stores are used.
+	Credentials CredentialRevoker
 
 	// ACL snapshots the user's readable libraries into the access
 	// token's `lib[]` claim at mint time. Streaming's claims guard
@@ -145,8 +145,6 @@ func (h *Handler) Mount(r chi.Router) {
 	// also added to DefaultPublicAllowlist so the global gate lets
 	// anonymous callers through.
 	r.Post("/api/auth/register", h.Register)
-	r.Post("/api/auth/forgot-password", h.ForgotPassword)
-	r.Post("/api/auth/reset-password", h.ResetPassword)
 	// web-pages-batch2 — authenticated self-service (behind the gate).
 	r.Get("/api/me", h.GetMe)
 	r.Get("/api/me/sessions", h.MeSessions)
@@ -168,6 +166,8 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Patch("/api/users/{id}", h.AdminUpdateUser)
 	r.Delete("/api/users/{id}", h.AdminDeleteUser)
 	r.Post("/api/users/{id}/unlock", h.AdminUnlockUser)
+	// No mailer, so a forgotten password is reset by an admin.
+	r.Post("/api/users/{id}/reset-password", h.AdminResetPassword)
 }
 
 // loginRequest is the JSON body shape for POST /api/auth/login.
@@ -196,6 +196,9 @@ type userResponse struct {
 	ID       string `json:"id"`
 	Username string `json:"username"`
 	IsAdmin  bool   `json:"is_admin"`
+	// MustChangePassword: an admin reset the password to a temporary one;
+	// the web app shows only the change-password form until it is changed.
+	MustChangePassword bool `json:"must_change_password"`
 }
 
 // Login is the single endpoint shared between web and native flows.
@@ -268,6 +271,12 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if isNativeClient(r) {
+		if u.MustChangePassword {
+			// An app cannot show the change-password form: the temporary
+			// password only opens it in the web app.
+			httperror.Write(w, r, passwordChangeRequired())
+			return
+		}
 		h.respondNative(w, r, u)
 		return
 	}
@@ -536,11 +545,13 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	// A principal with no user row (the admin-token bypass) has no
 	// username; any other lookup failure is a server error.
 	username := ""
+	mustChange := false
 	if h.Users != nil {
 		u, err := h.Users.GetByID(r.Context(), p.UserID)
 		switch {
 		case err == nil:
 			username = u.Username
+			mustChange = u.MustChangePassword
 		case !errors.Is(err, users.ErrNotFound):
 			httperror.Write(w, r, httperror.Internal("load user"))
 			return
@@ -552,7 +563,9 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 		Libraries: libs,
 		ID:        p.UserID,
 		Username:  username,
-		User:      userResponse{ID: p.UserID, Username: username, IsAdmin: p.IsAdmin},
+		User: userResponse{
+			ID: p.UserID, Username: username, IsAdmin: p.IsAdmin, MustChangePassword: mustChange,
+		},
 	})
 }
 
@@ -693,6 +706,13 @@ func (h *Handler) CookieAuth(next http.Handler) http.Handler {
 		}
 		_ = h.Sessions.TouchLastSeen(r.Context(), sess.ID, h.now())
 
+		// After an admin reset to a temporary password the session may
+		// only choose a new password (and see who it is, or sign out).
+		if u.MustChangePassword && !allowedWhilePasswordChange(r) {
+			httperror.Write(w, r, passwordChangeRequired())
+			return
+		}
+
 		p := &principal.Principal{
 			UserID:             u.ID,
 			IsAdmin:            u.IsAdmin,
@@ -825,9 +845,10 @@ func writeAdminGate(w http.ResponseWriter, r *http.Request, p *principal.Princip
 
 func toUserResponse(u *users.User) userResponse {
 	return userResponse{
-		ID:       u.ID,
-		Username: u.Username,
-		IsAdmin:  u.IsAdmin,
+		ID:                 u.ID,
+		Username:           u.Username,
+		IsAdmin:            u.IsAdmin,
+		MustChangePassword: u.MustChangePassword,
 	}
 }
 
@@ -894,9 +915,8 @@ func NewHandler(d Deps) *Handler {
 		SecureCookies: d.SecureCookies,
 		ACL:           &authz.ACLStore{DB: d.DB},
 		// web-pages-batch2 self-service: DB powers the open-registration
-		// settings read; PasswordReset backs forgot/reset-password.
-		DB:            d.DB,
-		PasswordReset: passwordreset.New(d.DB),
+		// settings read.
+		DB: d.DB,
 		// Same store instance backs the brute-force counter so the
 		// (previously dead) IncrementFailedAttempt is driven live.
 		FailedLogins: us,

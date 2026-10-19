@@ -99,10 +99,10 @@ describe("App routes (test-cases/app-shell.md)", () => {
   });
 });
 
-// The four public pages sit outside AppShell, so App.tsx gives them their own
+// The public pages sit outside AppShell, so App.tsx gives them their own
 // RouteErrorBoundary: a render crash there shows the fallback, and Back
 // brings the app back.
-describe("Public page crash (login / register / forgot / reset test cases)", () => {
+describe("Public page crash (login / register test cases)", () => {
   async function expectFallbackThenBack(backHeading: string) {
     expect(await screen.findByRole("alert", {}, { timeout: 300 })).toHaveTextContent(
       en["common.pageError"]
@@ -117,11 +117,14 @@ describe("Public page crash (login / register / forgot / reset test cases)", () 
 
   it("LGN-23: a crash on /login shows a fallback; Back recovers", async () => {
     quiet();
-    open("/forgot-password");
-    const user = userEvent.setup();
+    open("/register");
+    await screen.findByRole("heading", { name: en["register.title"] });
     crash.cluster = true;
-    await user.click(await screen.findByRole("link", { name: en["register.toLogin"] }));
-    await expectFallbackThenBack(en["forgot.title"]);
+    await act(async () => {
+      window.history.pushState({}, "", "/login");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await expectFallbackThenBack(en["register.title"]);
   });
 
   it("REG-19: a crash on /register shows a fallback; Back recovers", async () => {
@@ -133,24 +136,9 @@ describe("Public page crash (login / register / forgot / reset test cases)", () 
     await expectFallbackThenBack(en["app.title"]);
   });
 
-  it("FPW-12: a crash on /forgot-password shows a fallback; Back recovers", async () => {
-    quiet();
-    open("/login");
-    const user = userEvent.setup();
-    crash.keys.add("forgot.title");
-    await user.click(await screen.findByRole("link", { name: en["login.forgot"] }));
-    await expectFallbackThenBack(en["app.title"]);
-  });
-
-  it("RPW-16: a crash on /reset-password shows a fallback; Back recovers", async () => {
-    quiet();
+  it("no self-service reset: /forgot-password and /reset-password are gone", async () => {
     open("/forgot-password");
-    await screen.findByRole("heading", { name: en["forgot.title"] });
-    crash.keys.add("reset.title");
-    await act(async () => {
-      window.history.pushState({}, "", "/reset-password?token=x");
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    });
-    await expectFallbackThenBack(en["forgot.title"]);
+    expect(await screen.findByRole("heading", { name: en["app.title"] })).toBeInTheDocument();
+    expect(screen.queryByText("Reset your password")).not.toBeInTheDocument();
   });
 });

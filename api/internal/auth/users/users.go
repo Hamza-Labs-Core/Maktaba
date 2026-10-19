@@ -47,6 +47,10 @@ type User struct {
 	LockedUntil    *time.Time
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	// MustChangePassword is set when an admin reset the password to a
+	// temporary one (slot 0138): the user may only choose a new password
+	// until they do.
+	MustChangePassword bool
 }
 
 // IsLocked reports whether the user is currently in the brute-force
@@ -147,7 +151,7 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (*User, error) {
 	id := uuid.NewString()
 	const q = `INSERT INTO users (id, username, pw_hash, is_admin, email, display_name)
 	             VALUES ($1, $2, $3, $4, $5, $6)
-	           RETURNING id, username, pw_hash, is_admin, failed_attempts, locked_until, created_at, updated_at`
+	           RETURNING id, username, pw_hash, is_admin, failed_attempts, locked_until, created_at, updated_at, must_change_password`
 	row := s.DB.QueryRowContext(ctx, q, id, in.Username, hash, in.IsAdmin,
 		nullIfEmpty(in.Email), nullIfEmpty(in.DisplayName))
 	u, err := scanUser(row)
@@ -162,7 +166,7 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (*User, error) {
 
 // GetByID fetches one user by primary key.
 func (s *Store) GetByID(ctx context.Context, id string) (*User, error) {
-	const q = `SELECT id, username, pw_hash, is_admin, failed_attempts, locked_until, created_at, updated_at
+	const q = `SELECT id, username, pw_hash, is_admin, failed_attempts, locked_until, created_at, updated_at, must_change_password
 	             FROM users WHERE id = $1`
 	row := s.DB.QueryRowContext(ctx, q, id)
 	u, err := scanUser(row)
@@ -175,7 +179,7 @@ func (s *Store) GetByID(ctx context.Context, id string) (*User, error) {
 // GetByUsername fetches one user by case-insensitive username.
 // Used by the login handler.
 func (s *Store) GetByUsername(ctx context.Context, username string) (*User, error) {
-	const q = `SELECT id, username, pw_hash, is_admin, failed_attempts, locked_until, created_at, updated_at
+	const q = `SELECT id, username, pw_hash, is_admin, failed_attempts, locked_until, created_at, updated_at, must_change_password
 	             FROM users WHERE lower(username) = lower($1)`
 	row := s.DB.QueryRowContext(ctx, q, username)
 	u, err := scanUser(row)
@@ -191,6 +195,9 @@ type UpdateInput struct {
 	Username *string
 	Password *string
 	IsAdmin  *bool
+	// MustChangePassword sets or clears the "choose a new password at the
+	// next sign-in" flag (admin reset, self-service change).
+	MustChangePassword *bool
 }
 
 // Update applies the partial update to `id`. Wraps the password
@@ -200,7 +207,7 @@ type UpdateInput struct {
 // Refuses to demote the last admin (returns ErrLastAdmin); callers
 // can let that bubble back as a 409.
 func (s *Store) Update(ctx context.Context, id string, in UpdateInput) (*User, error) {
-	if in.Username == nil && in.Password == nil && in.IsAdmin == nil {
+	if in.Username == nil && in.Password == nil && in.IsAdmin == nil && in.MustChangePassword == nil {
 		return s.GetByID(ctx, id)
 	}
 	if in.Username != nil {
@@ -262,11 +269,16 @@ func (s *Store) Update(ctx context.Context, id string, in UpdateInput) (*User, e
 		args = append(args, *in.IsAdmin)
 		idx++
 	}
+	if in.MustChangePassword != nil {
+		sets = append(sets, fmt.Sprintf("must_change_password = $%d", idx))
+		args = append(args, *in.MustChangePassword)
+		idx++
+	}
 	sets = append(sets, "updated_at = now()")
 	args = append(args, id)
 
 	q := fmt.Sprintf(`UPDATE users SET %s WHERE id = $%d
-	                  RETURNING id, username, pw_hash, is_admin, failed_attempts, locked_until, created_at, updated_at`,
+	                  RETURNING id, username, pw_hash, is_admin, failed_attempts, locked_until, created_at, updated_at, must_change_password`,
 		strings.Join(sets, ", "), idx)
 	row := tx.QueryRowContext(ctx, q, args...)
 	u, err := scanUser(row)
@@ -444,9 +456,7 @@ func (s *Store) GetProfile(ctx context.Context, id string) (*Profile, error) {
 }
 
 // IDByEmail returns the user id owning the case-insensitive email, or
-// ErrNotFound. Used by the forgot-password flow and the register
-// pre-check. Never reveals the result to the client directly (the
-// forgot-password handler always responds 200).
+// ErrNotFound. Used by the register pre-check.
 func (s *Store) IDByEmail(ctx context.Context, email string) (string, error) {
 	const q = `SELECT id FROM users WHERE email IS NOT NULL AND lower(email) = lower($1)`
 	var id string
@@ -535,7 +545,7 @@ func scanUser(row *sql.Row) (*User, error) {
 	var locked sql.NullTime
 	if err := row.Scan(
 		&u.ID, &u.Username, &u.pwHash, &u.IsAdmin,
-		&u.FailedAttempts, &locked, &u.CreatedAt, &u.UpdatedAt,
+		&u.FailedAttempts, &locked, &u.CreatedAt, &u.UpdatedAt, &u.MustChangePassword,
 	); err != nil {
 		return nil, err
 	}

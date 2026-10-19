@@ -16,7 +16,6 @@ import { SSO_AUTHORIZE_PATH, assignLocation, safeRelativePath } from "../lib/nav
 
 interface LocationState {
   from?: string;
-  reset?: boolean;
 }
 
 export function Login() {
@@ -74,11 +73,6 @@ export function Login() {
       <form className="mkt-login__form" onSubmit={onSubmit} aria-label={t("login.submit")}>
         <h1 className="mkt-login__title">{t("app.title")}</h1>
         {!toAuthorize && <ClusterSignIn returnTo={dest} />}
-        {(location.state as LocationState | null)?.reset && (
-          <div className="mkt-alert mkt-alert--success" role="status">
-            {t("reset.success")}
-          </div>
-        )}
         <label className="mkt-field">
           <span className="mkt-field__label">{t("login.username")}</span>
           <input
@@ -109,9 +103,6 @@ export function Login() {
           {submitting ? t("common.loading") : t("login.submit")}
         </button>
         <div className="mkt-login__links">
-          <Link to="/forgot-password" className="mkt-login__link">
-            {t("login.forgot")}
-          </Link>
           <Link to="/register" className="mkt-login__link">
             {t("login.register")}
           </Link>

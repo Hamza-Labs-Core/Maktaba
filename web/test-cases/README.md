@@ -41,8 +41,8 @@ Responsive, RTL, Theme, Accessibility.
 2. **A page crash breaks Back.** After a page crashed, browser Back did not work until a
    refresh, because there was no error boundary. Every page has a case that makes the page
    throw while rendering. The expected result is a route error fallback, and Back or a nav
-   link then works without a refresh. The four auth pages (`/login`, `/register`,
-   `/forgot-password`, `/reset-password`) sit outside `AppShell`, so a boundary there does
+   link then works without a refresh. The auth pages (`/login`, `/register`) and the
+   required password change after an admin reset sit outside `AppShell`, so a boundary there does
    not cover them; their cases say so.
 
 ## Suspected bugs
@@ -64,14 +64,12 @@ open are `it.fails` / `it.todo` tests.
 
 ## Sign-in and app shell
 
-| File                                     | Route                           | Prefix | Cases | P1  | Covered (Yes / Partial) |
-| ---------------------------------------- | ------------------------------- | ------ | ----- | --- | ----------------------- |
-| [login.md](login.md)                     | `/login`                        | LGN    | 27    | 9   | 24 / 0                  |
-| [register.md](register.md)               | `/register`                     | REG    | 23    | 4   | 19 / 0                  |
-| [forgot-password.md](forgot-password.md) | `/forgot-password`              | FPW    | 16    | 3   | 11 / 0                  |
-| [reset-password.md](reset-password.md)   | `/reset-password?token=<token>` | RPW    | 20    | 5   | 18 / 0                  |
-| [app-shell.md](app-shell.md)             | layout, `/`, `*`                | SHL    | 34    | 13  | 26 / 2                  |
-| [more-menu.md](more-menu.md)             | `/more`                         | MOR    | 17    | 6   | 12 / 0                  |
+| File                         | Route            | Prefix | Cases | P1  | Covered (Yes / Partial) |
+| ---------------------------- | ---------------- | ------ | ----- | --- | ----------------------- |
+| [login.md](login.md)         | `/login`         | LGN    | 27    | 9   | 24 / 0                  |
+| [register.md](register.md)   | `/register`      | REG    | 23    | 4   | 19 / 0                  |
+| [app-shell.md](app-shell.md) | layout, `/`, `*` | SHL    | 34    | 13  | 26 / 2                  |
+| [more-menu.md](more-menu.md) | `/more`          | MOR    | 17    | 6   | 12 / 0                  |
 
 ## Library and playback
 

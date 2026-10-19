@@ -108,11 +108,8 @@ model), SHL-02 (`NotFound.tsx` is English only), REG-05 (password length hint), 
 - auth.tsx:63-64,69-74 200 without `user` -> setUser(undefined) -> bounce to /login silently.
 - Register.tsx:30-33 nav() during render.
 - Register.tsx:48 problem without `type` -> TypeError, unhandled.
-- Register.tsx:36 `valid` ignores 8-char min (ResetPassword checks it).
-- Register.tsx:51-53, ResetPassword.tsx:39 + api.ts:168-173 raw HTML 502 body shown in alert.
-- ResetPassword.tsx:39 any error w/o detail (incl. 500) says "link invalid/expired".
-- ResetPassword.tsx:36 + Login.tsx:48-50 stale signed-in user skips reset banner.
-- ForgotPassword.tsx:39-45 "sent" message not a live region; focus lost.
+- Register.tsx:36 `valid` ignores 8-char min.
+- Register.tsx:51-53 + api.ts:168-173 raw HTML 502 body shown in alert.
 - DesktopBridge.tsx:78-99 + DropOverlay.tsx:26-38 overlay never closes after all-accepted drop.
 - DropOverlay.tsx:20,28, NotFound.tsx:6-10 hardcoded English.
 - NotificationsBell.tsx:106,119 missing `unread` -> "NaN" badge.
@@ -120,7 +117,6 @@ model), SHL-02 (`NotFound.tsx` is English only), REG-05 (password length hint), 
 - AppShell.tsx:52-65 /admin/enrichment not in nav or More menu.
 - AppShell.tsx:150-160 sign-out label-in-name mismatch; two nav landmarks both "Primary".
 - AppShell.tsx:266-275 MoreMenu sign-out has no pending state (double POST).
-- ResetPassword.tsx:20,27 whitespace token counts as present; `+` in token becomes space.
 
 ## Channels / filler / analytics / enrichment
 
