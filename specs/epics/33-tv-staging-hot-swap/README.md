@@ -838,9 +838,8 @@ capacity (future).
   last instant the target is live, the old live slot `previous` until `previous_until`
   (warm on the watched channels), the old standby drained; at the end of the grace the
   previous slot drains and a standby starts on the live release. A routing switch during
-  an operation answers 409 `swap_in_progress`. `POST /internal/tv/routing/staging {slot}`
-  (signed, loopback) gives an instance that runs a staged release the staging role (the
-  hook story 33.5's staging start uses; the staging slot is never a failover target).
+  an operation answers 409 `swap_in_progress`. The staging slot (story 33.5's) is
+  never a failover target; a change staged inside the grace never takes the previous slot.
 - **HLS** (`Stitcher.Plan`): the live slot's segments are listed while they end by the
   instant; the target's segment that starts where the last one ended follows after one
   `EXT-X-DISCONTINUITY` (media sequence continuing, PDT continuous: 0 ms in the test).

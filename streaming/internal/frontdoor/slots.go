@@ -78,8 +78,8 @@ type Slots struct {
 	previous      string
 	previousUntil time.Time
 	boundAt       map[string]time.Time
-	stage      *stagingRun
-	lastSample time.Time
+	stage         *stagingRun
+	lastSample    time.Time
 }
 
 // slotHealth is what the last probes of a slot said.

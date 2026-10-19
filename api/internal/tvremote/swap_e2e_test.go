@@ -247,7 +247,7 @@ func TestSwapRollbackEndToEnd(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		bin += ".exe"
 	}
-	build := exec.Command("go", "build", "-o", bin, ".")
+	build := exec.Command("go", "build", "-tags", "tvstaging", "-o", bin, ".")
 	build.Dir = streamingDir
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build streaming: %v\n%s", err, out)
@@ -418,30 +418,27 @@ func TestSwapRollbackEndToEnd(t *testing.T) {
 		out, _ := io.ReadAll(resp.Body)
 		return resp.StatusCode, string(out)
 	}
-	// staging warms the watched channel (what story 33.5's warm-up does)
-	prewarm := func() {
+	// story 33.5's staging start, as the change controller sends it: amber, up
+	// on the staged release, takes the staging role and warms the watched channel
+	prewarm := func(change string) {
 		t.Helper()
 		e2eWait(t, "amber up", 60*time.Second, func() bool {
 			st, ok := getSlotStatus(base("amber"))
 			return ok && st.Rel == r2
 		})
-		if code, out := internal("/internal/tv/routing/staging", map[string]any{"slot": "amber"}); code != 200 {
-			t.Fatalf("staging role: %d %s", code, out)
+		plan := map[string]any{"change_id": change, "release_id": r2, "version": "dev", "channels": []string{ch, ch2},
+			"changed": []string{ch}, "probe": ch2, "probe_seconds": 5}
+		if code, out := internal("/internal/tv/staging/start", plan); code != 200 {
+			t.Fatalf("staging start: %d %s", code, out)
 		}
 		e2eWait(t, "amber warm on the channel", 90*time.Second, func() bool {
-			st, _ := getSlotStatus(base("amber"))
-			b, _ := json.Marshal(map[string]any{"role": "staging", "epoch": st.Epoch, "channels": []string{ch}})
-			resp, err := http.Post(base("amber")+"/internal/tv/slot/warm", "application/json", bytes.NewReader(b))
-			if err == nil {
-				resp.Body.Close()
-			}
-			resp2, err := http.Get(base("amber") + "/stream/channel/" + ch + "/index.m3u8")
+			resp, err := http.Get(base("amber") + "/stream/channel/" + ch + "/index.m3u8")
 			if err != nil {
 				return false
 			}
-			body, _ := io.ReadAll(resp2.Body)
-			resp2.Body.Close()
-			return resp2.StatusCode == 200 && strings.Count(string(body), "seg-") >= 3
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return resp.StatusCode == 200 && strings.Count(string(body), "seg-") >= 3
 		})
 	}
 
@@ -565,14 +562,17 @@ func TestSwapRollbackEndToEnd(t *testing.T) {
 		return nil
 	}
 	go ctl.Run(ctx)
-	newChange := func(state string) string {
+	// a staged, verified change (ready); approve() is the admin's approval
+	newChange := func() string {
 		var id string
-		if err := db.QueryRow(`INSERT INTO tv_changes (state, title, source, kinds, release_id, base_release_id, approved_by, approved_at)
-			VALUES ($1, 'e2e', '{"kind": "manual"}', '["schedule"]', $2, $3,
-			CASE WHEN $1 = 'approved' THEN '["admin"]'::jsonb ELSE '[]'::jsonb END, now()) RETURNING id`, state, r2, r1).Scan(&id); err != nil {
+		if err := db.QueryRow(`INSERT INTO tv_changes (state, title, source, kinds, release_id, base_release_id, verify_report)
+			VALUES ('ready', 'e2e', '{"kind": "manual"}', '["schedule"]', $1, $2, '{"warnings": 0}') RETURNING id`, r2, r1).Scan(&id); err != nil {
 			t.Fatal(err)
 		}
 		return id
+	}
+	approve := func(id string) {
+		mustExec(`UPDATE tv_changes SET state = 'approved', approved_by = '["admin"]', approved_at = now() WHERE id = $1`, id)
 	}
 	changeState := func(id string) (state, reason string) {
 		var r sql.NullString
@@ -633,10 +633,11 @@ func TestSwapRollbackEndToEnd(t *testing.T) {
 	}
 
 	// ---- 1. the swap: the watched channel at its boundary ----------------------
-	prewarm()
+	c1 := newChange()
+	prewarm(c1)
 	segs0 := len(hls.entries())
 	frames0, _, _ := ts.stats(0)
-	c1 := newChange("approved")
+	approve(c1)
 	tSwap := time.Now()
 	var plannedAt time.Time
 	e2eWait(t, "the swap committed", 30*time.Second, func() bool {
@@ -710,9 +711,10 @@ func TestSwapRollbackEndToEnd(t *testing.T) {
 	// ---- 3. a crash of the new live slot inside the grace: automatic rollback ---
 	restart("green", "") // the supervisor's restarts: the standby, and amber on the staged release
 	restart("amber", r2)
-	prewarm()
+	c2 := newChange()
+	prewarm(c2)
 	segs2 := len(hls.entries())
-	c2 := newChange("approved")
+	approve(c2)
 	e2eWait(t, "the second swap live", 90*time.Second, func() bool {
 		s, _ := changeState(c2)
 		return s == tvchange.StateLive
@@ -769,14 +771,8 @@ func TestSwapRollbackEndToEnd(t *testing.T) {
 	// ---- 4. a crash of the live slot with an unapproved change staged ----------
 	restart("green", "")
 	restart("amber", r2)
-	c3 := newChange("ready") // staged and verified, not approved
-	e2eWait(t, "amber up on the staged release", 60*time.Second, func() bool {
-		st, ok := getSlotStatus(base("amber"))
-		return ok && st.Rel == r2
-	})
-	if code, out := internal("/internal/tv/routing/staging", map[string]any{"slot": "amber"}); code != 200 {
-		t.Fatalf("staging role: %d %s", code, out)
-	}
+	c3 := newChange() // staged and verified, not approved
+	prewarm(c3)
 	e2eWait(t, "green the standby again, warm", 90*time.Second, func() bool {
 		g, ok := getSlotStatus(base("green"))
 		return ok && g.Role == "standby" && contains(g.Stations, ch) && g.Rel == r1

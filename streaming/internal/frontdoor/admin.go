@@ -31,9 +31,6 @@ func (h *Handler) MountInternal(r chi.Router) {
 		g.Post("/internal/tv/staging/start", h.internalStageStart)
 		g.Post("/internal/tv/staging/stop", h.internalStageStop)
 		g.Get("/internal/tv/staging", h.internalStaging)
-		// story 33.7: an instance that runs a staged release takes the staging
-		// role (the swap's target; never a failover target)
-		g.Post("/internal/tv/routing/staging", h.internalAdoptStaging)
 	})
 }
 
@@ -113,23 +110,6 @@ func (h *Handler) internalSwitch(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "swap_in_progress", "detail": err.Error()})
 			return
 		}
-		http.Error(w, err.Error(), http.StatusConflict)
-		return
-	}
-	writeJSON(w, http.StatusOK, h.Slots.View())
-}
-
-func (h *Handler) internalAdoptStaging(w http.ResponseWriter, r *http.Request) {
-	if h.Slots == nil {
-		http.Error(w, "no TV slots on this host", http.StatusNotFound)
-		return
-	}
-	var b switchBody
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b); err != nil {
-		http.Error(w, "bad body", http.StatusBadRequest)
-		return
-	}
-	if err := h.Slots.AdoptStaging(r.Context(), b.Slot); err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
