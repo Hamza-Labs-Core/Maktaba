@@ -163,6 +163,26 @@ func TestSecondAdmin(t *testing.T) {
 	}
 }
 
+// Review fix: an admin who saved an edit into a change someone else created is one of
+// its authors too, and cannot approve it under require_second_admin.
+func TestSecondAdminCoversContributors(t *testing.T) {
+	w := newWorld(t)
+	w.exec(`INSERT INTO app_settings (key, value) VALUES ('rules.tv_staging', '{"require_second_admin": true}')`)
+	creator := "11111111-1111-4111-8111-111111111111"
+	editor := "22222222-2222-4222-8222-222222222222"
+	id := w.change(core.StateReady, core.SourceEditor, &creator, "")
+	w.exec(`INSERT INTO tv_change_events (change_id, actor_user_id, actor_source, from_state, to_state, action)
+		VALUES ($1, $2, 'admin', 'draft', 'draft', 'append')`, id, editor)
+	code, out := w.do("POST", "/api/tv/changes/"+id+"/approve", "", editor)
+	if code != http.StatusConflict || out["error"] != "second_admin_required" {
+		t.Fatalf("a contributor approves: %d %v", code, out)
+	}
+	code, out = w.do("POST", "/api/tv/changes/"+id+"/approve", "", "33333333-3333-4333-8333-333333333333")
+	if code != http.StatusOK || out["state"] != core.StateApproved {
+		t.Fatalf("a third admin: %d %v", code, out)
+	}
+}
+
 // A ready change waits for an admin (every rule is approval); approved, the controller
 // starts the swap (the tv_swap job) at its swap_at.
 func TestApprovalThenSwap(t *testing.T) {

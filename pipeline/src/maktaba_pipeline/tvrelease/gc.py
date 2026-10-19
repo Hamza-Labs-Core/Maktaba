@@ -15,8 +15,9 @@ from typing import Any
 
 from .. import rules
 from ..channels.repo import live_gen
-from ..engine.sql import loads, now, parse_ts, to_ts
+from ..engine.sql import is_pg, loads, now, parse_ts, to_ts
 from ..log import get_logger
+from .generation import GC_LOCK
 from .store import IN_FLIGHT
 
 __all__ = ["collect"]
@@ -47,6 +48,17 @@ async def collect(db: Any, *, clock: datetime | None = None) -> dict[str, int]:
     clock = clock or now()
     cfg, _, _ = await rules.read(db, "tv_staging")
     retention = timedelta(hours=int(cfg.rollback_retention_hours))
+    async with db.transaction():
+        if is_pg(db):
+            # a generation being built (tv_stage, a swap's re-anchor) holds this lock
+            # shared: what is kept is read only once no build is half way
+            await db.execute("SELECT pg_advisory_xact_lock(hashtext($1))", GC_LOCK)
+        out = await _sweep(db, clock, retention)
+    _log.info("tv_gc", **out)
+    return out
+
+
+async def _sweep(db: Any, clock: datetime, retention: timedelta) -> dict[str, int]:
     keep = await _kept_generations(db, clock, retention)
     gens = [
         int(r["g"]) for r in await db.fetch("SELECT DISTINCT sched_gen AS g FROM channel_programs")
@@ -83,5 +95,4 @@ async def collect(db: Any, *, clock: datetime | None = None) -> dict[str, int]:
         if str(r["id"]) not in wanted:
             await db.execute("DELETE FROM channels WHERE id = $1", str(r["id"]))
             out["staged_channels"] += 1
-    _log.info("tv_gc", **out)
     return out
