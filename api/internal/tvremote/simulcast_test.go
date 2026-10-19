@@ -596,7 +596,6 @@ func TestSimulcastCapAndBudget(t *testing.T) {
 		if n.Level != 100 {
 			t.Errorf("notice %s", raw)
 		}
-		fx.reconcile()
 		if got := capNotices(); len(got) != 2 || got[1].p.Params["level"] != 100 || got[1].p.Severity != notify.SeverityError ||
 			got[1].p.Params["cap_hours"] != 1.0 {
 			t.Fatalf("100 %% bell notices %+v", got)

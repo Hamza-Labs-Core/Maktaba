@@ -172,7 +172,7 @@ class PromptModel(FakeModel):
 
     prompted: list[tuple[str | None, list[int]]] = field(default_factory=list)
 
-    def decode(  # type: ignore[override]
+    def decode(
         self, mels: Sequence[Any], temps: Sequence[float], prompt: str | None = None
     ) -> list[R]:
         self.prompted.append((prompt, sorted({wid // 100 for _, wid in mels})))
