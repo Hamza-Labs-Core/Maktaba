@@ -25,6 +25,10 @@ func TestNodeHandshakeWelcomeAndRegistry(t *testing.T) {
 	if _, has := settings["share_root"]; !has {
 		t.Fatal("no share_root in settings")
 	}
+	// the IP folder the hub files this session under: the remote address
+	if settings["ip"] != "127.0.0.1" {
+		t.Fatalf("settings.ip = %v", settings["ip"])
+	}
 	if !sessionRe.MatchString(a.Session) {
 		t.Fatalf("session id %q", a.Session)
 	}
@@ -71,17 +75,43 @@ func TestHomeHandshakeUsesHomeAddress(t *testing.T) {
 	if p.Kind != "home" || p.NodeID != nil || p.IP != testHomeIP || p.Session != a.Session {
 		t.Fatalf("process = %+v", p)
 	}
+	// it is told the home's folder, the one the hub's own files use
+	if settings, _ := a.Welcome["settings"].(map[string]any); settings["ip"] != testHomeIP {
+		t.Fatalf("settings.ip = %v", settings["ip"])
+	}
 	// the wrong home key is refused
 	if _, err := f.dialAgent(helloOpts{kind: "home", homeKey: make([]byte, 32)}); !isClose(err, CloseAuthFailed) {
 		t.Fatalf("wrong home key: %v", err)
 	}
-	// a process may say which folder it writes (hello.ip)
+	// a home process shares the home's folder whatever it reports
 	b, err := f.dialAgent(helloOpts{kind: "home", homeKey: f.homeKey, ip: "10.1.2.3"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f.hub.Session(b.Session).IP != "10.1.2.3" {
-		t.Fatal("hello.ip ignored")
+	if f.hub.Session(b.Session).IP != testHomeIP || b.Welcome["settings"].(map[string]any)["ip"] != testHomeIP {
+		t.Fatal("a home process left the home's folder")
+	}
+}
+
+func TestNodeFolderFromHello(t *testing.T) {
+	f := newFixture(t)
+	id, priv := f.approvedNode("v6")
+	// a machine's own address (hello.ip) wins over the remote address; an
+	// IPv6 folder is written with '-'
+	a, err := f.dialAgent(helloOpts{kind: "node", nodeID: id, nodePriv: priv, ip: "fe80::1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.hub.Session(a.Session).IP != "fe80::1" || a.Welcome["settings"].(map[string]any)["ip"] != "fe80--1" {
+		t.Fatalf("settings = %v", a.Welcome["settings"])
+	}
+	// an invalid one falls back to the remote address
+	b, err := f.dialAgent(helloOpts{kind: "node", nodeID: id, nodePriv: priv, ip: "../etc", workerID: "other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Welcome["settings"].(map[string]any)["ip"] != "127.0.0.1" {
+		t.Fatalf("settings = %v", b.Welcome["settings"])
 	}
 }
 

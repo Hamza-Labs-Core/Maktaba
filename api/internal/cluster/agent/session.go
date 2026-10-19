@@ -304,18 +304,17 @@ func writeText(ctx context.Context, c *websocket.Conn, v any) ([]byte, error) {
 	return b, c.Write(ctx, websocket.MessageText, b)
 }
 
-// folderIP is the address a process is filed under: the address it
-// reports in hello (informational, but authenticated by the handshake),
-// else the connection's remote address; a home process on the loopback is
-// the home's own address.
+// folderIP is the address a process is filed under (and told in
+// welcome.settings.ip): a home process always shares the home's own folder,
+// the one the hub's files use; a machine's process the address it reports
+// in hello (informational, but authenticated by the handshake) when valid,
+// else the connection's remote address.
 func (h *Hub) folderIP(kind, reported, remote string) string {
+	if kind == "home" {
+		return h.homeIP
+	}
 	if reported != "" && len(reported) <= 64 && (net.ParseIP(reported) != nil || ValidIPDir(reported)) {
 		return reported
-	}
-	if kind == "home" {
-		if ip := net.ParseIP(remote); ip == nil || isLocalAddress(ip) {
-			return h.homeIP
-		}
 	}
 	return remote
 }
@@ -448,7 +447,7 @@ func (h *Hub) handshake(ctx context.Context, c *websocket.Conn, remote string) (
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 	welcome := map[string]any{"t": "welcome", "session": s.ID,
 		"proof":    base64.StdEncoding.EncodeToString(ServerProof(ks2c, th)),
-		"settings": h.settings()}
+		"settings": h.settings(s.IP)}
 	b, _ := json.Marshal(welcome)
 	sealed, err := s2c.Seal(b)
 	if err != nil {
@@ -466,15 +465,23 @@ func (h *Hub) handshake(ctx context.Context, c *websocket.Conn, remote string) (
 	return s, c2s, s2c, nil
 }
 
-// settings is welcome.settings (§5.1).
-func (h *Hub) settings() map[string]any {
+// settings is welcome.settings (§5.1). `ip` is the IP folder the hub files
+// this session under (IPv6 with '-'), so a process writes its files where
+// the hub looks for them: for a machine, hello.ip when valid, else its
+// remote address; for a home process, the home's own folder (the one its
+// hub.jsonl files use). Left out when empty.
+func (h *Hub) settings(ip string) map[string]any {
 	loc := h.Location()
 	var shareRoot any
 	if loc.ShareRoot != "" {
 		shareRoot = loc.ShareRoot
 	}
-	return map[string]any{"log_level": h.cfg.LogLevel, "metrics_every": h.cfg.MetricsEvery, "share_root": shareRoot,
+	out := map[string]any{"log_level": h.cfg.LogLevel, "metrics_every": h.cfg.MetricsEvery, "share_root": shareRoot,
 		"retention_days": h.cfg.RetentionDays, "file_mb": h.cfg.FileMaxBytes >> 20}
+	if dir := IPDir(ip); dir != "" {
+		out["ip"] = dir
+	}
+	return out
 }
 
 func clip(s string, n int) string {

@@ -52,27 +52,6 @@ func LANAddress() string {
 	return host
 }
 
-// isLocalAddress reports whether ip is a loopback address or one of this
-// machine's own interface addresses.
-func isLocalAddress(ip net.IP) bool {
-	if ip == nil {
-		return false
-	}
-	if ip.IsLoopback() {
-		return true
-	}
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return false
-	}
-	for _, a := range addrs {
-		if n, ok := a.(*net.IPNet); ok && n.IP.Equal(ip) {
-			return true
-		}
-	}
-	return false
-}
-
 // HomeKeyPath is the home agent key's file (design-agent.md §4.3): the
 // given override (MAKTABA_HOME_AGENT_KEY), else
 // ~/.maktaba/cluster/home-agent.key: always local, never on the share.
