@@ -35,8 +35,9 @@ def test_0129_up_down() -> None:
         "host_id", "slot", "role", "role_epoch", "state", "release_id", "base_url", "pid",
         "version", "warm", "encoders_used", "started_at", "beat_at", "last_exit",
     } <= _cols(conn, "tv_slots")  # fmt: skip
-    conn.execute("INSERT INTO tv_slots (host_id, slot, role, role_epoch) VALUES ('h', 'blue', 'live', 1)")
-    conn.execute("INSERT INTO tv_slots (host_id, slot, role, role_epoch) VALUES ('h', 'green', 'standby', 1)")
+    ins = "INSERT INTO tv_slots (host_id, slot, role, role_epoch) VALUES (?, ?, ?, 1)"
+    conn.execute(ins, ("h", "blue", "live"))
+    conn.execute(ins, ("h", "green", "standby"))
     # one live slot per host; only the three instances and the known roles
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute("UPDATE tv_slots SET role = 'live' WHERE slot = 'green'")
@@ -45,7 +46,9 @@ def test_0129_up_down() -> None:
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute("INSERT INTO tv_slots (host_id, slot, role) VALUES ('h', 'amber', 'boss')")
     conn.execute("INSERT INTO tv_slots (host_id, slot, role) VALUES ('other', 'blue', 'live')")
-    row = conn.execute("SELECT state, warm, encoders_used FROM tv_slots WHERE slot = 'green'").fetchone()
+    row = conn.execute(
+        "SELECT state, warm, encoders_used FROM tv_slots WHERE slot = 'green'"
+    ).fetchone()
     assert row == ("stopped", "[]", 0)
     for stmt in down_statements(_MIG.read_text("utf-8")):
         apply_statement(conn, stmt)
