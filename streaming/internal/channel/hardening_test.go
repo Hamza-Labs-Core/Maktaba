@@ -232,15 +232,15 @@ func TestStation_LocalAssetRefusesProtocols(t *testing.T) {
 	logo := filepath.Join(dir, "logo.png")
 	_ = os.WriteFile(logo, []byte("png"), 0o644)
 	s := &Station{}
-	if got := s.localAsset(logo); got != "file:"+logo {
+	if got := s.localAsset(context.Background(), AssetKindLogo, logo); got != "file:"+logo {
 		t.Errorf("local logo = %q", got)
 	}
 	for _, bad := range []string{"udp://x:1/a.png", "file:///etc/passwd", "concat:" + logo, filepath.Join(dir, "missing.png")} {
-		if got := s.localAsset(bad); got != "" {
+		if got := s.localAsset(context.Background(), AssetKindLogo, bad); got != "" {
 			t.Errorf("localAsset(%q) = %q, want refused", bad, got)
 		}
 	}
-	if got := s.localAsset("https://cdn.example/logo.png"); got != "https://cdn.example/logo.png" {
+	if got := s.localAsset(context.Background(), AssetKindLogo, "https://cdn.example/logo.png"); got != "https://cdn.example/logo.png" {
 		t.Errorf("https asset = %q", got)
 	}
 }

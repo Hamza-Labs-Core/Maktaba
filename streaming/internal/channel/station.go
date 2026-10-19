@@ -44,6 +44,30 @@ type StationConfig struct {
 	// when the gate is full and this station holds one (its current block,
 	// ending at the boundary); 0: defaultNVENCWait.
 	NVENCWait time.Duration
+	// Assets, when set, resolves the channel's art (logo, watermark, loading
+	// picture) to a local file: a cluster node encodes with a cached copy of the
+	// home's files (Epic 32.1). Nil: the look's paths through PathMap.
+	Assets AssetResolver
+	// Discontinuity starts the muxer with an HLS discontinuity: a station that
+	// takes over a channel from another host (failover, move) continues the
+	// viewers' playlists with EXT-X-DISCONTINUITY (Epic 32.4).
+	Discontinuity bool
+	// PathMapSource, when set, is read at each station start instead of PathMap
+	// (a node's map follows the cluster's, Epic 31).
+	PathMapSource func() pathmap.Map
+}
+
+// Asset kinds an AssetResolver is asked for.
+const (
+	AssetKindLogo      = "logo"
+	AssetKindWatermark = "watermark"
+	AssetKindLoading   = "loading"
+)
+
+// AssetResolver returns the local file for a channel's art kind whose look path
+// on the home is src ("" when there is none).
+type AssetResolver interface {
+	Asset(ctx context.Context, channelID uuid.UUID, kind, src string) string
 }
 
 // defaultNVENCWait covers the feeder's pre-start lead plus margin: the
@@ -136,7 +160,7 @@ func StartStation(cfg StationConfig, channelID uuid.UUID, dir string) (*Station,
 	}
 	s.blockLog, _ = os.Create(filepath.Join(dir, "blocks.log"))
 
-	m, err := s.startMuxer(false)
+	m, err := s.startMuxer(cfg.Discontinuity)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("channel: start muxer: %w", err)
@@ -789,7 +813,7 @@ func (s *Station) blockInput(ctx context.Context, seg Segment, look Look) (*Bloc
 		in.SeekSec = float64(seekMS) / 1000
 		in.HasVideo, in.HasAudio = info.HasVideo, info.HasAudio
 		in.HWDecode = s.cfg.Profile.Encoder == EncoderNVENC || s.cfg.Profile.Encoder == EncoderVideoToolbox
-		s.applyLook(in, look)
+		s.applyLook(ctx, in, look)
 	case KindLive:
 		u, err := s.cfg.Resolver.Resolve(ctx, seg.Block.SourceURL)
 		if err != nil {
@@ -813,12 +837,12 @@ func (s *Station) blockInput(ctx context.Context, seg Segment, look Look) (*Bloc
 		in.Kind = "live"
 		in.Source = u
 		in.HasVideo, in.HasAudio = info.HasVideo, info.HasAudio
-		s.applyLook(in, look)
+		s.applyLook(ctx, in, look)
 	default:
 		in.Kind = "slate"
-		if p := s.localAsset(look.LoadingPath); p != "" {
+		if p := s.localAsset(ctx, AssetKindLoading, look.LoadingPath); p != "" {
 			in.SlateImage = p
-		} else if p := s.localAsset(look.LogoPath); p != "" {
+		} else if p := s.localAsset(ctx, AssetKindLogo, look.LogoPath); p != "" {
 			in.SlateLogo = p
 		}
 		if seg.Message != "" {
@@ -829,9 +853,9 @@ func (s *Station) blockInput(ctx context.Context, seg Segment, look Look) (*Bloc
 	return in, start, nil
 }
 
-func (s *Station) applyLook(in *BlockInput, look Look) {
+func (s *Station) applyLook(ctx context.Context, in *BlockInput, look Look) {
 	if wm := look.Watermark; wm != nil {
-		if p := s.localAsset(wm.Path); p != "" {
+		if p := s.localAsset(ctx, AssetKindWatermark, wm.Path); p != "" {
 			w := *wm
 			w.Path = p
 			in.Watermark = &w
@@ -842,8 +866,9 @@ func (s *Station) applyLook(in *BlockInput, look Look) {
 }
 
 // localAsset maps a look/logo path and returns it if it exists (URLs are
-// passed through for ffmpeg to fetch).
-func (s *Station) localAsset(p string) string {
+// passed through for ffmpeg to fetch). With an AssetResolver (a cluster
+// node) the file comes from its cache of the home's art.
+func (s *Station) localAsset(ctx context.Context, kind, p string) string {
 	if p == "" {
 		return ""
 	}
@@ -854,6 +879,12 @@ func (s *Station) localAsset(p string) string {
 		return "" // no file:, concat:, udp: … from look/logo values
 	}
 	m := s.cfg.PathMap.Apply(p)
+	if s.cfg.Assets != nil {
+		m = s.cfg.Assets.Asset(ctx, s.id, kind, p)
+		if m == "" {
+			return ""
+		}
+	}
 	if fi, err := os.Stat(m); err == nil && !fi.IsDir() {
 		if in, err := LocalInput(m); err == nil {
 			return in
