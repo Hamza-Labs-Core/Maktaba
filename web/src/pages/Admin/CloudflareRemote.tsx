@@ -9,6 +9,7 @@ import { useI18n } from "../../lib/i18n";
 import { tvRemoteApi } from "../../lib/tvRemoteApi";
 import type { RemoteIntegration, RemoteTestLine, RemoteTestResult } from "../../lib/tvRemoteApi";
 import { useAction } from "../../components/queue/useAction";
+import { RemoteUsage } from "./RemoteUsage";
 
 const LINE_KEYS = [
   "token",
@@ -152,6 +153,7 @@ export function CloudflareRemote({ refresh }: { refresh: number }) {
           </Button>
         )}
       </div>
+      {st.configured && <RemoteUsage key={refresh} />}
       {removed && (
         <p role="status" className="mkt-q-muted">
           {removed}

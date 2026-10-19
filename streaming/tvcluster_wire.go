@@ -24,6 +24,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/frontdoor"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/frontdoor/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/hdhr"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pathmap"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/placement"
@@ -292,10 +293,31 @@ func (b *tvBase) wireHomeCluster(ctx context.Context, engine *channel.Engine, lo
 	}}
 	go sweeper.Run(context.Background())
 
+	// Epic 32.7 / 33.8: the push relay to Cloudflare Stream runs here, in the
+	// home's front door (never on a node), once slot 0125 exists.
+	go b.runPushRelay(fd)
+
 	// channel art for the stations on nodes
 	assets := &cluster.AssetHandler{Looks: chRepo, PathMap: pathmap.FromEnv(), Keyring: keyring}
 	logger.Info("tv: front door ready", "host_id", ident.ID, "event", "tv_frontdoor_ready")
 	return fd, assets
+}
+
+// runPushRelay waits for slot 0125 (the API migrates it, maybe after this
+// process started) and runs the relay controller: one ffmpeg per pushed
+// channel, fed by the front door, stream copy to the push's live input.
+func (b *tvBase) runPushRelay(fd *frontdoor.Handler) {
+	ctx := context.Background()
+	for !relay.Available(ctx, b.pool) {
+		time.Sleep(30 * time.Second)
+	}
+	ctl := &relay.Ctl{Pool: b.pool, Source: fd.RelaySource(), FFmpeg: b.cfg.FFmpeg.Binary, Logger: b.logger,
+		Audio: func(ctx context.Context) (relay.Audio, int) {
+			out := b.settings.Output(ctx)
+			return relay.Audio{Codec: out.AudioCodec, Kbps: out.AudioKbps}, out.VideoKbps + out.AudioKbps
+		}}
+	b.logger.Info("tv: push relay ready", "event", "tv_push_relay_ready")
+	ctl.Run(ctx)
 }
 
 // buildNodeTV is a node's whole public handler (AC3 of 32.1).

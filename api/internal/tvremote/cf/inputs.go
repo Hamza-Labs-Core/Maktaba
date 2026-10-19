@@ -122,3 +122,36 @@ func (c *Client) SetLiveInputEnabled(ctx context.Context, uid string, enabled bo
 func (c *Client) DeleteLiveInput(ctx context.Context, uid string) error {
 	return c.do(ctx, http.MethodDelete, c.account()+"/stream/live_inputs/"+url.PathEscape(uid), nil, nil)
 }
+
+// InputStatus is a live input's status as the API reports it: either a plain
+// string or {current: {state, reason, ...}}. Reason may carry an ERR_* code.
+type InputStatus struct {
+	State  string
+	Reason string
+}
+
+// ParseInputStatus reads a live input's status field.
+func ParseInputStatus(raw json.RawMessage) InputStatus {
+	if len(raw) == 0 || string(raw) == "null" {
+		return InputStatus{}
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return InputStatus{State: s}
+	}
+	var obj struct {
+		Current *struct {
+			State  string `json:"state"`
+			Reason string `json:"reason"`
+		} `json:"current"`
+		State  string `json:"state"`
+		Reason string `json:"reason"`
+	}
+	if json.Unmarshal(raw, &obj) != nil {
+		return InputStatus{}
+	}
+	if obj.Current != nil {
+		return InputStatus{State: obj.Current.State, Reason: obj.Current.Reason}
+	}
+	return InputStatus{State: obj.State, Reason: obj.Reason}
+}

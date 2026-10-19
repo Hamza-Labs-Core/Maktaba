@@ -3632,6 +3632,182 @@
    ]
   },
   {
+   "key": "tv_remote",
+   "title": "Maktaba TV away from home",
+   "what": "who may watch channels away from home through Cloudflare Stream, how many at once, the monthly budget and the storage guard",
+   "fields": [
+    {
+     "name": "viewers",
+     "kind": "str",
+     "group": "Remote viewers",
+     "label": "Who may watch away from home",
+     "help": "all: every signed-in user; admins: administrators only; listed: the users below. Watching away from home needs Cloudflare Stream set up and switched on.",
+     "default": "all",
+     "choices": [
+      "all",
+      "admins",
+      "listed"
+     ]
+    },
+    {
+     "name": "viewer_users",
+     "kind": "list",
+     "group": "Remote viewers",
+     "label": "Users allowed (listed)",
+     "help": "User ids or user names.",
+     "default": []
+    },
+    {
+     "name": "max_streams_per_user",
+     "kind": "int",
+     "group": "Remote viewers",
+     "label": "Remote streams per user",
+     "help": "How many channels one user may watch away from home at once (each device counts).",
+     "default": 2,
+     "minimum": 1,
+     "maximum": 10
+    },
+    {
+     "name": "max_channels",
+     "kind": "int",
+     "group": "Remote limits",
+     "label": "Remote channels at once",
+     "help": "Channels sent to Cloudflare at the same time. Each uses its bitrate of the home's upload once (about 6.5 Mbit/s at the default bitrate; 22 channels about 143 Mbit/s), whatever the number of viewers. On one 1,000-minute storage block the storage, not this number, usually limits it to two.",
+     "default": 22,
+     "minimum": 1,
+     "maximum": 50
+    },
+    {
+     "name": "allowed_countries",
+     "kind": "list",
+     "group": "Remote viewers",
+     "label": "Countries",
+     "help": "Two-letter country codes (SA, EG, GB ...) viewers may watch from; Cloudflare checks every request. Empty: anywhere.",
+     "default": []
+    },
+    {
+     "name": "idle_timeout_minutes",
+     "kind": "int",
+     "group": "Remote limits",
+     "label": "Keep sending after the last viewer (minutes)",
+     "help": "So a viewer who comes back finds the channel at once.",
+     "default": 3,
+     "minimum": 1,
+     "maximum": 60
+    },
+    {
+     "name": "token_ttl_minutes",
+     "kind": "int",
+     "group": "Remote limits",
+     "label": "Playback link lifetime (minutes)",
+     "help": "A viewer's signed link stops working after this; the app renews it while it plays. Shorter cuts off a removed user sooner.",
+     "default": 60,
+     "minimum": 5,
+     "maximum": 1440
+    },
+    {
+     "name": "ingest",
+     "kind": "str",
+     "group": "Remote push",
+     "label": "How channels are sent",
+     "help": "rtmps (works with every ffmpeg with TLS) or srt (needs ffmpeg with libsrt).",
+     "default": "rtmps",
+     "choices": [
+      "rtmps",
+      "srt"
+     ]
+    },
+    {
+     "name": "low_latency",
+     "kind": "bool",
+     "group": "Remote push",
+     "label": "Low-latency HLS (beta)",
+     "help": "Cloudflare's low-latency HLS for new inputs.",
+     "default": false
+    },
+    {
+     "name": "max_push_hours",
+     "kind": "int",
+     "group": "Remote limits",
+     "label": "Longest broadcast (hours)",
+     "help": "Past this a channel's broadcast starts again (remote viewers re-buffer once), so its recording never outgrows the storage. Lower fits more channels per storage block.",
+     "default": 8,
+     "minimum": 1,
+     "maximum": 24
+    },
+    {
+     "name": "monthly_budget_usd",
+     "kind": "float",
+     "group": "Remote budget",
+     "label": "Monthly budget (USD)",
+     "help": "Estimated Cloudflare spend per calendar month (UTC). At 80 % the admin is told; at 100 % see below. 0: no budget check. There is no audio-only saving: Cloudflare bills minutes watched, not bytes.",
+     "default": 10.0,
+     "minimum": 0
+    },
+    {
+     "name": "budget_action",
+     "kind": "str",
+     "group": "Remote budget",
+     "label": "At 100 % of the budget",
+     "help": "block_new: new remote tunes are refused, running ones finish; warn: only a notice.",
+     "default": "block_new",
+     "choices": [
+      "block_new",
+      "warn"
+     ]
+    },
+    {
+     "name": "delivery_usd_per_1000_min",
+     "kind": "float",
+     "group": "Remote budget",
+     "label": "Price per 1,000 minutes watched (USD)",
+     "help": "",
+     "default": 1.0,
+     "minimum": 0
+    },
+    {
+     "name": "storage_usd_per_1000_min",
+     "kind": "float",
+     "group": "Remote budget",
+     "label": "Price per 1,000 minutes of storage a month (USD)",
+     "help": "",
+     "default": 5.0,
+     "minimum": 0
+    },
+    {
+     "name": "storage_plan_minutes",
+     "kind": "int",
+     "group": "Remote budget",
+     "label": "Storage plan (minutes)",
+     "help": "The prepaid storage the estimate counts. A running broadcast is recorded while it runs and deleted when it ends; the storage guard reads the account's real capacity from Cloudflare.",
+     "default": 1000,
+     "minimum": 0
+    },
+    {
+     "name": "storage_margin_minutes",
+     "kind": "int",
+     "group": "Remote budget",
+     "label": "Storage kept free (minutes)",
+     "help": "The guard starts a new channel only when every running broadcast's full length (up to the longest broadcast), the recordings not yet deleted and this margin fit in the account's storage.",
+     "default": 30,
+     "minimum": 0,
+     "maximum": 10000
+    },
+    {
+     "name": "remote_detection",
+     "kind": "str",
+     "group": "Remote push",
+     "label": "Who counts as away from home",
+     "help": "relay: requests through the Maktaba relay; relay_or_public_ip: also a request from a public address (your own reverse proxy or tunnel).",
+     "default": "relay",
+     "choices": [
+      "relay",
+      "relay_or_public_ip"
+     ]
+    }
+   ]
+  },
+  {
    "key": "tv_strip",
    "title": "Channel strip",
    "what": "the news-style bar across a channel's picture: what is on now and next, and a clock rotating between cities",

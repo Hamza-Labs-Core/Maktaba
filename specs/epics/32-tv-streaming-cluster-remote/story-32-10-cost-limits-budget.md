@@ -26,8 +26,12 @@ Design: [design.md](design.md) §9; README "Cost".
   100 %: with `budget_action = block_new` (default) every new tune gets 402, including a tune of a
   channel already pushing (running sessions continue until they end; their token refresh,
   rotation and failover are not new tunes and are never refused); with `warn` only a notification. A budget of 0 means "no budget check".
-- **AC5** The storage guard refuses a new push when the running pushes' age plus `max_push_hours`
-  would exceed `storage_plan_minutes`. On the default 1,000-minute block with `max_push_hours = 8`
+- **AC5** The storage guard refuses a new push when every running push's remaining reservation
+  (its stored minutes plus what it may still store until its rotation at `max_push_hours`), the
+  recordings not yet deleted, the account's other stored minutes, the new push's `max_push_hours`
+  and `storage_margin_minutes` (default 30) would exceed the storage capacity Cloudflare reports
+  (`storage_plan_minutes` when it cannot be read). *(Amended after review: the elapsed age alone let
+  more than two pushes start on one block.)* On the default 1,000-minute block with `max_push_hours = 8`
   there is room for two full-length concurrent pushes; past that the next push gets 503
   `remote_storage_full` with the hint "buy
   another 1,000-minute block or lower max_push_hours", even though `max_channels` is 22.
