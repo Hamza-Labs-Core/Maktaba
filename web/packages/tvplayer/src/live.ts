@@ -55,12 +55,23 @@ export interface LiveHandle {
 }
 
 /** Whether the element plays HLS without MSE (Safari / iOS). */
+/**
+ * Whether to play HLS with the browser's own player. Only on Apple's engine
+ * (Safari, every iOS browser), whose native HLS is the better one, or where
+ * hls.js cannot run (no Media Source Extensions). Chrome 142+ also answers
+ * canPlayType "maybe", but its native player cannot parse our MPEG-TS live
+ * segments (DEMUXER_ERROR_COULD_NOT_PARSE): there hls.js plays them.
+ */
 export function hasNativeHls(video: HTMLVideoElement): boolean {
   try {
-    return video.canPlayType(HLS_MIME) !== "";
+    if (video.canPlayType(HLS_MIME) === "") return false;
   } catch {
     return false;
   }
+  const g = globalThis as { MediaSource?: unknown; ManagedMediaSource?: unknown };
+  const mse = typeof g.MediaSource === "function" || typeof g.ManagedMediaSource === "function";
+  if (!mse) return true;
+  return /Apple/.test(globalThis.navigator?.vendor ?? "");
 }
 
 const defaultLoadHls = () => import("hls.js").then((m) => m.default);

@@ -143,6 +143,9 @@ services:
       api:
         condition: service_healthy
     environment:
+      # the channels, the TV settings and this host's streaming_hosts check-in
+      # (the admin Live TV page lists only hosts that check in)
+      DATABASE_URL: postgres://${MAKTABA_PG_USER:-maktaba}:${MAKTABA_PG_PASSWORD:-maktaba}@postgres:5432/${MAKTABA_PG_DB:-maktaba}?sslmode=disable
       MAKTABA_API_URL: http://api:8080
       MAKTABA_HTTP_ADDR: ":8081"
       MAKTABA_ADMIN_ADDR: ":9101"
