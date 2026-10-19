@@ -201,12 +201,26 @@ system:
   service to the settings file's full path (and make sure the service's user can read it).
 - **The NAS first.** The service must start after the share is mounted.
 
-When your Maktaba release ships the packaged worker service, use it instead of the
-examples below (see [deploy/packaging](../../deploy/packaging/README.md)).
+**The easy way: the node installer.** From a copy of Maktaba on the machine, it builds the
+worker's environment, joins the home if the machine has not joined yet, and registers the
+worker as a service for your system (launchd on macOS, systemd on Linux, a scheduled task or
+an NSSM service on Windows), with extra workers if you want them:
+
+```sh
+deploy/packaging/node/install-node.sh                 # macOS, Linux
+```
+
+```powershell
+deploy\packaging\node\windows\install-node.ps1        # Windows
+```
+
+See [deploy/packaging/node](../../deploy/packaging/node/README.md) for its options, logs,
+updates and removal. The examples below do the same by hand.
 
 The examples use `maktaba-pipeline` as installed for your user (`~/.local/bin`). From a
-source copy, use `uv --directory /path/to/Maktaba/pipeline run python -m maktaba_pipeline run`
-as the command.
+source copy, use `uv --directory /path/to/Maktaba/pipeline run maktaba-pipeline run --node`
+as the command. `--node` makes the worker refuse to start (exit 78) until the machine has
+joined, instead of running as a home worker on an empty database.
 
 ### macOS (launchd)
 
@@ -222,6 +236,7 @@ Save as `~/Library/LaunchAgents/com.maktaba.worker.plist` (replace `you`):
   <array>
     <string>/Users/you/.local/bin/maktaba-pipeline</string>
     <string>run</string>
+    <string>--node</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
@@ -250,9 +265,10 @@ RequiresMountsFor=/mnt/nas
 
 [Service]
 User=you
-ExecStart=/home/you/.local/bin/maktaba-pipeline run
+ExecStart=/home/you/.local/bin/maktaba-pipeline run --node
 Restart=on-failure
 RestartSec=10
+RestartPreventExitStatus=77
 
 [Install]
 WantedBy=multi-user.target
@@ -270,22 +286,24 @@ Simplest — start at sign-in (mapped drive letters work):
 
 ```powershell
 schtasks /Create /TN "Maktaba worker" /SC ONLOGON /RL LIMITED `
-  /TR "`"$env:USERPROFILE\.local\bin\maktaba-pipeline.exe`" run"
+  /TR "`"$env:USERPROFILE\.local\bin\maktaba-pipeline.exe`" run --node"
 ```
 
 Without signing in — start with Windows (use `\\nas\share` paths, not drive letters):
 
 ```powershell
 schtasks /Create /TN "Maktaba worker" /SC ONSTART /RU "$env:USERDOMAIN\$env:USERNAME" /RP * `
-  /TR "`"$env:USERPROFILE\.local\bin\maktaba-pipeline.exe`" run"
+  /TR "`"$env:USERPROFILE\.local\bin\maktaba-pipeline.exe`" run --node"
 ```
 
 Then open **Task Scheduler**, find *Maktaba worker*, and on its **Settings** tab tick **If
 the task fails, restart every 1 minute**, and untick **Stop the task if it runs longer
 than**.
 
-A worker stops for good when you revoke its machine; the service settings above do not
-restart it then.
+A worker stops for good when you revoke its machine: it exits with code 77. The
+installer's services and the systemd example (`RestartPreventExitStatus=77`) do not restart
+it then; the hand-made launchd and Task Scheduler entries above do, and keep being refused —
+unload them when you remove the machine.
 
 ## Leaving the cluster
 
