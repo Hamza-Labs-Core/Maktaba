@@ -64,6 +64,19 @@ describe("Channels admin", () => {
     expect(screen.getByText("Shuffle")).toBeInTheDocument();
   });
 
+  it("shows the XMLTV guide address with a copy button in the header", async () => {
+    get.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === "/api/tv/info" ? { xmltv_url: "http://192.168.1.20:8782/xmltv.xml" } : channels
+      )
+    );
+    renderChannels();
+    expect(
+      await screen.findByDisplayValue("http://192.168.1.20:8782/xmltv.xml")
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /copy xmltv guide/i })).toBeInTheDocument();
+  });
+
   it("shows an empty state when there are no channels", async () => {
     get.mockResolvedValue({ items: [] });
     renderChannels();

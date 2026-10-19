@@ -8,6 +8,8 @@
 //	GET   /api/tv/hdhr   (admin) the emulated HDHomeRun tuner (slot 0084
 //	                     hdhr_device), provisioned on first read.
 //	PATCH /api/tv/hdhr   (admin) {enabled?, friendly_name?, tuner_count?}
+//	GET   /api/tv/plex, POST /api/tv/plex/refresh, POST /api/tv/plex/register
+//	                     (admin) Plex Live TV status and actions (plex.go)
 //
 // The streaming service owns the HDHomeRun protocol itself (discover.json,
 // lineup.json, /auto/v{n}); it re-reads hdhr_device per request, so an
@@ -25,6 +27,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -55,6 +58,11 @@ type Handler struct {
 	PublicBaseURL string
 	// DefaultStreamPort is used only by that fallback (default 8081).
 	DefaultStreamPort string
+	// Enqueue overrides how plex_livetv is queued (tests); nil uses
+	// processing_jobs_enqueue (queues.Enqueue).
+	Enqueue EnqueueFunc
+	// NowFunc overrides the clock (tests).
+	NowFunc func() time.Time
 }
 
 // Mount wires the routes.
@@ -62,6 +70,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/tv/info", h.Info)
 	r.Get("/api/tv/hdhr", h.GetHDHR)
 	r.Patch("/api/tv/hdhr", h.PatchHDHR)
+	h.mountPlex(r)
 }
 
 // Info is the GET /api/tv/info body.
@@ -209,6 +218,9 @@ func (h *Handler) PatchHDHR(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("reload hdhr device"))
 		return
+	}
+	if len(sets) > 0 {
+		h.NotifyPlex(r.Context()) // the tuner's name or state is part of what Plex shows
 	}
 	common.WriteJSON(w, r, http.StatusOK, d)
 }

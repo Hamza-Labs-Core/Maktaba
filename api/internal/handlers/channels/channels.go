@@ -25,6 +25,11 @@ type Handler struct {
 	// DataDir is the API's data volume (MAKTABA_DATA_DIR); uploaded
 	// channel art is kept under <DataDir>/channel-art/<channel id>/.
 	DataDir string
+	// OnLineupChange runs after a channel is created, edited, deleted or
+	// renumbered by hand (nil: nothing). The router points it at the Plex
+	// Live TV refresh, so Plex's channel map follows edits that never go
+	// through write_channels (audit P1-6).
+	OnLineupChange func(ctx context.Context)
 
 	rootCache artRootCache // the art folders served from (artpaths.go)
 	artLocks  sync.Map     // channel id + kind → *sync.Mutex (artLock)
@@ -201,6 +206,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("create channel: "+err.Error()))
 		return
 	}
+	h.lineupChanged(r.Context())
 	common.WriteJSON(w, r, http.StatusCreated, c)
 }
 
@@ -396,6 +402,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	}
 	h.attachOverrides(r.Context(), &updated)
 	attachBuilderInfo(&updated, h.planStatuses(r.Context()), h.guideUntil(r.Context()))
+	h.lineupChanged(r.Context())
 	common.WriteJSON(w, r, http.StatusOK, updated)
 }
 
@@ -411,6 +418,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("delete channel"))
 		return
 	}
+	h.lineupChanged(r.Context())
 	common.WriteNoContent(w)
 }
 
@@ -489,6 +497,7 @@ func (h *Handler) Reorder(w http.ResponseWriter, r *http.Request) {
 		ids = append(ids, e.ID)
 	}
 	h.markEdited(r.Context(), ids...)
+	h.lineupChanged(r.Context())
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"reordered": len(entries)})
 }
 
@@ -531,6 +540,13 @@ func (h *Handler) nextNumber(ctx context.Context, libraryID *string) (int, error
 		return 1, nil
 	}
 	return int(maxNum.Int64) + 1, nil
+}
+
+// lineupChanged tells OnLineupChange (best-effort, never fails the request).
+func (h *Handler) lineupChanged(ctx context.Context) {
+	if h.OnLineupChange != nil {
+		h.OnLineupChange(context.WithoutCancel(ctx))
+	}
 }
 
 // markStale flips channel_schedule_state.stale; best-effort (27.2 may not
