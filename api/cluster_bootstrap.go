@@ -14,6 +14,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/agent"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/cache"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
 	clusterh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
@@ -119,8 +120,24 @@ func mountClusterHub(r chi.Router, h *clusterh.Handler, db *sql.DB, driver strin
 		h.ClusterPub = cluster.EncodeKey(pub)
 	}
 	cfg.Logger = logger
-	hub := router.MountP31Agent(r, h, router.P31AgentDeps{DB: db, Driver: driver, Config: cfg})
-	logger.Info("p31: cluster channel mounted", "home_ip", hub.HomeIP(), "event", "p31_hub_mounted")
+	deps := router.P31AgentDeps{DB: db, Driver: driver, Config: cfg}
+	var hub *agent.Hub
+	if db != nil && driver != "sqlite" {
+		// the database cache of the channel (design-agent.md §7.9): the hub
+		// starts its Run and its first Backfill; later passes over the files
+		// follow the hub's cluster directory. (The API's handle is a
+		// Postgres one: a SQLite home gets no cache.)
+		deps.Cache = cache.New(db, cache.Options{Window: cfg.CacheWindow, Driver: driver, Logger: logger,
+			ClusterDir: func() string {
+				if hub == nil {
+					return ""
+				}
+				return hub.Location().Dir
+			}})
+	}
+	hub = router.MountP31Agent(r, h, deps)
+	logger.Info("p31: cluster channel mounted", "home_ip", hub.HomeIP(), "cache_hours", cfg.CacheWindow.Hours(),
+		"event", "p31_hub_mounted")
 	return hub
 }
 
