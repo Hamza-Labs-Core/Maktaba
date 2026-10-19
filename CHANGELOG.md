@@ -109,6 +109,15 @@ don't append a line here; docs-only PRs are exempt.
 - `audit_log` table reconciled (slot 0054); supersedes earlier ad-hoc
   creations from Epics 9/12.
 
+### Fixed
+- Live TV in the browser with TV slots: the web port's stream gate now lets the
+  stitched playlist's segments (`/stream/channel/{id}/s/{slot}/seg-N.ts`) through;
+  before, every segment answered 404 and the player never started.
+- TV staging: a staging start the supervisor did not take is retried on the
+  change controller's next tick instead of being remembered as started (the change
+  then failed as "not healthy"); the staging plan is read under the routing lock
+  (a data race between the controller's plan updates and the warm-set sync).
+
 ## [0.1.0] — Pre-release
 
 Platform skeleton from Phases 0–11. See git log for individual stories.
