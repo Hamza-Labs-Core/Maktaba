@@ -90,11 +90,61 @@ On **Admin > Machines**, look at the machine:
 - **Offline** and never online — its worker is not running, or cannot reach the database
   (port 5432, above). Run `maktaba-pipeline run` in a terminal on the machine and read the
   error.
-- **Online, but no live views** (no metrics, no log) — its live connection to the home
-  (port 8080) is blocked or a proxy drops WebSocket connections. The worker still pulls
-  jobs. Check the port, and that any proxy passes the `Upgrade` and `Connection` headers.
+- **Online, but no live views** (no metrics, no log) — its live connection to the home is
+  off. The worker still pulls jobs. Look at the worker's own log (its terminal or service
+  log): if it says [this is not the home I joined](#this-is-not-the-home-i-joined) or
+  [re-join this machine](#re-join-this-machine), see those sections. Otherwise port 8080 is
+  blocked or a proxy drops WebSocket connections: check the port, and that any proxy passes
+  the `Upgrade` and `Connection` headers.
 - **A queue is off with a reason** — the reason says why (cannot run here, runs on the home
   only, storage not reachable, switched off, draining). That is usually expected.
+
+## "This is not the home I joined"
+
+The machine's log says **this is not the home I joined**. The machine reached something at
+the home's address, but it could not prove it is the home this machine joined (it does not
+hold the home's cluster key). The machine refuses it: no live views, no LLMs from other
+machines. It keeps pulling jobs from the queues in the meantime.
+
+The usual causes:
+
+- **The home was reinstalled or moved, and its cluster key was not kept.** The key is the
+  file `~/.maktaba/cluster/home-cluster.key` of the user that runs the home's server (or the
+  file named by `MAKTABA_HOME_CLUSTER_KEY`). With Docker, it must be on a volume that
+  survives the container.
+- **The machine is talking to another Maktaba home**: two homes on the network, or a wrong
+  `--home` address when it joined.
+- **Something on the network is intercepting the connection.**
+
+What to do:
+
+1. If you have a copy of the old key file, put it back in the same place (readable only by
+   the user that runs the server) and restart the home's server. The machines reconnect by
+   themselves within a minute.
+2. Otherwise, [re-join](#re-join-this-machine) every machine.
+3. If the home was not reinstalled and the address is right, treat it as an intrusion: do
+   not re-join over that network until you know what is answering.
+
+Keep a backup of `home-cluster.key` with your database backups — without it, every machine
+has to re-join.
+
+## "Re-join this machine"
+
+The machine's log says **re-join this machine**. It joined before this version of Maktaba
+(its settings do not have the home's cluster key), or its home's cluster key was replaced.
+It keeps pulling jobs, but has no live connection: the Machines page shows it without live
+views, and it cannot use LLMs on other machines.
+
+1. Stop the worker on the machine (stop its service).
+2. On the home, **Admin > Machines**: **Revoke** the machine, then **Remove** it.
+3. On the machine, delete its settings file (`node.json`; where it is:
+   [Join a machine, Step 5](join-a-machine.md#step-5--on-the-home-approve-with-the-code)).
+4. On the home, turn on **Accept new machines**; on the machine run
+   `maktaba-pipeline join` and approve the new code.
+5. Start the worker again (or its service).
+
+The machine comes back as a new record: if you had set its path map or switched queues off
+for it by hand, set them again.
 
 ## Storage not reachable
 
@@ -156,6 +206,23 @@ reconnects within a few seconds; nothing needs restarting.
 
 To look at the cluster while the home is off, read the files from any machine:
 `maktaba-pipeline cluster logs --follow` (see [Files on the share](files-on-the-share.md)).
+
+## History is slow, or says `X-Maktaba-Source: files`
+
+The home answers metrics and logs history from its database cache when the cache holds the
+whole range, and from the files on the share otherwise; the `X-Maktaba-Source` header of
+`/api/cluster/files/…` says which. `files` is normal for anything older than the cache
+window (24 hours by default, `MAKTABA_CLUSTER_CACHE_HOURS`) and just after the home started
+with an empty cache, while it refills from the files. The records are the same either way;
+reading from files is only slower.
+
+If recent history keeps coming from `files`, or the cache's **dropped** count grows (in the
+processes list, `GET /api/cluster/processes` with an admin token, under `cache`), the home
+could not write to its database for a while: the database was slow, full or stopped. Look at
+the database. Nothing is lost — the files have every record. The home never answers from the
+cache for a range it does not fully hold, so requests for that time come from the files
+until it leaves the cache window. `MAKTABA_CLUSTER_CACHE_HOURS=0` turns the cache tables off
+if you prefer to always read the files.
 
 ## Two machines write into one folder
 

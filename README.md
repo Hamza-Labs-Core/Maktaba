@@ -299,6 +299,7 @@ See:
 - [`specs/FULL_IMPLEMENTATION_AUDIT.md`](specs/FULL_IMPLEMENTATION_AUDIT.md) — end-to-end audit of all 25 epics on `main`.
 - [`specs/TEST_RESULTS.md`](specs/TEST_RESULTS.md) — full-suite test results snapshot.
 - [`docs/testing.md`](docs/testing.md) — test pyramid, tier budgets, CI gates.
+- [`docs/cluster/README.md`](docs/cluster/README.md) — several machines as one Maktaba cluster: joining, files on the share, LLMs, troubleshooting.
 - [`docs/wiki/INDEX.md`](docs/wiki/INDEX.md) — generated wiki index. **The wiki is served by the bundled wiki web app in [`web/wiki-app/`](web/wiki-app/), NOT by GitHub Wiki** — see [`docs/WIKI_SYNC.md`](docs/WIKI_SYNC.md) for why and how.
 - [`docs/wiki/build-order.md`](docs/wiki/build-order.md) — phase-by-phase implementation order.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — day-1 setup, day-N inner loop, troubleshooting.

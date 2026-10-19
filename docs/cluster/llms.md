@@ -22,7 +22,7 @@ Each server runs one request at a time by default; raise `MAKTABA_LLM_MAX_PARALL
 machine if your hardware can take more.
 
 **Admin > Machines** shows each machine's LLM servers and models, which are loaded, and the
-requests running.
+requests running, with a box to try a model. Only admins see this part of the page.
 
 ## Run Ollama on a machine
 
@@ -66,6 +66,9 @@ http://<home>:8080/api/cluster/llm/v1
 Any tool that lets you set an "OpenAI base URL" can use it. It needs a key: create a
 **personal access token** in the web app (your profile, **API tokens**), and use it as the
 API key. The token is sent as `Authorization: Bearer <token>`.
+
+Who may use it: anyone with a personal access token, and admins. An ordinary user signed in
+to the web app (without a token) gets **403**.
 
 List the models (from every machine):
 
@@ -121,6 +124,7 @@ Use the model names exactly as `/models` lists them.
 | `machine_gone` | 502 | The machine running the request disconnected. | Try again; another machine may take it. |
 | `runtime_error` | 502 | The LLM server on that machine returned an error. | Look at that machine's LLM server and its log. |
 | — | 401 | Missing or wrong token. | Use a valid personal access token. |
+| — | 403 | Signed in as an ordinary user, without a personal access token. | Create a personal access token and use it, or ask an admin. |
 
 Inside Maktaba, a machine whose connection to the home is down can still use its own
 models, but not other machines' (`no_channel`).

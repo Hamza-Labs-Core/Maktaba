@@ -6,7 +6,8 @@ The home adds the numbers of the whole cluster: the queues and the library. Ever
 can read every machine's files, so you can look at the whole cluster from any computer —
 even when the home is off.
 
-Nothing of this is kept in the database.
+These files are the record. The home's database keeps only a short cache of the most recent
+metrics and logs, so pages read fast (see [The database cache](#the-database-cache)).
 
 ## Where the folder is
 
@@ -72,7 +73,7 @@ maktaba/cluster/
 | Kind | One line is | Useful for |
 |---|---|---|
 | `logs` | a log record: time, level, event, details | what went wrong, and where |
-| `metrics` | a snapshot of the process and its machine | load, memory, GPU, disk space over time |
+| `metrics` | a snapshot of the process and its machine, with its health numbers (NAS speed and timeouts) | load, memory, GPU, disk space, NAS health over time |
 | `jobs` | a job event: taken, progress, done, failed, skipped, paused, deferred | how long each step takes on which machine; failures |
 | `llm` | one LLM request this machine ran: model, who asked, tokens, time, error | LLM load and speed per machine |
 | `events` | the home's hub: a connection, a disconnection, a refusal, a command | who was connected when; refused machines |
@@ -131,7 +132,29 @@ The last line of a file that is being written may be incomplete for a moment; sk
 **Admin > Machines** shows each machine's live views, and its history from these files
 (pick a kind and a day). Scripts can read the same through the home's API with an admin
 token: `GET /api/cluster/files` lists the folders, and
-`GET /api/cluster/files/<ip>/<kind>?date=YYYY-MM-DD` returns a day's records.
+`GET /api/cluster/files/<ip>/<kind>?date=YYYY-MM-DD` returns a day's records. For metrics and
+logs of the last day the home answers from its database cache (below); the answer's
+`X-Maktaba-Source` header says `cache` or `files`, and the records are the same either way.
+
+## The database cache
+
+The home keeps a copy of the most recent metrics and logs in its database, so its pages and
+the API read them quickly instead of opening many files on the NAS.
+
+- **What**: every metrics snapshot (one per process every 10 seconds) and every log record
+  the home receives over the machines' live connections; and the health numbers (NAS speed,
+  CPU, memory, transcription speed) that the Processing page and the transcription report
+  show.
+- **For how long**: the metrics and logs copies keep the last 24 hours
+  (`MAKTABA_CLUSTER_CACHE_HOURS` on the home; `0` turns them off). The health numbers are kept
+  as before.
+- **Who writes it**: only the home. Machines never write to it.
+- **Emptying it loses nothing**: everything in it is also in the files. When the home starts
+  and finds the cache empty (a new install, or after a database crash) or behind, it refills
+  it from the files by itself.
+- **When the database is slow or stopped**, the home skips the cache for a while and counts
+  what it skipped; the live views and the files are not affected, and history for that time
+  is read from the files.
 
 ## How long they are kept, and how big they get
 

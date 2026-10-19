@@ -16,17 +16,19 @@ authenticated, encrypted channel to a hub on the home, over which flow real-time
 what it collects to **files on the shared video storage**, where every other machine can
 read them; and the Processing page watches the whole cluster live through the hub.
 
-The database keeps what it is for: the catalog and the queues. Logs, metrics and LLM
-traffic never go through it.
+The database keeps the catalog and the queues, and — "keep a database, but it will be like
+a cache" (owner) — a bounded, disposable cache of the channel that only the hub writes, so
+recent history reads fast (§7.9). Logs, metrics and LLM traffic never travel through the
+database; the files on the share are their record.
 
 ## 0. Requirements and trace
 
-The owner's phase 2 requirements, in the order they were given (2026-10-18/19):
+The owner's phase 2 requirements, in the order they were given (2026-10-18/19; 10 refines 2):
 
 | # | Requirement | Satisfied by |
 |---|---|---|
 | 1 | Metrics over a socket for every worker; LLMs running on any machine usable by all; "all should be like a cluster" | §4 every process runs an agent on one channel to the hub; §5 `metrics` frame; §8 LLM runtimes, router and doors; §6 hub |
-| 2 | "Build it solid"; "no database" — logs, metrics, LLM traffic never through the database | §4 authenticated, encrypted, versioned protocol with strict counters; §10 failure behaviour; §9 settings from the environment; §2 the three planes |
+| 2 | "Build it solid"; "no database" — logs, metrics, LLM traffic never through the database | §4 mutually authenticated, forward-secret, encrypted, versioned protocol with strict counters; §10 failure behaviour; §9 settings from the environment; §2 the three planes; §7.9 the database only as the hub's cache |
 | 3 | Real-time streams | §5 metrics every 2 s, logs within 250 ms, job events as they happen; §6.4 browser WebSocket |
 | 4 | Saved to files by node IP | §7.3 the IP folder; §7.4 layout |
 | 5 | All saved on the videos share under a `maktaba` folder, viewable from all nodes, each finding the right path for its OS | §7.1 share root; §7.2 per-OS path through each machine's path map |
@@ -34,6 +36,7 @@ The owner's phase 2 requirements, in the order they were given (2026-10-18/19):
 | 7 | Same for queue metrics, job metrics, library — all | §5.3 `job` frame; §7.4 `jobs/`, `queues/`, `library/`; §6.4 topics `jobs`, `queues`, `library` |
 | 8 | The Processing page talks to a central hub on the main node over a WebSocket; all jobs on all machines talk to that hub | §6.4 `/api/cluster/ws`; §6.5 Processing page; §5.3 every job reports to the hub |
 | 9 | Not stages: the work is split into queues on the main node and each machine's workers pull jobs from those queues | §3 queues and pulling |
+| 10 | "Keep a database, but it will be like a cache" | §7.9 the database cache: `health_samples` and two cache tables, written only by the hub, bounded, refilled from the files |
 
 ## 1. Words used here
 
@@ -46,6 +49,7 @@ The owner's phase 2 requirements, in the order they were given (2026-10-18/19):
 | **hub** | The part of the home's API that accepts agents, keeps the live state of the cluster, serves browsers, routes LLM requests and writes the home's own files. |
 | **session** | One authenticated agent connection; identified by the id the hub gives it in `welcome`. |
 | **queue** | The jobs waiting for one stage of the processing graph (probe, extract, transcribe, …). The code and the database name a queue by its stage, so some fields keep the word `stages`. |
+| **cluster key** | The home's long-term X25519 key pair (`home-cluster.key`, local to the home). Its public half is in every machine's node config, so a machine can tell its home from an impostor (§4.2). |
 | **share** | The network storage that holds the videos (the NAS). |
 | **share root** | The top of the share as the database writes paths (§7.1). |
 | **cluster directory** | `<share root>/maktaba/cluster`, where every machine writes its files. |
@@ -61,7 +65,7 @@ The owner's phase 2 requirements, in the order they were given (2026-10-18/19):
                                          │     └──▲───────────────────▲────────────┘      │
  OpenAI client ── /api/cluster/llm/v1 ──►│        │ agent channel      │ agent channel     │
                                          │  home workers (agents)     │                   │
-                                         │  Postgres: catalog + QUEUES ◄── pull (SQL) ──┐ │
+                                         │  Postgres: QUEUES, catalog, cache ◄─ pull ───┐ │
                                          └────────────────────────────┼─────────────────┼─┘
                                                                       │                 │
  MACHINE (macOS / Linux / Windows) ── workers (agents) ── WebSocket /api/cluster/agent  │
@@ -75,12 +79,14 @@ Three planes, each with one job:
 
 | Plane | Carries | Where |
 |---|---|---|
-| **Database** (phase 1, unchanged) | the catalog and the queues: jobs, claims, the worker registry, machines and their switches | Postgres on the home |
+| **Database** | the catalog and the queues (phase 1: jobs, claims, the worker registry, machines and their switches) **+ a cache of the channel** (§7.9) | Postgres on the home |
 | **Channel** (this phase) | live metrics, logs, job events, commands, LLM requests and answers | one WebSocket per process to the hub, sealed frames |
 | **Files** (this phase) | the record: logs, metrics, job events, LLM usage, hub events, queue and library snapshots | JSON Lines on the share, one IP folder per machine |
 
-Nothing on the channel or in the files is written to the database. The channel is the
-real-time view; the files are the record, and they keep being written when the home is down.
+The files are the record. The database keeps a cache of the channel for fast reading:
+written only by the hub, bounded, and disposable — emptying it loses nothing the files do not
+hold (§7.9). The channel is the real-time view; the files keep being written when the home is
+down.
 
 ## 3. Queues and pulling
 
@@ -195,10 +201,12 @@ one per frame. The receiver opens a frame only with the counter it expects; a ga
 or a failed tag closes the connection with `4011 seal_error`. The plaintext is one JSON
 object with a string field `t` naming the frame type.
 
-**Interop vectors**: `shared/testdata/cluster/agent_vectors.json` holds fixed keys, nonces,
-the derived keys, the proof and three sealed frames (node session), plus the home-key
-variant. The Go and the Python tests both check against it. Any change to a constant above
-changes the vectors and is a new protocol version (§4.7).
+**Interop vectors**: `shared/testdata/cluster/agent_vectors.json` holds fixed static and
+ephemeral keys, nonces, the exact `hello` and `challenge` bytes, the transcript hash, the
+three DH results, the derived keys, both proofs and three sealed frames (a node session,
+starting with the `welcome` that carries the hub's proof), plus the home-key variant. The Go
+and the Python tests both check against it. Any change to a constant of §4.2–§4.4 changes the
+vectors and is a new protocol version (§4.7).
 
 ### 4.5 Liveness and reconnecting
 
@@ -215,28 +223,37 @@ changes the vectors and is a new protocol version (§4.7).
 | 1000 | `normal` | either | the process or the hub stops cleanly | reconnects if it is still running |
 | 1001 | `going_away` | hub | the API is restarting | reconnects with backoff |
 | 4000 | `protocol_error` | either | malformed JSON, an unexpected frame, text after `welcome` | reconnects with backoff |
-| 4001 | `unsupported_version` | hub | `hello.v` is not served; the close reason lists the versions served, e.g. `unsupported_version 1` | retries at the longest delay; logs it once an hour |
+| 4001 | `unsupported_version` | hub | `hello.v` is not served (version 1 never is); the close reason lists the versions served, e.g. `unsupported_version 2` | retries at the longest delay; logs it once an hour |
 | 4003 | `not_member` | hub | the machine is unknown, pending, rejected or revoked | retries at the longest delay |
-| 4004 | `auth_failed` | hub | wrong proof (wrong pairing key or home agent key), or an all-zero shared secret | retries at the longest delay |
+| 4004 | `auth_failed` | either | hub: wrong client proof (wrong pairing key or home agent key); agent: a `welcome` that does not open or carries a wrong hub proof; either: an all-zero DH result | retries at the longest delay; when the hub failed to prove itself, logs "this is not the home I joined" |
 | 4008 | `timeout` | either | handshake over 10 s, or 45 s of silence | reconnects |
 | 4009 | `replaced` | hub | a newer session with the same `worker_id` authenticated | retries at the longest delay; logs an error (two processes share a worker id) |
 | 4010 | `revoked` | hub | the admin revoked this machine | **does not reconnect**; the worker stops gracefully (phase 1 revocation) |
-| 4011 | `seal_error` | either | a tag failed, or a counter gap or repeat | reconnects (new keys) |
+| 4011 | `seal_error` | either | after `welcome`: a tag failed, or a counter gap or repeat (a `welcome` that does not open is `4004`) | reconnects (new keys) |
 | 4012 | `too_large` | either | a frame over the size limit (§4.7) | reconnects |
 | 4013 | `rate_limited` | hub | too many handshakes from this address | retries at the longest delay |
 | 4014 | `disconnect` | hub | an admin's `disconnect` command | reconnects with backoff |
 
 The close reason (at most 123 bytes) carries the name and an optional short detail.
 
+A machine whose node config has no `home.cluster_pub` (joined before version 2) does not try
+to connect at all: it logs "re-join this machine" once an hour and keeps working.
+
 ### 4.7 Versioning and limits
 
-- `hello.v` is the protocol version, now `1`. The labels `maktaba-agent-v1` and
-  `maktaba-agent-auth` belong to version 1; a new version brings new labels and new vectors.
-  The hub may serve several versions at once; the agent sends its highest, and on `4001`
-  retries with the highest version both serve, if any.
-- Within version 1 only additive changes are allowed: new optional fields and new frame
+- `hello.v` is the protocol version, now **`2`**. Version 2 is defined by its labels —
+  `maktaba-agent-v2` (HKDF info), `maktaba-agent-auth` (the process's proof),
+  `maktaba-agent-server` (the hub's proof) — by the transcript rule (SHA-256 over the exact
+  `hello` and `challenge` bytes as sent), by the layouts of §4.2–§4.4 and by the vectors.
+- Version 1 (the first draft: a static machine key against a fresh hub key, the hub not
+  proven, no forward secrecy) is not served: a `hello` with `v: 1` is closed with `4001`.
+- A new version brings new labels and new vectors. The hub may serve several versions at
+  once; the agent sends its highest, and on `4001` retries with the highest version both
+  serve, if any.
+- Within version 2 only additive changes are allowed: new optional fields and new frame
   types. Receivers ignore unknown fields, unknown `settings` keys and unknown frame types
-  (an ignored frame still advances the counter).
+  (an ignored frame still advances the counter). The transcript covers the bytes as sent,
+  so optional `hello` fields need no canonical form.
 - A sealed frame is at most 4 MiB. A `logs` frame holds at most 1 000 records; a record
   over 64 KiB has its `fields` cut and `"truncated": true` added.
 - The hub accepts at most 30 handshakes a minute from one address (`4013`).
@@ -249,8 +266,8 @@ All frames are sealed JSON objects with `t` naming the type.
 
 | `t` | Direction | When | Content |
 |---|---|---|---|
-| `welcome` | S→C | once, first sealed frame | `session`, `settings` {`log_level`, `metrics_every`, `share_root`, `retention_days`, `file_mb`} |
-| `metrics` | C→S | every `metrics_every` s (2) | §5.2 |
+| `welcome` | S→C | once, first sealed frame | `proof` (the hub's, §4.2), `session`, `settings` {`log_level`, `metrics_every`, `share_root`, `retention_days`, `file_mb`} |
+| `metrics` | C→S | every `metrics_every` s (2), and a last one at a graceful stop | §5.2, including `health` |
 | `logs` | C→S | batched, within 250 ms | `records` [{`ts`, `level`, `event`, `logger`, `fields`}] at or above the session's level |
 | `job` | C→S | as it happens | §5.3 — every job this process runs |
 | `dropped` | C→S | after a reconnect | `logs` (count of log records dropped while disconnected), `since`, `until` |
@@ -281,7 +298,10 @@ Timestamps are RFC 3339 in UTC. Sizes are bytes; rates are per second.
               "claims_per_min": 4, "stt": {"audio_sec_per_s": 0, "files_in_flight": 0}},
  "llm":      {"in_flight": 0, "tokens_per_s": 0},
  "files":    {"ip": "192.168.50.31", "dir": "/mnt/nas/maktaba/cluster/192.168.50.31",
-              "on_share": true, "reason": null, "dropped": 0}}
+              "on_share": true, "reason": null, "dropped": 0},
+ "health":   {"nas.open_ms_p50": 4.1, "nas.open_ms_p95": 38.0, "nas.timeouts": 3,
+              "cpu.pct": 41.5, "mem.free_pct": 43.7, "mem.available_gb": 28.0,
+              "stt.audio_sec:stt-1": 51234.0, "stt.files_in_flight:stt-1": 2}}
 ```
 
 `pipeline.stages` are the queues this process pulls from now and `stages_off` why the
@@ -289,6 +309,15 @@ others are left out (the reasons of phase 1 §5); `pipeline.jobs` are the jobs i
 running, so a hub that has just (re)connected knows them within one period. `rx_bps` and
 `tx_bps` are bytes per second. `files` reports where the process writes its files (§7)
 and how many records it could not write.
+
+`health` is a flat map of the process's health numbers under the metric names
+`health_samples` uses today (plan 06-11 §6.6): the NAS probe (`nas.open_ms_p50`,
+`nas.open_ms_p95`, `nas.timeouts`), `cpu.pct`, `mem.free_pct`, `mem.available_gb`, the
+network probes (about once a minute) and the metrics stages register (for example
+`stt.audio_sec:<slot>`, the transcription slot's audio seconds). Counters are cumulative
+since the process started; the rest are gauges. `nas.reads_busy` is not sent: the hub counts
+it. A worker sends a last `metrics` frame when it stops gracefully, so its counters are
+complete. The hub writes these numbers to the `health_samples` cache (§7.9).
 
 ### 5.3 `job`
 
@@ -347,8 +376,9 @@ connected since, the latest metrics, the running jobs with their progress, the l
 log records, the LLM runtimes it reported. A process that disconnected stays listed as
 *gone* for 5 minutes. Cluster-wide: the latest queue snapshot (built from the database by
 the same code that feeds the Processing page today), the latest library snapshot, the LLM
-router's queues and requests in flight. Nothing of it is stored in the database; a hub
-restart rebuilds it within one metrics period.
+router's queues and requests in flight. The live state is memory only and rebuilds within one
+metrics period after a hub restart; history does not start blank, since the database cache
+survives a normal restart (§7.9).
 
 ### 6.2 Sessions and revocation
 
@@ -386,17 +416,18 @@ Browser → hub:
 {"op": "ping"}
 ```
 
-Hub → browser, in the envelope the existing SSE streams use (`{type, at, payload}`), plus
-`topic` on snapshots:
+Hub → browser: `{type, topic?, data}` — `topic` on snapshots, times inside `data` (this is
+the envelope the hub and the web app were built with; it differs from the SSE streams'
+`{type, at, payload}`):
 
 ```json
-{"type": "snapshot", "topic": "queues", "at": "…", "payload": {}}
-{"type": "queues",   "at": "…", "payload": {}}
-{"type": "job",      "at": "…", "payload": {}}
-{"type": "cmd.result", "at": "…", "payload": {"id": "c-1", "ok": true, "detail": ""}}
-{"type": "dropped",  "at": "…", "payload": {"topic": "metrics", "count": 40}}
-{"type": "error",    "at": "…", "payload": {"code": "forbidden", "topic": "logs:*:debug"}}
-{"type": "pong",     "at": "…"}
+{"type": "snapshot", "topic": "queues", "data": {}}
+{"type": "queues",   "data": {}}
+{"type": "job",      "data": {}}
+{"type": "cmd.result", "data": {"id": "c-1", "ok": true, "detail": ""}}
+{"type": "dropped",  "data": {"topic": "metrics", "count": 40}}
+{"type": "error",    "data": {"code": "forbidden", "topic": "logs:*:debug"}}
+{"type": "pong"}
 ```
 
 | Topic | Snapshot on subscribe | Live messages | Who |
@@ -437,8 +468,9 @@ the snapshot.
 
 The Machines page (`/admin/machines`, phase 1) uses the same socket for its live views:
 per machine its processes, their metrics (CPU, memory, GPU, disks, network), the jobs they
-run, a log tail with a level picker, the LLM runtimes and models; and per process the
-commands of §5.4. History comes from the files (§6.7).
+run, a log tail with a level picker, the LLM runtimes and models (with a box to try a
+model, admin-only like the `llm` topic); and per process the commands of §5.4. History comes
+from the files (§6.7).
 
 ### 6.7 REST
 
@@ -446,11 +478,11 @@ commands of §5.4. History comes from the files (§6.7).
 |---|---|---|---|
 | GET | `/api/cluster/agent` | public (protocol auth) | the agent WebSocket (§4) |
 | GET | `/api/cluster/ws` | signed-in | the browser WebSocket (§6.4) |
-| GET | `/api/cluster/processes` | admin | the live processes (the `processes` snapshot) |
+| GET | `/api/cluster/processes` | admin | the live processes (the `processes` snapshot, with the database cache's counters, §7.9) |
 | POST | `/api/cluster/processes/{session}/cmd` | admin | `{name, args}` → `{id, ok, detail}`; 404 unknown session; 504 no answer in 10 s |
 | GET | `/api/cluster/files` | admin | the IP folders, with their processes (from `processes/*.json`) and the days present per kind |
-| GET | `/api/cluster/files/{ip}/{kind}?date=YYYY-MM-DD&worker=&level=&from=&to=&limit=` | admin | NDJSON, the day's records of that kind merged by `ts`; `kind` is `logs` \| `metrics` \| `jobs` \| `llm` \| `events` \| `queues` \| `library` |
-| GET, POST | `/api/cluster/llm/v1/…` | authenticated | §8.3 |
+| GET | `/api/cluster/files/{ip}/{kind}?date=YYYY-MM-DD&worker=&level=&from=&to=&limit=` | admin | NDJSON, the day's records of that kind merged by `ts`; `kind` is `logs` \| `metrics` \| `jobs` \| `llm` \| `events` \| `queues` \| `library`; `metrics` and `logs` come from the database cache when it covers the range, else from the files (header `X-Maktaba-Source: cache\|files`, §7.9) |
+| GET, POST | `/api/cluster/llm/v1/…` | admin or personal access token (others 403) | §8.3 |
 
 `{ip}`, `{kind}` and `date` are checked against strict patterns, and the resolved path must
 stay inside the cluster directory.
@@ -593,7 +625,59 @@ Anyone who can open the share can read the files; two readers come with Maktaba:
   `--dir` reads another cluster directory (a local fallback, a copy).
 - **On the home**, the REST endpoints of §6.7 serve the same records to the web app.
 
-Nothing of this goes to the database.
+The files are the record; the home's database holds only a bounded, disposable cache of
+recent metrics and logs for fast reading (§7.9).
+
+### 7.9 The database cache
+
+Owner (2026-10-19): "Keep a database, but it will be like a cache." The files on the share
+stay the record. The home's database keeps a **cache** of the channel so that recent history
+reads fast. Three rules: only the **hub** writes it; it is **bounded**; it is **disposable** —
+emptying it loses nothing the files do not hold.
+
+**(a) `health_samples` — the metrics cache for today's readers.** The hub writes each
+process's `health` (§5.2) to `health_samples` at most every 10 s per process: `at` is the
+hub's clock, `host` the process's host, one row per metric; plus `nas.reads_busy`, which the
+hub counts itself (jobs of the `nas_read` pool that are claimed or running, as workers
+counted it). The readers are unchanged: the transcription report's live speed and time left
+(`stt.audio_sec:<slot>`), the Processing page's health strip and sparklines
+(`GET /api/queues/health`), a queue's rate chart, and the 10-minute rollups. The API's own
+`backlog.ready` sample stays as it is. **Workers no longer write `health_samples`**: the
+migration takes `INSERT`, `UPDATE` and `DELETE` on it from `maktaba_worker`, and the home's
+own workers stop by code. The 48-hour fold of raw rows into 10-minute rollups, and the
+pruning of old rollups, therefore move from the workers' pruner (`engine/prune.py`, which
+every worker runs today) to the hub. A worker without an agent (`MAKTABA_CLUSTER_AGENT=0`)
+records no health numbers.
+
+**(b) Two cache tables**, both `UNLOGGED` (fast, not written to the write-ahead log, emptied
+by a database crash — acceptable for a cache):
+
+| Table | Holds |
+|---|---|
+| `cluster_metrics_cache` | one `metrics` frame per process per 10 s |
+| `cluster_log_cache` | every log record the hub receives |
+
+They keep `MAKTABA_CLUSTER_CACHE_HOURS` hours (default 24; `0` disables them) and are
+pruned every 10 minutes. `maktaba_worker` has no rights on them (the migration revokes what
+the default privileges would grant).
+
+**(c) Coverage.** The hub never claims a range it does not hold. At start it refills from the
+files: the whole window when the tables are empty (a new install, or a crash emptied the
+`UNLOGGED` tables), otherwise the gap since its newest row. Backfill is idempotent (reading a
+range twice adds nothing) and symlink-safe (it never follows a link out of the cluster
+directory).
+
+**(d) Readers.** `GET /api/cluster/files/{ip}/{metrics|logs}` answers from the cache when the
+range is covered, else from the files, with the header `X-Maktaba-Source: cache` or `files`;
+the NDJSON is the same either way. The other kinds are always read from the files.
+
+**(e) Failure.** The cache never blocks the hub, the channel or the files. When the database
+is slow or down, batches are dropped and counted (`cache` in the `processes` snapshot:
+written, dropped, oldest and newest row); readers fall back to the files.
+
+**Migration** `0104_cluster_cache` (with its SQLite sibling and MANIFEST row, as the migration
+rules require). PR 57 uses slots 0104–0115 on its own branch; whichever merges second
+renumbers. Built by track C1 (package `api/internal/cluster/cache`).
 
 ## 8. LLMs across the cluster
 
@@ -634,10 +718,12 @@ lives in memory.
   `no_channel` while the channel is down).
 - **Anything OpenAI-compatible**: the home serves
   `GET /api/cluster/llm/v1/models`, `POST /api/cluster/llm/v1/chat/completions` and
-  `POST /api/cluster/llm/v1/embeddings`, streaming as SSE in the OpenAI wire format,
-  authenticated like the rest of the API (`Authorization: Bearer <admin token or personal
-  access token>`). Point a tool at `http://<home>:8080/api/cluster/llm/v1`. `models` lists
-  every model on any machine, with the machines that hold it.
+  `POST /api/cluster/llm/v1/embeddings`, streaming as SSE in the OpenAI wire format.
+  **Admins and personal access tokens only** (owner decision, 2026-10-19): an admin's session
+  or the admin token, or any `Authorization: Bearer pat_…` personal access token; an
+  ordinary signed-in user's session gets 403. Point a tool at
+  `http://<home>:8080/api/cluster/llm/v1`. `models` lists every model on any machine, with
+  the machines that hold it.
 
 ### 8.4 What travels
 
@@ -656,7 +742,7 @@ The process that ran a request writes one line to its `llm` file (§7.6): model,
 who asked, token counts, time and error. Prompts and outputs are never written to disk or
 logged, by the agent or the hub.
 
-## 9. Settings (no database)
+## 9. Settings (not in the database)
 
 Phase 2 settings come from the environment (or the API's config file); the hub hands the
 per-process ones to each process in `welcome.settings`, and `cmd log_level` changes the log
@@ -671,9 +757,11 @@ level live.
 | `MAKTABA_CLUSTER_RETENTION_DAYS` | home API (sent), any process (override) | `14` | days of files kept |
 | `MAKTABA_CLUSTER_FILE_MB` | home API (sent), any process (override) | `256` | cap per file |
 | `MAKTABA_CLUSTER_LOG_LEVEL` | home API (sent) | `info` | each session's starting log level |
+| `MAKTABA_HOME_CLUSTER_KEY` | home API | `~/.maktaba/cluster/home-cluster.key` | the home's long-term cluster key pair (its public half is in every machine's node config) |
 | `MAKTABA_HOME_AGENT_KEY` | home API, home workers | `~/.maktaba/cluster/home-agent.key` | the home agent key file |
 | `MAKTABA_API_URL` | home workers | `http://127.0.0.1:8080` | where a home process finds the hub |
-| `MAKTABA_CLUSTER_AGENT` | any process | `1` | `0` runs the worker without an agent (tests, a single-process setup) |
+| `MAKTABA_CLUSTER_AGENT` | any process | `1` | `0` runs the worker without an agent (tests, debugging); it then sends no metrics, so no health numbers are recorded for it (§7.9) |
+| `MAKTABA_CLUSTER_CACHE_HOURS` | home API | `24` | hours kept in the database cache tables; `0` disables them (§7.9) |
 | `MAKTABA_OLLAMA_URL` | any process | `http://127.0.0.1:11434` | the local Ollama |
 | `MAKTABA_LLM_ENDPOINTS` | any process | empty | comma-separated OpenAI-compatible base URLs |
 | `MAKTABA_LLM_MAX_PARALLEL` | any process | `1` | requests at once per runtime |
@@ -685,7 +773,9 @@ level live.
 |---|---|
 | The home's API stops or is unreachable | Workers keep pulling jobs (the queues are in the database) and keep writing their files. Agents buffer logs (10 000, oldest dropped and counted), keep only the latest metrics, reconnect with backoff up to 30 s. LLM requests that need another machine fail with `no_channel`; local ones work. |
 | The whole home is down (database too) | Workers cannot pull, as in phase 1; they wait and retry. Files keep being written. |
-| The hub restarts | Agents reconnect and resend `llm.models`; the live state is whole again within one metrics period. Browsers reconnect, re-subscribe and get fresh snapshots. |
+| The hub restarts | Agents reconnect and resend `llm.models`; the live state is whole again within one metrics period. Browsers reconnect, re-subscribe and get fresh snapshots. History is still there: the cache survives a normal restart, and the hub refills the gap since its newest row from the files. |
+| The database is slow or down (the cache) | The cache never blocks: its batches are dropped and counted (`cache` in the `processes` snapshot); history readers use the files. |
+| A database crash empties the `UNLOGGED` cache tables | At its next start the hub refills the whole window from the files. |
 | The share is not reachable | Each process writes to its local fallback and says so in its metrics; it moves back when the share returns (§7.2). The live view is not affected. |
 | The share is full or read-only | Writes fail closed: counted, logged once a minute; workers and the live view go on. |
 | A file reaches its cap | Further records of that day are counted, not written. |
@@ -694,36 +784,48 @@ level live.
 | A runtime stops | In-flight requests fail with `runtime_error`; the next check (30 s) removes its models. |
 | Machines' clocks differ | Records carry each machine's own UTC time; readers merge by it, so skew shows only as reordering. |
 | A machine is revoked | §6.2: sessions closed at once, no reconnect, the worker stops. |
-| Versions differ | The hub refuses an unknown protocol version (`4001`); the worker goes on working without a channel. |
+| Versions differ | The hub refuses an unknown protocol version, version 1 included (`4001`); the worker goes on working without a channel. |
+| A machine joined before version 2 (no `home.cluster_pub` in its node config) | It does not connect; it logs "re-join this machine" and keeps pulling jobs. Re-joining it (revoke, remove, join again) brings the channel. |
+| The home's cluster key changed (reinstalled home, lost key file, another home at that address) or something in the middle answers | Machines refuse the `welcome` ("this is not the home I joined", `4004`) and keep pulling jobs without a channel. Restoring the key file brings them back; otherwise every machine re-joins. |
 
 ## 11. Security
 
-- **Who may connect.** A machine's process authenticates by possession of its pairing key
-  (phase 1), a home process by the home agent key (local, mode 0600, never on the share).
-  Revoking a machine closes its sessions at once and refuses new ones.
-- **Keys per connection.** Every connection uses a fresh hub key pair (machines) and fresh
-  nonces, so no key or nonce is reused across connections. This is **not** forward secrecy:
-  whoever later steals a machine's pairing key (or the home agent key) and recorded its
-  traffic can derive that traffic's keys. These keys are the long-term credentials, as in
-  phase 1.
+- **Mutual authentication.** A machine's process proves it holds its pairing key (phase 1);
+  the hub proves it holds the home's **cluster key**, whose public half each machine received
+  sealed in its pairing credentials (`home.cluster_pub`). A home process and the hub prove to
+  each other that they hold the home agent key. Neither side sends anything sealed to a peer
+  that has not proven itself: the process waits for the hub's proof in `welcome`. A device in
+  the middle of the LAN can pose as neither side — a machine refuses it ("this is not the
+  home I joined") and the hub refuses it (`4004`).
+- **Forward secrecy.** Both sides use a fresh ephemeral key per connection (`dh_ee`, and for
+  home processes `home_key ‖ dh_ee`), so traffic recorded today stays private even if a
+  long-term key is stolen later.
+- **Transcript binding.** Both proofs cover the SHA-256 of the exact `hello` and `challenge`
+  bytes, so nothing in them (the version, an ephemeral key, a nonce, the node id) can be
+  changed in flight without a proof failing.
+- **What a stolen long-term key allows.** A machine's pairing key lets the thief pose as that
+  machine until it is revoked. The home's cluster key lets the thief pose as the home to every
+  machine; there is no rotation in this phase other than re-joining every machine with a new
+  key. Both keys live on local disks only (mode 0600), never on the share; back up the home's
+  cluster key with the same care as the database, since losing it means re-joining every
+  machine. No long-term key decrypts past traffic.
+- **Revocation** closes a machine's sessions at once and refuses new ones.
 - **Every frame** is encrypted and authenticated with a strict per-direction counter; any
   failure closes the connection.
-- **What the handshake does not prove.** The machine proves itself to the hub; the hub does
-  not prove itself to the machine. A device in the middle of the LAN can therefore pose as
-  the hub to a machine's process: it could read that process's metrics and logs and send it
-  the commands of §5.4 and LLM requests for its local runtimes. It cannot reach the real hub
-  as that machine, nor touch the database or the files. Closing this needs a handshake
-  change (version 2, new vectors) or TLS — see §13.
 - **Limits.** 30 handshakes a minute per address, a 10 s handshake deadline, 4 MiB frames,
   a fixed command list.
 - **Browsers.** `/api/cluster/ws` uses the API's own authentication and checks `Origin`;
   the metrics, LLM, processes and logs topics and every command need an admin.
-- **LLM door.** Requires API authentication; runtimes stay on localhost; prompts and
-  outputs are never written or logged.
+- **LLM door.** Admins and personal access tokens only (others 403); the `llm` topic and the
+  try box are admin-only; runtimes stay on localhost; prompts and outputs are never written
+  or logged.
 - **Files on the share** can be read by anyone who can read the share — that is the point
   (requirements 5 and 6). They hold logs (titles, paths, errors), metrics, job events and
   usage counts; never credentials, keys, prompts or outputs. The share's own permissions are
   the boundary. Log records pass the same redaction as today's logs.
+- **The database cache** holds what the files hold (log records included) and is written
+  only by the hub; `maktaba_worker` can neither write `health_samples` nor touch the cache
+  tables. Backfill never follows a link out of the cluster directory.
 - **REST file reads** validate `{ip}`, `{kind}` and `date` and keep every path inside the
   cluster directory.
 
@@ -737,27 +839,36 @@ sequenceDiagram
     participant N as Node process (agent)
     participant H as Home API (hub)
     participant DB as Home database
+    Note over N: holds node_static (its pairing key) and home_static public (home.cluster_pub, from joining)
     N->>H: GET /api/cluster/agent (WebSocket upgrade)
     H-->>N: 101 Switching Protocols
-    N->>H: text hello {v:1, kind:node, node_id, worker_id, pid, host, ip, nonce_c}
+    Note over N: fresh client_eph key pair
+    N->>H: text hello {v:2, kind:node, node_id, worker_id, pid, host, eph, nonce_c}
     H->>DB: cluster_nodes[node_id]: state, node_pubkey
     alt unknown, pending, rejected or revoked
         H-->>N: close 4003 not_member
     else approved
-        Note over H: fresh X25519 key pair for this connection
-        H-->>N: text challenge {server_pub, nonce_s}
-        Note over N,H: shared = X25519, okm = HKDF-SHA256(shared, nonce_c+nonce_s, "maktaba-agent-v1", 64)
-        N->>H: text auth {proof = HMAC-SHA256(k_c2s, "maktaba-agent-auth"+nonce_s)}
-        alt proof wrong
+        Note over H: fresh server_eph key pair for this connection
+        H-->>N: text challenge {server_eph, nonce_s}
+        Note over N,H: dh_ee = X25519(client_eph, server_eph), dh_se = X25519(node_static, server_eph), dh_es = X25519(client_eph, home_static)
+        Note over N,H: th = SHA-256(hello bytes + challenge bytes as sent), keys = HKDF-SHA256(dh_ee+dh_se+dh_es, nonce_c+nonce_s, "maktaba-agent-v2", 64)
+        N->>H: text auth {proof = HMAC-SHA256(k_c2s, "maktaba-agent-auth"+th)}
+        alt client proof wrong
             H-->>N: close 4004 auth_failed
-        else proof right
-            H-->>N: sealed s2c #0 welcome {session, settings}
-            N->>H: sealed c2s #0 metrics
-            N->>H: sealed c2s #1 llm.models
-            H-->>N: sealed s2c #1 ping
+        else machine proven
+            H-->>N: sealed s2c #0 welcome {proof = HMAC-SHA256(k_s2c, "maktaba-agent-server"+th), session, settings}
+            alt welcome does not open, or hub proof wrong
+                N-->>H: close 4004 auth_failed (this is not the home I joined)
+            else home proven
+                N->>H: sealed c2s #0 metrics
+                N->>H: sealed c2s #1 llm.models
+            end
         end
     end
 ```
+
+A home process follows the same steps with `kind: "home"` and no node lookup; its keys come
+from `home_key ‖ dh_ee` (§4.3).
 
 ### 12.2 A job's life, as the hub and a browser see it
 
@@ -843,23 +954,23 @@ sequenceDiagram
 
 ## 13. Open points for the owner
 
-These are not decided by this document; the plan builds what is above and leaves these as
+Items marked *resolved* were decided after the consolidation and are built as described.
+The others are not decided by this document; the plan builds what is above and leaves them as
 they are today.
 
-1. **The hub is not authenticated to machines** (§11). Options: a long-term home key given
-   to each machine at join (sealed with the credentials) and a hub proof in the handshake
-   (protocol version 2, new vectors), or TLS on the API with the certificate pinned at join
-   (the phase 1 follow-up).
-2. **`health_samples` is metrics in the database.** Each worker still writes it every 10 s
-   (plan 06-11); the Processing page's health and the transcription speed read it.
-   Requirement 2 says metrics never go through the database. Keep it, or move those views to
-   the hub and the files and retire the table?
+1. **Resolved — the hub is authenticated to machines.** Handshake version 2 (§4.2: the
+   home's cluster key, ephemeral keys on both sides, a transcript hash, a proof each way)
+   gives mutual authentication and forward secrecy. Machines joined before it must re-join.
+   TLS on the API (the phase 1 follow-up) remains open for the browser and REST traffic.
+2. **Resolved — the database as a cache** (owner, 2026-10-19: "Keep a database, but it
+   will be like a cache"): `health_samples` stays, written by the hub from `metrics` frames,
+   plus two bounded cache tables refilled from the files (§7.9).
 3. **No SSE fallback for the Machines page's live views.** The first draft had
    `/api/cluster/stream` (SSE); the WebSocket replaced it, and only the Processing page keeps
    a fallback (the existing streams). Bring back an SSE mirror of the hub for blocked
    networks?
-4. **Who may use the LLM door**: any authenticated user (as written: "authenticated like the
-   rest of the API") or admins only?
+4. **Resolved — who may use the LLM door** (owner, 2026-10-19): admins and personal access
+   tokens; ordinary signed-in users get 403 (§8.3).
 5. **Day folders in UTC** (chosen so machines agree): an admin in UTC+3 sees a day start at
    03:00 local time. Keep UTC, or use the home's time zone?
 6. **Local fallback files** are not copied to the share when it returns. Copy them?
@@ -873,6 +984,14 @@ What this rewrite settled where the amended draft was unclear or contradicted it
 what it added because an implementer needs it. Every decided detail of the draft (handshake,
 cryptography, frames, files, the hub, queues and pulling, LLMs, settings) is kept.
 
+**Owner decisions after the consolidation (2026-10-19):**
+
+- The database becomes a cache of the channel (requirement 10, §7.9): workers send `health`
+  in `metrics` frames and the hub writes `health_samples` and two `UNLOGGED` cache tables,
+  refilled from the files. This supersedes a same-day decision to stop writing
+  `health_samples` and serve the health views from the hub's memory.
+- The LLM door is for admins and personal access tokens only (§8.3).
+
 **Contradictions resolved (the later amendment wins):**
 
 - Browsers: the first draft fanned out over SSE (`/api/cluster/stream`); the later amendment
@@ -884,14 +1003,20 @@ cryptography, frames, files, the hub, queues and pulling, LLMs, settings) is kep
 - The `logs` frame carries its records under `records`, as the interop vectors do (the draft
   showed a bare list).
 - "Disk full on the home" became "the share is full": the files are on the share.
-- "Forward secrecy per session" was not accurate for a static-key × fresh-key exchange; §11
-  says what the fresh keys do and do not give.
+- **Handshake version 2** (written by the lead after this review): version 1 proved the
+  machine to the hub but not the hub to the machine, and a static machine key against a fresh
+  hub key gave no forward secrecy (the draft claimed it did). Version 2 (§4.2–§4.3) adds the
+  home's cluster key (`home-cluster.key`, `MAKTABA_HOME_CLUSTER_KEY`, sent to machines as
+  `home.cluster_pub` in the phase 1 sealed payload), ephemeral keys on both sides, three DH
+  results, a transcript hash over the exact `hello` and `challenge` bytes, the process's proof
+  in `auth` and the hub's in `welcome`. New vectors replace the old ones; version 1 is not
+  served; machines joined before version 2 re-join.
 - The draft cited "phase 1 §6" for the API's `MAKTABA_PATH_MAP`; phase 1 has no such setting,
   so it is new here. (Workers' `--path-map` reads `MAKTABA_WORKER_PATH_MAP`.)
 - The queue snapshot cadence: live to browsers when it changes, at most once a second; to
   the file every 10 s (one commit message said 2 s, the text 10 s).
 
-**Added for implementers (no change to any cryptographic parameter):**
+**Added for implementers (beyond the handshake above, no cryptographic change):**
 
 - `hello` gains optional `ip`, `os`, `version`; `welcome.settings` gains `share_root`,
   `retention_days`, `file_mb`.
@@ -901,7 +1026,7 @@ cryptography, frames, files, the hub, queues and pulling, LLMs, settings) is kep
   HTTP mapping; one count per runtime per machine (§8).
 - `cmd drain` acts on one process until it restarts; machine drain stays the database
   setting. `log_level` applies to shipped and written records alike.
-- Topic access (signed-in vs admin), the browser message envelope (the existing SSE one),
+- Topic access (signed-in vs admin), the browser message envelope (`{type, topic?, data}`, as built),
   `Origin` checking, slow-browser rules (§6.4).
 - `GET /api/cluster/processes`; `cluster ls`, `cluster where`, `--dir`, and the `jobs`,
   `queues`, `library` kinds in the CLI (§7.8).

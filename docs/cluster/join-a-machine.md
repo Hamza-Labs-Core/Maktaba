@@ -162,8 +162,9 @@ refused; after five wrong codes the request is rejected and you start again from
 request expires after 15 minutes.
 
 On the machine, `join` prints `Approved. This machine joined …; settings saved to …` and
-stops (or starts working, with `--run`). The settings file holds this machine's identity and
-its database login, readable only by your user:
+stops (or starts working, with `--run`). The settings file holds this machine's identity,
+the home's public key (so the machine can tell its home from an impostor) and its database
+login, readable only by your user:
 
 | System | Settings file |
 |---|---|
