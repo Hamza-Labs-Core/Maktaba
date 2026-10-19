@@ -116,6 +116,12 @@ func runJSON(cfg *config, in io.Reader, out io.Writer) int {
 	outputs := map[string][]string{}
 	failures := []failure{}
 	failedTests := map[string]bool{} // package -> had a failing test
+	// running holds, per package, the tests that started and have not
+	// ended, in start order. A test still running when its package fails
+	// is the one that hung (go test -timeout) or was cut off by another
+	// test's panic: test2json gives it no fail event, and its output (the
+	// timeout panic, the goroutine dump) sits under its own key.
+	running := map[string][]string{}
 
 	for scanner.Scan() {
 		raw := scanner.Text()
@@ -144,12 +150,34 @@ func runJSON(cfg *config, in io.Reader, out io.Writer) int {
 			continue
 		}
 		key := ev.Package + "\x00" + ev.Test
+		if ev.Test != "" {
+			switch ev.Action {
+			case "run":
+				running[ev.Package] = append(running[ev.Package], ev.Test)
+			case "pass", "skip", "fail":
+				running[ev.Package] = without(running[ev.Package], ev.Test)
+			}
+		}
 		switch ev.Action {
 		case "output":
 			outputs[key] = append(outputs[key], ev.Output)
 		case "pass", "skip":
 			delete(outputs, key)
+			if ev.Test == "" {
+				for _, t := range running[ev.Package] {
+					delete(outputs, ev.Package+"\x00"+t)
+				}
+				delete(running, ev.Package)
+			}
 		case "fail":
+			if ev.Test == "" {
+				for _, t := range running[ev.Package] {
+					k := ev.Package + "\x00" + t
+					failures = append(failures, failure{name: ev.Package + "::" + t + " [did not finish]", output: outputs[k]})
+					delete(outputs, k)
+				}
+				delete(running, ev.Package)
+			}
 			switch {
 			case ev.Test != "":
 				failedTests[ev.Package] = true
@@ -247,6 +275,16 @@ func runJSON(cfg *config, in io.Reader, out io.Writer) int {
 		}
 	}
 	return rc
+}
+
+// without returns tests minus name, in order.
+func without(tests []string, name string) []string {
+	for i, t := range tests {
+		if t == name {
+			return append(tests[:i:i], tests[i+1:]...)
+		}
+	}
+	return tests
 }
 
 type failure struct {
