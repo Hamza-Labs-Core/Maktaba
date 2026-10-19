@@ -53,7 +53,7 @@ stop) drains and exits as today.
   `health` map and whether it is the process's last), `Logs(proc, records)` for every
   `logs` batch. Never blocks: a full or failing database drops and counts.
 - `Reader` — `Covers` (does the cache hold this IP and range?), `ReadMetrics`, `ReadLogs`
-  (the same NDJSON records as the files).
+  (the same records as the files).
 - `Run` (writers and the 10-minute prune), `Backfill` (refill from the files at start), and
   `Stats` (written, dropped, oldest and newest row — shown as `cache` in the `processes`
   snapshot).
@@ -133,7 +133,7 @@ FIFO fairness, `no_model`, `no_capacity` timeout, `machine_gone`, cancel on requ
 OpenAI door streaming and non-streaming, 403 for an ordinary session, 200 for a personal
 access token and for an admin; the files endpoint answers from a fake `Reader` when it covers
 the range (`X-Maktaba-Source: cache`) and from the files otherwise (`files`), with the same
-NDJSON; a blocked or failing `Sink` never slows a session. All with `-race`. Postgres-dependent tests skip
+JSON; a blocked or failing `Sink` never slows a session. All with `-race`. Postgres-dependent tests skip
 when Postgres is unavailable, as phase 1's do.
 
 **Acceptance.** The Go test client, using the vector keys, completes a handshake and

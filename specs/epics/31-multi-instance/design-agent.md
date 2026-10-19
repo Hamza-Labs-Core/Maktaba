@@ -233,6 +233,7 @@ vectors and is a new protocol version (§4.7).
 | 4012 | `too_large` | either | a frame over the size limit (§4.7) | reconnects |
 | 4013 | `rate_limited` | hub | too many handshakes from this address | retries at the longest delay |
 | 4014 | `disconnect` | hub | an admin's `disconnect` command | reconnects with backoff |
+| 1013 | `try_again_later` | hub | the agent did not keep up: its outgoing queue to the hub overflowed | reconnects with backoff |
 
 The close reason (at most 123 bytes) carries the name and an optional short detail.
 
@@ -266,7 +267,7 @@ All frames are sealed JSON objects with `t` naming the type.
 
 | `t` | Direction | When | Content |
 |---|---|---|---|
-| `welcome` | S→C | once, first sealed frame | `proof` (the hub's, §4.2), `session`, `settings` {`log_level`, `metrics_every`, `share_root`, `retention_days`, `file_mb`} |
+| `welcome` | S→C | once, first sealed frame | `proof` (the hub's, §4.2), `session`, `settings` {`log_level`, `metrics_every`, `share_root`, `retention_days`, `file_mb`, `ip` (the IP folder to write under, §7.3)} |
 | `metrics` | C→S | every `metrics_every` s (2), and a last one at a graceful stop | §5.2, including `health` |
 | `logs` | C→S | batched, within 250 ms | `records` [{`ts`, `level`, `event`, `logger`, `fields`}] at or above the session's level |
 | `job` | C→S | as it happens | §5.3 — every job this process runs |
@@ -433,13 +434,13 @@ the envelope the hub and the web app were built with; it differs from the SSE st
 | Topic | Snapshot on subscribe | Live messages | Who |
 |---|---|---|---|
 | `queues` | the queue snapshot (as `GET /api/queues` returns it) | `queues` when it changes, at most once a second | signed-in |
-| `jobs` | the running jobs on every machine, with progress | `job` for every job event from every machine | signed-in |
+| `jobs` | the last 200 job events from every machine (the running jobs and their progress are the latest event per job) | `job` for every job event from every machine | signed-in |
 | `workers` | the worker registry with each worker's machine and session | `workers` on change | signed-in |
 | `library` | the latest library snapshot | `library` every 5 minutes | signed-in |
 | `metrics` | the latest metrics of every process | `metrics` per process frame | admin |
 | `llm` | runtimes and models per machine, the router's queues, requests in flight | `llm` on change | admin |
 | `processes` | connected processes and those gone in the last 5 minutes | `process` (connect, disconnect, auth refused, revoked) | admin |
-| `logs:<who>:<level>` | the last 200 matching records | `log` | admin |
+| `logs:<who>:<level>` | the last 500 matching records | `log` | admin |
 
 In `logs:<who>:<level>`, `<who>` is an IP, a node id, a session id or `*`, and `<level>`
 one of `debug`, `info`, `warning`, `error` (records at or above it), e.g.
@@ -481,7 +482,7 @@ from the files (§6.7).
 | GET | `/api/cluster/processes` | admin | the live processes (the `processes` snapshot, with the database cache's counters, §7.9) |
 | POST | `/api/cluster/processes/{session}/cmd` | admin | `{name, args}` → `{id, ok, detail}`; 404 unknown session; 504 no answer in 10 s |
 | GET | `/api/cluster/files` | admin | the IP folders, with their processes (from `processes/*.json`) and the days present per kind |
-| GET | `/api/cluster/files/{ip}/{kind}?date=YYYY-MM-DD&worker=&level=&from=&to=&limit=` | admin | NDJSON, the day's records of that kind merged by `ts`; `kind` is `logs` \| `metrics` \| `jobs` \| `llm` \| `events` \| `queues` \| `library`; `metrics` and `logs` come from the database cache when it covers the range, else from the files (header `X-Maktaba-Source: cache\|files`, §7.9) |
+| GET | `/api/cluster/files/{ip}/{kind}?date=YYYY-MM-DD&worker_id=&level=&q=&stage=&event=&before=&limit=` | admin | JSON, the day's records of that kind merged by `ts`: `{records, next_before}` for `logs`, `jobs`, `llm`, `events` (newest first, page with `before`); `{samples: [{ts, worker_id, metrics}], thinned}` for `metrics`; `{samples}` for `queues` and `library`; a node's `events` include the hub's records about it; `kind` is `logs` \| `metrics` \| `jobs` \| `llm` \| `events` \| `queues` \| `library`; `metrics` and `logs` come from the database cache when it covers the range, else from the files (header `X-Maktaba-Source: cache\|files`, §7.9) |
 | GET, POST | `/api/cluster/llm/v1/…` | admin or personal access token (others 403) | §8.3 |
 
 `{ip}`, `{kind}` and `date` are checked against strict patterns, and the resolved path must
@@ -541,6 +542,13 @@ home), it is the machine's first non-loopback private IPv4 address. IPv6 address
 written with `:` replaced by `-`. `MAKTABA_CLUSTER_IP` overrides the rule (for containers,
 whose own address is not the machine's).
 
+The process reports its folder in `hello.ip`; the hub files the session under it when it is a
+valid address and answers with the folder it chose in `welcome.settings.ip` — for a process on
+the home, the home's own IP folder (the one its `hub.jsonl` files use), so the home's
+processes and the hub never split across two folders on a machine with several private
+addresses. A welcomed process writes under `welcome.settings.ip`; before its first `welcome`
+(or while the home is down) it uses the rule above.
+
 A machine whose address changes starts a new folder; every `processes/*.json` names its
 node, so readers can still group folders by machine.
 
@@ -593,13 +601,13 @@ own `<worker_id>` files, and the hub only its `hub.jsonl` files. Writing rules:
 | `jobs` | the `job` frame without `t` |
 | `llm` | `ts`, `id`, `model`, `op`, `from` (the requesting process or `api:<user>`), `prompt_tokens`, `completion_tokens`, `ms`, `error` — never prompt or output text |
 | `events` | `ts`, `event` (`connect` \| `disconnect` \| `auth_refused` \| `cmd` \| `cmd_result` \| `revoked`), `session`, `kind`, `node_id`, `worker_id`, `ip`, `code`, `detail` |
-| `queues` | `ts`, `stages` [{`stage`, `waiting`, `ready`, `running`, `paused`, `failed`, `done_per_min`, `oldest_wait_s`}], `pools` [{`pool`, `busy`, `size`}], `flows` |
+| `queues` | `ts`, `stages` [{`stage`, `waiting`, `ready`, `running`, `paused`, `failed`, `done_per_min`, `oldest_wait_s`}], `pools` [{`pool`, `busy`, `size`}], `flows`, and `snapshot` (the queue snapshot as `GET /api/queues` returns it, which the web's charts read) |
 | `library` | `ts`, `libraries` [{`library_id`, `name`, `videos`, `hours`, `bytes`, `transcribed_videos`, `transcribed_hours`, `series`, `seasons`, `tagged`, `indexed`}], `totals` |
 
 ### 7.7 Retention and caps
 
 - Kept for `MAKTABA_CLUSTER_RETENTION_DAYS` days (default 14). Each process removes its own
-  expired day files at start and once a day; the hub, once a day, removes expired day
+  expired day files at start and once a day; the hub, once an hour, removes expired day
   folders in every IP folder and `processes/*.json` whose `last_seen` is older than the
   retention (processes that will not come back: worker ids are new at every start).
 - Each file is capped at `MAKTABA_CLUSTER_FILE_MB` MB (default 256); past it, records are
@@ -669,7 +677,7 @@ directory).
 
 **(d) Readers.** `GET /api/cluster/files/{ip}/{metrics|logs}` answers from the cache when the
 range is covered, else from the files, with the header `X-Maktaba-Source: cache` or `files`;
-the NDJSON is the same either way. The other kinds are always read from the files.
+the answer is the same either way. The other kinds are always read from the files.
 
 **(e) Failure.** The cache never blocks the hub, the channel or the files. When the database
 is slow or down, batches are dropped and counted (`cache` in the `processes` snapshot:
