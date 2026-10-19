@@ -729,142 +729,147 @@ func TestRightsConfirmationRequired(t *testing.T) {
 	}
 }
 
-// EC2-EC5 and the delete guard.
-func TestSimulcastEdges(t *testing.T) {
-	t.Run("two attachments share one push", func(t *testing.T) {
-		fx := newSim(t)
-		ctx := context.Background()
-		ch := fx.chans[0]
-		d1 := fx.dest(tvremote.KindYouTube, "", "yt-key-11111111")
-		d2 := fx.dest(tvremote.KindFacebook, "", "fb-key-22222222")
-		if _, err := fx.c.SetChannelSimulcast(ctx, "admin-1", ch, []tvremote.AttachmentInput{
-			{DestinationID: d1.ID, Mode: tvremote.ModeAlways, Enabled: true, RightsConfirmed: true},
-			{DestinationID: d2.ID, Mode: tvremote.ModeAlways, Enabled: true, RightsConfirmed: true}}); err != nil {
-			t.Fatal(err)
-		}
-		fx.reconcile()
-		p := fx.goLive(ch)
-		fx.reconcile()
-		uid := fx.cfInput(p.ID)
-		if len(fx.pushes(ch)) != 1 || len(fx.f.InputOutputs(uid)) != 2 {
-			t.Fatalf("pushes %d outputs %d", len(fx.pushes(ch)), len(fx.f.InputOutputs(uid)))
-		}
-		// deleting a destination in use is refused; detaching deletes its output only
-		var te *tvremote.TuneError
-		if err := fx.c.DeleteDestination(ctx, "admin-1", d1.ID); !errors.As(err, &te) || te.Code != "destination_in_use" {
-			t.Fatalf("delete in use: %v", err)
-		}
-		if _, err := fx.c.SetChannelSimulcast(ctx, "admin-1", ch, []tvremote.AttachmentInput{
-			{DestinationID: d2.ID, Mode: tvremote.ModeAlways, Enabled: true}}); err != nil {
-			t.Fatal(err)
-		}
-		fx.reconcile()
-		outs := fx.f.InputOutputs(uid)
-		if len(outs) != 1 || outs[0].StreamKey != "fb-key-22222222" {
-			t.Fatalf("after detaching: %+v", outs)
-		}
-		if err := fx.c.DeleteDestination(ctx, "admin-1", d1.ID); err != nil {
-			t.Fatalf("delete after detaching: %v", err)
-		}
-		// EC4: the channel is disabled: its outputs are deleted
-		fx.exec(`UPDATE channels SET enabled = 0 WHERE id = $1`, ch)
-		fx.reconcile()
-		if fx.f.OutputCount() != 0 {
-			t.Fatal("a disabled channel kept its output")
-		}
-	})
+// EC2-EC5 and the delete guard, one test each (a single test running them all
+// as subtests passed the unit tier's per-test cap under -race on a busy runner).
 
-	t.Run("no free input: waits, then starts", func(t *testing.T) {
-		fx := newSim(t)
-		ctx := context.Background()
-		fx.rules(map[string]any{"max_channels": 1})
-		a, b := fx.chans[0], fx.chans[1]
-		r, _ := fx.tune("u1", a, "")
-		fx.goLive(a)
-		d := fx.dest(tvremote.KindRTMP, "rtmp://ingest.example.com/app", "key-dddddddddd")
-		att := fx.attach(b, d.ID, tvremote.ModeAlways, nil)
-		fx.reconcile()
-		if o := fx.open(att); o.State != tvremote.OutScheduled || o.Detail != tvremote.ReasonNoInput {
-			t.Fatalf("waiting output %+v", o)
-		}
-		if len(fx.pushes(b)) != 0 {
-			t.Fatal("a push beyond max_channels")
-		}
-		_ = fx.c.End(ctx, viewer("u1"), r.SessionID)
-		fx.reconcile()
-		fx.advance(3*time.Minute + time.Second)
-		fx.reconcile()
-		fx.endPush(a)
-		fx.reconcile()
-		if fx.last(b).State != tvremote.PushRequested {
-			t.Fatalf("the freed input did not start the simulcast: %+v", fx.pushes(b))
-		}
-		fx.goLive(b)
-		fx.reconcile()
-		if o := fx.open(att); o.State != tvremote.OutLive {
-			t.Fatalf("after the input freed %+v", o)
-		}
-	})
+// TestSimulcastEdgeSharedPush: two attachments share one push.
+func TestSimulcastEdgeSharedPush(t *testing.T) {
+	fx := newSim(t)
+	ctx := context.Background()
+	ch := fx.chans[0]
+	d1 := fx.dest(tvremote.KindYouTube, "", "yt-key-11111111")
+	d2 := fx.dest(tvremote.KindFacebook, "", "fb-key-22222222")
+	if _, err := fx.c.SetChannelSimulcast(ctx, "admin-1", ch, []tvremote.AttachmentInput{
+		{DestinationID: d1.ID, Mode: tvremote.ModeAlways, Enabled: true, RightsConfirmed: true},
+		{DestinationID: d2.ID, Mode: tvremote.ModeAlways, Enabled: true, RightsConfirmed: true}}); err != nil {
+		t.Fatal(err)
+	}
+	fx.reconcile()
+	p := fx.goLive(ch)
+	fx.reconcile()
+	uid := fx.cfInput(p.ID)
+	if len(fx.pushes(ch)) != 1 || len(fx.f.InputOutputs(uid)) != 2 {
+		t.Fatalf("pushes %d outputs %d", len(fx.pushes(ch)), len(fx.f.InputOutputs(uid)))
+	}
+	// deleting a destination in use is refused; detaching deletes its output only
+	var te *tvremote.TuneError
+	if err := fx.c.DeleteDestination(ctx, "admin-1", d1.ID); !errors.As(err, &te) || te.Code != "destination_in_use" {
+		t.Fatalf("delete in use: %v", err)
+	}
+	if _, err := fx.c.SetChannelSimulcast(ctx, "admin-1", ch, []tvremote.AttachmentInput{
+		{DestinationID: d2.ID, Mode: tvremote.ModeAlways, Enabled: true}}); err != nil {
+		t.Fatal(err)
+	}
+	fx.reconcile()
+	outs := fx.f.InputOutputs(uid)
+	if len(outs) != 1 || outs[0].StreamKey != "fb-key-22222222" {
+		t.Fatalf("after detaching: %+v", outs)
+	}
+	if err := fx.c.DeleteDestination(ctx, "admin-1", d1.ID); err != nil {
+		t.Fatalf("delete after detaching: %v", err)
+	}
+	// EC4: the channel is disabled: its outputs are deleted
+	fx.exec(`UPDATE channels SET enabled = 0 WHERE id = $1`, ch)
+	fx.reconcile()
+	if fx.f.OutputCount() != 0 {
+		t.Fatal("a disabled channel kept its output")
+	}
+}
 
-	t.Run("integration removed: outputs go with the inputs", func(t *testing.T) {
-		fx := newSim(t)
-		ch := fx.chans[0]
-		fx.in.StopPushes = fx.c.StopAll
-		d := fx.dest(tvremote.KindRTMP, "rtmp://ingest.example.com/app", "key-eeeeeeeeee")
-		att := fx.attach(ch, d.ID, tvremote.ModeAlways, nil)
-		fx.reconcile()
-		fx.goLive(ch)
-		fx.reconcile()
-		if fx.f.OutputCount() != 1 {
-			t.Fatal("no output")
-		}
-		if _, err := fx.in.Remove(context.Background()); err != nil {
-			t.Fatal(err)
-		}
-		if fx.f.OutputCount() != 0 || fx.hasOpen(att) {
-			t.Fatalf("outputs after remove: %d open %v", fx.f.OutputCount(), fx.hasOpen(att))
-		}
-		fx.reconcile()
-		if fx.hasOpen(att) {
-			t.Fatal("an output reopened without the integration")
-		}
-	})
+// TestSimulcastEdgeNoFreeInput: no free input: waits, then starts.
+func TestSimulcastEdgeNoFreeInput(t *testing.T) {
+	fx := newSim(t)
+	ctx := context.Background()
+	fx.rules(map[string]any{"max_channels": 1})
+	a, b := fx.chans[0], fx.chans[1]
+	r, _ := fx.tune("u1", a, "")
+	fx.goLive(a)
+	d := fx.dest(tvremote.KindRTMP, "rtmp://ingest.example.com/app", "key-dddddddddd")
+	att := fx.attach(b, d.ID, tvremote.ModeAlways, nil)
+	fx.reconcile()
+	if o := fx.open(att); o.State != tvremote.OutScheduled || o.Detail != tvremote.ReasonNoInput {
+		t.Fatalf("waiting output %+v", o)
+	}
+	if len(fx.pushes(b)) != 0 {
+		t.Fatal("a push beyond max_channels")
+	}
+	_ = fx.c.End(ctx, viewer("u1"), r.SessionID)
+	fx.reconcile()
+	fx.advance(3*time.Minute + time.Second)
+	fx.reconcile()
+	fx.endPush(a)
+	fx.reconcile()
+	if fx.last(b).State != tvremote.PushRequested {
+		t.Fatalf("the freed input did not start the simulcast: %+v", fx.pushes(b))
+	}
+	fx.goLive(b)
+	fx.reconcile()
+	if o := fx.open(att); o.State != tvremote.OutLive {
+		t.Fatalf("after the input freed %+v", o)
+	}
+}
 
-	t.Run("Cloudflare refuses the output: errored, retried", func(t *testing.T) {
-		fx := newSim(t)
-		ch := fx.chans[0]
-		d := fx.dest(tvremote.KindRTMP, "rtmp://ingest.example.com/app", "key-ffffffffff")
-		att := fx.attach(ch, d.ID, tvremote.ModeAlways, nil)
-		fx.f.Mu.Lock()
-		fx.f.OutputFail, fx.f.OutputFailMsg = 1, "bad url"
-		fx.f.Mu.Unlock()
-		fx.reconcile()
-		fx.goLive(ch)
-		fx.reconcile()
-		if o := fx.open(att); o.State != tvremote.OutErrored || !strings.Contains(o.Error, "bad url") {
-			t.Fatalf("errored %+v", o)
-		}
-		fx.advance(tvremote.OutputRetry + time.Second)
-		fx.reconcile()
-		if o := fx.open(att); o.State != tvremote.OutLive {
-			t.Fatalf("not retried %+v", o)
-		}
-	})
+// TestSimulcastEdgeIntegrationRemoved: integration removed: outputs go with the inputs.
+func TestSimulcastEdgeIntegrationRemoved(t *testing.T) {
+	fx := newSim(t)
+	ch := fx.chans[0]
+	fx.in.StopPushes = fx.c.StopAll
+	d := fx.dest(tvremote.KindRTMP, "rtmp://ingest.example.com/app", "key-eeeeeeeeee")
+	att := fx.attach(ch, d.ID, tvremote.ModeAlways, nil)
+	fx.reconcile()
+	fx.goLive(ch)
+	fx.reconcile()
+	if fx.f.OutputCount() != 1 {
+		t.Fatal("no output")
+	}
+	if _, err := fx.in.Remove(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if fx.f.OutputCount() != 0 || fx.hasOpen(att) {
+		t.Fatalf("outputs after remove: %d open %v", fx.f.OutputCount(), fx.hasOpen(att))
+	}
+	fx.reconcile()
+	if fx.hasOpen(att) {
+		t.Fatal("an output reopened without the integration")
+	}
+}
 
-	t.Run("Q13: a per-output status is shown when Cloudflare has one", func(t *testing.T) {
-		fx := newSim(t)
-		ch := fx.chans[0]
-		fx.f.Mu.Lock()
-		fx.f.OutputStatus = true
-		fx.f.Mu.Unlock()
-		d := fx.dest(tvremote.KindRTMP, "rtmp://ingest.example.com/app", "key-gggggggggg")
-		fx.attach(ch, d.ID, tvremote.ModeAlways, nil)
-		fx.reconcile()
-		fx.goLive(ch)
-		fx.reconcile()
-		v, _ := fx.c.SimulcastStatus(context.Background(), ch)
-		if o := v.Attachments[0].Output; o.CFStatus != "connected" || o.Platform {
-			t.Fatalf("view %+v", o)
-		}
-	})
+// TestSimulcastEdgeOutputRefused: Cloudflare refuses the output: errored, retried.
+func TestSimulcastEdgeOutputRefused(t *testing.T) {
+	fx := newSim(t)
+	ch := fx.chans[0]
+	d := fx.dest(tvremote.KindRTMP, "rtmp://ingest.example.com/app", "key-ffffffffff")
+	att := fx.attach(ch, d.ID, tvremote.ModeAlways, nil)
+	fx.f.Mu.Lock()
+	fx.f.OutputFail, fx.f.OutputFailMsg = 1, "bad url"
+	fx.f.Mu.Unlock()
+	fx.reconcile()
+	fx.goLive(ch)
+	fx.reconcile()
+	if o := fx.open(att); o.State != tvremote.OutErrored || !strings.Contains(o.Error, "bad url") {
+		t.Fatalf("errored %+v", o)
+	}
+	fx.advance(tvremote.OutputRetry + time.Second)
+	fx.reconcile()
+	if o := fx.open(att); o.State != tvremote.OutLive {
+		t.Fatalf("not retried %+v", o)
+	}
+}
+
+// TestSimulcastEdgeOutputStatus: Q13: a per-output status is shown when Cloudflare has one.
+func TestSimulcastEdgeOutputStatus(t *testing.T) {
+	fx := newSim(t)
+	ch := fx.chans[0]
+	fx.f.Mu.Lock()
+	fx.f.OutputStatus = true
+	fx.f.Mu.Unlock()
+	d := fx.dest(tvremote.KindRTMP, "rtmp://ingest.example.com/app", "key-gggggggggg")
+	fx.attach(ch, d.ID, tvremote.ModeAlways, nil)
+	fx.reconcile()
+	fx.goLive(ch)
+	fx.reconcile()
+	v, _ := fx.c.SimulcastStatus(context.Background(), ch)
+	if o := v.Attachments[0].Output; o.CFStatus != "connected" || o.Platform {
+		t.Fatalf("view %+v", o)
+	}
 }

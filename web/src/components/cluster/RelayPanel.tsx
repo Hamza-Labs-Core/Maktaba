@@ -13,6 +13,7 @@ import { clusterChannelApi, tsMs, type RelayStatus } from "../../lib/clusterApi"
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { rulesApi, rulesError } from "../../lib/rulesApi";
 import { useClusterFmt } from "./format";
+import { relayStatusOf } from "./RelayDoorCard";
 
 export const RELAY_POLL_MS = 5_000;
 
@@ -28,7 +29,7 @@ export function RelayPanel() {
     clusterChannelApi
       .relay()
       .then((s) => {
-        setStatus(s);
+        setStatus(relayStatusOf(s));
         setError(false);
       })
       .catch(() => setError(true));
@@ -96,15 +97,17 @@ export function RelayPanel() {
               disabled={busy}
               onChange={(e) => toggle(e.currentTarget.checked)}
             />
-            <p className="mkt-mc-muted">
-              {t("cluster.relay.limits", {
-                rpm: n(s.requests_per_minute),
-                burst: n(s.burst),
-                inflight: n(s.max_in_flight),
-                mb: n(s.max_response_mb),
-                sec: n(s.timeout_sec),
-              })}
-            </p>
+            {s && (
+              <p className="mkt-mc-muted">
+                {t("cluster.relay.limits", {
+                  rpm: n(s.requests_per_minute),
+                  burst: n(s.burst),
+                  inflight: n(s.max_in_flight),
+                  mb: n(s.max_response_mb),
+                  sec: n(s.timeout_sec),
+                })}
+              </p>
+            )}
           </>
         )}
         {error && (

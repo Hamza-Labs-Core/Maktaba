@@ -18,33 +18,33 @@
 
 | ID     | Title                                                        | Category      | Priority | Covered by existing test? |
 | ------ | ------------------------------------------------------------ | ------------- | -------- | ------------------------- |
-| USR-01 | Empty roster shows empty state                               | Empty state   | P2       | No                        |
-| USR-02 | Roster loads from localStorage                               | Happy path    | P1       | No                        |
-| USR-03 | Create user (happy path) adds row and persists               | Happy path    | P1       | No                        |
-| USR-04 | Create form validation (username/password required)          | Validation    | P2       | No                        |
-| USR-05 | Create fails with 409 username exists                        | Error         | P2       | No                        |
-| USR-06 | Create/edit fails with network error or non-JSON 500         | Error         | P2       | No                        |
-| USR-07 | Edit sends only changed fields                               | Happy path    | P1       | No                        |
-| USR-08 | Promote user to admin / demote to user                       | Happy path    | P1       | No                        |
-| USR-09 | Last-admin protection on demote (409)                        | Permissions   | P1       | No                        |
-| USR-10 | Last-admin protection on delete (409)                        | Permissions   | P1       | No                        |
-| USR-11 | Admin demotes themself                                       | Permissions   | P1       | No                        |
-| USR-12 | Admin deletes themself                                       | Permissions   | P1       | No                        |
-| USR-13 | Delete user (confirm, cancel, error)                         | Happy path    | P1       | No                        |
-| USR-14 | Unlock account (success, 404)                                | Happy path    | P2       | No                        |
-| USR-15 | Revoke session / token family                                | Happy path    | P2       | No                        |
-| USR-16 | Session expired (401) during a mutation                      | Error         | P2       | No                        |
-| USR-17 | Corrupt or `null` roster in localStorage does not blank page | Empty state   | P1       | No                        |
-| USR-18 | Create response missing / malformed                          | Error         | P2       | No                        |
-| USR-19 | Page crash shows route error fallback; Back works            | Navigation    | P1       | No                        |
-| USR-20 | Non-admin sees "Admins only"                                 | Permissions   | P1       | No                        |
-| USR-21 | Signed-out user redirected to /login                         | Permissions   | P1       | No                        |
-| USR-22 | Deep link and Back/Forward                                   | Navigation    | P2       | No                        |
+| USR-01 | Empty roster shows empty state                               | Empty state   | P2       | Yes (`Users.test.tsx`)    |
+| USR-02 | Roster loads from localStorage                               | Happy path    | P1       | Yes (`Users.test.tsx`)    |
+| USR-03 | Create user (happy path) adds row and persists               | Happy path    | P1       | Yes (`Users.test.tsx`)    |
+| USR-04 | Create form validation (username/password required)          | Validation    | P2       | Yes (`Users.test.tsx`)    |
+| USR-05 | Create fails with 409 username exists                        | Error         | P2       | Yes (`Users.test.tsx`)    |
+| USR-06 | Create/edit fails with network error or non-JSON 500         | Error         | P2       | Yes (`Users.test.tsx`)    |
+| USR-07 | Edit sends only changed fields                               | Happy path    | P1       | Yes (`Users.test.tsx`)    |
+| USR-08 | Promote user to admin / demote to user                       | Happy path    | P1       | Yes (`Users.test.tsx`)    |
+| USR-09 | Last-admin protection on demote (409)                        | Permissions   | P1       | Yes (`Users.test.tsx`)    |
+| USR-10 | Last-admin protection on delete (409)                        | Permissions   | P1       | Yes (`Users.test.tsx`)    |
+| USR-11 | Admin demotes themself                                       | Permissions   | P1       | No (it.fails: bug)        |
+| USR-12 | Admin deletes themself                                       | Permissions   | P1       | No (it.fails: bug)        |
+| USR-13 | Delete user (confirm, cancel, error)                         | Happy path    | P1       | Yes (`Users.test.tsx`)    |
+| USR-14 | Unlock account (success, 404)                                | Happy path    | P2       | Yes (`Users.test.tsx`)    |
+| USR-15 | Revoke session / token family                                | Happy path    | P2       | Yes (`Users.test.tsx`)    |
+| USR-16 | Session expired (401) during a mutation                      | Error         | P2       | No (it.fails: bug)        |
+| USR-17 | Corrupt or `null` roster in localStorage does not blank page | Empty state   | P1       | Yes (`Users.test.tsx`)    |
+| USR-18 | Create response missing / malformed                          | Error         | P2       | Yes (`Users.test.tsx`)    |
+| USR-19 | Page crash shows route error fallback; Back works            | Navigation    | P1       | Yes (`Users.test.tsx`)    |
+| USR-20 | Non-admin sees "Admins only"                                 | Permissions   | P1       | Yes (`Users.test.tsx`)    |
+| USR-21 | Signed-out user redirected to /login                         | Permissions   | P1       | Yes (`Users.test.tsx`)    |
+| USR-22 | Deep link and Back/Forward                                   | Navigation    | P2       | Yes (`Users.test.tsx`)    |
 | USR-23 | localStorage unavailable                                     | Error         | P3       | No                        |
 | USR-24 | Phone width (375px)                                          | Responsive    | P3       | No                        |
 | USR-25 | Arabic / RTL                                                 | RTL           | P3       | No                        |
 | USR-26 | Light and dark theme                                         | Theme         | P3       | No                        |
-| USR-27 | Modals: focus trap, Escape, labels, toasts announced         | Accessibility | P2       | No                        |
+| USR-27 | Modals: focus trap, Escape, labels, toasts announced         | Accessibility | P2       | Yes (`Users.test.tsx`)    |
 
 ## Cases
 
@@ -52,7 +52,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Users.test.tsx`)
 - **Preconditions / data:** signed in as admin; `localStorage["mkt:admin:knownUsers"]` absent. Also run with value `"[]"`.
 - **Steps:**
   1. Open `/admin/users`.
@@ -62,7 +62,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Users.test.tsx`)
 - **Preconditions / data:** `localStorage["mkt:admin:knownUsers"] = '[{"id":"u1","username":"alice","is_admin":true},{"id":"u2","username":"bob","is_admin":false}]'`
 - **Steps:**
   1. Open `/admin/users`.
@@ -72,7 +72,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Users.test.tsx`)
 - **Preconditions / data:** empty roster; `POST /api/users` → 201 `{ "id": "u9", "username": "carol", "is_admin": false }`
 - **Steps:**
   1. Click "Add user". Dialog "Create user" opens.
@@ -84,7 +84,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Users.test.tsx`)
 - **Preconditions / data:** create dialog open.
 - **Steps:**
   1. Leave both empty. 2. Type only username. 3. Type username " " (spaces) and a password. 4. Press Enter with empty fields.
@@ -94,7 +94,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Users.test.tsx`)
 - **Preconditions / data:** `POST /api/users` → 409, `Content-Type: application/problem+json`, `{ "type": "https://maktaba.dev/problems/username-exists", "title": "conflict", "status": 409, "detail": "username already exists" }`
 - **Steps:**
   1. Create user "alice".
@@ -104,7 +104,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Users.test.tsx`)
 - **Preconditions / data:** (a) `fetch` rejects (`TypeError: Failed to fetch`); (b) `POST /api/users` → 500 `text/plain` "boom"; (c) 500 problem+json `{ "title": "internal", "status": 500 }` with no detail.
 - **Steps:**
   1. Submit the create form in each setup. Repeat for edit (PATCH).
@@ -114,7 +114,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Users.test.tsx`)
 - **Preconditions / data:** roster has `{id:"u2",username:"bob",is_admin:false}`; `PATCH /api/users/u2` → `{ "id":"u2","username":"robert","is_admin":false }`
 - **Steps:**
   1. Click Edit on bob. Dialog "Edit user" opens with Username "bob", password empty, Administrator unchecked.
@@ -127,7 +127,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Users.test.tsx`)
 - **Preconditions / data:** roster has bob (user) and alice (admin); PATCH returns the updated user.
 - **Steps:**
   1. Edit bob, check "Administrator", Save.
@@ -138,7 +138,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Users.test.tsx`)
 - **Preconditions / data:** roster has alice (only admin). `PATCH /api/users/u1` → 409 problem `{ "type": "https://maktaba.dev/problems/last-admin", "title": "conflict", "status": 409, "detail": "operation would leave the system with no admin" }`
 - **Steps:**
   1. Edit alice, uncheck "Administrator", Save.
@@ -148,7 +148,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Users.test.tsx`)
 - **Preconditions / data:** `DELETE /api/users/u1` → same 409 last-admin problem.
 - **Steps:**
   1. Click Delete on alice. Dialog "Delete user" with text "Delete user “alice”? This cannot be undone."
@@ -159,7 +159,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** No (it.fails: bug)
 - **Preconditions / data:** `/api/auth/me` → `{ user: { id: "u1", username: "alice", is_admin: true } }`; roster includes u1 and another admin; `PATCH /api/users/u1` → `{ id:"u1", username:"alice", is_admin:false }`.
 - **Steps:**
   1. Edit alice (yourself), uncheck Administrator, Save.
@@ -170,7 +170,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** No (it.fails: bug)
 - **Preconditions / data:** signed in as u1; another admin exists; `DELETE /api/users/u1` → 204; any next call → 401.
 - **Steps:**
   1. Delete yourself (u1) and confirm.
@@ -180,7 +180,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Users.test.tsx`)
 - **Preconditions / data:** roster has bob; `DELETE /api/users/u2` → 204.
 - **Steps:**
   1. Delete → Cancel. 2. Delete → click the backdrop. 3. Delete → "Delete". 4. Repeat with DELETE → 404 problem `{ "title":"not found","status":404,"detail":"user not found" }`.
@@ -190,7 +190,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Users.test.tsx`)
 - **Preconditions / data:** `POST /api/users/u2/unlock` → 204; then → 404 problem.
 - **Steps:**
   1. Click Unlock on bob.
@@ -200,7 +200,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Users.test.tsx`)
 - **Preconditions / data:** `DELETE /api/users/u2/sessions/s-1` → 204; `DELETE /api/users/u2/refresh-tokens/f-1` → 204; then each → 404.
 - **Steps:**
   1. Click "Revoke access" on bob. Dialog "Revoke sessions & tokens" with description.
@@ -213,7 +213,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** No (it.fails: bug)
 - **Preconditions / data:** any mutation → 401 problem `{ "title":"unauthorized","status":401 }`.
 - **Steps:**
   1. Try create, edit, delete, unlock.
@@ -223,7 +223,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Users.test.tsx`)
 - **Preconditions / data:** this page has no fetched list; the only list is the localStorage roster. Run each: `"null"`, `"{}"`, `"\"text\""`, `"not json"`, `'[{"username":"x"}]'` (missing `id`/`is_admin`), `'[null]'`.
 - **Steps:**
   1. Open `/admin/users`.
@@ -233,7 +233,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Users.test.tsx`)
 - **Preconditions / data:** `POST /api/users` → 204 empty; and → 200 `text/html` body `<html>`.
 - **Steps:**
   1. Create a user.
@@ -243,7 +243,7 @@
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Users.test.tsx`)
 - **Preconditions / data:** full app router (`App.tsx` routes inside `AppShell`). Start on `/library`, then navigate to `/admin/users` with `localStorage["mkt:admin:knownUsers"] = "null"` (throws on render), or mock `Badge` to throw.
 - **Steps:**
   1. Go to `/library`, click sidebar "Users" (`nav.admin.users`).
@@ -254,7 +254,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Users.test.tsx`)
 - **Preconditions / data:** `/api/auth/me` → `{ user: { id:"u2", username:"bob", is_admin:false } }`; roster in localStorage has entries.
 - **Steps:**
   1. Open `/admin/users` directly.
@@ -264,7 +264,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Users.test.tsx`)
 - **Preconditions / data:** `/api/auth/me` → 401.
 - **Steps:**
   1. Open `/admin/users`.
@@ -274,7 +274,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Users.test.tsx`)
 - **Preconditions / data:** admin.
 - **Steps:**
   1. Open `/admin/users` directly in a new tab. 2. Open the Create dialog, press browser Back. 3. Forward.
@@ -324,7 +324,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Users.test.tsx`)
 - **Preconditions / data:** admin; roster with one user.
 - **Steps:**
   1. Tab to "Add user", press Enter. Tab through the dialog; Shift+Tab from first element.

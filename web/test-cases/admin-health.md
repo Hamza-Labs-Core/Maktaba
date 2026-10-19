@@ -17,33 +17,33 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
 
 ## Summary
 
-| ID     | Title                                                         | Category      | Priority | Covered by existing test?                           |
-| ------ | ------------------------------------------------------------- | ------------- | -------- | --------------------------------------------------- |
-| HLT-01 | Full dashboard renders when every endpoint answers            | Happy path    | P1       | No                                                  |
-| HLT-02 | Non-admin sees "Admins only" and no admin calls are made      | Permissions   | P1       | No                                                  |
-| HLT-03 | Signed-out user is redirected to /login                       | Permissions   | P1       | No                                                  |
-| HLT-04 | Status words map to Operational / Down / Degraded             | Happy path    | P2       | No                                                  |
-| HLT-05 | Loading state before health answers                           | Loading       | P2       | No                                                  |
-| HLT-06 | Health endpoint fails: overall Down, services section error   | Error         | P1       | No                                                  |
-| HLT-07 | One section failing does not break the others                 | Error         | P2       | Partial (`Processes.test.tsx`: processes card only) |
-| HLT-08 | `services: null` / missing renders an empty Services section  | Empty state   | P1       | No                                                  |
-| HLT-09 | Service or check with missing `status` does not crash         | Error         | P1       | No                                                  |
-| HLT-10 | `/api/tv/cluster` with `hosts` / `on_air` null or missing     | Empty state   | P1       | No                                                  |
-| HLT-11 | `/api/system/processes` with `processes` / `events` null      | Empty state   | P1       | No                                                  |
-| HLT-12 | `caches: null`, missing, and `[]` show "No caches registered" | Empty state   | P1       | No                                                  |
-| HLT-13 | Budgets: PascalCase, camelCase, object, and null shapes       | Happy path    | P2       | No                                                  |
-| HLT-14 | Optional stats missing show a dash; budget card hidden        | Empty state   | P2       | No                                                  |
-| HLT-15 | Version with empty build_sha / build_time shows a dash        | Empty state   | P3       | No                                                  |
-| HLT-16 | TV remote line: none / off / problem / ready / failed         | Happy path    | P2       | No                                                  |
-| HLT-17 | Auto-refresh every 30 s and stops on unmount                  | Happy path    | P2       | No                                                  |
-| HLT-18 | Recovers from error on the next poll                          | Error         | P2       | No                                                  |
-| HLT-19 | Render crash shows route error fallback; Back still works     | Error         | P1       | No                                                  |
-| HLT-20 | Malformed JSON / HTML body from health                        | Error         | P2       | No                                                  |
-| HLT-21 | Nav link reaches the page; Back/Forward work                  | Navigation    | P2       | No                                                  |
-| HLT-22 | Arabic: RTL, Arabic strings and Arabic-Indic digits           | RTL           | P2       | No                                                  |
-| HLT-23 | Phone width: cards stack, no horizontal scroll                | Responsive    | P3       | No                                                  |
-| HLT-24 | Light and dark theme: badges and text readable                | Theme         | P3       | No                                                  |
-| HLT-25 | Headings, badges and loading text are accessible              | Accessibility | P3       | No                                                  |
+| ID     | Title                                                         | Category      | Priority | Covered by existing test?   |
+| ------ | ------------------------------------------------------------- | ------------- | -------- | --------------------------- |
+| HLT-01 | Full dashboard renders when every endpoint answers            | Happy path    | P1       | Yes (SystemHealth.test.tsx) |
+| HLT-02 | Non-admin sees "Admins only" and no admin calls are made      | Permissions   | P1       | Yes (SystemHealth.test.tsx) |
+| HLT-03 | Signed-out user is redirected to /login                       | Permissions   | P1       | Yes (SystemHealth.test.tsx) |
+| HLT-04 | Status words map to Operational / Down / Degraded             | Happy path    | P2       | Yes (SystemHealth.test.tsx) |
+| HLT-05 | Loading state before health answers                           | Loading       | P2       | Yes (SystemHealth.test.tsx) |
+| HLT-06 | Health endpoint fails: overall Down, services section error   | Error         | P1       | Yes (SystemHealth.test.tsx) |
+| HLT-07 | One section failing does not break the others                 | Error         | P2       | Yes (SystemHealth.test.tsx) |
+| HLT-08 | `services: null` / missing renders an empty Services section  | Empty state   | P1       | Yes (SystemHealth.test.tsx) |
+| HLT-09 | Service or check with missing `status` does not crash         | Error         | P1       | Yes (SystemHealth.test.tsx) |
+| HLT-10 | `/api/tv/cluster` with `hosts` / `on_air` null or missing     | Empty state   | P1       | Yes (SystemHealth.test.tsx) |
+| HLT-11 | `/api/system/processes` with `processes` / `events` null      | Empty state   | P1       | Yes (SystemHealth.test.tsx) |
+| HLT-12 | `caches: null`, missing, and `[]` show "No caches registered" | Empty state   | P1       | Yes (SystemHealth.test.tsx) |
+| HLT-13 | Budgets: PascalCase, camelCase, object, and null shapes       | Happy path    | P2       | Yes (SystemHealth.test.tsx) |
+| HLT-14 | Optional stats missing show a dash; budget card hidden        | Empty state   | P2       | Yes (SystemHealth.test.tsx) |
+| HLT-15 | Version with empty build_sha / build_time shows a dash        | Empty state   | P3       | No                          |
+| HLT-16 | TV remote line: none / off / problem / ready / failed         | Happy path    | P2       | Yes (SystemHealth.test.tsx) |
+| HLT-17 | Auto-refresh every 30 s and stops on unmount                  | Happy path    | P2       | Yes (SystemHealth.test.tsx) |
+| HLT-18 | Recovers from error on the next poll                          | Error         | P2       | Yes (SystemHealth.test.tsx) |
+| HLT-19 | Render crash shows route error fallback; Back still works     | Error         | P1       | Yes (SystemHealth.test.tsx) |
+| HLT-20 | Malformed JSON / HTML body from health                        | Error         | P2       | Yes (SystemHealth.test.tsx) |
+| HLT-21 | Nav link reaches the page; Back/Forward work                  | Navigation    | P2       | No (e2e-only)               |
+| HLT-22 | Arabic: RTL, Arabic strings and Arabic-Indic digits           | RTL           | P2       | Yes (SystemHealth.test.tsx) |
+| HLT-23 | Phone width: cards stack, no horizontal scroll                | Responsive    | P3       | No                          |
+| HLT-24 | Light and dark theme: badges and text readable                | Theme         | P3       | No                          |
+| HLT-25 | Headings, badges and loading text are accessible              | Accessibility | P3       | No                          |
 
 ## Cases
 
@@ -51,7 +51,7 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (SystemHealth.test.tsx)
 - **Preconditions / data:** admin (`useAuth` -> `{ user: { is_admin: true } }`). Mocks:
   - `/api/system/health` -> `{ "status": "ok", "services": { "db": { "status": "up", "checks": { "ping": { "status": "pass" } } }, "pipeline": { "status": "degraded", "reason": "queue slow" } }, "disk_free_bytes": 53687091200, "queue_depth": 12, "transcribe_budget_usd_left": "4.20" }`
   - `/api/system/version` -> `{ "version": "1.5.0", "build_sha": "abcdef1234567890", "build_time": "2026-10-01T10:00:00Z", "go_version": "go1.23", "schema_revision": 124 }`
@@ -68,7 +68,7 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (SystemHealth.test.tsx)
 - **Preconditions / data:** `useAuth` -> `{ user: { username: "viewer", is_admin: false } }`.
 - **Steps:**
   1. Open `/admin/health`.
@@ -78,7 +78,7 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (SystemHealth.test.tsx)
 - **Preconditions / data:** full `App` routing (or `RequireAuth` + `MemoryRouter initialEntries={["/admin/health"]}`); `GET /api/auth/me` (or the auth bootstrap call) -> 401.
 - **Steps:**
   1. Open `/admin/health` signed out.
@@ -88,7 +88,7 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (SystemHealth.test.tsx)
 - **Preconditions / data:** admin; health `services` with one entry per status: `ok`, `UP`, `healthy`, `ready`, `pass` (expect "Operational", success tone); `down`, `fail`, `error`, `unhealthy` (expect "Down", error tone); `degraded`, `starting`, `""` (expect "Degraded", warn tone).
 - **Steps:**
   1. Open `/admin/health`.
@@ -98,7 +98,7 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (SystemHealth.test.tsx)
 - **Preconditions / data:** admin; `/api/system/health` returns a never-resolving promise; others resolve.
 - **Steps:**
   1. Open `/admin/health`.
@@ -108,7 +108,7 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (SystemHealth.test.tsx)
 - **Preconditions / data:** admin; `/api/system/health` rejects, run once each with: `ApiError` 500, `ApiError` 403, `ApiError` 401, `TypeError("Failed to fetch")` (network).
 - **Steps:**
   1. Open `/admin/health`.
@@ -118,7 +118,7 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** Partial (`Processes.test.tsx`: "shows the section error when the request fails" covers the processes card only)
+- **Covered by existing test?** Yes (SystemHealth.test.tsx)
 - **Preconditions / data:** admin; health OK; reject one at a time: `/api/system/version`, `/api/admin/caches`, `/api/admin/perf/budgets`, `/api/system/processes`, `/api/tv/cluster`, `/api/tv/remote`.
 - **Steps:**
   1. Open `/admin/health` for each failure.
@@ -128,7 +128,7 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (SystemHealth.test.tsx)
 - **Preconditions / data:** admin; `/api/system/health` -> (a) `{ "status": "ok", "services": null }`, (b) `{ "status": "ok" }` (key missing), (c) `{ "status": "ok", "services": {} }`. Also a service with `"checks": null`.
 - **Steps:**
   1. Open `/admin/health` for each.
@@ -138,7 +138,7 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (SystemHealth.test.tsx)
 - **Preconditions / data:** admin; health -> `{ "status": null, "services": { "db": {} , "api": { "status": "ok", "checks": { "x": {} } } } }`. Separately `{ "services": {} }` with no top-level `status`.
 - **Steps:**
   1. Open `/admin/health`.
@@ -148,7 +148,7 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (SystemHealth.test.tsx)
 - **Preconditions / data:** admin; other calls OK. `/api/tv/cluster` -> each of: `{ "hosts": null, "on_air": [] }`, `{ "hosts": [], "on_air": null }`, `{ }` (both keys missing), `{ "hosts": [], "on_air": [], "failovers_24h": null }`.
 - **Steps:**
   1. Open `/admin/health` for each.
@@ -158,7 +158,7 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (SystemHealth.test.tsx)
 - **Preconditions / data:** admin; `/api/system/processes` -> each of: `{ "available": true, "processes": null, "events": [] }`, `{ "available": true, "events": null, "processes": [] }`, `{ "available": true }` (both missing).
 - **Steps:**
   1. Open `/admin/health`.
@@ -168,7 +168,7 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (SystemHealth.test.tsx)
 - **Preconditions / data:** admin; `/api/admin/caches` -> `{ "caches": null }`, `{}`, `{ "caches": [] }`.
 - **Steps:**
   1. Open `/admin/health` for each.
@@ -178,7 +178,7 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (SystemHealth.test.tsx)
 - **Preconditions / data:** admin; `/api/admin/perf/budgets` -> (a) `{ "Version": 2, "Endpoints": [{}, {}, {}] }`, (b) `{ "version": 5, "endpoints": [] }`, (c) `{ "Endpoints": { "a": {}, "b": {} } }`, (d) `{ "Endpoints": null }`, (e) `{}`, (f) `{ "Version": "x" }`.
 - **Steps:**
   1. Open `/admin/health` for each.
@@ -188,7 +188,7 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (SystemHealth.test.tsx)
 - **Preconditions / data:** admin; health -> `{ "status": "ok", "services": {} }` (no disk, queue, budget). Then `{ ..., "disk_free_bytes": 0, "queue_depth": 0, "transcribe_budget_usd_left": "" }`.
 - **Steps:**
   1. Open `/admin/health` for each.
@@ -208,7 +208,7 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (SystemHealth.test.tsx)
 - **Preconditions / data:** admin; `/api/tv/cluster` OK with empty lists. `/api/tv/remote` ->
   - `{ "integration": { "configured": false, "enabled": false } }` -> "remote viewing not set up"
   - `{ "integration": { "configured": true, "enabled": false } }` -> "remote viewing off"
@@ -223,7 +223,7 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (SystemHealth.test.tsx)
 - **Preconditions / data:** admin; `vi.useFakeTimers({ shouldAdvanceTime: true })`; all calls OK.
 - **Steps:**
   1. Open `/admin/health`; count calls to `/api/system/health`.
@@ -235,7 +235,7 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (SystemHealth.test.tsx)
 - **Preconditions / data:** admin; fake timers; `/api/system/health` rejects first, then resolves `{ "status": "ok", "services": { "db": { "status": "ok" } } }`.
 - **Steps:**
   1. Open `/admin/health`; see "Could not load this section." and overall "Down".
@@ -246,7 +246,7 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (SystemHealth.test.tsx)
 - **Preconditions / data:** full `App` (or `AppShell` with routes) in a `MemoryRouter` with history `["/library", "/admin/health"]`; admin. Force a render throw with `/api/tv/cluster` -> `{ "hosts": null }` (or mock `ProcessesCard` to throw).
 - **Steps:**
   1. Open `/library`, then navigate to `/admin/health`.
@@ -258,7 +258,7 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (SystemHealth.test.tsx)
 - **Preconditions / data:** admin; stub `fetch` for `/api/system/health` to return 200 `Content-Type: application/json` body `{"status":` (truncated), then 200 `text/html` body `<html>…</html>`.
 - **Steps:**
   1. Open `/admin/health` for each.
@@ -268,7 +268,7 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** full app, admin, desktop width.
 - **Steps:**
   1. From `/library`, click sidebar "System health" (`nav.admin.health`).
@@ -281,7 +281,7 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (SystemHealth.test.tsx)
 - **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`; data as HLT-01.
 - **Steps:**
   1. Open `/admin/health`.

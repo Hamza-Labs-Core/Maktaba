@@ -20,8 +20,8 @@ import { useI18n } from "../../lib/i18n";
 
 interface Session {
   id: string;
-  created_at: string;
-  last_seen_at: string;
+  created_at: string | null;
+  last_seen_at: string | null;
   expires_at: string;
   ip: string | null;
   user_agent: string | null;
@@ -33,7 +33,8 @@ export function Sessions() {
   const toast = useToast();
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [revoking, setRevoking] = useState<string | null>(null);
+  // Ids with a revoke in flight: each row keeps its own busy state.
+  const [revoking, setRevoking] = useState<ReadonlySet<string>>(new Set());
 
   function load() {
     setError(null);
@@ -48,8 +49,18 @@ export function Sessions() {
 
   useEffect(load, []);
 
+  function setBusy(id: string, on: boolean) {
+    setRevoking((cur) => {
+      const next = new Set(cur);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
   async function revoke(s: Session) {
-    setRevoking(s.id);
+    if (revoking.has(s.id)) return;
+    setBusy(s.id, true);
     try {
       await api.delete(`/api/me/sessions/${encodeURIComponent(s.id)}`);
       toast.show({ tone: "success", message: t("sessions.revoked") });
@@ -60,7 +71,7 @@ export function Sessions() {
         message: e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error"),
       });
     } finally {
-      setRevoking(null);
+      setBusy(s.id, false);
     }
   }
 
@@ -112,8 +123,8 @@ export function Sessions() {
                   )}
                 </td>
                 <td className="mkt-mono">{s.ip || "—"}</td>
-                <td>{formatDate(s.created_at)}</td>
-                <td>{formatDate(s.last_seen_at)}</td>
+                <td>{s.created_at ? formatDate(s.created_at) : "—"}</td>
+                <td>{s.last_seen_at ? formatDate(s.last_seen_at) : "—"}</td>
                 <td className="mkt-row-actions">
                   {s.current ? (
                     <span className="mkt-muted">{t("sessions.thisDevice")}</span>
@@ -121,7 +132,7 @@ export function Sessions() {
                     <Button
                       size="sm"
                       variant="destructive"
-                      loading={revoking === s.id}
+                      loading={revoking.has(s.id)}
                       onClick={() => revoke(s)}
                     >
                       {t("sessions.revoke")}

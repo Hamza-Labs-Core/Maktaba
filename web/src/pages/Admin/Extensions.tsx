@@ -5,14 +5,17 @@
 // "Test connection".
 //   GET  /api/extensions
 //   PUT  /api/extensions/{name}      { enabled?, settings? }
-//   POST /api/extensions/{name}/test { ok, message }
-// The Plex card also has "Sign in with Plex" (PlexSignin.tsx); the
-// Cloudflare Stream card lists each check of its test and the remote
-// viewing status (CloudflareRemote.tsx, Epic 32 story 32.6).
-import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+//   POST /api/extensions/{name}/test { ok, message, lines? }
+// The Plex card also has "Sign in with Plex" (PlexSignin.tsx). Every
+// card lists each check of its last test (RemoteTestLines); the
+// Cloudflare Stream card adds the remote viewing status
+// (CloudflareRemote.tsx, Epic 32 story 32.6).
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { useI18n } from "../../lib/i18n";
+import { useOptionalAuth } from "../../lib/auth";
+import { AdminGate } from "../../components/AdminGate";
 import { queueApi } from "../../lib/queueApi";
 import type { Extension, ExtensionSettingField } from "../../lib/queueApi";
 import { useAction } from "../../components/queue/useAction";
@@ -32,10 +35,24 @@ function ExtensionCard({ ext, onSaved }: { ext: Extension; onSaved: (e: Extensio
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [lines, setLines] = useState<RemoteTestResult | null>(null);
   const [tested, setTested] = useState(0);
+  // The server may send null/missing lists; treat them as empty.
+  const schema = ext.settings_schema ?? [];
+  const secretsSet = ext.secrets_set ?? [];
 
+  // When the extension changes (toggle, save, Plex sign-in), take the
+  // settings the server changed and keep the user's other unsaved edits.
+  const prevSettings = useRef(ext.settings);
   useEffect(() => {
-    setValues({ ...ext.settings });
-    setSecrets({});
+    const prev: Values = prevSettings.current ?? {};
+    const next: Values = ext.settings ?? {};
+    prevSettings.current = ext.settings;
+    setValues((cur) => {
+      const out = { ...cur };
+      for (const k of new Set([...Object.keys(prev), ...Object.keys(next)])) {
+        if (prev[k] !== next[k]) out[k] = next[k] ?? null;
+      }
+      return out;
+    });
   }, [ext]);
 
   const set = (key: string, v: string | number | boolean | null) =>
@@ -45,7 +62,7 @@ function ExtensionCard({ ext, onSaved }: { ext: Extension; onSaved: (e: Extensio
     void action
       .run("save", () => {
         const settings: Values = {};
-        for (const f of ext.settings_schema) {
+        for (const f of schema) {
           if (f.type === "secret") {
             if (secrets[f.key]) settings[f.key] = secrets[f.key];
           } else if (f.key in values) {
@@ -57,6 +74,7 @@ function ExtensionCard({ ext, onSaved }: { ext: Extension; onSaved: (e: Extensio
       .then((r) => {
         if (r) {
           setMsg({ ok: true, text: t("queue.ext.saved") });
+          setSecrets({});
           onSaved(r);
         }
       });
@@ -121,7 +139,7 @@ function ExtensionCard({ ext, onSaved }: { ext: Extension; onSaved: (e: Extensio
             autoComplete="new-password"
             value={secrets[f.key] ?? ""}
             placeholder={
-              ext.secrets_set.includes(f.key)
+              secretsSet.includes(f.key)
                 ? `•••••••• ${t("queue.ext.secretSaved")}`
                 : t("queue.ext.secretEmpty")
             }
@@ -133,7 +151,14 @@ function ExtensionCard({ ext, onSaved }: { ext: Extension; onSaved: (e: Extensio
             type={f.type === "number" ? "number" : f.type === "url" ? "url" : "text"}
             value={String(values[f.key] ?? "")}
             onChange={(e) =>
-              set(f.key, f.type === "number" ? Number(e.target.value) : e.target.value)
+              set(
+                f.key,
+                f.type !== "number"
+                  ? e.target.value
+                  : e.target.value === ""
+                    ? null
+                    : Number(e.target.value)
+              )
             }
           />
         )}
@@ -175,7 +200,9 @@ function ExtensionCard({ ext, onSaved }: { ext: Extension; onSaved: (e: Extensio
           save();
         }}
       >
-        {ext.settings_schema.map(field)}
+        {schema.map(field)}
+        {/* Lets Enter in a field submit (the visible Save sits below the form). */}
+        <button type="submit" hidden tabIndex={-1} />
       </form>
       <div className="mkt-q-extcard__actions">
         <Button loading={action.busy === "save"} onClick={save}>
@@ -191,7 +218,9 @@ function ExtensionCard({ ext, onSaved }: { ext: Extension; onSaved: (e: Extensio
           </span>
         )}
       </div>
-      {lines && ext.name !== "cloudflare_stream" && <RemoteTestLines result={lines} />}
+      {lines && ext.name !== "cloudflare_stream" && (
+        <RemoteTestLines result={lines} ext={ext.name} />
+      )}
       {ext.name === "cloudflare_stream" && <CloudflareRemote refresh={tested} />}
       {action.error && (
         <p role="alert" className="mkt-q-banner">
@@ -203,7 +232,17 @@ function ExtensionCard({ ext, onSaved }: { ext: Extension; onSaved: (e: Extensio
 }
 
 export function AdminExtensions() {
+  // Admin only, like the other admin pages. (useOptionalAuth: the page
+  // is also rendered on its own, without an AuthProvider, in tests.)
+  const auth = useOptionalAuth();
+  if (auth && !auth.user?.is_admin) return <AdminGate>{null}</AdminGate>;
+  return <ExtensionsInner />;
+}
+
+function ExtensionsInner() {
   const { t } = useI18n();
+  const { hash } = useLocation();
+  const scrolled = useRef(false);
   const [list, setList] = useState<Extension[] | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -211,12 +250,20 @@ export function AdminExtensions() {
     queueApi
       .extensions()
       .then((r) => {
-        setList(r.extensions);
+        setList(r?.extensions ?? []);
         setFailed(false);
       })
       .catch(() => setFailed(true));
   }, []);
   useEffect(load, [load]);
+
+  // Deep links like #dizquetv: the cards only exist after the load, so
+  // jump to the card once it is there.
+  useEffect(() => {
+    if (!list || !hash || scrolled.current) return;
+    scrolled.current = true;
+    document.getElementById(decodeURIComponent(hash.slice(1)))?.scrollIntoView?.();
+  }, [list, hash]);
 
   const replace = (e: Extension) =>
     setList((prev) => (prev ?? []).map((x) => (x.name === e.name ? e : x)));

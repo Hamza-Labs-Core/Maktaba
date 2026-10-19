@@ -17,37 +17,37 @@
 
 ## Summary
 
-| ID     | Title                                                             | Category      | Priority | Covered by existing test?                             |
-| ------ | ----------------------------------------------------------------- | ------------- | -------- | ----------------------------------------------------- |
-| VID-01 | Header, badges, tabs and Play link render                         | Happy path    | P1       | No                                                    |
-| VID-02 | Null list fields across tab endpoints render empty states         | Empty state   | P1       | No                                                    |
-| VID-03 | MediaContextCard null / missing lists and facts                   | Empty state   | P1       | No                                                    |
-| VID-04 | EnrichmentPanel `candidates: null` / `fields: null`               | Empty state   | P1       | Partial (`EnrichmentPanel.test.tsx`: `[]` only)       |
-| VID-05 | Stats with missing numbers and `viewers: null`                    | Empty state   | P1       | No                                                    |
-| VID-06 | Render crash shows route error fallback; Back still works         | Error         | P1       | No                                                    |
-| VID-07 | Video the user has no ACL access to                               | Permissions   | P1       | No                                                    |
-| VID-08 | Non-admin: no title edit, no per-user stats, no enrichment writes | Permissions   | P1       | Partial (`DisplayTitle.test.tsx`: title edit only)    |
-| VID-09 | Signed-out user is sent to `/login`                               | Permissions   | P1       | No                                                    |
-| VID-10 | Unknown id (404) shows "Video not found."                         | Error         | P2       | No                                                    |
-| VID-11 | 500 / network error is not shown as "not found"                   | Error         | P2       | No                                                    |
-| VID-12 | Loading state for the header and each tab                         | Loading       | P2       | No                                                    |
-| VID-13 | Transcript: timestamps link to the player at `?t=`                | Happy path    | P2       | No                                                    |
-| VID-14 | Transcript over 400 segments                                      | Happy path    | P2       | No                                                    |
-| VID-15 | Chapters list and links                                           | Happy path    | P2       | No                                                    |
-| VID-16 | Files tab subtitles list and default badge                        | Happy path    | P2       | No                                                    |
-| VID-17 | Processing tab rows and live updates                              | Happy path    | P2       | No                                                    |
-| VID-18 | Stats tab cards; admin per-user table                             | Happy path    | P2       | No                                                    |
-| VID-19 | Stats error shows ErrorState inside the tab                       | Error         | P2       | No                                                    |
-| VID-20 | MediaContextCard full card: rating, cast, attribution, related    | Happy path    | P2       | No                                                    |
-| VID-21 | "Find metadata" opens the Metadata tab                            | Navigation    | P2       | No                                                    |
-| VID-22 | Related link switches to another video and reloads everything     | Navigation    | P2       | No                                                    |
-| VID-23 | Enrichment accept / dismiss / manual search                       | Happy path    | P2       | Partial (`EnrichmentPanel.test.tsx`: render only)     |
-| VID-24 | DisplayTitle validation: empty, whitespace, 200-char cap, error   | Validation    | P2       | Partial (`DisplayTitle.test.tsx`: happy path only)    |
-| VID-25 | Arabic titles, description, transcript and UI in Arabic           | RTL           | P2       | Partial (`DisplayTitle.test.tsx`: Arabic title saved) |
-| VID-26 | Tabs keyboard: arrows, Home/End, focus                            | Accessibility | P3       | No                                                    |
-| VID-27 | Phone width: tabs and tables fit                                  | Responsive    | P3       | No                                                    |
-| VID-28 | Light/dark theme readability                                      | Theme         | P3       | No                                                    |
-| VID-29 | Hardcoded English strings in Arabic mode                          | RTL           | P3       | No                                                    |
+| ID     | Title                                                             | Category      | Priority | Covered by existing test?                                                     |
+| ------ | ----------------------------------------------------------------- | ------------- | -------- | ----------------------------------------------------------------------------- |
+| VID-01 | Header, badges, tabs and Play link render                         | Happy path    | P1       | Yes (`VideoDetail.test.tsx`)                                                  |
+| VID-02 | Null list fields across tab endpoints render empty states         | Empty state   | P1       | Yes (`VideoDetail.test.tsx`; it.todo: fetch failure still looks like empty)   |
+| VID-03 | MediaContextCard null / missing lists and facts                   | Empty state   | P1       | Yes (`VideoDetail.test.tsx`)                                                  |
+| VID-04 | EnrichmentPanel `candidates: null` / `fields: null`               | Empty state   | P1       | Yes (`VideoDetail.test.tsx`; it.todo: load failure shows No suggestions)      |
+| VID-05 | Stats with missing numbers and `viewers: null`                    | Empty state   | P1       | Yes (`VideoDetail.test.tsx`)                                                  |
+| VID-06 | Render crash shows route error fallback; Back still works         | Error         | P1       | Yes (`VideoDetail.test.tsx`)                                                  |
+| VID-07 | Video the user has no ACL access to                               | Permissions   | P1       | Yes (`VideoDetail.test.tsx`; e2e-only: real API refuses the tab endpoints)    |
+| VID-08 | Non-admin: no title edit, no per-user stats, no enrichment writes | Permissions   | P1       | Yes (`VideoDetail.test.tsx`; it.fails: enrichment writes shown to non-admins) |
+| VID-09 | Signed-out user is sent to `/login`                               | Permissions   | P1       | Yes (`VideoDetail.test.tsx`)                                                  |
+| VID-10 | Unknown id (404) shows "Video not found."                         | Error         | P2       | Yes (`VideoDetail.test.tsx`)                                                  |
+| VID-11 | 500 / network error is not shown as "not found"                   | Error         | P2       | Yes (`VideoDetail.test.tsx`)                                                  |
+| VID-12 | Loading state for the header and each tab                         | Loading       | P2       | Yes (`VideoDetail.test.tsx`)                                                  |
+| VID-13 | Transcript: timestamps link to the player at `?t=`                | Happy path    | P2       | Yes (`VideoDetail.test.tsx`)                                                  |
+| VID-14 | Transcript over 400 segments                                      | Happy path    | P2       | Yes (`VideoDetail.test.tsx`)                                                  |
+| VID-15 | Chapters list and links                                           | Happy path    | P2       | Yes (`VideoDetail.test.tsx`)                                                  |
+| VID-16 | Files tab subtitles list and default badge                        | Happy path    | P2       | Yes (`VideoDetail.test.tsx`)                                                  |
+| VID-17 | Processing tab rows and live updates                              | Happy path    | P2       | Yes (`VideoDetail.test.tsx`)                                                  |
+| VID-18 | Stats tab cards; admin per-user table                             | Happy path    | P2       | Yes (`VideoDetail.test.tsx`)                                                  |
+| VID-19 | Stats error shows ErrorState inside the tab                       | Error         | P2       | Yes (`VideoDetail.test.tsx`)                                                  |
+| VID-20 | MediaContextCard full card: rating, cast, attribution, related    | Happy path    | P2       | Yes (`VideoDetail.test.tsx`)                                                  |
+| VID-21 | "Find metadata" opens the Metadata tab                            | Navigation    | P2       | Yes (`VideoDetail.test.tsx`)                                                  |
+| VID-22 | Related link switches to another video and reloads everything     | Navigation    | P2       | Yes (`VideoDetail.test.tsx`)                                                  |
+| VID-23 | Enrichment accept / dismiss / manual search                       | Happy path    | P2       | Yes (`VideoDetail.test.tsx`)                                                  |
+| VID-24 | DisplayTitle validation: empty, whitespace, 200-char cap, error   | Validation    | P2       | Yes (`VideoDetail.test.tsx`)                                                  |
+| VID-25 | Arabic titles, description, transcript and UI in Arabic           | RTL           | P2       | Yes (`VideoDetail.test.tsx`; it.todo: RTL arrow keys in DS Tabs)              |
+| VID-26 | Tabs keyboard: arrows, Home/End, focus                            | Accessibility | P3       | No                                                                            |
+| VID-27 | Phone width: tabs and tables fit                                  | Responsive    | P3       | No                                                                            |
+| VID-28 | Light/dark theme readability                                      | Theme         | P3       | No                                                                            |
+| VID-29 | Hardcoded English strings in Arabic mode                          | RTL           | P3       | No                                                                            |
 
 ## Cases
 
@@ -55,7 +55,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`)
 - **Preconditions / data:** `GET /api/videos/v1` → `{ "id": "v1", "title": "Lecture 1", "filename": "l1.mp4", "description": "Intro talk", "state": "ready", "detected_language": "en", "library_id": "lib-1", "display_title": "Lecture 1", "display_title_source": "rules" }`; `/context` → `{ "related_in_library": [], "more_like_this": [] }`.
 - **Steps:**
   1. Open `/videos/v1`.
@@ -65,7 +65,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`; it.todo: fetch failure still looks like empty)
 - **Preconditions / data:** video as VID-01. For each endpoint run with the list field `null` and with the key missing (`{}`):
   - `/segments` → `items` → Transcript shows "No transcript available."
   - `/chapters` → `items` → Chapters shows "Nothing here yet."
@@ -80,7 +80,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`)
 - **Preconditions / data:** `/context` → each of:
   - (a) `{ "related_in_library": null, "more_like_this": null }`
   - (b) `{}`
@@ -96,7 +96,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** Partial — `EnrichmentPanel.test.tsx` "shows an empty state..." uses `[]` only.
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`; it.todo: load failure shows No suggestions)
 - **Preconditions / data:** `/enrichment` → (a) `{ "candidates": null }`, (b) `{}`, (c) 500, (d) `{ "candidates": [ { "id": "c1", "provider": "tmdb", "external_id": "tmdb:1", "confidence": 0.8, "accepted": false, "fields": null } ] }`; also `POST .../search` → `{ "candidates": null }`. List fields: `candidates`, `candidates[].fields`.
 - **Steps:**
   1. Open `/videos/v1`; click "Metadata". For the search case type "x" and click "Search manually".
@@ -106,7 +106,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`)
 - **Preconditions / data:** admin; `/stats` → (a) `{ "total_views": 0, "unique_viewers": 0, "avg_completion": 0, "avg_watch_sec": 0, "completion_rate": 0, "viewers": null }`; (b) `{}`. List field: `viewers`.
 - **Steps:**
   1. Open `/videos/v1`; click "Statistics".
@@ -116,7 +116,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`)
 - **Preconditions / data:** full app routes inside `AppShell`; start at `/library` with one video card `v1`. Make the page throw: `/context` → VID-03 (d) (`cast: [null]`), or mock `MediaContextCard` to throw.
 - **Steps:**
   1. Open `/library`; click the `v1` card.
@@ -128,7 +128,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`; e2e-only: real API refuses the tab endpoints)
 - **Preconditions / data:** non-admin; `GET /api/videos/v-secret` → 404 (or 403) problem+json `{ "title": "video not found", "status": 404 }`. E2e: real API with a user lacking ACL on the video's library.
 - **Steps:**
   1. Open `/videos/v-secret` directly.
@@ -138,7 +138,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** Partial — `DisplayTitle.test.tsx` "read only for viewers" covers the title only.
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`; it.fails: enrichment writes shown to non-admins)
 - **Preconditions / data:** `useAuth` user `{ is_admin: false }`; video with `display_title: "T"`; `/stats` returns `viewers: [ { "user_id": "u2", "username": "sara", ... } ]` (simulate a server bug); `/enrichment` → one candidate; enrichment POSTs → 403 `{ "title": "forbidden" }`.
 - **Steps:**
   1. Open `/videos/v1`; check header, Statistics, Metadata.
@@ -148,7 +148,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`)
 - **Preconditions / data:** full `App`; `GET /api/auth/me` → 401.
 - **Steps:**
   1. Open `/videos/v1`.
@@ -158,7 +158,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`)
 - **Preconditions / data:** `GET /api/videos/nope` → 404 problem+json `{ "title": "not found", "status": 404 }`.
 - **Steps:**
   1. Open `/videos/nope`.
@@ -168,7 +168,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`)
 - **Preconditions / data:** (a) 500 `{ "title": "db down", "status": 500 }`; (b) fetch rejects; (c) 200 JSON body `{bad`.
 - **Steps:**
   1. Open `/videos/v1`.
@@ -178,7 +178,7 @@
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`)
 - **Preconditions / data:** header GET pending; then header resolved with each tab endpoint pending.
 - **Steps:**
   1. Open `/videos/v1`; then click each tab.
@@ -188,7 +188,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`)
 - **Preconditions / data:** `/segments` → `{ "items": [ { "id": 1, "seq": 1, "start_sec": 65.7, "end_sec": 70, "text": "Hello", "speaker": "A" }, { "id": 2, "seq": 2, "start_sec": 3725, "end_sec": 3730, "text": "Bye", "speaker": null } ] }`.
 - **Steps:**
   1. Open `/videos/v1`; click "Transcript"; click "1:05".
@@ -198,7 +198,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`)
 - **Preconditions / data:** `/segments` → 450 items.
 - **Steps:**
   1. Open the Transcript tab.
@@ -208,7 +208,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`)
 - **Preconditions / data:** `/chapters` → `{ "items": [ { "id": 1, "seq": 1, "start_sec": 0, "end_sec": 60, "title": "Opening" }, { "id": 2, "seq": 2, "start_sec": 125.9, "end_sec": 300, "title": "المقدمة" } ] }`.
 - **Steps:**
   1. Open the Chapters tab.
@@ -218,7 +218,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`)
 - **Preconditions / data:** `/subtitles` → `{ "items": [ { "id": 1, "language": "ar", "format": "vtt", "source": "asr", "is_default": true, "url": "/api/videos/v1/subtitles/1.vtt" }, { "id": 2, "language": "en", "format": "srt", "source": "file", "is_default": false, "url": "/api/videos/v1/subtitles/2.srt" } ] }`.
 - **Steps:**
   1. Open the Files tab.
@@ -228,7 +228,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`)
 - **Preconditions / data:** video `library_id: "lib-1"`; `/api/jobs?limit=200` → jobs for `v1` (`stage: "transcribe"`, `state: "running"`, `attempts: 1`, `estimated_remaining_sec: 90`) and one for `v2`. Mock `subscribe` from `src/lib/ws.ts`.
 - **Steps:**
   1. Open the Processing tab.
@@ -241,7 +241,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`)
 - **Preconditions / data:** admin; `/stats` → `{ "total_views": 12, "unique_viewers": 3, "avg_completion": 64.4, "avg_watch_sec": 3720, "completion_rate": 0.25, "viewers": [ { "user_id": "u1", "username": "مها", "times_watched": 4, "total_watch_sec": 7200, "best_percent": 100 } ] }`.
 - **Steps:**
   1. Open the Statistics tab; expand "Per-user breakdown".
@@ -251,7 +251,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`)
 - **Preconditions / data:** `/stats` → 500 `{ "title": "stats failed", "status": 500 }`.
 - **Steps:**
   1. Open the Statistics tab, then switch to Watch.
@@ -261,7 +261,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`)
 - **Preconditions / data:** `/context` → `{ "facts": { "rating": { "imdb": 8.53, "tmdb": 7 }, "runtime_min": 95, "genres": ["Drama", "History"], "content_rating": "PG-13", "cast": [ { "name": "A" }, { "name": "B" } ], "director": "D", "summary": "ملخص", "summary_lang": "ar", "attribution": [ { "provider": "TMDB", "url": "https://www.themoviedb.org/movie/1" }, { "provider": "Wikidata" } ] }, "related_in_library": [ { "video_id": "v2", "title": "Part 2", "reason": "same_series" }, { "video_id": "v3", "title": "Other", "reason": "shared_cast", "via": "A" } ], "more_like_this": [ { "video_id": "v4", "title": "Similar", "score": 0.9 } ] }`. Also run with `"rating": 7.25`.
 - **Steps:**
   1. Open `/videos/v1`.
@@ -271,7 +271,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`)
 - **Preconditions / data:** `/context` → `{ "related_in_library": [], "more_like_this": [] }`.
 - **Steps:**
   1. Open `/videos/v1`; click "Find metadata".
@@ -282,7 +282,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`)
 - **Preconditions / data:** `/videos/v1` and `/videos/v2` with different titles; v1 context has related `v2`.
 - **Steps:**
   1. Open `/videos/v1`; open the Chapters tab; go back to Watch; click related "Part 2".
@@ -293,7 +293,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `EnrichmentPanel.test.tsx` "renders the headline, diff, and protected marker" (no actions).
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`)
 - **Preconditions / data:** admin; `/enrichment` → one candidate `{ "external_id": "tmdb:42", "title": "Dune", "year": 2021, "confidence": 0.873, "fields": [ { "field": "title", "current": "dune.mkv", "proposed": "Dune", "would_change": true, "protected": false }, { "field": "description", "current": "mine", "proposed": "theirs", "would_change": false, "protected": true } ] }`; accept/dismiss → 204; search → `{ "candidates": [ { "external_id": "tmdb:7", "title": "Dune 1984", "confidence": 0.5, ... } ] }`. Render within `ToastProvider`.
 - **Steps:**
   1. Open the Metadata tab; click "Accept".
@@ -306,7 +306,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** Partial — `DisplayTitle.test.tsx` covers a valid save and reset.
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`)
 - **Preconditions / data:** admin; video `display_title: "Auto"`, `display_title_source: "rules"`. `PATCH /api/videos/v1` → (a) 422 problem+json `{ "title": "invalid", "detail": "title too long" }`, (b) success.
 - **Steps:**
   1. Click "Change"; clear the box.
@@ -320,7 +320,7 @@
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** Partial — `DisplayTitle.test.tsx` saves an Arabic title.
+- **Covered by existing test?** Yes (`VideoDetail.test.tsx`; it.todo: RTL arrow keys in DS Tabs)
 - **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`; video `{ "title": "السيرة النبوية ( 18 )", "description": "وصف قصير", "detected_language": "ar" }`; Arabic transcript segments and chapters.
 - **Steps:**
   1. Open `/videos/v1`; go through Watch, Transcript, Chapters.

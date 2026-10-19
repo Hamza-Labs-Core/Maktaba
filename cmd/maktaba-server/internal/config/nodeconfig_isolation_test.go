@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,7 +18,15 @@ func TestMain(m *testing.M) {
 	}
 	_ = os.Setenv("MAKTABA_NODE_CONFIG", filepath.Join(dir, "node.json"))
 	_ = os.Unsetenv("MAKTABA_TV_HOST_ROLE")
+	// no test binds a wildcard or LAN address (loopback_guard_test.go)
+	listenTCP = guardedListen
 	code := m.Run()
+	if code == 0 && len(guardViolations()) > 0 {
+		for _, v := range guardViolations() {
+			fmt.Fprintln(os.Stderr, "loopback guard:", v)
+		}
+		code = 1
+	}
 	_ = os.RemoveAll(dir)
 	os.Exit(code)
 }

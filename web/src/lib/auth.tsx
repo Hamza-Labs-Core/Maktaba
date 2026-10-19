@@ -9,6 +9,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { api, ApiError } from "./api";
+import { useI18n } from "./i18n";
 import { purgeApiCacheOnLogout } from "./sw";
 
 export interface User {
@@ -17,7 +18,7 @@ export interface User {
   is_admin: boolean;
 }
 
-interface AuthState {
+export interface AuthState {
   user: User | null;
   loading: boolean;
   login: (username: string, password: string) => Promise<void>;
@@ -26,7 +27,15 @@ interface AuthState {
   logoutAll: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthState | undefined>(undefined);
+// Exported so page tests can sign a user in without the /api/auth/me probe
+// (see src/test/pageHarness.tsx).
+export const AuthContext = createContext<AuthState | undefined>(undefined);
+
+/** The user from a login / register answer; an answer without one is an error. */
+function signedIn(res: { user?: User } | null | undefined): User {
+  if (!res?.user) throw new Error("the server's answer has no user");
+  return res.user;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -60,18 +69,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       async login(username, password) {
-        const res = await api.post<{ user: User }>("/api/auth/login", { username, password });
-        setUser(res.user);
+        const res = await api.post<{ user?: User }>("/api/auth/login", { username, password });
+        setUser(signedIn(res));
       },
       async register(username, email, password) {
         // The server signs the new user in (web cookie flow) and returns
         // {user}, mirroring login — so the SPA is authenticated on return.
-        const res = await api.post<{ user: User }>("/api/auth/register", {
+        const res = await api.post<{ user?: User }>("/api/auth/register", {
           username,
           email,
           password,
         });
-        setUser(res.user);
+        setUser(signedIn(res));
       },
       async logout() {
         try {
@@ -117,13 +126,16 @@ export function useOptionalAuth(): AuthState | null {
 
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
+  const { t } = useI18n();
   const location = useLocation();
   if (loading)
     return (
       <div className="mkt-loading" role="status">
-        Loading…
+        {t("common.loading")}
       </div>
     );
-  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  // Keep the query too, so /search?q=x comes back to the same search.
+  if (!user)
+    return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
   return <>{children}</>;
 }

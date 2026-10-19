@@ -14,30 +14,30 @@ Mock `../lib/analytics` (`analyticsApi.getPrivacy/history/setPrivacy/deleteHisto
 
 ## Summary
 
-| ID     | Title                                                       | Category      | Priority | Covered by existing test? |
-| ------ | ----------------------------------------------------------- | ------------- | -------- | ------------------------- |
-| SPR-01 | Shows tracking toggle and watch history table               | Happy path    | P1       | No                        |
-| SPR-02 | Tracking off shows "Tracking paused"                        | Happy path    | P2       | No                        |
-| SPR-03 | Turn tracking off saves and toasts                          | Happy path    | P1       | No                        |
-| SPR-04 | Toggle is disabled while saving; no double request          | Loading       | P2       | No                        |
-| SPR-05 | Save tracking fails (403 / 500 / network)                   | Error         | P1       | No                        |
-| SPR-06 | Loading states before data arrives                          | Loading       | P2       | No                        |
-| SPR-07 | Privacy settings load fails: toggle shows "on" (misleading) | Error         | P1       | No                        |
-| SPR-08 | Empty history `items: []`                                   | Empty state   | P2       | No                        |
-| SPR-09 | `items: null` from history                                  | Empty state   | P1       | No                        |
-| SPR-10 | `items` key missing from history: crash                     | Empty state   | P1       | No                        |
-| SPR-11 | History load fails (401 / 500 / network / bad JSON)         | Error         | P2       | No                        |
-| SPR-12 | Missing or null optional fields in a history row            | Empty state   | P2       | No                        |
-| SPR-13 | Remove a history item                                       | Happy path    | P1       | No                        |
-| SPR-14 | Remove fails: row stays, error toast                        | Error         | P2       | No                        |
-| SPR-15 | Removing the last item shows the empty text                 | Empty state   | P3       | No                        |
-| SPR-16 | Video title links to the video page; Back returns           | Navigation    | P2       | No                        |
-| SPR-17 | Signed-out deep link redirects to /login                    | Permissions   | P1       | No                        |
-| SPR-18 | Render crash shows route error fallback; Back works         | Error         | P1       | No                        |
-| SPR-19 | Arabic: RTL, Arabic strings, Arabic titles                  | RTL           | P2       | No                        |
-| SPR-20 | Phone width: history table does not cause page scroll       | Responsive    | P2       | No                        |
-| SPR-21 | Keyboard and labels: switch, table, Remove buttons          | Accessibility | P2       | No                        |
-| SPR-22 | Both themes readable                                        | Theme         | P3       | No                        |
+| ID     | Title                                                       | Category      | Priority | Covered by existing test?                                     |
+| ------ | ----------------------------------------------------------- | ------------- | -------- | ------------------------------------------------------------- |
+| SPR-01 | Shows tracking toggle and watch history table               | Happy path    | P1       | Yes (`Settings.test.tsx`)                                     |
+| SPR-02 | Tracking off shows "Tracking paused"                        | Happy path    | P2       | Yes (`Settings.test.tsx`)                                     |
+| SPR-03 | Turn tracking off saves and toasts                          | Happy path    | P1       | Yes (`Settings.test.tsx`)                                     |
+| SPR-04 | Toggle is disabled while saving; no double request          | Loading       | P2       | Yes (`Settings.test.tsx`)                                     |
+| SPR-05 | Save tracking fails (403 / 500 / network)                   | Error         | P1       | Yes (`Settings.test.tsx`)                                     |
+| SPR-06 | Loading states before data arrives                          | Loading       | P2       | Yes (`Settings.test.tsx`)                                     |
+| SPR-07 | Privacy settings load fails: toggle shows "on" (misleading) | Error         | P1       | Yes (`Settings.test.tsx`)                                     |
+| SPR-08 | Empty history `items: []`                                   | Empty state   | P2       | Yes (`Settings.test.tsx`)                                     |
+| SPR-09 | `items: null` from history                                  | Empty state   | P1       | Yes (`Settings.test.tsx`)                                     |
+| SPR-10 | `items` key missing from history: crash                     | Empty state   | P1       | Yes (`Settings.test.tsx`)                                     |
+| SPR-11 | History load fails (401 / 500 / network / bad JSON)         | Error         | P2       | Yes (`Settings.test.tsx`)                                     |
+| SPR-12 | Missing or null optional fields in a history row            | Empty state   | P2       | Yes (`Settings.test.tsx`)                                     |
+| SPR-13 | Remove a history item                                       | Happy path    | P1       | Yes (`Settings.test.tsx`)                                     |
+| SPR-14 | Remove fails: row stays, error toast                        | Error         | P2       | Yes (`Settings.test.tsx`)                                     |
+| SPR-15 | Removing the last item shows the empty text                 | Empty state   | P3       | No                                                            |
+| SPR-16 | Video title links to the video page; Back returns           | Navigation    | P2       | Yes (`Settings.test.tsx`)                                     |
+| SPR-17 | Signed-out deep link redirects to /login                    | Permissions   | P1       | Yes (`Settings.test.tsx`)                                     |
+| SPR-18 | Render crash shows route error fallback; Back works         | Error         | P1       | Yes (`Settings.test.tsx`)                                     |
+| SPR-19 | Arabic: RTL, Arabic strings, Arabic titles                  | RTL           | P2       | Yes (`Settings.test.tsx`)                                     |
+| SPR-20 | Phone width: history table does not cause page scroll       | Responsive    | P2       | No (e2e-only)                                                 |
+| SPR-21 | Keyboard and labels: switch, table, Remove buttons          | Accessibility | P2       | Yes (`Settings.test.tsx`; it.fails: Remove not named per row) |
+| SPR-22 | Both themes readable                                        | Theme         | P3       | No                                                            |
 
 ## Cases
 
@@ -45,7 +45,7 @@ Mock `../lib/analytics` (`analyticsApi.getPrivacy/history/setPrivacy/deleteHisto
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `GET /api/me/activity/settings` → `{ "track_enabled": true }`; `GET /api/me/history?limit=20` → `{ "items": [{ "video_id": "v1", "title": "Tafsir 1", "duration_sec": 3600, "times_watched": 2, "total_watch_sec": 5400, "best_percent": 87.4, "last_watched_at": "2026-10-18T20:00:00Z", "position_sec": 120 }, { "video_id": "v2", "title": "Fiqh 2", "duration_sec": 600, "times_watched": 1, "total_watch_sec": 300, "best_percent": 50, "last_watched_at": "2026-10-17T20:00:00Z", "position_sec": 0 }], "limit": 20, "offset": 0 }`.
 - **Steps:**
   1. Open `/settings/privacy`.
@@ -55,7 +55,7 @@ Mock `../lib/analytics` (`analyticsApi.getPrivacy/history/setPrivacy/deleteHisto
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `getPrivacy` → `{ track_enabled: false }`.
 - **Steps:**
   1. Open `/settings/privacy`.
@@ -65,7 +65,7 @@ Mock `../lib/analytics` (`analyticsApi.getPrivacy/history/setPrivacy/deleteHisto
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** as SPR-01; `PUT /api/me/activity/settings` → `{ "track_enabled": false }`.
 - **Steps:**
   1. Click the switch.
@@ -75,7 +75,7 @@ Mock `../lib/analytics` (`analyticsApi.getPrivacy/history/setPrivacy/deleteHisto
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `setPrivacy` returns a pending promise.
 - **Steps:**
   1. Click the switch twice quickly; then resolve.
@@ -85,7 +85,7 @@ Mock `../lib/analytics` (`analyticsApi.getPrivacy/history/setPrivacy/deleteHisto
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `PUT` → 500 problem+json `{ "title": "Internal Server Error", "status": 500, "detail": "db down" }`; then 403 `{ "title": "Forbidden", "status": 403 }`; then fetch rejects.
 - **Steps:**
   1. Click the switch.
@@ -95,7 +95,7 @@ Mock `../lib/analytics` (`analyticsApi.getPrivacy/history/setPrivacy/deleteHisto
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** both GETs pending.
 - **Steps:**
   1. Open `/settings/privacy`.
@@ -105,7 +105,7 @@ Mock `../lib/analytics` (`analyticsApi.getPrivacy/history/setPrivacy/deleteHisto
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `GET /api/me/activity/settings` → 500, or 401, or fetch rejects. Server-side truth is `track_enabled: false`.
 - **Steps:**
   1. Open `/settings/privacy`.
@@ -116,7 +116,7 @@ Mock `../lib/analytics` (`analyticsApi.getPrivacy/history/setPrivacy/deleteHisto
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** history → `{ "items": [], "limit": 20, "offset": 0 }`.
 - **Steps:**
   1. Open `/settings/privacy`.
@@ -126,7 +126,7 @@ Mock `../lib/analytics` (`analyticsApi.getPrivacy/history/setPrivacy/deleteHisto
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** history → `{ "items": null, "limit": 20, "offset": 0 }`.
 - **Steps:**
   1. Open `/settings/privacy`; wait 2 s.
@@ -136,7 +136,7 @@ Mock `../lib/analytics` (`analyticsApi.getPrivacy/history/setPrivacy/deleteHisto
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** history → `{}` (or `{ "limit": 20 }`); also try a 200 with body `[]`.
 - **Steps:**
   1. Open `/settings/privacy`.
@@ -146,7 +146,7 @@ Mock `../lib/analytics` (`analyticsApi.getPrivacy/history/setPrivacy/deleteHisto
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** history → 500; then 401; then fetch rejects; then 200 `Content-Type: application/json` with body `{bad json`.
 - **Steps:**
   1. Open `/settings/privacy`.
@@ -156,7 +156,7 @@ Mock `../lib/analytics` (`analyticsApi.getPrivacy/history/setPrivacy/deleteHisto
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** items: `[{ "video_id": "v3", "title": "", "best_percent": null, "total_watch_sec": null }, { "video_id": "v4" }]`.
 - **Steps:**
   1. Open `/settings/privacy`.
@@ -166,7 +166,7 @@ Mock `../lib/analytics` (`analyticsApi.getPrivacy/history/setPrivacy/deleteHisto
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** as SPR-01; `DELETE /api/me/history/v1` → 204.
 - **Steps:**
   1. Click "Remove" in the "Tafsir 1" row.
@@ -176,7 +176,7 @@ Mock `../lib/analytics` (`analyticsApi.getPrivacy/history/setPrivacy/deleteHisto
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `DELETE` → 404 `{ "title": "Not Found", "status": 404 }`; then 500; then network reject.
 - **Steps:**
   1. Click "Remove" on "Tafsir 1".
@@ -196,7 +196,7 @@ Mock `../lib/analytics` (`analyticsApi.getPrivacy/history/setPrivacy/deleteHisto
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** as SPR-01; a second item with `video_id: "a/b?c"`.
 - **Steps:**
   1. Click "Tafsir 1".
@@ -207,7 +207,7 @@ Mock `../lib/analytics` (`analyticsApi.getPrivacy/history/setPrivacy/deleteHisto
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `GET /api/auth/me` → 401.
 - **Steps:**
   1. Open `/settings/privacy`.
@@ -217,7 +217,7 @@ Mock `../lib/analytics` (`analyticsApi.getPrivacy/history/setPrivacy/deleteHisto
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** full app with `AppShell`; start at `/settings`. History → `{}` (makes the tab throw, see SPR-10).
 - **Steps:**
   1. Click "Privacy".
@@ -228,7 +228,7 @@ Mock `../lib/analytics` (`analyticsApi.getPrivacy/history/setPrivacy/deleteHisto
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `mkt:locale=ar`; item title "تفسير سورة البقرة".
 - **Steps:**
   1. Open `/settings/privacy`.
@@ -238,7 +238,7 @@ Mock `../lib/analytics` (`analyticsApi.getPrivacy/history/setPrivacy/deleteHisto
 
 - **Priority:** P2
 - **Category:** Responsive
-- **Covered by existing test?** No
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** e2e 375x812; long title (120 chars).
 - **Steps:**
   1. Open `/settings/privacy`.
@@ -248,7 +248,7 @@ Mock `../lib/analytics` (`analyticsApi.getPrivacy/history/setPrivacy/deleteHisto
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`; it.fails: Remove not named per row)
 - **Preconditions / data:** as SPR-01.
 - **Steps:**
   1. Tab to the switch, press Space; Tab to each "Remove".

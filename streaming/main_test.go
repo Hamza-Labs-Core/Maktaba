@@ -60,6 +60,8 @@ func TestServeIntegration(t *testing.T) {
 
 	t.Setenv("MAKTABA_HTTP_ADDR", publicAddr)
 	t.Setenv("MAKTABA_ADMIN_ADDR", adminAddr)
+	// the gRPC default is ":9050" (every interface): loopback here
+	t.Setenv("MAKTABA_STREAMING_GRPC_ADDR", "127.0.0.1:0")
 	t.Setenv("MAKTABA_HEALTH_WARM", "0s")
 	t.Setenv("MAKTABA_GRPC_PEERS", "")
 	t.Setenv("MAKTABA_ENV", "test")

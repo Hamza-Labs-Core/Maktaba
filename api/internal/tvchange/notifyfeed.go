@@ -20,6 +20,10 @@ const (
 	NotifyRolledBack    = "tv.change.rolled_back"    // manual or automatic, with the cause
 	NotifyWaiting       = "tv.change.waiting"        // ready for more than a day
 	NotifyRollbackEnds  = "tv.rollback.expiring"     // the rollback point goes within the hour
+	// Sent by the controller's swap operations tick (swap.go).
+	NotifySwapNotTaken         = "tv.change.swap_not_taken"  // no front door took the swap in time: rolled back
+	NotifyRollbackDegraded     = "tv.rollback.degraded"      // a warm rollback without a live TV slot: the database only
+	NotifyRollbackNotCommitted = "tv.rollback.not_committed" // the reverse commit found nothing to roll back
 	// From the front door's slot events (tv_slot_events, slot 0137): notifySlotEvents
 	// sends them through the same Notifier.
 	NotifyFailover  = "tv.slot.failover"   // the live slot failed over to the hot standby

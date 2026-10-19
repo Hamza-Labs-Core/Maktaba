@@ -346,12 +346,21 @@ func (rt *Router) dispatch(start []*LLMRequest) {
 	}
 }
 
+// notify reports a request's state with its runner as read now. The runner
+// is written once, under rt.mu, when the request is placed; every caller
+// either placed it itself or read it after the lock, except a "queued" event,
+// which is sent after the lock while a concurrent finish may place the
+// request: that one goes through notifyTo with the runner it saw locked.
 func (rt *Router) notify(req *LLMRequest, state string, usage json.RawMessage, errCode string) {
+	rt.notifyTo(req, req.runner, state, usage, errCode)
+}
+
+func (rt *Router) notifyTo(req *LLMRequest, runner, state string, usage json.RawMessage, errCode string) {
 	if rt.cfg.Notify == nil {
 		return
 	}
 	ev := LLMEvent{ID: req.id, Model: req.Model, Op: req.Op, FromSession: nullable(req.FromSession),
-		ToSession: nullable(req.runner), State: state, Usage: usage}
+		ToSession: nullable(runner), State: state, Usage: usage}
 	if errCode != "" {
 		ev.Error = &errCode
 	}
@@ -389,7 +398,9 @@ func (rt *Router) Submit(req *LLMRequest) {
 	}
 	rt.mu.Unlock()
 	if stillQueued {
-		rt.notify(req, "queued", nil, "")
+		// not req.runner: once unlocked, a finishing request's pump may place
+		// this one on a runner concurrently (a data race on the read)
+		rt.notifyTo(req, "", "queued", nil, "")
 	}
 	rt.dispatch(start)
 }

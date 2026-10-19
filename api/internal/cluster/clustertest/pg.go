@@ -12,7 +12,9 @@ package clustertest
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"io"
 	"net/url"
 	"os"
@@ -40,16 +42,23 @@ func ScratchDB(t *testing.T) (*sql.DB, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = admin.Close() })
+	tmpl := template(t, admin, base)
 	name := "t1_cluster_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "")
-	if _, err := admin.Exec(`CREATE DATABASE ` + pq.QuoteIdentifier(name)); err != nil {
-		t.Fatalf("create scratch database: %v", err)
+	// a copy of the migrated template: one goose run per set of migrations, not
+	// one per test (every slot again took ~2 s a test and kept the integration
+	// tier near its budget)
+	var cerr error
+	for i := 0; i < 20; i++ {
+		_, cerr = admin.Exec(`CREATE DATABASE ` + pq.QuoteIdentifier(name) + ` TEMPLATE ` + pq.QuoteIdentifier(tmpl))
+		if cerr == nil || !strings.Contains(cerr.Error(), "being accessed by other users") {
+			break
+		}
+		time.Sleep(100 * time.Millisecond) // another process is copying it right now
 	}
-	u, err := url.Parse(base)
-	if err != nil {
-		t.Fatal(err)
+	if cerr != nil {
+		t.Fatalf("create scratch database: %v", cerr)
 	}
-	u.Path = "/" + name
-	dsn := u.String()
+	dsn := dsnFor(t, base, name)
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		t.Fatal(err)
@@ -61,8 +70,105 @@ func ScratchDB(t *testing.T) (*sql.DB, string) {
 			t.Logf("drop scratch database %s: %v", name, err)
 		}
 	})
-	migrate(t, db)
 	return db, dsn
+}
+
+func dsnFor(t *testing.T, base, name string) string {
+	t.Helper()
+	u, err := url.Parse(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u.Path = "/" + name
+	return u.String()
+}
+
+// templatePrefix names the migrated template databases; the suffix is a hash of
+// the migrations, so a changed migration makes a new template.
+const templatePrefix = "t1_cluster_tmpl_"
+
+// template returns the migrated template database for the current migrations,
+// making it the first time (under an advisory lock: the packages of a module
+// test in parallel processes). It is built under a temporary name and renamed
+// once migrated, so a template that exists is complete.
+func template(t *testing.T, admin *sql.DB, base string) string {
+	t.Helper()
+	sum := migrationsHash(t)
+	name := templatePrefix + sum
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	conn, err := admin.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock(hashtext('clustertest_template'))`); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock(hashtext('clustertest_template'))`)
+	}()
+	var exists bool
+	if err := conn.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)`, name).Scan(&exists); err != nil {
+		t.Fatal(err)
+	}
+	if exists {
+		return name
+	}
+	// templates of older migrations: gone (best-effort; one in use stays)
+	if rows, err := conn.QueryContext(ctx, `SELECT datname FROM pg_database WHERE datname LIKE 't1\_cluster\_tmpl\_%'`); err == nil {
+		var old []string
+		for rows.Next() {
+			var n string
+			if rows.Scan(&n) == nil {
+				old = append(old, n)
+			}
+		}
+		rows.Close()
+		for _, n := range old {
+			_, _ = conn.ExecContext(ctx, `DROP DATABASE IF EXISTS `+pq.QuoteIdentifier(n))
+		}
+	}
+	build := name + "_b"
+	_, _ = conn.ExecContext(ctx, `DROP DATABASE IF EXISTS `+pq.QuoteIdentifier(build)) // a half-built one
+	if _, err := conn.ExecContext(ctx, `CREATE DATABASE `+pq.QuoteIdentifier(build)); err != nil {
+		t.Fatalf("create template database: %v", err)
+	}
+	db, err := sql.Open("postgres", dsnFor(t, base, build))
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrate(t, db)
+	_ = db.Close()
+	if _, err := conn.ExecContext(ctx, `ALTER DATABASE `+pq.QuoteIdentifier(build)+` RENAME TO `+pq.QuoteIdentifier(name)); err != nil {
+		t.Fatalf("rename template database: %v", err)
+	}
+	return name
+}
+
+// migrationsHash is a short hash of the Postgres migrations' names and contents.
+func migrationsHash(t *testing.T) string {
+	t.Helper()
+	src := migrationsDir(t)
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := sha256.New()
+	for _, e := range entries {
+		n := e.Name()
+		if e.IsDir() || !strings.HasSuffix(n, ".sql") || strings.HasSuffix(n, ".sqlite.sql") {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(src, n))
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.Write([]byte(n))
+		h.Write([]byte{0})
+		h.Write(b)
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
 // WithUser rewrites dsn to log in as user/password.

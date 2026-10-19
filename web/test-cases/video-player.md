@@ -16,37 +16,37 @@
 
 ## Summary
 
-| ID     | Title                                                      | Category      | Priority | Covered by existing test?                                     |
-| ------ | ---------------------------------------------------------- | ------------- | -------- | ------------------------------------------------------------- |
-| VPL-01 | Opens a stream session and plays `manifest_url`            | Happy path    | P1       | Yes (`VideoPlayer.test.tsx`)                                  |
-| VPL-02 | Falls back to `direct_url`                                 | Happy path    | P1       | Yes (`VideoPlayer.test.tsx`)                                  |
-| VPL-03 | Signed URL is used exactly as returned                     | Happy path    | P1       | No                                                            |
-| VPL-04 | HLS manifest on a browser without native HLS               | Error         | P1       | No                                                            |
-| VPL-05 | Session with no URL at all                                 | Error         | P1       | No                                                            |
-| VPL-06 | Playback error (expired signature / 403 / decode) is shown | Error         | P1       | No                                                            |
-| VPL-07 | Session open 403 / 404 (no ACL, unknown id)                | Permissions   | P1       | No                                                            |
-| VPL-08 | Signed-out user is sent to `/login`                        | Permissions   | P1       | No                                                            |
-| VPL-09 | `?t=` start position; bad values ignored                   | Navigation    | P1       | No                                                            |
-| VPL-10 | Progress posts: throttled, on pause, completed on end      | Happy path    | P1       | Partial (`VideoPlayer.test.tsx`: one timeupdate only)         |
-| VPL-11 | Streaming session closed on unmount / video change         | Happy path    | P1       | Yes (`VideoPlayer.test.tsx`)                                  |
-| VPL-12 | Leaving before the session opens does not leak a session   | Happy path    | P1       | Partial (`VideoPlayer.test.tsx`: never-resolving POST only)   |
-| VPL-13 | Watch analytics: start on play, stop on pause/end/unmount  | Happy path    | P1       | Partial (`watchSession.test.ts`: controller only, not wiring) |
-| VPL-14 | Analytics tracking paused or failing never breaks playback | Error         | P2       | Partial (`watchSession.test.ts`)                              |
-| VPL-15 | Chapters `items: null` / missing and ticks placement       | Empty state   | P1       | No                                                            |
-| VPL-16 | Render crash shows route error fallback; Back still works  | Error         | P1       | No                                                            |
-| VPL-17 | Loading text while the session opens                       | Loading       | P2       | Yes (`VideoPlayer.test.tsx` "does NOT call DELETE...")        |
-| VPL-18 | Session open 500 / network / malformed JSON                | Error         | P2       | No                                                            |
-| VPL-19 | Error clears when moving to another video                  | Navigation    | P2       | No                                                            |
-| VPL-20 | Back button: in-app history and direct deep link           | Navigation    | P2       | No                                                            |
-| VPL-21 | Keyboard map works on the focused player                   | Accessibility | P2       | No                                                            |
-| VPL-22 | Shortcuts do not fire from form controls or with modifiers | Accessibility | P2       | No                                                            |
-| VPL-23 | Speed select and +/- keys stay in sync                     | Happy path    | P2       | No                                                            |
-| VPL-24 | Subtitles: tracks loaded, `c` toggles, size select applies | Happy path    | P2       | No                                                            |
-| VPL-25 | Picture in picture toggle, unsupported is non-fatal        | Happy path    | P3       | No                                                            |
-| VPL-26 | Session expiry (`expires_at`) during long playback         | Error         | P2       | No                                                            |
-| VPL-27 | RTL: Back arrow, chapter ticks vs. native scrubber         | RTL           | P2       | No                                                            |
-| VPL-28 | Phone width: controls wrap, video fits                     | Responsive    | P3       | No                                                            |
-| VPL-29 | Light/dark theme: control bar readable                     | Theme         | P3       | No                                                            |
+| ID     | Title                                                      | Category      | Priority | Covered by existing test?                                               |
+| ------ | ---------------------------------------------------------- | ------------- | -------- | ----------------------------------------------------------------------- |
+| VPL-01 | Opens a stream session and plays `manifest_url`            | Happy path    | P1       | Yes (`VideoPlayer.test.tsx`)                                            |
+| VPL-02 | Falls back to `direct_url`                                 | Happy path    | P1       | Yes (`VideoPlayer.test.tsx`)                                            |
+| VPL-03 | Signed URL is used exactly as returned                     | Happy path    | P1       | Yes (`VideoPlayer.cases.test.tsx`)                                      |
+| VPL-04 | HLS manifest on a browser without native HLS               | Error         | P1       | Yes (`VideoPlayer.hls.test.tsx`)                                        |
+| VPL-05 | Session with no URL at all                                 | Error         | P1       | Yes (`VideoPlayer.cases.test.tsx`)                                      |
+| VPL-06 | Playback error (expired signature / 403 / decode) is shown | Error         | P1       | Yes (`VideoPlayer.cases.test.tsx`)                                      |
+| VPL-07 | Session open 403 / 404 (no ACL, unknown id)                | Permissions   | P1       | Yes (`VideoPlayer.cases.test.tsx`)                                      |
+| VPL-08 | Signed-out user is sent to `/login`                        | Permissions   | P1       | Yes (`VideoPlayer.cases.test.tsx`)                                      |
+| VPL-09 | `?t=` start position; bad values ignored                   | Navigation    | P1       | Yes (`VideoPlayer.cases.test.tsx`)                                      |
+| VPL-10 | Progress posts: throttled, on pause, completed on end      | Happy path    | P1       | Yes (`VideoPlayer.cases.test.tsx`)                                      |
+| VPL-11 | Streaming session closed on unmount / video change         | Happy path    | P1       | Yes (`VideoPlayer.test.tsx`, `VideoPlayer.cases.test.tsx`)              |
+| VPL-12 | Leaving before the session opens does not leak a session   | Happy path    | P1       | Yes (`VideoPlayer.cases.test.tsx`)                                      |
+| VPL-13 | Watch analytics: start on play, stop on pause/end/unmount  | Happy path    | P1       | Yes (`VideoPlayer.cases.test.tsx`)                                      |
+| VPL-14 | Analytics tracking paused or failing never breaks playback | Error         | P2       | Yes (`VideoPlayer.cases.test.tsx`)                                      |
+| VPL-15 | Chapters `items: null` / missing and ticks placement       | Empty state   | P1       | Yes (`VideoPlayer.cases.test.tsx`)                                      |
+| VPL-16 | Render crash shows route error fallback; Back still works  | Error         | P1       | Yes (`VideoPlayer.cases.test.tsx`)                                      |
+| VPL-17 | Loading text while the session opens                       | Loading       | P2       | Yes (`VideoPlayer.cases.test.tsx`)                                      |
+| VPL-18 | Session open 500 / network / malformed JSON                | Error         | P2       | Yes (`VideoPlayer.cases.test.tsx`)                                      |
+| VPL-19 | Error clears when moving to another video                  | Navigation    | P2       | Yes (`VideoPlayer.cases.test.tsx`)                                      |
+| VPL-20 | Back button: in-app history and direct deep link           | Navigation    | P2       | Yes (`VideoPlayer.cases.test.tsx`)                                      |
+| VPL-21 | Keyboard map works on the focused player                   | Accessibility | P2       | Yes (`VideoPlayer.cases.test.tsx`; it.todo: visible shortcut list)      |
+| VPL-22 | Shortcuts do not fire from form controls or with modifiers | Accessibility | P2       | Yes (`VideoPlayer.cases.test.tsx`)                                      |
+| VPL-23 | Speed select and +/- keys stay in sync                     | Happy path    | P2       | Yes (`VideoPlayer.cases.test.tsx`)                                      |
+| VPL-24 | Subtitles: tracks loaded, `c` toggles, size select applies | Happy path    | P2       | Yes (`VideoPlayer.cases.test.tsx`)                                      |
+| VPL-25 | Picture in picture toggle, unsupported is non-fatal        | Happy path    | P3       | No                                                                      |
+| VPL-26 | Session expiry (`expires_at`) during long playback         | Error         | P2       | Yes (`VideoPlayer.cases.test.tsx`)                                      |
+| VPL-27 | RTL: Back arrow, chapter ticks vs. native scrubber         | RTL           | P2       | Yes (`VideoPlayer.cases.test.tsx`; e2e-only: ticks vs. native scrubber) |
+| VPL-28 | Phone width: controls wrap, video fits                     | Responsive    | P3       | No                                                                      |
+| VPL-29 | Light/dark theme: control bar readable                     | Theme         | P3       | No                                                                      |
 
 ## Cases
 
@@ -74,7 +74,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoPlayer.cases.test.tsx`)
 - **Preconditions / data:** session → `{ "session_id": "s1", "mode": "direct", "direct_url": "/api/stream/s1/file?exp=1760870400&sig=a%2Bb%2F%3D", "manifest_url": "" }`. E2e variant: real API, real video.
 - **Steps:**
   1. Open `/videos/vid-1/watch`.
@@ -84,7 +84,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoPlayer.hls.test.tsx`)
 - **Preconditions / data:** jsdom: `HTMLMediaElement.prototype.canPlayType = () => ""`; session → `{ "mode": "transcode", "manifest_url": "/stream/s/manifest.m3u8", "direct_url": "/files/o.mp4" }`. E2e: Chromium (no native HLS).
 - **Steps:**
   1. Open `/videos/vid-1/watch`.
@@ -94,7 +94,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoPlayer.cases.test.tsx`)
 - **Preconditions / data:** session → `{ "session_id": "s1", "mode": "transcode", "manifest_url": "", "direct_url": "", "expires_at": "..." }`; also `{}` (malformed: no `session_id`).
 - **Steps:**
   1. Open `/videos/vid-1/watch`.
@@ -104,7 +104,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoPlayer.cases.test.tsx`)
 - **Preconditions / data:** VPL-01 session. In jsdom set `video.error = { code: 2 }` (MEDIA_ERR_NETWORK) and dispatch `error` on the video; also code 3 (decode) and 4 (src not supported). E2e: point `direct_url` at a URL that returns 403.
 - **Steps:**
   1. Open `/videos/vid-1/watch`; trigger the error.
@@ -114,7 +114,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoPlayer.cases.test.tsx`)
 - **Preconditions / data:** `POST /api/stream/sessions` → (a) 403 problem+json `{ "title": "forbidden", "status": 403 }`; (b) 404 `{ "title": "video not found", "status": 404 }`. E2e: non-admin without ACL on the library.
 - **Steps:**
   1. Open `/videos/<id>/watch` directly.
@@ -124,7 +124,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoPlayer.cases.test.tsx`)
 - **Preconditions / data:** full `App`; `GET /api/auth/me` → 401.
 - **Steps:**
   1. Open `/videos/vid-1/watch?t=120`.
@@ -134,7 +134,7 @@
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoPlayer.cases.test.tsx`)
 - **Preconditions / data:** VPL-01 session; set `video.duration = 600` and dispatch `loadedmetadata`.
 - **Steps:**
   1. Open `/videos/vid-1/watch?t=125`, fire `loadedmetadata`.
@@ -145,7 +145,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `VideoPlayer.test.tsx` "posts progress to /api/stream/sessions/{id}/progress" checks one timeupdate.
+- **Covered by existing test?** Yes (`VideoPlayer.cases.test.tsx`)
 - **Preconditions / data:** VPL-01 session; fake timers / mock `Date.now`; set `currentTime` per step.
 - **Steps:**
   1. Fire `timeupdate` at t=0 s (currentTime 10.7), again at +1 s, again at +6 s (currentTime 16.2).
@@ -158,7 +158,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Yes — `VideoPlayer.test.tsx` "closes the streaming session via DELETE on unmount" and "closes the prior session via DELETE when videoId changes".
+- **Covered by existing test?** Yes (`VideoPlayer.test.tsx`, `VideoPlayer.cases.test.tsx`)
 - **Preconditions / data:** as in the existing tests.
 - **Steps:**
   1. Open, then unmount; separately navigate `/videos/vid-1/watch` → `/videos/vid-2/watch`.
@@ -168,7 +168,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `VideoPlayer.test.tsx` "does NOT call DELETE when no session was ever opened" uses a POST that never resolves.
+- **Covered by existing test?** Yes (`VideoPlayer.cases.test.tsx`)
 - **Preconditions / data:** POST resolves 200 ms after mount with `{ "session_id": "late", ... }`.
 - **Steps:**
   1. Open `/videos/vid-1/watch`; unmount after 50 ms; advance timers past 200 ms.
@@ -178,7 +178,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `watchSession.test.ts` covers the controller alone; nothing checks the player wiring.
+- **Covered by existing test?** Yes (`VideoPlayer.cases.test.tsx`)
 - **Preconditions / data:** VPL-01 session (`mode: "transcode"`); `POST /api/watch/start` → `{ "tracking": true, "session_id": "w1" }`; fake timers.
 - **Steps:**
   1. Fire `play` on the video.
@@ -192,7 +192,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** Partial — `watchSession.test.ts` "stays idle when tracking is paused" and "swallows a start() rejection".
+- **Covered by existing test?** Yes (`VideoPlayer.cases.test.tsx`)
 - **Preconditions / data:** (a) start → `{ "tracking": false }`; (b) start → 500; (c) heartbeat → network error.
 - **Steps:**
   1. Fire `play`, advance 60 s, fire `pause`.
@@ -202,7 +202,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoPlayer.cases.test.tsx`)
 - **Preconditions / data:** chapters → (a) `{ "items": null }`, (b) `{}`, (c) 500, (d) `{ "items": [ { "id": 1, "start_sec": 0, "title": "Intro" }, { "id": 2, "start_sec": 300, "title": "Part 2" } ] }` with `duration = 600`. List field: `items`.
 - **Steps:**
   1. Open the player; fire `loadedmetadata`.
@@ -212,7 +212,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoPlayer.cases.test.tsx`)
 - **Preconditions / data:** full routes inside `AppShell`; start at `/videos/vid-1`; mock `@ds/components/Button/Button` (or `createWatchSession`) to throw while the player renders; or chapters → `{ "items": [ null ] }` (today `c.id` on `null` throws once duration > 0).
 - **Steps:**
   1. Open `/videos/vid-1`; click "▶ Play".
@@ -224,7 +224,7 @@
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** Yes — `VideoPlayer.test.tsx` "does NOT call DELETE when no session was ever opened" checks "Loading…".
+- **Covered by existing test?** Yes (`VideoPlayer.cases.test.tsx`)
 - **Preconditions / data:** POST never resolves.
 - **Steps:**
   1. Open the player.
@@ -234,7 +234,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoPlayer.cases.test.tsx`)
 - **Preconditions / data:** (a) 500 `{ "title": "transcoder busy", "status": 500 }`; (b) fetch rejects; (c) 200 JSON body `{bad`; (d) 503 `{ "code": "paused" }`.
 - **Steps:**
   1. Open the player.
@@ -244,7 +244,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoPlayer.cases.test.tsx`)
 - **Preconditions / data:** first POST (vid-1) → 403; second POST (vid-2) → valid session.
 - **Steps:**
   1. Open `/videos/vid-1/watch`; wait for the error.
@@ -255,7 +255,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoPlayer.cases.test.tsx`)
 - **Preconditions / data:** full routes. (a) history `/videos/vid-1` → `/videos/vid-1/watch`; (b) open `/videos/vid-1/watch` as the first entry (e.g. pasted link).
 - **Steps:**
   1. Click "← Back".
@@ -266,7 +266,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoPlayer.cases.test.tsx`; it.todo: visible shortcut list)
 - **Preconditions / data:** VPL-01 session; stub `video.play`, `video.pause`, `paused`, `duration = 600`, `currentTime = 100`, `requestFullscreen`, `document.exitFullscreen`.
 - **Steps:**
   1. Focus `section.mkt-player` (named "Watch", `tabIndex=0`); press Space, `k`, `j`, `l`, ArrowLeft, ArrowRight, `m`, `,`, `.`, `5`, `f`, `f` (while fullscreen).
@@ -276,7 +276,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoPlayer.cases.test.tsx`)
 - **Preconditions / data:** as VPL-21.
 - **Steps:**
   1. Focus the "Playback speed" select; press ArrowRight and `-`.
@@ -289,18 +289,18 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoPlayer.cases.test.tsx`)
 - **Preconditions / data:** VPL-01 session.
 - **Steps:**
   1. Select "1.5×".
   2. Focus the player; press `+` twice, then `-` four times.
-- **Expected:** `video.playbackRate === 1.5` and select value 1.5; after `+` twice: 2 (capped, options 0.5, 0.75, 1, 1.25, 1.5, 2); after `-` four times: 1. Select always shows the current rate. After switching video, wanted: rate re-applied to the new element (today `speed` state stays but the new `<video>` starts at 1×).
+- **Expected:** `video.playbackRate === 1.5` and select value 1.5; after `+` twice: 2 (capped, options 0.5, 0.75, 1, 1.25, 1.5, 2); after `-` four times: 0.75 (2 → 1.5 → 1.25 → 1 → 0.75). Select always shows the current rate. After switching video, wanted: rate re-applied to the new element (today `speed` state stays but the new `<video>` starts at 1×).
 
 ### VPL-24 — Subtitles: tracks loaded, `c` toggles, size select applies
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoPlayer.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/videos/vid-1/subtitles` → `{ "items": [ { "id": 1, "language": "ar", "format": "vtt", "is_default": true, "url": "/api/videos/vid-1/subtitles/1.vtt" } ] }`.
 - **Steps:**
   1. Open the player.
@@ -322,7 +322,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoPlayer.cases.test.tsx`)
 - **Preconditions / data:** session `expires_at` = now + 60 s; fake timers; e2e: real API with a short expiry.
 - **Steps:**
   1. Play; advance past `expires_at`; trigger the next segment load (e2e) or a `stalled`/`error` event (unit).
@@ -332,7 +332,7 @@
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`VideoPlayer.cases.test.tsx`; e2e-only: ticks vs. native scrubber)
 - **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`; VPL-15 (d) chapters; e2e for visuals.
 - **Steps:**
   1. Open the player in Arabic.

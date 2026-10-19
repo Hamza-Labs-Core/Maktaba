@@ -24,6 +24,16 @@ export function ConnectedDevices() {
   const [devices, setDevices] = useState<Device[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Device | null>(null);
+  const [removing, setRemoving] = useState(false);
+
+  // A platform the catalog doesn't know shows its raw value (or a dash),
+  // never the i18n key.
+  function platformLabel(platform: string | null | undefined): string {
+    if (!platform) return "—";
+    const key = `devices.platform.${platform}`;
+    const label = t(key);
+    return label === key ? platform : label;
+  }
 
   function load() {
     setError(null);
@@ -39,6 +49,8 @@ export function ConnectedDevices() {
   useEffect(load, []);
 
   async function remove(d: Device) {
+    if (removing) return;
+    setRemoving(true);
     try {
       await api.delete(`/api/devices/${encodeURIComponent(d.id)}`);
       toast.show({ tone: "success", message: t("devices.removed") });
@@ -49,6 +61,8 @@ export function ConnectedDevices() {
         tone: "error",
         message: e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error"),
       });
+    } finally {
+      setRemoving(false);
     }
   }
 
@@ -82,14 +96,14 @@ export function ConnectedDevices() {
                   {platformIcon(d.platform)}
                 </span>
                 <div>
-                  <strong>{t(`devices.platform.${d.platform}`)}</strong>
+                  <strong>{platformLabel(d.platform)}</strong>
                   <div className="mkt-muted mkt-mono mkt-truncate">{d.bundle_id}</div>
                 </div>
               </div>
               <dl className="mkt-device-card__meta">
                 <div>
                   <dt className="mkt-muted">{t("devices.col.lastSeen")}</dt>
-                  <dd>{formatDate(d.last_seen_at)}</dd>
+                  <dd>{d.last_seen_at ? formatDate(d.last_seen_at) : t("common.never")}</dd>
                 </div>
                 {d.app_version && (
                   <div>
@@ -117,7 +131,7 @@ export function ConnectedDevices() {
               <Button variant="ghost" onClick={() => setDeleting(null)}>
                 {t("common.cancel")}
               </Button>
-              <Button variant="destructive" onClick={() => remove(deleting)}>
+              <Button variant="destructive" loading={removing} onClick={() => remove(deleting)}>
                 {t("devices.remove")}
               </Button>
             </>

@@ -13,34 +13,34 @@
 
 ## Summary
 
-| ID     | Title                                                          | Category      | Priority | Covered by existing test?                                  |
-| ------ | -------------------------------------------------------------- | ------------- | -------- | ---------------------------------------------------------- |
-| SAB-01 | Shows version, commit, build date, channel, last checked       | Happy path    | P1       | No                                                         |
-| SAB-02 | Version API fails: build version fallback                      | Error         | P2       | No                                                         |
-| SAB-03 | Missing / "unknown" optional version fields hidden             | Empty state   | P2       | No                                                         |
-| SAB-04 | Up to date / checks disabled messages                          | Happy path    | P2       | No                                                         |
-| SAB-05 | Update available card with notes and release link              | Happy path    | P1       | No                                                         |
-| SAB-06 | Release notes render as plain text (no HTML injection)         | Validation    | P1       | No                                                         |
-| SAB-07 | Check now refreshes; busy state; error toast                   | Error         | P2       | No                                                         |
-| SAB-08 | Non-admin sees no Update now and no updates card               | Permissions   | P1       | No                                                         |
-| SAB-09 | Admin Update now: downloading, restarting, done                | Happy path    | P1       | No                                                         |
-| SAB-10 | Update now reports success even when the version never changes | Error         | P1       | No                                                         |
-| SAB-11 | Update now fails (403 / 500 / network): no retry possible      | Error         | P1       | No                                                         |
-| SAB-12 | Docker / package install: 409 shows the instruction            | Error         | P2       | No                                                         |
-| SAB-13 | Leaving the tab during polling                                 | Navigation    | P2       | No                                                         |
-| SAB-14 | Unknown channel / bad checked_at values                        | Empty state   | P3       | No                                                         |
-| SAB-15 | Updates card: next update texts (at / held / waiting / none)   | Happy path    | P2       | Partial (`UpdatesSettings.test.tsx`: "at" only)            |
-| SAB-16 | Updates card: validation of window, age, pin                   | Validation    | P1       | Partial (`UpdatesSettings.test.tsx`: window and pin below) |
-| SAB-17 | Updates card: save success and error                           | Error         | P2       | Partial (`UpdatesSettings.test.tsx`: request body only)    |
-| SAB-18 | Updates card: `plan: null` / missing crashes the tab           | Empty state   | P1       | No                                                         |
-| SAB-19 | Updates card: null lists and policy fields                     | Empty state   | P1       | No                                                         |
-| SAB-20 | Updates card hidden when the API fails                         | Error         | P2       | Yes (`UpdatesSettings.test.tsx`)                           |
-| SAB-21 | Signed-out deep link redirects to /login                       | Permissions   | P1       | No                                                         |
-| SAB-22 | Render crash shows route error fallback; Back works            | Error         | P1       | No                                                         |
-| SAB-23 | Arabic: RTL, Arabic strings, versions stay LTR                 | RTL           | P2       | No                                                         |
-| SAB-24 | Phone width: meta list, notes and card fit                     | Responsive    | P3       | No                                                         |
-| SAB-25 | Labels, region and live announcements                          | Accessibility | P2       | No                                                         |
-| SAB-26 | Both themes readable (success, error, pre blocks)              | Theme         | P3       | No                                                         |
+| ID     | Title                                                          | Category      | Priority | Covered by existing test?        |
+| ------ | -------------------------------------------------------------- | ------------- | -------- | -------------------------------- |
+| SAB-01 | Shows version, commit, build date, channel, last checked       | Happy path    | P1       | Yes (`Settings.test.tsx`)        |
+| SAB-02 | Version API fails: build version fallback                      | Error         | P2       | Yes (`Settings.test.tsx`)        |
+| SAB-03 | Missing / "unknown" optional version fields hidden             | Empty state   | P2       | Yes (`Settings.test.tsx`)        |
+| SAB-04 | Up to date / checks disabled messages                          | Happy path    | P2       | Yes (`Settings.test.tsx`)        |
+| SAB-05 | Update available card with notes and release link              | Happy path    | P1       | Yes (`Settings.test.tsx`)        |
+| SAB-06 | Release notes render as plain text (no HTML injection)         | Validation    | P1       | Yes (`Settings.test.tsx`)        |
+| SAB-07 | Check now refreshes; busy state; error toast                   | Error         | P2       | Yes (`Settings.test.tsx`)        |
+| SAB-08 | Non-admin sees no Update now and no updates card               | Permissions   | P1       | Yes (`Settings.test.tsx`)        |
+| SAB-09 | Admin Update now: downloading, restarting, done                | Happy path    | P1       | Yes (`Settings.test.tsx`)        |
+| SAB-10 | Update now reports success even when the version never changes | Error         | P1       | Yes (`Settings.test.tsx`)        |
+| SAB-11 | Update now fails (403 / 500 / network): no retry possible      | Error         | P1       | Yes (`Settings.test.tsx`)        |
+| SAB-12 | Docker / package install: 409 shows the instruction            | Error         | P2       | Yes (`Settings.test.tsx`)        |
+| SAB-13 | Leaving the tab during polling                                 | Navigation    | P2       | Yes (`Settings.test.tsx`)        |
+| SAB-14 | Unknown channel / bad checked_at values                        | Empty state   | P3       | No                               |
+| SAB-15 | Updates card: next update texts (at / held / waiting / none)   | Happy path    | P2       | Yes (`UpdatesSettings.test.tsx`) |
+| SAB-16 | Updates card: validation of window, age, pin                   | Validation    | P1       | Yes (`UpdatesSettings.test.tsx`) |
+| SAB-17 | Updates card: save success and error                           | Error         | P2       | Yes (`UpdatesSettings.test.tsx`) |
+| SAB-18 | Updates card: `plan: null` / missing crashes the tab           | Empty state   | P1       | Yes (`UpdatesSettings.test.tsx`) |
+| SAB-19 | Updates card: null lists and policy fields                     | Empty state   | P1       | Yes (`UpdatesSettings.test.tsx`) |
+| SAB-20 | Updates card hidden when the API fails                         | Error         | P2       | Yes (`UpdatesSettings.test.tsx`) |
+| SAB-21 | Signed-out deep link redirects to /login                       | Permissions   | P1       | Yes (`Settings.test.tsx`)        |
+| SAB-22 | Render crash shows route error fallback; Back works            | Error         | P1       | Yes (`Settings.test.tsx`)        |
+| SAB-23 | Arabic: RTL, Arabic strings, versions stay LTR                 | RTL           | P2       | Yes (`Settings.test.tsx`)        |
+| SAB-24 | Phone width: meta list, notes and card fit                     | Responsive    | P3       | No (e2e-only)                    |
+| SAB-25 | Labels, region and live announcements                          | Accessibility | P2       | Yes (`Settings.test.tsx`)        |
+| SAB-26 | Both themes readable (success, error, pre blocks)              | Theme         | P3       | No                               |
 
 ## Cases
 
@@ -48,7 +48,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** normal user. `GET /api/system/version` → `{ "version": "1.5.0", "commit": "abcdef1234567890", "build_date": "2026-10-01", "channel": "stable" }`; `GET /api/system/updates` → `{ "available": false, "current_version": "1.5.0", "channel": "stable", "checked_at": "2026-10-19T08:00:00Z" }`.
 - **Steps:**
   1. Open `/settings/about`.
@@ -58,7 +58,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `GET /api/system/version` → 500 (and separately fetch rejects); `VITE_APP_VERSION` unset; updates → `{ "available": false, "channel": "beta", "current_version": "1.5.0", "checked_at": "..." }`.
 - **Steps:**
   1. Open `/settings/about`.
@@ -68,7 +68,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** version → `{ "version": "1.5.0", "commit": "unknown", "build_date": "unknown" }`; then `{ "version": "1.5.0", "commit": null, "build_date": "" }`.
 - **Steps:**
   1. Open `/settings/about`.
@@ -78,7 +78,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** updates → (a) `{ "available": false, "channel": "stable", ... }`; (b) `{ "available": false, "disabled": true, ... }`; (c) `{ "available": true, ... }` without `latest_version`.
 - **Steps:**
   1. Open `/settings/about` for each.
@@ -88,7 +88,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** updates → `{ "available": true, "current_version": "1.5.0", "latest_version": "1.6.0", "channel": "stable", "release_url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/tag/v1.6.0", "release_notes": "- faster\n- fixes", "checked_at": "2026-10-19T08:00:00Z" }`.
 - **Steps:**
   1. Open `/settings/about`; expand the notes.
@@ -98,7 +98,7 @@
 
 - **Priority:** P1
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `release_notes: "<img src=x onerror=alert(1)><b>bold</b>"`; `release_url: "javascript:alert(1)"`.
 - **Steps:**
   1. Open `/settings/about`.
@@ -108,7 +108,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** first updates → up to date; `GET /api/system/updates?refresh=true` → (a) available 1.6.0; (b) 500 `{ "title": "Internal Server Error", "status": 500, "detail": "github rate limited" }`; (c) fetch rejects; (d) pending.
 - **Steps:**
   1. Click "Check now".
@@ -118,7 +118,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `user.is_admin = false`; updates as SAB-05.
 - **Steps:**
   1. Open `/settings/about`.
@@ -128,7 +128,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** admin; fake timers; version `1.5.0`; updates as SAB-05. `POST /api/admin/system/update` resolves after a tick; polls of `/api/system/version`: reject (server restarting), then `{ "version": "1.5.0" }`, then `{ "version": "1.6.0" }`.
 - **Steps:**
   1. Click "Update now".
@@ -139,7 +139,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** admin; fake timers. (a) every poll returns `{ "version": "1.5.0" }` (update rolled back) for 30 attempts; (b) version GET failed at load (so `from` is `""`) and the first poll answers the old `1.5.0`.
 - **Steps:**
   1. Click "Update now"; advance 60 s.
@@ -149,7 +149,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** admin; `POST /api/admin/system/update` → 500 `{ "title": "Internal Server Error", "status": 500 }`; then 403; then fetch rejects.
 - **Steps:**
   1. Click "Update now".
@@ -160,7 +160,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** admin; POST → 409 `application/problem+json` `{ "title": "Conflict", "status": 409, "instructions": "docker compose pull && docker compose up -d" }`; second run 409 with only `detail: "apt upgrade maktaba"`; third run 409 with neither.
 - **Steps:**
   1. Click "Update now".
@@ -170,7 +170,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** admin; fake timers; POST ok; polls keep returning the old version.
 - **Steps:**
   1. Click "Update now"; after 4 s click "Account" in the Settings nav; advance 60 s.
@@ -190,7 +190,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `UpdatesSettings.test.tsx` "shows the next planned update" (the "at" case)
+- **Covered by existing test?** Yes (`UpdatesSettings.test.tsx`)
 - **Preconditions / data:** admin; `GET /api/cluster/updates` → the test's `overview()` with `plan` variants: (a) `target` 1.6.0 + `next_run_at`; (b) `held: true`; (c) no `next_run_at`, `waiting: "release_age"`; (d) `waiting` missing; (e) `waiting: "something_new"`; (f) no `target`.
 - **Steps:**
   1. Open `/settings/about`; read `data-testid="updates-next"`.
@@ -200,7 +200,7 @@
 
 - **Priority:** P1
 - **Category:** Validation
-- **Covered by existing test?** Partial — "refuses a bad window and a pin below the installed version before saving"
+- **Covered by existing test?** Yes (`UpdatesSettings.test.tsx`)
 - **Preconditions / data:** admin; default overview (installed 1.5.0, `watermark` 1.5.0).
 - **Steps:**
   1. Window: `03:00-03:30`, `24:00-01:00`, `3am`, `23:00 - 01:00`.
@@ -212,7 +212,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** Partial — the good-save request body is covered
+- **Covered by existing test?** Yes (`UpdatesSettings.test.tsx`)
 - **Preconditions / data:** admin. PUT → (a) `{ "section": "updates", "changed": ["window"] }`; (b) 400 `{ "title": "Bad Request", "status": 400, "detail": "bad_window" }`; (c) 403; (d) fetch rejects; (e) pending.
 - **Steps:**
   1. Change the release channel to "Beta" and toggle "Install updates automatically"; click "Save update settings".
@@ -222,7 +222,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`UpdatesSettings.test.tsx`)
 - **Preconditions / data:** admin; `GET /api/cluster/updates` → `overview({ plan: null })`; then the same with `plan` key deleted.
 - **Steps:**
   1. Open `/settings/about`.
@@ -232,7 +232,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`UpdatesSettings.test.tsx`)
 - **Preconditions / data:** admin; overview variants, each alone: `catalog: null`; `catalog` missing; `policy.skipped_versions: null`; `policy.pinned_version: null`; `policy.window: null`; `policy: null`; `time_zone` missing. Also `GET /api/system/updates` with `assets: null`.
 - **Steps:**
   1. Open `/settings/about`.
@@ -252,7 +252,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `GET /api/auth/me` → 401.
 - **Steps:**
   1. Open `/settings/about`.
@@ -262,7 +262,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** full app with `AppShell`; admin; start at `/settings/models`. `GET /api/cluster/updates` → `overview({ plan: null })` (SAB-18). A second variant for non-admins: `GET /api/system/updates` → `{ "available": true, "latest_version": "1.6.0", "release_notes": { "md": "x" }, ... }` (an object as a React child throws).
 - **Steps:**
   1. Click "About".
@@ -273,7 +273,7 @@
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** `mkt:locale=ar`; admin; data as SAB-05 plus the updates overview.
 - **Steps:**
   1. Open `/settings/about`.
@@ -283,7 +283,7 @@
 
 - **Priority:** P3
 - **Category:** Responsive
-- **Covered by existing test?** No
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** e2e 375x812; long release notes with a 200-char line; Docker hint with a long command.
 - **Steps:**
   1. Open `/settings/about`; expand notes.
@@ -293,7 +293,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Settings.test.tsx`)
 - **Preconditions / data:** admin; update available.
 - **Steps:**
   1. Run axe; click "Update now" and watch the DOM.

@@ -33,18 +33,26 @@ import { QueueHeader, overallState } from "../../components/queue/QueueHeader";
 import { RetriggerDialog, type RetriggerSubject } from "../../components/queue/RetriggerDialog";
 import { useAction } from "../../components/queue/useAction";
 import { useThrottledReload } from "../../components/queue/useThrottledReload";
+import { safeGroups, safeLibraries, safeSnapshot } from "./safeData";
 import "../../styles/queue.css";
 
 export function QueueOverview() {
   const { t } = useI18n();
-  const { snapshot, error, polling, reload } = useQueuesSnapshot();
+  const { snapshot: rawSnapshot, error: loadError, polling, reload } = useQueuesSnapshot();
+  // a payload that is not a snapshot (an HTML page from a proxy) counts as a load error
+  const snapshot = useMemo(
+    () => (rawSnapshot === null ? null : safeSnapshot(rawSnapshot)),
+    [rawSnapshot]
+  );
+  const error = loadError || (rawSnapshot !== null && snapshot === null);
   const stream = useJobStream();
   const action = useAction();
   const admin = useIsAdmin();
   const [issues, setIssues] = useState<FailureGroup[]>([]);
   const [libraries, setLibraries] = useState<LibraryQueueRow[]>([]);
   const [extensions, setExtensions] = useState<Extension[] | null>(null);
-  const workers = useWorkers();
+  // an older /api/workers without the key leaves undefined: treat as unknown
+  const workers = useWorkers() ?? null;
   const host = useSearchParams()[0].get("host") || null;
   const [history, setHistory] = useState<HealthSeries[] | null>(null);
   const [dialog, setDialog] = useState<{ open: boolean; subjects?: RetriggerSubject[] }>({
@@ -54,13 +62,13 @@ export function QueueOverview() {
   const loadIssues = useCallback(() => {
     queueApi
       .issues()
-      .then((r) => setIssues(r.groups))
+      .then((r) => setIssues(safeGroups(r?.groups)))
       .catch(() => {});
   }, []);
   const loadLibraries = useCallback(() => {
     queueApi
       .libraries()
-      .then((r) => setLibraries(r.items))
+      .then((r) => setLibraries(safeLibraries(r?.items)))
       .catch(() => {});
   }, []);
 
@@ -72,7 +80,7 @@ export function QueueOverview() {
   useEffect(() => {
     queueApi
       .extensions()
-      .then((r) => setExtensions(r.extensions))
+      .then((r) => setExtensions(r?.extensions ?? null))
       .catch(() => {});
   }, []);
 
@@ -95,7 +103,7 @@ export function QueueOverview() {
     const load = () =>
       queueApi
         .health(4)
-        .then((r) => alive && setHistory(r.series))
+        .then((r) => alive && setHistory(Array.isArray(r?.series) ? r.series : null))
         .catch(() => {});
     load();
     const id = setInterval(load, 60_000);
@@ -202,7 +210,7 @@ export function QueueOverview() {
           refreshAfter();
           queueApi
             .extensions()
-            .then((r) => setExtensions(r.extensions))
+            .then((r) => setExtensions(r?.extensions ?? null))
             .catch(() => {});
         }}
       />

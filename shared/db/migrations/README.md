@@ -44,9 +44,15 @@ DATABASE_URL=... make migrate-status
 6. **Down migrations are dev-only.** `+goose Down` blocks may exist for
    local convenience but are never run in production paths. Rollback
    in production is handled at the artifact layer (Story 22.6).
-7. **Numbering is contiguous.** Slots are claimed in
-   [`MANIFEST.md`](MANIFEST.md) with no gaps; if two PRs race for the
-   next slot, the later one rebases.
+7. **Numbering only goes up.** Slots are claimed in
+   [`MANIFEST.md`](MANIFEST.md) at the next integer after the highest slot
+   on `main`; if two PRs race for the next slot, the later one renumbers
+   and rebases. A slot below the highest one is never filled later, even
+   when it is free: goose runs without `--allow-missing`, so on a database
+   already past it the migration is out of order and goose refuses it.
+   `0133` is such a permanent gap (MANIFEST.md, "Permanent gaps"): never
+   add a `0133_*` file. `tools/migration-lint` does not check for
+   contiguous slots, so the gap passes it.
 
 8. **Raise the nodes' schema revision.** A new slot also raises
    `SCHEMA_REV` in `pipeline/src/maktaba_pipeline/cluster/schema.py` and

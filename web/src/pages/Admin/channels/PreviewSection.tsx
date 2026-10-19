@@ -39,13 +39,19 @@ export function PreviewSection({ channelId }: { channelId: string }) {
   const toast = useToast();
   const [programs, setPrograms] = useState<Program[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   const load = useCallback(() => {
     setPrograms(null);
+    setFailed(false);
     channelsApi
       .schedulePreview(channelId, PREVIEW_HOURS)
       .then((r) => setPrograms(r.channels[0]?.programs ?? []))
-      .catch(() => setPrograms([]));
+      .catch(() => {
+        // a failed load is not an empty guide: say so
+        setFailed(true);
+        setPrograms([]);
+      });
   }, [channelId]);
   useEffect(load, [load]);
 
@@ -92,6 +98,10 @@ export function PreviewSection({ channelId }: { channelId: string }) {
       </div>
       {programs === null ? (
         <p className="mkt-loading">{t("common.loading")}</p>
+      ) : failed ? (
+        <p className="mkt-form__warn" role="alert">
+          {t("common.error")}
+        </p>
       ) : rows.length === 0 ? (
         <p className="mkt-muted">{t("channels.previewEmpty")}</p>
       ) : (

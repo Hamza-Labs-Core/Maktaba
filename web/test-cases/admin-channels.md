@@ -26,46 +26,46 @@
 
 ## Summary
 
-| ID     | Title                                                        | Category      | Priority | Covered by existing test?                                                                        |
-| ------ | ------------------------------------------------------------ | ------------- | -------- | ------------------------------------------------------------------------------------------------ |
-| CHN-01 | Lists channels sorted by number with all columns             | Happy path    | P1       | Partial (`Channels.test.tsx`, `ChannelBuilder.test.tsx`: sort order and mode label not asserted) |
-| CHN-02 | XMLTV guide field shown, hidden when `/api/tv/info` fails    | Happy path    | P3       | Partial (`Channels.test.tsx`: failure / empty `xmltv_url` not tested)                            |
-| CHN-03 | `items: []` shows "No channels yet"                          | Empty state   | P2       | Yes (`Channels.test.tsx`)                                                                        |
-| CHN-04 | `items: null` or missing key shows empty state, no crash     | Empty state   | P1       | No                                                                                               |
-| CHN-05 | Nullable channel fields render fallbacks                     | Empty state   | P1       | No                                                                                               |
-| CHN-06 | Channel with `name: null` does not blank the page            | Error         | P1       | No                                                                                               |
-| CHN-07 | List load fails (500, network, malformed JSON)               | Error         | P2       | No                                                                                               |
-| CHN-08 | Loading text while the list is pending                       | Loading       | P3       | No                                                                                               |
-| CHN-09 | Non-admin sees "Admins only" and no channel requests fire    | Permissions   | P1       | Partial (`Channels.test.tsx`: no-request check missing)                                          |
-| CHN-10 | Signed-out user is redirected to `/login`                    | Permissions   | P1       | No                                                                                               |
-| CHN-11 | Search, category and origin filters; "no match" text         | Happy path    | P2       | Partial (`ChannelBuilder.test.tsx`: category, origin, number and now-title search not tested)    |
-| CHN-12 | On/off toggle: optimistic, plan warning, error toast         | Happy path    | P1       | No                                                                                               |
-| CHN-13 | Reorder by drag and keyboard; reorder error                  | Happy path    | P2       | Partial (`ChannelBuilder.test.tsx`: drag, error toast, edges not tested)                         |
-| CHN-14 | Delete a channel: confirm, cancel, error                     | Happy path    | P1       | No                                                                                               |
-| CHN-15 | New channel form validation blocks Save                      | Validation    | P1       | Partial (`Channels.test.tsx`, `ChannelBuilder.test.tsx`: name and number <= 0 not tested)        |
-| CHN-16 | Create a channel; pending art uploads after create           | Happy path    | P1       | Partial (`ChannelBuilder.test.tsx`: art upload failure toast not tested)                         |
-| CHN-17 | Edit sends only changed fields; Save disabled when unchanged | Happy path    | P1       | Partial (`ChannelBuilder.test.tsx`, `channels.test.ts`: disabled-when-clean not tested)          |
-| CHN-18 | Plan / edited banners and Back to plan                       | Happy path    | P2       | Partial (`ChannelBuilder.test.tsx`: plan banner switch and follow-plan error not tested)         |
-| CHN-19 | Save errors: 409 stale, 400 detail, network                  | Error         | P1       | No                                                                                               |
-| CHN-20 | Unsaved changes on Cancel / Escape / backdrop / X            | Validation    | P1       | No                                                                                               |
-| CHN-21 | Unsaved section drafts lost on tab switch                    | Validation    | P2       | No                                                                                               |
-| CHN-22 | Schedule slot validation and the cross-tab warning           | Validation    | P1       | Partial (`schedule.test.ts` covers rules only, not the UI blocking)                              |
-| CHN-23 | `mode_config.slots` / `ramadan` null or wrong type           | Empty state   | P1       | No                                                                                               |
-| CHN-24 | Non-grid modes: marathon needs a series, shuffle, smart mix  | Validation    | P2       | Partial (`Channels.test.tsx`: marathon blocking not asserted)                                    |
-| CHN-25 | Filler section: weights, missing pool, max gap validation    | Validation    | P2       | Partial (`ChannelBuilder.test.tsx`: max gap and missing pool not tested)                         |
-| CHN-26 | Filler pools and source search: null lists and errors        | Empty state   | P1       | No                                                                                               |
-| CHN-27 | Live broadcasts: validation, renumbering, rules load failure | Validation    | P2       | Partial (`ChannelBuilder.test.tsx`: validation, renumber and `sections: null` not tested)        |
-| CHN-28 | Live save fails after a new channel was created              | Error         | P1       | No                                                                                               |
-| CHN-29 | Art upload / revert / watermark errors                       | Error         | P2       | Partial (`ChannelArt.test.tsx`: server error paths not tested)                                   |
-| CHN-30 | Strip settings: validation, save, reset, errors              | Validation    | P2       | Partial (`StripPreview.test.tsx`: range/colour errors and API error alert not tested)            |
-| CHN-31 | Prefer host select: null hosts, pin failure                  | Error         | P2       | Partial (`PreferHost.test.tsx`: `hosts: null` and pin failure not tested)                        |
-| CHN-32 | Preview tab: loading, empty, null blocks, regenerate         | Empty state   | P2       | Partial (`ChannelBuilder.test.tsx`: empty, failure and regen error not tested)                   |
-| CHN-33 | Links: Filler pools, TV draft change; Back returns to list   | Navigation    | P2       | No                                                                                               |
-| CHN-34 | Render crash shows route error fallback; Back still works    | Error         | P1       | No                                                                                               |
-| CHN-35 | Phone width (375 px)                                         | Responsive    | P3       | No                                                                                               |
-| CHN-36 | Arabic / RTL                                                 | RTL           | P3       | No                                                                                               |
-| CHN-37 | Light and dark theme                                         | Theme         | P3       | No                                                                                               |
-| CHN-38 | Keyboard and screen reader basics (list, modal, grid)        | Accessibility | P2       | No                                                                                               |
+| ID     | Title                                                        | Category      | Priority | Covered by existing test?                                                             |
+| ------ | ------------------------------------------------------------ | ------------- | -------- | ------------------------------------------------------------------------------------- |
+| CHN-01 | Lists channels sorted by number with all columns             | Happy path    | P1       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-02 | XMLTV guide field shown, hidden when `/api/tv/info` fails    | Happy path    | P3       | Partial (`Channels.test.tsx`: failure / empty `xmltv_url` not tested)                 |
+| CHN-03 | `items: []` shows "No channels yet"                          | Empty state   | P2       | Yes (`Channels.test.tsx`)                                                             |
+| CHN-04 | `items: null` or missing key shows empty state, no crash     | Empty state   | P1       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-05 | Nullable channel fields render fallbacks                     | Empty state   | P1       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-06 | Channel with `name: null` does not blank the page            | Error         | P1       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-07 | List load fails (500, network, malformed JSON)               | Error         | P2       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-08 | Loading text while the list is pending                       | Loading       | P3       | No                                                                                    |
+| CHN-09 | Non-admin sees "Admins only" and no channel requests fire    | Permissions   | P1       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-10 | Signed-out user is redirected to `/login`                    | Permissions   | P1       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-11 | Search, category and origin filters; "no match" text         | Happy path    | P2       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-12 | On/off toggle: optimistic, plan warning, error toast         | Happy path    | P1       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-13 | Reorder by drag and keyboard; reorder error                  | Happy path    | P2       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-14 | Delete a channel: confirm, cancel, error                     | Happy path    | P1       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-15 | New channel form validation blocks Save                      | Validation    | P1       | Yes (`Channels.cases.test.tsx`; the 2.5 refusal is it.fails: bug)                     |
+| CHN-16 | Create a channel; pending art uploads after create           | Happy path    | P1       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-17 | Edit sends only changed fields; Save disabled when unchanged | Happy path    | P1       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-18 | Plan / edited banners and Back to plan                       | Happy path    | P2       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-19 | Save errors: 409 stale, 400 detail, network                  | Error         | P1       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-20 | Unsaved changes on Cancel / Escape / backdrop / X            | Validation    | P1       | No (it.fails: bug) — `Channels.cases.test.tsx`; the no-changes close passes           |
+| CHN-21 | Unsaved section drafts lost on tab switch                    | Validation    | P2       | No (it.fails: bug) — `Channels.cases.test.tsx`                                        |
+| CHN-22 | Schedule slot validation and the cross-tab warning           | Validation    | P1       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-23 | `mode_config.slots` / `ramadan` null or wrong type           | Empty state   | P1       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-24 | Non-grid modes: marathon needs a series, shuffle, smart mix  | Validation    | P2       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-25 | Filler section: weights, missing pool, max gap validation    | Validation    | P2       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-26 | Filler pools and source search: null lists and errors        | Empty state   | P1       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-27 | Live broadcasts: validation, renumbering, rules load failure | Validation    | P2       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-28 | Live save fails after a new channel was created              | Error         | P1       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-29 | Art upload / revert / watermark errors                       | Error         | P2       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-30 | Strip settings: validation, save, reset, errors              | Validation    | P2       | Partial (`StripPreview.test.tsx`: range/colour errors and API error alert not tested) |
+| CHN-31 | Prefer host select: null hosts, pin failure                  | Error         | P2       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-32 | Preview tab: loading, empty, null blocks, regenerate         | Empty state   | P2       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-33 | Links: Filler pools, TV draft change; Back returns to list   | Navigation    | P2       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-34 | Render crash shows route error fallback; Back still works    | Error         | P1       | Yes (`Channels.cases.test.tsx`)                                                       |
+| CHN-35 | Phone width (375 px)                                         | Responsive    | P3       | No                                                                                    |
+| CHN-36 | Arabic / RTL                                                 | RTL           | P3       | No                                                                                    |
+| CHN-37 | Light and dark theme                                         | Theme         | P3       | No                                                                                    |
+| CHN-38 | Keyboard and screen reader basics (list, modal, grid)        | Accessibility | P2       | Yes (`Channels.cases.test.tsx`)                                                       |
 
 ## Cases
 
@@ -75,7 +75,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `Channels.test.tsx` "lists channels", `ChannelBuilder.test.tsx` "shows origin, what is on now and guide coverage"; sort order and mode label not asserted
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/channels` → `{ "items": [C2, C1] }` (out of order)
 - **Steps:**
   1. Open `/admin/channels`.
@@ -105,7 +105,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** a) `GET /api/channels` → `{ "items": null }`; b) → `{}`
 - **Steps:**
   1. Open `/admin/channels` for each case.
@@ -116,7 +116,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/channels` → one channel `C1` with `now_playing: null`, `plan: null`, `category: null`, `guide_until: null`, `logo_url: null`, `logo_path: null`, `mode_config: null`, `art: null`, `draft: null`; second case with `now_playing: { "title": "", "progress": null, ... }` and `guide_until: "not-a-date"`.
 - **Steps:**
   1. Open `/admin/channels`.
@@ -127,7 +127,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/channels` → `{ "items": [{ ...C1, "name": null, "logo_url": null }] }`
 - **Steps:**
   1. Open `/admin/channels`.
@@ -138,7 +138,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/channels` → a) 500 `application/problem+json` `{ "title": "Internal error", "status": 500 }`; b) fetch rejects (`TypeError: Failed to fetch`); c) 200 with body `{not json` and `Content-Type: application/json`; d) 403 problem (session lost admin)
 - **Steps:**
   1. Open `/admin/channels` for each case.
@@ -158,7 +158,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** Partial — `Channels.test.tsx` "is gated behind admin"; no-request assertion missing
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** signed in as `{ username: "bob", is_admin: false }`
 - **Steps:**
   1. Open `/admin/channels`.
@@ -168,7 +168,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** no session (`useAuth` → `user: null`, not loading)
 - **Steps:**
   1. Open `/admin/channels` directly.
@@ -178,7 +178,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `ChannelBuilder.test.tsx` "filters by search and disables reordering while filtered"
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** `{ "items": [C1, C2, { ...C1, "id": "c3", "number": 12, "name": "News", "category": "News", "plan": { "owned": true, "edited": true } }] }`
 - **Steps:**
   1. Type "12" in "Search channels"; then "baqara"; then "zzz".
@@ -190,7 +190,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** `{ "items": [C1, C2] }`; `PATCH /api/channels/c2` → 200; `window.confirm` mocked
 - **Steps:**
   1. Toggle Kids (manual) on.
@@ -202,7 +202,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `ChannelBuilder.test.tsx` "reorders from the keyboard, after warning about plan channels"
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** `{ "items": [C2(number 1, manual), {...C2, id: "c3", number: 5, name: "Docs"}] }`; `POST /api/channels/reorder` → 204
 - **Steps:**
   1. Focus the handle "Move Kids" (`channels.list.handle`) and press ArrowUp (first row), then ArrowDown.
@@ -214,7 +214,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** `{ "items": [C1, C2] }`; `DELETE /api/channels/c2` → 204
 - **Steps:**
   1. Click Delete on Kids, Cancel the confirm.
@@ -226,7 +226,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P1
 - **Category:** Validation
-- **Covered by existing test?** Partial — `Channels.test.tsx` "flags a duplicate channel number inline", `ChannelBuilder.test.tsx` "a new channel needs a slot and a free number..."
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`; the 2.5 refusal is it.fails: bug)
 - **Preconditions / data:** `{ "items": [C1, C2] }`
 - **Steps:**
   1. Click "New channel" (dialog "New channel", Number prefilled 3, Enabled off).
@@ -239,7 +239,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `ChannelBuilder.test.tsx` "a new channel needs a slot ... its art uploads after the first save"
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** `POST /api/channels` → `{ ...C2, "id": "c9" }`; `POST /api/channels/c9/art/logo` → 200 first run, 500 `{ "title": "Too big" }` second run
 - **Steps:**
   1. New channel, fill Name "Docs", add a slot, pick a 10 KB PNG on the Art tab Logo tile ("Choose …").
@@ -250,7 +250,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `ChannelBuilder.test.tsx` "saves live broadcasts ... without editing the channel", `channels.test.ts` "sends only writable fields on update"
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** `{ "items": [C2] }`; `PATCH /api/channels/c2` → 200
 - **Steps:**
   1. Click Edit on Kids. Dialog title "Edit Kids".
@@ -263,7 +263,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `ChannelBuilder.test.tsx` "offers back to plan on an edited channel"
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** C1 (plan); C3 = `{ ...C1, id: "c3", plan: { owned: true, edited: true } }`; `POST /api/channels/c3/follow-plan` → 202 `{ "queued": true }`, then 500 `{ "title": "Down" }`
 - **Steps:**
   1. Edit Quran: read the banner, change its name, read the banner and the Save label.
@@ -274,7 +274,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** edit C2, change name; `PATCH /api/channels/c2` → a) 409 problem; b) 400 `{ "title": "Bad Request", "detail": "number taken" }`; c) 400 with no detail; d) fetch rejects
 - **Steps:**
   1. Click Save for each case.
@@ -284,7 +284,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P1
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** No (it.fails: bug) — `Channels.cases.test.tsx`; the no-changes close passes
 - **Preconditions / data:** edit C2; change Name to "Kids 2" and add a slot
 - **Steps:**
   1. Press Cancel. Reopen, change again, press Escape. Repeat with a click on the backdrop and with the dialog's "Close" (X) button.
@@ -295,7 +295,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** No (it.fails: bug) — `Channels.cases.test.tsx`
 - **Preconditions / data:** edit C1 with `art` set (watermark `{ position: "top-right", width_pct: 10, margin_pct: 2 }`)
 - **Steps:**
   1. Art tab: change the watermark width to 20 (do not press Apply); change the strip height (do not press "Save strip" / `channels.strip.save`).
@@ -307,7 +307,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P1
 - **Category:** Validation
-- **Covered by existing test?** Partial — `schedule.test.ts` "validates times, sources and overlaps" (logic only)
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** edit C2 with `mode_config.slots: [{ start: "08:00", end: "10:00", source: { type: "series" } }, { start: "09:00", end: "11:00", source: { type: "filler" } }]`
 - **Steps:**
   1. Schedule tab: click the 08:00 block (button labelled via `channels.grid.blockLabel`).
@@ -319,7 +319,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** edit a schedule channel with each `mode_config`: a) `{ "slots": null }`; b) `{}`; c) `{ "slots": [], "ramadan": null }`; d) `{ "slots": [], "ramadan": { "slots": null } }`; e) `{ "slots": [{ "start": "08:00", "end": "09:00", "days": null, "source": null }] }`; f) `{ "slots": {} }` (object, not array)
 - **Steps:**
   1. Open the Schedule tab; click "Add slot"; in d) switch to the Ramadan grid.
@@ -329,7 +329,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** Partial — `Channels.test.tsx` "opens the CRUD form with a mode-aware rule builder"
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** new channel; `GET /api/channels/sources?kind=series...` → `{ "items": [{ "kind": "series", "id": "s1", "name": "Omar", "count": 30, "duration_ms": 108000000 }] }`
 - **Steps:**
   1. Set Mode to marathon; open Schedule tab; pick "Omar".
@@ -340,7 +340,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** Partial — `ChannelBuilder.test.tsx` "changes filler weights and adds a pool"
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** pools `{ "items": [{ "id": "p1", "name": "News clips", "items": [] }] }`; channel `mode_config.filler: { "lists": [{ "pool": "gone", "weight": 50 }, { "pool": "p1", "weight": 150 }] }`
 - **Steps:**
   1. Filler tab. Read the lists.
@@ -353,7 +353,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** a) `GET /api/filler/pools` → `{ "items": null }`, `{}`, and `{ "items": [{ "id": "p1", "name": "A", "items": null }] }`, and 500; b) `GET /api/channels/sources` → `{ "items": null }`, `{}`, 500, fetch rejects; hit with `"detail": null`
 - **Steps:**
   1. Open the editor, Filler tab; type in "Search pools".
@@ -364,7 +364,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** Partial — `ChannelBuilder.test.tsx` "saves live broadcasts through the rules, without editing the channel"
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** C2 (number 2); `GET /api/rules` → `{ "sections": [{ "key": "tv", "fields": [{ "name": "live", "value": [{ "channel": 2, "url": "https://x/live", "title": "News" }, { "channel": 7, "url": "https://y" }] }] }] }`; `PATCH /api/rules/tv` → 200
 - **Steps:**
   1. Live tab: add a row; leave the address empty; type "ftp://a"; type a valid https URL.
@@ -377,7 +377,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** new channel with a valid slot and one live row; `POST /api/channels` → `{ "id": "c9", ... }`; `PATCH /api/rules/tv` → 500 `{ "title": "Rules locked" }`
 - **Steps:**
   1. Save. Then press Save again.
@@ -387,7 +387,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** Partial — `ChannelArt.test.tsx` covers happy paths and client-side size/type refusal
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** edit C1 with `art: { logo: { url: "/a.png", overridden: true }, watermark: { position: "top-right", width_pct: 10, margin_pct: 2, overridden: false }, loading: { overridden: false } }`; upload → 413 `{ "title": "Payload Too Large", "detail": "max 5 MB" }`; revert → 500 `{ "title": "Down" }`; watermark PATCH → network reject
 - **Steps:**
   1. Logo: choose a 1 MB PNG. Then "Back to plan" (`channels.art.remove`).
@@ -410,7 +410,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** Partial — `PreferHost.test.tsx` covers pinning and the failed-load case
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** edit C1 (has `slug`); `GET /api/tv/cluster` → a) `{ "hosts": null, "settings": { "pins": null } }`; b) `{ "hosts": [{ "name": "box1" }], "settings": null }`; c) `{ "hosts": [{ "name": "box1" }], "settings": { "pins": { "quran": ["gone-host"] } } }`; `PATCH /api/rules/tv_cluster` → 500
 - **Steps:**
   1. Basics tab for each case; in c) pick "box1".
@@ -420,7 +420,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** Partial — `ChannelBuilder.test.tsx` "previews 48 hours and regenerates after confirming"
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** click "Preview" on Quran's row (opens editor on the Preview tab); `GET /api/channels/c1/guide?...` → a) pending; b) `{ "channel": {...}, "blocks": [] }`; c) `{ "channel": {...}, "blocks": null }`; d) 500; e) two consecutive filler blocks then a program; `POST /api/channels/c1/regenerate` → 500 `{ "title": "Busy" }`
 - **Steps:**
   1. Open each case; click "Refresh"; click "Regenerate", Cancel, then OK.
@@ -430,7 +430,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** `{ "items": [{ ...C1, "draft": { "change_id": "ch7", "number": 4 } }] }`
 - **Steps:**
   1. Click "Filler pools" in the header; press browser Back.
@@ -443,7 +443,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** start on `/admin/filler` (or `/`); `GET /api/channels` → `{ "items": [{ ...C1, "name": null, "logo_url": null }] }` (throws in `ChannelList`), or mock `ChannelList` to throw
 - **Steps:**
   1. Navigate to `/admin/channels` via the sidebar.
@@ -484,7 +484,7 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Channels.cases.test.tsx`)
 - **Preconditions / data:** `{ "items": [C1, C2] }`
 - **Steps:**
   1. Tab through the page: search, selects, row handles, toggles, Edit/Preview/Delete.

@@ -8,31 +8,31 @@
 
 ## Summary
 
-| ID     | Title                                                    | Category      | Priority | Covered by existing test? |
-| ------ | -------------------------------------------------------- | ------------- | -------- | ------------------------- |
-| REG-01 | Create account signs in and goes to /library             | Happy path    | P1       | No                        |
-| REG-02 | Submit disabled until every field is filled              | Validation    | P2       | No                        |
-| REG-03 | Whitespace-only username or email keeps submit disabled  | Validation    | P2       | No                        |
-| REG-04 | Password mismatch alert and disabled submit              | Validation    | P2       | No                        |
-| REG-05 | Password shorter than 8 characters is not sent           | Validation    | P2       | No                        |
-| REG-06 | Invalid email format is not sent                         | Validation    | P3       | No                        |
-| REG-07 | Registration closed (403) replaces the form              | Permissions   | P1       | No                        |
-| REG-08 | Username or email taken (409) shows server detail        | Error         | P1       | No                        |
-| REG-09 | 409 without detail shows the generic conflict text       | Error         | P2       | No                        |
-| REG-10 | 500 shows detail or generic error                        | Error         | P2       | No                        |
-| REG-11 | Non-JSON error body (HTML 502) does not show raw HTML    | Error         | P2       | No                        |
-| REG-12 | JSON error without `type` still shows an error           | Error         | P2       | No                        |
-| REG-13 | Network failure shows the generic error                  | Error         | P2       | No                        |
-| REG-14 | 200 with a body lacking `user` does not bounce silently  | Error         | P2       | No                        |
-| REG-15 | Submitting state: one request, button shows Loading      | Loading       | P2       | No                        |
-| REG-16 | Already signed in: /register goes to /library            | Navigation    | P2       | No                        |
-| REG-17 | Links to sign in (form and closed state)                 | Navigation    | P2       | No                        |
-| REG-18 | Back after creating the account does not reopen the form | Navigation    | P3       | No                        |
-| REG-19 | Crash during render shows a fallback; Back recovers      | Error         | P1       | No                        |
-| REG-20 | Arabic / RTL                                             | RTL           | P2       | No                        |
-| REG-21 | Light and dark theme                                     | Theme         | P3       | No                        |
-| REG-22 | Phone width 375px                                        | Responsive    | P3       | No                        |
-| REG-23 | Keyboard, labels and autocomplete                        | Accessibility | P2       | No                        |
+| ID     | Title                                                    | Category      | Priority | Covered by existing test?                    |
+| ------ | -------------------------------------------------------- | ------------- | -------- | -------------------------------------------- |
+| REG-01 | Create account signs in and goes to /library             | Happy path    | P1       | Yes (`Register.test.tsx`)                    |
+| REG-02 | Submit disabled until every field is filled              | Validation    | P2       | Yes (`Register.test.tsx`)                    |
+| REG-03 | Whitespace-only username or email keeps submit disabled  | Validation    | P2       | Yes (`Register.test.tsx`)                    |
+| REG-04 | Password mismatch alert and disabled submit              | Validation    | P2       | Yes (`Register.test.tsx`)                    |
+| REG-05 | Password shorter than 8 characters is not sent           | Validation    | P2       | Yes (`Register.test.tsx`)                    |
+| REG-06 | Invalid email format is not sent                         | Validation    | P3       | No                                           |
+| REG-07 | Registration closed (403) replaces the form              | Permissions   | P1       | Yes (`Register.test.tsx`)                    |
+| REG-08 | Username or email taken (409) shows server detail        | Error         | P1       | Yes (`Register.test.tsx`)                    |
+| REG-09 | 409 without detail shows the generic conflict text       | Error         | P2       | Yes (`Register.test.tsx`)                    |
+| REG-10 | 500 shows detail or generic error                        | Error         | P2       | Yes (`Register.test.tsx`)                    |
+| REG-11 | Non-JSON error body (HTML 502) does not show raw HTML    | Error         | P2       | Yes (`Register.test.tsx`, `lib/api.test.ts`) |
+| REG-12 | JSON error without `type` still shows an error           | Error         | P2       | Yes (`Register.test.tsx`)                    |
+| REG-13 | Network failure shows the generic error                  | Error         | P2       | Yes (`Register.test.tsx`)                    |
+| REG-14 | 200 with a body lacking `user` does not bounce silently  | Error         | P2       | Yes (`Register.test.tsx`)                    |
+| REG-15 | Submitting state: one request, button shows Loading      | Loading       | P2       | Yes (`Register.test.tsx`)                    |
+| REG-16 | Already signed in: /register goes to /library            | Navigation    | P2       | Yes (`Register.test.tsx`)                    |
+| REG-17 | Links to sign in (form and closed state)                 | Navigation    | P2       | Yes (`Register.test.tsx`)                    |
+| REG-18 | Back after creating the account does not reopen the form | Navigation    | P3       | No                                           |
+| REG-19 | Crash during render shows a fallback; Back recovers      | Error         | P1       | Yes (`App.cases.test.tsx`)                   |
+| REG-20 | Arabic / RTL                                             | RTL           | P2       | Yes (`Register.test.tsx`)                    |
+| REG-21 | Light and dark theme                                     | Theme         | P3       | No                                           |
+| REG-22 | Phone width 375px                                        | Responsive    | P3       | No                                           |
+| REG-23 | Keyboard, labels and autocomplete                        | Accessibility | P2       | Yes (`Register.test.tsx`)                    |
 
 ## Cases
 
@@ -40,7 +40,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Register.test.tsx`)
 - **Preconditions / data:** real `AuthProvider`; `/api/auth/me` → 401; `POST /api/auth/register` → `200 { "user": { "id": "u9", "username": "salma", "is_admin": false } }`.
 - **Steps:**
   1. Open `/register`.
@@ -52,7 +52,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Register.test.tsx`)
 - **Preconditions / data:** none.
 - **Steps:**
   1. Fill fields one at a time, checking the button after each.
@@ -62,7 +62,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Register.test.tsx`)
 - **Preconditions / data:** username `"   "`, other fields valid.
 - **Steps:**
   1. Fill the form.
@@ -72,7 +72,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Register.test.tsx`)
 - **Preconditions / data:** password `longpass1`, confirm `longpass2`.
 - **Steps:**
   1. Type both. 2. Fix confirm to `longpass1`.
@@ -82,7 +82,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Register.test.tsx`)
 - **Preconditions / data:** password and confirm `short`.
 - **Steps:**
   1. Fill all fields; click "Create account".
@@ -102,7 +102,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Register.test.tsx`)
 - **Preconditions / data:** POST → `403` problem+json `{ "type": "https://maktaba/problems/registration-closed", "title": "Forbidden", "status": 403 }`.
 - **Steps:**
   1. Submit a valid form.
@@ -112,7 +112,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Register.test.tsx`)
 - **Preconditions / data:** POST → `409` `{ "type": "username-exists", "title": "Conflict", "status": 409, "detail": "username already exists" }`; repeat with `email-exists`.
 - **Steps:**
   1. Submit.
@@ -122,7 +122,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Register.test.tsx`)
 - **Preconditions / data:** `409 { "type": "username-exists", "title": "Conflict", "status": 409 }`.
 - **Steps:**
   1. Submit.
@@ -132,7 +132,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Register.test.tsx`)
 - **Preconditions / data:** `500 { "type": "about:blank", "title": "Internal", "status": 500, "detail": "db down" }`; then the same without `detail`.
 - **Steps:**
   1. Submit each.
@@ -142,7 +142,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Register.test.tsx`, `lib/api.test.ts`)
 - **Preconditions / data:** POST → `502` `Content-Type: text/html` body `<html><body>Bad Gateway</body></html>`.
 - **Steps:**
   1. Submit.
@@ -152,7 +152,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Register.test.tsx`)
 - **Preconditions / data:** POST → `400` `application/json` `{ "title": "Bad Request", "status": 400, "detail": "username too short" }` (no `type`).
 - **Steps:**
   1. Submit.
@@ -162,7 +162,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Register.test.tsx`)
 - **Preconditions / data:** `fetch` rejects.
 - **Steps:**
   1. Submit.
@@ -172,7 +172,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Register.test.tsx`)
 - **Preconditions / data:** full App routes; POST → `200 {}`.
 - **Steps:**
   1. Submit.
@@ -182,7 +182,7 @@
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Register.test.tsx`)
 - **Preconditions / data:** POST held pending.
 - **Steps:**
   1. Submit, then click again.
@@ -192,7 +192,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Register.test.tsx`)
 - **Preconditions / data:** `/api/auth/me` → user.
 - **Steps:**
   1. Open `/register`.
@@ -202,7 +202,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Register.test.tsx`)
 - **Preconditions / data:** none; closed state from REG-07.
 - **Steps:**
   1. Click "Already have an account? Sign in". 2. Back. 3. Trigger the closed state, click "Back to sign in".
@@ -222,7 +222,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`App.cases.test.tsx`)
 - **Preconditions / data:** mock `useI18n().t` (or wrap with a mocked `../../lib/i18n`) so `t("register.title")` throws. `/register` is outside `AppShell`, so the AppShell route boundary does not cover it.
 - **Steps:**
   1. From `/login`, click "Create an account".
@@ -233,7 +233,7 @@
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Register.test.tsx`)
 - **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`.
 - **Steps:**
   1. Open `/register`; make a mismatch; then trigger REG-07.
@@ -263,7 +263,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Register.test.tsx`)
 - **Preconditions / data:** none.
 - **Steps:**
   1. Tab through the form; submit with Enter.

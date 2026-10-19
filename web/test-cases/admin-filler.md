@@ -14,32 +14,32 @@
 
 ## Summary
 
-| ID     | Title                                                | Category      | Priority | Covered by existing test?                                              |
-| ------ | ---------------------------------------------------- | ------------- | -------- | ---------------------------------------------------------------------- |
-| FIL-01 | Lists pools with clip count, running time and badges | Happy path    | P1       | Partial (`FillerPools.test.tsx`: "One channel" badge not tested)       |
-| FIL-02 | Expand a pool: items, plan note, links to the player | Happy path    | P2       | Partial (`FillerPools.test.tsx`: plan note and link href not asserted) |
-| FIL-03 | `items: []` shows the empty state                    | Empty state   | P2       | No                                                                     |
-| FIL-04 | `items: null` / missing key / pool `items: null`     | Empty state   | P1       | No                                                                     |
-| FIL-05 | Missing optional fields on pools and items           | Empty state   | P2       | No                                                                     |
-| FIL-06 | Pool with `name: null` does not crash the search     | Error         | P1       | No                                                                     |
-| FIL-07 | Pools load fails (500, network, malformed JSON)      | Error         | P2       | No                                                                     |
-| FIL-08 | Loading text while pools load                        | Loading       | P3       | No                                                                     |
-| FIL-09 | Create a pool; name validation                       | Validation    | P1       | No                                                                     |
-| FIL-10 | Create pool fails                                    | Error         | P2       | No                                                                     |
-| FIL-11 | Delete a pool: confirm, cancel, error                | Happy path    | P1       | No                                                                     |
-| FIL-12 | Add a clip with the chosen kind                      | Happy path    | P1       | Partial (`FillerPools.test.tsx`: kind other than default not tested)   |
-| FIL-13 | Add clip fails                                       | Error         | P2       | No                                                                     |
-| FIL-14 | Remove a clip; remove fails                          | Happy path    | P1       | No                                                                     |
-| FIL-15 | Video search states: loading, none, null, error      | Empty state   | P2       | No                                                                     |
-| FIL-16 | Search pools filter and its "no match" text          | Happy path    | P2       | No                                                                     |
-| FIL-17 | Non-admin sees "Admins only", no requests            | Permissions   | P1       | No                                                                     |
-| FIL-18 | Signed-out redirect to `/login`                      | Permissions   | P1       | No                                                                     |
-| FIL-19 | Navigation from Channels and Back / Forward          | Navigation    | P2       | No                                                                     |
-| FIL-20 | Render crash shows route error fallback; Back works  | Error         | P1       | No                                                                     |
-| FIL-21 | Phone width (375 px)                                 | Responsive    | P3       | No                                                                     |
-| FIL-22 | Arabic / RTL                                         | RTL           | P3       | No                                                                     |
-| FIL-23 | Light and dark theme                                 | Theme         | P3       | No                                                                     |
-| FIL-24 | Keyboard and accessibility basics                    | Accessibility | P2       | No                                                                     |
+| ID     | Title                                                | Category      | Priority | Covered by existing test?                                                   |
+| ------ | ---------------------------------------------------- | ------------- | -------- | --------------------------------------------------------------------------- |
+| FIL-01 | Lists pools with clip count, running time and badges | Happy path    | P1       | Yes (`FillerPools.cases.test.tsx`)                                          |
+| FIL-02 | Expand a pool: items, plan note, links to the player | Happy path    | P2       | Yes (`FillerPools.cases.test.tsx`)                                          |
+| FIL-03 | `items: []` shows the empty state                    | Empty state   | P2       | Yes (`FillerPools.cases.test.tsx`)                                          |
+| FIL-04 | `items: null` / missing key / pool `items: null`     | Empty state   | P1       | Yes (`FillerPools.cases.test.tsx`)                                          |
+| FIL-05 | Missing optional fields on pools and items           | Empty state   | P2       | Yes (`FillerPools.cases.test.tsx`)                                          |
+| FIL-06 | Pool with `name: null` does not crash the search     | Error         | P1       | Yes (`FillerPools.cases.test.tsx`)                                          |
+| FIL-07 | Pools load fails (500, network, malformed JSON)      | Error         | P2       | Yes (`FillerPools.cases.test.tsx`)                                          |
+| FIL-08 | Loading text while pools load                        | Loading       | P3       | No                                                                          |
+| FIL-09 | Create a pool; name validation                       | Validation    | P1       | Yes (`FillerPools.cases.test.tsx`)                                          |
+| FIL-10 | Create pool fails                                    | Error         | P2       | Yes (`FillerPools.cases.test.tsx`)                                          |
+| FIL-11 | Delete a pool: confirm, cancel, error                | Happy path    | P1       | Yes (`FillerPools.cases.test.tsx`)                                          |
+| FIL-12 | Add a clip with the chosen kind                      | Happy path    | P1       | Yes (`FillerPools.cases.test.tsx`)                                          |
+| FIL-13 | Add clip fails                                       | Error         | P2       | Yes (`FillerPools.cases.test.tsx`)                                          |
+| FIL-14 | Remove a clip; remove fails                          | Happy path    | P1       | Yes (`FillerPools.cases.test.tsx`)                                          |
+| FIL-15 | Video search states: loading, none, null, error      | Empty state   | P2       | Yes (`FillerPools.cases.test.tsx`)                                          |
+| FIL-16 | Search pools filter and its "no match" text          | Happy path    | P2       | No (it.fails: bug) — `FillerPools.cases.test.tsx`; the filter itself passes |
+| FIL-17 | Non-admin sees "Admins only", no requests            | Permissions   | P1       | Yes (`FillerPools.cases.test.tsx`)                                          |
+| FIL-18 | Signed-out redirect to `/login`                      | Permissions   | P1       | Yes (`FillerPools.cases.test.tsx`)                                          |
+| FIL-19 | Navigation from Channels and Back / Forward          | Navigation    | P2       | Yes (`FillerPools.cases.test.tsx`)                                          |
+| FIL-20 | Render crash shows route error fallback; Back works  | Error         | P1       | Yes (`FillerPools.cases.test.tsx`)                                          |
+| FIL-21 | Phone width (375 px)                                 | Responsive    | P3       | No                                                                          |
+| FIL-22 | Arabic / RTL                                         | RTL           | P3       | No                                                                          |
+| FIL-23 | Light and dark theme                                 | Theme         | P3       | No                                                                          |
+| FIL-24 | Keyboard and accessibility basics                    | Accessibility | P2       | Yes (`FillerPools.cases.test.tsx`)                                          |
 
 ## Cases
 
@@ -49,7 +49,7 @@ Shared fixture (`POOLS`): `{ "items": [ { "id": "p1", "name": "News clips", "ext
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `FillerPools.test.tsx` "lists pools with counts and adds a clip from the search"
+- **Covered by existing test?** Yes (`FillerPools.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/filler/pools` → `POOLS`
 - **Steps:**
   1. Open `/admin/filler`.
@@ -59,7 +59,7 @@ Shared fixture (`POOLS`): `{ "items": [ { "id": "p1", "name": "News clips", "ext
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `FillerPools.test.tsx` opens a pool to add a clip
+- **Covered by existing test?** Yes (`FillerPools.cases.test.tsx`)
 - **Preconditions / data:** `POOLS`
 - **Steps:**
   1. Click the News clips toggle; then click it again; open Bumpers.
@@ -69,7 +69,7 @@ Shared fixture (`POOLS`): `{ "items": [ { "id": "p1", "name": "News clips", "ext
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`FillerPools.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/filler/pools` → `{ "items": [] }`
 - **Steps:**
   1. Open `/admin/filler`.
@@ -79,7 +79,7 @@ Shared fixture (`POOLS`): `{ "items": [ { "id": "p1", "name": "News clips", "ext
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`FillerPools.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/filler/pools` → a) `{ "items": null }`; b) `{}`; c) `{ "items": [{ "id": "p1", "name": "A", "items": null }] }`; d) `{ "items": [{ "id": "p1", "name": "A" }] }` (no `items` key)
 - **Steps:**
   1. Open `/admin/filler`; in c) and d) expand pool A.
@@ -89,7 +89,7 @@ Shared fixture (`POOLS`): `{ "items": [ { "id": "p1", "name": "News clips", "ext
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`FillerPools.cases.test.tsx`)
 - **Preconditions / data:** pool `{ "id": "p1", "name": "A", "external_key": null, "channel_id": null, "items": [{ "id": "i1", "pool_id": "p1", "video_id": "v1", "type": "filler", "title": null, "duration_ms": null }, { "id": "i2", "pool_id": "p1", "video_id": "v2", "type": "unknown_kind" }] }`
 - **Steps:**
   1. Open the page; expand A.
@@ -99,7 +99,7 @@ Shared fixture (`POOLS`): `{ "items": [ { "id": "p1", "name": "News clips", "ext
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`FillerPools.cases.test.tsx`)
 - **Preconditions / data:** `{ "items": [{ "id": "p1", "name": null, "items": [] }] }`
 - **Steps:**
   1. Open the page; type "a" in "Search pools".
@@ -109,7 +109,7 @@ Shared fixture (`POOLS`): `{ "items": [ { "id": "p1", "name": "News clips", "ext
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`FillerPools.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/filler/pools` → a) 500 `{ "title": "Internal error" }`; b) fetch rejects; c) 200 with invalid JSON; d) 403
 - **Steps:**
   1. Open `/admin/filler` for each.
@@ -129,7 +129,7 @@ Shared fixture (`POOLS`): `{ "items": [ { "id": "p1", "name": "News clips", "ext
 
 - **Priority:** P1
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`FillerPools.cases.test.tsx`)
 - **Preconditions / data:** `POOLS`; `POST /api/filler/pools` → `{ "id": "p3", "name": "Idents", "items": [] }`; then the reload returns `POOLS` plus p3
 - **Steps:**
   1. Check "Add pool" with an empty name and with " ".
@@ -140,7 +140,7 @@ Shared fixture (`POOLS`): `{ "items": [ { "id": "p1", "name": "News clips", "ext
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`FillerPools.cases.test.tsx`)
 - **Preconditions / data:** `POST /api/filler/pools` → a) 409 `{ "title": "A pool with that name exists" }`; b) fetch rejects
 - **Steps:**
   1. Type "News clips"; click "Add pool".
@@ -150,7 +150,7 @@ Shared fixture (`POOLS`): `{ "items": [ { "id": "p1", "name": "News clips", "ext
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`FillerPools.cases.test.tsx`)
 - **Preconditions / data:** `POOLS`; `window.confirm` mocked; `DELETE /api/filler/pools/p2` → 204, later → 409 `{ "title": "Pool in use" }`
 - **Steps:**
   1. Click Delete on Bumpers; Cancel. Then OK.
@@ -161,7 +161,7 @@ Shared fixture (`POOLS`): `{ "items": [ { "id": "p1", "name": "News clips", "ext
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `FillerPools.test.tsx` adds a clip with the default kind
+- **Covered by existing test?** Yes (`FillerPools.cases.test.tsx`)
 - **Preconditions / data:** `POOLS`; `POST /api/filler/pools/p2/items` → `{ "items": [...] }`
 - **Steps:**
   1. Open Bumpers; set "Kind" to "Bumper" (`filler.kind.bumper`); type "ident" in "Add a clip from the library"; click "Station ident".
@@ -172,7 +172,7 @@ Shared fixture (`POOLS`): `{ "items": [ { "id": "p1", "name": "News clips", "ext
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`FillerPools.cases.test.tsx`)
 - **Preconditions / data:** `POST /api/filler/pools/p2/items` → a) 400 `{ "title": "Video already in pool" }`; b) fetch rejects
 - **Steps:**
   1. Open Bumpers; pick "Station ident".
@@ -182,7 +182,7 @@ Shared fixture (`POOLS`): `{ "items": [ { "id": "p1", "name": "News clips", "ext
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`FillerPools.cases.test.tsx`)
 - **Preconditions / data:** `POOLS`; `DELETE /api/filler/items/i1` → 204, then → 500 `{ "title": "Down" }`
 - **Steps:**
   1. Open News clips; click "Remove Headlines".
@@ -193,7 +193,7 @@ Shared fixture (`POOLS`): `{ "items": [ { "id": "p1", "name": "News clips", "ext
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`FillerPools.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/channels/sources?kind=video...` → a) pending; b) `{ "items": [] }`; c) `{ "items": null }`; d) `{}`; e) 500; f) a hit with `"detail": null`
 - **Steps:**
   1. Open a pool; type "zz" in the clip search for b).
@@ -203,7 +203,7 @@ Shared fixture (`POOLS`): `{ "items": [ { "id": "p1", "name": "News clips", "ext
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** No (it.fails: bug) — `FillerPools.cases.test.tsx`; the filter itself passes
 - **Preconditions / data:** `POOLS`
 - **Steps:**
   1. Type "NEWS" in "Search pools"; then "topic"; then "zzz"; then clear.
@@ -213,7 +213,7 @@ Shared fixture (`POOLS`): `{ "items": [ { "id": "p1", "name": "News clips", "ext
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`FillerPools.cases.test.tsx`)
 - **Preconditions / data:** signed in as `{ username: "bob", is_admin: false }`
 - **Steps:**
   1. Open `/admin/filler`.
@@ -223,7 +223,7 @@ Shared fixture (`POOLS`): `{ "items": [ { "id": "p1", "name": "News clips", "ext
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`FillerPools.cases.test.tsx`)
 - **Preconditions / data:** no session
 - **Steps:**
   1. Open `/admin/filler` directly.
@@ -233,7 +233,7 @@ Shared fixture (`POOLS`): `{ "items": [ { "id": "p1", "name": "News clips", "ext
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`FillerPools.cases.test.tsx`)
 - **Preconditions / data:** `POOLS`; channels list loaded
 - **Steps:**
   1. From `/admin/channels` click "Filler pools".
@@ -246,7 +246,7 @@ Shared fixture (`POOLS`): `{ "items": [ { "id": "p1", "name": "News clips", "ext
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`FillerPools.cases.test.tsx`)
 - **Preconditions / data:** start on `/admin/channels`; `GET /api/filler/pools` → `{ "items": [{ "id": "p1", "name": null }] }` and type in search (throws, see FIL-06), or mock `SourceSearch` to throw on open
 - **Steps:**
   1. Navigate to `/admin/filler`, trigger the throw.
@@ -287,7 +287,7 @@ Shared fixture (`POOLS`): `{ "items": [ { "id": "p1", "name": "News clips", "ext
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`FillerPools.cases.test.tsx`)
 - **Preconditions / data:** `POOLS`
 - **Steps:**
   1. Tab through search, pool name, Add pool, each pool toggle, Delete, items, the Kind select and the clip search.

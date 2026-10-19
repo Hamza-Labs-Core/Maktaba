@@ -16,32 +16,32 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 | ID     | Title                                                          | Category      | Priority | Covered by existing test? |
 | ------ | -------------------------------------------------------------- | ------------- | -------- | ------------------------- |
-| DEV-01 | Lists devices in a table with all columns                      | Happy path    | P1       | No                        |
-| DEV-02 | Non-admin sees "Admins only"; no request                       | Permissions   | P1       | No                        |
-| DEV-03 | Signed-out user is redirected to /login                        | Permissions   | P1       | No                        |
-| DEV-04 | Loading text before the list arrives                           | Loading       | P2       | No                        |
-| DEV-05 | `items: []` shows the empty state                              | Empty state   | P2       | No                        |
-| DEV-06 | `items: null` / missing, `categories: null` render safely      | Empty state   | P1       | No                        |
-| DEV-07 | Missing optional / date fields and unknown platform            | Empty state   | P2       | No                        |
-| DEV-08 | Load fails: error state with detail and Try again              | Error         | P1       | No                        |
-| DEV-09 | Try again reloads and shows the list                           | Error         | P2       | No                        |
-| DEV-10 | Register: button disabled until token and bundle ID are set    | Validation    | P1       | No                        |
-| DEV-11 | Register success: POST body, toast, modal closes, list reloads | Happy path    | P1       | No                        |
-| DEV-12 | Register failure keeps the modal open with an error toast      | Error         | P2       | No                        |
-| DEV-13 | Register with Enter key submits only when valid                | Validation    | P2       | No                        |
-| DEV-14 | Edit: pre-filled categories/locale, PATCH body, reload         | Happy path    | P1       | No                        |
-| DEV-15 | Edit: clearing locale                                          | Validation    | P2       | No                        |
-| DEV-16 | Edit failure shows an error toast                              | Error         | P2       | No                        |
-| DEV-17 | Remove asks first; Cancel does nothing                         | Happy path    | P1       | No                        |
-| DEV-18 | Remove confirm: DELETE, toast, reload; double click            | Happy path    | P1       | No                        |
-| DEV-19 | Remove failure keeps the dialog open with an error toast       | Error         | P2       | No                        |
-| DEV-20 | Ids with special characters are URL-encoded                    | Validation    | P2       | No                        |
-| DEV-21 | Render crash shows route error fallback; Back still works      | Error         | P1       | No                        |
-| DEV-22 | Nav link, Back/Forward, deep link                              | Navigation    | P2       | No                        |
-| DEV-23 | Arabic: RTL table and modals                                   | RTL           | P2       | No                        |
+| DEV-01 | Lists devices in a table with all columns                      | Happy path    | P1       | Yes (Devices.test.tsx)    |
+| DEV-02 | Non-admin sees "Admins only"; no request                       | Permissions   | P1       | Yes (Devices.test.tsx)    |
+| DEV-03 | Signed-out user is redirected to /login                        | Permissions   | P1       | Yes (Devices.test.tsx)    |
+| DEV-04 | Loading text before the list arrives                           | Loading       | P2       | Yes (Devices.test.tsx)    |
+| DEV-05 | `items: []` shows the empty state                              | Empty state   | P2       | Yes (Devices.test.tsx)    |
+| DEV-06 | `items: null` / missing, `categories: null` render safely      | Empty state   | P1       | Yes (Devices.test.tsx)    |
+| DEV-07 | Missing optional / date fields and unknown platform            | Empty state   | P2       | Yes (Devices.test.tsx)    |
+| DEV-08 | Load fails: error state with detail and Try again              | Error         | P1       | Yes (Devices.test.tsx)    |
+| DEV-09 | Try again reloads and shows the list                           | Error         | P2       | Yes (Devices.test.tsx)    |
+| DEV-10 | Register: button disabled until token and bundle ID are set    | Validation    | P1       | Yes (Devices.test.tsx)    |
+| DEV-11 | Register success: POST body, toast, modal closes, list reloads | Happy path    | P1       | Yes (Devices.test.tsx)    |
+| DEV-12 | Register failure keeps the modal open with an error toast      | Error         | P2       | Yes (Devices.test.tsx)    |
+| DEV-13 | Register with Enter key submits only when valid                | Validation    | P2       | Yes (Devices.test.tsx)    |
+| DEV-14 | Edit: pre-filled categories/locale, PATCH body, reload         | Happy path    | P1       | Yes (Devices.test.tsx)    |
+| DEV-15 | Edit: clearing locale                                          | Validation    | P2       | Yes (Devices.test.tsx)    |
+| DEV-16 | Edit failure shows an error toast                              | Error         | P2       | Yes (Devices.test.tsx)    |
+| DEV-17 | Remove asks first; Cancel does nothing                         | Happy path    | P1       | Yes (Devices.test.tsx)    |
+| DEV-18 | Remove confirm: DELETE, toast, reload; double click            | Happy path    | P1       | Yes (Devices.test.tsx)    |
+| DEV-19 | Remove failure keeps the dialog open with an error toast       | Error         | P2       | Yes (Devices.test.tsx)    |
+| DEV-20 | Ids with special characters are URL-encoded                    | Validation    | P2       | Yes (Devices.test.tsx)    |
+| DEV-21 | Render crash shows route error fallback; Back still works      | Error         | P1       | Yes (Devices.test.tsx)    |
+| DEV-22 | Nav link, Back/Forward, deep link                              | Navigation    | P2       | Yes (Devices.test.tsx)    |
+| DEV-23 | Arabic: RTL table and modals                                   | RTL           | P2       | Yes (Devices.test.tsx)    |
 | DEV-24 | Phone width: table does not cause page scroll                  | Responsive    | P3       | No                        |
 | DEV-25 | Light and dark theme                                           | Theme         | P3       | No                        |
-| DEV-26 | Dialogs trap focus, close on Escape, return focus              | Accessibility | P2       | No                        |
+| DEV-26 | Dialogs trap focus, close on Escape, return focus              | Accessibility | P2       | Yes (Devices.test.tsx)    |
 | DEV-27 | Table, buttons and fields have accessible names                | Accessibility | P3       | No                        |
 
 ## Cases
@@ -50,7 +50,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** admin; `GET /api/devices` -> `{ "items": [ { "id": "d1", "user_id": "u1", "platform": "ios", "bundle_id": "com.maktaba.app", "app_version": "2.1.0", "locale": "en", "categories": ["job"], "registered_at": "2026-09-01T10:00:00Z", "last_seen_at": "2026-10-18T09:00:00Z" }, { "id": "d2", "user_id": "u1", "platform": "android", "bundle_id": "com.maktaba.android", "registered_at": "2026-09-02T10:00:00Z", "last_seen_at": "2026-10-17T09:00:00Z" }, { "id": "d3", "user_id": "u1", "platform": "web", "bundle_id": "web", "registered_at": "2026-09-03T10:00:00Z", "last_seen_at": "2026-10-16T09:00:00Z" } ] }`
 - **Steps:**
   1. Open `/admin/devices`.
@@ -60,7 +60,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** `useAuth` -> `{ user: { is_admin: false } }`.
 - **Steps:**
   1. Open `/admin/devices`.
@@ -70,7 +70,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** full app routing; auth bootstrap 401.
 - **Steps:**
   1. Open `/admin/devices`.
@@ -80,7 +80,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** admin; `GET /api/devices` never resolves.
 - **Steps:**
   1. Open `/admin/devices`.
@@ -90,7 +90,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** admin; `GET /api/devices` -> `{ "items": [] }`.
 - **Steps:**
   1. Open `/admin/devices`.
@@ -100,7 +100,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** admin; `GET /api/devices` -> (a) `{ "items": null }`, (b) `{}`, (c) `null` body, (d) `{ "items": [ { ...d1, "categories": null, "locale": null } ] }`.
 - **Steps:**
   1. Open `/admin/devices` for each; for (d) click "Edit".
@@ -110,7 +110,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** admin; items `[ { "id": "d9", "user_id": "u1", "platform": "windows", "bundle_id": "" } ]` (no dates, no app_version).
 - **Steps:**
   1. Open `/admin/devices`.
@@ -120,7 +120,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** admin; `GET /api/devices` rejects with (a) `ApiError` 500 `{ title: "Internal Server Error", detail: "db down" }`, (b) `ApiError` 403 `{ title: "Forbidden" }` (no detail), (c) `TypeError("Failed to fetch")`, (d) 200 with truncated JSON body.
 - **Steps:**
   1. Open `/admin/devices`.
@@ -130,7 +130,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** admin; first `GET /api/devices` rejects, second resolves with one device (hold it pending at first).
 - **Steps:**
   1. Open `/admin/devices`; click "Try again".
@@ -141,7 +141,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P1
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** admin; list OK.
 - **Steps:**
   1. Click "Register device"; dialog "Register device" opens.
@@ -153,7 +153,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** admin; `POST /api/devices/register` resolves `{}`; second `GET /api/devices` returns the new device.
 - **Steps:**
   1. Open the Register dialog; choose "iOS"; token "abc123"; bundle "com.maktaba.app"; tick "Jobs" and "System".
@@ -164,7 +164,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** admin; `POST` rejects with `ApiError` 400 `{ title: "Bad Request", detail: "token already registered" }`; then with a network `TypeError`.
 - **Steps:**
   1. Fill the form validly; click "Register device".
@@ -174,7 +174,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** admin.
 - **Steps:**
   1. Open Register; type only a token; press Enter in the token field.
@@ -185,7 +185,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** admin; device d1 from DEV-01 (`categories: ["job"]`, `locale: "en"`); `PATCH` resolves.
 - **Steps:**
   1. Click "Edit" on the iOS row; dialog "Edit device".
@@ -197,7 +197,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** admin; device with `locale: "en"`.
 - **Steps:**
   1. Edit; clear Locale; Save.
@@ -207,7 +207,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** admin; `PATCH` rejects `ApiError` 404 `{ title: "Not Found" }` (device removed elsewhere).
 - **Steps:**
   1. Edit; Save.
@@ -217,7 +217,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** admin; list with d1.
 - **Steps:**
   1. Click "Remove" on d1.
@@ -228,7 +228,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** admin; `DELETE` resolves after a delay; reload returns `{ "items": [] }`.
 - **Steps:**
   1. Remove d1; click the dialog "Remove".
@@ -239,7 +239,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** admin; `DELETE` rejects `ApiError` 500 `{ title: "Internal Server Error", detail: "boom" }`.
 - **Steps:**
   1. Remove d1; confirm.
@@ -249,7 +249,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** admin; device `id: "a/b?c#d"`.
 - **Steps:**
   1. Edit and Save; then Remove and confirm.
@@ -259,7 +259,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** full app in `MemoryRouter` with history `["/admin/logs", "/admin/devices"]`; admin. Force a render throw: `GET /api/devices` -> `{ "items": [ { "id": "d1", "platform": {} } ] }` is not enough (renders "[object Object]"), so mock `platformIcon` or `@ds/components/EmptyState/EmptyState` to throw, or return `{ "items": "oops" }` (string: `devices.map` is not a function -> throws).
 - **Steps:**
   1. Navigate to `/admin/devices`.
@@ -270,7 +270,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** full app, admin.
 - **Steps:**
   1. Click sidebar "All devices" (`nav.admin.devices`).
@@ -283,7 +283,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`; data as DEV-01.
 - **Steps:**
   1. Open `/admin/devices`; open Register, Edit and Remove dialogs.
@@ -314,7 +314,7 @@ Notes for the implementer: mock `../../lib/api` `api.get/post/patch/delete` and 
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Devices.test.tsx)
 - **Preconditions / data:** admin; list with d1.
 - **Steps:**
   1. Click "Register device"; press Tab repeatedly; press Escape.

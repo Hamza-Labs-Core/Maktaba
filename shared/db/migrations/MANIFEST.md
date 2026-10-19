@@ -13,7 +13,8 @@
 **Format.** `NNNN | filename | owning plan | depends on | one-line summary`.
 The `depends on` column lists the slots that must already be applied for
 the migration to succeed. Slots are reserved in groups per epic; new plans
-land at the next free integer (no gaps, no reservations).
+land at the next free integer after the highest slot on `main` (no
+reservations; the one permanent gap is listed below the table).
 
 ---
 
@@ -144,11 +145,18 @@ land at the next free integer (no gaps, no reservations).
 | `0136` | `0136_tv_swap_ops.sql` | [plan-33-07](../../specs/epics/33-tv-staging-hot-swap/plan-33-07-hot-swap-front-door.md), [plan-33-09](../../specs/epics/33-tv-staging-hot-swap/plan-33-09-rollback.md) | 0127, 0129 | The swap in the front door and the rollback (stories 33.7, 33.9): `tv_swap_ops` (one swap or rollback operation for the front door: change, kind swap/rollback, scope cluster or `host:<id>`, the release it puts on the air and the one it replaces, the routing epoch of its commit, reason (manual, `auto:crash`, ...), state planned/switching/done/failed/cancelled, committed (the database side applied), the host and slots that ran it, counts); `tv_channel_switch` (one channel of an operation: planned instant, state planned/switched/skipped, removed from the lineup); `job_stages` row `tv_rollback` (the reverse commit). `maktaba_worker`: SELECT on both tables. |
 | `0137` | `0137_tv_slot_events.sql` | [plan-33-13](../../specs/epics/33-tv-staging-hot-swap/plan-33-13-notifications-audit.md) | 0130, 0136 | What the TV slots' front door reports for the bell (story 33.13 AC1): `tv_slot_events` (one failover of the live slot to the hot standby, or one staging slot crash loop: host, kind failover/crash_loop, slot, detail, at). The API's TV change controller turns each into a notice (`notification_cursors` row `tv_slot_events`). `maktaba_worker`: SELECT. |
 
+### Permanent gaps
+
+- **0133**: never used, and never to be filled. `0136_tv_swap_ops` was written as 0133; #111 merged 0134 and 0135 first, so it was renumbered to 0136 (PR #108). goose runs without `--allow-missing` (`api/migrate.go`): on a database already at 0134 or above, a new 0133 is an out-of-order migration and goose refuses to apply it, which stops every upgraded home. A new migration takes the next slot after the highest one on `main` (0137 at the time of writing). `tools/migration-lint` does not check that slots are contiguous, so it accepts this gap; the schema revision (`SchemaRev` / `SCHEMA_REV`) is the highest slot, not a count.
+
 ---
 
 ## Reservation discipline
 
-1. New migrations land at the next free integer. No gaps.
+1. New migrations land at the next free integer after the highest slot on
+   `main`, never in a hole below it (goose would refuse it on every database
+   already past it). The only hole is `0133` (Permanent gaps above); do not
+   fill it.
 2. SQLite-only variants reuse the same slot with a `.sqlite.sql` suffix
    (e.g. `0002_processing_jobs.sqlite.sql`). They **do not** consume an
    independent slot.

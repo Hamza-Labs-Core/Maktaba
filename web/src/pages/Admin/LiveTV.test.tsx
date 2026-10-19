@@ -264,7 +264,7 @@ describe("AdminLiveTV", () => {
     renderPage();
     await user.click(await screen.findByRole("button", { name: "Refresh Plex now" }));
     expect(post).toHaveBeenCalledWith("/api/tv/plex/refresh");
-    expect(await screen.findByRole("alert")).toHaveTextContent("stage is not available");
+    expect(await screen.findByText(/stage is not available/)).toHaveAttribute("role", "alert");
   });
 
   it("asks to sign in with Plex when the extension is not set up", async () => {

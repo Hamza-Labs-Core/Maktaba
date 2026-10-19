@@ -216,7 +216,7 @@ func (c *Controller) Tick(ctx context.Context) error {
 		}
 	}
 	// story 33.7/33.9: swaps the front door finished, rollbacks to commit
-	if err := c.tickOps(ctx); err != nil {
+	if err := c.tickOps(ctx, cfg); err != nil {
 		c.Logger.Warn("tv swap operations tick failed", "event", "tv_swap_ops_failed", "error", err.Error())
 	}
 	// story 33.5: the staging slot ends with its change (cancel, fail, live)

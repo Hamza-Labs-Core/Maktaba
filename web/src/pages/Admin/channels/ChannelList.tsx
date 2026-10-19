@@ -162,7 +162,7 @@ export function ChannelList({
                       <img className="mkt-cb-logo" src={apiUrl(logo)} alt="" loading="lazy" />
                     ) : (
                       <span className="mkt-cb-logo mkt-cb-logo--none" aria-hidden="true">
-                        {c.name.slice(0, 1)}
+                        {(c.name ?? "").slice(0, 1)}
                       </span>
                     )}
                     <span>

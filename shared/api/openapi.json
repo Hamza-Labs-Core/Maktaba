@@ -5284,7 +5284,8 @@
         "tags": [
           "Queue"
         ],
-        "summary": "Test an extension connection (not implemented yet)",
+        "summary": "Test an extension connection (a list of checks)",
+        "description": "Admin-only; runs on the home. Each check: key, ok, optional (a warning when not ok), skipped, detail, code, latency_ms. Plex: reachable, token, server, livetv, maktaba_tuner, dizquetv_tuner, path_map. dizqueTV: reachable, channels, plex_servers. Cloudflare Stream: see /tv/remote/test. Every run is audited (audit_log config/extension_test).",
         "responses": {
           "200": {
             "description": "OK",
@@ -5298,6 +5299,39 @@
                     },
                     "message": {
                       "type": "string"
+                    },
+                    "checked_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "lines": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "ok": {
+                            "type": "boolean"
+                          },
+                          "optional": {
+                            "type": "boolean"
+                          },
+                          "skipped": {
+                            "type": "boolean"
+                          },
+                          "detail": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "latency_ms": {
+                            "type": "integer"
+                          }
+                        }
+                      }
                     }
                   }
                 }

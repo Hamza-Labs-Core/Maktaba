@@ -27,38 +27,38 @@
 
 ## Summary
 
-| ID     | Title                                                        | Category      | Priority | Covered by existing test?                                                               |
-| ------ | ------------------------------------------------------------ | ------------- | -------- | --------------------------------------------------------------------------------------- |
-| QOV-01 | Renders every section from a full snapshot                   | Happy path    | P1       | Yes (`QueueOverview.test.tsx`)                                                          |
-| QOV-02 | Shows Loading while the first snapshot is pending            | Loading       | P2       | No                                                                                      |
-| QOV-03 | Snapshot load fails, then Try again recovers                 | Error         | P1       | No                                                                                      |
-| QOV-04 | 401 / 403 on the snapshot shows the error, not a blank page  | Error         | P2       | No                                                                                      |
-| QOV-05 | Malformed or non-JSON snapshot does not crash the page       | Error         | P1       | No                                                                                      |
-| QOV-06 | `/api/queues` list fields `null` or missing                  | Empty state   | P1       | No                                                                                      |
-| QOV-07 | `/api/issues` `groups` / `sample_subjects` `null` or missing | Empty state   | P1       | No                                                                                      |
-| QOV-08 | `/api/queues/libraries` `items` / `strip` `null` or missing  | Empty state   | P1       | No                                                                                      |
-| QOV-09 | `/api/workers` `workers` `null` or missing                   | Empty state   | P1       | No                                                                                      |
-| QOV-10 | Side panels' list fields `null` or missing                   | Empty state   | P1       | No                                                                                      |
-| QOV-11 | Hub / SSE snapshot with `null` lists does not crash          | Empty state   | P1       | No                                                                                      |
-| QOV-12 | Empty but valid snapshot shows empty states                  | Empty state   | P2       | No                                                                                      |
-| QOV-13 | Render crash shows route error fallback; Back works          | Error         | P1       | No                                                                                      |
-| QOV-14 | Signed-out user is sent to `/login`                          | Permissions   | P1       | No                                                                                      |
-| QOV-15 | Non-admin: run and style controls off; 403 on other actions  | Permissions   | P1       | Partial (`RunPanel.test.tsx`, `parityPanels.test.tsx`: no page-level 403)               |
-| QOV-16 | Pause all / Resume all toggles and refreshes                 | Happy path    | P1       | Partial (`QueueOverview.test.tsx`: no resume-all)                                       |
-| QOV-17 | Failed mutation shows the API message in an alert            | Error         | P2       | No                                                                                      |
-| QOV-18 | Issue actions: Retry, Apply, Open settings, Show workers     | Happy path    | P2       | Partial (`QueueOverview.test.tsx`: retry only)                                          |
-| QOV-19 | Queue work dialog: validation, close, keyboard               | Validation    | P2       | Partial (`QueueOverview.test.tsx`: submit paths only)                                   |
-| QOV-20 | Live updates over the cluster socket                         | Happy path    | P1       | Yes (`QueueOverview.socket.test.tsx`)                                                   |
-| QOV-21 | Socket drops: SSE takes over, then polling with a note       | Error         | P1       | Partial (`QueueOverview.socket.test.tsx`, `QueueOverview.test.tsx`: no note text check) |
-| QOV-22 | Socket reconnects: back on the hub, no SSE, no duplicates    | Happy path    | P2       | No                                                                                      |
-| QOV-23 | `?host=` filter: panel, unknown host, failures, way back     | Navigation    | P2       | Partial (`hostFilter.test.tsx`: no unknown host / failure / link back)                  |
-| QOV-24 | Links: cards, Reports, Extensions, libraries; Back/Forward   | Navigation    | P2       | No                                                                                      |
-| QOV-25 | Libraries table: filter, select all, no match                | Happy path    | P2       | Partial (`QueueOverview.test.tsx`: filter and bulk only)                                |
-| QOV-26 | Activity log: filters, Load older, failure                   | Error         | P2       | Partial (`QueueOverview.test.tsx`: problems filter only)                                |
-| QOV-27 | Phone width 375 px: no horizontal scroll                     | Responsive    | P3       | No                                                                                      |
-| QOV-28 | Arabic: RTL, Arabic strings, mirrored layout                 | RTL           | P3       | Partial (`QueueOverview.test.tsx`: one string)                                          |
-| QOV-29 | Light and dark theme use tokens only                         | Theme         | P3       | Yes (`QueueOverview.test.tsx`)                                                          |
-| QOV-30 | Keyboard and accessibility basics                            | Accessibility | P3       | Partial (`a11y.test.tsx`: axe only)                                                     |
+| ID     | Title                                                        | Category      | Priority | Covered by existing test?                                                                          |
+| ------ | ------------------------------------------------------------ | ------------- | -------- | -------------------------------------------------------------------------------------------------- |
+| QOV-01 | Renders every section from a full snapshot                   | Happy path    | P1       | Yes (`QueueOverview.test.tsx`)                                                                     |
+| QOV-02 | Shows Loading while the first snapshot is pending            | Loading       | P2       | Yes (`QueueOverview.cases.test.tsx`)                                                               |
+| QOV-03 | Snapshot load fails, then Try again recovers                 | Error         | P1       | Yes (`QueueOverview.cases.test.tsx`)                                                               |
+| QOV-04 | 401 / 403 on the snapshot shows the error, not a blank page  | Error         | P2       | Yes (`QueueOverview.cases.test.tsx`; 401 does not redirect to /login (not checked))                |
+| QOV-05 | Malformed or non-JSON snapshot does not crash the page       | Error         | P1       | Yes (`QueueOverview.cases.test.tsx`)                                                               |
+| QOV-06 | `/api/queues` list fields `null` or missing                  | Empty state   | P1       | Yes (`QueueOverview.cases.test.tsx`)                                                               |
+| QOV-07 | `/api/issues` `groups` / `sample_subjects` `null` or missing | Empty state   | P1       | Yes (`QueueOverview.cases.test.tsx`)                                                               |
+| QOV-08 | `/api/queues/libraries` `items` / `strip` `null` or missing  | Empty state   | P1       | Yes (`QueueOverview.cases.test.tsx`)                                                               |
+| QOV-09 | `/api/workers` `workers` `null` or missing                   | Empty state   | P1       | Yes (`QueueOverview.cases.test.tsx`)                                                               |
+| QOV-10 | Side panels' list fields `null` or missing                   | Empty state   | P1       | Yes (`QueueOverview.cases.test.tsx`)                                                               |
+| QOV-11 | Hub / SSE snapshot with `null` lists does not crash          | Empty state   | P1       | Yes (`QueueOverview.cases.test.tsx`)                                                               |
+| QOV-12 | Empty but valid snapshot shows empty states                  | Empty state   | P2       | Yes (`QueueOverview.cases.test.tsx`)                                                               |
+| QOV-13 | Render crash shows route error fallback; Back works          | Error         | P1       | Yes (`QueueOverview.cases.test.tsx`)                                                               |
+| QOV-14 | Signed-out user is sent to `/login`                          | Permissions   | P1       | Yes (`QueueOverview.cases.test.tsx`)                                                               |
+| QOV-15 | Non-admin: run and style controls off; 403 on other actions  | Permissions   | P1       | Yes (`QueueOverview.cases.test.tsx`; it.fails: Pause all / Queue work still offered to non-admins) |
+| QOV-16 | Pause all / Resume all toggles and refreshes                 | Happy path    | P1       | Yes (`QueueOverview.cases.test.tsx`)                                                               |
+| QOV-17 | Failed mutation shows the API message in an alert            | Error         | P2       | Yes (`QueueOverview.cases.test.tsx`)                                                               |
+| QOV-18 | Issue actions: Retry, Apply, Open settings, Show workers     | Happy path    | P2       | Yes (`QueueOverview.cases.test.tsx`)                                                               |
+| QOV-19 | Queue work dialog: validation, close, keyboard               | Validation    | P2       | Partial (`QueueOverview.cases.test.tsx`: no focus-return / focus-trap / Seasons error check)       |
+| QOV-20 | Live updates over the cluster socket                         | Happy path    | P1       | Yes (`QueueOverview.socket.test.tsx`)                                                              |
+| QOV-21 | Socket drops: SSE takes over, then polling with a note       | Error         | P1       | Yes (`QueueOverview.cases.test.tsx`)                                                               |
+| QOV-22 | Socket reconnects: back on the hub, no SSE, no duplicates    | Happy path    | P2       | Yes (`QueueOverview.cases.test.tsx`)                                                               |
+| QOV-23 | `?host=` filter: panel, unknown host, failures, way back     | Navigation    | P2       | Yes (`QueueOverview.cases.test.tsx`)                                                               |
+| QOV-24 | Links: cards, Reports, Extensions, libraries; Back/Forward   | Navigation    | P2       | Yes (`QueueOverview.cases.test.tsx`)                                                               |
+| QOV-25 | Libraries table: filter, select all, no match                | Happy path    | P2       | Yes (`QueueOverview.cases.test.tsx`)                                                               |
+| QOV-26 | Activity log: filters, Load older, failure                   | Error         | P2       | Yes (`QueueOverview.cases.test.tsx`)                                                               |
+| QOV-27 | Phone width 375 px: no horizontal scroll                     | Responsive    | P3       | No (e2e-only)                                                                                      |
+| QOV-28 | Arabic: RTL, Arabic strings, mirrored layout                 | RTL           | P3       | Partial (`QueueOverview.test.tsx`: one string)                                                     |
+| QOV-29 | Light and dark theme use tokens only                         | Theme         | P3       | Yes (`QueueOverview.test.tsx`)                                                                     |
+| QOV-30 | Keyboard and accessibility basics                            | Accessibility | P3       | Partial (`a11y.test.tsx`: axe only)                                                                |
 
 ## Cases
 
@@ -76,7 +76,7 @@
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/queues` returns a promise that never resolves; other routes as QOV-01.
 - **Steps:**
   1. Open `/queue`.
@@ -86,7 +86,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`)
 - **Preconditions / data:** first `GET /api/queues` rejects (repeat for: `ApiError` 500 `{ "title": "Internal Server Error" }`, and `fetch` rejecting with `TypeError("Failed to fetch")`); SSE silent.
 - **Steps:**
   1. Open `/queue`.
@@ -98,7 +98,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`; 401 does not redirect to /login (not checked))
 - **Preconditions / data:** signed in, but `GET /api/queues` → 401 `application/problem+json` `{ "title": "Unauthorized", "status": 401 }` (session expired); second run with 403 `{ "title": "Forbidden", "status": 403 }`.
 - **Steps:**
   1. Open `/queue`.
@@ -108,7 +108,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`)
 - **Preconditions / data:** mock `fetch` (not `api.get`) so that `GET /api/queues` returns (a) status 200, `Content-Type: application/json`, body `{"queues": [` (truncated); (b) status 200, `Content-Type: text/html`, body `<!doctype html><html>…</html>` (SPA fallback from a proxy).
 - **Steps:**
   1. Open `/queue` for each response.
@@ -118,7 +118,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/queues` → `snapshotFixture` with, one at a time, each field set to `null` and then deleted: `stages`, `queues`, `pools`, `flows`, `health.spark.nas_open_ms`, `health.spark.cpu_pct`, `health.spark.backlog_ready`; and nested: `queues[0].running_jobs`, `queues[0].served_by`, `stages[0].edges`, `stages[0].subject_kinds`, `pools[0].stages`. Other routes as QOV-01.
 - **Steps:**
   1. Open `/queue`.
@@ -128,7 +128,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/issues` → (a) `{ "groups": null }`; (b) `{}`; (c) `{ "groups": [ { ...failureGroupsFixture[0], "sample_subjects": null } ] }`.
 - **Steps:**
   1. Open `/queue`.
@@ -138,7 +138,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/queues/libraries` → (a) `{ "items": null }`; (b) `{}`; (c) `{ "items": [ { ...librariesFixture[0], "strip": null } ] }`.
 - **Steps:**
   1. Open `/queue`.
@@ -149,7 +149,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`)
 - **Preconditions / data:** no WebSocket (`vi.stubGlobal("WebSocket", undefined)`); `GET /api/workers` → (a) `{ "workers": null }`; (b) `{}`; (c) `{ "workers": [] }`. Also hub message `{ type: "workers", data: { workers: null } }` with the socket open.
 - **Steps:**
   1. Open `/queue` and `/queue?host=home`.
@@ -159,7 +159,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`)
 - **Preconditions / data:** one at a time, `null` then key missing:
   - `GET /api/queues/health` → `series: null`; `series: [{ "metric": "cpu.pct", "points": null }]`.
   - `GET /api/queues/pulse` → `stuck: null` (state `"stalled"`).
@@ -177,7 +177,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`)
 - **Preconditions / data:** page loaded with `snapshotFixture`. Then (a) socket open, `FakeSocket.last.recv({ type: "queues", data: { ...snapshotFixture, stages: null, pools: null, flows: null } })`; (b) no socket, SSE `hub.emit("queues", { type: "queues.snapshot", at: "x", payload: { ...snapshotFixture, queues: null } })`; (c) a hub `snapshot` on `jobs` with `{ jobs: null, running: null }`.
 - **Steps:**
   1. Send each message.
@@ -187,7 +187,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/queues` → `{ ...snapshotFixture, stages: [], queues: [], pools: [], flows: [], issues_count: 0, paused_all: false }`; `/api/issues` → `{ groups: [] }`; `/api/queues/libraries` → `{ items: [] }`; `/api/workers` → `{ workers: [] }`; `/api/activity` → `{ items: [], next: null }`.
 - **Steps:**
   1. Open `/queue`.
@@ -197,7 +197,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`)
 - **Preconditions / data:** full app routes (`App.tsx` routes inside `MemoryRouter` or a browser e2e), signed in. Start at `/library`, then navigate to `/queue`. Force a render throw, e.g. `GET /api/issues` → `{ "groups": null }` (QOV-07) or `vi.mock` `FlowLanes` to throw.
 - **Steps:**
   1. Open `/library`, click the "Processing" nav link.
@@ -209,7 +209,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`)
 - **Preconditions / data:** `AuthProvider` with no user (`GET /api/auth/me` → 401).
 - **Steps:**
   1. Open `/queue` and `/queue?host=home` directly.
@@ -219,7 +219,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** Partial — `RunPanel.test.tsx` "a non-admin sees the panel but cannot start", `parityPanels.test.tsx` "a viewer can look but not pin"; no page-level check
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`; it.fails: Pause all / Queue work still offered to non-admins)
 - **Preconditions / data:** signed in as a non-admin (`user.is_admin: false`) via `AuthProvider`; routes as QOV-01; every `POST` → 403 `{ "title": "Forbidden", "status": 403, "detail": "admin only" }`.
 - **Steps:**
   1. Open `/queue`.
@@ -231,7 +231,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `QueueOverview.test.tsx` "pause all posts to the API", "applies a live queues.snapshot (pause all flips the button)"
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`)
 - **Preconditions / data:** admin; snapshot with `paused_all: false`, then a second `GET /api/queues` returning `paused_all: true`; `POST` resolves `undefined` (204).
 - **Steps:**
   1. Click "Pause all".
@@ -242,7 +242,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`)
 - **Preconditions / data:** admin; `POST /api/queues/pause-all` → 500 `{ "title": "Internal Server Error", "status": 500, "detail": "db down" }`; separately `POST /api/queues/{stage}/retry` rejects with `TypeError("Failed to fetch")`.
 - **Steps:**
   1. Click "Pause all".
@@ -253,7 +253,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `QueueOverview.test.tsx` "retries an issue group by cause"
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`)
 - **Preconditions / data:** `/api/issues` → groups with `action` `"retry"` (cause `nas_timeout`, stage `probe`), `"apply"` (stage `plex_collection`), `"open_settings"`, `"show_workers"`; snapshot `health.nas.open_ms_p95: 850`.
 - **Steps:**
   1. Read the retry button label.
@@ -266,7 +266,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** Partial — `QueueOverview.test.tsx` "queue work dialog posts a retrigger with the chosen mode", "limits a retrigger to the chosen queues"
+- **Covered by existing test?** Partial (`QueueOverview.cases.test.tsx`: no focus-return / focus-trap / Seasons error check)
 - **Preconditions / data:** admin; routes as QOV-01; `GET /api/items/library/<id>/history` rejects for one library; `POST /api/queue/retrigger` → `{ "results": null }` for one run.
 - **Steps:**
   1. Click "Queue work…" (dialog title "Queue work").
@@ -291,7 +291,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** Partial — `QueueOverview.socket.test.tsx` "falls back to the SSE stream when the socket cannot connect"; `QueueOverview.test.tsx` "falls back to polling /api/queues only after 10 s…" (no note text check)
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`)
 - **Preconditions / data:** fake timers; socket open and a hub snapshot shown; then `FakeSocket.last.drop()`; SSE silent.
 - **Steps:**
   1. Drop the socket.
@@ -303,7 +303,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`)
 - **Preconditions / data:** fake timers; socket open; `drop()`; advance past `BACKOFF_START_MS` (1 s) so a new `FakeSocket` is created; `FakeSocket.last.open()`; it receives `{ type: "snapshot", topic: "jobs", data: { jobs: [], running: [] } }` and a `queues` snapshot.
 - **Steps:**
   1. Reconnect as above.
@@ -314,7 +314,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** Partial — `hostFilter.test.tsx` "lists the machine's running jobs…", "titles the panel with the name the link carried…", "has no machine panel without ?host="
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`)
 - **Preconditions / data:** (a) `/queue?host=node-zz` where no worker has `node_id: "node-zz"`, `GET /api/queues/running?host=node-zz` → `{ host: "node-zz", jobs: [] }`; (b) `/queue?host=home` with `/api/queues/running` → 500; (c) `/queue?host=` (empty).
 - **Steps:**
   1. Open each URL.
@@ -326,7 +326,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`)
 - **Preconditions / data:** app routes in a `MemoryRouter` (or e2e); routes as QOV-01.
 - **Steps:**
   1. Click a queue card title (e.g. "Length") → `/queue/<stage>`.
@@ -339,7 +339,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `QueueOverview.test.tsx` "filters the libraries table by name", "re-queues several libraries at once from the table"
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`)
 - **Preconditions / data:** `librariesFixture` (2+ rows).
 - **Steps:**
   1. Type "zzz" in "Search libraries".
@@ -352,7 +352,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** Partial — `QueueOverview.test.tsx` "appends live job.log lines… and filters problems"
+- **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`)
 - **Preconditions / data:** `/api/activity` → `{ items: logFixture, next: "c1" }`; with `cursor=c1` → first reject (500), then `{ items: [...], next: null }`; separately the first `/api/activity` call rejects.
 - **Steps:**
   1. Pick a queue in the "Queue" select.
@@ -364,7 +364,7 @@
 
 - **Priority:** P3
 - **Category:** Responsive
-- **Covered by existing test?** No
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** browser e2e at 375×812; full fixtures.
 - **Steps:**
   1. Open `/queue`; scroll to the bottom.

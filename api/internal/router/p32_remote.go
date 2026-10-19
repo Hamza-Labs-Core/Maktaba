@@ -95,6 +95,7 @@ func WireP32Remote(q *queues.Handler, d P32RemoteDeps) (*tvremote.Integration, *
 		return in.Test(ctx)
 	}
 	q.Validators[queues.CloudflareExtension] = in.ValidateSettings
+	WireExtensionTesters(q, d.DB, d.Secrets, d.Logger)
 	return in, ctl, func(r chi.Router) { (&tvremoteh.Handler{Integration: in, Remote: ctl}).Mount(r) }
 }
 

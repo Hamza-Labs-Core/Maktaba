@@ -36,10 +36,23 @@ interface AdminUser {
 
 const ROSTER_KEY = "mkt:admin:knownUsers";
 
+// The roster is browser storage anyone (or an old build) may have written,
+// so keep only entries that look like users: a corrupt value ("null", {},
+// [null], ...) must not crash the page.
 function readRoster(): AdminUser[] {
   try {
     const raw = localStorage.getItem(ROSTER_KEY);
-    if (raw) return JSON.parse(raw) as AdminUser[];
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((u: unknown) => {
+      if (!u || typeof u !== "object") return [];
+      const { id, username, is_admin } = u as Partial<Record<keyof AdminUser, unknown>>;
+      if (typeof id !== "string" || id === "") return [];
+      return [
+        { id, username: typeof username === "string" ? username : "", is_admin: is_admin === true },
+      ];
+    });
   } catch {
     /* ignored — locked-down or corrupt storage */
   }
@@ -211,11 +224,13 @@ function UserFormModal({
     setBusy(true);
     try {
       if (mode === "create") {
-        const created = await api.post<AdminUser>("/api/users", {
+        const created = await api.post<AdminUser | undefined>("/api/users", {
           username,
           password,
           is_admin: isAdmin,
         });
+        // A response without a user can't be added to the roster.
+        if (!created || typeof created !== "object" || !created.id) throw new Error("no user");
         toast.show({ tone: "success", message: t("admin.users.created") });
         onSaved(created);
       } else if (user) {
@@ -238,7 +253,11 @@ function UserFormModal({
   }
 
   const passwordRequired = mode === "create";
-  const valid = username.trim() !== "" && (!passwordRequired || password !== "");
+  // In edit mode Save needs at least one change (no empty PATCH).
+  const changed =
+    mode === "create" ||
+    (!!user && (username !== user.username || password !== "" || isAdmin !== user.is_admin));
+  const valid = username.trim() !== "" && (!passwordRequired || password !== "") && changed;
 
   return (
     <Modal
@@ -286,6 +305,8 @@ function UserFormModal({
           checked={isAdmin}
           onChange={(e) => setIsAdmin(e.target.checked)}
         />
+        {/* Lets Enter in a field submit (the visible Save sits in the footer). */}
+        <button type="submit" hidden tabIndex={-1} />
       </form>
     </Modal>
   );

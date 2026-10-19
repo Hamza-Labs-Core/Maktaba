@@ -106,7 +106,7 @@ export function CanonicalizePanel({
           {t("machines.canon.serversAdded")}{" "}
           {st.servers_added.map((s) => (
             <code key={s.name} dir="ltr">
-              {`smb://${s.name}/ (${s.addresses.join(", ")}) `}
+              {`smb://${s.name}/ (${(s.addresses ?? []).join(", ")}) `}
             </code>
           ))}
         </p>

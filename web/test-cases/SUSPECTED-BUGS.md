@@ -1,9 +1,61 @@
 # Suspected bugs found while writing the test cases
 
-These come from reading the code, not from running it, so none is confirmed. Paths are
-under `web/src/` unless they start with `api/` or `design-system/`. Line numbers are from
-the commit these cases were written against. The matching test cases (null-list and
-crash cases in each page file) should show whether each one is real.
+These came from reading the code. The tests written from the cases have since checked them:
+most were real and are fixed, each with a test. The list below the status section is the
+original one, kept for reference. Paths are under `web/src/` unless they start with `api/` or
+`design-system/`.
+
+## Status: still open after the tests
+
+Each of these has an `it.fails` (asserts the right behaviour, fails today) or `it.todo` test
+named with its case id.
+
+**Shared code (`lib/`, design system, shared components)**
+
+- A 401 in the middle of a session shows an error instead of going to `/login` (SHL-07,
+  ACC-13, ADV-14, ASE-06, ASE-14, ATK-22, BIL-17, CST-08, USR-16, AUD-13, QDT-04, QIH-05).
+  Fix: one 401 handler in `lib/api.ts` + `lib/auth.tsx`.
+- A failed "sign out everywhere" is treated as success (SAC-05, `lib/auth.tsx`).
+- Demoting or deleting yourself does not refresh your own access (USR-11, USR-12).
+- No unsaved-changes prompt when leaving an editor (CHN-20, SRL-26, ACL-14). `useBlocker`
+  needs a data router; the app uses `BrowserRouter`.
+- `design-system` Tabs: switching tabs unmounts the panel and drops drafts (CHN-21); arrow
+  keys are not mirrored in RTL (SRL-29, VID-25).
+- `components/EnrichmentPanel.tsx`: write actions shown to non-admins (VID-08), the queue is
+  not refetched after accept or dismiss (ENR-12), Enter in its search box does nothing (VID-23).
+- `components/charts`: `BarList` turns a negative value into a negative width (ANL-22).
+- Queue pages show write controls to non-admins; the server refuses them (QOV-15, QDT-12,
+  QIH-12). Needs a UX decision.
+
+**Live TV**
+
+- `lib/channels.ts`: one bad guide header hides the whole guide (GDE-11); `category` is
+  dropped (GDE-18); `video_id` is dropped, so "Watch from beginning" never shows (LPL-23).
+- `pages/LiveTV/Player.tsx`: `/live/%20` plays channel 0 (LPL-05); any channel-list failure
+  says "Channel not found" (LPL-06).
+- `packages/tvplayer`: after a LAN failure switches to remote, nothing tunes (LPL-22); the
+  number overlay is not announced and the mini guide does not take focus (LPL-31).
+
+**Need a new translated string** (en + ar), then a one-line page change
+
+LTC-06 (slots/releases failure), LTV-08 ("Change #0 is"), LTV-20 (remote stale hint),
+CHN-15 (whole channel numbers), FIL-16 (no-match text), BIL-02 (empty entitlements), SSE-03
+(stale sessions copy), SPR-21 and ASE-21 / ADV-21 (per-row button labels), SMD-06 ("None"
+model), SHL-02 (`NotFound.tsx` is English only), REG-05 (password length hint), SED-17
+("watched"), SRC-20 (saved), LIB-06 (scan feedback), LIB-08 (no access).
+
+**Other**
+
+- `ar.json`: "Revoke" and "Cancel" are both "إلغاء" (ATK-26); "Devices" and admin
+  "Machines" are both "الأجهزة".
+- Billing "Revoke license" has no confirm and is enabled on the free tier (BIL-10).
+- Cloud status treats any service named `*cloud*` as the relay (CST-15).
+- The desktop drop overlay never closes after a clean drop and is English only (SHL-22).
+- A stored density only applies once the Appearance tab opens (SAP-12).
+- Models flash "No models in this category." before loading (SMD-09).
+- Item history: a live reload drops older pages already loaded (QIH-18).
+- No resume from a saved position on series and the player: no API for it (SED-02, VPL-09).
+- No confirm before "Accept all episode matches" (SED-18); no visible shortcut list (VPL-21).
 
 ## Look at first
 

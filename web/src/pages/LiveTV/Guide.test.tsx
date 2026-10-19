@@ -14,6 +14,7 @@ vi.mock("../../lib/api", async () => {
 
 import { Guide } from "./Guide";
 import { I18nProvider } from "../../lib/i18n";
+import { TestAuth, adminUser } from "../../test/pageHarness";
 
 const NOW = Date.now();
 const iso = (msFromNow: number) => new Date(NOW + msFromNow).toISOString();
@@ -62,11 +63,14 @@ function renderGuide() {
   return render(
     <MemoryRouter initialEntries={["/guide"]}>
       <I18nProvider>
-        <Routes>
-          <Route path="/guide" element={<Guide />} />
-          <Route path="/live/:number" element={<div>LIVE PLAYER</div>} />
-          <Route path="/admin/channels" element={<div>ADMIN</div>} />
-        </Routes>
+        {/* an admin: the empty state's "Create a channel" CTA is admin-only */}
+        <TestAuth user={adminUser}>
+          <Routes>
+            <Route path="/guide" element={<Guide />} />
+            <Route path="/live/:number" element={<div>LIVE PLAYER</div>} />
+            <Route path="/admin/channels" element={<div>ADMIN</div>} />
+          </Routes>
+        </TestAuth>
       </I18nProvider>
     </MemoryRouter>
   );

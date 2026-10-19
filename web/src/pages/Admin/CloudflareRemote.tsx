@@ -5,7 +5,7 @@
 // Cloudflare, then the stored token).
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
-import { useI18n } from "../../lib/i18n";
+import { lookupMessage, useI18n } from "../../lib/i18n";
 import { tvRemoteApi } from "../../lib/tvRemoteApi";
 import type { RemoteIntegration, RemoteTestLine, RemoteTestResult } from "../../lib/tvRemoteApi";
 import { useAction } from "../../components/queue/useAction";
@@ -21,16 +21,31 @@ const LINE_KEYS = [
   "push",
 ] as const;
 
-/** One check of Test connection: ok / failed / not checked, and Cloudflare's reason. */
-export function RemoteTestLines({ result }: { result: RemoteTestResult }) {
-  const { t } = useI18n();
-  const label = (l: RemoteTestLine) =>
-    (LINE_KEYS as readonly string[]).includes(l.key) ? t(`cfstream.line.${l.key}`) : l.key;
+/**
+ * One check of Test connection: ok / failed / warning / not checked, the
+ * reason, and the check's error code. `ext` names the extension whose
+ * labels to use (`ext.check.<ext>.<key>`); Cloudflare Stream keeps its
+ * `cfstream.line.*` labels. An unknown key shows as is.
+ */
+export function RemoteTestLines({
+  result,
+  ext = "cloudflare_stream",
+}: {
+  result: RemoteTestResult;
+  ext?: string;
+}) {
+  const { t, locale } = useI18n();
+  const label = (l: RemoteTestLine) => {
+    if (ext === "cloudflare_stream") {
+      return (LINE_KEYS as readonly string[]).includes(l.key) ? t(`cfstream.line.${l.key}`) : l.key;
+    }
+    return lookupMessage(locale, `ext.check.${ext}.${l.key}`) ?? l.key;
+  };
   const state = (l: RemoteTestLine) =>
     l.skipped ? "skipped" : l.ok ? "ok" : l.optional ? "warn" : "bad";
   return (
     <ul className="mkt-q-cflines" aria-label={t("cfstream.lines")}>
-      {result.lines.map((l) => {
+      {(result.lines ?? []).map((l) => {
         const s = state(l);
         return (
           <li
@@ -42,6 +57,14 @@ export function RemoteTestLines({ result }: { result: RemoteTestResult }) {
             <span className="mkt-q-muted">({t(`cfstream.state.${s}`)})</span>
             {": "}
             <span dir="auto">{l.detail}</span>
+            {l.code && !l.ok && !l.skipped && (
+              <>
+                {" "}
+                <code className="mkt-q-muted" dir="ltr">
+                  {l.code}
+                </code>
+              </>
+            )}
           </li>
         );
       })}
@@ -78,10 +101,11 @@ export function CloudflareRemote({ refresh }: { refresh: number }) {
       .run("remove", () => tvRemoteApi.remove())
       .then((r) => {
         if (!r) return;
+        const errors = r.errors ?? [];
         setRemoved(
-          r.errors.length
-            ? t("cfstream.removedWithErrors", { errors: r.errors.join("; ") })
-            : t("cfstream.removed", { n: r.deleted_inputs.length })
+          errors.length
+            ? t("cfstream.removedWithErrors", { errors: errors.join("; ") })
+            : t("cfstream.removed", { n: (r.deleted_inputs ?? []).length })
         );
         load();
       });

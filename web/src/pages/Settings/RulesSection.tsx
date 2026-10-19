@@ -245,14 +245,19 @@ export function RulesSection() {
 
   const load = useCallback(async () => {
     const r = await rulesApi.list();
-    // a fresh array: the localised copy is rebuilt from what was read
-    setSections([...r.sections]);
+    // a fresh array: the localised copy is rebuilt from what was read.
+    // sections or a section's fields null / missing read as empty lists.
+    const read: RuleSection[] = (Array.isArray(r?.sections) ? r.sections : []).map((s) => ({
+      ...s,
+      fields: Array.isArray(s.fields) ? s.fields : [],
+    }));
+    setSections(read);
     setLoadError(null);
-    setTab((cur) => (r.sections.some((s) => s.key === cur) ? cur : (r.sections[0]?.key ?? "")));
+    setTab((cur) => (read.some((s) => s.key === cur) ? cur : (read[0]?.key ?? "")));
     // an edit that now equals the saved value is no longer an edit
     setEdits((prev) => {
       const next: Edits = {};
-      for (const s of r.sections) {
+      for (const s of read) {
         const e = prev[s.key];
         if (!e) continue;
         const kept: Record<string, unknown> = {};
@@ -596,7 +601,9 @@ export function RulesSection() {
             <PlanPreviewPanel canRun={canEdit} compact unsaved={unsaved} />
           </div>
         )}
-        {groups.length === 0 ? (
+        {s.fields.length === 0 ? (
+          <p className="mkt-muted">{t("common.empty")}</p>
+        ) : groups.length === 0 ? (
           <p className="mkt-muted">{t("settings.rules.noMatch", { q: query.trim() })}</p>
         ) : (
           groups.map((g, gi) => {
@@ -645,6 +652,7 @@ export function RulesSection() {
           {t("settings.rules.loadError")} {loadError}
         </p>
       )}
+      {sections.length === 0 && <p className="mkt-muted">{t("common.empty")}</p>}
       <Tabs
         label={t("settings.rules.tabs")}
         value={active?.key}

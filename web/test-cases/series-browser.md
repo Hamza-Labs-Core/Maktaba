@@ -8,28 +8,28 @@
 
 ## Summary
 
-| ID     | Title                                                     | Category      | Priority | Covered by existing test?                             |
-| ------ | --------------------------------------------------------- | ------------- | -------- | ----------------------------------------------------- |
-| SER-01 | Grid shows a card per series with name, counts, progress  | Happy path    | P1       | Partial (`SeriesBrowser.test.tsx`: name only)         |
-| SER-02 | `items: null` and missing `items` render the empty state  | Empty state   | P1       | No                                                    |
-| SER-03 | Null / missing numeric and optional fields do not crash   | Empty state   | P1       | No                                                    |
-| SER-04 | Empty list shows "No series detected yet"                 | Empty state   | P2       | Yes (`SeriesBrowser.test.tsx`)                        |
-| SER-05 | Render crash shows route error fallback; Back still works | Error         | P1       | No                                                    |
-| SER-06 | Signed-out user is sent to `/login`                       | Permissions   | P1       | No                                                    |
-| SER-07 | Only series from accessible libraries are shown           | Permissions   | P1       | No                                                    |
-| SER-08 | Loading text while pending                                | Loading       | P2       | No                                                    |
-| SER-09 | Server error (500 / 403) shows ErrorState                 | Error         | P2       | No                                                    |
-| SER-10 | Network failure and malformed JSON show generic error     | Error         | P2       | No                                                    |
-| SER-11 | Error state offers a way to retry                         | Error         | P2       | No                                                    |
-| SER-12 | Sort change re-fetches with `sort=progress`               | Navigation    | P2       | No                                                    |
-| SER-13 | Fast sort changes: last response wins                     | Navigation    | P2       | No                                                    |
-| SER-14 | Poster source rules and broken-poster fallback            | Happy path    | P2       | No                                                    |
-| SER-15 | Card links to `/series/:id`; Back returns                 | Navigation    | P2       | No                                                    |
-| SER-16 | Year badge rules (`year` 0 / missing)                     | Empty state   | P3       | No                                                    |
-| SER-17 | Arabic UI and Arabic series names                         | RTL           | P2       | Partial (`SeriesBrowser.test.tsx`: `dir="auto"` only) |
-| SER-18 | Phone width: grid fits, no horizontal scroll              | Responsive    | P3       | No                                                    |
-| SER-19 | Light/dark theme readability                              | Theme         | P3       | No                                                    |
-| SER-20 | Keyboard and a11y: sort label, link names, progress label | Accessibility | P3       | No                                                    |
+| ID     | Title                                                     | Category      | Priority | Covered by existing test?      |
+| ------ | --------------------------------------------------------- | ------------- | -------- | ------------------------------ |
+| SER-01 | Grid shows a card per series with name, counts, progress  | Happy path    | P1       | Yes (`SeriesBrowser.test.tsx`) |
+| SER-02 | `items: null` and missing `items` render the empty state  | Empty state   | P1       | Yes (`SeriesBrowser.test.tsx`) |
+| SER-03 | Null / missing numeric and optional fields do not crash   | Empty state   | P1       | Yes (`SeriesBrowser.test.tsx`) |
+| SER-04 | Empty list shows "No series detected yet"                 | Empty state   | P2       | Yes (`SeriesBrowser.test.tsx`) |
+| SER-05 | Render crash shows route error fallback; Back still works | Error         | P1       | Yes (`SeriesBrowser.test.tsx`) |
+| SER-06 | Signed-out user is sent to `/login`                       | Permissions   | P1       | Yes (`SeriesBrowser.test.tsx`) |
+| SER-07 | Only series from accessible libraries are shown           | Permissions   | P1       | No (e2e-only)                  |
+| SER-08 | Loading text while pending                                | Loading       | P2       | Yes (`SeriesBrowser.test.tsx`) |
+| SER-09 | Server error (500 / 403) shows ErrorState                 | Error         | P2       | Yes (`SeriesBrowser.test.tsx`) |
+| SER-10 | Network failure and malformed JSON show generic error     | Error         | P2       | Yes (`SeriesBrowser.test.tsx`) |
+| SER-11 | Error state offers a way to retry                         | Error         | P2       | Yes (`SeriesBrowser.test.tsx`) |
+| SER-12 | Sort change re-fetches with `sort=progress`               | Navigation    | P2       | Yes (`SeriesBrowser.test.tsx`) |
+| SER-13 | Fast sort changes: last response wins                     | Navigation    | P2       | Yes (`SeriesBrowser.test.tsx`) |
+| SER-14 | Poster source rules and broken-poster fallback            | Happy path    | P2       | Yes (`SeriesBrowser.test.tsx`) |
+| SER-15 | Card links to `/series/:id`; Back returns                 | Navigation    | P2       | Yes (`SeriesBrowser.test.tsx`) |
+| SER-16 | Year badge rules (`year` 0 / missing)                     | Empty state   | P3       | No                             |
+| SER-17 | Arabic UI and Arabic series names                         | RTL           | P2       | Yes (`SeriesBrowser.test.tsx`) |
+| SER-18 | Phone width: grid fits, no horizontal scroll              | Responsive    | P3       | No                             |
+| SER-19 | Light/dark theme readability                              | Theme         | P3       | No                             |
+| SER-20 | Keyboard and a11y: sort label, link names, progress label | Accessibility | P3       | No                             |
 
 ## Cases
 
@@ -37,7 +37,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `SeriesBrowser.test.tsx` "renders series cards from the cross-library list" checks the name only.
+- **Covered by existing test?** Yes (`SeriesBrowser.test.tsx`)
 - **Preconditions / data:** `GET /api/series?sort=name` → `{ "items": [ { "id": "s1", "name": "Breaking Bad", "numbering": "season", "season_count": 5, "episode_count": 62, "watched_count": 31, "in_progress": 1, "year": 2008, "poster_video_id": "v9" } ] }`
 - **Steps:**
   1. Open `/series`.
@@ -47,7 +47,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesBrowser.test.tsx`)
 - **Preconditions / data:** `GET /api/series` → (a) `{ "items": null }`, (b) `{}`. List fields read: `items`.
 - **Steps:**
   1. Open `/series`.
@@ -57,7 +57,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesBrowser.test.tsx`)
 - **Preconditions / data:** items: `{ "id": "s1", "name": "A", "numbering": "season", "season_count": null, "episode_count": 0, "watched_count": 0, "in_progress": 0 }`, `{ "id": "s2", "name": "", "numbering": "absolute", "episode_count": null, "watched_count": null }`, `{ "id": "s3", "name": null, "poster_path": null, "poster_video_id": null }`.
 - **Steps:**
   1. Open `/series`.
@@ -77,7 +77,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesBrowser.test.tsx`)
 - **Preconditions / data:** full app routes inside `AppShell`; mock `@ds/components/ProgressBar/ProgressBar` (or `Card`) to throw for this page, or return `{ "items": "oops" }` (string → `.map` is not a function).
 - **Steps:**
   1. Open `/library`, click the "Series" nav link.
@@ -89,7 +89,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesBrowser.test.tsx`)
 - **Preconditions / data:** full `App`; `GET /api/auth/me` → 401.
 - **Steps:**
   1. Open `/series`.
@@ -99,7 +99,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** e2e against the real API: non-admin user with ACL on library A only; series exist in A and B.
 - **Steps:**
   1. Sign in as the user; open `/series`.
@@ -109,7 +109,7 @@
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesBrowser.test.tsx`)
 - **Preconditions / data:** `GET /api/series` never resolves.
 - **Steps:**
   1. Open `/series`.
@@ -119,7 +119,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesBrowser.test.tsx`)
 - **Preconditions / data:** (a) 500 problem+json `{ "title": "list series failed", "status": 500 }`; (b) 403 `{ "title": "forbidden", "status": 403 }`.
 - **Steps:**
   1. Open `/series`.
@@ -129,7 +129,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesBrowser.test.tsx`)
 - **Preconditions / data:** (a) fetch rejects; (b) 200 `application/json` body `<html>`.
 - **Steps:**
   1. Open `/series`.
@@ -139,7 +139,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesBrowser.test.tsx`)
 - **Preconditions / data:** first call 500, second call returns one series.
 - **Steps:**
   1. Open `/series`; wait for the error.
@@ -150,7 +150,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesBrowser.test.tsx`)
 - **Preconditions / data:** `sort=name` → `[A, B]`; `sort=progress` → `[B, A]`.
 - **Steps:**
   1. Open `/series`; select "Progress" in the select named "Sort".
@@ -160,7 +160,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesBrowser.test.tsx`)
 - **Preconditions / data:** `sort=progress` resolves after 300 ms with `[P]`; the following `sort=name` resolves after 10 ms with `[N]`.
 - **Steps:**
   1. Open `/series`; select "Progress", then quickly "Name".
@@ -170,7 +170,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesBrowser.test.tsx`)
 - **Preconditions / data:** items: (a) `poster_path: "https://img.example/p.jpg"`; (b) `poster_path: "/api/series/s2/poster"`; (c) `poster_path: "/mnt/media/poster.jpg"`, `poster_video_id: "v3"`; (d) neither.
 - **Steps:**
   1. Open `/series`; fire `error` on image (a).
@@ -180,7 +180,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`SeriesBrowser.test.tsx`)
 - **Preconditions / data:** full routes; one series `s1`; `/api/series/s1*` mocked.
 - **Steps:**
   1. Open `/series`; click the card.
@@ -201,7 +201,7 @@
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** Partial — `SeriesBrowser.test.tsx` checks `dir="auto"` on an Arabic name.
+- **Covered by existing test?** Yes (`SeriesBrowser.test.tsx`)
 - **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`; item `{ "name": "باب الحارة", "season_count": 11, "episode_count": 400, "watched_count": 12 }`.
 - **Steps:**
   1. Open `/series`.

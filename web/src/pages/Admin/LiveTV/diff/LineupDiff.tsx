@@ -35,11 +35,14 @@ export function LineupDiff({
   const tk = useTk();
   if (!lineup) {
     if (!pending) return <p className="mkt-tvx-muted">{t("tvchanges.lineup.notYet")}</p>;
+    // the server may send null for an empty group
+    const channels = pending.channels ?? [];
+    const settings = pending.settings ?? [];
     return (
       <div className="mkt-tvx-diff" data-testid="pending-summary">
         <p className="mkt-tvx-hint">{t("tvchanges.lineup.draftNote")}</p>
-        <Group title={t("tvchanges.lineup.draftChannels")} empty={pending.channels.length === 0}>
-          {pending.channels.map((c) => (
+        <Group title={t("tvchanges.lineup.draftChannels")} empty={channels.length === 0}>
+          {channels.map((c) => (
             <li key={c.id}>
               <span className={`mkt-tvx-op mkt-tvx-op--${c.op}`}>
                 {tk(`tvchanges.op.${c.op}`, c.op)}
@@ -50,8 +53,8 @@ export function LineupDiff({
             </li>
           ))}
         </Group>
-        <Group title={t("tvchanges.lineup.draftSettings")} empty={pending.settings.length === 0}>
-          {pending.settings.map((s) => (
+        <Group title={t("tvchanges.lineup.draftSettings")} empty={settings.length === 0}>
+          {settings.map((s) => (
             <li key={s}>{t(`tvchanges.settings.section.${s}`)}</li>
           ))}
         </Group>
@@ -78,24 +81,29 @@ export function LineupDiff({
     );
   }
   const name = (id: string) => names[id] ?? id.slice(0, 8);
+  const added = lineup.added ?? [];
+  const removed = lineup.removed ?? [];
+  const renumbered = lineup.renumbered ?? [];
+  const renamed = lineup.renamed ?? [];
+  const changed = lineup.changed ?? [];
   return (
     <div className="mkt-tvx-diff" data-testid="lineup-diff">
-      <Group title={t("tvchanges.lineup.added")} empty={lineup.added.length === 0}>
-        {lineup.added.map((c) => (
+      <Group title={t("tvchanges.lineup.added")} empty={added.length === 0}>
+        {added.map((c) => (
           <li key={c.id} className="mkt-tvx-add">
             + {chan(t, c)}
           </li>
         ))}
       </Group>
-      <Group title={t("tvchanges.lineup.removed")} empty={lineup.removed.length === 0}>
-        {lineup.removed.map((c) => (
+      <Group title={t("tvchanges.lineup.removed")} empty={removed.length === 0}>
+        {removed.map((c) => (
           <li key={c.id} className="mkt-tvx-del">
             − {chan(t, c)}
           </li>
         ))}
       </Group>
-      <Group title={t("tvchanges.lineup.renumbered")} empty={lineup.renumbered.length === 0}>
-        {lineup.renumbered.map((r) => (
+      <Group title={t("tvchanges.lineup.renumbered")} empty={renumbered.length === 0}>
+        {renumbered.map((r) => (
           <li key={r.id}>
             {name(r.id)}:{" "}
             <span className="mkt-tvx-num" dir="ltr">
@@ -104,19 +112,19 @@ export function LineupDiff({
           </li>
         ))}
       </Group>
-      <Group title={t("tvchanges.lineup.renamed")} empty={lineup.renamed.length === 0}>
-        {lineup.renamed.map((r) => (
+      <Group title={t("tvchanges.lineup.renamed")} empty={renamed.length === 0}>
+        {renamed.map((r) => (
           <li key={r.id}>
             <span className="mkt-tvx-del">{r.from}</span> →{" "}
             <span className="mkt-tvx-add">{r.to}</span>
           </li>
         ))}
       </Group>
-      <Group title={t("tvchanges.lineup.changed")} empty={lineup.changed.length === 0}>
-        {lineup.changed.map((c) => (
+      <Group title={t("tvchanges.lineup.changed")} empty={changed.length === 0}>
+        {changed.map((c) => (
           <li key={c.id}>
             {chan(t, c)}:{" "}
-            {c.fields.map((f) => (
+            {(c.fields ?? []).map((f) => (
               <span key={f} className="mkt-tvx-kind">
                 {tk(`tvchanges.field.${f}`, f)}
               </span>

@@ -48,10 +48,9 @@ export function ScheduleSection({
   const [grid, setGrid] = useState<Grid>("regular");
   const [selected, setSelected] = useState<number | null>(null);
 
-  const slots: Slot[] =
-    grid === "ramadan"
-      ? ((ramadan?.slots as Slot[] | undefined) ?? [])
-      : ((config.slots as Slot[] | undefined) ?? []);
+  // a wrong-typed value (an object, a string) is treated as no slots
+  const raw = grid === "ramadan" ? ramadan?.slots : config.slots;
+  const slots: Slot[] = Array.isArray(raw) ? (raw as Slot[]) : [];
   const [weeklyPref, setWeeklyPref] = useState<boolean>(isWeekly(slots));
   const weekly = weeklyPref || isWeekly(slots);
 

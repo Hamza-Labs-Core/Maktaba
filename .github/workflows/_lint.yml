@@ -23,6 +23,37 @@ jobs:
           # while still letting `git diff origin/main...HEAD` work.
           fetch-depth: 0
 
+      # A PR must not add a build output (api/api.exe, 49.7 MB, landed in #119)
+      # or any file over 5 MB. Allowlist exceptions in ALLOW (one regex per line).
+      - name: No binaries or files over 5 MB
+        shell: bash
+        env:
+          # extended regexes of paths allowed anyway, one per line (none yet)
+          ALLOW: ""
+        run: |
+          base=$(git merge-base origin/main HEAD)
+          bad=0
+          while IFS= read -r f; do
+            [ -f "$f" ] || continue
+            if [ -n "$ALLOW" ] && grep -qE -x -f <(printf '%s\n' "$ALLOW" | sed '/^$/d') <<<"$f"; then
+              continue
+            fi
+            size=$(stat -c %s "$f")
+            if [ "$size" -gt 5242880 ]; then
+              echo "::error file=$f::$f is $size bytes (over 5 MB)"; bad=1
+            fi
+            case "$f" in
+              *.exe|*.dll|*.so|*.dylib|*.test|*.syso|*.o|*.a|*.pyd|*.jar)
+                echo "::error file=$f::$f is a build output"; bad=1; continue ;;
+            esac
+            magic=$(head -c 4 "$f" | od -An -tx1 | tr -d ' \n')
+            case "$magic" in
+              7f454c46|4d5a*|cffaedfe|cefaedfe|feedface|feedfacf|cafebabe)
+                echo "::error file=$f::$f is an executable (magic $magic)"; bad=1 ;;
+            esac
+          done < <(git diff --name-only --diff-filter=AM "$base" HEAD)
+          exit $bad
+
       - name: Set up Go
         uses: actions/setup-go@v6.4.0
         with:

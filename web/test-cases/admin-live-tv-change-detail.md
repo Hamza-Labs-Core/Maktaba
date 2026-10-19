@@ -17,40 +17,40 @@
 
 ## Summary
 
-| ID     | Title                                                      | Category      | Priority | Covered by existing test?                                     |
-| ------ | ---------------------------------------------------------- | ------------- | -------- | ------------------------------------------------------------- |
-| LCD-01 | Header, facts and actions in fixed order                   | Happy path    | P1       | Yes (`ChangeDetail.test.tsx`)                                 |
-| LCD-02 | Lineup tab                                                 | Happy path    | P2       | Yes (`ChangeDetail.test.tsx`)                                 |
-| LCD-03 | Schedules tab: open a channel, paging, errors              | Happy path    | P2       | Partial (`ChangeDetail.test.tsx`: open only; no paging/error) |
-| LCD-04 | Settings tab                                               | Happy path    | P3       | Yes (`ChangeDetail.test.tsx`)                                 |
-| LCD-05 | Binary & art tab, thumbnail fails                          | Happy path    | P3       | Partial (`ChangeDetail.test.tsx`: thumb error not)            |
-| LCD-06 | Checks tab order, reasons, errors, slot line               | Happy path    | P2       | Partial (`ChangeDetail.test.tsx`: order only)                 |
-| LCD-07 | History tab                                                | Happy path    | P3       | Yes (`ChangeDetail.test.tsx`)                                 |
-| LCD-08 | Draft: what it holds, Stage                                | Happy path    | P2       | Partial (`ChangeDetail.test.tsx`: Stage click result not)     |
-| LCD-09 | Unknown change id                                          | Navigation    | P1       | No                                                            |
-| LCD-10 | Load errors on first load and after a good load            | Error         | P2       | No                                                            |
-| LCD-11 | Change top-level arrays null or missing                    | Empty state   | P1       | No                                                            |
-| LCD-12 | Change `diff` and `pending_summary` arrays null or missing | Empty state   | P1       | No                                                            |
-| LCD-13 | Sub-endpoint arrays null or missing                        | Empty state   | P1       | No                                                            |
-| LCD-14 | Stage / Re-verify success and refusal                      | Error         | P2       | No                                                            |
-| LCD-15 | Approve for as soon as possible                            | Happy path    | P1       | Yes (`ChangeDetail.test.tsx`)                                 |
-| LCD-16 | Parameter-change acknowledgement                           | Validation    | P1       | Yes (`ChangeDetail.test.tsx`)                                 |
-| LCD-17 | Second-admin rule                                          | Permissions   | P1       | Yes (`ChangeDetail.test.tsx`)                                 |
-| LCD-18 | Schedule a swap time; past time blocked                    | Validation    | P2       | Partial (`ChangeDetail.test.tsx`: past time not)              |
-| LCD-19 | Swap now (promote) flow                                    | Happy path    | P1       | No                                                            |
-| LCD-20 | Approve / promote conflicts (409) and 501                  | Error         | P1       | No                                                            |
-| LCD-21 | Cancel (reject) flow and its errors                        | Happy path    | P1       | Partial (`ChangeDetail.test.tsx`: "cancel asks first")        |
-| LCD-22 | Roll back warm, cold, none, and errors                     | Happy path    | P1       | Partial (`ChangeDetail.test.tsx`: warm + none)                |
-| LCD-23 | Preview tab: mint, switch, side by side, errors            | Happy path    | P2       | Partial (`PreviewPanel.test.tsx`: no error/retry)             |
-| LCD-24 | Preview with a missing or bad `expires_at`                 | Error         | P2       | No                                                            |
-| LCD-25 | Polling rules and stopping on leave                        | Happy path    | P2       | No                                                            |
-| LCD-26 | Non-admin and signed-out access                            | Permissions   | P1       | No                                                            |
-| LCD-27 | Render crash shows the route error fallback; Back works    | Error         | P1       | No                                                            |
-| LCD-28 | Links, Back and switching between changes                  | Navigation    | P2       | No                                                            |
-| LCD-29 | Phone width                                                | Responsive    | P3       | No                                                            |
-| LCD-30 | Arabic: RTL and Arabic strings                             | RTL           | P2       | No                                                            |
-| LCD-31 | Light and dark theme                                       | Theme         | P3       | No                                                            |
-| LCD-32 | Keyboard, tabs, dialogs and live regions                   | Accessibility | P2       | No                                                            |
+| ID     | Title                                                      | Category      | Priority | Covered by existing test?                          |
+| ------ | ---------------------------------------------------------- | ------------- | -------- | -------------------------------------------------- |
+| LCD-01 | Header, facts and actions in fixed order                   | Happy path    | P1       | Yes (`ChangeDetail.test.tsx`)                      |
+| LCD-02 | Lineup tab                                                 | Happy path    | P2       | Yes (`ChangeDetail.test.tsx`)                      |
+| LCD-03 | Schedules tab: open a channel, paging, errors              | Happy path    | P2       | Yes (`ChangeDetail.cases.test.tsx`)                |
+| LCD-04 | Settings tab                                               | Happy path    | P3       | Yes (`ChangeDetail.test.tsx`)                      |
+| LCD-05 | Binary & art tab, thumbnail fails                          | Happy path    | P3       | Partial (`ChangeDetail.test.tsx`: thumb error not) |
+| LCD-06 | Checks tab order, reasons, errors, slot line               | Happy path    | P2       | Yes (`ChangeDetail.cases.test.tsx`)                |
+| LCD-07 | History tab                                                | Happy path    | P3       | Yes (`ChangeDetail.test.tsx`)                      |
+| LCD-08 | Draft: what it holds, Stage                                | Happy path    | P2       | Yes (`ChangeDetail.cases.test.tsx`)                |
+| LCD-09 | Unknown change id                                          | Navigation    | P1       | Yes (`ChangeDetail.cases.test.tsx`)                |
+| LCD-10 | Load errors on first load and after a good load            | Error         | P2       | Yes (`ChangeDetail.cases.test.tsx`)                |
+| LCD-11 | Change top-level arrays null or missing                    | Empty state   | P1       | Yes (`ChangeDetail.cases.test.tsx`)                |
+| LCD-12 | Change `diff` and `pending_summary` arrays null or missing | Empty state   | P1       | Yes (`ChangeDetail.cases.test.tsx`)                |
+| LCD-13 | Sub-endpoint arrays null or missing                        | Empty state   | P1       | Yes (`ChangeDetail.cases.test.tsx`)                |
+| LCD-14 | Stage / Re-verify success and refusal                      | Error         | P2       | Yes (`ChangeDetail.cases.test.tsx`)                |
+| LCD-15 | Approve for as soon as possible                            | Happy path    | P1       | Yes (`ChangeDetail.test.tsx`)                      |
+| LCD-16 | Parameter-change acknowledgement                           | Validation    | P1       | Yes (`ChangeDetail.test.tsx`)                      |
+| LCD-17 | Second-admin rule                                          | Permissions   | P1       | Yes (`ChangeDetail.test.tsx`)                      |
+| LCD-18 | Schedule a swap time; past time blocked                    | Validation    | P2       | Yes (`ChangeDetail.cases.test.tsx`)                |
+| LCD-19 | Swap now (promote) flow                                    | Happy path    | P1       | Yes (`ChangeDetail.cases.test.tsx`)                |
+| LCD-20 | Approve / promote conflicts (409) and 501                  | Error         | P1       | Yes (`ChangeDetail.cases.test.tsx`)                |
+| LCD-21 | Cancel (reject) flow and its errors                        | Happy path    | P1       | Yes (`ChangeDetail.cases.test.tsx`)                |
+| LCD-22 | Roll back warm, cold, none, and errors                     | Happy path    | P1       | Yes (`ChangeDetail.cases.test.tsx`)                |
+| LCD-23 | Preview tab: mint, switch, side by side, errors            | Happy path    | P2       | Yes (`ChangeDetail.cases.test.tsx`)                |
+| LCD-24 | Preview with a missing or bad `expires_at`                 | Error         | P2       | Yes (`ChangeDetail.cases.test.tsx`)                |
+| LCD-25 | Polling rules and stopping on leave                        | Happy path    | P2       | Yes (`ChangeDetail.cases.test.tsx`)                |
+| LCD-26 | Non-admin and signed-out access                            | Permissions   | P1       | Yes (`ChangeDetail.cases.test.tsx`)                |
+| LCD-27 | Render crash shows the route error fallback; Back works    | Error         | P1       | Yes (`ChangeDetail.cases.test.tsx`)                |
+| LCD-28 | Links, Back and switching between changes                  | Navigation    | P2       | Yes (`ChangeDetail.cases.test.tsx`)                |
+| LCD-29 | Phone width                                                | Responsive    | P3       | No (e2e-only)                                      |
+| LCD-30 | Arabic: RTL and Arabic strings                             | RTL           | P2       | Yes (`ChangeDetail.cases.test.tsx`)                |
+| LCD-31 | Light and dark theme                                       | Theme         | P3       | No (e2e-only)                                      |
+| LCD-32 | Keyboard, tabs, dialogs and live regions                   | Accessibility | P2       | Yes (`ChangeDetail.cases.test.tsx`)                |
 
 ## Cases
 
@@ -80,7 +80,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `ChangeDetail.test.tsx` "the Schedules tab: the regenerated channels; a channel opens before / after side by side"
+- **Covered by existing test?** Yes (`ChangeDetail.cases.test.tsx`)
 - **Preconditions / data:** staged change (`release_id` set). (a) `schedule-diff?page=1` → `{channels:[10 items], page:1, pages:3, total:25}`; `page=2` → next 10. (b) `?channel=c1` rejects 500. (c) `?page=1` rejects 500. (d) `{channels:[], total:0}`. (e) not staged (`release_id` missing). (f) `?channel=c2` → `{unchanged:true, before:[...], after:[...]}`.
 - **Steps:**
   1. Open the "Schedules" tab; click Next, Prev; click a channel twice.
@@ -110,7 +110,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `ChangeDetail.test.tsx` "the Checks tab: failures first, then warnings, passes, skipped"
+- **Covered by existing test?** Yes (`ChangeDetail.cases.test.tsx`)
 - **Preconditions / data:** `verify_report = {checks:[...], at:"<iso>", interim:true, runtime:"slots", slot:"green", status:"soaking", budget:{staging:2, capacity:8, live:4, standby:2}, reasons:["black frames on 101"], error:"probe failed"}`; second run `verify_report: {}`.
 - **Steps:**
   1. Open "Checks".
@@ -130,7 +130,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `ChangeDetail.test.tsx` "a draft: what it holds, Stage among its actions"
+- **Covered by existing test?** Yes (`ChangeDetail.cases.test.tsx`)
 - **Preconditions / data:** draft with `pending_summary` and no `diff.lineup`; `POST .../stage` → the change with `state:"staged"`; second run → 204 (empty body).
 - **Steps:**
   1. Click "Stage".
@@ -140,7 +140,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ChangeDetail.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/tv/changes/does-not-exist` rejects `ApiError` 404 "Not Found"; also an id with spaces/slashes `/admin/live-tv/changes/a%2Fb`.
 - **Steps:**
   1. Open `/admin/live-tv/changes/does-not-exist`; advance 6 s.
@@ -151,7 +151,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ChangeDetail.cases.test.tsx`)
 - **Preconditions / data:** (a) first `GET` rejects 500 / 403 / network / malformed JSON. (b) first `GET` good, later rejects 500 "boom". Fake timers.
 - **Steps:**
   1. Open the page; advance 2 s.
@@ -161,7 +161,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ChangeDetail.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/tv/changes/{id}` → a `ready` fixture with one change per run:
   - `allowed_actions: null` / missing (`ChangeDetail.tsx:120` `.includes` unguarded; `:213` `new Set(...)`)
   - `kinds: null` / missing (`changeBits.tsx:54`)
@@ -179,7 +179,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ChangeDetail.cases.test.tsx`)
 - **Preconditions / data:** one change per run:
   - `diff: null` / missing (guarded with `?.`)
   - `diff.lineup.added|removed|renumbered|renamed|changed: null` and each missing (`LineupDiff.tsx:64-97` `.length`/`.map` unguarded; `channelNames` guards added/removed/changed)
@@ -196,7 +196,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ChangeDetail.cases.test.tsx`)
 - **Preconditions / data:** one change per run:
   - `schedule-diff?page=1` → `{channels:null, page:1, pages:1, total:3}` and `channels` missing (`ScheduleDiff.tsx:56`)
   - `schedule-diff?channel=c1` → `{before:null, after:null, unchanged:false, ...}` (`ScheduleDiff.tsx:117-118`, `PreviewPanel.tsx` `GuideStrip` `d.after.slice`)
@@ -212,7 +212,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ChangeDetail.cases.test.tsx`)
 - **Preconditions / data:** `POST .../verify` → change; then rejects `ApiError` 409 `{state:"swapping"}`; then 409 `{error:"change_in_flight"}`; then 501; then network error.
 - **Steps:**
   1. Click "Re-verify" each time.
@@ -252,7 +252,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** Partial — `ChangeDetail.test.tsx` "schedules a swap time"
+- **Covered by existing test?** Yes (`ChangeDetail.cases.test.tsx`)
 - **Preconditions / data:** `approved` change with `allowed_actions:["schedule", ...]`.
 - **Steps:**
   1. Click "Schedule"; pick "At a time"; type a past datetime; then empty; then +2 h; switch mode to "immediate"; confirm.
@@ -262,7 +262,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ChangeDetail.cases.test.tsx`)
 - **Preconditions / data:** `approved` change with `swap_wait:"boundary"`, `allowed_actions` includes `promote`; `POST .../promote` → change `swapping`.
 - **Steps:**
   1. Click "Swap now"; click the backdrop; press Escape; reopen.
@@ -273,7 +273,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ChangeDetail.cases.test.tsx`)
 - **Preconditions / data:** `POST .../approve` rejects `ApiError` 409 with, per run: `{error:"second_admin_required"}`, `{error:"ack_param_change_required"}`, `{error:"change_in_flight"}`, `{state:"cancelled"}`, a bare 409 "Conflict"; then status 501. `POST .../promote` 409 `{state:"live"}`. And the pre-PATCH failing with 409 when the mode changed.
 - **Steps:**
   1. Open the dialog; confirm.
@@ -283,7 +283,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `ChangeDetail.test.tsx` "cancel asks first"
+- **Covered by existing test?** Yes (`ChangeDetail.cases.test.tsx`)
 - **Preconditions / data:** `ready` change; `POST .../cancel` → change `cancelled`; second run rejects 409 `{state:"swapping"}`.
 - **Steps:**
   1. Click "Cancel"; in the dialog click its "Cancel" (`common.cancel`) button.
@@ -294,7 +294,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `ChangeDetail.test.tsx` "a live change: Roll back says warm (instant) and the minutes left, and rolls back", "Roll back is disabled with the reason when there is no rollback point"
+- **Covered by existing test?** Yes (`ChangeDetail.cases.test.tsx`)
 - **Preconditions / data:** live change with `rollback` allowed. `GET /api/tv/rollback` → (a) `{mode:"warm", until:+12 min}`, (b) `{mode:"warm"}` (no until), (c) `{mode:"cold"}`, (d) `{mode:"none", reason:"no_rollback_point"}`, (e) rejects. `POST /api/tv/rollback` → `{mode:"cold", change_id, rollback_change_id}`; another run rejects 409.
 - **Steps:**
   1. Read `data-testid="rollback-mode"`; click "Roll back"; confirm.
@@ -304,7 +304,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `PreviewPanel.test.tsx` "mints the preview and plays the changed channel from staging, with the token", "switches channels and plays live side by side, following the staging channel", "says why there is no preview outside verifying / ready / approved"
+- **Covered by existing test?** Yes (`ChangeDetail.cases.test.tsx`)
 - **Preconditions / data:** `ready` change; `POST .../preview` → fixture; second run rejects 500 "boom" then succeeds.
 - **Steps:**
   1. Open "Preview"; tick side by side; click another channel.
@@ -315,7 +315,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ChangeDetail.cases.test.tsx`)
 - **Preconditions / data:** fake timers; `POST .../preview` → fixture with `expires_at` missing, then `"not-a-date"`, then a time already in the past.
 - **Steps:**
   1. Open "Preview"; advance 10 s; count preview calls.
@@ -325,7 +325,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ChangeDetail.cases.test.tsx`)
 - **Preconditions / data:** fake timers; live change with `rollback` allowed, then a `ready` change without it.
 - **Steps:**
   1. Open; advance 2 s, 60 s; hide the tab 10 s; show; navigate away; advance 10 s.
@@ -335,7 +335,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ChangeDetail.cases.test.tsx`)
 - **Preconditions / data:** (a) `useAuth` → `{user:{is_admin:false}}`; (b) full `App` with `{user:null, loading:false}`; (c) admin but the server answers 403 on `GET /api/tv/changes/{id}`.
 - **Steps:**
   1. Open `/admin/live-tv/changes/<id>`.
@@ -345,7 +345,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ChangeDetail.cases.test.tsx`)
 - **Preconditions / data:** full `App`, history `["/admin/live-tv/changes", "/admin/live-tv/changes/<id>"]`; `GET /api/tv/changes/<id>` → fixture with `allowed_actions: null` (throws at `ChangeDetail.tsx:120`), or mock `ChecksTable` to throw.
 - **Steps:**
   1. Render the detail URL.
@@ -356,7 +356,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ChangeDetail.cases.test.tsx`)
 - **Preconditions / data:** change with `source.stage:"tv_plan"`; two changes A and B.
 - **Steps:**
   1. Click "All changes"; Back.
@@ -368,7 +368,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P3
 - **Category:** Responsive
-- **Covered by existing test?** No (browser e2e)
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** viewport 375 × 812; change with many actions, checks and a preview.
 - **Steps:**
   1. Open the page; switch tabs; open the Approve dialog.
@@ -378,7 +378,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** No (keys only: `Changes.test.tsx` "every Changes page and notification key exists in English and Arabic")
+- **Covered by existing test?** Yes (`ChangeDetail.cases.test.tsx`)
 - **Preconditions / data:** `localStorage["mkt:locale"]="ar"`.
 - **Steps:**
   1. Open the page; each tab; the Approve dialog.
@@ -388,7 +388,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P3
 - **Category:** Theme
-- **Covered by existing test?** No (visual)
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** `data-theme="light"` / `"dark"`.
 - **Steps:**
   1. View add/del diff colours, check result chips, warn banner, errors.
@@ -398,7 +398,7 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ChangeDetail.cases.test.tsx`)
 - **Preconditions / data:** `ready` change.
 - **Steps:**
   1. Tab through the toolbar; move between tabs with arrow keys; open Approve; Tab through it; press Escape.

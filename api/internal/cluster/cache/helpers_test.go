@@ -116,6 +116,14 @@ func sqliteDB(t *testing.T) *sql.DB {
 	}
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
+	// a scratch database: no fsync per statement. TestRun's passes run every
+	// 20 ms on the one connection; with an fsync per commit on a slow runner
+	// disk it passed the unit tier's per-test cap (tvchangetest does the same)
+	for _, p := range []string{"PRAGMA synchronous = OFF", "PRAGMA journal_mode = MEMORY"} {
+		if _, err := db.Exec(p); err != nil {
+			t.Fatal(err)
+		}
+	}
 	for _, s := range append(append([]string{}, sqliteSchema...), upStatements(t, "0119_cluster_cache.sqlite.sql")...) {
 		if _, err := db.Exec(s); err != nil {
 			t.Fatalf("schema: %v\n%s", err, s)
