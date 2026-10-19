@@ -34,6 +34,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/pat"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
@@ -42,6 +43,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/watch"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
@@ -167,6 +169,13 @@ Commands:
 func runServe() error {
 	logger := initLogger()
 	processStart := time.Now()
+
+	// Epic 35 story 35.8: a full node (MAKTABA_NODE_MODE=1) never migrates and needs
+	// its home's address; checked before anything binds.
+	nodeCfg := nodemode.FromEnv(os.Getenv)
+	if err := checkNodeEnv(nodeCfg); err != nil {
+		return err
+	}
 
 	// MAKTABA_AUTO_MIGRATE=true runs `migrate up` synchronously before
 	// the HTTP servers bind. The dev/e2e compose stacks set this so
@@ -307,10 +316,14 @@ func runServe() error {
 	// the app-DB block: it needs no DB, only the build version + network.
 	// The background poller runs for the process lifetime; the admin
 	// route's auth rides the principal middleware applySecurity installs.
-	updater := buildUpdater(logger)
-	go updater.Run(context.Background())
-	router.MountP28(r, router.P28Deps{Updater: updater})
-	logger.Info("p28: auto-update surface mounted", "event", "p28_mounted")
+	// A full node checks nothing itself: the home updates the cluster (these routes
+	// are home class there, proxied).
+	if !nodeCfg.Enabled {
+		updater := buildUpdater(logger)
+		go updater.Run(context.Background())
+		router.MountP28(r, router.P28Deps{Updater: updater})
+		logger.Info("p28: auto-update surface mounted", "event", "p28_mounted")
+	}
 
 	// Phase 6 (Epic 7) handler wiring. Opens its own *sql.DB so the
 	// admin-port readiness check and the handler DB pool are
@@ -327,7 +340,18 @@ func runServe() error {
 	// the security chain alongside JWT/cookie. Nil when the auth surface
 	// is unwired (no DB).
 	var patAuth func(http.Handler) http.Handler
-	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
+	// nodeRT is a full node's runtime (nil on the home); nodeVerifier checks the
+	// nodes' signed requests on the home (Epic 35 stories 35.8-35.10).
+	var nodeRT *nodeRuntime
+	var nodeVerifier *delegation.Verifier
+	if nodeCfg.Enabled {
+		rt, closeNode, err := mountNode(r, nodeCfg, statsDataDir, logger)
+		if err != nil {
+			return err
+		}
+		defer closeNode()
+		nodeRT = rt
+	} else if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
 		appDB, dbErr := sql.Open("postgres", dsn)
 		if dbErr != nil {
 			logger.Warn("p6: sql.Open failed; handlers unwired",
@@ -511,8 +535,12 @@ func runServe() error {
 			// Epic 31 (multi-instance) — instance identity, the LAN
 			// announcement (MAKTABA_DISCOVERY_MDNS=0 turns it off), the
 			// machine join/approve/revoke surface and its housekeeping.
-			clusterClose := mountCluster(r, appDB, dsn, publicAddr, homeSecrets, logger)
+			clusterClose, verifier := mountCluster(r, appDB, dsn, publicAddr, homeSecrets, logger)
 			defer clusterClose()
+			nodeVerifier = verifier
+			// Epic 35 stories 35.9, 35.11: the nodes' delegation and cluster sign-in,
+			// and this machine's /api/cluster/self
+			mountHomeClusterAuth(r, appDB, logger)
 
 			// Story 15.6 pairing reaper. Mirrors the idempotency sweeper
 			// (go idemSweep()): a boot goroutine expires stale tickets and
@@ -534,9 +562,16 @@ func runServe() error {
 	publicMux.Handle("/api/.well-known/jwks.json", &keys.JWKSHandler{Set: auth.keys})
 	publicMux.Handle("/", r)
 
+	// The home verifies the nodes' signed requests before anything else (story
+	// 35.9); a full node serves every route by its placement class (story 35.10).
+	publicHandler := delegation.Accept(nodeVerifier, "mkt_sess")(
+		auth.applySecurity(publicMux, cookieAuth, csrf, patAuth))
+	if nodeRT != nil {
+		publicHandler = nodeRT.handler(auth, r, publicMux)
+	}
 	publicSrv := &http.Server{
 		Addr:              publicAddr,
-		Handler:           auth.applySecurity(publicMux, cookieAuth, csrf, patAuth),
+		Handler:           publicHandler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	adminSrv := &http.Server{

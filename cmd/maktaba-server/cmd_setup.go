@@ -17,15 +17,21 @@ import (
 
 func newSetupCmd() *cobra.Command {
 	var runMigrate bool
+	var nf nodeSetupFlags
 	cmd := &cobra.Command{
 		Use:   "setup",
 		Short: "Interactive first-run wizard",
 		Long:  "setup detects your platform, gathers media roots and storage choice, seeds an admin credential, optionally downloads a Whisper model, writes server.toml, and runs the initial migration.",
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(c *cobra.Command, _ []string) error {
+			if nf.node {
+				// Epic 35 story 35.8: a worker-only node becomes a full node
+				return runSetupNodeCmd(c)
+			}
 			return runSetup(runMigrate)
 		},
 	}
 	cmd.Flags().BoolVar(&runMigrate, "migrate", true, "run the initial database migration at the end")
+	nf.register(cmd)
 	return cmd
 }
 

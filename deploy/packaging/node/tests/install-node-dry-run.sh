@@ -357,6 +357,17 @@ has_cmd "an update removes the last release's downloaded wheel" \
     "rm -rf -- $T/h-dist/.local/share/maktaba/node/dist/maktaba_pipeline-1.0.0-py3-none-any.whl"
 has_cmd "an update removes the last release's downloaded constraints" \
     "rm -rf -- $T/h-dist/.local/share/maktaba/node/dist/maktaba-pipeline-1.0.0-constraints.txt"
+# --- --full: a worker becomes a full node (Epic 35 story 35.8 TC6) --------------------------------
+mkdir -p "$T/full-release"
+run_installer "$NODE_SRC" HOME="$T/h-full" -- --full --server-dir "$T/full-release" --instances 2
+expect_ok "--full"
+has_cmd "--full runs setup --node with the release, the worker's Python and its instances" \
+    "maktaba-server setup --node --from $T/full-release --python $T/h-full/.local/share/maktaba/node/venv/bin/python --instances 2"
+if grep -q "systemctl --user enable" <<<"$OUT"; then
+    fail "--full registers no worker unit (setup --node registers maktaba-server)"
+else
+    ok "--full registers no worker unit"
+fi
 echo
 printf '%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" = 0 ]

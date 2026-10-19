@@ -171,8 +171,13 @@ func runServe() error {
 	if nodeMode && os.Getenv("DATABASE_URL") == "" && node.DatabaseURL != "" {
 		_ = os.Setenv("DATABASE_URL", node.DatabaseURL)
 	}
+	// Epic 35 story 35.8 (design §9.1, R13): on a full node (MAKTABA_FULL_NODE=1, set by
+	// its supervisor) the streaming role also serves video on demand — its own sessions,
+	// read from the NAS through this machine's mounts — besides the channels the home's
+	// front door places here.
+	fullNode := nodeMode && fullNodeFromEnv()
 	if nodeMode {
-		logger.Info("streaming: cluster node mode", "node_id", node.NodeID, "event", "tv_node_mode")
+		logger.Info("streaming: cluster node mode", "node_id", node.NodeID, "full_node", fullNode, "event", "tv_node_mode")
 	}
 
 	backendCtx, backendCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -199,6 +204,9 @@ func runServe() error {
 		layout := cache.New(cfg.Cache.Root)
 		_ = layout.EnsureTiers()
 		publicHandler = buildNodeTV(logger, cfg, pool, layout, node)
+		if fullNode {
+			publicHandler = splitFullNode(publicHandler, buildVOD(logger, probeBackend, transcripts))
+		}
 	} else {
 		publicHandler = buildPublicHandler(logger, probeBackend, transcripts, pool)
 	}
@@ -234,11 +242,11 @@ func runServe() error {
 	var grpcServer *grpc.Server
 	var grpcLis net.Listener
 	grpcErr := errors.New("node mode")
-	if !nodeMode {
+	if !nodeMode || fullNode {
 		grpcServer = grpcsrv.NewGRPCServer(buildGRPCServer(logger, probeBackend))
 		grpcLis, grpcErr = net.Listen("tcp", grpcAddr)
 	}
-	if nodeMode {
+	if nodeMode && !fullNode {
 		logger.Info("grpc surface off on a cluster node", "event", "grpc_node_off")
 	} else if grpcErr != nil {
 		logger.Warn("grpc listen failed; grpc surface disabled",

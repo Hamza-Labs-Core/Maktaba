@@ -86,6 +86,10 @@ type Handler struct {
 	// Storage holds the storage servers and the home's share report (story
 	// 31.3). Nil: those routes answer 404.
 	Storage cluster.StorageStore
+	// WebURL and Version are the home's own web address and release (Epic 35 story
+	// 35.11), shown next to the machines'.
+	WebURL  string
+	Version string
 }
 
 // Mount wires the routes.
@@ -458,6 +462,10 @@ type Home struct {
 	// Canonicalize is the automatic conversion of the stored paths to
 	// canonical share paths (state, pending admin request).
 	Canonicalize *cluster.CanonStatus `json:"canonicalize,omitempty"`
+	// Epic 35 story 35.11: the home's own web address and release, listed with the
+	// machines' (WebURL: MAKTABA_WEB_URL, set by the supervisor).
+	WebURL  *string `json:"web_url"`
+	Version string  `json:"version"`
 }
 
 // Overview is GET /api/cluster.
@@ -500,6 +508,11 @@ func (h *Handler) Overview(w http.ResponseWriter, r *http.Request) {
 	}
 	home := h.home(ctx, id)
 	h.homeStorage(r, &home)
+	if h.WebURL != "" {
+		u := h.WebURL
+		home.WebURL = &u
+	}
+	home.Version = h.Version
 	common.WriteJSON(w, r, http.StatusOK, Overview{Home: home, Nodes: nodes})
 }
 

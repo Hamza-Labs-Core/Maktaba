@@ -33,6 +33,14 @@ type Config struct {
 	Cloud         CloudSection         `toml:"cloud"`
 	Supervisor    SupervisorSection    `toml:"supervisor"`
 	TV            TVSection            `toml:"tv"`
+	Pipeline      PipelineSection      `toml:"pipeline"`
+}
+
+// PipelineSection is the [pipeline] table (Epic 35 story 35.8): how many pipeline
+// worker processes this machine runs (a converted worker-only node keeps its
+// installer's --instances N here).
+type PipelineSection struct {
+	Instances int `toml:"instances"`
 }
 
 // TVSection is the [tv] table (Epic 33 story 33.1).
@@ -63,6 +71,19 @@ type ServerSection struct {
 	// "http://192.168.1.20:8081" (Plex's HDHomeRun address, XMLTV/M3U
 	// links). Empty derives it from stream_addr + the LAN IP.
 	PublicURL string `toml:"public_url"`
+	// WebPublicURL is how other devices reach this machine's web UI (Epic 35 story
+	// 35.11), e.g. "http://192.168.1.21:8088". Empty derives it from web_listen and
+	// the host of public_url (or the LAN IP).
+	WebPublicURL string `toml:"web_public_url"`
+	// Role is "auto" (default: a joined node config makes this machine a full node,
+	// Epic 35 story 35.8), "home" (never a node, even with a node config) or "node".
+	Role string `toml:"role"`
+	// The intra-host ports of the roles (defaults 127.0.0.1:9050, :9101,
+	// 127.0.0.1:9090, 127.0.0.1:9102); set them to run two machines on one host.
+	StreamingGRPCAddr  string `toml:"streaming_grpc_addr"`
+	StreamingAdminAddr string `toml:"streaming_admin_addr"`
+	PipelineGRPCAddr   string `toml:"pipeline_grpc_addr"`
+	PipelineLogsAddr   string `toml:"pipeline_logs_addr"`
 }
 
 // DatabaseSection selects the storage backend via a single DSN. The

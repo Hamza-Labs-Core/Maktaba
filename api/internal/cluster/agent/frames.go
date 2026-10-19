@@ -103,6 +103,8 @@ func (h *Hub) dispatch(s *Session, t string, raw []byte) {
 		if json.Unmarshal(raw, &f) == nil {
 			s.cancelRelay(f.ID)
 		}
+	case "update.state":
+		h.onUpdateState(s, raw)
 	case "cmd.result":
 		var f CmdResult
 		if json.Unmarshal(raw, &f) == nil {

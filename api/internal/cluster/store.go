@@ -72,6 +72,16 @@ type Node struct {
 	RevokedAt     *time.Time
 	LastSeenAt    *time.Time
 	UpdatedAt     time.Time
+
+	// What a full node reports about itself (Epic 35 slot 0134, story 35.8): its
+	// release, platform, own web address, whether it runs maktaba-server in node mode,
+	// the VOD fallback (design §11.5) and the rollout's view of it (story 35.12).
+	Version     *string
+	Platform    *string
+	WebURL      *string
+	FullNode    bool
+	VOD         json.RawMessage
+	UpdateState json.RawMessage
 }
 
 // NodeWorker is a workers row that belongs to a node.

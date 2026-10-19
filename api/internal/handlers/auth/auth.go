@@ -37,6 +37,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/refresh"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/securityaudit"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/sessions"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
@@ -315,6 +316,9 @@ func (h *Handler) respondWeb(w http.ResponseWriter, r *http.Request, u *users.Us
 		UserID:    u.ID,
 		IP:        remoteIP(r),
 		UserAgent: r.UserAgent(),
+		// a sign-in through a full node (its signed proxy, Epic 35 story 35.9 AC5) is a
+		// sign-in on the home tagged with the node; the cookie (no Domain) is the node's
+		OriginNodeID: delegation.NodeFrom(r.Context()),
 	})
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("create session"))

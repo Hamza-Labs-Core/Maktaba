@@ -122,9 +122,9 @@ func ProbeURL(role Role, cfg config.Config) string {
 	case RoleAPI:
 		return "http://" + LocalAddr(cfg.Server.AdminAddr, "9100") + "/healthz"
 	case RoleStreaming:
-		return "http://" + LocalAddr(streamingAdminAddr, "9101") + "/healthz"
+		return "http://" + LocalAddr(streamingAdmin(cfg), "9101") + "/healthz"
 	case RolePipeline:
-		return "http://" + pipelineLogsAddr + "/healthz"
+		return "http://" + pipelineLogs(cfg) + "/healthz"
 	}
 	return ""
 }

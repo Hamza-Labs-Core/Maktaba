@@ -20,6 +20,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -59,6 +60,49 @@ type Session struct {
 	IP         *string
 	UserAgent  *string
 	RevokedAt  *time.Time
+	// OriginNodeID is the machine the session was created through (Epic 35 story
+	// 35.9: a sign-in on a node is a sign-in on the home, tagged with the node); nil:
+	// the home itself.
+	OriginNodeID *string
+	// ParentSessionID is set on a cluster sign-in's child session; signing out of the
+	// parent ends it.
+	ParentSessionID *string
+}
+
+// Revocation is what a revocation ended: sessions by id, or every session of a user.
+// The cluster pushes it to every node (auth.revoked) so their caches drop it within a
+// second (story 35.9 AC4).
+type Revocation struct {
+	SessionIDs []string
+	UserID     string
+	Reason     string
+}
+
+var (
+	hookMu     sync.RWMutex
+	revokeHook func(Revocation)
+)
+
+// SetRevokeHook installs the function every revocation is reported to (the home's
+// cluster hub). nil removes it.
+func SetRevokeHook(fn func(Revocation)) {
+	hookMu.Lock()
+	revokeHook = fn
+	hookMu.Unlock()
+}
+
+// NotifyRevoked reports a revocation made outside this store (a user disabled or
+// deleted, an expiry sweep) to the hook.
+func NotifyRevoked(r Revocation) {
+	if len(r.SessionIDs) == 0 && r.UserID == "" {
+		return
+	}
+	hookMu.RLock()
+	fn := revokeHook
+	hookMu.RUnlock()
+	if fn != nil {
+		fn(r)
+	}
 }
 
 // Active reports whether `s` is currently usable (not revoked and not
@@ -88,6 +132,10 @@ type CreateInput struct {
 	UserID    string
 	IP        string
 	UserAgent string
+	// OriginNodeID tags a session created through a node (story 35.9); "" = the home.
+	OriginNodeID string
+	// ParentSessionID makes a cluster sign-in's child session; "" = none.
+	ParentSessionID string
 }
 
 // Create inserts a fresh session row and returns the in-memory shape
@@ -113,8 +161,10 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (*Session, error) {
 	expires := now.Add(ttl)
 
 	var (
-		ipArg sql.NullString
-		uaArg sql.NullString
+		ipArg     sql.NullString
+		uaArg     sql.NullString
+		originArg sql.NullString
+		parentArg sql.NullString
 	)
 	if in.IP != "" {
 		ipArg = sql.NullString{Valid: true, String: in.IP}
@@ -122,14 +172,32 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (*Session, error) {
 	if in.UserAgent != "" {
 		uaArg = sql.NullString{Valid: true, String: in.UserAgent}
 	}
+	if in.OriginNodeID != "" {
+		originArg = sql.NullString{Valid: true, String: in.OriginNodeID}
+	}
+	if in.ParentSessionID != "" {
+		parentArg = sql.NullString{Valid: true, String: in.ParentSessionID}
+	}
 
-	const q = `INSERT INTO web_sessions
-	             (id, user_id, csrf_token, created_at, last_seen_at, expires_at, ip, user_agent)
-	             VALUES ($1, $2, $3, $4, $4, $5, $6, $7)`
-	if _, err := s.DB.ExecContext(ctx, q,
-		rowID, in.UserID, csrf, now, expires, ipArg, uaArg,
-	); err != nil {
-		return nil, err
+	if originArg.Valid || parentArg.Valid {
+		const q = `INSERT INTO web_sessions
+		             (id, user_id, csrf_token, created_at, last_seen_at, expires_at, ip, user_agent,
+		              origin_node_id, parent_session_id)
+		             VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8, $9)`
+		if _, err := s.DB.ExecContext(ctx, q,
+			rowID, in.UserID, csrf, now, expires, ipArg, uaArg, originArg, parentArg,
+		); err != nil {
+			return nil, err
+		}
+	} else {
+		const q = `INSERT INTO web_sessions
+		             (id, user_id, csrf_token, created_at, last_seen_at, expires_at, ip, user_agent)
+		             VALUES ($1, $2, $3, $4, $4, $5, $6, $7)`
+		if _, err := s.DB.ExecContext(ctx, q,
+			rowID, in.UserID, csrf, now, expires, ipArg, uaArg,
+		); err != nil {
+			return nil, err
+		}
 	}
 
 	out := &Session{
@@ -148,7 +216,24 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (*Session, error) {
 		v := uaArg.String
 		out.UserAgent = &v
 	}
+	if originArg.Valid {
+		v := originArg.String
+		out.OriginNodeID = &v
+	}
+	if parentArg.Valid {
+		v := parentArg.String
+		out.ParentSessionID = &v
+	}
 	return out, nil
+}
+
+// Origin reads a session's origin node and parent (story 35.9); empty strings when
+// none. Kept apart from Lookup so a database without slot 0133 still signs people in.
+func (s *Store) Origin(ctx context.Context, id string) (originNodeID, parentSessionID string, err error) {
+	var o, p sql.NullString
+	err = s.DB.QueryRowContext(ctx,
+		`SELECT CAST(origin_node_id AS TEXT), CAST(parent_session_id AS TEXT) FROM web_sessions WHERE id = $1`, id).Scan(&o, &p)
+	return o.String, p.String, err
 }
 
 // Lookup fetches the session row by id. Returns ErrNotFound when the
@@ -188,12 +273,41 @@ func (s *Store) TouchLastSeen(ctx context.Context, id string, now time.Time) err
 
 // Revoke marks a single session as revoked. Idempotent — re-revoking
 // a revoked row is a no-op.
+//
+// The session's cluster sign-in children (story 35.9) are revoked with it, and the
+// revocation is reported to the hook (every node drops its cached copy).
 func (s *Store) Revoke(ctx context.Context, id string) error {
 	const q = `UPDATE web_sessions
 	             SET revoked_at = now()
 	             WHERE id = $1 AND revoked_at IS NULL`
-	_, err := s.DB.ExecContext(ctx, q, id)
-	return err
+	if _, err := s.DB.ExecContext(ctx, q, id); err != nil {
+		return err
+	}
+	ids := append([]string{id}, s.revokeChildren(ctx, id)...)
+	NotifyRevoked(Revocation{SessionIDs: ids, Reason: "revoked"})
+	return nil
+}
+
+// revokeChildren revokes the active children of a session and returns their ids. A
+// database without slot 0133 has none.
+func (s *Store) revokeChildren(ctx context.Context, parent string) []string {
+	rows, err := s.DB.QueryContext(ctx, `SELECT CAST(id AS TEXT) FROM web_sessions
+	             WHERE parent_session_id = $1 AND revoked_at IS NULL`, parent)
+	if err != nil {
+		return nil
+	}
+	var ids []string
+	for rows.Next() {
+		var c string
+		if rows.Scan(&c) == nil {
+			ids = append(ids, c)
+		}
+	}
+	_ = rows.Close()
+	for _, c := range ids {
+		_, _ = s.DB.ExecContext(ctx, `UPDATE web_sessions SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL`, c)
+	}
+	return ids
 }
 
 // RevokeAllForUser revokes every active web session for `userID`. Used
@@ -208,6 +322,7 @@ func (s *Store) RevokeAllForUser(ctx context.Context, userID string) (int64, err
 		return 0, err
 	}
 	n, _ := res.RowsAffected()
+	NotifyRevoked(Revocation{UserID: userID, Reason: "revoked_all"})
 	return n, nil
 }
 

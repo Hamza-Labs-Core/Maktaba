@@ -1,0 +1,59 @@
+{
+  "_doc": "Epic 35 story 35.9 delegation signatures (design §10.2, with the nonce line): b64(HMAC-SHA256(key, method \n path?query \n ts \n nonce \n sha256(body) hex \n sha256(delegated session) hex)). key is the UTF-8 bytes of key_utf8. Checked by the home's verifier and the node's signer (api/internal/cluster/delegation).",
+  "cases": [
+    {
+      "name": "introspect",
+      "method": "POST",
+      "path_query": "/api/cluster/delegate/introspect",
+      "ts": 1790000000,
+      "nonce": "AAECAwQFBgcICQoLDA0ODw",
+      "body": "{\"session\":\"5f0c6d0e-7a2b-4b8e-9d1c-0a1b2c3d4e5f\"}",
+      "delegated_session": "",
+      "body_sha256": "9d2954419339d9e5bafdd8c93b62f1b7b8594f8bce84fafc2038c24e1dac3e04",
+      "session_hash": "",
+      "canonical": "POST\n/api/cluster/delegate/introspect\n1790000000\nAAECAwQFBgcICQoLDA0ODw\n9d2954419339d9e5bafdd8c93b62f1b7b8594f8bce84fafc2038c24e1dac3e04\n",
+      "sig": "T1eoBQaPefIcosOQL10hRLH2KfvLMo0UHcch6wo86TY="
+    },
+    {
+      "name": "proxied get with session",
+      "method": "GET",
+      "path_query": "/api/videos?limit=20\u0026q=a%20b",
+      "ts": 1790000001,
+      "nonce": "EBESExQVFhcYGRobHB0eHw",
+      "body": "",
+      "delegated_session": "5f0c6d0e-7a2b-4b8e-9d1c-0a1b2c3d4e5f",
+      "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "session_hash": "42449b39286ac490843bdd8c86b3a53e4b580f3dc248a9e351a7eabb3c2d34fc",
+      "canonical": "GET\n/api/videos?limit=20\u0026q=a%20b\n1790000001\nEBESExQVFhcYGRobHB0eHw\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n42449b39286ac490843bdd8c86b3a53e4b580f3dc248a9e351a7eabb3c2d34fc",
+      "sig": "qma/xCVgT78UPbMXAMxFpPJaAbU5oGc7Sg1g/fLkFAk="
+    },
+    {
+      "name": "no session, no body",
+      "method": "GET",
+      "path_query": "/api/system/version",
+      "ts": 1790000002,
+      "nonce": "ICEiIyQlJicoKSorLC0uLw",
+      "body": "",
+      "delegated_session": "",
+      "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "session_hash": "",
+      "canonical": "GET\n/api/system/version\n1790000002\nICEiIyQlJicoKSorLC0uLw\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n",
+      "sig": "TEgmeAxjoOdBq1Sb43DtmARNT7Dj5+goOaV1DkFoRsQ="
+    },
+    {
+      "name": "upgrade",
+      "method": "GET",
+      "path_query": "/api/cluster/ws",
+      "ts": 1790000003,
+      "nonce": "MDEyMzQ1Njc4OTo7PD0-Pw",
+      "body": "",
+      "unsigned": true,
+      "delegated_session": "5f0c6d0e-7a2b-4b8e-9d1c-0a1b2c3d4e5f",
+      "body_sha256": "UNSIGNED-PAYLOAD",
+      "session_hash": "42449b39286ac490843bdd8c86b3a53e4b580f3dc248a9e351a7eabb3c2d34fc",
+      "canonical": "GET\n/api/cluster/ws\n1790000003\nMDEyMzQ1Njc4OTo7PD0-Pw\nUNSIGNED-PAYLOAD\n42449b39286ac490843bdd8c86b3a53e4b580f3dc248a9e351a7eabb3c2d34fc",
+      "sig": "u7sz3SJptYqL268Z8Jvg07fv2PplZYdjYqZaz+MNk5M="
+    }
+  ],
+  "key_utf8": "0123456789abcdef0123456789abcdef"
+}

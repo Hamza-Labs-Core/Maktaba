@@ -69,6 +69,7 @@ import {
   type StorageServer,
 } from "../../lib/clusterApi";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
+import { safeHttpUrl } from "../../lib/navigation";
 import "../../styles/queue.css";
 import "../../styles/machines.css";
 import "../../styles/cluster.css";
@@ -369,6 +370,7 @@ const HomeCard = memo(function HomeCard({
   const showError = useErrorToast();
   const [busy, setBusy] = useState(false);
   const left = home.accept_joins ? secondsUntil(home.accept_joins_until) : null;
+  const webUrl = safeHttpUrl(home.web_url);
 
   const toggle = (on: boolean) => {
     setBusy(true);
@@ -388,6 +390,21 @@ const HomeCard = memo(function HomeCard({
         <p className="mkt-mc-home__name">{bidiIsolate(home.name)}</p>
         <JobsSummary host={HOME_HOST} count={jobs} name={home.name} />
       </div>
+      {(webUrl || home.version) && (
+        <p className="mkt-mc-muted mkt-mc-line mkt-mc-where">
+          {webUrl && (
+            <span>
+              {t("machines.home.web")}{" "}
+              <WebLink href={webUrl}>
+                <bdi dir="ltr">{webUrl}</bdi>
+              </WebLink>
+            </span>
+          )}
+          {home.version && (
+            <span className="mkt-mc-chip">{t("machines.version", { version: home.version })}</span>
+          )}
+        </p>
+      )}
       <Toggle
         label={t("machines.home.accept")}
         checked={home.accept_joins}
@@ -561,6 +578,30 @@ function StorageServers() {
       )}
     </section>
   );
+}
+
+/** A link to a machine's own web address, in a new tab. */
+function WebLink({ href, children }: { href: string; children: ReactNode }) {
+  const { t } = useI18n();
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="mkt-mc-weblink">
+      {children}
+      <span className="mkt-visually-hidden"> {t("machines.newTab")}</span>
+    </a>
+  );
+}
+
+/** "Version 1.5.0 · windows-amd64" (Epic 35); null when it reports neither. */
+function versionChip(
+  t: (key: string, vars?: Record<string, string | number>) => string,
+  node: ClusterNode
+): string | null {
+  const parts = [
+    node.version ? t("machines.version", { version: node.version }) : "",
+    node.platform ?? "",
+  ];
+  const text = parts.filter(Boolean).join(" · ");
+  return text || null;
 }
 
 // ---------------------------------------------------------------- pending
@@ -755,6 +796,9 @@ const MachineCard = memo(function MachineCard({
   const chips = useCapabilityChips(node);
   const active = node.state === "approved";
   const name = bidiIsolate(node.name);
+  const version = versionChip(t, node);
+  const vod = node.vod?.fallback ? node.vod : null;
+  const webUrl = safeHttpUrl(node.web_url);
 
   const run = (p: Promise<unknown>) => {
     setBusy(true);
@@ -768,9 +812,14 @@ const MachineCard = memo(function MachineCard({
     <li className={`mkt-mc-card mkt-mc-node mkt-mc-node--${status}`}>
       <article aria-label={node.name}>
         <header className="mkt-mc-row mkt-mc-row--head">
-          <h3 className="mkt-mc-name">{name}</h3>
+          <h3 className="mkt-mc-name">{webUrl ? <WebLink href={webUrl}>{name}</WebLink> : name}</h3>
           <Badge tone={STATUS_TONE[status]}>{t(`machines.status.${status}`)}</Badge>
           <span className="mkt-mc-muted">{t("machines.role.node")}</span>
+          {version && <span className="mkt-mc-chip">{version}</span>}
+          {active && node.full_node === true && <Badge tone="success">{t("machines.full")}</Badge>}
+          {active && node.full_node === false && (
+            <Badge tone="neutral">{t("machines.workerOnly")}</Badge>
+          )}
           {/* "last seen" only while it is away: on a live machine it changed every poll */}
           {status !== "online" && node.last_seen_at && (
             <span className="mkt-mc-muted">
@@ -780,6 +829,14 @@ const MachineCard = memo(function MachineCard({
           {active && <JobsSummary host={node.id} count={jobs} name={node.name} />}
         </header>
         {paused && <PausedNotice reason={paused} />}
+        {vod && (
+          <p className="mkt-mc-note" role="note">
+            {t("machines.vod.fallback", {
+              machine: vod.served_by ? bidiIsolate(vod.served_by) : t("machines.vod.another"),
+            })}
+            {vod.detail && <span className="mkt-mc-muted"> {vod.detail}</span>}
+          </p>
+        )}
         {chips.length > 0 && (
           <ul className="mkt-mc-chips" aria-label={t("machines.cap.title")}>
             {chips.map((c, i) => (

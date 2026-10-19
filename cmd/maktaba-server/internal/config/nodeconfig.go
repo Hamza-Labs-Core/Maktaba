@@ -9,11 +9,53 @@ import (
 )
 
 // NodeConfig is the part of a joined machine's Epic 31 node config (node.json, written
-// by the pipeline when the home approved the join) the streaming role needs to run as a
-// cluster node (Epic 32.1).
+// by the pipeline when the home approved the join) the node's roles need: the streaming
+// role as a cluster node (Epic 32.1), and since Epic 35 (story 35.8) the whole of
+// maktaba-server in node mode — the API with the node's database role and the home's
+// address, the machine agent with the node's channel key.
+//
+// It holds credentials (the database password, the node's private key): never log or
+// print it; String redacts.
 type NodeConfig struct {
-	NodeID      string `json:"node_id"`
-	DatabaseURL string `json:"database_url"`
+	NodeID      string  `json:"node_id"`
+	Name        string  `json:"name"`
+	PrivateKey  string  `json:"private_key"`
+	Home        HomeRef `json:"home"`
+	DatabaseURL string  `json:"database_url"`
+}
+
+// HomeRef is node.json's home.
+type HomeRef struct {
+	URL        string `json:"url"`
+	APIURL     string `json:"api_url"`
+	InstanceID string `json:"instance_id"`
+	Name       string `json:"name"`
+	// ClusterPub is the home's long-term cluster public key (channel handshake v2);
+	// empty in a config written before v2 (the machine must re-join, story 35.8 EC2).
+	ClusterPub string `json:"cluster_pub"`
+}
+
+// HomeURL is the home's API URL (home.url, or the older home.api_url).
+func (n NodeConfig) HomeURL() string {
+	u := strings.TrimSpace(n.Home.URL)
+	if u == "" {
+		u = strings.TrimSpace(n.Home.APIURL)
+	}
+	return strings.TrimRight(u, "/")
+}
+
+// Node8 is the first 8 hex of the node id (its worker ids, its database role).
+func (n NodeConfig) Node8() string {
+	h := strings.ToLower(strings.ReplaceAll(n.NodeID, "-", ""))
+	if len(h) > 8 {
+		h = h[:8]
+	}
+	return h
+}
+
+// String never shows a credential.
+func (n NodeConfig) String() string {
+	return "node " + n.NodeID + " of " + n.HomeURL()
 }
 
 // Joined reports whether the machine joined a home (it holds a database credential).
@@ -52,6 +94,7 @@ func ReadNodeConfig(getenv func(string) string, goos, userHome string, readFile 
 		_ = json.Unmarshal(b, &n)
 	}
 	n.NodeID, n.DatabaseURL = strings.TrimSpace(n.NodeID), strings.TrimSpace(n.DatabaseURL)
+	n.PrivateKey = strings.TrimSpace(n.PrivateKey)
 	return n
 }
 
@@ -59,4 +102,10 @@ func ReadNodeConfig(getenv func(string) string, goos, userHome string, readFile 
 func LocalNodeConfig() NodeConfig {
 	home, _ := os.UserHomeDir()
 	return ReadNodeConfig(os.Getenv, runtime.GOOS, home, os.ReadFile)
+}
+
+// LocalNodeConfigPath is NodeConfigPath for this process.
+func LocalNodeConfigPath() string {
+	home, _ := os.UserHomeDir()
+	return NodeConfigPath(os.Getenv, runtime.GOOS, home)
 }

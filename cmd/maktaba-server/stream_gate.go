@@ -65,6 +65,9 @@ type streamGate struct {
 	authURL string       // the API's GET /api/auth/me
 	client  *http.Client
 	now     func() time.Time
+	// allow is the path filter (allowedStreamPath; a full node adds its
+	// /stream/via-home/ fallback, Epic 35)
+	allow func(string) bool
 
 	mu sync.Mutex
 	ok map[string]time.Time // credential hash → accepted until
@@ -77,6 +80,7 @@ func newStreamGate(next http.Handler, apiOrigin *url.URL) *streamGate {
 		client:  &http.Client{Timeout: 5 * time.Second},
 		now:     time.Now,
 		ok:      map[string]time.Time{},
+		allow:   allowedStreamPath,
 	}
 }
 
@@ -86,7 +90,7 @@ func (g *streamGate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !allowedStreamPath(r.URL.Path) {
+	if allow := g.allow; (allow == nil && !allowedStreamPath(r.URL.Path)) || (allow != nil && !allow(r.URL.Path)) {
 		http.NotFound(w, r)
 		return
 	}
