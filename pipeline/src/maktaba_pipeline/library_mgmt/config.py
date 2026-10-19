@@ -98,7 +98,9 @@ EFFECTIVE_DEFAULTS: dict[str, Any] = {
     "auto_tag_topics": True,
     "default_subtitle_lang": "en",
     "ignore_globs": [],
-    "sweep_interval_sec": 6 * 60 * 60,  # 6 h, per architecture §3.1
+    # 0: no periodic sweep (scans run when asked for); the reconciler sweeps a
+    # library that sets it (architecture §3.1 suggests 6 h)
+    "sweep_interval_sec": 0,
     "speaker_match_threshold": 0.35,
     "topic_clusters": None,  # auto: sqrt(N)/2 capped at 32
     "stt": {"backend": "whisper-mlx", "model": "large-v3", "profile": "default"},

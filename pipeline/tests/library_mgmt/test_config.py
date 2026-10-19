@@ -146,7 +146,7 @@ def test_effective_config_with_no_overrides_returns_defaults() -> None:
     eff = effective_config({})
     assert eff["language"] == "auto"
     assert eff["chapter_inference"] is True
-    assert eff["sweep_interval_sec"] == 6 * 60 * 60
+    assert eff["sweep_interval_sec"] == 0  # no periodic sweep unless a library sets one
 
 
 @pytest.mark.unit

@@ -8,7 +8,10 @@ and schedules:
    handler's ``mark_done`` and the engine bookkeeping);
 2. a scheduled ``youtube_sync`` refresh for libraries that have YouTube channels;
 3. the version sweep: after a stage ``version`` bump, every subject whose last
-   success ran at an older version is queued once (bulk priority 500).
+   success ran at an older version is queued once (bulk priority 500);
+4. the periodic library sweep (story 9.3): a library whose
+   ``settings.sweep_interval_sec`` is above 0 gets a ``scan`` once its last one is
+   that old (0, the default: only scans someone asks for).
 """
 
 from __future__ import annotations
@@ -26,7 +29,7 @@ from ..log import get_logger
 from .enqueue import enqueue_job
 from .graph import StageDef
 from .propagate import after_legacy_done
-from .sql import is_pg, now, to_ts
+from .sql import is_pg, loads, now, to_ts
 
 __all__ = ["ReconcileReport", "reconcile_once", "run_reconciler"]
 
@@ -45,6 +48,7 @@ class ReconcileReport:
     propagated: int = 0
     yt_refresh: int = 0
     version_sweep: int = 0
+    library_sweep: int = 0
 
 
 async def reconcile_once(
@@ -66,7 +70,8 @@ async def reconcile_once(
         propagated = await _repair_unpropagated(db, graph, t)
         refresh = await _youtube_refresh(db, graph, t, yt_refresh_hours)
         sweep = await _version_sweep(db, graph)
-    return ReconcileReport(True, propagated, refresh, sweep)
+        scans = await _library_sweeps(db, graph, t)
+    return ReconcileReport(True, propagated, refresh, sweep, scans)
 
 
 async def _repair_unpropagated(db: Any, graph: Mapping[str, StageDef], t: datetime) -> int:
@@ -124,6 +129,42 @@ async def _youtube_refresh(
     return n
 
 
+async def _library_sweeps(db: Any, graph: Mapping[str, StageDef], t: datetime) -> int:
+    """A ``scan`` for each library whose ``sweep_interval_sec`` has passed since its
+    last scan (queued, running or finished); none while one is live."""
+    if "scan" not in graph:
+        return 0
+    n = 0
+    for r in await db.fetch("SELECT id, settings FROM libraries WHERE deleted_at IS NULL"):
+        try:
+            settings = loads(r["settings"])
+        except ValueError:  # a malformed settings blob: no sweep for it
+            continue
+        every = settings.get("sweep_interval_sec") if isinstance(settings, dict) else None
+        if isinstance(every, bool) or not isinstance(every, int | float) or every <= 0:
+            continue
+        cutoff = to_ts(db, t - timedelta(seconds=float(every)))
+        recent = await db.fetchval(
+            "SELECT 1 FROM processing_jobs WHERE subject_kind = 'library' AND subject_id = $1"
+            " AND stage = 'scan' AND (state IN ('pending','claimed','running','resuming','paused')"
+            " OR finished_at >= $2) LIMIT 1",
+            r["id"],
+            cutoff,
+        )
+        if recent is not None:
+            continue
+        res = await enqueue_job(
+            db,
+            subject_kind="library",
+            subject_id=UUID(str(r["id"])),
+            stage="scan",
+            priority=SWEEP_PRIORITY,
+            reason={"why": "periodic sweep", "by": "system", "every_sec": every},
+        )
+        n += 1 if res.job_id is not None else 0
+    return n
+
+
 async def _version_sweep(db: Any, graph: Mapping[str, StageDef]) -> int:
     total = 0
     for stage in graph.values():
@@ -167,12 +208,16 @@ async def run_reconciler(
     while not stop.is_set():
         try:
             report = await reconcile_once(db, graph)
-            if report.leader and (report.propagated or report.yt_refresh or report.version_sweep):
+            if report.leader and (
+                report.propagated or report.yt_refresh or report.version_sweep
+                or report.library_sweep
+            ):  # fmt: skip
                 _log.info(
                     "reconciled",
                     propagated=report.propagated,
                     yt_refresh=report.yt_refresh,
                     version_sweep=report.version_sweep,
+                    library_sweep=report.library_sweep,
                 )
         except Exception:  # noqa: BLE001 - the reconciler must never take the worker down
             _log.exception("reconcile_failed")
