@@ -13,7 +13,9 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/agent"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
+	clusterh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
 )
@@ -65,12 +67,61 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, logger *slog
 			"event", "p31_mounted")
 	}
 	go h.Run(ctx, clusterTick)
+
+	// Epic 31 phase 2 — the cluster channel: every process's sealed
+	// WebSocket, the browsers' hub, the cluster files, the LLM router.
+	hub := mountClusterHub(r, h, db, driver, logger)
+	hubDone := make(chan struct{})
+	go func() {
+		defer close(hubDone)
+		hub.Run(ctx)
+	}()
 	return func() {
 		cancel()
+		select {
+		case <-hubDone:
+		case <-time.After(5 * time.Second):
+		}
 		if pub != nil {
 			_ = pub.Close()
 		}
 	}
+}
+
+// mountClusterHub reads the hub's settings (agent.FromEnv), loads or
+// creates the home's two local keys (never on the share): the home agent
+// key (~/.maktaba/cluster/home-agent.key, MAKTABA_HOME_AGENT_KEY) and the
+// cluster key pair (~/.maktaba/cluster/home-cluster.key,
+// MAKTABA_HOME_CLUSTER_KEY), whose public half goes into every approved
+// machine's sealed credentials; then it mounts the hub.
+func mountClusterHub(r chi.Router, h *clusterh.Handler, db *sql.DB, driver string, logger *slog.Logger) *agent.Hub {
+	cfg, warnings := agent.FromEnv(os.Getenv)
+	for _, w := range warnings {
+		logger.Warn("p31: cluster hub setting ignored", "detail", w, "event", "p31_hub_setting")
+	}
+	agentKeyEnv := os.Getenv("MAKTABA_HOME_AGENT_KEY")
+	if agentKeyEnv == "" {
+		agentKeyEnv = os.Getenv("MAKTABA_CLUSTER_KEY_PATH")
+	}
+	keyPath := agent.HomeKeyPath(agentKeyEnv)
+	key, err := agent.LoadOrCreateHomeKey(keyPath)
+	if err != nil {
+		logger.Warn("p31: home agent key unavailable; the home's own processes cannot join the channel",
+			"path", keyPath, "err", err, "event", "p31_home_key_failed")
+	}
+	cfg.HomeKey = key
+	clusterPath := agent.ClusterKeyPath(os.Getenv("MAKTABA_HOME_CLUSTER_KEY"))
+	if priv, pub, err := agent.LoadOrCreateClusterKey(clusterPath); err != nil {
+		logger.Warn("p31: home cluster key unavailable; machines cannot join the channel",
+			"path", clusterPath, "err", err, "event", "p31_cluster_key_failed")
+	} else {
+		cfg.ClusterKey = priv
+		h.ClusterPub = cluster.EncodeKey(pub)
+	}
+	cfg.Logger = logger
+	hub := router.MountP31Agent(r, h, router.P31AgentDeps{DB: db, Driver: driver, Config: cfg})
+	logger.Info("p31: cluster channel mounted", "home_ip", hub.HomeIP(), "event", "p31_hub_mounted")
+	return hub
 }
 
 func mdnsEnabled() bool {
