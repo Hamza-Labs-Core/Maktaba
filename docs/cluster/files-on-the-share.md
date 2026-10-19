@@ -39,7 +39,9 @@ If your libraries have no folder in common (for example they are on different sh
 Maktaba uses the folder of the library with the most videos. To choose the place yourself, set `MAKTABA_SHARE_ROOT` on the home (a path as the home sees
 it). `MAKTABA_CLUSTER_DIR` on a machine forces a local folder for that machine.
 
-The scanner ignores the `maktaba` folder: it holds no videos.
+The scanner ignores the `maktaba` folder: it holds no videos. Beside `cluster`, the
+`maktaba/models` folder holds the home's copy of the transcription model for the other
+machines (see [The transcription model on the share](models.md)).
 
 ## What is inside
 

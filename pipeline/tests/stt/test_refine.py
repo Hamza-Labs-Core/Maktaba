@@ -210,13 +210,13 @@ def test_refine_is_on_by_default_and_can_be_switched_off(
 def test_a_worker_without_the_model_keeps_whisper(monkeypatch: pytest.MonkeyPatch) -> None:
     from maktaba_pipeline.stt import cohere
 
-    def missing(model: str) -> Any:
+    def missing(model: str, share: Any = None) -> Any:
         raise RuntimeError("gated repo")
 
     monkeypatch.setattr(cohere, "recogniser", missing)
     t = transcript(sentence("قال الشيخ"))
     out = stage._refine(t, silence(), "m")
-    assert out == {"model": "m", "skipped": "RuntimeError: gated repo"}
+    assert out == {"model": "m", "source": "skipped", "skipped": "RuntimeError: gated repo"}
     assert t.sentences[0].text == "قال الشيخ"
 
 
@@ -236,7 +236,7 @@ def test_refine_hears_a_files_stretches_together_in_order() -> None:
 def test_a_merge_error_keeps_the_transcript(monkeypatch: pytest.MonkeyPatch) -> None:
     from maktaba_pipeline.stt import cohere
 
-    monkeypatch.setattr(cohere, "recogniser", lambda _m: lambda _s: ["x"])
+    monkeypatch.setattr(cohere, "recogniser", lambda _m, _share=None: lambda _s: ["x"])
     monkeypatch.setattr(cohere, "dictionary", lambda: None)
 
     def broken(*_a: Any, **_k: Any) -> Any:
@@ -244,5 +244,9 @@ def test_a_merge_error_keeps_the_transcript(monkeypatch: pytest.MonkeyPatch) -> 
 
     monkeypatch.setattr(rf, "refine", broken)
     t = transcript(sentence("قال الشيخ"))
-    assert stage._refine(t, silence(), "m") == {"model": "m", "failed": "ValueError: bug"}
+    assert stage._refine(t, silence(), "m") == {
+        "model": "m",
+        "source": "hf",
+        "failed": "ValueError: bug",
+    }
     assert t.sentences[0].text == "قال الشيخ"

@@ -23,6 +23,7 @@ import importlib.util
 import math
 import os
 import platform
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -154,22 +155,31 @@ def refine_model() -> str | None:
     return os.environ.get("MAKTABA_STT_REFINE_MODEL", REFINE_MODEL)
 
 
-def _refine(result: Transcript, audio: Any, model: str) -> dict[str, Any]:
-    """The second listen (in a thread: it decodes on the GPU). A worker that cannot run
-    it (no mlx-audio, no licence for the model) keeps Whisper's words and says why."""
+def _refine(
+    result: Transcript, audio: Any, model: str, share: Path | None = None
+) -> dict[str, Any]:
+    """The second listen (in a thread: it decodes on the GPU). The model comes from
+    Hugging Face or, on a machine without the licence, from the home's copy on the share
+    (``share``: the share's models folder); ``source`` says which. A worker that cannot
+    run it (no mlx-audio, no copy of the model) keeps Whisper's words and says why."""
     from ...stt.cohere import dictionary, recogniser
     from ...stt.refine import refine
 
     try:
-        rec = recogniser(model)
+        rec = recogniser(model, share)
     except Exception as exc:  # noqa: BLE001 - Whisper's transcript is still a transcript
         _log.warning("transcribe.refine_unavailable", model=model, error=str(exc))
-        return {"model": model, "skipped": f"{type(exc).__name__}: {exc}"[:300]}
+        return {
+            "model": model,
+            "source": "skipped",
+            "skipped": f"{type(exc).__name__}: {exc}"[:300],
+        }
+    source = str(getattr(rec, "source", "hf"))
     try:
-        return refine(result, audio, rec, dictionary(), model).as_dict()
+        return {**refine(result, audio, rec, dictionary(), model).as_dict(), "source": source}
     except Exception as exc:  # noqa: BLE001 - each stretch is merged whole: what is done stands
         _log.warning("transcribe.refine_failed", model=model, exc_info=True)
-        return {"model": model, "failed": f"{type(exc).__name__}: {exc}"[:300]}
+        return {"model": model, "source": source, "failed": f"{type(exc).__name__}: {exc}"[:300]}
 
 
 async def wait_for_memory(ctx: StageContext) -> None:
@@ -404,7 +414,10 @@ async def _transcribe_file(
     model = refine_model()
     if model and result.sentences and settings.word_timestamps:
         await ctx.progress("transcribe", round(total_sec), round(total_sec), "second listen")
-        refined = await asyncio.to_thread(_refine, result, audio, model)
+        from ...stt.model_share import resolve_models_dir
+
+        share = await resolve_models_dir(db)
+        refined = await asyncio.to_thread(_refine, result, audio, model, share)
     del audio
     if tmap is not None:
         result = _remap(result, tmap, total_sec)

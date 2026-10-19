@@ -2,8 +2,9 @@
 (through ``mlx-audio``) and the CAMeL Tools MSA dictionary.
 
 Both load once per process, on first use, and both are optional: a worker without the
-packages, the model's licence (a gated Hugging Face repo: accept it and log in once with
-``hf auth login``) or the dictionary's data (``camel_data -i morphology-db-msa-r13``,
+packages, the model (a gated Hugging Face repo: the home accepts its licence and logs in
+once with ``hf auth login``, then publishes a copy to the share that the other machines
+load from, :mod:`~.model_share`) or the dictionary's data (``camel_data -i morphology-db-msa-r13``,
 fetched here on first use) stores Whisper's transcript as it is and says why in the
 transcript's metadata.
 """
@@ -14,9 +15,11 @@ import importlib.util
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from ..log import get_logger
+from . import model_share
 
 __all__ = ["DEFAULT_MODEL", "CamelDictionary", "CohereRecogniser", "dictionary", "recogniser"]
 
@@ -34,17 +37,24 @@ class CohereRecogniser:
     the model is loaded and run on one dedicated thread, like Whisper's
     (:class:`~maktaba_pipeline.stt.batched.BatchedTranscriber`); calls queue for it."""
 
-    def __init__(self, model_id: str) -> None:
+    def __init__(self, model_id: str, path: Path | None = None, *, source: str = "hf") -> None:
         self.model_id = model_id
+        #: where the weights came from: ``hf`` (Hugging Face) or ``share`` (the home's copy)
+        self.source = source
+        self._path = path
         self._gpu = ThreadPoolExecutor(max_workers=1, thread_name_prefix="cohere")
-        self._model: Any = self._gpu.submit(self._load).result()
+        try:
+            self._model: Any = self._gpu.submit(self._load).result()
+        except BaseException:
+            self._gpu.shutdown(wait=False)
+            raise
 
     def _load(self) -> Any:
         from mlx_audio.stt.utils import (  # type: ignore[import-untyped,import-not-found,unused-ignore]
             load,
         )
 
-        return load(self.model_id)
+        return load(str(self._path) if self._path is not None else self.model_id)
 
     def __call__(self, stretches: list[Any]) -> list[str]:
         """The text of each stretch (each at most 30 s), decoded together in batches."""
@@ -76,16 +86,44 @@ _REC: dict[str, CohereRecogniser] = {}
 _REC_LOCK = threading.Lock()
 
 
-def recogniser(model_id: str) -> CohereRecogniser:
-    """The process's recogniser for ``model_id`` (loaded on first use; raises when the
-    package, the licence or the network is missing)."""
+_PUBLISHED: set[str] = set()
+
+
+def recogniser(model_id: str, share: Path | None = None) -> CohereRecogniser:
+    """The process's recogniser for ``model_id``, loaded on first use: from Hugging Face,
+    else from the copy on ``share`` (the share's models folder, :mod:`~.model_share`).
+    Raises when the package is missing or neither has the model. A Hugging Face load
+    publishes the snapshot to ``share`` (once per process, on a thread of its own)."""
     if importlib.util.find_spec("mlx_audio") is None:
         raise RuntimeError("mlx-audio is not installed (the stt extra)")
     with _REC_LOCK:
         rec = _REC.get(model_id)
         if rec is None:
-            rec = _REC[model_id] = CohereRecogniser(model_id)
+            rec = _REC[model_id] = _open(model_id, share)
         return rec
+
+
+def _open(model_id: str, share: Path | None) -> CohereRecogniser:
+    try:
+        rec = CohereRecogniser(model_id)
+    except Exception as hf_exc:  # noqa: BLE001 - gated, not logged in, offline: the share
+        try:
+            path = model_share.from_share(model_id, share)
+        except (OSError, ValueError, model_share.ShareModelError) as exc:
+            raise RuntimeError(
+                f"Hugging Face: {type(hf_exc).__name__}: {hf_exc} | share: {exc}"
+            ) from hf_exc
+        _log.info("stt.model_from_share", model=model_id, folder=str(path), hf_error=str(hf_exc))
+        return CohereRecogniser(model_id, path, source="share")
+    if share is not None and model_id not in _PUBLISHED:
+        _PUBLISHED.add(model_id)
+        threading.Thread(
+            target=model_share.publish_from_cache,
+            args=(model_id, share),
+            name="cohere-publish",
+            daemon=True,
+        ).start()
+    return rec
 
 
 class CamelDictionary:
