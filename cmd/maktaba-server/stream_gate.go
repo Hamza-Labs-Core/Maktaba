@@ -6,7 +6,7 @@ package main
 //
 //   - serves only the stream paths the web app loads (allowedStreamPath):
 //     a channel's HLS (/stream/channel/{uuid}/index|master|manifest.m3u8,
-//     seg-N.ts, live.ts) and a video session's HLS/DASH, subtitles and
+//     seg-N.ts, s/{slot}/seg-N.ts, live.ts) and a video session's HLS/DASH, subtitles and
 //     chapters (/stream/{session uuid}/...) and direct play
 //     (/stream/direct/{video uuid}); everything else is a 404;
 //   - requires a signed-in session: the request's Cookie / Authorization
@@ -47,6 +47,9 @@ const uuidRe = `[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9
 var streamPathRes = []*regexp.Regexp{
 	// a channel's live HLS (streaming/internal/channel/handler.go)
 	regexp.MustCompile(`^/stream/channel/` + uuidRe + `/(index\.m3u8|master\.m3u8|manifest\.m3u8|live\.ts|seg-[0-9]{1,12}\.ts)$`),
+	// with TV slots (Epic 33 story 33.1) the front door's stitched playlist
+	// lists each segment under the slot it came from: s/{slot}/seg-N.ts
+	regexp.MustCompile(`^/stream/channel/` + uuidRe + `/s/(blue|green|amber)/seg-[0-9]{1,12}\.ts$`),
 	// a video session (streaming/internal/server/server.go): master
 	// playlist / DASH manifest, rendition playlists and segments,
 	// subtitles and chapters
