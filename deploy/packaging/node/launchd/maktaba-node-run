@@ -1,0 +1,89 @@
+#!/bin/sh
+# Runs one Maktaba node worker for launchd (com.maktaba.node*.plist, Epic 31).
+#
+#   maktaba-node-run [main|<instance>]
+#
+# The plist passes the install, config and log directories in MAKTABA_NODE_DIR,
+# MAKTABA_NODE_CONF_DIR and MAKTABA_NODE_LOG_DIR. Before every start this:
+#   1. reads node.env, then node@<instance>.env, from the config directory (KEY=VALUE
+#      lines, no shell expansion: the same files and format systemd's EnvironmentFile=
+#      and the Windows runner read), so a settings change needs only a restart;
+#   2. rotates the instance's log files past MAKTABA_NODE_LOG_MAX_MB (default 50; three
+#      old files kept) and reopens stdout / stderr on them (launchd itself never rotates);
+#   3. checks that this machine has joined a home (node_check.py; exit 78 otherwise, and
+#      launchd tries again after its ThrottleInterval, so the worker starts by itself
+#      once `maktaba-pipeline join` completes);
+#   4. execs the worker, so launchd signals and watches Python directly.
+set -u
+
+instance="${1:-main}"
+node_dir="${MAKTABA_NODE_DIR:?MAKTABA_NODE_DIR is not set (start this from launchd)}"
+conf_dir="${MAKTABA_NODE_CONF_DIR:?MAKTABA_NODE_CONF_DIR is not set}"
+log_dir="${MAKTABA_NODE_LOG_DIR:?MAKTABA_NODE_LOG_DIR is not set}"
+python="$node_dir/venv/bin/python"
+
+if [ "$instance" = main ]; then
+    base=node
+else
+    base="node@$instance"
+fi
+
+load_env() {
+    [ -f "$1" ] || return 0
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            '' | '#'*) continue ;;
+            'export '*) line=${line#export } ;;
+        esac
+        case "$line" in *=*) ;; *) continue ;; esac
+        key=${line%%=*}
+        value=${line#*=}
+        case "$key" in
+            '' | [0-9]* | *[!A-Za-z0-9_]*) continue ;;
+        esac
+        case "$value" in
+            \"*\") value=${value#\"}; value=${value%\"} ;;
+            \'*\') value=${value#\'}; value=${value%\'} ;;
+        esac
+        export "$key=$value"
+    done <"$1"
+}
+
+rotate() {
+    file=$1
+    [ -f "$file" ] || return 0
+    size=$(wc -c <"$file" 2>/dev/null | tr -d ' ')
+    [ "${size:-0}" -gt "$max_bytes" ] || return 0
+    rm -f "$file.3"
+    if [ -f "$file.2" ]; then mv -f "$file.2" "$file.3"; fi
+    if [ -f "$file.1" ]; then mv -f "$file.1" "$file.2"; fi
+    mv -f "$file" "$file.1"
+}
+
+load_env "$conf_dir/node.env"
+if [ "$instance" != main ]; then
+    load_env "$conf_dir/node@$instance.env"
+fi
+# A node takes its database from its node config; a MAKTABA_DATABASE_URL would make the
+# worker run as a home worker against that database instead.
+unset MAKTABA_DATABASE_URL
+
+max_mb="${MAKTABA_NODE_LOG_MAX_MB:-50}"
+case "$max_mb" in '' | *[!0-9]*) max_mb=50 ;; esac
+max_bytes=$((max_mb * 1024 * 1024))
+
+mkdir -p "$log_dir"
+out="$log_dir/$base.log"
+err="$log_dir/$base.err.log"
+rotate "$out"
+rotate "$err"
+exec >>"$out" 2>>"$err"
+
+if [ ! -x "$python" ]; then
+    echo "maktaba-node: no Python at $python; run deploy/packaging/node/install-node.sh again" >&2
+    exit 78
+fi
+
+"$python" "$node_dir/node_check.py" || exit $?
+
+exec "$python" -m maktaba_pipeline run
