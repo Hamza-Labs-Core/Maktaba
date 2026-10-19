@@ -117,6 +117,12 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		// The streaming binary binds MAKTABA_HTTP_ADDR; the older
 		// MAKTABA_STREAMING_HTTP_ADDR is kept for anything reading it.
 		add("MAKTABA_HTTP_ADDR", cfg.Server.StreamAddr)
+		// its cache (channel segments, transcodes) under this install's data
+		// directory: the binary's default, /var/maktaba, is the containers' path,
+		// which a user cannot create on macOS or Windows. An operator's own is kept.
+		if os.Getenv("MAKTABA_CACHE_ROOT") == "" {
+			add("MAKTABA_CACHE_ROOT", filepath.Join(cfg.Server.DataDir, "cache", "streaming"))
+		}
 		add("MAKTABA_STREAMING_HTTP_ADDR", cfg.Server.StreamAddr)
 		add("MAKTABA_ADMIN_ADDR", streamingAdmin(cfg))
 		add("MAKTABA_STREAMING_GRPC_ADDR", streamingGRPC(cfg))
