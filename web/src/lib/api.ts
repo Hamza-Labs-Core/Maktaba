@@ -50,6 +50,43 @@ function logApiError(method: string, path: string, status: number, detail: strin
   console.error(`[api] ${method} ${path} failed (${status}): ${detail}`);
 }
 
+// Epic 35 (story 35.10): a node answers 503 {code: "paused"} when its code
+// does not fit the home's database, or {code: "home_unreachable"} when it
+// cannot reach its home. Every call that sees one tells the app (NodeGuard
+// shows the paused page while it holds).
+export const NODE_UNAVAILABLE_EVENT = "maktaba:node-unavailable";
+
+export type NodeUnavailableCode = "paused" | "home_unreachable";
+
+export interface NodeUnavailableDetail {
+  code: NodeUnavailableCode;
+  reason?: string;
+}
+
+let lastUnavailable: NodeUnavailableDetail | null = null;
+
+/** The last paused / home_unreachable answer seen (for a listener mounted after it). */
+export function lastNodeUnavailable(): NodeUnavailableDetail | null {
+  return lastUnavailable;
+}
+
+/** Forgets the last paused / home_unreachable answer (tests; a page reload does it too). */
+export function clearNodeUnavailable(): void {
+  lastUnavailable = null;
+}
+
+function noteUnavailable(status: number, problem: unknown): void {
+  if (status !== 503 || !problem || typeof problem !== "object") return;
+  const p = problem as { code?: unknown; reason?: unknown };
+  if (p.code !== "paused" && p.code !== "home_unreachable") return;
+  const detail: NodeUnavailableDetail = { code: p.code };
+  if (typeof p.reason === "string" && p.reason !== "") detail.reason = p.reason;
+  lastUnavailable = detail;
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(NODE_UNAVAILABLE_EVENT, { detail }));
+  }
+}
+
 // csrfHeaders returns the double-submit header for a hand-rolled fetch
 // (e.g. a streaming POST that cannot go through request()).
 export function csrfHeaders(): Record<string, string> {
@@ -118,7 +155,9 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
   if (!res.ok) {
     if (ct.includes("problem+json") || ct.includes("json")) {
       try {
-        const err = new ApiError(JSON.parse(text) as Problem);
+        const parsed = JSON.parse(text) as Problem;
+        noteUnavailable(res.status, parsed);
+        const err = new ApiError({ ...parsed, status: parsed.status || res.status });
         logApiError(method, path, err.status, err.message);
         throw err;
       } catch (e) {
@@ -274,6 +313,7 @@ export function uploadWithProgress<T>(
       let problem: Problem;
       try {
         problem = JSON.parse(text) as Problem;
+        noteUnavailable(xhr.status, problem);
       } catch {
         problem = {
           type: "about:blank",

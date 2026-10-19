@@ -193,6 +193,19 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		// Epic 32 story 32.7 — Cloudflare Notifications for the live inputs;
 		// the handler refuses any request without the webhook secret header.
 		"/api/tv/remote/webhook": {},
+		// Epic 35 story 35.11 — every machine's identity (never a library or
+		// user name): the apps and a typed address recognise the cluster.
+		"/api/cluster/self": {},
+		// Epic 35 story 35.9 — the cluster sign-in: authorize sends a browser
+		// that is not signed in to the home's sign-in page (and checks the
+		// session itself); start and callback run before the node holds a
+		// session. Introspect and exchange are a node's calls: the handlers
+		// refuse any request without a verified node signature.
+		"/api/cluster/sso/authorize":       {},
+		"/api/cluster/sso/start":           {},
+		"/api/cluster/sso/callback":        {},
+		"/api/cluster/sso/exchange":        {},
+		"/api/cluster/delegate/introspect": {},
 	}
 }
 

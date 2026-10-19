@@ -1,0 +1,285 @@
+// Package vodfallback serves video on demand on a full node (Epic 35 story 35.8 AC9,
+// story 35.10 AC4a, design §11.5). Media is read where it is needed: a node's VOD
+// session is opened on the node's own streaming role, which reads the file from the NAS
+// through this machine's mounts (the canonical share-path resolver, story 31.3); no
+// media byte goes through the home.
+//
+// Fallback only: when this machine cannot read the video's file (its share is not
+// mounted or not readable here), the session is opened on the home instead and the
+// player's URLs are rewritten under /stream/via-home/, which the node's web port relays
+// from the home's streaming port with the session's signed URL (the legacy path of the
+// ticketed VOD stream, story 35.16). The state is reported to the home — the Machines
+// page shows "VOD served by <home>: share not readable here" — and clears by itself
+// with the next video this machine can read.
+package vodfallback
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+)
+
+// ViaHome is the web-port prefix of a session served by the home.
+const ViaHome = "/stream/via-home/"
+
+// State is what the node reports (cluster_nodes.vod).
+type State struct {
+	Fallback  bool       `json:"fallback"`
+	ServedBy  string     `json:"served_by,omitempty"`
+	Since     *time.Time `json:"since,omitempty"`
+	Detail    string     `json:"detail,omitempty"`
+	CheckedAt time.Time  `json:"checked_at"`
+}
+
+// Fallback wraps the node's /api/stream/sessions routes.
+type Fallback struct {
+	DB *sql.DB
+	// ToLocal maps a stored path to this machine's path (sharepath + the stream path map).
+	ToLocal func(string) string
+	// Stat checks a local path (nil: os.Stat).
+	Stat func(string) error
+	// Home serves a request on the home (the node's home proxy).
+	Home http.Handler
+	// HomeName is shown as served_by.
+	HomeName func() string
+	// OnChange reports a new state (to the home).
+	OnChange func(State)
+	Logger   *slog.Logger
+
+	mu     sync.Mutex
+	remote map[string]time.Time
+	state  State
+}
+
+// Current is the last state.
+func (f *Fallback) Current() State {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.state
+}
+
+func (f *Fallback) stat(p string) error {
+	if f.Stat != nil {
+		return f.Stat(p)
+	}
+	_, err := os.Stat(p)
+	return err
+}
+
+func (f *Fallback) set(fallback bool, detail string) {
+	f.mu.Lock()
+	now := time.Now().UTC()
+	prev := f.state
+	f.state.CheckedAt = now
+	f.state.Detail = detail
+	if fallback {
+		if !prev.Fallback {
+			f.state.Since = &now
+		}
+		f.state.Fallback = true
+		f.state.ServedBy = "home"
+		if f.HomeName != nil {
+			if n := f.HomeName(); n != "" {
+				f.state.ServedBy = n
+			}
+		}
+	} else {
+		f.state.Fallback, f.state.ServedBy, f.state.Since = false, "", nil
+	}
+	st, changed := f.state, prev.Fallback != f.state.Fallback || prev.Detail != f.state.Detail
+	f.mu.Unlock()
+	if changed {
+		if f.Logger != nil {
+			if fallback {
+				f.Logger.Warn("node: this machine cannot read the share; VOD is served by the home",
+					"detail", detail, "event", "node_vod_fallback")
+			} else {
+				f.Logger.Info("node: the share is readable again; VOD is served here", "event", "node_vod_local")
+			}
+		}
+		if f.OnChange != nil {
+			f.OnChange(st)
+		}
+	}
+}
+
+// Readable reports whether this machine can read the video's file, and why not.
+func (f *Fallback) Readable(ctx context.Context, videoID string) (bool, string) {
+	var p string
+	if err := f.DB.QueryRowContext(ctx, `SELECT path FROM videos WHERE id = $1`, videoID).Scan(&p); err != nil {
+		// unknown video: the local handler answers 404 as usual
+		return true, ""
+	}
+	local := p
+	if f.ToLocal != nil {
+		local = f.ToLocal(p)
+	}
+	if err := f.stat(local); err != nil {
+		return false, "cannot open " + filepath.Dir(local)
+	}
+	return true, ""
+}
+
+func (f *Fallback) remember(id string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.remote == nil {
+		f.remote = map[string]time.Time{}
+	}
+	now := time.Now()
+	for k, t := range f.remote {
+		if now.Sub(t) > 24*time.Hour {
+			delete(f.remote, k)
+		}
+	}
+	f.remote[id] = now
+}
+
+func (f *Fallback) isRemote(id string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, ok := f.remote[id]
+	return ok
+}
+
+// Rewrite moves a session's stream URLs under /stream/via-home/.
+func Rewrite(u string) string {
+	if strings.HasPrefix(u, "/stream/") && !strings.HasPrefix(u, ViaHome) {
+		return ViaHome + strings.TrimPrefix(u, "/stream/")
+	}
+	return u
+}
+
+// rewriteBody rewrites manifest_url / direct_url of a session answer.
+func rewriteBody(b []byte) []byte {
+	var m map[string]any
+	if json.Unmarshal(b, &m) != nil {
+		return b
+	}
+	for _, k := range []string{"manifest_url", "direct_url"} {
+		if s, ok := m[k].(string); ok && s != "" {
+			m[k] = Rewrite(s)
+		}
+	}
+	m["served_by"] = "home"
+	out, err := json.Marshal(m)
+	if err != nil {
+		return b
+	}
+	return out
+}
+
+// serveHome runs the request on the home and rewrites the answer's URLs.
+func (f *Fallback) serveHome(w http.ResponseWriter, r *http.Request, body []byte, rewrite bool) {
+	rec := httptest.NewRecorder()
+	r2 := r.Clone(r.Context())
+	r2.Body = io.NopCloser(bytes.NewReader(body))
+	r2.ContentLength = int64(len(body))
+	f.Home.ServeHTTP(rec, r2)
+	res := rec.Result()
+	defer res.Body.Close()
+	out, _ := io.ReadAll(res.Body)
+	if rewrite && res.StatusCode < 300 {
+		out = rewriteBody(out)
+		var m map[string]any
+		if json.Unmarshal(out, &m) == nil {
+			if id, ok := m["session_id"].(string); ok && id != "" {
+				f.remember(id)
+			}
+		}
+	}
+	keys := make([]string, 0, len(res.Header))
+	for k := range res.Header {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if strings.EqualFold(k, "Content-Length") {
+			continue
+		}
+		for _, v := range res.Header[k] {
+			w.Header().Add(k, v)
+		}
+	}
+	w.Header().Set("X-Maktaba-VOD", "home")
+	w.WriteHeader(res.StatusCode)
+	_, _ = w.Write(out)
+}
+
+// Wrap guards the local stream session routes.
+func (f *Fallback) Wrap(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		switch {
+		case r.Method == http.MethodPost && path == "/api/stream/sessions":
+			body, err := io.ReadAll(io.LimitReader(r.Body, 64<<10))
+			if err != nil {
+				http.Error(w, "bad body", http.StatusBadRequest)
+				return
+			}
+			var req struct {
+				VideoID string `json:"video_id"`
+			}
+			_ = json.Unmarshal(body, &req)
+			if req.VideoID != "" && f.DB != nil && f.Home != nil {
+				ok, why := f.Readable(r.Context(), req.VideoID)
+				if !ok {
+					f.set(true, why)
+					f.serveHome(w, r, body, true)
+					return
+				}
+				f.set(false, "")
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			r.ContentLength = int64(len(body))
+			w.Header().Set("X-Maktaba-VOD", "local")
+			next.ServeHTTP(w, r)
+		case strings.HasPrefix(path, "/api/stream/sessions/") && f.Home != nil:
+			id, _, _ := strings.Cut(strings.TrimPrefix(path, "/api/stream/sessions/"), "/")
+			if f.isRemote(id) {
+				body, _ := io.ReadAll(io.LimitReader(r.Body, 64<<10))
+				f.serveHome(w, r, body, r.Method == http.MethodGet)
+				return
+			}
+			next.ServeHTTP(w, r)
+		default:
+			next.ServeHTTP(w, r)
+		}
+	})
+}
+
+// PrefixMap is the streaming role's MAKTABA_STREAM_PATH_MAP ("from=>to;from2=>to2",
+// longest prefix first, case- and slash-insensitive), so the node checks a file where
+// its streaming role will open it.
+func PrefixMap(spec string) func(string) string {
+	type rule struct{ from, to string }
+	var rules []rule
+	for _, part := range strings.Split(spec, ";") {
+		from, to, ok := strings.Cut(strings.TrimSpace(part), "=>")
+		if from = strings.TrimSpace(from); ok && from != "" {
+			rules = append(rules, rule{from, strings.TrimSpace(to)})
+		}
+	}
+	sort.SliceStable(rules, func(i, j int) bool { return len(rules[i].from) > len(rules[j].from) })
+	norm := func(s string) string { return strings.ToLower(strings.ReplaceAll(s, `\`, "/")) }
+	return func(p string) string {
+		np := norm(p)
+		for _, r := range rules {
+			if nf := norm(r.from); strings.HasPrefix(np, nf) {
+				return r.to + p[len(r.from):]
+			}
+		}
+		return p
+	}
+}

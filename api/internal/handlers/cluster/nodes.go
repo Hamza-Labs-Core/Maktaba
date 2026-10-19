@@ -51,6 +51,16 @@ type Node struct {
 	Online         bool            `json:"online"`
 	Workers        []NodeWorker    `json:"workers"`
 	StageOverrides map[string]bool `json:"stage_overrides"`
+	// Epic 35 (stories 35.8, 35.11): a full node's release, platform and own web
+	// address (the Machines page links to it); full_node false = worker-only (the
+	// pipeline alone; it converts on its next update or installer run); vod is the
+	// VOD fallback when the machine cannot read the share (design §11.5).
+	Version     *string         `json:"version"`
+	Platform    *string         `json:"platform"`
+	WebURL      *string         `json:"web_url"`
+	FullNode    bool            `json:"full_node"`
+	VOD         json.RawMessage `json:"vod"`
+	UpdateState json.RawMessage `json:"update_state"`
 }
 
 func view(n cluster.Node, workers []cluster.NodeWorker, stages map[string]bool, now time.Time) Node {
@@ -63,6 +73,14 @@ func view(n cluster.Node, workers []cluster.NodeWorker, stages map[string]bool, 
 		CreatedAt: n.CreatedAt, ApprovedAt: n.ApprovedAt, ApprovedBy: n.ApprovedBy, RevokedAt: n.RevokedAt,
 		LastSeenAt: n.LastSeenAt, UpdatedAt: n.UpdatedAt,
 		Workers: []NodeWorker{}, StageOverrides: map[string]bool{},
+		Version: n.Version, Platform: n.Platform, WebURL: n.WebURL, FullNode: n.FullNode,
+		VOD: n.VOD, UpdateState: n.UpdateState,
+	}
+	if out.VOD == nil {
+		out.VOD = json.RawMessage("{}")
+	}
+	if out.UpdateState == nil {
+		out.UpdateState = json.RawMessage("{}")
 	}
 	if out.PathMap == nil {
 		out.PathMap = json.RawMessage("null")

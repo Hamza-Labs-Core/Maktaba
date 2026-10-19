@@ -56,3 +56,26 @@ func detectLANIP() string {
 	}
 	return "127.0.0.1"
 }
+
+// PublicWebURL is this machine's web address as other devices reach it (Epic 35 story
+// 35.11: the Machines page links each machine, the cluster sign-in redirects there):
+// [server] web_public_url when set, else http://<host>:<port of web_listen>, the host
+// taken from PublicStreamURL (public_url's host, or this machine's LAN IP).
+func (c Config) PublicWebURL() string {
+	if u := strings.TrimRight(strings.TrimSpace(c.Server.WebPublicURL), "/"); u != "" {
+		if !strings.Contains(u, "://") {
+			u = "http://" + u
+		}
+		return u
+	}
+	_, port, err := net.SplitHostPort(strings.TrimSpace(c.Server.WebListen))
+	if err != nil || port == "" {
+		port = "8088"
+	}
+	stream := c.PublicStreamURL()
+	host := strings.TrimPrefix(strings.TrimPrefix(stream, "http://"), "https://")
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return "http://" + net.JoinHostPort(strings.Trim(host, "[]"), port)
+}

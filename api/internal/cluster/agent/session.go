@@ -106,6 +106,7 @@ type Session struct {
 	IP          string
 	Host        string
 	WorkerID    string
+	Process     string // "supervisor": a node's machine agent (Epic 35)
 	PID         int
 	OS          string
 	Version     string
@@ -127,6 +128,8 @@ type Session struct {
 	logs     []logMsg // recent log messages
 	cmds     map[string]chan CmdResult
 	relays   map[string]context.CancelFunc // svc.request ids running
+	// updateState is a machine agent's last update.state (Epic 35)
+	updateState json.RawMessage
 }
 
 type outFrame struct {
@@ -228,13 +231,16 @@ type helloFrame struct {
 	Kind     string `json:"kind"`
 	NodeID   string `json:"node_id"`
 	WorkerID string `json:"worker_id"`
-	PID      int    `json:"pid"`
-	Host     string `json:"host"`
-	Eph      string `json:"eph"`
-	Nonce    string `json:"nonce"`
-	IP       string `json:"ip"`
-	OS       string `json:"os"`
-	Version  string `json:"version"`
+	// Process names a process kind beyond the pipeline's ("supervisor": a node's
+	// machine agent, Epic 35); empty for the pipeline.
+	Process string `json:"process"`
+	PID     int    `json:"pid"`
+	Host    string `json:"host"`
+	Eph     string `json:"eph"`
+	Nonce   string `json:"nonce"`
+	IP      string `json:"ip"`
+	OS      string `json:"os"`
+	Version string `json:"version"`
 }
 
 type authFrame struct {
@@ -293,6 +299,7 @@ func (h *Hub) ServeAgent(w http.ResponseWriter, r *http.Request) {
 		_ = c.Close(rf.code, rf.Error())
 		return
 	}
+	h.afterWelcome(s)
 	h.runSession(r.Context(), c, s, c2s, s2c)
 }
 
@@ -373,7 +380,7 @@ func (h *Hub) handshake(ctx context.Context, c *websocket.Conn, remote string) (
 
 	authAt := h.now()
 	s := &Session{Kind: hello.Kind, Host: ident.Host, WorkerID: ident.WorkerID, PID: hello.PID,
-		OS: clip(hello.OS, 64), Version: clip(hello.Version, 64)}
+		OS: clip(hello.OS, 64), Version: clip(hello.Version, 64), Process: clip(hello.Process, 32)}
 	s.IP = h.folderIP(hello.Kind, hello.IP, remote)
 	ident.IP = s.IP
 	var nodePub []byte

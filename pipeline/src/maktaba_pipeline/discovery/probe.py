@@ -51,6 +51,9 @@ class ProbeResult:
     port: int
     schema_rev: int
     version: str
+    #: "home" or "node" (Epic 35 story 35.11: every machine of a cluster answers; an old
+    #: home without the field is a home)
+    role: str = "home"
 
 
 class LANProbe:
@@ -105,6 +108,7 @@ class LANProbe:
                 port=self.port,
                 schema_rev=int(payload.get("schema_rev", 0)),
                 version=str(payload.get("version", "")),
+                role=str(payload.get("role") or "home"),
             )
         except (TypeError, ValueError):
             return None

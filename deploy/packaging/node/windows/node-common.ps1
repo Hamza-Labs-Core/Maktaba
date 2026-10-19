@@ -21,6 +21,32 @@ function Write-NodeStep {
 
 # maktaba-node for the main worker, maktaba-node@<N> for extra worker N (task and
 # service names, as the systemd units on Linux).
+# Find-MaktabaServer: maktaba-server.exe in ServerDir, else on the PATH ('' when none).
+function Find-MaktabaServer {
+    param([string]$ServerDir = '')
+    if ($ServerDir) {
+        $p = Join-Path $ServerDir 'maktaba-server.exe'
+        if (Test-Path -LiteralPath $p -PathType Leaf) { return $p }
+    }
+    $cmd = Get-Command 'maktaba-server.exe' -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    return ''
+}
+
+# Get-FullNodeArguments: the `maktaba-server setup --node` arguments of install-node.ps1
+# -Full (Epic 35 story 35.8): the release folder, the worker's own Python environment,
+# its extra workers ([pipeline] instances) and the Task / Service mode.
+function Get-FullNodeArguments {
+    param([string]$ServerDir = '', [Parameter(Mandatory = $true)][string]$Python, [int]$Instances = -1,
+        [string]$Mode = 'Task')
+    $a = @('setup', '--node')
+    if ($ServerDir) { $a += @('--from', $ServerDir) }
+    $a += @('--python', $Python)
+    if ($Instances -ge 0) { $a += @('--instances', "$Instances") }
+    $a += @('--mode', $Mode.ToLowerInvariant())
+    return ,$a
+}
+
 function Get-NodeUnitName {
     param([Parameter(Mandatory = $true)][string]$Instance)
     if ($Instance -eq 'main') { return 'maktaba-node' }

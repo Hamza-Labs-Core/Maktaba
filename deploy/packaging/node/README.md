@@ -291,6 +291,56 @@ adds or removes workers to match. Transcription runs on Apple Silicon only today
 other machines give an extra worker other stages in its `node@<i>.env`
 (`MAKTABA_PIPELINE_STAGES=...`). The home's per-machine stage switches apply on top.
 
+## Becoming a full node (Epic 35)
+
+A joined machine can run the whole of Maktaba, not just the pipeline worker: the same
+`maktaba-server` as the home, in node mode — its own web UI and API at its own address,
+the pipeline worker, and the streaming role (video on demand read from the NAS here; TV
+channels only when the home places them here). The home stays the only database, the
+only place migrations run and the only holder of secrets. Sign-ins are the home's: open
+the machine's web address and press **Continue with <home>**.
+
+Worker-only nodes are converted automatically on their next update once the home's
+rollout sends `update.convert` (story 35.12). A worker whose pipeline is too old to know
+that command (every worker installed before this release) converts once by hand:
+
+1. Download, from the release the home runs (Admin → System health shows its version),
+   the server archive for this machine (`maktaba-server-<version>-<os>-<arch>.zip` or
+   `.tar.gz`) plus `checksums.txt`, `checksums.txt.sigstore.json` and `release.json`,
+   into one folder, and extract the archive there.
+2. Run the conversion from that folder:
+
+   ```sh
+   # Linux / macOS
+   ./maktaba-server setup --node --from . --python ~/.local/share/maktaba/node/venv/bin/python
+   # (or: deploy/packaging/node/install-node.sh --full --server-dir <folder>)
+   ```
+
+   ```powershell
+   # Windows
+   .\maktaba-server.exe setup --node --from . --python "$env:LOCALAPPDATA\Maktaba\node\venv\Scripts\python.exe"
+   # (or: windows\install-node.ps1 -Full -ServerDir <folder>)
+   ```
+
+`setup --node` keeps `node.json` (identity, key, database credential, home) as it is,
+verifies the release in process (the Sigstore bundle of `checksums.txt` with the pinned
+release-workflow identity, then every file against `checksums.txt` and `release.json`;
+nothing is installed when a check fails), installs it side by side like
+`setup --self-managed` (`bin/releases/<version>/`, `current`, `maktaba-launcher`),
+keeps this worker's Python environment for the pipeline (`--python`, written to
+`[pipeline] python` in `server.toml`), writes `[pipeline] instances` when given
+`--instances N`, registers the launcher's service (Windows: the "Maktaba" logon task,
+`--mode service` for a Windows service; Linux: a systemd user unit; macOS: a
+LaunchAgent), waits until the new service answers as a node, and only then removes the
+old worker units (`maktaba-node`, `maktaba-node@N`). `--dry-run` prints the plan.
+Without `--from` it fetches the home's version itself (the home's mirror, else GitHub
+Releases). A machine joined before the cluster channel's handshake v2 (no
+`home.cluster_pub` in `node.json`) must re-join first.
+
+A worker started by hand (a script or a shortcut running `maktaba-pipeline run`) is not
+one of the installer's units: stop it yourself after the conversion, or the machine runs
+two workers.
+
 ## Settings
 
 `node.env` (and `node@<N>.env` for one worker, which wins) holds `KEY=VALUE` lines, read

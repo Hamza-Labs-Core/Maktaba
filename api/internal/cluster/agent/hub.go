@@ -108,6 +108,10 @@ type Config struct {
 	// (the API's own origin is always allowed).
 	BrowserOrigins []string
 
+	// Delegation issues the nodes' delegation keys (Epic 35 story 35.9); nil: the
+	// machine agents get none (full nodes then cannot act for users).
+	Delegation KeyIssuer
+
 	Now    func() time.Time
 	Logger *slog.Logger
 }
@@ -242,6 +246,7 @@ func (h *Hub) Run(ctx context.Context) {
 	start(h.workersLoop)
 	start(h.libraryLoop)
 	start(h.sweepLoop)
+	start(h.keysLoop)
 	start(func(ctx context.Context) {
 		t := time.NewTicker(10 * time.Second)
 		defer t.Stop()
@@ -466,6 +471,12 @@ func (h *Hub) RevokeNode(nodeID string) {
 	h.mu.Lock()
 	h.revokedAt[nodeID] = h.now()
 	h.mu.Unlock()
+	if h.cfg.Delegation != nil {
+		// its delegation key stops working at once (story 35.9 EC4)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		h.cfg.Delegation.Revoke(ctx, nodeID)
+		cancel()
+	}
 	sessions := h.nodeSessions(nodeID)
 	for _, s := range sessions {
 		frame := map[string]any{"t": "cmd", "id": newID(), "name": "disconnect", "args": map[string]any{"reason": "revoked"}}
