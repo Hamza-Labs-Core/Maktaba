@@ -41,6 +41,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 	perfpkg "github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 )
 
 // P6Deps bundles the dependencies for Phase 6 handlers. DB is the only
@@ -77,6 +78,12 @@ type P6Deps struct {
 	// BusCtx so a graceful shutdown stops the loop.
 	BusCtx context.Context
 	BusDSN string
+	// Secrets is the home's sealed store (slot 0120, story 32.6): the
+	// extensions' secret settings live there. nil refuses secret writes.
+	Secrets secrets.Store
+	// OnQueues, when set, is called with the queue/extensions handler
+	// before it is mounted (story 32.6 hangs the Cloudflare test on it).
+	OnQueues func(*queues.Handler)
 }
 
 // modelPipelineClient adapts the gRPC pipeline.Client to the models
@@ -246,6 +253,10 @@ func MountP6(r chi.Router, d P6Deps) {
 	}}
 	if bus != nil {
 		queuesHandler.Events = bus
+	}
+	queuesHandler.Secrets = d.Secrets
+	if d.OnQueues != nil {
+		d.OnQueues(queuesHandler)
 	}
 	queuesHandler.Mount(r)
 	wsHandler.Initial = queuesHandler.InitialFrame

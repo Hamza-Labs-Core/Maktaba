@@ -17,8 +17,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 )
 
 // "Sign in with Plex" (the plex.tv PIN flow, as dizqueTV does it):
@@ -353,8 +355,23 @@ func (h *Handler) PlexSigninUse(w http.ResponseWriter, r *http.Request) {
 		cur.settings = map[string]any{}
 	}
 	cur.settings["url"] = chosen.URI
+	// the server's token goes to home_secrets (slot 0120), never the row
+	delete(cur.settings, "token")
+	def, _ := findExtension("plex")
 	if chosen.token != "" {
-		cur.settings["token"] = chosen.token
+		if h.Secrets == nil {
+			httperror.Write(w, r, &httperror.Error{Status: http.StatusServiceUnavailable,
+				Title: "Service Unavailable", Detail: "the secrets store is not available on this server"})
+			return
+		}
+		by := ""
+		if pr := principal.FromContext(r.Context()); pr != nil {
+			by = pr.UserID
+		}
+		if err := h.Secrets.Put(r.Context(), secrets.ExtensionName("plex", "token"), []byte(chosen.token), by); err != nil {
+			writeErr(w, r, "save secret", err)
+			return
+		}
 	}
 	blob, _ := json.Marshal(cur.settings)
 	now := h.now()
@@ -363,8 +380,7 @@ func (h *Handler) PlexSigninUse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.plexPins.drop(id)
-	def, _ := findExtension("plex")
 	ts := now.Format(tsLayout)
 	common.WriteJSON(w, r, http.StatusOK,
-		buildExtension(def, extRow{enabled: cur.enabled, settings: cur.settings, updated: &ts}))
+		buildExtension(def, extRow{enabled: cur.enabled, settings: cur.settings, updated: &ts}, h.secretSet(r.Context(), def)))
 }
