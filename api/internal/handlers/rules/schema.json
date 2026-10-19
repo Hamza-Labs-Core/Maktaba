@@ -3557,6 +3557,416 @@
    ]
   },
   {
+   "key": "tv_strip",
+   "title": "Channel strip",
+   "what": "the news-style bar across a channel's picture: what is on now and next, and a clock rotating between cities",
+   "fields": [
+    {
+     "name": "enabled",
+     "kind": "bool",
+     "group": "Channel strip",
+     "label": "Show the strip on every channel",
+     "help": "A bar across the picture, as on news channels: the programme on air (its display title, the series and «الحلقة n»), what comes next and a clock. Off: only channels whose own Look switches it on show it.",
+     "default": false
+    },
+    {
+     "name": "position",
+     "kind": "str",
+     "group": "Channel strip",
+     "label": "Where",
+     "help": "",
+     "default": "bottom",
+     "choices": [
+      "bottom",
+      "top"
+     ]
+    },
+    {
+     "name": "height_pct",
+     "kind": "float",
+     "group": "Strip look",
+     "label": "Height (% of the picture)",
+     "help": "",
+     "default": 9.0,
+     "minimum": 4,
+     "maximum": 25
+    },
+    {
+     "name": "bg_color",
+     "kind": "str",
+     "group": "Strip look",
+     "label": "Background colour",
+     "help": "#RRGGBB.",
+     "default": "#0b1f3a"
+    },
+    {
+     "name": "bg_opacity",
+     "kind": "float",
+     "group": "Strip look",
+     "label": "Background opacity",
+     "help": "0 clear, 1 solid.",
+     "default": 0.85,
+     "minimum": 0,
+     "maximum": 1
+    },
+    {
+     "name": "accent_color",
+     "kind": "str",
+     "group": "Strip look",
+     "label": "Clock box colour",
+     "help": "#RRGGBB.",
+     "default": "#c8a24a"
+    },
+    {
+     "name": "text_color",
+     "kind": "str",
+     "group": "Strip look",
+     "label": "Text colour",
+     "help": "#RRGGBB.",
+     "default": "#ffffff"
+    },
+    {
+     "name": "font_file",
+     "kind": "str",
+     "group": "Strip look",
+     "label": "Font file",
+     "help": "A .ttf/.otf with Arabic letters on the streaming host. Empty: Noto Naskh/Sans Arabic, Arial or Tahoma, whichever is found.",
+     "default": ""
+    },
+    {
+     "name": "font_size_pct",
+     "kind": "float",
+     "group": "Strip look",
+     "label": "Title size (% of the strip height)",
+     "help": "",
+     "default": 42.0,
+     "minimum": 15,
+     "maximum": 80
+    },
+    {
+     "name": "direction",
+     "kind": "str",
+     "group": "Channel strip",
+     "label": "Direction",
+     "help": "auto: right to left for Arabic titles.",
+     "default": "auto",
+     "choices": [
+      "auto",
+      "rtl",
+      "ltr"
+     ]
+    },
+    {
+     "name": "show_next",
+     "kind": "bool",
+     "group": "Channel strip",
+     "label": "Show what is next",
+     "help": "A second line: «التالي: …».",
+     "default": true
+    },
+    {
+     "name": "next_label_ar",
+     "kind": "str",
+     "group": "Channel strip",
+     "label": "Next label (Arabic)",
+     "help": "",
+     "default": "التالي"
+    },
+    {
+     "name": "next_label_en",
+     "kind": "str",
+     "group": "Channel strip",
+     "label": "Next label (other languages)",
+     "help": "",
+     "default": "Next"
+    },
+    {
+     "name": "filler_label",
+     "kind": "str",
+     "group": "Channel strip",
+     "label": "Between programmes",
+     "help": "Empty: the clip's own title. Else this text («فواصل»).",
+     "default": ""
+    },
+    {
+     "name": "overflow",
+     "kind": "str",
+     "group": "Channel strip",
+     "label": "Long titles",
+     "help": "truncate: cut with …; scroll: run across like a news ticker.",
+     "default": "truncate",
+     "choices": [
+      "truncate",
+      "scroll"
+     ]
+    },
+    {
+     "name": "scroll_speed",
+     "kind": "int",
+     "group": "Channel strip",
+     "label": "Scroll speed (pixels a second)",
+     "help": "",
+     "default": 90,
+     "minimum": 10,
+     "maximum": 600
+    },
+    {
+     "name": "show_mode",
+     "kind": "str",
+     "group": "Channel strip",
+     "label": "When",
+     "help": "always; or interval: at each programme's start and every few minutes.",
+     "default": "always",
+     "choices": [
+      "always",
+      "interval"
+     ]
+    },
+    {
+     "name": "show_seconds",
+     "kind": "int",
+     "group": "Channel strip",
+     "label": "Shown for (seconds)",
+     "help": "",
+     "default": 20,
+     "minimum": 3,
+     "maximum": 600
+    },
+    {
+     "name": "every_minutes",
+     "kind": "int",
+     "group": "Channel strip",
+     "label": "Again every (minutes)",
+     "help": "",
+     "default": 10,
+     "minimum": 1,
+     "maximum": 240
+    },
+    {
+     "name": "show_clock",
+     "kind": "bool",
+     "group": "Strip clock",
+     "label": "Show a clock",
+     "help": "",
+     "default": true
+    },
+    {
+     "name": "clocks",
+     "kind": "rows",
+     "group": "Strip clock",
+     "label": "Clocks",
+     "help": "Each city in turn: its time zone (IANA, such as Asia/Riyadh: daylight saving follows it), its Arabic label and its label in other languages.",
+     "default": [
+      {
+       "zone": "Asia/Riyadh",
+       "label_ar": "مكة المكرمة",
+       "label_en": "Makkah"
+      },
+      {
+       "zone": "Africa/Cairo",
+       "label_ar": "القاهرة",
+       "label_en": "Cairo"
+      },
+      {
+       "zone": "UTC",
+       "label_ar": "غرينتش",
+       "label_en": "GMT"
+      },
+      {
+       "zone": "America/New_York",
+       "label_ar": "نيويورك",
+       "label_en": "New York"
+      }
+     ],
+     "columns": [
+      "zone",
+      "label_ar",
+      "label_en"
+     ],
+     "column_kinds": [
+      "str",
+      "str",
+      "str"
+     ],
+     "column_optional": [
+      true,
+      true,
+      true
+     ]
+    },
+    {
+     "name": "clock_seconds",
+     "kind": "int",
+     "group": "Strip clock",
+     "label": "Each clock for (seconds)",
+     "help": "",
+     "default": 8,
+     "minimum": 2,
+     "maximum": 120
+    },
+    {
+     "name": "clock_format",
+     "kind": "str",
+     "group": "Strip clock",
+     "label": "Clock format",
+     "help": "",
+     "default": "24h",
+     "choices": [
+      "24h",
+      "12h"
+     ]
+    },
+    {
+     "name": "digits",
+     "kind": "str",
+     "group": "Strip clock",
+     "label": "Digits",
+     "help": "auto: Arabic-Indic (٠١٢) in a right-to-left strip.",
+     "default": "auto",
+     "choices": [
+      "auto",
+      "arabic",
+      "western"
+     ]
+    },
+    {
+     "name": "show_channel_name",
+     "kind": "bool",
+     "group": "Channel strip",
+     "label": "Channel name at the start",
+     "help": "",
+     "default": false
+    }
+   ]
+  },
+  {
+   "key": "display_titles",
+   "title": "Display titles",
+   "what": "short, clean on-air titles for the guide, the channel strip and the dizqueTV export",
+   "fields": [
+    {
+     "name": "enabled",
+     "kind": "bool",
+     "group": "Display titles",
+     "label": "Clean on-air titles",
+     "help": "The guide, the channel strip and the dizqueTV export show a short title made from the library title: no channel names, hashtags, emojis, links, dates or file leftovers, the series and «الحلقة 45» kept apart. A title set by hand on the video always wins.",
+     "default": true
+    },
+    {
+     "name": "max_length",
+     "kind": "int",
+     "group": "Display titles",
+     "label": "Longest title (characters)",
+     "help": "",
+     "default": 70,
+     "minimum": 10,
+     "maximum": 200
+    },
+    {
+     "name": "strip_patterns",
+     "kind": "list",
+     "group": "Display titles",
+     "label": "Patterns removed",
+     "help": "Regular expressions (case-insensitive) removed from every title.",
+     "default": [
+      "[\\[(（【]\\s*(?:full\\s*)?(?:hd|fhd|uhd|4k|8k|\\d{3,4}p|hq|sd|official(?:\\s+video)?|lyrics?|audio|video|مترجم|حصري[اًا]*|بجودة\\s+عالية)\\s*[\\])）】]",
+      "\\b\\d{3,4}p\\b",
+      "\\b(?:4k|8k|uhd|fhd)\\b"
+     ]
+    },
+    {
+     "name": "strip_words",
+     "kind": "list",
+     "group": "Display titles",
+     "label": "Words removed",
+     "help": "Whole words or phrases removed from every title.",
+     "default": [
+      "official video",
+      "official",
+      "full episode",
+      "full video",
+      "full hd",
+      "full",
+      "hd",
+      "hq",
+      "حصريا",
+      "حصرياً",
+      "بجودة عالية",
+      "جودة عالية"
+     ]
+    },
+    {
+     "name": "keep_episode_number",
+     "kind": "bool",
+     "group": "Display titles",
+     "label": "Show the episode number",
+     "help": "From the season's order, else from the title.",
+     "default": true
+    },
+    {
+     "name": "episode_label_ar",
+     "kind": "str",
+     "group": "Display titles",
+     "label": "Episode label (Arabic)",
+     "help": "{n} is the number.",
+     "default": "الحلقة {n}"
+    },
+    {
+     "name": "episode_label_en",
+     "kind": "str",
+     "group": "Display titles",
+     "label": "Episode label (other languages)",
+     "help": "{n} is the number.",
+     "default": "Ep {n}"
+    },
+    {
+     "name": "boilerplate_share",
+     "kind": "float",
+     "group": "Display titles",
+     "label": "Shared phrase from (share of titles)",
+     "help": "A title part that this share of a library's or a series' titles carry (a programme's or channel's name) is dropped.",
+     "default": 0.3,
+     "minimum": 0.05,
+     "maximum": 1
+    },
+    {
+     "name": "boilerplate_min_count",
+     "kind": "int",
+     "group": "Display titles",
+     "label": "Shared phrase from (titles)",
+     "help": "",
+     "default": 5,
+     "minimum": 2
+    },
+    {
+     "name": "use_in_guide",
+     "kind": "bool",
+     "group": "Display titles",
+     "label": "Use in the guide and dizqueTV",
+     "help": "Off: only the channel strip shows the display titles.",
+     "default": true
+    },
+    {
+     "name": "use_llm",
+     "kind": "bool",
+     "group": "Display titles",
+     "label": "Let the language model tidy what is left",
+     "help": "The local model (Tag check settings) rewrites titles the rules leave long or messy. Each answer is kept, so a title is asked once.",
+     "default": false
+    },
+    {
+     "name": "llm_batch",
+     "kind": "int",
+     "group": "Display titles",
+     "label": "Titles per question",
+     "help": "",
+     "default": 20,
+     "minimum": 1,
+     "maximum": 100
+    }
+   ]
+  },
+  {
    "key": "exactdates",
    "title": "Exact dates",
    "what": "exact upload dates fetched from YouTube for series members (off until switched on)",

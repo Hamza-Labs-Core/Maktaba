@@ -609,6 +609,29 @@ def _wrap(exc: Exception) -> StageFailure:
     return StageFailure(kind, str(exc), retryable=True)
 
 
+async def with_display_titles(
+    db: Any, saved: dict[str, dict[str, Any]], cfg: Any
+) -> dict[str, dict[str, Any]]:
+    """The Plex records with each video's display title as its programme title (Story
+    27.11: the dizqueTV guide shows the clean on-air titles; ``display_titles.use_in_guide``)."""
+    if not saved or not (cfg.enabled and cfg.use_in_guide):
+        return saved
+    keys = sorted(saved)
+    titles: dict[str, str] = {}
+    for i in range(0, len(keys), 400):
+        chunk = keys[i : i + 400]
+        marks = ",".join(f"${n + 1}" for n in range(len(chunk)))
+        rows = await db.fetch(
+            "SELECT p.rating_key AS rk,"
+            " COALESCE(NULLIF(v.display_title_manual, ''), v.display_title) AS t"
+            " FROM plex_items p JOIN videos v ON v.id = p.video_id"
+            f" WHERE p.rating_key IN ({marks})",  # noqa: S608 — placeholders only
+            *chunk,
+        )
+        titles.update({str(r["rk"]): str(r["t"]) for r in rows if r["t"]})
+    return {rk: ({**m, "title": titles[rk]} if rk in titles else m) for rk, m in saved.items()}
+
+
 async def resolve_plan_keys(db: Any, plan: dict[str, Any]) -> dict[str, Any]:
     """Fill ``plex_rating_key`` of every lane episode and filler item.
 
@@ -675,6 +698,7 @@ async def run_channels(
         ]
         wanted = {str(i["ratingKey"]) for a in objs for i in (a.body or {}).get("content", [])}
         saved = await details_for(db, sorted(wanted)) if wanted else {}
+        saved = await with_display_titles(db, saved, await ctx.rules("display_titles"))
         try:
             written.extend(
                 await asyncio.to_thread(

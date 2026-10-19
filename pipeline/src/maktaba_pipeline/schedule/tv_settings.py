@@ -22,6 +22,8 @@ __all__ = [
     "MaktabaTvOutputConfig",
     "PlexLiveConfig",
     "RepairConfig",
+    "StripClock",
+    "TvStripConfig",
     "channel_numbers",
     "live_slots",
 ]
@@ -36,6 +38,9 @@ TVO = "Maktaba TV output"
 TVN = "Hardware encoder"
 TVC = "Channels on air"
 PL = "Plex Live TV"
+TS = "Channel strip"
+TSL = "Strip look"
+TSC = "Strip clock"
 
 
 @dataclass(frozen=True)
@@ -130,6 +135,72 @@ class MaktabaTvOutputConfig:
     nvenc_max_sessions: int = 6
     #: VideoToolbox sessions at once (0: no cap)
     videotoolbox_max_sessions: int = 0
+
+
+@dataclass(frozen=True)
+class StripClock:
+    """One clock of the strip: an IANA time zone and its city label in Arabic and in
+    other languages."""
+
+    zone: str = "UTC"
+    label_ar: str = ""
+    label_en: str = ""
+
+
+_DEFAULT_CLOCKS = (
+    StripClock("Asia/Riyadh", "مكة المكرمة", "Makkah"),
+    StripClock("Africa/Cairo", "القاهرة", "Cairo"),
+    StripClock("UTC", "غرينتش", "GMT"),
+    StripClock("America/New_York", "نيويورك", "New York"),
+)
+
+
+@dataclass(frozen=True)
+class TvStripConfig:
+    """The news-style info strip burned into a channel's picture (rules ``tv_strip``):
+    what is on now and next, and a clock rotating between cities. These are every
+    channel's defaults; a channel's own strip settings (its Look) override them."""
+
+    #: off: no channel shows a strip unless its own settings switch it on
+    enabled: bool = False
+    #: ``bottom`` or ``top`` of the picture
+    position: str = "bottom"
+    #: the strip's height (share of the picture height, percent)
+    height_pct: float = 9.0
+    bg_color: str = "#0b1f3a"
+    bg_opacity: float = 0.85
+    #: the clock's box
+    accent_color: str = "#c8a24a"
+    text_color: str = "#ffffff"
+    #: a font file with Arabic letters; empty: the first one found on the host
+    font_file: str = ""
+    #: the title's size (percent of the strip height)
+    font_size_pct: float = 42.0
+    #: ``auto`` (Arabic titles: right to left), ``rtl`` or ``ltr``
+    direction: str = "auto"
+    show_next: bool = True
+    next_label_ar: str = "التالي"
+    next_label_en: str = "Next"
+    #: between programmes: empty: the clip's own title; else this text
+    filler_label: str = ""
+    #: ``truncate`` (cut with …) or ``scroll`` (a long title runs across, news-ticker style)
+    overflow: str = "truncate"
+    scroll_speed: int = 90
+    #: ``always`` or ``interval``: shown ``show_seconds`` at a programme's start and every
+    #: ``every_minutes``
+    show_mode: str = "always"
+    show_seconds: int = 20
+    every_minutes: int = 10
+    show_clock: bool = True
+    clocks: tuple[StripClock, ...] = _DEFAULT_CLOCKS
+    #: seconds each clock is shown before the next city
+    clock_seconds: int = 8
+    #: ``24h`` or ``12h``
+    clock_format: str = "24h"
+    #: ``auto`` (Arabic-Indic digits in a right-to-left strip), ``arabic`` or ``western``
+    digits: str = "auto"
+    #: the channel's name at the strip's start
+    show_channel_name: bool = False
 
 
 def live_slots(tv: MaktabaTvConfig | None, dz: DizqueExportConfig | None) -> tuple[LiveSlot, ...]:
@@ -393,6 +464,52 @@ register(
         ),
     },
 )
+register(
+    TvStripConfig,
+    {
+        "enabled": Help(
+            TS, "Show the strip on every channel",
+            "A bar across the picture, as on news channels: the programme on air (its "
+            "display title, the series and «الحلقة n»), what comes next and a clock. Off: "
+            "only channels whose own Look switches it on show it.",
+        ),
+        "position": Help(TS, "Where", choices=("bottom", "top")),
+        "show_next": Help(TS, "Show what is next", "A second line: «التالي: …»."),
+        "next_label_ar": Help(TS, "Next label (Arabic)"),
+        "next_label_en": Help(TS, "Next label (other languages)"),
+        "filler_label": Help(TS, "Between programmes",
+                             "Empty: the clip's own title. Else this text («فواصل»)."),
+        "overflow": Help(TS, "Long titles", "truncate: cut with …; scroll: run across "
+                         "like a news ticker.", choices=("truncate", "scroll")),
+        "scroll_speed": Help(TS, "Scroll speed (pixels a second)", minimum=10, maximum=600),
+        "show_mode": Help(TS, "When", "always; or interval: at each programme's start and "
+                          "every few minutes.", choices=("always", "interval")),
+        "show_seconds": Help(TS, "Shown for (seconds)", minimum=3, maximum=600),
+        "every_minutes": Help(TS, "Again every (minutes)", minimum=1, maximum=240),
+        "show_channel_name": Help(TS, "Channel name at the start"),
+        "direction": Help(TS, "Direction", "auto: right to left for Arabic titles.",
+                          choices=("auto", "rtl", "ltr")),
+        "height_pct": Help(TSL, "Height (% of the picture)", minimum=4, maximum=25),
+        "bg_color": Help(TSL, "Background colour", "#RRGGBB."),
+        "bg_opacity": Help(TSL, "Background opacity", "0 clear, 1 solid.", minimum=0,
+                           maximum=1),
+        "accent_color": Help(TSL, "Clock box colour", "#RRGGBB."),
+        "text_color": Help(TSL, "Text colour", "#RRGGBB."),
+        "font_file": Help(TSL, "Font file", "A .ttf/.otf with Arabic letters on the "
+                          "streaming host. Empty: Noto Naskh/Sans Arabic, Arial or Tahoma, "
+                          "whichever is found."),
+        "font_size_pct": Help(TSL, "Title size (% of the strip height)", minimum=15,
+                              maximum=80),
+        "show_clock": Help(TSC, "Show a clock"),
+        "clocks": Help(TSC, "Clocks", "Each city in turn: its time zone (IANA, such as "
+                       "Asia/Riyadh: daylight saving follows it), its Arabic label and "
+                       "its label in other languages."),
+        "clock_seconds": Help(TSC, "Each clock for (seconds)", minimum=2, maximum=120),
+        "clock_format": Help(TSC, "Clock format", choices=("24h", "12h")),
+        "digits": Help(TSC, "Digits", "auto: Arabic-Indic (٠١٢) in a right-to-left "
+                       "strip.", choices=("auto", "arabic", "western")),
+    },
+)  # fmt: skip
 register(
     ExactDatesConfig,
     {

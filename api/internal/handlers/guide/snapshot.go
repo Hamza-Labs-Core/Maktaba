@@ -30,6 +30,13 @@ type Snapshot struct {
 	Episode      *int   `json:"episode,omitempty"`
 	EpisodeTitle string `json:"episode_title,omitempty"`
 	DurationMS   int64  `json:"duration_ms,omitempty"`
+	// The display-title parts (Story 27.11): the strip's line and its
+	// pieces, and the library title the display title was made from.
+	OnAir        string `json:"on_air,omitempty"`
+	StripTitle   string `json:"strip_title,omitempty"`
+	StripSeries  string `json:"strip_series,omitempty"`
+	StripEpisode string `json:"strip_episode,omitempty"`
+	SourceTitle  string `json:"source_title,omitempty"`
 }
 
 // parseSnapshot decodes a title_snapshot blob. A nil/empty/garbage blob

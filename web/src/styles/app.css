@@ -2173,3 +2173,128 @@ mark {
   color: inherit;
   text-decoration: underline;
 }
+/* channel strip preview (Story 27.11): a mock of the bar burned into the picture */
+.mkt-strip-preview {
+  position: relative;
+  width: 100%;
+  max-width: 40rem;
+  aspect-ratio: 16 / 9;
+  container-type: size;
+  border-radius: var(--radius-sm, 4px);
+  overflow: hidden;
+  background: linear-gradient(135deg, #3b4a5a 0%, #6b7d8f 55%, #2a3440 100%);
+  background-size: cover;
+  background-position: center;
+}
+.mkt-strip-preview__bar {
+  position: absolute;
+  inset-inline: 0;
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+}
+.mkt-strip-preview__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-inline: 2cqw;
+  gap: 0.5cqh;
+}
+.mkt-strip-preview__channel {
+  font-size: 2.6cqh;
+  opacity: 0.75;
+}
+.mkt-strip-preview__now {
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.15;
+}
+.mkt-strip-preview__now--scroll {
+  text-overflow: clip;
+}
+.mkt-strip-preview__now--scroll > span {
+  display: inline-block;
+  padding-inline-start: 100%;
+  animation: mkt-strip-marquee 14s linear infinite;
+}
+[dir="rtl"] .mkt-strip-preview__now--scroll > span {
+  animation-name: mkt-strip-marquee-rtl;
+}
+@keyframes mkt-strip-marquee {
+  to {
+    transform: translateX(-100%);
+  }
+}
+@keyframes mkt-strip-marquee-rtl {
+  to {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mkt-strip-preview__now--scroll > span {
+    animation: none;
+    padding-inline-start: 0;
+  }
+}
+.mkt-strip-preview__next {
+  font-size: 3cqh;
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mkt-strip-preview__clock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-inline: 2cqw;
+  min-width: 16cqw;
+  color: #0b1f3a;
+  font-weight: 700;
+}
+.mkt-strip-preview__city {
+  font-size: 2.6cqh;
+}
+.mkt-strip-preview__time {
+  font-size: 4cqh;
+  font-variant-numeric: tabular-nums;
+}
+.mkt-strip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.mkt-strip__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--space-2) var(--space-3);
+}
+.mkt-strip__clocks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.mkt-strip__clock {
+  display: grid;
+  grid-template-columns: 2fr 1.5fr 1.5fr auto;
+  gap: var(--space-2);
+  align-items: end;
+}
+/* the video's on-air title (Story 27.11) */
+.mkt-video__display {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+.mkt-video__display-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}

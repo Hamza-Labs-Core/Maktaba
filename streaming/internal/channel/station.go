@@ -30,8 +30,11 @@ type StationConfig struct {
 	Resolver LiveResolver
 	PathMap  pathmap.Map
 	FontFile string // for slate captions; "" → no caption
-	Logger   *slog.Logger
-	Now      func() time.Time
+	// StripDefaults returns the strip settings every channel starts from
+	// (rules tv_strip); nil: no strip.
+	StripDefaults func(ctx context.Context) StripSettings
+	Logger        *slog.Logger
+	Now           func() time.Time
 	// LiveRetry: how long a failed live block slates before retrying.
 	LiveRetry time.Duration
 	// Gate is the NVENC session semaphore shared by every station (nil:
@@ -89,6 +92,8 @@ type Station struct {
 	lookAt      time.Time
 	logMu       sync.Mutex
 	blockLog    *os.File
+	stripOnce   sync.Once // "strip skipped" logged once
+	stripWarned string
 }
 
 // muxProc is one muxer process.
@@ -627,6 +632,7 @@ func (p *stationPlayback) run(ctx context.Context) (bool, error) {
 	s, seg := p.s, p.seg
 	look := s.currentLook(ctx)
 	in, start, err := s.blockInput(ctx, seg, look)
+	defer s.removeStripFiles(in)
 	if err != nil {
 		s.log.Warn("channel: block unplayable", "kind", seg.Kind, "seq", seg.Block.Seq,
 			"err", err.Error(), "event", "channel_block_unplayable")
@@ -668,6 +674,7 @@ func (p *stationPlayback) run(ctx context.Context) (bool, error) {
 		prof.Encoder = EncoderSoftware
 		s.encoderNow.Store(prof.Encoder)
 		in2, start2, err2 := s.blockInput(ctx, seg, look)
+		defer s.removeStripFiles(in2)
 		if err2 != nil || in2 == nil {
 			return in2 == nil && err2 == nil, err2
 		}
@@ -824,7 +831,53 @@ func (s *Station) blockInput(ctx context.Context, seg Segment, look Look) (*Bloc
 			in.FontFile = s.cfg.FontFile
 		}
 	}
+	s.attachStrip(ctx, in, seg, look, start)
 	return in, start, nil
+}
+
+// attachStrip adds the channel strip to a block when the channel shows one
+// and this ffmpeg can shape its text.
+func (s *Station) attachStrip(ctx context.Context, in *BlockInput, seg Segment, look Look, start time.Time) {
+	if s.cfg.StripDefaults == nil || in == nil {
+		return
+	}
+	st, _ := ApplyStripRules(s.cfg.StripDefaults(ctx), look.Strip, true)
+	if !st.Enabled {
+		return
+	}
+	font := FindStripFont(st.FontFile)
+	if ok, why := TextShaping(ctx, s.cfg.FFmpeg, font); !ok {
+		s.stripOnce.Do(func() {
+			s.stripWarned = why
+			s.log.Warn("channel: strip skipped", "why", why, "event", "channel_strip_unavailable")
+		})
+		return
+	}
+	offset := float64(seg.SeekMS)/1000 + start.Sub(seg.Start).Seconds()
+	key := fmt.Sprintf("strip-%d-%d", seg.Block.Seq, start.UnixMilli())
+	si, files, err := BuildStrip(s.cfg.Profile, st, font, look.Name, seg, start,
+		time.Duration(in.DurationSec*float64(time.Second)), offset, filepath.Join(s.dir, "strip"), key)
+	if err != nil {
+		for _, f := range files {
+			_ = os.Remove(f)
+		}
+		s.log.Warn("channel: strip files", "err", err.Error(), "event", "channel_strip_failed")
+		return
+	}
+	if si != nil {
+		in.Strip = si
+		in.stripFiles = files
+	}
+}
+
+// removeStripFiles deletes a finished block's strip files.
+func (s *Station) removeStripFiles(in *BlockInput) {
+	if in == nil {
+		return
+	}
+	for _, f := range in.stripFiles {
+		_ = os.Remove(f)
+	}
 }
 
 func (s *Station) applyLook(in *BlockInput, look Look) {

@@ -16,6 +16,9 @@ type Segment struct {
 	SeekMS    int          // ms into the source file at Start (files only)
 	Message   string       // slate caption (e.g. "Live stream unavailable")
 	Synthetic bool         // not a schedule block (gap / empty / failure fill)
+	// Next is the next programme after this segment (the strip's «التالي»),
+	// nil when the look-ahead holds none.
+	Next *ProgramBlock
 }
 
 // Duration is the planned on-air length.
@@ -61,7 +64,7 @@ func PlanNext(blocks []ProgramBlock, pos time.Time) Segment {
 		if gap > maxGapSlate {
 			end = pos.Add(maxGapSlate)
 		}
-		return Segment{Kind: KindSlate, Start: pos, End: end, Synthetic: true}
+		return Segment{Kind: KindSlate, Start: pos, End: end, Synthetic: true, Next: nextProgramme(live, 0)}
 	}
 	// Wall-clock join (join.go): seek = (pos − start) + source_offset;
 	// a block starting within earlyStart joins at its own offset.
@@ -70,7 +73,8 @@ func PlanNext(blocks []ProgramBlock, pos time.Time) Segment {
 		return Segment{Kind: KindSlate, Start: pos, End: pos.Add(emptySlate), Synthetic: true}
 	}
 	b := j.Block
-	seg := Segment{Kind: b.Kind, Block: b, Start: pos, End: b.EndAt, SeekMS: j.SeekMS}
+	seg := Segment{Kind: b.Kind, Block: b, Start: pos, End: b.EndAt, SeekMS: j.SeekMS,
+		Next: nextProgramme(live, 1)}
 	switch b.Kind {
 	case KindProgram, KindFiller, KindBumper:
 		if b.Path == "" {
@@ -92,6 +96,23 @@ func PlanNext(blocks []ProgramBlock, pos time.Time) Segment {
 		}
 	}
 	return seg
+}
+
+// nextProgramme is the first programme or live block in blocks[from:]
+// (filler, bumpers and slates are not "next"), else the first block with a
+// title, else nil.
+func nextProgramme(blocks []ProgramBlock, from int) *ProgramBlock {
+	var titled *ProgramBlock
+	for i := from; i < len(blocks); i++ {
+		b := blocks[i]
+		if b.Kind == KindProgram || b.Kind == KindLive {
+			return &b
+		}
+		if titled == nil && b.Kind != KindSlate && b.Info.Line() != "" {
+			titled = &b
+		}
+	}
+	return titled
 }
 
 // failureFill returns the slate that covers the rest of `seg` after its
