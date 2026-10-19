@@ -11,6 +11,19 @@ don't append a line here; docs-only PRs are exempt.
 ## [Unreleased]
 
 ### Added
+- TV slots and the hot standby (Epic 33 stories 33.1, 33.4): the channel
+  engine runs in TV slot processes (`maktaba-streaming slot --slot
+  blue|green|amber`, supervisor role `tv-slot`, loopback 8791-8793, probes
+  9111-9113) behind the streaming role, which becomes the front door. The
+  live slot serves the viewers; the hot standby runs the same channels warm
+  (`rules.tv_staging.hot_standby`, on; `standby_warm`, `viewers` by default,
+  within the encoder budget: live first) and takes over at once when the live
+  slot crashes: HLS continues across one discontinuity, Plex/TS connections
+  are spliced, the Cloudflare push keeps its session. Station output is
+  splice-ready: wall-clock timestamps, keyframes on a wall-clock grid
+  (`tv_output.keyint_seconds`, 2), fixed PIDs, aligned segments. Slot 0127
+  `tv_slots`. `[tv] slots = "off"` in server.toml keeps the engine in the
+  streaming process. Staging itself stays behind the `tvstaging` build tag.
 - Extension relay (story 31.R): machines run the Plex stages (index,
   season, topic and clip collections) again without the Plex token. Each
   Plex call goes over the machine's sealed cluster channel to the home,
