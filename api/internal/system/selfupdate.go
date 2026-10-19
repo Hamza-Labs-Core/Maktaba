@@ -1,9 +1,12 @@
 // Server self-update handler (Epic 28, Story 28.3).
 //
-// POST /api/admin/system/update downloads the correct release archive for
-// this host from GitHub, verifies its SHA-256 against the release's
-// checksums.txt, atomically swaps the running maktaba-server binary
-// (keeping a .bak), and re-execs. Package-managed (.deb/.rpm) installs
+// POST /api/admin/system/update downloads the release for this host from
+// the GitHub release of the pinned repository, verifies it with
+// shared/go/releaseverify (Epic 35 story 35.1: the Sigstore bundle over
+// checksums.txt against the pinned release-workflow identity and the Rekor
+// inclusion proof, release.json, the archive's and the extracted binary's
+// digests, and the no-downgrade watermark), atomically swaps the running
+// maktaba-server binary (keeping a .bak), raises the watermark and re-execs. Package-managed (.deb/.rpm) installs
 // shell out to the package manager instead; Docker installs can't replace
 // their own image and get a 409 with instructions.
 //
@@ -11,30 +14,27 @@
 // cmd/maktaba-server/internal/selfupdate: write the new binary next to
 // the target, rename the live one aside, rename the new one into place —
 // each rename is atomic within a directory, and the .bak makes a
-// mid-swap crash recoverable. Download/verify/extract are pure helpers so
-// the only filesystem-mutating step is isolated and testable.
+// mid-swap crash recoverable. Download/verify/extract live in releaseverify
+// (shared with `maktaba-server update` and the node installers) so the only
+// filesystem-mutating step here is isolated and testable.
 package system
 
 import (
-	"archive/tar"
-	"archive/zip"
-	"bytes"
-	"compress/gzip"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/sigstore/sigstore-go/pkg/root"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
@@ -67,6 +67,11 @@ type SelfUpdater struct {
 	detect       func(self string) installKind
 	runPkgMgr    func(kind installKind, version string) ([]byte, error)
 	selfPathFunc func() (string, error)
+	// trusted returns the Sigstore trust root (default: the Updater's
+	// RootStore, refreshed through TUF first, else the embedded root).
+	trusted func(ctx context.Context) (root.TrustedMaterial, error)
+	// platform is the release.json assets key ("" = this host).
+	platform string
 }
 
 // NewSelfUpdater builds a SelfUpdater backed by u.
@@ -78,8 +83,14 @@ func NewSelfUpdater(u *Updater) *SelfUpdater {
 		detect:       detectInstall,
 		runPkgMgr:    runPackageManager,
 		selfPathFunc: resolveSelf,
+		trusted:      u.trustedMaterial,
 	}
 }
+
+// WatermarkPath is where a flat (pre-35.2 layout) install keeps the highest
+// version it ever installed: next to the binary, shared with
+// `maktaba-server update`. Story 35.2 moves it to <install>/watermark.
+func WatermarkPath(self string) string { return releaseverify.FlatWatermarkPath(self) }
 
 type updateRequest struct {
 	Version string `json:"version"` // empty ⇒ latest on the channel
@@ -195,66 +206,58 @@ func (s *SelfUpdater) handle(w http.ResponseWriter, r *http.Request) {
 }
 
 // applyBinary performs the download/verify/swap. Errors are sentinel-wrapped
-// so the handler can map them to HTTP statuses.
+// so the handler can map them to HTTP statuses. Nothing touches the disk
+// until releaseverify accepted the release and the watermark allows it.
 func (s *SelfUpdater) applyBinary(ctx context.Context, self string, status UpdateStatus) error {
 	dir := filepath.Dir(self)
 	if err := writableDir(dir); err != nil {
 		return fmt.Errorf("%w: %s", errNotWritable, dir)
 	}
-	asset := matchServerAsset(status.Assets)
-	if asset == nil {
-		return fmt.Errorf("%w: no maktaba-server asset for %s", errNoAsset, PlatformToken())
-	}
-	if err := diskCheck(dir, 2*asset.Size); err != nil {
-		return err
-	}
-	checksumsURL := findChecksumsURL(status.Assets)
-	if checksumsURL == "" {
-		return fmt.Errorf("%w: release has no checksums.txt", errVerify)
-	}
-
-	archive, err := s.download(ctx, asset.URL)
-	if err != nil {
-		return fmt.Errorf("%w: %v", errDownload, err)
-	}
-	sums, err := s.download(ctx, checksumsURL)
-	if err != nil {
-		return fmt.Errorf("%w: fetch checksums: %v", errDownload, err)
-	}
-	want := lookupChecksum(string(sums), asset.Name)
-	if want == "" {
-		return fmt.Errorf("%w: %s not in checksums.txt", errVerify, asset.Name)
-	}
-	got := sha256hex(archive)
-	if !strings.EqualFold(got, want) {
-		return fmt.Errorf("%w: got %s want %s", errChecksumMismatch, got, want)
-	}
-
-	bin, err := extractServerBinary(asset.Name, archive)
+	id, err := s.u.Identity()
 	if err != nil {
 		return fmt.Errorf("%w: %v", errVerify, err)
 	}
-	if err := swapBinary(self, bin); err != nil {
+	tm, err := s.trusted(ctx)
+	if err != nil {
+		return fmt.Errorf("%w: %v", errVerify, err)
+	}
+	assets := make(map[string]string, len(status.Assets))
+	for _, a := range status.Assets {
+		assets[a.Name] = a.URL
+	}
+	up, err := releaseverify.FetchServer(ctx, releaseverify.HTTPDownloader(s.httpc),
+		releaseverify.Input{Tag: status.LatestVersion, Identity: id, TrustedMaterial: tm}, assets, s.platform)
+	if err != nil {
+		var rvErr *releaseverify.Error
+		switch {
+		case errors.Is(err, releaseverify.ErrNotFound):
+			return fmt.Errorf("%w: %v", errNoAsset, err)
+		case errors.As(err, &rvErr):
+			return fmt.Errorf("%w: %v", errVerify, err)
+		default:
+			return fmt.Errorf("%w: %v", errDownload, err)
+		}
+	}
+	wm := releaseverify.WatermarkFile{Path: WatermarkPath(self)}
+	cur, err := wm.Load()
+	if err != nil {
+		return fmt.Errorf("%w: read watermark: %v", errVerify, err)
+	}
+	if err := releaseverify.CheckMonotonic(cur, up.Result); err != nil {
+		return fmt.Errorf("%w: %v", errDowngrade, err)
+	}
+	if err := diskCheck(dir, 2*int64(len(up.Binary))); err != nil {
+		return err
+	}
+	if err := swapBinary(self, up.Binary); err != nil {
 		return fmt.Errorf("%w: %v", errSwap, err)
 	}
+	if err := wm.Commit(up.Result); err != nil {
+		// The new binary is in place and verified; a watermark that could not
+		// be raised only weakens the downgrade guard until the next update.
+		s.u.log.Warn("self-update: watermark not raised", "event", "update_watermark_error", "err", err.Error())
+	}
 	return nil
-}
-
-func (s *SelfUpdater) download(ctx context.Context, url string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := s.httpc.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-	// Cap at 512 MiB so a hostile/buggy feed can't OOM us.
-	return io.ReadAll(io.LimitReader(resp.Body, 512<<20))
 }
 
 func (s *SelfUpdater) packageManagerUpdate(w http.ResponseWriter, r *http.Request, kind installKind, version string) {
@@ -274,13 +277,13 @@ func (s *SelfUpdater) packageManagerUpdate(w http.ResponseWriter, r *http.Reques
 // --- error sentinels → HTTP mapping ---
 
 var (
-	errNotWritable      = errors.New("binary directory not writable")
-	errNoAsset          = errors.New("no platform asset")
-	errDownload         = errors.New("download failed")
-	errVerify           = errors.New("verification failed")
-	errChecksumMismatch = errors.New("checksum mismatch")
-	errSwap             = errors.New("binary swap failed")
-	errDiskSpace        = errors.New("insufficient disk space")
+	errNotWritable = errors.New("binary directory not writable")
+	errNoAsset     = errors.New("no platform asset")
+	errDownload    = errors.New("download failed")
+	errVerify      = errors.New("verification failed")
+	errDowngrade   = errors.New("downgrade or replay refused")
+	errSwap        = errors.New("binary swap failed")
+	errDiskSpace   = errors.New("insufficient disk space")
 )
 
 func (s *SelfUpdater) writeApplyError(w http.ResponseWriter, r *http.Request, err error) {
@@ -297,7 +300,9 @@ func (s *SelfUpdater) writeApplyError(w http.ResponseWriter, r *http.Request, er
 			Status: http.StatusInsufficientStorage,
 			Detail: err.Error(),
 		})
-	case errors.Is(err, errChecksumMismatch), errors.Is(err, errDownload), errors.Is(err, errVerify):
+	case errors.Is(err, errDowngrade):
+		httperror.Write(w, r, httperror.Conflict("downgrade_refused", err.Error()))
+	case errors.Is(err, errDownload), errors.Is(err, errVerify):
 		httperror.Write(w, r, httperror.BadGateway(err.Error()))
 	default:
 		httperror.Write(w, r, httperror.Internal(err.Error()))
@@ -305,114 +310,6 @@ func (s *SelfUpdater) writeApplyError(w http.ResponseWriter, r *http.Request, er
 }
 
 // --- pure helpers (unit-tested) ---
-
-// matchServerAsset picks the maktaba-server archive for this host. Release
-// archives are named maktaba-server-<ver>-<os>-<arch>.{tar.gz,zip}; we
-// match on the "<os>-<arch>" token plus the platform-appropriate
-// extension.
-func matchServerAsset(assets []Asset) *Asset {
-	token := PlatformToken()
-	wantExt := ".tar.gz"
-	if runtime.GOOS == "windows" {
-		wantExt = ".zip"
-	}
-	for i := range assets {
-		n := assets[i].Name
-		if strings.HasPrefix(n, "maktaba-server-") &&
-			strings.Contains(n, token) &&
-			strings.HasSuffix(n, wantExt) {
-			return &assets[i]
-		}
-	}
-	return nil
-}
-
-func findChecksumsURL(assets []Asset) string {
-	for _, a := range assets {
-		if a.Name == "checksums.txt" {
-			return a.URL
-		}
-	}
-	return ""
-}
-
-// lookupChecksum finds the hex digest for name in a `sha256sum`-format
-// manifest. Each line is "<hex>  <path>"; the path may carry a leading
-// "./" so we match on the basename.
-func lookupChecksum(manifest, name string) string {
-	for _, line := range strings.Split(manifest, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-		if filepath.Base(fields[len(fields)-1]) == name {
-			return fields[0]
-		}
-	}
-	return ""
-}
-
-func sha256hex(b []byte) string {
-	sum := sha256.Sum256(b)
-	return hex.EncodeToString(sum[:])
-}
-
-// extractServerBinary returns the maktaba-server executable bytes from a
-// .tar.gz or .zip archive.
-func extractServerBinary(name string, archive []byte) ([]byte, error) {
-	switch {
-	case strings.HasSuffix(name, ".zip"):
-		return extractFromZip(archive)
-	case strings.HasSuffix(name, ".tar.gz"), strings.HasSuffix(name, ".tgz"):
-		return extractFromTarGz(archive)
-	default:
-		return nil, fmt.Errorf("unsupported archive: %s", name)
-	}
-}
-
-func extractFromTarGz(archive []byte) ([]byte, error) {
-	gz, err := gzip.NewReader(bytes.NewReader(archive))
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = gz.Close() }()
-	tr := tar.NewReader(gz)
-	for {
-		hdr, err := tr.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		if isServerBinaryName(filepath.Base(hdr.Name)) && hdr.Typeflag == tar.TypeReg {
-			return io.ReadAll(io.LimitReader(tr, 512<<20))
-		}
-	}
-	return nil, errors.New("maktaba-server not found in archive")
-}
-
-func extractFromZip(archive []byte) ([]byte, error) {
-	zr, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
-	if err != nil {
-		return nil, err
-	}
-	for _, f := range zr.File {
-		if isServerBinaryName(filepath.Base(f.Name)) {
-			rc, err := f.Open()
-			if err != nil {
-				return nil, err
-			}
-			defer func() { _ = rc.Close() }()
-			return io.ReadAll(io.LimitReader(rc, 512<<20))
-		}
-	}
-	return nil, errors.New("maktaba-server not found in archive")
-}
-
-func isServerBinaryName(base string) bool {
-	return base == "maktaba-server" || base == "maktaba-server.exe"
-}
 
 // swapBinary atomically replaces target with body, keeping target+".bak".
 func swapBinary(target string, body []byte) error {

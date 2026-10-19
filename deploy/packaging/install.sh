@@ -4,7 +4,8 @@
 #   curl -fsSL https://raw.githubusercontent.com/Hamza-Labs-Core/Maktaba/main/deploy/packaging/install.sh | bash
 #
 # Detects your OS + CPU, downloads the matching signed release archive
-# from GitHub, verifies its SHA-256 against the release checksums, and
+# from GitHub, verifies the release's Sigstore signature (when cosign is
+# installed) and its SHA-256 against the release checksums, and
 # installs the maktaba-server binary (plus the api/streaming siblings it
 # supervises) into a bin directory on your PATH. On Linux it can also
 # drop in and enable the systemd unit.
@@ -104,14 +105,17 @@ main() {
     fetch "${url}" "${tmp}/${archive}" \
         || die "download failed: ${url}"
 
-    # Verify against the release checksums.txt unless disabled.
+    # Verify against the release checksums.txt unless disabled: first the
+    # Sigstore signature over checksums.txt (pinned to this repository's
+    # release workflow for exactly this tag), then the archive's SHA-256.
     if [ "${MAKTABA_NO_VERIFY:-0}" != "1" ]; then
         if fetch "${base}/checksums.txt" "${tmp}/checksums.txt" 2>/dev/null; then
+            verify_signature "${tmp}" "${base}" "${tag}"
             info "Verifying SHA-256 checksum"
             verify_checksum "${tmp}" "${archive}" \
                 || die "checksum verification failed for ${archive}"
         else
-            warn "checksums.txt not found in release — skipping verification"
+            warn "checksums.txt not found in release - skipping verification"
         fi
     fi
 
@@ -125,6 +129,33 @@ main() {
     fi
 
     info "Done. Run 'maktaba-server setup' to configure your library."
+}
+
+# The exact signing identity of a release (Epic 35 story 35.1): this
+# repository's release workflow, run for the tag being installed. A regexp
+# over the repository name would also accept a fork's workflow.
+identity_for() {
+    printf 'https://github.com/%s/.github/workflows/release.yml@refs/tags/%s' "${REPO}" "$1"
+}
+
+verify_signature() {
+    local dir="$1" base="$2" tag="$3" id
+    id="$(identity_for "${tag}")"
+    if ! fetch "${base}/checksums.txt.sigstore.json" "${dir}/checksums.txt.sigstore.json" 2>/dev/null; then
+        warn "release ${tag} has no Sigstore bundle (published before signed manifests) - signature not checked"
+        return 0
+    fi
+    if command -v cosign >/dev/null 2>&1; then
+        info "Verifying the Sigstore signature of checksums.txt"
+        cosign verify-blob --bundle "${dir}/checksums.txt.sigstore.json" \
+            --certificate-identity "${id}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "${dir}/checksums.txt" >/dev/null 2>&1 \
+            || die "signature verification failed: checksums.txt is not signed by ${id}"
+    else
+        warn "cosign not found - checksums.txt signature not checked. To check it yourself:"
+        warn "  cosign verify-blob --bundle checksums.txt.sigstore.json --certificate-identity '${id}' --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt"
+    fi
 }
 
 verify_checksum() {

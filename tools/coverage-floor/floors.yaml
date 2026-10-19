@@ -32,10 +32,12 @@ shared/metrics/go:   45    # measured 45.7
 shared/tracing/go:   71    # measured 71.3
 shared/errrpt/go:    85    # measured 85.8
 shared/testtier/go:  43    # measured 43.2
+shared/go/releaseverify: 50  # measured 50.9 (2026-10-19, story 35.1)
 
 # --- Go tooling modules ---
 tools/test-budget:   70    # measured 70.4
 tools/log-lint:      53    # measured 53.1
+tools/release:       65    # measured 65.4 (2026-10-19, story 35.1)
 
 # --- Python pipeline ---
 pipeline:            48    # measured 48 (pytest -m unit, src/maktaba_pipeline)

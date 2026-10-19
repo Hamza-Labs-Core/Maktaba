@@ -83,6 +83,40 @@ jobs:
           path: dist/*
           retention-days: 3
 
+      # Story 35.1 TC9 — release-manifest-check on a dry-run tag: release.yml's
+      # gen-release-json over this run's real wheel + constraints and stub
+      # server archives for the five platforms, then the check against the
+      # migrations, SCHEMA_REV / SchemaRev and the MANIFEST markers. (Signing
+      # needs a tag's OIDC identity; the bundle path is covered by
+      # shared/go/releaseverify's tests against a local fake Sigstore.)
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: tools/release/go.mod
+          cache: false
+
+      - name: release-manifest-check (dry run)
+        run: |
+          set -euo pipefail
+          tag="v0.0.1-dryrun.${{ github.run_number }}"
+          ver="${tag#v}"
+          rel="$RUNNER_TEMP/release-dry-run"
+          mkdir -p "$rel"
+          cp dist/maktaba_pipeline-*.whl dist/maktaba-pipeline-*-constraints.txt "$rel/"
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            os="${target%/*}"; arch="${target#*/}"; ext=""; [ "$os" = windows ] && ext=".exe"
+            stage="$(mktemp -d)"
+            for b in maktaba-server maktaba-api maktaba-streaming; do echo "stub $b $target" >"$stage/$b$ext"; done
+            if [ "$os" = windows ]; then
+              ( cd "$stage" && zip -qr - . ) >"$rel/maktaba-server-${ver}-${os}-${arch}.zip"
+            else
+              tar -C "$stage" -czf "$rel/maktaba-server-${ver}-${os}-${arch}.tar.gz" .
+            fi
+          done
+          cd tools/release
+          go run ./cmd/gen-release-json --tag "$tag" --commit "${{ github.sha }}" --dist "$rel" --repo ../.. >"$rel/release.json"
+          cat "$rel/release.json"
+          go run ./cmd/gen-release-json --check "$rel/release.json" --repo ../..
+
   installer-tests:
     name: installer tests (${{ matrix.os }})
     strategy:

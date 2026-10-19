@@ -8,7 +8,7 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 
-GO_MODULES := api streaming cmd/maktaba-server shared/log/go shared/health/go shared/metrics/go shared/tracing/go shared/errrpt/go shared/testtier/go tools/test-budget tools/log-lint
+GO_MODULES := api streaming cmd/maktaba-server shared/log/go shared/health/go shared/metrics/go shared/tracing/go shared/errrpt/go shared/go/releaseverify shared/testtier/go tools/release tools/test-budget tools/log-lint
 PIPELINE_DIR := pipeline
 WEB_DIR := web
 MIGRATIONS_DIR := shared/db/migrations

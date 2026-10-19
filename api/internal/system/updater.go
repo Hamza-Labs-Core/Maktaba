@@ -24,11 +24,22 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/sigstore/sigstore-go/pkg/root"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
 
 // defaultRepo is the canonical Maktaba repository; overridable per-fork
 // via MAKTABA_UPDATE_REPO so a downstream fork tracks its own releases.
-const defaultRepo = "Hamza-Labs-Core/Maktaba"
+// The repository and the expected release-signing identity are one setting
+// (releaseverify.Identity): a fork's binaries only install a release its own
+// release workflow signed, and no API field can change either.
+const defaultRepo = releaseverify.DefaultRepo
+
+// rootRefreshEvery is the Sigstore trusted-root TUF refresh cadence
+// (Epic 35 design §3.3).
+const rootRefreshEvery = 24 * time.Hour
 
 // DefaultCheckInterval is the auto-check cadence when none is configured.
 const DefaultCheckInterval = 24 * time.Hour
@@ -78,6 +89,9 @@ type UpdaterConfig struct {
 	// APIBaseURL overrides the GitHub API base (default
 	// "https://api.github.com") — a test seam pointing at httptest.
 	APIBaseURL string
+	// Roots keeps the Sigstore trusted root fresh (<data_dir>/sigstore);
+	// nil verifies against the root embedded in the binary.
+	Roots *releaseverify.RootStore
 }
 
 // Updater polls GitHub Releases and caches the result per channel.
@@ -92,6 +106,12 @@ type Updater struct {
 	log      *slog.Logger
 	httpc    *http.Client
 	now      func() time.Time
+	roots    *releaseverify.RootStore
+	identity releaseverify.Identity
+	idErr    error
+
+	rootsMu       sync.Mutex
+	rootRefreshed time.Time
 
 	mu      sync.RWMutex
 	cache   map[string]UpdateStatus // keyed by channel
@@ -128,7 +148,11 @@ func NewUpdater(cfg UpdaterConfig) *Updater {
 	if baseURL == "" {
 		baseURL = "https://api.github.com"
 	}
+	id, idErr := releaseverify.NewIdentity(repo)
 	return &Updater{
+		roots:    cfg.Roots,
+		identity: id,
+		idErr:    idErr,
 		repo:     repo,
 		current:  cfg.CurrentVersion,
 		channel:  channel,
@@ -141,6 +165,40 @@ func NewUpdater(cfg UpdaterConfig) *Updater {
 		now:      now,
 		cache:    make(map[string]UpdateStatus),
 	}
+}
+
+// Identity is the release-signing identity of the configured repository; an
+// invalid MAKTABA_UPDATE_REPO makes every self-update fail closed.
+func (u *Updater) Identity() (releaseverify.Identity, error) { return u.identity, u.idErr }
+
+// refreshRoots refreshes the Sigstore trusted root through TUF at most once per
+// rootRefreshEvery; a failure keeps the last good root (logged).
+func (u *Updater) refreshRoots(ctx context.Context, force bool) {
+	if u.roots == nil || u.disabled {
+		return
+	}
+	u.rootsMu.Lock()
+	defer u.rootsMu.Unlock()
+	if !force && !u.rootRefreshed.IsZero() && u.now().Sub(u.rootRefreshed) < rootRefreshEvery {
+		return
+	}
+	if err := u.roots.Refresh(ctx); err != nil {
+		u.log.Warn("sigstore trusted root refresh failed; keeping the last good root",
+			"event", "update_root_refresh_error", "err", err.Error())
+		return
+	}
+	u.rootRefreshed = u.now()
+}
+
+// trustedMaterial is the root releases are verified against: refreshed when
+// due, failing closed when expired.
+func (u *Updater) trustedMaterial(ctx context.Context) (root.TrustedMaterial, error) {
+	if u.roots == nil {
+		return releaseverify.EmbeddedTrustedRoot()
+	}
+	u.refreshRoots(ctx, false)
+	tm, _, err := u.roots.TrustedMaterial()
+	return tm, err
 }
 
 // Status returns the current update status, using the cache unless
@@ -181,6 +239,7 @@ func (u *Updater) Run(ctx context.Context) {
 		return
 	}
 	_ = u.Status(ctx, true)
+	u.refreshRoots(ctx, false)
 	t := time.NewTicker(u.ttl)
 	defer t.Stop()
 	for {
@@ -189,6 +248,7 @@ func (u *Updater) Run(ctx context.Context) {
 			return
 		case <-t.C:
 			_ = u.Status(ctx, true)
+			u.refreshRoots(ctx, false)
 		}
 	}
 }
