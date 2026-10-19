@@ -195,8 +195,13 @@ the first reason it is not:
 | 7 | draining | `cluster_nodes.drain` |
 
 Home-only stages (`placement="home"`): `index` (the vector index is a local directory
-the home's gRPC search reads), `thumb_small` and `review_pages` (the API serves their
-files from the home's disk). The served set and `stages_off` are written to `workers`;
+the home's gRPC search reads), `thumbnail` (poster and sprites), `thumb_small`,
+`chapter_thumbs` and `review_pages` (the API serves their files from the home's disk, and
+`videos.poster_path` / `sprite_path` name a file in the cache of the machine that made
+it). Moving these caches to the share stays out of scope (README); a poster path a node
+wrote before `thumbnail` was home-only (another machine's `.maktaba/cache/thumbnails`, or
+a path spelled for another OS) is cleared by the home at its start and the stage
+enqueued again (`thumbnail/repair.py`, idempotent). The served set and `stages_off` are written to `workers`;
 the claim loop reads the current set each poll, so a change applies without a restart.
 
 A node never runs `sync_graph` or the extensions' `ensure_rows` (the home's workers own

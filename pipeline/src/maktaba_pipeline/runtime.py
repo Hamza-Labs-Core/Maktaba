@@ -573,6 +573,16 @@ async def _start_engine(
             await agent.start_home()
         except Exception:  # noqa: BLE001 - the legacy map keeps working
             _log.exception("home_storage_start_failed")
+        if not cfg.path_map.strip():
+            # posters a node's thumbnail stage recorded in its own cache: cleared, made
+            # again here (the stage is home-only now; idempotent). Only on the home's
+            # own machine: a worker elsewhere (it has a path map) has another cache
+            try:
+                from .thumbnail.repair import clear_foreign_thumbnails
+
+                await clear_foreign_thumbnails(database)
+            except Exception:  # noqa: BLE001 - a repair, never a reason not to start
+                _log.exception("thumbnail_foreign_repair_failed")
     selector.compute()
 
     collector = runtime.nas.collector

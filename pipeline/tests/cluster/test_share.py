@@ -147,7 +147,9 @@ async def test_resolve_cluster_dir() -> None:
         ]
     )
     pm = PathMap.parse("Y:/=/mnt/y")
-    found, how = await share.resolve_cluster_dir(db, pm, env={})
+    found, how = await share.resolve_cluster_dir(
+        db, pm, env={}, is_dir=lambda _p: True, system="Linux"
+    )
     assert found == Path("/mnt/y/Media/maktaba/cluster") and "Y:/Media" in how
     found, how = await share.resolve_cluster_dir(db, pm, env={"MAKTABA_CLUSTER_DIR": "/tmp/c"})
     assert found == Path("/tmp/c") and how == "MAKTABA_CLUSTER_DIR"
@@ -191,5 +193,7 @@ async def test_the_roots_come_from_library_roots_as_the_hub_reads_them(db: Datab
         "/Volumes/Originals/Courses",
     ]
     assert {lib: n for lib, _, n in rows}[str(a)] == 1
-    found, _ = await share.resolve_cluster_dir(db, PathMap(), env={})
+    found, _ = await share.resolve_cluster_dir(
+        db, PathMap(), env={}, is_dir=lambda _p: True, system="Darwin"
+    )
     assert found == Path("/Volumes/Originals/maktaba/cluster")  # the hub's share root
