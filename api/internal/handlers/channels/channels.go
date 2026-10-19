@@ -25,6 +25,11 @@ type Handler struct {
 	// DataDir is the API's data volume (MAKTABA_DATA_DIR); uploaded
 	// channel art is kept under <DataDir>/channel-art/<channel id>/.
 	DataDir string
+	// OnLineupChange runs after a channel is created, edited, deleted or
+	// renumbered by hand (nil: nothing). The router points it at the Plex
+	// Live TV refresh, so Plex's channel map follows edits that never go
+	// through write_channels (audit P1-6).
+	OnLineupChange func(ctx context.Context)
 
 	rootCache artRootCache // the art folders served from (artpaths.go)
 	artLocks  sync.Map     // channel id + kind → *sync.Mutex (artLock)
@@ -45,6 +50,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/channels/{id}/art/{kind}", h.ArtUpload)
 	r.Patch("/api/channels/{id}/art/{kind}", h.ArtSettings)
 	r.Delete("/api/channels/{id}/art/{kind}", h.ArtRevert)
+	h.mountBuilder(r)
 }
 
 func (h *Handler) repo() *repo { return &repo{db: h.DB} }
@@ -82,11 +88,13 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		ids = append(ids, c.ID)
 	}
 	overrides := h.overriddenKinds(r.Context(), ids)
+	plan, until := h.planStatuses(r.Context()), h.guideUntil(r.Context())
 	for _, c := range all {
 		if !h.canRead(p, c.LibraryID) {
 			continue
 		}
 		applyOverrideFlags(&c, overrides[c.ID])
+		attachBuilderInfo(&c, plan, until)
 		redactPaths(p, &c)
 		if np, err := h.repo().nowPlaying(r.Context(), c.ID, now); err == nil && np != nil {
 			c.NowPlaying = np
@@ -198,6 +206,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("create channel: "+err.Error()))
 		return
 	}
+	h.lineupChanged(r.Context())
 	common.WriteJSON(w, r, http.StatusCreated, c)
 }
 
@@ -226,6 +235,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		c.NowPlaying = np
 	}
 	h.attachOverrides(r.Context(), &c)
+	attachBuilderInfo(&c, h.planStatuses(r.Context()), h.guideUntil(r.Context()))
 	redactPaths(p, &c)
 	common.WriteJSON(w, r, http.StatusOK, c)
 }
@@ -361,6 +371,8 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.Internal("update channel: "+err.Error()))
 			return
 		}
+		// a definition change by a person (art is not one: see art.go)
+		h.markEdited(r.Context(), id)
 	}
 	if logoChange {
 		var err error
@@ -389,6 +401,8 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.attachOverrides(r.Context(), &updated)
+	attachBuilderInfo(&updated, h.planStatuses(r.Context()), h.guideUntil(r.Context()))
+	h.lineupChanged(r.Context())
 	common.WriteJSON(w, r, http.StatusOK, updated)
 }
 
@@ -404,6 +418,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("delete channel"))
 		return
 	}
+	h.lineupChanged(r.Context())
 	common.WriteNoContent(w)
 }
 
@@ -433,7 +448,33 @@ func (h *Handler) Reorder(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = tx.Rollback() }()
 
 	now := h.now()
+	// Only the channels whose number really changes are written (and so count
+	// as edited). They first step aside to a temporary negative number, so a
+	// swap or a shift never trips the scope-unique index half way.
+	var moved []ReorderEntry
 	for _, e := range entries {
+		var cur int
+		if err := tx.QueryRowContext(r.Context(),
+			`SELECT number FROM channels WHERE id = $1`, e.ID).Scan(&cur); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				httperror.Write(w, r, httperror.NotFound("channel "+e.ID))
+				return
+			}
+			httperror.Write(w, r, httperror.Internal("reorder: "+err.Error()))
+			return
+		}
+		if cur != e.Number {
+			moved = append(moved, e)
+		}
+	}
+	for i, e := range moved {
+		if _, err := tx.ExecContext(r.Context(),
+			`UPDATE channels SET number = $1 WHERE id = $2`, -(i + 1), e.ID); err != nil {
+			httperror.Write(w, r, httperror.Internal("reorder: "+err.Error()))
+			return
+		}
+	}
+	for _, e := range moved {
 		if _, err := tx.ExecContext(r.Context(),
 			`UPDATE channels SET number = $1, updated_at = $2 WHERE id = $3`,
 			e.Number, now, e.ID); err != nil {
@@ -451,6 +492,12 @@ func (h *Handler) Reorder(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("commit reorder"))
 		return
 	}
+	ids := make([]string, 0, len(moved))
+	for _, e := range moved {
+		ids = append(ids, e.ID)
+	}
+	h.markEdited(r.Context(), ids...)
+	h.lineupChanged(r.Context())
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"reordered": len(entries)})
 }
 
@@ -493,6 +540,13 @@ func (h *Handler) nextNumber(ctx context.Context, libraryID *string) (int, error
 		return 1, nil
 	}
 	return int(maxNum.Int64) + 1, nil
+}
+
+// lineupChanged tells OnLineupChange (best-effort, never fails the request).
+func (h *Handler) lineupChanged(ctx context.Context) {
+	if h.OnLineupChange != nil {
+		h.OnLineupChange(context.WithoutCancel(ctx))
+	}
 }
 
 // markStale flips channel_schedule_state.stale; best-effort (27.2 may not

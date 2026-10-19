@@ -9,7 +9,9 @@ Safety rules carried over from the prototype's exporters:
 
 * the tool only ever touches channels it created (``external_links.created_by_tool``);
 * a channel somebody edited since the tool last wrote it (its stored content hash no longer matches
-  the row) is left alone and reported, never overwritten;
+  the row) is left alone and reported, never overwritten — until that person hands it back
+  ("back to plan" in the channel editor: ``POST /api/channels/{id}/follow-plan`` stores
+  :data:`FOLLOW_PLAN` as the link's hash), when the next run rewrites it from the plan;
 * a planned channel whose number or slug is taken by a channel the tool did not create is skipped
   and reported (a ``conflict``);
 * after writing, the rows are read back and verified (``readback_mismatch``).
@@ -44,7 +46,7 @@ from ..sql import dumps, is_pg, loads, now, to_ts
 from ._plan_json import pool_items
 from .registry import StageImpl
 
-__all__ = ["IMPL", "ChannelWrite", "WritePlan", "compute_changes", "content_hash"]
+__all__ = ["FOLLOW_PLAN", "IMPL", "ChannelWrite", "WritePlan", "compute_changes", "content_hash"]
 
 TARGET = "maktaba_channel"
 SUBJECT_KIND = "catalog"
@@ -62,6 +64,9 @@ _FIELDS = (
 #: hand (``channel_art_overrides``, slot 0114) is never a user edit; it is compared on
 #: its own (:func:`_art`)
 _ART_KINDS = ("logo", "watermark", "loading")
+#: ``external_links.content_hash`` of a channel handed back to the plan (the API writes it;
+#: never a real hash): the next run rewrites the channel whatever it holds
+FOLLOW_PLAN = "follow-plan"
 
 
 def content_hash(row: dict[str, Any]) -> str:
@@ -396,7 +401,8 @@ async def compute_changes(
                 continue
             wp.create.append(want)
             continue
-        if content_hash(row) != str(link["content_hash"]):
+        handed_back = str(link["content_hash"]) == FOLLOW_PLAN
+        if not handed_back and content_hash(row) != str(link["content_hash"]):
             wp.user_edited.append({"key": key, "channel_id": str(link["external_id"])})
             continue
         ov = await _overrides(db, str(link["external_id"])) if has_ov else {}
@@ -410,7 +416,7 @@ async def compute_changes(
                 {**want.values, "logo_path": logo,
                  "mode_config": {**want.values["mode_config"], "look": art_look}},
             )  # fmt: skip
-        if content_hash(row) != want.digest or _art(row) != _art(want.values):
+        if handed_back or content_hash(row) != want.digest or _art(row) != _art(want.values):
             n = want.values["number"]
             if taken_numbers.get(n) not in (None, str(link["external_id"])):
                 wp.conflicts.append({"key": key, "number": n, "why": "number taken"})
@@ -610,8 +616,17 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
     from ... import rules
 
     _, tv_changes, _ = await rules.read(db, "tv")
+    handed_back = await db.fetch(
+        "SELECT subject_id FROM external_links WHERE target = $1 AND subject_kind = $2"
+        " AND content_hash = $3 ORDER BY subject_id",
+        TARGET,
+        SUBJECT_KIND,
+        FOLLOW_PLAN,
+    )
     return canonical_hash(
         {
+            # a channel handed back to the plan: the stage has something to do
+            "follow": [str(r["subject_id"]) for r in handed_back],
             "plan": None if latest is None else int(latest["id"]),  # a new row = a new lineup
             "mode": None if mode is None else mode["write_mode"],
             "v": CH_WRITE_VERSION,

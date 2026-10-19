@@ -19,6 +19,8 @@ __all__ = [
     "ExactDatesConfig",
     "LiveSlot",
     "MaktabaTvConfig",
+    "MaktabaTvOutputConfig",
+    "PlexLiveConfig",
     "RepairConfig",
     "channel_numbers",
     "live_slots",
@@ -29,6 +31,11 @@ EX = "Exact dates"
 AU = "Channel audit"
 RP = "Repair"
 TV = "Maktaba TV"
+TVG = "Guide"
+TVO = "Maktaba TV output"
+TVN = "Hardware encoder"
+TVC = "Channels on air"
+PL = "Plex Live TV"
 
 
 @dataclass(frozen=True)
@@ -93,6 +100,36 @@ class MaktabaTvConfig:
     #: even loudness across programmes and filler
     loudnorm: bool = True
     loudnorm_target_lufs: float = -16.0
+    #: every channel's schedule is planned this many days ahead (what the guide shows)
+    horizon_days: int = 7
+    #: a channel is topped up when less than this many days are planned
+    topup_below_days: int = 3
+
+
+@dataclass(frozen=True)
+class MaktabaTvOutputConfig:
+    """How the streaming service encodes a channel on air. Read when a channel starts; a
+    setting not changed here keeps the streaming host's ``MAKTABA_CHANNEL_*`` value, else
+    this default."""
+
+    #: ``auto``: on a Mac VideoToolbox when its hardware encoder answers a test encode,
+    #: elsewhere NVENC when an NVIDIA GPU does; else libx264
+    encoder: str = "auto"
+    resolution: str = "1920x1080"
+    fps: int = 30
+    video_kbps: int = 6000
+    audio_codec: str = "aac"
+    audio_kbps: int = 192
+    segment_seconds: int = 4
+    #: channels this host keeps on air at once (one encode each, however many watch);
+    #: 0: 16 with VideoToolbox, else 8
+    max_active_channels: int = 0
+    #: seconds a channel stays on air after its last viewer leaves
+    warm_grace_seconds: int = 60
+    #: NVENC sessions at once across all channels; past it a block is encoded by libx264
+    nvenc_max_sessions: int = 6
+    #: VideoToolbox sessions at once (0: no cap)
+    videotoolbox_max_sessions: int = 0
 
 
 def live_slots(tv: MaktabaTvConfig | None, dz: DizqueExportConfig | None) -> tuple[LiveSlot, ...]:
@@ -130,6 +167,33 @@ class ChannelAuditConfig:
     window_days: int = 28
     #: audits kept (older ones are deleted)
     keep: int = 5
+
+
+@dataclass(frozen=True)
+class PlexLiveConfig:
+    """Maktaba's channels in Plex Live TV (the Plex extension's ``plex_livetv`` stage):
+    what dizqueTV's "auto refresh guide / channels" do, plus adding the tuner and its
+    XMLTV guide to Plex once. Nothing here deletes or replaces a DVR in Plex."""
+
+    #: add Maktaba's tuner and a DVR with its XMLTV guide to Plex when Plex has none
+    #: (off: only the "Add Maktaba to Plex" button does it; it changes the user's Plex DVRs)
+    auto_register: bool = False
+    #: ask Plex to reload Maktaba's guide when the schedule grew or changed
+    auto_refresh_guide: bool = True
+    #: push the channel map (which channels Plex shows) when the lineup changed
+    auto_refresh_channels: bool = True
+    #: a guide reload caused only by the schedule growing waits until this long after the
+    #: last one (a channel change or "Refresh Plex now" reloads at once)
+    guide_refresh_min_minutes: int = 60
+    #: the tuner address Plex should use (http://host:port of the streaming service);
+    #: empty: MAKTABA_PUBLIC_BASE_URL, else what /api/tv/info reported
+    tuner_url: str = ""
+    #: the XMLTV guide address Plex should read; empty: <tuner address>/xmltv.xml
+    xmltv_url: str = ""
+    #: the DVR's guide language (Plex's three-letter code)
+    language: str = "ara"
+    #: the guide's name in Plex
+    guide_title: str = "Maktaba"
 
 
 @dataclass(frozen=True)
@@ -235,6 +299,98 @@ register(
         ),
         "loudnorm": Help(TV, "Even loudness", "Normalise every programme's loudness."),
         "loudnorm_target_lufs": Help(TV, "Loudness target (LUFS)"),
+        "horizon_days": Help(
+            TVG,
+            "Guide days ahead",
+            "Every channel's schedule is planned this many days ahead; the guide (XMLTV) "
+            "Plex and the apps read shows as far.",
+            minimum=1,
+            maximum=31,
+        ),
+        "topup_below_days": Help(
+            TVG,
+            "Top up below (days)",
+            "A channel with less than this many days planned is extended back to the days "
+            "ahead above. Checked every few minutes.",
+            minimum=1,
+            maximum=31,
+        ),
+    },
+)
+register(
+    MaktabaTvOutputConfig,
+    {
+        "encoder": Help(
+            TVO,
+            "Video encoder",
+            "auto: on a Mac, Apple VideoToolbox when its hardware encoder answers a test "
+            "encode; elsewhere the NVIDIA GPU (NVENC) when it does; else the processor "
+            "(libx264). nvenc, videotoolbox or software force one.",
+            choices=("auto", "nvenc", "videotoolbox", "software"),
+        ),
+        "resolution": Help(
+            TVO,
+            "Picture size",
+            "Every programme is scaled to this (width x height); black bars keep its shape.",
+            choices=("3840x2160", "2560x1440", "1920x1080", "1280x720", "1024x576", "854x480"),
+        ),
+        "fps": Help(TVO, "Frames per second", minimum=10, maximum=60),
+        "video_kbps": Help(
+            TVO,
+            "Video bitrate (kbit/s)",
+            "Per channel. 6000 suits 1080p; 3000 suits 720p.",
+            minimum=300,
+            maximum=50000,
+        ),
+        "audio_codec": Help(
+            TVO,
+            "Audio codec",
+            "aac plays everywhere; ac3 for players that want Dolby Digital.",
+            choices=("aac", "ac3"),
+        ),
+        "audio_kbps": Help(TVO, "Audio bitrate (kbit/s)", minimum=64, maximum=640),
+        "segment_seconds": Help(
+            TVO,
+            "HLS segment (seconds)",
+            "Shorter starts a channel sooner; longer is steadier on a slow network.",
+            minimum=1,
+            maximum=10,
+        ),
+        "max_active_channels": Help(
+            TVC,
+            "Channels on air at once",
+            "On each streaming host. Viewers of the same channel share its one encode; a "
+            "channel nobody watches makes way for a new one. 0: 16 with VideoToolbox (Apple "
+            "Silicon has several media engines), else 8.",
+            minimum=0,
+            maximum=64,
+        ),
+        "warm_grace_seconds": Help(
+            TVC,
+            "Keep on air after the last viewer (seconds)",
+            "So zapping back is instant.",
+            minimum=0,
+            maximum=3600,
+        ),
+        "nvenc_max_sessions": Help(
+            TVN,
+            "Most NVENC sessions",
+            "A GeForce card encodes only a few streams at once. Past this many a block is "
+            "encoded by the processor (libx264); the channel goes back to the GPU at its "
+            "next programme once a session is free. The next programme starts 3 seconds "
+            "early, so a channel holds two sessions for a moment.",
+            minimum=1,
+            maximum=64,
+        ),
+        "videotoolbox_max_sessions": Help(
+            TVN,
+            "Most VideoToolbox sessions",
+            "Apple VideoToolbox sessions at once on a Mac; past this many a block is encoded "
+            "by the processor (libx264) and the channel goes back at its next programme. 0: "
+            "no limit.",
+            minimum=0,
+            maximum=64,
+        ),
     },
 )
 register(
@@ -300,5 +456,47 @@ register(
         ),
         "max_per_run": Help(RP, "Most files a run", "0: all of them.", minimum=0),
         "download_timeout_minutes": Help(RP, "Download time limit (minutes)", minimum=1),
+    },
+)
+register(
+    PlexLiveConfig,
+    {
+        "auto_register": Help(
+            PL,
+            "Add Maktaba to Plex by itself",
+            "When Plex has no DVR with Maktaba's tuner, add the tuner and a DVR that reads "
+            'Maktaba\'s XMLTV guide. Off: only the "Add Maktaba to Plex" button does it. '
+            "An existing DVR (dizqueTV's, an antenna's) is never changed or removed.",
+        ),
+        "auto_refresh_guide": Help(
+            PL,
+            "Refresh the guide in Plex",
+            "Ask Plex to reload Maktaba's guide after the channels change and when the "
+            'schedule grows (what dizqueTV\'s "auto refresh guide" does).',
+        ),
+        "auto_refresh_channels": Help(
+            PL,
+            "Refresh the channels in Plex",
+            "Push the channel list to Plex's tuner after the channels change, so a new, "
+            'renumbered or removed channel shows in Plex (dizqueTV\'s "auto refresh channels").',
+        ),
+        "guide_refresh_min_minutes": Help(
+            PL,
+            "Guide reload at most every (min)",
+            "A reload caused only by the schedule growing waits this long after the last "
+            'one. A channel change or "Refresh Plex now" reloads at once.',
+            minimum=1,
+        ),
+        "tuner_url": Help(
+            PL,
+            "Tuner address for Plex",
+            "http://host:port of Maktaba's streaming service as the Plex server reaches it. "
+            "Empty: the public address Maktaba was started with (public_url).",
+        ),
+        "xmltv_url": Help(
+            PL, "Guide address for Plex", "Empty: the tuner address followed by /xmltv.xml."
+        ),
+        "language": Help(PL, "Guide language", "Plex's three-letter code: ara, eng ..."),
+        "guide_title": Help(PL, "Guide name in Plex"),
     },
 )

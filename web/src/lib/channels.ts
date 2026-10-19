@@ -39,6 +39,54 @@ export interface Channel {
   updated_at?: string;
   /** The effective logo / watermark / loading screen and which were set by hand. */
   art?: ChannelArt;
+  /** What is airing now (list/get). */
+  now_playing?: NowPlaying | null;
+  /** Whether the lineup plan wrote this channel, and whether a person changed it since. */
+  plan?: PlanStatus | null;
+  /** The end of the generated guide: how far ahead the channel is planned. */
+  guide_until?: string | null;
+}
+
+export interface NowPlaying {
+  title: string;
+  start_at: string;
+  end_at: string;
+  progress: number;
+}
+
+export interface PlanStatus {
+  owned: boolean;
+  edited: boolean;
+  edited_at?: string;
+}
+
+/** Where a channel's definition comes from: the lineup plan, the plan but changed by hand, or a person. */
+export type ChannelOrigin = "plan" | "edited" | "manual";
+
+export function channelOrigin(c: Pick<Channel, "plan">): ChannelOrigin {
+  if (!c.plan?.owned) return "manual";
+  return c.plan.edited ? "edited" : "plan";
+}
+
+/** Hours of guide ahead of `nowMs` (0 when none or in the past). */
+export function guideHoursAhead(c: Pick<Channel, "guide_until">, nowMs: number): number {
+  if (!c.guide_until) return 0;
+  const end = Date.parse(c.guide_until);
+  if (Number.isNaN(end)) return 0;
+  return Math.max(0, (end - nowMs) / 3_600_000);
+}
+
+// ─── Builder sources (GET /api/channels/sources) ──────────────────────
+export type SourceKind = "series" | "collection" | "lane" | "video";
+
+export interface SourceHit {
+  kind: SourceKind;
+  id: string;
+  name: string;
+  count: number;
+  duration_ms: number;
+  /** a lane's shows */
+  detail?: string[];
 }
 
 // ─── Channel art ──────────────────────────────────────────────────────
@@ -188,6 +236,8 @@ export interface FillerPool {
   id: string;
   channel_id?: string | null;
   name: string;
+  /** the lineup plan's key for a pool the plan writer made */
+  external_key?: string | null;
   items?: FillerItem[];
 }
 
@@ -395,6 +445,16 @@ export const channelsApi = {
     api.post<{ channel_id: string; status: string }>(
       `/api/channels/${encodeURIComponent(id)}/regenerate`
     ),
+  // Hands an edited plan channel back to the lineup plan (202).
+  followPlan: (id: string) =>
+    api.post<{ channel_id: string; status: string; queued: boolean }>(
+      `/api/channels/${encodeURIComponent(id)}/follow-plan`
+    ),
+  // What a slot (or a filler pool) can play, with episode counts.
+  sources: (kind: SourceKind, q = "", limit = 25) => {
+    const qs = new URLSearchParams({ kind, q, limit: String(limit) });
+    return api.get<{ kind: SourceKind; items: SourceHit[] }>(`/api/channels/sources?${qs}`);
+  },
 };
 
 const artPath = (id: string, kind: ArtKind) =>
@@ -414,11 +474,77 @@ export const channelArtApi = {
   ) => api.patch<Channel>(artPath(id, "watermark"), body),
 };
 
+/** A tuner Plex knows; ``kind`` says whose it is. */
+export interface PlexLiveTuner {
+  key: string;
+  uri: string;
+  device_id: string;
+  title: string;
+  kind: "maktaba" | "dizquetv" | "other";
+  in_dvr?: boolean;
+}
+
+export interface PlexLiveDvr {
+  key: string;
+  title: string;
+  lineup: string;
+  maktaba: boolean;
+  devices: PlexLiveTuner[];
+}
+
+/** What the plex_livetv stage last saw and did (plex_livetv_state.status). */
+export interface PlexLiveReport {
+  reachable?: boolean;
+  server?: string;
+  error?: string | null;
+  target?: { tuner_url: string; xmltv_url: string; source: string };
+  device?: { device_id: string; name: string; enabled: boolean };
+  dvrs?: PlexLiveDvr[];
+  tuners?: PlexLiveTuner[];
+  maktaba?: { tuner_key: string | null; dvr_key: string | null; registered: boolean };
+  dizquetv_present?: boolean;
+  channels?: { lineup: number; mapped: number | null; in_sync: boolean | null };
+  actions?: { register: string; channel_map: string; guide: string };
+  warnings?: string[];
+}
+
+/** GET /api/tv/plex */
+export interface PlexLiveStatus {
+  plex: { enabled: boolean; configured: boolean; url: string };
+  stage: { enabled: boolean; disabled_reason: string | null } | null;
+  job: {
+    id: number;
+    state: string;
+    created_at: string | null;
+    finished_at: string | null;
+    paused_reason: string | null;
+  } | null;
+  checked_at: string | null;
+  guide_reloaded_at: string | null;
+  channelmap_at: string | null;
+  last_error: string | null;
+  last_error_at: string | null;
+  register_requested_at: string | null;
+  status: PlexLiveReport;
+}
+
+export interface PlexLiveAction {
+  queued: boolean;
+  outcome: string;
+  job_id?: number;
+}
+
 export const tvApi = {
   info: () => api.get<TvInfo>("/api/tv/info"),
   hdhr: () => api.get<HdhrDevice>("/api/tv/hdhr"),
   updateHdhr: (body: Partial<Pick<HdhrDevice, "enabled" | "friendly_name" | "tuner_count">>) =>
     api.patch<HdhrDevice>("/api/tv/hdhr", body),
+  /** Plex Live TV: what the plex_livetv stage last saw (admin). */
+  plex: () => api.get<PlexLiveStatus>("/api/tv/plex"),
+  /** Queue plex_livetv now: push the channel map and reload the guide. */
+  plexRefresh: () => api.post<PlexLiveAction>("/api/tv/plex/refresh"),
+  /** Add Maktaba's tuner and a DVR with its XMLTV guide to Plex, once (409 when present). */
+  plexRegister: () => api.post<PlexLiveAction>("/api/tv/plex/register"),
 };
 
 export const fillerApi = {

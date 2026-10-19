@@ -19,6 +19,7 @@ EXT_STAGES = {
     "plex_index",
     "plex_collection",
     "plex_groups",
+    "plex_livetv",
     "dizquetv_show",
     "dizquetv_channels",
     "dizquetv_audit",

@@ -48,7 +48,10 @@ type Pool struct {
 	ID        string `json:"id"`
 	ChannelID string `json:"channel_id,omitempty"`
 	Name      string `json:"name"`
-	Items     []Item `json:"items"`
+	// ExternalKey is the lineup plan's key for a pool the plan writer made
+	// (a channel's filler list names it by that key or by the pool id).
+	ExternalKey string `json:"external_key,omitempty"`
+	Items       []Item `json:"items"`
 }
 
 // Handler bundles deps.
@@ -102,11 +105,11 @@ func (h *Handler) ListPools(w http.ResponseWriter, r *http.Request) {
 	var err error
 	if channelID != "" {
 		rows, err = h.DB.QueryContext(r.Context(),
-			`SELECT id, COALESCE(channel_id::text, ''), name FROM filler_pools WHERE channel_id = $1 ORDER BY name`,
+			`SELECT id, COALESCE(channel_id::text, ''), name, COALESCE(external_key, '') FROM filler_pools WHERE channel_id = $1 ORDER BY name`,
 			channelID)
 	} else {
 		rows, err = h.DB.QueryContext(r.Context(),
-			`SELECT id, COALESCE(channel_id::text, ''), name FROM filler_pools ORDER BY name`)
+			`SELECT id, COALESCE(channel_id::text, ''), name, COALESCE(external_key, '') FROM filler_pools ORDER BY name`)
 	}
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("list filler pools"))
@@ -118,7 +121,7 @@ func (h *Handler) ListPools(w http.ResponseWriter, r *http.Request) {
 	byID := map[string]int{}
 	for rows.Next() {
 		var p Pool
-		if err := rows.Scan(&p.ID, &p.ChannelID, &p.Name); err == nil {
+		if err := rows.Scan(&p.ID, &p.ChannelID, &p.Name, &p.ExternalKey); err == nil {
 			p.Items = []Item{}
 			byID[p.ID] = len(pools)
 			pools = append(pools, p)

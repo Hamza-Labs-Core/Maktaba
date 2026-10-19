@@ -218,6 +218,9 @@ class StageDef:
     #: run it too when that address is not the machine itself (localhost), since every
     #: machine then asks the same model server
     model_rules: str | None = None
+    #: enqueued (catalog subject) whenever the scheduler's top-up extended a channel's
+    #: timeline: a stage that tells another system the guide grew (Plex Live TV)
+    after_topup: bool = False
 
     def edges_json(self) -> list[dict[str, Any]]:
         return [e.to_json() for e in self.edges]

@@ -40,6 +40,7 @@ import { APITokens } from "./pages/Profile/APITokens";
 import { Account } from "./pages/Profile/Account";
 import { LibraryACL } from "./pages/Admin/LibraryACL";
 import { Channels } from "./pages/Admin/Channels";
+import { FillerPools } from "./pages/Admin/FillerPools";
 import { AdminLiveTV } from "./pages/Admin/LiveTV";
 import { AdminAnalytics } from "./pages/Admin/Analytics";
 import { Guide } from "./pages/LiveTV/Guide";
@@ -111,6 +112,7 @@ export function App() {
                     <Route path="/admin/extensions" element={<AdminExtensions />} />
                     <Route path="/admin/enrichment" element={<AdminEnrichment />} />
                     <Route path="/admin/channels" element={<Channels />} />
+                    <Route path="/admin/filler" element={<FillerPools />} />
                     <Route path="/admin/live-tv" element={<AdminLiveTV />} />
                     <Route path="/admin/analytics" element={<AdminAnalytics />} />
                     <Route path="/admin/audit" element={<AdminAuditLog />} />

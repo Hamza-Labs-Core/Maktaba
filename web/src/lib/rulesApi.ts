@@ -16,10 +16,14 @@ export interface RuleField {
   changed: boolean;
   invalid?: string;
   minimum?: number;
+  /** the largest value a number may take (with a minimum: shown as a slider) */
+  maximum?: number;
   choices?: string[];
   columns?: string[];
   column_kinds?: string[];
   time_columns?: number[];
+  /** per column: a row may leave it out (its default applies) */
+  column_optional?: boolean[];
 }
 
 export interface RuleSection {
@@ -51,7 +55,7 @@ export function rulesError(e: unknown): { message: string; field: string | null 
     const body = e.problem as unknown as { error?: string; field?: string; detail?: string };
     const message = body.error ?? body.detail ?? e.message;
     let field = body.field ?? null;
-    if (!field && e.status === 400) {
+    if (!field && (e.status === 400 || e.status === 422)) {
       const m = /^([\w.[\]]+): /.exec(message);
       if (m) field = m[1];
     }

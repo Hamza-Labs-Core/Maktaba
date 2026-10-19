@@ -53,7 +53,9 @@ _WEEKDAYS = {
     "sat": 5,
     "sun": 6,
 }
-_MAX_WINDOWS = 10_000
+# a window is one slot occurrence, gap or live broadcast: a month of five-minute slots
+# with a live break in each stays below this (each channel is planned on its own)
+_MAX_WINDOWS = 200_000
 _MS = timedelta(milliseconds=1)
 
 
@@ -181,6 +183,11 @@ class SchedulePlanner:
         src = self._all[slot_idx].get("source")
         if isinstance(src, dict) and src.get("lane"):
             return f"lane:{src['lane']}"
+        # a series / collection picked in the channel editor: one queue too, whichever
+        # slots play it
+        for kind, key in (("series", "series_id"), ("collection", "collection_id")):
+            if isinstance(src, dict) and src.get("type") == kind and src.get(key):
+                return f"{kind}:{src[key]}"
         return str(slot_idx)
 
     def _in_ramadan(self, day: date) -> bool:

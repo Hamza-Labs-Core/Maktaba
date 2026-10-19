@@ -63,6 +63,9 @@ type GuideHandler struct {
 	Now     func() time.Time
 	// Back/Ahead bound the programme window (default 2 h back, 7 days ahead).
 	Back, Ahead time.Duration
+	// AheadFunc, when set, gives Ahead per request: the guide follows the
+	// schedule horizon setting (rules tv.horizon_days).
+	AheadFunc func(ctx context.Context) time.Duration
 }
 
 // Mount wires the guide routes.
@@ -87,6 +90,11 @@ func (g *GuideHandler) XMLTV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	back, ahead := g.Back, g.Ahead
+	if g.AheadFunc != nil {
+		if a := g.AheadFunc(r.Context()); a > 0 {
+			ahead = a
+		}
+	}
 	if back <= 0 {
 		back = 2 * time.Hour
 	}

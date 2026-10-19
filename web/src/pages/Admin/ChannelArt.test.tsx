@@ -6,6 +6,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "../../lib/i18n";
 import { ToastProvider } from "@ds/components/Toast/Toast";
+import { MemoryRouter } from "react-router-dom";
 
 const { get, post, patch, del, upload } = vi.hoisted(() => ({
   get: vi.fn(),
@@ -57,14 +58,17 @@ async function openForm() {
   const user = userEvent.setup();
   get.mockResolvedValue({ items: [channel()] });
   render(
-    <I18nProvider>
-      <ToastProvider>
-        <Channels />
-      </ToastProvider>
-    </I18nProvider>
+    <MemoryRouter>
+      <I18nProvider>
+        <ToastProvider>
+          <Channels />
+        </ToastProvider>
+      </I18nProvider>
+    </MemoryRouter>
   );
   await screen.findByText("Kids");
   await user.click(screen.getByRole("button", { name: /^edit$/i }));
+  await user.click(await screen.findByRole("tab", { name: /^art$/i }));
   await screen.findByText(/corner watermark/i);
   return user;
 }
@@ -164,18 +168,28 @@ describe("Channel art", () => {
     });
   });
 
-  it("asks to save a new channel before adding art", async () => {
+  it("keeps the art of a new channel until its first save", async () => {
     const user = userEvent.setup();
     get.mockResolvedValue({ items: [] });
     render(
-      <I18nProvider>
-        <ToastProvider>
-          <Channels />
-        </ToastProvider>
-      </I18nProvider>
+      <MemoryRouter>
+        <I18nProvider>
+          <ToastProvider>
+            <Channels />
+          </ToastProvider>
+        </I18nProvider>
+      </MemoryRouter>
     );
     await user.click(await screen.findByRole("button", { name: /new channel/i }));
-    expect(await screen.findByText(/save the channel first/i)).toBeInTheDocument();
-    expect(screen.queryByTestId("art-logo")).toBeNull();
+    await user.click(await screen.findByRole("tab", { name: /^art$/i }));
+    // a picked file waits for the first save
+    expect(
+      await screen.findByText(/uploaded as soon as the channel is saved/i)
+    ).toBeInTheDocument();
+    const tile = screen.getByTestId("art-logo");
+    const file = new File([new Uint8Array([0x89, 0x50])], "logo.png", { type: "image/png" });
+    await user.upload(within(tile).getByLabelText(/choose an image for logo/i), file);
+    expect(within(tile).getByText(/uploads on save/i)).toBeInTheDocument();
+    expect(upload).not.toHaveBeenCalled();
   });
 });

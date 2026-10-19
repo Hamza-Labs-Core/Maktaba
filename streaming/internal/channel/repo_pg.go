@@ -25,6 +25,9 @@ type PGRepo struct {
 	mu            sync.Mutex
 	hasSourceURL  bool
 	checkedSrcURL time.Time
+
+	hasRTStats     bool
+	checkedRTStats time.Time
 }
 
 // NewPGRepo builds a PGRepo. `host` is the pinned host written to
@@ -127,6 +130,32 @@ func (r *PGRepo) SetRuntime(ctx context.Context, rt Runtime) error {
 	if rt.Host == "" {
 		rt.Host = r.host
 	}
+	if r.runtimeStatsColumns(ctx) {
+		_, err := r.pool.Exec(ctx, `
+			INSERT INTO channel_runtime
+				(channel_id, host, pid, state, viewer_count, started_at, last_segment_at,
+				 host_id, stream_base_url, encoder, restarts, nvenc_fallbacks, heartbeat_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now())
+			ON CONFLICT (channel_id) DO UPDATE SET
+				host = EXCLUDED.host,
+				pid = EXCLUDED.pid,
+				state = EXCLUDED.state,
+				viewer_count = EXCLUDED.viewer_count,
+				started_at = CASE WHEN channel_runtime.host_id IS DISTINCT FROM EXCLUDED.host_id
+				                  THEN EXCLUDED.started_at ELSE channel_runtime.started_at END,
+				last_segment_at = EXCLUDED.last_segment_at,
+				host_id = EXCLUDED.host_id,
+				stream_base_url = EXCLUDED.stream_base_url,
+				encoder = EXCLUDED.encoder,
+				restarts = EXCLUDED.restarts,
+				nvenc_fallbacks = EXCLUDED.nvenc_fallbacks,
+				heartbeat_at = now()
+		`, rt.ChannelID, rt.Host, nullablePID(rt.PID), rt.State, rt.ViewerCount,
+			nullableTime(rt.StartedAt), nullableTime(rt.LastSegmentAt),
+			nullableString(rt.HostID), nullableString(rt.StreamBaseURL),
+			nullableString(rt.Encoder), rt.Restarts, rt.NVENCFallbacks)
+		return err
+	}
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO channel_runtime
 			(channel_id, host, pid, state, viewer_count, started_at, last_segment_at)
@@ -142,6 +171,95 @@ func (r *PGRepo) SetRuntime(ctx context.Context, rt Runtime) error {
 	return err
 }
 
+// runtimeStatsColumns reports whether slot 0117's channel_runtime columns
+// exist (a database not yet migrated gets the old row).
+func (r *PGRepo) runtimeStatsColumns(ctx context.Context) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.hasRTStats || (!r.checkedRTStats.IsZero() && time.Since(r.checkedRTStats) < sourceURLRecheck) {
+		return r.hasRTStats
+	}
+	var ok bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_name = 'channel_runtime' AND column_name = 'heartbeat_at'
+			  AND table_schema = ANY (current_schemas(false))
+		)`).Scan(&ok)
+	if err == nil {
+		r.hasRTStats = ok
+		r.checkedRTStats = time.Now()
+	}
+	return r.hasRTStats
+}
+
+// RuntimeOf reads a channel's channel_runtime row and its heartbeat.
+func (r *PGRepo) RuntimeOf(ctx context.Context, channelID uuid.UUID) (Runtime, time.Time, bool, error) {
+	if !r.runtimeStatsColumns(ctx) {
+		return Runtime{}, time.Time{}, false, nil
+	}
+	var rt Runtime
+	var hostID, base *string
+	var hb *time.Time
+	err := r.pool.QueryRow(ctx, `
+		SELECT host, host_id, stream_base_url, state, heartbeat_at
+		FROM channel_runtime WHERE channel_id = $1`, channelID).Scan(&rt.Host, &hostID, &base, &rt.State, &hb)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Runtime{}, time.Time{}, false, nil
+	}
+	if err != nil {
+		return Runtime{}, time.Time{}, false, err
+	}
+	rt.ChannelID, rt.HostID, rt.StreamBaseURL = channelID, deref(hostID), deref(base)
+	var at time.Time
+	if hb != nil {
+		at = *hb
+	}
+	return rt, at, true, nil
+}
+
+// SetHostStatus upserts this host's streaming_hosts row (slot 0117).
+func (r *PGRepo) SetHostStatus(ctx context.Context, st HostStatus) error {
+	if !r.runtimeStatsColumns(ctx) || st.Identity.ID == "" {
+		return nil
+	}
+	role := st.Identity.Role
+	if role != RoleNode {
+		role = RoleHome
+	}
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO streaming_hosts
+			(host_id, host, role, stream_base_url, encoder, max_active, active_channels, nvenc_free, vt_free, heartbeat_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, now())
+		ON CONFLICT (host_id) DO UPDATE SET
+			host = EXCLUDED.host, role = EXCLUDED.role, stream_base_url = EXCLUDED.stream_base_url,
+			encoder = EXCLUDED.encoder, max_active = EXCLUDED.max_active,
+			active_channels = EXCLUDED.active_channels, nvenc_free = EXCLUDED.nvenc_free,
+			vt_free = EXCLUDED.vt_free, heartbeat_at = now()
+	`, st.Identity.ID, st.Identity.Host, role, nullableString(st.Identity.StreamBaseURL),
+		nullableString(st.Encoder), st.MaxActive, st.ActiveChannels, st.NVENCFree, st.VTFree)
+	return err
+}
+
+// ClearHostRuntime deletes every channel_runtime row of this host (boot):
+// rows with its host id, and rows from before slot 0117 under its name.
+func (r *PGRepo) ClearHostRuntime(ctx context.Context, hostID, host string) (int64, error) {
+	if host == "" {
+		host = r.host
+	}
+	q := `DELETE FROM channel_runtime WHERE host = $1`
+	args := []any{host}
+	if r.runtimeStatsColumns(ctx) {
+		q = `DELETE FROM channel_runtime WHERE host_id = $2 OR (host_id IS NULL AND host = $1)`
+		args = append(args, hostID)
+	}
+	tag, err := r.pool.Exec(ctx, q, args...)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 func (r *PGRepo) ClearRuntime(ctx context.Context, channelID uuid.UUID) error {
 	_, err := r.pool.Exec(ctx, `DELETE FROM channel_runtime WHERE channel_id = $1`, channelID)
 	return err
@@ -152,6 +270,13 @@ func nullablePID(pid int) any {
 		return nil
 	}
 	return pid
+}
+
+func nullableString(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 func nullableTime(t time.Time) any {
