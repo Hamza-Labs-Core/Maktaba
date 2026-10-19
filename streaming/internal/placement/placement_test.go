@@ -423,3 +423,28 @@ func TestParseSettings(t *testing.T) {
 		t.Errorf("bad values keep defaults: %+v", d)
 	}
 }
+
+// noChannelStore is a MemStore whose writes fail like Postgres's foreign key does
+// for a channel id that does not exist.
+type noChannelStore struct{ *MemStore }
+
+func (noChannelStore) Place(context.Context, uuid.UUID, func(*Placement, map[string]int) (Decision, error)) (Placement, error) {
+	return Placement{}, errors.New(`insert or update on table "channel_placements" violates foreign key constraint`)
+}
+
+// Post-merge review: resolving ids that are no channel (the front-door routes are
+// open to any id) leaves no cached facts behind; they used to pile up for good.
+func TestResolveUnknownChannelCachesNothing(t *testing.T) {
+	h := newHarness(homeHost(4))
+	h.svc.Store = noChannelStore{h.store}
+	for i := 0; i < 100; i++ {
+		if _, err := h.svc.Resolve(context.Background(), uuid.New()); err == nil {
+			t.Fatal("an unknown channel was placed")
+		}
+	}
+	h.svc.mu.Lock()
+	defer h.svc.mu.Unlock()
+	if len(h.svc.live) != 0 || len(h.svc.slugs) != 0 {
+		t.Fatalf("cached facts for unknown channels: live %d slugs %d", len(h.svc.live), len(h.svc.slugs))
+	}
+}

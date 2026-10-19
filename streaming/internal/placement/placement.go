@@ -266,6 +266,12 @@ func (s *Service) Place(ctx context.Context, ch uuid.UUID, reason, host string) 
 			s.log().Warn("tv: no host can take the channel", "channel_id", ch.String(),
 				"reason", nh.Reason, "event", "tv_place_no_room")
 		}
+		// a channel that could not be placed (e.g. no such channel: any id
+		// reaches here through the open front-door routes) keeps no cached facts
+		s.mu.Lock()
+		delete(s.live, ch)
+		delete(s.slugs, ch)
+		s.mu.Unlock()
 		return Placement{}, err
 	}
 	if kept {

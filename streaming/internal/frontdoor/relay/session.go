@@ -166,6 +166,16 @@ type Session struct {
 	stalls  []time.Time
 	restart chan struct{}
 	kick    chan struct{}
+	chOnce  sync.Once
+}
+
+// initChans makes the restart and kick channels once: Ctl.Kick may reach a
+// session whose Run has not started yet.
+func (s *Session) initChans() {
+	s.chOnce.Do(func() {
+		s.restart = make(chan struct{}, 1)
+		s.kick = make(chan struct{}, 1)
+	})
 }
 
 func (s *Session) log() *slog.Logger {
@@ -202,6 +212,7 @@ func (s *Session) Origin() Origin {
 // Kick ends the current source so the relay resolves the channel again at
 // once (a move or a swap announced by the front door).
 func (s *Session) Kick() {
+	s.initChans()
 	select {
 	case s.kick <- struct{}{}:
 	default:
@@ -228,8 +239,7 @@ func (s *Session) Run(ctx context.Context) error {
 	}
 	s.rt = NewRetimer()
 	s.feed = make(chan chunk, 1024)
-	s.restart = make(chan struct{}, 1)
-	s.kick = make(chan struct{}, 1)
+	s.initChans()
 	release := s.Source.Attach(s.Channel)
 	defer release()
 	ctx, cancel := context.WithCancel(ctx)
@@ -293,8 +303,19 @@ func (f *feeder) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// behind records a stall: ffmpeg (the uplink) did not take the stream in time.
+// behind records a stall: ffmpeg (the uplink) did not take the stream in time,
+// and asks for a restart.
 func (s *Session) behind() {
+	s.noteStall()
+	select {
+	case s.restart <- struct{}{}:
+	default:
+	}
+}
+
+// noteStall records a stall (the "uplink too slow" count) without asking for a
+// restart: the stall watchdog kills the stuck ffmpeg itself.
+func (s *Session) noteStall() {
 	now := time.Now()
 	s.mu.Lock()
 	keep := s.stalls[:0]
@@ -307,10 +328,6 @@ func (s *Session) behind() {
 	n := len(s.stalls)
 	s.mu.Unlock()
 	s.log().Warn("relay: ffmpeg fell behind the channel; restarting it", "stalls", n, "event", "tv_push_error")
-	select {
-	case s.restart <- struct{}{}:
-	default:
-	}
 }
 
 func (s *Session) tooSlow() bool {
@@ -390,6 +407,12 @@ func (s *Session) pushLoop(ctx context.Context, fatal chan<- error) {
 		if n > 1 {
 			s.rt.Resync() // the new ffmpeg begins on a keyframe after the PAT/PMT
 			s.gen++
+		}
+		// a restart asked for the previous ffmpeg (a stall, a parameter change)
+		// is this start: a token left over would end the new ffmpeg at once
+		select {
+		case <-s.restart:
+		default:
 		}
 		s.mu.Unlock()
 		s.log().Info("relay: pushing", "cmd", MaskedArgs(s.FFmpeg, args, s.Creds), "pid", p.PID(), "start", n,
@@ -483,7 +506,7 @@ func (s *Session) feedProc(ctx context.Context, p Proc, done <-chan error) (stri
 			case <-tk.C:
 				if at := writing.Load(); at != 0 && time.Since(time.Unix(0, at)) > stall {
 					writing.Store(0)
-					s.behind()
+					s.noteStall()
 					p.Kill()
 				}
 			}
