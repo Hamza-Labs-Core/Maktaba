@@ -14,7 +14,7 @@ Design: [design.md](design.md) §7.1, §7.6; README "Security", "Cloudflare fact
 
 ## Acceptance criteria
 
-- **AC1** Slot 0119 creates `home_secrets` (name, ciphertext, nonce, key_id, updated_at,
+- **AC1** Slot 0120 (0119 went to `cluster_cache` first) creates `home_secrets` (name, ciphertext, nonce, key_id, updated_at,
   updated_by), revoked from `maktaba_worker`. Values are sealed with AES-256-GCM using a 32-byte key
   file in the home's config directory (`secrets.key`, mode 0600, created on first use); the key
   never enters the database.

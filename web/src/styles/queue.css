@@ -1252,6 +1252,20 @@ summary.mkt-q-lane__title {
 .mkt-q-status--off {
   color: var(--color-muted);
 }
+/* Cloudflare Stream: one line per Test connection check (story 32.6) */
+.mkt-q-cflines {
+  list-style: none;
+  margin: var(--space-2) 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
+}
+.mkt-q-cfstatus {
+  border-block-start: 1px solid var(--color-border);
+  margin-block-start: var(--space-3);
+  padding-block-start: var(--space-3);
+}
 
 /* keep wide children (tables, lane rows) scrolling inside their own box */
 .mkt-q > * {

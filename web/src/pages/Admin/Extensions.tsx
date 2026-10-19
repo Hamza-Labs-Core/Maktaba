@@ -6,7 +6,9 @@
 //   GET  /api/extensions
 //   PUT  /api/extensions/{name}      { enabled?, settings? }
 //   POST /api/extensions/{name}/test { ok, message }
-// The Plex card also has "Sign in with Plex" (PlexSignin.tsx).
+// The Plex card also has "Sign in with Plex" (PlexSignin.tsx); the
+// Cloudflare Stream card lists each check of its test and the remote
+// viewing status (CloudflareRemote.tsx, Epic 32 story 32.6).
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
@@ -15,6 +17,8 @@ import { queueApi } from "../../lib/queueApi";
 import type { Extension, ExtensionSettingField } from "../../lib/queueApi";
 import { useAction } from "../../components/queue/useAction";
 import { PlexSignin } from "./PlexSignin";
+import { CloudflareRemote, RemoteTestLines } from "./CloudflareRemote";
+import type { RemoteTestResult } from "../../lib/tvRemoteApi";
 import "../../styles/queue.css";
 
 type Values = Record<string, string | number | boolean | null>;
@@ -26,6 +30,8 @@ function ExtensionCard({ ext, onSaved }: { ext: Extension; onSaved: (e: Extensio
   // Secrets are write-only: the draft starts empty and is only sent when typed into.
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [lines, setLines] = useState<RemoteTestResult | null>(null);
+  const [tested, setTested] = useState(0);
 
   useEffect(() => {
     setValues({ ...ext.settings });
@@ -69,6 +75,9 @@ function ExtensionCard({ ext, onSaved }: { ext: Extension; onSaved: (e: Extensio
             ok: r.ok,
             text: t(r.ok ? "queue.ext.testOk" : "queue.ext.testBad", { message: r.message }),
           });
+          const withLines = r as Partial<RemoteTestResult>;
+          setLines(Array.isArray(withLines.lines) ? (withLines as RemoteTestResult) : null);
+          setTested((n) => n + 1);
         }
       });
 
@@ -182,6 +191,8 @@ function ExtensionCard({ ext, onSaved }: { ext: Extension; onSaved: (e: Extensio
           </span>
         )}
       </div>
+      {lines && ext.name !== "cloudflare_stream" && <RemoteTestLines result={lines} />}
+      {ext.name === "cloudflare_stream" && <CloudflareRemote refresh={tested} />}
       {action.error && (
         <p role="alert" className="mkt-q-banner">
           {action.error}

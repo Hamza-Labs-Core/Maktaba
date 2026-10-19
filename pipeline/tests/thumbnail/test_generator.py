@@ -71,6 +71,17 @@ def test_build_sprite_args_tiles_grid_across_duration() -> None:
     assert args[args.index("-frames:v") + 1] == "1"
 
 
+def test_build_sprite_args_decodes_keyframes_only_single_threaded() -> None:
+    """The sheet is built from keyframes (``-skip_frame nokey`` must precede ``-i``):
+    a full decode of the library would take days on the share."""
+    args = build_sprite_args("/m/movie.mkv", "/out/sprite.jpg", duration_sec=3600.0)
+    i = args.index("-i")
+    assert args[args.index("-skip_frame") + 1] == "nokey"
+    assert args.index("-skip_frame") < i
+    assert args[args.index("-threads") + 1] == "1" and args.index("-threads") < i
+    assert args[i + 1] == "/m/movie.mkv"
+
+
 def test_build_sprite_args_zero_duration_falls_back_to_1fps() -> None:
     args = build_sprite_args("/m/x.mkv", "/o/s.jpg", duration_sec=0.0)
     vf = args[args.index("-vf") + 1]
