@@ -193,6 +193,11 @@ func runServe() error {
 		startShareMap(shareCtx, pool, logger)
 	}
 
+	// One session store for both surfaces: the gRPC OpenSession the API calls
+	// inserts the row the public mux's manifest/segment routes then look up
+	// (and the reaper idles). Two stores meant every session's manifest 404'd.
+	sessions := session.NewMemoryStore(5 * time.Second)
+
 	var publicHandler http.Handler
 	if nodeMode {
 		// Epic 32.1: a cluster node serves only the signed channel routes the home's
@@ -205,10 +210,10 @@ func runServe() error {
 		_ = layout.EnsureTiers()
 		publicHandler = buildNodeTV(logger, cfg, pool, layout, node)
 		if fullNode {
-			publicHandler = splitFullNode(publicHandler, buildVOD(logger, probeBackend, transcripts))
+			publicHandler = splitFullNode(publicHandler, buildVOD(logger, probeBackend, transcripts, sessions))
 		}
 	} else {
-		publicHandler = buildPublicHandler(logger, probeBackend, transcripts, pool)
+		publicHandler = buildPublicHandler(logger, probeBackend, transcripts, pool, sessions)
 	}
 
 	publicSrv := &http.Server{
@@ -243,7 +248,7 @@ func runServe() error {
 	var grpcLis net.Listener
 	grpcErr := errors.New("node mode")
 	if !nodeMode || fullNode {
-		grpcServer = grpcsrv.NewGRPCServer(buildGRPCServer(logger, probeBackend))
+		grpcServer = grpcsrv.NewGRPCServer(buildGRPCServer(logger, probeBackend, sessions))
 		grpcLis, grpcErr = net.Listen("tcp", grpcAddr)
 	}
 	if nodeMode && !fullNode {
@@ -304,9 +309,8 @@ func runServe() error {
 // on their own; until then sessions live in-process (lost on restart,
 // not shared across replicas), which is acceptable for the v1
 // single-replica deploy.
-func buildGRPCServer(logger *slog.Logger, backend probe.Backend) *grpcsrv.Server {
+func buildGRPCServer(logger *slog.Logger, backend probe.Backend, store session.Store) *grpcsrv.Server {
 	cfg := config.Load()
-	store := session.NewMemoryStore(5 * time.Second)
 	allocator := slots.NewAllocator(slots.AllocatorConfig{
 		MaxTranscode: cfg.Transcode.MaxConcurrent,
 		QueueDepth:   cfg.Transcode.QueueDepth,
@@ -387,24 +391,18 @@ func warmPeriod() time.Duration {
 // local `serve`. The session store is still in-memory (see
 // buildGRPCServer's note); Postgres-backed sessions are a tracked
 // follow-up.
-func buildPublicHandler(logger *slog.Logger, backend probe.Backend, transcripts handlers.TranscriptStreamer, pool *pgxpool.Pool) http.Handler {
+func buildPublicHandler(logger *slog.Logger, backend probe.Backend, transcripts handlers.TranscriptStreamer, pool *pgxpool.Pool, store session.Store) http.Handler {
 	cfg := config.Load()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	jwks, err := auth.NewJWKSCache(ctx, cfg.JWT.JWKSURL, cfg.JWKSRefreshDuration())
-	if err != nil {
-		logger.Warn("jwks load failed at boot, will keep retrying", "err", err.Error(), "event", "jwks_boot_warn")
-	} else if cfg.JWT.JWKSURL != "" {
-		jwks.StartRefreshLoop(context.Background())
-	}
+	jwks := buildVerifierKeys(ctx, logger, cfg)
 
 	layout := cache.New(cfg.Cache.Root)
 	if err := layout.EnsureTiers(); err != nil {
 		logger.Warn("cache layout init failed", "err", err.Error(), "event", "cache_init_warn")
 	}
 
-	store := session.NewMemoryStore(5 * time.Second)
 	allocator := slots.NewAllocator(slots.AllocatorConfig{
 		MaxTranscode: cfg.Transcode.MaxConcurrent,
 		QueueDepth:   cfg.Transcode.QueueDepth,
@@ -459,6 +457,33 @@ func buildPublicHandler(logger *slog.Logger, backend probe.Backend, transcripts 
 		Now:         time.Now,
 		ExtraMounts: extraMounts,
 	})
+}
+
+// buildVerifierKeys is the key set the signed-URL middleware verifies against:
+// the machine's stream signing key file (MAKTABA_STREAM_SIGNING_KEY, which the
+// API on this machine signs with), else the API's JWKS (MAKTABA_JWKS_URL).
+// Neither: every signed route refuses (signed-url-bad-signature), logged.
+func buildVerifierKeys(ctx context.Context, logger *slog.Logger, cfg config.Config) *auth.JWKSCache {
+	if path := cfg.JWT.StreamKeyFile; path != "" {
+		c := auth.NewKeyFileCache(context.Background(), path, 2*time.Second, func(kid string) {
+			logger.Info("stream URLs verified with this machine's stream key", "kid", kid, "event", "stream_key_loaded")
+		})
+		if c.AnyKey() == nil {
+			logger.Warn("stream key not readable yet; video playback is refused until it is",
+				"path", path, "event", "stream_key_pending")
+		}
+		return c
+	}
+	if cfg.JWT.JWKSURL == "" {
+		logger.Warn("no stream key and no JWKS URL: every signed stream URL is refused",
+			"event", "stream_key_missing")
+	}
+	jwks, err := auth.NewRetryingJWKSCache(ctx, cfg.JWT.JWKSURL, cfg.JWKSRefreshDuration())
+	if err != nil {
+		logger.Warn("jwks load failed at boot, will keep retrying", "err", err.Error(), "event", "jwks_boot_warn")
+	}
+	jwks.StartRefreshLoop(context.Background())
+	return jwks
 }
 
 // buildProbeStores constructs the probe Backend + transcript streamer

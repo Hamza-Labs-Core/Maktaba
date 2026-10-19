@@ -173,12 +173,15 @@ func BuildMasterPlaylistFor(ladder []Rendition) []byte {
 	sb.WriteString("#EXTM3U\n")
 	sb.WriteString("#EXT-X-VERSION:6\n")
 	sb.WriteString("#EXT-X-INDEPENDENT-SEGMENTS\n")
-	for _, r := range ladder {
+	for i, r := range ladder {
 		fmt.Fprintf(&sb,
 			"#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%dx%d,CODECS=\"avc1.4d4028,mp4a.40.2\"\n",
 			r.BitrateKbps*1000, r.Width, r.Height,
 		)
-		sb.WriteString(r.Name + "/index.m3u8\n")
+		// FFmpeg's HLS muxer names the variant folders by variant index
+		// (HLSArgs: <out>/v%v/index.m3u8), not by rung name: a capped
+		// ladder (only the 480p rung, Name "v2") is still written to v0/.
+		fmt.Fprintf(&sb, "v%d/index.m3u8\n", i)
 	}
 	return []byte(sb.String())
 }

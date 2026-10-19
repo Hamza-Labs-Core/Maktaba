@@ -76,6 +76,21 @@ func NewJWKSCache(ctx context.Context, jwksURL string, refresh time.Duration) (*
 	return c, nil
 }
 
+// NewRetryingJWKSCache is NewJWKSCache that never fails: when the first fetch
+// fails (the API is still starting) the cache starts empty and the refresh
+// loop keeps trying, instead of leaving the verifier without a cache.
+func NewRetryingJWKSCache(ctx context.Context, jwksURL string, refresh time.Duration) (*JWKSCache, error) {
+	c, err := NewJWKSCache(ctx, jwksURL, refresh)
+	if err == nil {
+		return c, nil
+	}
+	if refresh <= 0 {
+		refresh = 5 * time.Minute
+	}
+	return &JWKSCache{url: jwksURL, client: &http.Client{Timeout: 5 * time.Second}, refresh: refresh,
+		keys: map[string]*rsa.PublicKey{}}, err
+}
+
 // Lookup returns the public key for a given kid, or nil if absent.
 // Triggers an asynchronous refresh on miss so a fresh key id
 // rotated in by the API resolves on the next request without restart.
@@ -142,6 +157,9 @@ func (c *JWKSCache) StartRefreshLoop(ctx context.Context) {
 }
 
 func (c *JWKSCache) tryRefresh(ctx context.Context) error {
+	if c.url == "" {
+		return nil // a static key set (the machine's stream key file)
+	}
 	// single-flight: only one refresh in flight at a time
 	if !c.inflight.TryLock() {
 		return nil

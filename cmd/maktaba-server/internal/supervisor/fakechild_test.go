@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -37,7 +38,15 @@ func TestMain(m *testing.M) {
 	}
 	// never this machine's real node config (it holds a database credential)
 	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
-	os.Exit(m.Run())
+	// ...nor for the children the tests start (they inherit the environment)
+	dir, err := os.MkdirTemp("", "maktaba-nodecfg-")
+	if err != nil {
+		panic(err)
+	}
+	_ = os.Setenv("MAKTABA_NODE_CONFIG", filepath.Join(dir, "node.json"))
+	code := m.Run()
+	_ = os.RemoveAll(dir)
+	os.Exit(code)
 }
 
 func fakeChild(mode string) {

@@ -56,6 +56,7 @@ type Process struct {
 	exitErr error
 	stdout  io.ReadCloser
 	stderr  io.ReadCloser
+	tail    *tailBuf
 }
 
 // Spawn starts a new FFmpeg process with args. Stdout/stderr are
@@ -77,10 +78,18 @@ func Spawn(ctx context.Context, bin Binary, args Args) (*Process, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	p := &Process{cmd: cmd, stdout: stdout, stderr: stderr}
+	p := &Process{cmd: cmd, stdout: stdout, stderr: stderr, tail: &tailBuf{max: 8 << 10}}
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
+		// Drain both pipes (nobody else reads them): an undrained pipe fills
+		// and blocks ffmpeg mid-encode. The last 8 KiB of stderr is kept for
+		// diagnostics. Wait only after the reads end (os/exec contract).
+		var drain sync.WaitGroup
+		drain.Add(2)
+		go func() { defer drain.Done(); _, _ = io.Copy(io.Discard, stdout) }()
+		go func() { defer drain.Done(); _, _ = io.Copy(p.tail, stderr) }()
+		drain.Wait()
 		err := cmd.Wait()
 		p.mu.Lock()
 		p.exitErr = err
@@ -90,11 +99,35 @@ func Spawn(ctx context.Context, bin Binary, args Args) (*Process, error) {
 	return p, nil
 }
 
-// Stdout returns the stdout pipe.
-func (p *Process) Stdout() io.Reader { return p.stdout }
+// Stdout is drained by the process itself; kept for callers of the old
+// accessor (always empty).
+func (p *Process) Stdout() io.Reader { return strings.NewReader("") }
 
-// Stderr returns the stderr pipe.
-func (p *Process) Stderr() io.Reader { return p.stderr }
+// Stderr returns the last 8 KiB ffmpeg wrote to stderr so far.
+func (p *Process) Stderr() io.Reader { return strings.NewReader(p.tail.String()) }
+
+// tailBuf keeps the last max bytes written to it.
+type tailBuf struct {
+	mu  sync.Mutex
+	max int
+	b   []byte
+}
+
+func (t *tailBuf) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.b = append(t.b, p...)
+	if len(t.b) > t.max {
+		t.b = append([]byte(nil), t.b[len(t.b)-t.max:]...)
+	}
+	return len(p), nil
+}
+
+func (t *tailBuf) String() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return string(t.b)
+}
 
 // PID returns the OS pid (0 once exited).
 func (p *Process) PID() int {

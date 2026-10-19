@@ -39,11 +39,13 @@ type SessionService interface {
 	Capabilities(ctx context.Context) (Capabilities, error)
 }
 
-// URLSigner mints the signed manifest URL for the session. Production
-// implementation lives in the auth package (Story 10.8); we accept an
-// interface so tests can stub it.
+// URLSigner signs the stream URLs the streaming service handed out for a
+// session (Story 10.8): the manifest (aud=streaming, sub=session) or the
+// direct-play URL (aud=streaming-direct, sub=video), for the user and the
+// video's library, expiring after ttl. Production is signedurl.Minter
+// (api/internal/auth/signedurl); tests can stub it.
 type URLSigner interface {
-	SignManifestURL(sessionID, userID, libraryID string, ttl time.Duration) (string, time.Time, error)
+	SignStreamURL(rawURL, sessionID, userID, libraryID string, ttl time.Duration) (string, time.Time, error)
 }
 
 // OpenSessionRequest is the AC-1 body shape; Streaming's gRPC stub
@@ -189,29 +191,50 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
+		sid := uuid.NewString()
 		resp = OpenSessionResponse{
-			SessionID:   uuid.NewString(),
+			SessionID:   sid,
 			Mode:        "transcode",
 			ExpiresAt:   h.now().Add(h.ttl()),
-			ManifestURL: "/stream/" + uuid.NewString() + "/manifest.m3u8",
+			ManifestURL: "/stream/" + sid + "/manifest.m3u8",
 		}
 	}
 
-	// Sign manifest URL if a signer is configured.
-	if h.Signer != nil && resp.ManifestURL != "" {
-		signed, exp, signErr := h.Signer.SignManifestURL(resp.SessionID, p.UserID, libraryID, h.ttl())
-		if signErr == nil {
-			resp.ManifestURL = signed
+	// Sign the stream URLs (Story 10.8): the streaming service refuses an
+	// unsigned manifest/segment/direct request, so without this a session opens
+	// but no byte plays. The URL lives as long as the session can: the
+	// session TTL, or the video's length plus an hour when that is longer.
+	if h.Signer != nil {
+		ttl := h.urlTTL(duration)
+		for _, u := range []*string{&resp.ManifestURL, &resp.DirectURL} {
+			if *u == "" {
+				continue
+			}
+			signed, exp, signErr := h.Signer.SignStreamURL(*u, resp.SessionID, p.UserID, libraryID, ttl)
+			if signErr != nil {
+				w.Header().Set("Retry-After", "5")
+				httperror.Write(w, r, &httperror.Error{
+					Type:   "https://maktaba.dev/problems/signing-unavailable",
+					Title:  "signing unavailable",
+					Status: http.StatusServiceUnavailable,
+					Detail: signErr.Error(),
+				})
+				return
+			}
+			*u = signed
 			resp.ExpiresAt = exp
 		}
 	}
 
-	// Persist row.
+	// Persist row. The streaming service hands back the open session of the
+	// same (user, video) when there is one (a reload, a second tab): that is
+	// the row already stored, refreshed instead of a duplicate-key 500.
 	_, err = h.DB.ExecContext(r.Context(), `
 		INSERT INTO streaming_sessions
 		(id, user_id, video_id, client_profile, mode, audio_track_id, subtitle_lang,
 		 start_sec, max_bitrate_kbps, burn_subs, opened_at, last_seen_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+		ON CONFLICT (id) DO UPDATE SET last_seen_at = EXCLUDED.last_seen_at, closed_at = NULL
 	`, resp.SessionID, p.UserID, req.VideoID, req.ClientProfile, resp.Mode,
 		req.AudioTrack, req.SubtitleTrack, req.StartSec, req.MaxBitrateKbps,
 		req.BurnSubs, h.now())
@@ -402,6 +425,19 @@ func (h *Handler) ttl() time.Duration {
 		return h.SessionTTL
 	}
 	return 30 * time.Minute
+}
+
+// urlTTL is a signed stream URL's lifetime: the session TTL, or the video's
+// length plus an hour when that is longer (the native player cannot ask for a
+// fresh URL mid-video), capped by the signer (24 h).
+func (h *Handler) urlTTL(duration sql.NullFloat64) time.Duration {
+	ttl := h.ttl()
+	if duration.Valid && duration.Float64 > 0 {
+		if d := time.Duration(duration.Float64*float64(time.Second)) + time.Hour; d > ttl {
+			ttl = d
+		}
+	}
+	return ttl
 }
 
 // ---------------------------------------------------------------

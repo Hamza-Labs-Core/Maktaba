@@ -69,6 +69,16 @@ def _secrets_key_in_tmp(
 
 
 @pytest.fixture(autouse=True)
+def _node_config_in_tmp(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """cluster.config.config_path() (role detection, the agent, join) reads the file
+    named here: never this machine's real node.json (a joined machine's holds a
+    database credential). A test that needs a node config sets its own."""
+    monkeypatch.setenv("MAKTABA_NODE_CONFIG", str(tmp_path_factory.mktemp("node") / "node.json"))
+
+
+@pytest.fixture(autouse=True)
 def _forget_refusals() -> object:
     """A test that revokes a machine must not make later workers exit 77."""
     from maktaba_pipeline.cluster import exitcodes

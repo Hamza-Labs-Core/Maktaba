@@ -104,6 +104,9 @@ services:
       # the long-term archive of every machine's logs, jobs and LLM usage
       # (design-agent.md §7.10): on its own volume, kept a year by default
       MAKTABA_ARCHIVE_DIR: /var/maktaba/archive
+      # the stream signing key (Story 10.8): the api signs the video sessions'
+      # stream URLs with it (created on first start), streaming verifies them
+      MAKTABA_STREAM_SIGNING_KEY: /var/maktaba/keys/stream-signing.key
       # The home's IP folder on the share: set it to the host's LAN address
       # (a container only knows its own bridge address).
       MAKTABA_CLUSTER_IP: ${MAKTABA_CLUSTER_IP:-}
@@ -148,10 +151,13 @@ services:
       # the story's gRPC-peer requirement (AC2).
       MAKTABA_GRPC_PEERS: api=api:9100
       HEALTHCHECK_URL: http://127.0.0.1:9101/healthz
+      # verifies the stream URLs the api signs (same key file, read-only here)
+      MAKTABA_STREAM_SIGNING_KEY: /var/maktaba/keys/stream-signing.key
     command: ["serve"]
     volumes:
       - media:/var/maktaba/media:ro
       - cache:/var/maktaba/cache
+      - cluster_keys:/var/maktaba/keys:ro
     healthcheck:
       test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 10s
