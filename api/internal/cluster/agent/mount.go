@@ -54,7 +54,7 @@ func errUnauthorized() *httperror.Error {
 		Status: http.StatusUnauthorized, Detail: "authentication required"}
 }
 
-func requireAdminP(w http.ResponseWriter, r *http.Request) bool {
+func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 	p := principal.FromContext(r.Context())
 	if p == nil {
 		httperror.Write(w, r, httperror.Forbidden("", "auth required"))

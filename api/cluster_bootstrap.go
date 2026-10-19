@@ -90,7 +90,8 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, logger *slog
 
 // mountClusterHub reads the hub's settings (agent.FromEnv), loads or
 // creates the home's two local keys (never on the share): the home agent
-// key (~/.maktaba/cluster/home-agent.key, MAKTABA_HOME_AGENT_KEY) and the
+// key (~/.maktaba/cluster/home-agent.key, MAKTABA_HOME_AGENT_KEY; mode
+// MAKTABA_HOME_AGENT_KEY_MODE, 0600 or 0640) and the
 // cluster key pair (~/.maktaba/cluster/home-cluster.key,
 // MAKTABA_HOME_CLUSTER_KEY), whose public half goes into every approved
 // machine's sealed credentials; then it mounts the hub.
@@ -104,7 +105,7 @@ func mountClusterHub(r chi.Router, h *clusterh.Handler, db *sql.DB, driver strin
 		agentKeyEnv = os.Getenv("MAKTABA_CLUSTER_KEY_PATH")
 	}
 	keyPath := agent.HomeKeyPath(agentKeyEnv)
-	key, err := agent.LoadOrCreateHomeKey(keyPath)
+	key, err := agent.LoadOrCreateKey(keyPath, cfg.HomeKeyMode)
 	if err != nil {
 		logger.Warn("p31: home agent key unavailable; the home's own processes cannot join the channel",
 			"path", keyPath, "err", err, "event", "p31_home_key_failed")

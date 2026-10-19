@@ -73,9 +73,10 @@ func localKeyPath(override, name string) string {
 }
 
 // LoadOrCreateClusterKey returns the cluster key pair (X25519 private and
-// public), creating the private half like the home agent key.
+// public), creating the private half like the home agent key; it is
+// always mode 0600.
 func LoadOrCreateClusterKey(path string) (priv, pub []byte, err error) {
-	priv, err = LoadOrCreateHomeKey(path)
+	priv, err = LoadOrCreateKey(path, 0o600)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -86,26 +87,61 @@ func LoadOrCreateClusterKey(path string) (priv, pub []byte, err error) {
 	return priv, pub, nil
 }
 
-// LoadOrCreateHomeKey returns the 32-byte key at path, creating it (32
-// random bytes, mode 0600, written atomically) when absent or not 32
-// bytes. It tightens a looser mode to 0600.
-func LoadOrCreateHomeKey(path string) ([]byte, error) {
+// Key file modes MAKTABA_HOME_AGENT_KEY_MODE may choose: 0600 (the default)
+// or 0640, for a home whose workers read the key as another user of the
+// API's group (Docker: a shared volume).
+const (
+	KeyMode      os.FileMode = 0o600
+	GroupKeyMode os.FileMode = 0o640
+)
+
+// ParseKeyMode reads MAKTABA_HOME_AGENT_KEY_MODE: "0600"/"600" or
+// "0640"/"640"; anything else is refused.
+func ParseKeyMode(v string) (os.FileMode, bool) {
+	switch strings.TrimSpace(v) {
+	case "0600", "600", "0o600":
+		return KeyMode, true
+	case "0640", "640", "0o640":
+		return GroupKeyMode, true
+	}
+	return 0, false
+}
+
+// LoadOrCreateHomeKey is LoadOrCreateKey with mode 0600.
+func LoadOrCreateHomeKey(path string) ([]byte, error) { return LoadOrCreateKey(path, KeyMode) }
+
+// LoadOrCreateKey returns the 32-byte key at path, creating it (32 random
+// bytes, written atomically, with the given mode: 0600 or 0640) when
+// absent or not 32 bytes. An existing file with bits beyond mode is
+// tightened to it; an existing 0600 file is opened to 0640 only when mode
+// asks for 0640. Nothing else is ever loosened.
+func LoadOrCreateKey(path string, mode os.FileMode) ([]byte, error) {
+	if mode != GroupKeyMode {
+		mode = KeyMode
+	}
 	if b, err := os.ReadFile(path); err == nil { //nolint:gosec // the configured key path
 		if len(b) == KeySize {
-			if st, err := os.Stat(path); err == nil && st.Mode().Perm()&0o077 != 0 {
-				_ = os.Chmod(path, 0o600)
+			if st, err := os.Stat(path); err == nil {
+				perm := st.Mode().Perm()
+				if perm&^mode != 0 || (mode == GroupKeyMode && perm == KeyMode) {
+					_ = os.Chmod(path, mode)
+				}
 			}
 			return b, nil
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("agent: read home key: %w", err)
+		return nil, fmt.Errorf("agent: read key: %w", err)
 	}
 	key := make([]byte, KeySize)
 	if _, err := io.ReadFull(rand.Reader, key); err != nil {
 		return nil, fmt.Errorf("agent: random home key: %w", err)
 	}
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	dirMode := os.FileMode(0o700)
+	if mode == GroupKeyMode {
+		dirMode = 0o750 // the group must reach the file
+	}
+	if err := os.MkdirAll(dir, dirMode); err != nil {
 		return nil, fmt.Errorf("agent: home key dir: %w", err)
 	}
 	tmp, err := os.CreateTemp(dir, ".home-agent.key-*")
@@ -114,7 +150,7 @@ func LoadOrCreateHomeKey(path string) ([]byte, error) {
 	}
 	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }()
-	if err := tmp.Chmod(0o600); err != nil {
+	if err := tmp.Chmod(mode); err != nil {
 		_ = tmp.Close()
 		return nil, fmt.Errorf("agent: home key mode: %w", err)
 	}

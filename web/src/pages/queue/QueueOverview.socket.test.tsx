@@ -144,6 +144,65 @@ describe("QueueOverview on the cluster socket", () => {
     expect(within(log).getByText(/done · on .*Studio Mac/)).toBeInTheDocument();
   });
 
+  it("shows a job already running when the page loads (the snapshot's running)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    setup();
+    const ws = FakeSocket.last;
+    ws.open();
+    ws.recv({ type: "queues", data: snapshotFixture });
+    // its claimed event is long gone from the recent events; the hub lists it
+    // from the machine's latest metrics
+    ws.recv({
+      type: "snapshot",
+      topic: "jobs",
+      data: {
+        jobs: [],
+        running: [
+          {
+            session: "s2",
+            ip: "10.0.0.6",
+            node_name: "Linux Box",
+            worker_id: "node-1-7",
+            host: "linux",
+            job: {
+              event: "progress",
+              job_id: 9100,
+              stage: "probe",
+              subject_kind: "video",
+              subject_id: "v10",
+              title: "Episode 10",
+              attempt: null,
+              started_at: new Date().toISOString(),
+              ts: new Date().toISOString(),
+              duration_ms: null,
+              progress: { step: "read", done: 2, total: 4 },
+              outcome: null,
+              output: null,
+            },
+          },
+        ],
+      },
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_100);
+    });
+    const probe = document.querySelector('[data-stage="probe"]') as HTMLElement;
+    const live = within(probe).getByRole("list", { name: "Running now in Length" });
+    expect(within(live).getByText(/Episode 10/)).toBeInTheDocument();
+    expect(within(live).getByText(/on .*Linux Box/)).toBeInTheDocument();
+    expect(within(live).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "50");
+    // a seed is not an event: the activity feed does not report it
+    const log = screen.getByRole("heading", { name: "Activity" }).closest("section")!;
+    expect(within(log).queryByText(/Episode 10/)).toBeNull();
+
+    // a fresh snapshot (a reconnect) without it: it is no longer running
+    ws.recv({ type: "snapshot", topic: "jobs", data: { jobs: [], running: [] } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_100);
+    });
+    expect(within(probe).queryByRole("list", { name: "Running now in Length" })).toBeNull();
+  });
+
   it("takes the workers from the socket", async () => {
     setup(Promise.resolve(snapshotFixture));
     const ws = FakeSocket.last;
