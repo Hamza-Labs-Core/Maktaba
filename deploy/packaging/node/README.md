@@ -104,6 +104,19 @@ explicit flag starts a new pin. The digest comes from `sha256sum`, else `shasum`
 Python's `hashlib` (Windows: `Get-FileHash`); with none of them the installer stops
 rather than install unchecked.
 
+**Dependencies, hash-checked.** A release's constraints file carries every pinned
+dependency's hashes from `uv.lock` (`build-release.sh` refuses to publish one without), and
+the installers install with `--require-hashes`: each package downloaded from PyPI must match
+one of its hashes, and the wheel its own SHA-256. A constraints file without hashes is
+refused. Without uv, the venv's own pip installs the constraints' pins (hash-checked, every
+extra's) and then the wheel; it is not upgraded from PyPI first.
+
+**URLs with credentials are refused.** A `--from-wheel` / `--constraints` URL is printed
+while it downloads and remembered in `install.conf`, so one with user info
+(`https://user:token@host/...`) or a query string (`?token=...`, a signed URL) is refused,
+shown redacted. Use a plain URL pinned with `--sha256` / `--constraints-sha256`, or download
+the file and pass its path.
+
 Downloads go to `<node dir>/dist/`; after a successful install only the files that
 install used are kept there.
 

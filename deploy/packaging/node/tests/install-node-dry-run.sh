@@ -59,6 +59,20 @@ rendered_conf() {
     root="$(sed -n 's/.*Rendered files are under //p' <<<"$OUT" | tail -n 1)"
     cat "$root$T/home/.local/share/maktaba/node/install.conf"
 }
+# the rendered one-line requirements file (the wheel and its hash) of the last dry run,
+# written next to the constraints in DIR
+rendered_req() {
+    local root
+    root="$(sed -n 's/.*Rendered files are under //p' <<<"$OUT" | tail -n 1)"
+    cat "$root$1/.maktaba-node-requirements.txt" 2>/dev/null || true
+}
+# req_has WHAT DIR TEXT: that file has TEXT
+req_has() {
+    local req
+    req="$(rendered_req "$2")"
+    if grep -qF -- "$3" <<<"$req"; then ok "$1"; else OUT="$OUT
+[requirements file: $req]"; fail "$1: no '$3' in the requirements file"; fi
+}
 
 sha256() {
     if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
@@ -70,7 +84,9 @@ mkdir -p "$T/home" "$T/files"
 WHEEL="$T/files/maktaba_pipeline-9.8.7-py3-none-any.whl"
 CONS="$T/files/maktaba-pipeline-9.8.7-constraints.txt"
 printf 'not really a wheel\n' >"$WHEEL"
-printf 'structlog==25.1.0\n' >"$CONS"
+printf 'structlog==25.1.0 \\\n    --hash=sha256:%s\n' "$(printf 'a%.0s' $(seq 64))" >"$CONS"
+NOHASH_CONS="$T/files/nohash-constraints.txt"
+printf 'structlog==25.1.0\n' >"$NOHASH_CONS"
 
 # make_bundle DIR [with-files]: the installer as a maktaba-node-9.8.7 archive unpacks it
 make_bundle() {
@@ -99,8 +115,10 @@ run_installer "$BUNDLE" --
 expect_ok "release archive"
 has "release archive: says which release" "Pipeline: release v9.8.7"
 has_cmd "release archive: venv with the release's Python" "uv venv --python 3.13"
-has_cmd "release archive: installs the bundled wheel, constrained" \
-    "pip install" "--constraint ./$(basename "$CONS")" "$BUNDLE/$(basename "$WHEEL")"
+has_cmd "release archive: installs in hash-checking mode, constrained" \
+    "pip install" "--require-hashes" "--constraint ./$(basename "$CONS")" "-r ./.maktaba-node-requirements.txt"
+req_has "release archive: the bundled wheel, by its SHA-256" "$BUNDLE" \
+    "maktaba-pipeline @ file://$BUNDLE/$(basename "$WHEEL") --hash=sha256:$(sha256 "$WHEEL")"
 has_cmd "release archive: from the constraints' directory (uv splits a --constraint path at spaces)" \
     "cd $BUNDLE"
 lacks "release archive: no download" "curl"
@@ -115,7 +133,7 @@ fi
 
 run_installer "$BUNDLE" -- --extras stt,search
 # (printed shell-quoted: maktaba_pipeline-...whl\[stt\,search\])
-has_cmd "release archive: extras on the wheel" "pip install" "$(basename "$WHEEL")" "[stt" "search"
+req_has "release archive: extras on the wheel" "$BUNDLE" "maktaba-pipeline[stt,search] @ file://$BUNDLE/$(basename "$WHEEL")"
 
 run_installer "$BUNDLE" MAKTABA_NODE_OS=linux -- --system
 has_cmd "release archive, --system: uv's Python under the node dir" \
@@ -135,8 +153,8 @@ has_cmd "bare release archive: downloads the wheel from the release" \
     "curl" "https://github.com/example/Maktaba/releases/download/v9.8.7/$(basename "$WHEEL")"
 has_cmd "bare release archive: downloads the constraints" \
     "curl" "https://github.com/example/Maktaba/releases/download/v9.8.7/$(basename "$CONS")"
-has_cmd "bare release archive: installs the download" \
-    "pip install" "$T/home/.local/share/maktaba/node/dist/$(basename "$WHEEL")"
+req_has "bare release archive: installs the download" "$T/home/.local/share/maktaba/node/dist" \
+    "@ file://$T/home/.local/share/maktaba/node/dist/$(basename "$WHEEL") --hash=sha256:"
 
 # --- an archive unpacked under a path with a space -----------------------------------------------
 SPACED="$T/My Downloads/maktaba-node-9.8.7"
@@ -145,6 +163,8 @@ run_installer "$SPACED" --
 expect_ok "archive under a path with a space"
 has_cmd "archive under a path with a space: cd there, constraints relative" "cd $T/My\\ Downloads/maktaba-node-9.8.7"
 has_cmd "archive under a path with a space: --constraint ./<file>" "--constraint ./$(basename "$CONS")"
+req_has "archive under a path with a space: the wheel's file URL escapes it" "$SPACED" \
+    "file://$T/My%20Downloads/maktaba-node-9.8.7/$(basename "$WHEEL")"
 
 # --- --from-wheel PATH / URL ----------------------------------------------------------------------
 run_installer "$NODE_SRC" -- --from-wheel "$WHEEL"
@@ -162,15 +182,42 @@ fi
 
 (cd "$T/files" && run_installer "$NODE_SRC" -- --from-wheel "./$(basename "$WHEEL")" \
     --constraints "./$(basename "$CONS")"
-    has_cmd "--from-wheel ./relative: made absolute" "--constraint ./$(basename "$CONS")" "$WHEEL")
+    has_cmd "--from-wheel ./relative: constrained" "--constraint ./$(basename "$CONS")"
+    req_has "--from-wheel ./relative: made absolute" "$T/files" "file://$WHEEL")
 
-run_installer "$NODE_SRC" -- --from-wheel "https://example.com/dl/maktaba_pipeline-1.0.0-py3-none-any.whl?x=1" \
+run_installer "$NODE_SRC" -- --from-wheel "https://example.com/dl/maktaba_pipeline-1.0.0-py3-none-any.whl" \
     --constraints https://example.com/dl/c.txt
 expect_ok "--from-wheel URL"
 has_cmd "--from-wheel URL: downloads it" "curl" "-o $T/home/.local/share/maktaba/node/dist/maktaba_pipeline-1.0.0-py3-none-any.whl.part"
-has_cmd "--from-wheel URL: installs the download, constrained" \
-    "pip install" "--constraint ./c.txt" \
-    "$T/home/.local/share/maktaba/node/dist/maktaba_pipeline-1.0.0-py3-none-any.whl"
+has_cmd "--from-wheel URL: installs the download, constrained, hash-checked" \
+    "pip install" "--require-hashes" "--constraint ./c.txt"
+req_has "--from-wheel URL: the download" "$T/home/.local/share/maktaba/node/dist" \
+    "file://$T/home/.local/share/maktaba/node/dist/maktaba_pipeline-1.0.0-py3-none-any.whl"
+
+# --- a URL with a credential is neither logged nor remembered ---------------------------------
+run_installer "$NODE_SRC" -- --from-wheel "https://example.com/dl/maktaba_pipeline-1.0.0-py3-none-any.whl?token=s3cr3t-tok"
+expect_err "--from-wheel URL with a ?token" "carries a credential"
+lacks "--from-wheel URL with a ?token: not in the output" "s3cr3t-tok"
+has "--from-wheel URL with a ?token: shown redacted" "https://example.com/dl/maktaba_pipeline-1.0.0-py3-none-any.whl?***"
+run_installer "$NODE_SRC" -- --from-wheel "https://bob:hunter2pw@example.com/dl/maktaba_pipeline-1.0.0-py3-none-any.whl"
+expect_err "--from-wheel URL with user:password@" "carries a credential"
+lacks "--from-wheel URL with user:password@: not in the output" "hunter2pw"
+run_installer "$NODE_SRC" -- --from-wheel "$WHEEL" --constraints "https://example.com/c.txt?X-Amz-Signature=abcsig123"
+expect_err "--constraints URL with a signature" "carries a credential"
+lacks "--constraints URL with a signature: not in the output" "abcsig123"
+mkdir -p "$T/h-tok/.local/share/maktaba/node"
+cat >"$T/h-tok/.local/share/maktaba/node/install.conf" <<EOF
+FROM=wheel
+EXTRAS=none
+WHEEL=https://example.com/maktaba_pipeline-1.0.0-py3-none-any.whl?token=old-s3cr3t
+EOF
+run_installer "$NODE_SRC" HOME="$T/h-tok" --
+expect_err "update: a remembered URL with a token is refused" "carries a credential"
+lacks "update: a remembered URL with a token: not in the output" "old-s3cr3t"
+
+# --- constraints without hashes are refused ------------------------------------------------------
+run_installer "$NODE_SRC" -- --from-wheel "$WHEEL" --constraints "$NOHASH_CONS"
+expect_err "--constraints without hashes" "pins no hashes"
 
 run_installer "$BUNDLE" -- --from-wheel "$WHEEL"
 has_cmd "--from-wheel beats release.conf" "pip install" "$WHEEL"
@@ -181,8 +228,9 @@ if command -v python3.12 >/dev/null 2>&1 || command -v python3.13 >/dev/null 2>&
     || python3 -c 'import sys; sys.exit(sys.version_info < (3, 12))' 2>/dev/null; then
     run_installer "$BUNDLE" MAKTABA_NODE_NO_UV=1 --
     expect_ok "pip"
-    has_cmd "pip: constrained install of the wheel" "-m pip install" "--constraint" "$(basename "$WHEEL")"
-    has_cmd "pip: then the wheel itself again" "--force-reinstall --no-deps" "$(basename "$WHEEL")"
+    has_cmd "pip: the constraints' pins, hash-checked" "-m pip install" "--require-hashes --no-deps -r ./$(basename "$CONS")"
+    has_cmd "pip: then the wheel, hash-checked" "--require-hashes --no-deps --force-reinstall -r ./.maktaba-node-requirements.txt"
+    lacks "pip: no unchecked pip upgrade" "--upgrade pip"
     lacks "pip: no uv" "uv venv"
 else
     printf 'skip  pip: no Python 3.12+ here\n'
@@ -225,7 +273,8 @@ WHEEL=$WHEEL
 CONSTRAINTS=$CONS
 EOF
 run_installer "$BUNDLE" HOME="$T/h-wheel" --
-has_cmd "update: a remembered wheel beats release.conf" "--constraint ./$(basename "$CONS")" "$WHEEL"
+has_cmd "update: a remembered wheel beats release.conf" "--constraint ./$(basename "$CONS")"
+req_has "update: a remembered wheel beats release.conf (the wheel)" "$T/files" "file://$WHEEL"
 
 remember "$T/h-old" <<EOF
 EXTRAS=none
@@ -239,7 +288,7 @@ FROM=release
 EXTRAS=none
 EOF
 run_installer "$BUNDLE" HOME="$T/h-rel" --
-has_cmd "update: FROM=release takes this archive's release" "pip install" "$BUNDLE/$(basename "$WHEEL")"
+req_has "update: FROM=release takes this archive's release" "$BUNDLE" "file://$BUNDLE/$(basename "$WHEEL")"
 run_installer "$NODE_SRC" HOME="$T/h-rel" --
 expect_err "update: FROM=release from a checkout" "not from one"
 set +e

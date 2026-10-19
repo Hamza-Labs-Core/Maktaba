@@ -271,13 +271,21 @@ if ($Origin.From -ne 'source') {
     }
     $spec = $wheelFile
     if ($extrasList.Count -gt 0) { $spec = '{0}[{1}]' -f $wheelFile, ($extrasList -join ',') }
+    $installArgs = @($spec)
+    $reqFile = ''
+    if ($consFile) {
+        # Hash-checking mode: every dependency must match a --hash of the constraints file,
+        # the wheel its own SHA-256 (a one-line requirements file next to the constraints).
+        $reqFile = New-NodeHashedRequirements -WheelFile $wheelFile -WheelSha256 $wheelPin -Extras $extrasList -ConstraintsFile $consFile
+        $installArgs = @('--require-hashes') + $consArgs + @('-r', ('.\' + (Split-Path -Leaf $reqFile)))
+    }
     if ($uv) {
         Write-NodeStep "Installing $(Split-Path -Leaf $wheelFile) with uv ($($script:NodeVenv))"
         if (-not (Test-Path -LiteralPath $script:NodePython -PathType Leaf)) {
             Assert-ExitCode (Invoke-NativeCommand -FilePath $uv -ArgumentList @('venv', '--python', $Origin.Python, $script:NodeVenv)) 'uv venv'
         }
         # --reinstall-package: a rebuilt wheel of an unchanged version replaces the old one
-        $uvArgs = @('pip', 'install', '--python', $script:NodePython, '--reinstall-package', 'maktaba-pipeline') + $consArgs + @($spec)
+        $uvArgs = @('pip', 'install', '--python', $script:NodePython, '--reinstall-package', 'maktaba-pipeline') + $installArgs
         Assert-ExitCode (Invoke-NativeCommand -FilePath $uv -ArgumentList $uvArgs -WorkingDirectory $installDir) 'uv pip install'
     } else {
         $basePython = Find-Python312
@@ -288,10 +296,19 @@ if ($Origin.From -ne 'source') {
         if (-not (Test-Path -LiteralPath $script:NodePython -PathType Leaf)) {
             Assert-ExitCode (Invoke-NativeCommand -FilePath $basePython -ArgumentList @('-m', 'venv', $script:NodeVenv)) 'python -m venv'
         }
-        Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList @('-m', 'pip', 'install', '--quiet', '--upgrade', 'pip')) 'pip upgrade'
-        Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList (@('-m', 'pip', 'install', '--quiet') + $consArgs + @($spec)) -WorkingDirectory $installDir) 'pip install'
-        Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList @('-m', 'pip', 'install', '--quiet', '--force-reinstall', '--no-deps', $wheelFile)) 'pip reinstall'
+        if ($reqFile) {
+            # A venv's own pip (no unchecked upgrade from PyPI) does not take hashes from a
+            # constraints file: install its pins as requirements, each checked, then the
+            # wheel, checked, without resolving again (every extra's pins come along).
+            Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList @('-m', 'pip', 'install', '--quiet', '--require-hashes', '--no-deps', '-r', ('.\' + (Split-Path -Leaf $consFile))) -WorkingDirectory $installDir) 'pip install (dependencies)'
+            Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList @('-m', 'pip', 'install', '--quiet', '--require-hashes', '--no-deps', '--force-reinstall', '-r', ('.\' + (Split-Path -Leaf $reqFile))) -WorkingDirectory $installDir) 'pip install (the wheel)'
+        } else {
+            Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList @('-m', 'pip', 'install', '--quiet', '--upgrade', 'pip')) 'pip upgrade'
+            Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList (@('-m', 'pip', 'install', '--quiet') + @($spec)) -WorkingDirectory $installDir) 'pip install'
+            Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList @('-m', 'pip', 'install', '--quiet', '--force-reinstall', '--no-deps', $wheelFile)) 'pip reinstall'
+        }
     }
+    if ($reqFile) { Remove-Item -LiteralPath $reqFile -Force -ErrorAction SilentlyContinue }
     # installed: earlier updates' downloads are of no more use
     Remove-NodeOldDownloads -Dir $downloads -Keep @($wheelFile, $consFile)
 } elseif ($uv) {
