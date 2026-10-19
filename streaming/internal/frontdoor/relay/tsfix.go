@@ -87,7 +87,13 @@ type Retimer struct {
 	pending  []byte // a partial packet between writes
 	out      bytes.Buffer
 	switches int
-	jumps    int
+	// held is each output PID's elementary-stream PES in progress: it goes out
+	// once the next PES of that PID starts, so the PES a source was cut in the
+	// middle of (a crash, a dropped connection) is dropped at a Switch instead of
+	// reaching the decoder truncated (a broken AAC/H.264 frame makes ffmpeg's FLV
+	// muxer fail: Epic 33.1 failover, 32.4 node failover).
+	held  map[uint16]*heldPES
+	jumps int
 }
 
 // NewRetimer starts with no program; the first source defines it.
@@ -110,6 +116,7 @@ func (r *Retimer) resetSource() {
 // Switch announces that the next bytes come from a new source (another
 // station, host or slot): the retimer waits for its PAT/PMT and an IDR.
 func (r *Retimer) Switch() {
+	r.held = nil // the cut PES of the old source
 	r.resetSource()
 	r.switches++
 }
@@ -487,8 +494,78 @@ func (r *Retimer) packet(p []byte) error {
 	if hasAdaptation(p) {
 		p[5] &^= 0x80 // no discontinuity: the program is continuous
 	}
-	r.emit(p, out)
+	r.hold(p, out, pusi)
 	return nil
+}
+
+// hold forwards an elementary-stream packet. A PES that states its length
+// (audio) is held until it is complete and then goes out whole; one cut short
+// by its source (a crash, a dropped connection) is dropped at the Switch. A PES
+// of unbounded length (video) passes at once.
+func (r *Retimer) hold(p []byte, out uint16, pusi bool) {
+	if r.held == nil {
+		r.held = map[uint16]*heldPES{}
+	}
+	h := r.held[out]
+	if pusi {
+		if h != nil && len(h.pkts) > 0 {
+			r.flushHeld(out, h) // the previous one ended without its stated length: pass it
+		}
+		n := pesLength(p)
+		if n == 0 {
+			r.held[out] = nil
+			r.emit(p, out)
+			return
+		}
+		h = &heldPES{want: n}
+		r.held[out] = h
+	} else if h == nil {
+		r.emit(p, out) // unbounded PES (or one being passed through)
+		return
+	}
+	h.pkts = append(h.pkts, p)
+	h.got += payloadLen(p)
+	if h.got >= h.want {
+		r.flushHeld(out, h)
+		r.held[out] = nil
+	}
+}
+
+func (r *Retimer) flushHeld(out uint16, h *heldPES) {
+	for _, q := range h.pkts {
+		r.emit(q, out)
+	}
+	h.pkts = h.pkts[:0]
+}
+
+// heldPES is a bounded PES being collected.
+type heldPES struct {
+	pkts [][]byte
+	want int // header + payload bytes the PES states
+	got  int
+}
+
+// pesLength is the PES's total size (6 + PES_packet_length) when the packet
+// starts one with a stated length, else 0.
+func pesLength(p []byte) int {
+	off := payloadStart(p)
+	if off < 0 || off+6 > tsSize || p[off] != 0 || p[off+1] != 0 || p[off+2] != 1 {
+		return 0
+	}
+	n := int(p[off+4])<<8 | int(p[off+5])
+	if n == 0 {
+		return 0
+	}
+	return 6 + n
+}
+
+// payloadLen is a packet's payload size.
+func payloadLen(p []byte) int {
+	off := payloadStart(p)
+	if off < 0 {
+		return 0
+	}
+	return tsSize - off
 }
 
 // emitPSI passes a PAT/PMT: the source's own when its layout is the output's,
