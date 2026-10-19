@@ -6,7 +6,16 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
+
+// isUUID: channels.id is a Postgres UUID; any other path id would fail the
+// cast (a 500), so it is a channel that does not exist.
+func isUUID(s string) bool {
+	_, err := uuid.Parse(s)
+	return err == nil && len(s) == 36
+}
 
 // repo wraps the SQL access to `channels` (+ a cheap now-playing join to
 // `channel_programs`). Kept thin: the interesting logic (validation,
@@ -20,6 +29,9 @@ const channelCols = `id, library_id, number, name, slug, logo_path, category,
 	created_at, updated_at`
 
 func (rp *repo) get(ctx context.Context, id string) (Channel, error) {
+	if !isUUID(id) {
+		return Channel{}, sql.ErrNoRows
+	}
 	row := rp.db.QueryRowContext(ctx, `SELECT `+channelCols+` FROM channels WHERE id = $1`, id)
 	return scanChannel(row)
 }
@@ -101,6 +113,9 @@ func (rp *repo) insert(ctx context.Context, c Channel) error {
 }
 
 func (rp *repo) delete(ctx context.Context, id string) error {
+	if !isUUID(id) {
+		return nil // nothing to delete, as for an unknown id
+	}
 	_, err := rp.db.ExecContext(ctx, `DELETE FROM channels WHERE id=$1`, id)
 	return err
 }

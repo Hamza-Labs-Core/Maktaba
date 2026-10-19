@@ -176,19 +176,23 @@ func TestValidateReorder(t *testing.T) {
 	if err := validateReorder(nil); err == nil {
 		t.Error("empty payload should be rejected")
 	}
-	if err := validateReorder([]ReorderEntry{{ID: "a", Number: 1}, {ID: "b", Number: 2}}); err != nil {
+	if err := validateReorder([]ReorderEntry{{ID: "00000000-0000-4000-8000-0000000000aa", Number: 1}, {ID: "00000000-0000-4000-8000-0000000000bb", Number: 2}}); err != nil {
 		t.Errorf("valid payload rejected: %v", err)
 	}
-	if err := validateReorder([]ReorderEntry{{ID: "a", Number: 1}, {ID: "a", Number: 2}}); err == nil {
+	if err := validateReorder([]ReorderEntry{{ID: "00000000-0000-4000-8000-0000000000aa", Number: 1}, {ID: "00000000-0000-4000-8000-0000000000aa", Number: 2}}); err == nil {
 		t.Error("duplicate id should be rejected")
 	}
-	if err := validateReorder([]ReorderEntry{{ID: "a", Number: 1}, {ID: "b", Number: 1}}); err == nil {
+	if err := validateReorder([]ReorderEntry{{ID: "00000000-0000-4000-8000-0000000000aa", Number: 1}, {ID: "00000000-0000-4000-8000-0000000000bb", Number: 1}}); err == nil {
 		t.Error("duplicate number should be rejected")
+	}
+	// channels.id is a Postgres UUID: anything else is refused before any query
+	if err := validateReorder([]ReorderEntry{{ID: "not-a-uuid", Number: 1}}); err == nil {
+		t.Error("non-UUID id should be rejected")
 	}
 	if err := validateReorder([]ReorderEntry{{ID: "", Number: 1}}); err == nil {
 		t.Error("missing id should be rejected")
 	}
-	if err := validateReorder([]ReorderEntry{{ID: "a", Number: 0}}); err == nil {
+	if err := validateReorder([]ReorderEntry{{ID: "00000000-0000-4000-8000-0000000000aa", Number: 0}}); err == nil {
 		t.Error("non-positive number should be rejected")
 	}
 }

@@ -52,14 +52,14 @@ func jsonReq(method, target, body string) *http.Request {
 
 func TestPatchMarksEditedAndListShowsPlanStatus(t *testing.T) {
 	e := newBuilderEnv(t)
-	insertChannel(t, e.db, "c1", nil)
-	e.link(t, "mix", "c1")
+	insertChannel(t, e.db, "00000000-0000-4000-8000-0000000000c1", nil)
+	e.link(t, "mix", "00000000-0000-4000-8000-0000000000c1")
 
-	_, c := e.do(t, artAdmin, httptest.NewRequest("GET", "/api/channels/c1", nil))
+	_, c := e.do(t, artAdmin, httptest.NewRequest("GET", "/api/channels/00000000-0000-4000-8000-0000000000c1", nil))
 	if c.Plan == nil || !c.Plan.Owned || c.Plan.Edited {
 		t.Fatalf("a fresh plan channel: %+v", c.Plan)
 	}
-	rec, c := e.do(t, artAdmin, jsonReq("PATCH", "/api/channels/c1", `{"name":"Mine"}`))
+	rec, c := e.do(t, artAdmin, jsonReq("PATCH", "/api/channels/00000000-0000-4000-8000-0000000000c1", `{"name":"Mine"}`))
 	if rec.Code != 200 || c.Plan == nil || !c.Plan.Edited || c.Plan.EditedAt == nil {
 		t.Fatalf("after an edit: %d %+v", rec.Code, c.Plan)
 	}
@@ -76,12 +76,12 @@ func TestPatchMarksEditedAndListShowsPlanStatus(t *testing.T) {
 
 func TestArtUploadIsNotAnEdit(t *testing.T) {
 	e := newBuilderEnv(t)
-	insertChannel(t, e.db, "c1", nil)
-	e.link(t, "mix", "c1")
-	if rec, _ := e.upload(t, "c1", ArtLogo, "l.png", pngBytes); rec.Code != 200 {
+	insertChannel(t, e.db, "00000000-0000-4000-8000-0000000000c1", nil)
+	e.link(t, "mix", "00000000-0000-4000-8000-0000000000c1")
+	if rec, _ := e.upload(t, "00000000-0000-4000-8000-0000000000c1", ArtLogo, "l.png", pngBytes); rec.Code != 200 {
 		t.Fatalf("upload: %d %s", rec.Code, rec.Body.String())
 	}
-	_, c := e.do(t, artAdmin, httptest.NewRequest("GET", "/api/channels/c1", nil))
+	_, c := e.do(t, artAdmin, httptest.NewRequest("GET", "/api/channels/00000000-0000-4000-8000-0000000000c1", nil))
 	if c.Plan == nil || c.Plan.Edited {
 		t.Fatalf("an upload is an override, not an edit: %+v", c.Plan)
 	}
@@ -89,26 +89,26 @@ func TestArtUploadIsNotAnEdit(t *testing.T) {
 
 func TestFollowPlanHandsTheChannelBack(t *testing.T) {
 	e := newBuilderEnv(t)
-	insertChannel(t, e.db, "c1", nil)
-	e.link(t, "mix", "c1")
-	e.do(t, artAdmin, jsonReq("PATCH", "/api/channels/c1", `{"name":"Mine"}`))
+	insertChannel(t, e.db, "00000000-0000-4000-8000-0000000000c1", nil)
+	e.link(t, "mix", "00000000-0000-4000-8000-0000000000c1")
+	e.do(t, artAdmin, jsonReq("PATCH", "/api/channels/00000000-0000-4000-8000-0000000000c1", `{"name":"Mine"}`))
 
-	rec, _ := e.do(t, artAdmin, httptest.NewRequest("POST", "/api/channels/c1/follow-plan", nil))
+	rec, _ := e.do(t, artAdmin, httptest.NewRequest("POST", "/api/channels/00000000-0000-4000-8000-0000000000c1/follow-plan", nil))
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("follow-plan: %d %s", rec.Code, rec.Body.String())
 	}
 	var hash string
-	if err := e.db.QueryRow(`SELECT content_hash FROM external_links WHERE external_id = 'c1'`).Scan(&hash); err != nil {
+	if err := e.db.QueryRow(`SELECT content_hash FROM external_links WHERE external_id = '00000000-0000-4000-8000-0000000000c1'`).Scan(&hash); err != nil {
 		t.Fatal(err)
 	}
 	if hash != FollowPlanHash {
 		t.Fatalf("link hash %q", hash)
 	}
 	var stale bool
-	if err := e.db.QueryRow(`SELECT stale FROM channel_schedule_state WHERE channel_id = 'c1'`).Scan(&stale); err != nil || !stale {
+	if err := e.db.QueryRow(`SELECT stale FROM channel_schedule_state WHERE channel_id = '00000000-0000-4000-8000-0000000000c1'`).Scan(&stale); err != nil || !stale {
 		t.Fatalf("schedule not marked stale: %v %v", stale, err)
 	}
-	_, c := e.do(t, artAdmin, httptest.NewRequest("GET", "/api/channels/c1", nil))
+	_, c := e.do(t, artAdmin, httptest.NewRequest("GET", "/api/channels/00000000-0000-4000-8000-0000000000c1", nil))
 	if c.Plan == nil || c.Plan.Edited {
 		t.Fatalf("edited mark kept: %+v", c.Plan)
 	}
@@ -116,29 +116,29 @@ func TestFollowPlanHandsTheChannelBack(t *testing.T) {
 
 func TestFollowPlanRefusesAChannelNoPlanOwns(t *testing.T) {
 	e := newBuilderEnv(t)
-	insertChannel(t, e.db, "c1", nil)
-	if rec, _ := e.do(t, artAdmin, httptest.NewRequest("POST", "/api/channels/c1/follow-plan", nil)); rec.Code != http.StatusConflict {
+	insertChannel(t, e.db, "00000000-0000-4000-8000-0000000000c1", nil)
+	if rec, _ := e.do(t, artAdmin, httptest.NewRequest("POST", "/api/channels/00000000-0000-4000-8000-0000000000c1/follow-plan", nil)); rec.Code != http.StatusConflict {
 		t.Fatalf("got %d", rec.Code)
 	}
 	if rec, _ := e.do(t, artAdmin, httptest.NewRequest("POST", "/api/channels/nope/follow-plan", nil)); rec.Code != http.StatusNotFound {
 		t.Fatalf("missing channel: %d", rec.Code)
 	}
 	user := &principal.Principal{UserID: "u", AccessAllLibraries: true}
-	if rec, _ := e.do(t, user, httptest.NewRequest("POST", "/api/channels/c1/follow-plan", nil)); rec.Code != http.StatusForbidden {
+	if rec, _ := e.do(t, user, httptest.NewRequest("POST", "/api/channels/00000000-0000-4000-8000-0000000000c1/follow-plan", nil)); rec.Code != http.StatusForbidden {
 		t.Fatalf("non-admin: %d", rec.Code)
 	}
 }
 
 func TestGuideUntilOnList(t *testing.T) {
 	e := newBuilderEnv(t)
-	insertChannel(t, e.db, "c1", nil)
+	insertChannel(t, e.db, "00000000-0000-4000-8000-0000000000c1", nil)
 	end := time.Date(2026, 10, 20, 6, 0, 0, 0, time.UTC)
 	for _, s := range []string{"2026-10-19T00:00:00Z", "2026-10-20T06:00:00Z"} {
-		if _, err := e.db.Exec(`INSERT INTO channel_programs (channel_id, start_at, end_at) VALUES ('c1', '2026-10-18T00:00:00Z', $1)`, s); err != nil {
+		if _, err := e.db.Exec(`INSERT INTO channel_programs (channel_id, start_at, end_at) VALUES ('00000000-0000-4000-8000-0000000000c1', '2026-10-18T00:00:00Z', $1)`, s); err != nil {
 			t.Fatal(err)
 		}
 	}
-	_, c := e.do(t, artAdmin, httptest.NewRequest("GET", "/api/channels/c1", nil))
+	_, c := e.do(t, artAdmin, httptest.NewRequest("GET", "/api/channels/00000000-0000-4000-8000-0000000000c1", nil))
 	if c.GuideUntil == nil || !c.GuideUntil.Equal(end) {
 		t.Fatalf("guide_until %v", c.GuideUntil)
 	}
@@ -147,7 +147,7 @@ func TestGuideUntilOnList(t *testing.T) {
 func TestReorderSwapsAndMarksOnlyTheMoved(t *testing.T) {
 	e := newBuilderEnv(t)
 	now := time.Now().UTC()
-	for i, id := range []string{"a", "b", "c"} {
+	for i, id := range []string{"00000000-0000-4000-8000-0000000000aa", "00000000-0000-4000-8000-0000000000bb", "00000000-0000-4000-8000-0000000000cc"} {
 		if _, err := e.db.Exec(`INSERT INTO channels (id, number, name, slug, mode, created_at, updated_at)
 			VALUES ($1, $2, $1, $1, 'shuffle', $3, $3)`, id, i+1, now); err != nil {
 			t.Fatal(err)
@@ -158,7 +158,7 @@ func TestReorderSwapsAndMarksOnlyTheMoved(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec, _ := e.do(t, artAdmin, jsonReq("POST", "/api/channels/reorder",
-		`[{"id":"a","number":2},{"id":"b","number":1},{"id":"c","number":3}]`))
+		`[{"id":"00000000-0000-4000-8000-0000000000aa","number":2},{"id":"00000000-0000-4000-8000-0000000000bb","number":1},{"id":"00000000-0000-4000-8000-0000000000cc","number":3}]`))
 	if rec.Code != 200 {
 		t.Fatalf("reorder: %d %s", rec.Code, rec.Body.String())
 	}
@@ -176,10 +176,10 @@ func TestReorderSwapsAndMarksOnlyTheMoved(t *testing.T) {
 		_ = rows.Scan(&id, &n, &ed)
 		got[id], edited[id] = n, ed
 	}
-	if got["a"] != 2 || got["b"] != 1 || got["c"] != 3 {
+	if got["00000000-0000-4000-8000-0000000000aa"] != 2 || got["00000000-0000-4000-8000-0000000000bb"] != 1 || got["00000000-0000-4000-8000-0000000000cc"] != 3 {
 		t.Fatalf("numbers %v", got)
 	}
-	if !edited["a"] || !edited["b"] || edited["c"] {
+	if !edited["00000000-0000-4000-8000-0000000000aa"] || !edited["00000000-0000-4000-8000-0000000000bb"] || edited["00000000-0000-4000-8000-0000000000cc"] {
 		t.Fatalf("edited %v", edited)
 	}
 }
@@ -191,8 +191,8 @@ func TestSources(t *testing.T) {
 		`INSERT INTO videos (id, title, filename, duration_sec, deleted_at) VALUES ('v4', 'Gone', 'g.mp4', 60, '2026-01-01')`,
 		`INSERT INTO series (id, name) VALUES ('s1', 'Prophets'), ('s2', 'Other')`,
 		`INSERT INTO series_episodes (series_id, video_id) VALUES ('s1', 'v1'), ('s1', 'v2'), ('s1', 'v4')`,
-		`INSERT INTO collections (id, name) VALUES ('c1', 'Short clips')`,
-		`INSERT INTO collection_items (collection_id, video_id) VALUES ('c1', 'v3')`,
+		`INSERT INTO collections (id, name) VALUES ('00000000-0000-4000-8000-0000000000c1', 'Short clips')`,
+		`INSERT INTO collection_items (collection_id, video_id) VALUES ('00000000-0000-4000-8000-0000000000c1', 'v3')`,
 		`INSERT INTO channel_plans (input_hash, plan) VALUES ('h', '{"lanes":{"kids.weekly":{"name":"Kids weekly","shows":["Prophets"],"hours":2.5,"episode_count":6},"news":{"name":"News","shows":[],"hours":1,"episode_count":2}}}')`,
 	} {
 		if _, err := e.db.Exec(q); err != nil {
