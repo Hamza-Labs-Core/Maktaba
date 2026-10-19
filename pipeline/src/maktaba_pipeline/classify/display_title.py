@@ -61,7 +61,7 @@ __all__ = [
 ]
 
 #: bumps when the rules change what they produce (every library is cleaned again)
-DISPLAY_TITLE_VERSION = 2
+DISPLAY_TITLE_VERSION = 3
 #: bumps when the model's prompt changes (cached answers are asked again)
 LLM_PROMPT_VERSION = 1
 
@@ -386,15 +386,51 @@ _CREDIT = frozenset(fold(
 ).split())  # fmt: skip
 
 
+#: the longest name a presenter credit gives after its honorifics («فضيلة الشيخ عبد العزيز بن
+#: عبد الله بن باز»)
+_CREDIT_NAME_MAX = 6
+_SENTENCE_END = ("؟", "?", "!", "…")
+
+
+def _is_credit(words: Sequence[str]) -> bool:
+    """``words`` is a presenter credit as a whole: one or more honorifics, then a short
+    name and nothing else («الشيخ مصطفى العدوي», «د. محمد حسن عبد الغفار»)."""
+    j = 0
+    while j < len(words) and fold(words[j]) in _CREDIT:
+        j += 1
+    name = [fold(w) for w in words[j:]]
+    return (
+        j > 0
+        and 1 <= len(name) <= _CREDIT_NAME_MAX
+        and all(w and not w.isdigit() and w not in _CREDIT for w in name)
+    )
+
+
 def _drop_credit(seg: str, first: bool) -> str:
-    """A presenter credit goes: in a later part everything from an honorific on («د حسام
-    عقل», «… (1) د. أحمد عبد المنعم»); in the first part a short one at its end."""
+    """A presenter credit goes, never the title's subject that names someone.
+
+    - a later part (after ``|``, `` - ``, ``ـ``…) that is a credit as a whole goes
+      («… | د سيد عطوة», «… ـ الشيخ سعيد الكملي»; a number or bracket before it is
+      allowed and goes with it: «(1) د. أحمد عبد المنعم»);
+    - in the first part only a credit right after the sentence ended («ما حكم …؟ د.
+      محمد حسن عبد الغفار»).
+
+    A part where the honorific is inside the subject stays whole: «سيرة الإمام أحمد»,
+    «مناقب الشيخ ابن باز», «شرح الشيخ الألباني لحديث …», «قصة الشيخ والبحر». A credit
+    that names the channel or presenter goes with the branding (:func:`_strip_phrase`)."""
     words = seg.split()
     for i, w in enumerate(words):
-        # in the title's own first part only a short credit at its end («… د. محمد حسن عبد
-        # الغفار»), never «قصة الشيخ …»
-        if fold(w) in _CREDIT and (not first or (i >= 3 and len(words) - i <= 5)):
-            return " ".join(words[:i])
+        if fold(w) not in _CREDIT:
+            continue
+        if first:
+            if i > 0 and words[i - 1].endswith(_SENTENCE_END) and _is_credit(words[i:]):
+                return " ".join(words[:i])
+            continue
+        # a later part: the credit must be the whole part (only a number or brackets
+        # before it, which go with it)
+        if all(not fold(x) or fold(x).isdigit() for x in words[:i]) and _is_credit(words[i:]):
+            return ""
+        return seg
     return seg
 
 
