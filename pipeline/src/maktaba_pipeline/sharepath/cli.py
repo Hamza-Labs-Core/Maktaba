@@ -303,7 +303,7 @@ async def _auto(args: argparse.Namespace, db: Any) -> int:
         )
         return 0
     if args.what == "restore-backup":
-        bid, n = await bk.restore_backup(db, args.backup)
+        bid, n = await auto.restore(db, args.backup)
         _print(args, {"backup": bid, "restored": n}, f"backup {bid}: {n} values written back")
         return 0
     if args.what == "auto":
