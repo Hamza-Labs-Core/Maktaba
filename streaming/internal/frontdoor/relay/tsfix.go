@@ -439,6 +439,14 @@ func (r *Retimer) packet(p []byte) error {
 	if pusi {
 		pts, dts, hasDTS, okT := pesTimes(p)
 		if okT {
+			if _, seen := r.unwrapPTS[pid]; !seen && pid != r.srcVideo {
+				// unwrap a new audio PID near the video's clock, not from its own
+				// first value: one on the other side of a 33-bit wrap from the
+				// joined keyframe would land 2^33 off (all its audio dropped)
+				if v, ok := r.unwrapPTS[r.srcVideo]; ok {
+					r.unwrapPTS[pid] = v
+				}
+			}
 			up := unwrap(r.unwrapPTS, pid, dts)
 			ptsDelta := (pts - dts) % ptsWrap
 			if ptsDelta > ptsHalf {

@@ -449,3 +449,32 @@ func TestRelayKickBeforeRun(t *testing.T) {
 	cancel()
 	<-done
 }
+
+// Post-merge review: a new source whose 33-bit clock wraps between its first
+// video keyframe and its first audio packet keeps its audio. Each PID used to be
+// unwrapped from its own first value, so the audio landed 2^33 behind the video
+// and every audio PES of the source was dropped as "before the last audio".
+func TestRetimerSwitchAcrossWrapKeepsAudio(t *testing.T) {
+	r := NewRetimer()
+	a := newGen(0x1000, 0x100, 0x101, 900_000)
+	o, err := r.Process(a.frames(60))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := append([]byte(nil), o...)
+	before := len(readTrack(t, out).dts[0x101])
+	r.Switch()
+	b := newGen(0x1000, 0x100, 0x101, ptsWrap-3000) // the IDR just before the wrap
+	b.apts = ptsWrap + 100                           // its audio just after it
+	o, err = r.Process(b.frames(60))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out = append(out, o...)
+	tr := readTrack(t, out)
+	if got := len(tr.dts[0x101]) - before; got < 50 {
+		t.Fatalf("only %d audio packets of the new source reached the output", got)
+	}
+	monotonic(t, "video", tr.dts[0x100], 6000)
+	monotonic(t, "audio", tr.dts[0x101], 12000)
+}
