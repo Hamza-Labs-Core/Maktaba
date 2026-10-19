@@ -155,9 +155,9 @@ func runSlot(args []string) error {
 	go func() {
 		logger.Info("tv slot listening", "addr", *listen, "kind", "public", "host_id", ident.ID,
 			"event", "tv_slot_started")
-		errCh <- publicSrv.ListenAndServe()
+		errCh <- serveOn(publicSrv)
 	}()
-	go func() { errCh <- adminSrv.ListenAndServe() }()
+	go func() { errCh <- serveOn(adminSrv) }()
 
 	var runErr error
 	select {
