@@ -3557,6 +3557,81 @@
    ]
   },
   {
+   "key": "tv_cluster",
+   "title": "Maktaba TV machines",
+   "what": "which machines encode channels and how the home spreads them; one encode per channel",
+   "fields": [
+    {
+     "name": "nodes_stream",
+     "kind": "bool",
+     "group": "Streaming machines",
+     "label": "Other machines may stream",
+     "help": "Machines that joined this home may encode channels too, so more channels can be on air at once. Each machine also needs \"Stream on this machine\" on the Live TV page. Off: the home encodes every channel.",
+     "default": false
+    },
+    {
+     "name": "policy",
+     "kind": "str",
+     "group": "Placement",
+     "label": "Where channels go",
+     "help": "home_first: the home until it is full (see below), then the machine with the most room. balanced: always the machine with the most room. A channel on air is never moved to even out the load.",
+     "default": "home_first",
+     "choices": [
+      "home_first",
+      "balanced"
+     ]
+    },
+    {
+     "name": "spill_at",
+     "kind": "int",
+     "group": "Placement",
+     "label": "Home full at (%)",
+     "help": "home_first: the share of the home's channels in use before other machines take new channels.",
+     "default": 100,
+     "minimum": 1,
+     "maximum": 100
+    },
+    {
+     "name": "hls_mode",
+     "kind": "str",
+     "group": "Placement",
+     "label": "Web video path",
+     "help": "proxy: the home forwards every piece of video (one address, works everywhere). redirect: the browser fetches the video pieces from the encoding machine itself; only when every viewer can reach every machine.",
+     "default": "proxy",
+     "choices": [
+      "proxy",
+      "redirect"
+     ]
+    },
+    {
+     "name": "failover",
+     "kind": "bool",
+     "group": "Placement",
+     "label": "Move channels off a machine that stops",
+     "help": "A channel being watched on a machine that stops answering continues on another one at the same point of its schedule.",
+     "default": true
+    },
+    {
+     "name": "dead_after_seconds",
+     "kind": "int",
+     "group": "Placement",
+     "label": "Machine down after (seconds)",
+     "help": "Without a heartbeat for this long a machine counts as down.",
+     "default": 15,
+     "minimum": 5,
+     "maximum": 300
+    },
+    {
+     "name": "pins",
+     "kind": "map",
+     "group": "Placement",
+     "label": "Preferred machine per channel",
+     "help": "Channel (its slug) -> the machine that should encode it while it is up and has room. Set it on the channel's page.",
+     "default": {}
+    }
+   ]
+  },
+  {
    "key": "tv_strip",
    "title": "Channel strip",
    "what": "the news-style bar across a channel's picture: what is on now and next, and a clock rotating between cities",

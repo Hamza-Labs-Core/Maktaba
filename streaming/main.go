@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -33,13 +34,11 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/auth"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/cache"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/capability"
-	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/channel"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/grpcsrv"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/handlers"
-	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/hdhr"
-	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pathmap"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/probe"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/procattr"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/server"
@@ -154,12 +153,35 @@ func runServe() error {
 	// otherwise we fall back to the in-memory FakeBackend so a local
 	// `serve` against no DB still answers liveness. The pool is shared
 	// across the public and gRPC surfaces and closed on shutdown.
+	// Node mode (Epic 32.1): a joined machine streams from its Epic 31 node config;
+	// its database credential is the one it got when it joined.
+	node, nodeMode := cluster.NodeModeFromOS(runtime.GOOS)
+	if nodeMode && os.Getenv("DATABASE_URL") == "" && node.DatabaseURL != "" {
+		_ = os.Setenv("DATABASE_URL", node.DatabaseURL)
+	}
+	if nodeMode {
+		logger.Info("streaming: cluster node mode", "node_id", node.NodeID, "event", "tv_node_mode")
+	}
+
 	backendCtx, backendCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	probeBackend, transcripts, pool, closeStores := buildProbeStores(backendCtx, logger)
 	backendCancel()
 	defer closeStores()
 
-	publicHandler := buildPublicHandler(logger, probeBackend, transcripts, pool)
+	var publicHandler http.Handler
+	if nodeMode {
+		// Epic 32.1: a cluster node serves only the signed channel routes the home's
+		// front door forwards (no HDHomeRun, guide or video sessions; no SSDP).
+		if pool == nil {
+			return errors.New("streaming node: the home's database is unreachable")
+		}
+		cfg := config.Load()
+		layout := cache.New(cfg.Cache.Root)
+		_ = layout.EnsureTiers()
+		publicHandler = buildNodeTV(logger, cfg, pool, layout, node)
+	} else {
+		publicHandler = buildPublicHandler(logger, probeBackend, transcripts, pool)
+	}
 
 	publicSrv := &http.Server{
 		Addr:              publicAddr,
@@ -188,9 +210,17 @@ func runServe() error {
 
 	// gRPC surface for the API (Story 7.18 / 8.8): JSON-codec service
 	// matching the api streaming client's wire convention.
-	grpcServer := grpcsrv.NewGRPCServer(buildGRPCServer(logger, probeBackend))
-	grpcLis, grpcErr := net.Listen("tcp", grpcAddr)
-	if grpcErr != nil {
+	// A cluster node has no video sessions (Epic 32.1): no gRPC surface.
+	var grpcServer *grpc.Server
+	var grpcLis net.Listener
+	grpcErr := errors.New("node mode")
+	if !nodeMode {
+		grpcServer = grpcsrv.NewGRPCServer(buildGRPCServer(logger, probeBackend))
+		grpcLis, grpcErr = net.Listen("tcp", grpcAddr)
+	}
+	if nodeMode {
+		logger.Info("grpc surface off on a cluster node", "event", "grpc_node_off")
+	} else if grpcErr != nil {
 		logger.Warn("grpc listen failed; grpc surface disabled",
 			"addr", grpcAddr, "err", grpcErr.Error(), "event", "grpc_listen_failed")
 	} else {
@@ -386,108 +416,7 @@ func buildPublicHandler(logger *slog.Logger, backend probe.Backend, transcripts 
 	// channel_programs); the no-DB local `serve` skips them entirely.
 	var extraMounts []func(chi.Router)
 	if pool != nil {
-		hostname, _ := os.Hostname()
-		chRepo := channel.NewPGRepo(pool, hostname)
-		// The Maktaba TV settings (rules tv / tv_output in app_settings, over
-		// today's MAKTABA_CHANNEL_* env): read at each station start, so a
-		// change applies the next time a channel goes on air.
-		tvSettings := channel.NewPGSettings(pool, logger)
-		encoders := &channel.EncoderResolver{FFmpeg: cfg.FFmpeg.Binary}
-		out := tvSettings.Output(context.Background())
-		enc := encoders.Resolve(context.Background(), out.Encoder)
-		ident := channel.LocalIdentity(context.Background(), pool, hostname, os.Getenv("MAKTABA_PUBLIC_BASE_URL"))
-		logger.Info("channels: output profile", "encoder", enc.Name, "preference", out.Encoder,
-			"vt_software", enc.VTSoftware, "width", out.Width, "height", out.Height, "fps", out.FPS,
-			"audio", out.AudioCodec, "nvenc_max", out.NVENCMax, "vt_max", out.VTMax,
-			"max_active", out.EffectiveMaxActive(enc.Name), "role", ident.Role, "host_id", ident.ID,
-			"event", "channel_profile")
-		ytdlp := os.Getenv("MAKTABA_YTDLP")
-		start := channel.SettingsStarter(channel.StationConfig{
-			FFmpeg:   cfg.FFmpeg.Binary,
-			Repo:     chRepo,
-			Prober:   channel.NewFFprobe(cfg.FFmpeg.ProbeBinary),
-			Resolver: channel.NewYtDlp(ytdlp),
-			PathMap:  pathmap.FromEnv(),
-			FontFile: channel.FindFont(),
-			Logger:   logger,
-			Gate:     channel.DefaultEncoderGate(),
-			VTGate:   channel.DefaultVTGate(),
-		}, tvSettings, encoders)
-		engine := channel.NewEngine(chRepo, layout, start, out.EffectiveMaxActive(enc.Name), time.Now)
-		engine.Host = hostname
-		engine.Identity = ident
-		engine.Limits = func(ctx context.Context) (int, time.Duration) {
-			o := tvSettings.Output(ctx)
-			return o.EffectiveMaxActive(encoders.Resolve(ctx, o.Encoder).Name), o.WarmGrace
-		}
-		engine.Status = func(ctx context.Context) channel.HostStatus {
-			return channel.HostStatus{
-				Encoder:   encoders.Resolve(ctx, tvSettings.Output(ctx).Encoder).Name,
-				NVENCFree: channel.DefaultEncoderGate().Free(),
-				VTFree:    channel.DefaultVTGate().Free(),
-			}
-		}
-		// Stations live in memory: rows this host left before a restart
-		// describe nothing on air.
-		clearCtx, clearCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if n, err := engine.ClearStaleRuntime(clearCtx); err != nil {
-			logger.Warn("channels: clearing stale runtime rows failed", "err", err.Error(), "event", "channel_runtime_clear_failed")
-		} else if n > 0 {
-			logger.Info("channels: cleared stale runtime rows", "rows", n, "event", "channel_runtime_cleared")
-		}
-		clearCancel()
-		chHandler := &channel.HTTPHandler{Engine: engine}
-		extraMounts = append(extraMounts, chHandler.Mount)
-		watchChannels(engine, pool)
-
-		// Reap idle channel encoders on the same cadence as the session
-		// reaper (warm grace + zero viewers → teardown), and keep each
-		// running channel's channel_runtime row current (viewers, encoder,
-		// restarts, NVENC fallbacks) for the admin "on air" list.
-		// The heartbeat (every 10 s) is what keeps this host's rows live
-		// cluster-wide: a row older than ~45 s no longer owns its channel.
-		go func() {
-			engine.SyncRuntime(context.Background())
-			t := time.NewTicker(channel.HeartbeatInterval)
-			defer t.Stop()
-			for i := 1; ; i++ {
-				<-t.C
-				if i%3 == 0 {
-					engine.ReapIdle(context.Background())
-				}
-				engine.SyncRuntime(context.Background())
-			}
-		}()
-
-		// HDHomeRun emulation (Story 27.5) — off until the operator
-		// enables hdhr_device.enabled; the handler 404s and SSDP stays
-		// silent while disabled.
-		hdhrRepo := hdhr.NewPGRepo(pool)
-		hdhrHandler := hdhr.New(hdhrRepo, engine)
-		hdhrHandler.PublicBase = os.Getenv("MAKTABA_PUBLIC_BASE_URL")
-		extraMounts = append(extraMounts, hdhrHandler.Mount)
-
-		// Plex/IPTV guide + playlist, unauthenticated on this port
-		// (/xmltv.xml, /lineup.m3u, /channel/{id}/logo).
-		guideHandler := &hdhr.GuideHandler{Repo: hdhrRepo, PathMap: pathmap.FromEnv(),
-			PublicBase: os.Getenv("MAKTABA_PUBLIC_BASE_URL"), WebBase: os.Getenv("MAKTABA_PUBLIC_WEB_BASE"),
-			AheadFunc: func(ctx context.Context) time.Duration {
-				return time.Duration(tvSettings.TV(ctx).HorizonDays) * 24 * time.Hour
-			}}
-		extraMounts = append(extraMounts, guideHandler.Mount)
-
-		// SSDP discovery follows hdhr_device.enabled live (polled). Only
-		// the home advertises the HDHomeRun device (it is the front door
-		// for the tuner, XMLTV and M3U); a node never does, so two
-		// machines never announce the same DeviceID.
-		if ident.IsHome() {
-			ssdp := &hdhr.SSDPController{Repo: hdhrRepo, Logger: logger,
-				LocationBase: os.Getenv("MAKTABA_PUBLIC_BASE_URL")}
-			go ssdp.Run(context.Background())
-		} else {
-			logger.Info("hdhr: this host is a cluster node; the home advertises the tuner",
-				"event", "hdhr_ssdp_node")
-		}
+		extraMounts = buildHomeTV(logger, cfg, pool, layout)
 	}
 
 	return server.New(server.Deps{

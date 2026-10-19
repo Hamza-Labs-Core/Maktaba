@@ -16,6 +16,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/channels"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/guide"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tv"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tvcluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 )
 
@@ -48,4 +49,6 @@ func MountP27(r chi.Router, d P27Deps) {
 	chh.MountSchedule(r) // Story 27.2 — schedule read + regenerate trigger
 	(&guide.Handler{DB: d.DB}).Mount(r)
 	tvh.Mount(r)
+	// Epic 32: streaming hosts and channels on air across the cluster (admin)
+	tvcluster.New(d.DB).Mount(r)
 }

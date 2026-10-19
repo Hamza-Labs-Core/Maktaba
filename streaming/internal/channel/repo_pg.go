@@ -21,6 +21,8 @@ import (
 type PGRepo struct {
 	pool *pgxpool.Pool
 	host string
+	// HostID, when set, scopes ClearRuntime to this host's row.
+	HostID string
 
 	mu            sync.Mutex
 	hasSourceURL  bool
@@ -263,6 +265,13 @@ func (r *PGRepo) ClearHostRuntime(ctx context.Context, hostID, host string) (int
 }
 
 func (r *PGRepo) ClearRuntime(ctx context.Context, channelID uuid.UUID) error {
+	if r.HostID != "" && r.runtimeStatsColumns(ctx) {
+		// only this host's row: a station stopped because its channel moved must not
+		// delete the row the new host already wrote (one encode per channel)
+		_, err := r.pool.Exec(ctx, `DELETE FROM channel_runtime WHERE channel_id = $1
+			AND (host_id IS NULL OR host_id = $2)`, channelID, r.HostID)
+		return err
+	}
 	_, err := r.pool.Exec(ctx, `DELETE FROM channel_runtime WHERE channel_id = $1`, channelID)
 	return err
 }

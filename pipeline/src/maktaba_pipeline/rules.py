@@ -35,6 +35,7 @@ from .schedule.tv_settings import (
     ChannelAuditConfig,
     DizqueExportConfig,
     ExactDatesConfig,
+    MaktabaTvClusterConfig,
     MaktabaTvConfig,
     MaktabaTvOutputConfig,
     PlexLiveConfig,
@@ -80,6 +81,8 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
     "tv_output": (MaktabaTvOutputConfig, "Maktaba TV output", "how a channel on air is "
                   "encoded: encoder, picture, bitrates, how many channels and NVENC "
                   "sessions at once"),
+    "tv_cluster": (MaktabaTvClusterConfig, "Maktaba TV machines", "which machines encode "
+                   "channels and how the home spreads them; one encode per channel"),
     "tv_strip": (TvStripConfig, "Channel strip", "the news-style bar across a channel's "
                  "picture: what is on now and next, and a clock rotating between cities"),
     "display_titles": (DisplayTitleConfig, "Display titles", "short, clean on-air titles "
