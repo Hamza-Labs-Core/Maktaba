@@ -35,6 +35,7 @@ class Maktaba < Formula
     bin.install "maktaba-server"
     bin.install "maktaba-api"
     bin.install "maktaba-streaming"
+    bin.install "maktaba-launcher" if File.exist?("maktaba-launcher")
 
     # Seed a default config the first time only; never clobber an edited one.
     (etc/"maktaba").mkpath
@@ -60,6 +61,14 @@ class Maktaba < Formula
         brew services start maktaba
 
       Web UI: http://localhost:8088
+
+      This install is managed by Homebrew: automatic updates are off for it
+      (brew owns these files). To let Maktaba update itself (and a cluster
+      roll out to this Mac), convert it to a self-managed install:
+        brew services stop maktaba
+        maktaba-server setup --self-managed
+      which moves it to ~/Library/Application Support/Maktaba/server and
+      installs a LaunchAgent that runs maktaba-launcher.
     EOS
   end
 

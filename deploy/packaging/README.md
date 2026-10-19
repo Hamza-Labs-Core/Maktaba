@@ -47,14 +47,49 @@ Linux — the systemd unit.
 
 ## Install paths (.deb / .rpm)
 
+Side-by-side layout (Epic 35, story 35.2): the package owns the launcher, the
+updater owns the releases.
+
 ```
-/usr/bin/maktaba-server                       unified binary
-/usr/bin/maktaba-api, /usr/bin/maktaba-streaming   forked role binaries
-/usr/lib/systemd/system/maktaba-server.service     systemd unit
+/usr/bin/maktaba-launcher                     what the service runs (package-owned)
+/usr/bin/maktaba-server                       CLI wrapper: runs the current release
+/usr/lib/maktaba/release/                     the binaries this package shipped
+/var/lib/maktaba/bin/releases/<version>/      releases (postinstall copies the package's here)
+/var/lib/maktaba/{current,previous,pending,watermark}   pointer files
+/var/lib/maktaba/updates/launcher.log         launcher events (start, restart, rollback)
+/usr/lib/systemd/system/maktaba-server.service     systemd unit (ExecStart = the launcher)
 /etc/maktaba/server.toml                      config (conffile — survives upgrades)
 /var/lib/maktaba, /var/log/maktaba            state + logs (owned by maktaba user)
 /usr/share/doc/maktaba-server/                README + LICENSE
 ```
+
+postinstall writes `current` only when the package is newer than `watermark`
+(a package older than what the updater installed only refreshes the
+launcher). `maktaba-launcher --status` shows current, previous, pending and
+the last rollback.
+
+## Self-managed installs (archive, manual, Homebrew, Windows)
+
+```sh
+maktaba-server setup --self-managed            # copy the running binaries into the layout, write the service
+maktaba-server setup --self-managed --dry-run  # print what it would do
+maktaba-server setup --service [--user|--system]   # only (re)write the OS service
+```
+
+| OS | Default root | Service |
+|---|---|---|
+| Linux (root) | `/var/lib/maktaba` | systemd system unit |
+| Linux (user) | `~/.local/share/maktaba` | systemd user unit + linger |
+| macOS | `~/Library/Application Support/Maktaba/server` | LaunchAgent (`--system`: LaunchDaemon, `/usr/local/var/maktaba`) |
+| Windows | `%LOCALAPPDATA%\Maktaba` | logon task "Maktaba" (`--system`: Windows service, `%ProgramData%\Maktaba`) |
+
+The conversion copies (does not move) `maktaba-server`, `maktaba-api`,
+`maktaba-streaming` and `maktaba-launcher` into `bin/releases/<version>/`,
+records their digests in `.verified` (`identity: "migrated"`), writes
+`current` and `watermark`, puts the launcher at the root and rewrites the
+service. `server.toml`, `secrets.key` and `node.json` stay where they are.
+Homebrew installs are not converted automatically (brew owns the Cellar);
+stop brew's service first (`brew services stop maktaba`).
 
 ## Installing
 

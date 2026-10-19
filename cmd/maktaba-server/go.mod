@@ -14,6 +14,7 @@ require (
 )
 
 require (
+	github.com/Hamza-Labs-Core/Maktaba/shared/go/layout v0.0.0
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
@@ -98,5 +99,7 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
+
+replace github.com/Hamza-Labs-Core/Maktaba/shared/go/layout => ../../shared/go/layout
 
 replace github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify => ../../shared/go/releaseverify

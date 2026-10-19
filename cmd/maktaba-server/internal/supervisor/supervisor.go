@@ -72,6 +72,21 @@ type Options struct {
 	// executable) for sibling maktaba-api / maktaba-streaming binaries.
 	// Empty means "next to me only".
 	BinDir string
+	// ReleaseDir is the current release's directory when the launcher
+	// started us (MAKTABA_RELEASE_DIR = <install>/bin/releases/<v>/, Epic 35
+	// story 35.2 AC2): every role binary is resolved there and only there —
+	// never from PATH or next to the launcher — and the pipeline runs from
+	// the release's venv when it has one.
+	ReleaseDir string
+}
+
+// resolve finds a role binary: in ReleaseDir only when set, else the
+// classic order of resolveBinary.
+func (o Options) resolve(name, overrideEnv string) (string, error) {
+	if o.ReleaseDir != "" {
+		return resolveInRelease(name, overrideEnv, o.ReleaseDir)
+	}
+	return resolveBinary(name, overrideEnv, o.BinDir)
 }
 
 // ErrBinaryNotFound is returned when a role's executable can't be
@@ -90,21 +105,21 @@ func Build(role Role, opts Options) (Process, error) {
 	var cmd *exec.Cmd
 	switch role {
 	case RoleAPI:
-		bin, err := resolveBinary("maktaba-api", "MAKTABA_API_BIN", opts.BinDir)
+		bin, err := opts.resolve("maktaba-api", "MAKTABA_API_BIN")
 		if err != nil {
 			return Process{}, err
 		}
 		cmd = exec.Command(bin, "serve")
 
 	case RoleStreaming:
-		bin, err := resolveBinary("maktaba-streaming", "MAKTABA_STREAMING_BIN", opts.BinDir)
+		bin, err := opts.resolve("maktaba-streaming", "MAKTABA_STREAMING_BIN")
 		if err != nil {
 			return Process{}, err
 		}
 		cmd = exec.Command(bin, "serve")
 
 	case RolePipeline:
-		cmd = exec.Command(pythonExecutable(), "-m", "maktaba_pipeline")
+		cmd = exec.Command(pythonExecutable(opts.ReleaseDir), "-m", "maktaba_pipeline")
 
 	default:
 		return Process{}, fmt.Errorf("unknown role %q", role)
@@ -203,10 +218,40 @@ func isExecutable(p string) bool {
 	return info.Mode()&0o111 != 0
 }
 
-// pythonExecutable honours $MAKTABA_PYTHON, then falls back to python3.
-func pythonExecutable() string {
+// resolveInRelease resolves a binary inside the launcher's release
+// directory only (the explicit override env var still wins: an operator's
+// choice, never a request's).
+func resolveInRelease(name, overrideEnv, releaseDir string) (string, error) {
+	if p := os.Getenv(overrideEnv); p != "" {
+		if isExecutable(p) {
+			return p, nil
+		}
+		return "", fmt.Errorf("%w: %s=%q is not an executable file", ErrBinaryNotFound, overrideEnv, p)
+	}
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	p := filepath.Join(releaseDir, name)
+	if isExecutable(p) {
+		return p, nil
+	}
+	return "", fmt.Errorf("%w: %q is not in the release directory %s", ErrBinaryNotFound, name, releaseDir)
+}
+
+// pythonExecutable honours $MAKTABA_PYTHON, then the release's pipeline
+// environment (<release>/venv, design §2.1), then falls back to python3.
+func pythonExecutable(releaseDir string) string {
 	if p := os.Getenv("MAKTABA_PYTHON"); p != "" {
 		return p
+	}
+	if releaseDir != "" {
+		venvPy := filepath.Join(releaseDir, "venv", "bin", "python")
+		if runtime.GOOS == "windows" {
+			venvPy = filepath.Join(releaseDir, "venv", "Scripts", "python.exe")
+		}
+		if isExecutable(venvPy) {
+			return venvPy
+		}
 	}
 	return "python3"
 }
