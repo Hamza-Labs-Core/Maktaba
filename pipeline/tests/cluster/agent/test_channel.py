@@ -427,6 +427,29 @@ async def test_hub_routes_an_llm_request_here() -> None:
     assert [r["error"] for r in records if r["id"] == "r4"] == ["cancelled"]
 
 
+async def test_a_runtime_that_dies_mid_stream_is_answered() -> None:
+    """Whatever fails (here the runtime closes inside a chunk: IncompleteReadError), the
+    hub gets llm.done with runtime_error, and the runtime's slot is free again."""
+    hub, key = node_hub()
+    with fake_runtime(FakeRuntimeState(die_after=1)) as (rt_url, _):
+        local = LocalLLM(LLMRuntimes(env={"MAKTABA_OLLAMA_URL": rt_url}))
+        async with running_hub(hub):
+            agent = make_agent(hub, node_key=key, llm=local)
+            async with running(agent):
+                s = await hub.wait_session(1)
+                await s.next("llm.models", lambda f: bool(f["runtimes"]))
+                req = {"t": "llm.request", "id": "d1", "model": "llama3", "op": "chat",
+                       "body": {"messages": []}, "stream": True}  # fmt: skip
+                await s.send(req)
+                done = await s.next("llm.done", lambda f: f["id"] == "d1")
+                assert done["error"]["code"] == "runtime_error"
+                assert "IncompleteReadError" in done["error"]["detail"]
+                assert local.runtimes.stats()["in_flight"] == 0
+                await s.send({**req, "id": "d2"})  # the slot is free: not no_capacity
+                again = await s.next("llm.done", lambda f: f["id"] == "d2")
+                assert again["error"]["code"] == "runtime_error"
+
+
 async def test_the_door_asks_the_cluster() -> None:
     hub, key = node_hub()
 
@@ -504,9 +527,10 @@ async def test_files_continue_while_the_home_is_down_and_a_final_frame(tmp_path:
         port = hub.port
     hub.port = port  # nothing listens there any more
     shutdown = asyncio.Event()
-    agent = make_agent(hub, node_key=key, files=files, collector=collector, metrics_every=0.05)
+    agent = make_agent(hub, node_key=key, files=files, collector=collector, metrics_every=0.05,
+                       metrics_file_sec=0.1)  # fmt: skip
     async with running(agent, shutdown):
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.35)
         assert not agent.connected and agent.last_error
         shutdown.set()  # the worker stops: one last frame, final values
         await asyncio.sleep(0.2)
@@ -514,8 +538,33 @@ async def test_files_continue_while_the_home_is_down_and_a_final_frame(tmp_path:
     path = next((tmp_path / "10.1.1.1" / "metrics").glob("*/w.jsonl"))
     lines = [json.loads(x) for x in path.read_text().splitlines()]
     assert len(lines) >= 3 and "system" in lines[0]
+    assert len(lines) <= 6  # every 0.1 s, not every 0.05 s frame
     assert lines[-1]["final"] is True and lines[-1]["health"] == {"stt.audio_lost:x": 3.0}
     assert all(x["health"] == {"stt.audio_lost:x": 1.0} for x in lines[:-1])
+
+
+async def test_the_metrics_file_gets_a_line_every_10_s_the_channel_every_frame(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("MAKTABA_CLUSTER_METRICS_FILE_SEC", raising=False)
+    hub, key = node_hub()
+    files = ClusterFiles(tmp_path, "10.1.1.2", "w", fallback_dir=tmp_path / "l")
+    collector = MetricsCollector(files_status=files.status)
+    shutdown = asyncio.Event()
+    async with running_hub(hub):
+        agent = make_agent(hub, node_key=key, files=files, collector=collector, metrics_every=0.05)
+        assert agent.metrics_file_sec == 10.0
+        async with running(agent, shutdown):
+            s = await hub.wait_session(1)
+            await until(lambda: len([f for f in s.frames if f["t"] == "metrics"]) >= 5)
+            shutdown.set()
+            await s.next("metrics", lambda f: bool(f.get("final")))
+    files.flush()
+    path = next((tmp_path / "10.1.1.2" / "metrics").glob("*/w.jsonl"))
+    lines = [json.loads(x) for x in path.read_text().splitlines()]
+    assert len(lines) == 2 and lines[-1]["final"] is True  # the first frame, then the final
+    monkeypatch.setenv("MAKTABA_CLUSTER_METRICS_FILE_SEC", "30")
+    assert make_agent(hub, node_key=key).metrics_file_sec == 30.0
 
 
 async def test_the_welcome_names_the_folder_and_the_share(tmp_path: Path) -> None:

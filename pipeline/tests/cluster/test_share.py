@@ -1,7 +1,9 @@
-"""Where the cluster files live (design-agent.md section 4)."""
+"""Where the cluster files live (design-agent.md section 7): the share root follows the
+hub's rule (``api/internal/cluster/agent/location.go``)."""
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -9,36 +11,45 @@ import pytest
 
 from maktaba_pipeline.cluster import share
 from maktaba_pipeline.engine.paths import PathMap
+from maktaba_pipeline.engine.sql import dumps, is_pg, now, to_ts
+from maktaba_pipeline.runtime import Database
+from tests.engine.factory import make_library, make_video
 
-pytestmark = pytest.mark.unit
 
-
+@pytest.mark.unit
 def test_common_root() -> None:
     assert share.common_root(["Y:/Videos/Kids", "Y:/Videos/Docs/x"]) == "Y:/Videos"
     assert share.common_root(["/volume1/media/a", "/volume1/media/b"]) == "/volume1/media"
     assert share.common_root(["y:/videos/a", "Y:/Videos/b"]) == "y:/videos"
-    assert share.common_root(["//nas/share/a", "//nas/share/b"]) == "//nas/share"
+    assert share.common_root(["//nas/share/x/a", "//nas/share/x/b"]) == "//nas/share/x"
+    assert share.common_root(["//nas/share/a", "//nas/share/b"]) is None  # the share itself
     assert share.common_root(["/volume1/a", "/volume2/b"]) is None  # only "/"
     assert share.common_root(["Y:/a", "O:/b"]) is None
     assert share.common_root(["Y:/a", "Y:/b"]) is None  # only the drive
-    assert share.common_root(["//nas/a", "//nas/b"]) is None  # a UNC host is no share
-    assert share.common_root(["Y:\\Videos\\Kids"]) == "Y:/Videos/Kids"
+    assert share.common_root(["Y:\\Videos\\Kids\\"]) == "Y:/Videos/Kids"
     assert share.common_root([]) is None
+    assert share.split_db_path("//nas/share/a/./b/") == ("//nas/share/", ["a", "b"])
 
 
+@pytest.mark.unit
 def test_share_root_rules() -> None:
-    libs: list[tuple[list[str], int]] = [(["Y:/Media/Kids"], 10), (["Y:/Media/Docs"], 5)]
-    assert share.share_root_from(libs, env={}) == "Y:/Media"
-    # nothing in common but the filesystem root: the busiest library's root
-    libs = [(["Y:/Kids"], 10), (["O:/Docs", "O:/More"], 500)]
-    # its own roots share only the drive: its first root
-    assert share.share_root_from(libs, env={}) == "O:/Docs"
-    libs = [(["Y:/Kids"], 10), (["O:/Docs/A"], 500)]
-    assert share.share_root_from(libs, env={}) == "O:/Docs/A"
-    assert share.share_root_from(libs, env={"MAKTABA_SHARE_ROOT": "Z:\\Share\\"}) == "Z:/Share"
+    rows = [("l1", "Y:/Media/Kids", 10), ("l2", "Y:/Media/Docs", 5)]
+    assert share.share_root_from(rows, env={}) == "Y:/Media"
+    # nothing in common but a filesystem root: the busiest library, its roots' common dir
+    rows = [("l1", "Y:/Kids", 10), ("l2", "O:/Docs/A", 500), ("l2", "O:/Docs/B", 500)]
+    assert share.share_root_from(rows, env={}) == "O:/Docs"
+    # ... else its first root (sorted)
+    rows = [("l1", "Y:/Kids", 10), ("l2", "O:/Zed", 500), ("l2", "O:/Alpha", 500)]
+    assert share.share_root_from(rows, env={}) == "O:/Alpha"
+    # ties: the smallest library id
+    rows = [("b", "Y:/B", 7), ("a", "O:/A", 7)]
+    assert share.share_root_from(rows, env={}) == "O:/A"
+    env = {"MAKTABA_SHARE_ROOT": "Z:\\Share\\"}
+    assert share.share_root_from(rows, env=env) == "Z:/Share"
     assert share.share_root_from([], env={}) is None
 
 
+@pytest.mark.unit
 def test_cluster_dir_through_the_path_map() -> None:
     pm = PathMap.parse("Y:/=/Volumes/Y")
     assert share.cluster_dir_for("Y:/Media", pm) == Path("/Volumes/Y/Media/maktaba/cluster")
@@ -46,20 +57,22 @@ def test_cluster_dir_through_the_path_map() -> None:
 
 
 class FakeDB:
-    def __init__(self, libs: list[dict[str, Any]], counts: list[dict[str, Any]]) -> None:
-        self.libs = libs
-        self.counts = counts
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self.rows = rows
 
     async def fetch(self, sql: str, *args: Any) -> list[dict[str, Any]]:
-        return self.libs if "FROM libraries" in sql else self.counts
+        assert "library_roots" in sql
+        return self.rows
 
 
 @pytest.mark.integration  # an event loop opens a socket pair
 @pytest.mark.asyncio
 async def test_resolve_cluster_dir() -> None:
     db = FakeDB(
-        [{"id": "l1", "roots": '["Y:/Media/A"]'}, {"id": "l2", "roots": ["Y:/Media/B"]}],
-        [{"library_id": "l1", "n": 3}],
+        [
+            {"library_id": "l1", "path": "Y:/Media/A", "videos": 3},
+            {"library_id": "l2", "path": "Y:/Media/B", "videos": 0},
+        ]
     )
     pm = PathMap.parse("Y:/=/mnt/y")
     found, how = await share.resolve_cluster_dir(db, pm, env={})
@@ -68,12 +81,43 @@ async def test_resolve_cluster_dir() -> None:
     assert found == Path("/tmp/c") and how == "MAKTABA_CLUSTER_DIR"
     found, how = await share.resolve_cluster_dir(None, pm, env={})
     assert found is None
-    found, how = await share.resolve_cluster_dir(FakeDB([], []), pm, env={})
+    found, how = await share.resolve_cluster_dir(FakeDB([]), pm, env={})
     assert found is None and how == "no library roots"
 
 
-def test_folder_name_and_key_path() -> None:
-    assert share.folder_name("fe80::1%en0") == "fe80--1"
-    assert share.folder_name("192.168.1.2") == "192.168.1.2"
-    assert share.home_key_path({"MAKTABA_CLUSTER_KEY_PATH": "/k/key"}) == Path("/k/key")
-    assert share.home_key_path({}).parts[-3:] == (".maktaba", "cluster", "home-agent.key")
+async def _root(db: Database, lib: uuid.UUID, path: str) -> None:
+    await db.execute(
+        "INSERT INTO library_roots (id, library_id, path, path_canonical) VALUES ($1,$2,$3,$4)",
+        str(uuid.uuid4()),
+        str(lib),
+        path,
+        path.lower(),
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_roots_come_from_library_roots_as_the_hub_reads_them(db: Database) -> None:
+    """The API edits roots in ``library_roots`` only; ``libraries.roots`` is the old copy."""
+    a, b, gone = await make_library(db), await make_library(db), await make_library(db)
+    old = ["/old/place"]
+    for lib in (a, b):
+        await db.execute(
+            "UPDATE libraries SET roots = $2 WHERE id = $1",
+            str(lib),
+            old if is_pg(db) else dumps(old),
+        )
+    await _root(db, a, "/Volumes/Originals/Channels")
+    await _root(db, b, "/Volumes/Originals/Courses")
+    await _root(db, gone, "/elsewhere/x")
+    await db.execute(
+        "UPDATE libraries SET deleted_at = $2 WHERE id = $1", str(gone), to_ts(db, now())
+    )
+    await make_video(db, a)
+    rows = await share.load_library_roots(db)
+    assert sorted(p for _, p, _ in rows) == [
+        "/Volumes/Originals/Channels",
+        "/Volumes/Originals/Courses",
+    ]
+    assert {lib: n for lib, _, n in rows}[str(a)] == 1
+    found, _ = await share.resolve_cluster_dir(db, PathMap(), env={})
+    assert found == Path("/Volumes/Originals/maktaba/cluster")  # the hub's share root

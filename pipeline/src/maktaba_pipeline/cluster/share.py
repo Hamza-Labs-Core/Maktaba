@@ -31,6 +31,7 @@ __all__ = [
     "ENV_KEY_PATH",
     "ENV_SHARE_ROOT",
     "cluster_dir_for",
+    "common_dir",
     "common_root",
     "folder_name",
     "home_key_path",
@@ -66,79 +67,106 @@ def home_key_path(env: Mapping[str, str] | None = None) -> Path:
 # --- the share root -------------------------------------------------------------------
 
 
-def _parts(path: str) -> list[str]:
-    p = path.replace("\\", "/").rstrip("/")
-    return p.split("/") if p else [""]
+def split_db_path(path: str) -> tuple[str, list[str]]:
+    """``(filesystem root, parts)`` of a database-form path: the root is ``/``, a drive
+    (``Y:/``), a UNC share (``//nas/share/``) or empty (relative). The hub's rule."""
+    p = path.strip().replace("\\", "/")
+    rest: str
+    if p.startswith("//"):
+        segs = p[2:].split("/", 2)
+        if len(segs) == 1:
+            root, rest = f"//{segs[0]}/", ""
+        elif len(segs) == 2:
+            root, rest = f"//{segs[0]}/{segs[1]}/", ""
+        else:
+            root, rest = f"//{segs[0]}/{segs[1]}/", segs[2]
+    elif len(p) >= 2 and p[1] == ":" and p[0].isascii() and p[0].isalpha():
+        root, rest = p[:2] + "/", p[2:].lstrip("/")
+    elif p.startswith("/"):
+        root, rest = "/", p.lstrip("/")
+    else:
+        root, rest = "", p
+    return root, [s for s in rest.split("/") if s not in ("", ".")]
 
 
-def _is_fs_root(parts: Sequence[str]) -> bool:
-    """``/``, a drive (``Y:``), or a UNC host without its share (``//nas``)."""
-    real = [p for p in parts if p]
-    if not real:
-        return True
-    return len(real) == 1 and (
-        (len(real[0]) == 2 and real[0][1] == ":") or list(parts[:2]) == ["", ""]
-    )
+def join_db_path(root: str, parts: Sequence[str]) -> str:
+    return root + "/".join(parts)
+
+
+def common_dir(paths: Sequence[str]) -> tuple[str, bool]:
+    """The deepest directory shared by every path (compared case-insensitively, in the
+    first path's case) and whether it is more than a filesystem root."""
+    if not paths:
+        return "", False
+    root, common = split_db_path(paths[0])
+    for path in paths[1:]:
+        r, parts = split_db_path(path)
+        if r.lower() != root.lower():
+            return "", False
+        n = 0
+        while n < len(common) and n < len(parts) and common[n].lower() == parts[n].lower():
+            n += 1
+        common = common[:n]
+    if root == "" and not common:
+        return "", False
+    return join_db_path(root, common), bool(common)
 
 
 def common_root(paths: Iterable[str]) -> str | None:
-    """The deepest directory common to ``paths`` (``None`` when they share nothing but the
-    filesystem root). Compared case-insensitively, returned in the first path's case."""
-    split = [_parts(p) for p in paths if p and p.strip()]
-    if not split:
-        return None
-    first = split[0]
-    n = len(first)
-    for other in split[1:]:
-        k = 0
-        while k < min(n, len(other)) and first[k].lower() == other[k].lower():
-            k += 1
-        n = k
-    common = first[:n]
-    if _is_fs_root(common):
-        return None
-    joined = "/".join(common)
-    return joined or None
+    """The deepest directory common to ``paths``, or None when they share nothing but a
+    filesystem root (``/``, a drive, a UNC share)."""
+    found, ok = common_dir([p for p in paths if p and p.strip()])
+    return found if ok else None
 
 
 def share_root_from(
-    libraries: Sequence[tuple[Sequence[str], int]], env: Mapping[str, str] | None = None
+    roots: Sequence[tuple[str, str, int]], env: Mapping[str, str] | None = None
 ) -> str | None:
-    """``libraries``: ``(roots, video count)`` of every library not deleted."""
+    """The share root from ``(library id, root path, the library's videos)`` of every root
+    of a live library — the hub's rule (``ShareRootOf``), so both agree before the hub's
+    value arrives: the deepest directory common to every root; failing that, the library
+    with the most videos (ties: the smallest id), its roots' common directory, else its
+    first root. ``MAKTABA_SHARE_ROOT`` overrides."""
     env = os.environ if env is None else env
     explicit = (env.get(ENV_SHARE_ROOT) or "").strip()
     if explicit:
-        return explicit.replace("\\", "/").rstrip("/")
-    roots = [r for lib_roots, _ in libraries for r in lib_roots]
-    common = common_root(roots)
-    if common is not None:
-        return common
-    busiest = sorted((lib for lib in libraries if lib[0]), key=lambda lib: lib[1], reverse=True)
-    if not busiest:
+        r, parts = split_db_path(explicit)
+        return join_db_path(r, parts)
+    rows = [(lib, path, videos) for lib, path, videos in roots if path and path.strip()]
+    if not rows:
         return None
-    lib_roots = list(busiest[0][0])
-    own = common_root(lib_roots)
-    return own if own is not None else lib_roots[0].replace("\\", "/").rstrip("/")
+    found, ok = common_dir([path for _, path, _ in rows])
+    if ok:
+        return found
+    videos: dict[str, int] = {}
+    by_lib: dict[str, list[str]] = {}
+    for lib, path, n in rows:
+        videos[lib] = n
+        by_lib.setdefault(lib, []).append(path)
+    busiest = sorted(by_lib, key=lambda lib: (-videos[lib], lib))[0]
+    paths = by_lib[busiest]
+    found, ok = common_dir(paths)
+    if ok:
+        return found
+    r, parts = split_db_path(sorted(paths)[0])
+    return join_db_path(r, parts)
 
 
-async def load_library_roots(db: Any) -> list[tuple[list[str], int]]:
-    """``(roots, videos)`` of every library not deleted."""
-    from ..engine.sql import loads
+#: every root of a live library, with the library's present videos (the hub's query)
+LIBRARY_ROOTS_SQL = (
+    "SELECT l.id AS library_id, lr.path AS path,"
+    " (SELECT count(*) FROM videos v WHERE v.library_id = l.id AND v.deleted_at IS NULL)"
+    " AS videos"
+    " FROM library_roots lr JOIN libraries l ON l.id = lr.library_id"
+    " WHERE l.deleted_at IS NULL ORDER BY l.id, lr.path"
+)
 
-    rows = await db.fetch("SELECT id, roots FROM libraries WHERE deleted_at IS NULL")
-    counts = {
-        str(r["library_id"]): int(r["n"])
-        for r in await db.fetch(
-            "SELECT library_id, count(*) AS n FROM videos"
-            " WHERE deleted_at IS NULL GROUP BY library_id"
-        )
-    }
-    out: list[tuple[list[str], int]] = []
-    for row in rows:
-        roots = row["roots"]
-        items = loads(roots) if isinstance(roots, str) else list(roots or [])
-        out.append(([str(r) for r in items or []], counts.get(str(row["id"]), 0)))
-    return out
+
+async def load_library_roots(db: Any) -> list[tuple[str, str, int]]:
+    """``(library id, root path, videos)`` from ``library_roots`` — where the API keeps
+    the roots (``libraries.roots`` is the old copy) — for the live libraries."""
+    rows = await db.fetch(LIBRARY_ROOTS_SQL)
+    return [(str(r["library_id"]), str(r["path"]), int(r["videos"] or 0)) for r in rows]
 
 
 def cluster_dir_for(share_root: str, path_map: PathMap) -> Path:
@@ -154,15 +182,15 @@ async def resolve_cluster_dir(
     override = (env.get(ENV_CLUSTER_DIR) or "").strip()
     if override:
         return Path(override).expanduser(), ENV_CLUSTER_DIR
-    libraries: list[tuple[list[str], int]] = []
+    roots: list[tuple[str, str, int]] = []
     if not (env.get(ENV_SHARE_ROOT) or "").strip():
         if db is None:
             return None, "no database to find the share"
         try:
-            libraries = await load_library_roots(db)
+            roots = await load_library_roots(db)
         except Exception as exc:  # noqa: BLE001 - the share is optional; logs stay local
             return None, f"libraries unreadable: {exc}"
-    root = share_root_from(libraries, env)
+    root = share_root_from(roots, env)
     if root is None:
         return None, "no library roots"
     return cluster_dir_for(root, path_map), f"share root {root}"

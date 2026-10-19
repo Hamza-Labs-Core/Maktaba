@@ -75,8 +75,15 @@ def real_file(path: Path) -> bool:
     return not is_link(st) and stat.S_ISREG(st.st_mode)
 
 
+#: directories this module creates: group-writable, whatever the umask. On the home the
+#: hub and the workers run as different users sharing a group (Docker: 65532 and 1000),
+#: and both add files under the same ``<ip>/<kind>/<day>`` folders.
+DIR_MODE = 0o775
+
+
 def safe_dir(base: Path, parts: Sequence[str], *, create: bool = True) -> Path:
-    """``base/parts...``, each part a real directory (created when missing)."""
+    """``base/parts...``, each part a real directory (created when missing, mode 0775;
+    existing directories are left as they are)."""
     cur = base
     for part in parts:
         _check_part(part)
@@ -86,12 +93,34 @@ def safe_dir(base: Path, parts: Sequence[str], *, create: bool = True) -> Path:
         except FileNotFoundError:
             if not create:
                 raise
+            created = False
             with contextlib.suppress(FileExistsError):
-                os.mkdir(cur, 0o755)
+                os.mkdir(cur, DIR_MODE)
+                created = True
             st = os.lstat(cur)
+            if created and not is_link(st) and stat.S_ISDIR(st.st_mode):
+                _group_writable(cur)
         if is_link(st) or not stat.S_ISDIR(st.st_mode):
             raise UnsafePath(f"{cur} is not a real directory")
     return cur
+
+
+def _group_writable(path: Path) -> None:
+    """``chmod 0775`` a directory this call created (mkdir's mode is cut by the umask),
+    through a descriptor opened without following links."""
+    if os.name == "nt" or not hasattr(os, "O_DIRECTORY"):
+        return  # Windows: ACLs, not mode bits
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | _NOFOLLOW | _CLOEXEC)
+    except OSError:
+        return
+    try:
+        if stat.S_ISDIR(os.fstat(fd).st_mode):
+            os.fchmod(fd, DIR_MODE)
+    except OSError:
+        pass  # a share that ignores modes (SMB): nothing to do
+    finally:
+        os.close(fd)
 
 
 def _check_existing_file(path: Path) -> None:

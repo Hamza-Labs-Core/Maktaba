@@ -128,3 +128,27 @@ def test_bad_components() -> None:
     for bad in ("..", "", "a/b", "a\\b", "."):
         with pytest.raises(safefs.UnsafePath):
             safefs.safe_dir(Path("/tmp"), [bad], create=False)
+
+
+def test_new_folders_are_group_writable_whatever_the_umask(tmp_path: Path) -> None:
+    """The hub and the home's workers run as different users of one group: a folder one
+    creates must take the other's files. Existing folders and files keep their modes."""
+    root = tmp_path / "cluster"
+    root.mkdir()
+    (root / IP).mkdir(mode=0o700)  # made by someone else, before us
+    os.chmod(root / IP, 0o700)
+    old = os.umask(0o022)
+    try:
+        f = _files(root)
+        f.write("logs", {"ts": f"{DAY}T00:00:00Z", "event": "x"})
+        f.flush()
+    finally:
+        os.umask(old)
+
+    def mode(p: Path) -> int:
+        return os.lstat(p).st_mode & 0o777
+
+    assert mode(root / IP) == 0o700  # not ours: untouched
+    for d in (root / IP / "processes", root / IP / "logs", root / IP / "logs" / DAY):
+        assert mode(d) == 0o775, d
+    assert mode(root / IP / "logs" / DAY / f"{WID}.jsonl") == 0o644

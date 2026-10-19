@@ -33,9 +33,6 @@ STORAGE_CHECK_SEC = 300.0
 
 _log = get_logger()
 
-#: errors meaning this machine's database login no longer works (revoked on the home)
-_AUTH_ERRORS = ("InvalidPasswordError", "InvalidAuthorizationSpecificationError")
-
 
 def path_map_from_json(data: dict[str, str] | None) -> PathMap:
     return PathMap.parse(json.dumps(data)) if data else PathMap()
@@ -159,11 +156,15 @@ class WorkerAgent:
         try:
             beat = await nodes_db.beat(self.db, self.node_id)
         except Exception as exc:
-            if type(exc).__name__ in _AUTH_ERRORS:
+            if exitcodes.login_revoked(exc):
                 _log.error("cluster_node_login_refused_stopping", error=str(exc))
                 exitcodes.mark_refused("the home's database refused this machine's login")
                 self.shutdown.set()
                 return
+            if exitcodes.is_auth_error(exc):
+                # refused for another reason (pg_hba, ...): fixable on the home, so the
+                # worker keeps going and the next heartbeat tries again
+                _log.error("cluster_node_login_refused", error=str(exc))
             raise
         if beat is None or beat.state in ("revoked", "rejected"):
             _log.warning("cluster_node_revoked_stopping", state=None if beat else "removed")
