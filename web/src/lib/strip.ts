@@ -20,7 +20,9 @@ export const DEFAULT_STRIP: StripSettings = {
   next_label_ar: "التالي",
   next_label_en: "Next",
   filler_label: "",
-  overflow: "truncate",
+  overflow: "cycle",
+  page_seconds: 4,
+  page_indicator: true,
   scroll_speed: 90,
   show_mode: "always",
   show_seconds: 20,
@@ -135,4 +137,181 @@ export function stripChanges(base: StripSettings, draft: StripSettings): Channel
     if (JSON.stringify(base[k]) !== JSON.stringify(draft[k])) out[k] = draft[k];
   }
   return out as ChannelStrip;
+}
+
+// ─── overflow "cycle": a long line in pages that take turns ───────────
+// The same rules as the streaming engine: pages break at words and fit the
+// title area with a 0.9 safety margin; the pages are balanced (the narrowest
+// width that keeps their count); a page ending inside a bracket (﴿…﴾ {…}
+// (…) «…») closes it and the next page reopens it; a verse reference goes on
+// the last page (" · <ref>") when it fits, else on a page of its own.
+
+/** Width of `text` in the strip's font (pixels of the output picture). */
+export type Measure = (text: string) => number;
+
+export const PAGE_MARGIN = 0.9;
+
+const OPEN: Record<string, string> = { "﴿": "﴾", "{": "}", "(": ")", "«": "»" };
+const CLOSE = new Set(Object.values(OPEN));
+
+/** The brackets still open after `text`, given those open before it. */
+function openAfter(open: string[], text: string): string[] {
+  const st = [...open];
+  for (const ch of text) {
+    if (OPEN[ch]) st.push(ch);
+    else if (CLOSE.has(ch) && st.length && OPEN[st[st.length - 1]] === ch) st.pop();
+  }
+  return st;
+}
+
+/** The page texts for words broken into groups, brackets kept per page. */
+function render(groups: string[][]): string[] {
+  const out: string[] = [];
+  let open: string[] = [];
+  for (const g of groups) {
+    const body = g.join(" ");
+    const after = openAfter(open, body);
+    const text =
+      open.join("") +
+      body +
+      [...after]
+        .reverse()
+        .map((o) => OPEN[o])
+        .join("");
+    out.push(text);
+    open = after;
+  }
+  return out;
+}
+
+/** Greedy groups of words whose pages are at most `width` wide. */
+function greedy(words: string[], width: number, measure: Measure): string[][] {
+  const groups: string[][] = [];
+  let cur: string[] = [];
+  for (const w of words) {
+    const tryGroups = [...groups, [...cur, w]];
+    const pages = render(tryGroups);
+    if (cur.length && measure(pages[pages.length - 1]) > width) {
+      groups.push(cur);
+      cur = [w];
+    } else {
+      cur.push(w);
+    }
+  }
+  if (cur.length) groups.push(cur);
+  return groups;
+}
+
+/** The pages of `text` for a title area `areaWidth` wide (see above). */
+export function pageLine(
+  text: string,
+  areaWidth: number,
+  measure: Measure,
+  ref?: string | null
+): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const max = areaWidth * PAGE_MARGIN;
+  if (!words.length) return ref ? [ref] : [];
+  let groups = greedy(words, max, measure);
+  if (groups.length > 1) {
+    // balance (as the engine): 12 halvings between limit/n and limit for the
+    // narrowest width that keeps the n pages
+    const n = groups.length;
+    let lo = max / n;
+    let hi = max;
+    for (let i = 0; i < 12; i++) {
+      const mid = (lo + hi) / 2;
+      if (greedy(words, mid, measure).length <= n) hi = mid;
+      else lo = mid;
+    }
+    groups = greedy(words, hi, measure);
+  }
+  const pages = render(groups);
+  if (ref) {
+    const last = `${pages[pages.length - 1]} · ${ref}`;
+    if (measure(last) <= max) pages[pages.length - 1] = last;
+    else pages.push(ref);
+  }
+  return pages;
+}
+
+/** How long a page shows: page_seconds × clamp(0.75 + 0.75 × fill, 1, 2). */
+export function pageSeconds(pageWidth: number, areaWidth: number, base: number): number {
+  const fill = areaWidth > 0 ? pageWidth / areaWidth : 1;
+  return base * Math.min(2, Math.max(1, 0.75 + 0.75 * fill));
+}
+
+/** The «التالي» line pages more slowly. */
+export const NEXT_PAGE_FACTOR = 1.5;
+
+/** «١/٢» or «1/2» per the digits rule. */
+export function pageIndicator(i: number, n: number, indic: boolean): string {
+  const s = `${i + 1}/${n}`;
+  return indic ? toArabicDigits(s) : s;
+}
+
+/** The engine's width estimate of one character, in ems (no font metrics at hand). */
+export function runeEms(ch: string): number {
+  const c = ch.codePointAt(0) ?? 0;
+  if (ch === " ") return 0.28;
+  if ((c >= 0x064b && c <= 0x065f) || c === 0x0670 || c === 0x200e || c === 0x200f) return 0;
+  if (/\p{Script=Arabic}/u.test(ch) && /\p{L}/u.test(ch)) return 0.5;
+  if (/\p{Nd}/u.test(ch)) return 0.56;
+  if (/\p{Lu}/u.test(ch)) return 0.68;
+  if (/\p{L}/u.test(ch)) return 0.52;
+  if (/[\p{P}\p{S}]/u.test(ch)) return 0.36;
+  return 0.55;
+}
+
+/** `text`'s estimated width at `fontPx` (the engine's estimate). */
+export function estimateWidth(text: string, fontPx: number): number {
+  let em = 0;
+  for (const ch of text) em += runeEms(ch);
+  return em * fontPx;
+}
+
+/** The strip's layout on a W×H frame, as the engine computes it (strip.go Layout). */
+export function stripLayout(
+  s: StripSettings,
+  opts: {
+    W?: number;
+    H?: number;
+    clock: boolean;
+    hasNext: boolean;
+    channelName?: string;
+    measure?: (text: string, fontPx: number) => number;
+  }
+) {
+  const W = opts.W ?? 1920;
+  const H = opts.H ?? 1080;
+  const measure = opts.measure ?? estimateWidth;
+  let h = Math.round((H * s.height_pct) / 100);
+  h -= h % 2;
+  h = Math.max(16, h);
+  const pad = Math.floor(h / 4);
+  const clockW = opts.clock ? Math.floor((h * 19) / 10) : 0;
+  const titlePx = Math.max(8, Math.floor((h * s.font_size_pct) / 100));
+  const nextPx = Math.max(8, Math.floor((titlePx * 2) / 3));
+  // the page number is in the «التالي» line's size
+  const indicatorPx = nextPx;
+  const indicatorW =
+    s.overflow === "cycle" && s.page_indicator ? measure("٠٠/٠٠", indicatorPx) + pad : 0;
+  const nameW =
+    s.show_channel_name && opts.channelName
+      ? Math.min(W / 4, [...opts.channelName].length * titlePx * 0.55 + 2 * pad)
+      : 0;
+  const areaWidth = W - clockW - 2 * pad - (nameW ? nameW + pad : 0) - indicatorW;
+  return {
+    h,
+    pad,
+    clockW,
+    titlePx,
+    nextPx,
+    indicatorPx,
+    indicatorW,
+    nameW,
+    areaWidth,
+    clockLabelPx: Math.floor((h * 26) / 100),
+    clockTimePx: Math.floor((h * 40) / 100),
+  };
 }

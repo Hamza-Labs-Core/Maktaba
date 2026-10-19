@@ -153,7 +153,10 @@ export interface StripSettings {
   next_label_ar: string;
   next_label_en: string;
   filler_label: string;
-  overflow: "truncate" | "scroll";
+  overflow: "cycle" | "truncate" | "scroll";
+  /** overflow "cycle": each page's base time and the «١/٢» beside a paged line */
+  page_seconds: number;
+  page_indicator: boolean;
   scroll_speed: number;
   show_mode: "always" | "interval";
   show_seconds: number;
@@ -205,6 +208,8 @@ export interface Program {
   episode?: string | null;
   /** The channel strip's line (Story 27.11): «series · الحلقة 45 — title». */
   on_air?: string | null;
+  /** The reference of a Quran verse the title quotes («البقرة ١٨٣»): the strip's last page. */
+  strip_ref?: string | null;
 }
 
 export interface GuideChannel {
@@ -333,6 +338,7 @@ interface WireBlock {
   season?: number;
   episode?: number;
   on_air?: string;
+  strip_ref?: string;
 }
 
 interface WireHeader {
@@ -377,6 +383,7 @@ function fromBlock(b: WireBlock, seq: number): Program {
     series: b.series || null,
     episode: episodeLabel(b),
     on_air: b.on_air || null,
+    strip_ref: b.strip_ref || null,
   };
 }
 

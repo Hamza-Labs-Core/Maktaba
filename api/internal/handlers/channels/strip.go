@@ -52,18 +52,19 @@ var stripNumbers = map[string]stripRange{
 	"show_seconds":  {3, 600},
 	"every_minutes": {1, 240},
 	"clock_seconds": {2, 120},
+	"page_seconds":  {2, 30},
 }
 
-var stripInts = map[string]bool{"scroll_speed": true, "show_seconds": true, "every_minutes": true, "clock_seconds": true}
+var stripInts = map[string]bool{"scroll_speed": true, "show_seconds": true, "every_minutes": true, "clock_seconds": true, "page_seconds": true}
 
 var stripBools = map[string]bool{
-	"enabled": true, "show_next": true, "show_clock": true, "show_channel_name": true,
+	"enabled": true, "show_next": true, "show_clock": true, "show_channel_name": true, "page_indicator": true,
 }
 
 var stripChoices = map[string][]string{
 	"position":     {"bottom", "top"},
 	"direction":    {"auto", "rtl", "ltr"},
-	"overflow":     {"truncate", "scroll"},
+	"overflow":     {"cycle", "truncate", "scroll"},
 	"show_mode":    {"always", "interval"},
 	"clock_format": {"24h", "12h"},
 	"digits":       {"auto", "arabic", "western"},

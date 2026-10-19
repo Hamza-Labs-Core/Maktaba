@@ -35,6 +35,7 @@ export const STRIP_RANGES: Partial<Record<keyof StripSettings, [number, number]>
   show_seconds: [3, 600],
   every_minutes: [1, 240],
   clock_seconds: [2, 120],
+  page_seconds: [2, 30],
 };
 
 const MAX_CLOCKS = 8;
@@ -80,7 +81,11 @@ export function StripSection({
   const [draft, setDraft] = useState<StripSettings>(() => effectiveStrip(DEFAULT_STRIP, own));
   const [mode, setMode] = useState<EnabledMode>(modeOf(own));
   const [touched, setTouched] = useState(false);
-  const [lines, setLines] = useState<{ now: string; next: string | null } | null>(null);
+  const [lines, setLines] = useState<{
+    now: string;
+    ref: string | null;
+    next: string | null;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -97,6 +102,7 @@ export function StripSection({
         if (live && e?.current) {
           setLines({
             now: e.current.on_air || e.current.title,
+            ref: e.current.strip_ref || null,
             next: e.next ? e.next.on_air || e.next.title : null,
           });
         }
@@ -192,6 +198,7 @@ export function StripSection({
         settings={{ ...draft, enabled }}
         now={sampleNow}
         next={sampleNext}
+        nowRef={lines ? lines.ref : null}
         channelName={channelName}
         image={image}
       />
@@ -220,11 +227,15 @@ export function StripSection({
           label={t("channels.strip.overflow")}
           value={draft.overflow}
           options={[
+            { value: "cycle", label: t("channels.strip.overflow.cycle") },
             { value: "truncate", label: t("channels.strip.overflow.truncate") },
             { value: "scroll", label: t("channels.strip.overflow.scroll") },
           ]}
           onChange={(e) => set("overflow", e.target.value as StripSettings["overflow"])}
         />
+        {draft.overflow === "cycle" && (
+          <Input label={t("channels.strip.pageSeconds")} step="1" {...num("page_seconds")} />
+        )}
         {draft.overflow === "scroll" && (
           <Input label={t("channels.strip.scrollSpeed")} {...num("scroll_speed")} />
         )}
@@ -272,6 +283,13 @@ export function StripSection({
           onChange={(e) => set("filler_label", e.target.value)}
         />
       </div>
+      {draft.overflow === "cycle" && (
+        <Toggle
+          checked={draft.page_indicator}
+          label={t("channels.strip.pageIndicator")}
+          onChange={(e) => set("page_indicator", e.target.checked)}
+        />
+      )}
       <Toggle
         checked={draft.show_next}
         label={t("channels.strip.showNext")}

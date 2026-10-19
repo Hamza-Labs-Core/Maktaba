@@ -36,7 +36,9 @@ type Snapshot struct {
 	StripTitle   string `json:"strip_title,omitempty"`
 	StripSeries  string `json:"strip_series,omitempty"`
 	StripEpisode string `json:"strip_episode,omitempty"`
-	SourceTitle  string `json:"source_title,omitempty"`
+	// StripRef is the reference of a Quran verse the title quotes («البقرة ١٨٣»).
+	StripRef    string `json:"strip_ref,omitempty"`
+	SourceTitle string `json:"source_title,omitempty"`
 }
 
 // parseSnapshot decodes a title_snapshot blob. A nil/empty/garbage blob

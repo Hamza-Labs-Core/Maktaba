@@ -23,6 +23,7 @@ type Block struct {
 	StripTitle   string  `json:"strip_title,omitempty"`
 	StripSeries  string  `json:"strip_series,omitempty"`
 	StripEpisode string  `json:"strip_episode,omitempty"`
+	StripRef     string  `json:"strip_ref,omitempty"`
 	IsLive       bool    `json:"is_live,omitempty"`
 	Progress     float64 `json:"progress,omitempty"`
 }
