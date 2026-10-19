@@ -12,7 +12,7 @@ import type {
   RatePoint,
   WaitingReason,
 } from "../../lib/queueApi";
-import { useJobStream, useQueuesSnapshot } from "../../lib/useQueueStream";
+import { runMachine, useJobStream, useQueuesSnapshot } from "../../lib/useQueueStream";
 import { ActivityLog } from "../../components/queue/ActivityLog";
 import { IssueList, groupKey } from "../../components/queue/IssueList";
 import { NextUp } from "../../components/queue/NextUp";
@@ -105,6 +105,11 @@ export function QueueDetail() {
       (a.started_at ?? "").localeCompare(b.started_at ?? "")
     );
   }, [detail?.running, stream.jobs]);
+  // where each running job runs (the cluster hub's job events)
+  const machines = useMemo(
+    () => new Map([...stream.running.values()].map((r) => [r.job.id, runMachine(r, null)])),
+    [stream.running]
+  );
 
   if (missing && !detail) {
     return (
@@ -357,7 +362,7 @@ export function QueueDetail() {
           <h2 className="mkt-q-section-title" id="mkt-q-run-h">
             {t("queue.detail.running")}
           </h2>
-          <RunningJobs jobs={running} />
+          <RunningJobs jobs={running} machines={machines} />
         </section>
         <section className="mkt-q-panel" aria-labelledby="mkt-q-next-h">
           <h2 className="mkt-q-section-title" id="mkt-q-next-h">

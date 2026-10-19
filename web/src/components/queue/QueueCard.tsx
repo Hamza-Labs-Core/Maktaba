@@ -3,8 +3,9 @@
 // ::after stretches over the card so the whole card is clickable while
 // the DOM keeps a single, real anchor.
 import { Link } from "react-router-dom";
-import { useI18n } from "../../lib/i18n";
-import type { Pool, QueueSummary, StageInfo } from "../../lib/queueApi";
+import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
+import { bidiIsolate, useI18n } from "../../lib/i18n";
+import type { JobRef, Pool, QueueSummary, StageInfo } from "../../lib/queueApi";
 import { RingGauge } from "./RingGauge";
 import { STATE_GLYPH, queueVisualState, useFmt } from "./format";
 
@@ -28,6 +29,48 @@ export interface QueueCardProps {
   compact?: boolean;
   /** Display name of the owning extension (badge); absent for core queues. */
   extensionLabel?: string;
+  /** The queue's jobs running now (from the cluster hub), with their machine. */
+  live?: QueueLiveJob[];
+}
+
+export interface QueueLiveJob {
+  label: string;
+  machine: string | null;
+  job: JobRef;
+}
+
+/** At most this many live jobs are listed on a card. */
+export const CARD_LIVE_MAX = 3;
+
+function LiveJobs({ jobs, queue }: { jobs: QueueLiveJob[]; queue: string }) {
+  const { t, n } = useI18n();
+  const shown = jobs.slice(0, CARD_LIVE_MAX);
+  return (
+    <ul className="mkt-q-card__live" aria-label={t("queue.card.liveJobs", { queue })}>
+      {shown.map(({ label, machine, job }) => {
+        const p = job.progress;
+        const pct = p && p.total_units > 0 ? (p.done_units / p.total_units) * 100 : undefined;
+        return (
+          <li key={job.id} className="mkt-q-card__livejob">
+            <span className="mkt-q-card__livetext">
+              {bidiIsolate(label || String(job.id))}
+              {machine && (
+                <span className="mkt-q-muted"> · {t("queue.card.on", { machine: bidiIsolate(machine) })}</span>
+              )}
+            </span>
+            <ProgressBar
+              label={t("queue.running.progressAria", { label: label || String(job.id) })}
+              value={pct}
+              indeterminate={pct === undefined}
+            />
+          </li>
+        );
+      })}
+      {jobs.length > shown.length && (
+        <li className="mkt-q-muted">{t("queue.card.liveMore", { n: n(jobs.length - shown.length) })}</li>
+      )}
+    </ul>
+  );
 }
 
 export function QueueCard({
@@ -37,6 +80,7 @@ export function QueueCard({
   subSteps = [],
   compact,
   extensionLabel,
+  live = [],
 }: QueueCardProps) {
   const { t, n } = useI18n();
   const fmt = useFmt();
@@ -118,6 +162,7 @@ export function QueueCard({
           {t("queue.ext.setup")}
         </Link>
       )}
+      {live.length > 0 && <LiveJobs jobs={live} queue={info.label} />}
       {subSteps.map((s) => (
         <p className="mkt-q-card__sub" key={s.info.stage}>
           {t("queue.card.subStep", {

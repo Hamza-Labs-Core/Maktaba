@@ -47,6 +47,13 @@ function logApiError(method: string, path: string, status: number, detail: strin
   console.error(`[api] ${method} ${path} failed (${status}): ${detail}`);
 }
 
+// csrfHeaders returns the double-submit header for a hand-rolled fetch
+// (e.g. a streaming POST that cannot go through request()).
+export function csrfHeaders(): Record<string, string> {
+  const tok = csrfToken();
+  return tok ? { [CSRF_HEADER]: tok } : {};
+}
+
 function csrfToken(): string | null {
   const m = document.cookie.match(/(?:^|;\s*)mkt_csrf=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : null;
