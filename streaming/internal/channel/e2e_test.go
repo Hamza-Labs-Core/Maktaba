@@ -20,6 +20,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/mediatest"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pathmap"
 )
 
@@ -54,11 +55,7 @@ func needFFmpeg(t *testing.T) {
 	if testing.Short() {
 		t.Skip("real-ffmpeg test skipped in -short mode")
 	}
-	for _, b := range []string{"ffmpeg", "ffprobe"} {
-		if _, err := exec.LookPath(b); err != nil {
-			t.Skipf("%s not on PATH", b)
-		}
-	}
+	mediatest.NeedFFmpeg(t, "ffmpeg", "ffprobe")
 }
 
 func makeClip(t *testing.T, path string, withAudio bool, secs int) {

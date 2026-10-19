@@ -444,7 +444,10 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
     except (PlexError, TransportError) as exc:
         error = f"plex: {exc}"
         st.status = status(run, str(exc))
-        await _save(db, st, at=started, error=error, clear_register=asked)
+        # a register that failed half-way (the tuner added, the DVR not created) keeps the
+        # admin's request for the retry: cleared, the retry would only report
+        # "not_registered" and never create the DVR
+        await _save(db, st, at=started, error=error, clear_register=asked and bool(run.register))
         raise _wrap(exc) from exc
 
     st.status = status(run, None)

@@ -180,7 +180,7 @@ func (h *Handler) remoteTS(ctx context.Context, hostID string, gen int64, ch uui
 	h.Svc.Hosts.OK(hostID)
 	n, err := copyFlush(out, resp.Body)
 	h.count("ts", hostID)(n)
-	if !clientGone(out) && ctx.Err() == nil {
+	if !clientGone(out) && ctx.Err() == nil && h.stillPlaced(ctx, ch, hostID, gen) {
 		// the node's stream broke under a live client: a failure of that host
 		h.Svc.Hosts.Fail(hostID)
 	}
@@ -196,4 +196,17 @@ func clientGone(w io.Writer) bool {
 		return clientGone(c.w)
 	}
 	return false
+}
+
+// stillPlaced reports whether the channel's placement still names host with gen. A
+// node ends a live.ts on purpose when the channel moved or stopped (its station is
+// fenced): that is no failure of the node, and counting it would mark a healthy
+// node down after three TS clients of one moved channel (a read error counts as
+// still placed).
+func (h *Handler) stillPlaced(ctx context.Context, ch uuid.UUID, hostID string, gen int64) bool {
+	p, found, err := h.Svc.Store.Get(ctx, ch)
+	if err != nil {
+		return true
+	}
+	return found && p.Active() && p.Host == hostID && p.Gen == gen
 }

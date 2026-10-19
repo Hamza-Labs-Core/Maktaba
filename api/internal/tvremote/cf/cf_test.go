@@ -136,3 +136,23 @@ func TestAnalyticsProbe(t *testing.T) {
 		t.Errorf("denied: %v", err)
 	}
 }
+
+// Post-review: the customer code becomes the playback host signed tokens go
+// to, so only a code (or the domain/URL it is read from) is accepted.
+func TestNormalizeCustomerCode(t *testing.T) {
+	for in, want := range map[string]string{
+		"abc123xyz":    "abc123xyz",
+		"  ABC123xyz ": "abc123xyz",
+		"customer-abc123xyz.cloudflarestream.com":                               "abc123xyz",
+		"https://customer-abc123xyz.cloudflarestream.com/x/manifest/video.m3u8": "abc123xyz",
+		"":                   "",
+		"x@evil.example/":    "",
+		"abc.evil.example":   "",
+		"abc123/../../":      "",
+		"customer-abc123xyz": "",
+	} {
+		if got := cf.NormalizeCustomerCode(in); got != want {
+			t.Errorf("NormalizeCustomerCode(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

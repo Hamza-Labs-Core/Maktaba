@@ -80,6 +80,20 @@ func CustomerCode(s string) string {
 	return m[1]
 }
 
+var customerCodeRe = regexp.MustCompile(`^[a-z0-9]{1,64}$`)
+
+// NormalizeCustomerCode reads a customer subdomain code as an admin may enter
+// it: the code itself, the domain customer-<code>.cloudflarestream.com or a
+// URL on it. Anything else is "" — the code becomes the playback host the
+// signed tokens are sent to, so it is never taken as free text.
+func NormalizeCustomerCode(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if customerCodeRe.MatchString(s) {
+		return s
+	}
+	return CustomerCode(s)
+}
+
 // CustomerBaseURL is https://customer-<code>.cloudflarestream.com (or the
 // test override).
 func (c *Client) CustomerBaseURL(code string) string {

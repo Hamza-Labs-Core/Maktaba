@@ -270,3 +270,54 @@ func TestHeartbeatAfterAccessLost(t *testing.T) {
 		t.Error("session not ended")
 	}
 }
+
+// Post-review: the viewers rule and the channel's enabled flag bind the whole
+// session, not only the tune: a heartbeat after either changed mints no new
+// token and ends the session.
+func TestHeartbeatAfterGatesChange(t *testing.T) {
+	cases := []struct {
+		name   string
+		change func(fx *remoteFx)
+	}{
+		{"viewers narrowed to admins", func(fx *remoteFx) { fx.rules(map[string]any{"viewers": "admins"}) }},
+		{"viewers narrowed to a list", func(fx *remoteFx) {
+			fx.rules(map[string]any{"viewers": "listed", "viewer_users": []string{"someone-else"}})
+		}},
+		{"channel switched off", func(fx *remoteFx) {
+			fx.exec(`UPDATE channels SET enabled = false WHERE id = $1`, fx.chans[0])
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fx := newRemote(t)
+			r := fx.liveTune("u", fx.chans[0])
+			tc.change(fx)
+			fx.advance(31 * time.Minute) // a token would be due
+			b, err := fx.c.Heartbeat(context.Background(), viewer("u"), r.SessionID)
+			if te, ok := err.(*tvremote.TuneError); !ok || te.Status != http.StatusForbidden || te.Code != "remote_not_allowed" {
+				t.Fatalf("heartbeat: %+v %v", b, err)
+			}
+			if b.Token != "" || b.HLSURL != "" {
+				t.Fatalf("a token was minted: %+v", b)
+			}
+			var ended *string
+			_ = fx.db.QueryRow(`SELECT ended_at FROM tv_remote_sessions WHERE id = $1`, r.SessionID).Scan(&ended)
+			if ended == nil {
+				t.Error("session not ended")
+			}
+		})
+	}
+}
+
+// The listed rule matches a viewer's username on the heartbeat as on the tune.
+func TestHeartbeatListedViewerByName(t *testing.T) {
+	fx := newRemote(t)
+	r := fx.liveTune("u", fx.chans[0])
+	fx.rules(map[string]any{"viewers": "listed", "viewer_users": []string{"amina"}})
+	v := viewer("u")
+	v.Name = "Amina"
+	fx.advance(31 * time.Minute)
+	if b, err := fx.c.Heartbeat(context.Background(), v, r.SessionID); err != nil || b.Token == "" {
+		t.Fatalf("listed viewer refused: %+v %v", b, err)
+	}
+}

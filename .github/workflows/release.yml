@@ -22,6 +22,11 @@
 #                        LICENSE + sample config (+ systemd unit on Linux).
 #   5. package-nfpm      build native .deb (Debian/Ubuntu) and .rpm
 #                        (Fedora/RHEL) for linux/{amd64,arm64} with nfpm.
+#   5b. package-node     the worker side of a multi-instance home (Epic 31):
+#                        the pipeline wheel stamped with the tag, its
+#                        dependency constraints from uv.lock, and the node
+#                        installer archives (maktaba-node-<ver>.tar.gz /
+#                        .zip) that install that wheel with no checkout.
 #   6. sign-and-release  checksum every artifact, keyless-cosign-sign the
 #                        checksums file AND each pushed image digest,
 #                        generate the Homebrew formula, then attach
@@ -456,9 +461,37 @@ jobs:
           path: out/*
           retention-days: 7
 
+  # The node's assets: what a machine needs to join a home without a git
+  # checkout (deploy/packaging/node/build-release.sh; the CI node-packaging
+  # gate builds and installs the same assets on every PR).
+  package-node:
+    name: package node (wheel + installer)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: astral-sh/setup-uv@v8.1.0
+
+      - name: Build the wheel, constraints and installer archives
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          SOURCE_DATE_EPOCH="$(git log -1 --pretty=%ct)" \
+            deploy/packaging/node/build-release.sh --version "${TAG}" --out out
+          ls -l out
+
+      - name: Upload node assets
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-node
+          path: out/*
+          retention-days: 7
+
   sign-and-release:
     name: sign + publish release
-    needs: [build-artifacts, build-server, build-images, package-archives, package-nfpm]
+    needs: [build-artifacts, build-server, build-images, package-archives, package-nfpm, package-node]
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     permissions:
@@ -495,6 +528,12 @@ jobs:
           name: release-web-bundle
           path: staged/web-dist
 
+      - name: Download node assets
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-node
+          path: staged/node
+
       # One artifact per build-images matrix leg ("digest-<svc>", each a
       # single file named "<svc>" holding "<svc> sha256:...").
       - name: Download image digests
@@ -515,6 +554,9 @@ jobs:
           # server/api/streaming binaries live inside them, not loose.
           cp staged/archives/* dist/
           cp staged/packages/* dist/
+          # The node's wheel, constraints and installer archives (a worker
+          # machine joins a home with these; no checkout).
+          cp staged/node/* dist/
           # The cloud (relay) binary ships loose — it's a separate VPS
           # deploy target, not part of the home-server archives. Restore
           # the +x bit dropped by artifact download.
@@ -659,6 +701,7 @@ jobs:
           - **Fedora/RHEL:** download the \`.rpm\` below, then \`sudo dnf install ./maktaba-server-*.rpm\`
           - **macOS (Homebrew):** \`maktaba.rb\` formula is attached (and pushed to the tap when configured)
           - **Windows / manual:** grab the matching \`.tar.gz\` / \`.zip\` archive
+          - **Worker machine (join a home, no checkout):** unpack \`maktaba-node-*.tar.gz\` (macOS/Linux) or \`maktaba-node-*.zip\` (Windows) and run \`install-node.sh\` / \`windows\\install-node.ps1\`: it installs this release's \`maktaba_pipeline-*.whl\` (also attached, with its \`-constraints.txt\`). See docs/cluster/join-a-machine.md.
 
           Artifacts are signed with keyless cosign (Sigstore). Verify the
           checksums manifest:
