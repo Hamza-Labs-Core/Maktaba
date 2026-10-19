@@ -449,48 +449,47 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 // Delete implements AC-4: ?purge=false (default) cascades DB rows; ?purge=true
 // also requires “?confirm=<name>“ and unlinks the on-disk files.
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
+	_ = h.deleteLibrary(w, r)
+}
+
+// deleteLibrary is Delete; it returns the HTTP status it answered with,
+// for AuditedDelete.
+func (h *Handler) deleteLibrary(w http.ResponseWriter, r *http.Request) int {
 	p := principal.FromContext(r.Context())
 	if p == nil || !p.IsAdmin {
-		httperror.Write(w, r, httperror.Forbidden("", "admin-only"))
-		return
+		return writeErr(w, r, httperror.Forbidden("", "admin-only"))
 	}
 	id := chi.URLParam(r, "id")
 	if _, err := uuid.Parse(id); err != nil {
-		httperror.Write(w, r, httperror.BadRequest("malformed id"))
-		return
+		return writeErr(w, r, httperror.BadRequest("malformed id"))
 	}
 
 	lib, err := h.loadLibrary(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			httperror.Write(w, r, httperror.NotFound("library "+id))
-			return
+			return writeErr(w, r, httperror.NotFound("library "+id))
 		}
-		httperror.Write(w, r, httperror.Internal("load library"))
-		return
+		return writeErr(w, r, httperror.Internal("load library"))
 	}
 
 	purge, e := common.QueryBool(r, "purge", false)
 	if e != nil {
-		httperror.Write(w, r, e)
-		return
+		return writeErr(w, r, e)
 	}
 	if purge {
 		confirm := r.URL.Query().Get("confirm")
 		if confirm != lib.Name {
-			httperror.Write(w, r, &httperror.Error{
+			return writeErr(w, r, &httperror.Error{
 				Type:   httperror.TypeConfirmationReq,
 				Title:  "confirmation required",
 				Status: http.StatusPreconditionFailed,
 				Detail: "include ?confirm=<library name> to purge",
 			})
-			return
 		}
 	}
 
 	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM libraries WHERE id=$1`, id); err != nil {
-		httperror.Write(w, r, httperror.Internal("delete library"))
-		return
+		return writeErr(w, r, httperror.Internal("delete library"))
 	}
 	if purge {
 		failed := []string{}
@@ -504,10 +503,11 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 				"deleted":      true,
 				"failed_paths": failed,
 			})
-			return
+			return http.StatusMultiStatus
 		}
 	}
 	common.WriteNoContent(w)
+	return http.StatusNoContent
 }
 
 // Scan implements AC-5: enqueue a scan job at priority 50. Admin-only,
@@ -636,6 +636,12 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	common.WriteJSON(w, r, http.StatusOK, resp)
+}
+
+// writeErr writes e and returns its status.
+func writeErr(w http.ResponseWriter, r *http.Request, e *httperror.Error) int {
+	httperror.Write(w, r, e)
+	return e.Status
 }
 
 // canSeeLibrary reports whether the caller may read library id (admin,

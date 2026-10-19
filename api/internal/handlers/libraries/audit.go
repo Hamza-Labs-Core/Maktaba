@@ -199,38 +199,18 @@ func (h *Handler) AuditedDelete(w http.ResponseWriter, r *http.Request) {
 	lib, _ := h.loadLibrary(r.Context(), id)
 	purge := strings.EqualFold(r.URL.Query().Get("purge"), "true")
 
-	sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
-	h.Delete(sw, r)
+	status := h.deleteLibrary(w, r)
 
-	if sw.status >= 300 && sw.status != http.StatusPreconditionFailed {
+	if status >= 300 && status != http.StatusPreconditionFailed {
 		return
 	}
 	WriteAudit(r.Context(), h.DB, EventLibraryDeleted, ActorOf(p), id, map[string]any{
 		"name":    lib.Name,
 		"roots":   lib.Roots,
 		"purge":   purge,
-		"status":  sw.status,
-		"deleted": sw.status < 300,
+		"status":  status,
+		"deleted": status < 300,
 	})
-}
-
-// statusWriter remembers the status the wrapped handler wrote.
-type statusWriter struct {
-	http.ResponseWriter
-	status int
-	wrote  bool
-}
-
-func (s *statusWriter) WriteHeader(code int) {
-	if !s.wrote {
-		s.status, s.wrote = code, true
-	}
-	s.ResponseWriter.WriteHeader(code)
-}
-
-func (s *statusWriter) Write(b []byte) (int, error) {
-	s.wrote = true
-	return s.ResponseWriter.Write(b)
 }
 
 // ActorOf is the audit actor for p: its user id, or nil for no caller.
