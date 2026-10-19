@@ -58,7 +58,7 @@ func psi(tableID byte, body []byte) []byte {
 }
 
 func patPMT(cc byte) []byte {
-	pat := psi(0x00, []byte{0, 1, 0xc1, 0, 0, 0, 1, 0xf0, 0x00}) // tsid 1; program 1 -> PMT 0x1000
+	pat := psi(0x00, []byte{0, 1, 0xc1, 0, 0, 0, 1, 0xf0, 0x00})      // tsid 1; program 1 -> PMT 0x1000
 	pmt := psi(0x02, []byte{0, 1, 0xc1, 0, 0, 0xe1, 0x00, 0xf0, 0x00, // program 1, PCR PID 0x100
 		0x1b, 0xe1, 0x00, 0xf0, 0x00, // H.264 on 0x100
 		0x0f, 0xe1, 0x01, 0xf0, 0x00}) // AAC on 0x101
@@ -184,11 +184,11 @@ func (f *fakeSlot) crash() {
 }
 
 type slotRig struct {
-	fd           *Handler
-	slots        *Slots
-	srv          *httptest.Server
-	blue, green  *fakeSlot
-	ch           uuid.UUID
+	fd          *Handler
+	slots       *Slots
+	srv         *httptest.Server
+	blue, green *fakeSlot
+	ch          uuid.UUID
 }
 
 func newSlotRig(t *testing.T) *slotRig {

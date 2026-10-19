@@ -419,6 +419,7 @@ func TestEngine_LimitsRuntimeAndStaleRows(t *testing.T) {
 		t.Errorf("the settings' warm grace not used: reaped %v", reaped)
 	}
 	e.SyncRuntime(context.Background())
+	e.FlushRuntime(2 * time.Second) // rows are written off the engine lock
 	repo.mu.Lock()
 	defer repo.mu.Unlock()
 	var got *Runtime

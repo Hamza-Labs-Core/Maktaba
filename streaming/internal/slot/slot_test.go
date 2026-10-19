@@ -44,8 +44,8 @@ func (e *fakeEngine) Hold(_ context.Context, id uuid.UUID) error {
 	return nil
 }
 func (e *fakeEngine) StopChannel(id uuid.UUID) bool { e.stopped = append(e.stopped, id); return true }
-func (e *fakeEngine) ActiveIDs() []uuid.UUID         { return e.active }
-func (e *fakeEngine) StopAll()                       {}
+func (e *fakeEngine) ActiveIDs() []uuid.UUID        { return e.active }
+func (e *fakeEngine) StopAll()                      {}
 
 // TC2: a slot answers this machine only.
 func TestSlotLoopbackOnly(t *testing.T) {

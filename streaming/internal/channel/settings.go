@@ -79,10 +79,10 @@ func OutputSettingsFromEnv() OutputSettings {
 		Encoder: enc, Width: p.Width, Height: p.Height, FPS: p.FPS, VideoKbps: p.VideoKbps,
 		AudioCodec: p.AudioCodec, AudioKbps: p.AudioKbps, SegmentSeconds: p.SegmentSeconds,
 		KeyintSeconds: clampInt(envInt("MAKTABA_CHANNEL_KEYINT_SEC", DefaultKeyintSeconds), 1, 10),
-		MaxActive: envInt("MAKTABA_CHANNEL_MAX_ACTIVE", 0),
-		WarmGrace: time.Duration(envInt("MAKTABA_CHANNEL_WARM_GRACE_SEC", int(DefaultWarmGrace/time.Second))) * time.Second,
-		NVENCMax:  envInt("MAKTABA_CHANNEL_NVENC_MAX", DefaultNVENCMaxSessions),
-		VTMax:     envInt("MAKTABA_CHANNEL_VT_MAX", 0),
+		MaxActive:     envInt("MAKTABA_CHANNEL_MAX_ACTIVE", 0),
+		WarmGrace:     time.Duration(envInt("MAKTABA_CHANNEL_WARM_GRACE_SEC", int(DefaultWarmGrace/time.Second))) * time.Second,
+		NVENCMax:      envInt("MAKTABA_CHANNEL_NVENC_MAX", DefaultNVENCMaxSessions),
+		VTMax:         envInt("MAKTABA_CHANNEL_VT_MAX", 0),
 	}
 }
 

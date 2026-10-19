@@ -115,6 +115,7 @@ func TestEngine_OnePipelinePerChannel(t *testing.T) {
 	if sc.n != 1 {
 		t.Errorf("5 tunes started %d pipelines, want 1", sc.n)
 	}
+	e.FlushRuntime(2 * time.Second) // rows are written off the engine lock
 	if repo.setCalls != 1 {
 		t.Errorf("runtime row written %d times", repo.setCalls)
 	}

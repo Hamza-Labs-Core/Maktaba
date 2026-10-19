@@ -708,11 +708,12 @@ func (h *Handler) streamKey(ctx context.Context) ([]byte, error) {
 }
 
 // Sign is the front-door signature (streaming/internal/cluster.Keyring.Sign): HMAC-SHA256
-// over "METHOD\npath\nexp" with the cluster stream key, "<exp>.<hex>".
+// over "METHOD\npath\nexp\ngen" with the cluster stream key, "<exp>.<hex>". These
+// requests carry no placement generation: gen is 0 (streaming cluster protocol 2).
 func Sign(key []byte, method, path string, exp time.Time) string {
 	e := strconv.FormatInt(exp.Unix(), 10)
 	m := hmac.New(sha256.New, key)
-	_, _ = m.Write([]byte(method + "\n" + path + "\n" + e))
+	_, _ = m.Write([]byte(method + "\n" + path + "\n" + e + "\n0"))
 	return e + "." + hex.EncodeToString(m.Sum(nil))
 }
 

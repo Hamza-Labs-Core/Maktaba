@@ -61,14 +61,14 @@ type Slots struct {
 	clientOnce sync.Once
 	mu         sync.Mutex
 	live       string
-	standby  string
-	staging  string
-	epoch    int64
-	health   map[string]*slotHealth
-	failing  map[string]bool // in a failover right now
-	switches int
-	lastWarm time.Time
-	wantStby int // 0: not asked yet, 1: started, -1: stopped (supervisor)
+	standby    string
+	staging    string
+	epoch      int64
+	health     map[string]*slotHealth
+	failing    map[string]bool // in a failover right now
+	switches   int
+	lastWarm   time.Time
+	wantStby   int // 0: not asked yet, 1: started, -1: stopped (supervisor)
 }
 
 // slotHealth is what the last probes of a slot said.
@@ -537,7 +537,7 @@ func (s *Slots) supervise(ctx context.Context, name string, start bool) {
 
 // warmPlan is what SyncWarm sends each slot.
 type warmPlan struct {
-	live, standby       []uuid.UUID
+	live, standby        []uuid.UUID
 	liveBudget, stBudget slot.Budget
 }
 

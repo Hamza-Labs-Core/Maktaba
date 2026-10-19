@@ -69,8 +69,8 @@ type ProbeInfo struct {
 
 // ChildStatus is one child's row in a Snapshot.
 type ChildStatus struct {
-	Role          Role       `json:"role"`
-	Instance      string     `json:"instance,omitempty"`
+	Role     Role   `json:"role"`
+	Instance string `json:"instance,omitempty"`
 	// Wanted: an on-demand process asked for (tv-slot amber; a stopped standby).
 	Wanted        bool       `json:"wanted"`
 	State         State      `json:"state"`

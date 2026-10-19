@@ -121,7 +121,7 @@ func TestStitcherSwitchAligned(t *testing.T) {
 func TestStitcherPendingSwitch(t *testing.T) {
 	t0 := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
 	st := &Stitcher{}
-	st.Update("blue", mustParse(t, slotPlaylist(1, 5, t0, 2, false))) // to t0+10
+	st.Update("blue", mustParse(t, slotPlaylist(1, 5, t0, 2, false)))                      // to t0+10
 	st.Update("green", mustParse(t, slotPlaylist(50, 3, t0.Add(2*time.Second), 2, false))) // to t0+8
 	if r := render(t, st); len(r.uris) != 5 || len(r.discAt) != 0 {
 		t.Fatalf("listed a green segment from before the end: %+v", r)
