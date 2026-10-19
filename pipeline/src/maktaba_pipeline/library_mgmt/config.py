@@ -239,9 +239,8 @@ def _validate_stt_field(name: str, value: Any, result: ValidationResult) -> None
                     f"unknown backend {value!r}; allowed: {sorted(ALLOWED_STT_BACKENDS)}",
                 )
             )
-    elif name in ("model", "profile", "initial_prompt"):
-        if not isinstance(value, str):
-            result.errors.append(ValidationError(f"stt/{name}", "must be a string"))
+    elif name in ("model", "profile", "initial_prompt") and not isinstance(value, str):
+        result.errors.append(ValidationError(f"stt/{name}", "must be a string"))
 
 
 def _validate_embedding_field(name: str, value: Any, result: ValidationResult) -> None:
