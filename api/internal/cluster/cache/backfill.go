@@ -306,9 +306,9 @@ func (c *Cache) readFile(ctx context.Context, root *os.Root, dir, kind string, k
 	}
 	defer func() { _ = f.Close() }()
 	size := fi.Size()
-	from := int64(0)
+	from := int64(0) // a new file, one read in another directory, or one that shrank (replaced)
 	if pos.root == dir && pos.readTo <= size {
-		from = pos.readTo // a shorter file was replaced: from its start
+		from = pos.readTo
 	}
 	if from == size {
 		return nil
@@ -341,7 +341,7 @@ func (c *Cache) readFile(ctx context.Context, root *os.Root, dir, kind string, k
 			break
 		}
 	}
-	if ch.at > ch.committed || ch.lines > 0 {
+	if ch.at > ch.committed {
 		return c.commit(ctx, &ch)
 	}
 	return nil

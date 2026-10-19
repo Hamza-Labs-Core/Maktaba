@@ -255,3 +255,31 @@ func TestBackfillRateIsBounded(t *testing.T) {
 		t.Fatalf("rows = %d", n)
 	}
 }
+
+// A process's frames reach the cache from the channel and from its file:
+// one row per 10 s slot either way, whichever came first.
+func TestFramesMeetOnTheirSlot(t *testing.T) {
+	eachDB(t, func(t *testing.T, db *sql.DB, driver string) {
+		dir := t.TempDir()
+		clk := newClock("2026-10-19T12:00:00Z")
+		c := newTestCache(db, driver, clk, 24*time.Hour)
+		p := agent.Proc{WorkerID: "studio/1/ab", IP: "10.0.0.1", Host: "studio"}
+		var lines []string
+		for s := 0; s < 40; s += 2 {
+			at := time.Date(2026, 10, 19, 11, 0, s, 0, time.UTC)
+			lines = append(lines, metricsLine(at.Format(time.RFC3339), s))
+			if s >= 20 { // the channel had the second half, and was first
+				c.Metrics(p, frame(at, float64(s)), nil, false)
+			}
+		}
+		c.flushMetrics(bg)
+		writeFile(t, filepath.Join(dir, "10.0.0.1", "metrics", "2026-10-19", FileName(p.WorkerID)+".jsonl"), lines...)
+		must(t, c.Backfill(bg, dir))
+		if n := count(t, db, `SELECT count(*) FROM cluster_metrics_cache WHERE worker_id = 'studio_1_ab'`); n != 4 {
+			t.Fatalf("frames = %d, want 4 (slots :00 :10 :20 :30)", n)
+		}
+		if st := c.Snapshot(); st.Metrics.Written != 2 || st.Metrics.FromFiles != 2 {
+			t.Fatalf("stats = %+v", st.Metrics)
+		}
+	})
+}
