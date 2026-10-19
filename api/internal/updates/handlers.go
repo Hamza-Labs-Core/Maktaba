@@ -277,6 +277,10 @@ func (h *Handler) runNow(w http.ResponseWriter, r *http.Request, p *principal.Pr
 		httperror.Write(w, r, httperror.Conflict("about:blank#blocked", "an update cannot start now: "+blk.Reason).With("code", blk.Reason))
 	case errors.As(err, &wd):
 		httperror.Write(w, r, httperror.Conflict("about:blank#withdrawn", "the release was withdrawn: "+wd.reason).With("code", "release_withdrawn"))
+	case errors.Is(err, ErrAutoInstallNotBuilt):
+		httperror.Write(w, r, (&httperror.Error{Type: "about:blank#auto_install_not_built", Title: "service unavailable",
+			Status: http.StatusServiceUnavailable, Detail: AutoInstallPendingMessage}).
+			With("code", ErrAutoInstallNotBuilt.Error()))
 	case errors.Is(err, ErrOrchestratorUnavailable):
 		httperror.Write(w, r, (&httperror.Error{Type: "about:blank#orchestrator_unavailable", Title: "service unavailable",
 			Status: http.StatusServiceUnavailable, Detail: "this build cannot install updates by itself yet"}).

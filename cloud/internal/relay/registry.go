@@ -64,6 +64,27 @@ func (r *Registry) Len() int {
 	return len(r.conns)
 }
 
+// Counts samples the relay gauges (Epic 30): servers is the number of
+// distinct home servers with a live tunnel, tunnels the number of live
+// tunnels carrying at least one proxied request right now. A connected
+// but idle server counts as connected, not as an active tunnel.
+func (r *Registry) Counts() (servers, tunnels int) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	seen := make(map[string]struct{}, len(r.conns))
+	for slug, t := range r.conns {
+		id := t.ServerID
+		if id == "" {
+			id = "slug:" + slug
+		}
+		seen[id] = struct{}{}
+		if t.Busy() {
+			tunnels++
+		}
+	}
+	return len(seen), tunnels
+}
+
 // Slugs returns the connected slugs, for diagnostics.
 func (r *Registry) Slugs() []string {
 	r.mu.RLock()

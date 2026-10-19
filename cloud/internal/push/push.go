@@ -29,6 +29,14 @@ type Dispatcher struct {
 	DB   *sql.DB
 	APNs Driver
 	FCM  Driver
+	// Metrics counts each device delivery (Epic 30 push_sent /
+	// push_failed); nil records nothing.
+	Metrics Recorder
+}
+
+// Recorder takes one delivery outcome per device (metrics.Collector).
+type Recorder interface {
+	RecordPush(ok bool)
 }
 
 // Driver is the per-platform send interface. APNsDriver and FCMDriver
@@ -54,9 +62,6 @@ func (d *Dispatcher) Send(ctx context.Context, n Notification) error {
 	}
 	defer rows.Close()
 
-	type target struct {
-		platform, token string
-	}
 	var targets []target
 	for rows.Next() {
 		var t target
@@ -71,7 +76,17 @@ func (d *Dispatcher) Send(ctx context.Context, n Notification) error {
 	if len(targets) == 0 {
 		return errors.New("push: no devices registered")
 	}
+	d.fanOut(ctx, n, targets)
+	return nil
+}
 
+// target is one registered device.
+type target struct {
+	platform, token string
+}
+
+// fanOut sends to every device in parallel, logging and counting each.
+func (d *Dispatcher) fanOut(ctx context.Context, n Notification, targets []target) {
 	var wg sync.WaitGroup
 	for _, t := range targets {
 		wg.Add(1)
@@ -80,6 +95,7 @@ func (d *Dispatcher) Send(ctx context.Context, n Notification) error {
 			drv := d.driverFor(t.platform)
 			if drv == nil {
 				d.logResult(ctx, n.UserID, t.platform, n.Topic, "no_driver", "")
+				d.record(false)
 				return
 			}
 			err := drv.Send(ctx, t.token, n)
@@ -90,10 +106,18 @@ func (d *Dispatcher) Send(ctx context.Context, n Notification) error {
 				errStr = err.Error()
 			}
 			d.logResult(ctx, n.UserID, t.platform, n.Topic, status, errStr)
+			d.record(err == nil)
 		}(t)
 	}
 	wg.Wait()
-	return nil
+}
+
+// record counts one delivery the way PushStats reads the log: "ok" is
+// sent, anything else (an error, no driver) failed.
+func (d *Dispatcher) record(ok bool) {
+	if d.Metrics != nil {
+		d.Metrics.RecordPush(ok)
+	}
 }
 
 func (d *Dispatcher) driverFor(platform string) Driver {
@@ -107,6 +131,9 @@ func (d *Dispatcher) driverFor(platform string) Driver {
 }
 
 func (d *Dispatcher) logResult(ctx context.Context, uid, platform, topic, status, errStr string) {
+	if d.DB == nil {
+		return
+	}
 	_, _ = d.DB.ExecContext(ctx, `
         INSERT INTO push_dispatch_log (user_id, platform, topic, status, error)
         VALUES ($1,$2,$3,$4,$5)

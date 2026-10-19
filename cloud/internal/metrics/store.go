@@ -201,6 +201,54 @@ func (s *Store) ExportRows(ctx context.Context, start time.Time) ([]ExportRow, e
 	return out, rows.Err()
 }
 
+// LiveSampleMaxAge is how old the newest gauge sample may be before the
+// overview reports the relay as having nothing connected: the relay
+// flushes every minute, so a sample older than this means no relay is
+// running (or none can reach the database).
+const LiveSampleMaxAge = 3 * time.Minute
+
+// LatestGauges reads the newest connected_servers / active_tunnels sample
+// the relay role flushed (each minute row holds value summed over its
+// samples, so value/samples is that minute's reading). It is how the api
+// role, a separate process from the relay's registry, shows live counts
+// (story 30.3). Samples older than maxAge count as zero; ok is false then.
+func (s *Store) LatestGauges(ctx context.Context, now time.Time, maxAge time.Duration) (servers, tunnels int, ok bool, err error) {
+	const q = `
+        SELECT DISTINCT ON (metric) metric, value, samples
+        FROM relay_metrics_raw
+        WHERE metric IN ($1, $2) AND country = '' AND samples > 0 AND bucket >= $3
+        ORDER BY metric, bucket DESC`
+	rows, err := s.DB.QueryContext(ctx, q, MetricConnectedServers, MetricActiveTunnels, now.UTC().Add(-maxAge))
+	if err != nil {
+		return 0, 0, false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var m string
+		var v int64
+		var n int
+		if err := rows.Scan(&m, &v, &n); err != nil {
+			return 0, 0, false, err
+		}
+		ok = true
+		avg := gaugeReading(v, n)
+		if m == MetricConnectedServers {
+			servers = avg
+		} else {
+			tunnels = avg
+		}
+	}
+	return servers, tunnels, ok, rows.Err()
+}
+
+// gaugeReading turns a summed gauge row back into one reading (rounded).
+func gaugeReading(sum int64, samples int) int {
+	if samples <= 0 {
+		return 0
+	}
+	return int((sum + int64(samples)/2) / int64(samples))
+}
+
 // ServerCount is the total registered servers (not just connected).
 func (s *Store) ServerCount(ctx context.Context) (int, error) {
 	var n int

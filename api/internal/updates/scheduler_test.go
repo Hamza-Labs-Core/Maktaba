@@ -198,6 +198,7 @@ func TestSchedulerBlockers(t *testing.T) {
 // TC6 (story 35.3 AC7): Update now skips only the window and the release age; it
 // approves a held contract release; it never skips the checks (blockers, withdrawal).
 func TestUpdateNowIgnoresWindowAndAge(t *testing.T) {
+	enableAutoInstall(t)
 	ctx := context.Background()
 	f := newFixture(t, sqliteDB(t))
 	f.now = time.Date(2026, 10, 1, 13, 0, 0, 0, f.loc) // midday, an hour after publishing

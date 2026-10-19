@@ -132,6 +132,7 @@ func TestSkipDeferRunAndOverview(t *testing.T) {
 	if code != 200 || target["version"] != "1.6.0" || body["auto_install_available"] != false {
 		t.Fatalf("overview: %d %v", code, body)
 	}
+	enableAutoInstall(t) // Update now below needs a build that installs by itself
 	if code, _ := do(t, h, "POST", "/api/cluster/updates/skip", map[string]any{"version": "v1.6.0"}, true); code != 200 {
 		t.Fatalf("skip: %d", code)
 	}
@@ -185,6 +186,7 @@ func TestSkipDeferRunAndOverview(t *testing.T) {
 // The orchestrator is story 35.4: a supervisor that does not know /update/start makes
 // Update now 503 orchestrator_unavailable and the run failed.
 func TestUpdateNowWithoutOrchestrator(t *testing.T) {
+	enableAutoInstall(t)
 	sup := httptest.NewServer(http.NotFoundHandler())
 	defer sup.Close()
 	f := newFixture(t, sqliteDB(t))
@@ -230,5 +232,33 @@ func TestMigrationS1Revoked(t *testing.T) {
 		if _, err := be.db.Exec(`INSERT INTO audit_log (category, action) VALUES ('update', 'probe')`); err != nil {
 			t.Errorf("audit category update refused: %v", err)
 		}
+	}
+}
+
+// Stub audit #1: a build without the update orchestrator (autoInstallEnabled false)
+// answers Update now with the pending message, records no run and sends no notice.
+func TestUpdateNowNotBuilt(t *testing.T) {
+	old := autoInstallEnabled
+	autoInstallEnabled = "false"
+	t.Cleanup(func() { autoInstallEnabled = old })
+	f := newFixture(t, sqliteDB(t))
+	seed(t, f.store, rel("1.5.0"))
+	code, body := do(t, newRouter(t, f), "POST", "/api/cluster/updates/run", map[string]any{"confirm": true}, true)
+	if code != http.StatusServiceUnavailable || body["code"] != "auto_install_not_built" ||
+		body["detail"] != AutoInstallPendingMessage {
+		t.Fatalf("%d %v", code, body)
+	}
+	if runs, _ := f.store.Runs(context.Background(), 5); len(runs) != 0 {
+		t.Fatalf("runs recorded: %+v", runs)
+	}
+	if f.notes.find(NoticeRunFailed) != nil || len(f.starter.runs) != 0 {
+		t.Fatalf("notice or start: %v %v", f.notes.kinds(), f.starter.runs)
+	}
+	// the scheduler never plans one either
+	if d, err := f.svc.Tick(context.Background()); err != nil || d.Action != "none" {
+		t.Fatalf("tick: %+v %v", d, err)
+	}
+	if runs, _ := f.store.Runs(context.Background(), 5); len(runs) != 0 {
+		t.Fatalf("tick recorded runs: %+v", runs)
 	}
 }

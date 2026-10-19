@@ -2988,7 +2988,7 @@
   "updates.settings.badPin": "اكتب إصدارًا مثل 1.5.9.",
   "updates.settings.pinBelow": "لا يمكن التثبيت عند إصدار أقل من المثبَّت {version}.",
   "updates.settings.badAge": "اكتب عددًا صحيحًا من الساعات، صفرًا أو أكثر.",
-  "updates.settings.notBuilt": "هذا الإصدار يتحقق من التحديثات ويخبرك بها فقط؛ التثبيت التلقائي يأتي في الإصدارات القادمة.",
+  "updates.settings.notBuilt": "التثبيت التلقائي يصل مع منسّق التحديثات.",
   "updates.settings.stale": "لم ينجح أي تحقق من التحديثات منذ 14 يومًا. تحقق من الشبكة أو الوصول إلى GitHub.",
   "updates.plan.none": "لا تحديث مخطط: لديك أحدث إصدار.",
   "updates.plan.at": "يُثبَّت الإصدار {version} في {at}.",
