@@ -373,6 +373,29 @@ describe("Machines admin page", () => {
     expect(get).not.toHaveBeenCalled();
   });
 
+  it("shows a machine paused for the home's database schema (en + ar)", async () => {
+    const why = "paused: home database at 0119, this machine needs 0124 — update the home";
+    const pausedNode: ClusterNode = {
+      ...baseNode,
+      workers: [{ ...baseNode.workers[0], stages: [], stages_off: { transcribe: why, tag: why } }],
+    };
+    get.mockImplementation(() =>
+      Promise.resolve({ ...fixture(), nodes: [pausedNode] } satisfies ClusterView)
+    );
+    const first = renderPage();
+    const card = await screen.findByRole("article", { name: "Studio Mac" });
+    expect(within(card).getByText("Paused")).toBeInTheDocument();
+    expect(within(card).getByRole("status")).toHaveTextContent(why);
+    first.unmount();
+
+    localStorage.setItem("mkt:locale", "ar");
+    renderPage();
+    const ar = await screen.findByRole("article", { name: "Studio Mac" });
+    expect(within(ar).getByRole("status")).toHaveTextContent(
+      "متوقف مؤقتًا: قاعدة بيانات الجهاز الرئيسي على الإصدار 0119 وهذا الجهاز يحتاج الإصدار 0124"
+    );
+  });
+
   it("renders in Arabic, right to left", async () => {
     localStorage.setItem("mkt:locale", "ar");
     renderPage();

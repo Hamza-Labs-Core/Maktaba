@@ -6,6 +6,11 @@ the admin's stage switches and (every 5 min) the storage check; at each 10 s hea
 node also beats its ``cluster_nodes`` row and reads ``state`` / ``drain``: ``revoked``
 sets the shutdown event, ``drain`` empties the served set at once. A change is written
 to ``workers.stages`` / ``stages_off``; the claim loop reads the set on every poll.
+
+A node also checks the home's schema (:mod:`.schema`) at start and with every storage
+check, at every refresh while paused: a home whose database lacks this code's migrations
+pauses the machine (every stage off, ``paused: ...``; no storage probe; the runtime's
+writers wait on :attr:`WorkerAgent.paused`) and it resumes by itself once the home caught up.
 """
 
 from __future__ import annotations
@@ -13,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -25,6 +30,7 @@ from ..engine.workers import update_worker_stages
 from ..log import get_logger
 from ..sharepath.servers import build_for_machine, load_servers
 from . import exitcodes, nodes_db
+from .schema import SCHEMA_REV, HomeSchema, pause_reason, read_home_schema
 from .stages import StageSelector, lifted_placements
 from .storage import (
     LibrarySample,
@@ -82,10 +88,24 @@ class WorkerAgent:
     admin_map: dict[str, str] | None = None
     legacy_map: dict[str, str] | None = None
     mounts: list[Any] | None = None
+    #: the schema guard's inputs (tests replace them): this code's highest migration slot
+    #: and how the home's schema is read
+    required_schema: int = SCHEMA_REV
+    schema_reader: Callable[[Any], Awaitable[HomeSchema]] | None = None
+    _last_schema: float = 0.0
+    _schema_unknown_logged: bool = False
+    #: a node's start finished (it waits while the machine starts paused)
+    _node_ready: bool = False
+    _capabilities: dict[str, Any] = field(default_factory=dict)
 
     @property
     def is_node(self) -> bool:
         return self.node_id is not None
+
+    @property
+    def paused(self) -> bool:
+        """The home's schema does not fit this code: claim nothing, write nothing."""
+        return self.selector.paused is not None
 
     @property
     def node8(self) -> str:
@@ -108,6 +128,21 @@ class WorkerAgent:
                 exitcodes.mark_refused(f"this machine is {beat.state} on the home")
             self.shutdown.set()
         self.selector.drain = beat.drain
+        self._capabilities = capabilities
+        await self.check_schema()
+        if self.paused:
+            # the rest (path map, storage probe, report, switches) waits for the home:
+            # :meth:`refresh` finishes it once the schema fits
+            return
+        await self._finish_node_start(beat)
+
+    async def _finish_node_start(self, beat: nodes_db.NodeBeat | None = None) -> None:
+        assert self.node_id is not None
+        if beat is None:
+            # resumed after a pause: the row as it is now (removed: the heartbeat stops us)
+            beat = await nodes_db.beat(self.db, self.node_id)
+            if beat is None:
+                return
         self.samples = await load_samples(self.db)
         self.servers = await load_servers(self.db)
         if not self.explicit_path_map:
@@ -125,7 +160,7 @@ class WorkerAgent:
         await nodes_db.report(
             self.db,
             self.node_id,
-            capabilities=capabilities,
+            capabilities=self._capabilities,
             storage=storage,
             # the whole map this machine resolves with (its shares included), so the
             # Machines page and a streaming node on this machine see it
@@ -135,6 +170,36 @@ class WorkerAgent:
         )
         self.selector.switches = await nodes_db.stage_switches(self.db, self.node_id)
         self.selector.lifted = await lifted_placements(self.db, self.graph)
+        self._node_ready = True
+
+    async def check_schema(self) -> bool:
+        """Compare the home's schema with this code's; True when the pause changed.
+
+        The pause and the resume are logged once each (not at every check)."""
+        home = await (self.schema_reader or read_home_schema)(self.db)
+        self._last_schema = time.monotonic()
+        if home.applied is None and not self._schema_unknown_logged:
+            self._schema_unknown_logged = True
+            _log.warning("cluster_home_schema_unknown", required=self.required_schema)
+        reason = pause_reason(home, self.required_schema)
+        if reason == self.selector.paused:
+            return False
+        if reason is not None:
+            _log.warning(
+                "cluster_node_paused_schema",
+                reason=reason,
+                home_schema=home.applied,
+                home_min_node_schema=home.min_node,
+                required=self.required_schema,
+            )
+        else:
+            _log.info(
+                "cluster_node_resumed_schema",
+                home_schema=home.applied,
+                required=self.required_schema,
+            )
+        self.selector.paused = reason
+        return True
 
     def _infer(self) -> dict[str, str]:
         paths = [p for lib in self.samples for p, _ in lib.videos]
@@ -225,6 +290,12 @@ class WorkerAgent:
         """The 30 s re-evaluation."""
         self.selector.ahead = await stages_ahead(self.db, self.graph)
         if self.node_id is not None:
+            if self.paused or time.monotonic() - self._last_schema >= self.storage_check_sec:
+                await self.check_schema()
+            if self.paused:
+                return await self.apply()
+            if not self._node_ready:
+                await self._finish_node_start()
             self.selector.switches = await nodes_db.stage_switches(self.db, self.node_id)
             self.selector.lifted = await lifted_placements(self.db, self.graph)
             if time.monotonic() - self._last_storage >= self.storage_check_sec:

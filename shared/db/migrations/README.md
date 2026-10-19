@@ -48,6 +48,18 @@ DATABASE_URL=... make migrate-status
    [`MANIFEST.md`](MANIFEST.md) with no gaps; if two PRs race for the
    next slot, the later one rebases.
 
+8. **Raise the nodes' schema revision.** A new slot also raises
+   `SCHEMA_REV` in `pipeline/src/maktaba_pipeline/cluster/schema.py` and
+   `SchemaRev` in `streaming/internal/cluster/schema.go` (tests fail
+   otherwise): a joined machine pauses while the home's database is below
+   it (Epic 31 design §5.1).
+9. **Breaking for older nodes.** A migration that older node code cannot
+   run against (a dropped or renamed column, a changed function signature)
+   `CREATE OR REPLACE`s `maktaba_min_node_schema() RETURNS integer` to
+   return the oldest node schema it still works with, and its MANIFEST row
+   says "Breaking for older nodes". Nodes below that pause until updated.
+   Additive migrations need neither.
+
 ## File naming
 
 ```
