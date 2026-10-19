@@ -10,6 +10,51 @@ don't append a line here; docs-only PRs are exempt.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-19
+
+The first tagged release of Maktaba: a self-hosted library for lectures,
+talks and series (video and audio) that understands what it holds and runs it
+as live TV channels.
+
+Highlights:
+
+- **One server binary.** `maktaba-server` supervises the API, streaming and
+  pipeline roles, serves the embedded web UI, advertises itself over mDNS and
+  carries the installer CLI (`setup`, `setup --node`, `setup --self-managed`,
+  `update`, `uninstall`, `models`). Per-platform archives for Windows (amd64),
+  macOS (arm64, amd64) and Linux (amd64, arm64), `.deb`/`.rpm` packages, a
+  Homebrew formula and container images.
+- **Library intelligence.** Scanning and indexing, whole-library transcription
+  on the queue engine (Whisper, with a second Cohere Arabic listen merged into
+  Whisper's words), subtitles and search, chapters, topics and posters, series
+  intelligence, tagging, production style and display titles; Plex index,
+  season, topic and clip collections.
+- **Maktaba TV.** Channels built from settings like real TV (a lineup of up to
+  20 channels, show slots, fillers, no dead air), a guide and HLS/MPEG-TS
+  output, Plex Live TV (HDHomeRun tuner + XMLTV DVR), TV slots with a hot
+  standby, staged TV changes with automated verification, preview, hot swap
+  and rollback, and remote viewing and simulcast through Cloudflare Stream.
+- **Multi-machine homes.** LAN discovery and pairing, the sealed cluster
+  channel, files on canonical share paths, worker nodes and full nodes that
+  run the same server, sign-in across machines, node routing and the
+  extension relay (nodes run the Plex stages without the Plex token).
+- **Queue engine and control centre.** A change-driven multi-level job queue
+  with per-job progress, the control centre and System Health pages, process
+  supervision with crash recovery.
+- **Signed releases and automatic updates.** Every release is checksummed
+  and keyless-signed by this repository's release workflow (Sigstore);
+  `release.json` carries versions, schema revisions and per-platform digests.
+  Machines verify a release in process, offline, against a pinned workflow
+  identity before installing it; side-by-side install layout run by
+  `maktaba-launcher`, update policy and scheduling, rollback.
+- **Clients.** The web app (system theme on every page), desktop (Tauri),
+  mobile and TV (tvOS, Android TV) shells.
+- **Platform.** SQLite or Postgres, migrations with a schema guard, secrets
+  sealed on the home, rate limiting, audit log, observability, backup and
+  integrity tooling.
+
+Details of everything in this release:
+
 ### Added
 - TV hot swap, push continuity and rollback (Epic 33 stories 33.7, 33.8,
   33.9): an approved TV change goes on the air in the front door, channel by
@@ -131,7 +176,3 @@ don't append a line here; docs-only PRs are exempt.
   change controller's next tick instead of being remembered as started (the change
   then failed as "not healthy"); the staging plan is read under the routing lock
   (a data race between the controller's plan updates and the warm-set sync).
-
-## [0.1.0] — Pre-release
-
-Platform skeleton from Phases 0–11. See git log for individual stories.
