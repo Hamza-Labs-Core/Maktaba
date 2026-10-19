@@ -20,6 +20,11 @@ func TestMain(m *testing.M) {
 	}
 	_ = os.Setenv("MAKTABA_NODE_CONFIG", filepath.Join(dir, "node.json"))
 	_ = os.Unsetenv("MAKTABA_TV_HOST_ROLE")
+	// every port is free unless a test says otherwise: the result must not depend
+	// on what this machine happens to run (Splunk on 8088 ...)
+	portProbe = func() config.PortProbe {
+		return config.PortProbe{Free: func(string) bool { return true }, Ours: func(int) bool { return false }}
+	}
 	code := m.Run()
 	_ = os.RemoveAll(dir)
 	os.Exit(code)

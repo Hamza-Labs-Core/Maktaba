@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -51,8 +52,11 @@ In container/orchestrated deployments, start one role per container:
   maktaba-server serve --role pipeline
   maktaba-server serve --role web`,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			cfg, _, err := config.Load()
+			cfg, found, err := config.Load()
 			if err != nil {
+				return err
+			}
+			if err := servePorts(&cfg, found, strings.TrimSpace(strings.ToLower(role)), noWeb); err != nil {
 				return err
 			}
 			return runServe(cfg, serveOptions{
@@ -110,7 +114,10 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	// Start the in-process web server (and mDNS) when web is in scope.
 	var webSrv *http.Server
 	if serveWeb && !opts.noWeb {
-		webSrv = startWebServer(cfg, node)
+		webSrv, err = startWebServer(cfg, node)
+		if err != nil {
+			return err
+		}
 		fmt.Fprintf(os.Stderr, "[serve] web UI on %s (embedded=%v)\n", cfg.Server.WebListen, webui.Embedded)
 	}
 
@@ -251,18 +258,67 @@ func containsRole(roles []supervisor.Role, want supervisor.Role) bool {
 // On a full node (node != nil) live TV, the guide and the lineup go to the home's front
 // door, and a VOD session the home serves (the fallback) to the home's streaming port;
 // VOD stays on this machine's streaming role (Epic 35 design §11.3).
-func startWebServer(cfg config.Config, node *nodeServices) *http.Server {
+func startWebServer(cfg config.Config, node *nodeServices) (*http.Server, error) {
 	srv := &http.Server{
 		Addr:              cfg.Server.WebListen,
 		Handler:           webHandler(cfg, node),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	// Bind before returning: a web port that cannot be bound stops serve with the
+	// reason instead of a log line nobody reads.
+	ln, err := net.Listen("tcp", cfg.Server.WebListen)
+	if err != nil {
+		return nil, fmt.Errorf("web UI cannot listen on %s (web_listen in %s): %w", cfg.Server.WebListen, config.Path(), err)
+	}
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			fmt.Fprintf(os.Stderr, "[serve] web server error: %v\n", err)
 		}
 	}()
-	return srv
+	return srv, nil
+}
+
+// servePorts checks the binds serve is about to use. Serving every role, a port
+// another program holds moves into the fallback range and server.toml is updated
+// (config/ports.go); a port another running Maktaba holds stops serve. A single
+// role (containers, orchestrators) never moves a port: a taken one stops serve.
+func servePorts(cfg *config.Config, found bool, role string, noWeb bool) error {
+	var keys []string
+	single := true
+	switch role {
+	case "", "all":
+		single = false
+		keys = []string{"listen", "stream_addr"}
+		if !noWeb {
+			keys = append(keys, "web_listen")
+		}
+	case "web":
+		keys = []string{"web_listen"}
+	case string(supervisor.RoleAPI):
+		keys = []string{"listen"}
+	case string(supervisor.RoleStreaming):
+		keys = []string{"stream_addr"}
+	default:
+		return nil
+	}
+	o := config.PortOptions{Keys: keys, Wait: servePortWait}
+	if single {
+		probe := *cfg
+		moved, err := probe.ReconcilePorts(portProbe(), o)
+		if err != nil {
+			return err
+		}
+		if len(moved) > 0 {
+			return fmt.Errorf("%s %s is in use by another program: free it or set %s in %s",
+				moved[0].Key, moved[0].From, moved[0].Key, config.Path())
+		}
+		return nil
+	}
+	moved, err := reconcilePorts(cfg, config.Path(), o, os.Stderr, found)
+	if err == nil && len(moved) > 0 && !found {
+		fmt.Fprintf(os.Stderr, "  port: no server.toml at %s; the new address(es) hold for this run only\n", config.Path())
+	}
+	return err
 }
 
 // webHandler is the web port: the embedded UI, /api/ proxied to the API
