@@ -10,7 +10,7 @@
 //
 // The state is a pure reducer (clusterReducer) so it is tested without a
 // socket; the hook stamps every action with the receive time.
-import { useCallback, useEffect, useReducer, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import {
   tsMs,
   type ClusterLogRecord,
@@ -134,7 +134,17 @@ export const initialClusterState: ClusterStreamState = {
 
 export type ClusterAction =
   | { type: "event"; name: string; data: unknown; at: number }
+  | { type: "batch"; events: { name: string; data: unknown; at: number }[] }
   | { type: "clearLogs" };
+
+/**
+ * How often the hook hands the hub's frames to React. Every machine sends
+ * a metrics frame every second or two, so one React update per frame made
+ * the whole Machines page re-render several times a second; the frames
+ * are buffered and applied together, at most once per flushMs. Tests set
+ * it to 0 (every frame applied at once).
+ */
+export const clusterStreamConfig = { flushMs: 1_000 };
 
 // ---------------------------------------------------------------- derive
 
@@ -462,6 +472,8 @@ export function clusterReducer(s: ClusterStreamState, a: ClusterAction): Cluster
       return { ...s, logs: [] };
     case "event":
       return onEvent(s, a.name, a.data, a.at);
+    case "batch":
+      return a.events.reduce((acc, e) => onEvent(acc, e.name, e.data, e.at), s);
   }
 }
 
@@ -516,13 +528,34 @@ export function useClusterStream(): ClusterStream {
   const [sub, setSub] = useState<LogSubscription | null>(null);
   const topics = sub ? [...CLUSTER_TOPICS, logsTopic(sub.target, sub.level)] : CLUSTER_TOPICS;
 
+  // frames wait here until the next flush: one React update per flushMs
+  const buf = useRef<{ name: string; data: unknown; at: number }[]>([]);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flush = useCallback(() => {
+    timer.current = null;
+    const events = buf.current;
+    buf.current = [];
+    if (events.length) dispatch({ type: "batch", events });
+  }, []);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+    },
+    []
+  );
+
   const status = useSocketTopic(topics, (msg) => {
     const at = Date.now();
-    for (const ev of hubEvents(msg)) dispatch({ type: "event", name: ev.name, data: ev.data, at });
+    for (const ev of hubEvents(msg)) buf.current.push({ name: ev.name, data: ev.data, at });
+    const ms = clusterStreamConfig.flushMs;
+    if (ms <= 0) flush();
+    else if (!timer.current) timer.current = setTimeout(flush, ms);
   });
 
   // a new logs topic starts with an empty tail
   useEffect(() => {
+    buf.current = buf.current.filter((e) => e.name !== "log");
     dispatch({ type: "clearLogs" });
   }, [sub?.target, sub?.level]);
 

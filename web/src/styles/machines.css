@@ -208,3 +208,76 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Holding still (the page updates every second): numbers keep their width,
+   status lines keep their height whether or not they say anything, the
+   per-machine jobs line sits at the end of the header at a fixed width. */
+.mkt-mc {
+  font-variant-numeric: tabular-nums;
+}
+.mkt-mc-statusline,
+.mkt-mc-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  min-block-size: 1.5em;
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+.mkt-mc-warn {
+  color: var(--color-warn);
+}
+.mkt-mc-live {
+  display: inline-flex;
+  min-inline-size: 7rem;
+}
+.mkt-mc-row--head {
+  align-items: center;
+}
+.mkt-mc-jobs {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-inline-start: auto;
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+.mkt-mc-jobs__count {
+  min-inline-size: 9ch;
+  color: var(--color-muted);
+  text-align: end;
+}
+.mkt-mc-jobs__link {
+  color: var(--color-accent);
+}
+.mkt-mc-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.mkt-mc-skel {
+  background: color-mix(in srgb, var(--color-border) 35%, var(--color-subtle));
+}
+.mkt-mc-skel--home {
+  block-size: 10rem;
+}
+.mkt-mc-skel--node {
+  block-size: 24rem;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .mkt-mc-skel {
+    animation: mkt-mc-pulse 1.6s ease-in-out infinite;
+  }
+}
+@keyframes mkt-mc-pulse {
+  50% {
+    opacity: 0.6;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mkt-mc *,
+  .mkt-q * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
