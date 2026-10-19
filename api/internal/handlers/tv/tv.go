@@ -85,6 +85,8 @@ type Handler struct {
 	// Remote reports remote viewing for /api/tv/info (Epic 32 story 32.9);
 	// nil: not available on this server.
 	Remote func(ctx context.Context) RemoteAvailability
+	// Staging reports TV staging for /api/tv/info (Epic 33); nil: not reported.
+	Staging func(ctx context.Context) any
 }
 
 // Mount wires the routes.
@@ -274,6 +276,8 @@ type Info struct {
 	Remote RemoteInfo `json:"remote"`
 	// Cluster: the streaming hosts on air (Epic 32).
 	Cluster ClusterInfo `json:"cluster"`
+	// Staging: TV staging on or off, the live release, the change in flight (Epic 33).
+	Staging any `json:"staging,omitempty"`
 }
 
 // Device is the GET/PATCH /api/tv/hdhr body.
@@ -329,7 +333,15 @@ func (h *Handler) info(r *http.Request) Info {
 		HLSPathTemplate: HLSPathTemplate,
 		Remote:          h.remoteInfo(r),
 		Cluster:         ClusterInfo{HostsOnAir: h.hostsOnAir(r.Context())},
+		Staging:         h.stagingInfo(r.Context()),
 	}
+}
+
+func (h *Handler) stagingInfo(ctx context.Context) any {
+	if h.Staging == nil {
+		return nil
+	}
+	return h.Staging(ctx)
 }
 
 // hostPort strips the scheme/path from a base URL: Plex's "enter the

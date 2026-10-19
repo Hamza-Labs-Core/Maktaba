@@ -67,6 +67,10 @@ type Channel struct {
 	Plan *PlanStatus `json:"plan,omitempty"`
 	// GuideUntil is the end of the generated guide (list/get).
 	GuideUntil *time.Time `json:"guide_until,omitempty"`
+
+	// Draft: the channel as the open editor draft (a TV change, Epic 33) has it -
+	// what goes on the air when that change is swapped (admins, staging on).
+	Draft *ChannelDraft `json:"draft,omitempty"`
 }
 
 // NowPlaying is the current-block summary shown on list/get.

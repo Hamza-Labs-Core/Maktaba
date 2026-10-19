@@ -45,6 +45,16 @@ export interface Channel {
   plan?: PlanStatus | null;
   /** The end of the generated guide: how far ahead the channel is planned. */
   guide_until?: string | null;
+  /** TV staging (Epic 33): the channel as the open editor draft change has it. */
+  draft?: ChannelTvDraft | null;
+}
+
+/** The TV change draft a channel is shown from (its values go on the air at the swap). */
+export interface ChannelTvDraft {
+  change_id: string;
+  number: number;
+  added?: boolean;
+  removed?: boolean;
 }
 
 export interface NowPlaying {

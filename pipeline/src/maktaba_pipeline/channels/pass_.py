@@ -28,7 +28,7 @@ from . import packer, slate
 from .base import ChannelMode
 from .filler import FillerPicker
 from .planner import make_planner
-from .repo import ScheduleRepo, ScheduleState, SqlRepo
+from .repo import ScheduleRepo, ScheduleState
 
 __all__ = [
     "channel_tz",
@@ -142,6 +142,7 @@ async def run_schedule(
     *,
     now: datetime,
     horizon: timedelta | None = None,
+    anchor: datetime | None = None,
 ) -> int:
     """(Re)generate ``channel_id``'s schedule out to ``now + horizon`` (``None``: the
     ``tv`` rules' ``horizon_days``).
@@ -150,6 +151,10 @@ async def run_schedule(
     disabled). Past/current blocks are never rewritten (D3): the anchor
     is ``max(now, horizon_until)``, so regeneration only appends/refreshes
     the future tail.
+
+    ``anchor`` (Epic 33): regenerate from this instant, as for a stale channel - the
+    divergence boundary of a staged generation (the end of the block on air at the
+    planned swap), so everything before it stays as it is.
     """
     channel = await repo.load_channel(channel_id)
     if channel is None or not channel.enabled:
@@ -159,14 +164,20 @@ async def run_schedule(
     if horizon is None:
         horizon = guide_window(tv)[0]
     state = await repo.load_state(channel_id)
+    if anchor is not None:
+        # a forced rewrite from the boundary: never cut a block that spans it (one that
+        # starts exactly there is the first one rewritten)
+        on_air = await repo.airing_until(channel_id, anchor - timedelta(milliseconds=1))
+        if on_air is not None and on_air > anchor:
+            anchor = on_air
     # Anchor at the existing horizon when topping up (continue the
     # timeline) but never before now, and never rewrite the current block.
-    anchor = now
-    if state.horizon_until is not None and state.horizon_until > now and not state.stale:
+    elif state.horizon_until is not None and state.horizon_until > now and not state.stale:
         anchor = state.horizon_until
     else:
         # A regeneration starts after the block on air: it is kept (D3), so a
         # new timeline from ``now`` would overlap it.
+        anchor = now
         on_air = await repo.airing_until(channel_id, now)
         if on_air is not None and on_air > anchor:
             anchor = on_air
@@ -288,25 +299,47 @@ async def topup_once(
 
     ``horizon`` / ``low_water`` (``None``: the ``tv`` rules) say how far ahead each
     channel is planned and below what it is topped up; the rules are read once a sweep,
-    so a change applies from the next one."""
+    so a change applies from the next one.
+
+    Epic 33: every open schedule generation is extended - the live one, the one a staged
+    TV change wrote, the previous one while it is kept for a rollback - each channel and
+    generation under its own advisory lock. A routine top-up is never a TV change. With
+    staging on, a ``stale`` flag on the live generation no longer rewrites it: the
+    channel goes into the open schedule draft (a forced regeneration is a schedule
+    change, story 33.12 AC7)."""
+    from ..tvrelease.generation import open_generations
+    from ..tvrelease.stage import stale_to_draft
+
     now = now or datetime.now(UTC)
-    repo = SqlRepo(db)  # ``db``'s methods join each transaction (and rewrite $N for SQLite)
-    horizon, low_water = _window(await repo.load_tv(), horizon, low_water)
     touched = 0
-    for channel_id in await repo.channels_needing_topup(now, now + low_water):
-        try:
-            async with db.transaction():
-                if db.dialect == "postgres" and not await db.fetchval(
-                    "SELECT pg_try_advisory_xact_lock($1, $2)",
-                    TOPUP_ADVISORY_LOCK_KEY,
-                    _seed_for(channel_id),
-                ):
-                    continue
-                await run_schedule(repo, channel_id, now=now, horizon=horizon)
-            touched += 1
-        except Exception:  # noqa: BLE001 - one bad channel must not stop the sweep
-            _log.exception("channel.topup_failed", channel_id=str(channel_id))
+    # ``db``'s methods join each transaction (and rewrite $N for SQLite)
+    for live, repo in await open_generations(db, now):
+        if live:
+            await stale_to_draft(db, repo)
+        h, low = _window(await repo.load_tv(), horizon, low_water)
+        gen = await repo.gen()
+        for channel_id in await repo.channels_needing_topup(now, now + low):
+            try:
+                async with db.transaction():
+                    if db.dialect == "postgres" and not await db.fetchval(
+                        "SELECT pg_try_advisory_xact_lock($1, $2)",
+                        TOPUP_ADVISORY_LOCK_KEY,
+                        lock_key(channel_id, gen),
+                    ):
+                        continue
+                    await run_schedule(repo, channel_id, now=now, horizon=h)
+                touched += 1
+            except Exception:  # noqa: BLE001 - one bad channel must not stop the sweep
+                _log.exception("channel.topup_failed", channel_id=str(channel_id), gen=gen)
     return touched
+
+
+def lock_key(channel_id: UUID, gen: int) -> int:
+    """The second advisory-lock key of (channel, generation): generation 0 keeps the key
+    a channel always had, so a worker on older code still excludes this one."""
+    if not gen:
+        return _seed_for(channel_id)
+    return (_seed_for(channel_id) ^ ((gen * 2654435761) & 0x7FFFFFFF)) & 0x7FFFFFFF
 
 
 async def notify_listeners(db: Any, listeners: tuple[str, ...], touched: int) -> None:

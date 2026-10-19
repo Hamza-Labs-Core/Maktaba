@@ -40,11 +40,21 @@ async def _events(db: Database, kind: str, stage: str) -> list[Any]:
 
 
 async def _pipeline(
-    db: Database, *, name: str = "قصص الأنبياء", episodes: int = 30
+    db: Database, *, name: str = "قصص الأنبياء", episodes: int = 30, staging: bool = False
 ) -> tuple[EngineRuntime, World]:
-    """detect -> everything it triggers, run to quiescence."""
+    """detect -> everything it triggers, run to quiescence. With ``staging`` off (these
+    tests' default) write_channels writes the air directly, as before Epic 33 (story
+    33.12 AC10); on, it makes a TV change."""
     rt = await core_runtime(db)
     await _small_library_rules(db)
+    if not staging:
+        await db.execute(
+            "INSERT INTO app_settings (key, value, updated_at) VALUES ($1, $2, $3)"
+            " ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+            "rules.tv_staging",
+            dumps({"enabled": False}),
+            to_ts(db, now()),
+        )
     w = await make_show(db, name=name, episodes=episodes, loose=4)
     await enqueue_job(db, subject_kind="library", subject_id=w.library, stage="detect")
     await drain_core(db, rt)
@@ -186,6 +196,35 @@ async def test_plan_channels_stores_a_plan_and_write_channels_creates_live_tv(db
     applied = await _events(db, "applied", "write_channels")
     assert applied[0]["changes"]["counts"]["added"] == n
     assert all(str(j["subject_id"]) == str(CATALOG_ID) for j in await _rows(db, "write_channels"))
+
+
+@pytest.mark.asyncio
+async def test_with_staging_write_channels_stages_a_tv_change(db: Database) -> None:
+    """Story 33.12 AC1 / AC9 end to end: with staging on (the default) the plan's lineup
+    becomes a staged TV change - nothing on the air, no Plex refresh - and the swap
+    commit puts it on the air."""
+    from maktaba_pipeline.tvrelease.commit import commit_change
+    from maktaba_pipeline.tvrelease.store import update_change
+
+    await _pipeline(db, episodes=40, staging=True)
+    plan = loads((await db.fetch("SELECT plan FROM channel_plans ORDER BY id"))[-1]["plan"])
+    assert await db.fetchval("SELECT count(*) FROM channels WHERE lifecycle = 'live'") == 0
+    assert await db.fetchval("SELECT count(*) FROM external_links") == 0
+    changes = await db.fetch("SELECT id, state, kinds FROM tv_changes")
+    assert [(r["state"], loads(r["kinds"])) for r in changes] == [("staged", ["lineup"])]
+    summary = loads((await _rows(db, "write_channels"))[-1]["output_summary"])
+    assert summary["staged"] and summary["tv_change"]["id"] == str(changes[0]["id"])
+    cid = str(changes[0]["id"])
+    await update_change(db, cid, state="swapping")  # what the API's controller does on approval
+    report = await commit_change(db, cid)
+    assert report["readback"]["ok"]
+    n = await db.fetchval("SELECT count(*) FROM channels WHERE lifecycle = 'live'")
+    assert n == len(plan["channels"])
+    assert (
+        await db.fetchval("SELECT count(*) FROM external_links WHERE target = 'maktaba_channel'")
+        == n
+    )
+    assert await db.fetchval("SELECT count(*) FROM channel_programs_live") > 0
 
 
 @pytest.mark.asyncio

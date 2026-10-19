@@ -360,7 +360,7 @@ async def generated(db: Any, channel_id: str, minutes_ago: float = 0) -> None:
     at = to_ts(db, now() - timedelta(minutes=minutes_ago))
     await db.execute(
         "INSERT INTO channel_schedule_state (channel_id, last_generated_at, horizon_until)"
-        " VALUES ($1, $2, $2) ON CONFLICT (channel_id) DO UPDATE SET"
+        " VALUES ($1, $2, $2) ON CONFLICT (channel_id, sched_gen) DO UPDATE SET"
         " last_generated_at = excluded.last_generated_at",
         channel_id,
         at,

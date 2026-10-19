@@ -42,6 +42,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 	perfpkg "github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange"
 )
 
 // P6Deps bundles the dependencies for Phase 6 handlers. DB is the only
@@ -202,6 +203,10 @@ func MountP6(r chi.Router, d P6Deps) {
 	// Admin-editable pipeline rules (planner / grouping / detection),
 	// stored as per-section overrides in app_settings (rules.<section>).
 	rulesHandler := &rules.Handler{DB: d.DB}
+	if d.DB != nil {
+		// Epic 33: with TV staging on, rules.tv / rules.tv_output saves go into a TV change draft
+		rulesHandler.Staging = tvchange.NewDrafts(d.DB)
+	}
 	rulesHandler.Mount(r)
 
 	// Model Management surface for the Settings page (catalog + async

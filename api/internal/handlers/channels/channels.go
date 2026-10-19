@@ -16,6 +16,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange"
 )
 
 // Handler bundles deps. Mirrors handlers/collections.
@@ -30,6 +31,10 @@ type Handler struct {
 	// Live TV refresh, so Plex's channel map follows edits that never go
 	// through write_channels (audit P1-6).
 	OnLineupChange func(ctx context.Context)
+	// Drafts, when staging is on (rules.tv_staging.enabled), takes every editor save
+	// into the open editor draft instead of the air (Epic 33, story 33.12; staging.go).
+	// Nil: direct writes.
+	Drafts *tvchange.Drafts
 
 	rootCache artRootCache // the art folders served from (artpaths.go)
 	artLocks  sync.Map     // channel id + kind → *sync.Mutex (artLock)
@@ -102,6 +107,9 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 			c.NowPlaying = np
 		}
 		items = append(items, c)
+	}
+	if p.IsAdmin && h.staging(r.Context()) {
+		items = h.listWithDraft(r.Context(), items)
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": items})
 }
@@ -177,6 +185,11 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:    now,
 	}
 
+	if h.staging(r.Context()) {
+		h.createDraft(w, r, req, c)
+		return
+	}
+
 	// Stable, scope-unique slug (D4): derive once, suffix on collision.
 	slug, err := h.uniqueSlug(r.Context(), req.LibraryID, req.Name)
 	if err != nil {
@@ -220,6 +233,19 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := chi.URLParam(r, "id")
+	if p.IsAdmin && h.staging(r.Context()) {
+		c, _, ok := h.loadEffective(w, r, id)
+		if !ok {
+			return
+		}
+		if np, err := h.repo().nowPlaying(r.Context(), c.ID, h.now()); err == nil && np != nil {
+			c.NowPlaying = np
+		}
+		h.attachDraftOverrides(r.Context(), &c)
+		attachBuilderInfo(&c, h.planStatuses(r.Context()), h.guideUntil(r.Context()))
+		common.WriteJSON(w, r, http.StatusOK, c)
+		return
+	}
 	c, err := h.repo().get(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -252,14 +278,24 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := chi.URLParam(r, "id")
-	existing, err := h.repo().get(r.Context(), id)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			httperror.Write(w, r, httperror.NotFound("channel "+id))
+	staged := h.staging(r.Context())
+	var existing Channel
+	if staged {
+		var ok bool
+		if existing, _, ok = h.loadEffective(w, r, id); !ok {
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load channel"))
-		return
+	} else {
+		var err error
+		existing, err = h.repo().get(r.Context(), id)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				httperror.Write(w, r, httperror.NotFound("channel "+id))
+				return
+			}
+			httperror.Write(w, r, httperror.Internal("load channel"))
+			return
+		}
 	}
 
 	var req PatchRequest
@@ -359,6 +395,10 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		common.WriteJSON(w, r, http.StatusOK, existing)
 		return
 	}
+	if staged {
+		h.patchDraft(w, r, existing, req, logoChange, newLogo)
+		return
+	}
 	if len(sets) > 0 {
 		add("updated_at", h.now())
 		args = append(args, id)
@@ -416,6 +456,26 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := chi.URLParam(r, "id")
+	if h.staging(r.Context()) {
+		c, dr, ok := h.loadEffective(w, r, id)
+		if !ok {
+			return
+		}
+		added := c.Draft != nil && c.Draft.Added
+		_ = dr
+		if _, ok := h.saveDraft(w, r, "delete", func(pd *tvchange.Pending) error {
+			if added {
+				pd.DropChannel(id)
+			} else {
+				pd.RemoveChannel(id)
+			}
+			return nil
+		}); !ok {
+			return
+		}
+		common.WriteNoContent(w)
+		return
+	}
 	if err := h.repo().delete(r.Context(), id); err != nil {
 		httperror.Write(w, r, httperror.Internal("delete channel"))
 		return
@@ -440,6 +500,10 @@ func (h *Handler) Reorder(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := validateReorder(entries); err != nil {
 		httperror.Write(w, r, httperror.BadRequest(err.Error()))
+		return
+	}
+	if h.staging(r.Context()) {
+		h.reorderDraft(w, r, entries)
 		return
 	}
 	tx, err := h.DB.BeginTx(r.Context(), nil)
@@ -530,10 +594,10 @@ func (h *Handler) nextNumber(ctx context.Context, libraryID *string) (int, error
 	var err error
 	if libraryID == nil {
 		err = h.DB.QueryRowContext(ctx,
-			`SELECT max(number) FROM channels WHERE library_id IS NULL`).Scan(&maxNum)
+			`SELECT max(number) FROM channels WHERE library_id IS NULL AND lifecycle = 'live'`).Scan(&maxNum)
 	} else {
 		err = h.DB.QueryRowContext(ctx,
-			`SELECT max(number) FROM channels WHERE library_id = $1`, *libraryID).Scan(&maxNum)
+			`SELECT max(number) FROM channels WHERE library_id = $1 AND lifecycle = 'live'`, *libraryID).Scan(&maxNum)
 	}
 	if err != nil {
 		return 0, err
@@ -556,9 +620,9 @@ func (h *Handler) lineupChanged(ctx context.Context) {
 // the flag on first run.
 func (h *Handler) markStale(ctx context.Context, channelID string) {
 	_, _ = h.DB.ExecContext(ctx, `
-		INSERT INTO channel_schedule_state (channel_id, stale)
-		VALUES ($1, true)
-		ON CONFLICT (channel_id) DO UPDATE SET stale = true
+		INSERT INTO channel_schedule_state (channel_id, stale, sched_gen)
+		VALUES ($1, true, COALESCE((SELECT live_gen FROM tv_routing WHERE scope = 'cluster'), 0))
+		ON CONFLICT (channel_id, sched_gen) DO UPDATE SET stale = true
 	`, channelID)
 }
 

@@ -29,7 +29,31 @@ from ..schedule.tv_settings import MaktabaTvConfig
 from .base import Block, BlockKind, ChannelDef, ChannelMode, ContentItem, FillerItem
 from .filler import FillerList, FillerSet
 
-__all__ = ["ScheduleState", "ScheduleRepo", "SqlRepo"]
+__all__ = ["ReleaseView", "ScheduleState", "ScheduleRepo", "SqlRepo", "live_gen"]
+
+
+async def live_gen(db: Any) -> int:
+    """The live schedule generation (``tv_routing`` scope ``cluster``, slot 0127): 0 when
+    staging was never used, or on a database without the table yet."""
+    try:
+        v = await db.fetchval("SELECT live_gen FROM tv_routing WHERE scope = 'cluster'")
+    except Exception as exc:  # noqa: BLE001 - a database before slot 0127
+        if "tv_routing" not in str(exc) and "no such table" not in str(exc).lower():
+            raise
+        return 0
+    return int(v or 0)
+
+
+@dataclass(slots=True)
+class ReleaseView:
+    """What a generation that is not the live one plans from (Epic 33): its release's
+    channel definitions (``tv_release_channels.def`` by channel id), its ``rules.tv``
+    overrides, and the filler pools a pending ``write_channels`` change will write
+    (``pool key -> items``, each ``(filler item id, video id, duration ms)``)."""
+
+    defs: dict[str, dict[str, Any]]
+    tv: dict[str, Any] | None = None
+    pools: dict[str, list[tuple[str, str, int]]] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -97,15 +121,41 @@ class ScheduleRepo(Protocol):
 
 
 class SqlRepo:
-    """Production repo over a pipeline DB connection."""
+    """Production repo over a pipeline DB connection, for one schedule generation
+    (``gen``; None: the live one, read once). A generation other than the live one
+    plans from its release (``release``), not from ``channels`` / ``app_settings``."""
 
-    def __init__(self, conn: DBConn) -> None:
+    def __init__(
+        self, conn: DBConn, *, gen: int | None = None, release: ReleaseView | None = None
+    ) -> None:
         self._c = conn
         # the latest plan's lanes, read once per repo (one top-up sweep)
         self._lane_cache: dict[str, Any] | None = None
         self._tv: MaktabaTvConfig | None = None
+        self._gen = gen
+        self.release = release
+
+    async def gen(self) -> int:
+        """The schedule generation this repo reads and writes."""
+        if self._gen is None:
+            self._gen = await live_gen(self._c)
+        return self._gen
 
     async def load_channel(self, channel_id: UUID) -> ChannelDef | None:
+        if self.release is not None:
+            d = self.release.defs.get(str(channel_id))
+            if d is None:
+                return None
+            return ChannelDef(
+                id=UUID(str(d["id"])),
+                mode=ChannelMode(d["mode"]),
+                mode_config=_json(d.get("mode_config")),
+                source_filter=_json(d.get("source_filter")) or None,
+                library_id=UUID(str(d["library_id"])) if d.get("library_id") else None,
+                enabled=bool(d.get("enabled", True)),
+                transition=d.get("transition") or "cut",
+                number=int(d.get("number") or 0),
+            )
         row = await self._c.fetchrow(
             """
             SELECT id, library_id, number, mode, mode_config, source_filter, transition, enabled
@@ -130,17 +180,18 @@ class SqlRepo:
         row = await self._c.fetchrow(
             """
             SELECT channel_id, anchor_at, horizon_until, last_generated_at, cursor, stale
-            FROM channel_schedule_state WHERE channel_id = $1
+            FROM channel_schedule_state WHERE channel_id = $1 AND sched_gen = $2
             """,
             channel_id,
+            await self.gen(),
         )
         if row is None:
             return ScheduleState(channel_id=channel_id)
         return ScheduleState(
             channel_id=channel_id,
-            anchor_at=row["anchor_at"],
-            horizon_until=row["horizon_until"],
-            last_generated_at=row["last_generated_at"],
+            anchor_at=_ts(row["anchor_at"]),
+            horizon_until=_ts(row["horizon_until"]),
+            last_generated_at=_ts(row["last_generated_at"]),
             cursor=_json(row["cursor"]),
             stale=bool(row["stale"]),
         )
@@ -384,6 +435,10 @@ class SqlRepo:
             " WHERE external_key IS NOT NULL OR channel_id IS NOT NULL"
         )
         want = set(refs)
+        overlay = self.release.pools if self.release is not None else {}
+        rows = [
+            r for r in rows if r["external_key"] is None or str(r["external_key"]) not in overlay
+        ]
         by_ref: dict[str, str] = {}
         for r in rows:
             pid = str(r["id"])
@@ -394,8 +449,9 @@ class SqlRepo:
                 by_ref[pid] = pid
             if r["channel_id"] is not None and str(r["channel_id"]) == str(channel_id):
                 by_ref.setdefault(f"channel:{pid}", pid)
+        staged = {k: v for k, v in overlay.items() if k in want}
         ids = sorted(set(by_ref.values()))
-        if not ids:
+        if not ids and not staged:
             return {}
         items: dict[str, list[FillerItem]] = {pid: [] for pid in ids}
         cast = "::uuid" if self._pg else ""
@@ -425,7 +481,24 @@ class SqlRepo:
                         snapshot={"title": _bare(r["title"] or ""), "duration_ms": int(ms)},
                     )
                 )
-        return {ref: (pid, tuple(items[pid])) for ref, pid in by_ref.items()}
+        out = {ref: (pid, tuple(items[pid])) for ref, pid in by_ref.items()}
+        for key, clips in staged.items():  # a pool the staged change writes (Epic 33)
+            titles = await self._live_videos(sorted({v for _, v, _ in clips}))
+            out[key] = (
+                f"staged:{key}",
+                tuple(
+                    FillerItem(
+                        filler_item_id=UUID(fid),
+                        video_id=UUID(vid),
+                        duration_ms=int(ms),
+                        kind=BlockKind.FILLER,
+                        snapshot={"title": _bare(titles[vid]), "duration_ms": int(ms)},
+                    )
+                    for fid, vid, ms in clips
+                    if vid in titles and int(ms) > 0
+                ),
+            )
+        return out
 
     async def load_tv(self) -> MaktabaTvConfig:
         """The ``tv`` rules, with the dizqueTV export's live broadcasts when Maktaba TV
@@ -434,7 +507,10 @@ class SqlRepo:
             from .. import rules
             from ..schedule.tv_settings import live_slots
 
-            tv, _, _ = await rules.read(self._c, "tv")
+            if self.release is not None and self.release.tv is not None:
+                tv, _ = rules.config("tv", self.release.tv)
+            else:
+                tv, _, _ = await rules.read(self._c, "tv")
             dz, _, _ = await rules.read(self._c, "dizquetv")
             self._tv = replace(tv, live=live_slots(tv, dz))
         return self._tv
@@ -442,26 +518,30 @@ class SqlRepo:
     async def future_programs(self, channel_id: UUID, from_at: datetime) -> list[UUID]:
         rows = await self._c.fetch(
             "SELECT video_id FROM channel_programs WHERE channel_id = $1 AND start_at >= $2"
-            " AND kind = 'program' AND video_id IS NOT NULL ORDER BY start_at",
+            " AND sched_gen = $3 AND kind = 'program' AND video_id IS NOT NULL ORDER BY start_at",
             channel_id,
             from_at,
+            await self.gen(),
         )
         return [UUID(str(r["video_id"])) for r in rows]
 
     async def airing_until(self, channel_id: UUID, at: datetime) -> datetime | None:
         row = await self._c.fetchrow(
             "SELECT max(end_at) AS e FROM channel_programs"
-            " WHERE channel_id = $1 AND start_at <= $2 AND end_at > $2",
+            " WHERE channel_id = $1 AND sched_gen = $3 AND start_at <= $2 AND end_at > $2",
             channel_id,
             at,
+            await self.gen(),
         )
-        return None if row is None else row["e"]
+        return None if row is None else _ts(row["e"])
 
     async def max_seq_before(self, channel_id: UUID, anchor: datetime) -> int:
         row = await self._c.fetchrow(
-            "SELECT max(seq) AS m FROM channel_programs WHERE channel_id = $1 AND start_at < $2",
+            "SELECT max(seq) AS m FROM channel_programs"
+            " WHERE channel_id = $1 AND sched_gen = $3 AND start_at < $2",
             channel_id,
             anchor,
+            await self.gen(),
         )
         if row is None or row["m"] is None:
             return -1
@@ -471,13 +551,16 @@ class SqlRepo:
         self, channel_id: UUID, *, from_at: datetime, blocks: list[Block]
     ) -> None:
         snaps = await self._display_snapshots(blocks)
+        gen = await self.gen()
         async with self._c.transaction():
             # D3: only the future tail is rewritten — past/current blocks
             # (start_at < from_at) are immutable.
             await self._c.execute(
-                "DELETE FROM channel_programs WHERE channel_id = $1 AND start_at >= $2",
+                "DELETE FROM channel_programs WHERE channel_id = $1 AND sched_gen = $3"
+                " AND start_at >= $2",
                 channel_id,
                 from_at,
+                gen,
             )
             for i, b in enumerate(blocks):
                 await self._c.execute(
@@ -485,8 +568,8 @@ class SqlRepo:
                     INSERT INTO channel_programs
                         (channel_id, seq, kind, video_id, filler_item_id,
                          start_at, end_at, source_offset, source_duration, title_snapshot,
-                         source_url)
-                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                         source_url, sched_gen)
+                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
                     """,
                     channel_id,
                     b.seq,
@@ -499,6 +582,7 @@ class SqlRepo:
                     b.source_duration,
                     json.dumps(snaps[i]),
                     b.source_url,
+                    gen,
                 )
 
     async def _display_snapshots(self, blocks: list[Block]) -> list[dict[str, Any]]:
@@ -519,9 +603,9 @@ class SqlRepo:
         await self._c.execute(
             """
             INSERT INTO channel_schedule_state
-                (channel_id, anchor_at, horizon_until, last_generated_at, cursor, stale)
-            VALUES ($1,$2,$3,$4,$5,false)
-            ON CONFLICT (channel_id) DO UPDATE SET
+                (channel_id, anchor_at, horizon_until, last_generated_at, cursor, stale, sched_gen)
+            VALUES ($1,$2,$3,$4,$5,false,$6)
+            ON CONFLICT (channel_id, sched_gen) DO UPDATE SET
                 anchor_at = EXCLUDED.anchor_at,
                 horizon_until = EXCLUDED.horizon_until,
                 last_generated_at = EXCLUDED.last_generated_at,
@@ -533,20 +617,62 @@ class SqlRepo:
             state.horizon_until,
             state.last_generated_at,
             json.dumps(state.cursor),
+            await self.gen(),
         )
 
     async def channels_needing_topup(self, now: datetime, low_water: datetime) -> list[UUID]:
+        gen = await self.gen()
+        if self.release is not None:
+            # a staged / previous generation: its release's enabled channels
+            want = [k for k, d in self.release.defs.items() if d.get("enabled", True)]
+            if not want:
+                return []
+            states = {
+                str(r["channel_id"]): r
+                for r in await self._c.fetch(
+                    "SELECT channel_id, horizon_until, stale FROM channel_schedule_state"
+                    " WHERE sched_gen = $1",
+                    gen,
+                )
+            }
+            out: list[UUID] = []
+            for cid in sorted(want):
+                st = states.get(cid)
+                until = _ts(st["horizon_until"]) if st is not None else None
+                if st is None or until is None or until < low_water or bool(st["stale"]):
+                    out.append(UUID(cid))
+            return out
         rows = await self._c.fetch(
             """
             SELECT c.id AS id
             FROM channels c
-            LEFT JOIN channel_schedule_state s ON s.channel_id = c.id
-            WHERE c.enabled = true
+            LEFT JOIN channel_schedule_state s ON s.channel_id = c.id AND s.sched_gen = $2
+            WHERE c.enabled = true AND c.lifecycle = 'live'
               AND (s.horizon_until IS NULL OR s.horizon_until < $1 OR s.stale = true)
             """,
             low_water,
+            gen,
         )
         return [UUID(str(r["id"])) for r in rows]
+
+    async def stale_channels(self) -> list[UUID]:
+        """The live channels whose schedule is flagged for a regeneration (``stale``)."""
+        rows = await self._c.fetch(
+            "SELECT s.channel_id AS id FROM channel_schedule_state s"
+            " JOIN channels c ON c.id = s.channel_id AND c.lifecycle = 'live'"
+            " WHERE s.sched_gen = $1 AND s.stale = true",
+            await self.gen(),
+        )
+        return [UUID(str(r["id"])) for r in rows]
+
+    async def clear_stale(self, channel_id: UUID) -> None:
+        """Drop the ``stale`` flag (a staged change took the regeneration over)."""
+        await self._c.execute(
+            "UPDATE channel_schedule_state SET stale = $3 WHERE channel_id = $1 AND sched_gen = $2",
+            channel_id,
+            await self.gen(),
+            False if getattr(self._c, "dialect", "postgres") == "postgres" else 0,
+        )
 
 
 def all_slots(mode_config: dict[str, Any]) -> list[dict[str, Any]]:
@@ -605,6 +731,15 @@ def lane_episodes(lane: dict[str, Any]) -> list[ContentItem]:
             if ms > 0:
                 out.append(ContentItem(video_id=vid, duration_ms=ms, title=ep.get("title") or ""))
     return out
+
+
+def _ts(val: Any) -> datetime | None:
+    """A timestamp column as an aware datetime (SQLite hands back text)."""
+    if val is None or isinstance(val, datetime):
+        return val
+    from ..engine.sql import parse_ts
+
+    return parse_ts(val)
 
 
 def _json(val: Any) -> dict[str, Any]:

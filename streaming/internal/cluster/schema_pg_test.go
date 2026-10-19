@@ -41,8 +41,10 @@ func TestReadHomeSchemaAsAMachineRole(t *testing.T) {
 	}
 
 	h := cluster.ReadHomeSchema(ctx, node)
-	if !h.Known || h.Applied != cluster.SchemaRev || h.HasMinNode {
-		t.Fatalf("ReadHomeSchema = %+v, want applied %d, no breaking declaration", h, cluster.SchemaRev)
+	// the newest breaking declaration a migration makes (slot 0128: 128) never pauses
+	// the code that ships it
+	if !h.Known || h.Applied != cluster.SchemaRev || (h.HasMinNode && h.MinNode > cluster.SchemaRev) {
+		t.Fatalf("ReadHomeSchema = %+v, want applied %d, no declaration above it", h, cluster.SchemaRev)
 	}
 	if r := cluster.PauseReason(h, cluster.SchemaRev); r != "" {
 		t.Fatalf("a fitting home pauses: %q", r)
@@ -51,7 +53,7 @@ func TestReadHomeSchemaAsAMachineRole(t *testing.T) {
 		t.Fatalf("newer code against this home: %q", r)
 	}
 
-	if _, err := pool.Exec(ctx, `CREATE FUNCTION `+cluster.MinNodeFunction+`() RETURNS integer LANGUAGE sql IMMUTABLE AS 'SELECT 9999'`); err != nil {
+	if _, err := pool.Exec(ctx, `CREATE OR REPLACE FUNCTION `+cluster.MinNodeFunction+`() RETURNS integer LANGUAGE sql IMMUTABLE AS 'SELECT 9999'`); err != nil {
 		t.Fatal(err)
 	}
 	h = cluster.ReadHomeSchema(ctx, node)

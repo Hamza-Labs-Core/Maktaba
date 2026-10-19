@@ -1,0 +1,326 @@
+"""Producers that make TV changes instead of changing the air (story 33.12), and the
+stage step every change goes through (design 11.2 ``draft -> staged``).
+
+* :func:`stage_write_channels` - ``write_channels`` with staging on: its write plan
+  becomes a change's pending edits; ``write_mode = review`` parks it as a ``draft``
+  (the Changes page shows its diff; its Approve is the queue's Apply), ``auto`` (or an
+  approved digest) stages it at once;
+* :func:`stale_to_draft` - the scheduler's ``stale`` flag with staging on: the channel
+  goes into the open ``schedule`` draft; the live generation is never rewritten;
+* :func:`stage_change` - build the release and generation N+1 of a draft (the
+  ``tv_stage`` job, and the producers above in auto mode).
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+from .. import rules
+from ..engine.sql import is_pg, now
+from ..log import get_logger
+from .build import build_release
+from .generation import build_generation, planned_swap
+from .store import (
+    create_change,
+    event,
+    get_change,
+    in_flight,
+    open_draft,
+    transition,
+    update_change,
+)
+
+__all__ = [
+    "ChangeInFlight",
+    "enabled",
+    "stage_change",
+    "stage_write_channels",
+    "stale_to_draft",
+    "write_plan_pending",
+]
+
+_log = get_logger()
+
+
+class ChangeInFlight(RuntimeError):
+    """Another change is in ``staged … swapping`` (README R9.4)."""
+
+    def __init__(self, change_id: str) -> None:
+        super().__init__(f"change_in_flight: {change_id}")
+        self.change_id = change_id
+
+
+async def enabled(db: Any) -> bool:
+    """``rules.tv_staging.enabled`` (on by default: owner decision)."""
+    cfg, _, _ = await rules.read(db, "tv_staging")
+    return bool(cfg.enabled)
+
+
+async def stage_change(
+    db: Any, change_id: str, *, clock: datetime | None = None, actor_source: str = "system"
+) -> str:
+    """Build the release and schedule generation of a ``draft`` change and move it to
+    ``staged``. Returns the change's state afterwards: ``staged``, ``draft`` (another
+    change is in flight: it queues), or ``cancelled`` (it airs exactly what is live)."""
+    clock = clock or now()
+    ch = await get_change(db, change_id)
+    if ch is None:
+        raise LookupError(f"no TV change {change_id}")
+    if ch.state != "draft":
+        return ch.state
+    other = await in_flight(db)
+    if other is not None and other.id != change_id:
+        await event(
+            db, change_id, from_state="draft", to_state="draft", action="queued",
+            actor_source=actor_source, detail={"in_flight": other.id},
+        )  # fmt: skip
+        raise ChangeInFlight(other.id)
+    cfg, _, _ = await rules.read(db, "tv_staging")
+    pending = ch.pending
+    rel, diff, kinds = await build_release(db, pending, created_by=ch.row.get("created_by"))
+    if rel is None:
+        await transition(
+            db, change_id, from_states=("draft",), to="cancelled", action="noop",
+            actor_source=actor_source, detail={"why": "the change airs exactly what is live"},
+            end_reason="noop", ended_at=clock, kinds=kinds,
+        )  # fmt: skip
+        return "cancelled"
+    at = planned_swap(ch.row.get("swap_at"), int(cfg.verify_soak_seconds), clock)
+    boundaries = await build_generation(db, rel, at=at, pending=pending, clock=clock)
+    for s in diff.get("schedules") or []:
+        b = boundaries.get(str(s.get("id")))
+        if b:
+            s["divergence_at"] = b
+    live = await db.fetchval("SELECT live_release_id FROM tv_routing WHERE scope = 'cluster'")
+    await transition(
+        db, change_id, from_states=("draft",), to="staged", action="stage",
+        actor_source=actor_source,
+        detail={"release_id": rel.id, "sched_gen": rel.sched_gen, "reused": rel.reused},
+        release_id=rel.id, base_release_id=None if live is None else str(live), kinds=kinds,
+        diff={**diff, "pending": pending}, anchor_at=at, staged_at=clock,
+        auto_rule=_strictest(cfg, kinds),
+    )  # fmt: skip
+    _log.info(
+        "tv_change_staged", change_id=change_id, release=rel.id, gen=rel.sched_gen, kinds=kinds
+    )
+    return "staged"
+
+
+def _strictest(cfg: Any, kinds: list[str]) -> str:
+    from .config import auto_rule
+
+    return auto_rule(cfg, kinds)
+
+
+# --- write_channels -----------------------------------------------------------------
+
+
+async def write_plan_pending(db: Any, wp: Any) -> dict[str, Any]:
+    """A ``write_channels`` write plan as a change's pending edits (the channels as they
+    will be, their links and the filler pools, applied at the swap)."""
+    from .snapshot import DEF_COLUMNS
+
+    channels: dict[str, Any] = {}
+    links: list[dict[str, Any]] = []
+    for cid, w in wp.update:
+        row = await db.fetchrow(f"SELECT {', '.join(DEF_COLUMNS)} FROM channels WHERE id = $1", cid)
+        from .snapshot import _def  # noqa: PLC0415 - shared row decoder
+
+        cur = _def(row) if row is not None else {"id": cid}
+        channels[cid] = {**cur, **_values(w.values)}
+        links.append(
+            {"key": w.key, "channel_id": cid, "title": w.values["name"], "digest": w.digest}
+        )
+    import uuid
+
+    for w in wp.create:
+        cid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"maktaba:write_channels:{w.key}:{w.digest}"))
+        channels[cid] = {
+            "id": cid,
+            "library_id": None,
+            "slug": w.slug,
+            **_values(w.values),
+        }
+        links.append(
+            {"key": w.key, "channel_id": cid, "title": w.values["name"], "digest": w.digest}
+        )
+    for _, cid in wp.delete:
+        channels[cid] = None
+    pools = {
+        "write": [
+            {
+                "key": pw.key, "name": pw.name, "items": pw.items, "pool_id": pw.pool_id,
+                "add": pw.add, "drop": pw.drop, "retime": pw.retime, "rename": pw.rename,
+            }
+            for pw in wp.pools.write
+        ],
+        "delete": [list(x) for x in wp.pools.delete],
+    }  # fmt: skip
+    sched: list[str] = []
+    if wp.pools.write or wp.pools.delete:
+        # what fills the gaps changed: every channel the tool made plans its filler anew
+        from ..engine.stages.write_channels import SUBJECT_KIND, TARGET
+
+        sched = sorted(
+            {
+                str(r["external_id"])
+                for r in await db.fetch(
+                    "SELECT external_id FROM external_links"
+                    " WHERE target = $1 AND subject_kind = $2",
+                    TARGET,
+                    SUBJECT_KIND,
+                )
+            }
+            | {c for c, d in channels.items() if d is not None}
+        )
+    return {
+        "channels": channels,
+        "links": links,
+        "unlinks": [k for k, _ in wp.delete],
+        "pools": pools,
+        "sched": sched,
+    }
+
+
+def _values(v: dict[str, Any]) -> dict[str, Any]:
+    return {
+        k: v[k]
+        for k in (
+            "number", "name", "category", "mode", "mode_config", "transition", "enabled",
+            "sort_order", "logo_path",
+        )
+        if k in v
+    }  # fmt: skip
+
+
+async def stage_write_channels(
+    db: Any,
+    *,
+    wp: Any,
+    changes: Any,
+    job: Any,
+    write_mode: str,
+    approved: frozenset[str],
+    plan_id: int | None,
+) -> dict[str, Any]:
+    """``write_channels`` with staging on (AC1 - AC3): returns the job summary's
+    ``tv_change`` part. Nothing on the air changes here."""
+    digest = changes.digest()
+    source = {
+        "kind": "write_channels",
+        "job_id": job.id,
+        "stage": "write_channels",
+        "plan_id": plan_id,
+        "digest": digest,
+    }
+    flying = await in_flight(db)
+    if flying is not None and flying.row.get("digest") == digest:
+        # this very plan is already staged (a re-run while it waits for approval)
+        return {"id": flying.id, "digest": digest, "state": flying.state}
+    pending = await write_plan_pending(db, wp)
+    title = f"Channel plan #{plan_id}" if plan_id is not None else "Channel plan"
+    draft = await open_draft(db, "write_channels")
+    if draft is not None and draft.row.get("digest") != digest:
+        # the plan changed since that review: a new draft, the old one is superseded (AC3)
+        await transition(
+            db, draft.id, from_states=("draft",), to="superseded", action="supersede",
+            detail={"by_digest": digest}, ended_at=now(), end_reason="plan_changed",
+        )  # fmt: skip
+        draft = None
+    if draft is None:
+        cid = await create_change(
+            db, state="draft", title=title, source=source, pending=pending,
+            change_set=changes.to_json(), digest=digest, actor_source="write_channels",
+        )  # fmt: skip
+    else:
+        cid = draft.id
+        await update_change(db, cid, source=source, change_set=changes.to_json(),
+                            diff={**(draft.row.get("diff") or {}), "pending": pending})  # fmt: skip
+    out: dict[str, Any] = {"id": cid, "digest": digest}
+    if write_mode == "review" and digest not in approved:
+        out["state"] = "draft"
+        return out
+    if digest in approved:
+        # the Changes page's Approve was the queue's Apply (AC2): the change is approved
+        ch = await get_change(db, cid)
+        if ch is not None and not ch.row.get("approved_by"):
+            await update_change(db, cid, approved_by=["queue_apply"], approved_at=now())
+    try:
+        out["state"] = await stage_change(db, cid, actor_source="write_channels")
+    except ChangeInFlight as e:
+        out["state"] = "draft"
+        out["queued_behind"] = e.change_id
+    if out["state"] == "cancelled":
+        # nothing airs differently: only the bookkeeping (links) is written
+        await _write_links(db, pending)
+    return out
+
+
+async def _write_links(db: Any, pending: dict[str, Any]) -> None:
+    from ..engine.sql import to_ts
+    from ..engine.stages.write_channels import SUBJECT_KIND, TARGET
+
+    stamp = to_ts(db, now())
+    for link in pending.get("links") or []:
+        if (
+            await db.fetchrow("SELECT 1 AS x FROM channels WHERE id = $1", link["channel_id"])
+            is None
+        ):
+            continue
+        await db.execute(
+            "INSERT INTO external_links (target, subject_kind, subject_id, external_id, title,"
+            " content_hash, created_by_tool, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)"
+            " ON CONFLICT (target, subject_kind, subject_id) DO UPDATE SET"
+            " external_id = EXCLUDED.external_id, title = EXCLUDED.title,"
+            " content_hash = EXCLUDED.content_hash, updated_at = EXCLUDED.updated_at",
+            TARGET, SUBJECT_KIND, link["key"], link["channel_id"], link["title"], link["digest"],
+            True if is_pg(db) else 1, stamp,
+        )  # fmt: skip
+
+
+# --- the stale flag ------------------------------------------------------------------
+
+
+async def stale_to_draft(db: Any, repo: Any) -> list[str]:
+    """With staging on, a ``stale`` live channel is a schedule change (AC7): it goes
+    into the open ``schedule`` draft (created if none) and its flag is cleared, so the
+    top-up never rewrites the live generation. Off: nothing (today's behaviour)."""
+    try:
+        if not await enabled(db):
+            return []
+        ids = [str(c) for c in await repo.stale_channels()]
+    except Exception as exc:  # noqa: BLE001 - a database before slot 0127
+        if "no such" in str(exc).lower() or "does not exist" in str(exc):
+            return []
+        raise
+    if not ids:
+        return []
+    async with db.transaction():
+        if is_pg(db):
+            # the drafts' lock (the API's tvchange.Drafts takes the same): one open draft
+            # per kind even with several workers topping up
+            await db.execute("SELECT pg_advisory_xact_lock(hashtext('tv_change_draft'))")
+        draft = await open_draft(db, "schedule")
+        if draft is None:
+            await create_change(
+                db, state="draft", title="Schedule regeneration",
+                source={"kind": "schedule", "by": "scheduler"}, pending={"sched": ids},
+                actor_source="scheduler",
+            )  # fmt: skip
+        else:
+            pending = draft.pending
+            pending["sched"] = sorted(set(pending.get("sched") or []) | set(ids))
+            await update_change(
+                db, draft.id, diff={**(draft.row.get("diff") or {}), "pending": pending}
+            )
+            await event(
+                db, draft.id, from_state="draft", to_state="draft", action="append",
+                actor_source="scheduler", detail={"sched": ids},
+            )  # fmt: skip
+        for cid in ids:
+            from uuid import UUID
+
+            await repo.clear_stale(UUID(cid))
+    _log.info("tv_change_stale_drafted", channels=len(ids))
+    return ids

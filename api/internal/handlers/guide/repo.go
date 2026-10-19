@@ -38,7 +38,7 @@ type ProgramRow struct {
 // category. ACL scoping is applied by the caller against the principal.
 func (rp *repo) channelsVisible(ctx context.Context, category string) ([]ChannelMeta, error) {
 	q := `SELECT id, library_id, number, name, slug, logo_path, category
-	      FROM channels WHERE enabled = true`
+	      FROM channels WHERE enabled = true AND lifecycle = 'live'`
 	var args []any
 	if category != "" {
 		q += " AND category = $1"
@@ -103,7 +103,7 @@ func (rp *repo) programsOverlapping(ctx context.Context, channelIDs []string, st
 	startPH := "$" + itoa(len(channelIDs)+1)
 	endPH := "$" + itoa(len(channelIDs)+2)
 	q := `SELECT channel_id, seq, kind, start_at, end_at, title_snapshot
-	      FROM channel_programs
+	      FROM channel_programs_live
 	      WHERE channel_id IN (` + strings.Join(ph, ",") + `)
 	        AND start_at < ` + endPH + ` AND end_at > ` + startPH + `
 	      ORDER BY channel_id ASC, start_at ASC`
@@ -130,7 +130,7 @@ func (rp *repo) programsOverlapping(ctx context.Context, channelIDs []string, st
 func (rp *repo) currentAndNext(ctx context.Context, channelID string, now time.Time) (cur, next *ProgramRow, err error) {
 	curRow := rp.db.QueryRowContext(ctx, `
 		SELECT channel_id, seq, kind, start_at, end_at, title_snapshot
-		FROM channel_programs
+		FROM channel_programs_live
 		WHERE channel_id = $1 AND start_at <= $2 AND end_at > $2
 		ORDER BY start_at DESC LIMIT 1`, channelID, now)
 	cur, err = scanProgram(curRow)
@@ -139,7 +139,7 @@ func (rp *repo) currentAndNext(ctx context.Context, channelID string, now time.T
 	}
 	nextRow := rp.db.QueryRowContext(ctx, `
 		SELECT channel_id, seq, kind, start_at, end_at, title_snapshot
-		FROM channel_programs
+		FROM channel_programs_live
 		WHERE channel_id = $1 AND start_at >= $2
 		ORDER BY start_at ASC LIMIT 1`, channelID, now)
 	next, err = scanProgram(nextRow)
@@ -155,7 +155,8 @@ func (rp *repo) currentAndNext(ctx context.Context, channelID string, now time.T
 func (rp *repo) horizonUntil(ctx context.Context, channelID string) (time.Time, bool) {
 	var until sql.NullTime
 	err := rp.db.QueryRowContext(ctx,
-		`SELECT horizon_until FROM channel_schedule_state WHERE channel_id = $1`, channelID).Scan(&until)
+		`SELECT horizon_until FROM channel_schedule_state WHERE channel_id = $1
+		   AND sched_gen = COALESCE((SELECT live_gen FROM tv_routing WHERE scope = 'cluster'), 0)`, channelID).Scan(&until)
 	if err != nil || !until.Valid {
 		return time.Time{}, false
 	}

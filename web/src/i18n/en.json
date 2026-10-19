@@ -112,6 +112,8 @@
   "settings.rules.removeUnknown": "Remove them",
   "settings.rules.saved": "Saved. {n} rule(s) differ from the defaults.",
   "settings.rules.resetDone": "Back to the default.",
+  "channels.tvDraft": "Editing draft change #{n}: what you save goes on the air when the change is approved (Live TV, Changes).",
+  "settings.rules.savedToDraft": "Saved to draft change #{n}: it goes on the air when the change is approved (Live TV, Changes).",
   "settings.rules.notSaved": "Not saved: {message}",
   "settings.rules.loadError": "Could not load the rules.",
   "settings.rules.on": "On",

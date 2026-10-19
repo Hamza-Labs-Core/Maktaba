@@ -1,7 +1,9 @@
 // Client for the rules API (detection, grouping and channel planning):
 //   GET   /api/rules            → { sections: RuleSection[] }
 //   PATCH /api/rules/{section}  { set: {name: value}, reset: [names] }
-//         → 200 { section, changed } | 400 { error: "<field>: <message>", field }
+//         → 200 { section, changed, draft_change? } | 400 { error: "<field>: <message>", field }
+// With TV staging on, a save of "tv" / "tv_output" goes into a TV change draft
+// (draft_change: {id, number}) instead of the air (Epic 33, story 33.12).
 // PATCH is admin only (403 otherwise).
 import { api, ApiError } from "./api";
 
@@ -41,6 +43,8 @@ export interface RulesResponse {
 export interface RulesPatchResult {
   section: string;
   changed: string[];
+  /** the TV change draft the save went to (TV staging on, sections tv / tv_output) */
+  draft_change?: { id: string; number: number };
 }
 
 export const rulesApi = {

@@ -117,7 +117,7 @@ func asTime(v any) (time.Time, bool) {
 func (h *Handler) guideUntil(ctx context.Context) map[string]time.Time {
 	out := map[string]time.Time{}
 	rows, err := h.DB.QueryContext(ctx,
-		`SELECT channel_id, max(end_at) FROM channel_programs GROUP BY channel_id`)
+		`SELECT channel_id, max(end_at) FROM channel_programs_live GROUP BY channel_id`)
 	if err != nil {
 		return out
 	}

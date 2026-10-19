@@ -3863,6 +3863,271 @@
    ]
   },
   {
+   "key": "tv_staging",
+   "title": "TV staging",
+   "what": "every TV change is prepared next to what is on the air, checked and approved before it goes on the air; when channels switch, rollback, the hot standby",
+   "fields": [
+    {
+     "name": "enabled",
+     "kind": "bool",
+     "group": "TV staging",
+     "label": "Stage every TV change",
+     "help": "A lineup, schedule, settings or art change is prepared next to what is on the air, checked, and put on the air only when an admin approves it (Live TV -> Changes). Off: changes go on the air at once, as before.",
+     "default": true
+    },
+    {
+     "name": "auto_promote_lineup",
+     "kind": "str",
+     "group": "TV staging approval",
+     "label": "Lineup changes",
+     "help": "approval: an admin approves it; quiet_window: put on the air in the quiet window with no warnings; immediate: as soon as it is verified with no warnings.",
+     "default": "approval",
+     "choices": [
+      "approval",
+      "quiet_window",
+      "immediate"
+     ]
+    },
+    {
+     "name": "auto_promote_settings",
+     "kind": "str",
+     "group": "TV staging approval",
+     "label": "Settings changes",
+     "help": "approval: an admin approves it; quiet_window: put on the air in the quiet window with no warnings; immediate: as soon as it is verified with no warnings.",
+     "default": "approval",
+     "choices": [
+      "approval",
+      "quiet_window",
+      "immediate"
+     ]
+    },
+    {
+     "name": "auto_promote_live_slots",
+     "kind": "str",
+     "group": "TV staging approval",
+     "label": "Live slots changes",
+     "help": "approval: an admin approves it; quiet_window: put on the air in the quiet window with no warnings; immediate: as soon as it is verified with no warnings.",
+     "default": "approval",
+     "choices": [
+      "approval",
+      "quiet_window",
+      "immediate"
+     ]
+    },
+    {
+     "name": "auto_promote_art",
+     "kind": "str",
+     "group": "TV staging approval",
+     "label": "Art changes",
+     "help": "approval: an admin approves it; quiet_window: put on the air in the quiet window with no warnings; immediate: as soon as it is verified with no warnings.",
+     "default": "approval",
+     "choices": [
+      "approval",
+      "quiet_window",
+      "immediate"
+     ]
+    },
+    {
+     "name": "auto_promote_schedule",
+     "kind": "str",
+     "group": "TV staging approval",
+     "label": "Schedule changes",
+     "help": "approval: an admin approves it; quiet_window: put on the air in the quiet window with no warnings; immediate: as soon as it is verified with no warnings.",
+     "default": "approval",
+     "choices": [
+      "approval",
+      "quiet_window",
+      "immediate"
+     ]
+    },
+    {
+     "name": "auto_promote_binary",
+     "kind": "str",
+     "group": "TV staging approval",
+     "label": "Binary changes",
+     "help": "approval: an admin approves it; quiet_window: put on the air in the quiet window with no warnings; immediate: as soon as it is verified with no warnings.",
+     "default": "approval",
+     "choices": [
+      "approval",
+      "quiet_window",
+      "immediate"
+     ]
+    },
+    {
+     "name": "auto_promote_rollback",
+     "kind": "str",
+     "group": "TV staging approval",
+     "label": "Rollback changes",
+     "help": "approval: an admin approves it; quiet_window: put on the air in the quiet window with no warnings; immediate: as soon as it is verified with no warnings.",
+     "default": "approval",
+     "choices": [
+      "approval",
+      "quiet_window",
+      "immediate"
+     ]
+    },
+    {
+     "name": "quiet_window",
+     "kind": "str",
+     "group": "TV staging approval",
+     "label": "Quiet window",
+     "help": "Local time, HH:MM-HH:MM, for a rule switched to quiet_window.",
+     "default": "03:00-05:00"
+    },
+    {
+     "name": "quiet_max_viewers",
+     "kind": "int",
+     "group": "TV staging approval",
+     "label": "Viewers at most in the quiet window",
+     "help": "",
+     "default": 0,
+     "minimum": 0,
+     "maximum": 1000
+    },
+    {
+     "name": "swap_wait",
+     "kind": "str",
+     "group": "TV staging swap",
+     "label": "When a channel switches",
+     "help": "boundary: a watched channel switches at the end of the programme on the air; immediate: every channel at once.",
+     "default": "boundary",
+     "choices": [
+      "boundary",
+      "immediate"
+     ]
+    },
+    {
+     "name": "boundary_max_wait_minutes",
+     "kind": "int",
+     "group": "TV staging swap",
+     "label": "Longest wait for a boundary (minutes)",
+     "help": "",
+     "default": 30,
+     "minimum": 0,
+     "maximum": 600
+    },
+    {
+     "name": "keep_warm_minutes",
+     "kind": "int",
+     "group": "TV staging swap",
+     "label": "Previous version kept warm (minutes)",
+     "help": "For an instant rollback.",
+     "default": 15,
+     "minimum": 0,
+     "maximum": 1440
+    },
+    {
+     "name": "rollback_retention_hours",
+     "kind": "int",
+     "group": "TV staging swap",
+     "label": "Previous version kept (hours)",
+     "help": "For a rollback after the warm period.",
+     "default": 24,
+     "minimum": 1,
+     "maximum": 720
+    },
+    {
+     "name": "verify_soak_seconds",
+     "kind": "int",
+     "group": "TV staging swap",
+     "label": "Checks run for (seconds)",
+     "help": "",
+     "default": 120,
+     "minimum": 0,
+     "maximum": 3600
+    },
+    {
+     "name": "verify_probe_seconds",
+     "kind": "int",
+     "group": "TV staging swap",
+     "label": "Each changed channel probed for (seconds)",
+     "help": "",
+     "default": 30,
+     "minimum": 5,
+     "maximum": 600
+    },
+    {
+     "name": "probe_channel",
+     "kind": "str",
+     "group": "TV staging swap",
+     "label": "Probe channel",
+     "help": "A slug; empty: the lowest-numbered.",
+     "default": ""
+    },
+    {
+     "name": "staging_max_extra_encodes",
+     "kind": "int",
+     "group": "TV staging swap",
+     "label": "Extra encodes while staging",
+     "help": "0: what the machine has free.",
+     "default": 0,
+     "minimum": 0,
+     "maximum": 64
+    },
+    {
+     "name": "rolling_swap",
+     "kind": "str",
+     "group": "TV staging swap",
+     "label": "Rolling swap",
+     "help": "When there are not enough encoders to run both versions.",
+     "default": "auto",
+     "choices": [
+      "auto",
+      "always",
+      "never"
+     ]
+    },
+    {
+     "name": "auto_rollback",
+     "kind": "bool",
+     "group": "TV staging swap",
+     "label": "Roll back automatically",
+     "help": "A crash or a failed check just after a switch.",
+     "default": true
+    },
+    {
+     "name": "hot_standby",
+     "kind": "bool",
+     "group": "TV staging swap",
+     "label": "Hot standby",
+     "help": "A second copy of what is on the air takes over at once on a crash.",
+     "default": true
+    },
+    {
+     "name": "standby_warm",
+     "kind": "str",
+     "group": "TV staging swap",
+     "label": "What the standby keeps warm",
+     "help": "demand: every channel with viewers or a push; viewers: channels with people watching first, when encoders are short.",
+     "default": "demand",
+     "choices": [
+      "demand",
+      "viewers"
+     ]
+    },
+    {
+     "name": "require_second_admin",
+     "kind": "bool",
+     "group": "TV staging approval",
+     "label": "A second admin approves",
+     "help": "The approver must not be the change's author.",
+     "default": false
+    },
+    {
+     "name": "param_change_push",
+     "kind": "str",
+     "group": "TV staging swap",
+     "label": "Picture changes on pushed channels",
+     "help": "approve: the approval acknowledges that simulcast outputs may reconnect; defer: that channel switches when its push ends.",
+     "default": "approve",
+     "choices": [
+      "approve",
+      "defer"
+     ]
+    }
+   ]
+  },
+  {
    "key": "tv_strip",
    "title": "Channel strip",
    "what": "the news-style bar across a channel's picture: what is on now and next, and a clock rotating between cities",
