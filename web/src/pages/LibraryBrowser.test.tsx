@@ -4,7 +4,7 @@
 // advance using it. Grid/list toggle persists per-user.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, act } from "@testing-library/react";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { MemoryRouter, Routes, Route, useNavigate } from "react-router-dom";
 
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock("../lib/api", async () => {
@@ -156,5 +156,60 @@ describe("LibraryBrowser", () => {
       expect(screen.getByText("a.mp4")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /load more/i })).toBeInTheDocument();
     });
+
+    it("LIB-16: a Load more answer that arrives after the sort changed is dropped", async () => {
+      let release: (v: unknown) => void = () => {};
+      get.mockImplementation((url: string) => {
+        if (url.includes("/api/channels/now"))
+          return Promise.resolve({ server_time: "", items: [] });
+        if (url.includes("cursor=")) return new Promise((r) => (release = r));
+        return Promise.resolve(
+          url.includes("sort=title")
+            ? { items: [{ id: "t1", filename: "title-sorted.mp4", state: "ready" }], next: null }
+            : { items: [v1], next: "C2" }
+        );
+      });
+      render(
+        <MemoryRouter initialEntries={["/library"]}>
+          <I18nProvider>
+            <Routes>
+              <Route path="/library" element={<LibraryBrowser />} />
+            </Routes>
+            <SortLink />
+          </I18nProvider>
+        </MemoryRouter>
+      );
+      const more = await screen.findByRole("button", { name: /load more/i });
+      await act(async () => more.click());
+      await act(async () => screen.getByRole("button", { name: "sort by title" }).click());
+      expect(await screen.findByText("title-sorted.mp4")).toBeInTheDocument();
+      await act(async () => release({ items: [v2], next: "OLD_SORT_CURSOR" }));
+      expect(screen.queryByText("b.mp4")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /load more/i })).not.toBeInTheDocument();
+    });
+
+    it("LIB-13: ?sort=constructor falls back to updated_at", async () => {
+      serve({ items: [], next: null }, () => Promise.resolve({ items: [], next: null }));
+      render(
+        <MemoryRouter initialEntries={["/library?sort=constructor"]}>
+          <I18nProvider>
+            <Routes>
+              <Route path="/library" element={<LibraryBrowser />} />
+            </Routes>
+          </I18nProvider>
+        </MemoryRouter>
+      );
+      await waitFor(() => expect(videoCalls()).toHaveLength(1));
+      expect(videoCalls()[0]).toContain("sort=updated_at");
+    });
   });
 });
+
+function SortLink() {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate("/library?sort=title")}>
+      sort by title
+    </button>
+  );
+}

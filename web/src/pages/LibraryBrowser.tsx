@@ -90,7 +90,10 @@ export function LibraryBrowser() {
   const [view, setView] = useState<View>(readView);
   const rawSort = params.get("sort");
   // An unknown ?sort= (a stale or hand-typed link) falls back to the default.
-  const sort: SortField = rawSort && rawSort in SERVER_SORT ? (rawSort as SortField) : "updated_at";
+  const sort: SortField =
+    rawSort && Object.prototype.hasOwnProperty.call(SERVER_SORT, rawSort)
+      ? (rawSort as SortField)
+      : "updated_at";
   // Library ids are UUIDs; the server ignores any other `library` value and
   // would list every video, so a malformed id is "not found" here.
   const badLibrary = !!libraryId && !UUID.test(libraryId);
@@ -102,6 +105,9 @@ export function LibraryBrowser() {
   const [cursor, setCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const loadingMoreRef = useRef(false);
+  // Bumped whenever the list starts over (new sort, library, language or a
+  // retry): a Load more answer for an older list is dropped.
+  const listGen = useRef(0);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -127,6 +133,9 @@ export function LibraryBrowser() {
 
   useEffect(() => {
     let cancelled = false;
+    listGen.current += 1;
+    loadingMoreRef.current = false;
+    setLoadingMore(false);
     setVideos(null);
     setErr(null);
     setCursor(null);
@@ -157,9 +166,11 @@ export function LibraryBrowser() {
     if (!cursor || loadingMoreRef.current) return;
     loadingMoreRef.current = true;
     setLoadingMore(true);
+    const gen = listGen.current;
     api
       .get<VideoListResponse>(`/api/videos?${buildQuery(cursor)}`)
       .then((res) => {
+        if (gen !== listGen.current) return;
         // Skip ids already shown: a page that overlaps the last one (rows
         // re-sorted between requests) must not add duplicate cards.
         setVideos((prev) => {
@@ -168,8 +179,12 @@ export function LibraryBrowser() {
         });
         setCursor(res.next ?? null);
       })
-      .catch((e) => setErr(e instanceof ApiError ? e.problem.title : t("common.error")))
+      .catch((e) => {
+        if (gen !== listGen.current) return;
+        setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
+      })
       .finally(() => {
+        if (gen !== listGen.current) return;
         loadingMoreRef.current = false;
         setLoadingMore(false);
       });

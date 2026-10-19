@@ -1034,6 +1034,35 @@ describe("Admin Channels (test-cases/admin-channels.md)", () => {
     expect(patch.mock.calls[1][0]).toBe("/api/rules/tv");
   });
 
+  it("CHN-28: an edit made after the live rows failed is saved on the retry", async () => {
+    post.mockImplementation((path: string) => {
+      if (path !== "/api/channels") return Promise.reject(new Error(path));
+      return Promise.resolve({ ...C2, id: "c9", number: 3, name: "Docs" });
+    });
+    patch.mockRejectedValueOnce(problem(500, "Rules locked"));
+    const { user, dialog } = await openNew();
+    await user.type(within(dialog).getByLabelText("Name"), "Docs");
+    await user.click(within(dialog).getByRole("tab", { name: /^schedule/i }));
+    await user.click(within(dialog).getByRole("button", { name: "Add slot" }));
+    await user.click(within(dialog).getByRole("tab", { name: /^live broadcasts/i }));
+    await user.click(within(dialog).getByRole("button", { name: "Add live broadcast" }));
+    await user.type(within(dialog).getByLabelText("Stream address"), "https://x/live");
+    await user.click(saveButton(dialog));
+    expect(
+      await screen.findByText("The live broadcasts could not be saved: Rules locked")
+    ).toBeInTheDocument();
+
+    patch.mockResolvedValue({});
+    await user.click(within(dialog).getByRole("tab", { name: /^basics/i }));
+    await user.type(within(dialog).getByLabelText("Name"), " 2");
+    await waitFor(() => expect(saveButton(dialog)).toBeEnabled());
+    await user.click(saveButton(dialog));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(post.mock.calls.filter(([p]) => p === "/api/channels")).toHaveLength(1);
+    const update = patch.mock.calls.find(([p]) => p === "/api/channels/c9");
+    expect(update?.[1]).toEqual({ name: "Docs 2" });
+  });
+
   it("CHN-29: art errors show under the tile; watermark ranges block Apply", async () => {
     answers["/api/channels"] = {
       items: [

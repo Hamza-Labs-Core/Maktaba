@@ -502,6 +502,19 @@ describe("AdminAnalytics (test-cases/admin-analytics.md)", () => {
     expect(kpi("Sessions")).toBe("30");
   });
 
+  it("ANL-15: a card whose endpoint fails for the new range does not keep the old range's data", async () => {
+    open({
+      summary: (u: string) => {
+        if (u.includes("30d")) throw problem(500, "Internal error");
+        return SUMMARY;
+      },
+    });
+    await waitFor(() => expect(kpi("Sessions")).toBe("42"));
+    await userEvent.setup().selectOptions(screen.getByLabelText("Range"), "30d");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Internal error");
+    expect(kpi("Sessions")).toBe("—");
+  });
+
   it("ANL-17: non-admin sees Admins only, no requests, no polling", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     open({}, memberUser);

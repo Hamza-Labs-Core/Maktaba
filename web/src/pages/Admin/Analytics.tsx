@@ -98,10 +98,12 @@ function AnalyticsInner() {
       analyticsApi.users(range),
     ]);
     if (seq !== loadSeq.current) return;
-    if (s.status === "fulfilled") setSummary(cleanSummary(s.value));
-    if (tv.status === "fulfilled") setTop(list(obj(tv.value).videos));
-    if (ac.status === "fulfilled") setActivity(cleanActivity(ac.value));
-    if (us.status === "fulfilled") setUsers(list(obj(us.value).users));
+    // A card whose endpoint failed is cleared, so it never shows the old
+    // range's numbers under the new range.
+    setSummary(s.status === "fulfilled" ? cleanSummary(s.value) : null);
+    setTop(tv.status === "fulfilled" ? list(obj(tv.value).videos) : null);
+    setActivity(cleanActivity(ac.status === "fulfilled" ? ac.value : {}));
+    setUsers(us.status === "fulfilled" ? list(obj(us.value).users) : null);
     const failed = [s, tv, ac, us].find((r) => r.status === "rejected");
     if (failed) {
       const e: unknown = failed.reason;

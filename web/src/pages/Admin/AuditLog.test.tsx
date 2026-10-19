@@ -528,7 +528,7 @@ describe("AdminAuditLog (test-cases/admin-audit.md)", () => {
     expect(await readBlob(cap.blobs[1])).toContain("مرحبا");
   });
 
-  it("AUD-20: CSV export neutralises cells that start with = + - @", async () => {
+  it("AUD-20: CSV export neutralises cells that start with = + - @, tab or CR", async () => {
     const user = userEvent.setup();
     const cap = captureExport();
     routeGet(get, {
@@ -543,6 +543,7 @@ describe("AdminAuditLog (test-cases/admin-audit.md)", () => {
             ts: "-1",
           },
           { id: 2, event: "ok", actor_user_id: "u1", target_id: "a=b", ts: "2026-10-18T10:00:00Z" },
+          { id: 3, event: "\t=cmd", actor_user_id: "\r=cmd", ts: "2026-10-18T09:00:00Z" },
         ],
       },
     });
@@ -553,6 +554,8 @@ describe("AdminAuditLog (test-cases/admin-audit.md)", () => {
     expect(lines[1]).toBe(`1,'-1,'@SUM(A1),'+cmd,"'=HYPERLINK(""http://evil"")","""x"""`);
     // a value with = later in the text is left alone
     expect(lines[2]).toBe("2,2026-10-18T10:00:00Z,ok,u1,a=b,{}");
+    // a leading tab or carriage return is neutralised too
+    expect(lines[3].startsWith("3,2026-10-18T09:00:00Z,'\t=cmd,\"'\r=cmd\",")).toBe(true);
     for (const line of lines.slice(1)) {
       for (const cell of line.split(",")) expect(cell).not.toMatch(/^"?[=+\-@]/);
     }

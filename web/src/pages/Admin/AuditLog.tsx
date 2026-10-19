@@ -324,10 +324,11 @@ function payloadText(p: unknown): string {
 }
 
 // csvCell quotes a CSV cell and neutralises spreadsheet formulas: a cell
-// starting with =, +, - or @ gets a leading ' so Excel / Sheets show it as
-// text instead of running it (audit rows carry user-chosen values).
+// starting with =, +, -, @, a tab or a carriage return gets a leading ' so
+// Excel / Sheets show it as text instead of running it (audit rows carry
+// user-chosen values).
 function csvCell(v: unknown): string {
   let s = String(v ?? "");
-  if (/^[=+\-@]/.test(s)) s = `'${s}`;
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }

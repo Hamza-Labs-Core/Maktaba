@@ -136,6 +136,7 @@ func TestListCursorRejectsBadOrForeignCursor(t *testing.T) {
 	for name, qs := range map[string]url.Values{
 		"garbage":     {"cursor": {"%%%"}},
 		"bad library": {"library": {"not-a-uuid"}}, // LIB-09: used to list every video
+		"bad id":      {"cursor": {encodeListCursor("updated_at", Video{ID: "x"})}},
 		"other sort":  {"sort": {"title"}, "cursor": {*next}},
 	} {
 		if _, _, code := listPage(t, h, qs); code != http.StatusBadRequest {

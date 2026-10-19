@@ -109,6 +109,9 @@ export function ChannelEditor({
   // A new channel that was created but whose live rows failed to save: the
   // next Save retries only the live rows, never a second POST.
   const [createdId, setCreatedId] = useState<string | null>(null);
+  // What was created: a later Save (after the live rows failed) sends only
+  // the edits made since, instead of dropping them.
+  const [createdAs, setCreatedAs] = useState<Partial<Channel> | null>(null);
   const origin = channelOrigin(draft);
 
   useEffect(() => {
@@ -198,7 +201,14 @@ export function ChannelEditor({
       } else if (!createdId) {
         const created = await channelsApi.create(form);
         setCreatedId(created.id);
+        setCreatedAs(form);
         await uploadPending(created.id);
+      } else {
+        const edits = changedFields(createdAs ?? {}, form);
+        if (Object.keys(edits).length > 0) {
+          await channelsApi.update(createdId, edits);
+          setCreatedAs(form);
+        }
       }
       if (live.dirty) {
         const old = draft.number;

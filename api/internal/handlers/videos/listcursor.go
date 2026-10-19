@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
@@ -65,6 +67,11 @@ func decodeListCursor(raw, sort string) (*listCursor, *httperror.Error) {
 	}
 	var c listCursor
 	if err := json.Unmarshal(b, &c); err != nil || c.ID == "" {
+		return nil, invalidCursor("malformed cursor")
+	}
+	// videos.id is a UUID column: a bad id must be a 400 here, not a
+	// database error.
+	if _, err := uuid.Parse(c.ID); err != nil {
 		return nil, invalidCursor("malformed cursor")
 	}
 	if c.Sort != sort {
