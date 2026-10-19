@@ -1,6 +1,6 @@
 # Maktaba CI — single merge gate (Story 22.1).
 #
-# Six gates fan out from `changes`; the `ci-success` rollup is the only
+# The gates fan out from `changes`; the `ci-success` rollup is the only
 # job branch protection requires. Adding a new gate means wiring it into
 # `ci-success.needs:` — branch protection config never has to change.
 #
@@ -82,6 +82,13 @@ jobs:
       && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
     uses: ./.github/workflows/_e2e.yml
 
+  media-e2e:
+    # The Go tests that need a real ffmpeg (and Postgres); they skip in
+    # every other tier. Its own job and budget (see _media-e2e.yml).
+    needs: [changes]
+    if: needs.changes.outputs.docs_only != 'true'
+    uses: ./.github/workflows/_media-e2e.yml
+
   perf-ci:
     needs: [changes, integration]
     if: >-
@@ -141,6 +148,7 @@ jobs:
       - unit
       - integration
       - e2e
+      - media-e2e
       - perf-ci
       - build-artifacts
       - pr-body-check
@@ -156,7 +164,7 @@ jobs:
           # Fail if any required gate failed or was cancelled. Skipped
           # is acceptable (docs-only PR, fork-skipped e2e/perf-ci).
           fail=0
-          for gate in lint unit integration e2e perf-ci build-artifacts pr-body-check; do
+          for gate in lint unit integration e2e media-e2e perf-ci build-artifacts pr-body-check; do
             result=$(echo "$RESULTS" | jq -r ".\"$gate\".result // \"skipped\"")
             echo "  $gate: $result"
             case "$result" in

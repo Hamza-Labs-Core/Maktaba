@@ -37,6 +37,7 @@ UNIT_PACKAGE_BUDGET     ?= 30s
 UNIT_PER_TEST_SOFT_CAP  ?= 400ms
 INTEGRATION_TIER_BUDGET ?= 2m
 E2E_TIER_BUDGET         ?= 5m
+MEDIA_E2E_TIER_BUDGET   ?= 5m
 PERF_CI_TIER_BUDGET     ?= 2m
 
 ARTIFACT_DIR ?= artifacts
@@ -313,6 +314,18 @@ migrate-status:  ## Show applied vs. pending migrations against $$DATABASE_URL.
 		echo "DATABASE_URL is required"; exit 1; \
 	fi
 	cd api && go run . migrate status --dir $(CURDIR)/$(MIGRATIONS_DIR)
+
+# ---------------------------------------------------------------------------
+# Media e2e tests — the Go tests that need a real ffmpeg/ffprobe (remote
+# end to end, simulcast, two hosts, the channel engine and strip). Needs
+# ffmpeg + ffprobe, fonts-noto-core and MAKTABA_TEST_PG_URL; fails on any
+# skip. See tools/media-e2e.sh.
+# ---------------------------------------------------------------------------
+
+.PHONY: test-media-e2e
+test-media-e2e:  ## Media e2e tier (real ffmpeg + Postgres; CI job media-e2e).
+	@bash tools/test-budget.sh wall media-e2e $(MEDIA_E2E_TIER_BUDGET) -- \
+		bash tools/media-e2e.sh
 
 # ---------------------------------------------------------------------------
 # E2E tests (gate 4) — drives the compose stack.
