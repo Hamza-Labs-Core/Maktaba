@@ -8,7 +8,7 @@ import { groupByMachine } from "../../lib/clusterStream";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { useClusterFmt } from "./format";
 import { LogViewer, type LogTarget } from "./LogViewer";
-import type { FilesState } from "./useClusterFiles";
+import { nodeDays, type FilesState } from "./useClusterFiles";
 
 interface Props {
   stream: ClusterStream;
@@ -116,7 +116,7 @@ export function LogsPanel({ stream, files, target, onTarget }: Props) {
           <ul className="mkt-mc-list">
             {nodes.map((nd) => {
               const name = nd.processes.find((p) => p.name)?.name ?? nd.ip;
-              const days = [...(nd.dates.logs ?? [])].sort().reverse();
+              const days = nodeDays(nd, "logs");
               return (
                 <li key={nd.ip} className="mkt-mc-card">
                   <div className="mkt-mc-row">

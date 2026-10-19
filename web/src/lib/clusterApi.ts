@@ -270,18 +270,25 @@ export interface FileProcess {
   started_at: string | null;
 }
 
+/** Days on record per kind (YYYY-MM-DD). */
+export interface FileDates {
+  logs?: string[];
+  metrics?: string[];
+  llm?: string[];
+  events?: string[];
+  jobs?: string[];
+  queues?: string[];
+  library?: string[];
+}
+
 export interface FileNode {
   ip: string;
   processes: FileProcess[];
-  dates: {
-    logs?: string[];
-    metrics?: string[];
-    llm?: string[];
-    events?: string[];
-    jobs?: string[];
-    queues?: string[];
-    library?: string[];
-  };
+  /** the days the share holds */
+  dates: FileDates;
+  /** the days the home's long-term archive holds (design-agent.md §7.10); the
+   * history endpoints read them from the archive once the share has let them go */
+  archived_dates?: FileDates;
 }
 
 export interface ClusterFiles {

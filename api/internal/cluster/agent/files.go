@@ -322,7 +322,10 @@ const (
 // mkdirShared creates the missing directories of rel under root, each
 // 0775 whatever the umask. It only changes the mode of directories it
 // creates, and refuses a link (or anything not a directory) on the way.
-func mkdirShared(root *os.Root, rel string) error {
+func mkdirShared(root *os.Root, rel string) error { return mkdirMode(root, rel, sharedDirMode) }
+
+// mkdirMode is mkdirShared with another mode.
+func mkdirMode(root *os.Root, rel string, mode os.FileMode) error {
 	cur := ""
 	for _, part := range strings.Split(filepath.ToSlash(filepath.Clean(rel)), "/") {
 		if part == "" || part == "." {
@@ -331,9 +334,9 @@ func mkdirShared(root *os.Root, rel string) error {
 		cur = filepath.Join(cur, part)
 		st, err := root.Lstat(cur)
 		if errors.Is(err, fs.ErrNotExist) {
-			switch merr := root.Mkdir(cur, sharedDirMode); {
+			switch merr := root.Mkdir(cur, mode); {
 			case merr == nil:
-				if err := root.Chmod(cur, sharedDirMode); err != nil {
+				if err := root.Chmod(cur, mode); err != nil {
 					return err
 				}
 			case !errors.Is(merr, fs.ErrExist): // a racing creator is fine
@@ -353,7 +356,10 @@ func mkdirShared(root *os.Root, rel string) error {
 
 // mkdirSharedAbs is mkdirShared for an absolute path: rooted at its
 // deepest existing ancestor.
-func mkdirSharedAbs(dir string) error {
+func mkdirSharedAbs(dir string) error { return mkdirModeAbs(dir, sharedDirMode) }
+
+// mkdirModeAbs is mkdirSharedAbs with another mode.
+func mkdirModeAbs(dir string, mode os.FileMode) error {
 	dir = filepath.Clean(dir)
 	base := dir
 	for {
@@ -375,7 +381,7 @@ func mkdirSharedAbs(dir string) error {
 		return err
 	}
 	defer func() { _ = root.Close() }()
-	return mkdirShared(root, rel)
+	return mkdirMode(root, rel, mode)
 }
 
 // plainDirs checks that every component of rel under root is a real

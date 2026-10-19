@@ -21,6 +21,8 @@ function parse(v: unknown): ClusterFiles {
         ip: n.ip,
         processes: Array.isArray(n.processes) ? n.processes : [],
         dates: n.dates && typeof n.dates === "object" ? n.dates : {},
+        archived_dates:
+          n.archived_dates && typeof n.archived_dates === "object" ? n.archived_dates : {},
       })),
   };
 }
@@ -51,10 +53,17 @@ export function useClusterFiles(): FilesState {
   return { files, error, reload: load };
 }
 
-/** Days on record of one kind across all machines, newest first. */
+/** One machine's days of a kind, on the share or in the home's archive, newest first. */
+export function nodeDays(node: FileNode | null, kind: keyof FileNode["dates"]): string[] {
+  if (!node) return [];
+  const set = new Set<string>([...(node.dates[kind] ?? []), ...(node.archived_dates?.[kind] ?? [])]);
+  return [...set].sort().reverse();
+}
+
+/** Days on record of one kind across all machines (share and archive), newest first. */
 export function datesOf(files: ClusterFiles | null, kind: keyof FileNode["dates"]): string[] {
   const set = new Set<string>();
-  for (const n of files?.nodes ?? []) for (const d of n.dates[kind] ?? []) set.add(d);
+  for (const n of files?.nodes ?? []) for (const d of nodeDays(n, kind)) set.add(d);
   return [...set].sort().reverse();
 }
 
@@ -64,5 +73,5 @@ export function nodeWith(
   kind: keyof FileNode["dates"],
   date: string
 ): FileNode | null {
-  return files?.nodes.find((n) => (n.dates[kind] ?? []).includes(date)) ?? null;
+  return files?.nodes.find((n) => nodeDays(n, kind).includes(date)) ?? null;
 }

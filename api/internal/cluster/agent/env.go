@@ -22,6 +22,10 @@ import (
 //	MAKTABA_CLUSTER_CACHE_HOURS     the database cache's window, default 24
 //	MAKTABA_CORS_ALLOWED_ORIGINS    extra browser origins for /api/cluster/ws
 //
+//	MAKTABA_ARCHIVE_DIR             the home's long-term archive, default ~/.maktaba/archive
+//	MAKTABA_ARCHIVE_KINDS           the kinds archived, default logs,jobs,llm,events
+//	MAKTABA_ARCHIVE_DAYS            days kept in the archive, default 365 (0: no age limit)
+//	MAKTABA_ARCHIVE_MAX_GB          the archive's size cap, default 20 (0: no size limit)
 //	MAKTABA_HOME_AGENT_KEY_MODE     the home agent key file's mode: 0600 (default) or 0640
 //	                                (0640 lets home workers of the API's group read it, e.g. Docker)
 //
@@ -64,6 +68,35 @@ func FromEnv(getenv func(string) string) (Config, []string) {
 		cfg.RetentionDays = DefaultRetentionDays
 	}
 	cfg.CacheWindow = time.Duration(intVar("MAKTABA_CLUSTER_CACHE_HOURS", DefaultCacheHours)) * time.Hour
+	cfg.Archive = &ArchiveConfig{
+		Dir:      strings.TrimSpace(getenv("MAKTABA_ARCHIVE_DIR")),
+		Kinds:    DefaultArchiveKinds,
+		Days:     intVar("MAKTABA_ARCHIVE_DAYS", DefaultArchiveDays),
+		MaxBytes: int64(intVar("MAKTABA_ARCHIVE_MAX_GB", DefaultArchiveMaxGB)) << 30,
+	}
+	if cfg.Archive.Dir == "" {
+		cfg.Archive.Dir = DefaultArchiveDir()
+	}
+	if v := strings.TrimSpace(getenv("MAKTABA_ARCHIVE_KINDS")); v != "" {
+		known := map[string]bool{}
+		for _, k := range DayKinds {
+			known[k] = true
+		}
+		var kinds []string
+		for _, k := range strings.Split(v, ",") {
+			k = strings.TrimSpace(k)
+			switch {
+			case k == "":
+			case known[k]:
+				kinds = append(kinds, k)
+			default:
+				warn = append(warn, fmt.Sprintf("MAKTABA_ARCHIVE_KINDS: %q is not a kind (%s)", k, strings.Join(DayKinds, ", ")))
+			}
+		}
+		if len(kinds) > 0 {
+			cfg.Archive.Kinds = kinds
+		}
+	}
 	cfg.HomeKeyMode = KeyMode
 	if v := strings.TrimSpace(getenv("MAKTABA_HOME_AGENT_KEY_MODE")); v != "" {
 		if m, ok := ParseKeyMode(v); ok {

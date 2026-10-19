@@ -175,6 +175,31 @@ the API read them quickly instead of opening many files on the NAS.
   what it skipped; the live views and the files are not affected, and history for that time
   is read from the files.
 
+## The archive on the home
+
+The share keeps two weeks; the home keeps the **long-term archive** on its own disk.
+
+- **What**: every machine's `logs`, `jobs` and `llm` files and the home's `events`, each
+  compressed (about ten to one). Metrics, queue and library snapshots are not archived.
+- **When**: once a day has closed (UTC), within the hour; a record that arrives late for that
+  day is added the next hour. After the home was off, it archives at start every day the
+  share still holds.
+- **Where**: `~/.maktaba/archive` of the user that runs the home's server (with Docker, a
+  volume), never on the share; the same layout as the share, each file `.jsonl.gz`, plus a
+  `.manifest.json` per day. Only the home writes it; folders are `0750`, files `0640`.
+- **Reading**: Admin > Machines offers the archive's days next to the share's; once the share
+  has deleted a day, the page reads it from the archive (the answer is the same). On the home,
+  `maktaba-pipeline cluster logs --archive` reads it too, and so do `zcat` and `zgrep`.
+- **When it cannot write** (disk full, folder not writable), it says so on Admin > Machines
+  and tries again every hour; nothing else is affected.
+
+| Setting (on the home) | Default | Meaning |
+|---|---|---|
+| `MAKTABA_ARCHIVE_DIR` | `~/.maktaba/archive` | where the archive is |
+| `MAKTABA_ARCHIVE_KINDS` | `logs,jobs,llm,events` | what is archived |
+| `MAKTABA_ARCHIVE_DAYS` | 365 | days kept; `0` keeps them all (up to the size cap) |
+| `MAKTABA_ARCHIVE_MAX_GB` | 20 | the archive's size cap; past it, the oldest days go |
+
 ## How long they are kept, and how big they get
 
 | Setting (on the home) | Default | Meaning |

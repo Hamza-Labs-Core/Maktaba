@@ -517,5 +517,10 @@ func cmdErrCode(err error) string {
 // processesSnapshot is the processes topic's snapshot and GET
 // /api/cluster/processes.
 func (h *Hub) processesSnapshot() map[string]any {
-	return map[string]any{"processes": h.Processes(), "gone": h.Gone(), "files": h.Location(), "cache": h.cacheStats()}
+	var archive any
+	if h.archiver != nil {
+		archive = h.archiver.Stats()
+	}
+	return map[string]any{"processes": h.Processes(), "gone": h.Gone(), "files": h.Location(), "cache": h.cacheStats(),
+		"archive": archive}
 }
