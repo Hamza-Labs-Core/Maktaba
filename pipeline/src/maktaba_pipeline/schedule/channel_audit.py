@@ -370,12 +370,18 @@ def html_report(audits: Sequence[ChannelAudit], window_days: int = WINDOW_DAYS) 
             f"<td class=b>{fs['none']:.0f}%</td></tr>"
         )
     parts = [
-        "<!doctype html><meta charset=utf-8><title>Channel audit</title><style>"
-        "body{font:14px system-ui;margin:24px;background:#fafaf7;color:#222}"
-        "table{border-collapse:collapse;margin:8px 0}td,th{padding:4px 8px;border-bottom:1px solid #ddd;"
-        "text-align:left;vertical-align:top}.g{color:#17803d}.w{color:#b26b00}.b{color:#b42318}"
+        "<!doctype html><meta charset=utf-8><meta name=color-scheme content='dark light'>"
+        "<title>Channel audit</title><style>"
+        # dark unless the OS asks for light (the app's theme rule)
+        ":root{color-scheme:dark light;--bg:#151513;--fg:#ecebe6;--line:#33312c;--mute:#a19d93;"
+        "--g:#4cc38a;--w:#e0a53a;--b:#f0707f}"
+        "@media (prefers-color-scheme:light){:root{--bg:#fafaf7;--fg:#222;--line:#ddd;--mute:#666;"
+        "--g:#17803d;--w:#b26b00;--b:#b42318}}"
+        "body{font:14px system-ui;margin:24px;background:var(--bg);color:var(--fg)}"
+        "table{border-collapse:collapse;margin:8px 0}td,th{padding:4px 8px;border-bottom:1px solid var(--line);"
+        "text-align:left;vertical-align:top}.g{color:var(--g)}.w{color:var(--w)}.b{color:var(--b)}"
         "details{margin:4px 0}summary{cursor:pointer}.ar{direction:rtl;unicode-bidi:plaintext}"
-        "small{color:#666}</style><h1>Channel audit</h1>"
+        "small{color:var(--mute)}</style><h1>Channel audit</h1>"
         f"<p>Hours on air in the next {window_days} days. What dizqueTV holds, traced to each file's series and tags, judged against the "
         "channel's theme. <b>weak</b>: matched on a playlist name, on having aired in Ramadan, "
         "on a few titles, or on a person's name. <b>none</b>: nothing ties it to the channel.</p>"

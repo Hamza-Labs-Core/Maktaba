@@ -34,6 +34,8 @@ import (
 	"regexp"
 	"sync"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme"
 )
 
 // streamAuthTTL is how long a session the API accepted stays accepted.
@@ -103,7 +105,7 @@ func newStreamGate(next http.Handler, apiOrigin *url.URL) *streamGate {
 func (g *streamGate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		pagetheme.Error(w, r, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	staging := stagingPathRe.MatchString(r.URL.Path)
@@ -112,21 +114,21 @@ func (g *streamGate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		allow = allowedStreamPath
 	}
 	if !staging && !allow(r.URL.Path) {
-		http.NotFound(w, r)
+		pagetheme.NotFound(w, r)
 		return
 	}
 	cookie, authz := r.Header.Get("Cookie"), r.Header.Get("Authorization")
 	if cookie == "" && authz == "" {
-		http.Error(w, "sign in to watch", http.StatusUnauthorized)
+		pagetheme.Error(w, r, "sign in to watch", http.StatusUnauthorized)
 		return
 	}
 	ok, admin := g.session(r, cookie, authz)
 	if !ok {
-		http.Error(w, "sign in to watch", http.StatusUnauthorized)
+		pagetheme.Error(w, r, "sign in to watch", http.StatusUnauthorized)
 		return
 	}
 	if staging && !admin {
-		http.Error(w, "the staging preview is for admins", http.StatusForbidden)
+		pagetheme.Error(w, r, "the staging preview is for admins", http.StatusForbidden)
 		return
 	}
 	out := r.Clone(r.Context())

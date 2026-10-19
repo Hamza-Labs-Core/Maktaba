@@ -26,6 +26,7 @@
 package reports
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -44,6 +45,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme"
 )
 
 // Well-known page names (the pipeline writes them; keep in step with
@@ -326,12 +328,14 @@ func (h *Handler) Page(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.NotFound("report not found"))
 		return
 	}
-	f, err := os.Open(filepath.Join(h.dir(), name))
+	doc, err := os.ReadFile(filepath.Join(h.dir(), name))
 	if err != nil {
 		httperror.Write(w, r, httperror.NotFound("report not found"))
 		return
 	}
-	defer f.Close()
+	// a page written before the reports learnt the theme rule still gets a
+	// dark-or-system canvas (pagetheme: the app's theme outside the app)
+	doc = pagetheme.Inject(doc)
 	hd := w.Header()
 	hd.Set("Content-Type", "text/html; charset=utf-8")
 	hd.Set("Content-Security-Policy", pageCSP)
@@ -339,7 +343,7 @@ func (h *Handler) Page(w http.ResponseWriter, r *http.Request) {
 	hd.Set("X-Frame-Options", "SAMEORIGIN")
 	hd.Set("Referrer-Policy", "no-referrer")
 	hd.Set("Cache-Control", "private, no-cache")
-	http.ServeContent(w, r, name, info.ModTime(), f)
+	http.ServeContent(w, r, name, info.ModTime(), bytes.NewReader(doc))
 }
 
 // Thumbnail implements GET /api/thumbnails/{hash}/small.jpg: the small copy

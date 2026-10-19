@@ -13,6 +13,8 @@ import (
 	"net/http"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/reqid"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme"
 )
 
 // Error is the canonical API error type. It serialises to the RFC 9457
@@ -145,7 +147,34 @@ func Write(w http.ResponseWriter, r *http.Request, err error) {
 		body[k] = v
 	}
 
+	// A browser that navigated here (a link, a report iframe, a typed URL)
+	// gets a readable page that follows the system theme, dark by default,
+	// instead of raw JSON on a white tab. Fetches keep problem+json.
+	if pagetheme.WantsHTML(r) {
+		writePage(w, e, body["requestId"].(string))
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(e.Status)
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+func writePage(w http.ResponseWriter, e *Error, requestID string) {
+	links := []pagetheme.Link{{Href: "/", Text: "Back to Maktaba"}}
+	if e.Status == http.StatusUnauthorized || e.Status == http.StatusForbidden {
+		links = append([]pagetheme.Link{{Href: "/login", Text: "Sign in"}}, links...)
+	}
+	detail := ""
+	if requestID != "" {
+		detail = "Request " + requestID
+	}
+	pagetheme.Write(w, pagetheme.Page{
+		Status:  e.Status,
+		Title:   e.Title + " · Maktaba",
+		Heading: e.Title,
+		Message: e.Detail,
+		Detail:  detail,
+		Links:   links,
+	})
 }
