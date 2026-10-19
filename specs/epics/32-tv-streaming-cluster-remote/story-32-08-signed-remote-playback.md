@@ -14,11 +14,13 @@ Design: [design.md](design.md) §7.5, §7.6.
 ## Acceptance criteria
 
 - **AC1** `POST /api/tv/remote/tune {channel_id, device?}` requires a signed-in user allowed by
-  `tv_remote.viewers` who can read the channel (library ACL); returns
+  `tv_remote.viewers` (default `all`: every signed-in user, README Q6) who can read the channel
+  (library ACL); returns
   `200 {session_id, hls_url, expires_at, refresh_after, channel}` when the push is live.
 - **AC2** Gates in this order, each with its own error: integration not ready / remote disabled →
-  503 `remote_unavailable` (with reason); budget → 402 `budget_exhausted`; user sessions ≥
-  `max_streams_per_user` → 429 `user_streams_full`; a new push needed and pushes ≥ `max_channels` →
+  503 `remote_unavailable` (with reason); budget at 100 % → 402 `budget_exhausted` (new tunes
+  only; running sessions keep heartbeating, README Q8); user sessions ≥ `max_streams_per_user`
+  (default 2) → 429 `user_streams_full`; a new push needed and pushes ≥ `max_channels` →
   429 `remote_channels_full`; storage guard → 503 `remote_storage_full`.
 - **AC3** While the push starts, the call waits up to 20 s, then answers `202 {state:"starting",
   retry_after:3, session_id}`; retrying with the same user, channel and device is idempotent.

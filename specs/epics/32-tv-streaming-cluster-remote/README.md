@@ -7,7 +7,7 @@
 > (accounts, the tunnel, LAN-first client routing), [Epic 08 — Streaming](../08-streaming/README.md).
 > **Builds on the in-flight branch `feat/tv-core`** (encoder settings in the database, VideoToolbox,
 > the NVENC session cap, the 7-day guide horizon, the live SSDP toggle, `channel_runtime` as a
-> cluster-wide record — slot 0117).
+> cluster-wide record — slot 0117, `tv_core_runtime`, still in flight).
 
 **Documents.** [design.md](design.md) (balancer, leases, front door, failover, the Cloudflare push
 pipeline, tokens, app routing) · stories `story-32-01` … `story-32-12` · plans `plan-32-01` … `plan-32-12`.
@@ -44,7 +44,12 @@ that the LAN stream does not have.
 | Balancing | **The home balances, one encode per channel cluster-wide.** |
 | Front door | **The home only**, for HDHomeRun/SSDP, XMLTV, M3U and the web HLS path. It proxies (or redirects) to the encoding host. |
 | Failover | **Move the channel to another host at the wall-clock position.** |
-| Remote | **Cloudflare Stream Live**: live inputs (RTMPS/SRT ingest), HLS/DASH playback, signed tokens, webhooks, recordings off as far as Cloudflare allows (see "Cloudflare facts"), simulcast available. |
+| Remote | **Cloudflare Stream Live**: live inputs (RTMPS/SRT ingest), HLS/DASH playback, signed tokens, optional webhooks (polling is the truth), simulcast available. |
+| Recording | **Mode `automatic`** (Cloudflare serves live HLS only then); **each recording is deleted as soon as its broadcast ends**; the account is sized for the **$5/month 1,000-minute storage block** (Q1). |
+| Upload and remote channels | The home's upload is **≥ 100 Mb/s**: no separate remote encode; ≈ 6.5 Mb/s per remote channel; **default max 10 concurrent remote channels** (Q4). |
+| Remote viewers | **All signed-in users**, **2 concurrent remote streams each** (a setting) (Q6). |
+| Budget at 100 % | **Refuse new remote tunes; running sessions finish** (Q8). |
+| Other questions | Q5, Q7, Q9–Q12: the spec's defaults, accepted (revisit if needed) — see "Open questions — decided". |
 
 ## Scope
 
@@ -54,15 +59,15 @@ that the LAN stream does not have.
   and only when chosen).
 - Failover and drain.
 - Admin pages for streaming hosts and channels on air.
-- A Cloudflare Stream integration (credentials, test connection, signing keys), the live input
-  pool, the push from the encoding host, signed playback, the remote session API.
+- A Cloudflare Stream integration (credentials, test connection, signing keys), moving every
+  extension secret (the Plex token too) into `home_secrets` (Q7), the live input pool, the push from the encoding host, signed playback, the remote session API.
 - LAN-or-remote routing in the web app first; mobile and TV apps after.
 - Cost controls, metrics, the runbook.
 
 ## Non-goals
 
 - Re-encoding for remote viewers (a lower "remote rendition"). v1 pushes the channel's own encode;
-  Cloudflare builds the quality ladder. See open question Q4.
+  Cloudflare builds the quality ladder. Not needed: the home's upload is ≥ 100 Mb/s (Q4, decided).
 - Remote HDHomeRun, remote XMLTV/M3U for third-party players, remote Plex. **Plex Live TV remote
   viewing is Plex's own feature**: Plex pulls `/auto/v{n}` from the front door on the LAN and
   serves its remote users itself. Maktaba does nothing extra for it beyond keeping `/auto/v{n}`
@@ -181,7 +186,7 @@ that the LAN stream does not have.
 - R9.3 The guide and channel list for remote clients are the existing JSON APIs through the relay.
 
 ### R10 — Cost and limits
-- R10.1 Limits: concurrent remote channels (`max_channels`, default 2), remote streams per user
+- R10.1 Limits: concurrent remote channels (`max_channels`, default 10, at most 10), remote streams per user
   (default 2), which users may watch remotely (default: every signed-in user), allowed countries.
 - R10.2 A monthly budget (USD, default 10) estimated from delivered minutes (Cloudflare analytics)
   and the storage plan; at 80 % the admin is notified; at 100 % new remote tunes get 402 (running
@@ -211,8 +216,8 @@ that the LAN stream does not have.
   within 25 s; a second phone tuning 105 does not start a second push.
 - Three minutes after both phones stop, the push ends, the input is disabled and the recording is
   gone from the Cloudflare account.
-- A fourth remote channel when `max_channels = 3` gets 429 `remote_channels_full`; a user over the
-  budget gets 402.
+- A fourth remote channel when `max_channels = 3` (and a 2,000-minute storage plan, room for four
+  full 8 h pushes) gets 429 `remote_channels_full`; a user over the budget gets 402.
 
 ---
 
@@ -247,10 +252,11 @@ that the LAN stream does not have.
 
 ## Data model (proposed migrations)
 
-Slots after the highest on `main` (0115) and after 0116–0118 reserved by in-flight branches
-(`feat/plex-livetv` 0116, `feat/tv-core` 0117, `feat/tv-builder-ui` 0118). Nothing is added to
-`MANIFEST.md` until the files exist (its rule: next free integer, no reservations); the rows go in
-with each plan's PR, so these numbers are provisional and move up if other work lands first.
+Slots 0116–0118 are taken: 0116 (`plex_livetv`, PR #61) and 0118 (`channel_edited_at`, PR #59)
+are merged on `main` (its highest slot is 0118), and 0117 (`tv_core_runtime`, `feat/tv-core`) is
+in flight. Epic 32's slots therefore start at **0119**. Nothing is added to `MANIFEST.md` until the
+files exist (its rule: next free integer, no reservations); the rows go in with each plan's PR, so
+these numbers are provisional and move up if other work lands first.
 
 | Slot | Story | File | Tables / changes |
 |---|---|---|---|
@@ -276,7 +282,7 @@ decided*. Settings are rules sections in `app_settings` (as `rules.tv` / `rules.
 | `tv_cluster.pins` | `{}` | `{channel_slug: host_name}` preferred host. |
 | per host (`tv_stream_hosts`) | home on, nodes off | "Stream on this machine", capacity override, weight, drain. |
 | `tv_remote.enabled` | `false` | Remote viewing through Cloudflare. |
-| `tv_remote.max_channels` | `2` | Concurrent pushes (size of the input pool). |
+| `tv_remote.max_channels` | `10` | Concurrent pushes (size of the input pool), 1–10; ≈ 6.5 Mb/s of upload each. |
 | `tv_remote.max_streams_per_user` | `2` | Concurrent remote sessions per user. |
 | `tv_remote.viewers` | `all` | `all` \| `admins` \| list of user ids. |
 | `tv_remote.idle_timeout_minutes` | `3` | Keep a push after its last remote viewer. |
@@ -287,7 +293,7 @@ decided*. Settings are rules sections in `app_settings` (as `rules.tv` / `rules.
 | `tv_remote.monthly_budget_usd` | `10` | Estimated spend cap. |
 | `tv_remote.budget_action` | `block_new` | `block_new` \| `warn`. |
 | `tv_remote.delivery_usd_per_1000_min` | `1.00` | Price used by the estimate. |
-| `tv_remote.storage_plan_minutes` | `1000` | Prepaid storage the estimate and the guard assume. |
+| `tv_remote.storage_plan_minutes` | `1000` | Prepaid storage the estimate and the guard assume (one $5/month block; ≈ 2 concurrent 8 h pushes per block). |
 | `tv_remote.allowed_countries` | `[]` | ISO codes; empty = any (token access rules). |
 | `tv_remote.remote_detection` | `relay` | `relay` (requests through the tunnel) \| `relay_or_public_ip`. |
 
@@ -327,7 +333,8 @@ POST   {home-streaming}/internal/tv/ensure/{channel}  loopback: API asks the fro
 
 ## Security
 
-- **Secrets.** The Cloudflare API token, the signing key (PEM) and the live inputs' stream keys live
+- **Secrets.** The Cloudflare API token, the signing key (PEM), the live inputs' stream keys and
+  every other extension secret (the Plex token, today in `extensions.settings`; Q7) live
   in `home_secrets` (sealed by the home's API with a key file that never enters the database;
   REVOKE from `maktaba_worker`). For a running push only, the API writes that input's ingest URL
   and key to `tv_push_secrets` (revoked from workers, deleted when the push ends); a node reads it
@@ -362,7 +369,10 @@ in delivery (but holds storage and an encoder slot).
 | 3 viewers, different channels, 4 h/day | 21,600 min | $21.60 | $10 (2,000 min: 3 × 8 h rotation cap) | ≈ $31.60 |
 
 Upload bandwidth at home: each pushed channel uses its bitrate once (≈ 6.5 Mb/s at the default
-6 Mb/s video + audio), whatever the number of remote viewers.
+6 Mb/s video + audio), whatever the number of remote viewers. The home's upload is ≥ 100 Mb/s, so
+the default `max_channels = 10` (≈ 65 Mb/s) fits with headroom; on the default 1,000-minute
+storage block there is room for about 2 concurrent full-length (8 h) pushes (Q1), so running more remote
+channels at once means buying another block per two channels (or lowering `max_push_hours`).
 
 ## Rollout
 
@@ -401,39 +411,60 @@ Upload bandwidth at home: each pushed channel uses its bitrate once (≈ 6.5 Mb/
   `cloud/internal/cloudlink.LocalProxy` exists but `maktaba-server` does not start it — see Q5.
 - Web player hls.js (audit P1-3) — folded into 32.9.
 
-## Open questions (with the recommendation used in this spec)
+## Open questions — decided (owner, 2026-10-18)
 
-1. **Recording must be on for live HLS.** Cloudflare plays a live input over HLS/DASH only with
-   recording mode `automatic` ("off" = not recorded *and not available for playback*). The owner
-   asked for recording off. *Recommendation:* `automatic` + delete each recording the moment its
-   broadcast ends, and buy the 1,000-minute storage block ($5/month). Please confirm.
+Every question below is closed. "Owner decision" means the owner chose it; "accepted default,
+revisit if needed" means the spec's recommendation stands as the default and can be revisited
+later without changing the rest of the design. The decisions are folded into design.md and the
+stories.
+
+1. **Recording must be on for live HLS — owner decision.** Cloudflare plays a live input over
+   HLS/DASH only with recording mode `automatic` ("off" = not recorded *and not available for
+   playback*). Decided: recording mode **`automatic`**; Maktaba **deletes each recording as soon
+   as its broadcast ends** (design §7.7); the account is sized for the **$5/month 1,000-minute
+   storage block** (`tv_remote.storage_plan_minutes = 1000`). Because a running broadcast holds
+   storage until it ends, one block has room for about **2 concurrent full-length pushes** at
+   `max_push_hours = 8` (2 × 480 min ≤ 1,000); each further block adds about two. The storage
+   guard (design §7.7) refuses a new push with 503 `remote_storage_full` once the running pushes'
+   ages plus 480 min would exceed the plan, so on the default plan it, not `max_channels`, is
+   usually the binding limit.
 2. **Token subject.** The design signs tokens for the broadcast's video id (a new id per
    broadcast, so tokens die with it). Verify in the 32.6 spike that a signed token for the live
    video id plays the in-progress broadcast (the docs show live input ids and video ids both work as
    playback ids). Fallback: `sub` = live input id with an input cool-down of one token lifetime
-   before reuse.
+   before reuse. *(Spike item, not an owner question; stays open until the 32.6 spike.)*
 3. **Is `exp` checked on every segment?** The docs say rules are checked continuously. The web
-   player swaps tokens without a reload (32.9); native apps re-tune at expiry. Confirm in the spike.
-4. **Upload bandwidth.** Each remote channel is pushed at the channel bitrate (≈ 6.5 Mb/s). If the
-   home's uplink is small, a second, lower "remote rendition" encode would be needed (out of scope).
-   What is the uplink?
-5. **Remote API path without the relay agent.** The relay agent is not yet started by
-   `maktaba-server`. *Recommendation:* wire it as part of Epic 25 work before Phase B; meanwhile
-   `remote_detection = relay_or_public_ip` supports a user's own reverse proxy / tunnel.
-6. **Who may watch remotely** — all signed-in users (default) or admins only? Per-user limit 2?
-7. **Other secrets in `extensions`.** The Plex token in `extensions.settings` is readable by node
-   roles today. Move all extension secrets to `home_secrets` too (cheap once 0119 exists)?
-8. **Budget at 100 %:** refuse new tunes but let running sessions finish (recommended), or stop
-   everything?
-9. **Rotation at `max_push_hours`** causes a short re-buffer for remote viewers every 8 h of a
-   continuous push. Acceptable, or raise the default and buy more storage?
-10. **Plex next to the PC.** Proxying `/auto/v{n}` makes PC-encoded bytes cross the LAN twice (PC →
-    home → Plex). *Recommendation:* accept (≈ 6.5 Mb/s per tuned channel); revisit only if the
-    home's NIC is busy.
-11. **LL-HLS beta** (`preferLowLatency`) for remote? Off by default (beta; the encoder already
-    uses 2 s GOP, no B-frames, which LL-HLS needs).
-12. **Webhooks need a public URL.** The design polls Cloudflare (live input status and lifecycle)
-    and treats webhooks as an optional speed-up through the relay URL. OK?
+   player swaps tokens without a reload (32.9); native apps re-tune at expiry. Confirm in the
+   spike. *(Spike item, as Q2.)*
+4. **Upload bandwidth — owner decision.** The home's upload is **≥ 100 Mb/s**, so no separate
+   "remote rendition" encode is needed: each remote channel is pushed once at the channel bitrate
+   (**≈ 6.5 Mb/s**, the default 6 Mb/s video + audio). `tv_remote.max_channels` defaults to **10**
+   concurrent remote channels (≈ 65 Mb/s at the default bitrate, inside the uplink with headroom
+   for everything else); the setting stays capped at 10.
+5. **Remote API path without the relay agent — accepted default, revisit if needed.** The relay
+   agent is wired into `maktaba-server` as part of the Epic 25 work before Phase B; until then, and
+   for users with their own reverse proxy or tunnel, `remote_detection = relay_or_public_ip` ("a
+   public client IP counts as remote") is an **opt-in**; the default stays `relay`.
+6. **Who may watch remotely — owner decision.** **All signed-in users** (`tv_remote.viewers =
+   all`), **2 concurrent remote streams per user** (`tv_remote.max_streams_per_user = 2`, a
+   setting).
+7. **Other secrets in `extensions` — accepted default, revisit if needed.** All extension secrets
+   (the Plex token in `extensions.settings` today, and any future `secret` field) move to
+   `home_secrets` in story 32.6, so node roles cannot read them.
+8. **Budget at 100 % — owner decision.** **Refuse new remote tunes (402 `budget_exhausted`) and let
+   running sessions finish**; nothing is cut mid-programme (`budget_action = block_new`, the
+   default; `warn` remains a setting).
+9. **Rotation at `max_push_hours` — accepted default, revisit if needed.** A short re-buffer for
+   remote viewers every 8 h of a continuous push is acceptable; `max_push_hours` stays 8.
+10. **Plex next to the PC — accepted default, revisit if needed.** Proxying `/auto/v{n}` makes
+    PC-encoded bytes cross the LAN twice (PC → home → Plex, ≈ 6.5 Mb/s per tuned channel).
+    Accepted; revisit only if the home's NIC is busy.
+11. **LL-HLS beta — accepted default, revisit if needed.** `tv_remote.low_latency`
+    (`preferLowLatency`) is **off** by default (beta; the encoder already uses 2 s GOP and no
+    B-frames, which LL-HLS needs, so it can be switched on later).
+12. **Webhooks need a public URL — accepted default, revisit if needed.** **Polling is the source
+    of truth** (live input status and lifecycle); webhooks are only an optional speed-up through
+    the relay URL.
 
 ## Cloudflare facts this design relies on (with sources)
 

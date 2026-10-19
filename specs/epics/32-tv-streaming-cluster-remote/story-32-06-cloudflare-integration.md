@@ -32,6 +32,12 @@ Design: [design.md](design.md) §7.1, §7.6; README "Security", "Cloudflare fact
 - **AC5** Removing the integration disables remote, stops pushes, deletes Maktaba's live inputs and
   signing key at Cloudflare (with confirmation), and deletes the secrets.
 - **AC6** Cloudflare errors are shown with their code and message; the token is never logged.
+- **AC6a (README Q7, accepted default)** Every extension's `secret` setting field — the Plex token
+  in `extensions.settings` today, and any future one — is stored in `home_secrets` instead. On the
+  home API's first start after this story, existing secret values are moved out of
+  `extensions.settings` into `home_secrets` (idempotent) and returned masked by the API. Code that
+  needs a secret reads it through the secrets store on the home; a job that needs one on a node
+  gets it per job from the home, never by reading a table its role can see.
 - **AC7 (spike, documented in the runbook)** With a real account: (a) a token whose `sub` is the
   in-progress video id plays the live broadcast; (b) whether `exp` is enforced per segment;
   (c) glass-to-glass latency of standard HLS and of LL-HLS with the channel encoder settings;
@@ -47,6 +53,8 @@ Design: [design.md](design.md) §7.1, §7.6; README "Security", "Cloudflare fact
   created once.
 - **TC4** `TestRemoteEnableNeedsGreenTest`.
 - **TC5** `TestTokenMaskedInAPI`.
+- **TC6** `TestExtensionSecretsMovedToHomeSecrets` — a Plex token in `extensions.settings` moves
+  to `home_secrets` once, is masked in the API, and `maktaba_worker` cannot read it.
 
 ## Edge cases
 

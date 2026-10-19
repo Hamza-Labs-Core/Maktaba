@@ -13,10 +13,12 @@ remote viewing through Cloudflare, what it costs, and what to do when something 
      the switches; what the Streaming hosts page shows);
   2. choosing the policy, `spill_at`, pins, proxy vs redirect, and the home's network load;
   3. failover behaviour and drain/move for maintenance;
-  4. Cloudflare setup: a Stream subscription, buying storage (1,000 minutes = $5/month), creating an
+  4. Cloudflare setup: a Stream subscription, buying storage (one 1,000-minute block = $5/month; it holds about two concurrent 8 h pushes,
+     buy another block per two more), creating an
      API token with Stream Write and Account Analytics Read, entering it, Test connection, enabling
      remote;
-  5. limits, budget and cost examples (README table); the upload bandwidth one push uses;
+  5. limits, budget and cost examples (README table); the upload bandwidth one push uses
+     (≈ 6.5 Mb/s; the default 10 channels ≈ 65 Mb/s of a ≥ 100 Mb/s uplink);
   6. what remote viewers do (web, apps), what they see on each error;
   7. the failure playbook: Cloudflare down (remote unavailable; LAN unaffected), storage quota
      exhausted, ingest errors (`ERR_*` meanings), a node failing mid-push, the home down,

@@ -8,7 +8,7 @@
 | # | Decision | Rationale |
 |---|---|---|
 | D1 | Secrets in `home_secrets`, AES-256-GCM, key file `secrets.key` (0600) in the home's config dir. | Not readable by node roles (REVOKE) and not usable from a database dump alone. |
-| D2 | The integration is listed with the extensions (name `cloudflare_stream`) but its secret fields are `home_only`: stored in `home_secrets`, never in `extensions.settings`. | Same admin UX as Plex; fixes the class of leak (extension secrets readable by nodes) for this integration; the Plex token can follow (README Q7). |
+| D2 | The integration is listed with the extensions (name `cloudflare_stream`) but its secret fields are `home_only`: stored in `home_secrets`, never in `extensions.settings`. | Same admin UX as Plex; fixes the class of leak (extension secrets readable by nodes). Every extension secret (the Plex token too) moves to `home_secrets` in this plan (README Q7, accepted default, revisit if needed). |
 | D3 | All Cloudflare calls are made by the home's API (Go). | The token never leaves the home; nodes only ever get one push's ingest key. |
 | D4 | The signing key is created by "Test connection" when missing and kept as `cf_signing_key` (id + PEM). | Local RS256 signing, no per-viewer API calls. |
 | D5 | The spike runs before 32.7 merges and its findings are written into design.md and the runbook. | Four behaviours are not documented (README). |
@@ -27,7 +27,8 @@
 
 **Modify**
 - `pipeline/src/maktaba_pipeline/extensions/base.py` — `SettingField.home_only`
-- `api/internal/handlers/queues/queues.go` (`PutExtension`, `Extensions`) — route `home_only` fields to `secrets.Store`; return them masked
+- `api/internal/handlers/queues/queues.go` (`PutExtension`, `Extensions`) — route `home_only` and `secret` fields to `secrets.Store`; return them masked
+- `api/internal/secrets/migrate.go` — one-time, idempotent move of existing `secret` values (the Plex token) from `extensions.settings` to `home_secrets` at the home API's start; inventory of the readers of those values (pipeline Plex stages) so each reads through the home
 - `web/src/pages/Admin/Extensions.tsx` — "Test connection" button for `cloudflare_stream`, result list
 - `cmd/maktaba-server/internal/config` — the secrets key path (`<config dir>/secrets.key`)
 

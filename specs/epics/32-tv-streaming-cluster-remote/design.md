@@ -197,6 +197,9 @@ while the push runs.
   client is still connected it resolves again (§6) and continues with the new host's TS on the
   same client connection; at most 3 splices per connection (as `Engine.StreamChannelTS` restarts
   today). The tuner lease is held by the front door for the whole client connection.
+  When the encoding host is not the home (e.g. the PC), the bytes cross the LAN twice
+  (node → home → Plex, ≈ 6.5 Mb/s per tuned channel); accepted (README Q10), revisit only if the
+  home's NIC is busy.
 - Playlists and segments: plain proxy; a failed attempt counts against the host (§2.4); a
   playlist request retries once after re-resolving.
 
@@ -304,9 +307,11 @@ Inputs are created lazily (first need) up to `max_channels`, named
 ```
 
 `recording.mode = automatic` because Cloudflare serves HLS/DASH for a live input only in that mode
-(README Q1); each broadcast's recording is deleted when the broadcast ends (§7.6).
-`deleteRecordingAfterDays` is not used (minimum 30 days). Lowering `max_channels` deletes idle
-inputs above the limit. The stream key / SRT passphrase go to `home_secrets`
+(README Q1, decided by the owner); each broadcast's recording is deleted as soon as the broadcast
+ends (§7.7). `preferLowLatency` follows `tv_remote.low_latency`, off by default (README Q11).
+`deleteRecordingAfterDays` is not used (minimum 30 days). The pool holds at most `max_channels`
+inputs (default 10, at most 10: ≈ 6.5 Mb/s of the home's ≥ 100 Mb/s upload each, README Q4).
+Lowering `max_channels` deletes idle inputs above the limit. The stream key / SRT passphrase go to `home_secrets`
 (`cf_input_<uid>_key`); `tv_remote_inputs.ingest` keeps only the URLs. When a push is requested
 the API opens the key and writes `{url, key}` to `tv_push_secrets` (push id, `expires_at` = now +
 `max_push_hours`); the row is deleted when the push ends.
@@ -356,6 +361,11 @@ the gap is under `timeoutSeconds` (30 s) Cloudflare continues the same video: th
 stay valid. A longer gap creates a new video: the controller notices the new `videoUID` from the
 lifecycle endpoint, and the next heartbeat of each session returns a new token and URL.
 
+Rotation (age ≥ `max_push_hours`, default 8) costs remote viewers a short re-buffer once per 8 h
+of a continuous push: the web player swaps to the new video's URL from its next heartbeat, native
+apps re-tune. Accepted as the default (README Q9); it is what keeps two pushes inside one
+1,000-minute storage block (§7.7).
+
 ### 7.4 The pusher (on the encoding host)
 
 - **No second encode.** It subscribes to the station's Hub (the same MPEG-TS that `/auto/v{n}`
@@ -390,9 +400,10 @@ lifecycle endpoint, and the next heartbeat of each session returns a new token a
 
 ```
 POST /api/tv/remote/tune {channel_id, device}
-  auth: signed-in; tv_remote.viewers allows the user; channel enabled and readable (libraryacl)
+  auth: signed-in; tv_remote.viewers allows the user (default `all` signed-in users, README Q6);
+        channel enabled and readable (libraryacl)
   gates (in order): integration ready → remote enabled → budget (402) →
-                    user sessions < max_streams_per_user (429 user_streams_full) →
+                    user sessions < max_streams_per_user (default 2; 429 user_streams_full) →
                     channel pushing? reuse : (pushes < max_channels ? new push : 429 remote_channels_full)
   create tv_remote_sessions row (push_id)
   push live with video_uid → 200 {session_id, hls_url, expires_at, refresh_after, channel}
@@ -438,14 +449,24 @@ current broadcast of a live push (crash recovery). Before starting a push the co
 `Σ age(live pushes) + max_push_hours × 60 ≤ storage_plan_minutes`; otherwise the tune gets 503
 `remote_storage_full` with a hint to raise the storage plan or lower `max_push_hours`.
 
+The account is sized for one $5/month block of 1,000 stored minutes (README Q1). Because the
+recording of a running broadcast is stored until it ends and is deleted right after, stored
+minutes ≈ Σ age(live pushes). With `max_push_hours = 8` (480 min) one block has room for
+**two** full-length concurrent pushes (2 × 480 ≤ 1,000); once the running pushes' ages plus 480
+would pass 1,000, the next push gets `remote_storage_full` even though `max_channels` is 10. On the
+default plan the storage guard is therefore usually the binding concurrency limit, and the admin
+page shows the stored-minutes headroom next to "remote channels: n of 10". Each further
+1,000-minute block makes room for about two more full-length pushes; a lower `max_push_hours` fits more pushes per block at the
+cost of more frequent rotation (§7.3).
+
 ### 7.8 Polling and webhooks
 
-Polling is the source of truth: input `status` and `lifecycle` every 1 s while `connecting`,
+Polling is the source of truth (README Q12): input `status` and `lifecycle` every 1 s while `connecting`,
 every 15 s while `live`; `views` (live viewers) every 60 s for the admin page and as a second
 signal for idleness (sessions are primary). Webhooks (`live_input.connected|disconnected|errored`)
 are optional: if the admin configures a Cloudflare Notifications webhook to
 `https://<user>.maktaba.app/api/tv/remote/webhook` with a secret, the handler verifies the secret
-and triggers an immediate reconcile; errored events carry the `ERR_*` code shown on the admin page.
+and triggers an immediate reconcile (it never changes state by itself); errored events carry the `ERR_*` code shown on the admin page.
 
 ## 8. App routing (LAN or remote)
 
@@ -459,8 +480,10 @@ and triggers an immediate reconcile; errored events carry the `ERR_*` code shown
 ```
 
 `via_relay` is true when the request carries `X-Maktaba-Via: relay`, set by the server-side relay
-agent on its loopback calls (the agent strips any client-supplied copy); with
-`remote_detection = relay_or_public_ip` a request from a non-private client address (not RFC 1918,
+agent on its loopback calls (the agent strips any client-supplied copy). The agent is wired into
+`maktaba-server` with the Epic 25 work before Phase B (README Q5). With the opt-in
+`remote_detection = relay_or_public_ip` ("a public client IP counts as remote"; default `relay`)
+a request from a non-private client address (not RFC 1918,
 not ULA, not loopback, not CGNAT 100.64/10) also counts as remote. The API strips
 `X-Maktaba-Via` from requests that do not come from loopback.
 
@@ -497,8 +520,11 @@ XMLTV/M3U are not offered remotely (non-goal).
   minutes delivered come from GraphQL `streamMinutesViewedAdaptiveGroups` summed over the video ids
   of this month's Maktaba pushes (hourly; between polls the estimate adds
   `Σ live sessions × minutes since last poll`, so it errs high).
-- 80 % → admin notification (existing notifications/log event); 100 % → `block_new` (402 on tune;
-  running sessions continue until they end, like Epic 25.12) or `warn`.
+- 80 % → admin notification (existing notifications/log event); 100 % → `block_new` (the default,
+  README Q8: 402 on every new tune, including a tune of a channel that is already pushing;
+  running sessions continue until they end, like Epic 25.12; their heartbeats keep refreshing
+  tokens, and a rotation at `max_push_hours` or a failover of a channel they watch is not a new
+  tune, so it is not refused) or `warn` (notification only).
 - Idle timeout and `max_push_hours` bound pushes with no viewers and the stored minutes.
 - No audio-only mode: Cloudflare bills minutes, not bytes, and live inputs need H.264 video.
 
@@ -531,7 +557,9 @@ Events (structured logs with `event=`): `tv_placement`, `tv_failover`, `tv_host_
 See README "Security". The trust boundary for cluster streaming is the LAN plus Epic 31's approval
 of a machine; the front-door HMAC keeps a LAN client from pulling channels straight from a node.
 For remote viewing it is the Maktaba session (through the relay) plus a short-lived token per
-broadcast; the Cloudflare API token never leaves the home.
+broadcast; the Cloudflare API token never leaves the home. Every extension secret (the Plex token
+today, the Cloudflare token, any `secret` setting field) lives in `home_secrets`, not in
+`extensions.settings`, so node roles cannot read it (README Q7, story 32.6).
 
 ## 12. Testing approach
 
