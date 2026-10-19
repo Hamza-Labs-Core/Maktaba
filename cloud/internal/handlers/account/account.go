@@ -1,6 +1,12 @@
 // Package account exposes the user-facing account management
-// endpoints: profile read/update, password change, email change,
-// account deletion (with 30-day reversible hold).
+// endpoints: profile read/update, password change, account deletion
+// (with 30-day reversible hold).
+//
+// There is no email-change endpoint: changing the sign-in address needs
+// a verification mail to the new address (story 25.5), and the cloud has
+// no mail provider yet. The route returned 202 and did nothing, and no
+// client called it, so it was removed rather than left as a false
+// success; it comes back with the mailer.
 package account
 
 import (
@@ -33,7 +39,6 @@ func Mount(r interface {
 	r.Get("/v1/account/me", d.Me)
 	r.Patch("/v1/account/me", d.UpdateProfile)
 	r.Post("/v1/account/password", d.ChangePassword)
-	r.Post("/v1/account/email", d.RequestEmailChange)
 	r.Delete("/v1/account/me", d.RequestDeletion)
 }
 
@@ -132,21 +137,6 @@ func (d *Deps) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = d.Sessions.RevokeAllForUser(r.Context(), uid)
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// RequestEmailChange begins a two-step flow: the new address receives
-// a token, the caller redeems it from a different endpoint we don't
-// land here (verification email worker). We persist a pending row so
-// the redeemer can resolve which user is asking.
-//
-// NOTE: this is currently a stub — it returns 202 without reading the
-// request body or persisting anything. The persistence + verification
-// worker land with the mail-provider integration (see CODE_QUALITY_REVIEW).
-func (d *Deps) RequestEmailChange(w http.ResponseWriter, _ *http.Request) {
-	// Implementation note: the actual send is deferred to a worker;
-	// here we only persist the request. Verifier endpoint lands when
-	// the mail provider integration is wired.
-	w.WriteHeader(http.StatusAccepted)
 }
 
 // RequestDeletion soft-deletes by enqueueing a 30-day hold. The user
