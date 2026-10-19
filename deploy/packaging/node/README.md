@@ -88,6 +88,24 @@ The first of these that applies:
 installs, with a warning: its dependencies then resolve to the newest versions its
 metadata allows, not the tested ones.
 
+**Digests.** A wheel or constraints file whose SHA-256 is known is checked before it is
+installed; one that does not match is refused (a refused download is deleted):
+
+| File | Checked against |
+|---|---|
+| a release's wheel and constraints | `release.conf`'s `WHEEL_SHA256` / `CONSTRAINTS_SHA256` |
+| `--from-wheel` / `--constraints` with `--sha256 HEX` / `--constraints-sha256 HEX` (`-Sha256`, `-ConstraintsSha256`) | that digest, remembered in `install.conf` |
+| a URL given without a digest | nothing the first time; its SHA-256 is then pinned in `install.conf` (`WHEEL_SHA256`, `CONSTRAINTS_SHA256`), so an update that downloads a different file from the same URL is refused |
+| a local file given without a digest | not pinned: a wheel rebuilt at the same path installs on the next update |
+
+To take a new file from a pinned URL, pass `--from-wheel` (and `--constraints`) again: an
+explicit flag starts a new pin. The digest comes from `sha256sum`, else `shasum`, else
+Python's `hashlib` (Windows: `Get-FileHash`); with none of them the installer stops
+rather than install unchecked.
+
+Downloads go to `<node dir>/dist/`; after a successful install only the files that
+install used are kept there.
+
 ## Before you start
 
 - **The home** accepts machines: on the home, Admin → Machines → "Accept new machines"

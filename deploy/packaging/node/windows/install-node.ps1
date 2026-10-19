@@ -59,10 +59,17 @@
     Install the pipeline from this wheel (maktaba_pipeline-*.whl), a file or an http(s)
     URL (default: the release this script came with; remembered).
 
+.PARAMETER Sha256
+    With -FromWheel: the wheel's SHA-256; a file that differs is refused (remembered; a
+    wheel downloaded without one is pinned to the digest of its first download).
+
 .PARAMETER Constraints
     With -FromWheel: pin the wheel's dependencies with this constraints file, a file or
     an http(s) URL (maktaba-pipeline-<version>-constraints.txt of the release; the
     release's own when installing the release).
+
+.PARAMETER ConstraintsSha256
+    With -Constraints: its SHA-256 (remembered, pinned the same way).
 
 .PARAMETER Source
     Build the pipeline from this source directory instead (default in a checkout:
@@ -98,7 +105,9 @@ param(
     [string]$Extras = '',
     [string]$Source = '',
     [string]$FromWheel = '',
+    [string]$Sha256 = '',
     [string]$Constraints = '',
+    [string]$ConstraintsSha256 = '',
     [string]$Ffmpeg = '',
     [ValidateSet('Task', 'Service')][string]$Mode = '',
     [switch]$NoJoin,
@@ -122,6 +131,7 @@ if ($Instances -gt 16) { throw '-Instances: at most 16' }
 if (-not $Extras) { $Extras = Read-NodeKeyValue $script:NodeInstallConf 'EXTRAS' }
 if (-not $Extras) { $Extras = 'none' }
 $Origin = Resolve-NodePipelineOrigin -FromWheel $FromWheel -Constraints $Constraints -Source $Source `
+    -WheelSha256 $Sha256 -ConstraintsSha256 $ConstraintsSha256 `
     -BundleDir $PackagingDir -InstallConf $script:NodeInstallConf `
     -CheckoutPipeline (Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PackagingDir))) 'pipeline')
 if (-not $Mode) {
@@ -239,11 +249,23 @@ $uv = Find-Uv
 if ($Origin.From -ne 'source') {
     # The release's (or a given) wheel, its dependencies pinned by the constraints file.
     $downloads = Join-Path $script:NodeDir 'dist'
-    $wheelFile = Get-NodePipelineFile -Spec $Origin.Wheel -Sha256 $Origin.WheelSha256 -DownloadDir $downloads
+    $got = Get-NodePipelineFile -Spec $Origin.Wheel -Sha256 $Origin.WheelSha256 -DownloadDir $downloads
+    $wheelFile = $got.Path
+    $wheelPin = $Origin.WheelSha256
+    if (-not $wheelPin) { $wheelPin = $got.Sha256 }
+    $consFile = ''
+    $consPin = ''
     $consArgs = @()
+    # The installs run from the constraints file's folder and name it .\<file>: uv splits
+    # a --constraint path at its spaces (C:\Users\Jane Doe\...).
+    $installDir = $script:NodeDir
     if ($Origin.Constraints) {
-        $consFile = Get-NodePipelineFile -Spec $Origin.Constraints -Sha256 $Origin.ConstraintsSha256 -DownloadDir $downloads
-        $consArgs = @('--constraint', $consFile)
+        $got = Get-NodePipelineFile -Spec $Origin.Constraints -Sha256 $Origin.ConstraintsSha256 -DownloadDir $downloads
+        $consFile = $got.Path
+        $consPin = $Origin.ConstraintsSha256
+        if (-not $consPin) { $consPin = $got.Sha256 }
+        $installDir = Split-Path -Parent $consFile
+        $consArgs = @('--constraint', ('.\' + (Split-Path -Leaf $consFile)))
     } else {
         Write-Warning 'no constraints file: the wheel''s dependencies are not pinned (pass -Constraints)'
     }
@@ -256,7 +278,7 @@ if ($Origin.From -ne 'source') {
         }
         # --reinstall-package: a rebuilt wheel of an unchanged version replaces the old one
         $uvArgs = @('pip', 'install', '--python', $script:NodePython, '--reinstall-package', 'maktaba-pipeline') + $consArgs + @($spec)
-        Assert-ExitCode (Invoke-NativeCommand -FilePath $uv -ArgumentList $uvArgs) 'uv pip install'
+        Assert-ExitCode (Invoke-NativeCommand -FilePath $uv -ArgumentList $uvArgs -WorkingDirectory $installDir) 'uv pip install'
     } else {
         $basePython = Find-Python312
         if (-not $basePython) {
@@ -267,9 +289,11 @@ if ($Origin.From -ne 'source') {
             Assert-ExitCode (Invoke-NativeCommand -FilePath $basePython -ArgumentList @('-m', 'venv', $script:NodeVenv)) 'python -m venv'
         }
         Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList @('-m', 'pip', 'install', '--quiet', '--upgrade', 'pip')) 'pip upgrade'
-        Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList (@('-m', 'pip', 'install', '--quiet') + $consArgs + @($spec))) 'pip install'
+        Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList (@('-m', 'pip', 'install', '--quiet') + $consArgs + @($spec)) -WorkingDirectory $installDir) 'pip install'
         Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList @('-m', 'pip', 'install', '--quiet', '--force-reinstall', '--no-deps', $wheelFile)) 'pip reinstall'
     }
+    # installed: earlier updates' downloads are of no more use
+    Remove-NodeOldDownloads -Dir $downloads -Keep @($wheelFile, $consFile)
 } elseif ($uv) {
     Write-NodeStep "Building the worker's Python environment with uv ($($script:NodeVenv))"
     # --no-editable: the worker runs a snapshot, not the checkout being edited;
@@ -333,17 +357,27 @@ if ($help.StdOut -notmatch '--node') {
 # FROM=release re-reads release.conf on the next run, so a newer release's archive
 # installs its own wheel; FROM=wheel keeps the wheel (and constraints) given.
 $wheelKv = ''
+$wheelShaKv = ''
 $consKv = ''
+$consShaKv = ''
 $sourceKv = ''
 if ($Origin.From -eq 'source') { $sourceKv = $Source }
 if ($Origin.From -eq 'wheel') {
+    # A download is pinned to what this install got (trust on first use) unless a digest
+    # was given; a local file only to a given digest, so a rebuilt wheel at the same path
+    # still installs.
     $wheelKv = $Origin.Wheel
-    if (-not (Test-NodeUrl $wheelKv)) { $wheelKv = $wheelFile }
+    $wheelShaKv = $Origin.WheelSha256
+    if (Test-NodeUrl $wheelKv) { $wheelShaKv = $wheelPin } else { $wheelKv = $wheelFile }
     $consKv = $Origin.Constraints
-    if ($consKv -and -not (Test-NodeUrl $consKv)) { $consKv = $consFile }
+    $consShaKv = $Origin.ConstraintsSha256
+    if ($consKv) {
+        if (Test-NodeUrl $consKv) { $consShaKv = $consPin } else { $consKv = $consFile }
+    }
 }
 $conf = "# install-node.ps1 remembers these for updates`r`nFROM=$($Origin.From)`r`nEXTRAS=$Extras`r`n" +
-    "SOURCE=$sourceKv`r`nWHEEL=$wheelKv`r`nCONSTRAINTS=$consKv`r`nMODE=$Mode`r`n"
+    "SOURCE=$sourceKv`r`nWHEEL=$wheelKv`r`nWHEEL_SHA256=$wheelShaKv`r`nCONSTRAINTS=$consKv`r`n" +
+    "CONSTRAINTS_SHA256=$consShaKv`r`nMODE=$Mode`r`n"
 [System.IO.File]::WriteAllText($script:NodeInstallConf, $conf)
 
 # --- settings ------------------------------------------------------------------------------

@@ -42,10 +42,15 @@
 #                    install the pipeline from this wheel (maktaba_pipeline-*.whl), a
 #                    file or an http(s) URL (default: the release this script came
 #                    with; remembered for updates)
+#   --sha256 HEX     with --from-wheel: the wheel's SHA-256; a file that differs is
+#                    refused (remembered; a wheel downloaded without one is pinned to
+#                    the digest of its first download)
 #   --constraints URL|PATH
 #                    with --from-wheel: pin its dependencies with this constraints
 #                    file (maktaba-pipeline-<version>-constraints.txt of the release;
 #                    the release's own when installing the release)
+#   --constraints-sha256 HEX
+#                    with --constraints: its SHA-256 (remembered, pinned the same way)
 #   --source DIR     build the pipeline from this source directory instead (default
 #                    in a checkout: pipeline/ of the repo holding this script;
 #                    remembered for updates)
@@ -77,6 +82,8 @@ EXTRAS=""
 SOURCE=""
 FROM_WHEEL=""
 CONSTRAINTS=""
+WHEEL_SHA_ARG=""
+CONSTRAINTS_SHA_ARG=""
 FROM=""        # where the pipeline comes from: release, wheel or source
 SCOPE=user
 RUN_AS=""
@@ -106,6 +113,8 @@ while [ $# -gt 0 ]; do
         --source)    need_value "$@"; SOURCE="$2"; shift 2 ;;
         --from-wheel)  need_value "$@"; FROM_WHEEL="$2"; shift 2 ;;
         --constraints) need_value "$@"; CONSTRAINTS="$2"; shift 2 ;;
+        --sha256)      need_value "$@"; WHEEL_SHA_ARG="$2"; shift 2 ;;
+        --constraints-sha256) need_value "$@"; CONSTRAINTS_SHA_ARG="$2"; shift 2 ;;
         --system)    SCOPE=system; shift ;;
         --run-as)    need_value "$@"; RUN_AS="$2"; shift 2 ;;
         --no-join)   DO_JOIN=0; shift ;;
@@ -134,6 +143,24 @@ fi
 if [ -n "$CONSTRAINTS" ] && [ -n "$SOURCE" ]; then
     die "--constraints goes with --from-wheel (a source build uses its uv.lock)"
 fi
+# check_hex NAME VALUE: VALUE, lower-cased, if it is a SHA-256 in hex.
+check_hex() {
+    local v
+    v="$(printf '%s' "$2" | tr 'A-F' 'a-f')"
+    case "$v" in
+        *[!0-9a-f]*) die "$1 takes a SHA-256 in hex (64 characters): $2" ;;
+    esac
+    [ "${#v}" -eq 64 ] || die "$1 takes a SHA-256 in hex (64 characters): $2"
+    printf '%s' "$v"
+}
+if [ -n "$WHEEL_SHA_ARG" ]; then
+    [ -n "$FROM_WHEEL" ] || die "--sha256 goes with --from-wheel (a release's wheel has its digest in release.conf)"
+    WHEEL_SHA_ARG="$(check_hex --sha256 "$WHEEL_SHA_ARG")"
+fi
+if [ -n "$CONSTRAINTS_SHA_ARG" ]; then
+    [ -n "$CONSTRAINTS" ] || die "--constraints-sha256 goes with --constraints"
+    CONSTRAINTS_SHA_ARG="$(check_hex --constraints-sha256 "$CONSTRAINTS_SHA_ARG")"
+fi
 
 # --- platform ----------------------------------------------------------------------
 OS="$(uname -s)"
@@ -144,6 +171,10 @@ if [ -n "${MAKTABA_NODE_OS:-}" ]; then
 fi
 if [ -n "${MAKTABA_NODE_NO_UV:-}" ] && [ "$DRY_RUN" != 1 ]; then
     die "MAKTABA_NODE_NO_UV is only honoured with --dry-run"
+fi
+# Test hook: MAKTABA_NODE_HASH=python (skip sha256sum and shasum) or none (no way to hash).
+if [ -n "${MAKTABA_NODE_HASH:-}" ] && [ "$DRY_RUN" != 1 ]; then
+    die "MAKTABA_NODE_HASH is only honoured with --dry-run"
 fi
 case "$OS" in
     Darwin|darwin) OS=darwin ;;
@@ -270,8 +301,10 @@ fi
 
 # --- where the pipeline comes from ---------------------------------------------------------
 RELEASE_CONF="$SCRIPT_DIR/release.conf"
-WHEEL_SHA256=""         # expected digests: the release's assets only
-CONSTRAINTS_SHA256=""
+# Expected digests: the release's (release.conf), given (--sha256, --constraints-sha256),
+# or pinned by the last install (install.conf). Empty: not known yet.
+WHEEL_SHA256="$WHEEL_SHA_ARG"
+CONSTRAINTS_SHA256="$CONSTRAINTS_SHA_ARG"
 PYTHON_VERSION=""       # the Python a wheel's environment gets (uv)
 
 if [ "$ACTION" = uninstall ]; then
@@ -285,7 +318,11 @@ else
     case "$FROM" in
         wheel)
             FROM_WHEEL="$(read_kv "$INSTALL_CONF" WHEEL)"
-            if [ -z "$CONSTRAINTS" ]; then CONSTRAINTS="$(read_kv "$INSTALL_CONF" CONSTRAINTS)"; fi
+            WHEEL_SHA256="$(read_kv "$INSTALL_CONF" WHEEL_SHA256)"
+            if [ -z "$CONSTRAINTS" ]; then
+                CONSTRAINTS="$(read_kv "$INSTALL_CONF" CONSTRAINTS)"
+                CONSTRAINTS_SHA256="$(read_kv "$INSTALL_CONF" CONSTRAINTS_SHA256)"
+            fi
             ;;
         source) SOURCE="$(read_kv "$INSTALL_CONF" SOURCE)" ;;
         release) ;;
@@ -475,17 +512,41 @@ is_url() { case "$1" in http://*|https://*) return 0 ;; *) return 1 ;; esac; }
 
 abs_path() { printf '%s/%s' "$(cd "$(dirname "$1")" && pwd)" "$(basename "$1")"; }
 
+# sha256_of FILE: its SHA-256. sha256sum, shasum, else any Python's hashlib; fails only
+# when none of them is here.
 sha256_of() {
-    if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
-    elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
-    else return 1; fi
+    local p hash_tool="${MAKTABA_NODE_HASH:-}"
+    if [ -z "$hash_tool" ] && command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+        return 0
+    fi
+    if [ -z "$hash_tool" ] && command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | awk '{print $1}'
+        return 0
+    fi
+    [ "$hash_tool" = none ] && return 1
+    for p in "$PY" "$(find_python 2>/dev/null || true)" "$(command -v python3 2>/dev/null || true)"; do
+        if [ -z "$p" ] || [ ! -x "$p" ]; then continue; fi
+        "$p" - "$1" <<'PYHASH' && return 0
+import hashlib, sys
+h = hashlib.sha256()
+with open(sys.argv[1], "rb") as f:
+    for block in iter(lambda: f.read(1 << 20), b""):
+        h.update(block)
+print(h.hexdigest())
+PYHASH
+    done
+    return 1
 }
 
 # fetch SPEC [SHA256]: FETCHED = a local file for SPEC, a path or an http(s) URL (which
-# is downloaded into $NODE_DIR/dist). SHA256, when given, must match.
+# is downloaded into $NODE_DIR/dist), FETCHED_SHA256 its digest. SHA256, when given,
+# must match; a download is always hashed, so the next update can pin it.
 FETCHED=""
+FETCHED_SHA256=""
 fetch() {
     local spec="$1" want="${2:-}" dest got
+    FETCHED_SHA256=""
     if is_url "$spec"; then
         dest="$NODE_DIR/dist/$(basename "${spec%%[?#]*}")"
         info "Downloading $spec"
@@ -503,10 +564,28 @@ fetch() {
         dest="$(abs_path "$spec")"
     fi
     FETCHED="$dest"
-    if [ -n "$want" ] && [ -f "$dest" ]; then
-        got="$(sha256_of "$dest")" || { warn "no sha256sum or shasum: not checking $dest"; return 0; }
-        [ "$got" = "$want" ] || die "$dest: SHA-256 $got, the release says $want"
+    # (a dry run downloads nothing: nothing to hash then)
+    if [ -f "$dest" ] && { [ -n "$want" ] || is_url "$spec"; }; then
+        got="$(sha256_of "$dest")" \
+            || die "cannot check $dest: no sha256sum, shasum or Python here to compute its SHA-256"
+        if [ -n "$want" ] && [ "$got" != "$want" ]; then
+            if is_url "$spec"; then rm -f -- "$dest"; fi   # not left for anything to use
+            die "$dest: SHA-256 $got, expected $want (the release's, --sha256's, or the one pinned at the first install; pass --from-wheel again to take a new file)"
+        fi
+        FETCHED_SHA256="$got"
     fi
+}
+
+# prune_dist KEEP...: remove the earlier downloads in $NODE_DIR/dist, keeping KEEP.
+prune_dist() {
+    local f k keep
+    [ -d "$NODE_DIR/dist" ] || return 0
+    for f in "$NODE_DIR"/dist/*; do
+        [ -e "$f" ] || continue
+        keep=0
+        for k in "$@"; do if [ "$f" = "$k" ]; then keep=1; fi; done
+        if [ "$keep" = 0 ]; then remove "$f"; fi
+    done
 }
 
 # extras_suffix: "[a,b]" for the chosen extras, or nothing.
@@ -516,19 +595,42 @@ build_venv() {
     if [ "$FROM" = source ]; then build_venv_source; else build_venv_wheel; fi
 }
 
+# The digests install.conf pins for FROM=wheel (see install_helpers).
+WHEEL_PIN=""
+CONSTRAINTS_PIN=""
+
+# in_dir DIR CMD...: run CMD from DIR.
+in_dir() {
+    local dir="$1"
+    shift
+    (
+        if [ "$DRY_RUN" = 1 ]; then printf '  + cd %s\n' "$(quote_cmd "$dir")"; else cd "$dir"; fi
+        run "$@"
+    )
+}
+
 # The release's (or a given) wheel, its dependencies pinned by the constraints file.
 build_venv_wheel() {
-    local uv py wheel constraints="" cons_args=() spec
+    local uv py wheel constraints="" cons_args=() spec here
     run mkdir -p "$NODE_DIR"
     fetch "$FROM_WHEEL" "$WHEEL_SHA256"
     wheel="$FETCHED"
+    WHEEL_PIN="${WHEEL_SHA256:-$FETCHED_SHA256}"
     if [ -n "$CONSTRAINTS" ]; then
         fetch "$CONSTRAINTS" "$CONSTRAINTS_SHA256"
         constraints="$FETCHED"
+        CONSTRAINTS_PIN="${CONSTRAINTS_SHA256:-$FETCHED_SHA256}"
     else
         warn "no constraints file: the wheel's dependencies are not pinned (pass --constraints)"
     fi
     spec="$wheel$(extras_suffix)"
+    # The installs run from the constraints file's directory and name it ./<file>: uv
+    # splits a --constraint path at its spaces (~/Library/Application Support/...).
+    here="$NODE_DIR"
+    if [ -n "$constraints" ]; then
+        here="$(dirname "$constraints")"
+        cons_args=(--constraint "./$(basename "$constraints")")
+    fi
     if uv="$(find_uv)"; then
         info "Installing $(basename "$wheel") with uv ($VENV)"
         local uv_env=()
@@ -536,23 +638,23 @@ build_venv_wheel() {
             # a uv-managed Python must sit where the service account can read it
             uv_env+=("UV_PYTHON_INSTALL_DIR=$NODE_DIR/python")
         fi
-        if [ -n "$constraints" ]; then cons_args=(--constraint "$constraints"); fi
         if [ ! -x "$PY" ]; then
             run env ${uv_env[@]+"${uv_env[@]}"} "$uv" venv --python "$PYTHON_VERSION" "$VENV"
         fi
         # --reinstall-package: a rebuilt wheel of an unchanged version replaces the old one
-        run env ${uv_env[@]+"${uv_env[@]}"} "$uv" pip install --python "$PY" \
+        in_dir "$here" env ${uv_env[@]+"${uv_env[@]}"} "$uv" pip install --python "$PY" \
             --reinstall-package maktaba-pipeline ${cons_args[@]+"${cons_args[@]}"} "$spec"
     elif py="$(find_python)"; then
         warn "uv not found: using $py and pip."
-        if [ -n "$constraints" ]; then cons_args=(--constraint "$constraints"); fi
         if [ ! -x "$PY" ]; then run "$py" -m venv "$VENV"; fi
         run "$PY" -m pip install --quiet --upgrade pip
-        run "$PY" -m pip install --quiet ${cons_args[@]+"${cons_args[@]}"} "$spec"
+        in_dir "$here" "$PY" -m pip install --quiet ${cons_args[@]+"${cons_args[@]}"} "$spec"
         run "$PY" -m pip install --quiet --force-reinstall --no-deps "$wheel"
     else
         die "neither uv nor Python 3.12+ found. Install uv (https://docs.astral.sh/uv/) and run this again."
     fi
+    # installed: earlier updates' downloads are of no more use
+    prune_dist "$wheel" ${constraints:+"$constraints"}
 }
 
 # A checkout's pipeline/, its dependencies pinned by its uv.lock.
@@ -625,13 +727,20 @@ EOF
     fi
     # FROM=release re-reads release.conf on the next run, so a newer release's archive
     # installs its own wheel; FROM=wheel keeps the wheel (and constraints) given.
-    local wheel_kv="" cons_kv="" src_kv=""
+    local wheel_kv="" cons_kv="" src_kv="" wheel_sha_kv="" cons_sha_kv=""
     if [ "$FROM" = source ]; then src_kv="$SOURCE"; fi
     if [ "$FROM" = wheel ]; then
         wheel_kv="$FROM_WHEEL"
         if ! is_url "$wheel_kv"; then wheel_kv="$(abs_path "$wheel_kv")"; fi
         cons_kv="$CONSTRAINTS"
         if [ -n "$cons_kv" ] && ! is_url "$cons_kv"; then cons_kv="$(abs_path "$cons_kv")"; fi
+        # A download is pinned to what this install got (trust on first use) unless a
+        # digest was given; a local file only to a given digest, so a rebuilt wheel at
+        # the same path still installs.
+        wheel_sha_kv="$WHEEL_SHA256"
+        if is_url "$FROM_WHEEL"; then wheel_sha_kv="$WHEEL_PIN"; fi
+        cons_sha_kv="$CONSTRAINTS_SHA256"
+        if [ -n "$CONSTRAINTS" ] && is_url "$CONSTRAINTS"; then cons_sha_kv="$CONSTRAINTS_PIN"; fi
     fi
     write_file "$INSTALL_CONF" 0644 <<EOF
 # install-node.sh remembers these for updates
@@ -639,7 +748,9 @@ FROM=$FROM
 EXTRAS=$EXTRAS
 SOURCE=$src_kv
 WHEEL=$wheel_kv
+WHEEL_SHA256=$wheel_sha_kv
 CONSTRAINTS=$cons_kv
+CONSTRAINTS_SHA256=$cons_sha_kv
 RUN_AS=$RUN_AS
 EOF
 }

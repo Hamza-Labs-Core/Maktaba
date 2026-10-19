@@ -129,9 +129,37 @@ try {
     $conf = New-InstallConf "FROM=wheel`n"
     Assert-Throws { Resolve-NodePipelineOrigin -BundleDir $plain -CheckoutPipeline $checkout -InstallConf $conf } 'names no WHEEL' 'install.conf with FROM=wheel and no wheel'
 
+    # --- digests ------------------------------------------------------------------------------------------
+    $sha = Get-Sha256 $wheel
+    $o = Resolve-NodePipelineOrigin -FromWheel $wheel -WheelSha256 $sha.ToUpperInvariant() -BundleDir $plain -CheckoutPipeline $checkout -InstallConf $noConf
+    Assert-Equal $sha $o.WheelSha256 '-Sha256: lower-cased'
+    Assert-Throws { Resolve-NodePipelineOrigin -FromWheel $wheel -WheelSha256 'abc' -BundleDir $plain -CheckoutPipeline $checkout -InstallConf $noConf } '64 characters' '-Sha256: not a digest'
+    Assert-Throws { Resolve-NodePipelineOrigin -WheelSha256 $sha -BundleDir $bundle -CheckoutPipeline $checkout -InstallConf $noConf } '-Sha256 goes with -FromWheel' '-Sha256 without -FromWheel'
+    Assert-Throws { Resolve-NodePipelineOrigin -FromWheel $wheel -ConstraintsSha256 $sha -BundleDir $plain -CheckoutPipeline $checkout -InstallConf $noConf } 'goes with -Constraints' '-ConstraintsSha256 without -Constraints'
+    $pinned = ('1' * 64)
+    $conf = New-InstallConf "FROM=wheel`nWHEEL=https://example.com/maktaba_pipeline-1.0.0-py3-none-any.whl`nWHEEL_SHA256=$pinned`nCONSTRAINTS=https://example.com/c.txt`nCONSTRAINTS_SHA256=$sha`n"
+    $o = Resolve-NodePipelineOrigin -BundleDir $plain -CheckoutPipeline $checkout -InstallConf $conf
+    Assert-Equal $pinned $o.WheelSha256 'update: the pinned wheel digest'
+    Assert-Equal $sha $o.ConstraintsSha256 'update: the pinned constraints digest'
+    $o = Resolve-NodePipelineOrigin -Constraints $cons -BundleDir $plain -CheckoutPipeline $checkout -InstallConf $conf
+    Assert-Equal '' $o.ConstraintsSha256 'update: new -Constraints drop the old pin'
+
+    # --- earlier downloads -------------------------------------------------------------------------------
+    $dist = Join-Path $T 'dist'
+    New-Item -ItemType Directory -Path $dist | Out-Null
+    $old = Join-Path $dist 'maktaba_pipeline-1.0.0-py3-none-any.whl'
+    $new = Join-Path $dist 'maktaba_pipeline-2.0.0-py3-none-any.whl'
+    foreach ($x in @($old, $new)) { [System.IO.File]::WriteAllText($x, 'x') }
+    Remove-NodeOldDownloads -Dir $dist -Keep @($new, '')
+    Assert-Equal $false (Test-Path -LiteralPath $old) 'the last release''s download is removed'
+    Assert-Equal $true (Test-Path -LiteralPath $new) 'this install''s download is kept'
+
     # --- Get-NodePipelineFile ------------------------------------------------------------------------------
     $dl = Join-Path $T 'dl'
-    Assert-Equal (Resolve-Path -LiteralPath $wheel).Path (Get-NodePipelineFile -Spec $wheel -Sha256 (Get-Sha256 $wheel) -DownloadDir $dl) 'a local file with the right digest'
+    $f = Get-NodePipelineFile -Spec $wheel -Sha256 (Get-Sha256 $wheel).ToUpperInvariant() -DownloadDir $dl
+    Assert-Equal (Resolve-Path -LiteralPath $wheel).Path $f.Path 'a local file with the right digest (any case)'
+    Assert-Equal (Get-Sha256 $wheel) $f.Sha256 'its digest is returned, to pin'
+    Assert-Equal '' (Get-NodePipelineFile -Spec $wheel -DownloadDir $dl).Sha256 'a local file without a digest is not hashed (not pinned)'
     Assert-Throws { Get-NodePipelineFile -Spec $wheel -Sha256 ('0' * 64) -DownloadDir $dl } 'SHA-256' 'a local file with the wrong digest'
     Assert-Throws { Get-NodePipelineFile -Spec (Join-Path $files 'missing.whl') -DownloadDir $dl } 'no such file' 'a missing file'
 } finally {

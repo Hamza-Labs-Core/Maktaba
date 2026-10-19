@@ -144,6 +144,35 @@ jobs:
           "${bundle}uninstall-node.sh" --purge
           test ! -e "$node"
 
+      # --from-wheel URL outside a release: pinned to its first download, so a changed
+      # file at the same URL is refused at the next update. Under ~/Library/Application
+      # Support, a path with a space (uv splits a --constraint path at spaces).
+      - name: Install from a wheel URL, then refuse a changed one
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/srv"
+          cp dist/maktaba_pipeline-*.whl dist/maktaba-pipeline-*-constraints.txt "$RUNNER_TEMP/srv/"
+          (cd "$RUNNER_TEMP/srv" && exec python3 -m http.server 18765 --bind 127.0.0.1) &
+          sleep 2
+          bundle="$(ls -d "$RUNNER_TEMP"/maktaba-node-*/)"
+          node="$HOME/Library/Application Support/Maktaba/node"
+          wheel="$(basename "$RUNNER_TEMP"/srv/maktaba_pipeline-*.whl)"
+          cons="$(basename "$RUNNER_TEMP"/srv/maktaba-pipeline-*-constraints.txt)"
+          "${bundle}install-node.sh" --no-join --no-start --extras none \
+            --from-wheel "http://127.0.0.1:18765/$wheel" --constraints "http://127.0.0.1:18765/$cons"
+          want="$(shasum -a 256 "$RUNNER_TEMP/srv/$wheel" | awk '{print $1}')"
+          grep -qx "WHEEL_SHA256=$want" "$node/install.conf"
+          test -f "$node/dist/$wheel" && test -f "$node/dist/$cons"
+          [ "$(find "$node/dist" -type f | wc -l | tr -d ' ')" = 2 ]
+          printf 'x' >>"$RUNNER_TEMP/srv/$wheel"
+          if "${bundle}install-node.sh" --no-join --no-start 2>err.txt; then
+            echo "::error::a changed wheel at the pinned URL was installed"; exit 1
+          fi
+          grep -q 'pinned at the first install' err.txt
+          test ! -e "$node/dist/$wheel"
+          "$node/bin/maktaba-pipeline" --version
+          "${bundle}uninstall-node.sh" --purge
+
   install-windows:
     name: install from the archive (windows)
     needs: [wheel]
@@ -182,3 +211,32 @@ jobs:
           Get-ScheduledTask -TaskName maktaba-node | Out-Null
           & (Join-Path $bundle 'windows\uninstall-node.ps1') -Purge
           if (Get-ScheduledTask -TaskName maktaba-node -ErrorAction SilentlyContinue) { throw 'the task is still registered' }
+
+      # --from-wheel URL outside a release: pinned to its first download, so a changed
+      # file at the same URL is refused at the next update.
+      - name: Install from a wheel URL, then refuse a changed one
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $srv = Join-Path $env:RUNNER_TEMP 'srv'
+          New-Item -ItemType Directory -Force -Path $srv | Out-Null
+          Copy-Item dist\maktaba_pipeline-*.whl, dist\maktaba-pipeline-*-constraints.txt -Destination $srv
+          $server = Start-Process -FilePath python -ArgumentList '-m', 'http.server', '18765', '--bind', '127.0.0.1' -WorkingDirectory $srv -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 3
+          $zip = Get-ChildItem dist -Filter 'maktaba-node-*.zip' | Select-Object -First 1
+          $bundle = Join-Path $env:RUNNER_TEMP $zip.BaseName
+          $wheel = (Get-ChildItem $srv -Filter 'maktaba_pipeline-*.whl').Name
+          $cons = (Get-ChildItem $srv -Filter 'maktaba-pipeline-*-constraints.txt').Name
+          & (Join-Path $bundle 'windows\install-node.ps1') -NoJoin -NoStart -FromWheel "http://127.0.0.1:18765/$wheel" -Constraints "http://127.0.0.1:18765/$cons"
+          $node = Join-Path $env:LOCALAPPDATA 'Maktaba\node'
+          $want = (Get-FileHash (Join-Path $srv $wheel) -Algorithm SHA256).Hash.ToLowerInvariant()
+          if (-not ((Get-Content (Join-Path $node 'install.conf')) -contains "WHEEL_SHA256=$want")) { throw 'install.conf: the wheel is not pinned' }
+          [System.IO.File]::AppendAllText((Join-Path $srv $wheel), 'x')
+          $refused = $false
+          try { & (Join-Path $bundle 'windows\install-node.ps1') -NoJoin -NoStart } catch {
+            if ($_.Exception.Message -like '*pinned at the first install*') { $refused = $true } else { throw }
+          }
+          if (-not $refused) { throw 'a changed wheel at the pinned URL was installed' }
+          if (Test-Path (Join-Path $node "dist\$wheel")) { throw 'the refused download was left behind' }
+          & (Join-Path $bundle 'windows\uninstall-node.ps1') -Purge
+          Stop-Process -Id $server.Id -Force

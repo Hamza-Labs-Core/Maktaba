@@ -100,7 +100,9 @@ expect_ok "release archive"
 has "release archive: says which release" "Pipeline: release v9.8.7"
 has_cmd "release archive: venv with the release's Python" "uv venv --python 3.13"
 has_cmd "release archive: installs the bundled wheel, constrained" \
-    "pip install" "--constraint $BUNDLE/$(basename "$CONS")" "$BUNDLE/$(basename "$WHEEL")"
+    "pip install" "--constraint ./$(basename "$CONS")" "$BUNDLE/$(basename "$WHEEL")"
+has_cmd "release archive: from the constraints' directory (uv splits a --constraint path at spaces)" \
+    "cd $BUNDLE"
 lacks "release archive: no download" "curl"
 lacks "release archive: no uv sync" "uv sync"
 has "release archive: remembers FROM=release" "Pipeline: release"
@@ -136,6 +138,14 @@ has_cmd "bare release archive: downloads the constraints" \
 has_cmd "bare release archive: installs the download" \
     "pip install" "$T/home/.local/share/maktaba/node/dist/$(basename "$WHEEL")"
 
+# --- an archive unpacked under a path with a space -----------------------------------------------
+SPACED="$T/My Downloads/maktaba-node-9.8.7"
+make_bundle "$SPACED" with-files
+run_installer "$SPACED" --
+expect_ok "archive under a path with a space"
+has_cmd "archive under a path with a space: cd there, constraints relative" "cd $T/My\\ Downloads/maktaba-node-9.8.7"
+has_cmd "archive under a path with a space: --constraint ./<file>" "--constraint ./$(basename "$CONS")"
+
 # --- --from-wheel PATH / URL ----------------------------------------------------------------------
 run_installer "$NODE_SRC" -- --from-wheel "$WHEEL"
 expect_ok "--from-wheel PATH"
@@ -152,14 +162,14 @@ fi
 
 (cd "$T/files" && run_installer "$NODE_SRC" -- --from-wheel "./$(basename "$WHEEL")" \
     --constraints "./$(basename "$CONS")"
-    has_cmd "--from-wheel ./relative: made absolute" "--constraint $CONS" "$WHEEL")
+    has_cmd "--from-wheel ./relative: made absolute" "--constraint ./$(basename "$CONS")" "$WHEEL")
 
 run_installer "$NODE_SRC" -- --from-wheel "https://example.com/dl/maktaba_pipeline-1.0.0-py3-none-any.whl?x=1" \
     --constraints https://example.com/dl/c.txt
 expect_ok "--from-wheel URL"
 has_cmd "--from-wheel URL: downloads it" "curl" "-o $T/home/.local/share/maktaba/node/dist/maktaba_pipeline-1.0.0-py3-none-any.whl.part"
 has_cmd "--from-wheel URL: installs the download, constrained" \
-    "pip install" "--constraint $T/home/.local/share/maktaba/node/dist/c.txt" \
+    "pip install" "--constraint ./c.txt" \
     "$T/home/.local/share/maktaba/node/dist/maktaba_pipeline-1.0.0-py3-none-any.whl"
 
 run_installer "$BUNDLE" -- --from-wheel "$WHEEL"
@@ -215,7 +225,7 @@ WHEEL=$WHEEL
 CONSTRAINTS=$CONS
 EOF
 run_installer "$BUNDLE" HOME="$T/h-wheel" --
-has_cmd "update: a remembered wheel beats release.conf" "--constraint $CONS" "$WHEEL"
+has_cmd "update: a remembered wheel beats release.conf" "--constraint ./$(basename "$CONS")" "$WHEEL"
 
 remember "$T/h-old" <<EOF
 EXTRAS=none
@@ -241,6 +251,63 @@ has "uninstall: removes the node dir" "rm -rf -- $T/h-rel/.local/share/maktaba/n
 run_installer "$NODE_SRC" HOME="$T/h-rel" -- --source "$REPO_PIPELINE"
 has_cmd "update: --source switches a release install to the checkout" "uv sync --project $REPO_PIPELINE"
 
+# --- digests: never skipped ------------------------------------------------------------------------
+run_installer "$BUNDLE" MAKTABA_NODE_HASH=python --
+expect_ok "no sha256sum/shasum: Python hashes the release's wheel"
+run_installer "$TAMPERED" MAKTABA_NODE_HASH=python --
+expect_err "no sha256sum/shasum: a tampered wheel is still refused" "SHA-256"
+run_installer "$BUNDLE" MAKTABA_NODE_HASH=none --
+expect_err "no way to hash: the release's wheel is not installed unchecked" "cannot check"
+
+WHEEL_SHA="$(sha256 "$WHEEL")"
+run_installer "$NODE_SRC" -- --from-wheel "$WHEEL" --sha256 "$(printf '%s' "$WHEEL_SHA" | tr 'a-f' 'A-F')"
+expect_ok "--sha256: the right digest (any case)"
+conf="$(rendered_conf)"
+if grep -qx "WHEEL_SHA256=$WHEEL_SHA" <<<"$conf"; then
+    ok "--sha256: remembered in install.conf"
+else
+    OUT="$conf"; fail "--sha256: remembered in install.conf"
+fi
+run_installer "$NODE_SRC" -- --from-wheel "$WHEEL" --sha256 "$(printf '0%.0s' $(seq 64))"
+expect_err "--sha256: a wrong digest" "expected 0000"
+run_installer "$NODE_SRC" -- --from-wheel "$WHEEL" --sha256 abc
+expect_err "--sha256: not a digest" "64 characters"
+run_installer "$BUNDLE" -- --sha256 "$WHEEL_SHA"
+expect_err "--sha256 without --from-wheel" "--sha256 goes with --from-wheel"
+run_installer "$NODE_SRC" -- --from-wheel "$WHEEL" --constraints-sha256 "$WHEEL_SHA"
+expect_err "--constraints-sha256 without --constraints" "goes with --constraints"
+run_installer "$NODE_SRC" -- --from-wheel "$WHEEL" --constraints "$CONS" --constraints-sha256 "$WHEEL_SHA"
+expect_err "--constraints-sha256: a wrong digest" "expected $WHEEL_SHA"
+
+run_installer "$NODE_SRC" -- --from-wheel "$WHEEL"
+conf="$(rendered_conf)"
+if grep -qx 'WHEEL_SHA256=' <<<"$conf"; then
+    ok "a local wheel without --sha256 is not pinned (a rebuild at the same path installs)"
+else
+    OUT="$conf"; fail "a local wheel without --sha256 is not pinned"
+fi
+
+# an update whose remembered (pinned) digest no longer matches the file
+remember "$T/h-pinned" <<EOF
+FROM=wheel
+EXTRAS=none
+WHEEL=$WHEEL
+WHEEL_SHA256=$(printf '1%.0s' $(seq 64))
+EOF
+run_installer "$NODE_SRC" HOME="$T/h-pinned" --
+expect_err "update: a wheel that changed since it was pinned" "pinned at the first install"
+run_installer "$NODE_SRC" HOME="$T/h-pinned" -- --from-wheel "$WHEEL"
+expect_ok "update: --from-wheel again takes the new file"
+
+# --- earlier downloads are removed ---------------------------------------------------------------------
+mkdir -p "$T/h-dist/.local/share/maktaba/node/dist"
+touch "$T/h-dist/.local/share/maktaba/node/dist/maktaba_pipeline-1.0.0-py3-none-any.whl" \
+    "$T/h-dist/.local/share/maktaba/node/dist/maktaba-pipeline-1.0.0-constraints.txt"
+run_installer "$BUNDLE" HOME="$T/h-dist" --
+has_cmd "an update removes the last release's downloaded wheel" \
+    "rm -rf -- $T/h-dist/.local/share/maktaba/node/dist/maktaba_pipeline-1.0.0-py3-none-any.whl"
+has_cmd "an update removes the last release's downloaded constraints" \
+    "rm -rf -- $T/h-dist/.local/share/maktaba/node/dist/maktaba-pipeline-1.0.0-constraints.txt"
 echo
 printf '%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" = 0 ]

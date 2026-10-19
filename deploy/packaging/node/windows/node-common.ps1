@@ -122,12 +122,14 @@ function ConvertTo-CommandLineArgument {
 function Invoke-NativeCommand {
     param(
         [Parameter(Mandatory = $true)][string]$FilePath,
-        [string[]]$ArgumentList = @()
+        [string[]]$ArgumentList = @(),
+        [string]$WorkingDirectory = ''
     )
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $FilePath
     $psi.Arguments = (@($ArgumentList | ForEach-Object { ConvertTo-CommandLineArgument $_ }) -join ' ')
     $psi.UseShellExecute = $false
+    if ($WorkingDirectory) { $psi.WorkingDirectory = $WorkingDirectory }
     $process = [System.Diagnostics.Process]::Start($psi)
     $process.WaitForExit()
     return $process.ExitCode
@@ -198,16 +200,27 @@ function Get-NodeSpecLeaf {
     return ($bare -split '[\\/]')[-1]
 }
 
+# A SHA-256 given on the command line, lower-cased; throws unless it is 64 hex digits.
+function ConvertTo-NodeSha256 {
+    param([Parameter(Mandatory = $true)][string]$Name, [Parameter(Mandatory = $true)][string]$Value)
+    $v = $Value.ToLowerInvariant()
+    if ($v -notmatch '^[0-9a-f]{64}$') { throw "$Name takes a SHA-256 in hex (64 characters): $Value" }
+    return $v
+}
+
 # Where the worker's pipeline comes from, decided as install-node.sh decides it (first
 # match wins): -FromWheel / -Source as given; the last install's choice (install.conf);
 # release.conf in BundleDir (the installer came from a maktaba-node-<version> archive:
 # that release's wheel); the checkout's pipeline\. Returns a hashtable: From (release,
 # wheel or source), Wheel, WheelSha256, Constraints, ConstraintsSha256, Python, Source,
-# Tag.
+# Tag. The digests are the release's, the given ones (-WheelSha256, -ConstraintsSha256),
+# or the ones the last install pinned; empty when not known yet.
 function Resolve-NodePipelineOrigin {
     param(
         [string]$FromWheel = '',
         [string]$Constraints = '',
+        [string]$WheelSha256 = '',
+        [string]$ConstraintsSha256 = '',
         [string]$Source = '',
         [Parameter(Mandatory = $true)][string]$BundleDir,
         [Parameter(Mandatory = $true)][string]$CheckoutPipeline,
@@ -215,8 +228,16 @@ function Resolve-NodePipelineOrigin {
     )
     if ($FromWheel -and $Source) { throw '-FromWheel and -Source: give one (a wheel, or a source directory to build)' }
     if ($Constraints -and $Source) { throw '-Constraints goes with -FromWheel (a source build uses its uv.lock)' }
-    $o = @{ From = ''; Wheel = $FromWheel; WheelSha256 = ''; Constraints = $Constraints; ConstraintsSha256 = '';
-        Python = ''; Source = $Source; Tag = '' }
+    if ($WheelSha256) {
+        if (-not $FromWheel) { throw "-Sha256 goes with -FromWheel (a release's wheel has its digest in release.conf)" }
+        $WheelSha256 = ConvertTo-NodeSha256 '-Sha256' $WheelSha256
+    }
+    if ($ConstraintsSha256) {
+        if (-not $Constraints) { throw '-ConstraintsSha256 goes with -Constraints' }
+        $ConstraintsSha256 = ConvertTo-NodeSha256 '-ConstraintsSha256' $ConstraintsSha256
+    }
+    $o = @{ From = ''; Wheel = $FromWheel; WheelSha256 = $WheelSha256; Constraints = $Constraints;
+        ConstraintsSha256 = $ConstraintsSha256; Python = ''; Source = $Source; Tag = '' }
     $releaseConf = Join-Path $BundleDir 'release.conf'
 
     if ($FromWheel) {
@@ -228,7 +249,11 @@ function Resolve-NodePipelineOrigin {
         if ($remembered -eq 'wheel') {
             $o.From = 'wheel'
             $o.Wheel = Read-NodeKeyValue $InstallConf 'WHEEL'
-            if (-not $o.Constraints) { $o.Constraints = Read-NodeKeyValue $InstallConf 'CONSTRAINTS' }
+            $o.WheelSha256 = Read-NodeKeyValue $InstallConf 'WHEEL_SHA256'
+            if (-not $o.Constraints) {
+                $o.Constraints = Read-NodeKeyValue $InstallConf 'CONSTRAINTS'
+                $o.ConstraintsSha256 = Read-NodeKeyValue $InstallConf 'CONSTRAINTS_SHA256'
+            }
             if (-not $o.Wheel) { throw "$InstallConf says FROM=wheel but names no WHEEL: pass -FromWheel" }
         } elseif ($remembered -eq 'source') {
             $o.From = 'source'
@@ -285,15 +310,18 @@ function Resolve-NodePipelineOrigin {
     return $o
 }
 
-# A local file for Spec, a path or an http(s) URL (downloaded into DownloadDir). Sha256,
-# when given, must match.
+# A local file for Spec, a path or an http(s) URL (downloaded into DownloadDir), as
+# @{ Path; Sha256 }. Sha256, when given, must match (a download that does not is deleted);
+# a download is always hashed, so the next update can pin it. Get-FileHash is part of
+# every supported PowerShell (4.0+), so a digest is never skipped.
 function Get-NodePipelineFile {
     param(
         [Parameter(Mandatory = $true)][string]$Spec,
         [string]$Sha256 = '',
         [Parameter(Mandatory = $true)][string]$DownloadDir
     )
-    if (Test-NodeUrl $Spec) {
+    $isUrl = Test-NodeUrl $Spec
+    if ($isUrl) {
         New-Item -ItemType Directory -Force -Path $DownloadDir | Out-Null
         $dest = Join-Path $DownloadDir (Get-NodeSpecLeaf $Spec)
         Write-NodeStep "Downloading $Spec"
@@ -314,9 +342,22 @@ function Get-NodePipelineFile {
         if (-not (Test-Path -LiteralPath $Spec -PathType Leaf)) { throw "no such file: $Spec" }
         $dest = (Resolve-Path -LiteralPath $Spec).Path
     }
-    if ($Sha256) {
+    $got = ''
+    if ($Sha256 -or $isUrl) {
         $got = (Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash.ToLowerInvariant()
-        if ($got -ne $Sha256.ToLowerInvariant()) { throw "${dest}: SHA-256 $got, the release says $Sha256" }
+        if ($Sha256 -and $got -ne $Sha256.ToLowerInvariant()) {
+            if ($isUrl) { Remove-Item -LiteralPath $dest -Force -ErrorAction SilentlyContinue }
+            throw "${dest}: SHA-256 $got, expected $Sha256 (the release's, -Sha256's, or the one pinned at the first install; pass -FromWheel again to take a new file)"
+        }
     }
-    return $dest
+    return @{ Path = $dest; Sha256 = $got }
+}
+
+# Remove the earlier downloads in Dir, keeping the files in Keep.
+function Remove-NodeOldDownloads {
+    param([Parameter(Mandatory = $true)][string]$Dir, [string[]]$Keep = @())
+    if (-not (Test-Path -LiteralPath $Dir -PathType Container)) { return }
+    foreach ($f in @(Get-ChildItem -LiteralPath $Dir -File)) {
+        if ($Keep -notcontains $f.FullName) { Remove-Item -LiteralPath $f.FullName -Force }
+    }
 }
