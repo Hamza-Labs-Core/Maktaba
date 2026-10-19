@@ -547,7 +547,10 @@ func (h *Hub) writeLoop(s *Session, c *websocket.Conn, s2c *Cipher, lastRecv <-c
 		if err != nil {
 			return err
 		}
-		wctx, cancel := context.WithTimeout(s.ctx, 10*time.Second)
+		// not the session's context: cancelling a write mid-frame makes the
+		// websocket drop the connection without a close frame, and closing
+		// the session (a seal error, a revoke) must still send its code
+		wctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		return c.Write(wctx, websocket.MessageBinary, sealed)
 	}

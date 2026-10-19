@@ -166,11 +166,21 @@ func write(w http.ResponseWriter, status int, result any, errs ...cf.Error) {
 	})
 }
 
-// newKeyPEM is a fresh RSA key as Cloudflare returns it (base64 PEM).
+// keyPEM is an RSA key as Cloudflare returns it (base64 PEM). One per test
+// binary: a 2048-bit key takes ~100 ms to make (seconds under -race), and
+// the fake's keys differ by ID, which is all the tests compare.
+var (
+	keyOnce sync.Once
+	keyPEM  string
+)
+
 func newKeyPEM() string {
-	k, _ := rsa.GenerateKey(rand.Reader, 2048)
-	p := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)})
-	return base64.StdEncoding.EncodeToString(p)
+	keyOnce.Do(func() {
+		k, _ := rsa.GenerateKey(rand.Reader, 2048)
+		p := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)})
+		keyPEM = base64.StdEncoding.EncodeToString(p)
+	})
+	return keyPEM
 }
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
