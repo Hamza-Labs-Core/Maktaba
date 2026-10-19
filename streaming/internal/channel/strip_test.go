@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/png"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -354,4 +356,213 @@ func absDiff(a, b uint32) uint32 {
 		return a - b
 	}
 	return b - a
+}
+
+// ─── paging (overflow cycle) ─────────────────────────────────────────
+
+func stripWords(pages []string) []string {
+	var out []string
+	for _, p := range pages {
+		p = strings.NewReplacer("﴿", "", "﴾", "", "{", "", "}", "", "(", "", ")", "").Replace(p)
+		out = append(out, strings.Fields(p)...)
+	}
+	return out
+}
+
+func TestPageTextAtWordBoundaries(t *testing.T) {
+	for _, s := range []string{
+		"من زاوية أخرى · الحلقة 45 — في الخنادق… لا يوجد ملحدون! وكيف نتعامل مع الشبهات المعاصرة في زمن الإنترنت ووسائل التواصل",
+		"The Story of Yusuf, part three: the dream of the king and the years of plenty and famine in Egypt explained",
+	} {
+		pages := PageText(s, 600, 40)
+		if len(pages) < 2 {
+			t.Fatalf("a long line pages: %q", pages)
+		}
+		if got, want := strings.Join(stripWords(pages), " "), strings.Join(strings.Fields(s), " "); got != want {
+			t.Fatalf("every word once, in order:\n got %q\nwant %q", got, want)
+		}
+		for _, p := range pages {
+			if textWidth(p, 40) > 600*widthMargin && len(strings.Fields(p)) > 1 {
+				t.Fatalf("page too wide: %q", p)
+			}
+		}
+	}
+	if p := PageText("قصة يوسف", 600, 40); len(p) != 1 || p[0] != "قصة يوسف" {
+		t.Fatalf("a short line is one page: %q", p)
+	}
+	if p := PageText("كلمةطويلةجداجداجداجداجداجداجداجداجداجداجداجدا قصيرة", 200, 40); p[0] != "كلمةطويلةجداجداجداجداجداجداجداجداجداجداجداجدا" {
+		t.Fatalf("a word wider than a page is never split: %q", p)
+	}
+}
+
+func TestPageTextVerseKeepsOrderAndBrackets(t *testing.T) {
+	title := "تفسير قوله تعالى: ﴿يا أيها الذين آمنوا كتب عليكم الصيام كما كتب على الذين من قبلكم لعلكم تتقون﴾"
+	pages := withRef(PageText(title, 520, 40), "البقرة ١٨٣", 520, 40)
+	if len(pages) < 3 {
+		t.Fatalf("pages: %q", pages)
+	}
+	for i, p := range pages {
+		if strings.Count(p, "﴿") != strings.Count(p, "﴾") {
+			t.Fatalf("page %d unbalanced: %q", i, p)
+		}
+	}
+	if !strings.HasPrefix(pages[1], "﴿") {
+		t.Fatalf("a continued verse reopens its bracket: %q", pages[1])
+	}
+	last := pages[len(pages)-1]
+	if !strings.Contains(last, "البقرة ١٨٣") {
+		t.Fatalf("the reference comes last: %q", pages)
+	}
+	if got := strings.Join(stripWords(pages), " "); !strings.HasPrefix(got, strings.Join(stripWords([]string{title}), " ")) {
+		t.Fatalf("the whole verse, in order:\n%q", got)
+	}
+}
+
+func TestPageScheduleCyclesThroughTheBlock(t *testing.T) {
+	pages := []string{"أ ب", "ج د", "هـ و"}
+	cmds := PageSchedule("drawtext@now", "drawtext@nowi", pages, 4, 30, 600, 40, true)
+	var texts []string
+	var labels []string
+	last := -1.0
+	for _, c := range cmds {
+		if c.At < last {
+			t.Fatal("times go forward")
+		}
+		last = c.At
+		if c.Target == "drawtext@now" {
+			texts = append(texts, c.Text)
+		} else {
+			labels = append(labels, c.Text)
+		}
+	}
+	if cmds[0].At != 0 || texts[0] != "أ ب" || texts[3] != "أ ب" || labels[1] != "٢/٣" {
+		t.Fatalf("cycle: %v %v", texts, labels)
+	}
+	if last >= 30 || last < 30-8 {
+		t.Fatalf("the cycle runs to the block's end: last at %v", last)
+	}
+	slow := PageSchedule("drawtext@next", "", pages, 6, 30, 600, 40, false)
+	if len(slow) >= len(texts) {
+		t.Fatalf("the next line pages more slowly: %d vs %d", len(slow), len(texts))
+	}
+	if PageSchedule("x", "", []string{"one"}, 4, 30, 600, 40, false) != nil {
+		t.Fatal("one page: no timeline")
+	}
+}
+
+func TestCmdScriptGroupsInstants(t *testing.T) {
+	got := CmdScript([]StripCmd{{At: 4, Target: "drawtext@now", Text: "ب: ج"}, {At: 0, Target: "drawtext@now", Text: "أ"},
+		{At: 0, Target: "drawtext@clkl", Text: "مكة"}})
+	want := "0.000 drawtext@now reinit 'text=أ', drawtext@clkl reinit 'text=مكة';\n4.000 drawtext@now reinit 'text=ب\\: ج';\n"
+	if got != want {
+		t.Fatalf("got  %q\nwant %q", got, want)
+	}
+}
+
+func TestBuildStripPagesALongTitle(t *testing.T) {
+	long := "من زاوية أخرى · الحلقة 45 — في الخنادق… لا يوجد ملحدون! وكيف نتعامل مع الشبهات المعاصرة في زمن الإنترنت ووسائل التواصل الاجتماعي"
+	next := &ProgramBlock{Kind: KindProgram, Info: BlockInfo{OnAir: "تفسير قوله تعالى: ﴿يا أيها الذين آمنوا كتب عليكم الصيام كما كتب على الذين من قبلكم لعلكم تتقون﴾", Ref: "البقرة ١٨٣"}}
+	next.Info.OnAir += " — " + long // a next line longer than the strip too
+	in, files, err := BuildStrip(DefaultProfile(), stripOn(), "C:/Windows/Fonts/arial.ttf", "", seg(KindProgram, long, next),
+		time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC), 2*time.Minute, 0, t.TempDir(), "k")
+	if err != nil || in == nil {
+		t.Fatal(err)
+	}
+	if !in.NowPaged || !in.NextPaged || in.NowFile != "" || len(files) != 1 {
+		t.Fatalf("both lines paged by the timeline: %+v files=%v", in, files)
+	}
+	b, _ := os.ReadFile(in.CmdFile)
+	script := string(b)
+	for _, want := range []string{"drawtext@now reinit", "drawtext@nowi reinit 'text=١/", "drawtext@next reinit", "البقرة ١٨٣", "drawtext@clkt reinit"} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("script misses %q", want)
+		}
+	}
+	f := in.Filters()
+	if strings.Contains(f, "الخنادق") || !strings.Contains(f, "drawtext@now=") || strings.Index(f, "sendcmd") > strings.Index(f, "drawtext@now=") {
+		t.Fatalf("filters: %s", f)
+	}
+}
+
+// TestStripRendersPages renders a strip whose title and a verse page in
+// turn, and checks that the title area differs between two pages. With
+// MAKTABA_STRIP_FRAMES=<dir> it saves a frame of every page there.
+func TestStripRendersPages(t *testing.T) {
+	ff, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("no ffmpeg")
+	}
+	font := FindStripFont("")
+	if ok, why := TextShaping(context.Background(), ff, font); !ok {
+		t.Skip("strip unavailable: " + why)
+	}
+	p := OutputProfile{Width: 960, Height: 540, FPS: 25, VideoKbps: 1500}
+	cases := map[string]Segment{
+		"title": seg(KindProgram, "من زاوية أخرى · الحلقة 45 — في الخنادق… لا يوجد ملحدون! وكيف نتعامل مع الشبهات المعاصرة",
+			&ProgramBlock{Kind: KindProgram, Info: BlockInfo{OnAir: "الإيمان سؤال وجواب · الحلقة 15"}}),
+		"verse": {Kind: KindProgram, Block: ProgramBlock{Kind: KindProgram, Info: BlockInfo{
+			OnAir: "تفسير قوله تعالى: ﴿يا أيها الذين آمنوا كتب عليكم الصيام كما كتب على الذين من قبلكم لعلكم تتقون﴾",
+			Ref:   "البقرة ١٨٣"}}},
+	}
+	frames := os.Getenv("MAKTABA_STRIP_FRAMES")
+	for name, s := range cases {
+		dir := t.TempDir()
+		in, _, err := BuildStrip(p, stripOn(), font, "", s, time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC),
+			30*time.Second, 0, dir, name)
+		if err != nil || in == nil || !in.NowPaged {
+			t.Fatalf("%s: not paged: %+v %v", name, in, err)
+		}
+		b, _ := os.ReadFile(in.CmdFile)
+		var at []float64
+		for _, ln := range strings.Split(string(b), "\n") {
+			if strings.Contains(ln, "drawtext@now reinit") {
+				f, _ := strconv.ParseFloat(strings.Fields(ln)[0], 64)
+				if len(at) == 0 || f > at[len(at)-1] {
+					at = append(at, f)
+				}
+			}
+		}
+		pagesN := strings.Count(string(b), "drawtext@nowi reinit 'text=١/")
+		if len(at) < 2 || pagesN < 1 {
+			t.Fatalf("%s: no page timeline:\n%s", name, b)
+		}
+		var imgs []image.Image
+		n := len(at)
+		if n > 4 {
+			n = 4
+		}
+		for i := 0; i < n; i++ {
+			out := filepath.Join(dir, fmt.Sprintf("p%d.png", i))
+			cmd := exec.Command(ff, "-hide_banner", "-nostdin", "-loglevel", "error", "-f", "lavfi",
+				"-i", "testsrc2=s=960x540:r=25:d=30,format=yuv420p,"+in.Filters(),
+				"-vf", "select=gte(t\\,"+formatSec(at[i]+0.5)+")", "-frames:v", "1", "-y", out)
+			if b, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("ffmpeg: %v\n%s", err, b)
+			}
+			fb, _ := os.ReadFile(out)
+			img, err := png.Decode(bytes.NewReader(fb))
+			if err != nil {
+				t.Fatal(err)
+			}
+			imgs = append(imgs, img)
+			if frames != "" {
+				_ = os.MkdirAll(frames, 0o755)
+				_ = os.WriteFile(filepath.Join(frames, fmt.Sprintf("strip-%s-page%d.png", name, i+1)), fb, 0o644)
+			}
+		}
+		l := in.Layout
+		diff := 0
+		for y := l.NowY; y < l.NowY+l.NowSize; y++ {
+			for x := l.TitleL; x < l.TitleR; x += 2 {
+				r1, g1, b1, _ := imgs[0].At(x, y).RGBA()
+				r2, g2, b2, _ := imgs[1].At(x, y).RGBA()
+				if absDiff(r1, r2)+absDiff(g1, g2)+absDiff(b1, b2) > 6000 {
+					diff++
+				}
+			}
+		}
+		if diff < 200 {
+			t.Fatalf("%s: page 2 looks like page 1 (%d px differ)", name, diff)
+		}
+	}
 }

@@ -183,8 +183,14 @@ class TvStripConfig:
     next_label_en: str = "Next"
     #: between programmes: empty: the clip's own title; else this text
     filler_label: str = ""
-    #: ``truncate`` (cut with …) or ``scroll`` (a long title runs across, news-ticker style)
-    overflow: str = "truncate"
+    #: a title longer than the strip: ``cycle`` (shown whole, in pages that take turns,
+    #: a quoted verse whole with its reference after it), ``truncate`` (cut with …) or
+    #: ``scroll`` (runs across, news-ticker style)
+    overflow: str = "cycle"
+    #: cycle: seconds a page shows (a full page up to twice as long; «التالي» 1.5 times)
+    page_seconds: int = 4
+    #: cycle: a small «١/٢» beside a paged line
+    page_indicator: bool = True
     scroll_speed: int = 90
     #: ``always`` or ``interval``: shown ``show_seconds`` at a programme's start and every
     #: ``every_minutes``
@@ -479,8 +485,14 @@ register(
         "next_label_en": Help(TS, "Next label (other languages)"),
         "filler_label": Help(TS, "Between programmes",
                              "Empty: the clip's own title. Else this text («فواصل»)."),
-        "overflow": Help(TS, "Long titles", "truncate: cut with …; scroll: run across "
-                         "like a news ticker.", choices=("truncate", "scroll")),
+        "overflow": Help(TS, "Long titles", "cycle: the whole title in pages that take "
+                         "turns (a quoted verse whole, then its reference); truncate: cut with "
+                         "…; scroll: run across like a news ticker.",
+                         choices=("cycle", "truncate", "scroll")),
+        "page_seconds": Help(TS, "Each page for (seconds)", "A full page shows up to twice "
+                             "as long; the «التالي» line half as long again.", minimum=2,
+                             maximum=30),
+        "page_indicator": Help(TS, "Page number beside a paged title", "A small «١/٢»."),
         "scroll_speed": Help(TS, "Scroll speed (pixels a second)", minimum=10, maximum=600),
         "show_mode": Help(TS, "When", "always; or interval: at each programme's start and "
                           "every few minutes.", choices=("always", "interval")),

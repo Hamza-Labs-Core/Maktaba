@@ -6,7 +6,8 @@ a video's display title (``videos.display_title_manual``, else ``videos.display_
 its series' display name and its episode number over the snapshot:
 
 * ``on_air``: the strip's line («من زاوية أخرى · الحلقة 45 — في الخنادق…»), always;
-* ``strip_title`` / ``strip_series`` / ``strip_episode``: its parts;
+* ``strip_title`` / ``strip_series`` / ``strip_episode``: its parts; ``strip_ref``: the
+  reference of a Quran verse the title quotes («البقرة ١٨٣»), the strip's last page;
 * with ``display_titles.use_in_guide``: ``title`` (the display title), ``series``,
   ``episode`` and ``episode_title`` too; the library title stays as ``source_title``.
 
@@ -24,6 +25,7 @@ from ..classify.display_title import (
     episode_label,
     is_arabic,
     on_air_line,
+    verse_reference,
 )
 
 __all__ = ["DisplayInfo", "display_info", "merge_snapshot"]
@@ -85,6 +87,8 @@ def merge_snapshot(
     line = on_air_line(title, series, label) or raw
     out["on_air"] = line
     out["strip_title"] = title or line
+    if ref := verse_reference(title):
+        out["strip_ref"] = ref  # the strip shows the quoted verse whole, then this
     if series:
         out["strip_series"] = series
     if label:

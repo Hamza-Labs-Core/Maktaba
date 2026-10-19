@@ -49,6 +49,8 @@ __all__ = [
     "clean_series_name",
     "clean_title",
     "episode_label",
+    "fit_title",
+    "verse_reference",
     "is_arabic",
     "llm_input_hash",
     "llm_prompt",
@@ -82,8 +84,15 @@ class DisplayTitleConfig:
 
     #: off: the guide and the strip show the library titles as they are
     enabled: bool = True
-    #: the longest on-air title (characters); longer ones are cut at a word boundary
-    max_length: int = 70
+    #: the longest stored title (characters; 0: no limit, the default: the guide takes the
+    #: whole title and the channel strip pages a long one); a longer one is cut at a word
+    #: boundary, never inside a quoted verse (see ``verse_display``)
+    max_length: int = 0
+    #: a title that quotes a Quran verse and must be cut: ``reference`` puts the verse's
+    #: reference in its place («تفسير البقرة ١٨٣»); ``opening_words`` keeps the verse's
+    #: first words («﴿يا أيها الذين آمنوا﴾…»); ``full_if_fits`` keeps the whole verse
+    #: without the rest of the title when it fits, else the reference
+    verse_display: str = "reference"
     #: regular expressions removed from every title (case-insensitive)
     strip_patterns: tuple[str, ...] = _DEFAULT_PATTERNS
     #: whole words / phrases removed from every title (case-insensitive)
@@ -114,8 +123,17 @@ register(
             "file leftovers, the series and «الحلقة 45» kept apart. A title set by hand on "
             "the video always wins.",
         ),
-        "max_length": Help("Display titles", "Longest title (characters)", minimum=10,
-                           maximum=200),
+        "max_length": Help("Display titles", "Longest title (characters)",
+                           "0: no limit (the guide shows the whole title; the channel strip "
+                           "shows a long one in pages). Else cut at a word, never inside a "
+                           "quoted verse.", minimum=0, maximum=500),
+        "verse_display": Help(
+            "Display titles", "A quoted verse in a cut title",
+            "reference: the verse's surah and number in its place («تفسير البقرة ١٨٣»); "
+            "opening_words: its first words, «…» after the closing bracket; full_if_fits: "
+            "the whole verse alone when it fits, else the reference.",
+            choices=("reference", "opening_words", "full_if_fits"),
+        ),
         "strip_patterns": Help("Display titles", "Patterns removed",
                                "Regular expressions (case-insensitive) removed from every "
                                "title."),
@@ -199,7 +217,9 @@ def _drop_emoji(s: str) -> str:
     return "".join(out)
 
 
-_LEAD_NUM_RE = re.compile(rf"^\s*(?:#\s*({_DIGIT}{{1,4}})\s+|({_DIGIT}{{1,4}})\s*[-.)]\s+)")
+_LEAD_NUM_RE = re.compile(
+    rf"^\s*(?:#\s*({_DIGIT}{{1,4}})\s+|({_DIGIT}{{1,4}})\s*[-.)_]\s*(?=[^\d\s/.\-]))"
+)
 
 
 def _lead_number(raw: str) -> tuple[int | None, str]:
@@ -251,7 +271,21 @@ _EP_RE = re.compile(
     rf"|(?<!\w)(?:ال)?حلق[ةه]\s+(\w+))",
     re.I,
 )
-_TRIM_CHARS = " \t-–—_|:;,،.•·/\\*~+=<>^\"'`()[]{}"
+_TRIM_CHARS = " \t-–—_|:;,،.•·/\\*~+=<>^`"
+#: brackets and quotes are trimmed only when left alone at an end («(» at the end, «)» at
+#: the start); a balanced pair («(قال يا نوح إنه ليس من أهلك)») is kept
+_OPENERS = "([{﴿«“"
+_CLOSERS = ")]}﴾»”"
+
+
+def _trim(s: str) -> str:
+    prev = None
+    while prev != s:
+        prev = s
+        s = s.strip(_TRIM_CHARS).rstrip(_OPENERS).lstrip(_CLOSERS)
+    return s
+
+
 _PUNCT_RUNS = (
     (re.compile(r"\.{3,}|…+"), "…"),
     (re.compile(r"!{2,}"), "!"),
@@ -280,7 +314,7 @@ def _episode_in(seg: str) -> tuple[int | None, str]:
         n = _ORDINALS.get(fold(m.group(3)))
         if n is None:
             return None, seg  # «حلقة نقاش»: not a marker
-    rest = (seg[: m.start()] + " " + seg[m.end() :]).strip(_TRIM_CHARS)
+    rest = _trim(seg[: m.start()] + " " + seg[m.end() :])
     return n, rest
 
 
@@ -290,18 +324,27 @@ def _tidy(s: str) -> str:
     for rx, rep in _PUNCT_RUNS:
         s = rx.sub(rep, s)
     s = " ".join(s.split())
-    s = s.strip(_TRIM_CHARS)
+    s = _trim(s)
     # unbalanced quotes/brackets left by the cuts
-    for o, c in ("()", "«»", "[]", "“”"):
+    for o, c in ("()", "«»", "[]", "“”", "{}", "﴿﴾"):
         if s.count(o) != s.count(c):
-            s = s.replace(o, "").replace(c, "")
+            s = s.replace(o, " ").replace(c, " ")
+    if s.count('"') % 2:
+        s = s.replace('"', " ")
+    if s.count("''") % 2:
+        s = s.replace("''", " ")
+    s = " ".join(s.split())
+    # no space just inside a bracket: «( قال يا نوح )» → «(قال يا نوح)»
+    s = re.sub(r"([(\[{﴿«“])\s+", r"\1", s)
+    s = re.sub(r"\s+([)\]}﴾»”])", r"\1", s)
+    s = _trim(s)
     return (
         " ".join(s.split()).strip(_TRIM_CHARS + "!") if not s.endswith(("!", "؟", "?", "…")) else s
     )
 
 
 def _segments(s: str) -> list[str]:
-    return [p for p in (x.strip(_TRIM_CHARS) for x in _SEP_RE.split(s)) if p]
+    return [p for p in (_trim(x) for x in _SEP_RE.split(s)) if p]
 
 
 _HONOR = frozenset(fold(
@@ -402,13 +445,62 @@ def title_boilerplate(
 
 
 def _cut(s: str, limit: int) -> str:
+    """``s`` cut to ``limit`` characters at a word boundary, with «…» (never mid-word: a
+    first word longer than the limit is the only exception)."""
     if limit <= 0 or len(s) <= limit:
         return s
     cut = s[: limit - 1]
     sp = cut.rfind(" ")
-    if sp >= limit // 2:
+    if sp > 0 and not s[limit - 1].isspace():
         cut = cut[:sp]
     return cut.rstrip(_TRIM_CHARS) + "…"
+
+
+def _join(*parts: str) -> str:
+    return " ".join(p.strip(" :：-–—") for p in parts if p and p.strip(" :：-–—"))
+
+
+_AYA_TAIL = re.compile(r"^\s*(?:الآية|الاية|الآيات|الايات|الآيه)(?=\s|$)")
+
+
+def fit_title(title: str, cfg: DisplayTitleConfig) -> str:
+    """``title`` within ``max_length``: a quoted verse is never cut inside; per
+    ``verse_display`` it gives way to its reference or keeps its opening words."""
+    limit = cfg.max_length
+    if limit <= 0 or len(title) <= limit:
+        return title
+    from .quran import find_quotes
+
+    quotes = find_quotes(title)
+    if not quotes:
+        return _cut(title, limit)
+    q = quotes[0]
+    arabic = is_arabic(title)
+    before, after = title[: q.start], _AYA_TAIL.sub("", title[q.end :])
+    if q.ref is not None and cfg.verse_display in ("reference", "full_if_fits"):
+        if cfg.verse_display == "full_if_fits":
+            alone = f"{q.open or '﴿'}{q.text}{q.close or '﴾'}"
+            if len(alone) <= limit:
+                return alone
+        new = _tidy(_join(before, q.ref.label(arabic), after))
+        if len(new) <= limit:
+            return new
+        return _cut(_tidy(_join(before, q.ref.label(arabic))), limit)
+    # the verse's opening words, «…» after its closing bracket
+    op, cl = q.open or "﴿", q.close or "﴾"
+    inner = title.find(q.text, q.start)
+    lead = title[: max(q.start, inner - len(q.open))] if inner >= 0 else before
+    head = _tidy(lead) + " " if lead.strip() else ""
+    budget = limit - len(head) - len(op) - len(cl) - 1
+    words = q.text.split()
+    kept: list[str] = []
+    for w in words:
+        if len(" ".join([*kept, w])) > budget:
+            break
+        kept.append(w)
+    if len(kept) < 2:
+        return _cut(_tidy(before) or title, limit)
+    return f"{head}{op}{' '.join(kept)}{cl}" + ("…" if len(kept) < len(words) else "")
 
 
 def clean_title(
@@ -441,7 +533,7 @@ def clean_title(
             kept.append(seg)
     title = " - ".join(kept)
     title = _tidy(title) if title else ""
-    return Cleaned(_cut(title, cfg.max_length), episode, max(1, len(kept)))
+    return Cleaned(fit_title(title, cfg), episode, max(1, len(kept)))
 
 
 def clean_series_name(name: str, cfg: DisplayTitleConfig | None = None,
@@ -454,7 +546,7 @@ def clean_series_name(name: str, cfg: DisplayTitleConfig | None = None,
         return c.title
     # the name is itself one of the phrases (the series' own name): its first part
     segs = _segments(_prep(name, cfg))
-    return _cut(_tidy(segs[0]), cfg.max_length) if segs else ""
+    return fit_title(_tidy(segs[0]), cfg) if segs else ""
 
 
 def episode_label(n: int | None, arabic: bool, cfg: DisplayTitleConfig | None = None) -> str:
@@ -468,6 +560,19 @@ def episode_label(n: int | None, arabic: bool, cfg: DisplayTitleConfig | None = 
         return f"{fmt} {n}".strip()
 
 
+def verse_reference(title: str) -> str:
+    """The reference of the first verse the title quotes («البقرة ١٨٣»), for the strip's
+    last page; "" when there is none or the title already names the surah («سورة البقرة»)."""
+    if not title or re.search(r"(?<!\w)سور[ةه]\s+\S", title):
+        return ""
+    from .quran import find_quotes
+
+    for q in find_quotes(title):
+        if q.ref is not None:
+            return q.ref.label(is_arabic(title))
+    return ""
+
+
 def on_air_line(title: str, series: str = "", label: str = "") -> str:
     """The one line the strip shows: «من زاوية أخرى · الحلقة 45 — في الخنادق…»."""
     head = " · ".join(p for p in (series, label) if p)
@@ -479,10 +584,21 @@ def on_air_line(title: str, series: str = "", label: str = "") -> str:
 # ---------------------------------------------------------------- the language model
 
 
+def _llm_limit(cfg: DisplayTitleConfig) -> int:
+    """What the model is asked to stay within: ``max_length``, else 70 characters."""
+    return cfg.max_length if cfg.max_length > 0 else 70
+
+
 def needs_llm(raw: str, cleaned: Cleaned, cfg: DisplayTitleConfig) -> bool:
     """The rules left this title long (cut), in several parts, or empty while the library
     title was long: worth a rewrite by the model."""
-    if cleaned.title.endswith("…") and len(raw) > cfg.max_length:
+    from .quran import find_quotes
+
+    if find_quotes(cleaned.title):
+        return False  # a quoted verse is kept word for word; the strip pages it
+    if len(cleaned.title) > _llm_limit(cfg) or (
+        cleaned.title.endswith("…") and len(raw) > cfg.max_length
+    ):
         return True
     if cleaned.segments > 1:
         return True
@@ -502,11 +618,11 @@ def llm_prompt(items: Sequence[tuple[str, str]], cfg: DisplayTitleConfig) -> str
     rows = [{"n": i, "title": t, "series": s} for i, (t, s) in enumerate(items, 1)]
     return (
         "أنت محرر عناوين لقناة تلفزيونية. لكل عنوان فيديو أدناه اكتب عنواناً قصيراً نظيفاً "
-        f"للعرض على الشاشة (لا يزيد عن {cfg.max_length} حرفاً) بنفس لغة العنوان: احذف اسم "
+        f"للعرض على الشاشة (لا يزيد عن {_llm_limit(cfg)} حرفاً) بنفس لغة العنوان: احذف اسم "
         "القناة والمقدم واسم البرنامج (series) ورقم الحلقة والوسوم والرموز التعبيرية "
         "والروابط والتواريخ وكلمات الجودة، ولا تضف معلومة ليست في العنوان. "
         "You are a TV title editor: for each video title write a short clean on-air title "
-        f"(at most {cfg.max_length} characters) in the title's language, without channel, "
+        f"(at most {_llm_limit(cfg)} characters) in the title's language, without channel, "
         "presenter or programme names, episode numbers, hashtags, emojis, links, dates or "
         'quality words. Answer JSON only: {"titles": [{"n": 1, "title": "..."}]}\n'
         + json.dumps({"titles": rows}, ensure_ascii=False)
@@ -534,6 +650,6 @@ def parse_llm(
         except ValueError:
             continue
         t = _tidy(_drop_emoji(str(row.get("title") or "")))
-        if 1 <= i <= count and t and len(t) <= cfg.max_length * 1.2:
-            out[i] = _cut(t, cfg.max_length)
+        if 1 <= i <= count and t and len(t) <= _llm_limit(cfg) * 1.2:
+            out[i] = _cut(t, _llm_limit(cfg))
     return out

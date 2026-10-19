@@ -65,7 +65,9 @@ type StripSettings struct {
 	NextLabelAR     string
 	NextLabelEN     string
 	FillerLabel     string
-	Overflow        string // truncate | scroll
+	Overflow        string // cycle | truncate | scroll
+	PageSeconds     int    // cycle: seconds a page shows (scaled by its length)
+	PageIndicator   bool   // cycle: «١/٢» beside a paged line
 	ScrollSpeed     int
 	ShowMode        string // always | interval
 	ShowSeconds     int
@@ -83,7 +85,8 @@ func DefaultStripSettings() StripSettings {
 	return StripSettings{
 		Enabled: false, Position: "bottom", HeightPct: 9, BgColor: "#0b1f3a", BgOpacity: 0.85,
 		AccentColor: "#c8a24a", TextColor: "#ffffff", FontSizePct: 42, Direction: "auto",
-		ShowNext: true, NextLabelAR: "التالي", NextLabelEN: "Next", Overflow: "truncate",
+		ShowNext: true, NextLabelAR: "التالي", NextLabelEN: "Next", Overflow: "cycle",
+		PageSeconds: 4, PageIndicator: true,
 		ScrollSpeed: 90, ShowMode: "always", ShowSeconds: 20, EveryMinutes: 10,
 		ShowClock: true, Clocks: DefaultStripClocks(), ClockSeconds: 8, ClockFormat: "24h",
 		Digits: "auto",
@@ -125,7 +128,11 @@ func ApplyStripRules(base StripSettings, raw []byte, channel bool) (out StripSet
 		case "direction":
 			ok = setChoice(&out.Direction, v, "auto", "rtl", "ltr")
 		case "overflow":
-			ok = setChoice(&out.Overflow, v, "truncate", "scroll")
+			ok = setChoice(&out.Overflow, v, "cycle", "truncate", "scroll")
+		case "page_seconds":
+			ok = setInt(&out.PageSeconds, v, 2, 30)
+		case "page_indicator":
+			ok = setBool(&out.PageIndicator, v)
 		case "show_mode":
 			ok = setChoice(&out.ShowMode, v, "always", "interval")
 		case "clock_format":
@@ -356,6 +363,9 @@ type BlockInfo struct {
 	Title  string // snapshot title (display title with use_in_guide)
 	OnAir  string // the strip line (series · episode — title)
 	Series string
+	// Ref is the reference of a Quran verse the title quotes («البقرة ١٨٣»):
+	// with overflow cycle the strip shows it after the verse.
+	Ref string
 }
 
 // Line is what the strip shows for this block: the on-air line, else
@@ -374,17 +384,21 @@ func ParseBlockInfo(raw []byte) BlockInfo {
 		OnAir      string `json:"on_air"`
 		StripTitle string `json:"strip_title"`
 		Series     string `json:"strip_series"`
+		Ref        string `json:"strip_ref"`
 	}
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &s)
 	}
-	return BlockInfo{Title: s.Title, OnAir: s.OnAir, Series: s.Series}
+	return BlockInfo{Title: s.Title, OnAir: s.OnAir, Series: s.Series, Ref: oneLine(s.Ref)}
 }
 
 // StripTexts are the strip's two lines for one segment.
 type StripTexts struct {
 	Now, Next string
-	RTL       bool
+	// NowRef / NextRef: a quoted verse's reference, shown after the line
+	// when it is paged (overflow cycle).
+	NowRef, NextRef string
+	RTL             bool
 }
 
 // TextsFor decides what the strip says during seg: the programme's line
@@ -395,15 +409,18 @@ func TextsFor(seg Segment, st StripSettings) StripTexts {
 	switch seg.Kind {
 	case KindProgram, KindBumper, KindLive:
 		t.Now = seg.Block.Info.Line()
+		t.NowRef = seg.Block.Info.Ref
 	case KindFiller:
 		if st.FillerLabel != "" {
 			t.Now = st.FillerLabel
 		} else {
 			t.Now = seg.Block.Info.Line()
+			t.NowRef = seg.Block.Info.Ref
 		}
 	}
 	if st.ShowNext && seg.Next != nil {
 		t.Next = seg.Next.Info.Line()
+		t.NextRef = seg.Next.Info.Ref
 	}
 	switch st.Direction {
 	case "rtl":
@@ -454,6 +471,7 @@ type StripLayout struct {
 	LabelY       int
 	TimeY        int
 	NameW        int // channel name box (estimated)
+	IndSize      int // the page indicator's font size
 	SingleLine   bool
 	RTL          bool
 	ClockOnRight bool
@@ -504,6 +522,10 @@ func (st StripSettings) Layout(p OutputProfile, rtl, twoLines bool, channelName 
 		gap := (l.Height - l.NowSize - l.NextSize) / 3
 		l.NowY = l.Y + gap
 		l.NextY = l.NowY + l.NowSize + gap
+	}
+	l.IndSize = l.NextSize
+	if l.IndSize == 0 || l.IndSize > l.NowSize*2/3 {
+		l.IndSize = l.NowSize * 2 / 3
 	}
 	l.LabelSize = l.Height * 26 / 100
 	l.TimeSize = l.Height * 40 / 100
@@ -672,15 +694,7 @@ func escapeReinit(s string) string {
 
 // SendCmdScript is the sendcmd file that switches the clock's two
 // drawtext instances (drawtext@clkl, drawtext@clkt) at each step.
-func SendCmdScript(steps []ClockStep) string {
-	var b strings.Builder
-	for _, s := range steps {
-		at := strconv.FormatFloat(s.At, 'f', 3, 64)
-		fmt.Fprintf(&b, "%s drawtext@clkl reinit 'text=%s', drawtext@clkt reinit 'text=%s';\n",
-			at, escapeReinit(s.Label), escapeReinit(s.Time))
-	}
-	return b.String()
-}
+func SendCmdScript(steps []ClockStep) string { return CmdScript(clockCmds(steps)) }
 
 // ─── the filter chain ─────────────────────────────────────────────────
 
@@ -693,7 +707,11 @@ type StripInput struct {
 	NowFile  string // UTF-8 text files, one line each ("" = no line)
 	NextFile string
 	NameFile string
-	CmdFile  string // sendcmd script for the clock ("" = no clock)
+	CmdFile  string // sendcmd script: the clock and the paged lines ("" = none)
+	// NowPaged / NextPaged: the line is paged by the sendcmd timeline
+	// (drawtext@now / drawtext@next, with drawtext@nowi / @nexti «١/٢»).
+	NowPaged, NextPaged bool
+	Clock               bool // the clock is drawn (drawtext@clkl / @clkt)
 	// OffsetSec is how far into the programme the block starts (the seek):
 	// the interval mode counts from the programme's start.
 	OffsetSec float64
@@ -754,6 +772,8 @@ func (in StripInput) textX() string {
 }
 
 // Filters is the strip's filter chain (comma-joined filters, no labels).
+// The sendcmd that switches the clock's and the paged lines' texts comes
+// right after the bar, before every drawtext it drives.
 func (in StripInput) Filters() string {
 	l, st := in.Layout, in.Settings
 	font := "fontfile='" + escapeFilterPath(in.FontFile) + "'"
@@ -764,19 +784,39 @@ func (in StripInput) Filters() string {
 	color := ffColor(st.TextColor, 1)
 	var f []string
 	f = append(f, "drawbox=x=0:y="+itoa(l.Y)+":w=iw:h="+itoa(l.Height)+":color="+ffColor(st.BgColor, st.BgOpacity)+":t=fill"+en)
-	text := func(file string, size, y int, x string) string {
-		return "drawtext=" + font + ":textfile='" + escapeFilterPath(file) + "':expansion=none:text_shaping=1" +
+	if in.CmdFile != "" {
+		f = append(f, "sendcmd=f='"+escapeFilterPath(in.CmdFile)+"'")
+	}
+	// a line from its file, or (paged) a named drawtext whose text the
+	// sendcmd timeline sets
+	text := func(name string, paged bool, file string, size, y int, x string) string {
+		src := ":textfile='" + escapeFilterPath(file) + "'"
+		head := "drawtext="
+		if paged {
+			src, head = ":text=.", "drawtext@"+name+"="
+		}
+		return head + font + src + ":expansion=none:text_shaping=1" +
 			":fontcolor=" + color + ":fontsize=" + itoa(size) + ":x=" + x + ":y=" + itoa(y) + en
 	}
-	if in.NowFile != "" {
-		f = append(f, text(in.NowFile, l.NowSize, l.NowY, in.textX()))
+	indX := itoa(l.TitleR) + "-tw" // the page indicator: the line's far end
+	if l.RTL {
+		indX = itoa(l.TitleL)
 	}
-	if in.NextFile != "" {
+	if in.NowFile != "" || in.NowPaged {
+		f = append(f, text("now", in.NowPaged, in.NowFile, l.NowSize, l.NowY, in.textX()))
+		if in.NowPaged && st.PageIndicator {
+			f = append(f, text("nowi", true, "", l.IndSize, l.NowY+(l.NowSize-l.IndSize)/2, indX))
+		}
+	}
+	if in.NextFile != "" || in.NextPaged {
 		x := itoa(l.TitleL)
 		if l.RTL {
 			x = itoa(l.TitleR) + "-tw"
 		}
-		f = append(f, text(in.NextFile, l.NextSize, l.NextY, x))
+		f = append(f, text("next", in.NextPaged, in.NextFile, l.NextSize, l.NextY, x))
+		if in.NextPaged && st.PageIndicator {
+			f = append(f, text("nexti", true, "", l.IndSize, l.NextY+(l.NextSize-l.IndSize)/2, indX))
+		}
 	}
 	// drawn after the titles so a scrolling title passes under them
 	if in.NameFile != "" && l.NameW > 0 {
@@ -794,12 +834,11 @@ func (in StripInput) Filters() string {
 			"drawtext="+font+":textfile='"+escapeFilterPath(in.NameFile)+"':expansion=none:text_shaping=1"+
 				":fontcolor="+color+":fontsize="+itoa(l.NowSize)+":x="+nx+"+("+itoa(l.NameW)+"-tw)/2:y="+itoa(l.Y+(l.Height-l.NowSize)/2)+en)
 	}
-	if in.CmdFile != "" && l.ClockW > 0 {
+	if in.Clock && l.ClockW > 0 {
 		cx := itoa(l.ClockX)
 		mid := cx + "+(" + itoa(l.ClockW) + "-tw)/2"
 		f = append(f,
 			"drawbox=x="+cx+":y="+itoa(l.Y)+":w="+itoa(l.ClockW)+":h="+itoa(l.Height)+":color="+ffColor(st.AccentColor, 1)+":t=fill"+en,
-			"sendcmd=f='"+escapeFilterPath(in.CmdFile)+"'",
 			"drawtext@clkl="+font+":text=.:expansion=none:text_shaping=1:fontcolor="+color+":fontsize="+itoa(l.LabelSize)+":x="+mid+":y="+itoa(l.LabelY)+en,
 			"drawtext@clkt="+font+":text=.:expansion=none:text_shaping=1:fontcolor="+color+":fontsize="+itoa(l.TimeSize)+":x="+mid+":y="+itoa(l.TimeY)+en)
 	}
@@ -831,22 +870,59 @@ func BuildStrip(p OutputProfile, st StripSettings, fontFile, channelName string,
 		return path, nil
 	}
 	area := l.TitleR - l.TitleL
+	arabicDigits := st.Digits == "arabic" || (st.Digits == "auto" && texts.RTL)
+	secs := dur.Seconds()
+	base := float64(st.PageSeconds)
+	if base <= 0 {
+		base = 4
+	}
+	var cmds []StripCmd
 	var err error
-	nowLine := texts.Now
+	// line puts one line on the strip: its file, or (overflow cycle, longer
+	// than the strip) its pages on the timeline. It reports whether it pages.
+	line := func(name, text, ref string, size int, pace float64) (string, bool, error) {
+		if st.Overflow != "cycle" {
+			if st.Overflow != "scroll" || name != "now" {
+				text = truncateText(text, fitChars(area, size))
+			}
+			f, err := write(name+".txt", bidiWrap(text, texts.RTL))
+			return f, false, err
+		}
+		pages := withRef(PageText(text, area, size), ref, area, size)
+		if len(pages) > 1 {
+			w := area
+			if st.PageIndicator {
+				w -= int(textWidth("٠٠/٠٠", l.IndSize)) + l.Pad // room for «١/٢»
+			}
+			pages = withRef(PageText(text, w, size), ref, w, size)
+		}
+		if len(pages) == 1 {
+			f, err := write(name+".txt", bidiWrap(pages[0], texts.RTL))
+			return f, false, err
+		}
+		for i := range pages {
+			pages[i] = bidiWrap(pages[i], texts.RTL)
+		}
+		ind := ""
+		if st.PageIndicator {
+			ind = "drawtext@" + name + "i"
+		}
+		cmds = append(cmds, PageSchedule("drawtext@"+name, ind, pages, base*pace, secs, area, size, arabicDigits)...)
+		return "", true, nil
+	}
+	nowLine, nowRef := texts.Now, texts.NowRef
 	if l.SingleLine && nowLine == "" {
-		nowLine = texts.Next // a slate: only what is next, on the main line
+		nowLine, nowRef = texts.Next, texts.NextRef // a slate: only what is next, on the main line
 		texts.Next = ""
 	}
 	if nowLine != "" {
-		if st.Overflow != "scroll" {
-			nowLine = truncateText(nowLine, fitChars(area, l.NowSize))
-		}
-		if in.NowFile, err = write("now.txt", bidiWrap(nowLine, texts.RTL)); err != nil {
+		if in.NowFile, in.NowPaged, err = line("now", nowLine, nowRef, l.NowSize, 1); err != nil {
 			return nil, files, err
 		}
 	}
 	if texts.Next != "" {
-		if in.NextFile, err = write("next.txt", bidiWrap(truncateText(texts.Next, fitChars(area, l.NextSize)), texts.RTL)); err != nil {
+		// the next line pages on its own, more slowly
+		if in.NextFile, in.NextPaged, err = line("next", texts.Next, texts.NextRef, l.NextSize, 1.5); err != nil {
 			return nil, files, err
 		}
 	}
@@ -856,11 +932,14 @@ func BuildStrip(p OutputProfile, st StripSettings, fontFile, channelName string,
 		}
 	}
 	if l.ClockW > 0 {
-		steps := ClockSchedule(st, texts.RTL, start, dur)
-		if len(steps) > 0 {
-			if in.CmdFile, err = write("clock.cmd", SendCmdScript(steps)); err != nil {
-				return nil, files, err
-			}
+		if steps := ClockSchedule(st, texts.RTL, start, dur); len(steps) > 0 {
+			cmds = append(cmds, clockCmds(steps)...)
+			in.Clock = true
+		}
+	}
+	if len(cmds) > 0 {
+		if in.CmdFile, err = write("strip.cmd", CmdScript(cmds)); err != nil {
+			return nil, files, err
 		}
 	}
 	return in, files, nil

@@ -3693,12 +3693,31 @@
      "kind": "str",
      "group": "Channel strip",
      "label": "Long titles",
-     "help": "truncate: cut with …; scroll: run across like a news ticker.",
-     "default": "truncate",
+     "help": "cycle: the whole title in pages that take turns (a quoted verse whole, then its reference); truncate: cut with …; scroll: run across like a news ticker.",
+     "default": "cycle",
      "choices": [
+      "cycle",
       "truncate",
       "scroll"
      ]
+    },
+    {
+     "name": "page_seconds",
+     "kind": "int",
+     "group": "Channel strip",
+     "label": "Each page for (seconds)",
+     "help": "A full page shows up to twice as long; the «التالي» line half as long again.",
+     "default": 4,
+     "minimum": 2,
+     "maximum": 30
+    },
+    {
+     "name": "page_indicator",
+     "kind": "bool",
+     "group": "Channel strip",
+     "label": "Page number beside a paged title",
+     "help": "A small «١/٢».",
+     "default": true
     },
     {
      "name": "scroll_speed",
@@ -3857,10 +3876,23 @@
      "kind": "int",
      "group": "Display titles",
      "label": "Longest title (characters)",
-     "help": "",
-     "default": 70,
-     "minimum": 10,
-     "maximum": 200
+     "help": "0: no limit (the guide shows the whole title; the channel strip shows a long one in pages). Else cut at a word, never inside a quoted verse.",
+     "default": 0,
+     "minimum": 0,
+     "maximum": 500
+    },
+    {
+     "name": "verse_display",
+     "kind": "str",
+     "group": "Display titles",
+     "label": "A quoted verse in a cut title",
+     "help": "reference: the verse's surah and number in its place («تفسير البقرة ١٨٣»); opening_words: its first words, «…» after the closing bracket; full_if_fits: the whole verse alone when it fits, else the reference.",
+     "default": "reference",
+     "choices": [
+      "reference",
+      "opening_words",
+      "full_if_fits"
+     ]
     },
     {
      "name": "strip_patterns",

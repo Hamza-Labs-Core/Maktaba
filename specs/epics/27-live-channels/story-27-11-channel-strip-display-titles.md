@@ -32,12 +32,25 @@ slot 0122.
   series' titles share, presenter credits («| د حسام عقل»), hashtags, emojis, URLs,
   quality tags (`(1080p)`, `[HD]`, `Official`, `Full`), dates (`1438⧸10⧸12`,
   `2019-05-01`), the fullwidth substitutes yt-dlp writes into file names (`｜ ： ⧸`), file
-  extensions and repeated punctuation are removed; the result is cut at a word boundary
-  to `max_length` (default 70).
+  extensions and repeated punctuation are removed. The stored title is not cut by
+  default (`max_length` 0: the guide and XMLTV take the whole clean title, the strip pages
+  it); with a limit it is cut at a word boundary, never mid-word and never inside a quoted
+  verse (AC2b).
 - **AC2** The episode number comes from the season order (`series_episodes`), else from
   the title («الحلقة 45», «حلقة 14:», «Episode 3», «#20 …», «175- …», «الحلقة الأولى»),
   and is shown as `episode_label_ar` / `episode_label_en` («الحلقة {n}» / «Ep {n}»).
   Each series gets `series.display_name`, cleaned the same way.
+- **AC2b** A title that quotes a Quran verse (`﴿…﴾`, `{…}`, brackets or quotes or bare
+  words after «قوله تعالى» / «الآية») has the verse found in the bundled Tanzil "Simple
+  Clean" text (CC BY 3.0, verbatim, with its notice and `LICENSE-TANZIL.txt`): words are
+  matched after folding (no tashkeel; alef, ya, ta marbuta forms unified), across verse
+  ends (a range), tolerating a word or two spelt otherwise; a quote found in more than one
+  place gives no reference. The reference is «البقرة ١٨٣» / "Al-Baqara 2:183" (a range
+  «الإنفطار ١٣–١٤»). When a title must be cut, `verse_display` decides: `reference`
+  (default) puts the reference in the verse's place («تفسير البقرة ١٨٣»), `opening_words`
+  keeps the verse's first words with «…» after the closing bracket, `full_if_fits` keeps
+  the verse alone when it fits, else the reference. A title that names its surah
+  («سورة البقرة …») gets no extra reference. Verse titles are never sent to the model.
 - **AC3** The stage `display_title` (library subject) runs after `detect`; its input
   fingerprint covers the titles, series and episode order, channel names, manual titles,
   the rules and (when used) the model; an unchanged library is not re-run.
@@ -50,7 +63,8 @@ slot 0122.
   `display_title_manual`, wins over rules and model, and is cleared with an empty value.
 - **AC6** The scheduler writes the display parts into each block's `title_snapshot`
   (`on_air`, `strip_title`, `strip_series`, `strip_episode`; with `use_in_guide`, `title`,
-  `series`, `episode`, `episode_title`, the library title kept as `source_title`), and a
+  `series`, `episode`, `episode_title`, the library title kept as `source_title`;
+  `strip_ref`: the reference of a quoted verse), and a
   `display_title` run updates the snapshots of the future blocks at once (no re-plan).
 - **AC7** With `use_in_guide` the dizqueTV export's programme titles are the display
   titles too.
@@ -65,7 +79,15 @@ slot 0122.
   marquee and speed), show mode (always / at programme start and every N minutes), clock
   on/off, clocks (rows: IANA zone, Arabic label, other label; default Makkah, Cairo,
   Greenwich, New York), seconds per clock (8), 12/24 h, digits (auto: Arabic-Indic in a
-  right-to-left strip / arabic / western), channel name.
+  right-to-left strip / arabic / western), channel name, long titles (`overflow`: cycle
+  — default — / truncate / scroll), seconds per page and the page indicator.
+- **AC8b** With `overflow` cycle nothing is cut: a line wider than the strip (measured
+  with per-character width estimates and a 10 % margin) is split at word boundaries into
+  balanced pages that take turns in place, each for `page_seconds` (a full page up to
+  twice as long), with a small «١/٢»; the «التالي» line pages on its own, 1.5 times slower.
+  A quoted verse is shown whole across pages in order, each page closing and reopening
+  its brackets, and its reference follows on the last page (or a page of its own). The
+  pages are switched by the same `sendcmd` timeline as the clock, from the block's start.
 - **AC9** The strip shows: for a programme its `on_air` line; for filler the clip's
   display title or the filler label; for a live block its title; for a slate only what is
   next. The second line is «التالي: <next programme>» (filler is never "next").
@@ -104,8 +126,9 @@ slot 0122.
 - **EC2** A bad pattern in `strip_patterns` is skipped; the other rules apply.
 - **EC3** An unknown time zone in the clocks is refused (the setting keeps its default).
 - **EC4** No Arabic font on the host: the strip is skipped and logged once.
-- **EC5** A long title: cut with … (truncate) or run across like a ticker (scroll; the
-  clock box covers it as it passes).
+- **EC5** A long title: shown in pages (cycle), cut with … (truncate) or run across like a
+  ticker (scroll; the clock box covers it as it passes). A single word wider than the
+  strip is a page of its own, never split.
 - **EC6** A database before slot 0122: the scheduler and the strip keep working with the
   library titles.
 

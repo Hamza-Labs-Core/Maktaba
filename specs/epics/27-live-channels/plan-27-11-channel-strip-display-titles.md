@@ -19,6 +19,8 @@
 | D7 | **Display titles are stored on the video** (`display_title`, `display_title_manual`, `display_title_source`) and the series (`display_name`), made by a `display_title` stage after `detect`. | One computation, reused by the scheduler, guide, XMLTV, dizqueTV export and strip. |
 | D8 | **The scheduler lays the display parts over `title_snapshot`**; the stage refreshes future blocks' snapshots in place. | The guide and the streaming service read only the snapshot (no library join per read); no re-plan when a title changes. |
 | D9 | **Rules first, model optional** (`use_llm` off), cached by input hash in `display_title_llm`. | Rules are free and deterministic; the model costs seconds per batch and is only worth it for what rules leave messy. |
+| D11 | **Long lines page instead of being cut** (`overflow` cycle, default): pages switched by the sendcmd timeline (`reinit text=` on `drawtext@now` / `@next` / `@nowi` / `@nexti`). | The strip can cycle, so nothing needs to be dropped; the same timeline as the clock keeps pages in step with the picture. Titles then live only in files (text files, the sendcmd script), never in the filter string. |
+| D12 | **Quran verses are located in a bundled Tanzil text** (`data/quran`, CC BY 3.0, verbatim + notice), indexed by its first two folded words. | A verse is never cut; its reference is a page of the strip and, when a stored title must be short, its stand-in. Local, fast (one 0.3 s index build), no service. |
 | D10 | **Per-channel strip settings live in `mode_config.look.strip`**; `write_channels` carries them across plan rewrites; the API writes them without marking the channel edited. | The look is already the channel's on-air presentation; the plan never sets a strip. |
 
 ## 1. Files
@@ -51,7 +53,18 @@ shared/db/migrations/0122_display_titles{,.sqlite}.sql
    shared phrase or only honorifics goes; brand words inside a part go with their
    honorifics.
 4. Fold repeated punctuation, drop a dangling «…» (a cut YouTube title) and unbalanced
-   brackets; join what is left with « - »; cut at a word to `max_length`.
+   brackets (balanced ones, a quoted verse's, are kept); join what is left with « - ».
+5. `fit_title`: with `max_length` > 0 a longer title is cut at a word; a quoted verse is
+   never cut inside: per `verse_display` its reference replaces it, or its opening words
+   are kept with «…» after the closing bracket.
+
+`classify/quran.py`: `find_quotes` (spans `﴿…﴾`, `{…}`, brackets / quotes / bare words
+after «قوله تعالى», «الآية (…)»), `locate` (folded word stream of the Tanzil text with the
+basmala of each surah's first verse removed; candidates by the quote's first two words,
+every word must match, a fallback anchored on a later pair tolerates ⌊n/4⌋ different
+words; unique hits only), `VerseRef.label` («البقرة ١٨٣», "Al-Baqara 2:183", ranges).
+`verse_reference(title)` gives the snapshot's `strip_ref` unless the title names its
+surah.
 
 `title_boilerplate(titles)`: folded parts in at least `boilerplate_share` (0.3) and
 `boilerplate_min_count` (5) of the titles — computed per library and per series.
@@ -83,6 +96,13 @@ before programmes are built.
   `drawtext@clkt`; `enable=lt(mod(t+offset,every),show)` in interval mode; a scrolling
   line's `x` is `if(lte(tw,area), aligned, marquee)`. A watermark on the strip's edge is
   lifted by the strip's height.
+- Paging (`strip_pages.go`, overflow cycle): `PageText` fills pages greedily by an
+  estimated width (per-character em classes, 90 % of the area), then balances them (the
+  narrowest width that keeps the page count); brackets open at a page's end are closed
+  there and reopened on the next; `withRef` adds the verse reference; `PageSchedule`
+  cycles the pages over the block (`page_seconds` × 1–2 by fill; the next line × 1.5)
+  with «k/n»; `CmdScript` merges the pages' and the clock's changes into one sendcmd file
+  (one line per instant).
 - Layout: bar `height_pct` of the frame; clock box `1.9 × height` at the end side; title
   `font_size_pct` of the height, next line ⅔ of it; truncation by an estimated
   characters-per-width before writing the file.
@@ -105,9 +125,16 @@ before programmes are built.
   (titles, manual, rules), future snapshots and a manual title, the model with a stand-in
   asked once (cache).
 - streaming: settings overlay and validation, texts per block kind, next-programme pick,
-  layout (clock side, watermark), zone offsets and DST (New York 2026-03-08 / 11-01,
+  layout (clock side, watermark), paging at word boundaries (Arabic, Latin), verse pages
+  in order with their brackets and the reference last, the page timeline over a block and
+  the slower next line, the sendcmd script, zone offsets and DST (New York 2026-03-08 / 11-01,
   Cairo 2026-04-24 / 10-29), clock rotation and minute steps, sendcmd escaping, the filter
   chain never carrying titles, BlockArgs wiring, and a real ffmpeg render of an Arabic
-  strip compared against the bare frame (skipped without shaping).
+  strip compared against the bare frame, and of a paged title and a paged verse whose
+  pages differ (skipped without shaping).
+- pipeline (verses): `locate` on real quotes (a range, spelling variants, a surah's first
+  verse, ambiguous quotes refused), `find_quotes` (no braces taken for verses), stored
+  titles keep the whole verse, a cut title never cuts inside it (each `verse_display`),
+  the snapshot's `strip_ref`.
 - api / web: strip PATCH validation and merge, display title PATCH; preview, strip form,
   item view.
