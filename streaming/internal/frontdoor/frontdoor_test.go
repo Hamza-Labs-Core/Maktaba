@@ -337,3 +337,60 @@ func TestSpliceTSOnFailover(t *testing.T) {
 	_ = pr.Close()
 	<-done
 }
+
+// Post-merge review: a node that ends its live.ts because the channel moved away
+// (its station is fenced) is not failing. Three TS clients of one moved channel
+// used to count three proxy failures and mark the healthy node down, failing
+// over every other channel on it.
+func TestMoveDoesNotMarkNodeDown(t *testing.T) {
+	key := cluster.NewKeyring([]byte("cluster-key"))
+	a := newFakeNode(t, key)
+	b := newFakeNode(t, key)
+	g := newRig(t, placement.DefaultSettings(), a.srv.URL, 0, 4)
+	hs, _ := g.store.Hosts(context.Background())
+	hs = append(hs, placement.Host{ID: "pc2", Name: "pc2", Role: placement.RoleNode, Enabled: true, Capacity: 4, Weight: 1, BaseURL: b.srv.URL})
+	g.store.SetHosts(hs)
+	g.hosts.Refresh(context.Background())
+	ch := uuid.New()
+	p, err := g.fd.Svc.Resolve(context.Background(), ch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, other := a, "pc2"
+	if p.Host == "pc2" {
+		first, other = b, "pc"
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var wg sync.WaitGroup
+	for i := 0; i < 3; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = g.fd.StreamChannelTS(ctx, ch, io.Discard)
+		}()
+	}
+	waitFor := func(what string, f func() bool) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for !f() {
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out: %s", what)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	waitFor("three TS clients on the first node", func() bool { return first.requests.Load() >= 3 })
+	// the admin moves the channel; the first node's station is fenced and its
+	// live.ts responses end
+	if _, err := g.fd.Svc.Place(context.Background(), ch, placement.ReasonMove, other); err != nil {
+		t.Fatal(err)
+	}
+	close(first.closeTS)
+	time.Sleep(200 * time.Millisecond)
+	if !g.hosts.Alive(context.Background(), p.Host) {
+		t.Fatalf("a move marked the healthy node %s down", p.Host)
+	}
+	cancel()
+	wg.Wait()
+}
