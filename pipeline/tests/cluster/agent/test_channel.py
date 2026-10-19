@@ -530,7 +530,14 @@ async def test_files_continue_while_the_home_is_down_and_a_final_frame(tmp_path:
     agent = make_agent(hub, node_key=key, files=files, collector=collector, metrics_every=0.05,
                        metrics_file_sec=0.1)  # fmt: skip
     async with running(agent, shutdown):
+        # a refused connection is reported at once on Linux and macOS, after ~2 s on
+        # Windows (it retries the SYN): wait for the first failure, and for a few
+        # metrics lines, not a fixed time
         await asyncio.sleep(0.35)
+        for _ in range(200):
+            if agent.last_error:
+                break
+            await asyncio.sleep(0.05)
         assert not agent.connected and agent.last_error
         shutdown.set()  # the worker stops: one last frame, final values
         await asyncio.sleep(0.2)

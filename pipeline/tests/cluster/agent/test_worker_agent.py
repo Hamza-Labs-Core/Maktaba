@@ -57,7 +57,9 @@ async def _stop(started: EngineStart, stop: asyncio.Event, *, grace: float = 0.0
 
 @pytest.fixture
 def agent_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))  # status files, the local fallback
+    # status files, the local fallback (Path.home(): HOME, or USERPROFILE on Windows)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     monkeypatch.setenv("MAKTABA_CLUSTER_AGENT", "1")
     monkeypatch.setenv("MAKTABA_CLUSTER_DIR", str(tmp_path / "share"))
     monkeypatch.setenv("MAKTABA_OLLAMA_URL", "")

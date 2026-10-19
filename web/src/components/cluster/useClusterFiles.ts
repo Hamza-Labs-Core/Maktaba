@@ -56,7 +56,10 @@ export function useClusterFiles(): FilesState {
 /** One machine's days of a kind, on the share or in the home's archive, newest first. */
 export function nodeDays(node: FileNode | null, kind: keyof FileNode["dates"]): string[] {
   if (!node) return [];
-  const set = new Set<string>([...(node.dates[kind] ?? []), ...(node.archived_dates?.[kind] ?? [])]);
+  const set = new Set<string>([
+    ...(node.dates[kind] ?? []),
+    ...(node.archived_dates?.[kind] ?? []),
+  ]);
   return [...set].sort().reverse();
 }
 

@@ -190,20 +190,23 @@ func TestReadLogsPages(t *testing.T) {
 	db := sqliteDB(t)
 	clk := newClock("2026-10-19T12:00:00Z")
 	c := newTestCache(db, "sqlite", clk, 24*time.Hour)
+	page := logsPage
+	logsPage = 7
+	t.Cleanup(func() { logsPage = page })
 	p := agent.Proc{WorkerID: "w-a", IP: "192.168.50.31", Host: "studio"}
 	base := time.Date(2026, 10, 19, 8, 0, 0, 0, time.UTC)
-	n := logsPage*2 + 500
+	n := logsPage*3 + 4
 	recs := make([]agent.LogRecord, 0, n)
 	for i := 0; i < n; i++ {
 		ev := "tick"
-		if i%997 == 0 {
+		if i%5 == 0 {
 			ev = "needle"
 		}
 		recs = append(recs, agent.LogRecord{TS: base.Add(time.Duration(i) * time.Second).Format(time.RFC3339), Level: "info",
 			Event: ev, Logger: "engine", Fields: json.RawMessage(`{"i":` + strconv.Itoa(i) + `}`)})
 	}
 	for len(recs) > 0 {
-		k := min(len(recs), 1000)
+		k := min(len(recs), 10)
 		c.Logs(p, recs[:k])
 		c.flushLogs(bg)
 		recs = recs[k:]
@@ -225,7 +228,7 @@ func TestReadLogsPages(t *testing.T) {
 	q.Q = "NEEDLE"
 	got, err = c.ReadLogs(bg, q)
 	must(t, err)
-	if want := (n-1)/997 + 1; len(got) != want {
+	if want := (n-1)/5 + 1; len(got) != want {
 		t.Fatalf("text across pages: %d rows, want %d", len(got), want)
 	}
 }

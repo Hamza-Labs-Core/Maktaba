@@ -83,8 +83,9 @@ func (c *Cache) ReadLogs(ctx context.Context, q agent.CacheQuery) ([]agent.Cache
 	}
 }
 
-// logsPage is how many log rows one statement of ReadLogs reads.
-const logsPage = 1000
+// logsPage is how many log rows one statement of ReadLogs reads (a
+// variable so tests can page small).
+var logsPage = 1000
 
 // logKey is a cluster_log_cache row's key, the cursor of ReadLogs' pages.
 type logKey struct {

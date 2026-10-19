@@ -58,6 +58,9 @@ func TestJobsSnapshotRunning(t *testing.T) {
 // A frame too large for the channel is refused without closing it; the
 // router fails such a request with too_large; the door answers 413.
 func TestFrameSizeLimit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("seals 4 MiB frames (seconds under -race): the integration tier")
+	}
 	f := newFixture(t)
 	runner, _ := f.node("runner")
 	s := f.hub.Session(runner.Session)
