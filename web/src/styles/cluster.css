@@ -1,0 +1,333 @@
+/* /admin/machines — the live cluster views (Epic 31 phase 2). Colours come
+   only from the app tokens, logical properties keep Arabic right, and every
+   track can shrink to a 375 px phone. */
+.mkt-cl-tabs .mk-tabs__list {
+  flex-wrap: wrap;
+}
+.mkt-cl-tabs .mk-tabs__panel {
+  padding-block-start: var(--space-4);
+}
+.mkt-mc-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+/* metric tiles */
+.mkt-cl-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+.mkt-cl-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-inline-size: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+.mkt-cl-tile dt {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+.mkt-cl-tile dd {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.mkt-cl-tiles--small .mkt-cl-tile {
+  padding: var(--space-1) var(--space-2);
+}
+.mkt-cl-spark {
+  display: block;
+  inline-size: 100%;
+  max-inline-size: 8rem;
+  color: var(--color-accent);
+}
+.mkt-cl-spark .mkt-q-spark {
+  block-size: 24px;
+  color: inherit;
+}
+
+/* machines and processes */
+.mkt-cl-machine--off {
+  opacity: 0.75;
+}
+.mkt-cl-machine section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.mkt-cl-procs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mkt-cl-proc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-inline-start: 3px solid var(--color-success);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  min-inline-size: 0;
+}
+.mkt-cl-proc--off {
+  border-inline-start-color: var(--color-border);
+  opacity: 0.75;
+}
+.mkt-cl-files {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-success);
+}
+.mkt-cl-files--local {
+  color: var(--color-warn);
+}
+.mkt-cl-jobs,
+.mkt-cl-notpull,
+.mkt-cl-places,
+.mkt-cl-days {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-sm);
+}
+.mkt-cl-jobs li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
+}
+.mkt-cl-days {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.mkt-cl-pulls p {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+.mkt-cl-notpull {
+  color: var(--color-muted);
+}
+.mkt-cl-actions {
+  align-items: flex-end;
+}
+.mkt-cl-level {
+  min-inline-size: 9rem;
+}
+.mkt-cl-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-accent);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.mkt-cl-link:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* filters, segmented control */
+.mkt-cl-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+.mkt-cl-filters > * {
+  min-inline-size: min(100%, 10rem);
+}
+.mkt-cl-seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+/* log viewer */
+.mkt-cl-logs {
+  gap: var(--space-2);
+}
+.mkt-cl-logbox {
+  max-block-size: 28rem;
+  overflow: auto;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  font-size: var(--font-size-sm);
+  text-align: start;
+}
+.mkt-cl-logbox:focus-visible {
+  outline: 2px solid var(--color-accent);
+}
+.mkt-cl-loglist {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mkt-cl-logrow {
+  padding-block: 1px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mkt-cl-logrow__ts,
+.mkt-cl-logrow__logger,
+.mkt-cl-logrow__worker {
+  color: var(--color-muted);
+}
+.mkt-cl-logrow__level {
+  font-weight: 600;
+}
+.mkt-cl-logrow--warning .mkt-cl-logrow__level,
+.mkt-cl-logrow--warn .mkt-cl-logrow__level {
+  color: var(--color-warn);
+}
+.mkt-cl-logrow--error .mkt-cl-logrow__level,
+.mkt-cl-logrow--critical .mkt-cl-logrow__level {
+  color: var(--color-error);
+}
+.mkt-cl-logrow__fields {
+  color: var(--color-muted);
+}
+
+/* feeds */
+.mkt-cl-feed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-block-size: 32rem;
+  overflow: auto;
+}
+.mkt-cl-feed__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-block-end: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+.mkt-cl-feed__row time {
+  color: var(--color-muted);
+}
+.mkt-cl-outcome {
+  font-weight: 600;
+}
+.mkt-cl-outcome--done {
+  color: var(--color-success);
+}
+.mkt-cl-outcome--failed {
+  color: var(--color-error);
+}
+.mkt-cl-outcome--running,
+.mkt-cl-outcome--started {
+  color: var(--color-accent);
+}
+.mkt-cl-outcome--skipped,
+.mkt-cl-outcome--other {
+  color: var(--color-muted);
+}
+
+/* charts */
+.mkt-cl-chart {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.mkt-cl-chart svg {
+  inline-size: 100%;
+  block-size: auto;
+  direction: ltr;
+}
+.mkt-cl-chart__base {
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+.mkt-cl-chart__line {
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.mkt-cl-chart__line--0 {
+  stroke: var(--color-accent);
+  background: var(--color-accent);
+}
+.mkt-cl-chart__line--1 {
+  stroke: var(--color-success);
+  background: var(--color-success);
+}
+.mkt-cl-chart__line--2 {
+  stroke: var(--color-warn);
+  background: var(--color-warn);
+}
+.mkt-cl-chart__line--3 {
+  stroke: var(--color-error);
+  background: var(--color-error);
+}
+.mkt-cl-chart__tick {
+  fill: var(--color-muted);
+  font-size: 12px;
+}
+.mkt-cl-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-sm);
+}
+.mkt-cl-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.mkt-cl-legend__swatch {
+  display: inline-block;
+  inline-size: 0.75rem;
+  block-size: 0.25rem;
+  border-radius: 2px;
+}
+
+/* try a model */
+.mkt-cl-try {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.mkt-cl-try__out {
+  display: block;
+  min-block-size: 3rem;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

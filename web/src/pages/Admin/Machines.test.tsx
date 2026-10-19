@@ -140,8 +140,8 @@ describe("Machines admin page", () => {
     expect(within(card).getByText("Apple Silicon")).toBeInTheDocument();
     expect(within(card).getByText("worked out automatically")).toBeInTheDocument();
     expect(within(card).getByText("/Volumes/nas")).toBeInTheDocument();
-    expect(within(card).getByText("Served")).toBeInTheDocument();
-    expect(within(card).getByText("runs on the home only")).toBeInTheDocument();
+    expect(within(card).getByText("Pulls from it")).toBeInTheDocument();
+    expect(within(card).getByText(/runs on the home only/)).toBeInTheDocument();
   });
 
   it("explains why joins are unavailable and disables the toggle", async () => {
@@ -208,16 +208,19 @@ describe("Machines admin page", () => {
 
   it("switches a stage off for a machine", async () => {
     renderPage();
-    const select = await screen.findByRole("combobox", { name: /^transcribe on/ });
+    const select = await screen.findByRole("combobox", { name: /^Pull from transcribe on/ });
     expect(select).toHaveValue("auto");
-    expect(screen.getByRole("combobox", { name: /^tag on/ })).toHaveValue("off");
+    expect(screen.getByRole("combobox", { name: /^Pull from tag on/ })).toHaveValue("off");
     await userEvent.selectOptions(select, "off");
     expect(put).toHaveBeenCalledWith("/api/cluster/nodes/n1", { stages: { transcribe: false } });
   });
 
   it("sets a stage back to automatic with null", async () => {
     renderPage();
-    await userEvent.selectOptions(await screen.findByRole("combobox", { name: /^tag on/ }), "auto");
+    await userEvent.selectOptions(
+      await screen.findByRole("combobox", { name: /^Pull from tag on/ }),
+      "auto"
+    );
     expect(put).toHaveBeenCalledWith("/api/cluster/nodes/n1", { stages: { tag: null } });
   });
 

@@ -1,0 +1,165 @@
+# Files on the share
+
+Every Maktaba machine saves what it collects — its logs, its metrics, every job it ran, its
+LLM usage — as plain text files **on your NAS**, in a `maktaba` folder next to your videos.
+The home adds the numbers of the whole cluster: the queues and the library. Every machine
+can read every machine's files, so you can look at the whole cluster from any computer —
+even when the home is off.
+
+Nothing of this is kept in the database.
+
+## Where the folder is
+
+Maktaba finds the top of your video share — the folder that holds all your libraries — and
+uses `maktaba/cluster` inside it. For example, if your libraries are
+`/Volumes/Originals/Channels` and `/Volumes/Originals/Courses`, the folder is
+`/Volumes/Originals/maktaba/cluster`.
+
+Each machine reaches it through its own path to the share (its *path map*, shown on
+**Admin > Machines**):
+
+| On | The same folder is |
+|---|---|
+| the Mac home | `/Volumes/Originals/maktaba/cluster` |
+| a Linux machine with the share on `/mnt/nas` | `/mnt/nas/maktaba/cluster` |
+| a Windows machine with the share on `Y:` | `Y:\maktaba\cluster` |
+| a Windows machine using the network path | `\\nas\originals\maktaba\cluster` |
+
+To see where this machine writes, run:
+
+```sh
+maktaba-pipeline cluster where
+```
+
+It prints the share's top as the home knows it, the folder on this machine, and whether it
+is really on the share (and if not, why).
+
+If your libraries have no folder in common (for example they are on different shares),
+Maktaba uses the folder of the library with the most videos. To choose the place yourself, set `MAKTABA_SHARE_ROOT` on the home (a path as the home sees
+it). `MAKTABA_CLUSTER_DIR` on a machine forces a local folder for that machine.
+
+The scanner ignores the `maktaba` folder: it holds no videos.
+
+## What is inside
+
+One folder per machine, named by its IP address, and inside it one folder per kind of
+record and one per day:
+
+```
+maktaba/cluster/
+  192.168.50.20/                     the home
+    processes/                       one small file per worker process: who it is
+    logs/2026-10-19/                 what the workers logged that day
+    metrics/2026-10-19/              CPU, memory, GPU, disks, network every 2 seconds
+    jobs/2026-10-19/                 every job: when it was taken, its progress, how it ended
+    llm/2026-10-19/                  LLM requests this machine ran (counts only)
+    events/2026-10-19/hub.jsonl      the home only: machines connecting, leaving, refused, commands
+    queues/2026-10-19/hub.jsonl      the home only: every queue's numbers every 10 seconds
+    library/2026-10-19/hub.jsonl     the home only: the library's numbers every 5 minutes
+  192.168.50.31/                     a machine
+    processes/  logs/  metrics/  jobs/  llm/
+```
+
+- **Days are in UTC**, so all machines start a new day folder at the same moment
+  (for example at 03:00 in UTC+3).
+- **Each worker process writes its own files** (named after the process), and only those.
+  Several processes on one machine never write to the same file — that keeps the files safe
+  on SMB and NFS shares.
+- The files are **JSON Lines**: one record per line. They open in any text editor.
+- A machine whose IP address changes starts a new folder. Each `processes` file names its
+  machine, so `cluster ls` still groups them.
+
+| Kind | One line is | Useful for |
+|---|---|---|
+| `logs` | a log record: time, level, event, details | what went wrong, and where |
+| `metrics` | a snapshot of the process and its machine | load, memory, GPU, disk space over time |
+| `jobs` | a job event: taken, progress, done, failed, skipped, paused, deferred | how long each step takes on which machine; failures |
+| `llm` | one LLM request this machine ran: model, who asked, tokens, time, error | LLM load and speed per machine |
+| `events` | the home's hub: a connection, a disconnection, a refusal, a command | who was connected when; refused machines |
+| `queues` | every queue: waiting, ready, running, paused, failed, done per minute, oldest wait | the queues over time |
+| `library` | per library: videos, hours, size, transcribed, series, tagged, indexed | the library's growth |
+
+What is **never** in these files: passwords, keys, the database login, LLM prompts or
+answers.
+
+## Reading the files
+
+### With the pipeline command, on any machine
+
+```sh
+maktaba-pipeline cluster ls                          # machines, their processes, the days present
+maktaba-pipeline cluster logs --level warning        # today's warnings and errors, all machines
+maktaba-pipeline cluster logs --ip 192.168.50.31 --follow     # one machine's log, live
+maktaba-pipeline cluster jobs --date 2026-10-18      # every job event of a day
+maktaba-pipeline cluster metrics --ip 192.168.50.31  # one machine's metrics
+maktaba-pipeline cluster queues                      # the queues through today
+maktaba-pipeline cluster library                     # the library snapshots
+maktaba-pipeline cluster llm                         # LLM requests run today
+maktaba-pipeline cluster events                      # connections and commands on the home
+```
+
+Options:
+
+| Option | Meaning |
+|---|---|
+| `--ip IP` | one machine's folder (default: all) |
+| `--date YYYY-MM-DD` | a day (default: today, UTC) |
+| `--level LEVEL` | logs at or above `debug`, `info`, `warning` or `error` |
+| `--follow` | keep printing new lines as they arrive |
+| `--dir PATH` | read another folder (for example a machine's local fallback folder, or a copy) |
+
+The day's files of all processes are merged in time order. These commands read the share
+directly, so they work while the home is off.
+
+### With ordinary tools
+
+The files are text, so any tool works:
+
+```sh
+tail -f /mnt/nas/maktaba/cluster/192.168.50.31/logs/2026-10-19/*.jsonl
+jq 'select(.level == "error")' /mnt/nas/maktaba/cluster/*/logs/2026-10-19/*.jsonl
+```
+
+```powershell
+Get-Content Y:\maktaba\cluster\192.168.50.31\logs\2026-10-19\*.jsonl -Wait
+```
+
+The last line of a file that is being written may be incomplete for a moment; skip it.
+
+### From the web app
+
+**Admin > Machines** shows each machine's live views, and its history from these files
+(pick a kind and a day). Scripts can read the same through the home's API with an admin
+token: `GET /api/cluster/files` lists the folders, and
+`GET /api/cluster/files/<ip>/<kind>?date=YYYY-MM-DD` returns a day's records.
+
+## How long they are kept, and how big they get
+
+| Setting (on the home) | Default | Meaning |
+|---|---|---|
+| `MAKTABA_CLUSTER_RETENTION_DAYS` | 14 | day folders older than this are deleted |
+| `MAKTABA_CLUSTER_FILE_MB` | 256 | the most one file may grow in a day; past it, records are counted, not written |
+
+The home sends these to every machine; setting them on a machine overrides them for that
+machine. Each process deletes its own old files; the home also cleans up after processes
+that are gone.
+
+You can delete any of these files or folders at any time; they are a record, Maktaba does
+not need them to work. Do not edit files that are being written.
+
+## When the share is not reachable
+
+If a machine cannot reach the share (it is not mounted, or the `maktaba` folder cannot be
+created), it writes the same files on its own disk, in `~/.maktaba/cluster` (Windows:
+`%USERPROFILE%\.maktaba\cluster`), says so on **Admin > Machines**, and checks again every
+5 minutes. When the share is back it writes there again. What it wrote locally stays on
+that machine; read it with `maktaba-pipeline cluster logs --dir ~/.maktaba/cluster`.
+
+If the share is full or read-only, the records that cannot be written are counted and the
+machine keeps working.
+
+## Who can read them
+
+Anyone who can open the share can read these files — that is what lets every machine see
+every other. The share's own permissions decide who that is. The logs mention video titles,
+paths and errors; if that matters to you, limit who can open the share.
