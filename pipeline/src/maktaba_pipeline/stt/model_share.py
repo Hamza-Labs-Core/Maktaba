@@ -8,7 +8,7 @@ and logs in. A machine that loads it from Hugging Face publishes a copy of the s
         manifest.json       {model, revision, published_at, files: [{path, size, sha256}]}
         <the snapshot's files>
 
-written whole or not at all: the files go to a hidden ``.<revision>.partial-…`` folder,
+written whole or not at all: the files go to a hidden ``.<revision>.incoming-…`` folder,
 the manifest last, and the folder is renamed into place. A machine that cannot load the
 model from Hugging Face takes the newest complete snapshot on the share
 (:func:`share_snapshots`), copies it once to ``~/.maktaba/models/...`` checking every file
@@ -255,7 +255,7 @@ def _copy_hashing(src: Any, dest: Path) -> tuple[int, str]:
 
 
 def _partial(parent: Path, revision: str) -> Path:
-    tmp = parent / f".{revision}.partial-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    tmp = parent / f".{revision}.incoming-{os.getpid()}-{uuid.uuid4().hex[:8]}"
     os.mkdir(tmp, safefs.DIR_MODE)
     return tmp
 
@@ -286,8 +286,8 @@ def _whole(folder: Path, model_id: str) -> bool:
 
 
 def _busy(parent: Path, revision: str, now: float) -> bool:
-    """Another process is copying ``revision`` here (a partial folder touched lately)."""
-    prefix = f".{revision}.partial-"
+    """Another process is copying ``revision`` here (a incoming folder touched lately)."""
+    prefix = f".{revision}.incoming-"
     for d in safefs.list_real_dirs(parent):
         if d.name.startswith(prefix):
             try:

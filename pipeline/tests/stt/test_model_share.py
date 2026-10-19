@@ -95,11 +95,11 @@ def test_a_failed_publish_leaves_nothing(tmp_path: Path, monkeypatch: pytest.Mon
 def test_publish_leaves_it_to_a_process_already_copying(tmp_path: Path) -> None:
     share = tmp_path / "share"
     parent = share / ms.model_folder(MODEL)
-    (parent / f".{REV}.partial-99-abcdef01").mkdir(parents=True)
+    (parent / f".{REV}.incoming-99-abcdef01").mkdir(parents=True)
     assert ms.publish(MODEL, hf_snapshot(tmp_path), share) is None
-    # a partial folder left long ago by a crash does not hold it up
+    # a incoming folder left long ago by a crash does not hold it up
     old = time.time() - 2 * ms._BUSY_SEC
-    os.utime(parent / f".{REV}.partial-99-abcdef01", (old, old))
+    os.utime(parent / f".{REV}.incoming-99-abcdef01", (old, old))
     assert ms.publish(MODEL, hf_snapshot(tmp_path / "2"), share) == parent / REV
 
 
@@ -125,7 +125,7 @@ def test_a_partial_copy_is_ignored(tmp_path: Path) -> None:
     parent = share / ms.model_folder(MODEL)
     # still being written: a hidden folder, even with a manifest in it
     newest = parent / ("b" * 40)
-    (parent / f".{'b' * 40}.partial-1-abc").mkdir()
+    (parent / f".{'b' * 40}.incoming-1-abc").mkdir()
     # renamed in place by hand but without its manifest
     newest.mkdir()
     (newest / "config.json").write_text("{}")
