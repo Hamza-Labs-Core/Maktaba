@@ -49,8 +49,12 @@ type Controller struct {
 	// Notifier receives the change notices (story 33.13); nil sends none (the audit
 	// rows of automatic transitions are written either way).
 	Notifier notify.Notifier
+	// Staging is the front door's staging slot runtime (story 33.5); nil, or a
+	// front door without slots, verifies on the database only.
+	Staging StagingRuntime
 
-	lastGC time.Time
+	lastGC     time.Time
+	interimWhy string
 }
 
 // NewController wires a controller over db.
@@ -151,17 +155,46 @@ func (c *Controller) Tick(ctx context.Context) error {
 	for i := len(open) - 1; i >= 0; i-- { // oldest first
 		ch := open[i]
 		switch ch.State {
-		case StateStaged:
-			if err := c.Store.Move(ctx, c.DB, ch, StateVerifying, ActionStartVerify, nil,
-				map[string]any{"interim": "verified on the database until the two-slot runtime (33.1/33.5)"}, nil); err != nil {
-				return err
+		case StateStaged, StateVerifying:
+			if c.Staging != nil {
+				// story 33.5: the staging slot runs the release; the front door samples it
+				var err error
+				if ch.State == StateStaged {
+					err = c.stageSlot(ctx, cfg, ch)
+					if err == nil && ch.State == StateVerifying {
+						err = c.verifyStream(ctx, cfg, ch)
+					}
+				} else {
+					err = c.verifyStream(ctx, cfg, ch)
+				}
+				if err == nil {
+					continue
+				}
+				if !errors.Is(err, ErrNoStagingRuntime) {
+					c.Logger.Warn("tv change verification tick failed", "change_id", ch.ID, "error", err.Error(),
+						"event", "tv_change_verify_tick_failed")
+					continue
+				}
+				c.interimWhy = err.Error()
 			}
-			fallthrough
-		case StateVerifying:
+			if ch.State == StateStaged {
+				if err := c.Store.Move(ctx, c.DB, ch, StateVerifying, ActionStartVerify, nil,
+					map[string]any{"interim": "verified on the database: no staging slot runtime"}, nil); err != nil {
+					return err
+				}
+			}
 			if err := c.verifyAndMove(ctx, ch); err != nil {
 				return err
 			}
 		case StateReady:
+			if c.Staging != nil {
+				if err := c.recheck(ctx, cfg, ch); err != nil && !errors.Is(err, ErrNoStagingRuntime) {
+					c.Logger.Warn("tv change recheck failed", "change_id", ch.ID, "error", err.Error())
+				}
+				if ch.State != StateReady {
+					continue
+				}
+			}
 			if err := c.ready(ctx, cfg, ch); err != nil {
 				return err
 			}
@@ -181,6 +214,8 @@ func (c *Controller) Tick(ctx context.Context) error {
 			}
 		}
 	}
+	// story 33.5: the staging slot ends with its change (cancel, fail, live)
+	c.reconcileStaging(ctx)
 	// story 33.13: notices and the audit rows of automatic transitions (best-effort:
 	// a failure here never holds a change back)
 	if err := c.notifyEvents(ctx, cfg); err != nil {

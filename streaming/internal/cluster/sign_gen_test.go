@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The placement generation is part of the front-door signature: a request whose
@@ -74,5 +75,36 @@ func TestSignatureBytesForTheAPI(t *testing.T) {
 	}
 	if sum != mac([]byte("k"), "POST", "/internal/tv/place/x", e, 0) {
 		t.Fatal("signature bytes changed")
+	}
+}
+
+// story 33.6: a preview token names its change, is good for an hour and only
+// with the cluster key.
+func TestPreviewTokenRoundTrip(t *testing.T) {
+	key := []byte("0123456789abcdef0123456789abcdef")
+	now := time.Unix(1_800_000_000, 0)
+	k := NewKeyring(key)
+	k.now = func() time.Time { return now }
+	tok := PreviewToken(key, "c-1", now.Add(PreviewTTL))
+	if id, err := k.CheckPreview(tok); err != nil || id != "c-1" {
+		t.Fatalf("good token: %q %v", id, err)
+	}
+	k.now = func() time.Time { return now.Add(PreviewTTL + time.Second) }
+	if _, err := k.CheckPreview(tok); err == nil {
+		t.Fatal("an expired token passed")
+	}
+	k.now = func() time.Time { return now }
+	if _, err := k.CheckPreview(PreviewToken(key, "c-1", now.Add(5*time.Hour))); err == nil {
+		t.Fatal("a token beyond the hour passed")
+	}
+	bad := tok[:len(tok)-1] + "0"
+	if bad == tok {
+		bad = tok[:len(tok)-1] + "1"
+	}
+	if _, err := k.CheckPreview(bad); err == nil {
+		t.Fatal("a tampered token passed")
+	}
+	if _, err := k.CheckPreview("c-2" + tok[3:]); err == nil {
+		t.Fatal("a token for another change passed")
 	}
 }

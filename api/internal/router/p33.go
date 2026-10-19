@@ -46,6 +46,11 @@ func MountP33(r chi.Router, d P33Deps) *tvchange.Controller {
 	}
 	ctl := tvchange.NewController(d.DB, d.Logger)
 	ctl.Notifier = hub
+	if d.RunController {
+		// story 33.5: verification on the home front door's staging slot (a front
+		// door without slots, or staging not built, keeps the database checks)
+		ctl.Staging = tvchange.NewHTTPStaging(d.DB)
+	}
 	tvchangeapi.New(d.DB, ctl).Mount(r)
 	(&notify.Handler{Store: &notify.Store{DB: d.DB}}).Mount(r)
 	if d.RunController {

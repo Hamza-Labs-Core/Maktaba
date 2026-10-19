@@ -43,10 +43,23 @@ func (f Fence) Allow(ctx context.Context, ch uuid.UUID) (channel.Grant, error) {
 	if err != nil {
 		return channel.Grant{}, err
 	}
+	if f.staging() && (!found || !p.Active()) {
+		// story 33.5: staging airs its release's channels for verification and
+		// preview whether or not live has them placed now (an idle channel, a
+		// channel the change adds); it never places one itself
+		return channel.Grant{}, nil
+	}
 	if !found || !p.Active() || p.Host != f.Self {
 		return channel.Grant{}, placement.ErrNotPlacedHere
 	}
 	return channel.Grant{Gen: p.Gen, Discontinuity: p.Takeover()}, nil
+}
+
+// staging reports the staging role (its stations follow the front door's warm
+// set, not the live placements).
+func (f Fence) staging() bool {
+	r, _ := f.State.Role()
+	return r == RoleStaging
 }
 
 // Check implements channel.Fence: keep while the placement names this host.
@@ -57,6 +70,10 @@ func (f Fence) Check(ctx context.Context, ch uuid.UUID, gen int64) (bool, int64)
 	p, found, err := f.Store.Get(ctx, ch)
 	if err != nil {
 		return true, 0
+	}
+	if f.staging() {
+		// kept while no other host has it placed (its warm hold decides)
+		return !found || !p.Active() || p.Host == f.Self, 0
 	}
 	if !found || !p.Active() || p.Host != f.Self {
 		return false, 0

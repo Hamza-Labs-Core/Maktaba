@@ -69,6 +69,8 @@ type Slots struct {
 	switches   int
 	lastWarm   time.Time
 	wantStby   int // 0: not asked yet, 1: started, -1: stopped (supervisor)
+	stage      *stagingRun
+	lastSample time.Time
 }
 
 // slotHealth is what the last probes of a slot said.
@@ -291,6 +293,15 @@ func (s *Slots) Run(ctx context.Context) {
 		if time.Since(s.lastWarmAt()) >= 2*time.Second {
 			s.SyncWarm(ctx)
 		}
+		s.mu.Lock()
+		due := s.stage != nil && time.Since(s.lastSample) >= stagingSampleEvery
+		if due {
+			s.lastSample = time.Now()
+		}
+		s.mu.Unlock()
+		if due {
+			go s.sampleStaging(ctx)
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -466,6 +477,7 @@ func (s *Slots) Switch(ctx context.Context, to string, epoch int64) error {
 		}
 		if s.staging == to {
 			s.staging = ""
+			s.stage = nil // the staged release is live now (story 33.7)
 		}
 		s.switches++
 	}
@@ -502,6 +514,7 @@ func (s *Slots) StopStaging(ctx context.Context) error {
 	s.mu.Lock()
 	name := s.staging
 	s.staging = ""
+	s.stage = nil
 	s.mu.Unlock()
 	if name == "" {
 		return nil
@@ -675,7 +688,11 @@ func (s *Slots) SyncWarm(ctx context.Context) {
 		}
 	}
 	if staging != "" {
-		_ = s.sendWarm(ctx, staging, slot.WarmRequest{Role: slot.RoleStaging, Epoch: epoch})
+		stby := 0
+		if set.HotStandby && standby != "" {
+			stby = len(plan.standby)
+		}
+		s.syncStaging(ctx, staging, epoch, capacity, nvencMax, vtMax, len(liveOnAir), stby, demands)
 	}
 }
 

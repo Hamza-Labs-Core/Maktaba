@@ -1,6 +1,6 @@
 // Admin → Live TV → Changes → a change (Epic 33, story 33.11): what exactly it changes
-// (Lineup, Schedules, Settings, Binary & art), whether it passed its checks, a preview
-// (story 33.6), its history, and the actions its state allows (allowed_actions: the page
+// (Lineup, Schedules, Settings, Binary & art), whether it passed its checks (on the
+// staging slot, story 33.5), a preview of the staging channels (story 33.6), its history, and the actions its state allows (allowed_actions: the page
 // never re-implements the state machine).
 //
 // Re-read every 2 s while visible (AC5); the header, the action bar (fixed order) and the
@@ -37,6 +37,7 @@ import {
 } from "./changeBits";
 import { ChecksTable } from "./ChecksTable";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { PreviewPanel } from "./PreviewPanel";
 import { ArtDiff } from "./diff/ArtDiff";
 import { LineupDiff } from "./diff/LineupDiff";
 import { ScheduleDiff } from "./diff/ScheduleDiff";
@@ -336,7 +337,7 @@ function DetailInner() {
           {
             id: "preview",
             label: t("tvchanges.tab.preview"),
-            content: <p className="mkt-tvx-muted">{t("tvchanges.preview.notYet")}</p>,
+            content: <PreviewPanel change={change} />,
           },
           {
             id: "history",

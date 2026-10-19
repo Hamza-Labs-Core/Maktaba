@@ -140,14 +140,17 @@ func (c *Controller) coverage(ctx context.Context, channelID string, gen int64, 
 	return end, gaps, rows.Err()
 }
 
-// Verify runs the checks the database can answer (interim, until the staging slot of
-// story 33.1 / 33.5 adds the stream checks): lineup sanity, the new generation's
+// Verify runs the checks the database can answer (the whole verification without a
+// staging slot runtime; with one, streamverify.go adds the stream checks): lineup sanity, the new generation's
 // guide coverage, and the invariant that makes every swap cut-free - the block on air
 // now is the same in the new generation as in the live one (design §4.3).
 func (c *Controller) Verify(ctx context.Context, ch *Change) (map[string]any, bool, int, error) {
 	now := c.now()
-	checks := []Check{{Check: "slot.health", Result: ResultSkip,
-		Value: "the two-slot runtime (story 33.1) is not installed: no staging slot to probe"}}
+	why := "no staging slot runtime: verified on the database"
+	if c.interimWhy != "" {
+		why = "no staging slot (" + c.interimWhy + "): verified on the database"
+	}
+	checks := []Check{{Check: "slot.health", Result: ResultSkip, Value: why}}
 	failed, warnings := false, 0
 	add := func(k Check) {
 		checks = append(checks, k)

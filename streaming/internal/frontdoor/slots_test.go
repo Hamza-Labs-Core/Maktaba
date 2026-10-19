@@ -452,7 +452,7 @@ func TestStandbyBudgetOrder(t *testing.T) {
 // The rules.tv_staging overlay; staging needs the build flag too.
 func TestStagingSettings(t *testing.T) {
 	d := DefaultStagingSettings()
-	if d.Enabled || !d.HotStandby || d.StandbyWarm != StandbyWarmViewers {
+	if !d.Enabled || !d.HotStandby || d.StandbyWarm != StandbyWarmViewers {
 		t.Fatalf("defaults %+v", d)
 	}
 	got := ApplyStagingRules(d, []byte(`{"hot_standby":false,"standby_warm":"demand","enabled":true}`))
@@ -462,8 +462,8 @@ func TestStagingSettings(t *testing.T) {
 	if ApplyStagingRules(d, []byte(`{"standby_warm":"all"}`)).StandbyWarm != StandbyWarmViewers {
 		t.Fatal("a bad value replaced the default")
 	}
-	if d.StagingActive() {
-		t.Fatal("staging active by default")
+	if d.StagingActive() != StagingBuild {
+		t.Fatal("staging active by default only in a staging build")
 	}
 }
 
@@ -517,6 +517,7 @@ func TestSlotsViewAndSupervisor(t *testing.T) {
 	if v["live"] != "blue" || v["standby"] != "green" || len(v["slots"].([]SlotView)) != 2 {
 		t.Fatalf("view %v", v)
 	}
+	g.slots.Addrs["amber"] = newFakeSlot(t, "amber", 4000).addr() // the third instance
 	name, err := g.slots.StartStaging(context.Background())
 	if StagingBuild {
 		if err != nil || name != "amber" {

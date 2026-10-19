@@ -53,9 +53,17 @@ type Handler struct {
 	// CacheRoot is the slots' cache root (<root>/tv/<slot>/…): a crashed slot's
 	// listed segments are still served from disk.
 	CacheRoot string
+	// PublicBase / WebBase are the streaming and web origins the staging
+	// preview's M3U points at ("": the request's).
+	PublicBase string
+	WebBase    string
+	// PreviewLookup, when set, answers a change's state and release for the
+	// preview (tests; nil reads tv_changes).
+	PreviewLookup func(ctx context.Context, changeID string) (state, release string)
 
 	clientOnce sync.Once
 	stitch     stitchers
+	preview    previewCache
 }
 
 // NewClient is the front door's HTTP client: keep-alives, no overall timeout (TS

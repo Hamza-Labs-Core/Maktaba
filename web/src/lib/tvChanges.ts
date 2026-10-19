@@ -78,6 +78,16 @@ export interface VerifyReport {
   at?: string;
   interim?: boolean;
   error?: string;
+  /** story 33.5: "slots" when measured on the staging slot */
+  runtime?: string;
+  slot?: string;
+  /** warming / soaking while verifying */
+  status?: string;
+  soak_started_at?: string;
+  /** why the change failed */
+  reasons?: string[];
+  summary?: { pass: number; warn: number; fail: number };
+  budget?: { staging: number; capacity: number; live: number; standby: number };
   /** what the swap commit reported (tv_swap) */
   swap?: Record<string, unknown>;
 }
@@ -289,6 +299,7 @@ export const tvChangesApi = {
   promote: (id: string) => api.post<TvChangeDetail>(`${base(id)}/promote`),
   cancel: (id: string) => api.post<TvChangeDetail>(`${base(id)}/cancel`),
   rollback: () => api.post<unknown>(`/api/tv/rollback`, {}),
+  preview: (id: string) => api.post<Preview>(`${base(id)}/preview`),
   slots: () => api.get<SlotsView>(`/api/tv/slots`),
   releases: (limit = 20) => api.get<{ items: Release[] }>(`/api/tv/releases?limit=${limit}`),
   scheduleChannels: (id: string, page = 1) =>
@@ -305,6 +316,31 @@ export const tvChangesApi = {
     return api.get<Boundaries>(`${base(id)}/boundaries${qs ? `?${qs}` : ""}`);
   },
 };
+
+/** One channel of a staging preview (story 33.6). */
+export interface PreviewChannel {
+  id: string;
+  number: number;
+  name: string;
+  logo?: boolean;
+  changed?: boolean;
+  added?: boolean;
+  removed?: boolean;
+  /** the staging slot's HLS (web origin, with the token) */
+  url: string;
+  /** the live channel, for "live vs staging" (absent for an added channel) */
+  live_url?: string;
+}
+
+/** POST /api/tv/changes/{id}/preview: signed staging URLs for an hour. */
+export interface Preview {
+  hls_base: string;
+  token: string;
+  m3u: string;
+  xmltv: string;
+  expires_at: string;
+  channels: PreviewChannel[];
+}
 
 /** Whether a state is one a change is "in flight" in (README R9.4). */
 export const IN_FLIGHT: ReadonlySet<ChangeState> = new Set([

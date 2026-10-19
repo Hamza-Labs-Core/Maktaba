@@ -221,3 +221,52 @@ func VerifyMiddleware(k *Keyring, logger *slog.Logger) func(http.Handler) http.H
 		})
 	}
 }
+
+// PreviewTTL is how long a staging preview token is good for (story 33.6 AC1).
+const PreviewTTL = time.Hour
+
+// previewMAC is the preview token's HMAC: the cluster stream key over
+// "preview", the change id and the expiry.
+func previewMAC(key []byte, changeID string, exp int64) string {
+	h := hmac.New(sha256.New, key)
+	_, _ = h.Write([]byte("preview\n" + changeID + "\n" + strconv.FormatInt(exp, 10)))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// PreviewToken mints a staging preview token "<change>.<exp>.<hex>" (the API
+// mints the same with the key from tv_cluster_secret).
+func PreviewToken(key []byte, changeID string, exp time.Time) string {
+	e := exp.Unix()
+	return changeID + "." + strconv.FormatInt(e, 10) + "." + previewMAC(key, changeID, e)
+}
+
+// ErrPreviewToken is a missing, bad or expired preview token.
+var ErrPreviewToken = errors.New("cluster: bad or expired preview token")
+
+// CheckPreview verifies a preview token and returns its change id.
+func (k *Keyring) CheckPreview(tok string) (string, error) {
+	parts := strings.Split(tok, ".")
+	if len(parts) != 3 || parts[0] == "" || parts[2] == "" {
+		return "", ErrPreviewToken
+	}
+	exp, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return "", ErrPreviewToken
+	}
+	now := k.clock()
+	if now.Unix() > exp || exp > now.Add(PreviewTTL+time.Minute).Unix() {
+		return "", ErrPreviewToken
+	}
+	k.mu.RLock()
+	keys := [][]byte{k.cur}
+	if len(k.prev) > 0 && now.Before(k.prevUntil) {
+		keys = append(keys, k.prev)
+	}
+	k.mu.RUnlock()
+	for _, key := range keys {
+		if len(key) > 0 && hmac.Equal([]byte(previewMAC(key, parts[0], exp)), []byte(parts[2])) {
+			return parts[0], nil
+		}
+	}
+	return "", ErrPreviewToken
+}
