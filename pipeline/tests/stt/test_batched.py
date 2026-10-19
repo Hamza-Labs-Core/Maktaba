@@ -166,6 +166,48 @@ async def test_many_files_share_each_pass_and_get_their_own_sentences() -> None:
     assert max(n for n, _ in model.calls) == 4  # four files in one pass
 
 
+@dataclass
+class PromptModel(FakeModel):
+    """Records the prompt each decode call had and the files it decoded."""
+
+    prompted: list[tuple[str | None, list[int]]] = field(default_factory=list)
+
+    def decode(  # type: ignore[override]
+        self, mels: Sequence[Any], temps: Sequence[float], prompt: str | None = None
+    ) -> list[R]:
+        self.prompted.append((prompt, sorted({wid // 100 for _, wid in mels})))
+        return super().decode(mels, temps)
+
+
+@pytest.mark.asyncio
+async def test_a_file_s_prompt_biases_only_its_own_windows() -> None:
+    """``stt.initial_prompt``: a prompted file is decoded with its prompt, apart from the
+    files without one; every file still gets its own sentences."""
+    model = PromptModel()
+    bt = _transcriber(model)
+    bt._decode = model.decode  # the prompt-aware fake
+    results = await asyncio.gather(
+        bt.transcribe(_audio(1, 2), prompt="الشيخ نبيل العوضي"),
+        bt.transcribe(_audio(2, 2)),
+    )
+    assert [len(r.sentences) for r in results] == [2, 2]
+    assert all(s.text == "w101 w101" for s in results[0].sentences)
+    with_prompt = [files for p, files in model.prompted if p == "الشيخ نبيل العوضي"]
+    without = [files for p, files in model.prompted if p is None]
+    assert with_prompt and all(files == [1] for files in with_prompt)
+    assert without and all(1 not in files for files in without)
+
+
+@pytest.mark.asyncio
+async def test_no_prompt_keeps_one_decode_call_per_pass() -> None:
+    model = PromptModel()
+    bt = _transcriber(model)
+    bt._decode = model.decode
+    await asyncio.gather(*(bt.transcribe(_audio(f, 2)) for f in (1, 2)))
+    assert all(p is None for p, _ in model.prompted)
+    assert any(files == [1, 2] for _, files in model.prompted)  # both files in one call
+
+
 @pytest.mark.asyncio
 async def test_an_improbable_window_is_decoded_again_warmer() -> None:
     model = FakeModel(bad_once={101})  # file 1, window 1
