@@ -1,0 +1,470 @@
+"""The ``plex_livetv`` stage: Maktaba's channels in Plex Live TV (audit P0-1).
+
+What dizqueTV's "auto refresh guide" and "auto refresh channels" do, aimed at Maktaba's own
+HDHomeRun tuner only, plus adding that tuner to Plex once:
+
+* **find** Plex's DVRs (``GET /livetv/dvrs``) and tuners (``GET /media/grabbers/devices``)
+  and Maktaba's tuner among them, by its HDHomeRun DeviceID (``hdhr_device``) or its address;
+* **register** (``POST /media/grabbers/devices?uri=..``, then ``POST /livetv/dvrs`` with the
+  XMLTV guide), only when an admin asked for it (``POST /api/tv/plex/register``) or
+  ``rules.plexlive.auto_register`` is on, and never when a DVR already has Maktaba's tuner;
+* **channel map** (``PUT /media/grabbers/devices/{key}/channelmap``, dizqueTV's exact query)
+  when the lineup differs from the one last pushed;
+* **reload the guide** (``POST /livetv/dvrs/{key}/reloadGuide``) after a channel-map push, an
+  explicit refresh, or when the schedule grew (then at most every
+  ``guide_refresh_min_minutes``: an early run is given back until then).
+
+Other DVRs and tuners (dizqueTV's, an antenna's) are listed in the status and never touched:
+nothing here deletes, replaces or reloads a DVR that is not Maktaba's.
+
+Triggers: the edge ``write_channels -> plex_livetv`` (the lineup changed), the scheduler's
+top-up (``StageDef.after_topup``: the schedule grew), and the API (``force``: refresh now,
+register). Everything the stage saw and did is kept in ``plex_livetv_state`` (slot 0116),
+which ``GET /api/tv/plex`` reports.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
+from datetime import datetime
+from typing import Any
+
+from ...engine.context import JobDeferred, StageContext, StageFailure
+from ...engine.graph import StageResult
+from ...engine.hashing import canonical_hash
+from ...engine.sql import dumps, loads, now, parse_ts, to_ts
+from ...integrations.plex import (
+    PlexClient,
+    PlexDvr,
+    PlexError,
+    PlexTuner,
+    TransportError,
+    find_tuner,
+    same_host,
+)
+from .collection import PlexService
+
+__all__ = [
+    "LiveState",
+    "Target",
+    "classify",
+    "load_state",
+    "resolve_target",
+    "run_livetv",
+]
+
+XMLTV_PATH = "/xmltv.xml"
+
+
+@dataclass(frozen=True, slots=True)
+class Target:
+    """The addresses Plex is given: the tuner's base URL and its XMLTV guide."""
+
+    tuner_url: str
+    xmltv_url: str
+    #: where the tuner address came from: ``rules``, ``env``, ``api`` or "" (none)
+    source: str
+
+
+@dataclass(slots=True)
+class LiveState:
+    register_requested_at: datetime | None = None
+    requested_base_url: str = ""
+    status: dict[str, Any] = field(default_factory=dict)
+    guide_reloaded_at: datetime | None = None
+    guide_version: str = ""
+    channelmap_at: datetime | None = None
+    channelmap_hash: str = ""
+
+
+async def load_state(db: Any) -> LiveState:
+    row = await db.fetchrow("SELECT * FROM plex_livetv_state WHERE id = 1")
+    if row is None:
+        return LiveState()
+    return LiveState(
+        register_requested_at=parse_ts(row["register_requested_at"]),
+        requested_base_url=str(row["requested_base_url"] or ""),
+        status=dict(loads(row["status"]) or {}),
+        guide_reloaded_at=parse_ts(row["guide_reloaded_at"]),
+        guide_version=str(row["guide_version"] or ""),
+        channelmap_at=parse_ts(row["channelmap_at"]),
+        channelmap_hash=str(row["channelmap_hash"] or ""),
+    )
+
+
+async def _save(
+    db: Any,
+    st: LiveState,
+    *,
+    at: datetime,
+    error: str | None,
+    clear_register: bool,
+) -> None:
+    await db.execute(
+        "INSERT INTO plex_livetv_state (id, status, checked_at, guide_reloaded_at, guide_version,"
+        " channelmap_at, channelmap_hash, last_error, last_error_at, updated_at)"
+        " VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $2)"
+        " ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status,"
+        " checked_at = EXCLUDED.checked_at, guide_reloaded_at = EXCLUDED.guide_reloaded_at,"
+        " guide_version = EXCLUDED.guide_version, channelmap_at = EXCLUDED.channelmap_at,"
+        " channelmap_hash = EXCLUDED.channelmap_hash, last_error = EXCLUDED.last_error,"
+        " last_error_at = COALESCE(EXCLUDED.last_error_at, plex_livetv_state.last_error_at),"
+        " updated_at = EXCLUDED.updated_at",
+        dumps(st.status),
+        to_ts(db, at),
+        to_ts(db, st.guide_reloaded_at),
+        st.guide_version or None,
+        to_ts(db, st.channelmap_at),
+        st.channelmap_hash or None,
+        error,
+        to_ts(db, at) if error else None,
+    )
+    if clear_register:
+        # only the request this run answered: one made while it ran stays for the next run
+        await db.execute(
+            "UPDATE plex_livetv_state SET register_requested_at = NULL"
+            " WHERE id = 1 AND register_requested_at <= $1",
+            to_ts(db, at),
+        )
+
+
+def resolve_target(cfg: Any, st: LiveState, env: Mapping[str, str]) -> Target:
+    """The tuner address: ``rules.plexlive.tuner_url``, else ``MAKTABA_PUBLIC_BASE_URL`` (what
+    the streaming service advertises), else what ``/api/tv/info`` reported when an admin
+    asked to register. The guide: ``rules.plexlive.xmltv_url``, else ``<tuner>/xmltv.xml``."""
+    base, source = str(cfg.tuner_url or "").strip(), "rules"
+    if not base:
+        base, source = str(env.get("MAKTABA_PUBLIC_BASE_URL") or "").strip(), "env"
+    if not base:
+        base, source = st.requested_base_url.strip(), "api"
+    if not base:
+        source = ""
+    elif "://" not in base:
+        base = f"http://{base}"
+    base = base.rstrip("/")
+    xmltv = str(cfg.xmltv_url or "").strip() or (f"{base}{XMLTV_PATH}" if base else "")
+    return Target(base, xmltv, source)
+
+
+def classify(t: PlexTuner, ours: PlexTuner | None, dizquetv_url: str) -> str:
+    """``maktaba``, ``dizquetv`` (its address, or its name says so) or ``other``."""
+    if ours is not None and t.key == ours.key:
+        return "maktaba"
+    text = f"{t.title} {t.make} {t.model}".casefold()
+    if same_host(t.uri, dizquetv_url) or "dizque" in text:
+        return "dizquetv"
+    return "other"
+
+
+async def _device(db: Any) -> tuple[str, str, bool] | None:
+    """Maktaba's HDHomeRun device: (DeviceID, name, enabled), None before it exists."""
+    try:
+        row = await db.fetchrow(
+            "SELECT device_id, friendly_name, enabled FROM hdhr_device WHERE id = 1"
+        )
+    except Exception as exc:  # noqa: BLE001 - a bare database without the table
+        if "hdhr_device" not in str(exc):
+            raise
+        return None
+    if row is None:
+        return None
+    return str(row["device_id"]), str(row["friendly_name"]), bool(row["enabled"])
+
+
+async def _lineup(db: Any) -> list[str]:
+    """The HDHomeRun lineup's channel numbers, in its order (streaming ``hdhr`` Lineup)."""
+    rows = await db.fetch(
+        "SELECT number FROM channels WHERE enabled = true ORDER BY sort_order ASC, number ASC"
+    )
+    return [str(int(r["number"])) for r in rows]
+
+
+async def _guide_version(db: Any) -> str:
+    """When any channel's schedule was last (re)generated: the guide changed since then."""
+    v = await db.fetchval("SELECT max(last_generated_at) FROM channel_schedule_state")
+    if v is None:
+        return ""
+    ts = parse_ts(v)
+    return ts.isoformat() if ts is not None else str(v)
+
+
+def _tuners(dvrs: Sequence[PlexDvr], devices: Sequence[PlexTuner]) -> list[PlexTuner]:
+    """Every tuner once: a DVR's listing (it carries the channel mapping) before the
+    device list's."""
+    out: dict[str, PlexTuner] = {}
+    for d in dvrs:
+        for t in d.devices:
+            out.setdefault(t.key or t.uuid, t)
+    for t in devices:
+        out.setdefault(t.key or t.uuid, t)
+    return list(out.values())
+
+
+def _dvr_of(dvrs: Sequence[PlexDvr], tuner: PlexTuner | None) -> PlexDvr | None:
+    if tuner is None:
+        return None
+    for d in dvrs:
+        if any(t.key == tuner.key for t in d.devices):
+            return d
+    return next((d for d in dvrs if tuner.dvr_key and d.key == tuner.dvr_key), None)
+
+
+def _wrap(exc: Exception) -> StageFailure:
+    kind = "plex_unreachable" if isinstance(exc, TransportError) else "plex_error"
+    return StageFailure(kind, f"plex: {exc}", retryable=True)
+
+
+@dataclass(slots=True)
+class _Run:
+    """What one run saw and did (becomes ``status``)."""
+
+    dvrs: list[PlexDvr]
+    tuners: list[PlexTuner]
+    ours: PlexTuner | None = None
+    ours_dvr: PlexDvr | None = None
+    register: str = ""
+    channel_map: str = ""
+    guide: str = ""
+    warnings: list[str] = field(default_factory=list)
+
+
+def _list(client: PlexClient) -> tuple[list[PlexDvr], list[PlexTuner]]:
+    dvrs = client.dvrs()
+    try:
+        devices = client.grabber_devices()
+    except PlexError:  # the DVRs list their tuners; the device list only adds idle ones
+        devices = []
+    return dvrs, devices
+
+
+async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept in order
+    db: Any,
+    job: Any,
+    ctx: StageContext,
+    service: PlexService,
+    *,
+    env: Mapping[str, str] | None = None,
+    wall: Callable[[], datetime] = now,
+) -> StageResult:
+    cfg = await ctx.rules("plexlive")
+    settings = ctx.extension_settings("plex")
+    dz_url = str(ctx.extension_settings("dizquetv").get("url", ""))
+    st = await load_state(db)
+    manual = bool(getattr(job, "force", False) or getattr(job, "force_cascade", False))
+    asked = st.register_requested_at is not None
+    target = resolve_target(cfg, st, os.environ if env is None else env)
+    device = await _device(db)
+    device_id = device[0] if device else ""
+    lineup = await _lineup(db)
+    guide_version = await _guide_version(db)
+    client = service.client(settings)
+    started = wall()
+
+    def status(run: _Run | None, error: str | None) -> dict[str, Any]:
+        ours = run.ours if run else None
+        ours_dvr = run.ours_dvr if run else None
+        seen_dvrs = run.dvrs if run else []
+        mapped = None if ours is None or ours.mapped is None else list(ours.mapped)
+        return {
+            "reachable": run is not None,
+            "server": str(settings.get("url", "")),
+            "error": error,
+            "target": {
+                "tuner_url": target.tuner_url,
+                "xmltv_url": target.xmltv_url,
+                "source": target.source,
+            },
+            "device": {
+                "device_id": device_id,
+                "name": device[1] if device else "",
+                "enabled": bool(device and device[2]),
+            },
+            "dvrs": [
+                {
+                    "key": d.key,
+                    "title": d.title,
+                    "lineup": d.lineup,
+                    "maktaba": ours_dvr is not None and d.key == ours_dvr.key,
+                    "devices": [
+                        {
+                            "key": t.key,
+                            "uri": t.uri,
+                            "device_id": t.device_id,
+                            "title": t.title,
+                            "kind": classify(t, ours, dz_url),
+                        }
+                        for t in d.devices
+                    ],
+                }
+                for d in seen_dvrs
+            ],
+            "tuners": [
+                {
+                    "key": t.key,
+                    "uri": t.uri,
+                    "device_id": t.device_id,
+                    "title": t.title,
+                    "kind": classify(t, ours, dz_url),
+                    "in_dvr": _dvr_of(seen_dvrs, t) is not None,
+                }
+                for t in (run.tuners if run else [])
+            ],
+            "maktaba": {
+                "tuner_key": ours.key if ours else None,
+                "dvr_key": run.ours_dvr.key if run and run.ours_dvr else None,
+                "registered": bool(run and run.ours_dvr),
+            },
+            "dizquetv_present": bool(
+                run and any(classify(t, ours, dz_url) == "dizquetv" for t in run.tuners)
+            ),
+            "channels": {
+                "lineup": len(lineup),
+                "mapped": len(mapped) if mapped is not None else None,
+                "in_sync": None if mapped is None else sorted(mapped) == sorted(lineup),
+            },
+            "actions": {
+                "register": run.register if run else "",
+                "channel_map": run.channel_map if run else "",
+                "guide": run.guide if run else "",
+            },
+            "warnings": run.warnings if run else [],
+            "auto": {
+                "register": bool(cfg.auto_register),
+                "refresh_guide": bool(cfg.auto_refresh_guide),
+                "refresh_channels": bool(cfg.auto_refresh_channels),
+                "guide_refresh_min_minutes": int(cfg.guide_refresh_min_minutes),
+            },
+        }
+
+    try:
+        dvrs, devices = await asyncio.to_thread(_list, client)
+    except (PlexError, TransportError) as exc:
+        st.status = status(None, str(exc))
+        await _save(db, st, at=started, error=f"plex: {exc}", clear_register=False)
+        raise _wrap(exc) from exc
+
+    run = _Run(dvrs, _tuners(dvrs, devices))
+    run.ours = find_tuner(run.tuners, device_id, target.tuner_url)
+    run.ours_dvr = _dvr_of(run.dvrs, run.ours)
+    others = [d for d in run.dvrs if run.ours_dvr is None or d.key != run.ours_dvr.key]
+    if others:
+        run.warnings.append(f"other DVRs left as they are: {len(others)}")
+
+    registered_now = False
+    error: str | None = None
+    try:
+        # ---- register (once; refused when a DVR already has Maktaba's tuner)
+        if asked or (cfg.auto_register and run.ours_dvr is None):
+            if run.ours_dvr is not None:
+                run.register = "already_registered"
+            elif device is None or not device[2]:
+                run.register = "tuner_off"
+            elif not target.tuner_url:
+                run.register = "no_address"
+            elif not lineup:
+                run.register = "no_channels"
+            else:
+                tuner = run.ours
+                if tuner is None:
+                    added = await asyncio.to_thread(client.add_grabber_device, target.tuner_url)
+                    _, devices = await asyncio.to_thread(_list, client)
+                    tuner = find_tuner(
+                        [*([added] if added else []), *devices], device_id, target.tuner_url
+                    )
+                if tuner is None or not tuner.uuid:
+                    run.register = "tuner_not_added"
+                else:
+                    await asyncio.to_thread(
+                        client.create_dvr,
+                        tuner.uuid,
+                        target.xmltv_url,
+                        str(cfg.guide_title or "Maktaba"),
+                        str(cfg.language or "ara"),
+                    )
+                    dvrs, devices = await asyncio.to_thread(_list, client)
+                    run.dvrs, run.tuners = dvrs, _tuners(dvrs, devices)
+                    run.ours = find_tuner(run.tuners, device_id, target.tuner_url) or tuner
+                    run.ours_dvr = _dvr_of(run.dvrs, run.ours)
+                    registered_now = run.ours_dvr is not None
+                    run.register = "registered" if registered_now else "dvr_not_created"
+            await ctx.log("info", f"plex live tv: register {run.register}")
+
+        # ---- channel map, then the guide (Maktaba's tuner and DVR only)
+        if run.ours is not None and run.ours_dvr is not None:
+            want = canonical_hash(lineup)
+            pushed = False
+            if not lineup:
+                run.channel_map = "no_channels"
+            elif registered_now or (
+                (manual or cfg.auto_refresh_channels) and (manual or want != st.channelmap_hash)
+            ):
+                await asyncio.to_thread(client.put_channel_map, run.ours.key, lineup)
+                st.channelmap_hash, st.channelmap_at, pushed = want, wall(), True
+                run.ours = replace(run.ours, mapped=tuple(lineup))
+                run.channel_map = "pushed"
+                await ctx.log("info", f"plex live tv: channel map pushed ({len(lineup)} channels)")
+            else:
+                run.channel_map = "unchanged" if want == st.channelmap_hash else "off"
+            if run.ours.mapped is not None and sorted(run.ours.mapped) != sorted(lineup):
+                run.warnings.append("Plex's channel list differs from Maktaba's lineup")
+
+            due = guide_version != st.guide_version
+            if registered_now or manual or (pushed and cfg.auto_refresh_guide):
+                reload = True
+            elif cfg.auto_refresh_guide and due:
+                last = st.guide_reloaded_at
+                wait = (
+                    0.0
+                    if last is None
+                    else float(cfg.guide_refresh_min_minutes) * 60.0
+                    - (wall() - last).total_seconds()
+                )
+                if wait > 0:
+                    run.guide = "waiting"
+                    st.status = status(run, None)
+                    await _save(db, st, at=started, error=None, clear_register=asked)
+                    raise JobDeferred(
+                        f"guide reloaded less than {cfg.guide_refresh_min_minutes} min ago",
+                        wait,
+                    )
+                reload = True
+            else:
+                reload = False
+                run.guide = "unchanged" if not due else "off"
+            if reload:
+                await asyncio.to_thread(client.reload_guide, run.ours_dvr.key)
+                st.guide_reloaded_at, st.guide_version = wall(), guide_version
+                run.guide = "reloaded"
+                await ctx.log("info", f"plex live tv: guide reloaded (DVR {run.ours_dvr.key})")
+        else:
+            run.channel_map = run.guide = "not_registered"
+    except (PlexError, TransportError) as exc:
+        error = f"plex: {exc}"
+        st.status = status(run, str(exc))
+        await _save(db, st, at=started, error=error, clear_register=asked)
+        raise _wrap(exc) from exc
+
+    st.status = status(run, None)
+    await _save(db, st, at=started, error=None, clear_register=asked)
+    wrote = run.register == "registered" or run.channel_map == "pushed" or run.guide == "reloaded"
+    return StageResult(
+        output_hash=canonical_hash(
+            {
+                "dvr": run.ours_dvr.key if run.ours_dvr else None,
+                "map": st.channelmap_hash,
+                "guide": st.guide_version,
+            }
+        ),
+        outcome="changed" if wrote else "unchanged",
+        summary={
+            "registered": bool(run.ours_dvr),
+            "register": run.register or None,
+            "channel_map": run.channel_map,
+            "guide": run.guide,
+            "dvrs": len(run.dvrs),
+            "channels": len(lineup),
+        },
+    )

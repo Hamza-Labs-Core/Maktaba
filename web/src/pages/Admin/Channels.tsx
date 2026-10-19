@@ -19,7 +19,14 @@ import { Link } from "react-router-dom";
 import { ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { AdminGate } from "../../components/AdminGate";
-import { channelOrigin, channelsApi, type Channel, type ChannelOrigin } from "../../lib/channels";
+import { CopyField } from "../../components/CopyField";
+import {
+  channelOrigin,
+  channelsApi,
+  tvApi,
+  type Channel,
+  type ChannelOrigin,
+} from "../../lib/channels";
 import { ChannelEditor } from "./channels/ChannelEditor";
 import { ChannelList, renumber } from "./channels/ChannelList";
 import "./channels/channels.css";
@@ -159,6 +166,7 @@ function ChannelsInner() {
           </Button>
         </div>
       </header>
+      <GuideUrl />
 
       {channels.length === 0 ? (
         <EmptyState title={t("channels.empty.title")} description={t("channels.empty.desc")} />
@@ -226,5 +234,31 @@ function ChannelsInner() {
         />
       )}
     </section>
+  );
+}
+
+/** The XMLTV guide address (what Plex and other players read), copyable. */
+function GuideUrl() {
+  const { t } = useI18n();
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    tvApi
+      .info()
+      .then((i) => {
+        if (alive && typeof i?.xmltv_url === "string" && i.xmltv_url) setUrl(i.xmltv_url);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  if (!url) return null;
+  return (
+    <CopyField
+      className="mkt-copy--compact mkt-channels__guide"
+      label={t("channels.guideUrl")}
+      value={url}
+    />
   );
 }

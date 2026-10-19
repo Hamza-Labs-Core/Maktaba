@@ -35,10 +35,14 @@ func MountP27(r chi.Router, d P27Deps) {
 	if d.DB == nil {
 		return
 	}
-	chh := &channels.Handler{DB: d.DB, DataDir: d.DataDir}
+	// Live TV access: HDHomeRun tuner admin, where the TV streams live, and
+	// Plex Live TV (status, refresh, register).
+	tvh := &tv.Handler{DB: d.DB, PublicBaseURL: d.PublicBaseURL}
+	// a channel created, edited, renumbered or deleted by hand: Plex's
+	// channel map follows (the plex_livetv stage decides what to push)
+	chh := &channels.Handler{DB: d.DB, DataDir: d.DataDir, OnLineupChange: tvh.NotifyPlex}
 	chh.Mount(r)
 	chh.MountSchedule(r) // Story 27.2 — schedule read + regenerate trigger
 	(&guide.Handler{DB: d.DB}).Mount(r)
-	// Live TV access: HDHomeRun tuner admin + where the TV streams live.
-	(&tv.Handler{DB: d.DB, PublicBaseURL: d.PublicBaseURL}).Mount(r)
+	tvh.Mount(r)
 }

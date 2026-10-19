@@ -20,6 +20,7 @@ __all__ = [
     "LiveSlot",
     "MaktabaTvConfig",
     "MaktabaTvOutputConfig",
+    "PlexLiveConfig",
     "RepairConfig",
     "channel_numbers",
     "live_slots",
@@ -34,6 +35,7 @@ TVG = "Guide"
 TVO = "Maktaba TV output"
 TVN = "Hardware encoder"
 TVC = "Channels on air"
+PL = "Plex Live TV"
 
 
 @dataclass(frozen=True)
@@ -165,6 +167,33 @@ class ChannelAuditConfig:
     window_days: int = 28
     #: audits kept (older ones are deleted)
     keep: int = 5
+
+
+@dataclass(frozen=True)
+class PlexLiveConfig:
+    """Maktaba's channels in Plex Live TV (the Plex extension's ``plex_livetv`` stage):
+    what dizqueTV's "auto refresh guide / channels" do, plus adding the tuner and its
+    XMLTV guide to Plex once. Nothing here deletes or replaces a DVR in Plex."""
+
+    #: add Maktaba's tuner and a DVR with its XMLTV guide to Plex when Plex has none
+    #: (off: only the "Add Maktaba to Plex" button does it; it changes the user's Plex DVRs)
+    auto_register: bool = False
+    #: ask Plex to reload Maktaba's guide when the schedule grew or changed
+    auto_refresh_guide: bool = True
+    #: push the channel map (which channels Plex shows) when the lineup changed
+    auto_refresh_channels: bool = True
+    #: a guide reload caused only by the schedule growing waits until this long after the
+    #: last one (a channel change or "Refresh Plex now" reloads at once)
+    guide_refresh_min_minutes: int = 60
+    #: the tuner address Plex should use (http://host:port of the streaming service);
+    #: empty: MAKTABA_PUBLIC_BASE_URL, else what /api/tv/info reported
+    tuner_url: str = ""
+    #: the XMLTV guide address Plex should read; empty: <tuner address>/xmltv.xml
+    xmltv_url: str = ""
+    #: the DVR's guide language (Plex's three-letter code)
+    language: str = "ara"
+    #: the guide's name in Plex
+    guide_title: str = "Maktaba"
 
 
 @dataclass(frozen=True)
@@ -427,5 +456,47 @@ register(
         ),
         "max_per_run": Help(RP, "Most files a run", "0: all of them.", minimum=0),
         "download_timeout_minutes": Help(RP, "Download time limit (minutes)", minimum=1),
+    },
+)
+register(
+    PlexLiveConfig,
+    {
+        "auto_register": Help(
+            PL,
+            "Add Maktaba to Plex by itself",
+            "When Plex has no DVR with Maktaba's tuner, add the tuner and a DVR that reads "
+            'Maktaba\'s XMLTV guide. Off: only the "Add Maktaba to Plex" button does it. '
+            "An existing DVR (dizqueTV's, an antenna's) is never changed or removed.",
+        ),
+        "auto_refresh_guide": Help(
+            PL,
+            "Refresh the guide in Plex",
+            "Ask Plex to reload Maktaba's guide after the channels change and when the "
+            'schedule grows (what dizqueTV\'s "auto refresh guide" does).',
+        ),
+        "auto_refresh_channels": Help(
+            PL,
+            "Refresh the channels in Plex",
+            "Push the channel list to Plex's tuner after the channels change, so a new, "
+            'renumbered or removed channel shows in Plex (dizqueTV\'s "auto refresh channels").',
+        ),
+        "guide_refresh_min_minutes": Help(
+            PL,
+            "Guide reload at most every (min)",
+            "A reload caused only by the schedule growing waits this long after the last "
+            'one. A channel change or "Refresh Plex now" reloads at once.',
+            minimum=1,
+        ),
+        "tuner_url": Help(
+            PL,
+            "Tuner address for Plex",
+            "http://host:port of Maktaba's streaming service as the Plex server reaches it. "
+            "Empty: the public address Maktaba was started with (public_url).",
+        ),
+        "xmltv_url": Help(
+            PL, "Guide address for Plex", "Empty: the tuner address followed by /xmltv.xml."
+        ),
+        "language": Help(PL, "Guide language", "Plex's three-letter code: ara, eng ..."),
+        "guide_title": Help(PL, "Guide name in Plex"),
     },
 )

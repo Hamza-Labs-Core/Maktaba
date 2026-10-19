@@ -3651,6 +3651,78 @@
    ]
   },
   {
+   "key": "plexlive",
+   "title": "Plex Live TV",
+   "what": "Maktaba's channels in Plex: adding the tuner and its guide, refreshing the guide and the channel list",
+   "fields": [
+    {
+     "name": "auto_register",
+     "kind": "bool",
+     "group": "Plex Live TV",
+     "label": "Add Maktaba to Plex by itself",
+     "help": "When Plex has no DVR with Maktaba's tuner, add the tuner and a DVR that reads Maktaba's XMLTV guide. Off: only the \"Add Maktaba to Plex\" button does it. An existing DVR (dizqueTV's, an antenna's) is never changed or removed.",
+     "default": false
+    },
+    {
+     "name": "auto_refresh_guide",
+     "kind": "bool",
+     "group": "Plex Live TV",
+     "label": "Refresh the guide in Plex",
+     "help": "Ask Plex to reload Maktaba's guide after the channels change and when the schedule grows (what dizqueTV's \"auto refresh guide\" does).",
+     "default": true
+    },
+    {
+     "name": "auto_refresh_channels",
+     "kind": "bool",
+     "group": "Plex Live TV",
+     "label": "Refresh the channels in Plex",
+     "help": "Push the channel list to Plex's tuner after the channels change, so a new, renumbered or removed channel shows in Plex (dizqueTV's \"auto refresh channels\").",
+     "default": true
+    },
+    {
+     "name": "guide_refresh_min_minutes",
+     "kind": "int",
+     "group": "Plex Live TV",
+     "label": "Guide reload at most every (min)",
+     "help": "A reload caused only by the schedule growing waits this long after the last one. A channel change or \"Refresh Plex now\" reloads at once.",
+     "default": 60,
+     "minimum": 1
+    },
+    {
+     "name": "tuner_url",
+     "kind": "str",
+     "group": "Plex Live TV",
+     "label": "Tuner address for Plex",
+     "help": "http://host:port of Maktaba's streaming service as the Plex server reaches it. Empty: the public address Maktaba was started with (public_url).",
+     "default": ""
+    },
+    {
+     "name": "xmltv_url",
+     "kind": "str",
+     "group": "Plex Live TV",
+     "label": "Guide address for Plex",
+     "help": "Empty: the tuner address followed by /xmltv.xml.",
+     "default": ""
+    },
+    {
+     "name": "language",
+     "kind": "str",
+     "group": "Plex Live TV",
+     "label": "Guide language",
+     "help": "Plex's three-letter code: ara, eng ...",
+     "default": "ara"
+    },
+    {
+     "name": "guide_title",
+     "kind": "str",
+     "group": "Plex Live TV",
+     "label": "Guide name in Plex",
+     "help": "",
+     "default": "Maktaba"
+    }
+   ]
+  },
+  {
    "key": "repair",
    "title": "Broken files",
    "what": "downloads that cannot be read are fetched from YouTube again (off until switched on)",

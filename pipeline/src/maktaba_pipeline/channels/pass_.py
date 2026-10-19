@@ -309,6 +309,26 @@ async def topup_once(
     return touched
 
 
+async def notify_listeners(db: Any, listeners: tuple[str, ...], touched: int) -> None:
+    """Enqueue each ``after_topup`` stage (catalog subject) once a top-up extended a
+    timeline: the guide grew, so whatever shows it elsewhere may reload it. A stage that is
+    off (its extension disabled) just answers ``disabled``; the stage itself throttles."""
+    from ..engine.enqueue import enqueue_job
+    from ..engine.graph import CATALOG_ID
+
+    for stage in listeners:
+        try:
+            await enqueue_job(
+                db,
+                subject_kind="catalog",
+                subject_id=CATALOG_ID,
+                stage=stage,
+                reason={"why": "guide_extended", "by": "system", "channels": touched},
+            )
+        except Exception:  # noqa: BLE001 - a listener must never stop the top-up
+            _log.exception("channel.topup_listener_failed", stage=stage)
+
+
 async def run_topup_loop(
     db: Any,
     stop: asyncio.Event,
@@ -316,14 +336,17 @@ async def run_topup_loop(
     interval_sec: float = TOPUP_INTERVAL_S,
     horizon: timedelta | None = None,
     low_water: timedelta | None = None,
+    listeners: tuple[str, ...] = (),
 ) -> None:
     """The worker's background loop that keeps every channel's timeline ahead
-    (``horizon`` / ``low_water`` ``None``: the ``tv`` rules, re-read every sweep)."""
+    (``horizon`` / ``low_water`` ``None``: the ``tv`` rules, re-read every sweep); after a
+    sweep that extended any channel it enqueues the ``listeners`` (``after_topup`` stages)."""
     while not stop.is_set():
         try:
             touched = await topup_once(db, horizon=horizon, low_water=low_water)
             if touched:
                 _log.info("channel.topup", channels=touched)
+                await notify_listeners(db, listeners, touched)
         except Exception:  # noqa: BLE001 - the guide must never take the worker down
             _log.exception("channel.topup_loop_failed")
         with contextlib.suppress(TimeoutError, asyncio.TimeoutError):  # noqa: UP041

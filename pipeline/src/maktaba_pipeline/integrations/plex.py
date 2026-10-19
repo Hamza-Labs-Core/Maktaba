@@ -15,23 +15,34 @@ import json
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 __all__ = [
     "PlexClient",
     "PlexCollection",
+    "PlexDvr",
     "PlexError",
     "PlexItem",
     "PlexSection",
+    "PlexTuner",
     "Transport",
     "TransportError",
     "UrllibTransport",
+    "channel_map_query",
+    "find_tuner",
+    "hdhr_device_id",
     "quote",
+    "same_host",
+    "xmltv_lineup",
 ]
 
 DEFAULT_TIMEOUT = 120.0
+#: the lineup URI scheme of Plex's XMLTV guide provider
+XMLTV_LINEUP_PREFIX = "lineup://tv.plex.providers.epg.xmltv/"
+#: the uuid Plex gives an HDHomeRun tuner: ``device://tv.plex.grabbers.hdhomerun/<DeviceID>``
+HDHR_UUID_PREFIX = "device://tv.plex.grabbers.hdhomerun/"
 #: ``type`` query value that lists playable items of a section type
 _LIST_TYPE = {"movie": 1, "show": 4}
 
@@ -141,6 +152,137 @@ class PlexCollection:
     labels: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class PlexTuner:
+    """A tuner ("grabber device") Plex knows, as ``/media/grabbers/devices`` or a DVR's
+    ``Device`` lists it."""
+
+    key: str
+    uuid: str = ""
+    uri: str = ""
+    #: the HDHomeRun DeviceID (``deviceId``, else the tail of ``uuid``)
+    device_id: str = ""
+    title: str = ""
+    make: str = ""
+    model: str = ""
+    #: the DVR it belongs to (``parentID``, or the DVR that lists it)
+    dvr_key: str = ""
+    #: the lineup identifiers of its enabled channel mappings; None when Plex listed none
+    mapped: tuple[str, ...] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PlexDvr:
+    """One Live TV DVR (``/livetv/dvrs``): a guide (``lineup``) and its tuners."""
+
+    key: str
+    uuid: str = ""
+    title: str = ""
+    lineup: str = ""
+    language: str = ""
+    devices: tuple[PlexTuner, ...] = ()
+
+
+def _list(raw: Any) -> list[dict[str, Any]]:
+    """Plex gives one element as an object and several as a list."""
+    if isinstance(raw, dict):
+        return [raw]
+    return [x for x in raw if isinstance(x, dict)] if isinstance(raw, list) else []
+
+
+def hdhr_device_id(uuid: str) -> str:
+    """``device://tv.plex.grabbers.hdhomerun/1A2B3C4D`` -> ``1A2B3C4D`` ("" for any other)."""
+    return uuid[len(HDHR_UUID_PREFIX) :] if uuid.startswith(HDHR_UUID_PREFIX) else ""
+
+
+def _mapped(raw: Any) -> tuple[str, ...] | None:
+    if raw is None:
+        return None
+    out: list[str] = []
+    for m in _list(raw):
+        if str(m.get("enabled", "1")).strip().lower() in ("0", "false"):
+            continue
+        ident = str(m.get("lineupIdentifier") or m.get("channelKey") or "").strip()
+        if ident and ident not in out:
+            out.append(ident)
+    return tuple(out)
+
+
+def _tuner(d: Mapping[str, Any], dvr_key: str = "") -> PlexTuner:
+    uuid = str(d.get("uuid") or "")
+    return PlexTuner(
+        key=str(d.get("key") or ""),
+        uuid=uuid,
+        uri=str(d.get("uri") or ""),
+        device_id=str(d.get("deviceId") or hdhr_device_id(uuid)),
+        title=str(d.get("title") or d.get("name") or ""),
+        make=str(d.get("make") or ""),
+        model=str(d.get("model") or ""),
+        dvr_key=str(d.get("parentID") or dvr_key),
+        mapped=_mapped(d.get("ChannelMapping")),
+    )
+
+
+def _dvr(d: Mapping[str, Any]) -> PlexDvr:
+    key = str(d.get("key") or "")
+    return PlexDvr(
+        key=key,
+        uuid=str(d.get("uuid") or ""),
+        title=str(d.get("title") or d.get("lineupTitle") or ""),
+        lineup=str(d.get("lineup") or ""),
+        language=str(d.get("language") or ""),
+        devices=tuple(_tuner(x, key) for x in _list(d.get("Device"))),
+    )
+
+
+def _host(url: str) -> str:
+    u = urllib.parse.urlsplit(url if "://" in url else f"http://{url}")
+    try:
+        port = u.port
+    except ValueError:
+        port = None
+    port = port or (443 if u.scheme == "https" else 80)
+    return f"{(u.hostname or '').lower()}:{port}"
+
+
+def same_host(a: str, b: str) -> bool:
+    """Do two addresses name the same host and port (scheme and path aside)?"""
+    return bool(a) and bool(b) and _host(a) == _host(b)
+
+
+def find_tuner(tuners: Iterable[PlexTuner], device_id: str, base_url: str) -> PlexTuner | None:
+    """Maktaba's tuner among Plex's: by its HDHomeRun DeviceID first, else by its address."""
+    tuners = list(tuners)
+    if device_id:
+        for t in tuners:
+            if t.device_id and t.device_id.casefold() == device_id.casefold():
+                return t
+    if base_url:
+        for t in tuners:
+            if same_host(t.uri, base_url):
+                return t
+    return None
+
+
+def xmltv_lineup(xmltv_url: str, title: str) -> str:
+    """The lineup id of an XMLTV guide, ``lineup://tv.plex.providers.epg.xmltv/<url>#<title>``,
+    the guide's address and title each percent-encoded (as Plex Web sends it)."""
+    return f"{XMLTV_LINEUP_PREFIX}{quote(xmltv_url)}#{quote(title)}"
+
+
+def channel_map_query(numbers: Sequence[int | str]) -> list[tuple[str, str]]:
+    """The query of ``PUT /media/grabbers/devices/{key}/channelmap``, built exactly as
+    dizqueTV's ``RefreshChannels`` builds it: ``channelsEnabled`` (the numbers, comma
+    joined), then per channel ``channelMapping[n]=n`` and ``channelMappingByKey[n]=n`` (the
+    XMLTV channel id is the channel number, as the HDHomeRun GuideNumber is)."""
+    nums = [str(n) for n in numbers]
+    out = [("channelsEnabled", ",".join(nums))]
+    for n in nums:
+        out.append((f"channelMapping[{n}]", n))
+        out.append((f"channelMappingByKey[{n}]", n))
+    return out
+
+
 def _tags(raw: Any) -> tuple[str, ...]:
     return tuple(str(t["tag"]) for t in raw or () if isinstance(t, dict) and t.get("tag"))
 
@@ -184,6 +326,10 @@ class PlexClient:
 
     def get(self, path: str) -> dict[str, Any]:
         return self.send("GET", path)
+
+    @staticmethod
+    def _q(path: str, query: Sequence[tuple[str, str]] | Mapping[str, str]) -> str:
+        return f"{path}?{urllib.parse.urlencode(query, quote_via=urllib.parse.quote)}"
 
     def _container(self, path: str) -> dict[str, Any]:
         c = self.get(path).get("MediaContainer")
@@ -368,3 +514,49 @@ class PlexClient:
             f"/library/sections/{section_key}/all?type=18&id={rating_key}"
             f"&label[0].tag.tag={quote(label)}&label.locked=1",
         )
+
+    # ------------------------------------------------------------------ Live TV
+
+    def dvrs(self) -> list[PlexDvr]:
+        """Every Live TV DVR (``GET /livetv/dvrs``) with its tuners."""
+        return [_dvr(d) for d in _list(self._container("/livetv/dvrs").get("Dvr"))]
+
+    def grabber_devices(self) -> list[PlexTuner]:
+        """Every tuner Plex knows (``GET /media/grabbers/devices``), in a DVR or not."""
+        devs = self._container("/media/grabbers/devices").get("Device")
+        return [_tuner(d) for d in _list(devs)]
+
+    def add_grabber_device(self, uri: str) -> PlexTuner | None:
+        """``POST /media/grabbers/devices?uri=<tuner base>``: Plex reads the tuner's
+        ``discover.json`` and adds it. Returns the device when Plex answers with it."""
+        doc = self.send("POST", self._q("/media/grabbers/devices", {"uri": uri}))
+        mc = doc.get("MediaContainer")
+        devs = _list(mc.get("Device")) if isinstance(mc, dict) else []
+        return _tuner(devs[0]) if devs else None
+
+    def create_dvr(
+        self, device_uuid: str, xmltv_url: str, title: str, language: str
+    ) -> PlexDvr | None:
+        """``POST /livetv/dvrs?language=..&device=<uuid>&lineup=<xmltv lineup>&lineupTitle=..``:
+        a DVR on that tuner whose guide is the XMLTV file. Returns it when Plex answers
+        with it (callers list the DVRs again otherwise)."""
+        query = [
+            ("language", language),
+            ("device", device_uuid),
+            ("lineup", xmltv_lineup(xmltv_url, title)),
+            ("lineupTitle", title),
+        ]
+        doc = self.send("POST", self._q("/livetv/dvrs", query))
+        mc = doc.get("MediaContainer")
+        dvrs = _list(mc.get("Dvr")) if isinstance(mc, dict) else []
+        return _dvr(dvrs[0]) if dvrs else None
+
+    def reload_guide(self, dvr_key: str) -> None:
+        """``POST /livetv/dvrs/{key}/reloadGuide``: Plex fetches the XMLTV guide again."""
+        self.send("POST", f"/livetv/dvrs/{quote(dvr_key)}/reloadGuide")
+
+    def put_channel_map(self, device_key: str, numbers: Sequence[int | str]) -> None:
+        """``PUT /media/grabbers/devices/{key}/channelmap`` with :func:`channel_map_query`:
+        exactly these channels enabled, each mapped to its guide channel."""
+        path = f"/media/grabbers/devices/{quote(device_key)}/channelmap"
+        self.send("PUT", self._q(path, channel_map_query(numbers)))

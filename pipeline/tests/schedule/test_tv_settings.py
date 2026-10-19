@@ -11,6 +11,7 @@ from maktaba_pipeline.schedule.tv_settings import (
     DizqueExportConfig,
     ExactDatesConfig,
     MaktabaTvConfig,
+    PlexLiveConfig,
     RepairConfig,
     channel_numbers,
 )
@@ -19,6 +20,7 @@ SECTIONS = {
     "dizquetv": DizqueExportConfig,
     "exactdates": ExactDatesConfig,
     "audit": ChannelAuditConfig,
+    "plexlive": PlexLiveConfig,
     "repair": RepairConfig,
     "tv": MaktabaTvConfig,
 }
