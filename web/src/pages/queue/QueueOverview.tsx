@@ -8,10 +8,10 @@ import type {
   Extension,
   FailureGroup,
   HealthSeries,
+  JobRef,
   LibraryQueueRow,
-  WorkerHost,
 } from "../../lib/queueApi";
-import { useJobStream, useQueuesSnapshot } from "../../lib/useQueueStream";
+import { runMachine, useJobStream, useQueuesSnapshot, useWorkers } from "../../lib/useQueueStream";
 import { ActivityLog } from "../../components/queue/ActivityLog";
 import { FlowLanes } from "../../components/queue/FlowLanes";
 import { HealthStrip } from "../../components/queue/HealthStrip";
@@ -32,7 +32,7 @@ export function QueueOverview() {
   const [issues, setIssues] = useState<FailureGroup[]>([]);
   const [libraries, setLibraries] = useState<LibraryQueueRow[]>([]);
   const [extensions, setExtensions] = useState<Extension[] | null>(null);
-  const [workers, setWorkers] = useState<WorkerHost[] | null>(null);
+  const workers = useWorkers();
   const [history, setHistory] = useState<HealthSeries[] | null>(null);
   const [dialog, setDialog] = useState<{ open: boolean; subjects?: RetriggerSubject[] }>({
     open: false,
@@ -63,20 +63,16 @@ export function QueueOverview() {
       .catch(() => {});
   }, []);
 
-  useEffect(() => {
-    let alive = true;
-    const load = () =>
-      queueApi
-        .workers()
-        .then((r) => alive && setWorkers(r.workers))
-        .catch(() => {});
-    load();
-    const id = setInterval(load, 30_000);
-    return () => {
-      alive = false;
-      clearInterval(id);
-    };
-  }, []);
+  // each queue's jobs running now, wherever they run (the hub's job events)
+  const liveRuns = useMemo(() => {
+    const m = new Map<string, { label: string; machine: string | null; job: JobRef }[]>();
+    for (const run of stream.running.values()) {
+      const list = m.get(run.job.stage) ?? [];
+      list.push({ label: run.job.subject_label, machine: runMachine(run, workers), job: run.job });
+      m.set(run.job.stage, list);
+    }
+    return m;
+  }, [stream.running, workers]);
 
   // 4 h sparklines: refresh once a minute (the snapshot only carries ~30 min).
   useEffect(() => {
@@ -188,6 +184,7 @@ export function QueueOverview() {
         pools={snapshot.pools}
         flows={snapshot.flows}
         extensions={extensions}
+        live={liveRuns}
       />
 
       <div className="mkt-q-cols">

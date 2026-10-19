@@ -6,16 +6,29 @@
 //
 // Contract: GET /api/cluster and the /api/cluster/* mutations (design §8),
 // re-read every POLL_MS while the page is open.
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { Input } from "@ds/components/Input/Input";
 import { Modal } from "@ds/components/Modal/Modal";
 import { Select } from "@ds/components/Select/Select";
+import { Tabs } from "@ds/components/Tabs/Tabs";
 import { Toggle } from "@ds/components/Choice/Toggle";
 import { useToast } from "@ds/components/Toast/Toast";
 import { AdminGate } from "../../components/AdminGate";
+import { useClusterFmt } from "../../components/cluster/format";
+import { JobsPanel } from "../../components/cluster/JobsPanel";
+import { LibraryPanel } from "../../components/cluster/LibraryPanel";
+import { LiveMachines } from "../../components/cluster/LiveMachines";
+import { LlmPanel } from "../../components/cluster/LlmPanel";
+import type { LogTarget } from "../../components/cluster/LogViewer";
+import { LogsPanel } from "../../components/cluster/LogsPanel";
+import { queueLabeller } from "../../components/cluster/names";
+import { QueuesPanel } from "../../components/cluster/QueuesPanel";
+import { useClusterFiles } from "../../components/cluster/useClusterFiles";
 import { useFmt } from "../../components/queue/format";
+import { useClusterStream } from "../../lib/clusterStream";
+import type { SocketStatus } from "../../lib/clusterSocket";
 import { ApiError } from "../../lib/api";
 import {
   approveFailure,
@@ -29,14 +42,106 @@ import {
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import "../../styles/queue.css";
 import "../../styles/machines.css";
+import "../../styles/cluster.css";
 
 export const POLL_MS = 5_000;
 
 export function Machines() {
   return (
     <AdminGate>
-      <MachinesInner />
+      <MachinesPage />
     </AdminGate>
+  );
+}
+
+const STATUS_BADGE: Record<SocketStatus, ["success" | "neutral" | "warn", string]> = {
+  idle: ["neutral", "cluster.status.connecting"],
+  connecting: ["neutral", "cluster.status.connecting"],
+  open: ["success", "cluster.status.open"],
+  reconnecting: ["warn", "cluster.status.reconnecting"],
+  unavailable: ["neutral", "cluster.status.unavailable"],
+};
+
+// The page: the approvals (phase 1) and the live views of the cluster hub
+// (phase 2, design-agent.md §5) in tabs, all fed by one socket.
+function MachinesPage() {
+  const { t, n } = useI18n();
+  const stream = useClusterStream();
+  const files = useClusterFiles();
+  const [tab, setTab] = useState("machines");
+  const [logTarget, setLogTarget] = useState<LogTarget | null>(null);
+  const queueLabel = useMemo(() => queueLabeller(stream.latestQueues), [stream.latestQueues]);
+  const [tone, statusKey] = STATUS_BADGE[stream.status];
+  const openLogs = (target: LogTarget) => {
+    setLogTarget(target);
+    setTab("logs");
+  };
+
+  return (
+    <section className="mkt-page mkt-mc" aria-labelledby="mkt-mc-h">
+      <header className="mkt-mc__head">
+        <div className="mkt-mc-row">
+          <h1 id="mkt-mc-h">{t("machines.title")}</h1>
+          <Badge tone={tone} role="status">
+            {t(statusKey)}
+          </Badge>
+        </div>
+        <p className="mkt-mc-muted">{t("machines.intro")}</p>
+        {stream.dropped > 0 && (
+          <p className="mkt-mc-muted">{t("cluster.status.dropped", { n: n(stream.dropped) })}</p>
+        )}
+        {stream.lastRefused && (
+          <p className="mkt-mc-note" role="note">
+            {t("cluster.status.refused", { reason: stream.lastRefused.reason ?? "–" })}
+          </p>
+        )}
+      </header>
+      <Tabs
+        label={t("cluster.tabs.label")}
+        value={tab}
+        onChange={setTab}
+        className="mkt-cl-tabs"
+        items={[
+          {
+            id: "machines",
+            label: t("cluster.tabs.machines"),
+            content: (
+              <div className="mkt-mc-tab">
+                <Approvals queueLabel={queueLabel} />
+                <LiveMachines stream={stream} queueLabel={queueLabel} onOpenLogs={openLogs} />
+              </div>
+            ),
+          },
+          {
+            id: "jobs",
+            label: t("cluster.tabs.jobs"),
+            content: <JobsPanel stream={stream} queueLabel={queueLabel} />,
+          },
+          {
+            id: "queues",
+            label: t("cluster.tabs.queues"),
+            content: <QueuesPanel stream={stream} files={files} queueLabel={queueLabel} />,
+          },
+          {
+            id: "library",
+            label: t("cluster.tabs.library"),
+            content: <LibraryPanel stream={stream} files={files} />,
+          },
+          {
+            id: "logs",
+            label: t("cluster.tabs.logs"),
+            content: (
+              <LogsPanel stream={stream} files={files} target={logTarget} onTarget={setLogTarget} />
+            ),
+          },
+          {
+            id: "llm",
+            label: t("cluster.tabs.llm"),
+            content: <LlmPanel stream={stream} />,
+          },
+        ]}
+      />
+    </section>
   );
 }
 
@@ -60,7 +165,7 @@ function useErrorToast() {
   );
 }
 
-function MachinesInner() {
+function Approvals({ queueLabel }: { queueLabel: (stage: string) => string }) {
   const { t } = useI18n();
   const [view, setView] = useState<ClusterView | null>(null);
   const [error, setError] = useState(false);
@@ -92,22 +197,17 @@ function MachinesInner() {
   }, [load]);
 
   if (!view) {
-    return (
-      <section className="mkt-page mkt-mc">
-        <h1>{t("machines.title")}</h1>
-        {error ? (
-          <div role="alert" className="mkt-mc-banner">
-            <p>{t("machines.error.load")}</p>
-            <Button variant="secondary" onClick={() => void load()}>
-              {t("common.retry")}
-            </Button>
-          </div>
-        ) : (
-          <p className="mkt-loading" role="status">
-            {t("common.loading")}
-          </p>
-        )}
-      </section>
+    return error ? (
+      <div role="alert" className="mkt-mc-banner">
+        <p>{t("machines.error.load")}</p>
+        <Button variant="secondary" onClick={() => void load()}>
+          {t("common.retry")}
+        </Button>
+      </div>
+    ) : (
+      <p className="mkt-loading" role="status">
+        {t("common.loading")}
+      </p>
     );
   }
 
@@ -116,16 +216,12 @@ function MachinesInner() {
   const reload = () => void load();
 
   return (
-    <section className="mkt-page mkt-mc" aria-labelledby="mkt-mc-h">
-      <header className="mkt-mc__head">
-        <h1 id="mkt-mc-h">{t("machines.title")}</h1>
-        <p className="mkt-mc-muted">{t("machines.intro")}</p>
-        {error && (
-          <p className="mkt-mc-muted" role="status">
-            {t("machines.stale")}
-          </p>
-        )}
-      </header>
+    <>
+      {error && (
+        <p className="mkt-mc-muted" role="status">
+          {t("machines.stale")}
+        </p>
+      )}
       <HomeCard home={view.home} onChanged={reload} />
       <section className="mkt-mc-section" aria-labelledby="mkt-mc-pending-h">
         <h2 id="mkt-mc-pending-h" className="mkt-mc-section__title">
@@ -150,12 +246,12 @@ function MachinesInner() {
         ) : (
           <ul className="mkt-mc-list">
             {machines.map((n) => (
-              <MachineCard key={n.id} node={n} onChanged={reload} />
+              <MachineCard key={n.id} node={n} onChanged={reload} queueLabel={queueLabel} />
             ))}
           </ul>
         )}
       </section>
-    </section>
+    </>
   );
 }
 
@@ -362,7 +458,15 @@ function useCapabilityChips(node: ClusterNode): string[] {
   return chips;
 }
 
-function MachineCard({ node, onChanged }: { node: ClusterNode; onChanged: () => void }) {
+function MachineCard({
+  node,
+  onChanged,
+  queueLabel,
+}: {
+  node: ClusterNode;
+  onChanged: () => void;
+  queueLabel: (stage: string) => string;
+}) {
   const { t } = useI18n();
   const fmt = useFmt();
   const showError = useErrorToast();
@@ -406,7 +510,7 @@ function MachineCard({ node, onChanged }: { node: ClusterNode; onChanged: () => 
           <>
             <StorageCheck node={node} />
             <PathMapEditor node={node} busy={busy} onSave={update} />
-            <StageTable node={node} busy={busy} onSet={update} />
+            <StageTable node={node} busy={busy} onSet={update} queueLabel={queueLabel} />
           </>
         )}
         <div className="mkt-mc-actions mkt-mc-node__actions">
@@ -629,16 +733,21 @@ function PathMapEditor({
 
 type SwitchValue = "auto" | "on" | "off";
 
+// The queues this machine pulls from: what it reports (pulls from / does
+// not, and why) next to the admin's switch per queue.
 function StageTable({
   node,
   busy,
   onSet,
+  queueLabel,
 }: {
   node: ClusterNode;
   busy: boolean;
   onSet: (body: NodeUpdate) => void;
+  queueLabel: (stage: string) => string;
 }) {
   const { t } = useI18n();
+  const cf = useClusterFmt();
   const name = bidiIsolate(node.name);
   const set = new Set<string>(Object.keys(node.stage_overrides ?? {}));
   for (const w of node.workers ?? []) {
@@ -654,11 +763,6 @@ function StageTable({
       </section>
     );
   }
-  const reasonText = (r: string) => {
-    const key = `machines.reason.${r}`;
-    const s = t(key);
-    return s === key ? r : s;
-  };
   const options = [
     { value: "auto", label: t("machines.switch.auto") },
     { value: "on", label: t("machines.switch.on") },
@@ -669,6 +773,7 @@ function StageTable({
       <h4 className="mkt-mc-sub__title" id={`mkt-mc-st-${node.id}`}>
         {t("machines.stages.title")}
       </h4>
+      <p className="mkt-mc-muted">{t("machines.stages.help")}</p>
       <div className="mkt-mc-table-wrap">
         <table className="mkt-mc-table" aria-labelledby={`mkt-mc-st-${node.id}`}>
           <thead>
@@ -688,9 +793,7 @@ function StageTable({
               const value: SwitchValue = o === true ? "on" : o === false ? "off" : "auto";
               return (
                 <tr key={s}>
-                  <th scope="row">
-                    <code>{s}</code>
-                  </th>
+                  <th scope="row">{queueLabel(s)}</th>
                   <td>
                     {served ? (
                       <span className="mkt-mc-served">
@@ -700,13 +803,15 @@ function StageTable({
                     ) : (
                       <span className="mkt-mc-off">
                         <span aria-hidden="true">– </span>
-                        {reason ? reasonText(reason) : t("machines.stages.off")}
+                        {reason
+                          ? t("machines.stages.offWhy", { reason: cf.reason(reason) })
+                          : t("machines.stages.off")}
                       </span>
                     )}
                   </td>
                   <td>
                     <Select
-                      aria-label={t("machines.stages.switchFor", { stage: s, name })}
+                      aria-label={t("machines.stages.switchFor", { stage: queueLabel(s), name })}
                       value={value}
                       disabled={busy}
                       options={options}
