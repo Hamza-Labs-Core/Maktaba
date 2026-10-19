@@ -1,7 +1,7 @@
 # Plan 32.6 — Cloudflare Stream integration — implementation
 
 > Implementation plan for [story-32-06](story-32-06-cloudflare-integration.md).
-> Writes slot **0119** (`home_secrets`). Design: [design.md](design.md) §7.1, §7.6.
+> Writes slot **0120** (`home_secrets`; 0119 went to Epic 31's `cluster_cache` first). Design: [design.md](design.md) §7.1, §7.6.
 
 ## 0. Decisions
 
@@ -16,7 +16,7 @@
 ## 1. Files
 
 **Create**
-- `shared/db/migrations/0119_home_secrets.sql`, `.sqlite.sql`; MANIFEST row; `pipeline/tests/db/test_home_secrets_migration.py`
+- `shared/db/migrations/0120_home_secrets.sql`, `.sqlite.sql`; MANIFEST row; `pipeline/tests/db/test_home_secrets_migration.py`
 - `api/internal/secrets/secrets.go` — `Store{DB, Key}`: `Put(name, []byte)`, `Get(name)`, `Delete(name)`, `Masked(name) bool`; key file load/create
 - `api/internal/tvremote/cf/client.go` — HTTP client for `api.cloudflare.com/client/v4` (token auth, retries on 429/5xx with backoff, error decoding of `errors[]`)
 - `api/internal/tvremote/cf/{inputs,videos,keys,analytics}.go` — the calls listed in design §7.1
@@ -32,7 +32,7 @@
 - `web/src/pages/Admin/Extensions.tsx` — "Test connection" button for `cloudflare_stream`, result list
 - `cmd/maktaba-server/internal/config` — the secrets key path (`<config dir>/secrets.key`)
 
-## 2. Migration 0119
+## 2. Migration 0120
 
 ```sql
 CREATE TABLE IF NOT EXISTS home_secrets (

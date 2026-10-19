@@ -33,7 +33,7 @@ def edges(graph: tuple[StageDef, ...], name: str) -> set[tuple[str, str]]:
 
 def test_builtin_extensions_are_discovered() -> None:
     names = {e.manifest.name for e in discover(include_entry_points=False)}
-    assert names == {"plex", "dizquetv"}
+    assert names == {"plex", "dizquetv", "cloudflare_stream"}
 
 
 def test_register_adds_stages_and_edges_and_validates() -> None:
@@ -145,3 +145,10 @@ async def test_extension_removed_from_the_graph_leaves_core_intact(db: Database)
     await sync_graph(db, build_full_graph([plex]), {"plex": ExtensionState("plex", True, {}, True)})
     await sync_graph(db, build_full_graph([]), {})
     assert await stage_state(db, "detect") == (True, None)
+
+
+def test_plex_stages_run_on_the_home_only() -> None:
+    """The Plex token is in home_secrets (slot 0120), which a node cannot read."""
+    graph = build_full_graph(discover(include_entry_points=False))
+    plex = {s.name: s.placement for s in graph if s.name.startswith("plex_")}
+    assert plex and set(plex.values()) == {"home"}, plex
