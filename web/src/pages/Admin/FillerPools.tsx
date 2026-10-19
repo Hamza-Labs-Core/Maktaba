@@ -2,7 +2,10 @@
 // holds and how long they run; clips are added by searching the library
 // (not by typing ids), removed, and previewed. The lineup plan's own pools
 // (external_key) are rewritten by the plan writer, which the page says.
+// With TV staging on an edit is saved into the editor's draft change (story
+// 33.12 AC6): the page says so, and marks the pools and clips it holds.
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { Card } from "@ds/components/Card/Card";
@@ -13,7 +16,12 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { AdminGate } from "../../components/AdminGate";
-import { fillerApi, type FillerKind, type FillerPool } from "../../lib/channels";
+import {
+  fillerApi,
+  type FillerDraftRef,
+  type FillerKind,
+  type FillerPool,
+} from "../../lib/channels";
 import { SourceSearch, useDuration } from "./channels/pickers";
 import "./channels/channels.css";
 
@@ -52,10 +60,21 @@ function FillerPoolsInner() {
     });
   }
 
+  /** A save that went into a TV draft change says so. */
+  function drafted(number: number | undefined | null) {
+    if (number == null) return;
+    toast.show({ tone: "success", message: t("fillerPools.savedToDraft", { n: number }) });
+  }
+
+  function draftOf(r: unknown) {
+    return (r as FillerDraftRef | undefined)?.draft_change?.number;
+  }
+
   async function create() {
     if (!name.trim()) return;
     try {
       const p = await fillerApi.createPool({ name: name.trim() });
+      drafted(p.draft?.number);
       setName("");
       setOpen(p.id);
       load();
@@ -67,7 +86,7 @@ function FillerPoolsInner() {
   async function removePool(p: FillerPool) {
     if (!window.confirm(t("fillerPools.confirmDelete", { name: p.name }))) return;
     try {
-      await fillerApi.deletePool(p.id);
+      drafted(draftOf(await fillerApi.deletePool(p.id)));
       load();
     } catch (e) {
       fail(e);
@@ -76,7 +95,7 @@ function FillerPoolsInner() {
 
   async function addVideo(pool: FillerPool, videoId: string) {
     try {
-      await fillerApi.addItems(pool.id, [{ video_id: videoId, type: kind }]);
+      drafted(draftOf(await fillerApi.addItems(pool.id, [{ video_id: videoId, type: kind }])));
       load();
     } catch (e) {
       fail(e);
@@ -85,7 +104,7 @@ function FillerPoolsInner() {
 
   async function removeItem(id: string) {
     try {
-      await fillerApi.deleteItem(id);
+      drafted(draftOf(await fillerApi.deleteItem(id)));
       load();
     } catch (e) {
       fail(e);
@@ -151,6 +170,16 @@ function FillerPoolsInner() {
                   </button>
                   {p.external_key && <Badge tone="accent">{t("fillerPools.fromPlan")}</Badge>}
                   {p.channel_id && <Badge tone="neutral">{t("fillerPools.channelOnly")}</Badge>}
+                  {p.draft && (
+                    <Link
+                      to={`/admin/live-tv/changes/${encodeURIComponent(p.draft.change_id)}`}
+                      data-testid={`pool-draft-${p.id}`}
+                    >
+                      <Badge tone="warn">
+                        {t("fillerPools.inDraft", { n: p.draft.number })}
+                      </Badge>
+                    </Link>
+                  )}
                   <Button size="sm" variant="ghost" onClick={() => removePool(p)}>
                     {t("common.delete")}
                   </Button>
@@ -167,6 +196,9 @@ function FillerPoolsInner() {
                         {items.map((it) => (
                           <li key={it.id}>
                             <Badge tone="neutral">{t(`filler.kind.${it.type}`)}</Badge>
+                            {it.pending && (
+                              <Badge tone="warn">{t("fillerPools.pendingItem")}</Badge>
+                            )}
                             <a href={`/videos/${encodeURIComponent(it.video_id)}/watch?t=0`}>
                               {it.title || it.video_id}
                             </a>

@@ -5,6 +5,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "../../lib/i18n";
 import { ToastProvider } from "@ds/components/Toast/Toast";
+import { MemoryRouter } from "react-router-dom";
 
 const { get, post, del } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), del: vi.fn() }));
 vi.mock("../../lib/api", async () => {
@@ -87,5 +88,51 @@ describe("Filler pools", () => {
     const sting = screen.getByRole("link", { name: "Sting" }).closest("li")!;
     await user.click(within(sting).getByRole("button", { name: /remove sting/i }));
     expect(del).toHaveBeenCalledWith("/api/filler/items/i2");
+  });
+
+  it("marks what a TV draft change holds and says where a save went (33.12 AC6)", async () => {
+    const user = userEvent.setup();
+    const drafted = {
+      items: [
+        {
+          id: "p3",
+          name: "Station ids",
+          draft: { change_id: "c9", number: 12, op: "added" },
+          items: [
+            {
+              id: "i9",
+              pool_id: "p3",
+              video_id: "v9",
+              type: "station_id",
+              title: "Ident",
+              duration_ms: 15_000,
+              pending: true,
+            },
+          ],
+        },
+      ],
+    };
+    get.mockImplementation((path: string) =>
+      path.startsWith("/api/channels/sources")
+        ? Promise.resolve({ kind: "video", items: [] })
+        : Promise.resolve(drafted)
+    );
+    render(
+      <MemoryRouter>
+        <I18nProvider>
+          <ToastProvider>
+            <FillerPools />
+          </ToastProvider>
+        </I18nProvider>
+      </MemoryRouter>
+    );
+    const badge = await screen.findByTestId("pool-draft-p3");
+    expect(badge).toHaveTextContent("In draft change #12");
+    expect(badge).toHaveAttribute("href", "/admin/live-tv/changes/c9");
+    await user.click(screen.getByRole("button", { name: /station ids/i }));
+    expect(screen.getByText("Not on the air yet")).toBeInTheDocument();
+    del.mockResolvedValue({ item_id: "i9", draft_change: { id: "c9", number: 12, state: "draft" } });
+    await user.click(screen.getByRole("button", { name: /remove ident/i }));
+    expect(await screen.findByText(/Saved to draft change #12/)).toBeInTheDocument();
   });
 });

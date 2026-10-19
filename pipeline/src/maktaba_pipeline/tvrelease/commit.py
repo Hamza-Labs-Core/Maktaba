@@ -243,10 +243,64 @@ async def _apply_bookkeeping(db: Any, pending: dict[str, Any], stamp: Any) -> No
                 vid,
                 items.get(vid, 0),
             )
+    await _apply_filler(db, pending.get("filler") or {}, stamp)
     for cid in pending.get("edited") or []:
         await db.execute("UPDATE channels SET edited_at = $2 WHERE id = $1", cid, stamp)
     for cid in pending.get("follow") or []:
         await db.execute("UPDATE channels SET edited_at = NULL WHERE id = $1", cid)
+
+
+async def _apply_filler(db: Any, filler: dict[str, Any], stamp: Any) -> None:
+    """The hand-made filler edits the API's filler routes drafted while staging was on
+    (story 33.12 AC6): ``pools`` and ``items`` by id, a None value removed. Pools are
+    written first (an added clip's pool must exist), clips next, removed pools last."""
+    pools: dict[str, Any] = filler.get("pools") or {}
+    items: dict[str, Any] = filler.get("items") or {}
+    for pid, d in sorted(pools.items()):
+        if d is None:
+            continue
+        name, channel = str(d.get("name") or ""), d.get("channel_id") or None
+        if await db.fetchrow("SELECT 1 AS x FROM filler_pools WHERE id = $1", pid) is None:
+            await db.execute(
+                "INSERT INTO filler_pools (id, channel_id, name, created_at, updated_at)"
+                " VALUES ($1, $2, $3, $4, $4)",
+                pid,
+                channel,
+                name,
+                stamp,
+            )
+        else:
+            await db.execute(
+                "UPDATE filler_pools SET name = $2, channel_id = $3, updated_at = $4 WHERE id = $1",
+                pid,
+                name,
+                channel,
+                stamp,
+            )
+    for iid, d in sorted(items.items()):
+        if d is None:
+            await db.execute("DELETE FROM filler_items WHERE id = $1", iid)
+    for iid, d in sorted(items.items()):
+        if d is None or pools.get(str(d.get("pool_id")), {}) is None:
+            continue  # a clip of a pool the change also removes
+        pid, vid = str(d["pool_id"]), str(d["video_id"])
+        if await db.fetchrow("SELECT 1 AS x FROM filler_pools WHERE id = $1", pid) is None:
+            continue  # the pool went away since the draft
+        secs = await db.fetchval("SELECT duration_sec FROM videos WHERE id = $1", vid)
+        await db.execute(
+            "INSERT INTO filler_items (id, pool_id, video_id, type, duration_ms, created_at)"
+            " VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (pool_id, video_id) DO NOTHING",
+            iid,
+            pid,
+            vid,
+            str(d.get("type") or "filler"),
+            None if secs is None else int(float(secs) * 1000),
+            stamp,
+        )
+    for pid, d in sorted(pools.items()):
+        if d is None:
+            await db.execute("DELETE FROM filler_items WHERE pool_id = $1", pid)
+            await db.execute("DELETE FROM filler_pools WHERE id = $1", pid)
 
 
 async def slots_runtime(db: Any) -> bool:

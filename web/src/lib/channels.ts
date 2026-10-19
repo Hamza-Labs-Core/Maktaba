@@ -331,6 +331,20 @@ export interface FillerItem {
   type: FillerKind;
   title?: string | null;
   duration_ms?: number | null;
+  /** added in the open TV draft change: not on the air until it is approved */
+  pending?: boolean;
+}
+
+/** The TV draft change holding a filler pool's pending edits (staging on). */
+export interface FillerDraft {
+  change_id: string;
+  number: number;
+  op: "added" | "edited" | "removed" | "items";
+}
+
+/** What a filler edit saved into a TV draft change answers with. */
+export interface FillerDraftRef {
+  draft_change?: { id: string; number: number; state: string };
 }
 
 export interface FillerPool {
@@ -340,6 +354,7 @@ export interface FillerPool {
   /** the lineup plan's key for a pool the plan writer made */
   external_key?: string | null;
   items?: FillerItem[];
+  draft?: FillerDraft | null;
 }
 
 // `filler_collapsed` (27.4 AC10 / 27.6 EC2): filler & bumpers are merged
@@ -667,10 +682,12 @@ export const fillerApi = {
     api.post<FillerPool>("/api/filler/pools", body),
   updatePool: (id: string, body: { name?: string; channel_id?: string | null }) =>
     api.patch<FillerPool>(`/api/filler/pools/${encodeURIComponent(id)}`, body),
-  deletePool: (id: string) => api.delete<void>(`/api/filler/pools/${encodeURIComponent(id)}`),
+  deletePool: (id: string) =>
+    api.delete<FillerDraftRef | void>(`/api/filler/pools/${encodeURIComponent(id)}`),
   addItems: (poolId: string, items: Array<{ video_id: string; type: FillerKind }>) =>
-    api.post<{ items: FillerItem[] }>(`/api/filler/pools/${encodeURIComponent(poolId)}/items`, {
+    api.post<{ items: FillerItem[] } & FillerDraftRef>(`/api/filler/pools/${encodeURIComponent(poolId)}/items`, {
       items,
     }),
-  deleteItem: (id: string) => api.delete<void>(`/api/filler/items/${encodeURIComponent(id)}`),
+  deleteItem: (id: string) =>
+    api.delete<FillerDraftRef | void>(`/api/filler/items/${encodeURIComponent(id)}`),
 };

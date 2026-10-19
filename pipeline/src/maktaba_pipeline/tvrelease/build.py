@@ -11,7 +11,10 @@ design 3.2), with the change's diff and kinds (story 33.10 AC3).
   did not change (a forced regeneration, the ``stale`` flag, a filler pool's clips);
 * ``settings`` - ``{"tv" | "tv_output": stored overrides}``: the section as it will be;
 * ``links`` / ``unlinks`` / ``pools`` / ``edited`` - ``write_channels`` and editor
-  bookkeeping applied at the swap (:mod:`.commit`).
+  bookkeeping applied at the swap (:mod:`.commit`);
+* ``filler`` - ``{"pools": {pool id: {name, channel_id, created} | null}, "items":
+  {item id: {pool_id, video_id, type} | null}}``: hand-made filler pool and clip edits
+  (the API's filler routes while staging is on), applied at the swap.
 
 Nothing here changes what is on the air: a release, its channels and the ``staged``
 rows of added channels (``channels.lifecycle = 'staged'``, written disabled) are new
@@ -335,6 +338,14 @@ async def load_release(db: Any, release_id: str) -> Release | None:
     )
 
 
+def _filler_edits(pending: dict[str, Any]) -> dict[str, Any]:
+    """The hand-made filler edits a change carries (``pending["filler"]``, story 33.12
+    AC6), {} when none: a change of them alone still goes on the air at its swap."""
+    f = pending.get("filler") or {}
+    out = {k: f[k] for k in ("pools", "items") if f.get(k)}
+    return out
+
+
 async def build_release(
     db: Any, pending: dict[str, Any], *, created_by: str | None = None
 ) -> tuple[Release | None, dict[str, Any], list[str]]:
@@ -350,9 +361,10 @@ async def build_release(
         base, target, pending, (live_streaming, (target_streaming[0], target_streaming[1]))
     )
     content = content_digest(target, (target_streaming[0], target_streaming[1]))
-    if content == content_digest(base, live_streaming) and not sched:
+    filler = _filler_edits(pending)
+    if content == content_digest(base, live_streaming) and not sched and not filler:
         return None, diff, kinds
-    digest = release_digest(content, base_id, sorted(sched))
+    digest = release_digest(content, base_id, sorted(sched), filler)
     got = await db.fetchrow("SELECT id FROM tv_releases WHERE digest = $1", digest)
     if got is not None:
         rel = await load_release(db, str(got["id"]))

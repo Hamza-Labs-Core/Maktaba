@@ -174,6 +174,14 @@ export interface AuditRow {
 export interface PendingSummary {
   channels: { id: string; number?: number; name?: string; op: string }[];
   settings: string[];
+  /** the filler pools the draft adds, edits, removes or changes the clips of */
+  filler?: {
+    id: string;
+    name: string;
+    op: string;
+    items_added: number;
+    items_removed: number;
+  }[];
 }
 
 export interface Release {

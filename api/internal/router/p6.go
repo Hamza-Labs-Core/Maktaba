@@ -193,7 +193,7 @@ func MountP6(r chi.Router, d P6Deps) {
 	tagsHandler.Mount(r)
 
 	// Story 27.10 — filler & bumper pools/items (Epic 27 receiver batch).
-	fillerHandler := &filler.Handler{DB: d.DB}
+	fillerHandler := &filler.Handler{DB: d.DB, Drafts: tvchange.NewDrafts(d.DB)} // Epic 33: drafts while staging is on
 	fillerHandler.Mount(r)
 
 	speakerHandler := &speakers.Handler{DB: d.DB}

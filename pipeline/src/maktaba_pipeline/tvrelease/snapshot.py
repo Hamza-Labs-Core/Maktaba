@@ -160,10 +160,18 @@ def content_digest(snap: dict[str, Any], streaming: tuple[str, str]) -> str:
     )
 
 
-def release_digest(content: str, base_release_id: str | None, sched: list[str]) -> str:
-    """A release's identity: its content, the release it was built on and the channels
-    whose schedule it regenerates. Building the same change on the same base again
-    gives the same release (a retried stage job reuses it, story 33.2 AC1)."""
-    return "sha256:" + canonical_hash(
-        {"content": content, "base": base_release_id, "sched": sorted(sched)}
-    )
+def release_digest(
+    content: str,
+    base_release_id: str | None,
+    sched: list[str],
+    filler: dict[str, Any] | None = None,
+) -> str:
+    """A release's identity: its content, the release it was built on, the channels
+    whose schedule it regenerates and the hand-made filler edits its generation plans
+    with (story 33.12 AC6; left out when there are none, so other digests stay as they
+    were). Building the same change on the same base again gives the same release (a
+    retried stage job reuses it, story 33.2 AC1)."""
+    parts: dict[str, Any] = {"content": content, "base": base_release_id, "sched": sorted(sched)}
+    if filler:
+        parts["filler"] = filler
+    return "sha256:" + canonical_hash(parts)

@@ -13,6 +13,10 @@
 // wall-clock boundary. Pools are tied to a channel; the scheduler reads
 // them when generating the schedule.
 //
+// With TV staging on (rules.tv_staging.enabled) every mutation goes into the
+// channel editor's draft change instead of the tables (staging.go, story 33.12
+// AC6); the list shows the pools as the draft will have them.
+//
 // Mutations are admin-only, mirroring the other CRUD surfaces (tags,
 // users); the real ACL authority is the server-side principal check here.
 package filler
@@ -28,6 +32,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange"
 )
 
 // Valid item kinds (mirrors the 0085 CHECK constraint).
@@ -41,6 +46,8 @@ type Item struct {
 	Type       string `json:"type"`
 	Title      string `json:"title,omitempty"`
 	DurationMS *int64 `json:"duration_ms,omitempty"`
+	// Pending: added in the open draft change (TV staging), not on the air yet.
+	Pending bool `json:"pending,omitempty"`
 }
 
 // Pool is the API shape of a filler pool, with its items nested.
@@ -52,11 +59,17 @@ type Pool struct {
 	// (a channel's filler list names it by that key or by the pool id).
 	ExternalKey string `json:"external_key,omitempty"`
 	Items       []Item `json:"items"`
+	// Draft names the draft change holding this pool's pending edits (TV staging).
+	Draft *Draft `json:"draft,omitempty"`
 }
 
 // Handler bundles deps.
 type Handler struct {
 	DB *sql.DB
+	// Drafts, when TV staging is on (rules.tv_staging.enabled), takes every pool
+	// and item edit into the editor's draft change (story 33.12 AC6); nil or
+	// staging off: edits go on the air at once.
+	Drafts *tvchange.Drafts
 }
 
 func (h *Handler) Mount(r chi.Router) {
@@ -100,20 +113,41 @@ type AddItemsRequest struct {
 // items. A nil channel_id query returns all pools.
 func (h *Handler) ListPools(w http.ResponseWriter, r *http.Request) {
 	channelID := strings.TrimSpace(r.URL.Query().Get("channel_id"))
+	if h.staging(r.Context()) {
+		if dr := h.editorDraft(r.Context()); dr != nil {
+			// the pools as the draft will have them: a pool the draft moves to or
+			// from the channel is filtered after the projection
+			live, err := h.listLive(r, "")
+			if err != nil {
+				httperror.Write(w, r, httperror.Internal("list filler pools"))
+				return
+			}
+			h.listDraft(w, r, channelID, live, dr)
+			return
+		}
+	}
+	pools, err := h.listLive(r, channelID)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("list filler pools"))
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": pools})
+}
 
+// listLive is the pools (of a channel, or all) with their items.
+func (h *Handler) listLive(r *http.Request, channelID string) ([]Pool, error) {
 	var rows *sql.Rows
 	var err error
 	if channelID != "" {
 		rows, err = h.DB.QueryContext(r.Context(),
-			`SELECT id, COALESCE(channel_id::text, ''), name, COALESCE(external_key, '') FROM filler_pools WHERE channel_id = $1 ORDER BY name`,
+			`SELECT id, channel_id, name, external_key FROM filler_pools WHERE channel_id = $1 ORDER BY name`,
 			channelID)
 	} else {
 		rows, err = h.DB.QueryContext(r.Context(),
-			`SELECT id, COALESCE(channel_id::text, ''), name, COALESCE(external_key, '') FROM filler_pools ORDER BY name`)
+			`SELECT id, channel_id, name, external_key FROM filler_pools ORDER BY name`)
 	}
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list filler pools"))
-		return
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -121,16 +155,22 @@ func (h *Handler) ListPools(w http.ResponseWriter, r *http.Request) {
 	byID := map[string]int{}
 	for rows.Next() {
 		var p Pool
-		if err := rows.Scan(&p.ID, &p.ChannelID, &p.Name, &p.ExternalKey); err == nil {
+		var ch, key sql.NullString
+		if err := rows.Scan(&p.ID, &ch, &p.Name, &key); err == nil {
+			p.ChannelID, p.ExternalKey = ch.String, key.String
 			p.Items = []Item{}
 			byID[p.ID] = len(pools)
 			pools = append(pools, p)
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
 	if len(pools) > 0 {
 		h.attachItems(r, channelID, pools, byID)
 	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": pools})
+	return pools, nil
 }
 
 // attachItems loads the items for the listed pools in one query and folds
@@ -181,6 +221,10 @@ func (h *Handler) CreatePool(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{{Field: "name", Message: "required"}}))
 		return
 	}
+	if h.staging(r.Context()) {
+		h.createPoolDraft(w, r, req)
+		return
+	}
 	id := uuid.NewString()
 	var chID any
 	if strings.TrimSpace(req.ChannelID) != "" {
@@ -206,12 +250,16 @@ func (h *Handler) UpdatePool(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, e)
 		return
 	}
+	if req.Name != nil && strings.TrimSpace(*req.Name) == "" {
+		httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{{Field: "name", Message: "required"}}))
+		return
+	}
+	if h.staging(r.Context()) {
+		h.updatePoolDraft(w, r, id, req)
+		return
+	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
-		if name == "" {
-			httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{{Field: "name", Message: "required"}}))
-			return
-		}
 		if _, err := h.DB.ExecContext(r.Context(),
 			`UPDATE filler_pools SET name=$1, updated_at=now() WHERE id=$2`, name, id); err != nil {
 			httperror.Write(w, r, httperror.Internal("update filler pool"))
@@ -238,6 +286,10 @@ func (h *Handler) DeletePool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := chi.URLParam(r, "id")
+	if h.staging(r.Context()) {
+		h.deletePoolDraft(w, r, id)
+		return
+	}
 	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM filler_pools WHERE id=$1`, id); err != nil {
 		httperror.Write(w, r, httperror.Internal("delete filler pool"))
 		return
@@ -262,16 +314,26 @@ func (h *Handler) AddItems(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{{Field: "items", Message: "required"}}))
 		return
 	}
+	for _, in := range req.Items {
+		kind := strings.TrimSpace(in.Type)
+		if kind == "" {
+			kind = "filler"
+		}
+		if strings.TrimSpace(in.VideoID) == "" || !validKinds[kind] {
+			httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{{Field: "items", Message: "video_id required and type must be one of bumper|filler|station_id"}}))
+			return
+		}
+	}
+	if h.staging(r.Context()) {
+		h.addItemsDraft(w, r, poolID, req)
+		return
+	}
 	created := []Item{}
 	for _, in := range req.Items {
 		vid := strings.TrimSpace(in.VideoID)
 		kind := strings.TrimSpace(in.Type)
 		if kind == "" {
 			kind = "filler"
-		}
-		if vid == "" || !validKinds[kind] {
-			httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{{Field: "items", Message: "video_id required and type must be one of bumper|filler|station_id"}}))
-			return
 		}
 		id := uuid.NewString()
 		// duration_ms is sourced from the probed videos.duration_sec when
@@ -296,6 +358,10 @@ func (h *Handler) DeleteItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := chi.URLParam(r, "id")
+	if h.staging(r.Context()) {
+		h.deleteItemDraft(w, r, id)
+		return
+	}
 	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM filler_items WHERE id=$1`, id); err != nil {
 		httperror.Write(w, r, httperror.Internal("delete filler item"))
 		return
