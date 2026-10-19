@@ -8,29 +8,29 @@
 
 ## Summary
 
-| ID     | Title                                                                | Category      | Priority | Covered by existing test? |
-| ------ | -------------------------------------------------------------------- | ------------- | -------- | ------------------------- |
-| ASE-01 | Sessions table renders with the current session badged               | Happy path    | P1       | No                        |
-| ASE-02 | Current session cannot be revoked                                    | Permissions   | P1       | No                        |
-| ASE-03 | Revoke another session                                               | Happy path    | P1       | No                        |
-| ASE-04 | Revoke has no confirmation step                                      | Validation    | P2       | No                        |
-| ASE-05 | Revoke fails: error toast, row stays, button usable                  | Error         | P1       | No                        |
-| ASE-06 | Revoke returns 401 because the current session was revoked elsewhere | Permissions   | P1       | No                        |
-| ASE-07 | Busy state on the row being revoked; two quick revokes               | Loading       | P2       | No                        |
-| ASE-08 | `items: []` shows the empty state                                    | Empty state   | P2       | No                        |
-| ASE-09 | `items: null` / missing `items` shows the empty state                | Empty state   | P1       | No                        |
-| ASE-10 | Null / empty `ip` and `user_agent`; null dates                       | Empty state   | P1       | No                        |
-| ASE-11 | No row has `current: true`                                           | Permissions   | P2       | No                        |
-| ASE-12 | Loading state                                                        | Loading       | P3       | No                        |
-| ASE-13 | List load errors and Retry                                           | Error         | P2       | No                        |
-| ASE-14 | 401 on list load                                                     | Permissions   | P1       | No                        |
-| ASE-15 | Signed out deep link redirects to /login                             | Permissions   | P1       | No                        |
-| ASE-16 | Crash during render shows a fallback; Back recovers                  | Error         | P1       | No                        |
-| ASE-17 | Nav link, Back and Forward                                           | Navigation    | P2       | No                        |
-| ASE-18 | Arabic / RTL                                                         | RTL           | P2       | No                        |
-| ASE-19 | Light and dark theme                                                 | Theme         | P3       | No                        |
-| ASE-20 | Phone width 375px                                                    | Responsive    | P3       | No                        |
-| ASE-21 | Keyboard and screen reader basics                                    | Accessibility | P2       | No                        |
+| ID     | Title                                                                | Category      | Priority | Covered by existing test?                                                                 |
+| ------ | -------------------------------------------------------------------- | ------------- | -------- | ----------------------------------------------------------------------------------------- |
+| ASE-01 | Sessions table renders with the current session badged               | Happy path    | P1       | Yes (Sessions.test.tsx)                                                                   |
+| ASE-02 | Current session cannot be revoked                                    | Permissions   | P1       | Yes (Sessions.test.tsx)                                                                   |
+| ASE-03 | Revoke another session                                               | Happy path    | P1       | Yes (Sessions.test.tsx)                                                                   |
+| ASE-04 | Revoke has no confirmation step                                      | Validation    | P2       | Yes (Sessions.test.tsx)                                                                   |
+| ASE-05 | Revoke fails: error toast, row stays, button usable                  | Error         | P1       | Yes (Sessions.test.tsx)                                                                   |
+| ASE-06 | Revoke returns 401 because the current session was revoked elsewhere | Permissions   | P1       | Partial (Sessions.test.tsx: no blank page passes; 401 redirect is it.fails: bug)          |
+| ASE-07 | Busy state on the row being revoked; two quick revokes               | Loading       | P2       | Yes (Sessions.test.tsx)                                                                   |
+| ASE-08 | `items: []` shows the empty state                                    | Empty state   | P2       | Yes (Sessions.test.tsx)                                                                   |
+| ASE-09 | `items: null` / missing `items` shows the empty state                | Empty state   | P1       | Yes (Sessions.test.tsx)                                                                   |
+| ASE-10 | Null / empty `ip` and `user_agent`; null dates                       | Empty state   | P1       | Yes (Sessions.test.tsx)                                                                   |
+| ASE-11 | No row has `current: true`                                           | Permissions   | P2       | Yes (Sessions.test.tsx)                                                                   |
+| ASE-12 | Loading state                                                        | Loading       | P3       | No                                                                                        |
+| ASE-13 | List load errors and Retry                                           | Error         | P2       | Yes (Sessions.test.tsx)                                                                   |
+| ASE-14 | 401 on list load                                                     | Permissions   | P1       | Partial (Sessions.test.tsx: no blank page passes; 401 redirect is it.fails: bug)          |
+| ASE-15 | Signed out deep link redirects to /login                             | Permissions   | P1       | Yes (Sessions.test.tsx)                                                                   |
+| ASE-16 | Crash during render shows a fallback; Back recovers                  | Error         | P1       | Yes (Sessions.test.tsx)                                                                   |
+| ASE-17 | Nav link, Back and Forward                                           | Navigation    | P2       | Partial (Sessions.test.tsx: Back re-fetch; sidebar aria-current is AppShell, not covered) |
+| ASE-18 | Arabic / RTL                                                         | RTL           | P2       | Yes (Sessions.test.tsx)                                                                   |
+| ASE-19 | Light and dark theme                                                 | Theme         | P3       | No                                                                                        |
+| ASE-20 | Phone width 375px                                                    | Responsive    | P3       | No                                                                                        |
+| ASE-21 | Keyboard and screen reader basics                                    | Accessibility | P2       | No (it.todo: bug)                                                                         |
 
 ## Cases
 
@@ -38,7 +38,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Sessions.test.tsx)
 - **Preconditions / data:** signed in; `GET /api/me/sessions` → `{ "items": [ { "id": "s1", "created_at": "2026-10-01T09:00:00Z", "last_seen_at": "2026-10-19T07:00:00Z", "expires_at": "2026-11-01T09:00:00Z", "ip": "192.168.1.20", "user_agent": "Mozilla/5.0 (Macintosh) Firefox/131", "current": true }, { "id": "s2", "created_at": "2026-10-10T09:00:00Z", "last_seen_at": "2026-10-18T07:00:00Z", "expires_at": "2026-11-10T09:00:00Z", "ip": "10.0.0.5", "user_agent": "Maktaba-iOS/1.4", "current": false } ] }`
 - **Steps:**
   1. Open `/account/sessions`.
@@ -48,7 +48,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Sessions.test.tsx)
 - **Preconditions / data:** as ASE-01
 - **Steps:**
   1. Look at row s1's Actions cell; try to find any button in it.
@@ -58,7 +58,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Sessions.test.tsx)
 - **Preconditions / data:** as ASE-01; `DELETE /api/me/sessions/s2` → 204; second `GET` → `{ "items": [ <s1 only> ] }`
 - **Steps:**
   1. Click "Revoke" in row s2.
@@ -68,7 +68,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Sessions.test.tsx)
 - **Preconditions / data:** as ASE-01
 - **Steps:**
   1. Click "Revoke" in row s2.
@@ -78,7 +78,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Sessions.test.tsx)
 - **Preconditions / data:** variants for `DELETE /api/me/sessions/s2`: (a) 404 `{ "title": "Not Found", "status": 404, "detail": "session not found" }`; (b) 403 `{ "title": "Forbidden", "status": 403 }`; (c) 500 problem+json without detail; (d) fetch rejects.
 - **Steps:**
   1. Click "Revoke" in row s2.
@@ -88,7 +88,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Partial (Sessions.test.tsx: no blank page passes; 401 redirect is it.fails: bug)
 - **Preconditions / data:** as ASE-01; `DELETE /api/me/sessions/s2` → 401 `{ "title": "Unauthorized", "status": 401 }` (this browser's session was revoked from another device)
 - **Steps:**
   1. Click "Revoke" in row s2.
@@ -98,7 +98,7 @@
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Sessions.test.tsx)
 - **Preconditions / data:** three sessions s1 (current), s2, s3; each DELETE resolves after a delay
 - **Steps:**
   1. Click "Revoke" on s2 twice quickly.
@@ -109,7 +109,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Sessions.test.tsx)
 - **Preconditions / data:** `GET /api/me/sessions` → `{ "items": [] }`
 - **Steps:**
   1. Open `/account/sessions`.
@@ -119,7 +119,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Sessions.test.tsx)
 - **Preconditions / data:** variants: (a) `{ "items": null }`; (b) `{}`; (c) 200 `text/html` body (api returns a string); (d) 200 `application/json` body `null`.
 - **Steps:**
   1. Open `/account/sessions`.
@@ -129,7 +129,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Sessions.test.tsx)
 - **Preconditions / data:** rows with: (a) `"user_agent": null`; (b) `"user_agent": ""`; (c) `"ip": null`; (d) `"ip": ""`; (e) `"last_seen_at": null`; (f) `created_at` missing; (g) `current` missing.
 - **Steps:**
   1. Open `/account/sessions`.
@@ -139,7 +139,7 @@
 
 - **Priority:** P2
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Sessions.test.tsx)
 - **Preconditions / data:** two sessions, both `"current": false` (e.g. server could not match the cookie, or the request came via a token)
 - **Steps:**
   1. Open the page; click "Revoke" on the row whose IP/UA match this browser.
@@ -159,7 +159,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Sessions.test.tsx)
 - **Preconditions / data:** first `GET`: (a) 500 `{ "title": "Internal Server Error", "status": 500, "detail": "db down" }`; (b) 404 `{ "title": "Not Found", "status": 404 }`; (c) fetch rejects; (d) 200 `application/json` body `{bad`. Second `GET` → list as ASE-01.
 - **Steps:**
   1. Open `/account/sessions`.
@@ -170,7 +170,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Partial (Sessions.test.tsx: no blank page passes; 401 redirect is it.fails: bug)
 - **Preconditions / data:** auth probe OK; `GET /api/me/sessions` → 401 `{ "title": "Unauthorized", "status": 401 }`
 - **Steps:**
   1. Open `/account/sessions`.
@@ -180,7 +180,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Sessions.test.tsx)
 - **Preconditions / data:** `GET /api/auth/me` → 401
 - **Steps:**
   1. Open `/account/sessions` directly.
@@ -190,7 +190,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Sessions.test.tsx)
 - **Preconditions / data:** start on `/account/devices`. `GET /api/me/sessions` → `{ "items": [ { "id": "s2", "user_agent": { "ua": "x" }, "ip": "1.2.3.4", "created_at": "2026-10-10T09:00:00Z", "last_seen_at": "2026-10-18T07:00:00Z", "current": false } ] }` (object as React child throws); or mock `Badge` to throw.
 - **Steps:**
   1. From `/account/devices` click sidebar "Sessions".
@@ -202,7 +202,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Partial (Sessions.test.tsx: Back re-fetch; sidebar aria-current is AppShell, not covered)
 - **Preconditions / data:** as ASE-01
 - **Steps:**
   1. From `/library` click "Sessions"; revoke s2; press Back; press Forward.
@@ -212,7 +212,7 @@
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Sessions.test.tsx)
 - **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`; data as ASE-01
 - **Steps:**
   1. Open `/account/sessions`.
@@ -242,7 +242,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** No (it.todo: bug)
 - **Preconditions / data:** as ASE-01 plus a third session
 - **Steps:**
   1. Tab through the page; press Enter on a "Revoke".

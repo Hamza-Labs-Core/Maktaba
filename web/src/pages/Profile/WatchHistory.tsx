@@ -236,9 +236,16 @@ export function ActivityTimeline({ limit }: { limit?: number }) {
           ))}
         </div>
       )}
-      {error && <ErrorState kind="server" title={t("common.error")} description={error} />}
+      {error &&
+        (limit === undefined ? (
+          <ErrorState kind="server" title={t("common.error")} description={error} />
+        ) : (
+          <p className="mkt-muted">{t("history.activity.loadFailed")}</p>
+        ))}
       {items === null ? (
-        <p className="mkt-loading">{t("common.loading")}</p>
+        <p className="mkt-loading">
+          {limit === undefined ? t("common.loading") : t("history.activity.loading")}
+        </p>
       ) : items.length === 0 && !error ? (
         <p className="mkt-muted">{t("history.activity.empty")}</p>
       ) : (

@@ -8,8 +8,8 @@
 //                 density comfortable/compact (persisted)
 //   Privacy     — tracking switch, recent history, activity timeline (29.4)
 //   About       — app version and updates (Epic 28)
-import { useEffect, useState } from "react";
-import { Link, Route, Routes, useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, Navigate, NavLink, Route, Routes, useNavigate } from "react-router-dom";
 import { RadioGroup, Radio } from "@ds/components/Choice/Radio";
 import { Button } from "@ds/components/Button/Button";
 import { useAuth } from "../lib/auth";
@@ -29,7 +29,7 @@ import {
   useUpdateStatus,
   type UpdateStatus,
 } from "../lib/updates";
-import { Markdown, safeHref } from "../lib/markdown";
+import { Markdown } from "../lib/markdown";
 
 const DENSITY_KEY = "mkt:density";
 type Density = "comfortable" | "compact";
@@ -60,26 +60,30 @@ export function Settings() {
     <section className="mkt-page mkt-settings">
       <h1>{t("nav.settings")}</h1>
       <nav className="mkt-settings__nav" aria-label={t("nav.settings")}>
-        <Link to="">{t("settings.section.account")}</Link>
-        <Link to="sessions">{t("settings.section.sessions")}</Link>
-        <Link to="appearance">{t("settings.section.appearance")}</Link>
-        <Link to="privacy">{t("settings.section.privacy")}</Link>
-        <Link to="models">{t("settings.section.models")}</Link>
-        <Link to="rules">{t("settings.section.rules")}</Link>
-        <Link
+        {/* NavLink marks the open tab with aria-current="page" */}
+        <NavLink to="" end>
+          {t("settings.section.account")}
+        </NavLink>
+        <NavLink to="sessions">{t("settings.section.sessions")}</NavLink>
+        <NavLink to="appearance">{t("settings.section.appearance")}</NavLink>
+        <NavLink to="privacy">{t("settings.section.privacy")}</NavLink>
+        <NavLink to="models">{t("settings.section.models")}</NavLink>
+        <NavLink to="rules">{t("settings.section.rules")}</NavLink>
+        <NavLink
           to="about"
           className="mkt-settings__navlink"
-          aria-label={
-            hasUpdate
-              ? `${t("settings.section.about")}, ${t("update.badge")}`
-              : t("settings.section.about")
-          }
+          aria-describedby={hasUpdate ? "mkt-settings-update-badge" : undefined}
         >
           {t("settings.section.about")}
           {hasUpdate && (
             <span className="mkt-update-dot" aria-hidden="true" data-testid="update-badge" />
           )}
-        </Link>
+        </NavLink>
+        {hasUpdate && (
+          <span id="mkt-settings-update-badge" hidden>
+            {t("update.badge")}
+          </span>
+        )}
       </nav>
       <Routes>
         <Route index element={<AccountTab />} />
@@ -89,6 +93,8 @@ export function Settings() {
         <Route path="models" element={<ModelsSection />} />
         <Route path="rules" element={<RulesSection />} />
         <Route path="about" element={<AboutTab />} />
+        {/* an unknown tab (/settings/nope) opens Account instead of an empty panel */}
+        <Route path="*" element={<Navigate to="/settings" replace />} />
       </Routes>
     </section>
   );
@@ -233,26 +239,32 @@ interface VersionInfo {
   channel?: string;
 }
 
-type UpdatePhase =
-  | "idle"
-  | "downloading"
-  | "restarting"
-  | "done"
-  | "pending"
-  | "error"
-  | "rolled_back";
+/**
+ * The release page link, only for http(s) URLs: the value comes from the
+ * server, and a `javascript:` or `data:` URL in an href would run when clicked.
+ */
+export function safeReleaseUrl(raw: unknown): string | null {
+  if (typeof raw !== "string" || raw.trim() === "") return null;
+  try {
+    const u = new URL(raw);
+    return u.protocol === "http:" || u.protocol === "https:" ? u.href : null;
+  } catch {
+    return null; // relative or malformed
+  }
+}
+
+type UpdatePhase = "idle" | "downloading" | "restarting" | "done" | "error" | "rolled_back";
 
 // AboutTab is the version + update section (Stories 28.1/28.2/28.3/28.6).
 // It shows the running build, the update channel and last-check time, an
-// "available" card with the release notes rendered as (safe) Markdown, and
-// — for admins on a self-updatable install — a one-click "Update now".
-// A Docker install is known from the status (`install: "docker"`), so its
-// `docker compose pull` instruction is shown up front instead of a button
-// that can't work. After an update the page follows the restart and says
-// whether the new version came up, is waiting for a restart, or could not
-// start and was rolled back.
+// "available" card with the release notes rendered as (safe) Markdown,
+// and — for admins on a self-updatable install — a one-click "Update
+// now". A Docker install is known from the status (`install: "docker"`),
+// so its `docker compose pull` instruction shows up front instead of a
+// button that can't work; an older server's 409 instruction still shows
+// after a click. A self-update the server undid (rolled_back) is reported.
 function AboutTab() {
-  const { t } = useI18n();
+  const { t, formatDate } = useI18n();
   const { user } = useAuth();
   const toast = useToast();
   const buildVersion = import.meta.env?.VITE_APP_VERSION ?? "dev";
@@ -263,8 +275,15 @@ function AboutTab() {
   const upd = fresh ?? shared;
   const [checking, setChecking] = useState(false);
   const [phase, setPhase] = useState<UpdatePhase>("idle");
-  const [target, setTarget] = useState<string>("");
   const [dockerHint, setDockerHint] = useState<string | null>(null);
+  // false once the tab unmounts: stops the post-update polling
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     api
@@ -286,25 +305,35 @@ function AboutTab() {
   };
 
   const runUpdate = async () => {
-    const latest = upd?.latest_version ?? "";
-    setTarget(latest);
     setPhase("downloading");
     setDockerHint(null);
     try {
       await api.post("/api/admin/system/update", { confirm: true });
       setPhase("restarting");
-      const out = await followRestart(ver?.version ?? "", latest);
-      setVer(out.version);
-      setPhase(out.phase);
-      if (out.phase === "done") {
+      // The server re-execs; poll /api/system/version until it answers
+      // with a different version. Still the old one at the end: the update
+      // was rolled back. Without a loaded version, the update check's
+      // current_version is the one to move away from.
+      const from = ver?.version || upd?.current_version || "";
+      const polled = await pollVersionUntilChanged(
+        from,
+        upd?.latest_version ?? "",
+        () => alive.current
+      );
+      if (!alive.current) return;
+      if (polled.changed) {
+        setVer(polled.info);
+        setPhase("done");
         fetchUpdateStatus(true)
-          .then(setFresh)
+          .then((s) => alive.current && setFresh(s))
           .catch(() => {});
+      } else {
+        setPhase("rolled_back");
       }
     } catch (e) {
+      if (!alive.current) return;
       if (e instanceof ApiError && e.status === 409) {
-        // An older server that does not report `install` answers a
-        // Docker install with 409 + the instruction.
+        // Docker/package-manager install: surface the instruction.
         const hint =
           (e.problem as unknown as { instructions?: string }).instructions ?? e.problem.detail;
         if (hint) {
@@ -319,11 +348,13 @@ function AboutTab() {
 
   const version = ver?.version ?? buildVersion;
   const channel = ver?.channel ?? upd?.channel ?? "stable";
-  const docker = upd?.install === "docker" ? upd.instructions || DOCKER_DEFAULT : dockerHint;
+  const docker = upd?.install === "docker" ? upd.instructions || DOCKER_INSTRUCTIONS : dockerHint;
   const showUpdateButton =
     user?.is_admin && upd?.available && phase !== "done" && phase !== "rolled_back" && !docker;
-  const lastRollback = upd?.rolled_back;
-  const releaseUrl = upd?.release_url ? safeHref(upd.release_url) : null;
+  const lastRollback = phase === "idle" ? upd?.rolled_back : undefined;
+  // a failed update can be tried again; only a running one blocks the button
+  const updateRunning = phase === "downloading" || phase === "restarting";
+  const releaseUrl = safeReleaseUrl(upd?.release_url);
 
   return (
     <div className="mkt-settings__panel mkt-settings__about">
@@ -355,7 +386,7 @@ function AboutTab() {
         {upd?.checked_at && (
           <div>
             <dt>{t("update.lastChecked")}</dt>
-            <dd>{new Date(upd.checked_at).toLocaleString()}</dd>
+            <dd>{formatDate(upd.checked_at)}</dd>
           </div>
         )}
       </dl>
@@ -372,7 +403,7 @@ function AboutTab() {
         <p className="mkt-muted">{t("update.upToDate")}</p>
       )}
 
-      {lastRollback && phase === "idle" && (
+      {lastRollback && (
         <p className="mkt-error" role="status">
           {t("update.lastRolledBack", { version: lastRollback.version })}{" "}
           <span className="mkt-muted">{lastRollback.reason}</span>
@@ -384,13 +415,14 @@ function AboutTab() {
           <h2>{t("update.available", { version: upd.latest_version })}</h2>
           {upd.release_notes && (
             <details className="mkt-about__notes" open>
-              <summary>{t("update.releaseNotes")}</summary>
+              <summary>{t("update.banner.notes")}</summary>
+              {/* Markdown as React elements: release-note HTML is shown as text, never injected. */}
               <Markdown className="mkt-about__notes-body mkt-markdown" source={upd.release_notes} />
             </details>
           )}
           {releaseUrl && (
             <p>
-              <a href={releaseUrl} target="_blank" rel="noreferrer noopener">
+              <a href={releaseUrl} target="_blank" rel="noreferrer">
                 {t("update.viewRelease")}
               </a>
             </p>
@@ -400,7 +432,7 @@ function AboutTab() {
             <div className="mkt-about__docker">
               <p>{t("update.docker.instructions")}</p>
               <pre>{docker}</pre>
-              {upd.image && (
+              {upd.install === "docker" && upd.image && (
                 <p className="mkt-muted">
                   {t("update.docker.image")} <code>{upd.image}</code>
                 </p>
@@ -409,78 +441,85 @@ function AboutTab() {
           )}
 
           {showUpdateButton && (
-            <Button variant="primary" disabled={phase !== "idle"} onClick={runUpdate}>
-              {phase === "idle" ? t("update.updateNow") : t(`update.phase.${phase}`)}
+            <Button variant="primary" disabled={updateRunning} onClick={runUpdate}>
+              {updateRunning ? t(`update.phase.${phase}`) : t("update.updateNow")}
             </Button>
+          )}
+
+          {/* progress is announced: a live region for each phase text */}
+          {phase === "downloading" && (
+            <p className="mkt-muted" role="status">
+              {t("update.phase.downloading")}
+            </p>
+          )}
+          {phase === "restarting" && (
+            <p className="mkt-muted" role="status">
+              {t("update.phase.restarting")}
+            </p>
+          )}
+          {phase === "done" && (
+            <p className="mkt-success" role="status">
+              {t("update.phase.done", { version: upd.latest_version })}
+            </p>
+          )}
+          {phase === "error" && (
+            <p className="mkt-error" role="alert">
+              {t("update.phase.error")}
+            </p>
+          )}
+          {phase === "rolled_back" && (
+            <p className="mkt-error" role="alert">
+              {t("update.rolledBack")}
+            </p>
           )}
         </div>
       )}
 
-      {phase === "downloading" && <p className="mkt-muted">{t("update.phase.downloading")}</p>}
-      {phase === "restarting" && <p className="mkt-muted">{t("update.phase.restarting")}</p>}
-      {phase === "done" && (
-        <p className="mkt-success">{t("update.phase.done", { version: ver?.version ?? target })}</p>
-      )}
-      {phase === "pending" && <p className="mkt-muted">{t("update.phase.pending")}</p>}
-      {phase === "rolled_back" && (
-        <p className="mkt-error" role="status">
-          {t("update.rolledBack")} {t("update.stillRunning", { version: ver?.version ?? version })}
+      {/* after an update the refreshed status no longer offers one: say so here */}
+      {phase === "done" && !upd?.available && (
+        <p className="mkt-success" role="status">
+          {t("update.phase.done", { version })}
         </p>
       )}
-      {phase === "error" && <p className="mkt-error">{t("update.phase.error")}</p>}
 
       {user?.is_admin && <UpdatesSettings />}
     </div>
   );
 }
 
-const DOCKER_DEFAULT = "docker compose pull && docker compose up -d";
+const DOCKER_INSTRUCTIONS = "docker compose pull && docker compose up -d";
 
-export interface RestartOutcome {
-  phase: "done" | "pending" | "rolled_back" | "error";
-  version: VersionInfo;
-}
-
-// followRestart follows the server through the restart after an update
-// (it re-execs, or its launcher restarts it on the new release):
-//   - it answers with a new version               -> done
-//   - it reports the target as rolled back, or it went away and came back
-//     on the old version (the launcher's boot-loop guard put the previous
-//     release back)                               -> rolled_back
-//   - it never went away and still runs the old version (a supervisor
-//     relaunches it later)                        -> pending
-//   - it went away and did not come back          -> error
-export async function followRestart(
+// pollVersionUntilChanged re-fetches /api/system/version until it reports
+// a version different from `from` (the server re-execs after a self-
+// update), until the server reports `target` as rolled back (its new
+// binary could not start and the old one was put back), until a bounded
+// number of attempts elapse (changed: false, the update did not take), or
+// until `keepGoing` says stop (the tab closed).
+export async function pollVersionUntilChanged(
   from: string,
   target: string,
+  keepGoing: () => boolean,
   opts: { attempts?: number; delayMs?: number } = {}
-): Promise<RestartOutcome> {
-  const attempts = opts.attempts ?? 30;
-  const delayMs = opts.delayMs ?? 2000;
+): Promise<{ changed: boolean; info: VersionInfo }> {
+  const ATTEMPTS = opts.attempts ?? 30;
+  const DELAY_MS = opts.delayMs ?? 2000;
   let last: VersionInfo = { version: from };
-  let wentDown = false;
-  for (let i = 0; i < attempts; i++) {
-    await new Promise((r) => setTimeout(r, delayMs));
-    let v: VersionInfo;
+  for (let i = 0; i < ATTEMPTS && keepGoing(); i++) {
+    await new Promise((r) => setTimeout(r, DELAY_MS));
+    if (!keepGoing()) break;
     try {
-      v = await api.get<VersionInfo>("/api/system/version");
-    } catch {
-      wentDown = true; // server mid-restart: keep polling
-      continue;
-    }
-    last = v;
-    if (v.version && v.version !== from) return { phase: "done", version: v };
-    if (wentDown) return { phase: "rolled_back", version: v };
-    try {
-      const s = await api.get<UpdateStatus>("/api/system/updates");
-      if (s?.rolled_back && (!target || s.rolled_back.version === target)) {
-        return { phase: "rolled_back", version: v };
+      const v = await api.get<VersionInfo>("/api/system/version");
+      last = v;
+      if (v.version && v.version !== from) return { changed: true, info: v };
+      if (target) {
+        const s = await api.get<UpdateStatus>("/api/system/updates").catch(() => null);
+        if (s?.rolled_back?.version === target) return { changed: false, info: v };
       }
     } catch {
-      /* the status is extra; the version decides */
+      /* server mid-restart — keep polling */
     }
   }
-  return { phase: wentDown ? "error" : "pending", version: last };
+  return { changed: false, info: last };
 }
 
 // PrivacyTab — Story 29.4 watch-history & privacy. A switch that pauses
@@ -494,16 +533,24 @@ function PrivacyTab() {
   const [tracking, setTracking] = useState<boolean | null>(null);
   const [history, setHistory] = useState<HistoryItem[] | null>(null);
   const [busy, setBusy] = useState(false);
+  // a failed load is said, not guessed: no "Tracking on" when it may be off,
+  // no "Nothing here yet." when the history could not be read
+  const [privacyFailed, setPrivacyFailed] = useState(false);
+  const [historyFailed, setHistoryFailed] = useState(false);
 
   useEffect(() => {
     analyticsApi
       .getPrivacy()
-      .then((p) => setTracking(p.track_enabled))
-      .catch(() => setTracking(true));
+      .then((p) => setTracking(Boolean(p?.track_enabled)))
+      .catch(() => setPrivacyFailed(true));
     analyticsApi
       .history({ limit: 20 })
-      .then((r) => setHistory(r.items))
-      .catch(() => setHistory([]));
+      // items null or missing is an empty history
+      .then((r) => setHistory(Array.isArray(r?.items) ? r.items : []))
+      .catch(() => {
+        setHistoryFailed(true);
+        setHistory([]);
+      });
   }, []);
 
   async function toggle() {
@@ -534,6 +581,11 @@ function PrivacyTab() {
     <div className="mkt-settings__panel mkt-settings__privacy">
       <h2>{t("settings.privacy.title")}</h2>
       <p className="mkt-muted">{t("settings.privacy.hint")}</p>
+      {privacyFailed && (
+        <p className="mkt-error" role="alert">
+          {t("common.error")}
+        </p>
+      )}
       {tracking !== null && (
         <Toggle
           checked={tracking}
@@ -545,7 +597,11 @@ function PrivacyTab() {
 
       <hr />
       <h2>{t("settings.privacy.history")}</h2>
-      {history === null ? (
+      {historyFailed ? (
+        <p className="mkt-error" role="alert">
+          {t("common.error")}
+        </p>
+      ) : history === null ? (
         <p className="mkt-loading">{t("common.loading")}</p>
       ) : history.length === 0 ? (
         <p className="mkt-muted">{t("common.empty")}</p>
@@ -563,10 +619,12 @@ function PrivacyTab() {
             {history.map((h) => (
               <tr key={h.video_id}>
                 <td dir="auto">
-                  <Link to={`/videos/${h.video_id}`}>{h.title}</Link>
+                  <Link to={`/videos/${encodeURIComponent(h.video_id)}`}>
+                    {h.title || h.video_id}
+                  </Link>
                 </td>
-                <td>{formatPercent(h.best_percent)}</td>
-                <td>{formatWatchTime(h.total_watch_sec)}</td>
+                <td>{formatPercent(h.best_percent ?? 0)}</td>
+                <td>{formatWatchTime(h.total_watch_sec ?? 0)}</td>
                 <td>
                   <Button size="sm" variant="ghost" onClick={() => void remove(h.video_id)}>
                     {t("settings.privacy.remove")}

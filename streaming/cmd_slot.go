@@ -72,7 +72,17 @@ func runSlot(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer pool.Close()
+	// the loops stop (bounded) before the pool closes: one still holding its
+	// LISTEN connection would block pool.Close and the slot would never exit
+	bg := newBackground(ctx)
+	defer func() {
+		if !bg.Stop(shutdownWait) {
+			logger.Warn("tv slot: background loops did not stop; leaving the database pool open",
+				"event", "shutdown_loops_stuck")
+			return
+		}
+		pool.Close()
+	}()
 	if !clusterSchema(ctx, pool, 60*time.Second) || !slotSchema(ctx, pool, 60*time.Second) {
 		return errors.New("the database has no TV slot schema yet (slots 0123, 0129)")
 	}
@@ -80,7 +90,7 @@ func runSlot(args []string) error {
 	cfg := config.Load()
 	layout := cache.New(cfg.Cache.Root)
 	_ = layout.EnsureTiers()
-	b := newTVBase(logger, cfg, pool, layout)
+	b := newTVBase(bg, logger, cfg, pool, layout)
 	publicBase := os.Getenv("MAKTABA_PUBLIC_BASE_URL")
 	ident := channel.LocalIdentity(ctx, pool, b.hostname, publicBase)
 	state := slot.NewState(*name, os.Getenv("MAKTABA_TV_RELEASE"))
@@ -132,22 +142,22 @@ func runSlot(args []string) error {
 	engine.Fence = slot.Fence{Store: placement.PGStore{Pool: pool}, Self: ident.ID, State: state}
 	engine.HostStatusOff = true
 	watchChannels(engine, pool)
-	runEngineLoops(engine)
-	go placement.Listen(context.Background(), pool, logger, func(ch uuid.UUID) {
-		engine.CheckFences(context.Background(), ch)
+	runEngineLoops(bg, engine)
+	bg.Go(func(ctx context.Context) {
+		placement.Listen(ctx, pool, logger, func(ch uuid.UUID) { engine.CheckFences(ctx, ch) })
 	})
 
 	srv := &slot.Server{State: state, HostID: ident.ID, BaseURL: "http://" + *listen, Version: version.Version,
 		Engine: engine, Pool: pool, Logger: logger, Bind: bindTo,
 		Channels:     (&channel.HTTPHandler{Engine: engine}).Mount,
 		EncodersUsed: func() int { return channel.DefaultEncoderGate().Active() + channel.DefaultVTGate().Active() }}
-	go srv.Run(ctx)
+	bg.Go(srv.Run)
 
 	checks := []health.Check{procWatchdog.ReadyCheck("db"), procWatchdog.ReadyCheck("channel_engine")}
 	adminMux := health.AdminMuxWithLiveness("tv-slot", []health.Check{procWatchdog.LiveCheck()}, checks, 0)
 	adminMux.Handle("/logs/recent", mlog.RecentHandler(mlog.Ring()))
 	adminMux.Handle("/metrics", tvmetrics.Handler())
-	go procWatchdog.Run(ctx)
+	bg.Go(procWatchdog.Run)
 
 	publicSrv := &http.Server{Addr: *listen, Handler: srv.Handler(), ReadHeaderTimeout: 5 * time.Second}
 	adminSrv := &http.Server{Addr: *admin, Handler: adminMux, ReadHeaderTimeout: 5 * time.Second}
@@ -155,9 +165,9 @@ func runSlot(args []string) error {
 	go func() {
 		logger.Info("tv slot listening", "addr", *listen, "kind", "public", "host_id", ident.ID,
 			"event", "tv_slot_started")
-		errCh <- publicSrv.ListenAndServe()
+		errCh <- serveOn(publicSrv)
 	}()
-	go func() { errCh <- adminSrv.ListenAndServe() }()
+	go func() { errCh <- serveOn(adminSrv) }()
 
 	var runErr error
 	select {

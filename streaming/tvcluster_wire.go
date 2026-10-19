@@ -59,6 +59,7 @@ func clusterSchema(ctx context.Context, pool *pgxpool.Pool, wait time.Duration) 
 
 // tvBase is what both roles share.
 type tvBase struct {
+	bg       *background
 	logger   *slog.Logger
 	cfg      config.Config
 	pool     *pgxpool.Pool
@@ -73,9 +74,9 @@ type tvBase struct {
 
 type cpuLoad interface{ Load() float64 }
 
-func newTVBase(logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, layout *cache.Layout) *tvBase {
+func newTVBase(bg *background, logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, layout *cache.Layout) *tvBase {
 	hostname, _ := os.Hostname()
-	b := &tvBase{logger: logger, cfg: cfg, pool: pool, layout: layout, hostname: hostname,
+	b := &tvBase{bg: bg, logger: logger, cfg: cfg, pool: pool, layout: layout, hostname: hostname,
 		settings: channel.NewPGSettings(pool, logger),
 		encoders: &channel.EncoderResolver{FFmpeg: cfg.FFmpeg.Binary},
 		cpu:      cluster.NewCPUSampler()}
@@ -155,27 +156,23 @@ func (b *tvBase) newEngine(repo *channel.PGRepo, start channel.StartFunc, ident 
 }
 
 // runEngineLoops: reap idle stations, keep channel_runtime current, re-check fences.
-func runEngineLoops(engine *channel.Engine) {
-	go func() {
-		engine.SyncRuntime(context.Background())
-		t := time.NewTicker(channel.HeartbeatInterval)
-		defer t.Stop()
-		for i := 1; ; i++ {
-			<-t.C
-			if i%3 == 0 {
-				engine.ReapIdle(context.Background())
+// At shutdown the engine's stations stop (their ffmpeg children with them).
+func runEngineLoops(bg *background, engine *channel.Engine) {
+	bg.OnStop(engine.StopAll)
+	bg.Go(func(ctx context.Context) {
+		engine.SyncRuntime(ctx)
+		i := 0
+		tick(ctx, channel.HeartbeatInterval, func() {
+			if i++; i%3 == 0 {
+				engine.ReapIdle(ctx)
 			}
-			engine.SyncRuntime(context.Background())
-		}
-	}()
+			engine.SyncRuntime(ctx)
+		})
+	})
 	if engine.Fence != nil {
-		go func() {
-			t := time.NewTicker(5 * time.Second)
-			defer t.Stop()
-			for range t.C {
-				engine.CheckFences(context.Background())
-			}
-		}()
+		bg.Go(func(ctx context.Context) {
+			tick(ctx, 5*time.Second, func() { engine.CheckFences(ctx) })
+		})
 	}
 }
 
@@ -202,9 +199,9 @@ func (b *tvBase) beatInfo(ctx context.Context, role string, onAir func() []uuid.
 
 // buildHomeTV wires the channel engine, HDHomeRun, the guide and — with slot 0123 —
 // the placement service, the front door and the home's heartbeat.
-func buildHomeTV(logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, layout *cache.Layout) []func(chi.Router) {
-	b := newTVBase(logger, cfg, pool, layout)
-	ctx := context.Background()
+func buildHomeTV(bg *background, logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, layout *cache.Layout) []func(chi.Router) {
+	b := newTVBase(bg, logger, cfg, pool, layout)
+	ctx := bg.ctx
 	publicBase := os.Getenv("MAKTABA_PUBLIC_BASE_URL")
 	ident := channel.LocalIdentity(ctx, pool, b.hostname, publicBase)
 	chRepo := channel.NewPGRepo(pool, b.hostname)
@@ -234,7 +231,7 @@ func buildHomeTV(logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, lay
 			"event", "tv_cluster_schema_missing")
 		mounts = append(mounts, chHandler.Mount)
 	}
-	runEngineLoops(engine)
+	runEngineLoops(bg, engine)
 
 	// HDHomeRun emulation (Story 27.5): off until hdhr_device.enabled.
 	hdhrRepo := hdhr.NewPGRepo(pool)
@@ -249,7 +246,7 @@ func buildHomeTV(logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, lay
 	mounts = append(mounts, guideHandler.Mount)
 	// Only the home advertises the tuner (the front door); a node never runs this.
 	ssdp := &hdhr.SSDPController{Repo: hdhrRepo, Logger: logger, LocationBase: publicBase}
-	go ssdp.Run(context.Background())
+	bg.Go(ssdp.Run)
 	return mounts
 }
 
@@ -291,25 +288,27 @@ func (b *tvBase) wireHomeCluster(ctx context.Context, engine *channel.Engine, lo
 	// the first beat creates the home's row before the first decision
 	_ = b.loop.BeatOnce(ctx)
 	hosts.Refresh(ctx)
-	go b.loop.Run(context.Background())
+	b.bg.Go(b.loop.Run)
 
 	engine.Fence = placement.HomeFence{Svc: svc}
 	engine.HostStatusOff = true
-	svc.OnChange(func(ch uuid.UUID) { go engine.CheckFences(context.Background(), ch) })
-	go placement.Listen(context.Background(), b.pool, logger, func(ch uuid.UUID) {
-		svc.Invalidate(ch)
-		engine.CheckFences(context.Background(), ch)
+	svc.OnChange(func(ch uuid.UUID) { b.bg.Go(func(ctx context.Context) { engine.CheckFences(ctx, ch) }) })
+	b.bg.Go(func(ctx context.Context) {
+		placement.Listen(ctx, b.pool, logger, func(ch uuid.UUID) {
+			svc.Invalidate(ch)
+			engine.CheckFences(ctx, ch)
+		})
 	})
 	sweeper := &placement.Sweeper{Svc: svc, Demand: tracker.Demand, Cleaner: func(ctx context.Context) {
 		if n, err := store.CleanStaleRuntime(ctx); err == nil && n > 0 {
 			logger.Info("tv: cleaned stale on-air rows", "rows", n, "event", "tv_runtime_cleaned")
 		}
 	}}
-	go sweeper.Run(context.Background())
+	b.bg.Go(sweeper.Run)
 
 	// Epic 32.7 / 33.8: the push relay to Cloudflare Stream runs here, in the
 	// home's front door (never on a node), once slot 0125 exists.
-	go b.runPushRelay(fd, nil)
+	b.bg.Go(func(ctx context.Context) { b.runPushRelay(ctx, fd, nil) })
 
 	// channel art for the stations on nodes
 	assets := &cluster.AssetHandler{Looks: chRepo, PathMap: pathmap.FromEnv(), Keyring: keyring}
@@ -320,10 +319,13 @@ func (b *tvBase) wireHomeCluster(ctx context.Context, engine *channel.Engine, lo
 // runPushRelay waits for slot 0125 (the API migrates it, maybe after this
 // process started) and runs the relay controller: one ffmpeg per pushed
 // channel, fed by the front door, stream copy to the push's live input.
-func (b *tvBase) runPushRelay(fd *frontdoor.Handler, ready func(*relay.Ctl)) {
-	ctx := context.Background()
+func (b *tvBase) runPushRelay(ctx context.Context, fd *frontdoor.Handler, ready func(*relay.Ctl)) {
 	for !relay.Available(ctx, b.pool) {
-		time.Sleep(30 * time.Second)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(30 * time.Second):
+		}
 	}
 	ctl := &relay.Ctl{Pool: b.pool, Source: fd.RelaySource(), FFmpeg: b.cfg.FFmpeg.Binary, Logger: b.logger,
 		Audio: func(ctx context.Context) (relay.Audio, int) {
@@ -340,17 +342,17 @@ func (b *tvBase) runPushRelay(fd *frontdoor.Handler, ready func(*relay.Ctl)) {
 // buildNodeTV is a node's whole public handler (AC3 of 32.1). A node whose code needs
 // migrations the home's database lacks (cluster.SchemaGuard) streams nothing and does
 // not beat: it answers 503 until the home caught up, then starts by itself.
-func buildNodeTV(logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, layout *cache.Layout, ns cluster.NodeSettings) http.Handler {
+func buildNodeTV(bg *background, logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, layout *cache.Layout, ns cluster.NodeSettings) http.Handler {
 	guard := &cluster.SchemaGuard{Q: pool, Logger: logger}
-	if guard.Check(context.Background()) == "" {
-		return buildNodeTVReady(logger, cfg, pool, layout, ns, guard)
+	if guard.Check(bg.ctx) == "" {
+		return buildNodeTVReady(bg, logger, cfg, pool, layout, ns, guard)
 	}
 	sw := newSwapHandler(pausedNodeHandler())
-	go func() {
-		if guard.Wait(context.Background()) == nil {
-			sw.set(buildNodeTVReady(logger, cfg, pool, layout, ns, guard))
+	bg.Go(func(ctx context.Context) {
+		if guard.Wait(ctx) == nil {
+			sw.set(buildNodeTVReady(bg, logger, cfg, pool, layout, ns, guard))
 		}
-	}()
+	})
 	return sw
 }
 
@@ -377,10 +379,10 @@ func pausedNodeHandler() http.Handler {
 	})
 }
 
-func buildNodeTVReady(logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, layout *cache.Layout,
+func buildNodeTVReady(bg *background, logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, layout *cache.Layout,
 	ns cluster.NodeSettings, guard *cluster.SchemaGuard) http.Handler {
-	b := newTVBase(logger, cfg, pool, layout)
-	ctx := context.Background()
+	b := newTVBase(bg, logger, cfg, pool, layout)
+	ctx := bg.ctx
 	id := ns.NodeID
 	if id == "" {
 		id = "node-" + b.hostname
@@ -474,20 +476,18 @@ func buildNodeTVReady(logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool
 			return b.beatInfo(ctx, channel.RoleNode, engine.ActiveIDs, ident.StreamBaseURL, u)
 		}}
 	_ = b.loop.BeatOnce(ctx)
-	go b.loop.Run(context.Background())
-	go func() {
-		t := time.NewTicker(5 * time.Minute)
-		defer t.Stop()
-		for range t.C {
+	bg.Go(b.loop.Run)
+	bg.Go(func(ctx context.Context) {
+		tick(ctx, 5*time.Minute, func() {
 			checkSchema()
 			refreshHome()
 			checkStorage()
-		}
-	}()
-	go placement.Listen(context.Background(), pool, logger, func(ch uuid.UUID) {
-		engine.CheckFences(context.Background(), ch)
+		})
 	})
-	runEngineLoops(engine)
+	bg.Go(func(ctx context.Context) {
+		placement.Listen(ctx, pool, logger, func(ch uuid.UUID) { engine.CheckFences(ctx, ch) })
+	})
+	runEngineLoops(bg, engine)
 
 	logger.Info("tv: streaming node ready", "host_id", id, "stream_base_url", base,
 		"encoders", strings.Join(b.caps.Encoders, ","), "event", "tv_node_ready")

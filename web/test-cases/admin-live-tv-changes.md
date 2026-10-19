@@ -8,31 +8,31 @@
 
 ## Summary
 
-| ID     | Title                                                         | Category      | Priority | Covered by existing test?                                                         |
-| ------ | ------------------------------------------------------------- | ------------- | -------- | --------------------------------------------------------------------------------- |
-| LTC-01 | Lists changes with state, kinds, source, author, checks       | Happy path    | P1       | Yes (`Changes.test.tsx`)                                                          |
-| LTC-02 | Filters with counts                                           | Happy path    | P2       | Yes (`Changes.test.tsx`)                                                          |
-| LTC-03 | Empty list and empty filters                                  | Empty state   | P2       | Partial (`Changes.test.tsx`: per-filter empty text not checked)                   |
-| LTC-04 | `/api/tv/changes` arrays and objects null or missing          | Empty state   | P1       | No                                                                                |
-| LTC-05 | `/api/tv/slots`, `/api/tv/releases`, updates null or missing  | Empty state   | P1       | No                                                                                |
-| LTC-06 | Slots or releases endpoint fails                              | Error         | P2       | No                                                                                |
-| LTC-07 | Changes list fails on first load                              | Error         | P1       | No                                                                                |
-| LTC-08 | Changes list fails after a good load                          | Error         | P2       | No                                                                                |
-| LTC-09 | Skeletons show on the first load only                         | Loading       | P3       | Partial (`Changes.test.tsx`: poll keeps rows, skeleton not checked)               |
-| LTC-10 | In-flight banner links to the change                          | Navigation    | P2       | Partial (`Changes.test.tsx`: banner shown, link not followed)                     |
-| LTC-11 | Slot bar: hosts, roles, staging slot progress, single runtime | Happy path    | P2       | Partial (`Changes.test.tsx`: slots shown; verifying progress and single hint not) |
-| LTC-12 | Staging off banner hides the list                             | Happy path    | P2       | Yes (`Changes.test.tsx`)                                                          |
-| LTC-13 | Staging settings panel                                        | Happy path    | P3       | Yes (`Changes.test.tsx`)                                                          |
-| LTC-14 | Polls every 2 s only while visible; stops on leave            | Happy path    | P2       | Partial (`Changes.test.tsx`: poll + rows kept; hidden/unmount not)                |
-| LTC-15 | Held release: update now, skip, errors                        | Happy path    | P2       | Partial (`HeldReleaseCard.test.tsx`: no error case)                               |
-| LTC-16 | Non-admin sees "Admins only" and nothing polls                | Permissions   | P1       | No                                                                                |
-| LTC-17 | Signed-out user is sent to `/login`                           | Permissions   | P1       | No                                                                                |
-| LTC-18 | Render crash shows the route error fallback; Back works       | Error         | P1       | No                                                                                |
-| LTC-19 | Links and Back: Live TV, change detail, settings              | Navigation    | P2       | No                                                                                |
-| LTC-20 | Phone width: table and slot bar fit                           | Responsive    | P3       | No                                                                                |
-| LTC-21 | Arabic: RTL and Arabic strings                                | RTL           | P2       | Yes (`Changes.test.tsx`)                                                          |
-| LTC-22 | Light and dark theme                                          | Theme         | P3       | No                                                                                |
-| LTC-23 | Keyboard and screen reader basics                             | Accessibility | P2       | Partial (`Changes.test.tsx`: filter buttons by role only)                         |
+| ID     | Title                                                         | Category      | Priority | Covered by existing test?                                           |
+| ------ | ------------------------------------------------------------- | ------------- | -------- | ------------------------------------------------------------------- |
+| LTC-01 | Lists changes with state, kinds, source, author, checks       | Happy path    | P1       | Yes (`Changes.test.tsx`)                                            |
+| LTC-02 | Filters with counts                                           | Happy path    | P2       | Yes (`Changes.test.tsx`)                                            |
+| LTC-03 | Empty list and empty filters                                  | Empty state   | P2       | Yes (`Changes.cases.test.tsx`)                                      |
+| LTC-04 | `/api/tv/changes` arrays and objects null or missing          | Empty state   | P1       | Yes (`Changes.cases.test.tsx`)                                      |
+| LTC-05 | `/api/tv/slots`, `/api/tv/releases`, updates null or missing  | Empty state   | P1       | Yes (`Changes.cases.test.tsx`)                                      |
+| LTC-06 | Slots or releases endpoint fails                              | Error         | P2       | No (it.fails: bug)                                                  |
+| LTC-07 | Changes list fails on first load                              | Error         | P1       | Yes (`Changes.cases.test.tsx`)                                      |
+| LTC-08 | Changes list fails after a good load                          | Error         | P2       | Yes (`Changes.cases.test.tsx`)                                      |
+| LTC-09 | Skeletons show on the first load only                         | Loading       | P3       | Partial (`Changes.test.tsx`: poll keeps rows, skeleton not checked) |
+| LTC-10 | In-flight banner links to the change                          | Navigation    | P2       | Yes (`Changes.cases.test.tsx`)                                      |
+| LTC-11 | Slot bar: hosts, roles, staging slot progress, single runtime | Happy path    | P2       | Yes (`Changes.cases.test.tsx`)                                      |
+| LTC-12 | Staging off banner hides the list                             | Happy path    | P2       | Yes (`Changes.test.tsx`)                                            |
+| LTC-13 | Staging settings panel                                        | Happy path    | P3       | Yes (`Changes.test.tsx`)                                            |
+| LTC-14 | Polls every 2 s only while visible; stops on leave            | Happy path    | P2       | Yes (`Changes.cases.test.tsx`)                                      |
+| LTC-15 | Held release: update now, skip, errors                        | Happy path    | P2       | Yes (`Changes.cases.test.tsx`)                                      |
+| LTC-16 | Non-admin sees "Admins only" and nothing polls                | Permissions   | P1       | Yes (`Changes.cases.test.tsx`)                                      |
+| LTC-17 | Signed-out user is sent to `/login`                           | Permissions   | P1       | Yes (`Changes.cases.test.tsx`)                                      |
+| LTC-18 | Render crash shows the route error fallback; Back works       | Error         | P1       | Yes (`Changes.cases.test.tsx`)                                      |
+| LTC-19 | Links and Back: Live TV, change detail, settings              | Navigation    | P2       | Yes (`Changes.cases.test.tsx`)                                      |
+| LTC-20 | Phone width: table and slot bar fit                           | Responsive    | P3       | No (e2e-only)                                                       |
+| LTC-21 | Arabic: RTL and Arabic strings                                | RTL           | P2       | Yes (`Changes.test.tsx`)                                            |
+| LTC-22 | Light and dark theme                                          | Theme         | P3       | No (e2e-only)                                                       |
+| LTC-23 | Keyboard and screen reader basics                             | Accessibility | P2       | Yes (`Changes.cases.test.tsx`)                                      |
 
 ## Cases
 
@@ -62,7 +62,7 @@ Shared data: `changeList`, `slots`, `releases` and `answer(path)` from `src/page
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** Partial — `Changes.test.tsx` covers filtering, not the empty texts
+- **Covered by existing test?** Yes (`Changes.cases.test.tsx`)
 - **Preconditions / data:** (a) `GET /api/tv/changes` → `{items:[], config:{...enabled:true}, users:{}}`; (b) fixtures with no drafts.
 - **Steps:**
   1. Open the page; click each filter.
@@ -72,7 +72,7 @@ Shared data: `changeList`, `slots`, `releases` and `answer(path)` from `src/page
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Changes.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/tv/changes` → fixture with one change per run:
   - `items: null` and `items` missing (guarded `l.items ?? []`)
   - `users: null` and missing (guarded in `userName`)
@@ -92,7 +92,7 @@ Shared data: `changeList`, `slots`, `releases` and `answer(path)` from `src/page
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Changes.cases.test.tsx`)
 - **Preconditions / data:** one change per run:
   - `GET /api/tv/slots` → `{runtime:"slots", slots:null}`, `{}` (guarded `view?.slots ?? []`)
   - a slot with `release_id` missing and `version` missing
@@ -107,7 +107,7 @@ Shared data: `changeList`, `slots`, `releases` and `answer(path)` from `src/page
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** No (it.fails: bug) — `Changes.cases.test.tsx`
 - **Preconditions / data:** `GET /api/tv/slots` rejects 500; `GET /api/tv/releases` rejects 404; list fine.
 - **Steps:**
   1. Open the page; wait for 2 polls.
@@ -117,7 +117,7 @@ Shared data: `changeList`, `slots`, `releases` and `answer(path)` from `src/page
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Changes.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/tv/changes` rejects: `ApiError` 500 "Internal Server Error"; 403; 401; network `TypeError("Failed to fetch")`; 200 malformed JSON; `ApiError` 409 `{state:"swapping"}`; 501.
 - **Steps:**
   1. Open the page; advance 2 s with the next call succeeding.
@@ -127,7 +127,7 @@ Shared data: `changeList`, `slots`, `releases` and `answer(path)` from `src/page
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Changes.cases.test.tsx`)
 - **Preconditions / data:** fake timers; first read fixtures, second rejects 500 "boom".
 - **Steps:**
   1. Open the page; advance 2 s.
@@ -147,7 +147,7 @@ Shared data: `changeList`, `slots`, `releases` and `answer(path)` from `src/page
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** Partial — `Changes.test.tsx` "shows the slot bar, the change in flight and the staging settings"
+- **Covered by existing test?** Yes (`Changes.cases.test.tsx`)
 - **Preconditions / data:** `in_flight` = id of change #7 (state `verifying`, title "Ramadan lineup"); second run with title "".
 - **Steps:**
   1. Click `data-testid="in-flight"`.
@@ -157,7 +157,7 @@ Shared data: `changeList`, `slots`, `releases` and `answer(path)` from `src/page
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `Changes.test.tsx` "shows the slot bar..." (verifying progress and single hint not checked)
+- **Covered by existing test?** Yes (`Changes.cases.test.tsx`)
 - **Preconditions / data:** `slots` with host `home` (live blue, standby green) and a node; in-flight change `verifying` with 3 checks (1 fail); second run `runtime:"single"`; third run in-flight `draft`.
 - **Steps:**
   1. Open the page.
@@ -187,7 +187,7 @@ Shared data: `changeList`, `slots`, `releases` and `answer(path)` from `src/page
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `Changes.test.tsx` "re-reads every 2 s and keeps unchanged rows in place"
+- **Covered by existing test?** Yes (`Changes.cases.test.tsx`)
 - **Preconditions / data:** fake timers.
 - **Steps:**
   1. Open; advance 2 s; set `visibilityState="hidden"` and advance 10 s; set visible; navigate away; advance 10 s.
@@ -197,7 +197,7 @@ Shared data: `changeList`, `slots`, `releases` and `answer(path)` from `src/page
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `HeldReleaseCard.test.tsx` "shows a held release and approves it with Update now for that version", "skips a held release", "renders nothing when nothing is held"
+- **Covered by existing test?** Yes (`Changes.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/cluster/updates` → `{plan:{held:true, target:{version:"1.9.0", release_url:"https://..."}}}`; `POST /api/cluster/updates/run` rejects `ApiError` 409 "busy" on one run, a plain `Error` on another; updates endpoint 404.
 - **Steps:**
   1. Click approve; click skip.
@@ -207,7 +207,7 @@ Shared data: `changeList`, `slots`, `releases` and `answer(path)` from `src/page
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Changes.cases.test.tsx`)
 - **Preconditions / data:** `useAuth` → `{user:{is_admin:false}}`; fake timers.
 - **Steps:**
   1. Open the page; advance 6 s.
@@ -217,7 +217,7 @@ Shared data: `changeList`, `slots`, `releases` and `answer(path)` from `src/page
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Changes.cases.test.tsx`)
 - **Preconditions / data:** full `App`, `useAuth` → `{user:null, loading:false}`.
 - **Steps:**
   1. Navigate to `/admin/live-tv/changes`.
@@ -227,7 +227,7 @@ Shared data: `changeList`, `slots`, `releases` and `answer(path)` from `src/page
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Changes.cases.test.tsx`)
 - **Preconditions / data:** full `App`, history `["/admin/live-tv", "/admin/live-tv/changes"]`; `GET /api/tv/changes` → fixtures with `items[0].kinds = null` (throws in `Kinds`), or mock `SlotBar` to throw.
 - **Steps:**
   1. Render at `/admin/live-tv/changes`.
@@ -238,7 +238,7 @@ Shared data: `changeList`, `slots`, `releases` and `answer(path)` from `src/page
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Changes.cases.test.tsx`)
 - **Preconditions / data:** fixtures.
 - **Steps:**
   1. Click "Back to Live TV"; press Back.
@@ -250,7 +250,7 @@ Shared data: `changeList`, `slots`, `releases` and `answer(path)` from `src/page
 
 - **Priority:** P3
 - **Category:** Responsive
-- **Covered by existing test?** No (browser e2e)
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** viewport 375 × 812; 20 changes; 2 hosts × 2 slots.
 - **Steps:**
   1. Open the page; scroll.
@@ -270,7 +270,7 @@ Shared data: `changeList`, `slots`, `releases` and `answer(path)` from `src/page
 
 - **Priority:** P3
 - **Category:** Theme
-- **Covered by existing test?** No (visual)
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** `data-theme="light"` / `"dark"`.
 - **Steps:**
   1. Open the page with every state chip, the staging-off banner, the in-flight banner and an error.
@@ -280,7 +280,7 @@ Shared data: `changeList`, `slots`, `releases` and `answer(path)` from `src/page
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** Partial — `Changes.test.tsx` finds filter buttons by role
+- **Covered by existing test?** Yes (`Changes.cases.test.tsx`)
 - **Preconditions / data:** fixtures.
 - **Steps:**
   1. Tab through filters, banner, rows, settings `<summary>`.

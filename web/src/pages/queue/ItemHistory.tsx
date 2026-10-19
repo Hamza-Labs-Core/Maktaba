@@ -1,9 +1,10 @@
 // /queue/items/:kind/:id — everything the queues did for one library,
 // series, season or video: re-queue buttons per queue, seasons as bars,
 // where it appears, and the job history timeline.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
+import { ApiError } from "../../lib/api";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { queueApi } from "../../lib/queueApi";
 import { reportsApi } from "../../lib/reportsApi";
@@ -22,6 +23,7 @@ import { RetriggerDialog } from "../../components/queue/RetriggerDialog";
 import { STATE_GLYPH, useFmt } from "../../components/queue/format";
 import { useAction } from "../../components/queue/useAction";
 import { useThrottledReload } from "../../components/queue/useThrottledReload";
+import { arr, safeHistory, safeTimeline } from "./safeData";
 import "../../styles/queue.css";
 
 const FILTERS: TimelineFilter[] = ["all", "changes", "problems"];
@@ -48,7 +50,8 @@ export function ItemHistory() {
   const action = useAction();
 
   const [data, setData] = useState<ItemHistoryData | null>(null);
-  const [missing, setMissing] = useState(false);
+  // "missing": the API knows nothing about it (404); "failed": any other error
+  const [failure, setFailure] = useState<"missing" | "failed" | null>(null);
   const [filter, setFilter] = useState<TimelineFilter>("all");
   const [status, setStatus] = useState<string | null>(null);
   const [dialog, setDialog] = useState(false);
@@ -64,7 +67,14 @@ export function ItemHistory() {
       .extensions()
       .then(
         (r) =>
-          alive && setEnabledExt(new Set(r.extensions.filter((e) => e.enabled).map((e) => e.name)))
+          alive &&
+          setEnabledExt(
+            new Set(
+              arr(r?.extensions)
+                .filter((e) => e.enabled)
+                .map((e) => e.name)
+            )
+          )
       )
       .catch(() => {});
     return () => {
@@ -77,25 +87,37 @@ export function ItemHistory() {
     let alive = true;
     reportsApi
       .list()
-      .then((r) => alive && setHasReview(r.reports.some((x) => x.library_id === id)))
+      .then((r) => alive && setHasReview(arr(r?.reports).some((x) => x.library_id === id)))
       .catch(() => {});
     return () => {
       alive = false;
     };
   }, [kind, id]);
 
+  // the item the page shows now: a late answer for another item is dropped
+  const current = useRef(`${kind}/${id}`);
+  current.current = `${kind}/${id}`;
+
   const load = useCallback(() => {
+    const key = `${kind}/${id}`;
     queueApi
       .history(kind, id)
-      .then((d) => {
+      .then((raw) => {
+        if (current.current !== key) return;
+        const d = safeHistory(raw);
+        if (!d) throw new Error("not an item history");
         setData(d);
-        setMissing(false);
+        setFailure(null);
       })
-      .catch(() => setMissing(true));
+      .catch((e: unknown) => {
+        if (current.current !== key) return;
+        setFailure(e instanceof ApiError && e.status === 404 ? "missing" : "failed");
+      });
   }, [kind, id]);
 
   useEffect(() => {
     setData(null);
+    setFailure(null);
     setStatus(null);
     load();
   }, [load]);
@@ -106,12 +128,25 @@ export function ItemHistory() {
     [snapshot?.stages]
   );
 
-  if (missing && !data) {
+  if (failure === "missing" && !data) {
     return (
       <section className="mkt-page mkt-q">
         <p role="alert" className="mkt-q-banner">
           {t("queue.item.notFound")}
         </p>
+        <Link to="/queue">{t("queue.detail.back")}</Link>
+      </section>
+    );
+  }
+  if (failure === "failed" && !data) {
+    return (
+      <section className="mkt-page mkt-q">
+        <div role="alert" className="mkt-q-banner">
+          <p>{t("common.error")}</p>
+          <Button variant="secondary" onClick={load}>
+            {t("common.retry")}
+          </Button>
+        </div>
         <Link to="/queue">{t("queue.detail.back")}</Link>
       </section>
     );
@@ -129,6 +164,9 @@ export function ItemHistory() {
   const subject = data.subject;
   const subjectKind = subject.kind as SubjectKind;
   const open = itemLink(subject.kind, subject.id);
+  // a kind this page has no name for shows as itself, not as an i18n key
+  const kindKey = `queue.subject.${subject.kind}`;
+  const kindName = t(kindKey) === kindKey ? subject.kind : t(kindKey);
   const maxEpisodes = Math.max(1, ...(data.seasons ?? []).map((s) => s.episode_count));
   const visible = filterTimeline(data.timeline, filter);
 
@@ -144,15 +182,16 @@ export function ItemHistory() {
       )
       .then((r) => {
         if (!r) return;
-        const inserted = r.results.filter((x) => x.outcome === "inserted").length;
-        const merged = r.results.filter(
+        const results = arr(r.results);
+        const inserted = results.filter((x) => x.outcome === "inserted").length;
+        const merged = results.filter(
           (x) => x.outcome === "coalesced" || x.outcome === "rerun_requested"
         ).length;
         setStatus(
           t("queue.item.queued", {
             queued: n(inserted),
             merged: n(merged),
-            skipped: n(r.results.length - inserted - merged),
+            skipped: n(results.length - inserted - merged),
           })
         );
         load();
@@ -161,10 +200,13 @@ export function ItemHistory() {
   async function more() {
     if (!data?.next) return;
     setLoadingMore(true);
+    const key = `${kind}/${id}`;
     try {
       const next = await queueApi.history(kind, id, data.next);
+      if (current.current !== key) return;
+      const older = safeTimeline(next?.timeline);
       setData((prev) =>
-        prev ? { ...prev, timeline: [...prev.timeline, ...next.timeline], next: next.next } : next
+        prev ? { ...prev, timeline: [...prev.timeline, ...older], next: next?.next ?? null } : prev
       );
     } catch {
       /* the button stays; the user can retry */
@@ -193,7 +235,7 @@ export function ItemHistory() {
 
       <header className="mkt-q-detailhead">
         <div>
-          <p className="mkt-q-eyebrow">{t(`queue.subject.${subject.kind}`)}</p>
+          <p className="mkt-q-eyebrow">{kindName}</p>
           <h1>{bidiIsolate(subject.label)}</h1>
           <KindChips kinds={data.kinds} />
           {open && (

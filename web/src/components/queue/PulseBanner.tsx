@@ -48,9 +48,9 @@ export function PulseBanner({ pollMs = POLL_MS }: { pollMs?: number }) {
     >
       <span className="mkt-q-pulse__dot" aria-hidden="true" />
       <span>{text}</span>
-      {pulse.stuck.length > 0 && (
+      {(pulse.stuck ?? []).length > 0 && (
         <ul className="mkt-q-pulse__stuck">
-          {pulse.stuck.map((j) => (
+          {(pulse.stuck ?? []).map((j) => (
             <li key={j.job_id}>
               <Link to={jobHref(j)}>{bidiIsolate(j.label)}</Link>{" "}
               <span className="mkt-q-muted">

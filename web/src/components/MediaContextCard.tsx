@@ -80,12 +80,25 @@ export function MediaContextCard({ videoId }: { videoId: string }) {
     api
       .get<ContextResponse>(`/api/videos/${encodeURIComponent(videoId)}/context`)
       .then((r) => {
-        if (alive)
-          setData({
-            ...r,
-            related_in_library: r.related_in_library ?? [],
-            more_like_this: r.more_like_this ?? [],
-          });
+        if (!alive) return;
+        const list = <T,>(v: T[] | null | undefined) =>
+          Array.isArray(v) ? v.filter((x): x is T => x != null) : [];
+        const f = r?.facts;
+        setData({
+          ...r,
+          // Drop null / non-array lists and null entries so a partial answer
+          // never crashes the video page.
+          facts: f
+            ? {
+                ...f,
+                genres: list(f.genres),
+                cast: list(f.cast).filter((c) => typeof c.name === "string"),
+                attribution: list(f.attribution),
+              }
+            : undefined,
+          related_in_library: list(r?.related_in_library),
+          more_like_this: list(r?.more_like_this),
+        });
       })
       .catch(() => {
         if (alive) setData({ related_in_library: [], more_like_this: [] });

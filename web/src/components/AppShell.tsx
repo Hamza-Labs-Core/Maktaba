@@ -3,7 +3,7 @@
 // content outlet. Lives inside <RequireAuth> so it never renders
 // without a user. Stories 11.7 (responsive), 11.9 (search focus ref),
 // 11.10 (update toast), 11.11 (skip-link + landmarks).
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Component, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Outlet, NavLink, useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { useToast } from "@ds/components/Toast/Toast";
@@ -21,7 +21,9 @@ import { updateAvailable, useUpdateStatus } from "../lib/updates";
 const BADGED: ReadonlySet<string> = new Set(["/settings", "/more"]);
 
 // UpdateDot is the badge: a dot over the nav icon, positioned absolutely
-// so it never moves the layout; the label rides on the link's name.
+// so it never moves the layout; the badged link is described by
+// UPDATE_DESC ("Update available"), its name stays the same.
+const UPDATE_DESC = "mkt-shell-update-badge";
 function UpdateDot() {
   return <span className="mkt-update-dot" aria-hidden="true" data-testid="update-badge" />;
 }
@@ -77,6 +79,24 @@ const ADMIN = [
   { to: "/admin/extensions", key: "nav.admin.extensions", icon: "⧉" },
 ] as const;
 
+// A header part that throws while rendering drops out on its own instead of
+// taking the whole app down (the route boundary only wraps the page).
+class QuietBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error("[shell] header part failed", error);
+  }
+
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
 // A new page opens at its top; Back / Forward (POP) leave the browser's own
 // restoration alone, so returning to a long list keeps its place.
 function useScrollTopOnNavigate(): void {
@@ -101,8 +121,6 @@ export function AppShell() {
   const searchRef = useRef<HTMLInputElement | null>(null);
   const hasUpdate = updateAvailable(useUpdateStatus());
   const badged = (to: string) => hasUpdate && BADGED.has(to);
-  const navLabel = (to: string, key: string) =>
-    badged(to) ? `${t(key)}, ${t("update.badge")}` : t(key);
 
   useEffect(() => {
     focusSearchRef(searchRef.current);
@@ -161,7 +179,11 @@ export function AppShell() {
           />
         </form>
         <div className="mkt-shell__actions">
-          {user && <NotificationsBell />}
+          {user && (
+            <QuietBoundary>
+              <NotificationsBell />
+            </QuietBoundary>
+          )}
           <ThemeToggle />
           <LangToggle />
           {user && (
@@ -186,8 +208,9 @@ export function AppShell() {
               key={item.to}
               to={item.to}
               className="mkt-nav-link"
-              title={navLabel(item.to, item.key)}
-              aria-label={navLabel(item.to, item.key)}
+              title={t(item.key)}
+              aria-label={t(item.key)}
+              aria-describedby={badged(item.to) ? UPDATE_DESC : undefined}
             >
               <span className="mkt-nav-link__icon" aria-hidden="true">
                 {item.icon}
@@ -238,13 +261,18 @@ export function AppShell() {
           </RouteErrorBoundary>
         </main>
       </div>
+      {hasUpdate && (
+        <span id={UPDATE_DESC} hidden>
+          {t("update.badge")}
+        </span>
+      )}
       <nav className="mkt-shell__tabbar" aria-label={t("nav.primary")}>
         {TABS.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             className="mkt-tab"
-            aria-label={badged(item.to) ? navLabel(item.to, item.key) : undefined}
+            aria-describedby={badged(item.to) ? UPDATE_DESC : undefined}
           >
             <span className="mkt-tab__icon" aria-hidden="true">
               {item.icon}
@@ -274,21 +302,29 @@ export function MoreMenu() {
   return (
     <section className="mkt-page mkt-more">
       <h1>{t("nav.more")}</h1>
+      {hasUpdate && (
+        <span id="mkt-more-update-badge" hidden>
+          {t("update.badge")}
+        </span>
+      )}
       {groups.map((g, i) => (
         <div key={i} className="mkt-more__group">
           {g.title && <h2>{g.title}</h2>}
           <ul className="mkt-more__list">
             {g.items.map((item) => (
               <li key={item.to}>
-                <NavLink to={item.to} className="mkt-more__link">
+                <NavLink
+                  to={item.to}
+                  className="mkt-more__link"
+                  aria-describedby={
+                    hasUpdate && item.to === "/settings" ? "mkt-more-update-badge" : undefined
+                  }
+                >
                   <span className="mkt-nav-link__icon" aria-hidden="true">
                     {item.icon}
                     {hasUpdate && item.to === "/settings" && <UpdateDot />}
                   </span>
                   {t(item.key)}
-                  {hasUpdate && item.to === "/settings" && (
-                    <span className="mk-visually-hidden">, {t("update.badge")}</span>
-                  )}
                 </NavLink>
               </li>
             ))}

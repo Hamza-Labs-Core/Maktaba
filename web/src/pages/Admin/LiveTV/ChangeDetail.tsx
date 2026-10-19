@@ -12,6 +12,7 @@ import { Tabs } from "@ds/components/Tabs/Tabs";
 import { Tooltip } from "@ds/components/Tooltip/Tooltip";
 import { AdminGate } from "../../../components/AdminGate";
 import { useAuth } from "../../../lib/auth";
+import { ApiError } from "../../../lib/api";
 import { useI18n } from "../../../lib/i18n";
 import {
   ACTION_ORDER,
@@ -46,9 +47,12 @@ import { SettingsDiff } from "./diff/SettingsDiff";
 import "../../../styles/tvchanges.css";
 
 export function AdminTvChangeDetail() {
+  const { id = "" } = useParams();
   return (
     <AdminGate>
-      <DetailInner />
+      {/* keyed by id: moving to another change starts clean (no data, tab, dialog or
+          message of the previous one) */}
+      <DetailInner key={id} />
     </AdminGate>
   );
 }
@@ -94,6 +98,8 @@ function DetailInner() {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [tab, setTab] = useState("lineup");
   const [point, setPoint] = useState<RollbackPoint | null>(null);
+  // a change the server does not know (404) is not polled again
+  const [gone, setGone] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -101,11 +107,12 @@ function DetailInner() {
       setChange((prev) => reconcile(prev, c));
       setError(null);
     } catch (e) {
+      if (e instanceof ApiError && e.status === 404) setGone(true);
       setError(actionError(t, e));
     }
   }, [id, t]);
 
-  useVisiblePoll(load, CHANGES_POLL_MS);
+  useVisiblePoll(load, CHANGES_POLL_MS, !gone);
   // the staging settings (second admin, swap wait): once, with the list call
   useVisiblePoll(async () => {
     try {
@@ -117,7 +124,7 @@ function DetailInner() {
   }, 60_000);
 
   // story 33.9 AC7: warm (instant) while the previous slot is up, cold after, none
-  const canRollback = !!change?.allowed_actions.includes("rollback");
+  const canRollback = !!change?.allowed_actions?.includes("rollback");
   useVisiblePoll(
     async () => {
       try {
@@ -140,10 +147,12 @@ function DetailInner() {
       return;
     }
     if (a === "cancel") {
+      setMsg(null);
       setDialog({ kind: "cancel" });
       return;
     }
     if (a === "rollback") {
+      setMsg(null);
       setDialog({ kind: "rollback" });
       return;
     }
@@ -167,7 +176,12 @@ function DetailInner() {
     setBusy("rollback");
     try {
       const r = await tvChangesApi.rollback();
-      setMsg({ ok: true, text: t(`tvchanges.done.rollback.${r.mode}`) });
+      // degraded: only the database was rolled back (no TV slot is live)
+      setMsg(
+        r.degraded
+          ? { ok: false, text: t("tvchanges.done.rollback.degraded") }
+          : { ok: true, text: t(`tvchanges.done.rollback.${r.mode}`) }
+      );
       setDialog(null);
       void load();
     } catch (e) {
@@ -210,8 +224,16 @@ function DetailInner() {
 
   const staged = !!change.release_id;
   const s = checksSummary(change.verify_report);
-  const allowed = new Set(change.allowed_actions);
+  const allowed = new Set(change.allowed_actions ?? []);
+  const approvedBy = change.approved_by ?? [];
   const shownActions = ACTION_ORDER.filter((a) => allowed.has(a));
+  // a failed cancel / roll back, inside the dialog: the page behind it is inert
+  const failed =
+    msg && !msg.ok ? (
+      <p role="alert" className="mkt-tvx-error">
+        {msg.text}
+      </p>
+    ) : null;
 
   return (
     <section className="mkt-page mkt-tvx" data-testid="change-detail">
@@ -274,9 +296,7 @@ function DetailInner() {
         </dd>
         <dt>{t("tvchanges.col.approved")}</dt>
         <dd>
-          {change.approved_by.length
-            ? change.approved_by.map((u) => userName(change.users, u, u)).join(", ")
-            : "—"}
+          {approvedBy.length ? approvedBy.map((u) => userName(change.users, u, u)).join(", ") : "—"}
         </dd>
       </dl>
 
@@ -338,6 +358,12 @@ function DetailInner() {
         })}
       </div>
       <div className="mkt-tvx-status" aria-live="polite">
+        {/* a read that failed after a good one: the change shown may be stale */}
+        {error && (
+          <p role="alert" className="mkt-q-status--bad" data-testid="load-error">
+            {t("tvchanges.loadError", { error })}
+          </p>
+        )}
         {msg && (
           <p
             role={msg.ok ? "status" : "alert"}
@@ -427,6 +453,7 @@ function DetailInner() {
           onClose={() => setDialog(null)}
         >
           <p>{t("tvchanges.dialog.cancel.intro")}</p>
+          {failed}
         </ConfirmDialog>
       )}
       {dialog?.kind === "rollback" && (
@@ -445,6 +472,7 @@ function DetailInner() {
             )}
           </p>
           {point && <p className="mkt-tvx-muted">{rollbackHint(point, t, n)}</p>}
+          {failed}
         </ConfirmDialog>
       )}
     </section>
@@ -500,6 +528,7 @@ function progressText(
 function History({ change }: { change: TvChangeDetail }) {
   const { t, formatDate } = useI18n();
   const tk = useTk();
+  const audit = change.audit ?? [];
   const who = (id: string | undefined, source: string) =>
     id ? userName(change.users, id, id) : tk(`tvchanges.actor.${source}`, source);
   return (
@@ -522,7 +551,7 @@ function History({ change }: { change: TvChangeDetail }) {
         ))}
       </ol>
       <h3>{t("tvchanges.audit.title")}</h3>
-      {change.audit.length === 0 ? (
+      {audit.length === 0 ? (
         <p className="mkt-tvx-muted">{t("tvchanges.audit.none")}</p>
       ) : (
         <table className="mkt-tvx-kv" data-testid="audit">
@@ -534,7 +563,7 @@ function History({ change }: { change: TvChangeDetail }) {
             </tr>
           </thead>
           <tbody>
-            {change.audit.map((a) => (
+            {audit.map((a) => (
               <tr key={a.id}>
                 <td>{formatDate(a.at)}</td>
                 <td>

@@ -10,7 +10,7 @@
 // so the "registration closed" state is surfaced reactively from the
 // 403 on submit. Styled like Login (outside the AppShell).
 import { type FormEvent, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, Navigate } from "react-router-dom";
 import { useAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
 import { ApiError } from "../../lib/api";
@@ -27,13 +27,13 @@ export function Register() {
   const [error, setError] = useState<string | null>(null);
   const [closed, setClosed] = useState(false);
 
-  if (user) {
-    nav("/library", { replace: true });
-    return null;
-  }
+  // already signed in: a redirect element, never nav() while rendering
+  if (user) return <Navigate to="/library" replace />;
 
   const mismatch = confirm !== "" && password !== confirm;
-  const valid = username.trim() !== "" && email.trim() !== "" && password !== "" && !mismatch;
+  // the 8-character minimum is checked here too (minLength only guards a
+  // native form submit), as ResetPassword does
+  const valid = username.trim() !== "" && email.trim() !== "" && password.length >= 8 && !mismatch;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -45,7 +45,8 @@ export function Register() {
       nav("/library", { replace: true });
     } catch (err) {
       if (err instanceof ApiError) {
-        if (err.problem.type.includes("registration-closed")) {
+        // a problem without `type` (a plain JSON error) is still an error
+        if ((err.problem.type ?? "").includes("registration-closed")) {
           setClosed(true);
         } else if (err.status === 409) {
           setError(err.problem.detail || t("register.conflict"));

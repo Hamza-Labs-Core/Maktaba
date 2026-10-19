@@ -68,7 +68,7 @@ export function ArtDiff({
         ) : (
           <ul className="mkt-tvx-art">
             {art.map((a) => {
-              const kinds = [...new Set(a.what.flatMap((w) => KINDS_FOR[w] ?? []))];
+              const kinds = [...new Set((a.what ?? []).flatMap((w) => KINDS_FOR[w] ?? []))];
               return (
                 <li key={a.id}>
                   <h4>

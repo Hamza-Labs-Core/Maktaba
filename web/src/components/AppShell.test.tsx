@@ -3,7 +3,7 @@
 // toast renders the localized copy plus a Reload button whose click
 // activates the waiting SW (postMessage SKIP_WAITING).
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, act, within } from "@testing-library/react";
+import { render, screen, act, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
@@ -145,14 +145,13 @@ describe("AppShell update badge (Story 28.6)", () => {
     });
     renderShell();
     const [sidebar, tabbar] = await screen.findAllByRole("navigation", { name: en["nav.primary"] });
-    const settings = await within(sidebar).findByRole("link", {
-      name: `${en["nav.settings"]}, ${en["update.badge"]}`,
-    });
+    const settings = within(sidebar).getByRole("link", { name: en["nav.settings"] });
+    await waitFor(() => expect(settings).toHaveAccessibleDescription(en["update.badge"]));
     expect(settings).toHaveAttribute("href", "/settings");
     expect(within(settings).getByTestId("update-badge")).toBeInTheDocument();
-    expect(
-      within(tabbar).getByRole("link", { name: `${en["nav.more"]}, ${en["update.badge"]}` })
-    ).toHaveAttribute("href", "/more");
+    const more = within(tabbar).getByRole("link", { name: en["nav.more"] });
+    expect(more).toHaveAttribute("href", "/more");
+    expect(more).toHaveAccessibleDescription(en["update.badge"]);
     expect(get).toHaveBeenCalledWith("/api/system/updates");
   });
 

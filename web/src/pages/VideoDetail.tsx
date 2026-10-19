@@ -12,6 +12,7 @@
 // TanStack-Virtual integration — see report deferral note.
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams, Link } from "react-router-dom";
+import { Button } from "@ds/components/Button/Button";
 import { Tabs } from "@ds/components/Tabs/Tabs";
 import { Badge } from "@ds/components/Badge/Badge";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
@@ -87,50 +88,86 @@ const STAGE_LABEL: Record<string, string> = {
   index: "Index",
 };
 
+// m:ss, or h:mm:ss from an hour up (the same as the library cards).
 const TS = (s: number) => {
-  const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  return `${m}:${sec.toString().padStart(2, "0")}`;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = Math.floor(s % 60)
+    .toString()
+    .padStart(2, "0");
+  return h > 0 ? `${h}:${m.toString().padStart(2, "0")}:${sec}` : `${m}:${sec}`;
 };
 
-// VIDEO_TABS is the ordered set of tab ids. `?tab=<id>` deep-links any
-// of them (the context card's "Find metadata" uses ?tab=enrichment);
-// anything else falls back to the Watch tab.
-export const VIDEO_TABS = [
-  "watch",
-  "enrichment",
-  "transcript",
-  "chapters",
-  "files",
-  "processing",
-  "stats",
-] as const;
-type VideoTab = (typeof VIDEO_TABS)[number];
-
-function asVideoTab(raw: string | null): VideoTab {
-  return (VIDEO_TABS as readonly string[]).includes(raw ?? "") ? (raw as VideoTab) : "watch";
-}
+const TAB_IDS = ["watch", "enrichment", "transcript", "chapters", "files", "processing", "stats"];
 
 export function VideoDetail() {
   const { videoId } = useParams();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = asVideoTab(searchParams.get("tab"));
   const { t } = useI18n();
   const { user } = useAuth();
-  const [video, setVideo] = useState<Video | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  // The loaded video and the route id it was loaded for: after a switch to
+  // another video, the old one is never shown under the new id.
+  const [loaded, setLoaded] = useState<{ id: string; video: Video } | null>(null);
+  const video = loaded && loaded.id === videoId ? loaded.video : null;
+  const [err, setErr] = useState<{ message: string; status?: number } | null>(null);
+  const [reload, setReload] = useState(0);
+  // The open tab lives in ?tab= so "Find metadata" (?tab=enrichment) and
+  // deep links open the right one.
+  const [params, setParams] = useSearchParams();
+  const tabParam = params.get("tab") ?? "";
+  const tab = TAB_IDS.includes(tabParam) ? tabParam : "watch";
 
   useEffect(() => {
     if (!videoId) return;
-    setVideo(null);
+    let cancelled = false;
     setErr(null);
     api
       .get<Video>(`/api/videos/${encodeURIComponent(videoId)}`)
-      .then(setVideo)
-      .catch((e) => setErr(e instanceof ApiError ? e.problem.title : t("common.error")));
-  }, [videoId, t]);
+      .then((v) => !cancelled && setLoaded({ id: videoId, video: v }))
+      .catch((e) => {
+        if (cancelled) return;
+        setErr(
+          e instanceof ApiError
+            ? { message: e.problem.title, status: e.status }
+            : { message: t("common.error") }
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [videoId, t, reload]);
 
-  if (err) return <ErrorState kind="not_found" title={t("video.notFound")} description={err} />;
+  function selectTab(id: string) {
+    const next = new URLSearchParams(params);
+    if (id === "watch") next.delete("tab");
+    else next.set("tab", id);
+    setParams(next, { replace: true });
+  }
+
+  if (err) {
+    // Only a 404 / 403 means "not found"; anything else is a failure to retry.
+    if (err.status === 404 || err.status === 403) {
+      return (
+        <ErrorState
+          kind="not_found"
+          title={t("video.notFound")}
+          description={err.message}
+          action={
+            <Link to="/library" className="mkt-btn mkt-btn--secondary">
+              {t("nav.library")}
+            </Link>
+          }
+        />
+      );
+    }
+    return (
+      <ErrorState
+        kind="server"
+        title={t("common.error")}
+        description={err.message}
+        action={<Button onClick={() => setReload((x) => x + 1)}>{t("common.retry")}</Button>}
+      />
+    );
+  }
   if (!video || !videoId) return <p className="mkt-loading">{t("common.loading")}</p>;
 
   const items = [
@@ -195,25 +232,12 @@ export function VideoDetail() {
         <DisplayTitle
           video={video}
           canEdit={Boolean(user?.is_admin)}
-          onSaved={(v) => setVideo((cur) => (cur ? { ...cur, ...v } : cur))}
+          onSaved={(v) =>
+            setLoaded((cur) => (cur ? { ...cur, video: { ...cur.video, ...v } } : cur))
+          }
         />
       </header>
-      <Tabs
-        label={video.title || video.filename}
-        items={items}
-        value={activeTab}
-        onChange={(id) => {
-          setSearchParams(
-            (prev) => {
-              const next = new URLSearchParams(prev);
-              if (id === "watch") next.delete("tab");
-              else next.set("tab", id);
-              return next;
-            },
-            { replace: true }
-          );
-        }}
-      />
+      <Tabs label={video.title || video.filename} items={items} value={tab} onChange={selectTab} />
     </section>
   );
 }
@@ -279,6 +303,7 @@ const TRANSCRIPT_WINDOW = 400;
 function TranscriptTab({ videoId }: { videoId: string }) {
   const { t } = useI18n();
   const [segs, setSegs] = useState<Segment[] | null>(null);
+  const [limit, setLimit] = useState(TRANSCRIPT_WINDOW);
   useEffect(() => {
     api
       .get<{ items: Segment[] }>(`/api/videos/${encodeURIComponent(videoId)}/segments`)
@@ -289,7 +314,7 @@ function TranscriptTab({ videoId }: { videoId: string }) {
   if (segs.length === 0) return <EmptyState title={t("video.transcript.empty")} />;
   // Window cap: render at most TRANSCRIPT_WINDOW rows to bound DOM size
   // on long transcripts (true virtualization deferred — see report).
-  const shown = segs.slice(0, TRANSCRIPT_WINDOW);
+  const shown = segs.slice(0, limit);
   return (
     <div className="mkt-transcript">
       {shown.map((s) => (
@@ -304,7 +329,11 @@ function TranscriptTab({ videoId }: { videoId: string }) {
           <span>{s.text}</span>
         </p>
       ))}
-      {segs.length > TRANSCRIPT_WINDOW && <p className="mkt-muted">{t("common.loadMore")}</p>}
+      {segs.length > limit && (
+        <Button variant="secondary" onClick={() => setLimit((l) => l + TRANSCRIPT_WINDOW)}>
+          {t("common.loadMore")}
+        </Button>
+      )}
     </div>
   );
 }
@@ -404,23 +433,26 @@ function StatsTab({ videoId }: { videoId: string }) {
   return (
     <div className="mkt-video__stats">
       <div className="mkt-analytics__kpis">
-        <StatCard label={t("video.stats.views")} value={String(stats.total_views)} />
-        <StatCard label={t("video.stats.uniqueViewers")} value={String(stats.unique_viewers)} />
+        <StatCard label={t("video.stats.views")} value={num(stats.total_views, String)} />
+        <StatCard
+          label={t("video.stats.uniqueViewers")}
+          value={num(stats.unique_viewers, String)}
+        />
         <StatCard
           label={t("video.stats.avgCompletion")}
-          value={formatPercent(stats.avg_completion)}
+          value={num(stats.avg_completion, formatPercent)}
         />
         <StatCard
           label={t("video.stats.avgWatch")}
-          value={formatWatchTime(Math.round(stats.avg_watch_sec))}
+          value={num(stats.avg_watch_sec, (x) => formatWatchTime(Math.round(x)))}
         />
         <StatCard
           label={t("video.stats.completionRate")}
-          value={formatPercentRatio(stats.completion_rate)}
+          value={num(stats.completion_rate, formatPercentRatio)}
         />
       </div>
 
-      {user?.is_admin && stats.viewers && stats.viewers.length > 0 && (
+      {user?.is_admin && Array.isArray(stats.viewers) && stats.viewers.length > 0 && (
         <details className="mkt-video__viewers">
           <summary>{t("video.stats.perUser")}</summary>
           <table className="mkt-table" aria-label={t("video.stats.perUser")}>
@@ -447,6 +479,12 @@ function StatsTab({ videoId }: { videoId: string }) {
       )}
     </div>
   );
+}
+
+// A missing number (an older server, a partial answer) shows "—", not
+// "undefined" or "NaN%".
+function num(v: number | null | undefined, fmt: (x: number) => string): string {
+  return typeof v === "number" && Number.isFinite(v) ? fmt(v) : "—";
 }
 
 function StatCard({ label, value }: { label: string; value: string }) {

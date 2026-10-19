@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	authmw "github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/middleware"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
@@ -105,10 +106,15 @@ func New(p Pipeline) *Handler {
 // Mount wires the routes onto r.
 func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/models", h.List)
-	r.Post("/api/models/{id}/download", h.Download)
-	r.Delete("/api/models/{id}", h.Delete)
-	r.Patch("/api/models/{id}/activate", h.Activate)
-	r.Post("/api/models/{id}/test", h.Test)
+	// Downloading, deleting, activating and testing a model change (or load)
+	// the home's speech models for everyone, so only admins may do them.
+	r.Group(func(r chi.Router) {
+		r.Use(authmw.RequireAdmin)
+		r.Post("/api/models/{id}/download", h.Download)
+		r.Delete("/api/models/{id}", h.Delete)
+		r.Patch("/api/models/{id}/activate", h.Activate)
+		r.Post("/api/models/{id}/test", h.Test)
+	})
 }
 
 // offline reports whether no usable pipeline client is wired.

@@ -26,7 +26,7 @@ interface Entitlements {
   tier: string;
   license_id?: string;
   seats?: number;
-  features: Record<string, boolean>;
+  features?: Record<string, boolean> | null;
 }
 
 export function Billing() {
@@ -41,8 +41,13 @@ export function Billing() {
   function load() {
     setError(null);
     api
-      .get<Entitlements>("/api/entitlements")
-      .then(setEnt)
+      .get<Entitlements | null>("/api/entitlements")
+      .then((r) => {
+        // A 200 with `null` or an HTML page (string) is not entitlements:
+        // show the error state instead of "Loading…" forever or a crash.
+        if (!r || typeof r !== "object") throw new Error("not entitlements");
+        setEnt(r);
+      })
       .catch((e) =>
         setError(e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error"))
       );
@@ -111,7 +116,7 @@ export function Billing() {
     );
   }
 
-  const features = Object.entries(ent.features).sort(([a], [b]) => a.localeCompare(b));
+  const features = Object.entries(ent.features ?? {}).sort(([a], [b]) => a.localeCompare(b));
 
   return (
     <section className="mkt-page mkt-billing">

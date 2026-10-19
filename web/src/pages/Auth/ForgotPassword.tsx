@@ -38,7 +38,10 @@ export function ForgotPassword() {
 
         {sent ? (
           <>
-            <p className="mkt-login__hint">{t("forgot.sent")}</p>
+            {/* a live region: the focused input is gone, so announce the result */}
+            <p className="mkt-login__hint" role="status">
+              {t("forgot.sent")}
+            </p>
             <Link to="/login" className="mkt-login__link">
               {t("register.toLogin")}
             </Link>

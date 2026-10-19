@@ -786,7 +786,13 @@ func TestSwapRollbackEndToEnd(t *testing.T) {
 	})
 	e2eWait(t, "HLS on green", 30*time.Second, func() bool { return hls.lastSlot() == "green" })
 	time.Sleep(3 * time.Second)
+	failedBefore := t.Failed()
 	checkPhase("failover with a staged change", segs4, "blue", "green")
+	if !failedBefore && t.Failed() {
+		// once seen in CI (ffmpeg 4.4): the green standby's first segments after
+		// the failover dated 24 s ahead of the clock; keep what tells why
+		dumpSlotHLS(t, filepath.Join(cache, "tv", "green", "channel-"+ch), base("green")+"/stream/channel/"+ch+"/index.m3u8")
+	}
 	if a, _ := getSlotStatus(base("amber")); a.Role != "staging" {
 		t.Errorf("the staging slot became %q in the crash", a.Role)
 	}
@@ -859,4 +865,33 @@ func lastField(lines []string) string {
 		}
 	}
 	return strings.Join(out, " ")
+}
+
+// dumpSlotHLS logs a slot's HLS directory as the slot muxer wrote it and as the
+// slot serves it (program date-times from the timestamps), with each segment's
+// first video timestamp, its blocks.log and its mux.log.
+func dumpSlotHLS(t *testing.T, dir, playlistURL string) {
+	t.Helper()
+	for _, f := range []string{"index.m3u8", "blocks.log", "mux.log"} {
+		b, _ := os.ReadFile(filepath.Join(dir, f))
+		t.Logf("%s on disk:\n%s", f, b)
+	}
+	if resp, err := http.Get(playlistURL); err == nil {
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Logf("playlist the slot serves:\n%s", b)
+	}
+	ents, _ := os.ReadDir(dir)
+	for _, e := range ents {
+		if !strings.HasSuffix(e.Name(), ".ts") {
+			continue
+		}
+		out, _ := exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time",
+			"-read_intervals", "%+#1", "-of", "csv=p=0", filepath.Join(dir, e.Name())).Output()
+		var mod string
+		if fi, err := e.Info(); err == nil {
+			mod = fi.ModTime().UTC().Format("15:04:05.000")
+		}
+		t.Logf("%s written %s, first video pts %s", e.Name(), mod, strings.TrimSpace(string(out)))
+	}
 }

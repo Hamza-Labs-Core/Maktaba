@@ -90,10 +90,10 @@ function ChangesInner() {
         tvChangesApi.slots().catch(() => null),
         tvChangesApi.releases(20).catch(() => null),
       ]);
+      // read outside the updater: a null body throws here (a load error), not in render
+      const next = l.items ?? [];
       // one batched update: unchanged rows keep their objects
-      setList((prev) =>
-        reconcile(prev, { ...l, items: reconcileList(prev?.items, l.items ?? []) })
-      );
+      setList((prev) => reconcile(prev, { ...l, items: reconcileList(prev?.items, next) }));
       if (s) setSlots((prev) => reconcile(prev, s));
       if (r) setReleases((prev) => reconcile(prev, r.items ?? []));
       setError(null);

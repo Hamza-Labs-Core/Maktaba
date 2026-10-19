@@ -152,7 +152,7 @@ export function ExplainPanel({ libraries }: { libraries: LibraryQueueRow[] }) {
   async function search() {
     if (tooShort) return;
     const r = await run("explain", () => queueApi.explain(text.trim(), library || undefined));
-    if (r) setResult(r);
+    if (r) setResult({ ...r, remote: r.remote ?? [], videos: r.videos ?? [] });
   }
 
   return (

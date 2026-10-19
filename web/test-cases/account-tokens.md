@@ -8,37 +8,37 @@
 
 ## Summary
 
-| ID     | Title                                                           | Category      | Priority | Covered by existing test? |
-| ------ | --------------------------------------------------------------- | ------------- | -------- | ------------------------- |
-| ATK-01 | Token table renders (active and revoked)                        | Happy path    | P1       | No                        |
-| ATK-02 | Create token: request body and show-once reveal                 | Happy path    | P1       | No                        |
-| ATK-03 | Secret is shown only once                                       | Permissions   | P1       | No                        |
-| ATK-04 | Copy button on a secure origin                                  | Happy path    | P1       | No                        |
-| ATK-05 | Copy on plain http LAN (no `navigator.clipboard`)               | Error         | P1       | No                        |
-| ATK-06 | Copy rejected by the browser                                    | Error         | P2       | No                        |
-| ATK-07 | Reveal dialog closes by Escape / X and loses the secret         | Accessibility | P2       | No                        |
-| ATK-08 | Create name validation (empty, spaces, trimming)                | Validation    | P2       | No                        |
-| ATK-09 | Scopes and expiry choices are sent correctly                    | Validation    | P2       | No                        |
-| ATK-10 | Create fails: error toast, dialog stays with inputs             | Error         | P1       | No                        |
-| ATK-11 | Create response without `token`                                 | Error         | P2       | No                        |
-| ATK-12 | Create: double click / Enter sends one POST                     | Loading       | P2       | No                        |
-| ATK-13 | Create dialog Cancel / Escape / backdrop                        | Accessibility | P3       | No                        |
-| ATK-14 | Revoke through the confirm dialog                               | Happy path    | P1       | No                        |
-| ATK-15 | Revoke fails / double click                                     | Error         | P2       | No                        |
-| ATK-16 | `items: []` shows the empty state                               | Empty state   | P2       | No                        |
-| ATK-17 | `items: null` / missing `items` shows the empty state           | Empty state   | P1       | No                        |
-| ATK-18 | `scopes: null` / missing on a token                             | Empty state   | P1       | No                        |
-| ATK-19 | Null dates, empty name, odd prefix                              | Empty state   | P2       | No                        |
-| ATK-20 | Loading state                                                   | Loading       | P3       | No                        |
-| ATK-21 | List load errors and Retry                                      | Error         | P2       | No                        |
-| ATK-22 | 401 mid-session; signed-out deep link                           | Permissions   | P1       | No                        |
-| ATK-23 | Token name with markup is shown as text                         | Permissions   | P2       | No                        |
-| ATK-24 | Crash during render shows a fallback; Back recovers             | Error         | P1       | No                        |
-| ATK-25 | Back while a dialog is open                                     | Navigation    | P2       | No                        |
-| ATK-26 | Arabic / RTL (incl. identical "إلغاء" buttons in revoke dialog) | RTL           | P2       | No                        |
-| ATK-27 | Light and dark theme                                            | Theme         | P3       | No                        |
-| ATK-28 | Phone width 375px                                               | Responsive    | P3       | No                        |
-| ATK-29 | Keyboard and screen reader basics                               | Accessibility | P2       | No                        |
+| ID     | Title                                                           | Category      | Priority | Covered by existing test?                                                                       |
+| ------ | --------------------------------------------------------------- | ------------- | -------- | ----------------------------------------------------------------------------------------------- |
+| ATK-01 | Token table renders (active and revoked)                        | Happy path    | P1       | Yes (APITokens.test.tsx)                                                                        |
+| ATK-02 | Create token: request body and show-once reveal                 | Happy path    | P1       | Yes (APITokens.test.tsx)                                                                        |
+| ATK-03 | Secret is shown only once                                       | Permissions   | P1       | Yes (APITokens.test.tsx)                                                                        |
+| ATK-04 | Copy button on a secure origin                                  | Happy path    | P1       | Yes (APITokens.test.tsx)                                                                        |
+| ATK-05 | Copy on plain http LAN (no `navigator.clipboard`)               | Error         | P1       | Yes (APITokens.test.tsx)                                                                        |
+| ATK-06 | Copy rejected by the browser                                    | Error         | P2       | Yes (APITokens.test.tsx)                                                                        |
+| ATK-07 | Reveal dialog closes by Escape / X and loses the secret         | Accessibility | P2       | Yes (APITokens.test.tsx)                                                                        |
+| ATK-08 | Create name validation (empty, spaces, trimming)                | Validation    | P2       | Yes (APITokens.test.tsx)                                                                        |
+| ATK-09 | Scopes and expiry choices are sent correctly                    | Validation    | P2       | Yes (APITokens.test.tsx)                                                                        |
+| ATK-10 | Create fails: error toast, dialog stays with inputs             | Error         | P1       | Yes (APITokens.test.tsx)                                                                        |
+| ATK-11 | Create response without `token`                                 | Error         | P2       | Yes (APITokens.test.tsx)                                                                        |
+| ATK-12 | Create: double click / Enter sends one POST                     | Loading       | P2       | Yes (APITokens.test.tsx)                                                                        |
+| ATK-13 | Create dialog Cancel / Escape / backdrop                        | Accessibility | P3       | No                                                                                              |
+| ATK-14 | Revoke through the confirm dialog                               | Happy path    | P1       | Yes (APITokens.test.tsx)                                                                        |
+| ATK-15 | Revoke fails / double click                                     | Error         | P2       | Yes (APITokens.test.tsx)                                                                        |
+| ATK-16 | `items: []` shows the empty state                               | Empty state   | P2       | Yes (APITokens.test.tsx)                                                                        |
+| ATK-17 | `items: null` / missing `items` shows the empty state           | Empty state   | P1       | Yes (APITokens.test.tsx)                                                                        |
+| ATK-18 | `scopes: null` / missing on a token                             | Empty state   | P1       | Yes (APITokens.test.tsx)                                                                        |
+| ATK-19 | Null dates, empty name, odd prefix                              | Empty state   | P2       | Yes (APITokens.test.tsx)                                                                        |
+| ATK-20 | Loading state                                                   | Loading       | P3       | No                                                                                              |
+| ATK-21 | List load errors and Retry                                      | Error         | P2       | Yes (APITokens.test.tsx)                                                                        |
+| ATK-22 | 401 mid-session; signed-out deep link                           | Permissions   | P1       | Partial (APITokens.test.tsx: signed-out redirect, no blank page; 401 redirect is it.fails: bug) |
+| ATK-23 | Token name with markup is shown as text                         | Permissions   | P2       | Yes (APITokens.test.tsx)                                                                        |
+| ATK-24 | Crash during render shows a fallback; Back recovers             | Error         | P1       | Yes (APITokens.test.tsx)                                                                        |
+| ATK-25 | Back while a dialog is open                                     | Navigation    | P2       | Yes (APITokens.test.tsx)                                                                        |
+| ATK-26 | Arabic / RTL (incl. identical "إلغاء" buttons in revoke dialog) | RTL           | P2       | Partial (APITokens.test.tsx: RTL strings; identical revoke/cancel labels is it.fails: bug)      |
+| ATK-27 | Light and dark theme                                            | Theme         | P3       | No                                                                                              |
+| ATK-28 | Phone width 375px                                               | Responsive    | P3       | No                                                                                              |
+| ATK-29 | Keyboard and screen reader basics                               | Accessibility | P2       | Yes (APITokens.test.tsx)                                                                        |
 
 ## Cases
 
@@ -46,7 +46,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** signed in; `GET /api/me/tokens` → `{ "items": [ { "id": "t1", "name": "CLI laptop", "prefix": "ab12cd", "scopes": [], "last_used_at": null, "expires_at": null, "created_at": "2026-10-01T09:00:00Z", "revoked_at": null }, { "id": "t2", "name": "CI", "prefix": "ef34gh", "scopes": ["read", "write"], "last_used_at": "2026-10-18T07:00:00Z", "expires_at": "2027-01-01T00:00:00Z", "created_at": "2026-09-01T09:00:00Z", "revoked_at": null }, { "id": "t3", "name": "Old", "prefix": "zz99yy", "scopes": ["read"], "last_used_at": null, "expires_at": null, "created_at": "2026-01-01T09:00:00Z", "revoked_at": "2026-02-01T09:00:00Z" } ] }`
 - **Steps:**
   1. Open `/account/tokens`.
@@ -56,7 +56,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** list as ATK-01; `POST /api/me/tokens` → 201 `{ "token": "mkt_pat_ab12cd_SECRETVALUE", "pat": { "id": "t4", "name": "Scripts", "prefix": "ab12cd", "scopes": ["read"], "last_used_at": null, "expires_at": "2026-11-18T09:00:00Z", "created_at": "2026-10-19T09:00:00Z", "revoked_at": null } }`; next `GET` includes t4
 - **Steps:**
   1. Click "Create token".
@@ -68,7 +68,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** as ATK-02
 - **Steps:**
   1. Create a token; click "Close" in the reveal dialog.
@@ -79,7 +79,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** as ATK-02; `navigator.clipboard.writeText` mocked to resolve; `window.isSecureContext = true`
 - **Steps:**
   1. In the reveal dialog click "Copy".
@@ -89,7 +89,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** as ATK-02; `navigator.clipboard` undefined and `window.isSecureContext = false` (Maktaba opened at `http://192.168.1.20:8780`); `document.execCommand` mocked to return `true`
 - **Steps:**
   1. In the reveal dialog click "Copy".
@@ -99,7 +99,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** secure context; `navigator.clipboard.writeText` rejects `DOMException("NotAllowedError")`
 - **Steps:**
   1. Click "Copy".
@@ -109,7 +109,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** reveal dialog open as ATK-02
 - **Steps:**
   1. Click the backdrop.
@@ -120,7 +120,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** list loaded; `POST` mocked
 - **Steps:**
   1. Open the create dialog; leave "Name" empty.
@@ -132,7 +132,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** `POST` mocked
 - **Steps:**
   1. Create with no scope ticked and expiry left at default.
@@ -143,7 +143,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** variants for `POST /api/me/tokens`: (a) 400 `{ "title": "Bad Request", "status": 400, "detail": "name required" }`; (b) 403 `{ "title": "Forbidden", "status": 403, "detail": "admin scope not allowed" }`; (c) 500 no detail; (d) fetch rejects.
 - **Steps:**
   1. Fill the create dialog and submit.
@@ -153,7 +153,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** `POST /api/me/tokens` → 201 `{ "pat": { … } }` (no `token`), or `{ "token": "" }`, or 204
 - **Steps:**
   1. Create a token.
@@ -163,7 +163,7 @@
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** `POST` resolves after a delay
 - **Steps:**
   1. Fill the name, click "Create token" twice quickly.
@@ -186,7 +186,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** list as ATK-01; `DELETE /api/me/tokens/t2` → 204; next `GET` returns t2 with `"revoked_at": "2026-10-19T09:00:00Z"`
 - **Steps:**
   1. Click "Revoke" on "CI".
@@ -197,7 +197,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** (a) `DELETE` → 404 `{ "title": "Not Found", "status": 404, "detail": "token not found" }`; (b) fetch rejects; (c) `DELETE` slow, for the double click
 - **Steps:**
   1. Confirm a revoke for each variant; for (c) click the dialog's "Revoke" twice quickly.
@@ -207,7 +207,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** `GET /api/me/tokens` → `{ "items": [] }`
 - **Steps:**
   1. Open `/account/tokens`.
@@ -217,7 +217,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** variants: (a) `{ "items": null }`; (b) `{}`; (c) 200 `text/html`; (d) 200 `application/json` body `null`.
 - **Steps:**
   1. Open `/account/tokens`.
@@ -227,7 +227,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** `GET /api/me/tokens` → one token with `"scopes": null`, another with the `scopes` key missing (other fields as t1)
 - **Steps:**
   1. Open `/account/tokens`.
@@ -237,7 +237,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** tokens with (a) `"name": ""`; (b) `"prefix": ""` / `null`; (c) `last_used_at` and `expires_at` keys missing; (d) `"revoked_at"` key missing.
 - **Steps:**
   1. Open the page; open the revoke dialog for (a).
@@ -257,7 +257,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** first `GET`: (a) 500 `{ "title": "Internal Server Error", "status": 500, "detail": "db down" }`; (b) 404 `{ "title": "Not Found", "status": 404 }`; (c) fetch rejects; (d) 200 `application/json` `{bad`. Second `GET` → list.
 - **Steps:**
   1. Open the page; click "Try again".
@@ -267,7 +267,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Partial (APITokens.test.tsx: signed-out redirect, no blank page; 401 redirect is it.fails: bug)
 - **Preconditions / data:** (a) auth probe OK, `GET /api/me/tokens` → 401; (b) `GET /api/auth/me` → 401
 - **Steps:**
   1. Open `/account/tokens` directly.
@@ -277,7 +277,7 @@
 
 - **Priority:** P2
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** token `"name": "<img src=x onerror=alert(1)>"`
 - **Steps:**
   1. Open the page; open its revoke dialog.
@@ -287,7 +287,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** start on `/account/sessions`; `GET /api/me/tokens` → `{ "items": [ { "id": "t1", "name": "x", "prefix": "p", "scopes": null, "last_used_at": null, "expires_at": null, "created_at": "2026-10-01T09:00:00Z", "revoked_at": null } ] }` (crashes today, see ATK-18)
 - **Steps:**
   1. From `/account/sessions` click sidebar "API tokens".
@@ -299,7 +299,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** list loaded
 - **Steps:**
   1. Open the create dialog; press browser Back.
@@ -310,7 +310,7 @@
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** No
+- **Covered by existing test?** Partial (APITokens.test.tsx: RTL strings; identical revoke/cancel labels is it.fails: bug)
 - **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`; list as ATK-01
 - **Steps:**
   1. Open the page; open the create dialog; open a revoke dialog; create a token to see the reveal dialog.
@@ -340,7 +340,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (APITokens.test.tsx)
 - **Preconditions / data:** list loaded
 - **Steps:**
   1. Keyboard only: open create, fill name, Space on checkboxes, choose expiry, submit, Tab to Copy, Enter, Tab to Close.

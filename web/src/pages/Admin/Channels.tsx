@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
+import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { Input } from "@ds/components/Input/Input";
 import { Select } from "@ds/components/Select/Select";
 import { useToast } from "@ds/components/Toast/Toast";
@@ -63,12 +64,18 @@ function ChannelsInner() {
   const [category, setCategory] = useState("");
   const [origin, setOrigin] = useState<OriginFilter>("all");
   const [nowMs, setNowMs] = useState(() => Date.now());
+  // A failed first load is an error, not an empty lineup (an admin told
+  // "No channels yet" would create duplicates).
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     channelsApi
       .list()
-      .then((r) => setChannels([...(r.items ?? [])].sort((a, b) => a.number - b.number)))
-      .catch(() => setChannels([]));
+      .then((r) => {
+        setLoadError(null);
+        setChannels([...(r.items ?? [])].sort((a, b) => a.number - b.number));
+      })
+      .catch((e: unknown) => setLoadError(e instanceof ApiError ? e.problem.title : ""));
   }, []);
   useEffect(load, [load]);
   useEffect(() => {
@@ -93,7 +100,7 @@ function ChannelsInner() {
     return (channels ?? []).filter(
       (c) =>
         (!needle ||
-          c.name.toLowerCase().includes(needle) ||
+          (c.name ?? "").toLowerCase().includes(needle) ||
           String(c.number).includes(needle) ||
           (c.now_playing?.title ?? "").toLowerCase().includes(needle)) &&
         (!category || c.category === category) &&
@@ -151,6 +158,26 @@ function ChannelsInner() {
     }
   }
 
+  if (!channels && loadError !== null) {
+    return (
+      <section className="mkt-page mkt-channels">
+        <ErrorState
+          kind="server"
+          title={loadError || t("common.error")}
+          action={
+            <Button
+              onClick={() => {
+                setLoadError(null);
+                load();
+              }}
+            >
+              {t("common.retry")}
+            </Button>
+          }
+        />
+      </section>
+    );
+  }
   if (!channels) return <p className="mkt-loading">{t("common.loading")}</p>;
 
   return (

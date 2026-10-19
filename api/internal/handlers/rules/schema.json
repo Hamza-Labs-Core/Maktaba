@@ -4017,6 +4017,16 @@
      "maximum": 600
     },
     {
+     "name": "swap_start_timeout_minutes",
+     "kind": "int",
+     "group": "TV staging swap",
+     "label": "Swap not started after (minutes)",
+     "help": "A swap no front door has started by then is rolled back, with a notice. 0: wait for the front door.",
+     "default": 10,
+     "minimum": 0,
+     "maximum": 1440
+    },
+    {
      "name": "keep_warm_minutes",
      "kind": "int",
      "group": "TV staging swap",

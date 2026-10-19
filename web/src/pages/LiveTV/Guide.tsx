@@ -22,6 +22,7 @@ import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { useI18n } from "../../lib/i18n";
+import { useOptionalAuth } from "../../lib/auth";
 import {
   channelLogo,
   channelsApi,
@@ -45,6 +46,19 @@ function minutesBetween(a: number, b: number): number {
   return (b - a) / 60_000;
 }
 
+// cellBox places a program on the time axis. A block with unparseable or
+// backwards timestamps gets the 2px minimum at the window start instead of a
+// NaN/negative width (which React drops, leaving an unsized cell).
+function cellBox(p: Program, windowStart: number): { start: number; width: number } {
+  const s = Date.parse(p.start_at);
+  const e = Date.parse(p.end_at);
+  if (Number.isNaN(s) || Number.isNaN(e) || e <= s) return { start: 0, width: 2 };
+  return {
+    start: Math.max(0, minutesBetween(windowStart, s)) * PX_PER_MIN,
+    width: Math.max(2, minutesBetween(s, e) * PX_PER_MIN),
+  };
+}
+
 // collapseFiller merges runs of filler/bumper blocks into one cell so the
 // grid isn't shredded into slivers (EC2 / 27.4 AC10) — the merged cell
 // reads as an "Up Next" placeholder.
@@ -64,11 +78,16 @@ function collapseFiller(programs: Program[]): Program[] {
 export function Guide() {
   const { t, formatDate } = useI18n();
   const nav = useNavigate();
+  // only admins can create channels: the empty-state CTA is theirs
+  const isAdmin = useOptionalAuth()?.user?.is_admin === true;
   const [guide, setGuide] = useState<GuideResponse | null>(null);
   const [err, setErr] = useState(false);
   const [category, setCategory] = useState("");
   const [compact, setCompact] = useState(() =>
-    typeof window !== "undefined" ? window.matchMedia?.("(max-width: 640px)").matches : false
+    // `?? false`: without matchMedia this was undefined and the toggle lost aria-pressed
+    typeof window !== "undefined"
+      ? (window.matchMedia?.("(max-width: 640px)").matches ?? false)
+      : false
   );
   const [details, setDetails] = useState<Program | null>(null);
   // Server-clock offset (serverTime − clientTime at fetch) so the now-line
@@ -179,7 +198,11 @@ export function Guide() {
         <EmptyState
           title={t("guide.empty.title")}
           description={t("guide.empty.desc")}
-          action={<Button onClick={() => nav("/admin/channels")}>{t("guide.empty.cta")}</Button>}
+          action={
+            isAdmin ? (
+              <Button onClick={() => nav("/admin/channels")}>{t("guide.empty.cta")}</Button>
+            ) : undefined
+          }
         />
       ) : compact ? (
         <WhatsOnNowList channels={channels} nowMs={nowMs} onTune={(num) => nav(`/live/${num}`)} />
@@ -217,8 +240,7 @@ export function Guide() {
                     </div>
                   )}
                   {cells.map((p) => {
-                    const offMin = Math.max(0, minutesBetween(windowStart, Date.parse(p.start_at)));
-                    const durMin = minutesBetween(Date.parse(p.start_at), Date.parse(p.end_at));
+                    const box = cellBox(p, windowStart);
                     const airing = isAiring(p, nowMs);
                     const prog = progressFraction(p, nowMs);
                     return (
@@ -229,8 +251,8 @@ export function Guide() {
                         data-testid="guide-cell"
                         title={p.title}
                         style={{
-                          insetInlineStart: offMin * PX_PER_MIN,
-                          width: Math.max(2, durMin * PX_PER_MIN),
+                          insetInlineStart: box.start,
+                          width: box.width,
                         }}
                         onClick={() => onCellActivate(p, channel.number)}
                       >

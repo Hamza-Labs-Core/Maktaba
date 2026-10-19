@@ -1,6 +1,7 @@
 // Story 28.6 — the server's update status (GET /api/system/updates), shared
-// by the About section and the nav badge. The nav reads it once per page
-// load; "Check now" on the About page refreshes it for both.
+// by the About section and the nav badge. Each view reads it when it mounts
+// (the reads of one render share one request); "Check now" on the About page
+// refreshes it for every view on screen.
 import { useEffect, useState } from "react";
 import { api } from "./api";
 
@@ -23,56 +24,53 @@ export interface UpdateStatus {
   rolled_back?: { version: string; reason: string; at: string };
 }
 
-let cached: Promise<UpdateStatus | null> | null = null;
+let inflight: Promise<UpdateStatus | null> | null = null;
 const listeners = new Set<(s: UpdateStatus | null) => void>();
 
-/** fetchUpdateStatus reads the status; `refresh` asks the server to re-check. */
-export function fetchUpdateStatus(refresh = false): Promise<UpdateStatus | null> {
-  if (refresh || !cached) {
-    const p = api
-      .get<UpdateStatus>(`/api/system/updates${refresh ? "?refresh=true" : ""}`)
-      .then((s) => s ?? null);
-    if (refresh) {
-      // A failed refresh keeps the last good status for the badge; the
-      // caller still sees the error.
-      p.then(
-        (s) => publish(Promise.resolve(s), s),
-        () => {}
-      );
-      return p;
-    }
-    cached = p.catch(() => null);
-  }
-  return cached;
-}
-
-/** publishUpdateStatus shares a status read elsewhere with the badge. */
-export function publishUpdateStatus(s: UpdateStatus | null): void {
-  publish(Promise.resolve(s), s);
-}
-
-function publish(p: Promise<UpdateStatus | null>, s: UpdateStatus | null) {
-  cached = p;
+function publish(s: UpdateStatus | null) {
   for (const l of listeners) l(s);
 }
 
-/** Test hook: forget the cached status. */
-export function resetUpdateStatusCache(): void {
-  cached = null;
+/**
+ * fetchUpdateStatus reads the status and shares it with every view on
+ * screen; `refresh` asks the server to check again (and rejects on a
+ * failure, for the caller's toast). A plain read never rejects: null.
+ */
+export function fetchUpdateStatus(refresh = false): Promise<UpdateStatus | null> {
+  if (refresh) {
+    const p = api.get<UpdateStatus>("/api/system/updates?refresh=true").then((s) => s ?? null);
+    p.then(publish, () => {});
+    return p;
+  }
+  if (!inflight) {
+    const p: Promise<UpdateStatus | null> = api
+      .get<UpdateStatus>("/api/system/updates")
+      .then((s) => s ?? null)
+      .catch(() => null);
+    // shared only by the reads of one render (the nav and the About tab
+    // mounting together); a later mount reads again
+    inflight = p;
+    queueMicrotask(() => {
+      if (inflight === p) inflight = null;
+    });
+    void p.then(publish);
+  }
+  return inflight;
 }
 
-/** useUpdateStatus is the shared status (null until loaded or on error). */
+/** Test hook: forget a read in flight. */
+export function resetUpdateStatusCache(): void {
+  inflight = null;
+}
+
+/** useUpdateStatus is the status (null until loaded, or when it can't be read). */
 export function useUpdateStatus(): UpdateStatus | null {
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   useEffect(() => {
-    let live = true;
-    void fetchUpdateStatus().then((s) => {
-      if (live) setStatus(s);
-    });
     const l = (s: UpdateStatus | null) => setStatus(s);
     listeners.add(l);
+    void fetchUpdateStatus();
     return () => {
-      live = false;
       listeners.delete(l);
     };
   }, []);

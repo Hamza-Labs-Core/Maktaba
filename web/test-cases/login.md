@@ -8,35 +8,35 @@
 
 ## Summary
 
-| ID     | Title                                                           | Category      | Priority | Covered by existing test?                                                   |
-| ------ | --------------------------------------------------------------- | ------------- | -------- | --------------------------------------------------------------------------- |
-| LGN-01 | Sign in goes to /library by default                             | Happy path    | P1       | Partial (`Login.test.tsx`: only via unsafe-next cases, auth mocked)         |
-| LGN-02 | Sign in returns to `state.from`                                 | Navigation    | P1       | No                                                                          |
-| LGN-03 | Signed-out deep link round trip keeps the page (and its query)  | Navigation    | P1       | No                                                                          |
-| LGN-04 | `?next=` app path wins over `state.from`                        | Navigation    | P2       | Partial (`Login.test.tsx`: next tested alone)                               |
-| LGN-05 | `?next=` SSO authorize path does a full page load               | Happy path    | P1       | Yes (`Login.test.tsx`)                                                      |
-| LGN-06 | Unsafe `?next=` falls back to /library                          | Permissions   | P1       | Yes (`Login.test.tsx`)                                                      |
-| LGN-07 | Unsafe `state.from` falls back to /library                      | Permissions   | P1       | No                                                                          |
-| LGN-08 | Already signed in: /login redirects to /library at once         | Navigation    | P1       | Partial (`Login.test.tsx`: only the SSO `next` case)                        |
-| LGN-09 | Already signed in with `state.from`: goes there                 | Navigation    | P2       | No                                                                          |
-| LGN-10 | Session probe finishes after render: page moves on              | Loading       | P2       | No                                                                          |
-| LGN-11 | Wrong password (401) shows the invalid-credentials alert        | Error         | P1       | No                                                                          |
-| LGN-12 | Server error (500) shows the generic alert                      | Error         | P2       | No                                                                          |
-| LGN-13 | Network failure shows the generic alert                         | Error         | P2       | No                                                                          |
-| LGN-14 | 200 with a body lacking `user` does not loop silently           | Error         | P2       | No                                                                          |
-| LGN-15 | Submitting state: button disabled, one request only             | Loading       | P2       | No                                                                          |
-| LGN-16 | Old error clears on the next attempt                            | Error         | P3       | No                                                                          |
-| LGN-17 | Empty username or password does not submit                      | Validation    | P2       | No                                                                          |
-| LGN-18 | Password-reset banner after reset                               | Happy path    | P2       | No                                                                          |
-| LGN-19 | Cluster prompt on a node; hidden while continuing SSO           | Happy path    | P2       | Partial (`ClusterSignIn.test.tsx`: component only; Login hiding not tested) |
-| LGN-20 | `/api/cluster/self` with `home: null` / fails: form still works | Empty state   | P2       | Partial (`ClusterSignIn.test.tsx`: role/sso/error, not `home: null`)        |
-| LGN-21 | Forgot-password and register links                              | Navigation    | P2       | No                                                                          |
-| LGN-22 | Back after sign-in does not return to /login                    | Navigation    | P2       | No                                                                          |
-| LGN-23 | Crash during render shows a fallback; Back recovers             | Error         | P1       | No                                                                          |
-| LGN-24 | Arabic / RTL                                                    | RTL           | P2       | No                                                                          |
-| LGN-25 | Light and dark theme                                            | Theme         | P3       | No                                                                          |
-| LGN-26 | Phone width 375px                                               | Responsive    | P3       | No                                                                          |
-| LGN-27 | Keyboard and labels                                             | Accessibility | P2       | No                                                                          |
+| ID     | Title                                                           | Category      | Priority | Covered by existing test?    |
+| ------ | --------------------------------------------------------------- | ------------- | -------- | ---------------------------- |
+| LGN-01 | Sign in goes to /library by default                             | Happy path    | P1       | Yes (`Login.cases.test.tsx`) |
+| LGN-02 | Sign in returns to `state.from`                                 | Navigation    | P1       | Yes (`Login.cases.test.tsx`) |
+| LGN-03 | Signed-out deep link round trip keeps the page (and its query)  | Navigation    | P1       | Yes (`Login.cases.test.tsx`) |
+| LGN-04 | `?next=` app path wins over `state.from`                        | Navigation    | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-05 | `?next=` SSO authorize path does a full page load               | Happy path    | P1       | Yes (`Login.test.tsx`)       |
+| LGN-06 | Unsafe `?next=` falls back to /library                          | Permissions   | P1       | Yes (`Login.test.tsx`)       |
+| LGN-07 | Unsafe `state.from` falls back to /library                      | Permissions   | P1       | Yes (`Login.cases.test.tsx`) |
+| LGN-08 | Already signed in: /login redirects to /library at once         | Navigation    | P1       | Yes (`Login.cases.test.tsx`) |
+| LGN-09 | Already signed in with `state.from`: goes there                 | Navigation    | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-10 | Session probe finishes after render: page moves on              | Loading       | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-11 | Wrong password (401) shows the invalid-credentials alert        | Error         | P1       | Yes (`Login.cases.test.tsx`) |
+| LGN-12 | Server error (500) shows the generic alert                      | Error         | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-13 | Network failure shows the generic alert                         | Error         | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-14 | 200 with a body lacking `user` does not loop silently           | Error         | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-15 | Submitting state: button disabled, one request only             | Loading       | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-16 | Old error clears on the next attempt                            | Error         | P3       | No                           |
+| LGN-17 | Empty username or password does not submit                      | Validation    | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-18 | Password-reset banner after reset                               | Happy path    | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-19 | Cluster prompt on a node; hidden while continuing SSO           | Happy path    | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-20 | `/api/cluster/self` with `home: null` / fails: form still works | Empty state   | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-21 | Forgot-password and register links                              | Navigation    | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-22 | Back after sign-in does not return to /login                    | Navigation    | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-23 | Crash during render shows a fallback; Back recovers             | Error         | P1       | Yes (`App.cases.test.tsx`)   |
+| LGN-24 | Arabic / RTL                                                    | RTL           | P2       | Yes (`Login.cases.test.tsx`) |
+| LGN-25 | Light and dark theme                                            | Theme         | P3       | No                           |
+| LGN-26 | Phone width 375px                                               | Responsive    | P3       | No                           |
+| LGN-27 | Keyboard and labels                                             | Accessibility | P2       | Yes (`Login.cases.test.tsx`) |
 
 ## Cases
 
@@ -44,7 +44,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `Login.test.tsx` "ignores %s and goes to the library" reaches `/library` but with `useAuth` mocked; the real `POST /api/auth/login` is never exercised.
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** real `AuthProvider`; `GET /api/auth/me` → 401; `POST /api/auth/login` → `200 { "user": { "id": "u1", "username": "amal", "is_admin": false } }`; `GET /api/cluster/self` rejects.
 - **Steps:**
   1. Open `/login`.
@@ -56,7 +56,7 @@
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** MemoryRouter initial entry `{ pathname: "/login", state: { from: "/videos/42" } }`; login resolves.
 - **Steps:**
   1. Sign in as in LGN-01.
@@ -66,7 +66,7 @@
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** full `App` routes (RequireAuth + AppShell); `GET /api/auth/me` → 401; login resolves with a user.
 - **Steps:**
   1. Open `/search?q=quran` signed out.
@@ -78,7 +78,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** Partial — `Login.test.tsx` "opens another app path with the router" tests `next` alone.
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** entry `/login?next=%2Fqueue` with state `{ from: "/videos/42" }`.
 - **Steps:**
   1. Sign in.
@@ -108,7 +108,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** state `{ from: "//evil.example/x" }`, then `{ from: "https://evil.example" }`, then `{ from: 42 }` (non-string).
 - **Steps:**
   1. Sign in.
@@ -118,7 +118,7 @@
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** Partial — `Login.test.tsx` "continues at once when already signed in" covers only the SSO `next` case.
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/auth/me` → `{ "user": { "id": "u1", "username": "amal", "is_admin": false } }`.
 - **Steps:**
   1. Open `/login` with no query.
@@ -128,7 +128,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** signed in; entry `/login` with state `{ from: "/series/7" }`.
 - **Steps:**
   1. Render.
@@ -138,7 +138,7 @@
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/auth/me` held pending (deferred promise).
 - **Steps:**
   1. Open `/login`. Form shows (user is still null while the probe runs).
@@ -149,7 +149,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** `POST /api/auth/login` → `401` `application/problem+json` `{ "type": "about:blank", "title": "Unauthorized", "status": 401 }`.
 - **Steps:**
   1. Sign in with a wrong password.
@@ -159,7 +159,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** login → `500` problem+json; repeat with `403` and with a `text/html` 502 body.
 - **Steps:**
   1. Submit.
@@ -169,7 +169,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** `fetch` rejects with `TypeError("Failed to fetch")` for `/api/auth/login`.
 - **Steps:**
   1. Submit.
@@ -179,7 +179,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** full App routes; login → `200` `application/json` `{}` (or `text/html` body).
 - **Steps:**
   1. Submit.
@@ -189,7 +189,7 @@
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** login promise held pending.
 - **Steps:**
   1. Submit, then click the button again and press Enter in the password field.
@@ -209,7 +209,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** none.
 - **Steps:**
   1. Click "Sign in" with both fields empty. 2. Fill only username, click again.
@@ -219,7 +219,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** entry `/login` with state `{ reset: true }`, signed out.
 - **Steps:**
   1. Render.
@@ -229,7 +229,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `ClusterSignIn.test.tsx` covers the component; Login-level wiring not tested.
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/cluster/self` → `{ "role": "node", "id": "n1", "name": "Studio Mac", "version": "1.5.0", "schema_rev": 134, "sso": true, "home": { "name": "Home NAS", "web_url": "http://home.local:8780", "reachable": true } }`.
 - **Steps:**
   1. Open `/login` with state `{ from: "/videos/42" }`; click "Continue with Home NAS".
@@ -240,7 +240,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** Partial — `ClusterSignIn.test.tsx` covers role home, no sso, error; not `home: null` or missing.
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** `/api/cluster/self` → node with `"home": null`; then node with no `home` key; then `500`; then malformed JSON (`text/html` 200). (No list fields on this page; this endpoint is the only fetched shape.)
 - **Steps:**
   1. Open `/login`, sign in.
@@ -250,7 +250,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** signed out.
 - **Steps:**
   1. Click "Forgot password?". 2. Back. 3. Click "Create an account".
@@ -260,7 +260,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** history `["/library", "/login"]` style e2e: open `/library` signed out (redirects to `/login`), sign in.
 - **Steps:**
   1. After landing on `/library`, press browser Back.
@@ -270,7 +270,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`App.cases.test.tsx`)
 - **Preconditions / data:** mock `../components/ClusterSignIn` so `ClusterSignIn` throws during render. Note `/login` is outside `AppShell`, so the route boundary being added to `AppShell.tsx` will not cover it.
 - **Steps:**
   1. Navigate `/forgot-password` → click "Back to sign in" (crashes on `/login`).
@@ -281,7 +281,7 @@
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`.
 - **Steps:**
   1. Open `/login`; submit a wrong password (401).
@@ -311,7 +311,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Login.cases.test.tsx`)
 - **Preconditions / data:** signed out.
 - **Steps:**
   1. Open `/login`; press Tab repeatedly; press Enter in the password field.

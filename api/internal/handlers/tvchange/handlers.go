@@ -726,8 +726,11 @@ func (h *Handler) Rollback(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("rollback: "+err.Error()))
 		return
 	}
-	h.Store.Audit(r.Context(), h.DB, p.UserID, "rollback", res.ChangeID, map[string]any{"mode": res.Mode,
-		"op_id": res.OpID, "rollback_change_id": res.RollbackChangeID})
+	audit := map[string]any{"mode": res.Mode, "op_id": res.OpID, "rollback_change_id": res.RollbackChangeID}
+	if res.Degraded != "" {
+		audit["degraded"] = res.Degraded
+	}
+	h.Store.Audit(r.Context(), h.DB, p.UserID, "rollback", res.ChangeID, audit)
 	common.WriteJSON(w, r, http.StatusAccepted, res)
 }
 

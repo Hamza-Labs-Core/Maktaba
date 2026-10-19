@@ -28,10 +28,30 @@ const RUNNING = new Set(["requested", "connecting", "live", "stopping"]);
 
 const since = (s?: string | null) => (s ? new Date(s).toLocaleString() : "—");
 
-function channelLabel(p: { channel_number?: number; channel_name?: string; channel_id: string }) {
+function channelLabel(p: {
+  channel_number?: number;
+  channel_name?: string;
+  channel_id?: string | null;
+}) {
   if (p.channel_number) return `${p.channel_number} ${p.channel_name ?? ""}`.trim();
-  return p.channel_id.slice(0, 8);
+  return p.channel_id ? p.channel_id.slice(0, 8) : "—";
 }
+
+/** A money amount the API may leave out (or send as null). */
+const usd = (v: number | null | undefined) => (typeof v === "number" ? v.toFixed(2) : "—");
+
+/** Read as "not set up" when the API leaves the integration out. */
+const NO_INTEGRATION: RemoteIntegration = {
+  configured: false,
+  account_id: "",
+  token_set: false,
+  token_problem: null,
+  signing_key_set: false,
+  customer_domain: null,
+  enabled: false,
+  can_enable: false,
+  last_test: null,
+};
 
 export function RemotePanel() {
   const { t } = useI18n();
@@ -42,17 +62,21 @@ export function RemotePanel() {
   const [pushPage, setPushPage] = useState(1);
   const [sessPage, setSessPage] = useState(1);
   const alive = useRef(true);
+  // a 403 / 404 (not an admin, or no remote viewing on this server) stops polling
+  const off = useRef(false);
 
   const load = useCallback(async () => {
+    if (off.current) return;
     try {
       const r = await tvRemoteApi.status();
       if (!alive.current) return;
-      setIntegration(r.integration);
-      setSt(r.remote ?? null);
+      setIntegration(r?.integration ?? NO_INTEGRATION);
+      setSt(r?.remote ?? null);
       setError(null);
     } catch (e) {
       if (!alive.current) return;
       if (e instanceof ApiError && (e.status === 403 || e.status === 404)) {
+        off.current = true;
         setHidden(true);
         return;
       }
@@ -114,6 +138,7 @@ export function RemotePanel() {
       : st && !st.ready
         ? "problem"
         : "ready";
+  const inputs = st?.inputs ?? [];
   const pushes = st?.pushes ?? [];
   const sessions = st?.session_list ?? [];
   const events = st?.events ?? [];
@@ -155,9 +180,9 @@ export function RemotePanel() {
         <p data-testid="remote-month">
           {t("tv.remote.month", {
             month: e.month,
-            minutes: Math.round(e.delivered_minutes + e.running_minutes),
-            usd: e.total_usd.toFixed(2),
-            budget: e.budget_usd.toFixed(2),
+            minutes: Math.round((e.delivered_minutes ?? 0) + (e.running_minutes ?? 0)),
+            usd: usd(e.total_usd),
+            budget: usd(e.budget_usd),
           })}
           {e.exhausted && <span className="mkt-q-status--bad"> · {t("cfremote.exhausted")}</span>}{" "}
           <a href={docLink("costs")} target="_blank" rel="noreferrer">
@@ -166,7 +191,7 @@ export function RemotePanel() {
         </p>
       )}
 
-      {st && st.inputs.length > 0 && (
+      {inputs.length > 0 && (
         <table className="mkt-q-cfpushes" data-testid="remote-inputs">
           <caption>{t("tv.remote.inputs")}</caption>
           <thead>
@@ -179,7 +204,7 @@ export function RemotePanel() {
             </tr>
           </thead>
           <tbody>
-            {st.inputs.map((i) => (
+            {inputs.map((i) => (
               <tr key={i.id}>
                 <td>
                   <bdi>{i.name}</bdi>

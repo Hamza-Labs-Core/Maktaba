@@ -24,6 +24,10 @@ export interface RemoteTestLine {
   optional?: boolean;
   skipped?: boolean;
   detail: string;
+  /** Why a check failed (extension tests: timeout, token_rejected, livetv_missing, ...). */
+  code?: string;
+  /** The check's round trip (extension tests). */
+  latency_ms?: number;
 }
 
 export interface RemoteTestResult {

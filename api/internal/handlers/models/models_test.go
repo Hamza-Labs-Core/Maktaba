@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 )
 
@@ -70,7 +71,15 @@ func newRouter(p Pipeline) *chi.Mux {
 
 func do(t *testing.T, r *chi.Mux, method, path string) *httptest.ResponseRecorder {
 	t.Helper()
+	return doAs(t, r, method, path, &principal.Principal{UserID: "admin", IsAdmin: true})
+}
+
+func doAs(t *testing.T, r *chi.Mux, method, path string, p *principal.Principal) *httptest.ResponseRecorder {
+	t.Helper()
 	req := httptest.NewRequest(method, path, nil)
+	if p != nil {
+		req = req.WithContext(principal.WithPrincipal(req.Context(), p))
+	}
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	return w
@@ -239,5 +248,31 @@ func TestTestOfflineReturns503(t *testing.T) {
 	w := do(t, newRouter(nil), http.MethodPost, "/api/models/all-minilm-l6-v2/test")
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("offline test status = %d, want 503", w.Code)
+	}
+}
+
+// SMD-18: a signed-in non-admin can list models but not change them.
+func TestModelMutationsAreAdminOnly(t *testing.T) {
+	p := &fakePipeline{}
+	r := newRouter(p)
+	member := &principal.Principal{UserID: "member"}
+	if w := doAs(t, r, http.MethodGet, "/api/models", member); w.Code != http.StatusOK {
+		t.Fatalf("list as member: %d, want 200", w.Code)
+	}
+	for _, c := range []struct{ method, path string }{
+		{http.MethodPost, "/api/models/whisper-small/download"},
+		{http.MethodDelete, "/api/models/whisper-small"},
+		{http.MethodPatch, "/api/models/whisper-small/activate"},
+		{http.MethodPost, "/api/models/whisper-small/test"},
+	} {
+		if w := doAs(t, r, c.method, c.path, member); w.Code != http.StatusForbidden {
+			t.Errorf("%s %s as member: %d, want 403", c.method, c.path, w.Code)
+		}
+		if w := doAs(t, r, c.method, c.path, nil); w.Code != http.StatusUnauthorized {
+			t.Errorf("%s %s signed out: %d, want 401", c.method, c.path, w.Code)
+		}
+	}
+	if p.downloadedID != "" || p.deletedID != "" || p.activatedID != "" || p.testedID != "" {
+		t.Fatalf("pipeline was called for a non-admin: %+v", p)
 	}
 }
