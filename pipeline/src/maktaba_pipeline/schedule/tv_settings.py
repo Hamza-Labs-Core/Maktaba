@@ -40,6 +40,10 @@ TVN = "Hardware encoder"
 TVC = "Channels on air"
 TCL = "Streaming machines"
 TCP = "Placement"
+TRV = "Remote viewers"
+TRL = "Remote limits"
+TRB = "Remote budget"
+TRP = "Remote push"
 PL = "Plex Live TV"
 TS = "Channel strip"
 TSL = "Strip look"
@@ -162,6 +166,50 @@ class MaktabaTvClusterConfig:
     dead_after_seconds: int = 15
     #: channel slug -> the machine name it prefers (one name)
     pins: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class MaktabaTvRemoteConfig:
+    """Remote viewing through Cloudflare Stream (Epic 32, stories 32.7, 32.8, 32.10): who may
+    watch away from home, how many channels go out at once, the monthly budget and the
+    storage the account holds. Remote viewing itself is switched on on the Cloudflare page
+    (it needs a passed Test connection); these are its limits."""
+
+    #: ``all`` signed-in users, ``admins`` only, or ``listed``: the users below
+    viewers: str = "all"
+    #: user ids (or user names) allowed when ``viewers`` is ``listed``
+    viewer_users: tuple[str, ...] = ()
+    #: remote sessions one user may have at once (two phones, a phone and a laptop)
+    max_streams_per_user: int = 2
+    #: channels pushed to Cloudflare at once (the size of the live input pool)
+    max_channels: int = 22
+    #: ISO 3166-1 alpha-2 country codes remote viewers may watch from; empty: anywhere
+    allowed_countries: tuple[str, ...] = ()
+    #: keep a channel pushed this many minutes after its last remote viewer leaves
+    idle_timeout_minutes: int = 3
+    #: lifetime of a viewer's signed playback token (refreshed by the heartbeat)
+    token_ttl_minutes: int = 60
+    #: ``rtmps`` or ``srt``: how the home's push relay sends a channel to Cloudflare
+    ingest: str = "rtmps"
+    #: Cloudflare's low-latency HLS (beta)
+    low_latency: bool = False
+    #: a longer broadcast starts a new one (so one recording never outgrows the storage)
+    max_push_hours: int = 8
+    #: estimated spend cap per calendar month (UTC), USD; 0: no budget check
+    monthly_budget_usd: float = 10.0
+    #: at 100 %: ``block_new`` refuses new remote tunes (running ones finish); ``warn``
+    budget_action: str = "block_new"
+    #: price of 1,000 minutes delivered, USD
+    delivery_usd_per_1000_min: float = 1.0
+    #: price of 1,000 minutes of storage per month, USD
+    storage_usd_per_1000_min: float = 5.0
+    #: the prepaid storage the estimate counts (the guard reads the account's real capacity)
+    storage_plan_minutes: int = 1000
+    #: minutes of storage the guard keeps free on top of every push's reservation
+    storage_margin_minutes: int = 30
+    #: ``relay``: requests through the Maktaba relay are remote; ``relay_or_public_ip``:
+    #: a public client address counts as remote too
+    remote_detection: str = "relay"
 
 
 @dataclass(frozen=True)
@@ -560,6 +608,117 @@ register(
             "Preferred machine per channel",
             "Channel (its slug) -> the machine that should encode it while it is up and has "
             "room. Set it on the channel's page.",
+        ),
+    },
+)
+register(
+    MaktabaTvRemoteConfig,
+    {
+        "viewers": Help(
+            TRV,
+            "Who may watch away from home",
+            "all: every signed-in user; admins: administrators only; listed: the users "
+            "below. Watching away from home needs Cloudflare Stream set up and switched on.",
+            choices=("all", "admins", "listed"),
+        ),
+        "viewer_users": Help(TRV, "Users allowed (listed)", "User ids or user names."),
+        "max_streams_per_user": Help(
+            TRV,
+            "Remote streams per user",
+            "How many channels one user may watch away from home at once (each device counts).",
+            minimum=1,
+            maximum=10,
+        ),
+        "allowed_countries": Help(
+            TRV,
+            "Countries",
+            "Two-letter country codes (SA, EG, GB ...) viewers may watch from; Cloudflare "
+            "checks every request. Empty: anywhere.",
+        ),
+        "max_channels": Help(
+            TRL,
+            "Remote channels at once",
+            "Channels sent to Cloudflare at the same time. Each uses its bitrate of the "
+            "home's upload once (about 6.5 Mbit/s at the default bitrate; 22 channels about "
+            "143 Mbit/s), whatever the number of viewers. On one 1,000-minute storage block "
+            "the storage, not this number, usually limits it to two.",
+            minimum=1,
+            maximum=50,
+        ),
+        "idle_timeout_minutes": Help(
+            TRL,
+            "Keep sending after the last viewer (minutes)",
+            "So a viewer who comes back finds the channel at once.",
+            minimum=1,
+            maximum=60,
+        ),
+        "token_ttl_minutes": Help(
+            TRL,
+            "Playback link lifetime (minutes)",
+            "A viewer's signed link stops working after this; the app renews it while it "
+            "plays. Shorter cuts off a removed user sooner.",
+            minimum=5,
+            maximum=1440,
+        ),
+        "max_push_hours": Help(
+            TRL,
+            "Longest broadcast (hours)",
+            "Past this a channel's broadcast starts again (remote viewers re-buffer once), "
+            "so its recording never outgrows the storage. Lower fits more channels per "
+            "storage block.",
+            minimum=1,
+            maximum=24,
+        ),
+        "monthly_budget_usd": Help(
+            TRB,
+            "Monthly budget (USD)",
+            "Estimated Cloudflare spend per calendar month (UTC). At 80 % the admin is "
+            "told; at 100 % see below. 0: no budget check. There is no audio-only saving: "
+            "Cloudflare bills minutes watched, not bytes.",
+            minimum=0,
+        ),
+        "budget_action": Help(
+            TRB,
+            "At 100 % of the budget",
+            "block_new: new remote tunes are refused, running ones finish; warn: only a notice.",
+            choices=("block_new", "warn"),
+        ),
+        "delivery_usd_per_1000_min": Help(TRB, "Price per 1,000 minutes watched (USD)", minimum=0),
+        "storage_usd_per_1000_min": Help(
+            TRB, "Price per 1,000 minutes of storage a month (USD)", minimum=0
+        ),
+        "storage_plan_minutes": Help(
+            TRB,
+            "Storage plan (minutes)",
+            "The prepaid storage the estimate counts. A running broadcast is recorded while "
+            "it runs and deleted when it ends; the storage guard reads the account's real "
+            "capacity from Cloudflare.",
+            minimum=0,
+        ),
+        "storage_margin_minutes": Help(
+            TRB,
+            "Storage kept free (minutes)",
+            "The guard starts a new channel only when every running broadcast's full length "
+            "(up to the longest broadcast), the recordings not yet deleted and this margin "
+            "fit in the account's storage.",
+            minimum=0,
+            maximum=10000,
+        ),
+        "ingest": Help(
+            TRP,
+            "How channels are sent",
+            "rtmps (works with every ffmpeg with TLS) or srt (needs ffmpeg with libsrt).",
+            choices=("rtmps", "srt"),
+        ),
+        "low_latency": Help(
+            TRP, "Low-latency HLS (beta)", "Cloudflare's low-latency HLS for new inputs."
+        ),
+        "remote_detection": Help(
+            TRP,
+            "Who counts as away from home",
+            "relay: requests through the Maktaba relay; relay_or_public_ip: also a request "
+            "from a public address (your own reverse proxy or tunnel).",
+            choices=("relay", "relay_or_public_ip"),
         ),
     },
 )

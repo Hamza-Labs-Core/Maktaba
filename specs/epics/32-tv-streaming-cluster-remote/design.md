@@ -465,14 +465,27 @@ After `stopping`: disable the input (no reconnects), wait for the broadcast's vi
 after a broadcast ends), `DELETE /accounts/{id}/stream/{video_uid}`, record
 `recording_deleted_at`. A startup sweep deletes any video of a Maktaba input that is not the
 current broadcast of a live push (crash recovery). Before starting a push the controller checks
-`Σ age(live pushes) + max_push_hours × 60 ≤ storage_plan_minutes`; otherwise the tune gets 503
-`remote_storage_full` with a hint to raise the storage plan or lower `max_push_hours`.
+
+```
+Σ_running max(age, max_push_hours × 60)      -- each running push's whole reservation:
+                                             --   what it stored + what it may still store
++ Σ recordings not yet deleted               -- ended broadcasts waiting for cleanup
++ other stored minutes of the account        -- storage-usage minus Maktaba's own
++ max_push_hours × 60 + storage_margin_minutes
+≤ storage capacity                           -- Cloudflare's storage-usage limit
+                                             --   (storage_plan_minutes if unreadable)
+```
+
+otherwise the tune gets 503 `remote_storage_full` with a hint to raise the storage plan or lower
+`max_push_hours`. (Amended after review: counting only the running pushes' elapsed minutes let a
+third push start on one 1,000-minute block while the first two were young, and the storage still
+ran out hours later. A rotation is a continuation of its push's reservation, not a new push.)
 
 The account is sized for one $5/month block of 1,000 stored minutes (README Q1). Because the
 recording of a running broadcast is stored until it ends and is deleted right after, stored
 minutes ≈ Σ age(live pushes). With `max_push_hours = 8` (480 min) one block has room for
-**two** full-length concurrent pushes (2 × 480 ≤ 1,000); once the running pushes' ages plus 480
-would pass 1,000, the next push gets `remote_storage_full` even though `max_channels` is 22. On the
+**two** full-length concurrent pushes (2 × 480 + 30 ≤ 1,000); with two running, however young,
+the next push gets `remote_storage_full` even though `max_channels` is 22. On the
 default plan the storage guard is therefore usually the binding concurrency limit, and the admin
 page shows the stored-minutes headroom next to "remote channels: n of 22". Each further
 1,000-minute block makes room for about two more full-length pushes; a lower `max_push_hours` fits more pushes per block at the

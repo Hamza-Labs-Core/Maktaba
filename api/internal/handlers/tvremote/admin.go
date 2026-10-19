@@ -22,9 +22,11 @@ import (
 	remote "github.com/Hamza-Labs-Core/Maktaba/api/internal/tvremote"
 )
 
-// Handler serves the routes above.
+// Handler serves the routes above and the remote viewer routes (viewer.go).
 type Handler struct {
 	Integration *remote.Integration
+	// Remote is the remote controller (32.7-32.10); nil: the routes answer 503.
+	Remote *remote.Controller
 }
 
 // Mount registers the routes.
@@ -33,6 +35,13 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/tv/remote/test", h.Test)
 	r.Put("/api/tv/remote/enabled", h.SetEnabled)
 	r.Delete("/api/tv/remote/integration", h.Remove)
+	r.Post("/api/tv/remote/tune", h.Tune)
+	r.Post("/api/tv/remote/sessions/{id}/heartbeat", h.Heartbeat)
+	r.Delete("/api/tv/remote/sessions/{id}", h.EndSession)
+	r.Post("/api/tv/remote/pushes/{id}/stop", h.StopPush)
+	r.Post("/api/tv/remote/signing-key/rotate", h.RotateKey)
+	r.Post("/api/tv/remote/webhook-secret", h.NewWebhookSecret)
+	r.Post("/api/tv/remote/webhook", h.Webhook)
 }
 
 func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
@@ -58,7 +67,16 @@ func (h *Handler) Status(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("tv remote status"))
 		return
 	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"integration": st})
+	out := map[string]any{"integration": st}
+	if h.Remote != nil {
+		rs, err := h.Remote.Status(r.Context())
+		if err != nil {
+			httperror.Write(w, r, httperror.Internal("tv remote status"))
+			return
+		}
+		out["remote"] = rs
+	}
+	common.WriteJSON(w, r, http.StatusOK, out)
 }
 
 // Test answers POST /api/tv/remote/test.

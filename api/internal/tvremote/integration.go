@@ -31,6 +31,8 @@ const Extension = "cloudflare_stream"
 const (
 	SecretAPIToken   = "cf_api_token"
 	SecretSigningKey = "cf_signing_key"
+	// SecretWebhook is the Cloudflare Notifications webhook secret (32.7 AC13).
+	SecretWebhook = "cf_webhook_secret"
 	// SecretInputPrefix starts the names of the live inputs' stream keys
 	// (32.7); removing the integration deletes them too.
 	SecretInputPrefix = "cf_input."
@@ -40,7 +42,10 @@ const (
 const (
 	SettingEnabled  = "tv_remote.enabled"
 	SettingLastTest = "tv_remote.last_test"
-	SettingIngest   = "tv_remote.ingest" // rtmps (default) | srt
+	SettingIngest   = "tv_remote.ingest" // legacy; rules.tv_remote ingest wins
+	// SettingUnavailable is set when Cloudflare reported an account-level
+	// error (storage quota, no subscription): remote is off until a green test.
+	SettingUnavailable = "tv_remote.unavailable"
 )
 
 // GreenTestMaxAge is how recent a passed test must be to turn remote on (AC4).
@@ -211,6 +216,10 @@ func (in *Integration) Test(ctx context.Context) (TestResult, error) {
 	}
 	if err := in.putSetting(ctx, SettingLastTest, res); err != nil {
 		return res, err
+	}
+	if res.OK && in.DB != nil {
+		// a green test lifts "remote unavailable" (an account-level Cloudflare error, 32.7 AC11)
+		_, _ = in.DB.ExecContext(ctx, `DELETE FROM app_settings WHERE key = $1`, SettingUnavailable)
 	}
 	in.log().Info("tv_remote: test connection", "ok", res.OK, "failed", strings.Join(failed, ","),
 		"event", "tv_remote_test")
@@ -384,7 +393,25 @@ func (in *Integration) customerLine(ctx context.Context, cl *cf.Client, inputs [
 		"(Stream, Live inputs, the HLS manifest URL customer-<code>.cloudflarestream.com)"}
 }
 
+// cfClient is the Cloudflare client and the customer subdomain code.
+func (in *Integration) cfClient(ctx context.Context) (*cf.Client, string, error) {
+	c, err := in.load(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	if c.account == "" {
+		return nil, "", errors.New("no Cloudflare account ID saved")
+	}
+	if c.tokenErr != nil {
+		return nil, "", errors.New(tokenProblem(c.tokenErr))
+	}
+	return in.client(c.account, c.token), c.code, nil
+}
+
 func (in *Integration) ingest(ctx context.Context) string {
+	if LoadSettings(ctx, in.DB).Ingest == "srt" {
+		return "srt"
+	}
 	var v string
 	if err := in.getSetting(ctx, SettingIngest, &v); err != nil || v == "" {
 		return "rtmps"
@@ -573,7 +600,7 @@ func (in *Integration) Remove(ctx context.Context) (RemoveResult, error) {
 		res.Errors = append(res.Errors, "Cloudflare not cleaned up ("+tokenProblem(c.tokenErr)+"): delete Maktaba's live inputs and signing key in the dashboard")
 	}
 	if in.Secrets != nil {
-		for _, n := range []string{SecretAPIToken, SecretSigningKey} {
+		for _, n := range []string{SecretAPIToken, SecretSigningKey, SecretSigningKey + "_prev", SecretWebhook} {
 			if err := in.Secrets.Delete(ctx, n); err != nil {
 				return res, err
 			}
