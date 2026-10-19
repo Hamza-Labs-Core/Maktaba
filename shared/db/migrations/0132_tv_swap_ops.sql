@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0131 (Epic 33, stories 33.7 and 33.9) - the swap in the front door and the
+-- Slot 0132 (Epic 33, stories 33.7 and 33.9) - the swap in the front door and the
 -- rollback (specs/epics/33-tv-staging-hot-swap/design.md sections 8 and 10).
 --
 -- tv_swap_ops is one swap or rollback operation for the front door to run on the TV

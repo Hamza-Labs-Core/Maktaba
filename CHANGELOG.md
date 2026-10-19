@@ -23,7 +23,7 @@ don't append a line here; docs-only PRs are exempt.
   `GET/POST /api/tv/rollback`): warm (instant) while that slot is up, cold
   (the previous release staged again) within `rollback_retention_hours`; a
   crash of the new live slot in that window rolls back by itself. A live
-  crash never puts an unapproved staged change on the air. Slot 0131
+  crash never puts an unapproved staged change on the air. Slot 0132
   `tv_swap_ops`, `tv_channel_switch`; pipeline stage `tv_rollback`.
 - TV slots and the hot standby (Epic 33 stories 33.1, 33.4): the channel
   engine runs in TV slot processes (`maktaba-streaming slot --slot
