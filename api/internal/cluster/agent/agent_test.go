@@ -427,8 +427,12 @@ func TestCommandTimeoutAndDisconnect(t *testing.T) {
 	if r := f.do("POST", "/api/cluster/processes/"+a.Session+"/cmd", `{"name":"drain"}`, "admin"); r.StatusCode != http.StatusGatewayTimeout {
 		t.Fatalf("timeout: %d", r.StatusCode)
 	}
-	// disconnect closes the session (4014) even without an answer
+	// disconnect closes the session (4014) even without an answer. The
+	// request is joined before the test ends: f.do's cleanup closes the
+	// response body, which would cut an answer still being decoded.
+	answered := make(chan struct{})
 	go func() {
+		defer close(answered)
 		r := f.do("POST", "/api/cluster/processes/"+a.Session+"/cmd", `{"name":"disconnect"}`, "admin")
 		var res CmdResult
 		_ = json.NewDecoder(r.Body).Decode(&res)
@@ -440,6 +444,11 @@ func TestCommandTimeoutAndDisconnect(t *testing.T) {
 		t.Fatalf("close = %d", code)
 	}
 	waitFor(t, "session closed", func() bool { return len(f.hub.Processes()) == 0 })
+	select {
+	case <-answered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the disconnect request never answered")
+	}
 }
 
 func TestEventsFileRecordsConnections(t *testing.T) {
@@ -448,26 +457,37 @@ func TestEventsFileRecordsConnections(t *testing.T) {
 	_ = a.c.Close(websocket.StatusNormalClosure, "")
 	waitFor(t, "gone", func() bool { return len(f.hub.Processes()) == 0 })
 	_, _ = f.dialAgent(helloOpts{kind: "node", nodeID: uuid.NewString(), nodePriv: make([]byte, 32)})
-	waitFor(t, "events written", func() bool {
-		f.hub.files.Flush()
-		return countLines(t, eventsPath(f)) >= 3 // connect, disconnect, auth_refused
-	})
+	// wait for the events themselves, not a line count: the file also
+	// starts with the hub's files_dir line, so three lines can be there
+	// before the refusal is written
+	want := []string{"connect", "disconnect", "auth_refused"}
 	var events []string
-	for _, l := range readLines(t, eventsPath(f)) {
-		var m map[string]any
-		_ = json.Unmarshal([]byte(l), &m)
-		events = append(events, m["event"].(string))
-		if m["ts"] == nil {
-			t.Fatalf("no ts: %s", l)
+	seen := func() bool {
+		f.hub.files.Flush()
+		events = events[:0]
+		have := map[string]bool{}
+		for _, l := range readLines(t, eventsPath(f)) {
+			var m map[string]any
+			_ = json.Unmarshal([]byte(l), &m)
+			e, _ := m["event"].(string)
+			events = append(events, e)
+			have[e] = true
+			if m["ts"] == nil {
+				t.Fatalf("no ts: %s", l)
+			}
 		}
-	}
-	want := map[string]bool{"connect": false, "disconnect": false, "auth_refused": false}
-	for _, e := range events {
-		want[e] = true
-	}
-	for e, ok := range want {
-		if !ok {
-			t.Fatalf("no %s event in %v", e, events)
+		for _, e := range want {
+			if !have[e] {
+				return false
+			}
 		}
+		return true
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for !seen() {
+		if time.Now().After(deadline) {
+			t.Fatalf("events %v, want all of %v", events, want)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
