@@ -75,7 +75,9 @@ build_wheel() {
     rm -rf "$WORK/wheel"
     uv build --wheel --project "$src" --out-dir "$WORK/wheel" --quiet
     wheels=("$WORK"/wheel/maktaba_pipeline-*-py3-none-any.whl)
-    [ "${#wheels[@]}" -eq 1 ] && [ -f "${wheels[0]}" ] || die "expected one maktaba_pipeline wheel, got: ${wheels[*]}"
+    if [ "${#wheels[@]}" -ne 1 ] || [ ! -f "${wheels[0]}" ]; then
+        die "expected one maktaba_pipeline wheel, got: ${wheels[*]}"
+    fi
     basename "${wheels[0]}"
 }
 

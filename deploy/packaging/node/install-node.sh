@@ -95,7 +95,7 @@ usage() {
     awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
 }
 
-need_value() { [ $# -ge 2 ] && [ -n "$2" ] || die "$1 needs a value"; }
+need_value() { if [ $# -lt 2 ] || [ -z "$2" ]; then die "$1 needs a value"; fi; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -309,7 +309,9 @@ if [ "$FROM" = release ]; then
     rel_tag="$(read_kv "$RELEASE_CONF" TAG)"
     rel_repo="$(read_kv "$RELEASE_CONF" REPO)"
     rel_wheel="$(read_kv "$RELEASE_CONF" WHEEL)"
-    [ -n "$rel_tag" ] && [ -n "$rel_repo" ] && [ -n "$rel_wheel" ] || die "$RELEASE_CONF is incomplete (TAG, REPO, WHEEL)"
+    if [ -z "$rel_tag" ] || [ -z "$rel_repo" ] || [ -z "$rel_wheel" ]; then
+        die "$RELEASE_CONF is incomplete (TAG, REPO, WHEEL)"
+    fi
     rel_url="https://github.com/$rel_repo/releases/download/$rel_tag"
     # the archive carries the wheel; the release has it too, for an archive without it
     if [ -f "$SCRIPT_DIR/$rel_wheel" ]; then FROM_WHEEL="$SCRIPT_DIR/$rel_wheel"; else FROM_WHEEL="$rel_url/$rel_wheel"; fi
