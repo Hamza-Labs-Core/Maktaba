@@ -156,6 +156,56 @@ func TestRunJSONReportsPackageAndBuildFailures(t *testing.T) {
 	}
 }
 
+// A test that hangs until go test's -timeout gets no fail event (only its
+// package does), and the timeout panic is that test's output: it is named
+// and its output replayed. A test that ended is not. (The stream is what
+// go1.25 test2json writes for a test sleeping past -timeout 2s.)
+func TestRunJSONReportsTestThatDidNotFinish(t *testing.T) {
+	in := strings.NewReader(`
+{"Action":"start","Package":"tb"}
+{"Action":"run","Package":"tb","Test":"TestQuick"}
+{"Action":"output","Package":"tb","Test":"TestQuick","Output":"=== RUN   TestQuick\n"}
+{"Action":"output","Package":"tb","Test":"TestQuick","Output":"--- PASS: TestQuick (0.00s)\n"}
+{"Action":"pass","Package":"tb","Test":"TestQuick","Elapsed":0}
+{"Action":"run","Package":"tb","Test":"TestHang"}
+{"Action":"output","Package":"tb","Test":"TestHang","Output":"=== RUN   TestHang\n"}
+{"Action":"output","Package":"tb","Test":"TestHang","Output":"panic: test timed out after 2s\n"}
+{"Action":"output","Package":"tb","Test":"TestHang","Output":"\trunning tests:\n"}
+{"Action":"output","Package":"tb","Test":"TestHang","Output":"\t\tTestHang (2s)\n"}
+{"Action":"output","Package":"tb","Test":"TestHang","Output":"goroutine 7 [sleep]:\n"}
+{"Action":"output","Package":"tb","Output":"FAIL\ttb\t2.464s\n"}
+{"Action":"fail","Package":"tb","Elapsed":2.464}
+`)
+	var out bytes.Buffer
+	runJSON(unitCfg(), in, &out)
+	s := out.String()
+	for _, want := range []string{"--- FAIL tb::TestHang [did not finish]", "panic: test timed out after 2s", "goroutine 7 [sleep]"} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("missing %q in %q", want, s)
+		}
+	}
+	if strings.Contains(s, "TestQuick") {
+		t.Fatalf("a test that passed is reported: %q", s)
+	}
+}
+
+// A package that passes forgets the tests it saw start.
+func TestRunJSONPassedPackageReportsNothing(t *testing.T) {
+	in := strings.NewReader(`
+{"Action":"run","Package":"p","Test":"TestA"}
+{"Action":"output","Package":"p","Test":"TestA","Output":"=== RUN   TestA\n"}
+{"Action":"run","Package":"p","Test":"TestA/sub"}
+{"Action":"pass","Package":"p","Test":"TestA/sub","Elapsed":0}
+{"Action":"pass","Package":"p","Test":"TestA","Elapsed":0}
+{"Action":"pass","Package":"p","Elapsed":0.01}
+`)
+	var out bytes.Buffer
+	runJSON(unitCfg(), in, &out)
+	if s := out.String(); strings.Contains(s, "FAIL") {
+		t.Fatalf("a passing package reported a failure: %q", s)
+	}
+}
+
 func TestRunWallUnderBudget(t *testing.T) {
 	cfg := &config{
 		mode:   "wall",

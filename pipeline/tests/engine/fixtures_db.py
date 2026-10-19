@@ -15,7 +15,7 @@ import os
 import shutil
 import sqlite3
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
 import pytest
@@ -42,8 +42,8 @@ def _pg_admin_url() -> str:
 
 
 @pytest.fixture(scope="session")
-def pg_template() -> str:
-    """Create (once) a migrated template database; return its name."""
+def pg_template() -> Iterator[str]:
+    """Create (once) a migrated template database; yield its name; drop it at the end."""
     if not PG_URL:
         pytest.skip("MAKTABA_TEST_PG_URL not set")
     import asyncpg  # type: ignore[import-untyped]  # no stubs ship with asyncpg
@@ -58,10 +58,20 @@ def pg_template() -> str:
         await apply_postgres(conn)
         await conn.close()
 
+    async def drop() -> None:
+        admin = await asyncpg.connect(PG_URL)
+        await admin.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+        await admin.close()
+
     # a worker thread has no running loop, so this also works when requested from an async test
     with concurrent.futures.ThreadPoolExecutor(1) as pool:
         pool.submit(lambda: asyncio.run(build())).result()
-    return name
+    try:
+        yield name
+    finally:
+        # without this every session left a migrated maktaba_tpl_* database behind
+        with concurrent.futures.ThreadPoolExecutor(1) as pool:
+            pool.submit(lambda: asyncio.run(drop())).result()
 
 
 def _swap_db(url: str, name: str) -> str:

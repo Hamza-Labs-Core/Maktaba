@@ -98,6 +98,31 @@ info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn()  { printf '\033[1;33mwarn:\033[0m %s\n' "$*" >&2; }
 die()   { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
+# url_has_credentials SPEC: an http(s) URL with user info (user:password@host) or a query
+# string (a token, a signed URL's signature). Such a URL is neither logged nor remembered.
+url_has_credentials() {
+    local rest auth
+    case "$1" in http://*|https://*) ;; *) return 1 ;; esac
+    rest="${1#*://}"
+    auth="${rest%%/*}"
+    case "$auth" in *@*) return 0 ;; esac
+    case "$1" in *\?*) return 0 ;; esac
+    return 1
+}
+
+# redact_url SPEC: SPEC for a message, user info and query string replaced by ***.
+redact_url() {
+    local scheme rest auth path=""
+    case "$1" in http://*|https://*) ;; *) printf '%s' "$1"; return 0 ;; esac
+    scheme="${1%%://*}"
+    rest="${1#*://}"
+    auth="${rest%%/*}"
+    if [ "$auth" != "$rest" ]; then path="/${rest#*/}"; fi
+    case "$auth" in *@*) auth="***@${auth##*@}" ;; esac
+    case "$path" in *[?#]*) path="${path%%[?#]*}?***" ;; esac
+    printf '%s://%s%s' "$scheme" "$auth" "$path"
+}
+
 usage() {
     awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
 }
@@ -372,13 +397,20 @@ fi
 if [ "$FROM" = release ] || [ "$FROM" = wheel ]; then
     case "${FROM_WHEEL%%[?#]*}" in
         *.whl) ;;
-        *) die "--from-wheel takes a wheel (maktaba_pipeline-<version>-py3-none-any.whl): $FROM_WHEEL" ;;
+        *) die "--from-wheel takes a wheel (maktaba_pipeline-<version>-py3-none-any.whl): $(redact_url "$FROM_WHEEL")" ;;
     esac
     case "$(basename "${FROM_WHEEL%%[?#]*}")" in
         maktaba_pipeline-*) ;;
-        *) die "$FROM_WHEEL is not a maktaba-pipeline wheel (maktaba_pipeline-<version>-...whl)" ;;
+        *) die "$(redact_url "$FROM_WHEEL") is not a maktaba-pipeline wheel (maktaba_pipeline-<version>-...whl)" ;;
     esac
     PYTHON_VERSION="${PYTHON_VERSION:-3.12}"
+    # A URL is printed while it downloads and kept in install.conf for updates: one that
+    # carries a credential would leave it in logs and on disk.
+    for u in "$FROM_WHEEL" "$CONSTRAINTS"; do
+        if url_has_credentials "$u"; then
+            die "$(redact_url "$u") carries a credential (user:password@ or a ?query such as a token), which would be logged and remembered in install.conf: use a plain URL pinned with --sha256 / --constraints-sha256, or download the file and pass its path"
+        fi
+    done
 fi
 
 # --- environment the services see -------------------------------------------------------
@@ -512,6 +544,11 @@ is_url() { case "$1" in http://*|https://*) return 0 ;; *) return 1 ;; esac; }
 
 abs_path() { printf '%s/%s' "$(cd "$(dirname "$1")" && pwd)" "$(basename "$1")"; }
 
+# file_url PATH: a file:// URL for an absolute PATH (%, space, # and ? escaped).
+file_url() {
+    printf 'file://%s' "$(printf '%s' "$1" | sed -e 's/%/%25/g' -e 's/ /%20/g' -e 's/#/%23/g' -e 's/?/%3F/g')"
+}
+
 # sha256_of FILE: its SHA-256. sha256sum, shasum, else any Python's hashlib; fails only
 # when none of them is here.
 sha256_of() {
@@ -549,14 +586,14 @@ fetch() {
     FETCHED_SHA256=""
     if is_url "$spec"; then
         dest="$NODE_DIR/dist/$(basename "${spec%%[?#]*}")"
-        info "Downloading $spec"
+        info "Downloading $(redact_url "$spec")"
         run mkdir -p "$NODE_DIR/dist"
         if command -v curl >/dev/null 2>&1; then
-            run curl -fsSL --retry 3 -o "$dest.part" "$spec" || die "could not download $spec"
+            run curl -fsSL --retry 3 -o "$dest.part" "$spec" || die "could not download $(redact_url "$spec")"
         elif command -v wget >/dev/null 2>&1; then
-            run wget -q -O "$dest.part" "$spec" || die "could not download $spec"
+            run wget -q -O "$dest.part" "$spec" || die "could not download $(redact_url "$spec")"
         else
-            die "neither curl nor wget found to download $spec: download it and pass the file"
+            die "neither curl nor wget found to download $(redact_url "$spec"): download it and pass the file"
         fi
         run mv -f "$dest.part" "$dest"
     else
@@ -627,9 +664,27 @@ build_venv_wheel() {
     # The installs run from the constraints file's directory and name it ./<file>: uv
     # splits a --constraint path at its spaces (~/Library/Application Support/...).
     here="$NODE_DIR"
+    local install_args=("$spec") req="" wheel_hash
     if [ -n "$constraints" ]; then
         here="$(dirname "$constraints")"
         cons_args=(--constraint "./$(basename "$constraints")")
+        # Hash-checking mode: every dependency must match a --hash of the constraints file
+        # (build-release.sh exports them from uv.lock), and the wheel its own SHA-256,
+        # through a one-line requirements file next to the constraints.
+        if [ -f "$constraints" ] && ! grep -q -- '--hash=sha256:' "$constraints"; then
+            die "$constraints pins no hashes (--hash=sha256:...), so the dependencies downloaded from PyPI could not be checked: use the constraints file of a release made with hashes"
+        fi
+        wheel_hash="$WHEEL_PIN"
+        if [ -z "$wheel_hash" ] && [ -f "$wheel" ]; then
+            wheel_hash="$(sha256_of "$wheel")" \
+                || die "cannot check $wheel: no sha256sum, shasum or Python here to compute its SHA-256"
+        fi
+        # (a dry run downloads nothing: no digest to write then)
+        wheel_hash="${wheel_hash:-0000000000000000000000000000000000000000000000000000000000000000}"
+        req="$here/.maktaba-node-requirements.txt"
+        printf 'maktaba-pipeline%s @ %s --hash=sha256:%s\n' "$(extras_suffix)" "$(file_url "$wheel")" "$wheel_hash" \
+            | write_file "$req" 0644
+        install_args=(--require-hashes ${cons_args[@]+"${cons_args[@]}"} -r "./$(basename "$req")")
     fi
     if uv="$(find_uv)"; then
         info "Installing $(basename "$wheel") with uv ($VENV)"
@@ -643,16 +698,25 @@ build_venv_wheel() {
         fi
         # --reinstall-package: a rebuilt wheel of an unchanged version replaces the old one
         in_dir "$here" env ${uv_env[@]+"${uv_env[@]}"} "$uv" pip install --python "$PY" \
-            --reinstall-package maktaba-pipeline ${cons_args[@]+"${cons_args[@]}"} "$spec"
+            --reinstall-package maktaba-pipeline "${install_args[@]}"
     elif py="$(find_python)"; then
         warn "uv not found: using $py and pip."
         if [ ! -x "$PY" ]; then run "$py" -m venv "$VENV"; fi
-        run "$PY" -m pip install --quiet --upgrade pip
-        in_dir "$here" "$PY" -m pip install --quiet ${cons_args[@]+"${cons_args[@]}"} "$spec"
-        run "$PY" -m pip install --quiet --force-reinstall --no-deps "$wheel"
+        if [ -n "$req" ]; then
+            # A venv's own pip (no unchecked upgrade from PyPI) does not take hashes from a
+            # constraints file: install its pins as requirements, each checked, then the
+            # wheel, checked, without resolving again (every extra's pins come along).
+            in_dir "$here" "$PY" -m pip install --quiet --require-hashes --no-deps -r "./$(basename "$constraints")"
+            in_dir "$here" "$PY" -m pip install --quiet --require-hashes --no-deps --force-reinstall -r "./$(basename "$req")"
+        else
+            run "$PY" -m pip install --quiet --upgrade pip
+            in_dir "$here" "$PY" -m pip install --quiet "$spec"
+            run "$PY" -m pip install --quiet --force-reinstall --no-deps "$wheel"
+        fi
     else
         die "neither uv nor Python 3.12+ found. Install uv (https://docs.astral.sh/uv/) and run this again."
     fi
+    if [ -n "$req" ]; then remove "$req"; fi
     # installed: earlier updates' downloads are of no more use
     prune_dist "$wheel" ${constraints:+"$constraints"}
 }

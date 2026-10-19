@@ -108,10 +108,18 @@ for name in project.get("optional-dependencies", {}):
         print(name)
 PY
 )
-uv export --project "$src" --frozen --no-dev --no-emit-project --no-hashes --quiet \
+# With the hashes uv.lock records: the installers install in hash-checking mode
+# (--require-hashes), so a dependency that PyPI serves differently is refused.
+uv export --project "$src" --frozen --no-dev --no-emit-project --quiet \
     ${extras[@]+"${extras[@]}"} -o "$WORK/$CONSTRAINTS"
 # The export header names this script's temporary path: keep the file reproducible.
 grep -v '^#    uv export' "$WORK/$CONSTRAINTS" >"$OUT/$CONSTRAINTS"
+# every requirement carries a hash (the installers refuse the file otherwise)
+unhashed="$(awk '
+    /^[A-Za-z0-9]/ { if (req != "" && !h) bad = bad " " req; req = $1; h = ($0 ~ /--hash=sha256:/); next }
+    /--hash=sha256:/ { h = 1 }
+    END { if (req != "" && !h) bad = bad " " req; print bad }' "$OUT/$CONSTRAINTS")"
+[ -z "$unhashed" ] || die "$CONSTRAINTS has requirements without a hash:$unhashed"
 if grep -qE '^(-e |file:|\./)' "$OUT/$CONSTRAINTS"; then
     die "$CONSTRAINTS has a local requirement, which a machine without the checkout cannot install"
 fi
