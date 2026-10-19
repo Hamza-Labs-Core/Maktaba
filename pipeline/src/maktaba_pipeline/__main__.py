@@ -241,7 +241,8 @@ def _build_parser() -> argparse.ArgumentParser:
         default=os.getenv("MAKTABA_NODE") == "1",
         help="Run as this machine's node of a home (MAKTABA_NODE=1); exit 78 when it has "
         "not joined one. Exit codes: 77 when the home refused this machine for good "
-        "(revoked, not a member, login refused): do not restart; 78 for --node without a "
+        "(its sealed revocation, or the database: revoked, removed, login refused): do not "
+        "restart; 78 for --node without a "
         "joined node config.",
     )
     run_p.add_argument(
