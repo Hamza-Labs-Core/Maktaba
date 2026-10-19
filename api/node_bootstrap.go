@@ -139,7 +139,7 @@ func platform() string {
 	return runtime.GOOS + "-" + runtime.GOARCH
 }
 
-// report tells the home what this machine is (cluster_node_report_full, slot 0134).
+// report tells the home what this machine is (cluster_node_report_full, slot 0135).
 func (rt *nodeRuntime) report(ctx context.Context) {
 	vod, _ := json.Marshal(rt.vod.Current())
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -165,7 +165,7 @@ func (rt *nodeRuntime) reportLoop(ctx context.Context) {
 
 // self is a node's GET /api/cluster/self.
 func (rt *nodeRuntime) self(ctx context.Context) clusterauth.SelfInfo {
-	info := clusterauth.SelfInfo{Role: "node", ID: rt.cfg.NodeID, Version: version.Version,
+	info := clusterauth.SelfInfo{Role: "node", ID: rt.cfg.NodeID, Name: rt.cfg.Name, Version: version.Version,
 		SchemaRev: schemaguard.SchemaRev, WebURL: rt.cfg.WebURL, Paused: rt.guard.Paused(), SSO: rt.rules().SSO}
 	ok, since := rt.resolver.Reachability()
 	home := &clusterauth.SelfHome{Reachable: ok, FailingSince: since}

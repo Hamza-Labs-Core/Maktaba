@@ -5010,6 +5010,188 @@
      "label": "Add to the Plex path map",
      "help": "The Plex extension's path map gets the canonical prefix of every local prefix it maps.",
      "default": true
+    },
+    {
+     "name": "map_settle_minutes",
+     "kind": "int",
+     "group": "Canonical share paths",
+     "label": "Wait for the share map (min)",
+     "help": "The API and the streaming service read the home's share map every 5 minutes: paths are converted to a share only once the map has named it this long, so playback never meets a path it cannot open yet.",
+     "default": 6,
+     "minimum": 0,
+     "maximum": 240
+    }
+   ]
+  },
+  {
+   "key": "updates",
+   "title": "Updates",
+   "what": "new signed releases installed by themselves in the quiet window, on the home first and then on every machine; channel, pin, defer, skip",
+   "fields": [
+    {
+     "name": "auto_install",
+     "kind": "bool",
+     "group": "Updates",
+     "label": "Install updates automatically",
+     "help": "A new signed release is installed on the home in the quiet window, then on every machine one by one, each checked before the next. Off: Maktaba only checks and tells you an update is available.",
+     "default": true
+    },
+    {
+     "name": "channel",
+     "kind": "str",
+     "group": "Updates",
+     "label": "Release channel",
+     "help": "stable: releases only; beta: pre-releases too. Going back to stable never installs a lower version.",
+     "default": "stable",
+     "choices": [
+      "stable",
+      "beta"
+     ]
+    },
+    {
+     "name": "window",
+     "kind": "str",
+     "group": "Updates",
+     "label": "Quiet window",
+     "help": "Home's local time, HH:MM-HH:MM (23:00-01:00 crosses midnight). An update starts only inside it, at least 30 minutes before its end.",
+     "default": "03:00-05:00"
+    },
+    {
+     "name": "window_overrun_minutes",
+     "kind": "int",
+     "group": "Updates",
+     "label": "May run past the window (minutes)",
+     "help": "A started update may finish the TV swap and the machines this long after the window.",
+     "default": 120,
+     "minimum": 0,
+     "maximum": 720
+    },
+    {
+     "name": "min_release_age_hours",
+     "kind": "int",
+     "group": "Updates",
+     "label": "Release age before installing (hours)",
+     "help": "A release must be this old before it installs by itself (a release pulled within a day is never installed). 0: as soon as it is seen. Update now ignores it.",
+     "default": 24,
+     "minimum": 0,
+     "maximum": 8760
+    },
+    {
+     "name": "pinned_version",
+     "kind": "str",
+     "group": "Updates",
+     "label": "Stay at or below version",
+     "help": "For example 1.5.9. Never below the installed version. Empty: no pin.",
+     "default": ""
+    },
+    {
+     "name": "deferred_until",
+     "kind": "str",
+     "group": "Updates",
+     "label": "No automatic update before",
+     "help": "An instant (2026-10-24T03:00:00Z). Empty: not deferred.",
+     "default": ""
+    },
+    {
+     "name": "skipped_versions",
+     "kind": "list",
+     "group": "Updates",
+     "label": "Skipped versions",
+     "help": "Never installed automatically; a newer one is.",
+     "default": []
+    },
+    {
+     "name": "node_failure_policy",
+     "kind": "str",
+     "group": "Updates rollout",
+     "label": "When a machine fails",
+     "help": "hold_platform: stop the machines of the same system (OS and processor) and go on with the others; halt: stop the rollout; continue: go on with every machine.",
+     "default": "hold_platform",
+     "choices": [
+      "hold_platform",
+      "halt",
+      "continue"
+     ]
+    },
+    {
+     "name": "node_health_timeout_minutes",
+     "kind": "int",
+     "group": "Updates rollout",
+     "label": "A machine is healthy within (minutes)",
+     "help": "",
+     "default": 10,
+     "minimum": 1,
+     "maximum": 240
+    },
+    {
+     "name": "drain_timeout_minutes",
+     "kind": "int",
+     "group": "Updates rollout",
+     "label": "Longest wait for running jobs (minutes)",
+     "help": "Transcriptions resume from their checkpoints.",
+     "default": 10,
+     "minimum": 0,
+     "maximum": 240
+    },
+    {
+     "name": "rehearse_migrations",
+     "kind": "bool",
+     "group": "Updates safety",
+     "label": "Rehearse database changes first",
+     "help": "A release that changes the database tries the change on a copy first.",
+     "default": true
+    },
+    {
+     "name": "rehearse_max_db_gb",
+     "kind": "int",
+     "group": "Updates safety",
+     "label": "Rehearse only up to (GB)",
+     "help": "A larger database skips the rehearsal (the backup still runs).",
+     "default": 20,
+     "minimum": 0,
+     "maximum": 100000
+    },
+    {
+     "name": "keep_versions",
+     "kind": "int",
+     "group": "Updates safety",
+     "label": "Versions kept on each machine",
+     "help": "Never fewer than the running one and the one before.",
+     "default": 3,
+     "minimum": 2,
+     "maximum": 20
+    },
+    {
+     "name": "backups_keep",
+     "kind": "int",
+     "group": "Updates safety",
+     "label": "Backups before an update kept",
+     "help": "",
+     "default": 3,
+     "minimum": 1,
+     "maximum": 50
+    },
+    {
+     "name": "catch_up",
+     "kind": "str",
+     "group": "Updates rollout",
+     "label": "A machine that was offline is updated",
+     "help": "immediate: as soon as it is back (streaming machines in the window); window: in the next quiet window.",
+     "default": "immediate",
+     "choices": [
+      "immediate",
+      "window"
+     ]
+    },
+    {
+     "name": "proxy_cache_mb",
+     "kind": "int",
+     "group": "Updates rollout",
+     "label": "Image cache on a machine (MB)",
+     "help": "",
+     "default": 2048,
+     "minimum": 0,
+     "maximum": 1048576
     }
    ]
   },

@@ -17,20 +17,27 @@ import (
 
 func newSetupCmd() *cobra.Command {
 	var runMigrate bool
+	var lf layoutFlags
 	var nf nodeSetupFlags
 	cmd := &cobra.Command{
 		Use:   "setup",
 		Short: "Interactive first-run wizard",
-		Long:  "setup detects your platform, gathers media roots and storage choice, seeds an admin credential, optionally downloads a Whisper model, writes server.toml, and runs the initial migration.",
+		Long: "setup detects your platform, gathers media roots and storage choice, seeds an admin credential, optionally downloads a Whisper model, writes server.toml, and runs the initial migration." +
+			"\n\nWith --self-managed or --service it instead converts this install to the side-by-side layout run by maktaba-launcher (automatic updates) and writes the OS service." +
+			"\n\nWith --node it converts this worker-only node into a full node (maktaba-server in node mode, the same layout and launcher).",
 		RunE: func(c *cobra.Command, _ []string) error {
 			if nf.node {
 				// Epic 35 story 35.8: a worker-only node becomes a full node
-				return runSetupNodeCmd(c)
+				return runSetupNodeCmd(c, lf)
+			}
+			if lf.active() {
+				return runLayoutSetup(lf)
 			}
 			return runSetup(runMigrate)
 		},
 	}
 	cmd.Flags().BoolVar(&runMigrate, "migrate", true, "run the initial database migration at the end")
+	lf.register(cmd)
 	nf.register(cmd)
 	return cmd
 }

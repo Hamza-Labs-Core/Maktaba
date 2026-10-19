@@ -1,0 +1,41 @@
+# golangci-lint v2 config (the cmd/maktaba-server set; Epic 35 story 35.2).
+#
+# Mirrors api/.golangci.yml's linter set with ONE deliberate exception:
+# forbidigo is omitted. The api/streaming configs ban bare `fmt.Print*`
+# to force server output through the structured logger. maktaba-server
+# is an interactive CLI + installer (setup wizard, models list, update
+# prompts) where printing to stdout/stderr IS the user-facing contract,
+# so the forbidigo rule would be actively wrong here.
+# Migrated from the v1 schema when the modules moved to Go 1.25.
+version: "2"
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - misspell
+    - revive
+    - staticcheck
+    - unused
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

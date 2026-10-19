@@ -126,7 +126,7 @@ func (f *Fallback) Readable(ctx context.Context, videoID string) (bool, string) 
 		local = f.ToLocal(p)
 	}
 	if err := f.stat(local); err != nil {
-		return false, "share not readable here: " + filepath.Dir(local)
+		return false, "cannot open " + filepath.Dir(local)
 	}
 	return true, ""
 }

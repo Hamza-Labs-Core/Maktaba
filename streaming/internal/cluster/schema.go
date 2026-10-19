@@ -19,7 +19,7 @@ import (
 
 // SchemaRev is the highest migration slot this code ships (shared/db/migrations); a
 // test fails when a migration is added without raising it.
-const SchemaRev = 134
+const SchemaRev = 135
 
 // MinNodeFunction is what a migration that breaks older nodes (re)defines: RETURNS
 // integer, the oldest node schema it still works with.

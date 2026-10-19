@@ -41,6 +41,10 @@ type Config struct {
 // installer's --instances N here).
 type PipelineSection struct {
 	Instances int `toml:"instances"`
+	// Python is the interpreter of the pipeline (a converted worker keeps its own
+	// environment, setup --node --python); empty: the release's venv, else python3.
+	// MAKTABA_PYTHON still wins.
+	Python string `toml:"python"`
 }
 
 // TVSection is the [tv] table (Epic 33 story 33.1).

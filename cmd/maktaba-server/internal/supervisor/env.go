@@ -98,6 +98,7 @@ func ChildEnv(role Role, cfg config.Config) []string {
 			env = setEnv(env, "MAKTABA_AUTO_MIGRATE", "false")
 			add("MAKTABA_NODE_MODE", "1")
 			add("MAKTABA_NODE_ID", n.NodeID)
+			add("MAKTABA_NODE_NAME", n.Name)
 			add("MAKTABA_HOME_API_URL", n.HomeURL())
 			add("MAKTABA_HOME_STREAM_URL", HomeStreamURL(n))
 			add("MAKTABA_NODE_WEB_URL", cfg.PublicWebURL())

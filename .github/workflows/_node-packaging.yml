@@ -133,8 +133,13 @@ jobs:
         run: |
           shellcheck deploy/packaging/node/install-node.sh deploy/packaging/node/uninstall-node.sh \
             deploy/packaging/node/build-release.sh deploy/packaging/node/tests/install-node-dry-run.sh
+          shellcheck -x deploy/packaging/install.sh deploy/packaging/tests/install-sh-verify.sh
       - name: install-node.sh dry runs
         run: deploy/packaging/node/tests/install-node-dry-run.sh
+      # The home-server install.sh refuses a release missing checksums.txt,
+      # its Sigstore bundle or the archive's entry (verification fails closed).
+      - name: install.sh verification cases
+        run: bash deploy/packaging/tests/install-sh-verify.sh
 
   install-linux:
     name: install from the archive (linux, --system)

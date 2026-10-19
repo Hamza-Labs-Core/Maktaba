@@ -192,9 +192,18 @@ func (u *Updater) refreshRoots(ctx context.Context, force bool) {
 
 // trustedMaterial is the root releases are verified against: refreshed when
 // due, failing closed when expired.
+// TrustedMaterial is the Sigstore root releases verify against (refreshed when
+// due, failing closed when expired): the release catalog's verifier uses it.
+func (u *Updater) TrustedMaterial(ctx context.Context) (root.TrustedMaterial, error) {
+	return u.trustedMaterial(ctx)
+}
+
 func (u *Updater) trustedMaterial(ctx context.Context) (root.TrustedMaterial, error) {
 	if u.roots == nil {
-		return releaseverify.EmbeddedTrustedRoot()
+		// No cache configured: the embedded root, still held to the age
+		// limit (an expired root fails closed here too).
+		tm, _, err := (&releaseverify.RootStore{Now: u.now}).TrustedMaterial()
+		return tm, err
 	}
 	u.refreshRoots(ctx, false)
 	tm, _, err := u.roots.TrustedMaterial()

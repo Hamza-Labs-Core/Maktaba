@@ -235,12 +235,12 @@ type helloFrame struct {
 	// machine agent, Epic 35); empty for the pipeline.
 	Process string `json:"process"`
 	PID     int    `json:"pid"`
-	Host     string `json:"host"`
-	Eph      string `json:"eph"`
-	Nonce    string `json:"nonce"`
-	IP       string `json:"ip"`
-	OS       string `json:"os"`
-	Version  string `json:"version"`
+	Host    string `json:"host"`
+	Eph     string `json:"eph"`
+	Nonce   string `json:"nonce"`
+	IP      string `json:"ip"`
+	OS      string `json:"os"`
+	Version string `json:"version"`
 }
 
 type authFrame struct {

@@ -66,6 +66,17 @@ func ResolveReleaseBinary(binRoot, version, wantSHA256, currentVersion, fallback
 	return ReleaseBinary{Path: path, Version: v, SHA256: sum}, nil
 }
 
+// releaseBinRoot is the root ResolveReleaseBinary looks under: <install>/bin
+// when the launcher started us (MAKTABA_RELEASE_DIR = <install>/bin/releases/
+// <v>, Epic 35 design §2.1), else the directory of the built binary (story
+// 33.2, before side-by-side installs).
+func releaseBinRoot(base string) string {
+	if rd := os.Getenv("MAKTABA_RELEASE_DIR"); rd != "" {
+		return filepath.Dir(filepath.Dir(filepath.Clean(rd)))
+	}
+	return filepath.Dir(base)
+}
+
 func fileSHA256(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {

@@ -110,8 +110,12 @@ type lockedBuf struct {
 	b  bytes.Buffer
 }
 
-func (l *lockedBuf) Write(p []byte) (int, error) { l.mu.Lock(); defer l.mu.Unlock(); return l.b.Write(p) }
-func (l *lockedBuf) String() string              { l.mu.Lock(); defer l.mu.Unlock(); return l.b.String() }
+func (l *lockedBuf) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+func (l *lockedBuf) String() string { l.mu.Lock(); defer l.mu.Unlock(); return l.b.String() }
 
 func (m *machine) stop() {
 	m.once.Do(func() {
@@ -302,7 +306,7 @@ slots = "off"
 	homeToml := toml(homeDir, hAPI, hWeb, hStream, fmt.Sprintf("web_public_url = %q\nrole = \"home\"\n[database]\nurl = %q", homeWebURL, dsn))
 	nodeToml := toml(nodeDir, nAPI, nWeb, nStream, fmt.Sprintf("web_public_url = %q\n[database]\nurl = \"sqlite://unused.db\"", nodeWebURL))
 	nodeCfg, _ := json.Marshal(map[string]any{"node_id": nodeID, "name": "studio-node", "private_key": cluster.EncodeKey(nodePriv),
-		"home": map[string]any{"url": fmt.Sprintf("http://127.0.0.1:%d", hAPI), "cluster_pub": cluster.EncodeKey(homePub)},
+		"home":         map[string]any{"url": fmt.Sprintf("http://127.0.0.1:%d", hAPI), "cluster_pub": cluster.EncodeKey(homePub)},
 		"database_url": nodeDSN})
 	_ = os.WriteFile(filepath.Join(nodeDir, "node.json"), nodeCfg, 0o600)
 	self, _ := os.Executable()
@@ -505,14 +509,16 @@ slots = "off"
 		}
 		waitFor(t, "the Machines page to show the VOD fallback", 15*time.Second, func() bool {
 			_, b := user.do("GET", homeWebURL+"/api/cluster", nil, nil)
-			return strings.Contains(string(b), `"fallback":true`) && strings.Contains(string(b), "share not readable here")
+			return strings.Contains(string(b), `"fallback":true`) && strings.Contains(string(b), "cannot open")
 		})
 	})
 
 	t.Run("Machines page lists each machine's web address", func(t *testing.T) {
 		_, body := user.do("GET", homeWebURL+"/api/cluster", nil, nil)
 		var v struct {
-			Home  struct{ WebURL string `json:"web_url"` } `json:"home"`
+			Home struct {
+				WebURL string `json:"web_url"`
+			} `json:"home"`
 			Nodes []struct {
 				WebURL   string `json:"web_url"`
 				FullNode bool   `json:"full_node"`

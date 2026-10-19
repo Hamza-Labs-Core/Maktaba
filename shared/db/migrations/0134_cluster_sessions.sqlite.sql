@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0133 (Epic 35 story 35.9). A SQLite home cannot take
+-- SQLite parity sibling for slot 0134 (Epic 35 story 35.9). A SQLite home cannot take
 -- other machines, so no session is ever created through one; the columns and the table
 -- exist so the same code runs on both.
 --

@@ -200,7 +200,7 @@ func TestAcceptMiddleware(t *testing.T) {
 	now := time.Now()
 	v := &Verifier{Keys: staticKeys{node: {"dk_1": key}}}
 	var gotNode, gotCookie, gotVia string
-	h := Accept(v, "mkt_sess")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := Accept(v, "mkt_sess")(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		gotNode = NodeFrom(r.Context())
 		if c, err := r.Cookie("mkt_sess"); err == nil {
 			gotCookie = c.Value

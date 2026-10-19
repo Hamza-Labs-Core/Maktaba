@@ -35,6 +35,8 @@ type Config struct {
 	AgentTokenFile string
 	// Version and Platform are reported to the home (cluster_node_report_full).
 	Platform string
+	// Name is this machine's name (node.json's, MAKTABA_NODE_NAME).
+	Name string
 }
 
 // FromEnv reads the node-mode environment.
@@ -49,6 +51,7 @@ func FromEnv(getenv func(string) string) Config {
 		AgentURL:       strings.TrimRight(strings.TrimSpace(getenv("MAKTABA_AGENT_URL")), "/"),
 		AgentTokenFile: strings.TrimSpace(getenv("MAKTABA_AGENT_TOKEN_FILE")),
 		Platform:       strings.TrimSpace(getenv("MAKTABA_PLATFORM")),
+		Name:           strings.TrimSpace(getenv("MAKTABA_NODE_NAME")),
 	}
 	return c
 }

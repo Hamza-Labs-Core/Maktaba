@@ -17,14 +17,14 @@
         try {
           var m = localStorage.getItem("mkt:theme");
           if (m !== "light" && m !== "dark" && m !== "system") m = "system";
+          // system theme; dark when the browser cannot say (never a bright white page)
           var d =
             m === "dark" ||
             (m === "system" &&
-              window.matchMedia &&
-              window.matchMedia("(prefers-color-scheme: dark)").matches);
+              (!window.matchMedia || window.matchMedia("(prefers-color-scheme: dark)").matches));
           document.documentElement.dataset.theme = d ? "dark" : "light";
         } catch (e) {
-          document.documentElement.dataset.theme = "light";
+          document.documentElement.dataset.theme = "dark";
         }
       })();
     </script>

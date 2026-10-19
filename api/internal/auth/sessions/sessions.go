@@ -228,7 +228,7 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (*Session, error) {
 }
 
 // Origin reads a session's origin node and parent (story 35.9); empty strings when
-// none. Kept apart from Lookup so a database without slot 0133 still signs people in.
+// none. Kept apart from Lookup so a database without slot 0134 still signs people in.
 func (s *Store) Origin(ctx context.Context, id string) (originNodeID, parentSessionID string, err error) {
 	var o, p sql.NullString
 	err = s.DB.QueryRowContext(ctx,
@@ -289,7 +289,7 @@ func (s *Store) Revoke(ctx context.Context, id string) error {
 }
 
 // revokeChildren revokes the active children of a session and returns their ids. A
-// database without slot 0133 has none.
+// database without slot 0134 has none.
 func (s *Store) revokeChildren(ctx context.Context, parent string) []string {
 	rows, err := s.DB.QueryContext(ctx, `SELECT CAST(id AS TEXT) FROM web_sessions
 	             WHERE parent_session_id = $1 AND revoked_at IS NULL`, parent)

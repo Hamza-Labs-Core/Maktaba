@@ -582,3 +582,76 @@
   min-block-size: 4rem;
   margin-block-end: var(--space-3);
 }
+
+/* The Preview tab (story 33.6): the staging player, live next to it on request (two
+   columns from 900 px; stacked on a phone), the channel chips and the staged guide. */
+.mkt-tvx-preview__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+@media (min-width: 900px) {
+  .mkt-tvx-preview__grid.is-side {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .mkt-tvx-preview__grid.is-side > .mkt-tvx-preview__list,
+  .mkt-tvx-preview__grid.is-side > .mkt-tvx-preview__guide {
+    grid-column: 1 / -1;
+  }
+}
+.mkt-tvx-preview__pane {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+.mkt-tvx-preview__pane:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.mkt-tvx-preview__badge {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  border: 1px solid var(--color-border);
+}
+.mkt-tvx-preview__badge.is-staging {
+  color: var(--color-warn);
+}
+.mkt-tvx-preview__badge.is-live {
+  color: var(--color-success);
+}
+.mkt-tvx-preview__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mkt-tvx-preview__ch {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+.mkt-tvx-preview__ch.is-current {
+  border-color: var(--color-accent);
+  font-weight: 600;
+}
+.mkt-tvx-preview__guide ol {
+  margin: 0;
+  padding-inline-start: var(--space-4);
+}
+.mkt-tvx-preview__side {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}

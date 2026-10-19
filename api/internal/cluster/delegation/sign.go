@@ -27,8 +27,8 @@ package delegation
 
 import (
 	"bytes"
-	"crypto/rand"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -42,20 +42,20 @@ import (
 
 // Header names.
 const (
-	HeaderNode              = "X-Maktaba-Node"
-	HeaderKey               = "X-Maktaba-Node-Key"
-	HeaderTs                = "X-Maktaba-Node-Ts"
-	HeaderNonce             = "X-Maktaba-Node-Nonce"
-	HeaderSig               = "X-Maktaba-Node-Sig"
-	HeaderBody              = "X-Maktaba-Node-Body" // "unsigned" when the body is not hashed
-	HeaderDelegatedSession  = "X-Maktaba-Delegated-Session"
-	HeaderOriginNode        = "X-Maktaba-Origin-Node"
-	HeaderVia               = "X-Maktaba-Via"
-	ViaNode                 = "node"
-	UnsignedPayload         = "UNSIGNED-PAYLOAD"
-	KeySize                 = 32
-	MaxSkew                 = 60 * time.Second
-	maxSignedBody     int64 = 8 << 20
+	HeaderNode                   = "X-Maktaba-Node"
+	HeaderKey                    = "X-Maktaba-Node-Key"
+	HeaderTs                     = "X-Maktaba-Node-Ts"
+	HeaderNonce                  = "X-Maktaba-Node-Nonce"
+	HeaderSig                    = "X-Maktaba-Node-Sig"
+	HeaderBody                   = "X-Maktaba-Node-Body" // "unsigned" when the body is not hashed
+	HeaderDelegatedSession       = "X-Maktaba-Delegated-Session"
+	HeaderOriginNode             = "X-Maktaba-Origin-Node"
+	HeaderVia                    = "X-Maktaba-Via"
+	ViaNode                      = "node"
+	UnsignedPayload              = "UNSIGNED-PAYLOAD"
+	KeySize                      = 32
+	MaxSkew                      = 60 * time.Second
+	maxSignedBody          int64 = 8 << 20
 )
 
 // testNonce lets the vector tests fix the nonce (never set outside tests).

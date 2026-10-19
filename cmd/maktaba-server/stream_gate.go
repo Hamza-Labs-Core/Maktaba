@@ -6,7 +6,7 @@ package main
 //
 //   - serves only the stream paths the web app loads (allowedStreamPath):
 //     a channel's HLS (/stream/channel/{uuid}/index|master|manifest.m3u8,
-//     seg-N.ts, live.ts) and a video session's HLS/DASH, subtitles and
+//     seg-N.ts, s/{slot}/seg-N.ts, live.ts) and a video session's HLS/DASH, subtitles and
 //     chapters (/stream/{session uuid}/...) and direct play
 //     (/stream/direct/{video uuid}); everything else is a 404;
 //   - requires a signed-in session: the request's Cookie / Authorization
@@ -18,10 +18,17 @@ package main
 //
 // /xmltv.xml and /lineup.m3u stay public (players read them); external
 // players tune channels on the streaming port itself.
+//
+// The staging preview (Epic 33 story 33.6), /stream/staging/channel/{uuid}/
+// index.m3u8 and its segments, is for admins only: the session must be an
+// admin's (is_admin from /api/auth/me), and the front door also wants the
+// change's preview token (?pt=). A signed-in non-admin gets 403.
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -40,6 +47,9 @@ const uuidRe = `[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9
 var streamPathRes = []*regexp.Regexp{
 	// a channel's live HLS (streaming/internal/channel/handler.go)
 	regexp.MustCompile(`^/stream/channel/` + uuidRe + `/(index\.m3u8|master\.m3u8|manifest\.m3u8|live\.ts|seg-[0-9]{1,12}\.ts)$`),
+	// with TV slots (Epic 33 story 33.1) the front door's stitched playlist
+	// lists each segment under the slot it came from: s/{slot}/seg-N.ts
+	regexp.MustCompile(`^/stream/channel/` + uuidRe + `/s/(blue|green|amber)/seg-[0-9]{1,12}\.ts$`),
 	// a video session (streaming/internal/server/server.go): master
 	// playlist / DASH manifest, rendition playlists and segments,
 	// subtitles and chapters
@@ -48,6 +58,10 @@ var streamPathRes = []*regexp.Regexp{
 	// direct play of a video
 	regexp.MustCompile(`^/stream/direct/` + uuidRe + `$`),
 }
+
+// stagingPathRe is the staging preview of a channel (story 33.6): admins only.
+var stagingPathRe = regexp.MustCompile(`^/stream/staging/channel/` + uuidRe +
+	`/(index\.m3u8|s/(blue|green|amber)/seg-[0-9]{1,12}\.ts)$`)
 
 // allowedStreamPath reports whether path is one the web app loads.
 func allowedStreamPath(path string) bool {
@@ -69,8 +83,9 @@ type streamGate struct {
 	// /stream/via-home/ fallback, Epic 35)
 	allow func(string) bool
 
-	mu sync.Mutex
-	ok map[string]time.Time // credential hash → accepted until
+	mu    sync.Mutex
+	ok    map[string]time.Time // credential hash → accepted until
+	admin map[string]bool      // credential hash → an admin's session (while in ok)
 }
 
 func newStreamGate(next http.Handler, apiOrigin *url.URL) *streamGate {
@@ -80,6 +95,7 @@ func newStreamGate(next http.Handler, apiOrigin *url.URL) *streamGate {
 		client:  &http.Client{Timeout: 5 * time.Second},
 		now:     time.Now,
 		ok:      map[string]time.Time{},
+		admin:   map[string]bool{},
 		allow:   allowedStreamPath,
 	}
 }
@@ -90,7 +106,12 @@ func (g *streamGate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if allow := g.allow; (allow == nil && !allowedStreamPath(r.URL.Path)) || (allow != nil && !allow(r.URL.Path)) {
+	staging := stagingPathRe.MatchString(r.URL.Path)
+	allow := g.allow
+	if allow == nil {
+		allow = allowedStreamPath
+	}
+	if !staging && !allow(r.URL.Path) {
 		http.NotFound(w, r)
 		return
 	}
@@ -99,8 +120,13 @@ func (g *streamGate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "sign in to watch", http.StatusUnauthorized)
 		return
 	}
-	if !g.signedIn(r, cookie, authz) {
+	ok, admin := g.session(r, cookie, authz)
+	if !ok {
 		http.Error(w, "sign in to watch", http.StatusUnauthorized)
+		return
+	}
+	if staging && !admin {
+		http.Error(w, "the staging preview is for admins", http.StatusForbidden)
 		return
 	}
 	out := r.Clone(r.Context())
@@ -109,21 +135,23 @@ func (g *streamGate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	g.next.ServeHTTP(w, out)
 }
 
-// signedIn asks the API whether the credentials are a signed-in session,
-// with a short cache of the accepted ones.
-func (g *streamGate) signedIn(r *http.Request, cookie, authz string) bool {
+// session reports whether the credentials are a signed-in session and whether
+// it is an admin's (GET /api/auth/me: 200, is_admin), with a short cache of the
+// accepted ones.
+func (g *streamGate) session(r *http.Request, cookie, authz string) (bool, bool) {
 	sum := sha256.Sum256([]byte(cookie + "\x00" + authz))
 	key := hex.EncodeToString(sum[:])
 	now := g.now()
 	g.mu.Lock()
 	until, hit := g.ok[key]
+	adm := g.admin[key]
 	g.mu.Unlock()
 	if hit && now.Before(until) {
-		return true
+		return true, adm
 	}
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, g.authURL, nil)
 	if err != nil {
-		return false
+		return false, false
 	}
 	if cookie != "" {
 		req.Header.Set("Cookie", cookie)
@@ -134,27 +162,37 @@ func (g *streamGate) signedIn(r *http.Request, cookie, authz string) bool {
 	req.Header.Set("Accept", "application/json")
 	resp, err := g.client.Do(req)
 	if err != nil {
-		return false
+		return false, false
+	}
+	var me struct {
+		IsAdmin bool `json:"is_admin"`
+	}
+	if resp.StatusCode == http.StatusOK {
+		_ = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&me)
 	}
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		g.mu.Lock()
 		delete(g.ok, key)
+		delete(g.admin, key)
 		g.mu.Unlock()
-		return false
+		return false, false
 	}
 	g.mu.Lock()
 	if len(g.ok) >= streamAuthCacheMax {
 		for k, t := range g.ok {
 			if !now.Before(t) {
 				delete(g.ok, k)
+				delete(g.admin, k)
 			}
 		}
 		if len(g.ok) >= streamAuthCacheMax {
 			g.ok = map[string]time.Time{}
+			g.admin = map[string]bool{}
 		}
 	}
 	g.ok[key] = now.Add(streamAuthTTL)
+	g.admin[key] = me.IsAdmin
 	g.mu.Unlock()
-	return true
+	return true, me.IsAdmin
 }

@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/service"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify/releaseverifytest"
 )
@@ -68,7 +70,11 @@ func newTestSetup(t *testing.T, ss *releaseverifytest.Sigstore, from string, rec
 		Instances: 2, Out: &bytes.Buffer{}, NodeConfig: joinedNode(), NodePath: nodePath,
 		ConfigPath: filepath.Join(tmp, "server.toml"), Platform: runtime.GOOS + "/" + runtime.GOARCH,
 		Run: rec.run, Identity: id, Trust: tm,
-		Healthy: func(context.Context) error { healthy++; return nil }}
+		Healthy: func(context.Context) error { healthy++; return nil },
+		InstallService: func(sp service.Spec) error {
+			rec.calls = append(rec.calls, "install "+string(sp.Kind)+" "+sp.Root)
+			return nil
+		}}
 	return s, nodePath, nodeBytes
 }
 
@@ -105,22 +111,21 @@ func TestSetupNodeConvertsWorkerOnlyNode(t *testing.T) {
 		t.Fatalf("server.toml [pipeline] instances: %+v %v %v", cfg.Pipeline, found, err)
 	}
 	all := strings.Join(rec.calls, "\n")
-	switch runtime.GOOS {
-	case "windows":
-		if !strings.Contains(all, "schtasks /Create /F /TN Maktaba /SC ONLOGON") ||
-			!strings.Contains(all, "schtasks /Delete /F /TN maktaba-node") {
+	if !strings.Contains(all, "install "+string(service.DefaultKind(runtime.GOOS, layout.ModeUser))+" "+s.Root) {
+		t.Fatalf("the launcher's service is installed as setup --service writes it:\n%s", all)
+	}
+	if _, err := os.Stat(filepath.Join(s.Root, exeName("maktaba-launcher"))); err != nil {
+		t.Fatal("the launcher goes to the install root")
+	}
+	if cfg.Pipeline.Python != "/opt/worker/python" {
+		t.Fatalf("the worker's Python is kept in server.toml: %q", cfg.Pipeline.Python)
+	}
+	if runtime.GOOS == "windows" {
+		if !strings.Contains(all, "schtasks /Run /TN Maktaba") || !strings.Contains(all, "schtasks /Delete /F /TN maktaba-node") {
 			t.Fatalf("calls:\n%s", all)
 		}
-		if strings.Index(all, "/Create") > strings.Index(all, "/Delete") {
+		if strings.Index(all, "install ") > strings.Index(all, "/Delete") {
 			t.Fatal("the old worker is removed only after the new service is registered and healthy")
-		}
-		script, _ := os.ReadFile(filepath.Join(s.Root, "run-maktaba.cmd"))
-		if !strings.Contains(string(script), "maktaba-server.exe\" serve") || !strings.Contains(string(script), "MAKTABA_PYTHON=/opt/worker/python") {
-			t.Fatalf("run-maktaba.cmd:\n%s", script)
-		}
-	case "linux":
-		if !strings.Contains(all, "systemctl --user enable --now maktaba-server.service") {
-			t.Fatalf("calls:\n%s", all)
 		}
 	}
 	if strings.Contains(s.Out.(*bytes.Buffer).String(), "secret") {

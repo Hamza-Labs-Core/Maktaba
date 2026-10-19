@@ -47,16 +47,21 @@ class Column:
     #: the column the value is unique together with (``library_roots``: ``UNIQUE
     #: (library_id, path_canonical)``): two rows must not be given one value
     unique_with: str | None = None
+    #: the rows whose file must exist, as SQL (the dry run's sampled check opens only
+    #: those); ``None``: never checked. A purged file (``purge_log``), a soft-deleted
+    #: video or subtitle and a repair's kept backup are gone on purpose, and a check
+    #: that sampled them would hold the conversion back for good.
+    verify: str | None = "1 = 1"
 
 
 COLUMNS: tuple[Column, ...] = (
     Column("libraries", "id", "roots", "uuid", array=True),
     Column("library_roots", "id", "path", "uuid"),
     Column("library_roots", "id", "path_canonical", "uuid", unique_with="library_id"),
-    Column("videos", "id", "path", "uuid"),
-    Column("subtitle_files", "id", "path", "bigint"),
-    Column("video_repairs", "video_id", "backup_path", "uuid"),
-    Column("purge_log", "id", "path", "bigint"),
+    Column("videos", "id", "path", "uuid", verify="deleted_at IS NULL"),
+    Column("subtitle_files", "id", "path", "bigint", verify="deleted_at IS NULL"),
+    Column("video_repairs", "video_id", "backup_path", "uuid", verify=None),
+    Column("purge_log", "id", "path", "bigint", verify=None),
 )
 
 
@@ -135,10 +140,13 @@ def convert(value: str, resolver: Resolver, *, include_local: bool = False) -> s
     return n if n != value else None
 
 
-async def _rows(db: Any, col: Column) -> list[tuple[str, Any, str | None]]:
-    """``(key, value, unique_with value)`` of every row with a value, in key order."""
-    out: list[tuple[str, Any, str | None]] = []
+async def _rows(db: Any, col: Column) -> list[tuple[str, Any, str | None, bool]]:
+    """``(key, value, unique_with value, file must exist)`` of every row with a value,
+    in key order."""
+    out: list[tuple[str, Any, str | None, bool]] = []
     group = f", {col.unique_with} AS g" if col.unique_with else ""
+    if col.verify is not None:
+        group += f", CASE WHEN {col.verify} THEN 1 ELSE 0 END AS live"
     last: Any = None
     while True:
         cast = f"::{col.key_type}" if is_pg(db) else ""
@@ -153,7 +161,14 @@ async def _rows(db: Any, col: Column) -> list[tuple[str, Any, str | None]]:
         if not rows:
             return out
         for r in rows:
-            out.append((str(r["k"]), r["v"], str(r["g"]) if col.unique_with else None))
+            out.append(
+                (
+                    str(r["k"]),
+                    r["v"],
+                    str(r["g"]) if col.unique_with else None,
+                    col.verify is not None and bool(r["live"]),
+                )
+            )
         last = rows[-1]["k"]
         if not isinstance(last, int):
             last = str(last)
@@ -201,9 +216,10 @@ async def plan(
         # left as it is, rather than a constraint error that stops the apply mid-way
         taken: dict[tuple[str, str], str] = {}
         if col.unique_with:
-            for key, raw, grp in rows:
+            for key, raw, grp, _ in rows:
                 taken.setdefault((grp or "", nfc(str(raw)).lower()), key)
-        for key, raw, grp in rows:
+        live: set[str] = set()
+        for key, raw, grp, must_exist in rows:
             rep.rows += 1
             values = _array(raw) if col.array else [str(raw)]
             new_values: list[str] = []
@@ -242,7 +258,9 @@ async def plan(
                 taken[ident] = key
             rep.converted += 1
             result.changes.append((col, key, old_text, new_text))
-        samples = [c for c in result.changes if c[0] is col and not col.array]
+            if must_exist:
+                live.add(key)
+        samples = [c for c in result.changes if c[0] is col and not col.array and c[1] in live]
         for _, _, _, new in random.sample(samples, min(verify, len(samples))):
             local = resolver.to_local(new)
             rep.verified.append((new, local, bool(exists(local))))

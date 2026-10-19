@@ -1,8 +1,8 @@
 package cluster
 
 import (
-	"encoding/json"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"

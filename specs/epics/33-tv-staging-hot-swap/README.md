@@ -709,3 +709,94 @@ capacity (future).
   handler's row, now with from / to. Slot 0130 also widens `audit_log_category_check` with
   `tv_change` and `tv_remote`: on Postgres both categories were refused before (the 0054 check), so
   the 33.10 audit rows were never written there.
+
+## As built: 33.5, 33.6 (staging verification and preview)
+
+- **Who does what.** The API's change controller (`api/internal/tvchange/streamverify.go`,
+  `runtime.go`) drives the runs; the home front door (`streaming/internal/frontdoor/staging.go`)
+  runs the staging slot and samples it; the checks over bytes are
+  `streaming/internal/frontdoor/verify` (TS packets, SPS, slice headers, ADTS/AC-3 parsed in Go, no
+  ffprobe). The controller talks to the front door over three signed loopback routes:
+  `POST /internal/tv/staging/start` (the plan: change, release, version + SHA-256, the release's
+  channels, the changed and removed ones, the probe channel, `verify_probe_seconds`,
+  `staging_max_extra_encodes`; idempotent, sent every tick so a front-door restart resumes),
+  `POST /internal/tv/staging/stop`, `GET /internal/tv/staging` (slot, health, budget, warm set,
+  rolling state, the newest sample per channel). A front door without slots (404) or without
+  staging (the `tvstaging` build tag, `tv_staging.enabled`) keeps the database-only verification of
+  33.10 (`slot.health` skip with the reason).
+- **Start.** On `staged` the front door gives the third instance the `staging` role, writes
+  `tv_slots.release_id`, and asks the supervisor's `POST /slots/{name}/start` with the release
+  binding (`{release_id, version, sha256}`: the supervisor runs that version's binary and sets
+  `MAKTABA_TV_RELEASE`). The change moves to `verifying` once the slot answers on that release and
+  version (`slot.health`); not within 90 s → `failed (slot_not_healthy)`. A staging slot's fence
+  airs its release's channels without a live placement (an idle channel, a channel the change adds);
+  it never places one, never writes `channel_runtime`, and has no push path (TC6 checks the slot and
+  engine packages import none).
+- **Warm set and budget** (design §6.1, §14): demand on live, then preview viewers (33.6), the probe
+  channel, then the changed channels not probed yet (rolling: each until it aired
+  `verify_probe_seconds` and a sample measured min(probe, 10 s) of it); removed channels never.
+  Budget = capacity − live's stations − the standby's warm set (NVENC / VideoToolbox: two sessions a
+  channel), capped by `staging_max_extra_encodes`; the rest wait (`deferred`).
+- **Sampling** (every 3 s, per warm channel): the staging slot's playlist and its newest ~10 s of
+  segments, 3 s of its `live.ts` (the HDHomeRun path: PAT/PMT every ≤ 0.5 s, continuity, PCR), and —
+  only when live airs the channel (asking live would start an encode) — the live slot's playlist and
+  its two newest segments; the slots' status (the block on air, `reached`, encoder, restarts) is
+  read before the samples. Slot status gained `channels[]` (story 33.5 step 1).
+- **Checks** (per channel unless noted; `verify_report.checks`): `slot.health`,
+  `channel.first_segment` (fail 75 s after the warm-up began), `channel.cadence`, `channel.wallclock`
+  (newest segment end vs the time the playlist was read, < hls_time + 1 s), `channel.position`
+  (output vs wall clock, < 2 s), `channel.block` (the slot airs generation N+1's block at its
+  position; unchanged channels the same block as live), `ts.conformity` (PAT/PMT, PIDs, service id,
+  H.264, resolution, fps, IDR interval and wall-clock grid, no B-frames, no open GOP, CC, PCR, audio
+  codec — against the release's `tv_output` and the fixed layout), `hls.conformity` (program dates,
+  independent segments, target duration, every segment starts with an IDR and carries PAT/PMT),
+  `splice.align` (new: same PIDs as live, segment boundaries and first PTS within one frame —
+  fail), `splice.compat` (`seamless` or `param_change: …`, warn), `cloudflare.ingest` (H.264,
+  AAC/AC-3, GOP 2–10 s, 2–14 Mb/s, B-frames only with low latency; fail for a pushed channel, warn
+  otherwise), `push.continuity` (pushed channels; a `param_change` fails until acknowledged at the
+  approval, `param_change_push = defer` warns — the one fail that does not fail the change),
+  `guide.vs_stream` (the guide's title of N+1 at the position = the stream's), `encoders` (no muxer
+  restart or hardware fallback during the run, warn), `encoders.budget` (global: staging stations
+  ≤ budget), plus the database checks (`lineup.sanity` — now also "a watched channel missing from the
+  release" — `guide.coverage`, and the cut-free invariant renamed `schedule.boundary`).
+- **Verdict.** A fail on two samples in a row (database checks: one) ends the run: `failed
+  (verification_failed)` with `reasons`; else `ready` after `verify_soak_seconds` of samples with every
+  warm channel measured and every changed channel probed (`soak_started_at`); a run that cannot finish
+  (soak + probes + 3 × the first-segment timeout) fails `verification_timeout`; three staging-slot
+  restarts during a run fail `slot_crash_loop`. `ready` re-checks health, wall clock, position and
+  block every 60 s and returns to `verifying` on a fail (AC9). The report also carries `summary`
+  (pass/warn/fail), `slot`, `warm`, `budget`, `status` (warming/soaking) and `run` (its state between
+  ticks). The staging slot is stopped (supervisor stop, role idle, release binding cleared) whenever
+  no change in `staged…swapping` names it — cancel, fail, live, rolled back — so story 33.7's switch
+  finds it running through `approved`/`swapping` (`Slots.Switch` to the staging instance drops the
+  staging state).
+- **Preview (33.6).** `POST /api/tv/changes/{id}/preview` (admin; verifying/ready/approved) answers
+  `{hls_base, token, m3u, xmltv, expires_at, channels[]}`: the token is
+  `<change>.<exp>.<hmac>` with the cluster stream key over `preview\n<change>\n<exp>` (an hour;
+  `cluster.PreviewToken` / `Keyring.CheckPreview`). The front door serves
+  `/stream/staging/channel/{id}/index.m3u8?pt=` from the staging slot (segment URIs rewritten to
+  `s/<slot>/seg-N.ts?pt=`), warming the channel as staging demand only (never live demand or a
+  push; budget exhausted → 503 `Retry-After` + reason; a removed channel → live's, header
+  `X-Maktaba-Preview: removed`), `/staging/lineup.m3u` and `/staging/xmltv.xml` from the release's
+  lineup and generation (`hdhr.ReleaseGuide`). The token must name the staged change in a previewable
+  state (else 403/410/503). The web port's stream gate lets `/stream/staging/channel/{uuid}/…` through
+  for admin sessions only (`is_admin` of `/api/auth/me`, cached with the session). No staging
+  HDHomeRun device and no SSDP change. The Changes page's Preview tab (`PreviewPanel.tsx`) mints and
+  renews the token, plays a staged channel with the shared player (`@maktaba/tvplayer`: channel
+  switching, digits), "Live vs staging" side by side, the staged guide strip (schedule diff of the
+  channel) and the M3U / XMLTV links; en + ar.
+- **Deviations.** `rules.tv_staging` defaults in the front door now match the pipeline and the API
+  (`enabled = true`; still inert without the build tag). The verify report's per-channel stream
+  checks come from the front door's evaluation (`verify.Evaluate`); the API adds what needs the
+  database. `channel.BuildDefect` (`-ldflags -X …/channel.BuildDefect=pids|pts:<ms>`) builds a
+  deliberately broken binary for the end-to-end test; release builds never set it.
+- **Tested.** Unit: TS checks with crafted and ffmpeg-made streams (missing PAT, CC errors, wrong
+  PIDs, PCR back, B-frames, wrong fps/resolution), Cloudflare rules, splice align/compat, playlist
+  checks, warm set and budget, preview token, preview not live demand, budget exhausted, no staging
+  device, the gate (admin only), the controller on a fake runtime (soak → ready, fail streak → failed
+  + stop, wrong version → slot_not_healthy, no runtime → database checks, ready recheck). End to end
+  (`api/internal/tvremote/staging_e2e_test.go`, real processes and ffmpeg, Postgres): front door +
+  live + standby + staging; a good change is ready after the soak, previewed (staging HLS, M3U,
+  XMLTV; live untouched), cancelled (the slot stops); a binary with other PIDs fails `ts.conformity`
+  and `splice.align`, a binary 700 ms off the clock fails `splice.align`, a release missing a watched
+  channel fails `lineup.sanity`.

@@ -91,11 +91,11 @@ func (v *Verifier) Verify(r *http.Request) (string, error) {
 	if nodeID == "" || keyID == "" || tsRaw == "" || sigRaw == "" || nonce == "" || len(nonce) > 64 {
 		return "", v.reject(r, nodeID, ReasonMissing)
 	}
-	if u, err := uuid.Parse(nodeID); err != nil {
+	u, err := uuid.Parse(nodeID)
+	if err != nil {
 		return "", v.reject(r, nodeID, ReasonUnknownNode)
-	} else {
-		nodeID = u.String()
 	}
+	nodeID = u.String()
 	ts, err := strconv.ParseInt(tsRaw, 10, 64)
 	if err != nil {
 		return "", v.reject(r, nodeID, ReasonMissing)

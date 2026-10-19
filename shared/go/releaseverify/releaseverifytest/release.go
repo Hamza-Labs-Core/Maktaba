@@ -52,7 +52,7 @@ func (s *Sigstore) NewRelease(repo, tag, platform string) (*FakeRelease, error) 
 		exe = ".exe"
 	}
 	r := &FakeRelease{Tag: tag, Repo: repo, Platform: platform, Files: map[string][]byte{}, Binaries: map[string][]byte{}}
-	for _, b := range []string{"maktaba-server", "maktaba-api", "maktaba-streaming"} {
+	for _, b := range []string{"maktaba-server", "maktaba-api", "maktaba-streaming", "maktaba-launcher"} {
 		r.Binaries[b+exe] = []byte(fmt.Sprintf("#!fake %s %s %s\n", b, tag, platform))
 	}
 	base := fmt.Sprintf("maktaba-server-%s-%s-%s", ver, goos, goarch)
@@ -79,7 +79,7 @@ func (s *Sigstore) NewRelease(repo, tag, platform string) (*FakeRelease, error) 
 		files[n] = hexsum(b)
 	}
 	r.Manifest = map[string]any{
-		"v": 1, "version": ver, "tag": tag, "commit": strings.Repeat("0a", 20), "channel": "stable",
+		"v": 1, "version": ver, "tag": tag, "commit": fakeCommit, "channel": "stable",
 		"published": time.Now().UTC().Format(time.RFC3339), "schema_rev": 128, "min_node_schema": 128,
 		"breaks_previous_home": false, "min_upgrade_from": ver,
 		"edge_protocol": 1, "launcher_protocol": 1, "agent_protocol": 2,

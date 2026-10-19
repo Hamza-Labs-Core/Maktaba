@@ -85,6 +85,15 @@ type serveOptions struct {
 func runServe(cfg config.Config, opts serveOptions) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	// Under maktaba-launcher (Epic 35, story 35.2): every role starts from the
+	// current release's directory, and the launcher's stop file stops us.
+	releaseDir, err := launcherRelease()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	restart := watchLauncher(ctx, cancel, releaseDir)
 
 	// The `web` role is served in-process; every other role is a
 	// supervised subprocess. Decide which we're running.
@@ -112,7 +121,7 @@ func runServe(cfg config.Config, opts serveOptions) error {
 
 	// Build the supervised processes.
 	var procs []supervisor.Process
-	sopts := supervisor.Options{Config: cfg, BinDir: opts.binDir}
+	sopts := supervisor.Options{Config: cfg, BinDir: opts.binDir, ReleaseDir: releaseDir}
 	for _, r := range roles {
 		if r == supervisor.RoleTVSlot {
 			// a single slot instance (--role tv-slot --slot blue)
@@ -173,9 +182,13 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	if adminSrv := startSupervisorAdmin(policy.AdminAddr, node.adminHandler(sup.Handler())); adminSrv != nil {
 		defer func() { _ = shutdownWeb(adminSrv) }()
 	}
+	confirmPending(ctx, sup, releaseDir)
 	runErr := sup.Run(ctx, opts.grace)
 	if webSrv != nil {
 		_ = shutdownWeb(webSrv)
+	}
+	if restart.Load() {
+		os.Exit(exitRestart) // drained: the launcher starts current again
 	}
 	return runErr
 }
@@ -253,6 +266,11 @@ func startWebServer(cfg config.Config, node *nodeServices) *http.Server {
 			// agent marks its loopback calls X-Maktaba-Via: relay
 			r.Header.Del("X-Maktaba-Via")
 		}
+		// this machine's API is down or restarting: a themed page for a browser
+		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+			webui.Error(w, r, http.StatusBadGateway, "Maktaba is starting",
+				"This machine's server is not answering yet ("+err.Error()+").")
+		}
 		mux.Handle("/api/", proxy)
 	}
 
@@ -262,7 +280,7 @@ func startWebServer(cfg config.Config, node *nodeServices) *http.Server {
 	// and lineup are public; /stream/ needs a signed-in session and only
 	// the paths the web app loads (stream_gate.go).
 	streamProxy := newStreamProxy(cfg.Server.StreamAddr)
-	var publicProxy, gated http.Handler = streamProxy, streamProxy
+	publicProxy, gated := streamProxy, streamProxy
 	allow := allowedStreamPath
 	if node != nil {
 		home := homeStreamProxy(supervisor.HomeStreamURL(node.node))
@@ -314,8 +332,8 @@ func newStreamProxy(streamAddr string) http.Handler {
 		r.Header.Del("Authorization")
 	}
 	proxy.FlushInterval = -1
-	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
-		http.Error(w, "live TV is not reachable: "+err.Error(), http.StatusBadGateway)
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		webui.Error(w, r, http.StatusBadGateway, "Live TV is not reachable", err.Error())
 	}
 	return proxy
 }

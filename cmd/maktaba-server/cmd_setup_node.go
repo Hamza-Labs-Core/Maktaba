@@ -11,13 +11,15 @@ package main
 //     and verifies it in process (the Sigstore bundle of checksums.txt with the pinned
 //     identity, every file against checksums.txt and release.json) before anything is
 //     installed;
-//  3. installs it side by side (bin/releases/<v>/, .verified, current, previous,
-//     watermark: the layout of design §2.1 the launcher runs);
+//  3. installs it side by side with the same code as `setup --self-managed`
+//     (selfmanaged.Convert: bin/releases/<v>/, .verified, current / previous /
+//     watermark, maktaba-launcher at the root — design §2.1, story 35.2);
 //  4. builds the pipeline's environment from the release's wheel with --require-hashes
 //     (or keeps --python, the worker's existing interpreter);
 //  5. writes [pipeline] instances = N into the node's server.toml (--instances);
-//  6. registers the service (Windows: a logon task by default, mapped drives are per
-//     user; Linux: a systemd user unit; macOS: a LaunchAgent) and starts it;
+//  6. registers the launcher's service like `setup --service` (Windows: a logon task
+//     by default, mapped drives are per user, or --mode service; Linux: a systemd
+//     user unit; macOS: a LaunchAgent) and starts it;
 //  7. waits until the new service answers as a node, then removes the old worker
 //     units (maktaba-node, maktaba-node@N), never before.
 //
@@ -27,8 +29,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -46,7 +46,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/selfmanaged"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/selfupdate"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/service"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
 
@@ -69,7 +72,10 @@ func (f *nodeSetupFlags) register(cmd *cobra.Command) {
 			fl.Bool(name, false, usage)
 		}
 	}
-	def("root", "", "install root (default per OS, e.g. %LOCALAPPDATA%\\Maktaba, ~/.local/share/maktaba)")
+	// --root, --from, --version and --dry-run are setup's layout flags (setup
+	// --self-managed); with --node, --from is a directory holding the release (its
+	// assets or an extracted archive) and --version defaults to the home's
+	def("root", "", "install root (default per OS)")
 	def("from", "", "with --node: a directory holding the release (its assets, or an extracted release)")
 	def("version", "", "with --node: the release to install (default: the home's version)")
 	defBool("dry-run", "print what would be done, change nothing")
@@ -101,7 +107,9 @@ type nodeSetup struct {
 	Identity   releaseverify.Identity
 	Trust      root.TrustedMaterial // nil: the embedded Sigstore root
 	Healthy    func(ctx context.Context) error
-	Now        func() time.Time
+	// InstallService writes and enables the service (service.Install; tests replace it).
+	InstallService func(service.Spec) error
+	Now            func() time.Time
 }
 
 func flagString(cmd *cobra.Command, name string) string {
@@ -114,16 +122,17 @@ func flagBool(cmd *cobra.Command, name string) bool {
 	return v
 }
 
-func runSetupNodeCmd(cmd *cobra.Command) error {
+func runSetupNodeCmd(cmd *cobra.Command, lf layoutFlags) error {
 	inst, _ := cmd.Flags().GetInt("instances")
 	id, err := releaseverify.IdentityFromEnv()
 	if err != nil {
 		return err
 	}
 	s := &nodeSetup{
-		Root: flagString(cmd, "root"), From: flagString(cmd, "from"), Version: flagString(cmd, "version"),
-		Python: flagString(cmd, "python"), Mode: flagString(cmd, "mode"), Instances: inst,
-		DryRun: flagBool(cmd, "dry-run"), Converting: flagBool(cmd, "converting"),
+		Root: orStr(lf.root, flagString(cmd, "root")), From: orStr(lf.from, flagString(cmd, "from")),
+		Version: orStr(lf.version, flagString(cmd, "version")),
+		Python:  flagString(cmd, "python"), Mode: flagString(cmd, "mode"), Instances: inst,
+		DryRun: lf.dryRun || flagBool(cmd, "dry-run"), Converting: flagBool(cmd, "converting"),
 		NoService: flagBool(cmd, "no-service"), KeepWorker: flagBool(cmd, "keep-worker"),
 		Out: cmd.OutOrStdout(), NodeConfig: config.LocalNodeConfig(), NodePath: config.LocalNodeConfigPath(),
 		ConfigPath: config.Path(), Platform: releaseverify.Platform(), Identity: id,
@@ -135,6 +144,7 @@ func runSetupNodeCmd(cmd *cobra.Command) error {
 		},
 	}
 	s.Healthy = func(ctx context.Context) error { return waitNodeAnswers(ctx, s.ConfigPath) }
+	s.InstallService = func(sp service.Spec) error { return service.Install(sp, func(l string) { s.say("    %s", l) }) }
 	return s.run(cmd.Context())
 }
 
@@ -145,29 +155,6 @@ func (s *nodeSetup) now() time.Time {
 		return s.Now()
 	}
 	return time.Now()
-}
-
-// defaultInstallRoot is design §2.1's root for a node.
-func defaultInstallRoot(mode string) string {
-	home, _ := os.UserHomeDir()
-	switch runtime.GOOS {
-	case "windows":
-		if mode == "service" {
-			if p := os.Getenv("ProgramData"); p != "" {
-				return filepath.Join(p, "Maktaba")
-			}
-		}
-		if p := os.Getenv("LOCALAPPDATA"); p != "" {
-			return filepath.Join(p, "Maktaba")
-		}
-		return filepath.Join(home, "AppData", "Local", "Maktaba")
-	case "darwin":
-		return filepath.Join(home, "Library", "Application Support", "Maktaba", "server")
-	}
-	if os.Geteuid() == 0 {
-		return "/var/lib/maktaba"
-	}
-	return filepath.Join(home, ".local", "share", "maktaba")
 }
 
 // ErrRejoin: the node config predates handshake v2 (story 35.8 EC2).
@@ -191,7 +178,7 @@ func (s *nodeSetup) run(ctx context.Context) error {
 		return fmt.Errorf("--mode must be task or service")
 	}
 	if s.Root == "" {
-		s.Root = defaultInstallRoot(s.Mode)
+		s.Root = layout.DefaultRoot(s.layoutMode())
 	}
 	s.say("Maktaba setup --node: %s (node %s) of the home at %s", hostName(), n.Node8(), n.HomeURL())
 	s.say("  node config kept: %s", s.NodePath)
@@ -219,7 +206,6 @@ func (s *nodeSetup) run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("refusing the release: %w", err)
 	}
-	ver = rel.version
 	s.say("  verified %s: checksums.txt signed by %s", rel.tag, rel.identity)
 
 	// 2. the layout
@@ -246,7 +232,7 @@ func (s *nodeSetup) run(ctx context.Context) error {
 		s.say("  --no-service: start it with %s serve", filepath.Join(dir, exeName("maktaba-server")))
 		return nil
 	}
-	if err := s.registerService(dir, python); err != nil {
+	if err := s.registerService(); err != nil {
 		return err
 	}
 	// 6. healthy, then the old units go
@@ -266,6 +252,14 @@ func (s *nodeSetup) run(ctx context.Context) error {
 	return nil
 }
 
+// layoutMode: --mode service is the system install (Windows service, system unit).
+func (s *nodeSetup) layoutMode() layout.Mode {
+	if s.Mode == "service" {
+		return layout.ModeSystem
+	}
+	return layout.ModeUser
+}
+
 func (s *nodeSetup) plan(ver string) {
 	s.say("  (--dry-run) would verify the release, then:")
 	s.say("    install   %s", filepath.Join(s.Root, "bin", "releases", orStr(ver, "<version>")))
@@ -281,10 +275,9 @@ func (s *nodeSetup) plan(ver string) {
 	switch {
 	case s.NoService:
 		s.say("    service   none (--no-service)")
-	case runtime.GOOS == "windows" && s.Mode == "task":
-		s.say("    service   logon task \"Maktaba\" running %s", filepath.Join(s.Root, "run-maktaba.cmd"))
 	default:
-		s.say("    service   %s", s.serviceDescription())
+		s.say("    service   %s (%s), running %s", service.DefaultKind(runtime.GOOS, s.layoutMode()), s.layoutMode(),
+			filepath.Join(s.Root, exeName("maktaba-launcher")))
 	}
 	if !s.KeepWorker {
 		s.say("    then      remove the worker units (maktaba-node, maktaba-node@N) once the node answers")
@@ -496,51 +489,35 @@ func (s *nodeSetup) source(ctx context.Context, ver string) (func(string) ([]byt
 	}, nil
 }
 
-// install writes bin/releases/<v>/ (binaries + the release files + .verified), then the
-// pointers: previous (when current is another release), current, watermark.
+// install stages the verified release as `setup --self-managed` does
+// (selfmanaged.Convert: bin/releases/<v>/ with .verified, the pointers, the
+// launcher), from a staging copy of the verified bytes, plus the release files
+// (release.json, checksums.txt, its bundle) the launcher's re-check reads.
 func (s *nodeSetup) install(rel *verifiedRelease) (string, error) {
-	dir := filepath.Join(s.Root, "bin", "releases", rel.version)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	stage, err := os.MkdirTemp("", "maktaba-node-release-")
+	if err != nil {
 		return "", err
 	}
-	sums := map[string]string{}
-	write := func(name string, b []byte, mode os.FileMode) error {
-		p := filepath.Join(dir, name)
-		if err := writeAtomic(p, b, mode); err != nil {
-			return err
-		}
-		h := sha256.Sum256(b)
-		sums[name] = hex.EncodeToString(h[:])
-		return nil
-	}
+	defer os.RemoveAll(stage)
 	for n, b := range rel.binaries {
-		if err := write(n, b, 0o755); err != nil {
+		if err := writeAtomic(filepath.Join(stage, n), b, 0o755); err != nil {
 			return "", err
 		}
 	}
+	res, err := selfmanaged.Convert(selfmanaged.Options{Root: s.Root, From: stage, Version: rel.version,
+		Identity: rel.identity, Now: s.now(), Log: func(l string) { s.say("    %s", l) }})
+	if err != nil {
+		return "", err
+	}
+	l := layout.New(s.Root)
+	dir := l.ReleaseDir(res.Version)
 	for n, b := range rel.files {
-		if err := write(n, b, 0o644); err != nil {
+		if err := writeAtomic(filepath.Join(dir, n), b, 0o644); err != nil {
 			return "", err
 		}
 	}
-	ver, _ := json.MarshalIndent(map[string]any{"sha256": sums, "verified_at": s.now().UTC(), "identity": rel.identity,
-		"version": rel.version}, "", "  ")
-	if err := writeAtomic(filepath.Join(dir, ".verified"), append(ver, '\n'), 0o644); err != nil {
-		return "", err
-	}
-	cur := readPointer(filepath.Join(s.Root, "current"))
-	if cur != "" && cur != rel.version {
-		if err := writeAtomic(filepath.Join(s.Root, "previous"), []byte(cur+"\n"), 0o644); err != nil {
-			return "", err
-		}
-	}
-	if err := writeAtomic(filepath.Join(s.Root, "current"), []byte(rel.version+"\n"), 0o644); err != nil {
-		return "", err
-	}
-	if w := readPointer(filepath.Join(s.Root, "watermark")); w == "" || releaseverify.CompareVersions(rel.version, w) > 0 {
-		if err := writeAtomic(filepath.Join(s.Root, "watermark"), []byte(rel.version+"\n"), 0o644); err != nil {
-			return "", err
-		}
+	if res.Skipped != "" && res.Skipped != "already current" {
+		return "", fmt.Errorf("the release was staged but current was not switched: %s", res.Skipped)
 	}
 	return dir, nil
 }
@@ -619,6 +596,10 @@ func (s *nodeSetup) writeServerToml() error {
 		cfg.Pipeline.Instances = s.Instances
 		changed = true
 	}
+	if s.Python != "" && cfg.Pipeline.Python != s.Python {
+		cfg.Pipeline.Python = s.Python
+		changed = true
+	}
 	if _, err := os.Stat(s.ConfigPath); err != nil {
 		changed = true
 	}
@@ -629,117 +610,28 @@ func (s *nodeSetup) writeServerToml() error {
 	return cfg.SaveTo(s.ConfigPath)
 }
 
-func (s *nodeSetup) serverExe(dir string) string {
-	if l := filepath.Join(s.Root, exeName("maktaba-launcher")); fileExists(l) {
-		return l
+// registerService writes the launcher's service as `setup --service` does and
+// starts it.
+func (s *nodeSetup) registerService() error {
+	mode := s.layoutMode()
+	spec := service.Spec{Kind: service.DefaultKind(runtime.GOOS, mode), Mode: mode, Root: s.Root,
+		ConfigPath: s.ConfigPath}
+	s.say("  service: %s (%s)", spec.Kind, mode)
+	if err := s.InstallService(spec); err != nil {
+		return fmt.Errorf("register the service: %w", err)
 	}
-	return filepath.Join(dir, exeName("maktaba-server"))
-}
-
-func fileExists(p string) bool {
-	st, err := os.Stat(p)
-	return err == nil && !st.IsDir()
-}
-
-func (s *nodeSetup) serviceDescription() string {
-	switch runtime.GOOS {
-	case "windows":
-		return "Windows service (maktaba-server setup --service --system of the installed release)"
-	case "darwin":
-		return "LaunchAgent ~/Library/LaunchAgents/com.maktaba.server.plist"
+	switch spec.Kind {
+	case service.KindTask:
+		return s.Run("schtasks", "/Run", "/TN", service.WindowsName)
+	case service.KindWinService:
+		return s.Run("sc", "start", service.WindowsName)
+	case service.KindSystemd:
+		if mode == layout.ModeSystem {
+			return s.Run("systemctl", "restart", service.Name)
+		}
+		return s.Run("systemctl", "--user", "restart", service.Name)
 	}
-	return "systemd user unit ~/.config/systemd/user/maktaba-server.service"
-}
-
-// registerService writes and starts the OS service (design §2.3).
-func (s *nodeSetup) registerService(dir, python string) error {
-	exe := s.serverExe(dir)
-	env := map[string]string{"MAKTABA_PYTHON": python, "MAKTABA_CONFIG": s.ConfigPath, "MAKTABA_NODE_CONFIG": s.NodePath}
-	switch runtime.GOOS {
-	case "windows":
-		if s.Mode == "service" {
-			srv := filepath.Join(dir, exeName("maktaba-server"))
-			s.say("  service: %s setup --service --system", srv)
-			return s.Run(srv, "setup", "--service", "--system", "--root", s.Root)
-		}
-		script := filepath.Join(s.Root, "run-maktaba.cmd")
-		var b strings.Builder
-		b.WriteString("@echo off\r\nrem Maktaba full node (maktaba-server setup --node): started at logon.\r\n")
-		keys := []string{"MAKTABA_CONFIG", "MAKTABA_NODE_CONFIG", "MAKTABA_PYTHON"}
-		for _, k := range keys {
-			fmt.Fprintf(&b, "set \"%s=%s\"\r\n", k, env[k])
-		}
-		b.WriteString(":run\r\n")
-		fmt.Fprintf(&b, "\"%s\" serve\r\n", exe)
-		b.WriteString("if %errorlevel%==0 exit /b 0\r\ntimeout /t 10 /nobreak >nul\r\ngoto run\r\n")
-		if err := writeAtomic(script, []byte(b.String()), 0o644); err != nil {
-			return err
-		}
-		s.say("  service: logon task \"Maktaba\" (%s)", script)
-		if err := s.Run("schtasks", "/Create", "/F", "/TN", "Maktaba", "/SC", "ONLOGON", "/RL", "LIMITED",
-			"/TR", "\""+script+"\""); err != nil {
-			return fmt.Errorf("register the logon task: %w", err)
-		}
-		return s.Run("schtasks", "/Run", "/TN", "Maktaba")
-	case "darwin":
-		home, _ := os.UserHomeDir()
-		plist := filepath.Join(home, "Library", "LaunchAgents", "com.maktaba.server.plist")
-		var envXML strings.Builder
-		for _, k := range []string{"MAKTABA_CONFIG", "MAKTABA_NODE_CONFIG", "MAKTABA_PYTHON"} {
-			fmt.Fprintf(&envXML, "    <key>%s</key><string>%s</string>\n", k, env[k])
-		}
-		body := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>com.maktaba.server</string>
-  <key>ProgramArguments</key><array><string>%s</string><string>serve</string></array>
-  <key>EnvironmentVariables</key><dict>
-%s  </dict>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>AbandonProcessGroup</key><true/>
-</dict></plist>
-`, exe, envXML.String())
-		if err := os.MkdirAll(filepath.Dir(plist), 0o755); err != nil {
-			return err
-		}
-		if err := writeAtomic(plist, []byte(body), 0o644); err != nil {
-			return err
-		}
-		s.say("  service: %s", plist)
-		return s.Run("launchctl", "bootstrap", fmt.Sprintf("gui/%d", os.Getuid()), plist)
-	default:
-		home, _ := os.UserHomeDir()
-		unit := filepath.Join(home, ".config", "systemd", "user", "maktaba-server.service")
-		var envLines strings.Builder
-		for _, k := range []string{"MAKTABA_CONFIG", "MAKTABA_NODE_CONFIG", "MAKTABA_PYTHON"} {
-			fmt.Fprintf(&envLines, "Environment=%s=%s\n", k, env[k])
-		}
-		body := fmt.Sprintf(`[Unit]
-Description=Maktaba (full node)
-After=network-online.target
-
-[Service]
-ExecStart=%s serve
-%sRestart=always
-RestartForceExitStatus=75
-KillMode=mixed
-
-[Install]
-WantedBy=default.target
-`, exe, envLines.String())
-		if err := os.MkdirAll(filepath.Dir(unit), 0o755); err != nil {
-			return err
-		}
-		if err := writeAtomic(unit, []byte(body), 0o644); err != nil {
-			return err
-		}
-		s.say("  service: %s", unit)
-		if err := s.Run("systemctl", "--user", "daemon-reload"); err != nil {
-			return err
-		}
-		return s.Run("systemctl", "--user", "enable", "--now", "maktaba-server.service")
-	}
+	return nil // launchd: bootstrap started it
 }
 
 // removeWorkerUnits removes the Epic 31 installer's worker units (only after the new

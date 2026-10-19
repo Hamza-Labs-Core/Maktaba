@@ -24,6 +24,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/mdns"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/webui"
 )
 
 // nodeServices is what the supervisor runs for node mode (nil on the home).
@@ -78,8 +79,9 @@ func (ns *nodeServices) adminHandler(base http.Handler) http.Handler {
 func homeStreamProxy(target string) http.Handler {
 	u, err := url.Parse(target)
 	if err != nil || u.Host == "" {
-		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			http.Error(w, "the home's front door is not known", http.StatusBadGateway)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			webui.Error(w, r, http.StatusBadGateway, "This machine cannot reach its home",
+				"The home's address is not known.")
 		})
 	}
 	proxy := httputil.NewSingleHostReverseProxy(u)
@@ -93,8 +95,9 @@ func homeStreamProxy(target string) http.Handler {
 		r.Header.Del("X-Maktaba-Via")
 	}
 	proxy.FlushInterval = -1
-	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
-		http.Error(w, "the home's live TV is not reachable: "+err.Error(), http.StatusBadGateway)
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		webui.Error(w, r, http.StatusBadGateway, "This machine cannot reach its home",
+			"The home's live TV is not reachable ("+err.Error()+").")
 	}
 	return proxy
 }

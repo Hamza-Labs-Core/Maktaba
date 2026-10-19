@@ -9,7 +9,7 @@
 //	POST  /api/tv/changes/{id}/approve      {swap_at?, ack_param_change?}
 //	POST  /api/tv/changes/{id}/promote      swap now
 //	POST  /api/tv/changes/{id}/cancel
-//	POST  /api/tv/changes/{id}/preview      501 until story 33.6
+//	POST  /api/tv/changes/{id}/preview      signed staging URLs (story 33.6)
 //	POST  /api/tv/rollback                  501 until story 33.9
 //	GET   /api/tv/slots                     the TV slots (one live process until 33.1)
 //	GET   /api/tv/releases?limit=           releases with the change that made each
@@ -24,6 +24,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
+	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -556,12 +559,132 @@ func notYet(w http.ResponseWriter, r *http.Request, what, story string) {
 		Status: http.StatusNotImplemented, Detail: what + " arrives with story " + story})
 }
 
-// Preview serves POST /api/tv/changes/{id}/preview (story 33.6).
+// previewStates are the states a staged change can be previewed in (33.6 AC1).
+var previewStates = map[string]bool{core.StateVerifying: true, core.StateReady: true, core.StateApproved: true}
+
+// PreviewChannel is one channel of a preview.
+type PreviewChannel struct {
+	ID      string `json:"id"`
+	Number  int    `json:"number"`
+	Name    string `json:"name"`
+	Logo    bool   `json:"logo"`
+	Changed bool   `json:"changed,omitempty"`
+	Added   bool   `json:"added,omitempty"`
+	Removed bool   `json:"removed,omitempty"`
+	// URL is the staging playlist (web origin: the stream gate wants an admin
+	// session; the token rides along); LiveURL the live one, side by side.
+	URL     string `json:"url"`
+	LiveURL string `json:"live_url,omitempty"`
+}
+
+// PreviewReply is POST /api/tv/changes/{id}/preview.
+type PreviewReply struct {
+	HLSBase   string           `json:"hls_base"`
+	Token     string           `json:"token"`
+	M3U       string           `json:"m3u"`
+	XMLTV     string           `json:"xmltv"`
+	ExpiresAt time.Time        `json:"expires_at"`
+	Channels  []PreviewChannel `json:"channels"`
+}
+
+// Preview serves POST /api/tv/changes/{id}/preview (story 33.6): signed staging
+// URLs for an hour — the staging slot's HLS per channel (through the web port's
+// stream gate, admin sessions only), the staged lineup M3U and the staged guide
+// (on the streaming port, for VLC). Never a second HDHomeRun device.
 func (h *Handler) Preview(w http.ResponseWriter, r *http.Request) {
-	if _, ok := admin(w, r); !ok {
+	p, ok := admin(w, r)
+	if !ok {
 		return
 	}
-	notYet(w, r, "the staging preview", "33.6")
+	c, ok := h.load(w, r)
+	if !ok {
+		return
+	}
+	if !previewStates[c.State] || c.ReleaseID == nil {
+		httperror.Write(w, r, httperror.Conflict("", "a change can be previewed while verifying, ready or approved; this one is "+c.State).
+			With("state", c.State))
+		return
+	}
+	exp := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
+	tok, err := core.PreviewToken(r.Context(), h.DB, c.ID, exp)
+	if err != nil {
+		httperror.Write(w, r, httperror.Conflict("", err.Error()).With("state", c.State))
+		return
+	}
+	q := "?pt=" + url.QueryEscape(tok)
+	base := strings.TrimRight(os.Getenv("MAKTABA_PUBLIC_BASE_URL"), "/")
+	out := PreviewReply{HLSBase: "/stream/staging/channel/", Token: tok, M3U: base + "/staging/lineup.m3u" + q,
+		XMLTV: base + "/staging/xmltv.xml" + q, ExpiresAt: exp, Channels: []PreviewChannel{}}
+	changed, added, removed := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	if lu, ok := c.Diff["lineup"].(map[string]any); ok {
+		for k, set := range map[string]map[string]bool{"added": added, "removed": removed, "renumbered": changed,
+			"renamed": changed, "changed": changed} {
+			xs, _ := lu[k].([]any)
+			for _, x := range xs {
+				if m, ok := x.(map[string]any); ok {
+					if id, _ := m["id"].(string); id != "" {
+						set[id] = true
+					}
+				}
+			}
+		}
+	}
+	for _, k := range []string{"schedules", "art"} {
+		xs, _ := c.Diff[k].([]any)
+		for _, x := range xs {
+			if m, ok := x.(map[string]any); ok {
+				if id, _ := m["id"].(string); id != "" {
+					changed[id] = true
+				}
+			}
+		}
+	}
+	rows, err := h.DB.QueryContext(r.Context(), `SELECT channel_id, def FROM tv_release_channels WHERE release_id = $1`, *c.ReleaseID)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("preview: "+err.Error()))
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var raw []byte
+		if rows.Scan(&id, &raw) != nil {
+			continue
+		}
+		var d struct {
+			Number   int     `json:"number"`
+			Name     string  `json:"name"`
+			LogoPath *string `json:"logo_path"`
+			Enabled  *bool   `json:"enabled"`
+		}
+		if json.Unmarshal(raw, &d) != nil || (d.Enabled != nil && !*d.Enabled) {
+			continue
+		}
+		pc := PreviewChannel{ID: id, Number: d.Number, Name: d.Name, Logo: d.LogoPath != nil && *d.LogoPath != "",
+			Changed: changed[id], Added: added[id], URL: out.HLSBase + id + "/index.m3u8" + q}
+		if !added[id] {
+			pc.LiveURL = "/stream/channel/" + id + "/index.m3u8"
+		}
+		out.Channels = append(out.Channels, pc)
+	}
+	// EC1: a removed channel is shown from live, labelled
+	if lu, ok := c.Diff["lineup"].(map[string]any); ok {
+		xs, _ := lu["removed"].([]any)
+		for _, x := range xs {
+			m, _ := x.(map[string]any)
+			id, _ := m["id"].(string)
+			if id == "" {
+				continue
+			}
+			n, _ := m["number"].(float64)
+			name, _ := m["name"].(string)
+			out.Channels = append(out.Channels, PreviewChannel{ID: id, Number: int(n), Name: name, Removed: true,
+				URL: out.HLSBase + id + "/index.m3u8" + q, LiveURL: "/stream/channel/" + id + "/index.m3u8"})
+		}
+	}
+	sort.SliceStable(out.Channels, func(i, j int) bool { return out.Channels[i].Number < out.Channels[j].Number })
+	h.Store.Audit(r.Context(), h.DB, p.UserID, "preview", c.ID, map[string]any{"expires_at": exp})
+	common.WriteJSON(w, r, http.StatusOK, out)
 }
 
 // Rollback serves POST /api/tv/rollback (story 33.9).

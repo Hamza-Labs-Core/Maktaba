@@ -8,7 +8,9 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/local/bin/maktaba-server</string>
+    <string>/usr/local/var/maktaba/maktaba-launcher</string>
+    <string>--root</string>
+    <string>/usr/local/var/maktaba</string>
     <string>serve</string>
   </array>
 
@@ -17,6 +19,12 @@
 
   <key>KeepAlive</key>
   <true/>
+
+  <key>AbandonProcessGroup</key>
+  <true/>
+
+  <key>ExitTimeOut</key>
+  <integer>90</integer>
 
   <key>StandardOutPath</key>
   <string>/usr/local/var/log/maktaba/server.log</string>

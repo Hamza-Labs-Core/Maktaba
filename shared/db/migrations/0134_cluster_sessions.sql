@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0133 (Epic 35 story 35.9, README slot S2): sessions across the machines of a
+-- Slot 0134 (Epic 35 story 35.9, README slot S2): sessions across the machines of a
 -- cluster (specs/epics/35-cluster-full-nodes-and-updates/design.md §10). Sessions stay in
 -- the home's web_sessions, resolved only by the home; a full node asks the home and
 -- caches the answer.

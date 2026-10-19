@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0134 (Epic 35 stories 35.8 and 35.12, README slot S3): what a full node reports
+-- Slot 0135 (Epic 35 stories 35.8 and 35.12, README slot S3): what a full node reports
 -- about itself (specs/epics/35-cluster-full-nodes-and-updates/design.md §9.1, §11.5).
 --
 --   version, platform   the node's release and OS/arch (os-arch, e.g. windows-amd64)

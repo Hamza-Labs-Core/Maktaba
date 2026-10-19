@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0134 (Epic 35 stories 35.8, 35.12). A SQLite home has
+-- SQLite parity sibling for slot 0135 (Epic 35 stories 35.8, 35.12). A SQLite home has
 -- no machines; the columns exist so the same code runs on both (the reporting function
 -- is Postgres only: no machine reaches a SQLite home's database).
 --

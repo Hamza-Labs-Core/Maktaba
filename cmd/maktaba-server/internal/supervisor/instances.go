@@ -33,7 +33,7 @@ func BuildPipelineInstances(opts Options) ([]Process, error) {
 		env = setEnv(env, "MAKTABA_PIPELINE_EXCLUDE_STAGES", "")
 		env = setEnv(env, "MAKTABA_PIPELINE_GRPC_ADDR", "")
 		env = setEnv(env, "MAKTABA_PIPELINE_LOGS_ADDR", logs)
-		cmd := exec.Command(pythonExecutable(), "-m", "maktaba_pipeline")
+		cmd := exec.Command(pythonFor(opts), "-m", "maktaba_pipeline")
 		cmd.Env = env
 		wire(cmd)
 		out = append(out, Process{Role: RolePipeline, Instance: "stt-" + strconv.Itoa(i), Cmd: cmd,

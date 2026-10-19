@@ -37,8 +37,8 @@ var (
 	pingEvery    = 15 * time.Second
 	silenceLimit = 45 * time.Second
 	handshakeMax = 10 * time.Second
-	backoffMin   = time.Second
-	backoffMax   = 30 * time.Second
+	backoffFloor   = time.Second
+	backoffCeiling   = 30 * time.Second
 )
 
 // Identity is what the agent connects as (from node.json; never logged).
@@ -192,7 +192,7 @@ func (a *Agent) Run(ctx context.Context) {
 		a.log().Warn("node: the machine agent cannot connect: re-join this machine", "event", "node_agent_rejoin")
 		return
 	}
-	delay := backoffMin
+	delay := backoffFloor
 	for ctx.Err() == nil {
 		start := time.Now()
 		code, err := a.session(ctx)
@@ -202,12 +202,12 @@ func (a *Agent) Run(ctx context.Context) {
 		}
 		a.setErr(err)
 		if time.Since(start) > time.Minute {
-			delay = backoffMin
+			delay = backoffFloor
 		}
 		wait := delay
 		switch code {
 		case closeUnsupported, closeNotMember, closeAuthFailed, closeReplaced, closeRevoked, closeRateLimited:
-			wait = backoffMax
+			wait = backoffCeiling
 		}
 		jitter := 0.8 + 0.4*mrand.Float64()
 		wait = time.Duration(float64(wait) * jitter)
@@ -218,7 +218,7 @@ func (a *Agent) Run(ctx context.Context) {
 			return
 		case <-time.After(wait):
 		}
-		delay = min(delay*2, backoffMax)
+		delay = min(delay*2, backoffCeiling)
 	}
 }
 
