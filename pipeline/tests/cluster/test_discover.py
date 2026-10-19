@@ -140,7 +140,7 @@ def test_discover_skips_nodes() -> None:
         mock.patch.object(
             discover, "local_subnet_hosts", return_value=["192.168.1.20", "192.168.1.21"]
         ),
-        mock.patch.object(discover.asyncio, "run", fake_run),
+        mock.patch("asyncio.run", fake_run),
     ):
         homes = discover.probe_lan()
     assert [h.url for h in homes] == ["http://192.168.1.20:8080"]

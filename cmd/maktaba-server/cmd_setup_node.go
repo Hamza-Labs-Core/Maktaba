@@ -406,7 +406,8 @@ func (s *nodeSetup) fetchVerified(ctx context.Context, ver string) (*verifiedRel
 			if err := res.Manifest.VerifyExtracted(s.Platform, entry, b); err != nil {
 				return nil, err
 			}
-			rel.binaries[entry] = b
+			// kept under the manifest's own name, never the archive's path
+			rel.binaries[n] = b
 		}
 	}
 	// the pipeline's wheel and constraints, when the release has them and they are found
@@ -500,6 +501,9 @@ func (s *nodeSetup) install(rel *verifiedRelease) (string, error) {
 	}
 	defer os.RemoveAll(stage)
 	for n, b := range rel.binaries {
+		if !safeFileName(n) {
+			return "", fmt.Errorf("refusing the file name %q in release.json", n)
+		}
 		if err := writeAtomic(filepath.Join(stage, n), b, 0o755); err != nil {
 			return "", err
 		}
@@ -512,6 +516,9 @@ func (s *nodeSetup) install(rel *verifiedRelease) (string, error) {
 	l := layout.New(s.Root)
 	dir := l.ReleaseDir(res.Version)
 	for n, b := range rel.files {
+		if !safeFileName(n) {
+			return "", fmt.Errorf("refusing the file name %q in release.json", n)
+		}
 		if err := writeAtomic(filepath.Join(dir, n), b, 0o644); err != nil {
 			return "", err
 		}
@@ -520,6 +527,11 @@ func (s *nodeSetup) install(rel *verifiedRelease) (string, error) {
 		return "", fmt.Errorf("the release was staged but current was not switched: %s", res.Skipped)
 	}
 	return dir, nil
+}
+
+// safeFileName accepts a plain file name: no directory part, no "..".
+func safeFileName(n string) bool {
+	return n != "" && n != "." && n != ".." && !strings.ContainsAny(n, `/\:`) && filepath.Base(n) == n
 }
 
 func readPointer(p string) string {
