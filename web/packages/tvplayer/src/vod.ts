@@ -1,0 +1,340 @@
+// VOD HLS on one <video> (library playback, the watch page).
+//
+// The live path (live.ts) is tuned for a moving live edge; a library video is
+// a finite playlist the viewer seeks around in, so it gets its own small
+// attachment that shares the same loading rules: Safari / iOS play the .m3u8
+// natively, everywhere else hls.js is lazy-loaded into its own chunk (only
+// when native HLS is missing) and drives the element through MSE.
+//
+// Signed URLs (PR #114): the manifest URL carries `?sig=` and the streaming
+// service copies that token onto every child URI it serves, so hls.js must
+// request URLs exactly as resolved — no query stripping. As a belt-and-braces
+// step the loader also carries the manifest's sig onto a same-session child
+// URL that arrives without one (never onto another origin or path).
+//
+// An expired / revoked token surfaces as HTTP 401/403 on a playlist or
+// segment: hls.js does not retry 4xx, so `onAuthError(position, playing)` tells the
+// owner to reopen the session for a fresh signed URL and re-attach at that
+// position. Other fatal errors get bounded network retries and media-error
+// recovery before `onFatal`.
+import type HlsType from "hls.js";
+import { hasNativeHls } from "./live";
+
+export const VOD_NET_RETRIES = 3;
+export const VOD_NET_RETRY_BASE_MS = 1000;
+export const VOD_MEDIA_RECOVERIES = 2;
+/** Native path: no progress for this long while playing → probe the URL. */
+export const VOD_STALL_MS = 8000;
+
+export const VOD_HLS_CONFIG = {
+  enableWorker: true,
+  lowLatencyMode: false,
+  // Keep enough behind the playhead for a short seek back without refetching.
+  backBufferLength: 90,
+  // In-manifest subtitle renditions become the element's TextTracks, so the
+  // native captions menu and the "c" shortcut work as on Safari.
+  renderTextTracksNatively: true,
+} as const;
+
+export type VodMode = "idle" | "native" | "hls" | "unsupported";
+
+export interface VodOptions {
+  /** Position (s) to start at; 0 / undefined = the beginning. */
+  startAt?: number;
+  onMode?: (mode: VodMode) => void;
+  /** HTTP 401/403 on a playlist or segment: the signed URL expired. */
+  onAuthError?: (position: number, playing: boolean) => void;
+  /** The stream cannot be recovered. */
+  onFatal?: () => void;
+  /**
+   * Native HLS reports no HTTP status: a media error while this says the
+   * signed URL has expired is treated as an auth error. Otherwise the
+   * manifest is probed and a 401/403 there counts as one too.
+   */
+  isExpired?: () => boolean;
+  /** Status probe for the native path (default: fetch the manifest). */
+  probe?: (url: string) => Promise<number>;
+  /** Loads hls.js (default: a dynamic import into its own chunk). */
+  loadHls?: () => Promise<typeof HlsType>;
+}
+
+export interface VodHandle {
+  readonly mode: VodMode;
+  detach(): void;
+}
+
+const defaultLoadHls = () => import("hls.js").then((m) => m.default);
+
+/** HTTP status of a GET of `url` (the body is discarded). */
+async function defaultProbe(url: string): Promise<number> {
+  const res = await fetch(url, { credentials: "include", cache: "no-store" });
+  void res.body?.cancel().catch(() => {});
+  return res.status;
+}
+
+/** The `sig` query value of `url`, or "" when it has none. */
+export function sigOf(url: string): string {
+  try {
+    return new URL(url, baseHref()).searchParams.get("sig") ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function baseHref(): string {
+  return typeof location !== "undefined" ? location.href : "http://localhost/";
+}
+
+/**
+ * Returns `url` unchanged when it already carries a sig or lies outside the
+ * manifest's session directory; otherwise appends the manifest's sig. The
+ * rest of the URL (path, other query parameters, fragment) is kept as is.
+ */
+export function carrySig(url: string, manifest: string): string {
+  const sig = sigOf(manifest);
+  if (!sig) return url;
+  try {
+    const m = new URL(manifest, baseHref());
+    const u = new URL(url, m);
+    if (u.searchParams.has("sig")) return url;
+    if (u.origin !== m.origin) return url;
+    const dir = m.pathname.slice(0, m.pathname.lastIndexOf("/") + 1);
+    if (!u.pathname.startsWith(dir)) return url;
+    const [base, frag] = splitHash(url);
+    return `${base}${base.includes("?") ? "&" : "?"}sig=${encodeURIComponent(sig)}${frag}`;
+  } catch {
+    return url;
+  }
+}
+
+function splitHash(url: string): [string, string] {
+  const i = url.indexOf("#");
+  return i < 0 ? [url, ""] : [url.slice(0, i), url.slice(i)];
+}
+
+/** HTTP status of an hls.js error, when it has one. */
+export function httpStatusOf(data: {
+  response?: { code?: number };
+  networkDetails?: { status?: number };
+}): number {
+  const code = data.response?.code ?? data.networkDetails?.status;
+  return typeof code === "number" ? code : 0;
+}
+
+interface LoaderLike {
+  load(context: { url: string }, config: unknown, callbacks: unknown): void;
+}
+type LoaderCtor = new (config: unknown) => LoaderLike;
+
+function sigLoader(Hls: typeof HlsType, manifest: string): LoaderCtor | null {
+  const Base = (Hls as unknown as { DefaultConfig?: { loader?: LoaderCtor } }).DefaultConfig
+    ?.loader;
+  if (!Base) return null;
+  return class extends Base {
+    load(context: { url: string }, config: unknown, callbacks: unknown) {
+      context.url = carrySig(context.url, manifest);
+      super.load(context, config, callbacks);
+    }
+  };
+}
+
+/** Plays the VOD playlist `src` on `video` until detach. */
+export function attachVod(video: HTMLVideoElement, src: string, opts: VodOptions = {}): VodHandle {
+  let disposed = false;
+  let mode: VodMode = "idle";
+  let hls: HlsType | null = null;
+  let netRetries = 0;
+  let mediaRecoveries = 0;
+  let authReported = false;
+  let netTimer: ReturnType<typeof setTimeout> | null = null;
+  const startAt = opts.startAt && opts.startAt > 0 ? opts.startAt : 0;
+
+  const setMode = (m: VodMode) => {
+    mode = m;
+    opts.onMode?.(m);
+  };
+  const clearNet = () => {
+    if (netTimer) clearTimeout(netTimer);
+    netTimer = null;
+  };
+  const position = () => {
+    const t = video.currentTime;
+    return Number.isFinite(t) && t > 0 ? t : startAt;
+  };
+  const authError = (at = position(), playing = !video.paused) => {
+    if (authReported || disposed) return;
+    authReported = true;
+    clearNet();
+    opts.onAuthError?.(at, playing);
+  };
+
+  // Native path: a start offset is applied once the metadata is known.
+  const onNativeMeta = () => {
+    if (startAt > 0) {
+      try {
+        video.currentTime = startAt;
+      } catch {
+        /* not seekable yet */
+      }
+    }
+  };
+
+  // Native HLS gives no HTTP status: on a media error, or when playback
+  // stalls (Chrome's native HLS just stops on a 403 segment), probe the
+  // manifest; 401/403 there means the signed URL expired.
+  let probing = false;
+  let stallTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastTime = -1;
+  let wantPlay = false;
+  const clearStall = () => {
+    if (stallTimer) clearTimeout(stallTimer);
+    stallTimer = null;
+  };
+  const checkNative = (onOther?: () => void) => {
+    if (disposed || authReported || probing) return;
+    // Native HLS pauses on an error (the flag can flip before the pause event
+    // is dispatched): keep what the viewer was doing.
+    const at = position();
+    const playing = wantPlay || !video.paused;
+    if (opts.isExpired?.()) {
+      authError(at, playing);
+      return;
+    }
+    probing = true;
+    (opts.probe ?? defaultProbe)(src)
+      .then((status) => {
+        if (disposed) return;
+        if (status === 401 || status === 403) authError(at, playing);
+        else onOther?.();
+      })
+      .catch(() => {
+        if (!disposed) onOther?.();
+      })
+      .finally(() => {
+        probing = false;
+      });
+  };
+  const onNativeError = () => {
+    clearStall();
+    checkNative(() => opts.onFatal?.());
+  };
+  const armStall = () => {
+    clearStall();
+    if (disposed || video.paused || video.ended) return;
+    stallTimer = setTimeout(() => {
+      stallTimer = null;
+      if (disposed || video.paused || video.ended) return;
+      checkNative(armStall);
+    }, VOD_STALL_MS);
+  };
+  const onNativeProgress = () => {
+    if (video.currentTime === lastTime) return;
+    lastTime = video.currentTime;
+    armStall();
+  };
+  const onNativePlay = () => {
+    wantPlay = true;
+    armStall();
+  };
+  const onNativePause = () => {
+    wantPlay = false;
+    clearStall();
+  };
+  const NATIVE_EVENTS: [string, () => void][] = [
+    ["error", onNativeError],
+    ["play", onNativePlay],
+    ["playing", onNativePlay],
+    ["timeupdate", onNativeProgress],
+    ["pause", onNativePause],
+    ["ended", onNativePause],
+  ];
+
+  const startHls = (Hls: typeof HlsType) => {
+    const config: Record<string, unknown> = { ...VOD_HLS_CONFIG, startPosition: startAt || -1 };
+    const loader = sigLoader(Hls, src);
+    if (loader) config.loader = loader;
+    const inst = new Hls(config);
+    hls = inst;
+    inst.on(Hls.Events.ERROR, (_evt, data) => {
+      if (disposed || hls !== inst) return;
+      const status = httpStatusOf(data);
+      if (status === 401 || status === 403) {
+        authError();
+        return;
+      }
+      if (!data.fatal) return;
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR && netRetries < VOD_NET_RETRIES) {
+        const delay = VOD_NET_RETRY_BASE_MS * 2 ** netRetries;
+        netRetries += 1;
+        clearNet();
+        netTimer = setTimeout(() => {
+          if (!disposed && hls === inst) inst.startLoad(position());
+        }, delay);
+        return;
+      }
+      if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < VOD_MEDIA_RECOVERIES) {
+        mediaRecoveries += 1;
+        inst.recoverMediaError();
+        return;
+      }
+      clearNet();
+      opts.onFatal?.();
+    });
+    inst.attachMedia(video);
+    inst.loadSource(src);
+  };
+
+  const onPlaying = () => {
+    netRetries = 0;
+    mediaRecoveries = 0;
+  };
+  video.addEventListener("playing", onPlaying);
+
+  if (hasNativeHls(video)) {
+    setMode("native");
+    video.addEventListener("loadedmetadata", onNativeMeta, { once: true });
+    for (const [e, fn] of NATIVE_EVENTS) video.addEventListener(e, fn);
+    video.src = src;
+  } else {
+    (opts.loadHls ?? defaultLoadHls)()
+      .then((Hls) => {
+        if (disposed) return;
+        if (!Hls.isSupported()) {
+          // No MSE: hand the URL to the element and let it try (old behaviour).
+          setMode("unsupported");
+          video.src = src;
+          return;
+        }
+        setMode("hls");
+        startHls(Hls);
+      })
+      .catch(() => {
+        if (disposed) return;
+        setMode("unsupported");
+        video.src = src;
+      });
+  }
+
+  return {
+    get mode() {
+      return mode;
+    },
+    detach() {
+      if (disposed) return;
+      disposed = true;
+      clearNet();
+      video.removeEventListener("playing", onPlaying);
+      video.removeEventListener("loadedmetadata", onNativeMeta);
+      clearStall();
+      for (const [e, fn] of NATIVE_EVENTS) video.removeEventListener(e, fn);
+      if (hls) {
+        try {
+          hls.destroy();
+        } catch {
+          /* already torn down */
+        }
+        hls = null;
+      }
+    },
+  };
+}

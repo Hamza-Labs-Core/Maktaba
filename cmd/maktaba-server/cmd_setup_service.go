@@ -125,6 +125,9 @@ func runLayoutSetup(f layoutFlags) error {
 	if cfgPath == "" {
 		cfgPath = config.Path()
 	}
+	if err := checkLayoutPorts(cfgPath, f.dryRun); err != nil {
+		return err
+	}
 	spec := service.Spec{
 		Kind:       service.DefaultKind(runtime.GOOS, mode),
 		Mode:       mode,
@@ -176,4 +179,23 @@ func startHint(s service.Spec) string {
 func indent(s string) string {
 	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
 	return "      " + strings.Join(lines, "\n      ") + "\n"
+}
+
+// checkLayoutPorts runs the port check of setup on the install's server.toml (a
+// missing one is left to the first serve): a web, API or streaming port another
+// program holds moves into the fallback range and is written back.
+func checkLayoutPorts(cfgPath string, dryRun bool) error {
+	cfg, found, err := config.LoadFrom(cfgPath)
+	if err != nil || !found {
+		return err
+	}
+	if dryRun {
+		moved, err := cfg.ReconcilePorts(portProbe(), config.PortOptions{KeepOurs: true})
+		for _, m := range moved {
+			fmt.Printf("  (dry run) port: would move %s\n", m)
+		}
+		return err
+	}
+	_, err = reconcilePorts(&cfg, cfgPath, config.PortOptions{KeepOurs: true}, os.Stdout, true)
+	return err
 }

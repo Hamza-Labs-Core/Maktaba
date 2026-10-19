@@ -8,6 +8,14 @@
 # Override with the MAKTABA_CONFIG environment variable.
 
 [server]
+# Ports: `setup` (the wizard, --node, --self-managed) and `serve` check that
+# listen, web_listen and stream_addr are free. One that another program holds
+# (Splunk takes 8088 and some backup tools 8080 on Windows desktops) moves to the
+# first free port of 8780-8790 (web tries 8780 first, streaming 8781, the API
+# 8782) and the new address is written back here and logged. A Windows full
+# node (setup --node) prefers 8780 for the web UI. `serve --role X` never moves
+# a port: a taken one stops it with the reason.
+#
 # Public API bind address.
 listen = "0.0.0.0:8080"
 # Writable state root: SQLite database, downloaded models, caches.
