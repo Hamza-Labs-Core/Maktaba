@@ -47,7 +47,7 @@ def test_the_prompt_names_the_series_and_samples_its_titles() -> None:
     assert "prophets_stories" in text and "palestine" in text  # topics and sub-topics
 
 
-def test_the_model_never_damps_twice_nor_against_the_book():
+def test_the_model_never_damps_twice_nor_against_the_book() -> None:
     cfg = TagCheckConfig()
     v = Verdict(("tafsir",), ())
     tags = {"topic:hadith": (0.9, "book «بلوغ المرام»"), "topic:fiqh": (0.8, "kw")}

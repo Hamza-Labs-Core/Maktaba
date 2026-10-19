@@ -65,11 +65,13 @@ from maktaba_pipeline.integrations.dizquetv_export import (
     slot_lengths,
     slot_text,
     splice,
-    versioned,
     write_channel,
 )
 from maktaba_pipeline.integrations.dizquetv_export import (
     new_channel_defaults as _new_channel_defaults,
+)
+from maktaba_pipeline.integrations.dizquetv_export import (
+    versioned as versioned,
 )
 
 __all__ = [

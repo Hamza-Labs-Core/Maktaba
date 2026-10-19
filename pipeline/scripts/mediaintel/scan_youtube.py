@@ -30,7 +30,8 @@ from typing import Any
 import yt_dlp  # type: ignore[import-untyped]
 
 from maktaba_pipeline.discovery.ytdlp_sidecars import is_real_playlist, parse_upload_date
-from maktaba_pipeline.integrations.youtube import BotCheck, YtDlpFetcher
+from maktaba_pipeline.integrations.youtube import BotCheck as BotCheck
+from maktaba_pipeline.integrations.youtube import YtDlpFetcher
 
 TABS = ("videos", "shorts", "streams")
 

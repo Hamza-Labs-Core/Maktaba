@@ -350,7 +350,9 @@ async def test_the_book_a_series_explains_decides_its_topics_and_is_looked_up_on
     tags = await _tags(db, sid)
     assert tags["topic:hadith"] > 0.89 and tags["genre:hadith"] > 0.89  # the book's subject
     row = await db.fetchrow("SELECT name, fields FROM series_books WHERE season_id = $1", str(sid))
-    assert row["name"] == books.book_of(BOOK).name and "hadith" in row["fields"]
+    ref = books.book_of(BOOK)
+    assert ref is not None
+    assert row["name"] == ref.name and "hadith" in row["fields"]
     assert await db.fetchval("SELECT title FROM books") == "بلوغ المرام"
     assert len(calls) == 1
     assert (await _jobs(db, "books"))[-1]["state"] == "done"
@@ -396,9 +398,54 @@ async def test_an_episode_in_a_chapter_playlist_takes_its_topic_and_the_planner_
     assert {e.path for e in eps if "topic:fasting" in e.tags} == chapter  # the planner's input
 
 
+async def _episode_tag_map(db: Database) -> dict[str, dict[str, float]]:
+    out: dict[str, dict[str, float]] = {}
+    for r in await db.fetch("SELECT video_id, tag, score FROM episode_tags"):
+        out.setdefault(str(r["video_id"]), {})[str(r["tag"])] = float(r["score"])
+    return out
+
+
+async def _retag(db: Database, sid: UUID) -> None:
+    rt = await core_runtime(db, models=False)
+    await enqueue_job(db, subject_kind="season", subject_id=sid, stage="tag")
+    await drain_core(db, rt, limit=300)
+
+
+@pytest.mark.asyncio
+async def test_a_playlist_sync_tags_the_episodes_again(db: Database) -> None:
+    """Chapter playlists are evidence: a playlist synced later re-tags the season (the
+    playlists are in its fingerprint), though its episodes did not change."""
+    w = await make_show(db, episodes=12, loose=0, name=SHOW)
+    await _run(db, w.library, models=False)
+    assert not any("topic:fasting" in t for t in (await _episode_tag_map(db)).values())
+    await set_playlist(db, "PLch", "كتاب الصيام", [(v, w.youtube[v]) for v in w.episodes[:3]])
+    await _retag(db, await _season(db))
+    stored = await _episode_tag_map(db)
+    assert all("topic:fasting" in stored.get(str(v), {}) for v in w.episodes[:3]), stored
+
+
+@pytest.mark.asyncio
+async def test_an_episode_that_leaves_the_season_loses_its_episode_tags(db: Database) -> None:
+    w = await make_show(db, episodes=12, loose=0, name=SHOW)
+    await set_playlist(db, "PLch", "كتاب الصيام", [(v, w.youtube[v]) for v in w.episodes[:3]])
+    await _run(db, w.library, models=False)
+    gone = str(w.episodes[0])
+    assert "topic:fasting" in (await _episode_tag_map(db)).get(gone, {})
+    await db.execute("DELETE FROM series_episodes WHERE video_id = $1", gone)
+    await _retag(db, await _season(db))
+    stored = await _episode_tag_map(db)
+    assert gone not in stored
+    assert all("topic:fasting" in stored.get(str(v), {}) for v in w.episodes[1:3]), stored
+
+
 @pytest.mark.unit
 def test_a_playlist_holding_several_shows_is_no_chapter() -> None:
     ep = {"id": "v1", "title": "المجلس 14", "description": "", "dur": 1500.0, "yid": "yt1"}
-    args = ([ep], ["قناة"], frozenset(), {"yt1": ["PL"]}, {"PL": "كتاب الصيام"})
-    assert "topic:fasting" in _episode_tags(*args, {"PL": 1})["v1"]
-    assert "v1" not in _episode_tags(*args, {"PL": 2})  # a collection of shows, not a chapter
+
+    def tags(shows: dict[str, int]) -> dict[str, dict[str, float]]:
+        return _episode_tags(
+            [ep], ["قناة"], frozenset(), {"yt1": ["PL"]}, {"PL": "كتاب الصيام"}, shows
+        )
+
+    assert "topic:fasting" in tags({"PL": 1})["v1"]
+    assert "v1" not in tags({"PL": 2})  # a collection of shows, not a chapter

@@ -25,14 +25,21 @@ type fakePipeline struct {
 	done    chan struct{}
 	stopped chan struct{}
 	once    sync.Once
+	wg      sync.WaitGroup
 }
 
 func newFakePipeline(dir string, readyAfter time.Duration) *fakePipeline {
 	_ = os.MkdirAll(dir, 0o755)
 	_ = os.WriteFile(filepath.Join(dir, "master.m3u8"), []byte("#EXTM3U\nindex.m3u8\n"), 0o644)
 	p := &fakePipeline{dir: dir, hub: NewHub(4), done: make(chan struct{}), stopped: make(chan struct{})}
+	p.wg.Add(1)
 	go func() {
-		time.Sleep(readyAfter)
+		defer p.wg.Done()
+		select {
+		case <-time.After(readyAfter):
+		case <-p.stopped:
+			return
+		}
 		_ = os.WriteFile(filepath.Join(dir, "index.m3u8"), []byte("#EXTM3U\n#EXTINF:4.0,\nseg-1.ts\n"), 0o644)
 		_ = os.WriteFile(filepath.Join(dir, "seg-1.ts"), bytes.Repeat([]byte{0x47}, tsPacket), 0o644)
 	}()
@@ -64,6 +71,7 @@ func (p *fakePipeline) Alive() bool {
 func (p *fakePipeline) Stop() {
 	p.once.Do(func() {
 		close(p.stopped)
+		p.wg.Wait() // no writes into the dir after Stop
 		p.hub.Close()
 		close(p.done)
 	})
@@ -91,6 +99,7 @@ func newTestEngine(t *testing.T, clk *fakeClock, readyAfter time.Duration) (*Eng
 	repo := &fakeRepo{}
 	sc := &startCounter{readyAfter: readyAfter}
 	e := NewEngine(repo, fakeLayout{root: t.TempDir()}, sc.start, 2, clk.now)
+	t.Cleanup(e.StopAll) // runs before TempDir removal
 	return e, repo, sc
 }
 

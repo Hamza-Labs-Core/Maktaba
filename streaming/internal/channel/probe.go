@@ -54,8 +54,9 @@ func (f *FFprobe) Probe(ctx context.Context, source string) (MediaInfo, error) {
 
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
+	// "--" ends option parsing so a source can never be read as a flag.
 	cmd := exec.CommandContext(ctx, f.Bin, "-v", "error", "-show_entries", "stream=codec_type",
-		"-of", "csv=p=0", source)
+		"-of", "csv=p=0", "--", source)
 	out, err := cmd.Output()
 	if err != nil {
 		return MediaInfo{}, err

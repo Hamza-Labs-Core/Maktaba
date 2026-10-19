@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -206,17 +207,28 @@ func publicBase(configured string, r *http.Request) string {
 
 // baseURL derives scheme://host from the inbound request (D4), honouring
 // reverse-proxy headers so it works over LAN IP and the relay alike.
+//
+// X-Forwarded-* headers are client-controlled unless a trusted reverse
+// proxy sets them, so they are honoured only when
+// MAKTABA_TRUST_PROXY_HEADERS=1 (set MAKTABA_PUBLIC_BASE_URL otherwise).
 func baseURL(r *http.Request) string {
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	if xf := r.Header.Get("X-Forwarded-Proto"); xf != "" {
-		scheme = xf
-	}
 	host := r.Host
-	if xf := r.Header.Get("X-Forwarded-Host"); xf != "" {
-		host = xf
+	if trustProxyHeaders() {
+		if xf := r.Header.Get("X-Forwarded-Proto"); xf == "http" || xf == "https" {
+			scheme = xf
+		}
+		if xf := r.Header.Get("X-Forwarded-Host"); xf != "" && !strings.ContainsAny(xf, "/\\ \"<>") {
+			host = xf
+		}
 	}
 	return scheme + "://" + host
+}
+
+func trustProxyHeaders() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("MAKTABA_TRUST_PROXY_HEADERS")))
+	return v == "1" || v == "true" || v == "yes"
 }

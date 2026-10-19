@@ -250,15 +250,19 @@ func (s *Station) isStopping() bool {
 // down (restarting) data is dropped: the channel clock keeps running and
 // the new muxer picks up at the next keyframe.
 func (s *Station) writeMux(b []byte) (int, error) {
+	// Only one playback forwards at a time, so writes are already
+	// serialised; the lock only guards the muxer pointer and is NOT held
+	// across the pipe write (a wedged muxer must not block Stop).
 	s.muxMu.Lock()
-	defer s.muxMu.Unlock()
-	if s.mux == nil {
+	m := s.mux
+	s.muxMu.Unlock()
+	if m == nil {
 		if s.isStopping() {
 			return 0, errors.New("channel: station stopped")
 		}
 		return len(b), nil
 	}
-	if _, err := s.mux.in.Write(b); err != nil {
+	if _, err := m.in.Write(b); err != nil {
 		if s.isStopping() {
 			return 0, err
 		}
@@ -291,10 +295,20 @@ const paceMargin = 50 * time.Millisecond
 // paceMargin of the wall clock.
 func (s *Station) paceTo(pos float64) {
 	at := s.epoch.Add(time.Duration(pos * float64(time.Second)))
-	if ahead := at.Sub(s.cfg.Now()); ahead > paceMargin {
-		sleepCtx(s.ctx, ahead-paceMargin/2)
+	ahead := at.Sub(s.cfg.Now())
+	if ahead <= paceMargin {
+		return
 	}
+	if ahead > maxPaceAhead {
+		// Blocks are queued at most Lead ahead; anything further means a
+		// bogus timestamp. Don't stall the channel on it.
+		return
+	}
+	sleepCtx(s.ctx, ahead-paceMargin/2)
 }
+
+// maxPaceAhead bounds the pacing wait (well above the feeder's Lead).
+const maxPaceAhead = 15 * time.Second
 
 func (s *Station) reached() float64 { return math.Float64frombits(s.reachedBits.Load()) }
 
@@ -308,24 +322,52 @@ func (s *Station) setReached(v float64) {
 }
 
 // ptsTracker follows the PES timestamps of a block's MPEG-TS output.
+// PTS is a 33-bit counter that wraps every ~26.5 h; all arithmetic is
+// relative to the first PTS seen, modulo 2^33, so a block straddling the
+// wrap still measures its true span.
 type ptsTracker struct {
-	min, max int64
-	seen     bool
+	first int64
+	min   int64 // lowest PTS seen, relative to first (may be < 0: B-frames, audio)
+	max   int64 // highest PTS seen, relative to first
+	seen  bool
+}
+
+const (
+	ptsModulus = int64(1) << 33
+	ptsHalf    = ptsModulus / 2
+)
+
+// ptsDelta is (a − b) mod 2^33, mapped to (−2^32, 2^32].
+func ptsDelta(a, b int64) int64 {
+	d := (a - b) % ptsModulus
+	if d < 0 {
+		d += ptsModulus
+	}
+	if d > ptsHalf {
+		d -= ptsModulus
+	}
+	return d
 }
 
 // scan reads PTS values from whole 188-byte packets; true if any found.
 func (t *ptsTracker) scan(b []byte) bool {
 	found := false
 	for i := 0; i+tsPacket <= len(b); i += tsPacket {
-		if pts, ok := packetPTS(b[i : i+tsPacket]); ok {
-			if !t.seen || pts < t.min {
-				t.min = pts
-			}
-			if !t.seen || pts > t.max {
-				t.max = pts
-			}
-			t.seen, found = true, true
+		pts, ok := packetPTS(b[i : i+tsPacket])
+		if !ok {
+			continue
 		}
+		if !t.seen {
+			t.first, t.seen = pts, true
+		}
+		rel := ptsDelta(pts, t.first)
+		if rel < t.min {
+			t.min = rel
+		}
+		if rel > t.max {
+			t.max = rel
+		}
+		found = true
 	}
 	return found
 }
@@ -356,7 +398,7 @@ func packetPTS(p []byte) (int64, bool) {
 		return 0, false
 	}
 	sid := h[3]
-	if !(sid >= 0xC0 && sid <= 0xEF) && sid != 0xBD {
+	if (sid < 0xC0 || sid > 0xEF) && sid != 0xBD { // audio, video or AC-3 (private 1)
 		return 0, false
 	}
 	if h[7]&0x80 == 0 {
@@ -436,19 +478,15 @@ func (s *Station) Stop() {
 		s.cancel()
 		s.muxMu.Lock()
 		m := s.mux
+		s.muxMu.Unlock()
 		if m != nil {
+			// Kill outright: a blocked block→muxer write then fails at
+			// once, and nothing waits on a wedged muxer.
+			if m.cmd.Process != nil {
+				_ = m.cmd.Process.Kill()
+			}
 			_ = m.in.Close()
 		}
-		s.muxMu.Unlock()
-		go func() {
-			select {
-			case <-s.done:
-			case <-time.After(3 * time.Second):
-				if m != nil && m.cmd.Process != nil {
-					_ = m.cmd.Process.Kill()
-				}
-			}
-		}()
 	})
 }
 
@@ -635,7 +673,10 @@ func (s *Station) blockInput(ctx context.Context, seg Segment, look Look) (*Bloc
 
 	switch seg.Kind {
 	case KindProgram, KindFiller, KindBumper:
-		path := s.cfg.PathMap.Apply(seg.Block.Path)
+		path, err := LocalInput(s.cfg.PathMap.Apply(seg.Block.Path))
+		if err != nil {
+			return nil, start, err
+		}
 		info, err := s.cfg.Prober.Probe(ctx, path)
 		if err != nil {
 			return nil, start, fmt.Errorf("probe %s: %w", path, err)
@@ -660,6 +701,9 @@ func (s *Station) blockInput(ctx context.Context, seg Segment, look Look) (*Bloc
 		u, err := s.cfg.Resolver.Resolve(ctx, seg.Block.SourceURL)
 		if err != nil {
 			return nil, start, fmt.Errorf("resolve live: %w", err)
+		}
+		if !IsStreamURL(u) {
+			return nil, start, fmt.Errorf("live: refusing source %q", redactURL(u))
 		}
 		info, err := s.cfg.Prober.Probe(ctx, u)
 		if err != nil {
@@ -711,11 +755,16 @@ func (s *Station) localAsset(p string) string {
 		return ""
 	}
 	if strings.Contains(p, "://") {
-		return p
+		if isHTTP(p) {
+			return p
+		}
+		return "" // no file:, concat:, udp: … from look/logo values
 	}
 	m := s.cfg.PathMap.Apply(p)
 	if fi, err := os.Stat(m); err == nil && !fi.IsDir() {
-		return m
+		if in, err := LocalInput(m); err == nil {
+			return in
+		}
 	}
 	return ""
 }

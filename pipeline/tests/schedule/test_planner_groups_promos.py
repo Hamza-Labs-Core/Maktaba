@@ -165,7 +165,7 @@ def test_the_quran_channel_takes_recitations_not_talk_about_dua() -> None:
     plan = suggest_channels(reciter, [talk, recited],
                             PlannerConfig(**{**SMALL, "themes": themes}))  # type: ignore[arg-type]  # fmt: skip
     pool = (
-        {i.path for i in plan.filler_pools.get("quran.filler", ()).items}
+        {i.path for i in plan.filler_pools["quran.filler"].items}
         if "quran.filler" in plan.filler_pools
         else set()
     )

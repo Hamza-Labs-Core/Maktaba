@@ -1,9 +1,11 @@
 from pathlib import Path
 
+import pytest
+
 from scripts.mediaintel import db, jobs, repair_broken
 
 
-def test_download_args_write_locally_under_a_plain_name(tmp_path: Path):
+def test_download_args_write_locally_under_a_plain_name(tmp_path: Path) -> None:
     target = Path("Y:/x/مفاتح الطلب 2025⧸1446 ｜ 100% [1].mp4")
     args = repair_broken.download_args("a-B_9", target, None, tmp_path)
     assert args[-1] == "https://www.youtube.com/watch?v=a-B_9"
@@ -13,13 +15,13 @@ def test_download_args_write_locally_under_a_plain_name(tmp_path: Path):
     assert mkv[mkv.index("-f") + 1] == repair_broken.FORMAT and "--cookies-from-browser" in mkv
 
 
-def test_only_finished_downloads_count(tmp_path: Path):
+def test_only_finished_downloads_count(tmp_path: Path) -> None:
     (tmp_path / "v-a.f137.mp4.part").write_bytes(b"x")
     (tmp_path / "v-a.webm").write_bytes(b"x")
     assert [p.name for p in repair_broken._made(tmp_path)] == ["v-a.webm"]
 
 
-def test_broken_lists_failed_probes_with_their_youtube_id(tmp_path: Path):
+def test_broken_lists_failed_probes_with_their_youtube_id(tmp_path: Path) -> None:
     conn = db.connect(str(tmp_path / "m.db"))
     conn.executemany(
         "INSERT INTO files (path, folder, stem, ext, size, mtime, youtube_id) "
@@ -33,13 +35,15 @@ def test_broken_lists_failed_probes_with_their_youtube_id(tmp_path: Path):
     assert repair_broken.broken(conn) == [("a.mp4", "ya"), ("b.mp4", None)]
 
 
-def test_a_second_backup_never_overwrites_the_first(tmp_path: Path):
+def test_a_second_backup_never_overwrites_the_first(tmp_path: Path) -> None:
     target = tmp_path / "a.mp4"
     (tmp_path / "a.mp4.broken").write_bytes(b"old")
     assert repair_broken._backup_name(target).name == "a.mp4.broken2"
 
 
-def test_a_file_that_reads_now_is_kept_not_downloaded(tmp_path: Path, monkeypatch):
+def test_a_file_that_reads_now_is_kept_not_downloaded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     conn = db.connect(str(tmp_path / "m.db"))
     conn.execute("INSERT INTO files (path, folder, stem, ext, size, mtime, youtube_id) "
                  "VALUES ('a.mp4','Y:/x','a','.mp4',1,1.0,'ya')")  # fmt: skip

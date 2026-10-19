@@ -73,7 +73,9 @@ function VideoCard({ v }: { v: ExplainVideo }) {
           <dt>{t("queue.explain.length")}</dt>
           <dd>
             {v.duration_sec ? fmt.dur(v.duration_sec) : "?"}
-            {v.width && v.height ? ` · ${n(v.width, { useGrouping: false })}×${n(v.height, { useGrouping: false })}` : ""}
+            {v.width && v.height
+              ? ` · ${n(v.width, { useGrouping: false })}×${n(v.height, { useGrouping: false })}`
+              : ""}
           </dd>
         </div>
         <div>

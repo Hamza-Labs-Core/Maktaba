@@ -153,13 +153,21 @@ func TestBlockArgs_LiveNoSeek(t *testing.T) {
 }
 
 func TestMuxerArgs(t *testing.T) {
-	a := MuxerArgs(DefaultProfile(), `C:\cache\channel-x`, false)
+	dir := filepath.Join(t.TempDir(), "channel-x")
+	slash := filepath.ToSlash(dir)
+	a := MuxerArgs(DefaultProfile(), dir, false)
 	j := joined(a)
-	for _, want := range []string{"-f mpegts -i pipe:0", "-c copy", "-f hls", "C:/cache/channel-x/index.m3u8",
-		"C:/cache/channel-x/seg-%d.ts", "omit_endlist", "pipe:1"} {
+	for _, want := range []string{"-f mpegts -i pipe:0", "-c copy", "-copyts", "-f hls", slash + "/index.m3u8",
+		slash + "/seg-%d.ts", "omit_endlist", "pipe:1"} {
 		if !strings.Contains(j, want) {
 			t.Errorf("muxer missing %q: %s", want, j)
 		}
+	}
+	if strings.Contains(j, "discont_start") {
+		t.Error("first muxer must not mark a discontinuity")
+	}
+	if !strings.Contains(joined(MuxerArgs(DefaultProfile(), dir, true)), "discont_start") {
+		t.Error("restarted muxer should mark a discontinuity")
 	}
 	if !strings.Contains(MasterPlaylist(DefaultProfile()), "RESOLUTION=1920x1080") {
 		t.Error("master playlist resolution")

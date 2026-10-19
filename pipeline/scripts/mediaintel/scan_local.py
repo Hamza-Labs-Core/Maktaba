@@ -34,7 +34,7 @@ from maktaba_pipeline.discovery.ytdlp_sidecars import (
     parse_archive,
     parse_info_json,
 )
-from maktaba_pipeline.library_mgmt.repair import probe_failure
+from maktaba_pipeline.library_mgmt.repair import probe_failure as probe_failure
 from maktaba_pipeline.thumbnail.dhash import (
     FRAMES_VERSION,
     dhash_from_gray,

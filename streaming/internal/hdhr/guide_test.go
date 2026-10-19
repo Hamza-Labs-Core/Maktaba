@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -157,5 +159,65 @@ func TestLineup_UsesPublicBase(t *testing.T) {
 	mux(h).ServeHTTP(rec, httptest.NewRequest("GET", "/discover.json", nil))
 	if !strings.Contains(rec.Body.String(), `"LineupURL":"http://10.0.0.9:8781/lineup.json"`) {
 		t.Errorf("discover: %s", rec.Body.String())
+	}
+}
+
+func TestXMLEscape_DropsIllegalControlChars(t *testing.T) {
+	got := xmlEscape("A\x00B\x01C\x0bD\tE\nF&<\"\uFFFEG")
+	if got != "ABCD\tE\nF&amp;&lt;&quot;G" {
+		t.Errorf("xmlEscape = %q", got)
+	}
+	var b strings.Builder
+	WriteXMLTV(&b, "http://h", []GuideChannel{{ID: uuid.New(), Number: 1, Name: "Bad\x07Name"}}, nil)
+	var doc xmltvDoc
+	if err := xml.Unmarshal([]byte(b.String()), &doc); err != nil {
+		t.Fatalf("control char broke the XML: %v", err)
+	}
+}
+
+func TestBaseURL_IgnoresForwardedHeadersUnlessTrusted(t *testing.T) {
+	req := httptest.NewRequest("GET", "/lineup.json", nil)
+	req.Host = "10.0.0.5:8081"
+	req.Header.Set("X-Forwarded-Host", "evil.example")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	t.Setenv("MAKTABA_TRUST_PROXY_HEADERS", "")
+	if got := baseURL(req); got != "http://10.0.0.5:8081" {
+		t.Errorf("untrusted forwarded headers used: %s", got)
+	}
+	t.Setenv("MAKTABA_TRUST_PROXY_HEADERS", "1")
+	if got := baseURL(req); got != "https://evil.example" {
+		t.Errorf("trusted proxy headers ignored: %s", got)
+	}
+}
+
+type logoGuide struct {
+	fakeGuide
+	logo string
+}
+
+func (l *logoGuide) ChannelLogo(context.Context, uuid.UUID) (string, error) { return l.logo, nil }
+
+func TestLogo_OnlyImagesAndHTTPRedirects(t *testing.T) {
+	dir := t.TempDir()
+	png := filepath.Join(dir, "logo.png")
+	txt := filepath.Join(dir, "secret.txt")
+	_ = os.WriteFile(png, []byte("\x89PNG"), 0o644)
+	_ = os.WriteFile(txt, []byte("secret"), 0o644)
+	cases := map[string]int{
+		png:                          200,
+		txt:                          404,
+		"https://cdn.example/l.png":  302,
+		"javascript://x/%0aalert(1)": 404,
+		"file:///etc/passwd":         404,
+	}
+	for logo, want := range cases {
+		g := &GuideHandler{Repo: &logoGuide{logo: logo}}
+		r := chi.NewRouter()
+		g.Mount(r)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest("GET", "/channel/"+uuid.NewString()+"/logo", nil))
+		if rec.Code != want {
+			t.Errorf("logo %q → %d, want %d", logo, rec.Code, want)
+		}
 	}
 }

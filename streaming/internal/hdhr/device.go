@@ -64,6 +64,9 @@ func deviceXML(dev Device, baseURL string) string {
 func xmlEscape(s string) string {
 	out := make([]byte, 0, len(s))
 	for _, r := range s {
+		if !xmlChar(r) {
+			continue // XML 1.0 forbids it even escaped
+		}
 		switch r {
 		case '&':
 			out = append(out, "&amp;"...)
@@ -78,4 +81,17 @@ func xmlEscape(s string) string {
 		}
 	}
 	return string(out)
+}
+
+// xmlChar reports whether r is allowed in an XML 1.0 document.
+func xmlChar(r rune) bool {
+	switch {
+	case r == '\t' || r == '\n' || r == '\r':
+		return true
+	case r < 0x20:
+		return false
+	case r >= 0xD800 && r <= 0xDFFF, r == 0xFFFE, r == 0xFFFF:
+		return false
+	}
+	return r <= 0x10FFFF
 }

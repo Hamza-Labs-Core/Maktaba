@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -105,7 +106,8 @@ func writeEngineError(w http.ResponseWriter, err error) {
 		w.Header().Set("Retry-After", "2")
 		http.Error(w, "channel is starting", http.StatusServiceUnavailable)
 	default:
-		http.Error(w, "channel unavailable: "+err.Error(), http.StatusServiceUnavailable)
+		slog.Warn("channel: request failed", "err", err.Error(), "event", "channel_request_failed")
+		http.Error(w, "channel unavailable", http.StatusServiceUnavailable)
 	}
 }
 

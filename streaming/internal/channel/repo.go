@@ -62,7 +62,8 @@ type Repo interface {
 	ProgramsFrom(ctx context.Context, channelID uuid.UUID, from time.Time, limit int) ([]ProgramBlock, error)
 
 	// Look loads the channel's presentation settings (logo, watermark,
-	// loading picture, loudness). ErrChannelNotFound when no such channel.
+	// loading picture, loudness). ErrChannelNotFound when there is no
+	// such channel or it is disabled (disabled channels never stream).
 	Look(ctx context.Context, channelID uuid.UUID) (Look, error)
 
 	// SetRuntime upserts the channel_runtime row (state machine +

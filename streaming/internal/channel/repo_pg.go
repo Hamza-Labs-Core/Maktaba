@@ -103,7 +103,7 @@ func (r *PGRepo) Look(ctx context.Context, channelID uuid.UUID) (Look, error) {
 	var logo *string
 	var raw []byte
 	err := r.pool.QueryRow(ctx, `
-		SELECT name, logo_path, mode_config->'look' FROM channels WHERE id = $1
+		SELECT name, logo_path, mode_config->'look' FROM channels WHERE id = $1 AND enabled = true
 	`, channelID).Scan(&name, &logo, &raw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Look{}, ErrChannelNotFound

@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -127,11 +129,19 @@ func (g *GuideHandler) Logo(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if strings.HasPrefix(logo, "http://") || strings.HasPrefix(logo, "https://") {
-		http.Redirect(w, r, logo, http.StatusFound)
+	if strings.Contains(logo, "://") {
+		if u, err := url.Parse(logo); err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" {
+			http.Redirect(w, r, u.String(), http.StatusFound)
+			return
+		}
+		http.NotFound(w, r)
 		return
 	}
 	p := g.PathMap.Apply(logo)
+	if !imageExt[strings.ToLower(filepath.Ext(p))] {
+		http.NotFound(w, r) // only images are served from logo_path
+		return
+	}
 	if fi, err := os.Stat(p); err != nil || fi.IsDir() {
 		http.NotFound(w, r)
 		return
@@ -139,6 +149,9 @@ func (g *GuideHandler) Logo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	http.ServeFile(w, r, p)
 }
+
+// imageExt lists the logo file types served (no SVG: it can carry script).
+var imageExt = map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true}
 
 // guideSnapshot is the subset of title_snapshot the guide renders (the
 // same keys the API guide reads).

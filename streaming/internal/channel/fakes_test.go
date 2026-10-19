@@ -30,6 +30,7 @@ func (c *fakeClock) advance(d time.Duration) {
 
 // fakeRepo serves a fixed block list and records runtime writes.
 type fakeRepo struct {
+	mu       sync.Mutex
 	blocks   []ProgramBlock
 	setCalls int
 	cleared  []uuid.UUID
@@ -49,7 +50,7 @@ func (f *fakeRepo) ProgramsFrom(_ context.Context, _ uuid.UUID, from time.Time, 
 	return out, nil
 }
 
-func (f *fakeRepo) Look(_ context.Context, id uuid.UUID) (Look, error) {
+func (f *fakeRepo) Look(_ context.Context, _ uuid.UUID) (Look, error) {
 	if f.missing {
 		return Look{}, ErrChannelNotFound
 	}
@@ -58,9 +59,16 @@ func (f *fakeRepo) Look(_ context.Context, id uuid.UUID) (Look, error) {
 	return l, nil
 }
 
-func (f *fakeRepo) SetRuntime(_ context.Context, _ Runtime) error { f.setCalls++; return nil }
+func (f *fakeRepo) SetRuntime(_ context.Context, _ Runtime) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.setCalls++
+	return nil
+}
 
 func (f *fakeRepo) ClearRuntime(_ context.Context, id uuid.UUID) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.cleared = append(f.cleared, id)
 	return nil
 }

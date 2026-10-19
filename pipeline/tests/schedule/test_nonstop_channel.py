@@ -73,7 +73,7 @@ def _plan() -> object:
     ]
     cfg = PlannerConfig(themes=(NONSTOP, PROPHETS), mix_channel=False, presenter_channels=False,
                         show_max_channels=1, channel_min_days=1, channel_day_hours=1,
-                        dawn_quran=False)  # type: ignore[arg-type]  # fmt: skip
+                        dawn_quran=False)  # fmt: skip
     return suggest_channels(seasons, clips, cfg)
 
 
@@ -111,7 +111,7 @@ def test_an_unknown_kind_is_reported() -> None:
     bad = ThemeSpec("x", "X", "س", 130, ("prophets_stories",), kind="marathon")
     p = suggest_channels([_season("a1", "قصص الأنبياء", 1)], (),
                          PlannerConfig(themes=(bad,), mix_channel=False,
-                                       presenter_channels=False))  # type: ignore[arg-type]  # fmt: skip
+                                       presenter_channels=False))  # fmt: skip
     assert "kind 'marathon'" in dict(p.unplaced)["theme x"]
 
 
@@ -138,7 +138,7 @@ def test_slot_minutes_0_is_back_to_back_all_day() -> None:
     p = suggest_channels(
         [_season("a1", "قصص الأنبياء", 1)], (),
         PlannerConfig(themes=(t,), mix_channel=False, presenter_channels=False,
-                      dawn_quran=False),  # type: ignore[arg-type]
+                      dawn_quran=False),
     )  # fmt: skip
     ch = next(c for c in p.channels if c.key == "prophets_awadi")
     assert [(s.start, s.end) for s in ch.slots] == [(0, 1440)]
@@ -157,7 +157,7 @@ def test_filler_off_is_programmes_only_and_never_a_gap() -> None:
     p = suggest_channels(
         [_season("a1", "قصص الأنبياء", 1, minutes=23)], clips,
         PlannerConfig(themes=(t,), mix_channel=False, presenter_channels=False,
-                      dawn_quran=False),  # type: ignore[arg-type]
+                      dawn_quran=False),
     )  # fmt: skip
     ch = next(c for c in p.channels if c.key == "prophets_awadi")
     assert ch.filler_pools == () and all(s.filler_pool is None for s in ch.slots)

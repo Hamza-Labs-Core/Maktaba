@@ -57,11 +57,14 @@ func IsDirectStream(u string) bool {
 		return false
 	}
 	switch strings.ToLower(pu.Scheme) {
-	case "rtmp", "rtmps", "rtsp", "srt", "udp", "rtp", "mms", "file":
-		return true
+	case "rtmp", "rtmps", "rtsp", "srt":
+		return pu.Host != ""
 	case "http", "https":
+		if pu.Host == "" {
+			return false
+		}
 	default:
-		return false
+		return false // file:, udp:, concat:, … are never accepted from the DB
 	}
 	switch strings.ToLower(path.Ext(pu.Path)) {
 	case ".m3u8", ".m3u", ".ts", ".mp4", ".mkv", ".flv", ".mpd", ".aac", ".mp3", ".webm", ".mov":
@@ -79,6 +82,9 @@ func (y *YtDlp) Resolve(ctx context.Context, sourceURL string) (string, error) {
 	if IsDirectStream(sourceURL) {
 		return sourceURL, nil
 	}
+	if !isHTTP(sourceURL) {
+		return "", errors.New("live: source_url must be an http(s) page or a stream URL")
+	}
 	y.mu.Lock()
 	if e, ok := y.cache[sourceURL]; ok && time.Since(e.at) < y.TTL {
 		y.mu.Unlock()
@@ -88,7 +94,8 @@ func (y *YtDlp) Resolve(ctx context.Context, sourceURL string) (string, error) {
 
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	out, err := y.run(ctx, y.Bin, "-f", "best[height<=1080][protocol^=m3u8]/best", "-g", "--no-playlist", sourceURL)
+	// "--" ends option parsing: a source_url can never be read as a flag.
+	out, err := y.run(ctx, y.Bin, "-f", "best[height<=1080][protocol^=m3u8]/best", "-g", "--no-playlist", "--", sourceURL)
 	if err != nil {
 		return "", err
 	}
@@ -101,6 +108,9 @@ func (y *YtDlp) Resolve(ctx context.Context, sourceURL string) (string, error) {
 	}
 	if resolved == "" {
 		return "", errors.New("live: yt-dlp returned no URL")
+	}
+	if !IsStreamURL(resolved) {
+		return "", errors.New("live: yt-dlp returned a non-network URL")
 	}
 	y.mu.Lock()
 	y.cache[sourceURL] = ytEntry{url: resolved, at: time.Now()}

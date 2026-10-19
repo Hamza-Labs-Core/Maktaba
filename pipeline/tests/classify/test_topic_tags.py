@@ -442,7 +442,7 @@ def test_a_prophets_name_after_a_first_name_is_a_surname() -> None:
         assert "topic:prophets_stories" in match_text(title), title
 
 
-def test_a_season_label_is_when_it_aired_not_its_topic():
+def test_a_season_label_is_when_it_aired_not_its_topic() -> None:
     from maktaba_pipeline.classify.topic_tags import chapter_tags, match_text
 
     pl = "عباد الشيطان | الدكتور هيثم طلعت رمضان 1445-2024"
@@ -452,7 +452,7 @@ def test_a_season_label_is_when_it_aired_not_its_topic():
     assert "occasion:ramadan" in match_text("فضائل شهر رمضان")
 
 
-def test_a_month_label_alone_is_the_season_in_every_form():
+def test_a_month_label_alone_is_the_season_in_every_form() -> None:
     from maktaba_pipeline.classify.topic_tags import chapter_tags
 
     eps = [f"عباد الشيطان | الدكتور هيثم طلعت | ح {i}" for i in range(1, 30)]
@@ -474,7 +474,7 @@ def test_a_month_label_alone_is_the_season_in_every_form():
     assert set(chapter_tags("عباد الشيطان رمضان")) == {"occasion:ramadan_season"}
 
 
-def test_ramadan_content_is_still_ramadan():
+def test_ramadan_content_is_still_ramadan() -> None:
     from maktaba_pipeline.classify.topic_tags import chapter_tags
 
     tags = {t.tag: t.score for t in tag_series(
@@ -484,7 +484,7 @@ def test_ramadan_content_is_still_ramadan():
     assert {"topic:fasting", "occasion:ramadan"} <= set(chapter_tags("كتاب الصيام"))
 
 
-def test_a_season_label_leaves_the_next_word_whole():
+def test_a_season_label_leaves_the_next_word_whole() -> None:
     from maktaba_pipeline.classify.topic_tags import _season_labels
 
     for title, rest in (("رمضان 1445 مع الشيخ", "مع الشيخ"), ("رمضان 1445 هدايا", "هدايا"),

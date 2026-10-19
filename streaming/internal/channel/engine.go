@@ -96,13 +96,27 @@ func (e *Engine) Tune(ctx context.Context, channelID uuid.UUID) (TuneResult, err
 func (e *Engine) Ensure(ctx context.Context, channelID uuid.UUID) (Pipeline, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if p, ok := e.stations[channelID]; ok {
+	for {
+		p, ok := e.stations[channelID]
+		if !ok {
+			break
+		}
 		if p.Alive() {
 			e.reg.touch(channelID)
 			return p, nil
 		}
-		delete(e.stations, channelID)
-		e.reg.remove(channelID)
+		// A stopping station still owns the HLS dir and the runtime row:
+		// wait for it to finish before a new one reuses them.
+		e.mu.Unlock()
+		err := waitDone(ctx, p, stopWait)
+		e.mu.Lock()
+		if err != nil {
+			return nil, err
+		}
+		if e.stations[channelID] == p {
+			delete(e.stations, channelID)
+			e.reg.remove(channelID)
+		}
 	}
 	if _, err := e.Repo.Look(ctx, channelID); err != nil {
 		return nil, err
@@ -122,12 +136,15 @@ func (e *Engine) Ensure(ctx context.Context, channelID uuid.UUID) (Pipeline, err
 	go func() {
 		<-p.Done()
 		e.mu.Lock()
+		defer e.mu.Unlock()
+		// Only the station still registered for the channel clears the
+		// runtime row, under the engine lock so it is ordered against a
+		// re-tune writing the new station's row.
 		if e.stations[channelID] == p {
 			delete(e.stations, channelID)
 			e.reg.remove(channelID)
+			_ = e.Repo.ClearRuntime(context.Background(), channelID)
 		}
-		e.mu.Unlock()
-		_ = e.Repo.ClearRuntime(context.Background(), channelID)
 	}()
 	_ = e.Repo.SetRuntime(ctx, Runtime{ChannelID: channelID, Host: e.Host, PID: p.PID(),
 		State: StateLive, StartedAt: started, LastSegmentAt: started})
@@ -174,9 +191,17 @@ func (e *Engine) StreamChannelTS(ctx context.Context, channelID uuid.UUID, w io.
 	return errors.New("channel: stream ended")
 }
 
+// tsWriteTimeout drops a TS client whose connection stalls (so its
+// tuner lease is released promptly instead of when the hub gives up).
+const tsWriteTimeout = 15 * time.Second
+
 func pumpTS(ctx context.Context, p Pipeline, w io.Writer, flusher http.Flusher) error {
 	ch, cancel := p.Subscribe()
 	defer cancel()
+	var rc *http.ResponseController
+	if rw, ok := w.(http.ResponseWriter); ok {
+		rc = http.NewResponseController(rw)
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -184,6 +209,9 @@ func pumpTS(ctx context.Context, p Pipeline, w io.Writer, flusher http.Flusher) 
 		case b, ok := <-ch:
 			if !ok {
 				return nil
+			}
+			if rc != nil {
+				_ = rc.SetWriteDeadline(time.Now().Add(tsWriteTimeout))
 			}
 			if _, err := w.Write(b); err != nil {
 				return err
@@ -207,12 +235,34 @@ func (e *Engine) ReapIdle(_ context.Context) []uuid.UUID {
 	return e.reg.reapIdle(e.WarmGrace)
 }
 
-// StopAll stops every station (shutdown).
+// StopAll stops every station (shutdown). Stops run outside the engine
+// lock.
 func (e *Engine) StopAll() {
 	e.mu.Lock()
-	defer e.mu.Unlock()
+	ps := make([]Pipeline, 0, len(e.stations))
 	for _, p := range e.stations {
+		ps = append(ps, p)
+	}
+	e.mu.Unlock()
+	for _, p := range ps {
 		p.Stop()
+	}
+}
+
+// stopWait bounds how long a re-tune waits for the previous station of
+// the same channel to finish stopping.
+const stopWait = 10 * time.Second
+
+func waitDone(ctx context.Context, p Pipeline, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-p.Done():
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return errors.New("channel: previous station did not stop in time")
 	}
 }
 

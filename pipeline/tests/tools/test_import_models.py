@@ -141,15 +141,21 @@ def _add_model_tables(path: Path) -> dict[str, Any]:
         c.execute(
             "INSERT INTO episode_tags VALUES (?, 'topic:fasting', 0.9)", (f"Y:/chan/ep{i:02d}.mp4",)
         )
-    for path, (title, keep) in CLIPS.items():
+    for clip_path, (title, keep) in CLIPS.items():
         damped = tc.apply_clip(_clip_raw(title), keep, cfg)
-        c.execute("DELETE FROM video_tags WHERE path = ?", (path,))
+        c.execute("DELETE FROM video_tags WHERE path = ?", (clip_path,))
         c.executemany(
-            "INSERT INTO video_tags VALUES (?,?,?)", [(path, t, s) for t, s in damped.items()]
+            "INSERT INTO video_tags VALUES (?,?,?)", [(clip_path, t, s) for t, s in damped.items()]
         )
         c.execute(
             "INSERT INTO clip_checks VALUES (?,?,?,?,?,'2026-10-18 01:00:00')",
-            (path, "cache-own-hash", "qwen2.5:7b", json.dumps(keep), tc.clip_tags_hash(damped)),
+            (
+                clip_path,
+                "cache-own-hash",
+                "qwen2.5:7b",
+                json.dumps(keep),
+                tc.clip_tags_hash(damped),
+            ),
         )
     c.commit()
     c.close()

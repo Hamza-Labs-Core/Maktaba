@@ -187,11 +187,11 @@ def test_a_short_channel_takes_back_a_show_rather_than_dropping_out() -> None:
            season("k1", "سيرة", genre="seerah", n=40, minutes=60)]  # fmt: skip
     kw = dict(themes=(hist, kids), mix_channel=False, presenter_channels=False,
               show_max_channels=1, channel_min_days=1, channel_day_hours=1)  # fmt: skip
-    p = plan(lib, **kw)  # type: ignore[arg-type]
+    p = plan(lib, **kw)
     on = {c.key: {u.name for k in c.lanes for u in p.lanes[k].units} for c in p.channels}
     assert on["kids"] == {"سيرة", "100 سؤال في التاريخ"}  # 40 h of its own + the history show
     assert "100 سؤال في التاريخ" in on["history"]
-    off = plan(lib, **{**kw, "show_reuse_to_fill": False})  # type: ignore[arg-type]
+    off = plan(lib, **{**kw, "show_reuse_to_fill": False})
     assert "kids" not in {c.key for c in off.channels}
 
 
@@ -336,7 +336,7 @@ def test_a_channel_is_mainly_its_libraries_and_never_an_excluded_one() -> None:
     lib[1] = replace(lib[1], episodes=tuple(
         replace(e, tags={"topic:current_affairs": 0.95}) for e in lib[1].episodes))  # fmt: skip
     p = plan(lib, themes=(news, talk), mix_channel=False, presenter_channels=False,
-             show_max_channels=1, channel_min_days=1, channel_day_hours=1)  # type: ignore[arg-type]  # fmt: skip
+             show_max_channels=1, channel_min_days=1, channel_day_hours=1)  # fmt: skip
     on = {c.key: {u.name for k in c.lanes for u in p.lanes[k].units} for c in p.channels}
     assert "شاهد على العصر" in on["news"]  # its library, though tagged history
     assert "قراءات في التاريخ" not in on["news"]  # never on News
