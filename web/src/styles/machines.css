@@ -281,3 +281,20 @@
     transition: none !important;
   }
 }
+
+/* Epic 35: the home's web address and version; a machine's name links to its own */
+.mkt-mc-where {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.mkt-mc-weblink {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.mkt-mc-weblink:hover,
+.mkt-mc-weblink:focus-visible {
+  color: var(--color-accent);
+}

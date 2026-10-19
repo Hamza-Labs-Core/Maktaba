@@ -26,6 +26,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/sessions"
 )
 
 // TokenPrefix identifies a personal access token on the wire.
@@ -168,6 +170,8 @@ func (s *Store) Revoke(ctx context.Context, userID, id string) error {
 	if n == 0 {
 		return ErrNotFound
 	}
+	// full nodes drop their cached answer for this user's tokens (Epic 35 story 35.9)
+	sessions.NotifyRevoked(sessions.Revocation{UserID: userID, Reason: "token_revoked"})
 	return nil
 }
 

@@ -17,6 +17,10 @@ export interface ClusterHome {
   path_map?: Record<string, string> | null;
   /** story 31.3: the automatic conversion of the stored paths to smb://server/share/... */
   canonicalize?: CanonStatus | null;
+  /** Epic 35: the home's own web address (null: not known) */
+  web_url?: string | null;
+  /** Epic 35: the version the home runs */
+  version?: string;
 }
 
 /** What the home's pipeline reports of the automatic path conversion. */
@@ -127,6 +131,54 @@ export interface ClusterNode {
   workers: NodeWorker[];
   /** the admin's switches; an absent stage is automatic */
   stage_overrides: Record<string, boolean>;
+  /** Epic 35: the version it runs (null: not reported yet) */
+  version?: string | null;
+  /** Epic 35: "windows-amd64", "darwin-arm64", ... */
+  platform?: string | null;
+  /** Epic 35 (story 35.11): its own web address */
+  web_url?: string | null;
+  /** Epic 35 (story 35.8): a full machine (web, API, streaming); false: a worker only */
+  full_node?: boolean;
+  /** Epic 35 (design §11.5): VOD served by another machine when the share is not readable here */
+  vod?: NodeVod;
+  /** Epic 35 (story 35.12): the update rollout's view of this machine */
+  update_state?: Record<string, unknown>;
+}
+
+/** A machine's VOD fallback (design §11.5); {} when it serves its own. */
+export interface NodeVod {
+  fallback?: boolean;
+  served_by?: string;
+  since?: string;
+  detail?: string;
+  checked_at?: string;
+}
+
+/** GET /api/cluster/self (public, every machine): who this machine is and who its home is. */
+export interface ClusterSelf {
+  role: "home" | "node";
+  id: string;
+  name?: string;
+  version: string;
+  schema_rev: number;
+  web_url?: string;
+  home?: {
+    instance_id?: string;
+    name?: string;
+    web_url?: string;
+    version?: string;
+    reachable: boolean;
+    failing_since?: string;
+  };
+  /** the schema guard's reason; non-empty: this node is paused */
+  paused?: string;
+  /** cluster sign-in is on */
+  sso: boolean;
+  agent_connected?: boolean;
+  vod?: NodeVod & { checked_at: string };
+  machines?: { role: "home" | "node"; id: string; name: string; web_url?: string }[];
+  accept_joins?: boolean;
+  served_at: string;
 }
 
 export interface ClusterView {
@@ -147,6 +199,7 @@ const q = encodeURIComponent;
 
 export const clusterApi = {
   getCluster: () => api.get<ClusterView>("/api/cluster"),
+  getSelf: () => api.get<ClusterSelf>("/api/cluster/self"),
   putSettings: (body: { accept_joins?: boolean; name?: string }) =>
     api.put<ClusterHome>("/api/cluster/settings", body),
   approve: (id: string, code: string) =>

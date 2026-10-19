@@ -396,6 +396,78 @@ describe("Machines admin page", () => {
     );
   });
 
+  it("links each machine to its web address, with its version and kind (Epic 35)", async () => {
+    const v = fixture();
+    v.home.web_url = "http://home.local:8780";
+    v.home.version = "1.5.0";
+    v.nodes[1] = {
+      ...baseNode,
+      web_url: "http://studio.local:8780",
+      version: "1.5.0",
+      platform: "darwin-arm64",
+      full_node: false,
+      vod: {},
+      update_state: {},
+    };
+    get.mockResolvedValue(v);
+    renderPage();
+    const card = await screen.findByRole("article", { name: "Studio Mac" });
+    const link = within(card).getByRole("link", { name: /Studio Mac.*opens in a new tab/ });
+    expect(link).toHaveAttribute("href", "http://studio.local:8780");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    expect(within(card).getByText("Version 1.5.0 · darwin-arm64")).toBeInTheDocument();
+    expect(
+      within(card).getByText("Worker only — re-run the installer once (install-node … -Full)")
+    ).toBeInTheDocument();
+    expect(within(card).queryByText(/VOD served by/)).not.toBeInTheDocument();
+
+    const home = screen.getByRole("link", { name: /home\.local/ });
+    expect(home).toHaveAttribute("href", "http://home.local:8780");
+    expect(screen.getByText("Version 1.5.0")).toBeInTheDocument();
+  });
+
+  it("marks a full machine and never links an address that is not http(s)", async () => {
+    const v = fixture();
+    v.nodes[1] = { ...baseNode, web_url: "javascript:alert(1)", full_node: true };
+    get.mockResolvedValue(v);
+    renderPage();
+    const card = await screen.findByRole("article", { name: "Studio Mac" });
+    expect(within(card).getByText("Full machine")).toBeInTheDocument();
+    expect(
+      within(card).queryByRole("link", { name: /opens in a new tab/ })
+    ).not.toBeInTheDocument();
+  });
+
+  it("says when another machine serves VOD because the share is not readable here", async () => {
+    const v = fixture();
+    v.nodes[1] = {
+      ...baseNode,
+      full_node: true,
+      vod: {
+        fallback: true,
+        served_by: "Home NAS box",
+        detail: "smb://nas/Originals: permission denied",
+        checked_at: NOW,
+      },
+    };
+    get.mockResolvedValue(v);
+    const first = renderPage();
+    const card = await screen.findByRole("article", { name: "Studio Mac" });
+    const note = within(card).getByRole("note");
+    expect(note).toHaveTextContent(/VOD served by .*Home NAS box.*: share not readable here/);
+    expect(note).toHaveTextContent("smb://nas/Originals: permission denied");
+    first.unmount();
+
+    localStorage.setItem("mkt:locale", "ar");
+    renderPage();
+    const ar = await screen.findByRole("article", { name: "Studio Mac" });
+    expect(within(ar).getByRole("note")).toHaveTextContent(
+      /الفيديو عند الطلب: المجلد المشترك غير قابل للقراءة هنا/
+    );
+    expect(within(ar).getByText("جهاز كامل")).toBeInTheDocument();
+  });
+
   it("renders in Arabic, right to left", async () => {
     localStorage.setItem("mkt:locale", "ar");
     renderPage();

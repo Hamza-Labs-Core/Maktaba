@@ -245,8 +245,11 @@ def probe_lan(port: int = 8080) -> list[Home]:
         return []
     hosts = local_subnet_hosts(f"{ip}/24")
     results = asyncio.run(LANProbe(port=port).probe(hosts))
+    # one joins a home, never a node (Epic 35 story 35.11 AC4): a full node answers too
     return [
-        Home(url=_url(r.host, r.port), version=r.version, schema_rev=r.schema_rev) for r in results
+        Home(url=_url(r.host, r.port), version=r.version, schema_rev=r.schema_rev)
+        for r in results
+        if r.role == "home"
     ]
 
 

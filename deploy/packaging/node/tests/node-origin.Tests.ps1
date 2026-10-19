@@ -183,6 +183,13 @@ try {
     Assert-Equal $false (Test-Path -LiteralPath $old) 'the last release''s download is removed'
     Assert-Equal $true (Test-Path -LiteralPath $new) 'this install''s download is kept'
 
+    # --- -Full: setup --node (Epic 35 story 35.8 TC6) ------------------------------------------------
+    $full = Get-FullNodeArguments -ServerDir 'C:\rel' -Python 'C:\venv\Scripts\python.exe' -Instances 2 -Mode 'Task'
+    Assert-Equal 'setup --node --from C:\rel --python C:\venv\Scripts\python.exe --instances 2 --mode task' ($full -join ' ') '-Full runs setup --node with the release, the worker''s Python and its instances'
+    $full = Get-FullNodeArguments -Python 'C:\venv\Scripts\python.exe' -Mode 'Service'
+    Assert-Equal 'setup --node --python C:\venv\Scripts\python.exe --mode service' ($full -join ' ') '-Full without a folder lets setup --node fetch the home''s release'
+    Assert-Equal '' (Find-MaktabaServer -ServerDir (Join-Path $T 'no-such-dir')) 'no maktaba-server.exe in an empty folder'
+
     # --- Get-NodePipelineFile ------------------------------------------------------------------------------
     $dl = Join-Path $T 'dl'
     $f = Get-NodePipelineFile -Spec $wheel -Sha256 (Get-Sha256 $wheel).ToUpperInvariant() -DownloadDir $dl

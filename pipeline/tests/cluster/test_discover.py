@@ -109,3 +109,38 @@ def test_the_first_address_that_answers_is_used() -> None:
     assert _reachable(home, answers).url == "http://100.75.0.9:8080"
     assert asked == list(home.urls)
     assert _reachable(home, lambda u: False).url == home.url  # none answer: keep the best
+
+
+def test_discover_skips_nodes() -> None:
+    """Epic 35 story 35.11 TC4: a full node advertises (role=node, home=<id8>, web) and
+    answers /api/system/version with role node; neither is offered as a home."""
+    node_txt = {**TXT, b"role": b"node", b"home": b"0b9a8c7d", b"web": b"8088", b"id": b"6f1c2a3b"}
+    node_txt.pop(b"join")
+    assert (
+        home_from_service("Maktaba (studio)._maktaba._tcp.local.", node_txt, ["192.168.1.21"], 8080)
+        is None
+    )
+
+    from unittest import mock
+
+    from maktaba_pipeline.cluster import discover
+    from maktaba_pipeline.discovery.probe import ProbeResult
+
+    found = [
+        ProbeResult(host="192.168.1.20", port=8080, schema_rev=134, version="1.5.0", role="home"),
+        ProbeResult(host="192.168.1.21", port=8080, schema_rev=134, version="1.5.0", role="node"),
+    ]
+
+    def fake_run(coro: object) -> list[ProbeResult]:
+        coro.close()  # type: ignore[attr-defined]
+        return found
+
+    with (
+        mock.patch.object(discover, "primary_iface_ip", return_value="192.168.1.5"),
+        mock.patch.object(
+            discover, "local_subnet_hosts", return_value=["192.168.1.20", "192.168.1.21"]
+        ),
+        mock.patch("asyncio.run", fake_run),
+    ):
+        homes = discover.probe_lan()
+    assert [h.url for h in homes] == ["http://192.168.1.20:8080"]

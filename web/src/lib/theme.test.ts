@@ -42,6 +42,11 @@ describe("theme", () => {
     expect(document.documentElement.dataset.theme).toBe("dark");
   });
 
+  it("falls back to dark when the browser cannot report a preference", () => {
+    vi.stubGlobal("matchMedia", undefined);
+    expect(resolveTheme("system")).toBe("dark");
+  });
+
   it("an explicit choice wins over the OS preference", () => {
     mockMatchMedia(true);
     setMode("light");

@@ -9,6 +9,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/securityaudit"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/sessions"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
@@ -200,6 +201,9 @@ func (h *Handler) AdminUpdateUser(w http.ResponseWriter, r *http.Request) {
 		h.writeUserStoreError(w, r, err)
 		return
 	}
+	// nodes drop their cached copy of this user's sessions (story 35.9 AC4): a new
+	// password, name or admin flag is re-read from the home at once
+	sessions.NotifyRevoked(sessions.Revocation{UserID: id, Reason: "user_updated"})
 	h.audit(r.Context(), securityaudit.Entry{
 		Event:       securityaudit.EventPasswordChanged,
 		ActorUserID: actor.UserID,
@@ -224,6 +228,7 @@ func (h *Handler) AdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		h.writeUserStoreError(w, r, err)
 		return
 	}
+	sessions.NotifyRevoked(sessions.Revocation{UserID: id, Reason: "user_deleted"})
 	h.audit(r.Context(), securityaudit.Entry{
 		Event:       securityaudit.EventPasswordChanged,
 		ActorUserID: actor.UserID,

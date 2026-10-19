@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0133 (Epic 33, stories 33.7 and 33.9): the swap and
+-- SQLite parity sibling for slot 0136 (Epic 33, stories 33.7 and 33.9): the swap and
 -- rollback operations. A SQLite home runs the engine in one process (no TV slots), so
 -- the swap commit makes the change live itself and no front door reads these tables;
 -- they exist for the same shape. UUID becomes TEXT, JSONB TEXT, TIMESTAMPTZ TEXT,

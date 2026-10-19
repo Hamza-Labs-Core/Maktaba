@@ -1,0 +1,13 @@
+{
+  "_doc": "Epic 31 design §5.1 schema guard verdicts, shared by the pipeline (cluster/schema.py), the streaming node (streaming/internal/cluster/schema.go) and a full node's API (api/internal/cluster/schemaguard, Epic 35 story 35.8 TC4). required is the node's SchemaRev.",
+  "required": 124,
+  "cases": [
+    {"name": "home behind", "home": {"applied": 119, "known": true}, "reason": "paused: home database at 0119, this machine needs 0124 — update the home"},
+    {"name": "same", "home": {"applied": 124, "known": true}, "reason": ""},
+    {"name": "home ahead, additive", "home": {"applied": 130, "known": true}, "reason": ""},
+    {"name": "home ahead, compatible", "home": {"applied": 130, "known": true, "min_node": 124, "has_min_node": true}, "reason": ""},
+    {"name": "home ahead, breaking", "home": {"applied": 130, "known": true, "min_node": 127, "has_min_node": true}, "reason": "paused: home database at 0130 needs this machine at 0127 or newer (it has 0124) — update this machine"},
+    {"name": "breaking, applied unknown", "home": {"min_node": 127, "has_min_node": true}, "reason": "paused: home database needs this machine at 0127 or newer (it has 0124) — update this machine"},
+    {"name": "unreadable", "home": {}, "reason": ""}
+  ]
+}

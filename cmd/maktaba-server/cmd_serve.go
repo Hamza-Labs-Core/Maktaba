@@ -18,7 +18,6 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/mdns"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
-	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/webui"
 )
 
@@ -100,21 +99,24 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	// supervised subprocess. Decide which we're running.
 	roles, serveWeb := resolveRoles(opts)
 
+	// Epic 35 story 35.8: a joined node config makes this machine a full node (the
+	// machine agent; the api in node mode; the web port's TV to the home).
+	var node *nodeServices
+	if containsRole(roles, supervisor.RoleAPI) {
+		node = startNodeServices(ctx, cfg)
+	}
+
 	// Start the in-process web server (and mDNS) when web is in scope.
 	var webSrv *http.Server
 	if serveWeb && !opts.noWeb {
-		webSrv = startWebServer(cfg)
+		webSrv = startWebServer(cfg, node)
 		fmt.Fprintf(os.Stderr, "[serve] web UI on %s (embedded=%v)\n", cfg.Server.WebListen, webui.Embedded)
 	}
 
+	// Epic 35 story 35.11: the supervisor is the machine's one mDNS advertiser
+	// (home or node), re-publishing when what it says changes.
 	if !opts.noMDNS && (serveWeb || containsRole(roles, supervisor.RoleAPI)) {
-		port := mdns.PortFromListen(cfg.Server.Listen, 8080)
-		if adv, err := mdns.Advertise("", port, version.Version); err != nil {
-			fmt.Fprintf(os.Stderr, "[serve] mDNS advertisement failed (continuing): %v\n", err)
-		} else {
-			defer adv.Close()
-			fmt.Fprintf(os.Stderr, "[serve] advertising _maktaba._tcp on port %d\n", port)
-		}
+		go advertiseMachine(ctx, cfg, node)
 	}
 
 	// Build the supervised processes.
@@ -136,6 +138,14 @@ func runServe(cfg config.Config, opts serveOptions) error {
 			return err
 		}
 		procs = append(procs, p)
+		if r == supervisor.RolePipeline {
+			// [pipeline] instances = N (Epic 35 story 35.8): extra transcription workers
+			extra, err := supervisor.BuildPipelineInstances(sopts)
+			if err != nil {
+				return err
+			}
+			procs = append(procs, extra...)
+		}
 		// Epic 33 story 33.1: the streaming role is the front door; the channel
 		// engine runs in the TV slots next to it (live + hot standby; the third
 		// on request)
@@ -169,7 +179,7 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	sup := supervisor.New(procs, policy, supervisor.WithEventSink(
 		supervisor.NewFileSink(filepath.Join(cfg.Server.DataDir, "supervisor", "events.jsonl"), 0)),
 		supervisor.WithExitHook(supervisor.SlotExitReporter(cfg.Server.StreamAddr)))
-	if adminSrv := startSupervisorAdmin(policy.AdminAddr, sup); adminSrv != nil {
+	if adminSrv := startSupervisorAdmin(policy.AdminAddr, node.adminHandler(sup.Handler())); adminSrv != nil {
 		defer func() { _ = shutdownWeb(adminSrv) }()
 	}
 	confirmPending(ctx, sup, releaseDir)
@@ -186,11 +196,11 @@ func runServe(cfg config.Config, opts serveOptions) error {
 // startSupervisorAdmin serves the supervisor's state (GET /processes)
 // on its loopback admin address; the api proxies it to
 // /api/system/processes. A bind failure is logged, not fatal.
-func startSupervisorAdmin(addr string, sup *supervisor.Supervisor) *http.Server {
+func startSupervisorAdmin(addr string, h http.Handler) *http.Server {
 	if addr == "" {
 		return nil
 	}
-	srv := &http.Server{Addr: addr, Handler: sup.Handler(), ReadHeaderTimeout: 5 * time.Second}
+	srv := &http.Server{Addr: addr, Handler: h, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			fmt.Fprintf(os.Stderr, "[serve] supervisor admin endpoint on %s failed (continuing): %v\n", addr, err)
@@ -236,7 +246,11 @@ func containsRole(roles []supervisor.Role, want supervisor.Role) bool {
 // startWebServer stands up the in-process SPA server. It serves the
 // embedded UI and reverse-proxies /api to the API listen address so the
 // whole app is reachable from a single origin (the web port).
-func startWebServer(cfg config.Config) *http.Server {
+//
+// On a full node (node != nil) live TV, the guide and the lineup go to the home's front
+// door, and a VOD session the home serves (the fallback) to the home's streaming port;
+// VOD stays on this machine's streaming role (Epic 35 design §11.3).
+func startWebServer(cfg config.Config, node *nodeServices) *http.Server {
 	mux := http.NewServeMux()
 
 	// Reverse-proxy /api/* to the API service so the SPA can talk to a
@@ -252,6 +266,11 @@ func startWebServer(cfg config.Config) *http.Server {
 			// agent marks its loopback calls X-Maktaba-Via: relay
 			r.Header.Del("X-Maktaba-Via")
 		}
+		// this machine's API is down or restarting: a themed page for a browser
+		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+			webui.Error(w, r, http.StatusBadGateway, "Maktaba is starting",
+				"This machine's server is not answering yet ("+err.Error()+").")
+		}
 		mux.Handle("/api/", proxy)
 	}
 
@@ -261,11 +280,21 @@ func startWebServer(cfg config.Config) *http.Server {
 	// and lineup are public; /stream/ needs a signed-in session and only
 	// the paths the web app loads (stream_gate.go).
 	streamProxy := newStreamProxy(cfg.Server.StreamAddr)
+	publicProxy, gated := streamProxy, streamProxy
+	allow := allowedStreamPath
+	if node != nil {
+		home := homeStreamProxy(supervisor.HomeStreamURL(node.node))
+		publicProxy = home
+		gated = nodeStreamRouter(streamProxy, home)
+		allow = allowedNodeStreamPath
+	}
 	for _, p := range publicStreamPaths {
-		mux.Handle(p, streamProxy)
+		mux.Handle(p, publicProxy)
 	}
 	if api != nil {
-		mux.Handle("/stream/", newStreamGate(streamProxy, api))
+		gate := newStreamGate(gated, api)
+		gate.allow = allow
+		mux.Handle("/stream/", gate)
 	} else {
 		mux.Handle("/stream/", http.NotFoundHandler())
 	}
@@ -303,8 +332,8 @@ func newStreamProxy(streamAddr string) http.Handler {
 		r.Header.Del("Authorization")
 	}
 	proxy.FlushInterval = -1
-	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
-		http.Error(w, "live TV is not reachable: "+err.Error(), http.StatusBadGateway)
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		webui.Error(w, r, http.StatusBadGateway, "Live TV is not reachable", err.Error())
 	}
 	return proxy
 }

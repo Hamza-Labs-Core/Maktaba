@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"runtime"
+	"sync/atomic"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
 )
@@ -27,6 +28,35 @@ type VersionInfo struct {
 	Commit string `json:"commit"`
 	// BuildDate mirrors BuildTime under the auto-update field name.
 	BuildDate string `json:"build_date"`
+	// Epic 35 story 35.11 AC7: which machine of a cluster answered — "home" or
+	// "node" — its node id (nodes), the home's instance id and this machine's own
+	// web address, so a typed node address is recognised as part of its cluster.
+	Role           string `json:"role"`
+	NodeID         string `json:"node_id,omitempty"`
+	HomeInstanceID string `json:"home_instance_id,omitempty"`
+	WebURL         string `json:"web_url,omitempty"`
+}
+
+// Machine is what /api/system/version says about the machine (SetMachine).
+type Machine struct {
+	Role           string
+	NodeID         string
+	HomeInstanceID string
+	WebURL         string
+}
+
+var machine atomic.Pointer[Machine]
+
+// SetMachine records this machine's place in the cluster (main.go; the home learns its
+// instance id after the identity bootstrap).
+func SetMachine(m Machine) { machine.Store(&m) }
+
+// CurrentMachine is the recorded machine (role "home" until told otherwise).
+func CurrentMachine() Machine {
+	if m := machine.Load(); m != nil {
+		return *m
+	}
+	return Machine{Role: "home"}
 }
 
 // VersionHandler returns a handler for GET /api/system/version. The
@@ -44,6 +74,11 @@ func VersionHandler(schemaRev int) http.Handler {
 			Channel:   version.Channel(),
 			Commit:    version.Commit,
 			BuildDate: version.BuildDate,
+		}
+		m := CurrentMachine()
+		info.Role, info.NodeID, info.HomeInstanceID, info.WebURL = m.Role, m.NodeID, m.HomeInstanceID, m.WebURL
+		if info.Role == "" {
+			info.Role = "home"
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)

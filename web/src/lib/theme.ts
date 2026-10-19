@@ -26,8 +26,9 @@ export function readMode(): ThemeMode {
   return "system";
 }
 
+// No way to ask the OS (no matchMedia): dark, never a bright white page.
 function systemPrefersDark(): boolean {
-  return typeof matchMedia !== "undefined" && matchMedia("(prefers-color-scheme: dark)").matches;
+  return typeof matchMedia === "undefined" || matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
 export function resolveTheme(mode: ThemeMode = readMode()): ResolvedTheme {
