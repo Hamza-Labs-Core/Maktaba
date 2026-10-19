@@ -111,7 +111,8 @@ func newRig(t *testing.T, s placement.Settings, nodeBase string, homeCap, nodeCa
 		g.local.Add(1)
 		_, _ = io.WriteString(w, "#EXTM3U\nlocal\n")
 	})
-	g.fd = &Handler{Svc: svc, Settings: settings{s}, Self: "home", Local: local, Keyring: g.key, Tracker: NewTracker()}
+	g.fd = &Handler{Svc: svc, Settings: settings{s}, Self: "home", Local: local, Keyring: g.key, Tracker: NewTracker(),
+		SpliceRetry: 20 * time.Millisecond}
 	g.r = chi.NewRouter()
 	g.fd.Mount(g.r)
 	g.srv = httptest.NewServer(g.r)

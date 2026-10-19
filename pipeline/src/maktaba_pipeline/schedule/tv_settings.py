@@ -427,7 +427,7 @@ register(
             TCL,
             "Other machines may stream",
             "Machines that joined this home may encode channels too, so more channels can "
-            "be on air at once. Each machine also needs \"Stream on this machine\" on the "
+            'be on air at once. Each machine also needs "Stream on this machine" on the '
             "Live TV page. Off: the home encodes every channel.",
         ),
         "policy": Help(

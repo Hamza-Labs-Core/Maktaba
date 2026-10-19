@@ -119,9 +119,16 @@ func (h *Handler) StreamChannelTS(ctx context.Context, ch uuid.UUID, w io.Writer
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(spliceRetry):
+		case <-time.After(h.retryDelay()):
 		}
 	}
+}
+
+func (h *Handler) retryDelay() time.Duration {
+	if h.SpliceRetry > 0 {
+		return h.SpliceRetry
+	}
+	return spliceRetry
 }
 
 // remoteTS copies a node's live.ts to the client until it ends.

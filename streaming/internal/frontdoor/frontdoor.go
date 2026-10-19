@@ -41,6 +41,9 @@ type Handler struct {
 	Logger  *slog.Logger
 	// Metrics, when set, counts the bytes forwarded from nodes.
 	Bytes func(n int64)
+	// SpliceRetry is the pause between two attempts to reach a channel's source
+	// (0: 500 ms).
+	SpliceRetry time.Duration
 }
 
 // NewClient is the front door's HTTP client: keep-alives, no overall timeout (TS

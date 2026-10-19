@@ -56,7 +56,9 @@ def test_0121_up_down(schema_at_121: sqlite3.Connection) -> None:
     assert hosts["stream_base_url_source"] == "'reported'"
     assert hosts["weight"] == "1"
     # the home keeps streaming; a node waits for the admin
-    assert conn.execute("SELECT host_id, enabled FROM streaming_hosts ORDER BY host_id").fetchall() == [
+    assert conn.execute(
+        "SELECT host_id, enabled FROM streaming_hosts ORDER BY host_id"
+    ).fetchall() == [
         ("h", 1),
         ("n", 0),
     ]
