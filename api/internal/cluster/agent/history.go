@@ -28,6 +28,10 @@ import (
 //	GET /api/cluster/files
 //	GET /api/cluster/files/{ip}/logs?date&level&q&worker_id&limit&before
 //	GET /api/cluster/files/{ip}/jobs?date&stage&event&worker_id&limit&before
+//
+// (worker= is accepted for worker_id.) Logs and metrics come from the
+// database cache when it covers the range (header X-Maktaba-Source: cache),
+// else from the files (files).
 //	GET /api/cluster/files/{ip}/llm?date&limit&before
 //	GET /api/cluster/files/{ip}/events?date&limit&before
 //	GET /api/cluster/files/{ip}/metrics?date&from&to&limit
@@ -59,7 +63,7 @@ type MachineFiles struct {
 // FilesIndex is GET /api/cluster/files.
 type FilesIndex struct {
 	Files Location       `json:"files"`
-	IPs   []MachineFiles `json:"ips"`
+	Nodes []MachineFiles `json:"nodes"`
 }
 
 // Readers go through an os.Root at the cluster folder and refuse links
@@ -84,7 +88,7 @@ func (h *Hub) Files(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	loc := h.Location()
-	out := FilesIndex{Files: loc, IPs: []MachineFiles{}}
+	out := FilesIndex{Files: loc, Nodes: []MachineFiles{}}
 	root, err := openCluster(loc.Dir)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("read the cluster folder"))
@@ -109,7 +113,7 @@ func (h *Hub) Files(w http.ResponseWriter, r *http.Request) {
 		for _, kind := range DayKinds {
 			m.Dates[kind] = listDates(root, filepath.Join(e.Name(), kind))
 		}
-		out.IPs = append(out.IPs, m)
+		out.Nodes = append(out.Nodes, m)
 	}
 	common.WriteJSON(w, r, http.StatusOK, out)
 }
@@ -321,7 +325,7 @@ func parseTimeParam(v string) (*time.Time, bool) {
 	return &t, true
 }
 
-func (h *Hub) parseHistory(w http.ResponseWriter, r *http.Request, def, max int) (historyQuery, bool) {
+func (h *Hub) parseHistory(w http.ResponseWriter, r *http.Request, def, ceiling int) (historyQuery, bool) {
 	q := historyQuery{ip: chi.URLParam(r, "ip"), kind: chi.URLParam(r, "kind"), date: r.URL.Query().Get("date")}
 	if !ValidIPDir(q.ip) {
 		badRequest(w, r, "ip must be an address (IPv6 with '-') or a host name")
@@ -341,7 +345,7 @@ func (h *Hub) parseHistory(w http.ResponseWriter, r *http.Request, def, max int)
 			badRequest(w, r, "limit must be a positive number")
 			return q, false
 		}
-		q.limit = min(n, max)
+		q.limit = min(n, ceiling)
 	}
 	var ok bool
 	if q.before, ok = parseTimeParam(r.URL.Query().Get("before")); !ok {
@@ -388,7 +392,14 @@ func (h *Hub) historyRecords(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	needle := []byte(strings.ToLower(qs.Get("q")))
-	stage, event, worker := qs.Get("stage"), qs.Get("event"), qs.Get("worker_id")
+	stage, event := qs.Get("stage"), qs.Get("event")
+	worker := qs.Get("worker_id")
+	if worker == "" {
+		worker = qs.Get("worker")
+	}
+	if q.kind == "logs" && h.logsFromCache(w, r, q, worker, qs.Get("level"), qs.Get("q")) {
+		return
+	}
 	root, err := openCluster(h.Location().Dir)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("read the cluster folder"))
@@ -472,7 +483,101 @@ func (h *Hub) historyRecords(w http.ResponseWriter, r *http.Request) {
 		c := recs[0].ts.Format(time.RFC3339Nano)
 		cursor = &c
 	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"ip": q.ip, "date": q.date, "records": out, "before": cursor})
+	w.Header().Set(sourceHeader, "files")
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"ip": q.ip, "date": q.date, "records": out, "next_before": cursor})
+}
+
+// sourceHeader says where a history answer came from: cache or files.
+const sourceHeader = "X-Maktaba-Source"
+
+// dayRange is [the day's start, the next day's start) for a YYYY-MM-DD.
+func dayRange(date string) (time.Time, time.Time) {
+	d, _ := time.Parse("2006-01-02", date)
+	return d, d.AddDate(0, 0, 1)
+}
+
+// logsFromCache answers a logs query from the cache when it covers the
+// range; it reports whether it answered.
+func (h *Hub) logsFromCache(w http.ResponseWriter, r *http.Request, q historyQuery, worker, level, needle string) bool {
+	if h.cfg.Cache == nil {
+		return false
+	}
+	from, to := dayRange(q.date)
+	if q.before != nil && q.before.Before(to) {
+		to = *q.before
+	}
+	if !to.After(from) || !h.cfg.Cache.Covers("logs", from, to) {
+		return false
+	}
+	recs, err := h.cfg.Cache.ReadLogs(r.Context(), CacheQuery{IP: q.ip, WorkerID: worker, Level: normLevel(level),
+		Q: needle, From: from, To: to, Limit: q.limit + 1})
+	if err != nil {
+		h.log().Warn("cluster: cache read failed; reading the files", "err", err, "event", "cluster_cache_read_failed")
+		return false
+	}
+	sort.SliceStable(recs, func(i, j int) bool { return recs[i].TS.Before(recs[j].TS) })
+	more := len(recs) > q.limit
+	if more {
+		recs = recs[len(recs)-q.limit:]
+	}
+	out := make([]json.RawMessage, 0, len(recs))
+	for _, rec := range recs {
+		var m map[string]json.RawMessage
+		if json.Unmarshal(rec.Line, &m) != nil {
+			continue
+		}
+		if data := withWorker(m, rec.WorkerID); data != nil {
+			out = append(out, data)
+		}
+	}
+	var cursor *string
+	if more && len(recs) > 0 {
+		c := recs[0].TS.UTC().Format(time.RFC3339Nano)
+		cursor = &c
+	}
+	w.Header().Set(sourceHeader, "cache")
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"ip": q.ip, "date": q.date, "records": out, "next_before": cursor})
+	return true
+}
+
+// metricsFromCache answers a metrics query from the cache when it covers
+// the range; it reports whether it answered.
+func (h *Hub) metricsFromCache(w http.ResponseWriter, r *http.Request, q historyQuery) bool {
+	if h.cfg.Cache == nil {
+		return false
+	}
+	from, to := dayRange(q.date)
+	if q.from != nil && q.from.After(from) {
+		from = *q.from
+	}
+	if q.to != nil && q.to.Before(to) {
+		to = *q.to
+	}
+	if !to.After(from) || !h.cfg.Cache.Covers("metrics", from, to) {
+		return false
+	}
+	recs, err := h.cfg.Cache.ReadMetrics(r.Context(), CacheQuery{IP: q.ip, From: from, To: to})
+	if err != nil {
+		h.log().Warn("cluster: cache read failed; reading the files", "err", err, "event", "cluster_cache_read_failed")
+		return false
+	}
+	sort.SliceStable(recs, func(i, j int) bool { return recs[i].TS.Before(recs[j].TS) })
+	stride, thinned := 1, false
+	if len(recs) > q.limit {
+		stride = (len(recs) + q.limit - 1) / q.limit
+		thinned = true
+	}
+	out := make([]json.RawMessage, 0, len(recs)/stride+1)
+	for i := 0; i < len(recs); i += stride {
+		b, err := json.Marshal(map[string]any{"ts": recs[i].TS.UTC().Format(time.RFC3339Nano), "worker_id": recs[i].WorkerID,
+			"metrics": recs[i].Line})
+		if err == nil {
+			out = append(out, b)
+		}
+	}
+	w.Header().Set(sourceHeader, "cache")
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"ip": q.ip, "date": q.date, "samples": out, "thinned": thinned})
+	return true
 }
 
 func jsonString(raw json.RawMessage) string {
@@ -488,6 +593,9 @@ func jsonString(raw json.RawMessage) string {
 func (h *Hub) historySamples(w http.ResponseWriter, r *http.Request) {
 	q, ok := h.parseHistory(w, r, defaultSamples, maxSamples)
 	if !ok {
+		return
+	}
+	if q.kind == "metrics" && h.metricsFromCache(w, r, q) {
 		return
 	}
 	root, err := openCluster(h.Location().Dir)
@@ -551,5 +659,6 @@ func (h *Hub) historySamples(w http.ResponseWriter, r *http.Request) {
 	for _, rec := range all {
 		out = append(out, rec.data)
 	}
+	w.Header().Set(sourceHeader, "files")
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"ip": q.ip, "date": q.date, "samples": out, "thinned": thinned})
 }

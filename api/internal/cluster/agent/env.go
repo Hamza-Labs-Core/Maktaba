@@ -17,8 +17,13 @@ import (
 //	MAKTABA_CLUSTER_LOG_LEVEL       default info
 //	MAKTABA_LLM_QUEUE_TIMEOUT_S     default 300
 //	MAKTABA_LLM_MAX_PARALLEL        default 1 (per runtime that does not say)
-//	MAKTABA_CLUSTER_AGENT_RATE_PER_MIN  connection attempts per IP, default 60
+//	MAKTABA_CLUSTER_AGENT_RATE_PER_MIN  handshakes per IP a minute, default 30
+//	MAKTABA_CLUSTER_IP              the home's IP folder name (default: its first private IPv4)
+//	MAKTABA_CLUSTER_CACHE_HOURS     the database cache's window, default 24
 //	MAKTABA_CORS_ALLOWED_ORIGINS    extra browser origins for /api/cluster/ws
+//
+// The key files are read by the caller: MAKTABA_HOME_AGENT_KEY
+// (MAKTABA_CLUSTER_KEY_PATH also accepted) and MAKTABA_HOME_CLUSTER_KEY.
 //
 // Bad values fall back to the default and are reported as warnings.
 func FromEnv(getenv func(string) string) (Config, []string) {
@@ -53,6 +58,14 @@ func FromEnv(getenv func(string) string) (Config, []string) {
 	}
 	if cfg.RetentionDays == 0 {
 		cfg.RetentionDays = DefaultRetentionDays
+	}
+	cfg.CacheWindow = time.Duration(intVar("MAKTABA_CLUSTER_CACHE_HOURS", DefaultCacheHours)) * time.Hour
+	if v := strings.TrimSpace(getenv("MAKTABA_CLUSTER_IP")); v != "" {
+		if ValidIPDir(IPDir(v)) {
+			cfg.HomeAddr = v
+		} else {
+			warn = append(warn, fmt.Sprintf("MAKTABA_CLUSTER_IP=%q ignored (an address or a host name)", v))
+		}
 	}
 	if cfg.AgentRatePerMin == 0 {
 		cfg.AgentRatePerMin = -1 // 0 in the environment: no limit

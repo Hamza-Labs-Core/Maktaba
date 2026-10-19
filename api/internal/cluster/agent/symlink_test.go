@@ -87,7 +87,7 @@ func TestSweeperRefusesLinks(t *testing.T) {
 	}
 
 	s := &Sweeper{Days: 14, Now: time.Now}
-	if _, err := s.Sweep(cdir, "10.0.0.1"); err != nil {
+	if _, err := s.Sweep(cdir); err != nil {
 		t.Fatal(err)
 	}
 	if b, err := os.ReadFile(filepath.Join(outside, "2020-01-01", "precious")); err != nil || string(b) != "x" {
@@ -111,7 +111,7 @@ func TestReadersRefuseLinks(t *testing.T) {
 	}
 	var idx FilesIndex
 	decode(t, f.do("GET", "/api/cluster/files", "", "admin"), &idx)
-	for _, m := range idx.IPs {
+	for _, m := range idx.Nodes {
 		if m.IP == "10.0.0.5" && len(m.Processes) != 0 {
 			t.Fatalf("linked process file read: %s", m.Processes)
 		}

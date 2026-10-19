@@ -94,6 +94,7 @@ func newFixture(t *testing.T) *fixture {
 		JoinRatePerMin: -1,
 		PollRatePerMin: -1,
 		NowFunc:        func() time.Time { return f.now },
+		ClusterPub:     "RSujjNFA61v0BQ1NiOVfwb46U0QPe3dj8ve08aDH0V8=",
 	}
 	f.h.Mount(f.r)
 	if _, err := f.h.Bootstrap(context.Background(), "home-mac"); err != nil {
@@ -396,8 +397,14 @@ func TestApproveSealsCredentials(t *testing.T) {
 	id, _ := f.store.Identity(context.Background())
 	wantURL := "postgres://maktaba_node_6f1c2a3b4d5e4f608a7192b3c4d5e6f7:" + pw + "@192.168.1.20:6543/maktaba?sslmode=prefer"
 	if p.V != 1 || p.NodeID != nodeID || p.DatabaseURL != wantURL ||
-		p.Home != (cluster.PayloadHome{APIURL: "http://192.168.1.20:8080", InstanceID: id.InstanceID, Name: "home-mac"}) {
+		p.Home != (cluster.PayloadHome{APIURL: "http://192.168.1.20:8080", ClusterPub: "RSujjNFA61v0BQ1NiOVfwb46U0QPe3dj8ve08aDH0V8=",
+			InstanceID: id.InstanceID, Name: "home-mac"}) {
 		t.Errorf("payload = %+v", p)
+	}
+	// the home part keeps its keys sorted, cluster_pub in its place
+	if i, j, k := strings.Index(string(plain), `"api_url"`), strings.Index(string(plain), `"cluster_pub"`),
+		strings.Index(string(plain), `"instance_id"`); i >= j || j >= k {
+		t.Errorf("key order: %s", plain)
 	}
 
 	// Once the node's worker registers, the envelope is gone.

@@ -142,31 +142,39 @@ func TestSweeperRetention(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
 	old := now.AddDate(0, 0, -20)
-	// the home: its hub files expire; a home process's own files are its own
+	// expired day folders go in every IP folder, whoever wrote them
 	mkday(t, dir, "192.168.50.1", KindEvents, "2026-10-01", hubFile, old)
 	mkday(t, dir, "192.168.50.1", KindEvents, "2026-10-29", hubFile, now)
 	mkday(t, dir, "192.168.50.1", "logs", "2026-10-01", "w1.jsonl", old)
-	// a machine gone for good: everything past retention goes
-	mkday(t, dir, "192.168.50.7", "logs", "2026-10-01", "w7.jsonl", old)
 	mkday(t, dir, "192.168.50.7", "metrics", "2026-10-02", "w7.jsonl", old)
-	// a machine with a live session keeps its files (it cleans its own)
-	mkday(t, dir, "192.168.50.8", "logs", "2026-10-01", "w8.jsonl", old)
-	// a machine that wrote recently but is not connected now: kept
-	mkday(t, dir, "192.168.50.9", "logs", "2026-10-01", "w9.jsonl", old)
-	mkday(t, dir, "192.168.50.9", "logs", "2026-10-29", "w9.jsonl", now.Add(-time.Hour))
+	mkday(t, dir, "192.168.50.7", "logs", "2026-10-16", "w7.jsonl", old) // inside the 14 days
+	// processes not seen within the retention are removed; others kept
+	writeJSONL(t, filepath.Join(dir, "192.168.50.7", "processes", "gone.json"), `{"worker_id":"gone","last_seen":"2026-10-01T00:00:00Z"}`)
+	writeJSONL(t, filepath.Join(dir, "192.168.50.7", "processes", "alive.json"), `{"worker_id":"alive","last_seen":"2026-10-30T11:00:00Z"}`)
+	writeJSONL(t, filepath.Join(dir, "192.168.50.7", "processes", "stopped.json"), `{"stopped_at":"2026-10-02T00:00:00Z"}`)
+	// not a day, not an IP folder: left alone
+	mkday(t, dir, "192.168.50.7", "logs", "notes", "x.jsonl", old)
+	mkday(t, dir, "..x", "logs", "2026-10-01", "x.jsonl", old)
 
-	s := &Sweeper{Days: 14, Now: func() time.Time { return now }, LiveIPs: func() map[string]bool { return map[string]bool{"192.168.50.8": true} }}
-	if _, err := s.Sweep(dir, "192.168.50.1"); err != nil {
+	s := &Sweeper{Days: 14, Now: func() time.Time { return now }}
+	n, err := s.Sweep(dir)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if n != 5 {
+		t.Errorf("removed = %d, want 5", n)
 	}
 	for p, want := range map[string]bool{
 		"192.168.50.1/events/2026-10-01":           false,
 		"192.168.50.1/events/2026-10-29/hub.jsonl": true,
-		"192.168.50.1/logs/2026-10-01/w1.jsonl":    true,
-		"192.168.50.7/logs/2026-10-01":             false,
+		"192.168.50.1/logs/2026-10-01":             false,
 		"192.168.50.7/metrics/2026-10-02":          false,
-		"192.168.50.8/logs/2026-10-01/w8.jsonl":    true,
-		"192.168.50.9/logs/2026-10-01/w9.jsonl":    true,
+		"192.168.50.7/logs/2026-10-16/w7.jsonl":    true,
+		"192.168.50.7/processes/gone.json":         false,
+		"192.168.50.7/processes/stopped.json":      false,
+		"192.168.50.7/processes/alive.json":        true,
+		"192.168.50.7/logs/notes/x.jsonl":          true,
+		"..x/logs/2026-10-01/x.jsonl":              true,
 	} {
 		if got := exists(filepath.Join(dir, p)); got != want {
 			t.Errorf("%s exists = %v, want %v", p, got, want)
@@ -341,7 +349,8 @@ func TestFromEnv(t *testing.T) {
 		t.Fatalf("origins = %v", cfg.BrowserOrigins)
 	}
 	cfg, _ = FromEnv(func(string) string { return "" })
-	if cfg.LogLevel != "info" || cfg.RetentionDays != 14 || cfg.FileMaxBytes != 256<<20 || cfg.AgentRatePerMin != 60 {
+	if cfg.LogLevel != "info" || cfg.RetentionDays != 14 || cfg.FileMaxBytes != 256<<20 || cfg.AgentRatePerMin != 30 ||
+		cfg.CacheWindow != 24*time.Hour {
 		t.Fatalf("defaults = %+v", cfg)
 	}
 }

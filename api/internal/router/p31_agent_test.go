@@ -43,7 +43,7 @@ func TestP31AgentUpgradeThroughMiddleware(t *testing.T) {
 	}
 	_, _, err = c.Read(ctx)
 	var ce websocket.CloseError
-	if !errors.As(err, &ce) || ce.Reason != agent.RefuseVersion {
+	if !errors.As(err, &ce) || ce.Code != agent.CloseUnsupportedVersion {
 		t.Fatalf("answer = %v", err)
 	}
 }

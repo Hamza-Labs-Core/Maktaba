@@ -352,23 +352,22 @@ func readDirIn(root *os.Root, rel string) ([]os.DirEntry, error) {
 
 // ---------- retention ----------
 
-// Sweeper removes expired day directories (design-agent.md §4): the hub's
-// own files under the home's folder, and everything past retention in the
-// folders of machines whose processes are all gone (no live session and
-// nothing written within the retention window). Live processes clean their
-// own files.
+// Sweeper removes what is past retention (design-agent.md §7.7), once a
+// day: expired day folders in every IP folder (a day folder is a UTC date,
+// so an expired one is never being written), and processes/*.json whose
+// last_seen is older than the retention (processes that will not come
+// back: worker ids are new at every start). Each process also removes its
+// own expired files.
 type Sweeper struct {
 	Days int
 	Now  func() time.Time
-	// LiveIPs returns the folder names with a connected process.
-	LiveIPs func() map[string]bool
 }
 
-// Sweep runs once over dir; homeIPDir is the hub's own folder. It returns
-// the number of day directories (or hub files) removed. Everything goes
-// through an os.Root and refuses links: the share is writable by every
-// machine, and the sweep must not delete anything outside it.
-func (s *Sweeper) Sweep(dir, homeIPDir string) (int, error) {
+// Sweep runs once over dir and returns the number of day folders and
+// process files removed. Everything goes through an os.Root and refuses
+// links: the share is writable by every machine, and the sweep must not
+// delete anything outside it.
+func (s *Sweeper) Sweep(dir string) (int, error) {
 	if s.Days <= 0 || dir == "" {
 		return 0, nil
 	}
@@ -387,48 +386,53 @@ func (s *Sweeper) Sweep(dir, homeIPDir string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	live := map[string]bool{}
-	if s.LiveIPs != nil {
-		live = s.LiveIPs()
-	}
 	removed := 0
 	for _, e := range entries {
 		if !e.IsDir() || !ValidIPDir(e.Name()) || plainDirs(root, e.Name()) != nil {
 			continue
 		}
-		if e.Name() == homeIPDir {
-			removed += removeOldHubFiles(root, e.Name(), cutoff)
-		}
-		if live[e.Name()] || newestWrite(root, e.Name()).After(horizon) {
-			continue
-		}
 		for _, kind := range DayKinds {
 			removed += removeOldDays(root, filepath.Join(e.Name(), kind), cutoff)
 		}
+		removed += removeOldProcesses(root, filepath.Join(e.Name(), "processes"), horizon)
 	}
 	return removed, nil
 }
 
-func removeOldHubFiles(root *os.Root, ip, cutoff string) int {
+// removeOldProcesses removes processes/*.json last seen before horizon
+// (last_seen, else stopped_at, else the file's time).
+func removeOldProcesses(root *os.Root, rel string, horizon time.Time) int {
+	entries, err := readDirIn(root, rel)
+	if err != nil {
+		return 0
+	}
 	n := 0
-	for _, kind := range []string{KindEvents, KindQueues, KindLibrary} {
-		days, err := readDirIn(root, filepath.Join(ip, kind))
+	for _, e := range entries {
+		p := filepath.Join(rel, e.Name())
+		if !strings.HasSuffix(e.Name(), ".json") || !plainFile(root, p) {
+			continue
+		}
+		st, err := root.Lstat(p)
 		if err != nil {
 			continue
 		}
-		for _, d := range days {
-			if !d.IsDir() || !ValidDate(d.Name()) || d.Name() >= cutoff {
-				continue
+		seen := st.ModTime()
+		if b, err := root.ReadFile(p); err == nil && len(b) <= 256<<10 {
+			var f struct {
+				LastSeen  string `json:"last_seen"`
+				StoppedAt string `json:"stopped_at"`
 			}
-			dayDir := filepath.Join(ip, kind, d.Name())
-			if plainDirs(root, dayDir) != nil {
-				continue
+			if json.Unmarshal(b, &f) == nil {
+				for _, v := range []string{f.LastSeen, f.StoppedAt} {
+					if t, err := time.Parse(time.RFC3339Nano, v); err == nil {
+						seen = t
+						break
+					}
+				}
 			}
-			f := filepath.Join(dayDir, hubFile)
-			if st, err := root.Lstat(f); err == nil && st.Mode().IsRegular() && root.Remove(f) == nil {
-				n++
-			}
-			_ = root.Remove(dayDir) // only when empty
+		}
+		if seen.Before(horizon) && root.Remove(p) == nil {
+			n++
 		}
 	}
 	return n
@@ -451,20 +455,4 @@ func removeOldDays(root *os.Root, kindRel, cutoff string) int {
 		}
 	}
 	return n
-}
-
-// newestWrite is the latest modification time of any file under rel
-// (links are not followed).
-func newestWrite(root *os.Root, rel string) time.Time {
-	var newest time.Time
-	_ = fs.WalkDir(root.FS(), filepath.ToSlash(rel), func(_ string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		if info, err := d.Info(); err == nil && info.Mode().IsRegular() && info.ModTime().After(newest) {
-			newest = info.ModTime()
-		}
-		return nil
-	})
-	return newest
 }

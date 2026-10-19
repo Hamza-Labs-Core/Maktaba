@@ -20,28 +20,38 @@ const AgentPath = "/api/cluster/agent"
 
 // Mount wires the hub's routes:
 //
-//	GET  /api/cluster/agent                     public, per-IP limited: processes
+//	GET  /api/cluster/agent                     public (protocol auth), 30 handshakes/min per IP: processes
 //	GET  /api/cluster/ws                        signed-in users: browsers
+//	GET  /api/cluster/processes                 admin: the processes snapshot
 //	GET  /api/cluster/files                     admin
 //	GET  /api/cluster/files/{ip}/{kind}         admin
 //	POST /api/cluster/processes/{session}/cmd   admin
-//	GET  /api/cluster/llm/v1/models             signed-in (admin token or PAT included)
-//	POST /api/cluster/llm/v1/chat/completions   signed-in
-//	POST /api/cluster/llm/v1/embeddings         signed-in
+//	GET  /api/cluster/llm/v1/models             admins (admin token or session) and personal access tokens
+//	POST /api/cluster/llm/v1/chat/completions   same
+//	POST /api/cluster/llm/v1/embeddings         same
 func (h *Hub) Mount(r chi.Router) {
-	agent := http.HandlerFunc(h.ServeAgent)
-	if h.cfg.AgentRatePerMin > 0 {
-		r.Method(http.MethodGet, AgentPath, mw.PerIP(h.cfg.AgentRatePerMin)(agent))
-	} else {
-		r.Method(http.MethodGet, AgentPath, agent)
-	}
+	r.Get(AgentPath, h.ServeAgent)
 	r.Get("/api/cluster/ws", h.ServeBrowser)
+	r.Get("/api/cluster/processes", h.ProcessesHTTP)
 	r.Get("/api/cluster/files", h.Files)
 	r.Get("/api/cluster/files/{ip}/{kind}", h.History)
 	r.With(mw.BodyLimit(64<<10)).Post("/api/cluster/processes/{session}/cmd", h.CmdHTTP)
 	r.Get("/api/cluster/llm/v1/models", h.LLMModels)
 	r.Post("/api/cluster/llm/v1/chat/completions", h.LLMChat)
 	r.Post("/api/cluster/llm/v1/embeddings", h.LLMEmbeddings)
+}
+
+// ProcessesHTTP implements GET /api/cluster/processes.
+func (h *Hub) ProcessesHTTP(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, h.processesSnapshot())
+}
+
+func errUnauthorized() *httperror.Error {
+	return &httperror.Error{Type: "https://maktaba.dev/problems/unauthorized", Title: "unauthorized",
+		Status: http.StatusUnauthorized, Detail: "authentication required"}
 }
 
 func requireAdminP(w http.ResponseWriter, r *http.Request) bool {

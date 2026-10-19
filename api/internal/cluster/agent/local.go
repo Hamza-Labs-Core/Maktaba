@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
 )
 
 // LANAddress is the home's own folder name and the address its own
@@ -71,22 +73,43 @@ func isLocalAddress(ip net.IP) bool {
 	return false
 }
 
-// HomeKeyPath is MAKTABA_CLUSTER_KEY_PATH, else
+// HomeKeyPath is the home agent key's file (design-agent.md §4.3): the
+// given override (MAKTABA_HOME_AGENT_KEY), else
 // ~/.maktaba/cluster/home-agent.key: always local, never on the share.
-func HomeKeyPath(override string) string {
+func HomeKeyPath(override string) string { return localKeyPath(override, "home-agent.key") }
+
+// ClusterKeyPath is the home's long-term cluster key's file (§4.2):
+// MAKTABA_HOME_CLUSTER_KEY, else ~/.maktaba/cluster/home-cluster.key.
+func ClusterKeyPath(override string) string { return localKeyPath(override, "home-cluster.key") }
+
+func localKeyPath(override, name string) string {
 	if override != "" {
 		return override
 	}
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
-		return filepath.Join(".maktaba", "cluster", "home-agent.key")
+		return filepath.Join(".maktaba", "cluster", name)
 	}
-	return filepath.Join(home, ".maktaba", "cluster", "home-agent.key")
+	return filepath.Join(home, ".maktaba", "cluster", name)
 }
 
-// LoadOrCreateHomeKey returns the 32-byte home agent key at path, creating
-// it (32 random bytes, mode 0600, written atomically) when absent or not
-// 32 bytes. It tightens a looser mode to 0600.
+// LoadOrCreateClusterKey returns the cluster key pair (X25519 private and
+// public), creating the private half like the home agent key.
+func LoadOrCreateClusterKey(path string) (priv, pub []byte, err error) {
+	priv, err = LoadOrCreateHomeKey(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	pub, err = cluster.PublicKey(priv)
+	if err != nil {
+		return nil, nil, err
+	}
+	return priv, pub, nil
+}
+
+// LoadOrCreateHomeKey returns the 32-byte key at path, creating it (32
+// random bytes, mode 0600, written atomically) when absent or not 32
+// bytes. It tightens a looser mode to 0600.
 func LoadOrCreateHomeKey(path string) ([]byte, error) {
 	if b, err := os.ReadFile(path); err == nil { //nolint:gosec // the configured key path
 		if len(b) == KeySize {

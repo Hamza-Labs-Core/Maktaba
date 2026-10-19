@@ -68,7 +68,7 @@ func seedFiles(t *testing.T, dir string) {
 
 type recordsResp struct {
 	Records []map[string]any `json:"records"`
-	Before  *string          `json:"before"`
+	Before  *string          `json:"next_before"`
 }
 
 func (f *fixture) records(path string) (int, recordsResp) {
@@ -100,9 +100,9 @@ func TestFilesIndex(t *testing.T) {
 		t.Fatalf("files = %+v", idx.Files)
 	}
 	var node *MachineFiles
-	for i := range idx.IPs {
-		if idx.IPs[i].IP == "192.168.50.31" {
-			node = &idx.IPs[i]
+	for i := range idx.Nodes {
+		if idx.Nodes[i].IP == "192.168.50.31" {
+			node = &idx.Nodes[i]
 		}
 	}
 	if node == nil || len(node.Processes) != 2 {
@@ -253,7 +253,7 @@ func TestHistoryRejectsBadInput(t *testing.T) {
 	}
 	var idx FilesIndex
 	decode(t, f.do("GET", "/api/cluster/files", "", "admin"), &idx)
-	for _, m := range idx.IPs {
+	for _, m := range idx.Nodes {
 		if m.IP == "10.9.9.9" {
 			t.Fatal("symlinked folder listed")
 		}

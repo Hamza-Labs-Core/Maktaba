@@ -57,6 +57,8 @@ func llmErrStatus(code string) (int, string) {
 		return http.StatusServiceUnavailable, "every machine with this model stayed busy past the queue timeout"
 	case LLMMachineGone:
 		return http.StatusBadGateway, "the machine running the request disconnected"
+	case LLMRuntimeError:
+		return http.StatusBadGateway, "the model runtime failed"
 	case LLMTimeout:
 		return http.StatusGatewayTimeout, "the machine running the request stopped answering"
 	case LLMBadRequest:
@@ -65,9 +67,16 @@ func llmErrStatus(code string) (int, string) {
 	return http.StatusBadGateway, "the model failed: " + code
 }
 
+// requireUser: admins (admin token, admin session or admin JWT) and
+// personal access tokens; an ordinary signed-in session gets 403.
 func requireUser(w http.ResponseWriter, r *http.Request) bool {
-	if principal.FromContext(r.Context()) == nil {
+	p := principal.FromContext(r.Context())
+	switch {
+	case p == nil:
 		writeOpenAIError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return false
+	case !p.IsAdmin && p.Source != principal.SourcePAT:
+		writeOpenAIError(w, http.StatusForbidden, "forbidden", "an admin or a personal access token is required")
 		return false
 	}
 	return true
@@ -128,9 +137,9 @@ func (k *httpSink) Chunk(data json.RawMessage) {
 	k.poke()
 }
 
-func (k *httpSink) Done(_ json.RawMessage, errCode string) {
+func (k *httpSink) Done(_ json.RawMessage, e LLMError) {
 	k.mu.Lock()
-	k.done, k.errCode = true, errCode
+	k.done, k.errCode = true, e.Code
 	k.mu.Unlock()
 	k.poke()
 }

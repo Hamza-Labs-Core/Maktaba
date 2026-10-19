@@ -21,22 +21,36 @@ type vectorFrame struct {
 }
 
 type vectors struct {
-	NodePrivate   string        `json:"node_private"`
-	NodePublic    string        `json:"node_public"`
-	ServerPrivate string        `json:"server_private"`
-	ServerPublic  string        `json:"server_public"`
-	ClientNonce   string        `json:"client_nonce"`
-	ServerNonce   string        `json:"server_nonce"`
-	Shared        string        `json:"shared"`
-	KC2S          string        `json:"k_c2s"`
-	KS2C          string        `json:"k_s2c"`
-	Proof         string        `json:"proof"`
-	Frames        []vectorFrame `json:"frames"`
-	Home          struct {
-		HomeKey string `json:"home_key"`
-		KC2S    string `json:"k_c2s"`
-		KS2C    string `json:"k_s2c"`
-		Proof   string `json:"proof"`
+	NodeStaticPrivate string        `json:"node_static_private"`
+	NodeStaticPublic  string        `json:"node_static_public"`
+	ClientEphPrivate  string        `json:"client_eph_private"`
+	ClientEphPublic   string        `json:"client_eph_public"`
+	ServerEphPrivate  string        `json:"server_eph_private"`
+	ServerEphPublic   string        `json:"server_eph_public"`
+	HomeStaticPrivate string        `json:"home_static_private"`
+	HomeStaticPublic  string        `json:"home_static_public"`
+	ClientNonce       string        `json:"client_nonce"`
+	ServerNonce       string        `json:"server_nonce"`
+	Hello             string        `json:"hello"`
+	Challenge         string        `json:"challenge"`
+	TranscriptHash    string        `json:"transcript_hash"`
+	DHEE              string        `json:"dh_ee"`
+	DHSE              string        `json:"dh_se"`
+	DHES              string        `json:"dh_es"`
+	KC2S              string        `json:"k_c2s"`
+	KS2C              string        `json:"k_s2c"`
+	ClientProof       string        `json:"client_proof"`
+	ServerProof       string        `json:"server_proof"`
+	Frames            []vectorFrame `json:"frames"`
+	Home              struct {
+		HomeKey        string `json:"home_key"`
+		Hello          string `json:"hello"`
+		Challenge      string `json:"challenge"`
+		TranscriptHash string `json:"transcript_hash"`
+		KC2S           string `json:"k_c2s"`
+		KS2C           string `json:"k_s2c"`
+		ClientProof    string `json:"client_proof"`
+		ServerProof    string `json:"server_proof"`
 	} `json:"home"`
 }
 
@@ -64,34 +78,58 @@ func b64(t *testing.T, s string) []byte {
 	return b
 }
 
+func pubOf(t *testing.T, priv string) []byte {
+	t.Helper()
+	p, err := cluster.PublicKey(b64(t, priv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
 func TestVectorsNode(t *testing.T) {
 	v := loadVectors(t)
-	nodePub, err := cluster.PublicKey(b64(t, v.NodePrivate))
-	if err != nil || !bytes.Equal(nodePub, b64(t, v.NodePublic)) {
-		t.Fatalf("node public: %v", err)
+	for priv, pub := range map[string]string{
+		v.NodeStaticPrivate: v.NodeStaticPublic, v.ClientEphPrivate: v.ClientEphPublic,
+		v.ServerEphPrivate: v.ServerEphPublic, v.HomeStaticPrivate: v.HomeStaticPublic,
+	} {
+		if !bytes.Equal(pubOf(t, priv), b64(t, pub)) {
+			t.Fatalf("public key of %s", priv)
+		}
 	}
-	serverPub, _ := cluster.PublicKey(b64(t, v.ServerPrivate))
-	if !bytes.Equal(serverPub, b64(t, v.ServerPublic)) {
-		t.Fatal("server public mismatch")
+	// the hub's side, from its own private halves
+	ee, err1 := DH(b64(t, v.ServerEphPrivate), b64(t, v.ClientEphPublic))
+	se, err2 := DH(b64(t, v.ServerEphPrivate), b64(t, v.NodeStaticPublic))
+	es, err3 := DH(b64(t, v.HomeStaticPrivate), b64(t, v.ClientEphPublic))
+	if err := errors.Join(err1, err2, err3); err != nil {
+		t.Fatal(err)
 	}
-	// both sides reach the same secret
-	s1, _ := cluster.SharedSecret(b64(t, v.NodePrivate), serverPub)
-	s2, _ := cluster.SharedSecret(b64(t, v.ServerPrivate), nodePub)
-	if !bytes.Equal(s1, s2) || !bytes.Equal(s1, b64(t, v.Shared)) {
-		t.Fatal("shared mismatch")
+	if !bytes.Equal(ee, b64(t, v.DHEE)) || !bytes.Equal(se, b64(t, v.DHSE)) || !bytes.Equal(es, b64(t, v.DHES)) {
+		t.Fatal("dh mismatch")
 	}
-	c2s, s2c, err := DeriveKeys(s1, b64(t, v.ClientNonce), b64(t, v.ServerNonce))
+	// the machine's side reaches the same values
+	ee2, _ := DH(b64(t, v.ClientEphPrivate), b64(t, v.ServerEphPublic))
+	se2, _ := DH(b64(t, v.NodeStaticPrivate), b64(t, v.ServerEphPublic))
+	es2, _ := DH(b64(t, v.ClientEphPrivate), b64(t, v.HomeStaticPublic))
+	if !bytes.Equal(ee, ee2) || !bytes.Equal(se, se2) || !bytes.Equal(es, es2) {
+		t.Fatal("the two sides disagree")
+	}
+	th := Transcript([]byte(v.Hello), []byte(v.Challenge))
+	if !bytes.Equal(th, b64(t, v.TranscriptHash)) {
+		t.Fatal("transcript mismatch")
+	}
+	c2s, s2c, err := DeriveKeys(NodeIKM(ee, se, es), b64(t, v.ClientNonce), b64(t, v.ServerNonce))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(c2s, b64(t, v.KC2S)) || !bytes.Equal(s2c, b64(t, v.KS2C)) {
 		t.Fatal("keys mismatch")
 	}
-	if !bytes.Equal(Proof(c2s, b64(t, v.ServerNonce)), b64(t, v.Proof)) {
+	if !bytes.Equal(ClientProof(c2s, th), b64(t, v.ClientProof)) || !bytes.Equal(ServerProof(s2c, th), b64(t, v.ServerProof)) {
 		t.Fatal("proof mismatch")
 	}
-	if !CheckProof(c2s, b64(t, v.ServerNonce), b64(t, v.Proof)) || CheckProof(s2c, b64(t, v.ServerNonce), b64(t, v.Proof)) {
-		t.Fatal("CheckProof")
+	if !CheckClientProof(c2s, th, b64(t, v.ClientProof)) || CheckClientProof(s2c, th, b64(t, v.ClientProof)) {
+		t.Fatal("CheckClientProof")
 	}
 
 	// seal / open every frame at its counter, both ways
@@ -115,19 +153,43 @@ func TestVectorsNode(t *testing.T) {
 			t.Fatalf("frame %d: open: %v", i, err)
 		}
 	}
+	// the welcome carries the server proof
+	var w map[string]any
+	_ = json.Unmarshal([]byte(v.Frames[0].Plaintext), &w)
+	if w["t"] != "welcome" || w["proof"] != v.ServerProof {
+		t.Fatalf("welcome = %v", w)
+	}
 }
 
 func TestVectorsHome(t *testing.T) {
 	v := loadVectors(t)
-	c2s, s2c, err := DeriveKeys(b64(t, v.Home.HomeKey), b64(t, v.ClientNonce), b64(t, v.ServerNonce))
+	ee, err := DH(b64(t, v.ServerEphPrivate), b64(t, v.ClientEphPublic))
+	if err != nil {
+		t.Fatal(err)
+	}
+	th := Transcript([]byte(v.Home.Hello), []byte(v.Home.Challenge))
+	if !bytes.Equal(th, b64(t, v.Home.TranscriptHash)) {
+		t.Fatal("home transcript mismatch")
+	}
+	c2s, s2c, err := DeriveKeys(HomeIKM(b64(t, v.Home.HomeKey), ee), b64(t, v.ClientNonce), b64(t, v.ServerNonce))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(c2s, b64(t, v.Home.KC2S)) || !bytes.Equal(s2c, b64(t, v.Home.KS2C)) {
 		t.Fatal("home keys mismatch")
 	}
-	if !bytes.Equal(Proof(c2s, b64(t, v.ServerNonce)), b64(t, v.Home.Proof)) {
+	if !bytes.Equal(ClientProof(c2s, th), b64(t, v.Home.ClientProof)) || !bytes.Equal(ServerProof(s2c, th), b64(t, v.Home.ServerProof)) {
 		t.Fatal("home proof mismatch")
+	}
+}
+
+func TestDHRefusesLowOrder(t *testing.T) {
+	priv := bytes.Repeat([]byte{9}, 32)
+	if _, err := DH(priv, make([]byte, 32)); !errors.Is(err, ErrLowOrder) {
+		t.Fatalf("zero point accepted: %v", err)
+	}
+	if _, err := DH(priv, []byte{1}); err == nil {
+		t.Fatal("short key accepted")
 	}
 }
 
@@ -170,7 +232,7 @@ func TestCipherRejectsReplayGapAndTamper(t *testing.T) {
 	})
 	t.Run("bad inputs", func(t *testing.T) {
 		if _, _, err := DeriveKeys([]byte{1}, make([]byte, 16), make([]byte, 16)); err == nil {
-			t.Fatal("short shared accepted")
+			t.Fatal("short ikm accepted")
 		}
 		if _, _, err := DeriveKeys(key, make([]byte, 15), make([]byte, 16)); err == nil {
 			t.Fatal("short nonce accepted")

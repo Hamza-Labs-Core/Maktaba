@@ -25,7 +25,9 @@ const (
 	DefaultQueueTimeout    = 300 * time.Second
 	DefaultMaxParallel     = 1
 	DefaultIdleTimeout     = 10 * time.Minute
-	DefaultAgentRatePerMin = 60
+	DefaultAgentRatePerMin = 30
+	DefaultCacheHours      = 24
+	goneKeep               = 5 * time.Minute
 
 	recentJobs    = 200
 	sessionLogs   = 500
@@ -59,6 +61,14 @@ type Config struct {
 	Store NodeStore
 	// HomeKey authenticates the home's own processes; nil refuses them.
 	HomeKey []byte
+	// ClusterKey is the private half of the home's long-term cluster key
+	// (design-agent.md §4.2); nil refuses machines.
+	ClusterKey []byte
+	// Cache is the database cache of the channel (track C1); nil: none.
+	Cache Cache
+	// CacheWindow is MAKTABA_CLUSTER_CACHE_HOURS, for the cache's
+	// Options.Window.
+	CacheWindow time.Duration
 	// LogLevel is MAKTABA_CLUSTER_LOG_LEVEL (sent in welcome).
 	LogLevel     string
 	MetricsEvery int
@@ -80,8 +90,8 @@ type Config struct {
 	LLMMaxParallel  int
 	LLMIdleTimeout  time.Duration
 
-	// AgentRatePerMin caps connection attempts per IP on
-	// /api/cluster/agent (negative: no limit).
+	// AgentRatePerMin caps handshakes per IP on /api/cluster/agent
+	// (default 30; negative: no limit); past it the close is 4013.
 	AgentRatePerMin int
 	// BrowserOrigins are extra Origin patterns allowed on /api/cluster/ws
 	// (the API's own origin is always allowed).
@@ -97,12 +107,14 @@ type Hub struct {
 	files   *FileWriter
 	router  *Router
 	sweeper *Sweeper
+	limiter *ipLimiter
 	homeIP  string
 
 	mu        sync.RWMutex
 	sessions  map[string]*Session
 	revokedAt map[string]time.Time
 	browsers  map[*browser]struct{}
+	gone      []Process // left in the last 5 minutes
 	loc       Location
 	jobs      []json.RawMessage // recent job messages (data of type "job")
 	queues    json.RawMessage
@@ -148,8 +160,9 @@ func New(cfg Config) *Hub {
 		queuesDirty:  make(chan struct{}, 1),
 		workersDirty: make(chan struct{}, 1),
 	}
+	h.limiter = newIPLimiter(cfg.AgentRatePerMin)
 	h.files = NewFileWriter(8192, cfg.FileMaxBytes, cfg.Now, cfg.Logger)
-	h.sweeper = &Sweeper{Days: cfg.RetentionDays, Now: cfg.Now, LiveIPs: h.liveIPDirs}
+	h.sweeper = &Sweeper{Days: cfg.RetentionDays, Now: cfg.Now}
 	h.router = NewRouter(RouterConfig{
 		QueueTimeout:   cfg.LLMQueueTimeout,
 		MaxParallel:    cfg.LLMMaxParallel,
@@ -189,8 +202,19 @@ func (h *Hub) Run(ctx context.Context) {
 		wg.Add(1)
 		go func() { defer wg.Done(); f(ctx) }()
 	}
-	h.Locate(ctx)
+	loc := h.Locate(ctx)
 	start(h.files.Run)
+	if h.cfg.Cache != nil {
+		start(h.cfg.Cache.Run)
+		start(func(ctx context.Context) {
+			if loc.Dir == "" {
+				return
+			}
+			if err := h.cfg.Cache.Backfill(ctx, loc.Dir); err != nil && ctx.Err() == nil {
+				h.log().Warn("cluster: cache backfill failed", "err", err, "event", "cluster_cache_backfill_failed")
+			}
+		})
+	}
 	start(h.locateLoop)
 	start(h.queuesLoop)
 	start(h.workersLoop)
@@ -216,7 +240,7 @@ func (h *Hub) Run(ctx context.Context) {
 	}
 	h.mu.RUnlock()
 	for _, s := range ss {
-		s.closeWith(statusGoingAway, "home shutting down")
+		s.closeWith(CloseGoingAway, "")
 	}
 	wg.Wait()
 }
@@ -267,7 +291,7 @@ func (h *Hub) locateLoop(ctx context.Context) {
 func (h *Hub) sweepLoop(ctx context.Context) {
 	sweep := func() {
 		loc := h.Location()
-		if n, err := h.sweeper.Sweep(loc.Dir, IPDir(h.homeIP)); err != nil {
+		if n, err := h.sweeper.Sweep(loc.Dir); err != nil {
 			h.log().Warn("cluster: retention sweep failed", "err", err, "event", "cluster_sweep_failed")
 		} else if n > 0 {
 			h.log().Info("cluster: expired cluster files removed", "count", n, "event", "cluster_sweep")
@@ -286,16 +310,6 @@ func (h *Hub) sweepLoop(ctx context.Context) {
 	}
 }
 
-func (h *Hub) liveIPDirs() map[string]bool {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	out := map[string]bool{}
-	for _, s := range h.sessions {
-		out[IPDir(s.IP)] = true
-	}
-	return out
-}
-
 // event appends one line to the hub's events file.
 func (h *Hub) event(fields map[string]any) {
 	fields["ts"] = h.now().Format(time.RFC3339Nano)
@@ -311,7 +325,8 @@ func newID() string {
 }
 
 // register adds an authenticated session unless its node was revoked
-// after authAt (the handshake's registry read).
+// after authAt (the handshake's registry read). An older session with the
+// same worker id is replaced (4009).
 func (h *Hub) register(s *Session, authAt time.Time) bool {
 	h.mu.Lock()
 	if s.NodeID != "" {
@@ -320,9 +335,18 @@ func (h *Hub) register(s *Session, authAt time.Time) bool {
 			return false
 		}
 	}
+	var replaced []*Session
+	for _, o := range h.sessions {
+		if o.WorkerID == s.WorkerID && o.Kind == s.Kind && o.NodeID == s.NodeID {
+			replaced = append(replaced, o)
+		}
+	}
 	h.sessions[s.ID] = s
 	h.mu.Unlock()
-	h.event(map[string]any{"event": "connected", "session": s.ID, "kind": s.Kind, "node_id": nullable(s.NodeID),
+	for _, o := range replaced {
+		o.closeWith(CloseReplaced, "")
+	}
+	h.event(map[string]any{"event": "connect", "session": s.ID, "kind": s.Kind, "node_id": nullable(s.NodeID),
 		"ip": s.IP, "host": s.Host, "worker_id": s.WorkerID, "pid": s.PID})
 	h.publish(TopicProcesses, "process", processEvent{Event: "connected", Session: &s.ID, Process: ptr(s.view())})
 	h.markWorkersDirty()
@@ -330,23 +354,47 @@ func (h *Hub) register(s *Session, authAt time.Time) bool {
 }
 
 func (h *Hub) unregister(s *Session, reason string) {
+	now := h.now()
 	h.mu.Lock()
 	if h.sessions[s.ID] != s {
 		h.mu.Unlock()
 		return
 	}
 	delete(h.sessions, s.ID)
+	p := s.view()
+	p.GoneAt = &now
+	kept := h.gone[:0]
+	for _, g := range h.gone {
+		if g.GoneAt != nil && now.Sub(*g.GoneAt) < goneKeep {
+			kept = append(kept, g)
+		}
+	}
+	h.gone = append(kept, p)
 	h.mu.Unlock()
 	h.router.HostGone(s.ID)
-	h.event(map[string]any{"event": "disconnected", "session": s.ID, "kind": s.Kind, "node_id": nullable(s.NodeID),
-		"ip": s.IP, "worker_id": s.WorkerID, "reason": reason})
-	h.publish(TopicProcesses, "process", processEvent{Event: "disconnected", Session: &s.ID, Process: ptr(s.view()), Reason: &reason})
+	h.event(map[string]any{"event": "disconnect", "session": s.ID, "kind": s.Kind, "node_id": nullable(s.NodeID),
+		"ip": s.IP, "worker_id": s.WorkerID, "detail": reason})
+	h.publish(TopicProcesses, "process", processEvent{Event: "disconnected", Session: &s.ID, Process: &p, Reason: &reason})
 	h.markWorkersDirty()
 }
 
+// Gone lists the processes that left in the last 5 minutes.
+func (h *Hub) Gone() []Process {
+	now := h.now()
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	out := []Process{}
+	for _, g := range h.gone {
+		if g.GoneAt != nil && now.Sub(*g.GoneAt) < goneKeep {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
 func (h *Hub) refused(p Process, reason string) {
-	h.event(map[string]any{"event": "refused", "kind": p.Kind, "node_id": p.NodeID, "ip": p.IP, "host": p.Host,
-		"worker_id": p.WorkerID, "pid": p.PID, "reason": reason})
+	h.event(map[string]any{"event": "auth_refused", "kind": p.Kind, "node_id": p.NodeID, "ip": p.IP, "host": p.Host,
+		"worker_id": p.WorkerID, "pid": p.PID, "detail": reason})
 	h.publish(TopicProcesses, "process", processEvent{Event: "refused", Process: &p, Reason: &reason})
 }
 
@@ -396,11 +444,16 @@ func (h *Hub) RevokeNode(nodeID string) {
 	h.mu.Lock()
 	h.revokedAt[nodeID] = h.now()
 	h.mu.Unlock()
-	for _, s := range h.nodeSessions(nodeID) {
+	sessions := h.nodeSessions(nodeID)
+	for _, s := range sessions {
 		frame := map[string]any{"t": "cmd", "id": newID(), "name": "disconnect", "args": map[string]any{"reason": "revoked"}}
-		s.sendThenClose(frame, statusPolicyViolation, "revoked")
+		s.sendThenClose(frame, CloseRevoked, "")
 	}
-	h.event(map[string]any{"event": "revoked", "node_id": nodeID})
+	h.event(map[string]any{"event": "revoked", "node_id": nodeID, "sessions": len(sessions)})
+	for _, s := range sessions {
+		id := s.ID
+		h.publish(TopicProcesses, "process", processEvent{Event: "revoked", Session: &id, Process: ptr(s.view())})
+	}
 }
 
 // NodeChanged tells the node's processes to re-read their stage switches
@@ -508,56 +561,86 @@ func (h *Hub) queuesLoop(ctx context.Context) {
 	}
 }
 
-// QueueLine is one line of queues/<date>/hub.jsonl.
+// QueueLine is one line of queues/<date>/hub.jsonl: the queue snapshot in
+// the Processing page's own shape (trimmed to its numbers) under
+// `snapshot`, which the web app's charts read, and the flat per-stage rows
+// of design-agent.md §7.6, which the CLI reads.
 type QueueLine struct {
-	TS          time.Time                 `json:"ts"`
-	PausedAll   bool                      `json:"paused_all"`
-	Stages      map[string]QueueStageLine `json:"stages"`
-	Pools       map[string]QueuePoolLine  `json:"pools"`
-	Flows       []queues.Flow             `json:"flows"`
-	IssuesCount int                       `json:"issues_count"`
+	TS       time.Time         `json:"ts"`
+	Snapshot QueueSnapshotLite `json:"snapshot"`
+	Stages   []QueueStageLine  `json:"stages"`
+	Pools    []QueuePoolLine   `json:"pools"`
+	Flows    []queues.Flow     `json:"flows"`
 }
 
-// QueueStageLine is one stage in a QueueLine.
+// QueueSnapshotLite is a queues.Snapshot without the stage registry, the
+// running jobs or the health strip.
+type QueueSnapshotLite struct {
+	At          time.Time        `json:"at"`
+	PausedAll   bool             `json:"paused_all"`
+	Queues      []QueueLiteStage `json:"queues"`
+	Pools       []QueuePoolLite  `json:"pools"`
+	Flows       []queues.Flow    `json:"flows"`
+	IssuesCount int              `json:"issues_count"`
+}
+
+// QueueLiteStage is one queue in QueueSnapshotLite (the QueueSummary
+// field names).
+type QueueLiteStage struct {
+	Stage            string                `json:"stage"`
+	Counts           queues.Counts         `json:"counts"`
+	RatePerMin       float64               `json:"rate_per_min"`
+	EtaSec           *float64              `json:"eta_sec"`
+	OldestWaitingSec *float64              `json:"oldest_waiting_sec"`
+	WaitingReason    *queues.WaitingReason `json:"waiting_reason"`
+}
+
+// QueuePoolLite is one pool in QueueSnapshotLite.
+type QueuePoolLite struct {
+	Pool          string `json:"pool"`
+	Busy          int    `json:"busy"`
+	EffectiveSize int    `json:"effective_size"`
+}
+
+// QueueStageLine is one stage row of design-agent.md §7.6.
 type QueueStageLine struct {
-	Waiting          int      `json:"waiting"`
-	Ready            int      `json:"ready"`
-	Running          int      `json:"running"`
-	Paused           int      `json:"paused"`
-	Failed           int      `json:"failed"`
-	Done24h          int      `json:"done_24h"`
-	DonePerMin       float64  `json:"done_per_min"`
-	OldestWaitingSec *float64 `json:"oldest_waiting_sec"`
-	EtaSec           *float64 `json:"eta_sec"`
-	WaitingReason    *string  `json:"waiting_reason"`
+	Stage       string   `json:"stage"`
+	Waiting     int      `json:"waiting"`
+	Ready       int      `json:"ready"`
+	Running     int      `json:"running"`
+	Paused      int      `json:"paused"`
+	Failed      int      `json:"failed"`
+	DonePerMin  float64  `json:"done_per_min"`
+	OldestWaitS *float64 `json:"oldest_wait_s"`
 }
 
-// QueuePoolLine is one pool in a QueueLine.
+// QueuePoolLine is one pool row of design-agent.md §7.6.
 type QueuePoolLine struct {
-	Busy int `json:"busy"`
-	Size int `json:"size"`
+	Pool string `json:"pool"`
+	Busy int    `json:"busy"`
+	Size int    `json:"size"`
 }
 
 func compactQueues(s queues.Snapshot) QueueLine {
-	out := QueueLine{TS: s.At, PausedAll: s.PausedAll, Stages: map[string]QueueStageLine{},
-		Pools: map[string]QueuePoolLine{}, Flows: s.Flows, IssuesCount: s.IssuesCount}
-	if out.Flows == nil {
-		out.Flows = []queues.Flow{}
+	flows := s.Flows
+	if flows == nil {
+		flows = []queues.Flow{}
 	}
+	lite := QueueSnapshotLite{At: s.At, PausedAll: s.PausedAll, Queues: []QueueLiteStage{}, Pools: []QueuePoolLite{},
+		Flows: flows, IssuesCount: s.IssuesCount}
+	out := QueueLine{TS: s.At, Stages: []QueueStageLine{}, Pools: []QueuePoolLine{}, Flows: flows}
 	for _, q := range s.Queues {
-		var reason *string
-		if q.WaitingReason != nil {
-			reason = strPtr(string(*q.WaitingReason))
-		}
-		out.Stages[q.Stage] = QueueStageLine{
-			Waiting: q.Counts.Pending, Ready: q.Counts.Ready, Running: q.Counts.Running, Paused: q.Counts.Paused,
-			Failed: q.Counts.FailedOpen, Done24h: q.Counts.Done24h, DonePerMin: q.RatePerMin,
-			OldestWaitingSec: q.OldestWaitingSec, EtaSec: q.EtaSec, WaitingReason: reason,
-		}
+		lite.Queues = append(lite.Queues, QueueLiteStage{Stage: q.Stage, Counts: q.Counts, RatePerMin: q.RatePerMin,
+			EtaSec: q.EtaSec, OldestWaitingSec: q.OldestWaitingSec, WaitingReason: q.WaitingReason})
+		out.Stages = append(out.Stages, QueueStageLine{Stage: q.Stage, Waiting: q.Counts.Pending, Ready: q.Counts.Ready,
+			Running: q.Counts.Running, Paused: q.Counts.Paused, Failed: q.Counts.FailedOpen, DonePerMin: q.RatePerMin,
+			OldestWaitS: q.OldestWaitingSec})
 	}
 	for _, p := range s.Pools {
-		out.Pools[p.Pool] = QueuePoolLine{Busy: p.Busy, Size: p.EffectiveSize}
+		lite.Pools = append(lite.Pools, QueuePoolLite{Pool: p.Pool, Busy: p.Busy, EffectiveSize: p.EffectiveSize})
+		out.Pools = append(out.Pools, QueuePoolLine{Pool: p.Pool, Busy: p.Busy, Size: p.EffectiveSize})
 	}
+	out.Snapshot = lite
 	return out
 }
 
@@ -580,7 +663,7 @@ func (h *Hub) workersLoop(ctx context.Context) {
 			}
 			return
 		}
-		data, err := json.Marshal(map[string]any{"workers": ws})
+		data, err := json.Marshal(map[string]any{"workers": h.withSessions(ws)})
 		if err != nil {
 			return
 		}
@@ -640,6 +723,34 @@ func (h *Hub) libraryLoop(ctx context.Context) {
 			build()
 		}
 	}
+}
+
+// withSessions adds each worker's live session (null when it has none)
+// to the GET /api/workers shape.
+func (h *Hub) withSessions(ws []queues.Worker) []map[string]any {
+	h.mu.RLock()
+	byWorker := map[string]string{}
+	for _, s := range h.sessions {
+		byWorker[s.WorkerID] = s.ID
+	}
+	h.mu.RUnlock()
+	out := make([]map[string]any, 0, len(ws))
+	for _, w := range ws {
+		b, err := json.Marshal(w)
+		if err != nil {
+			continue
+		}
+		var m map[string]any
+		if json.Unmarshal(b, &m) != nil {
+			continue
+		}
+		m["session"] = nil
+		if id, ok := byWorker[w.ID]; ok {
+			m["session"] = id
+		}
+		out = append(out, m)
+	}
+	return out
 }
 
 // ---------- helpers ----------

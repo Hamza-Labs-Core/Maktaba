@@ -20,7 +20,7 @@ func TestBrowserNeedsSignIn(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	_, resp, err := websocket.Dial(ctx, f.wsURL("/api/cluster/ws"), nil)
-	if err == nil || resp == nil || resp.StatusCode != http.StatusForbidden {
+	if err == nil || resp == nil || resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("anonymous browser: %v %v", err, resp)
 	}
 }
@@ -247,10 +247,27 @@ func TestQueuesWorkersLibraryTopics(t *testing.T) {
 		return countLines(t, f.dir+"/"+testHomeIP+"/queues/"+day+"/hub.jsonl") > 0
 	})
 	line := readLines(t, f.dir+"/"+testHomeIP+"/queues/"+day+"/hub.jsonl")[0]
-	var ql QueueLine
-	if err := json.Unmarshal([]byte(line), &ql); err != nil || ql.Stages["transcribe"].Ready != 2 ||
-		ql.Stages["transcribe"].WaitingReason == nil || *ql.Stages["transcribe"].WaitingReason != "pool_full" ||
-		ql.Pools["gpu"].Size != 2 {
+	// the web app's charts read snapshot.queues[].counts.pending and
+	// rate_per_min; the CLI reads the flat rows
+	var ql struct {
+		TS       string `json:"ts"`
+		Snapshot struct {
+			Queues []struct {
+				Stage         string        `json:"stage"`
+				Counts        queues.Counts `json:"counts"`
+				RatePerMin    float64       `json:"rate_per_min"`
+				WaitingReason string        `json:"waiting_reason"`
+			} `json:"queues"`
+			Pools []QueuePoolLite `json:"pools"`
+		} `json:"snapshot"`
+		Stages []QueueStageLine `json:"stages"`
+		Pools  []QueuePoolLine  `json:"pools"`
+	}
+	if err := json.Unmarshal([]byte(line), &ql); err != nil || ql.TS == "" || len(ql.Snapshot.Queues) != 1 ||
+		ql.Snapshot.Queues[0].Counts.Ready != 2 || ql.Snapshot.Queues[0].RatePerMin != 1.5 ||
+		ql.Snapshot.Queues[0].WaitingReason != "pool_full" || ql.Snapshot.Pools[0].EffectiveSize != 2 ||
+		len(ql.Stages) != 1 || ql.Stages[0].Stage != "transcribe" || ql.Stages[0].Ready != 2 ||
+		ql.Pools[0].Pool != "gpu" || ql.Pools[0].Size != 2 {
 		t.Fatalf("queue line = %s", line)
 	}
 	if countLines(t, f.dir+"/"+testHomeIP+"/library/"+day+"/hub.jsonl") != 1 {
@@ -269,6 +286,19 @@ func TestSendQueueDropsOldest(t *testing.T) {
 	}
 	if got, dropped := q.take(); len(got) != 0 || dropped != 0 {
 		t.Fatal("not emptied")
+	}
+
+	// the latest queues snapshot replaces a waiting one and is never the
+	// one dropped; metrics and logs go first
+	q = newSendQueue(3)
+	q.pushKind("queues", []byte("Q1"))
+	q.push([]byte("m1"))
+	q.pushKind("queues", []byte("Q2"))
+	q.push([]byte("m2"))
+	q.push([]byte("m3"))
+	got, dropped = q.take()
+	if dropped != 1 || len(got) != 3 || string(got[0]) != "Q2" || string(got[1]) != "m2" || string(got[2]) != "m3" {
+		t.Fatalf("got %q dropped %d", got, dropped)
 	}
 }
 
@@ -299,7 +329,12 @@ func TestSlowBrowserGetsDroppedCount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != `{"type":"dropped","data":{"count":88}}` {
+	var first struct {
+		Type string         `json:"type"`
+		At   time.Time      `json:"at"`
+		Data map[string]int `json:"data"`
+	}
+	if json.Unmarshal(data, &first) != nil || first.Type != "dropped" || first.Data["count"] != 88 || first.At.IsZero() {
 		t.Fatalf("first = %s", data)
 	}
 	_, data, _ = c.Read(ctx)

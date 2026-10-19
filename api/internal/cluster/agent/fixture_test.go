@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -44,14 +45,15 @@ func (c *clock) Set(t time.Time) {
 }
 
 type fixture struct {
-	t       *testing.T
-	hub     *Hub
-	store   *cluster.MemoryStore
-	srv     *httptest.Server
-	dir     string
-	homeKey []byte
-	cancel  context.CancelFunc
-	done    chan struct{}
+	t          *testing.T
+	hub        *Hub
+	store      *cluster.MemoryStore
+	srv        *httptest.Server
+	dir        string
+	homeKey    []byte
+	clusterPub []byte
+	cancel     context.CancelFunc
+	done       chan struct{}
 }
 
 type fixtureOpt func(*Config)
@@ -62,9 +64,15 @@ func newFixture(t *testing.T, opts ...fixtureOpt) *fixture {
 	t.Helper()
 	f := &fixture{t: t, store: cluster.NewMemoryStore(), dir: t.TempDir(), homeKey: make([]byte, 32), done: make(chan struct{})}
 	_, _ = rand.Read(f.homeKey)
+	clusterPriv, clusterPub, err := cluster.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.clusterPub = clusterPub
 	cfg := Config{
 		Store:           f.store,
 		HomeKey:         f.homeKey,
+		ClusterKey:      clusterPriv,
 		HomeAddr:        testHomeIP,
 		Locator:         &Locator{Override: f.dir},
 		AgentRatePerMin: -1,
@@ -83,6 +91,9 @@ func newFixture(t *testing.T, opts ...fixtureOpt) *fixture {
 				req = req.WithContext(principal.WithPrincipal(req.Context(), &principal.Principal{UserID: "u1", IsAdmin: true}))
 			case "viewer":
 				req = req.WithContext(principal.WithPrincipal(req.Context(), &principal.Principal{UserID: "u2"}))
+			case "pat":
+				req = req.WithContext(principal.WithPrincipal(req.Context(),
+					&principal.Principal{UserID: "u3", Source: principal.SourcePAT}))
 			}
 			next.ServeHTTP(w, req)
 		})
@@ -151,10 +162,16 @@ type testAgent struct {
 type helloOpts struct {
 	kind, nodeID, workerID string
 	nodePriv, homeKey      []byte
-	badProof               bool
+	// clusterPub is the home key the machine expects (default: the
+	// fixture's); a wrong one makes the welcome undecryptable
+	clusterPub []byte
+	badProof   bool
+	version    int
+	ip         string
 }
 
-// dialAgent runs the handshake; on refusal it returns the close error.
+// dialAgent runs the v2 handshake as a process does (and checks the hub's
+// proof); on refusal it returns the close error.
 func (f *fixture) dialAgent(o helloOpts) (*testAgent, error) {
 	f.t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -163,50 +180,72 @@ func (f *fixture) dialAgent(o helloOpts) (*testAgent, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.SetReadLimit(maxAgentFrame)
+	c.SetReadLimit(maxWSMessage)
 	clientNonce := make([]byte, NonceSize)
 	_, _ = rand.Read(clientNonce)
+	ephPriv, ephPub, err := cluster.GenerateKey()
+	if err != nil {
+		return nil, err
+	}
 	if o.workerID == "" {
 		o.workerID = "w-" + newID()
 	}
-	hello := map[string]any{"t": "hello", "v": 1, "kind": o.kind, "worker_id": o.workerID, "pid": 4242,
-		"host": "test-host", "nonce": base64.StdEncoding.EncodeToString(clientNonce)}
+	if o.version == 0 {
+		o.version = ProtocolVersion
+	}
+	hello := map[string]any{"t": "hello", "v": o.version, "kind": o.kind, "worker_id": o.workerID, "pid": 4242,
+		"host": "test-host", "eph": base64.StdEncoding.EncodeToString(ephPub),
+		"nonce": base64.StdEncoding.EncodeToString(clientNonce)}
 	if o.nodeID != "" {
 		hello["node_id"] = o.nodeID
 	}
-	if err := writeText(ctx, c, hello); err != nil {
+	if o.ip != "" {
+		hello["ip"] = o.ip
+	}
+	helloBytes, err := writeText(ctx, c, hello)
+	if err != nil {
 		return nil, err
 	}
 	var ch struct {
 		T         string `json:"t"`
-		ServerPub string `json:"server_pub"`
+		ServerEph string `json:"server_eph"`
 		Nonce     string `json:"nonce"`
 	}
-	if err := readText(ctx, c, &ch); err != nil {
-		return nil, err
-	}
-	serverNonce, _ := base64.StdEncoding.DecodeString(ch.Nonce)
-	var shared []byte
-	if o.kind == "node" {
-		sp, err := base64.StdEncoding.DecodeString(ch.ServerPub)
-		if err != nil {
-			return nil, err
-		}
-		if shared, err = cluster.SharedSecret(o.nodePriv, sp); err != nil {
-			return nil, err
-		}
-	} else {
-		shared = o.homeKey
-	}
-	kc2s, ks2c, err := DeriveKeys(shared, clientNonce, serverNonce)
+	challengeBytes, err := readText(ctx, c, &ch)
 	if err != nil {
 		return nil, err
 	}
-	proof := Proof(kc2s, serverNonce)
+	serverNonce, _ := base64.StdEncoding.DecodeString(ch.Nonce)
+	serverEph, _ := base64.StdEncoding.DecodeString(ch.ServerEph)
+	th := Transcript(helloBytes, challengeBytes)
+	ee, err := DH(ephPriv, serverEph)
+	if err != nil {
+		return nil, err
+	}
+	var ikm []byte
+	if o.kind == "node" {
+		home := o.clusterPub
+		if home == nil {
+			home = f.clusterPub
+		}
+		se, err1 := DH(o.nodePriv, serverEph)
+		es, err2 := DH(ephPriv, home)
+		if err1 != nil || err2 != nil {
+			return nil, errors.Join(err1, err2)
+		}
+		ikm = NodeIKM(ee, se, es)
+	} else {
+		ikm = HomeIKM(o.homeKey, ee)
+	}
+	kc2s, ks2c, err := DeriveKeys(ikm, clientNonce, serverNonce)
+	if err != nil {
+		return nil, err
+	}
+	proof := ClientProof(kc2s, th)
 	if o.badProof {
 		proof[0] ^= 1
 	}
-	if err := writeText(ctx, c, map[string]any{"t": "auth", "proof": base64.StdEncoding.EncodeToString(proof)}); err != nil {
+	if _, err := writeText(ctx, c, map[string]any{"t": "auth", "proof": base64.StdEncoding.EncodeToString(proof)}); err != nil {
 		return nil, err
 	}
 	a := &testAgent{t: f.t, c: c}
@@ -214,10 +253,12 @@ func (f *fixture) dialAgent(o helloOpts) (*testAgent, error) {
 	a.s2c, _ = NewCipher(ks2c)
 	w, err := a.recvCtx(ctx)
 	if err != nil {
+		_ = c.CloseNow()
 		return nil, err
 	}
-	if w["t"] != "welcome" {
-		return nil, errors.New("no welcome")
+	if w["t"] != "welcome" || w["proof"] != base64.StdEncoding.EncodeToString(ServerProof(ks2c, th)) {
+		_ = c.CloseNow()
+		return nil, errors.New("not the home I joined")
 	}
 	a.Welcome = w
 	a.Session, _ = w["session"].(string)
@@ -310,15 +351,14 @@ func (a *testAgent) closed() (websocket.StatusCode, string) {
 	}
 }
 
-func closeReason(err error) string {
+// closeOf is the close code and reason of a refused or closed
+// connection (-1 when it was not a close).
+func closeOf(err error) (websocket.StatusCode, string) {
 	var ce websocket.CloseError
 	if errors.As(err, &ce) {
-		return ce.Reason
+		return ce.Code, ce.Reason
 	}
-	if err == nil {
-		return ""
-	}
-	return err.Error()
+	return -1, fmt.Sprint(err)
 }
 
 // testBrowser is a browser on /api/cluster/ws; a goroutine reads its

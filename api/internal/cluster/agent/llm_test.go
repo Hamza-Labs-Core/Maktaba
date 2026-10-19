@@ -2,8 +2,10 @@ package agent
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"io"
+	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -52,11 +54,11 @@ func (s *recSink) Chunk(d json.RawMessage) {
 	s.mu.Unlock()
 }
 
-func (s *recSink) Done(u json.RawMessage, errCode string) {
+func (s *recSink) Done(u json.RawMessage, e LLMError) {
 	s.mu.Lock()
 	s.usage = u
 	s.mu.Unlock()
-	s.done <- errCode
+	s.done <- e.Code
 }
 
 func (s *recSink) wait(t *testing.T) string {
@@ -168,7 +170,7 @@ func TestRouterQueueFIFOAndDone(t *testing.T) {
 	// output flows to the requester; a stranger's chunk is ignored
 	rt.Chunk("a", r1.ID(), json.RawMessage(`{"x":1}`))
 	rt.Chunk("intruder", r1.ID(), json.RawMessage(`{"x":2}`))
-	rt.Done("a", r1.ID(), json.RawMessage(`{"prompt_tokens":3,"completion_tokens":5,"ms":40}`), "")
+	rt.Done("a", r1.ID(), json.RawMessage(`{"prompt_tokens":3,"completion_tokens":5,"ms":40}`), LLMError{})
 	if e := s1.wait(t); e != "" || len(s1.chunks) != 1 || !strings.Contains(string(s1.usage), "completion_tokens") {
 		t.Fatalf("r1: %q %v", e, s1.chunks)
 	}
@@ -177,7 +179,7 @@ func TestRouterQueueFIFOAndDone(t *testing.T) {
 	if len(reqs) != 2 || reqs[1]["id"] != r2.ID() || !s3.pending() {
 		t.Fatalf("after done: %v", reqs)
 	}
-	rt.Done("a", r2.ID(), nil, "runtime_error")
+	rt.Done("a", r2.ID(), nil, LLMError{Code: "runtime_error", Detail: "oom"})
 	if e := s2.wait(t); e != "runtime_error" {
 		t.Fatalf("r2 = %q", e)
 	}
@@ -306,7 +308,7 @@ func TestOpenAIDoorStreaming(t *testing.T) {
 	announce(runner, model("llama3", true))
 	waitFor(t, "model known", func() bool { return len(f.hub.Router().Models()) == 1 })
 
-	resp := f.do("GET", "/api/cluster/llm/v1/models", "", "viewer")
+	resp := f.do("GET", "/api/cluster/llm/v1/models", "", "pat")
 	var models struct {
 		Object string `json:"object"`
 		Data   []struct {
@@ -328,7 +330,7 @@ func TestOpenAIDoorStreaming(t *testing.T) {
 		got <- fakeRunner(t, runner, chunks, map[string]any{"prompt_tokens": 3, "completion_tokens": 2, "ms": 9}, "")
 	}()
 	resp = f.do("POST", "/api/cluster/llm/v1/chat/completions",
-		`{"model":"llama3","stream":true,"messages":[{"role":"user","content":"hi"}]}`, "viewer")
+		`{"model":"llama3","stream":true,"messages":[{"role":"user","content":"hi"}]}`, "pat")
 	if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
 		t.Fatalf("status %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
 	}
@@ -425,9 +427,18 @@ func TestOpenAIDoorNonStreamingAndErrors(t *testing.T) {
 			t.Fatalf("%s %s: %d %+v", c.path, c.body, resp.StatusCode, e)
 		}
 	}
-	// no principal
+	// no principal; an ordinary signed-in user
 	if r := f.do("GET", "/api/cluster/llm/v1/models", "", ""); r.StatusCode != 401 {
 		t.Fatalf("anonymous: %d", r.StatusCode)
+	}
+	for _, p := range []string{"/api/cluster/llm/v1/models", "/api/cluster/llm/v1/chat/completions", "/api/cluster/llm/v1/embeddings"} {
+		method := "POST"
+		if strings.HasSuffix(p, "models") {
+			method = "GET"
+		}
+		if r := f.do(method, p, `{"model":"llama3"}`, "viewer"); r.StatusCode != 403 {
+			t.Fatalf("viewer %s: %d", p, r.StatusCode)
+		}
 	}
 }
 
@@ -476,7 +487,54 @@ func TestProcessToProcessLLM(t *testing.T) {
 	// nobody has it
 	asker.send(map[string]any{"t": "llm.request", "id": "mine-2", "model": "ghost", "op": "chat", "body": map[string]any{}})
 	done = asker.recvType("llm.done")
-	if done["id"] != "mine-2" || done["error"] != LLMNoModel {
+	if e, _ := done["error"].(map[string]any); done["id"] != "mine-2" || e["code"] != LLMNoModel {
 		t.Fatalf("no model = %v", done)
+	}
+}
+
+func TestLLMCancel(t *testing.T) {
+	f := newFixture(t)
+	runner, _ := f.node("runner")
+	asker, _ := f.node("asker")
+	announce(runner, model("m", true))
+	waitFor(t, "model", func() bool { return len(f.hub.Router().Models()) == 1 })
+
+	// the requester cancels: the runner is told, still ends with llm.done
+	asker.send(map[string]any{"t": "llm.request", "id": "q1", "model": "m", "op": "chat", "body": map[string]any{}, "stream": true})
+	req := runner.recvType("llm.request")
+	asker.send(map[string]any{"t": "llm.cancel", "id": "q1"})
+	if c := runner.recvType("llm.cancel"); c["id"] != req["id"] {
+		t.Fatalf("cancel = %v", c)
+	}
+	runner.send(map[string]any{"t": "llm.chunk", "id": req["id"], "data": map[string]any{"late": true}})
+	runner.send(map[string]any{"t": "llm.done", "id": req["id"], "error": map[string]any{"code": "cancelled"}})
+	done := asker.recvType("llm.done")
+	if e, _ := done["error"].(map[string]any); e["code"] != LLMCancelled {
+		t.Fatalf("done = %v", done)
+	}
+
+	// the requester leaves: the runner is told to stop
+	asker.send(map[string]any{"t": "llm.request", "id": "q2", "model": "m", "op": "chat", "body": map[string]any{}})
+	req = runner.recvType("llm.request")
+	_ = asker.c.CloseNow()
+	if c := runner.recvType("llm.cancel"); c["id"] != req["id"] {
+		t.Fatalf("cancel on leave = %v", c)
+	}
+	runner.send(map[string]any{"t": "llm.done", "id": req["id"], "error": map[string]any{"code": "cancelled"}})
+
+	// an HTTP client that goes away: same
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		r, _ := http.NewRequestWithContext(ctx, "POST", f.srv.URL+"/api/cluster/llm/v1/chat/completions",
+			strings.NewReader(`{"model":"m","stream":true}`))
+		r.Header.Set("X-Test-User", "admin")
+		if resp, err := http.DefaultClient.Do(r); err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+	req = runner.recvType("llm.request")
+	cancel()
+	if c := runner.recvType("llm.cancel"); c["id"] != req["id"] {
+		t.Fatalf("cancel on HTTP leave = %v", c)
 	}
 }

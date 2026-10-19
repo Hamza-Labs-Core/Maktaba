@@ -20,28 +20,51 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
 )
 
+// Close codes of design-agent.md §4.6.
 const (
-	statusGoingAway       = websocket.StatusGoingAway
-	statusPolicyViolation = websocket.StatusPolicyViolation
-	statusTryAgainLater   = websocket.StatusTryAgainLater
-	statusNormal          = websocket.StatusNormalClosure
+	CloseNormal             = websocket.StatusNormalClosure // 1000
+	CloseGoingAway          = websocket.StatusGoingAway     // 1001
+	CloseSlow               = websocket.StatusTryAgainLater // 1013: the process cannot keep up
+	CloseProtocolError      = websocket.StatusCode(4000)
+	CloseUnsupportedVersion = websocket.StatusCode(4001)
+	CloseNotMember          = websocket.StatusCode(4003)
+	CloseAuthFailed         = websocket.StatusCode(4004)
+	CloseTimeout            = websocket.StatusCode(4008)
+	CloseReplaced           = websocket.StatusCode(4009)
+	CloseRevoked            = websocket.StatusCode(4010)
+	CloseSealError          = websocket.StatusCode(4011)
+	CloseTooLarge           = websocket.StatusCode(4012)
+	CloseRateLimited        = websocket.StatusCode(4013)
+	CloseDisconnect         = websocket.StatusCode(4014)
 
-	maxAgentFrame = 16 << 20
+	// MaxFrame is the largest sealed frame (§4.7); the transport limit is
+	// above it so an oversized frame gets 4012 rather than a bare 1009.
+	MaxFrame      = 4 << 20
+	maxWSMessage  = 8 << 20
 	maxTextFrame  = 8 << 10
+	maxLogRecords = 1000
 )
 
-// Refusal reasons (the close reason of a refused handshake).
-const (
-	RefuseBadHello     = "bad_hello"
-	RefuseVersion      = "unsupported_version"
-	RefuseUnknownNode  = "unknown_node"
-	RefuseNotApproved  = "not_approved"
-	RefuseRevoked      = "revoked"
-	RefuseNoHomeKey    = "home_key_unavailable"
-	RefuseBadProof     = "bad_proof"
-	RefuseTimeout      = "handshake_timeout"
-	RefuseStoreFailure = "registry_unavailable"
-)
+// closeNames are the close reasons' names.
+var closeNames = map[websocket.StatusCode]string{
+	CloseNormal: "normal", CloseGoingAway: "going_away", CloseSlow: "slow_consumer",
+	CloseProtocolError: "protocol_error", CloseUnsupportedVersion: "unsupported_version",
+	CloseNotMember: "not_member", CloseAuthFailed: "auth_failed", CloseTimeout: "timeout",
+	CloseReplaced: "replaced", CloseRevoked: "revoked", CloseSealError: "seal_error",
+	CloseTooLarge: "too_large", CloseRateLimited: "rate_limited", CloseDisconnect: "disconnect",
+}
+
+// closeReason is "<name>[ <detail>]", at most 123 bytes.
+func closeReason(code websocket.StatusCode, detail string) string {
+	r := closeNames[code]
+	if detail != "" {
+		r += " " + detail
+	}
+	if len(r) > 123 {
+		r = r[:123]
+	}
+	return r
+}
 
 // Process is a connected process as browsers see it.
 type Process struct {
@@ -53,7 +76,10 @@ type Process struct {
 	Host        string          `json:"host"`
 	WorkerID    string          `json:"worker_id"`
 	PID         int             `json:"pid"`
+	OS          *string         `json:"os"`
+	Version     *string         `json:"version"`
 	ConnectedAt time.Time       `json:"connected_at"`
+	GoneAt      *time.Time      `json:"gone_at,omitempty"`
 	LogLevel    string          `json:"log_level"`
 	Metrics     json.RawMessage `json:"metrics"`
 	LLM         *ProcessLLM     `json:"llm"`
@@ -81,6 +107,8 @@ type Session struct {
 	Host        string
 	WorkerID    string
 	PID         int
+	OS          string
+	Version     string
 	ConnectedAt time.Time
 
 	hub    *Hub
@@ -112,7 +140,8 @@ func (s *Session) view() Process {
 	defer s.mu.Unlock()
 	p := Process{
 		Session: s.ID, Kind: s.Kind, NodeID: nullable(s.NodeID), NodeName: s.NodeName, IP: s.IP, Host: s.Host,
-		WorkerID: s.WorkerID, PID: s.PID, ConnectedAt: s.ConnectedAt, LogLevel: s.logLevel, Metrics: s.metrics,
+		WorkerID: s.WorkerID, PID: s.PID, OS: nullable(s.OS), Version: nullable(s.Version),
+		ConnectedAt: s.ConnectedAt, LogLevel: s.logLevel, Metrics: s.metrics,
 	}
 	if s.runtimes != nil {
 		p.LLM = &ProcessLLM{Runtimes: s.runtimes}
@@ -135,34 +164,34 @@ func (s *Session) send(v any) bool {
 	case s.out <- outFrame{payload: b}:
 		return true
 	default:
-		s.closeWith(statusTryAgainLater, "slow_consumer")
+		s.closeWith(CloseSlow, "")
 		return false
 	}
 }
 
 // sendThenClose queues a frame and a close behind it (the writer sends
 // the frame first); when the queue is full it closes at once.
-func (s *Session) sendThenClose(v any, code websocket.StatusCode, reason string) {
+func (s *Session) sendThenClose(v any, code websocket.StatusCode, detail string) {
 	b, err := json.Marshal(v)
 	if err == nil {
 		select {
 		case s.out <- outFrame{payload: b}:
 			select {
-			case s.out <- outFrame{close: true, closeCode: code, closeReason: reason}:
+			case s.out <- outFrame{close: true, closeCode: code, closeReason: closeReason(code, detail)}:
 				// let the writer flush, but never wait forever
-				time.AfterFunc(5*time.Second, func() { s.closeWith(code, reason) })
+				time.AfterFunc(5*time.Second, func() { s.closeWith(code, detail) })
 				return
 			default:
 			}
 		default:
 		}
 	}
-	s.closeWith(code, reason)
+	s.closeWith(code, detail)
 }
 
-func (s *Session) closeWith(code websocket.StatusCode, reason string) {
+func (s *Session) closeWith(code websocket.StatusCode, detail string) {
 	s.closeOnce.Do(func() {
-		s.closeCode, s.closeReason = code, reason
+		s.closeCode, s.closeReason = code, closeReason(code, detail)
 		s.cancel()
 	})
 }
@@ -177,7 +206,11 @@ type helloFrame struct {
 	WorkerID string `json:"worker_id"`
 	PID      int    `json:"pid"`
 	Host     string `json:"host"`
+	Eph      string `json:"eph"`
 	Nonce    string `json:"nonce"`
+	IP       string `json:"ip"`
+	OS       string `json:"os"`
+	Version  string `json:"version"`
 }
 
 type authFrame struct {
@@ -185,16 +218,21 @@ type authFrame struct {
 	Proof string `json:"proof"`
 }
 
-type refusal struct{ reason string }
+// refusal ends a handshake with a close code.
+type refusal struct {
+	code   websocket.StatusCode
+	detail string
+}
 
-func (r refusal) Error() string { return r.reason }
+func (r refusal) Error() string { return closeReason(r.code, r.detail) }
 
 // ServeAgent implements GET /api/cluster/agent: the handshake of
-// design-agent.md §2, then sealed frames until either side leaves.
+// design-agent.md §4.2/§4.3, then sealed frames until either side leaves.
 func (h *Hub) ServeAgent(w http.ResponseWriter, r *http.Request) {
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		// authentication is in the protocol (key possession), not ambient
-		// credentials, so a cross-origin page gains nothing
+		// credentials, so a cross-origin page gains nothing (this skips the
+		// Origin check only; it has nothing to do with TLS)
 		InsecureSkipVerify: true,
 		CompressionMode:    websocket.CompressionDisabled,
 	})
@@ -203,28 +241,32 @@ func (h *Hub) ServeAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	c.SetReadLimit(maxTextFrame)
 	remote := remoteIP(r)
+	if !h.limiter.allow(remote, h.now()) {
+		h.refused(Process{IP: remote}, closeReason(CloseRateLimited, ""))
+		_ = c.Close(CloseRateLimited, closeReason(CloseRateLimited, ""))
+		return
+	}
 	// a cancelled read would drop the connection without a close frame, so
-	// the time limit closes it (with its reason) instead
+	// the time limit closes it (with its code) instead
 	var timedOut atomic.Bool
 	timer := time.AfterFunc(HandshakeTime, func() {
 		timedOut.Store(true)
-		_ = c.Close(statusPolicyViolation, RefuseTimeout)
+		_ = c.Close(CloseTimeout, closeReason(CloseTimeout, "handshake"))
 	})
 	s, c2s, s2c, err := h.handshake(r.Context(), c, remote)
 	if !timer.Stop() || timedOut.Load() {
 		if err == nil {
-			s.closeWith(statusPolicyViolation, RefuseTimeout)
-			h.unregister(s, RefuseTimeout)
+			s.closeWith(CloseTimeout, "handshake")
+			h.unregister(s, closeReason(CloseTimeout, "handshake"))
 		}
 		return
 	}
 	if err != nil {
-		reason := RefuseBadHello
-		var rf refusal
-		if errors.As(err, &rf) {
-			reason = rf.reason
+		rf := refusal{code: CloseProtocolError}
+		if !errors.As(err, &rf) {
+			rf = refusal{code: CloseProtocolError, detail: "handshake"}
 		}
-		_ = c.Close(statusPolicyViolation, reason)
+		_ = c.Close(rf.code, rf.Error())
 		return
 	}
 	h.runSession(r.Context(), c, s, c2s, s2c)
@@ -238,120 +280,155 @@ func remoteIP(r *http.Request) string {
 	return strings.Trim(host, "[]")
 }
 
-func readText(ctx context.Context, c *websocket.Conn, v any) error {
+// readText reads one text frame; it returns the exact bytes.
+func readText(ctx context.Context, c *websocket.Conn, v any) ([]byte, error) {
 	typ, data, err := c.Read(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if typ != websocket.MessageText {
-		return refusal{RefuseBadHello}
+		return nil, refusal{code: CloseProtocolError, detail: "text frame expected"}
 	}
 	if err := json.Unmarshal(data, v); err != nil {
-		return refusal{RefuseBadHello}
+		return nil, refusal{code: CloseProtocolError, detail: "malformed JSON"}
 	}
-	return nil
+	return data, nil
 }
 
-func writeText(ctx context.Context, c *websocket.Conn, v any) error {
+// writeText writes v as one text frame and returns the exact bytes.
+func writeText(ctx context.Context, c *websocket.Conn, v any) ([]byte, error) {
 	b, err := json.Marshal(v)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return c.Write(ctx, websocket.MessageText, b)
+	return b, c.Write(ctx, websocket.MessageText, b)
 }
 
-// handshake authenticates the process and returns its registered session
-// with the two directions' ciphers.
+// folderIP is the address a process is filed under: the address it
+// reports in hello (informational, but authenticated by the handshake),
+// else the connection's remote address; a home process on the loopback is
+// the home's own address.
+func (h *Hub) folderIP(kind, reported, remote string) string {
+	if reported != "" && len(reported) <= 64 && (net.ParseIP(reported) != nil || ValidIPDir(reported)) {
+		return reported
+	}
+	if kind == "home" {
+		if ip := net.ParseIP(remote); ip == nil || isLocalAddress(ip) {
+			return h.homeIP
+		}
+	}
+	return remote
+}
+
+// handshake authenticates the process (both ways) and returns its
+// registered session with the two directions' ciphers.
 func (h *Hub) handshake(ctx context.Context, c *websocket.Conn, remote string) (*Session, *Cipher, *Cipher, error) {
 	var hello helloFrame
-	if err := readText(ctx, c, &hello); err != nil {
+	helloBytes, err := readText(ctx, c, &hello)
+	if err != nil {
 		return nil, nil, nil, err
 	}
-	ident := Process{Kind: hello.Kind, IP: remote, Host: clip(hello.Host, 255), WorkerID: clip(hello.WorkerID, 128), PID: hello.PID}
-	refuse := func(reason string) (*Session, *Cipher, *Cipher, error) {
-		h.refused(ident, reason)
-		return nil, nil, nil, refusal{reason}
+	ident := Process{Kind: hello.Kind, IP: remote, Host: clip(hello.Host, 255), WorkerID: clip(hello.WorkerID, 128),
+		PID: hello.PID}
+	refuse := func(code websocket.StatusCode, detail string) (*Session, *Cipher, *Cipher, error) {
+		rf := refusal{code: code, detail: detail}
+		h.refused(ident, rf.Error())
+		return nil, nil, nil, rf
 	}
-	clientNonce, err := base64.StdEncoding.DecodeString(hello.Nonce)
-	switch {
-	case hello.T != "hello" || err != nil || len(clientNonce) != NonceSize ||
-		(hello.Kind != "node" && hello.Kind != "home"):
-		return refuse(RefuseBadHello)
-	case hello.V != ProtocolVersion:
-		return refuse(RefuseVersion)
+	if hello.T != "hello" {
+		return refuse(CloseProtocolError, "hello expected")
+	}
+	if hello.V != ProtocolVersion {
+		return refuse(CloseUnsupportedVersion, "2")
+	}
+	clientNonce, err1 := base64.StdEncoding.DecodeString(hello.Nonce)
+	clientEph, err2 := base64.StdEncoding.DecodeString(hello.Eph)
+	if err1 != nil || err2 != nil || len(clientNonce) != NonceSize || len(clientEph) != KeySize ||
+		(hello.Kind != "node" && hello.Kind != "home") || ident.WorkerID == "" {
+		return refuse(CloseProtocolError, "bad hello")
 	}
 
-	serverNonce := make([]byte, NonceSize)
-	if _, err := io.ReadFull(rand.Reader, serverNonce); err != nil {
-		return nil, nil, nil, err
-	}
 	authAt := h.now()
-	s := &Session{Kind: hello.Kind, IP: remote, Host: ident.Host, WorkerID: ident.WorkerID, PID: hello.PID}
-	var shared []byte
-	challenge := map[string]any{"t": "challenge", "nonce": base64.StdEncoding.EncodeToString(serverNonce)}
+	s := &Session{Kind: hello.Kind, Host: ident.Host, WorkerID: ident.WorkerID, PID: hello.PID,
+		OS: clip(hello.OS, 64), Version: clip(hello.Version, 64)}
+	s.IP = h.folderIP(hello.Kind, hello.IP, remote)
+	ident.IP = s.IP
+	var nodePub []byte
 	if hello.Kind == "node" {
 		u, err := uuid.Parse(hello.NodeID)
 		if err != nil {
-			return refuse(RefuseBadHello)
+			return refuse(CloseProtocolError, "bad node_id")
 		}
 		s.NodeID = u.String()
 		ident.NodeID = &s.NodeID
 		n, err := h.cfg.Store.Node(ctx, s.NodeID)
 		switch {
 		case errors.Is(err, cluster.ErrNotFound):
-			return refuse(RefuseUnknownNode)
+			return refuse(CloseNotMember, "")
 		case err != nil:
 			h.log().Warn("cluster: agent handshake could not read the registry", "err", err, "event", "cluster_agent_store_failed")
-			return refuse(RefuseStoreFailure)
-		case n.State == cluster.StateRevoked:
-			return refuse(RefuseRevoked)
+			return refuse(CloseGoingAway, "registry unavailable")
 		case n.State != cluster.StateApproved:
-			return refuse(RefuseNotApproved)
+			// unknown, pending, rejected and revoked look the same
+			return refuse(CloseNotMember, "")
 		}
 		name := n.Name
 		s.NodeName, ident.NodeName = &name, &name
-		nodePub, err := cluster.DecodeKey(n.NodePubkey)
-		if err != nil {
-			return refuse(RefuseNotApproved)
+		if nodePub, err = cluster.DecodeKey(n.NodePubkey); err != nil {
+			return refuse(CloseNotMember, "")
 		}
-		serverPriv, serverPub, err := cluster.GenerateKey()
-		if err != nil {
-			return nil, nil, nil, err
+		if len(h.cfg.ClusterKey) != KeySize {
+			return refuse(CloseAuthFailed, "the home has no cluster key")
 		}
-		shared, err = cluster.SharedSecret(serverPriv, nodePub)
-		if err != nil || allZero(shared) {
-			return refuse(RefuseNotApproved)
-		}
-		challenge["server_pub"] = base64.StdEncoding.EncodeToString(serverPub)
-	} else {
-		if len(h.cfg.HomeKey) != KeySize {
-			return refuse(RefuseNoHomeKey)
-		}
-		shared = h.cfg.HomeKey
-		// the home's own processes are filed under the home's address
-		if ip := net.ParseIP(remote); ip == nil || isLocalAddress(ip) {
-			s.IP = h.homeIP
-			ident.IP = h.homeIP
-		}
+	} else if len(h.cfg.HomeKey) != KeySize {
+		return refuse(CloseAuthFailed, "the home agent key is unavailable")
 	}
-	if err := writeText(ctx, c, challenge); err != nil {
+
+	serverEphPriv, serverEphPub, err := cluster.GenerateKey()
+	if err != nil {
 		return nil, nil, nil, err
 	}
-	kc2s, ks2c, err := DeriveKeys(shared, clientNonce, serverNonce)
+	serverNonce := make([]byte, NonceSize)
+	if _, err := io.ReadFull(rand.Reader, serverNonce); err != nil {
+		return nil, nil, nil, err
+	}
+	challengeBytes, err := writeText(ctx, c, map[string]any{"t": "challenge",
+		"server_eph": base64.StdEncoding.EncodeToString(serverEphPub),
+		"nonce":      base64.StdEncoding.EncodeToString(serverNonce)})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	th := Transcript(helloBytes, challengeBytes)
+	dhEE, err := DH(serverEphPriv, clientEph)
+	if err != nil {
+		return refuse(CloseAuthFailed, "low-order key")
+	}
+	var ikm []byte
+	if hello.Kind == "node" {
+		dhSE, err1 := DH(serverEphPriv, nodePub)
+		dhES, err2 := DH(h.cfg.ClusterKey, clientEph)
+		if err1 != nil || err2 != nil {
+			return refuse(CloseAuthFailed, "low-order key")
+		}
+		ikm = NodeIKM(dhEE, dhSE, dhES)
+	} else {
+		ikm = HomeIKM(h.cfg.HomeKey, dhEE)
+	}
+	kc2s, ks2c, err := DeriveKeys(ikm, clientNonce, serverNonce)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	var auth authFrame
-	if err := readText(ctx, c, &auth); err != nil {
+	if _, err := readText(ctx, c, &auth); err != nil {
 		var rf refusal
 		if errors.As(err, &rf) {
-			return refuse(rf.reason)
+			return refuse(rf.code, rf.detail)
 		}
 		return nil, nil, nil, err
 	}
 	proof, err := base64.StdEncoding.DecodeString(auth.Proof)
-	if auth.T != "auth" || err != nil || !CheckProof(kc2s, serverNonce, proof) {
-		return refuse(RefuseBadProof)
+	if auth.T != "auth" || err != nil || !CheckClientProof(kc2s, th, proof) {
+		return refuse(CloseAuthFailed, "")
 	}
 	c2s, err := NewCipher(kc2s)
 	if err != nil {
@@ -370,7 +447,8 @@ func (h *Hub) handshake(ctx context.Context, c *websocket.Conn, remote string) (
 	s.cmds = map[string]chan CmdResult{}
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 	welcome := map[string]any{"t": "welcome", "session": s.ID,
-		"settings": map[string]any{"log_level": h.cfg.LogLevel, "metrics_every": h.cfg.MetricsEvery}}
+		"proof":    base64.StdEncoding.EncodeToString(ServerProof(ks2c, th)),
+		"settings": h.settings()}
 	b, _ := json.Marshal(welcome)
 	sealed, err := s2c.Seal(b)
 	if err != nil {
@@ -378,7 +456,7 @@ func (h *Hub) handshake(ctx context.Context, c *websocket.Conn, remote string) (
 	}
 	if !h.register(s, authAt) {
 		s.cancel()
-		return refuse(RefuseRevoked)
+		return refuse(CloseNotMember, "")
 	}
 	if err := c.Write(ctx, websocket.MessageBinary, sealed); err != nil {
 		s.cancel()
@@ -388,12 +466,15 @@ func (h *Hub) handshake(ctx context.Context, c *websocket.Conn, remote string) (
 	return s, c2s, s2c, nil
 }
 
-func allZero(b []byte) bool {
-	var acc byte
-	for _, x := range b {
-		acc |= x
+// settings is welcome.settings (§5.1).
+func (h *Hub) settings() map[string]any {
+	loc := h.Location()
+	var shareRoot any
+	if loc.ShareRoot != "" {
+		shareRoot = loc.ShareRoot
 	}
-	return acc == 0
+	return map[string]any{"log_level": h.cfg.LogLevel, "metrics_every": h.cfg.MetricsEvery, "share_root": shareRoot,
+		"retention_days": h.cfg.RetentionDays, "file_mb": h.cfg.FileMaxBytes >> 20}
 }
 
 func clip(s string, n int) string {
@@ -406,8 +487,8 @@ func clip(s string, n int) string {
 
 // runSession pumps frames until the connection ends.
 func (h *Hub) runSession(reqCtx context.Context, c *websocket.Conn, s *Session, c2s, s2c *Cipher) {
-	c.SetReadLimit(maxAgentFrame)
-	stop := context.AfterFunc(reqCtx, func() { s.closeWith(statusGoingAway, "request ended") })
+	c.SetReadLimit(maxWSMessage)
+	stop := context.AfterFunc(reqCtx, func() { s.closeWith(CloseGoingAway, "") })
 	defer stop()
 
 	// the reader's context is not the session's: cancelling a read closes
@@ -419,7 +500,7 @@ func (h *Hub) runSession(reqCtx context.Context, c *websocket.Conn, s *Session, 
 	go func() { readDone <- h.readLoop(readCtx, s, c, c2s, lastRecv) }()
 
 	reason := h.writeLoop(s, c, s2c, lastRecv, readDone)
-	s.closeWith(statusNormal, reason)
+	s.closeWith(CloseNormal, "")
 	h.unregister(s, reason)
 	s.failPendingCmds()
 }
@@ -455,14 +536,10 @@ func (h *Hub) writeLoop(s *Session, c *websocket.Conn, s2c *Cipher, lastRecv <-c
 			_ = c.CloseNow()
 			return reason
 		case <-s.ctx.Done():
-			code, reason := s.closeCode, s.closeReason
-			if code == 0 {
-				code, reason = statusNormal, "closed"
-			}
-			return closeConn(code, reason)
+			return closeConn(s.closeCode, s.closeReason)
 		case f := <-s.out:
 			if f.close {
-				s.closeWith(f.closeCode, f.closeReason)
+				s.closeWith(f.closeCode, strings.TrimPrefix(strings.TrimPrefix(f.closeReason, closeNames[f.closeCode]), " "))
 				return closeConn(f.closeCode, f.closeReason)
 			}
 			if err := write(f.payload); err != nil {
@@ -478,9 +555,11 @@ func (h *Hub) writeLoop(s *Session, c *websocket.Conn, s2c *Cipher, lastRecv <-c
 			}
 			silence.Reset(SilenceLimit)
 		case <-silence.C:
-			return closeConn(statusPolicyViolation, "timeout")
+			s.closeWith(CloseTimeout, "silence")
+			return closeConn(s.closeCode, s.closeReason)
 		case <-ping.C:
-			if err := write([]byte(`{"t":"ping"}`)); err != nil {
+			b, _ := json.Marshal(map[string]any{"t": "ping", "ts": h.now().Format(time.RFC3339Nano)})
+			if err := write(b); err != nil {
 				_ = c.CloseNow()
 				return "write failed"
 			}
@@ -500,158 +579,40 @@ func (h *Hub) readLoop(ctx context.Context, s *Session, c *websocket.Conn, c2s *
 			if s.ctx.Err() != nil {
 				return "closed"
 			}
-			if websocket.CloseStatus(err) != -1 {
-				return "agent closed"
+			if st := websocket.CloseStatus(err); st != -1 {
+				return "agent closed: " + closeNames[st]
 			}
 			if errors.Is(err, io.EOF) {
 				return "agent closed"
 			}
+			if strings.Contains(err.Error(), "read limited") {
+				s.closeWith(CloseTooLarge, "")
+				return "too large"
+			}
 			return "read failed"
 		}
 		if typ != websocket.MessageBinary {
-			s.closeWith(statusPolicyViolation, "unsealed frame")
-			return "unsealed frame"
+			s.closeWith(CloseProtocolError, "text after welcome")
+			return "text after welcome"
+		}
+		if len(data) > MaxFrame+16 {
+			s.closeWith(CloseTooLarge, "")
+			return "too large"
 		}
 		pt, err := c2s.Open(data)
 		if err != nil {
-			s.closeWith(statusPolicyViolation, "bad frame")
-			return "bad frame"
+			s.closeWith(CloseSealError, "")
+			return "seal error"
 		}
 		select {
 		case lastRecv <- struct{}{}:
 		default:
 		}
 		var head frameHead
-		if err := json.Unmarshal(pt, &head); err != nil {
-			s.closeWith(statusPolicyViolation, "bad frame")
-			return "bad frame"
+		if err := json.Unmarshal(pt, &head); err != nil || head.T == "" {
+			s.closeWith(CloseProtocolError, "malformed frame")
+			return "malformed frame"
 		}
 		h.dispatch(s, head.T, pt)
 	}
-}
-
-// dispatch handles one opened frame (design-agent.md §3). Unknown types
-// are ignored (a newer agent may send more).
-func (h *Hub) dispatch(s *Session, t string, raw []byte) {
-	switch t {
-	case "ping":
-		s.send(map[string]any{"t": "pong"})
-	case "pong":
-	case "metrics":
-		m := stripT(raw)
-		s.mu.Lock()
-		s.metrics = m
-		s.mu.Unlock()
-		h.onMetrics(s, m)
-	case "logs":
-		var f struct {
-			Records []json.RawMessage `json:"records"`
-		}
-		if json.Unmarshal(raw, &f) == nil {
-			h.onLogs(s, f.Records)
-		}
-	case "job":
-		h.onJob(s, stripT(raw))
-	case "dropped":
-		h.event(map[string]any{"event": "agent_dropped", "session": s.ID, "ip": s.IP, "worker_id": s.WorkerID,
-			"counts": stripT(raw)})
-	case "llm.models":
-		var f struct {
-			Runtimes json.RawMessage `json:"runtimes"`
-		}
-		if json.Unmarshal(raw, &f) != nil {
-			return
-		}
-		if len(f.Runtimes) == 0 || string(f.Runtimes) == "null" {
-			f.Runtimes = json.RawMessage("[]")
-		}
-		s.mu.Lock()
-		s.runtimes = f.Runtimes
-		s.mu.Unlock()
-		h.router.UpdateHost(s.ID, s.IP, s.ConnectedAt, f.Runtimes)
-		h.publish(TopicProcesses, "process", processEvent{Event: "updated", Session: &s.ID, Process: ptr(s.view())})
-	case "llm.request":
-		var f LLMRequestFrame
-		if json.Unmarshal(raw, &f) != nil {
-			return
-		}
-		h.router.Submit(&LLMRequest{
-			ClientID: f.ID, Model: f.Model, Op: f.Op, Body: f.Body, Stream: f.Stream,
-			FromSession: s.ID, FromIP: s.IP, Sink: &sessionSink{s: s, id: f.ID},
-		})
-	case "llm.chunk":
-		var f struct {
-			ID   string          `json:"id"`
-			Data json.RawMessage `json:"data"`
-		}
-		if json.Unmarshal(raw, &f) == nil {
-			h.router.Chunk(s.ID, f.ID, f.Data)
-		}
-	case "llm.done":
-		var f struct {
-			ID    string          `json:"id"`
-			Usage json.RawMessage `json:"usage"`
-			Error *string         `json:"error"`
-		}
-		if json.Unmarshal(raw, &f) == nil {
-			errCode := ""
-			if f.Error != nil {
-				errCode = *f.Error
-			}
-			h.router.Done(s.ID, f.ID, f.Usage, errCode)
-		}
-	case "cmd.result":
-		var f CmdResult
-		if json.Unmarshal(raw, &f) == nil {
-			s.deliverCmd(f)
-		}
-	}
-}
-
-// stripT drops the "t" key of a frame (what is left is its content).
-func stripT(raw []byte) json.RawMessage {
-	var m map[string]json.RawMessage
-	if json.Unmarshal(raw, &m) != nil {
-		return json.RawMessage(raw)
-	}
-	delete(m, "t")
-	b, err := json.Marshal(m)
-	if err != nil {
-		return json.RawMessage(raw)
-	}
-	return b
-}
-
-func (h *Hub) onLogs(s *Session, records []json.RawMessage) {
-	if len(records) == 0 {
-		return
-	}
-	msgs := make([]logMsg, 0, len(records))
-	for _, rec := range records {
-		var lv struct {
-			Level string `json:"level"`
-		}
-		_ = json.Unmarshal(rec, &lv)
-		rank := levelRank(lv.Level)
-		if rank == 0 {
-			rank = levelRank("info")
-		}
-		data, err := json.Marshal(map[string]any{"session": s.ID, "ip": s.IP, "record": rec})
-		if err != nil {
-			continue
-		}
-		msgs = append(msgs, logMsg{rank: rank, data: data})
-	}
-	s.mu.Lock()
-	s.logs = append(s.logs, msgs...)
-	if len(s.logs) > sessionLogs {
-		s.logs = append([]logMsg(nil), s.logs[len(s.logs)-sessionLogs:]...)
-	}
-	s.mu.Unlock()
-	h.publishLogs(s, msgs)
-}
-
-type logMsg struct {
-	rank int
-	data json.RawMessage
 }

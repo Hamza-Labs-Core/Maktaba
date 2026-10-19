@@ -27,7 +27,7 @@ const (
 	TopicProcesses = "processes"
 	logsPrefix     = "logs:"
 
-	browserQueueCap = 512
+	browserQueueCap = 1000
 	browserMaxMsg   = 64 << 10
 	browserPing     = 30 * time.Second
 	maxSnapshotLogs = 500
@@ -38,29 +38,55 @@ var topicAdmin = map[string]bool{
 	TopicMetrics: true, TopicLLM: true, TopicProcesses: true,
 }
 
-// sendQueue is a bounded queue that drops its oldest entry when full and
-// counts what it dropped.
+// sendQueue is a browser's bounded queue (design-agent.md §6.4). A
+// message of a replacing kind (queues, workers, library) replaces one of
+// the same kind still waiting; when full, the oldest other message
+// (metrics, log, …) is dropped, and the drops are counted.
 type sendQueue struct {
 	mu      sync.Mutex
-	buf     [][]byte
-	head, n int
+	items   []queued
+	limit   int
 	dropped int
 	notify  chan struct{}
 }
 
-func newSendQueue(capacity int) *sendQueue {
-	return &sendQueue{buf: make([][]byte, capacity), notify: make(chan struct{}, 1)}
+type queued struct {
+	kind string // "" unless the message replaces its predecessor
+	msg  []byte
 }
 
-func (q *sendQueue) push(b []byte) {
+func newSendQueue(capacity int) *sendQueue {
+	return &sendQueue{limit: capacity, notify: make(chan struct{}, 1)}
+}
+
+func (q *sendQueue) push(b []byte) { q.pushKind("", b) }
+
+func (q *sendQueue) pushKind(kind string, b []byte) {
 	q.mu.Lock()
-	if q.n == len(q.buf) {
-		q.head = (q.head + 1) % len(q.buf)
-		q.n--
-		q.dropped++
+	replaced := false
+	if kind != "" {
+		for i := range q.items {
+			if q.items[i].kind == kind {
+				q.items[i].msg = b
+				replaced = true
+				break
+			}
+		}
 	}
-	q.buf[(q.head+q.n)%len(q.buf)] = b
-	q.n++
+	if !replaced {
+		if len(q.items) >= q.limit {
+			drop := 0
+			for i, it := range q.items {
+				if it.kind == "" {
+					drop = i
+					break
+				}
+			}
+			q.items = append(q.items[:drop], q.items[drop+1:]...)
+			q.dropped++
+		}
+		q.items = append(q.items, queued{kind: kind, msg: b})
+	}
 	q.mu.Unlock()
 	select {
 	case q.notify <- struct{}{}:
@@ -73,17 +99,18 @@ func (q *sendQueue) push(b []byte) {
 func (q *sendQueue) take() ([][]byte, int) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	out := make([][]byte, 0, q.n)
-	for i := 0; i < q.n; i++ {
-		j := (q.head + i) % len(q.buf)
-		out = append(out, q.buf[j])
-		q.buf[j] = nil
+	out := make([][]byte, 0, len(q.items))
+	for _, it := range q.items {
+		out = append(out, it.msg)
 	}
-	q.head, q.n = 0, 0
+	q.items = nil
 	d := q.dropped
 	q.dropped = 0
 	return out, d
 }
+
+// replacing are the message types where only the latest matters.
+var replacing = map[string]bool{"queues": true, "workers": true, "library": true}
 
 type logFilter struct {
 	topic string
@@ -124,14 +151,16 @@ func (b *browser) subscribed(topic string) bool {
 	return b.topics[topic]
 }
 
+// outMsg is a hub → browser message: {type, topic?, at, data?}.
 type outMsg struct {
-	Type  string `json:"type"`
-	Topic string `json:"topic,omitempty"`
-	Data  any    `json:"data,omitempty"`
+	Type  string    `json:"type"`
+	Topic string    `json:"topic,omitempty"`
+	At    time.Time `json:"at"`
+	Data  any       `json:"data,omitempty"`
 }
 
 func marshalMsg(typ, topic string, data any) []byte {
-	b, err := json.Marshal(outMsg{Type: typ, Topic: topic, Data: data})
+	b, err := json.Marshal(outMsg{Type: typ, Topic: topic, At: time.Now().UTC(), Data: data})
 	if err != nil {
 		return nil
 	}
@@ -161,8 +190,12 @@ func (h *Hub) publish(topic, typ string, data any) {
 	if m == nil {
 		return
 	}
+	kind := ""
+	if replacing[typ] {
+		kind = typ
+	}
 	for _, b := range targets {
-		b.q.push(m)
+		b.q.pushKind(kind, m)
 	}
 }
 
@@ -175,18 +208,18 @@ func (h *Hub) publishLogs(s *Session, msgs []logMsg) {
 	h.mu.RUnlock()
 	for _, b := range browsers {
 		b.mu.Lock()
-		min := 0
+		lowest := 0
 		for _, f := range b.logs {
-			if f.match(s) && (min == 0 || f.rank < min) {
-				min = f.rank
+			if f.match(s) && (lowest == 0 || f.rank < lowest) {
+				lowest = f.rank
 			}
 		}
 		b.mu.Unlock()
-		if min == 0 {
+		if lowest == 0 {
 			continue
 		}
 		for _, m := range msgs {
-			if m.rank >= min {
+			if m.rank >= lowest {
 				b.send("log", "", m.data)
 			}
 		}
@@ -257,7 +290,7 @@ func (h *Hub) snapshot(topic string) any {
 	case TopicLLM:
 		return h.router.Snapshot()
 	case TopicProcesses:
-		return map[string]any{"processes": h.Processes(), "files": h.Location()}
+		return h.processesSnapshot()
 	}
 	return nil
 }
@@ -314,7 +347,7 @@ type inMsg struct {
 func (h *Hub) ServeBrowser(w http.ResponseWriter, r *http.Request) {
 	p := principal.FromContext(r.Context())
 	if p == nil {
-		httperror.Write(w, r, httperror.Forbidden("", "auth required"))
+		httperror.Write(w, r, errUnauthorized())
 		return
 	}
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: h.cfg.BrowserOrigins})
@@ -339,7 +372,7 @@ func (h *Hub) ServeBrowser(w http.ResponseWriter, r *http.Request) {
 		h.browserRead(ctx, c, b)
 	}()
 	h.browserWrite(ctx, c, b)
-	_ = c.Close(statusNormal, "")
+	_ = c.Close(CloseNormal, "")
 }
 
 func (h *Hub) browserWrite(ctx context.Context, c *websocket.Conn, b *browser) {
@@ -478,4 +511,10 @@ func cmdErrCode(err error) string {
 		return "timeout"
 	}
 	return "failed"
+}
+
+// processesSnapshot is the processes topic's snapshot and GET
+// /api/cluster/processes.
+func (h *Hub) processesSnapshot() map[string]any {
+	return map[string]any{"processes": h.Processes(), "gone": h.Gone(), "files": h.Location(), "cache": h.cacheStats()}
 }

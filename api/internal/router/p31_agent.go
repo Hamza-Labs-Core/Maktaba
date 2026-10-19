@@ -26,9 +26,13 @@ import (
 type P31AgentDeps struct {
 	DB     *sql.DB
 	Driver string // "postgres" (default) or "sqlite"
-	// Config carries the settings (agent.FromEnv) and the home key; the
+	// Config carries the settings (agent.FromEnv) and the home keys; the
 	// data sources are filled in here.
 	Config agent.Config
+	// Cache is the database cache of the channel (track C1,
+	// api/internal/cluster/cache, built with Options.Window =
+	// Config.CacheWindow); nil runs without it.
+	Cache agent.Cache
 }
 
 // MountP31Agent builds the hub, mounts its routes, and hooks it to the
@@ -52,6 +56,9 @@ func MountP31Agent(r chi.Router, h *clusterh.Handler, d P31AgentDeps) *agent.Hub
 		if cfg.Locator != nil && cfg.Locator.Roots == nil {
 			cfg.Locator.Roots = agent.DBLibraryRoots(d.DB)
 		}
+	}
+	if d.Cache != nil {
+		cfg.Cache = d.Cache
 	}
 	hub := agent.New(cfg)
 	hub.Mount(r)

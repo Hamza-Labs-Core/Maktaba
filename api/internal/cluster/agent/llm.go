@@ -8,14 +8,25 @@ import (
 	"time"
 )
 
-// LLM error codes (design-agent.md §6).
+// LLM error codes (design-agent.md §5.1, §8.2).
 const (
-	LLMNoModel     = "no_model"
-	LLMNoCapacity  = "no_capacity"
-	LLMMachineGone = "machine_gone"
-	LLMTimeout     = "timeout"
-	LLMBadRequest  = "bad_request"
+	LLMNoModel      = "no_model"
+	LLMNoCapacity   = "no_capacity"
+	LLMMachineGone  = "machine_gone"
+	LLMRuntimeError = "runtime_error"
+	LLMCancelled    = "cancelled"
+	LLMTooLarge     = "too_large"
+	LLMTimeout      = "timeout"
+	LLMBadRequest   = "bad_request"
 )
+
+// LLMError is llm.done's error: {code, detail}; a zero Code is success.
+type LLMError struct {
+	Code   string `json:"code"`
+	Detail string `json:"detail,omitempty"`
+}
+
+func llmErr(code string) LLMError { return LLMError{Code: code} }
 
 var llmOps = map[string]bool{"chat": true, "generate": true, "embed": true}
 
@@ -33,7 +44,7 @@ type LLMRequestFrame struct {
 // lock held, in order; Done is the last call.
 type Sink interface {
 	Chunk(data json.RawMessage)
-	Done(usage json.RawMessage, errCode string)
+	Done(usage json.RawMessage, err LLMError)
 }
 
 // LLMRequest is a request to the cluster.
@@ -54,6 +65,7 @@ type LLMRequest struct {
 	lastActive time.Time
 	timer      *time.Timer
 	queued     bool
+	cancelled  bool
 }
 
 // ID is the router's id of the request (the one the runner sees).
@@ -351,14 +363,14 @@ func (rt *Router) Submit(req *LLMRequest) {
 	}
 	if req.Model == "" || !llmOps[req.Op] {
 		rt.notify(req, "failed", nil, LLMBadRequest)
-		req.Sink.Done(nil, LLMBadRequest)
+		req.Sink.Done(nil, llmErr(LLMBadRequest))
 		return
 	}
 	rt.mu.Lock()
 	if !rt.hasModelLocked(req.Model) {
 		rt.mu.Unlock()
 		rt.notify(req, "failed", nil, LLMNoModel)
-		req.Sink.Done(nil, LLMNoModel)
+		req.Sink.Done(nil, llmErr(LLMNoModel))
 		return
 	}
 	req.enqueuedAt = rt.cfg.Now()
@@ -396,21 +408,54 @@ func (rt *Router) expire(id string) {
 	rt.dequeueLocked(found)
 	rt.mu.Unlock()
 	rt.notify(found, "failed", nil, LLMNoCapacity)
-	found.Sink.Done(nil, LLMNoCapacity)
+	found.Sink.Done(nil, llmErr(LLMNoCapacity))
 }
 
-// Cancel drops a queued request whose requester left (a running one
-// finishes on its runner; its output is discarded).
+// Cancel is the requester giving up (router id): a queued request is
+// dropped; a running one gets llm.cancel on its runner, which still ends it
+// with llm.done (its output is discarded meanwhile).
 func (rt *Router) Cancel(id string) {
 	rt.mu.Lock()
-	defer rt.mu.Unlock()
 	for _, q := range rt.queues {
 		for _, r := range q {
 			if r.id == id {
 				rt.dequeueLocked(r)
+				rt.mu.Unlock()
+				rt.notify(r, "failed", nil, LLMCancelled)
 				return
 			}
 		}
+	}
+	req := rt.active[id]
+	if req == nil || req.cancelled {
+		rt.mu.Unlock()
+		return
+	}
+	req.cancelled = true
+	runner := req.runner
+	rt.mu.Unlock()
+	rt.cfg.Send(runner, map[string]any{"t": "llm.cancel", "id": id})
+}
+
+// CancelFrom is a process's llm.cancel for its own request id.
+func (rt *Router) CancelFrom(session, clientID string) {
+	rt.mu.Lock()
+	var id string
+	for _, q := range rt.queues {
+		for _, r := range q {
+			if r.FromSession == session && r.ClientID == clientID {
+				id = r.id
+			}
+		}
+	}
+	for _, r := range rt.active {
+		if r.FromSession == session && r.ClientID == clientID {
+			id = r.id
+		}
+	}
+	rt.mu.Unlock()
+	if id != "" {
+		rt.Cancel(id)
 	}
 }
 
@@ -423,12 +468,15 @@ func (rt *Router) Chunk(session, id string, data json.RawMessage) {
 		return
 	}
 	req.lastActive = rt.cfg.Now()
+	cancelled := req.cancelled
 	rt.mu.Unlock()
-	req.Sink.Chunk(data)
+	if !cancelled {
+		req.Sink.Chunk(data)
+	}
 }
 
 // Done finishes a request on its runner's word.
-func (rt *Router) Done(session, id string, usage json.RawMessage, errCode string) {
+func (rt *Router) Done(session, id string, usage json.RawMessage, e LLMError) {
 	rt.mu.Lock()
 	req := rt.active[id]
 	if req == nil || req.runner != session {
@@ -438,14 +486,14 @@ func (rt *Router) Done(session, id string, usage json.RawMessage, errCode string
 	start := rt.finishLocked(req)
 	rt.mu.Unlock()
 	state := "done"
-	if errCode != "" {
+	if e.Code != "" {
 		state = "failed"
 	}
 	if len(usage) == 0 || string(usage) == "null" {
 		usage = nil
 	}
-	rt.notify(req, state, usage, errCode)
-	req.Sink.Done(usage, errCode)
+	rt.notify(req, state, usage, e.Code)
+	req.Sink.Done(usage, e)
 	rt.dispatch(start)
 }
 
@@ -470,7 +518,7 @@ func (rt *Router) fail(id, errCode string) {
 	start := rt.finishLocked(req)
 	rt.mu.Unlock()
 	rt.notify(req, "failed", nil, errCode)
-	req.Sink.Done(nil, errCode)
+	req.Sink.Done(nil, llmErr(errCode))
 	rt.dispatch(start)
 }
 
@@ -500,10 +548,20 @@ func (rt *Router) HostGone(session string) {
 	for _, r := range dropped {
 		rt.dequeueLocked(r)
 	}
+	// running requests whose requester left: their runners stop them
+	var orphans []string
+	for id, r := range rt.active {
+		if r.FromSession == session && !r.cancelled {
+			orphans = append(orphans, id)
+		}
+	}
 	rt.mu.Unlock()
+	for _, id := range orphans {
+		rt.Cancel(id)
+	}
 	for _, req := range gone {
 		rt.notify(req, "failed", nil, LLMMachineGone)
-		req.Sink.Done(nil, LLMMachineGone)
+		req.Sink.Done(nil, llmErr(LLMMachineGone))
 	}
 	for _, req := range dropped {
 		rt.notify(req, "failed", nil, "requester_gone")
@@ -611,13 +669,13 @@ func (k *sessionSink) Chunk(data json.RawMessage) {
 	k.s.send(map[string]any{"t": "llm.chunk", "id": k.id, "data": data})
 }
 
-func (k *sessionSink) Done(usage json.RawMessage, errCode string) {
+func (k *sessionSink) Done(usage json.RawMessage, e LLMError) {
 	f := map[string]any{"t": "llm.done", "id": k.id, "usage": usage}
 	if usage == nil {
 		f["usage"] = nil
 	}
-	if errCode != "" {
-		f["error"] = errCode
+	if e.Code != "" {
+		f["error"] = e
 	}
 	k.s.send(f)
 }

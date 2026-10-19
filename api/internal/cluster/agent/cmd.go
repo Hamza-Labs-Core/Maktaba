@@ -101,7 +101,7 @@ func (h *Hub) Command(ctx context.Context, sessionID, name string, args json.Raw
 		s.mu.Unlock()
 	}
 	if name == "disconnect" {
-		s.closeWith(statusNormal, "disconnected by an admin")
+		s.closeWith(CloseDisconnect, "by an admin")
 		if err == nil && !res.OK && string(res.Detail) == `"disconnected"` {
 			res.OK = true
 		}
