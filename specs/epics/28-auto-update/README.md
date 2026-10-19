@@ -83,7 +83,10 @@ says `api.github.com/repos/Hamza-Labs-Core/Maktaba/releases`.
 
 - Delta/binary-diff updates (full-asset download only; defer).
 - Staged/percentage rollouts (operator manages their own fleet).
-- Auto-applying updates without an explicit admin action on the server
+- *(Superseded by [Epic 35](../35-cluster-full-nodes-and-updates/README.md): the home installs signed
+  releases automatically in a quiet window and rolls them out to every joined machine; Epic 35 also
+  adds the cosign signature check that 28.3 lacks and updates the sibling binaries and the pipeline.)*
+  Auto-applying updates without an explicit admin action on the server
   (desktop background-apply on next launch *is* in scope; the server is
   deliberately click-to-update).
 - Cross-service version-skew orchestration for separately-deployed

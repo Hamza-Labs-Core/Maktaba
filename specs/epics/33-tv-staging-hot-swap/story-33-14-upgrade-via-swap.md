@@ -18,6 +18,9 @@ Design: [design.md](design.md) §13.
   live release with the new streaming version).
 - **AC2** The change is staged and verified, then waits for an admin's approval (owner decision:
   `auto_promote.binary = approval` by default) and is swapped; viewers, Plex, remote viewers and simulcast outputs see no interruption (33.7/33.8 ACs).
+  *Amended by [Epic 35](../35-cluster-full-nodes-and-updates/story-35-06-tv-during-updates.md):* a binary change
+  created by the automatic cluster updater (`source.kind = auto_update`) is promoted without approval
+  (`auto_rule = immediate`, `swap_wait = boundary`); a binary change made by hand still waits for approval.
 - **AC3** After the TV swap: `api`, `pipeline` and `web` restart on the new version (rolling, one at a time,
   each waits for `/readyz`); the supervisor re-execs last.
 - **AC4** The front door restarts only when `edge_protocol` differs between versions, and then in the quiet
