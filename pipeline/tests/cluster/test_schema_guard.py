@@ -342,3 +342,28 @@ async def test_a_machine_role_reads_the_home_schema() -> None:
         with contextlib.suppress(Exception):
             await admin.execute(f"DROP ROLE IF EXISTS {role}")
         await admin.close()
+
+
+@pytest.mark.asyncio
+async def test_a_paused_node_still_builds_its_path_map(db: Database) -> None:
+    """The cluster agent places its files through the active map while the node waits:
+    without it the home's /Volumes/... was taken as a local path (a stray Volumes
+    folder on a Windows drive)."""
+    from maktaba_pipeline.engine.paths import PathMap, active_path_map, set_active_path_map
+    from maktaba_pipeline.sharepath.resolver import Resolver
+
+    await sync_graph(db, GRAPH)
+    node_id = await _node(db)
+    agent, _ = await _agent(db, node_id)
+    agent.explicit_path_map = False
+    agent.mounts = []
+    agent.required_schema = 124
+    agent.schema_reader = _reader({"applied": 119})
+    try:
+        await agent.start_node({})
+        assert agent.paused
+        assert isinstance(agent.path_map, Resolver) and active_path_map() is agent.path_map
+        row = await _row(db, node_id)
+        assert not loads(row["storage"])  # still nothing written while paused
+    finally:
+        set_active_path_map(PathMap())

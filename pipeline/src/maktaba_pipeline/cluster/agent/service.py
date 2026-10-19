@@ -128,7 +128,9 @@ class JobsFileSink:
         self.files.write("jobs", {k: v for k, v in event.items() if k != "t"})
 
 
-def _settings_hook(files: ClusterFiles) -> Callable[[Mapping[str, Any]], None]:
+def _settings_hook(
+    files: ClusterFiles, locator: share.ShareLocator | None = None
+) -> Callable[[Mapping[str, Any]], None]:
     """``welcome.settings``: the hub's share root wins over this process's own guess;
     its retention and cap apply unless this machine's environment sets them."""
 
@@ -149,9 +151,14 @@ def _settings_hook(files: ClusterFiles) -> Callable[[Mapping[str, Any]], None]:
             loop.run_in_executor(None, files.set_ip, share.folder_name(ip))
         root = settings.get("share_root")
         if isinstance(root, str) and root.strip() and not os.environ.get(share.ENV_CLUSTER_DIR):
-            target = share.cluster_dir_for(root.strip(), active_path_map())
-            if target != files.share_dir:
-                loop.run_in_executor(None, files.set_share_dir, target, f"share root {root}")
+            if locator is not None:
+                # resolved through this machine's map, now and at every retry
+                locator.share_root, locator.how = root.strip(), f"share root {root.strip()}"
+                loop.run_in_executor(None, files.relocate)
+            else:
+                target, how, anchor = share.locate_cluster_dir(root.strip(), active_path_map())
+                if target != files.share_dir:
+                    loop.run_in_executor(None, files.set_share_dir, target, how, anchor)
 
     return apply
 
@@ -197,14 +204,17 @@ async def run_agent(
         ip = await asyncio.to_thread(share.machine_ip, ident.url)
         ident.ip = ip
         ident.os, ident.version = AgentIdentity.describe_os()
-        share_dir: Path | None
+        root: str | None
         try:
-            share_dir, how = await asyncio.wait_for(
-                share.resolve_cluster_dir(database, active_path_map()), 30
-            )
+            root, how = await asyncio.wait_for(share.find_share_root(database), 30)
         except (TimeoutError, asyncio.TimeoutError):  # noqa: UP041
-            share_dir, how = None, "share lookup timed out"
-        files = await asyncio.to_thread(ClusterFiles, share_dir, ip, worker_id, reason=how)
+            root, how = None, "share lookup timed out"
+        # the share root goes through the path map active when the files are placed
+        # (and at every retry): a node paused at start has no map yet
+        locator = share.ShareLocator(root, how, path_map=active_path_map)
+        files = await asyncio.to_thread(
+            ClusterFiles, None, ip, worker_id, reason=how, locate=locator
+        )
         await asyncio.to_thread(
             files.set_identity,
             {
@@ -247,7 +257,7 @@ async def run_agent(
                 revoked=_refused(shutdown),
                 check_membership=check_membership,
             ),
-            on_settings=_settings_hook(files),
+            on_settings=_settings_hook(files, locator),
             status_path=status_dir() / f"{safe_name(worker_id)}.json",
         )
         jobs_sink = JobsFileSink(files)
