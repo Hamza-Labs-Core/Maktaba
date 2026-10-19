@@ -141,6 +141,7 @@ func TestExplainSQL_CastsEachParameterOneWay(t *testing.T) {
 	for name, q := range map[string]string{
 		"videos": explainVideosSQL, "remote": explainRemoteSQL, "episode": explainEpisodeSQL,
 		"hidden": explainHiddenSQL, "clip": explainClipGroupSQL, "promo": explainPromoSQL,
+		"styles": styleListSQL,
 	} {
 		seen := map[string]string{}
 		for _, m := range cast.FindAllStringSubmatch(q, -1) {
@@ -340,12 +341,16 @@ func TestStyle_EnqueueFailureRollsBack(t *testing.T) {
 	}
 }
 
-func TestSeasonStyles_List(t *testing.T) {
-	f := newFixture(&queuestest.Rule{Match: "left join season_style st",
+func styleListFixture() *fixture {
+	return newFixture(&queuestest.Rule{Match: "left join season_style st",
 		Cols: []string{"sid", "series_id", "series", "name", "season", "lib", "libname", "style", "tier", "conf", "override"},
 		Rows: [][]driver.Value{{seasonA, seriesX, "الحبيب", "الحبيب", int64(1), libL, "قناة", "talk", int64(1), 0.8, "cinematic"},
 			{seasonB, seriesX, "الحبيب", "الحبيب", int64(2), nil, nil, nil, nil, nil, nil}}})
-	rec := f.do("GET", "/api/seasons/styles?q=50%25&pinned=true&library_id="+libL, "", viewer())
+}
+
+func TestSeasonStyles_List(t *testing.T) {
+	f := styleListFixture()
+	rec := f.do("GET", "/api/seasons/styles?q=50%25&pinned=true&library_id="+libL, "", libViewer())
 	var out struct{ Items []SeasonStyle }
 	decode(t, rec, &out)
 	if rec.Code != 200 || len(out.Items) != 2 || *out.Items[0].OverrideStyle != "cinematic" || out.Items[1].Style != nil {
@@ -357,6 +362,41 @@ func TestSeasonStyles_List(t *testing.T) {
 	}
 	if rec = f.do("GET", "/api/seasons/styles?library_id=zzz", "", viewer()); rec.Code != http.StatusBadRequest {
 		t.Errorf("bad library -> %d", rec.Code)
+	}
+}
+
+func TestSeasonStyles_AppliesTheLibraryACL(t *testing.T) {
+	other := "99999999-9999-4999-8999-999999999999"
+	f := styleListFixture()
+	// a library the caller was not granted is refused before any query
+	if rec := f.do("GET", "/api/seasons/styles?library_id="+other, "", libViewer()); rec.Code != http.StatusForbidden {
+		t.Fatalf("other library -> %d", rec.Code)
+	}
+	if n := len(f.db.Find("left join season_style st")); n != 0 {
+		t.Fatalf("queried %d times for a refused library", n)
+	}
+	scopeOf := func(p *principal.Principal) driver.Value {
+		t.Helper()
+		f := styleListFixture()
+		if rec := f.do("GET", "/api/seasons/styles", "", p); rec.Code != 200 {
+			t.Fatalf("list -> %d %s", rec.Code, rec.Body.String())
+		}
+		a := f.db.Find("left join season_style st")[0].Args
+		if len(a) != 5 {
+			t.Fatalf("args %v", a)
+		}
+		return a[4]
+	}
+	// without library_id a non-admin is scoped to the granted libraries,
+	// a viewer with none to nothing, an admin not at all
+	if got := fmt.Sprint(scopeOf(libViewer())); !strings.Contains(got, libL) {
+		t.Errorf("granted viewer scope %s", got)
+	}
+	if got := fmt.Sprint(scopeOf(viewer())); got != "{}" {
+		t.Errorf("no-library viewer scope %s", got)
+	}
+	if got := scopeOf(admin()); got != nil {
+		t.Errorf("admin scope %#v", got)
 	}
 }
 
@@ -454,7 +494,7 @@ func TestLibraryCollections(t *testing.T) {
 		&queuestest.Rule{Match: "from promo_links p", Cols: []string{"vid", "title", "show", "sid", "season", "ev"},
 			Rows: [][]driver.Value{{videoV, "برومو الحبيب", "الحبيب", seasonA, int64(2), "title names the show"}}},
 	)
-	rec := f.do("GET", "/api/items/library/"+libL+"/collections", "", viewer())
+	rec := f.do("GET", "/api/items/library/"+libL+"/collections", "", libViewer())
 	var out LibraryCollectionsResponse
 	decode(t, rec, &out)
 	if rec.Code != 200 || len(out.Topics) != 2 || out.Topics[0].Collection == nil || out.Topics[1].Collection != nil ||
@@ -472,5 +512,25 @@ func TestLibraryCollections(t *testing.T) {
 	}
 	if rec = f.do("GET", "/api/items/library/"+libL+"/collections", "", nil); rec.Code != http.StatusForbidden {
 		t.Errorf("anonymous -> %d", rec.Code)
+	}
+	if rec = f.do("GET", "/api/items/library/"+libL+"/collections", "", admin()); rec.Code != 200 {
+		t.Errorf("admin -> %d", rec.Code)
+	}
+}
+
+func TestLibraryCollections_AppliesTheLibraryACL(t *testing.T) {
+	other := "99999999-9999-4999-8999-999999999999"
+	f := newFixture()
+	// an ungranted library (existing or not) is refused before any query
+	for _, tc := range []struct {
+		id string
+		p  *principal.Principal
+	}{{other, libViewer()}, {libL, viewer()}} {
+		if rec := f.do("GET", "/api/items/library/"+tc.id+"/collections", "", tc.p); rec.Code != http.StatusForbidden {
+			t.Errorf("%s as %s -> %d", tc.id, tc.p.UserID, rec.Code)
+		}
+	}
+	if n := len(f.db.Calls()); n != 0 {
+		t.Fatalf("queried %d times for refused libraries", n)
 	}
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
@@ -90,6 +91,13 @@ func (h *Handler) LibraryCollections(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !isUUID(id) {
 		httperror.Write(w, r, httperror.BadRequest("id must be a uuid"))
+		return
+	}
+	// The library ACL is checked before any query and does not look the
+	// library up, so an id the caller was not granted answers 403 whether
+	// or not it exists.
+	if !canReadLibrary(principal.FromContext(r.Context()), id) {
+		httperror.Write(w, r, httperror.Forbidden("", "no access to this library"))
 		return
 	}
 	ctx := r.Context()
