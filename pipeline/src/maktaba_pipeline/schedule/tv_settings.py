@@ -167,11 +167,22 @@ class TvStripConfig:
     position: str = "bottom"
     #: the strip's height (share of the picture height, percent)
     height_pct: float = 9.0
-    bg_color: str = "#0b1f3a"
-    bg_opacity: float = 0.85
-    #: the clock's box
-    accent_color: str = "#c8a24a"
+    #: the default palette is deep green and gold; every text colour has a WCAG contrast of
+    #: at least 4.5:1 on what it is drawn on (white 7.9, the «التالي» gold 5.6 and the
+    #: page number 4.9 on the green; the clock's dark green 5.1 on the gold)
+    bg_color: str = "#0b5d3b"
+    bg_opacity: float = 0.9
+    #: the rule along the bar and the clock's box
+    accent_color: str = "#c9a227"
+    #: the gold rule along the bar's inner edge (percent of the bar's height; 0: none)
+    rule_height: float = 4.0
     text_color: str = "#ffffff"
+    #: the «التالي» line
+    next_color: str = "#e8d9a8"
+    #: the clock's label and time (on the accent colour)
+    clock_text_color: str = "#0b3d27"
+    #: the page number «١/٢»
+    indicator_color: str = "#eac85e"
     #: a font file with Arabic letters; empty: the first one found on the host
     font_file: str = ""
     #: the title's size (percent of the strip height)
@@ -505,8 +516,14 @@ register(
         "bg_color": Help(TSL, "Background colour", "#RRGGBB."),
         "bg_opacity": Help(TSL, "Background opacity", "0 clear, 1 solid.", minimum=0,
                            maximum=1),
-        "accent_color": Help(TSL, "Clock box colour", "#RRGGBB."),
-        "text_color": Help(TSL, "Text colour", "#RRGGBB."),
+        "accent_color": Help(TSL, "Accent colour", "The rule along the bar and the clock's "
+                             "box. #RRGGBB."),
+        "rule_height": Help(TSL, "Rule thickness (% of the bar)", "The accent line along the "
+                            "bar's edge facing the picture. 0: none.", minimum=0, maximum=20),
+        "text_color": Help(TSL, "Title colour", "#RRGGBB."),
+        "next_color": Help(TSL, "«التالي» line colour", "#RRGGBB."),
+        "clock_text_color": Help(TSL, "Clock text colour", "On the accent colour. #RRGGBB."),
+        "indicator_color": Help(TSL, "Page number colour", "#RRGGBB."),
         "font_file": Help(TSL, "Font file", "A .ttf/.otf with Arabic letters on the "
                           "streaming host. Empty: Noto Naskh/Sans Arabic, Arial or Tahoma, "
                           "whichever is found."),

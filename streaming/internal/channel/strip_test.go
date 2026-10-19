@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -299,12 +300,13 @@ func TestStripRendersArabic(t *testing.T) {
 		t.Fatal(err)
 	}
 	render := func(strip *StripInput, at float64, out string) image.Image {
-		filters := "testsrc2=s=960x540:r=25:d=" + formatSec(dur.Seconds()) + ",format=yuv420p"
+		filters := "scale=960:540,setsar=1,format=yuv420p"
 		if strip != nil {
 			filters += "," + strip.Filters()
 		}
-		cmd := exec.Command(ff, "-hide_banner", "-nostdin", "-loglevel", "error", "-f", "lavfi", "-i", filters,
-			"-vf", "select=gte(t\\,"+formatSec(at)+")", "-frames:v", "1", "-y", out)
+		args := append(append([]string{"-hide_banner", "-nostdin", "-loglevel", "error"}, frameBackground(dur.Seconds())...),
+			"-vf", filters+",select=gte(t\\,"+formatSec(at)+")", "-frames:v", "1", "-y", out)
+		cmd := exec.Command(ff, args...)
 		if b, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("ffmpeg: %v\n%s", err, b)
 		}
@@ -344,10 +346,36 @@ func TestStripRendersArabic(t *testing.T) {
 	if frames != "" {
 		_ = os.MkdirAll(frames, 0o755)
 		for i, c := range st.Clocks {
-			render(in, float64(i*2)+0.5, filepath.Join(frames, "strip-"+strings.ReplaceAll(c.LabelEN, " ", "")+".png"))
+			render(in, float64(i*2)+0.5, filepath.Join(frames, "strip-"+strings.ReplaceAll(c.LabelEN, " ", "")+frameSuffix()+".png"))
 		}
 		js, _ := json.MarshalIndent(ClockSchedule(st, true, start, dur), "", " ")
 		_ = os.WriteFile(filepath.Join(frames, "clock-steps.json"), js, 0o644)
+	}
+}
+
+// frameBackground is the picture the strip tests draw on: a test pattern,
+// or with MAKTABA_STRIP_BG "dark" a plain dark frame, or a still image path.
+// frameSuffix names saved frames by their background.
+func frameSuffix() string {
+	switch bg := os.Getenv("MAKTABA_STRIP_BG"); bg {
+	case "":
+		return ""
+	case "dark":
+		return "-dark"
+	default:
+		return "-still"
+	}
+}
+
+func frameBackground(sec float64) []string {
+	d := formatSec(sec)
+	switch bg := os.Getenv("MAKTABA_STRIP_BG"); bg {
+	case "":
+		return []string{"-f", "lavfi", "-i", "testsrc2=s=960x540:r=25:d=" + d}
+	case "dark":
+		return []string{"-f", "lavfi", "-i", "color=c=0x101418:s=960x540:r=25:d=" + d}
+	default:
+		return []string{"-loop", "1", "-framerate", "25", "-t", d, "-i", bg}
 	}
 }
 
@@ -533,9 +561,10 @@ func TestStripRendersPages(t *testing.T) {
 		}
 		for i := 0; i < n; i++ {
 			out := filepath.Join(dir, fmt.Sprintf("p%d.png", i))
-			cmd := exec.Command(ff, "-hide_banner", "-nostdin", "-loglevel", "error", "-f", "lavfi",
-				"-i", "testsrc2=s=960x540:r=25:d=30,format=yuv420p,"+in.Filters(),
-				"-vf", "select=gte(t\\,"+formatSec(at[i]+0.5)+")", "-frames:v", "1", "-y", out)
+			args := append(append([]string{"-hide_banner", "-nostdin", "-loglevel", "error"}, frameBackground(30)...),
+				"-vf", "scale=960:540,setsar=1,format=yuv420p,"+in.Filters()+",select=gte(t\\,"+formatSec(at[i]+0.5)+")",
+				"-frames:v", "1", "-y", out)
+			cmd := exec.Command(ff, args...)
 			if b, err := cmd.CombinedOutput(); err != nil {
 				t.Fatalf("ffmpeg: %v\n%s", err, b)
 			}
@@ -547,7 +576,7 @@ func TestStripRendersPages(t *testing.T) {
 			imgs = append(imgs, img)
 			if frames != "" {
 				_ = os.MkdirAll(frames, 0o755)
-				_ = os.WriteFile(filepath.Join(frames, fmt.Sprintf("strip-%s-page%d.png", name, i+1)), fb, 0o644)
+				_ = os.WriteFile(filepath.Join(frames, fmt.Sprintf("strip-%s-page%d%s.png", name, i+1, frameSuffix())), fb, 0o644)
 			}
 		}
 		l := in.Layout
@@ -564,5 +593,76 @@ func TestStripRendersPages(t *testing.T) {
 		if diff < 200 {
 			t.Fatalf("%s: page 2 looks like page 1 (%d px differ)", name, diff)
 		}
+	}
+}
+
+// ─── palette ─────────────────────────────────────────────────────────
+
+func relLum(hex string) float64 {
+	var rgb [3]float64
+	for i := 0; i < 3; i++ {
+		v, _ := strconv.ParseUint(hex[1+2*i:3+2*i], 16, 8)
+		c := float64(v) / 255
+		if c <= 0.03928 {
+			rgb[i] = c / 12.92
+		} else {
+			rgb[i] = math.Pow((c+0.055)/1.055, 2.4)
+		}
+	}
+	return 0.2126*rgb[0] + 0.7152*rgb[1] + 0.0722*rgb[2]
+}
+
+func contrast(a, b string) float64 {
+	la, lb := relLum(a), relLum(b)
+	if lb > la {
+		la, lb = lb, la
+	}
+	return (la + 0.05) / (lb + 0.05)
+}
+
+func TestDefaultPaletteGreenAndGoldReadable(t *testing.T) {
+	st := DefaultStripSettings()
+	if st.BgColor != "#0b5d3b" || st.AccentColor != "#c9a227" {
+		t.Fatalf("palette: %+v", st)
+	}
+	for _, c := range []struct{ fg, bg, what string }{
+		{st.TextColor, st.BgColor, "title"}, {st.NextColor, st.BgColor, "next"},
+		{st.IndicatorColor, st.BgColor, "page number"}, {st.ClockTextColor, st.AccentColor, "clock"},
+	} {
+		if r := contrast(c.fg, c.bg); r < 4.5 {
+			t.Errorf("%s: contrast %.2f < 4.5", c.what, r)
+		}
+	}
+}
+
+func TestPaletteSettingsAndFilters(t *testing.T) {
+	st, bad := ApplyStripRules(stripOn(), []byte(`{"next_color":"#112233","clock_text_color":"#000000",
+		"indicator_color":"#ffcc00","rule_height":10,"text_color":"#zzzzzz"}`), true)
+	if len(bad) != 1 || bad[0] != "text_color" || st.NextColor != "#112233" || st.RuleHeight != 10 {
+		t.Fatalf("settings: %+v bad=%v", st, bad)
+	}
+	if _, bad := ApplyStripRules(st, []byte(`{"rule_height":25}`), true); len(bad) != 1 {
+		t.Fatal("rule_height 0..20")
+	}
+	l := st.Layout(DefaultProfile(), true, true, "")
+	in := StripInput{Settings: st, Layout: l, FontFile: "f.ttf", NowFile: "n.txt", NextFile: "x.txt", CmdFile: "c.cmd", Clock: true}
+	f := in.Filters()
+	for _, want := range []string{
+		"drawbox=x=0:y=984:w=iw:h=10:color=0xc9a227:t=fill", // the gold rule on the bar's top edge
+		"fontcolor=0x112233:fontsize=26",                    // the next line
+		"drawtext@clkt=f", "fontcolor=0x000000:fontsize=38", // the clock on the gold
+	} {
+		if !strings.Contains(f, want) {
+			t.Fatalf("filters miss %q:\n%s", want, f)
+		}
+	}
+	st.Position = "top"
+	top := StripInput{Settings: st, Layout: st.Layout(DefaultProfile(), true, false, ""), FontFile: "f.ttf", NowFile: "n.txt"}
+	if !strings.Contains(top.Filters(), "drawbox=x=0:y=86:w=iw:h=10:") {
+		t.Fatalf("a top bar's rule is on its lower edge: %s", top.Filters())
+	}
+	st.RuleHeight = 0
+	if strings.Count(StripInput{Settings: st, Layout: st.Layout(DefaultProfile(), true, false, ""), NowFile: "n"}.Filters(), "drawbox") != 1 {
+		t.Fatal("no rule at 0")
 	}
 }

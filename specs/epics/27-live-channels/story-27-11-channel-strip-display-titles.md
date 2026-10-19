@@ -81,6 +81,24 @@ slot 0122.
   Greenwich, New York), seconds per clock (8), 12/24 h, digits (auto: Arabic-Indic in a
   right-to-left strip / arabic / western), channel name, long titles (`overflow`: cycle
   — default — / truncate / scroll), seconds per page and the page indicator.
+- **AC8c** The default palette is deep green and gold, every text at a WCAG contrast of at
+  least 4.5:1 on what it is drawn on:
+
+  | Setting | Default | Drawn on | Contrast |
+  |---|---|---|---|
+  | `bg_color` / `bg_opacity` | `#0B5D3B` / 0.9 | the picture | — |
+  | `accent_color` (rule and clock box) | `#C9A227` | — | — |
+  | `rule_height` | 4 % of the bar | — | — |
+  | `text_color` (title) | `#FFFFFF` | green | 7.9:1 |
+  | `next_color` («التالي») | `#E8D9A8` | green | 5.6:1 |
+  | `indicator_color` (page number) | `#EAC85E` | green | 4.9:1 |
+  | `clock_text_color` (clock, channel name) | `#0B3D27` | gold | 5.1:1 |
+
+  (Gold `#C9A227` itself is only 3.3:1 on the green, so it is used for the rule and the
+  box, not for text.) Every colour is a setting, edited with a colour picker (native
+  picker, hex field, opacity slider for the bar) in Settings → Channel strip and in the
+  channel's Strip section, with presets — Green & gold (default), Navy, Black, Maroon &
+  gold — and "reset to default"; the preview follows each pick.
 - **AC8b** With `overflow` cycle nothing is cut: a line wider than the strip (measured
   with per-character width estimates and a 10 % margin) is split at word boundaries into
   balanced pages that take turns in place, each for `page_seconds` (a full page up to

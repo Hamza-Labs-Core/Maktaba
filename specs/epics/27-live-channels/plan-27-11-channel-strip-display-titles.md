@@ -21,6 +21,7 @@
 | D9 | **Rules first, model optional** (`use_llm` off), cached by input hash in `display_title_llm`. | Rules are free and deterministic; the model costs seconds per batch and is only worth it for what rules leave messy. |
 | D11 | **Long lines page instead of being cut** (`overflow` cycle, default): pages switched by the sendcmd timeline (`reinit text=` on `drawtext@now` / `@next` / `@nowi` / `@nexti`). | The strip can cycle, so nothing needs to be dropped; the same timeline as the clock keeps pages in step with the picture. Titles then live only in files (text files, the sendcmd script), never in the filter string. |
 | D12 | **Quran verses are located in a bundled Tanzil text** (`data/quran`, CC BY 3.0, verbatim + notice), indexed by its first two folded words. | A verse is never cut; its reference is a page of the strip and, when a stored title must be short, its stand-in. Local, fast (one 0.3 s index build), no service. |
+| D13 | **Green and gold by default; every colour a setting** (`bg_color`, `bg_opacity`, `accent_color`, `rule_height`, `text_color`, `next_color`, `clock_text_color`, `indicator_color`), picked with a colour control and presets. | The look of an Islamic channel; each text colour is checked at ≥ 4.5:1 (a Go test computes the WCAG ratios of the defaults). |
 | D10 | **Per-channel strip settings live in `mode_config.look.strip`**; `write_channels` carries them across plan rewrites; the API writes them without marking the channel edited. | The look is already the channel's on-air presentation; the plan never sets a strip. |
 
 ## 1. Files
@@ -103,6 +104,10 @@ before programmes are built.
   cycles the pages over the block (`page_seconds` × 1–2 by fill; the next line × 1.5)
   with «k/n»; `CmdScript` merges the pages' and the clock's changes into one sendcmd file
   (one line per instant).
+- Palette: the bar (`bg_color` at `bg_opacity`), an accent rule of `rule_height` % of the
+  bar along its edge facing the picture, titles in `text_color`, «التالي» in
+  `next_color`, «١/٢» in `indicator_color`, the clock box and channel-name box in
+  `accent_color` with `clock_text_color` text.
 - Layout: bar `height_pct` of the frame; clock box `1.9 × height` at the end side; title
   `font_size_pct` of the height, next line ⅔ of it; truncation by an estimated
   characters-per-width before writing the file.

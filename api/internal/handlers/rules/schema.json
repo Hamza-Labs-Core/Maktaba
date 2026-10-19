@@ -3597,7 +3597,7 @@
      "group": "Strip look",
      "label": "Background colour",
      "help": "#RRGGBB.",
-     "default": "#0b1f3a"
+     "default": "#0b5d3b"
     },
     {
      "name": "bg_opacity",
@@ -3605,7 +3605,7 @@
      "group": "Strip look",
      "label": "Background opacity",
      "help": "0 clear, 1 solid.",
-     "default": 0.85,
+     "default": 0.9,
      "minimum": 0,
      "maximum": 1
     },
@@ -3613,17 +3613,51 @@
      "name": "accent_color",
      "kind": "str",
      "group": "Strip look",
-     "label": "Clock box colour",
-     "help": "#RRGGBB.",
-     "default": "#c8a24a"
+     "label": "Accent colour",
+     "help": "The rule along the bar and the clock's box. #RRGGBB.",
+     "default": "#c9a227"
+    },
+    {
+     "name": "rule_height",
+     "kind": "float",
+     "group": "Strip look",
+     "label": "Rule thickness (% of the bar)",
+     "help": "The accent line along the bar's edge facing the picture. 0: none.",
+     "default": 4.0,
+     "minimum": 0,
+     "maximum": 20
     },
     {
      "name": "text_color",
      "kind": "str",
      "group": "Strip look",
-     "label": "Text colour",
+     "label": "Title colour",
      "help": "#RRGGBB.",
      "default": "#ffffff"
+    },
+    {
+     "name": "next_color",
+     "kind": "str",
+     "group": "Strip look",
+     "label": "«التالي» line colour",
+     "help": "#RRGGBB.",
+     "default": "#e8d9a8"
+    },
+    {
+     "name": "clock_text_color",
+     "kind": "str",
+     "group": "Strip look",
+     "label": "Clock text colour",
+     "help": "On the accent colour. #RRGGBB.",
+     "default": "#0b3d27"
+    },
+    {
+     "name": "indicator_color",
+     "kind": "str",
+     "group": "Strip look",
+     "label": "Page number colour",
+     "help": "#RRGGBB.",
+     "default": "#eac85e"
     },
     {
      "name": "font_file",

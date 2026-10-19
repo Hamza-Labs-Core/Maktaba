@@ -56,8 +56,12 @@ type StripSettings struct {
 	HeightPct       float64
 	BgColor         string
 	BgOpacity       float64
-	AccentColor     string
+	AccentColor     string  // the rule along the bar and the clock's box
+	RuleHeight      float64 // the rule's thickness, percent of the bar (0: none)
 	TextColor       string
+	NextColor       string // the «التالي» line
+	ClockTextColor  string // text on the accent colour (clock, channel name)
+	IndicatorColor  string // the page number «١/٢»
 	FontFile        string
 	FontSizePct     float64
 	Direction       string // auto | rtl | ltr
@@ -83,8 +87,9 @@ type StripSettings struct {
 // DefaultStripSettings mirrors the pipeline's TvStripConfig defaults.
 func DefaultStripSettings() StripSettings {
 	return StripSettings{
-		Enabled: false, Position: "bottom", HeightPct: 9, BgColor: "#0b1f3a", BgOpacity: 0.85,
-		AccentColor: "#c8a24a", TextColor: "#ffffff", FontSizePct: 42, Direction: "auto",
+		Enabled: false, Position: "bottom", HeightPct: 9, BgColor: "#0b5d3b", BgOpacity: 0.9,
+		AccentColor: "#c9a227", RuleHeight: 4, TextColor: "#ffffff", NextColor: "#e8d9a8",
+		ClockTextColor: "#0b3d27", IndicatorColor: "#eac85e", FontSizePct: 42, Direction: "auto",
 		ShowNext: true, NextLabelAR: "التالي", NextLabelEN: "Next", Overflow: "cycle",
 		PageSeconds: 4, PageIndicator: true,
 		ScrollSpeed: 90, ShowMode: "always", ShowSeconds: 20, EveryMinutes: 10,
@@ -153,18 +158,17 @@ func ApplyStripRules(base StripSettings, raw []byte, channel bool) (out StripSet
 			ok = setInt(&out.EveryMinutes, v, 1, 240)
 		case "clock_seconds":
 			ok = setInt(&out.ClockSeconds, v, 2, 120)
-		case "bg_color", "accent_color", "text_color":
+		case "bg_color", "accent_color", "text_color", "next_color", "clock_text_color", "indicator_color":
 			s, good := jsonString(v)
 			if ok = good && hexColor.MatchString(s); ok {
-				switch name {
-				case "bg_color":
-					out.BgColor = s
-				case "accent_color":
-					out.AccentColor = s
-				default:
-					out.TextColor = s
-				}
+				*map[string]*string{
+					"bg_color": &out.BgColor, "accent_color": &out.AccentColor,
+					"text_color": &out.TextColor, "next_color": &out.NextColor,
+					"clock_text_color": &out.ClockTextColor, "indicator_color": &out.IndicatorColor,
+				}[name] = s
 			}
+		case "rule_height":
+			ok = setFloat(&out.RuleHeight, v, 0, 20)
 		case "next_label_ar", "next_label_en", "filler_label":
 			s, good := jsonString(v)
 			if ok = good && utf8.RuneCountInString(s) <= 60; ok {
@@ -472,6 +476,7 @@ type StripLayout struct {
 	TimeY        int
 	NameW        int // channel name box (estimated)
 	IndSize      int // the page indicator's font size
+	RuleH        int // the accent rule's thickness (0: none)
 	SingleLine   bool
 	RTL          bool
 	ClockOnRight bool
@@ -522,6 +527,12 @@ func (st StripSettings) Layout(p OutputProfile, rtl, twoLines bool, channelName 
 		gap := (l.Height - l.NowSize - l.NextSize) / 3
 		l.NowY = l.Y + gap
 		l.NextY = l.NowY + l.NowSize + gap
+	}
+	if st.RuleHeight > 0 {
+		l.RuleH = int(math.Round(float64(l.Height) * st.RuleHeight / 100))
+		if l.RuleH < 1 {
+			l.RuleH = 1
+		}
 	}
 	l.IndSize = l.NextSize
 	if l.IndSize == 0 || l.IndSize > l.NowSize*2/3 {
@@ -784,12 +795,19 @@ func (in StripInput) Filters() string {
 	color := ffColor(st.TextColor, 1)
 	var f []string
 	f = append(f, "drawbox=x=0:y="+itoa(l.Y)+":w=iw:h="+itoa(l.Height)+":color="+ffColor(st.BgColor, st.BgOpacity)+":t=fill"+en)
+	if l.RuleH > 0 { // the accent rule along the edge facing the picture
+		ry := l.Y
+		if l.Top {
+			ry = l.Y + l.Height - l.RuleH
+		}
+		f = append(f, "drawbox=x=0:y="+itoa(ry)+":w=iw:h="+itoa(l.RuleH)+":color="+ffColor(st.AccentColor, 1)+":t=fill"+en)
+	}
 	if in.CmdFile != "" {
 		f = append(f, "sendcmd=f='"+escapeFilterPath(in.CmdFile)+"'")
 	}
 	// a line from its file, or (paged) a named drawtext whose text the
 	// sendcmd timeline sets
-	text := func(name string, paged bool, file string, size, y int, x string) string {
+	text := func(name string, paged bool, file string, size, y int, x, color string) string {
 		src := ":textfile='" + escapeFilterPath(file) + "'"
 		head := "drawtext="
 		if paged {
@@ -803,9 +821,9 @@ func (in StripInput) Filters() string {
 		indX = itoa(l.TitleL)
 	}
 	if in.NowFile != "" || in.NowPaged {
-		f = append(f, text("now", in.NowPaged, in.NowFile, l.NowSize, l.NowY, in.textX()))
+		f = append(f, text("now", in.NowPaged, in.NowFile, l.NowSize, l.NowY, in.textX(), color))
 		if in.NowPaged && st.PageIndicator {
-			f = append(f, text("nowi", true, "", l.IndSize, l.NowY+(l.NowSize-l.IndSize)/2, indX))
+			f = append(f, text("nowi", true, "", l.IndSize, l.NowY+(l.NowSize-l.IndSize)/2, indX, ffColor(st.IndicatorColor, 1)))
 		}
 	}
 	if in.NextFile != "" || in.NextPaged {
@@ -813,11 +831,12 @@ func (in StripInput) Filters() string {
 		if l.RTL {
 			x = itoa(l.TitleR) + "-tw"
 		}
-		f = append(f, text("next", in.NextPaged, in.NextFile, l.NextSize, l.NextY, x))
+		f = append(f, text("next", in.NextPaged, in.NextFile, l.NextSize, l.NextY, x, ffColor(st.NextColor, 1)))
 		if in.NextPaged && st.PageIndicator {
-			f = append(f, text("nexti", true, "", l.IndSize, l.NextY+(l.NextSize-l.IndSize)/2, indX))
+			f = append(f, text("nexti", true, "", l.IndSize, l.NextY+(l.NextSize-l.IndSize)/2, indX, ffColor(st.IndicatorColor, 1)))
 		}
 	}
+	onAccent := ffColor(st.ClockTextColor, 1)
 	// drawn after the titles so a scrolling title passes under them
 	if in.NameFile != "" && l.NameW > 0 {
 		nx := itoa(l.Pad)
@@ -832,15 +851,15 @@ func (in StripInput) Filters() string {
 		f = append(f, "drawbox=x="+nx+":y="+itoa(l.Y)+":w="+itoa(l.NameW)+":h="+itoa(l.Height)+
 			":color="+ffColor(st.AccentColor, 1)+":t=fill"+en,
 			"drawtext="+font+":textfile='"+escapeFilterPath(in.NameFile)+"':expansion=none:text_shaping=1"+
-				":fontcolor="+color+":fontsize="+itoa(l.NowSize)+":x="+nx+"+("+itoa(l.NameW)+"-tw)/2:y="+itoa(l.Y+(l.Height-l.NowSize)/2)+en)
+				":fontcolor="+onAccent+":fontsize="+itoa(l.NowSize)+":x="+nx+"+("+itoa(l.NameW)+"-tw)/2:y="+itoa(l.Y+(l.Height-l.NowSize)/2)+en)
 	}
 	if in.Clock && l.ClockW > 0 {
 		cx := itoa(l.ClockX)
 		mid := cx + "+(" + itoa(l.ClockW) + "-tw)/2"
 		f = append(f,
 			"drawbox=x="+cx+":y="+itoa(l.Y)+":w="+itoa(l.ClockW)+":h="+itoa(l.Height)+":color="+ffColor(st.AccentColor, 1)+":t=fill"+en,
-			"drawtext@clkl="+font+":text=.:expansion=none:text_shaping=1:fontcolor="+color+":fontsize="+itoa(l.LabelSize)+":x="+mid+":y="+itoa(l.LabelY)+en,
-			"drawtext@clkt="+font+":text=.:expansion=none:text_shaping=1:fontcolor="+color+":fontsize="+itoa(l.TimeSize)+":x="+mid+":y="+itoa(l.TimeY)+en)
+			"drawtext@clkl="+font+":text=.:expansion=none:text_shaping=1:fontcolor="+onAccent+":fontsize="+itoa(l.LabelSize)+":x="+mid+":y="+itoa(l.LabelY)+en,
+			"drawtext@clkt="+font+":text=.:expansion=none:text_shaping=1:fontcolor="+onAccent+":fontsize="+itoa(l.TimeSize)+":x="+mid+":y="+itoa(l.TimeY)+en)
 	}
 	return strings.Join(f, ",")
 }
