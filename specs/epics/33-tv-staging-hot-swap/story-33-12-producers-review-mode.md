@@ -16,7 +16,7 @@ Design: [design.md](design.md) §11.4.
 - **AC1** `write_channels` with staging on and `write_mode = auto`: `apply` builds a release from the live
   release + the change set and creates a TV change in `staged` (`source = {job_id, stage, plan_id,
   digest}`); `channels`, `filler_pools`/`filler_items` and art are not modified on air; the job's summary
-  links the change; the auto-promote rule then decides.
+  links the change; it is verified and then waits for an admin's approval (default rules).
 - **AC2** `write_mode = review`: the digest is parked as today (`review_digests`), and a `draft` TV change
   with the change set and diff is created so the Changes page shows it; **Approve on the Changes page
   posts `{apply:true, plan_digests:[digest]}`** to the job (`POST /api/queues/write_channels/apply`), the

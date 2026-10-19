@@ -15,7 +15,9 @@ wrong.*
   remote viewers or simulcast outputs reconnected (relay events, param-change policy); front door
   restart; database unavailable; disk full; rollback point expired.
 - **AC3** Upgrades with staging (33.14): order, what restarts, expand/contract migrations, Windows notes.
-- **AC4** Resource notes: VideoToolbox/NVENC budgets, rolling swap, `hot_standby` cost.
+- **AC4** Resource notes: VideoToolbox/NVENC budgets, the budget order live → standby → staging, rolling
+  swap, `hot_standby` cost with 22 always-on pushed channels, `standby_warm = viewers`, QSV nodes as
+  future capacity.
 - **AC5** English; Arabic summary page for the Changes UI.
 
 ## Test cases

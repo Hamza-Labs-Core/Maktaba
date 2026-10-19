@@ -24,9 +24,14 @@ Design: [design.md](design.md) §11.
   with its id; drafts queue and are re-diffed against the release that goes live.
 - **AC5** Approve requires the admin role; with `require_second_admin` the approver must differ from the
   author (or the producer job's enqueuer); `ack_param_change` is required when `push.continuity` asks.
-- **AC6** Auto-promote: the strictest rule of the change's kinds; `quiet_window` promotes at the first
-  minute inside the window with ≤ `quiet_max_viewers` viewers and no warnings; `immediate` when ready
-  with no warnings; `approval` never by itself.
+- **AC6** Default: **every** kind (lineup, settings, schedule, art, live slots, binary, rollback) is
+  `approval` — no change reaches the air without an admin (owner decision); a test asserts the shipped
+  defaults. The rules stay as settings: the strictest rule of the change's kinds applies;
+  `quiet_window` promotes at the first minute inside the window with ≤ `quiet_max_viewers` viewers and
+  no warnings; `immediate` when ready with no warnings; `approval` never by itself.
+- **AC6a** Routine top-ups (extending the existing grid with the same lineup, rules and content
+  selection) never create a change; a schedule change (grid, rules, content selection, forced
+  regeneration) always does.
 - **AC7** `swap_at` schedules the swap; changing it re-anchors the generation (33.3 AC4); a ready change
   past `swap_at` + 1 h without approval stays `ready` and notifies daily.
 - **AC8** API endpoints of the README (list, get, patch, stage, verify, approve, promote, cancel,
@@ -38,7 +43,8 @@ Design: [design.md](design.md) §11.
 
 - **TC1** `TestTransitionsTable` — every (state, action) pair.
 - **TC2** `TestOneInFlight`.
-- **TC3** `TestAutoPromoteRules` — kinds × rules × window × viewers × warnings.
+- **TC3** `TestAutoPromoteRules` — kinds × rules × window × viewers × warnings; `TestDefaultsAllApproval`.
+- **TC3a** `test_topup_creates_no_change`.
 - **TC4** `TestSecondAdmin`.
 - **TC5** `TestControllerResume` — kill the API mid-verification; resumes.
 - **TC6** `TestDiffKinds` — fixtures of release pairs.

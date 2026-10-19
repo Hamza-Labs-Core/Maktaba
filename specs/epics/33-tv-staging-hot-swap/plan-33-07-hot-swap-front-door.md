@@ -38,7 +38,7 @@
    `switch_at − 10 s`, align, switch at the IDR ≥ `switch_at`.
 5. Removed channels: end streams at `B_c`.
 6. Rolling swap ordering.
-7. Standby timer → drain → stop (slot role transitions).
+7. Previous-slot timer → drain → stop (slot role transitions).
 
 ## 3. Tests
 

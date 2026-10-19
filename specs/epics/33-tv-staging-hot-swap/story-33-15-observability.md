@@ -13,7 +13,7 @@ Design: [design.md](design.md) §15.
   endpoints.
 - **AC2** Events of design §15 in the structured logs with `change_id`, `release_id`, `channel_id`, `slot`,
   `epoch` fields; visible in the control centre's event stream.
-- **AC3** The control centre shows the slot bar (per host: live/staging/standby, release, version) and the
+- **AC3** The control centre shows the slot bar (per host: live/standby/staging/previous, release, version) and the
   in-flight change with its progress; runs of `tv_stage` and `tv_gc` appear as visible runs.
 - **AC4** Per swap a summary is stored on the change: duration, per-channel switch latency, splices
   (aligned/retimed), stitches, relay switches (seamless/retimed/reconnect), skipped channels, viewers at

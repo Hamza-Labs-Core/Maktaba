@@ -3,7 +3,10 @@
 ## Description
 
 *As an admin, I want to watch a staged change before it goes live — the new channel, the new look,
-the new encoder settings — in my browser, and optionally in a test Plex.*
+the new encoder settings — in my browser.*
+
+Browser preview only (decision 10); there is no staging HDHomeRun device. VLC can open the staging
+M3U.
 
 Design: [design.md](design.md) §7.
 
@@ -17,9 +20,7 @@ Design: [design.md](design.md) §7.
   VLC can browse the staged lineup.
 - **AC4** Preview viewers count as demand for the staging track only: they never keep a live channel
   warm and never trigger a push.
-- **AC5** With `preview_hdhr = true`, a second HDHomeRun device ("Maktaba TV (staging)", own DeviceID,
-  port 8782) is advertised by SSDP and serves the staged lineup; it is off by default and stops when
-  no change is in flight.
+- **AC5** No second HDHomeRun device is advertised; SSDP only ever announces the live device.
 - **AC6** The Changes page's Preview tab plays a channel with the web player and shows the staged guide
   strip for it (33.11).
 
@@ -29,7 +30,7 @@ Design: [design.md](design.md) §7.
 - **TC2** `TestStagingGateAdminOnly` (web port gate).
 - **TC3** `TestStagingXMLTVUsesStagedGen`.
 - **TC4** `TestPreviewNotLiveDemand`.
-- **TC5** `TestPreviewHDHRDevice` — distinct DeviceID, lineup from the release.
+- **TC5** `TestNoStagingSSDP` — only the live device is announced while a change is staged.
 
 ## Edge cases
 

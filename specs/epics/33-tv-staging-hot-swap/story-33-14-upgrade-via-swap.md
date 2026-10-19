@@ -16,8 +16,8 @@ Design: [design.md](design.md) §13.
 - **AC1** `POST /api/admin/system/update` (and `maktaba-server update`) with staging on downloads to
   `bin/releases/<version>/`, verifies checksums (Epic 28), and creates a `binary` TV change (release =
   live release with the new streaming version).
-- **AC2** The change is staged, verified and swapped under `auto_promote.binary` (quiet window by default)
-  or approval; viewers, Plex, remote viewers and simulcast outputs see no interruption (33.7/33.8 ACs).
+- **AC2** The change is staged and verified, then waits for an admin's approval (owner decision:
+  `auto_promote.binary = approval` by default) and is swapped; viewers, Plex, remote viewers and simulcast outputs see no interruption (33.7/33.8 ACs).
 - **AC3** After the TV swap: `api`, `pipeline` and `web` restart on the new version (rolling, one at a time,
   each waits for `/readyz`); the supervisor re-execs last.
 - **AC4** The front door restarts only when `edge_protocol` differs between versions, and then in the quiet

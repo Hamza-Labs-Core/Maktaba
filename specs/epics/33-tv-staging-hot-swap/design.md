@@ -11,7 +11,7 @@ confused with the placement generation), **routing epoch** and **TV change**.
 | Piece | Where | Built on |
 |---|---|---|
 | **Front door** (edge) | the home's `streaming` role (`maktaba-streaming serve`) | Epic 32 `streaming/internal/frontdoor`; `hdhr` handler, SSDP, XMLTV/M3U; the web port's `/stream` gate (`cmd/maktaba-server/stream_gate.go`) |
-| **Slots** `blue`, `green` | new supervisor role `tv-slot` (`maktaba-streaming slot --slot blue`), two instances per streaming host | `streaming/internal/channel` (Engine, Station, Hub, muxer, HLS dir), unchanged in substance |
+| **Slots** `blue`, `green`, `amber` | new supervisor role `tv-slot` (`maktaba-streaming slot --slot blue`), up to three instances per streaming host: live, hot standby, staging (§2.4) | `streaming/internal/channel` (Engine, Station, Hub, muxer, HLS dir), unchanged in substance |
 | **Change controller** | the home API, new package `api/internal/tvchange` | `tv_changes`, `tv_releases`, rules settings, `audit_log` |
 | **Release builder + generations** | pipeline (`pipeline/src/maktaba_pipeline/tvrelease/`) and the scheduler pass | `engine/changes.py`, `engine/stages/write_channels.py`, `channels/pass_.py`, `channels/repo.py` |
 | **Push relay** | inside the front door, `streaming/internal/frontdoor/relay` | Epic 32 §7.4 pusher, moved |
@@ -37,16 +37,19 @@ own lifecycle); only the channel engine moves into slots.
 
 ### 2.1 Process model
 
-`maktaba-server serve` (supervisor) starts, with `tv_staging.enabled` on, roles `api`, `pipeline`,
-`web`, `streaming` (front door) and `tv-slot@blue`, `tv-slot@green`. With staging off it starts
-only `tv-slot@blue` (live) — the same process split, one slot. Each slot:
+`maktaba-server serve` (supervisor) starts roles `api`, `pipeline`, `web`, `streaming` (front door)
+and the slot instances the slot roles need: the live slot and, with `hot_standby` (default on for the
+home), the standby — two instances in steady state; the third instance only while a change is staged
+or during a swap's grace (§2.4). Roles rotate between `blue`, `green` and `amber`; the instance name
+carries no meaning. With `tv_staging.enabled = false` no staging slot is ever started (changes are
+written directly). Each slot:
 
 | Item | Value |
 |---|---|
 | Command | `bin/releases/<version>/maktaba-streaming slot --slot blue` (version from the slot's release; the supervisor resolves it from `tv_slots.release_id` at each (re)start) |
-| Listen | `127.0.0.1:8791` (blue) / `127.0.0.1:8792` (green) on the home; on a node the Epic 32 streaming port + `/slot/<name>` prefix behind the signature check |
-| Admin | `127.0.0.1:9111` / `9112` — `/healthz`, `/readyz` for the watchdog probe |
-| Output dir | `<cache>/tv/<slot>/<channel>/` (today `<cache>/tv/<channel>/`); the two slots never share files |
+| Listen | `127.0.0.1:8791` (blue) / `8792` (green) / `8793` (amber) on the home; on a node the Epic 32 streaming port + `/slot/<name>` prefix behind the signature check |
+| Admin | `127.0.0.1:9111` / `9112` / `9113` — `/healthz`, `/readyz` for the watchdog probe |
+| Output dir | `<cache>/tv/<slot>/<channel>/` (today `<cache>/tv/<channel>/`); no two slots share files |
 | Env | `MAKTABA_TV_SLOT=blue`, `MAKTABA_TV_RELEASE=<uuid>`, `DATABASE_URL`, output settings come from the release |
 | Encoders | the host's hardware sessions are shared; each slot reports its use; the host budget is enforced by the front door/placement (§14) |
 
@@ -58,8 +61,8 @@ on the home.
 ### 2.2 Slot record and heartbeat
 
 ```sql
-tv_slots(host_id text, slot text check (slot in ('blue','green')),
-         role  text check (role in ('idle','staging','live','standby','draining')),
+tv_slots(host_id text, slot text check (slot in ('blue','green','amber')),
+         role  text check (role in ('idle','staging','live','standby','previous','draining')),
          state text check (state in ('stopped','starting','healthy','unhealthy','crashed')),
          release_id uuid, base_url text, pid int, version text,
          warm jsonb,           -- channels the slot holds warm and why (demand|probe|rolling)
@@ -83,6 +86,37 @@ The slot's `Engine` is today's engine with three differences:
    slot and this track (Epic 32 §3.4 fence + `track`, `slot`).
 3. **Holds.** `POST /internal/tv/slot/warm {channels}` attaches a synthetic viewer per channel
    (`reg.attach`), refreshed every 10 s by the front door, so the reaper keeps warmed channels up.
+
+### 2.4 Hot standby and failover (owner decision)
+
+The **standby** slot runs the live release and the same `sched_gen`; the front door keeps the
+standby's warm set equal to live's (`standby_warm = demand`) or, when the encoder budget is short,
+to the channels with human viewers and then the pushes with the most remote viewers
+(`standby_warm = viewers`, §14). Its stations are frame-aligned with live's (§5), so a failover is an
+exact splice.
+
+```
+live slot crash / hang (watchdog probe, upstream EOF, 3 proxy errors)
+  └─► front door: epoch + 1, standby → live for every channel at once (no boundary wait):
+        HLS stitch, TS splice, relay source switch — same mechanisms as a swap (§8.4, §8.5, §9)
+        channels not warm on the standby: started on the new live slot (one stall; pushes
+        reconnect inside timeoutSeconds, same video id)
+  └─► supervisor restarts the crashed instance; it comes back as the new standby and warms
+```
+
+Role layout over a change's life (one host):
+
+| Moment | live | standby | staging | previous |
+|---|---|---|---|---|
+| steady | blue (R_N) | green (R_N) | — | — |
+| change staged / verifying / ready | blue (R_N) | green (R_N) | amber (R_N+1) | — |
+| swap commit → grace | amber (R_N+1) | — (green drains at the switch) | — | blue (R_N) |
+| after the grace | amber (R_N+1) | green restarted on R_N+1 | — | — (blue stops) |
+
+During the grace the `previous` slot is the crash target (automatic rollback, §10), which is why the
+new release's standby only starts after the grace: it keeps the peak at three slots and the encodes
+at 2 × W (§14). A live crash never promotes an unapproved staged change: the standby always runs the
+live release.
 
 ## 3. Releases and snapshots
 
@@ -120,7 +154,7 @@ build the generation (§4.3).
 
 Release binaries live in `bin/releases/<version>/` next to the current install (Epic 28.3 downloads
 there instead of replacing in place — story 33.14). The supervisor refuses to start a slot whose
-binary's SHA-256 differs from `tv_releases.streaming.sha256`. Kept: the live and standby versions
+binary's SHA-256 differs from `tv_releases.streaming.sha256`. Kept: the live and previous versions
 and the last `keep_versions` (3).
 
 ## 4. Schedule generations
@@ -173,9 +207,9 @@ Because N+1 ≡ N before `B_c`, **both slots play the same programme at the same
 
 ### 4.4 Top-up of open generations
 
-`topup_once` iterates `(channel, gen)` over the open generations — live, staging, standby
+`topup_once` iterates `(channel, gen)` over the open generations — live, staging, previous
 (`tv_routing.live_gen`, the in-flight change's release, `previous_gen` while inside
-`standby_until`) — each with its own advisory lock key `(TOPUP_KEY, hash(channel, gen))`. The
+`previous_until`) — each with its own advisory lock key `(TOPUP_KEY, hash(channel, gen))`. The
 7-day horizon (tv-core) makes this rarely needed during a swap window, but a change can sit in
 `ready` for days waiting for approval.
 
@@ -250,7 +284,7 @@ demand  := channels with a front-door client attached, an HLS touch within the w
 changed := channels with sched_changed, def changed, or all channels for settings/binary kinds
 probe   := tv_staging.probe_channel or the lowest-numbered channel
 warm    := demand ∪ {probe} ∪ (rolling window over changed \ demand, verify_probe_seconds each)
-budget  := staging_max_extra_encodes or free hardware sessions per host (§14)
+budget  := staging_max_extra_encodes or the sessions left after live and the standby's warm set (§14)
 ```
 
 Demand channels have priority; if demand alone exceeds the budget, the change is still verifiable
@@ -282,8 +316,8 @@ aggregates them into `tv_changes.verify_report`:
 | `encoders` | no NVENC→software fallback, no muxer restart during the soak | warn |
 | `soak` | all of the above hold for `verify_soak_seconds` | — |
 
-Verification passes when no check fails. Warnings are shown and block `quiet_window` /
-`immediate` auto-promotion (an admin may still approve).
+Verification passes when no check fails. Warnings are shown to the approver; if an auto-promote
+rule has been switched on (all are `approval` by default), warnings block it.
 
 ### 6.3 Staging never pushes
 
@@ -299,8 +333,7 @@ are `track = staging`, which the remote controller ignores.
   admin session (the stream gate checks the role).
 - The front door serves preview from the staging placement (warming the channel if needed, within
   the budget; a preview viewer counts as demand for the staging track only).
-- Optional `preview_hdhr`: a second SSDP device ("Maktaba TV (staging)", its own DeviceID, port
-  8782) serving the staged lineup — for adding to a test Plex server. Off by default.
+- No staging HDHomeRun device (decision 10: browser preview only; VLC can use the staging M3U).
 
 ## 8. The swap
 
@@ -310,7 +343,7 @@ are `track = staging`, which the remote controller ignores.
 tv_routing(scope text primary key,             -- 'cluster' | 'host:<id>'
            live_release_id uuid, live_gen bigint,
            previous_release_id uuid, previous_gen bigint,
-           epoch bigint not null, switched_at timestamptz, standby_until timestamptz)
+           epoch bigint not null, switched_at timestamptz, previous_until timestamptz)
 tv_channel_switch(change_id uuid, channel_id uuid, switch_at timestamptz,
                   state text check (state in ('planned','switching','switched','skipped')),
                   switched_at timestamptz, primary key (change_id, channel_id))
@@ -321,7 +354,8 @@ it was made under.
 
 ### 8.2 Planning
 
-At `promote` (approval with `swap_at` reached, or an auto rule) the controller asks the front door
+At `promote` (an admin's approval with `swap_at` reached, or "Swap now"; an auto rule only if one
+was switched on) the controller asks the front door
 for a plan:
 
 ```
@@ -339,9 +373,9 @@ then the front door ends TS connections and answers HLS 404/`ENDLIST`). Added ch
 ### 8.3 Commit
 
 At `T_swap` the controller runs **one transaction** under `pg_advisory_xact_lock('tv_swap')`:
-§4.6 apply, `tv_routing` (new live release/gen, previous = old, `epoch + 1`, `standby_until = now +
-keep_warm`), `tv_slots.role` (new → live, old → standby), placements (`track staging → live`, old
-live → standby), `tv_channel_switch` rows, change `swapping`. NOTIFY `tv_routing`. Then it enqueues
+§4.6 apply, `tv_routing` (new live release/gen, previous = old, `epoch + 1`, `previous_until = now +
+keep_warm`), `tv_slots.role` (staging → live, old live → previous, old standby → draining), placements
+(`track staging → live`, old live → previous, old standby released), `tv_channel_switch` rows, change `swapping`. NOTIFY `tv_routing`. Then it enqueues
 `plex_livetv` (`reason: tv_swap`, force: channel map + guide reload).
 
 The guide and lineup change at commit; for channels that switch at `B_c` later, guide and stream
@@ -371,7 +405,7 @@ playlist := EXT-X-MEDIA-SEQUENCE = out_seq of the first listed entry,
 ```
 
 Segment requests `…/s/{slot}/seg-N.ts` are proxied to that slot (so a player that fetched an old
-playlist still gets old segments while the old slot is standby). The upstream epoch-based segment
+playlist still gets old segments while the old slot is in the `previous` role). The upstream epoch-based segment
 numbers are not exposed. A player sees one `EXT-X-DISCONTINUITY` (players handle it as they do at a
 muxer restart today), no media-sequence reset, and the wall-clock position continues.
 
@@ -401,7 +435,7 @@ ends.
 When the warm budget cannot hold every watched channel twice, channels are switched in order of
 `switch_at`: for channel c, staging warms c at `switch_at − warm_lead` (first segment ready time +
 margin, default 20 s), the switch happens, and the old slot's station for c is released at once
-(not kept for standby; rollback for it is cold for its first minutes). The planner orders and
+(not kept for the previous slot; rollback for it is cold for its first minutes). The planner orders and
 spreads `switch_at` (only in `immediate` mode; boundary mode already spreads them) so that extra
 encodes stay ≤ budget.
 
@@ -413,7 +447,7 @@ encodes stay ≤ budget.
   cluster routing row is untouched.
 - When the staging placement of c is on another host than its live placement, the switch is the
   same operation with a different upstream URL (signed node request). The live placement is
-  released after the standby period; Epic 32's "a placed channel is sticky" holds for the new
+  released after the previous slot period; Epic 32's "a placed channel is sticky" holds for the new
   placement.
 
 ### 8.8 Sequence (one watched channel, boundary mode)
@@ -424,7 +458,7 @@ admin approve ─► controller: plan (B_101 = 20:30) ─► commit at T (routin
 20:29:40  front door: staging station of 101 warm (already, verified), aligned upstream open
 20:30:00  block boundary: HLS → discontinuity + staging segments; TS → splice at IDR 20:30:00.000;
           relay → source switch at the same IDR; tv_channel_switch(101) = switched
-20:45:00  standby_until: old slot drains its stations, stops; change stays live
+20:45:00  previous_until: old slot drains its stations, stops; change stays live
 ```
 
 ## 9. Push relay — remote and simulcast continuity
@@ -453,7 +487,7 @@ recording and every simulcast output continue. **The simulcast outputs are prote
 this:** they hang off the live input, and the live input never sees its publisher disconnect.
 
 The relay holds the push's demand (`reg.attach` equivalent through a front-door hold) on whichever
-slot is live, and pulls node-encoded channels over the signed LAN path (one more LAN hop, Q5).
+slot is live, and pulls node-encoded channels over the signed LAN path (one more LAN hop, README decision 5).
 
 ### 9.2 Parameter changes
 
@@ -478,8 +512,8 @@ continuous, so the AAC stream is continuous too.
 
 | Kind | When | What happens |
 |---|---|---|
-| **Warm** | `now < standby_until` and the standby slot is healthy | A swap in reverse: commit restores the previous lineup snapshot (`tv_release_channels` of the previous release) into `channels` (un-retiring removed channels, `staged`-izing added ones), `live_gen := previous_gen`, `epoch + 1`, roles swap; switch per channel **immediately** (boundary waiting is skipped: the old content is the content of N up to now, which equals N+1 before `B_c`; for channels already past `B_c` it is a mid-programme splice back to N's programme at the same wall-clock position); `plex_livetv` again. Channels the standby no longer holds warm are warmed first (≤ 10 s) or switched cold. |
-| **Cold** | after the grace, within retention | A new TV change `rollback` with `release = previous`, generation re-anchored (a *new* `sched_gen` copied from the retained N, so the timeline continues from now); normal verify → swap (auto-promoted unless the setting says approval). |
+| **Warm** | `now < previous_until` and the previous slot is healthy | A swap in reverse: commit restores the previous lineup snapshot (`tv_release_channels` of the previous release) into `channels` (un-retiring removed channels, `staged`-izing added ones), `live_gen := previous_gen`, `epoch + 1`, roles swap; switch per channel **immediately** (boundary waiting is skipped: the old content is the content of N up to now, which equals N+1 before `B_c`; for channels already past `B_c` it is a mid-programme splice back to N's programme at the same wall-clock position); `plex_livetv` again. Channels the previous slot no longer holds warm are warmed first (≤ 10 s) or switched cold. |
+| **Cold** | after the grace, within retention | A new TV change `rollback` with `release = previous`, generation re-anchored (a *new* `sched_gen` copied from the retained N, so the timeline continues from now); normal verify → swap; the admin's rollback request is its approval (`require_second_admin` still applies). |
 | **Automatic** | in the grace: live slot crash (watchdog), crash loop (2 in 10 min), or post-swap health failure (any `channel.*`/`ts.*` check failing on the new live) | Warm rollback, `end_reason = auto:<cause>`, notification. Outside the grace: no automatic rollback (the watchdog restarts the slot). |
 
 Rollback keeps R7: the relay switches source back with the same splice, so remote viewers and
@@ -498,11 +532,13 @@ admin action (category `tv_change`, `target_kind = tv_change`).
 |---|---|---|
 | — → `draft` | producer writes (§11.4), admin "new" | at most one open draft per author source; editor saves append to the open draft |
 | `draft → staged` | Stage (admin) or auto (producer in `auto` mode) | no other change in `staged…swapping`; release builds; generation built |
-| `staged → verifying` | slot started on the release and healthy | staging slot free (role idle/standby past grace) |
+| `staged → verifying` | slot started on the release and healthy | a slot instance that is neither live, standby nor previous is free |
 | `verifying → ready` | report has no fail | — |
 | `verifying → failed` | a fail | slot stopped, staging placements released, staged channels deleted |
 | `ready → approved` | Approve | admin; second admin when required; param-change ack when needed |
-| `ready/approved → swapping` | promote: Swap now, `swap_at` reached, or auto rule satisfied | auto: rule allows all kinds, no warnings, in quiet window |
+| `ready → approved` is required by default for every kind | | |
+| `approved → swapping` | Swap now, or `swap_at` reached | an admin approved (all rules are `approval` by default) |
+| `ready → swapping` | an auto rule satisfied | only if the admin switched a rule on: rule allows all kinds, no warnings, in the quiet window |
 | `swapping → live` | all channel switches done | — |
 | `live → superseded` | the next change goes live | — |
 | `swapping/live → rolled_back` | rollback (manual/auto) | live only while it is the current live change |
@@ -514,7 +550,9 @@ no approval stays `ready` and notifies daily.
 
 ### 11.3 Auto-promote
 
-The strictest `tv_staging.auto_promote` rule among the change's kinds: `approval` → wait for an admin;
+**Default (owner decision): every kind is `approval`** — nothing reaches the air without an admin.
+The rules remain settings: the strictest `tv_staging.auto_promote` rule among the change's kinds:
+`approval` → wait for an admin;
 `quiet_window` → promote at the first moment inside the window with ≤ `quiet_max_viewers` viewers
 and no warnings; `immediate` → promote when ready and no warnings. An explicit `swap_at` overrides
 the window (still requires the rule's approval if `approval`).
@@ -526,7 +564,7 @@ the window (still requires the rule's approval if `approval`).
 - `write_channels.run` passes an `apply` that **stages** instead of writing: it builds a TV change
   (`source = {job_id, stage, plan_id, digest}`, `change_set = changes.to_json()`) and a release
   from the base release + the change set. `write_mode = auto` → the change goes straight to
-  `staged` (then the auto rule decides when it goes on air). `write_mode = review` → today's path
+  `staged`, is verified, and waits in `ready` for an admin (default rules). `write_mode = review` → today's path
   parks the digest; the TV change is created as `draft` with `digest` so the Changes page can show
   the diff; **Approve on the Changes page posts `{apply:true, plan_digests:[digest]}` to the job
   (the queue's Apply)**, which re-runs the job, whose `apply` now stages; the controller links the
@@ -540,6 +578,11 @@ the window (still requires the rule's approval if `approval`).
 - Settings saves of `rules.tv` and `rules.tv_output` (Settings page) create/append a `settings`
   draft when staging is on; other rules sections are unaffected.
 - `plan_channels` is unchanged (its output, `channel_plans`, is not on air).
+- **What is not a change.** The scheduler's routine top-up — extending the existing grid with the same
+  lineup, rules and content selection — writes every open generation (§4.4) and never creates a
+  change. A *schedule change* is a change to a channel's grid, `rules.tv`, mode/slots or content
+  selection (sources, collections, filler lists), or a forced regeneration (`stale`); those go through
+  a change.
 - `dizquetv_*` extension stages are out of scope (they write to dizqueTV, not to Maktaba's air).
 
 ### 11.5 Queueing
@@ -556,9 +599,10 @@ adds rules on top:
 | Failure | Effect | Handling |
 |---|---|---|
 | Staging slot crash / hang | none for viewers (no client reads it; the relay does not use it) | watchdog restarts it; the change returns to `verifying`; 3 crashes during verification → `failed (slot_crash_loop)` |
-| Live slot crash, outside grace | the front door's upstreams end | if `hot_standby` and the standby slot runs the live release: front door switches to it (failover = splice, like 32.4); else watchdog restarts the slot (~1–3 s) and the front door re-resolves; viewers stall one ready timeout; TS connections are kept (up to 3 splices); pushes keep their session if the gap < 30 s |
-| Live slot crash, inside grace | — | automatic warm rollback to the standby (§10) |
-| Live slot crash while the in-flight change is `approved` and staging is `ready` | — | early promotion: swap now to staging (counts as the planned swap). Never for an unapproved change (Q11) |
+| Live slot crash, outside grace | the front door's upstreams end | **hot standby (default on the home)**: the front door switches every channel to the standby at once (§2.4) — HLS stitch, TS splice, relay source switch; the crashed instance restarts as the new standby. Without a standby (nodes, or `hot_standby = false`): the watchdog restarts the slot (~1–3 s) and the front door re-resolves; viewers stall one ready timeout; TS connections are kept (up to 3 splices); pushes keep their session if the gap < 30 s |
+| Standby slot crash | none for viewers | watchdog restarts it; it re-warms; failover is unavailable meanwhile (event, slot bar shows it) |
+| Live slot crash, inside grace | — | automatic warm rollback to the previous slot (§10) |
+| Live slot crash while a change is staged | — | failover to the hot standby (live release); the staged change is never promoted by a crash, approved or not (decision 11); its verification continues |
 | Front door crash | TV clients disconnect; slots keep encoding | watchdog restarts it first; Plex retries `/auto`; HLS players retry; relays reconnect within 30 s (same video id) |
 | Both slots on one host down | channels of that host fail over to other hosts (Epic 32 §6) | — |
 | Swap commit fails (DB error) | nothing switched (single transaction) | change returns to `ready`; event `tv_swap_failed` |
@@ -573,8 +617,8 @@ Epic 28.3's update path changes from "replace this executable, re-exec" to:
 
 1. download the release to `bin/releases/<version>/`, verify checksums;
 2. create a `binary` TV change with `streaming = <version>` and the rest of the live release;
-   stage → verify (the new binary runs as the staging slot) → swap under the `binary` auto rule
-   (quiet window by default) or approval;
+   stage → verify (the new binary runs as the staging slot) → wait for an admin's approval (owner
+   decision; the `binary` auto rule is `approval` by default) → swap;
 3. after the TV swap: restart `api`, `pipeline`, `web` on the new version (supervisor rolling
    restart; their clients retry);
 4. the front door restarts only if `edge_protocol` (a constant in the binary) changed, in the quiet
@@ -589,10 +633,19 @@ report.
 
 ## 14. Resources
 
-- Encoder budget per host: `capacity` (tv-core `EffectiveMaxActive`, NVENC session cap /2) shared by
-  both slots. During warm-up, extra encodes ≤ `staging_max_extra_encodes` (auto = free sessions).
-- VideoToolbox on the home: tv-core caps at 16 active; a 20-channel lineup with 3–4 watched channels
-  doubles to 6–8 during a swap — inside the cap. NVENC (consumer cards, session cap): rolling swap.
+- Encoder budget per host: `capacity` (tv-core `EffectiveMaxActive`, NVENC session cap / 2) shared by
+  all slots, allocated in order: **live** → **standby warm set** → **staging** (extra encodes ≤
+  `staging_max_extra_encodes`, auto = what is left). Live never loses a session to the others.
+- Load per phase (W = live warm channels): steady 2 × W (live + standby); change staged 2 × W +
+  staging set; grace 2 × W (new live + previous; the old standby drains at the switch); after the
+  grace 2 × W again (the new standby starts). Never three full copies.
+- The planned **22 always-on channels pushed to Cloudflare** make W = 22: 44 encodes with a full
+  standby. tv-core's VideoToolbox cap is 16 per host, so: live channels beyond the home's cap spill to
+  nodes (Epic 32); the standby warms `viewers` first; channels not on the standby fail over by restart;
+  staging uses rolling probes and a rolling swap (§8.6). How many real-time encodes the M3 Ultra's
+  VideoToolbox sustains is an open measurement (README question 12); **Intel QSV** (`h264_qsv`) on an
+  additional streaming node is the future capacity path.
+- NVENC (consumer cards, session cap): rolling swap; the standby is off by default on nodes.
 - Memory/disk: each slot's HLS window is small (`hls_list_size` × segments); standby keeps only
   watched channels.
 - CPU of the front door: stitching and splicing are packet-level copies; the relay is stream copy

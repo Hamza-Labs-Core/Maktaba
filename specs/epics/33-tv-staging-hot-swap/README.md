@@ -30,10 +30,11 @@ is found by viewers.
 
 This epic makes every TV change go through **staging**:
 
-1. **Two TV slots per streaming host, blue and green.** The slot that is **LIVE** serves viewers
-   through the front door; the other is **STAGING** and runs a *candidate release*: a new streaming
-   binary, new encoder settings, a new lineup, new schedules, new art, new live slots — any
-   combination.
+1. **TV slots per streaming host: `blue`, `green`, `amber`.** The slot that is **LIVE** serves
+   viewers through the front door; a **hot STANDBY** runs the same live release on the home so a
+   live crash fails over instantly; while a change is staged a third slot is **STAGING** and runs a
+   *candidate release*: a new streaming binary, new encoder settings, a new lineup, new schedules,
+   new art, new live slots — any combination.
 2. **Staging is warmed and verified** on the channels people are watching right now plus probe
    channels: segments at the right wall-clock position, HLS and HDHomeRun TS health, the guide
    against the streams, Cloudflare ingest compatibility. An admin can watch staging at a staging URL.
@@ -48,20 +49,25 @@ This epic makes every TV change go through **staging**:
    notifications and an audit trail, on a **Changes** page in the web app. `write_channels` and the
    channel editor produce TV changes instead of writing the air directly.
 
-## Decisions (recommended in this spec; see Open questions)
+## Decisions
 
-| Question | Recommendation |
+Owner decisions are marked **owner**; the others were accepted with the recommendation of the first
+draft (**accepted default**). Full list under "Decisions on the open questions" at the end.
+
+| Question | Decision |
 |---|---|
-| What is a slot | A separate OS process (`maktaba-streaming slot --slot blue|green`), supervised by `maktaba-server`. Two engine instances in one process would share a crash and a binary, which defeats both purposes. |
+| What is a slot | A separate OS process (`maktaba-streaming slot --slot blue|green|amber`), supervised by `maktaba-server`. Two engine instances in one process would share a crash and a binary, which defeats both purposes. Roles rotate between the three instances (`live`, `standby`, `staging`, `previous`). |
+| Hot standby (**owner**) | On by default for the home: a second slot runs the **live release** and keeps the live channels warm (encoded twice). A live crash fails over to it instantly (same release, a splice). The standby **stays** while a change is staged; staging is a **third slot**, started only while a change is staged. All three respect tv-core's encoder caps (§ Resources). |
 | Where the switch happens | In the **front door** (Epic 32 §4) — the stable edge process on the home that owns every client connection. Slots never own a client socket. |
 | What a TV release is | An immutable record: streaming binary version + checksum, a snapshot of `rules.tv` / `rules.tv_output`, a lineup snapshot (every channel definition, art digests, filler references) and a **schedule generation** number. |
 | How schedules are staged | `channel_programs` gains `sched_gen`; LIVE reads generation N, STAGING N+1; the swap flips `tv_routing.live_gen`. A schedule generation equals its predecessor up to each channel's next block boundary, so nothing is cut mid-programme. |
 | When a channel switches | `swap_wait = boundary` (default): each watched channel switches at its next block boundary (at most `boundary_max_wait_minutes`, 30); unwatched channels switch at once. |
 | Seamless splicing | Both slots stamp **wall-clock-anchored timestamps on a fixed GOP grid** (story 33.4), so the same instant has the same PTS and an IDR in both slots: the TS splice is exact and continuous. A re-timestamping splicer covers the cases where that does not hold. |
 | Who owns the Cloudflare push | The **front door's push relay** (moves Epic 32 §7.4's pusher off the encoding slot). It holds one RTMPS/SRT session per channel and switches its *source* at a GOP boundary with continuous timestamps. Staging never pushes. |
-| Rollback | Warm (instant, while the previous slot is kept warm, default 15 min) or cold (re-stage the previous release, minutes). A LIVE crash or crash loop inside the grace period rolls back automatically. |
-| Approval | Admins approve. Per change kind: lineup and settings changes need approval; upgrades and schedule-only changes auto-promote in a quiet window once checks pass (settings). |
-| Defaults | `tv_staging.enabled = false` ships dark (today's direct writes) — "rules as settings, defaults = current behaviour". Turning it on is the intended state (open question Q1). |
+| Rollback | Warm (instant, while the previous slot is kept warm, default 15 min) or cold (re-stage the previous release, minutes; retention 24 h — accepted default). A LIVE crash or crash loop inside the grace period rolls back automatically. |
+| Approval (**owner**) | **Every change needs an admin's approval**: lineup, settings, schedule, art, live slots, upgrades. The auto-promote rules exist as settings but are all `approval` by default. Routine top-ups that only extend the existing grid with the same lineup and rules are **not** TV changes (they flow into every open generation); a *schedule change* is a change to grids, rules or content selection. |
+| Defaults (**owner**) | `tv_staging.enabled = true` by default once built (the owner's call overrides the usual "defaults = current behaviour"); the setting stays so it can be turned off (then: direct writes, one live slot plus the hot standby). Phases A–B ship behind a build flag until the epic is complete. |
+| Swap timing (**owner**) | At each channel's programme boundary (`swap_wait = boundary`), as designed. |
 
 ## Scope
 
@@ -87,14 +93,15 @@ This epic makes every TV change go through **staging**:
 ## Non-goals
 
 - A second front door / two homes (Epic 31: one home). The front door's own restart is the one
-  remaining TV interruption; it is kept small and rarely upgraded (§ design 11, Q6).
+  remaining TV interruption; it is kept small and rarely upgraded (design §13, decision 6).
+- A staging HDHomeRun device for a test Plex (decision 10: browser preview only).
 - Staging of on-demand video sessions (Epic 08). TV channels only.
 - A/B testing (part of the viewers on staging, part on live). A swap is per channel and total.
 - Multi-change merges: at most one change is in `staged…swapping` at a time; later drafts queue
   and rebase.
 - Staging the pipeline, API or web roles. They are not viewer-facing; an upgrade restarts them
   normally after the TV swap (story 33.14).
-- Re-encoding in the push relay to hide encoder-parameter changes from Cloudflare (Q4).
+- Re-encoding in the push relay to hide encoder-parameter changes from Cloudflare (decision 4).
 
 ---
 
@@ -102,8 +109,8 @@ This epic makes every TV change go through **staging**:
 
 ### R1 — Two TV slots
 - R1.1 Each streaming host runs one **front door** (on the home; on a node a thin slot host, see
-  design §2) and up to two **slot processes**, `blue` and `green`. Exactly one slot per host is
-  `live`; the other is `staging`, `standby` (previous release kept warm), `draining` or `idle`.
+  design §2) and up to three **slot processes**, `blue`, `green` and `amber`. Exactly one slot per
+  host is `live`; the others are `staging`, `standby` (hot standby on the live release), `previous` (previous release kept warm for rollback), `draining` or `idle`.
 - R1.2 A slot is bound to one TV release for its whole life. It reads the lineup, settings and
   schedule generation of that release, never "whatever is in `channels` now".
 - R1.3 Slots listen on loopback (home) or on the Epic 32 signed streaming port (nodes); they
@@ -111,7 +118,13 @@ This epic makes every TV change go through **staging**:
 - R1.4 A crash of the staging slot never affects the live slot (separate processes, separate output
   directories, separate encoder sessions). The supervisor restarts a crashed slot with backoff
   (process watchdog).
-- R1.5 Without `tv_staging.enabled` there is one slot (`blue`, live) and behaviour is today's.
+- R1.5 Hot standby (`hot_standby`, default **on** for the home): one slot runs the live release with
+  the live slot's warm set (budget permitting, design §14) and takes over instantly when the live slot
+  crashes; the crashed instance restarts as the new standby. The standby stays while a change is
+  staged; the staging slot is the third instance, running only while a change is in
+  `staged…swapping` or during the grace after a swap (as `previous`).
+- R1.6 With `tv_staging.enabled = false` changes are written directly (today's behaviour) and only the
+  live slot and the hot standby run.
 
 ### R2 — TV releases
 - R2.1 A release is immutable once staged: `{id, kind, sched_gen, streaming_version,
@@ -131,7 +144,7 @@ This epic makes every TV change go through **staging**:
   copy N whole.
 - R3.3 The divergence boundary of a channel is the end of its block on air at the planned swap
   time (re-anchored when the swap time moves), so the swap never cuts a programme.
-- R3.4 The scheduler's top-up extends every open generation (live, staging, standby) until the
+- R3.4 The scheduler's top-up extends every open generation (live, staging, previous) until the
   older ones are superseded.
 - R3.5 The swap flips `tv_routing.live_gen` in the same transaction that applies the lineup
   snapshot to `channels`; the guide (XMLTV, `/api/guide`) changes at that instant, and the
@@ -163,8 +176,10 @@ This epic makes every TV change go through **staging**:
   on); **splice compatibility** with live per channel (seamless / param change); a soak of
   `verify_soak_seconds` (120) with no muxer restart.
 - R5.4 A failed check fails the change (`failed`, with the report); warnings do not block but are
-  shown, and block auto-promotion.
+  shown; with an auto-promote rule switched on they block auto-promotion.
 - R5.5 Warm-up and verification never push to Cloudflare and never touch a live input.
+- R5.6 Staging's encoder budget comes after the live slot and the hot standby: it never takes
+  sessions the live slot or the standby's warm set need (design §14).
 
 ### R6 — Hot swap
 - R6.1 The front door holds `tv_routing` (live slot per host, live release, live generation,
@@ -187,8 +202,12 @@ This epic makes every TV change go through **staging**:
   (binary-only releases for that host). The staging slot of a channel may sit on another host
   than its live slot (Epic 32 placement with `track = staging`); the front door switches upstream
   hosts the same way.
-- R6.8 After the switch the old slot becomes `standby` for `keep_warm_minutes` (15), keeping only the
-  watched channels warm, then drains and stops.
+- R6.8 After the switch the old live slot becomes `previous` for `keep_warm_minutes` (15), keeping
+  only the watched channels warm, then drains and stops; the old standby (old release) is drained at
+  the switch and restarted on the new live release as the new hot standby once the grace ends (during
+  the grace the `previous` slot is the crash target: R8.3).
+- R6.9 Live-slot failover to the hot standby (outside a swap) uses the same per-channel splice, HLS
+  stitch and relay source switch, at once (no boundary wait).
 
 ### R7 — Remote push and simulcast continuity
 - R7.1 The Cloudflare push of a channel is owned by the front door's **push relay**, not by a slot
@@ -206,17 +225,18 @@ This epic makes every TV change go through **staging**:
   session on both, monotonic timestamps and no gap above one GOP across swap, rollback and slot failover
   (33.8 TC5, 33.9 TC6).
 - R7.4 When a release changes video parameters (resolution, fps, profile, audio layout) and the
-  in-session parameter change is not accepted by Cloudflare (spike, Q4), the relay reconnects
+  in-session parameter change is not accepted by Cloudflare (spike, decision 4), the relay reconnects
   within 2 s — inside the input's `timeoutSeconds` (30), so the same video id continues — and the
-  change is flagged in verification ("simulcast outputs may reconnect"); such a change needs
-  explicit approval and is never auto-promoted.
+  change is flagged in verification ("simulcast outputs may reconnect"); such a change needs an
+  explicit acknowledgement in the approval, or waits for that channel's push to end
+  (`param_change_push = defer`) — accepted default; the Cloudflare spike is tracked in 33.8.
 - R7.5 Staging never pushes: the relay only subscribes to the routed slot; a staging slot has no
   push code path and no push credentials.
 - R7.6 When the channel's host changes at the swap (multi-host), the relay on the home pulls the new
   host's TS (signed, Epic 32 §4.2) and switches source the same way; nothing reconnects.
 
 ### R8 — Rollback
-- R8.1 Warm rollback: while the previous slot is `standby`, `POST /api/tv/rollback` swaps back with
+- R8.1 Warm rollback: while the `previous` slot is up (grace), `POST /api/tv/rollback` swaps back with
   the same mechanism (stitch, splice, relay source switch), restores the previous lineup snapshot
   to `channels`, flips `live_gen` back, and re-runs `plex_livetv`.
 - R8.2 Cold rollback: after the grace, rollback stages the previous release again (its generation
@@ -236,37 +256,45 @@ This epic makes every TV change go through **staging**:
   an upgrade, an admin "new change", a rollback.
 - R9.4 At most one change in `staged…swapping`; newer drafts queue and rebase on the release that
   goes live (or are re-diffed against it).
-- R9.5 Approval by an admin (optionally a second admin: `require_second_admin`). Auto-promote
-  rules per kind: `approval` | `quiet_window` | `immediate`.
+- R9.5 Approval by an admin is required for **every** change kind (owner decision; optionally a second
+  admin: `require_second_admin`). Auto-promote rules per kind (`approval` | `quiet_window` |
+  `immediate`) exist as settings, all `approval` by default.
+- R9.7 What is **not** a TV change: routine top-ups that only extend the existing grid with the same
+  lineup, rules and content selection (they write every open generation, R3.4). A **schedule change**
+  is a change to a channel's grid, rules (`rules.tv`, mode, slots) or content selection (sources,
+  collections, filler lists), or a forced regeneration (`stale`).
 - R9.6 A swap may be scheduled (`swap_at`); a ready change waits; the boundary planning uses that time.
 
 ### R10 — Changes page
 - R10.1 Admin → Live TV → **Changes**: list (state, kinds, author/source, created, checks, swap time),
   detail (diff tabs: Lineup, Schedules, Settings, Binary & art; Checks; Preview; History),
   actions (Stage, Re-verify, Approve, Schedule, Swap now, Cancel, Roll back), slot status bar
-  (live/staging/standby per host, releases, encoder use).
+  (live/standby/staging/previous per host, releases, encoder use).
 - R10.2 English and Arabic, RTL layout.
 
 ### R11 — Producers in review mode
 - R11.1 With `tv_staging.enabled`, `write_channels.apply_changes` writes a draft TV change
   (snapshot + change set) instead of `channels`; `write_mode = review` parks it as today and the
   Changes page's Approve is the queue's Apply (it posts the digest); `write_mode = auto` stages it
-  right away and the auto-promote rule decides.
+  right away (staged, verified, then waiting for approval under the default rules).
 - R11.2 The channel editor and the filler/art editors save into the open draft; the stale flag no
   longer rewrites the live generation.
 - R11.3 `plan_channels` stays a plan (not on air); its plan id is the change's provenance.
 - R11.4 Top-ups (horizon extension) are not changes; they write every open generation.
 
 ### R12 — Notifications and audit
-- R12.1 In-app notifications for: change ready (needs approval), failed, auto-promote scheduled,
-  swapped, rolled back (manual/automatic), staging slot crash, retention expiry of a rollback point.
+- R12.1 In-app notifications for: change ready (needs approval), failed, auto-promote scheduled
+  (only when a rule is switched on), swapped, rolled back (manual/automatic), failover to the hot
+  standby, staging slot crash, retention expiry of a rollback point. They use a new general
+  `notifications` table (accepted default).
 - R12.2 Every transition and admin action is written to `audit_log` (category `tv_change`) and
   `tv_change_events`.
 - R12.3 A hook (`notify(kind, payload)`) for the general review/notification system to subscribe.
 
 ### R13 — Upgrades
-- R13.1 A Maktaba upgrade (Epic 28) installs side by side and creates a `binary` TV change; the TV
-  swap happens first; the API and pipeline roles restart afterwards; the front door restarts only
+- R13.1 A Maktaba upgrade (Epic 28) installs side by side and creates a `binary` TV change, which is
+  staged and verified and then waits for an admin's approval like every change; the TV swap happens
+  first; the API and pipeline roles restart afterwards; the front door restarts only
   when its edge protocol version changes, in the quiet window.
 - R13.2 A failed staging verification of the new version aborts the TV part of the upgrade and
   leaves the live slot on the old version.
@@ -295,6 +323,12 @@ This epic makes every TV change go through **staging**:
 - Killing the staging slot during verification does not affect any viewer; killing the live slot
   5 minutes after a swap rolls back automatically within 10 s, with viewers continuing.
 - An upgrade to a new `maktaba-streaming` version swaps TV with no viewer interruption.
+- With no change in flight, killing the live slot fails over to the hot standby within 2 s: browser
+  and Plex viewers continue (one discontinuity / one splice), the Cloudflare broadcast and its simulcast
+  outputs do not disconnect, and the crashed instance comes back as the new standby. An unapproved
+  staged change is never put on the air by a crash.
+- Every change — including a schedule-only change and an upgrade — waits for an admin's approval
+  with the default settings; a routine top-up never creates a change.
 
 ---
 
@@ -314,14 +348,16 @@ This epic makes every TV change go through **staging**:
  │   │          ▲   ▲                       ▲                                               │    live input
  │   │          │   └──── staging upstream (warm, aligned, not routed) ─┐                   │    └─ simulcast
  │   │          └──────── live upstream ───────────────┐               │                   │       outputs
- │   ├─ tv-slot blue   release R_N   sched_gen N   LIVE    stations …   │                   │
- │   └─ tv-slot green  release R_N+1 sched_gen N+1 STAGING warm set ────┘                   │
+ │   ├─ tv-slot blue   release R_N   sched_gen N   LIVE     stations …  │                   │
+ │   ├─ tv-slot green  release R_N   sched_gen N   STANDBY  (hot, same warm set, failover)  │
+ │   └─ tv-slot amber  release R_N+1 sched_gen N+1 STAGING  warm set ───┘ (only while a     │
+ │                                                          change is staged)               │
  │ Postgres: tv_releases, tv_release_channels, tv_changes, tv_change_events, tv_routing,     │
  │           tv_slots, channel_programs(sched_gen), channel_placements(track), notifications │
  └───────────────────────────────▲────────────────────────────────────────────────────────┘
                                  │ signed HTTP (Epic 32 §4.2), SQL (Epic 31 role)
  ┌───────────────────────────────┴───────── NODE (Windows PC, NVENC) ──────────────────────┐
- │ maktaba-server (node mode): tv-slot blue (LIVE) · tv-slot green (STAGING)  — no edge      │
+ │ maktaba-server (node mode): tv-slot LIVE · STAGING (standby optional per host) — no edge  │
  └──────────────────────────────────────────────────────────────────────────────────────────┘
  Plex / Jellyfin / VLC / browsers talk to the front door only; Cloudflare gets one push per channel
  from the front door's relay, whichever slot or host encodes it.
@@ -346,11 +382,16 @@ This epic makes every TV change go through **staging**:
 **Slot (per host)**
 
 ```
- idle ──start(release)──► starting ──healthy──► staging ──swap──► live ──next swap──► standby ──grace──► draining ──► idle
-                              │ crash (watchdog restart)   ▲                │ crash: restart, or rollback in grace
-                              └────────────────────────────┘                ▼
-                                                                    (auto rollback ► standby becomes live)
+ idle ──start(release)──► starting ──healthy──► staging ──swap──► live ──next swap──► previous ──grace──► draining ──► idle
+   │                          │ crash (watchdog restart)   ▲        ▲  │ crash outside grace: standby takes over
+   │ start(live release)      └────────────────────────────┘        │  │ crash inside grace: auto rollback to previous
+   └──────────────────────────► standby ──live crash (failover)─────┘  ▼
+                                   │ swap: the old standby drains       crashed instance restarts as standby
+                                   └────────► draining ──► idle ──► (after the grace) standby on the new release
 ```
+
+Three instances (`blue`, `green`, `amber`) carry these roles; at most one each of `live`, `standby`,
+`staging` and `previous` per host.
 
 ## Data model (proposed migrations)
 
@@ -360,21 +401,21 @@ Slots after the highest on `main` (0118 `channel_edited_at`) and after Epic 32's
 
 | Slot | Story | File | Tables / changes |
 |---|---|---|---|
-| 0122 | 33.2, 33.10 | `0122_tv_releases_changes.sql` | `tv_releases` (id uuid, digest unique, kind text[], sched_gen bigint unique, streaming_version, streaming_sha256, settings jsonb, lineup_digest, base_release_id, created_at, created_by); `tv_release_channels` (release_id, channel_id, def jsonb, art jsonb, sched_changed bool, PK both); `tv_changes` (id, release_id, base_release_id, state, kinds text[], title, source jsonb, change_set jsonb, digest, diff jsonb, verify_report jsonb, auto_rule, approved_by uuid[], approved_at, swap_at, swap_wait, created_by, created_at, staged_at, ready_at, swapped_at, ended_at, end_reason, superseded_by); `tv_change_events` (id bigserial, change_id, at, actor_user_id, actor_source, from_state, to_state, action, detail jsonb); `tv_routing` (scope pk: `cluster` or `host:<id>`; live_release_id, live_gen, previous_release_id, previous_gen, epoch bigint, switched_at, standby_until); sequence `tv_sched_gen_seq` (starts at 1; generation 0 = everything today). |
+| 0122 | 33.2, 33.10 | `0122_tv_releases_changes.sql` | `tv_releases` (id uuid, digest unique, kind text[], sched_gen bigint unique, streaming_version, streaming_sha256, settings jsonb, lineup_digest, base_release_id, created_at, created_by); `tv_release_channels` (release_id, channel_id, def jsonb, art jsonb, sched_changed bool, PK both); `tv_changes` (id, release_id, base_release_id, state, kinds text[], title, source jsonb, change_set jsonb, digest, diff jsonb, verify_report jsonb, auto_rule, approved_by uuid[], approved_at, swap_at, swap_wait, created_by, created_at, staged_at, ready_at, swapped_at, ended_at, end_reason, superseded_by); `tv_change_events` (id bigserial, change_id, at, actor_user_id, actor_source, from_state, to_state, action, detail jsonb); `tv_routing` (scope pk: `cluster` or `host:<id>`; live_release_id, live_gen, previous_release_id, previous_gen, epoch bigint, switched_at, previous_until); sequence `tv_sched_gen_seq` (starts at 1; generation 0 = everything today). |
 | 0123 | 33.3 | `0123_tv_sched_generations.sql` (NO TRANSACTION) | `channel_programs.sched_gen bigint not null default 0`; unique index `(channel_id, sched_gen, seq)` and lookup index `(channel_id, sched_gen, start_at, end_at)` built CONCURRENTLY, old `(channel_id, seq)` unique dropped; `channel_schedule_state` PK → `(channel_id, sched_gen)`; `channels.lifecycle text not null default 'live' check in ('staged','live','retired')`, `channels.retired_at`; number/slug unique indexes rebuilt as partial `WHERE lifecycle = 'live'`; function `tv_live_gen()` (stable, reads `tv_routing` cluster row, 0 when absent); view `channel_programs_live`. |
-| 0124 | 33.1, 33.7 | `0124_tv_slots.sql` | `tv_slots` (host_id, slot 'blue'/'green', role, state, release_id, base_url, pid, version, warm jsonb, encoders_used int, started_at, beat_at, last_exit jsonb, PK (host_id, slot)); `channel_placements` (slot 0120) gains `track text not null default 'live' check in ('live','staging','standby')` and `slot text`, PK → `(channel_id, track)`; `tv_slot_beat(...)` SECURITY DEFINER own-row (Epic 31 guard); `tv_channel_switch` (change_id, channel_id, switch_at, state planned/switched/skipped, switched_at, PK both). |
-| 0125 | 33.13 | `0125_notifications.sql` | `notifications` (id, kind, severity, title_key, params jsonb, link, audience 'admins'/user_id, created_at, read_at per user via `notification_reads`) — the first user of a general in-app table (Q8). |
+| 0124 | 33.1, 33.7 | `0124_tv_slots.sql` | `tv_slots` (host_id, slot 'blue'/'green'/'amber', role, state, release_id, base_url, pid, version, warm jsonb, encoders_used int, started_at, beat_at, last_exit jsonb, PK (host_id, slot)); `channel_placements` (slot 0120) gains `track text not null default 'live' check in ('live','staging','standby','previous')` and `slot text`, PK → `(channel_id, track)`; `tv_slot_beat(...)` SECURITY DEFINER own-row (Epic 31 guard); `tv_channel_switch` (change_id, channel_id, switch_at, state planned/switched/skipped, switched_at, PK both). |
+| 0125 | 33.13 | `0125_notifications.sql` | `notifications` (id, kind, severity, title_key, params jsonb, link, audience 'admins'/user_id, created_at, read_at per user via `notification_reads`) — the first user of a general in-app table (decision 8). |
 
 `channel_runtime` (0083/0117) gains nothing: a slot writes its rows with `host_id = <host>/<slot>`
 so the On air page (Epic 32.5) shows both slots during a swap.
 
-## Settings (`rules.tv_staging`; defaults keep today's behaviour)
+## Settings (`rules.tv_staging`; defaults are the owner's decisions)
 
 | Key | Default | Meaning |
 |---|---|---|
-| `enabled` | `false` | Changes go through staging. Off: direct writes, one slot (today). |
-| `auto_promote` | `{lineup:"approval", settings:"approval", live_slots:"approval", art:"quiet_window", schedule:"quiet_window", binary:"quiet_window", rollback:"immediate"}` | Strictest rule among a change's kinds wins. `approval` \| `quiet_window` \| `immediate`. |
-| `quiet_window` | `"03:00-05:00"` | Local time window for auto-promotion; also requires ≤ `quiet_max_viewers` (0 = no one watching). |
+| `enabled` | `true` | Changes go through staging (owner). Off: direct writes as today; the live slot and the hot standby still run. |
+| `auto_promote` | `{lineup:"approval", settings:"approval", live_slots:"approval", art:"approval", schedule:"approval", binary:"approval", rollback:"approval"}` | Every kind needs approval (owner). Strictest rule among a change's kinds wins. `approval` \| `quiet_window` \| `immediate`. A rollback pressed by an admin is itself the approval; the automatic rollback (`auto_rollback`) is not gated. |
+| `quiet_window` | `"03:00-05:00"` | Local time window for front-door restarts (R13.1) and for any auto-promote rule switched on; auto-promotion also requires ≤ `quiet_max_viewers`. |
 | `quiet_max_viewers` | `0` | |
 | `swap_wait` | `boundary` | `boundary` \| `immediate`. |
 | `boundary_max_wait_minutes` | `30` | A channel whose block runs longer switches at this deadline. |
@@ -386,10 +427,10 @@ so the On air page (Epic 32.5) shows both slots during a swap.
 | `staging_max_extra_encodes` | `0` | 0 = auto (free hardware sessions on the host); otherwise a cap. |
 | `rolling_swap` | `auto` | `auto` (when the budget is short) \| `always` \| `never`. |
 | `auto_rollback` | `true` | Crash / crash loop / failed post-swap health in the grace. |
-| `hot_standby` | `false` | Keep the second slot running the live release when no change is staged (instant failover on a live crash; doubles encodes of watched channels). |
+| `hot_standby` | `true` (home) | A slot runs the live release with the live slot's warm set (instant failover on a live crash; watched channels encoded twice). Nodes: `false` by default, per-host switch. |
+| `standby_warm` | `demand` | `demand` (every channel with demand, as live) \| `viewers` (only channels with human viewers, then pushes ordered by remote viewers, when the encoder budget is short). Channels not warm on the standby fail over by restart (one stall; pushes reconnect inside 30 s). |
 | `require_second_admin` | `false` | Approver must differ from the author. |
-| `preview_hdhr` | `false` | Also expose staging as a second HDHomeRun device (for a test Plex). |
-| `param_change_push` | `approve` | Video-parameter changes on pushed channels: `approve` (explicit ack) \| `defer` (switch that channel when its push ends). |
+| `param_change_push` | `approve` | Video-parameter changes on pushed channels: `approve` (explicit ack) \| `defer` (switch that channel when its push ends). Accepted default. |
 
 ## APIs
 
@@ -405,7 +446,7 @@ POST   /api/tv/changes/{id}/approve            {swap_at?, ack_param_change?}
 POST   /api/tv/changes/{id}/promote            swap now (approved or rule allows)
 POST   /api/tv/changes/{id}/cancel
 POST   /api/tv/changes/{id}/preview            → {hls_base, m3u, xmltv, expires_at} (signed, 1 h)
-POST   /api/tv/rollback                        {to_release_id?} warm if standby, else cold
+POST   /api/tv/rollback                        {to_release_id?} warm if a previous slot is up, else cold
 GET    /api/tv/slots                           per host: slots, roles, releases, warm sets, encoders
 GET    /api/tv/releases?limit=                 releases with their changes
 
@@ -428,8 +469,8 @@ GET    /stream/staging/channel/{id}/index.m3u8 · /staging/lineup.m3u · /stagin
 
 ## UI
 
-Admin → Live TV gains **Changes** (story 33.11): a slot bar (per host: LIVE blue R12 · STAGING green
-R13 verifying 3/9 · encoders 6/16), the change list, and a detail view with tabs **Lineup** (added,
+Admin → Live TV gains **Changes** (story 33.11): a slot bar (per host: LIVE blue R12 · STANDBY green
+R12 · STAGING amber R13 verifying 3/9 · encoders 14/16), the change list, and a detail view with tabs **Lineup** (added,
 removed, renumbered, renamed, definition changes), **Schedules** (per channel: divergence at
 `20:30`, next-24 h programmes before/after), **Settings** (key diff), **Binary & art**, **Checks**
 (each check, per channel, pass/warn/fail, with the measured value), **Preview** (player on staging +
@@ -450,25 +491,26 @@ while a change is in flight; the channel editor shows "editing draft change #42"
 
 ## Rollout
 
-1. **Phase A — runtime** (33.1, 33.2, 33.3, 33.4): front door / slot split with one slot; release
-   records for what is live (release 1 = today); generations with only `sched_gen = 0`/`1`;
-   aligned timestamps. Ships dark: viewers see no change.
+1. **Phase A — runtime** (33.1, 33.2, 33.3, 33.4): front door / slot split with the live slot and
+   the hot standby; release records for what is live (release 1 = today); generations with only
+   `sched_gen = 0`/`1`; aligned timestamps. Viewers see no change except instant failover.
 2. **Phase B — staging and swap** (33.5–33.9): admin-triggered changes only (Changes page minimal),
    verification, swap, rollback, push continuity. Test with a test Plex and a test Cloudflare input.
+   Staging is behind a build flag until Phase C.
 3. **Phase C — change management** (33.10–33.13): producers in review mode, full Changes page,
-   notifications; flip `tv_staging.enabled` on the home.
+   notifications; the build flag goes away and `tv_staging.enabled = true` (the default) takes effect.
 4. **Phase D — upgrades** (33.14), observability (33.15), runbook (33.16) with each phase.
 
 ## Stories
 
 | # | Story | Summary |
 |---|---|---|
-| 33.1 | [Two-slot TV runtime](story-33-01-two-slot-runtime.md) | Front door / slot split, `tv-slot` supervisor role, blue/green, slot heartbeat, routing by slot. |
+| 33.1 | [Two-slot TV runtime](story-33-01-two-slot-runtime.md) | Front door / slot split, `tv-slot` supervisor role (blue/green/amber), hot standby and instant failover, slot heartbeat, routing by slot. |
 | 33.2 | [Releases and snapshots](story-33-02-releases-snapshots.md) | `tv_releases`, lineup + settings snapshot, side-by-side binaries, slot bound to a release. |
 | 33.3 | [Schedule generations](story-33-03-schedule-generations.md) | `sched_gen`, copy-to-boundary, top-up of open generations, lineup lifecycle, GC. |
 | 33.4 | [Splice-ready output](story-33-04-splice-ready-output.md) | Wall-clock PTS, fixed IDR grid, fixed PIDs. |
 | 33.5 | [Staging warm-up and verification](story-33-05-staging-warmup-verification.md) | Warm set, budget, rolling probes, the checks, the report. |
-| 33.6 | [Staging preview](story-33-06-staging-preview.md) | Admin staging URLs, player, staging guide, optional staging HDHomeRun. |
+| 33.6 | [Staging preview](story-33-06-staging-preview.md) | Admin staging URLs in the browser, player, staging guide (no staging HDHomeRun). |
 | 33.7 | [Atomic hot swap in the front door](story-33-07-hot-swap-front-door.md) | Routing epochs, boundary planning, HLS stitch, TS splice, rolling swap, multi-host. |
 | 33.8 | [Continuous remote push and simulcast](story-33-08-continuous-push-simulcast.md) | Push relay in the front door, source switch with continuous timestamps, outputs untouched. |
 | 33.9 | [Rollback](story-33-09-rollback.md) | Warm, cold, automatic; symmetric continuity. |
@@ -488,39 +530,69 @@ while a change is in flight; the channel editor shows "editing draft change #42"
   32.7's pusher moves into the front door's relay (33.8) — Epic 32 plan-32-07 should be amended
   accordingly if 33.8 lands first, or 33.8 moves it.
 - `feat/process-watchdog` merged (per-child restart, backoff, probes): 33.1 adds the `tv-slot` role
-  with two instances.
+  with three instances.
 - Epic 32.7/32.8 (push, tokens) and 32.13 (simulcast outputs on the live input) for 33.8: the push
   relay is what keeps those outputs connected across swaps.
 - Epic 28.3 (self-update) for 33.14.
 
-## Open questions (with the recommendation used in this spec)
+## Resources and capacity
 
-1. **Default on or off?** Rules-as-settings says defaults keep today's behaviour, so
-   `tv_staging.enabled = false` ships dark. *Recommendation:* turn it on for the home after
-   Phase B and make it the default in a later release. Confirm.
-2. **Approval policy.** Lineup and settings changes need an admin; schedule-only, art and upgrades
-   auto-promote in the quiet window (03:00–05:00, nobody watching). Is that the right split? Should
-   a `write_channels` run from a nightly pipeline ever auto-promote a lineup change?
-3. **Swap at the programme boundary** (default) means a change waits up to 30 min per watched
-   channel. Or always swap at once (one mid-programme splice, invisible with aligned output)?
-4. **Encoder-parameter changes and Cloudflare.** Whether Cloudflare accepts a mid-session H.264
-   parameter change (new SPS/resolution) on RTMPS/SRT is not documented: spike in 33.8. If not, a
-   resolution/fps change on a pushed channel reconnects inside `timeoutSeconds` (same video), but
-   YouTube/Facebook simulcast outputs may still see a reconnect. *Recommendation:* such changes need
-   explicit approval (`param_change_push = approve`), or wait for the push to end (`defer`).
-5. **Push relay on the home.** Moving the push from the encoding host (Epic 32 §7.4) to the
-   front door makes node-encoded channels cross the LAN once more (≈ 6.5 Mb/s per pushed channel)
-   but is what makes a host change invisible to Cloudflare. Accept?
-6. **The front door's own upgrades.** It is the one process whose restart interrupts TV (Plex
-   reconnects, HLS retries, pushes reconnect within 30 s — same video). Keep it rare and in the quiet
-   window (recommended), or invest in listener hand-off (pass sockets to a new edge process) later?
-7. **Hot standby** (`hot_standby`): run the live release in the second slot when nothing is
-   staged, for instant failover on a live crash, at the cost of double encodes of watched channels.
-   Off by default; on for the home?
-8. **Notifications table.** There is no general in-app notifications store (only mobile push
-   categories, 0065). Create `notifications` here as the general one (recommended), or wait?
-9. **Retention.** 24 h of rollback point (old generation and lineup snapshot) — enough?
-10. **Staging HDHomeRun for a test Plex** (`preview_hdhr`): useful, or browser preview only?
-11. **Failover to an unapproved staging slot.** On a live crash the spec restarts live (or rolls back
-    in the grace) and never promotes an unapproved change; staging is used for failover only when its
-    change is approved and ready ("early promotion"). Confirm.
+The home's encoder load in each phase (W = channels warm on live, i.e. every channel with demand; with
+the planned **22 always-on channels pushed to Cloudflare for public/remote viewing**, W = 22):
+
+| Phase | Slots running | Encodes |
+|---|---|---|
+| steady | live + hot standby | 2 × W |
+| change staged (verifying / ready) | live + standby + staging | 2 × W + staging warm set (≤ `staging_max_extra_encodes`, rolling) |
+| grace after a swap | new live + previous (the old standby drains at the switch) | 2 × W |
+| after the grace | live + new standby | 2 × W |
+
+tv-core caps a VideoToolbox host at 16 active channels (`EffectiveMaxActive`) and NVENC by its session
+cap. With W = 22, **2 × W = 44 does not fit a 16 cap** (and 22 alone does not): live is placed first
+(Epic 32 spills to nodes), the standby then warms only what the budget leaves (`standby_warm = viewers`:
+channels with human viewers first, then pushes ordered by remote viewers), the remaining channels fail
+over by restart (one stall; their pushes reconnect within 30 s, same video), and staging uses rolling
+probes and a rolling swap. Live always gets its sessions first; staging never takes a session the live
+slot or the standby's warm set needs.
+
+Capacity work outside this epic: measure how many 1080p H.264 real-time encodes the M3 Ultra's
+VideoToolbox sustains (the 16 cap is tv-core's conservative default; question 12), and add **Intel Quick
+Sync (QSV)** as an encoder (`h264_qsv`) so a QSV machine can join as an Epic 32 streaming node for more
+capacity (future).
+
+## Decisions on the open questions
+
+1. **Default — owner.** `tv_staging.enabled = true` by default once the epic is built; the setting stays
+   to turn it off. This deliberately overrides the usual "defaults = current behaviour".
+2. **Approval — owner.** Every change needs an admin's approval: lineup, settings, schedule, art, live
+   slots, upgrades (a manual rollback is itself an admin action). The auto-promote rules stay as
+   settings, all `approval`. Routine top-ups that only extend the existing grid with the same lineup,
+   rules and content selection are **not** TV changes; a *schedule change* is a change to grids, rules
+   or content selection (R9.7).
+3. **Swap timing — owner.** At each channel's programme boundary (`swap_wait = boundary`), as designed.
+4. **Encoder-parameter changes and Cloudflare — accepted default.** A resolution/fps change on a pushed
+   channel needs explicit acknowledgement in the approval, or that channel waits for its push to end
+   (`param_change_push = defer`). The Cloudflare spike (mid-session parameter change; simulcast output
+   behaviour on a short reconnect) is tracked in 33.8.
+5. **Push relay on the home — accepted default.** The push moves from the encoding host (Epic 32 §7.4)
+   to the front door's relay; node-encoded pushed channels cross the LAN once more (≈ 6.5 Mb/s each).
+6. **Front door upgrades — accepted default.** Rare, only when `edge_protocol` changes, in the quiet
+   window; listener hand-off is a later improvement.
+7. **Hot standby — owner.** Yes for the home: a second slot runs the live release (watched channels
+   encoded twice); a live crash fails over instantly to it. The standby **stays** while a change is
+   staged; staging is a **third slot**, warmed only while a change is staged; all within tv-core's
+   encoder caps (see "Resources and capacity").
+8. **Notifications table — accepted default.** Create the general `notifications` table (slot 0125).
+9. **Retention — accepted default.** 24 h rollback retention.
+10. **Preview — accepted default.** Browser preview only (plus the staging M3U/XMLTV URLs for VLC); no
+    staging HDHomeRun device.
+11. **Crash and unapproved changes — confirmed.** A live crash never promotes an unapproved staged
+    change; it fails over to the hot standby running the live release (or, inside a swap's grace, rolls
+    back to the `previous` slot).
+
+## Open questions (remaining)
+
+12. **VideoToolbox capacity.** How many simultaneous real-time encodes does the M3 Ultra sustain at the
+    default output (1080p30, 6 Mb/s)? The answer decides whether 22 always-on channels fit with a full
+    hot standby (44 encodes) or the standby warms only channels with viewers. A benchmark belongs to
+    tv-core; QSV nodes are the future capacity path.

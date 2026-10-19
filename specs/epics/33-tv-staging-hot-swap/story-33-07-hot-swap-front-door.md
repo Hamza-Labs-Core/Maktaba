@@ -18,7 +18,7 @@ Design: [design.md](design.md) §8 (and §9 for the relay).
 
 - **AC1** Commit: under `pg_advisory_xact_lock('tv_swap')`, one transaction applies the lineup snapshot
   (adds, renumbers, edits, retires), the settings snapshot, `tv_routing` (`live_release_id`, `live_gen`,
-  `previous_*`, `epoch + 1`, `standby_until`), slot roles, placement tracks and `tv_channel_switch`
+  `previous_*`, `epoch + 1`, `previous_until`), slot roles, placement tracks and `tv_channel_switch`
   rows; a failure leaves everything as before (change back to `ready`).
 - **AC2** After commit, `lineup.json`, `discover.json`, XMLTV, M3U and `/api/guide` show the new release;
   `plex_livetv` is enqueued with `force` (channel map + `reloadGuide`) and its run is linked to the change.
@@ -29,7 +29,7 @@ Design: [design.md](design.md) §8 (and §9 for the relay).
   one per segment, exactly one `EXT-X-DISCONTINUITY` before the first staging segment,
   `EXT-X-DISCONTINUITY-SEQUENCE` advancing when it slides out, `PROGRAM-DATE-TIME` continuous (gap or
   overlap ≤ one GOP; 0 with aligned output), and no playlist with fewer segments than `hls_list_size − 1`.
-- **AC5** Old segment URIs (`/s/{old}/seg-N.ts`) keep answering while the old slot is standby.
+- **AC5** Old segment URIs (`/s/{old}/seg-N.ts`) keep answering while the old slot is in the `previous` role.
 - **AC6** TS: an open `/auto/v{n}` or `live.ts` connection is spliced at a grid IDR: the client's TCP
   connection stays open; PTS/DTS/PCR are continuous (aligned: unchanged; otherwise re-timestamped);
   continuity counters continue per PID; PAT/PMT are re-sent (version bumped only if they differ); the
@@ -43,8 +43,9 @@ Design: [design.md](design.md) §8 (and §9 for the relay).
   `warm_lead` before its switch and released on the old slot right after.
 - **AC10** Multi-host: a channel whose staging placement is on another host switches the same way
   (signed upstream); a per-host binary release swaps only that host's slots.
-- **AC11** After all switches the change is `live`; the old slot is `standby` until `standby_until`,
-  then drains and stops; `tv_change_events` and `audit_log` record commit, each switch, completion.
+- **AC11** After all switches the change is `live`; the old live slot is `previous` until
+  `previous_until`, then drains and stops; the old standby (old release) drains at the switch and is
+  restarted on the new release as the hot standby after the grace (design §2.4); `tv_change_events` and `audit_log` record commit, each switch, completion.
 - **AC12** A second swap request during a swap is refused (409 `swap_in_progress`); a stale epoch is
   ignored by the front door.
 

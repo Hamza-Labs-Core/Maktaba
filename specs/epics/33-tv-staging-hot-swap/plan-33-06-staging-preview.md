@@ -9,13 +9,12 @@
 |---|---|---|
 | D1 | Preview through the front door, not a direct slot URL. | Slots stay loopback-only; one auth point. |
 | D2 | HMAC preview token `pt` (1 h) besides the admin session. | VLC/test Plex cannot carry a web session. |
-| D3 | Optional second HDHomeRun device. | Lets the owner try a change in a test Plex; off by default to avoid confusing the real Plex. |
+| D3 | No staging HDHomeRun device (decision 10). | Browser preview is enough; avoids a second device confusing Plex. |
 
 ## 1. Files
 
 **Create**
 - `streaming/internal/frontdoor/preview.go` — `/stream/staging/…`, `/staging/lineup.m3u`, `/staging/xmltv.xml`
-- `streaming/internal/hdhr/staging_device.go` — second device (reuses handlers with a release-bound repo)
 - `api/internal/handlers/tvchange/preview.go` — token minting
 
 **Modify**
@@ -27,7 +26,7 @@
 1. Token: `HMAC(cluster stream key, change_id|exp)`.
 2. Front door preview routes → staging placement (warm if missing).
 3. Gate rule for admin role.
-4. Staging device behind `preview_hdhr`.
+4. (No staging device.)
 
 ## 3. Tests
 

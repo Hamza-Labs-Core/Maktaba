@@ -1,4 +1,4 @@
-# Plan 33.1 — Two-slot TV runtime — implementation
+# Plan 33.1 — Slot TV runtime (live, hot standby, staging) — implementation
 
 > Implementation plan for [story-33-01](story-33-01-two-slot-runtime.md).
 > Design: [design.md](design.md) §1, §2. Migration: slot 0124 (`tv_slots`, placement `track`/`slot`).
@@ -11,7 +11,9 @@
 | D2 | The front door keeps every client socket and the on-demand sessions. | Client connections survive a slot swap and a slot crash. |
 | D3 | Same binary, new subcommand `slot`. | One build; the release picks the version (33.2). |
 | D4 | Loopback on the home; signed prefix on nodes. | No new exposed port; reuses Epic 32's HMAC. |
-| D5 | One slot when staging is off. | The split ships dark and is exercised from day one. |
+| D5 | Hot standby on by default for the home (owner). | Instant failover on a live crash; costs a second encode of the warm channels. |
+| D6 | Three instances with rotating roles. | The standby stays while a change is staged; staging is the third. |
+| D7 | Failover reuses the swap's splice, stitch and relay switch. | One continuity path for swaps, rollbacks and crashes. |
 
 ## 1. Files
 
@@ -20,11 +22,12 @@
 - `streaming/internal/slot/status.go` — `GET /internal/tv/slot/status`, `POST …/warm`, `POST …/drain`
 - `streaming/internal/slot/beat.go` — `tv_slot_beat` loop
 - `streaming/internal/frontdoor/route.go` — `Route(channel) → upstream{host, slot, base, epoch}` from `tv_routing` + placements, cache 2 s, LISTEN `tv_routing`/`tv_placement`
+- `streaming/internal/frontdoor/standby.go` — standby warm set (budget order live → standby), failover on live-slot loss (epoch + 1, all channels switch at once)
 - `shared/db/migrations/0124_tv_slots.sql` (+ `.sqlite.sql`)
 - tests
 
 **Modify**
-- `cmd/maktaba-server/internal/supervisor/supervisor.go` — role `tv-slot` with instances; `ProbeURL` per instance; ordering (slots before streaming on start, after on stop)
+- `cmd/maktaba-server/internal/supervisor/supervisor.go` — role `tv-slot` with three instances started on demand; `ProbeURL` per instance; ordering (slots before streaming on start, after on stop); report a slot exit to the front door at once (faster than the probe)
 - `cmd/maktaba-server/cmd_serve.go` — `--role tv-slot --slot blue` for single-role runs
 - `streaming/main.go` — engine construction moves to `cmd_slot.go`; serve mode wires front door handlers to `frontdoor.Route`
 - `streaming/internal/hdhr/handler.go` — `Streamer` implemented by the front door's splicing copier
@@ -42,8 +45,10 @@
 4. HLS: the front door proxies the slot's playlist and segments (stitching comes in 33.7; until then
    pass-through with `/s/{slot}/` URIs rewritten).
 5. TS: hdhr `Auto` and `live.ts` through the splicing copier (one upstream).
-6. Supervisor: instances, probes, start order; `tv_staging.enabled` read from settings at boot and on
-   change (start/stop green).
+6. Supervisor: instances, probes, start order; `hot_standby` read from settings at boot and on change
+   (start/stop the standby); the third instance on request of the change controller.
+8. Hot standby: warm set, budget order, failover path (uses the splicer/stitcher; until 33.7 lands the
+   failover is the Epic 32 restart-style splice).
 7. Bootstrap (EC2): routing epoch 1, slot blue live with release 1.
 
 ## 3. Tests
@@ -54,5 +59,5 @@ first segment latency; the whole existing streaming suite through the front door
 
 ## 4. Rollout
 
-Phase A, dark: one slot. Measure the added hop (loopback proxy) on the On air page; budget < 5 ms per
+Phase A: live slot + hot standby. Measure the added hop (loopback proxy) on the On air page; budget < 5 ms per
 segment request.

@@ -24,7 +24,7 @@ Design: [design.md](design.md) §4.
   video, offsets, start, end) in N and N+1.
 - **AC4** Re-anchoring when `swap_at` moves replaces N+1's blocks between the old and the new `B_c`
   with N's and regenerates the tail; programmes before the earlier boundary are untouched.
-- **AC5** The top-up extends every open generation (live, staging, standby within grace) with its own
+- **AC5** The top-up extends every open generation (live, staging, previous within grace) with its own
   advisory lock; a `ready` change waiting 3 days still has a 7-day horizon.
 - **AC6** `channels.lifecycle` (`staged`/`live`/`retired`); number and slug unique among `live`; every
   live reader (HDHR lineup, guide, API lists, `write_channels._actual`) filters `live`.

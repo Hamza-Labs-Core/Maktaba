@@ -7,7 +7,7 @@
 
 | # | Decision | Rationale |
 |---|---|---|
-| D1 | A general `notifications` table, TV as its first user. | No in-app store exists; the review flow and other features will need it (README Q8). |
+| D1 | A general `notifications` table, TV as its first user. | No in-app store exists; the review flow and other features will need it (README decision 8). |
 | D2 | Key + params, localised in the client. | Arabic and English without storing two texts. |
 | D3 | Audit through the existing `audit_log`. | Append-only already; the Audit log page already lists it. |
 

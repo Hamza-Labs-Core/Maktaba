@@ -13,13 +13,14 @@ Design: [design.md](design.md) §6.
 
 ## Acceptance criteria
 
-- **AC1** On `staged`, the controller assigns the free slot (`idle`, or `standby` past its grace) to the
-  release; the supervisor starts it; on `healthy` the change becomes `verifying`.
+- **AC1** On `staged`, the controller starts the third slot instance (the one that is neither live nor
+  standby) on the release; the hot standby keeps running; on `healthy` the change becomes `verifying`.
 - **AC2** Warm set = demand ∪ probe ∪ rolling window of changed channels (`verify_probe_seconds` each);
   each gets a `track = staging` placement and a warm hold; the set follows demand (a channel tuned
   during verification is warmed within 5 s).
-- **AC3** Extra encodes never exceed the budget (`staging_max_extra_encodes`, auto = free hardware
-  sessions per host); live channels never fall back to software because of staging (NVENC).
+- **AC3** Extra encodes never exceed the budget (`staging_max_extra_encodes`, auto = what is left after
+  live and the standby's warm set); neither live nor the standby ever loses a session or falls back to
+  software because of staging (NVENC).
 - **AC4** All checks of design §6.2 run and are recorded per channel with the measured value;
   verification passes after `verify_soak_seconds` with no fail.
 - **AC5** `cloudflare.ingest` checks H.264, AAC (or AC-3 with relay transcode), closed GOP within 2–10 s,
