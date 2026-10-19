@@ -31,6 +31,7 @@ type Config struct {
 	Media         MediaSection         `toml:"media"`
 	Transcription TranscriptionSection `toml:"transcription"`
 	Cloud         CloudSection         `toml:"cloud"`
+	Supervisor    SupervisorSection    `toml:"supervisor"`
 }
 
 // ServerSection controls listen addresses and on-disk state.
@@ -90,7 +91,8 @@ func Defaults() Config {
 			Backend: defaultTranscriptionBackend(),
 			Model:   "large-v3",
 		},
-		Cloud: CloudSection{Enabled: false},
+		Cloud:      CloudSection{Enabled: false},
+		Supervisor: DefaultSupervisor(),
 	}
 }
 

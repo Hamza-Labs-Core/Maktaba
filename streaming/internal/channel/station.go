@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pathmap"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/procattr"
 )
 
 // StationConfig is everything a Station needs from the host.
@@ -181,6 +182,7 @@ func StartStation(cfg StationConfig, channelID uuid.UUID, dir string) (*Station,
 // hub. restart appends to mux.log and marks an HLS discontinuity.
 func (s *Station) startMuxer(restart bool) (*muxProc, error) {
 	cmd := exec.Command(s.cfg.FFmpeg, MuxerArgs(s.cfg.Profile, s.dir, restart)...)
+	procattr.Tie(cmd) // dies with this process, however it dies (Story 22.9)
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -905,6 +907,7 @@ func (s *Station) runBlock(ctx context.Context, prof OutputProfile, in BlockInpu
 	args := BlockArgs(prof, in)
 
 	cmd := exec.CommandContext(ctx, s.cfg.FFmpeg, args...)
+	procattr.Tie(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return blockResult{}, err

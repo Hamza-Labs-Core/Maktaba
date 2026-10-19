@@ -65,18 +65,24 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		add("MAKTABA_LOG_PEERS",
 			"streaming=http://127.0.0.1:9101/logs/recent,"+
 				"pipeline=http://127.0.0.1:9102/logs/recent")
+		// Process supervision (Story 22.9): the api proxies the
+		// supervisor's state to GET /api/system/processes and records
+		// crashes into health_samples.
+		add("MAKTABA_SUPERVISOR_URL", StateURL(cfg))
 	case RoleStreaming:
 		// The streaming binary binds MAKTABA_HTTP_ADDR; the older
 		// MAKTABA_STREAMING_HTTP_ADDR is kept for anything reading it.
 		add("MAKTABA_HTTP_ADDR", cfg.Server.StreamAddr)
 		add("MAKTABA_STREAMING_HTTP_ADDR", cfg.Server.StreamAddr)
-		add("MAKTABA_ADMIN_ADDR", ":9101")
+		add("MAKTABA_ADMIN_ADDR", streamingAdminAddr)
 	case RolePipeline:
 		// The pipeline exposes its gRPC server so the api can call it.
 		add("MAKTABA_PIPELINE_GRPC_ADDR", "127.0.0.1:9090")
 		// Recent-logs HTTP endpoint drained by the api's diagnostics
 		// export proxy (see MAKTABA_LOG_PEERS on the api role).
-		add("MAKTABA_PIPELINE_LOGS_ADDR", "127.0.0.1:9102")
+		// Its /healthz (event-loop heartbeat) is the pipeline's liveness
+		// probe.
+		add("MAKTABA_PIPELINE_LOGS_ADDR", pipelineLogsAddr)
 	}
 
 	return env
@@ -84,6 +90,25 @@ func ChildEnv(role Role, cfg config.Config) []string {
 
 // StreamingGRPCAddr is the streaming service's intra-host gRPC address.
 const StreamingGRPCAddr = "127.0.0.1:9050"
+
+const (
+	// streamingAdminAddr is the streaming admin port (/healthz, /readyz,
+	// /logs/recent).
+	streamingAdminAddr = ":9101"
+	// pipelineLogsAddr is the pipeline's HTTP port (/logs/recent,
+	// /healthz).
+	pipelineLogsAddr = "127.0.0.1:9102"
+)
+
+// StateURL is the base URL of the supervisor's state endpoint, or
+// "" when [supervisor] admin_addr is switched off.
+func StateURL(cfg config.Config) string {
+	p, err := PolicyFromConfig(cfg.Supervisor)
+	if err != nil || p.AdminAddr == "" {
+		return ""
+	}
+	return "http://" + LocalAddr(p.AdminAddr, "9103")
+}
 
 // LocalAddr turns a bind spec like ":8081" or "0.0.0.0:8081" into a
 // dialable 127.0.0.1:<port> address for intra-host gRPC/HTTP. Falls back

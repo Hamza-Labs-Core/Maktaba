@@ -179,6 +179,7 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
     # API's diagnostics export can proxy this service's ring buffer.
     # Opt-in via --logs-addr / $MAKTABA_PIPELINE_LOGS_ADDR.
     log_server: Any = None
+    heartbeat_task: asyncio.Task[None] | None = None
     if args.logs_addr:
         try:
             from .log.http import start_log_server
@@ -187,6 +188,14 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
             log.info("pipeline_logs_listening", addr=args.logs_addr)
         except Exception as exc:  # noqa: BLE001 — startup-only branch
             log.warning("pipeline_logs_disabled", reason=str(exc))
+        else:
+            # /healthz on the same port reports this loop's heartbeat; the
+            # maktaba-server supervisor restarts the process when it stalls.
+            from .log.liveness import LoopHeartbeat, run_heartbeat, set_heartbeat
+
+            heartbeat = LoopHeartbeat()
+            set_heartbeat(heartbeat)
+            heartbeat_task = asyncio.create_task(run_heartbeat(heartbeat))
 
     grpc_addr = args.grpc_addr
     grpc_task: asyncio.Task[None] | None = None
@@ -217,6 +226,8 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
                 await asyncio.wait_for(grpc_task, timeout=2.0)
             except (TimeoutError, asyncio.TimeoutError):  # noqa: UP041
                 grpc_task.cancel()
+        if heartbeat_task is not None:
+            heartbeat_task.cancel()
         if log_server is not None:
             log_server.shutdown()
         await database.close()

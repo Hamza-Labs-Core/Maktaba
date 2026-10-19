@@ -24,3 +24,27 @@ func TestResolveBinaryFindsTheExeOnWindows(t *testing.T) {
 		t.Fatalf("override: %q, %v", got, err)
 	}
 }
+
+// Windows: a child terminated from outside (TerminateProcess, as Task
+// Manager does) is restarted; there is no signal, only the exit code.
+func TestTerminatedChildIsRestartedOnWindows(t *testing.T) {
+	streaming, _ := fakeProc(t, RoleStreaming, "serve")
+	s := New([]Process{streaming}, testPolicy(), WithLog(&syncBuffer{}))
+	running(t, s)
+	snap := waitFor(t, s, "running", runningPID(RoleStreaming))
+	p, err := os.FindProcess(proc(snap, RoleStreaming).PID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	snap = waitFor(t, s, "restarted", func(s Snapshot) bool {
+		c := proc(s, RoleStreaming)
+		return c.Restarts == 1 && c.State == StateRunning
+	})
+	exit := proc(snap, RoleStreaming).LastExit
+	if exit == nil || exit.Signal != "" || exit.Code != 1 || exit.Reason != ReasonCrash {
+		t.Fatalf("last exit = %+v, want code 1 crash with no signal", exit)
+	}
+}

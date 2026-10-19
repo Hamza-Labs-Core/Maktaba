@@ -20,3 +20,4 @@ rollback. It does **not** cover security hardening
 - [Story 22.6 — Upgrade and rollback](story-22-06-upgrade-rollback.md)
 - [Story 22.7 — Multi-platform packaging](story-22-07-multi-platform-packaging.md)
 - [Story 22.8 — Local developer workflow](story-22-08-local-developer-workflow.md)
+- [Story 22.9 — Process supervision and crash recovery](story-22-09-process-supervision.md)

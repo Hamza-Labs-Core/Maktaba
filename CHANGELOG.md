@@ -11,6 +11,18 @@ don't append a line here; docs-only PRs are exempt.
 ## [Unreleased]
 
 ### Added
+- Process supervision (Story 22.9): `maktaba-server serve` restarts only
+  the child process (api, streaming or pipeline) that crashed or hung,
+  with exponential backoff, a crash-loop guard and `/healthz` liveness
+  probes. It is configured by `[supervisor]` in `server.toml`.
+  `restart = "never"` keeps the old behaviour, where any exit stops the
+  whole stack. The streaming `/healthz` now fails when the live-channel
+  engine is wedged, and the pipeline serves an event-loop `/healthz`. The
+  state is shown at `GET /api/system/processes` (admin) and on the System
+  Health page. Crashes are recorded in `health_samples`. A child's own
+  ffmpeg and yt-dlp processes die with it: on POSIX through its process
+  group, on Windows through a kill-on-close Job Object. Streaming also
+  ties them to itself (Windows job, Linux `Pdeathsig`).
 - Unified `maktaba-server` binary (`cmd/maktaba-server`): one executable
   that supervises the API, streaming, and pipeline roles, serves the
   embedded web UI (build tag `embed_web`), advertises `_maktaba._tcp`
