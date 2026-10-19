@@ -34,6 +34,26 @@ type StationConfig struct {
 	Now      func() time.Time
 	// LiveRetry: how long a failed live block slates before retrying.
 	LiveRetry time.Duration
+	// Gate is the NVENC session semaphore shared by every station (nil:
+	// the process-wide DefaultEncoderGate); VTGate the VideoToolbox one
+	// (nil: DefaultVTGate, uncapped by default).
+	Gate   *EncoderGate
+	VTGate *EncoderGate
+	// NVENCWait is how long a pre-started block waits for an NVENC slot
+	// when the gate is full and this station holds one (its current block,
+	// ending at the boundary); 0: defaultNVENCWait.
+	NVENCWait time.Duration
+}
+
+// defaultNVENCWait covers the feeder's pre-start lead plus margin: the
+// station's own ending block frees its slot at the boundary.
+const defaultNVENCWait = defaultLead + 2*time.Second
+
+// StationStats is what a station reports for channel_runtime.
+type StationStats struct {
+	Encoder        string // the current block's encoder
+	Restarts       int    // muxer restarts
+	NVENCFallbacks int64  // blocks encoded by libx264 instead of the hardware encoder (NVENC or VideoToolbox)
 }
 
 // Station is one channel on air: the persistent muxer (HLS window +
@@ -59,7 +79,8 @@ type Station struct {
 	stopOnce sync.Once
 	stopping chan struct{}
 
-	software atomic.Bool // NVENC failed on this station: libx264 from now on
+	nvencFallbacks atomic.Int64 // blocks that fell back from NVENC to libx264
+	encoderNow     atomic.Value // string: the encoder of the block on air
 	// reachedBits: float64 bits of the timeline position (s since epoch)
 	// the forwarded output has reached.
 	reachedBits atomic.Uint64
@@ -615,18 +636,37 @@ func (p *stationPlayback) run(ctx context.Context) (bool, error) {
 		return true, nil // nothing left of this segment
 	}
 	prof := s.cfg.Profile
-	if s.software.Load() {
-		prof.Encoder = EncoderSoftware
-		in.HWDecode = false
+	release := func(bool) {}
+	if hw := prof.Encoder; hw == EncoderNVENC || hw == EncoderVideoToolbox {
+		switch rel, ok := s.acquireHW(ctx, hw, in); {
+		case in.Kind == "slate":
+			// a still picture is never worth a GPU session
+			prof.Encoder = EncoderSoftware
+			in.HWDecode = false
+		case ok:
+			release = rel
+		default:
+			// every hardware session is in use (or the driver just
+			// refused one): libx264 for this block; the next asks again.
+			s.nvencFallbacks.Add(1)
+			s.log.Info("channel: hardware encoder sessions full, block encoded by libx264", "encoder", hw,
+				"seq", seg.Block.Seq, "event", "channel_nvenc_full")
+			prof.Encoder = EncoderSoftware
+			in.HWDecode = false
+		}
 	}
+	s.encoderNow.Store(prof.Encoder)
 	res, err := s.runBlock(ctx, prof, *in, start, p)
-	if err != nil && ctx.Err() == nil && prof.Encoder == EncoderNVENC && res.written == 0 {
-		// NVENC can refuse a session (GeForce session cap, driver
-		// hiccup): fall back to libx264 for the rest of this station.
-		s.log.Warn("channel: NVENC failed, falling back to libx264", "err", err.Error(),
-			"event", "channel_nvenc_fallback")
-		s.software.Store(true)
+	if hw := prof.Encoder; err != nil && ctx.Err() == nil && (hw == EncoderNVENC || hw == EncoderVideoToolbox) && res.written == 0 {
+		// The hardware encoder can refuse a session (GeForce session cap,
+		// a busy VideoToolbox, a driver hiccup): this block falls back to
+		// libx264, and the gate pauses that encoder briefly for everyone.
+		release(hwRefused(err))
+		s.nvencFallbacks.Add(1)
+		s.log.Warn("channel: hardware encoder failed, block falls back to libx264", "encoder", hw,
+			"err", err.Error(), "event", "channel_nvenc_fallback")
 		prof.Encoder = EncoderSoftware
+		s.encoderNow.Store(prof.Encoder)
 		in2, start2, err2 := s.blockInput(ctx, seg, look)
 		if err2 != nil || in2 == nil {
 			return in2 == nil && err2 == nil, err2
@@ -634,6 +674,8 @@ func (p *stationPlayback) run(ctx context.Context) (bool, error) {
 		in2.HWDecode = false
 		in, start = in2, start2
 		res, err = s.runBlock(ctx, prof, *in2, start2, p)
+	} else {
+		release(false)
 	}
 	if err != nil && ctx.Err() == nil {
 		s.log.Warn("channel: block failed", "kind", seg.Kind, "seq", seg.Block.Seq,
@@ -648,6 +690,55 @@ func (p *stationPlayback) run(ctx context.Context) (bool, error) {
 	// than the slot) is incomplete even when ffmpeg exited cleanly.
 	full := in.DurationSec >= seg.End.Sub(start).Seconds()-earlyEnd.Seconds()
 	return err == nil && res.complete && full, err
+}
+
+// hwRefused reports whether a block failed because the hardware encoder
+// refused the session (no session left, no capable device), rather than
+// for its input.
+func hwRefused(err error) bool {
+	m := strings.ToLower(errString(err))
+	for _, k := range []string{"openencodesession", "nvenc", "incompatible client key", "no capable devices",
+		"out of memory", "videotoolbox", "vtcompressionsession"} {
+		if strings.Contains(m, k) {
+			return true
+		}
+	}
+	return false
+}
+
+// acquireHW takes a hardware-encoder slot for a block (none for a slate).
+func (s *Station) acquireHW(ctx context.Context, encoder string, in *BlockInput) (func(bool), bool) {
+	if in.Kind == "slate" {
+		return nil, false
+	}
+	wait := s.cfg.NVENCWait
+	if wait <= 0 {
+		wait = defaultNVENCWait
+	}
+	return s.gate(encoder).Acquire(ctx, s.id, wait)
+}
+
+func (s *Station) gate(encoder string) *EncoderGate {
+	if encoder == EncoderVideoToolbox {
+		if s.cfg.VTGate != nil {
+			return s.cfg.VTGate
+		}
+		return defaultVTGate
+	}
+	if s.cfg.Gate != nil {
+		return s.cfg.Gate
+	}
+	return defaultGate
+}
+
+// Stats reports the station's encoder, muxer restarts and NVENC
+// fallbacks.
+func (s *Station) Stats() StationStats {
+	enc, _ := s.encoderNow.Load().(string)
+	if enc == "" {
+		enc = s.cfg.Profile.Encoder
+	}
+	return StationStats{Encoder: enc, Restarts: s.MuxerRestarts(), NVENCFallbacks: s.nvencFallbacks.Load()}
 }
 
 // blockInput builds the ffmpeg input for `seg` starting now (or at the
@@ -695,7 +786,7 @@ func (s *Station) blockInput(ctx context.Context, seg Segment, look Look) (*Bloc
 		in.Source = path
 		in.SeekSec = float64(seekMS) / 1000
 		in.HasVideo, in.HasAudio = info.HasVideo, info.HasAudio
-		in.HWDecode = s.cfg.Profile.Encoder == EncoderNVENC
+		in.HWDecode = s.cfg.Profile.Encoder == EncoderNVENC || s.cfg.Profile.Encoder == EncoderVideoToolbox
 		s.applyLook(in, look)
 	case KindLive:
 		u, err := s.cfg.Resolver.Resolve(ctx, seg.Block.SourceURL)

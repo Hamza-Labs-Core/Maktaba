@@ -2,9 +2,10 @@
 
 ``run_schedule`` (re)generates one channel's future tail from the next
 boundary after ``now``; ``topup_all`` extends every enabled channel whose
-horizon is running low (the ~6-hourly cron). Both are debounced/periodic,
-never request-time — generating a 48 h timeline is batch planning that
-mirrors Epic 26's auto-collection pass model.
+horizon is running low (the worker's top-up loop). Both are debounced/periodic,
+never request-time — generating a week's timeline is batch planning that
+mirrors Epic 26's auto-collection pass model. How far ahead (``horizon_days``)
+and when to top up (``topup_below_days``) are the ``tv`` rules.
 
 The pass is the only place that touches the clock; the planner and packer
 are pure. Generation never raises (D9): an empty source yields a single
@@ -38,17 +39,19 @@ __all__ = [
     "DEFAULT_HORIZON",
     "TOPUP_LOW_WATER",
     "TOPUP_INTERVAL_S",
+    "guide_window",
 ]
 
 _log = get_logger()
 
 # Default look-ahead and the threshold below which a top-up extends a
-# channel (Plan 27.2 §2).
-DEFAULT_HORIZON = timedelta(hours=48)
-TOPUP_LOW_WATER = timedelta(hours=24)
+# channel: the defaults of the ``tv`` rules horizon_days / topup_below_days
+# (7 days, as dizqueTV's guide; topped up below 3).
+DEFAULT_HORIZON = timedelta(days=7)
+TOPUP_LOW_WATER = timedelta(days=3)
 
 # How often a worker looks for channels due a top-up. A tick that finds none
-# is one query, so it runs well inside the 24 h low water: a channel that is
+# is one query, so it runs well inside the low water: a channel that is
 # new or edited (``stale``) gets its timeline within minutes, not hours.
 TOPUP_INTERVAL_S = 600.0
 
@@ -119,6 +122,16 @@ def _ms_or_none(v: Any) -> int | None:
         return None
 
 
+def guide_window(tv: Any) -> tuple[timedelta, timedelta]:
+    """(horizon, low water) from the ``tv`` rules: plan ``horizon_days`` ahead, top up
+    below ``topup_below_days`` (never more than the horizon itself)."""
+    days = getattr(tv, "horizon_days", None)
+    below = getattr(tv, "topup_below_days", None)
+    horizon = timedelta(days=days) if isinstance(days, int) and days > 0 else DEFAULT_HORIZON
+    low = timedelta(days=below) if isinstance(below, int) and below > 0 else TOPUP_LOW_WATER
+    return horizon, min(low, horizon)
+
+
 def _seed_for(channel_id: UUID) -> int:
     return int(channel_id.int & 0x7FFFFFFF)
 
@@ -128,9 +141,10 @@ async def run_schedule(
     channel_id: UUID,
     *,
     now: datetime,
-    horizon: timedelta = DEFAULT_HORIZON,
+    horizon: timedelta | None = None,
 ) -> int:
-    """(Re)generate ``channel_id``'s schedule out to ``now + horizon``.
+    """(Re)generate ``channel_id``'s schedule out to ``now + horizon`` (``None``: the
+    ``tv`` rules' ``horizon_days``).
 
     Returns the number of blocks written (0 if the channel is missing or
     disabled). Past/current blocks are never rewritten (D3): the anchor
@@ -141,6 +155,9 @@ async def run_schedule(
     if channel is None or not channel.enabled:
         return 0
 
+    tv = await repo.load_tv()
+    if horizon is None:
+        horizon = guide_window(tv)[0]
     state = await repo.load_state(channel_id)
     # Anchor at the existing horizon when topping up (continue the
     # timeline) but never before now, and never rewrite the current block.
@@ -158,7 +175,6 @@ async def run_schedule(
         # Already covered past the requested horizon; nothing to do.
         return 0
 
-    tv = await repo.load_tv()
     slot_content = await repo.resolve_slot_content(channel)
     planner = make_planner(
         channel, cursor=state.cursor, seed=_seed_for(channel_id), slot_content=slot_content, tv=tv
@@ -230,11 +246,13 @@ async def topup_all(
     repo: ScheduleRepo,
     *,
     now: datetime,
-    horizon: timedelta = DEFAULT_HORIZON,
-    low_water: timedelta = TOPUP_LOW_WATER,
+    horizon: timedelta | None = None,
+    low_water: timedelta | None = None,
 ) -> int:
     """Extend every enabled channel whose horizon is within ``low_water``
-    of ``now`` (or marked stale). Returns the count of channels touched."""
+    of ``now`` (or marked stale). Returns the count of channels touched.
+    ``None``: the ``tv`` rules' horizon_days / topup_below_days."""
+    horizon, low_water = _window(await repo.load_tv(), horizon, low_water)
     due = await repo.channels_needing_topup(now, now + low_water)
     touched = 0
     for channel_id in due:
@@ -246,18 +264,36 @@ async def topup_all(
     return touched
 
 
-async def topup_once(db: Any, *, now: datetime | None = None) -> int:
+def _window(
+    tv: Any, horizon: timedelta | None, low_water: timedelta | None
+) -> tuple[timedelta, timedelta]:
+    h, low = guide_window(tv)
+    return horizon or h, low_water or (min(low, horizon) if horizon else low)
+
+
+async def topup_once(
+    db: Any,
+    *,
+    now: datetime | None = None,
+    horizon: timedelta | None = None,
+    low_water: timedelta | None = None,
+) -> int:
     """Top up every channel that is due, each in its own short transaction.
 
     One transaction per channel, never one for the sweep: writing a channel's
     blocks takes key-share locks on the videos they reference, which would hold
     off ``content_hash`` (it updates a unique column of ``videos``) for the whole
     sweep. On Postgres a per-channel advisory lock lets several workers share
-    the sweep without writing the same channel twice."""
+    the sweep without writing the same channel twice.
+
+    ``horizon`` / ``low_water`` (``None``: the ``tv`` rules) say how far ahead each
+    channel is planned and below what it is topped up; the rules are read once a sweep,
+    so a change applies from the next one."""
     now = now or datetime.now(UTC)
     repo = SqlRepo(db)  # ``db``'s methods join each transaction (and rewrite $N for SQLite)
+    horizon, low_water = _window(await repo.load_tv(), horizon, low_water)
     touched = 0
-    for channel_id in await repo.channels_needing_topup(now, now + TOPUP_LOW_WATER):
+    for channel_id in await repo.channels_needing_topup(now, now + low_water):
         try:
             async with db.transaction():
                 if db.dialect == "postgres" and not await db.fetchval(
@@ -266,7 +302,7 @@ async def topup_once(db: Any, *, now: datetime | None = None) -> int:
                     _seed_for(channel_id),
                 ):
                     continue
-                await run_schedule(repo, channel_id, now=now)
+                await run_schedule(repo, channel_id, now=now, horizon=horizon)
             touched += 1
         except Exception:  # noqa: BLE001 - one bad channel must not stop the sweep
             _log.exception("channel.topup_failed", channel_id=str(channel_id))
@@ -298,13 +334,16 @@ async def run_topup_loop(
     stop: asyncio.Event,
     *,
     interval_sec: float = TOPUP_INTERVAL_S,
+    horizon: timedelta | None = None,
+    low_water: timedelta | None = None,
     listeners: tuple[str, ...] = (),
 ) -> None:
-    """The worker's background loop that keeps every channel's timeline ahead; after a
+    """The worker's background loop that keeps every channel's timeline ahead
+    (``horizon`` / ``low_water`` ``None``: the ``tv`` rules, re-read every sweep); after a
     sweep that extended any channel it enqueues the ``listeners`` (``after_topup`` stages)."""
     while not stop.is_set():
         try:
-            touched = await topup_once(db)
+            touched = await topup_once(db, horizon=horizon, low_water=low_water)
             if touched:
                 _log.info("channel.topup", channels=touched)
                 await notify_listeners(db, listeners, touched)

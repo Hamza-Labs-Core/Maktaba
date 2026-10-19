@@ -3316,7 +3316,7 @@
   {
    "key": "tv",
    "title": "Maktaba TV",
-   "what": "how Maktaba's own channels air: filler between programmes, the Ramadan grids, live broadcasts, loudness",
+   "what": "how Maktaba's own channels air: filler between programmes, the Ramadan grids, live broadcasts, loudness, the guide's days ahead",
    "fields": [
     {
      "name": "max_filler_per_gap",
@@ -3404,6 +3404,155 @@
      "label": "Loudness target (LUFS)",
      "help": "",
      "default": -16.0
+    },
+    {
+     "name": "horizon_days",
+     "kind": "int",
+     "group": "Guide",
+     "label": "Guide days ahead",
+     "help": "Every channel's schedule is planned this many days ahead; the guide (XMLTV) Plex and the apps read shows as far.",
+     "default": 7,
+     "minimum": 1,
+     "maximum": 31
+    },
+    {
+     "name": "topup_below_days",
+     "kind": "int",
+     "group": "Guide",
+     "label": "Top up below (days)",
+     "help": "A channel with less than this many days planned is extended back to the days ahead above. Checked every few minutes.",
+     "default": 3,
+     "minimum": 1,
+     "maximum": 31
+    }
+   ]
+  },
+  {
+   "key": "tv_output",
+   "title": "Maktaba TV output",
+   "what": "how a channel on air is encoded: encoder, picture, bitrates, how many channels and NVENC sessions at once",
+   "fields": [
+    {
+     "name": "encoder",
+     "kind": "str",
+     "group": "Maktaba TV output",
+     "label": "Video encoder",
+     "help": "auto: on a Mac, Apple VideoToolbox when its hardware encoder answers a test encode; elsewhere the NVIDIA GPU (NVENC) when it does; else the processor (libx264). nvenc, videotoolbox or software force one.",
+     "default": "auto",
+     "choices": [
+      "auto",
+      "nvenc",
+      "videotoolbox",
+      "software"
+     ]
+    },
+    {
+     "name": "resolution",
+     "kind": "str",
+     "group": "Maktaba TV output",
+     "label": "Picture size",
+     "help": "Every programme is scaled to this (width x height); black bars keep its shape.",
+     "default": "1920x1080",
+     "choices": [
+      "3840x2160",
+      "2560x1440",
+      "1920x1080",
+      "1280x720",
+      "1024x576",
+      "854x480"
+     ]
+    },
+    {
+     "name": "fps",
+     "kind": "int",
+     "group": "Maktaba TV output",
+     "label": "Frames per second",
+     "help": "",
+     "default": 30,
+     "minimum": 10,
+     "maximum": 60
+    },
+    {
+     "name": "video_kbps",
+     "kind": "int",
+     "group": "Maktaba TV output",
+     "label": "Video bitrate (kbit/s)",
+     "help": "Per channel. 6000 suits 1080p; 3000 suits 720p.",
+     "default": 6000,
+     "minimum": 300,
+     "maximum": 50000
+    },
+    {
+     "name": "audio_codec",
+     "kind": "str",
+     "group": "Maktaba TV output",
+     "label": "Audio codec",
+     "help": "aac plays everywhere; ac3 for players that want Dolby Digital.",
+     "default": "aac",
+     "choices": [
+      "aac",
+      "ac3"
+     ]
+    },
+    {
+     "name": "audio_kbps",
+     "kind": "int",
+     "group": "Maktaba TV output",
+     "label": "Audio bitrate (kbit/s)",
+     "help": "",
+     "default": 192,
+     "minimum": 64,
+     "maximum": 640
+    },
+    {
+     "name": "segment_seconds",
+     "kind": "int",
+     "group": "Maktaba TV output",
+     "label": "HLS segment (seconds)",
+     "help": "Shorter starts a channel sooner; longer is steadier on a slow network.",
+     "default": 4,
+     "minimum": 1,
+     "maximum": 10
+    },
+    {
+     "name": "max_active_channels",
+     "kind": "int",
+     "group": "Channels on air",
+     "label": "Channels on air at once",
+     "help": "On each streaming host. Viewers of the same channel share its one encode; a channel nobody watches makes way for a new one. 0: 16 with VideoToolbox (Apple Silicon has several media engines), else 8.",
+     "default": 0,
+     "minimum": 0,
+     "maximum": 64
+    },
+    {
+     "name": "warm_grace_seconds",
+     "kind": "int",
+     "group": "Channels on air",
+     "label": "Keep on air after the last viewer (seconds)",
+     "help": "So zapping back is instant.",
+     "default": 60,
+     "minimum": 0,
+     "maximum": 3600
+    },
+    {
+     "name": "nvenc_max_sessions",
+     "kind": "int",
+     "group": "Hardware encoder",
+     "label": "Most NVENC sessions",
+     "help": "A GeForce card encodes only a few streams at once. Past this many a block is encoded by the processor (libx264); the channel goes back to the GPU at its next programme once a session is free. The next programme starts 3 seconds early, so a channel holds two sessions for a moment.",
+     "default": 6,
+     "minimum": 1,
+     "maximum": 64
+    },
+    {
+     "name": "videotoolbox_max_sessions",
+     "kind": "int",
+     "group": "Hardware encoder",
+     "label": "Most VideoToolbox sessions",
+     "help": "Apple VideoToolbox sessions at once on a Mac; past this many a block is encoded by the processor (libx264) and the channel goes back at its next programme. 0: no limit.",
+     "default": 0,
+     "minimum": 0,
+     "maximum": 64
     }
    ]
   },

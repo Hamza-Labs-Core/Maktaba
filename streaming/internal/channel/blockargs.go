@@ -16,18 +16,24 @@ type OutputProfile struct {
 	VideoKbps     int
 	AudioCodec    string // "aac" (default) | "ac3"
 	AudioKbps     int
-	// Encoder is "nvenc" (h264_nvenc) or "software" (libx264).
+	// Encoder is "nvenc" (h264_nvenc), "videotoolbox" (h264_videotoolbox,
+	// macOS) or "software" (libx264).
 	Encoder string
 	// SegmentSeconds is the HLS target segment duration.
 	SegmentSeconds int
 	// HLSListSize is the sliding window length (segments).
 	HLSListSize int
+	// VTSoftware: VideoToolbox may use Apple's software encoder (no
+	// hardware encoder answered); VTPrioSpeed: ffmpeg has -prio_speed.
+	VTSoftware  bool
+	VTPrioSpeed bool
 }
 
 // Encoder names.
 const (
-	EncoderNVENC    = "nvenc"
-	EncoderSoftware = "software"
+	EncoderNVENC        = "nvenc"
+	EncoderVideoToolbox = "videotoolbox"
+	EncoderSoftware     = "software"
 )
 
 // DefaultProfile is 1080p30 H.264 6 Mb/s + AAC 192k stereo, 4 s segments.
@@ -57,7 +63,7 @@ func (p OutputProfile) normalised() OutputProfile {
 	if p.AudioKbps <= 0 {
 		p.AudioKbps = d.AudioKbps
 	}
-	if p.Encoder != EncoderNVENC {
+	if p.Encoder != EncoderNVENC && p.Encoder != EncoderVideoToolbox {
 		p.Encoder = EncoderSoftware
 	}
 	if p.SegmentSeconds <= 0 {
@@ -124,7 +130,12 @@ func BlockArgs(p OutputProfile, in BlockInput) []string {
 		var main []string
 		if in.Kind == "file" {
 			if in.HWDecode && in.HasVideo {
-				main = append(main, "-hwaccel", "cuda")
+				switch p.Encoder {
+				case EncoderNVENC:
+					main = append(main, "-hwaccel", "cuda")
+				case EncoderVideoToolbox:
+					main = append(main, "-hwaccel", "videotoolbox")
+				}
 			}
 			if in.SeekSec > 0 {
 				main = append(main, "-ss", formatSec(in.SeekSec))
@@ -222,14 +233,40 @@ func videoEncoderArgs(p OutputProfile) []string {
 	rate := itoa(p.VideoKbps) + "k"
 	buf := itoa(p.VideoKbps*2) + "k"
 	kf := "expr:gte(t,n_forced*" + itoa(keyintSeconds) + ")"
-	if p.Encoder == EncoderNVENC {
+	switch p.Encoder {
+	case EncoderNVENC:
 		return []string{"-c:v", "h264_nvenc", "-preset", "p4", "-tune", "ll", "-rc", "cbr",
 			"-b:v", rate, "-maxrate", rate, "-bufsize", buf, "-profile:v", "high",
 			"-g", gop, "-bf", "0", "-forced-idr", "1", "-force_key_frames", kf}
+	case EncoderVideoToolbox:
+		return videoToolboxArgs(p, rate, buf)
 	}
 	return []string{"-c:v", "libx264", "-preset", "veryfast", "-profile:v", "high",
 		"-b:v", rate, "-maxrate", rate, "-bufsize", buf,
 		"-g", gop, "-keyint_min", gop, "-sc_threshold", "0", "-force_key_frames", kf}
+}
+
+// videoToolboxArgs: Apple's hardware encoder for live output: real-time
+// priority (and speed over quality where this ffmpeg has -prio_speed),
+// the hardware encoder only unless none answered (-allow_sw), bitrate held
+// near constant by -b:v / -maxrate / -bufsize, no B-frames, and a keyframe
+// at every HLS segment boundary (the GOP is one segment long).
+func videoToolboxArgs(p OutputProfile, rate, buf string) []string {
+	seg := p.SegmentSeconds
+	if seg <= 0 {
+		seg = keyintSeconds
+	}
+	allowSW := "0"
+	if p.VTSoftware {
+		allowSW = "1"
+	}
+	args := []string{"-c:v", "h264_videotoolbox", "-realtime", "1", "-allow_sw", allowSW}
+	if p.VTPrioSpeed {
+		args = append(args, "-prio_speed", "1")
+	}
+	gop := itoa(p.FPS * seg)
+	return append(args, "-b:v", rate, "-maxrate", rate, "-bufsize", buf, "-profile:v", "high",
+		"-g", gop, "-bf", "0", "-force_key_frames", "expr:gte(t,n_forced*"+itoa(seg)+")")
 }
 
 func audioEncoderArgs(p OutputProfile) []string {

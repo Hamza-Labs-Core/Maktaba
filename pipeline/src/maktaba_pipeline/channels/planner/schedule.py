@@ -53,7 +53,9 @@ _WEEKDAYS = {
     "sat": 5,
     "sun": 6,
 }
-_MAX_WINDOWS = 10_000
+# a window is one slot occurrence, gap or live broadcast: a month of five-minute slots
+# with a live break in each stays below this (each channel is planned on its own)
+_MAX_WINDOWS = 200_000
 _MS = timedelta(milliseconds=1)
 
 
