@@ -4,7 +4,7 @@
 > Design: [design.md](design.md) §2, §5. Writes slot **0120** (`tv_stream_hosts`,
 > `channel_placements`, `tv_placement_generation_seq`, `tv_cluster_secret`, `tv_host_beat`,
 > `tv_placement_ack`).
-> Starts after `feat/tv-core` is on `main` (slot 0117, `OutputSettings`, encoder gates).
+> `feat/tv-core` is on `main` (PR #63; slot 0117, `OutputSettings`, encoder gates).
 
 ## 0. Decisions
 

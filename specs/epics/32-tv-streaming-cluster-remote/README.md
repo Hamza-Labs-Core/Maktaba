@@ -5,9 +5,9 @@
 > HDHomeRun, XMLTV/M3U), [Epic 31 — Multi-instance](../31-multi-instance/README.md) (home and
 > nodes, database roles, path maps), [Epic 25 — Cloud relay](../25-cloud-relay/README.md)
 > (accounts, the tunnel, LAN-first client routing), [Epic 08 — Streaming](../08-streaming/README.md).
-> **Builds on the in-flight branch `feat/tv-core`** (encoder settings in the database, VideoToolbox,
+> **Builds on `feat/tv-core` (merged, PR #63)** (encoder settings in the database, VideoToolbox,
 > the NVENC session cap, the 7-day guide horizon, the live SSDP toggle, `channel_runtime` as a
-> cluster-wide record — slot 0117, `tv_core_runtime`, still in flight).
+> cluster-wide record — slot 0117, `tv_core_runtime`; merged in PR #63).
 
 **Documents.** [design.md](design.md) (balancer, leases, front door, failover, the Cloudflare push
 pipeline, tokens, app routing, simulcast) · stories `story-32-01` … `story-32-13` · plans `plan-32-01` … `plan-32-13`.
@@ -273,9 +273,9 @@ that the LAN stream does not have.
 
 ## Data model (proposed migrations)
 
-Slots 0116–0118 are taken: 0116 (`plex_livetv`, PR #61) and 0118 (`channel_edited_at`, PR #59)
-are merged on `main` (its highest slot is 0118), and 0117 (`tv_core_runtime`, `feat/tv-core`) is
-in flight. Epic 32's slots therefore start at **0119**. Nothing is added to `MANIFEST.md` until the
+Slots 0116–0118 are taken by merged work: 0116 (`plex_livetv`, PR #61), 0117
+(`tv_core_runtime`, `feat/tv-core`, PR #63) and 0118 (`channel_edited_at`, PR #59); the highest
+slot on `main` is 0118. Epic 32's slots therefore start at **0119**. Nothing is added to `MANIFEST.md` until the
 files exist (its rule: next free integer, no reservations); the rows go in with each plan's PR, so
 these numbers are provisional and move up if other work lands first.
 
@@ -450,7 +450,7 @@ budget.
 ## Dependencies
 
 - `feat/tv-core` (slot 0117 and the output settings): capacity, encoders, NVENC cap, cluster-wide
-  `channel_runtime`. Epic 32 code starts after it merges.
+  `channel_runtime`. Merged (PR #63); Epic 32 code can start.
 - Epic 31 (merged): node identity, database roles, `SECURITY DEFINER` own-row functions, path maps.
 - Epic 25 relay: the server-side tunnel agent must run inside `maktaba-server` and mark relayed
   requests (`X-Maktaba-Via: relay`, set by the agent on its loopback calls). Today
