@@ -36,8 +36,12 @@ Design: [design.md](design.md) §9; README R1.
   (verified), builds the venv, registers the launcher service (Windows: logon task by default,
   `-Mode Service` optional), maps `--instances N` to `[pipeline] instances = N`, and removes the old
   worker units only after the new service is healthy.
-- **AC8** Worker-only nodes keep working; the Updates page shows them as "worker-only — convert to
-  update automatically".
+- **AC8** Worker-only nodes are converted automatically on their next update (`update.convert` to
+  their pipeline agent, design §9.4); one too old for the command is shown "worker-only — re-run the
+  installer once".
+- **AC9** The node's streaming role runs for VOD and reads media from the NAS through the node's own
+  mounts and the share-path resolver (story 31.3); no media byte goes through the home or the link
+  except in the storage-failure fallback (design §11.5).
 
 ## Test cases
 

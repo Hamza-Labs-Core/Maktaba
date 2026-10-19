@@ -27,8 +27,12 @@ Design: [design.md](design.md) §11; README R6.
   paused → 503 `{code: "paused", reason}`. Writes stay `home` in v1.
 - **AC4** `/stream/…` on a node's web port passes the node's stream gate (session as
   `stream_gate.go`) and is proxied to the home's front door (`MAKTABA_HOME_STREAM_URL`) with per-write
-  flush; `/xmltv.xml` and `/lineup.m3u` are proxied unchanged (their URLs name the home). VOD is
-  proxied to the home.
+  flush; `/xmltv.xml` and `/lineup.m3u` are proxied unchanged (their URLs name the home). Live TV is the
+  only stream that goes through the home.
+- **AC4a** VOD is served by the node itself: its streaming role reads the file from the NAS through
+  its own mounts and the share-path resolver (story 31.3); no library media passes through the home or
+  the cluster link. Only when the node's storage check cannot read the share is VOD served through a
+  ticketed stream from a machine that can (design §11.5, story 35.16), and the Machines page says so.
 - **AC5** Images from home-only caches (posters, sprites, chapter thumbs, review pages) are cached
   at `<data_dir>/cache/proxy/<sha256(url)>` honouring `ETag`/`Cache-Control`; content-addressed art
   is immutable; LRU eviction at `proxy_cache_mb` (2048).
@@ -56,6 +60,12 @@ Design: [design.md](design.md) §11; README R6.
 - **EC3** Cache disk full: the proxy serves uncached and logs once.
 - **EC4** A route moved from `any` to `home` in a newer release: the node's older router still serves
   it locally while its schema fits — acceptable because migrations are additive.
+
+## Transport
+
+On the cluster link (story 35.16) the home proxy sends `home` requests on the machine's control
+channel and WebSocket upgrades as ticketed data streams; the signed HTTP proxy is the legacy path
+while `cluster.link.mode = prefer` and the machine has no certificate.
 
 ## Dependencies
 

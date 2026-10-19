@@ -17,7 +17,7 @@
 
 **Documents.** [design.md](design.md) (install layout and the launcher, release verification, the
 home's update state machine, the rollout to the machines, full nodes, auth across machines, routing,
-failure modes, tests) · stories `story-35-01` … `story-35-15` · plans `plan-35-01` … `plan-35-15`.
+failure modes, the cluster link, tests) · stories `story-35-01` … `story-35-16` · plans `plan-35-01` … `plan-35-16`.
 
 ## Goal
 
@@ -43,16 +43,19 @@ before its nodes leaves them paused until someone visits each one. This epic clo
 
 ## Decisions
 
-Owner decisions are marked **owner**; the rest are this spec's recommendations, marked **accepted
-default** and listed again under [Open questions](#open-questions) where the owner may want a say.
+Owner decisions are marked **owner**; the rest were proposed by the first draft and accepted by the
+owner on 2026-10-19 (**accepted default**). The questions and their answers are listed under
+[Decisions on the open questions](#decisions-on-the-open-questions).
 
 | Question | Decision |
 |---|---|
-| What a machine runs (**owner**) | The same `maktaba-server` as the home, in **node mode**: `api` (node mode), `web`, `pipeline` (node mode, as today), and `streaming` only when Epic 32 streaming is enabled for it. No database, no migrations, no front door, no secrets. |
+| What a machine runs (**owner**) | The same `maktaba-server` as the home, in **node mode**: `api` (node mode), `web`, `pipeline` (node mode, as today), and `streaming` for VOD from the NAS (TV stations only when Epic 32 streaming is enabled for it). No database, no migrations, no front door, no secrets. |
 | Single source of truth (**owner**) | The home's Postgres. A node's API uses the node's own database role (Epic 31 §3.3, no access to accounts, sessions, secrets or cluster tables). Migrations run only on the home (`MAKTABA_AUTO_MIGRATE` is never set on a node; a node's API refuses DDL). |
-| Sessions across machines | **Shared sessions in the home's database, resolved by the home** (not a redirect to the home). A node never reads `web_sessions`; it asks the home over a signed delegation call and caches the answer 30 s; a revocation is pushed to every node over the cluster channel and takes effect within a second. A sign-in on a node is a sign-in on the home (the session row is the home's, tagged with the node). An optional one-click **cluster sign-in** carries a session from one machine to another (story 35.9). Accepted default. |
+| Sessions across machines | **Shared sessions in the home's database, resolved by the home** (not a redirect to the home). A node never reads `web_sessions`; it asks the home over a signed delegation call and caches the answer 30 s; a revocation is pushed to every node over the cluster channel and takes effect within a second. A sign-in on a node is a sign-in on the home (the session row is the home's, tagged with the node). An optional one-click **cluster sign-in** carries a session from one machine to another (story 35.9). Accepted default. On the cluster link (story 35.16) the session check is a request on the machine's control channel; the signed HTTP call is the legacy path while a machine is not on the link. |
 | Node API auth and ACL | The node's API runs the same middleware (principal, roles, CSRF double submit, rate limits) on the principal the home resolved; nothing is trusted from the browser that the home has not confirmed. |
 | Home-only actions | Every API route has a **placement class**: `local` (this machine: its version, processes, logs, update state), `any` (served from the database by whichever API gets it) or `home` (proxied to the home's API with the delegated session). Unclassified routes are `home` (safe default); a test fails when a route has no class. |
+| Machine ↔ home transport (**owner**, 2026-10-19) | **The cluster link** (story 35.16): "auth first, then stream on another". Each machine keeps **one control channel** — a WebSocket over mutual TLS (`wss://`) to the home's existing API port — that authenticates first (client certificate from the home's internal CA + the Epic 31 node identity) and carries control, commands, session checks, proxied `home` API requests and small requests. Every **data stream** (a TV stream between the front door and a streaming node, a push-relay pull, a release download, a wheelhouse or backup transfer, a VOD fallback stream) gets **its own `wss://` connection**, opened only with a short-lived, single-use **stream ticket** the home issued on the control channel; no head-of-line blocking between streams, per-machine stream limits, all streams closed when the machine's control session ends for good or it is revoked. Per-frame sealing (Epic 31) is not used on the link (mTLS gives it); it stays on the legacy direct WebSocket. Postgres stays its own TCP connection with TLS `verify-full` and a client certificate. Browser ↔ machine web UI is unchanged (optional HTTPS with the cluster CA). |
+| Media (**owner**) | **Library media is always read directly from the NAS** by the machine that needs it, through its own mounts and the canonical share-path resolver (story 31.3, #81): playback and transcoding on a node's own web UI, scanning, thumbnails, transcription and channel encoding never go through the home or the cluster link. The link carries only control, database-adjacent calls, the secret-holding service door and machine-to-machine TV streams. Fallback only: a machine whose storage check cannot read the share serves VOD through a **ticketed stream from a machine that can** (design §11.5), reported on the Machines page. |
 | Release source | GitHub Releases of `Hamza-Labs-Core/Maktaba` (Epic 28), checked **only by the home**. Machines download the release from the home's artifact mirror (fallback: GitHub directly) and verify it themselves. |
 | Verification | Every install checks, in process (no `cosign` binary needed): the Sigstore bundle of `checksums.txt` with the **pinned identity** (issuer `https://token.actions.githubusercontent.com`, SAN exactly `https://github.com/Hamza-Labs-Core/Maktaba/.github/workflows/release.yml@refs/tags/<the tag being installed>`) and a Rekor inclusion proof; then the SHA-256 of every file it installs against `checksums.txt`; then the signed `release.json` (version = tag, schema fields). Pipeline dependencies install with `--require-hashes` from the release's constraints (PR #94). Anything that fails is not installed. |
 | Automatic (**owner**) | `updates.auto_install = true`. The home installs a new release in the quiet window unless a check fails, then rolls it out to every machine. "Update now" runs the same flow at once. Checks that fail stop the run before anything changes, or roll it back. |
@@ -62,6 +65,9 @@ default** and listed again under [Open questions](#open-questions) where the own
 | Contract releases | A release whose migrations break the **previous home release** (a MANIFEST row marked "Breaking for the previous release", published as `release.json: breaks_previous_home = true`) cannot be rolled back by binaries; the updater holds it and asks for an admin's approval (the one exception to fully automatic, the same rule as story 33.14 EC1). Breaking **older nodes** only (`maktaba_min_node_schema()` raised) is fine: nodes pause until their turn, which comes minutes later. |
 | Order | Home first, then machines one by one; never a machine ahead of the home. Machines download in parallel while the home updates; only the switch is sequential. |
 | Machine failure | The failed machine rolls back to its previous release, is drained and reported. The rollout **holds machines of the same platform** (OS/arch) and continues with the others (`node_failure_policy = hold_platform`); `halt` and `continue` are the alternatives. Accepted default. |
+| Worker-only nodes | Converted to full nodes **automatically on their next update** (the rollout sends `update.convert` to their pipeline agent, design §9.4). Accepted default. |
+| Machines without internet | **The home hosts a wheelhouse** per release and platform: the hash-pinned pipeline dependencies are mirrored by the home with the release artifacts, so a node needs no PyPI access (design §3.4). Accepted default. |
+| Windows nodes (**owner**) | Run at logon of the user (scheduled task) by default — mapped drives are per user; the Windows service is optional (UNC paths). |
 | Skew | Home ≥ every machine. A machine behind runs while the schema guard says its code fits; it pauses (Epic 31 §5.1) when a migration says older nodes break. A machine that comes back online behind is updated at once (catch-up), streaming machines in the quiet window. |
 | TV during updates | Through Epic 33's hot swap: the new streaming binary runs as the staging slot, is verified and swapped at programme boundaries; the front door restarts only when its `edge_protocol` changed. Until the two-slot runtime (33.1) is built, the update restarts the streaming role in the window when no more than `quiet_max_viewers` are watching. |
 | Quiet window | `updates.window = "03:00-05:00"` (home's local time), default equal to `tv_staging.quiet_window`. A run starts only inside it; the TV swap and node rollout may finish after it (bounded by `window_overrun_minutes`, 120). |
@@ -99,8 +105,9 @@ default** and listed again under [Open questions](#open-questions) where the own
   operator's choice).
 - Delta updates, staged percentage rollouts across unrelated installs.
 - Desktop and mobile app updates (Epic 28.4 / 28.5 unchanged).
-- TLS between machines on the LAN (Epic 31 follow-up; this epic keeps the same exposure as today and
-  says where it matters, see Security).
+- HTTPS for browsers by default (the web UI stays as today; HTTPS with the cluster CA is optional,
+  story 35.16). Machine-to-machine TLS **is** in scope (story 35.16).
+- Library media through the home or the link (R13): machines read the NAS themselves.
 - Running the vector index, thumbnails or review pages on nodes (Epic 31 home-only stages stay).
 - A node serving HDHomeRun, SSDP, XMLTV/M3U as the advertised source, or the push (Epic 32 R1.4).
 
@@ -110,7 +117,8 @@ default** and listed again under [Open questions](#open-questions) where the own
 
 ### R1 — Full nodes
 - R1.1 A joined machine runs `maktaba-server serve` in node mode, with roles `api`, `web`,
-  `pipeline` and, when Epic 32 streaming is enabled for it, `streaming`. The roles follow the node
+  `pipeline` and `streaming` (VOD, reading the NAS itself; TV stations only when Epic 32 streaming is
+  enabled for it). The roles follow the node
   config (Epic 31 `node.json`); no extra flag.
 - R1.2 A node never migrates: its API starts with migrations off, opens the home's database with the
   node's role, and refuses to start when the role can create tables (a misconfigured superuser URL).
@@ -239,6 +247,42 @@ default** and listed again under [Open questions](#open-questions) where the own
 - R10.4 Update commands are admin-only on the home and are accepted by a node only from its
   authenticated home channel.
 
+### R12 — The cluster link (machine-to-machine TLS)
+- R12.1 The home runs an internal CA (ECDSA P-256; key only on the home, `cluster-ca.key` 0600 beside
+  `secrets.key`, sealed copy in `home_secrets`); it issues every machine a certificate at join (CSR
+  from the node; the CA certificate and its fingerprint in the sealed join bundle), renews it over the
+  control channel before expiry, and stops accepting it when the machine is revoked.
+- R12.2 **Control channel first.** One `wss://` with mutual TLS per machine to the home's API port;
+  it authenticates (certificate + node identity) before anything else and carries control frames,
+  commands, session checks, revocations, proxied `home` routes, the service door and small requests,
+  multiplexed by request id with control frames first.
+- R12.3 **Data streams after.** Each data stream (TV TS/HLS between the front door and a streaming
+  node, push-relay pull, release or wheelhouse download, backup transfer, VOD fallback) is its own
+  `wss://` with mutual TLS, opened only with a stream ticket issued on the control channel (bound to
+  the machine, the purpose and resource, single use, 30 s to present). The home refuses a stream
+  without a valid ticket, or while the machine has no live control session.
+- R12.4 Limits per machine (`link.max_streams`, 32); flow control is per connection, so one stream
+  never blocks another.
+- R12.5 Reconnect: the control channel reconnects with backoff; in-flight requests fail cleanly
+  (`link_lost`), idempotent ones retry once; open streams survive a control reconnect for up to 60 s,
+  then close; a revocation closes everything at once.
+- R12.6 Postgres connections from nodes use TLS `verify-full` with the cluster CA and a client
+  certificate whose CN is the node's database role.
+- R12.7 Existing joined machines move to the link without re-joining (CSR over the authenticated v2
+  channel); `cluster.link.mode` goes `prefer` → `require` when every machine is on it.
+- R12.8 Optional: each machine's web UI over HTTPS with a cluster-CA certificate, for users who
+  install the CA (documented per OS).
+
+### R13 — Media stays on the NAS path
+- R13.1 Every machine reads library media from the NAS through its own mounts and the canonical
+  share-path resolver (story 31.3); a node's VOD playback and transcoding, scans, thumbnails,
+  transcription and channel encoding never read media through the home or the link.
+- R13.2 Full nodes run the streaming role for VOD (Epic 08) on their own media access; TV stations
+  only when Epic 32 streaming is enabled for them.
+- R13.3 Fallback: when a machine's storage check cannot read the share, VOD on that machine is served
+  by a machine that can (preferring the home) through a ticketed stream relayed by the home; the
+  Machines page shows "VOD served by <machine>: share not readable here".
+
 ### R11 — Observability and docs
 - R11.1 Metrics `maktaba_update_*`, events `update_*`, the control centre shows the run.
 - R11.2 Runbook: what happens at 03:00, how to pause updates, how to roll back, how to restore a
@@ -280,16 +324,18 @@ default** and listed again under [Open questions](#open-questions) where the own
  │     └─ tv-slots   live / standby / staging (Epic 33) — new streaming binary verified here first │
  │   Postgres (single source of truth): catalog, queue, web_sessions, update_runs, …               │
  └──────▲───────────────────────▲───────────────────────────────▲─────────────────────────────────┘
-        │ cluster channel (WS,  │ SQL (node role,              │ HTTP: delegation (signed),
-        │ sealed): update.*,    │ no auth/secret tables)       │ home-class routes (proxied),
-        │ auth.revoked, keys    │                              │ artifacts, /stream → front door
+        │ control channel       │ SQL over TLS verify-full     │ data streams: one wss:// (mTLS)
+        │ wss:// (mTLS, auth    │ (node role + client cert,    │ each, ticketed on the control
+        │ first): update.*,     │ no auth/secret tables)       │ channel: TV pulls, relay pulls,
+        │ session checks, home  │                              │ artifacts, wheelhouse, backups
+        │ routes, service door  │                              │ (library media: NAS, never here)
  ┌──────┴───────────────────────┴───────────────────────────────┴─────────────────────────────────┐
  │ NODE (Linux / Windows / Mac) — OS service ─► maktaba-launcher ─► bin/releases/<current>/…      │
  │   supervisor (node mode) ── machine agent (Go, channel kind node/process supervisor)            │
  │     ├─ api (node mode)   route classes: local · any (DB) · home (proxy) · session cache         │
  │     ├─ web               same app, node's version; paused page when the schema guard pauses     │
  │     ├─ pipeline          node worker (Epic 31), venv bin/releases/<v>/venv                      │
- │     └─ streaming?        Epic 32 streaming node / Epic 33 node slots, only when enabled         │
+ │     └─ streaming         VOD from the NAS; Epic 32/33 TV stations only when enabled             │
  │   mDNS _maktaba._tcp role=node home=<id8> web=<port>                                            │
  └─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -334,6 +380,7 @@ Main ends at 0128; 0129/0130 are provisional for Epic 33 (slots, notifications).
 |---|---|---|
 | S1 | 35.3, 35.4, 35.13 | `release_catalog` (version pk, tag, channel, published_at, prerelease, release_url, notes, assets jsonb, manifest jsonb, verify_state `unverified\|verified\|failed`, verify_error, first_seen_at, withdrawn_at, blocked_reason, attempts int); `update_runs` (id uuid, version, from_version, trigger `auto\|manual\|catch_up\|retry`, state, step, started_at, finished_at, error jsonb, backup jsonb, actor_user_id, journal_digest); `update_run_steps` (run_id, seq, host_id `home`\|node uuid, step, state, started_at, finished_at, detail jsonb, PK (run_id, seq)); `update_targets` (run_id, node_id, ord int, platform, state, from_version, to_version, attempts, error jsonb, prepared_at, applied_at, healthy_at, PK (run_id, node_id)); `update_watermark` singleton (highest_installed text, set_at). |
 | S2 | 35.9 | `web_sessions` + `origin_node_id uuid null`, `parent_session_id text null` (FK to `web_sessions.id` on delete cascade); `cluster_sso_codes` (code_hash pk, node_id, user_id, parent_session_id, pkce_challenge, return_path, expires_at, used_at); `cluster_nodes` + `delegation_key_id text`, `delegation_rotated_at`. The keys themselves live in `home_secrets` (`cluster.node.<id>.delegation`). |
+| S4 | 35.16 | `cluster_certs` (serial text pk, node_id uuid null — null: the home's own, kind `server\|client\|pg_server\|web`, subject, sans jsonb, fingerprint, not_before, not_after, revoked_at, replaced_by); `cluster_nodes` + `cert_serial text`, `link_state jsonb` (control connected, since, rtt, open streams). Stream tickets are memory only (single use, 30 s). |
 | S3 | 35.12 | `cluster_nodes` + `version text`, `platform text`, `update_state jsonb` (state, run_id, prepared_version, detail), `full_node bool default false`. |
 
 Settings are `app_settings` rows under `rules.updates` (no migration; `api/internal/handlers/rules/schema.json`
@@ -361,6 +408,12 @@ Epic 33 did for `tv_staging.enabled`.
 | `backups_keep` | `3` | Pre-update backups kept. |
 | `catch_up` | `immediate` | `immediate` \| `window`: when a machine that was offline or behind is updated (streaming machines always in the window). |
 | `proxy_cache_mb` | `2048` | Node-side cache for proxied images. |
+| `cluster.link.mode` | `prefer` | `off` \| `prefer` (link when the machine has a certificate, legacy HTTP otherwise) \| `require` (legacy paths refused). Switched to `require` automatically when every approved machine has been on the link for 24 h; an admin can override. |
+| `cluster.link.max_streams` | `32` | Concurrent data streams per machine. |
+| `cluster.link.stream_grace_seconds` | `60` | How long open data streams survive a lost control channel. |
+| `cluster.tls.cert_days` | `30` | Machine certificate lifetime; renewed when a third is left. |
+| `cluster.tls.web_https` | `false` | Also serve each machine's web UI over HTTPS (port 8443) with a cluster-CA certificate. |
+| `wheelhouse` | `true` | The home mirrors each release's pipeline dependencies per platform for its machines. |
 | `delegate_unreachable_grace_seconds` | `30` | After this long without an answer from the home, a node fails closed for authenticated routes (R2.3). |
 
 Cluster sign-in has its own switch, `rules.cluster.sso` (default `true`; off: each machine asks for its own sign-in, still against the home's sessions).
@@ -430,8 +483,11 @@ paused page on a node (R6.4). English and Arabic, RTL.
   (the mirror is a convenience, not a trust anchor).
 - **Delegation**: a node can act only as a user whose session the home confirms; the home re-checks
   the session on every proxied home-class request; per-node keys, rotated daily, revoked with the
-  node. Session ids travel node → home over the LAN like browser cookies do today (plain HTTP until
-  the Epic 31 TLS follow-up); the cluster sign-in uses single-use, short, PKCE-bound codes.
+  node. On the cluster link (35.16) all of it is inside mutual TLS; the cluster sign-in uses
+  single-use, short, PKCE-bound codes.
+- **Cluster CA**: its key never leaves the home; certificates are short (30 days) so revocation needs
+  no CRL; the CA fingerprint reaches a machine only inside the sealed join bundle or the
+  authenticated v2 channel. Data streams need a single-use ticket from a live control session.
 - **Least privilege kept**: the node's database role gains nothing; new tables are revoked from it.
 - **Backups** are written mode 0600 in the home's data dir, never to the share.
 - **Rollback limits**: only `previous`, only if its schema rev is ≥ `maktaba_min_node_schema()` and
@@ -449,7 +505,11 @@ paused page on a node (R6.4). English and Arabic, RTL.
 3. **Phase C — full nodes** (35.8, 35.9, 35.10, 35.11): node mode, auth, routing, mDNS; conversion of
    today's nodes.
 4. **Phase D — cluster rollout** (35.12, 35.13): rollout, Updates page, notifications.
-5. **Phase E — hardening** (35.14, 35.15): chaos and E2E tests on three OSes; runbook.
+5. **Phase E — hardening** (35.14, 35.15): chaos tests and per-OS E2E in CI; runbook. The three-OS
+   cluster E2E on a self-hosted lab is a follow-up.
+
+The cluster link (35.16) lands with phase C (it carries the full nodes' traffic); until then the
+legacy signed HTTP paths of 35.9/35.10 apply.
 
 ## Stories
 
@@ -470,6 +530,7 @@ paused page on a node (R6.4). English and Arabic, RTL.
 | 35.13 | [Updates page, notifications and history](story-35-13-updates-page-notifications.md) | Admin page, live run view, history and logs, notifications, audit. |
 | 35.14 | [Failure modes and end-to-end tests](story-35-14-failure-modes-e2e.md) | Power loss, home failure, node offline, signature attacks; three-OS E2E. |
 | 35.15 | [Observability, docs and runbook](story-35-15-observability-docs.md) | Metrics, events, control centre; operator docs and runbook. |
+| 35.16 | [The cluster link: machine-to-machine TLS](story-35-16-cluster-link-tls.md) | Internal CA, per-machine certificates, the mTLS control channel and ticketed per-stream `wss://` connections carrying all machine ↔ home traffic, Postgres verify-full, migration without re-join. |
 
 ## Dependencies
 
@@ -483,33 +544,30 @@ paused page on a node (R6.4). English and Arabic, RTL.
 - Epic 22.9 supervisor (built: per-child restart, probes, events).
 - `release.yml` (22.5) and `deploy/packaging/node` (PR #70, #94).
 
-## Open questions
+## Decisions on the open questions
 
-Each has the recommendation this spec uses.
+Asked in the first draft; answered by the owner on 2026-10-19.
 
-1. **Sessions: shared via the home vs redirect to the home.** Spec: shared (the home resolves every
-   session; nodes cache 30 s; revocation pushed). Redirect-to-home would make every machine's UI a
-   thin client of the home's address and lose "open any machine". Confirm.
-2. **Release age before automatic install** (`min_release_age_hours = 24`). It protects against a
-   release pulled within a day; the owner may prefer 0 (install the same night). Confirm 24.
-3. **Contract releases held for approval.** A release that breaks the previous home release cannot
-   be rolled back by binaries; the spec holds it for an admin. The alternative is to install it
-   automatically and accept restore-from-backup as the only way back. Confirm the hold.
-4. **Machine failure policy** `hold_platform` (vs `halt` everything, vs `continue`). Confirm.
-5. **Windows nodes: service or logon task.** Shares mapped in a user session are invisible to a
-   service; the spec keeps Epic 31's default (logon task of the user) and offers the service with UNC
-   paths. Confirm the default.
-6. **Database rollback** forward-only with manual restore (vs automatic down migrations). Confirm.
-7. **Catch-up outside the window** for non-streaming machines (`catch_up = immediate`). Confirm.
-8. **TLS on the LAN.** Delegated session ids cross the LAN in plain HTTP like browser cookies do
-   today. Should this epic wait for (or include) the Epic 31 TLS follow-up?
-9. **Worker-only nodes.** Convert them to full nodes automatically during a rollout, or only when an
-   admin runs `setup --node`? Spec: admin-run (the conversion changes the machine's services).
-10. **Machines without internet.** A node needs PyPI (hash-checked) to build the pipeline's environment.
-    A wheelhouse mirrored by the home is a follow-up; needed now?
-11. **Release gate.** Plan 35.14 makes the three-OS cluster E2E required before `release.yml`
-    publishes a tag; its networking (a tailnet or a self-hosted lab, since hosted runners cannot
-    multicast to each other) is undecided.
+1. **Sessions** — shared via the home (the home resolves every session; nodes cache 30 s; revocation
+   pushed). *Accepted default.*
+2. **Release age** — `min_release_age_hours = 24`. **Owner.**
+3. **Contract releases** — held for an admin's approval. **Owner.**
+4. **Machine failure policy** — `hold_platform`. *Accepted default.*
+5. **Windows nodes** — logon task by default, service optional. **Owner.**
+6. **Database rollback** — forward-only, manual restore. *Accepted default.*
+7. **Catch-up** — immediately, except streaming machines (in the window). *Accepted default.*
+8. **TLS between machines** — **included now** (owner): story 35.16, the cluster link — an mTLS
+   control channel that authenticates first, and ticketed per-stream `wss://` connections (owner's
+   transport choice).
+9. **Worker-only nodes** — converted automatically on their next update. *Accepted default.*
+10. **Machines without internet** — the home hosts a wheelhouse. *Accepted default.*
+11. **Three-OS cluster E2E** — on a self-hosted lab later (**follow-up**); CI keeps the per-OS tests
+    and is not gated on the cluster E2E. *Accepted default.*
+
+## Open questions (remaining)
+
+None blocking. Follow-ups: the self-hosted three-OS lab (11); `any`-class writes on nodes (design
+§11.1); tunnelling Postgres through the link (design §18.8, rejected for now).
 
 ## Sources
 

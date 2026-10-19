@@ -67,6 +67,12 @@ Design: [design.md](design.md) §10; README R2, decision "Sessions across machin
 - **EC4** A node revoked mid-session: its key is deleted, every proxied call and introspection fails
   at once; the node shows the removed page.
 
+## Transport
+
+On the cluster link (story 35.16) session checks, revocations, keys and the SSO exchange travel on the
+machine's mTLS control channel, whose certificate authenticates the node; the delegation HMAC over HTTP
+described here is the legacy path while `cluster.link.mode = prefer` and is refused in `require`.
+
 ## Dependencies
 
 35.8 (machine agent, node mode), 35.10 (home proxy); Epic 10 sessions, CSRF, JWKS; Epic 31 channel v2.

@@ -49,8 +49,8 @@ Design: [design.md](design.md) §9.2, §13; README R8, decisions "Order", "Machi
   window for streaming machines and `catch_up = window`. A node paused by the schema guard is caught up
   at once regardless.
 - **AC10** Skew: no machine is ever ordered to a version the home has not committed; a node ahead of
-  the home is flagged "ahead of the home"; worker-only nodes (no machine agent) are listed
-  "worker-only — convert to update automatically" and are not targets.
+  the home is flagged "ahead of the home"; worker-only nodes (no machine agent) are targets of kind
+  `convert`: their pipeline agent gets `update.convert` (design §9.4) and they become full nodes.
 - **AC11** Each node keeps its own journal (§5.2 shape); a power loss during its apply resumes or
   rolls back without the home.
 - **AC12** `cluster_nodes` gains `version`, `platform`, `update_state`, `full_node` (slot S3, next free
@@ -84,6 +84,12 @@ Design: [design.md](design.md) §9.2, §13; README R8, decisions "Order", "Machi
   skipped, with the conversion command.
 - **EC5** A newer release appears mid-rollout: the current rollout finishes first; the next run starts
   from the new home commit.
+
+## Transport
+
+On the cluster link (story 35.16) `update.*` commands travel on the control channel and each artifact
+or wheelhouse download is its own ticketed data stream (`purpose: artifact` / `wheelhouse`); the
+mirror's signed HTTP endpoint is the legacy path.
 
 ## Dependencies
 

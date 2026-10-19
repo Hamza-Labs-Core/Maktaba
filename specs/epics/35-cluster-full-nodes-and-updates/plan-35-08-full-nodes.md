@@ -10,7 +10,8 @@
 | D2 | The API checks its own role privileges at start. | A copied superuser URL must never let a node run DDL. |
 | D3 | One Go machine agent per node, in the supervisor; the API uses it over loopback. | One channel per machine for Go; survives API restarts. |
 | D4 | Go schema guard mirrors the streaming one with shared fixtures. | Same verdicts and texts in Python, streaming and API. |
-| D5 | Conversion keeps worker-only nodes supported. | No forced migration; the rollout simply skips them with a hint. |
+| D5 | Worker-only nodes are converted automatically on their next update (`update.convert`, verified with sigstore-python). | Owner decision (2026-10-19): no machine is left behind on the old install. |
+| D6 | Full nodes always run the streaming role for VOD, reading the NAS directly. | Owner decision: media never goes through the home. |
 
 ## 1. Files
 
@@ -50,4 +51,4 @@ that checks the node's `/api/system/version` and a library read through `any`.
 
 ## 4. Rollout
 
-Phase C. Conversion is opt-in per machine; the Updates page nudges worker-only nodes.
+Phase C. Conversion happens on each worker-only node's next update; the Updates page lists the ones that need an installer run.
