@@ -414,9 +414,11 @@ async def _transcribe_file(
     model = refine_model()
     if model and result.sentences and settings.word_timestamps:
         await ctx.progress("transcribe", round(total_sec), round(total_sec), "second listen")
+        from ...stt.cohere import loaded
         from ...stt.model_share import resolve_models_dir
 
-        share = await resolve_models_dir(db)
+        # the share is looked for until the model is loaded (a stale mount can be slow)
+        share = None if loaded(model) else await resolve_models_dir(db)
         refined = await asyncio.to_thread(_refine, result, audio, model, share)
     del audio
     if tmap is not None:

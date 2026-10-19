@@ -21,7 +21,14 @@ from typing import Any
 from ..log import get_logger
 from . import model_share
 
-__all__ = ["DEFAULT_MODEL", "CamelDictionary", "CohereRecogniser", "dictionary", "recogniser"]
+__all__ = [
+    "DEFAULT_MODEL",
+    "CamelDictionary",
+    "CohereRecogniser",
+    "dictionary",
+    "loaded",
+    "recogniser",
+]
 
 _log = get_logger()
 
@@ -101,6 +108,11 @@ def recogniser(model_id: str, share: Path | None = None) -> CohereRecogniser:
         if rec is None:
             rec = _REC[model_id] = _open(model_id, share)
         return rec
+
+
+def loaded(model_id: str) -> bool:
+    """The process has ``model_id`` loaded already (no need to look for the share)."""
+    return model_id in _REC
 
 
 def _open(model_id: str, share: Path | None) -> CohereRecogniser:
