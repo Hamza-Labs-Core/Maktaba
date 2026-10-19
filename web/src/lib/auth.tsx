@@ -17,7 +17,7 @@ export interface User {
   is_admin: boolean;
 }
 
-interface AuthState {
+export interface AuthState {
   user: User | null;
   loading: boolean;
   login: (username: string, password: string) => Promise<void>;
@@ -26,7 +26,9 @@ interface AuthState {
   logoutAll: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthState | undefined>(undefined);
+// Exported so page tests can sign a user in without the /api/auth/me probe
+// (see src/test/pageHarness.tsx).
+export const AuthContext = createContext<AuthState | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
