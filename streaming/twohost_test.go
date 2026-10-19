@@ -34,6 +34,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/mediatest"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pgtest"
 )
 
@@ -107,9 +108,7 @@ func TestTwoHostsOneMachine(t *testing.T) {
 	if os.Getenv("MAKTABA_TEST_PG_URL") == "" || testing.Short() {
 		t.Skip("MAKTABA_TEST_PG_URL unset (or -short): skipping the two-host test")
 	}
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.Skip("ffmpeg not on PATH")
-	}
+	mediatest.NeedFFmpeg(t)
 	dsn, pool := pgtest.ScratchDB(t)
 	bin := filepath.Join(t.TempDir(), "maktaba-streaming")
 	if runtime.GOOS == "windows" {

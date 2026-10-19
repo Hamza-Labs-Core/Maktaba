@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/mediatest"
 )
 
 func stripOn() StripSettings {
@@ -275,13 +277,11 @@ func TestStripFiltersNeverCarryTitles(t *testing.T) {
 // without it. Skipped when ffmpeg or a shaping drawtext is missing. With
 // MAKTABA_STRIP_FRAMES=<dir> it saves one frame per clock city there.
 func TestStripRendersArabic(t *testing.T) {
-	ff, err := exec.LookPath("ffmpeg")
-	if err != nil {
-		t.Skip("no ffmpeg")
-	}
+	mediatest.NeedFFmpeg(t)
+	ff, _ := exec.LookPath("ffmpeg")
 	font := FindStripFont("")
 	if ok, why := TextShaping(context.Background(), ff, font); !ok {
-		t.Skip("strip unavailable: " + why)
+		mediatest.Unavailable(t, "strip unavailable: "+why)
 	}
 	dir := t.TempDir()
 	p := OutputProfile{Width: 960, Height: 540, FPS: 25, VideoKbps: 1500}
@@ -516,13 +516,11 @@ func TestBuildStripPagesALongTitle(t *testing.T) {
 // turn, and checks that the title area differs between two pages. With
 // MAKTABA_STRIP_FRAMES=<dir> it saves a frame of every page there.
 func TestStripRendersPages(t *testing.T) {
-	ff, err := exec.LookPath("ffmpeg")
-	if err != nil {
-		t.Skip("no ffmpeg")
-	}
+	mediatest.NeedFFmpeg(t)
+	ff, _ := exec.LookPath("ffmpeg")
 	font := FindStripFont("")
 	if ok, why := TextShaping(context.Background(), ff, font); !ok {
-		t.Skip("strip unavailable: " + why)
+		mediatest.Unavailable(t, "strip unavailable: "+why)
 	}
 	p := OutputProfile{Width: 960, Height: 540, FPS: 25, VideoKbps: 1500}
 	cases := map[string]Segment{

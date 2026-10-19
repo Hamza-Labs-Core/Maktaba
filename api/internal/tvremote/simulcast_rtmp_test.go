@@ -24,9 +24,7 @@ func TestSimulcastReachesRTMPDestination(t *testing.T) {
 	if testing.Short() {
 		t.Skip("-short")
 	}
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.Skip("ffmpeg not on PATH")
-	}
+	rtmptest.NeedFFmpeg(t)
 	dst, err := rtmptest.Listen(false)
 	if err != nil {
 		t.Fatal(err)
