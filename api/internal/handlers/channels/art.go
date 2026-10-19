@@ -561,6 +561,10 @@ func (h *Handler) loadAdminChannel(w http.ResponseWriter, r *http.Request) (Chan
 		return Channel{}, "", false
 	}
 	id := chi.URLParam(r, "id")
+	if h.staging(r.Context()) {
+		c, _, ok := h.loadEffective(w, r, id)
+		return c, kind, ok
+	}
 	c, err := h.repo().get(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -574,6 +578,10 @@ func (h *Handler) loadAdminChannel(w http.ResponseWriter, r *http.Request) (Chan
 }
 
 func (h *Handler) writeChannel(w http.ResponseWriter, r *http.Request, id string) {
+	if h.staging(r.Context()) {
+		h.writeDraftChannel(w, r, id, http.StatusOK)
+		return
+	}
 	c, err := h.repo().get(r.Context(), id)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("reload channel"))
@@ -708,6 +716,13 @@ func (h *Handler) ArtUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.staging(r.Context()) {
+		// into the draft; the picture on the air stays (and so does its file)
+		if h.setOverrideDraft(w, r, c, kind, &dest, nil) {
+			h.writeChannel(w, r, c.ID)
+		}
+		return
+	}
 	if err := h.setOverride(r.Context(), c, kind, &dest, nil); err != nil {
 		if !existed {
 			_ = os.Remove(dest)
@@ -805,6 +820,12 @@ func (h *Handler) ArtRevert(w http.ResponseWriter, r *http.Request) {
 	}
 	unlock := h.artLock(c.ID, kind)
 	defer unlock()
+	if h.staging(r.Context()) {
+		if h.revertArtDraft(w, r, c, kind) {
+			h.writeChannel(w, r, c.ID)
+		}
+		return
+	}
 	if err := h.revertArt(r.Context(), c, kind); err != nil {
 		httperror.Write(w, r, httperror.Internal("revert channel art: "+err.Error()))
 		return
@@ -856,6 +877,12 @@ func (h *Handler) ArtSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(settings) == 0 {
 		h.writeChannel(w, r, c.ID)
+		return
+	}
+	if h.staging(r.Context()) {
+		if h.watermarkDraft(w, r, c, settings) {
+			h.writeChannel(w, r, c.ID)
+		}
 		return
 	}
 	// The stored settings are merged so a later PATCH of one field keeps the others.

@@ -1,7 +1,7 @@
 # Plan 33.3 — Schedule generations — implementation
 
 > Implementation plan for [story-33-03](story-33-03-schedule-generations.md).
-> Design: [design.md](design.md) §4. Migration: slot 0124 (NO TRANSACTION, concurrent indexes).
+> Design: [design.md](design.md) §4. Migration: slot 0128 (NO TRANSACTION, concurrent indexes).
 
 ## 0. Decisions
 
@@ -16,7 +16,7 @@
 ## 1. Files
 
 **Create**
-- `shared/db/migrations/0124_tv_sched_generations.sql` (+ sqlite)
+- `shared/db/migrations/0128_tv_sched_generations.sql` (+ sqlite)
 - `pipeline/src/maktaba_pipeline/tvrelease/generation.py` — `build_generation`, `reanchor`
 - `pipeline/src/maktaba_pipeline/tvrelease/gc.py`
 - tests

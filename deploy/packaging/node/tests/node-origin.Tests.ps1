@@ -41,7 +41,7 @@ New-Item -ItemType Directory -Path $files | Out-Null
 $wheel = Join-Path $files 'maktaba_pipeline-9.8.7-py3-none-any.whl'
 $cons = Join-Path $files 'maktaba-pipeline-9.8.7-constraints.txt'
 [System.IO.File]::WriteAllText($wheel, "not really a wheel`n")
-[System.IO.File]::WriteAllText($cons, "structlog==25.1.0`n")
+[System.IO.File]::WriteAllText($cons, "structlog==25.1.0 \`n    --hash=sha256:$('a' * 64)`n")
 $checkout = Join-Path $T 'checkout\pipeline'
 $noConf = Join-Path $T 'none\install.conf'
 
@@ -93,10 +93,39 @@ try {
     Assert-Equal $wheel $o.Wheel '-FromWheel: that wheel'
     Assert-Equal '' $o.Constraints '-FromWheel: no constraints unless given'
     Assert-Equal '3.12' $o.Python '-FromWheel: Python 3.12 by default'
-    $url = 'https://example.com/dl/maktaba_pipeline-1.0.0-py3-none-any.whl?x=1'
+    $url = 'https://example.com/dl/maktaba_pipeline-1.0.0-py3-none-any.whl'
     $o = Resolve-NodePipelineOrigin -FromWheel $url -BundleDir $plain -CheckoutPipeline $checkout -InstallConf $noConf
-    Assert-Equal $url $o.Wheel '-FromWheel URL with a query'
-    Assert-Equal 'maktaba_pipeline-1.0.0-py3-none-any.whl' (Get-NodeSpecLeaf $url) 'a URL''s file name drops the query'
+    Assert-Equal $url $o.Wheel '-FromWheel URL'
+    Assert-Equal 'maktaba_pipeline-1.0.0-py3-none-any.whl' (Get-NodeSpecLeaf "${url}?x=1") 'a URL''s file name drops the query'
+
+    # --- a URL with a credential is neither logged nor remembered ----------------------------------
+    Assert-Throws { Resolve-NodePipelineOrigin -FromWheel "${url}?token=s3cr3t" -BundleDir $plain -CheckoutPipeline $checkout -InstallConf $noConf } 'carries a credential' '-FromWheel URL with a ?token'
+    try { Resolve-NodePipelineOrigin -FromWheel "${url}?token=s3cr3t" -BundleDir $plain -CheckoutPipeline $checkout -InstallConf $noConf | Out-Null } catch {
+        if ($_.Exception.Message -like '*s3cr3t*') { Bad 'the refusal shows the token' } else { Ok 'the refusal does not show the token' }
+    }
+    Assert-Throws { Resolve-NodePipelineOrigin -FromWheel 'https://bob:hunter2@example.com/maktaba_pipeline-1.0.0-py3-none-any.whl' -BundleDir $plain -CheckoutPipeline $checkout -InstallConf $noConf } 'carries a credential' '-FromWheel URL with user:password@'
+    Assert-Throws { Resolve-NodePipelineOrigin -FromWheel $wheel -Constraints 'https://example.com/c.txt?X-Amz-Signature=abc' -BundleDir $plain -CheckoutPipeline $checkout -InstallConf $noConf } 'carries a credential' '-Constraints URL with a signature'
+    $tokConf = Join-Path $T 'tok\install.conf'
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $tokConf) | Out-Null
+    [System.IO.File]::WriteAllText($tokConf, "FROM=wheel`nWHEEL=${url}?token=old`n")
+    Assert-Throws { Resolve-NodePipelineOrigin -BundleDir $plain -CheckoutPipeline $checkout -InstallConf $tokConf } 'carries a credential' 'update: a remembered URL with a token'
+    Assert-Equal 'https://***@example.com/a/b.whl?***' (Format-NodeSpecForLog 'https://bob:pw@example.com/a/b.whl?token=x') 'a URL for a message: user info and query redacted'
+    Assert-Equal 'https://example.com/a/b.whl' (Format-NodeSpecForLog 'https://example.com/a/b.whl') 'a plain URL for a message: as it is'
+    Assert-Equal $false (Test-NodeUrlHasCredential $url) 'a plain URL carries no credential'
+
+    # --- hash-checking mode --------------------------------------------------------------------------
+    $spaced = Join-Path $T 'My Downloads'
+    New-Item -ItemType Directory -Force -Path $spaced | Out-Null
+    Copy-Item -LiteralPath $wheel, $cons -Destination $spaced
+    $sw = Join-Path $spaced (Split-Path -Leaf $wheel)
+    $req = New-NodeHashedRequirements -WheelFile $sw -Extras @('stt', 'search') -ConstraintsFile (Join-Path $spaced (Split-Path -Leaf $cons))
+    $line = ([System.IO.File]::ReadAllText($req)).Trim()
+    Assert-Equal (Join-Path $spaced '.maktaba-node-requirements.txt') $req 'the requirements file sits next to the constraints'
+    Assert-Equal ('maktaba-pipeline[stt,search] @ ' + ([System.Uri]::new($sw)).AbsoluteUri + ' --hash=sha256:' + (Get-Sha256 $wheel)) $line 'the wheel by file URL, extras and SHA-256'
+    if ($line -like '*My%20Downloads*') { Ok 'the file URL escapes the space' } else { Bad "the file URL does not escape the space: $line" }
+    $noHash = Join-Path $files 'nohash-constraints.txt'
+    [System.IO.File]::WriteAllText($noHash, "structlog==25.1.0`n")
+    Assert-Throws { New-NodeHashedRequirements -WheelFile $wheel -ConstraintsFile $noHash } 'pins no hashes' 'constraints without hashes'
 
     # --- refusals ------------------------------------------------------------------------------------
     Assert-Throws { Resolve-NodePipelineOrigin -FromWheel $wheel -Source $checkout -BundleDir $plain -CheckoutPipeline $checkout -InstallConf $noConf } 'give one' '-FromWheel with -Source'

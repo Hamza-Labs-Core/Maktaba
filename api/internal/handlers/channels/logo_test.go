@@ -51,7 +51,8 @@ func newLogoServer(t *testing.T) (*sql.DB, http.Handler) {
 		mode_config TEXT NOT NULL DEFAULT '{}', source_filter TEXT,
 		transition TEXT NOT NULL DEFAULT 'cut', enabled BOOLEAN NOT NULL DEFAULT 1,
 		sort_order INTEGER NOT NULL DEFAULT 0,
-		created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)`); err != nil {
+		created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL,
+		lifecycle TEXT NOT NULL DEFAULT 'live')`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`CREATE TABLE channel_art_overrides (
@@ -99,10 +100,10 @@ func TestLogoServesFileWithCacheHeaders(t *testing.T) {
 	if err := os.WriteFile(logo, []byte("\x89PNG fake"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	insertChannel(t, db, "c1", logo)
+	insertChannel(t, db, "00000000-0000-4000-8000-0000000000c1", logo)
 
 	rec := httptest.NewRecorder()
-	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/api/channels/c1/logo", nil))
+	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/api/channels/00000000-0000-4000-8000-0000000000c1/logo", nil))
 	if rec.Code != 200 {
 		t.Fatalf("code %d: %s", rec.Code, rec.Body.String())
 	}
@@ -118,7 +119,7 @@ func TestLogoServesFileWithCacheHeaders(t *testing.T) {
 	}
 
 	// Revalidation answers 304.
-	req := httptest.NewRequest("GET", "/api/channels/c1/logo", nil)
+	req := httptest.NewRequest("GET", "/api/channels/00000000-0000-4000-8000-0000000000c1/logo", nil)
 	req.Header.Set("If-None-Match", etag)
 	rec = httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
@@ -129,17 +130,17 @@ func TestLogoServesFileWithCacheHeaders(t *testing.T) {
 
 func TestLogoRedirectsURLAndMissing(t *testing.T) {
 	db, srv := newLogoServer(t)
-	insertChannel(t, db, "remote", "https://cdn.example/kids.png")
+	insertChannel(t, db, "00000000-0000-4000-8000-0000000000a0", "https://cdn.example/kids.png")
 	rec := httptest.NewRecorder()
-	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/api/channels/remote/logo", nil))
+	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/api/channels/00000000-0000-4000-8000-0000000000a0/logo", nil))
 	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "https://cdn.example/kids.png" {
 		t.Fatalf("redirect: %d %q", rec.Code, rec.Header().Get("Location"))
 	}
 
-	if _, err := db.Exec(`UPDATE channels SET id='none', logo_path=NULL WHERE id='remote'`); err != nil {
+	if _, err := db.Exec(`UPDATE channels SET id='00000000-0000-4000-8000-0000000000a1', logo_path=NULL WHERE id='00000000-0000-4000-8000-0000000000a0'`); err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range []string{"/api/channels/none/logo", "/api/channels/nope/logo"} {
+	for _, p := range []string{"/api/channels/00000000-0000-4000-8000-0000000000a1/logo", "/api/channels/nope/logo"} {
 		rec = httptest.NewRecorder()
 		srv.ServeHTTP(rec, httptest.NewRequest("GET", p, nil))
 		if rec.Code != http.StatusNotFound {
@@ -152,9 +153,9 @@ func TestLogoRefusesNonImageFile(t *testing.T) {
 	db, srv := newLogoServer(t)
 	secret := filepath.Join(t.TempDir(), "secret.txt")
 	_ = os.WriteFile(secret, []byte("nope"), 0o600)
-	insertChannel(t, db, "c1", secret) // written behind the API's back
+	insertChannel(t, db, "00000000-0000-4000-8000-0000000000c1", secret) // written behind the API's back
 	rec := httptest.NewRecorder()
-	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/api/channels/c1/logo", nil))
+	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/api/channels/00000000-0000-4000-8000-0000000000c1/logo", nil))
 	if rec.Code != http.StatusNotFound || strings.Contains(rec.Body.String(), "nope") {
 		t.Fatalf("non-image served: %d %q", rec.Code, rec.Body.String())
 	}
@@ -169,9 +170,9 @@ func TestLogoOnlyFromAnArtFolder(t *testing.T) {
 	inside := filepath.Join(logos, "kids.png")
 	_ = os.WriteFile(inside, []byte("\x89PNG kids"), 0o600)
 	for id, p := range map[string]string{
-		"out":    outside, // an image, but not in an art folder
-		"dotdot": filepath.Join(logos, "..", filepath.Base(elsewhere), "other.png"),
-		"unc":    `\\fileserver\share\logo.png`,
+		"00000000-0000-4000-8000-0000000000a2": outside, // an image, but not in an art folder
+		"00000000-0000-4000-8000-0000000000a3": filepath.Join(logos, "..", filepath.Base(elsewhere), "other.png"),
+		"00000000-0000-4000-8000-0000000000a4": `\\fileserver\share\logo.png`,
 	} {
 		insertChannel(t, db, id, p)
 		rec := httptest.NewRecorder()
@@ -180,9 +181,9 @@ func TestLogoOnlyFromAnArtFolder(t *testing.T) {
 			t.Errorf("%s (%s) served: %d", id, p, rec.Code)
 		}
 	}
-	insertChannel(t, db, "in", inside)
+	insertChannel(t, db, "00000000-0000-4000-8000-0000000000b0", inside)
 	rec := httptest.NewRecorder()
-	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/api/channels/in/logo", nil))
+	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/api/channels/00000000-0000-4000-8000-0000000000b0/logo", nil))
 	if rec.Code != 200 || rec.Body.String() != "\x89PNG kids" {
 		t.Fatalf("inside the logos folder: %d %q", rec.Code, rec.Body.String())
 	}
@@ -211,7 +212,7 @@ func TestWithinAndUNC(t *testing.T) {
 
 func TestChannelPathsHiddenFromNonAdmins(t *testing.T) {
 	db, srv := newLogoServer(t)
-	insertChannel(t, db, "c1", "/srv/art/kids.png")
+	insertChannel(t, db, "00000000-0000-4000-8000-0000000000c1", "/srv/art/kids.png")
 	if _, err := db.Exec(`UPDATE channels SET mode_config = $1`,
 		`{"slots":[],"look":{"loading_path":"/srv/art/loading-kids.png","watermark":{"path":"/srv/art/wm.gif","position":"top-left"}}}`); err != nil {
 		t.Fatal(err)
@@ -227,33 +228,33 @@ func TestChannelPathsHiddenFromNonAdmins(t *testing.T) {
 		return rec.Body.String()
 	}
 	viewer := &principal.Principal{UserID: "v", AccessAllLibraries: true}
-	for _, target := range []string{"/api/channels/c1", "/api/channels"} {
+	for _, target := range []string{"/api/channels/00000000-0000-4000-8000-0000000000c1", "/api/channels"} {
 		body := get(viewer, target)
 		if strings.Contains(body, "/srv/art") {
 			t.Errorf("%s leaks a path to a non-admin: %s", target, body)
 		}
-		if !strings.Contains(body, "/api/channels/c1/logo") || !strings.Contains(body, "/api/channels/c1/art/watermark") ||
+		if !strings.Contains(body, "/api/channels/00000000-0000-4000-8000-0000000000c1/logo") || !strings.Contains(body, "/api/channels/00000000-0000-4000-8000-0000000000c1/art/watermark") ||
 			!strings.Contains(body, `"position":"top-left"`) {
 			t.Errorf("%s lost the servable URLs / settings: %s", target, body)
 		}
 	}
 	admin := &principal.Principal{UserID: "a", IsAdmin: true, AccessAllLibraries: true}
-	if body := get(admin, "/api/channels/c1"); !strings.Contains(body, "/srv/art/kids.png") || !strings.Contains(body, "/srv/art/wm.gif") {
+	if body := get(admin, "/api/channels/00000000-0000-4000-8000-0000000000c1"); !strings.Contains(body, "/srv/art/kids.png") || !strings.Contains(body, "/srv/art/wm.gif") {
 		t.Errorf("admin must still see the paths: %s", body)
 	}
 	// a URL logo is not a server path: it stays (the web app falls back to it)
 	if _, err := db.Exec(`UPDATE channels SET logo_path = 'https://cdn.example/k.png'`); err != nil {
 		t.Fatal(err)
 	}
-	if body := get(viewer, "/api/channels/c1"); !strings.Contains(body, "https://cdn.example/k.png") {
+	if body := get(viewer, "/api/channels/00000000-0000-4000-8000-0000000000c1"); !strings.Contains(body, "https://cdn.example/k.png") {
 		t.Errorf("URL logo dropped: %s", body)
 	}
 }
 
 func TestGetCarriesLogoURL(t *testing.T) {
 	db, srv := newLogoServer(t)
-	insertChannel(t, db, "c1", "https://cdn.example/kids.png")
-	req := httptest.NewRequest("GET", "/api/channels/c1", nil)
+	insertChannel(t, db, "00000000-0000-4000-8000-0000000000c1", "https://cdn.example/kids.png")
+	req := httptest.NewRequest("GET", "/api/channels/00000000-0000-4000-8000-0000000000c1", nil)
 	req = req.WithContext(principal.WithPrincipal(req.Context(),
 		&principal.Principal{UserID: "u", AccessAllLibraries: true}))
 	rec := httptest.NewRecorder()
@@ -263,17 +264,17 @@ func TestGetCarriesLogoURL(t *testing.T) {
 	}
 	var c Channel
 	_ = json.Unmarshal(rec.Body.Bytes(), &c)
-	if c.LogoURL != "/api/channels/c1/logo" || c.LogoPath == nil {
+	if c.LogoURL != "/api/channels/00000000-0000-4000-8000-0000000000c1/logo" || c.LogoPath == nil {
 		t.Fatalf("logo fields: %+v", c)
 	}
 }
 
 func TestPatchLogoPath(t *testing.T) {
 	db, srv := newLogoServer(t)
-	insertChannel(t, db, "c1", nil)
+	insertChannel(t, db, "00000000-0000-4000-8000-0000000000c1", nil)
 	admin := &principal.Principal{UserID: "a", IsAdmin: true, AccessAllLibraries: true}
 	patch := func(body string) (int, Channel) {
-		req := httptest.NewRequest("PATCH", "/api/channels/c1", strings.NewReader(body))
+		req := httptest.NewRequest("PATCH", "/api/channels/00000000-0000-4000-8000-0000000000c1", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req = req.WithContext(principal.WithPrincipal(req.Context(), admin))
 		rec := httptest.NewRecorder()

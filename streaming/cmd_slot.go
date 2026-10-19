@@ -74,7 +74,7 @@ func runSlot(args []string) error {
 	}
 	defer pool.Close()
 	if !clusterSchema(ctx, pool, 60*time.Second) || !slotSchema(ctx, pool, 60*time.Second) {
-		return errors.New("the database has no TV slot schema yet (slots 0123, 0127)")
+		return errors.New("the database has no TV slot schema yet (slots 0123, 0129)")
 	}
 
 	cfg := config.Load()
@@ -144,7 +144,7 @@ func runSlot(args []string) error {
 	return nil
 }
 
-// slotSchema waits for slot 0127's tv_slot_beat (the API migrates at boot).
+// slotSchema waits for slot 0129's tv_slot_beat (the API migrates at boot).
 func slotSchema(ctx context.Context, pool *pgxpool.Pool, wait time.Duration) bool {
 	deadline := time.Now().Add(wait)
 	for {

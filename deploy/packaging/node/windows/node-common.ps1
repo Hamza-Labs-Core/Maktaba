@@ -193,6 +193,33 @@ function Test-NodeUrl {
     return ($Spec -match '^https?://')
 }
 
+# True for an http(s) URL with user info (user:password@host) or a query string (a token,
+# a signed URL's signature): such a URL is neither logged nor remembered in install.conf.
+function Test-NodeUrlHasCredential {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Spec)
+    if (-not (Test-NodeUrl $Spec)) { return $false }
+    $authority = (($Spec -replace '^https?://', '') -split '[/?#]', 2)[0]
+    return ($authority.Contains('@') -or $Spec.Contains('?'))
+}
+
+# Spec for a message: a URL's user info and query string replaced by ***.
+function Format-NodeSpecForLog {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Spec)
+    if (-not (Test-NodeUrl $Spec)) { return $Spec }
+    $m = [regex]::Match($Spec, '^(https?://)([^/?#]*)([^?#]*)([?#].*)?$')
+    $authority = $m.Groups[2].Value
+    if ($authority.Contains('@')) { $authority = '***@' + $authority.Substring($authority.LastIndexOf('@') + 1) }
+    $rest = $m.Groups[3].Value
+    if ($m.Groups[4].Success -and $m.Groups[4].Value) { $rest += '?***' }
+    return $m.Groups[1].Value + $authority + $rest
+}
+
+# A file:// URL for a local path (spaces and the like escaped).
+function ConvertTo-NodeFileUrl {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    return ([System.Uri]::new($Path)).AbsoluteUri
+}
+
 # The spec's file name without a URL's query or fragment.
 function Get-NodeSpecLeaf {
     param([Parameter(Mandatory = $true)][string]$Spec)
@@ -300,12 +327,19 @@ function Resolve-NodePipelineOrigin {
     } else {
         $leaf = Get-NodeSpecLeaf $o.Wheel
         if ($leaf -notlike '*.whl') {
-            throw "-FromWheel takes a wheel (maktaba_pipeline-<version>-py3-none-any.whl): $($o.Wheel)"
+            throw "-FromWheel takes a wheel (maktaba_pipeline-<version>-py3-none-any.whl): $(Format-NodeSpecForLog $o.Wheel)"
         }
         if ($leaf -notlike 'maktaba_pipeline-*') {
-            throw "$($o.Wheel) is not a maktaba-pipeline wheel (maktaba_pipeline-<version>-...whl)"
+            throw "$(Format-NodeSpecForLog $o.Wheel) is not a maktaba-pipeline wheel (maktaba_pipeline-<version>-...whl)"
         }
         if (-not $o.Python) { $o.Python = '3.12' }
+        # A URL is printed while it downloads and kept in install.conf for updates: one that
+        # carries a credential would leave it in logs and on disk.
+        foreach ($u in @($o.Wheel, $o.Constraints)) {
+            if ($u -and (Test-NodeUrlHasCredential $u)) {
+                throw "$(Format-NodeSpecForLog $u) carries a credential (user:password@ or a ?query such as a token), which would be logged and remembered in install.conf: use a plain URL pinned with -Sha256 / -ConstraintsSha256, or download the file and pass its path"
+            }
+        }
     }
     return $o
 }
@@ -324,7 +358,7 @@ function Get-NodePipelineFile {
     if ($isUrl) {
         New-Item -ItemType Directory -Force -Path $DownloadDir | Out-Null
         $dest = Join-Path $DownloadDir (Get-NodeSpecLeaf $Spec)
-        Write-NodeStep "Downloading $Spec"
+        Write-NodeStep "Downloading $(Format-NodeSpecForLog $Spec)"
         # Windows PowerShell 5.1 does not offer TLS 1.2 by default; GitHub needs it.
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
         $part = "$dest.part"
@@ -333,7 +367,7 @@ function Get-NodePipelineFile {
         try {
             Invoke-WebRequest -Uri $Spec -OutFile $part -UseBasicParsing
         } catch {
-            throw "could not download ${Spec}: $($_.Exception.Message)"
+            throw "could not download $(Format-NodeSpecForLog $Spec): $($_.Exception.Message)"
         } finally {
             $ProgressPreference = $saved
         }
@@ -351,6 +385,29 @@ function Get-NodePipelineFile {
         }
     }
     return @{ Path = $dest; Sha256 = $got }
+}
+
+# Hash-checking mode (uv/pip --require-hashes): the one-line requirements file that names
+# the wheel by its file URL and SHA-256 (with its extras), written next to the constraints
+# file, whose --hash lines check every dependency. Throws when the constraints file has no
+# hashes. Returns the requirements file's path.
+function New-NodeHashedRequirements {
+    param(
+        [Parameter(Mandatory = $true)][string]$WheelFile,
+        [string]$WheelSha256 = '',
+        [string[]]$Extras = @(),
+        [Parameter(Mandatory = $true)][string]$ConstraintsFile
+    )
+    if (-not (Select-String -LiteralPath $ConstraintsFile -SimpleMatch -Pattern '--hash=sha256:' -Quiet)) {
+        throw "$ConstraintsFile pins no hashes (--hash=sha256:...), so the dependencies downloaded from PyPI could not be checked: use the constraints file of a release made with hashes"
+    }
+    if (-not $WheelSha256) { $WheelSha256 = (Get-FileHash -LiteralPath $WheelFile -Algorithm SHA256).Hash }
+    $name = 'maktaba-pipeline'
+    if ($Extras.Count -gt 0) { $name = '{0}[{1}]' -f $name, ($Extras -join ',') }
+    $line = '{0} @ {1} --hash=sha256:{2}' -f $name, (ConvertTo-NodeFileUrl $WheelFile), $WheelSha256.ToLowerInvariant()
+    $req = Join-Path (Split-Path -Parent $ConstraintsFile) '.maktaba-node-requirements.txt'
+    [System.IO.File]::WriteAllText($req, $line + "`n")
+    return $req
 }
 
 # Remove the earlier downloads in Dir, keeping the files in Keep.

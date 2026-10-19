@@ -486,6 +486,9 @@ func runServe() error {
 			if mountRemote != nil {
 				mountRemote(r) // Epic 32 story 32.6: /api/tv/remote
 			}
+			// Epic 33: TV changes (/api/tv/changes, releases, slots) and the change
+			// controller (staged -> verified -> approved -> swapped)
+			router.MountP33(r, router.P33Deps{DB: appDB, Logger: logger, RunController: true})
 			logger.Info("p27: live-channel + guide handlers mounted",
 				"event", "p27_mounted")
 

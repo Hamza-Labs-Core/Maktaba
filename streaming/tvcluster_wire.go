@@ -215,7 +215,7 @@ func buildHomeTV(logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, lay
 		if clusterSchema(ctx, pool, 60*time.Second) && slotSchema(ctx, pool, 60*time.Second) {
 			return b.buildHomeSlots(ctx, addrs, ident, chRepo, publicBase)
 		}
-		logger.Warn("tv: the TV slot schema (slots 0123, 0127) is missing; channels encode in this process",
+		logger.Warn("tv: the TV slot schema (slots 0123, 0129) is missing; channels encode in this process",
 			"event", "tv_slot_schema_missing")
 	}
 	start := channel.SettingsStarter(b.stationConfig(chRepo), b.settings, b.encoders)

@@ -79,7 +79,9 @@ func (h *Handler) Schedule(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.InvalidQuery("end must be after start"))
 		return
 	}
-	blocks, err := h.loadSchedule(r, id, start, end)
+	// ?gen=staging (admins, the Changes page): the in-flight TV change's generation
+	staging := r.URL.Query().Get("gen") == "staging" && p.IsAdmin
+	blocks, err := h.loadSchedule(r, id, start, end, staging)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("read schedule"))
 		return
@@ -102,6 +104,10 @@ func (h *Handler) Regenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := chi.URLParam(r, "id")
+	if h.staging(r.Context()) {
+		h.regenerateDraft(w, r, id)
+		return
+	}
 	if _, err := h.repo().get(r.Context(), id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httperror.Write(w, r, httperror.NotFound("channel "+id))
@@ -117,11 +123,20 @@ func (h *Handler) Regenerate(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *Handler) loadSchedule(r *http.Request, channelID string, start, end time.Time) ([]ScheduleBlock, error) {
+// stagingGenSQL is the schedule generation of the TV change in flight (Epic 33).
+const stagingGenSQL = `(SELECT r.sched_gen FROM tv_changes c JOIN tv_releases r ON r.id = c.release_id
+	WHERE c.state IN ('staged','verifying','ready','approved','swapping') ORDER BY c.created_at LIMIT 1)`
+
+func (h *Handler) loadSchedule(r *http.Request, channelID string, start, end time.Time, staging bool) ([]ScheduleBlock, error) {
+	from := "channel_programs_live"
+	if staging {
+		from = "channel_programs WHERE sched_gen = " + stagingGenSQL + " AND"
+	} else {
+		from += " WHERE"
+	}
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT seq, kind, video_id, start_at, end_at, source_offset, source_duration, title_snapshot
-		FROM channel_programs
-		WHERE channel_id = $1 AND start_at < $3 AND end_at > $2
+		FROM `+from+` channel_id = $1 AND start_at < $3 AND end_at > $2
 		ORDER BY start_at ASC
 	`, channelID, start, end)
 	if err != nil {

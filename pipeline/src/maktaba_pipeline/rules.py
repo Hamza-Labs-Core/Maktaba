@@ -41,11 +41,11 @@ from .schedule.tv_settings import (
     MaktabaTvOutputConfig,
     MaktabaTvRemoteConfig,
     MaktabaTvSimulcastConfig,
-    MaktabaTvStagingConfig,
     PlexLiveConfig,
     RepairConfig,
     TvStripConfig,
 )
+from .tvrelease.config import MaktabaTvStagingConfig
 
 __all__ = ["SECTIONS", "config", "read", "schema"]
 
@@ -87,9 +87,6 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
                   "sessions at once"),
     "tv_cluster": (MaktabaTvClusterConfig, "Maktaba TV machines", "which machines encode "
                    "channels and how the home spreads them; one encode per channel"),
-    "tv_staging": (MaktabaTvStagingConfig, "Maktaba TV staging", "the TV processes: the hot "
-                   "standby that takes over when the live one crashes, what it keeps warm, "
-                   "and whether changes go through staging"),
     "tv_remote": (MaktabaTvRemoteConfig, "Maktaba TV away from home", "who may watch "
                   "channels away from home through Cloudflare Stream, how many at once, the "
                   "monthly budget and the storage guard"),
@@ -97,6 +94,9 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
                      "Facebook or any RTMP destination through Cloudflare: on or off, "
                      "destinations per channel, the monthly output-hours, the margins around "
                      "a scheduled window"),
+    "tv_staging": (MaktabaTvStagingConfig, "TV staging", "every TV change is prepared next "
+                   "to what is on the air, checked and approved before it goes on the air; "
+                   "when channels switch, rollback, the hot standby"),
     "tv_strip": (TvStripConfig, "Channel strip", "the news-style bar across a channel's "
                  "picture: what is on now and next, and a clock rotating between cities"),
     "display_titles": (DisplayTitleConfig, "Display titles", "short, clean on-air titles "

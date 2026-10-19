@@ -451,18 +451,18 @@ func TestStandbyBudgetOrder(t *testing.T) {
 // The rules.tv_staging overlay; staging needs the build flag too.
 func TestStagingSettings(t *testing.T) {
 	d := DefaultStagingSettings()
-	if !d.Enabled || !d.HotStandby || d.StandbyWarm != StandbyWarmViewers {
+	if d.Enabled || !d.HotStandby || d.StandbyWarm != StandbyWarmViewers {
 		t.Fatalf("defaults %+v", d)
 	}
-	got := ApplyStagingRules(d, []byte(`{"hot_standby":false,"standby_warm":"demand","enabled":"yes"}`))
-	if got.HotStandby || got.StandbyWarm != StandbyWarmDemand || !got.Enabled {
+	got := ApplyStagingRules(d, []byte(`{"hot_standby":false,"standby_warm":"demand","enabled":true}`))
+	if got.HotStandby || got.StandbyWarm != StandbyWarmDemand || !got.Enabled || got.StagingActive() != StagingBuild {
 		t.Fatalf("overlay %+v", got)
 	}
 	if ApplyStagingRules(d, []byte(`{"standby_warm":"all"}`)).StandbyWarm != StandbyWarmViewers {
 		t.Fatal("a bad value replaced the default")
 	}
-	if d.StagingActive() != StagingBuild {
-		t.Fatal("staging active without the build flag")
+	if d.StagingActive() {
+		t.Fatal("staging active by default")
 	}
 }
 

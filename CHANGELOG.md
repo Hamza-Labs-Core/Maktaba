@@ -21,7 +21,7 @@ don't append a line here; docs-only PRs are exempt.
   slot crashes: HLS continues across one discontinuity, Plex/TS connections
   are spliced, the Cloudflare push keeps its session. Station output is
   splice-ready: wall-clock timestamps, keyframes on a wall-clock grid
-  (`tv_output.keyint_seconds`, 2), fixed PIDs, aligned segments. Slot 0127
+  (`tv_output.keyint_seconds`, 2), fixed PIDs, aligned segments. Slot 0129
   `tv_slots`. `[tv] slots = "off"` in server.toml keeps the engine in the
   streaming process. Staging itself stays behind the `tvstaging` build tag.
 - Extension relay (story 31.R): machines run the Plex stages (index,

@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0127 (Epic 33, story 33.1): the TV slots. A SQLite home
+-- SQLite parity sibling for slot 0129 (Epic 33, story 33.1): the TV slots. A SQLite home
 -- is a single machine: no roles, no heartbeat function (the slot writes its row).
 -- UUID becomes TEXT, JSONB TEXT, TIMESTAMPTZ TEXT.
 --

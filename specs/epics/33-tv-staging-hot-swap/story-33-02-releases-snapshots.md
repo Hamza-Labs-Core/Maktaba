@@ -14,7 +14,7 @@ Design: [design.md](design.md) §3.
 
 ## Acceptance criteria
 
-- **AC1** `tv_releases` and `tv_release_channels` exist (slot 0123); a release has a digest over its
+- **AC1** `tv_releases` and `tv_release_channels` exist (slot 0127); a release has a digest over its
   snapshot; building a release equal to an existing one returns the existing one.
 - **AC2** Release 1 is created at first start (or migration bootstrap) from `channels`, `app_settings`
   and the running version; `tv_routing.cluster.live_release_id` = release 1, `live_gen` = 0.

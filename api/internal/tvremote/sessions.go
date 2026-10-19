@@ -115,7 +115,7 @@ func (c *Controller) Tune(ctx context.Context, v Viewer, channelID, device strin
 	if !viewerAllowed(s, v) {
 		return Tuned{}, refuse(http.StatusForbidden, "remote_not_allowed", "you may not watch away from home")
 	}
-	if _, err := uuid.Parse(channelID); err != nil {
+	if !isUUID(channelID) {
 		return Tuned{}, refuse(http.StatusNotFound, "no_such_channel", "no such channel")
 	}
 	ch, err := c.st.channel(ctx, channelID)

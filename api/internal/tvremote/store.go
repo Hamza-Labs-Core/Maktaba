@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // The remote controller's tables (slot 0125). The SQL here is portable
@@ -357,7 +359,17 @@ func (s *store) activePushes(ctx context.Context) ([]Push, error) {
 	return s.queryPushes(ctx, `WHERE state NOT IN ('done', 'failed')`)
 }
 
+// isUUID: the tv_remote ids are Postgres UUIDs; any other id from a path or
+// a body would fail the cast (a 500), so it names no row.
+func isUUID(s string) bool {
+	_, err := uuid.Parse(s)
+	return err == nil && len(s) == 36
+}
+
 func (s *store) push(ctx context.Context, id string) (Push, error) {
+	if !isUUID(id) {
+		return Push{}, sql.ErrNoRows
+	}
 	return scanPush(s.db.QueryRowContext(ctx, `SELECT `+pushCols+` FROM tv_remote_pushes WHERE id = $1`, id))
 }
 
@@ -480,6 +492,9 @@ func (s *store) openSessions(ctx context.Context) ([]Session, error) {
 }
 
 func (s *store) session(ctx context.Context, id string) (Session, error) {
+	if !isUUID(id) {
+		return Session{}, sql.ErrNoRows
+	}
 	return scanSession(s.db.QueryRowContext(ctx, `SELECT `+sessionCols+` FROM tv_remote_sessions WHERE id = $1`, id))
 }
 

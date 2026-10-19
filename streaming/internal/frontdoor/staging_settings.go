@@ -30,10 +30,12 @@ const (
 	StandbyWarmDemand  = "demand"
 )
 
-// DefaultStagingSettings are the owner's decisions; standby_warm is viewers so
-// the standby never spends an encoder on a channel nobody watches by default.
+// DefaultStagingSettings mirror rules.tv_staging's defaults (pipeline
+// tvrelease/config.py): enabled is off in the interim until the Changes page
+// (story 33.11) lands, then on; hot_standby on; standby_warm viewers, so the
+// standby never spends an encoder on a channel nobody watches by default.
 func DefaultStagingSettings() StagingSettings {
-	return StagingSettings{Enabled: true, HotStandby: true, StandbyWarm: StandbyWarmViewers}
+	return StagingSettings{Enabled: false, HotStandby: true, StandbyWarm: StandbyWarmViewers}
 }
 
 // StagingActive reports whether staging may run (the setting and the build).

@@ -1,7 +1,7 @@
 # Plan 33.2 — TV releases and snapshots — implementation
 
 > Implementation plan for [story-33-02](story-33-02-releases-snapshots.md).
-> Design: [design.md](design.md) §3. Migration: slot 0123 (`tv_releases`, `tv_release_channels`,
+> Design: [design.md](design.md) §3. Migration: slot 0127 (`tv_releases`, `tv_release_channels`,
 > `tv_routing`, `tv_sched_gen_seq`; `tv_changes`/`tv_change_events` land in the same file, used by 33.10).
 
 ## 0. Decisions
@@ -17,7 +17,7 @@
 ## 1. Files
 
 **Create**
-- `shared/db/migrations/0123_tv_releases_changes.sql` (+ sqlite)
+- `shared/db/migrations/0127_tv_releases_changes.sql` (+ sqlite)
 - `pipeline/src/maktaba_pipeline/tvrelease/__init__.py`, `build.py` (`build(base, edits) → Release`), `snapshot.py` (from `channels`/`app_settings`), `digest.py`
 - `streaming/internal/channel/repo_release.go` — Repo reading `tv_release_channels` + `sched_gen`
 - `streaming/internal/channel/settings_release.go` — `Settings` from the release (tv-core `Settings` interface)

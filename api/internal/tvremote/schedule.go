@@ -282,7 +282,7 @@ func (s *store) channelZone(ctx context.Context, channel string) *time.Location 
 func (s *store) blocks(ctx context.Context, channel string, from, to time.Time) ([]Block, error) {
 	q := `SELECT p.start_at, p.end_at, p.kind, p.video_id,
 		(SELECT e.series_id FROM series_episodes e WHERE e.video_id = p.video_id LIMIT 1)
-		FROM channel_programs p WHERE p.channel_id = $1 AND p.kind IN ('program', 'live')`
+		FROM channel_programs_live p WHERE p.channel_id = $1 AND p.kind IN ('program', 'live')`
 	args := []any{channel}
 	if s.postgres {
 		q += ` AND p.end_at > $2 AND p.start_at < $3`

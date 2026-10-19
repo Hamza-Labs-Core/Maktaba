@@ -1,8 +1,8 @@
 # Plan 33.5 — Staging warm-up and verification — implementation
 
 > Implementation plan for [story-33-05](story-33-05-staging-warmup-verification.md).
-> Design: [design.md](design.md) §6. No migration (`tv_changes.verify_report`, slot 0123; placements
-> `track`, slot 0125).
+> Design: [design.md](design.md) §6. No migration (`tv_changes.verify_report`, slot 0127; placements
+> `track`, slot 0129).
 
 ## 0. Decisions
 

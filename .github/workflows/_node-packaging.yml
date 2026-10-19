@@ -40,10 +40,21 @@ jobs:
       - name: Wheel in a clean venv (uv)
         run: |
           set -euo pipefail
+          # hash-checking mode, as the installers install: the wheel by its SHA-256, every
+          # dependency by the constraints file's hashes
+          cons="$PWD/dist/maktaba-pipeline-${NODE_VERSION}-constraints.txt"
+          whl="$PWD/dist/maktaba_pipeline-${NODE_VERSION}-py3-none-any.whl"
+          printf 'maktaba-pipeline @ file://%s --hash=sha256:%s\n' "$whl" "$(sha256sum "$whl" | awk '{print $1}')" \
+            >"$RUNNER_TEMP/req.txt"
           uv venv --python 3.12 "$RUNNER_TEMP/uv-venv"
-          uv pip install --python "$RUNNER_TEMP/uv-venv/bin/python" \
-            --constraint "dist/maktaba-pipeline-${NODE_VERSION}-constraints.txt" \
-            "dist/maktaba_pipeline-${NODE_VERSION}-py3-none-any.whl"
+          # dependencies that do not match their hashes are refused
+          sed -E "s/sha256:[0-9a-f]{64}/sha256:$(printf '0%.0s' $(seq 64))/g" "$cons" >"$RUNNER_TEMP/bad-constraints.txt"
+          if uv pip install --python "$RUNNER_TEMP/uv-venv/bin/python" --require-hashes \
+              --constraint "$RUNNER_TEMP/bad-constraints.txt" -r "$RUNNER_TEMP/req.txt"; then
+            echo "::error::dependencies with wrong hashes were installed"; exit 1
+          fi
+          uv pip install --python "$RUNNER_TEMP/uv-venv/bin/python" --require-hashes \
+            --constraint "$cons" -r "$RUNNER_TEMP/req.txt"
           cd "$RUNNER_TEMP"   # not the checkout: nothing on sys.path but the venv
           bin="$RUNNER_TEMP/uv-venv/bin/maktaba-pipeline"
           got="$("$bin" --version)"
@@ -56,10 +67,12 @@ jobs:
         run: |
           set -euo pipefail
           python -m venv "$RUNNER_TEMP/pip-venv"
-          "$RUNNER_TEMP/pip-venv/bin/python" -m pip install --quiet --upgrade pip
-          "$RUNNER_TEMP/pip-venv/bin/python" -m pip install --quiet \
-            --constraint "dist/maktaba-pipeline-${NODE_VERSION}-constraints.txt" \
-            "dist/maktaba_pipeline-${NODE_VERSION}-py3-none-any.whl"
+          # the venv's own pip, hash-checked, as install-node.sh falls back to it
+          "$RUNNER_TEMP/pip-venv/bin/python" -m pip install --quiet --require-hashes --no-deps \
+            -r "dist/maktaba-pipeline-${NODE_VERSION}-constraints.txt"
+          "$RUNNER_TEMP/pip-venv/bin/python" -m pip install --quiet --require-hashes --no-deps \
+            -r "$RUNNER_TEMP/req.txt"
+          "$RUNNER_TEMP/pip-venv/bin/python" -m pip check
           cd "$RUNNER_TEMP"
           [ "$("$RUNNER_TEMP/pip-venv/bin/maktaba-pipeline" --version)" = "$NODE_VERSION" ]
           "$RUNNER_TEMP/pip-venv/bin/maktaba-pipeline" run --help | grep -q -- '--node'

@@ -1,4 +1,4 @@
-"""Slot 0127 (SQLite twin): the TV slots (Epic 33 story 33.1) - one row per host and
+"""Slot 0129 (SQLite twin): the TV slots (Epic 33 story 33.1) - one row per host and
 slot instance (blue, green, amber) with its role (the front door's) and the epoch it
 was written under, its state, release and heartbeat; at most one live slot per host.
 Both directions."""
@@ -19,16 +19,16 @@ from tests.engine.migrate import (
 
 pytestmark = pytest.mark.unit
 
-_MIG = MIGRATIONS_DIR / "0127_tv_slots.sqlite.sql"
+_MIG = MIGRATIONS_DIR / "0129_tv_slots.sqlite.sql"
 
 
 def _cols(conn: sqlite3.Connection, table: str) -> set[str]:
     return {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
 
 
-def test_0127_up_down() -> None:
+def test_0129_up_down() -> None:
     conn = sqlite3.connect(":memory:")
-    apply_sqlite(conn, upto=126)
+    apply_sqlite(conn, upto=128)
     for stmt in up_statements(_MIG.read_text("utf-8")):
         apply_statement(conn, stmt)
     assert {

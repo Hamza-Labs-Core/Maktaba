@@ -4,7 +4,7 @@
 --
 -- Runs outside a transaction because the index is built CONCURRENTLY.
 --
--- Slot 0127 (Epic 33, story 33.1) - the TV slots: on each streaming host the channel
+-- Slot 0129 (Epic 33, story 33.1) - the TV slots: on each streaming host the channel
 -- engine runs in slot processes (maktaba-streaming slot --slot blue|green|amber),
 -- supervised by maktaba-server, behind the front door that owns every client connection
 -- (specs/epics/33-tv-staging-hot-swap/design.md section 2).

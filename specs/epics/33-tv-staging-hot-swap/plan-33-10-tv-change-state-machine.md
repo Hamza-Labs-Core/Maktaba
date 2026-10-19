@@ -1,7 +1,7 @@
 # Plan 33.10 — TV change objects and state machine — implementation
 
 > Implementation plan for [story-33-10](story-33-10-tv-change-state-machine.md).
-> Design: [design.md](design.md) §11. Migration: slot 0123 (`tv_changes`, `tv_change_events`).
+> Design: [design.md](design.md) §11. Migration: slot 0127 (`tv_changes`, `tv_change_events`).
 
 ## 0. Decisions
 

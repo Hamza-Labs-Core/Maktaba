@@ -6,7 +6,16 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
+
+// isUUID: channels.id is a Postgres UUID; any other path id would fail the
+// cast (a 500), so it is a channel that does not exist.
+func isUUID(s string) bool {
+	_, err := uuid.Parse(s)
+	return err == nil && len(s) == 36
+}
 
 // repo wraps the SQL access to `channels` (+ a cheap now-playing join to
 // `channel_programs`). Kept thin: the interesting logic (validation,
@@ -20,7 +29,10 @@ const channelCols = `id, library_id, number, name, slug, logo_path, category,
 	created_at, updated_at`
 
 func (rp *repo) get(ctx context.Context, id string) (Channel, error) {
-	row := rp.db.QueryRowContext(ctx, `SELECT `+channelCols+` FROM channels WHERE id = $1`, id)
+	if !isUUID(id) {
+		return Channel{}, sql.ErrNoRows
+	}
+	row := rp.db.QueryRowContext(ctx, `SELECT `+channelCols+` FROM channels WHERE id = $1 AND lifecycle = 'live'`, id)
 	return scanChannel(row)
 }
 
@@ -29,7 +41,8 @@ func (rp *repo) get(ctx context.Context, id string) (Channel, error) {
 // handler so the repo stays a pure data accessor.
 func (rp *repo) list(ctx context.Context, f listFilter) ([]Channel, error) {
 	q := `SELECT ` + channelCols + ` FROM channels`
-	var conds []string
+	// staged (a TV change's additions) and retired channels are not the lineup (Epic 33)
+	conds := []string{"lifecycle = 'live'"}
 	var args []any
 	i := 1
 	if f.libraryID != "" {
@@ -80,10 +93,10 @@ func (rp *repo) slugTaken(ctx context.Context, libraryID *string, slug string) (
 	var err error
 	if libraryID == nil {
 		err = rp.db.QueryRowContext(ctx,
-			`SELECT count(*) FROM channels WHERE library_id IS NULL AND slug = $1`, slug).Scan(&n)
+			`SELECT count(*) FROM channels WHERE library_id IS NULL AND slug = $1 AND lifecycle = 'live'`, slug).Scan(&n)
 	} else {
 		err = rp.db.QueryRowContext(ctx,
-			`SELECT count(*) FROM channels WHERE library_id = $1 AND slug = $2`, *libraryID, slug).Scan(&n)
+			`SELECT count(*) FROM channels WHERE library_id = $1 AND slug = $2 AND lifecycle = 'live'`, *libraryID, slug).Scan(&n)
 	}
 	return n > 0, err
 }
@@ -101,6 +114,9 @@ func (rp *repo) insert(ctx context.Context, c Channel) error {
 }
 
 func (rp *repo) delete(ctx context.Context, id string) error {
+	if !isUUID(id) {
+		return nil // nothing to delete, as for an unknown id
+	}
 	_, err := rp.db.ExecContext(ctx, `DELETE FROM channels WHERE id=$1`, id)
 	return err
 }
@@ -111,7 +127,7 @@ func (rp *repo) delete(ctx context.Context, id string) error {
 func (rp *repo) nowPlaying(ctx context.Context, channelID string, now time.Time) (*NowPlaying, error) {
 	row := rp.db.QueryRowContext(ctx, `
 		SELECT title_snapshot, start_at, end_at
-		FROM channel_programs
+		FROM channel_programs_live
 		WHERE channel_id = $1 AND start_at <= $2 AND end_at > $2
 		ORDER BY start_at DESC LIMIT 1
 	`, channelID, now)

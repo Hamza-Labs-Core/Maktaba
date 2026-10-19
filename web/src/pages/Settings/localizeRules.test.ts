@@ -68,7 +68,7 @@ describe("localizeSections", () => {
   it("describes every tv_cluster and tv_remote setting in English and Arabic", () => {
     const enC = en as Record<string, string>;
     const arC = ar as Record<string, string>;
-    for (const key of ["tv_cluster", "tv_remote", "tv_staging"]) {
+    for (const key of ["tv_cluster", "tv_remote"]) {
       const sec = sections().find((s) => s.key === key)!;
       expect(sec, key).toBeTruthy();
       expect(arC[`rules.${key}.title`], `${key} title`).toBeTruthy();

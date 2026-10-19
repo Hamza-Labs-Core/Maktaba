@@ -69,7 +69,7 @@ func (r *PGRepo) ProgramsFrom(ctx context.Context, channelID uuid.UUID, from tim
 	rows, err := r.pool.Query(ctx, `
 		SELECT cp.seq, cp.kind, cp.video_id, cp.start_at, cp.end_at,
 		       cp.source_offset, cp.source_duration, v.path, `+srcCol+`, cp.title_snapshot
-		FROM channel_programs cp
+		FROM channel_programs_live cp
 		LEFT JOIN videos v ON v.id = cp.video_id
 		WHERE cp.channel_id = $1 AND cp.end_at > $2
 		ORDER BY cp.start_at ASC
@@ -111,6 +111,7 @@ func (r *PGRepo) Look(ctx context.Context, channelID uuid.UUID) (Look, error) {
 	var raw []byte
 	err := r.pool.QueryRow(ctx, `
 		SELECT name, logo_path, mode_config->'look' FROM channels WHERE id = $1 AND enabled = true
+		  AND lifecycle = 'live'
 	`, channelID).Scan(&name, &logo, &raw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Look{}, ErrChannelNotFound
