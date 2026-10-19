@@ -10,24 +10,13 @@
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%231E5AD8'/%3E%3C/svg%3E"
     />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <!-- Story 11.8 AC-3: resolve theme BEFORE first paint (no FOUC).
-         Mirrors src/lib/theme.ts THEME_BOOT; keep the two in sync. -->
-    <script>
-      (function () {
-        try {
-          var m = localStorage.getItem("mkt:theme");
-          if (m !== "light" && m !== "dark" && m !== "system") m = "system";
-          // system theme; dark when the browser cannot say (never a bright white page)
-          var d =
-            m === "dark" ||
-            (m === "system" &&
-              (!window.matchMedia || window.matchMedia("(prefers-color-scheme: dark)").matches));
-          document.documentElement.dataset.theme = d ? "dark" : "light";
-        } catch (e) {
-          document.documentElement.dataset.theme = "dark";
-        }
-      })();
-    </script>
+    <!-- Before any paint the UA canvas is dark unless the OS asks for light
+         (first listed scheme wins when there is no preference). -->
+    <meta name="color-scheme" content="dark light" />
+    <!-- Story 11.8 AC-3: resolve theme BEFORE first paint (no FOUC). A
+         blocking same-origin script (the CSP forbids inline script); it
+         mirrors src/lib/theme.ts — keep the two in sync. -->
+    <script src="/theme-boot.js"></script>
   </head>
   <body>
     <div id="root"></div>

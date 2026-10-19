@@ -1,6 +1,8 @@
 /*
  * CSS variables sourced from the design system (web/design-system/tokens/).
- * Light theme is the default; `[data-theme="dark"]` swaps the values.
+ * The light values sit on :root; `[data-theme="dark"]` swaps them. The
+ * resolved theme is stamped on <html> by public/theme-boot.js before first
+ * paint; if it never ran (no data-theme at all) the page falls back to dark.
  * No component should ever hard-code a color, font, or spacing token.
  */
 :root {
@@ -72,9 +74,12 @@
   --radius-lg: 12px;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.12);
+  color-scheme: light;
 }
 
-[data-theme="dark"] {
+[data-theme="dark"],
+:root:not([data-theme]) {
+  color-scheme: dark;
   --color-bg: #09090b;
   --color-fg: #fafafa;
   --color-muted: #a1a1aa;

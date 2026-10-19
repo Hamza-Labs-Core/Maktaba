@@ -301,3 +301,26 @@ func TestPreview_BusyOfflineAndStatus(t *testing.T) {
 		t.Fatalf("offline: %d", w.Code)
 	}
 }
+
+// A report page follows the system theme with a dark fallback even when it
+// was written without one (pagetheme.Inject), and stays scriptless.
+func TestPage_FollowsTheSystemTheme(t *testing.T) {
+	f := newFixture(t)
+	f.write(t, PlanPage, `<!doctype html><html><head><title>p</title></head><body><p>hi</p></body></html>`)
+	rec := f.do("GET", "/api/reports/"+PlanPage, "", admin())
+	if rec.Code != 200 {
+		t.Fatalf("%d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`<meta name="color-scheme" content="dark light">`, "color-scheme:dark light", "@media (prefers-color-scheme: light)", "<p>hi</p>"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("report lacks %q: %s", want, body)
+		}
+	}
+	// a page that already declares its scheme is served untouched
+	own := `<!doctype html><style>:root{color-scheme:dark light}</style><p>own</p>`
+	f.write(t, AuditPage, own)
+	if rec := f.do("GET", "/api/reports/"+AuditPage, "", admin()); rec.Body.String() != own {
+		t.Errorf("page with its own color-scheme changed: %s", rec.Body.String())
+	}
+}

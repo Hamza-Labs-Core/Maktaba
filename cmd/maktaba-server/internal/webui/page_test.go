@@ -14,7 +14,7 @@ func TestErrorPageIsThemedDarkByDefault(t *testing.T) {
 	w := httptest.NewRecorder()
 	Error(w, r, http.StatusBadGateway, "This machine cannot reach its home", "<x>")
 	body := w.Body.String()
-	if w.Code != 502 || !strings.Contains(body, "color-scheme") || !strings.Contains(body, "--bg:#111317") ||
+	if w.Code != 502 || !strings.Contains(body, "color-scheme") || !strings.Contains(body, "--mk-bg:#09090b") ||
 		!strings.Contains(body, "prefers-color-scheme: light") || strings.Contains(body, "<x>") {
 		t.Fatalf("page: %d %s", w.Code, body)
 	}

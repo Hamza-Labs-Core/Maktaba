@@ -18,8 +18,8 @@ from typing import Any
 from . import thumbs
 
 CSS = """
-:root{--bg:#f6f5f2;--card:#fff;--ink:#1c1b19;--mute:#6b675f;--line:#e2ded6;--acc:#2f6f5e;--warn:#a5532a;--att:#7a5aa8}
-@media (prefers-color-scheme:dark){:root{--bg:#161614;--card:#21201d;--ink:#ecebe6;--mute:#a19d93;--line:#33312c;--acc:#6fbfa6;--warn:#e0956b;--att:#b59ae0}}
+:root{color-scheme:dark light;--bg:#161614;--card:#21201d;--ink:#ecebe6;--mute:#a19d93;--line:#33312c;--acc:#6fbfa6;--warn:#e0956b;--att:#b59ae0}
+@media (prefers-color-scheme:light){:root{--bg:#f6f5f2;--card:#fff;--ink:#1c1b19;--mute:#6b675f;--line:#e2ded6;--acc:#2f6f5e;--warn:#a5532a;--att:#7a5aa8}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,"Segoe UI",Tahoma,sans-serif}
 header{padding:20px 16px 8px;max-width:1400px;margin:auto}h1{margin:0 0 4px;font-size:22px}
 .sum{color:var(--mute)}main{max-width:1400px;margin:auto;padding:0 16px 40px}

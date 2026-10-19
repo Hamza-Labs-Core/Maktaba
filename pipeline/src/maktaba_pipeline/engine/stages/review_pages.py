@@ -89,9 +89,10 @@ def _mmss(sec: Any) -> str:
 
 
 _CSS = """
-:root{--bg:#f7f6f2;--fg:#1d1c19;--muted:#6b675e;--card:#fff;--line:#e3e0d8;--accent:#2f6f5e}
-@media (prefers-color-scheme:dark){:root{--bg:#151513;--fg:#ecebe6;--muted:#a19d93;
---card:#1f1e1b;--line:#33312c;--accent:#7cc4ad}}
+:root{color-scheme:dark light;--bg:#151513;--fg:#ecebe6;--muted:#a19d93;
+--card:#1f1e1b;--line:#33312c;--accent:#7cc4ad}
+@media (prefers-color-scheme:light){:root{--bg:#f7f6f2;--fg:#1d1c19;--muted:#6b675e;--card:#fff;
+--line:#e3e0d8;--accent:#2f6f5e}}
 body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,sans-serif;
 padding:16px max(16px,env(safe-area-inset-right)) 32px max(16px,env(safe-area-inset-left))}
 h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 4px}
