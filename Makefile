@@ -82,6 +82,10 @@ STREAMING_VERSION_PKG := github.com/Hamza-Labs-Core/Maktaba/streaming/internal/v
 SERVER_VERSION_PKG    := github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version
 
 GO_LDFLAGS_BASE := -buildid= -s -w
+# The streaming binary ships with TV staging and hot swap (Epic 33 stories
+# 33.5-33.9) compiled in; `make build-go-streaming STREAMING_TAGS=` builds
+# without them (rules.tv_staging.enabled then has no effect).
+STREAMING_TAGS ?= tvstaging
 GO_BUILD_FLAGS  ?= -trimpath
 
 api_ldflags = $(GO_LDFLAGS_BASE) \
@@ -261,6 +265,8 @@ test-unit-go:
 		UNIT_PACKAGE_BUDGET="$(UNIT_PACKAGE_BUDGET)" \
 		UNIT_PER_TEST_SOFT_CAP="$(UNIT_PER_TEST_SOFT_CAP)" \
 		bash tools/test-budget.sh unit
+	@echo "==> go test -tags $(STREAMING_TAGS) ./internal/frontdoor/ (streaming, as shipped)"
+	@cd streaming && go test -tags '$(STREAMING_TAGS)' -count=1 ./internal/frontdoor/
 
 .PHONY: test-unit-py
 test-unit-py:
@@ -427,7 +433,7 @@ build-go-streaming:
 	@echo "==> building streaming for $(GOOS)/$(GOARCH) (version=$(VERSION))"
 	@cd streaming && \
 		GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 \
-		go build $(GO_BUILD_FLAGS) -ldflags='$(streaming_ldflags)' \
+		go build $(GO_BUILD_FLAGS) -tags '$(STREAMING_TAGS)' -ldflags='$(streaming_ldflags)' \
 			-o bin/$(BIN_SUBDIR)maktaba-streaming .
 
 .PHONY: server

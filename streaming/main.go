@@ -234,11 +234,11 @@ func runServe() error {
 	errCh := make(chan error, 3)
 	go func() {
 		logger.Info("listening", "addr", publicAddr, "kind", "public", "event", "http_listen")
-		errCh <- publicSrv.ListenAndServe()
+		errCh <- serveOn(publicSrv)
 	}()
 	go func() {
 		logger.Info("listening", "addr", adminAddr, "kind", "admin", "event", "http_listen")
-		errCh <- adminSrv.ListenAndServe()
+		errCh <- serveOn(adminSrv)
 	}()
 
 	// gRPC surface for the API (Story 7.18 / 8.8): JSON-codec service
@@ -249,7 +249,7 @@ func runServe() error {
 	grpcErr := errors.New("node mode")
 	if !nodeMode || fullNode {
 		grpcServer = grpcsrv.NewGRPCServer(buildGRPCServer(logger, probeBackend, sessions))
-		grpcLis, grpcErr = net.Listen("tcp", grpcAddr)
+		grpcLis, grpcErr = listenTCP("tcp", grpcAddr)
 	}
 	if nodeMode && !fullNode {
 		logger.Info("grpc surface off on a cluster node", "event", "grpc_node_off")
@@ -289,6 +289,21 @@ func runServe() error {
 		}
 		return nil
 	}
+}
+
+// listenTCP opens every socket runServe listens on (public, admin, gRPC).
+// Production: net.Listen. The tests swap in a guard that refuses any address
+// that is not loopback, so `go test` never opens a socket on the LAN (on
+// Windows that pops a firewall prompt for every new streaming.test.exe).
+var listenTCP = net.Listen
+
+// serveOn binds srv.Addr through listenTCP and serves it (ListenAndServe).
+func serveOn(srv *http.Server) error {
+	ln, err := listenTCP("tcp", srv.Addr)
+	if err != nil {
+		return err
+	}
+	return srv.Serve(ln)
 }
 
 // buildGRPCServer constructs the in-process streaming Server backing

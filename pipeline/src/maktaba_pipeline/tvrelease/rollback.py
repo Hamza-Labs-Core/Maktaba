@@ -44,8 +44,47 @@ async def rollback_change(
     actor_user_id: str | None = None,
 ) -> dict[str, Any]:
     """Put the previous release back on the air for the live (or swapping) change
-    ``change_id``. Raises :class:`LookupError` when there is no rollback point."""
+    ``change_id``. Raises :class:`LookupError` when there is no rollback point; the
+    front door's operation ``op_id``, if any, then records why (``commit_error``):
+    the change controller stops enqueueing its reverse commit and tells the admins,
+    instead of asking again every two minutes for as long as the change is live."""
     clock = clock or now()
+    try:
+        return await _rollback_change(
+            db, change_id, op_id=op_id, reason=reason, clock=clock, actor_source=actor_source,
+            actor_user_id=actor_user_id,
+        )  # fmt: skip
+    except LookupError as e:
+        if op_id is not None:
+            await _record_commit_error(db, op_id, str(e), clock)
+        raise
+
+
+async def _record_commit_error(db: Any, op_id: int, error: str, clock: datetime) -> None:
+    """``tv_swap_ops.detail.commit_error`` of an operation the reverse commit cannot
+    commit (Postgres only: the swap operations are the TV slots')."""
+    if not is_pg(db):
+        return
+    await db.execute(
+        "UPDATE tv_swap_ops SET detail = detail || jsonb_build_object('commit_error', $2::text,"
+        " 'commit_failed_at', $3::text) WHERE id = $1 AND NOT committed",
+        op_id,
+        error,
+        clock.isoformat(),
+    )
+    _log.warning("tv_rollback_not_committed", op_id=op_id, error=error)
+
+
+async def _rollback_change(
+    db: Any,
+    change_id: str,
+    *,
+    op_id: int | None,
+    reason: str,
+    clock: datetime,
+    actor_source: str,
+    actor_user_id: str | None,
+) -> dict[str, Any]:
     ch = await get_change(db, change_id)
     if ch is None or ch.state not in ("live", "swapping"):
         raise LookupError(f"change {change_id} is not live")

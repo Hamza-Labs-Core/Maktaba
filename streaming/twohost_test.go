@@ -168,10 +168,25 @@ func TestTwoHostsOneMachine(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE streaming_hosts SET enabled = true WHERE host_id = $1`, nodeID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `UPDATE streaming_hosts SET capacity_override = 1 WHERE host_id = $1`, homeID); err != nil {
-		t.Fatal(err)
+	// a host learns its capacity override from the answer to its heartbeat
+	// (every cluster.BeatInterval, 5 s): until its next beat the home's engine
+	// still enforces the old cap, and admitting a channel over it evicts a warm
+	// one (its placement released). Wait for the beat, never a fixed sleep.
+	overrideHome := func(n int) {
+		t.Helper()
+		var at time.Time
+		if err := pool.QueryRow(ctx, `UPDATE streaming_hosts SET capacity_override = $2 WHERE host_id = $1
+			RETURNING now()`, homeID, n).Scan(&at); err != nil {
+			t.Fatal(err)
+		}
+		waitFor(t, fmt.Sprintf("the home's beat after its capacity became %d", n), 20*time.Second, func() bool {
+			var beat time.Time
+			_ = pool.QueryRow(ctx, `SELECT heartbeat_at FROM streaming_hosts WHERE host_id = $1`, homeID).Scan(&beat)
+			return beat.After(at)
+		})
 	}
-	time.Sleep(6 * time.Second) // one beat + one host refresh
+	overrideHome(1)
+	time.Sleep(2 * time.Second) // the front door's host refresh (placement.SweepInterval)
 
 	homeURL := fmt.Sprintf("http://127.0.0.1:%d", homePort)
 	client := &http.Client{Timeout: 60 * time.Second}
@@ -266,10 +281,8 @@ func TestTwoHostsOneMachine(t *testing.T) {
 	waitFor(t, "TS bytes from the node", 30*time.Second, func() bool { return total.Load() > 100_000 })
 
 	// room on the home for the failover, then the node dies
-	if _, err := pool.Exec(ctx, `UPDATE streaming_hosts SET capacity_override = 2 WHERE host_id = $1`, homeID); err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(3 * time.Second)
+	overrideHome(2)
+	time.Sleep(2 * time.Second) // the front door's host refresh
 	before := total.Load()
 	killedAt := time.Now()
 	node.kill()

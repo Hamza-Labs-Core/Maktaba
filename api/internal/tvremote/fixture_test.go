@@ -2,13 +2,8 @@ package tvremote_test
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
 	"database/sql"
-	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"os"
 	"path/filepath"
@@ -30,21 +25,9 @@ import (
 // portable) with the fake Cloudflare API and a fake clock. The home's push
 // relay is simulated by writing what tv_push_report writes.
 
-var (
-	keyOnce sync.Once
-	keyPEM  string
-)
-
-// signingPEM is one RSA key for the whole package (key generation is slow
-// under -race).
-func signingPEM() string {
-	keyOnce.Do(func() {
-		k, _ := rsa.GenerateKey(rand.Reader, 2048)
-		p := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)})
-		keyPEM = base64.StdEncoding.EncodeToString(p)
-	})
-	return keyPEM
-}
+// signingPEM is one RSA key for the whole package: cftest's, made in the
+// background at start-up (cftest's key says why).
+func signingPEM() string { return cftest.KeyPEM() }
 
 func migrationsDir() string {
 	_, file, _, _ := runtime.Caller(0)

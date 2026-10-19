@@ -9,7 +9,7 @@
 //   GET   /api/tv/changes/{id}/schedule-diff?page= | ?channel=
 //   GET   /api/tv/changes/{id}/boundaries?at=&swap_wait=
 //   GET   /api/tv/rollback                       the rollback point (warm / cold / none)
-//   POST  /api/tv/rollback                       {to_release_id?} → {mode, op_id?, rollback_change_id?}
+//   POST  /api/tv/rollback                       {to_release_id?} → {mode, op_id?, rollback_change_id?, degraded?}
 //   GET   /api/tv/slots, /api/tv/releases
 //
 // The page never re-implements the state machine: the buttons are the change's
@@ -33,6 +33,8 @@ export type RollbackResult = {
   change_id: string;
   op_id?: number;
   rollback_change_id?: string;
+  /** What a warm rollback could not do ("no_live_slot": the database only). */
+  degraded?: string;
 };
 
 export type ChangeState =

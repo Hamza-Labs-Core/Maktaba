@@ -87,7 +87,8 @@ Details of everything in this release:
   player, a live-vs-staging view, the staged guide strip; staged M3U and XMLTV for
   VLC), through `POST /api/tv/changes/{id}/preview` (a token for an hour) and the
   front door's `/stream/staging/…`; the web port lets only admins through. No
-  staging HDHomeRun device. Still behind the `tvstaging` build tag.
+  staging HDHomeRun device. Compiled in by the `tvstaging` build tag, which
+  the release and `make build-go` set for the streaming binary and image.
 - TV slots and the hot standby (Epic 33 stories 33.1, 33.4): the channel
   engine runs in TV slot processes (`maktaba-streaming slot --slot
   blue|green|amber`, supervisor role `tv-slot`, loopback 8791-8793, probes
@@ -100,7 +101,8 @@ Details of everything in this release:
   splice-ready: wall-clock timestamps, keyframes on a wall-clock grid
   (`tv_output.keyint_seconds`, 2), fixed PIDs, aligned segments. Slot 0129
   `tv_slots`. `[tv] slots = "off"` in server.toml keeps the engine in the
-  streaming process. Staging itself stays behind the `tvstaging` build tag.
+  streaming process. Staging is compiled in by the `tvstaging` build tag
+  (set by the release builds).
 - Extension relay (story 31.R): machines run the Plex stages (index,
   season, topic and clip collections) again without the Plex token. Each
   Plex call goes over the machine's sealed cluster channel to the home,

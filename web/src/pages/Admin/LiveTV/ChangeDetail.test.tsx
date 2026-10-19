@@ -206,6 +206,22 @@ describe("Change detail", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("Rolling back");
   });
 
+  it("a warm rollback with no live TV slot says only the database was rolled back", async () => {
+    renderDetail(liveChange.id);
+    await screen.findByTestId("change-detail");
+    await screen.findByTestId("rollback-mode");
+    post.mockResolvedValueOnce({
+      mode: "warm",
+      change_id: liveChange.id,
+      degraded: "no_live_slot",
+    });
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId("action-rollback"));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Roll back" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Rolled back in the database only");
+  });
+
   it("Roll back is disabled with the reason when there is no rollback point", async () => {
     get.mockImplementation(async (path: string) =>
       path === "/api/tv/rollback" ? { mode: "none", reason: "retention_expired" } : answer(path)

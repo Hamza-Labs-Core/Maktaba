@@ -44,6 +44,9 @@ class MaktabaTvStagingConfig:
     #: boundary: a watched channel switches at its next programme boundary; immediate
     swap_wait: str = "boundary"
     boundary_max_wait_minutes: int = 30
+    #: a swap no front door took within this fails and is rolled back (the API's
+    #: change controller); 0: it waits for the front door however long
+    swap_start_timeout_minutes: int = 10
     keep_warm_minutes: int = 15
     rollback_retention_hours: int = 24
     verify_soak_seconds: int = 120
@@ -107,6 +110,14 @@ register(
         ),
         "boundary_max_wait_minutes": Help(
             TSS, "Longest wait for a boundary (minutes)", minimum=0, maximum=600
+        ),
+        "swap_start_timeout_minutes": Help(
+            TSS,
+            "Swap not started after (minutes)",
+            "A swap no front door has started by then is rolled back, with a notice. "
+            "0: wait for the front door.",
+            minimum=0,
+            maximum=1440,
         ),
         "keep_warm_minutes": Help(
             TSS, "Previous version kept warm (minutes)", "For an instant rollback.", minimum=0,
