@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/procattr"
 )
 
 // stopGrace is how long Process.Stop waits after SIGTERM for ffmpeg to
@@ -63,6 +65,7 @@ func Spawn(ctx context.Context, bin Binary, args Args) (*Process, error) {
 		bin.FFmpeg = "ffmpeg"
 	}
 	cmd := exec.CommandContext(ctx, bin.FFmpeg, args...)
+	procattr.Tie(cmd) // dies with this process, however it dies (Story 22.9)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err

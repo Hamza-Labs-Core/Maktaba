@@ -25,7 +25,7 @@ Design: [design.md](design.md) §7.1, §7.6; README "Security", "Cloudflare fact
   token valid and active; the account has Stream (list live inputs); storage capacity and use;
   Analytics read (optional — without it the cost estimate uses session minutes only);
   creates the signing key if none (`POST /stream/keys`, stores `id` + `pem` in `home_secrets`);
-  learns the customer playback domain; each online streaming host's `can_push` for the chosen
+  learns the customer playback domain; the home's (push relay's) `can_push` for the chosen
   ingest.
 - **AC4** `tv_remote.enabled` can only be switched on after a green test less than 24 h old; the
   status shows the last test time and result.

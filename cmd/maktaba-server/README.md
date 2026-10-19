@@ -15,7 +15,12 @@ variables. This binary:
 2. Translates it into the per-service environment each role already
    understands (`internal/supervisor/env.go`).
 3. Launches the role binaries as **managed child processes** and owns
-   their graceful shutdown (`internal/supervisor`).
+   their graceful shutdown (`internal/supervisor`). Each child is watched
+   on its own: a crash or a hang (failed `/healthz` probes) restarts only
+   that child, with backoff and a crash-loop guard, and the state is
+   served at `GET /processes` on `[supervisor] admin_addr` (default
+   `127.0.0.1:9103`). The api shows it at `/api/system/processes`
+   (Story 22.9; settings in `deploy/server.toml.example`).
 4. Serves the embedded SPA in-process and reverse-proxies `/api` to the
    API service, so the whole app is reachable from one origin.
 
