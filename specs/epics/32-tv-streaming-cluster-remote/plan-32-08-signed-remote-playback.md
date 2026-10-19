@@ -1,7 +1,7 @@
 # Plan 32.8 — Signed playback for remote viewers — implementation
 
 > Implementation plan for [story-32-08](story-32-08-signed-remote-playback.md).
-> Uses slot 0123 (`tv_remote_sessions`). Design: [design.md](design.md) §7.5, §7.6.
+> Uses slot 0124 (`tv_remote_sessions`). Design: [design.md](design.md) §7.5, §7.6.
 
 ## 0. Decisions
 

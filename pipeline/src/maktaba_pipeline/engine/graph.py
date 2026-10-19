@@ -18,6 +18,7 @@ from uuid import UUID
 
 from ..audio.chromaprint import AUDIO_FP_VERSION
 from ..classify.books import BOOKS_VERSION
+from ..classify.display_title import DISPLAY_TITLE_VERSION
 from ..classify.production_style import STYLE_VERSION
 from ..classify.series_detector import DETECTOR_VERSION
 from ..classify.tag_check import CLIP_CHECK_VERSION, TAG_CHECK_VERSION
@@ -392,6 +393,7 @@ GRAPH: tuple[StageDef, ...] = (
             Edge("review_pages", "same"),
             Edge("topic_collections", "same"),
             Edge("promo_links", "same"),
+            Edge("display_title", "same"),
         ),
         may_request=("fingerprint", "fp_gate"),
         entry_for=("library",),
@@ -462,6 +464,23 @@ GRAPH: tuple[StageDef, ...] = (
         debounce_max_sec=300,
         # the model server defaults to localhost: the home's own (a node would ask
         # another model, or none) unless the settings name a shared one
+        placement="home",
+        model_rules="tagcheck",
+    ),
+    # ---- the on-air titles the guide and the channel strip show (Story 27.11) ----
+    StageDef(
+        name="display_title",
+        label="Display titles",
+        subject_kinds=("library",),
+        pool="cpu",
+        lane="seasons",
+        lane_order=4,
+        version=DISPLAY_TITLE_VERSION,
+        entry_for=("library",),
+        debounce_sec=30,
+        debounce_max_sec=300,
+        # with rules display_titles.use_llm it asks the model server, which defaults to
+        # localhost: the home's own unless the settings name a shared one
         placement="home",
         model_rules="tagcheck",
     ),

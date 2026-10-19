@@ -1,7 +1,7 @@
 # Plan 32.2 — Channel placement and balancer — implementation
 
 > Implementation plan for [story-32-02](story-32-02-channel-placement-balancer.md).
-> Design: [design.md](design.md) §3. Uses slot 0122 (plan 32.1); no new migration.
+> Design: [design.md](design.md) §3. Uses slot 0123 (plan 32.1); no new migration.
 
 ## 0. Decisions
 

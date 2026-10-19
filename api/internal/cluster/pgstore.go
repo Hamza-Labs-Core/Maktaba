@@ -197,7 +197,7 @@ UPDATE cluster_nodes SET state = 'revoked', home_privkey = NULL, sealed = NULL, 
 	}
 	// a revoked machine streams no more TV (Epic 32.1 EC2); its role can no longer log
 	// in, so it stops beating and its channels fail over. Best effort: the table is
-	// absent before slot 0122.
+	// absent before slot 0123.
 	_, _ = s.DB.ExecContext(ctx, `UPDATE streaming_hosts SET enabled = false WHERE host_id = $1 AND role = 'node'`, id)
 	return nil
 }

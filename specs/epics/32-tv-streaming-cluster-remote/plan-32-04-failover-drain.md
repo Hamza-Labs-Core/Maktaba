@@ -1,7 +1,7 @@
 # Plan 32.4 — Failover and drain — implementation
 
 > Implementation plan for [story-32-04](story-32-04-failover-drain.md).
-> Design: [design.md](design.md) §6. No migration (uses `streaming_hosts.draining`, added in slot 0122).
+> Design: [design.md](design.md) §6. No migration (uses `streaming_hosts.draining`, added in slot 0123).
 
 ## 0. Decisions
 

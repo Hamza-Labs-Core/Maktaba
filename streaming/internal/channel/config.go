@@ -250,6 +250,9 @@ func SettingsStarter(base StationConfig, settings Settings, enc *EncoderResolver
 		if o, ok := StartOptionsFrom(ctx); ok {
 			cfg.Discontinuity = o.Discontinuity
 		}
+		if ss, ok := settings.(StripSource); ok && cfg.StripDefaults == nil {
+			cfg.StripDefaults = ss.Strip
+		}
 		st, err := StartStation(cfg, channelID, dir)
 		if err != nil {
 			return nil, err

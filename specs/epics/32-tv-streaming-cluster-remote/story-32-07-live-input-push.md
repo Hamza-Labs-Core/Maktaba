@@ -10,7 +10,7 @@ Design: [design.md](design.md) §7.2–§7.4, §7.7, §7.8.
 
 ## Acceptance criteria
 
-- **AC1** Slot 0123 creates `tv_remote_inputs`, `tv_remote_pushes`, `tv_remote_sessions`,
+- **AC1** Slot 0124 creates `tv_remote_inputs`, `tv_remote_pushes`, `tv_remote_sessions`,
   `tv_remote_usage_daily`, `tv_push_secrets` and the functions `tv_push_credentials(push_id)` and
   `tv_push_report(push_id, state, detail)`; node roles get SELECT on non-secret columns and the
   functions only.

@@ -1,7 +1,7 @@
 # Plan 32.1 — Streaming nodes and capacity — implementation
 
 > Implementation plan for [story-32-01](story-32-01-streaming-nodes-capacity.md).
-> Design: [design.md](design.md) §2, §5. Writes slot **0122** (extends `streaming_hosts` from 0117,
+> Design: [design.md](design.md) §2, §5. Writes slot **0123** (extends `streaming_hosts` from 0117,
 > `channel_placements`, `tv_placement_generation_seq`, `tv_cluster_secret`, `tv_host_beat`,
 > `tv_placement_ack`).
 > `feat/tv-core` is on `main` (PR #63; slot 0117, `OutputSettings`, encoder gates).
@@ -20,7 +20,7 @@
 ## 1. Files
 
 **Create**
-- `shared/db/migrations/0122_tv_stream_cluster.sql`, `.sqlite.sql`
+- `shared/db/migrations/0123_tv_stream_cluster.sql`, `.sqlite.sql`
 - `streaming/internal/cluster/host.go` — host identity, heartbeat loop, capability detection
 - `streaming/internal/cluster/capability.go` — encoders, `ffmpeg -protocols`, yt-dlp, load (CPU per OS: `/proc/stat`, `host_processor_info` via `sysctl`, Windows PDH; NVENC sessions from the encoder gate)
 - `streaming/internal/cluster/sign.go` — HMAC sign/verify (shared with 32.3)
@@ -34,9 +34,9 @@
 - `cmd/maktaba-server/cmd_serve.go`, `internal/supervisor/env.go` — when a node config is present and the role is `streaming`, pass `DATABASE_URL`, `MAKTABA_NODE_ID`, `MAKTABA_TV_HOST_ROLE=node`, home API URL
 - `cmd/maktaba-server/internal/config` — read the Epic 31 node config path (same resolution as the pipeline: `MAKTABA_NODE_CONFIG`, OS default)
 - `api/internal/handlers/rules/schema.json` + `schema.go` — section `tv_cluster` (`nodes_stream`, `policy`, `spill_at`, `hls_mode`, `failover`, `dead_after_seconds`, `pins`), en + ar descriptions
-- `shared/db/migrations/MANIFEST.md` — row for 0122
+- `shared/db/migrations/MANIFEST.md` — row for 0123
 
-## 2. Migration 0122 (Postgres)
+## 2. Migration 0123 (Postgres)
 
 ```sql
 -- +goose Up
@@ -124,4 +124,4 @@ Streaming hosts page (32.5) is the first visible piece.
 ## 6. Ordering
 
 Slot 0120 (`home_secrets`, plan 32.6 §2) is independent and landed first; this plan does not
-need it. Slot 0122 needs the cluster tables of Epic 31 (slot 0103) only.
+need it. Slot 0123 needs the cluster tables of Epic 31 (slot 0103) only.

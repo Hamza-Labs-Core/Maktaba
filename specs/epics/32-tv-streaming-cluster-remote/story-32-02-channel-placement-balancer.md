@@ -60,4 +60,4 @@ Design: [design.md](design.md) §3.
 
 ## Dependencies
 
-32.1 (hosts, heartbeats, slot 0122).
+32.1 (hosts, heartbeats, slot 0123).

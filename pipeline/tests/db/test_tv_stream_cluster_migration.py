@@ -1,4 +1,4 @@
-"""Slot 0122 (SQLite twin): streaming_hosts gains the cluster columns (the home stays on,
+"""Slot 0123 (SQLite twin): streaming_hosts gains the cluster columns (the home stays on,
 nodes stay off), channel_placements, the generation counter and the cluster stream key.
 Both directions."""
 
@@ -18,7 +18,7 @@ from tests.engine.migrate import (
 
 pytestmark = pytest.mark.unit
 
-_MIG = MIGRATIONS_DIR / "0122_tv_stream_cluster.sqlite.sql"
+_MIG = MIGRATIONS_DIR / "0123_tv_stream_cluster.sqlite.sql"
 
 
 def _cols(conn: sqlite3.Connection, table: str) -> dict[str, str | None]:
@@ -26,9 +26,9 @@ def _cols(conn: sqlite3.Connection, table: str) -> dict[str, str | None]:
 
 
 @pytest.fixture(scope="module")
-def schema_at_122() -> sqlite3.Connection:
+def schema_at_123() -> sqlite3.Connection:
     conn = sqlite3.connect(":memory:")
-    apply_sqlite(conn, upto=121)
+    apply_sqlite(conn, upto=122)
     conn.execute("INSERT INTO streaming_hosts (host_id, host, role) VALUES ('h', 'mac', 'home')")
     conn.execute("INSERT INTO streaming_hosts (host_id, host, role) VALUES ('n', 'pc', 'node')")
     for stmt in up_statements(_MIG.read_text("utf-8")):
@@ -36,8 +36,8 @@ def schema_at_122() -> sqlite3.Connection:
     return conn
 
 
-def test_0122_up_down(schema_at_122: sqlite3.Connection) -> None:
-    conn = schema_at_122
+def test_0123_up_down(schema_at_123: sqlite3.Connection) -> None:
+    conn = schema_at_123
     hosts = _cols(conn, "streaming_hosts")
     assert {
         "enabled",

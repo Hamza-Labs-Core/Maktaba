@@ -1,7 +1,7 @@
 # Plan 32.7 — Live input pool and push — implementation
 
 > Implementation plan for [story-32-07](story-32-07-live-input-push.md).
-> Writes slot **0123** (`tv_remote_*`, `tv_push_secrets`, `tv_push_credentials`, `tv_push_report`).
+> Writes slot **0124** (`tv_remote_*`, `tv_push_secrets`, `tv_push_credentials`, `tv_push_report`).
 > Design: [design.md](design.md) §7.2–§7.4, §7.7, §7.8.
 
 ## 0. Decisions
@@ -19,7 +19,7 @@
 ## 1. Files
 
 **Create**
-- `shared/db/migrations/0123_tv_remote.sql`, `.sqlite.sql`; MANIFEST row; migration test
+- `shared/db/migrations/0124_tv_remote.sql`, `.sqlite.sql`; MANIFEST row; migration test
 - `api/internal/tvremote/pool.go` — create/assign/release inputs; shrink
 - `api/internal/tvremote/push.go` — push state machine (design §7.3), timeouts, rotation, failover follow
 - `api/internal/tvremote/reconcile.go` — loop every 2 s + on NOTIFY (`tv_push`, `tv_placement`), advisory lock `tv_remote`
@@ -35,7 +35,7 @@
 - `streaming/main.go` — start the relay controller in the home's front door when remote or simulcast is enabled (never on nodes)
 - `api/internal/router` — mount webhook (public) and admin push stop
 
-## 2. Migration 0123 (Postgres, abridged)
+## 2. Migration 0124 (Postgres, abridged)
 
 ```sql
 CREATE TABLE tv_remote_inputs (

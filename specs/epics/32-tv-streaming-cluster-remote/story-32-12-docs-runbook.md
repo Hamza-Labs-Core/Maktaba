@@ -30,7 +30,7 @@ remote viewing through Cloudflare, what it costs, and what to do when something 
 - **AC2** The settings descriptions in the rules schema (`tv_cluster`, `tv_remote`) are short,
   plain and match the doc; English and Arabic.
 - **AC3** The Live TV admin page links each section to the matching doc heading.
-- **AC4** `shared/db/migrations/MANIFEST.md` has rows for 0120, 0122, 0123 when those files land (each in
+- **AC4** `shared/db/migrations/MANIFEST.md` has rows for 0120, 0123, 0124 when those files land (each in
   its plan's PR).
 
 ## Test cases

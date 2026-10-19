@@ -30,7 +30,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/version"
 )
 
-// clusterSchema waits (up to wait) for slot 0122's tv_host_beat: the API migrates the
+// clusterSchema waits (up to wait) for slot 0123's tv_host_beat: the API migrates the
 // database at boot, possibly after this process started. Without it the TV runs as
 // before Epic 32 (the home alone, no placements).
 func clusterSchema(ctx context.Context, pool *pgxpool.Pool, wait time.Duration) bool {
@@ -196,7 +196,7 @@ func (b *tvBase) beatInfo(ctx context.Context, role string, engine *channel.Engi
 	}
 }
 
-// buildHomeTV wires the channel engine, HDHomeRun, the guide and — with slot 0122 —
+// buildHomeTV wires the channel engine, HDHomeRun, the guide and — with slot 0123 —
 // the placement service, the front door and the home's heartbeat.
 func buildHomeTV(logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, layout *cache.Layout) []func(chi.Router) {
 	b := newTVBase(logger, cfg, pool, layout)
@@ -217,7 +217,7 @@ func buildHomeTV(logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, lay
 		mounts = append(mounts, fd.Mount, fd.MountInternal, assets.Mount)
 		streamer = fd
 	} else {
-		logger.Warn("tv: the cluster schema (slot 0122) is missing; channels stream on this host only",
+		logger.Warn("tv: the cluster schema (slot 0123) is missing; channels stream on this host only",
 			"event", "tv_cluster_schema_missing")
 		mounts = append(mounts, chHandler.Mount)
 	}
@@ -309,7 +309,7 @@ func buildNodeTV(logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, lay
 	}
 	r := chi.NewRouter()
 	if !clusterSchema(ctx, pool, 60*time.Second) {
-		logger.Error("tv: the home's database has no cluster schema (slot 0122); this node streams nothing",
+		logger.Error("tv: the home's database has no cluster schema (slot 0123); this node streams nothing",
 			"event", "tv_cluster_schema_missing")
 		return r
 	}

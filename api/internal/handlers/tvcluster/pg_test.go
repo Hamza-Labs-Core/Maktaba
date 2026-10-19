@@ -10,7 +10,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
 )
 
-// The same read and write against real Postgres (slot 0122's types: jsonb, bool,
+// The same read and write against real Postgres (slot 0123's types: jsonb, bool,
 // timestamptz). Runs only with MAKTABA_TEST_PG_URL.
 func TestClusterPostgres(t *testing.T) {
 	db, _ := clustertest.ScratchDB(t)

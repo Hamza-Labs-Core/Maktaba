@@ -298,6 +298,7 @@ export function ChannelEditor({
     isEdit && draft.id ? (
       <ArtSection
         channelId={draft.id}
+        channelName={form.name ?? ""}
         art={form.art}
         onChange={(c: Channel) => {
           setForm((f) => ({ ...f, art: c.art, logo_path: c.logo_path ?? null }));
