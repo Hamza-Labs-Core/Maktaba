@@ -12,6 +12,9 @@ import (
 // hlsViewerWindow: an HLS client that fetched within this counts as watching.
 const hlsViewerWindow = 30 * time.Second
 
+// hlsForget: an HLS client silent this long is forgotten.
+const hlsForget = 10 * time.Minute
+
 // Tracker counts the front door's viewers per channel: TS connections (tuners,
 // live.ts) and HLS clients by address. It is the failover sweeper's demand and the
 // admin page's viewer counts.
@@ -94,7 +97,7 @@ func (t *Tracker) Demand(ch uuid.UUID) int {
 	for k, at := range t.hls[ch] {
 		if at.After(cut) {
 			n++
-		} else if t.now().Sub(at) > 10*time.Minute {
+		} else if t.now().Sub(at) > hlsForget {
 			delete(t.hls[ch], k)
 		}
 	}
@@ -107,12 +110,26 @@ type Viewers struct {
 	Tuners int `json:"tuners"`
 }
 
-// Snapshot is every channel's current viewers.
+// Snapshot is every channel's current viewers. It also forgets HLS clients
+// silent for hlsForget (and channels left with none): the routes are open, so
+// fetches for any channel id from any address would otherwise pile up for good
+// (Demand prunes only the channels the sweeper asks about).
 func (t *Tracker) Snapshot() map[string]Viewers {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	out := map[string]Viewers{}
-	cut := t.now().Add(-hlsViewerWindow)
+	now := t.now()
+	cut := now.Add(-hlsViewerWindow)
+	for ch, m := range t.hls {
+		for k, at := range m {
+			if now.Sub(at) > hlsForget {
+				delete(m, k)
+			}
+		}
+		if len(m) == 0 {
+			delete(t.hls, ch)
+		}
+	}
 	for ch, n := range t.ts {
 		v := out[ch.String()]
 		v.Tuners = n

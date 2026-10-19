@@ -394,3 +394,27 @@ func TestMoveDoesNotMarkNodeDown(t *testing.T) {
 	cancel()
 	wg.Wait()
 }
+
+// Post-merge review: HLS fetches for any channel id from any address are
+// forgotten after a while (the routes are open); they used to stay for good.
+func TestTrackerForgetsSilentClients(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	tr := NewTracker()
+	tr.Now = func() time.Time { return now }
+	for i := 0; i < 500; i++ {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.Header.Set("X-Forwarded-For", uuid.NewString())
+		tr.TouchHLS(uuid.New(), r)
+	}
+	if got := len(tr.Snapshot()); got != 500 {
+		t.Fatalf("viewers of %d channels, want 500", got)
+	}
+	now = now.Add(hlsForget + time.Second)
+	_ = tr.Snapshot()
+	tr.mu.Lock()
+	n := len(tr.hls)
+	tr.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("%d channels of silent HLS clients kept", n)
+	}
+}
