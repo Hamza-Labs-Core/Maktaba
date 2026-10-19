@@ -42,7 +42,10 @@ is on.
 The machine needs **uv** (the Python package tool; it fetches the right Python by itself)
 and **ffmpeg**. It does **not** need git or a copy of the source code: every Maktaba release
 publishes the pipeline as a package (a wheel) and a node installer that installs it. Use
-the release your home runs: a machine and its home run the same version.
+the release your home runs: a machine and its home run the same version. A machine whose
+pipeline is newer than the home's database (or older than a breaking migration allows)
+pauses: it takes no work until the two match again, and the Machines page says which one to
+update.
 
 ```sh
 brew install uv ffmpeg                                # macOS (Homebrew: https://brew.sh)
@@ -79,6 +82,20 @@ versions the release was tested with), then does **Steps 4, 5 and 7 for you**: i
 service. Mount the share (Step 3) before or after; until the share is there, the worker
 leaves the work that needs it. Its options (`--home`, `--name`, extra workers, a system
 service on Linux, ...) are in [deploy/packaging/node](../../deploy/packaging/node/README.md).
+
+To check the archive before you unpack it, download the release's `checksums.txt`,
+`checksums.txt.sig` and `checksums.txt.pem` next to it and run (cosign:
+https://docs.sigstore.dev/cosign/system_config/installation/):
+
+```sh
+cosign verify-blob --certificate checksums.txt.pem --signature checksums.txt.sig \
+  --certificate-identity-regexp '^https://github.com/Hamza-Labs-Core/Maktaba/\.github/workflows/release\.yml@' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt
+grep " \./maktaba-node-$v\.tar\.gz$" checksums.txt | shasum -a 256 -c   # Linux: or sha256sum -c
+```
+
+The installer then checks the wheel and constraints inside the archive against the
+digests the release wrote into its `release.conf`.
 
 ### By hand: the wheel
 

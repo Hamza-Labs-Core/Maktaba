@@ -40,6 +40,7 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$TAG" ] || die "--version is required"
 command -v uv >/dev/null 2>&1 || die "uv is required (https://docs.astral.sh/uv/)"
+command -v zip >/dev/null 2>&1 || die "zip is required (the Windows archive)"
 case "$TAG" in v*) ;; *) TAG="v$TAG" ;; esac
 VERSION="${TAG#v}"
 
@@ -96,7 +97,8 @@ cp "$WORK/wheel/$WHEEL" "$OUT/$WHEEL"
 # --- the constraints: uv.lock's pins for the runtime and every extra but dev ------------------
 CONSTRAINTS="maktaba-pipeline-$PEP_VERSION-constraints.txt"
 extras=()
-while IFS= read -r e; do extras+=(--extra "$e"); done < <(
+# (a Windows Python prints CRLF: strip the CR, or uv rejects the extra's name)
+while IFS=$'\r' read -r e; do extras+=(--extra "$e"); done < <(
     uv run --no-project --quiet python - "$src/pyproject.toml" <<'PY'
 import sys, tomllib
 with open(sys.argv[1], "rb") as f:

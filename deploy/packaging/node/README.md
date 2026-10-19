@@ -51,8 +51,9 @@ Every release attaches the node's assets next to the server archives:
 | `maktaba_pipeline-<version>-py3-none-any.whl` | the pipeline, stamped with the release's version |
 | `maktaba-pipeline-<version>-constraints.txt` | the pipeline's dependencies as `uv.lock` pins them (every extra but `dev`) |
 
-They are in the release's `checksums.txt`, signed with cosign like the rest
-([deploy/packaging/README.md](../README.md)). On the machine:
+They are in the release's `checksums.txt`, signed with cosign like the rest (how to check
+the archive: [join a machine](../../../docs/cluster/join-a-machine.md#the-easy-way-the-node-installer)).
+On the machine:
 
 ```sh
 v=1.4.0   # the home's version: a node and its home run the same release
@@ -293,7 +294,9 @@ its database from its node config, and that variable would make it a home worker
 ## Updating
 
 When the home moves to a new release, run the new release's installer (same scope flags
-as before, `--system`):
+as before, `--system`). Until then the worker pauses by itself when its pipeline needs
+migrations the home has not applied, or when a home migration declares it too old (the
+schema guard; the Machines page shows the reason), and resumes once they match:
 
 ```sh
 ./maktaba-node-1.5.0/install-node.sh
