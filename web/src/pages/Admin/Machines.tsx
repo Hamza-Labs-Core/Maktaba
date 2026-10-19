@@ -33,7 +33,7 @@ import { Tabs } from "@ds/components/Tabs/Tabs";
 import { Toggle } from "@ds/components/Choice/Toggle";
 import { useToast } from "@ds/components/Toast/Toast";
 import { AdminGate } from "../../components/AdminGate";
-import { useClusterFmt } from "../../components/cluster/format";
+import { pausedOf, useClusterFmt } from "../../components/cluster/format";
 import { JobsPanel } from "../../components/cluster/JobsPanel";
 import { JobsSummary } from "../../components/cluster/JobsSummary";
 import { LibraryPanel } from "../../components/cluster/LibraryPanel";
@@ -669,12 +669,14 @@ function PendingRow({ node, onChanged }: { node: ClusterNode; onChanged: () => v
 
 // ---------------------------------------------------------------- machines
 
-type Status = "online" | "offline" | "draining" | "revoked" | "rejected";
+type Status = "online" | "offline" | "draining" | "paused" | "revoked" | "rejected";
 
 function nodeStatus(node: ClusterNode): Status {
   if (node.state === "revoked") return "revoked";
   if (node.state === "rejected") return "rejected";
   if (node.drain) return "draining";
+  // its code needs a database schema the home does not have (or the other way round)
+  if (node.online && pausedOf(node.workers)) return "paused";
   return node.online ? "online" : "offline";
 }
 
@@ -682,6 +684,7 @@ const STATUS_TONE: Record<Status, "success" | "neutral" | "warn" | "error"> = {
   online: "success",
   offline: "neutral",
   draining: "warn",
+  paused: "warn",
   revoked: "error",
   rejected: "error",
 };
@@ -719,6 +722,16 @@ function useCapabilityChips(node: ClusterNode): string[] {
   return chips;
 }
 
+/** Why a machine claims nothing: its code and the home's database schema do not fit. */
+function PausedNotice({ reason }: { reason: string }) {
+  const cf = useClusterFmt();
+  return (
+    <p className="mkt-mc-muted" role="status">
+      {cf.reason(reason)}
+    </p>
+  );
+}
+
 const MachineCard = memo(function MachineCard({
   node,
   onChanged,
@@ -736,6 +749,7 @@ const MachineCard = memo(function MachineCard({
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<"revoke" | "remove" | null>(null);
   const status = nodeStatus(node);
+  const paused = status === "paused" ? pausedOf(node.workers) : null;
   const chips = useCapabilityChips(node);
   const active = node.state === "approved";
   const name = bidiIsolate(node.name);
@@ -763,6 +777,7 @@ const MachineCard = memo(function MachineCard({
           )}
           {active && <JobsSummary host={node.id} count={jobs} name={node.name} />}
         </header>
+        {paused && <PausedNotice reason={paused} />}
         {chips.length > 0 && (
           <ul className="mkt-mc-chips" aria-label={t("machines.cap.title")}>
             {chips.map((c, i) => (

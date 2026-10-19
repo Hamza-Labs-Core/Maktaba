@@ -298,8 +298,48 @@ func (b *tvBase) wireHomeCluster(ctx context.Context, engine *channel.Engine, lo
 	return fd, assets
 }
 
-// buildNodeTV is a node's whole public handler (AC3 of 32.1).
+// buildNodeTV is a node's whole public handler (AC3 of 32.1). A node whose code needs
+// migrations the home's database lacks (cluster.SchemaGuard) streams nothing and does
+// not beat: it answers 503 until the home caught up, then starts by itself.
 func buildNodeTV(logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, layout *cache.Layout, ns cluster.NodeSettings) http.Handler {
+	guard := &cluster.SchemaGuard{Q: pool, Logger: logger}
+	if guard.Check(context.Background()) == "" {
+		return buildNodeTVReady(logger, cfg, pool, layout, ns, guard)
+	}
+	sw := newSwapHandler(pausedNodeHandler())
+	go func() {
+		if guard.Wait(context.Background()) == nil {
+			sw.set(buildNodeTVReady(logger, cfg, pool, layout, ns, guard))
+		}
+	}()
+	return sw
+}
+
+// swapHandler serves the handler set last (a paused node's, then the real one).
+type swapHandler struct{ h atomic.Pointer[http.Handler] }
+
+func newSwapHandler(h http.Handler) *swapHandler {
+	s := &swapHandler{}
+	s.set(h)
+	return s
+}
+
+func (s *swapHandler) set(h http.Handler) { s.h.Store(&h) }
+
+func (s *swapHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	(*s.h.Load()).ServeHTTP(w, r)
+}
+
+// pausedNodeHandler answers every request of a paused node.
+func pausedNodeHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "30")
+		http.Error(w, "this node is paused: the home's database is older than its code", http.StatusServiceUnavailable)
+	})
+}
+
+func buildNodeTVReady(logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, layout *cache.Layout,
+	ns cluster.NodeSettings, guard *cluster.SchemaGuard) http.Handler {
 	b := newTVBase(logger, cfg, pool, layout)
 	ctx := context.Background()
 	id := ns.NodeID
@@ -338,6 +378,16 @@ func buildNodeTV(logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, lay
 	pm.Store(pathmap.FromEnv())
 	var unfit atomic.Value
 	unfit.Store("")
+	// the home's schema stopped fitting while this node runs: it takes no channels
+	var schemaUnfit atomic.Value
+	schemaUnfit.Store("")
+	checkSchema := func() {
+		if guard.Check(ctx) != "" {
+			schemaUnfit.Store(cluster.UnfitVersion)
+		} else {
+			schemaUnfit.Store("")
+		}
+	}
 	checkStorage := func() {
 		if os.Getenv(pathmap.EnvVar) == "" {
 			qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -378,7 +428,11 @@ func buildNodeTV(logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, lay
 
 	b.loop = &cluster.HostLoop{Store: cluster.PGBeatStore{Pool: pool}, HostID: id, Keyring: keyring, Logger: logger,
 		Info: func(ctx context.Context) cluster.BeatInfo {
-			return b.beatInfo(ctx, channel.RoleNode, engine, ident.StreamBaseURL, unfit.Load().(string))
+			u := schemaUnfit.Load().(string)
+			if u == "" {
+				u = unfit.Load().(string)
+			}
+			return b.beatInfo(ctx, channel.RoleNode, engine, ident.StreamBaseURL, u)
 		}}
 	_ = b.loop.BeatOnce(ctx)
 	go b.loop.Run(context.Background())
@@ -386,6 +440,7 @@ func buildNodeTV(logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, lay
 		t := time.NewTicker(5 * time.Minute)
 		defer t.Stop()
 		for range t.C {
+			checkSchema()
 			refreshHome()
 			checkStorage()
 		}
