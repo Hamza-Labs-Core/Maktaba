@@ -14,6 +14,7 @@ vi.mock("../lib/api", async () => {
   return { ...actual, api: { ...actual.api, get, post } };
 });
 
+import { ToastProvider } from "@ds/components/Toast/Toast";
 import { LibraryBrowser } from "./LibraryBrowser";
 
 type Payload = unknown | ((url: string) => unknown);
@@ -49,10 +50,10 @@ function renderLib(
   opts: { user?: typeof adminUser | null; history?: string[] } = {}
 ) {
   return renderPage(
-    <>
+    <ToastProvider>
       <LibraryBrowser />
       <Loc />
-    </>,
+    </ToastProvider>,
     {
       path,
       route: path.startsWith("/library/") ? "/library/:libraryId" : "/library",
@@ -203,7 +204,7 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("LIB-06: admin on /library/:id sees Scan now, which POSTs the scan (errors swallowed)", async () => {
+  it("LIB-06: admin on /library/:id sees Scan now, which POSTs the scan and says how it went", async () => {
     serve({ items: [], next: null });
     post.mockResolvedValueOnce({}).mockRejectedValueOnce(problem(500, "scan failed"));
     renderLib("/library/11111111-1111-4111-8111-111111111111", { user: adminUser });
@@ -212,10 +213,11 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     const scan = screen.getByRole("button", { name: "Scan now" });
     await user.click(scan);
     expect(post).toHaveBeenCalledWith("/api/libraries/11111111-1111-4111-8111-111111111111/scan");
-    await user.click(scan);
+    expect(await screen.findByText("Scan started.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Scan now" }));
     expect(post).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText("Could not start the scan: scan failed")).toBeInTheDocument();
     expect(screen.getByText("No videos yet")).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("LIB-06: admin on /library (no id) sees no Scan now", async () => {
@@ -224,8 +226,6 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     expect(await screen.findByText("No videos yet")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Scan now" })).toBeNull();
   });
-
-  it.todo("LIB-06: Scan now gives feedback (toast/status) that the scan started or failed");
 
   it("LIB-07: non-admin never sees Scan now", async () => {
     serve({ items: [], next: null });

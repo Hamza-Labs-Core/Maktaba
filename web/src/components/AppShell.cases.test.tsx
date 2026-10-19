@@ -127,6 +127,7 @@ const PAGES = [
   "/account/devices",
   "/account/sessions",
   "/account/tokens",
+  "/account/history",
   "/billing",
   "/cloud/status",
   "/videos/:videoId",
@@ -262,6 +263,7 @@ const USER_LINKS = [
   ["nav.devices", "/account/devices"],
   ["nav.sessions", "/account/sessions"],
   ["nav.tokens", "/account/tokens"],
+  ["nav.history", "/account/history"],
   ["nav.billing", "/billing"],
   ["nav.cloudStatus", "/cloud/status"],
 ] as const;

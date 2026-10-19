@@ -1,6 +1,10 @@
 # Epic 32 — Maktaba TV across the cluster, and remote viewing through Cloudflare Stream
 
-> **Status:** spec. **Source:** `specs/epics/32-tv-streaming-cluster-remote/`.
+> **Status:** mostly built (checked against the code 2026-10-19). **Built:** 32.1-32.8,
+> 32.10-32.13 (the runbook's §9 measurements wait for the Cloudflare spike, which has not been run
+> against a real account). **Partly built:** 32.9 (web only: the tvOS, Android TV and mobile apps do
+> not tune remotely or swap tokens, AC9-11).
+> **Source:** `specs/epics/32-tv-streaming-cluster-remote/`.
 > **Anchors:** [Epic 27 — Live Channels](../27-live-channels/README.md) (the channel engine,
 > HDHomeRun, XMLTV/M3U), [Epic 31 — Multi-instance](../31-multi-instance/README.md) (home and
 > nodes, database roles, path maps), [Epic 25 — Cloud relay](../25-cloud-relay/README.md)
@@ -275,14 +279,14 @@ that the LAN stream does not have.
  node-encoded channels over the LAN; one continuous session per channel.
 ```
 
-## Data model (proposed migrations)
+## Data model (migrations)
 
 Slots 0116–0118 are taken by merged work: 0116 (`plex_livetv`, PR #61), 0117
 (`tv_core_runtime`, `feat/tv-core`, PR #63) and 0118 (`channel_edited_at`, PR #59); the highest
 slot on `main` was 0118; 0119 then went to Epic 31's `cluster_cache`, so Epic 32's slots start at **0120**
 (merged: 0120 `home_secrets`, PR #73; 0121 went to Epic 09's `video_embeddings` (PR #69) and 0122 to `display_titles` (PR #71); 0123 `tv_stream_cluster`, stories 32.1–32.5; 0124 went to Epic 31.3's `canonical_share_paths`, so remote viewing is 0125). Nothing is added to `MANIFEST.md` until the
-files exist (its rule: next free integer, no reservations); the rows go in with each plan's PR, so
-these numbers are provisional and move up if other work lands first.
+files exist (its rule: next free integer, no reservations); 0120, 0123, 0125 and 0126 have all
+landed.
 
 | Slot | Story | File | Tables / changes |
 |---|---|---|---|
@@ -488,8 +492,8 @@ stories.
    playback ids). Fallback: `sub` = live input id with an input cool-down of one token lifetime
    before reuse. *(Spike item, not an owner question; stays open until the 32.6 spike.)*
 3. **Is `exp` checked on every segment?** The docs say rules are checked continuously. The web
-   player swaps tokens without a reload (32.9); native apps re-tune at expiry. Confirm in the
-   spike. *(Spike item, as Q2.)*
+   player swaps tokens without a reload (32.9); the native apps are to re-tune at expiry (32.9
+   AC9-11, not built yet). Confirm in the spike. *(Spike item, as Q2.)*
    *Status (32.12, 2026-10-19):* the spike (`maktaba-api cloudflare spike`) has not been run
    against a real account yet, so Q2 and Q3 stay open; the runbook's §9 "Measured behaviour"
    lists the measurements still due and gets the report's numbers. The web player does not

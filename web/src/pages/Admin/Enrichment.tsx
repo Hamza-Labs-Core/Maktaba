@@ -6,8 +6,11 @@
 //
 // Lists videos with a pending high-confidence match. Selecting a row
 // shows the full EnrichmentPanel for that video. Keyboard-driven:
-// j/k move the selection, a accepts (handled inside the panel via its
-// own controls), so the reviewer can clear the queue quickly.
+// j/k move the selection, a accepts and d dismisses the selected match
+// (the panel's shortcuts), then the queue reloads and the next video is
+// selected, so the reviewer can clear the queue quickly. Matches at or
+// above rules.enrich.auto_accept_threshold (Settings > Rules; 0 =
+// off) are accepted by the server's sweep and never reach the queue.
 import { useEffect, useRef, useState } from "react";
 import { Card } from "@ds/components/Card/Card";
 import { Badge } from "@ds/components/Badge/Badge";
@@ -59,20 +62,33 @@ function EnrichmentInner() {
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
+  const itemsRef = useRef<Pending[] | null>(null);
 
-  function load() {
+  // load refreshes the queue. `after` is the video just decided: the
+  // selection moves to the row that now sits where it was.
+  function load(after?: string) {
     setErr(null);
     api
       .get<{ items?: Pending[] | null } | null>("/api/enrichment/pending")
       .then((r) => {
-        const list = r?.items ?? [];
-        setItems(list);
-        setSelected((cur) => cur ?? list[0]?.video_id ?? null);
+        const next = r?.items ?? [];
+        const oldIdx = after
+          ? (itemsRef.current ?? []).findIndex((it) => it.video_id === after)
+          : -1;
+        itemsRef.current = next;
+        setItems(next);
+        setSelected((cur) => {
+          if (cur && next.some((it) => it.video_id === cur)) return cur;
+          if (oldIdx >= 0 && next.length > 0) {
+            return next[Math.min(oldIdx, next.length - 1)]!.video_id;
+          }
+          return next[0]?.video_id ?? null;
+        });
       })
       .catch((e) => setErr(e instanceof ApiError ? e.problem.title : t("common.error")));
   }
 
-  useEffect(load, [t]);
+  useEffect(() => load(), [t]);
 
   // j/k navigate the queue (keyboard-driven review, Story 26.6 AC).
   useEffect(() => {
@@ -95,7 +111,7 @@ function EnrichmentInner() {
         title={t("common.error")}
         description={err}
         action={
-          <Button variant="secondary" onClick={load}>
+          <Button variant="secondary" onClick={() => load()}>
             {t("common.retry")}
           </Button>
         }
@@ -147,7 +163,14 @@ function EnrichmentInner() {
           </ul>
           <div className="mkt-enrich-review__detail">
             {selected ? (
-              <EnrichmentPanel key={selected} videoId={selected} />
+              <EnrichmentPanel
+                key={selected}
+                videoId={selected}
+                shortcuts
+                onDecided={(action) => {
+                  if (action !== "revert") load(selected);
+                }}
+              />
             ) : (
               <Card elevation={1}>
                 <p className="mkt-muted">{t("enrich.review.select")}</p>

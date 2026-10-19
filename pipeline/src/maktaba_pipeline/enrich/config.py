@@ -55,6 +55,9 @@ class EnrichConfig:
     timeout_s: float = 30.0
     #: the model's answer timeout (a local 7B model on a long prompt is slow)
     llm_timeout_s: float = 180.0
+    #: a waiting match at or above this confidence (0-1) is accepted by itself, by the
+    #: API's review-queue sweep (api/internal/handlers/enrichment/autoaccept.go); 0: off
+    auto_accept_threshold: float = 0.0
 
 
 def _register_help() -> None:
@@ -97,6 +100,14 @@ def _register_help() -> None:
         "cache_days": Help(g, "Reuse searches and answers for (days)", minimum=0),
         "timeout_s": Help(g, "Search and page timeout (s)", minimum=1),
         "llm_timeout_s": Help(g, "Model answer timeout (s)", minimum=1),
+        "auto_accept_threshold": Help(g, "Accept matches by themselves from (confidence)",
+                                      "A match waiting in the review queue whose "
+                                      "confidence is at least this (0 to 1, 0.9 is 90%) is "
+                                      "accepted without a person, checked every minute. "
+                                      "Fields you edited yourself are never replaced, and "
+                                      "an accepted match can be reverted to the original. "
+                                      "0: off, every match waits for review.",
+                                      minimum=0, maximum=1),
     })  # fmt: skip
 
 

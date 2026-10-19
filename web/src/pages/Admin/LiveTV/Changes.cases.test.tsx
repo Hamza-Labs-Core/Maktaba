@@ -317,7 +317,7 @@ describe("Changes page (test-cases/admin-live-tv-changes.md)", () => {
         apiError(409, "Conflict", { state: "swapping" }),
         "Not possible now: the change is Swapping.",
       ],
-      ["501", apiError(501, "Not Implemented"), "Not available yet."],
+      ["501", apiError(501, "Not Implemented"), "Not Implemented"],
     ];
     it.each(runs)(
       "%s: alert, skeleton, counts 0; the next good poll clears it",

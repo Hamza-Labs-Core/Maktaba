@@ -624,7 +624,7 @@ describe("Change detail (test-cases/admin-live-tv-change-detail.md)", () => {
         "alert",
         "Another change is in flight; this one waits for its turn.",
       ],
-      ["501", apiError(501, "Not Implemented"), "alert", "Not available yet."],
+      ["501", apiError(501, "Not Implemented"), "alert", "Not Implemented"],
       ["network", new TypeError("Failed to fetch"), "alert", "Failed to fetch"],
     ] as const)("%s", async (_n, err, role, text) => {
       open();
@@ -733,7 +733,7 @@ describe("Change detail (test-cases/admin-live-tv-change-detail.md)", () => {
     });
   });
 
-  describe("LCD-20: approve / promote conflicts and 501", () => {
+  describe("LCD-20: approve / promote conflicts; other statuses show their message", () => {
     it.each([
       [
         { error: "second_admin_required" },
@@ -752,7 +752,7 @@ describe("Change detail (test-cases/admin-live-tv-change-detail.md)", () => {
       ],
       [{ state: "cancelled" }, 409, "Not possible now: the change is Cancelled."],
       [{}, 409, "Conflict"],
-      [{}, 501, "Not available yet."],
+      [{}, 501, "Not Implemented"],
     ])("approve %j %i: the dialog stays with the reason", async (extra, status, text) => {
       open();
       await screen.findByTestId("change-detail");

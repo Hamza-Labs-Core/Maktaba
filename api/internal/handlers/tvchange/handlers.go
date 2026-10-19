@@ -10,8 +10,8 @@
 //	POST  /api/tv/changes/{id}/promote      swap now
 //	POST  /api/tv/changes/{id}/cancel
 //	POST  /api/tv/changes/{id}/preview      signed staging URLs (story 33.6)
-//	POST  /api/tv/rollback                  501 until story 33.9
-//	GET   /api/tv/slots                     the TV slots (one live process until 33.1)
+//	POST  /api/tv/rollback                  {to_release_id?} warm or cold rollback (story 33.9)
+//	GET   /api/tv/slots                     the TV slots (tv_slots, story 33.1)
 //	GET   /api/tv/releases?limit=           releases with the change that made each
 //
 // Every route is admin-only; every response carries the change's allowed_actions; an

@@ -1,20 +1,13 @@
 // Story 11.6 — Settings.
 //
-// Implemented (genuinely buildable against the live API):
-//   Account     — sign-out-everywhere (POST /api/auth/logout-all, wired)
+//   Account     — sign-out-everywhere (POST /api/auth/logout-all), a link
+//                 to personal access tokens (/account/tokens, 11.13) and
+//                 the diagnostics bundle
+//   Sessions    — a link to the per-session list (/account/sessions, 11.14)
 //   Appearance  — theme light/dark/system (11.8), language en/ar (11.12),
 //                 density comfortable/compact (persisted)
-//   About       — app version
-//
-// Honestly deferred (no backend endpoint exists — Epic 10/auth, NOT
-// Epic 11):
-//   Sessions    — 11.14: there is NO GET /api/me/sessions /
-//                 DELETE /api/me/sessions/{id}. Only the admin
-//                 DELETE /api/users/{id}/sessions/{sid} exists. Showing
-//                 a fake list against a dead route would be a false
-//                 green, so this panel states the dependency instead.
-//   PAT tokens  — 11.13: no personal_access_tokens table / endpoint /
-//                 verifier exists anywhere in api/internal. Same call.
+//   Privacy     — tracking switch, recent history, activity timeline (29.4)
+//   About       — app version and updates (Epic 28)
 import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useNavigate } from "react-router-dom";
 import { RadioGroup, Radio } from "@ds/components/Choice/Radio";
@@ -29,6 +22,14 @@ import { Toggle } from "@ds/components/Choice/Toggle";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api, downloadBlob, ApiError } from "../lib/api";
 import { analyticsApi, formatPercent, formatWatchTime, type HistoryItem } from "../lib/analytics";
+import { ActivityTimeline } from "./Profile/WatchHistory";
+import {
+  fetchUpdateStatus,
+  updateAvailable,
+  useUpdateStatus,
+  type UpdateStatus,
+} from "../lib/updates";
+import { Markdown } from "../lib/markdown";
 
 const DENSITY_KEY = "mkt:density";
 type Density = "comfortable" | "compact";
@@ -54,6 +55,7 @@ function applyDensity(d: Density) {
 
 export function Settings() {
   const { t } = useI18n();
+  const hasUpdate = updateAvailable(useUpdateStatus());
   return (
     <section className="mkt-page mkt-settings">
       <h1>{t("nav.settings")}</h1>
@@ -67,7 +69,21 @@ export function Settings() {
         <NavLink to="privacy">{t("settings.section.privacy")}</NavLink>
         <NavLink to="models">{t("settings.section.models")}</NavLink>
         <NavLink to="rules">{t("settings.section.rules")}</NavLink>
-        <NavLink to="about">{t("settings.section.about")}</NavLink>
+        <NavLink
+          to="about"
+          className="mkt-settings__navlink"
+          aria-describedby={hasUpdate ? "mkt-settings-update-badge" : undefined}
+        >
+          {t("settings.section.about")}
+          {hasUpdate && (
+            <span className="mkt-update-dot" aria-hidden="true" data-testid="update-badge" />
+          )}
+        </NavLink>
+        {hasUpdate && (
+          <span id="mkt-settings-update-badge" hidden>
+            {t("update.badge")}
+          </span>
+        )}
       </nav>
       <Routes>
         <Route index element={<AccountTab />} />
@@ -105,8 +121,11 @@ function AccountTab() {
         {t("settings.signOutEverywhere")}
       </Button>
       <hr />
-      {/* 11.13 deferred — no backend endpoint. */}
-      <p className="mkt-muted">{t("settings.tokens.deferred")}</p>
+      <h2>{t("settings.tokens.title")}</h2>
+      <p className="mkt-muted">{t("settings.tokens.hint")}</p>
+      <Link to="/account/tokens" className="mkt-link-btn">
+        {t("settings.tokens.manage")}
+      </Link>
       <hr />
       <DiagnosticsSection />
     </div>
@@ -148,11 +167,13 @@ function DiagnosticsSection() {
 
 function SessionsTab() {
   const { t } = useI18n();
-  // 11.14 deferred — no GET /api/me/sessions. Stating the dependency
-  // truthfully beats rendering a list against a 404 route.
   return (
     <div className="mkt-settings__panel">
-      <p className="mkt-muted">{t("settings.sessions.deferred")}</p>
+      <h2>{t("settings.sessions.title")}</h2>
+      <p className="mkt-muted">{t("settings.sessions.hint")}</p>
+      <Link to="/account/sessions" className="mkt-link-btn">
+        {t("settings.sessions.manage")}
+      </Link>
     </div>
   );
 }
@@ -218,18 +239,6 @@ interface VersionInfo {
   channel?: string;
 }
 
-// UpdateStatus mirrors GET /api/system/updates (Story 28.2).
-interface UpdateStatus {
-  available: boolean;
-  disabled?: boolean;
-  current_version: string;
-  latest_version?: string;
-  channel: string;
-  release_url?: string;
-  release_notes?: string;
-  checked_at: string;
-}
-
 /**
  * The release page link, only for http(s) URLs: the value comes from the
  * server, and a `javascript:` or `data:` URL in an href would run when clicked.
@@ -248,10 +257,12 @@ type UpdatePhase = "idle" | "downloading" | "restarting" | "done" | "error" | "r
 
 // AboutTab is the version + update section (Stories 28.1/28.2/28.3/28.6).
 // It shows the running build, the update channel and last-check time, an
-// "available" card with release notes, and — for admins on a self-
-// updatable install — a one-click "Update now" button. Docker/deb
-// installs surface the package-manager instruction returned by the 409
-// instead of a button that can't work.
+// "available" card with the release notes rendered as (safe) Markdown,
+// and — for admins on a self-updatable install — a one-click "Update
+// now". A Docker install is known from the status (`install: "docker"`),
+// so its `docker compose pull` instruction shows up front instead of a
+// button that can't work; an older server's 409 instruction still shows
+// after a click. A self-update the server undid (rolled_back) is reported.
 function AboutTab() {
   const { t, formatDate } = useI18n();
   const { user } = useAuth();
@@ -259,7 +270,9 @@ function AboutTab() {
   const buildVersion = import.meta.env?.VITE_APP_VERSION ?? "dev";
 
   const [ver, setVer] = useState<VersionInfo | null>(null);
-  const [upd, setUpd] = useState<UpdateStatus | null>(null);
+  const shared = useUpdateStatus();
+  const [fresh, setFresh] = useState<UpdateStatus | null>(null);
+  const upd = fresh ?? shared;
   const [checking, setChecking] = useState(false);
   const [phase, setPhase] = useState<UpdatePhase>("idle");
   const [dockerHint, setDockerHint] = useState<string | null>(null);
@@ -277,16 +290,12 @@ function AboutTab() {
       .get<VersionInfo>("/api/system/version")
       .then(setVer)
       .catch(() => {});
-    api
-      .get<UpdateStatus>("/api/system/updates")
-      .then(setUpd)
-      .catch(() => {});
   }, []);
 
   const checkNow = async () => {
     setChecking(true);
     try {
-      setUpd(await api.get<UpdateStatus>("/api/system/updates?refresh=true"));
+      setFresh(await fetchUpdateStatus(true));
     } catch (e) {
       const detail = e instanceof ApiError ? e.message : t("common.error");
       toast.show({ tone: "error", message: detail });
@@ -306,11 +315,18 @@ function AboutTab() {
       // was rolled back. Without a loaded version, the update check's
       // current_version is the one to move away from.
       const from = ver?.version || upd?.current_version || "";
-      const polled = await pollVersionUntilChanged(from, () => alive.current);
+      const polled = await pollVersionUntilChanged(
+        from,
+        upd?.latest_version ?? "",
+        () => alive.current
+      );
       if (!alive.current) return;
       if (polled.changed) {
         setVer(polled.info);
         setPhase("done");
+        fetchUpdateStatus(true)
+          .then((s) => alive.current && setFresh(s))
+          .catch(() => {});
       } else {
         setPhase("rolled_back");
       }
@@ -332,8 +348,10 @@ function AboutTab() {
 
   const version = ver?.version ?? buildVersion;
   const channel = ver?.channel ?? upd?.channel ?? "stable";
+  const docker = upd?.install === "docker" ? upd.instructions || DOCKER_INSTRUCTIONS : dockerHint;
   const showUpdateButton =
-    user?.is_admin && upd?.available && phase !== "done" && phase !== "rolled_back" && !dockerHint;
+    user?.is_admin && upd?.available && phase !== "done" && phase !== "rolled_back" && !docker;
+  const lastRollback = phase === "idle" ? upd?.rolled_back : undefined;
   // a failed update can be tried again; only a running one blocks the button
   const updateRunning = phase === "downloading" || phase === "restarting";
   const releaseUrl = safeReleaseUrl(upd?.release_url);
@@ -385,14 +403,21 @@ function AboutTab() {
         <p className="mkt-muted">{t("update.upToDate")}</p>
       )}
 
+      {lastRollback && (
+        <p className="mkt-error" role="status">
+          {t("update.lastRolledBack", { version: lastRollback.version })}{" "}
+          <span className="mkt-muted">{lastRollback.reason}</span>
+        </p>
+      )}
+
       {upd?.available && upd.latest_version && (
         <div className="mkt-about__update" role="region" aria-label={t("update.section.title")}>
           <h2>{t("update.available", { version: upd.latest_version })}</h2>
           {upd.release_notes && (
-            <details className="mkt-about__notes">
+            <details className="mkt-about__notes" open>
               <summary>{t("update.banner.notes")}</summary>
-              {/* Plain-text render — never inject release-note HTML. */}
-              <pre className="mkt-about__notes-body">{upd.release_notes}</pre>
+              {/* Markdown as React elements: release-note HTML is shown as text, never injected. */}
+              <Markdown className="mkt-about__notes-body mkt-markdown" source={upd.release_notes} />
             </details>
           )}
           {releaseUrl && (
@@ -403,10 +428,15 @@ function AboutTab() {
             </p>
           )}
 
-          {dockerHint && (
+          {docker && (
             <div className="mkt-about__docker">
               <p>{t("update.docker.instructions")}</p>
-              <pre>{dockerHint}</pre>
+              <pre>{docker}</pre>
+              {upd.install === "docker" && upd.image && (
+                <p className="mkt-muted">
+                  {t("update.docker.image")} <code>{upd.image}</code>
+                </p>
+              )}
             </div>
           )}
 
@@ -445,21 +475,34 @@ function AboutTab() {
         </div>
       )}
 
+      {/* after an update the refreshed status no longer offers one: say so here */}
+      {phase === "done" && !upd?.available && (
+        <p className="mkt-success" role="status">
+          {t("update.phase.done", { version })}
+        </p>
+      )}
+
       {user?.is_admin && <UpdatesSettings />}
     </div>
   );
 }
 
+const DOCKER_INSTRUCTIONS = "docker compose pull && docker compose up -d";
+
 // pollVersionUntilChanged re-fetches /api/system/version until it reports
 // a version different from `from` (the server re-execs after a self-
-// update), until a bounded number of attempts elapse (changed: false, the
-// update did not take), or until `keepGoing` says stop (the tab closed).
-async function pollVersionUntilChanged(
+// update), until the server reports `target` as rolled back (its new
+// binary could not start and the old one was put back), until a bounded
+// number of attempts elapse (changed: false, the update did not take), or
+// until `keepGoing` says stop (the tab closed).
+export async function pollVersionUntilChanged(
   from: string,
-  keepGoing: () => boolean
+  target: string,
+  keepGoing: () => boolean,
+  opts: { attempts?: number; delayMs?: number } = {}
 ): Promise<{ changed: boolean; info: VersionInfo }> {
-  const ATTEMPTS = 30;
-  const DELAY_MS = 2000;
+  const ATTEMPTS = opts.attempts ?? 30;
+  const DELAY_MS = opts.delayMs ?? 2000;
   let last: VersionInfo = { version: from };
   for (let i = 0; i < ATTEMPTS && keepGoing(); i++) {
     await new Promise((r) => setTimeout(r, DELAY_MS));
@@ -468,6 +511,10 @@ async function pollVersionUntilChanged(
       const v = await api.get<VersionInfo>("/api/system/version");
       last = v;
       if (v.version && v.version !== from) return { changed: true, info: v };
+      if (target) {
+        const s = await api.get<UpdateStatus>("/api/system/updates").catch(() => null);
+        if (s?.rolled_back?.version === target) return { changed: false, info: v };
+      }
     } catch {
       /* server mid-restart — keep polling */
     }
@@ -588,6 +635,20 @@ function PrivacyTab() {
           </tbody>
         </table>
       )}
+      <p>
+        <Link to="/account/history" className="mkt-link-btn">
+          {t("settings.privacy.fullHistory")}
+        </Link>
+      </p>
+
+      <hr />
+      <h2>{t("settings.privacy.activity")}</h2>
+      <ActivityTimeline limit={10} />
+      <p>
+        <Link to="/account/history?tab=activity" className="mkt-link-btn">
+          {t("settings.privacy.fullActivity")}
+        </Link>
+      </p>
     </div>
   );
 }

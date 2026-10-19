@@ -3,7 +3,7 @@
 // toast renders the localized copy plus a Reload button whose click
 // activates the waiting SW (postMessage SKIP_WAITING).
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, act, within } from "@testing-library/react";
+import { render, screen, act, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
@@ -20,6 +20,7 @@ import { ShortcutProvider } from "../lib/keyboard/shortcuts";
 import { ToastProvider } from "@ds/components/Toast/Toast";
 import en from "../i18n/en.json";
 import type { SwUpdateDetail } from "../lib/pwa";
+import { resetUpdateStatusCache } from "../lib/updates";
 
 function renderShell() {
   return render(
@@ -121,5 +122,57 @@ describe("AppShell transcription navigation", () => {
       "href",
       "/transcription"
     );
+  });
+});
+
+describe("AppShell update badge (Story 28.6)", () => {
+  const viewer = { user: { id: "u2", username: "viewer", is_admin: false, roles: [] } };
+  beforeEach(() => resetUpdateStatusCache());
+
+  function serve(updates: unknown) {
+    get.mockImplementation((url: string) =>
+      Promise.resolve(url.startsWith("/api/system/updates") ? updates : viewer)
+    );
+  }
+
+  it("badges Settings and More when an update is available", async () => {
+    serve({
+      available: true,
+      latest_version: "v2.0.0",
+      current_version: "v1.0.0",
+      channel: "stable",
+      checked_at: "",
+    });
+    renderShell();
+    const [sidebar, tabbar] = await screen.findAllByRole("navigation", { name: en["nav.primary"] });
+    const settings = within(sidebar).getByRole("link", { name: en["nav.settings"] });
+    await waitFor(() => expect(settings).toHaveAccessibleDescription(en["update.badge"]));
+    expect(settings).toHaveAttribute("href", "/settings");
+    expect(within(settings).getByTestId("update-badge")).toBeInTheDocument();
+    const more = within(tabbar).getByRole("link", { name: en["nav.more"] });
+    expect(more).toHaveAttribute("href", "/more");
+    expect(more).toHaveAccessibleDescription(en["update.badge"]);
+    expect(get).toHaveBeenCalledWith("/api/system/updates");
+  });
+
+  it("shows no badge when up to date or when checks are off", async () => {
+    for (const status of [
+      { available: false, current_version: "v1.0.0", channel: "stable", checked_at: "" },
+      {
+        available: true,
+        disabled: true,
+        latest_version: "v2.0.0",
+        current_version: "v1.0.0",
+        channel: "stable",
+        checked_at: "",
+      },
+    ]) {
+      resetUpdateStatusCache();
+      serve(status);
+      const { unmount } = renderShell();
+      await screen.findAllByRole("link", { name: en["nav.transcription"] });
+      expect(screen.queryByTestId("update-badge")).not.toBeInTheDocument();
+      unmount();
+    }
   });
 });

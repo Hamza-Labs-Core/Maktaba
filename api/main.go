@@ -458,6 +458,7 @@ func runServe() error {
 				SearchSemanticBudget: semanticBudget,
 				BusCtx:               busCtx,
 				BusDSN:               dsn,
+				EnrichAutoAcceptCtx:  busCtx,
 				PerfRegistry:         perfRegistry,
 				URLSigner:            streamURLSigner(auth.keys, logger),
 			})

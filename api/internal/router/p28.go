@@ -42,8 +42,11 @@ func MountP28(r chi.Router, d P28Deps) {
 	}
 	r.Group(func(r chi.Router) {
 		r.Use(mw.BodyLimit(mw.DefaultBodyLimit))
-		status := d.Updater.Handler()
-		self := system.NewSelfUpdater(d.Updater).Handler()
+		su := system.NewSelfUpdater(d.Updater)
+		// install / instructions / rolled_back ride on the status so the
+		// About page shows how this server updates before anyone clicks.
+		status := su.StatusHandler(d.Updater.Handler())
+		self := su.Handler()
 		r.Method(http.MethodGet, "/api/system/updates", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			if h := d.Updates.Get(); h != nil {
 				h.ExtendStatus(status).ServeHTTP(w, req)

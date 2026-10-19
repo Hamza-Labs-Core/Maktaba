@@ -39,8 +39,8 @@
 2. Loopback routes; orchestrator step with a fake controller (TC3, TC4).
 3. Viewer count query (sessions in `channel_runtime` excluding probe holds) and the fallback loop (TC5).
 4. `EdgeProtocol` and the restart gate in step 11; pruning guard (TC6).
-5. Rollback hook: `POST /api/tv/rollback` with the run's change (Epic 33.9; 501 before it exists →
-   fallback restarts streaming on `from`).
+5. Rollback hook: `POST /api/tv/rollback` with the run's change (Epic 33.9, built: warm or cold
+   rollback; a 409 `no_rollback_point` → fallback restarts streaming on `from`).
 6. Nightly E2E with the 33.14 harness (TC7).
 
 ## 3. Tests

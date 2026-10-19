@@ -10,12 +10,17 @@
 // chips are URL-encoded; cursor "Load more" appends pages; empty states
 // distinguish first-run (admin "Scan now") vs filtered-out ("Clear
 // filters"). State badges + poster 404 fallback + bidi-isolated titles.
+// "Scan now" (admins) toasts the result, follows the scan job
+// (GET /api/jobs/{id}) with a progress bar, and reloads the list when the
+// scan is done.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Chip } from "@ds/components/Chip/Chip";
 import { Button } from "@ds/components/Button/Button";
 import { Skeleton } from "@ds/components/Skeleton/Skeleton";
+import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
+import { useToast } from "@ds/components/Toast/Toast";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { api, ApiError } from "../lib/api";
@@ -69,6 +74,106 @@ function StateBadge({ state }: { state: string }) {
   const { t } = useI18n();
   const tone = PROBLEM_TONE[state];
   return tone ? <Badge tone={tone}>{t(`video.state.${state}`)}</Badge> : null;
+}
+
+// How often the scan's job is re-read, and for how long at most.
+export const SCAN_POLL_MS = 2000;
+export const SCAN_POLL_MAX = 900; // 30 minutes
+
+interface ScanJob {
+  id: string;
+  state: string;
+  error?: string | null;
+  estimated_remaining_sec?: number | null;
+}
+
+const SCAN_TERMINAL = new Set(["done", "failed", "cancelled", "superseded"]);
+
+// ScanNow starts a library scan and follows it: a toast when it is queued
+// (or refused), a progress bar while the job is pending or running, and a
+// toast plus onDone() when it ends.
+export function ScanNow({ libraryId, onDone }: { libraryId: string; onDone: () => void }) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [job, setJob] = useState<ScanJob | null>(null);
+  const [starting, setStarting] = useState(false);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+
+  const errMessage = (e: unknown) =>
+    e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error");
+
+  async function follow(id: string) {
+    for (let i = 0; i < SCAN_POLL_MAX && alive.current; i++) {
+      await new Promise((r) => setTimeout(r, SCAN_POLL_MS));
+      if (!alive.current) return;
+      let j: ScanJob;
+      try {
+        j = await api.get<ScanJob>(`/api/jobs/${encodeURIComponent(id)}`);
+      } catch {
+        continue; // a missed read: try again
+      }
+      if (!alive.current) return;
+      setJob(j);
+      if (SCAN_TERMINAL.has(j.state)) {
+        if (j.state === "done") {
+          toast.show({ tone: "success", message: t("library.scan.done") });
+        } else {
+          toast.show({
+            tone: "error",
+            message: j.error ? `${t("library.scan.failed")}: ${j.error}` : t("library.scan.failed"),
+          });
+        }
+        setJob(null);
+        onDone();
+        return;
+      }
+    }
+    if (alive.current) setJob(null);
+  }
+
+  async function start() {
+    setStarting(true);
+    try {
+      const r = await api.post<{ job_id?: string }>(
+        `/api/libraries/${encodeURIComponent(libraryId)}/scan`
+      );
+      toast.show({ tone: "info", message: t("library.scan.started") });
+      if (r?.job_id) {
+        setJob({ id: r.job_id, state: "pending" });
+        void follow(r.job_id);
+      }
+    } catch (e) {
+      toast.show({ tone: "error", message: `${t("library.scan.error")}: ${errMessage(e)}` });
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  const eta = job?.estimated_remaining_sec;
+  return (
+    <div className="mkt-scan-now">
+      <Button onClick={() => void start()} loading={starting} disabled={starting || job !== null}>
+        {job ? t("library.scan.running") : t("library.scanNow")}
+      </Button>
+      {job && (
+        <div className="mkt-scan-now__progress" role="status">
+          <ProgressBar indeterminate label={t("library.scan.running")} />
+          <span className="mkt-muted">
+            {t(job.state === "running" ? "library.scan.stateRunning" : "library.scan.statePending")}
+            {typeof eta === "number" && eta > 0
+              ? ` · ${t("library.scan.eta", { min: String(Math.max(1, Math.round(eta / 60))) })}`
+              : ""}
+          </span>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function readView(): View {
@@ -315,11 +420,7 @@ export function LibraryBrowser() {
                 {t("common.clearFilters")}
               </Button>
             ) : user?.is_admin && libraryId ? (
-              <Button
-                onClick={() => void api.post(`/api/libraries/${libraryId}/scan`).catch(() => {})}
-              >
-                {t("library.scanNow")}
-              </Button>
+              <ScanNow libraryId={libraryId} onDone={() => setReloads((n) => n + 1)} />
             ) : undefined
           }
         />

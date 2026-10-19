@@ -203,7 +203,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.DB == nil {
-		common.WriteJSON(w, r, http.StatusOK, map[string]any{"candidates": []Candidate{}})
+		common.WriteJSON(w, r, http.StatusOK, map[string]any{"candidates": []Candidate{}, "revertable": []string{}})
 		return
 	}
 	v, err := h.loadVideo(r, id)
@@ -230,7 +230,18 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		cands[i].Title, cands[i].Year = headline(cands[i].Mapped)
 		cands[i].Sources, cands[i].Facts = provenanceOf(cands[i].Mapped)
 	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"candidates": cands, "job": h.jobStatus(r, id)})
+	// revertable: the fields an accept wrote that "Revert to original"
+	// would restore (their previous value is kept in provenance).
+	revertable := []string{}
+	enriched := h.fieldsWithOrigin(r, id, "enrichment")
+	for _, f := range mappableFields {
+		if enriched[f] {
+			revertable = append(revertable, f)
+		}
+	}
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{
+		"candidates": cands, "job": h.jobStatus(r, id), "revertable": revertable,
+	})
 }
 
 // PendingItem is one row in the library review queue.
@@ -330,9 +341,15 @@ func (h *Handler) loadCandidates(r *http.Request, videoID, externalID string) ([
 // protectedFields returns the set of fields whose provenance origin is
 // 'user' (so an accept must skip them).
 func (h *Handler) protectedFields(r *http.Request, videoID string) map[string]bool {
+	return h.fieldsWithOrigin(r, videoID, "user")
+}
+
+// fieldsWithOrigin returns the set of a video's fields whose provenance
+// origin is origin ('user' or 'enrichment').
+func (h *Handler) fieldsWithOrigin(r *http.Request, videoID, origin string) map[string]bool {
 	out := map[string]bool{}
 	rows, err := h.DB.QueryContext(r.Context(),
-		`SELECT field FROM media_field_provenance WHERE video_id = $1 AND origin = 'user'`, videoID)
+		`SELECT field FROM media_field_provenance WHERE video_id = $1 AND origin = $2`, videoID, origin)
 	if err != nil {
 		return out
 	}

@@ -152,6 +152,7 @@ function mockGets(over: Table = {}) {
     "/api/system/version": VERSION,
     "/api/system/updates": UP_TO_DATE,
     "/api/me/activity/settings": { track_enabled: true },
+    "/api/me/activity": { items: [], limit: 10, offset: 0 },
     "/api/me/history": () => structuredClone(HISTORY),
     "/api/models": [],
     "/api/rules": { sections: [] },
@@ -279,9 +280,10 @@ describe("Settings account (test-cases/settings-account.md)", () => {
     expect(line).not.toHaveTextContent("(admin)");
     expect(screen.getByText("maha").tagName).toBe("STRONG");
     expect(screen.getByRole("button", { name: "Sign out everywhere" })).toBeInTheDocument();
-    expect(
-      screen.getByText(/Personal access token management requires a backend endpoint/)
-    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Manage tokens" })).toHaveAttribute(
+      "href",
+      "/account/tokens"
+    );
     expect(screen.getByRole("heading", { level: 2, name: "Diagnostics" })).toBeInTheDocument();
     expect(screen.getByText(/Collect a diagnostics bundle/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Collect diagnostics" })).toBeInTheDocument();
@@ -477,7 +479,7 @@ describe("Settings account (test-cases/settings-account.md)", () => {
     const cases: [string, () => Promise<unknown>, string[]][] = [
       ["/settings", () => screen.findByText(/Signed in as/), []],
       ["/settings/", () => screen.findByText(/Signed in as/), []],
-      ["/settings/sessions", () => screen.findByText(/Per-session listing/), []],
+      ["/settings/sessions", () => screen.findByRole("link", { name: "Manage sessions" }), []],
       ["/settings/appearance", () => screen.findByRole("radiogroup", { name: "Theme" }), []],
       [
         "/settings/privacy",
@@ -504,8 +506,16 @@ describe("Settings account (test-cases/settings-account.md)", () => {
       get.mockClear();
       const { unmount } = renderSettings(path);
       await find();
-      await waitFor(() => expect(get.mock.calls.length > 0).toBe(prefixes.length > 0));
-      for (const p of getPaths()) expect(prefixes.some((x) => p.startsWith(x))).toBe(true);
+      // every tab also reads the update status, for the badge on About
+      await waitFor(() => expect(getPaths()).toContain("/api/system/updates"));
+      if (prefixes.length > 0) {
+        await waitFor(() =>
+          expect(getPaths().some((p) => prefixes.some((x) => p.startsWith(x)))).toBe(true)
+        );
+      }
+      for (const p of getPaths()) {
+        expect(p === "/api/system/updates" || prefixes.some((x) => p.startsWith(x))).toBe(true);
+      }
       unmount();
     }
   });
@@ -607,16 +617,14 @@ describe("Settings sessions (test-cases/settings-sessions.md)", () => {
       expect(screen.getByRole("navigation", { name: "Settings" })).toBeInTheDocument();
       expect(
         screen.getByText(
-          "Per-session listing requires a backend endpoint that is not yet available."
+          "See every device and browser signed in to your account, and sign one out."
         )
       ).toHaveClass("mkt-muted");
       unmount();
     }
   });
 
-  // Bug: the tab says the endpoint does not exist, but GET /api/me/sessions does and
-  // /account/sessions lists them. Fix needs new copy (i18n key) or the list in Settings.tsx.
-  it.fails("SSE-03: the tab points to the real sessions page", () => {
+  it("SSE-03: the tab points to the real sessions page", () => {
     renderSettings("/settings/sessions");
     expect(document.querySelector('a[href="/account/sessions"]')).not.toBeNull();
   });
@@ -624,24 +632,24 @@ describe("Settings sessions (test-cases/settings-sessions.md)", () => {
   it("SSE-04: a signed-out deep link redirects to /login", () => {
     renderSettings("/settings/sessions", { user: null });
     expect(screen.getByText("login page (from /settings/sessions)")).toBeInTheDocument();
-    expect(screen.queryByText(/Per-session listing/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/See every device/)).not.toBeInTheDocument();
   });
 
   it("SSE-05: deep link and Back to and from the tab", async () => {
     const user = userEvent.setup();
     renderSettings("/settings");
     await user.click(screen.getByRole("link", { name: "Sessions" }));
-    expect(screen.getByText(/Per-session listing/)).toBeInTheDocument();
+    expect(screen.getByText(/See every device/)).toBeInTheDocument();
     await user.click(screen.getByRole("link", { name: "Appearance" }));
-    expect(screen.queryByText(/Per-session listing/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/See every device/)).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "go back" }));
-    expect(screen.getByText(/Per-session listing/)).toBeInTheDocument();
+    expect(screen.getByText(/See every device/)).toBeInTheDocument();
   });
 
   it("SSE-06: a render crash shows the route error fallback; Back works", async () => {
     const user = userEvent.setup();
     quietCrash();
-    flags.throwKey = "settings.sessions.deferred";
+    flags.throwKey = "settings.sessions.hint";
     renderSettings("/settings");
     await user.click(screen.getByRole("link", { name: "Sessions" }));
     expect(screen.getByRole("alert")).toHaveTextContent("boom");
@@ -1248,14 +1256,18 @@ describe("Settings about (test-cases/settings-about.md)", () => {
     );
     const summary = card.querySelector("details > summary")!;
     expect(summary).toHaveTextContent("Release notes");
-    expect(card.querySelector("details pre")!.textContent).toBe("- faster\n- fixes");
+    // Markdown: the two bullets are a list
+    expect(Array.from(card.querySelectorAll("details li")).map((li) => li.textContent)).toEqual([
+      "faster",
+      "fixes",
+    ]);
     const link = within(card).getByRole("link", { name: "View release" });
     expect(link).toHaveAttribute("href", AVAILABLE.release_url);
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", "noreferrer");
   });
 
-  it("SAB-06: release notes render as plain text; a javascript: URL is not a link", async () => {
+  it("SAB-06: release-note HTML is shown as text, never injected; a javascript: URL is not a link", async () => {
     const notes = "<img src=x onerror=alert(1)><b>bold</b>";
     mockGets({
       "/api/system/updates": {
@@ -1266,7 +1278,7 @@ describe("Settings about (test-cases/settings-about.md)", () => {
     });
     renderSettings("/settings/about", { user: memberUser });
     const card = await screen.findByRole("region", { name: "Updates" });
-    expect(card.querySelector("pre")!.textContent).toBe(notes);
+    expect(card.querySelector(".mkt-about__notes-body")!.textContent).toBe(notes);
     expect(card.querySelector("img")).toBeNull();
     expect(card.querySelector("b")).toBeNull();
     expect(within(card).queryByRole("link")).not.toBeInTheDocument();
@@ -1485,7 +1497,7 @@ describe("Settings about (test-cases/settings-about.md)", () => {
     renderSettings("/settings/models", { user: memberUser });
     await screen.findByRole("heading", { name: "Model Management" });
     await user.click(screen.getByRole("link", { name: "About" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Objects are not valid");
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "go back" }));
     expect(await screen.findByRole("heading", { name: "Model Management" })).toBeInTheDocument();
     await user.click(screen.getByRole("link", { name: "go elsewhere" }));

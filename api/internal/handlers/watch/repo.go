@@ -281,23 +281,25 @@ func (r *repo) deleteHistory(ctx context.Context, userID, videoID string) error 
 
 func (r *repo) watchedActivity(ctx context.Context, userID string, n int) ([]ActivityItem, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT video_id, started_at, percent_complete
-		FROM watch_sessions WHERE user_id = $1
-		ORDER BY started_at DESC LIMIT $2`, userID, n)
+		SELECT ws.video_id, ws.started_at, ws.percent_complete,
+		       COALESCE(v.title, v.filename, '')
+		FROM watch_sessions ws LEFT JOIN videos v ON v.id = ws.video_id
+		WHERE ws.user_id = $1
+		ORDER BY ws.started_at DESC LIMIT $2`, userID, n)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []ActivityItem{}
 	for rows.Next() {
-		var videoID string
+		var videoID, title string
 		var at time.Time
 		var pct float64
-		if err := rows.Scan(&videoID, &at, &pct); err != nil {
+		if err := rows.Scan(&videoID, &at, &pct, &title); err != nil {
 			return nil, err
 		}
 		out = append(out, ActivityItem{Kind: "watched", At: at.UTC(),
-			Meta: map[string]any{"video_id": videoID, "percent_complete": pct}})
+			Meta: map[string]any{"video_id": videoID, "percent_complete": pct, "title": title}})
 	}
 	return out, rows.Err()
 }

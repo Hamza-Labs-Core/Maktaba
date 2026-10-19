@@ -14,6 +14,19 @@ import { applyServiceWorkerUpdate, type SwUpdateDetail } from "../lib/pwa";
 import { ThemeToggle } from "./ThemeToggle";
 import { LangToggle } from "./LangToggle";
 import { NotificationsBell } from "./NotificationsBell";
+import { updateAvailable, useUpdateStatus } from "../lib/updates";
+
+// Where the update badge sits (Story 28.6): Settings in the sidebar and
+// the More menu, and More in the phone tab bar (Settings lives behind it).
+const BADGED: ReadonlySet<string> = new Set(["/settings", "/more"]);
+
+// UpdateDot is the badge: a dot over the nav icon, positioned absolutely
+// so it never moves the layout; the badged link is described by
+// UPDATE_DESC ("Update available"), its name stays the same.
+const UPDATE_DESC = "mkt-shell-update-badge";
+function UpdateDot() {
+  return <span className="mkt-update-dot" aria-hidden="true" data-testid="update-badge" />;
+}
 
 const NAV = [
   { to: "/library", key: "nav.library", icon: "▦" },
@@ -44,6 +57,7 @@ const SECONDARY = [
   { to: "/account/devices", key: "nav.devices", icon: "▢" },
   { to: "/account/sessions", key: "nav.sessions", icon: "⧉" },
   { to: "/account/tokens", key: "nav.tokens", icon: "⚿" },
+  { to: "/account/history", key: "nav.history", icon: "◷" },
   { to: "/billing", key: "nav.billing", icon: "◈" },
   { to: "/cloud/status", key: "nav.cloudStatus", icon: "☁" },
 ] as const;
@@ -105,6 +119,8 @@ export function AppShell() {
   const nav = useNavigate();
   const [q, setQ] = useState("");
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const hasUpdate = updateAvailable(useUpdateStatus());
+  const badged = (to: string) => hasUpdate && BADGED.has(to);
 
   useEffect(() => {
     focusSearchRef(searchRef.current);
@@ -194,9 +210,11 @@ export function AppShell() {
               className="mkt-nav-link"
               title={t(item.key)}
               aria-label={t(item.key)}
+              aria-describedby={badged(item.to) ? UPDATE_DESC : undefined}
             >
               <span className="mkt-nav-link__icon" aria-hidden="true">
                 {item.icon}
+                {badged(item.to) && <UpdateDot />}
               </span>
               <span className="mkt-nav-link__label">{t(item.key)}</span>
             </NavLink>
@@ -243,11 +261,22 @@ export function AppShell() {
           </RouteErrorBoundary>
         </main>
       </div>
+      {hasUpdate && (
+        <span id={UPDATE_DESC} hidden>
+          {t("update.badge")}
+        </span>
+      )}
       <nav className="mkt-shell__tabbar" aria-label={t("nav.primary")}>
         {TABS.map((item) => (
-          <NavLink key={item.to} to={item.to} className="mkt-tab">
+          <NavLink
+            key={item.to}
+            to={item.to}
+            className="mkt-tab"
+            aria-describedby={badged(item.to) ? UPDATE_DESC : undefined}
+          >
             <span className="mkt-tab__icon" aria-hidden="true">
               {item.icon}
+              {badged(item.to) && <UpdateDot />}
             </span>
             <span className="mkt-tab__label">{t(item.key)}</span>
           </NavLink>
@@ -264,6 +293,7 @@ export function MoreMenu() {
   const { user, logout } = useAuth();
   const { t } = useI18n();
   const nav = useNavigate();
+  const hasUpdate = updateAvailable(useUpdateStatus());
   const groups: Array<{
     title?: string;
     items: ReadonlyArray<{ to: string; key: string; icon: string }>;
@@ -272,15 +302,27 @@ export function MoreMenu() {
   return (
     <section className="mkt-page mkt-more">
       <h1>{t("nav.more")}</h1>
+      {hasUpdate && (
+        <span id="mkt-more-update-badge" hidden>
+          {t("update.badge")}
+        </span>
+      )}
       {groups.map((g, i) => (
         <div key={i} className="mkt-more__group">
           {g.title && <h2>{g.title}</h2>}
           <ul className="mkt-more__list">
             {g.items.map((item) => (
               <li key={item.to}>
-                <NavLink to={item.to} className="mkt-more__link">
+                <NavLink
+                  to={item.to}
+                  className="mkt-more__link"
+                  aria-describedby={
+                    hasUpdate && item.to === "/settings" ? "mkt-more-update-badge" : undefined
+                  }
+                >
                   <span className="mkt-nav-link__icon" aria-hidden="true">
                     {item.icon}
+                    {hasUpdate && item.to === "/settings" && <UpdateDot />}
                   </span>
                   {t(item.key)}
                 </NavLink>

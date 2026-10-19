@@ -69,7 +69,8 @@ func (h *Handler) Accept(w http.ResponseWriter, r *http.Request) {
 
 // applyAccept is the transactional promotion shared by Accept and
 // AcceptAll. It honours optimistic concurrency (409 on a stale version)
-// and per-field provenance.
+// and per-field provenance. action is "accept", or "auto_accept" for the
+// review-queue sweep (autoaccept.go), whose request carries no principal.
 func (h *Handler) applyAccept(r *http.Request, videoID, externalID, version, action string) (AcceptResult, *httperror.Error) {
 	res := AcceptResult{VideoID: videoID, Applied: []string{}, Skipped: []string{}}
 	v, err := h.loadVideo(r, videoID)
@@ -97,6 +98,21 @@ func (h *Handler) applyAccept(r *http.Request, videoID, externalID, version, act
 		return res, httperror.Internal("tx")
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	if action == "auto_accept" {
+		// Claim the candidate first: a second sweep (another replica) racing
+		// this one finds it already accepted and stops, so the recorded
+		// previous values stay the originals Revert restores.
+		claim, err := tx.ExecContext(r.Context(),
+			`UPDATE media_metadata_enrichment SET is_accepted = true
+			 WHERE video_id = $1 AND external_id = $2 AND is_accepted = false`, videoID, externalID)
+		if err != nil {
+			return res, httperror.Internal("claim candidate")
+		}
+		if n, err := claim.RowsAffected(); err != nil || n == 0 {
+			return res, httperror.Conflict("", "candidate already accepted")
+		}
+	}
 
 	now := h.now()
 	for _, f := range mappableFields {

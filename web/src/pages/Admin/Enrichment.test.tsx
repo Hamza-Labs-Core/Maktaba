@@ -267,9 +267,8 @@ describe("AdminEnrichment (test-cases/admin-enrichment.md)", () => {
     expect(option(/omar\.e01/)).toBeInTheDocument();
   });
 
-  // EnrichmentPanel (src/components, shared with VideoDetail) has no
-  // "changed" callback, so the page never refetches the queue.
-  it.fails("ENR-12: an accepted video leaves the queue and the selection moves on", async () => {
+  // EnrichmentPanel's onDecided makes the page refetch the queue.
+  it("ENR-12: an accepted video leaves the queue and the selection moves on", async () => {
     post.mockResolvedValue({});
     let pending: unknown = PENDING;
     routeGet(get, {

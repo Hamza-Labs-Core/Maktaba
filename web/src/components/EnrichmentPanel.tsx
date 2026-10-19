@@ -4,7 +4,7 @@
 // the sources it rests on.
 //
 // Server contract (api/internal/handlers/enrichment):
-//   GET  /api/videos/{id}/enrichment            -> { candidates:[Candidate], job? }
+//   GET  /api/videos/{id}/enrichment            -> { candidates:[Candidate], job?, revertable:[field] }
 //   POST /api/videos/{id}/enrichment/accept      { external_id, version? }
 //   POST /api/videos/{id}/enrichment/dismiss     { external_id? }
 //   POST /api/videos/{id}/enrichment/search      { query, year? } -> 202 { candidates, job }
@@ -16,8 +16,11 @@
 // (user-owned) fields are badged "won't change". Every field shows its
 // confidence and its sources (web pages link out; Maktaba's own intel is
 // named). A search runs as the engine's `enrich` job: the panel shows it
-// and polls until it is done. Accept / Dismiss / Search controls.
-import { useCallback, useEffect, useState } from "react";
+// and polls until it is done. Accept / Dismiss / Search controls, and
+// "Revert to original" once an accept has written fields. With
+// `shortcuts`, the a / d keys accept / dismiss the top candidate (the
+// review queue turns this on).
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Card } from "@ds/components/Card/Card";
 import { Button } from "@ds/components/Button/Button";
 import { Badge } from "@ds/components/Badge/Badge";
@@ -79,10 +82,28 @@ function suggestions(cands: Candidate[] | undefined): Candidate[] {
   return (cands ?? []).filter((c) => !(c.provider === "youtube" && c.accepted));
 }
 
-export function EnrichmentPanel({ videoId }: { videoId: string }) {
+// isTypingTarget is true for a key press meant for a text field, so
+// single-letter shortcuts never fire while someone types.
+export function isTypingTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.tagName !== "string") return false;
+  const tag = el.tagName.toLowerCase();
+  return tag === "input" || tag === "textarea" || tag === "select" || el.isContentEditable;
+}
+
+export interface EnrichmentPanelProps {
+  videoId: string;
+  /** a / d accept / dismiss the top candidate. */
+  shortcuts?: boolean;
+  /** Called after an accept, dismiss or revert succeeded. */
+  onDecided?: (action: "accept" | "dismiss" | "revert") => void;
+}
+
+export function EnrichmentPanel({ videoId, shortcuts = false, onDecided }: EnrichmentPanelProps) {
   const { t, n, locale, formatDate } = useI18n();
   const toast = useToast();
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
+  const [revertable, setRevertable] = useState<string[]>([]);
   const [job, setJob] = useState<Job | null>(null);
   const [busy, setBusy] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -90,12 +111,13 @@ export function EnrichmentPanel({ videoId }: { videoId: string }) {
 
   const load = useCallback(() => {
     api
-      .get<{ candidates: Candidate[]; job?: Job | null }>(
+      .get<{ candidates: Candidate[]; job?: Job | null; revertable?: string[] | null }>(
         `/api/videos/${encodeURIComponent(videoId)}/enrichment`
       )
       .then((r) => {
         setCandidates(suggestions(r.candidates));
         setJob(r.job ?? null);
+        setRevertable(r.revertable ?? []);
       })
       .catch(() => setCandidates([]));
   }, [videoId]);
@@ -127,6 +149,7 @@ export function EnrichmentPanel({ videoId }: { videoId: string }) {
       });
       toast.show({ message: t("enrich.accepted"), tone: "success" });
       load();
+      onDecided?.("accept");
     } catch (e) {
       fail(e);
     } finally {
@@ -142,12 +165,57 @@ export function EnrichmentPanel({ videoId }: { videoId: string }) {
       });
       toast.show({ message: t("enrich.dismissed"), tone: "info" });
       load();
+      onDecided?.("dismiss");
     } catch (e) {
       fail(e);
     } finally {
       setBusy(false);
     }
   }
+
+  async function revert() {
+    setBusy(true);
+    try {
+      const r = await api.post<{ reverted?: string[] | null }>(
+        `/api/videos/${encodeURIComponent(videoId)}/enrichment/revert`,
+        {}
+      );
+      toast.show({
+        message: (r?.reverted ?? []).length > 0 ? t("enrich.reverted") : t("enrich.revertNothing"),
+        tone: "success",
+      });
+      load();
+      onDecided?.("revert");
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // The latest top candidate and busy flag, for the key handler below.
+  const live = useRef<{ top?: Candidate; busy: boolean }>({ busy: false });
+  live.current = { top: candidates?.[0], busy };
+  const actions = useRef({ accept, dismiss });
+  actions.current = { accept, dismiss };
+
+  useEffect(() => {
+    if (!shortcuts) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.ctrlKey || e.metaKey || e.altKey || isTypingTarget(e.target)) return;
+      const { top, busy: isBusyNow } = live.current;
+      if (!top || isBusyNow) return;
+      if (e.key === "a" && !top.accepted) {
+        e.preventDefault();
+        void actions.current.accept(top);
+      } else if (e.key === "d") {
+        e.preventDefault();
+        void actions.current.dismiss(top);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [shortcuts]);
 
   async function manualSearch() {
     setSearching(true);
@@ -255,6 +323,21 @@ export function EnrichmentPanel({ videoId }: { videoId: string }) {
         </p>
       )}
 
+      {revertable.length > 0 && (
+        <div className="mkt-enrich-panel__revert">
+          <p className="mkt-muted">
+            {t("enrich.revertHint", {
+              fields: revertable
+                .map((f) => labels.fieldName(f))
+                .join(locale === "ar" ? "، " : ", "),
+            })}
+          </p>
+          <Button variant="secondary" onClick={revert} disabled={busy}>
+            {t("enrich.revert")}
+          </Button>
+        </div>
+      )}
+
       {candidates.length === 0 ? (
         <EmptyState title={t("enrich.empty.title")} description={t("enrich.empty.desc")} />
       ) : (
@@ -262,11 +345,13 @@ export function EnrichmentPanel({ videoId }: { videoId: string }) {
           <CandidateView
             c={top}
             headline
+            shortcuts={shortcuts}
             busy={busy}
             onAccept={accept}
             onDismiss={dismiss}
             labels={labels}
           />
+          {shortcuts && <p className="mkt-muted mkt-enrich-panel__keys">{t("enrich.keys")}</p>}
           {rest.length > 0 && (
             <section aria-labelledby="mkt-enrich-more">
               <h3 id="mkt-enrich-more" className="mkt-enrich-panel__more">
@@ -300,6 +385,7 @@ interface Labels {
 function CandidateView({
   c,
   headline,
+  shortcuts,
   busy,
   onAccept,
   onDismiss,
@@ -307,6 +393,8 @@ function CandidateView({
 }: {
   c: Candidate;
   headline?: boolean;
+  /** this card's Accept / Dismiss answer the a / d keys */
+  shortcuts?: boolean;
   busy: boolean;
   onAccept: (c: Candidate) => void;
   onDismiss: (c: Candidate) => void;
@@ -423,10 +511,20 @@ function CandidateView({
       )}
 
       <div className="mkt-enrich-panel__actions">
-        <Button onClick={() => onAccept(c)} loading={busy} disabled={c.accepted}>
+        <Button
+          onClick={() => onAccept(c)}
+          loading={busy}
+          disabled={c.accepted}
+          aria-keyshortcuts={shortcuts ? "a" : undefined}
+        >
           {t("enrich.accept")}
         </Button>
-        <Button variant="ghost" onClick={() => onDismiss(c)} disabled={busy}>
+        <Button
+          variant="ghost"
+          onClick={() => onDismiss(c)}
+          disabled={busy}
+          aria-keyshortcuts={shortcuts ? "d" : undefined}
+        >
           {t("enrich.dismiss")}
         </Button>
       </div>

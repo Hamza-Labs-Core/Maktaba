@@ -102,7 +102,6 @@ export function actionError(
     if (code === "second_admin_required") return t("tvchanges.err.secondAdmin");
     if (code === "ack_param_change_required") return t("tvchanges.err.ackParam");
     if (code === "change_in_flight") return t("tvchanges.err.inFlight");
-    if (e.status === 501) return t("tvchanges.err.notYet");
     if (e.status === 409) {
       const st = typeof p.state === "string" ? p.state : "";
       return st ? t("tvchanges.err.state", { state: t(`tvchanges.state.${st}`) }) : e.message;
