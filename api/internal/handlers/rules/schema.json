@@ -4909,6 +4909,109 @@
      "maximum": 3600
     }
    ]
+  },
+  {
+   "key": "storage",
+   "title": "Canonical share paths",
+   "what": "the home registers the storage servers it mounts and converts the stored media paths to smb://server/share/... by itself: when, how it checks, what it pauses, the backups",
+   "fields": [
+    {
+     "name": "auto_canonicalize",
+     "kind": "bool",
+     "group": "Canonical share paths",
+     "label": "Convert paths automatically",
+     "help": "The home converts the stored media paths to smb://server/share/... by itself, once every share they are on is mounted and the check passes. Off: only maktaba-pipeline storage canonicalize does.",
+     "default": true
+    },
+    {
+     "name": "auto_register_servers",
+     "kind": "bool",
+     "group": "Canonical share paths",
+     "label": "Register storage servers",
+     "help": "Every NAS the home mounts gets a storage server record (named from its DNS or NetBIOS name). A record you edited is never changed.",
+     "default": true
+    },
+    {
+     "name": "check_minutes",
+     "kind": "int",
+     "group": "Canonical share paths",
+     "label": "Look again every (min)",
+     "help": "",
+     "default": 60,
+     "minimum": 5,
+     "maximum": 10080
+    },
+    {
+     "name": "verify_samples",
+     "kind": "int",
+     "group": "Canonical share paths",
+     "label": "Paths checked",
+     "help": "Converted paths opened before and after the conversion.",
+     "default": 20,
+     "minimum": 1,
+     "maximum": 1000
+    },
+    {
+     "name": "allowed_missing",
+     "kind": "int",
+     "group": "Canonical share paths",
+     "label": "Missing files allowed",
+     "help": "Checked paths that may be missing (deleted since the scan) before the conversion waits.",
+     "default": 0,
+     "minimum": 0,
+     "maximum": 1000
+    },
+    {
+     "name": "pause_pools",
+     "kind": "list",
+     "group": "Canonical share paths",
+     "label": "Pause these pools",
+     "help": "The stages of these worker pools read or write the shares: they pause while the paths are written, the rest of the pipeline keeps running.",
+     "default": [
+      "nas_read",
+      "nas_write",
+      "repairs"
+     ]
+    },
+    {
+     "name": "drain_wait_minutes",
+     "kind": "int",
+     "group": "Canonical share paths",
+     "label": "Wait for running jobs (min)",
+     "help": "",
+     "default": 10,
+     "minimum": 0,
+     "maximum": 240
+    },
+    {
+     "name": "batch_size",
+     "kind": "int",
+     "group": "Canonical share paths",
+     "label": "Values per transaction",
+     "help": "",
+     "default": 2000,
+     "minimum": 100,
+     "maximum": 100000
+    },
+    {
+     "name": "backups_kept",
+     "kind": "int",
+     "group": "Canonical share paths",
+     "label": "Backups kept",
+     "help": "",
+     "default": 3,
+     "minimum": 1,
+     "maximum": 20
+    },
+    {
+     "name": "plex_path_map",
+     "kind": "bool",
+     "group": "Canonical share paths",
+     "label": "Add to the Plex path map",
+     "help": "The Plex extension's path map gets the canonical prefix of every local prefix it maps.",
+     "default": true
+    }
+   ]
   }
  ]
 }

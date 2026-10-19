@@ -13,6 +13,12 @@
                                         dry run (default) / convert the stored paths
     storage batches                     the migrations done so far
     storage revert [--batch ID]         undo a migration (the latest by default)
+    storage auto                        what the home does by itself, once, now:
+                                        register servers, check, back up, convert
+    storage status                      the automatic conversion's state
+    storage backups                     the path backups kept in the database
+    storage restore-backup [--backup ID]
+                                        write a backup's values back (the newest)
 """
 
 from __future__ import annotations
@@ -41,7 +47,18 @@ def add_parser(subparsers: Any) -> None:
     )
     p.add_argument(
         "what",
-        choices=("mounts", "servers", "server-add", "canonicalize", "batches", "revert"),
+        choices=(
+            "mounts",
+            "servers",
+            "server-add",
+            "canonicalize",
+            "batches",
+            "revert",
+            "auto",
+            "status",
+            "backups",
+            "restore-backup",
+        ),
     )
     p.add_argument("name", nargs="?", default=None, help="server-add: the server's name.")
     p.add_argument("--address", action="append", default=[], help="server-add: an address.")
@@ -69,6 +86,9 @@ def add_parser(subparsers: Any) -> None:
         help="canonicalize: write file:///... for paths on no share (default: leave them).",
     )
     p.add_argument("--batch", default=None, help="revert: the batch id (default: the latest).")
+    p.add_argument(
+        "--backup", default=None, help="restore-backup: the backup id (default: the newest)."
+    )
     p.add_argument("--json", action="store_true", help="Print JSON.")
     p.add_argument("--database-url", default=os.getenv("MAKTABA_DATABASE_URL") or None)
     p.add_argument("--path-map", default=os.getenv("MAKTABA_WORKER_PATH_MAP") or None)
@@ -142,6 +162,8 @@ async def _with_db(args: argparse.Namespace, db: Any) -> int:
         batch, n = await mig.revert(db, args.batch)
         _print(args, {"batch": batch, "reverted": n}, f"batch {batch}: {n} values put back")
         return 0
+    if args.what in ("auto", "status", "backups", "restore-backup"):
+        return await _auto(args, db)
     resolver = build_for_machine(servers, explicit=PathMap.parse(args.path_map))
     if args.what == "mounts":
         if not args.json:
@@ -261,3 +283,45 @@ async def _server_add(args: argparse.Namespace, db: Any, servers: list[StorageSe
 
 def main(args: argparse.Namespace) -> int:
     return asyncio.run(_run(args))
+
+
+async def _auto(args: argparse.Namespace, db: Any) -> int:
+    from . import auto
+    from . import backup as bk
+
+    if args.what == "backups":
+        rows = await bk.list_backups(db)
+        _print(
+            args,
+            rows,
+            "\n".join(
+                f"{b['backup']}  {b['at']}  {b['machine']}  {b['values']} values"
+                f"  batch {b['batch'] or '-'}"
+                for b in rows
+            )
+            or "no backups",
+        )
+        return 0
+    if args.what == "restore-backup":
+        bid, n = await bk.restore_backup(db, args.backup)
+        _print(args, {"backup": bid, "restored": n}, f"backup {bid}: {n} values written back")
+        return 0
+    if args.what == "auto":
+        state = await auto.run_once(db, auto.AutoEnv())
+    else:
+        state, req = await auto.load_state(db)
+        state = {**state, "request": req}
+    problems = state.get("problems") or []
+    run = state.get("run") or {}
+    last = state.get("last") or {}
+    lines = [f"phase: {state.get('phase') or 'never ran'}"]
+    lines += [f"  {p['code']}: {p.get('detail', '')}" for p in problems]
+    if run:
+        lines.append(f"run: batch {run.get('batch')}, {run.get('done', 0)}/{run.get('total', 0)}")
+    if last:
+        lines.append(
+            f"last: batch {last.get('batch')}, {last.get('changes')} values,"
+            f" {last.get('finished_at')}"
+        )
+    _print(args, state, "\n".join(lines))
+    return 0

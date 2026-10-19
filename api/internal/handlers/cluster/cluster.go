@@ -455,6 +455,9 @@ type Home struct {
 	// the home reports it) and its "share -> local mount" override.
 	Storage json.RawMessage `json:"storage,omitempty"`
 	PathMap json.RawMessage `json:"path_map,omitempty"`
+	// Canonicalize is the automatic conversion of the stored paths to
+	// canonical share paths (state, pending admin request).
+	Canonicalize *cluster.CanonStatus `json:"canonicalize,omitempty"`
 }
 
 // Overview is GET /api/cluster.
