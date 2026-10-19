@@ -234,6 +234,9 @@ func (g *slotRig) get(t *testing.T, path string) (int, string) {
 // the playlist (stitched, segment URIs per slot), its segments, and after a
 // switch the new slot — the old slot still serves what an old playlist names.
 func TestFrontDoorRoutesToLiveSlot(t *testing.T) {
+	if testing.Short() {
+		t.Skip("seconds of wall-clock segments and TS; runs without -short")
+	}
 	g := newSlotRig(t)
 	if live, epoch := g.slots.Live(); live != "blue" || epoch != 1 {
 		t.Fatalf("bootstrap: live %s epoch %d", live, epoch)
@@ -283,6 +286,9 @@ func TestFrontDoorRoutesToLiveSlot(t *testing.T) {
 // no media-sequence reset; a TS client's connection is kept and its timestamps
 // stay monotonic (the retiming splicer).
 func TestFailoverToHotStandby(t *testing.T) {
+	if testing.Short() {
+		t.Skip("seconds of wall-clock segments and TS; runs without -short")
+	}
 	g := newSlotRig(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

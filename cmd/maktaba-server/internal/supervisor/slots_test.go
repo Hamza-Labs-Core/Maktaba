@@ -184,7 +184,7 @@ func TestSupervisorSlotsOnDemand(t *testing.T) {
 // The supervisor reports a slot's exit to the front door at once.
 func TestSlotExitReporter(t *testing.T) {
 	got := make(chan string, 1)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		got <- r.Method + " " + r.URL.Path
 	}))
 	defer srv.Close()

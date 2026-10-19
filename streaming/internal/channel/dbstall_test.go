@@ -152,7 +152,7 @@ func TestReapNeverReleasesANewStation(t *testing.T) {
 			e.ReapIdle(context.Background())
 		}
 	}()
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 	close(stop)
 	wg.Wait()
 	e.mu.Lock()

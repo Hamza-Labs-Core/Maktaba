@@ -2,9 +2,11 @@ package channel
 
 import (
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -28,6 +30,10 @@ type OutputProfile struct {
 	// hardware encoder answered); VTPrioSpeed: ffmpeg has -prio_speed.
 	VTSoftware  bool
 	VTPrioSpeed bool
+	// HLSSegmentOption is how this ffmpeg names the HLS muxer's options for its
+	// segments: hls_segment_options (ffmpeg 5+) or hls_ts_options (4.x); empty:
+	// hls_segment_options (HLSSegmentOptionFor detects it).
+	HLSSegmentOption string
 	// KeyintSeconds is the wall-clock IDR grid (story 33.4; default 2, 1-10;
 	// lowered to a divisor of SegmentSeconds when it is not one).
 	KeyintSeconds int
@@ -386,7 +392,7 @@ func MuxerArgs(p OutputProfile, outDir string, restart bool) []string {
 		"-f", "mpegts", "-i", "pipe:0",
 		"-map", "0:v:0", "-map", "0:a:0", "-c", "copy",
 		"-f", "hls",
-		"-hls_segment_options", hlsSegmentOptions(),
+		"-"+hlsSegOpt(p.HLSSegmentOption), hlsSegmentOptions(),
 		"-hls_time", itoa(p.SegmentSeconds),
 		"-hls_list_size", itoa(p.HLSListSize),
 		"-hls_delete_threshold", "3",
@@ -444,3 +450,33 @@ func formatSec(s float64) string {
 }
 
 func itoa(i int) string { return strconv.Itoa(i) }
+
+func hlsSegOpt(name string) string {
+	if name == "" {
+		return "hls_segment_options"
+	}
+	return name
+}
+
+var (
+	hlsOptMu    sync.Mutex
+	hlsOptCache = map[string]string{}
+)
+
+// HLSSegmentOptionFor is the name the ffmpeg binary gives the HLS muxer's
+// segment options (asked once per binary): hls_segment_options, or the older
+// hls_ts_options of ffmpeg 4.x.
+func HLSSegmentOptionFor(ffmpeg string) string {
+	hlsOptMu.Lock()
+	defer hlsOptMu.Unlock()
+	if v, ok := hlsOptCache[ffmpeg]; ok {
+		return v
+	}
+	v := "hls_segment_options"
+	if out, err := exec.Command(ffmpeg, "-hide_banner", "-h", "muxer=hls").CombinedOutput(); err == nil && //nolint:gosec // the configured ffmpeg
+		!strings.Contains(string(out), "hls_segment_options") && strings.Contains(string(out), "hls_ts_options") {
+		v = "hls_ts_options"
+	}
+	hlsOptCache[ffmpeg] = v
+	return v
+}
