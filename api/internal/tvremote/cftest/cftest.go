@@ -508,26 +508,39 @@ func write(w http.ResponseWriter, status int, result any, errs ...cf.Error) {
 	})
 }
 
-// keyPEM is an RSA key as Cloudflare returns it (base64 PEM). One per test
-// binary, and 1024 bits, the smallest Go makes: a 2048-bit key takes ~100 ms
-// to make and, its prime search being random, now and then seconds under
-// -race on a busy runner, all of it charged to whichever test asks first
-// (TestCFTestConnection passed the unit tier's per-test cap that way). The
-// fake's keys differ by ID, which is all the tests compare; the signatures
-// the tests verify work the same with either size.
+// keyPEM is an RSA key as Cloudflare returns it (base64 PEM), 2048 bits, one
+// per test binary. A 2048-bit key takes ~100 ms to make and, its prime search
+// being random, now and then seconds under -race on a busy runner; made on
+// first use, all of that was charged to whichever test asked first
+// (TestCFTestConnection passed the unit tier's per-test cap that way). So it
+// is made in the background from package init, while the binary starts up and
+// runs the tests that need no key. The fake's keys differ by ID, which is all
+// the tests compare.
 var (
-	keyOnce sync.Once
-	keyPEM  string
+	keyOnce  sync.Once
+	keyPEM   string
+	keyReady = make(chan string, 1)
 )
 
-func newKeyPEM() string {
-	keyOnce.Do(func() {
-		k, _ := rsa.GenerateKey(rand.Reader, 1024)
+func init() {
+	go func() {
+		k, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			panic("cftest: rsa key: " + err.Error())
+		}
 		p := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)})
-		keyPEM = base64.StdEncoding.EncodeToString(p)
-	})
+		keyReady <- base64.StdEncoding.EncodeToString(p)
+	}()
+}
+
+// KeyPEM is the package's test key (base64 PEM), for tests that sign as the
+// fake Cloudflare does.
+func KeyPEM() string {
+	keyOnce.Do(func() { keyPEM = <-keyReady })
 	return keyPEM
 }
+
+func newKeyPEM() string { return KeyPEM() }
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	s.Mu.Lock()
