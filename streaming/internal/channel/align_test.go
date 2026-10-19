@@ -338,7 +338,7 @@ func TestRewritePDTFromPTS(t *testing.T) {
 	if _, ok := c.firstPTS(filepath.Join(dir, "seg-7.ts")); !ok {
 		t.Fatal("not cached")
 	}
-	c.rewritePDT(dir, []byte("#EXTM3U\n"), time.Now()) // nothing listed: pruned
+	c.rewritePDT(dir, []byte("#EXTM3U\n#EXT-X-PROGRAM-DATE-TIME:x\n#EXTINF:2,\nseg-9.ts\n"), time.Now()) // seg-7 gone: pruned
 	if len(c.m) != 0 {
 		t.Fatalf("cache %v", c.m)
 	}
