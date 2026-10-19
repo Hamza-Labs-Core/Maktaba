@@ -108,7 +108,7 @@ func (h *Home) principalFor(ctx context.Context, userID string) (Principal, erro
 		return Principal{}, err
 	}
 	p := Principal{UserID: u.ID, Username: u.Username, IsAdmin: u.IsAdmin, AccessAllLibraries: u.IsAdmin,
-		Libraries: []string{}}
+		Libraries: []string{}, MustChangePassword: u.MustChangePassword}
 	if !u.IsAdmin && h.ACL != nil {
 		if libs, err := h.ACL.LibrariesFor(ctx, u.ID); err == nil && libs != nil {
 			p.Libraries = libs
@@ -170,6 +170,9 @@ func (h *Home) Introspect(w http.ResponseWriter, r *http.Request) {
 			unauthorized(w, r, "user gone")
 			return
 		}
+		// the must-change gate is a web-session rule (the home's PAT path does
+		// not apply it either)
+		p.MustChangePassword = false
 		ans = IntrospectAnswer{Principal: p, Source: string(principal.SourcePAT), ExpiresAt: h.now().Add(time.Hour)}
 		if tok.ExpiresAt != nil && tok.ExpiresAt.Before(ans.ExpiresAt) {
 			ans.ExpiresAt = *tok.ExpiresAt

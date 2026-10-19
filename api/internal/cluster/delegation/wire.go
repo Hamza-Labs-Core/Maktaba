@@ -12,6 +12,10 @@ type Principal struct {
 	IsAdmin            bool     `json:"is_admin"`
 	Libraries          []string `json:"libraries"`
 	AccessAllLibraries bool     `json:"access_all_libraries"`
+	// MustChangePassword: the session's password was reset by an admin; the
+	// node's auth gate allows only the change-password form (an older home
+	// leaves it out, which reads as false).
+	MustChangePassword bool `json:"must_change_password,omitempty"`
 }
 
 // IntrospectRequest names one credential (POST /api/cluster/delegate/introspect).
