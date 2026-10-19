@@ -88,6 +88,19 @@ class FakeCollection:
         for key in [k for k, (_, m, _) in self.rows.items() if _matches(m, where)]:
             del self.rows[key]
 
+    def get(
+        self,
+        where: dict[str, Any] | None = None,
+        include: Sequence[str] = (),
+    ) -> dict[str, Any]:
+        hits = [(key, e, m, d) for key, (e, m, d) in self.rows.items() if _matches(m, where)]
+        return {
+            "ids": [h[0] for h in hits],
+            "embeddings": [h[1] for h in hits],
+            "metadatas": [h[2] for h in hits],
+            "documents": [h[3] for h in hits],
+        }
+
     def query(
         self,
         query_embeddings: Sequence[Sequence[float]],
