@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
@@ -515,13 +516,60 @@ func (h *Handler) TestExtension(w http.ResponseWriter, r *http.Request) {
 	if t := h.Testers[name]; t != nil {
 		res, err := t(r.Context())
 		if err != nil {
+			h.auditTest(r, name, map[string]any{"ok": false})
 			common.WriteJSON(w, r, http.StatusOK, map[string]any{"ok": false, "message": err.Error()})
 			return
 		}
+		h.auditTest(r, name, res)
 		common.WriteJSON(w, r, http.StatusOK, res)
 		return
 	}
 	// 200 {ok:false} (queueApi.ts testExtension) rather than a 501 so
 	// the UI can show the message inline.
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"ok": false, "message": "not_implemented: connection test is not available yet"})
+}
+
+// auditTest records a Test connection run in audit_log (category config):
+// who ran it, the outcome and each failed check's key and code. Only those
+// fields are copied out of the result, so no detail text (and never a
+// secret) reaches the row. Best effort: a miss is ignored.
+func (h *Handler) auditTest(r *http.Request, name string, res any) {
+	if h.DB == nil {
+		return
+	}
+	blob, err := json.Marshal(res)
+	if err != nil {
+		return
+	}
+	var out struct {
+		OK    bool `json:"ok"`
+		Lines []struct {
+			Key      string `json:"key"`
+			OK       bool   `json:"ok"`
+			Optional bool   `json:"optional"`
+			Skipped  bool   `json:"skipped"`
+			Code     string `json:"code"`
+		} `json:"lines"`
+	}
+	_ = json.Unmarshal(blob, &out)
+	failed := []map[string]any{}
+	warned := []string{}
+	for _, l := range out.Lines {
+		switch {
+		case l.OK || l.Skipped:
+		case l.Optional:
+			warned = append(warned, l.Key)
+		default:
+			failed = append(failed, map[string]any{"key": l.Key, "code": l.Code})
+		}
+	}
+	payload, _ := json.Marshal(map[string]any{"extension": name, "ok": out.OK, "failed": failed, "warned": warned})
+	var actor any
+	if p := principal.FromContext(r.Context()); p != nil {
+		if _, perr := uuid.Parse(p.UserID); perr == nil {
+			actor = p.UserID
+		}
+	}
+	_, _ = h.DB.ExecContext(r.Context(), `INSERT INTO audit_log (category, action, actor_user_id, target_id, payload)
+		VALUES ('config', 'extension_test', $1, $2, $3)`, actor, name, string(payload))
 }
