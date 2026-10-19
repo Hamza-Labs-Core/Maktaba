@@ -56,13 +56,16 @@ for mod in "${modules[@]}"; do
   fi
   prof="$covdir/${mod//\//_}.cover"
   echo "==> coverage ($mod)"
+  out="$covdir/${mod//\//_}.out"
   set +e
   ( cd "$REPO_ROOT/$mod" && \
-    go test -short -count=1 -coverprofile="$prof" ./... >/dev/null 2>&1 )
+    go test -short -count=1 -coverprofile="$prof" ./... >"$out" 2>&1 )
   test_rc=$?
   set -e
   if [[ $test_rc -ne 0 ]]; then
     echo "::error::go test failed in $mod (exit $test_rc) — cannot measure coverage"
+    # what failed (the passing packages' lines are left out)
+    grep -E -A30 '^(--- FAIL|FAIL|panic:)|\[(setup|build) failed\]' "$out" | head -150 || true
     rc=1
     continue
   fi
