@@ -108,6 +108,9 @@ class LibraryRecord:
     roots: tuple[str, ...]
     disabled: bool = False
     follow_symlinks: bool = False
+    #: ``settings.ignore_globs`` (Story 9.5): files whose path matches one are not
+    #: catalogued (``*`` spans folders: ``*/extras/*``, ``*.sample.mkv``)
+    ignore_globs: tuple[str, ...] = ()
 
 
 @dataclass(slots=True, frozen=True)
@@ -295,7 +298,7 @@ class ScanResult:
     files_inserted: int = 0
     files_unchanged: int = 0  # path+signature matched an existing row
     files_skipped: int = 0  # ON CONFLICT swallowed the insert
-    files_ignored: int = 0  # zero-byte
+    files_ignored: int = 0  # zero-byte, or matched the library's ignore_globs
     errors: list[ScanError] = field(default_factory=list)
 
 
@@ -306,6 +309,26 @@ class _Logger(Protocol):
     def warning(self, event: str, **kwargs: Any) -> Any: ...
     def debug(self, event: str, **kwargs: Any) -> Any: ...
     def error(self, event: str, **kwargs: Any) -> Any: ...
+
+
+def _ignore_matcher(globs: Iterable[str]) -> Any:
+    """``path -> bool``: whether a library's ``ignore_globs`` drop the file. Matched
+    on the path with ``/`` separators; case-insensitive where the OS is (Windows).
+    No globs: nothing is dropped."""
+    from ..library_mgmt.ignore import compile_globs  # noqa: PLC0415 - keeps the import light
+
+    fold = os.path.normcase("ABC") == "abc"
+    pats = compile_globs(g.lower() if fold else g for g in globs if g)
+    if not pats:
+        return lambda _path: False
+
+    def ignored(path: str) -> bool:
+        p = path.replace("\\", "/")
+        if fold:
+            p = p.lower()
+        return any(x.match(p) for x in pats)
+
+    return ignored
 
 
 class Scanner:
@@ -389,10 +412,15 @@ class Scanner:
         poll_every = max(1, opts.cancel_poll_every)
         files_since_poll = 0
 
+        ignored = _ignore_matcher(lib.ignore_globs)
         try:
             for candidate in self._candidates(lib.roots, walk_cfg):
                 result.files_walked += 1
-                await self._process_candidate(lib, candidate, result)
+                if ignored(candidate.path):
+                    result.files_ignored += 1
+                    self._log.debug("scanner.ignored_by_glob", path=candidate.path)
+                else:
+                    await self._process_candidate(lib, candidate, result)
 
                 files_since_poll += 1
                 if (

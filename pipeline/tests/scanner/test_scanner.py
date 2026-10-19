@@ -19,6 +19,7 @@ sockets — same rationale documented in
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -210,6 +211,42 @@ async def test_scan_ignores_non_video_extensions(tmp_path: Path) -> None:
     only = next(iter(store.videos.values()))
     assert only.filename == "a.mp4"
     assert len(store.jobs) == 1
+
+
+@pytest.mark.asyncio
+async def test_scan_honours_the_library_ignore_globs(tmp_path: Path) -> None:
+    """Story 9.5 — ``settings.ignore_globs`` keeps matching files out of the catalog."""
+    _touch(tmp_path, "keep.mp4", content=b"keep")
+    _touch(tmp_path, "extras/bonus.mp4", content=b"bonus")
+    _touch(tmp_path, "trailer.sample.mkv", content=b"sample")
+    store = FakeScanStore()
+    lib = dataclasses.replace(_make_lib(tmp_path), ignore_globs=("*/extras/*", "*.sample.mkv"))
+    store.libraries[lib.id] = lib
+
+    res = await Scanner(store, log=_LoggerSink()).run(lib.id)
+
+    assert res.files_walked == 3
+    assert res.files_inserted == 1
+    assert res.files_ignored == 2
+    assert [v.filename for v in store.videos.values()] == ["keep.mp4"]
+
+
+@pytest.mark.asyncio
+async def test_scan_without_ignore_globs_keeps_every_file(tmp_path: Path) -> None:
+    _touch(tmp_path, "extras/bonus.mp4", content=b"bonus")
+    store = FakeScanStore()
+    lib = _make_lib(tmp_path)
+    store.libraries[lib.id] = lib
+    res = await Scanner(store, log=_LoggerSink()).run(lib.id)
+    assert res.files_inserted == 1 and res.files_ignored == 0
+
+
+def test_store_reads_ignore_globs_from_settings() -> None:
+    from maktaba_pipeline.scanner.store import _ignore_globs
+
+    assert _ignore_globs(["*/extras/*", "", 3]) == ("*/extras/*",)
+    assert _ignore_globs("*/extras/*") == ()
+    assert _ignore_globs(None) == ()
 
 
 @pytest.mark.asyncio
