@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from maktaba_pipeline.cluster import safefs
 from maktaba_pipeline.cluster.agent.files import ClusterFiles, safe_name
 
 pytestmark = pytest.mark.unit
@@ -142,3 +143,33 @@ def test_safe_name() -> None:
     assert safe_name("node-ab12/x:y 1") == "node-ab12_x_y_1"
     assert safe_name("...") == "worker"
     assert os.sep not in safe_name("a/b\\c")
+
+
+def test_macos_sidecars_are_not_records_and_expire_with_their_files(tmp_path: Path) -> None:
+    """macOS writes a "._<name>" sidecar beside every file on a share that cannot keep
+    extended attributes: readers skip it, and retention removes it with its file."""
+    f = ClusterFiles(None, "10.0.0.7", "node-ab12cd34-4242", fallback_dir=tmp_path / "local",
+                     retention_days=14)  # fmt: skip
+    f.set_identity({"worker_id": "node-ab12cd34-4242"})
+    m = tmp_path / "local/10.0.0.7"
+    old = m / "logs/2026-09-01"
+    old.mkdir(parents=True)
+    (old / "w.jsonl").write_text("{}\n")
+    (old / "._w.jsonl").write_bytes(b"\x00\x05\x16\x07Mac OS X")
+    assert [p.name for p in safefs.list_real_files(old)] == ["w.jsonl"]
+    assert sorted(p.name for p in safefs.list_real_files(old, hidden=True)) == [
+        "._w.jsonl",
+        "w.jsonl",
+    ]
+    procs = m / "processes"
+    (procs / "node-ab12cd34-1111.json").write_text(
+        json.dumps({"last_seen": "2026-09-01T00:00:00Z"})
+    )
+    (procs / "._node-ab12cd34-1111.json").write_bytes(b"\x00\x05\x16\x07")
+    assert [p.name for p in safefs.list_real_files(procs, ".json")] == [
+        "node-ab12cd34-1111.json",
+        "node-ab12cd34-4242.json",
+    ]
+    f.prune(today="2026-10-19")
+    assert not old.exists()  # the day folder goes, its sidecars with it
+    assert sorted(p.name for p in procs.iterdir()) == ["node-ab12cd34-4242.json"]

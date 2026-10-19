@@ -10,14 +10,15 @@
 //
 // The supervisor's job is lifecycle, not logic: resolve the executable
 // for a role, hand it an environment translated from server.toml, start
-// it, fan its stdout/stderr through to ours, and — on SIGINT/SIGTERM —
+// it, fan its stdout/stderr through to ours, keep it running (Story
+// 22.9, run.go: per-child restart with backoff, a crash-loop guard and
+// liveness probes that catch a hung child) and — on SIGINT/SIGTERM —
 // signal every child and wait for the drain. The web role is served
 // in-process by the unified binary, so it is handled by the caller, not
 // here.
 package supervisor
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -25,8 +26,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 )
@@ -43,11 +42,14 @@ const (
 	RolePipeline Role = "pipeline"
 )
 
-// Process describes a single supervised child: a human label and the
-// fully-formed command (with env + args) ready to Start.
+// Process describes a single supervised child: a human label, the
+// fully-formed command (with env + args) ready to Start, and the
+// liveness URL the supervisor polls (empty = no probe). The command is
+// a template: each restart starts a fresh copy of it.
 type Process struct {
-	Role Role
-	Cmd  *exec.Cmd
+	Role  Role
+	Cmd   *exec.Cmd
+	Probe string
 }
 
 // Options configures process construction.
@@ -72,109 +74,68 @@ var ErrBinaryNotFound = errors.New("service binary not found")
 func Build(role Role, opts Options) (Process, error) {
 	env := append(os.Environ(), ChildEnv(role, opts.Config)...)
 
+	var cmd *exec.Cmd
 	switch role {
 	case RoleAPI:
 		bin, err := resolveBinary("maktaba-api", "MAKTABA_API_BIN", opts.BinDir)
 		if err != nil {
 			return Process{}, err
 		}
-		cmd := exec.Command(bin, "serve")
-		cmd.Env = env
-		wire(cmd)
-		return Process{Role: role, Cmd: cmd}, nil
+		cmd = exec.Command(bin, "serve")
 
 	case RoleStreaming:
 		bin, err := resolveBinary("maktaba-streaming", "MAKTABA_STREAMING_BIN", opts.BinDir)
 		if err != nil {
 			return Process{}, err
 		}
-		cmd := exec.Command(bin, "serve")
-		cmd.Env = env
-		wire(cmd)
-		return Process{Role: role, Cmd: cmd}, nil
+		cmd = exec.Command(bin, "serve")
 
 	case RolePipeline:
-		py := pythonExecutable()
-		cmd := exec.Command(py, "-m", "maktaba_pipeline")
-		cmd.Env = env
-		wire(cmd)
-		return Process{Role: role, Cmd: cmd}, nil
+		cmd = exec.Command(pythonExecutable(), "-m", "maktaba_pipeline")
 
 	default:
 		return Process{}, fmt.Errorf("unknown role %q", role)
 	}
+	cmd.Env = env
+	wire(cmd)
+	return Process{Role: role, Cmd: cmd, Probe: ProbeURL(role, opts.Config)}, nil
 }
 
-// Run starts every process and blocks until ctx is cancelled or any
-// child exits. On ctx cancellation it sends SIGTERM to all children and
-// waits up to grace for them to drain before SIGKILL. The first
-// non-nil child error (other than a clean shutdown) is returned.
-func Run(ctx context.Context, procs []Process, grace time.Duration) error {
-	if len(procs) == 0 {
-		return errors.New("no processes to run")
+// ProbeURL is the liveness endpoint the supervisor polls for a role:
+// the api and streaming admin ports' /healthz, and the pipeline's
+// logs-port /healthz (its event-loop heartbeat).
+func ProbeURL(role Role, cfg config.Config) string {
+	switch role {
+	case RoleAPI:
+		return "http://" + LocalAddr(cfg.Server.AdminAddr, "9100") + "/healthz"
+	case RoleStreaming:
+		return "http://" + LocalAddr(streamingAdminAddr, "9101") + "/healthz"
+	case RolePipeline:
+		return "http://" + pipelineLogsAddr + "/healthz"
 	}
-
-	var wg sync.WaitGroup
-	errCh := make(chan error, len(procs))
-
-	for _, p := range procs {
-		if err := p.Cmd.Start(); err != nil {
-			// Tear down anything already started before bailing.
-			signalAll(procs, os.Kill)
-			return fmt.Errorf("start %s: %w", p.Role, err)
-		}
-		fmt.Fprintf(os.Stderr, "[supervisor] started %s (pid %d)\n", p.Role, p.Cmd.Process.Pid)
-	}
-
-	for _, p := range procs {
-		wg.Add(1)
-		go func(p Process) {
-			defer wg.Done()
-			if err := p.Cmd.Wait(); err != nil {
-				// A child killed by our own SIGTERM during shutdown is
-				// not a failure; the ctx.Err() check in Run decides.
-				errCh <- fmt.Errorf("%s exited: %w", p.Role, err)
-			} else {
-				errCh <- nil
-			}
-		}(p)
-	}
-
-	select {
-	case <-ctx.Done():
-		// Graceful: ask everyone to drain, then hard-kill stragglers.
-		signalAll(procs, terminationSignal())
-		done := make(chan struct{})
-		go func() { wg.Wait(); close(done) }()
-		select {
-		case <-done:
-		case <-time.After(grace):
-			signalAll(procs, os.Kill)
-			<-done
-		}
-		return nil
-
-	case err := <-errCh:
-		// A child died on its own — take the rest down with it so the
-		// supervisor never lingers half-up, then surface the cause.
-		signalAll(procs, terminationSignal())
-		go func() { wg.Wait() }()
-		return err
-	}
-}
-
-func signalAll(procs []Process, sig os.Signal) {
-	for _, p := range procs {
-		if p.Cmd.Process != nil {
-			_ = p.Cmd.Process.Signal(sig)
-		}
-	}
+	return ""
 }
 
 func wire(cmd *exec.Cmd) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = nil
+}
+
+// cloneCmd returns a fresh, unstarted copy of a command template: an
+// exec.Cmd can only be started once, so every restart needs a new one.
+func cloneCmd(tpl *exec.Cmd) *exec.Cmd {
+	return &exec.Cmd{
+		Path:        tpl.Path,
+		Args:        append([]string(nil), tpl.Args...),
+		Env:         tpl.Env,
+		Dir:         tpl.Dir,
+		Stdin:       tpl.Stdin,
+		Stdout:      tpl.Stdout,
+		Stderr:      tpl.Stderr,
+		SysProcAttr: tpl.SysProcAttr,
+		Err:         tpl.Err,
+	}
 }
 
 // LocateAPI resolves the maktaba-api binary, used by the passthrough

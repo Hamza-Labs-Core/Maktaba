@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -123,13 +124,41 @@ func runServe(cfg config.Config, opts serveOptions) error {
 		return shutdownWeb(webSrv)
 	}
 
-	// Run children; on return (signal or child death), drain the web
-	// server too.
-	runErr := supervisor.Run(ctx, procs, opts.grace)
+	// Run children. Each one is restarted on its own when it crashes or
+	// hangs ([supervisor] in server.toml, Story 22.9); Run returns on a
+	// signal, or on a child exit with restart = "never". Then drain the
+	// web server too.
+	policy, err := supervisor.PolicyFromConfig(cfg.Supervisor)
+	if err != nil {
+		return err
+	}
+	sup := supervisor.New(procs, policy, supervisor.WithEventSink(
+		supervisor.NewFileSink(filepath.Join(cfg.Server.DataDir, "supervisor", "events.jsonl"), 0)))
+	if adminSrv := startSupervisorAdmin(policy.AdminAddr, sup); adminSrv != nil {
+		defer func() { _ = shutdownWeb(adminSrv) }()
+	}
+	runErr := sup.Run(ctx, opts.grace)
 	if webSrv != nil {
 		_ = shutdownWeb(webSrv)
 	}
 	return runErr
+}
+
+// startSupervisorAdmin serves the supervisor's state (GET /processes)
+// on its loopback admin address; the api proxies it to
+// /api/system/processes. A bind failure is logged, not fatal.
+func startSupervisorAdmin(addr string, sup *supervisor.Supervisor) *http.Server {
+	if addr == "" {
+		return nil
+	}
+	srv := &http.Server{Addr: addr, Handler: sup.Handler(), ReadHeaderTimeout: 5 * time.Second}
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Fprintf(os.Stderr, "[serve] supervisor admin endpoint on %s failed (continuing): %v\n", addr, err)
+		}
+	}()
+	fmt.Fprintf(os.Stderr, "[serve] supervisor state on http://%s/processes\n", addr)
+	return srv
 }
 
 // resolveRoles maps the --role flag onto the supervised roles plus a

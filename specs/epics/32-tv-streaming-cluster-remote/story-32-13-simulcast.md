@@ -66,11 +66,12 @@ Design: [design.md](design.md) §7.9; README R13, "Settings", "APIs", "Cost".
   destination that rejects the stream shows "sent; the destination's state is shown on the
   platform".
 - **AC8 Survives hot swaps and failovers.** A simulcast is one continuous push session:
-  - a block change, muxer restart or Epic 33 hot swap of the station's pipeline keeps the
-    station's Hub, so the pusher keeps feeding the input; if the pusher must reconnect, it does
-    so inside the input's `timeoutSeconds` (30 s) and Cloudflare continues the same broadcast;
-  - an Epic 32 failover (32.4) moves the pusher to the new host and the same input (design
-    §7.3); the outputs stay attached to the input and resume when its feed resumes;
+  - the push runs in the home's front door push relay (design §7.4, Epic 33 story 33.8), which
+    keeps one RTMPS/SRT session per channel and only switches its source on a block change,
+    muxer restart, Epic 33 swap or rollback, or an Epic 32 failover/move: the live input never
+    loses its publisher, so the outputs see no disconnect;
+  - a relay ffmpeg crash restarts within 1 s on the same input (inside `timeoutSeconds`, same
+    broadcast);
   - a rotation at `max_push_hours` (32.7 AC9) reuses the same input, so outputs persist; the
     destination sees a gap of at most a few seconds.
 - **AC9 Limits and cost.** Simulcast minutes count towards `tv_remote.monthly_budget_usd`
@@ -120,6 +121,6 @@ Design: [design.md](design.md) §7.9; README R13, "Settings", "APIs", "Cost".
 
 ## Dependencies
 
-32.6 (integration, `home_secrets`), 32.7 (inputs, push, holds), 32.10 (budget). Epic 33 hot
-swap keeps the station's Hub (AC8) — the requirement is stated here and checked in Epic 33's
+32.6 (integration, `home_secrets`), 32.7 (inputs, push, holds), 32.10 (budget). Epic 33 story
+33.8 (the push relay that keeps one session across swaps, AC8) — the requirement is stated here and checked in Epic 33's
 tests.

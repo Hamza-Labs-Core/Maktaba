@@ -424,7 +424,8 @@ class ClusterFiles:
                 for ddir in safefs.list_real_dirs(base / self.ip / stream):
                     if not _DAY.fullmatch(ddir.name) or ddir.name >= cutoff:
                         continue
-                    for f in safefs.list_real_files(ddir, ".jsonl"):
+                    # macOS's "._<name>" sidecars go with the files they stand beside
+                    for f in safefs.list_real_files(ddir, ".jsonl", hidden=True):
                         try:
                             if safefs.remove_real_file(f):
                                 removed += 1
@@ -450,6 +451,7 @@ class ClusterFiles:
             try:
                 if safefs.remove_real_file(p):
                     removed += 1
+                    safefs.remove_real_file(p.with_name("._" + p.name))  # macOS's sidecar
             except OSError as exc:
                 self._error("cluster_files_prune_failed", exc)
         return removed

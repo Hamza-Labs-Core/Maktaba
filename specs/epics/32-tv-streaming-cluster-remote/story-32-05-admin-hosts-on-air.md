@@ -13,7 +13,7 @@ Design: [design.md](design.md) §2–§3, §6.3.
 ## Acceptance criteria
 
 - **AC1** `GET /api/tv/cluster` (admin) returns the cluster settings, every host
-  (`tv_stream_hosts` + health: online/down/draining/disabled/unfit with reason, encoders,
+  (`streaming_hosts` + health: online/down/draining/disabled/unfit with reason, encoders,
   capacity, used, load, last beat, version, can_push, can_live) and every placement (channel, host,
   generation, state, reason, since) joined with `channel_runtime` (encoder, viewers, restarts,
   NVENC fallbacks) and the remote push state when there is one.

@@ -61,6 +61,8 @@ export default defineConfig({
       "/api": {
         target: "http://localhost:8080",
         changeOrigin: false,
+        // the cluster hub's browser socket (/api/cluster/ws) upgrades here
+        ws: true,
       },
       "/ws": {
         target: "ws://localhost:8080",

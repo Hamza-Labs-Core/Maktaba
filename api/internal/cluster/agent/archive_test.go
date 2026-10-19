@@ -393,3 +393,32 @@ func TestArchiveEnv(t *testing.T) {
 		t.Fatalf("defaults = %+v", a)
 	}
 }
+
+// macOS writes a "._<name>" sidecar beside every file on a share that
+// cannot keep extended attributes: history never reads one as a process's
+// records, and the archive never copies one.
+func TestMacSidecarsAreIgnored(t *testing.T) {
+	f := newArchFixture(t, ArchiveConfig{})
+	f.put(t, "10.0.0.5/logs/2026-10-19/w1.jsonl", `{"ts":"2026-10-19T10:00:00Z","event":"a"}`)
+	side := filepath.Join(f.share, "10.0.0.5", "logs", "2026-10-19", "._w1.jsonl")
+	if err := os.WriteFile(side, []byte("\x00\x05\x16\x07Mac OS X        \x00\x02"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(f.share)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	files := dayFiles(root, "10.0.0.5", "logs", "2026-10-19")
+	if len(files) != 1 || files[0].workerID != "w1" {
+		t.Fatalf("day files = %+v", files)
+	}
+	f.a.Pass(context.Background())
+	day := filepath.Join(f.arch, "10.0.0.5", "logs", "2026-10-19")
+	if exists(filepath.Join(day, "._w1.jsonl.gz")) {
+		t.Fatal("a sidecar was archived")
+	}
+	if m := readManifestFile(t, filepath.Join(day, manifestName)); len(m.Files) != 1 {
+		t.Fatalf("manifest = %+v", m.Files)
+	}
+}

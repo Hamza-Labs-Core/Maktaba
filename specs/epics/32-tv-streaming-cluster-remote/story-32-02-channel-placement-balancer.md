@@ -23,7 +23,8 @@ Design: [design.md](design.md) §3.
 - **AC4** A pin (`tv_cluster.pins[slug] = host name`) wins while that host is online with room;
   otherwise the policy applies and the admin page says the pin was skipped and why.
 - **AC5** Channels with live (yt-dlp) blocks within the next 24 h go only to hosts with
-  `can_live`; channels wanted for a remote push go only to hosts with `can_push[ingest]`.
+  `can_live`. A remote push puts no constraint on the host: the home's push relay pushes (design
+  §7.4, Epic 33.8).
 - **AC6** Capacity counts placements, not reported stations: two concurrent first requests for
   different channels never overfill a host.
 - **AC7** A station starts only when its host holds the current generation (home: the resolved

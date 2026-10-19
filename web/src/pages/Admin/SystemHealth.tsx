@@ -7,6 +7,7 @@
 //   GET /api/system/version { version, build_sha, build_time, go_version, schema_revision }
 //   GET /api/admin/caches   { caches: [name] }                 (admin)
 //   GET /api/admin/perf/budgets  — the parsed budget bundle    (admin)
+//   GET /api/system/processes    — supervised processes        (admin, Processes.tsx)
 //
 // NOTE: the budgets payload is YAML-tagged Go structs serialised by
 // encoding/json, so its keys arrive PascalCase (Endpoints, Version);
@@ -20,6 +21,7 @@ import { Badge } from "@ds/components/Badge/Badge";
 import { useI18n } from "../../lib/i18n";
 import { api } from "../../lib/api";
 import { AdminGate } from "../../components/AdminGate";
+import { ProcessesCard } from "./Processes";
 
 interface ServiceSnapshot {
   status: string;
@@ -146,6 +148,9 @@ function HealthInner() {
           ))}
         </div>
       )}
+
+      {/* Supervised processes: state, restarts, last crash (Story 22.9) */}
+      <ProcessesCard />
 
       {/* Caches + budgets + version */}
       <div className="mkt-health__grid">

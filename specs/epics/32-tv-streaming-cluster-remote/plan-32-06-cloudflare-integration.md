@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS home_secrets (
 5. Signing key: if `cf_signing_key` absent → `POST /accounts/{id}/stream/keys`, store `{id, pem}`.
 6. Customer domain: from the `playback.hls` of any input (`customer-<code>.cloudflarestream.com`),
    creating the first pool input disabled if none exists (it is reused by 32.7).
-7. Hosts: every online streaming host's `can_push[tv_remote.ingest]`.
+7. The home's push relay: its `can_push[tv_remote.ingest]` (Epic 33.8: only the home pushes).
 
 Result `{ok, checked_at, lines:[{key, ok, detail}]}` stored in `app_settings` (`tv_remote.last_test`).
 
