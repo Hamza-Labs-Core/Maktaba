@@ -28,6 +28,7 @@ __all__ = [
     "list_real_files",
     "open_append",
     "open_read",
+    "open_read_binary",
     "real_dir",
     "real_file",
     "remove_real_file",
@@ -152,6 +153,14 @@ def open_append(path: Path) -> IO[str]:
         raise
     _check_opened(fd, path)
     return os.fdopen(fd, "a", encoding="utf-8")
+
+
+def open_read_binary(path: Path) -> IO[bytes]:
+    """Read ``path`` as bytes, a regular file only, never through a link."""
+    _check_existing_file(path)
+    fd = os.open(path, os.O_RDONLY | _NOFOLLOW | _CLOEXEC | _BINARY)
+    _check_opened(fd, path)
+    return os.fdopen(fd, "rb")
 
 
 def open_read(path: Path) -> IO[str]:

@@ -4,6 +4,8 @@
 - ``cluster ls``: the machines' folders, their processes and the days present.
 - ``cluster status``: the agent of every worker on this machine (from their local
   status files): connected or not, to which home, where their files go.
+- ``cluster logs|jobs|llm|events --archive [DIR]`` (and ``ls --archive``): the home's
+  long-term archive instead (design-agent.md §7.10), gzip day files, same filters.
 - ``cluster logs|metrics|llm|jobs|events|queues|library [--ip IP] [--date D] [--level L]
   [--follow] [--json]``: reads the files on the share directly (design-agent.md §4),
   merging a day's per-process files by timestamp; without ``--ip`` it lists the machines
@@ -20,15 +22,18 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import gzip
 import heapq
+import io
 import json
 import os
 import sys
 import time
+import zlib
 from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, TextIO
+from typing import IO, Any, TextIO
 
 from ..engine.paths import PathMap
 from . import safefs, share
@@ -36,6 +41,10 @@ from . import safefs, share
 __all__ = ["READERS", "add_parser", "main", "merged_records"]
 
 READERS = ("logs", "metrics", "llm", "jobs", "events", "queues", "library")
+#: the kinds the home's archive keeps (design-agent.md section 7.10)
+ARCHIVE_KINDS = ("logs", "jobs", "llm", "events")
+ARCHIVE_SUFFIX = ".jsonl.gz"
+ENV_ARCHIVE_DIR = "MAKTABA_ARCHIVE_DIR"
 _LEVEL_RANK = {"debug": 10, "info": 20, "warning": 30, "warn": 30, "error": 40, "critical": 50}
 
 
@@ -53,6 +62,15 @@ def add_parser(subparsers: Any) -> None:
     p.add_argument("--follow", "-f", action="store_true", help="Keep reading new records.")
     p.add_argument("--json", action="store_true", help="Print the records as JSON lines.")
     p.add_argument("--dir", default=None, help="The cluster directory (a local path).")
+    p.add_argument(
+        "--archive",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="DIR",
+        help="Read the home's long-term archive instead of the share (logs, jobs, llm, "
+        "events; ls): DIR, else MAKTABA_ARCHIVE_DIR, else ~/.maktaba/archive. No --follow.",
+    )
     p.add_argument("--database-url", default=os.getenv("MAKTABA_DATABASE_URL") or None)
     p.add_argument("--path-map", default=os.getenv("MAKTABA_WORKER_PATH_MAP") or None)
 
@@ -129,8 +147,21 @@ def locate(args: argparse.Namespace) -> tuple[Path | None, str]:
     return found, "the library roots in the database, through this machine's path map"
 
 
+def archive_dir(arg: str | None = None) -> Path:
+    """The home's archive: ``--archive DIR``, else ``MAKTABA_ARCHIVE_DIR``, else
+    ``~/.maktaba/archive``."""
+    if arg:
+        return Path(arg).expanduser()
+    env = os.environ.get(ENV_ARCHIVE_DIR)
+    return Path(env).expanduser() if env else Path.home() / ".maktaba" / "archive"
+
+
 def where(args: argparse.Namespace, out: TextIO | None = None) -> int:
     out = out or sys.stdout
+    archive = archive_dir(getattr(args, "archive", None))
+    out.write(
+        f"archive (the home's): {archive} ({'present' if archive.is_dir() else 'not here'})\n"
+    )
     root, how = locate(args)
     if root is None:
         out.write(f"no cluster directory ({how})\n")
@@ -149,17 +180,19 @@ def where(args: argparse.Namespace, out: TextIO | None = None) -> int:
     return 0
 
 
-def ls(root: Path, out: TextIO | None = None) -> int:
-    """The IP folders, their processes and the days present per kind."""
+def ls(root: Path, out: TextIO | None = None, *, archive: bool = False) -> int:
+    """The IP folders, their processes and the days present per kind (``archive``: the
+    home's archive, which has no processes)."""
     out = out or sys.stdout
     if not root.is_dir():
         sys.stderr.write(f"cannot read {root}: not a directory\n")
         return 1
     machines = list(safefs.list_real_dirs(root))
-    out.write(f"{root}: {len(machines)} machine folder(s)\n")
+    what = "archived machine folder(s)" if archive else "machine folder(s)"
+    out.write(f"{root}: {len(machines)} {what}\n")
     for m in machines:
         out.write(f"  {m.name}\n")
-        for p in safefs.list_real_files(m / "processes", ".json"):
+        for p in [] if archive else safefs.list_real_files(m / "processes", ".json"):
             try:
                 with safefs.open_read(p) as fh:
                     ident = json.load(fh)
@@ -170,12 +203,21 @@ def ls(root: Path, out: TextIO | None = None) -> int:
                 f"    process {p.stem}: {ident.get('kind', '?')} pid {ident.get('pid', '?')}"
                 f" on {ident.get('host', '?')} ({state})\n"
             )
-        for kind in READERS:
-            days = [d.name for d in safefs.list_real_dirs(m / kind)]
+        for kind in ARCHIVE_KINDS if archive else READERS:
+            days = [d.name for d in safefs.list_real_dirs(m / kind) if _is_day(d.name)]
             if days:
                 more = f" (+{len(days) - 5} earlier)" if len(days) > 5 else ""
-                out.write(f"    {kind}: {', '.join(days[-5:])}{more}\n")
+                span = f" ({days[0]} .. {days[-1]})" if archive and len(days) > 5 else ""
+                out.write(f"    {kind}: {', '.join(days[-5:])}{more}{span}\n")
     return 0
+
+
+def _is_day(name: str) -> bool:
+    try:
+        datetime.strptime(name, "%Y-%m-%d")
+    except ValueError:
+        return False
+    return True
 
 
 # --- reading ---------------------------------------------------------------------------------
@@ -188,29 +230,51 @@ def _day(date: str | None) -> str:
     return datetime.now(UTC).strftime("%Y-%m-%d")
 
 
+def _worker_of(path: Path) -> str:
+    name = path.name
+    for suffix in (ARCHIVE_SUFFIX, ".jsonl"):
+        if name.endswith(suffix):
+            return name[: -len(suffix)]
+    return path.stem
+
+
+def _open_lines(path: Path) -> IO[str]:
+    """A day file's text, never through a link; an archived ``.jsonl.gz`` decompressed."""
+    if path.name.endswith(".gz"):
+        raw = safefs.open_read_binary(path)
+        return io.TextIOWrapper(
+            gzip.GzipFile(fileobj=raw, mode="rb"), encoding="utf-8", errors="replace"
+        )
+    return safefs.open_read(path)
+
+
 def _read_lines(path: Path) -> Iterator[dict[str, Any]]:
     try:
-        fh = safefs.open_read(path)  # never through a link
+        fh = _open_lines(path)
     except OSError:
         return
+    worker = _worker_of(path)
     with fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-            except ValueError:
-                continue
-            if isinstance(rec, dict):
-                rec.setdefault("_file", path.stem)
-                yield rec
+        try:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue  # a last line being written, a damaged one
+                if isinstance(rec, dict):
+                    rec.setdefault("_file", worker)
+                    yield rec
+        except (OSError, EOFError, zlib.error) as exc:  # a damaged archive file
+            sys.stderr.write(f"stopped reading {path}: {exc}\n")
 
 
-def merged_records(day_dir: Path) -> Iterator[dict[str, Any]]:
+def merged_records(day_dir: Path, suffix: str = ".jsonl") -> Iterator[dict[str, Any]]:
     """A day's per-process files, merged by ``ts`` (each file is in order already);
     links are skipped, never followed."""
-    streams = [_read_lines(f) for f in safefs.list_real_files(day_dir)]
+    streams = [_read_lines(f) for f in safefs.list_real_files(day_dir, suffix)]
     return heapq.merge(*streams, key=lambda r: str(r.get("ts", "")))
 
 
@@ -243,7 +307,7 @@ def _fmt(what: str, rec: dict[str, Any], as_json: bool) -> str:
     return f"{ts} [{src}] {json.dumps(body, separators=(',', ':'), default=str)}"
 
 
-def _list(root: Path, what: str, out: TextIO) -> int:
+def _list(root: Path, what: str, out: TextIO, *, archive: bool = False) -> int:
     if not root.is_dir():
         sys.stderr.write(f"cannot read {root}: not a directory\n")
         return 1
@@ -253,10 +317,13 @@ def _list(root: Path, what: str, out: TextIO) -> int:
         return 0
     out.write(f"{root}\n")
     for m in machines:
-        days = [p.name for p in safefs.list_real_dirs(m / what)]
-        procs = len(list(safefs.list_real_files(m / "processes", ".json")))
+        days = [p.name for p in safefs.list_real_dirs(m / what) if _is_day(p.name)]
         shown = ", ".join(days[-7:]) if days else "-"
         more = f" (+{len(days) - 7} earlier)" if len(days) > 7 else ""
+        if archive:
+            out.write(f"  {m.name:<18} {what}: {shown}{more}\n")
+            continue
+        procs = len(list(safefs.list_real_files(m / "processes", ".json")))
         out.write(f"  {m.name:<18} {procs} process(es)  {what}: {shown}{more}\n")
     out.write("pick one with --ip\n")
     return 0
@@ -274,10 +341,18 @@ def show(
     out: TextIO | None = None,
     poll_sec: float = 1.0,
     max_polls: int | None = None,
+    archive: bool = False,
 ) -> int:
+    """Print a day's records of one kind, merged by ``ts`` (``archive``: from the home's
+    archive, ``<archive>/<ip>/<kind>/<day>/<worker>.jsonl.gz``)."""
     out = out or sys.stdout
+    if archive:
+        if what not in ARCHIVE_KINDS:
+            raise ValueError(f"the archive keeps {', '.join(ARCHIVE_KINDS)}, not {what}")
+        if follow:
+            raise ValueError("--follow reads the share; the archive holds closed days only")
     if ip is None:
-        return _list(root, what, out)
+        return _list(root, what, out, archive=archive)
     day = _day(date)
     day_dir = root / share.folder_name(ip) / what / day
     chain = (root / share.folder_name(ip), root / share.folder_name(ip) / what, day_dir)
@@ -287,7 +362,7 @@ def show(
         sys.stderr.write(f"refusing {day_dir}: a link or not a directory\n")
         return 1
     printed = 0
-    for rec in merged_records(day_dir):
+    for rec in merged_records(day_dir, ARCHIVE_SUFFIX if archive else ".jsonl"):
         if _keep(rec, level):
             out.write(_fmt(what, rec, as_json) + "\n")
             printed += 1
@@ -381,14 +456,15 @@ def main(args: argparse.Namespace) -> int:
         return status()
     if args.what == "where":
         return where(args)
-    root = find_dir(args)
+    archive = args.archive is not None
+    root = archive_dir(args.archive) if archive else find_dir(args)
     if root is None:
         sys.stderr.write(
             "no cluster directory: pass --dir, set MAKTABA_CLUSTER_DIR, or give a database\n"
         )
         return 2
     if args.what == "ls":
-        return ls(root)
+        return ls(root, archive=archive)
     try:
         return show(
             root,
@@ -398,6 +474,7 @@ def main(args: argparse.Namespace) -> int:
             level=args.level,
             follow=args.follow,
             as_json=args.json,
+            archive=archive,
         )
     except ValueError as exc:
         sys.stderr.write(f"{exc}\n")
