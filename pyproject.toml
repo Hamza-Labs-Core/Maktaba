@@ -1,26 +1,7 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[project]
-name = "maktaba"
-version = "0.1.0"
-description = "Batch video transcription, subtitling, and intelligent search."
-readme = "README.md"
-requires-python = ">=3.12"
-dependencies = [
-    "click",
-    "ffmpeg-python",
-    "mlx-whisper; sys_platform == 'darwin'",
-    "openai-whisper",
-    "chromadb",
-]
-
-[project.scripts]
-maktaba = "maktaba.cli:cli"
-
-[tool.hatch.build.targets.wheel]
-packages = ["maktaba"]
+# Repo-root config only. The Python package is the pipeline
+# (pipeline/pyproject.toml, `maktaba-pipeline`); the old root `maktaba`
+# click group had no subcommands and nothing packaged it, so it was
+# removed.
 
 # Repo-root pytest config. The e2e / perf-ci gates (Track V) live in
 # ./tests and are invoked with an explicit path, which makes pytest

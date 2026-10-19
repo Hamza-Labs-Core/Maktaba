@@ -7824,19 +7824,9 @@
       "description": "Status of REVIEW.md + four PLAN_REVIEW files."
     },
     {
-      "path": "maktaba/__init__.py",
-      "category": "code",
-      "description": "Pipeline package init."
-    },
-    {
-      "path": "maktaba/cli.py",
-      "category": "code",
-      "description": "Pipeline CLI entrypoint."
-    },
-    {
       "path": "pyproject.toml",
       "category": "infra",
-      "description": "Python project metadata (pipeline service)."
+      "description": "Repo-root pytest config (the pipeline package is pipeline/pyproject.toml)."
     },
     {
       "path": "shared/api/openapi.json",
