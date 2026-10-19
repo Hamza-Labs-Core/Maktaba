@@ -14,44 +14,44 @@
 
 ## Summary
 
-| ID     | Title                                                              | Category      | Priority | Covered by existing test?                                                          |
-| ------ | ------------------------------------------------------------------ | ------------- | -------- | ---------------------------------------------------------------------------------- |
-| LTV-01 | Admin sees tuner, addresses and Plex steps                         | Happy path    | P1       | Yes (`LiveTV.test.tsx`)                                                            |
-| LTV-02 | Non-admin sees "Admins only" and no requests are made              | Permissions   | P1       | No                                                                                 |
-| LTV-03 | Signed-out user is sent to `/login`                                | Permissions   | P1       | No                                                                                 |
-| LTV-04 | Loading text until info and tuner arrive                           | Loading       | P3       | No                                                                                 |
-| LTV-05 | Info or tuner load fails                                           | Error         | P1       | No                                                                                 |
-| LTV-06 | Tuner on/off, and a failed PATCH                                   | Happy path    | P2       | Partial (`LiveTV.test.tsx`: success only)                                          |
-| LTV-07 | Tuner name and count validation                                    | Validation    | P2       | Partial (`LiveTV.test.tsx`: count only)                                            |
-| LTV-08 | Staging banner: in flight, none, staging missing                   | Happy path    | P2       | Partial (`LiveTV.test.tsx`: in-flight only)                                        |
-| LTV-09 | Streaming hosts and On air render and poll every 5 s while visible | Happy path    | P1       | Yes (`LiveTV.test.tsx`)                                                            |
-| LTV-10 | Cluster 403 / 404 hides the sections and stops polling             | Permissions   | P2       | Partial (`LiveTV.test.tsx`: 404 hides; 403 and no-more-polls not checked)          |
-| LTV-11 | Cluster error on first load, then stale view after a good load     | Error         | P2       | No                                                                                 |
-| LTV-12 | `/api/tv/cluster` top-level arrays null or missing                 | Empty state   | P1       | No                                                                                 |
-| LTV-13 | `/api/tv/cluster` nested arrays and objects null or missing        | Empty state   | P1       | No                                                                                 |
-| LTV-14 | Host controls: switch, drain, move now, save                       | Happy path    | P1       | Yes (`StreamingHosts.test.tsx`)                                                    |
-| LTV-15 | Host and cluster settings validation                               | Validation    | P2       | Partial (`StreamingHosts.test.tsx`: valid saves only)                              |
-| LTV-16 | On air: move and stop with confirm                                 | Happy path    | P1       | Yes (`OnAir.test.tsx`)                                                             |
-| LTV-17 | On air: no movable hosts, move / stop failures                     | Error         | P2       | No                                                                                 |
-| LTV-18 | Remote panel states and tables                                     | Happy path    | P2       | Yes (`RemotePanel.test.tsx`)                                                       |
-| LTV-19 | `/api/tv/remote` arrays and objects null or missing                | Empty state   | P1       | No                                                                                 |
-| LTV-20 | Remote panel errors: 403/404 hidden, 500 message, stale            | Error         | P2       | No                                                                                 |
-| LTV-21 | Simulcast: destinations, outputs, start/stop, rights               | Happy path    | P2       | Yes (`Simulcast.test.tsx`)                                                         |
-| LTV-22 | `/api/tv/simulcast` arrays and objects null or missing             | Empty state   | P1       | No                                                                                 |
-| LTV-23 | Simulcast load failure is not silent                               | Error         | P2       | No                                                                                 |
-| LTV-24 | Destination form validation and a failed save                      | Validation    | P2       | Partial (`Simulcast.test.tsx`: valid add only)                                     |
-| LTV-25 | Delete destination: confirm, in use, 409                           | Happy path    | P2       | No                                                                                 |
-| LTV-26 | Channel editor: schedule rules, max outputs, unknown channel       | Validation    | P2       | Partial (`Simulcast.test.tsx`: rights flow only)                                   |
-| LTV-27 | Plex panel: status, add with confirm, refresh, automatic settings  | Happy path    | P2       | Yes (`LiveTV.test.tsx`)                                                            |
-| LTV-28 | `/api/tv/plex` and `/api/rules` null or missing fields             | Empty state   | P1       | No                                                                                 |
-| LTV-29 | Plex errors, busy-job polling and minutes validation               | Error         | P2       | Partial (`LiveTV.test.tsx`: refresh refusal; minutes valid save)                   |
-| LTV-30 | Render crash shows the route error fallback; Back works            | Error         | P1       | No                                                                                 |
-| LTV-31 | Links: Changes, in-flight change, extensions, docs                 | Navigation    | P2       | Partial (`LiveTV.test.tsx`: in-flight link href)                                   |
-| LTV-32 | Leaving the page stops every poll                                  | Navigation    | P2       | No                                                                                 |
-| LTV-33 | Phone width: wide tables scroll inside their box                   | Responsive    | P3       | No                                                                                 |
-| LTV-34 | Arabic: whole page RTL, URLs stay LTR                              | RTL           | P2       | Partial (`StreamingHosts`/`OnAir`/`RemotePanel`/`Simulcast` tests: sections alone) |
-| LTV-35 | Light and dark theme                                               | Theme         | P3       | No                                                                                 |
-| LTV-36 | Keyboard and screen reader basics                                  | Accessibility | P2       | No                                                                                 |
+| ID     | Title                                                              | Category      | Priority | Covered by existing test?                                          |
+| ------ | ------------------------------------------------------------------ | ------------- | -------- | ------------------------------------------------------------------ |
+| LTV-01 | Admin sees tuner, addresses and Plex steps                         | Happy path    | P1       | Yes (`LiveTV.test.tsx`)                                            |
+| LTV-02 | Non-admin sees "Admins only" and no requests are made              | Permissions   | P1       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-03 | Signed-out user is sent to `/login`                                | Permissions   | P1       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-04 | Loading text until info and tuner arrive                           | Loading       | P3       | No                                                                 |
+| LTV-05 | Info or tuner load fails                                           | Error         | P1       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-06 | Tuner on/off, and a failed PATCH                                   | Happy path    | P2       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-07 | Tuner name and count validation                                    | Validation    | P2       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-08 | Staging banner: in flight, none, staging missing                   | Happy path    | P2       | Yes (`LiveTV.cases.test.tsx`; missing number/state: it.fails: bug) |
+| LTV-09 | Streaming hosts and On air render and poll every 5 s while visible | Happy path    | P1       | Yes (`LiveTV.test.tsx`)                                            |
+| LTV-10 | Cluster 403 / 404 hides the sections and stops polling             | Permissions   | P2       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-11 | Cluster error on first load, then stale view after a good load     | Error         | P2       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-12 | `/api/tv/cluster` top-level arrays null or missing                 | Empty state   | P1       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-13 | `/api/tv/cluster` nested arrays and objects null or missing        | Empty state   | P1       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-14 | Host controls: switch, drain, move now, save                       | Happy path    | P1       | Yes (`StreamingHosts.test.tsx`)                                    |
+| LTV-15 | Host and cluster settings validation                               | Validation    | P2       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-16 | On air: move and stop with confirm                                 | Happy path    | P1       | Yes (`OnAir.test.tsx`)                                             |
+| LTV-17 | On air: no movable hosts, move / stop failures                     | Error         | P2       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-18 | Remote panel states and tables                                     | Happy path    | P2       | Yes (`RemotePanel.test.tsx`)                                       |
+| LTV-19 | `/api/tv/remote` arrays and objects null or missing                | Empty state   | P1       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-20 | Remote panel errors: 403/404 hidden, 500 message, stale            | Error         | P2       | Yes (`LiveTV.cases.test.tsx`; stale-hint wording: it.fails: bug)   |
+| LTV-21 | Simulcast: destinations, outputs, start/stop, rights               | Happy path    | P2       | Yes (`Simulcast.test.tsx`)                                         |
+| LTV-22 | `/api/tv/simulcast` arrays and objects null or missing             | Empty state   | P1       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-23 | Simulcast load failure is not silent                               | Error         | P2       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-24 | Destination form validation and a failed save                      | Validation    | P2       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-25 | Delete destination: confirm, in use, 409                           | Happy path    | P2       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-26 | Channel editor: schedule rules, max outputs, unknown channel       | Validation    | P2       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-27 | Plex panel: status, add with confirm, refresh, automatic settings  | Happy path    | P2       | Yes (`LiveTV.test.tsx`)                                            |
+| LTV-28 | `/api/tv/plex` and `/api/rules` null or missing fields             | Empty state   | P1       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-29 | Plex errors, busy-job polling and minutes validation               | Error         | P2       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-30 | Render crash shows the route error fallback; Back works            | Error         | P1       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-31 | Links: Changes, in-flight change, extensions, docs                 | Navigation    | P2       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-32 | Leaving the page stops every poll                                  | Navigation    | P2       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-33 | Phone width: wide tables scroll inside their box                   | Responsive    | P3       | No                                                                 |
+| LTV-34 | Arabic: whole page RTL, URLs stay LTR                              | RTL           | P2       | Yes (`LiveTV.cases.test.tsx`)                                      |
+| LTV-35 | Light and dark theme                                               | Theme         | P3       | No                                                                 |
+| LTV-36 | Keyboard and screen reader basics                                  | Accessibility | P2       | Yes (`LiveTV.cases.test.tsx`)                                      |
 
 ## Cases
 
@@ -71,7 +71,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`).
 - **Preconditions / data:** `useAuth` → `{user:{username:"u", is_admin:false}}`; also `is_admin` missing.
 - **Steps:**
   1. Open `/admin/live-tv`; wait 6 s (fake timers).
@@ -81,7 +81,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`).
 - **Preconditions / data:** full `App`; `useAuth` → `{user:null, loading:false}`.
 - **Steps:**
   1. Navigate to `/admin/live-tv`.
@@ -101,7 +101,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`).
 - **Preconditions / data:** run with `GET /api/tv/info` rejecting `ApiError` 500 "Internal Server Error"; `GET /api/tv/hdhr` rejecting 404; network `TypeError("Failed to fetch")`; 200 with malformed JSON; 401; 403.
 - **Steps:**
   1. Open `/admin/live-tv`.
@@ -111,7 +111,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `LiveTV.test.tsx` "turns the tuner on"
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`). Earlier: Partial — `LiveTV.test.tsx` "turns the tuner on".
 - **Preconditions / data:** `PATCH /api/tv/hdhr` → `{...device, enabled:true}`; second run rejects `ApiError` 500 "boom".
 - **Steps:**
   1. Click the toggle.
@@ -121,7 +121,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** Partial — `LiveTV.test.tsx` "saves the name and tuner count, and validates the count"
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`). Earlier: Partial — `LiveTV.test.tsx` "saves the name and tuner count, and validates the count".
 - **Preconditions / data:** `device` as shared; second run `max_tuners: 0` and `max_tuners` missing.
 - **Steps:**
   1. Clear "Tuner name".
@@ -134,7 +134,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `LiveTV.test.tsx` "shows the change in flight and the way to the Changes page (Epic 33)"
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`; missing number/state: it.fails: bug). Earlier: Partial — `LiveTV.test.tsx` "shows the change in flight and the way to the Changes page (Epic 33)".
 - **Preconditions / data:** `info.staging` = (a) `{enabled:true, change_in_flight:"ch-1", change_in_flight_number:7, change_in_flight_state:"verifying", live_release:null, live_gen:3}`; (b) `change_in_flight:null`; (c) `staging` missing; (d) `change_in_flight_state` missing, `change_in_flight_number` missing.
 - **Steps:**
   1. Open `/admin/live-tv`.
@@ -154,7 +154,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P2
 - **Category:** Permissions
-- **Covered by existing test?** Partial — `LiveTV.test.tsx` "leaves the cluster sections out when the server has none" (404 only)
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`). Earlier: Partial — `LiveTV.test.tsx` "leaves the cluster sections out when the server has none" (404 only).
 - **Preconditions / data:** `GET /api/tv/cluster` rejects `ApiError` 403; second run 404. Fake timers.
 - **Steps:**
   1. Open the page; advance 20 s; toggle visibility.
@@ -164,7 +164,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`).
 - **Preconditions / data:** fake timers. (a) first `GET /api/tv/cluster` rejects `ApiError` 500 "boom", second → `clusterView()`. (b) first → `clusterView()`, second rejects network `TypeError("Failed to fetch")`.
 - **Steps:**
   1. Open the page; advance 5 s.
@@ -174,7 +174,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No — this is the reported blank-page bug
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/tv/cluster` → `clusterView()` with, one run each:
   - `"hosts": null`, and `hosts` key deleted (read by `StreamingHosts.tsx:57,85,89` and `MoveDialog` via `movableHosts(view.hosts)`)
   - `"on_air": null`, and `on_air` deleted (`OnAir.tsx:39` spreads it)
@@ -191,7 +191,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`).
 - **Preconditions / data:** `clusterView()` with one host / on-air row changed per run:
   - `host.encoders: null` and missing (`StreamingHosts.tsx:269` `.length`)
   - `host.channels: null` and missing, on a draining host (`StreamingHosts.tsx:388`, read when "Move now" confirm opens)
@@ -219,7 +219,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** Partial — `StreamingHosts.test.tsx` saves valid values; error messages not checked
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`). Earlier: Partial — `StreamingHosts.test.tsx` saves valid values; error messages not checked.
 - **Preconditions / data:** `clusterView()`.
 - **Steps:**
   1. Capacity: 65, -1, 1.5, then empty.
@@ -243,7 +243,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`).
 - **Preconditions / data:** (a) all hosts `state:"down"` or draining; (b) move rejects `ApiError` 409 `{error:"no_room"}` text "no room"; (c) stop rejects 500 "boom".
 - **Steps:**
   1. Open Move dialog; confirm. 2. Stop and confirm.
@@ -263,7 +263,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`).
 - **Preconditions / data:** `GET /api/tv/remote` → `{integration:{configured:true, enabled:true, ...}, remote:{ready:true, ...}}` with one change per run:
   - `remote.inputs: null` and missing (`RemotePanel.tsx:169` reads `st.inputs.length` unguarded)
   - `remote.pushes: null` / missing; `remote.session_list: null` / missing; `remote.events: null` / missing (guarded with `?? []`)
@@ -280,7 +280,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`; stale-hint wording: it.fails: bug).
 - **Preconditions / data:** fake timers. (a) rejects 403, then 404; (b) rejects 500 "boom"; (c) good, then `TypeError("Failed to fetch")`.
 - **Steps:**
   1. Open the page; advance 5 s.
@@ -300,7 +300,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`).
 - **Preconditions / data:** the simulcast view with one change per run:
   - `destinations: null` / missing (`Simulcast.tsx:165,172,375,389`, editor `:548`)
   - `attachments: null` / missing (`:176,192`, editor `:546`)
@@ -318,7 +318,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`).
 - **Preconditions / data:** `GET /api/tv/simulcast` rejects 500 "boom"; then 404.
 - **Steps:**
   1. Open the page.
@@ -328,7 +328,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** Partial — `Simulcast.test.tsx` "adds a destination with the platform's URL prefilled"
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`). Earlier: Partial — `Simulcast.test.tsx` "adds a destination with the platform's URL prefilled".
 - **Preconditions / data:** view with no destinations; `POST /api/tv/simulcast/destinations` rejects `ApiError` 400 `{code:"invalid_ingest_url", detail:"host missing"}` on one run.
 - **Steps:**
   1. Click "Add destination"; leave name empty; set URL `http://x`, then `rtmp://`, then `rtmps://live.example/app`; leave key empty.
@@ -340,7 +340,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`).
 - **Preconditions / data:** two destinations, one `in_use:true`; `DELETE /api/tv/simulcast/destinations/{id}` resolves, and on another run rejects 409 `{code:"destination_in_use"}`.
 - **Steps:**
   1. Click Delete on the free one; answer Cancel in `window.confirm`; then OK.
@@ -351,7 +351,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** Partial — `Simulcast.test.tsx` rights cases only
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`). Earlier: Partial — `Simulcast.test.tsx` rights cases only.
 - **Preconditions / data:** 3 destinations, `settings.max_outputs_per_channel: 2`; channels list with `c1`; an attachment for channel `c9` not in the list.
 - **Steps:**
   1. Pick channel 1 → "Edit"; attach one destination with mode "On a schedule"; remove all rules.
@@ -374,7 +374,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`).
 - **Preconditions / data:** `GET /api/tv/plex` → `plexEmpty` with one change per run:
   - `status.dvrs: null` / missing (guarded `?? []`)
   - `status.dvrs[0].devices: null` / missing (`LiveTV.tsx:445` `.map` unguarded)
@@ -392,7 +392,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** Partial — `LiveTV.test.tsx` "refreshes Plex now and shows a refusal", "saves the automatic Plex settings as rules"
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`). Earlier: Partial — `LiveTV.test.tsx` "refreshes Plex now and shows a refusal", "saves the automatic Plex settings as rules".
 - **Preconditions / data:** fake timers. (a) `GET /api/tv/plex` rejects 500 "boom". (b) `job:{state:"running", ...}` on every read. (c) `job:{state:"paused", paused_reason:"plex down"}`. (d) register rejects 409 "already registered". (e) `PATCH /api/rules/plexlive` rejects 400.
 - **Steps:**
   1. Open the page; advance 3 s × 45.
@@ -403,7 +403,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`).
 - **Preconditions / data:** full `App`, history `["/admin/users", "/admin/live-tv"]`; `GET /api/tv/cluster` → `{...clusterView(), hosts: null}` (crashes until the fix lands), or mock `StreamingHosts` to throw.
 - **Steps:**
   1. Render at `/admin/live-tv`.
@@ -414,7 +414,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** Partial — `LiveTV.test.tsx` checks the in-flight link
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`). Earlier: Partial — `LiveTV.test.tsx` checks the in-flight link.
 - **Preconditions / data:** staging in flight; Plex not configured; remote not set up.
 - **Steps:**
   1. Click "Open Changes"; Back. 2. Click the in-flight link; Back. 3. Click "Open Extensions" and the remote "set up" link.
@@ -424,7 +424,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`).
 - **Preconditions / data:** fake timers; cluster, remote, plex (busy job) mocked.
 - **Steps:**
   1. Open the page; navigate to `/admin/users`; advance 30 s.
@@ -444,7 +444,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** Partial — section tests "renders in Arabic" / "reads in Arabic" render each section alone
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`). Earlier: Partial — section tests "renders in Arabic" / "reads in Arabic" render each section alone.
 - **Preconditions / data:** `localStorage["mkt:locale"]="ar"`; full happy data.
 - **Steps:**
   1. Open `/admin/live-tv`.
@@ -464,7 +464,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LiveTV.cases.test.tsx`).
 - **Preconditions / data:** happy data.
 - **Steps:**
   1. Tab through the page; open the Move, Stop, Move now, Add to Plex, destination and channel editor dialogs; press Escape in each.

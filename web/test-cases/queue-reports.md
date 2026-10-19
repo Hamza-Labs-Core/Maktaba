@@ -18,22 +18,22 @@
 | QRP-02 | Opens a report in a sandboxed frame                        | Happy path    | P1       | Yes (`Reports.test.tsx`)                               |
 | QRP-03 | Deep link `?open=` opens that report                       | Navigation    | P2       | Yes (`Reports.test.tsx`)                               |
 | QRP-04 | Deep link to a missing report says so                      | Navigation    | P2       | Yes (`Reports.test.tsx`)                               |
-| QRP-05 | Path-like names in `?open=` stay inside `/api/reports/`    | Permissions   | P1       | Partial (`Reports.test.tsx`: plain encoding only)      |
-| QRP-06 | Shows Loading while the list is pending                    | Loading       | P2       | No                                                     |
+| QRP-05 | Path-like names in `?open=` stay inside `/api/reports/`    | Permissions   | P1       | Yes (`Reports.cases.test.tsx`)                         |
+| QRP-06 | Shows Loading while the list is pending                    | Loading       | P2       | Yes (`Reports.cases.test.tsx`)                         |
 | QRP-07 | List fails, Try again recovers                             | Error         | P1       | Yes (`Reports.test.tsx`)                               |
-| QRP-08 | 401 / 403 / malformed list response                        | Error         | P2       | No                                                     |
-| QRP-09 | `reports` `null` or missing                                | Empty state   | P1       | No                                                     |
-| QRP-10 | Preview status list fields `null` or missing               | Empty state   | P1       | No                                                     |
-| QRP-11 | Empty folder and filter with no match                      | Empty state   | P2       | Partial (`Reports.test.tsx`: empty folder only)        |
-| QRP-12 | Render crash shows route error fallback; Back works        | Error         | P1       | No                                                     |
-| QRP-13 | Signed-out user is sent to `/login`                        | Permissions   | P1       | No                                                     |
-| QRP-14 | Non-admin sees reports but no preview buttons              | Permissions   | P1       | No                                                     |
+| QRP-08 | 401 / 403 / malformed list response                        | Error         | P2       | Yes (`Reports.cases.test.tsx`)                         |
+| QRP-09 | `reports` `null` or missing                                | Empty state   | P1       | Yes (`Reports.cases.test.tsx`)                         |
+| QRP-10 | Preview status list fields `null` or missing               | Empty state   | P1       | Yes (`Reports.cases.test.tsx`)                         |
+| QRP-11 | Empty folder and filter with no match                      | Empty state   | P2       | Yes (`Reports.cases.test.tsx`)                         |
+| QRP-12 | Render crash shows route error fallback; Back works        | Error         | P1       | Yes (`Reports.cases.test.tsx`)                         |
+| QRP-13 | Signed-out user is sent to `/login`                        | Permissions   | P1       | Yes (`Reports.cases.test.tsx`)                         |
+| QRP-14 | Non-admin sees reports but no preview buttons              | Permissions   | P1       | Yes (`Reports.cases.test.tsx`)                         |
 | QRP-15 | Start a preview, follow progress, reload on finish         | Happy path    | P1       | Yes (`Reports.test.tsx`)                               |
 | QRP-16 | Second start while running answers "already being planned" | Validation    | P2       | Yes (`Reports.test.tsx`)                               |
 | QRP-17 | Preview failed / pipeline offline                          | Error         | P2       | Yes (`Reports.test.tsx`)                               |
-| QRP-18 | Picking a report updates the URL; Back / Forward / links   | Navigation    | P2       | No                                                     |
+| QRP-18 | Picking a report updates the URL; Back / Forward / links   | Navigation    | P2       | Yes (`Reports.cases.test.tsx`)                         |
 | QRP-19 | Report list changes while one is open                      | Happy path    | P3       | No                                                     |
-| QRP-20 | Phone width 375 px                                         | Responsive    | P3       | No                                                     |
+| QRP-20 | Phone width 375 px                                         | Responsive    | P3       | No (e2e-only)                                          |
 | QRP-21 | Arabic: RTL, Arabic report titles                          | RTL           | P3       | Partial (`Reports.test.tsx`: Arabic title button only) |
 | QRP-22 | Light and dark theme                                       | Theme         | P3       | No                                                     |
 | QRP-23 | Keyboard and accessibility basics                          | Accessibility | P3       | Partial (`a11y.test.tsx`: axe only)                    |
@@ -84,7 +84,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** Partial — `Reports.test.tsx` checks plain encoding
+- **Covered by existing test?** Yes (`Reports.cases.test.tsx`)
 - **Preconditions / data:** `/api/reports` includes a report named `../secret.html` (and a second run where it is not listed); also `?open=javascript:alert(1)`.
 - **Steps:**
   1. Open `/queue/reports?open=..%2Fsecret.html`; then `?open=javascript:alert(1)`.
@@ -94,7 +94,7 @@
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Reports.cases.test.tsx`)
 - **Preconditions / data:** `/api/reports` never resolves; preview status idle.
 - **Steps:**
   1. Open `/queue/reports`.
@@ -114,7 +114,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Reports.cases.test.tsx`)
 - **Preconditions / data:** `/api/reports` → (a) 401; (b) 403 `{ "title": "Forbidden" }`; (c) 200 `application/json` body `{"reports": [` (truncated); (d) 200 `text/html` body.
 - **Steps:**
   1. Open the page.
@@ -124,7 +124,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Reports.cases.test.tsx`)
 - **Preconditions / data:** `/api/reports` → (a) `{ "reports": null }`; (b) `{}`; also `?open=channel-plan.html` with each.
 - **Steps:**
   1. Open the page.
@@ -134,7 +134,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Reports.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/reports/channel-plan/preview` → idle status with, one at a time: `log: null`, `log` missing, `ready: null`, `ready` missing, `summary: null`, `summary.added: null`, `summary.changes` missing.
 - **Steps:**
   1. Open the page (admin).
@@ -144,7 +144,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** Partial — `Reports.test.tsx` "shows an empty folder as such", "filters the list"
+- **Covered by existing test?** Yes (`Reports.cases.test.tsx`)
 - **Preconditions / data:** (a) `{ reports: [] }`; (b) the QRP-01 list.
 - **Steps:**
   1. (a) open the page. (b) type "zzz" in "Filter reports".
@@ -154,7 +154,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Reports.cases.test.tsx`)
 - **Preconditions / data:** app routes; start at `/queue`; `/api/reports` → `{}` (QRP-09) or `PlanPreviewPanel` mocked to throw.
 - **Steps:**
   1. Click "Reports" in the overview header.
@@ -165,7 +165,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Reports.cases.test.tsx`)
 - **Preconditions / data:** no user.
 - **Steps:**
   1. Open `/queue/reports?open=channel-plan.html`.
@@ -175,7 +175,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Reports.cases.test.tsx`)
 - **Preconditions / data:** `AuthProvider` user `is_admin: false`; list as QRP-01; status idle with `ready.preview: true`.
 - **Steps:**
   1. Open the page; open a report.
@@ -215,7 +215,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Reports.cases.test.tsx`)
 - **Preconditions / data:** app routes; start at `/queue`, click "Reports".
 - **Steps:**
   1. Pick "Channel plan", then "Channel audit".
@@ -238,7 +238,7 @@
 
 - **Priority:** P3
 - **Category:** Responsive
-- **Covered by existing test?** No
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** e2e 375×812; list as QRP-01; a report open.
 - **Steps:**
   1. Open `/queue/reports?open=channel-plan.html`.
