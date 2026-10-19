@@ -4,6 +4,7 @@ package privacy
 
 import (
 	"context"
+	neturl "net/url"
 	"os"
 	"strconv"
 	"testing"
@@ -23,23 +24,13 @@ func TestPurgeDueRemovesPushLogs(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	pool, err := db.Open(url, 4, 2, time.Minute)
-	if err != nil {
+	// CI points MAKTABA_CLOUD_DB_URL at the database the api's own
+	// integration tests migrate, whose users table is the api's (its
+	// CREATE TABLE IF NOT EXISTS wins). The cloud schema gets a scratch
+	// database of its own, dropped afterwards.
+	pool := scratchCloudDB(ctx, t, url)
+	if err := db.NewMigrator(pool, migrations.FS, ".").Up(ctx); err != nil {
 		t.Fatal(err)
-	}
-	defer func() { _ = pool.Close() }()
-	// integration packages run in parallel against one database; a
-	// migration that loses the race to another package succeeds on retry
-	mig := db.NewMigrator(pool, migrations.FS, ".")
-	for attempt := 1; ; attempt++ {
-		err := mig.Up(ctx)
-		if err == nil {
-			break
-		}
-		if attempt == 5 {
-			t.Fatal(err)
-		}
-		time.Sleep(time.Duration(attempt) * 300 * time.Millisecond)
 	}
 	stamp := strconv.FormatInt(time.Now().UnixNano(), 10)
 	newUser := func(email string) string {
@@ -97,4 +88,33 @@ func TestPurgeDueRemovesPushLogs(t *testing.T) {
 	if n := count(`SELECT count(*) FROM push_dispatch_log WHERE user_id = $1`, kept); n != 2 {
 		t.Fatalf("cancelled deletion lost push logs: %d", n)
 	}
+}
+
+// scratchCloudDB creates an empty database next to the one url names and
+// returns a pool on it; the test's cleanup closes the pool and drops it.
+func scratchCloudDB(ctx context.Context, t *testing.T, url string) *db.Pool {
+	t.Helper()
+	admin, err := db.Open(url, 2, 1, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Close() })
+	name := "cloud_purge_" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	if _, err := admin.DB.ExecContext(ctx, `CREATE DATABASE `+name); err != nil {
+		t.Fatal(err)
+	}
+	u, err := neturl.Parse(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u.Path = "/" + name
+	pool, err := db.Open(u.String(), 4, 2, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = pool.Close()
+		_, _ = admin.DB.ExecContext(context.Background(), `DROP DATABASE IF EXISTS `+name+` WITH (FORCE)`)
+	})
+	return pool
 }
