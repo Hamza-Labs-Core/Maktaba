@@ -204,6 +204,10 @@ database version is ahead of its code.
 
 ## 6. Shared storage
 
+> Story 31.3 ([story-31-03](story-31-03-canonical-share-paths.md)) stores media paths as
+> `smb://<server>/<share>/...` and resolves them from each machine's mounts; the inference
+> below remains the fallback for paths stored before the migration.
+
 **Path map inference** (`cluster/storage.py`, at the node's first start and whenever the
 map is not admin-set): for each library root take up to 5 videos (path, size); for each
 sample try the candidate mount roots joined with ever-shorter suffixes of the sample's

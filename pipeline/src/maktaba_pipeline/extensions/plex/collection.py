@@ -269,7 +269,7 @@ async def resolve_members(
     client = service.client(settings)
     index = await asyncio.to_thread(service.index, settings, client)
     for m in missing:
-        item = index.find(pm.to_local(m.path))
+        item = index.find(pm.rewrite(m.path))
         if item is None:
             continue
         link = Link(

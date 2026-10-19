@@ -552,11 +552,18 @@ async def _start_engine(
         node_id=cfg.node_id if is_node else None,
         explicit_path_map=bool(cfg.path_map.strip()),
         path_map=path_map,
+        explicit=path_map,
         runtime=runtime,
     )
     caps = await asyncio.to_thread(capabilities)
     if is_node:
         await agent.start_node(caps)
+    else:
+        try:
+            # story 31.3: canonical share paths resolve through this machine's mounts
+            await agent.start_home()
+        except Exception:  # noqa: BLE001 - the legacy map keeps working
+            _log.exception("home_storage_start_failed")
     selector.compute()
 
     collector = runtime.nas.collector

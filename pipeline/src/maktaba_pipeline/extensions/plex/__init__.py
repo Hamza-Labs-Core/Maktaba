@@ -4,7 +4,11 @@ season to Plex as a manual collection, and keeps Maktaba's channels in Plex Live
 
 Settings: ``url`` (``MAKTABA_PLEX_URL``), ``token`` (secret, ``MAKTABA_PLEX_TOKEN``)
 and ``path_map`` (``MAKTABA_PATH_MAP``: how *Plex* sees the NAS paths the database
-stores, same syntax as :class:`~maktaba_pipeline.engine.paths.PathMap`).
+stores, same syntax as :class:`~maktaba_pipeline.engine.paths.PathMap`). With the
+canonical paths of story 31.3 the map is per share, e.g.
+``smb://nas/Originals/=/volume1/Originals/`` (Plex on the Synology sees
+``/volume1/<share>``); legacy prefixes (``/Volumes/Originals/=...``) keep working for
+paths stored before the migration.
 
 Core never imports this package; it adds its stage and trigger edge through
 :meth:`PlexExtension.register`.
@@ -58,7 +62,7 @@ MANIFEST = Manifest(
         SettingField("token", "Plex token", secret=True, required=True, env="MAKTABA_PLEX_TOKEN"),
         SettingField(
             "path_map",
-            "Path map (Plex's view of the NAS paths)",
+            "Path map (Plex's view of the NAS paths: smb://nas/Share/=/volume1/Share/)",
             env="MAKTABA_PATH_MAP",
         ),
     ),

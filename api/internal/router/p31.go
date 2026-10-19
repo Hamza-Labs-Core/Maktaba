@@ -42,9 +42,11 @@ func MountP31(r chi.Router, d P31Deps) *clusterh.Handler {
 	case d.Driver == "sqlite":
 		h.Store = cluster.NewMemoryStore()
 		h.Roles = cluster.Unsupported{Reason: cluster.ReasonSQLite}
+		h.Storage = &cluster.MemoryStorage{}
 	case d.DB != nil:
 		h.Store = &cluster.PGStore{DB: d.DB}
 		h.Roles = &cluster.PGRoles{DB: d.DB}
+		h.Storage = &cluster.PGStorage{DB: d.DB}
 	default:
 		return nil
 	}

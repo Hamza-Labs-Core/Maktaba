@@ -70,6 +70,7 @@ from ..engine.enqueue import enqueue_job
 from ..engine.graph import SIG_VERSION, Subject
 from ..engine.hashing import canonical_hash
 from ..engine.ids import season_uuid, series_uuid
+from ..engine.paths import set_active_path_map, to_db, to_local
 from ..engine.sql import dumps, is_pg, loads, now, parse_ts, to_date, to_ts, uid
 from ..engine.stages import books as books_stage
 from ..engine.stages import check_clips as check_clips_stage
@@ -253,8 +254,10 @@ def _norm(p: str, maps: list[tuple[str, str]]) -> str:
 
 def _key(path: str) -> str:
     """How two paths are compared: ``/`` separators, composed Unicode (the share may hold a
-    name decomposed, and content_hash then stores that form), case folded."""
-    return unicodedata.normalize("NFC", path.replace("\\", "/")).lower()
+    name decomposed, and content_hash then stores that form), case folded; and (story
+    31.3) in the database's form, so a canonical ``smb://...`` row and the same file's
+    local path compare equal."""
+    return unicodedata.normalize("NFC", to_db(to_local(path)).replace("\\", "/")).lower()
 
 
 def parse_path_maps(values: list[str]) -> list[tuple[str, str]]:
@@ -311,12 +314,14 @@ async def _many(db: Any, sql: str, rows: list[tuple[Any, ...]]) -> None:
 
 
 def _map(p: str, maps: list[tuple[str, str]]) -> str:
-    """``p`` as Maktaba stores it: the cache prefix rewritten, the case kept."""
+    """``p`` as Maktaba stores it: the cache prefix rewritten, the case kept, and (story
+    31.3) canonical (``smb://nas/share/...``) when it lands on a share of this machine."""
     s = p.replace("\\", "/")
     for src, dst in maps:
         if s.lower().startswith(src.lower()):
-            return dst + s[len(src) :]
-    return s
+            s = dst + s[len(src) :]
+            break
+    return to_db(s)
 
 
 def _library_of(f: Any) -> str:
@@ -1439,6 +1444,15 @@ def _parser() -> argparse.ArgumentParser:
     return p
 
 
+async def _use_shares(db: Any) -> None:
+    """Story 31.3: paths are written canonical through this machine's shares."""
+    from ..sharepath.servers import build_for_machine, load_servers
+
+    servers = await load_servers(db)
+    if servers:
+        set_active_path_map(await asyncio.to_thread(build_for_machine, servers))
+
+
 async def _amain(args: argparse.Namespace) -> int:
     from ..runtime import Database
 
@@ -1447,6 +1461,7 @@ async def _amain(args: argparse.Namespace) -> int:
         return 2
     db = await Database.connect(args.database_url)
     try:
+        await _use_shares(db)
         report = await run_import(
             db, args.cache, args.library, path_maps=parse_path_maps(args.path_map),
             apply=args.apply, settings=args.settings, thumbs=args.thumbs, create=args.create,

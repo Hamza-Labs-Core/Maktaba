@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
 )
 
 // SyncLibraryRoots upserts one “library_roots“ row per entry in
@@ -98,6 +99,11 @@ func canonicalPath(p string) string {
 	p = strings.TrimSpace(p)
 	if p == "" {
 		return ""
+	}
+	if sharepath.IsCanonical(p) {
+		// story 31.3: smb://server/share/... is its own normal form;
+		// filepath.Clean would fold "smb://" into "smb:/"
+		return strings.TrimRight(strings.ReplaceAll(p, `\`, "/"), "/")
 	}
 	cleaned := filepath.Clean(p)
 	if len(cleaned) > 1 {

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import re
 import socket
 import urllib.parse
 from collections.abc import Iterable, Mapping, Sequence
@@ -74,7 +75,11 @@ def split_db_path(path: str) -> tuple[str, list[str]]:
     (``Y:/``), a UNC share (``//nas/share/``) or empty (relative). The hub's rule."""
     p = path.strip().replace("\\", "/")
     rest: str
-    if p.startswith("//"):
+    m = re.match(r"^((?:smb|nfs)://[^/]+/[^/]+/?)(.*)$", p, re.IGNORECASE)
+    if m:
+        # story 31.3: smb://server/share/... keeps its server and share as the root
+        root, rest = m.group(1).rstrip("/") + "/", m.group(2)
+    elif p.startswith("//"):
         segs = p[2:].split("/", 2)
         if len(segs) == 1:
             root, rest = f"//{segs[0]}/", ""

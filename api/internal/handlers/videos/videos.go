@@ -40,6 +40,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
 )
 
 // Video is the over-the-wire shape for both list and detail responses.
@@ -263,7 +264,8 @@ func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 	// returns ENOENT, mark not playable.
 	playable := true
 	if v.Path != "" {
-		if _, err := os.Stat(v.Path); err != nil {
+		// story 31.3: a canonical smb://... path is the home's mount of the share
+		if _, err := os.Stat(sharepath.ToLocal(v.Path)); err != nil {
 			playable = false
 		}
 	}
