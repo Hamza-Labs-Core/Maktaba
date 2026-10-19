@@ -186,6 +186,7 @@ the first reason it is not:
 | order | reason (shown on the page) | source |
 |---|---|---|
 | 1 | not in `--stages` / in `--exclude-stages` | CLI, as today |
+| – | paused: the home's schema does not fit this code (§5.1); every stage | `cluster/schema.py` |
 | 2 | newer version in the database | `stages_ahead`, as today |
 | 3 | cannot run here: *why* | `StageImpl.unavailable()` (platform, extras) |
 | 4 | runs on the home only | `StageDef.placement == "home"` and role is `node` |
@@ -201,6 +202,60 @@ the claim loop reads the current set each poll, so a change applies without a re
 A node never runs `sync_graph` or the extensions' `ensure_rows` (the home's workers own
 the registry; a node with older code would roll it back); it still refuses stages whose
 database version is ahead of its code.
+
+### 5.1 Schema guard (a node's code and the home's database)
+
+The home migrates its own database when its API starts; a node never migrates. A node
+updated before its home runs code that may read or write tables and columns the home does
+not have yet (seen live: a Windows node on main, migrations up to 0124, against a home at
+goose version 0119 — its channel top-up loop failed every minute). So a node compares,
+at start and with every storage check (§6, 5 min; every 30 s refresh while paused):
+
+| | |
+|---|---|
+| this code's schema | the highest migration slot it ships: `SCHEMA_REV` in `pipeline/src/maktaba_pipeline/cluster/schema.py`, `SchemaRev` in `streaming/internal/cluster/schema.go`; a test in each fails when a migration is added without raising them |
+| the home's schema | `max(version_id) FROM goose_db_version WHERE is_applied`; the machines' role reads it (slot 0103 granted every table of the schema, goose's own included), so no function or migration is needed |
+| the home's floor | `maktaba_min_node_schema()` when it exists (below) |
+
+| case | what the node does |
+|---|---|
+| home behind (applied < this code's schema) | **pauses** |
+| home ahead, no breaking migration since this code's schema | runs; stages whose definition moved on stay off (`version_ahead`, reason 2 above) |
+| home ahead with a breaking migration (`maktaba_min_node_schema()` > this code's schema) | **pauses** |
+| the home's version cannot be read | runs as before; logged once (`cluster_home_schema_unknown`) |
+
+**Compatible range.** Migrations are additive by rule (README conventions), so older code
+keeps working on a newer home and only a migration that breaks it stops it. Such a
+migration says so: it `CREATE OR REPLACE`s `maktaba_min_node_schema() RETURNS integer`
+to return the oldest node schema it still works with (normally its own slot), and its
+MANIFEST row contains "Breaking for older nodes" (a test keeps the two in step). The
+function is the only place the older node can learn it: the node's own MANIFEST is older
+than the migration. No migration defines it yet, so today a newer home never pauses a node.
+
+**Paused** means: every stage off with the reason
+`paused: home database at 0119, this machine needs 0124 — update the home` (or
+`paused: home database at 0130 needs this machine at 0127 or newer (it has 0124) — update
+this machine`), so the claim loop claims nothing; the channel top-up loop, the reconciler,
+the pruner and the reaper do not run (stopped if the pause starts while they run); the
+start's storage probe, path-map inference and `cluster_node_report` wait. What still runs:
+the worker registry heartbeat and `cluster_node_beat` (revoke and drain keep working), the
+stage-selection refresh, and the cluster agent ([design-agent.md](design-agent.md)), which carry the reason to
+the Machines page. The pause and the resume are logged once each
+(`cluster_node_paused_schema`, `cluster_node_resumed_schema`); when the home catches up
+the node finishes its start and claims again without a restart.
+
+The reason is English text after the `paused` code on purpose: the home that shows it is
+the older one, whose page does not know the code and prints the text as is. A current
+Machines page shows the machine as **Paused** with the reason, in English and Arabic.
+
+**Streaming nodes** (Epic 32.1, `serve --role streaming` on a joined machine) apply the
+same rule at start: paused, the node answers 503 to every request, does not beat and
+takes no channel; it checks every 30 s and builds its channel routes once the schema
+fits. A streaming node already running re-checks with its 5-minute storage check and
+reports `unfit: version` while the schema does not fit, so the placement service gives it
+no channel.
+
+The home's own processes are never judged (role `home`; the home's API migrates first).
 
 ## 6. Shared storage
 

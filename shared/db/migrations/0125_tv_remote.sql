@@ -200,6 +200,12 @@ BEGIN
         -- callable, but the guard refuses every login but the home's
         GRANT EXECUTE ON FUNCTION tv_push_credentials(uuid), tv_push_report(uuid, text, text)
             TO maktaba_worker;
+        -- slot 0103's blanket grant gave the group role write rights on goose's own
+        -- table: a node must never change the home's migration history. It keeps
+        -- SELECT, which the node schema guard (#84) reads.
+        IF to_regclass('public.goose_db_version') IS NOT NULL THEN
+            REVOKE INSERT, UPDATE, DELETE ON goose_db_version FROM maktaba_worker;
+        END IF;
     END IF;
 END
 $$;

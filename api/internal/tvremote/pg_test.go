@@ -126,6 +126,13 @@ func TestPushCredentialsOnlyForHome(t *testing.T) {
 			t.Errorf("%s as a machine: %v, want permission denied", q, err)
 		}
 	}
+	// goose's history: readable (the node schema guard), never writable
+	if err := node.QueryRow(`SELECT max(version_id) FROM goose_db_version`).Scan(&x); err != nil {
+		t.Errorf("a machine reads goose_db_version: %v", err)
+	}
+	if err := node.QueryRow(`DELETE FROM goose_db_version WHERE version_id = -1 RETURNING id`).Scan(&x); !pgDenied(err) {
+		t.Errorf("a machine may write goose_db_version: %v", err)
+	}
 	// what it may read: the pool's and pushes' public columns
 	var n int
 	if err := node.QueryRow(`SELECT count(*) FROM tv_remote_pushes`).Scan(&n); err != nil || n != 1 {

@@ -25,6 +25,7 @@ recovery) sweep.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from typing import Any
 
 from ..db.jobs_reaper import REAPER_ADVISORY_LOCK_KEY, reap_once
@@ -65,7 +66,10 @@ class Reaper:
         interval_sec: float = DEFAULT_REAPER_INTERVAL_SEC,
         stale_claim_sec: float = DEFAULT_STALE_CLAIM_SEC,
         heartbeat_sec: float = 5.0,
+        paused: Callable[[], bool] | None = None,
     ) -> None:
+        """``paused``: while it answers True the reaper writes nothing (a joined machine
+        whose code does not fit the home's schema, cluster/schema.py)."""
         if interval_sec <= 0:
             raise ValueError("interval_sec must be > 0")
         if stale_claim_sec <= 0:
@@ -86,6 +90,7 @@ class Reaper:
         self._stop = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
         self._local_lock: asyncio.Lock | None = None
+        self._paused = paused
 
     async def _try_lock(self) -> bool:
         """Postgres ``pg_try_advisory_lock`` / SQLite local mutex.
@@ -123,6 +128,8 @@ class Reaper:
         Public so tests can drive the loop deterministically without
         spinning the periodic timer.
         """
+        if self._paused is not None and self._paused():
+            return 0
         if not await self._try_lock():
             _log.debug("reaper_lock_busy")
             return 0

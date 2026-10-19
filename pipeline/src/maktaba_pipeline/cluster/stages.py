@@ -15,6 +15,10 @@ reason is stored as a code in ``workers.stages_off`` (the Machines page translat
 6. ``switched_off``: ``cluster_node_stages.enabled = false`` for this machine
 7. ``draining``: ``cluster_nodes.drain``
 
+A paused machine (its code needs migrations the home's database does not have, see
+:mod:`.schema`) keeps every stage off but the ``not_selected`` ones, with the reason
+``paused: <why>`` in place of 2-7.
+
 :func:`select_stages` is the pure rule; :class:`StageSelector` holds a worker's inputs,
 re-reads the moving ones (versions, switches, drain, storage) at :meth:`refresh`, and
 exposes the current set to the claim loop, which reads it on every poll.
@@ -85,10 +89,12 @@ def select_stages(
     drain: bool = False,
     detail: dict[str, str] | None = None,
     lifted: Collection[str] = (),
+    paused: str | None = None,
 ) -> tuple[list[str], dict[str, str]]:
     """``(served stages in graph order, {stage: reason code} for the others)``.
 
-    ``detail``, when given, receives the text behind each ``unavailable``.
+    ``detail``, when given, receives the text behind each ``unavailable``; ``paused``
+    (``paused: <why>``) keeps every requested stage off with that reason.
     """
     served: list[str] = []
     off: dict[str, str] = {}
@@ -99,6 +105,8 @@ def select_stages(
             reason = REASON_NOT_REQUESTED
         elif st.name in excluded:
             reason = REASON_EXCLUDED
+        elif paused:
+            reason = paused
         elif st.name in ahead:
             reason = REASON_AHEAD
         elif (why := _cannot_run(st, handlers)) is not None:
@@ -190,6 +198,8 @@ class StageSelector:
     held: bool = False
     #: home-only stages a node may run all the same (see :func:`lifted_placements`)
     lifted: frozenset[str] = frozenset()
+    #: ``paused: <why>`` while the home's schema does not fit this code (:mod:`.schema`)
+    paused: str | None = None
     served: tuple[str, ...] = ()
     stages_off: dict[str, str] = field(default_factory=dict)
     #: the text behind each ``unavailable`` code
@@ -210,6 +220,7 @@ class StageSelector:
             drain=self.drain or self.held,
             detail=detail,
             lifted=self.lifted,
+            paused=self.paused,
         )
         self.detail = detail
         changed = tuple(served) != self.served or off != self.stages_off
