@@ -291,6 +291,11 @@ func (c *Controller) requestStage(ctx context.Context, ch *Change, first bool) e
 }
 
 func (c *Controller) ready(ctx context.Context, cfg Config, ch *Change) error {
+	// a swap that failed brought the change back here: it waits for an admin (approve
+	// again, Swap now), else the kept approval or the rule would retry it every tick
+	if held, err := c.Store.HeldAfterSwapFailure(ctx, c.DB, ch.ID); err != nil || held {
+		return err
+	}
 	if len(ch.ApprovedBy) > 0 {
 		return c.Store.Move(ctx, c.DB, ch, StateApproved, ActionAutoApprove, nil,
 			map[string]any{"approved_by": ch.ApprovedBy}, nil)

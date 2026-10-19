@@ -213,3 +213,82 @@ async def test_a_new_channel_takes_a_removed_ones_number(db: Database) -> None:
     assert await db.fetchval("SELECT lifecycle FROM channels WHERE id = $1", new_id) == "live"
     assert await blocks(db, new_id, rel.sched_gen)
     assert a in rel.defs
+
+
+@pytest.mark.asyncio
+async def test_edit_saved_while_staging_is_not_lost(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review fix: an edit saved into the draft while tv_stage builds it is staged too
+    (the stage used to overwrite diff.pending with what it had read at the start)."""
+    import maktaba_pipeline.tvrelease.stage as stage_mod
+
+    a, b, other = await _two_channels(db)
+    da = await channel_def(db, a)
+    db_ = await channel_def(db, b)
+    cid = await create_change(
+        db, state="draft", title="t", source={"kind": "editor"},
+        pending={"channels": {a: {**da, "name": "First edit"}}},
+    )  # fmt: skip
+    real = stage_mod.build_generation
+    calls = {"n": 0}
+
+    async def build_and_edit(*args: Any, **kw: Any) -> Any:
+        out = await real(*args, **kw)
+        calls["n"] += 1
+        if calls["n"] == 1:
+            # an admin saves another edit into the same draft meanwhile (Drafts.Save)
+            ch = await get_change(db, cid)
+            assert ch is not None and ch.row["release_id"] is not None  # GC keeps it
+            pending = ch.pending
+            pending["channels"][b] = {**db_, "name": "Second edit"}
+            await update_change(db, cid, diff={**ch.row["diff"], "pending": pending})
+        return out
+
+    monkeypatch.setattr(stage_mod, "build_generation", build_and_edit)
+    assert await stage_change(db, cid, clock=NOW) == "staged"
+    assert calls["n"] == 2  # built again with the edit
+    ch = await get_change(db, cid)
+    assert ch is not None
+    assert set(ch.pending["channels"]) == {a, b}
+    from maktaba_pipeline.tvrelease.build import load_release
+
+    rel = await load_release(db, str(ch.row["release_id"]))
+    assert rel is not None and rel.defs[b]["name"] == "Second edit"
+
+
+@pytest.mark.asyncio
+async def test_second_change_cannot_go_in_flight_while_one_builds(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review fix: the in-flight check is repeated at the transition, so a change staged
+    by another job while this one was built leaves this one a draft."""
+    import maktaba_pipeline.tvrelease.stage as stage_mod
+    from maktaba_pipeline.tvrelease.stage import ChangeInFlight
+
+    a, b, _ = await _two_channels(db)
+    da = await channel_def(db, a)
+    db_ = await channel_def(db, b)
+    first = await create_change(
+        db, state="draft", title="t", source={"kind": "editor"},
+        pending={"channels": {a: {**da, "name": "A"}}},
+    )  # fmt: skip
+    second = await create_change(
+        db, state="draft", title="u", source={"kind": "manual"},
+        pending={"channels": {b: {**db_, "name": "B"}}},
+    )  # fmt: skip
+    real = stage_mod.build_generation
+    done = {"x": False}
+
+    async def build_and_race(*args: Any, **kw: Any) -> Any:
+        out = await real(*args, **kw)
+        if not done["x"]:
+            done["x"] = True
+            assert await stage_change(db, second, clock=NOW) == "staged"
+        return out
+
+    monkeypatch.setattr(stage_mod, "build_generation", build_and_race)
+    with pytest.raises(ChangeInFlight):
+        await stage_change(db, first, clock=NOW)
+    ch = await get_change(db, first)
+    assert ch is not None and ch.state == "draft"

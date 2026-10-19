@@ -39,6 +39,8 @@ _SQLITE_UUID = (
     " || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2)"
     " || '-' || hex(randomblob(6)))"
 )
+#: the advisory lock the daily clean-up holds (shared by every generation build)
+GC_LOCK = "tv_gc"
 _PROGRAM_COLS = (
     "channel_id, seq, kind, video_id, filler_item_id, start_at, end_at, source_offset,"
     " source_duration, title_snapshot, source_url"
@@ -144,9 +146,19 @@ async def _build_channel(
 ) -> datetime | None:
     """One channel of generation N+1, in its own transaction (as a top-up writes one
     channel: short locks). Returns the divergence boundary of a regenerated channel."""
-    from ..channels.pass_ import run_schedule
+    from ..channels.pass_ import TOPUP_ADVISORY_LOCK_KEY, lock_key, run_schedule
 
     async with db.transaction():
+        if is_pg(db):
+            # the top-up extends this generation too (open_generations): its (channel,
+            # generation) lock keeps a sweep from appending while the copy is rewritten;
+            # the clean-up's lock keeps a sweep from deleting it half built
+            await db.execute(
+                "SELECT pg_advisory_xact_lock($1, $2)",
+                TOPUP_ADVISORY_LOCK_KEY,
+                lock_key(UUID(channel_id), rel.sched_gen),
+            )
+            await db.execute("SELECT pg_advisory_xact_lock_shared(hashtext($1))", GC_LOCK)
         copied = await _copy_channel(db, channel_id, base_gen, rel.sched_gen)
         if channel_id not in rel.sched_changed:
             return None
