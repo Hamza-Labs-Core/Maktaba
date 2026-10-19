@@ -121,12 +121,15 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # VERSION comes from the tag, not `git describe`, so the artifact
-      # version string is exactly the tag the maintainer pushed.
+      # version string is exactly the tag the maintainer pushed. The
+      # streaming binary is built with -tags tvstaging (TV staging and hot
+      # swap, Epic 33.5-33.9) through the Makefile's STREAMING_TAGS.
       - name: Build Go binaries
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           VERSION: ${{ github.ref_name }}
+          STREAMING_TAGS: tvstaging
         run: make build-go
 
       # The maktaba-cloud (relay) binary is server-only, so it ships for

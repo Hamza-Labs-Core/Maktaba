@@ -48,6 +48,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     cd streaming && \
     GOARCH=${TARGETARCH:-amd64} go build \
         -trimpath \
+        -tags tvstaging \
         -ldflags "-buildid= -s -w \
             -X github.com/Hamza-Labs-Core/Maktaba/streaming/internal/version.Version=${VERSION} \
             -X github.com/Hamza-Labs-Core/Maktaba/streaming/internal/version.Commit=${COMMIT} \
