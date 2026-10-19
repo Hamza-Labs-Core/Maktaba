@@ -4,7 +4,7 @@
 // arrays (30 min) until that has loaded.
 import { useI18n } from "../../lib/i18n";
 import type { HealthNow, HealthSeries } from "../../lib/queueApi";
-import { Sparkline } from "./Sparkline";
+import { StatGrid, StatTile } from "./StatTile";
 import { useFmt } from "./format";
 
 const series = (all: HealthSeries[] | null, ...metrics: string[]): number[] | null => {
@@ -14,32 +14,6 @@ const series = (all: HealthSeries[] | null, ...metrics: string[]): number[] | nu
   }
   return null;
 };
-
-function Tile({
-  id,
-  title,
-  children,
-  spark,
-  sparkLabel,
-  tone,
-}: {
-  id: string;
-  title: string;
-  children: React.ReactNode;
-  spark: number[];
-  sparkLabel: string;
-  tone?: "warn" | "error";
-}) {
-  return (
-    <section className={`mkt-q-tile${tone ? ` mkt-q-tile--${tone}` : ""}`} aria-labelledby={id}>
-      <h2 className="mkt-q-tile__title" id={id}>
-        {title}
-      </h2>
-      <div className="mkt-q-tile__body">{children}</div>
-      <Sparkline values={spark} label={sparkLabel} />
-    </section>
-  );
-}
 
 export function HealthStrip({
   health,
@@ -53,68 +27,75 @@ export function HealthStrip({
   const { nas, cpu, network, backlog, spark } = health;
   const net = (ms: number | null) =>
     ms === null ? "–" : ms < 0 ? t("queue.health.unreachable") : fmt.ms(ms);
-  const netBad = [network.plex_ms, network.tv_ms, network.youtube_ms].some(
-    (v) => v !== null && v < 0
+  // null = not configured: only the probed services count
+  const probed = [network.plex_ms, network.tv_ms, network.youtube_ms].filter(
+    (v): v is number => v !== null
   );
+  const reachable = probed.filter((v) => v >= 0).length;
   const hours = t("queue.health.window");
+  const sparkOf = (values: number[], what: string) => ({
+    values,
+    label: t("queue.health.sparkAria", { what, window: hours }),
+  });
   return (
-    <div className="mkt-q-health" role="group" aria-label={t("queue.health.title")}>
-      <Tile
-        id="mkt-q-h-nas"
-        title={t("queue.health.nas")}
-        spark={series(history, "nas.open_ms_p95", "nas.open_ms_p50") ?? spark.nas_open_ms}
-        sparkLabel={t("queue.health.sparkAria", { what: t("queue.health.nasOpen"), window: hours })}
+    <StatGrid label={t("queue.health.title")} variant="health">
+      <StatTile
+        label={t("queue.health.nas")}
+        value={n(nas.reads_busy)}
+        unit={t("queue.health.slotsUnit", { limit: n(nas.reads_limit) })}
         tone={nas.timeouts_10m > 0 ? "warn" : undefined}
+        spark={sparkOf(
+          series(history, "nas.open_ms_p95", "nas.open_ms_p50") ?? spark.nas_open_ms,
+          t("queue.health.nasOpen")
+        )}
       >
-        <p className="mkt-q-tile__big">
-          {t("queue.health.slots", { busy: n(nas.reads_busy), limit: n(nas.reads_limit) })}
-        </p>
-        <p className="mkt-q-tile__line">
+        <p>
           {t("queue.health.open", { ms: fmt.ms(nas.open_ms_p50), p95: fmt.ms(nas.open_ms_p95) })}
         </p>
-        <p className="mkt-q-tile__line">
-          {nas.timeouts_10m > 0 && <span aria-hidden="true">! </span>}
+        <p className={nas.timeouts_10m > 0 ? "mkt-q-stat__warn" : undefined}>
           {t("queue.health.timeouts", { n: n(nas.timeouts_10m) })}
         </p>
-      </Tile>
-      <Tile
-        id="mkt-q-h-cpu"
-        title={t("queue.health.cpu")}
-        spark={series(history, "cpu.pct") ?? spark.cpu_pct}
-        sparkLabel={t("queue.health.sparkAria", { what: t("queue.health.cpu"), window: hours })}
+      </StatTile>
+      <StatTile
+        label={t("queue.health.cpu")}
+        value={cpu.pct === null ? "–" : n(Math.round(cpu.pct))}
+        unit={cpu.pct === null ? undefined : "%"}
+        spark={sparkOf(series(history, "cpu.pct") ?? spark.cpu_pct, t("queue.health.cpu"))}
+      />
+      <StatTile
+        label={t("queue.health.network")}
+        value={probed.length === 0 ? "–" : n(reachable)}
+        unit={
+          probed.length === 0
+            ? undefined
+            : t("queue.health.reachableUnit", { total: n(probed.length) })
+        }
+        tone={reachable < probed.length ? "error" : undefined}
+        spark={sparkOf(series(history, "net.plex_ms") ?? [], "Plex")}
       >
-        <p className="mkt-q-tile__big">{cpu.pct === null ? "–" : `${n(Math.round(cpu.pct))}%`}</p>
-      </Tile>
-      <Tile
-        id="mkt-q-h-net"
-        title={t("queue.health.network")}
-        spark={series(history, "net.plex_ms") ?? []}
-        sparkLabel={t("queue.health.sparkAria", { what: "Plex", window: hours })}
-        tone={netBad ? "error" : undefined}
-      >
-        <ul className="mkt-q-tile__list">
+        <ul className="mkt-q-stat__list">
           <li>
-            <span>Plex</span> <strong>{net(network.plex_ms)}</strong>
+            <span>Plex</span> <span>{net(network.plex_ms)}</span>
           </li>
           <li>
-            <span>dizqueTV</span> <strong>{net(network.tv_ms)}</strong>
+            <span>dizqueTV</span> <span>{net(network.tv_ms)}</span>
           </li>
           <li>
-            <span>YouTube</span> <strong>{net(network.youtube_ms)}</strong>
+            <span>YouTube</span> <span>{net(network.youtube_ms)}</span>
           </li>
         </ul>
-      </Tile>
-      <Tile
-        id="mkt-q-h-backlog"
-        title={t("queue.health.backlog")}
-        spark={series(history, "backlog.ready") ?? spark.backlog_ready}
-        sparkLabel={t("queue.health.sparkAria", { what: t("queue.health.backlog"), window: hours })}
+      </StatTile>
+      <StatTile
+        label={t("queue.health.backlog")}
+        value={n(backlog.ready)}
+        unit={t("queue.health.waitingUnit")}
+        spark={sparkOf(
+          series(history, "backlog.ready") ?? spark.backlog_ready,
+          t("queue.health.backlog")
+        )}
       >
-        <p className="mkt-q-tile__big">{t("queue.health.waiting", { n: n(backlog.ready) })}</p>
-        <p className="mkt-q-tile__line">
-          {t("queue.health.oldest", { time: fmt.dur(backlog.oldest_waiting_sec) })}
-        </p>
-      </Tile>
-    </div>
+        <p>{t("queue.health.oldest", { time: fmt.dur(backlog.oldest_waiting_sec) })}</p>
+      </StatTile>
+    </StatGrid>
   );
 }

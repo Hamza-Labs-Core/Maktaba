@@ -168,52 +168,97 @@
   color: var(--q-failing);
 }
 
-/* ---- health strip ----------------------------------------------------- */
-.mkt-q-health {
+/* ---- counter tiles (StatTile): health strip, insights, stage KPIs ------ */
+.mkt-q-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 9rem), 1fr));
+  grid-auto-rows: 1fr;
   gap: var(--space-3);
 }
-.mkt-q-tile {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-3) var(--space-4);
+.mkt-q-stats--health {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.mkt-q-stat {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  background: var(--q-surface);
+  gap: var(--space-1);
   min-inline-size: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--q-surface);
 }
-.mkt-q-tile--warn {
-  border-color: var(--color-warn);
-}
-.mkt-q-tile--error {
-  border-color: var(--color-error);
-}
-.mkt-q-tile__title {
+.mkt-q-stat__label {
+  overflow: hidden;
   font-size: var(--font-size-sm);
   font-weight: 600;
+  line-height: 1.4;
   color: var(--color-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
-.mkt-q-tile__big {
+.mkt-q-stat__value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-1);
+  line-height: 1.2;
+}
+.mkt-q-stat__num {
   font-size: var(--font-size-h2);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  color: var(--color-fg);
 }
-.mkt-q-tile__line {
+.mkt-q-stat__unit {
   font-size: var(--font-size-sm);
+  font-weight: 500;
   color: var(--color-muted);
 }
-.mkt-q-tile__list {
+.mkt-q-stat__detail {
   display: flex;
   flex-direction: column;
   gap: 2px;
   font-size: var(--font-size-sm);
+  line-height: 1.4;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
 }
-.mkt-q-tile__list li {
+.mkt-q-stat__detail p {
+  margin: 0;
+}
+.mkt-q-stat__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mkt-q-stat__list li {
   display: flex;
   justify-content: space-between;
   gap: var(--space-2);
+}
+.mkt-q-stat__list li > span:last-child {
+  color: var(--color-fg);
+}
+.mkt-q-stat--warn {
+  border-color: var(--color-warn);
+}
+.mkt-q-stat--error {
+  border-color: var(--color-error);
+}
+.mkt-q-stat--warn .mkt-q-stat__label,
+.mkt-q-stat__warn {
+  color: var(--color-warn);
+}
+.mkt-q-stat--error .mkt-q-stat__label {
+  color: var(--color-error);
+}
+.mkt-q-stat__flag {
+  margin-inline-end: var(--space-1);
+  font-weight: 700;
 }
 .mkt-q-spark {
   inline-size: 100%;
@@ -824,35 +869,8 @@ summary.mkt-q-lane__title {
   align-items: center;
   gap: var(--space-5);
 }
-.mkt-q-kpis {
+.mkt-q-hero > .mkt-q-stats {
   flex: 1 1 24rem;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
-  gap: var(--space-3);
-}
-.mkt-q-kpi {
-  padding: var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--q-surface);
-}
-.mkt-q-kpi--error {
-  border-color: var(--color-error);
-}
-.mkt-q-kpi__label {
-  font-size: var(--font-size-sm);
-  color: var(--color-muted);
-}
-.mkt-q-kpi__value {
-  margin: 0;
-  font-size: var(--font-size-h2);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-.mkt-q-kpi__sub {
-  margin: 0;
-  font-size: var(--font-size-sm);
-  color: var(--color-muted);
 }
 .mkt-q-neighbours {
   display: flex;
@@ -1080,17 +1098,21 @@ summary.mkt-q-lane__title {
 
 /* ---- responsive ------------------------------------------------------- */
 @media (max-width: 1024px) {
-  .mkt-q-health {
+  .mkt-q-stats--health {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .mkt-q-cols {
     grid-template-columns: minmax(0, 1fr);
   }
 }
-@media (max-width: 720px) {
-  .mkt-q-health {
+@media (max-width: 420px) {
+  /* one column: each tile only as tall as its own content */
+  .mkt-q-stats--health {
     grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: auto;
   }
+}
+@media (max-width: 720px) {
   .mkt-q-lane__cards,
   .mkt-q-lane__item {
     flex-direction: column;

@@ -22,6 +22,7 @@ import { RateChart } from "../../components/queue/RateChart";
 import { RetriggerDialog } from "../../components/queue/RetriggerDialog";
 import { RingGauge } from "../../components/queue/RingGauge";
 import { RunningJobs } from "../../components/queue/RunningJobs";
+import { StatGrid, StatTile } from "../../components/queue/StatTile";
 import { hostWorkerIds, runsOnHost, useHostName } from "../../components/queue/hostFilter";
 import { STATE_GLYPH, queueVisualState, useFmt } from "../../components/queue/format";
 import { useAction } from "../../components/queue/useAction";
@@ -40,11 +41,9 @@ function Kpi({
   tone?: "error";
 }) {
   return (
-    <div className={`mkt-q-kpi${tone ? ` mkt-q-kpi--${tone}` : ""}`}>
-      <dt className="mkt-q-kpi__label">{label}</dt>
-      <dd className="mkt-q-kpi__value">{value}</dd>
-      {sub && <dd className="mkt-q-kpi__sub">{sub}</dd>}
-    </div>
+    <StatTile label={label} value={value} tone={tone}>
+      {sub ? <p>{sub}</p> : undefined}
+    </StatTile>
   );
 }
 
@@ -289,7 +288,7 @@ export function QueueDetail() {
             progress: t("queue.card.doneOf", { done: n(wave.done), total: n(total) }),
           })}
         />
-        <dl className="mkt-q-kpis">
+        <StatGrid>
           <Kpi
             label={t("queue.kpi.waiting")}
             value={n(counts.pending)}
@@ -331,7 +330,7 @@ export function QueueDetail() {
             value={fmt.ms(detail.kpis.median_duration_ms)}
             sub={t("queue.kpi.p95", { ms: fmt.ms(detail.kpis.p95_duration_ms) })}
           />
-        </dl>
+        </StatGrid>
       </div>
 
       <div className="mkt-q-neighbours" aria-label={t("queue.detail.neighbours")}>
