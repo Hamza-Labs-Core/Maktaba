@@ -149,9 +149,19 @@ export function useTvSwitcher<C extends RingChannel>(o: TvSwitcherOptions<C>): T
 
   // the deep-linked channel: tune it when it differs from what plays or is carded
   const want = o.channel;
+  // the deep link each switcher was last asked for: this effect runs again when
+  // the switcher becomes ready (a render after it was made) and when the
+  // lineup is reloaded, and by then the viewer may already have surfed away
+  // from it (a key pressed before that render): the same request again must
+  // not pull them back
+  const askedRef = useRef<{ sw: Switcher<C> | null; id: string | null }>({ sw: null, id: null });
   useEffect(() => {
     const sw = switcherRef.current;
-    if (!sw || !want || want.id === settledRef.current) return;
+    if (!sw || !want) return;
+    const prev = askedRef.current;
+    askedRef.current = { sw, id: want.id };
+    if (prev.sw === sw && prev.id === want.id) return;
+    if (want.id === settledRef.current) return;
     const s = sw.state;
     if (s.target?.id === want.id || (s.current?.id === want.id && !s.target)) return;
     sw.tune(want);
