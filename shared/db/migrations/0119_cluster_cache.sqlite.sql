@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0116 (Epic 31, phase 2): the database cache of the
+-- SQLite parity sibling for slot 0119 (Epic 31, phase 2): the database cache of the
 -- cluster channel. The same tables, columns and keys as the Postgres slot. SQLite has
 -- no UNLOGGED tables (these are plain tables; emptying them loses nothing, the hub
 -- refills them from the files) and no roles (a SQLite home takes no machines).

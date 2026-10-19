@@ -3,7 +3,7 @@
 // tuning is lazy, there is no tune call), shows a LIVE indicator + tune
 // banner, a mini-guide overlay, retries a failing stream before showing a
 // slate, and resolves an unknown channel number to a not-found state.
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 
@@ -12,6 +12,45 @@ vi.mock("../../lib/api", async () => {
   const actual = await vi.importActual<typeof import("../../lib/api")>("../../lib/api");
   return { ...actual, api: { ...actual.api, get, post, delete: del } };
 });
+
+// hls.js (audit P1-3): browsers without native HLS get a lazily-imported
+// hls.js. The fake records instances so tests can drive its error events.
+const { hlsInstances, hlsSupported } = vi.hoisted(() => ({
+  hlsInstances: [] as Array<{
+    loadSource: ReturnType<typeof vi.fn>;
+    attachMedia: ReturnType<typeof vi.fn>;
+    destroy: ReturnType<typeof vi.fn>;
+    emit: (evt: string, data: unknown) => void;
+  }>,
+  hlsSupported: { value: true },
+}));
+vi.mock("hls.js", () => {
+  class FakeHls {
+    static Events = { ERROR: "hlsError" };
+    static ErrorTypes = { NETWORK_ERROR: "networkError", MEDIA_ERROR: "mediaError" };
+    static isSupported = () => hlsSupported.value;
+    handlers: Record<string, (evt: string, data: unknown) => void> = {};
+    loadSource = vi.fn();
+    attachMedia = vi.fn();
+    startLoad = vi.fn();
+    recoverMediaError = vi.fn();
+    destroy = vi.fn();
+    liveSyncPosition = null;
+    constructor() {
+      hlsInstances.push(this);
+    }
+    on(evt: string, fn: (evt: string, data: unknown) => void) {
+      this.handlers[evt] = fn;
+    }
+    emit(evt: string, data: unknown) {
+      this.handlers[evt]?.(evt, data);
+    }
+  }
+  return { default: FakeHls };
+});
+
+let nativeHls = true;
+const realCanPlayType = HTMLMediaElement.prototype.canPlayType;
 
 import { LIVE_RETRIES, LIVE_RETRY_MS, Player } from "./Player";
 import { I18nProvider } from "../../lib/i18n";
@@ -85,6 +124,15 @@ describe("Player (live channel)", () => {
     get.mockReset();
     post.mockReset();
     del.mockReset();
+    hlsInstances.length = 0;
+    hlsSupported.value = true;
+    nativeHls = true;
+    HTMLMediaElement.prototype.canPlayType = function (type: string) {
+      return nativeHls && type === "application/vnd.apple.mpegurl" ? "maybe" : "";
+    } as HTMLMediaElement["canPlayType"];
+  });
+  afterEach(() => {
+    HTMLMediaElement.prototype.canPlayType = realCanPlayType;
   });
 
   // TC1 — distinct live mode: a LIVE indicator + a video element playing
@@ -127,6 +175,38 @@ describe("Player (live channel)", () => {
       vi.useRealTimers();
     }
     expect(await screen.findByTestId("live-slate")).toBeInTheDocument();
+    expect(screen.getByTestId("live-direct-link").getAttribute("href")).toBe(
+      "/stream/channel/c1/index.m3u8"
+    );
+  });
+
+  // P1-3 — without native HLS the player lazy-loads hls.js and feeds it
+  // the channel playlist instead of setting <video src>.
+  it("plays through hls.js when the browser has no native HLS", async () => {
+    nativeHls = false;
+    mockGet();
+    const { unmount } = renderPlayer("1");
+    const video = (await screen.findByTestId("live-video")) as HTMLVideoElement;
+    await vi.waitFor(() => expect(hlsInstances).toHaveLength(1));
+    expect(hlsInstances[0].attachMedia).toHaveBeenCalledWith(video);
+    expect(hlsInstances[0].loadSource).toHaveBeenCalledWith("/stream/channel/c1/index.m3u8");
+    expect(video.getAttribute("src")).toBeNull();
+    // A fatal network error shows the reconnecting indicator.
+    act(() => hlsInstances[0].emit("hlsError", { fatal: true, type: "networkError" }));
+    fireEvent.playing(video); // first frame arrived earlier; tuning is over
+    act(() => hlsInstances[0].emit("hlsError", { fatal: true, type: "networkError" }));
+    expect(await screen.findByTestId("live-reconnecting")).toHaveTextContent(/reconnecting/i);
+    unmount();
+    expect(hlsInstances[0].destroy).toHaveBeenCalled();
+  });
+
+  it("shows a clear slate when neither native HLS nor hls.js can play", async () => {
+    nativeHls = false;
+    hlsSupported.value = false;
+    mockGet();
+    renderPlayer("1");
+    const slate = await screen.findByTestId("live-slate");
+    expect(slate).toHaveTextContent(/can't play live streams/i);
     expect(screen.getByTestId("live-direct-link").getAttribute("href")).toBe(
       "/stream/channel/c1/index.m3u8"
     );

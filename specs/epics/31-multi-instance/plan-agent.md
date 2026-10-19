@@ -165,11 +165,11 @@ and disposable.
     window when the tables are empty, else the gap since the newest row; idempotent and
     symlink-safe (links out of the cluster directory are skipped).
   - Drop and count when the database is slow or down; never block the caller.
-- `shared/db/migrations/0116_cluster_cache.sql`, `0116_cluster_cache.sqlite.sql` and the
+- `shared/db/migrations/0119_cluster_cache.sql`, `0119_cluster_cache.sqlite.sql` and the
   MANIFEST row: the two `UNLOGGED` tables and their indexes (plain tables in SQLite);
   `REVOKE ALL` on both from `maktaba_worker` (default privileges would grant them);
-  `REVOKE INSERT, UPDATE, DELETE ON health_samples FROM maktaba_worker`. Slot 0116 (first
-  written as 0104; PR 57 took 0104–0115 and merged first).
+  `REVOKE INSERT, UPDATE, DELETE ON health_samples FROM maktaba_worker`. Slot 0119 (first
+  written as 0104; PRs 57 and 59 took 0104–0118 and merged first).
 - A Postgres role test beside phase 1's (`api/internal/cluster/pg_integration_test.go` or a
   new file in the package): `maktaba_worker` cannot insert into, update or delete from
   `health_samples` and cannot read or write the cache tables.
@@ -385,7 +385,7 @@ survives a reboot, does not restart after a revocation (K9), and stops cleanly.
    only the fake hub), then T6, H1, P1 into `feat/cluster-agent`.
 2. Gates: Go (lint, unit with `-race`), Python (ruff, mypy strict, unit on both
    databases), web (lint, typecheck, vitest), the Windows cluster job, packaging lint,
-   migration lint (one migration: `0116_cluster_cache`),
+   migration lint (one migration: `0119_cluster_cache`),
    coverage floors, CodeQL (new alerts on
    the REST file readers and the LLM door are fixed, not dismissed, unless false positives).
 3. Update [docs/cluster](../../../docs/cluster/README.md) with what the tracks changed (P1's
@@ -446,7 +446,7 @@ LLMs
 
 The database
 
-- [ ] Only the cache migration (`0116_cluster_cache`); the database holds the channel only
+- [ ] Only the cache migration (`0119_cluster_cache`); the database holds the channel only
       as the hub's cache (§7.9) — no LLM traffic, no settings; the queue engine's own
       `job_events` writes are unchanged.
 - [ ] `health_samples` is written only by the hub: rows from every process at most every

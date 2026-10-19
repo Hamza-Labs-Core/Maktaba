@@ -9,24 +9,38 @@
 // "Back to default") clears only the edits it carried that are still
 // unchanged, so edits made while it was under way — or in another tab —
 // stay.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { Tabs } from "@ds/components/Tabs/Tabs";
 import { PlanPreviewPanel } from "../../components/queue/PlanPreviewPanel";
 import { useAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
 import { rulesApi, rulesError, type RuleField, type RuleSection } from "../../lib/rulesApi";
+import { Editor, tableProblems, type T } from "./RuleEditors";
+import { controlOf, same, subGroups, valueProblem, weekdayNames, WEEKDAYS } from "./ruleKinds";
 import "./rules.css";
 
 type Edits = Record<string, Record<string, unknown>>;
 type Errors = Record<string, Record<string, string>>;
-type T = (key: string, vars?: Record<string, string | number>) => string;
 
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-const baseKind = (kind: string) => kind.replace("?", "");
-const isOptional = (kind: string) => kind.endsWith("?");
-const asArray = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+/** What is wrong with a value the admin typed, as a message (null: nothing). */
+function problemText(f: RuleField, v: unknown, t: T): string | null {
+  if (controlOf(f) === "table") {
+    const { cols, cells } = tableProblems(f, v, t);
+    const first = Object.entries(cells)[0];
+    if (!first) return null;
+    const [i, j] = first[0].split(":").map(Number);
+    return t("settings.rules.err.cell", {
+      row: i + 1,
+      col: cols[j]?.label ?? "",
+      message: t(first[1].key, first[1].vars),
+    });
+  }
+  const p = valueProblem(f, v);
+  return p ? t(p.key, p.vars) : null;
+}
 
 function show(v: unknown, t: T): string {
   if (v === null || v === undefined || v === "") return t("settings.rules.empty");
@@ -51,364 +65,20 @@ function show(v: unknown, t: T): string {
   return String(v);
 }
 
-// A text draft over a typed value: the input shows what was typed (a
-// half-typed "1." or a list's new empty line) for as long as it still
-// reads back as the current value, and the value's own text otherwise
-// (after a discard, a reset or a reload).
-function useDraft<R>(
-  value: unknown,
-  format: (v: unknown) => R,
-  parse: (r: R) => unknown
-): [R, (r: R) => void] {
-  const [raw, setRaw] = useState<R>(() => format(value));
-  const shown = same(parse(raw), value) ? raw : format(value);
-  return [shown, setRaw];
-}
-
-interface EditorProps {
-  f: RuleField;
-  value: unknown;
-  labelId: string;
-  readOnly: boolean;
-  onChange: (v: unknown) => void;
-}
-
-function NumberEditor({ f, value, labelId, readOnly, onChange }: EditorProps) {
-  const opt = isOptional(f.kind);
-  const parse = (r: string) => (r.trim() === "" ? (opt ? null : "") : Number(r));
-  const [text, setText] = useDraft(
-    value,
-    (v) => (v === null || v === undefined ? "" : String(v)),
-    parse
-  );
-  return (
-    <input
-      type="number"
-      className="mkt-rules__input mkt-rules__input--short"
-      aria-labelledby={labelId}
-      step={baseKind(f.kind) === "int" ? 1 : "any"}
-      min={f.minimum}
-      value={text}
-      readOnly={readOnly}
-      placeholder={opt ? "—" : undefined}
-      onChange={(e) => {
-        setText(e.target.value);
-        onChange(parse(e.target.value));
-      }}
-    />
-  );
-}
-
-// list / words: one item per line. A trailing space is kept (in a phrase
-// list it means "the phrase ends here"); empty lines are dropped.
-function parseLines(r: string): string[] {
-  return r
-    .split("\n")
-    .map((x) => x.replace(/\r$/, "").replace(/^\s+/, ""))
-    .filter((x) => x.trim() !== "");
-}
-
-function ListEditor({ value, labelId, readOnly, onChange }: EditorProps) {
-  const { t } = useI18n();
-  const hintId = `${labelId}-hint`;
-  const [text, setText] = useDraft(value, (v) => asArray(v).map(String).join("\n"), parseLines);
-  return (
-    <>
-      <textarea
-        className="mkt-rules__input mkt-rules__textarea"
-        aria-labelledby={labelId}
-        aria-describedby={hintId}
-        dir="auto"
-        rows={Math.min(10, Math.max(3, asArray(value).length + 1))}
-        value={text}
-        readOnly={readOnly}
-        onChange={(e) => {
-          setText(e.target.value);
-          onChange(parseLines(e.target.value));
-        }}
-      />
-      <span className="mkt-rules__hint" id={hintId}>
-        {t("settings.rules.onePerLine")}
-      </span>
-    </>
-  );
-}
-
-interface Column {
-  name: string;
-  label: string;
-  kind: string;
-}
-
-function columnsOf(f: RuleField, t: T): Column[] {
-  if (baseKind(f.kind) === "map") {
-    return [
-      { name: "key", label: t("settings.rules.mapKey"), kind: "str" },
-      { name: "values", label: t("settings.rules.mapValues"), kind: "list" },
-    ];
-  }
-  const sample = asArray(f.default)[0] ?? asArray(f.value)[0];
-  return (f.columns ?? []).map((c, j) => {
-    let kind = f.column_kinds?.[j];
-    if (!kind) {
-      const s = Array.isArray(sample)
-        ? sample[j]
-        : sample && typeof sample === "object"
-          ? (sample as Record<string, unknown>)[c]
-          : undefined;
-      kind =
-        f.time_columns?.includes(j) || /^(start|end|from|until)$/.test(c)
-          ? "time"
-          : typeof s === "number"
-            ? "float?"
-            : Array.isArray(s)
-              ? "list"
-              : "str";
-    }
-    return { name: c, label: c.replace(/_/g, " "), kind };
-  });
-}
-
-// A row is an object keyed by column name when the default rows are
-// objects, else an array in column order.
-function rowsAreObjects(f: RuleField): boolean {
-  const sample = asArray(f.default)[0] ?? asArray(f.value)[0];
-  return !!sample && typeof sample === "object" && !Array.isArray(sample);
-}
-
-function cellText(v: unknown): string {
-  if (v === null || v === undefined) return "";
-  if (Array.isArray(v)) return v.join(", ");
-  return String(v);
-}
-
-function parseCell(kind: string, s: string): unknown {
-  const k = baseKind(kind);
-  if (k === "int" || k === "float") return s.trim() === "" ? null : Number(s);
-  if (k === "list" || k === "words")
-    return s
-      .split(",")
-      .map((x) => x.trim())
-      .filter(Boolean);
-  if (k === "str" && isOptional(kind) && s === "") return null;
-  return s;
-}
-
-function TableEditor({ f, value, labelId, readOnly, onChange }: EditorProps) {
-  const { t } = useI18n();
-  const isMap = baseKind(f.kind) === "map";
-  const cols = columnsOf(f, t);
-  const named = rowsAreObjects(f);
-  const tbody = useRef<HTMLTableSectionElement>(null);
-  const focusNew = useRef(false);
-
-  const format = (v: unknown): string[][] =>
-    isMap
-      ? Object.entries((v as Record<string, unknown>) ?? {}).map(([k, arr]) => [
-          k,
-          asArray(arr).join(", "),
-        ])
-      : asArray(v).map((r) =>
-          cols.map((c, j) =>
-            cellText(
-              Array.isArray(r)
-                ? r[j]
-                : r && typeof r === "object"
-                  ? (r as Record<string, unknown>)[c.name]
-                  : undefined
-            )
-          )
-        );
-  const parse = (raw: string[][]): unknown => {
-    if (isMap) {
-      const o: Record<string, string[]> = {};
-      for (const [k, vals] of raw) {
-        if (k.trim()) o[k.trim()] = parseCell("list", vals) as string[];
-      }
-      return o;
-    }
-    return raw.map((cells) => {
-      const typed = cells.map((s, j) => parseCell(cols[j].kind, s));
-      return named ? Object.fromEntries(cols.map((c, j) => [c.name, typed[j]])) : typed;
-    });
-  };
-  const [rows, setRows] = useDraft(value, format, parse);
-  const commit = (next: string[][]) => {
-    setRows(next);
-    onChange(parse(next));
-  };
-
-  useEffect(() => {
-    if (!focusNew.current) return;
-    focusNew.current = false;
-    tbody.current?.lastElementChild?.querySelector("input")?.focus();
-  }, [rows.length]);
-
-  return (
-    <>
-      <div className="mkt-rules__tablewrap">
-        <table className="mkt-rules__table" aria-labelledby={labelId}>
-          <thead>
-            <tr>
-              {cols.map((c) => (
-                <th key={c.name} scope="col">
-                  {c.label}
-                </th>
-              ))}
-              {!readOnly && (
-                <th scope="col">
-                  <span className="mkt-rules__sr">{t("settings.rules.removeRow")}</span>
-                </th>
-              )}
-            </tr>
-          </thead>
-          <tbody ref={tbody}>
-            {rows.map((cells, i) => (
-              <tr key={i}>
-                {cells.map((s, j) => {
-                  const k = baseKind(cols[j].kind);
-                  const numeric = k === "int" || k === "float";
-                  return (
-                    <td key={cols[j].name}>
-                      <input
-                        className={`mkt-rules__cell${numeric || k === "time" ? " mkt-rules__cell--short" : ""}`}
-                        type={k === "time" ? "time" : numeric ? "number" : "text"}
-                        step={numeric ? (k === "int" ? 1 : "any") : undefined}
-                        dir={numeric || k === "time" ? undefined : "auto"}
-                        aria-label={cols[j].label}
-                        value={s}
-                        readOnly={readOnly}
-                        onChange={(e) =>
-                          commit(
-                            rows.map((r, ri) =>
-                              ri === i ? r.map((c, ci) => (ci === j ? e.target.value : c)) : r
-                            )
-                          )
-                        }
-                      />
-                    </td>
-                  );
-                })}
-                {!readOnly && (
-                  <td className="mkt-rules__cell-x">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      aria-label={t("settings.rules.removeRow")}
-                      onClick={() => commit(rows.filter((_, ri) => ri !== i))}
-                    >
-                      <span aria-hidden="true">✕</span>
-                    </Button>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {!readOnly && (
-        <div>
-          <Button
-            size="sm"
-            variant="secondary"
-            aria-describedby={labelId}
-            onClick={() => {
-              focusNew.current = true;
-              commit([...rows, cols.map(() => "")]);
-            }}
-          >
-            {t("settings.rules.addRow")}
-          </Button>
-        </div>
-      )}
-    </>
-  );
-}
-
-function Editor(props: EditorProps) {
-  const { t } = useI18n();
-  const { f, value, labelId, readOnly, onChange } = props;
-  const k = baseKind(f.kind);
-  const opt = isOptional(f.kind);
-  if (k === "bool") {
-    return (
-      <label className="mkt-rules__switch">
-        <input
-          type="checkbox"
-          aria-labelledby={labelId}
-          checked={value === true}
-          disabled={readOnly}
-          onChange={(e) => onChange(e.target.checked)}
-        />
-        <span aria-hidden="true">{value ? t("settings.rules.on") : t("settings.rules.off")}</span>
-      </label>
-    );
-  }
-  if (f.choices) {
-    const current = String(value ?? "");
-    const options = f.choices.includes(current) ? f.choices : [current, ...f.choices];
-    return (
-      <select
-        className="mkt-rules__input mkt-rules__input--short"
-        aria-labelledby={labelId}
-        value={current}
-        disabled={readOnly}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {options.map((c) => (
-          <option key={c} value={c}>
-            {c}
-          </option>
-        ))}
-      </select>
-    );
-  }
-  if (k === "int" || k === "float") return <NumberEditor {...props} />;
-  if (k === "time") {
-    return (
-      <input
-        type="time"
-        className="mkt-rules__input mkt-rules__input--short"
-        aria-labelledby={labelId}
-        value={String(value ?? "")}
-        readOnly={readOnly}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    );
-  }
-  if (k === "str") {
-    return (
-      <input
-        type="text"
-        className="mkt-rules__input"
-        aria-labelledby={labelId}
-        dir="auto"
-        value={String(value ?? "")}
-        readOnly={readOnly}
-        placeholder={opt ? t("settings.rules.empty") : undefined}
-        onChange={(e) => onChange(opt && e.target.value === "" ? null : e.target.value)}
-      />
-    );
-  }
-  if (k === "list" || k === "words") return <ListEditor {...props} />;
-  if (k === "map" || k === "rows") return <TableEditor {...props} />;
-  return (
-    <p className="mkt-rules__hint">
-      {t("settings.rules.notEditable")} <span dir="auto">{show(value, t)}</span>
-    </p>
-  );
-}
-
 interface RowProps {
   f: RuleField;
   sectionKey: string;
   value: unknown;
   dirty: boolean;
+  /** the server's message for this setting (a failed save) */
   error?: string;
+  /** what is wrong with the typed value (blocks the save) */
+  problem?: string | null;
   canEdit: boolean;
   busy: boolean;
   onChange: (v: unknown) => void;
   onReset: () => void;
+  onUndo: () => void;
 }
 
 function RuleRow({
@@ -417,18 +87,38 @@ function RuleRow({
   value,
   dirty,
   error,
+  problem,
   canEdit,
   busy,
   onChange,
   onReset,
+  onUndo,
 }: RowProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const labelId = `rule-${sectionKey}-${f.name}-label`;
-  const wide = /rows|map/.test(f.kind);
+  const helpId = `rule-${sectionKey}-${f.name}-help`;
+  const errId = `rule-${sectionKey}-${f.name}-err`;
+  const control = controlOf(f);
+  const wide = control === "table";
   const cls = ["mkt-rules__set"];
   if (wide) cls.push("mkt-rules__set--wide");
   if (f.changed) cls.push("mkt-rules__set--changed");
   if (dirty) cls.push("mkt-rules__set--dirty");
+  if (problem || error) cls.push("mkt-rules__set--bad");
+  const message =
+    error ?? problem ?? (f.invalid ? t("settings.rules.invalid", { reason: f.invalid }) : null);
+  const describedBy = [f.help ? helpId : null, message ? errId : null].filter(Boolean).join(" ");
+  const names = weekdayNames(locale);
+  const dayName = (d: unknown) => {
+    const i = (WEEKDAYS as readonly unknown[]).indexOf(d);
+    return i >= 0 ? names[i].long : String(d);
+  };
+  const defaultText =
+    control === "days" && Array.isArray(f.default) && f.default.length
+      ? f.default.map(dayName).join(locale === "ar" ? "، " : ", ")
+      : control === "weekday"
+        ? dayName(f.default)
+        : show(f.default, t);
   return (
     <div className={cls.join(" ")} role="group" aria-labelledby={labelId} data-rule={f.name}>
       <div className="mkt-rules__about">
@@ -437,12 +127,12 @@ function RuleRow({
           <code>{f.name}</code>
         </div>
         {f.help && (
-          <p className="mkt-rules__help" dir="auto">
+          <p className="mkt-rules__help" id={helpId} dir="auto">
             {f.help}
           </p>
         )}
         <p className="mkt-rules__default">
-          <span dir="auto">{t("settings.rules.default", { value: show(f.default, t) })}</span>
+          <span dir="auto">{t("settings.rules.default", { value: defaultText })}</span>
           {f.changed && (
             <>
               {" · "}
@@ -458,23 +148,41 @@ function RuleRow({
         </p>
       </div>
       <div className="mkt-rules__editor">
-        <Editor f={f} value={value} labelId={labelId} readOnly={!canEdit} onChange={onChange} />
-        {(error || f.invalid) && (
-          <p className="mkt-rules__error" role={error ? "alert" : undefined}>
-            {error ?? t("settings.rules.invalid", { reason: f.invalid ?? "" })}
+        <Editor
+          f={f}
+          value={value}
+          labelId={labelId}
+          describedBy={describedBy || undefined}
+          invalid={!!(problem || error)}
+          readOnly={!canEdit}
+          onChange={onChange}
+          serverError={error}
+          show={(v) => show(v, t)}
+        />
+        {message && (
+          <p className="mkt-rules__error" id={errId} role={error || problem ? "alert" : undefined}>
+            {message}
           </p>
         )}
-        {canEdit && (f.changed || f.invalid) && (
-          <div>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              aria-describedby={labelId}
-              onClick={onReset}
-            >
-              {t("settings.rules.reset")}
-            </Button>
+        {canEdit && (dirty || f.changed || f.invalid) && (
+          <div className="mkt-rules__actions">
+            {dirty && (
+              // unsaved over the default: dropping the edit is the default
+              <Button size="sm" variant="ghost" aria-describedby={labelId} onClick={onUndo}>
+                {f.changed || f.invalid ? t("settings.rules.undo") : t("settings.rules.reset")}
+              </Button>
+            )}
+            {(f.changed || f.invalid) && (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                aria-describedby={labelId}
+                onClick={onReset}
+              >
+                {t("settings.rules.reset")}
+              </Button>
+            )}
           </div>
         )}
       </div>
@@ -496,6 +204,15 @@ export function RulesSection() {
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   // bumped on Discard so every editor drops its typed text
   const [epoch, setEpoch] = useState(0);
+  // the groups and sub-groups folded away ("section/group[/sub]")
+  const [folded, setFolded] = useState<Set<string>>(() => new Set());
+  const toggleFold = (id: string) =>
+    setFolded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const load = useCallback(async () => {
     const r = await rulesApi.list();
@@ -637,6 +354,94 @@ export function RulesSection() {
       (f) => !needle || [f.name, f.label, f.help, f.group].join(" ").toLowerCase().includes(needle)
     );
     const groups = [...new Set(fields.map((f) => f.group))];
+    // what is wrong with the typed values: shown at each field, blocks the save
+    const problems: Record<string, string> = {};
+    for (const f of s.fields) {
+      if (!(f.name in pending)) continue;
+      const p = problemText(f, pending[f.name], t);
+      if (p) problems[f.name] = p;
+    }
+    const nProblems = Object.keys(problems).length;
+    const searching = needle !== "";
+    const foldIds = groups.flatMap((g) => [
+      `${s.key}/${g}`,
+      ...subGroups(s.fields.filter((f) => f.group === g))
+        .filter((sg) => sg.title)
+        .map((sg) => `${s.key}/${g}/${sg.title}`),
+    ]);
+    const allFolded = foldIds.length > 0 && foldIds.every((id) => folded.has(id));
+    const row = (f: RuleField) => (
+      <RuleRow
+        key={`${f.name}:${epoch}`}
+        f={f}
+        sectionKey={s.key}
+        value={f.name in pending ? pending[f.name] : f.value}
+        dirty={f.name in pending}
+        error={errs[f.name]}
+        problem={problems[f.name]}
+        canEdit={canEdit}
+        busy={busy}
+        onChange={(v) => setEdit(s.key, f, v)}
+        onReset={() => void send(s.key, [f.name])}
+        onUndo={() => setEdit(s.key, f, f.value)}
+      />
+    );
+    const counts = (fs: RuleField[]) => {
+      const changed = fs.filter((f) => f.changed).length;
+      const dirty = fs.filter((f) => f.name in pending).length;
+      const bad = fs.filter((f) => problems[f.name] || errs[f.name]).length;
+      return (
+        <span className="mkt-rules__groupcounts">
+          <Badge>{t("settings.rules.groupCount", { n: fs.length })}</Badge>
+          {changed > 0 && (
+            <Badge tone="warn">{t("settings.rules.count.changed", { n: changed })}</Badge>
+          )}
+          {dirty > 0 && (
+            <Badge tone="accent">{t("settings.rules.count.unsaved", { n: dirty })}</Badge>
+          )}
+          {bad > 0 && <Badge tone="error">{t("settings.rules.count.errors", { n: bad })}</Badge>}
+        </span>
+      );
+    };
+    // a heading whose button folds the block away (WAI disclosure pattern)
+    const fold = (
+      id: string,
+      domId: string,
+      title: string,
+      fs: RuleField[],
+      level: 3 | 4,
+      content: ReactNode
+    ) => {
+      const open = searching || !folded.has(id);
+      const H = level === 3 ? "h3" : "h4";
+      return (
+        <section
+          key={id}
+          className={level === 3 ? "mkt-rules__group" : "mkt-rules__sub"}
+          aria-labelledby={`${domId}-h`}
+        >
+          <div className="mkt-rules__grouphead">
+            <H id={`${domId}-h`} className="mkt-rules__grouptitle">
+              <button
+                type="button"
+                className="mkt-rules__fold"
+                aria-expanded={open}
+                aria-controls={domId}
+                disabled={searching}
+                onClick={() => toggleFold(id)}
+              >
+                <span className="mkt-rules__chev" aria-hidden="true" />
+                {title}
+              </button>
+            </H>
+            {counts(fs)}
+          </div>
+          <div id={domId} className="mkt-rules__groupbody" hidden={!open}>
+            {content}
+          </div>
+        </section>
+      );
+    };
     const invalid = s.fields.filter((f) => f.invalid).length;
     const unknown = s.unknown ?? [];
     return (
@@ -660,12 +465,40 @@ export function RulesSection() {
               <Button variant="ghost" disabled={!unsaved || busy} onClick={() => discard(s.key)}>
                 {t("settings.rules.discard")}
               </Button>
-              <Button disabled={!unsaved} loading={busy} onClick={() => void send(s.key)}>
+              <Button
+                disabled={!unsaved || nProblems > 0}
+                loading={busy}
+                aria-describedby={nProblems ? `rules-${s.key}-fix` : undefined}
+                onClick={() => void send(s.key)}
+              >
                 {t("settings.rules.save")}
               </Button>
             </>
           )}
+          {foldIds.length > 1 && !searching && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                setFolded((prev) => {
+                  const next = new Set(prev);
+                  for (const id of foldIds) {
+                    if (allFolded) next.delete(id);
+                    else next.add(id);
+                  }
+                  return next;
+                })
+              }
+            >
+              {allFolded ? t("settings.rules.expandAll") : t("settings.rules.collapseAll")}
+            </Button>
+          )}
         </div>
+        {nProblems > 0 && (
+          <p id={`rules-${s.key}-fix`} className="mkt-rules__banner mkt-rules__banner--bad">
+            {t("settings.rules.fixErrors", { n: nProblems })}
+          </p>
+        )}
         {notice && (
           <p
             role={notice.ok ? "status" : "alert"}
@@ -703,27 +536,33 @@ export function RulesSection() {
           <p className="mkt-muted">{t("settings.rules.noMatch", { q: query.trim() })}</p>
         ) : (
           groups.map((g, gi) => {
-            const headingId = `rules-${s.key}-g${gi}`;
-            return (
-              <section key={g} className="mkt-rules__group" aria-labelledby={headingId}>
-                <h3 id={headingId}>{g}</h3>
-                {fields
-                  .filter((f) => f.group === g)
-                  .map((f) => (
-                    <RuleRow
-                      key={`${f.name}:${epoch}`}
-                      f={f}
-                      sectionKey={s.key}
-                      value={f.name in pending ? pending[f.name] : f.value}
-                      dirty={f.name in pending}
-                      error={errs[f.name]}
-                      canEdit={canEdit}
-                      busy={busy}
-                      onChange={(v) => setEdit(s.key, f, v)}
-                      onReset={() => void send(s.key, [f.name])}
-                    />
-                  ))}
-              </section>
+            const inGroup = fields.filter((f) => f.group === g);
+            // sub-groups come from the whole group, so a search keeps them
+            const subs = subGroups(s.fields.filter((f) => f.group === g))
+              .map((sg) => ({ ...sg, fields: sg.fields.filter((f) => inGroup.includes(f)) }))
+              .filter((sg) => sg.fields.length);
+            return fold(
+              `${s.key}/${g}`,
+              `rules-${s.key}-g${gi}`,
+              g,
+              inGroup,
+              3,
+              subs.map((sg, si) =>
+                sg.title === null ? (
+                  <div key="own" className="mkt-rules__own">
+                    {sg.fields.map(row)}
+                  </div>
+                ) : (
+                  fold(
+                    `${s.key}/${g}/${sg.title}`,
+                    `rules-${s.key}-g${gi}-s${si}`,
+                    sg.title,
+                    sg.fields,
+                    4,
+                    sg.fields.map(row)
+                  )
+                )
+              )
             );
           })
         )}

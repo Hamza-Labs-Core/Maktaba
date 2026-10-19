@@ -2,7 +2,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0116 (Epic 31, phase 2) - the database as a cache of the cluster channel
+-- Slot 0119 (Epic 31, phase 2) - the database as a cache of the cluster channel
 -- (specs/epics/31-multi-instance/design-agent.md section 7.9). The files on the share
 -- are the record; the home's API (the hub, which runs as the owner of these tables) is
 -- the only writer of the cache, and emptying it loses nothing: the hub refills it from
