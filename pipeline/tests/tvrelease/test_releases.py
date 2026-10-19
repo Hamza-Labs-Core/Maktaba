@@ -19,7 +19,7 @@ from tests.tvrelease.helpers import add_channel, library_with
 
 def test_defaults_every_kind_needs_approval() -> None:
     cfg = MaktabaTvStagingConfig()
-    assert cfg.enabled is True  # owner decision: staging on by default
+    assert cfg.enabled is False  # interim: off until the Changes page (story 33.11)
     assert cfg.swap_wait == "boundary" and cfg.hot_standby is True
     for kind in CHANGE_KINDS:
         assert getattr(cfg, f"auto_promote_{kind}") == "approval"

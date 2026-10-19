@@ -505,6 +505,11 @@ while a change is in flight; the channel editor shows "editing draft change #42"
 
 ## As built: 33.2, 33.3, 33.10, 33.12 (before the two-slot runtime)
 
+- **Interim default: `tv_staging.enabled = false`.** Until the Changes page (story 33.11) exists an
+  approval would be API-only, so staging ships off (direct writes, as before) and an admin may switch
+  it on. The owner's decision stands ("on once built"): the default flips to `true` when 33.11 lands
+  (pipeline `tvrelease/config.py`, API `tvchange.LoadConfig`, `schema.json`).
+
 Stories 33.2 (releases), 33.3 (generations), 33.10 (TV changes) and 33.12 (producers) landed before
 the runtime stories (33.1, 33.4, 33.7). What that means, and where the runtime hooks in:
 

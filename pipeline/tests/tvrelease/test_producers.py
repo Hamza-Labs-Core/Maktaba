@@ -128,6 +128,7 @@ async def test_digest_changed_supersedes_draft(db: Database) -> None:
 async def test_stale_marks_draft_only(db: Database) -> None:
     """TC6 / AC7: with staging on the stale flag drafts a schedule change; the live
     generation is not rewritten."""
+    await set_staging(db, enabled=True)
     lib = await library_with(db, 6)
     a = await add_channel(db, lib, 101)
     await topup_once(db, now=NOW)
@@ -149,7 +150,9 @@ async def test_stale_marks_draft_only(db: Database) -> None:
 async def test_staging_off_is_todays_behaviour(db: Database) -> None:
     """TC7 / AC10: staging off - write_channels writes directly (run() takes the old
     path) and the stale flag rewrites the live generation in place."""
-    assert await _staging(db) is True  # the default
+    assert await _staging(db) is False  # the interim default (until story 33.11)
+    await set_staging(db, enabled=True)
+    assert await _staging(db) is True
     await set_staging(db, enabled=False)
     assert await _staging(db) is False
     lib = await library_with(db, 6)
