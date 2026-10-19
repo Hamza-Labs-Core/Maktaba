@@ -23,27 +23,26 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
-// recognisedKeys mirrors config.py RECOGNISED_KEYS.
+// recognisedKeys mirrors config.py RECOGNISED_KEYS. multi_audio,
+// speaker_match_threshold and stt.max_usd_per_month are not settings any more
+// (config.py says why): a stored one round-trips with an "unknown key" warning.
 var recognisedKeys = map[string]struct{}{
-	"language":                {},
-	"multi_audio":             {},
-	"stt":                     {},
-	"embedding":               {},
-	"diarize":                 {},
-	"chapter_inference":       {},
-	"auto_tag_topics":         {},
-	"default_subtitle_lang":   {},
-	"ignore_globs":            {},
-	"sweep_interval_sec":      {},
-	"speaker_match_threshold": {},
-	"topic_clusters":          {},
+	"language":              {},
+	"stt":                   {},
+	"embedding":             {},
+	"diarize":               {},
+	"chapter_inference":     {},
+	"auto_tag_topics":       {},
+	"default_subtitle_lang": {},
+	"ignore_globs":          {},
+	"sweep_interval_sec":    {},
+	"topic_clusters":        {},
 }
 
 // nestedKeys mirrors config.py _NESTED_KEYS.
 var nestedKeys = map[string]map[string]struct{}{
 	"stt": {
-		"backend": {}, "model": {}, "profile": {},
-		"initial_prompt": {}, "max_usd_per_month": {},
+		"backend": {}, "model": {}, "profile": {}, "initial_prompt": {},
 	},
 	"embedding": {"model": {}, "device": {}},
 }
@@ -110,7 +109,7 @@ func validateSettingsKey(key string, value any, errs *[]httperror.FieldError, wa
 		if !ok || !iso6391Re.MatchString(s) {
 			addErr(errs, "settings/"+key, "must be an ISO-639-1 code")
 		}
-	case "multi_audio", "diarize", "chapter_inference", "auto_tag_topics":
+	case "diarize", "chapter_inference", "auto_tag_topics":
 		if _, ok := value.(bool); !ok {
 			addErr(errs, "settings/"+key, "must be boolean")
 		}
@@ -130,15 +129,6 @@ func validateSettingsKey(key string, value any, errs *[]httperror.FieldError, wa
 				addErr(errs, "settings/"+key, "must be a list of strings")
 				return
 			}
-		}
-	case "speaker_match_threshold":
-		f, ok := value.(float64)
-		if !ok {
-			addErr(errs, "settings/"+key, "must be a number")
-			return
-		}
-		if f < 0.0 || f > 1.0 {
-			addErr(errs, "settings/"+key, "must be in [0, 1]")
 		}
 	case "topic_clusters":
 		if value == nil {
@@ -191,11 +181,6 @@ func validateSTTField(name string, value any, errs *[]httperror.FieldError) {
 	case "model", "profile", "initial_prompt":
 		if _, ok := value.(string); !ok {
 			addErr(errs, "settings/stt/"+name, "must be a string")
-		}
-	case "max_usd_per_month":
-		f, ok := value.(float64)
-		if !ok || f < 0 {
-			addErr(errs, "settings/stt/"+name, "must be a non-negative number")
 		}
 	}
 }

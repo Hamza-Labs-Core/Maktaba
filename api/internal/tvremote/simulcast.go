@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvremote/cf"
 )
 
@@ -1098,6 +1099,12 @@ func (c *Controller) simulcastNotices(ctx context.Context, u SimulcastUsage, now
 	}
 	c.log().Warn("tv_simulcast: monthly output-hours threshold reached", "month", u.Month, "hours", round2(u.Hours),
 		"cap_hours", u.CapHours, "event", event)
+	sev := notify.SeverityWarn
+	if lvl == 100 {
+		sev = notify.SeverityError
+	}
+	c.notifyThreshold(ctx, NotifySimulcastCap, sev, u.Month, lvl, map[string]any{"month": u.Month, "level": lvl,
+		"hours": round2(u.Hours), "cap_hours": u.CapHours})
 }
 
 // writeSimulcastDays splits this month's output minutes per UTC day.

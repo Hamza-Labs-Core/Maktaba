@@ -1,6 +1,7 @@
 package recommendations
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,8 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg/runtimecfgtest"
 )
 
 func authReq(method, target string, uid string, admin bool) *http.Request {
@@ -146,5 +149,35 @@ func TestRailReasonKindsAreStable(t *testing.T) {
 		ReasonForYou != "for_you" ||
 		ReasonFromLibrary != "from_library" {
 		t.Fatal("reason_kind constants changed — client localization contract")
+	}
+}
+
+// recs.cache_ttl_sec overrides the cache TTL: the response's expiry and how
+// long a cached entry is served.
+func TestRuntimeCacheTTL(t *testing.T) {
+	now := time.Date(2026, 5, 18, 12, 0, 0, 0, time.UTC)
+	db := runtimecfgtest.DB(t)
+	runtimecfgtest.Set(t, db, "recs.cache_ttl_sec", `300`)
+	h := &Handler{NowFunc: func() time.Time { return now }, CacheTTL: 30 * time.Second, Settings: runtimecfg.New(db)}
+	r := chi.NewRouter()
+	h.Mount(r)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, authReq(http.MethodGet, "/api/recommendations?surface=tv-home", "u1", false))
+	var resp Response
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if !resp.ExpiresAt.Equal(now.Add(5 * time.Minute)) {
+		t.Fatalf("expires_at=%v want now+300s", resp.ExpiresAt)
+	}
+	// a stored entry lives until its expiry: past the 30 s default, within 300 s
+	h.cacheStore("u1:web-home", Response{ExpiresAt: now.Add(h.ttlFor(context.Background()))})
+	now = now.Add(2 * time.Minute)
+	if _, ok := h.cacheLookup("u1:web-home"); !ok {
+		t.Fatal("the entry expired at the default TTL")
+	}
+	now = now.Add(4 * time.Minute)
+	if _, ok := h.cacheLookup("u1:web-home"); ok {
+		t.Fatal("the entry outlived recs.cache_ttl_sec")
 	}
 }

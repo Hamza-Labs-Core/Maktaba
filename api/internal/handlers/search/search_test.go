@@ -1,9 +1,14 @@
 package search
 
 import (
+	"context"
+	"reflect"
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg/runtimecfgtest"
 )
 
 func TestRRFuse_Deterministic(t *testing.T) {
@@ -164,5 +169,37 @@ func TestNormaliseSuggestQuery_LowercasesAndStripsMarks(t *testing.T) {
 	}
 	if got != "cafe" {
 		t.Logf("note: unicode.Mn pass returned %q", got)
+	}
+}
+
+// The runtime weights search.fts_weight / search.semantic_weight steer the
+// hybrid fusion; unset they are 1 each (plain RRF).
+func TestFuseUsesRuntimeWeights(t *testing.T) {
+	ctx := context.Background()
+	db := runtimecfgtest.DB(t)
+	h := &Handler{Settings: runtimecfg.New(db)}
+	fts := []Hit{{SegmentID: 1}, {SegmentID: 2}}
+	sem := []Hit{{SegmentID: 3}, {SegmentID: 4}}
+	ids := func(hs []Hit) []int64 {
+		out := []int64{}
+		for _, x := range hs {
+			out = append(out, x.SegmentID)
+		}
+		return out
+	}
+	// plain RRF: the two rank-1 hits tie (id order), then the rank-2 hits
+	if got := ids(h.fuse(ctx, fts, sem)); !reflect.DeepEqual(got, ids(RRFuse(fts, sem, 60))) ||
+		!reflect.DeepEqual(got, []int64{1, 3, 2, 4}) {
+		t.Fatalf("default fusion %v", got)
+	}
+	runtimecfgtest.Set(t, db, "search.semantic_weight", `2`)
+	h.Settings.Invalidate()
+	if got := ids(h.fuse(ctx, fts, sem)); !reflect.DeepEqual(got, []int64{3, 4, 1, 2}) {
+		t.Fatalf("semantic weight 2: %v", got)
+	}
+	runtimecfgtest.Set(t, db, "search.fts_weight", `5`)
+	h.Settings.Invalidate()
+	if got := ids(h.fuse(ctx, fts, sem)); !reflect.DeepEqual(got, []int64{1, 2, 3, 4}) {
+		t.Fatalf("fts weight 5: %v", got)
 	}
 }

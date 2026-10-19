@@ -29,6 +29,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
 )
 
 // Job is the over-the-wire shape; minimal — handlers don't return rich
@@ -66,6 +67,11 @@ const jobColumns = `id, video_id, library_id, stage, state, priority, attempts,
 type Handler struct {
 	DB      *sql.DB
 	NowFunc func() time.Time
+	// Settings holds the runtime pause grace (pause.grace_sec). Unset: a
+	// force pause is taken at any time. Set: a force pause is taken only
+	// for a job whose requested pause has waited that long (the worker is
+	// stuck inside one segment; architecture §7.7 "Force pause").
+	Settings *runtimecfg.Reader
 }
 
 // Mount wires the routes.
@@ -151,6 +157,44 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": items})
 }
 
+// forceTooEarly refuses a force pause inside the pause grace: the job's
+// pause must be requested and have waited pause.grace_sec (updated_at is when
+// it was asked for). Nil when the grace is unset, passed, or the job is gone.
+func (h *Handler) forceTooEarly(r *http.Request, id string, now time.Time) *httperror.Error {
+	grace, ok := h.Settings.Seconds(r.Context(), runtimecfg.PauseGrace)
+	if !ok {
+		return nil
+	}
+	var requested bool
+	var at sql.NullTime
+	err := h.DB.QueryRowContext(r.Context(),
+		`SELECT pause_requested, updated_at FROM processing_jobs WHERE id = $1`, id).Scan(&requested, &at)
+	if err != nil {
+		return nil // no such job: the update and load below answer
+	}
+	if !requested {
+		return &httperror.Error{
+			Type:   "https://maktaba.dev/problems/pause-not-requested",
+			Title:  "pause not requested",
+			Status: http.StatusConflict,
+			Detail: "request a pause first: a force pause is taken once the pause has waited " +
+				strconv.Itoa(int(grace.Seconds())) + " s",
+		}
+	}
+	if at.Valid {
+		if wait := grace - now.Sub(at.Time); wait > 0 {
+			return &httperror.Error{
+				Type:   "https://maktaba.dev/problems/pause-grace",
+				Title:  "pause grace not over",
+				Status: http.StatusConflict,
+				Detail: "the worker may still pause at its next segment: force pause is taken in " +
+					strconv.Itoa(int(wait.Round(time.Second).Seconds())) + " s",
+			}
+		}
+	}
+	return nil
+}
+
 // Pause sets pause_requested. With “?force=true“ it shortcuts the
 // state directly per AC-2.
 func (h *Handler) Pause(w http.ResponseWriter, r *http.Request) {
@@ -162,6 +206,10 @@ func (h *Handler) Pause(w http.ResponseWriter, r *http.Request) {
 	now := h.now()
 	var err error
 	if force {
+		if e := h.forceTooEarly(r, id, now); e != nil {
+			httperror.Write(w, r, e)
+			return
+		}
 		_, err = h.DB.ExecContext(r.Context(), `
 			UPDATE processing_jobs SET state='paused', paused_reason='user-force',
 			       claimed_by=NULL, pause_requested=FALSE, updated_at=$2

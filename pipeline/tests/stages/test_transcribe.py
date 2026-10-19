@@ -27,12 +27,20 @@ class FakeTranscriber:
         self.detected: str | None = None
         self.resumed: Any = None
         self.slow = 0.0
+        self.prompts: list[str | None] = []
 
     async def transcribe(
-        self, audio: np.ndarray, *, resume: Any = None, progress: Any = None, scale: float = 1.0
+        self,
+        audio: np.ndarray,
+        *,
+        resume: Any = None,
+        progress: Any = None,
+        scale: float = 1.0,
+        prompt: str | None = None,
     ) -> Transcript:
         self.calls += 1
         self.resumed = resume
+        self.prompts.append(prompt)
         if progress is not None and self.slow:
             progress.publish(150, 1.5, "ar", [dict(SEG)])
             await asyncio.sleep(self.slow)
@@ -108,6 +116,34 @@ async def test_a_transcript_and_its_subtitle_files(
     await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
     await drain_core(db, rt, only={"transcribe", "subtitle_gen"})
     assert fake.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_the_library_s_initial_prompt_reaches_whisper(
+    db: Database, tmp_path: Path, fake: FakeTranscriber
+) -> None:
+    """``stt.initial_prompt``: Whisper decodes with the library's prompt, and a new
+    prompt is a new input (transcribed again)."""
+    from maktaba_pipeline.engine.sql import dumps
+
+    rt = await core_runtime(db)
+    vid, _ = await _one_video(db, tmp_path)
+    await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
+    await drain_core(db, rt, only={"transcribe"})
+    assert fake.prompts == [None]  # no prompt set: none given, as before
+    before = await tr.input_fingerprint(db, Subject(kind="video", id=vid))
+
+    lib = await db.fetchval("SELECT library_id FROM videos WHERE id = $1", str(vid))
+    settings = dumps({"stt": {"initial_prompt": "  الشيخ نبيل العوضي، السيرة النبوية "}})
+    await db.execute(
+        "UPDATE libraries SET settings = $2" + ("::jsonb" if is_pg(db) else "") + " WHERE id = $1",
+        lib,
+        settings,
+    )
+    assert await tr.input_fingerprint(db, Subject(kind="video", id=vid)) != before
+    await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
+    await drain_core(db, rt, only={"transcribe"})
+    assert fake.prompts == [None, "الشيخ نبيل العوضي، السيرة النبوية"]
 
 
 @pytest.mark.asyncio

@@ -572,7 +572,10 @@ class PlannerConfig:
     # grid shape
     min_slot_minutes: int = 30
     slot_round_minutes: int = 30
-    max_lanes_per_daypart: int = 2
+    #: the most shows one daypart holds on a day (a strip daypart: on its weekdays);
+    #: once reached, the daypart's last show runs on to its end (or the time is
+    #: filler). 0: no limit
+    max_lanes_per_daypart: int = 0
     max_slot_minutes: int = 120
     #: an episode this much longer than its slot still gets that slot (it overruns a little)
     overrun_tolerance_minutes: int = 5
@@ -1601,7 +1604,10 @@ def _show_grid(
                 if kb and t % DAY_MINUTES < kb[0] < t % DAY_MINUTES + (end - t):
                     stop = t + kb[0] - t % DAY_MINUTES
                 room = stop - t
-                if pattern in STRIP_FAMILY:
+                capped = 0 < cfg.max_lanes_per_daypart <= len(day_qs)
+                if capped:
+                    s = None  # the daypart has its shows: no new one, no extra airing
+                elif pattern in STRIP_FAMILY:
                     s = pick(strip_c if pattern == "strip" else shows, d, prev, room,
                              ramadan_first=pattern == "strip7", at=t)  # fmt: skip
                 else:  # a strip show may air weekly; a weekly show never daily
@@ -1632,6 +1638,8 @@ def _show_grid(
                         f"{d.label or d.key}: {s.name} ({s.cadence}, {s.type}, rank {s.rank:.2f})"
                         + (" — Ramadan show" if pattern == "strip7" and s.ramadan else "")
                     )
+                elif capped:
+                    pass
                 elif pattern == "weekly" or not (strip_c or shows):
                     q = extra_pick(pattern if pattern == "weekly" else "strip", room, prev_q,
                                    day_qs, prev, at=t)  # fmt: skip

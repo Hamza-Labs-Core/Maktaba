@@ -106,6 +106,7 @@ type fakeSlot struct {
 	stations []string
 	warm     []slot.WarmRequest
 	segs     atomic.Int32
+	pid      int // the process id the status reports (0: none)
 }
 
 func newFakeSlot(t *testing.T, name string, first int64, stations ...string) *fakeSlot {
@@ -179,7 +180,7 @@ func newFakeSlot(t *testing.T, name string, first int64, stations ...string) *fa
 func (f *fakeSlot) status() slot.Status {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return slot.Status{Slot: f.name, Role: f.role, Epoch: f.epoch, Stations: append([]string{}, f.stations...)}
+	return slot.Status{Slot: f.name, Role: f.role, Epoch: f.epoch, PID: f.pid, Stations: append([]string{}, f.stations...)}
 }
 
 func (f *fakeSlot) addr() string { return strings.TrimPrefix(f.srv.URL, "http://") }
@@ -386,6 +387,116 @@ func TestFailoverNeedsAHealthyStandby(t *testing.T) {
 	if _, err := g.slots.StartStaging(context.Background()); err == nil && !StagingBuild {
 		t.Fatal("staging started without the build flag")
 	}
+}
+
+// slotEvents records the events a front door emits for the bell.
+type slotEvents struct {
+	mu  sync.Mutex
+	got []SlotEvent
+}
+
+func (r *slotEvents) on(_ context.Context, e SlotEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.got = append(r.got, e)
+}
+
+func (r *slotEvents) all() []SlotEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]SlotEvent(nil), r.got...)
+}
+
+// Story 33.13 AC1: a failover to the hot standby is reported for the bell.
+func TestFailoverEmitsEvent(t *testing.T) {
+	g := newSlotRig(t)
+	ev := &slotEvents{}
+	g.slots.OnEvent = ev.on
+	ctx := context.Background()
+	g.slots.probeAll(ctx)
+	if !g.slots.Failover(ctx, "blue", "test: killed") {
+		t.Fatal("no failover")
+	}
+	got := ev.all()
+	if len(got) != 1 || got[0].Kind != SlotEventFailover || got[0].Slot != "blue" || got[0].Detail["to"] != "green" ||
+		got[0].Detail["why"] != "test: killed" {
+		t.Fatalf("events %+v", got)
+	}
+	// a failover that does not happen (blue is not live any more) reports nothing
+	if g.slots.Failover(ctx, "blue", "again") {
+		t.Fatal("failed over from a slot that is not live")
+	}
+	if n := len(ev.all()); n != 1 {
+		t.Fatalf("%d events", n)
+	}
+}
+
+// Story 33.13 AC1: a staging slot restarted three times within the window is a
+// crash loop, reported once; the live slot's restarts are not counted.
+func TestStagingCrashLoopEvent(t *testing.T) {
+	t.Run("restarts seen by the probes", func(t *testing.T) {
+		g := newSlotRig(t)
+		ev := &slotEvents{}
+		g.slots.OnEvent = ev.on
+		amber := newFakeSlot(t, "amber", 3000, g.ch.String())
+		g.slots.mu.Lock()
+		g.slots.Addrs["amber"] = amber.addr()
+		g.slots.staging = "amber"
+		g.slots.mu.Unlock()
+		ctx := context.Background()
+		restart := func(pid int) {
+			amber.mu.Lock()
+			amber.pid = pid
+			amber.mu.Unlock()
+			g.slots.check(ctx, "amber")
+		}
+		restart(100) // the first process: no restart yet
+		restart(101)
+		restart(102)
+		if n := len(ev.all()); n != 0 {
+			t.Fatalf("two restarts reported as a loop: %+v", ev.all())
+		}
+		restart(103)
+		got := ev.all()
+		if len(got) != 1 || got[0].Kind != SlotEventCrashLoop || got[0].Slot != "amber" || got[0].Detail["restarts"] != 3 {
+			t.Fatalf("events %+v", got)
+		}
+		restart(104) // still looping: reported once
+		restart(104) // the same process: no restart
+		if n := len(ev.all()); n != 1 {
+			t.Fatalf("%d events", n)
+		}
+		// the live slot restarting is no staging crash loop
+		for pid := 1; pid <= 5; pid++ {
+			g.blue.mu.Lock()
+			g.blue.pid = pid
+			g.blue.mu.Unlock()
+			g.slots.check(ctx, "blue")
+		}
+		if n := len(ev.all()); n != 1 {
+			t.Fatalf("live restarts counted: %+v", ev.all())
+		}
+	})
+	t.Run("exits the supervisor reports", func(t *testing.T) {
+		g := newSlotRig(t)
+		ev := &slotEvents{}
+		g.slots.OnEvent = ev.on
+		g.slots.mu.Lock()
+		g.slots.staging = "amber"
+		g.slots.mu.Unlock()
+		ctx := context.Background()
+		for i := 0; i < 2; i++ {
+			g.slots.Exited(ctx, "amber")
+		}
+		if n := len(ev.all()); n != 0 {
+			t.Fatalf("two exits reported as a loop")
+		}
+		g.slots.Exited(ctx, "amber")
+		g.slots.Exited(ctx, "amber")
+		if got := ev.all(); len(got) != 1 || got[0].Kind != SlotEventCrashLoop {
+			t.Fatalf("events %+v", got)
+		}
+	})
 }
 
 // TC8: cap 16, W = 22 watched channels: live gets 16 (the rest spill or are

@@ -45,6 +45,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/watch"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
@@ -439,13 +440,16 @@ func runServe() error {
 			// out of extensions.settings, which machines can read.
 			homeSecrets := router.OpenHomeSecrets(context.Background(), appDB,
 				secrets.KeyPath(os.Getenv), logger)
+			// one notification hub for every producer (story 33.13): the bell
+			// reads its table; e-mail / push subscribe to it later
+			notifyHub := notify.NewHub(appDB, logger)
 			var mountRemote func(r chi.Router)
 			var remoteCtl *tvremote.Controller
 			router.MountP6(r, router.P6Deps{
 				Secrets: homeSecrets,
 				OnQueues: func(q *queues.Handler) {
 					_, remoteCtl, mountRemote = router.WireP32Remote(q, router.P32RemoteDeps{
-						DB: appDB, Secrets: homeSecrets, Logger: logger,
+						DB: appDB, Secrets: homeSecrets, Logger: logger, Notifier: notifyHub,
 					})
 				},
 				DB:                   appDB,
@@ -519,10 +523,11 @@ func runServe() error {
 			}
 			// Epic 33: TV changes (/api/tv/changes, releases, slots) and the change
 			// controller (staged -> verified -> approved -> swapped)
-			router.MountP33(r, router.P33Deps{DB: appDB, Logger: logger, RunController: true})
+			router.MountP33(r, router.P33Deps{DB: appDB, Logger: logger, RunController: true,
+				Notifier: notifyHub})
 			// Epic 35 story 35.3: update policy, release catalog and the quiet-window
 			// scheduler (/api/cluster/updates). Verification is story 35.1's.
-			router.MountP35(r, router.P35Deps{DB: appDB, Logger: logger, Current: version.Version,
+			router.MountP35(r, router.P35Deps{DB: appDB, Logger: logger, Current: version.Version, Notifier: notifyHub,
 				BaseChannel: version.Channel(), Ref: updatesRef, RunLoops: true,
 				Verifier: updates.ReleaseVerifier{Trust: updater}})
 			logger.Info("p27: live-channel + guide handlers mounted",

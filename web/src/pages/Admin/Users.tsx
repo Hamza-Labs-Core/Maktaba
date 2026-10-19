@@ -26,6 +26,7 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { AdminGate } from "../../components/AdminGate";
+import { RegistrationToggle } from "./RegistrationToggle";
 
 interface AdminUser {
   id: string;
@@ -110,6 +111,8 @@ function UsersInner() {
       </header>
 
       <p className="mkt-muted mkt-admin__note">{t("admin.users.note")}</p>
+
+      <RegistrationToggle />
 
       {users.length === 0 ? (
         <EmptyState

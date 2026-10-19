@@ -235,6 +235,10 @@ func TestDetailForThePage(t *testing.T) {
 					"channels": map[string]any{chA: nil, "00000000-0000-4000-8000-0000000000c3": map[string]any{"number": 130, "name": "Seerah"}},
 					"art":      map[string]any{chB: map[string]any{"logo": map[string]any{"path": "/x.png"}}},
 					"settings": map[string]any{"tv_output": map[string]any{"fps": 25}},
+					"filler": map[string]any{
+						"pools": map[string]any{"p-new": map[string]any{"name": "Station ids", "created": true}, "p-old": nil},
+						"items": map[string]any{"i1": map[string]any{"pool_id": "p-new", "video_id": "v1", "type": "station_id"}},
+					},
 				}}}
 			if err := w.h.Store.Insert(context.Background(), w.db, d); err != nil {
 				t.Fatal(err)
@@ -255,6 +259,16 @@ func TestDetailForThePage(t *testing.T) {
 			}
 			if s, _ := ps["settings"].([]any); len(s) != 1 || s[0] != "tv_output" {
 				t.Fatalf("settings %v", ps["settings"])
+			}
+			// story 33.12 AC6: the filler pools the draft touches
+			fl, _ := ps["filler"].([]any)
+			if len(fl) != 2 {
+				t.Fatalf("filler %v", ps["filler"])
+			}
+			gone, added := fl[0].(map[string]any), fl[1].(map[string]any)
+			if gone["id"] != "p-old" || gone["op"] != "removed" ||
+				added["name"] != "Station ids" || added["op"] != "added" || added["items_added"] != 1.0 {
+				t.Fatalf("filler %v", fl)
 			}
 		})
 	}

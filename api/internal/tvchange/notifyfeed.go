@@ -24,8 +24,8 @@ const (
 	NotifySwapNotTaken         = "tv.change.swap_not_taken"  // no front door took the swap in time: rolled back
 	NotifyRollbackDegraded     = "tv.rollback.degraded"      // a warm rollback without a live TV slot: the database only
 	NotifyRollbackNotCommitted = "tv.rollback.not_committed" // the reverse commit found nothing to roll back
-	// Emitted by the two-slot runtime (stories 33.1 / 33.9) through the same Notifier;
-	// nothing sends them before it lands.
+	// From the front door's slot events (tv_slot_events, slot 0137): notifySlotEvents
+	// sends them through the same Notifier.
 	NotifyFailover  = "tv.slot.failover"   // the live slot failed over to the hot standby
 	NotifyCrashLoop = "tv.slot.crash_loop" // the staging slot keeps crashing
 )

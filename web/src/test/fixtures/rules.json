@@ -1027,10 +1027,10 @@
           "kind": "int",
           "group": "Grid and slots",
           "label": "Shows per daypart (most)",
-          "help": "",
-          "default": 2,
-          "minimum": 1,
-          "value": 2,
+          "help": "The most shows one daypart holds on a day; once reached, its last show runs on to the daypart's end. 0: no limit.",
+          "default": 0,
+          "minimum": 0,
+          "value": 0,
           "changed": false
         },
         {

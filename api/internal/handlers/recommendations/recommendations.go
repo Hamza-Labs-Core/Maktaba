@@ -24,6 +24,7 @@
 package recommendations
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 	"sync"
@@ -34,6 +35,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
 )
 
 // Reason kinds. A client maps these to localized strings; the server
@@ -86,6 +88,9 @@ type Handler struct {
 	DB       *sql.DB
 	NowFunc  func() time.Time
 	CacheTTL time.Duration
+	// Settings holds the runtime cache TTL (recs.cache_ttl_sec; nil or
+	// unset: CacheTTL, else 60 s).
+	Settings *runtimecfg.Reader
 	cacheMu  sync.Mutex
 	cache    map[string]cachedResponse
 }
@@ -137,7 +142,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		common.WriteJSON(w, r, http.StatusOK, Response{
 			Rails:       []Rail{},
 			GeneratedAt: now,
-			ExpiresAt:   now.Add(h.ttl()),
+			ExpiresAt:   now.Add(h.ttlFor(r.Context())),
 		})
 		return
 	}
@@ -173,7 +178,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	resp := Response{
 		Rails:       rails,
 		GeneratedAt: now,
-		ExpiresAt:   now.Add(h.ttl()),
+		ExpiresAt:   now.Add(h.ttlFor(r.Context())),
 	}
 
 	h.cacheStore(key, resp)
@@ -490,7 +495,11 @@ func (h *Handler) cacheStore(key string, resp Response) {
 		// Cheap bound: drop the cache when it grows too large.
 		h.cache = map[string]cachedResponse{}
 	}
-	h.cache[key] = cachedResponse{resp: resp, exp: h.now().Add(h.ttl())}
+	exp := resp.ExpiresAt
+	if exp.IsZero() {
+		exp = h.now().Add(h.ttl())
+	}
+	h.cache[key] = cachedResponse{resp: resp, exp: exp}
 }
 
 // bustUser drops every surface entry for one user (called after a
@@ -503,6 +512,14 @@ func (h *Handler) bustUser(userID string) {
 			delete(h.cache, k)
 		}
 	}
+}
+
+// ttlFor is the cache TTL with the runtime setting recs.cache_ttl_sec over it.
+func (h *Handler) ttlFor(ctx context.Context) time.Duration {
+	if d, ok := h.Settings.Seconds(ctx, runtimecfg.RecsCacheTTL); ok {
+		return d
+	}
+	return h.ttl()
 }
 
 func (h *Handler) ttl() time.Duration {

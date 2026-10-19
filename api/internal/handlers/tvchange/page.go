@@ -54,6 +54,19 @@ type PendingChannel struct {
 type PendingSummary struct {
 	Channels []PendingChannel `json:"channels"`
 	Settings []string         `json:"settings"`
+	// Filler is the filler pools the draft adds, edits, removes or changes the
+	// clips of (story 33.12 AC6).
+	Filler []PendingFiller `json:"filler"`
+}
+
+// PendingFiller is one filler pool a draft touches.
+type PendingFiller struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Op: added | edited | removed | items (only its clips change).
+	Op    string `json:"op"`
+	Added int    `json:"items_added"`
+	Gone  int    `json:"items_removed"`
 }
 
 // PageConfig is the part of rules.tv_staging the page shows next to the actions.
@@ -153,7 +166,7 @@ func (h *Handler) release(ctx context.Context, id string) *Release {
 // the draft's definitions or the live lineup.
 func (h *Handler) pendingSummary(ctx context.Context, c *core.Change) *PendingSummary {
 	pd := c.Pending()
-	out := &PendingSummary{Channels: []PendingChannel{}, Settings: []string{}}
+	out := &PendingSummary{Channels: []PendingChannel{}, Settings: []string{}, Filler: h.pendingFiller(ctx, pd)}
 	seen := map[string]int{}
 	add := func(id, op string, def map[string]any) {
 		pc := PendingChannel{ID: id, Op: op}
@@ -229,6 +242,62 @@ func (h *Handler) pendingSummary(ctx context.Context, c *core.Change) *PendingSu
 		sort.Strings(out.Settings)
 	}
 	sort.SliceStable(out.Channels, func(i, j int) bool { return out.Channels[i].Number < out.Channels[j].Number })
+	return out
+}
+
+// pendingFiller lists the filler pools a draft touches, named from the draft or the
+// live pool.
+func (h *Handler) pendingFiller(ctx context.Context, pd *core.Pending) []PendingFiller {
+	byID := map[string]*PendingFiller{}
+	get := func(id string) *PendingFiller {
+		if f := byID[id]; f != nil {
+			return f
+		}
+		f := &PendingFiller{ID: id, Op: "items"}
+		var name sql.NullString
+		if h.DB.QueryRowContext(ctx, `SELECT name FROM filler_pools WHERE id = $1`, id).Scan(&name) == nil {
+			f.Name = name.String
+		}
+		byID[id] = f
+		return f
+	}
+	for id, v := range pd.FillerPools() {
+		f := get(id)
+		d, _ := v.(map[string]any)
+		switch {
+		case d == nil:
+			f.Op = "removed"
+		case d["created"] == true:
+			f.Op = "added"
+		default:
+			f.Op = "edited"
+		}
+		if n, ok := d["name"].(string); ok && n != "" {
+			f.Name = n
+		}
+	}
+	for id, v := range pd.FillerItems() {
+		if d, _ := v.(map[string]any); d != nil {
+			if pid, _ := d["pool_id"].(string); pid != "" {
+				get(pid).Added++
+			}
+			continue
+		}
+		var pid string
+		if h.DB.QueryRowContext(ctx, `SELECT pool_id FROM filler_items WHERE id = $1`, id).Scan(&pid) == nil {
+			get(pid).Gone++
+		}
+	}
+	out := make([]PendingFiller, 0, len(byID))
+	for _, f := range byID {
+		out = append(out, *f)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].ID < out[j].ID
+	})
 	return out
 }
 

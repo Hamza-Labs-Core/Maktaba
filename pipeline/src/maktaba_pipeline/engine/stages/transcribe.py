@@ -14,6 +14,7 @@ Settings (environment, read per run): ``MAKTABA_STT_MODEL`` (default
 ``MAKTABA_STT_REFINE`` (``1``: a second listen corrects Whisper's words,
 :mod:`maktaba_pipeline.stt.refine`; ``0`` stores Whisper's as they are) with
 ``MAKTABA_STT_REFINE_MODEL`` (default ``CohereLabs/cohere-transcribe-arabic-07-2026``).
+The library's ``stt.initial_prompt`` (names, terms) biases every window's decoding.
 """
 
 from __future__ import annotations
@@ -214,8 +215,11 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
         return None
     s = settings_from_env()
     row = await db.fetchrow("SELECT content_hash FROM videos WHERE id = $1", uid(v.id))
+    prompt = await library_prompt(db, v.library_id)
     return canonical_hash(
         {
+            # only when set: a library without a prompt keeps the fingerprint it had
+            **({"prompt": prompt} if prompt else {}),
             "hash": None if row is None else str(row["content_hash"]),
             "size": v.size_bytes,
             "model": s.model,
@@ -228,6 +232,15 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
             "v": TRANSCRIBE_VERSION,
         }
     )
+
+
+async def library_prompt(db: Any, library_id: Any) -> str | None:
+    """The library's ``stt.initial_prompt`` (names and terms that bias Whisper), or None."""
+    from ._analysis import library_setting
+
+    stt = await library_setting(db, library_id, "stt")
+    got = stt.get("initial_prompt") if isinstance(stt, dict) else None
+    return (got.strip() or None) if isinstance(got, str) else None
 
 
 async def decode_audio(path: str, timeout: float = DECODE_TIMEOUT_S) -> np.ndarray:
@@ -346,14 +359,18 @@ async def _run_saving(
     settings: WhisperSettings,
     audio_sec: int,
     scale: float = 1.0,
+    prompt: str | None = None,
 ) -> Transcript:
-    """Transcribe, saving the file's progress every ``MAKTABA_STT_CHECKPOINT_S``."""
+    """Transcribe, saving the file's progress every ``MAKTABA_STT_CHECKPOINT_S``
+    (``prompt``: the library's ``stt.initial_prompt``)."""
     resume = await load_checkpoint(db, v.id, fingerprint)
     progress = FileProgress(saved_seek=resume.seek if resume else 0)
     progress.saved_count = len(resume.segments) if resume else 0
     every = float(os.environ.get("MAKTABA_STT_CHECKPOINT_S", str(CHECKPOINT_S)))
     task = asyncio.ensure_future(
-        get_transcriber(settings).transcribe(audio, resume=resume, progress=progress, scale=scale)
+        get_transcriber(settings).transcribe(
+            audio, resume=resume, progress=progress, scale=scale, prompt=prompt
+        )
     )
     try:
         while True:
@@ -406,8 +423,9 @@ async def _transcribe_file(
         else:
             scale = total_sec / (audio.size / SAMPLE_RATE)
             result = await _run_saving(
-                db, v, ctx, fingerprint, audio, settings, round(total_sec), scale
-            )
+                db, v, ctx, fingerprint, audio, settings, round(total_sec), scale,
+                prompt=await library_prompt(db, v.library_id),
+            )  # fmt: skip
     except Exception as exc:  # the model or the GPU: retryable (a restart may fix it)
         raise StageFailure("stt_failed", f"{type(exc).__name__}: {exc}") from exc
     refined: dict[str, Any] | None = None
