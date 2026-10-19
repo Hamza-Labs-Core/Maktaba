@@ -33,6 +33,9 @@ func queueDB(t *testing.T) *sql.DB {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
+	// One connection: the sweep's transaction and the test's reads take
+	// turns instead of racing for SQLite's write lock (SQLITE_BUSY).
+	db.SetMaxOpenConns(1)
 	stmts := []string{
 		`CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT)`,
 		`CREATE TABLE videos (id TEXT PRIMARY KEY, library_id TEXT, filename TEXT, title TEXT,
