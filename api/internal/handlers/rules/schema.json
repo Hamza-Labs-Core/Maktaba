@@ -5010,6 +5010,16 @@
      "label": "Add to the Plex path map",
      "help": "The Plex extension's path map gets the canonical prefix of every local prefix it maps.",
      "default": true
+    },
+    {
+     "name": "map_settle_minutes",
+     "kind": "int",
+     "group": "Canonical share paths",
+     "label": "Wait for the share map (min)",
+     "help": "The API and the streaming service read the home's share map every 5 minutes: paths are converted to a share only once the map has named it this long, so playback never meets a path it cannot open yet.",
+     "default": 6,
+     "minimum": 0,
+     "maximum": 240
     }
    ]
   }

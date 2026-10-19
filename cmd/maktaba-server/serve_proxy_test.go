@@ -200,6 +200,33 @@ func TestStreamGateAllowList(t *testing.T) {
 	}
 }
 
+// TestStreamGateSlotSegments: with TV slots the front door's stitched playlist
+// lists segments as s/{slot}/seg-N.ts (relative to the channel's playlist), so
+// the browser fetches /stream/channel/{id}/s/{slot}/seg-N.ts through the web
+// port: the gate must let those through (and nothing else under s/).
+func TestStreamGateSlotSegments(t *testing.T) {
+	mux, _, _, _ := webMux(t)
+	for _, name := range []string{"blue", "green", "amber"} {
+		path := "/stream/channel/" + chanID + "/s/" + name + "/seg-1760000000.ts"
+		if rec := get(mux, path, signedIn); rec.Code != 200 || rec.Body.String() != "ok:"+path {
+			t.Errorf("%s: %d %q", path, rec.Code, rec.Body.String())
+		}
+	}
+	for _, path := range []string{
+		"/stream/channel/" + chanID + "/s/purple/seg-1.ts",
+		"/stream/channel/" + chanID + "/s/blue/index.m3u8",
+		"/stream/channel/" + chanID + "/s/blue/seg-1.ts.tmp",
+		"/stream/channel/" + chanID + "/s/blue/x/seg-1.ts",
+	} {
+		if rec := get(mux, path, signedIn); rec.Code == http.StatusOK {
+			t.Errorf("%s: served, want refused", path)
+		}
+	}
+	if rec := get(mux, "/stream/channel/"+chanID+"/s/blue/seg-1.ts", nil); rec.Code != http.StatusUnauthorized {
+		t.Errorf("anonymous: %d, want 401", rec.Code)
+	}
+}
+
 func TestStreamGateCachesAcceptedSessions(t *testing.T) {
 	mux, _, api, gate := webMux(t)
 	now := time.Unix(1_700_000_000, 0)
