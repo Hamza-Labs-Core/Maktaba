@@ -21,7 +21,12 @@ func TestMain(m *testing.M) {
 	}
 	_ = os.Setenv("MAKTABA_NODE_CONFIG", filepath.Join(dir, "node.json"))
 	_ = os.Unsetenv("MAKTABA_TV_HOST_ROLE")
+	// no test listens on the LAN (loopback_guard_test.go)
+	guardReport := installLoopbackGuard()
 	code := m.Run()
+	if g := guardReport(); code == 0 {
+		code = g
+	}
 	_ = os.RemoveAll(dir)
 	os.Exit(code)
 }

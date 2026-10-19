@@ -168,9 +168,24 @@ func TestCanBindRealListener(t *testing.T) {
 		t.Fatalf("CanBind(%s) = true while it is listened on", ln.Addr())
 	}
 	_, port, _ := net.SplitHostPort(ln.Addr().String())
+	// The wildcard bind itself is faked (a real one would face the LAN and pop a
+	// firewall prompt); its 127.0.0.1 follow-up check is real and must refuse.
+	var tried []string
+	listenTCP = func(network, addr string) (net.Listener, error) {
+		tried = append(tried, addr)
+		if h, _, _ := net.SplitHostPort(addr); h == "0.0.0.0" {
+			return net.Listen(network, "127.0.0.1:0")
+		}
+		return guardedListen(network, addr)
+	}
+	defer func() { listenTCP = guardedListen }()
 	if CanBind(net.JoinHostPort("0.0.0.0", port)) {
 		t.Fatalf("wildcard bind of a port held on 127.0.0.1 reported free")
 	}
+	if len(tried) != 2 || tried[1] != net.JoinHostPort("127.0.0.1", port) {
+		t.Fatalf("wildcard CanBind tried %v, want the wildcard then 127.0.0.1:%s", tried, port)
+	}
+	listenTCP = guardedListen
 	_ = ln.Close()
 	if !CanBind(ln.Addr().String()) {
 		t.Fatalf("CanBind(%s) = false after close", ln.Addr())

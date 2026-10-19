@@ -144,7 +144,13 @@ cython_debug/
 .DS_Store
 Thumbs.db
 
-# Go build artifacts
+# Go build artifacts (never committed; CI's lint job refuses them too)
+*.exe
+*.test
+*.test.exe
+*.dll
+*.syso
+/bin/
 api/api
 api/bin/
 streaming/streaming

@@ -260,8 +260,12 @@ func CanBind(addr string) bool {
 	return true
 }
 
+// listenTCP is net.Listen; the tests swap in a loopback-only guard so no test
+// opens a socket on the LAN (a Windows firewall prompt per test binary).
+var listenTCP = net.Listen
+
 func tryListen(addr string) bool {
-	ln, err := net.Listen("tcp", addr)
+	ln, err := listenTCP("tcp", addr)
 	if err != nil {
 		return false
 	}
