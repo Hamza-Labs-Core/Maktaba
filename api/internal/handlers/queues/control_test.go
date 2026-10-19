@@ -742,4 +742,32 @@ func TestExtensions(t *testing.T) {
 			t.Fatalf("viewer: %d", rec.Code)
 		}
 	})
+
+	t.Run("a test run is audited without its details", func(t *testing.T) {
+		f := newFixture()
+		f.h.Testers = map[string]ExtensionTester{"plex": func(context.Context) (any, error) {
+			return map[string]any{"ok": false, "message": "not ready: token", "lines": []any{
+				map[string]any{"key": "reachable", "ok": true, "detail": "plex answered"},
+				map[string]any{"key": "token", "ok": false, "code": "token_rejected", "detail": "secret-ish detail"},
+				map[string]any{"key": "livetv", "ok": false, "optional": true, "code": "livetv_missing", "detail": "x"},
+			}}, nil
+		}}
+		who := admin()
+		who.UserID = "6f1c1a52-6d7e-4a0b-9d1b-0c3a2a4f5e61"
+		if rec := f.do("POST", "/api/extensions/plex/test", "", who); rec.Code != 200 {
+			t.Fatalf("status %d", rec.Code)
+		}
+		calls := f.db.Find("insert into audit_log")
+		if len(calls) != 1 {
+			t.Fatalf("audit rows %d", len(calls))
+		}
+		args := calls[0].Args
+		if len(args) != 3 || args[0] != who.UserID || args[1] != "plex" {
+			t.Fatalf("args %v", args)
+		}
+		payload, _ := args[2].(string)
+		if !strings.Contains(payload, `"token_rejected"`) || !strings.Contains(payload, `"livetv"`) || strings.Contains(payload, "secret-ish") {
+			t.Fatalf("payload %s", payload)
+		}
+	})
 }

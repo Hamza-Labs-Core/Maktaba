@@ -3021,5 +3021,15 @@
   "machines.workerOnly": "Worker only — re-run the installer once (install-node … -Full)",
   "machines.vod.fallback": "VOD served by {machine}: share not readable here",
   "machines.vod.another": "another machine",
-  "machines.newTab": "(opens in a new tab)"
+  "machines.newTab": "(opens in a new tab)",
+  "ext.check.plex.reachable": "Server reachable",
+  "ext.check.plex.token": "Plex token",
+  "ext.check.plex.server": "Server",
+  "ext.check.plex.livetv": "Live TV",
+  "ext.check.plex.maktaba_tuner": "Maktaba's tuner in Plex",
+  "ext.check.plex.dizquetv_tuner": "dizqueTV's tuner in Plex",
+  "ext.check.plex.path_map": "Path map",
+  "ext.check.dizquetv.reachable": "Server reachable",
+  "ext.check.dizquetv.channels": "Channels",
+  "ext.check.dizquetv.plex_servers": "Plex servers in dizqueTV"
 }
