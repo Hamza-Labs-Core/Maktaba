@@ -62,6 +62,8 @@ class FakeLiveTV:
     calls: list[tuple[str, str, str]] = field(default_factory=list)
     down: bool = False
     answer_with_objects: bool = True
+    #: ``POST /livetv/dvrs`` fails this many times first (Plex timing out on the guide)
+    dvr_failures: int = 0
     _next: int = 10
 
     def add_device(self, uri: str, device_id: str, title: str = "HDHomeRun") -> str:
@@ -141,6 +143,9 @@ class FakeLiveTV:
                 else {}
             )
         if method == "POST" and path == "/livetv/dvrs":
+            if self.dvr_failures > 0:
+                self.dvr_failures -= 1
+                raise TransportError("timed out")
             dev = next((k for k, d in self.devices.items() if d["uuid"] == q.get("device")), None)
             if dev is None:
                 return 400
@@ -601,6 +606,26 @@ async def test_guide_auto_refresh_off_waits_for_refresh_now(db: Database) -> Non
     assert row["state"] == "done" and w.fake.writes() == []
     await livetv(db, w, force=True)
     assert any(p.endswith("/reloadGuide") for _, p in w.fake.writes())
+
+
+@pytest.mark.asyncio
+async def test_a_register_that_fails_half_way_keeps_the_request_for_the_retry(
+    db: Database,
+) -> None:
+    w = await make_world(db)
+    await ask_register(db)
+    w.fake.dvr_failures = 1  # the tuner is added, then the DVR call times out
+    row = await livetv(db, w, force=True)
+    assert row["state"] in ("pending", "failed")
+    assert len(w.fake.devices) == 2 and len(w.fake.dvrs) == 1
+    assert (await load_state(db)).register_requested_at is not None  # not answered yet
+    row = await livetv(db, w, force=True)
+    assert row["state"] == "done", error_of(row)
+    # the retry uses the tuner the first run added and creates the DVR
+    assert len(w.fake.devices) == 2 and len(w.fake.dvrs) == 2
+    s = await status(db)
+    assert s["maktaba"]["registered"] and s["actions"]["register"] == "registered"
+    assert (await load_state(db)).register_requested_at is None
 
 
 @pytest.mark.asyncio

@@ -61,7 +61,7 @@ __all__ = [
 ]
 
 #: bumps when the rules change what they produce (every library is cleaned again)
-DISPLAY_TITLE_VERSION = 1
+DISPLAY_TITLE_VERSION = 2
 #: bumps when the model's prompt changes (cached answers are asked again)
 LLM_PROMPT_VERSION = 1
 

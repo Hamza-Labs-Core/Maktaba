@@ -97,10 +97,20 @@ def _ref(ix: _Index, start: int, n: int) -> VerseRef:
     return VerseRef(s, a, b, ar, en)
 
 
+#: the fewest words a ``{…}`` span needs to count as a verse when nothing else says it is
+#: one (no «قوله تعالى», no ``﴿…﴾``): most one- and two-word phrases occur exactly once in
+#: the text, so a lesson topic in braces would otherwise get a verse reference
+MIN_UNTRIGGERED_WORDS = 3
+
+
+def _words(quote: str) -> list[str]:
+    return [w for w in fold(re.sub(r"\.{2,}|…", " ", quote)).split() if w]
+
+
 def locate(quote: str) -> VerseRef | None:
     """The verse(s) the quoted words are from, or None (not found, too short to tell, or
     found in more than one place)."""
-    q = [w for w in fold(re.sub(r"\.{2,}|…", " ", quote)).split() if w]
+    q = _words(quote)
     if not q:
         return None
     ix = _index()
@@ -215,8 +225,11 @@ def find_quotes(title: str) -> list[Quote]:
         if not free(m.start(), m.end()) or not _ARABIC_WORD.search(inner):
             continue
         ref = locate(inner)
-        if m.group(1) is None and ref is None:
-            continue  # «{ نظرية التطور }», «{15}»: braces, not a verse
+        if m.group(1) is None and (ref is None or len(_words(inner)) < MIN_UNTRIGGERED_WORDS):
+            # «{ نظرية التطور }», «{15}»: braces, not a verse. Nor a short topic that
+            # happens to occur once in the text: «{شهر رمضان}», «{الحج والعمرة}» and
+            # «{اليوم الآخر}» are lesson subjects, not quotes of 2:185, 2:196 and 29:36
+            continue
         op, cl = ("﴿", "﴾") if m.group(1) is not None else ("{", "}")
         out.append(Quote(m.start(), m.end(), inner.strip(), op, cl, False, ref))
         taken.append((m.start(), m.end()))

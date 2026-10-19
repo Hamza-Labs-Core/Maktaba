@@ -61,6 +61,21 @@ def test_locate_refuses_what_it_cannot_tell() -> None:
 
 
 @pytest.mark.unit
+def test_a_short_topic_in_braces_is_not_a_verse() -> None:
+    # each occurs exactly once in the text, but in braces alone it is a lesson's subject
+    for title in ("درس {شهر رمضان}", "{الحج والعمرة}", "{اليوم الآخر}", "{الصمد}"):
+        assert find_quotes(title) == [], title
+        assert verse_reference(title) == "", title
+    # long enough to tell, or marked as a verse, it still is one
+    [q] = find_quotes("{إنا لله وإنا إليه راجعون}")
+    assert q.ref is not None and (q.ref.surah, q.ref.first) == (2, 156)
+    [q] = find_quotes("﴿شهر رمضان﴾")
+    assert q.ref is not None and (q.ref.surah, q.ref.first) == (2, 185)
+    [q] = find_quotes("تفسير قوله تعالى: {شهر رمضان}")
+    assert q.ref is not None and (q.ref.surah, q.ref.first) == (2, 185)
+
+
+@pytest.mark.unit
 def test_find_quotes() -> None:
     q = find_quotes(SIYAM)
     assert len(q) == 1 and q[0].open == "﴿" and q[0].ref and q[0].ref.label() == "البقرة ١٨٣"
