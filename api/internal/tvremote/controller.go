@@ -72,6 +72,14 @@ type Controller struct {
 	peakT time.Time            // last peak write
 	stor  storageCache
 	swept bool
+	// simulcast (32.13)
+	sched    map[string]schedCache // resolved windows per attachment
+	holds    map[string]bool       // channel -> its push is held by simulcast
+	noted    map[string]bool       // notices given once
+	outPoll  map[string]time.Time  // output row -> last Cloudflare poll
+	outRetry map[string]time.Time  // errored output row -> last attempt
+	simUse   time.Time             // last daily simulcast minutes write
+	simErr   string                // last simulcast tick error (logged once)
 }
 
 type storageCache struct {
@@ -86,6 +94,11 @@ func (c *Controller) init() {
 		c.wake = make(chan struct{}, 1)
 		c.polls = map[string]time.Time{}
 		c.notLv = map[string]time.Time{}
+		c.sched = map[string]schedCache{}
+		c.holds = map[string]bool{}
+		c.noted = map[string]bool{}
+		c.outPoll = map[string]time.Time{}
+		c.outRetry = map[string]time.Time{}
 	})
 }
 
@@ -224,6 +237,16 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 	if err := c.expireSessions(ctx, now); err != nil {
 		return err
 	}
+	// simulcast first: its holds keep pushes from the idle timeout, and a
+	// window opening requests its channel's push (story 32.13)
+	if _, err := c.simulcastTick(ctx, nil, s, now); err != nil {
+		if err.Error() != c.simErr {
+			c.log().Warn("tv_simulcast: reconcile failed", "err", err, "event", "tv_simulcast_error")
+			c.simErr = err.Error()
+		}
+	} else {
+		c.simErr = ""
+	}
 	pushes, err := c.st.activePushes(ctx)
 	if err != nil {
 		return err
@@ -251,7 +274,20 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 		}
 	}
 	for _, p := range pushes {
-		if err := c.step(ctx, cl, code, s, p, viewers[p.ID], now); err != nil {
+		hold := c.holdOf(p.ChannelID)
+		if Running(p.State) {
+			want := []string{}
+			if viewers[p.ID] > 0 {
+				want = append(want, HoldViewers)
+			}
+			if hold {
+				want = append(want, HoldSimulcast)
+			}
+			if strings.Join(want, ",") != strings.Join(p.Holds, ",") {
+				_ = c.st.setHolds(ctx, p.ID, want)
+			}
+		}
+		if err := c.step(ctx, cl, code, s, p, viewers[p.ID], hold, now); err != nil {
 			c.log().Warn("tv_remote: push step failed", "push_id", p.ID, "state", p.State, "err", err,
 				"event", "tv_push_error")
 		}
@@ -285,7 +321,7 @@ func (c *Controller) expireSessions(ctx context.Context, now time.Time) error {
 }
 
 // step advances one push (design §7.3).
-func (c *Controller) step(ctx context.Context, cl *cf.Client, code string, s Settings, p Push, viewers int, now time.Time) error {
+func (c *Controller) step(ctx context.Context, cl *cf.Client, code string, s Settings, p Push, viewers int, hold bool, now time.Time) error {
 	if Running(p.State) && p.State != PushStopping {
 		if host, gen, ok := c.st.placement(ctx, p.ChannelID); ok && (host != p.HostID || gen != p.Generation) {
 			// failover, move or swap: the relay follows on its own; the row shows where
@@ -332,7 +368,7 @@ func (c *Controller) step(ctx context.Context, cl *cf.Client, code string, s Set
 			return c.retryOrFail(ctx, cl, s, p, "Cloudflare did not report the broadcast live", now, false)
 		}
 	case PushLive:
-		return c.stepLive(ctx, cl, code, s, p, viewers, now)
+		return c.stepLive(ctx, cl, code, s, p, viewers, hold, now)
 	case PushStopping:
 		stopped := p.RelayState == "stopped" && p.RelayAt != nil && !p.RelayAt.Before(p.StateAt)
 		if !stopped && now.Sub(p.StateAt) < StopTimeout {
@@ -345,9 +381,10 @@ func (c *Controller) step(ctx context.Context, cl *cf.Client, code string, s Set
 	return nil
 }
 
-func (c *Controller) stepLive(ctx context.Context, cl *cf.Client, code string, s Settings, p Push, viewers int, now time.Time) error {
-	// idle: no remote session for idle_timeout (AC8)
-	if viewers == 0 {
+func (c *Controller) stepLive(ctx context.Context, cl *cf.Client, code string, s Settings, p Push, viewers int, hold bool, now time.Time) error {
+	// idle: no remote session for idle_timeout (AC8); a simulcast hold keeps
+	// the push regardless (32.13 AC4)
+	if viewers == 0 && !hold {
 		if p.IdleSince == nil {
 			return c.st.setPush(ctx, p.ID, map[string]any{"idle_since": now})
 		}
@@ -365,7 +402,7 @@ func (c *Controller) stepLive(ctx context.Context, cl *cf.Client, code string, s
 		since = *p.LiveAt
 	}
 	if now.Sub(since) >= s.MaxPush() {
-		if viewers > 0 {
+		if viewers > 0 || hold {
 			return c.stop(ctx, p, "rotate", now)
 		}
 		return c.stop(ctx, p, "max_push_hours", now)
@@ -481,6 +518,10 @@ func (c *Controller) stepCleanup(ctx context.Context, cl *cf.Client, s Settings,
 	}
 	if p.InputID != "" {
 		if in, err := c.st.input(ctx, p.InputID); err == nil && in.State != InputErrored {
+			// an idle input never keeps an output (32.13 D2)
+			if err := c.dropOutputs(ctx, cl, in, "the broadcast ended", false); err != nil {
+				return err
+			}
 			return c.st.setInput(ctx, in.ID, map[string]any{"state": InputIdle, "channel_id": nil, "assigned_at": nil})
 		}
 	}
@@ -549,7 +590,7 @@ func (c *Controller) deleteRecordings(ctx context.Context, cl *cf.Client, now ti
 // input and moves its open sessions there ("" when nobody watches any more).
 func (c *Controller) rotateSuccessor(ctx context.Context, cl *cf.Client, s Settings, p Push, now time.Time) (string, error) {
 	xs, err := c.st.querySessions(ctx, `WHERE push_id = $1 AND ended_at IS NULL`, p.ID)
-	if err != nil || len(xs) == 0 {
+	if err != nil || (len(xs) == 0 && !c.holdOf(p.ChannelID)) {
 		return "", err
 	}
 	if cl == nil {
@@ -625,6 +666,7 @@ func (c *Controller) fail(ctx context.Context, cl *cf.Client, p Push, why string
 			if cl != nil {
 				_ = cl.SetLiveInputEnabled(ctx, in.CFUID, false)
 			}
+			_ = c.dropOutputs(ctx, cl, in, "the broadcast failed", false)
 			if in.State != InputErrored {
 				_ = c.st.setInput(ctx, in.ID, map[string]any{"state": InputIdle, "channel_id": nil, "assigned_at": nil})
 			}
@@ -719,6 +761,8 @@ func (c *Controller) StopAll(ctx context.Context) error {
 	}
 	_, err = c.st.db.ExecContext(ctx, `UPDATE tv_remote_sessions SET ended_at = $1, end_reason = 'removed' WHERE ended_at IS NULL`,
 		c.st.t(c.now()))
+	// the inputs are deleted at Cloudflare next, with their outputs (32.13 EC5)
+	c.closeAllOutputs(ctx, "the Cloudflare integration was removed")
 	return err
 }
 
@@ -792,6 +836,10 @@ func (c *Controller) assignInput(ctx context.Context, cl *cf.Client, s Settings,
 	}
 	for _, in := range ins {
 		if in.State == InputIdle && in.ID != exclude {
+			// never hand another channel an input with an output on it (32.13 D2)
+			if err := c.dropOutputs(ctx, cl, in, "the input was reassigned", false); err != nil {
+				continue
+			}
 			return in, nil
 		}
 	}
@@ -980,6 +1028,10 @@ func (c *Controller) Sweep(ctx context.Context) error {
 				_, _ = c.st.db.ExecContext(ctx, `UPDATE tv_remote_pushes SET recording_deleted_at = $1
 					WHERE video_uid = $2 AND recording_deleted_at IS NULL`, c.st.t(c.now()), v.UID)
 			}
+		}
+		if !busy[in.ID] {
+			// crash recovery: an input without a running push keeps no output
+			_ = c.dropOutputs(ctx, cl, in, "startup sweep", true)
 		}
 		if !busy[in.ID] && in.State != InputIdle {
 			_ = c.st.setInput(ctx, in.ID, map[string]any{"state": InputIdle, "channel_id": nil, "assigned_at": nil})

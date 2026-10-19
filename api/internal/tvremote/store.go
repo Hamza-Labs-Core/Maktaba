@@ -90,7 +90,16 @@ type Push struct {
 	RelayAt            *time.Time `json:"relay_at,omitempty"`
 	MinutesDelivered   float64    `json:"minutes_delivered"`
 	RecordingDeletedAt *time.Time `json:"recording_deleted_at,omitempty"`
+	// Holds keep the push up besides the idle timeout: viewers, simulcast
+	// (story 32.13, slot 0126).
+	Holds []string `json:"holds"`
 }
+
+// Push holds.
+const (
+	HoldViewers   = "viewers"
+	HoldSimulcast = "simulcast"
+)
 
 // Session is a row of tv_remote_sessions.
 type Session struct {
@@ -300,7 +309,7 @@ func (s *store) set(ctx context.Context, table, id string, cols map[string]any) 
 
 const pushCols = `id, channel_id, input_id, host_id, generation, state, attempt, ingest, video_uid, started_at,
 	state_at, live_at, idle_since, ended_at, end_reason, detail, relay_state, relay_detail, relay_at,
-	minutes_delivered, recording_deleted_at`
+	minutes_delivered, recording_deleted_at, holds`
 
 func scanPush(sc interface{ Scan(...any) error }) (Push, error) {
 	var p Push
@@ -308,9 +317,14 @@ func scanPush(sc interface{ Scan(...any) error }) (Push, error) {
 	var gen sql.NullInt64
 	var started, stateAt, live, idle, ended, relayAt, deleted nt
 	var minutes sql.NullFloat64
+	var holds ns
 	if err := sc.Scan(&id, &ch, &in, &host, &gen, &p.State, &p.Attempt, &p.Ingest, &video, &started,
-		&stateAt, &live, &idle, &ended, &reason, &detail, &rstate, &rdetail, &relayAt, &minutes, &deleted); err != nil {
+		&stateAt, &live, &idle, &ended, &reason, &detail, &rstate, &rdetail, &relayAt, &minutes, &deleted, &holds); err != nil {
 		return p, err
+	}
+	_ = json.Unmarshal([]byte(holds.S), &p.Holds)
+	if p.Holds == nil {
+		p.Holds = []string{}
 	}
 	p.ID, p.ChannelID, p.InputID, p.HostID, p.VideoUID = id.S, ch.S, in.S, host.S, video.S
 	p.EndReason, p.Detail, p.RelayState, p.RelayDetail = reason.S, detail.S, rstate.S, rdetail.S

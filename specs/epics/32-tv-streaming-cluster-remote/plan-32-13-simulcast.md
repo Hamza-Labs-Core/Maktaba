@@ -1,8 +1,7 @@
 # Plan 32.13 — Simulcast to YouTube, Facebook and other RTMP destinations — implementation
 
 > Implementation plan for [story-32-13](story-32-13-simulcast.md).
-> Writes its tables into slot **0124** (`tv_remote`) when it ships in the same PR series as 32.7;
-> if 0124 is already merged, it takes the next free slot (0125 at the time of writing).
+> Shipped in slot **0126** (`0126_tv_simulcast.sql`): 0125 (`tv_remote`) was already merged.
 > Design: [design.md](design.md) §7.9.
 
 ## 0. Decisions
@@ -122,3 +121,50 @@ SQLite); web panel (vitest).
 Behind `tv_simulcast.enabled` (off). First test: one RTMP destination on a private YouTube event,
 a one-hour window on a channel the owner holds the rights to; watch the output state, a forced
 failover and a rotation (with `max_push_hours = 1`).
+
+## 7. As shipped (notes)
+
+- **Slot 0126.** `tv_simulcast_outputs` also keeps `channel_id`, `destination_id` and the
+  Cloudflare `input_uid`, with `attachment_id ON DELETE SET NULL`: an output whose attachment
+  or channel is deleted can still be deleted at Cloudflare (EC4). `holds` is `jsonb`
+  (`["viewers","simulcast"]`) rather than `text[]`, so the store's SQL stays portable to the
+  SQLite twin.
+- **Order in a reconcile pass.** The simulcast step runs before the pushes' steps: it decides
+  which attachments want an output, sets the channels' `simulcast` holds (the idle timeout
+  and the rotation read them in the same pass), requests a push for a held channel that has
+  none (the tune gates minus the per-user ones: remote failed, `max_channels`, the storage
+  guard), then creates or deletes outputs on live pushes.
+- **Rotation.** A held push past `max_push_hours` rotates (`end_reason = rotate`) like one
+  with viewers, and its successor starts on the same input even with no viewer. The outputs
+  stay on the input (no `POST …/outputs`); the output row's `push_id` moves to the successor.
+  The destination sees one gap: from the old broadcast's end until the successor is live
+  (Cloudflare ends a broadcast `timeoutSeconds` = 30 s after its publisher leaves, then the
+  recording is deleted and the next push starts), so tens of seconds rather than "a few".
+- **Input swap.** A retry on a fresh input (an `ERR_*` error that needs one, 32.7 AC11) deletes
+  the old input at Cloudflare, and its outputs with it. The output row keeps its identity and
+  minutes; once the new push is live the controller creates the output again on the new input
+  (one more `POST …/outputs`, the destination sees a reconnect). A retry on the same input
+  keeps the output.
+- **Idle inputs.** Outputs are deleted before an input goes idle (the end of a push without a
+  successor, a failed push), checked again when an idle input is handed to a channel, and the
+  startup sweep deletes whatever Cloudflare lists on an input without a running push.
+- **Status (Q13).** While an output is live its input's outputs are listed every 15 s; when
+  the answer carries a `status`/`state` field it is stored (`cf_status`) and shown, else the
+  page says "sent; the destination's state is shown on the platform". An input `ERR_*` error
+  (polled or from the webhook) shows on its outputs as `errored`.
+- **Cost.** Output minutes are Maktaba's own (`started_at` to `ended_at` while live) and are
+  added to the month's estimate on top of the analytics, so the estimate errs high if
+  Cloudflare's per-video analytics already include output minutes (for the spike to show).
+  `tv_remote_usage_daily.simulcast_minutes` keeps the per-day split.
+- **Cap and budget.** At 100 % of `max_hours_per_month` no output starts and `always` outputs
+  stop at once (event `tv_simulcast_capped`); scheduled and manually started ones finish
+  their window. With the budget used up (`block_new`) no output starts and running ones keep
+  going (an `always` output then runs until the cap). Thresholds: events
+  `tv_simulcast_cap_80` / `tv_simulcast_cap_100` and `app_settings.tv_simulcast.cap_notice`.
+- **Manual start/stop.** Stored as `manual` + `manual_until` (the next window boundary; none
+  for `always`, which Start/Stop toggle).
+- **Spike (README Q13 and the real account).** To confirm: whether the output object reports a
+  connection status; that outputs survive a broadcast end/restart on the same input; the
+  reconnect time a destination sees on rotation; whether output minutes appear in
+  `streamMinutesViewedAdaptiveGroups`; YouTube's and Facebook's acceptance of the forwarded
+  stream (codec, keyframes, RTMPS to Facebook).
