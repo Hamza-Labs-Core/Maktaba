@@ -78,6 +78,11 @@ func newFixture(t *testing.T, opts ...fixtureOpt) *fixture {
 		AgentRatePerMin: -1,
 		LLMQueueTimeout: 2 * time.Second,
 		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+		// The hub sweeps the share at start by the wall clock, and the
+		// tests seed fixed days (2026-10-01, 2026-10-19): with the default
+		// 14 days the sweep raced them for any day older than that
+		// (TestHistoryFromTheArchive, Oct 2026). The sweep has its own tests.
+		RetentionDays: 100 * 365,
 	}
 	for _, o := range opts {
 		o(&cfg)
