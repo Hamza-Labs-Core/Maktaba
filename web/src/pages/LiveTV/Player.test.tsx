@@ -548,4 +548,65 @@ describe("Player (live channel)", () => {
       );
     });
   });
+
+  // 27.7 AC5 — "Return to live" once the picture falls behind the edge.
+  describe("return to live", () => {
+    function fakeWindow(el: HTMLVideoElement, state: { end: number; paused: boolean }) {
+      Object.defineProperty(el, "seekable", {
+        configurable: true,
+        get: () => ({ length: 1, start: () => 0, end: () => state.end }),
+      });
+      Object.defineProperty(el, "paused", { configurable: true, get: () => state.paused });
+    }
+
+    it("appears when the viewer falls behind and jumps back to the edge", async () => {
+      mockGet();
+      await startOn("1");
+      const el = active();
+      const win = { end: 100, paused: false };
+      fakeWindow(el, win);
+      el.currentTime = 94; // the usual 6 s behind the end of the window
+      act(() => {
+        fireEvent.timeUpdate(el);
+      });
+      expect(screen.queryByTestId("return-to-live")).toBeNull();
+      expect(screen.getByText(/LIVE/)).toBeInTheDocument();
+
+      // paused while the edge moves on 30 s
+      win.paused = true;
+      win.end = 130;
+      act(() => {
+        fireEvent.pause(el);
+      });
+      const btn = await screen.findByTestId("return-to-live");
+      expect(btn).toHaveTextContent("Return to live");
+      expect(screen.getByText(/Behind live/)).toBeInTheDocument();
+
+      win.paused = false;
+      fireEvent.click(btn);
+      expect(el.currentTime).toBe(124); // the edge minus the usual 6 s
+      expect(HTMLMediaElement.prototype.play).toHaveBeenCalled();
+      await waitFor(() => expect(screen.queryByTestId("return-to-live")).toBeNull());
+    });
+
+    it("stays hidden while the picture keeps up with the edge", async () => {
+      mockGet();
+      await startOn("1");
+      const el = active();
+      const win = { end: 100, paused: false };
+      fakeWindow(el, win);
+      for (const [end, t] of [
+        [100, 94],
+        [110, 104],
+        [120, 113],
+      ]) {
+        win.end = end;
+        el.currentTime = t;
+        act(() => {
+          fireEvent.timeUpdate(el);
+        });
+      }
+      expect(screen.queryByTestId("return-to-live")).toBeNull();
+    });
+  });
 });

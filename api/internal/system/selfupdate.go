@@ -14,7 +14,10 @@
 // cmd/maktaba-server/internal/selfupdate: write the new binary next to
 // the target, rename the live one aside, rename the new one into place —
 // each rename is atomic within a directory, and the .bak makes a
-// mid-swap crash recoverable. Download/verify/extract live in releaseverify
+// mid-swap crash recoverable. If the re-exec of the swapped binary fails
+// (the new file cannot be executed), rollbackBinary puts the .bak back, the
+// old process keeps serving, and GET /api/system/updates reports
+// rolled_back so the About page says so. Download/verify/extract live in releaseverify
 // (shared with `maktaba-server update` and the node installers) so the only
 // filesystem-mutating step here is isolated and testable.
 package system
@@ -62,6 +65,9 @@ type SelfUpdater struct {
 
 	mu       sync.Mutex
 	inFlight bool
+	// rolledBack is the last update whose re-exec failed and was undone
+	// (nil: none since this process started).
+	rolledBack *RollbackInfo
 
 	// injection points for tests
 	httpc        *http.Client
@@ -178,8 +184,8 @@ func (s *SelfUpdater) handle(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusConflict)
 		_ = json.NewEncoder(w).Encode(dockerResponse{
 			Install:      "docker",
-			Instructions: "docker compose pull && docker compose up -d",
-			Image:        "ghcr.io/hamza-labs-core/maktaba-server:" + strings.TrimPrefix(status.LatestVersion, "v"),
+			Instructions: dockerInstructions,
+			Image:        dockerImage(status.LatestVersion),
 		})
 		return
 	case installDeb:
@@ -208,12 +214,141 @@ func (s *SelfUpdater) handle(w http.ResponseWriter, r *http.Request) {
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
 	}
-	// Best-effort re-exec; if it fails the .bak is still in place and the
-	// operator/supervisor can recover.
+	// Re-exec; if the new binary cannot be executed the old one is put back
+	// (restart).
 	go func() {
 		time.Sleep(500 * time.Millisecond) // let the response drain
-		_ = s.execSelf(self)
+		s.restart(self, status.LatestVersion)
 	}()
+}
+
+// RollbackInfo is a self-update that was undone: the release that could
+// not start, why, and when.
+type RollbackInfo struct {
+	Version string    `json:"version"`
+	Reason  string    `json:"reason"`
+	At      time.Time `json:"at"`
+}
+
+// errReexecUnsupported is the re-exec of a platform without syscall.Exec
+// (Windows): the binary is swapped and a supervisor relaunches the
+// process, so it is not a failure to roll back.
+var errReexecUnsupported = errors.New("re-exec unsupported on this platform")
+
+// restart re-execs the swapped binary at self. When the exec fails (the new
+// file is not runnable here: a wrong architecture, a truncated file), the
+// running process is still the old version, so the .bak is restored with
+// rollbackBinary: the next start runs the old version too, and the failed
+// release is reported as rolled back.
+func (s *SelfUpdater) restart(self, target string) {
+	err := s.execSelf(self)
+	if err == nil || errors.Is(err, errReexecUnsupported) {
+		return
+	}
+	if rbErr := rollbackBinary(self); rbErr != nil {
+		s.u.log.Error("self-update: re-exec failed and the old binary could not be restored",
+			"event", "update_rollback_error", "version", target, "err", err.Error(), "rollback_err", rbErr.Error())
+		return
+	}
+	s.mu.Lock()
+	s.rolledBack = &RollbackInfo{Version: target, Reason: err.Error(), At: time.Now().UTC()}
+	s.mu.Unlock()
+	s.u.log.Warn("self-update: re-exec failed; rolled back to the previous binary",
+		"event", "update_rolled_back", "version", target, "err", err.Error())
+}
+
+// LastRollback is the last undone self-update (nil: none).
+func (s *SelfUpdater) LastRollback() *RollbackInfo {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.rolledBack == nil {
+		return nil
+	}
+	cp := *s.rolledBack
+	return &cp
+}
+
+// InstallName is how this server was installed, as GET
+// /api/system/updates reports it: "managed" (the self-managed layout,
+// Epic 35.2), "docker", "deb", "rpm" or "binary".
+func (s *SelfUpdater) InstallName() string {
+	self, err := s.selfPathFunc()
+	if err != nil {
+		return "binary"
+	}
+	if _, ok := install.Root(self); ok {
+		return "managed"
+	}
+	switch s.detect(self) {
+	case installDocker:
+		return "docker"
+	case installDeb:
+		return "deb"
+	case installRPM:
+		return "rpm"
+	}
+	return "binary"
+}
+
+// dockerInstructions is what an operator runs to update a container.
+const dockerInstructions = "docker compose pull && docker compose up -d"
+
+func dockerImage(latest string) string {
+	return "ghcr.io/hamza-labs-core/maktaba-server:" + strings.TrimPrefix(latest, "v")
+}
+
+// StatusHandler decorates GET /api/system/updates with how this server
+// updates, so the About page can show the Docker instructions up front
+// instead of after a failed click: install, and for docker the
+// instructions and image; plus rolled_back when the last self-update was
+// undone.
+func (s *SelfUpdater) StatusHandler(base http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec := &statusCapture{header: http.Header{}}
+		base.ServeHTTP(rec, r)
+		var doc map[string]any
+		if (rec.code != 0 && rec.code != http.StatusOK) || json.Unmarshal(rec.body, &doc) != nil {
+			for k, v := range rec.header {
+				w.Header()[k] = v
+			}
+			if rec.code == 0 {
+				rec.code = http.StatusOK
+			}
+			w.WriteHeader(rec.code)
+			_, _ = w.Write(rec.body)
+			return
+		}
+		kind := s.InstallName()
+		doc["install"] = kind
+		if kind == "docker" {
+			doc["instructions"] = dockerInstructions
+			if v, _ := doc["latest_version"].(string); v != "" {
+				doc["image"] = dockerImage(v)
+			}
+		}
+		if rb := s.LastRollback(); rb != nil {
+			doc["rolled_back"] = rb
+		}
+		common.WriteJSON(w, r, http.StatusOK, doc)
+	})
+}
+
+// statusCapture buffers the decorated handler's response.
+type statusCapture struct {
+	header http.Header
+	code   int
+	body   []byte
+}
+
+func (c *statusCapture) Header() http.Header { return c.header }
+func (c *statusCapture) WriteHeader(code int) {
+	if c.code == 0 {
+		c.code = code
+	}
+}
+func (c *statusCapture) Write(b []byte) (int, error) {
+	c.body = append(c.body, b...)
+	return len(b), nil
 }
 
 // applyBinary performs the download/verify/swap. Errors are sentinel-wrapped
@@ -355,9 +490,8 @@ func swapBinary(target string, body []byte) error {
 	return nil
 }
 
-// rollbackBinary restores target from target+".bak" (used by the
-// supervisor's post-restart health check on the unified server, and
-// available to tests).
+// rollbackBinary restores target from target+".bak": restart calls it
+// when the swapped binary cannot be executed.
 func rollbackBinary(target string) error {
 	bak := target + ".bak"
 	if _, err := os.Stat(bak); err != nil {

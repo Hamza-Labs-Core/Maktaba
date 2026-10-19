@@ -1,6 +1,16 @@
 # Epic 33 — Maktaba TV staging, hot swap and change management
 
-> **Status:** spec. **Source:** `specs/epics/33-tv-staging-hot-swap/`.
+> **Status:** partly built (checked against the code 2026-10-19). **Built:** 33.1 two slots
+> (Postgres home only), 33.2 releases, 33.3 generations, 33.4 splice-ready output, 33.7 hot swap,
+> 33.9 rollback (no post-swap health trigger or crash-loop counter yet), 33.10 state machine, 33.11
+> Changes page. **Partly built:** 33.5 staging verification and 33.6 preview (the code exists, but
+> the staging slot is compiled out of every shipped build: `staging_build_off.go`, no
+> `-tags tvstaging` in the Makefile or release workflow, so checks run on the database only and
+> preview is unavailable); 33.8 push continuity (no TC7 spike, `param_change_push=defer` or
+> multi-host staging placements); 33.12 producers (filler pool edits bypass staging, AC6); 33.13
+> notifications (failover and crash-loop notices have no senders); 33.15 observability (swap,
+> rollback, splice and stitch metrics only). **Not built:** 33.14 upgrade through a swap, 33.16
+> docs and runbook. **Source:** `specs/epics/33-tv-staging-hot-swap/`.
 > **Anchors:** [Epic 27 — Live Channels](../27-live-channels/README.md) (channel engine, scheduler,
 > HDHomeRun, XMLTV/M3U), [Epic 32 — TV across the cluster and remote viewing](../32-tv-streaming-cluster-remote/README.md)
 > (front door on the home, placement and fencing, failover, TS splice, Cloudflare push; branch
@@ -396,19 +406,19 @@ draft (**accepted default**). Full list under "Decisions on the open questions" 
 Three instances (`blue`, `green`, `amber`) carry these roles; at most one each of `live`, `standby`,
 `staging` and `previous` per host.
 
-## Data model (proposed migrations)
+## Data model (migrations)
 
 Slots as built: main ended at 0126 (Epic 32: 0123 TV cluster, 0124 canonical share paths, 0125
 remote, 0126 simulcast) when 33.2/33.3/33.10/33.12 landed, so this epic's first two migrations are
-0127 and 0128 (`SCHEMA_REV` 128). 0129 and 0130 are provisional for the runtime (33.1/33.7) and
-notifications (33.13): whichever branch merges second renumbers. `MANIFEST.md` gets rows only when the
+0127 and 0128 (`SCHEMA_REV` 128). 0129 (runtime, 33.1/33.7) and 0130 (notifications, 33.13) have
+landed too. `MANIFEST.md` gets rows only when the
 files exist (its rule). Each has a `.sqlite.sql` sibling like every channel migration.
 
 | Slot | Story | File | Tables / changes |
 |---|---|---|---|
 | 0127 | 33.2, 33.10 | `0127_tv_releases_changes.sql` (NO TRANSACTION, built) | `tv_releases` (id uuid, digest unique, kinds jsonb, sched_gen bigint unique, streaming_version, streaming_sha256, settings jsonb, lineup_digest, base_release_id, created_at, created_by); `tv_release_channels` (release_id, channel_id - no foreign key: a direct write with staging off may delete a channel an old release names - def jsonb, art jsonb, sched_changed bool, boundary_at = the divergence boundary, PK both); `tv_changes` (id, number - the "#42" of the UI, release_id, base_release_id, state, kinds jsonb, title, source jsonb, change_set jsonb, digest, diff jsonb (`diff.pending` = the producer's edits), verify_report jsonb, auto_rule, approved_by jsonb, approved_at, anchor_at = the planned swap instant the generation is built for, swap_at, swap_wait, created_by, created_at, updated_at, staged_at, ready_at, swapped_at, ended_at, end_reason, superseded_by); `tv_change_events` (id bigserial, change_id, at, actor_user_id, actor_source, from_state, to_state, action, detail jsonb); `tv_routing` (scope pk: `cluster` or `host:<id>`; live_release_id, live_gen, previous_release_id, previous_gen, epoch bigint, switched_at, previous_until); sequence `tv_sched_gen_seq` (SQLite: a table). Arrays are jsonb (not text[]/uuid[]) so the SQLite twin has the same shape. |
 | 0128 | 33.3 | `0128_tv_sched_generations.sql` (NO TRANSACTION, built) | `channel_programs.sched_gen bigint not null default 0`; unique index `(channel_id, sched_gen, seq)` and lookup index `(channel_id, sched_gen, start_at, end_at)` built CONCURRENTLY, old `(channel_id, seq)` unique dropped; `channel_schedule_state` PK → `(channel_id, sched_gen)`; `channels.lifecycle text not null default 'live' check in ('staged','live','retired')`, `channels.retired_at`; number/slug unique indexes rebuilt as partial `WHERE lifecycle = 'live'`; function `tv_live_gen()` (stable, reads `tv_routing` cluster row, 0 when absent); view `channel_programs_live`; **breaking for older nodes**: `maktaba_min_node_schema()` returns 128. |
-| 0129 | 33.1, 33.7 | `0129_tv_slots.sql` (provisional) | `tv_slots` (host_id, slot 'blue'/'green'/'amber', role, state, release_id, base_url, pid, version, warm jsonb, encoders_used int, started_at, beat_at, last_exit jsonb, PK (host_id, slot)); `channel_placements` (Epic 32 placements, now proposed 0121) gains `track text not null default 'live' check in ('live','staging','standby','previous')` and `slot text`, PK → `(channel_id, track)`; `tv_slot_beat(...)` SECURITY DEFINER own-row (Epic 31 guard); `tv_channel_switch` (change_id, channel_id, switch_at, state planned/switched/skipped, switched_at, PK both). |
+| 0129 | 33.1, 33.7 | `0129_tv_slots.sql` (built) | `tv_slots` (host_id, slot 'blue'/'green'/'amber', role, state, release_id, base_url, pid, version, warm jsonb, encoders_used int, started_at, beat_at, last_exit jsonb, PK (host_id, slot)); `channel_placements` (Epic 32 placements, now proposed 0121) gains `track text not null default 'live' check in ('live','staging','standby','previous')` and `slot text`, PK → `(channel_id, track)`; `tv_slot_beat(...)` SECURITY DEFINER own-row (Epic 31 guard); `tv_channel_switch` (change_id, channel_id, switch_at, state planned/switched/skipped, switched_at, PK both). |
 | 0130 | 33.13 | `0130_notifications.sql` (built) | `notifications` (id, kind, severity, title_key, params jsonb, link, audience 'admins'/user_id, created_at, read_at per user via `notification_reads`; `notification_cursors`; `audit_log_category_check` gains `tv_change`, `tv_remote`) — the first user of a general in-app table (decision 8). |
 | 0136 | 33.7, 33.9 | `0136_tv_swap_ops.sql` (built) | `tv_swap_ops` (id, change_id, kind swap/rollback, scope, release_id, from_release_id, epoch, reason, state planned/switching/done/failed/cancelled, committed, created_by, host_id, from_slot, to_slot, detail, created/started/done_at) and `tv_channel_switch` (op_id, change_id, channel_id, switch_at, state planned/switched/skipped, removed, switched_at, detail; PK op + channel) — in place of the design's `tv_channel_switch (change_id, channel_id)`: a change can be swapped and rolled back; `job_stages` `tv_rollback`. See "As built: 33.7, 33.8, 33.9". |
 
@@ -522,8 +532,8 @@ the runtime stories (33.1, 33.4, 33.7). What that means, and where the runtime h
   reads `channel_programs_live` / `lifecycle = 'live'`; with only generation 0 everything is as before.
   `streaming/internal/channel/repo_release.go` (`NewReleaseRepo`) is the release-bound repo a slot uses
   (story 33.2 AC3); `cmd/maktaba-server/internal/supervisor/release.go` (`ResolveReleaseBinary`) is the
-  slot binary + checksum check (AC4). Both are ready for `cmd_slot.go` / the supervisor's `tv-slot`
-  role; nothing calls them yet.
+  slot binary + checksum check (AC4); the supervisor's slot runner calls `ResolveReleaseBinary`
+  (`supervisor/slots.go`).
 - **Interim swap.** The pipeline stage `tv_swap` (`tvrelease/commit.py`) is the swap commit: it
   re-anchors the generation at the commit instant, then in one transaction applies the release's
   lineup (staged channels become live, removed ones retired), art, `rules.tv` / `rules.tv_output`,
@@ -549,10 +559,11 @@ the runtime stories (33.1, 33.4, 33.7). What that means, and where the runtime h
   approves (with `swap_at` or at once); at `swap_at` the controller moves it to `swapping` and enqueues
   `tv_swap`. Approving a reviewed `write_channels` draft posts the queue's Apply for its digest. With
   `tv_staging.enabled = false` every producer writes directly, as before.
-- **Not yet:** preview (33.6) and rollback (33.9) answer 501; `GET /api/tv/slots` reports the one
-  process as the live `blue` slot until `tv_slots` (33.1) exists; notifications (33.13) are not sent;
-  the Changes page (33.11) is not built - the API is, and the editor and the settings page say which
-  draft a save went to.
+- **Since built:** preview (33.6) and rollback (33.9) are implemented (`POST
+  /api/tv/changes/{id}/preview`, `POST /api/tv/rollback`), `GET /api/tv/slots` reads `tv_slots`
+  (33.1), change notifications (33.13) are sent, and the Changes page (33.11) is built. **Still
+  not:** the failover and crash-loop notifications have no senders, and preview needs the staging
+  slot, which shipped builds leave out (see Status).
 - **Deviations from the text above.** `auto_promote` is one setting per kind (`auto_promote_<kind>`);
   array columns are jsonb; `tv_release_channels.channel_id` has no foreign key (EC1's `RESTRICT` would
   block today's direct deletes with staging off); `tv_release_channels.boundary_at`,

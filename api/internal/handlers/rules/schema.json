@@ -5196,6 +5196,23 @@
    ]
   },
   {
+   "key": "enrichment",
+   "title": "Metadata review",
+   "what": "what happens to a metadata match waiting in the review queue: accepted by itself above a confidence, or left for a person",
+   "fields": [
+    {
+     "name": "auto_accept_threshold",
+     "kind": "float",
+     "group": "Metadata review",
+     "label": "Accept matches by themselves from (confidence)",
+     "help": "A match waiting in the review queue whose confidence is at least this (0 to 1, 0.9 is 90%) is accepted without a person, checked every minute. Fields you edited yourself are never replaced, and an accepted match can be reverted to the original. 0: off, every match waits for review.",
+     "default": 0.0,
+     "minimum": 0,
+     "maximum": 1
+    }
+   ]
+  },
+  {
    "key": "cluster",
    "title": "Machines",
    "what": "every machine of the cluster as the same Maktaba: one sign-in for all of them, when a machine stops waiting for the home",

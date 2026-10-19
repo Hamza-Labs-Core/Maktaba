@@ -38,6 +38,7 @@ import { Billing } from "./pages/Cloud/Billing";
 import { ConnectedDevices } from "./pages/Profile/ConnectedDevices";
 import { Sessions } from "./pages/Profile/Sessions";
 import { APITokens } from "./pages/Profile/APITokens";
+import { WatchHistory } from "./pages/Profile/WatchHistory";
 import { Account } from "./pages/Profile/Account";
 import { LibraryACL } from "./pages/Admin/LibraryACL";
 import { Channels } from "./pages/Admin/Channels";
@@ -110,6 +111,7 @@ export function App() {
                       <Route path="/account/devices" element={<ConnectedDevices />} />
                       <Route path="/account/sessions" element={<Sessions />} />
                       <Route path="/account/tokens" element={<APITokens />} />
+                      <Route path="/account/history" element={<WatchHistory />} />
                       <Route path="/billing" element={<Billing />} />
                       <Route path="/cloud/status" element={<ServerStatus />} />
                       <Route path="/admin/users" element={<AdminUsers />} />

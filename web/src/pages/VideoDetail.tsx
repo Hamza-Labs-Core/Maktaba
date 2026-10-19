@@ -11,7 +11,7 @@
 // envelope). The transcript list is windowed (slice cap) rather than a
 // TanStack-Virtual integration — see report deferral note.
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, useSearchParams, Link } from "react-router-dom";
 import { Tabs } from "@ds/components/Tabs/Tabs";
 import { Badge } from "@ds/components/Badge/Badge";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
@@ -93,8 +93,28 @@ const TS = (s: number) => {
   return `${m}:${sec.toString().padStart(2, "0")}`;
 };
 
+// VIDEO_TABS is the ordered set of tab ids. `?tab=<id>` deep-links any
+// of them (the context card's "Find metadata" uses ?tab=enrichment);
+// anything else falls back to the Watch tab.
+export const VIDEO_TABS = [
+  "watch",
+  "enrichment",
+  "transcript",
+  "chapters",
+  "files",
+  "processing",
+  "stats",
+] as const;
+type VideoTab = (typeof VIDEO_TABS)[number];
+
+function asVideoTab(raw: string | null): VideoTab {
+  return (VIDEO_TABS as readonly string[]).includes(raw ?? "") ? (raw as VideoTab) : "watch";
+}
+
 export function VideoDetail() {
   const { videoId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = asVideoTab(searchParams.get("tab"));
   const { t } = useI18n();
   const { user } = useAuth();
   const [video, setVideo] = useState<Video | null>(null);
@@ -178,7 +198,22 @@ export function VideoDetail() {
           onSaved={(v) => setVideo((cur) => (cur ? { ...cur, ...v } : cur))}
         />
       </header>
-      <Tabs label={video.title || video.filename} items={items} defaultValue="watch" />
+      <Tabs
+        label={video.title || video.filename}
+        items={items}
+        value={activeTab}
+        onChange={(id) => {
+          setSearchParams(
+            (prev) => {
+              const next = new URLSearchParams(prev);
+              if (id === "watch") next.delete("tab");
+              else next.set("tab", id);
+              return next;
+            },
+            { replace: true }
+          );
+        }}
+      />
     </section>
   );
 }

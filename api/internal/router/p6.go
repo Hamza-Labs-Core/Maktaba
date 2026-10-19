@@ -82,6 +82,11 @@ type P6Deps struct {
 	// Secrets is the home's sealed store (slot 0120, story 32.6): the
 	// extensions' secret settings live there. nil refuses secret writes.
 	Secrets secrets.Store
+	// EnrichAutoAcceptCtx, when set, runs the review queue's auto-accept
+	// sweep (rules.enrichment.auto_accept_threshold, story 26.6) until it
+	// ends. Nil: no sweep (tests). The threshold defaults to 0, so the
+	// sweep does nothing until an admin sets it.
+	EnrichAutoAcceptCtx context.Context
 	// OnQueues, when set, is called with the queue/extensions handler
 	// before it is mounted (story 32.6 hangs the Cloudflare test on it).
 	OnQueues func(*queues.Handler)
@@ -224,6 +229,9 @@ func MountP6(r chi.Router, d P6Deps) {
 	// browser (26.10). All degrade gracefully with a nil DB.
 	enrichHandler := &enrichment.Handler{DB: d.DB}
 	enrichHandler.Mount(r)
+	if d.EnrichAutoAcceptCtx != nil && d.DB != nil {
+		go enrichHandler.RunAutoAccept(d.EnrichAutoAcceptCtx, enrichment.DefaultAutoAcceptInterval, nil)
+	}
 
 	contextHandler := &contextcard.Handler{DB: d.DB}
 	contextHandler.Mount(r)

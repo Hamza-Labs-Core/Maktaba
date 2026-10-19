@@ -1,6 +1,7 @@
 package enrichment
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -57,7 +58,7 @@ func (h *Handler) Accept(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Unavailable(0))
 		return
 	}
-	res, e := h.applyAccept(r, id, req.ExternalID, req.Version, "accept")
+	res, e := h.applyAccept(r.Context(), actorID(r), id, req.ExternalID, req.Version, "accept")
 	if e != nil {
 		httperror.Write(w, r, e)
 		return
@@ -67,10 +68,11 @@ func (h *Handler) Accept(w http.ResponseWriter, r *http.Request) {
 
 // applyAccept is the transactional promotion shared by Accept and
 // AcceptAll. It honours optimistic concurrency (409 on a stale version)
-// and per-field provenance.
-func (h *Handler) applyAccept(r *http.Request, videoID, externalID, version, action string) (AcceptResult, *httperror.Error) {
+// and per-field provenance. actor is the deciding user's id (nil for the
+// auto-accept sweep); action is "accept" or "auto_accept".
+func (h *Handler) applyAccept(ctx context.Context, actor any, videoID, externalID, version, action string) (AcceptResult, *httperror.Error) {
 	res := AcceptResult{VideoID: videoID, Applied: []string{}, Skipped: []string{}}
-	v, err := h.loadVideo(r, videoID)
+	v, err := h.loadVideo(ctx, videoID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return res, httperror.NotFound("video " + videoID)
@@ -80,7 +82,7 @@ func (h *Handler) applyAccept(r *http.Request, videoID, externalID, version, act
 	if version != "" && !versionMatches(v.UpdatedAt, version) {
 		return res, httperror.Conflict("https://maktaba.dev/problems/stale-version", "video changed since you loaded it")
 	}
-	cands, err := h.loadCandidates(r, videoID, externalID)
+	cands, err := h.loadCandidates(ctx, videoID, externalID)
 	if err != nil {
 		return res, httperror.Internal("load candidate")
 	}
@@ -88,13 +90,28 @@ func (h *Handler) applyAccept(r *http.Request, videoID, externalID, version, act
 		return res, httperror.NotFound("candidate " + externalID)
 	}
 	cand := cands[0]
-	prot := h.protectedFields(r, videoID)
+	prot := h.protectedFields(ctx, videoID)
 
-	tx, err := h.DB.BeginTx(r.Context(), nil)
+	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return res, httperror.Internal("tx")
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	if action == "auto_accept" {
+		// Claim the candidate first: a second sweep (another replica) racing
+		// this one finds it already accepted and stops, so the recorded
+		// previous values stay the originals Revert restores.
+		claim, err := tx.ExecContext(ctx,
+			`UPDATE media_metadata_enrichment SET is_accepted = true
+			 WHERE video_id = $1 AND external_id = $2 AND is_accepted = false`, videoID, externalID)
+		if err != nil {
+			return res, httperror.Internal("claim candidate")
+		}
+		if n, err := claim.RowsAffected(); err != nil || n == 0 {
+			return res, httperror.Conflict("", "candidate already accepted")
+		}
+	}
 
 	now := h.now()
 	for _, f := range mappableFields {
@@ -107,22 +124,22 @@ func (h *Handler) applyAccept(r *http.Request, videoID, externalID, version, act
 			continue
 		}
 		prev := v.field(f)
-		if _, err := tx.ExecContext(r.Context(),
+		if _, err := tx.ExecContext(ctx,
 			`UPDATE videos SET `+f+` = $1, updated_at = $2 WHERE id = $3`, val, now, videoID); err != nil {
 			return res, httperror.Internal("write field")
 		}
-		if err := upsertProvenance(r, tx, videoID, f, "enrichment", prev, externalID, now); err != nil {
+		if err := upsertProvenance(ctx, tx, videoID, f, "enrichment", prev, externalID, now); err != nil {
 			return res, httperror.Internal("write provenance")
 		}
 		res.Applied = append(res.Applied, f)
 	}
 
-	if _, err := tx.ExecContext(r.Context(),
+	if _, err := tx.ExecContext(ctx,
 		`UPDATE media_metadata_enrichment SET is_accepted = true WHERE video_id = $1 AND external_id = $2`,
 		videoID, externalID); err != nil {
 		return res, httperror.Internal("mark accepted")
 	}
-	if err := writeDecision(r, tx, videoID, externalID, action, res.Applied, res.Skipped, now); err != nil {
+	if err := writeDecision(ctx, tx, actor, videoID, externalID, action, res.Applied, res.Skipped, now); err != nil {
 		return res, httperror.Internal("write decision")
 	}
 	if err := tx.Commit(); err != nil {
@@ -276,7 +293,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("clear dismissals"))
 		return
 	}
-	cands, err := h.loadCandidates(r, id, "")
+	cands, err := h.loadCandidates(r.Context(), id, "")
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("load candidates"))
 		return
@@ -358,12 +375,12 @@ func (h *Handler) AcceptAll(w http.ResponseWriter, r *http.Request) {
 	}
 	summary := []episodeResult{}
 	for _, vid := range videoIDs {
-		best, e := h.bestCandidate(r, vid)
+		best, e := h.bestCandidate(r.Context(), vid)
 		if e != nil || best == "" {
 			summary = append(summary, episodeResult{VideoID: vid, Failed: "no candidate"})
 			continue
 		}
-		res, ee := h.applyAccept(r, vid, best, "", "accept")
+		res, ee := h.applyAccept(r.Context(), actorID(r), vid, best, "", "accept")
 		if ee != nil {
 			summary = append(summary, episodeResult{VideoID: vid, Failed: ee.Title})
 			continue
@@ -375,9 +392,9 @@ func (h *Handler) AcceptAll(w http.ResponseWriter, r *http.Request) {
 
 // bestCandidate returns the highest-confidence non-dismissed external_id
 // for a video, or "" if none.
-func (h *Handler) bestCandidate(r *http.Request, videoID string) (string, error) {
+func (h *Handler) bestCandidate(ctx context.Context, videoID string) (string, error) {
 	var ext string
-	err := h.DB.QueryRowContext(r.Context(),
+	err := h.DB.QueryRowContext(ctx,
 		`SELECT external_id FROM media_metadata_enrichment
 		 WHERE video_id = $1 AND is_dismissed = false
 		 ORDER BY confidence DESC LIMIT 1`, videoID).Scan(&ext)
@@ -387,8 +404,8 @@ func (h *Handler) bestCandidate(r *http.Request, videoID string) (string, error)
 	return ext, err
 }
 
-func upsertProvenance(r *http.Request, tx *sql.Tx, videoID, field, origin, prev, sourceID string, now time.Time) error {
-	_, err := tx.ExecContext(r.Context(), `
+func upsertProvenance(ctx context.Context, tx *sql.Tx, videoID, field, origin, prev, sourceID string, now time.Time) error {
+	_, err := tx.ExecContext(ctx, `
 		INSERT INTO media_field_provenance (video_id, field, origin, prev_value, source_id, set_at)
 		VALUES ($1,$2,$3,$4,$5,$6)
 		ON CONFLICT (video_id, field) DO UPDATE
@@ -398,11 +415,11 @@ func upsertProvenance(r *http.Request, tx *sql.Tx, videoID, field, origin, prev,
 	return err
 }
 
-func writeDecision(r *http.Request, tx *sql.Tx, videoID, externalID, action string, applied, skipped []string, now time.Time) error {
-	_, err := tx.ExecContext(r.Context(), `
+func writeDecision(ctx context.Context, tx *sql.Tx, actor any, videoID, externalID, action string, applied, skipped []string, now time.Time) error {
+	_, err := tx.ExecContext(ctx, `
 		INSERT INTO enrichment_decisions (id, video_id, external_id, action, actor_user_id, applied, skipped, created_at)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-	`, uuid.NewString(), videoID, nullStr(externalID), action, actorID(r), jsonArray(applied), jsonArray(skipped), now)
+	`, uuid.NewString(), videoID, nullStr(externalID), action, actor, jsonArray(applied), jsonArray(skipped), now)
 	return err
 }
 

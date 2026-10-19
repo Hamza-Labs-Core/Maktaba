@@ -22,6 +22,7 @@
 package enrichment
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -114,12 +115,12 @@ func (v videoRow) field(name string) string {
 	return ""
 }
 
-func (h *Handler) loadVideo(r *http.Request, id string) (videoRow, error) {
+func (h *Handler) loadVideo(ctx context.Context, id string) (videoRow, error) {
 	var v videoRow
 	if h.DB == nil {
 		return v, sql.ErrConnDone
 	}
-	row := h.DB.QueryRowContext(r.Context(), `
+	row := h.DB.QueryRowContext(ctx, `
 		SELECT id, library_id, title, description, poster_path, updated_at
 		FROM videos WHERE id = $1
 	`, id)
@@ -162,10 +163,10 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.DB == nil {
-		common.WriteJSON(w, r, http.StatusOK, map[string]any{"candidates": []Candidate{}})
+		common.WriteJSON(w, r, http.StatusOK, map[string]any{"candidates": []Candidate{}, "revertable": []string{}})
 		return
 	}
-	v, err := h.loadVideo(r, id)
+	v, err := h.loadVideo(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httperror.Write(w, r, httperror.NotFound("video "+id))
@@ -178,17 +179,26 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, e)
 		return
 	}
-	cands, err := h.loadCandidates(r, id, "")
+	cands, err := h.loadCandidates(r.Context(), id, "")
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("load candidates"))
 		return
 	}
-	prot := h.protectedFields(r, id)
+	prot := h.protectedFields(r.Context(), id)
 	for i := range cands {
 		cands[i].Fields = diffFields(v, cands[i].Mapped, prot)
 		cands[i].Title, cands[i].Year = headline(cands[i].Mapped)
 	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"candidates": cands})
+	// revertable: the fields an accept wrote that "Revert to original"
+	// would restore (their previous value is kept in provenance).
+	revertable := []string{}
+	enriched := h.fieldsWithOrigin(r.Context(), id, "enrichment")
+	for _, f := range mappableFields {
+		if enriched[f] {
+			revertable = append(revertable, f)
+		}
+	}
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"candidates": cands, "revertable": revertable})
 }
 
 // PendingItem is one row in the library review queue.
@@ -256,7 +266,7 @@ func (h *Handler) Pending(w http.ResponseWriter, r *http.Request) {
 // loadCandidates loads non-dismissed candidates for a video, ranked by
 // confidence. When externalID is non-empty only that candidate is
 // returned (used by accept).
-func (h *Handler) loadCandidates(r *http.Request, videoID, externalID string) ([]Candidate, error) {
+func (h *Handler) loadCandidates(ctx context.Context, videoID, externalID string) ([]Candidate, error) {
 	q := `
 		SELECT id, provider, external_id, confidence, is_accepted, mapped
 		FROM media_metadata_enrichment
@@ -267,7 +277,7 @@ func (h *Handler) loadCandidates(r *http.Request, videoID, externalID string) ([
 		args = append(args, externalID)
 	}
 	q += ` ORDER BY confidence DESC`
-	rows, err := h.DB.QueryContext(r.Context(), q, args...)
+	rows, err := h.DB.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -287,10 +297,16 @@ func (h *Handler) loadCandidates(r *http.Request, videoID, externalID string) ([
 
 // protectedFields returns the set of fields whose provenance origin is
 // 'user' (so an accept must skip them).
-func (h *Handler) protectedFields(r *http.Request, videoID string) map[string]bool {
+func (h *Handler) protectedFields(ctx context.Context, videoID string) map[string]bool {
+	return h.fieldsWithOrigin(ctx, videoID, "user")
+}
+
+// fieldsWithOrigin returns the set of a video's fields whose provenance
+// origin is origin ('user' or 'enrichment').
+func (h *Handler) fieldsWithOrigin(ctx context.Context, videoID, origin string) map[string]bool {
 	out := map[string]bool{}
-	rows, err := h.DB.QueryContext(r.Context(),
-		`SELECT field FROM media_field_provenance WHERE video_id = $1 AND origin = 'user'`, videoID)
+	rows, err := h.DB.QueryContext(ctx,
+		`SELECT field FROM media_field_provenance WHERE video_id = $1 AND origin = $2`, videoID, origin)
 	if err != nil {
 		return out
 	}

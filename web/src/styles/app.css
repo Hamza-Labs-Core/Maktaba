@@ -572,6 +572,22 @@ html {
   flex: 0 0 1.5rem;
   font-size: 1.1rem;
   text-align: center;
+  position: relative;
+}
+.mkt-tab__icon {
+  position: relative;
+}
+/* Story 28.6 — update badge: a dot on the icon's corner, out of flow so
+   showing it never shifts the nav. */
+.mkt-update-dot {
+  position: absolute;
+  inset-block-start: -0.1rem;
+  inset-inline-end: -0.15rem;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-bg);
 }
 .mkt-nav-link__label {
   min-width: 0;
@@ -1392,6 +1408,9 @@ mark {
   font-size: var(--font-size-sm);
   font-weight: 600;
 }
+.mkt-live__badge.is-behind {
+  background: var(--color-neutral-700, #3f3f46);
+}
 .mkt-live__tuning {
   position: absolute;
   inset: 0;
@@ -1922,6 +1941,23 @@ mark {
 .mkt-enrich-panel__actions {
   display: flex;
   gap: var(--space-2);
+}
+.mkt-enrich-panel__revert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-block: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  margin-block-end: var(--space-3);
+}
+.mkt-enrich-panel__revert p {
+  margin: 0;
+}
+.mkt-enrich-panel__keys {
+  margin-block-start: var(--space-2);
+  font-size: 0.875em;
 }
 .mkt-enrich-review__layout {
   display: grid;
@@ -2517,4 +2553,109 @@ mark {
   flex-wrap: wrap;
   gap: var(--space-3);
   align-items: center;
+}
+
+/* Story 29.4 — watch history + activity timeline (/account/history). */
+.mkt-history__panel,
+.mkt-activity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.mkt-history__table {
+  width: 100%;
+  overflow-x: auto;
+}
+.mkt-activity__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.mkt-activity__days,
+.mkt-activity__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+}
+.mkt-activity__day + .mkt-activity__day {
+  margin-block-start: var(--space-4);
+}
+.mkt-activity__date {
+  font-size: 0.95rem;
+  margin: 0 0 var(--space-2);
+  color: var(--color-muted);
+}
+.mkt-activity__row {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: var(--space-2);
+  padding-block: var(--space-2);
+  padding-inline-start: var(--space-3);
+  border-inline-start: 2px solid var(--color-border);
+}
+.mkt-activity__row--watched {
+  border-inline-start-color: var(--color-accent, var(--color-border));
+}
+.mkt-activity__time {
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+.mkt-activity__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Story 28.6 — About: release notes (Markdown) and the About link's badge. */
+.mkt-settings__navlink {
+  position: relative;
+  padding-inline-end: 0.7rem;
+}
+.mkt-settings__navlink .mkt-update-dot {
+  inset-block-start: 0;
+  inset-inline-end: 0;
+}
+.mkt-about__notes-body {
+  max-height: 24rem;
+  overflow: auto;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 6px);
+  overflow-wrap: anywhere;
+}
+.mkt-markdown > :first-child {
+  margin-block-start: 0;
+}
+.mkt-markdown pre {
+  overflow-x: auto;
+  padding: var(--space-2);
+  background: var(--color-bg);
+  border-radius: var(--radius-sm, 4px);
+}
+.mkt-markdown blockquote {
+  margin-inline: 0;
+  padding-inline-start: var(--space-3);
+  border-inline-start: 3px solid var(--color-border);
+  color: var(--color-muted);
+}
+.mkt-about__docker pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Story 11.1 — "Scan now" on an empty library: the button, then the scan's progress. */
+.mkt-scan-now {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: min(20rem, 100%);
+}
+.mkt-scan-now__progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  text-align: center;
 }

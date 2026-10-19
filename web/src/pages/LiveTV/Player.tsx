@@ -16,6 +16,8 @@
 //   • the neighbours' playlists (previous, next, last channel) are fetched
 //     ahead — only channels already on air, and never a segment
 //   • a tune banner, a mini-guide with now/next, "watch from beginning", PiP
+//   • "Return to live" once the viewer has paused or seeked back behind the
+//     live edge (27.7 AC5): it jumps back to the edge
 //   • deep links: /live/{number}; every switch rewrites the URL (replace
 //     while surfing, push once a channel has played 5 s)
 //
@@ -70,6 +72,73 @@ export const LIVE_RETRIES = PREPARE_RETRIES; // lazy tuning: the first playlist 
 export const LIVE_RETRY_MS = PREPARE_RETRY_MS;
 /** LAN failures in a row before "Watch remotely" is offered (32.9 AC8). */
 export const LAN_FAILS_TO_OFFER = 3;
+// How far behind the usual distance from the live edge the picture must be
+// before "Return to live" shows (seconds); the usual distance is the
+// smallest one seen while playing this channel.
+export const BEHIND_LIVE_S = 10;
+
+/** liveGap is how far (s) el plays behind the end of its seekable window. */
+export function liveGap(el: HTMLMediaElement): number | null {
+  const s = el.seekable;
+  if (!s || s.length === 0) return null;
+  const end = s.end(s.length - 1);
+  if (!Number.isFinite(end)) return null;
+  return Math.max(0, end - el.currentTime);
+}
+
+// useBehindLive watches the active picture: behind once its distance from
+// the live edge grows BEHIND_LIVE_S past the usual one (a pause, or a seek
+// back with the native controls). returnToLive seeks to the usual distance
+// and plays; where the window is unknown it retunes the channel.
+function useBehindLive(
+  el: HTMLVideoElement | null,
+  channelKey: string,
+  retune: () => void
+): { behind: boolean; returnToLive: () => void } {
+  const [behind, setBehind] = useState(false);
+  const baseline = useRef<number | null>(null);
+  useEffect(() => {
+    baseline.current = null;
+    setBehind(false);
+    if (!el) return;
+    const check = () => {
+      const gap = liveGap(el);
+      if (gap === null) {
+        setBehind(false);
+        return;
+      }
+      if (!el.paused && (baseline.current === null || gap < baseline.current)) {
+        baseline.current = gap;
+      }
+      setBehind(baseline.current !== null && gap - baseline.current > BEHIND_LIVE_S);
+    };
+    const events = ["timeupdate", "pause", "play", "seeked", "playing"] as const;
+    for (const e of events) el.addEventListener(e, check);
+    // a paused picture fires nothing while the edge moves on
+    const timer = setInterval(check, 1000);
+    return () => {
+      for (const e of events) el.removeEventListener(e, check);
+      clearInterval(timer);
+    };
+  }, [el, channelKey]);
+  const returnToLive = useCallback(() => {
+    if (!el) return;
+    const s = el.seekable;
+    if (s && s.length > 0 && Number.isFinite(s.end(s.length - 1))) {
+      try {
+        el.currentTime = Math.max(0, s.end(s.length - 1) - (baseline.current ?? 0));
+      } catch {
+        retune();
+        return;
+      }
+      void el.play?.()?.catch?.(() => {});
+    } else {
+      retune();
+    }
+    setBehind(false);
+  }, [el, retune]);
+  return { behind, returnToLive };
+}
 
 type Path = "lan" | "remote";
 
@@ -280,6 +349,17 @@ export function Player() {
 
   const playing = state.current;
   const entry = playing ? (nowById.get(playing.id) ?? null) : null;
+  // the element on screen; the switcher swaps elements on a channel change
+  const [activeEl, setActiveEl] = useState<HTMLVideoElement | null>(null);
+  useEffect(() => {
+    const el = player.activeVideo();
+    setActiveEl((prev) => (prev === el ? prev : el));
+  });
+  const { behind, returnToLive } = useBehindLive(
+    activeEl,
+    `${playing?.id ?? ""}:${player.activeIndex}`,
+    player.retune
+  );
   const watchFromStart = useCallback(() => {
     const vid = entry?.current?.video_id;
     if (vid) nav(`/videos/${encodeURIComponent(vid)}/watch?t=0`);
@@ -406,8 +486,11 @@ export function Player() {
         {/* swipes and taps over the picture, above the native controls bar */}
         <div className="mkt-live__touch" ref={player.gestureRef} aria-hidden="true" />
 
-        <span className="mkt-live__badge" aria-label={t("live.liveLabel")}>
-          ● {t("live.liveLabel")}
+        <span
+          className={"mkt-live__badge" + (behind ? " is-behind" : "")}
+          aria-label={behind ? t("live.behindLive") : t("live.liveLabel")}
+        >
+          ● {behind ? t("live.behindLive") : t("live.liveLabel")}
           {path === "remote" && <span className="mkt-live__via"> · {t("live.remote.badge")}</span>}
         </span>
         {card}
@@ -486,6 +569,11 @@ export function Player() {
         <Button variant="secondary" onClick={() => setMiniGuide((v) => !v)}>
           {t("live.guideBtn")}
         </Button>
+        {behind && !degraded && (
+          <Button variant="primary" onClick={returnToLive} data-testid="return-to-live">
+            ⏭ {t("live.returnToLive")}
+          </Button>
+        )}
         {current?.video_id && current && isAiring(current, nowMs) && (
           <Button variant="secondary" onClick={watchFromStart}>
             {t("live.watchFromStart")}

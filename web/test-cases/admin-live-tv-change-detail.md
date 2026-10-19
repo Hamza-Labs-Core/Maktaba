@@ -13,7 +13,7 @@
   - `GET /api/rules` → `{sections}` via `rulesApi.list()` (labels on the Settings tab)
   - Art thumbs `GET /api/channels/{id}/art/{kind}[?release=<id>]`
 - **Access:** admin only via `AdminGate`; signed out → `/login`. Second-admin rule (`config.require_second_admin`) blocks the author's own approve in the dialog; server answers 409 `second_admin_required`.
-- **Existing tests:** `src/pages/Admin/LiveTV/ChangeDetail.test.tsx` — header + checks summary + actions in fixed order; Lineup tab (added, removed, renumbered 105 → 115, renamed, changed fields); Schedules tab open before/after; Settings tab `tv_output` diff; Art tab thumbnails; Checks tab order; History events + audit; draft with Stage; live change warm rollback; rollback disabled with reason; failed change no actions; cancel asks first; Approve dialog ASAP with switch times; param-change ack; second-admin rule; schedule a time. `PreviewPanel.test.tsx` — mint + play staging with token; switch channels + live side by side; why no preview outside verifying/ready/approved. **Gaps:** unknown id / load errors, error after load, null/missing arrays in the change and sub-endpoints, 409/501 action errors, promote flow, cancel/rollback errors, past swap time, preview errors and bad expiry, schedule paging, permissions, crash recovery, navigation, responsive, theme, a11y.
+- **Existing tests:** `src/pages/Admin/LiveTV/ChangeDetail.test.tsx` — header + checks summary + actions in fixed order; Lineup tab (added, removed, renumbered 105 → 115, renamed, changed fields); Schedules tab open before/after; Settings tab `tv_output` diff; Art tab thumbnails; Checks tab order; History events + audit; draft with Stage; live change warm rollback; rollback disabled with reason; failed change no actions; cancel asks first; Approve dialog ASAP with switch times; param-change ack; second-admin rule; schedule a time. `PreviewPanel.test.tsx` — mint + play staging with token; switch channels + live side by side; why no preview outside verifying/ready/approved. **Gaps:** unknown id / load errors, error after load, null/missing arrays in the change and sub-endpoints, 409 action errors, promote flow, cancel/rollback errors, past swap time, preview errors and bad expiry, schedule paging, permissions, crash recovery, navigation, responsive, theme, a11y.
 
 ## Summary
 
@@ -38,7 +38,7 @@
 | LCD-17 | Second-admin rule                                          | Permissions   | P1       | Yes (`ChangeDetail.test.tsx`)                                 |
 | LCD-18 | Schedule a swap time; past time blocked                    | Validation    | P2       | Partial (`ChangeDetail.test.tsx`: past time not)              |
 | LCD-19 | Swap now (promote) flow                                    | Happy path    | P1       | No                                                            |
-| LCD-20 | Approve / promote conflicts (409) and 501                  | Error         | P1       | No                                                            |
+| LCD-20 | Approve / promote conflicts (409)                          | Error         | P1       | No                                                            |
 | LCD-21 | Cancel (reject) flow and its errors                        | Happy path    | P1       | Partial (`ChangeDetail.test.tsx`: "cancel asks first")        |
 | LCD-22 | Roll back warm, cold, none, and errors                     | Happy path    | P1       | Partial (`ChangeDetail.test.tsx`: warm + none)                |
 | LCD-23 | Preview tab: mint, switch, side by side, errors            | Happy path    | P2       | Partial (`PreviewPanel.test.tsx`: no error/retry)             |
@@ -213,10 +213,10 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
 - **Priority:** P2
 - **Category:** Error
 - **Covered by existing test?** No
-- **Preconditions / data:** `POST .../verify` → change; then rejects `ApiError` 409 `{state:"swapping"}`; then 409 `{error:"change_in_flight"}`; then 501; then network error.
+- **Preconditions / data:** `POST .../verify` → change; then rejects `ApiError` 409 `{state:"swapping"}`; then 409 `{error:"change_in_flight"}`; then a 500 with a message; then network error.
 - **Steps:**
   1. Click "Re-verify" each time.
-- **Expected:** Success `role="status"` "The checks run again." 409 state → `role="alert"` "Not possible now: the change is Swapping." 409 in flight → "Another change is in flight; this one waits for its turn." 501 → "Not available yet." Network → its message. All action buttons are disabled while busy and re-enabled after.
+- **Expected:** Success `role="status"` "The checks run again." 409 state → `role="alert"` "Not possible now: the change is Swapping." 409 in flight → "Another change is in flight; this one waits for its turn." 500 → the server's message. Network → its message. All action buttons are disabled while busy and re-enabled after.
 
 ### LCD-15 — Approve for as soon as possible
 
@@ -269,15 +269,15 @@ Shared data: `changeList`, `boundaries`, `schedulePage`, `quranSchedule`, `rollb
   2. Switch to "immediate"; confirm.
 - **Expected:** Dialog "Swap change #N now" with destructive confirm "Swap now" and no "when" fieldset. Backdrop click does not close it (`dismissable={false}`); Escape still closes it (check that is intended). With a changed mode: first `PATCH {swap_at:<existing or null>, swap_wait:"immediate"}`, then `POST .../promote`. Status "Swapping: the channels switch now."; chip "Swapping".
 
-### LCD-20 — Approve / promote conflicts (409) and 501
+### LCD-20 — Approve / promote conflicts (409)
 
 - **Priority:** P1
 - **Category:** Error
 - **Covered by existing test?** No
-- **Preconditions / data:** `POST .../approve` rejects `ApiError` 409 with, per run: `{error:"second_admin_required"}`, `{error:"ack_param_change_required"}`, `{error:"change_in_flight"}`, `{state:"cancelled"}`, a bare 409 "Conflict"; then status 501. `POST .../promote` 409 `{state:"live"}`. And the pre-PATCH failing with 409 when the mode changed.
+- **Preconditions / data:** `POST .../approve` rejects `ApiError` 409 with, per run: `{error:"second_admin_required"}`, `{error:"ack_param_change_required"}`, `{error:"change_in_flight"}`, `{state:"cancelled"}`, a bare 409 "Conflict". `POST .../promote` 409 `{state:"live"}`. And the pre-PATCH failing with 409 when the mode changed.
 - **Steps:**
   1. Open the dialog; confirm.
-- **Expected:** Dialog stays open; `role="alert"` inside it with: "A second admin approves this change: you made it." / "This change changes the picture of a pushed channel: acknowledge it first." / "Another change is in flight; this one waits for its turn." / "Not possible now: the change is Cancelled." / "Conflict" / "Not available yet." Confirm re-enabled. A failed pre-PATCH stops before approve/promote is sent. The page re-reads on the next poll and shows the real state.
+- **Expected:** Dialog stays open; `role="alert"` inside it with: "A second admin approves this change: you made it." / "This change changes the picture of a pushed channel: acknowledge it first." / "Another change is in flight; this one waits for its turn." / "Not possible now: the change is Cancelled." / "Conflict". Confirm re-enabled. A failed pre-PATCH stops before approve/promote is sent. The page re-reads on the next poll and shows the real state.
 
 ### LCD-21 — Cancel (reject) flow and its errors
 
