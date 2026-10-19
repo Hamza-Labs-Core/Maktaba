@@ -83,6 +83,29 @@ WHERE v.deleted_at IS NULL
                     AND c.stage = 'chapter_infer');
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+-- Backfill: posters and sprites for the library as it stood (thumbnail now follows
+-- content_hash, which already ran for these videos, so its edge never fires for them).
+-- Once per live video with a content hash, no poster yet and no thumbnail job of any
+-- state; priority 900, behind live work (100) and the chapter backfill (500), so it only
+-- runs when the share has nothing else to read. A no-op when re-run.
+INSERT INTO processing_jobs
+    (subject_kind, subject_id, video_id, library_id, stage, state, priority, max_attempts,
+     reasons, triggered_by_stage)
+SELECT 'video', v.id, v.id, v.library_id, 'thumbnail', 'pending', 900, 3,
+       jsonb_build_array(jsonb_build_object(
+           'why', 'posters follow content_hash (slot 0121): backfill of the library',
+           'by', 'migration:0121', 'at', to_jsonb(now()))),
+       'content_hash'
+FROM videos v
+WHERE v.deleted_at IS NULL
+  AND v.content_hash IS NOT NULL
+  AND v.poster_path IS NULL
+  AND NOT EXISTS (SELECT 1 FROM processing_jobs t
+                  WHERE t.subject_kind = 'video' AND t.subject_id = v.id
+                    AND t.stage = 'thumbnail');
+-- +goose StatementEnd
+
 -- +goose Down
 -- +goose StatementBegin
 DELETE FROM processing_jobs WHERE stage = 'chapter_thumbs';

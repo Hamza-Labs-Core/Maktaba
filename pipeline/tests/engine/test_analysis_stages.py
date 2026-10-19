@@ -22,7 +22,7 @@ from maktaba_pipeline.engine.context import StageContext
 from maktaba_pipeline.engine.dispatch import dispatch_job
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import GRAPH, StageDef, Subject, get_stage
-from maktaba_pipeline.engine.sql import dumps, is_pg, loads
+from maktaba_pipeline.engine.sql import dumps, is_pg, loads, to_ts
 from maktaba_pipeline.engine.stages import (
     chapter_infer,
     chapter_thumbs,
@@ -418,10 +418,15 @@ async def test_chapter_frames_follow_the_chapters(db: Database, tmp_path: Path) 
 # ------------------------------------------------------------------- backfill (slot 0121)
 
 
-def _backfill_sql(db: Database) -> str:
+def _backfill_sql(db: Database, stage: str) -> str:
+    """The migration's own backfill statement of ``stage``, in the db's dialect."""
     name = "0121_video_embeddings" + ("" if is_pg(db) else ".sqlite") + ".sql"
     text = (MIGRATIONS_DIR / name).read_text(encoding="utf-8")
-    (stmt,) = [s for s in up_statements(text) if "INSERT INTO processing_jobs" in s]
+    (stmt,) = [
+        s
+        for s in up_statements(text)
+        if "INSERT INTO processing_jobs" in s and f"'{stage}', 'pending'" in s
+    ]
     return stmt
 
 
@@ -438,7 +443,7 @@ async def test_the_migration_queues_chapter_infer_once_for_indexed_videos(
     await db.execute("UPDATE processing_jobs SET state = 'done' WHERE stage = 'index'")
     not_indexed = await make_video(db, lib)
     await _transcript(db, not_indexed, ["ج"])
-    sql = _backfill_sql(db)
+    sql = _backfill_sql(db, "chapter_infer")
     await db.execute(sql)
     await db.execute(sql)  # idempotent
     jobs = await rows(db, "chapter_infer")
@@ -446,6 +451,35 @@ async def test_the_migration_queues_chapter_infer_once_for_indexed_videos(
     job = jobs[0]
     assert job["state"] == "pending" and int(job["priority"]) == 500
     assert str(job["video_id"]) == str(indexed) and str(job["library_id"]) == str(lib)
+    assert "slot 0121" in loads(job["reasons"])[0]["why"]
+
+
+@pytest.mark.asyncio
+async def test_the_migration_queues_posters_once_behind_everything_else(
+    db: Database,
+) -> None:
+    lib = await make_library(db)
+    wanted = await make_video(db, lib)
+    has_poster = await make_video(db, lib)
+    await db.execute("UPDATE videos SET poster_path = '/p.jpg' WHERE id = $1", str(has_poster))
+    gone = await make_video(db, lib)
+    await db.execute(
+        "UPDATE videos SET deleted_at = $2 WHERE id = $1",
+        str(gone),
+        to_ts(db, datetime(2026, 1, 1, tzinfo=UTC)),
+    )
+    queued = await make_video(db, lib)
+    await enqueue_job(db, subject_kind="video", subject_id=queued, stage="thumbnail")
+    sql = _backfill_sql(db, "thumbnail")
+    await db.execute(sql)
+    await db.execute(sql)  # idempotent
+    jobs = await rows(db, "thumbnail")
+    backfilled = [j for j in jobs if int(j["priority"]) == 900]
+    assert [str(j["subject_id"]) for j in backfilled] == [str(wanted)]
+    assert {str(j["subject_id"]) for j in jobs} == {str(wanted), str(queued)}
+    job = backfilled[0]
+    assert str(job["video_id"]) == str(wanted)  # what the legacy handler reads
+    assert job["triggered_by_stage"] == "content_hash"
     assert "slot 0121" in loads(job["reasons"])[0]["why"]
 
 
