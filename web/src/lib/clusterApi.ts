@@ -336,9 +336,10 @@ export const clusterChannelApi = {
     ip: string,
     p: { date?: string; stage?: string; event?: string; limit?: number; before?: string | number }
   ) =>
-    api.get<{ records: (JobEvent & { worker_id?: string })[]; next_before: string | number | null }>(
-      `/api/cluster/files/${q(ip)}/jobs${query(p)}`
-    ),
+    api.get<{
+      records: (JobEvent & { worker_id?: string })[];
+      next_before: string | number | null;
+    }>(`/api/cluster/files/${q(ip)}/jobs${query(p)}`),
   queues: (ip: string, p: { date?: string; from?: string; to?: string } = {}) =>
     api.get<{ samples: { ts: string | number; snapshot: QueuesSnapshot }[] }>(
       `/api/cluster/files/${q(ip)}/queues${query(p)}`

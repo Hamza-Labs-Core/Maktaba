@@ -55,7 +55,10 @@ function LiveJobs({ jobs, queue }: { jobs: QueueLiveJob[]; queue: string }) {
             <span className="mkt-q-card__livetext">
               {bidiIsolate(label || String(job.id))}
               {machine && (
-                <span className="mkt-q-muted"> · {t("queue.card.on", { machine: bidiIsolate(machine) })}</span>
+                <span className="mkt-q-muted">
+                  {" "}
+                  · {t("queue.card.on", { machine: bidiIsolate(machine) })}
+                </span>
               )}
             </span>
             <ProgressBar
@@ -67,7 +70,9 @@ function LiveJobs({ jobs, queue }: { jobs: QueueLiveJob[]; queue: string }) {
         );
       })}
       {jobs.length > shown.length && (
-        <li className="mkt-q-muted">{t("queue.card.liveMore", { n: n(jobs.length - shown.length) })}</li>
+        <li className="mkt-q-muted">
+          {t("queue.card.liveMore", { n: n(jobs.length - shown.length) })}
+        </li>
       )}
     </ul>
   );

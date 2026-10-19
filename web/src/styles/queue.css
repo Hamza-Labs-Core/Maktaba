@@ -1261,3 +1261,17 @@ summary.mkt-q-lane__title {
   position: relative;
   max-inline-size: 100%;
 }
+
+/* Epic 31: a queue's jobs running now, with the machine they run on */
+.mkt-q-card__live {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-sm);
+}
+.mkt-q-card__livetext {
+  overflow-wrap: anywhere;
+}

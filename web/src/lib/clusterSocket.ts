@@ -130,7 +130,11 @@ class ClusterSocket {
    * Runs a per-process command (§3 cmd): over the socket when it is open,
    * else through POST /api/cluster/processes/{session}/cmd.
    */
-  cmd(session: string, name: ProcessCommand, args: Record<string, unknown> = {}): Promise<CommandResult> {
+  cmd(
+    session: string,
+    name: ProcessCommand,
+    args: Record<string, unknown> = {}
+  ): Promise<CommandResult> {
     if (!this.ws || this.status !== "open") return clusterChannelApi.cmd(session, name, args);
     const id = `cmd-${++this.seq}`;
     return new Promise<CommandResult>((resolve, reject) => {
@@ -278,7 +282,8 @@ class ClusterSocket {
       return;
     }
     if (msg.type === "log") {
-      for (const topic of [...this.topics.keys()]) if (topic.startsWith("logs:")) this.deliver(topic, msg);
+      for (const topic of [...this.topics.keys()])
+        if (topic.startsWith("logs:")) this.deliver(topic, msg);
       return;
     }
     if (msg.type === "dropped") {
@@ -294,7 +299,11 @@ export const clusterSocket = new ClusterSocket();
 
 /** The socket's status, re-rendering on change. */
 export function useSocketStatus(): SocketStatus {
-  return useSyncExternalStore(clusterSocket.onStatus, clusterSocket.getStatus, clusterSocket.getStatus);
+  return useSyncExternalStore(
+    clusterSocket.onStatus,
+    clusterSocket.getStatus,
+    clusterSocket.getStatus
+  );
 }
 
 /**
