@@ -8,39 +8,39 @@
 
 ## Summary
 
-| ID     | Title                                                            | Category      | Priority | Covered by existing test?                                   |
-| ------ | ---------------------------------------------------------------- | ------------- | -------- | ----------------------------------------------------------- |
-| LPL-01 | Plays the channel's LAN HLS with a LIVE badge                    | Happy path    | P1       | Yes (`Player.test.tsx`)                                     |
-| LPL-02 | Tuning card shows at once, then the tune banner                  | Happy path    | P2       | Yes (`Player.test.tsx`)                                     |
-| LPL-03 | Tune banner: now, progress, next; hides after 5 s; Enter toggles | Happy path    | P2       | Partial (`Player.test.tsx`: no auto-hide, no Enter)         |
-| LPL-04 | Unknown channel number shows "Channel not found"                 | Navigation    | P1       | Partial (`Player.test.tsx`: "Open guide" not clicked)       |
-| LPL-05 | Bad `:number` values (abc, 0, -1, 1.5) are not found             | Validation    | P1       | No                                                          |
-| LPL-06 | Channel list request fails                                       | Error         | P1       | No                                                          |
-| LPL-07 | Null or missing lists in list / now / info                       | Empty state   | P1       | No                                                          |
-| LPL-08 | Offline channel: retries, then slate with a direct link          | Error         | P1       | Yes (`Player.test.tsx`)                                     |
-| LPL-09 | hls.js path and fatal-error recovery                             | Error         | P2       | Yes (`Player.test.tsx`)                                     |
-| LPL-10 | No HLS support at all shows a clear slate                        | Error         | P2       | Yes (`Player.test.tsx`)                                     |
-| LPL-11 | Stall shows "Reconnecting…"                                      | Error         | P2       | No                                                          |
-| LPL-12 | Channel up / down by keys and on-screen buttons                  | Happy path    | P1       | Partial (`Player.test.tsx`: keys only, buttons not clicked) |
-| LPL-13 | Make before break: old channel plays until the new one starts    | Happy path    | P1       | Yes (`Player.test.tsx`)                                     |
-| LPL-14 | Number entry, last channel (L / Backspace / button)              | Happy path    | P2       | Partial (`Player.test.tsx`: button and Backspace not)       |
-| LPL-15 | Unknown number shows "No channel N"                              | Validation    | P2       | Yes (`Player.test.tsx`)                                     |
-| LPL-16 | Modifier keys and text fields are ignored                        | Accessibility | P2       | Partial (`keymap.test.ts`: unit only)                       |
-| LPL-17 | Mini-guide opens, tunes, closes with Escape                      | Happy path    | P2       | Partial (`Player.test.tsx`: Escape / close button not)      |
-| LPL-18 | Guide key and "Open guide" button go to `/guide`                 | Navigation    | P2       | Partial (`Player.test.tsx`: G only)                         |
-| LPL-19 | URL and history: replace while surfing, push after 5 s           | Navigation    | P2       | Partial (`Player.test.tsx`: pathname only)                  |
-| LPL-20 | Remote path: tune, heartbeat, end session                        | Happy path    | P1       | Yes (`Player.test.tsx`)                                     |
-| LPL-21 | Remote refusals show the right words                             | Error         | P2       | Partial (`Player.test.tsx`: 402, 429 only)                  |
-| LPL-22 | Three LAN failures offer "Watch remotely"                        | Error         | P2       | No                                                          |
-| LPL-23 | "Watch from beginning" opens the VOD at t=0                      | Happy path    | P2       | No                                                          |
-| LPL-24 | Autoplay blocked shows "Tap for sound"; PiP failure is quiet     | Happy path    | P3       | No                                                          |
-| LPL-25 | Loading text before the lineup arrives                           | Loading       | P3       | No                                                          |
-| LPL-26 | Signed-out user is sent to `/login`                              | Permissions   | P1       | No                                                          |
-| LPL-27 | Render crash shows the route error fallback; Back works          | Error         | P1       | No                                                          |
-| LPL-28 | Phone width: controls wrap, swipe surfs                          | Responsive    | P3       | Partial (`Player.test.tsx`: swipe only)                     |
-| LPL-29 | Arabic: RTL labels, up is still next channel                     | RTL           | P2       | Partial (`keymap.test.ts`: key map only)                    |
-| LPL-30 | Light and dark theme overlays readable                           | Theme         | P3       | No                                                          |
-| LPL-31 | Accessibility: labels, focus, hidden standby video               | Accessibility | P2       | No                                                          |
+| ID     | Title                                                            | Category      | Priority | Covered by existing test?                                                                                           |
+| ------ | ---------------------------------------------------------------- | ------------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
+| LPL-01 | Plays the channel's LAN HLS with a LIVE badge                    | Happy path    | P1       | Yes (`Player.test.tsx`)                                                                                             |
+| LPL-02 | Tuning card shows at once, then the tune banner                  | Happy path    | P2       | Yes (`Player.test.tsx`)                                                                                             |
+| LPL-03 | Tune banner: now, progress, next; hides after 5 s; Enter toggles | Happy path    | P2       | Yes (`Player.cases.test.tsx`)                                                                                       |
+| LPL-04 | Unknown channel number shows "Channel not found"                 | Navigation    | P1       | Yes (`Player.cases.test.tsx`)                                                                                       |
+| LPL-05 | Bad `:number` values (abc, 0, -1, 1.5) are not found             | Validation    | P1       | Yes (`Player.cases.test.tsx`); `/live/%20` vs channel 0 is No (it.fails: bug)                                       |
+| LPL-06 | Channel list request fails                                       | Error         | P1       | No (it.fails: bug); 30 s recovery Yes (`Player.cases.test.tsx`)                                                     |
+| LPL-07 | Null or missing lists in list / now / info                       | Empty state   | P1       | Yes (`Player.cases.test.tsx`)                                                                                       |
+| LPL-08 | Offline channel: retries, then slate with a direct link          | Error         | P1       | Yes (`Player.test.tsx`)                                                                                             |
+| LPL-09 | hls.js path and fatal-error recovery                             | Error         | P2       | Yes (`Player.test.tsx`)                                                                                             |
+| LPL-10 | No HLS support at all shows a clear slate                        | Error         | P2       | Yes (`Player.test.tsx`)                                                                                             |
+| LPL-11 | Stall shows "Reconnecting…"                                      | Error         | P2       | Yes (`Player.cases.test.tsx`)                                                                                       |
+| LPL-12 | Channel up / down by keys and on-screen buttons                  | Happy path    | P1       | Yes (`Player.cases.test.tsx`)                                                                                       |
+| LPL-13 | Make before break: old channel plays until the new one starts    | Happy path    | P1       | Yes (`Player.test.tsx`)                                                                                             |
+| LPL-14 | Number entry, last channel (L / Backspace / button)              | Happy path    | P2       | Yes (`Player.cases.test.tsx`)                                                                                       |
+| LPL-15 | Unknown number shows "No channel N"                              | Validation    | P2       | Yes (`Player.test.tsx`)                                                                                             |
+| LPL-16 | Modifier keys and text fields are ignored                        | Accessibility | P2       | Yes (`Player.cases.test.tsx`)                                                                                       |
+| LPL-17 | Mini-guide opens, tunes, closes with Escape                      | Happy path    | P2       | Yes (`Player.cases.test.tsx`)                                                                                       |
+| LPL-18 | Guide key and "Open guide" button go to `/guide`                 | Navigation    | P2       | Yes (`Player.cases.test.tsx`)                                                                                       |
+| LPL-19 | URL and history: replace while surfing, push after 5 s           | Navigation    | P2       | Yes (`Player.cases.test.tsx`)                                                                                       |
+| LPL-20 | Remote path: tune, heartbeat, end session                        | Happy path    | P1       | Yes (`Player.test.tsx`)                                                                                             |
+| LPL-21 | Remote refusals show the right words                             | Error         | P2       | Yes (`Player.cases.test.tsx`; heartbeat 410 retune not covered)                                                     |
+| LPL-22 | Three LAN failures offer "Watch remotely"                        | Error         | P2       | Yes (`Player.cases.test.tsx`); move-to-remote variant is No (it.fails: bug)                                         |
+| LPL-23 | "Watch from beginning" opens the VOD at t=0                      | Happy path    | P2       | No (it.fails: bug)                                                                                                  |
+| LPL-24 | Autoplay blocked shows "Tap for sound"; PiP failure is quiet     | Happy path    | P3       | No                                                                                                                  |
+| LPL-25 | Loading text before the lineup arrives                           | Loading       | P3       | No                                                                                                                  |
+| LPL-26 | Signed-out user is sent to `/login`                              | Permissions   | P1       | Yes (`Player.cases.test.tsx`)                                                                                       |
+| LPL-27 | Render crash shows the route error fallback; Back works          | Error         | P1       | Yes (`Player.cases.test.tsx`)                                                                                       |
+| LPL-28 | Phone width: controls wrap, swipe surfs                          | Responsive    | P3       | Partial (`Player.test.tsx`: swipe only; layout e2e-only)                                                            |
+| LPL-29 | Arabic: RTL labels, up is still next channel                     | RTL           | P2       | Yes (`Player.cases.test.tsx`)                                                                                       |
+| LPL-30 | Light and dark theme overlays readable                           | Theme         | P3       | No (e2e-only)                                                                                                       |
+| LPL-31 | Accessibility: labels, focus, hidden standby video               | Accessibility | P2       | Yes (`Player.cases.test.tsx`); number overlay role and mini-guide focus are No (it.fails: bug); focus ring e2e-only |
 
 ## Cases
 
@@ -70,7 +70,7 @@ Shared data (from `Player.test.tsx`): `lineup = {items:[{id:"c1",number:1,name:"
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `Player.test.tsx` "renders a tune banner with current and next program" (no auto-hide, no Enter)
+- **Covered by existing test?** Yes (`Player.cases.test.tsx`)
 - **Preconditions / data:** shared data; fake timers.
 - **Steps:**
   1. Play `/live/1` to first frame.
@@ -83,7 +83,7 @@ Shared data (from `Player.test.tsx`): `lineup = {items:[{id:"c1",number:1,name:"
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** Partial — `Player.test.tsx` "shows a not-found state for an unknown channel number" (button not clicked)
+- **Covered by existing test?** Yes (`Player.cases.test.tsx`)
 - **Preconditions / data:** shared data.
 - **Steps:**
   1. Open `/live/9`.
@@ -94,7 +94,7 @@ Shared data (from `Player.test.tsx`): `lineup = {items:[{id:"c1",number:1,name:"
 
 - **Priority:** P1
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Player.cases.test.tsx`); `/live/%20` vs channel 0 is No (it.fails: bug)
 - **Preconditions / data:** shared data; also a lineup where a channel has `number: 0`.
 - **Steps:**
   1. Open each of `/live/abc`, `/live/0`, `/live/-1`, `/live/1.5`, `/live/%20`, `/live/1e0`.
@@ -104,7 +104,7 @@ Shared data (from `Player.test.tsx`): `lineup = {items:[{id:"c1",number:1,name:"
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** No (it.fails: bug); 30 s recovery Yes (`Player.cases.test.tsx`)
 - **Preconditions / data:** `GET /api/channels?enabled=true` rejects with `ApiError` 500; repeat with 401, 403, a network `TypeError`, and a 200 with malformed JSON body.
 - **Steps:**
   1. Open `/live/1`.
@@ -114,7 +114,7 @@ Shared data (from `Player.test.tsx`): `lineup = {items:[{id:"c1",number:1,name:"
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Player.cases.test.tsx`)
 - **Preconditions / data:** run per payload:
   - `GET /api/channels?enabled=true` → `{ "items": null }` and `{}` (fields: `items`)
   - `GET /api/channels/now` → `{ "server_time":"<now>", "channels": null }`, `{}`, and an entry `{ "channel": {...c1}, "current": null }` with `next` missing (fields: `channels`, `channels[].current`, `channels[].next`)
@@ -157,7 +157,7 @@ Shared data (from `Player.test.tsx`): `lineup = {items:[{id:"c1",number:1,name:"
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No (`useLiveHls.test.ts` covers the hook's `reconnecting` flag, not the page)
+- **Covered by existing test?** Yes (`Player.cases.test.tsx`)
 - **Preconditions / data:** playing channel 1; fake timers; fire `waiting`/`stalled` on the active video and advance past `STALL_MS`.
 - **Steps:**
   1. Play to first frame, then stall.
@@ -168,7 +168,7 @@ Shared data (from `Player.test.tsx`): `lineup = {items:[{id:"c1",number:1,name:"
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `Player.test.tsx` covers ArrowUp, PageUp ×2 (debounced), PageDown wrap; the buttons are not clicked
+- **Covered by existing test?** Yes (`Player.cases.test.tsx`)
 - **Preconditions / data:** shared data; playing channel 1.
 - **Steps:**
   1. Click "Channel up" (`aria-label="Channel up"`).
@@ -191,7 +191,7 @@ Shared data (from `Player.test.tsx`): `lineup = {items:[{id:"c1",number:1,name:"
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `Player.test.tsx` "tunes by number with Enter and goes back with L"
+- **Covered by existing test?** Yes (`Player.cases.test.tsx`)
 - **Preconditions / data:** playing channel 1; fake timers.
 - **Steps:**
   1. Press 3 then Enter.
@@ -215,7 +215,7 @@ Shared data (from `Player.test.tsx`): `lineup = {items:[{id:"c1",number:1,name:"
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** Partial — `keymap.test.ts` "leaves browser shortcuts and unknown keys alone", "recognises text fields" (unit only)
+- **Covered by existing test?** Yes (`Player.cases.test.tsx`)
 - **Preconditions / data:** playing channel 1.
 - **Steps:**
   1. On the player press Ctrl+L, Cmd+G, Alt+ArrowUp.
@@ -226,7 +226,7 @@ Shared data (from `Player.test.tsx`): `lineup = {items:[{id:"c1",number:1,name:"
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `Player.test.tsx` "opens a mini-guide listing channels with now and next" and "tunes from the mini-guide (I, then a tap)"
+- **Covered by existing test?** Yes (`Player.cases.test.tsx`)
 - **Preconditions / data:** shared data.
 - **Steps:**
   1. Click "Mini-guide"; check rows.
@@ -239,7 +239,7 @@ Shared data (from `Player.test.tsx`): `lineup = {items:[{id:"c1",number:1,name:"
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** Partial — `Player.test.tsx` "opens the full guide with G"
+- **Covered by existing test?** Yes (`Player.cases.test.tsx`)
 - **Preconditions / data:** playing channel 1; remote path variant.
 - **Steps:**
   1. Click "← Open guide".
@@ -250,7 +250,7 @@ Shared data (from `Player.test.tsx`): `lineup = {items:[{id:"c1",number:1,name:"
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** Partial — `Player.test.tsx` checks the pathname after switches, not push vs replace
+- **Covered by existing test?** Yes (`Player.cases.test.tsx`)
 - **Preconditions / data:** `MemoryRouter` history `["/guide", "/live/1"]`; fake timers.
 - **Steps:**
   1. Play 1; within 5 s press ArrowUp (settles on 2); press Back.
@@ -271,7 +271,7 @@ Shared data (from `Player.test.tsx`): `lineup = {items:[{id:"c1",number:1,name:"
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** Partial — `Player.test.tsx` covers 402 `budget_exhausted` and 429 `remote_channels_full`
+- **Covered by existing test?** Yes (`Player.cases.test.tsx`; heartbeat 410 retune not covered)
 - **Preconditions / data:** `POST /api/tv/remote/tune` rejects with `ApiError` carrying `code`: `user_streams_full`, `remote_storage_full`, `remote_unavailable` (message "no inputs"), `remote_not_allowed`, `remote_timeout`, `no_such_channel`, an unknown code.
 - **Steps:**
   1. Open `/live/1` for each.
@@ -281,7 +281,7 @@ Shared data (from `Player.test.tsx`): `lineup = {items:[{id:"c1",number:1,name:"
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Player.cases.test.tsx`); move-to-remote variant is No (it.fails: bug)
 - **Preconditions / data:** `info.remote = {available:true, via_relay:false}`; LAN stream fails every time.
 - **Steps:**
   1. Open `/live/1`; let three tunes fail (`LAN_FAILS_TO_OFFER = 3`).
@@ -293,7 +293,7 @@ Shared data (from `Player.test.tsx`): `lineup = {items:[{id:"c1",number:1,name:"
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** No (it.fails: bug)
 - **Preconditions / data:** shared data; the now payload's `c1.current` carries `video_id:"v1"` and is airing.
 - **Steps:**
   1. Play `/live/1`; click "Watch from beginning".
@@ -324,7 +324,7 @@ Shared data (from `Player.test.tsx`): `lineup = {items:[{id:"c1",number:1,name:"
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Player.cases.test.tsx`)
 - **Preconditions / data:** full `App`; `useAuth` → `{user:null, loading:false}`; also a normal (non-admin) user.
 - **Steps:**
   1. Navigate to `/live/1`.
@@ -334,7 +334,7 @@ Shared data (from `Player.test.tsx`): `lineup = {items:[{id:"c1",number:1,name:"
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Player.cases.test.tsx`)
 - **Preconditions / data:** full `App`, history `["/guide", "/live/1"]`. Force a render throw: mock `channelsApi.now` (bypassing `nowFrom`) to resolve `{server_time:"<now>", items:[{channel:null}]}` (the `nowById` loop reads `e.channel.id`), or mock `TuningCard` to throw.
 - **Steps:**
   1. Render at `/live/1`.
@@ -345,7 +345,7 @@ Shared data (from `Player.test.tsx`): `lineup = {items:[{id:"c1",number:1,name:"
 
 - **Priority:** P3
 - **Category:** Responsive
-- **Covered by existing test?** Partial — `Player.test.tsx` "surfs with a vertical swipe on the picture"
+- **Covered by existing test?** Partial (`Player.test.tsx`: swipe only; layout e2e-only)
 - **Preconditions / data:** viewport 375 × 812 (mobile preset, touch).
 - **Steps:**
   1. Open `/live/1`; swipe up on the picture; tap the picture.
@@ -355,7 +355,7 @@ Shared data (from `Player.test.tsx`): `lineup = {items:[{id:"c1",number:1,name:"
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** Partial — `keymap.test.ts` "keeps up = next channel in RTL (nothing is mirrored)"
+- **Covered by existing test?** Yes (`Player.cases.test.tsx`)
 - **Preconditions / data:** `localStorage["mkt:locale"]="ar"`; Arabic channel names.
 - **Steps:**
   1. Open `/live/1`; press ArrowUp; open the mini-guide.
@@ -365,7 +365,7 @@ Shared data (from `Player.test.tsx`): `lineup = {items:[{id:"c1",number:1,name:"
 
 - **Priority:** P3
 - **Category:** Theme
-- **Covered by existing test?** No (visual)
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** `data-theme="light"` and `"dark"`.
 - **Steps:**
   1. Show the tuning card, banner, mini-guide, slate and number overlay.
@@ -375,7 +375,7 @@ Shared data (from `Player.test.tsx`): `lineup = {items:[{id:"c1",number:1,name:"
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Player.cases.test.tsx`); number overlay role and mini-guide focus are No (it.fails: bug); focus ring e2e-only
 - **Preconditions / data:** playing channel 1.
 - **Steps:**
   1. Tab through the page.

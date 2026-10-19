@@ -45,7 +45,7 @@ export function RemoteTestLines({
     l.skipped ? "skipped" : l.ok ? "ok" : l.optional ? "warn" : "bad";
   return (
     <ul className="mkt-q-cflines" aria-label={t("cfstream.lines")}>
-      {result.lines.map((l) => {
+      {(result.lines ?? []).map((l) => {
         const s = state(l);
         return (
           <li
@@ -101,10 +101,11 @@ export function CloudflareRemote({ refresh }: { refresh: number }) {
       .run("remove", () => tvRemoteApi.remove())
       .then((r) => {
         if (!r) return;
+        const errors = r.errors ?? [];
         setRemoved(
-          r.errors.length
-            ? t("cfstream.removedWithErrors", { errors: r.errors.join("; ") })
-            : t("cfstream.removed", { n: r.deleted_inputs.length })
+          errors.length
+            ? t("cfstream.removedWithErrors", { errors: errors.join("; ") })
+            : t("cfstream.removed", { n: (r.deleted_inputs ?? []).length })
         );
         load();
       });

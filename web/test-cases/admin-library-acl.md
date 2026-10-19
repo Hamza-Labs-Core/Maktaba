@@ -11,30 +11,30 @@
 
 ## Summary
 
-| ID     | Title                                                 | Category      | Priority | Covered by existing test? |
-| ------ | ----------------------------------------------------- | ------------- | -------- | ------------------------- |
-| ACL-01 | Matrix renders users x libraries with current roles   | Happy path    | P1       | No                        |
-| ACL-02 | Loading state before GET resolves                     | Loading       | P3       | No                        |
-| ACL-03 | Change cells and save sends only the diff             | Happy path    | P1       | No                        |
-| ACL-04 | Setting a cell to None revokes it                     | Happy path    | P1       | No                        |
-| ACL-05 | Changing a cell back removes it from the diff         | Validation    | P2       | No                        |
-| ACL-06 | Save button state and count label                     | Validation    | P2       | No                        |
-| ACL-07 | Save failure keeps edits and shows error toast        | Error         | P1       | No                        |
-| ACL-08 | Save response `grants: null` / missing                | Empty state   | P1       | No                        |
-| ACL-09 | No users or no libraries shows empty state            | Empty state   | P2       | No                        |
-| ACL-10 | GET list fields `null` or missing do not crash        | Empty state   | P1       | No                        |
-| ACL-11 | GET errors (403, 404, 500, network, non-JSON) + Retry | Error         | P2       | No                        |
-| ACL-12 | Unknown role in a grant                               | Error         | P3       | No                        |
-| ACL-13 | Grants for unknown user/library ids                   | Empty state   | P3       | No                        |
-| ACL-14 | Leaving with unsaved changes                          | Navigation    | P2       | No                        |
-| ACL-15 | Page crash shows route error fallback; Back works     | Navigation    | P1       | No                        |
-| ACL-16 | Non-admin sees "Admins only" and no request           | Permissions   | P1       | No                        |
-| ACL-17 | Signed-out user redirected to /login                  | Permissions   | P1       | No                        |
-| ACL-18 | Deep link, Back/Forward, nav link                     | Navigation    | P2       | No                        |
-| ACL-19 | Wide matrix at 375px scrolls inside its box           | Responsive    | P3       | No                        |
-| ACL-20 | Arabic / RTL                                          | RTL           | P3       | No                        |
-| ACL-21 | Light and dark theme                                  | Theme         | P3       | No                        |
-| ACL-22 | Keyboard and labels on every cell                     | Accessibility | P2       | No                        |
+| ID     | Title                                                 | Category      | Priority | Covered by existing test?                |
+| ------ | ----------------------------------------------------- | ------------- | -------- | ---------------------------------------- |
+| ACL-01 | Matrix renders users x libraries with current roles   | Happy path    | P1       | Yes (`LibraryACL.test.tsx`)              |
+| ACL-02 | Loading state before GET resolves                     | Loading       | P3       | No                                       |
+| ACL-03 | Change cells and save sends only the diff             | Happy path    | P1       | Yes (`LibraryACL.test.tsx`)              |
+| ACL-04 | Setting a cell to None revokes it                     | Happy path    | P1       | Yes (`LibraryACL.test.tsx`)              |
+| ACL-05 | Changing a cell back removes it from the diff         | Validation    | P2       | Yes (`LibraryACL.test.tsx`)              |
+| ACL-06 | Save button state and count label                     | Validation    | P2       | Yes (`LibraryACL.test.tsx`)              |
+| ACL-07 | Save failure keeps edits and shows error toast        | Error         | P1       | Yes (`LibraryACL.test.tsx`)              |
+| ACL-08 | Save response `grants: null` / missing                | Empty state   | P1       | Yes (`LibraryACL.test.tsx`)              |
+| ACL-09 | No users or no libraries shows empty state            | Empty state   | P2       | Yes (`LibraryACL.test.tsx`)              |
+| ACL-10 | GET list fields `null` or missing do not crash        | Empty state   | P1       | Yes (`LibraryACL.test.tsx`)              |
+| ACL-11 | GET errors (403, 404, 500, network, non-JSON) + Retry | Error         | P2       | Yes (`LibraryACL.test.tsx`)              |
+| ACL-12 | Unknown role in a grant                               | Error         | P3       | No                                       |
+| ACL-13 | Grants for unknown user/library ids                   | Empty state   | P3       | No                                       |
+| ACL-14 | Leaving with unsaved changes                          | Navigation    | P2       | No (it.todo: needs a data router + i18n) |
+| ACL-15 | Page crash shows route error fallback; Back works     | Navigation    | P1       | Yes (`LibraryACL.test.tsx`)              |
+| ACL-16 | Non-admin sees "Admins only" and no request           | Permissions   | P1       | Yes (`LibraryACL.test.tsx`)              |
+| ACL-17 | Signed-out user redirected to /login                  | Permissions   | P1       | Yes (`LibraryACL.test.tsx`)              |
+| ACL-18 | Deep link, Back/Forward, nav link                     | Navigation    | P2       | Yes (`LibraryACL.test.tsx`)              |
+| ACL-19 | Wide matrix at 375px scrolls inside its box           | Responsive    | P3       | No                                       |
+| ACL-20 | Arabic / RTL                                          | RTL           | P3       | No                                       |
+| ACL-21 | Light and dark theme                                  | Theme         | P3       | No                                       |
+| ACL-22 | Keyboard and labels on every cell                     | Accessibility | P2       | Yes (`LibraryACL.test.tsx`)              |
 
 ## Cases
 
@@ -42,7 +42,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryACL.test.tsx`)
 - **Preconditions / data:** admin; `GET /api/admin/library-acl` →
   `{ "users":[{"id":"u1","username":"alice"},{"id":"u2","username":"bob"}], "libraries":[{"id":"l1","name":"Lectures"},{"id":"l2","name":"Kids"}], "grants":[{"user_id":"u1","library_id":"l1","role":"admin"},{"user_id":"u2","library_id":"l2","role":"read"}] }`
 - **Steps:**
@@ -63,7 +63,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryACL.test.tsx`)
 - **Preconditions / data:** ACL-01 data; `PUT /api/admin/library-acl` → `{ "grants":[{"user_id":"u1","library_id":"l1","role":"admin"},{"user_id":"u2","library_id":"l2","role":"read"},{"user_id":"u2","library_id":"l1","role":"write"}] }`
 - **Steps:**
   1. Set "bob access to Lectures" to Write.
@@ -74,7 +74,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryACL.test.tsx`)
 - **Preconditions / data:** ACL-01 data; PUT → grants without the u1/l1 row.
 - **Steps:**
   1. Set "alice access to Lectures" to None. Save.
@@ -84,7 +84,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryACL.test.tsx`)
 - **Preconditions / data:** ACL-01 data.
 - **Steps:**
   1. Set bob/Lectures None → Read (label "Save 1 change(s)").
@@ -95,7 +95,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryACL.test.tsx`)
 - **Preconditions / data:** ACL-01 data.
 - **Steps:**
   1. Change 3 different cells.
@@ -106,7 +106,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryACL.test.tsx`)
 - **Preconditions / data:** PUT → (a) 400 problem `{ "title":"bad request","status":400,"detail":"unknown role" }`; (b) 403 problem `{ "title":"forbidden","status":403 }`; (c) 500 `text/plain`; (d) fetch rejects.
 - **Steps:**
   1. Change a cell, Save.
@@ -116,7 +116,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryACL.test.tsx`)
 - **Preconditions / data:** revoke the last grant; PUT → `{ "grants": null }`; also `{}`.
 - **Steps:**
   1. Set every granted cell to None. Save.
@@ -126,7 +126,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryACL.test.tsx`)
 - **Preconditions / data:** GET → `{ "users":[], "libraries":[{"id":"l1","name":"Lectures"}], "grants":[] }`; then `{ "users":[{"id":"u1","username":"alice"}], "libraries":[], "grants":[] }`.
 - **Steps:**
   1. Open page.
@@ -136,7 +136,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryACL.test.tsx`)
 - **Preconditions / data:** fields read from `GET /api/admin/library-acl`: `users`, `libraries`, `grants`. Run each separately:
   - `users: null`; `users` key missing
   - `libraries: null`; `libraries` key missing
@@ -150,7 +150,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryACL.test.tsx`)
 - **Preconditions / data:** GET → (a) 403 problem `{ "title":"forbidden","status":403,"detail":"admin only" }`; (b) 404 `text/plain` "404 page not found"; (c) 500 problem without detail `{ "title":"internal","status":500 }`; (d) fetch rejects; (e) 200 with `Content-Type: application/json` body `{bad json`.
 - **Steps:**
   1. Open page. 2. Make GET succeed with ACL-01 data, click "Try again".
@@ -180,7 +180,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** No (it.todo: needs a data router + i18n)
 - **Preconditions / data:** ACL-01 data.
 - **Steps:**
   1. Change 2 cells, do not save.
@@ -191,7 +191,7 @@
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryACL.test.tsx`)
 - **Preconditions / data:** full app router; GET → `{ "users": null, "libraries": [...], "grants": [] }` (throws today) or mock `Select` to throw.
 - **Steps:**
   1. Start at `/library`, click sidebar "Library access".
@@ -202,7 +202,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryACL.test.tsx`)
 - **Preconditions / data:** `/api/auth/me` → user with `is_admin:false`.
 - **Steps:**
   1. Open `/admin/library-acl`.
@@ -212,7 +212,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryACL.test.tsx`)
 - **Preconditions / data:** `/api/auth/me` → 401.
 - **Steps:**
   1. Open `/admin/library-acl`.
@@ -222,7 +222,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryACL.test.tsx`)
 - **Preconditions / data:** admin.
 - **Steps:**
   1. Open `/admin/library-acl` directly. 2. Go to `/admin/users` via nav, then Back, then Forward.
@@ -262,7 +262,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`LibraryACL.test.tsx`)
 - **Preconditions / data:** ACL-01 data.
 - **Steps:**
   1. Tab from Save through the matrix; change a cell with the keyboard (arrow keys / Enter).

@@ -25,7 +25,24 @@ type Summary = {
   recent: RelayCall[];
 };
 
-function summarise(s: RelayStatus): Summary {
+/**
+ * The relay status with every list present: the API may send null (or
+ * leave out) extensions, home_only, calls, totals, an extension's allow
+ * list, or the settings.
+ */
+export function relayStatusOf(s: RelayStatus): RelayStatus {
+  const list = <T,>(v: T[] | null | undefined): T[] => (Array.isArray(v) ? v : []);
+  return {
+    ...s,
+    extensions: list(s.extensions).map((e) => ({ ...e, allow: list(e.allow) })),
+    home_only: list(s.home_only),
+    calls: list(s.calls),
+    totals: list(s.totals),
+  };
+}
+
+function summarise(raw: RelayStatus): Summary {
+  const s = relayStatusOf(raw);
   const sum = (k: "calls" | "refused" | "failed") => s.totals.reduce((a, x) => a + (x[k] ?? 0), 0);
   return {
     state: !s.available ? "unavailable" : s.enabled ? "on" : "off",

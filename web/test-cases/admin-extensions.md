@@ -18,31 +18,31 @@
 
 ## Summary
 
-| ID     | Title                                                     | Category      | Priority | Covered by existing test?                                         |
-| ------ | --------------------------------------------------------- | ------------- | -------- | ----------------------------------------------------------------- |
-| EXT-01 | Lists extension cards with status and generated form      | Happy path    | P1       | Yes (`Extensions.test.tsx`)                                       |
-| EXT-02 | Secrets are masked and write-only                         | Happy path    | P1       | Yes (`Extensions.test.tsx`)                                       |
-| EXT-03 | Loading state                                             | Loading       | P3       | No                                                                |
-| EXT-04 | Load failure shows error banner                           | Error         | P2       | No                                                                |
-| EXT-05 | No extensions installed                                   | Empty state   | P2       | No                                                                |
-| EXT-06 | `GET /api/extensions` null/missing list fields            | Empty state   | P1       | No                                                                |
-| EXT-07 | Toggle enabled: success and failure                       | Happy path    | P1       | Partial (`Extensions.test.tsx`: success only)                     |
-| EXT-08 | Toggling discards unsaved form edits                      | Validation    | P2       | No                                                                |
-| EXT-09 | Save failure shows error, keeps edits                     | Error         | P1       | No                                                                |
-| EXT-10 | Field types: number, select, boolean, url, help, required | Validation    | P2       | Partial (`Extensions.test.tsx`: url, secret, boolean render only) |
-| EXT-11 | Test connection: ok, failed, request error, with lines    | Happy path    | P2       | Partial (`Extensions.test.tsx`: failed result only)               |
-| EXT-12 | Plex sign-in happy paths                                  | Happy path    | P1       | Yes (`Extensions.test.tsx`)                                       |
-| EXT-13 | Plex sign-in error paths                                  | Error         | P2       | Partial (`Extensions.test.tsx`: timeout only)                     |
-| EXT-14 | Cloudflare card null list fields                          | Empty state   | P1       | No                                                                |
-| EXT-15 | Non-admin user                                            | Permissions   | P1       | No                                                                |
-| EXT-16 | Signed-out user redirected to /login                      | Permissions   | P1       | No                                                                |
-| EXT-17 | Hash deep link scrolls to the card                        | Navigation    | P2       | No                                                                |
-| EXT-18 | "Back to the queues" link and browser Back                | Navigation    | P2       | No                                                                |
-| EXT-19 | Page crash shows route error fallback; Back works         | Navigation    | P1       | No                                                                |
-| EXT-20 | Phone width (375px)                                       | Responsive    | P3       | No                                                                |
-| EXT-21 | Arabic / RTL                                              | RTL           | P3       | No                                                                |
-| EXT-22 | Light and dark theme                                      | Theme         | P3       | No                                                                |
-| EXT-23 | Keyboard, labels, live regions                            | Accessibility | P2       | Partial (`a11y.test.tsx`: axe on happy path only)                 |
+| ID     | Title                                                     | Category      | Priority | Covered by existing test?         |
+| ------ | --------------------------------------------------------- | ------------- | -------- | --------------------------------- |
+| EXT-01 | Lists extension cards with status and generated form      | Happy path    | P1       | Yes (`Extensions.test.tsx`)       |
+| EXT-02 | Secrets are masked and write-only                         | Happy path    | P1       | Yes (`Extensions.test.tsx`)       |
+| EXT-03 | Loading state                                             | Loading       | P3       | No                                |
+| EXT-04 | Load failure shows error banner                           | Error         | P2       | Yes (`Extensions.cases.test.tsx`) |
+| EXT-05 | No extensions installed                                   | Empty state   | P2       | Yes (`Extensions.cases.test.tsx`) |
+| EXT-06 | `GET /api/extensions` null/missing list fields            | Empty state   | P1       | Yes (`Extensions.cases.test.tsx`) |
+| EXT-07 | Toggle enabled: success and failure                       | Happy path    | P1       | Yes (`Extensions.cases.test.tsx`) |
+| EXT-08 | Toggling discards unsaved form edits                      | Validation    | P2       | Yes (`Extensions.cases.test.tsx`) |
+| EXT-09 | Save failure shows error, keeps edits                     | Error         | P1       | Yes (`Extensions.cases.test.tsx`) |
+| EXT-10 | Field types: number, select, boolean, url, help, required | Validation    | P2       | Yes (`Extensions.cases.test.tsx`) |
+| EXT-11 | Test connection: ok, failed, request error, with lines    | Happy path    | P2       | Yes (`Extensions.cases.test.tsx`) |
+| EXT-12 | Plex sign-in happy paths                                  | Happy path    | P1       | Yes (`Extensions.test.tsx`)       |
+| EXT-13 | Plex sign-in error paths                                  | Error         | P2       | Yes (`Extensions.cases.test.tsx`) |
+| EXT-14 | Cloudflare card null list fields                          | Empty state   | P1       | Yes (`Extensions.cases.test.tsx`) |
+| EXT-15 | Non-admin user                                            | Permissions   | P1       | Yes (`Extensions.cases.test.tsx`) |
+| EXT-16 | Signed-out user redirected to /login                      | Permissions   | P1       | Yes (`Extensions.cases.test.tsx`) |
+| EXT-17 | Hash deep link scrolls to the card                        | Navigation    | P2       | Yes (`Extensions.cases.test.tsx`) |
+| EXT-18 | "Back to the queues" link and browser Back                | Navigation    | P2       | Yes (`Extensions.cases.test.tsx`) |
+| EXT-19 | Page crash shows route error fallback; Back works         | Navigation    | P1       | Yes (`Extensions.cases.test.tsx`) |
+| EXT-20 | Phone width (375px)                                       | Responsive    | P3       | No                                |
+| EXT-21 | Arabic / RTL                                              | RTL           | P3       | No                                |
+| EXT-22 | Light and dark theme                                      | Theme         | P3       | No                                |
+| EXT-23 | Keyboard, labels, live regions                            | Accessibility | P2       | Yes (`Extensions.cases.test.tsx`) |
 
 ## Cases
 
@@ -80,7 +80,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Extensions.cases.test.tsx`)
 - **Preconditions / data:** GET → (a) 500 problem; (b) 401; (c) fetch rejects; (d) 200 `application/json` body `{bad`.
 - **Steps:**
   1. Open page.
@@ -90,7 +90,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Extensions.cases.test.tsx`)
 - **Preconditions / data:** GET → `{ "extensions": [] }`.
 - **Steps:**
   1. Open page.
@@ -100,7 +100,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Extensions.cases.test.tsx`)
 - **Preconditions / data:** every list/array field read from this endpoint, run separately:
   - top-level `extensions: null`; `extensions` key missing (`{}`)
   - `extensions[0].settings_schema: null`; key missing
@@ -115,7 +115,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `Extensions.test.tsx` "toggles an extension on" (request only)
+- **Covered by existing test?** Yes (`Extensions.cases.test.tsx`)
 - **Preconditions / data:** fixture. (a) PUT `/api/extensions/dizquetv` → `{...fixture[1], enabled:true}`; (b) PUT → 403 problem `{ "title":"forbidden","status":403,"detail":"admin only" }`; (c) PUT → 500 / fetch rejects.
 - **Steps:**
   1. Click the dizqueTV "Enabled" switch.
@@ -125,7 +125,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Extensions.cases.test.tsx`)
 - **Preconditions / data:** fixture; PUT `{enabled:false}` → fixture[0] with `enabled:false`.
 - **Steps:**
   1. On Plex, change "Path map" to "/x=Y:/" and type a token; do NOT save.
@@ -136,7 +136,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Extensions.cases.test.tsx`)
 - **Preconditions / data:** PUT `/api/extensions/plex` → (a) 400 problem `{ "title":"bad request","status":400,"detail":"url: required" }`; (b) 403; (c) fetch rejects.
 - **Steps:**
   1. Clear "Server address", Save.
@@ -146,7 +146,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** Partial — `Extensions.test.tsx` checks url value and boolean checkbox render only
+- **Covered by existing test?** Yes (`Extensions.cases.test.tsx`)
 - **Preconditions / data:** one extension `{ name:"demo", settings_schema:[{key:"port",label:"Port",type:"number",required:true},{key:"mode",label:"Mode",type:"select",options:[{value:"a",label:"A"},{value:"b",label:"B"}]},{key:"on",label:"On",type:"boolean"},{key:"url",label:"URL",type:"url",help:"http://host:port"}], settings:{port:8080,mode:"b",on:true,url:"http://x"}, secrets_set:[] , ...}`; PUT echoes.
 - **Steps:**
   1. Check initial values. 2. Change Port to 9090, Mode to A, uncheck On. Save. 3. Clear Port entirely, Save.
@@ -156,7 +156,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `Extensions.test.tsx` "tests the connection and reports the result" (failed result only)
+- **Covered by existing test?** Yes (`Extensions.cases.test.tsx`)
 - **Preconditions / data:** POST `/api/extensions/plex/test` → (a) `{ ok:true, message:"Plex 1.40" }`; (b) `{ ok:false, message:"401 from Plex" }`; (c) 500 problem / fetch rejects; (d) `{ ok:true, message:"ok", lines:[{key:"token",ok:true,detail:"valid"}] }`; (e) `{ ok:true, message:"ok", lines:null }`.
 - **Steps:**
   1. Click "Test connection".
@@ -176,7 +176,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** Partial — `Extensions.test.tsx` "gives up after 15 minutes"
+- **Covered by existing test?** Yes (`Extensions.cases.test.tsx`)
 - **Preconditions / data:** run each:
   - (a) `window.open` returns `null` (popup blocked)
   - (b) `POST /api/extensions/plex/signin` → 502 problem `{ "title":"bad gateway","status":502,"detail":"plex.tv unreachable" }`
@@ -190,7 +190,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No (`CloudflareRemote.test.tsx` covers only full payloads)
+- **Covered by existing test?** Yes (`Extensions.cases.test.tsx`)
 - **Preconditions / data:** extensions list includes `{ name:"cloudflare_stream", ... }`. Run separately:
   - `GET /api/tv/remote` → `integration.last_test.lines: null`; and `lines` missing
   - `DELETE /api/tv/remote/integration` → `{ deleted_inputs: null, errors: null }`; and `{}`
@@ -203,7 +203,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Extensions.cases.test.tsx`)
 - **Preconditions / data:** `/api/auth/me` → `is_admin:false`; GET `/api/extensions` → fixture (server allows this read); PUT/test/signin → 403 problem `{ "title":"forbidden","status":403 }`.
 - **Steps:**
   1. Open `/admin/extensions` directly.
@@ -213,7 +213,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Extensions.cases.test.tsx`)
 - **Preconditions / data:** `/api/auth/me` → 401.
 - **Steps:**
   1. Open `/admin/extensions#plex`.
@@ -223,7 +223,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Extensions.cases.test.tsx`)
 - **Preconditions / data:** fixture; GET resolves after a delay (e.g. 300 ms).
 - **Steps:**
   1. Open `/admin/extensions#dizquetv` (as linked from the queue overview). Also `#unknown`.
@@ -233,7 +233,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Extensions.cases.test.tsx`)
 - **Preconditions / data:** fixture.
 - **Steps:**
   1. From `/queue`, click an extension badge link to `/admin/extensions#plex`.
@@ -244,7 +244,7 @@
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Extensions.cases.test.tsx`)
 - **Preconditions / data:** full app router; GET `/api/extensions` → `{ extensions:[{ ...fixture[0], settings_schema:null }] }` (throws today), or mock `PlexSignin` to throw.
 - **Steps:**
   1. Start on `/queue`, click sidebar "Extensions".
@@ -285,7 +285,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** Partial — `a11y.test.tsx` "extensions page has no violations" (happy path only)
+- **Covered by existing test?** Yes (`Extensions.cases.test.tsx`)
 - **Preconditions / data:** fixture.
 - **Steps:**
   1. Tab through a card: switch, Sign in, fields, Save, Test. Toggle the switch with Space.

@@ -8,32 +8,32 @@
 
 ## Summary
 
-| ID     | Title                                                       | Category      | Priority | Covered by existing test? |
-| ------ | ----------------------------------------------------------- | ------------- | -------- | ------------------------- |
-| ACC-01 | Profile loads and fills both forms                          | Happy path    | P1       | No                        |
-| ACC-02 | Save display name and email                                 | Happy path    | P1       | No                        |
-| ACC-03 | Save is disabled until something changes                    | Validation    | P2       | No                        |
-| ACC-04 | Profile save error shows an error toast and keeps the edits | Error         | P2       | No                        |
-| ACC-05 | Change password happy path                                  | Happy path    | P1       | No                        |
-| ACC-06 | Wrong current password shows the server message             | Error         | P1       | No                        |
-| ACC-07 | New password shorter than 8 keeps the button disabled       | Validation    | P2       | No                        |
-| ACC-08 | Confirm mismatch shows "Passwords do not match."            | Validation    | P2       | No                        |
-| ACC-09 | Empty confirm field must not allow submit                   | Validation    | P1       | No                        |
-| ACC-10 | Loading state while `/api/me` is pending                    | Loading       | P3       | No                        |
-| ACC-11 | `/api/me` 500 shows ErrorState and Retry works              | Error         | P2       | No                        |
-| ACC-12 | `/api/me` network failure / malformed JSON                  | Error         | P2       | No                        |
-| ACC-13 | `/api/me` 401 mid-session                                   | Permissions   | P1       | No                        |
-| ACC-14 | Null or missing optional fields in the profile              | Empty state   | P1       | No                        |
-| ACC-15 | Signed out deep link redirects to /login                    | Permissions   | P1       | No                        |
-| ACC-16 | Username field is read-only and not sent                    | Validation    | P2       | No                        |
-| ACC-17 | Double submit sends one request                             | Loading       | P2       | No                        |
-| ACC-18 | Header and nav reflect the new display name after save      | Happy path    | P3       | No                        |
-| ACC-19 | Crash during render shows a fallback; Back recovers         | Error         | P1       | No                        |
-| ACC-20 | Nav link, Back and Forward                                  | Navigation    | P2       | No                        |
-| ACC-21 | Arabic / RTL                                                | RTL           | P2       | No                        |
-| ACC-22 | Light and dark theme                                        | Theme         | P3       | No                        |
-| ACC-23 | Phone width 375px                                           | Responsive    | P3       | No                        |
-| ACC-24 | Keyboard, labels, live regions                              | Accessibility | P2       | No                        |
+| ID     | Title                                                       | Category      | Priority | Covered by existing test?                                                                |
+| ------ | ----------------------------------------------------------- | ------------- | -------- | ---------------------------------------------------------------------------------------- |
+| ACC-01 | Profile loads and fills both forms                          | Happy path    | P1       | Yes (Account.test.tsx)                                                                   |
+| ACC-02 | Save display name and email                                 | Happy path    | P1       | Yes (Account.test.tsx)                                                                   |
+| ACC-03 | Save is disabled until something changes                    | Validation    | P2       | Yes (Account.test.tsx)                                                                   |
+| ACC-04 | Profile save error shows an error toast and keeps the edits | Error         | P2       | Yes (Account.test.tsx)                                                                   |
+| ACC-05 | Change password happy path                                  | Happy path    | P1       | Yes (Account.test.tsx)                                                                   |
+| ACC-06 | Wrong current password shows the server message             | Error         | P1       | Yes (Account.test.tsx)                                                                   |
+| ACC-07 | New password shorter than 8 keeps the button disabled       | Validation    | P2       | Yes (Account.test.tsx)                                                                   |
+| ACC-08 | Confirm mismatch shows "Passwords do not match."            | Validation    | P2       | Yes (Account.test.tsx)                                                                   |
+| ACC-09 | Empty confirm field must not allow submit                   | Validation    | P1       | Yes (Account.test.tsx)                                                                   |
+| ACC-10 | Loading state while `/api/me` is pending                    | Loading       | P3       | No                                                                                       |
+| ACC-11 | `/api/me` 500 shows ErrorState and Retry works              | Error         | P2       | Yes (Account.test.tsx)                                                                   |
+| ACC-12 | `/api/me` network failure / malformed JSON                  | Error         | P2       | Yes (Account.test.tsx)                                                                   |
+| ACC-13 | `/api/me` 401 mid-session                                   | Permissions   | P1       | Partial (Account.test.tsx: no blank page passes; 401 redirect is it.fails: bug)          |
+| ACC-14 | Null or missing optional fields in the profile              | Empty state   | P1       | Yes (Account.test.tsx)                                                                   |
+| ACC-15 | Signed out deep link redirects to /login                    | Permissions   | P1       | Yes (Account.test.tsx)                                                                   |
+| ACC-16 | Username field is read-only and not sent                    | Validation    | P2       | Yes (Account.test.tsx)                                                                   |
+| ACC-17 | Double submit sends one request                             | Loading       | P2       | Yes (Account.test.tsx)                                                                   |
+| ACC-18 | Header and nav reflect the new display name after save      | Happy path    | P3       | No                                                                                       |
+| ACC-19 | Crash during render shows a fallback; Back recovers         | Error         | P1       | Yes (Account.test.tsx)                                                                   |
+| ACC-20 | Nav link, Back and Forward                                  | Navigation    | P2       | Partial (Account.test.tsx: Back re-fetch; sidebar aria-current is AppShell, not covered) |
+| ACC-21 | Arabic / RTL                                                | RTL           | P2       | Yes (Account.test.tsx)                                                                   |
+| ACC-22 | Light and dark theme                                        | Theme         | P3       | No                                                                                       |
+| ACC-23 | Phone width 375px                                           | Responsive    | P3       | No                                                                                       |
+| ACC-24 | Keyboard, labels, live regions                              | Accessibility | P2       | Yes (Account.test.tsx)                                                                   |
 
 ## Cases
 
@@ -41,7 +41,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Account.test.tsx)
 - **Preconditions / data:** signed in; `GET /api/me` → `{ "id": "u1", "username": "mona", "email": "mona@example.com", "display_name": "Mona", "is_admin": false }`
 - **Steps:**
   1. Open `/account`.
@@ -51,7 +51,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Account.test.tsx)
 - **Preconditions / data:** as ACC-01; `PATCH /api/me` → `{ "id": "u1", "username": "mona", "email": "m2@example.com", "display_name": "Mona D", "is_admin": false }`
 - **Steps:**
   1. Open `/account`.
@@ -63,7 +63,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Account.test.tsx)
 - **Preconditions / data:** as ACC-01
 - **Steps:**
   1. Open `/account`. Check "Save".
@@ -75,7 +75,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Account.test.tsx)
 - **Preconditions / data:** as ACC-01; variants for `PATCH /api/me`: (a) 409 `application/problem+json` `{ "title": "Conflict", "status": 409, "detail": "email already in use" }`; (b) 400 `{ "title": "Bad Request", "status": 400 }` (no detail); (c) fetch rejects (network); (d) 500 `text/plain` body `boom`.
 - **Steps:**
   1. Change "Email" and click "Save".
@@ -85,7 +85,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Account.test.tsx)
 - **Preconditions / data:** as ACC-01; `POST /api/me/change-password` → 204
 - **Steps:**
   1. Fill "Current password" `oldpass12`, "New password" `newpass12`, "Confirm password" `newpass12`.
@@ -96,7 +96,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Account.test.tsx)
 - **Preconditions / data:** `POST /api/me/change-password` → 403 (or 400) `application/problem+json` `{ "title": "Forbidden", "status": 403, "detail": "current password is incorrect" }`
 - **Steps:**
   1. Fill the three fields validly and submit.
@@ -106,7 +106,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Account.test.tsx)
 - **Preconditions / data:** as ACC-01
 - **Steps:**
   1. Fill current `oldpass12`, new `short7x` (7 chars), confirm `short7x`.
@@ -117,7 +117,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Account.test.tsx)
 - **Preconditions / data:** as ACC-01
 - **Steps:**
   1. Fill current `oldpass12`, new `newpass12`, confirm `newpass13`.
@@ -128,7 +128,7 @@
 
 - **Priority:** P1
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Account.test.tsx)
 - **Preconditions / data:** as ACC-01
 - **Steps:**
   1. Fill current `oldpass12`, new `newpass12`, leave confirm empty.
@@ -149,7 +149,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Account.test.tsx)
 - **Preconditions / data:** first `GET /api/me` → 500 `application/problem+json` `{ "title": "Internal Server Error", "status": 500, "detail": "db down" }`; second call → profile as ACC-01
 - **Steps:**
   1. Open `/account`.
@@ -160,7 +160,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Account.test.tsx)
 - **Preconditions / data:** variants: (a) fetch rejects `TypeError("Failed to fetch")`; (b) 200 `application/json` body `{not json`; (c) 200 `text/html` body `<html>…</html>` (SPA fallback by a misrouted proxy).
 - **Steps:**
   1. Open `/account`.
@@ -170,7 +170,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Partial (Account.test.tsx: no blank page passes; 401 redirect is it.fails: bug)
 - **Preconditions / data:** `AuthProvider` probe `GET /api/auth/me` → `{ "user": { "id": "u1", "username": "mona", "is_admin": false } }`; then `GET /api/me` → 401 `{ "title": "Unauthorized", "status": 401 }` (session expired)
 - **Steps:**
   1. Open `/account`.
@@ -180,7 +180,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Account.test.tsx)
 - **Preconditions / data:** variants of `GET /api/me`: (a) `"display_name": null`; (b) `"email": null`; (c) `display_name` and `email` keys missing; (d) `"display_name": ""`, `"email": ""`. (The page reads no list fields.)
 - **Steps:**
   1. Open `/account`.
@@ -191,7 +191,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Account.test.tsx)
 - **Preconditions / data:** `GET /api/auth/me` → 401
 - **Steps:**
   1. Open `/account` directly.
@@ -201,7 +201,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Account.test.tsx)
 - **Preconditions / data:** as ACC-02
 - **Steps:**
   1. Try to type into "Username".
@@ -212,7 +212,7 @@
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Account.test.tsx)
 - **Preconditions / data:** `PATCH /api/me` and `POST /api/me/change-password` resolve after a delay
 - **Steps:**
   1. Change display name, click "Save" twice quickly.
@@ -234,7 +234,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Account.test.tsx)
 - **Preconditions / data:** signed in; start on `/library`. Make `Account` throw during render, e.g. mock `ProfileForm`'s `Input` (or `@ds/components/Card/Card`) to throw, or mock `GET /api/me` to return a value whose getter throws.
 - **Steps:**
   1. From `/library`, click the sidebar link "Account".
@@ -246,7 +246,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Partial (Account.test.tsx: Back re-fetch; sidebar aria-current is AppShell, not covered)
 - **Preconditions / data:** signed in; profile as ACC-01
 - **Steps:**
   1. Start on `/library`, click sidebar "Account".
@@ -258,7 +258,7 @@
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Account.test.tsx)
 - **Preconditions / data:** `localStorage["mkt:locale"] = "ar"` (or switch language in Settings); profile as ACC-01
 - **Steps:**
   1. Open `/account`. Trigger the mismatch error and a save toast.
@@ -288,7 +288,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Account.test.tsx)
 - **Preconditions / data:** as ACC-01
 - **Steps:**
   1. Tab through the page from the top.

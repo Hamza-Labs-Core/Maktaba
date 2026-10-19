@@ -26,6 +26,7 @@
   "common.save": "Save",
   "common.loadMore": "Load more",
   "common.clearFilters": "Clear filters",
+  "library.notFound": "Library not found.",
   "library.sort": "Sort",
   "library.sort.recent": "Recently added",
   "library.sort.title": "Title",

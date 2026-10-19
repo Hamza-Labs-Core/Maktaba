@@ -10,35 +10,35 @@
 
 ## Summary
 
-| ID     | Title                                                       | Category      | Priority | Covered by existing test?                                    |
-| ------ | ----------------------------------------------------------- | ------------- | -------- | ------------------------------------------------------------ |
-| LOG-01 | Renders entries with time, level badge, service, message    | Happy path    | P1       | Partial (`Logs.test.tsx`: only checks the `msg` text)        |
-| LOG-02 | Non-admin sees "Admins only"; no log request                | Permissions   | P1       | No                                                           |
-| LOG-03 | Signed-out user is redirected to /login                     | Permissions   | P1       | No                                                           |
-| LOG-04 | Empty list shows "No log entries match the current filters" | Empty state   | P2       | No                                                           |
-| LOG-05 | `entries: null` / missing renders the empty state           | Empty state   | P1       | No                                                           |
-| LOG-06 | Entry that is `null` or not an object does not crash        | Error         | P1       | No                                                           |
-| LOG-07 | Entries missing ts / level / service / msg                  | Empty state   | P2       | No                                                           |
-| LOG-08 | Stream fails: "Could not load logs.", old lines kept        | Error         | P1       | No                                                           |
-| LOG-09 | Recovers on the next poll after an error                    | Error         | P2       | No                                                           |
-| LOG-10 | Level filter changes the query and refetches                | Happy path    | P1       | No                                                           |
-| LOG-11 | Service filter options come from the current lines          | Happy path    | P2       | No                                                           |
-| LOG-12 | Search sends trimmed `q`; whitespace-only sends none        | Validation    | P2       | No                                                           |
-| LOG-13 | Polls every 3 s; Pause stops and Resume restarts            | Happy path    | P1       | No                                                           |
-| LOG-14 | Auto-scroll pins to the newest line; off keeps position     | Happy path    | P2       | No                                                           |
-| LOG-15 | Extra fields open in the details row                        | Happy path    | P2       | No                                                           |
-| LOG-16 | Very long lines wrap; no horizontal page scroll             | Responsive    | P2       | No                                                           |
-| LOG-17 | 1000 lines render and stay responsive                       | Loading       | P3       | No                                                           |
-| LOG-18 | Export success toast and button busy state                  | Happy path    | P2       | Partial (`Logs.test.tsx`: call only, no toast or busy state) |
-| LOG-19 | Export failure shows an error toast                         | Error         | P2       | No                                                           |
-| LOG-20 | Export uses the current level and service filters           | Happy path    | P3       | No                                                           |
-| LOG-21 | Level colour/tone mapping incl. "warning" and unknown       | Happy path    | P3       | No                                                           |
-| LOG-22 | Render crash shows route error fallback; Back still works   | Error         | P1       | No                                                           |
-| LOG-23 | Nav link, Back/Forward, deep link                           | Navigation    | P2       | No                                                           |
-| LOG-24 | Arabic UI and Arabic log text                               | RTL           | P2       | No                                                           |
-| LOG-25 | Phone width: toolbar wraps, list scrolls inside the card    | Responsive    | P3       | No                                                           |
-| LOG-26 | Light and dark theme: row tints and badges readable         | Theme         | P3       | No                                                           |
-| LOG-27 | Filters labelled; details toggle has a localised name       | Accessibility | P3       | No                                                           |
+| ID     | Title                                                       | Category      | Priority | Covered by existing test? |
+| ------ | ----------------------------------------------------------- | ------------- | -------- | ------------------------- |
+| LOG-01 | Renders entries with time, level badge, service, message    | Happy path    | P1       | Yes (Logs.cases.test.tsx) |
+| LOG-02 | Non-admin sees "Admins only"; no log request                | Permissions   | P1       | Yes (Logs.cases.test.tsx) |
+| LOG-03 | Signed-out user is redirected to /login                     | Permissions   | P1       | Yes (Logs.cases.test.tsx) |
+| LOG-04 | Empty list shows "No log entries match the current filters" | Empty state   | P2       | Yes (Logs.cases.test.tsx) |
+| LOG-05 | `entries: null` / missing renders the empty state           | Empty state   | P1       | Yes (Logs.cases.test.tsx) |
+| LOG-06 | Entry that is `null` or not an object does not crash        | Error         | P1       | Yes (Logs.cases.test.tsx) |
+| LOG-07 | Entries missing ts / level / service / msg                  | Empty state   | P2       | Yes (Logs.cases.test.tsx) |
+| LOG-08 | Stream fails: "Could not load logs.", old lines kept        | Error         | P1       | Yes (Logs.cases.test.tsx) |
+| LOG-09 | Recovers on the next poll after an error                    | Error         | P2       | Yes (Logs.cases.test.tsx) |
+| LOG-10 | Level filter changes the query and refetches                | Happy path    | P1       | Yes (Logs.cases.test.tsx) |
+| LOG-11 | Service filter options come from the current lines          | Happy path    | P2       | Yes (Logs.cases.test.tsx) |
+| LOG-12 | Search sends trimmed `q`; whitespace-only sends none        | Validation    | P2       | Yes (Logs.cases.test.tsx) |
+| LOG-13 | Polls every 3 s; Pause stops and Resume restarts            | Happy path    | P1       | Yes (Logs.cases.test.tsx) |
+| LOG-14 | Auto-scroll pins to the newest line; off keeps position     | Happy path    | P2       | No (e2e-only)             |
+| LOG-15 | Extra fields open in the details row                        | Happy path    | P2       | Yes (Logs.cases.test.tsx) |
+| LOG-16 | Very long lines wrap; no horizontal page scroll             | Responsive    | P2       | No (e2e-only)             |
+| LOG-17 | 1000 lines render and stay responsive                       | Loading       | P3       | No                        |
+| LOG-18 | Export success toast and button busy state                  | Happy path    | P2       | Yes (Logs.cases.test.tsx) |
+| LOG-19 | Export failure shows an error toast                         | Error         | P2       | Yes (Logs.cases.test.tsx) |
+| LOG-20 | Export uses the current level and service filters           | Happy path    | P3       | No                        |
+| LOG-21 | Level colour/tone mapping incl. "warning" and unknown       | Happy path    | P3       | No                        |
+| LOG-22 | Render crash shows route error fallback; Back still works   | Error         | P1       | Yes (Logs.cases.test.tsx) |
+| LOG-23 | Nav link, Back/Forward, deep link                           | Navigation    | P2       | Yes (Logs.cases.test.tsx) |
+| LOG-24 | Arabic UI and Arabic log text                               | RTL           | P2       | Yes (Logs.cases.test.tsx) |
+| LOG-25 | Phone width: toolbar wraps, list scrolls inside the card    | Responsive    | P3       | No                        |
+| LOG-26 | Light and dark theme: row tints and badges readable         | Theme         | P3       | No                        |
+| LOG-27 | Filters labelled; details toggle has a localised name       | Accessibility | P3       | No                        |
 
 ## Cases
 
@@ -46,7 +46,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `Logs.test.tsx` "polls the stream endpoint and renders entries" checks only "started" and "boom".
+- **Covered by existing test?** Yes (Logs.cases.test.tsx)
 - **Preconditions / data:** admin (`useAuth` -> `{ user: { is_admin: true } }`); `/api/admin/logs/stream?...` -> `{ "entries": [ { "ts": "2026-06-10T00:00:00Z", "level": "info", "service": "api", "msg": "started" }, { "ts": "2026-06-10T00:00:01Z", "level": "error", "service": "streaming", "msg": "boom", "err": "x" } ], "count": 2 }`. Render in `I18nProvider` + `ToastProvider`.
 - **Steps:**
   1. Open `/admin/logs`.
@@ -56,7 +56,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Logs.cases.test.tsx)
 - **Preconditions / data:** `useAuth` -> `{ user: { username: "viewer", is_admin: false } }`.
 - **Steps:**
   1. Open `/admin/logs`.
@@ -66,7 +66,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Logs.cases.test.tsx)
 - **Preconditions / data:** full app routing; auth bootstrap returns 401.
 - **Steps:**
   1. Open `/admin/logs`.
@@ -76,7 +76,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Logs.cases.test.tsx)
 - **Preconditions / data:** admin; stream -> `{ "entries": [], "count": 0 }`.
 - **Steps:**
   1. Open `/admin/logs`.
@@ -86,7 +86,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Logs.cases.test.tsx)
 - **Preconditions / data:** admin; stream -> (a) `{ "entries": null, "count": 0 }`, (b) `{ "count": 0 }`, (c) `null` (body `null`).
 - **Steps:**
   1. Open `/admin/logs` for each.
@@ -96,7 +96,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Logs.cases.test.tsx)
 - **Preconditions / data:** admin; stream -> `{ "entries": [ { "level": "info", "msg": "ok" }, null, "plain text line", 42 ], "count": 4 }`.
 - **Steps:**
   1. Open `/admin/logs`.
@@ -106,7 +106,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Logs.cases.test.tsx)
 - **Preconditions / data:** admin; stream -> `{ "entries": [ {}, { "ts": "garbage", "level": "INFO" }, { "msg": { "nested": true } }, { "ts": 1760000000, "level": 3 } ] }`.
 - **Steps:**
   1. Open `/admin/logs`.
@@ -116,7 +116,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Logs.cases.test.tsx)
 - **Preconditions / data:** admin; fake timers. First poll OK with 2 entries; second poll rejects. Repeat with `ApiError` 500, 403, 401, and `TypeError("Failed to fetch")`.
 - **Steps:**
   1. Open `/admin/logs`; wait for rows.
@@ -127,7 +127,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Logs.cases.test.tsx)
 - **Preconditions / data:** admin; fake timers; first poll rejects, second resolves with entries.
 - **Steps:**
   1. Open `/admin/logs`; see "Could not load logs.".
@@ -138,7 +138,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Logs.cases.test.tsx)
 - **Preconditions / data:** admin; stream OK.
 - **Steps:**
   1. Open `/admin/logs`.
@@ -149,7 +149,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Logs.cases.test.tsx)
 - **Preconditions / data:** admin; stream returns entries with services `"streaming"`, `"api"`, `"api"`, `""`. When the URL has `services=api`, return only `api` entries.
 - **Steps:**
   1. Open `/admin/logs`; open the "Service" select.
@@ -161,7 +161,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Logs.cases.test.tsx)
 - **Preconditions / data:** admin; stream OK.
 - **Steps:**
   1. Type " timeout " in the "Search" input (placeholder "Filter by text…").
@@ -173,7 +173,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Logs.cases.test.tsx)
 - **Preconditions / data:** admin; `vi.useFakeTimers({ shouldAdvanceTime: true })`; stream OK.
 - **Steps:**
   1. Open `/admin/logs`; advance 9 s; count calls.
@@ -186,7 +186,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** browser e2e (jsdom has no layout); stream returns 200 entries, then 210 on the next poll.
 - **Steps:**
   1. Open `/admin/logs`; check `.mkt-logs__scroll` `scrollTop`.
@@ -197,7 +197,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Logs.cases.test.tsx)
 - **Preconditions / data:** admin; entry `{ "ts": "...", "level": "error", "service": "api", "msg": "boom", "version": "1.5", "env": "prod", "err": "x", "req_id": "r1" }`.
 - **Steps:**
   1. Click the row's details summary.
@@ -207,7 +207,7 @@
 
 - **Priority:** P2
 - **Category:** Responsive
-- **Covered by existing test?** No
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** browser e2e at 1280 and 375 widths; entries with a 5,000-char `msg` with no spaces, a long URL, and an attr value of 2,000 chars.
 - **Steps:**
   1. Open `/admin/logs`; open the details of the long-attr row.
@@ -227,7 +227,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `Logs.test.tsx` "exports a diagnostics bundle on click" checks only the `downloadBlob` call.
+- **Covered by existing test?** Yes (Logs.cases.test.tsx)
 - **Preconditions / data:** admin; `downloadBlob` returns a promise resolved later by the test.
 - **Steps:**
   1. Click "Export bundle".
@@ -238,7 +238,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Logs.cases.test.tsx)
 - **Preconditions / data:** admin; `downloadBlob` rejects with (a) `new ApiError({ type: "about:blank", title: "Forbidden", status: 403 })`, (b) `new TypeError("Failed to fetch")`.
 - **Steps:**
   1. Click "Export bundle".
@@ -268,7 +268,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Logs.cases.test.tsx)
 - **Preconditions / data:** full app in `MemoryRouter` with history `["/admin/health", "/admin/logs"]`; admin. Force a render throw: mock `@ds/components/Badge/Badge` (or `LogRow`) to throw for this page, or mock `useI18n().formatDate` to throw.
 - **Steps:**
   1. Navigate from `/admin/health` to `/admin/logs`.
@@ -279,7 +279,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Logs.cases.test.tsx)
 - **Preconditions / data:** full app, admin.
 - **Steps:**
   1. Click sidebar "Logs" (`nav.admin.logs`).
@@ -291,7 +291,7 @@
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (Logs.cases.test.tsx)
 - **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`; entries `{ "level": "info", "service": "api", "msg": "تم تحميل المكتبة: ١٢ ملف" }` and a mixed one `{ "msg": "فشل GET /api/videos/123 بعد 3s" }`.
 - **Steps:**
   1. Open `/admin/logs`.

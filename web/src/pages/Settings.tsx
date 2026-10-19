@@ -15,8 +15,8 @@
 //                 green, so this panel states the dependency instead.
 //   PAT tokens  — 11.13: no personal_access_tokens table / endpoint /
 //                 verifier exists anywhere in api/internal. Same call.
-import { useEffect, useState } from "react";
-import { Link, Route, Routes, useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, Navigate, NavLink, Route, Routes, useNavigate } from "react-router-dom";
 import { RadioGroup, Radio } from "@ds/components/Choice/Radio";
 import { Button } from "@ds/components/Button/Button";
 import { useAuth } from "../lib/auth";
@@ -58,13 +58,16 @@ export function Settings() {
     <section className="mkt-page mkt-settings">
       <h1>{t("nav.settings")}</h1>
       <nav className="mkt-settings__nav" aria-label={t("nav.settings")}>
-        <Link to="">{t("settings.section.account")}</Link>
-        <Link to="sessions">{t("settings.section.sessions")}</Link>
-        <Link to="appearance">{t("settings.section.appearance")}</Link>
-        <Link to="privacy">{t("settings.section.privacy")}</Link>
-        <Link to="models">{t("settings.section.models")}</Link>
-        <Link to="rules">{t("settings.section.rules")}</Link>
-        <Link to="about">{t("settings.section.about")}</Link>
+        {/* NavLink marks the open tab with aria-current="page" */}
+        <NavLink to="" end>
+          {t("settings.section.account")}
+        </NavLink>
+        <NavLink to="sessions">{t("settings.section.sessions")}</NavLink>
+        <NavLink to="appearance">{t("settings.section.appearance")}</NavLink>
+        <NavLink to="privacy">{t("settings.section.privacy")}</NavLink>
+        <NavLink to="models">{t("settings.section.models")}</NavLink>
+        <NavLink to="rules">{t("settings.section.rules")}</NavLink>
+        <NavLink to="about">{t("settings.section.about")}</NavLink>
       </nav>
       <Routes>
         <Route index element={<AccountTab />} />
@@ -74,6 +77,8 @@ export function Settings() {
         <Route path="models" element={<ModelsSection />} />
         <Route path="rules" element={<RulesSection />} />
         <Route path="about" element={<AboutTab />} />
+        {/* an unknown tab (/settings/nope) opens Account instead of an empty panel */}
+        <Route path="*" element={<Navigate to="/settings" replace />} />
       </Routes>
     </section>
   );
@@ -225,6 +230,20 @@ interface UpdateStatus {
   checked_at: string;
 }
 
+/**
+ * The release page link, only for http(s) URLs: the value comes from the
+ * server, and a `javascript:` or `data:` URL in an href would run when clicked.
+ */
+export function safeReleaseUrl(raw: unknown): string | null {
+  if (typeof raw !== "string" || raw.trim() === "") return null;
+  try {
+    const u = new URL(raw);
+    return u.protocol === "http:" || u.protocol === "https:" ? u.href : null;
+  } catch {
+    return null; // relative or malformed
+  }
+}
+
 type UpdatePhase = "idle" | "downloading" | "restarting" | "done" | "error" | "rolled_back";
 
 // AboutTab is the version + update section (Stories 28.1/28.2/28.3/28.6).
@@ -234,7 +253,7 @@ type UpdatePhase = "idle" | "downloading" | "restarting" | "done" | "error" | "r
 // installs surface the package-manager instruction returned by the 409
 // instead of a button that can't work.
 function AboutTab() {
-  const { t } = useI18n();
+  const { t, formatDate } = useI18n();
   const { user } = useAuth();
   const toast = useToast();
   const buildVersion = import.meta.env?.VITE_APP_VERSION ?? "dev";
@@ -244,6 +263,14 @@ function AboutTab() {
   const [checking, setChecking] = useState(false);
   const [phase, setPhase] = useState<UpdatePhase>("idle");
   const [dockerHint, setDockerHint] = useState<string | null>(null);
+  // false once the tab unmounts: stops the post-update polling
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     api
@@ -275,11 +302,20 @@ function AboutTab() {
       await api.post("/api/admin/system/update", { confirm: true });
       setPhase("restarting");
       // The server re-execs; poll /api/system/version until it answers
-      // with a different version (or the rolled-back original).
-      const newVer = await pollVersionUntilChanged(ver?.version ?? "");
-      setVer(newVer);
-      setPhase("done");
+      // with a different version. Still the old one at the end: the update
+      // was rolled back. Without a loaded version, the update check's
+      // current_version is the one to move away from.
+      const from = ver?.version || upd?.current_version || "";
+      const polled = await pollVersionUntilChanged(from, () => alive.current);
+      if (!alive.current) return;
+      if (polled.changed) {
+        setVer(polled.info);
+        setPhase("done");
+      } else {
+        setPhase("rolled_back");
+      }
     } catch (e) {
+      if (!alive.current) return;
       if (e instanceof ApiError && e.status === 409) {
         // Docker/package-manager install: surface the instruction.
         const hint =
@@ -296,7 +332,11 @@ function AboutTab() {
 
   const version = ver?.version ?? buildVersion;
   const channel = ver?.channel ?? upd?.channel ?? "stable";
-  const showUpdateButton = user?.is_admin && upd?.available && phase !== "done" && !dockerHint;
+  const showUpdateButton =
+    user?.is_admin && upd?.available && phase !== "done" && phase !== "rolled_back" && !dockerHint;
+  // a failed update can be tried again; only a running one blocks the button
+  const updateRunning = phase === "downloading" || phase === "restarting";
+  const releaseUrl = safeReleaseUrl(upd?.release_url);
 
   return (
     <div className="mkt-settings__panel mkt-settings__about">
@@ -328,7 +368,7 @@ function AboutTab() {
         {upd?.checked_at && (
           <div>
             <dt>{t("update.lastChecked")}</dt>
-            <dd>{new Date(upd.checked_at).toLocaleString()}</dd>
+            <dd>{formatDate(upd.checked_at)}</dd>
           </div>
         )}
       </dl>
@@ -350,14 +390,14 @@ function AboutTab() {
           <h2>{t("update.available", { version: upd.latest_version })}</h2>
           {upd.release_notes && (
             <details className="mkt-about__notes">
-              <summary>{t("update.viewRelease")}</summary>
+              <summary>{t("update.banner.notes")}</summary>
               {/* Plain-text render — never inject release-note HTML. */}
               <pre className="mkt-about__notes-body">{upd.release_notes}</pre>
             </details>
           )}
-          {upd.release_url && (
+          {releaseUrl && (
             <p>
-              <a href={upd.release_url} target="_blank" rel="noreferrer">
+              <a href={releaseUrl} target="_blank" rel="noreferrer">
                 {t("update.viewRelease")}
               </a>
             </p>
@@ -371,17 +411,37 @@ function AboutTab() {
           )}
 
           {showUpdateButton && (
-            <Button variant="primary" disabled={phase !== "idle"} onClick={runUpdate}>
-              {phase === "idle" ? t("update.updateNow") : t(`update.phase.${phase}`)}
+            <Button variant="primary" disabled={updateRunning} onClick={runUpdate}>
+              {updateRunning ? t(`update.phase.${phase}`) : t("update.updateNow")}
             </Button>
           )}
 
-          {phase === "downloading" && <p className="mkt-muted">{t("update.phase.downloading")}</p>}
-          {phase === "restarting" && <p className="mkt-muted">{t("update.phase.restarting")}</p>}
-          {phase === "done" && (
-            <p className="mkt-success">{t("update.phase.done", { version: upd.latest_version })}</p>
+          {/* progress is announced: a live region for each phase text */}
+          {phase === "downloading" && (
+            <p className="mkt-muted" role="status">
+              {t("update.phase.downloading")}
+            </p>
           )}
-          {phase === "error" && <p className="mkt-error">{t("update.phase.error")}</p>}
+          {phase === "restarting" && (
+            <p className="mkt-muted" role="status">
+              {t("update.phase.restarting")}
+            </p>
+          )}
+          {phase === "done" && (
+            <p className="mkt-success" role="status">
+              {t("update.phase.done", { version: upd.latest_version })}
+            </p>
+          )}
+          {phase === "error" && (
+            <p className="mkt-error" role="alert">
+              {t("update.phase.error")}
+            </p>
+          )}
+          {phase === "rolled_back" && (
+            <p className="mkt-error" role="alert">
+              {t("update.rolledBack")}
+            </p>
+          )}
         </div>
       )}
 
@@ -392,22 +452,27 @@ function AboutTab() {
 
 // pollVersionUntilChanged re-fetches /api/system/version until it reports
 // a version different from `from` (the server re-execs after a self-
-// update), or until a bounded number of attempts elapse.
-async function pollVersionUntilChanged(from: string): Promise<VersionInfo> {
+// update), until a bounded number of attempts elapse (changed: false, the
+// update did not take), or until `keepGoing` says stop (the tab closed).
+async function pollVersionUntilChanged(
+  from: string,
+  keepGoing: () => boolean
+): Promise<{ changed: boolean; info: VersionInfo }> {
   const ATTEMPTS = 30;
   const DELAY_MS = 2000;
   let last: VersionInfo = { version: from };
-  for (let i = 0; i < ATTEMPTS; i++) {
+  for (let i = 0; i < ATTEMPTS && keepGoing(); i++) {
     await new Promise((r) => setTimeout(r, DELAY_MS));
+    if (!keepGoing()) break;
     try {
       const v = await api.get<VersionInfo>("/api/system/version");
       last = v;
-      if (v.version && v.version !== from) return v;
+      if (v.version && v.version !== from) return { changed: true, info: v };
     } catch {
       /* server mid-restart — keep polling */
     }
   }
-  return last;
+  return { changed: false, info: last };
 }
 
 // PrivacyTab — Story 29.4 watch-history & privacy. A switch that pauses
@@ -421,16 +486,24 @@ function PrivacyTab() {
   const [tracking, setTracking] = useState<boolean | null>(null);
   const [history, setHistory] = useState<HistoryItem[] | null>(null);
   const [busy, setBusy] = useState(false);
+  // a failed load is said, not guessed: no "Tracking on" when it may be off,
+  // no "Nothing here yet." when the history could not be read
+  const [privacyFailed, setPrivacyFailed] = useState(false);
+  const [historyFailed, setHistoryFailed] = useState(false);
 
   useEffect(() => {
     analyticsApi
       .getPrivacy()
-      .then((p) => setTracking(p.track_enabled))
-      .catch(() => setTracking(true));
+      .then((p) => setTracking(Boolean(p?.track_enabled)))
+      .catch(() => setPrivacyFailed(true));
     analyticsApi
       .history({ limit: 20 })
-      .then((r) => setHistory(r.items))
-      .catch(() => setHistory([]));
+      // items null or missing is an empty history
+      .then((r) => setHistory(Array.isArray(r?.items) ? r.items : []))
+      .catch(() => {
+        setHistoryFailed(true);
+        setHistory([]);
+      });
   }, []);
 
   async function toggle() {
@@ -461,6 +534,11 @@ function PrivacyTab() {
     <div className="mkt-settings__panel mkt-settings__privacy">
       <h2>{t("settings.privacy.title")}</h2>
       <p className="mkt-muted">{t("settings.privacy.hint")}</p>
+      {privacyFailed && (
+        <p className="mkt-error" role="alert">
+          {t("common.error")}
+        </p>
+      )}
       {tracking !== null && (
         <Toggle
           checked={tracking}
@@ -472,7 +550,11 @@ function PrivacyTab() {
 
       <hr />
       <h2>{t("settings.privacy.history")}</h2>
-      {history === null ? (
+      {historyFailed ? (
+        <p className="mkt-error" role="alert">
+          {t("common.error")}
+        </p>
+      ) : history === null ? (
         <p className="mkt-loading">{t("common.loading")}</p>
       ) : history.length === 0 ? (
         <p className="mkt-muted">{t("common.empty")}</p>
@@ -490,10 +572,12 @@ function PrivacyTab() {
             {history.map((h) => (
               <tr key={h.video_id}>
                 <td dir="auto">
-                  <Link to={`/videos/${h.video_id}`}>{h.title}</Link>
+                  <Link to={`/videos/${encodeURIComponent(h.video_id)}`}>
+                    {h.title || h.video_id}
+                  </Link>
                 </td>
-                <td>{formatPercent(h.best_percent)}</td>
-                <td>{formatWatchTime(h.total_watch_sec)}</td>
+                <td>{formatPercent(h.best_percent ?? 0)}</td>
+                <td>{formatWatchTime(h.total_watch_sec ?? 0)}</td>
                 <td>
                   <Button size="sm" variant="ghost" onClick={() => void remove(h.video_id)}>
                     {t("settings.privacy.remove")}

@@ -41,17 +41,17 @@ const TONE: Record<ChangeState, string> = {
 };
 
 export function StateChip({ state }: { state: ChangeState }) {
-  const { t } = useI18n();
+  const tk = useTk();
   return (
     <span className={`mkt-tvx-chip mkt-tvx-chip--${TONE[state] ?? "neutral"}`} data-state={state}>
-      {t(`tvchanges.state.${state}`)}
+      {tk(`tvchanges.state.${state}`, String(state))}
     </span>
   );
 }
 
-export function Kinds({ kinds }: { kinds: string[] }) {
+export function Kinds({ kinds }: { kinds: string[] | null | undefined }) {
   const tk = useTk();
-  if (!kinds.length) return <span className="mkt-tvx-muted">—</span>;
+  if (!kinds?.length) return <span className="mkt-tvx-muted">—</span>;
   return (
     <span className="mkt-tvx-kinds">
       {kinds.map((k) => (

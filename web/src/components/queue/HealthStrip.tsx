@@ -10,7 +10,7 @@ import { useFmt } from "./format";
 const series = (all: HealthSeries[] | null, ...metrics: string[]): number[] | null => {
   for (const m of metrics) {
     const s = all?.find((x) => x.metric === m);
-    if (s && s.points.length > 1) return s.points.map((p) => p.v);
+    if (s && Array.isArray(s.points) && s.points.length > 1) return s.points.map((p) => p.v);
   }
   return null;
 };

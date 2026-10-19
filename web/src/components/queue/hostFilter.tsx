@@ -56,7 +56,7 @@ export function useHostJobs(
   const load = useCallback(() => {
     queueApi
       .running(host)
-      .then((r) => setRest(r.jobs))
+      .then((r) => setRest(r?.jobs ?? []))
       .catch(() => setRest((prev) => prev ?? []));
   }, [host]);
   useEffect(() => {

@@ -4,12 +4,13 @@
 // router → shortcuts → shell. ThemeProvider from the Epic-17 design
 // system stamps <html data-theme>; ThemeSync keeps it tracking the
 // "system" OS preference live (Story 11.8).
-import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
+import { BrowserRouter, Outlet, Route, Routes, Navigate, useLocation } from "react-router-dom";
 import { useEffect, useState, type ReactNode } from "react";
 import { ToastProvider } from "@ds/components/Toast/Toast";
 import { AppShell, MoreMenu } from "./components/AppShell";
 import { DesktopBridge } from "./components/DesktopBridge";
 import { NodeGuard } from "./components/NodeGuard";
+import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
 import { I18nProvider } from "./lib/i18n";
 import { AuthProvider, RequireAuth } from "./lib/auth";
 import { ShortcutProvider } from "./lib/keyboard/shortcuts";
@@ -66,6 +67,18 @@ function ThemeSync({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+// The sign-in pages sit outside AppShell, so they get their own error
+// boundary: a crash there shows an error instead of blanking the app, and
+// moving to another route clears it.
+function PublicPages() {
+  const { pathname } = useLocation();
+  return (
+    <RouteErrorBoundary resetKey={pathname}>
+      <Outlet />
+    </RouteErrorBoundary>
+  );
+}
+
 export function App() {
   return (
     <I18nProvider>
@@ -78,10 +91,12 @@ export function App() {
                 <DesktopBridge />
                 <ShortcutProvider>
                   <Routes>
-                    <Route path="/login" element={<Login />} />
-                    <Route path="/register" element={<Register />} />
-                    <Route path="/forgot-password" element={<ForgotPassword />} />
-                    <Route path="/reset-password" element={<ResetPassword />} />
+                    <Route element={<PublicPages />}>
+                      <Route path="/login" element={<Login />} />
+                      <Route path="/register" element={<Register />} />
+                      <Route path="/forgot-password" element={<ForgotPassword />} />
+                      <Route path="/reset-password" element={<ResetPassword />} />
+                    </Route>
                     <Route
                       element={
                         <RequireAuth>

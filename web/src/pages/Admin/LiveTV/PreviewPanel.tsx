@@ -52,7 +52,9 @@ export function PreviewPanel({ change }: { change: TvChangeDetail }) {
   useEffect(() => {
     if (!pv) return;
     const left = new Date(pv.expires_at).getTime() - Date.now() - RENEW_BEFORE_MS;
-    const id = setTimeout(() => void mint(), Math.max(left, 5_000));
+    // a missing or bad expires_at gives NaN: setTimeout(fn, NaN) fires at once and the
+    // panel would re-mint in a loop - wait the floor instead
+    const id = setTimeout(() => void mint(), Number.isFinite(left) ? Math.max(left, 5_000) : 5_000);
     return () => clearTimeout(id);
   }, [pv, mint]);
 
@@ -120,7 +122,7 @@ function PreviewPlayers({
   changeId: string;
 }) {
   const { t } = useI18n();
-  const channels = preview.channels;
+  const channels = useMemo(() => preview.channels ?? [], [preview.channels]);
   const [want, setWant] = useState<PreviewChannel | null>(null);
   const first = useMemo(
     () => channels.find((c) => c.changed || c.added) ?? channels[0] ?? null,
@@ -290,7 +292,7 @@ function GuideStrip({ changeId, channel }: { changeId: string; channel: PreviewC
         <p className="mkt-tvx-muted">{t("tvchanges.preview.guideUnchanged")}</p>
       ) : (
         <ol>
-          {d.after.slice(0, 6).map((p) => (
+          {(d.after ?? []).slice(0, 6).map((p) => (
             <li key={p.start_at}>
               <Clock at={p.start_at} /> <span dir="auto">{p.title}</span>
             </li>

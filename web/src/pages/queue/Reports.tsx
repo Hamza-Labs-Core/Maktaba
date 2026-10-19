@@ -31,7 +31,9 @@ export function Reports() {
     reportsApi
       .list()
       .then((r) => {
-        setReports(r.reports);
+        // a non-object (an HTML page from a proxy) is a load error; a null list is empty
+        if (!r || typeof r !== "object") throw new Error("not a report list");
+        setReports(Array.isArray(r.reports) ? r.reports : []);
         setError(false);
       })
       .catch(() => setError(true));

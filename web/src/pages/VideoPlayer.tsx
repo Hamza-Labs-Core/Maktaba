@@ -20,7 +20,7 @@
 // The rich control surface (speed, PiP, keyboard map, chapter ticks,
 // caption sizing, resume) works on top of the <video> either way.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { api, ApiError } from "../lib/api";
@@ -52,14 +52,33 @@ const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const CAPTION_SCALES = [0.75, 1, 1.25, 1.5];
 /** Treat a signed URL as expired this long before expires_at. */
 const EXPIRY_SKEW_MS = 30_000;
+/** How long after `g` the next key belongs to the global `g …` leader. */
+const LEADER_MS = 1200;
+
+// Letter shortcuts match the physical key (e.code), so Caps Lock, Shift and
+// a non-Latin layout (Arabic) still work.
+function shortcutKey(e: React.KeyboardEvent): string {
+  if (/^Key[A-Z]$/.test(e.code)) return e.code.slice(3).toLowerCase();
+  return e.key.length === 1 ? e.key.toLowerCase() : e.key;
+}
+
+// Keys typed into a control (the speed select, a button) are that control's.
+function isControlTarget(el: EventTarget | null): boolean {
+  if (!(el instanceof HTMLElement)) return false;
+  return Boolean(el.closest("input, select, textarea, button, a, [contenteditable='true']"));
+}
 
 export function VideoPlayer() {
   const { videoId } = useParams();
   const [params] = useSearchParams();
   const nav = useNavigate();
-  const { t } = useI18n();
+  const location = useLocation();
+  const { t, dir } = useI18n();
   const [session, setSession] = useState<OpenSessionResponse | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<{ message: string; status?: number } | null>(null);
+  const [playError, setPlayError] = useState(false);
+  const [reload, setReload] = useState(0);
+  const leaderUntil = useRef(0);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [duration, setDuration] = useState(0);
   const [speed, setSpeed] = useState(1);
@@ -71,23 +90,53 @@ export function VideoPlayer() {
   const resumeRef = useRef<{ at: number; play: boolean } | null>(null);
   const refreshingRef = useRef(false);
 
-  const startAt = Number(params.get("t")) || 0;
+  const tParam = Number(params.get("t"));
+  const startAt = Number.isFinite(tParam) && tParam > 0 ? tParam : 0;
+
+  const failure = useCallback(
+    (e: unknown) =>
+      e instanceof ApiError
+        ? { message: e.problem.title, status: e.status }
+        : { message: t("common.error") },
+    [t]
+  );
 
   // Open a streaming session for this video.
   useEffect(() => {
     if (!videoId) return;
     let cancelled = false;
+    // A new video (or a retry) starts clean: no old error, no old stream.
+    setErr(null);
+    setPlayError(false);
+    setSession(null);
     api
       .post<OpenSessionResponse>("/api/stream/sessions", { video_id: videoId })
       .then((s) => {
-        if (!cancelled) {
-          sessionIdRef.current = s.session_id;
-          setSession(s);
+        if (cancelled) {
+          // Left before the answer came: close the session it opened.
+          if (s?.session_id) {
+            void api
+              .delete(`/api/stream/sessions/${encodeURIComponent(s.session_id)}`)
+              .catch(() => {});
+          }
+          return;
         }
+        if (!s?.session_id || !(s.manifest_url || s.direct_url)) {
+          // Nothing to play: say so instead of showing a dead player.
+          if (s?.session_id) {
+            void api
+              .delete(`/api/stream/sessions/${encodeURIComponent(s.session_id)}`)
+              .catch(() => {});
+          }
+          setErr({ message: t("common.error") });
+          return;
+        }
+        sessionIdRef.current = s.session_id;
+        setSession(s);
       })
       .catch((e) => {
         if (cancelled) return;
-        setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
+        setErr(failure(e));
       });
     return () => {
       cancelled = true;
@@ -97,14 +146,20 @@ export function VideoPlayer() {
         void api.delete(`/api/stream/sessions/${encodeURIComponent(id)}`).catch(() => {});
       }
     };
-  }, [videoId, t]);
+  }, [videoId, t, failure, reload]);
 
   // Chapter ticks for the scrubber.
   useEffect(() => {
     if (!videoId) return;
     api
       .get<{ items: Chapter[] }>(`/api/videos/${encodeURIComponent(videoId)}/chapters`)
-      .then((r) => setChapters(r.items ?? []))
+      .then((r) =>
+        setChapters(
+          (Array.isArray(r?.items) ? r.items : []).filter(
+            (c): c is Chapter => c != null && typeof c.start_sec === "number"
+          )
+        )
+      )
       .catch(() => setChapters([]));
   }, [videoId]);
 
@@ -152,17 +207,30 @@ export function VideoPlayer() {
     const resume = resumeRef.current;
     resumeRef.current = null;
     const at = resume ? resume.at : startAt;
+    el.playbackRate = speed;
     const resumePlay = () => {
       if (resume?.play) void el.play?.()?.catch?.(() => {});
+    };
+    // A start past the end (?t=99999) lands just before the end instead.
+    const clampStart = () => {
+      const d = el.duration;
+      if (Number.isFinite(d) && d > 0 && el.currentTime > d - 1)
+        el.currentTime = Math.max(0, d - 1);
     };
     if (!session.manifest_url) {
       const onMeta = () => {
         if (at > 0) el.currentTime = at;
+        clampStart();
         resumePlay();
       };
+      const onError = () => setPlayError(true);
       el.addEventListener("loadedmetadata", onMeta, { once: true });
+      el.addEventListener("error", onError);
       el.src = session.direct_url || "";
-      return () => el.removeEventListener("loadedmetadata", onMeta);
+      return () => {
+        el.removeEventListener("loadedmetadata", onMeta);
+        el.removeEventListener("error", onError);
+      };
     }
     let cancelled = false;
     // Expired signed URL: reopen the session (the server hands back the same
@@ -189,7 +257,7 @@ export function VideoPlayer() {
           setSession(s);
         })
         .catch((e) => {
-          if (!cancelled) setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
+          if (!cancelled) setErr(failure(e));
         })
         .finally(() => {
           refreshingRef.current = false;
@@ -199,15 +267,21 @@ export function VideoPlayer() {
     const h = attachVod(el, session.manifest_url, {
       startAt: at,
       onAuthError: refresh,
+      onFatal: () => {
+        if (!cancelled) setPlayError(true);
+      },
       isExpired: () => Number.isFinite(expiresAt) && Date.now() >= expiresAt - EXPIRY_SKEW_MS,
     });
+    el.addEventListener("loadedmetadata", clampStart, { once: true });
     el.addEventListener("loadedmetadata", resumePlay, { once: true });
     return () => {
       cancelled = true;
+      el.removeEventListener("loadedmetadata", clampStart);
       el.removeEventListener("loadedmetadata", resumePlay);
       h.detach();
     };
-  }, [session, videoId, startAt, t]);
+    // speed is applied on attach only; the controls set it live.
+  }, [session, videoId, startAt, t, failure]);
 
   // Watch-analytics lifecycle (Story 29.1). Independent of the streaming
   // session above: keyed on the video itself, it opens a watch session on
@@ -251,7 +325,19 @@ export function VideoPlayer() {
     (e: React.KeyboardEvent) => {
       const el = videoRef.current;
       if (!el) return;
-      const k = e.key;
+      // Leave browser shortcuts (Ctrl/Cmd+F, Cmd+C) and keys typed into a
+      // control alone.
+      if (e.ctrlKey || e.metaKey || e.altKey || isControlTarget(e.target)) return;
+      const k = shortcutKey(e);
+      // `g` starts the global `g …` leader: the next key is the app's.
+      if (Date.now() < leaderUntil.current) {
+        leaderUntil.current = 0;
+        return;
+      }
+      if (k === "g") {
+        leaderUntil.current = Date.now() + LEADER_MS;
+        return;
+      }
       if (k === " " || k === "k") {
         e.preventDefault();
         if (el.paused) void el.play();
@@ -289,8 +375,43 @@ export function VideoPlayer() {
     }
   }
 
-  if (err) return <ErrorState kind="server" title={t("common.error")} description={err} />;
-  if (!session) return <p className="mkt-loading">{t("common.loading")}</p>;
+  // Back to where the viewer came from; a pasted link (no in-app history)
+  // goes to the video's page instead of leaving the app.
+  const goBack = () => {
+    if (location.key === "default") nav(videoId ? `/videos/${videoId}` : "/library");
+    else nav(-1);
+  };
+  const backButton = (
+    <Button variant="ghost" onClick={goBack}>
+      {dir === "rtl" ? "→" : "←"} {t("player.back")}
+    </Button>
+  );
+
+  if (err) {
+    const notFound = err.status === 404;
+    return (
+      <ErrorState
+        kind={notFound ? "not_found" : err.status === 403 ? "permission" : "server"}
+        title={notFound ? t("video.notFound") : t("common.error")}
+        description={err.message}
+        action={
+          <>
+            {backButton}
+            {!notFound && err.status !== 403 && (
+              <Button onClick={() => setReload((x) => x + 1)}>{t("common.retry")}</Button>
+            )}
+          </>
+        }
+      />
+    );
+  }
+  if (!session)
+    return (
+      <div className="mkt-player__loading">
+        {backButton}
+        <p className="mkt-loading">{t("common.loading")}</p>
+      </div>
+    );
 
   const tracks = session.subtitles ?? [];
   const sigSource = session.manifest_url || session.direct_url || "";
@@ -303,9 +424,7 @@ export function VideoPlayer() {
       aria-label={t("video.tab.watch")}
     >
       <div className="mkt-player__bar">
-        <Button variant="ghost" onClick={() => nav(-1)}>
-          ← {t("player.back")}
-        </Button>
+        {backButton}
         <div className="mkt-player__controls">
           <label className="mkt-field">
             <span className="mkt-field__label">{t("player.speed")}</span>
@@ -344,6 +463,12 @@ export function VideoPlayer() {
           </Button>
         </div>
       </div>
+      {playError && (
+        <div className="mkt-player__error" role="alert">
+          <p>{t("common.error")}</p>
+          <Button onClick={() => setReload((x) => x + 1)}>{t("common.retry")}</Button>
+        </div>
+      )}
       <div
         className="mkt-player__stage"
         style={{ ["--mkt-caption-scale" as string]: String(captionScale) }}
@@ -373,7 +498,9 @@ export function VideoPlayer() {
                 key={c.id}
                 className="mkt-player__tick"
                 title={c.title}
-                style={{ insetInlineStart: `${(c.start_sec / duration) * 100}%` }}
+                style={{
+                  insetInlineStart: `${Math.min(100, Math.max(0, (c.start_sec / duration) * 100))}%`,
+                }}
               />
             ))}
           </div>

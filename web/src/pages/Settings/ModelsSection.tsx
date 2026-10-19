@@ -16,6 +16,7 @@ import { Input } from "@ds/components/Input/Input";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { Select } from "@ds/components/Select/Select";
 import { api, ApiError } from "../../lib/api";
+import { useOptionalAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
 
 type ModelType = "stt" | "embedding" | "diarization";
@@ -65,8 +66,9 @@ export function ModelsSection() {
 
   const load = useCallback(async () => {
     try {
-      const data = await api.get<Model[]>("/api/models");
-      setModels(data);
+      const data = await api.get<Model[] | null>("/api/models");
+      // null or a non-array answer is an empty list, not a crash
+      setModels(Array.isArray(data) ? data : []);
       setError(null);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : t("settings.models.loadError"));
@@ -116,6 +118,10 @@ export function ModelsSection() {
     }
   }
 
+  // Downloading, activating, testing and deleting are admin-only on the
+  // server (SMD-18); other users see the catalog without the controls.
+  const canManage = useOptionalAuth()?.user?.is_admin ?? false;
+
   // STT backend selector reflects the active STT model.
   const sttModels = models.filter((m) => m.type === "stt");
   const activeStt = sttModels.find((m) => m.active)?.id ?? "";
@@ -135,6 +141,7 @@ export function ModelsSection() {
         <Select
           label={t("settings.models.activeBackend")}
           value={activeStt}
+          disabled={!canManage}
           onChange={(e) => {
             const id = e.currentTarget.value;
             if (id) void activate(id);
@@ -170,6 +177,7 @@ export function ModelsSection() {
                   <ModelCard
                     key={m.id}
                     model={m}
+                    canManage={canManage}
                     onDownload={() => download(m.id)}
                     onDelete={() => remove(m.id)}
                     onActivate={() => activate(m.id)}
@@ -187,13 +195,15 @@ export function ModelsSection() {
 
 interface ModelCardProps {
   model: Model;
+  /** admins only: show download / activate / test / delete */
+  canManage: boolean;
   onDownload: () => void;
   onDelete: () => void;
   onActivate: () => void;
   onTest: () => void;
 }
 
-function ModelCard({ model, onDownload, onDelete, onActivate, onTest }: ModelCardProps) {
+function ModelCard({ model, canManage, onDownload, onDelete, onActivate, onTest }: ModelCardProps) {
   const { t } = useI18n();
   const m = model;
   const isCloud = m.platform === "cloud";
@@ -223,28 +233,30 @@ function ModelCard({ model, onDownload, onDelete, onActivate, onTest }: ModelCar
         </p>
       )}
 
-      <div className="mkt-models__actions">
-        {!isDownloaded && !isCloud && m.status !== "downloading" && (
-          <Button variant="primary" size="sm" onClick={onDownload}>
-            {t("settings.models.download")}
-          </Button>
-        )}
-        {isDownloaded && !m.active && (
-          <Button variant="secondary" size="sm" onClick={onActivate}>
-            {t("settings.models.activate")}
-          </Button>
-        )}
-        {isDownloaded && (
-          <Button variant="ghost" size="sm" onClick={onTest}>
-            {t("settings.models.test")}
-          </Button>
-        )}
-        {isDownloaded && !isCloud && (
-          <Button variant="destructive" size="sm" onClick={onDelete}>
-            {t("settings.models.delete")}
-          </Button>
-        )}
-      </div>
+      {canManage && (
+        <div className="mkt-models__actions">
+          {!isDownloaded && !isCloud && m.status !== "downloading" && (
+            <Button variant="primary" size="sm" onClick={onDownload}>
+              {t("settings.models.download")}
+            </Button>
+          )}
+          {isDownloaded && !m.active && (
+            <Button variant="secondary" size="sm" onClick={onActivate}>
+              {t("settings.models.activate")}
+            </Button>
+          )}
+          {isDownloaded && (
+            <Button variant="ghost" size="sm" onClick={onTest}>
+              {t("settings.models.test")}
+            </Button>
+          )}
+          {isDownloaded && !isCloud && (
+            <Button variant="destructive" size="sm" onClick={onDelete}>
+              {t("settings.models.delete")}
+            </Button>
+          )}
+        </div>
+      )}
     </Card>
   );
 }

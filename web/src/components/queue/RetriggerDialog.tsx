@@ -41,7 +41,7 @@ const MODES: RetriggerMode[] = ["queue", "force", "force_cascade"];
 
 export function summarize(res: RetriggerResponse) {
   const out = { queued: 0, merged: 0, skipped: 0 };
-  for (const r of res.results) {
+  for (const r of res?.results ?? []) {
     if (r.outcome === "inserted") out.queued++;
     else if (r.outcome === "coalesced" || r.outcome === "rerun_requested") out.merged++;
     else out.skipped++;

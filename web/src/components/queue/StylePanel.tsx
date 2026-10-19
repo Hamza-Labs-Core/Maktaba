@@ -59,7 +59,7 @@ export function StylePanel({
         limit: 100,
       })
     );
-    if (r) setItems(r.items);
+    if (r) setItems(r.items ?? []);
   }
 
   const label = (s: ProductionStyle) => t(`queue.style.${s}`);

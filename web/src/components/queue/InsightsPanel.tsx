@@ -55,8 +55,8 @@ export function InsightsPanel() {
   }, []);
 
   if (!data) return null;
-  const c = data.totals;
-  const counters: [string, number][] = [
+  const c: Partial<Insights["totals"]> = data.totals ?? {};
+  const counters: [string, number | undefined][] = [
     ["videos", c.videos],
     ["videos_with_length", c.videos_with_length],
     ["series", c.series],
@@ -66,12 +66,13 @@ export function InsightsPanel() {
     ["channels", c.channels],
     ["style_pinned", c.style_pinned],
   ];
-  const styles = PRODUCTION_STYLES.filter((s) => data.styles[s]).map((s) => ({
+  const styleCounts = data.styles ?? {};
+  const styles = PRODUCTION_STYLES.filter((s) => styleCounts[s]).map((s) => ({
     key: s,
     label: t(`queue.style.${s}`),
-    n: data.styles[s] ?? 0,
+    n: styleCounts[s] ?? 0,
   }));
-  const genres = data.genres.map((g) => ({ key: g.genre, label: g.genre, n: g.seasons }));
+  const genres = (data.genres ?? []).map((g) => ({ key: g.genre, label: g.genre, n: g.seasons }));
 
   return (
     <section className="mkt-q-insights" aria-labelledby="mkt-q-insights-h">
@@ -80,7 +81,7 @@ export function InsightsPanel() {
       </h2>
       <StatGrid>
         {counters.map(([k, v]) => (
-          <StatTile key={k} label={t(`queue.insights.${k}`)} value={n(v)} />
+          <StatTile key={k} label={t(`queue.insights.${k}`)} value={n(v ?? 0)} />
         ))}
       </StatGrid>
       {(styles.length > 0 || genres.length > 0) && (

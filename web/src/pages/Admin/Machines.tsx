@@ -224,6 +224,23 @@ function MachinesOverview({
   );
 }
 
+// safeView makes a /api/cluster answer safe to sort and render: a null or
+// missing node list is empty, and a node with no name sorts as "".
+function safeView(v: ClusterView | null | undefined): ClusterView {
+  const nodes = Array.isArray(v?.nodes) ? v.nodes : [];
+  return {
+    ...(v ?? ({} as ClusterView)),
+    home: v?.home ?? (null as unknown as ClusterHome),
+    nodes: nodes.map((n) => (typeof n.name === "string" ? n : { ...n, name: "" })),
+  };
+}
+
+// asciiDigits turns Arabic-Indic (٠-٩) and Persian (۰-۹) digits into 0-9,
+// so a code typed on an Arabic keyboard is accepted.
+function asciiDigits(s: string): string {
+  return s.replace(/[\u0660-\u0669\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) & 0xf));
+}
+
 function secondsUntil(iso: string | null | undefined): number | null {
   if (!iso) return null;
   const at = Date.parse(iso);
@@ -265,7 +282,7 @@ const Approvals = memo(function Approvals({
         .getCluster()
         .then((v) => {
           if (!alive.current) return;
-          setView((prev) => reconcileView(prev, v));
+          setView((prev) => reconcileView(prev, safeView(v)));
           setError(false);
         })
         .catch(() => {
@@ -315,7 +332,17 @@ const Approvals = memo(function Approvals({
       <p className="mkt-mc-statusline" role="status">
         {error && <span className="mkt-mc-muted">{t("machines.stale")}</span>}
       </p>
-      <HomeCard home={view.home} onChanged={reload} jobs={jobs ? (jobs[HOME_HOST] ?? 0) : null} />
+      {view.home ? (
+        <HomeCard home={view.home} onChanged={reload} jobs={jobs ? (jobs[HOME_HOST] ?? 0) : null} />
+      ) : (
+        // no home in the answer: say so here and keep the rest of the page
+        <section className="mkt-mc-card mkt-mc-home" aria-labelledby="mkt-mc-home-h">
+          <h2 id="mkt-mc-home-h" className="mkt-mc-card__eyebrow">
+            {t("machines.home.title")}
+          </h2>
+          <p className="mkt-mc-muted">{t("common.error")}</p>
+        </section>
+      )}
       <section className="mkt-mc-section" aria-labelledby="mkt-mc-pending-h">
         <h2 id="mkt-mc-pending-h" className="mkt-mc-section__title">
           {t("machines.pending.title")}
@@ -508,7 +535,7 @@ function StorageServers() {
         <ul className="mkt-mc-map">
           {servers.map((s) => (
             <li key={s.name} dir="ltr">
-              <code>{`smb://${s.name}/`}</code> <span>{s.addresses.join(", ") || "-"}</span>
+              <code>{`smb://${s.name}/`}</code> <span>{(s.addresses ?? []).join(", ") || "-"}</span>
               {s.char_map !== "none" && <span className="mkt-mc-muted"> ({s.char_map})</span>}{" "}
               <Button
                 size="sm"
@@ -517,7 +544,7 @@ function StorageServers() {
                 onClick={() =>
                   setDraft({
                     name: s.name,
-                    addresses: s.addresses.join(", "),
+                    addresses: (s.addresses ?? []).join(", "),
                     char_map: s.char_map,
                   })
                 }
@@ -622,7 +649,7 @@ function PendingRow({ node, onChanged }: { node: ClusterNode; onChanged: () => v
 
   const approve = (e: FormEvent) => {
     e.preventDefault();
-    const digits = normalizePairingCode(code);
+    const digits = normalizePairingCode(asciiDigits(code));
     if (!digits) {
       setMessage(t("machines.pending.codeFormat"));
       return;
@@ -1123,7 +1150,7 @@ function StageTable({
   const name = bidiIsolate(node.name);
   const set = new Set<string>(Object.keys(node.stage_overrides ?? {}));
   for (const w of node.workers ?? []) {
-    w.stages.forEach((s) => set.add(s));
+    (w.stages ?? []).forEach((s) => set.add(s));
     Object.keys(w.stages_off ?? {}).forEach((s) => set.add(s));
   }
   const stages = [...set].sort();
@@ -1157,7 +1184,7 @@ function StageTable({
           </thead>
           <tbody>
             {stages.map((s) => {
-              const served = (node.workers ?? []).some((w) => w.stages.includes(s));
+              const served = (node.workers ?? []).some((w) => (w.stages ?? []).includes(s));
               const reason = (node.workers ?? [])
                 .map((w) => w.stages_off?.[s])
                 .find((r): r is string => typeof r === "string" && r !== "");

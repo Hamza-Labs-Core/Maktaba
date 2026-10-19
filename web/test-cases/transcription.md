@@ -10,33 +10,33 @@
 
 ## Summary
 
-| ID     | Title                                                      | Category      | Priority | Covered by existing test?                                    |
-| ------ | ---------------------------------------------------------- | ------------- | -------- | ------------------------------------------------------------ |
-| TRN-01 | Renders progress, speed, time left, stages, libraries      | Happy path    | P1       | Yes (`Transcription.test.tsx`)                               |
-| TRN-02 | Shows Loading under the title while pending                | Loading       | P2       | No                                                           |
-| TRN-03 | First load fails, Try again recovers                       | Error         | P1       | Yes (`Transcription.test.tsx`)                               |
-| TRN-04 | Refresh fails after a good load: stale note, data kept     | Error         | P2       | No                                                           |
-| TRN-05 | 401 / 403 / malformed summary                              | Error         | P2       | No                                                           |
-| TRN-06 | `stages` / `libraries` / `failures` `null` or missing      | Empty state   | P1       | No                                                           |
-| TRN-07 | `totals` / `rate` / `eta` objects `null` or missing        | Empty state   | P1       | No                                                           |
-| TRN-08 | Library with `name: null` or `""`, missing `library_id`    | Empty state   | P1       | No                                                           |
-| TRN-09 | Empty lists and zero totals                                | Empty state   | P2       | Partial (`Transcription.test.tsx`: empty lists, unknown ETA) |
-| TRN-10 | Render crash shows route error fallback; Back works        | Error         | P1       | No                                                           |
-| TRN-11 | Signed-out user is sent to `/login`                        | Permissions   | P1       | No                                                           |
-| TRN-12 | Non-admin user sees the full report                        | Permissions   | P2       | No                                                           |
-| TRN-13 | Time left: done, live / 10 min / 1 h basis                 | Happy path    | P2       | Partial (`Transcription.test.tsx`: live basis, unknown)      |
-| TRN-14 | Speed: live row only with workers; lost hours              | Happy path    | P2       | Partial (`Transcription.test.tsx`: live row only)            |
-| TRN-15 | Library table sorts by header and by the select            | Happy path    | P2       | Partial (`Transcription.test.tsx`: header buttons only)      |
-| TRN-16 | Failures: cause, unknown cause, unknown stage, links       | Happy path    | P2       | Partial (`Transcription.test.tsx`: link only)                |
-| TRN-17 | Live refetch only when transcription queues move           | Happy path    | P1       | Yes (`Transcription.test.tsx`)                               |
-| TRN-18 | Stream silent: polls every 5 s with a note; stops on event | Error         | P1       | Yes (`Transcription.test.tsx`)                               |
-| TRN-19 | Malformed SSE snapshot does not crash or refetch           | Error         | P2       | Partial (`Transcription.test.tsx`: `stagesKey` unit only)    |
-| TRN-20 | Leaving the page stops polling and the stream              | Navigation    | P2       | No                                                           |
-| TRN-21 | Links: stage cards, failures, nav; Back / Forward          | Navigation    | P2       | Partial (`Transcription.test.tsx`: hrefs only)               |
-| TRN-22 | Phone width 375 px; reached through "More"                 | Responsive    | P3       | No                                                           |
-| TRN-23 | Arabic: RTL, Arabic numbers and names                      | RTL           | P3       | Yes (`Transcription.test.tsx`)                               |
-| TRN-24 | Light and dark theme                                       | Theme         | P3       | No                                                           |
-| TRN-25 | Keyboard and accessibility basics                          | Accessibility | P3       | Partial (`Transcription.test.tsx`: axe only)                 |
+| ID     | Title                                                      | Category      | Priority | Covered by existing test?                    |
+| ------ | ---------------------------------------------------------- | ------------- | -------- | -------------------------------------------- |
+| TRN-01 | Renders progress, speed, time left, stages, libraries      | Happy path    | P1       | Yes (`Transcription.test.tsx`)               |
+| TRN-02 | Shows Loading under the title while pending                | Loading       | P2       | Yes (`Transcription.cases.test.tsx`)         |
+| TRN-03 | First load fails, Try again recovers                       | Error         | P1       | Yes (`Transcription.test.tsx`)               |
+| TRN-04 | Refresh fails after a good load: stale note, data kept     | Error         | P2       | Yes (`Transcription.cases.test.tsx`)         |
+| TRN-05 | 401 / 403 / malformed summary                              | Error         | P2       | Yes (`Transcription.cases.test.tsx`)         |
+| TRN-06 | `stages` / `libraries` / `failures` `null` or missing      | Empty state   | P1       | Yes (`Transcription.cases.test.tsx`)         |
+| TRN-07 | `totals` / `rate` / `eta` objects `null` or missing        | Empty state   | P1       | Yes (`Transcription.cases.test.tsx`)         |
+| TRN-08 | Library with `name: null` or `""`, missing `library_id`    | Empty state   | P1       | Yes (`Transcription.cases.test.tsx`)         |
+| TRN-09 | Empty lists and zero totals                                | Empty state   | P2       | Yes (`Transcription.cases.test.tsx`)         |
+| TRN-10 | Render crash shows route error fallback; Back works        | Error         | P1       | Yes (`Transcription.cases.test.tsx`)         |
+| TRN-11 | Signed-out user is sent to `/login`                        | Permissions   | P1       | Yes (`Transcription.cases.test.tsx`)         |
+| TRN-12 | Non-admin user sees the full report                        | Permissions   | P2       | Yes (`Transcription.cases.test.tsx`)         |
+| TRN-13 | Time left: done, live / 10 min / 1 h basis                 | Happy path    | P2       | Yes (`Transcription.cases.test.tsx`)         |
+| TRN-14 | Speed: live row only with workers; lost hours              | Happy path    | P2       | Yes (`Transcription.cases.test.tsx`)         |
+| TRN-15 | Library table sorts by header and by the select            | Happy path    | P2       | Yes (`Transcription.cases.test.tsx`)         |
+| TRN-16 | Failures: cause, unknown cause, unknown stage, links       | Happy path    | P2       | Yes (`Transcription.cases.test.tsx`)         |
+| TRN-17 | Live refetch only when transcription queues move           | Happy path    | P1       | Yes (`Transcription.test.tsx`)               |
+| TRN-18 | Stream silent: polls every 5 s with a note; stops on event | Error         | P1       | Yes (`Transcription.test.tsx`)               |
+| TRN-19 | Malformed SSE snapshot does not crash or refetch           | Error         | P2       | Yes (`Transcription.cases.test.tsx`)         |
+| TRN-20 | Leaving the page stops polling and the stream              | Navigation    | P2       | Yes (`Transcription.cases.test.tsx`)         |
+| TRN-21 | Links: stage cards, failures, nav; Back / Forward          | Navigation    | P2       | Yes (`Transcription.cases.test.tsx`)         |
+| TRN-22 | Phone width 375 px; reached through "More"                 | Responsive    | P3       | No (e2e-only)                                |
+| TRN-23 | Arabic: RTL, Arabic numbers and names                      | RTL           | P3       | Yes (`Transcription.test.tsx`)               |
+| TRN-24 | Light and dark theme                                       | Theme         | P3       | No                                           |
+| TRN-25 | Keyboard and accessibility basics                          | Accessibility | P3       | Partial (`Transcription.test.tsx`: axe only) |
 
 ## Cases
 
@@ -54,7 +54,7 @@
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Transcription.cases.test.tsx`)
 - **Preconditions / data:** summary request never resolves.
 - **Steps:**
   1. Open `/transcription`.
@@ -74,7 +74,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Transcription.cases.test.tsx`)
 - **Preconditions / data:** fake timers; first call OK; then the stream is silent so polling starts, and the next summary call returns 500; then OK again.
 - **Steps:**
   1. Load; advance 15 s; advance 5 s more.
@@ -84,7 +84,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Transcription.cases.test.tsx`)
 - **Preconditions / data:** summary → (a) 401; (b) 403; (c) 200 `application/json` truncated body; (d) 200 `text/html` (proxy fallback page).
 - **Steps:**
   1. Open the page.
@@ -94,7 +94,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Transcription.cases.test.tsx`)
 - **Preconditions / data:** summary fixture with, one at a time, `stages: null`, `stages` missing, `libraries: null`, `libraries` missing, `failures: null`, `failures` missing.
 - **Steps:**
   1. Open the page.
@@ -104,7 +104,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Transcription.cases.test.tsx`)
 - **Preconditions / data:** one at a time: `totals: null`; `rate: null`; `rate.last_10m: null`; `rate.live` missing (older API); `eta: null`; `totals.segments` missing.
 - **Steps:**
   1. Open the page.
@@ -114,7 +114,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Transcription.cases.test.tsx`)
 - **Preconditions / data:** `libraries: [{ library_id: "", name: "", videos: 3, videos_done: 1, hours: 2, hours_done: 1 }, { library_id: "l2", name: null, ... }, { library_id: "l3", name: "Fiqh", ... }]`.
 - **Steps:**
   1. Open the page; sort by "Library".
@@ -124,7 +124,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** Partial — `Transcription.test.tsx` "explains an unknown ETA and empty sections"
+- **Covered by existing test?** Yes (`Transcription.cases.test.tsx`)
 - **Preconditions / data:** `totals` all 0; `libraries: []`; `failures: []`; `stages: []`; `eta: { seconds: null, at: null, basis: null }`; `rate.last_10m` and `last_1h` with `jobs: 0`, `realtime_factor: 0`, `avg_job_rtf: null`.
 - **Steps:**
   1. Open the page.
@@ -134,7 +134,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Transcription.cases.test.tsx`)
 - **Preconditions / data:** app routes; start at `/queue`; summary → `{ ...summaryFixture, failures: null }` (TRN-06).
 - **Steps:**
   1. Click "Transcription" in the nav.
@@ -145,7 +145,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Transcription.cases.test.tsx`)
 - **Preconditions / data:** no user.
 - **Steps:**
   1. Open `/transcription`.
@@ -155,7 +155,7 @@
 
 - **Priority:** P2
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Transcription.cases.test.tsx`)
 - **Preconditions / data:** user `is_admin: false`; fixture as TRN-01.
 - **Steps:**
   1. Open `/transcription`.
@@ -165,7 +165,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `Transcription.test.tsx` "shows what the workers decode now and times the rest by it", "explains an unknown ETA…"
+- **Covered by existing test?** Yes (`Transcription.cases.test.tsx`)
 - **Preconditions / data:** `eta` variants: `{ seconds: 0, at: null, basis: null }`; `{ seconds: 7200, at: "2026-05-18T14:00:00Z", basis: "10m" }`; `basis: "1h"`; `basis: "live"`; `at: null` with seconds > 0.
 - **Steps:**
   1. Open the page for each.
@@ -175,7 +175,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `Transcription.test.tsx` "shows what the workers decode now…"
+- **Covered by existing test?** Yes (`Transcription.cases.test.tsx`)
 - **Preconditions / data:** `rate.live` with `workers: 0`; then `workers: 2, lost_hours: 0.5`; then `lost_hours` missing.
 - **Steps:**
   1. Open the page for each.
@@ -185,7 +185,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `Transcription.test.tsx` "sorts the library table by column"
+- **Covered by existing test?** Yes (`Transcription.cases.test.tsx`)
 - **Preconditions / data:** three libraries with different videos, hours and progress.
 - **Steps:**
   1. Check the default order; use the "Sort by" select ("Library, ascending"); click the "Videos" header twice.
@@ -195,7 +195,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `Transcription.test.tsx` "links failures to the item history page"
+- **Covered by existing test?** Yes (`Transcription.cases.test.tsx`)
 - **Preconditions / data:** failures: one with `error_cause: "decode_error"`, `error: "ffmpeg exit 1"`, `library_name: "Fiqh"`, `attempts: 3`; one with `error_cause: null`, `error: null`, `library_name: null`, `finished_at: null`; one with `stage: "diarize"` (not one of the three).
 - **Steps:**
   1. Open the page.
@@ -225,7 +225,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** Partial — `Transcription.test.tsx` `stagesKey` unit test
+- **Covered by existing test?** Yes (`Transcription.cases.test.tsx`)
 - **Preconditions / data:** emit `{ type: "queues.snapshot", at: "x", payload: { queues: null } }`, then `payload: {}`, then an event with no `payload`, then `{ type: "other" }`, then `payload.queues[0].counts: null`.
 - **Steps:**
   1. Emit each after the baseline snapshot.
@@ -235,7 +235,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Transcription.cases.test.tsx`)
 - **Preconditions / data:** fake timers; page in polling mode (TRN-18); then unmount (navigate to `/queue`).
 - **Steps:**
   1. Navigate away; advance 20 s.
@@ -245,7 +245,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** Partial — `Transcription.test.tsx` checks `href="/queue/transcribe"` and failure hrefs
+- **Covered by existing test?** Yes (`Transcription.cases.test.tsx`)
 - **Preconditions / data:** app routes; fixtures for `/queue/transcribe` and an item page.
 - **Steps:**
   1. Click "Transcribe" → `/queue/transcribe`; Back.
@@ -256,7 +256,7 @@
 
 - **Priority:** P3
 - **Category:** Responsive
-- **Covered by existing test?** No
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** e2e 375×812.
 - **Steps:**
   1. Open "More" in the bottom tab bar; tap "Transcription".

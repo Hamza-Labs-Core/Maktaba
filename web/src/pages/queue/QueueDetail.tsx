@@ -1,9 +1,10 @@
 // /queue/:stage — one queue: controls, KPIs, flow neighbours, throughput
 // chart, running jobs with sub-steps, next up, failures and its log.
 // ?host=<node id | home> narrows the running jobs to one machine.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
+import { ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { queueApi } from "../../lib/queueApi";
 import type {
@@ -27,6 +28,7 @@ import { hostWorkerIds, runsOnHost, useHostName } from "../../components/queue/h
 import { STATE_GLYPH, queueVisualState, useFmt } from "../../components/queue/format";
 import { useAction } from "../../components/queue/useAction";
 import { useThrottledReload } from "../../components/queue/useThrottledReload";
+import { arr, safeDetail, safeLibraries, safeSnapshot } from "./safeData";
 import "../../styles/queue.css";
 
 function Kpi({
@@ -53,7 +55,8 @@ export function QueueDetail() {
   const { stage = "" } = useParams<{ stage: string }>();
   const { t, n } = useI18n();
   const fmt = useFmt();
-  const { snapshot } = useQueuesSnapshot();
+  const { snapshot: rawSnapshot } = useQueuesSnapshot();
+  const snapshot = useMemo(() => safeSnapshot(rawSnapshot), [rawSnapshot]);
   const stream = useJobStream({ stage });
   const action = useAction();
   const host = useSearchParams()[0].get("host") || "";
@@ -62,31 +65,44 @@ export function QueueDetail() {
 
   const [detail, setDetail] = useState<QueueDetailData | null>(null);
   const [rate, setRate] = useState<RatePoint[]>([]);
-  const [missing, setMissing] = useState(false);
+  // "missing": the API says there is no such stage (404); "failed": any other error
+  const [failure, setFailure] = useState<"missing" | "failed" | null>(null);
   const [libraries, setLibraries] = useState<LibraryQueueRow[]>([]);
   const [dialog, setDialog] = useState(false);
   const [interrupt, setInterrupt] = useState(false);
 
+  // the stage the page shows now: a late answer for another stage is dropped
+  const current = useRef(stage);
+  current.current = stage;
+
   const load = useCallback(() => {
     queueApi
       .detail(stage)
-      .then((d) => {
+      .then((raw) => {
+        if (current.current !== stage) return;
+        const d = safeDetail(raw);
+        if (!d) throw new Error("not a queue detail");
         setDetail(d);
-        setMissing(false);
+        setFailure(null);
       })
-      .catch(() => setMissing(true));
+      .catch((e: unknown) => {
+        if (current.current !== stage) return;
+        setFailure(e instanceof ApiError && e.status === 404 ? "missing" : "failed");
+      });
     queueApi
       .rate(stage, 6)
-      .then((r) => setRate(r.points))
+      .then((r) => current.current === stage && setRate(arr(r?.points)))
       .catch(() => {});
   }, [stage]);
 
   useEffect(() => {
     setDetail(null);
+    setFailure(null);
+    setRate([]);
     load();
     queueApi
       .libraries()
-      .then((r) => setLibraries(r.items))
+      .then((r) => setLibraries(safeLibraries(r?.items)))
       .catch(() => {});
   }, [stage, load]);
   useThrottledReload(load, stream.finishedTick);
@@ -122,12 +138,25 @@ export function QueueDetail() {
     [stream.running]
   );
 
-  if (missing && !detail) {
+  if (failure === "missing" && !detail) {
     return (
       <section className="mkt-page mkt-q">
         <p role="alert" className="mkt-q-banner">
           {t("queue.detail.notFound", { stage })}
         </p>
+        <Link to="/queue">{t("queue.detail.back")}</Link>
+      </section>
+    );
+  }
+  if (failure === "failed" && !detail) {
+    return (
+      <section className="mkt-page mkt-q">
+        <div role="alert" className="mkt-q-banner">
+          <p>{t("common.error")}</p>
+          <Button variant="secondary" onClick={load}>
+            {t("common.retry")}
+          </Button>
+        </div>
         <Link to="/queue">{t("queue.detail.back")}</Link>
       </section>
     );
@@ -399,7 +428,7 @@ export function QueueDetail() {
           groups={detail.failures}
           stageLabel={stageLabel}
           busyKey={action.busy}
-          nasP95Ms={snapshot?.health.nas.open_ms_p95}
+          nasP95Ms={snapshot?.health?.nas?.open_ms_p95}
           onRetry={(g) =>
             void action
               .run(groupKey(g), () => queueApi.retry(stage, { cause: g.cause }))
@@ -419,7 +448,7 @@ export function QueueDetail() {
         </h2>
         <ActivityLog
           key={stage}
-          stages={snapshot?.stages ?? [info]}
+          stages={snapshot?.stages.length ? snapshot.stages : [info]}
           live={stream.lines}
           fixedStage={stage}
           initial={detail.log}
@@ -429,7 +458,7 @@ export function QueueDetail() {
       <RetriggerDialog
         open={dialog}
         onClose={() => setDialog(false)}
-        stages={snapshot?.stages ?? [info]}
+        stages={snapshot?.stages.length ? snapshot.stages : [info]}
         libraries={libraries}
         initialStages={[stage]}
         onDone={afterAction}

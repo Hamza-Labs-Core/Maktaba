@@ -11,7 +11,13 @@ import { Toggle } from "@ds/components/Choice/Toggle";
 import { useToast } from "@ds/components/Toast/Toast";
 import { ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
-import { pinProblem, updatesApi, validWindow, type UpdatesOverview } from "../../lib/updatesApi";
+import {
+  pinProblem,
+  updatesApi,
+  validWindow,
+  type UpdatesOverview,
+  type UpdatesPlan,
+} from "../../lib/updatesApi";
 
 interface Draft {
   auto_install: boolean;
@@ -25,7 +31,7 @@ function draftOf(o: UpdatesOverview): Draft {
   return {
     auto_install: o.policy.auto_install,
     channel: o.policy.channel,
-    window: o.policy.window,
+    window: o.policy.window ?? "",
     min_release_age_hours: String(o.policy.min_release_age_hours),
     pinned_version: o.policy.pinned_version ?? "",
   };
@@ -92,18 +98,23 @@ export function UpdatesSettings() {
     }
   };
 
-  const target = ov.plan.target;
+  // plan null or missing: nothing planned (it must not take the About tab down)
+  const plan: Partial<UpdatesPlan> = ov.plan ?? {};
+  const target = plan.target;
   let next = t("updates.plan.none");
-  if (target && ov.plan.held) next = t("updates.plan.held", { version: target.version });
-  else if (target && ov.plan.next_run_at)
+  if (target && plan.held) next = t("updates.plan.held", { version: target.version });
+  else if (target && plan.next_run_at)
     next = t("updates.plan.at", {
       version: target.version,
-      at: new Date(ov.plan.next_run_at).toLocaleString(),
+      at: new Date(plan.next_run_at).toLocaleString(),
     });
-  else if (target)
-    next = t(`updates.plan.waiting.${ov.plan.waiting ?? "auto_install_off"}`, {
-      version: target.version,
-    });
+  else if (target) {
+    const key = `updates.plan.waiting.${plan.waiting ?? "auto_install_off"}`;
+    next = t(key, { version: target.version });
+    // a reason this build has no text for: say the version is there, not the raw key
+    if (next === key)
+      next = t("updates.plan.waiting.automatic_installs_not_built", { version: target.version });
+  }
 
   return (
     <section className="mkt-about__updates" aria-labelledby="updates-settings-title" id="updates">

@@ -10,7 +10,7 @@
 // chips are URL-encoded; cursor "Load more" appends pages; empty states
 // distinguish first-run (admin "Scan now") vs filtered-out ("Clear
 // filters"). State badges + poster 404 fallback + bidi-isolated titles.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Chip } from "@ds/components/Chip/Chip";
@@ -46,6 +46,8 @@ interface VideoListResponse {
 // Server only sorts on updated_at|created_at|title; `duration_sec` is a
 // client-side sort over the loaded page (documented limitation: the
 // list API has no duration sort key).
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const SERVER_SORT: Record<SortField, string> = {
   updated_at: "updated_at",
   title: "title",
@@ -86,13 +88,26 @@ export function LibraryBrowser() {
   const [params, setParams] = useSearchParams();
 
   const [view, setView] = useState<View>(readView);
-  const sort = (params.get("sort") as SortField) || "updated_at";
+  const rawSort = params.get("sort");
+  // An unknown ?sort= (a stale or hand-typed link) falls back to the default.
+  const sort: SortField =
+    rawSort && Object.prototype.hasOwnProperty.call(SERVER_SORT, rawSort)
+      ? (rawSort as SortField)
+      : "updated_at";
+  // Library ids are UUIDs; the server ignores any other `library` value and
+  // would list every video, so a malformed id is "not found" here.
+  const badLibrary = !!libraryId && !UUID.test(libraryId);
+  const [reloads, setReloads] = useState(0);
   const order = params.get("order") === "asc" ? "asc" : "desc";
   const lang = params.get("language") || "";
 
   const [videos, setVideos] = useState<Video[] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const loadingMoreRef = useRef(false);
+  // Bumped whenever the list starts over (new sort, library, language or a
+  // retry): a Load more answer for an older list is dropped.
+  const listGen = useRef(0);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -118,9 +133,16 @@ export function LibraryBrowser() {
 
   useEffect(() => {
     let cancelled = false;
+    listGen.current += 1;
+    loadingMoreRef.current = false;
+    setLoadingMore(false);
     setVideos(null);
     setErr(null);
     setCursor(null);
+    if (badLibrary) {
+      setVideos([]);
+      return;
+    }
     api
       .get<VideoListResponse>(`/api/videos?${buildQuery()}`)
       .then((res) => {
@@ -136,19 +158,36 @@ export function LibraryBrowser() {
     return () => {
       cancelled = true;
     };
-  }, [buildQuery, t]);
+  }, [buildQuery, t, badLibrary, reloads]);
 
   function loadMore() {
-    if (!cursor || loadingMore) return;
+    // A ref, not the loadingMore state: two quick clicks run before React
+    // re-renders, and both would see loadingMore === false.
+    if (!cursor || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
+    const gen = listGen.current;
     api
       .get<VideoListResponse>(`/api/videos?${buildQuery(cursor)}`)
       .then((res) => {
-        setVideos((prev) => [...(prev ?? []), ...(res.items ?? [])]);
+        if (gen !== listGen.current) return;
+        // Skip ids already shown: a page that overlaps the last one (rows
+        // re-sorted between requests) must not add duplicate cards.
+        setVideos((prev) => {
+          const seen = new Set((prev ?? []).map((v) => v.id));
+          return [...(prev ?? []), ...(res.items ?? []).filter((v) => !seen.has(v.id))];
+        });
         setCursor(res.next ?? null);
       })
-      .catch((e) => setErr(e instanceof ApiError ? e.problem.title : t("common.error")))
-      .finally(() => setLoadingMore(false));
+      .catch((e) => {
+        if (gen !== listGen.current) return;
+        setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
+      })
+      .finally(() => {
+        if (gen !== listGen.current) return;
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      });
   }
 
   function patchParam(key: string, value: string | null) {
@@ -164,7 +203,9 @@ export function LibraryBrowser() {
     if (sort === "duration_sec") {
       arr.sort((a, b) => (a.duration_sec ?? 0) - (b.duration_sec ?? 0));
     } else if (sort === "title") {
-      arr.sort((a, b) => (a.title || a.filename).localeCompare(b.title || b.filename, locale));
+      arr.sort((a, b) =>
+        (a.title || a.filename || "").localeCompare(b.title || b.filename || "", locale)
+      );
     }
     if (order === "desc") arr.reverse();
     return arr;
@@ -252,20 +293,18 @@ export function LibraryBrowser() {
         </ul>
       )}
 
+      {badLibrary && <ErrorState kind="not_found" title={t("library.notFound")} />}
+
       {err && (
         <ErrorState
           kind="server"
           title={t("common.error")}
           description={err}
-          action={
-            <Button onClick={() => patchParam("_r", String(Date.now()))}>
-              {t("common.retry")}
-            </Button>
-          }
+          action={<Button onClick={() => setReloads((n) => n + 1)}>{t("common.retry")}</Button>}
         />
       )}
 
-      {sorted !== null && sorted.length === 0 && !err && (
+      {sorted !== null && sorted.length === 0 && !err && !badLibrary && (
         <EmptyState
           kind={filtersActive ? "filtered_out" : "first_run"}
           title={filtersActive ? t("library.empty.filtered") : t("library.empty.title")}

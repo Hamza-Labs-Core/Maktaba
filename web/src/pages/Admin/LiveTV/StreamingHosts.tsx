@@ -17,6 +17,7 @@ import {
   type HostState,
   type HostUpdate,
   type StreamingHost,
+  type TvClusterSettings,
   type TvClusterView,
 } from "../../../lib/tvClusterApi";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -81,7 +82,7 @@ export function StreamingHosts({
           ))}
         </ul>
       )}
-      <ClusterSettings view={view} onChanged={onChanged} />
+      {view.settings && <ClusterSettings settings={view.settings} onChanged={onChanged} />}
       {view.hosts.length === 0 ? (
         <p className="mkt-livetv__hint">{t("tv.cluster.hosts.none")}</p>
       ) : (
@@ -96,14 +97,13 @@ export function StreamingHosts({
 }
 
 function ClusterSettings({
-  view,
+  settings: s,
   onChanged,
 }: {
-  view: TvClusterView;
+  settings: TvClusterSettings;
   onChanged: () => void | Promise<void>;
 }) {
   const { t } = useI18n();
-  const s = view.settings;
   const [spill, setSpill] = useState(String(s.spill_at));
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<Msg>(null);
@@ -247,8 +247,12 @@ function HostCard({
   const dirty = Object.keys(changes).length > 0;
   const invalid = !!(capErr || weightErr || urlErr);
 
-  const cpu = host.load.cpu;
-  const push = [host.can_push.rtmps && "RTMPS", host.can_push.srt && "SRT"].filter(Boolean);
+  // an older or partial API can send these as null: read them as empty
+  const load = host.load ?? {};
+  const canPush = host.can_push ?? {};
+  const encoders = host.encoders ?? [];
+  const cpu = load.cpu;
+  const push = [canPush.rtmps && "RTMPS", canPush.srt && "SRT"].filter(Boolean);
 
   return (
     <article className="mkt-tvc-host" aria-label={host.name}>
@@ -266,14 +270,14 @@ function HostCard({
         <dt>{t("tv.cluster.host.used")}</dt>
         <dd>{t("tv.cluster.host.usedOf", { used: n(host.used), capacity: n(host.capacity) })}</dd>
         <dt>{t("tv.cluster.host.encoders")}</dt>
-        <dd>{host.encoders.length ? host.encoders.join(", ") : "—"}</dd>
+        <dd>{encoders.length ? encoders.join(", ") : "—"}</dd>
         <dt>{t("tv.cluster.host.cpu")}</dt>
         <dd>
           {cpu == null ? "—" : `${n(Math.round(cpu * 100))}%`}
-          {host.load.gpu_sessions != null &&
+          {load.gpu_sessions != null &&
             ` · ${t("tv.cluster.host.gpu", {
-              used: n(host.load.gpu_sessions),
-              max: host.load.nvenc_max != null ? n(host.load.nvenc_max) : "?",
+              used: n(load.gpu_sessions),
+              max: load.nvenc_max != null ? n(load.nvenc_max) : "?",
             })}`}
         </dd>
         <dt>{t("tv.cluster.host.lastBeat")}</dt>
@@ -385,7 +389,7 @@ function HostCard({
           onConfirm={() => put({ move_now: true }, t("tv.cluster.host.movedMsg"))}
         >
           <p>
-            {t("tv.cluster.host.moveNowBody", { count: n(host.channels.length) })}{" "}
+            {t("tv.cluster.host.moveNowBody", { count: n(host.channels?.length ?? 0) })}{" "}
             {t("tv.cluster.interrupt")}
           </p>
         </ConfirmDialog>

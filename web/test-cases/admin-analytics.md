@@ -15,34 +15,34 @@
 
 ## Summary
 
-| ID     | Title                                                        | Category      | Priority | Covered by existing test? |
-| ------ | ------------------------------------------------------------ | ------------- | -------- | ------------------------- |
-| ANL-01 | Dashboard renders all cards from full data                   | Happy path    | P1       | No                        |
-| ANL-02 | Range change refetches all four endpoints and export links   | Happy path    | P1       | No                        |
-| ANL-03 | Live card polls every 15 s and keeps the last value on error | Happy path    | P2       | No                        |
-| ANL-04 | Live: `sessions: []` shows "Nobody is watching right now."   | Empty state   | P2       | No                        |
-| ANL-05 | Live: `sessions: null` or missing key                        | Empty state   | P1       | No                        |
-| ANL-06 | Empty series and lists render placeholders                   | Empty state   | P2       | No                        |
-| ANL-07 | Null / missing list fields in summary, top videos, users     | Empty state   | P1       | No                        |
-| ANL-08 | Activity `heatmap` null, missing, empty or ragged            | Empty state   | P1       | No                        |
-| ANL-09 | Activity `series` null / missing; one point; bad values      | Empty state   | P2       | No                        |
-| ANL-10 | Summary numbers null or missing                              | Empty state   | P2       | No                        |
-| ANL-11 | Loading placeholders before data arrives                     | Loading       | P3       | No                        |
-| ANL-12 | One endpoint fails (500, 403, network)                       | Error         | P1       | No                        |
-| ANL-13 | Malformed JSON / HTML 200 response                           | Error         | P1       | No                        |
-| ANL-14 | "Try again" clears the error and refetches                   | Error         | P2       | No                        |
-| ANL-15 | Fast range switching: stale response does not win            | Error         | P2       | No                        |
-| ANL-16 | Error from an old range is not shown over new data           | Error         | P3       | No                        |
-| ANL-17 | Non-admin sees "Admins only", no requests, no polling        | Permissions   | P1       | No                        |
-| ANL-18 | Signed-out redirect to `/login`                              | Permissions   | P1       | No                        |
-| ANL-19 | Polling stops when leaving the page                          | Navigation    | P2       | No                        |
-| ANL-20 | Deep link, reload and Back keep a sane range                 | Navigation    | P3       | No                        |
-| ANL-21 | Render crash shows route error fallback; Back works          | Error         | P1       | No                        |
-| ANL-22 | Chart maths: scaling, ticks, bar widths, heatmap opacity     | Happy path    | P2       | No                        |
-| ANL-23 | Phone width (375 px)                                         | Responsive    | P3       | No                        |
-| ANL-24 | Arabic / RTL                                                 | RTL           | P3       | No                        |
-| ANL-25 | Light and dark theme for charts                              | Theme         | P3       | No                        |
-| ANL-26 | Accessibility: chart labels, table, alert, controls          | Accessibility | P2       | No                        |
+| ID     | Title                                                        | Category      | Priority | Covered by existing test?                                             |
+| ------ | ------------------------------------------------------------ | ------------- | -------- | --------------------------------------------------------------------- |
+| ANL-01 | Dashboard renders all cards from full data                   | Happy path    | P1       | Yes (`Analytics.test.tsx`)                                            |
+| ANL-02 | Range change refetches all four endpoints and export links   | Happy path    | P1       | Yes (`Analytics.test.tsx`)                                            |
+| ANL-03 | Live card polls every 15 s and keeps the last value on error | Happy path    | P2       | Yes (`Analytics.test.tsx`)                                            |
+| ANL-04 | Live: `sessions: []` shows "Nobody is watching right now."   | Empty state   | P2       | Yes (`Analytics.test.tsx`)                                            |
+| ANL-05 | Live: `sessions: null` or missing key                        | Empty state   | P1       | Yes (`Analytics.test.tsx`)                                            |
+| ANL-06 | Empty series and lists render placeholders                   | Empty state   | P2       | Yes (`Analytics.test.tsx`)                                            |
+| ANL-07 | Null / missing list fields in summary, top videos, users     | Empty state   | P1       | Yes (`Analytics.test.tsx`)                                            |
+| ANL-08 | Activity `heatmap` null, missing, empty or ragged            | Empty state   | P1       | Yes (`Analytics.test.tsx`)                                            |
+| ANL-09 | Activity `series` null / missing; one point; bad values      | Empty state   | P2       | Yes (`Analytics.test.tsx`)                                            |
+| ANL-10 | Summary numbers null or missing                              | Empty state   | P2       | Yes (`Analytics.test.tsx`)                                            |
+| ANL-11 | Loading placeholders before data arrives                     | Loading       | P3       | No                                                                    |
+| ANL-12 | One endpoint fails (500, 403, network)                       | Error         | P1       | Yes (`Analytics.test.tsx`)                                            |
+| ANL-13 | Malformed JSON / HTML 200 response                           | Error         | P1       | Yes (`Analytics.test.tsx`)                                            |
+| ANL-14 | "Try again" clears the error and refetches                   | Error         | P2       | Yes (`Analytics.test.tsx`)                                            |
+| ANL-15 | Fast range switching: stale response does not win            | Error         | P2       | Yes (`Analytics.test.tsx`)                                            |
+| ANL-16 | Error from an old range is not shown over new data           | Error         | P3       | No                                                                    |
+| ANL-17 | Non-admin sees "Admins only", no requests, no polling        | Permissions   | P1       | Yes (`Analytics.test.tsx`)                                            |
+| ANL-18 | Signed-out redirect to `/login`                              | Permissions   | P1       | Yes (`Analytics.test.tsx`)                                            |
+| ANL-19 | Polling stops when leaving the page                          | Navigation    | P2       | Yes (`Analytics.test.tsx`)                                            |
+| ANL-20 | Deep link, reload and Back keep a sane range                 | Navigation    | P3       | No                                                                    |
+| ANL-21 | Render crash shows route error fallback; Back works          | Error         | P1       | Yes (`Analytics.test.tsx`)                                            |
+| ANL-22 | Chart maths: scaling, ticks, bar widths, heatmap opacity     | Happy path    | P2       | Partial (`Analytics.test.tsx`; negative-width clamp is it.fails: bug) |
+| ANL-23 | Phone width (375 px)                                         | Responsive    | P3       | No                                                                    |
+| ANL-24 | Arabic / RTL                                                 | RTL           | P3       | No                                                                    |
+| ANL-25 | Light and dark theme for charts                              | Theme         | P3       | No                                                                    |
+| ANL-26 | Accessibility: chart labels, table, alert, controls          | Accessibility | P2       | Yes (`Analytics.test.tsx`)                                            |
 
 ## Cases
 
@@ -59,7 +59,7 @@ Shared fixtures:
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Analytics.test.tsx`)
 - **Preconditions / data:** all endpoints return the shared fixtures
 - **Steps:**
   1. Open `/admin/analytics`.
@@ -69,7 +69,7 @@ Shared fixtures:
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Analytics.test.tsx`)
 - **Preconditions / data:** fixtures; record requested URLs
 - **Steps:**
   1. Open the page; choose each range: Today, Last 30 days, ..., All time.
@@ -79,7 +79,7 @@ Shared fixtures:
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Analytics.test.tsx`)
 - **Preconditions / data:** fake timers; live → `LIVE`, then 500, then `{ "sessions": [] }`
 - **Steps:**
   1. Open the page; advance 15 s; advance 15 s again.
@@ -89,7 +89,7 @@ Shared fixtures:
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Analytics.test.tsx`)
 - **Preconditions / data:** live → `{ "sessions": [] }`
 - **Steps:**
   1. Open the page.
@@ -99,7 +99,7 @@ Shared fixtures:
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Analytics.test.tsx`)
 - **Preconditions / data:** live → a) `{ "sessions": null }`; b) `{}`; c) a session with `username: null`, `title: null`, `device_type` missing, `elapsed_sec: null`, `percent_complete: null`
 - **Steps:**
   1. Open the page for each.
@@ -109,7 +109,7 @@ Shared fixtures:
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Analytics.test.tsx`)
 - **Preconditions / data:** summary with `devices: [], platforms: [], libraries: [], genres: []`, zero totals; top `{ "videos": [] }`; users `{ "users": [] }`; activity `{ "bucket": "day", "series": [], "heatmap": [[0 x24] x7] }`
 - **Steps:**
   1. Open the page.
@@ -119,7 +119,7 @@ Shared fixtures:
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Analytics.test.tsx`)
 - **Preconditions / data:** run once with each field `null` and once with the key removed: `summary.devices`, `summary.genres`, `summary.libraries`, `summary.platforms`, `topVideos.videos`, `users.users`; also items with `title: null`, `username: null`, `label: null`
 - **Steps:**
   1. Open the page.
@@ -129,7 +129,7 @@ Shared fixtures:
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Analytics.test.tsx`)
 - **Preconditions / data:** activity → a) `{ "series": [], "heatmap": null }`; b) `{ "series": [] }`; c) `{ "series": [], "heatmap": [] }`; d) `heatmap` with 7 rows where row 3 is `null`; e) rows of 12 values instead of 24
 - **Steps:**
   1. Open the page for each.
@@ -139,7 +139,7 @@ Shared fixtures:
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Analytics.test.tsx`)
 - **Preconditions / data:** activity with valid heatmap and a) `series: null`; b) no `series` key; c) one point `[{ "bucket": "2026-10-19", "watch_sec": 300 }]`; d) points with `watch_sec: null` and `"bucket": null`; e) all zero values
 - **Steps:**
   1. Open the page for each.
@@ -149,7 +149,7 @@ Shared fixtures:
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Analytics.test.tsx`)
 - **Preconditions / data:** summary `{ "total_watch_sec": null, "total_sessions": null, "unique_viewers": null, "completion_rate": null }`; second run with those keys missing
 - **Steps:**
   1. Open the page.
@@ -169,7 +169,7 @@ Shared fixtures:
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Analytics.test.tsx`)
 - **Preconditions / data:** `GET .../top-videos` → a) 500 `{ "title": "Internal error", "detail": "db down" }`; b) 403 `{ "title": "Forbidden" }`; c) fetch rejects `TypeError("Failed to fetch")`; other three succeed
 - **Steps:**
   1. Open the page for each.
@@ -179,7 +179,7 @@ Shared fixtures:
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Analytics.test.tsx`)
 - **Preconditions / data:** a) `GET .../summary` → 200, `Content-Type: application/json`, body `{bad`; b) `GET .../activity` → 200, `Content-Type: text/html`, body `<!doctype html>...` (SPA fallback through a misrouted proxy)
 - **Steps:**
   1. Open the page for each.
@@ -189,7 +189,7 @@ Shared fixtures:
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Analytics.test.tsx`)
 - **Preconditions / data:** first summary call → 500; second → `SUMMARY`
 - **Steps:**
   1. Open the page; see the alert.
@@ -200,7 +200,7 @@ Shared fixtures:
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Analytics.test.tsx`)
 - **Preconditions / data:** `range=7d` responses delayed 500 ms with `total_sessions: 7`; `range=30d` responses immediate with `total_sessions: 30`
 - **Steps:**
   1. Open the page; immediately change the range to "Last 30 days"; wait 1 s.
@@ -220,7 +220,7 @@ Shared fixtures:
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Analytics.test.tsx`)
 - **Preconditions / data:** signed in as `{ username: "bob", is_admin: false }`; fake timers
 - **Steps:**
   1. Open `/admin/analytics`; advance 30 s.
@@ -230,7 +230,7 @@ Shared fixtures:
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Analytics.test.tsx`)
 - **Preconditions / data:** no session
 - **Steps:**
   1. Open `/admin/analytics` directly.
@@ -240,7 +240,7 @@ Shared fixtures:
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Analytics.test.tsx`)
 - **Preconditions / data:** fake timers; fixtures
 - **Steps:**
   1. Open the page; click another sidebar link (e.g. "Channels"); advance 60 s.
@@ -263,7 +263,7 @@ Shared fixtures:
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Analytics.test.tsx`)
 - **Preconditions / data:** start on `/admin/channels`; activity → `{ "series": [], "heatmap": null }` (throws in `Heatmap`, see ANL-08), or mock `Heatmap` to throw
 - **Steps:**
   1. Navigate to `/admin/analytics` from the sidebar.
@@ -274,7 +274,7 @@ Shared fixtures:
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Partial (`Analytics.test.tsx`; negative-width clamp is it.fails: bug)
 - **Preconditions / data:** render the charts directly: `LineChart` with 30 points (values 0..2900); `BarList` with values `[50, 100, 0]`; `Heatmap` with one cell 100 and one 50, rest 0; negative value `-5` in a bar list
 - **Steps:**
   1. Render each and read attributes.
@@ -314,7 +314,7 @@ Shared fixtures:
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Analytics.test.tsx`)
 - **Preconditions / data:** fixtures
 - **Steps:**
   1. Tab through: range select, Export CSV, Export JSON, Try again.

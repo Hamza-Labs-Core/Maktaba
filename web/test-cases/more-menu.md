@@ -8,25 +8,25 @@
 
 ## Summary
 
-| ID     | Title                                                      | Category      | Priority | Covered by existing test?                              |
-| ------ | ---------------------------------------------------------- | ------------- | -------- | ------------------------------------------------------ |
-| MOR-01 | Normal user sees Settings, Transcription and account links | Happy path    | P1       | Partial (`AppShell.test.tsx`: Transcription link only) |
-| MOR-02 | Normal user sees no Administration group                   | Permissions   | P1       | No                                                     |
-| MOR-03 | Admin sees the Administration group with every admin link  | Permissions   | P1       | No                                                     |
-| MOR-04 | User object without `is_admin` shows no admin group        | Empty state   | P2       | No                                                     |
-| MOR-05 | "More" tab opens /more and is marked active                | Navigation    | P2       | Partial (`AppShell.test.tsx`: tab href only)           |
-| MOR-06 | Each link opens its page; Back returns to /more            | Navigation    | P2       | No                                                     |
-| MOR-07 | Sign out goes to /login and Back does not return           | Happy path    | P1       | No                                                     |
-| MOR-08 | Sign out still leaves when the server call fails           | Error         | P2       | No                                                     |
-| MOR-09 | Double-clicking Sign out sends one request                 | Validation    | P3       | No                                                     |
-| MOR-10 | Signed-out deep link to /more, then back after sign-in     | Permissions   | P1       | No                                                     |
-| MOR-11 | Auth still loading on /more                                | Loading       | P3       | No                                                     |
-| MOR-12 | Crash during render shows a fallback; Back recovers        | Error         | P1       | No                                                     |
-| MOR-13 | Phone width 375px                                          | Responsive    | P2       | No                                                     |
-| MOR-14 | Wide screen /more still works                              | Responsive    | P3       | No                                                     |
-| MOR-15 | Arabic / RTL                                               | RTL           | P2       | No                                                     |
-| MOR-16 | Light and dark theme                                       | Theme         | P3       | No                                                     |
-| MOR-17 | Headings, list semantics and keyboard                      | Accessibility | P2       | No                                                     |
+| ID     | Title                                                      | Category      | Priority | Covered by existing test?       |
+| ------ | ---------------------------------------------------------- | ------------- | -------- | ------------------------------- |
+| MOR-01 | Normal user sees Settings, Transcription and account links | Happy path    | P1       | Yes (`AppShell.cases.test.tsx`) |
+| MOR-02 | Normal user sees no Administration group                   | Permissions   | P1       | Yes (`AppShell.cases.test.tsx`) |
+| MOR-03 | Admin sees the Administration group with every admin link  | Permissions   | P1       | Yes (`AppShell.cases.test.tsx`) |
+| MOR-04 | User object without `is_admin` shows no admin group        | Empty state   | P2       | Yes (`AppShell.cases.test.tsx`) |
+| MOR-05 | "More" tab opens /more and is marked active                | Navigation    | P2       | Yes (`AppShell.cases.test.tsx`) |
+| MOR-06 | Each link opens its page; Back returns to /more            | Navigation    | P2       | Yes (`AppShell.cases.test.tsx`) |
+| MOR-07 | Sign out goes to /login and Back does not return           | Happy path    | P1       | Yes (`AppShell.cases.test.tsx`) |
+| MOR-08 | Sign out still leaves when the server call fails           | Error         | P2       | Yes (`AppShell.cases.test.tsx`) |
+| MOR-09 | Double-clicking Sign out sends one request                 | Validation    | P3       | No                              |
+| MOR-10 | Signed-out deep link to /more, then back after sign-in     | Permissions   | P1       | Yes (`AppShell.cases.test.tsx`) |
+| MOR-11 | Auth still loading on /more                                | Loading       | P3       | No                              |
+| MOR-12 | Crash during render shows a fallback; Back recovers        | Error         | P1       | Yes (`AppShell.cases.test.tsx`) |
+| MOR-13 | Phone width 375px                                          | Responsive    | P2       | No (e2e-only)                   |
+| MOR-14 | Wide screen /more still works                              | Responsive    | P3       | No                              |
+| MOR-15 | Arabic / RTL                                               | RTL           | P2       | Yes (`AppShell.cases.test.tsx`) |
+| MOR-16 | Light and dark theme                                       | Theme         | P3       | No                              |
+| MOR-17 | Headings, list semantics and keyboard                      | Accessibility | P2       | Yes (`AppShell.cases.test.tsx`) |
 
 ## Cases
 
@@ -34,7 +34,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `AppShell.test.tsx` "puts Transcription on the More page" checks one link.
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** `/api/auth/me` → `{ "user": { "id": "u2", "username": "viewer", "is_admin": false } }`.
 - **Steps:**
   1. Open `/more`.
@@ -44,7 +44,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** as MOR-01.
 - **Steps:**
   1. Open `/more`.
@@ -54,7 +54,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** `/me` → `{ "user": { "id": "u1", "username": "root", "is_admin": true } }`.
 - **Steps:**
   1. Open `/more`.
@@ -64,7 +64,7 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** `/me` → `{ "user": { "id": "u3", "username": "x" } }` (no `is_admin`); then `"is_admin": null`. (MoreMenu reads no list fields from an API; the only fetched shape is the user.)
 - **Steps:**
   1. Open `/more`.
@@ -74,7 +74,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** Partial — `AppShell.test.tsx` checks the last tab `href="/more"`.
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** full shell at `/library`.
 - **Steps:**
   1. Click the "More" tab in the tab bar (second `navigation` named "Primary").
@@ -84,7 +84,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** signed in as admin; target pages' APIs mocked to empty.
 - **Steps:**
   1. From `/more`, click "Settings"; press Back. 2. Click "Users"; press Back. 3. Click "Sessions"; press Back.
@@ -94,7 +94,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** signed in; `POST /api/auth/logout` → `204`; `purgeApiCacheOnLogout` mocked.
 - **Steps:**
   1. Click "Sign out". 2. Press browser Back.
@@ -104,7 +104,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** logout → `500`; then `fetch` rejects.
 - **Steps:**
   1. Click "Sign out".
@@ -124,7 +124,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** `/me` → 401; login → user.
 - **Steps:**
   1. Open `/more`. 2. Sign in.
@@ -144,7 +144,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** `/me` → `{ "user": { "id": "u1", "username": "root", "is_admin": true } }`; mock `../lib/i18n` so `t("nav.admin")` throws (only MoreMenu and the sidebar admin group call it — or wrap `MoreMenu` route element in a test component that throws).
 - **Steps:**
   1. Open `/library`, click the "More" tab.
@@ -155,7 +155,7 @@
 
 - **Priority:** P2
 - **Category:** Responsive
-- **Covered by existing test?** No
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** e2e viewport 375x812, admin (longest list).
 - **Steps:**
   1. Open `/more`; scroll to the bottom.
@@ -175,7 +175,7 @@
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`, admin.
 - **Steps:**
   1. Open `/more`.
@@ -195,7 +195,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`AppShell.cases.test.tsx`)
 - **Preconditions / data:** admin.
 - **Steps:**
   1. Tab through the page.

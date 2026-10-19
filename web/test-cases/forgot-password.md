@@ -8,24 +8,24 @@
 
 ## Summary
 
-| ID     | Title                                                | Category      | Priority | Covered by existing test? |
-| ------ | ---------------------------------------------------- | ------------- | -------- | ------------------------- |
-| FPW-01 | Sending the link shows the neutral confirmation      | Happy path    | P1       | No                        |
-| FPW-02 | Same confirmation for a known and an unknown address | Permissions   | P1       | No                        |
-| FPW-03 | Submit disabled while email is empty or spaces       | Validation    | P2       | No                        |
-| FPW-04 | Invalid email format is not sent                     | Validation    | P3       | No                        |
-| FPW-05 | Server error still shows the neutral confirmation    | Error         | P2       | No                        |
-| FPW-06 | Network failure still shows the neutral confirmation | Error         | P2       | No                        |
-| FPW-07 | Submitting state: one request, Loading label         | Loading       | P2       | No                        |
-| FPW-08 | "Back to sign in" link before and after sending      | Navigation    | P2       | No                        |
-| FPW-09 | Deep link and Back/Forward                           | Navigation    | P3       | No                        |
-| FPW-10 | Signed-in user can still open the page               | Permissions   | P3       | No                        |
-| FPW-11 | Confirmation is announced to screen readers          | Accessibility | P2       | No                        |
-| FPW-12 | Crash during render shows a fallback; Back recovers  | Error         | P1       | No                        |
-| FPW-13 | Arabic / RTL                                         | RTL           | P2       | No                        |
-| FPW-14 | Light and dark theme                                 | Theme         | P3       | No                        |
-| FPW-15 | Phone width 375px                                    | Responsive    | P3       | No                        |
-| FPW-16 | Keyboard and labels                                  | Accessibility | P2       | No                        |
+| ID     | Title                                                | Category      | Priority | Covered by existing test?       |
+| ------ | ---------------------------------------------------- | ------------- | -------- | ------------------------------- |
+| FPW-01 | Sending the link shows the neutral confirmation      | Happy path    | P1       | Yes (`ForgotPassword.test.tsx`) |
+| FPW-02 | Same confirmation for a known and an unknown address | Permissions   | P1       | Yes (`ForgotPassword.test.tsx`) |
+| FPW-03 | Submit disabled while email is empty or spaces       | Validation    | P2       | Yes (`ForgotPassword.test.tsx`) |
+| FPW-04 | Invalid email format is not sent                     | Validation    | P3       | No                              |
+| FPW-05 | Server error still shows the neutral confirmation    | Error         | P2       | Yes (`ForgotPassword.test.tsx`) |
+| FPW-06 | Network failure still shows the neutral confirmation | Error         | P2       | Yes (`ForgotPassword.test.tsx`) |
+| FPW-07 | Submitting state: one request, Loading label         | Loading       | P2       | Yes (`ForgotPassword.test.tsx`) |
+| FPW-08 | "Back to sign in" link before and after sending      | Navigation    | P2       | Yes (`ForgotPassword.test.tsx`) |
+| FPW-09 | Deep link and Back/Forward                           | Navigation    | P3       | No                              |
+| FPW-10 | Signed-in user can still open the page               | Permissions   | P3       | No                              |
+| FPW-11 | Confirmation is announced to screen readers          | Accessibility | P2       | Yes (`ForgotPassword.test.tsx`) |
+| FPW-12 | Crash during render shows a fallback; Back recovers  | Error         | P1       | Yes (`App.cases.test.tsx`)      |
+| FPW-13 | Arabic / RTL                                         | RTL           | P2       | Yes (`ForgotPassword.test.tsx`) |
+| FPW-14 | Light and dark theme                                 | Theme         | P3       | No                              |
+| FPW-15 | Phone width 375px                                    | Responsive    | P3       | No                              |
+| FPW-16 | Keyboard and labels                                  | Accessibility | P2       | Yes (`ForgotPassword.test.tsx`) |
 
 ## Cases
 
@@ -33,7 +33,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ForgotPassword.test.tsx`)
 - **Preconditions / data:** `POST /api/auth/forgot-password` → `200 { "ok": true }`.
 - **Steps:**
   1. Open `/forgot-password`. Heading "Reset your password", hint "Enter your email and we'll send a reset link if an account exists.".
@@ -44,7 +44,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ForgotPassword.test.tsx`)
 - **Preconditions / data:** two runs: response `200 { "ok": true }` for `known@example.com`, and `200 { "ok": true }` (or `404`) for `nobody@example.com`.
 - **Steps:**
   1. Submit each in a fresh render.
@@ -54,7 +54,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ForgotPassword.test.tsx`)
 - **Preconditions / data:** none.
 - **Steps:**
   1. Check the button empty. 2. Type `"   "`. 3. Type a real address.
@@ -74,7 +74,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ForgotPassword.test.tsx`)
 - **Preconditions / data:** POST → `500` problem+json; repeat with `429` and `403` (missing CSRF).
 - **Steps:**
   1. Submit.
@@ -84,7 +84,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ForgotPassword.test.tsx`)
 - **Preconditions / data:** `fetch` rejects.
 - **Steps:**
   1. Submit.
@@ -94,7 +94,7 @@
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ForgotPassword.test.tsx`)
 - **Preconditions / data:** POST held pending.
 - **Steps:**
   1. Submit; click again.
@@ -104,7 +104,7 @@
 
 - **Priority:** P2
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ForgotPassword.test.tsx`)
 - **Preconditions / data:** none.
 - **Steps:**
   1. Click "Back to sign in" on the form. 2. Return, send, click "Back to sign in" again.
@@ -134,7 +134,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ForgotPassword.test.tsx`)
 - **Preconditions / data:** as FPW-01.
 - **Steps:**
   1. Submit; check the confirmation element and focus.
@@ -144,7 +144,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`App.cases.test.tsx`)
 - **Preconditions / data:** mock `../../lib/i18n` so `t("forgot.title")` throws. Page is outside `AppShell`.
 - **Steps:**
   1. From `/login`, click "Forgot password?".
@@ -155,7 +155,7 @@
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ForgotPassword.test.tsx`)
 - **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`.
 - **Steps:**
   1. Open the page; send.
@@ -185,7 +185,7 @@
 
 - **Priority:** P2
 - **Category:** Accessibility
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`ForgotPassword.test.tsx`)
 - **Preconditions / data:** none.
 - **Steps:**
   1. Tab through; submit with Enter.

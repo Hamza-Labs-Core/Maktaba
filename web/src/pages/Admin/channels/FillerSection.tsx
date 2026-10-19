@@ -47,6 +47,12 @@ export function shares(lists: FillerList[]): number[] {
   return lists.map((l) => (total > 0 ? Math.round((Math.max(0, l.weight) / total) * 100) : 0));
 }
 
+/** The slot's longest filler gap in minutes, and whether it is out of range (0–240). */
+export function maxGapOf(config: Record<string, unknown>): { minutes: number; bad: boolean } {
+  const minutes = Number(config.slot_max_filler_minutes ?? 20);
+  return { minutes, bad: !Number.isFinite(minutes) || minutes < 0 || minutes > 240 };
+}
+
 export function poolFor(pools: FillerPool[], ref: string): FillerPool | undefined {
   return pools.find((p) => p.id === ref || (p.external_key && p.external_key === ref));
 }
@@ -73,7 +79,7 @@ export function FillerSection({
         (p) =>
           !spec.lists.some((l) => poolFor([p], l.pool)) &&
           (!query ||
-            p.name.toLowerCase().includes(query) ||
+            (p.name ?? "").toLowerCase().includes(query) ||
             (p.external_key ?? "").toLowerCase().includes(query))
       ),
     [pools, spec.lists, query]
@@ -87,11 +93,8 @@ export function FillerSection({
   }
 
   const repeatMin = Math.round((spec.repeat_cooldown_ms ?? 1_800_000) / 60_000);
-  const maxGap = Number(config.slot_max_filler_minutes ?? 20);
-  const maxGapError =
-    !Number.isFinite(maxGap) || maxGap < 0 || maxGap > 240
-      ? t("channels.filler.err.gap")
-      : undefined;
+  const { minutes: maxGap, bad: gapBad } = maxGapOf(config);
+  const maxGapError = gapBad ? t("channels.filler.err.gap") : undefined;
 
   return (
     <div className="mkt-cb-filler">

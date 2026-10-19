@@ -16,29 +16,29 @@
 
 | ID     | Title                                                        | Category      | Priority | Covered by existing test?                           |
 | ------ | ------------------------------------------------------------ | ------------- | -------- | --------------------------------------------------- |
-| SRC-01 | Submit runs search and renders passage hits with time links  | Happy path    | P1       | Partial (`Search.test.tsx`: no link / time check)   |
-| SRC-02 | Title matches and passages show under their headings         | Happy path    | P1       | Partial (`Search.test.tsx`: videos only)            |
-| SRC-03 | Deep link `/search?q=...` runs the search on load            | Navigation    | P1       | No                                                  |
-| SRC-04 | Header search while already on `/search` runs the new query  | Navigation    | P1       | No                                                  |
-| SRC-05 | Back/Forward restores the query and its results              | Navigation    | P1       | No                                                  |
-| SRC-06 | `hits` / `videos` null or missing render the empty state     | Empty state   | P1       | No                                                  |
-| SRC-07 | YouTube `items: null`, missing `match`, null `snippet`       | Empty state   | P1       | No                                                  |
-| SRC-08 | Saved `items: null` and suggest `suggestions: null`          | Empty state   | P1       | No                                                  |
-| SRC-09 | Render crash shows route error fallback; Back still works    | Error         | P1       | No                                                  |
-| SRC-10 | Signed-out user is sent to `/login` and keeps the query      | Permissions   | P1       | No                                                  |
-| SRC-11 | Results only from accessible libraries                       | Permissions   | P1       | No                                                  |
-| SRC-12 | Snippet markup is escaped; only `<mark>` is highlighted      | Validation    | P1       | Partial (`Search.test.tsx`: mark text only)         |
+| SRC-01 | Submit runs search and renders passage hits with time links  | Happy path    | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-02 | Title matches and passages show under their headings         | Happy path    | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-03 | Deep link `/search?q=...` runs the search on load            | Navigation    | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-04 | Header search while already on `/search` runs the new query  | Navigation    | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-05 | Back/Forward restores the query and its results              | Navigation    | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-06 | `hits` / `videos` null or missing render the empty state     | Empty state   | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-07 | YouTube `items: null`, missing `match`, null `snippet`       | Empty state   | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-08 | Saved `items: null` and suggest `suggestions: null`          | Empty state   | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-09 | Render crash shows route error fallback; Back still works    | Error         | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-10 | Signed-out user is sent to `/login` and keeps the query      | Permissions   | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-11 | Results only from accessible libraries                       | Permissions   | P1       | No (e2e-only)                                       |
+| SRC-12 | Snippet markup is escaped; only `<mark>` is highlighted      | Validation    | P1       | Yes (`Search.test.tsx`)                             |
 | SRC-13 | No results shows "No results..." empty state                 | Empty state   | P2       | Yes (`Search.test.tsx`)                             |
-| SRC-14 | Blank / whitespace query does nothing; clearing removes `?q` | Validation    | P2       | No                                                  |
-| SRC-15 | Pending state: button loading, no duplicate submits          | Loading       | P2       | No                                                  |
-| SRC-16 | Search 500 / 400 / network / malformed JSON                  | Error         | P2       | No                                                  |
-| SRC-17 | Error clears on the next successful search                   | Error         | P2       | No                                                  |
-| SRC-18 | Mode select persists and is sent; change of mode             | Happy path    | P2       | No                                                  |
-| SRC-19 | Suggestions debounce, encode, and drop stale answers         | Happy path    | P2       | No                                                  |
-| SRC-20 | Save, run and delete saved searches                          | Happy path    | P2       | No                                                  |
-| SRC-21 | YouTube block: results, in-library link, reason text         | Happy path    | P2       | No                                                  |
-| SRC-22 | YouTube import prompt: cancel, success, error                | Happy path    | P2       | No                                                  |
-| SRC-23 | Arabic query text, Arabic results and Arabic UI              | RTL           | P2       | Partial (`Search.test.tsx`: Arabic title link only) |
+| SRC-14 | Blank / whitespace query does nothing; clearing removes `?q` | Validation    | P2       | Yes (`Search.test.tsx`)                             |
+| SRC-15 | Pending state: button loading, no duplicate submits          | Loading       | P2       | Yes (`Search.test.tsx`)                             |
+| SRC-16 | Search 500 / 400 / network / malformed JSON                  | Error         | P2       | Yes (`Search.test.tsx`)                             |
+| SRC-17 | Error clears on the next successful search                   | Error         | P2       | Yes (`Search.test.tsx`)                             |
+| SRC-18 | Mode select persists and is sent; change of mode             | Happy path    | P2       | Yes (`Search.test.tsx`)                             |
+| SRC-19 | Suggestions debounce, encode, and drop stale answers         | Happy path    | P2       | Yes (`Search.test.tsx`)                             |
+| SRC-20 | Save, run and delete saved searches                          | Happy path    | P2       | Yes (`Search.test.tsx`; it.todo: save confirmation) |
+| SRC-21 | YouTube block: results, in-library link, reason text         | Happy path    | P2       | Yes (`Search.test.tsx`)                             |
+| SRC-22 | YouTube import prompt: cancel, success, error                | Happy path    | P2       | Yes (`Search.test.tsx`)                             |
+| SRC-23 | Arabic query text, Arabic results and Arabic UI              | RTL           | P2       | Yes (`Search.test.tsx`)                             |
 | SRC-24 | Many hits: window cap and `total`                            | Happy path    | P3       | No                                                  |
 | SRC-25 | Keyboard and a11y: labels, saved delete name, status updates | Accessibility | P3       | No                                                  |
 | SRC-26 | Phone width: form wraps, saved list reachable                | Responsive    | P3       | No                                                  |
@@ -50,7 +50,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `Search.test.tsx` "POSTs /api/search with { q, mode, limit } and renders server hits" checks the body and snippet text, not links or times.
+- **Covered by existing test?** Yes (`Search.test.tsx`)
 - **Preconditions / data:** `GET /api/search/saved` → `{ "items": [] }`; `POST /api/search` → `{ "hits": [ { "segment_id": 42, "video_id": "vid-1", "start_sec": 72.5, "end_sec": 78.0, "snippet": "the <mark>quick</mark> brown fox", "score": 0.9 } ], "total": 1 }`.
 - **Steps:**
   1. Open `/search`; type "quick" in the box named "Search" (role `combobox` because of `list=`); click button "Search".
@@ -60,7 +60,7 @@
 
 - **Priority:** P1
 - **Category:** Happy path
-- **Covered by existing test?** Partial — `Search.test.tsx` "lists title matches..." covers videos with no hits.
+- **Covered by existing test?** Yes (`Search.test.tsx`)
 - **Preconditions / data:** search → `{ "hits": [ <one hit> ], "videos": [ { "video_id": "v9", "title": "Quick start", "duration_sec": 3725 }, { "video_id": "v8", "title": "No length" } ], "total": 1 }`.
 - **Steps:**
   1. Search "quick".
@@ -70,7 +70,7 @@
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Search.test.tsx`)
 - **Preconditions / data:** `localStorage["mkt:search:mode"] = "fts"`; search → one hit.
 - **Steps:**
   1. Open `/search?q=%D8%A7%D9%84%D8%B3%D9%8A%D8%B1%D8%A9` (السيرة) directly.
@@ -80,7 +80,7 @@
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Search.test.tsx`)
 - **Preconditions / data:** full app inside `AppShell`; start at `/search?q=alpha` (results for alpha); search for "beta" returns different hits.
 - **Steps:**
   1. Type "beta" in the header search box (form `role="search"` in the shell) and press Enter.
@@ -90,7 +90,7 @@
 
 - **Priority:** P1
 - **Category:** Navigation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Search.test.tsx`)
 - **Preconditions / data:** full routes; search for "one" and "two" return different hits; history: `/library` → `/search?q=one` (via header search) → `/search?q=two` (via header search).
 - **Steps:**
   1. Press browser Back.
@@ -102,7 +102,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Search.test.tsx`)
 - **Preconditions / data:** search → (a) `{ "hits": null, "videos": null, "total": 0 }`, (b) `{ "total": 0 }`, (c) `{}`. List fields: `hits`, `videos`.
 - **Steps:**
   1. Search "x".
@@ -112,7 +112,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Search.test.tsx`)
 - **Preconditions / data:** tick "Also search YouTube". Search → each of:
   - (a) `{ "hits": [], "youtube": { "items": null } }`
   - (b) `{ "hits": [], "youtube": { "reason": "disabled" } }` (no `items`)
@@ -127,7 +127,7 @@
 
 - **Priority:** P1
 - **Category:** Empty state
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Search.test.tsx`)
 - **Preconditions / data:** `GET /api/search/saved` → (a) `{ "items": null }`, (b) `{}`, (c) 500; `GET /api/search/suggest` → (a) `{ "suggestions": null }`, (b) `{}`, (c) 500. List fields: `items`, `suggestions`.
 - **Steps:**
   1. Open `/search`; type "qu" and wait 250 ms.
@@ -137,7 +137,7 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Search.test.tsx`)
 - **Preconditions / data:** full routes inside `AppShell`; start on `/library`; search → SRC-07 (a) response (crashes today), with "Also search YouTube" ticked — or mock `@ds/components/Badge/Badge` to throw.
 - **Steps:**
   1. Go to `/search` via the nav link; tick YouTube; search "x".
@@ -149,7 +149,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Search.test.tsx`)
 - **Preconditions / data:** full `App`; `GET /api/auth/me` → 401.
 - **Steps:**
   1. Open `/search?q=fox`; sign in.
@@ -159,7 +159,7 @@
 
 - **Priority:** P1
 - **Category:** Permissions
-- **Covered by existing test?** No
+- **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** e2e against the real API: non-admin with ACL on library A only; a word that appears in transcripts and titles in A and B.
 - **Steps:**
   1. Sign in; search the word.
@@ -169,7 +169,7 @@
 
 - **Priority:** P1
 - **Category:** Validation
-- **Covered by existing test?** Partial — `Search.test.tsx` renders a `<mark>` snippet, no injection check.
+- **Covered by existing test?** Yes (`Search.test.tsx`)
 - **Preconditions / data:** hit `snippet`: `"<img src=x onerror=alert(1)> <mark>fox</mark> <b>bold</b> <mark>unclosed"`.
 - **Steps:**
   1. Search "fox".
@@ -189,7 +189,7 @@
 
 - **Priority:** P2
 - **Category:** Validation
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Search.test.tsx`)
 - **Preconditions / data:** start at `/search?q=fox` with results.
 - **Steps:**
   1. Clear the box; type three spaces; submit.
@@ -200,7 +200,7 @@
 
 - **Priority:** P2
 - **Category:** Loading
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Search.test.tsx`)
 - **Preconditions / data:** search resolves after 300 ms.
 - **Steps:**
   1. Search "fox"; press Enter again twice while pending.
@@ -210,7 +210,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Search.test.tsx`)
 - **Preconditions / data:** (a) 500 problem+json `{ "title": "search backend down", "status": 500 }`; (b) 400 `{ "title": "query too long", "status": 400 }`; (c) fetch rejects; (d) 200 JSON body `{bad`.
 - **Steps:**
   1. Search "fox".
@@ -220,7 +220,7 @@
 
 - **Priority:** P2
 - **Category:** Error
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Search.test.tsx`)
 - **Preconditions / data:** first search → 500; second → one hit.
 - **Steps:**
   1. Search "a"; then search "b".
@@ -230,7 +230,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Search.test.tsx`)
 - **Preconditions / data:** `localStorage` empty; then `localStorage["mkt:search:mode"] = "bogus"`; then `localStorage` throwing.
 - **Steps:**
   1. Open `/search`; select "Semantic" in the select named "Mode"; search "x".
@@ -242,7 +242,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Search.test.tsx`)
 - **Preconditions / data:** fake timers; suggest for "qu" resolves after 500 ms with `["quiet"]`, for "qui" after 10 ms with `["quick", "quiz"]`; Arabic input "سي ر".
 - **Steps:**
   1. Type "q", "u" quickly; wait 199 ms; wait 1 more ms.
@@ -255,7 +255,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Search.test.tsx`; it.todo: save confirmation)
 - **Preconditions / data:** saved → `{ "items": [ { "id": "s1", "q": "fox", "mode": "fts" } ] }`, then after save → two items; `POST /api/search/save` → 201; `DELETE /api/search/saved/s1` → 204; also save → 500.
 - **Steps:**
   1. Open `/search`; type " dog "; click "Save".
@@ -268,7 +268,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Search.test.tsx`)
 - **Preconditions / data:** tick "Also search YouTube"; search → `{ "hits": [], "youtube": { "items": [ { "youtube_id": "abc&x", "title": "عنوان", "channel": "Chan", "description_snippet": "", "thumbnail": "https://i.ytimg.com/vi/abc/hq.jpg", "view_count": 12345, "match": { "state": "in_library", "video_id": "v5" } }, { "youtube_id": "def", "title": "Other", "channel": "C2", "thumbnail": "", "match": { "state": "none" } } ] } }`. Also `{ "youtube": { "items": [], "reason": "error" } }` and an unknown reason "quota".
 - **Steps:**
   1. Search "x".
@@ -278,7 +278,7 @@
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** No
+- **Covered by existing test?** Yes (`Search.test.tsx`)
 - **Preconditions / data:** SRC-21 data; stub `window.prompt`; `POST /api/videos/v7/import-youtube` → 204, then 404 `{ "title": "video not found" }`. Render within `ToastProvider`.
 - **Steps:**
   1. Click "Import metadata to…"; prompt returns `null`.
@@ -290,7 +290,7 @@
 
 - **Priority:** P2
 - **Category:** RTL
-- **Covered by existing test?** Partial — `Search.test.tsx` "lists title matches..." covers an Arabic title link.
+- **Covered by existing test?** Yes (`Search.test.tsx`)
 - **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`; search for "السيرة النبوية" → hit snippet `"من <mark>السيرة</mark> النبوية"` and video title "السيرة النبوية ( 18 )".
 - **Steps:**
   1. Type the Arabic query and submit; then reload the URL.

@@ -103,7 +103,8 @@ export function NotificationsBell() {
       setUnread((u) => Math.max(0, u - 1));
       try {
         const r = await notificationsApi.read(x.id);
-        setUnread(r.unread);
+        // an answer without a count keeps ours (never a NaN badge)
+        if (typeof r?.unread === "number") setUnread(r.unread);
       } catch {
         /* the next read corrects it */
       }
@@ -116,7 +117,7 @@ export function NotificationsBell() {
     setUnread(0);
     try {
       const r = await notificationsApi.readAll();
-      setUnread(r.unread);
+      if (typeof r?.unread === "number") setUnread(r.unread);
     } catch {
       /* the next read corrects it */
     }

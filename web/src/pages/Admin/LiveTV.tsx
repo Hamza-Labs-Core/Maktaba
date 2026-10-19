@@ -319,7 +319,9 @@ function PlexPanel({ info, device }: { info: TvInfo; device: HdhrDevice }) {
     rulesApi
       .list()
       .then((r) => {
-        const sec = r.sections.find((s) => s.key === "plexlive") ?? null;
+        const found = (r?.sections ?? []).find((s) => s.key === "plexlive");
+        // a section without fields cannot be edited: leave the block out
+        const sec = found && Array.isArray(found.fields) ? found : null;
         setRules(sec);
         const m = sec?.fields.find((f) => f.name === "guide_refresh_min_minutes");
         if (m) setMinutes(String(m.value));
@@ -383,7 +385,8 @@ function PlexPanel({ info, device }: { info: TvInfo; device: HdhrDevice }) {
   }
 
   const report = st?.status ?? {};
-  const plexReady = !!st?.plex.enabled && !!st?.plex.configured;
+  // no plex block (an older or partial API) reads as not set up
+  const plexReady = !!st?.plex?.enabled && !!st?.plex?.configured;
   const registered = !!report.maktaba?.registered;
   const dvrs = report.dvrs ?? [];
   const ch = report.channels;
@@ -416,7 +419,7 @@ function PlexPanel({ info, device }: { info: TvInfo; device: HdhrDevice }) {
         <dl className="mkt-livetv__plex-facts">
           <dt>{t("livetv.plex.server")}</dt>
           <dd>
-            {st.plex.url || "—"}
+            {st.plex?.url || "—"}
             {" · "}
             {!st.checked_at
               ? t("livetv.plex.notChecked")
@@ -442,7 +445,7 @@ function PlexPanel({ info, device }: { info: TvInfo; device: HdhrDevice }) {
                   <li key={d.key}>
                     {d.title || t("livetv.plex.dvrUntitled", { key: d.key })}
                     {": "}
-                    {d.devices.map((x) => kindLabel(x.kind)).join(", ") || "—"}
+                    {(d.devices ?? []).map((x) => kindLabel(x.kind)).join(", ") || "—"}
                   </li>
                 ))}
               </ul>

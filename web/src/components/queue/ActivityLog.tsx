@@ -33,12 +33,12 @@ export function ActivityLog({ stages, live, fixedStage, libraryId, initial }: Ac
   const { t } = useI18n();
   const [stage, setStage] = useState<string>(fixedStage ?? "");
   const [problems, setProblems] = useState(false);
-  const [items, setItems] = useState<LogLine[] | null>(initial ?? null);
+  const [items, setItems] = useState<LogLine[] | null>(Array.isArray(initial) ? initial : null);
   const [next, setNext] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
-  const skipInitial = useRef(initial !== undefined);
+  const skipInitial = useRef(Array.isArray(initial));
 
   const effectiveStage = fixedStage ?? stage;
 
@@ -59,8 +59,8 @@ export function ActivityLog({ stages, live, fixedStage, libraryId, initial }: Ac
       })
       .then((r) => {
         if (!alive) return;
-        setItems(r.items);
-        setNext(r.next);
+        setItems(r?.items ?? []);
+        setNext(r?.next ?? null);
         setFailed(false);
       })
       .catch(() => {
@@ -96,8 +96,8 @@ export function ActivityLog({ stages, live, fixedStage, libraryId, initial }: Ac
         cursor: next,
         limit: 100,
       });
-      setItems((prev) => [...(prev ?? []), ...r.items]);
-      setNext(r.next);
+      setItems((prev) => [...(prev ?? []), ...(r?.items ?? [])]);
+      setNext(r?.next ?? null);
     } catch {
       setFailed(true);
     } finally {

@@ -18,13 +18,13 @@ import { useI18n } from "../../lib/i18n";
 import { api } from "../../lib/api";
 
 interface ServiceSnapshot {
-  status: string;
-  checks?: Record<string, { status: string; reason?: string }>;
-  reason?: string;
+  status?: string | null;
+  checks?: Record<string, { status: string; reason?: string } | null> | null;
+  reason?: string | null;
 }
 interface Health {
   status: string;
-  services: Record<string, ServiceSnapshot>;
+  services?: Record<string, ServiceSnapshot | null> | null;
 }
 interface Version {
   version: string;
@@ -33,10 +33,9 @@ interface Version {
 
 const REFRESH_MS = 30_000;
 
-function findCloudService(
-  services: Record<string, ServiceSnapshot>
-): [string, ServiceSnapshot] | null {
-  for (const [name, svc] of Object.entries(services)) {
+function findCloudService(services: Health["services"]): [string, ServiceSnapshot | null] | null {
+  // `services` can be null / missing (same bug class as Live TV hosts: null).
+  for (const [name, svc] of Object.entries(services ?? {})) {
     if (/cloud|relay|tunnel/i.test(name)) return [name, svc];
   }
   return null;
@@ -52,6 +51,8 @@ export function ServerStatus() {
     api
       .get<Health>("/api/system/health")
       .then((h) => {
+        // 200 with `null` or an HTML page (string) is not a health report.
+        if (!h || typeof h !== "object") throw new Error("not a health report");
         setHealth(h);
         setHealthErr(false);
       })
@@ -113,13 +114,13 @@ function ConnectedView({
   version,
 }: {
   name: string;
-  svc: ServiceSnapshot;
+  svc: ServiceSnapshot | null;
   version: Version | null;
 }) {
   const { t } = useI18n();
-  const s = svc.status.toLowerCase();
+  const s = typeof svc?.status === "string" ? svc.status.toLowerCase() : "";
   const up = s === "ok" || s === "up" || s === "healthy" || s === "ready";
-  const heartbeat = svc.checks?.heartbeat?.reason ?? svc.reason ?? null;
+  const heartbeat = svc?.checks?.heartbeat?.reason ?? svc?.reason ?? null;
 
   return (
     <div className="mkt-stage-cards">

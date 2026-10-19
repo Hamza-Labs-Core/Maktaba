@@ -3,7 +3,7 @@
 // content outlet. Lives inside <RequireAuth> so it never renders
 // without a user. Stories 11.7 (responsive), 11.9 (search focus ref),
 // 11.10 (update toast), 11.11 (skip-link + landmarks).
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Component, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Outlet, NavLink, useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { useToast } from "@ds/components/Toast/Toast";
@@ -64,6 +64,24 @@ const ADMIN = [
   { to: "/admin/devices", key: "nav.admin.devices", icon: "▤" },
   { to: "/admin/extensions", key: "nav.admin.extensions", icon: "⧉" },
 ] as const;
+
+// A header part that throws while rendering drops out on its own instead of
+// taking the whole app down (the route boundary only wraps the page).
+class QuietBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error("[shell] header part failed", error);
+  }
+
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
 
 // A new page opens at its top; Back / Forward (POP) leave the browser's own
 // restoration alone, so returning to a long list keeps its place.
@@ -145,7 +163,11 @@ export function AppShell() {
           />
         </form>
         <div className="mkt-shell__actions">
-          {user && <NotificationsBell />}
+          {user && (
+            <QuietBoundary>
+              <NotificationsBell />
+            </QuietBoundary>
+          )}
           <ThemeToggle />
           <LangToggle />
           {user && (

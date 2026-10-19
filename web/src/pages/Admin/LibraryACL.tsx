@@ -69,11 +69,14 @@ function LibraryACLInner() {
 
   function load() {
     setError(null);
+    setMatrix(null);
     api
-      .get<Matrix>("/api/admin/library-acl")
+      .get<Partial<Matrix> | null>("/api/admin/library-acl")
       .then((m) => {
-        setMatrix(m);
-        const roles = toRoleMap(m.grants ?? []);
+        // Any list may come back null or missing; treat it as empty.
+        const grants = m?.grants ?? [];
+        setMatrix({ users: m?.users ?? [], libraries: m?.libraries ?? [], grants });
+        const roles = toRoleMap(grants);
         setOriginal(roles);
         setCurrent(roles);
       })
