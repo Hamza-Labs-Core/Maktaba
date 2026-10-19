@@ -149,9 +149,11 @@ the API read them quickly instead of opening many files on the NAS.
   (`MAKTABA_CLUSTER_CACHE_HOURS` on the home; `0` turns them off). The health numbers are kept
   as before.
 - **Who writes it**: only the home. Machines never write to it.
-- **Emptying it loses nothing**: everything in it is also in the files. When the home starts
-  and finds the cache empty (a new install, or after a database crash) or behind, it refills
-  it from the files by itself.
+- **Emptying it loses nothing**: everything in it is also in the files. The home also reads
+  the files into it by itself — once at start and then every minute, picking up where it
+  stopped — so it holds what the live connections missed (the home's own downtime, a busy
+  moment), and refills completely after a new install or a database crash.
+- **A home on SQLite** (a single machine) has no cache; its history comes from the files.
 - **When the database is slow or stopped**, the home skips the cache for a while and counts
   what it skipped; the live views and the files are not affected, and history for that time
   is read from the files.

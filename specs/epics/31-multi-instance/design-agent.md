@@ -36,7 +36,7 @@ The owner's phase 2 requirements, in the order they were given (2026-10-18/19; 1
 | 7 | Same for queue metrics, job metrics, library — all | §5.3 `job` frame; §7.4 `jobs/`, `queues/`, `library/`; §6.4 topics `jobs`, `queues`, `library` |
 | 8 | The Processing page talks to a central hub on the main node over a WebSocket; all jobs on all machines talk to that hub | §6.4 `/api/cluster/ws`; §6.5 Processing page; §5.3 every job reports to the hub |
 | 9 | Not stages: the work is split into queues on the main node and each machine's workers pull jobs from those queues | §3 queues and pulling |
-| 10 | "Keep a database, but it will be like a cache" | §7.9 the database cache: `health_samples` and two cache tables, written only by the hub, bounded, refilled from the files |
+| 10 | "Keep a database, but it will be like a cache" | §7.9 the database cache: `health_samples` and three cache tables, written only by the hub, bounded, refilled from the files |
 
 ## 1. Words used here
 
@@ -666,7 +666,9 @@ emptying it loses nothing the files do not hold.
 
 **(a) `health_samples` — the metrics cache for today's readers.** The hub writes each
 process's `health` (§5.2) to `health_samples` at most every 10 s per process: `at` is the
-hub's clock, `host` the process's host, one row per metric; plus `nas.reads_busy`, which the
+hub's clock to the millisecond (two processes on one host never share a key; the readers sum
+counters such as `nas.timeouts` across rows), `host` the process's host, one row per metric;
+a process's `final` map is written at once; plus `nas.reads_busy`, which the
 hub counts itself (jobs of the `nas_read` pool that are claimed or running, as workers
 counted it). The readers are unchanged: the transcription report's live speed and time left
 (`stt.audio_sec:<slot>`), the Processing page's health strip and sparklines
@@ -678,23 +680,36 @@ pruning of old rollups, therefore move from the workers' pruner (`engine/prune.p
 every worker runs today) to the hub. A worker without an agent (`MAKTABA_CLUSTER_AGENT=0`)
 records no health numbers.
 
-**(b) Two cache tables**, both `UNLOGGED` (fast, not written to the write-ahead log, emptied
+**(b) Three cache tables**, all `UNLOGGED` (fast, not written to the write-ahead log, emptied
 by a database crash — acceptable for a cache):
 
 | Table | Holds |
 |---|---|
-| `cluster_metrics_cache` | one `metrics` frame per process per 10 s |
-| `cluster_log_cache` | every log record the hub receives |
+| `cluster_metrics_cache` | one `metrics` frame per process per 10 s slot (key: worker, slot; the first frame of a slot is kept) |
+| `cluster_log_cache` | every log record (key: worker, `ts` and a hash of the record, so a record that arrives both over the channel and from its file is stored once — and two identical records with the same `ts` from one process are one row) |
+| `cluster_cache_files` | how far each file on the share has been read, and for which window |
+
+Worker ids are stored in their file-name form (the pipeline's `safe_name`), so the channel
+and the files meet on the same rows; rows read from the files have no `node_id` unless the
+same record also came over the channel.
 
 They keep `MAKTABA_CLUSTER_CACHE_HOURS` hours (default 24; `0` disables them) and are
 pruned every 10 minutes. `maktaba_worker` has no rights on them (the migration revokes what
 the default privileges would grant).
 
-**(c) Coverage.** The hub never claims a range it does not hold. At start it refills from the
-files: the whole window when the tables are empty (a new install, or a crash emptied the
-`UNLOGGED` tables), otherwise the gap since its newest row. Backfill is idempotent (reading a
-range twice adds nothing) and symlink-safe (it never follows a link out of the cluster
-directory).
+**(c) Filled from both sides, and coverage.** The channel fills the cache as frames arrive;
+**passes over the files** fill it too: one at start and one every minute, each reading every
+`<ip>/{metrics,logs}/<day>/<worker>.jsonl` of the window's days on from where the last pass
+stopped (`cluster_cache_files`; a file read for a shorter window, shrunk, or seen in another
+directory is read again from its start). So the cache also holds what the channel missed:
+dropped batches, the hub's own downtime, a process without an agent. Emptied tables (a new
+install, or a crash) mean the whole window is read again. Passes are rate-limited (5 000
+lines a second), idempotent, commit in chunks of 500 lines with their read position, leave a
+torn last line for the next pass, and read through an `os.Root` that refuses every link.
+The hub never claims a range it does not hold: `Covers` is true only when the window is on,
+`from` is inside the window, and a pass over every file completed in the last three minutes
+(a read or database error leaves the pass incomplete); the minutes since that pass rest on
+the channel. Today's history asks for the range up to now, not to midnight.
 
 **(d) Readers.** `GET /api/cluster/files/{ip}/{metrics|logs}` answers from the cache when the
 range is covered, else from the files, with the header `X-Maktaba-Source: cache` or `files`;
@@ -703,6 +718,9 @@ the answer is the same either way. The other kinds are always read from the file
 **(e) Failure.** The cache never blocks the hub, the channel or the files. When the database
 is slow or down, batches are dropped and counted (`cache` in the `processes` snapshot:
 written, dropped, oldest and newest row); readers fall back to the files.
+
+A home on SQLite (single machine, development) has no cache: the API's handle is
+Postgres-only there, and the Go health readers need Postgres anyway.
 
 **Migration** `0104_cluster_cache` (with its SQLite sibling and MANIFEST row, as the migration
 rules require). PR 57 uses slots 0104–0115 on its own branch; whichever merges second
