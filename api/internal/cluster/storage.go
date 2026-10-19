@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"time"
 )
 
 // StorageServer is a storage_servers row (story 31.3): the identity a
@@ -58,7 +59,28 @@ type StorageStore interface {
 	Servers(ctx context.Context) ([]StorageServer, error)
 	PutServer(ctx context.Context, s StorageServer) (StorageServer, error)
 	DeleteServer(ctx context.Context, name string) error
+	// Canonicalize is the home's automatic path conversion as its pipeline
+	// reports it (storage_canonicalize: state + the pending request); nil when
+	// the home has none yet.
+	Canonicalize(ctx context.Context) (*CanonStatus, error)
+	// RequestCanonicalize asks the home's pipeline for one of CanonActions.
+	RequestCanonicalize(ctx context.Context, action, by string) error
 }
+
+// CanonStatus is the storage_canonicalize row (story 31.3, automatic).
+type CanonStatus struct {
+	State       json.RawMessage `json:"state"`
+	Request     *string         `json:"request"`
+	RequestedAt *time.Time      `json:"requested_at"`
+	RequestedBy *string         `json:"requested_by"`
+}
+
+// CanonActions are the requests an admin may make: check now, undo the last
+// conversion (automatic conversion then holds), convert automatically again.
+var CanonActions = map[string]bool{"run": true, "revert": true, "resume": true}
+
+// ErrBadAction is returned for an action not in CanonActions.
+var ErrBadAction = errors.New("cluster: action is run, revert or resume")
 
 // PGStorage is the Postgres StorageStore.
 type PGStorage struct{ DB *sql.DB }
@@ -149,11 +171,54 @@ func (p *PGStorage) DeleteServer(ctx context.Context, name string) error {
 	return nil
 }
 
+func (p *PGStorage) Canonicalize(ctx context.Context) (*CanonStatus, error) {
+	var st, req, by sql.NullString
+	var at sql.NullTime
+	err := p.DB.QueryRowContext(ctx,
+		`SELECT state::text, request, requested_at, requested_by FROM storage_canonicalize WHERE id = 1`).
+		Scan(&st, &req, &at, &by)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := CanonStatus{State: rawOrNilStr(st)}
+	if out.State == nil {
+		out.State = json.RawMessage(`{}`)
+	}
+	if req.Valid {
+		out.Request = &req.String
+	}
+	if by.Valid {
+		out.RequestedBy = &by.String
+	}
+	if at.Valid {
+		t := at.Time
+		out.RequestedAt = &t
+	}
+	return &out, nil
+}
+
+func (p *PGStorage) RequestCanonicalize(ctx context.Context, action, by string) error {
+	if !CanonActions[action] {
+		return ErrBadAction
+	}
+	_, err := p.DB.ExecContext(ctx, `
+		INSERT INTO storage_canonicalize (id, request, requested_at, requested_by)
+		VALUES (1, $1, now(), $2)
+		ON CONFLICT (id) DO UPDATE SET request = EXCLUDED.request,
+			requested_at = EXCLUDED.requested_at, requested_by = EXCLUDED.requested_by`, action, by)
+	return err
+}
+
 // MemoryStorage is the in-memory StorageStore (SQLite homes, tests).
 type MemoryStorage struct {
 	mu      sync.Mutex
 	Storage json.RawMessage
 	PathMap json.RawMessage
+	// Canon is the automatic conversion's row (nil: none yet).
+	Canon   *CanonStatus
 	servers map[string]StorageServer
 }
 
@@ -214,5 +279,30 @@ func (m *MemoryStorage) DeleteServer(_ context.Context, name string) error {
 		return ErrNotFound
 	}
 	delete(m.servers, name)
+	return nil
+}
+
+func (m *MemoryStorage) Canonicalize(context.Context) (*CanonStatus, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.Canon == nil {
+		return nil, nil
+	}
+	c := *m.Canon
+	return &c, nil
+}
+
+func (m *MemoryStorage) RequestCanonicalize(_ context.Context, action, by string) error {
+	if !CanonActions[action] {
+		return ErrBadAction
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.Canon == nil {
+		m.Canon = &CanonStatus{State: json.RawMessage(`{}`)}
+	}
+	now := time.Now().UTC()
+	a, b := action, by
+	m.Canon.Request, m.Canon.RequestedAt, m.Canon.RequestedBy = &a, &now, &b
 	return nil
 }

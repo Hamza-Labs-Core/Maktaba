@@ -8,7 +8,7 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 
-GO_MODULES := api streaming cmd/maktaba-server shared/log/go shared/health/go shared/metrics/go shared/tracing/go shared/errrpt/go shared/testtier/go tools/test-budget tools/log-lint
+GO_MODULES := api streaming cmd/maktaba-server shared/log/go shared/health/go shared/metrics/go shared/tracing/go shared/errrpt/go shared/go/releaseverify shared/testtier/go tools/release tools/test-budget tools/log-lint
 PIPELINE_DIR := pipeline
 WEB_DIR := web
 MIGRATIONS_DIR := shared/db/migrations
@@ -35,7 +35,11 @@ UNIT_PACKAGE_BUDGET     ?= 30s
 # what we did for auth/keys) or pulling the slow ops out of the
 # hot path. See HLB-251 follow-up notes.
 UNIT_PER_TEST_SOFT_CAP  ?= 400ms
-INTEGRATION_TIER_BUDGET ?= 2m
+# Integration wall budget: 2m held at ~1m45 on main; story 35.1 links
+# sigstore-go into api and cmd/maktaba-server (in-process release
+# verification), which adds ~20s of compile/link to the tier's test
+# binaries. 2m30s keeps the same headroom.
+INTEGRATION_TIER_BUDGET ?= 2m30s
 E2E_TIER_BUDGET         ?= 5m
 MEDIA_E2E_TIER_BUDGET   ?= 9m
 PERF_CI_TIER_BUDGET     ?= 2m
@@ -280,6 +284,10 @@ test-unit-web:
 
 INTEGRATION_GO_PG_URL ?=
 
+# The release tooling has no integration-tagged tests; its unit run
+# covers it.
+INTEGRATION_GO_MODULES := $(filter-out shared/go/releaseverify tools/release,$(GO_MODULES))
+
 .PHONY: test-integration
 test-integration:  ## Integration tier (Story 20.1, Epic 20.4).
 	@bash tools/test-budget.sh wall integration $(INTEGRATION_TIER_BUDGET) -- \
@@ -287,7 +295,7 @@ test-integration:  ## Integration tier (Story 20.1, Epic 20.4).
 
 .PHONY: test-integration-inner
 test-integration-inner:
-	@for mod in $(GO_MODULES); do \
+	@for mod in $(INTEGRATION_GO_MODULES); do \
 		echo "==> go test -tags=integration ./... ($$mod)"; \
 		(cd $$mod && $(if $(INTEGRATION_GO_PG_URL),MAKTABA_TEST_PG_URL='$(INTEGRATION_GO_PG_URL)') \
 			go test -tags=integration -count=1 ./...); \

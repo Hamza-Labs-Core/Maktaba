@@ -88,7 +88,8 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 	go slots.RunOps(context.Background())
 
 	fd := &frontdoor.Handler{Svc: svc, Settings: csettings, Self: ident.ID, Keyring: keyring, Tracker: tracker,
-		Logger: logger, Slots: slots, CacheRoot: b.cfg.Cache.Root}
+		Logger: logger, Slots: slots, CacheRoot: b.cfg.Cache.Root,
+		PublicBase: publicBase, WebBase: os.Getenv("MAKTABA_PUBLIC_WEB_BASE")}
 
 	liveStations := func() []uuid.UUID { return slots.LiveStations() }
 	b.loop = &cluster.HostLoop{Store: cluster.PGBeatStore{Pool: b.pool}, HostID: ident.ID, Keyring: keyring, Logger: logger,
@@ -127,7 +128,8 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 	logger.Info("tv: front door ready with TV slots", "host_id", ident.ID, "slots", slot.FormatAddrs(addrs),
 		"event", "tv_frontdoor_ready")
 
-	mounts := []func(chi.Router){fd.Mount, fd.MountInternal, assets.Mount, slotReports(slots)}
+	// story 33.6: the admin preview of a staged change (token-gated; no HDHomeRun)
+	mounts := []func(chi.Router){fd.Mount, fd.MountInternal, fd.MountPreview, assets.Mount, slotReports(slots)}
 	hdhrRepo := hdhr.NewPGRepo(b.pool)
 	hdhrHandler := hdhr.New(hdhrRepo, fd)
 	hdhrHandler.PublicBase = publicBase

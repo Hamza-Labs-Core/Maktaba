@@ -462,10 +462,7 @@ func (s *Slots) ensureTarget(ctx context.Context, release string) {
 	s.mu.Lock()
 	name := s.staging
 	if name == "" {
-		name = s.otherThan(s.live, s.standby)
-		if name == s.previous {
-			name = ""
-		}
+		name = s.freeInstanceLocked()
 		s.staging = name
 	}
 	s.mu.Unlock()
@@ -982,4 +979,24 @@ func (s *Slots) rollingSwitched() map[uuid.UUID]bool {
 		}
 	}
 	return out
+}
+
+// stageActive reports whether a staged change runs on the staging slot (story
+// 33.5's warm-up and sampling).
+func (s *Slots) stageActive() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stage != nil
+}
+
+// freeInstanceLocked is an instance that is neither live, standby nor previous
+// (the previous slot is the warm rollback target: a change staged inside the
+// grace must not take it). s.mu is held.
+func (s *Slots) freeInstanceLocked() string {
+	for _, n := range slot.Names {
+		if _, ok := s.Addrs[n]; ok && n != s.live && n != s.standby && n != s.previous {
+			return n
+		}
+	}
+	return ""
 }

@@ -259,3 +259,56 @@ func TestDetailForThePage(t *testing.T) {
 		})
 	}
 }
+
+// story 33.6 AC1: the preview is minted for a staged change only (verifying, ready,
+// approved), signed with the cluster stream key, an hour; a staged-but-not-verifying
+// change or a missing key answers 409.
+func TestPreviewStatesAndToken(t *testing.T) {
+	for _, be := range tvchangetest.Backends(t) {
+		t.Run(be.Name, func(t *testing.T) {
+			w := newPageWorld(t, be.DB)
+			id := w.seed() // staged
+			post := func() (int, map[string]any) {
+				req := httptest.NewRequest("POST", "/api/tv/changes/"+id+"/preview", nil)
+				req = req.WithContext(principal.WithPrincipal(req.Context(), &principal.Principal{UserID: pageAdmin, IsAdmin: true}))
+				rec := httptest.NewRecorder()
+				w.r.ServeHTTP(rec, req)
+				out := map[string]any{}
+				_ = json.Unmarshal(rec.Body.Bytes(), &out)
+				return rec.Code, out
+			}
+			if code, _ := post(); code != 409 {
+				t.Fatalf("preview of a staged change: %d", code)
+			}
+			w.exec(`UPDATE tv_changes SET state = 'ready' WHERE id = $1`, id)
+			if core.IsSQLite(w.db) {
+				if code, _ := post(); code != 409 {
+					t.Fatalf("no stream key: %d", code)
+				}
+				return
+			}
+			w.exec(`INSERT INTO tv_cluster_secret (id, stream_key) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET stream_key = EXCLUDED.stream_key`,
+				[]byte("0123456789abcdef0123456789abcdef"))
+			code, out := post()
+			if code != 200 {
+				t.Fatalf("preview: %d %v", code, out)
+			}
+			tok, _ := out["token"].(string)
+			if parts := strings.Split(tok, "."); len(parts) != 3 || parts[0] != id {
+				t.Fatalf("token %q", tok)
+			}
+			exp, _ := time.Parse(time.RFC3339, out["expires_at"].(string))
+			if d := time.Until(exp); d < 59*time.Minute || d > 61*time.Minute {
+				t.Fatalf("expires in %v", d)
+			}
+			chans, _ := out["channels"].([]any)
+			if len(chans) != 0 {
+				// the seed's release has no channels; the URLs are checked end to end
+				t.Logf("channels %v", chans)
+			}
+			if !strings.Contains(out["m3u"].(string), "/staging/lineup.m3u?pt=") || out["hls_base"] != "/stream/staging/channel/" {
+				t.Fatalf("urls %v", out)
+			}
+		})
+	}
+}

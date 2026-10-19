@@ -27,10 +27,61 @@ func (h *Handler) MountInternal(r chi.Router) {
 		// Epic 33 story 33.1: the slots and the routing switch (33.7 swaps with it)
 		g.Get("/internal/tv/slots", h.internalSlots)
 		g.Post("/internal/tv/routing/switch", h.internalSwitch)
+		// story 33.5: the staged change's slot, warm set and samples
+		g.Post("/internal/tv/staging/start", h.internalStageStart)
+		g.Post("/internal/tv/staging/stop", h.internalStageStop)
+		g.Get("/internal/tv/staging", h.internalStaging)
 		// story 33.7: an instance that runs a staged release takes the staging
 		// role (the swap's target; never a failover target)
-		g.Post("/internal/tv/routing/staging", h.internalStaging)
+		g.Post("/internal/tv/routing/staging", h.internalAdoptStaging)
 	})
+}
+
+func (h *Handler) internalStageStart(w http.ResponseWriter, r *http.Request) {
+	if h.Slots == nil {
+		http.Error(w, "no TV slots on this host", http.StatusNotFound)
+		return
+	}
+	var p StagingPlan
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&p); err != nil {
+		http.Error(w, "bad body", http.StatusBadRequest)
+		return
+	}
+	v, err := h.Slots.StageStart(r.Context(), p)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (h *Handler) internalStageStop(w http.ResponseWriter, r *http.Request) {
+	if h.Slots == nil {
+		http.Error(w, "no TV slots on this host", http.StatusNotFound)
+		return
+	}
+	var b struct {
+		ChangeID string `json:"change_id"`
+	}
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b); err != nil {
+			http.Error(w, "bad body", http.StatusBadRequest)
+			return
+		}
+	}
+	if err := h.Slots.StageStop(r.Context(), b.ChangeID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, h.Slots.StagingView())
+}
+
+func (h *Handler) internalStaging(w http.ResponseWriter, _ *http.Request) {
+	if h.Slots == nil {
+		http.Error(w, "no TV slots on this host", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, h.Slots.StagingView())
 }
 
 func (h *Handler) internalSlots(w http.ResponseWriter, _ *http.Request) {
@@ -68,7 +119,7 @@ func (h *Handler) internalSwitch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, h.Slots.View())
 }
 
-func (h *Handler) internalStaging(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) internalAdoptStaging(w http.ResponseWriter, r *http.Request) {
 	if h.Slots == nil {
 		http.Error(w, "no TV slots on this host", http.StatusNotFound)
 		return

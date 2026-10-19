@@ -108,11 +108,61 @@ type Status struct {
 	Warm         []string `json:"warm"`
 	EncodersUsed int      `json:"encoders_used"`
 	Budget       Budget   `json:"budget"`
+	// Channels: what each station airs now (story 33.5: block, position,
+	// encoder, restarts), for the staging verification.
+	Channels []StationInfo `json:"channels,omitempty"`
 	// The fixed stream layout (story 33.4 AC3).
 	PMTPID    int `json:"pmt_pid"`
 	VideoPID  int `json:"video_pid"`
 	AudioPID  int `json:"audio_pid"`
 	ServiceID int `json:"service_id"`
+}
+
+// StationInfo is one station in the status.
+type StationInfo struct {
+	ID             string     `json:"id"`
+	Encoder        string     `json:"encoder,omitempty"`
+	Restarts       int        `json:"restarts"`
+	NVENCFallbacks int64      `json:"nvenc_fallbacks"`
+	Reached        *time.Time `json:"reached,omitempty"`
+	Block          *BlockInfo `json:"block,omitempty"`
+}
+
+// BlockInfo is the segment a station airs now: the schedule block (seq, video,
+// start, end, title) or a synthetic slate (gap, empty schedule, failure).
+type BlockInfo struct {
+	Seq       int64     `json:"seq"`
+	Kind      string    `json:"kind"`
+	VideoID   string    `json:"video_id,omitempty"`
+	StartAt   time.Time `json:"start_at"`
+	EndAt     time.Time `json:"end_at"`
+	Title     string    `json:"title,omitempty"`
+	Synthetic bool      `json:"synthetic,omitempty"`
+}
+
+// StatsSource is an engine that reports per-station stats (*channel.Engine).
+type StatsSource interface {
+	Stats(id uuid.UUID) (channel.StationStats, bool)
+}
+
+func stationInfo(id uuid.UUID, st channel.StationStats) StationInfo {
+	si := StationInfo{ID: id.String(), Encoder: st.Encoder, Restarts: st.Restarts, NVENCFallbacks: st.NVENCFallbacks}
+	if !st.Reached.IsZero() {
+		r := st.Reached.UTC()
+		si.Reached = &r
+	}
+	if seg := st.OnAir; seg != nil {
+		b := &BlockInfo{Seq: seg.Block.Seq, Kind: seg.Kind, StartAt: seg.Block.StartAt.UTC(),
+			EndAt: seg.Block.EndAt.UTC(), Title: seg.Block.Info.Title, Synthetic: seg.Synthetic}
+		if seg.Block.VideoID != uuid.Nil {
+			b.VideoID = seg.Block.VideoID.String()
+		}
+		if seg.Synthetic {
+			b.StartAt, b.EndAt = seg.Start.UTC(), seg.End.UTC()
+		}
+		si.Block = b
+	}
+	return si
 }
 
 // Snapshot is the slot's status.
@@ -123,9 +173,16 @@ func (s *Server) Snapshot() Status {
 		StartedAt: s.started.UTC().Format(time.RFC3339), Budget: s.State.Budget(),
 		PMTPID: channel.TSPMTPID, VideoPID: channel.TSVideoPID, AudioPID: channel.TSAudioPID,
 		ServiceID: channel.TSServiceID, Stations: []string{}, Warm: []string{}}
+	src, _ := s.Engine.(StatsSource)
 	for _, id := range s.Engine.ActiveIDs() {
 		st.Stations = append(st.Stations, id.String())
+		if src != nil {
+			if ss, ok := src.Stats(id); ok {
+				st.Channels = append(st.Channels, stationInfo(id, ss))
+			}
+		}
 	}
+	sort.Slice(st.Channels, func(i, j int) bool { return st.Channels[i].ID < st.Channels[j].ID })
 	for _, id := range s.State.Holds(s.now()) {
 		st.Warm = append(st.Warm, id.String())
 	}

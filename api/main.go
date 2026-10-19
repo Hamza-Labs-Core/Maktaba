@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -50,6 +51,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvremote"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
 	errrpt "github.com/Hamza-Labs-Core/Maktaba/shared/errrpt/go"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 	health "github.com/Hamza-Labs-Core/Maktaba/shared/health/go"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 	metrics "github.com/Hamza-Labs-Core/Maktaba/shared/metrics/go"
@@ -740,7 +742,23 @@ func buildUpdater(logger *slog.Logger) *system.Updater {
 		v := os.Getenv("MAKTABA_UPDATE_DISABLE")
 		return v == "1" || strings.EqualFold(v, "true")
 	}()
+	// The Sigstore trusted root for release verification (Epic 35 story
+	// 35.1): embedded in the binary, refreshed daily through TUF into
+	// <data_dir>/sigstore. Expiry fails verification closed; the critical
+	// notification for it lands with story 35.13 — until then it is logged.
+	dataDir := os.Getenv("MAKTABA_DATA_DIR")
+	if dataDir == "" {
+		dataDir = "/var/lib/maktaba"
+	}
+	roots := &releaseverify.RootStore{
+		Dir: filepath.Join(dataDir, "sigstore"),
+		OnExpired: func(err error) {
+			logger.Error("sigstore trusted root expired: release verification fails closed",
+				"event", "update_root_expired", "err", err.Error())
+		},
+	}
 	return system.NewUpdater(system.UpdaterConfig{
+		Roots:          roots,
 		Repo:           os.Getenv("MAKTABA_UPDATE_REPO"),
 		CurrentVersion: version.Version,
 		Channel:        version.Channel(),

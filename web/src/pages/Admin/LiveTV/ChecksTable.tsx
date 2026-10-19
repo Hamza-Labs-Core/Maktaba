@@ -34,6 +34,32 @@ export function ChecksTable({
         )}
       </p>
       {report.interim && <p className="mkt-tvx-hint">{t("tvchanges.checks.interim")}</p>}
+      {report.runtime === "slots" && (
+        <p className="mkt-tvx-hint" data-testid="checks-slot">
+          {t("tvchanges.checks.onSlot", { slot: report.slot ?? "staging" })}
+          {report.status ? ` · ${report.status}` : ""}
+          {report.budget
+            ? ` · ${t("tvchanges.checks.budget", {
+                staging: report.budget.staging,
+                capacity: report.budget.capacity,
+                live: report.budget.live,
+                standby: report.budget.standby,
+              })}`
+            : ""}
+        </p>
+      )}
+      {report.reasons && report.reasons.length > 0 && (
+        <div role="alert" className="mkt-tvx-error" data-testid="checks-reasons">
+          <p>{t("tvchanges.checks.reasons")}</p>
+          <ul>
+            {report.reasons.map((r) => (
+              <li key={r} dir="auto">
+                {r}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {report.error && (
         <p role="alert" className="mkt-tvx-error">
           {t("tvchanges.checks.error", { error: report.error })}

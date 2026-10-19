@@ -27,22 +27,31 @@
 #                        dependency constraints from uv.lock, and the node
 #                        installer archives (maktaba-node-<ver>.tar.gz /
 #                        .zip) that install that wheel with no checkout.
-#   6. sign-and-release  checksum every artifact, keyless-cosign-sign the
-#                        checksums file AND each pushed image digest,
-#                        generate the Homebrew formula, then attach
-#                        archives + packages + checksums + signatures to a
-#                        GitHub Release.
+#   6. sign-and-release  write release.json (Epic 35 story 35.1) and check
+#                        it against the migrations / SCHEMA_REV, checksum
+#                        every artifact, keyless-cosign-sign the checksums
+#                        file (Sigstore bundle + legacy .sig/.pem) AND each
+#                        pushed image digest, verify the result with the
+#                        same in-process verifier every machine installs
+#                        through, generate the Homebrew formula, then
+#                        attach archives + packages + checksums +
+#                        signatures to a GitHub Release.
 #
 # Signing identity: keyless cosign via the workflow's OIDC token
 # (`id-token: write`). No long-lived private key, no repo secret to
-# provision. Verification:
+# provision. The signer is exactly this workflow, run by the tag push it
+# publishes; verify with the exact identity (a regexp over the repository
+# name would also accept a fork's release workflow):
 #
-#   cosign verify-blob --certificate checksums.txt.pem \
-#     --signature checksums.txt.sig \
-#     --certificate-identity-regexp \
-#       'https://github.com/.+/Maktaba/.github/workflows/release.yml@.*' \
+#   cosign verify-blob --bundle checksums.txt.sigstore.json \
+#     --certificate-identity \
+#       https://github.com/Hamza-Labs-Core/Maktaba/.github/workflows/release.yml@refs/tags/vX.Y.Z \
 #     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
 #     checksums.txt
+#
+# Machines verify the same bundle in process (shared/go/releaseverify), with
+# no cosign binary and no network: the bundle carries the Rekor inclusion
+# proof; the Sigstore trusted root is compiled in and refreshed through TUF.
 #
 # OPERATOR NOTE: GHCR push uses the auto-provisioned `GITHUB_TOKEN`
 # (`packages: write`); no secret to set. If you fork to a registry that
@@ -503,6 +512,12 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@v3.10.0
 
+      # gen-release-json and the release self-check (shared/go/releaseverify).
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache: false
+
       - name: Download release binaries
         uses: actions/download-artifact@v8.0.1
         with:
@@ -615,6 +630,51 @@ jobs:
             git -C "${tmp}" push origin HEAD
           fi
 
+      # The previous release's release.json (if it has one) bounds
+      # breaks_previous_home and carries min_upgrade_from forward.
+      - name: Fetch the previous release manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          prev=""
+          for t in $(gh release list --exclude-drafts --limit 30 --json tagName --jq '.[].tagName'); do
+            [ "$t" = "$TAG" ] && continue
+            if gh release download "$t" --pattern release.json --output prev-release.json --clobber 2>/dev/null; then
+              prev="$t"; break
+            fi
+          done
+          echo "previous release with release.json: ${prev:-none}"
+
+      # release.json (Epic 35 design §3.1): version, schema revisions,
+      # protocol numbers, per-platform archive + inner binary digests, the
+      # pipeline wheel and constraints. It is listed in checksums.txt, so the
+      # one signature covers it.
+      - name: Write release.json
+        env:
+          TAG: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        working-directory: tools/release
+        run: |
+          set -euo pipefail
+          prev=()
+          if [ -f ../../prev-release.json ]; then prev=(--previous ../../prev-release.json); fi
+          go run ./cmd/gen-release-json --tag "${TAG}" --commit "${SHA}" \
+            --dist ../../dist --repo ../.. "${prev[@]}" > ../../dist/release.json
+          cat ../../dist/release.json
+
+      # Story 35.1 AC2 / TC9: schema_rev must equal SCHEMA_REV and SchemaRev,
+      # min_node_schema / breaks_previous_home must match the MANIFEST.md
+      # markers, and the embedded Sigstore root must be under 90 days old.
+      - name: release-manifest-check
+        run: |
+          set -euo pipefail
+          prev=()
+          if [ -f prev-release.json ]; then prev=(--previous ../../prev-release.json); fi
+          ( cd tools/release && go run ./cmd/gen-release-json --check ../../dist/release.json --repo ../.. "${prev[@]}" )
+          ( cd shared/go/releaseverify && MAKTABA_RELEASE_BUILD=1 go test -run TestEmbeddedRootAge -count=1 . )
+
       - name: Generate checksums
         working-directory: dist
         run: |
@@ -629,13 +689,33 @@ jobs:
       # signed). Emits checksums.txt.sig + checksums.txt.pem; the .pem
       # is the Fulcio cert that binds the signature to this workflow's
       # OIDC identity (verifiable offline by a self-hoster).
+      #
+      # checksums.txt.sigstore.json is the Sigstore bundle (certificate,
+      # signature, Rekor entry with its inclusion proof): what every Maktaba
+      # machine verifies, offline (story 35.1). The .sig/.pem pair stays for
+      # humans and older tooling.
       - name: Sign checksums (keyless cosign)
         working-directory: dist
         run: |
+          set -euo pipefail
+          cosign sign-blob --yes \
+            --bundle checksums.txt.sigstore.json \
+            --new-bundle-format \
+            checksums.txt
           cosign sign-blob --yes \
             --output-signature checksums.txt.sig \
             --output-certificate checksums.txt.pem \
             checksums.txt
+
+      # The release verifies with the code that installs it, before it is
+      # published: the Sigstore bundle against the embedded trusted root, the
+      # exact identity of this workflow for this tag, the Rekor inclusion
+      # proof, release.json and every file checksums.txt lists.
+      - name: Verify the signed release (releaseverify)
+        env:
+          TAG: ${{ github.ref_name }}
+        working-directory: shared/go/releaseverify
+        run: go run ./cmd/releaseverify --tag "${TAG}" --dir ../../../dist --repo "${GITHUB_REPOSITORY}"
 
       - name: Write release manifest
         env:
@@ -664,15 +744,16 @@ jobs:
           DIGEST_PIPELINE="$(digest_of pipeline)"
           DIGEST_WEB="$(digest_of web)"
           DIGEST_CLOUD="$(digest_of cloud)"
-          # TODO(HLB-337 follow-up): derive schema_rev from migration set;
-          # hardcoded 1 until then. rollback_* stay empty/0 until the
-          # rollback-tracking story lands (same follow-up).
+          # schema_rev comes from release.json (derived from the migration
+          # set, checked against SCHEMA_REV/SchemaRev). rollback_* stay
+          # empty/0 until the rollback-tracking story lands.
+          SCHEMA_REV="$(jq -r .schema_rev dist/release.json)"
           cat > dist/release-manifest.json <<EOF
           {
             "version": "${ver}",
             "git_sha": "${SHA}",
             "built_at": "${built_at}",
-            "schema_rev": 1,
+            "schema_rev": ${SCHEMA_REV},
             "components": {
               "api":       {"image": "${REGISTRY}/maktaba-api:${TAG}",       "sha256": "${DIGEST_API}"},
               "streaming": {"image": "${REGISTRY}/maktaba-streaming:${TAG}", "sha256": "${DIGEST_STREAMING}"},
@@ -703,19 +784,27 @@ jobs:
           - **Windows / manual:** grab the matching \`.tar.gz\` / \`.zip\` archive
           - **Worker machine (join a home, no checkout):** unpack \`maktaba-node-*.tar.gz\` (macOS/Linux) or \`maktaba-node-*.zip\` (Windows) and run \`install-node.sh\` / \`windows\\install-node.ps1\`: it installs this release's \`maktaba_pipeline-*.whl\` (also attached, with its \`-constraints.txt\`). See docs/cluster/join-a-machine.md.
 
-          Artifacts are signed with keyless cosign (Sigstore). Verify the
-          checksums manifest:
+          Artifacts are signed with keyless cosign (Sigstore) by this
+          repository's release workflow for exactly this tag; Maktaba
+          machines verify that in process before installing anything.
+          \`release.json\` (versions, schema revisions, per-platform
+          digests) is listed in \`checksums.txt\`. Verify by hand:
 
           \`\`\`
-          cosign verify-blob --certificate checksums.txt.pem \\
-            --signature checksums.txt.sig \\
-            --certificate-identity-regexp 'https://github.com/.+/Maktaba/.github/workflows/release.yml@.*' \\
+          cosign verify-blob --bundle checksums.txt.sigstore.json \\
+            --certificate-identity https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${TAG} \\
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \\
             checksums.txt
+          sha256sum --ignore-missing -c checksums.txt
           \`\`\`
 
+          (\`--certificate checksums.txt.pem --signature checksums.txt.sig\`
+          in place of \`--bundle\` checks the same identity.)
+
           Container images are signed at their digest; verify with
-          \`cosign verify <image>@<digest>\` using the same identity."
+          \`cosign verify <image>@<digest>\` and
+          \`--certificate-identity https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${TAG}\`
+          \`--certificate-oidc-issuer https://token.actions.githubusercontent.com\`."
           # Idempotent: a re-run of the same tag after images pushed but a
           # prior publish failed must update the existing release with the
           # (re-pushed, digest-stable) assets rather than hard-failing.

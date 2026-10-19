@@ -97,6 +97,9 @@ class WorkerAgent:
     #: a node's start finished (it waits while the machine starts paused)
     _node_ready: bool = False
     _capabilities: dict[str, Any] = field(default_factory=dict)
+    #: story 31.3: the home's own machine converts its stored paths by itself
+    _auto_canon: bool = False
+    _storage_dirty: bool = False
 
     @property
     def is_node(self) -> bool:
@@ -230,12 +233,50 @@ class WorkerAgent:
 
     async def start_home(self) -> None:
         """The home's start (story 31.3): its servers, its admin override, its mounts,
-        and the per-share storage check, kept on ``instance_identity``."""
+        and the per-share storage check, kept on ``instance_identity``. On the home's
+        own machine also the automatic path conversion (:mod:`..sharepath.auto`)."""
         self.samples = await load_samples(self.db)
         self.servers = await load_servers(self.db)
         self.admin_map = await _home_admin_map(self.db)
         await asyncio.to_thread(self._rebuild)
         await self._report_home()
+        if not self.explicit_path_map:
+            from ..engine.stages.storage_canonicalize import set_env
+            from ..sharepath.auto import AutoEnv
+
+            set_env(AutoEnv(mounts=self.mounts, on_change=self.storage_changed))
+            self._auto_canon = True
+            await self._check_canonicalize(full=True)
+
+    def storage_changed(self) -> None:
+        """The servers or the stored paths changed: rebuild and report at the next
+        refresh (30 s), not in 5 minutes."""
+        self._storage_dirty = True
+
+    async def _check_canonicalize(self, *, full: bool) -> None:
+        """Enqueue ``storage_canonicalize`` when it has something to do: an admin's
+        request or a run cut short (looked at every refresh), else (``full``, with the
+        storage check) a first look, a retry or a change in paths, mounts or servers."""
+        if not self._auto_canon:
+            return
+        from ..sharepath import auto
+
+        try:
+            if full:
+                why = await auto.due(self.db, auto.AutoEnv(mounts=self.mounts))
+            else:
+                state, req = await auto.load_state(self.db)
+                why = (
+                    f"request:{req}"
+                    if req
+                    else "resume"
+                    if state.get("phase") in auto.ACTIVE
+                    else None
+                )
+            if why is not None and await auto.enqueue(self.db, why.replace(":", "_")):
+                _log.info("storage_canonicalize_enqueued", why=why)
+        except Exception:  # noqa: BLE001 - an older schema, a busy database: next time
+            _log.debug("storage_canonicalize_check_failed", exc_info=True)
 
     async def _report_home(self) -> None:
         storage = await self._check_storage()
@@ -313,9 +354,16 @@ class WorkerAgent:
                 await self._refresh_resolver()
                 storage = await self._check_storage()
                 await nodes_db.report(self.db, self.node_id, storage=storage)
-        elif self._last_storage and time.monotonic() - self._last_storage >= self.storage_check_sec:
+        elif self._last_storage and (
+            self._storage_dirty or time.monotonic() - self._last_storage >= self.storage_check_sec
+        ):
+            full = not self._storage_dirty
+            self._storage_dirty = False
             await self._refresh_resolver()
             await self._report_home()
+            await self._check_canonicalize(full=full)
+        elif self._last_storage:
+            await self._check_canonicalize(full=False)
         return await self.apply()
 
     async def beat(self) -> None:

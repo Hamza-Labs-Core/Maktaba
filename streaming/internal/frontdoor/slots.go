@@ -57,6 +57,9 @@ type Slots struct {
 	// failed probes in a row that end a live slot (default 2).
 	ProbeEvery time.Duration
 	FailAfter  int
+	// StreamSample is how much of a staging channel's live.ts a sample reads
+	// (0: 3 s; tests shorten it).
+	StreamSample time.Duration
 
 	clientOnce sync.Once
 	mu         sync.Mutex
@@ -75,6 +78,8 @@ type Slots struct {
 	previous      string
 	previousUntil time.Time
 	boundAt       map[string]time.Time
+	stage      *stagingRun
+	lastSample time.Time
 }
 
 // slotHealth is what the last probes of a slot said.
@@ -319,6 +324,15 @@ func (s *Slots) Run(ctx context.Context) {
 		if time.Since(s.lastWarmAt()) >= 2*time.Second {
 			s.SyncWarm(ctx)
 		}
+		s.mu.Lock()
+		due := s.stage != nil && time.Since(s.lastSample) >= stagingSampleEvery
+		if due {
+			s.lastSample = time.Now()
+		}
+		s.mu.Unlock()
+		if due {
+			go s.sampleStaging(ctx)
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -513,6 +527,7 @@ func (s *Slots) Switch(ctx context.Context, to string, epoch int64) error {
 		}
 		if s.staging == to {
 			s.staging = ""
+			s.stage = nil // the staged release is live now (story 33.7)
 		}
 		s.switches++
 	}
@@ -533,7 +548,7 @@ func (s *Slots) StartStaging(ctx context.Context) (string, error) {
 	}
 	s.mu.Lock()
 	if s.staging == "" {
-		s.staging = s.otherThan(s.live, s.standby)
+		s.staging = s.freeInstanceLocked()
 	}
 	name := s.staging
 	s.mu.Unlock()
@@ -549,6 +564,7 @@ func (s *Slots) StopStaging(ctx context.Context) error {
 	s.mu.Lock()
 	name := s.staging
 	s.staging = ""
+	s.stage = nil
 	s.mu.Unlock()
 	if name == "" {
 		return nil
@@ -735,10 +751,19 @@ func (s *Slots) SyncWarm(ctx context.Context) {
 	// story 33.7: a swap's (or rollback's) target warms the watched channels
 	// before their instants — in a rolling swap only shortly before — and keeps
 	// those switched to it; the previous slot keeps the watched channels warm
-	// for a warm rollback (design §8.6, §10)
+	// for a warm rollback (design §8.6, §10). A target that is the staging slot of
+	// a staged change keeps story 33.5's warm set (it holds the watched channels).
 	to, toRole, toChans, prev, prevChans := s.opWarm(plan.live, demands, time.Now())
-	if staging != "" && staging != to {
-		_ = s.sendWarm(ctx, staging, slot.WarmRequest{Role: slot.RoleStaging, Epoch: epoch})
+	staged := s.stageActive()
+	if staging != "" && (staging != to || staged) {
+		stby := 0
+		if set.HotStandby && standby != "" {
+			stby = len(plan.standby)
+		}
+		s.syncStaging(ctx, staging, epoch, capacity, nvencMax, vtMax, len(liveOnAir), stby, demands)
+	}
+	if to == staging && staged {
+		to = ""
 	}
 	if to != "" {
 		if st := s.sendWarm(ctx, to, slot.WarmRequest{Role: toRole, Epoch: epoch, Channels: ids(toChans),

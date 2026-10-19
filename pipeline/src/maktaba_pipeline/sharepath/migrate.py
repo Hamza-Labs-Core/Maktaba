@@ -24,7 +24,7 @@ import platform
 import random
 import uuid
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -249,22 +249,41 @@ async def plan(
     return result
 
 
-async def apply(db: Any, p: MigrationPlan) -> str | None:
+Progress = Callable[[int, int], Awaitable[None]]
+
+
+async def apply(
+    db: Any,
+    p: MigrationPlan,
+    *,
+    batch: str | None = None,
+    chunk_size: int = CHUNK,
+    progress: Progress | None = None,
+) -> str | None:
     """Write the plan's changes (each with its backup row); the batch id, or ``None``
-    when there was nothing to do."""
+    when there was nothing to do.
+
+    Each chunk is one transaction, so a run cut short leaves whole chunks written;
+    passing the same ``batch`` again (the automatic conversion resuming) adds the rest
+    to it. ``progress(done, total)`` is awaited after every chunk."""
     if not p.changes:
         return None
-    batch = str(uuid.uuid4())
+    batch = batch or str(uuid.uuid4())
     pg = is_pg(db)
+    size = max(1, int(chunk_size))
     by_col: dict[Column, list[tuple[str, str, str]]] = {}
     for col, key, old, new in p.changes:
         by_col.setdefault(col, []).append((key, old, new))
+    done, total = 0, p.total
     for col, items in by_col.items():
-        for i in range(0, len(items), CHUNK):
-            chunk = items[i : i + CHUNK]
+        for i in range(0, len(items), size):
+            chunk = items[i : i + size]
             async with db.transaction():
                 await _backup(db, batch, col, chunk, p.machine)
                 await _update(db, col, chunk, pg=pg)
+            done += len(chunk)
+            if progress is not None:
+                await progress(done, total)
     return batch
 
 

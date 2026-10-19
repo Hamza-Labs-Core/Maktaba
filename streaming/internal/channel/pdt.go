@@ -80,7 +80,7 @@ func segmentFirstPTS(path string) (int64, bool) {
 		if !ok {
 			continue
 		}
-		if uint16(p[1]&0x1f)<<8|uint16(p[2]) == TSVideoPID {
+		if int(p[1]&0x1f)<<8|int(p[2]) == TSVideoPID {
 			return pts, true
 		}
 		if !haveAny {

@@ -45,6 +45,7 @@ from .schedule.tv_settings import (
     RepairConfig,
     TvStripConfig,
 )
+from .sharepath.auto import StorageConfig
 from .tvrelease.config import MaktabaTvStagingConfig
 
 __all__ = ["SECTIONS", "config", "read", "schema"]
@@ -110,6 +111,9 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
                "YouTube again (off until switched on)"),
     "relay": (RelayConfig, "Extension relay", "machines run the Plex stages through the home, "
               "which adds the Plex token they never see; limits per machine"),
+    "storage": (StorageConfig, "Canonical share paths", "the home registers the storage "
+                "servers it mounts and converts the stored media paths to smb://server/"
+                "share/... by itself: when, how it checks, what it pauses, the backups"),
 }  # fmt: skip
 
 

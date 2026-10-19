@@ -85,3 +85,45 @@ func TestStorageRoutesWithoutAStore(t *testing.T) {
 		t.Fatalf("no store: %d", rec.Code)
 	}
 }
+
+// The automatic path conversion (story 31.3): the home's report on the
+// Machines page and the admin's requests.
+func TestCanonicalizeStatusAndRequests(t *testing.T) {
+	f := newFixture(t)
+	mem := &cluster.MemoryStorage{}
+	f.h.Storage = mem
+	if rec := f.do("GET", "/api/cluster/storage/canonicalize", "", viewer()); rec.Code != http.StatusForbidden {
+		t.Fatalf("viewer: %d", rec.Code)
+	}
+	var st struct {
+		State   map[string]any `json:"state"`
+		Request *string        `json:"request"`
+	}
+	decode(t, f.do("GET", "/api/cluster/storage/canonicalize", "", admin()), http.StatusOK, &st)
+	if len(st.State) != 0 || st.Request != nil {
+		t.Fatalf("before the first look: %+v", st)
+	}
+	if rec := f.do("POST", "/api/cluster/storage/canonicalize", `{"action":"drop"}`, admin()); rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad action: %d", rec.Code)
+	}
+	if rec := f.do("POST", "/api/cluster/storage/canonicalize", `{"action":"revert"}`, viewer()); rec.Code != http.StatusForbidden {
+		t.Fatalf("viewer revert: %d", rec.Code)
+	}
+	decode(t, f.do("POST", "/api/cluster/storage/canonicalize", `{"action":"revert"}`, admin()), http.StatusAccepted, &st)
+	if st.Request == nil || *st.Request != "revert" || *mem.Canon.RequestedBy != "user:u1" {
+		t.Fatalf("request %+v", st)
+	}
+	mem.Canon.State = json.RawMessage(`{"phase":"held","held":true}`)
+	var ov struct {
+		Home struct {
+			Canonicalize struct {
+				State   map[string]any `json:"state"`
+				Request *string        `json:"request"`
+			} `json:"canonicalize"`
+		} `json:"home"`
+	}
+	decode(t, f.do("GET", "/api/cluster", "", admin()), http.StatusOK, &ov)
+	if ov.Home.Canonicalize.State["phase"] != "held" || *ov.Home.Canonicalize.Request != "revert" {
+		t.Fatalf("overview %+v", ov.Home.Canonicalize)
+	}
+}

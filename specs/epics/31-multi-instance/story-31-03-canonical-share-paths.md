@@ -166,51 +166,117 @@ works for legacy paths too. Then the other side of the character map is tried.
 - **AC8** The storage check reports per share whether it is reachable and writable on each
   machine, through which mount, or "not mounted here". This shows on the Machines page for
   every node and for the home.
+- **AC9** The home does all of AC5 by itself, with no SSH and no command: see
+  [What happens automatically](#what-happens-automatically). Rules
+  `storage.auto_canonicalize` (on by default) switches it off.
 
-## Runbook — migrating the live Mac home
+## What happens automatically
 
-Run on the **Mac home**, in the environment its pipeline runs with (`MAKTABA_DATABASE_URL`
+Nobody runs `storage canonicalize` on the Mac any more. The home's pipeline does it, as
+the home-only queue stage **`storage_canonicalize`** ("Canonical share paths", a visible
+run on the Processing page). Code: `pipeline/src/maktaba_pipeline/sharepath/auto.py`.
+
+**When it runs.** The home's agent enqueues the stage:
+
+- once at start;
+- with every storage check (5 min), when the paths still in local form, the mounts or the
+  storage servers changed since the last look;
+- every `storage.check_minutes` (60) while the last look was *blocked* or *failed*;
+- within 30 s of an admin's request on the Machines page;
+- at once when a run was cut short (the worker stopped mid-way).
+
+**What one run does.**
+
+1. **Registers the storage servers** the home mounts (macOS `mount`, Linux
+   `/proc/mounts`, Windows `WNetGetConnectionW` + `net use`) that no record names
+   (`sharepath/autoreg.py`):
+   - mounts whose hosts resolve to a common IP are one server;
+   - the name comes from a host name the mount uses, else the reverse DNS name of its IP,
+     else its NetBIOS name (`smbutil status` / `nmblookup -A` / `nbtstat -A`), else `nas`.
+     It is lower case, the first label, and unique (`Home-NAS.lan` -> `home-nas`);
+   - the addresses are every host the mounts use, every name found and every IP;
+   - an existing record is never changed, so the admin's edits stand. A host whose record
+     the admin removed is not registered again.
+2. **Checks** that it can convert. It waits (*blocked*, with the reason on the Machines
+   page) when any of these fails:
+   - every network mount that stored paths are on resolves to a server;
+   - every library root still in local form is on a mounted share, or exists here (a root
+     that is gone is an unmounted share);
+   - the dry run's sampled paths (`storage.verify_samples`, 20) open here, with at most
+     `storage.allowed_missing` (0) missing.
+
+   Collisions are counted and left as they are (PR #92).
+3. **Plex path map.** Every local prefix of the Plex extension's `path_map` that is on a
+   share gets its canonical entry beside it:
+   `/Volumes/Originals/=/volume1/Originals/` -> also
+   `smb://home-nas/Originals/=/volume1/Originals/`.
+4. **Backs up** every value of every path column (AC5's list) into
+   `storage_path_backups`, inside the database. No shell and no `pg_dump` are needed. The
+   last `storage.backups_kept` (3) are kept.
+5. **Pauses only the stages that read or write the shares**: the stages of the pools in
+   `storage.pause_pools` (`nas_read`, `nas_write`, `repairs`), with
+   `job_stages.paused_by = 'storage_canonicalize'`. It waits up to
+   `storage.drain_wait_minutes` (10) for their running jobs. The rest of the pipeline, the
+   API and streaming keep running. A stage the admin had paused stays paused.
+6. **Applies** in chunks of `storage.batch_size` (2000), one transaction each, under one
+   batch id, reporting progress on the Machines page.
+7. **Verifies**: a second dry run finds nothing left (a late writer's paths are taken
+   into the same batch), and sampled converted paths open.
+8. **Resumes** the paused stages and reports *done* (values, time, batch).
+
+It is idempotent: a run with nothing to convert changes nothing. A run cut short keeps
+its phase, batch and backup in `storage_canonicalize.state`. The next run carries on with
+the same batch, so one revert still undoes all of it. A failure resumes the paused stages,
+reports the error and is retried later.
+
+**On the Machines page** (home card, "Canonical paths", en + ar):
+
+- the phase and why it waits;
+- the run's progress and the last conversion;
+- the servers and the Plex entries it added;
+- the buttons **Check now**, **Revert last conversion** and **Convert automatically
+  again**.
+
+**In the notification centre** (the bell, slot 0130): one notice per outcome. The notice
+says whether the conversion is done, waits (with the reason), failed or was reverted, and
+links to the Machines page.
+
+A revert pauses the share stages, runs `storage revert` on the last batch and resumes
+them. Automatic conversion then **holds** until the admin resumes it.
+
+The API side: `GET` / `POST /api/cluster/storage/canonicalize` (`{action: run | revert |
+resume}`), and `home.canonicalize` in `GET /api/cluster`.
+
+**On the Mac's next update:**
+
+1. Migration 0131 adds the state and backup tables.
+2. At start the pipeline registers `home-nas` from `//…@192.168.50.94/Originals`. Then it
+   waits for the check, backs up, pauses the share stages, converts the paths and resumes.
+3. The Windows node then resolves `smb://home-nas/Originals/...` through `O:` / `Y:`.
+   Add the node's host name to the server on the Machines page if the home's lookups did
+   not find it.
+
+## Manual fallback
+
+Run these on the home, in the environment its pipeline runs with (`MAKTABA_DATABASE_URL`
 set as for `maktaba-pipeline run`). Nothing here changes a media file.
 
-1. **Deploy** the release with this story. Migration 0124 is schema only: it adds two tables
-   and two columns and changes no path.
-2. **Back up** the path columns:
-   `pg_dump -Fc -t videos -t libraries -t library_roots -t subtitle_files -t video_repairs -t purge_log "$MAKTABA_DATABASE_URL" > ~/maktaba-pre-canonical.dump`
-3. **See the mounts:** `maktaba-pipeline storage mounts`. Expect
-   `smb  //192.168.50.94/Originals  ->  /Volumes/Originals/  (mount)`.
-4. **Add the NAS** under the name the paths will use. Include the addresses every machine
-   uses: the IP the Mac mounts, plus the host name the Windows node mounts (`Home-NAS`):
-   `maktaba-pipeline storage server-add home-nas --address 192.168.50.94 --address Home-NAS --address home-nas.local`.
-   `storage server-add --from-mounts --name home-nas` does the same from the Mac's mounts;
-   add the other addresses on the Machines page afterwards.
-5. **Check** that the shares resolve: `maktaba-pipeline storage mounts`, now with the
-   database, should print `smb://home-nas/Originals  ->  /Volumes/Originals/`.
-6. **Dry run:** `maktaba-pipeline storage canonicalize`, or add `--json > ~/canonical-plan.json`.
-   - Expect `videos.path` to show about 148,593 to convert under
-     `smb://home-nas/Originals/`.
-   - "on no share" should list only local-disk paths.
-   - Expect `check: 20/20 sampled paths resolve to an existing file here`.
-   - Any `MISSING` line means a mount is absent: stop and remount.
-7. **Stop the writers.** Stop the home's pipeline worker and drain the nodes (Machines page →
-   Drain, or stop their pipeline), so no scan or stage writes a path during the change. The
-   API and streaming can stay up.
-8. **Apply:** `maktaba-pipeline storage canonicalize --apply`. Note the batch id it prints.
-9. **Verify:**
-   - `maktaba-pipeline storage canonicalize` again reports `0 values would change`.
-   - `maktaba-pipeline storage batches` lists the batch.
-10. **Restart** the home's pipeline and undrain the nodes. On the Machines page:
-    - the home shows `smb://home-nas/Originals → /Volumes/Originals/`, read ok, write ok;
-    - the Windows node shows `smb://home-nas/Originals → O:/` (or `Y:/` for the YouTube
-      folder), read ok, write ok.
-11. **Plex:** set the extension's path map to
-    `smb://home-nas/Originals/=/volume1/Originals/`. Keep the old
-    `/Volumes/Originals/=/volume1/Originals/` entry alongside it until the next release.
-12. **Streaming and API** read the home's share map from its storage report within 5 minutes.
-    Restart them to pick it up at once.
-
-**Undo:** stop the pipeline as in step 7, run `maktaba-pipeline storage revert` (the latest
-batch, or `--batch <id>`), and start it again. As a last resort, `pg_restore` the dump from
-step 2.
+- `maktaba-pipeline storage status` shows the automatic conversion's state.
+  `storage auto` runs one automatic run now, in the foreground.
+- `maktaba-pipeline storage mounts` shows the mounts and the shares they resolve to.
+  `storage servers` lists the records, and `storage server-add home-nas --address
+  192.168.50.94 --address Home-NAS` adds or extends one (or edit it on the Machines page).
+- `maktaba-pipeline storage canonicalize` is the dry run; `--apply` converts. This is the
+  original command. Stop the writers first (Machines page → Drain, or stop the pipeline).
+- `maktaba-pipeline storage batches` lists the conversions. `storage revert [--batch
+  <id>]` undoes one value by value, wherever the column still holds the new value.
+- `maktaba-pipeline storage backups` lists the backups kept in the database.
+  `storage restore-backup [--backup <id>]` writes one back (the last resort). Its batch
+  then counts as reverted.
+- Plex: the canonical entries are added by themselves. Keep the old
+  `/Volumes/Originals/=/volume1/Originals/` entry alongside them until the next release.
+- Streaming and the API read the home's share map from its storage report within
+  5 minutes. Restart them to pick it up at once.
 
 ## Out of scope
 

@@ -15,6 +15,50 @@ export interface ClusterHome {
   storage?: NodeStorage | null;
   /** the home's "share -> local mount" override; absent: its own mounts */
   path_map?: Record<string, string> | null;
+  /** story 31.3: the automatic conversion of the stored paths to smb://server/share/... */
+  canonicalize?: CanonStatus | null;
+}
+
+/** What the home's pipeline reports of the automatic path conversion. */
+export interface CanonState {
+  phase?:
+    | "idle"
+    | "done"
+    | "blocked"
+    | "failed"
+    | "off"
+    | "held"
+    | "backing_up"
+    | "pausing"
+    | "applying"
+    | "verifying"
+    | "reverting";
+  /** why it waits or failed: unmounted, missing, unresolved_mount, no_shares, error, ... */
+  problems?: { code: string; detail?: string }[];
+  checked_at?: string;
+  held?: boolean;
+  /** the run in progress (or cut short, resumed at the next look) */
+  run?: { batch: string; done?: number; total?: number; started_at?: string } | null;
+  last?: { batch: string; changes: number; finished_at?: string; backup?: string } | null;
+  reverted?: { batch: string; rows: number; at: string } | null;
+  plan?: {
+    changes: number;
+    collisions: number;
+    unmatched: number;
+    checked: number;
+    missing: number;
+  };
+  servers_added?: { name: string; addresses: string[] }[];
+  plex_added?: string[];
+}
+
+export type CanonAction = "run" | "revert" | "resume";
+
+export interface CanonStatus {
+  state: CanonState;
+  request: CanonAction | null;
+  requested_at: string | null;
+  requested_by: string | null;
 }
 
 export type NodeState = "pending" | "approved" | "rejected" | "revoked";
@@ -120,6 +164,8 @@ export const clusterApi = {
     body: { addresses: string[]; char_map?: string; exports?: Record<string, string> }
   ) => api.put<StorageServer>(`/api/cluster/storage-servers/${q(name)}`, body),
   deleteServer: (name: string) => api.delete<void>(`/api/cluster/storage-servers/${q(name)}`),
+  canonicalize: (action: CanonAction) =>
+    api.post<CanonStatus>("/api/cluster/storage/canonicalize", { action }),
 };
 
 /** "123 456", "123-456" -> "123456"; anything else -> null. */

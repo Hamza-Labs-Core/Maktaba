@@ -43,11 +43,12 @@ const (
 )
 
 // DefaultStagingSettings mirror rules.tv_staging's defaults (pipeline
-// tvrelease/config.py): enabled is off in the interim until the Changes page
-// (story 33.11) lands, then on; hot_standby on; standby_warm viewers, so the
-// standby never spends an encoder on a channel nobody watches by default.
+// tvrelease/config.py, API tvchange.LoadConfig): enabled on (the owner's
+// default since the Changes page, story 33.11); hot_standby on; standby_warm
+// viewers, so the standby never spends an encoder on a channel nobody watches
+// by default.
 func DefaultStagingSettings() StagingSettings {
-	return StagingSettings{Enabled: false, HotStandby: true, StandbyWarm: StandbyWarmViewers,
+	return StagingSettings{Enabled: true, HotStandby: true, StandbyWarm: StandbyWarmViewers,
 		AutoRollback: true, KeepWarm: 15 * time.Minute, RollingSwap: "auto"}
 }
 
