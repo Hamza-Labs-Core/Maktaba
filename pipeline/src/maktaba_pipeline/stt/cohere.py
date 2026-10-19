@@ -54,7 +54,7 @@ class CohereRecogniser:
         """On the model's thread. Uses the model's own batch decoder
         (``_transcribe_waveforms_batched``, pinned with mlx-audio 0.5.9) so a file's
         stretches share GPU passes; without it, one ``generate`` per stretch."""
-        import mlx.core as mx
+        import mlx.core as mx  # type: ignore[import-untyped,import-not-found,unused-ignore]
 
         batched = getattr(self._model, "_transcribe_waveforms_batched", None)
         if batched is None:
