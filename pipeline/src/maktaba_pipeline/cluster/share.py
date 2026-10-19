@@ -1,0 +1,423 @@
+"""Where the cluster's files live: on the share with the videos (design-agent.md §4).
+
+- **Share root** (database form, like the library roots): ``MAKTABA_SHARE_ROOT`` when
+  set; otherwise the deepest directory common to every library root; when the libraries
+  share nothing but the filesystem root, the root of the library with the most videos.
+- **Cluster directory**: ``<share root>/maktaba/cluster`` translated to this machine's path
+  by its path map (the resolver: a canonical ``smb://`` root or the home's own legacy
+  spelling, ``/Volumes/Originals/...``, both map to this machine's mount);
+  ``MAKTABA_CLUSTER_DIR`` overrides with a local path. A share root that does not
+  resolve to a directory that exists here (no mapping yet, another machine's path, the
+  share not mounted) is refused, never created: the files go to the local fallback and
+  the reason says why (:func:`locate_cluster_dir`, :class:`ShareLocator`).
+- **Local fallback** (share unreachable): ``~/.maktaba/cluster``. Secrets (the home agent
+  key) stay local, never on the share.
+- **The machine's folder**: its IP, the local address of a socket aimed at the home's API
+  host (no packet is sent), unless one of the machine's interfaces is on the home's own
+  subnet: that address wins (a VPN routing the home's LAN, such as Tailscale's subnet
+  routes, would otherwise answer with the VPN address); a loopback answer (a home process)
+  becomes the machine's first private IPv4. IPv6 is written with ``:`` as ``-``.
+"""
+
+from __future__ import annotations
+
+import ipaddress
+import os
+import platform
+import re
+import socket
+import urllib.parse
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from pathlib import Path
+from typing import Any
+
+from ..engine.paths import PathMap
+
+__all__ = [
+    "CLUSTER_SUBDIR",
+    "ENV_CLUSTER_DIR",
+    "ENV_IP",
+    "ENV_KEY_PATH",
+    "ENV_SHARE_ROOT",
+    "ShareLocator",
+    "cluster_dir_for",
+    "common_dir",
+    "common_root",
+    "find_share_root",
+    "folder_name",
+    "foreign_path",
+    "home_key_path",
+    "load_library_roots",
+    "local_dir",
+    "locate_cluster_dir",
+    "machine_ip",
+    "resolve_cluster_dir",
+    "share_root_from",
+]
+
+ENV_SHARE_ROOT = "MAKTABA_SHARE_ROOT"
+ENV_CLUSTER_DIR = "MAKTABA_CLUSTER_DIR"
+ENV_KEY_PATH = "MAKTABA_HOME_AGENT_KEY"
+#: an older name of the same setting
+ENV_KEY_PATH_ALT = "MAKTABA_CLUSTER_KEY_PATH"
+ENV_IP = "MAKTABA_CLUSTER_IP"
+CLUSTER_SUBDIR = "maktaba/cluster"
+
+
+def local_dir() -> Path:
+    """``~/.maktaba/cluster``: this machine's own, never on the share."""
+    return Path.home() / ".maktaba" / "cluster"
+
+
+def home_key_path(env: Mapping[str, str] | None = None) -> Path:
+    """The home agent key the home's API writes (``MAKTABA_HOME_AGENT_KEY`` names
+    another file)."""
+    env = os.environ if env is None else env
+    override = env.get(ENV_KEY_PATH) or env.get(ENV_KEY_PATH_ALT)
+    return Path(override).expanduser() if override else local_dir() / "home-agent.key"
+
+
+# --- the share root -------------------------------------------------------------------
+
+
+def split_db_path(path: str) -> tuple[str, list[str]]:
+    """``(filesystem root, parts)`` of a database-form path: the root is ``/``, a drive
+    (``Y:/``), a UNC share (``//nas/share/``) or empty (relative). The hub's rule."""
+    p = path.strip().replace("\\", "/")
+    rest: str
+    m = re.match(r"^((?:smb|nfs)://[^/]+/[^/]+/?)(.*)$", p, re.IGNORECASE)
+    if m:
+        # story 31.3: smb://server/share/... keeps its server and share as the root
+        root, rest = m.group(1).rstrip("/") + "/", m.group(2)
+    elif p.startswith("//"):
+        segs = p[2:].split("/", 2)
+        if len(segs) == 1:
+            root, rest = f"//{segs[0]}/", ""
+        elif len(segs) == 2:
+            root, rest = f"//{segs[0]}/{segs[1]}/", ""
+        else:
+            root, rest = f"//{segs[0]}/{segs[1]}/", segs[2]
+    elif len(p) >= 2 and p[1] == ":" and p[0].isascii() and p[0].isalpha():
+        root, rest = p[:2] + "/", p[2:].lstrip("/")
+    elif p.startswith("/"):
+        root, rest = "/", p.lstrip("/")
+    else:
+        root, rest = "", p
+    return root, [s for s in rest.split("/") if s not in ("", ".")]
+
+
+def join_db_path(root: str, parts: Sequence[str]) -> str:
+    return root + "/".join(parts)
+
+
+def common_dir(paths: Sequence[str]) -> tuple[str, bool]:
+    """The deepest directory shared by every path (compared case-insensitively, in the
+    first path's case) and whether it is more than a filesystem root."""
+    if not paths:
+        return "", False
+    root, common = split_db_path(paths[0])
+    for path in paths[1:]:
+        r, parts = split_db_path(path)
+        if r.lower() != root.lower():
+            return "", False
+        n = 0
+        while n < len(common) and n < len(parts) and common[n].lower() == parts[n].lower():
+            n += 1
+        common = common[:n]
+    if root == "" and not common:
+        return "", False
+    return join_db_path(root, common), bool(common)
+
+
+def common_root(paths: Iterable[str]) -> str | None:
+    """The deepest directory common to ``paths``, or None when they share nothing but a
+    filesystem root (``/``, a drive, a UNC share)."""
+    found, ok = common_dir([p for p in paths if p and p.strip()])
+    return found if ok else None
+
+
+def share_root_from(
+    roots: Sequence[tuple[str, str, int]], env: Mapping[str, str] | None = None
+) -> str | None:
+    """The share root from ``(library id, root path, the library's videos)`` of every root
+    of a live library — the hub's rule (``ShareRootOf``), so both agree before the hub's
+    value arrives: the deepest directory common to every root; failing that, the library
+    with the most videos (ties: the smallest id), its roots' common directory, else its
+    first root. ``MAKTABA_SHARE_ROOT`` overrides."""
+    env = os.environ if env is None else env
+    explicit = (env.get(ENV_SHARE_ROOT) or "").strip()
+    if explicit:
+        r, parts = split_db_path(explicit)
+        return join_db_path(r, parts)
+    rows = [(lib, path, videos) for lib, path, videos in roots if path and path.strip()]
+    if not rows:
+        return None
+    found, ok = common_dir([path for _, path, _ in rows])
+    if ok:
+        return found
+    videos: dict[str, int] = {}
+    by_lib: dict[str, list[str]] = {}
+    for lib, path, n in rows:
+        videos[lib] = n
+        by_lib.setdefault(lib, []).append(path)
+    busiest = sorted(by_lib, key=lambda lib: (-videos[lib], lib))[0]
+    paths = by_lib[busiest]
+    found, ok = common_dir(paths)
+    if ok:
+        return found
+    r, parts = split_db_path(sorted(paths)[0])
+    return join_db_path(r, parts)
+
+
+#: every root of a live library, with the library's present videos (the hub's query)
+LIBRARY_ROOTS_SQL = (
+    "SELECT l.id AS library_id, lr.path AS path,"
+    " (SELECT count(*) FROM videos v WHERE v.library_id = l.id AND v.deleted_at IS NULL)"
+    " AS videos"
+    " FROM library_roots lr JOIN libraries l ON l.id = lr.library_id"
+    " WHERE l.deleted_at IS NULL ORDER BY l.id, lr.path"
+)
+
+
+async def load_library_roots(db: Any) -> list[tuple[str, str, int]]:
+    """``(library id, root path, videos)`` from ``library_roots`` — where the API keeps
+    the roots (``libraries.roots`` is the old copy) — for the live libraries."""
+    rows = await db.fetch(LIBRARY_ROOTS_SQL)
+    return [(str(r["library_id"]), str(r["path"]), int(r["videos"] or 0)) for r in rows]
+
+
+def cluster_dir_for(share_root: str, path_map: PathMap) -> Path:
+    """``<share root>/maktaba/cluster`` through ``path_map``, unchecked (see
+    :func:`locate_cluster_dir` for the checked form the agent uses)."""
+    return Path(path_map.to_local(share_root.rstrip("/") + "/" + CLUSTER_SUBDIR))
+
+
+_DRIVE = re.compile(r"^[A-Za-z]:(?:/|$)")
+
+
+def foreign_path(local: str, system: str | None = None) -> str | None:
+    """Why ``local`` (a path after the path map) cannot be a path on this machine: a
+    canonical path no mount resolved, or another OS's spelling (the home's
+    ``/Volumes/...`` on Windows, where it would land on the current drive); ``None``
+    when it may be one."""
+    from ..sharepath.canonical import parse_canonical
+
+    sp = parse_canonical(local)
+    if sp is not None and sp.scheme != "file":
+        return f"no mount of {sp.scheme}://{sp.server}/{sp.share} on this machine"
+    p = local.replace("\\", "/")
+    system = system or platform.system()
+    if system == "Windows":
+        if p.startswith("/") and not p.startswith("//"):
+            return "another machine's path (no drive or UNC share maps it here)"
+    elif _DRIVE.match(p) or p.startswith("//"):
+        return "a Windows path"
+    return None
+
+
+def locate_cluster_dir(
+    share_root: str,
+    path_map: PathMap,
+    *,
+    is_dir: Callable[[str], bool] = os.path.isdir,
+    system: str | None = None,
+) -> tuple[Path | None, str, Path | None]:
+    """``(cluster directory, how, the share root here)`` when the share root resolves
+    to a directory that exists on this machine; ``(None, why not, None)`` otherwise.
+
+    The share root must exist (it holds the libraries): a path the map did not
+    translate, or a share not mounted now, would otherwise be created as a stray
+    folder on the wrong disk."""
+    root = share_root.strip()
+    trimmed = root.rstrip("/\\") or root
+    if re.fullmatch(r"[A-Za-z]:", trimmed):
+        trimmed += "/"  # a drive root keeps its slash
+    local = path_map.to_local(trimmed)
+    why = foreign_path(local, system)
+    if why is not None:
+        return None, f"share root {root} does not resolve here: {why}", None
+    try:
+        present = is_dir(local)
+    except (OSError, ValueError):
+        present = False
+    if not present:
+        return None, f"share root {root} -> {local} is not mounted here", None
+    base = Path(local)
+    return base.joinpath(*CLUSTER_SUBDIR.split("/")), f"share root {root}", base
+
+
+async def find_share_root(
+    db: Any | None, env: Mapping[str, str] | None = None
+) -> tuple[str | None, str]:
+    """``(the share root in database form, how)``; ``(None, why not)``."""
+    env = os.environ if env is None else env
+    roots: list[tuple[str, str, int]] = []
+    if not (env.get(ENV_SHARE_ROOT) or "").strip():
+        if db is None:
+            return None, "no database to find the share"
+        try:
+            roots = await load_library_roots(db)
+        except Exception as exc:  # noqa: BLE001 - the share is optional; logs stay local
+            return None, f"libraries unreadable: {exc}"
+    root = share_root_from(roots, env)
+    if root is None:
+        return None, "no library roots"
+    return root, f"share root {root}"
+
+
+async def resolve_cluster_dir(
+    db: Any | None,
+    path_map: PathMap,
+    env: Mapping[str, str] | None = None,
+    *,
+    is_dir: Callable[[str], bool] = os.path.isdir,
+    system: str | None = None,
+) -> tuple[Path | None, str]:
+    """``(the cluster directory on the share, how it was found)``; ``(None, why not)``
+    when there is no share to use here."""
+    env = os.environ if env is None else env
+    override = (env.get(ENV_CLUSTER_DIR) or "").strip()
+    if override:
+        return Path(override).expanduser(), ENV_CLUSTER_DIR
+    root, how = await find_share_root(db, env)
+    if root is None:
+        return None, how
+    found, how, _ = locate_cluster_dir(root, path_map, is_dir=is_dir, system=system)
+    return found, how
+
+
+class ShareLocator:
+    """Where this process's files go, asked again at every share retry: the share root
+    (from the database at start, then the hub's ``welcome.settings``) through the path
+    map active *now* — a node that starts paused, or before its resolver is built, has
+    no mapping yet and finds the share once it has (:class:`~.agent.files.ClusterFiles`
+    calls it). ``MAKTABA_CLUSTER_DIR`` wins."""
+
+    def __init__(
+        self,
+        share_root: str | None,
+        how: str,
+        *,
+        path_map: Callable[[], PathMap],
+        env: Mapping[str, str] | None = None,
+        is_dir: Callable[[str], bool] = os.path.isdir,
+        system: str | None = None,
+    ) -> None:
+        self.share_root = share_root
+        self.how = how
+        self.path_map = path_map
+        self.env = os.environ if env is None else env
+        self.is_dir = is_dir
+        self.system = system
+
+    def __call__(self) -> tuple[Path | None, str, Path | None]:
+        override = (self.env.get(ENV_CLUSTER_DIR) or "").strip()
+        if override:
+            return Path(override).expanduser(), ENV_CLUSTER_DIR, None
+        if self.share_root is None:
+            return None, self.how, None
+        return locate_cluster_dir(
+            self.share_root, self.path_map(), is_dir=self.is_dir, system=self.system
+        )
+
+
+# --- the machine's folder ---------------------------------------------------------------
+
+
+def _private_ipv4() -> str | None:
+    try:
+        import psutil
+
+        addrs = psutil.net_if_addrs()
+    except Exception:  # noqa: BLE001
+        return None
+    candidates: list[str] = []
+    for nics in addrs.values():
+        for a in nics:
+            if a.family != socket.AF_INET:
+                continue
+            try:
+                ip = ipaddress.ip_address(a.address)
+            except ValueError:
+                continue
+            if ip.is_loopback or ip.is_link_local:
+                continue
+            if ip.is_private:
+                candidates.append(a.address)
+    return sorted(candidates)[0] if candidates else None
+
+
+def _on_subnet_of(home: str, routed: str) -> str | None:
+    """This machine's IPv4 on the same subnet as ``home`` (an interface's address and
+    netmask) when ``routed`` (the address the route to the home picked) is not one; the
+    narrowest subnet wins. None: keep ``routed``."""
+    try:
+        target = ipaddress.ip_address(home.split("%")[0])
+    except ValueError:
+        return None
+    if target.version != 4 or target.is_loopback:
+        return None
+    try:
+        import psutil
+
+        addrs = psutil.net_if_addrs()
+    except Exception:  # noqa: BLE001
+        return None
+    best: tuple[int, str] | None = None
+    for nics in addrs.values():
+        for a in nics:
+            if a.family != socket.AF_INET or not a.netmask:
+                continue
+            try:
+                net = ipaddress.ip_interface(f"{a.address}/{a.netmask}").network
+                ip = ipaddress.ip_address(a.address)
+            except ValueError:
+                continue
+            if ip.is_loopback or ip.is_link_local or net.prefixlen == 0 or target not in net:
+                continue
+            if a.address == routed:
+                return None  # the route already leaves through the home's subnet
+            if best is None or net.prefixlen > best[0]:
+                best = (net.prefixlen, a.address)
+    return best[1] if best else None
+
+
+def machine_ip(home_url: str | None, env: Mapping[str, str] | None = None) -> str:
+    """This machine's address as the home sees it (see the module doc);
+    ``MAKTABA_CLUSTER_IP`` overrides it (a container's own address is not the machine's)."""
+    env = os.environ if env is None else env
+    override = (env.get(ENV_IP) or "").strip()
+    if override:
+        return folder_name(override)
+    found: str | None = None
+    home_addr: str | None = None
+    if home_url:
+        parsed = urllib.parse.urlsplit(home_url if "//" in home_url else "//" + home_url)
+        host = parsed.hostname
+        port = parsed.port or (443 if parsed.scheme in ("https", "wss") else 80)
+        if host:
+            try:
+                info = socket.getaddrinfo(host, port, type=socket.SOCK_DGRAM)[0]
+                with socket.socket(info[0], socket.SOCK_DGRAM) as s:
+                    s.connect(info[4])  # UDP: picks the route, sends nothing
+                    found = str(s.getsockname()[0])
+                    home_addr = str(info[4][0])
+            except OSError:
+                found = None
+    if found is not None:
+        try:
+            if ipaddress.ip_address(found.split("%")[0]).is_loopback:
+                found = None
+        except ValueError:
+            found = None
+    if found is not None and home_addr is not None and found != home_addr:
+        # a VPN that routes the home's LAN (Tailscale's subnet routes) makes the socket
+        # answer with the VPN's address: an interface on the home's own subnet wins
+        found = _on_subnet_of(home_addr, found) or found
+    if found is None:
+        found = _private_ipv4() or "127.0.0.1"
+    return folder_name(found)
+
+
+def folder_name(ip: str) -> str:
+    return ip.split("%")[0].replace(":", "-")

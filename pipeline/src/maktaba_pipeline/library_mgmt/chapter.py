@@ -20,10 +20,11 @@ Epic 8 Story 8.12's priority rule.
 
 from __future__ import annotations
 
+import importlib
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 
 class _LabelResolver(Protocol):
@@ -36,11 +37,17 @@ class _LabelResolver(Protocol):
 __all__ = [
     "DEFAULT_DROP_THRESHOLD",
     "DEFAULT_MIN_CHAPTER_SEC",
+    "DEFAULT_SHIFT_MIN_SEC",
+    "DEFAULT_SHIFT_WINDOW",
+    "DEFAULT_SHIFT_Z",
+    "DEFAULT_SNAP_RADIUS",
     "DEFAULT_TITLE_FALLBACK",
     "DEFAULT_WINDOW_SEGMENTS",
     "InferredChapter",
     "Segment",
+    "extractive_title",
     "infer_chapters",
+    "infer_topic_chapters",
     "title_for_chapter",
 ]
 
@@ -174,6 +181,143 @@ def title_for_chapter(
     if not label:
         return f"{DEFAULT_TITLE_FALLBACK} {chapter.seq + 1}"
     return label[:max_chars]
+
+
+# ---------------------------------------------------------------------------
+# Relative topic shifts (what the engine ``chapter_infer`` stage runs)
+# ---------------------------------------------------------------------------
+
+#: Defaults calibrated on the library's own transcripts with multilingual-e5-small
+#: (25 lectures, 15 min to 2 h): the drop between two 10-segment windows has a median
+#: of 0.019 and a 99.9th percentile of 0.046, so the absolute 0.35 of
+#: :func:`infer_chapters` (chosen for e5-large) never fires. A drop that stands
+#: ``DEFAULT_SHIFT_Z`` standard deviations above the video's own mean does, at about
+#: one chapter per 10 minutes, and the cuts land where the subject changes.
+DEFAULT_SHIFT_WINDOW: int = 10
+DEFAULT_SHIFT_Z: float = 2.5
+DEFAULT_SHIFT_MIN_SEC: float = 240.0
+#: a boundary moves to the longest pause within this many segments of the peak
+DEFAULT_SNAP_RADIUS: int = 3
+
+
+def infer_topic_chapters(
+    segments: Sequence[Segment],
+    *,
+    window_segments: int = DEFAULT_SHIFT_WINDOW,
+    z: float = DEFAULT_SHIFT_Z,
+    min_chapter_sec: float = DEFAULT_SHIFT_MIN_SEC,
+    snap_radius: int = DEFAULT_SNAP_RADIUS,
+) -> list[InferredChapter]:
+    """Chapters at the video's strongest topic shifts, whatever the embedding model.
+
+    For every position the cosine drop between the mean of the ``window_segments``
+    before and after it is computed; a local peak counts when it is at least ``z``
+    standard deviations above the mean drop of this video. Peaks are taken strongest
+    first, at least ``min_chapter_sec`` from the video's ends and from each other, and
+    each moves to the longest silence within ``snap_radius`` segments (people pause
+    between subjects, not mid-sentence). Returns the full span list, as
+    :func:`infer_chapters` does: one chapter when the video is too short to split.
+    """
+    if not segments:
+        return []
+    n = len(segments)
+    whole = [InferredChapter(seq=0, start_sec=segments[0].start_sec, end_sec=segments[-1].end_sec)]
+    w = window_segments
+    if w < 1 or n < 2 * w + 1:
+        return whole
+    # numpy (the search extra brings it, and the stage needs that extra anyway): a 4-hour
+    # transcript is ~4 000 x 384 numbers, which pure Python holds the GIL over for seconds
+    np: Any = importlib.import_module("numpy")
+    x = _matrix(np, segments)
+    # prefix sums of the vectors: every window sum in O(dim)
+    prefix = np.vstack([np.zeros((1, x.shape[1])), np.cumsum(x, axis=0)])
+    positions = np.arange(w, n - w + 1)
+    left = prefix[positions] - prefix[positions - w]
+    right = prefix[positions + w] - prefix[positions]
+    norms = np.linalg.norm(left, axis=1) * np.linalg.norm(right, axis=1)
+    dots = np.einsum("ij,ij->i", left, right)
+    cos = np.divide(dots, norms, out=np.zeros_like(dots), where=norms != 0.0)
+    drops = 1.0 - cos
+    std = float(drops.std())
+    if std == 0.0:
+        return whole
+    floor = float(drops.mean()) + z * std
+    prev = np.concatenate(([-np.inf], drops[:-1]))
+    nxt = np.concatenate((drops[1:], [-np.inf]))
+    mask = (drops >= floor) & (drops >= prev) & (drops >= nxt)
+    peaks = [(float(drops[k]), int(positions[k])) for k in np.flatnonzero(mask)]
+    peaks.sort(key=lambda p: (-p[0], p[1]))
+    first, last = segments[0].start_sec, segments[-1].end_sec
+    chosen: list[int] = []
+    for _, i in peaks:
+        i = _snap_to_pause(segments, i, snap_radius)
+        t = segments[i].start_sec
+        if t - first < min_chapter_sec or last - t < min_chapter_sec:
+            continue
+        if all(abs(t - segments[j].start_sec) >= min_chapter_sec for j in chosen):
+            chosen.append(i)
+    chosen.sort()
+    chapters: list[InferredChapter] = []
+    start = first
+    for seq, i in enumerate(chosen):
+        end = segments[i].start_sec
+        chapters.append(InferredChapter(seq=seq, start_sec=start, end_sec=end))
+        start = end
+    chapters.append(InferredChapter(seq=len(chosen), start_sec=start, end_sec=last))
+    return chapters
+
+
+def extractive_title(
+    chapter: InferredChapter,
+    segments: Sequence[Segment],
+    *,
+    lead_segments: int = 6,
+    min_words: int = 3,
+    max_chars: int = 60,
+) -> str | None:
+    """The chapter's own words as its title, or None when it has none worth showing.
+
+    Among the chapter's first ``lead_segments`` sentences (a new subject is usually
+    announced as it starts), the one closest to the chapter's mean vector, with at least
+    ``min_words`` words; cut at a word boundary to ``max_chars`` with an ellipsis.
+    """
+    inside = [s for s in segments if chapter.start_sec <= s.start_sec < chapter.end_sec]
+    if not inside:
+        return None
+    lead = [s for s in inside[:lead_segments] if len(s.text.split()) >= min_words]
+    if not lead:
+        return None
+    np: Any = importlib.import_module("numpy")
+    centroid = _matrix(np, inside).mean(axis=0)
+    cand = _matrix(np, lead)
+    norms = np.linalg.norm(cand, axis=1) * float(np.linalg.norm(centroid))
+    sims = np.divide(cand @ centroid, norms, out=np.zeros(len(lead)), where=norms != 0.0)
+    best = lead[int(sims.argmax())]  # the first of equals, as max() picks
+    text = " ".join(best.text.split())
+    if len(text) <= max_chars:
+        return text
+    cut = text[: max_chars - 1].rsplit(" ", 1)[0] or text[: max_chars - 1]
+    return cut.rstrip(" ،,.؛:") + "…"
+
+
+def _matrix(np: Any, segments: Sequence[Segment]) -> Any:
+    """The segments' vectors as one float64 matrix (all of one dimension)."""
+    dim = len(segments[0].embedding)
+    for k, s in enumerate(segments):
+        if len(s.embedding) != dim:
+            raise ValueError(f"embedding dim mismatch at index {k}: {len(s.embedding)} vs {dim}")
+    return np.asarray([s.embedding for s in segments], dtype=np.float64)
+
+
+def _snap_to_pause(segments: Sequence[Segment], i: int, radius: int) -> int:
+    """The segment within ``radius`` of ``i`` that follows the longest silence."""
+    lo, hi = max(1, i - radius), min(len(segments) - 1, i + radius)
+    if lo > hi:
+        return i
+    return max(
+        range(lo, hi + 1),
+        key=lambda j: (segments[j].start_sec - segments[j - 1].end_sec, -abs(j - i)),
+    )
 
 
 # ---------------------------------------------------------------------------

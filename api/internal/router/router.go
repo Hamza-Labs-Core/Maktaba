@@ -93,6 +93,10 @@ func New(d Deps) chi.Router {
 	// those headers, which is exactly RealIP's intended deployment, so
 	// we keep it deliberately. Operators exposing the API directly must
 	// strip inbound forwarding headers at their edge.
+	// Epic 32 story 32.9: only the relay agent on loopback may mark a
+	// request as coming through the relay; checked on the real peer
+	// address, before RealIP rewrites it.
+	r.Use(mw.StripVia)
 	r.Use(chimw.RealIP) //nolint:staticcheck // SA1019: intentional behind a trusted proxy (see comment above)
 	r.Use(mw.RequestID)
 	// Recoverer carries the central HLB-300 error-report hook. With a

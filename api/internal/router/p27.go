@@ -9,6 +9,7 @@
 package router
 
 import (
+	"context"
 	"database/sql"
 
 	"github.com/go-chi/chi/v5"
@@ -16,6 +17,8 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/channels"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/guide"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tv"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tvcluster"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 )
 
 // P27Deps bundles the dependencies for the Epic 27 handlers.
@@ -27,6 +30,11 @@ type P27Deps struct {
 	// DataDir is the data volume (MAKTABA_DATA_DIR); uploaded channel art
 	// is stored under <DataDir>/channel-art/.
 	DataDir string
+	// Secrets is the home's sealed store: the Plex token is there.
+	Secrets secrets.Store
+	// RemoteInfo reports remote viewing for /api/tv/info (Epic 32 story
+	// 32.9); nil: not available.
+	RemoteInfo func(ctx context.Context) tv.RemoteAvailability
 }
 
 // MountP27 attaches the Epic 27 route handlers onto r. Safe to skip when
@@ -37,7 +45,7 @@ func MountP27(r chi.Router, d P27Deps) {
 	}
 	// Live TV access: HDHomeRun tuner admin, where the TV streams live, and
 	// Plex Live TV (status, refresh, register).
-	tvh := &tv.Handler{DB: d.DB, PublicBaseURL: d.PublicBaseURL}
+	tvh := &tv.Handler{DB: d.DB, PublicBaseURL: d.PublicBaseURL, Secrets: d.Secrets, Remote: d.RemoteInfo}
 	// a channel created, edited, renumbered or deleted by hand: Plex's
 	// channel map follows (the plex_livetv stage decides what to push)
 	chh := &channels.Handler{DB: d.DB, DataDir: d.DataDir, OnLineupChange: tvh.NotifyPlex}
@@ -45,4 +53,6 @@ func MountP27(r chi.Router, d P27Deps) {
 	chh.MountSchedule(r) // Story 27.2 — schedule read + regenerate trigger
 	(&guide.Handler{DB: d.DB}).Mount(r)
 	tvh.Mount(r)
+	// Epic 32: streaming hosts and channels on air across the cluster (admin)
+	tvcluster.New(d.DB).Mount(r)
 }

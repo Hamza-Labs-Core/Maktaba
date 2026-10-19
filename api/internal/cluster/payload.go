@@ -12,8 +12,12 @@ import (
 const PayloadVersion = 1
 
 // PayloadHome identifies the home inside the sealed payload.
+// ClusterPub (phase 2) is the home's long-term cluster key, which the
+// machine's agent checks in the channel handshake (design-agent.md §4.2);
+// empty only in the phase-1 vectors.
 type PayloadHome struct {
 	APIURL     string `json:"api_url"`
+	ClusterPub string `json:"cluster_pub,omitempty"`
 	InstanceID string `json:"instance_id"`
 	Name       string `json:"name"`
 }

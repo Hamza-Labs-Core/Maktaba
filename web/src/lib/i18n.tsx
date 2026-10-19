@@ -38,6 +38,15 @@ const MESSAGES: Record<Locale, Record<string, string>> = {
 
 const warnedMisses = new Set<string>();
 
+/**
+ * The catalog entry for key in locale (English when the locale has none),
+ * or undefined: for copy with its own fallback (the rules schema's English),
+ * which `t` would report as a miss.
+ */
+export function lookupMessage(locale: Locale, key: string): string | undefined {
+  return MESSAGES[locale][key] ?? MESSAGES.en[key];
+}
+
 export interface I18nState {
   locale: Locale;
   dir: Direction;

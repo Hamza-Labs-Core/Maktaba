@@ -268,7 +268,16 @@ test-unit-web:
 # ---------------------------------------------------------------------------
 # Integration tests (gate 3; Story 20.1 integration tier)
 # Needs Postgres + Chroma reachable.
+#
+# INTEGRATION_GO_PG_URL names a Postgres server (its user may create
+# databases and roles) for the Go tests gated on MAKTABA_TEST_PG_URL:
+# each makes, migrates and drops its own scratch database there. It
+# is handed to the Go tests only (the pipeline's pytest reads the same
+# variable); empty leaves MAKTABA_TEST_PG_URL as the environment has
+# it. CI's integration job points it at its Postgres service.
 # ---------------------------------------------------------------------------
+
+INTEGRATION_GO_PG_URL ?=
 
 .PHONY: test-integration
 test-integration:  ## Integration tier (Story 20.1, Epic 20.4).
@@ -279,7 +288,8 @@ test-integration:  ## Integration tier (Story 20.1, Epic 20.4).
 test-integration-inner:
 	@for mod in $(GO_MODULES); do \
 		echo "==> go test -tags=integration ./... ($$mod)"; \
-		(cd $$mod && go test -tags=integration -count=1 ./...); \
+		(cd $$mod && $(if $(INTEGRATION_GO_PG_URL),MAKTABA_TEST_PG_URL='$(INTEGRATION_GO_PG_URL)') \
+			go test -tags=integration -count=1 ./...); \
 	done
 	@# pytest exits 5 when no tests match the marker — that's the
 	@# normal state until Story 20.4 lands real integration tests.

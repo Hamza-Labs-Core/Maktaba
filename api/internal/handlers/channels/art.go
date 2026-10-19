@@ -96,6 +96,9 @@ type ChannelArt struct {
 	Logo      ArtImage     `json:"logo"`
 	Watermark WatermarkArt `json:"watermark"`
 	Loading   ArtImage     `json:"loading"`
+	// Strip is the channel's own strip settings (mode_config.look.strip,
+	// Story 27.11); null: the rules tv_strip defaults apply.
+	Strip map[string]any `json:"strip"`
 }
 
 // WatermarkSettingsRequest is the PATCH /art/watermark body.
@@ -208,6 +211,7 @@ func withArt(c Channel) Channel {
 		a.Watermark.WidthPct = numOf(wm["width_pct"], DefaultWatermarkWidthPct)
 		a.Watermark.MarginPct = numOf(wm["margin_pct"], DefaultWatermarkMarginPct)
 	}
+	a.Strip = stripOf(c)
 	c.Art = a
 	return c
 }

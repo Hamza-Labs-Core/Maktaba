@@ -46,6 +46,8 @@ type ProgramBlock struct {
 	// SourceURL is the stream/page URL of a `live` block (nullable
 	// channel_programs.source_url; empty before that migration lands).
 	SourceURL string
+	// Info is the display part of title_snapshot (the strip's text).
+	Info BlockInfo
 }
 
 // Duration is the wall-clock length of the block.
@@ -76,13 +78,29 @@ type Repo interface {
 
 // Runtime mirrors the slot-0083 channel_runtime row.
 type Runtime struct {
-	ChannelID     uuid.UUID
+	ChannelID uuid.UUID
+	// HostID / Host / StreamBaseURL: which streaming host runs the channel
+	// and where it is reached (slot 0117; the row is cluster-wide).
+	HostID        string
+	StreamBaseURL string
 	Host          string
 	PID           int
 	State         string // idle | warming | live | draining
 	ViewerCount   int
 	StartedAt     time.Time
 	LastSegmentAt time.Time
+	// Encoder of the block on air (nvenc | videotoolbox | software),
+	// muxer restarts and blocks that fell back from NVENC (slot 0117).
+	Encoder        string
+	Restarts       int
+	NVENCFallbacks int64
+}
+
+// HostRuntimeClearer is implemented by repos that can drop every
+// channel_runtime row of a host (stale rows from before a restart:
+// stations live in memory, so none of them survived it).
+type HostRuntimeClearer interface {
+	ClearHostRuntime(ctx context.Context, hostID, host string) (int64, error)
 }
 
 // Runtime states (mirror the slot-0083 CHECK).

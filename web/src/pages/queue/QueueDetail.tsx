@@ -1,7 +1,8 @@
 // /queue/:stage — one queue: controls, KPIs, flow neighbours, throughput
 // chart, running jobs with sub-steps, next up, failures and its log.
+// ?host=<node id | home> narrows the running jobs to one machine.
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { useI18n } from "../../lib/i18n";
 import { queueApi } from "../../lib/queueApi";
@@ -12,7 +13,7 @@ import type {
   RatePoint,
   WaitingReason,
 } from "../../lib/queueApi";
-import { useJobStream, useQueuesSnapshot } from "../../lib/useQueueStream";
+import { runMachine, useJobStream, useQueuesSnapshot, useWorkers } from "../../lib/useQueueStream";
 import { ActivityLog } from "../../components/queue/ActivityLog";
 import { IssueList, groupKey } from "../../components/queue/IssueList";
 import { NextUp } from "../../components/queue/NextUp";
@@ -21,6 +22,7 @@ import { RateChart } from "../../components/queue/RateChart";
 import { RetriggerDialog } from "../../components/queue/RetriggerDialog";
 import { RingGauge } from "../../components/queue/RingGauge";
 import { RunningJobs } from "../../components/queue/RunningJobs";
+import { hostWorkerIds, runsOnHost, useHostName } from "../../components/queue/hostFilter";
 import { STATE_GLYPH, queueVisualState, useFmt } from "../../components/queue/format";
 import { useAction } from "../../components/queue/useAction";
 import { useThrottledReload } from "../../components/queue/useThrottledReload";
@@ -53,6 +55,9 @@ export function QueueDetail() {
   const { snapshot } = useQueuesSnapshot();
   const stream = useJobStream({ stage });
   const action = useAction();
+  const host = useSearchParams()[0].get("host") || "";
+  const workers = useWorkers();
+  const hostName = useHostName(host, workers);
 
   const [detail, setDetail] = useState<QueueDetailData | null>(null);
   const [rate, setRate] = useState<RatePoint[]>([]);
@@ -101,10 +106,20 @@ export function QueueDetail() {
         byId.set(j.id, j);
       else byId.delete(j.id);
     }
-    return [...byId.values()].sort((a, b) =>
-      (a.started_at ?? "").localeCompare(b.started_at ?? "")
+    let list = [...byId.values()];
+    if (host) {
+      const ids = hostWorkerIds(workers, host);
+      list = list.filter((j) => runsOnHost(j, stream.running.get(j.id), ids));
+    }
+    return list.sort(
+      (a, b) => (a.started_at ?? "").localeCompare(b.started_at ?? "") || a.id - b.id
     );
-  }, [detail?.running, stream.jobs]);
+  }, [detail?.running, stream.jobs, stream.running, host, workers]);
+  // where each running job runs (the cluster hub's job events)
+  const machines = useMemo(
+    () => new Map([...stream.running.values()].map((r) => [r.job.id, runMachine(r, null)])),
+    [stream.running]
+  );
 
   if (missing && !detail) {
     return (
@@ -357,7 +372,13 @@ export function QueueDetail() {
           <h2 className="mkt-q-section-title" id="mkt-q-run-h">
             {t("queue.detail.running")}
           </h2>
-          <RunningJobs jobs={running} />
+          {host && (
+            <p className="mkt-q-note">
+              {t("queue.host.filtered", { machine: hostName })}{" "}
+              <Link to={`/queue/${encodeURIComponent(stage)}`}>{t("queue.host.all")}</Link>
+            </p>
+          )}
+          <RunningJobs jobs={running} machines={machines} />
         </section>
         <section className="mkt-q-panel" aria-labelledby="mkt-q-next-h">
           <h2 className="mkt-q-section-title" id="mkt-q-next-h">

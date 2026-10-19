@@ -25,6 +25,7 @@ does not depend on whether the extra is installed).
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import os
 import re
 import threading
@@ -47,6 +48,7 @@ __all__ = [
     "SegmentHit",
     "SemanticIndex",
     "SemanticUnavailable",
+    "StoredVector",
     "VectorCollection",
     "batch_size",
     "chroma_dir",
@@ -57,6 +59,7 @@ __all__ = [
     "parse_hits",
     "pick_device",
     "search_available",
+    "video_vectors",
 ]
 
 #: bump when what a vector holds changes (text normalisation, metadata, prefixes): every
@@ -115,13 +118,15 @@ def collection_name(model: str, prefix: str | None = None) -> str:
 
 
 def search_available() -> bool:
-    """True when chromadb and sentence-transformers can be imported."""
-    try:
-        importlib.import_module("chromadb")
-        importlib.import_module("sentence_transformers")
-    except ImportError:
-        return False
-    return True
+    """True when chromadb and sentence-transformers are installed.
+
+    Found, not imported: importing them loads torch (seconds, and its memory), and every
+    worker asks this at start to decide whether it serves ``index``. A broken install
+    still fails, at the first index job (``search_unavailable``).
+    """
+    return all(
+        importlib.util.find_spec(m) is not None for m in ("chromadb", "sentence_transformers")
+    )
 
 
 # --------------------------------------------------------------------------- embedder
@@ -280,6 +285,12 @@ class VectorCollection(Protocol):
 
     def delete(self, where: dict[str, Any]) -> None: ...
 
+    def get(
+        self,
+        where: dict[str, Any] | None = None,
+        include: Sequence[str] = ...,
+    ) -> dict[str, Any]: ...
+
     def query(
         self,
         query_embeddings: Sequence[Sequence[float]],
@@ -334,6 +345,45 @@ class IndexedSegment:
     start_sec: float
     end_sec: float
     text: str
+
+
+@dataclass(frozen=True, slots=True)
+class StoredVector:
+    """One segment's vector as the store holds it (chapters and topics read these)."""
+
+    segment_id: int
+    transcript_id: str
+    seq: int
+    start_sec: float
+    end_sec: float
+    text: str
+    embedding: list[float]
+
+
+def video_vectors(collection: VectorCollection, video_id: UUID | str) -> list[StoredVector]:
+    """Every vector of ``video_id`` in segment order (no embedding model is loaded)."""
+    res = collection.get(
+        where={"video_id": str(video_id)}, include=["embeddings", "metadatas", "documents"]
+    )
+    embeddings = res.get("embeddings")
+    if embeddings is None:  # a numpy array has no truth value: test for None, not falsy
+        embeddings = []
+    metas = res.get("metadatas") or []
+    docs = res.get("documents") or [""] * len(metas)
+    out = [
+        StoredVector(
+            segment_id=int(m.get("segment_id", 0)),
+            transcript_id=str(m.get("transcript_id", "")),
+            seq=int(m.get("seq", 0)),
+            start_sec=float(m.get("start_sec", 0.0)),
+            end_sec=float(m.get("end_sec", 0.0)),
+            text=str(d or ""),
+            embedding=[float(x) for x in e],
+        )
+        for e, m, d in zip(embeddings, metas, docs, strict=True)
+    ]
+    out.sort(key=lambda v: v.seq)
+    return out
 
 
 @dataclass(frozen=True, slots=True)

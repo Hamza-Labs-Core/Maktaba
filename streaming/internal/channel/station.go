@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pathmap"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/procattr"
 )
 
 // StationConfig is everything a Station needs from the host.
@@ -30,10 +31,57 @@ type StationConfig struct {
 	Resolver LiveResolver
 	PathMap  pathmap.Map
 	FontFile string // for slate captions; "" → no caption
-	Logger   *slog.Logger
-	Now      func() time.Time
+	// StripDefaults returns the strip settings every channel starts from
+	// (rules tv_strip); nil: no strip.
+	StripDefaults func(ctx context.Context) StripSettings
+	Logger        *slog.Logger
+	Now           func() time.Time
 	// LiveRetry: how long a failed live block slates before retrying.
 	LiveRetry time.Duration
+	// Gate is the NVENC session semaphore shared by every station (nil:
+	// the process-wide DefaultEncoderGate); VTGate the VideoToolbox one
+	// (nil: DefaultVTGate, uncapped by default).
+	Gate   *EncoderGate
+	VTGate *EncoderGate
+	// NVENCWait is how long a pre-started block waits for an NVENC slot
+	// when the gate is full and this station holds one (its current block,
+	// ending at the boundary); 0: defaultNVENCWait.
+	NVENCWait time.Duration
+	// Assets, when set, resolves the channel's art (logo, watermark, loading
+	// picture) to a local file: a cluster node encodes with a cached copy of the
+	// home's files (Epic 32.1). Nil: the look's paths through PathMap.
+	Assets AssetResolver
+	// Discontinuity starts the muxer with an HLS discontinuity: a station that
+	// takes over a channel from another host (failover, move) continues the
+	// viewers' playlists with EXT-X-DISCONTINUITY (Epic 32.4).
+	Discontinuity bool
+	// PathMapSource, when set, is read at each station start instead of PathMap
+	// (a node's map follows the cluster's, Epic 31).
+	PathMapSource func() pathmap.Map
+}
+
+// Asset kinds an AssetResolver is asked for.
+const (
+	AssetKindLogo      = "logo"
+	AssetKindWatermark = "watermark"
+	AssetKindLoading   = "loading"
+)
+
+// AssetResolver returns the local file for a channel's art kind whose look path
+// on the home is src ("" when there is none).
+type AssetResolver interface {
+	Asset(ctx context.Context, channelID uuid.UUID, kind, src string) string
+}
+
+// defaultNVENCWait covers the feeder's pre-start lead plus margin: the
+// station's own ending block frees its slot at the boundary.
+const defaultNVENCWait = defaultLead + 2*time.Second
+
+// StationStats is what a station reports for channel_runtime.
+type StationStats struct {
+	Encoder        string // the current block's encoder
+	Restarts       int    // muxer restarts
+	NVENCFallbacks int64  // blocks encoded by libx264 instead of the hardware encoder (NVENC or VideoToolbox)
 }
 
 // Station is one channel on air: the persistent muxer (HLS window +
@@ -59,7 +107,8 @@ type Station struct {
 	stopOnce sync.Once
 	stopping chan struct{}
 
-	software atomic.Bool // NVENC failed on this station: libx264 from now on
+	nvencFallbacks atomic.Int64 // blocks that fell back from NVENC to libx264
+	encoderNow     atomic.Value // string: the encoder of the block on air
 	// reachedBits: float64 bits of the timeline position (s since epoch)
 	// the forwarded output has reached.
 	reachedBits atomic.Uint64
@@ -68,6 +117,8 @@ type Station struct {
 	lookAt      time.Time
 	logMu       sync.Mutex
 	blockLog    *os.File
+	stripOnce   sync.Once // "strip skipped" logged once
+	stripWarned string
 }
 
 // muxProc is one muxer process.
@@ -114,7 +165,7 @@ func StartStation(cfg StationConfig, channelID uuid.UUID, dir string) (*Station,
 	}
 	s.blockLog, _ = os.Create(filepath.Join(dir, "blocks.log"))
 
-	m, err := s.startMuxer(false)
+	m, err := s.startMuxer(cfg.Discontinuity)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("channel: start muxer: %w", err)
@@ -160,6 +211,7 @@ func StartStation(cfg StationConfig, channelID uuid.UUID, dir string) (*Station,
 // hub. restart appends to mux.log and marks an HLS discontinuity.
 func (s *Station) startMuxer(restart bool) (*muxProc, error) {
 	cmd := exec.Command(s.cfg.FFmpeg, MuxerArgs(s.cfg.Profile, s.dir, restart)...)
+	procattr.Tie(cmd) // dies with this process, however it dies (Story 22.9)
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -606,6 +658,7 @@ func (p *stationPlayback) run(ctx context.Context) (bool, error) {
 	s, seg := p.s, p.seg
 	look := s.currentLook(ctx)
 	in, start, err := s.blockInput(ctx, seg, look)
+	defer s.removeStripFiles(in)
 	if err != nil {
 		s.log.Warn("channel: block unplayable", "kind", seg.Kind, "seq", seg.Block.Seq,
 			"err", err.Error(), "event", "channel_block_unplayable")
@@ -615,25 +668,47 @@ func (p *stationPlayback) run(ctx context.Context) (bool, error) {
 		return true, nil // nothing left of this segment
 	}
 	prof := s.cfg.Profile
-	if s.software.Load() {
-		prof.Encoder = EncoderSoftware
-		in.HWDecode = false
+	release := func(bool) {}
+	if hw := prof.Encoder; hw == EncoderNVENC || hw == EncoderVideoToolbox {
+		switch rel, ok := s.acquireHW(ctx, hw, in); {
+		case in.Kind == "slate":
+			// a still picture is never worth a GPU session
+			prof.Encoder = EncoderSoftware
+			in.HWDecode = false
+		case ok:
+			release = rel
+		default:
+			// every hardware session is in use (or the driver just
+			// refused one): libx264 for this block; the next asks again.
+			s.nvencFallbacks.Add(1)
+			s.log.Info("channel: hardware encoder sessions full, block encoded by libx264", "encoder", hw,
+				"seq", seg.Block.Seq, "event", "channel_nvenc_full")
+			prof.Encoder = EncoderSoftware
+			in.HWDecode = false
+		}
 	}
+	s.encoderNow.Store(prof.Encoder)
 	res, err := s.runBlock(ctx, prof, *in, start, p)
-	if err != nil && ctx.Err() == nil && prof.Encoder == EncoderNVENC && res.written == 0 {
-		// NVENC can refuse a session (GeForce session cap, driver
-		// hiccup): fall back to libx264 for the rest of this station.
-		s.log.Warn("channel: NVENC failed, falling back to libx264", "err", err.Error(),
-			"event", "channel_nvenc_fallback")
-		s.software.Store(true)
+	if hw := prof.Encoder; err != nil && ctx.Err() == nil && (hw == EncoderNVENC || hw == EncoderVideoToolbox) && res.written == 0 {
+		// The hardware encoder can refuse a session (GeForce session cap,
+		// a busy VideoToolbox, a driver hiccup): this block falls back to
+		// libx264, and the gate pauses that encoder briefly for everyone.
+		release(hwRefused(err))
+		s.nvencFallbacks.Add(1)
+		s.log.Warn("channel: hardware encoder failed, block falls back to libx264", "encoder", hw,
+			"err", err.Error(), "event", "channel_nvenc_fallback")
 		prof.Encoder = EncoderSoftware
+		s.encoderNow.Store(prof.Encoder)
 		in2, start2, err2 := s.blockInput(ctx, seg, look)
+		defer s.removeStripFiles(in2)
 		if err2 != nil || in2 == nil {
 			return in2 == nil && err2 == nil, err2
 		}
 		in2.HWDecode = false
 		in, start = in2, start2
 		res, err = s.runBlock(ctx, prof, *in2, start2, p)
+	} else {
+		release(false)
 	}
 	if err != nil && ctx.Err() == nil {
 		s.log.Warn("channel: block failed", "kind", seg.Kind, "seq", seg.Block.Seq,
@@ -648,6 +723,55 @@ func (p *stationPlayback) run(ctx context.Context) (bool, error) {
 	// than the slot) is incomplete even when ffmpeg exited cleanly.
 	full := in.DurationSec >= seg.End.Sub(start).Seconds()-earlyEnd.Seconds()
 	return err == nil && res.complete && full, err
+}
+
+// hwRefused reports whether a block failed because the hardware encoder
+// refused the session (no session left, no capable device), rather than
+// for its input.
+func hwRefused(err error) bool {
+	m := strings.ToLower(errString(err))
+	for _, k := range []string{"openencodesession", "nvenc", "incompatible client key", "no capable devices",
+		"out of memory", "videotoolbox", "vtcompressionsession"} {
+		if strings.Contains(m, k) {
+			return true
+		}
+	}
+	return false
+}
+
+// acquireHW takes a hardware-encoder slot for a block (none for a slate).
+func (s *Station) acquireHW(ctx context.Context, encoder string, in *BlockInput) (func(bool), bool) {
+	if in.Kind == "slate" {
+		return nil, false
+	}
+	wait := s.cfg.NVENCWait
+	if wait <= 0 {
+		wait = defaultNVENCWait
+	}
+	return s.gate(encoder).Acquire(ctx, s.id, wait)
+}
+
+func (s *Station) gate(encoder string) *EncoderGate {
+	if encoder == EncoderVideoToolbox {
+		if s.cfg.VTGate != nil {
+			return s.cfg.VTGate
+		}
+		return defaultVTGate
+	}
+	if s.cfg.Gate != nil {
+		return s.cfg.Gate
+	}
+	return defaultGate
+}
+
+// Stats reports the station's encoder, muxer restarts and NVENC
+// fallbacks.
+func (s *Station) Stats() StationStats {
+	enc, _ := s.encoderNow.Load().(string)
+	if enc == "" {
+		enc = s.cfg.Profile.Encoder
+	}
+	return StationStats{Encoder: enc, Restarts: s.MuxerRestarts(), NVENCFallbacks: s.nvencFallbacks.Load()}
 }
 
 // blockInput builds the ffmpeg input for `seg` starting now (or at the
@@ -695,8 +819,8 @@ func (s *Station) blockInput(ctx context.Context, seg Segment, look Look) (*Bloc
 		in.Source = path
 		in.SeekSec = float64(seekMS) / 1000
 		in.HasVideo, in.HasAudio = info.HasVideo, info.HasAudio
-		in.HWDecode = s.cfg.Profile.Encoder == EncoderNVENC
-		s.applyLook(in, look)
+		in.HWDecode = s.cfg.Profile.Encoder == EncoderNVENC || s.cfg.Profile.Encoder == EncoderVideoToolbox
+		s.applyLook(ctx, in, look)
 	case KindLive:
 		u, err := s.cfg.Resolver.Resolve(ctx, seg.Block.SourceURL)
 		if err != nil {
@@ -720,12 +844,12 @@ func (s *Station) blockInput(ctx context.Context, seg Segment, look Look) (*Bloc
 		in.Kind = "live"
 		in.Source = u
 		in.HasVideo, in.HasAudio = info.HasVideo, info.HasAudio
-		s.applyLook(in, look)
+		s.applyLook(ctx, in, look)
 	default:
 		in.Kind = "slate"
-		if p := s.localAsset(look.LoadingPath); p != "" {
+		if p := s.localAsset(ctx, AssetKindLoading, look.LoadingPath); p != "" {
 			in.SlateImage = p
-		} else if p := s.localAsset(look.LogoPath); p != "" {
+		} else if p := s.localAsset(ctx, AssetKindLogo, look.LogoPath); p != "" {
 			in.SlateLogo = p
 		}
 		if seg.Message != "" {
@@ -733,12 +857,58 @@ func (s *Station) blockInput(ctx context.Context, seg Segment, look Look) (*Bloc
 			in.FontFile = s.cfg.FontFile
 		}
 	}
+	s.attachStrip(ctx, in, seg, look, start)
 	return in, start, nil
 }
 
-func (s *Station) applyLook(in *BlockInput, look Look) {
+// attachStrip adds the channel strip to a block when the channel shows one
+// and this ffmpeg can shape its text.
+func (s *Station) attachStrip(ctx context.Context, in *BlockInput, seg Segment, look Look, start time.Time) {
+	if s.cfg.StripDefaults == nil || in == nil {
+		return
+	}
+	st, _ := ApplyStripRules(s.cfg.StripDefaults(ctx), look.Strip, true)
+	if !st.Enabled {
+		return
+	}
+	font := FindStripFont(st.FontFile)
+	if ok, why := TextShaping(ctx, s.cfg.FFmpeg, font); !ok {
+		s.stripOnce.Do(func() {
+			s.stripWarned = why
+			s.log.Warn("channel: strip skipped", "why", why, "event", "channel_strip_unavailable")
+		})
+		return
+	}
+	offset := float64(seg.SeekMS)/1000 + start.Sub(seg.Start).Seconds()
+	key := fmt.Sprintf("strip-%d-%d", seg.Block.Seq, start.UnixMilli())
+	si, files, err := BuildStrip(s.cfg.Profile, st, font, look.Name, seg, start,
+		time.Duration(in.DurationSec*float64(time.Second)), offset, filepath.Join(s.dir, "strip"), key)
+	if err != nil {
+		for _, f := range files {
+			_ = os.Remove(f)
+		}
+		s.log.Warn("channel: strip files", "err", err.Error(), "event", "channel_strip_failed")
+		return
+	}
+	if si != nil {
+		in.Strip = si
+		in.stripFiles = files
+	}
+}
+
+// removeStripFiles deletes a finished block's strip files.
+func (s *Station) removeStripFiles(in *BlockInput) {
+	if in == nil {
+		return
+	}
+	for _, f := range in.stripFiles {
+		_ = os.Remove(f)
+	}
+}
+
+func (s *Station) applyLook(ctx context.Context, in *BlockInput, look Look) {
 	if wm := look.Watermark; wm != nil {
-		if p := s.localAsset(wm.Path); p != "" {
+		if p := s.localAsset(ctx, AssetKindWatermark, wm.Path); p != "" {
 			w := *wm
 			w.Path = p
 			in.Watermark = &w
@@ -749,8 +919,9 @@ func (s *Station) applyLook(in *BlockInput, look Look) {
 }
 
 // localAsset maps a look/logo path and returns it if it exists (URLs are
-// passed through for ffmpeg to fetch).
-func (s *Station) localAsset(p string) string {
+// passed through for ffmpeg to fetch). With an AssetResolver (a cluster
+// node) the file comes from its cache of the home's art.
+func (s *Station) localAsset(ctx context.Context, kind, p string) string {
 	if p == "" {
 		return ""
 	}
@@ -761,6 +932,12 @@ func (s *Station) localAsset(p string) string {
 		return "" // no file:, concat:, udp: … from look/logo values
 	}
 	m := s.cfg.PathMap.Apply(p)
+	if s.cfg.Assets != nil {
+		m = s.cfg.Assets.Asset(ctx, s.id, kind, p)
+		if m == "" {
+			return ""
+		}
+	}
 	if fi, err := os.Stat(m); err == nil && !fi.IsDir() {
 		if in, err := LocalInput(m); err == nil {
 			return in
@@ -814,6 +991,7 @@ func (s *Station) runBlock(ctx context.Context, prof OutputProfile, in BlockInpu
 	args := BlockArgs(prof, in)
 
 	cmd := exec.CommandContext(ctx, s.cfg.FFmpeg, args...)
+	procattr.Tie(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return blockResult{}, err

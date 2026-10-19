@@ -5,7 +5,12 @@ stage: before the subprocess it times ``stat + open + a 64 KiB read`` of the
 file, which is the cheapest honest measure of how the share is doing. A
 subprocess whose stderr names a ``nas_*`` cause is counted as a timeout.
 
-Each worker writes ``health_samples`` every 10 s (see :func:`run_sampler`).
+Where the numbers go (design-agent.md section 7.9): a worker never writes them to the
+database. Its agent's metrics frame carries them as the flat ``health`` map
+(:func:`health_frame`: the names ``health_samples`` holds, the network probes every ~60 s
+through :func:`run_network_probes`), and the home's hub keeps ``health_samples`` as a
+cache (it counts ``nas.reads_busy`` itself). A worker without an agent
+(``MAKTABA_CLUSTER_AGENT=0``) records no health numbers.
 """
 
 from __future__ import annotations
@@ -16,18 +21,19 @@ import os
 import time
 from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import Any
 
 from ..log import get_logger
 from .causes import classify
-from .sql import now, to_ts
 
 __all__ = [
     "HealthCollector",
     "NasProbe",
+    "health_frame",
+    "measure",
+    "measure_now",
     "register_metric",
-    "run_sampler",
-    "sample_once",
+    "registered_metrics",
+    "run_network_probes",
     "system_memory",
 ]
 
@@ -96,6 +102,15 @@ class HealthCollector:
         self._opens: deque[tuple[float, float]] = deque()
         self._timeouts: deque[float] = deque()
         self.probes: dict[str, ProbeFn] = {}
+        #: network probe results waiting for the next metrics frame (agent mode)
+        self._network: dict[str, float] = {}
+
+    def put_network(self, results: dict[str, float]) -> None:
+        self._network = dict(results)
+
+    def take_network(self) -> dict[str, float]:
+        out, self._network = self._network, {}
+        return out
 
     def record_open(self, ms: float) -> None:
         self._opens.append((self._clock(), ms))
@@ -170,25 +185,27 @@ def _cpu_percent() -> float | None:
     return float(getloadavg()[0] / (os.cpu_count() or 1) * 100.0)
 
 
-async def sample_once(
-    db: Any,
-    collector: HealthCollector,
-    *,
-    host: str,
-    probe_network: bool = False,
-    final: bool = False,
-) -> dict[str, float]:
-    """Write one round of ``health_samples``; returns what was written."""
+def registered_metrics(*, final: bool = False) -> dict[str, float]:
+    """Every :func:`register_metric` value now (``final``: the shutdown values)."""
+    out: dict[str, float] = {}
+    for metric, read in list(_METRICS.items()):
+        if final:
+            read = _FINAL.get(metric, read)
+        try:
+            out[metric] = float(read())
+        except Exception:  # noqa: BLE001 - one bad probe is skipped
+            _log.debug("metric_probe_failed", metric=metric)
+    return out
+
+
+def measure_now(collector: HealthCollector, *, final: bool = False) -> dict[str, float]:
+    """The sampler's numbers that need no network: NAS latency and timeouts, CPU, memory,
+    every registered metric (``final``: their shutdown readers). No database."""
     metrics: dict[str, float] = {}
     pct = collector.open_percentiles()
     if pct is not None:
         metrics["nas.open_ms_p50"], metrics["nas.open_ms_p95"] = pct
     metrics["nas.timeouts"] = float(collector.timeouts())
-    busy = await db.fetchval(
-        "SELECT count(*) FROM processing_jobs j JOIN job_stages s ON s.stage = j.stage"
-        " WHERE s.pool = 'nas_read' AND j.state IN ('claimed','running','resuming')"
-    )
-    metrics["nas.reads_busy"] = float(busy or 0)
     cpu = _cpu_percent()
     if cpu is not None:
         metrics["cpu.pct"] = cpu
@@ -197,56 +214,50 @@ async def sample_once(
         total, avail = mem
         metrics["mem.free_pct"] = round(100.0 * avail / total, 1) if total else 0.0
         metrics["mem.available_gb"] = round(avail / 1e9, 2)
-    for metric, read in list(_METRICS.items()):
-        if final:
-            read = _FINAL.get(metric, read)
-        try:
-            metrics[metric] = float(read())
-        except Exception:  # noqa: BLE001 - one bad probe is skipped
-            _log.debug("metric_probe_failed", metric=metric)
-    if probe_network:
-        for metric, fn in collector.probes.items():
-            try:
-                metrics[metric] = float(await fn())
-            except Exception:  # noqa: BLE001 - an unreachable service is a -1 sample, not a crash
-                metrics[metric] = -1.0
-    at = to_ts(db, now())
-    for metric, value in metrics.items():
-        await db.execute(
-            "INSERT INTO health_samples (at, host, metric, value) VALUES ($1,$2,$3,$4)"
-            " ON CONFLICT (metric, host, at) DO UPDATE SET value = EXCLUDED.value",
-            at,
-            host,
-            metric,
-            value,
-        )
+    metrics.update(registered_metrics(final=final))
     return metrics
 
 
-async def run_sampler(
-    db: Any,
-    collector: HealthCollector,
-    stop: asyncio.Event,
-    *,
-    host: str | None = None,
-    interval_sec: float = 10.0,
-    network_every: int = 6,
-) -> None:
-    """Sample every ``interval_sec`` (network probes every ``network_every`` rounds, ~60 s)."""
-    from .workers import stable_hostname
+async def measure(
+    collector: HealthCollector, *, probe_network: bool = False, final: bool = False
+) -> dict[str, float]:
+    """One round of the sampler's numbers (no database): :func:`measure_now` plus, with
+    ``probe_network``, the network probes (an unreachable service is -1)."""
+    metrics = measure_now(collector, final=final)
+    if probe_network:
+        metrics.update(await _probe_network(collector))
+    return metrics
 
-    host = host or stable_hostname()
-    n = 0
-    while not stop.is_set():
+
+def health_frame(collector: HealthCollector, *, final: bool = False) -> dict[str, float]:
+    """The metrics frame's ``health``: the flat map of ``health_samples`` names, without
+    ``nas.reads_busy`` (the hub counts that itself); the network probes' results only in
+    the first frame after they were measured (~every 60 s, :func:`run_network_probes`)."""
+    metrics = measure_now(collector, final=final)
+    metrics.update(collector.take_network())
+    return metrics
+
+
+async def _probe_network(collector: HealthCollector) -> dict[str, float]:
+    out: dict[str, float] = {}
+    for metric, fn in collector.probes.items():
         try:
-            await sample_once(db, collector, host=host, probe_network=(n % network_every == 0))
-        except Exception:  # noqa: BLE001 - health must never take the worker down
-            _log.exception("health_sample_failed")
-        n += 1
+            out[metric] = float(await fn())
+        except Exception:  # noqa: BLE001 - an unreachable service is a -1 sample, not a crash
+            out[metric] = -1.0
+    return out
+
+
+async def run_network_probes(
+    collector: HealthCollector, stop: asyncio.Event, *, interval_sec: float = 60.0
+) -> None:
+    """The agent's mode (no ``health_samples``): the network probes every
+    ``interval_sec`` (the first at once), their results handed to the next metrics frame."""
+    while not stop.is_set():
+        if collector.probes:
+            try:
+                collector.put_network(await _probe_network(collector))
+            except Exception:  # noqa: BLE001 - health must never take the worker down
+                _log.exception("health_probe_failed")
         with contextlib.suppress(TimeoutError, asyncio.TimeoutError):  # noqa: UP041
             await asyncio.wait_for(stop.wait(), timeout=interval_sec)
-    # one last round as the worker stops: what it is about to drop is recorded
-    try:
-        await asyncio.wait_for(sample_once(db, collector, host=host, final=True), 5.0)
-    except Exception:  # noqa: BLE001 - best effort, the worker is going away
-        _log.debug("health_final_sample_failed")

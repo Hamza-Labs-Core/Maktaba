@@ -55,24 +55,32 @@ func (r *registry) get(id uuid.UUID) (*entry, bool) {
 // WARM (zero-viewer) channel is evicted to make room; if none can be
 // evicted (all slots have viewers) it returns ErrAtCapacity.
 func (r *registry) admit(id uuid.UUID) error {
+	_, err := r.admitEvict(id)
+	return err
+}
+
+// admitEvict is admit that also names the warm channel it evicted (uuid.Nil:
+// none), so the engine can give its placement back.
+func (r *registry) admitEvict(id uuid.UUID) (uuid.UUID, error) {
 	r.mu.Lock()
 	if _, ok := r.entries[id]; ok {
 		r.mu.Unlock()
-		return nil
+		return uuid.Nil, nil
 	}
 	if len(r.entries) < r.cap {
 		r.mu.Unlock()
-		return nil
+		return uuid.Nil, nil
 	}
 	victim := r.lruWarmLocked()
 	if victim == nil {
 		r.mu.Unlock()
-		return ErrAtCapacity
+		return uuid.Nil, ErrAtCapacity
 	}
+	evicted := victim.channelID
 	stop := r.evictLocked(victim)
 	r.mu.Unlock()
 	runStops(stop) // never under the registry lock
-	return nil
+	return evicted, nil
 }
 
 // put records a freshly-spawned channel as active with one viewer.
@@ -181,6 +189,34 @@ func runStops(stops ...StopFunc) {
 			s()
 		}
 	}
+}
+
+// setCap changes the concurrent cap (a settings change). Channels over a
+// lowered cap keep running; new ones wait for room.
+func (r *registry) setCap(c int) {
+	if c < 1 {
+		c = 1
+	}
+	r.mu.Lock()
+	r.cap = c
+	r.mu.Unlock()
+}
+
+// capacity reports the concurrent cap.
+func (r *registry) capacity() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.cap
+}
+
+// viewers reports a channel's attached viewer count.
+func (r *registry) viewers(id uuid.UUID) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if e, ok := r.entries[id]; ok {
+		return e.viewers
+	}
+	return 0
 }
 
 // len reports the active-channel count (for tests/metrics).

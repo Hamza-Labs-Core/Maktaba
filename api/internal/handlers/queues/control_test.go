@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues/queuestest"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 )
 
 type busEvent struct {
@@ -548,7 +550,10 @@ func TestExtensions(t *testing.T) {
 		return &queuestest.Rule{Match: "from extensions", Cols: []string{"name", "enabled", "settings", "updated_at"},
 			Rows: [][]driver.Value{{name, enabled, settings, t0}}}
 	}
+	ctx := context.Background()
+	plexToken := secrets.ExtensionName("plex", "token")
 	t.Run("list masks secrets and never leaks unknown keys", func(t *testing.T) {
+		// a token still in the settings (before the start-up move) is masked too
 		f := newFixture(row("plex", true, `{"url":"http://plex:32400","token":"SUPERSECRET","stray":"LEAK"}`))
 		rec := f.do("GET", "/api/extensions", "", viewer())
 		if rec.Code != 200 {
@@ -560,16 +565,38 @@ func TestExtensions(t *testing.T) {
 		}
 		var out struct{ Extensions []Extension }
 		decode(t, rec, &out)
-		if len(out.Extensions) != 2 || out.Extensions[0].Name != "dizquetv" {
+		if len(out.Extensions) != 3 || out.Extensions[0].Name != "cloudflare_stream" || out.Extensions[1].Name != "dizquetv" {
 			t.Fatalf("extensions = %+v", out.Extensions)
 		}
-		plex := out.Extensions[1]
+		plex := out.Extensions[2]
 		if !plex.Enabled || !plex.Configured || plex.Settings["token"] != SecretMask || plex.SecretsSet[0] != "token" {
 			t.Errorf("plex = %+v", plex)
 		}
-		dq := out.Extensions[0]
+		dq := out.Extensions[1]
 		if dq.Enabled || dq.Configured {
 			t.Errorf("dizquetv without a row must be disabled+unconfigured: %+v", dq)
+		}
+	})
+
+	// TC5: the token lives in home_secrets and the API only says "set".
+	t.Run("token in home_secrets is masked", func(t *testing.T) {
+		f := newFixture(row("plex", true, `{"url":"http://plex:32400"}`))
+		f.h.Secrets = secrets.NewMemory()
+		_ = f.h.Secrets.Put(ctx, plexToken, []byte("SUPERSECRET"), "")
+		_ = f.h.Secrets.Put(ctx, "cf_api_token", []byte("CFSECRET"), "")
+		rec := f.do("GET", "/api/extensions", "", viewer())
+		body := rec.Body.String()
+		if strings.Contains(body, "SUPERSECRET") || strings.Contains(body, "CFSECRET") {
+			t.Fatalf("secret leaked: %s", body)
+		}
+		var out struct{ Extensions []Extension }
+		decode(t, rec, &out)
+		cfx, plex := out.Extensions[0], out.Extensions[2]
+		if !plex.Configured || plex.Settings["token"] != SecretMask || len(plex.SecretsSet) != 1 {
+			t.Errorf("plex = %+v", plex)
+		}
+		if cfx.Settings["api_token"] != SecretMask || cfx.Configured {
+			t.Errorf("cloudflare (token set, no account id) = %+v", cfx)
 		}
 	})
 
@@ -577,43 +604,67 @@ func TestExtensions(t *testing.T) {
 		name     string
 		ext      string
 		existing string
+		secret   string // already in home_secrets as ext.plex.token
 		body     string
 		wantCode int
-		check    func(t *testing.T, saved map[string]any, enabled any)
+		check    func(t *testing.T, saved map[string]any, enabled any, store *secrets.Memory)
 	}{
-		{"enable only keeps settings", "plex", `{"url":"http://p","token":"s"}`, `{"enabled":true}`, 200,
-			func(t *testing.T, s map[string]any, en any) {
-				if en != true || s["token"] != "s" || s["url"] != "http://p" {
-					t.Errorf("saved %v enabled %v", s, en)
+		{"enable only keeps settings", "plex", `{"url":"http://p"}`, "s", `{"enabled":true}`, 200,
+			func(t *testing.T, s map[string]any, en any, m *secrets.Memory) {
+				if v, _ := m.Get(ctx, plexToken); en != true || string(v) != "s" || s["url"] != "http://p" {
+					t.Errorf("saved %v enabled %v token %q", s, en, v)
 				}
 			}},
-		{"set secret", "plex", `{"url":"http://p"}`, `{"settings":{"token":"new"}}`, 200,
-			func(t *testing.T, s map[string]any, _ any) {
-				if s["token"] != "new" {
-					t.Errorf("saved %v", s)
+		{"set secret goes to home_secrets", "plex", `{"url":"http://p"}`, "", `{"settings":{"token":"new"}}`, 200,
+			func(t *testing.T, s map[string]any, _ any, m *secrets.Memory) {
+				if v, _ := m.Get(ctx, plexToken); string(v) != "new" {
+					t.Errorf("token %q", v)
+				}
+				if _, has := s["token"]; has {
+					t.Errorf("token in the settings row: %v", s)
 				}
 			}},
-		{"mask keeps the stored secret", "plex", `{"url":"http://p","token":"keep"}`, `{"settings":{"token":"********","url":"http://q"}}`, 200,
-			func(t *testing.T, s map[string]any, _ any) {
-				if s["token"] != "keep" || s["url"] != "http://q" {
-					t.Errorf("saved %v", s)
+		{"mask keeps the stored secret", "plex", `{"url":"http://p"}`, "keep", `{"settings":{"token":"********","url":"http://q"}}`, 200,
+			func(t *testing.T, s map[string]any, _ any, m *secrets.Memory) {
+				if v, _ := m.Get(ctx, plexToken); string(v) != "keep" || s["url"] != "http://q" {
+					t.Errorf("saved %v token %q", s, v)
 				}
 			}},
-		{"null clears", "plex", `{"url":"http://p","token":"x"}`, `{"settings":{"token":null}}`, 200,
-			func(t *testing.T, s map[string]any, _ any) {
-				if _, ok := s["token"]; ok {
-					t.Errorf("token not cleared: %v", s)
+		{"null clears", "plex", `{"url":"http://p"}`, "x", `{"settings":{"token":null}}`, 200,
+			func(t *testing.T, _ map[string]any, _ any, m *secrets.Memory) {
+				if ok, _ := m.Has(ctx, plexToken); ok {
+					t.Error("token not cleared")
 				}
 			}},
-		{"unknown setting", "plex", `{}`, `{"settings":{"password":"x"}}`, 400, nil},
-		{"bad url", "plex", `{}`, `{"settings":{"url":"ftp://x"}}`, 400, nil},
-		{"non-string setting", "plex", `{}`, `{"settings":{"url":5}}`, 400, nil},
-		{"nothing to change", "plex", `{}`, `{}`, 400, nil},
-		{"unknown extension", "kodi", `{}`, `{"enabled":true}`, 404, nil},
+		{"a legacy token in the row moves on save", "plex", `{"url":"http://p","token":"legacy"}`, "", `{"enabled":true}`, 200,
+			func(t *testing.T, s map[string]any, _ any, m *secrets.Memory) {
+				if v, _ := m.Get(ctx, plexToken); string(v) != "legacy" {
+					t.Errorf("token %q", v)
+				}
+				if _, has := s["token"]; has {
+					t.Errorf("token left in the row: %v", s)
+				}
+			}},
+		{"cloudflare token under its own name", "cloudflare_stream", `{}`, "", `{"settings":{"account_id":"acc","api_token":"cf"}}`, 200,
+			func(t *testing.T, s map[string]any, _ any, m *secrets.Memory) {
+				if v, _ := m.Get(ctx, "cf_api_token"); string(v) != "cf" || s["account_id"] != "acc" || len(s) != 1 {
+					t.Errorf("saved %v token %q", s, v)
+				}
+			}},
+		{"unknown setting", "plex", `{}`, "", `{"settings":{"password":"x"}}`, 400, nil},
+		{"bad url", "plex", `{}`, "", `{"settings":{"url":"ftp://x"}}`, 400, nil},
+		{"non-string setting", "plex", `{}`, "", `{"settings":{"url":5}}`, 400, nil},
+		{"nothing to change", "plex", `{}`, "", `{}`, 400, nil},
+		{"unknown extension", "kodi", `{}`, "", `{"enabled":true}`, 404, nil},
 	}
 	for _, tc := range puts {
 		t.Run("put "+tc.name, func(t *testing.T) {
 			f := newFixture(row(tc.ext, false, tc.existing))
+			store := secrets.NewMemory()
+			f.h.Secrets = store
+			if tc.secret != "" {
+				_ = store.Put(ctx, plexToken, []byte(tc.secret), "")
+			}
 			rec := f.do("PUT", "/api/extensions/"+tc.ext, tc.body, admin())
 			if rec.Code != tc.wantCode {
 				t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
@@ -624,15 +675,43 @@ func TestExtensions(t *testing.T) {
 				}
 				return
 			}
-			if strings.Contains(rec.Body.String(), "\"new\"") || strings.Contains(rec.Body.String(), "\"keep\"") {
-				t.Errorf("response leaked a secret: %s", rec.Body.String())
+			for _, leak := range []string{`"new"`, `"keep"`, `"legacy"`, `"cf"`} {
+				if strings.Contains(rec.Body.String(), leak) {
+					t.Errorf("response leaked a secret: %s", rec.Body.String())
+				}
 			}
 			up := f.db.Find("insert into extensions")[0]
 			var saved map[string]any
 			_ = json.Unmarshal([]byte(up.Args[2].(string)), &saved)
-			tc.check(t, saved, up.Args[1])
+			tc.check(t, saved, up.Args[1], store)
 		})
 	}
+
+	t.Run("a secret without a store is refused", func(t *testing.T) {
+		f := newFixture(row("plex", false, `{}`))
+		rec := f.do("PUT", "/api/extensions/plex", `{"settings":{"token":"x"}}`, admin())
+		if rec.Code != http.StatusServiceUnavailable || len(f.db.Find("insert into extensions")) != 0 {
+			t.Fatalf("status %d", rec.Code)
+		}
+	})
+
+	t.Run("validator refuses a change", func(t *testing.T) {
+		f := newFixture(row("cloudflare_stream", false, `{"account_id":"a1"}`))
+		f.h.Secrets = secrets.NewMemory()
+		f.h.Validators = map[string]ExtensionValidator{"cloudflare_stream": func(_ context.Context, cur, next map[string]any, _ []string) error {
+			if cur["account_id"] != next["account_id"] {
+				return httperror.Conflict("", "remove the integration first")
+			}
+			return nil
+		}}
+		rec := f.do("PUT", "/api/extensions/cloudflare_stream", `{"settings":{"account_id":"a2","api_token":"t"}}`, admin())
+		if rec.Code != http.StatusConflict || len(f.db.Find("insert into extensions")) != 0 {
+			t.Fatalf("status %d %s", rec.Code, rec.Body.String())
+		}
+		if ok, _ := f.h.Secrets.Has(ctx, "cf_api_token"); ok {
+			t.Error("a refused change must not store the token")
+		}
+	})
 
 	t.Run("test endpoint is not implemented", func(t *testing.T) {
 		f := newFixture()
@@ -647,6 +726,20 @@ func TestExtensions(t *testing.T) {
 		}
 		if rec := f.do("POST", "/api/extensions/kodi/test", "", admin()); rec.Code != 404 {
 			t.Fatalf("status %d", rec.Code)
+		}
+	})
+
+	t.Run("an extension's tester answers its test", func(t *testing.T) {
+		f := newFixture()
+		f.h.Testers = map[string]ExtensionTester{"cloudflare_stream": func(context.Context) (any, error) {
+			return map[string]any{"ok": true, "message": "ready", "lines": []any{}}, nil
+		}}
+		rec := f.do("POST", "/api/extensions/cloudflare_stream/test", "", admin())
+		if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"ready"`) {
+			t.Fatalf("status %d %s", rec.Code, rec.Body.String())
+		}
+		if rec := f.do("POST", "/api/extensions/cloudflare_stream/test", "", viewer()); rec.Code != 403 {
+			t.Fatalf("viewer: %d", rec.Code)
 		}
 	})
 }

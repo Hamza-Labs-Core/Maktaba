@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Maktaba node worker (Epic 31): a LaunchAgent for one worker of a machine that joined
+  a Maktaba home. TEMPLATE: deploy/packaging/node/install-node.sh fills the __NAME__
+  placeholders (launchd expands neither ~ nor $HOME) and writes the result to
+  ~/Library/LaunchAgents/__LABEL__.plist:
+
+    com.maktaba.node      the machine's main worker (every stage it can run)
+    com.maktaba.node.<N>  extra transcription worker N (MAKTABA_STT_SLOT=stt-<N>)
+
+  A user agent, not a daemon: the share is mounted in the user's session (Finder,
+  ~/nas-nfs) with the user's keychain credentials, and the node config lives in the
+  user's Library. It starts at login and stays up while the user is logged in.
+
+  The runner (maktaba-node-run) reads node.env / node@<N>.env, rotates the log files,
+  runs `maktaba-pipeline run --node` and maps its exit status for KeepAlive below.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>__LABEL__</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>__RUNNER__</string>
+    <string>__INSTANCE__</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- launchd's own PATH is /usr/bin:/bin:/usr/sbin:/sbin; Homebrew's ffmpeg is not on it. -->
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>MAKTABA_NODE_DIR</key>
+    <string>__NODE_DIR__</string>
+    <key>MAKTABA_NODE_CONF_DIR</key>
+    <string>__CONF_DIR__</string>
+    <key>MAKTABA_NODE_LOG_DIR</key>
+    <string>__LOG_DIR__</string>
+    <key>MAKTABA_ENV</key>
+    <string>prod</string>
+    <key>PYTHONUNBUFFERED</key>
+    <string>1</string>
+    <!-- Per instance; node.env / node@<N>.env override them. Empty means unset. -->
+    <key>MAKTABA_STT_SLOT</key>
+    <string>__STT_SLOT__</string>
+    <key>MAKTABA_PIPELINE_STAGES</key>
+    <string>__STAGES__</string>
+    <key>MAKTABA_PIPELINE_EXCLUDE_STAGES</key>
+    <string>__EXCLUDE_STAGES__</string>
+  </dict>
+  <key>WorkingDirectory</key>
+  <string>__HOME__</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <!--
+    Restart after a crash or a failed start (the home not reachable yet; not joined yet,
+    78), but not after a clean exit: the runner exits 0 when the worker was stopped and
+    when the home removed this machine for good (the worker's 77).
+  -->
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <!-- At most one start every 30 s while the home is unreachable. -->
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <!-- Time between SIGTERM and SIGKILL on stop: let the worker hand its jobs back. -->
+  <key>ExitTimeOut</key>
+  <integer>60</integer>
+  <!--
+    launchd's default class, named on purpose: Background would throttle the CPU and
+    I/O a transcription worker needs; Interactive is meant for jobs a UI waits on.
+  -->
+  <key>ProcessType</key>
+  <string>Standard</string>
+  <key>StandardOutPath</key>
+  <string>__STDOUT__</string>
+  <key>StandardErrorPath</key>
+  <string>__STDERR__</string>
+</dict>
+</plist>

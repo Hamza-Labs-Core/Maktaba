@@ -28,6 +28,7 @@ import sys
 from typing import Any
 
 from . import __version__
+from .cluster import exitcodes
 from .cluster.config import NodeConfig
 from .cluster.config import load as load_node_config
 from .db.jobs import Stage
@@ -106,8 +107,9 @@ _FALLBACK_DATABASE_URL = "sqlite:///:memory:"
 
 def _node_for(args: argparse.Namespace) -> NodeConfig | None:
     """Node mode (Epic 31 design section 7): no ``--database-url`` (nor
-    ``MAKTABA_DATABASE_URL``) and a joined node config on this machine."""
-    if args.database_url:
+    ``MAKTABA_DATABASE_URL``) and a joined node config on this machine; ``--node``
+    (``MAKTABA_NODE=1``) asks for it whatever the database URL says."""
+    if args.database_url and not getattr(args, "node", False):
         return None
     node = load_node_config()
     return node if node is not None and node.joined else None
@@ -143,6 +145,9 @@ def _build_runtime_config(
 
 async def _serve(args: argparse.Namespace, log: Any) -> int:
     node = _node_for(args)
+    if getattr(args, "node", False) and node is None:
+        sys.stderr.write("this machine has not joined a home: run maktaba-pipeline join\n")
+        return exitcodes.EX_CONFIG
     cfg = _build_runtime_config(args, node)
     if cfg.engine is False and node is not None:
         log.error("node_mode_needs_the_engine")
@@ -156,12 +161,25 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
         node_id=cfg.node_id,
         home=node.home.name or node.home.url if node is not None else None,
     )
-    database = await Database.connect(cfg.database_url)
+    try:
+        database = await Database.connect(cfg.database_url)
+    except Exception as exc:
+        if node is not None and exitcodes.login_revoked(exc):
+            # the home revoked this machine (password rotated, NOLOGIN): for good
+            log.error("cluster_node_login_refused", error=str(exc))
+            return exitcodes.EX_NOPERM
+        if exitcodes.is_auth_error(exc):
+            # refused for another reason (no pg_hba.conf entry, ...): fixable on the
+            # home, so exit 1 and let the service try again
+            log.error("database_login_refused", error=str(exc))
+            return 1
+        raise
 
     # Recent-logs HTTP endpoint (/logs/recent) on a daemon thread so the
     # API's diagnostics export can proxy this service's ring buffer.
     # Opt-in via --logs-addr / $MAKTABA_PIPELINE_LOGS_ADDR.
     log_server: Any = None
+    heartbeat_task: asyncio.Task[None] | None = None
     if args.logs_addr:
         try:
             from .log.http import start_log_server
@@ -170,6 +188,14 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
             log.info("pipeline_logs_listening", addr=args.logs_addr)
         except Exception as exc:  # noqa: BLE001 — startup-only branch
             log.warning("pipeline_logs_disabled", reason=str(exc))
+        else:
+            # /healthz on the same port reports this loop's heartbeat; the
+            # maktaba-server supervisor restarts the process when it stalls.
+            from .log.liveness import LoopHeartbeat, run_heartbeat, set_heartbeat
+
+            heartbeat = LoopHeartbeat()
+            set_heartbeat(heartbeat)
+            heartbeat_task = asyncio.create_task(run_heartbeat(heartbeat))
 
     grpc_addr = args.grpc_addr
     grpc_task: asyncio.Task[None] | None = None
@@ -200,6 +226,8 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
                 await asyncio.wait_for(grpc_task, timeout=2.0)
             except (TimeoutError, asyncio.TimeoutError):  # noqa: UP041
                 grpc_task.cancel()
+        if heartbeat_task is not None:
+            heartbeat_task.cancel()
         if log_server is not None:
             log_server.shutdown()
         await database.close()
@@ -219,6 +247,16 @@ def _build_parser() -> argparse.ArgumentParser:
         default=os.getenv("MAKTABA_DATABASE_URL") or None,
         help="Database URL (postgres://… or sqlite:///…). Default reads MAKTABA_DATABASE_URL; "
         "without either, a machine that joined a home (`join`) runs as its node.",
+    )
+    run_p.add_argument(
+        "--node",
+        action="store_true",
+        default=os.getenv("MAKTABA_NODE") == "1",
+        help="Run as this machine's node of a home (MAKTABA_NODE=1); exit 78 when it has "
+        "not joined one. Exit codes: 77 when the home refused this machine for good "
+        "(its sealed revocation, or the database: revoked, removed, login refused): do not "
+        "restart; 78 for --node without a "
+        "joined node config.",
     )
     run_p.add_argument(
         "--stages",
@@ -304,6 +342,20 @@ def _build_parser() -> argparse.ArgumentParser:
     join_p.add_argument(
         "--run", action="store_true", help="Start working as soon as the home approves."
     )
+    join_p.add_argument(
+        "--rejoin",
+        action="store_true",
+        help="Start over on a machine that already joined (or joined before the home had a "
+        "cluster key): the old settings are kept as node.json.bak and the home sees a new "
+        "machine (remove the old one there, set its path map and switches again).",
+    )
+    join_p.add_argument("--yes", "-y", action="store_true", help="Do not ask before re-joining.")
+    from .cluster.cli import add_parser as add_cluster_parser
+
+    add_cluster_parser(subparsers)
+    from .sharepath.cli import add_parser as add_storage_parser
+
+    add_storage_parser(subparsers)
     return parser
 
 
@@ -312,7 +364,13 @@ def _join(args: argparse.Namespace, parser: argparse.ArgumentParser, log: Any) -
 
     interactive = sys.stdin.isatty()
     try:
-        join(home_url=args.home, name=args.name, ask=input if interactive else None)
+        join(
+            home_url=args.home,
+            name=args.name,
+            ask=input if interactive else None,
+            rejoin=args.rejoin,
+            assume_yes=args.yes,
+        )
     except JoinError as exc:
         sys.stderr.write(f"join failed: {exc}\n")
         return 1
@@ -338,7 +396,7 @@ def main(argv: list[str] | None = None) -> int:
     # --database-url never attach to the namespace and _serve crashes
     # with AttributeError. Both the prod ENTRYPOINT (`python -m
     # maktaba_pipeline`) and the dev supervisor invoke us this way.
-    _subcommands = {"run", "doctor", "join"}
+    _subcommands = {"run", "doctor", "join", "cluster", "storage"}
     _top_level_flags = {"--version", "-V", "--help", "-h"}
     if not any(a in _subcommands for a in argv) and not any(a in _top_level_flags for a in argv):
         argv = ["run", *argv]
@@ -356,6 +414,14 @@ def main(argv: list[str] | None = None) -> int:
         return _doctor(log)
     if command == "run":
         return asyncio.run(_serve(args, log))
+    if command == "cluster":
+        from .cluster.cli import main as cluster_main
+
+        return cluster_main(args)
+    if command == "storage":
+        from .sharepath.cli import main as storage_main
+
+        return storage_main(args)
     if command == "join":
         return _join(args, parser, log)
 

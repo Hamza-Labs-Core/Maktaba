@@ -206,14 +206,18 @@ func (h *Handler) Now(w http.ResponseWriter, r *http.Request) {
 		Channel ChannelHeader `json:"channel"`
 		Current *Block        `json:"current"`
 		Next    *Block        `json:"next"`
+		// OnAir: the channel is encoding now on a streaming host (its
+		// playlist is cheap to prefetch; Epic 32.9 / 34.6).
+		OnAir bool `json:"on_air"`
 	}
+	live := h.onAir(r.Context(), now)
 	out := make([]nowEntry, 0, len(chans))
 	for _, c := range chans {
 		cur, next, err := h.repo().currentAndNext(r.Context(), c.ID, now)
 		if err != nil {
 			continue
 		}
-		e := nowEntry{Channel: toHeader(c)}
+		e := nowEntry{Channel: toHeader(c), OnAir: live[strings.ToLower(c.ID)]}
 		if cur != nil {
 			b := toBlock(*cur, now)
 			e.Current = &b
@@ -270,6 +274,12 @@ func toBlock(p ProgramRow, now time.Time) Block {
 		Series:    p.Snapshot.Series,
 		Season:    p.Snapshot.Season,
 		Episode:   p.Snapshot.Episode,
+
+		OnAir:        p.Snapshot.OnAir,
+		StripTitle:   p.Snapshot.StripTitle,
+		StripSeries:  p.Snapshot.StripSeries,
+		StripEpisode: p.Snapshot.StripEpisode,
+		StripRef:     p.Snapshot.StripRef,
 	}
 	if !now.Before(p.StartAt) && now.Before(p.EndAt) {
 		b.IsLive = true

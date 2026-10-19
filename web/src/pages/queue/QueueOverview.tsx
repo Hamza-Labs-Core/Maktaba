@@ -1,6 +1,10 @@
 // /queue — the queue control centre (plan 06-11 §9). Health strip, the
 // stage flow in lanes, "Needs attention" + live activity, libraries.
+// ?host=<node id | home> (the Machines page's "View in queues") adds the
+// jobs running on that machine, with their progress, and narrows the
+// lanes' live runs to it.
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { useI18n } from "../../lib/i18n";
 import { queueApi } from "../../lib/queueApi";
@@ -8,12 +12,13 @@ import type {
   Extension,
   FailureGroup,
   HealthSeries,
+  JobRef,
   LibraryQueueRow,
-  WorkerHost,
 } from "../../lib/queueApi";
-import { useJobStream, useQueuesSnapshot } from "../../lib/useQueueStream";
+import { runMachine, useJobStream, useQueuesSnapshot, useWorkers } from "../../lib/useQueueStream";
 import { ActivityLog } from "../../components/queue/ActivityLog";
 import { FlowLanes } from "../../components/queue/FlowLanes";
+import { HostJobs, hostWorkerIds, runsOnHost } from "../../components/queue/hostFilter";
 import { ExplainPanel } from "../../components/queue/ExplainPanel";
 import { HealthStrip } from "../../components/queue/HealthStrip";
 import { InsightsPanel } from "../../components/queue/InsightsPanel";
@@ -39,7 +44,8 @@ export function QueueOverview() {
   const [issues, setIssues] = useState<FailureGroup[]>([]);
   const [libraries, setLibraries] = useState<LibraryQueueRow[]>([]);
   const [extensions, setExtensions] = useState<Extension[] | null>(null);
-  const [workers, setWorkers] = useState<WorkerHost[] | null>(null);
+  const workers = useWorkers();
+  const host = useSearchParams()[0].get("host") || null;
   const [history, setHistory] = useState<HealthSeries[] | null>(null);
   const [dialog, setDialog] = useState<{ open: boolean; subjects?: RetriggerSubject[] }>({
     open: false,
@@ -70,20 +76,18 @@ export function QueueOverview() {
       .catch(() => {});
   }, []);
 
-  useEffect(() => {
-    let alive = true;
-    const load = () =>
-      queueApi
-        .workers()
-        .then((r) => alive && setWorkers(r.workers))
-        .catch(() => {});
-    load();
-    const id = setInterval(load, 30_000);
-    return () => {
-      alive = false;
-      clearInterval(id);
-    };
-  }, []);
+  // each queue's jobs running now, wherever they run (the hub's job events)
+  const liveRuns = useMemo(() => {
+    const m = new Map<string, { label: string; machine: string | null; job: JobRef }[]>();
+    const ids = host ? hostWorkerIds(workers, host) : null;
+    for (const run of stream.running.values()) {
+      if (ids && !runsOnHost(run.job, run, ids)) continue;
+      const list = m.get(run.job.stage) ?? [];
+      list.push({ label: run.job.subject_label, machine: runMachine(run, workers), job: run.job });
+      m.set(run.job.stage, list);
+    }
+    return m;
+  }, [stream.running, workers, host]);
 
   // 4 h sparklines: refresh once a minute (the snapshot only carries ~30 min).
   useEffect(() => {
@@ -185,6 +189,8 @@ export function QueueOverview() {
         </p>
       )}
 
+      {host && <HostJobs host={host} stream={stream} workers={workers} />}
+
       <PulseBanner />
 
       <RunPanel
@@ -213,6 +219,7 @@ export function QueueOverview() {
         pools={snapshot.pools}
         flows={snapshot.flows}
         extensions={extensions}
+        live={liveRuns}
       />
 
       <div className="mkt-q-cols">

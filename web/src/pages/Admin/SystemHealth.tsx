@@ -7,6 +7,7 @@
 //   GET /api/system/version { version, build_sha, build_time, go_version, schema_revision }
 //   GET /api/admin/caches   { caches: [name] }                 (admin)
 //   GET /api/admin/perf/budgets  — the parsed budget bundle    (admin)
+//   GET /api/system/processes    — supervised processes        (admin, Processes.tsx)
 //
 // NOTE: the budgets payload is YAML-tagged Go structs serialised by
 // encoding/json, so its keys arrive PascalCase (Endpoints, Version);
@@ -20,6 +21,9 @@ import { Badge } from "@ds/components/Badge/Badge";
 import { useI18n } from "../../lib/i18n";
 import { api } from "../../lib/api";
 import { AdminGate } from "../../components/AdminGate";
+import { ProcessesCard } from "./Processes";
+import { tvClusterApi, type TvClusterView } from "../../lib/tvClusterApi";
+import { tvRemoteApi } from "../../lib/tvRemoteApi";
 
 interface ServiceSnapshot {
   status: string;
@@ -58,6 +62,8 @@ function HealthInner() {
   const [version, setVersion] = useState<Version | null>(null);
   const [caches, setCaches] = useState<string[] | null>(null);
   const [budgets, setBudgets] = useState<Record<string, unknown> | null>(null);
+  const [tv, setTv] = useState<TvClusterView | null>(null);
+  const [remote, setRemote] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     api
@@ -79,6 +85,25 @@ function HealthInner() {
       .get<Record<string, unknown>>("/api/admin/perf/budgets")
       .then(setBudgets)
       .catch(() => setBudgets(null));
+    // Epic 32.11 AC5: the TV line (hosts, channels on air, failovers, remote)
+    tvClusterApi
+      .get()
+      .then(setTv)
+      .catch(() => setTv(null));
+    tvRemoteApi
+      .status()
+      .then((r) =>
+        setRemote(
+          !r.integration.configured
+            ? "none"
+            : !r.integration.enabled
+              ? "off"
+              : r.remote && !r.remote.ready
+                ? "problem"
+                : "ready"
+        )
+      )
+      .catch(() => setRemote(null));
   }, []);
 
   useEffect(() => {
@@ -120,6 +145,19 @@ function HealthInner() {
         )}
       </div>
 
+      {tv && (
+        <p className="mkt-health__tv" data-testid="health-tv">
+          <strong>{t("health.tv")}</strong>{" "}
+          {t("health.tvLine", {
+            up: n(tv.hosts.filter((h) => h.state !== "down").length),
+            total: n(tv.hosts.length),
+            onAir: n(tv.on_air.filter((c) => !c.stale).length),
+            failovers: n(tv.failovers_24h ?? 0),
+          })}
+          {remote && <> · {t(`health.tvRemote.${remote}`)}</>}
+        </p>
+      )}
+
       {/* Per-service cards */}
       <h2>{t("health.services")}</h2>
       {healthErr ? (
@@ -146,6 +184,9 @@ function HealthInner() {
           ))}
         </div>
       )}
+
+      {/* Supervised processes: state, restarts, last crash (Story 22.9) */}
+      <ProcessesCard />
 
       {/* Caches + budgets + version */}
       <div className="mkt-health__grid">

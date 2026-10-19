@@ -1,0 +1,13 @@
+New connections will be remembered.
+
+
+Status       Local     Remote                    Network
+
+-------------------------------------------------------------------------------
+OK           O:        \\Home-NAS\Originals      Microsoft Windows Network
+OK           Y:        \\Home-NAS\Originals\Backup\Youtube 
+                                                Microsoft Windows Network
+The command completed successfully.
+
+OK                     \\192.168.50.94\IPC$      Microsoft Windows Network
+Unavailable  Z:        \\192.168.50.94\Archive   Microsoft Windows Network

@@ -4,21 +4,28 @@ package guide
 // Fields mirror the Story 27.4 contract; most come from the block's
 // Snapshot so a read never joins the library.
 type Block struct {
-	ChannelID string  `json:"channel_id"`
-	Kind      string  `json:"kind"`
-	Start     string  `json:"start"` // ISO-8601 absolute
-	Stop      string  `json:"stop"`
-	Title     string  `json:"title"`
-	SubTitle  string  `json:"sub_title,omitempty"`
-	Desc      string  `json:"desc,omitempty"`
-	Poster    string  `json:"poster,omitempty"`
-	Genre     string  `json:"genre,omitempty"`
-	Rating    string  `json:"rating,omitempty"`
-	Series    string  `json:"series,omitempty"`
-	Season    *int    `json:"season,omitempty"`
-	Episode   *int    `json:"episode,omitempty"`
-	IsLive    bool    `json:"is_live,omitempty"`
-	Progress  float64 `json:"progress,omitempty"`
+	ChannelID string `json:"channel_id"`
+	Kind      string `json:"kind"`
+	Start     string `json:"start"` // ISO-8601 absolute
+	Stop      string `json:"stop"`
+	Title     string `json:"title"`
+	SubTitle  string `json:"sub_title,omitempty"`
+	Desc      string `json:"desc,omitempty"`
+	Poster    string `json:"poster,omitempty"`
+	Genre     string `json:"genre,omitempty"`
+	Rating    string `json:"rating,omitempty"`
+	Series    string `json:"series,omitempty"`
+	Season    *int   `json:"season,omitempty"`
+	Episode   *int   `json:"episode,omitempty"`
+	// OnAir is the channel strip's line (Story 27.11), StripTitle /
+	// StripSeries / StripEpisode its parts.
+	OnAir        string  `json:"on_air,omitempty"`
+	StripTitle   string  `json:"strip_title,omitempty"`
+	StripSeries  string  `json:"strip_series,omitempty"`
+	StripEpisode string  `json:"strip_episode,omitempty"`
+	StripRef     string  `json:"strip_ref,omitempty"`
+	IsLive       bool    `json:"is_live,omitempty"`
+	Progress     float64 `json:"progress,omitempty"`
 }
 
 // isFiller reports whether a block kind is filler-ish (collapsed by

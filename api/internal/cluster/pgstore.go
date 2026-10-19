@@ -190,9 +190,16 @@ UPDATE cluster_nodes SET state = 'rejected', home_privkey = NULL, sealed = NULL,
 
 // Revoke implements Store.
 func (s *PGStore) Revoke(ctx context.Context, id string, now time.Time) error {
-	return s.exec1(ctx, `
+	if err := s.exec1(ctx, `
 UPDATE cluster_nodes SET state = 'revoked', home_privkey = NULL, sealed = NULL, revoked_at = $2, updated_at = $2
- WHERE id = $1 AND state = 'approved'`, id, now)
+ WHERE id = $1 AND state = 'approved'`, id, now); err != nil {
+		return err
+	}
+	// a revoked machine streams no more TV (Epic 32.1 EC2); its role can no longer log
+	// in, so it stops beating and its channels fail over. Best effort: the table is
+	// absent before slot 0123.
+	_, _ = s.DB.ExecContext(ctx, `UPDATE streaming_hosts SET enabled = false WHERE host_id = $1 AND role = 'node'`, id)
+	return nil
 }
 
 // UpdateNode implements Store.
@@ -214,7 +221,12 @@ UPDATE cluster_nodes SET
 
 // DeleteNode implements Store.
 func (s *PGStore) DeleteNode(ctx context.Context, id string) error {
-	return s.exec1(ctx, `DELETE FROM cluster_nodes WHERE id = $1`, id)
+	if err := s.exec1(ctx, `DELETE FROM cluster_nodes WHERE id = $1`, id); err != nil {
+		return err
+	}
+	// its streaming host row goes too (placements on it cascade; best effort)
+	_, _ = s.DB.ExecContext(ctx, `DELETE FROM streaming_hosts WHERE host_id = $1 AND role = 'node'`, id)
+	return nil
 }
 
 // SetStages implements Store.

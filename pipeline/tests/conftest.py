@@ -54,6 +54,30 @@ def _app_cache_in_tmp(tmp_path_factory: pytest.TempPathFactory) -> object:
 
 
 @pytest.fixture(autouse=True)
+def _no_cluster_agent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Workers started by tests run without the cluster agent (no home to dial, no
+    files on a share); the agent's own tests build one explicitly."""
+    monkeypatch.setenv("MAKTABA_CLUSTER_AGENT", "0")
+
+
+@pytest.fixture(autouse=True)
+def _secrets_key_in_tmp(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """home_secrets reads the key file named here: never the real home's secrets.key."""
+    monkeypatch.setenv("MAKTABA_SECRETS_KEY", str(tmp_path_factory.mktemp("keys") / "secrets.key"))
+
+
+@pytest.fixture(autouse=True)
+def _forget_refusals() -> object:
+    """A test that revokes a machine must not make later workers exit 77."""
+    from maktaba_pipeline.cluster import exitcodes
+
+    yield
+    exitcodes.reset()
+
+
+@pytest.fixture(autouse=True)
 def _unit_tests_skip_disk_syncs(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -15,7 +15,12 @@ variables. This binary:
 2. Translates it into the per-service environment each role already
    understands (`internal/supervisor/env.go`).
 3. Launches the role binaries as **managed child processes** and owns
-   their graceful shutdown (`internal/supervisor`).
+   their graceful shutdown (`internal/supervisor`). Each child is watched
+   on its own: a crash or a hang (failed `/healthz` probes) restarts only
+   that child, with backoff and a crash-loop guard, and the state is
+   served at `GET /processes` on `[supervisor] admin_addr` (default
+   `127.0.0.1:9103`). The api shows it at `/api/system/processes`
+   (Story 22.9; settings in `deploy/server.toml.example`).
 4. Serves the embedded SPA in-process and reverse-proxies `/api` to the
    API service, so the whole app is reachable from one origin.
 
@@ -42,6 +47,15 @@ maktaba-server serve
 | `migrate`    | Database migrations (delegates to `maktaba-api`)               |
 | `adduser`    | Seed the first admin user (delegates to `maktaba-api`)         |
 | `keys`       | JWT signing-key management (delegates to `maktaba-api`)        |
+
+**Streaming on a cluster node (Epic 32.1).** On a machine that joined a home
+(Epic 31, `node.json` holds its database credential), `maktaba-server serve
+--role streaming` runs the streaming service as a cluster node: the home's
+database through the node's own role, its node id, the path map from the
+cluster; no extra flag. A node serves only the channel routes the home's front
+door forwards (signed with the cluster stream key) and never advertises
+HDHomeRun. It takes channels once the Live TV page's "Stream on this machine"
+and the setting `tv_cluster.nodes_stream` are both on.
 
 ## Building
 

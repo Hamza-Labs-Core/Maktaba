@@ -237,6 +237,8 @@ func TestPatch_InvalidRejected(t *testing.T) {
 		{"int as string", "planner", `{"set":{"min_slot_minutes":"30"}}`, "min_slot_minutes", "whole number"},
 		{"below minimum", "planner", `{"set":{"min_slot_minutes":4}}`, "min_slot_minutes", "at least 5"},
 		{"float below minimum", "detect", `{"set":{"core_band":0.5}}`, "core_band", "at least 1"},
+		{"above maximum", "tv", `{"set":{"horizon_days":32}}`, "horizon_days", "at most 31"},
+		{"bad encoder", "tv_output", `{"set":{"encoder":"quicksync"}}`, "encoder", "one of"},
 		{"bad choice", "planner", `{"set":{"khutbah_day":"friday"}}`, "khutbah_day", "one of"},
 		{"bad time", "planner", `{"set":{"khutbah_start":"25:00"}}`, "khutbah_start", "HH:MM"},
 		{"time past 24:00", "planner", `{"set":{"khutbah_end":"24:30"}}`, "khutbah_end", "HH:MM"},
@@ -253,9 +255,11 @@ func TestPatch_InvalidRejected(t *testing.T) {
 		{"nullable non-null wrong type", "planner", `{"set":{"timezone":5}}`, "timezone", "string"},
 		{"unknown name", "planner", `{"set":{"nope":1}}`, "nope", "unknown setting"},
 	}
+	// one server for every case (nothing is written on a refusal, which each
+	// case checks), so the test stays under the unit tier's per-test cap
+	db, srv := newServer(t)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			db, srv := newServer(t)
 			// A valid companion value proves nothing at all is written.
 			code, resp := do(t, srv, http.MethodPatch, "/api/rules/"+tc.section,
 				strings.Replace(tc.body, `{"set":{`, `{"set":{"`+companion(tc.section)+`,`, 1), admin)

@@ -34,6 +34,9 @@ class HomeRef:
     url: str
     instance_id: str = ""
     name: str = ""
+    #: the home's long-term cluster public key (X25519, standard base64), sealed in the
+    #: join credentials since the agent channel's handshake v2; empty in older configs
+    cluster_pub: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +71,7 @@ class NodeConfig:
                 url=str(home.get("url") or home.get("api_url") or ""),
                 instance_id=str(home.get("instance_id") or ""),
                 name=str(home.get("name") or ""),
+                cluster_pub=str(home.get("cluster_pub") or ""),
             ),
             database_url=str(data.get("database_url") or ""),
             joined_at=str(data.get("joined_at") or ""),

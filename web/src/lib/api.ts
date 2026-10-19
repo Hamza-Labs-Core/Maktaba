@@ -50,6 +50,13 @@ function logApiError(method: string, path: string, status: number, detail: strin
   console.error(`[api] ${method} ${path} failed (${status}): ${detail}`);
 }
 
+// csrfHeaders returns the double-submit header for a hand-rolled fetch
+// (e.g. a streaming POST that cannot go through request()).
+export function csrfHeaders(): Record<string, string> {
+  const tok = csrfToken();
+  return tok ? { [CSRF_HEADER]: tok } : {};
+}
+
 function csrfToken(): string | null {
   const m = document.cookie.match(/(?:^|;\s*)mkt_csrf=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : null;
@@ -200,12 +207,32 @@ export function postBeacon(path: string, body: unknown): void {
   }
 }
 
+// deleteBeacon sends a fire-and-forget DELETE that survives page unload
+// (keepalive fetch with the CSRF header; navigator.sendBeacon can do neither
+// DELETE nor headers). Epic 32.9: a remote TV session ends on page unload.
+export function deleteBeacon(path: string): void {
+  const headers = new Headers();
+  const tok = csrfToken();
+  if (tok) headers.set(CSRF_HEADER, tok);
+  try {
+    void fetch(`${BASE}${path}`, {
+      method: "DELETE",
+      headers,
+      credentials: "include",
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    // teardown: the server times the session out after 150 s anyway
+  }
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: "POST", body }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: "PATCH", body }),
   put: <T>(path: string, body?: unknown) => request<T>(path, { method: "PUT", body }),
-  delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  delete: <T>(path: string, body?: unknown) =>
+    request<T>(path, body === undefined ? { method: "DELETE" } : { method: "DELETE", body }),
 };
 
 /**

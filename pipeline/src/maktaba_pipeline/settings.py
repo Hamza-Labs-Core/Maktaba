@@ -56,6 +56,8 @@ class Help:
     #: the smallest value a number may take (a planner rule that would divide by it, or
     #: take the median of none, refuses 0 here rather than failing later)
     minimum: float | None = None
+    #: the largest value a number may take
+    maximum: float | None = None
     #: for a list of tuples: which columns hold a time (HH:MM), checked on save
     time_columns: tuple[int, ...] = ()
 
@@ -248,6 +250,8 @@ def _check(h: Help, v: Any, field: str) -> None:
     """The limits a field's help sets: a minimum, the allowed choices, time columns."""
     if h.minimum is not None and isinstance(v, int | float) and v < h.minimum:
         raise SettingsError(field, f"must be at least {h.minimum:g}, got {v!r}")
+    if h.maximum is not None and isinstance(v, int | float) and v > h.maximum:
+        raise SettingsError(field, f"must be at most {h.maximum:g}, got {v!r}")
     if h.choices and v is not None and v not in h.choices:
         raise SettingsError(field, f"must be one of {', '.join(h.choices)}, got {v!r}")
     for i, row in enumerate(v if h.time_columns else ()):
@@ -293,6 +297,8 @@ def describe(cfg: Any) -> list[dict[str, Any]]:
             entry["choices"] = list(h.choices)
         if h and h.minimum is not None:
             entry["minimum"] = h.minimum
+        if h and h.maximum is not None:
+            entry["maximum"] = h.maximum
         if kind == "rows":
             item = typing.get_args(tp)[0]
             entry["columns"] = (

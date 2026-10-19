@@ -22,9 +22,33 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from .liveness import LoopHeartbeat, get_heartbeat
 from .ring import LogRingBuffer, get_ring
 
-__all__ = ["build_recent_response", "start_log_server"]
+__all__ = ["build_health_response", "build_recent_response", "start_log_server"]
+
+
+def build_health_response(hb: LoopHeartbeat | None) -> tuple[int, str, bytes]:
+    """``/healthz``: 200 while the event loop beats, 503 once it is stale.
+
+    Without a heartbeat installed (the loop task not started) the process
+    is reported alive, like a plain liveness endpoint.
+    """
+    if hb is None or hb.healthy():
+        return 200, "application/json", b'{"status":"ok","service":"pipeline"}'
+    body = json.dumps(
+        {
+            "status": "fail",
+            "service": "pipeline",
+            "checks": {
+                "event_loop": {
+                    "status": "fail",
+                    "reason": f"no heartbeat for {hb.age():.0f}s (stale after {hb.stale_sec:.0f}s)",
+                }
+            },
+        }
+    )
+    return 503, "application/json", body.encode("utf-8")
 
 
 def build_recent_response(path: str, ring: LogRingBuffer | None) -> tuple[int, str, bytes]:
@@ -64,7 +88,10 @@ class _Handler(BaseHTTPRequestHandler):
         return
 
     def do_GET(self) -> None:  # noqa: N802 — BaseHTTPRequestHandler API
-        status, content_type, body = build_recent_response(self.path, get_ring())
+        if urlparse(self.path).path == "/healthz":
+            status, content_type, body = build_health_response(get_heartbeat())
+        else:
+            status, content_type, body = build_recent_response(self.path, get_ring())
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))

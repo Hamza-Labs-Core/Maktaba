@@ -1252,6 +1252,20 @@ summary.mkt-q-lane__title {
 .mkt-q-status--off {
   color: var(--color-muted);
 }
+/* Cloudflare Stream: one line per Test connection check (story 32.6) */
+.mkt-q-cflines {
+  list-style: none;
+  margin: var(--space-2) 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
+}
+.mkt-q-cfstatus {
+  border-block-start: 1px solid var(--color-border);
+  margin-block-start: var(--space-3);
+  padding-block-start: var(--space-3);
+}
 
 /* keep wide children (tables, lane rows) scrolling inside their own box */
 .mkt-q > * {
@@ -1260,6 +1274,20 @@ summary.mkt-q-lane__title {
 .mkt-q-tablewrap {
   position: relative;
   max-inline-size: 100%;
+}
+
+/* Epic 31: a queue's jobs running now, with the machine they run on */
+.mkt-q-card__live {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-sm);
+}
+.mkt-q-card__livetext {
+  overflow-wrap: anywhere;
 }
 
 /* ---- control-centre parity: reports, preview, explain, style, run, pulse --- */
@@ -1522,4 +1550,16 @@ summary.mkt-q-lane__title {
   .mkt-q-reports__list {
     max-block-size: 30vh;
   }
+}
+
+/* ?host=<machine>: the jobs running on one machine (from the Machines page) */
+.mkt-q-host__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+}
+.mkt-q-running {
+  font-variant-numeric: tabular-nums;
 }

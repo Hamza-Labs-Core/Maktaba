@@ -1,6 +1,7 @@
 package queues
 
 import (
+	"context"
 	"database/sql/driver"
 	"encoding/json"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues/queuestest"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 )
 
 // fakePlexTV is a minimal plex.tv: one PIN (id 42) that is authorised
@@ -194,6 +196,8 @@ func TestPlexSignin_ConcurrentPollsAreRaceFree(t *testing.T) {
 
 func TestPlexSignin_PollAndUse(t *testing.T) {
 	f, fp := plexFixture(t, `{"client_id":"cid","path_map":"{\"/m\":\"E:/m\"}","url":"http://old","token":"OLD"}`)
+	store := secrets.NewMemory()
+	f.h.Secrets = store
 	if rec := f.do("GET", "/api/extensions/plex/signin/99", "", admin()); rec.Code != 404 {
 		t.Fatalf("unknown pin: %d", rec.Code)
 	}
@@ -255,8 +259,11 @@ func TestPlexSignin_PollAndUse(t *testing.T) {
 	ups := f.db.Find("insert into extensions")
 	var saved map[string]any
 	_ = json.Unmarshal([]byte(ups[len(ups)-1].Args[2].(string)), &saved)
-	if saved["url"] != "http://cabin:32400" || saved["token"] != "SERVER-TOKEN-2" || saved["path_map"] != `{"/m":"E:/m"}` || saved["client_id"] != "cid" {
-		t.Errorf("saved %v", saved)
+	if _, has := saved["token"]; has || saved["url"] != "http://cabin:32400" || saved["path_map"] != `{"/m":"E:/m"}` || saved["client_id"] != "cid" {
+		t.Errorf("saved %v (the token must not stay in the row)", saved)
+	}
+	if v, err := store.Get(context.Background(), secrets.ExtensionName("plex", "token")); err != nil || string(v) != "SERVER-TOKEN-2" {
+		t.Errorf("token in home_secrets = %q %v", v, err)
 	}
 	// The sign-in is consumed.
 	if rec := f.do("GET", "/api/extensions/plex/signin/42", "", admin()); rec.Code != 404 {

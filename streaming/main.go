@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -33,18 +34,19 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/auth"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/cache"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/capability"
-	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/channel"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/grpcsrv"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/handlers"
-	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/hdhr"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pathmap"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/probe"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/procattr"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/server"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/session"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/slots"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/transcripts"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/tvmetrics"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/version"
 )
 
@@ -116,6 +118,14 @@ func envIntDefault(key string, def int) int {
 func runServe() error {
 	logger := initLogger()
 
+	// ffmpeg / yt-dlp children must never outlive this process (Story
+	// 22.9): on Windows put it in a kill-on-close job they all inherit;
+	// on Linux each child gets Pdeathsig (procattr.Tie).
+	if err := procattr.ContainSelf(); err != nil {
+		logger.Warn("child processes are not contained; they may outlive a crash",
+			"err", err.Error(), "event", "procattr_contain_failed")
+	}
+
 	publicAddr := os.Getenv("MAKTABA_HTTP_ADDR")
 	if publicAddr == "" {
 		publicAddr = ":8081"
@@ -129,25 +139,62 @@ func runServe() error {
 		grpcAddr = ":9050"
 	}
 
-	checks := buildChecks()
+	// Liveness (Story 22.9): /healthz fails once the watchdog heartbeat
+	// stalls (the channel engine lock is wedged), so the supervisor
+	// restarts the process; the database only affects /readyz.
+	checks := append(buildChecks(), procWatchdog.ReadyCheck("db"), procWatchdog.ReadyCheck("channel_engine"))
 	warm := warmPeriod()
-	adminMux := health.AdminMux("streaming", checks, warm)
+	adminMux := health.AdminMuxWithLiveness("streaming", []health.Check{procWatchdog.LiveCheck()}, checks, warm)
 
 	// Recent-logs endpoint on the admin port (already firewalled in
 	// production), drained by the API's diagnostics-export proxy.
 	adminMux.Handle("/logs/recent", mlog.RecentHandler(mlog.Ring()))
+	// Epic 32 story 32.11: Maktaba TV cluster metrics (Prometheus text) on the
+	// admin port, next to /healthz.
+	adminMux.Handle("/metrics", tvmetrics.Handler())
 
 	// Real read stores. When DATABASE_URL is set the probe backend and
 	// transcript streamer are Postgres-backed (the production path);
 	// otherwise we fall back to the in-memory FakeBackend so a local
 	// `serve` against no DB still answers liveness. The pool is shared
 	// across the public and gRPC surfaces and closed on shutdown.
+	// Node mode (Epic 32.1): a joined machine streams from its Epic 31 node config;
+	// its database credential is the one it got when it joined.
+	node, nodeMode := cluster.NodeModeFromOS(runtime.GOOS)
+	if nodeMode && os.Getenv("DATABASE_URL") == "" && node.DatabaseURL != "" {
+		_ = os.Setenv("DATABASE_URL", node.DatabaseURL)
+	}
+	if nodeMode {
+		logger.Info("streaming: cluster node mode", "node_id", node.NodeID, "event", "tv_node_mode")
+	}
+
 	backendCtx, backendCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	probeBackend, transcripts, pool, closeStores := buildProbeStores(backendCtx, logger)
 	backendCancel()
 	defer closeStores()
+	shareCtx, shareCancel := context.WithCancel(context.Background())
+	defer shareCancel()
+	if nodeMode {
+		// story 31.3: a node's share map is its own cluster map (buildNodeTV)
+		pathmap.SetDefault(pathmap.FromEnv())
+	} else {
+		startShareMap(shareCtx, pool, logger)
+	}
 
-	publicHandler := buildPublicHandler(logger, probeBackend, transcripts, pool)
+	var publicHandler http.Handler
+	if nodeMode {
+		// Epic 32.1: a cluster node serves only the signed channel routes the home's
+		// front door forwards (no HDHomeRun, guide or video sessions; no SSDP).
+		if pool == nil {
+			return errors.New("streaming node: the home's database is unreachable")
+		}
+		cfg := config.Load()
+		layout := cache.New(cfg.Cache.Root)
+		_ = layout.EnsureTiers()
+		publicHandler = buildNodeTV(logger, cfg, pool, layout, node)
+	} else {
+		publicHandler = buildPublicHandler(logger, probeBackend, transcripts, pool)
+	}
 
 	publicSrv := &http.Server{
 		Addr:              publicAddr,
@@ -162,6 +209,7 @@ func runServe() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	go procWatchdog.Run(ctx)
 
 	errCh := make(chan error, 3)
 	go func() {
@@ -175,9 +223,17 @@ func runServe() error {
 
 	// gRPC surface for the API (Story 7.18 / 8.8): JSON-codec service
 	// matching the api streaming client's wire convention.
-	grpcServer := grpcsrv.NewGRPCServer(buildGRPCServer(logger, probeBackend))
-	grpcLis, grpcErr := net.Listen("tcp", grpcAddr)
-	if grpcErr != nil {
+	// A cluster node has no video sessions (Epic 32.1): no gRPC surface.
+	var grpcServer *grpc.Server
+	var grpcLis net.Listener
+	grpcErr := errors.New("node mode")
+	if !nodeMode {
+		grpcServer = grpcsrv.NewGRPCServer(buildGRPCServer(logger, probeBackend))
+		grpcLis, grpcErr = net.Listen("tcp", grpcAddr)
+	}
+	if nodeMode {
+		logger.Info("grpc surface off on a cluster node", "event", "grpc_node_off")
+	} else if grpcErr != nil {
 		logger.Warn("grpc listen failed; grpc surface disabled",
 			"addr", grpcAddr, "err", grpcErr.Error(), "event", "grpc_listen_failed")
 	} else {
@@ -373,53 +429,7 @@ func buildPublicHandler(logger *slog.Logger, backend probe.Backend, transcripts 
 	// channel_programs); the no-DB local `serve` skips them entirely.
 	var extraMounts []func(chi.Router)
 	if pool != nil {
-		hostname, _ := os.Hostname()
-		chRepo := channel.NewPGRepo(pool, hostname)
-		profile, encPref := channel.ProfileFromEnv()
-		profile.Encoder = channel.DetectEncoder(context.Background(), cfg.FFmpeg.Binary, encPref)
-		logger.Info("channels: output profile", "encoder", profile.Encoder,
-			"width", profile.Width, "height", profile.Height, "fps", profile.FPS,
-			"audio", profile.AudioCodec, "event", "channel_profile")
-		ytdlp := os.Getenv("MAKTABA_YTDLP")
-		start := channel.StationStarter(channel.StationConfig{
-			FFmpeg:   cfg.FFmpeg.Binary,
-			Profile:  profile,
-			Repo:     chRepo,
-			Prober:   channel.NewFFprobe(cfg.FFmpeg.ProbeBinary),
-			Resolver: channel.NewYtDlp(ytdlp),
-			PathMap:  pathmap.FromEnv(),
-			FontFile: channel.FindFont(),
-			Logger:   logger,
-		})
-		engine := channel.NewEngine(chRepo, layout, start, envIntDefault("MAKTABA_CHANNEL_MAX_ACTIVE", channel.DefaultPerHostCap), time.Now)
-		engine.Host = hostname
-		chHandler := &channel.HTTPHandler{Engine: engine}
-		extraMounts = append(extraMounts, chHandler.Mount)
-
-		// Reap idle channel encoders on the same cadence as the session
-		// reaper (warm grace + zero viewers → teardown).
-		go func() {
-			t := time.NewTicker(30 * time.Second)
-			defer t.Stop()
-			for range t.C {
-				engine.ReapIdle(context.Background())
-			}
-		}()
-
-		// HDHomeRun emulation (Story 27.5) — off until the operator
-		// enables hdhr_device.enabled; the handler 404s and SSDP stays
-		// silent while disabled.
-		hdhrRepo := hdhr.NewPGRepo(pool)
-		hdhrHandler := hdhr.New(hdhrRepo, engine)
-		hdhrHandler.PublicBase = os.Getenv("MAKTABA_PUBLIC_BASE_URL")
-		extraMounts = append(extraMounts, hdhrHandler.Mount)
-
-		// Plex/IPTV guide + playlist, unauthenticated on this port
-		// (/xmltv.xml, /lineup.m3u, /channel/{id}/logo).
-		guideHandler := &hdhr.GuideHandler{Repo: hdhrRepo, PathMap: pathmap.FromEnv(),
-			PublicBase: os.Getenv("MAKTABA_PUBLIC_BASE_URL"), WebBase: os.Getenv("MAKTABA_PUBLIC_WEB_BASE")}
-		extraMounts = append(extraMounts, guideHandler.Mount)
-		startSSDPIfEnabled(logger, hdhrRepo)
+		extraMounts = buildHomeTV(logger, cfg, pool, layout)
 	}
 
 	return server.New(server.Deps{
@@ -434,31 +444,6 @@ func buildPublicHandler(logger *slog.Logger, backend probe.Backend, transcripts 
 		Now:         time.Now,
 		ExtraMounts: extraMounts,
 	})
-}
-
-// startSSDPIfEnabled launches the HDHomeRun SSDP responder in the
-// background when the feature is enabled (AC1/AC9). When disabled it does
-// nothing, so the LAN sees no advertisement.
-func startSSDPIfEnabled(logger *slog.Logger, repo *hdhr.PGRepo) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	dev, err := repo.Device(ctx)
-	cancel()
-	if err != nil || !dev.Enabled {
-		return
-	}
-	// LocationBase is the http base advertised in the SSDP LOCATION
-	// header; set it from MAKTABA_PUBLIC_BASE_URL when the box's
-	// reachable address is known (SSDP can't cross Docker bridges — see
-	// deploy notes). Empty is tolerated: discovery clients that probe the
-	// device directly still resolve /device.xml.
-	resp := &hdhr.Responder{DeviceUUID: dev.UUID, LocationBase: os.Getenv("MAKTABA_PUBLIC_BASE_URL")}
-	go func() {
-		if err := resp.Run(context.Background()); err != nil {
-			logger.Warn("hdhr ssdp responder stopped",
-				"err", err.Error(), "event", "hdhr_ssdp_stopped")
-		}
-	}()
-	logger.Info("hdhr: SSDP responder started", "event", "hdhr_ssdp_started")
 }
 
 // buildProbeStores constructs the probe Backend + transcript streamer

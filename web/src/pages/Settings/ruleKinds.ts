@@ -26,6 +26,7 @@ export type Control =
   | "time"
   | "text"
   | "url"
+  | "color"
   | "days"
   | "chips"
   | "lines"
@@ -36,6 +37,9 @@ export type Control =
 const TIME_TEXT = /^\d{1,2}:\d{2}$/;
 const TIME_NAME = /(^|_)(time|start|end|from|until)$/;
 const URL_NAME = /(^|_)(url|uri)$/;
+// a #RRGGBB setting (the channel strip's colours): a picker and a hex field
+const COLOR_NAME = /_colou?r$/;
+const HEX = /^#[0-9a-f]{6}$/i;
 const DAYS_NAME = /(^|_)days?$/;
 const URL_VALUE = /^[a-z][a-z0-9+.-]*:\/\/[^\s/?#]+\S*$/i;
 
@@ -77,6 +81,8 @@ export function controlOf(f: RuleField): Control {
   if (k === "time") return "time";
   if (k === "str") {
     if (looksTime(f.name, [f.default, f.value])) return "time";
+    if (COLOR_NAME.test(f.name) && typeof f.default === "string" && HEX.test(f.default))
+      return "color";
     return URL_NAME.test(f.name) ? "url" : "text";
   }
   if (k === "list" || k === "words") {
@@ -222,6 +228,8 @@ export function valueProblem(f: RuleField, v: unknown): Problem | null {
       return typeof v === "string" && v.trim() !== "" && !validUrl(v)
         ? { key: "settings.rules.err.url" }
         : null;
+    case "color":
+      return typeof v === "string" && HEX.test(v) ? null : { key: "settings.rules.err.color" };
     case "select":
     case "weekday":
       return v == null || f.choices?.includes(String(v))

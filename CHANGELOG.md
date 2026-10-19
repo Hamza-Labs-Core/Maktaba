@@ -11,6 +11,45 @@ don't append a line here; docs-only PRs are exempt.
 ## [Unreleased]
 
 ### Added
+- Extension relay (story 31.R): machines run the Plex stages (index,
+  season, topic and clip collections) again without the Plex token. Each
+  Plex call goes over the machine's sealed cluster channel to the home,
+  which checks the machine and the call against an allow-list, adds the
+  token from `home_secrets`, calls Plex and passes the answer back with the
+  token removed. Per-machine rate, concurrency, size and time limits;
+  every call recorded in the hub's events file. Admin > Machines > Relay
+  shows its state, the allow-list and the recent calls, and switches it
+  (rules section `relay`, on by default; off, the Plex stages run on the
+  home only). Cloudflare Stream stays home-only.
+- Cloudflare Stream integration (Epic 32 story 32.6): a new
+  "Cloudflare Stream" extension (account ID, API token, customer
+  subdomain code) whose Test connection checks the token, Stream on the
+  account, storage, Analytics (optional), creates the Stream signing key,
+  learns the playback domain and checks that the home can push. The
+  extensions page shows each check and the remote viewing switch (on only
+  after a passed test from the last 24 hours) and can remove the
+  integration (Maktaba's live inputs and signing key are deleted at
+  Cloudflare). `/api/tv/remote` (status, test, enabled, remove).
+  `maktaba-api cloudflare spike` runs the Stream spike against a real
+  account (tools/tv/cf-spike.md).
+- Secrets sealed on the home (slot 0120 `home_secrets`): AES-256-GCM
+  under the key file `secrets.key` beside `server.toml` (or
+  `MAKTABA_SECRETS_KEY`), never in the database and not readable by the
+  machines' role. Every extension secret lives there: the Plex token is
+  moved out of `extensions.settings` on the API's first start (once,
+  idempotent), and the Plex stages now run on the home only.
+- Process supervision (Story 22.9): `maktaba-server serve` restarts only
+  the child process (api, streaming or pipeline) that crashed or hung,
+  with exponential backoff, a crash-loop guard and `/healthz` liveness
+  probes. It is configured by `[supervisor]` in `server.toml`.
+  `restart = "never"` keeps the old behaviour, where any exit stops the
+  whole stack. The streaming `/healthz` now fails when the live-channel
+  engine is wedged, and the pipeline serves an event-loop `/healthz`. The
+  state is shown at `GET /api/system/processes` (admin) and on the System
+  Health page. Crashes are recorded in `health_samples`. A child's own
+  ffmpeg and yt-dlp processes die with it: on POSIX through its process
+  group, on Windows through a kill-on-close Job Object. Streaming also
+  ties them to itself (Windows job, Linux `Pdeathsig`).
 - Unified `maktaba-server` binary (`cmd/maktaba-server`): one executable
   that supervises the API, streaming, and pipeline roles, serves the
   embedded web UI (build tag `embed_web`), advertises `_maktaba._tcp`

@@ -33,7 +33,7 @@ def edges(graph: tuple[StageDef, ...], name: str) -> set[tuple[str, str]]:
 
 def test_builtin_extensions_are_discovered() -> None:
     names = {e.manifest.name for e in discover(include_entry_points=False)}
-    assert names == {"plex", "dizquetv"}
+    assert names == {"plex", "dizquetv", "cloudflare_stream"}
 
 
 def test_register_adds_stages_and_edges_and_validates() -> None:
@@ -145,3 +145,18 @@ async def test_extension_removed_from_the_graph_leaves_core_intact(db: Database)
     await sync_graph(db, build_full_graph([plex]), {"plex": ExtensionState("plex", True, {}, True)})
     await sync_graph(db, build_full_graph([]), {})
     assert await stage_state(db, "detect") == (True, None)
+
+
+def test_plex_stages_are_home_only_unless_the_relay_carries_them() -> None:
+    """The Plex token is in home_secrets (slot 0120), which a node cannot read: the stages
+    that only need the token name the relay (a node runs them through the home, story
+    31.R); plex_livetv stays beside write_channels on the home."""
+    graph = build_full_graph(discover(include_entry_points=False))
+    plex = {s.name: (s.placement, s.relay) for s in graph if s.name.startswith("plex_")}
+    assert plex == {
+        "plex_index": ("home", "plex"),
+        "plex_collection": ("home", "plex"),
+        "plex_groups": ("home", "plex"),
+        "plex_livetv": ("home", None),
+    }, plex
+    assert not any(s.relay for s in graph if s.extension in ("dizquetv", "cloudflare_stream"))

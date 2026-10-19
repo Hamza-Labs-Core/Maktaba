@@ -4,7 +4,11 @@ season to Plex as a manual collection, and keeps Maktaba's channels in Plex Live
 
 Settings: ``url`` (``MAKTABA_PLEX_URL``), ``token`` (secret, ``MAKTABA_PLEX_TOKEN``)
 and ``path_map`` (``MAKTABA_PATH_MAP``: how *Plex* sees the NAS paths the database
-stores, same syntax as :class:`~maktaba_pipeline.engine.paths.PathMap`).
+stores, same syntax as :class:`~maktaba_pipeline.engine.paths.PathMap`). With the
+canonical paths of story 31.3 the map is per share, e.g.
+``smb://nas/Originals/=/volume1/Originals/`` (Plex on the Synology sees
+``/volume1/<share>``); legacy prefixes (``/Volumes/Originals/=...``) keep working for
+paths stored before the migration.
 
 Core never imports this package; it adds its stage and trigger edge through
 :meth:`PlexExtension.register`.
@@ -17,6 +21,7 @@ import time
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
+from ... import relay
 from ...engine.graph import Edge, GraphBuilder, StageDef, StageResult, Subject
 from ...engine.stages.registry import StageImpl
 from ...integrations.plex import PlexClient
@@ -57,7 +62,7 @@ MANIFEST = Manifest(
         SettingField("token", "Plex token", secret=True, required=True, env="MAKTABA_PLEX_TOKEN"),
         SettingField(
             "path_map",
-            "Path map (Plex's view of the NAS paths)",
+            "Path map (Plex's view of the NAS paths: smb://nas/Share/=/volume1/Share/)",
             env="MAKTABA_PATH_MAP",
         ),
     ),
@@ -66,7 +71,10 @@ MANIFEST = Manifest(
 
 
 def _default_client(settings: Mapping[str, str]) -> PlexClient:
-    return PlexClient(settings.get("url", ""), settings.get("token", ""))
+    """With the token (the home): straight to Plex. Without it (a node: the token is in
+    home_secrets, which only the home reads): through the home's extension relay."""
+    client: PlexClient = relay.plex_client(settings)
+    return client
 
 
 class PlexExtension:
@@ -101,6 +109,11 @@ class PlexExtension:
                 entry_for=("library",),
                 debounce_sec=60,
                 debounce_max_sec=600,
+                # the Plex token is in home_secrets (slot 0120), which only the home
+                # reads: a node runs it through the home's extension relay (rules
+                # "relay", on by default), else it stays on the home
+                placement="home",
+                relay="plex",
             )
         )
         if graph.has_stage("scan"):  # a rescan may add, move or drop files Plex lists
@@ -116,6 +129,8 @@ class PlexExtension:
                 version=PLEX_EXPORT_VERSION,
                 external_write=True,
                 entry_for=("season",),
+                placement="home",  # needs the Plex token (home_secrets) ...
+                relay="plex",  # ... which the home's relay adds for a node
             )
         )
         graph.add_edge("detect", Edge("plex_collection", "seasons_changed"))
@@ -133,6 +148,8 @@ class PlexExtension:
                 entry_for=("library",),
                 debounce_sec=60,
                 debounce_max_sec=600,
+                placement="home",  # needs the Plex token (home_secrets) ...
+                relay="plex",  # ... which the home's relay adds for a node
             )
         )
         for src in ("topic_collections", "clip_groups", "plex_index"):

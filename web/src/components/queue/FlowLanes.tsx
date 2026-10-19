@@ -15,7 +15,7 @@ import type {
   StageInfo,
 } from "../../lib/queueApi";
 import { FlowArrow } from "./FlowArrow";
-import { QueueCard } from "./QueueCard";
+import { QueueCard, type QueueLiveJob } from "./QueueCard";
 import { STATE_GLYPH, queueVisualState } from "./format";
 
 const EMPTY_SUMMARY = (stage: string): QueueSummary => ({
@@ -42,6 +42,8 @@ const byOrder = (a: StageInfo, b: StageInfo) =>
   a.lane_order - b.lane_order || a.stage.localeCompare(b.stage);
 
 export type FlowLanesProps = Pick<QueuesSnapshot, "stages" | "queues" | "pools" | "flows"> & {
+  /** each queue's jobs running now with their machine, by stage */
+  live?: ReadonlyMap<string, QueueLiveJob[]>;
   extensions?: Extension[] | null;
 };
 
@@ -49,7 +51,7 @@ type ViewLane = Lane | "extensions";
 /** Extension-owned queues form their own lane, whatever lane the graph says. */
 const viewLane = (s: StageInfo): ViewLane => (s.extension ? "extensions" : s.lane);
 
-export function FlowLanes({ stages, queues, pools, flows, extensions }: FlowLanesProps) {
+export function FlowLanes({ stages, queues, pools, flows, extensions, live }: FlowLanesProps) {
   const { t, n } = useI18n();
   const summaryOf = (s: string) => queues.find((q) => q.stage === s) ?? EMPTY_SUMMARY(s);
   const poolOf = (p: string): Pool | undefined => pools.find((x) => x.pool === p);
@@ -87,6 +89,7 @@ export function FlowLanes({ stages, queues, pools, flows, extensions }: FlowLane
               summary={summaryOf(s.stage)}
               pool={poolOf(s.pool)}
               subSteps={subStepsFor(s)}
+              live={live?.get(s.stage)}
               compact={compact}
               extensionLabel={extLabel(s.extension)}
             />

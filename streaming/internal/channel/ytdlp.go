@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/procattr"
 )
 
 // LiveResolver turns a live block's source_url into something ffmpeg can
@@ -45,7 +47,9 @@ func NewYtDlp(bin string) *YtDlp {
 }
 
 func runOutput(ctx context.Context, bin string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, bin, args...).Output()
+	cmd := exec.CommandContext(ctx, bin, args...)
+	procattr.Tie(cmd)
+	return cmd.Output()
 }
 
 // IsDirectStream reports whether u already points at a stream ffmpeg can

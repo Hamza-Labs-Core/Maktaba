@@ -168,7 +168,7 @@ def test_model_stages_are_home_only_unless_the_settings_name_a_shared_server() -
     local = _RulesDb('{"url": "http://localhost:11434"}')
     assert _run(lifted_placements(local, CORE)) == frozenset()
     shared = _RulesDb('{"url": "http://10.0.0.5:11434"}')
-    assert _run(lifted_placements(shared, CORE)) == {"check_tags", "check_clips"}
+    assert _run(lifted_placements(shared, CORE)) == {"check_tags", "check_clips", "display_title"}
 
 
 def test_the_dizquetv_channel_stages_are_home_only() -> None:

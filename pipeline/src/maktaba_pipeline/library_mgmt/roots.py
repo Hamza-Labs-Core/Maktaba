@@ -74,6 +74,13 @@ def canonicalise(path: str) -> str:
     """
     if not path:
         return path
+    from ..sharepath.canonical import format_canonical, parse_canonical
+
+    sp = parse_canonical(path)
+    if sp is not None:
+        # story 31.3: a canonical share path is its own normal form (no realpath:
+        # it is not a path of this machine)
+        return format_canonical(sp.scheme, sp.server, sp.share, sp.rel)
     try:
         resolved = os.path.realpath(path)
     except OSError:
@@ -97,6 +104,13 @@ def _components(path: str) -> tuple[str, ...]:
     anchor (``/`` or a drive such as ``C:``) first, so ``/mnt/media2``
     can never look like it is under ``/mnt/media``.
     """
+    from ..sharepath.canonical import parse_canonical
+
+    sp = parse_canonical(path)
+    if sp is not None:
+        # smb://server/share/a/b: case-insensitive like SMB itself
+        head = (f"{sp.scheme}://{sp.server}/{sp.share.lower()}",)
+        return head + tuple(x.lower() for x in sp.rel.split("/") if x)
     return PurePath(os.path.normcase(path)).parts
 
 

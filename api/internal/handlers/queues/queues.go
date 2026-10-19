@@ -38,6 +38,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 )
 
 // EventPublisher is the slice of *eventbus.Bus the handlers use to
@@ -78,6 +79,15 @@ type Handler struct {
 	PlexHTTP  *http.Client
 	plexPins  plexSignins
 
+	// Secrets is the home's sealed store (slot 0120): every extension
+	// secret is kept there, never in extensions.settings. nil refuses to
+	// save a secret (503).
+	Secrets secrets.Store
+	// Testers run an extension's "Test connection" (Cloudflare Stream).
+	Testers map[string]ExtensionTester
+	// Validators check an extension's settings change before it is saved.
+	Validators map[string]ExtensionValidator
+
 	// extMu serialises the read-modify-write of an extension row's
 	// settings (PUT, the Plex client id, the Plex sign-in's server pick)
 	// so one cannot overwrite the other's keys.
@@ -96,6 +106,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/queues/health", h.Health)
 	r.Get("/api/queues/insights", h.Insights)
 	r.Get("/api/queues/pulse", h.Pulse)
+	r.Get("/api/queues/running", h.Running)
 	r.Post("/api/queues/pause-all", h.PauseAll)
 	r.Post("/api/queues/resume-all", h.ResumeAll)
 	r.Get("/api/queues/{stage}", h.Detail)

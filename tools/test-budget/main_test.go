@@ -92,6 +92,68 @@ WARNING: race detected
 	if got != 0 {
 		t.Fatalf("expected exit 0, got %d (out=%q)", got, out.String())
 	}
+	if !strings.Contains(out.String(), "WARNING: race detected") {
+		t.Fatalf("non-JSON lines must pass through, got %q", out.String())
+	}
+}
+
+func unitCfg() *config {
+	return &config{
+		mode:             "json",
+		perPackageBudget: 30 * time.Second,
+		perTestSoftCap:   100 * time.Millisecond,
+		tier:             "unit",
+	}
+}
+
+// A failing test is named and its output replayed; a passing test's
+// output is not.
+func TestRunJSONReplaysFailingTestOutput(t *testing.T) {
+	in := strings.NewReader(`
+{"Action":"run","Package":"p","Test":"TestOK"}
+{"Action":"output","Package":"p","Test":"TestOK","Output":"=== RUN   TestOK\n"}
+{"Action":"output","Package":"p","Test":"TestOK","Output":"    ok_test.go:1: quiet\n"}
+{"Action":"pass","Package":"p","Test":"TestOK","Elapsed":0}
+{"Action":"run","Package":"p","Test":"TestBad"}
+{"Action":"output","Package":"p","Test":"TestBad","Output":"=== RUN   TestBad\n"}
+{"Action":"output","Package":"p","Test":"TestBad","Output":"    bad_test.go:9: want 1, got 2\n"}
+{"Action":"output","Package":"p","Test":"TestBad","Output":"--- FAIL: TestBad (0.00s)\n"}
+{"Action":"fail","Package":"p","Test":"TestBad","Elapsed":0}
+{"Action":"output","Package":"p","Output":"FAIL\n"}
+{"Action":"fail","Package":"p","Elapsed":0.01}
+`)
+	var out bytes.Buffer
+	if got := runJSON(unitCfg(), in, &out); got != 0 {
+		t.Fatalf("test failures are go test's exit code, not a budget breach: got %d", got)
+	}
+	s := out.String()
+	for _, want := range []string{"1 failing test(s)", "--- FAIL p::TestBad", "bad_test.go:9: want 1, got 2"} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("missing %q in %q", want, s)
+		}
+	}
+	if strings.Contains(s, "quiet") || strings.Contains(s, "[package failed]") {
+		t.Fatalf("passing output or a duplicate package failure reported: %q", s)
+	}
+}
+
+// A package that fails with no failing test (a panic in TestMain, a
+// build error) is reported with its own output.
+func TestRunJSONReportsPackageAndBuildFailures(t *testing.T) {
+	in := strings.NewReader(`
+{"ImportPath":"q [q.test]","Action":"build-output","Output":"q/x.go:3:1: syntax error\n"}
+{"ImportPath":"q [q.test]","Action":"build-fail"}
+{"Action":"output","Package":"r","Output":"panic: boom in TestMain\n"}
+{"Action":"fail","Package":"r","Elapsed":0.01}
+`)
+	var out bytes.Buffer
+	runJSON(unitCfg(), in, &out)
+	s := out.String()
+	for _, want := range []string{"q [q.test] [build failed]", "syntax error", "r [package failed]", "panic: boom in TestMain"} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("missing %q in %q", want, s)
+		}
+	}
 }
 
 func TestRunWallUnderBudget(t *testing.T) {

@@ -27,6 +27,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/authz"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/pat"
@@ -35,12 +37,17 @@ import (
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/logs"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/processes"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/watch"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvremote"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
 	errrpt "github.com/Hamza-Labs-Core/Maktaba/shared/errrpt/go"
 	health "github.com/Hamza-Labs-Core/Maktaba/shared/health/go"
@@ -81,6 +88,12 @@ func main() {
 		case "keys":
 			if err := runKeys(os.Args[2:]); err != nil {
 				fmt.Fprintf(os.Stderr, "keys: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "cloudflare":
+			if err := runCloudflare(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "cloudflare: %v\n", err)
 				os.Exit(1)
 			}
 			return
@@ -129,6 +142,9 @@ Commands:
   migrate    Run database migrations (see "migrate --help")
   adduser    Seed the first admin user (Story 10.1 AC-4)
   keys       Generate or rotate RS256 JWT keys (Story 10.6)
+  cloudflare spike
+             Run the Cloudflare Stream spike against a real account
+             (credentials from the environment; tools/tv/cf-spike.md)
   --version  Print the binary's version
   help       Show this help`)
 }
@@ -273,6 +289,17 @@ func runServe() error {
 	})
 	logger.Info("logs: diagnostics export surface mounted", "event", "logs_mounted")
 
+	// Process supervision (Story 22.9): the supervisor's per-process
+	// state at /api/system/processes, and its crash/hang events copied
+	// into health_samples for the control centre's health history.
+	supervisorURL := os.Getenv("MAKTABA_SUPERVISOR_URL")
+	router.MountProcesses(r, router.ProcessesDeps{SupervisorURL: supervisorURL})
+	if supervisorURL != "" && statsDB != nil {
+		host, _ := os.Hostname()
+		recorder := &processes.Recorder{SupervisorURL: supervisorURL, DB: statsDB, Host: host, Logger: logger}
+		go recorder.Run(context.Background())
+	}
+
 	// Epic 28 (Auto-Update) — the update-check service (Story 28.2) and
 	// the admin self-update endpoint (Story 28.3). Mounted independent of
 	// the app-DB block: it needs no DB, only the build version + network.
@@ -325,6 +352,10 @@ func runServe() error {
 			// empty registry, so every flush 404'd.
 			perfRegistry := perf.NewRegistry()
 
+			// Story 31.3: canonical share paths (smb://nas/share/...) resolve
+			// through the home's mounts, as the pipeline reports them.
+			sharepath.Start(context.Background(), appDB, logger)
+
 			// MAKTABA_PIPELINE_ADDR is the API's dial address for the
 			// pipeline; MAKTABA_PIPELINE_GRPC_ADDR (the address the
 			// pipeline itself listens on) is accepted as a fallback so a
@@ -372,7 +403,21 @@ func runServe() error {
 			// PipelineClient also carries semantic search: MountP6 derives
 			// the search handler's SemanticClient from it (FTS-only when
 			// the pipeline address is unset or the pipeline has no index).
+			// Epic 32 story 32.6: the home's sealed secrets (slot 0120;
+			// key file MAKTABA_SECRETS_KEY, default <config dir>/secrets.key)
+			// and the one-time move of extension secrets (the Plex token)
+			// out of extensions.settings, which machines can read.
+			homeSecrets := router.OpenHomeSecrets(context.Background(), appDB,
+				secrets.KeyPath(os.Getenv), logger)
+			var mountRemote func(r chi.Router)
+			var remoteCtl *tvremote.Controller
 			router.MountP6(r, router.P6Deps{
+				Secrets: homeSecrets,
+				OnQueues: func(q *queues.Handler) {
+					_, remoteCtl, mountRemote = router.WireP32Remote(q, router.P32RemoteDeps{
+						DB: appDB, Secrets: homeSecrets, Logger: logger,
+					})
+				},
 				DB:                   appDB,
 				PipelineClient:       pipelineClient,
 				StreamingClient:      streamingClient,
@@ -435,7 +480,12 @@ func runServe() error {
 				DB:            appDB,
 				PublicBaseURL: os.Getenv("MAKTABA_PUBLIC_BASE_URL"),
 				DataDir:       statsDataDir,
+				Secrets:       homeSecrets,
+				RemoteInfo:    router.RemoteAvailability(remoteCtl),
 			})
+			if mountRemote != nil {
+				mountRemote(r) // Epic 32 story 32.6: /api/tv/remote
+			}
 			logger.Info("p27: live-channel + guide handlers mounted",
 				"event", "p27_mounted")
 
@@ -456,7 +506,7 @@ func runServe() error {
 			// Epic 31 (multi-instance) — instance identity, the LAN
 			// announcement (MAKTABA_DISCOVERY_MDNS=0 turns it off), the
 			// machine join/approve/revoke surface and its housekeeping.
-			clusterClose := mountCluster(r, appDB, dsn, publicAddr, logger)
+			clusterClose := mountCluster(r, appDB, dsn, publicAddr, homeSecrets, logger)
 			defer clusterClose()
 
 			// Story 15.6 pairing reaper. Mirrors the idempotency sweeper

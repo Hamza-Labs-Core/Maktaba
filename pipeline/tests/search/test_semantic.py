@@ -20,6 +20,7 @@ from maktaba_pipeline.search.semantic import (
     embed_model,
     parse_hits,
     pick_device,
+    search_available,
 )
 from tests.search.semantic_fakes import FakeCollection, FakeEmbedder, FakeModel
 
@@ -62,6 +63,22 @@ def test_each_model_gets_its_own_valid_collection(monkeypatch: pytest.MonkeyPatc
     assert small == "maktaba_segments-intfloat-multilingual-e5-small"
     assert small != collection_name("intfloat/multilingual-e5-base")
     assert collection_name("x/y", prefix="p") == "p-x-y"
+
+
+def test_search_available_finds_the_extra_without_importing_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import importlib.util
+    import sys
+
+    found: dict[str, object] = {"chromadb": object(), "sentence_transformers": object()}
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: found.get(name))
+    for name in found:
+        monkeypatch.delitem(sys.modules, name, raising=False)
+    assert search_available() is True
+    assert "chromadb" not in sys.modules and "sentence_transformers" not in sys.modules
+    found.pop("sentence_transformers")
+    assert search_available() is False
 
 
 def test_device_prefers_cuda_then_apple_gpu_then_cpu(monkeypatch: pytest.MonkeyPatch) -> None:

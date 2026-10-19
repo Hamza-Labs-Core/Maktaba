@@ -109,7 +109,9 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
             output_hash=canonical_hash({"small": dst.name, "size": dst.stat().st_size}),
             summary={"small": str(dst), "adopted": True},
         )
-    src = find_thumbnail(ctx.local_path(v.path), v.poster_path)
+    src = find_thumbnail(
+        ctx.local_path(v.path), ctx.local_path(v.poster_path) if v.poster_path else None
+    )
     if src is None:
         return StageResult(
             output_hash=canonical_hash({"small": None}),
