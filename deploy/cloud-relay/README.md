@@ -179,7 +179,7 @@ roll out the `maktaba-cloud` image on its own triggers.
   Tags only. Verify with:
   ```bash
   cosign verify ghcr.io/hamza-labs-core/maktaba-cloud:vX.Y.Z \
-    --certificate-identity-regexp 'https://github.com/.+/Maktaba/.github/workflows/relay.yml@.*' \
+    --certificate-identity https://github.com/Hamza-Labs-Core/Maktaba/.github/workflows/relay.yml@refs/tags/vX.Y.Z \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com
   ```
 - **deploy** — runs [`deploy.sh`](deploy.sh) against the VPS. Gated by the

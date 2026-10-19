@@ -1,147 +1,248 @@
-// Package selfupdate implements the `update` subcommand's core: fetch a
-// release manifest, compare it against the running version, and — when
-// newer — download the platform binary, verify its checksum, and
-// atomically replace the running executable.
+// Package selfupdate implements the `update` subcommand's core: find a
+// release of the pinned repository on GitHub Releases, verify it with
+// shared/go/releaseverify (the Sigstore bundle over checksums.txt from the
+// release workflow of exactly that tag, the Rekor inclusion proof,
+// release.json, the archive and the extracted binary, the no-downgrade
+// watermark), and atomically replace the running executable.
 //
-// The manifest is fetched from releases.maktaba.app/manifest.json with a
-// GitHub Releases API fallback. Keeping fetch/compare/verify as pure,
-// injectable functions makes the dangerous part (overwriting the running
-// binary) the only piece that touches the filesystem, and lets the rest
-// be unit-tested offline.
+// GitHub Releases is the only feed (Epic 35 story 35.1 AC9): the same one the
+// API's update check reads, so the CLI and the server can never disagree
+// about what a release is. MAKTABA_UPDATE_REPO retargets a fork and its
+// signing identity together.
 package selfupdate
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/sigstore/sigstore-go/pkg/root"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
 
-// DefaultManifestURL is the primary release feed.
-const DefaultManifestURL = "https://releases.maktaba.app/manifest.json"
+// DefaultAPIBase is the GitHub REST API.
+const DefaultAPIBase = "https://api.github.com"
 
-// Manifest is the release feed schema: a latest version plus a map of
-// "<os>/<arch>" -> artifact.
-type Manifest struct {
-	Version   string              `json:"version"`
-	Artifacts map[string]Artifact `json:"artifacts"`
+// Options configure a Client. Zero values are the production defaults.
+type Options struct {
+	// Identity is the repository and signer; zero is releaseverify.DefaultRepo.
+	Identity releaseverify.Identity
+	// Channel is "stable" (no prereleases) or "beta".
+	Channel string
+	// Token is an optional GitHub token (rate limit).
+	Token string
+	// HTTP, APIBase, Platform and Trusted are test seams.
+	HTTP     *http.Client
+	APIBase  string
+	Platform string
+	// Trusted returns the Sigstore trust root; nil refreshes a RootStore in
+	// the user cache directory and falls back to the embedded root.
+	Trusted func(ctx context.Context) (root.TrustedMaterial, error)
 }
 
-// Artifact is a single downloadable binary with its checksum.
-type Artifact struct {
-	URL    string `json:"url"`
-	SHA256 string `json:"sha256"`
-	Size   int64  `json:"size"`
-}
+// Client talks to GitHub Releases and verifies what it downloads.
+type Client struct{ o Options }
 
-// platformKey is the artifacts-map key for the running host.
-func platformKey() string { return runtime.GOOS + "/" + runtime.GOARCH }
-
-// FetchManifest GETs and decodes the release manifest.
-func FetchManifest(url string) (Manifest, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return Manifest{}, err
+// New returns a Client.
+func New(o Options) *Client {
+	if o.HTTP == nil {
+		o.HTTP = &http.Client{Timeout: 10 * time.Minute}
 	}
-	req.Header.Set("Accept", "application/json")
-	resp, err := client.Do(req)
+	if o.APIBase == "" {
+		o.APIBase = DefaultAPIBase
+	}
+	o.APIBase = strings.TrimRight(o.APIBase, "/")
+	if o.Channel == "" {
+		o.Channel = "stable"
+	}
+	if o.Trusted == nil {
+		o.Trusted = userRootStore
+	}
+	return &Client{o: o}
+}
+
+// Release is one GitHub release of the pinned repository.
+type Release struct {
+	Tag        string
+	Prerelease bool
+	Assets     map[string]string // asset name → download URL
+}
+
+type ghRelease struct {
+	TagName    string `json:"tag_name"`
+	Draft      bool   `json:"draft"`
+	Prerelease bool   `json:"prerelease"`
+	Assets     []struct {
+		Name string `json:"name"`
+		URL  string `json:"browser_download_url"`
+	} `json:"assets"`
+}
+
+// ErrNoRelease: nothing matches.
+var ErrNoRelease = errors.New("no such release")
+
+func (c *Client) get(ctx context.Context, path string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.o.APIBase+path, nil)
 	if err != nil {
-		return Manifest{}, fmt.Errorf("fetch manifest: %w", err)
+		return err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	if c.o.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.o.Token)
+	}
+	resp, err := c.o.HTTP.Do(req)
+	if err != nil {
+		return fmt.Errorf("github releases: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrNoRelease
+	}
 	if resp.StatusCode != http.StatusOK {
-		return Manifest{}, fmt.Errorf("manifest %s: HTTP %d", url, resp.StatusCode)
+		return fmt.Errorf("github releases %s: HTTP %d", path, resp.StatusCode)
 	}
-	var m Manifest
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&m); err != nil {
-		return Manifest{}, fmt.Errorf("decode manifest: %w", err)
-	}
-	return m, nil
+	return json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(out)
 }
 
-// Decision is the outcome of comparing current vs. latest.
-type Decision struct {
-	Current     string
-	Latest      string
-	Available   bool     // an artifact for this platform exists and is newer
-	Artifact    Artifact // populated when Available
-	PlatformKey string
+func toRelease(r ghRelease) *Release {
+	out := &Release{Tag: r.TagName, Prerelease: r.Prerelease, Assets: map[string]string{}}
+	for _, a := range r.Assets {
+		out.Assets[a.Name] = a.URL
+	}
+	return out
 }
 
-// Check compares the running version against a manifest without
-// touching the filesystem.
-func Check(current string, m Manifest) Decision {
-	d := Decision{Current: current, Latest: m.Version, PlatformKey: platformKey()}
-	art, ok := m.Artifacts[d.PlatformKey]
-	if !ok {
-		return d
+// Latest is the highest release of the channel.
+func (c *Client) Latest(ctx context.Context) (*Release, error) {
+	var rels []ghRelease
+	if err := c.get(ctx, "/repos/"+c.o.Identity.Repo()+"/releases?per_page=30", &rels); err != nil {
+		return nil, err
 	}
-	if Newer(m.Version, current) {
-		d.Available = true
-		d.Artifact = art
+	var best *ghRelease
+	for i := range rels {
+		r := &rels[i]
+		if r.Draft || !releaseverify.ValidTag(r.TagName) {
+			continue
+		}
+		if c.o.Channel != "beta" && (r.Prerelease || strings.Contains(r.TagName, "-")) {
+			continue
+		}
+		if best == nil || releaseverify.CompareVersions(r.TagName, best.TagName) > 0 {
+			best = r
+		}
 	}
-	return d
+	if best == nil {
+		return nil, ErrNoRelease
+	}
+	return toRelease(*best), nil
 }
 
-// Apply downloads the decided artifact, verifies its sha256, and
-// atomically replaces the running executable. It returns the path of
-// the replaced executable so the caller can re-exec / prompt a restart.
-func Apply(d Decision) (string, error) {
-	if !d.Available {
-		return "", fmt.Errorf("no update available")
+// ByTag is one release ("v1.5.0" or "1.5.0").
+func (c *Client) ByTag(ctx context.Context, version string) (*Release, error) {
+	tag := "v" + strings.TrimPrefix(strings.TrimSpace(version), "v")
+	if !releaseverify.ValidTag(tag) {
+		return nil, fmt.Errorf("invalid version %q", version)
 	}
+	var r ghRelease
+	if err := c.get(ctx, "/repos/"+c.o.Identity.Repo()+"/releases/tags/"+tag, &r); err != nil {
+		return nil, err
+	}
+	if r.Draft {
+		return nil, ErrNoRelease
+	}
+	return toRelease(r), nil
+}
+
+// Prepared is a verified update ready to install.
+type Prepared struct {
+	Update *releaseverify.ServerUpdate
+	Self   string
+}
+
+// Prepare downloads and verifies rel for the executable at self and applies
+// the watermark rules. It writes nothing.
+func (c *Client) Prepare(ctx context.Context, rel *Release, self string) (*Prepared, error) {
+	tm, err := c.o.Trusted(ctx)
+	if err != nil {
+		return nil, err
+	}
+	up, err := releaseverify.FetchServer(ctx, releaseverify.HTTPDownloader(c.o.HTTP),
+		releaseverify.Input{Tag: rel.Tag, Identity: c.o.Identity, TrustedMaterial: tm}, rel.Assets, c.o.Platform)
+	if err != nil {
+		return nil, err
+	}
+	w, err := releaseverify.WatermarkFile{Path: releaseverify.FlatWatermarkPath(self)}.Load()
+	if err != nil {
+		return nil, fmt.Errorf("read watermark: %w", err)
+	}
+	if err := releaseverify.CheckMonotonic(w, up.Result); err != nil {
+		return nil, err
+	}
+	return &Prepared{Update: up, Self: self}, nil
+}
+
+// Install swaps the verified binary in (keeping <self>.bak for Rollback) and
+// raises the watermark.
+func (p *Prepared) Install() error {
+	if err := replaceExecutable(p.Self, p.Update.Binary); err != nil {
+		return err
+	}
+	return releaseverify.WatermarkFile{Path: releaseverify.FlatWatermarkPath(p.Self)}.Commit(p.Update.Result)
+}
+
+// Self is the running executable, symlinks resolved.
+func Self() (string, error) {
 	self, err := os.Executable()
 	if err != nil {
 		return "", fmt.Errorf("locate self: %w", err)
 	}
-	self, _ = filepath.EvalSymlinks(self)
-
-	body, err := download(d.Artifact.URL)
-	if err != nil {
-		return "", err
-	}
-
-	sum := sha256.Sum256(body)
-	got := hex.EncodeToString(sum[:])
-	want := strings.ToLower(strings.TrimSpace(d.Artifact.SHA256))
-	if want != "" && got != want {
-		return "", fmt.Errorf("checksum mismatch: got %s want %s — refusing to install", got, want)
-	}
-
-	if err := replaceExecutable(self, body); err != nil {
-		return "", err
+	if r, err := filepath.EvalSymlinks(self); err == nil {
+		self = r
 	}
 	return self, nil
 }
 
-func download(url string) ([]byte, error) {
-	client := &http.Client{Timeout: 10 * time.Minute}
-	resp, err := client.Get(url)
+// Rollback restores <self>.bak, the release that ran before the last update.
+// It is the only way to run a version below the watermark, and it does not
+// lower the watermark (Epic 35 design §3.5).
+func Rollback(self string) error {
+	bak := self + ".bak"
+	b, err := os.ReadFile(bak)
 	if err != nil {
-		return nil, fmt.Errorf("download %s: %w", url, err)
+		return fmt.Errorf("no previous release kept at %s: %w", bak, err)
 	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("download %s: HTTP %d", url, resp.StatusCode)
-	}
-	// Cap at 512 MiB so a hostile/buggy feed can't OOM us.
-	return io.ReadAll(io.LimitReader(resp.Body, 512<<20))
+	return replaceExecutable(self, b)
 }
 
-// replaceExecutable swaps the new bytes in for the running binary.
-// Strategy: write the new binary next to the target, then rename the
-// old one aside and rename the new one into place. Rename within a
-// directory is atomic on every supported OS, and keeping a `.old` copy
-// means a crash mid-swap is recoverable.
+// userRootStore refreshes the Sigstore trusted root through TUF into the
+// user cache directory (the update needs the network anyway) and serves the
+// newest good root; a failed refresh keeps the cached or embedded one.
+func userRootStore(ctx context.Context) (root.TrustedMaterial, error) {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return releaseverify.EmbeddedTrustedRoot()
+	}
+	s := &releaseverify.RootStore{Dir: filepath.Join(dir, "maktaba", "sigstore")}
+	if err := s.Refresh(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: Sigstore trusted root refresh failed (%v); using the last good root\n", err)
+	}
+	tm, _, err := s.TrustedMaterial()
+	return tm, err
+}
+
+// replaceExecutable swaps the new bytes in for the target. It writes the new
+// binary next to the target, moves the live one to <target>.bak (Windows can
+// rename a running .exe but not delete it) and renames the new one into
+// place; each rename is atomic within a directory.
 func replaceExecutable(target string, body []byte) error {
 	dir := filepath.Dir(target)
 	tmp, err := os.CreateTemp(dir, ".maktaba-server.new.*")
@@ -161,69 +262,24 @@ func replaceExecutable(target string, body []byte) error {
 	if err := os.Chmod(tmpName, 0o755); err != nil {
 		return fmt.Errorf("chmod new binary: %w", err)
 	}
-
-	old := target + ".old"
-	_ = os.Remove(old)
-	// On Windows a running .exe can't be deleted but CAN be renamed;
-	// move the live binary aside first, then the new one into place.
-	if err := os.Rename(target, old); err != nil {
+	bak := target + ".bak"
+	prev := bak + ".prev"
+	_ = os.Remove(prev)
+	if _, err := os.Stat(bak); err == nil {
+		_ = os.Rename(bak, prev) // keep the old .bak until the swap is done
+	}
+	if err := os.Rename(target, bak); err != nil {
+		_ = os.Rename(prev, bak)
 		return fmt.Errorf("move current binary aside: %w", err)
 	}
 	if err := os.Rename(tmpName, target); err != nil {
-		// Roll back so we don't leave the install without a binary.
-		_ = os.Rename(old, target)
+		_ = os.Rename(bak, target) // roll back so the install keeps a binary
+		_ = os.Rename(prev, bak)
 		return fmt.Errorf("move new binary into place: %w", err)
 	}
-	_ = os.Remove(old)
+	_ = os.Remove(prev)
 	return nil
 }
 
-// Newer reports whether a is a strictly newer version than b using a
-// lenient dotted-numeric comparison. A leading "v" and any "-suffix"
-// (e.g. "-rc1", git describe's "-g<sha>") are ignored for the numeric
-// part. Unparseable components compare as 0, so "dev" is never newer
-// than a real release.
-func Newer(a, b string) bool {
-	return compareVersions(a, b) > 0
-}
-
-func compareVersions(a, b string) int {
-	an := numericParts(a)
-	bn := numericParts(b)
-	for i := 0; i < len(an) || i < len(bn); i++ {
-		var x, y int
-		if i < len(an) {
-			x = an[i]
-		}
-		if i < len(bn) {
-			y = bn[i]
-		}
-		if x != y {
-			if x > y {
-				return 1
-			}
-			return -1
-		}
-	}
-	return 0
-}
-
-func numericParts(v string) []int {
-	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
-	if i := strings.IndexAny(v, "-+"); i >= 0 {
-		v = v[:i]
-	}
-	if v == "" {
-		return nil
-	}
-	fields := strings.Split(v, ".")
-	out := make([]int, 0, len(fields))
-	for _, f := range fields {
-		n, err := strconv.Atoi(f)
-		if err != nil {
-			n = 0
-		}
-		out = append(out, n)
-	}
-	return out
-}
+// Newer reports whether a is a strictly newer release than b.
+func Newer(a, b string) bool { return releaseverify.CompareVersions(a, b) > 0 }

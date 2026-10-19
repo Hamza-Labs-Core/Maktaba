@@ -11,7 +11,8 @@ needs.
 |---|---|
 | All binaries | Version/commit/build-date stamped at compile time; reported at `GET /api/system/version` (`{version, commit, build_date, channel}`). |
 | Server | Background poller hits the GitHub Releases API, caches the result, serves `GET /api/system/updates`. |
-| Server (admin) | `POST /api/admin/system/update {"confirm":true}` downloads the platform asset, verifies SHA-256 against `checksums.txt`, swaps the binary (keeps `.bak`), re-execs. |
+| Server (admin) | `POST /api/admin/system/update {"confirm":true}` downloads the release and verifies it in process (below), refuses a downgrade, swaps the binary (keeps `.bak`), raises the watermark, re-execs. |
+| CLI | `maktaba-server update` reads the same GitHub Releases feed and verifies with the same code (`--check`, `--version vX.Y.Z`, `--rollback`). |
 | Desktop (Tauri) | Built-in updater reads the Release's `latest.json`, applies on relaunch (signature-verified). |
 | Mobile | In-app banner → App Store / Play Store / `.apk` (apps can't self-update). |
 
@@ -31,7 +32,8 @@ suffix ⇒ `beta`), overridable with `MAKTABA_UPDATE_CHANNEL`. Switching
 | `MAKTABA_UPDATE_CHANNEL` | derived from version | `stable` or `beta`. |
 | `MAKTABA_UPDATE_INTERVAL_SEC` | `86400` | Background check cadence; `0` disables the poller. |
 | `MAKTABA_UPDATE_DISABLE` | unset | `1`/`true` = no network checks at all. |
-| `MAKTABA_UPDATE_REPO` | `Hamza-Labs-Core/Maktaba` | Retarget a fork's releases. |
+| `MAKTABA_UPDATE_REPO` | `Hamza-Labs-Core/Maktaba` | Retarget a fork's releases. It changes the expected signing identity too (the fork's own `release.yml`); it is a startup setting, no API field can change it. |
+| `MAKTABA_DATA_DIR` | `/var/lib/maktaba` | The Sigstore trusted root refreshed through TUF is kept in `<data_dir>/sigstore/`. |
 | `MAKTABA_GITHUB_TOKEN` | unset | Optional; raises the GitHub API rate limit. |
 
 ## Install-type behaviour for self-update
@@ -77,14 +79,68 @@ still verify the transition release.
 > (Apple notarisation / Windows Authenticode), which remains the deferred
 > TODO in `desktop-release.yml`.
 
+## How a release is verified (Epic 35 story 35.1)
+
+Every release publishes, next to its archives:
+
+- `release.json`: version, tag, commit, schema revisions (`schema_rev`,
+  `min_node_schema`, `breaks_previous_home`), protocol numbers, the
+  per-platform archive with the SHA-256 of every binary inside it, the
+  pipeline wheel and constraints. It is listed in `checksums.txt`.
+- `checksums.txt` and `checksums.txt.sigstore.json`, a Sigstore bundle
+  (`cosign sign-blob --new-bundle-format`) holding the Fulcio certificate,
+  the signature and the Rekor entry with its inclusion proof. The legacy
+  `checksums.txt.sig` / `.pem` stay for humans.
+
+The server, `maktaba-server update` and (later) every node verify with one
+in-process package, `shared/go/releaseverify` (no cosign binary, no
+network needed):
+
+1. the bundle against the Sigstore trusted root, with at least one Rekor
+   inclusion proof and a signed log time inside the certificate's validity
+   (checked against that time, not the local clock);
+2. the certificate identity, exactly: issuer
+   `https://token.actions.githubusercontent.com`, SAN
+   `https://github.com/Hamza-Labs-Core/Maktaba/.github/workflows/release.yml@refs/tags/<tag>`,
+   source repository `https://github.com/Hamza-Labs-Core/Maktaba`, ref
+   `refs/tags/<tag>`, trigger `push`. A fork, another workflow, a branch
+   run or another tag's signature is refused;
+3. `checksums.txt` (duplicates or bad digests are refused), then
+   `release.json` against it and against the tag, every downloaded file
+   against `checksums.txt`, the extracted `maktaba-server` against
+   `release.json`, and every constraints line has `--hash=sha256:`;
+4. the watermark, the highest version this machine ever installed
+   (`maktaba-server.watermark` next to the binary): a lower version is
+   refused, the same version with other checksums is refused, and so is a
+   release signed before the installed one. `maktaba-server update
+   --rollback` (the kept `.bak`) is the only way to run a lower version;
+   it does not lower the watermark.
+
+Releases published before story 35.1 have no bundle and no `release.json`:
+they are never installed automatically (install them by hand).
+
+**Trusted root.** The public-good Sigstore `trusted_root.json` is compiled
+into the binary (`shared/go/releaseverify/trusted_root.json`, refreshed by
+`go generate` there; a release refuses to build with one older than 90
+days). The server refreshes it daily through Sigstore's TUF repository,
+anchored on the TUF root compiled into sigstore-go, into
+`<data_dir>/sigstore/`; the CLI refreshes into the user cache directory
+before it verifies. A failed refresh keeps the last good root; a root not
+refreshed for 180 days is treated as expired and verification fails closed.
+
 ## Verifying server artifacts manually
 
-The release `checksums.txt` is cosign-signed (keyless, Sigstore):
-
 ```bash
-cosign verify-blob --certificate checksums.txt.pem \
-  --signature checksums.txt.sig \
-  --certificate-identity-regexp 'https://github.com/.+/Maktaba/.github/workflows/release.yml@.*' \
+v=1.5.0
+cosign verify-blob --bundle checksums.txt.sigstore.json \
+  --certificate-identity "https://github.com/Hamza-Labs-Core/Maktaba/.github/workflows/release.yml@refs/tags/v$v" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   checksums.txt
+sha256sum --ignore-missing -c checksums.txt
 ```
+
+Use the exact `--certificate-identity`, never a
+`--certificate-identity-regexp` over the repository name: that accepts a
+fork's release workflow too. `--certificate checksums.txt.pem --signature
+checksums.txt.sig` in place of `--bundle` checks the same identity. A fork
+(`MAKTABA_UPDATE_REPO`) uses its own `owner/name` in the identity.

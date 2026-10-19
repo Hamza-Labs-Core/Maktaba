@@ -83,16 +83,23 @@ service. Mount the share (Step 3) before or after; until the share is there, the
 leaves the work that needs it. Its options (`--home`, `--name`, extra workers, a system
 service on Linux, ...) are in [deploy/packaging/node](../../deploy/packaging/node/README.md).
 
-To check the archive before you unpack it, download the release's `checksums.txt`,
-`checksums.txt.sig` and `checksums.txt.pem` next to it and run (cosign:
+To check the archive before you unpack it, download the release's `checksums.txt` and
+`checksums.txt.sigstore.json` (its Sigstore bundle) next to it and run (cosign:
 https://docs.sigstore.dev/cosign/system_config/installation/):
 
 ```sh
-cosign verify-blob --certificate checksums.txt.pem --signature checksums.txt.sig \
-  --certificate-identity-regexp '^https://github.com/Hamza-Labs-Core/Maktaba/\.github/workflows/release\.yml@' \
+cosign verify-blob --bundle checksums.txt.sigstore.json \
+  --certificate-identity "https://github.com/Hamza-Labs-Core/Maktaba/.github/workflows/release.yml@refs/tags/v$v" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt
 grep " \./maktaba-node-$v\.tar\.gz$" checksums.txt | shasum -a 256 -c   # Linux: or sha256sum -c
 ```
+
+The identity is exact: the release workflow of this repository, run for exactly the tag
+you are installing. Do not use a `--certificate-identity-regexp` over the repository
+name: it also accepts a fork's release workflow, or another tag's signature. Releases
+published before the signed `release.json` (story 35.1) have no `.sigstore.json`; check
+those with `--certificate checksums.txt.pem --signature checksums.txt.sig` and the same
+`--certificate-identity`.
 
 The installer then checks the wheel and constraints inside the archive against the
 digests the release wrote into its `release.conf`.

@@ -21,7 +21,8 @@ The [`release.yml`](../../.github/workflows/release.yml) workflow runs on a
 | `maktaba-web-<tag>.tar.gz` (web bundle) | `build-artifacts` | n/a |
 | `maktaba-node-<ver>.tar.gz` / `.zip` (node installer + wheel) | `package-node` | macOS + Linux / Windows; see [`node/README.md`](node/README.md#getting-the-installer) |
 | `maktaba_pipeline-<ver>-py3-none-any.whl` + `maktaba-pipeline-<ver>-constraints.txt` | `package-node` | any (pure Python, 3.12+) |
-| `checksums.txt` + `.sig` + `.pem` | `sign-and-release` | keyless cosign |
+| `release.json` | `sign-and-release` (`tools/release/cmd/gen-release-json`) | version, schema revisions, protocol numbers, per-platform archive + binary digests ([Epic 35 design §3.1](../../specs/epics/35-cluster-full-nodes-and-updates/design.md)); listed in `checksums.txt` |
+| `checksums.txt` + `checksums.txt.sigstore.json` (+ legacy `.sig` / `.pem`) | `sign-and-release` | keyless cosign; the bundle carries the Rekor inclusion proof, so machines verify offline. Identity: exactly `https://github.com/Hamza-Labs-Core/Maktaba/.github/workflows/release.yml@refs/tags/<tag>` ([how](../../docs/auto-update.md#verifying-server-artifacts-manually)) |
 | Container images (multi-arch) | `build-images` | linux/{amd64,arm64} on GHCR |
 
 Each archive is flat and contains the `maktaba-server`, `maktaba-api`, and
