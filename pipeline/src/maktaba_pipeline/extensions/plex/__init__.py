@@ -1,5 +1,6 @@
-"""The Plex extension: indexes each library's Plex items and writes each detected
-season to Plex as a manual collection.
+"""The Plex extension: indexes each library's Plex items, writes each detected
+season to Plex as a manual collection, and keeps Maktaba's channels in Plex Live TV
+(``plex_livetv``: tuner + XMLTV DVR, channel map, guide reloads; rules ``plexlive``).
 
 Settings: ``url`` (``MAKTABA_PLEX_URL``), ``token`` (secret, ``MAKTABA_PLEX_TOKEN``)
 and ``path_map`` (``MAKTABA_PATH_MAP``: how *Plex* sees the NAS paths the database
@@ -29,6 +30,7 @@ from .collection import (
 from .groups import fingerprint as groups_fingerprint
 from .groups import run_groups
 from .index import run_index
+from .livetv import run_livetv
 
 __all__ = [
     "PLEX_EXPORT_VERSION",
@@ -41,6 +43,7 @@ __all__ = [
 PLEX_EXPORT_VERSION = 1
 PLEX_INDEX_VERSION = 1
 PLEX_GROUPS_VERSION = 1
+PLEX_LIVETV_VERSION = 1
 
 MANIFEST = Manifest(
     name="plex",
@@ -58,7 +61,7 @@ MANIFEST = Manifest(
             env="MAKTABA_PATH_MAP",
         ),
     ),
-    stages=("plex_index", "plex_collection", "plex_groups"),
+    stages=("plex_index", "plex_collection", "plex_groups", "plex_livetv"),
 )
 
 
@@ -135,6 +138,29 @@ class PlexExtension:
         for src in ("topic_collections", "clip_groups", "plex_index"):
             if graph.has_stage(src):
                 graph.add_edge(src, Edge("plex_groups", "same"))
+        # Maktaba's channels in Plex Live TV: the channel map and the guide after the lineup
+        # changes (write_channels) and after the scheduler's top-up extends the guide
+        # (after_topup); the rules section "plexlive" decides what runs (livetv.py)
+        graph.add_stage(
+            StageDef(
+                name="plex_livetv",
+                label="Plex Live TV",
+                subject_kinds=("catalog",),
+                pool="network_plex",
+                lane="channels",
+                lane_order=3,
+                version=PLEX_LIVETV_VERSION,
+                external_write=True,
+                entry_for=("catalog",),
+                debounce_sec=30,
+                debounce_max_sec=300,
+                # beside write_channels: one place reads the lineup the home just wrote
+                placement="home",
+                after_topup=True,
+            )
+        )
+        if graph.has_stage("write_channels"):
+            graph.add_edge("write_channels", Edge("plex_livetv", "same"))
 
     def impls(self) -> Mapping[str, StageImpl]:
         return {
@@ -149,6 +175,10 @@ class PlexExtension:
                 input_fingerprint=self._groups_fingerprint,
                 output_fingerprint=None,
             ),
+            # no input fingerprint: every run looks at Plex (the state is there, not here)
+            "plex_livetv": StageImpl(
+                run=self._run_livetv, input_fingerprint=None, output_fingerprint=None
+            ),
         }
 
     # ------------------------------------------------------------------ stage
@@ -161,6 +191,9 @@ class PlexExtension:
 
     async def _run_groups(self, db: Any, job: Any, ctx: Any) -> StageResult:
         return await run_groups(db, job, ctx, self.service)
+
+    async def _run_livetv(self, db: Any, job: Any, ctx: Any) -> StageResult:
+        return await run_livetv(db, job, ctx, self.service)
 
     async def _groups_fingerprint(self, db: Any, subject: Subject) -> str | None:
         row = await db.fetchrow("SELECT write_mode FROM job_stages WHERE stage = $1", "plex_groups")

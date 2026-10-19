@@ -2103,22 +2103,65 @@ mark {
   color: var(--color-muted);
   font-size: var(--font-size-sm);
 }
-.mkt-livetv__copy {
+/* A copyable address (components/CopyField.tsx): always shown, selectable */
+.mkt-copy {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
 }
-.mkt-livetv__copy-label {
+.mkt-copy__label {
   min-width: 10rem;
   font-weight: 600;
 }
-.mkt-livetv__copy-value {
+.mkt-copy__value {
   flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
+  min-width: 12rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--font-size-sm);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-surface-2, transparent);
+  color: inherit;
   direction: ltr;
   unicode-bidi: isolate;
+}
+.mkt-copy__hint {
+  flex-basis: 100%;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+.mkt-copy--compact .mkt-copy__label {
+  min-width: 0;
+}
+.mkt-channels__guide {
+  margin-block-end: var(--space-3);
+}
+.mkt-livetv__plex-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+}
+.mkt-livetv__plex-facts dt {
+  font-weight: 600;
+}
+.mkt-livetv__plex-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.mkt-livetv__dvrs {
+  margin: 0;
+  padding-inline-start: var(--space-5);
+}
+.mkt-livetv__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.mkt-livetv__changes {
+  padding-inline-start: var(--space-5);
 }
 .mkt-livetv__steps {
   display: flex;

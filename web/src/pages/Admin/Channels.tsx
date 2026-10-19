@@ -23,6 +23,7 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { ApiError, apiUrl } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { AdminGate } from "../../components/AdminGate";
+import { CopyField } from "../../components/CopyField";
 import {
   ART_ACCEPT,
   ART_KINDS,
@@ -32,6 +33,7 @@ import {
   channelsApi,
   fillerApi,
   isFiller,
+  tvApi,
   type ArtImage,
   type ArtKind,
   type Channel,
@@ -152,6 +154,7 @@ function ChannelsInner() {
         <h1>{t("channels.title")}</h1>
         <Button onClick={() => setEditing(blankChannel(nextNumber))}>{t("channels.new")}</Button>
       </header>
+      <GuideUrl />
 
       {channels.length === 0 ? (
         <EmptyState title={t("channels.empty.title")} description={t("channels.empty.desc")} />
@@ -886,5 +889,31 @@ function FillerManager({ channel, onClose }: { channel: Channel; onClose: () => 
         )}
       </div>
     </Modal>
+  );
+}
+
+/** The XMLTV guide address (what Plex and other players read), copyable. */
+function GuideUrl() {
+  const { t } = useI18n();
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    tvApi
+      .info()
+      .then((i) => {
+        if (alive && typeof i?.xmltv_url === "string" && i.xmltv_url) setUrl(i.xmltv_url);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  if (!url) return null;
+  return (
+    <CopyField
+      className="mkt-copy--compact mkt-channels__guide"
+      label={t("channels.guideUrl")}
+      value={url}
+    />
   );
 }

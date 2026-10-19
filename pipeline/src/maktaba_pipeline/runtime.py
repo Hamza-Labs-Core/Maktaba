@@ -588,7 +588,14 @@ async def _start_engine(
         asyncio.create_task(run_sampler(database, collector, shutdown, host=host), name="health"),
         asyncio.create_task(run_reconciler(database, runtime.graph, shutdown), name="reconciler"),
         asyncio.create_task(run_pruner(database, shutdown), name="pruner"),
-        asyncio.create_task(run_topup_loop(database, shutdown), name="channel-topup"),
+        asyncio.create_task(
+            run_topup_loop(
+                database,
+                shutdown,
+                listeners=tuple(s.name for s in graph if s.after_topup),
+            ),
+            name="channel-topup",
+        ),
     ]
     return EngineStart(runtime=runtime, selector=selector, agent=agent, tasks=tasks)
 
