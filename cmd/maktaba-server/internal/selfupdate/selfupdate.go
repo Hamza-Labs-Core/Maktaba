@@ -229,7 +229,10 @@ func Rollback(self string) error {
 func userRootStore(ctx context.Context) (root.TrustedMaterial, error) {
 	dir, err := os.UserCacheDir()
 	if err != nil {
-		return releaseverify.EmbeddedTrustedRoot()
+		// No cache directory ($HOME unset under a service manager): the
+		// embedded root, still held to the age limit.
+		tm, _, err := (&releaseverify.RootStore{}).TrustedMaterial()
+		return tm, err
 	}
 	s := &releaseverify.RootStore{Dir: filepath.Join(dir, "maktaba", "sigstore")}
 	if err := s.Refresh(ctx); err != nil {
