@@ -61,6 +61,12 @@ type Channel struct {
 	// schedule has no current block (cold/empty channel) or the
 	// channel_programs table isn't present yet.
 	NowPlaying *NowPlaying `json:"now_playing,omitempty"`
+
+	// Plan says whether the lineup plan wrote this channel and whether a
+	// person changed it since (list/get; builder.go).
+	Plan *PlanStatus `json:"plan,omitempty"`
+	// GuideUntil is the end of the generated guide (list/get).
+	GuideUntil *time.Time `json:"guide_until,omitempty"`
 }
 
 // NowPlaying is the current-block summary shown on list/get.

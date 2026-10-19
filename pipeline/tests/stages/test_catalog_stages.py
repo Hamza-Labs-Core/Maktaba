@@ -14,7 +14,7 @@ from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import CATALOG_ID
 from maktaba_pipeline.engine.media import reset_runner
 from maktaba_pipeline.engine.sql import dumps, loads, now, to_ts
-from maktaba_pipeline.engine.stages.write_channels import content_hash
+from maktaba_pipeline.engine.stages.write_channels import FOLLOW_PLAN, content_hash
 from maktaba_pipeline.runtime import Database
 from tests.stages.world import World, core_runtime, drain_core, make_fake_media, make_show
 
@@ -234,6 +234,37 @@ async def test_write_channels_leaves_other_channels_and_user_edits_alone(db: Dat
     assert await db.fetchval("SELECT count(*) FROM channels WHERE number = 9001") == 1
     summary = loads((await _rows(db, "write_channels"))[-1]["output_summary"])
     assert any(u["key"] == mine["subject_id"] for u in summary["user_edited"])
+
+
+@pytest.mark.asyncio
+async def test_a_channel_handed_back_to_the_plan_is_rewritten(db: Database) -> None:
+    rt, _ = await _pipeline(db, episodes=40)
+    mine = await db.fetchrow(
+        "SELECT external_id, subject_id FROM external_links WHERE target = 'maktaba_channel' LIMIT 1"
+    )
+    planned = await db.fetchval("SELECT name FROM channels WHERE id = $1", mine["external_id"])
+    await db.execute("UPDATE channels SET name = 'My own name' WHERE id = $1", mine["external_id"])
+    # "back to plan" (POST /api/channels/{id}/follow-plan) stores the sentinel hash
+    await db.execute(
+        "UPDATE external_links SET content_hash = $1 WHERE target = 'maktaba_channel'"
+        " AND external_id = $2",
+        FOLLOW_PLAN,
+        mine["external_id"],
+    )
+    await enqueue_job(
+        db, subject_kind="catalog", subject_id=CATALOG_ID, stage="write_channels", force=True
+    )
+    await drain_core(db, rt)
+    assert (
+        await db.fetchval("SELECT name FROM channels WHERE id = $1", mine["external_id"]) == planned
+    )
+    link = await db.fetchval(
+        "SELECT content_hash FROM external_links WHERE target = 'maktaba_channel' AND external_id = $1",
+        mine["external_id"],
+    )
+    assert link != FOLLOW_PLAN  # a real hash again: a later edit is noticed as before
+    summary = loads((await _rows(db, "write_channels"))[-1]["output_summary"])
+    assert not any(u["key"] == mine["subject_id"] for u in summary["user_edited"])
 
 
 @pytest.mark.asyncio

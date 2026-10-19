@@ -7,6 +7,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "../../lib/i18n";
 import { ToastProvider } from "@ds/components/Toast/Toast";
+import { MemoryRouter } from "react-router-dom";
 
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock("../../lib/api", async () => {
@@ -39,11 +40,13 @@ const channels = {
 
 function renderChannels() {
   return render(
-    <I18nProvider>
-      <ToastProvider>
-        <Channels />
-      </ToastProvider>
-    </I18nProvider>
+    <MemoryRouter>
+      <I18nProvider>
+        <ToastProvider>
+          <Channels />
+        </ToastProvider>
+      </I18nProvider>
+    </MemoryRouter>
   );
 }
 
@@ -75,15 +78,17 @@ describe("Channels admin", () => {
     expect(await screen.findByText(/admins only|forbidden|permission/i)).toBeInTheDocument();
   });
 
-  // AC2 — the rule builder adapts to the mode (shuffle shows a filter).
+  // AC2 — the rule builder adapts to the mode (a schedule channel gets the grid).
   it("opens the CRUD form with a mode-aware rule builder", async () => {
     const user = userEvent.setup();
     get.mockResolvedValue(channels);
     renderChannels();
     await screen.findByText("Movies");
     await user.click(screen.getByRole("button", { name: /new channel/i }));
-    // shuffle is the default mode → the shuffle filter field is shown.
-    expect(await screen.findByText(/shuffle filter/i)).toBeInTheDocument();
+    // schedule is the default mode: the grid asks for a first slot.
+    await user.click(screen.getByRole("tab", { name: /schedule/i }));
+    expect(await screen.findByText(/has no slots yet/i)).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: /weekly schedule/i })).toBeInTheDocument();
   });
 
   // TC1 — a duplicate channel number is flagged inline before submit.
@@ -96,6 +101,6 @@ describe("Channels admin", () => {
     const numberField = await screen.findByLabelText(/channel number/i);
     await user.clear(numberField);
     await user.type(numberField, "1"); // collides with the existing channel 1
-    expect(await screen.findByText(/already in use/i)).toBeInTheDocument();
+    expect(await screen.findByText(/already used by movies/i)).toBeInTheDocument();
   });
 });
