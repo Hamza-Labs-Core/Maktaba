@@ -61,6 +61,15 @@
 #   --no-start       install and enable, but do not start or restart anything
 #   --no-linger      Linux user units: leave lingering off (the worker then starts at
 #                    login instead of at boot)
+#   --full           then make this machine a full node (Epic 35 story 35.8): runs
+#                    `maktaba-server setup --node`, which verifies the home's release
+#                    (Sigstore + checksums, in process), installs it side by side, keeps
+#                    node.json and this worker's Python environment, registers the
+#                    maktaba-server service and removes the worker units once it runs
+#   --server-dir DIR with --full: a directory holding the release (its assets, or an
+#                    extracted maktaba-server archive with release.json, checksums.txt
+#                    and checksums.txt.sigstore.json); default: setup --node fetches the
+#                    home's version itself. maktaba-server is taken from DIR, else PATH
 #   --dry-run        print the commands instead of running them; rendered files go
 #                    under a temporary directory (printed at the end)
 #   --uninstall      stop and remove the services and the node's Python environment
@@ -92,6 +101,8 @@ DO_START=1
 DO_LINGER=1
 PURGE=0
 DRY_RUN=0
+FULL=0
+SERVER_DIR=""
 DRY_ROOT=""
 
 info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
@@ -146,6 +157,8 @@ while [ $# -gt 0 ]; do
         --no-start)  DO_START=0; shift ;;
         --no-linger) DO_LINGER=0; shift ;;
         --dry-run)   DRY_RUN=1; shift ;;
+        --full)      FULL=1; shift ;;
+        --server-dir) need_value "$@"; SERVER_DIR="$2"; shift 2 ;;
         --uninstall) ACTION=uninstall; shift ;;
         --purge)     PURGE=1; shift ;;
         -h|--help)   usage; exit 0 ;;
@@ -1156,8 +1169,34 @@ do_install() {
     check_node_mode
     ensure_env_file
     join_if_needed
+    if [ "$FULL" = 1 ]; then
+        convert_full
+        return
+    fi
     if [ "$OS" = darwin ]; then install_launchd; else install_systemd; fi
     summary
+}
+
+# convert_full: Epic 35 story 35.8 AC7 — `maktaba-server setup --node` makes this worker a
+# full node: the home's release, verified in process, side by side; node.json and this
+# worker's Python environment kept; the old worker units removed once the node runs.
+convert_full() {
+    local server="" args=()
+    if [ -n "$SERVER_DIR" ]; then
+        [ -d "$SERVER_DIR" ] || die "--server-dir $SERVER_DIR is not a directory"
+        if [ -x "$SERVER_DIR/maktaba-server" ]; then server="$SERVER_DIR/maktaba-server"; fi
+        args+=(--from "$SERVER_DIR")
+    fi
+    if [ -z "$server" ]; then server="$(command -v maktaba-server || true)"; fi
+    if [ -z "$server" ]; then
+        if [ "$DRY_RUN" = 1 ]; then server=maktaba-server; else
+            die "--full needs maktaba-server: give --server-dir DIR (the release, extracted) or put it on PATH"
+        fi
+    fi
+    args+=(--python "$PY")
+    if [ -n "$INSTANCES" ]; then args+=(--instances "$INSTANCES"); fi
+    info "Converting this worker into a full node (maktaba-server setup --node)"
+    run "$server" setup --node "${args[@]}"
 }
 
 do_uninstall() {

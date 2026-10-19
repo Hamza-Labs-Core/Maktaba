@@ -15,6 +15,8 @@ import (
 
 	_ "github.com/lib/pq"
 	"github.com/pressly/goose/v3"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
 )
 
 // runMigrate executes the `migrate` subcommand. The subcommand wraps
@@ -26,6 +28,10 @@ import (
 // migrations directory installed alongside the binary in the container
 // image (Story 22.3). Story 22.6 may revisit single-binary embedding.
 func runMigrate(argv []string) error {
+	// Epic 35 story 35.8 AC2: migrations run only on the home
+	if nodemode.FromEnv(os.Getenv).Enabled {
+		return nodemode.ErrMigrate
+	}
 	fs := flag.NewFlagSet("migrate", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 

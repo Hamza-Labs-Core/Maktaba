@@ -72,7 +72,7 @@ describe("QueueDetail", () => {
     expect(screen.getByText(/Reads a short audio and picture fingerprint/)).toBeInTheDocument();
     // KPI tiles
     expect(screen.getByText("120").closest("div")).toHaveTextContent("Waiting");
-    expect(screen.getByText("1 of 2")).toBeInTheDocument(); // running of NAS pool
+    expect(screen.getByRole("group", { name: "Running" })).toHaveTextContent("1of 2"); // running of NAS pool
     expect(screen.getByText("Gave up")).toBeInTheDocument();
     expect(screen.getByText("Median per job")).toBeInTheDocument();
     // fed by -> this -> hands on to

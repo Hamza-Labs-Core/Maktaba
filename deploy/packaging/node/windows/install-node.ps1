@@ -81,6 +81,19 @@
 .PARAMETER Mode
     Task (default) or Service (see the description; remembered).
 
+.PARAMETER Full
+    Then make this machine a full node (Epic 35 story 35.8): runs `maktaba-server setup
+    --node`, which verifies the home's release in process (Sigstore + checksums), installs
+    it side by side in %LOCALAPPDATA%\Maktaba, keeps node.json and this worker's Python
+    environment, registers the "Maktaba" logon task (or -Mode Service) and removes the
+    maktaba-node tasks once the node answers.
+
+.PARAMETER ServerDir
+    With -Full: a folder holding the release (its assets, or the extracted maktaba-server
+    archive with release.json, checksums.txt and checksums.txt.sigstore.json).
+    maktaba-server.exe is taken from it, else from the PATH. Default: setup --node fetches
+    the home's version itself.
+
 .PARAMETER NoJoin
     Do not join now; the worker waits and starts once `maktaba-pipeline join` completes.
 
@@ -111,7 +124,9 @@ param(
     [string]$Ffmpeg = '',
     [ValidateSet('Task', 'Service')][string]$Mode = '',
     [switch]$NoJoin,
-    [switch]$NoStart
+    [switch]$NoStart,
+    [switch]$Full,
+    [string]$ServerDir = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -535,6 +550,20 @@ function Remove-NodeUnit {
 foreach ($inst in $unwanted) {
     Write-NodeStep "Removing worker $inst"
     Remove-NodeUnit $inst
+}
+
+if ($Full) {
+    # Epic 35 story 35.8 AC7: maktaba-server setup --node makes this worker a full node;
+    # it removes the maktaba-node tasks itself once the node answers
+    $server = Find-MaktabaServer -ServerDir $ServerDir
+    if (-not $server) { throw '-Full needs maktaba-server.exe: give -ServerDir (the release, extracted) or put it on the PATH' }
+    $python = Join-Path $script:NodeVenv 'Scripts\python.exe'
+    $fullArgs = Get-FullNodeArguments -ServerDir $ServerDir -Python $python -Instances $Instances -Mode $Mode
+    Write-NodeStep "Converting this worker into a full node: $server $($fullArgs -join ' ')"
+    & $server @fullArgs
+    Assert-ExitCode $LASTEXITCODE 'maktaba-server setup --node'
+    Write-NodeStep 'Done: this machine is a full node (the "Maktaba" task runs maktaba-server).'
+    return
 }
 
 foreach ($inst in @('main') + $wanted) {

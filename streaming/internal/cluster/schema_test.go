@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -82,5 +83,36 @@ func TestSchemaGuardWaitEndsWithTheContext(t *testing.T) {
 	defer cancel()
 	if err := g.Wait(ctx); err == nil {
 		t.Fatal("Wait returned nil while the home stayed behind")
+	}
+}
+
+// TestSchemaGuardSharedTable: the verdicts a full node's API checks too (Epic 35 story
+// 35.8 TC4, shared/testdata/cluster/schema_guard_cases.json).
+func TestSchemaGuardSharedTable(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "shared", "testdata", "cluster", "schema_guard_cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Required int `json:"required"`
+		Cases    []struct {
+			Name string `json:"name"`
+			Home struct {
+				Applied    int  `json:"applied"`
+				Known      bool `json:"known"`
+				MinNode    int  `json:"min_node"`
+				HasMinNode bool `json:"has_min_node"`
+			} `json:"home"`
+			Reason string `json:"reason"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range f.Cases {
+		h := HomeSchema{Applied: c.Home.Applied, Known: c.Home.Known, MinNode: c.Home.MinNode, HasMinNode: c.Home.HasMinNode}
+		if got := PauseReason(h, f.Required); got != c.Reason {
+			t.Errorf("%s: PauseReason = %q, want %q", c.Name, got, c.Reason)
+		}
 	}
 }

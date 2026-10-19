@@ -2,6 +2,8 @@ package supervisor
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,8 +49,11 @@ func ChildEnv(role Role, cfg config.Config) []string {
 	// Cross-service discovery: the api needs to reach streaming +
 	// pipeline over gRPC. These default ports mirror the compose stack.
 	// (Streaming's gRPC port, not its HTTP stream_addr.)
-	add("MAKTABA_STREAMING_ADDR", StreamingGRPCAddr)
-	add("MAKTABA_PIPELINE_ADDR", "127.0.0.1:9090")
+	add("MAKTABA_STREAMING_ADDR", streamingGRPC(cfg))
+	add("MAKTABA_PIPELINE_ADDR", pipelineGRPC(cfg))
+	// every role knows it runs under the supervisor (the supervisor is the one mDNS
+	// advertiser of the machine, Epic 35 story 35.11)
+	add("MAKTABA_SUPERVISED", "1")
 
 	// Where other devices reach the TV: streaming advertises it (SSDP,
 	// discover.json, XMLTV/M3U links) and the api reports it to the web
@@ -73,8 +78,8 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		// (9102, set below). Without this the bundle would carry api logs
 		// only.
 		add("MAKTABA_LOG_PEERS",
-			"streaming=http://127.0.0.1:9101/logs/recent,"+
-				"pipeline=http://127.0.0.1:9102/logs/recent")
+			"streaming=http://"+LocalAddr(streamingAdmin(cfg), "9101")+"/logs/recent,"+
+				"pipeline=http://"+pipelineLogs(cfg)+"/logs/recent")
 		// Process supervision (Story 22.9): the api proxies the
 		// supervisor's state to GET /api/system/processes and records
 		// crashes into health_samples.
@@ -82,12 +87,31 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		// Maktaba TV across the cluster (Epic 32): the api forwards move/stop/drain to
 		// the home streaming service's loopback internal routes.
 		add("MAKTABA_STREAMING_HTTP_URL", "http://"+LocalAddr(cfg.Server.StreamAddr, "8081"))
+		// Epic 35 story 35.11: this machine's own web address (the Machines page, the
+		// cluster sign-in)
+		add("MAKTABA_WEB_URL", cfg.PublicWebURL())
+		// Epic 35 story 35.8: a full node's api runs in node mode against the home's
+		// database with the node's own role; it never migrates.
+		if n := nodeConfig(); NodeMode(cfg, n) {
+			env = setEnv(env, "DATABASE_URL", n.DatabaseURL)
+			env = setEnv(env, "MAKTABA_DATABASE_URL", n.DatabaseURL)
+			env = setEnv(env, "MAKTABA_AUTO_MIGRATE", "false")
+			add("MAKTABA_NODE_MODE", "1")
+			add("MAKTABA_NODE_ID", n.NodeID)
+			add("MAKTABA_NODE_NAME", n.Name)
+			add("MAKTABA_HOME_API_URL", n.HomeURL())
+			add("MAKTABA_HOME_STREAM_URL", HomeStreamURL(n))
+			add("MAKTABA_NODE_WEB_URL", cfg.PublicWebURL())
+			add("MAKTABA_AGENT_URL", StateURL(cfg))
+			add("MAKTABA_AGENT_TOKEN_FILE", LocalTokenPath(cfg))
+		}
 	case RoleStreaming:
 		// The streaming binary binds MAKTABA_HTTP_ADDR; the older
 		// MAKTABA_STREAMING_HTTP_ADDR is kept for anything reading it.
 		add("MAKTABA_HTTP_ADDR", cfg.Server.StreamAddr)
 		add("MAKTABA_STREAMING_HTTP_ADDR", cfg.Server.StreamAddr)
-		add("MAKTABA_ADMIN_ADDR", streamingAdminAddr)
+		add("MAKTABA_ADMIN_ADDR", streamingAdmin(cfg))
+		add("MAKTABA_STREAMING_GRPC_ADDR", streamingGRPC(cfg))
 		// Epic 33 story 33.1: the streaming role is the front door of the TV
 		// slots (which encode); it asks the supervisor for the standby and
 		// staging instances.
@@ -97,23 +121,32 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		}
 		// A machine that joined a home (Epic 31) streams as a cluster node (Epic 32.1):
 		// the home's database through its own credential, its node id; no extra flag.
-		if n := nodeConfig(); n.Joined() {
+		if n := nodeConfig(); n.Joined() && !forcedHome(cfg) {
 			env = setEnv(env, "DATABASE_URL", n.DatabaseURL)
 			env = setEnv(env, "MAKTABA_DATABASE_URL", n.DatabaseURL)
 			add("MAKTABA_TV_HOST_ROLE", "node")
 			add("MAKTABA_NODE_ID", n.NodeID)
+			// a full node's streaming role also serves its own VOD (Epic 35 story 35.8)
+			if NodeMode(cfg, n) {
+				add("MAKTABA_FULL_NODE", "1")
+			}
 		}
 	case RoleTVSlot:
 		// a slot's own addresses are set by BuildSlot; it never joins as a node
 		// and serves no gRPC
 	case RolePipeline:
 		// The pipeline exposes its gRPC server so the api can call it.
-		add("MAKTABA_PIPELINE_GRPC_ADDR", "127.0.0.1:9090")
+		add("MAKTABA_PIPELINE_GRPC_ADDR", pipelineGRPC(cfg))
 		// Recent-logs HTTP endpoint drained by the api's diagnostics
 		// export proxy (see MAKTABA_LOG_PEERS on the api role).
 		// Its /healthz (event-loop heartbeat) is the pipeline's liveness
 		// probe.
-		add("MAKTABA_PIPELINE_LOGS_ADDR", pipelineLogsAddr)
+		add("MAKTABA_PIPELINE_LOGS_ADDR", pipelineLogs(cfg))
+		// extra transcription workers ([pipeline] instances, BuildPipelineInstances)
+		// take the transcribe stage; the main worker leaves it to them
+		if cfg.Pipeline.Instances > 0 {
+			add("MAKTABA_PIPELINE_EXCLUDE_STAGES", "transcribe")
+		}
 	}
 
 	return env
@@ -121,6 +154,64 @@ func ChildEnv(role Role, cfg config.Config) []string {
 
 // nodeConfig reads this machine's Epic 31 node config (tests replace it).
 var nodeConfig = config.LocalNodeConfig
+
+// NodeConfig is this machine's node config as the supervisor reads it.
+func NodeConfig() config.NodeConfig { return nodeConfig() }
+
+// NodeMode reports whether this machine runs as a full node (Epic 35 story 35.8): a
+// joined node config, unless [server] role = "home" (or MAKTABA_ROLE=home) says
+// otherwise.
+func NodeMode(cfg config.Config, n config.NodeConfig) bool {
+	return !forcedHome(cfg) && n.Joined() && n.HomeURL() != ""
+}
+
+// forcedHome: [server] role = "home" or MAKTABA_ROLE=home.
+func forcedHome(cfg config.Config) bool {
+	role := strings.ToLower(strings.TrimSpace(os.Getenv("MAKTABA_ROLE")))
+	if role == "" {
+		role = strings.ToLower(strings.TrimSpace(cfg.Server.Role))
+	}
+	return role == "home"
+}
+
+// HomeStreamURL is the home's streaming port, its TV front door (Epic 35 design
+// §11.3): MAKTABA_HOME_STREAM_URL, else the host of the home's API URL on 8081.
+func HomeStreamURL(n config.NodeConfig) string {
+	if v := strings.TrimRight(strings.TrimSpace(os.Getenv("MAKTABA_HOME_STREAM_URL")), "/"); v != "" {
+		return v
+	}
+	u, err := url.Parse(n.HomeURL())
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + net.JoinHostPort(u.Hostname(), "8081")
+}
+
+// LocalTokenPath is the per-boot token of the supervisor's loopback endpoints the
+// node API uses (<data_dir>/supervisor/local.token, design §9.2).
+func LocalTokenPath(cfg config.Config) string {
+	return filepath.Join(cfg.Server.DataDir, "supervisor", "local.token")
+}
+
+func orDefault(v, def string) string {
+	if strings.TrimSpace(v) != "" {
+		return strings.TrimSpace(v)
+	}
+	return def
+}
+
+func streamingGRPC(cfg config.Config) string {
+	return orDefault(cfg.Server.StreamingGRPCAddr, StreamingGRPCAddr)
+}
+func streamingAdmin(cfg config.Config) string {
+	return orDefault(cfg.Server.StreamingAdminAddr, streamingAdminAddr)
+}
+func pipelineGRPC(cfg config.Config) string {
+	return orDefault(cfg.Server.PipelineGRPCAddr, "127.0.0.1:9090")
+}
+func pipelineLogs(cfg config.Config) string {
+	return orDefault(cfg.Server.PipelineLogsAddr, pipelineLogsAddr)
+}
 
 // setEnv replaces (or adds) k in env.
 func setEnv(env []string, k, v string) []string {

@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/settings"
@@ -96,7 +97,13 @@ func (a streamingServiceAdapter) Open(ctx context.Context, req streaming.OpenSes
 	if req.AudioTrack != nil {
 		at = *req.AudioTrack
 	}
+	// the streaming service keys its sessions by (user, video): the signed-in user
+	userID := ""
+	if p := principal.FromContext(ctx); p != nil {
+		userID = p.UserID
+	}
 	resp, err := a.client.OpenSession(ctx, grpcstreaming.OpenSessionRequest{
+		UserID:         userID,
 		VideoID:        req.VideoID,
 		ClientProfile:  req.ClientProfile,
 		AudioTrack:     at,

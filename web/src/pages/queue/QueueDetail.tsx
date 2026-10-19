@@ -22,6 +22,7 @@ import { RateChart } from "../../components/queue/RateChart";
 import { RetriggerDialog } from "../../components/queue/RetriggerDialog";
 import { RingGauge } from "../../components/queue/RingGauge";
 import { RunningJobs } from "../../components/queue/RunningJobs";
+import { StatGrid, StatTile } from "../../components/queue/StatTile";
 import { hostWorkerIds, runsOnHost, useHostName } from "../../components/queue/hostFilter";
 import { STATE_GLYPH, queueVisualState, useFmt } from "../../components/queue/format";
 import { useAction } from "../../components/queue/useAction";
@@ -31,20 +32,20 @@ import "../../styles/queue.css";
 function Kpi({
   label,
   value,
+  unit,
   sub,
   tone,
 }: {
   label: string;
   value: string;
+  unit?: string;
   sub?: string;
   tone?: "error";
 }) {
   return (
-    <div className={`mkt-q-kpi${tone ? ` mkt-q-kpi--${tone}` : ""}`}>
-      <dt className="mkt-q-kpi__label">{label}</dt>
-      <dd className="mkt-q-kpi__value">{value}</dd>
-      {sub && <dd className="mkt-q-kpi__sub">{sub}</dd>}
-    </div>
+    <StatTile label={label} value={value} unit={unit} tone={tone}>
+      {sub ? <p>{sub}</p> : undefined}
+    </StatTile>
   );
 }
 
@@ -289,7 +290,7 @@ export function QueueDetail() {
             progress: t("queue.card.doneOf", { done: n(wave.done), total: n(total) }),
           })}
         />
-        <dl className="mkt-q-kpis">
+        <StatGrid>
           <Kpi
             label={t("queue.kpi.waiting")}
             value={n(counts.pending)}
@@ -301,7 +302,8 @@ export function QueueDetail() {
           />
           <Kpi
             label={t("queue.kpi.running")}
-            value={t("queue.kpi.ofPool", { n: n(counts.running), size: n(poolSize) })}
+            value={n(counts.running)}
+            unit={t("queue.kpi.ofPool", { size: n(poolSize) })}
             sub={pool?.label}
           />
           <Kpi
@@ -331,7 +333,7 @@ export function QueueDetail() {
             value={fmt.ms(detail.kpis.median_duration_ms)}
             sub={t("queue.kpi.p95", { ms: fmt.ms(detail.kpis.p95_duration_ms) })}
           />
-        </dl>
+        </StatGrid>
       </div>
 
       <div className="mkt-q-neighbours" aria-label={t("queue.detail.neighbours")}>

@@ -12,14 +12,17 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/sessions"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/agent"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/cache"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
 	clusterh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
 )
 
@@ -34,13 +37,18 @@ const clusterTick = 30 * time.Second
 //
 // store is the home's sealed secrets (nil: none); the extension relay
 // reads the secrets it adds to the calls it relays from it.
-func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secrets.Store, logger *slog.Logger) func() {
+//
+// It also returns the verifier of the full nodes' signed requests (Epic 35 story 35.9:
+// their delegation keys are issued on the channel and sealed in store).
+func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secrets.Store, logger *slog.Logger) (func(), *delegation.Verifier) {
 	driver := "postgres"
 	if isSQLiteDSN(dsn) {
 		driver = "sqlite"
 	}
 	var pub discovery.Publisher
-	if mdnsEnabled() {
+	// Epic 35 story 35.11: under the supervisor (maktaba-server serve) the supervisor
+	// is the machine's one advertiser; the API announces only when it runs alone
+	if mdnsEnabled() && os.Getenv("MAKTABA_SUPERVISED") != "1" {
 		pub = discovery.NewZeroconfPublisher()
 	}
 	var adv *cluster.Advertiser
@@ -60,8 +68,9 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 		Logger:     logger,
 	})
 	if h == nil {
-		return func() {}
+		return func() {}, nil
 	}
+	h.WebURL, h.Version = os.Getenv("MAKTABA_WEB_URL"), version.Version
 	ctx, cancel := context.WithCancel(context.Background())
 	bctx, bcancel := context.WithTimeout(ctx, 10*time.Second)
 	id, err := h.Bootstrap(bctx, cluster.StableHostName())
@@ -71,12 +80,27 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 	} else {
 		logger.Info("p31: cluster handlers mounted", "instance", id.Short(), "mdns", pub != nil,
 			"event", "p31_mounted")
+		system.SetMachine(system.Machine{Role: "home", HomeInstanceID: id.InstanceID,
+			WebURL: os.Getenv("MAKTABA_WEB_URL")})
 	}
 	go h.Run(ctx, clusterTick)
 
 	// Epic 31 phase 2 — the cluster channel: every process's sealed
 	// WebSocket, the browsers' hub, the cluster files, the LLM router.
-	hub := mountClusterHub(r, h, db, driver, store, logger)
+	keys := &delegation.KeyStore{Secrets: store, DB: db, Logger: logger}
+	if driver == "sqlite" {
+		keys.DB = nil
+	}
+	hub := mountClusterHub(r, h, db, driver, store, keys, logger)
+	// every revocation on the home reaches the full nodes within the second (story
+	// 35.9 AC4): the session store reports it, the hub pushes auth.revoked
+	sessions.SetRevokeHook(func(rv sessions.Revocation) {
+		hub.BroadcastRevoked(agent.RevokedSessions{SessionIDs: rv.SessionIDs, UserID: rv.UserID, Reason: rv.Reason})
+	})
+	verifier := &delegation.Verifier{Keys: keys, Logger: logger, Member: func(ctx context.Context, nodeID string) bool {
+		n, err := h.Store.Node(ctx, nodeID)
+		return err == nil && n.State == cluster.StateApproved
+	}}
 	hubDone := make(chan struct{})
 	go func() {
 		defer close(hubDone)
@@ -91,7 +115,8 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 		if pub != nil {
 			_ = pub.Close()
 		}
-	}
+		sessions.SetRevokeHook(nil)
+	}, verifier
 }
 
 // mountClusterHub reads the hub's settings (agent.FromEnv), loads or
@@ -101,7 +126,8 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 // cluster key pair (~/.maktaba/cluster/home-cluster.key,
 // MAKTABA_HOME_CLUSTER_KEY), whose public half goes into every approved
 // machine's sealed credentials; then it mounts the hub.
-func mountClusterHub(r chi.Router, h *clusterh.Handler, db *sql.DB, driver string, store secrets.Store, logger *slog.Logger) *agent.Hub {
+func mountClusterHub(r chi.Router, h *clusterh.Handler, db *sql.DB, driver string, store secrets.Store,
+	keys agent.KeyIssuer, logger *slog.Logger) *agent.Hub {
 	cfg, warnings := agent.FromEnv(os.Getenv)
 	for _, w := range warnings {
 		logger.Warn("p31: cluster hub setting ignored", "detail", w, "event", "p31_hub_setting")
@@ -126,6 +152,7 @@ func mountClusterHub(r chi.Router, h *clusterh.Handler, db *sql.DB, driver strin
 		h.ClusterPub = cluster.EncodeKey(pub)
 	}
 	cfg.Logger = logger
+	cfg.Delegation = keys
 	if db != nil {
 		// the extension service door (story 31.R): nodes run the Plex
 		// stages without the token; rules.relay switches it

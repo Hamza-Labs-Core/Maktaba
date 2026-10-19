@@ -191,3 +191,54 @@ func Start(ctx context.Context, db *sql.DB, logger *slog.Logger) {
 		}
 	}()
 }
+
+// nodeMapSQL is a full node's own map (Epic 35 story 35.8): the node's database role
+// has no access to cluster_nodes, but cluster_node_beat answers its own row, path map
+// included (slot 0103), as the node's pipeline reported or the admin set it.
+const nodeMapSQL = `SELECT COALESCE(path_map, '{}'::jsonb)::text FROM cluster_node_beat($1)`
+
+// LoadNode reads a node's map.
+func LoadNode(ctx context.Context, db *sql.DB, nodeID string) (Map, error) {
+	var raw string
+	if err := db.QueryRowContext(ctx, nodeMapSQL, nodeID).Scan(&raw); err != nil {
+		return Map{}, err
+	}
+	entries := map[string]string{}
+	if err := json.Unmarshal([]byte(raw), &entries); err != nil {
+		return Map{}, err
+	}
+	return FromEntries(entries), nil
+}
+
+// StartNode is Start for a full node: media is read through this machine's own mounts
+// (design §11.5), never the home's.
+func StartNode(ctx context.Context, db *sql.DB, nodeID string, logger *slog.Logger) {
+	if db == nil || nodeID == "" {
+		return
+	}
+	load := func() {
+		c, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		m, err := LoadNode(c, db, nodeID)
+		if err != nil {
+			if logger != nil {
+				logger.Debug("node share map not read", "err", err)
+			}
+			return
+		}
+		Set(m)
+	}
+	load()
+	go func() {
+		t := time.NewTicker(5 * time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				load()
+			}
+		}
+	}()
+}

@@ -119,7 +119,7 @@ func Build(role Role, opts Options) (Process, error) {
 		cmd = exec.Command(bin, "serve")
 
 	case RolePipeline:
-		cmd = exec.Command(pythonExecutable(opts.ReleaseDir), "-m", "maktaba_pipeline")
+		cmd = exec.Command(pythonFor(opts), "-m", "maktaba_pipeline")
 
 	default:
 		return Process{}, fmt.Errorf("unknown role %q", role)
@@ -137,9 +137,9 @@ func ProbeURL(role Role, cfg config.Config) string {
 	case RoleAPI:
 		return "http://" + LocalAddr(cfg.Server.AdminAddr, "9100") + "/healthz"
 	case RoleStreaming:
-		return "http://" + LocalAddr(streamingAdminAddr, "9101") + "/healthz"
+		return "http://" + LocalAddr(streamingAdmin(cfg), "9101") + "/healthz"
 	case RolePipeline:
-		return "http://" + pipelineLogsAddr + "/healthz"
+		return "http://" + pipelineLogs(cfg) + "/healthz"
 	}
 	return ""
 }
@@ -236,6 +236,18 @@ func resolveInRelease(name, overrideEnv, releaseDir string) (string, error) {
 		return p, nil
 	}
 	return "", fmt.Errorf("%w: %q is not in the release directory %s", ErrBinaryNotFound, name, releaseDir)
+}
+
+// pythonFor is pythonExecutable with [pipeline] python (a converted worker's own
+// environment, Epic 35 story 35.8) between MAKTABA_PYTHON and the release's venv.
+func pythonFor(opts Options) string {
+	if p := os.Getenv("MAKTABA_PYTHON"); p != "" {
+		return p
+	}
+	if p := strings.TrimSpace(opts.Config.Pipeline.Python); p != "" {
+		return p
+	}
+	return pythonExecutable(opts.ReleaseDir)
 }
 
 // pythonExecutable honours $MAKTABA_PYTHON, then the release's pipeline

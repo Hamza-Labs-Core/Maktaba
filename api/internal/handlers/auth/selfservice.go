@@ -25,6 +25,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/passwordreset"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/securityaudit"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/sessions"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
@@ -428,6 +429,7 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("update password"))
 		return
 	}
+	sessions.NotifyRevoked(sessions.Revocation{UserID: p.UserID, Reason: "password_changed"})
 	common.WriteNoContent(w)
 }
 

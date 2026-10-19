@@ -48,7 +48,7 @@ func deadWeb() http.Handler {
 	var cfg config.Config
 	cfg.Server.Listen = "127.0.0.1:1"
 	cfg.Server.StreamAddr = "127.0.0.1:1"
-	return webHandler(cfg)
+	return webHandler(cfg, nil)
 }
 
 func TestAPIDownPageIsThemedAndRetries(t *testing.T) {
