@@ -19,6 +19,7 @@ vi.mock("../../lib/auth", () => ({
 }));
 
 import { AdminLiveTV } from "./LiveTV";
+import { clusterView } from "./LiveTV/fixtures";
 
 const info = {
   stream_base_url: "http://192.168.1.20:8782",
@@ -318,5 +319,50 @@ describe("AdminLiveTV", () => {
         tuner_count: 2,
       })
     );
+  });
+
+  it("shows the streaming hosts and on air, and re-reads them every 5 s only while visible", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const setVisibility = (v: "visible" | "hidden") => {
+      Object.defineProperty(document, "visibilityState", { value: v, configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    };
+    try {
+      routes({ "/api/tv/cluster": clusterView() });
+      renderPage();
+      expect(await screen.findByRole("heading", { name: "Streaming hosts" })).toBeInTheDocument();
+      expect(screen.getByRole("table", { name: "On air" })).toBeInTheDocument();
+      const reads = () => get.mock.calls.filter(([u]) => u === "/api/tv/cluster").length;
+      const first = reads();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(reads()).toBe(first + 1);
+
+      setVisibility("hidden");
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(reads()).toBe(first + 1);
+
+      setVisibility("visible"); // read at once, then every 5 s again
+      await vi.advanceTimersByTimeAsync(0);
+      expect(reads()).toBe(first + 2);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(reads()).toBe(first + 3);
+    } finally {
+      Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves the cluster sections out when the server has none", async () => {
+    const { ApiError } = await import("../../lib/api");
+    routes();
+    const base = get.getMockImplementation()!;
+    get.mockImplementation((url: string) =>
+      url === "/api/tv/cluster"
+        ? Promise.reject(new ApiError({ type: "about:blank", title: "Not Found", status: 404 }))
+        : base(url)
+    );
+    renderPage();
+    expect(await screen.findByText("A1B2C3D4")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Streaming hosts" })).not.toBeInTheDocument();
   });
 });

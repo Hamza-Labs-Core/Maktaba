@@ -50,6 +50,8 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/channels/{id}/art/{kind}", h.ArtUpload)
 	r.Patch("/api/channels/{id}/art/{kind}", h.ArtSettings)
 	r.Delete("/api/channels/{id}/art/{kind}", h.ArtRevert)
+	r.Patch("/api/channels/{id}/strip", h.StripPatch)
+	r.Delete("/api/channels/{id}/strip", h.StripReset)
 	h.mountBuilder(r)
 }
 

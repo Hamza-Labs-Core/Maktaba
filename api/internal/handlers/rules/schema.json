@@ -3557,6 +3557,733 @@
    ]
   },
   {
+   "key": "tv_cluster",
+   "title": "Maktaba TV machines",
+   "what": "which machines encode channels and how the home spreads them; one encode per channel",
+   "fields": [
+    {
+     "name": "nodes_stream",
+     "kind": "bool",
+     "group": "Streaming machines",
+     "label": "Other machines may stream",
+     "help": "Machines that joined this home may encode channels too, so more channels can be on air at once. Each machine also needs \"Stream on this machine\" on the Live TV page. Off: the home encodes every channel.",
+     "default": false
+    },
+    {
+     "name": "policy",
+     "kind": "str",
+     "group": "Placement",
+     "label": "Where channels go",
+     "help": "home_first: the home until it is full (see below), then the machine with the most room. balanced: always the machine with the most room. A channel on air is never moved to even out the load.",
+     "default": "home_first",
+     "choices": [
+      "home_first",
+      "balanced"
+     ]
+    },
+    {
+     "name": "spill_at",
+     "kind": "int",
+     "group": "Placement",
+     "label": "Home full at (%)",
+     "help": "home_first: the share of the home's channels in use before other machines take new channels.",
+     "default": 100,
+     "minimum": 1,
+     "maximum": 100
+    },
+    {
+     "name": "hls_mode",
+     "kind": "str",
+     "group": "Placement",
+     "label": "Web video path",
+     "help": "proxy: the home forwards every piece of video (one address, works everywhere). redirect: the browser fetches the video pieces from the encoding machine itself; only when every viewer can reach every machine.",
+     "default": "proxy",
+     "choices": [
+      "proxy",
+      "redirect"
+     ]
+    },
+    {
+     "name": "failover",
+     "kind": "bool",
+     "group": "Placement",
+     "label": "Move channels off a machine that stops",
+     "help": "A channel being watched on a machine that stops answering continues on another one at the same point of its schedule.",
+     "default": true
+    },
+    {
+     "name": "dead_after_seconds",
+     "kind": "int",
+     "group": "Placement",
+     "label": "Machine down after (seconds)",
+     "help": "Without a heartbeat for this long a machine counts as down.",
+     "default": 15,
+     "minimum": 5,
+     "maximum": 300
+    },
+    {
+     "name": "pins",
+     "kind": "map",
+     "group": "Placement",
+     "label": "Preferred machine per channel",
+     "help": "Channel (its slug) -> the machine that should encode it while it is up and has room. Set it on the channel's page.",
+     "default": {}
+    }
+   ]
+  },
+  {
+   "key": "tv_remote",
+   "title": "Maktaba TV away from home",
+   "what": "who may watch channels away from home through Cloudflare Stream, how many at once, the monthly budget and the storage guard",
+   "fields": [
+    {
+     "name": "viewers",
+     "kind": "str",
+     "group": "Remote viewers",
+     "label": "Who may watch away from home",
+     "help": "all: every signed-in user; admins: administrators only; listed: the users below. Watching away from home needs Cloudflare Stream set up and switched on.",
+     "default": "all",
+     "choices": [
+      "all",
+      "admins",
+      "listed"
+     ]
+    },
+    {
+     "name": "viewer_users",
+     "kind": "list",
+     "group": "Remote viewers",
+     "label": "Users allowed (listed)",
+     "help": "User ids or user names.",
+     "default": []
+    },
+    {
+     "name": "max_streams_per_user",
+     "kind": "int",
+     "group": "Remote viewers",
+     "label": "Remote streams per user",
+     "help": "How many channels one user may watch away from home at once (each device counts).",
+     "default": 2,
+     "minimum": 1,
+     "maximum": 10
+    },
+    {
+     "name": "max_channels",
+     "kind": "int",
+     "group": "Remote limits",
+     "label": "Remote channels at once",
+     "help": "Channels sent to Cloudflare at the same time. Each uses its bitrate of the home's upload once (about 6.5 Mbit/s at the default bitrate; 22 channels about 143 Mbit/s), whatever the number of viewers. On one 1,000-minute storage block the storage, not this number, usually limits it to two.",
+     "default": 22,
+     "minimum": 1,
+     "maximum": 50
+    },
+    {
+     "name": "allowed_countries",
+     "kind": "list",
+     "group": "Remote viewers",
+     "label": "Countries",
+     "help": "Two-letter country codes (SA, EG, GB ...) viewers may watch from; Cloudflare checks every request. Empty: anywhere.",
+     "default": []
+    },
+    {
+     "name": "idle_timeout_minutes",
+     "kind": "int",
+     "group": "Remote limits",
+     "label": "Keep sending after the last viewer (minutes)",
+     "help": "So a viewer who comes back finds the channel at once.",
+     "default": 3,
+     "minimum": 1,
+     "maximum": 60
+    },
+    {
+     "name": "token_ttl_minutes",
+     "kind": "int",
+     "group": "Remote limits",
+     "label": "Playback link lifetime (minutes)",
+     "help": "A viewer's signed link stops working after this; the app renews it while it plays. Shorter cuts off a removed user sooner.",
+     "default": 60,
+     "minimum": 5,
+     "maximum": 1440
+    },
+    {
+     "name": "ingest",
+     "kind": "str",
+     "group": "Remote push",
+     "label": "How channels are sent",
+     "help": "rtmps (works with every ffmpeg with TLS) or srt (needs ffmpeg with libsrt).",
+     "default": "rtmps",
+     "choices": [
+      "rtmps",
+      "srt"
+     ]
+    },
+    {
+     "name": "low_latency",
+     "kind": "bool",
+     "group": "Remote push",
+     "label": "Low-latency HLS (beta)",
+     "help": "Cloudflare's low-latency HLS for new inputs.",
+     "default": false
+    },
+    {
+     "name": "max_push_hours",
+     "kind": "int",
+     "group": "Remote limits",
+     "label": "Longest broadcast (hours)",
+     "help": "Past this a channel's broadcast starts again (remote viewers re-buffer once), so its recording never outgrows the storage. Lower fits more channels per storage block.",
+     "default": 8,
+     "minimum": 1,
+     "maximum": 24
+    },
+    {
+     "name": "monthly_budget_usd",
+     "kind": "float",
+     "group": "Remote budget",
+     "label": "Monthly budget (USD)",
+     "help": "Estimated Cloudflare spend per calendar month (UTC). At 80 % the admin is told; at 100 % see below. 0: no budget check. There is no audio-only saving: Cloudflare bills minutes watched, not bytes.",
+     "default": 10.0,
+     "minimum": 0
+    },
+    {
+     "name": "budget_action",
+     "kind": "str",
+     "group": "Remote budget",
+     "label": "At 100 % of the budget",
+     "help": "block_new: new remote tunes are refused, running ones finish; warn: only a notice.",
+     "default": "block_new",
+     "choices": [
+      "block_new",
+      "warn"
+     ]
+    },
+    {
+     "name": "delivery_usd_per_1000_min",
+     "kind": "float",
+     "group": "Remote budget",
+     "label": "Price per 1,000 minutes watched (USD)",
+     "help": "",
+     "default": 1.0,
+     "minimum": 0
+    },
+    {
+     "name": "storage_usd_per_1000_min",
+     "kind": "float",
+     "group": "Remote budget",
+     "label": "Price per 1,000 minutes of storage a month (USD)",
+     "help": "",
+     "default": 5.0,
+     "minimum": 0
+    },
+    {
+     "name": "storage_plan_minutes",
+     "kind": "int",
+     "group": "Remote budget",
+     "label": "Storage plan (minutes)",
+     "help": "The prepaid storage the estimate counts. A running broadcast is recorded while it runs and deleted when it ends; the storage guard reads the account's real capacity from Cloudflare.",
+     "default": 1000,
+     "minimum": 0
+    },
+    {
+     "name": "storage_margin_minutes",
+     "kind": "int",
+     "group": "Remote budget",
+     "label": "Storage kept free (minutes)",
+     "help": "The guard starts a new channel only when every running broadcast's full length (up to the longest broadcast), the recordings not yet deleted and this margin fit in the account's storage.",
+     "default": 30,
+     "minimum": 0,
+     "maximum": 10000
+    },
+    {
+     "name": "remote_detection",
+     "kind": "str",
+     "group": "Remote push",
+     "label": "Who counts as away from home",
+     "help": "relay: requests through the Maktaba relay; relay_or_public_ip: also a request from a public address (your own reverse proxy or tunnel).",
+     "default": "relay",
+     "choices": [
+      "relay",
+      "relay_or_public_ip"
+     ]
+    }
+   ]
+  },
+  {
+   "key": "tv_strip",
+   "title": "Channel strip",
+   "what": "the news-style bar across a channel's picture: what is on now and next, and a clock rotating between cities",
+   "fields": [
+    {
+     "name": "enabled",
+     "kind": "bool",
+     "group": "Channel strip",
+     "label": "Show the strip on every channel",
+     "help": "A bar across the picture, as on news channels: the programme on air (its display title, the series and «الحلقة n»), what comes next and a clock. Off: only channels whose own Look switches it on show it.",
+     "default": false
+    },
+    {
+     "name": "position",
+     "kind": "str",
+     "group": "Channel strip",
+     "label": "Where",
+     "help": "",
+     "default": "bottom",
+     "choices": [
+      "bottom",
+      "top"
+     ]
+    },
+    {
+     "name": "height_pct",
+     "kind": "float",
+     "group": "Strip look",
+     "label": "Height (% of the picture)",
+     "help": "",
+     "default": 9.0,
+     "minimum": 4,
+     "maximum": 25
+    },
+    {
+     "name": "bg_color",
+     "kind": "str",
+     "group": "Strip look",
+     "label": "Background colour",
+     "help": "#RRGGBB.",
+     "default": "#0b5d3b"
+    },
+    {
+     "name": "bg_opacity",
+     "kind": "float",
+     "group": "Strip look",
+     "label": "Background opacity",
+     "help": "0 clear, 1 solid.",
+     "default": 0.9,
+     "minimum": 0,
+     "maximum": 1
+    },
+    {
+     "name": "accent_color",
+     "kind": "str",
+     "group": "Strip look",
+     "label": "Accent colour",
+     "help": "The rule along the bar and the clock's box. #RRGGBB.",
+     "default": "#c9a227"
+    },
+    {
+     "name": "rule_height",
+     "kind": "float",
+     "group": "Strip look",
+     "label": "Rule thickness (% of the bar)",
+     "help": "The accent line along the bar's edge facing the picture. 0: none.",
+     "default": 4.0,
+     "minimum": 0,
+     "maximum": 20
+    },
+    {
+     "name": "text_color",
+     "kind": "str",
+     "group": "Strip look",
+     "label": "Title colour",
+     "help": "#RRGGBB.",
+     "default": "#ffffff"
+    },
+    {
+     "name": "next_color",
+     "kind": "str",
+     "group": "Strip look",
+     "label": "«التالي» line colour",
+     "help": "#RRGGBB.",
+     "default": "#e8d9a8"
+    },
+    {
+     "name": "clock_text_color",
+     "kind": "str",
+     "group": "Strip look",
+     "label": "Clock text colour",
+     "help": "On the accent colour. #RRGGBB.",
+     "default": "#0b3d27"
+    },
+    {
+     "name": "indicator_color",
+     "kind": "str",
+     "group": "Strip look",
+     "label": "Page number colour",
+     "help": "#RRGGBB.",
+     "default": "#eac85e"
+    },
+    {
+     "name": "font_file",
+     "kind": "str",
+     "group": "Strip look",
+     "label": "Font file",
+     "help": "A .ttf/.otf with Arabic letters on the streaming host. Empty: Noto Naskh/Sans Arabic, Arial or Tahoma, whichever is found.",
+     "default": ""
+    },
+    {
+     "name": "font_size_pct",
+     "kind": "float",
+     "group": "Strip look",
+     "label": "Title size (% of the strip height)",
+     "help": "",
+     "default": 42.0,
+     "minimum": 15,
+     "maximum": 80
+    },
+    {
+     "name": "direction",
+     "kind": "str",
+     "group": "Channel strip",
+     "label": "Direction",
+     "help": "auto: right to left for Arabic titles.",
+     "default": "auto",
+     "choices": [
+      "auto",
+      "rtl",
+      "ltr"
+     ]
+    },
+    {
+     "name": "show_next",
+     "kind": "bool",
+     "group": "Channel strip",
+     "label": "Show what is next",
+     "help": "A second line: «التالي: …».",
+     "default": true
+    },
+    {
+     "name": "next_label_ar",
+     "kind": "str",
+     "group": "Channel strip",
+     "label": "Next label (Arabic)",
+     "help": "",
+     "default": "التالي"
+    },
+    {
+     "name": "next_label_en",
+     "kind": "str",
+     "group": "Channel strip",
+     "label": "Next label (other languages)",
+     "help": "",
+     "default": "Next"
+    },
+    {
+     "name": "filler_label",
+     "kind": "str",
+     "group": "Channel strip",
+     "label": "Between programmes",
+     "help": "Empty: the clip's own title. Else this text («فواصل»).",
+     "default": ""
+    },
+    {
+     "name": "overflow",
+     "kind": "str",
+     "group": "Channel strip",
+     "label": "Long titles",
+     "help": "cycle: the whole title in pages that take turns (a quoted verse whole, then its reference); truncate: cut with …; scroll: run across like a news ticker.",
+     "default": "cycle",
+     "choices": [
+      "cycle",
+      "truncate",
+      "scroll"
+     ]
+    },
+    {
+     "name": "page_seconds",
+     "kind": "int",
+     "group": "Channel strip",
+     "label": "Each page for (seconds)",
+     "help": "A full page shows up to twice as long; the «التالي» line half as long again.",
+     "default": 4,
+     "minimum": 2,
+     "maximum": 30
+    },
+    {
+     "name": "page_indicator",
+     "kind": "bool",
+     "group": "Channel strip",
+     "label": "Page number beside a paged title",
+     "help": "A small «١/٢».",
+     "default": true
+    },
+    {
+     "name": "scroll_speed",
+     "kind": "int",
+     "group": "Channel strip",
+     "label": "Scroll speed (pixels a second)",
+     "help": "",
+     "default": 90,
+     "minimum": 10,
+     "maximum": 600
+    },
+    {
+     "name": "show_mode",
+     "kind": "str",
+     "group": "Channel strip",
+     "label": "When",
+     "help": "always; or interval: at each programme's start and every few minutes.",
+     "default": "always",
+     "choices": [
+      "always",
+      "interval"
+     ]
+    },
+    {
+     "name": "show_seconds",
+     "kind": "int",
+     "group": "Channel strip",
+     "label": "Shown for (seconds)",
+     "help": "",
+     "default": 20,
+     "minimum": 3,
+     "maximum": 600
+    },
+    {
+     "name": "every_minutes",
+     "kind": "int",
+     "group": "Channel strip",
+     "label": "Again every (minutes)",
+     "help": "",
+     "default": 10,
+     "minimum": 1,
+     "maximum": 240
+    },
+    {
+     "name": "show_clock",
+     "kind": "bool",
+     "group": "Strip clock",
+     "label": "Show a clock",
+     "help": "",
+     "default": true
+    },
+    {
+     "name": "clocks",
+     "kind": "rows",
+     "group": "Strip clock",
+     "label": "Clocks",
+     "help": "Each city in turn: its time zone (IANA, such as Asia/Riyadh: daylight saving follows it), its Arabic label and its label in other languages.",
+     "default": [
+      {
+       "zone": "Asia/Riyadh",
+       "label_ar": "مكة المكرمة",
+       "label_en": "Makkah"
+      },
+      {
+       "zone": "Africa/Cairo",
+       "label_ar": "القاهرة",
+       "label_en": "Cairo"
+      },
+      {
+       "zone": "UTC",
+       "label_ar": "غرينتش",
+       "label_en": "GMT"
+      },
+      {
+       "zone": "America/New_York",
+       "label_ar": "نيويورك",
+       "label_en": "New York"
+      }
+     ],
+     "columns": [
+      "zone",
+      "label_ar",
+      "label_en"
+     ],
+     "column_kinds": [
+      "str",
+      "str",
+      "str"
+     ],
+     "column_optional": [
+      true,
+      true,
+      true
+     ]
+    },
+    {
+     "name": "clock_seconds",
+     "kind": "int",
+     "group": "Strip clock",
+     "label": "Each clock for (seconds)",
+     "help": "",
+     "default": 8,
+     "minimum": 2,
+     "maximum": 120
+    },
+    {
+     "name": "clock_format",
+     "kind": "str",
+     "group": "Strip clock",
+     "label": "Clock format",
+     "help": "",
+     "default": "24h",
+     "choices": [
+      "24h",
+      "12h"
+     ]
+    },
+    {
+     "name": "digits",
+     "kind": "str",
+     "group": "Strip clock",
+     "label": "Digits",
+     "help": "auto: Arabic-Indic (٠١٢) in a right-to-left strip.",
+     "default": "auto",
+     "choices": [
+      "auto",
+      "arabic",
+      "western"
+     ]
+    },
+    {
+     "name": "show_channel_name",
+     "kind": "bool",
+     "group": "Channel strip",
+     "label": "Channel name at the start",
+     "help": "",
+     "default": false
+    }
+   ]
+  },
+  {
+   "key": "display_titles",
+   "title": "Display titles",
+   "what": "short, clean on-air titles for the guide, the channel strip and the dizqueTV export",
+   "fields": [
+    {
+     "name": "enabled",
+     "kind": "bool",
+     "group": "Display titles",
+     "label": "Clean on-air titles",
+     "help": "The guide, the channel strip and the dizqueTV export show a short title made from the library title: no channel names, hashtags, emojis, links, dates or file leftovers, the series and «الحلقة 45» kept apart. A title set by hand on the video always wins.",
+     "default": true
+    },
+    {
+     "name": "max_length",
+     "kind": "int",
+     "group": "Display titles",
+     "label": "Longest title (characters)",
+     "help": "0: no limit (the guide shows the whole title; the channel strip shows a long one in pages). Else cut at a word, never inside a quoted verse.",
+     "default": 0,
+     "minimum": 0,
+     "maximum": 500
+    },
+    {
+     "name": "verse_display",
+     "kind": "str",
+     "group": "Display titles",
+     "label": "A quoted verse in a cut title",
+     "help": "reference: the verse's surah and number in its place («تفسير البقرة ١٨٣»); opening_words: its first words, «…» after the closing bracket; full_if_fits: the whole verse alone when it fits, else the reference.",
+     "default": "reference",
+     "choices": [
+      "reference",
+      "opening_words",
+      "full_if_fits"
+     ]
+    },
+    {
+     "name": "strip_patterns",
+     "kind": "list",
+     "group": "Display titles",
+     "label": "Patterns removed",
+     "help": "Regular expressions (case-insensitive) removed from every title.",
+     "default": [
+      "[\\[(（【]\\s*(?:full\\s*)?(?:hd|fhd|uhd|4k|8k|\\d{3,4}p|hq|sd|official(?:\\s+video)?|lyrics?|audio|video|مترجم|حصري[اًا]*|بجودة\\s+عالية)\\s*[\\])）】]",
+      "\\b\\d{3,4}p\\b",
+      "\\b(?:4k|8k|uhd|fhd)\\b"
+     ]
+    },
+    {
+     "name": "strip_words",
+     "kind": "list",
+     "group": "Display titles",
+     "label": "Words removed",
+     "help": "Whole words or phrases removed from every title.",
+     "default": [
+      "official video",
+      "official",
+      "full episode",
+      "full video",
+      "full hd",
+      "full",
+      "hd",
+      "hq",
+      "حصريا",
+      "حصرياً",
+      "بجودة عالية",
+      "جودة عالية"
+     ]
+    },
+    {
+     "name": "keep_episode_number",
+     "kind": "bool",
+     "group": "Display titles",
+     "label": "Show the episode number",
+     "help": "From the season's order, else from the title.",
+     "default": true
+    },
+    {
+     "name": "episode_label_ar",
+     "kind": "str",
+     "group": "Display titles",
+     "label": "Episode label (Arabic)",
+     "help": "{n} is the number.",
+     "default": "الحلقة {n}"
+    },
+    {
+     "name": "episode_label_en",
+     "kind": "str",
+     "group": "Display titles",
+     "label": "Episode label (other languages)",
+     "help": "{n} is the number.",
+     "default": "Ep {n}"
+    },
+    {
+     "name": "boilerplate_share",
+     "kind": "float",
+     "group": "Display titles",
+     "label": "Shared phrase from (share of titles)",
+     "help": "A title part that this share of a library's or a series' titles carry (a programme's or channel's name) is dropped.",
+     "default": 0.3,
+     "minimum": 0.05,
+     "maximum": 1
+    },
+    {
+     "name": "boilerplate_min_count",
+     "kind": "int",
+     "group": "Display titles",
+     "label": "Shared phrase from (titles)",
+     "help": "",
+     "default": 5,
+     "minimum": 2
+    },
+    {
+     "name": "use_in_guide",
+     "kind": "bool",
+     "group": "Display titles",
+     "label": "Use in the guide and dizqueTV",
+     "help": "Off: only the channel strip shows the display titles.",
+     "default": true
+    },
+    {
+     "name": "use_llm",
+     "kind": "bool",
+     "group": "Display titles",
+     "label": "Let the language model tidy what is left",
+     "help": "The local model (Tag check settings) rewrites titles the rules leave long or messy. Each answer is kept, so a title is asked once.",
+     "default": false
+    },
+    {
+     "name": "llm_batch",
+     "kind": "int",
+     "group": "Display titles",
+     "label": "Titles per question",
+     "help": "",
+     "default": 20,
+     "minimum": 1,
+     "maximum": 100
+    }
+   ]
+  },
+  {
    "key": "exactdates",
    "title": "Exact dates",
    "what": "exact upload dates fetched from YouTube for series members (off until switched on)",
@@ -3785,6 +4512,71 @@
      "help": "",
      "default": 60,
      "minimum": 1
+    }
+   ]
+  },
+  {
+   "key": "relay",
+   "title": "Extension relay",
+   "what": "machines run the Plex stages through the home, which adds the Plex token they never see; limits per machine",
+   "fields": [
+    {
+     "name": "enabled",
+     "kind": "bool",
+     "group": "Extension relay",
+     "label": "Relay extension calls for machines",
+     "help": "Machines run the Plex stages (index, collections) through the home, which adds the Plex token; the token never leaves the home. Off: those stages run on the home only.",
+     "default": true
+    },
+    {
+     "name": "requests_per_minute",
+     "kind": "int",
+     "group": "Extension relay",
+     "label": "Calls a minute per machine",
+     "help": "",
+     "default": 600,
+     "minimum": 1,
+     "maximum": 100000
+    },
+    {
+     "name": "burst",
+     "kind": "int",
+     "group": "Extension relay",
+     "label": "Burst per machine",
+     "help": "Calls above the rate a machine may make at once.",
+     "default": 60,
+     "minimum": 1,
+     "maximum": 10000
+    },
+    {
+     "name": "max_in_flight",
+     "kind": "int",
+     "group": "Extension relay",
+     "label": "Calls at once per machine",
+     "help": "",
+     "default": 4,
+     "minimum": 1,
+     "maximum": 64
+    },
+    {
+     "name": "max_response_mb",
+     "kind": "int",
+     "group": "Extension relay",
+     "label": "Largest answer (MB)",
+     "help": "",
+     "default": 256,
+     "minimum": 1,
+     "maximum": 4096
+    },
+    {
+     "name": "timeout_sec",
+     "kind": "int",
+     "group": "Extension relay",
+     "label": "Time limit per call (s)",
+     "help": "",
+     "default": 120,
+     "minimum": 1,
+     "maximum": 3600
     }
    ]
   }

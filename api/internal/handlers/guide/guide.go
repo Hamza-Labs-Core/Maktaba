@@ -270,6 +270,12 @@ func toBlock(p ProgramRow, now time.Time) Block {
 		Series:    p.Snapshot.Series,
 		Season:    p.Snapshot.Season,
 		Episode:   p.Snapshot.Episode,
+
+		OnAir:        p.Snapshot.OnAir,
+		StripTitle:   p.Snapshot.StripTitle,
+		StripSeries:  p.Snapshot.StripSeries,
+		StripEpisode: p.Snapshot.StripEpisode,
+		StripRef:     p.Snapshot.StripRef,
 	}
 	if !now.Before(p.StartAt) && now.Before(p.EndAt) {
 		b.IsLive = true

@@ -8,10 +8,12 @@ package router
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"log/slog"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	tvremoteh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tvremote"
@@ -55,6 +57,8 @@ type P32RemoteDeps struct {
 	DB      *sql.DB
 	Secrets secrets.Store
 	Logger  *slog.Logger
+	// NoLoop: do not start the remote controller's loop (tests).
+	NoLoop bool
 }
 
 // WireP32Remote builds the Cloudflare Stream integration over the
@@ -62,6 +66,13 @@ type P32RemoteDeps struct {
 // and returns a mount function for the /api/tv/remote routes.
 func WireP32Remote(q *queues.Handler, d P32RemoteDeps) (*tvremote.Integration, func(chi.Router)) {
 	in := &tvremote.Integration{DB: d.DB, Secrets: d.Secrets, Ext: q, Logger: d.Logger}
+	// Epic 32 stories 32.7-32.10: the remote controller (input pool, pushes,
+	// sessions, tokens, budget) and its reconcile loop.
+	ctl := &tvremote.Controller{DB: d.DB, Integration: in, Logger: d.Logger, Audit: remoteAudit(d.DB, d.Logger)}
+	in.StopPushes = ctl.StopAll
+	if d.DB != nil && !d.NoLoop {
+		go ctl.Run(context.Background())
+	}
 	if q.Testers == nil {
 		q.Testers = map[string]queues.ExtensionTester{}
 	}
@@ -72,5 +83,27 @@ func WireP32Remote(q *queues.Handler, d P32RemoteDeps) (*tvremote.Integration, f
 		return in.Test(ctx)
 	}
 	q.Validators[queues.CloudflareExtension] = in.ValidateSettings
-	return in, func(r chi.Router) { (&tvremoteh.Handler{Integration: in}).Mount(r) }
+	return in, func(r chi.Router) { (&tvremoteh.Handler{Integration: in, Remote: ctl}).Mount(r) }
+}
+
+// remoteAudit writes remote tunes, ends and key rotations to audit_log
+// (category tv_remote; story 32.8 AC9). Best effort: a miss is logged.
+func remoteAudit(db *sql.DB, logger *slog.Logger) func(ctx context.Context, action, actor, target string, payload map[string]any) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return func(ctx context.Context, action, actor, target string, payload map[string]any) {
+		if db == nil {
+			return
+		}
+		var who any
+		if _, err := uuid.Parse(actor); err == nil {
+			who = actor
+		}
+		blob, _ := json.Marshal(payload)
+		if _, err := db.ExecContext(ctx, `INSERT INTO audit_log (category, action, actor_user_id, target_id, payload)
+			VALUES ('tv_remote', $1, $2, $3, $4)`, action, who, target, string(blob)); err != nil {
+			logger.Warn("tv_remote: audit row not written", "action", action, "err", err, "event", "tv_remote_audit_failed")
+		}
+	}
 }

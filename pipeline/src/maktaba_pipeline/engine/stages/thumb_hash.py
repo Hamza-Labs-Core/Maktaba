@@ -51,7 +51,9 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
 
 async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     v = await require_video(db, job.subject.id)
-    thumb = find_thumbnail(ctx.local_path(v.path), v.poster_path)
+    thumb = find_thumbnail(
+        ctx.local_path(v.path), ctx.local_path(v.poster_path) if v.poster_path else None
+    )
     dhash: str | None = None
     if thumb is not None:
         async with ctx.nas.timed(thumb):

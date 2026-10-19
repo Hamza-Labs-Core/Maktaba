@@ -44,6 +44,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
@@ -350,6 +351,10 @@ func runServe() error {
 			// empty registry, so every flush 404'd.
 			perfRegistry := perf.NewRegistry()
 
+			// Story 31.3: canonical share paths (smb://nas/share/...) resolve
+			// through the home's mounts, as the pipeline reports them.
+			sharepath.Start(context.Background(), appDB, logger)
+
 			// MAKTABA_PIPELINE_ADDR is the API's dial address for the
 			// pipeline; MAKTABA_PIPELINE_GRPC_ADDR (the address the
 			// pipeline itself listens on) is accepted as a fallback so a
@@ -498,7 +503,7 @@ func runServe() error {
 			// Epic 31 (multi-instance) — instance identity, the LAN
 			// announcement (MAKTABA_DISCOVERY_MDNS=0 turns it off), the
 			// machine join/approve/revoke surface and its housekeeping.
-			clusterClose := mountCluster(r, appDB, dsn, publicAddr, logger)
+			clusterClose := mountCluster(r, appDB, dsn, publicAddr, homeSecrets, logger)
 			defer clusterClose()
 
 			// Story 15.6 pairing reaper. Mirrors the idempotency sweeper

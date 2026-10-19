@@ -102,13 +102,13 @@ func singleStageRule(row []driver.Value) *queuestest.Rule {
 
 func jobRefCols() []string {
 	return []string{"id", "stage", "state", "subject_kind", "subject_id", "label", "library_id", "priority",
-		"attempts", "max_attempts", "outcome", "error_cause", "created_at", "started_at", "finished_at", "progress"}
+		"attempts", "max_attempts", "outcome", "error_cause", "created_at", "started_at", "finished_at", "progress", "claimed_by"}
 }
 
 func jobRefRow(id int64, stage, state string) []driver.Value {
 	return []driver.Value{id, stage, state, "video", uidA, "Episode 1", uidB, int64(100), int64(1), int64(3),
 		nil, nil, t0.Add(-time.Hour), t0.Add(-time.Minute), nil,
-		`{"step":"extract","steps":["probe","extract"],"done_units":3,"total_units":10}`}
+		`{"step":"extract","steps":["probe","extract"],"done_units":3,"total_units":10}`, nil}
 }
 
 // ---------- pure functions ----------
@@ -574,7 +574,7 @@ func TestMountedRoutes(t *testing.T) {
 	f := newFixture()
 	want := map[string]bool{}
 	for _, p := range []string{
-		"GET /api/queues", "GET /api/queues/graph", "GET /api/queues/{stage}", "GET /api/queues/{stage}/rate",
+		"GET /api/queues", "GET /api/queues/graph", "GET /api/queues/running", "GET /api/queues/{stage}", "GET /api/queues/{stage}/rate",
 		"GET /api/queues/{stage}/jobs", "GET /api/queues/{stage}/failures", "POST /api/queues/{stage}/pause",
 		"POST /api/queues/{stage}/resume", "POST /api/queues/pause-all", "POST /api/queues/resume-all",
 		"PATCH /api/queues/{stage}", "POST /api/queues/{stage}/retry", "POST /api/queues/{stage}/apply",

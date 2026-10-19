@@ -40,6 +40,7 @@ import wave
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from .engine.paths import to_local
 from .log import get_logger
 from .models.service import ModelService
 from .stt.protocol import Segment, TranscriptionHints
@@ -219,7 +220,7 @@ class PipelineService:
             raise ValueError("extract_embedded_subtitle: stream_index is required")
         if self._subtitle_extractor is None:
             raise RuntimeError("subtitle extractor not configured")
-        body = await self._subtitle_extractor(path, stream_index)
+        body = await self._subtitle_extractor(to_local(path), stream_index)
         return {"body": body}
 
     # --- transcription (Story 3.x / 7.18) -------------------------------
@@ -241,9 +242,9 @@ class PipelineService:
             raise ValueError("transcribe: language must be a string")
 
         if self._transcriber is not None:
-            segments = await self._transcriber(path, language)
+            segments = await self._transcriber(to_local(path), language)
         else:
-            segments = await self._default_transcribe(path, language)
+            segments = await self._default_transcribe(to_local(path), language)
         return {"segments": segments}
 
     async def _default_transcribe(self, path: str, language: str | None) -> list[dict[str, Any]]:

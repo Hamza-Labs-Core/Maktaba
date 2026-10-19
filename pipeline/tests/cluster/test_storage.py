@@ -192,3 +192,13 @@ def test_storage_check_read_and_write(tmp_path: Path) -> None:
     assert "lib1" in bad["detail"]
     none = check_storage([LibrarySample("e", (), ())], pm, "x")
     assert none["read"] == "ok" and none["write"] == "skipped"
+
+
+def test_a_file_not_probed_yet_only_has_to_be_there(tmp_path: Path) -> None:
+    root = tmp_path / "share"
+    _file(root / "new.mp4", 7)
+    pm = PathMap.parse(f"Y:/={_slash(root)}")
+    found = LibrarySample("lib1", (), (("Y:/new.mp4", 0),))  # size not known yet
+    assert check_storage([found], pm, "6f1c2a3b")["read"] == "ok"
+    gone = LibrarySample("lib1", (), (("Y:/gone.mp4", 0),))
+    assert check_storage([gone], pm, "6f1c2a3b")["read"] == "error"

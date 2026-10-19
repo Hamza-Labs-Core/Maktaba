@@ -7,9 +7,11 @@ channel for as long as the worker runs:
 - C→S ``metrics`` every ``metrics_every`` s (``welcome.settings``, default 2), ``logs``
   batches within 250 ms, ``job`` events as they happen, ``dropped`` after a reconnect,
   ``llm.models`` after ``welcome`` and on change, ``llm.request`` / ``llm.cancel`` for the
-  door, ``llm.chunk`` / ``llm.done`` for requests the hub routed here, ``cmd.result``.
+  door, ``llm.chunk`` / ``llm.done`` for requests the hub routed here, ``cmd.result``,
+  ``svc.request`` / ``svc.cancel`` for the extension relay (story 31.R).
 - S→C ``cmd`` (drain, undrain, reload_stages, log_level, disconnect), ``llm.request``,
-  ``llm.cancel``, ``llm.chunk`` / ``llm.done`` answering this process's requests.
+  ``llm.cancel``, ``llm.chunk`` / ``llm.done`` answering this process's requests,
+  ``svc.chunk`` / ``svc.done`` answering its relayed calls.
 - ``ping`` / ``pong`` every 15 s both ways; 45 s without a frame closes the channel.
 
 Reconnects: 1 s doubling to 30 s, ±20 % jitter, reset once a session lasted 60 s; the
@@ -29,6 +31,7 @@ per kind) and retried.
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import json
 import os
@@ -641,7 +644,7 @@ class ChannelAgent:
             task = s.llm_tasks.get(str(frame.get("id")))
             if task is not None:
                 task.cancel()
-        elif t in ("llm.chunk", "llm.done"):
+        elif t in ("llm.chunk", "llm.done", "svc.chunk", "svc.done"):
             q = self._pending.get(str(frame.get("id")))
             if q is not None:
                 q.put_nowait(frame)
@@ -859,6 +862,74 @@ class ChannelAgent:
             if not finished and not s.closed:
                 # the caller gave up: tell the hub, which tells the runner (section 5.1)
                 s.spawn(_quiet(s.send({"t": "llm.cancel", "id": req_id})))
+
+    # -- the extension relay: this process's calls through the home's door (story 31.R) --------
+
+    def relay_available(self) -> bool:
+        return self.connected
+
+    async def relay_request(
+        self,
+        ext: str,
+        method: str,
+        path: str,
+        *,
+        accept: str = "",
+        content_type: str = "",
+        body: bytes | None = None,
+        timeout: float = 120.0,
+    ) -> tuple[int, str, bytes]:
+        """One call through the home's service door: ``(status, content type, body)``.
+        Raises :class:`~maktaba_pipeline.relay.RelayError` when the home refuses or cannot
+        complete it, ``ConnectionError`` when the channel is gone."""
+        from ...relay import RelayError
+
+        s = self._session
+        if s is None or s.closed:
+            raise ConnectionError("no channel to the home")
+        req_id = uuid.uuid4().hex
+        q: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+        self._pending[req_id] = q
+        finished = False
+        frame: dict[str, Any] = {
+            "t": "svc.request",
+            "id": req_id,
+            "ext": ext,
+            "method": method,
+            "path": path,
+            "timeout_ms": int(timeout * 1000),
+        }
+        if accept:
+            frame["accept"] = accept
+        if content_type:
+            frame["content_type"] = content_type
+        if body:
+            frame["body"] = base64.b64encode(body).decode("ascii")
+        parts: list[bytes] = []
+        try:
+            await s.send(frame)
+            while True:
+                item = await q.get()
+                if item is None:
+                    finished = True
+                    raise ConnectionError("the channel to the home closed mid-call")
+                if item.get("t") == "svc.chunk":
+                    data = item.get("data")
+                    if isinstance(data, str):
+                        parts.append(base64.b64decode(data))
+                    continue
+                finished = True
+                err = item.get("error")
+                if isinstance(err, Mapping) and err.get("code"):
+                    raise RelayError(str(err["code"]), str(err.get("detail") or ""))
+                status = int(item.get("status") or 0)
+                if status <= 0:
+                    raise RelayError("bad_answer", "no status")
+                return status, str(item.get("content_type") or ""), b"".join(parts)
+        finally:
+            self._pending.pop(req_id, None)
+            if not finished and not s.closed:
+                s.spawn(_quiet(s.send({"t": "svc.cancel", "id": req_id})))
 
     # -- side loops --------------------------------------------------------------------------
 

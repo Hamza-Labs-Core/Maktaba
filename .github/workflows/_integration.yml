@@ -97,6 +97,16 @@ jobs:
       - name: Run integration tier
         run: make test-integration
 
+      # Story 31.R: the extension relay end to end in two processes — the Go hub
+      # and service door (api/internal/cluster/agent/relayfixture) and a Python
+      # node running the Plex stages through it — on a scratch database of the
+      # Postgres service (the pipeline's Postgres tests read MAKTABA_TEST_PG_URL).
+      - name: Extension relay, two processes
+        working-directory: pipeline
+        env:
+          MAKTABA_TEST_PG_URL: postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable
+        run: uv run pytest -q -m integration tests/cluster/test_relay_two_process.py -p no:cacheprovider
+
       # The cloud module lives outside the Makefile's GO_MODULES set, so
       # `make test-integration` skips it. Run its integration-tagged
       # tests explicitly against the Postgres service container. The

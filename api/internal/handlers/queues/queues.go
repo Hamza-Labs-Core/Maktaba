@@ -106,6 +106,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/queues/health", h.Health)
 	r.Get("/api/queues/insights", h.Insights)
 	r.Get("/api/queues/pulse", h.Pulse)
+	r.Get("/api/queues/running", h.Running)
 	r.Post("/api/queues/pause-all", h.PauseAll)
 	r.Post("/api/queues/resume-all", h.ResumeAll)
 	r.Get("/api/queues/{stage}", h.Detail)

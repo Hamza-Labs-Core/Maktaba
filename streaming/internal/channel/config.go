@@ -218,8 +218,12 @@ func FindFont() string {
 
 // StationStarter adapts StartStation to the engine's StartFunc.
 func StationStarter(cfg StationConfig) StartFunc {
-	return func(_ context.Context, channelID uuid.UUID, dir string) (Pipeline, error) {
-		return StartStation(cfg, channelID, dir)
+	return func(ctx context.Context, channelID uuid.UUID, dir string) (Pipeline, error) {
+		c := cfg
+		if o, ok := StartOptionsFrom(ctx); ok {
+			c.Discontinuity = o.Discontinuity
+		}
+		return StartStation(c, channelID, dir)
 	}
 }
 
@@ -240,6 +244,15 @@ func SettingsStarter(base StationConfig, settings Settings, enc *EncoderResolver
 			cfg.VTGate = defaultVTGate
 		}
 		cfg.VTGate.SetMax(out.VTMax)
+		if cfg.PathMapSource != nil {
+			cfg.PathMap = cfg.PathMapSource()
+		}
+		if o, ok := StartOptionsFrom(ctx); ok {
+			cfg.Discontinuity = o.Discontinuity
+		}
+		if ss, ok := settings.(StripSource); ok && cfg.StripDefaults == nil {
+			cfg.StripDefaults = ss.Strip
+		}
 		st, err := StartStation(cfg, channelID, dir)
 		if err != nil {
 			return nil, err

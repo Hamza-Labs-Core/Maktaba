@@ -34,6 +34,32 @@ export interface ClusterFmt {
   files: (f: FilesTarget | null | undefined) => string | null;
 }
 
+/**
+ * The words behind a "paused: ..." reason (a machine whose code does not fit the home's
+ * database schema, Epic 31 design §5.1). The pipeline and the streaming node write them
+ * in English so that an older home's page still shows something readable; this page
+ * translates the two forms it knows.
+ */
+export function pausedReason(detail: string): { key: string; vars: Record<string, string> } | null {
+  let m = /^home database at (\d+), this machine needs (\d+)/.exec(detail);
+  if (m) return { key: "machines.reason.pausedHomeBehind", vars: { home: m[1], need: m[2] } };
+  m = /needs this machine at (\d+) or newer \(it has (\d+)\)/.exec(detail);
+  if (m) return { key: "machines.reason.pausedNodeBehind", vars: { need: m[1], have: m[2] } };
+  return null;
+}
+
+/** The "paused: ..." reason of a machine's workers, or null when it runs. */
+export function pausedOf(
+  workers: { stages_off?: Record<string, string> }[] | undefined
+): string | null {
+  for (const w of workers ?? []) {
+    for (const r of Object.values(w.stages_off ?? {})) {
+      if (typeof r === "string" && r.startsWith("paused:")) return r;
+    }
+  }
+  return null;
+}
+
 export function useClusterFmt(): ClusterFmt {
   const { t, locale } = useI18n();
   const loc = locale === "ar" ? "ar-EG" : "en";
@@ -41,8 +67,12 @@ export function useClusterFmt(): ClusterFmt {
     (code: string) => {
       const [head, ...rest] = String(code).split(":");
       const key = `machines.reason.${head.trim()}`;
-      const word = t(key);
       const detail = rest.join(":").trim();
+      if (head.trim() === "paused") {
+        const why = pausedReason(detail);
+        if (why) return t(why.key, why.vars);
+      }
+      const word = t(key);
       if (word === key) return code;
       return detail ? `${word}: ${detail}` : word;
     },
