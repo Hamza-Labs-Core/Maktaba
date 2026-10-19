@@ -74,6 +74,49 @@ describe("AdminExtensions", () => {
     expect(post).toHaveBeenCalledWith("/api/extensions/plex/test");
     expect(await within(plex).findByText(/Connection failed: 401 from Plex/)).toBeInTheDocument();
   });
+
+  it("lists each check of a Plex or dizqueTV test inline", async () => {
+    setup();
+    const plex = (await screen.findByRole("heading", { name: "Plex" })).closest("section")!;
+    post.mockResolvedValue({
+      ok: false,
+      message: "not ready: token",
+      checked_at: "2026-10-19T10:00:00Z",
+      lines: [
+        { key: "reachable", ok: true, detail: "nas:32400 answered in 12 ms", latency_ms: 12 },
+        {
+          key: "token",
+          ok: false,
+          detail: "token rejected — Sign in with Plex again",
+          code: "token_rejected",
+        },
+        { key: "livetv", ok: false, optional: true, skipped: true, detail: "not checked" },
+      ],
+    });
+    await userEvent.click(within(plex).getByRole("button", { name: "Test connection" }));
+    const list = await within(plex).findByRole("list", { name: "Connection checks" });
+    const items = within(list).getAllByRole("listitem");
+    expect(items).toHaveLength(3);
+    expect(items[0]).toHaveTextContent("Server reachable");
+    expect(items[0]).toHaveTextContent("nas:32400 answered in 12 ms");
+    expect(items[1]).toHaveTextContent("Plex token");
+    expect(items[1]).toHaveTextContent("token rejected — Sign in with Plex again");
+    expect(items[1]).toHaveTextContent("token_rejected");
+    expect(items[2]).toHaveTextContent("Live TV");
+    expect(items[2]).toHaveTextContent("not checked");
+
+    const dz = screen.getByRole("heading", { name: "dizqueTV" }).closest("section")!;
+    post.mockResolvedValue({
+      ok: true,
+      message: "dizqueTV is ready",
+      checked_at: "2026-10-19T10:00:00Z",
+      lines: [{ key: "channels", ok: true, detail: "4 channels" }],
+    });
+    await userEvent.click(within(dz).getByRole("button", { name: "Test connection" }));
+    expect(post).toHaveBeenLastCalledWith("/api/extensions/dizquetv/test");
+    const dzList = await within(dz).findByRole("list", { name: "Connection checks" });
+    expect(within(dzList).getByRole("listitem")).toHaveTextContent("Channels");
+  });
 });
 
 describe("Sign in with Plex", () => {
