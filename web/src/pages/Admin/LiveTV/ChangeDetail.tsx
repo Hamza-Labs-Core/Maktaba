@@ -167,7 +167,12 @@ function DetailInner() {
     setBusy("rollback");
     try {
       const r = await tvChangesApi.rollback();
-      setMsg({ ok: true, text: t(`tvchanges.done.rollback.${r.mode}`) });
+      // degraded: only the database was rolled back (no TV slot is live)
+      setMsg(
+        r.degraded
+          ? { ok: false, text: t("tvchanges.done.rollback.degraded") }
+          : { ok: true, text: t(`tvchanges.done.rollback.${r.mode}`) }
+      );
       setDialog(null);
       void load();
     } catch (e) {

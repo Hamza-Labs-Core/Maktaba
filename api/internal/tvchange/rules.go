@@ -29,6 +29,9 @@ type Config struct {
 	QuietMaxViewers    int
 	SwapWait           string
 	BoundaryMaxWaitMin int
+	// SwapStartTimeoutMin: a swap operation no front door took within this fails
+	// (rolled back, with a notice); 0: it waits for the front door however long
+	SwapStartTimeoutMin int
 	KeepWarmMinutes    int
 	RetentionHours     int
 	VerifySoakSeconds  int
@@ -43,6 +46,11 @@ type Config struct {
 	VerifyProbeSeconds int
 }
 
+// DefaultSwapStartTimeoutMin is tv_staging.swap_start_timeout_minutes' default.
+// A front door that is up takes a swap within a second and fails one it cannot
+// run itself after 90 s, so this only ends a swap while no front door runs.
+const DefaultSwapStartTimeoutMin = 10
+
 // LoadConfig reads the effective tv_staging rules (the defaults with what was changed).
 func LoadConfig(ctx context.Context, db *sql.DB) (Config, error) {
 	m, err := rules.Effective(ctx, db, "tv_staging")
@@ -56,6 +64,7 @@ func LoadConfig(ctx context.Context, db *sql.DB) (Config, error) {
 		QuietMaxViewers:    asInt(m["quiet_max_viewers"], 0),
 		SwapWait:           asStr(m["swap_wait"], "boundary"),
 		BoundaryMaxWaitMin: asInt(m["boundary_max_wait_minutes"], 30),
+		SwapStartTimeoutMin: asInt(m["swap_start_timeout_minutes"], DefaultSwapStartTimeoutMin),
 		KeepWarmMinutes:    asInt(m["keep_warm_minutes"], 15),
 		RetentionHours:     asInt(m["rollback_retention_hours"], 24),
 		VerifySoakSeconds:  asInt(m["verify_soak_seconds"], 120),

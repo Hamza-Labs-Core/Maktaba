@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
 )
 
 // The swap after its commit (story 33.7, design §8.3) and the rollback operations
@@ -37,6 +39,46 @@ const (
 // old slot is rolled back (story 33.7 EC2).
 const skippedRollbackShare = 0.25
 
+// ReasonFrontDoorTimeout is the rollback reason of a swap no front door took within
+// tv_staging.swap_start_timeout_minutes.
+const ReasonFrontDoorTimeout = "auto:front_door_timeout"
+
+// DegradedNoLiveSlot: a warm rollback while no TV slot beats as live. No front-door
+// operation switches the channels back: only the database is rolled back, and a
+// slot still running keeps its release until it restarts (RollbackResult.Degraded).
+const DegradedNoLiveSlot = "no_live_slot"
+
+// reaskAfter is how long a rollback asked for (or its reverse commit enqueued) is
+// left to run before the controller asks again: the job may have been lost.
+const reaskAfter = 2 * time.Minute
+
+// stampedSince reports whether detail[key] is a time less than reaskAfter ago.
+func (c *Controller) stampedSince(detail map[string]any, key string) bool {
+	at, _ := detail[key].(string)
+	if at == "" {
+		return false
+	}
+	t, err := time.Parse(time.RFC3339, at)
+	return err == nil && c.now().Sub(t) < reaskAfter
+}
+
+// stampOp merges the time now under key into an operation's detail.
+func (c *Controller) stampOp(ctx context.Context, id int64, key string) {
+	stamp, _ := json.Marshal(map[string]any{key: c.now().Format(time.RFC3339)})
+	_, _ = c.DB.ExecContext(ctx, `UPDATE tv_swap_ops SET detail = detail || $2::jsonb WHERE id = $1`, id, string(stamp))
+}
+
+// notifyOrLog sends a notice; a failure is logged (a notice never holds a change back).
+func (c *Controller) notifyOrLog(ctx context.Context, kind, changeID string, p notify.Payload) {
+	if c.Notifier == nil {
+		return
+	}
+	if err := c.Notifier.Notify(ctx, kind, p); err != nil {
+		c.Logger.Warn("tv change notification failed", "event", "tv_change_notify_failed", "change_id", changeID,
+			"error", err.Error())
+	}
+}
+
 // swapOp is a tv_swap_ops row (the fields the controller uses).
 type swapOp struct {
 	ID        int64
@@ -60,9 +102,12 @@ func (c *Controller) frontDoorOps(ctx context.Context) bool {
 
 // tickOps moves the swapping changes whose operation ended and enqueues the reverse
 // commit of the rollbacks nobody committed yet.
-func (c *Controller) tickOps(ctx context.Context) error {
+func (c *Controller) tickOps(ctx context.Context, cfg Config) error {
 	if !c.frontDoorOps(ctx) {
 		return nil
+	}
+	if err := c.expireUntakenSwaps(ctx, cfg); err != nil {
+		c.Logger.Warn("tv swap start timeout check failed", "event", "tv_swap_timeout_check_failed", "error", err.Error())
 	}
 	rows, err := c.DB.QueryContext(ctx, `SELECT DISTINCT ON (o.change_id, o.kind) o.id, o.change_id::text, o.kind,
 			o.state, o.committed, o.reason, o.detail
@@ -113,6 +158,74 @@ func (c *Controller) tickOps(ctx context.Context) error {
 	return nil
 }
 
+// expireUntakenSwaps fails the swap operations no front door took within
+// tv_staging.swap_start_timeout_minutes (no front door runs; the slots may still
+// beat): the change is rolled back (ReasonFrontDoorTimeout) like any failed swap,
+// and the admins get a notice that says why. A front door that comes back later
+// never takes a failed operation.
+func (c *Controller) expireUntakenSwaps(ctx context.Context, cfg Config) error {
+	if cfg.SwapStartTimeoutMin <= 0 {
+		return nil
+	}
+	why := fmt.Sprintf("no front door took the swap within %d min", cfg.SwapStartTimeoutMin)
+	d, _ := json.Marshal(map[string]any{"reason": ReasonFrontDoorTimeout, "error": why,
+		"timeout_minutes": cfg.SwapStartTimeoutMin})
+	rows, err := c.DB.QueryContext(ctx, `UPDATE tv_swap_ops SET state = 'failed', done_at = now(),
+			detail = detail || $2::jsonb
+		WHERE kind = 'swap' AND state = 'planned' AND created_at < $1
+		RETURNING id, COALESCE(change_id::text, '')`,
+		c.now().Add(-time.Duration(cfg.SwapStartTimeoutMin)*time.Minute), string(d))
+	if err != nil {
+		return err
+	}
+	type expired struct {
+		id     int64
+		change string
+	}
+	var ex []expired
+	for rows.Next() {
+		var e expired
+		if err := rows.Scan(&e.id, &e.change); err != nil {
+			rows.Close()
+			return err
+		}
+		ex = append(ex, e)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, e := range ex {
+		c.Logger.Warn("tv swap not taken by a front door; failing it", "event", "tv_swap_start_timeout",
+			"op_id", e.id, "change_id", e.change, "minutes", cfg.SwapStartTimeoutMin)
+		if e.change == "" {
+			continue
+		}
+		p := notify.Payload{Severity: notify.SeverityError, Link: ChangeLink(e.change), Subject: "tv_change:" + e.change,
+			Params: map[string]any{"minutes": cfg.SwapStartTimeoutMin}}
+		if ch, err := c.Store.Get(ctx, c.DB, e.change); err == nil {
+			p.Params["number"], p.Params["title"] = ch.Number, ch.Title
+		}
+		c.notifyOrLog(ctx, NotifySwapNotTaken, e.change, p)
+	}
+	return nil
+}
+
+// rollbackAfterSwap asks for the rollback of a swap that ended badly, once: the
+// swap's operation keeps its state, so every tick sees it again until the reverse
+// commit has run, and without a live slot beat no rollback operation is written
+// that would mark it (asked again after reaskAfter, should the job be lost).
+func (c *Controller) rollbackAfterSwap(ctx context.Context, ch *Change, o swapOp, reason string) error {
+	if c.stampedSince(o.Detail, "rollback_asked_at") {
+		return nil
+	}
+	if _, err := c.requestRollback(ctx, ch, reason, nil, nil); err != nil {
+		return err
+	}
+	c.stampOp(ctx, o.ID, "rollback_asked_at")
+	return nil
+}
+
 // swapEnded moves a swapping change whose operation ended.
 func (c *Controller) swapEnded(ctx context.Context, ch *Change, o swapOp) error {
 	switch o.State {
@@ -120,8 +233,7 @@ func (c *Controller) swapEnded(ctx context.Context, ch *Change, o swapOp) error 
 		sw, _ := o.Detail["switched"].(float64)
 		sk, _ := o.Detail["skipped"].(float64)
 		if sw+sk > 0 && sk/(sw+sk) > skippedRollbackShare {
-			_, err := c.requestRollback(ctx, ch, "auto:skipped", nil, nil)
-			return err
+			return c.rollbackAfterSwap(ctx, ch, o, "auto:skipped")
 		}
 		return c.Store.Move(ctx, c.DB, ch, StateLive, ActionSwapDone, nil,
 			map[string]any{"op_id": o.ID, "switched": sw, "skipped": sk, "rolling": o.Detail["rolling"],
@@ -131,18 +243,24 @@ func (c *Controller) swapEnded(ctx context.Context, ch *Change, o swapOp) error 
 		if r, _ := o.Detail["reason"].(string); r != "" {
 			reason = r
 		}
-		_, err := c.requestRollback(ctx, ch, reason, nil, nil)
-		return err
+		return c.rollbackAfterSwap(ctx, ch, o, reason)
 	}
 	return nil
 }
 
 // enqueueRollbackCommit enqueues the reverse commit of a rollback operation once.
+// A reverse commit that found nothing to roll back (the tv_rollback job's
+// LookupError, which it records as commit_error on the operation) is resolved: it
+// is not enqueued again, and the admins are told once.
 func (c *Controller) enqueueRollbackCommit(ctx context.Context, ch *Change, o swapOp) error {
-	if at, _ := o.Detail["enqueued_at"].(string); at != "" {
-		if t, err := time.Parse(time.RFC3339, at); err == nil && time.Since(t) < 2*time.Minute {
-			return nil
-		}
+	if e, _ := o.Detail["commit_error"].(string); e != "" {
+		c.notifyOrLog(ctx, NotifyRollbackNotCommitted, ch.ID, notify.Payload{Severity: notify.SeverityError,
+			Params: map[string]any{"number": ch.Number, "title": ch.Title, "error": e},
+			Link:   ChangeLink(ch.ID), Subject: fmt.Sprintf("tv_swap_op:%d", o.ID), Every: 30 * 24 * time.Hour})
+		return nil
+	}
+	if c.stampedSince(o.Detail, "enqueued_at") {
+		return nil
 	}
 	if c.Enqueue == nil {
 		return errors.New("no queue")
@@ -154,9 +272,8 @@ func (c *Controller) enqueueRollbackCommit(ctx context.Context, ch *Change, o sw
 	if err := c.Enqueue(ctx, StageTVRollback, payload, "roll back TV change"); err != nil {
 		return err
 	}
-	stamp, _ := json.Marshal(map[string]any{"enqueued_at": c.now().Format(time.RFC3339)})
-	_, err := c.DB.ExecContext(ctx, `UPDATE tv_swap_ops SET detail = detail || $2::jsonb WHERE id = $1`, o.ID, string(stamp))
-	return err
+	c.stampOp(ctx, o.ID, "enqueued_at")
+	return nil
 }
 
 // RollbackPoint is what a rollback would do now (story 33.9 AC7).
@@ -280,6 +397,9 @@ type RollbackResult struct {
 	OpID int64 `json:"op_id,omitempty"`
 	// RollbackChangeID is the new rollback change (cold).
 	RollbackChangeID string `json:"rollback_change_id,omitempty"`
+	// Degraded says what a warm rollback could not do (DegradedNoLiveSlot: no
+	// front-door operation, the database only).
+	Degraded string `json:"degraded,omitempty"`
 }
 
 // Rollback puts the previous release back (POST /api/tv/rollback, story 33.9): warm
@@ -324,12 +444,17 @@ func (c *Controller) requestRollback(ctx context.Context, ch *Change, reason str
 				return res, err
 			}
 			res.OpID = op
+		} else {
+			res.Degraded = DegradedNoLiveSlot
 		}
 	}
 	if detail == nil {
 		detail = map[string]any{}
 	}
 	detail["reason"], detail["op_id"] = reason, res.OpID
+	if res.Degraded != "" {
+		detail["degraded"] = res.Degraded
+	}
 	_ = c.Store.Event(ctx, c.DB, ch.ID, Event{ActorUserID: actor, ActorSource: actorSource(actor, "system"),
 		FromState: &ch.State, ToState: &ch.State, Action: ActionRollbackAsked, Detail: detail})
 	if c.Enqueue == nil {
@@ -346,11 +471,17 @@ func (c *Controller) requestRollback(ctx context.Context, ch *Change, reason str
 		return res, err
 	}
 	if res.OpID != 0 {
-		stamp, _ := json.Marshal(map[string]any{"enqueued_at": c.now().Format(time.RFC3339)})
-		_, _ = c.DB.ExecContext(ctx, `UPDATE tv_swap_ops SET detail = detail || $2::jsonb WHERE id = $1`, res.OpID, string(stamp))
+		c.stampOp(ctx, res.OpID, "enqueued_at")
 	}
 	c.Logger.Info("tv rollback requested", "event", "tv_rollback_requested", "change_id", ch.ID, "reason", reason,
 		"op_id", res.OpID)
+	if res.Degraded != "" {
+		c.Logger.Warn("tv warm rollback without a live TV slot: only the database is rolled back",
+			"event", "tv_rollback_degraded", "change_id", ch.ID, "reason", reason, "degraded", res.Degraded)
+		c.notifyOrLog(ctx, NotifyRollbackDegraded, ch.ID, notify.Payload{Severity: notify.SeverityWarn,
+			Params: map[string]any{"number": ch.Number, "title": ch.Title, "reason": reason},
+			Link:   ChangeLink(ch.ID), Subject: "tv_change:" + ch.ID})
+	}
 	return res, nil
 }
 

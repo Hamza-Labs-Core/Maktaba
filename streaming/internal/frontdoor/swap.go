@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/slot"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/tvmetrics"
@@ -324,11 +325,32 @@ func (s *Slots) startOp(ctx context.Context, o opRow) {
 		}
 		return
 	}
+	if !s.stillOpen(ctx, o.id) {
+		return // the controller failed it meanwhile (no front door took it in time)
+	}
 	rows, err := s.switchRows(ctx, o.id)
 	if err != nil {
 		return
 	}
 	s.runOp(ctx, o, to, rows, now)
+}
+
+// stillOpen reports whether an operation is still planned or switching: the change
+// controller fails a swap no front door took within swap_start_timeout_minutes,
+// and a front door coming back at that moment must not run it after all (a
+// database error: assume it is, as loadOps just read it so).
+func (s *Slots) stillOpen(ctx context.Context, id int64) bool {
+	if s.Pool == nil {
+		return true
+	}
+	qctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	var open bool
+	if err := s.Pool.QueryRow(qctx, `SELECT state IN ('planned', 'switching') FROM tv_swap_ops WHERE id = $1`, id).
+		Scan(&open); err != nil {
+		return !errors.Is(err, pgx.ErrNoRows)
+	}
+	return open
 }
 
 // runOp starts an operation on its target with its channel rows.
@@ -376,7 +398,7 @@ func (s *Slots) runOp(ctx context.Context, o opRow, to string, rows []switchRow,
 		"channels", len(rows), "rolling", op.rolling, "event", map[string]string{OpSwap: "tv_swap_planned",
 			OpRollback: "tv_rollback_started"}[o.kind])
 	s.exec(ctx, `UPDATE tv_swap_ops SET state = 'switching', started_at = COALESCE(started_at, now()), host_id = $2,
-		from_slot = $3, to_slot = $4 WHERE id = $1`, o.id, s.Host, from, to)
+		from_slot = $3, to_slot = $4 WHERE id = $1 AND state IN ('planned', 'switching')`, o.id, s.Host, from, to)
 	for ch, at := range op.at {
 		s.exec(ctx, `UPDATE tv_channel_switch SET switch_at = $3 WHERE op_id = $1 AND channel_id = $2 AND state = 'planned'`,
 			o.id, ch, at)

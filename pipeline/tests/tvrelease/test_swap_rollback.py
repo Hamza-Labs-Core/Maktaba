@@ -5,6 +5,7 @@ generation, routing), marks the change ``rolled_back`` and keeps its edits in a 
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 from typing import Any
 
@@ -142,6 +143,39 @@ async def test_no_rollback_before_the_swap_commit(db: Database) -> None:
     route = await db.fetchrow("SELECT * FROM tv_routing WHERE scope = 'cluster'")
     assert int(route["epoch"]) == 3 and route["previous_release_id"] is not None
     assert (await channel_def(db, a))["number"] == 101
+
+
+@pytest.mark.asyncio
+async def test_a_rollback_with_nothing_to_roll_back_records_why_on_its_operation(
+    db: Database,
+) -> None:
+    """The reverse commit of a front-door rollback operation that finds no rollback
+    point records the reason on the operation (``commit_error``, left uncommitted):
+    the change controller then stops enqueueing it every two minutes."""
+    if not is_pg(db):
+        pytest.skip("TV slots run on a Postgres home")
+    cid, _, _, rel = await _staged(db)
+    await db.execute("DELETE FROM tv_routing WHERE scope = 'cluster'")
+    await db.execute(
+        "INSERT INTO tv_routing (scope, live_release_id, live_gen, epoch)"
+        " VALUES ('cluster', $1, 1, 4)",
+        rel.id,
+    )
+    op = await db.fetchval(
+        "INSERT INTO tv_swap_ops (change_id, kind, reason, created_by)"
+        " VALUES ($1, 'rollback', 'auto:crash', 'test') RETURNING id",
+        cid,
+    )
+    with pytest.raises(LookupError):
+        await rollback_change(
+            db, cid, op_id=int(op), reason="auto:crash", clock=NOW + timedelta(minutes=1)
+        )
+    row = await db.fetchrow("SELECT committed, detail FROM tv_swap_ops WHERE id = $1", op)
+    detail = row["detail"] if isinstance(row["detail"], dict) else json.loads(row["detail"])
+    assert not row["committed"] and detail["commit_error"] == "no_rollback_point"
+    assert detail["commit_failed_at"]
+    ch = await get_change(db, cid)
+    assert ch is not None and ch.state == "swapping"
 
 
 @pytest.mark.asyncio

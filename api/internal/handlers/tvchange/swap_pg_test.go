@@ -1,13 +1,55 @@
 package tvchange
 
 import (
+	"context"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
 	core "github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange"
 )
+
+// notices records the controller's notices.
+type notices struct {
+	mu  sync.Mutex
+	got []string
+	ps  []notify.Payload
+}
+
+func (n *notices) Notify(_ context.Context, kind string, p notify.Payload) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.got, n.ps = append(n.got, kind), append(n.ps, p)
+	return nil
+}
+
+func (n *notices) count(kind string) int {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	c := 0
+	for _, k := range n.got {
+		if k == kind {
+			c++
+		}
+	}
+	return c
+}
+
+func (w *world) notices() *notices {
+	n := &notices{}
+	w.ctl.Notifier = n
+	return n
+}
+
+func (w *world) tick() {
+	w.t.Helper()
+	if err := w.ctl.Tick(w.t.Context()); err != nil {
+		w.t.Fatal(err)
+	}
+}
 
 // Stories 33.7 and 33.9 on the controller's side, against Postgres: the swap
 // after its commit (the front door's operation ends → live; a failed one or one
@@ -91,6 +133,13 @@ func TestSwapSkippingTooManyChannelsRollsBack(t *testing.T) {
 	}
 	if w.jobs("tv_rollback:"+id) != 1 || w.state(id) != core.StateSwapping {
 		t.Fatalf("jobs %v state %s: want the reverse commit enqueued", w.q.list(), w.state(id))
+	}
+	// no live slot beats: no rollback operation marks the swap as handled, yet the
+	// next ticks do not enqueue the reverse commit again (only after reaskAfter)
+	w.tick()
+	w.tick()
+	if n := w.jobs("tv_rollback:" + id); n != 1 {
+		t.Fatalf("the reverse commit was enqueued %d times: %v", n, w.q.list())
 	}
 	// a failed operation (its new slot was lost) rolls back too
 	id2 := w.change(core.StateSwapping, "settings", nil, "")
@@ -241,5 +290,117 @@ func TestNoRollbackBeforeTheSwapCommit(t *testing.T) {
 	if code, out := w.do("GET", "/api/tv/rollback", "", "u1"); code != 200 || out["mode"] != "warm" ||
 		out["release_id"] != prev || out["change_id"] != swapping {
 		t.Fatalf("point after the commit: %d %v", code, out)
+	}
+}
+
+// A swap operation no front door took within swap_start_timeout_minutes (the front
+// door is down) fails with that reason: the change is rolled back and the admins are
+// told why. A younger one waits; a front door would take it within a second.
+func TestSwapNoFrontDoorTookFails(t *testing.T) {
+	w := newWorld(t)
+	w.now = time.Now().UTC()
+	n := w.notices()
+	stuck := w.change(core.StateSwapping, "editor", nil, "")
+	op := w.op(stuck, "swap", "planned", true, `{}`)
+	w.exec(`UPDATE tv_swap_ops SET created_at = now() - interval '11 minutes' WHERE id = $1`, op)
+	w.tick()
+	var state, reason string
+	if err := w.db.QueryRow(`SELECT state, detail->>'reason' FROM tv_swap_ops WHERE id = $1`, op).Scan(&state, &reason); err != nil ||
+		state != "failed" || reason != core.ReasonFrontDoorTimeout {
+		t.Fatalf("the untaken swap is %s (%s) %v", state, reason, err)
+	}
+	if n.count(core.NotifySwapNotTaken) != 1 {
+		t.Fatalf("notices %v", n.got)
+	}
+	w.tick() // the failed operation rolls the change back
+	if w.jobs("tv_rollback:"+stuck) != 1 {
+		t.Fatalf("not rolled back: %v", w.q.list())
+	}
+	var asked string
+	if err := w.db.QueryRow(`SELECT detail->>'reason' FROM tv_change_events WHERE change_id = $1 AND action = $2`,
+		stuck, core.ActionRollbackAsked).Scan(&asked); err != nil || asked != core.ReasonFrontDoorTimeout {
+		t.Fatalf("rollback asked with reason %q %v", asked, err)
+	}
+
+	// five minutes in: still waiting for a front door
+	w.exec(`UPDATE tv_changes SET state = 'superseded' WHERE id = $1`, stuck)
+	young := w.change(core.StateSwapping, "settings", nil, "")
+	op2 := w.op(young, "swap", "planned", true, `{}`)
+	w.exec(`UPDATE tv_swap_ops SET created_at = now() - interval '5 minutes' WHERE id = $1`, op2)
+	w.tick()
+	if err := w.db.QueryRow(`SELECT state FROM tv_swap_ops WHERE id = $1`, op2).Scan(&state); err != nil || state != "planned" {
+		t.Fatalf("a five-minute-old swap is %s %v", state, err)
+	}
+	// 0 switches the timeout off
+	w.exec(`INSERT INTO app_settings (key, value) VALUES ('rules.tv_staging', '{"swap_start_timeout_minutes": 0}')
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`)
+	w.exec(`UPDATE tv_swap_ops SET created_at = now() - interval '3 hours' WHERE id = $1`, op2)
+	w.tick()
+	if err := w.db.QueryRow(`SELECT state FROM tv_swap_ops WHERE id = $1`, op2).Scan(&state); err != nil || state != "planned" {
+		t.Fatalf("with the timeout off the swap is %s %v", state, err)
+	}
+}
+
+// A warm rollback while no TV slot beats as live writes no front-door operation:
+// only the database is rolled back. The answer says so (degraded), the event and
+// the audit row carry it, and the admins get a notice.
+func TestWarmRollbackWithoutALiveSlotIsDegraded(t *testing.T) {
+	w := newWorld(t)
+	w.now = time.Now().UTC()
+	n := w.notices()
+	prev, cur := w.release(0), w.release(1)
+	live := w.change(core.StateLive, "editor", nil, "")
+	w.exec(`UPDATE tv_changes SET release_id = $2, base_release_id = $3, swapped_at = now() WHERE id = $1`, live, cur, prev)
+	w.exec(`INSERT INTO tv_routing (scope, live_release_id, live_gen, previous_release_id, previous_gen, epoch, switched_at, previous_until)
+		VALUES ('cluster', $1, 1, $2, 0, 5, now(), now() + interval '15 minutes')`, cur, prev)
+	code, out := w.do("POST", "/api/tv/rollback", "{}", "u1")
+	if code != http.StatusAccepted || out["mode"] != "warm" || out["degraded"] != core.DegradedNoLiveSlot || out["op_id"] != nil {
+		t.Fatalf("rollback without a live slot: %d %v", code, out)
+	}
+	if w.jobs("tv_rollback:"+live) != 1 {
+		t.Fatalf("the reverse commit was not enqueued: %v", w.q.list())
+	}
+	var ops int
+	if err := w.db.QueryRow(`SELECT count(*) FROM tv_swap_ops`).Scan(&ops); err != nil || ops != 0 {
+		t.Fatalf("%d operations written (%v), want none", ops, err)
+	}
+	if n.count(core.NotifyRollbackDegraded) != 1 {
+		t.Fatalf("notices %v", n.got)
+	}
+	var detail, audit string
+	if err := w.db.QueryRow(`SELECT detail::text FROM tv_change_events WHERE change_id = $1 AND action = $2`,
+		live, core.ActionRollbackAsked).Scan(&detail); err != nil || !strings.Contains(detail, core.DegradedNoLiveSlot) {
+		t.Fatalf("rollback event %q %v", detail, err)
+	}
+	if err := w.db.QueryRow(`SELECT payload::text FROM audit_log WHERE action = 'rollback' AND target_id = $1`, live).
+		Scan(&audit); err != nil || !strings.Contains(audit, core.DegradedNoLiveSlot) {
+		t.Fatalf("audit %q %v", audit, err)
+	}
+}
+
+// A rollback operation whose reverse commit found nothing to roll back (the
+// tv_rollback job's LookupError, recorded as commit_error) is resolved: the
+// controller does not enqueue it again, and tells the admins once.
+func TestRollbackThatCannotCommitIsNotReenqueued(t *testing.T) {
+	w := newWorld(t)
+	w.now = time.Now().UTC()
+	n := w.notices()
+	id := w.change(core.StateLive, "editor", nil, "")
+	w.op(id, "swap", "done", true, `{"switched": 1}`)
+	w.op(id, "rollback", "done", false, `{"commit_error": "no_rollback_point", "enqueued_at": "2000-01-01T00:00:00Z"}`)
+	for i := 0; i < 3; i++ {
+		w.tick()
+	}
+	if j := w.jobs("tv_rollback:" + id); j != 0 {
+		t.Fatalf("the reverse commit was enqueued again %d times: %v", j, w.q.list())
+	}
+	if c := n.count(core.NotifyRollbackNotCommitted); c < 1 {
+		t.Fatalf("notices %v", n.got)
+	}
+	n.mu.Lock()
+	p := n.ps[0]
+	n.mu.Unlock()
+	if p.Params["error"] != "no_rollback_point" || p.Every < 24*time.Hour {
+		t.Fatalf("notice %+v (once: a long repeat window)", p)
 	}
 }
