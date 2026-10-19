@@ -133,6 +133,8 @@ class StageSelector:
     storage: dict[str, Any] | None = None
     switches: dict[str, bool] = field(default_factory=dict)
     drain: bool = False
+    #: drained from the cluster channel (`cmd drain`, this process only, until `undrain`)
+    held: bool = False
     served: tuple[str, ...] = ()
     stages_off: dict[str, str] = field(default_factory=dict)
     #: the text behind each ``unavailable`` code
@@ -150,7 +152,7 @@ class StageSelector:
             role=self.role,
             storage=self.storage,
             switches=self.switches,
-            drain=self.drain,
+            drain=self.drain or self.held,
             detail=detail,
         )
         self.detail = detail

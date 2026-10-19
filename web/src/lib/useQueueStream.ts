@@ -219,6 +219,14 @@ interface HubJob {
   ip: string | null;
   worker_id: string | null;
   machine: string | null;
+  /** from the snapshot's `running` (a job running now, not an event): it seeds
+   * the running map and writes no activity line */
+  seed?: boolean;
+}
+
+/** A jobs snapshot starts the running map afresh. */
+interface ResetRunning {
+  reset: true;
 }
 
 function hubJobs(msg: HubMessage): HubJob[] {
@@ -241,9 +249,18 @@ function hubJobs(msg: HubMessage): HubJob[] {
     return j ? [j] : [];
   }
   if (msg.type === "snapshot") {
-    const d = msg.data as { jobs?: unknown[] } | unknown[] | undefined;
+    const d = msg.data as { jobs?: unknown[]; running?: unknown[] } | unknown[] | undefined;
     const list = Array.isArray(d) ? d : Array.isArray(d?.jobs) ? d.jobs : [];
-    return list.map(wrap).filter((j): j is HubJob => j !== null);
+    const events = list.map(wrap).filter((j): j is HubJob => j !== null);
+    // the jobs running now on every machine (from each process's latest
+    // metrics): a page that loads mid-job shows it even when its claimed
+    // event is no longer among the recent events
+    const running = !Array.isArray(d) && Array.isArray(d?.running) ? d.running : [];
+    const seeds = running
+      .map(wrap)
+      .filter((j): j is HubJob => j !== null)
+      .map((j) => ({ ...j, seed: true }));
+    return [...events, ...seeds];
   }
   return [];
 }
@@ -256,7 +273,7 @@ export function useJobStream(filter: JobStreamFilter = {}): JobStreamState {
     running: new Map(),
     finishedTick: 0,
   });
-  const buf = useRef<(ServerEvent | HubJob)[]>([]);
+  const buf = useRef<(ServerEvent | HubJob | ResetRunning)[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flushRef = useRef<() => void>(() => {});
 
@@ -271,6 +288,10 @@ export function useJobStream(filter: JobStreamFilter = {}): JobStreamState {
       const fresh: LiveLine[] = [];
       let finished = false;
       for (const item of batch) {
+        if ("reset" in item) {
+          running.clear();
+          continue;
+        }
         if ("ev" in item) {
           const { ev } = item;
           if (stage && ev.stage !== stage) continue;
@@ -278,6 +299,16 @@ export function useJobStream(filter: JobStreamFilter = {}): JobStreamState {
           const id = Number(ev.job_id);
           const ref = jobRefOf(ev, jobs.get(id));
           jobs.set(id, ref);
+          if (item.seed) {
+            running.set(id, {
+              job: ref,
+              session: item.session,
+              ip: item.ip,
+              worker_id: item.worker_id,
+              machine: item.machine,
+            });
+            continue;
+          }
           if (TERMINAL.has(ev.event)) running.delete(id);
           else
             running.set(id, {
@@ -346,12 +377,15 @@ export function useJobStream(filter: JobStreamFilter = {}): JobStreamState {
     });
   };
 
-  const push = (item: ServerEvent | HubJob) => {
+  const push = (item: ServerEvent | HubJob | ResetRunning) => {
     buf.current.push(item);
     if (!timer.current) timer.current = setTimeout(() => flushRef.current(), flushMs);
   };
 
-  const status = useSocketTopic("jobs", (msg) => hubJobs(msg).forEach(push));
+  const status = useSocketTopic("jobs", (msg) => {
+    if (msg.type === "snapshot") push({ reset: true });
+    hubJobs(msg).forEach(push);
+  });
   const sse = socketFallback(status);
 
   useEffect(() => {

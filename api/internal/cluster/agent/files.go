@@ -275,17 +275,20 @@ func (fw *FileWriter) open(kind, date string) (*openFile, error) {
 		fw.root = root
 	}
 	rel := filepath.Join(fw.ipDir, kind, date)
-	if err := fw.root.MkdirAll(rel, 0o755); err != nil { //nolint:gosec // shared, readable by every machine
-		return nil, err
-	}
 	// the share is writable by every machine: a planted link must not
 	// steer the hub's writes anywhere
-	if err := plainDirs(fw.root, rel); err != nil {
+	if err := mkdirShared(fw.root, rel); err != nil {
 		return nil, err
 	}
 	p := filepath.Join(rel, hubFile)
-	f, err := fw.root.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY|os.O_APPEND, 0o644) //nolint:gosec // readable by every machine
-	if errors.Is(err, fs.ErrExist) {
+	f, err := fw.root.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY|os.O_APPEND, fileMode)
+	if err == nil {
+		// readable by every machine whatever the umask
+		if cerr := f.Chmod(fileMode); cerr != nil {
+			_ = f.Close()
+			return nil, cerr
+		}
+	} else if errors.Is(err, fs.ErrExist) {
 		st, lerr := fw.root.Lstat(p)
 		if lerr != nil {
 			return nil, lerr
@@ -307,6 +310,73 @@ func (fw *FileWriter) open(kind, date string) (*openFile, error) {
 }
 
 var errNotPlain = errors.New("not a plain directory or file (a link?)")
+
+// Modes on the share: directories the hub creates are group-writable
+// (0775), so the home's workers running as another user of the group can
+// add their own folders beside the hub's; files are 0644.
+const (
+	sharedDirMode os.FileMode = 0o775
+	fileMode      os.FileMode = 0o644
+)
+
+// mkdirShared creates the missing directories of rel under root, each
+// 0775 whatever the umask. It only changes the mode of directories it
+// creates, and refuses a link (or anything not a directory) on the way.
+func mkdirShared(root *os.Root, rel string) error {
+	cur := ""
+	for _, part := range strings.Split(filepath.ToSlash(filepath.Clean(rel)), "/") {
+		if part == "" || part == "." {
+			continue
+		}
+		cur = filepath.Join(cur, part)
+		st, err := root.Lstat(cur)
+		if errors.Is(err, fs.ErrNotExist) {
+			switch merr := root.Mkdir(cur, sharedDirMode); {
+			case merr == nil:
+				if err := root.Chmod(cur, sharedDirMode); err != nil {
+					return err
+				}
+			case !errors.Is(merr, fs.ErrExist): // a racing creator is fine
+				return merr
+			}
+			st, err = root.Lstat(cur)
+		}
+		if err != nil {
+			return err
+		}
+		if !st.Mode().IsDir() {
+			return fmt.Errorf("%s: %w", cur, errNotPlain)
+		}
+	}
+	return nil
+}
+
+// mkdirSharedAbs is mkdirShared for an absolute path: rooted at its
+// deepest existing ancestor.
+func mkdirSharedAbs(dir string) error {
+	dir = filepath.Clean(dir)
+	base := dir
+	for {
+		if _, err := os.Stat(base); err == nil {
+			break
+		}
+		parent := filepath.Dir(base)
+		if parent == base {
+			return fmt.Errorf("%s: no existing ancestor", dir)
+		}
+		base = parent
+	}
+	rel, err := filepath.Rel(base, dir)
+	if err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(base)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	return mkdirShared(root, rel)
+}
 
 // plainDirs checks that every component of rel under root is a real
 // directory, not a link.

@@ -224,11 +224,11 @@ vectors and is a new protocol version (§4.7).
 | 1001 | `going_away` | hub | the API is restarting | reconnects with backoff |
 | 4000 | `protocol_error` | either | malformed JSON, an unexpected frame, text after `welcome` | reconnects with backoff |
 | 4001 | `unsupported_version` | hub | `hello.v` is not served (version 1 never is); the close reason lists the versions served, e.g. `unsupported_version 2` | retries at the longest delay; logs it once an hour |
-| 4003 | `not_member` | hub | the machine is unknown, pending, rejected or revoked | retries at the longest delay |
+| 4003 | `not_member` | hub | the machine is unknown, pending, rejected or revoked | retries at the longest delay and checks its membership through the database at once (the node heartbeat); never stops for good on this close alone |
 | 4004 | `auth_failed` | either | hub: wrong client proof (wrong pairing key or home agent key); agent: a `welcome` that does not open or carries a wrong hub proof; either: an all-zero DH result | retries at the longest delay; when the hub failed to prove itself, logs "this is not the home I joined" |
 | 4008 | `timeout` | either | handshake over 10 s, or 45 s of silence | reconnects |
 | 4009 | `replaced` | hub | a newer session with the same `worker_id` authenticated | retries at the longest delay; logs an error (two processes share a worker id) |
-| 4010 | `revoked` | hub | the admin revoked this machine | **does not reconnect**; the worker stops gracefully (phase 1 revocation) |
+| 4010 | `revoked` | hub | the admin revoked this machine | retries at the longest delay and checks its membership through the database at once; the worker stops for good (exit 77) only on the sealed `cmd disconnect {reason: "revoked"}` that precedes this close, or when the database says revoked / removed or refuses its login |
 | 4011 | `seal_error` | either | after `welcome`: a tag failed, or a counter gap or repeat (a `welcome` that does not open is `4004`) | reconnects (new keys) |
 | 4012 | `too_large` | either | a frame over the size limit (§4.7) | reconnects |
 | 4013 | `rate_limited` | hub | too many handshakes from this address | retries at the longest delay |
@@ -236,6 +236,16 @@ vectors and is a new protocol version (§4.7).
 | 1013 | `try_again_later` | hub | the agent did not keep up: its outgoing queue to the hub overflowed | reconnects with backoff |
 
 The close reason (at most 123 bytes) carries the name and an optional short detail.
+
+**Close codes are hints, not authority.** A WebSocket close frame is not authenticated:
+`4003` is sent before any proof, and even after `welcome` a close frame travels outside the
+sealed stream, so anyone who can answer as the home on the LAN could send one. A process
+therefore stops for good (exit code 77, which services do not restart) only on an
+authenticated signal: the sealed `cmd disconnect {reason: "revoked"}` (the hub sends it
+before closing `4010`), or the database — the node heartbeat finding the machine revoked,
+rejected or removed, or its database login refused (phase 1). On a bare `4003` or `4010` the
+agent waits the longest delay and runs the heartbeat's membership check at once: approved,
+it keeps working; revoked, that path stops it.
 
 A machine whose node config has no `home.cluster_pub` (joined before version 2) does not try
 to connect at all: it logs "re-join this machine" once an hour and keeps working.
@@ -559,7 +569,7 @@ node, so readers can still group folders by machine.
   192.168.50.31/                              # one folder per machine
     processes/<worker_id>.json                # who this process is (§7.6)
     logs/2026-10-19/<worker_id>.jsonl         # its log records
-    metrics/2026-10-19/<worker_id>.jsonl      # one line per metrics frame
+    metrics/2026-10-19/<worker_id>.jsonl      # one line every 10 s (and the final frame)
     jobs/2026-10-19/<worker_id>.jsonl         # every job event it had, claimed … done / failed
     llm/2026-10-19/<worker_id>.jsonl          # LLM requests it ran: usage only
   192.168.50.20/                              # the home
@@ -589,6 +599,13 @@ own `<worker_id>` files, and the hub only its `hub.jsonl` files. Writing rules:
   at a clean stop (`stopped_at`), each time to a temporary file renamed over the old one.
 - Progress events go to the jobs file at most once every 10 s per job (every other job
   event is written).
+- A metrics line goes to the metrics file at most every 10 s
+  (`MAKTABA_CLUSTER_METRICS_FILE_SEC`), plus the `final` frame at a graceful stop; the
+  channel still gets every frame (every 2 s). Ten processes writing every frame would be
+  about 43 000 lines each a day, near the file cap.
+- Directories a process creates under the cluster directory are mode `0775` whatever the
+  umask (the hub and the home's workers run as different users of one group); files are
+  `0644`.
 - Readers skip a last line that does not parse (a write in progress).
 
 ### 7.6 Record shapes
@@ -597,7 +614,7 @@ own `<worker_id>` files, and the hub only its `hub.jsonl` files. Writing rules:
 |---|---|
 | `processes/<worker_id>.json` | `worker_id`, `kind` (`home` \| `node`), `node_id`, `node_name`, `host`, `os`, `arch`, `pid`, `version`, `ip`, `started_at`, `last_seen`, `stopped_at` |
 | `logs` | `ts`, `level`, `event`, `logger`, `fields` |
-| `metrics` | the `metrics` frame without `t` |
+| `metrics` | the `metrics` frame without `t`, one every 10 s and the `final` one |
 | `jobs` | the `job` frame without `t` |
 | `llm` | `ts`, `id`, `model`, `op`, `from` (the requesting process or `api:<user>`), `prompt_tokens`, `completion_tokens`, `ms`, `error` — never prompt or output text |
 | `events` | `ts`, `event` (`connect` \| `disconnect` \| `auth_refused` \| `cmd` \| `cmd_result` \| `revoked`), `session`, `kind`, `node_id`, `worker_id`, `ip`, `code`, `detail` |
@@ -606,8 +623,12 @@ own `<worker_id>` files, and the hub only its `hub.jsonl` files. Writing rules:
 
 ### 7.7 Retention and caps
 
-- Kept for `MAKTABA_CLUSTER_RETENTION_DAYS` days (default 14). Each process removes its own
-  expired day files at start and once a day; the hub, once an hour, removes expired day
+- Kept for `MAKTABA_CLUSTER_RETENTION_DAYS` days (default 14). Each process removes, at start
+  and once a day, every file in its machine's expired day folders (an expired UTC day is
+  never written again, and worker ids are new at every start, so earlier processes' files
+  would otherwise stay), and in its local fallback also the `processes/*.json` not seen
+  within the retention (the hub never sweeps the fallback); the hub, once an hour, removes
+  expired day
   folders in every IP folder and `processes/*.json` whose `last_seen` is older than the
   retention (processes that will not come back: worker ids are new at every start).
 - Each file is capped at `MAKTABA_CLUSTER_FILE_MB` MB (default 256); past it, records are
@@ -764,6 +785,7 @@ level live.
 | `MAKTABA_CLUSTER_IP` | API, any process | the rule of §7.3 | the IP folder's name |
 | `MAKTABA_CLUSTER_RETENTION_DAYS` | home API (sent), any process (override) | `14` | days of files kept |
 | `MAKTABA_CLUSTER_FILE_MB` | home API (sent), any process (override) | `256` | cap per file |
+| `MAKTABA_CLUSTER_METRICS_FILE_SEC` | any process | `10` | a metrics line in the file at most this often (the channel gets every frame) |
 | `MAKTABA_CLUSTER_LOG_LEVEL` | home API (sent) | `info` | each session's starting log level |
 | `MAKTABA_HOME_CLUSTER_KEY` | home API | `~/.maktaba/cluster/home-cluster.key` | the home's long-term cluster key pair (its public half is in every machine's node config) |
 | `MAKTABA_HOME_AGENT_KEY` | home API, home workers | `~/.maktaba/cluster/home-agent.key` | the home agent key file |

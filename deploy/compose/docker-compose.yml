@@ -93,9 +93,27 @@ services:
       # plan's name=URL pair format.
       MAKTABA_HEALTH_PEERS: streaming=http://streaming:9101/readyz
       HEALTHCHECK_URL: http://127.0.0.1:9100/healthz
+      # Epic 31 cluster channel. The home's two keys live on a volume so a
+      # recreated container keeps them: a new cluster key would make every
+      # joined machine re-join; the agent key is shared with the pipeline's
+      # home workers (read-only there).
+      MAKTABA_HOME_CLUSTER_KEY: /var/maktaba/keys/home-cluster.key
+      MAKTABA_HOME_AGENT_KEY: /var/maktaba/keys/home-agent.key
+      # group-readable, so the pipeline (uid 1000, group_add 65532) can read it
+      MAKTABA_HOME_AGENT_KEY_MODE: "0640"
+      # The home's IP folder on the share: set it to the host's LAN address
+      # (a container only knows its own bridge address).
+      MAKTABA_CLUSTER_IP: ${MAKTABA_CLUSTER_IP:-}
     command: ["serve"]
     volumes:
-      - media:/var/maktaba/media:ro
+      # read-write: the hub writes <share root>/maktaba/cluster (its own
+      # files, link-safe, nothing else); the media itself is never written
+      - media:/var/maktaba/media
+      - cluster_keys:/var/maktaba/keys
+    # the pipeline (uid 1000) writes beside the hub in the home's IP folder on
+    # the share; both create group-writable folders and share each other's group
+    group_add:
+      - "1000"
     healthcheck:
       # Probes /healthz on the admin port (Story 21.4); the binary is
       # baked in because distroless has no curl. Liveness only — see
@@ -162,9 +180,18 @@ services:
       MAKTABA_CHROMA_URL: http://chroma:8000
       MAKTABA_MEDIA_ROOT: /var/maktaba/media
       MAKTABA_CHROMA_DIR: /var/maktaba/chroma
+      # Epic 31 cluster channel: the home workers dial the hub in the api
+      # container with the key it wrote.
+      MAKTABA_API_URL: http://api:8080
+      MAKTABA_HOME_AGENT_KEY: /var/maktaba/keys/home-agent.key
+      MAKTABA_CLUSTER_IP: ${MAKTABA_CLUSTER_IP:-}
     volumes:
       - media:/var/maktaba/media
       - chroma:/var/maktaba/chroma
+      - cluster_keys:/var/maktaba/keys:ro
+    # the API (distroless nonroot, 65532) owns the agent key; this group reads it
+    group_add:
+      - "65532"
     healthcheck:
       # `python -m maktaba_pipeline doctor` is the stub probe (Story
       # 22.3 plan §2.7); Epic 03 swaps it for the real doctor that
@@ -216,3 +243,4 @@ volumes:
   chroma:
   caddy_data:
   caddy_config:
+  cluster_keys: # the home's cluster and agent keys (Epic 31); back it up

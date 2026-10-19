@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log/slog"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -61,6 +62,9 @@ type Config struct {
 	Store NodeStore
 	// HomeKey authenticates the home's own processes; nil refuses them.
 	HomeKey []byte
+	// HomeKeyMode is MAKTABA_HOME_AGENT_KEY_MODE (0600 or 0640), for the
+	// caller that loads HomeKey.
+	HomeKeyMode os.FileMode
 	// ClusterKey is the private half of the home's long-term cluster key
 	// (design-agent.md §4.2); nil refuses machines.
 	ClusterKey []byte
@@ -490,6 +494,66 @@ func (h *Hub) onJob(s *Session, job json.RawMessage) {
 	case h.queuesDirty <- struct{}{}:
 	default:
 	}
+}
+
+// runningJob is a metrics frame's pipeline.jobs entry.
+type runningJob struct {
+	JobID    json.RawMessage `json:"job_id"`
+	Stage    string          `json:"stage"`
+	Subject  string          `json:"subject"` // "<kind>:<id>"
+	Title    *string         `json:"title"`
+	Since    *string         `json:"since"`
+	Progress json.RawMessage `json:"progress"`
+}
+
+// runningJobs is the jobs snapshot's `running`: every live session's
+// running jobs from its latest metrics frame, each as a `job` message
+// carries it (event "progress" when the job reported progress, else
+// "claimed"), so a page that loads mid-job shows it even when its
+// claimed event is no longer among the recent ones.
+func (h *Hub) runningJobs() []json.RawMessage {
+	out := []json.RawMessage{}
+	for _, p := range h.Processes() {
+		if p.Metrics == nil {
+			continue
+		}
+		var m struct {
+			TS       *string `json:"ts"`
+			Pipeline struct {
+				Jobs []runningJob `json:"jobs"`
+			} `json:"pipeline"`
+		}
+		if json.Unmarshal(p.Metrics, &m) != nil {
+			continue
+		}
+		for _, j := range m.Pipeline.Jobs {
+			if len(j.JobID) == 0 || j.Stage == "" {
+				continue
+			}
+			kind, id, _ := strings.Cut(j.Subject, ":")
+			var subjectKind, subjectID *string
+			if kind != "" {
+				subjectKind = &kind
+			}
+			if id != "" && id != "None" && id != "null" {
+				subjectID = &id
+			}
+			event := "claimed"
+			progress := json.RawMessage("null")
+			if len(j.Progress) > 0 && string(j.Progress) != "null" {
+				event, progress = "progress", j.Progress
+			}
+			job := map[string]any{"event": event, "job_id": j.JobID, "stage": j.Stage, "subject_kind": subjectKind,
+				"subject_id": subjectID, "title": j.Title, "attempt": nil, "started_at": j.Since, "ts": m.TS,
+				"duration_ms": nil, "progress": progress, "outcome": nil, "output": nil}
+			data, err := json.Marshal(map[string]any{"session": p.Session, "ip": p.IP, "node_name": p.NodeName,
+				"worker_id": p.WorkerID, "host": p.Host, "job": job})
+			if err == nil {
+				out = append(out, data)
+			}
+		}
+	}
+	return out
 }
 
 func (h *Hub) markWorkersDirty() {

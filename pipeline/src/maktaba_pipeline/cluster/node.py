@@ -22,7 +22,7 @@ from ..engine.paths import PathMap, set_active_path_map
 from ..engine.sync import stages_ahead
 from ..engine.workers import update_worker_stages
 from ..log import get_logger
-from . import nodes_db
+from . import exitcodes, nodes_db
 from .stages import StageSelector
 from .storage import LibrarySample, candidate_roots, check_storage, infer_path_map, load_samples
 
@@ -32,9 +32,6 @@ STAGE_REFRESH_SEC = 30.0
 STORAGE_CHECK_SEC = 300.0
 
 _log = get_logger()
-
-#: errors meaning this machine's database login no longer works (revoked on the home)
-_AUTH_ERRORS = ("InvalidPasswordError", "InvalidAuthorizationSpecificationError")
 
 
 def path_map_from_json(data: dict[str, str] | None) -> PathMap:
@@ -78,6 +75,8 @@ class WorkerAgent:
             )
         if beat.state != "approved":
             _log.error("cluster_node_not_approved", state=beat.state)
+            if beat.state in ("revoked", "rejected"):
+                exitcodes.mark_refused(f"this machine is {beat.state} on the home")
             self.shutdown.set()
         self.selector.drain = beat.drain
         self.samples = await load_samples(self.db)
@@ -157,13 +156,19 @@ class WorkerAgent:
         try:
             beat = await nodes_db.beat(self.db, self.node_id)
         except Exception as exc:
-            if type(exc).__name__ in _AUTH_ERRORS:
+            if exitcodes.login_revoked(exc):
                 _log.error("cluster_node_login_refused_stopping", error=str(exc))
+                exitcodes.mark_refused("the home's database refused this machine's login")
                 self.shutdown.set()
                 return
+            if exitcodes.is_auth_error(exc):
+                # refused for another reason (pg_hba, ...): fixable on the home, so the
+                # worker keeps going and the next heartbeat tries again
+                _log.error("cluster_node_login_refused", error=str(exc))
             raise
         if beat is None or beat.state in ("revoked", "rejected"):
             _log.warning("cluster_node_revoked_stopping", state=None if beat else "removed")
+            exitcodes.mark_refused(f"this machine is {beat.state if beat else 'removed'}")
             self.shutdown.set()
             return
         if beat.drain != self.selector.drain:

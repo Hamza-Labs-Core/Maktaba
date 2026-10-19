@@ -22,8 +22,12 @@ import (
 //	MAKTABA_CLUSTER_CACHE_HOURS     the database cache's window, default 24
 //	MAKTABA_CORS_ALLOWED_ORIGINS    extra browser origins for /api/cluster/ws
 //
+//	MAKTABA_HOME_AGENT_KEY_MODE     the home agent key file's mode: 0600 (default) or 0640
+//	                                (0640 lets home workers of the API's group read it, e.g. Docker)
+//
 // The key files are read by the caller: MAKTABA_HOME_AGENT_KEY
-// (MAKTABA_CLUSTER_KEY_PATH also accepted) and MAKTABA_HOME_CLUSTER_KEY.
+// (MAKTABA_CLUSTER_KEY_PATH also accepted) and MAKTABA_HOME_CLUSTER_KEY
+// (always 0600).
 //
 // Bad values fall back to the default and are reported as warnings.
 func FromEnv(getenv func(string) string) (Config, []string) {
@@ -60,6 +64,14 @@ func FromEnv(getenv func(string) string) (Config, []string) {
 		cfg.RetentionDays = DefaultRetentionDays
 	}
 	cfg.CacheWindow = time.Duration(intVar("MAKTABA_CLUSTER_CACHE_HOURS", DefaultCacheHours)) * time.Hour
+	cfg.HomeKeyMode = KeyMode
+	if v := strings.TrimSpace(getenv("MAKTABA_HOME_AGENT_KEY_MODE")); v != "" {
+		if m, ok := ParseKeyMode(v); ok {
+			cfg.HomeKeyMode = m
+		} else {
+			warn = append(warn, fmt.Sprintf("MAKTABA_HOME_AGENT_KEY_MODE=%q ignored (0600 or 0640)", v))
+		}
+	}
 	if v := strings.TrimSpace(getenv("MAKTABA_CLUSTER_IP")); v != "" {
 		if ValidIPDir(IPDir(v)) {
 			cfg.HomeAddr = v

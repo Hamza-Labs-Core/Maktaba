@@ -22,10 +22,10 @@ import (
 // `chat.completion.chunk` per chunk when streaming, otherwise one chunk
 // holding the whole `chat.completion` / embeddings response.
 
-const (
-	maxLLMBody   = 8 << 20
-	maxLLMChunks = 100_000
-)
+// maxLLMChunks caps what a non-streaming answer may buffer. The body cap
+// is the channel's: the llm.request frame carrying it must seal within
+// MaxFrame (RequestFits), else 413 too_large.
+const maxLLMChunks = 100_000
 
 type openAIError struct {
 	Error struct {
@@ -63,6 +63,8 @@ func llmErrStatus(code string) (int, string) {
 		return http.StatusGatewayTimeout, "the machine running the request stopped answering"
 	case LLMBadRequest:
 		return http.StatusBadRequest, "bad request"
+	case LLMTooLarge:
+		return http.StatusRequestEntityTooLarge, "the request or an answer is over the cluster channel's 4 MiB frame limit"
 	}
 	return http.StatusBadGateway, "the model failed: " + code
 }
@@ -158,9 +160,14 @@ func (h *Hub) llmDoor(w http.ResponseWriter, r *http.Request, op string) {
 	if !requireUser(w, r) {
 		return
 	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxLLMBody+1))
-	if err != nil || len(body) > maxLLMBody {
-		writeOpenAIError(w, http.StatusRequestEntityTooLarge, "too_large", "request body too large")
+	body, err := io.ReadAll(io.LimitReader(r.Body, MaxFrame+1))
+	if err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request", "the body could not be read")
+		return
+	}
+	if len(body) > MaxFrame {
+		status, msg := llmErrStatus(LLMTooLarge)
+		writeOpenAIError(w, status, LLMTooLarge, msg)
 		return
 	}
 	var head struct {
@@ -174,6 +181,11 @@ func (h *Hub) llmDoor(w http.ResponseWriter, r *http.Request, op string) {
 	stream := head.Stream && op == "chat"
 	sink := newHTTPSink()
 	req := &LLMRequest{Model: head.Model, Op: op, Body: body, Stream: stream, FromIP: remoteIP(r), Sink: sink}
+	if !RequestFits(req) {
+		status, msg := llmErrStatus(LLMTooLarge)
+		writeOpenAIError(w, status, LLMTooLarge, msg)
+		return
+	}
 	h.router.Submit(req)
 	defer h.router.Cancel(req.ID())
 

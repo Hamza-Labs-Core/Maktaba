@@ -149,25 +149,48 @@ func (s *Session) view() Process {
 	return p
 }
 
-// send seals and queues a frame; a session that cannot keep up is closed.
-func (s *Session) send(v any) bool {
+// Send errors.
+var (
+	// ErrFrameTooLarge: the frame would seal to more than MaxFrame; it is
+	// not sent, and the session stays open.
+	ErrFrameTooLarge = errors.New("agent: frame over the size limit")
+	// ErrGone: the session is closed (or closing).
+	ErrGone = errors.New("agent: session gone")
+)
+
+// sealOverhead is the Poly1305 tag a sealed frame adds.
+const sealOverhead = 16
+
+// fits reports whether a plaintext frame of n bytes seals within MaxFrame.
+func fits(n int) bool { return n+sealOverhead <= MaxFrame }
+
+// sendErr seals and queues a frame. A frame too large for the channel is
+// refused (ErrFrameTooLarge) without touching the session; a session that
+// cannot keep up is closed (ErrGone).
+func (s *Session) sendErr(v any) error {
 	b, err := json.Marshal(v)
 	if err != nil {
-		return false
+		return err
+	}
+	if !fits(len(b)) {
+		return ErrFrameTooLarge
 	}
 	select {
 	case <-s.ctx.Done():
-		return false
+		return ErrGone
 	default:
 	}
 	select {
 	case s.out <- outFrame{payload: b}:
-		return true
+		return nil
 	default:
 		s.closeWith(CloseSlow, "")
-		return false
+		return ErrGone
 	}
 }
+
+// send is sendErr reporting only success.
+func (s *Session) send(v any) bool { return s.sendErr(v) == nil }
 
 // sendThenClose queues a frame and a close behind it (the writer sends
 // the frame first); when the queue is full it closes at once.
@@ -602,7 +625,7 @@ func (h *Hub) readLoop(ctx context.Context, s *Session, c *websocket.Conn, c2s *
 			s.closeWith(CloseProtocolError, "text after welcome")
 			return "text after welcome"
 		}
-		if len(data) > MaxFrame+16 {
+		if len(data) > MaxFrame {
 			s.closeWith(CloseTooLarge, "")
 			return "too large"
 		}

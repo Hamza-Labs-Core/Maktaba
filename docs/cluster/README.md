@@ -100,9 +100,25 @@ is off (database included), the machines wait. See
 
 The home has a **cluster key**, a small file that proves to every machine that it is the
 home they joined: `~/.maktaba/cluster/home-cluster.key` of the user that runs the home's
-server (with Docker, keep it on a volume). It never leaves the home's disk. Back it up with
-your database: if it is lost (for example when you reinstall the home without it), every
-machine has to [re-join](troubleshooting.md#re-join-this-machine).
+server. It never leaves the home's disk. Back it up with your database: if it is lost (for
+example when you reinstall the home without it), every machine has to
+[re-join](troubleshooting.md#re-join-this-machine).
+
+**With Docker Compose** (`deploy/compose/docker-compose.yml`) both of the home's keys live
+on the `cluster_keys` volume (`/var/maktaba/keys`), so upgrading or recreating the
+containers keeps them; back that volume up. Set `MAKTABA_CLUSTER_IP` to the host's LAN
+address (a container only sees its own bridge address), so the home's files on the share
+are filed under the address the machines know. The API writes its own folder under
+`<share>/maktaba/cluster`, so its media volume is mounted read-write; it writes nothing
+else there.
+
+Beside it, the **home agent key** (`~/.maktaba/cluster/home-agent.key`, or the path in
+`MAKTABA_HOME_AGENT_KEY`) lets the home's own workers join the live connection; the server
+creates it at first start. It is readable by its owner only (mode `0600`). When the home's
+workers run as another user than the server, as the Docker setup does (they share the key on
+a volume and the server's group), set `MAKTABA_HOME_AGENT_KEY_MODE=0640` on the server: the
+key is then also readable by the server's group. Only `0600` and `0640` are accepted; the
+cluster key always stays `0600`.
 
 ## Ports at a glance
 

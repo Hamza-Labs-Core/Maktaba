@@ -18,6 +18,7 @@ type fakeCache struct {
 	logs      []LogRecord
 	procs     []Proc
 	covers    bool
+	coversFn  func(kind string, from, to time.Time) bool
 	queries   []CacheQuery
 	backfill  string
 	ran       bool
@@ -45,9 +46,12 @@ func (c *fakeCache) Logs(p Proc, recs []LogRecord) {
 	c.logs = append(c.logs, recs...)
 }
 
-func (c *fakeCache) Covers(string, time.Time, time.Time) bool {
+func (c *fakeCache) Covers(kind string, from, to time.Time) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.coversFn != nil {
+		return c.coversFn(kind, from, to)
+	}
 	return c.covers
 }
 
@@ -135,7 +139,7 @@ func TestHistoryFromCacheWhenItCovers(t *testing.T) {
 	fc.mu.Lock()
 	fc.covers = true
 	fc.mu.Unlock()
-	resp = f.do("GET", "/api/cluster/files/192.168.50.31/logs?date="+day+"&level=warn&q=boom&worker=w9&limit=1", "", "admin")
+	resp = f.do("GET", "/api/cluster/files/192.168.50.31/logs?date=2026-10-01&level=warn&q=boom&worker=w9&limit=1", "", "admin")
 	var rs struct {
 		Records    []map[string]any `json:"records"`
 		NextBefore *string          `json:"next_before"`
@@ -149,11 +153,11 @@ func TestHistoryFromCacheWhenItCovers(t *testing.T) {
 	q := fc.queries[0]
 	fc.mu.Unlock()
 	if q.IP != "192.168.50.31" || q.WorkerID != "w9" || q.Level != "warning" || q.Q != "boom" || q.Limit != 2 ||
-		!q.From.Equal(ts("2026-10-19T00:00:00Z")) || !q.To.Equal(ts("2026-10-20T00:00:00Z")) {
+		!q.From.Equal(ts("2026-10-01T00:00:00Z")) || !q.To.Equal(ts("2026-10-02T00:00:00Z")) {
 		t.Fatalf("query = %+v", q)
 	}
 
-	resp = f.do("GET", "/api/cluster/files/192.168.50.31/metrics?date="+day+"&from=2026-10-19T09:00:00Z", "", "admin")
+	resp = f.do("GET", "/api/cluster/files/192.168.50.31/metrics?date=2026-10-01&from=2026-10-01T09:00:00Z", "", "admin")
 	var ms struct {
 		Samples []struct {
 			WorkerID string         `json:"worker_id"`
@@ -193,5 +197,33 @@ func TestWorkersCarryTheirSession(t *testing.T) {
 	_ = json.Unmarshal(data, &ws)
 	if len(ws.Workers) != 2 || ws.Workers[0]["session"] != a.Session || ws.Workers[1]["session"] != nil {
 		t.Fatalf("workers = %s", data)
+	}
+}
+
+// Today's history (the default view) is asked of the cache only up to now:
+// a cache that holds [now-24h, now] answers it.
+func TestCacheAnswersTodayUpToNow(t *testing.T) {
+	fc := &fakeCache{}
+	fc.coversFn = func(_ string, from, to time.Time) bool {
+		now := time.Now().UTC()
+		return !from.Before(now.Add(-24*time.Hour)) && !to.After(now)
+	}
+	f := newFixture(t, func(c *Config) { c.Cache = fc })
+	today := time.Now().UTC().Format("2006-01-02")
+	for _, kind := range []string{"logs", "metrics"} {
+		resp := f.do("GET", "/api/cluster/files/192.168.50.31/"+kind+"?date="+today, "", "admin")
+		if resp.StatusCode != 200 || resp.Header.Get("X-Maktaba-Source") != "cache" {
+			t.Fatalf("%s today: %d from %q", kind, resp.StatusCode, resp.Header.Get("X-Maktaba-Source"))
+		}
+	}
+	fc.mu.Lock()
+	q := fc.queries[0]
+	fc.mu.Unlock()
+	if q.To.After(time.Now().UTC()) || q.From.Format("2006-01-02") != today {
+		t.Fatalf("range = %v .. %v", q.From, q.To)
+	}
+	// a day the cache does not hold goes to the files
+	if r := f.do("GET", "/api/cluster/files/192.168.50.31/logs?date=2020-01-01", "", "admin"); r.Header.Get("X-Maktaba-Source") != "files" {
+		t.Fatal("an old day was asked of the cache")
 	}
 }
