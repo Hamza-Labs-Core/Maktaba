@@ -7,6 +7,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/lib/pq"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
@@ -108,6 +111,7 @@ SELECT v.id::text, COALESCE(yv.title, v.title, v.filename), v.filename, v.librar
  WHERE v.deleted_at IS NULL
    AND (v.filename ILIKE $1 ESCAPE '\' OR v.title ILIKE $1 ESCAPE '\' OR yv.title ILIKE $1 ESCAPE '\')
    AND ($2::uuid IS NULL OR v.library_id = $2::uuid)
+   AND ($4::uuid[] IS NULL OR v.library_id = ANY($4::uuid[]))
  ORDER BY yv.upload_date NULLS LAST, v.filename
  LIMIT $3`
 
@@ -119,6 +123,8 @@ SELECT y.youtube_id, y.title, y.upload_date::text, y.date_quality, y.duration_s,
                     WHERE m.provider = 'youtube' AND m.external_id = y.youtube_id)
    AND ($2::uuid IS NULL OR y.channel_id IN
         (SELECT channel_id FROM youtube_channels WHERE library_id = $2::uuid))
+   AND ($4::uuid[] IS NULL OR y.channel_id IN
+        (SELECT channel_id FROM youtube_channels WHERE library_id = ANY($4::uuid[])))
  ORDER BY y.upload_date NULLS LAST
  LIMIT $3`
 
@@ -128,9 +134,13 @@ SELECT p.title, i.position
  WHERE i.youtube_id = $1 AND p.is_real
  ORDER BY p.title`
 
+// explainEpisodeSQL types $1 one way only (uuid, then ::text where a string
+// is needed): a parameter cast to two types depends on the order Postgres
+// resolves them and can fail with "inconsistent types deduced for
+// parameter $1".
 const explainEpisodeSQL = `
 SELECT ss.id::text, ss.series_id::text, ss.name, ss.season, COALESCE(e.episode_override, e.episode),
-       COALESCE(ss.metadata->'attached' @> to_jsonb($1::text), false)
+       COALESCE(ss.metadata->'attached' @> to_jsonb($1::uuid::text), false)
   FROM series_episodes e
   JOIN series_seasons ss ON ss.series_id = e.series_id
    AND ss.season = COALESCE(e.season_override, e.season) AND ss.retired_at IS NULL
@@ -191,6 +201,10 @@ func (h *Handler) Explain(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.InvalidQuery("library_id must be a uuid"))
 			return
 		}
+		if !canReadLibrary(principal.FromContext(r.Context()), v) {
+			httperror.Write(w, r, httperror.Forbidden("", "no access to this library"))
+			return
+		}
 		lib = v
 	}
 	limit, e := common.QueryInt(r, "limit", explainDefaultLimit)
@@ -204,7 +218,7 @@ func (h *Handler) Explain(w http.ResponseWriter, r *http.Request) {
 	if limit > explainMaxLimit {
 		limit = explainMaxLimit
 	}
-	out, err := h.explain(r.Context(), q, lib, limit)
+	out, err := h.explain(r.Context(), q, lib, libraryScope(principal.FromContext(r.Context())), limit)
 	if err != nil {
 		writeErr(w, r, "explain", err)
 		return
@@ -212,11 +226,43 @@ func (h *Handler) Explain(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, r, http.StatusOK, out)
 }
 
-func (h *Handler) explain(ctx context.Context, q string, lib any, limit int) (ExplainResponse, error) {
+// canReadLibrary is the per-principal library ACL (as the channels
+// handler's canRead): admins and all-library principals read every
+// library, everyone else only the libraries granted to them.
+func canReadLibrary(p *principal.Principal, libraryID string) bool {
+	if p == nil {
+		return false
+	}
+	if p.IsAdmin || p.AccessAllLibraries {
+		return true
+	}
+	return p.HasLibrary(libraryID)
+}
+
+// libraryScope is the uuid[] argument that limits a query to the
+// principal's libraries: NULL (no limit) for admins and all-library
+// principals, else the granted ids (possibly none, which matches nothing).
+func libraryScope(p *principal.Principal) any {
+	if p == nil {
+		return pq.Array([]string{})
+	}
+	if p.IsAdmin || p.AccessAllLibraries {
+		return nil
+	}
+	ids := make([]string, 0, len(p.Libraries))
+	for _, id := range p.Libraries {
+		if isUUID(id) {
+			ids = append(ids, id)
+		}
+	}
+	return pq.Array(ids)
+}
+
+func (h *Handler) explain(ctx context.Context, q string, lib, scope any, limit int) (ExplainResponse, error) {
 	like := likePattern(q)
 	out := ExplainResponse{Query: q, Videos: []ExplainVideo{}, Remote: []ExplainRemote{}, Limit: limit}
 
-	rrows, err := h.DB.QueryContext(ctx, explainRemoteSQL, like, lib, limit)
+	rrows, err := h.DB.QueryContext(ctx, explainRemoteSQL, like, lib, limit, scope)
 	if err != nil {
 		return out, err
 	}
@@ -242,7 +288,7 @@ func (h *Handler) explain(ctx context.Context, q string, lib any, limit int) (Ex
 		}
 	}
 
-	rows, err := h.DB.QueryContext(ctx, explainVideosSQL, like, lib, limit)
+	rows, err := h.DB.QueryContext(ctx, explainVideosSQL, like, lib, limit, scope)
 	if err != nil {
 		return out, err
 	}

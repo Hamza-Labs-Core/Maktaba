@@ -20,7 +20,9 @@
 // page is served with a Content-Security-Policy that allows no script, form
 // or network access (images only from this origin), nosniff and no referrer;
 // the web app shows them in a sandboxed iframe. Reads need a signed-in
-// principal; starting a preview needs an admin.
+// principal and follow the library ACL: a review page needs read access to
+// its library, the collection-wide pages (plan, preview, audit, other) an
+// admin or all-library principal. Starting a preview needs an admin.
 package reports
 
 import (
@@ -156,6 +158,23 @@ func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+// canSee applies the per-principal library ACL to a report: a review page
+// belongs to its library and needs read access to it (as the channels
+// handler's canRead); every other page (plan, preview, audit, other) spans
+// the whole collection, so it needs an admin or an all-library principal.
+func canSee(p *principal.Principal, name string) bool {
+	if p == nil {
+		return false
+	}
+	if p.IsAdmin || p.AccessAllLibraries {
+		return true
+	}
+	if kindOf(name) == KindReview {
+		return p.HasLibrary(strings.ToLower(strings.TrimSuffix(name, ".html")))
+	}
+	return false
+}
+
 // Report is one GET /api/reports item.
 type Report struct {
 	Name      string    `json:"name"`
@@ -247,6 +266,12 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("list reports: "+err.Error()))
 		return
 	}
+	p := principal.FromContext(r.Context())
+	for name := range files {
+		if !canSee(p, name) {
+			delete(files, name)
+		}
+	}
 	var libs []string
 	for name := range files {
 		if kindOf(name) == KindReview {
@@ -297,7 +322,7 @@ func (h *Handler) Page(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	info, ok := files[name]
-	if !ok {
+	if !ok || !canSee(principal.FromContext(r.Context()), name) {
 		httperror.Write(w, r, httperror.NotFound("report not found"))
 		return
 	}

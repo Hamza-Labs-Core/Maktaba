@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -24,6 +25,9 @@ type Handler struct {
 	// DataDir is the API's data volume (MAKTABA_DATA_DIR); uploaded
 	// channel art is kept under <DataDir>/channel-art/<channel id>/.
 	DataDir string
+
+	rootCache artRootCache // the art folders served from (artpaths.go)
+	artLocks  sync.Map     // channel id + kind → *sync.Mutex (artLock)
 }
 
 // Mount wires the channel routes. Admin-gating is enforced per-handler
@@ -83,6 +87,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		applyOverrideFlags(&c, overrides[c.ID])
+		redactPaths(p, &c)
 		if np, err := h.repo().nowPlaying(r.Context(), c.ID, now); err == nil && np != nil {
 			c.NowPlaying = np
 		}
@@ -221,6 +226,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		c.NowPlaying = np
 	}
 	h.attachOverrides(r.Context(), &c)
+	redactPaths(p, &c)
 	common.WriteJSON(w, r, http.StatusOK, c)
 }
 

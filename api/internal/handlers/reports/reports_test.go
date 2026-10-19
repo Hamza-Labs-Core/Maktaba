@@ -90,7 +90,7 @@ func TestList_KindsTitlesAndHiddenFiles(t *testing.T) {
 	f.write(t, libID+".part.html", "half") // a page being written
 	f.write(t, "readme.txt", "no")         // not a report
 	f.write(t, ".hidden.html", "no")       // does not match the name pattern
-	rec := f.do("GET", "/api/reports", "", viewer())
+	rec := f.do("GET", "/api/reports", "", admin())
 	if rec.Code != 200 {
 		t.Fatalf("status %d %s", rec.Code, rec.Body.String())
 	}
@@ -108,6 +108,39 @@ func TestList_KindsTitlesAndHiddenFiles(t *testing.T) {
 	}
 	if got.Reports[2].LibraryID == nil || *got.Reports[2].LibraryID != libID {
 		t.Errorf("review page lost its library id: %+v", got.Reports[2])
+	}
+}
+
+func TestReports_FollowTheLibraryACL(t *testing.T) {
+	f := newFixture(t)
+	other := "0a1b2c3d-0000-4000-8000-00000000ffff"
+	f.write(t, libID+".html", "<p>mine</p>")
+	f.write(t, other+".html", "<p>theirs</p>")
+	f.write(t, PlanPage, "<p>plan</p>")
+	granted := &principal.Principal{UserID: "u3", Libraries: []string{libID}}
+	rec := f.do("GET", "/api/reports", "", granted)
+	var got struct{ Reports []Report }
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if len(got.Reports) != 1 || got.Reports[0].Name != libID+".html" {
+		t.Fatalf("a restricted principal sees %+v", got.Reports)
+	}
+	if rec := f.do("GET", "/api/reports/"+libID+".html", "", granted); rec.Code != 200 {
+		t.Errorf("own review page -> %d", rec.Code)
+	}
+	for _, name := range []string{other + ".html", PlanPage} {
+		if rec := f.do("GET", "/api/reports/"+name, "", granted); rec.Code != http.StatusNotFound {
+			t.Errorf("%s -> %d, want 404", name, rec.Code)
+		}
+	}
+	// a viewer with no libraries sees nothing; an all-library principal everything
+	if rec := f.do("GET", "/api/reports", "", viewer()); !strings.Contains(rec.Body.String(), `"reports":[]`) {
+		t.Errorf("no-library viewer: %s", rec.Body.String())
+	}
+	all := &principal.Principal{UserID: "u4", AccessAllLibraries: true}
+	if rec := f.do("GET", "/api/reports/"+PlanPage, "", all); rec.Code != 200 {
+		t.Errorf("all-library principal plan page -> %d", rec.Code)
 	}
 }
 
@@ -135,7 +168,7 @@ func TestReads_NeedASignedInPrincipal(t *testing.T) {
 func TestPage_ServesWithAScriptlessPolicy(t *testing.T) {
 	f := newFixture(t)
 	f.write(t, PlanPage, `<!doctype html><p>hi</p><script>alert(1)</script>`)
-	rec := f.do("GET", "/api/reports/"+PlanPage, "", viewer())
+	rec := f.do("GET", "/api/reports/"+PlanPage, "", admin())
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "<p>hi</p>") {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
@@ -167,7 +200,7 @@ func TestPage_NamesNeverBecomePaths(t *testing.T) {
 		"..%2Fsecret.html", "%2e%2e%2fsecret.html", "..%5Csecret.html", "a%2Fb.html",
 		"missing.html", "channel-plan.txt", "x.part.html", ".html", "%00.html",
 	} {
-		rec := f.do("GET", "/api/reports/"+name, "", viewer())
+		rec := f.do("GET", "/api/reports/"+name, "", admin())
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("%q -> %d %s", name, rec.Code, rec.Body.String())
 		}
@@ -176,7 +209,7 @@ func TestPage_NamesNeverBecomePaths(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(f.dir, "dir.html"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if rec := f.do("GET", "/api/reports/dir.html", "", viewer()); rec.Code != http.StatusNotFound {
+	if rec := f.do("GET", "/api/reports/dir.html", "", admin()); rec.Code != http.StatusNotFound {
 		t.Errorf("a directory served: %d", rec.Code)
 	}
 }
@@ -190,7 +223,7 @@ func TestPage_SymlinkOutOfTheFolderIsNotServed(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(f.dir, "link.html")); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	if rec := f.do("GET", "/api/reports/link.html", "", viewer()); rec.Code != http.StatusNotFound {
+	if rec := f.do("GET", "/api/reports/link.html", "", admin()); rec.Code != http.StatusNotFound {
 		t.Fatalf("symlink served: %d %s", rec.Code, rec.Body.String())
 	}
 }

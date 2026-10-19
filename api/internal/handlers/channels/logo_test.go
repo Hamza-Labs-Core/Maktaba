@@ -41,6 +41,9 @@ func newLogoServer(t *testing.T) (*sql.DB, http.Handler) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
+	// One connection: concurrent handler calls in tests would otherwise
+	// race SQLite's file lock (SQLITE_BUSY) instead of queueing.
+	db.SetMaxOpenConns(1)
 	if _, err := db.Exec(`CREATE TABLE channels (
 		id TEXT PRIMARY KEY, library_id TEXT, number INTEGER NOT NULL,
 		name TEXT NOT NULL, slug TEXT NOT NULL, logo_path TEXT,
@@ -59,9 +62,24 @@ func newLogoServer(t *testing.T) (*sql.DB, http.Handler) {
 		PRIMARY KEY (channel_id, kind))`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.Exec(`CREATE TABLE channel_plans (id INTEGER PRIMARY KEY AUTOINCREMENT,
+		created_at TEXT NOT NULL DEFAULT '', planner_version INTEGER,
+		input_hash TEXT NOT NULL, plan TEXT NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
 	r := chi.NewRouter()
 	(&Handler{DB: db}).Mount(r)
 	return db, r
+}
+
+// planLogoDir makes dir the latest plan's logos folder (dz_logo_dir): an
+// art root logos are served from.
+func planLogoDir(t *testing.T, db *sql.DB, dir string) {
+	t.Helper()
+	cfg, _ := json.Marshal(map[string]any{"config": map[string]any{"dz_logo_dir": dir}, "channels": []any{}})
+	if _, err := db.Exec(`INSERT INTO channel_plans (input_hash, plan) VALUES ('roots', $1)`, string(cfg)); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func insertChannel(t *testing.T, db *sql.DB, id string, logo any) {
@@ -75,7 +93,9 @@ func insertChannel(t *testing.T, db *sql.DB, id string, logo any) {
 
 func TestLogoServesFileWithCacheHeaders(t *testing.T) {
 	db, srv := newLogoServer(t)
-	logo := filepath.Join(t.TempDir(), "kids.png")
+	logos := t.TempDir()
+	planLogoDir(t, db, logos)
+	logo := filepath.Join(logos, "kids.png")
 	if err := os.WriteFile(logo, []byte("\x89PNG fake"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -137,6 +157,96 @@ func TestLogoRefusesNonImageFile(t *testing.T) {
 	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/api/channels/c1/logo", nil))
 	if rec.Code != http.StatusNotFound || strings.Contains(rec.Body.String(), "nope") {
 		t.Fatalf("non-image served: %d %q", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLogoOnlyFromAnArtFolder(t *testing.T) {
+	db, srv := newLogoServer(t)
+	logos, elsewhere := t.TempDir(), t.TempDir()
+	planLogoDir(t, db, logos)
+	outside := filepath.Join(elsewhere, "other.png")
+	_ = os.WriteFile(outside, []byte("\x89PNG other"), 0o600)
+	inside := filepath.Join(logos, "kids.png")
+	_ = os.WriteFile(inside, []byte("\x89PNG kids"), 0o600)
+	for id, p := range map[string]string{
+		"out":    outside, // an image, but not in an art folder
+		"dotdot": filepath.Join(logos, "..", filepath.Base(elsewhere), "other.png"),
+		"unc":    `\\fileserver\share\logo.png`,
+	} {
+		insertChannel(t, db, id, p)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, httptest.NewRequest("GET", "/api/channels/"+id+"/logo", nil))
+		if rec.Code != http.StatusNotFound || strings.Contains(rec.Body.String(), "PNG") {
+			t.Errorf("%s (%s) served: %d", id, p, rec.Code)
+		}
+	}
+	insertChannel(t, db, "in", inside)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/api/channels/in/logo", nil))
+	if rec.Code != 200 || rec.Body.String() != "\x89PNG kids" {
+		t.Fatalf("inside the logos folder: %d %q", rec.Code, rec.Body.String())
+	}
+}
+
+func TestWithinAndUNC(t *testing.T) {
+	root := t.TempDir()
+	if got, ok := within(root, filepath.Join(root, "a", "b.png")); !ok || got != filepath.Join(root, "a", "b.png") {
+		t.Errorf("inside: %q %v", got, ok)
+	}
+	for _, p := range []string{root, filepath.Join(root, ".."), filepath.Join(root, "..", "x.png"),
+		root + "-sibling/x.png", `\\h\s\x.png`, "//h/s/x.png"} {
+		if _, ok := within(root, p); ok {
+			t.Errorf("%q accepted", p)
+		}
+	}
+	if _, ok := within(filepath.VolumeName(root)+string(filepath.Separator), filepath.Join(root, "x.png")); ok {
+		t.Error("a filesystem root is not an art root")
+	}
+	for _, p := range []string{`\\host\share\a.png`, "//host/share/a.png", `\\?\C:\a.png`} {
+		if !isUNC(p) || ValidateLogoPath(p) == nil {
+			t.Errorf("%q must be refused as UNC", p)
+		}
+	}
+}
+
+func TestChannelPathsHiddenFromNonAdmins(t *testing.T) {
+	db, srv := newLogoServer(t)
+	insertChannel(t, db, "c1", "/srv/art/kids.png")
+	if _, err := db.Exec(`UPDATE channels SET mode_config = $1`,
+		`{"slots":[],"look":{"loading_path":"/srv/art/loading-kids.png","watermark":{"path":"/srv/art/wm.gif","position":"top-left"}}}`); err != nil {
+		t.Fatal(err)
+	}
+	get := func(p *principal.Principal, target string) string {
+		req := httptest.NewRequest("GET", target, nil)
+		req = req.WithContext(principal.WithPrincipal(req.Context(), p))
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		if rec.Code != 200 {
+			t.Fatalf("%s: %d %s", target, rec.Code, rec.Body.String())
+		}
+		return rec.Body.String()
+	}
+	viewer := &principal.Principal{UserID: "v", AccessAllLibraries: true}
+	for _, target := range []string{"/api/channels/c1", "/api/channels"} {
+		body := get(viewer, target)
+		if strings.Contains(body, "/srv/art") {
+			t.Errorf("%s leaks a path to a non-admin: %s", target, body)
+		}
+		if !strings.Contains(body, "/api/channels/c1/logo") || !strings.Contains(body, "/api/channels/c1/art/watermark") ||
+			!strings.Contains(body, `"position":"top-left"`) {
+			t.Errorf("%s lost the servable URLs / settings: %s", target, body)
+		}
+	}
+	admin := &principal.Principal{UserID: "a", IsAdmin: true, AccessAllLibraries: true}
+	if body := get(admin, "/api/channels/c1"); !strings.Contains(body, "/srv/art/kids.png") || !strings.Contains(body, "/srv/art/wm.gif") {
+		t.Errorf("admin must still see the paths: %s", body)
+	}
+	// a URL logo is not a server path: it stays (the web app falls back to it)
+	if _, err := db.Exec(`UPDATE channels SET logo_path = 'https://cdn.example/k.png'`); err != nil {
+		t.Fatal(err)
+	}
+	if body := get(viewer, "/api/channels/c1"); !strings.Contains(body, "https://cdn.example/k.png") {
+		t.Errorf("URL logo dropped: %s", body)
 	}
 }
 

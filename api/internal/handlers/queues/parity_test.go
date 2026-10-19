@@ -4,11 +4,14 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues/queuestest"
 )
 
@@ -59,7 +62,7 @@ func TestExplain_EpisodeVerdictWithPlaylistsAndPlex(t *testing.T) {
 	f := newFixture(explainRules(&queuestest.Rule{Match: "from series_episodes e",
 		Cols: []string{"sid", "series", "name", "season", "episode", "attached"},
 		Rows: [][]driver.Value{{seasonA, seriesX, "كنوز السيرة", int64(2), int64(7), true}}})...)
-	rec := f.do("GET", "/api/explain?q=%D8%B7%D9%84%D8%B9&library_id="+libL+"&limit=500", "", viewer())
+	rec := f.do("GET", "/api/explain?q=%D8%B7%D9%84%D8%B9&library_id="+libL+"&limit=500", "", libViewer())
 	if rec.Code != 200 {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
@@ -83,6 +86,68 @@ func TestExplain_EpisodeVerdictWithPlaylistsAndPlex(t *testing.T) {
 	for _, c := range f.db.Find("from videos v") {
 		if strings.Contains(c.SQL, "طلع") || c.Args[0] != "%طلع%" || c.Args[1] != libL || c.Args[2] != int64(explainMaxLimit) {
 			t.Errorf("args %v / sql %s", c.Args, c.SQL)
+		}
+	}
+}
+
+// libViewer is a non-admin granted the test library only.
+func libViewer() *principal.Principal {
+	return &principal.Principal{UserID: "u3", Libraries: []string{libL}}
+}
+
+func TestExplain_AppliesTheLibraryACL(t *testing.T) {
+	other := "99999999-9999-4999-8999-999999999999"
+	f := newFixture(explainRules()...)
+	// a library the caller was not granted is refused before any query
+	if rec := f.do("GET", "/api/explain?q=ab&library_id="+other, "", libViewer()); rec.Code != http.StatusForbidden {
+		t.Fatalf("other library -> %d", rec.Code)
+	}
+	if n := len(f.db.Find("from videos v")); n != 0 {
+		t.Fatalf("queried %d times for a refused library", n)
+	}
+	// without library_id a non-admin is scoped to the granted libraries
+	if rec := f.do("GET", "/api/explain?q=ab", "", libViewer()); rec.Code != 200 {
+		t.Fatalf("scoped -> %d %s", rec.Code, rec.Body.String())
+	}
+	for _, m := range []string{"from videos v", "from youtube_videos y"} {
+		for _, c := range f.db.Find(m) {
+			if len(c.Args) != 4 || !strings.Contains(fmt.Sprint(c.Args[3]), libL) {
+				t.Errorf("%s not scoped: %v", m, c.Args)
+			}
+		}
+	}
+	// a viewer with no libraries gets an empty scope (matches nothing), an admin none
+	f = newFixture(explainRules()...)
+	f.do("GET", "/api/explain?q=ab", "", viewer())
+	for _, c := range f.db.Find("from videos v") {
+		if c.Args[3] == nil || fmt.Sprint(c.Args[3]) != "{}" {
+			t.Errorf("no-library viewer scope %#v", c.Args[3])
+		}
+	}
+	f = newFixture(explainRules()...)
+	f.do("GET", "/api/explain?q=ab", "", admin())
+	for _, c := range f.db.Find("from videos v") {
+		if c.Args[3] != nil {
+			t.Errorf("admin scope %#v", c.Args[3])
+		}
+	}
+}
+
+// Each explain query types a parameter one way only: a parameter cast to two
+// types ("$1::text ... $1::uuid") depends on Postgres' resolution order and
+// can fail with "inconsistent types deduced for parameter $1".
+func TestExplainSQL_CastsEachParameterOneWay(t *testing.T) {
+	cast := regexp.MustCompile(`\$(\d+)::(\w+(?:\[\])?)`)
+	for name, q := range map[string]string{
+		"videos": explainVideosSQL, "remote": explainRemoteSQL, "episode": explainEpisodeSQL,
+		"hidden": explainHiddenSQL, "clip": explainClipGroupSQL, "promo": explainPromoSQL,
+	} {
+		seen := map[string]string{}
+		for _, m := range cast.FindAllStringSubmatch(q, -1) {
+			if prev, ok := seen[m[1]]; ok && prev != m[2] {
+				t.Errorf("%s: $%s cast as both %s and %s", name, m[1], prev, m[2])
+			}
+			seen[m[1]] = m[2]
 		}
 	}
 }
@@ -345,15 +410,22 @@ func TestPulse_States(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			rec := tc.f.do("GET", "/api/queues/pulse", "", viewer())
+			rec := tc.f.do("GET", "/api/queues/pulse", "", admin())
 			var out Pulse
 			decode(t, rec, &out)
 			if rec.Code != 200 || out.State != tc.want {
 				t.Fatalf("%d %s", rec.Code, rec.Body.String())
 			}
 			if tc.want == PulseStalled && strings.Contains(tc.name, "heartbeat") &&
-				(len(out.Stuck) != 1 || out.Stuck[0].Stage != "probe" || out.Stuck[0].HeartbeatAgeSec != 1800) {
+				(len(out.Stuck) != 1 || out.StuckCount != 1 || out.Stuck[0].Stage != "probe" || out.Stuck[0].HeartbeatAgeSec != 1800) {
 				t.Errorf("stuck %+v", out.Stuck)
+			}
+			// a non-admin sees the state and the count, never the job details
+			rec = tc.f.do("GET", "/api/queues/pulse", "", viewer())
+			var vo Pulse
+			decode(t, rec, &vo)
+			if rec.Code != 200 || vo.State != tc.want || len(vo.Stuck) != 0 || vo.Stuck == nil || vo.StuckCount != out.StuckCount {
+				t.Errorf("viewer pulse %d %s", rec.Code, rec.Body.String())
 			}
 		})
 	}

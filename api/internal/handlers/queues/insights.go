@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 )
 
@@ -160,7 +161,10 @@ type Pulse struct {
 	PausedAll      bool       `json:"paused_all"`
 	LastActivityAt *time.Time `json:"last_activity_at"`
 	AgeSec         *float64   `json:"age_sec"`
-	Stuck          []StuckJob `json:"stuck"`
+	// Stuck lists the stalled jobs for admins only (job ids, subjects and
+	// worker names are operator detail); StuckCount is shown to everyone.
+	Stuck      []StuckJob `json:"stuck"`
+	StuckCount int        `json:"stuck_count"`
 }
 
 const pulseCountsSQL = `
@@ -244,11 +248,15 @@ func (h *Handler) Pulse(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, "pulse", err)
 		return
 	}
+	out.StuckCount = len(out.Stuck)
+	if p := principal.FromContext(ctx); p == nil || !p.IsAdmin {
+		out.Stuck = []StuckJob{}
+	}
 
 	switch {
 	case out.PausedAll:
 		out.State = PulsePaused
-	case len(out.Stuck) > 0:
+	case out.StuckCount > 0:
 		out.State = PulseStalled
 	case out.Running > 0 || out.Waiting > 0:
 		out.State = PulseWorking

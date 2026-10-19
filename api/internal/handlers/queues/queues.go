@@ -77,6 +77,13 @@ type Handler struct {
 	PlexTVURL string
 	PlexHTTP  *http.Client
 	plexPins  plexSignins
+
+	// extMu serialises the read-modify-write of an extension row's
+	// settings (PUT, the Plex client id, the Plex sign-in's server pick)
+	// so one cannot overwrite the other's keys.
+	extMu sync.Mutex
+	// plexID caches the stored Plex client identifier (guarded by extMu).
+	plexID string
 }
 
 // Mount wires the routes. Static segments (graph, libraries, health,

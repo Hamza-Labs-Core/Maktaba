@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -41,9 +42,6 @@ func newArtEnv(t *testing.T) artEnv {
 			subject_id TEXT NOT NULL, external_id TEXT NOT NULL, title TEXT NOT NULL,
 			content_hash TEXT NOT NULL, created_by_tool INTEGER NOT NULL,
 			updated_at TEXT NOT NULL DEFAULT '', PRIMARY KEY (target, subject_kind, subject_id))`,
-		`CREATE TABLE channel_plans (id INTEGER PRIMARY KEY AUTOINCREMENT,
-			created_at TEXT NOT NULL DEFAULT '', planner_version INTEGER,
-			input_hash TEXT NOT NULL, plan TEXT NOT NULL)`,
 	} {
 		if _, err := db.Exec(ddl); err != nil {
 			t.Fatal(err)
@@ -391,6 +389,48 @@ func TestPatchKeepsArtOverrides(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	if _, c = e.do(t, artAdmin, req); !c.Art.Logo.Overridden {
 		t.Fatalf("typed logo: %+v", c.Art.Logo)
+	}
+}
+
+func TestArtSameImageReuploadKeepsTheFileWhenTheSaveFails(t *testing.T) {
+	e := newArtEnv(t)
+	insertChannel(t, e.db, "c1", nil)
+	_, c := e.upload(t, "c1", "logo", "a.png", pngBytes)
+	live := *c.LogoPath
+	// the save of the second (identical) upload fails
+	if _, err := e.db.Exec(`DROP TABLE channel_art_overrides`); err != nil {
+		t.Fatal(err)
+	}
+	if rec, _ := e.upload(t, "c1", "logo", "a.png", pngBytes); rec.Code != http.StatusInternalServerError {
+		t.Fatalf("code %d", rec.Code)
+	}
+	if got, err := os.ReadFile(live); err != nil || !bytes.Equal(got, pngBytes) {
+		t.Fatalf("the channel's logo file was removed: %v", err)
+	}
+}
+
+func TestArtConcurrentUploadsLeaveOneFile(t *testing.T) {
+	e := newArtEnv(t)
+	insertChannel(t, e.db, "c1", nil)
+	var wg sync.WaitGroup
+	for i := 0; i < 6; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			img := append(append([]byte{}, pngBytes...), byte('a'+i))
+			if rec, _ := e.upload(t, "c1", "logo", "x.png", img); rec.Code != 200 {
+				t.Errorf("upload %d: %d %s", i, rec.Code, rec.Body.String())
+			}
+		}(i)
+	}
+	wg.Wait()
+	files := artFiles(t, e.dataDir, "c1")
+	var logo string
+	if err := e.db.QueryRow(`SELECT logo_path FROM channels WHERE id = 'c1'`).Scan(&logo); err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || filepath.Clean(files[0]) != filepath.Clean(logo) {
+		t.Fatalf("files %v, logo_path %s", files, logo)
 	}
 }
 

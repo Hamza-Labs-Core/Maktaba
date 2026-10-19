@@ -58,6 +58,9 @@ func ValidateLogoPath(p string) error {
 	if p == "" || isRemoteLogo(p) {
 		return nil
 	}
+	if isUNC(p) {
+		return errors.New("must not be a network (UNC) path")
+	}
 	if !filepath.IsAbs(p) {
 		return errors.New("must be an http(s) URL or an absolute path to an image")
 	}
@@ -100,7 +103,13 @@ func (h *Handler) serveArt(w http.ResponseWriter, r *http.Request, kind string) 
 		httperror.Write(w, r, httperror.NotFound(kind+" is not a servable image"))
 		return
 	}
-	f, err := os.Open(p) //nolint:gosec // admin-set path, image extensions only (ValidateLogoPath)
+	// only from <DataDir>/channel-art or the plan's art folders (artpaths.go)
+	safe, ok := h.servablePath(r.Context(), p)
+	if !ok {
+		httperror.Write(w, r, httperror.NotFound(kind+" is not in a channel art folder"))
+		return
+	}
+	f, err := os.Open(safe) //nolint:gosec // inside an art root (servablePath), image extensions only
 	if err != nil {
 		httperror.Write(w, r, httperror.NotFound(kind+" file missing"))
 		return

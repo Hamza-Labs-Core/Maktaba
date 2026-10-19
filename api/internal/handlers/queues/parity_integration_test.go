@@ -14,29 +14,123 @@ package queues
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
+	neturl "net/url"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	_ "github.com/lib/pq"
+	"github.com/pressly/goose/v3"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 )
 
+// parityDB is the database the test writes into. MAKTABA_TEST_PG_URL names a
+// migrated scratch database used as is. Otherwise, when DATABASE_URL is set
+// (CI's integration job), a fresh database is created on that server, every
+// migration is applied to it and it is dropped afterwards, so the test's
+// DELETEs never touch the tables other packages' integration tests use.
 func parityDB(t *testing.T) *sql.DB {
 	t.Helper()
-	url := os.Getenv("MAKTABA_TEST_PG_URL")
-	if url == "" {
-		t.Skip("MAKTABA_TEST_PG_URL not set")
+	if url := os.Getenv("MAKTABA_TEST_PG_URL"); url != "" {
+		return openPG(t, url)
 	}
+	base := os.Getenv("DATABASE_URL")
+	if base == "" {
+		t.Skip("neither MAKTABA_TEST_PG_URL nor DATABASE_URL is set")
+	}
+	u, err := neturl.Parse(base)
+	if err != nil {
+		t.Fatalf("DATABASE_URL: %v", err)
+	}
+	admin := openPG(t, base)
+	name := fmt.Sprintf("maktaba_parity_%d_%d", os.Getpid(), time.Now().UnixNano())
+	mustExec(t, admin, `CREATE DATABASE `+name)
+	t.Cleanup(func() { _, _ = admin.Exec(`DROP DATABASE IF EXISTS ` + name + ` WITH (FORCE)`) })
+	u.Path = "/" + name
+	db := openPG(t, u.String())
+	applyMigrations(t, db)
+	return db
+}
+
+func openPG(t *testing.T, url string) *sql.DB {
+	t.Helper()
 	db, err := sql.Open("postgres", url)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Ping(); err != nil {
+		t.Fatalf("ping: %v", err)
+	}
 	return db
+}
+
+// applyMigrations applies shared/db/migrations the way `maktaba-api migrate
+// up` does: slot 0000 by hand (goose refuses version 0), then every
+// Postgres migration (the .sqlite.sql siblings left out) through goose.
+func applyMigrations(t *testing.T, db *sql.DB) {
+	t.Helper()
+	dir := migrationsDir(t)
+	if raw, err := os.ReadFile(filepath.Join(dir, "0000_schema_version.sql")); err == nil {
+		up := string(raw)
+		if i := strings.Index(up, "-- +goose Down"); i >= 0 {
+			up = up[:i]
+		}
+		if _, err := db.Exec(up); err != nil {
+			t.Fatalf("0000_schema_version: %v", err)
+		}
+	}
+	stage := t.TempDir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		n := e.Name()
+		if e.IsDir() || filepath.Ext(n) != ".sql" || strings.HasSuffix(n, ".sqlite.sql") || strings.HasPrefix(n, "0000_") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, n))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(stage, n), raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	goose.SetLogger(goose.NopLogger())
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatal(err)
+	}
+	if err := goose.Up(db, stage); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+}
+
+// migrationsDir finds shared/db/migrations above the package directory.
+func migrationsDir(t *testing.T) string {
+	t.Helper()
+	cur, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		dir := filepath.Join(cur, "shared", "db", "migrations")
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return dir
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			t.Fatal("shared/db/migrations not found")
+		}
+		cur = parent
+	}
 }
 
 func mustExec(t *testing.T, db *sql.DB, q string, args ...any) {
@@ -73,7 +167,7 @@ func TestParity_AgainstPostgres(t *testing.T) {
 		VALUES ($1, 'youtube', 'yt-1', '{"link_method":"info_json"}', 1)`, videoV)
 
 	// explain: the linked episode, the extra, and the video on YouTube only
-	rec := f.do("GET", "/api/explain?q=%D8%B7%D9%84%D8%B9&library_id="+libL, "", viewer())
+	rec := f.do("GET", "/api/explain?q=%D8%B7%D9%84%D8%B9&library_id="+libL, "", libViewer())
 	var ex ExplainResponse
 	if rec.Code != 200 {
 		t.Fatalf("explain %d %s", rec.Code, rec.Body.String())
@@ -83,7 +177,7 @@ func TestParity_AgainstPostgres(t *testing.T) {
 		*ex.Videos[0].Width != 1920 || len(ex.Remote) != 1 || ex.Remote[0].YouTubeID != "yt-remote" {
 		t.Fatalf("explain %+v", ex)
 	}
-	rec = f.do("GET", "/api/explain?q=%D8%A8%D8%B1%D9%88%D9%85%D9%88", "", viewer())
+	rec = f.do("GET", "/api/explain?q=%D8%A8%D8%B1%D9%88%D9%85%D9%88", "", libViewer())
 	decode(t, rec, &ex)
 	if rec.Code != 200 || len(ex.Videos) != 1 || ex.Videos[0].Verdict.Kind != VerdictExtra {
 		t.Fatalf("explain extra %d %s", rec.Code, rec.Body.String())
@@ -141,7 +235,7 @@ func TestParity_AgainstPostgres(t *testing.T) {
 	mustExec(t, db, `UPDATE processing_jobs SET state = 'running', claimed_at = now() - interval '1 hour',
 		started_at = now() - interval '1 hour', last_heartbeat_at = now() - interval '30 minutes',
 		claimed_by = 'pc/1' WHERE stage = 'rate_style'`)
-	rec = f.do("GET", "/api/queues/pulse", "", viewer())
+	rec = f.do("GET", "/api/queues/pulse", "", admin())
 	var p Pulse
 	decode(t, rec, &p)
 	if rec.Code != 200 || p.State != PulseStalled || len(p.Stuck) != 1 || p.Stuck[0].Stage != "rate_style" {

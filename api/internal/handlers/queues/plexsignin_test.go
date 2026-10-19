@@ -145,6 +145,53 @@ func TestPlexSignin_Create(t *testing.T) {
 	})
 }
 
+func TestPlexSignin_ConcurrentFirstSigninsAgreeOnOneClientID(t *testing.T) {
+	f, fp := plexFixture(t, `{"url":"http://old"}`)
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if rec := f.do("POST", "/api/extensions/plex/signin", "", admin()); rec.Code != 200 {
+				t.Errorf("status %d", rec.Code)
+			}
+		}()
+	}
+	wg.Wait()
+	if n := len(f.db.Find("insert into extensions")); n != 1 {
+		t.Fatalf("client id written %d times, want once", n)
+	}
+	fp.mu.Lock()
+	defer fp.mu.Unlock()
+	for _, id := range fp.clientIDs {
+		if id != fp.clientIDs[0] {
+			t.Fatalf("client ids differ: %v", fp.clientIDs)
+		}
+	}
+}
+
+func TestPlexSignin_ConcurrentPollsAreRaceFree(t *testing.T) {
+	f, fp := plexFixture(t, `{"client_id":"cid"}`)
+	if rec := f.do("POST", "/api/extensions/plex/signin", "", admin()); rec.Code != 200 {
+		t.Fatalf("create %d", rec.Code)
+	}
+	fp.mu.Lock()
+	fp.authorised = true
+	fp.mu.Unlock()
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if rec := f.do("GET", "/api/extensions/plex/signin/42", "", admin()); rec.Code != 200 ||
+				!strings.Contains(rec.Body.String(), `"state":"done"`) {
+				t.Errorf("poll %d %s", rec.Code, rec.Body.String())
+			}
+		}()
+	}
+	wg.Wait()
+}
+
 func TestPlexSignin_PollAndUse(t *testing.T) {
 	f, fp := plexFixture(t, `{"client_id":"cid","path_map":"{\"/m\":\"E:/m\"}","url":"http://old","token":"OLD"}`)
 	if rec := f.do("GET", "/api/extensions/plex/signin/99", "", admin()); rec.Code != 404 {

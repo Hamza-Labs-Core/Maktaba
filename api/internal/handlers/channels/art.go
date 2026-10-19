@@ -510,10 +510,15 @@ func looksLikeSVG(b []byte) bool {
 // artDir is the folder channel id's art is kept in ("" when the API has no
 // data dir).
 func (h *Handler) artDir(channelID string) string {
-	if strings.TrimSpace(h.DataDir) == "" {
+	root := h.uploadRoot()
+	if root == "" || !safeID(channelID) {
 		return ""
 	}
-	return filepath.Join(h.DataDir, ArtDirName, channelID)
+	dir, ok := within(root, filepath.Join(root, channelID))
+	if !ok {
+		return ""
+	}
+	return dir
 }
 
 // removeArtFiles deletes kind's stored files of a channel except keep.
@@ -526,7 +531,9 @@ func removeArtFiles(dir, kind, keep string) {
 		if keep != "" && filepath.Clean(m) == filepath.Clean(keep) {
 			continue
 		}
-		_ = os.Remove(m)
+		if safe, ok := within(dir, m); ok {
+			_ = os.Remove(safe)
+		}
 	}
 }
 
@@ -642,7 +649,7 @@ func (h *Handler) ArtUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dir := h.artDir(c.ID)
-	if dir == "" || !safeID(c.ID) {
+	if dir == "" {
 		httperror.Write(w, r, httperror.Internal("channel art storage is not configured (MAKTABA_DATA_DIR)"))
 		return
 	}
@@ -662,11 +669,23 @@ func (h *Handler) ArtUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sum := sha256.Sum256(data)
+	dest, ok := within(dir, filepath.Join(dir, kind+"-"+hex.EncodeToString(sum[:])[:12]+ext))
+	if !ok {
+		httperror.Write(w, r, httperror.Internal("store image"))
+		return
+	}
+	// one upload or revert of this channel's kind at a time: their file
+	// writes and removals must not interleave
+	unlock := h.artLock(c.ID, kind)
+	defer unlock()
 	if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec // served images, world-readable is fine
 		httperror.Write(w, r, httperror.Internal("create art folder"))
 		return
 	}
-	dest := filepath.Join(dir, kind+"-"+hex.EncodeToString(sum[:])[:12]+ext)
+	// A re-upload of the same image lands on the file already in use: on
+	// a failed save that file must stay.
+	_, statErr := os.Lstat(dest)
+	existed := statErr == nil
 	tmp, err := os.CreateTemp(dir, ".upload-*")
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("store image"))
@@ -686,7 +705,9 @@ func (h *Handler) ArtUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.setOverride(r.Context(), c, kind, &dest, nil); err != nil {
-		_ = os.Remove(dest)
+		if !existed {
+			_ = os.Remove(dest)
+		}
 		httperror.Write(w, r, httperror.Internal("save channel art: "+err.Error()))
 		return
 	}
@@ -778,6 +799,8 @@ func (h *Handler) ArtRevert(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	unlock := h.artLock(c.ID, kind)
+	defer unlock()
 	if err := h.revertArt(r.Context(), c, kind); err != nil {
 		httperror.Write(w, r, httperror.Internal("revert channel art: "+err.Error()))
 		return

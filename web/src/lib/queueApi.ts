@@ -487,7 +487,10 @@ export interface Pulse {
   paused_all: boolean;
   last_activity_at: string | null;
   age_sec: number | null;
+  /** The stalled jobs: admins only (empty for everyone else). */
   stuck: StuckJob[];
+  /** How many jobs stalled (shown to everyone). */
+  stuck_count?: number;
 }
 
 export interface LibraryCollections {

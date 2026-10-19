@@ -95,6 +95,13 @@ func (s *plexSignins) put(id string, p *plexSignin) {
 	s.pending[id] = p
 }
 
+// isDone reads p.done under the lock the status poll writes it with.
+func (s *plexSignins) isDone(p *plexSignin) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return p.done
+}
+
 func (s *plexSignins) drop(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -135,14 +142,22 @@ func plexUpstream(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 // plexClientID returns the stable per-install client identifier, creating
-// and storing it in the plex extension row on first use.
+// and storing it in the plex extension row on first use. The read-modify-
+// write runs under extMu so two first sign-ins agree on one id and a
+// concurrent settings PUT is not overwritten.
 func (h *Handler) plexClientID(ctx context.Context) (string, error) {
+	h.extMu.Lock()
+	defer h.extMu.Unlock()
+	if h.plexID != "" {
+		return h.plexID, nil
+	}
 	rows, err := h.loadExtensionRows(ctx)
 	if err != nil {
 		return "", err
 	}
 	cur := rows["plex"]
 	if id, ok := cur.settings[plexClientIDKey].(string); ok && id != "" {
+		h.plexID = id
 		return id, nil
 	}
 	b := make([]byte, 16)
@@ -158,6 +173,7 @@ func (h *Handler) plexClientID(ctx context.Context) (string, error) {
 	if _, err := h.DB.ExecContext(ctx, upsertExtensionSQL, "plex", cur.enabled, string(blob), h.now()); err != nil {
 		return "", err
 	}
+	h.plexID = id
 	return id, nil
 }
 
@@ -246,7 +262,7 @@ func (h *Handler) PlexSigninStatus(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.NotFound("plex sign-in "+id))
 		return
 	}
-	if !p.done {
+	if !h.plexPins.isDone(p) {
 		var pin struct {
 			AuthToken *string `json:"authToken"`
 		}
@@ -325,6 +341,8 @@ func (h *Handler) PlexSigninUse(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.BadRequest("unknown server "+body.Name))
 		return
 	}
+	h.extMu.Lock()
+	defer h.extMu.Unlock()
 	rows, err := h.loadExtensionRows(r.Context())
 	if err != nil {
 		writeErr(w, r, "extensions", err)

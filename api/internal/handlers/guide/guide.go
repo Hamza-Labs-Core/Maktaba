@@ -244,7 +244,10 @@ type ChannelHeader struct {
 func toHeader(c ChannelMeta) ChannelHeader {
 	h := ChannelHeader{ID: c.ID, Number: c.Number, Name: c.Name, Slug: c.Slug}
 	if c.LogoPath != nil && strings.TrimSpace(*c.LogoPath) != "" {
-		h.Logo = *c.LogoPath
+		// a file logo is only ever named by its URL, never its server path
+		if p := strings.TrimSpace(*c.LogoPath); isURL(p) {
+			h.Logo = p
+		}
 		h.LogoURL = "/api/channels/" + url.PathEscape(c.ID) + "/logo"
 	}
 	return h
