@@ -59,7 +59,7 @@ cmd_unit() {
     local pipe=("${PIPESTATUS[@]}")
     set -e
     if [[ "${pipe[0]}" != 0 ]]; then
-      echo "::error::go test failed in $mod (exit ${pipe[0]})"
+      echo "::error::go test failed in $mod (exit ${pipe[0]}); the failing tests and their output are listed above"
       rc=1
     fi
     if [[ "${pipe[1]}" != 0 ]]; then
