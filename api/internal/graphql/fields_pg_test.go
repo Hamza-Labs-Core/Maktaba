@@ -20,8 +20,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	neturl "net/url"
-	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -29,7 +27,6 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -94,56 +91,14 @@ func (fakeStreaming) HealthCheck(context.Context) (grpcstreaming.Status, error) 
 	return grpcstreaming.Status{}, nil
 }
 
-// pgTemplate is a migrated, seeded database cloned per case (CREATE
-// DATABASE ... TEMPLATE), so each case starts from the same fixture
-// without migrating again.
-type pgTemplate struct {
-	base, name string
-}
-
-func newTemplate(t *testing.T) *pgTemplate {
+// setupPG is a scratch, fully migrated Postgres with the fixture, behind
+// the production router. The cases share it and run in a fixed order:
+// the reads first, then the writes (deleteLibrary last).
+func setupPG(t *testing.T) *pgEnv {
 	t.Helper()
 	db, dsn := clustertest.ScratchDB(t)
-	(&pgEnv{t: t, db: db}).seed()
-	u, err := neturl.Parse(dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	name := strings.TrimPrefix(u.Path, "/")
-	_ = db.Close() // a template must have no connections
-	return &pgTemplate{base: os.Getenv("MAKTABA_TEST_PG_URL"), name: name}
-}
-
-func (tp *pgTemplate) clone(t *testing.T) *pgEnv {
-	t.Helper()
-	adminDB, err := sql.Open("postgres", tp.base)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = adminDB.Close() })
-	name := "t1_gql_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "")
-	if _, err := adminDB.Exec(`CREATE DATABASE ` + pq.QuoteIdentifier(name) + ` TEMPLATE ` + pq.QuoteIdentifier(tp.name)); err != nil {
-		t.Fatalf("clone: %v", err)
-	}
-	u, _ := neturl.Parse(tp.base)
-	u.Path = "/" + name
-	db, err := sql.Open("postgres", u.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = db.Close()
-		_, _ = adminDB.Exec(`DROP DATABASE IF EXISTS ` + pq.QuoteIdentifier(name) + ` WITH (FORCE)`)
-	})
-	e := &pgEnv{t: t, db: db, dsn: u.String(), hub: ws.NewHub()}
-	for _, j := range []struct {
-		stage string
-		dst   *string
-	}{{"transcribe", &e.job1}, {"subtitle_gen", &e.job2}} {
-		if err := db.QueryRow(`SELECT id::text FROM processing_jobs WHERE stage = $1`, j.stage).Scan(j.dst); err != nil {
-			t.Fatal(err)
-		}
-	}
+	e := &pgEnv{t: t, db: db, dsn: dsn, hub: ws.NewHub()}
+	e.seed()
 	r := router.New(router.Deps{IdempotencyStore: idempotency.NewMemoryStore()})
 	router.MountP6(r, router.P6Deps{DB: db, EventHub: e.hub, StreamingClient: fakeStreaming{}})
 	// The outer security layer of main.go attaches the principal; the
@@ -158,11 +113,6 @@ func (tp *pgTemplate) clone(t *testing.T) *pgEnv {
 		r.ServeHTTP(w, req)
 	})
 	return e
-}
-
-func setupPG(t *testing.T) *pgEnv {
-	t.Helper()
-	return newTemplate(t).clone(t)
 }
 
 func (e *pgEnv) exec(q string, args ...any) {
@@ -202,7 +152,7 @@ func (e *pgEnv) seed() {
 	if err := e.db.QueryRow(`INSERT INTO processing_jobs (video_id, library_id, stage, state, created_at) VALUES ($1,$2,'transcribe','pending',$3) RETURNING id::text`, videoA1, libA, now).Scan(&e.job1); err != nil {
 		e.t.Fatal(err)
 	}
-	if err := e.db.QueryRow(`INSERT INTO processing_jobs (video_id, library_id, stage, state, created_at) VALUES ($1,$2,'subtitle_gen','failed',$3) RETURNING id::text`, videoA2, libA, now.Add(-time.Hour)).Scan(&e.job2); err != nil {
+	if err := e.db.QueryRow(`INSERT INTO processing_jobs (video_id, library_id, stage, state, created_at) VALUES ($1,$2,'subtitle_gen','failed',$3) RETURNING id::text`, videoA1, libA, now.Add(-time.Hour)).Scan(&e.job2); err != nil {
 		e.t.Fatal(err)
 	}
 	e.exec(`INSERT INTO devices (id, user_id, platform, push_token, bundle_id, app_version, locale) VALUES ($1,$2,'ios','tok','dev.maktaba.tv','1.0','ar')`, devID, memberID)
@@ -571,18 +521,6 @@ func cases() []fieldCase {
 				t.Fatalf("patched = %v", lib)
 			}
 		}},
-		{"deleteLibrary", func(t *testing.T, e *pgEnv) {
-			q := `mutation($id: ID!, $purge: Boolean, $c: String) { deleteLibrary(id: $id, purge: $purge, confirm: $c) { deleted failedPaths } }`
-			unauthorized(t, e, q, map[string]any{"id": libB})
-			e.fails(member, "forbidden", q, map[string]any{"id": libB})
-			e.fails(admin, "confirmation-required", q, map[string]any{"id": libB, "purge": true, "c": "wrong"})
-			if r := e.ok(admin, "deleteLibrary", q, map[string]any{"id": libB}).(map[string]any); r["deleted"] != true {
-				t.Fatalf("delete = %v", r)
-			}
-			if v := e.ok(admin, "library", `query($id: ID!) { library(id: $id) { id } }`, map[string]any{"id": libB}); v != nil {
-				t.Fatalf("library B still there: %v", v)
-			}
-		}},
 		{"scanLibrary", func(t *testing.T, e *pgEnv) {
 			q := `mutation($id: ID!) { scanLibrary(id: $id) }`
 			unauthorized(t, e, q, map[string]any{"id": libA})
@@ -724,6 +662,19 @@ func cases() []fieldCase {
 			}
 		}},
 
+		{"deleteLibrary", func(t *testing.T, e *pgEnv) {
+			q := `mutation($id: ID!, $purge: Boolean, $c: String) { deleteLibrary(id: $id, purge: $purge, confirm: $c) { deleted failedPaths } }`
+			unauthorized(t, e, q, map[string]any{"id": libB})
+			e.fails(member, "forbidden", q, map[string]any{"id": libB})
+			e.fails(admin, "confirmation-required", q, map[string]any{"id": libB, "purge": true, "c": "wrong"})
+			if r := e.ok(admin, "deleteLibrary", q, map[string]any{"id": libB}).(map[string]any); r["deleted"] != true {
+				t.Fatalf("delete = %v", r)
+			}
+			if v := e.ok(admin, "library", `query($id: ID!) { library(id: $id) { id } }`, map[string]any{"id": libB}); v != nil {
+				t.Fatalf("library B still there: %v", v)
+			}
+		}},
+
 		// ---------- subscriptions ----------
 		{"jobUpdates", func(t *testing.T, e *pgEnv) {
 			subscriptionCase(t, e, `subscription { jobUpdates { id stage } }`, func() {
@@ -843,16 +794,38 @@ func subscriptionCase(t *testing.T, e *pgEnv, query string, publish func(), matc
 // TestPG_Fields runs every root field's case; TestPG_EveryRootFieldHasACase
 // fails when a schema root field has none.
 func TestPG_Fields(t *testing.T) {
-	tmpl := newTemplate(t)
-	for _, c := range cases() {
-		t.Run(c.field, func(t *testing.T) {
-			c.run(t, tmpl.clone(t))
+	e := setupPG(t)
+	run := func(name string, fn func(*testing.T, *pgEnv)) {
+		t.Run(name, func(t *testing.T) {
+			e.t = t
+			fn(t, e)
 		})
+	}
+	var writes []fieldCase
+	for _, c := range cases() {
+		if isMutation(c.field) {
+			writes = append(writes, c)
+			continue
+		}
+		run(c.field, c.run)
+	}
+	// After the reads (they pin the fixture's counts), before the writes.
+	run("batching", nestedFieldsAreBatched)
+	run("idempotency", idempotencyReplays)
+	run("purge", purgeNeedsConfirm)
+	for _, c := range writes {
+		run(c.field, c.run)
 	}
 }
 
+func isMutation(field string) bool {
+	return parsedSchema.Mutation.Fields.ForName(field) != nil
+}
+
+var parsedSchema = gqlparser.MustLoadSchema(&ast.Source{Input: graphql.Schema})
+
 func TestPG_EveryRootFieldHasACase(t *testing.T) {
-	s := gqlparser.MustLoadSchema(&ast.Source{Input: graphql.Schema})
+	s := parsedSchema
 	have := map[string]bool{}
 	for _, c := range cases() {
 		have[c.field] = true
@@ -866,10 +839,9 @@ func TestPG_EveryRootFieldHasACase(t *testing.T) {
 	}
 }
 
-// A retried mutation with the same Idempotency-Key replays the first
+// idempotencyReplays: a retried mutation with the same Idempotency-Key replays the first
 // GraphQL response instead of running the write again.
-func TestPG_MutationIdempotencyKeyReplays(t *testing.T) {
-	e := setupPG(t)
+func idempotencyReplays(t *testing.T, e *pgEnv) {
 	q := `mutation { registerDevice(input: {platform: "android", pushToken: "fcm_token_for_the_graphql_test_00000000idem", bundleId: "dev.maktaba.tv"}) }`
 	_, first := e.gql(member, q, nil, "Idempotency-Key", "idem-1")
 	_, second := e.gql(member, q, nil, "Idempotency-Key", "idem-1")
@@ -888,21 +860,22 @@ func TestPG_MutationIdempotencyKeyReplays(t *testing.T) {
 	}
 }
 
-// A purge needs the REST confirmation; the REST warning header comes back.
-func TestPG_DeleteVideoPurgeNeedsConfirm(t *testing.T) {
-	e := setupPG(t)
+// purgeNeedsConfirm: a purge needs the REST confirmation; the REST warning header comes back.
+func purgeNeedsConfirm(t *testing.T, e *pgEnv) {
+	const videoP = "00000000-0000-4000-8000-0000000a00ff"
+	e.exec(`INSERT INTO videos (id, library_id, path, filename, content_hash, size_bytes, mtime, state)
+		VALUES ($1, $2, '/nonexistent/purge.mp4', 'purge.mp4', encode(sha256(convert_to($3::text,'UTF8')),'hex'), 1, now(), 'ready')`, videoP, libA, videoP)
 	q := `mutation($id: ID!, $c: String) { deleteVideo(id: $id, purge: true, confirm: $c) { deleted warning } }`
-	e.fails(admin, "confirmation-required", q, map[string]any{"id": videoA2})
-	r := e.ok(admin, "deleteVideo", q, map[string]any{"id": videoA2, "c": videoA2}).(map[string]any)
+	e.fails(admin, "confirmation-required", q, map[string]any{"id": videoP})
+	r := e.ok(admin, "deleteVideo", q, map[string]any{"id": videoP, "c": videoP}).(map[string]any)
 	if r["deleted"] != true || r["warning"] != "file-not-found" {
 		t.Fatalf("purge = %v", r)
 	}
 }
 
-// DataLoader: a page of videos with seven nested joins costs one batch
+// nestedFieldsAreBatched (DataLoader): a page of videos with seven nested joins costs one batch
 // query per join, not one per video.
-func TestPG_NestedFieldsAreBatched(t *testing.T) {
-	e := setupPG(t)
+func nestedFieldsAreBatched(t *testing.T, e *pgEnv) {
 	for i := 0; i < 40; i++ {
 		e.exec(`INSERT INTO videos (library_id, path, filename, content_hash, size_bytes, mtime, state) VALUES ($1,$2,$2,encode(sha256(convert_to($2,'UTF8')),'hex'),1,now(),'ready')`, libA, fmt.Sprintf("/m/%d.mp4", i))
 	}

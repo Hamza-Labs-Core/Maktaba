@@ -146,12 +146,15 @@ func TestBatchReaders_Chunked(t *testing.T) {
 		}
 	}
 	exec(`INSERT INTO libraries (id, name, roots) VALUES ('lib', 'L', '[]')`)
-	var ids []string
-	for i := 0; i < batchSize+7; i++ {
-		id := "v" + itoa(i)
-		ids = append(ids, id)
-		exec(`INSERT INTO videos (id, library_id, path, filename, content_hash, size_bytes, mtime) VALUES ($1, 'lib', $1, $1, $1, 1, '2026-01-01T00:00:00Z')`, id)
-		exec(`INSERT INTO chapters (video_id, seq, start_sec, title) VALUES ($1, 0, 0, 'c')`, id)
+	n := batchSize + 7
+	// One statement each (row-by-row inserts would dominate the test).
+	exec(`WITH RECURSIVE seq(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM seq WHERE i + 1 < $1)
+		INSERT INTO videos (id, library_id, path, filename, content_hash, size_bytes, mtime)
+		SELECT 'v' || i, 'lib', 'v' || i, 'v' || i, 'v' || i, 1, '2026-01-01T00:00:00Z' FROM seq`, n)
+	exec(`INSERT INTO chapters (video_id, seq, start_sec, title) SELECT id, 0, 0, 'c' FROM videos`)
+	ids := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		ids = append(ids, "v"+itoa(i))
 	}
 	ch, err := ChaptersByVideo(context.Background(), db, ids)
 	if err != nil || len(ch) != len(ids) {

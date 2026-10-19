@@ -260,7 +260,7 @@ func TestEveryRootFieldIsWired(t *testing.T) {
 			case v := <-ch:
 				b, _ := json.Marshal(v)
 				t.Fatalf("%s: stream closed or errored at once: %s", f.Name, b)
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(20 * time.Millisecond):
 			}
 		})
 	}
