@@ -10,18 +10,25 @@ Ported from ``scripts/mediaintel/export_dizquetv.py``. Split as plan notes N1/N1
 
 Safety rules: a show or filler list this tool did not create (no ``maktaba-plan``
 name prefix) and a channel without the ``maktabaPlan`` marker are **never**
-touched (they are reported as conflicts); an existing channel keeps every
-setting except its programmes, filler lists and schedule; every written object
-is read back and verified (``readback_mismatch``).
+touched (they are reported as conflicts) unless the ``dizquetv`` rules say
+``replace_existing``; only what carries this tool's mark is ever removed (rule ``prune``);
+an existing channel keeps every setting except its programmes, filler lists, schedule, logo,
+corner watermark and guide settings; every written object is read back and verified
+(``readback_mismatch``).
+
+What the two exporters share (the grid, the logos, what to remove, the continuity of a
+rewrite) lives in :mod:`maktaba_pipeline.integrations.dizquetv_export`.
 """
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Any
 
+from ... import rules
 from ...engine.changes import ChangeSet, apply_or_review
 from ...engine.context import StageContext, StageFailure
 from ...engine.graph import StageResult, Subject
@@ -36,7 +43,32 @@ from ...integrations.dizquetv import (
     program_from_plex,
     read_state,
 )
+from ...integrations.dizquetv_export import (
+    DAY_MS,
+    GUIDE_KEYS,
+    ReadbackMismatch,
+    add_live_slots,
+    art_link,
+    art_version,
+    channel_art,
+    filler_items,
+    guide_settings,
+    hosted_link,
+    new_channel_defaults,
+    removals,
+    resolve_slots,
+    slot_text,
+    versioned,
+    write_channel,
+)
 from ...integrations.plex import PlexClient, PlexError, TransportError
+from ...schedule.tv_settings import (
+    DizqueExportConfig,
+    MaktabaTvConfig,
+    channel_numbers,
+    live_slots,
+)
+from ...settings import overrides
 from ..links import Link, get_links, put_link
 from ..plex_items import details_for
 
@@ -53,7 +85,6 @@ __all__ = [
 ]
 
 CHANNEL_TARGET = "dizquetv_channel"
-DAY_MS = 86_400_000
 
 
 @dataclass(slots=True)
@@ -98,44 +129,47 @@ def _diff(old: Sequence[str] | None, new: Sequence[str]) -> tuple[str, list[str]
     return "update", [f"+{add} -{rem}" + (" (reordered)" if not add and not rem else "")]
 
 
-def new_channel_defaults() -> dict[str, Any]:
-    """What the dizqueTV web UI gives a new channel (``channel-config.js``)."""
-    return {
-        "icon": "",
-        "iconWidth": 120,
-        "iconDuration": 60,
-        "iconPosition": "2",
-        "disableFillerOverlay": True,
-        "guideMinimumDurationSeconds": 300,
-        "guideFlexPlaceholder": "",
-        "offlineMode": "pic",
-        "offlinePicture": "",
-        "offlineSoundtrack": "",
-        "stealth": False,
-        "fallback": [],
-        "transcoding": {"targetResolution": ""},
-        "watermark": {"enabled": False},
-        "onDemand": {"isOnDemand": False, "modulo": 1},
-        "mergeAdjacentPrograms": False,
-        "startTime": "<now>",
-    }
+def _art_digest(art: Mapping[str, Any]) -> dict[str, Any]:
+    """The logo and watermark by their pictures' versions (a changed file is a changed
+    channel), not by their local paths."""
+    out: dict[str, Any] = {}
+    if isinstance(art.get("icon"), str):
+        out["icon"] = art_version(art["icon"])
+    wm = art.get("watermark")
+    if isinstance(wm, Mapping):
+        out["watermark"] = {**wm, "url": art_version(str(wm["url"]))}
+    return out
 
 
-def plan_actions(plan: Mapping[str, Any], state: State, *, tz_offset: int = 0) -> list[Action]:
-    """Every dizqueTV object the plan maps to, with what would be done to it."""
+def plan_actions(
+    plan: Mapping[str, Any],
+    state: State,
+    *,
+    tz_offset: int = 0,
+    options: DizqueExportConfig | None = None,
+) -> list[Action]:
+    """Every dizqueTV object the plan maps to, with what would be done to it (and, with
+    the ``prune`` rule, what would be removed)."""
+    cfg = options or DizqueExportConfig()
+    only = channel_numbers(cfg.only_channels)
     lanes: Mapping[str, Any] = plan["lanes"]
     pools: Mapping[str, Any] = plan["filler_pools"]
-    channels = [c for c in plan["channels"] if (c.get("exports") or {}).get("dizquetv")]
+    planned = [c for c in plan["channels"] if (c.get("exports") or {}).get("dizquetv")]
+    channels = [c for c in planned if not only or c["number"] in only]
+    sched_key = "ramadan_schedule" if cfg.ramadan else "schedule"
     actions: list[Action] = []
     lane_ids: dict[str, str] = {}
     pool_ids: dict[str, str] = {}
     keys_of: dict[str, list[str]] = {}  # "show:lane" / "filler:pool" -> ordered rating keys
 
+    def grid(c: Mapping[str, Any]) -> dict[str, Any]:
+        dzc = c["exports"]["dizquetv"]
+        return dict(dzc.get(sched_key) or dzc["schedule"])
+
     used_lanes: list[str] = []
     used_pools: list[str] = []
     for c in channels:
-        sch = c["exports"]["dizquetv"]["schedule"]
-        for s in sch["slots"]:
+        for s in grid(c)["slots"]:
             if s["showId"].startswith("lane:") and s["showId"][5:] not in used_lanes:
                 used_lanes.append(s["showId"][5:])
         for f in c["exports"]["dizquetv"]["fillerCollections"]:
@@ -177,6 +211,8 @@ def plan_actions(plan: Mapping[str, Any], state: State, *, tz_offset: int = 0) -
             )
             return
         verb, d2 = _diff(ex["keys"], keys)
+        if verb == "conflict" and cfg.replace_existing:
+            verb, d2 = "update", ["replaces a list this tool did not make (replace_existing)"]
         if verb == "conflict":  # never overwrite what the user made
             actions.append(Action("conflict", kind, name, detail=[*detail, *d2], ref=ref))
             return
@@ -198,7 +234,12 @@ def plan_actions(plan: Mapping[str, Any], state: State, *, tz_offset: int = 0) -
     for k in used_pools:
         p = pools[k]
         object_action(
-            "filler", k, f"{p['name']} [{k}]", pool_items(plan, p), state.fillers, "clips"
+            "filler",
+            k,
+            f"{p['name']} [{k}]",
+            filler_items(plan, pool_items(plan, p)),
+            state.fillers,
+            "clips",
         )
     for k in used_lanes:
         ln = lanes[k]
@@ -207,28 +248,19 @@ def plan_actions(plan: Mapping[str, Any], state: State, *, tz_offset: int = 0) -
 
     for c in channels:
         dzc = c["exports"]["dizquetv"]
-        sch = dict(dzc["schedule"])
-        slots: list[dict[str, Any]] = []
-        for s in sch["slots"]:
-            sid = s["showId"]
-            if sid.startswith("lane:"):
-                lid = lane_ids.get(sid[5:])
-                sid = f"custom.{lid}" if lid else "flex."  # nothing playable yet: flex
-            if slots and slots[-1]["showId"] == sid:
-                continue  # merge with the previous slot
-            slots.append({**s, "showId": sid, "order": "shuffle" if sid == "flex." else s["order"]})
-        if len(slots) > 1 and slots[0]["showId"] == slots[-1]["showId"]:
-            slots = slots[1:]  # the last slot runs on past midnight into the first one
-        sch["slots"] = slots
-        sch["timeZoneOffset"] = tz_offset
+        src = grid(c)
+        sch = add_live_slots(resolve_slots(src, lane_ids, tz_offset), int(c["number"]), cfg.live)
+        slots = sch["slots"]
         fillers = [
             {"id": pool_ids[f["pool"]], "weight": f["weight"], "cooldown": f["cooldown"]}
             for f in dzc["fillerCollections"]
             if f["pool"] in pool_ids
         ]
         lane_refs = sorted(
-            {s["showId"][5:] for s in dzc["schedule"]["slots"] if s["showId"].startswith("lane:")}
+            {s["showId"][5:] for s in src["slots"] if s["showId"].startswith("lane:")}
         )
+        art = channel_art(plan, c["key"])
+        guide = guide_settings(plan)
         digest = canonical_hash(
             {
                 "schedule": sch,
@@ -239,6 +271,8 @@ def plan_actions(plan: Mapping[str, Any], state: State, *, tz_offset: int = 0) -
                     f["pool"]: keys_of.get(f"filler:{f['pool']}", [])
                     for f in dzc["fillerCollections"]
                 },
+                "art": _art_digest(art),
+                "guide": guide,
             }
         )
         marker = {"key": c["key"], "planner_version": plan["planner_version"], "hash": digest}
@@ -251,15 +285,28 @@ def plan_actions(plan: Mapping[str, Any], state: State, *, tz_offset: int = 0) -
             "fillerRepeatCooldown": dzc["fillerRepeatCooldown"],
             "scheduleBackup": sch,
             "maktabaPlan": marker,
+            **art,
+            **guide,
         }
         label = f"#{c['number']} {dzc['name']}"
+        per = int(sch["period"])
+        names = {lane_ids.get(k): lanes[k]["name"] for k in lanes}
+        grid_text = " | ".join(
+            f"{slot_text(int(s['time']), per)} "
+            + (names.get(s["showId"][7:], "flex") if s["showId"].startswith("custom.") else "flex")
+            for s in slots
+        )
         detail = [
-            f"time slots ({len(slots)}), tz offset {tz_offset} min",
+            f"time slots ({'weekly' if per != DAY_MS else 'daily'}, {len(slots)} slots, tz offset "
+            f"{tz_offset} min, lateness {int(sch['lateness']) // 60_000} min, "
+            f"maxDays {sch['maxDays']}): {grid_text}",
             "filler: "
             + (
                 ", ".join(f"{f['pool']} w{f['weight']}" for f in dzc["fillerCollections"]) or "none"
             ),
         ]
+        if cfg.ramadan and not dzc.get("ramadan_schedule"):
+            detail.append("no Ramadan grid for this channel: regular grid used")
         ex = state.channels.get(c["number"])
         if ex is None:
             actions.append(
@@ -277,14 +324,14 @@ def plan_actions(plan: Mapping[str, Any], state: State, *, tz_offset: int = 0) -
             )
             continue
         ours = isinstance(ex.get("maktabaPlan"), dict)
-        if not ours:  # never overwrite a channel the user made
+        if not ours and not cfg.replace_existing:  # never overwrite a channel the user made
             detail.append(
                 f"channel {c['number']} exists ('{ex.get('name')}') and was not created by this "
                 "tool: left alone"
             )
             actions.append(Action("conflict", "channel", label, detail=detail, ref=c["key"]))
             continue
-        if ex["maktabaPlan"].get("hash") == digest:
+        if ours and ex["maktabaPlan"].get("hash") == digest:
             actions.append(
                 Action("unchanged", "channel", label, detail=detail, ref=c["key"], digest=digest)
             )
@@ -299,7 +346,11 @@ def plan_actions(plan: Mapping[str, Any], state: State, *, tz_offset: int = 0) -
                     "scheduleBackup",
                     "maktabaPlan",
                     "fillerRepeatCooldown",
+                    "icon",
+                    "watermark",
+                    *GUIDE_KEYS,
                 )
+                if k in body
             },
         }
         actions.append(
@@ -312,18 +363,32 @@ def plan_actions(plan: Mapping[str, Any], state: State, *, tz_offset: int = 0) -
                 upd,
                 [
                     *detail,
-                    "keeps name, icon, watermark, transcoding; replaces programmes, "
-                    "filler lists and schedule",
+                    f"keeps name '{ex.get('name')}', transcoding; replaces programmes, filler "
+                    "lists, schedule, logo and guide settings",
                 ],
                 c["key"],
                 digest,
             )
         )
+    if (cfg.prune or cfg.clear_channels) and not only:
+        gone = removals(
+            {int(c["number"]) for c in planned},
+            state.channels,
+            state.shows,
+            state.fillers,
+            {a.name for a in actions if a.kind in ("show", "filler")},
+            PREFIX,
+            clear_channels=cfg.clear_channels,
+        )
+        actions.extend(
+            Action("delete", r.kind, r.name, "DELETE", r.endpoint, r.body, [r.why]) for r in gone
+        )
     return actions
 
 
 def changes_from(actions: Sequence[Action]) -> ChangeSet:
-    """The typed diff: created objects are ``added``, rewritten ones ``changed``."""
+    """The typed diff: created objects are ``added``, rewritten ones ``changed``, what the
+    plan dropped (rule ``prune``) ``removed``."""
     added = tuple(
         {"kind": a.kind, "name": a.name, "ref": a.ref, "detail": a.detail}
         for a in actions
@@ -334,6 +399,9 @@ def changes_from(actions: Sequence[Action]) -> ChangeSet:
         for a in actions
         if a.verb == "update"
     )
+    removed = tuple(
+        {"kind": a.kind, "name": a.name, "detail": a.detail} for a in actions if a.verb == "delete"
+    )
     conflicts = [{"kind": a.kind, "name": a.name} for a in actions if a.verb == "conflict"]
     meta: dict[str, Any] = {}
     if conflicts:
@@ -341,7 +409,7 @@ def changes_from(actions: Sequence[Action]) -> ChangeSet:
     skipped = [a.name for a in actions if a.verb == "skip"]
     if skipped:
         meta["skipped_nothing_playable"] = skipped
-    return ChangeSet("dizquetv_channels", added=added, changed=changed, meta=meta)
+    return ChangeSet("dizquetv_channels", added=added, removed=removed, changed=changed, meta=meta)
 
 
 # ------------------------------------------------------------------ apply (blocking)
@@ -359,6 +427,68 @@ def _content(
     return out
 
 
+def _remove(dz: DizqueTV, actions: Sequence[Action]) -> int:
+    """Delete what the plan dropped, channels first (they name the shows and lists), and
+    check each is gone with one re-read per kind."""
+    gone = sorted((a for a in actions if a.verb == "delete"), key=lambda a: a.kind != "channel")
+    for a in gone:
+        assert a.endpoint is not None
+        dz.call("DELETE", a.endpoint, a.body)
+    if not gone:
+        return 0
+    channels_left = {
+        int(n["number"] if isinstance(n, dict) else n) for n in dz.get("/api/channels")
+    }
+    ids_left = {
+        k: {str(x.get("id")) for x in dz.get(f"/api/{k}s")}
+        for k in ("show", "filler")
+        if any(a.kind == k for a in gone)
+    }
+    for a in gone:
+        assert a.endpoint is not None
+        done = (
+            int((a.body or {})["number"]) not in channels_left
+            if a.kind == "channel"
+            else a.endpoint.rsplit("/", 1)[-1] not in ids_left[a.kind]
+        )
+        if not done:
+            raise StageFailure("readback_mismatch", f"{a.kind} {a.name}: still there after DELETE")
+    return len(gone)
+
+
+class _Art:
+    """A channel's logo and corner watermark: local files uploaded once per run (or
+    checked on the logos' web host), then their links."""
+
+    def __init__(self, dz: DizqueTV, cfg: Mapping[str, Any]) -> None:
+        self.dz = dz
+        self.cfg = cfg
+        self._urls: dict[str, str] = {}
+
+    def link(self, path: str) -> str:
+        if path not in self._urls:
+            if host := str(self.cfg.get("dz_art_url") or ""):
+                try:
+                    self._urls[path] = hosted_link(host, path, self.dz.head_status)
+                except RuntimeError as exc:
+                    raise StageFailure("logo_not_hosted", str(exc), retryable=False) from exc
+            else:
+                got = self.dz.upload_image(Path(path).read_bytes(), f"maktaba-{Path(path).name}")
+                # the file's version in the link: a new picture is a new link, so Plex and
+                # the TVs fetch it instead of showing the one they cached
+                self._urls[path] = versioned(art_link(self.cfg, self.dz.base, got), path)
+        return self._urls[path]
+
+    def apply(self, body: dict[str, Any]) -> dict[str, Any]:
+        out = dict(body)
+        if out.get("icon") and not str(out["icon"]).startswith("http"):  # "": no logo
+            out["icon"] = self.link(out["icon"])
+        wm = out.get("watermark")
+        if isinstance(wm, dict) and wm.get("enabled") and not str(wm["url"]).startswith("http"):
+            out["watermark"] = {**wm, "url": self.link(wm["url"])}
+        return out
+
+
 def apply_actions(
     dz: DizqueTV,
     plex: PlexClient,
@@ -367,14 +497,18 @@ def apply_actions(
     *,
     tz_offset: int,
     saved: Mapping[str, Mapping[str, Any]] | None = None,
+    options: DizqueExportConfig | None = None,
 ) -> list[dict[str, Any]]:
-    """Write shows and filler lists, then the channels; read every object back.
+    """Remove what the plan dropped, write shows and filler lists, then the channels; read
+    every object back.
 
     Programmes come from ``saved`` (the ``plex_index`` records, by rating key);
     only the keys it lacks are asked of Plex.
 
     Returns one record per written channel (``key``, ``number``, ``name``, ``digest``).
     """
+    cfg = options or DizqueExportConfig()
+    _remove(dz, actions)
     server = dz.plex_server_name(plex.uri)
     if server is None:
         raise StageFailure(
@@ -409,42 +543,25 @@ def apply_actions(
     state = read_state(dz)
     written: list[dict[str, Any]] = []
     shows_by_id: dict[str, dict[str, Any]] = {}
-    for act in plan_actions(plan, state, tz_offset=tz_offset):
+    art = _Art(dz, plan.get("config") or {})
+    for act in plan_actions(plan, state, tz_offset=tz_offset, options=cfg):
         if act.kind != "channel" or act.verb not in ("create", "update"):
             continue
         assert act.body is not None
-        body = dict(act.body)
-        sched = body["scheduleBackup"]
-        programs: list[dict[str, Any]] = []
-        for sid in dict.fromkeys(s["showId"] for s in sched["slots"]):
-            if not sid.startswith("custom."):
-                continue
-            show_id = sid[len("custom.") :]
-            if show_id not in shows_by_id:
-                shows_by_id[show_id] = dz.call("GET", f"/api/show/{show_id}")
-            show = shows_by_id[show_id]
-            for n, prog in enumerate(show.get("content", [])):
-                programs.append(
-                    {
-                        **prog,
-                        "customShowId": show_id,
-                        "customShowName": show["name"],
-                        "customOrder": n,
-                    }
-                )
-        if not programs:
-            continue  # nothing playable yet
-        res = dz.call(
-            "POST", "/api/channel-tools/time-slots", {"programs": programs, "schedule": sched}
-        )
-        body["programs"] = res["programs"]
-        body["startTime"] = res["startTime"]
-        dz.call(act.method or "POST", "/api/channel", body)
-        back = dz.call("GET", f"/api/channel/programless/{body['number']}")
-        if not isinstance(back.get("maktabaPlan"), dict) or back.get("name") != body["name"]:
-            raise StageFailure(
-                "readback_mismatch", f"channel {body['number']}: read-back does not match"
+        body = art.apply(act.body)
+        try:
+            done = write_channel(
+                dz.call,
+                body,
+                act.method or "POST",
+                exists=int(body["number"]) in state.channels,
+                shows=shows_by_id,
+                keep_airing=cfg.keep_airing,
             )
+        except ReadbackMismatch as exc:
+            raise StageFailure("readback_mismatch", str(exc)) from exc
+        if done.status == "skipped":
+            continue  # nothing playable yet
         written.append(
             {"key": act.ref, "number": body["number"], "name": body["name"], "digest": act.digest}
         )
@@ -477,7 +594,13 @@ async def fingerprint(db: Any, subject: Subject, write_mode: str) -> str | None:
     got = await latest_plan(db)
     if got is None:
         return None
-    return canonical_hash({"plan": got[0], "write_mode": write_mode})
+    _, changes, _ = await rules.read(db, "dizquetv")
+    tv, _, _ = await rules.read(db, "tv")  # Maktaba TV's live broadcasts serve both
+    return canonical_hash(
+        {"plan": got[0], "write_mode": write_mode, "rules": changes, "live": overrides(tv)}
+        if tv.live
+        else {"plan": got[0], "write_mode": write_mode, "rules": changes}
+    )
 
 
 def _wrap(exc: Exception) -> StageFailure:
@@ -530,9 +653,12 @@ async def run_channels(
         state = await asyncio.to_thread(read_state, dz)
     except (DizqueError, TransportError) as exc:
         raise _wrap(exc) from exc
-    actions = plan_actions(plan, state, tz_offset=tz)
+    options: DizqueExportConfig = await ctx.rules("dizquetv")
+    tv: MaktabaTvConfig = await ctx.rules("tv")
+    options = replace(options, live=live_slots(tv, options))  # one list for both
+    actions = await asyncio.to_thread(plan_actions, plan, state, tz_offset=tz, options=options)
     changes = changes_from(actions)
-    output_hash = canonical_hash({"plan": plan_hash, "tz": tz})
+    output_hash = canonical_hash({"plan": plan_hash, "tz": tz, "rules": overrides(options)})
     written: list[dict[str, Any]] = []
 
     async def apply(cs: ChangeSet) -> None:
@@ -552,7 +678,14 @@ async def run_channels(
         try:
             written.extend(
                 await asyncio.to_thread(
-                    apply_actions, dz, plex, actions, plan, tz_offset=tz, saved=saved
+                    apply_actions,
+                    dz,
+                    plex,
+                    actions,
+                    plan,
+                    tz_offset=tz,
+                    saved=saved,
+                    options=options,
                 )
             )
         except (DizqueError, PlexError, TransportError) as exc:

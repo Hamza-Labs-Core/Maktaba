@@ -9,6 +9,7 @@ seen yet (tier unknown).
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Sequence
 
 import pytest
@@ -419,7 +420,9 @@ def test_filler_stays_on_topic_with_video_tags() -> None:
     prophets = {i.path for i in p.filler_pools["prophets.topic"].items}
     assert "Y:/nabil/s1.mp4" in seerah and "Y:/nabil/p1.mp4" not in seerah
     assert "Y:/nabil/p1.mp4" in prophets
-    assert all("ca.mp4" not in i.path for pool in p.filler_pools.values() for i in pool.items)
+    # current affairs (dated news) pads only the News channel
+    assert all("ca.mp4" not in i.path for k, pool in p.filler_pools.items()
+               if not k.startswith("news.") for i in pool.items)  # fmt: skip
     # horizontal clips come before vertical shorts
     items = list(p.filler_pools["seerah.topic"].items)
     assert items.index(next(i for i in items if i.vertical)) > items.index(
@@ -432,6 +435,8 @@ def test_filler_stays_on_topic_with_video_tags() -> None:
 def test_simulated_day_pads_every_slot_to_its_boundary() -> None:
     loose = [short(f"Y:/nabil/c{i}.mp4", "seerah", seconds=60 + 37 * i) for i in range(40)]
     p = plan(loose=loose)
+    # with slot_max_filler_minutes off (test_slot_gaps: on, a long gap takes an episode)
+    p = dataclasses.replace(p, config=dataclasses.replace(p.config, slot_max_filler_minutes=0))
     ch = channel(p, "seerah")
     day = simulate(ch, p, weekday="fri", days=1)
     assert day[0].start_s == 0

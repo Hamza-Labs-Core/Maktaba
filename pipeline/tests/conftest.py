@@ -30,6 +30,19 @@ from maktaba_testtier.softcap import (  # noqa: F401,E402
 
 
 @pytest.fixture(autouse=True)
+def _no_model_or_encyclopedia_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test reaches the language model server or the encyclopedia: the stages that ask
+    them (check_tags, check_clips, books) get a stand-in from the test, or fail loudly."""
+    from maktaba_pipeline.classify import books, tag_check
+
+    def refuse(*_a: object, **_k: object) -> None:
+        raise RuntimeError("a test must stand in for the model / encyclopedia")
+
+    monkeypatch.setattr(tag_check, "ask", refuse)
+    monkeypatch.setattr(books, "http_get", refuse)
+
+
+@pytest.fixture(autouse=True)
 def _app_cache_in_tmp(tmp_path_factory: pytest.TempPathFactory) -> object:
     """thumb_small and review_pages write the app's media cache: never the real home."""
     from maktaba_pipeline.engine.stages import thumb_small

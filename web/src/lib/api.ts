@@ -14,6 +14,9 @@
 
 const BASE = (import.meta.env.VITE_API_BASE ?? "") as string;
 
+/** The URL of an API path for something the browser loads itself (an iframe, a link). */
+export const apiUrl = (path: string): string => `${BASE}${path}`;
+
 // Must equal the server's `auth.CSRFHeader` and the CORS allow-list.
 const CSRF_HEADER = "X-Maktaba-CSRF";
 
@@ -211,3 +214,58 @@ export const api = {
   put: <T>(path: string, body?: unknown) => request<T>(path, { method: "PUT", body }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };
+
+/**
+ * uploadWithProgress POSTs a multipart form and reports the upload's
+ * progress (0..1). fetch cannot report upload progress, so this one call
+ * uses XMLHttpRequest — with the same cookie, CSRF header and problem+json
+ * error decoding as `request`.
+ */
+export function uploadWithProgress<T>(
+  path: string,
+  form: FormData,
+  onProgress?: (fraction: number) => void
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${BASE}${path}`);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader("Accept", "application/json");
+    const tok = csrfToken();
+    if (tok) xhr.setRequestHeader(CSRF_HEADER, tok);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && e.total > 0) onProgress?.(e.loaded / e.total);
+    };
+    xhr.onerror = () => {
+      logApiError("POST", path, 0, "network error");
+      reject(new Error("network error"));
+    };
+    xhr.onload = () => {
+      const text = xhr.responseText ?? "";
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress?.(1);
+        try {
+          resolve((text ? JSON.parse(text) : undefined) as T);
+        } catch {
+          resolve(text as unknown as T);
+        }
+        return;
+      }
+      let problem: Problem;
+      try {
+        problem = JSON.parse(text) as Problem;
+      } catch {
+        problem = {
+          type: "about:blank",
+          title: xhr.statusText || "upload failed",
+          status: xhr.status,
+          detail: text.slice(0, 256),
+        };
+      }
+      const err = new ApiError({ ...problem, status: problem.status || xhr.status });
+      logApiError("POST", path, err.status, err.message);
+      reject(err);
+    };
+    xhr.send(form);
+  });
+}

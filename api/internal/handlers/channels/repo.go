@@ -161,5 +161,5 @@ func scanChannel(rs rowScanner) (Channel, error) {
 	if len(srcFilter) > 0 {
 		c.SourceFilter = srcFilter
 	}
-	return c, nil
+	return withArt(withLogoURL(c)), nil
 }

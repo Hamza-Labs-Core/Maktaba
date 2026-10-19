@@ -34,10 +34,10 @@ from maktaba_pipeline.audio.chromaprint import (
     similarity,
     windows,
 )
-from maktaba_pipeline.thumbnail.dhash import FRAMES_VERSION, frame_times, hamming
+from maktaba_pipeline.thumbnail.dhash import FRAMES_VERSION, hamming
 
 from . import jobs
-from .scan_local import _signature
+from .scan_local import _signature_counted
 
 PER_SEASON = 4
 LENGTH_BAND = 0.35  # |log(duration / season median)|: about ±40 %
@@ -141,13 +141,16 @@ def _todo(conn: sqlite3.Connection, paths: set[str]) -> list[tuple[str, float]]:
     return out
 
 
-def _incomplete(dur: float, head: str | None, tail: str | None, frames: str) -> str | None:
+def _incomplete(
+    dur: float, head: str | None, tail: str | None, frames: str, unread: int | None = None
+) -> str | None:
     """Why a signature is partial, or None. A busy NAS fails some reads ("Invalid
-    argument" over SMB); a partial result is kept but marked failed, so it is retried."""
+    argument" over SMB); a partial result is kept but marked failed, so it is retried.
+    ``unread``: frames ffmpeg could not read — a flat frame (black, a fade) is read but
+    has no hash, so it is no failure; a stored signature (no count) is judged by audio."""
     missing = [w for w, _, _ in windows(dur) if not (head if w == "head" else tail)]
-    got = len([h for h in frames.split(",") if h])
-    if got < len(frame_times(dur)):
-        missing.append(f"{len(frame_times(dur)) - got} frames")
+    if unread:
+        missing.append(f"{unread} frames")
     return f"read failed: {', '.join(missing)}" if missing else None
 
 
@@ -157,9 +160,9 @@ def _fingerprint(
     print(f"{label}: fingerprinting {len(todo)} videos ({workers} reads at a time)", flush=True)
     t0, n = time.monotonic(), 0
     with ThreadPoolExecutor(max(1, workers)) as pool:
-        futures = {pool.submit(_signature, *x): x for x in todo}
+        futures = {pool.submit(_signature_counted, *x): x for x in todo}
         for fut in as_completed(futures):  # saved as each finishes
-            (path, dur), (head, tail, frames) = futures[fut], fut.result()
+            (path, dur), (head, tail, frames, unread) = futures[fut], fut.result()
             conn.execute(
                 """UPDATE files SET audio_head=?, audio_tail=?, audio_version=?,
                      frame_hashes=?, frames_version=? WHERE path=?""",
@@ -169,7 +172,7 @@ def _fingerprint(
                 "SELECT size, mtime FROM files WHERE path=?", (path,)
             ).fetchone()
             jobs.record(conn, path, "signature", SIG_VERSION, size, mtime,
-                        _incomplete(dur, head, tail, frames))  # fmt: skip
+                        _incomplete(dur, head, tail, frames, unread))  # fmt: skip
             conn.commit()
             n += 1
             if n % 25 == 0 or n == len(todo):

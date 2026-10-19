@@ -34,6 +34,7 @@ from maktaba_pipeline.discovery.ytdlp_sidecars import (
     parse_archive,
     parse_info_json,
 )
+from maktaba_pipeline.library_mgmt.repair import probe_failure as probe_failure
 from maktaba_pipeline.thumbnail.dhash import (
     FRAMES_VERSION,
     dhash_from_gray,
@@ -51,6 +52,10 @@ VIDEO_EXTS = (".mp4", ".mkv", ".webm", ".m4v", ".mov", ".avi")
 _FORMAT_PIECE_RE = re.compile(r"\.f\d{2,4}\.[^.]+$")
 
 
+#: why a file had no duration (path → ffprobe's reason), for the job's error
+_PROBE_WHY: dict[str, str] = {}
+
+
 def _probe(path: str) -> tuple[float | None, int | None, int | None]:
     """(duration seconds, width, height) of the first video stream."""
     try:
@@ -66,6 +71,7 @@ def _probe(path: str) -> tuple[float | None, int | None, int | None]:
         dur: float | None = float(j["format"]["duration"])
     except (KeyError, TypeError, ValueError):
         dur = None
+        _PROBE_WHY[path] = probe_failure(out.stderr.decode("utf-8", "replace"))
     st = (j.get("streams") or [{}])[0]
     return dur, st.get("width"), st.get("height")
 
@@ -82,6 +88,12 @@ def _thumb_dhash(path: str) -> str | None:
 
 def _signature(path: str, duration_s: float) -> tuple[str | None, str | None, str]:
     """(audio head, audio tail, frame hashes) of one episode-length video."""
+    return _signature_counted(path, duration_s)[:3]
+
+
+def _signature_counted(path: str, duration_s: float) -> tuple[str | None, str | None, str, int]:
+    """:func:`_signature` and how many frames ffmpeg could not read (a flat frame — black,
+    a fade — is read but has no hash, so the hash count alone cannot tell)."""
     audio: dict[str, str | None] = {"head": None, "tail": None}
     for which, start, length in windows(duration_s):
         try:
@@ -94,18 +106,23 @@ def _signature(path: str, duration_s: float) -> tuple[str | None, str | None, st
         except (subprocess.TimeoutExpired, OSError):
             pass
     raw = b""
+    unread = 0
     for t in frame_times(duration_s):
         try:
-            raw += subprocess.run(
+            got = subprocess.run(
                 ffmpeg_frame_args(path, t, binary=FFMPEG),
                 capture_output=True,
                 timeout=60,
                 check=False,
             ).stdout[:72]
         except (subprocess.TimeoutExpired, OSError):
+            got = b""
+        if len(got) < 72:
+            unread += 1
             continue
+        raw += got
     frames = ",".join(f"{h:016x}" for h in dhashes_from_frames(raw))
-    return audio["head"], audio["tail"], frames
+    return audio["head"], audio["tail"], frames, unread
 
 
 def _upsert_video_info(conn: sqlite3.Connection, v: VideoInfo) -> None:
@@ -336,7 +353,8 @@ def scan_folder(
             )
             stats["probed"] += 1
             jobs.record(conn, path, "probe", 1, size, mtime,
-                        None if dur is not None else "ffprobe gave no duration")  # fmt: skip
+                        None if dur is not None
+                        else _PROBE_WHY.pop(path, "ffprobe gave no duration"))  # fmt: skip
             conn.commit()  # per file: a restart never re-probes finished files
         for (path, _), dh in zip(
             todo_thumb, pool.map(_thumb_dhash, [t for _, t in todo_thumb]), strict=True

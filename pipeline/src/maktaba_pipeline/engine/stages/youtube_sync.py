@@ -51,12 +51,24 @@ from ..hashing import canonical_hash
 from ..sql import is_pg, loads, now, to_ts, uid
 from .registry import StageImpl
 
-__all__ = ["IMPL", "FetcherFactory", "discover_folders", "run", "set_fetcher_factory"]
+__all__ = [
+    "IMPL",
+    "FetcherFactory",
+    "discover_folders",
+    "new_fetcher",
+    "run",
+    "set_fetcher_factory",
+]
 
 FetcherFactory = Callable[[], YouTubeFetcher]
 
 _fetcher_factory: FetcherFactory = YtDlpFetcher
 _IN_CHUNK = 400
+
+
+def new_fetcher() -> YouTubeFetcher:
+    """A fetcher from the current factory (yt-dlp unless a test replaced it)."""
+    return _fetcher_factory()
 
 
 def set_fetcher_factory(factory: FetcherFactory | None) -> FetcherFactory:

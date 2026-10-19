@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Tabs } from "@ds/components/Tabs/Tabs";
+import { PlanPreviewPanel } from "../../components/queue/PlanPreviewPanel";
 import { useAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
 import { rulesApi, rulesError, type RuleField, type RuleSection } from "../../lib/rulesApi";
@@ -691,6 +692,11 @@ export function RulesSection() {
                 {t("settings.rules.removeUnknown")}
               </Button>
             )}
+          </div>
+        )}
+        {s.key === "planner" && (
+          <div className="mkt-q mkt-rules__preview">
+            <PlanPreviewPanel canRun={canEdit} compact unsaved={unsaved} />
           </div>
         )}
         {groups.length === 0 ? (

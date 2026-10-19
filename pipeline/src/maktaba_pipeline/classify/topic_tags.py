@@ -88,6 +88,7 @@ __all__ = [
     "TaggerConfig",
     "boilerplate_phrases",
     "branding",
+    "chapter_tags",
     "content_type",
     "looks_recited",
     "match_text",
@@ -98,7 +99,11 @@ __all__ = [
     "transcript_hits",
 ]
 
-TAGGER_VERSION: int = 4
+#: 4: transcripts are tagging evidence (``_add_transcripts``); the rules are settings
+#: 6: the tag stage also tags each episode by its own title and chapter playlist
+#: (``episode_tags``), reads the detection settings and strips the channel's branding
+#: 7: both: transcript evidence (4) and episode tags / branding / season labels (5-6)
+TAGGER_VERSION: int = 7
 
 NAMESPACES: tuple[str, ...] = ("topic", "format", "audience", "occasion", "genre")
 
@@ -137,8 +142,11 @@ FORMATS: tuple[str, ...] = (
 #: ``kids_friendly``: not made for children but fine for them (a seerah series, a
 #: reciter's or a history channel); ``beginners``: a basics programme
 AUDIENCES: tuple[str, ...] = ("general", "kids", "kids_friendly", "beginners", "women", "youth")
+#: ``ramadan_season`` / ``hajj_season``: aired then (a Ramadan TV season), which says
+#: when to air it, not what it is about (``ramadan`` / ``hajj``: about the occasion)
 OCCASIONS: tuple[str, ...] = (
     "ramadan", "hajj", "eid", "ashura", "jumuah", "isra_miraj", "hijri_new_year",
+    "ramadan_season", "hajj_season",
 )  # fmt: skip
 
 #: ``format:`` → Story 26.2 ``video_classification.content_type``
@@ -460,7 +468,7 @@ _LEXICON: dict[str, dict[float, str]] = {
             "| زاد المستقنع | عمدة الفقه | الروض المربع | فقه الصيام | فقه الحج | فقه الصلاة "
             "| مناسك | المناسك | سجود السهو | مخالفات | أخطاء المصلين | fiqh | الاعتكاف | النجاسة "
             "| نجاسات | المذهب | المذاهب | التمذهب | فقه الاختلاف | أخصر المختصرات | الورقات "
-            "| كتاب النكاح | كتاب الطهارة | الأضحية | زكاة"
+            "| كتاب النكاح | كتاب الطهارة | الأضحية | زكاة | السياسة الشرعية"
         ),
         0.5: (
             "حكم | ما حكم | يجوز | هل يجوز | حلال | حرام | الحلال والحرام | الصلاة | صلاة "
@@ -618,12 +626,14 @@ _LEXICON: dict[str, dict[float, str]] = {
     "topic:current_affairs": {
         1.0: (
             "غزة | فلسطين | الأقصى | المسجد الأقصى | القدس | الاحتلال | الصهاينة | الصهيوني "
-            "| السياسة | سياسي | الانتخابات | الثورة | الربيع العربي | الحرب على | الأخبار | نشرة "
-            "| الإعلام | كورونا | الواقع | قضايا معاصرة | النوازل | news | politics | gaza "
-            "| palestine | أخبار"
+            "| سياسي | الانتخابات | الثورة | الربيع العربي | الحرب على | نشرة الأخبار | نشرة "
+            "| آخر الأخبار | الإعلام | كورونا | الواقع | قضايا معاصرة | النوازل | news | politics "
+            "| gaza | palestine"
         ),
+        # «جوامع الأخبار», «أخبار الصحابة»: in a lesson's title these are reports
         0.5: (
-            "المسلمون اليوم | الغرب | السوشال ميديا | التفاهة | صناعة التفاهة | الحمية | الاقتصاد "
+            "الأخبار | أخبار | السياسة | المسلمون اليوم | الغرب | السوشال ميديا | التفاهة "
+            "| صناعة التفاهة | الحمية | الاقتصاد "
             "| العالم اليوم | الرئيس | ترامب | نتنياهو | إيران | الدولار | الأنظمة | الحكام "
             "| الانقلاب | الانقلابات | المقاومة | الكيان | غوانتنامو | المستوطنين | المستوطنون "
             "| الضفة"
@@ -792,6 +802,25 @@ _RECITERS = (
 _NAME_BEFORE = frozenset({"عبد", "عبدال", "ابو", "ابي", "ام"})
 # … or right before these (عثمان بن أرطغرل, يوسف بن تاشفين, صالح بن فوزان)
 _NAME_AFTER = frozenset({"بن", "ابن", "بنت"})
+# months that are also people's names: «الشيخ رمضان الشنوري», «سعيد رمضان», «رمضان عبد
+# المعز», «مسجد … رمضان» are a person (or a mosque named after one), not the month
+_MONTH_NAMES = frozenset(fold("رمضان شعبان رجب").split())
+_PERSON_BEFORE = frozenset(
+    fold(
+        "الشيخ للشيخ شيخ الدكتور د دكتور لفضيلة فضيلة الإمام الامام العلامة الأستاذ الاستاذ "
+        "أ ا القارئ للقارئ الحاج سعيد محمد أحمد احمد مولاي"
+    ).split()
+)
+_PERSON_AFTER = frozenset(fold("عبد عبدال البوطي الشنوري صبحي").split())
+# a prophet's bare name right after someone's first name is a surname («عدنان إبراهيم»,
+# «أحمد موسى»): it counts at a title's start, after a story / prophet word, or after one
+# of these small words
+_PROPHET_PREV_OK = frozenset(
+    fold(
+        "في عن مع من الى إلى على و ثم حياة دعوة زوجة زوجات امرأة ابن ابنا أبناء ابناء آل ال "
+        "الله والد ام أم اخوة إخوة رؤيا مولد وفاة بعثة هجرة جد ذرية"
+    ).split()
+)
 # the word after "سورة" is a surah's name (النساء، الحج، مريم، الجمعة), not a topic
 _SURAH_WORDS = frozenset({"سوره", "سور", "لسوره", "بسوره", "وسوره"})
 
@@ -866,6 +895,8 @@ def _compile() -> tuple[dict[str, list[_Entry]], list[_Entry]]:
 
 
 _INDEX, _WILD = _compile()
+#: the context bare prophet names require (``name ^prophet``)
+_PROPHET_CTX: frozenset[str] = frozenset(fold(_CONTEXT["prophet"]).split())
 
 #: one text's hits: tag → (strength 0..1, matched phrases)
 Hits = dict[str, tuple[float, tuple[str, ...]]]
@@ -888,11 +919,18 @@ def _raw_matches(toks: list[str]) -> list[tuple[_Entry, int]]:
                 continue
             if e.require and not e.require & all_forms:
                 continue
+            if (len(e.words) == 1 and e.require == _PROPHET_CTX and prev
+                    and not _token_forms(prev) & (_PROPHET_CTX | _PROPHET_PREV_OK)
+                    and not prev.isdigit()):  # fmt: skip
+                continue  # «عدنان إبراهيم»: a surname, not the prophet
             if prev in _SURAH_WORDS and e.words[0] not in _SURAH_WORDS:
                 continue
             if e.not_after and prev and _token_forms(prev) & e.not_after:
                 continue
             if len(e.words) == 1 and (prev in _NAME_BEFORE or nxt in _NAME_AFTER):
+                continue
+            if (len(e.words) == 1 and e.words[0] in _MONTH_NAMES
+                    and (prev in _PERSON_BEFORE or nxt in _PERSON_AFTER)):  # fmt: skip
                 continue
             if _match_at(forms, i, e):
                 out.append((e, i))
@@ -921,9 +959,11 @@ def match_text(
     hints (weight < 0.5) together add at most 0.35 — five weak words are
     still weak evidence — capped at 1.
     """
+    # «رمضان 1445», «رمضان 2024»: when it aired (a TV season), not what it is about
+    text, season = _season_labels(text)
     toks = _tokens(text, strip)
     if not toks:
-        return {}
+        return season
     raw = _raw_matches(toks)
     noisy = {i for e, i in raw if e.phrase in noise}  # boilerplate spans, any tag
     by_tag: dict[str, list[tuple[_Entry, int]]] = {}
@@ -945,7 +985,32 @@ def match_text(
         strength = min(1.0, strong + min(_HINT_CAP, hints))
         out[tag] = (strength, tuple(sorted(best, key=lambda p: -best[p])))
     out.update(_surah_title(toks))
+    for tag, hit in season.items():
+        if tag not in out or out[tag][0] < hit[0]:
+            out[tag] = hit
     return out
+
+
+_YEAR = r"(?:1[34]\d\d|19\d\d|20\d\d|[١][٣٤][٠-٩]{2}|[٢][٠][٠-٩]{2})"
+_SEASON_RE = re.compile(
+    r"(?P<m>رمضان|ذو الحجة|ذي الحجة)\s*(?:عام|لعام|سنة|موسم)?\s*[(\[]?\s*"
+    + _YEAR
+    # «هـ» / «م» only as the year's own suffix, never the first letter of the next word
+    + r"(?:\s*[-–/]\s*\d{2,4})?(?:\s*(?:هـ|ه|م)(?!\w))?\s*[)\]]?"
+)
+
+
+def _season_labels(text: str) -> tuple[str, Hits]:
+    """``text`` without its season labels («رمضان 1445-2024», «ذو الحجة 1444»), and
+    the season they name as ``occasion:ramadan_season`` / ``hajj_season`` hits."""
+    found: Hits = {}
+
+    def cut(m: re.Match[str]) -> str:
+        tag = "occasion:ramadan_season" if m.group("m") == "رمضان" else "occasion:hajj_season"
+        found[tag] = (1.0, (m.group(0).strip(),))
+        return " "
+
+    return _SEASON_RE.sub(cut, text), found
 
 
 # English transliterated surah names, compared as consonant skeletons
@@ -1414,11 +1479,12 @@ def tag_series(
     if len(dated) >= cfg.min_dated_episodes:
         n = len(dated)
         ram = sum(_in_ramadan(d) for d in dated)
+        # aired then: when to air it (the Ramadan grid), not what it is about
         if ram / n >= cfg.occasion_share:
-            acc.add("occasion:ramadan", 2.5, f"aired in Ramadan {ram}/{n}")
+            acc.add("occasion:ramadan_season", 2.5, f"aired in Ramadan {ram}/{n}")
         hajj = sum(_in_hajj_season(d) for d in dated)
         if hajj / n >= cfg.occasion_share:
-            acc.add("occasion:hajj", 2.0, f"aired in Dhu al-Hijjah {hajj}/{n}")
+            acc.add("occasion:hajj_season", 2.0, f"aired in Dhu al-Hijjah {hajj}/{n}")
         if (
             n >= cfg.program_min_episodes
             and kind != "clips"
@@ -1426,8 +1492,55 @@ def tag_series(
         ):
             acc.add("format:program", 1.0, f"broadcast run: {n} episodes in a season")
     _default_format(acc, median_duration_s, cfg)
+    _season_not_topic(acc)
     _resolve_conflicts(acc)
     return _finish(acc, cfg)
+
+
+#: a month's bare name: in a show's or playlist's name it says when it aired
+#: («عباد الشيطان | هيثم طلعت رمضان»), not what it is about
+_MONTH_WORDS = frozenset({"رمضان", "شهر رمضان", "ramadan", "ذي الحجة"})
+_SEASON_OF = {
+    "occasion:ramadan": "occasion:ramadan_season",
+    "topic:fasting": "occasion:ramadan_season",
+    "topic:qiyam": "occasion:ramadan_season",
+    "occasion:hajj": "occasion:hajj_season",
+}
+
+
+def _label_only(evidence: str) -> bool:
+    src, _, phrases = evidence.partition(":")
+    return src in ("name", "playlist") and set(phrases.split("/")) <= _MONTH_WORDS
+
+
+def _season_not_topic(acc: _Acc) -> None:
+    """Ramadan / Hajj evidence that is only the month's name in the show's or a
+    playlist's name (no episode, description or other phrase says so) is the season the
+    show aired in: ``occasion:ramadan_season``, never the occasion or fasting."""
+    for tag, season in _SEASON_OF.items():
+        evs = acc.ev.get(tag)
+        if not evs or not all(_label_only(e) for e in evs):
+            continue
+        amount = acc.raw.pop(tag)
+        acc.ev.pop(tag)
+        if tag.startswith("occasion:"):
+            acc.add(season, amount, "season label: " + "; ".join(evs))
+
+
+def chapter_tags(
+    title: str, *, strip: Sequence[str] = (), weight: float = 2.0, min_strength: float = 1.0
+) -> dict[str, float]:
+    """The topic a chapter playlist names («كتاب الصيام», «كتاب الصلاة من صحيح البخاري»,
+    «باب صفة الصلاة»): its episodes are about it, whatever their own titles say. Only an
+    unambiguous phrase counts (strength ≥ ``min_strength``), scored as a playlist."""
+    out: dict[str, float] = {}
+    for tag, (strength, phrases) in match_text(title, strip=strip).items():
+        if not tag.startswith(("topic:", "occasion:")) or strength < min_strength:
+            continue
+        if tag in _SEASON_OF and set(phrases) <= _MONTH_WORDS:
+            tag = _SEASON_OF[tag]  # «… رمضان»: the season the playlist aired in
+        out[tag] = max(out.get(tag, 0.0), round(1.0 - math.exp(-weight * strength), 3))
+    return out
 
 
 def _add_transcripts(

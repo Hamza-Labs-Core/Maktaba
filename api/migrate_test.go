@@ -289,7 +289,7 @@ func TestMigrationFiles_PostgresUsesConcurrentlyForCreateIndex(t *testing.T) {
 	files := []string{
 		"0001_init_libraries_and_videos.sql",
 		"0007_videos_last_seen_at.sql",
-		"0104_cluster_cache.sql",
+		"0116_cluster_cache.sql",
 	}
 	for _, name := range files {
 		body, err := os.ReadFile(filepath.Join(dir, name))
@@ -327,7 +327,7 @@ func TestMigrationFiles_PostgresAndSqliteSiblingsExist(t *testing.T) {
 		"0001_init_libraries_and_videos",
 		"0006_library_scan_state",
 		"0007_videos_last_seen_at",
-		"0104_cluster_cache",
+		"0116_cluster_cache",
 	}
 	for _, slot := range slots {
 		for _, suffix := range []string{".sql", ".sqlite.sql"} {
@@ -520,7 +520,7 @@ func TestMigrationFiles_Slot0061_HasEventsBus(t *testing.T) {
 	}
 }
 
-// TestMigrationFiles_Slot0104_ClusterCache asserts slot 0104 (Epic 31
+// TestMigrationFiles_Slot0116_ClusterCache asserts slot 0116 (Epic 31
 // phase 2, the hub's database cache of the cluster channel): three
 // UNLOGGED tables with natural keys on Postgres (plain tables in the
 // SQLite sibling), their indexes built CONCURRENTLY outside a
@@ -528,15 +528,15 @@ func TestMigrationFiles_Slot0061_HasEventsBus(t *testing.T) {
 // writing health_samples, guarded for a database without the role. The
 // live behaviour (persistence, denied writes) is asserted in
 // internal/cluster/cache (pg_test.go).
-func TestMigrationFiles_Slot0104_ClusterCache(t *testing.T) {
+func TestMigrationFiles_Slot0116_ClusterCache(t *testing.T) {
 	dir := repoMigrationsDir(t)
-	pg, err := os.ReadFile(filepath.Join(dir, "0104_cluster_cache.sql"))
+	pg, err := os.ReadFile(filepath.Join(dir, "0116_cluster_cache.sql"))
 	if err != nil {
-		t.Fatalf("read pg slot 0104: %v", err)
+		t.Fatalf("read pg slot 0116: %v", err)
 	}
 	s := string(pg)
 	if !strings.HasPrefix(s, "-- +goose NO TRANSACTION\n") {
-		t.Error("0104_cluster_cache.sql: CONCURRENTLY needs the no-transaction directive on line 1")
+		t.Error("0116_cluster_cache.sql: CONCURRENTLY needs the no-transaction directive on line 1")
 	}
 	for _, want := range []string{
 		"CREATE UNLOGGED TABLE IF NOT EXISTS cluster_metrics_cache",
@@ -553,18 +553,18 @@ func TestMigrationFiles_Slot0104_ClusterCache(t *testing.T) {
 		"DROP TABLE IF EXISTS cluster_log_cache",
 	} {
 		if !strings.Contains(s, want) {
-			t.Errorf("0104_cluster_cache.sql: missing %q", want)
+			t.Errorf("0116_cluster_cache.sql: missing %q", want)
 		}
 	}
-	lite, err := os.ReadFile(filepath.Join(dir, "0104_cluster_cache.sqlite.sql"))
+	lite, err := os.ReadFile(filepath.Join(dir, "0116_cluster_cache.sqlite.sql"))
 	if err != nil {
-		t.Fatalf("read sqlite slot 0104: %v", err)
+		t.Fatalf("read sqlite slot 0116: %v", err)
 	}
 	ls := string(lite)
 	for _, line := range strings.Split(ls, "\n") {
 		if code := strings.TrimSpace(line); !strings.HasPrefix(code, "--") &&
 			(strings.Contains(code, "UNLOGGED") || strings.Contains(code, "REVOKE")) {
-			t.Errorf("0104_cluster_cache.sqlite.sql: SQLite has no UNLOGGED tables and no roles: %q", code)
+			t.Errorf("0116_cluster_cache.sqlite.sql: SQLite has no UNLOGGED tables and no roles: %q", code)
 		}
 	}
 	for _, want := range []string{
@@ -575,7 +575,7 @@ func TestMigrationFiles_Slot0104_ClusterCache(t *testing.T) {
 		"-- +goose Down",
 	} {
 		if !strings.Contains(ls, want) {
-			t.Errorf("0104_cluster_cache.sqlite.sql: missing %q", want)
+			t.Errorf("0116_cluster_cache.sqlite.sql: missing %q", want)
 		}
 	}
 }

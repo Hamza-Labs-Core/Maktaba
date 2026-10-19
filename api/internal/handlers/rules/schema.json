@@ -10,7 +10,7 @@
      "kind": "rows",
      "group": "Channels",
      "label": "Themed channels",
-     "help": "One channel per theme, in priority order: its number, names, and the topics / audiences / formats / occasions whose shows it takes, and the tags it never takes (exclude, e.g. audience:adults). Min hours: this theme's own minimum instead of the days-without-a-repeat rule (the Quran channel repeats by nature); empty: the rule.",
+     "help": "One channel per theme, in priority order: its number, names, and the topics / audiences / formats / occasions whose shows it takes, and the tags it never takes (exclude, e.g. audience:adults). Libraries: the libraries the channel is mainly made of (their shows join it, live there and come first); exclude libraries: never on it. Series: the shows the channel is made of (part of the show's name; with libraries, only those shows of those libraries). Kind: theme (a show grid of the shows its tags take), quran (recitation non-stop by reciter), nonstop (only its own libraries / series in order all day, the first again after the last; no show grid). Slot minutes (nonstop): an episode every this many minutes, filler between; 0: back to back. Filler topics / with / libraries: its second-choice breaks. Filler off: programmes only, no clips. Min hours: this theme's own minimum instead of the days-without-a-repeat rule (the Quran channel repeats by nature); empty: the rule (a nonstop channel: none).",
      "default": [
       {
        "key": "quran",
@@ -27,7 +27,16 @@
        "category": "quran",
        "min_hours": 100.0,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "quran",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "kids",
@@ -49,7 +58,16 @@
        "occasions": [],
        "exclude": [
         "audience:adults"
-       ]
+       ],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "ramadan",
@@ -67,7 +85,16 @@
        "occasions": [
         "ramadan"
        ],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "seerah",
@@ -82,7 +109,16 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "tafsir",
@@ -97,7 +133,16 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "hadith",
@@ -112,7 +157,16 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "fiqh",
@@ -127,7 +181,16 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "aqeedah",
@@ -143,7 +206,16 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "history",
@@ -159,7 +231,16 @@
        "category": "documentaries",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "palestine",
@@ -174,7 +255,16 @@
        "category": "news",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "news",
@@ -189,7 +279,16 @@
        "category": "news",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "talk",
@@ -206,7 +305,16 @@
        "category": "general",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "prophets",
@@ -221,7 +329,16 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "raqaiq",
@@ -238,7 +355,16 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "akhlaq",
@@ -254,7 +380,16 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "family",
@@ -271,7 +406,16 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "salah",
@@ -286,7 +430,16 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "muamalat",
@@ -301,7 +454,16 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "family_fiqh",
@@ -316,7 +478,16 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "fasting",
@@ -331,7 +502,16 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "qiyam",
@@ -346,7 +526,16 @@
        "category": "quran",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "quran_learning",
@@ -361,7 +550,16 @@
        "category": "quran",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "quran_competition",
@@ -376,7 +574,16 @@
        "category": "quran",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "zakat",
@@ -391,7 +598,16 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "hajj",
@@ -406,7 +622,16 @@
        "occasions": [
         "hajj"
        ],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "stories",
@@ -421,7 +646,16 @@
        "category": "islamic",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       },
       {
        "key": "nasheed",
@@ -437,7 +671,16 @@
        "category": "music",
        "min_hours": null,
        "occasions": [],
-       "exclude": []
+       "exclude": [],
+       "libraries": [],
+       "exclude_libraries": [],
+       "series": [],
+       "kind": "theme",
+       "slot_minutes": 0,
+       "filler_topics": [],
+       "filler_with": [],
+       "filler_libraries": [],
+       "filler": true
       }
      ],
      "columns": [
@@ -451,7 +694,16 @@
       "category",
       "min_hours",
       "occasions",
-      "exclude"
+      "exclude",
+      "libraries",
+      "exclude_libraries",
+      "series",
+      "kind",
+      "slot_minutes",
+      "filler_topics",
+      "filler_with",
+      "filler_libraries",
+      "filler"
      ],
      "column_kinds": [
       "str",
@@ -464,13 +716,31 @@
       "str",
       "float?",
       "list",
-      "list"
+      "list",
+      "list",
+      "list",
+      "list",
+      "str",
+      "int",
+      "list",
+      "list",
+      "list",
+      "bool"
      ],
      "column_optional": [
       false,
       false,
       false,
       false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
       true,
       true,
       true,
@@ -800,6 +1070,105 @@
      "default": 0.6
     },
     {
+     "name": "theme_show_min_episode_share",
+     "kind": "float",
+     "group": "Channels",
+     "label": "Whole show: share of its own episodes on the theme",
+     "help": "A show a theme channel takes by a topic or occasion tag (not by its genre) joins whole only when at least this share of its hours are episodes about the theme themselves; otherwise only those episodes join, as a special run. 0: off.",
+     "default": 0.5
+    },
+    {
+     "name": "theme_general_filler",
+     "kind": "bool",
+     "group": "Channels",
+     "label": "Theme channels: also general filler",
+     "help": "Off: a theme channel fills its gaps only with clips on its own topic and its shows' promos. On: also with the library's clips on any topic.",
+     "default": false
+    },
+    {
+     "name": "break_filler",
+     "kind": "bool",
+     "group": "Channels",
+     "label": "Breaks: nasheeds and short clips",
+     "help": "Every channel's breaks between shows (like a TV channel's ads) also play the library's break filler, besides its shows' promos and its own topic's clips.",
+     "default": true
+    },
+    {
+     "name": "break_filler_topics",
+     "kind": "list",
+     "group": "Channels",
+     "label": "Breaks: clips on these topics",
+     "help": "Topic keys, e.g. nasheed, dua_dhikr.",
+     "default": [
+      "nasheed",
+      "dua_dhikr"
+     ]
+    },
+    {
+     "name": "break_filler_libraries",
+     "kind": "list",
+     "group": "Channels",
+     "label": "Breaks: any short clip of these libraries",
+     "help": "Part of the library's (or presenter's) name.",
+     "default": [
+      "سَعيد الكَمَلي",
+      "سعيد الكملي"
+     ]
+    },
+    {
+     "name": "break_filler_max_minutes",
+     "kind": "float",
+     "group": "Channels",
+     "label": "Breaks: clips up to (min)",
+     "help": "",
+     "default": 5.0,
+     "minimum": 0
+    },
+    {
+     "name": "break_related_min_score",
+     "kind": "float",
+     "group": "Channels",
+     "label": "Breaks: a clip's topic score on a topic channel",
+     "help": "A break clip plays only where it clearly belongs: on a topic channel scored at least this on its topic; on an audience channel (Kids) among its own filler.",
+     "default": 0.7,
+     "minimum": 0
+    },
+    {
+     "name": "break_nasheed_channels",
+     "kind": "list",
+     "group": "Channels",
+     "label": "Breaks: channels that may play nasheeds",
+     "help": "Channel keys (kids, history, stories …); the nasheed must still be related to the channel.",
+     "default": [
+      "kids",
+      "family",
+      "stories",
+      "history",
+      "prophets",
+      "seerah",
+      "palestine",
+      "akhlaq",
+      "nasheed",
+      "mix"
+     ]
+    },
+    {
+     "name": "theme_core_first",
+     "kind": "bool",
+     "group": "Channels",
+     "label": "Topic channels: their topic's shows first",
+     "help": "On a topic channel (Hadith, Fiqh …) the shows of that topic take the time slots before shows that joined by a tag or a few episodes; variety there means another presenter, not another topic.",
+     "default": true
+    },
+    {
+     "name": "theme_specialists_first",
+     "kind": "bool",
+     "group": "Channels",
+     "label": "Topic channels: specialists first",
+     "help": "Among a topic channel's shows, the presenters whose library is mostly that topic (a hadith scholar on the Hadith channel) take the slots first.",
+     "default": true
+    },
+    {
      "name": "theme_episode_min_minutes",
      "kind": "float",
      "group": "Channels",
@@ -956,6 +1325,14 @@
      "help": "A show airs on at most this many channels (0: no limit), the closest first: the channel of its own topic before an audience or format channel (History before Kids, Palestine before Talk Shows), then the one with fewer hours. Wherever it airs, never at the same time on two channels. A channel left without enough content of its own drops out.",
      "default": 0,
      "minimum": 0
+    },
+    {
+     "name": "show_reuse_to_fill",
+     "kind": "bool",
+     "group": "Channels",
+     "label": "Short channel takes back shows",
+     "help": "A channel left short of its month by the one-channel-per-show rule takes back shows it also matches (its own topic's first) until it has enough.",
+     "default": true
     },
     {
      "name": "show_same_time",
@@ -1529,6 +1906,16 @@
      ]
     },
     {
+     "name": "quran_filler_recited_topics",
+     "kind": "list",
+     "group": "Channels",
+     "label": "Quran channel: topics that must be recited",
+     "help": "Dua clips fill the Quran channel only when the dua is recited, not talked about.",
+     "default": [
+      "dua_dhikr"
+     ]
+    },
+    {
      "name": "prime_unknown_formats",
      "kind": "list",
      "group": "Prime time",
@@ -1631,8 +2018,17 @@
      "kind": "int",
      "group": "dizqueTV",
      "label": "Allowed lateness (ms)",
-     "help": "",
-     "default": 900000,
+     "help": "How late a slot may start and still play its show: an episode that runs past the next slot's start pushes it back. Past this, dizqueTV gives the whole slot to filler (an hour and more of clips, no programme). A day: every slot plays its next episode, the schedule is programmes around the clock.",
+     "default": 86400000,
+     "minimum": 0
+    },
+    {
+     "name": "slot_max_filler_minutes",
+     "kind": "int",
+     "group": "dizqueTV",
+     "label": "Most filler at a slot's end (minutes)",
+     "help": "When the next episode does not fit what is left of its slot, the rest is filler; past this many minutes the episode plays anyway, running past the slot's end (the next slot starts late). 0: never. A nonstop channel keeps its filler to the hour.",
+     "default": 20,
      "minimum": 0
     },
     {
@@ -1663,6 +2059,68 @@
      "minimum": 0
     },
     {
+     "name": "dz_weight_topic",
+     "kind": "int",
+     "group": "dizqueTV",
+     "label": "Filler weight: the channel's topic clips",
+     "help": "",
+     "default": 300,
+     "minimum": 0
+    },
+    {
+     "name": "dz_weight_promos",
+     "kind": "int",
+     "group": "dizqueTV",
+     "label": "Filler weight: its shows' promos",
+     "help": "",
+     "default": 150,
+     "minimum": 0
+    },
+    {
+     "name": "dz_weight_breaks",
+     "kind": "int",
+     "group": "dizqueTV",
+     "label": "Filler weight: breaks (nasheeds, short clips)",
+     "help": "",
+     "default": 200,
+     "minimum": 0
+    },
+    {
+     "name": "dz_weight_general",
+     "kind": "int",
+     "group": "dizqueTV",
+     "label": "Filler weight: general clips",
+     "help": "",
+     "default": 100,
+     "minimum": 0
+    },
+    {
+     "name": "dz_guide_min_program_s",
+     "kind": "int",
+     "group": "dizqueTV",
+     "label": "Guide: shortest programme listed (s)",
+     "help": "Programmes at least this long have their own entry in the guide; shorter ones count as filler.",
+     "default": 60,
+     "minimum": 0
+    },
+    {
+     "name": "dz_guide_max_padding_s",
+     "kind": "int",
+     "group": "dizqueTV",
+     "label": "Guide: filler shown from (s)",
+     "help": "Filler time at least this long gets its own guide entry (the filler title below); shorter filler is added to the programme before it. dizqueTV's own default is 1800.",
+     "default": 120,
+     "minimum": 0
+    },
+    {
+     "name": "dz_guide_filler_title",
+     "kind": "str",
+     "group": "dizqueTV",
+     "label": "Guide: title of filler time",
+     "help": "",
+     "default": "فواصل"
+    },
+    {
      "name": "dz_filler_max_items",
      "kind": "int",
      "group": "dizqueTV",
@@ -1685,6 +2143,14 @@
      "group": "dizqueTV",
      "label": "Corner logo (watermark)",
      "help": "A picture shown in a corner of the video on every channel, like a TV station's logo; an animated GIF loops. Empty: none.",
+     "default": ""
+    },
+    {
+     "name": "dz_watermark_dir",
+     "kind": "str",
+     "group": "dizqueTV",
+     "label": "Corner logos folder (per channel)",
+     "help": "Each channel's own corner logo: <channel key>.gif (quran.gif, palestine.gif …) or .png; a channel without one uses the corner logo above. Empty: that one everywhere.",
      "default": ""
     },
     {
@@ -2458,6 +2924,646 @@
       "يعملون",
       "يوم"
      ]
+    }
+   ]
+  },
+  {
+   "key": "tagcheck",
+   "title": "Tag check",
+   "what": "a language model checks what each series is about",
+   "fields": [
+    {
+     "name": "enabled",
+     "kind": "bool",
+     "group": "Checking tags with a language model",
+     "label": "Check tags with a model",
+     "help": "A local model (Ollama) reads each series' name and episode titles and says what it is about; the keyword tags it does not confirm are damped. Off: keyword tags only.",
+     "default": true
+    },
+    {
+     "name": "url",
+     "kind": "str",
+     "group": "Checking tags with a language model",
+     "label": "Model server (Ollama)",
+     "help": "",
+     "default": "http://localhost:11434"
+    },
+    {
+     "name": "model",
+     "kind": "str",
+     "group": "Checking tags with a language model",
+     "label": "Model",
+     "help": "Any model the server has; it must read Arabic well.",
+     "default": "qwen2.5:7b"
+    },
+    {
+     "name": "sample_titles",
+     "kind": "int",
+     "group": "Checking tags with a language model",
+     "label": "Episode titles shown per series",
+     "help": "",
+     "default": 15,
+     "minimum": 1
+    },
+    {
+     "name": "max_topics",
+     "kind": "int",
+     "group": "Checking tags with a language model",
+     "label": "Topics per series (most)",
+     "help": "",
+     "default": 3,
+     "minimum": 1
+    },
+    {
+     "name": "damp",
+     "kind": "float",
+     "group": "Checking tags with a language model",
+     "label": "Unconfirmed topic keeps (share of its score)",
+     "help": "0: dropped; 1: kept as it is.",
+     "default": 0.3,
+     "minimum": 0
+    },
+    {
+     "name": "added_score",
+     "kind": "float",
+     "group": "Checking tags with a language model",
+     "label": "Score of a topic only the model saw",
+     "help": "",
+     "default": 0.8,
+     "minimum": 0
+    },
+    {
+     "name": "timeout_s",
+     "kind": "float",
+     "group": "Checking tags with a language model",
+     "label": "Answer timeout (s)",
+     "help": "",
+     "default": 180.0,
+     "minimum": 1
+    },
+    {
+     "name": "clips",
+     "kind": "bool",
+     "group": "Checking tags with a language model",
+     "label": "Check clips too",
+     "help": "The model reads each short video's title (step check-clips): a clip that only mentions a topic is no filler on it.",
+     "default": true
+    },
+    {
+     "name": "clip_batch",
+     "kind": "int",
+     "group": "Checking tags with a language model",
+     "label": "Clip titles per question",
+     "help": "",
+     "default": 4,
+     "minimum": 1
+    },
+    {
+     "name": "clip_max_minutes",
+     "kind": "float",
+     "group": "Checking tags with a language model",
+     "label": "Clips up to (minutes)",
+     "help": "Only videos up to this long: the ones that air as filler.",
+     "default": 20.0,
+     "minimum": 0
+    }
+   ]
+  },
+  {
+   "key": "books",
+   "title": "Books",
+   "what": "the book a lesson series explains decides its topics",
+   "fields": [
+    {
+     "name": "enabled",
+     "kind": "bool",
+     "group": "Books behind the series",
+     "label": "Look up the books series explain",
+     "help": "A series named «شرح بلوغ المرام» explains that book: the book is looked up and its subject (hadith, fiqh, aqeedah …) corrects the series' topics. A whole fiqh book is not about one of its chapters (salah, fasting).",
+     "default": true
+    },
+    {
+     "name": "wiki_api",
+     "kind": "str",
+     "group": "Books behind the series",
+     "label": "Encyclopedia searched",
+     "help": "A MediaWiki API (Arabic Wikipedia).",
+     "default": "https://ar.wikipedia.org/w/api.php"
+    },
+    {
+     "name": "request_gap_s",
+     "kind": "float",
+     "group": "Books behind the series",
+     "label": "Pause between requests (s)",
+     "help": "",
+     "default": 1.5,
+     "minimum": 0
+    },
+    {
+     "name": "min_title_match",
+     "kind": "float",
+     "group": "Books behind the series",
+     "label": "Title match needed (share of words)",
+     "help": "How many of the name's words an article's title must have to be the book.",
+     "default": 0.75,
+     "minimum": 0
+    },
+    {
+     "name": "category_fields",
+     "kind": "map",
+     "group": "Books behind the series",
+     "label": "Category word → topics",
+     "help": "A word in a book's category and the topics it means («فقه» → fiqh).",
+     "default": {
+      "حديث": [
+       "hadith"
+      ],
+      "مصطلح": [
+       "hadith"
+      ],
+      "سنن": [
+       "hadith"
+      ],
+      "مسانيد": [
+       "hadith"
+      ],
+      "صحاح": [
+       "hadith"
+      ],
+      "جوامع": [
+       "hadith"
+      ],
+      "كتب سته": [
+       "hadith"
+      ],
+      "اربعينات": [
+       "hadith"
+      ],
+      "تخريج": [
+       "hadith"
+      ],
+      "فقه": [
+       "fiqh"
+      ],
+      "فتاوى": [
+       "fiqh"
+      ],
+      "عقيده": [
+       "aqeedah"
+      ],
+      "توحيد": [
+       "aqeedah"
+      ],
+      "اعتقاد": [
+       "aqeedah"
+      ],
+      "تفسير": [
+       "tafsir"
+      ],
+      "علوم القران": [
+       "tafsir"
+      ],
+      "سيره": [
+       "seerah"
+      ],
+      "شمائل": [
+       "seerah"
+      ],
+      "تجويد": [
+       "tajweed"
+      ],
+      "قراءات": [
+       "tajweed"
+      ],
+      "نحو": [
+       "arabic_language"
+      ],
+      "لغه عربيه": [
+       "arabic_language"
+      ],
+      "بلاغه": [
+       "arabic_language"
+      ],
+      "تصوف": [
+       "raqaiq"
+      ],
+      "زهد": [
+       "raqaiq"
+      ],
+      "رقائق": [
+       "raqaiq"
+      ],
+      "اخلاق": [
+       "akhlaq"
+      ],
+      "اداب": [
+       "akhlaq"
+      ],
+      "تاريخ": [
+       "islamic_history"
+      ],
+      "تراجم": [
+       "islamic_history"
+      ],
+      "اذكار": [
+       "dua_dhikr"
+      ],
+      "ادعيه": [
+       "dua_dhikr"
+      ],
+      "صحابه": [
+       "sahaba"
+      ],
+      "فرق": [
+       "shubuhat"
+      ],
+      "ردود": [
+       "shubuhat"
+      ]
+     }
+    },
+    {
+     "name": "book_score",
+     "kind": "float",
+     "group": "Books behind the series",
+     "label": "Score of the book's subject",
+     "help": "",
+     "default": 0.9,
+     "minimum": 0
+    },
+    {
+     "name": "damp",
+     "kind": "float",
+     "group": "Books behind the series",
+     "label": "Topic the book is not about keeps (share of its score)",
+     "help": "",
+     "default": 0.3,
+     "minimum": 0
+    },
+    {
+     "name": "retry_missing_days",
+     "kind": "int",
+     "group": "Books behind the series",
+     "label": "Search a book not found again after (days)",
+     "help": "",
+     "default": 30,
+     "minimum": 0
+    },
+    {
+     "name": "timeout_s",
+     "kind": "float",
+     "group": "Books behind the series",
+     "label": "Request timeout (s)",
+     "help": "",
+     "default": 20.0,
+     "minimum": 1
+    }
+   ]
+  },
+  {
+   "key": "dizquetv",
+   "title": "dizqueTV export",
+   "what": "how the planned channels are written into dizqueTV: removing what the plan dropped, rewriting a channel that is on air",
+   "fields": [
+    {
+     "name": "prune",
+     "kind": "bool",
+     "group": "dizqueTV export",
+     "label": "Remove what the plan no longer has",
+     "help": "Delete the channels, shows and filler lists this tool made earlier and the plan does not have now. Only what carries this tool's mark is touched.",
+     "default": false
+    },
+    {
+     "name": "clear_channels",
+     "kind": "bool",
+     "group": "dizqueTV export",
+     "label": "Also remove other channels not in the plan",
+     "help": "With the setting above: every channel that is not in the plan goes, including the ones made by hand. For a fresh lineup.",
+     "default": false
+    },
+    {
+     "name": "replace_existing",
+     "kind": "bool",
+     "group": "dizqueTV export",
+     "label": "Take over what exists",
+     "help": "A channel, show or filler list that is there under the same number or name but was not made by this tool is replaced. Off: it is left alone and reported.",
+     "default": false
+    },
+    {
+     "name": "ramadan",
+     "kind": "bool",
+     "group": "dizqueTV export",
+     "label": "Use the Ramadan grids",
+     "help": "A channel without one uses its regular grid.",
+     "default": false
+    },
+    {
+     "name": "keep_airing",
+     "kind": "bool",
+     "group": "dizqueTV export",
+     "label": "Rewrite without a break",
+     "help": "A rewrite lets the programme on air finish, goes on with each show where it stopped, drops no programme and leaves no gap; a channel whose schedule and programmes did not change is not saved at all (nobody watching is restarted). Off: the timeline is rebuilt from the start.",
+     "default": true
+    },
+    {
+     "name": "only_channels",
+     "kind": "str",
+     "group": "dizqueTV export",
+     "label": "Only these channels",
+     "help": "Channel numbers separated by commas (101, 105). Empty: all of them.",
+     "default": ""
+    },
+    {
+     "name": "live",
+     "kind": "rows",
+     "group": "dizqueTV export",
+     "label": "Live broadcasts",
+     "help": "A live stream a channel carries at set times, such as the news on the hour: channel number, the YouTube live page (https://www.youtube.com/@aljazeera/live) or a stream address, the guide title, the first start (HH:MM), the end (00:00: until midnight), how often (minutes), how long (minutes) and the days (mon ... sun; empty: every day). What airs before it finishes first or makes way: no programme is cut and the broadcast starts on time.",
+     "default": [],
+     "columns": [
+      "channel",
+      "url",
+      "title",
+      "start",
+      "end",
+      "every_minutes",
+      "minutes",
+      "days"
+     ],
+     "column_kinds": [
+      "int",
+      "str",
+      "str",
+      "time",
+      "time",
+      "int",
+      "int",
+      "list"
+     ],
+     "column_optional": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+     ]
+    }
+   ]
+  },
+  {
+   "key": "tv",
+   "title": "Maktaba TV",
+   "what": "how Maktaba's own channels air: filler between programmes, the Ramadan grids, live broadcasts, loudness",
+   "fields": [
+    {
+     "name": "max_filler_per_gap",
+     "kind": "int",
+     "group": "Maktaba TV",
+     "label": "Most clips in a gap",
+     "help": "A gap between programmes is filled with clips chosen by their lists' weights; past this many the rest of the gap shows the slate. 0: as many as fit.",
+     "default": 0,
+     "minimum": 0
+    },
+    {
+     "name": "slot_filler_first",
+     "kind": "bool",
+     "group": "Maktaba TV",
+     "label": "A slot's own filler first",
+     "help": "Pad a slot with its own shows' promos and topic clips before the channel's filler lists. Off: the channel's lists only (what dizqueTV does).",
+     "default": true
+    },
+    {
+     "name": "ramadan_grids",
+     "kind": "bool",
+     "group": "Maktaba TV",
+     "label": "Ramadan grids in Ramadan",
+     "help": "During the Hijri month of Ramadan a channel airs its Ramadan grid. A channel without one keeps its regular grid.",
+     "default": true
+    },
+    {
+     "name": "hijri_adjust_days",
+     "kind": "int",
+     "group": "Maktaba TV",
+     "label": "Hijri date adjustment (days)",
+     "help": "Added to the computed Hijri date when the month starts a day earlier or later where you are.",
+     "default": 0
+    },
+    {
+     "name": "live",
+     "kind": "rows",
+     "group": "Maktaba TV",
+     "label": "Live broadcasts",
+     "help": "A live stream a channel carries at set times: channel number, the YouTube live page or a stream address, the guide title, the first start (HH:MM), the end (00:00: until midnight), how often (minutes), how long (minutes) and the days (mon ... sun; empty: every day). No programme runs into it: what would not end before it is not started, filler fills up to it and the show goes on after. Empty: the dizqueTV export's live broadcasts.",
+     "default": [],
+     "columns": [
+      "channel",
+      "url",
+      "title",
+      "start",
+      "end",
+      "every_minutes",
+      "minutes",
+      "days"
+     ],
+     "column_kinds": [
+      "int",
+      "str",
+      "str",
+      "time",
+      "time",
+      "int",
+      "int",
+      "list"
+     ],
+     "column_optional": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+     ]
+    },
+    {
+     "name": "loudnorm",
+     "kind": "bool",
+     "group": "Maktaba TV",
+     "label": "Even loudness",
+     "help": "Normalise every programme's loudness.",
+     "default": true
+    },
+    {
+     "name": "loudnorm_target_lufs",
+     "kind": "float",
+     "group": "Maktaba TV",
+     "label": "Loudness target (LUFS)",
+     "help": "",
+     "default": -16.0
+    }
+   ]
+  },
+  {
+   "key": "exactdates",
+   "title": "Exact dates",
+   "what": "exact upload dates fetched from YouTube for series members (off until switched on)",
+   "fields": [
+    {
+     "name": "enabled",
+     "kind": "bool",
+     "group": "Exact dates",
+     "label": "Fetch exact upload dates",
+     "help": "Ask YouTube for the exact upload date of each series member whose date is only approximate (month level). Slow and polite; a bot check stops the run and the next one goes on.",
+     "default": false
+    },
+    {
+     "name": "scope",
+     "kind": "str",
+     "group": "Exact dates",
+     "label": "Which videos",
+     "help": "series: members of a series and videos in a playlist. all: every linked video.",
+     "default": "series",
+     "choices": [
+      "series",
+      "all"
+     ]
+    },
+    {
+     "name": "delay_s",
+     "kind": "float",
+     "group": "Exact dates",
+     "label": "Seconds between requests",
+     "help": "",
+     "default": 3.0,
+     "minimum": 0
+    },
+    {
+     "name": "lang",
+     "kind": "str",
+     "group": "Exact dates",
+     "label": "Language",
+     "help": "The language YouTube is asked in (titles are translated).",
+     "default": "ar"
+    },
+    {
+     "name": "cookies_from_browser",
+     "kind": "str",
+     "group": "Exact dates",
+     "label": "Use a signed-in browser",
+     "help": "firefox, chrome ...: yt-dlp uses that browser's YouTube session.",
+     "default": ""
+    },
+    {
+     "name": "max_per_run",
+     "kind": "int",
+     "group": "Exact dates",
+     "label": "Most videos a run",
+     "help": "0: all of them.",
+     "default": 0,
+     "minimum": 0
+    }
+   ]
+  },
+  {
+   "key": "audit",
+   "title": "Channel audit",
+   "what": "is what each channel airs about the channel",
+   "fields": [
+    {
+     "name": "enabled",
+     "kind": "bool",
+     "group": "Channel audit",
+     "label": "Audit the channels",
+     "help": "After the channels are written, check that what each airs is about the channel (reads dizqueTV, writes nothing).",
+     "default": true
+    },
+    {
+     "name": "window_days",
+     "kind": "int",
+     "group": "Channel audit",
+     "label": "Days weighed",
+     "help": "What airs from now for this many days.",
+     "default": 28,
+     "minimum": 1
+    },
+    {
+     "name": "keep",
+     "kind": "int",
+     "group": "Channel audit",
+     "label": "Audits kept",
+     "help": "",
+     "default": 5,
+     "minimum": 1
+    }
+   ]
+  },
+  {
+   "key": "repair",
+   "title": "Broken files",
+   "what": "downloads that cannot be read are fetched from YouTube again (off until switched on)",
+   "fields": [
+    {
+     "name": "enabled",
+     "kind": "bool",
+     "group": "Repair",
+     "label": "Repair broken downloads",
+     "help": "A file whose probe failed and that came from YouTube is downloaded again, checked, and swapped in on the share. Off: nothing is downloaded or changed.",
+     "default": false
+    },
+    {
+     "name": "cookies_from_browser",
+     "kind": "str",
+     "group": "Repair",
+     "label": "Use a signed-in browser",
+     "help": "firefox, chrome ...",
+     "default": ""
+    },
+    {
+     "name": "max_height",
+     "kind": "int",
+     "group": "Repair",
+     "label": "Tallest picture",
+     "help": "At most this many pixels high.",
+     "default": 1080,
+     "minimum": 144
+    },
+    {
+     "name": "h264_first",
+     "kind": "bool",
+     "group": "Repair",
+     "label": "H.264 first",
+     "help": "Take H.264 when YouTube has it (what the rest of the library is and what the GPU decodes); YouTube's 1080p is often AV1.",
+     "default": true
+    },
+    {
+     "name": "keep_broken_copy",
+     "kind": "bool",
+     "group": "Repair",
+     "label": "Keep the broken file",
+     "help": "As <name>.broken beside the new one.",
+     "default": true
+    },
+    {
+     "name": "max_per_run",
+     "kind": "int",
+     "group": "Repair",
+     "label": "Most files a run",
+     "help": "0: all of them.",
+     "default": 0,
+     "minimum": 0
+    },
+    {
+     "name": "download_timeout_minutes",
+     "kind": "int",
+     "group": "Repair",
+     "label": "Download time limit (minutes)",
+     "help": "",
+     "default": 60,
+     "minimum": 1
     }
    ]
   }

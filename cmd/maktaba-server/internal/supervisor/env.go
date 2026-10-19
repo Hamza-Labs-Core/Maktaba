@@ -44,8 +44,14 @@ func ChildEnv(role Role, cfg config.Config) []string {
 
 	// Cross-service discovery: the api needs to reach streaming +
 	// pipeline over gRPC. These default ports mirror the compose stack.
-	add("MAKTABA_STREAMING_ADDR", localAddr(cfg.Server.StreamAddr, "8081"))
+	// (Streaming's gRPC port, not its HTTP stream_addr.)
+	add("MAKTABA_STREAMING_ADDR", StreamingGRPCAddr)
 	add("MAKTABA_PIPELINE_ADDR", "127.0.0.1:9090")
+
+	// Where other devices reach the TV: streaming advertises it (SSDP,
+	// discover.json, XMLTV/M3U links) and the api reports it to the web
+	// app (/api/tv/info).
+	add("MAKTABA_PUBLIC_BASE_URL", cfg.PublicStreamURL())
 
 	switch role {
 	case RoleAPI:
@@ -60,6 +66,9 @@ func ChildEnv(role Role, cfg config.Config) []string {
 			"streaming=http://127.0.0.1:9101/logs/recent,"+
 				"pipeline=http://127.0.0.1:9102/logs/recent")
 	case RoleStreaming:
+		// The streaming binary binds MAKTABA_HTTP_ADDR; the older
+		// MAKTABA_STREAMING_HTTP_ADDR is kept for anything reading it.
+		add("MAKTABA_HTTP_ADDR", cfg.Server.StreamAddr)
 		add("MAKTABA_STREAMING_HTTP_ADDR", cfg.Server.StreamAddr)
 		add("MAKTABA_ADMIN_ADDR", ":9101")
 	case RolePipeline:
@@ -73,10 +82,13 @@ func ChildEnv(role Role, cfg config.Config) []string {
 	return env
 }
 
-// localAddr turns a bind spec like ":8081" or "0.0.0.0:8081" into a
+// StreamingGRPCAddr is the streaming service's intra-host gRPC address.
+const StreamingGRPCAddr = "127.0.0.1:9050"
+
+// LocalAddr turns a bind spec like ":8081" or "0.0.0.0:8081" into a
 // dialable 127.0.0.1:<port> address for intra-host gRPC/HTTP. Falls back
 // to the supplied default port when the spec has no parseable port.
-func localAddr(bind, defaultPort string) string {
+func LocalAddr(bind, defaultPort string) string {
 	port := defaultPort
 	if i := strings.LastIndexByte(bind, ':'); i >= 0 && i+1 < len(bind) {
 		port = bind[i+1:]

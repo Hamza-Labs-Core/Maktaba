@@ -50,7 +50,12 @@
         <label class="opt"><input type="checkbox" id="o-yt" checked> Read YouTube playlists and dates</label>
         <label class="opt"><input type="checkbox" id="o-exact"> <span>Exact upload dates<br><span class="muted">slow: one request per video</span></span></label>
       </li>
-      <li><span class="label">3 · Review</span>
+      <li><span class="label">3 · Steps</span>
+        <label class="opt">Start at <select id="o-from"><option value="">the first step</option></select></label>
+        <span class="muted">earlier steps keep what they saved</span>
+        <details class="opt"><summary>Leave out <span class="chip" id="skip-n">0</span></summary><div id="o-skip"></div></details>
+      </li>
+      <li><span class="label">4 · Review</span>
         <div id="wiz-review" class="muted"></div>
         <div><button class="btn primary" id="start">Start run</button></div>
       </li>
@@ -227,6 +232,7 @@ function drawGauges(s, cur, steps) {
 
 function render(s) {
   last = s;
+  fillSteps(s.run_steps);
   const t = s.now;
   const v = {files: s.totals.files, known: s.totals.files - (s.totals["length not known yet"] || 0),
              seasons: s.totals.seasons, cols: s.totals["Plex collections written"], step: s.progress ? s.progress.done : 0};
@@ -472,13 +478,22 @@ function drawLibs(libs) {
 }
 
 // ---- controls
-function options() { return {plex: $("o-plex").checked, tv: $("o-tv").checked, youtube: $("o-yt").checked, exact: $("o-exact").checked}; }
+function skipped() { return [...document.querySelectorAll("#o-skip input:checked")].map(i => i.value); }
+function options() { return {plex: $("o-plex").checked, tv: $("o-tv").checked, youtube: $("o-yt").checked, exact: $("o-exact").checked,
+                             from_step: $("o-from").value, skip: skipped()}; }
+function fillSteps(names) {  // the run's steps, from the server: "Start at" and "Leave out"
+  if (!names || $("o-from").options.length > 1) return;
+  $("o-from").insertAdjacentHTML("beforeend", names.map(n => `<option>${esc(n)}</option>`).join(""));
+  $("o-skip").innerHTML = names.map(n => `<label class="opt"><input type="checkbox" value="${esc(n)}"> ${esc(n)}</label>`).join("");
+}
 function review() {
   const o = options(), sel = $("scope-sel").checked;
   const what = [o.plex && "write season collections to Plex", o.tv && "update dizqueTV shows and channels",
                 o.youtube ? "read YouTube playlists" : "skip YouTube", o.exact && "fetch exact dates"].filter(Boolean);
   $("sel-n").textContent = selected.size;
-  $("wiz-review").textContent = `${sel ? `${selected.size} selected ${selected.size === 1 ? "library" : "libraries"}` : "All Plex libraries"}: scan, find seasons, tag and rate style, then ${what.join(", ")}.`;
+  const sk = skipped();
+  $("skip-n").textContent = sk.length;
+  $("wiz-review").textContent = `${sel ? `${selected.size} selected ${selected.size === 1 ? "library" : "libraries"}` : "All Plex libraries"}: ${o.from_step ? `from ${o.from_step} on` : "scan, find seasons, tag and rate style"}, then ${what.join(", ")}${sk.length ? `; leaving out ${sk.join(", ")}` : ""}.`;
   $("start").disabled = running || (sel && !selected.size);
 }
 async function startRun(folders) {
@@ -486,7 +501,7 @@ async function startRun(folders) {
   catch (e) { toast(e.message, true); }
 }
 $("start").addEventListener("click", () => startRun($("scope-sel").checked ? [...selected] : []));
-["o-plex", "o-tv", "o-yt", "o-exact", "scope-all", "scope-sel"].forEach(id => $(id).addEventListener("change", review));
+["o-plex", "o-tv", "o-yt", "o-exact", "o-from", "o-skip", "scope-all", "scope-sel"].forEach(id => $(id).addEventListener("change", review));
 $("libs").addEventListener("change", e => { const f = e.target.closest(".pick")?.dataset.f; if (!f) return;
   e.target.checked ? selected.add(f) : selected.delete(f); if (selected.size) $("scope-sel").checked = true; review(); });
 $("libs").addEventListener("click", e => { const b = e.target.closest(".run1"); if (b) startRun([b.dataset.f]); });

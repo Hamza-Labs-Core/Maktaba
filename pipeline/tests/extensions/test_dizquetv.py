@@ -378,7 +378,9 @@ async def test_channels_update_keeps_user_settings_and_rewrites_the_lane(db: Dat
     assert program_keys(show["content"]) == ["103", "102", "101"]
     ch = w.dz.channels[5]
     assert ch["icon"] == "http://icon"
-    assert [p["ratingKey"] for p in ch["programs"]][:3] == ["103", "102", "101"]
+    # what is on air finishes, the show's queue goes on after it: all three still air
+    keys = [p["ratingKey"] for p in ch["programs"] if not p.get("isOffline")]
+    assert {"101", "102", "103"} <= set(keys)
     assert not any(m == "DELETE" for m, _ in w.dz.calls)  # nothing is ever deleted
 
 
@@ -465,7 +467,11 @@ async def test_health_probe_reports_ms_or_minus_one() -> None:
 
 def test_manifest_and_configuration() -> None:
     m = default_extension.manifest
-    assert m.name == "dizquetv" and m.stages == ("dizquetv_show", "dizquetv_channels")
+    assert m.name == "dizquetv" and m.stages == (
+        "dizquetv_show",
+        "dizquetv_channels",
+        "dizquetv_audit",
+    )
     assert {f.key: f.env for f in m.settings} == {"url": "MAKTABA_DIZQUETV_URL"}
     assert default_extension.is_configured({"url": "http://x"})
     assert not default_extension.is_configured({})

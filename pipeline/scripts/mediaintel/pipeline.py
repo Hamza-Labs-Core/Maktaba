@@ -20,8 +20,9 @@ from . import db, detect, link, report, scan_local, scan_plex
 
 #: the steps ``run --from-step`` can start at, in order
 STEPS = (
-    "scan", "plex", "youtube", "link", "detect", "signatures", "exact", "tag", "group", "export-plex",
-    "dizquetv-shows", "report", "scan-visual", "plan-channels", "export-dizquetv",
+    "scan", "plex", "youtube", "link", "detect", "signatures", "exact", "tag", "check-tags",
+    "check-clips", "books", "group", "export-plex",
+    "dizquetv-shows", "report", "scan-visual", "plan-channels", "export-dizquetv", "audit-channels",
 )  # fmt: skip
 
 
@@ -188,6 +189,21 @@ def _run(
             _step("tag")
             for f in folders:
                 tags.run(conn, f)
+    if want("check-tags"):
+        from . import check_tags
+
+        _step("check-tags (a language model checks what each series is about)")
+        check_tags.run(conn)
+    if want("check-clips"):
+        from . import check_clips
+
+        _step("check-clips (a language model checks what each clip is about)")
+        check_clips.run(conn)
+    if want("books"):
+        from . import identify_books
+
+        _step("books (the book each lesson series explains decides its topics)")
+        identify_books.run(conn)
     if want("group"):
         from . import group_clips
 
@@ -276,6 +292,14 @@ def _run(
             prune=True,
             clear_channels=clear_channels,
         )
+    if tv and want("audit-channels"):
+        from . import audit_channels
+
+        _step("audit-channels (is each channel's content about the channel?)")
+        try:
+            audit_channels.run(conn, tv_url, report_dir)
+        except OSError as e:  # dizqueTV not running: the audit is a report, never a failure
+            print(f"  -  skipped: dizqueTV not reachable at {tv_url} ({e})")
     if side is not None and side.is_alive():
         print("waiting for the review pages to finish", flush=True)
         side.join()

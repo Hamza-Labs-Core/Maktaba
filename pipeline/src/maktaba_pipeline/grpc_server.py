@@ -145,6 +145,7 @@ class PipelineService:
         subtitle_extractor: Callable[[str, int], Awaitable[str]] | None = None,
         transcriber: Callable[[str, str | None], Awaitable[list[dict[str, Any]]]] | None = None,
         model_service: ModelService | None = None,
+        plan_preview: Any | None = None,
         semantic: SemanticSearchFn | None = None,
     ) -> None:
         self._embedder = embedder
@@ -157,6 +158,9 @@ class PipelineService:
         # from ``stt_registry`` and streams its segments.
         self._transcriber = transcriber
         self.model_service = model_service if model_service is not None else ModelService()
+        # the control centre's plan preview (engine.plan_preview.PlanPreview); None when this
+        # process has no database to plan from
+        self._plan_preview = plan_preview
 
     async def embed(self, payload: dict[str, Any]) -> dict[str, Any]:
         text = payload.get("text")
@@ -334,6 +338,25 @@ class PipelineService:
             raise ValueError("test_model: id is required")
         return await self.model_service.test_model(model_id)
 
+    # --- plan preview (control centre) -------------------------------------
+
+    def _preview(self) -> Any:
+        if self._plan_preview is None:
+            raise RuntimeError("plan preview is not available: this pipeline has no database")
+        return self._plan_preview
+
+    async def plan_preview_start(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Start a background preview: ``{"kind": "preview" | "stored"}``."""
+        from .engine.plan_preview import PreviewBusy
+
+        try:
+            return dict(self._preview().start(str(payload.get("kind") or "preview")))
+        except PreviewBusy as exc:
+            return {"started": False, "busy": True, "detail": str(exc)}
+
+    async def plan_preview_status(self, _payload: dict[str, Any]) -> dict[str, Any]:
+        return dict(self._preview().status())
+
 
 def _build_generic_handler(service: PipelineService) -> Any:
     """Return a :class:`grpc.GenericRpcHandler` exposing the pipeline RPCs."""
@@ -376,6 +399,12 @@ def _build_generic_handler(service: PipelineService) -> Any:
     async def _test_model(request: bytes, _ctx: Any) -> bytes:
         return await _dispatch(request, service.test_model)
 
+    async def _plan_preview_start(request: bytes, _ctx: Any) -> bytes:
+        return await _dispatch(request, service.plan_preview_start)
+
+    async def _plan_preview_status(request: bytes, _ctx: Any) -> bytes:
+        return await _dispatch(request, service.plan_preview_status)
+
     def _h(fn: Callable[[bytes, Any], Awaitable[bytes]]) -> Any:
         return grpc.unary_unary_rpc_method_handler(
             fn,
@@ -396,6 +425,8 @@ def _build_generic_handler(service: PipelineService) -> Any:
         "DeleteModel": _h(_delete_model),
         "ActivateModel": _h(_activate_model),
         "TestModel": _h(_test_model),
+        "PlanPreviewStart": _h(_plan_preview_start),
+        "PlanPreviewStatus": _h(_plan_preview_status),
     }
     return grpc.method_handlers_generic_handler(PIPELINE_SERVICE_NAME, handlers)
 
@@ -465,6 +496,7 @@ async def serve_grpc(
     addr: str,
     service: PipelineService | None = None,
     max_workers: int = 10,
+    database: Any | None = None,
 ) -> tuple[Any, asyncio.Task[None]]:
     """Start the gRPC server bound to ``addr`` (e.g. ``0.0.0.0:50051``).
 
@@ -477,10 +509,15 @@ async def serve_grpc(
 
     warm: Any = None
     if service is None:
+        plan_preview = None
+        if database is not None:
+            from .engine.plan_preview import PlanPreview
+
+            plan_preview = PlanPreview(database)
         embed, semantic, warm = default_search_backends()
         if embed is None:
             _log.info("pipeline_grpc_semantic_disabled", reason="search extra not installed")
-        service = PipelineService(embedder=embed, semantic=semantic)
+        service = PipelineService(embedder=embed, semantic=semantic, plan_preview=plan_preview)
 
     server = grpc.aio.server()
     server.add_generic_rpc_handlers((_build_generic_handler(service),))

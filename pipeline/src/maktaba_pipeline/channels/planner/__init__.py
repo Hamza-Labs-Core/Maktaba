@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ...schedule.tv_settings import MaktabaTvConfig
 from ..base import ChannelDef, ChannelMode, ContentItem, Planner
 from .marathon import MarathonPlanner
 from .schedule import SchedulePlanner
@@ -31,6 +32,7 @@ def make_planner(
     cursor: dict[str, Any] | None = None,
     seed: int | None = None,
     slot_content: list[list[ContentItem] | None] | None = None,
+    tv: MaktabaTvConfig | None = None,
 ) -> Planner:
     """Construct the planner for ``channel``'s mode, restoring its cursor
     (shuffle bag / marathon index) so a top-up continues (D5)."""
@@ -40,7 +42,16 @@ def make_planner(
     if channel.mode == ChannelMode.MARATHON:
         return MarathonPlanner(channel, cursor=cursor)
     if channel.mode == ChannelMode.SCHEDULE:
-        return SchedulePlanner(channel, cursor=cursor, seed=seed, slot_content=slot_content)
+        tv = tv or MaktabaTvConfig()
+        return SchedulePlanner(
+            channel,
+            cursor=cursor,
+            seed=seed,
+            slot_content=slot_content,
+            live=tv.live,
+            ramadan_grids=tv.ramadan_grids,
+            hijri_adjust_days=tv.hijri_adjust_days,
+        )
     if channel.mode == ChannelMode.SMART_MIX:
         return SmartMixPlanner(channel, cursor=cursor, seed=seed)
     raise ValueError(f"unknown channel mode: {channel.mode!r}")

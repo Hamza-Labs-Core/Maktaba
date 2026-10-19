@@ -5,8 +5,8 @@ equals the next block's ``start_at``, with no gaps and no overlaps, so
 the wall-clock anchoring downstream (live engine + guide) stays correct.
 The packer is where padding happens — a program rarely fills its slot
 exactly, so the gap to the next boundary (and the tail up to the horizon)
-is always closed with filler, falling back to a slate when no filler is
-available (D6/D9). Pure: no clock, no DB.
+is always closed with filler clips, the slate taking what no clip fits (D6/D9).
+Pure: no clock, no DB.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from uuid import UUID
 
 from .base import Block, BlockKind, FillerItem, PlanItem
+from .filler import FillerPicker, FillerSet
 
 __all__ = ["pack", "ContiguityError"]
 
@@ -31,7 +32,7 @@ def pack(
     channel_id: UUID,
     start_at: datetime,
     until: datetime,
-    filler: list[FillerItem] | None = None,
+    filler: FillerPicker | FillerSet | list[FillerItem] | None = None,
     base_seq: int = 0,
     slate_title: str = "Up Next",
 ) -> list[Block]:
@@ -39,11 +40,12 @@ def pack(
     ``until``. Returns a contiguous, monotonically-sequenced block list.
 
     A PROGRAM item becomes one program block (trimmed if it would cross
-    ``until``). A FILLER/pad item, or any leftover gap to ``until``, is
-    closed by :func:`_fill` — coalescing short clips into one looping
-    filler block (EC8) or a slate when no filler exists (D9).
+    ``until``); a LIVE item one live block. A FILLER/pad item, or any leftover gap to
+    ``until``, is closed by :func:`_fill`: clips one after the other, chosen by the
+    channel's filler lists (:class:`~.filler.FillerPicker`), then a slate for what no
+    clip fits (D9).
     """
-    filler = filler or []
+    picker = filler if isinstance(filler, FillerPicker) else FillerPicker(filler)
     blocks: list[Block] = []
     t = start_at
     seq = base_seq
@@ -55,6 +57,8 @@ def pack(
         end = t + dur
         if end > until:
             end = until
+        if end <= t:
+            continue
         if item.kind == BlockKind.PROGRAM and item.video_id is not None:
             played_ms = int((end - t) / timedelta(milliseconds=1))
             blocks.append(
@@ -71,16 +75,31 @@ def pack(
                 )
             )
             seq += 1
+        elif item.kind == BlockKind.LIVE:
+            blocks.append(
+                Block(
+                    channel_id=channel_id,
+                    seq=seq,
+                    kind=BlockKind.LIVE,
+                    start_at=t,
+                    end_at=end,
+                    source_offset=0,
+                    source_duration=int((end - t) / timedelta(milliseconds=1)),
+                    title_snapshot=dict(item.snapshot),
+                    source_url=item.source_url,
+                )
+            )
+            seq += 1
         else:
-            # A pad request: fill [t, end) from the filler pool / slate.
-            for b in _fill(channel_id, filler, t, end, seq, slate_title):
+            # A pad request: fill [t, end) from the filler lists / slate.
+            for b in _fill(channel_id, picker, t, end, seq, slate_title, item.pool):
                 blocks.append(b)
                 seq += 1
         t = end
 
     # Guarantee coverage up to the horizon.
     if t < until:
-        for b in _fill(channel_id, filler, t, until, seq, slate_title):
+        for b in _fill(channel_id, picker, t, until, seq, slate_title, None):
             blocks.append(b)
             seq += 1
         t = until
@@ -91,48 +110,50 @@ def pack(
 
 def _fill(
     channel_id: UUID,
-    filler: list[FillerItem],
+    picker: FillerPicker,
     start: datetime,
     end: datetime,
     seq: int,
     slate_title: str,
+    pool: str | None,
 ) -> list[Block]:
-    """Close ``[start, end)`` with filler, coalesced into a single looping
-    block (EC8), or a slate block when no filler exists (D9). Always
-    returns exactly one block so sequencing stays simple."""
-    span_ms = int((end - start) / timedelta(milliseconds=1))
-    if span_ms <= 0:
+    """Close ``[start, end)`` with clips back to back (each its own block, played whole
+    from its start), then a slate block for what is left when no clip fits it (D9)."""
+    if end <= start:
         return []
-    if not filler:
-        return [
+    out: list[Block] = []
+    t = start
+    for clip, at in picker.fill(start, end, pool):
+        stop = at + timedelta(milliseconds=clip.duration_ms)
+        out.append(
             Block(
                 channel_id=channel_id,
-                seq=seq,
+                seq=seq + len(out),
+                kind=clip.kind,
+                start_at=at,
+                end_at=stop,
+                source_offset=0,
+                source_duration=clip.duration_ms,
+                video_id=clip.video_id,
+                filler_item_id=clip.filler_item_id,
+                title_snapshot=dict(clip.snapshot) or {"title": slate_title},
+            )
+        )
+        t = stop
+    if t < end:
+        out.append(
+            Block(
+                channel_id=channel_id,
+                seq=seq + len(out),
                 kind=BlockKind.SLATE,
-                start_at=start,
+                start_at=t,
                 end_at=end,
                 source_offset=0,
-                source_duration=span_ms,
+                source_duration=int((end - t) / timedelta(milliseconds=1)),
                 title_snapshot={"title": slate_title},
             )
-        ]
-    # Coalesce: one filler block referencing the first pool item, spanning
-    # the whole gap (the live engine loops the clip to fill the window).
-    head = filler[0]
-    return [
-        Block(
-            channel_id=channel_id,
-            seq=seq,
-            kind=head.kind,
-            start_at=start,
-            end_at=end,
-            source_offset=0,
-            source_duration=span_ms,
-            video_id=head.video_id,
-            filler_item_id=head.filler_item_id,
-            title_snapshot=dict(head.snapshot) or {"title": slate_title},
         )
-    ]
+    return out
 
 
 def _assert_contiguous(blocks: list[Block]) -> None:

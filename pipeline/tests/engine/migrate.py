@@ -38,15 +38,24 @@ def list_migrations(*, sqlite: bool, upto: int | None = None) -> list[Path]:
 
 def up_statements(sql: str) -> list[str]:
     """Statements of the Up section, in order."""
+    return _section_statements(sql, "Up")
+
+
+def down_statements(sql: str) -> list[str]:
+    """Statements of the Down section, in order."""
+    return _section_statements(sql, "Down")
+
+
+def _section_statements(sql: str, section: str) -> list[str]:
     up: list[str] = []
     in_up = False
     for line in sql.splitlines():
         s = line.strip()
-        if s.startswith("-- +goose Up"):
-            in_up = True
+        if s.startswith("-- +goose Up") or s.startswith("-- +goose Down"):
+            if in_up:
+                break
+            in_up = s.startswith(f"-- +goose {section}")
             continue
-        if s.startswith("-- +goose Down"):
-            break
         if in_up:
             up.append(line)
     stmts: list[str] = []

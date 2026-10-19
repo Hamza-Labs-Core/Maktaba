@@ -19,7 +19,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
 )
 
-// Most tests run on both databases: SQLite always (the 0104 twin as
+// Most tests run on both databases: SQLite always (the 0116 twin as
 // shipped, beside the health_samples and queue tables it needs), Postgres
 // when MAKTABA_TEST_PG_URL is set (a scratch database with every
 // migration, clustertest.ScratchDB).
@@ -94,7 +94,7 @@ func upStatements(t *testing.T, name string) []string {
 	return out
 }
 
-// sqliteSchema: what the cache touches besides slot 0104 (from the 0087
+// sqliteSchema: what the cache touches besides slot 0116 (from the 0087
 // and 0089 twins).
 var sqliteSchema = []string{
 	`CREATE TABLE IF NOT EXISTS health_samples (
@@ -116,7 +116,7 @@ func sqliteDB(t *testing.T) *sql.DB {
 	}
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
-	for _, s := range append(append([]string{}, sqliteSchema...), upStatements(t, "0104_cluster_cache.sqlite.sql")...) {
+	for _, s := range append(append([]string{}, sqliteSchema...), upStatements(t, "0116_cluster_cache.sqlite.sql")...) {
 		if _, err := db.Exec(s); err != nil {
 			t.Fatalf("schema: %v\n%s", err, s)
 		}

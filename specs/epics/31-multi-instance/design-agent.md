@@ -723,9 +723,9 @@ written, dropped, oldest and newest row); readers fall back to the files.
 A home on SQLite (single machine, development) has no cache: the API's handle is
 Postgres-only there, and the Go health readers need Postgres anyway.
 
-**Migration** `0104_cluster_cache` (with its SQLite sibling and MANIFEST row, as the migration
-rules require). PR 57 uses slots 0104–0115 on its own branch; whichever merges second
-renumbers. Built by track C1 (package `api/internal/cluster/cache`).
+**Migration** `0116_cluster_cache` (with its SQLite sibling and MANIFEST row, as the migration
+rules require; first written as slot 0104 and renumbered after PR 57 took 0104–0115). Built
+by track C1 (package `api/internal/cluster/cache`).
 
 ### 7.10 The archive on the home
 

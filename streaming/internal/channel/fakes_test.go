@@ -2,7 +2,6 @@ package channel
 
 import (
 	"context"
-	"io"
 	"sync"
 	"time"
 
@@ -31,9 +30,11 @@ func (c *fakeClock) advance(d time.Duration) {
 
 // fakeRepo serves a fixed block list and records runtime writes.
 type fakeRepo struct {
+	mu       sync.Mutex
 	blocks   []ProgramBlock
 	setCalls int
 	cleared  []uuid.UUID
+	missing  bool
 }
 
 func (f *fakeRepo) ProgramsFrom(_ context.Context, _ uuid.UUID, from time.Time, limit int) ([]ProgramBlock, error) {
@@ -49,48 +50,26 @@ func (f *fakeRepo) ProgramsFrom(_ context.Context, _ uuid.UUID, from time.Time, 
 	return out, nil
 }
 
-func (f *fakeRepo) SetRuntime(_ context.Context, _ Runtime) error { f.setCalls++; return nil }
+func (f *fakeRepo) Look(_ context.Context, _ uuid.UUID) (Look, error) {
+	if f.missing {
+		return Look{}, ErrChannelNotFound
+	}
+	l := DefaultLook()
+	l.Name = "Test"
+	return l, nil
+}
 
-func (f *fakeRepo) ClearRuntime(_ context.Context, id uuid.UUID) error {
-	f.cleared = append(f.cleared, id)
+func (f *fakeRepo) SetRuntime(_ context.Context, _ Runtime) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.setCalls++
 	return nil
 }
 
-// fakeController is a stand-in encoder handle.
-type fakeController struct {
-	stopped bool
-	pid     int
-}
-
-func (c *fakeController) Stop(_ context.Context) error { c.stopped = true; return nil }
-func (c *fakeController) PID() int                     { return c.pid }
-func (c *fakeController) Active() bool                 { return !c.stopped }
-
-// fakeRunner records StartHLS calls and the concat scripts it was given.
-type fakeRunner struct {
-	starts   int
-	lastJob  Job
-	controls []*fakeController
-}
-
-func (r *fakeRunner) StartHLS(_ context.Context, job Job) (Controller, error) {
-	r.starts++
-	r.lastJob = job
-	c := &fakeController{pid: 1000 + r.starts}
-	r.controls = append(r.controls, c)
-	return c, nil
-}
-
-// fakeTS records StreamMPEGTS calls and writes a canned packet.
-type fakeTS struct {
-	calls      int
-	lastConcat string
-}
-
-func (t *fakeTS) StreamMPEGTS(_ context.Context, concatPath string, w io.Writer) error {
-	t.calls++
-	t.lastConcat = concatPath
-	_, _ = w.Write([]byte("TSPACKET"))
+func (f *fakeRepo) ClearRuntime(_ context.Context, id uuid.UUID) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cleared = append(f.cleared, id)
 	return nil
 }
 

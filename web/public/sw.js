@@ -74,6 +74,12 @@ self.addEventListener("fetch", (event) => {
 
   if (url.pathname.startsWith("/ws/")) return;
 
+  // Live TV (HLS playlists/segments, the XMLTV guide, the M3U lineup) is
+  // live data proxied to the streaming service: straight to the network,
+  // never the SPA fallback.
+  if (url.pathname.startsWith("/stream/")) return;
+  if (url.pathname === "/xmltv.xml" || url.pathname === "/lineup.m3u") return;
+
   // /api/* is network-only: do not consult or populate any cache.
   if (url.pathname.startsWith("/api/")) return;
 

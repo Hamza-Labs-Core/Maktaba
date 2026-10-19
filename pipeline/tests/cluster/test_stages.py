@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from collections.abc import Coroutine
+from typing import Any, Literal, cast
 
 import pytest
 
-from maktaba_pipeline.cluster.stages import StageSelector, select_stages
+from maktaba_pipeline.cluster.stages import (
+    StageSelector,
+    is_shared_url,
+    lifted_placements,
+    select_stages,
+)
 from maktaba_pipeline.engine.graph import StageDef
 
 pytestmark = pytest.mark.unit
@@ -111,3 +117,67 @@ def test_selector_reports_changes_and_pools() -> None:
     sel.compute()
     assert sel.current() == ()
     assert sel.detail == {"nohandler": "no handler in this worker"}
+
+
+def test_a_lifted_home_stage_runs_on_a_node() -> None:
+    _, off = select_stages(GRAPH, handlers=HANDLERS, role="node")
+    assert off["index"] == "home_only"
+    served, off = select_stages(GRAPH, handlers=HANDLERS, role="node", lifted={"index"})
+    assert "index" in served and "index" not in off
+
+
+@pytest.mark.parametrize(
+    ("url", "shared"),
+    [
+        ("http://localhost:11434", False),
+        ("http://127.0.0.1:11434", False),
+        ("http://[::1]:11434", False),
+        ("", False),
+        ("http://192.168.1.20:11434", True),
+        ("https://ollama.example.org", True),
+    ],
+)
+def test_only_a_shared_model_server_lifts_home_placement(url: str, shared: bool) -> None:
+    assert is_shared_url(url) is shared
+
+
+class _RulesDb:
+    def __init__(self, value: str | None) -> None:
+        self.value = value
+
+    async def fetchrow(self, sql: str, *args: object) -> dict[str, object] | None:
+        return None if self.value is None else {"value": self.value}
+
+
+def _run[T](coro: Coroutine[Any, Any, T]) -> T:
+    """Drive a coroutine that never waits (a unit test opens no event loop: no sockets)."""
+    try:
+        coro.send(None)
+    except StopIteration as done:
+        return cast(T, done.value)
+    raise AssertionError("the coroutine waited")
+
+
+def test_model_stages_are_home_only_unless_the_settings_name_a_shared_server() -> None:
+    from maktaba_pipeline.engine.graph import GRAPH as CORE
+
+    by = {s.name: s for s in CORE}
+    for name in ("check_tags", "check_clips", "plan_channels", "write_channels"):
+        assert by[name].placement == "home", name
+    assert _run(lifted_placements(_RulesDb(None), CORE)) == frozenset()
+    local = _RulesDb('{"url": "http://localhost:11434"}')
+    assert _run(lifted_placements(local, CORE)) == frozenset()
+    shared = _RulesDb('{"url": "http://10.0.0.5:11434"}')
+    assert _run(lifted_placements(shared, CORE)) == {"check_tags", "check_clips"}
+
+
+def test_the_dizquetv_channel_stages_are_home_only() -> None:
+    from maktaba_pipeline.engine.graph import GRAPH as CORE
+    from maktaba_pipeline.engine.graph import GraphBuilder
+    from maktaba_pipeline.extensions.dizquetv import DizqueTVExtension
+
+    gb = GraphBuilder(CORE)
+    DizqueTVExtension().register(gb)
+    by = {s.name: s for s in gb.build()}
+    assert by["dizquetv_channels"].placement == "home"
+    assert by["dizquetv_audit"].placement == "home"

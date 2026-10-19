@@ -16,12 +16,17 @@ listen = "0.0.0.0:8080"
 # Owned by the `maktaba` system user the package creates.
 data_dir = "/var/lib/maktaba"
 # Embedded web UI bind (the unified binary serves the SPA here and
-# reverse-proxies /api to the API service for a single-origin app).
+# reverse-proxies /api, /stream, /xmltv.xml and /lineup.m3u to the services
+# for a single-origin app).
 web_listen = "0.0.0.0:8088"
 # API admin/metrics bind (health, /metrics).
 admin_addr = ":9100"
 # Streaming service public bind.
 stream_addr = ":8081"
+# How other devices (Plex, TVs, phones) reach the streaming service:
+# the HDHomeRun address and the XMLTV/M3U links. Empty = stream_addr
+# with this machine's LAN IP.
+# public_url = "http://192.168.1.20:8081"
 
 [database]
 # SQLite (default, great for libraries under ~5 TB):

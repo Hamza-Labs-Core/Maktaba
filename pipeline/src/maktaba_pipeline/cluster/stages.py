@@ -7,7 +7,8 @@ reason is stored as a code in ``workers.stages_off`` (the Machines page translat
 2. ``version_ahead``: newer version in the database (``stages_ahead``)
 3. ``unavailable``: cannot run here (no handler; ``StageImpl.unavailable()``; the
    detail is logged and kept in :attr:`StageSelector.detail`)
-4. ``home_only``: ``placement == "home"`` on a node
+4. ``home_only``: ``placement == "home"`` on a node (a stage with ``model_rules`` is
+   lifted when those settings name a model server that is not localhost: ``lifted``)
 5. ``storage``: storage not reachable (``nas_read`` stages need the read check,
    ``nas_write`` the write check)
 6. ``switched_off``: ``cluster_node_stages.enabled = false`` for this machine
@@ -23,6 +24,7 @@ from __future__ import annotations
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlsplit
 
 from ..engine.graph import StageDef
 from ..log import get_logger
@@ -37,6 +39,8 @@ __all__ = [
     "REASON_SWITCHED_OFF",
     "REASON_UNAVAILABLE",
     "StageSelector",
+    "is_shared_url",
+    "lifted_placements",
     "select_stages",
 ]
 
@@ -79,6 +83,7 @@ def select_stages(
     switches: Mapping[str, bool] | None = None,
     drain: bool = False,
     detail: dict[str, str] | None = None,
+    lifted: Collection[str] = (),
 ) -> tuple[list[str], dict[str, str]]:
     """``(served stages in graph order, {stage: reason code} for the others)``.
 
@@ -101,7 +106,7 @@ def select_stages(
                 detail[st.name] = why
             if requested is not None:
                 _log.warning("stage_unavailable_here", stage=st.name, reason=why)
-        elif role == "node" and st.placement == "home":
+        elif role == "node" and st.placement == "home" and st.name not in lifted:
             reason = REASON_HOME_ONLY
         elif (
             storage is not None
@@ -120,6 +125,36 @@ def select_stages(
     return served, off
 
 
+_LOOPBACK = {"localhost", "127.0.0.1", "::1", "0.0.0.0", ""}  # noqa: S104 - names, not a bind
+
+
+def is_shared_url(url: str) -> bool:
+    """True when ``url`` names a server other than the machine itself, so every machine
+    that asks it asks the same one (a loopback or empty address is each machine's own)."""
+    host = (urlsplit(url.strip()).hostname or "").lower()
+    return host not in _LOOPBACK and not host.startswith("127.")
+
+
+async def lifted_placements(db: Any, graph: Iterable[StageDef]) -> frozenset[str]:
+    """The home-only stages with ``model_rules`` whose settings name a shared model server
+    (:func:`is_shared_url`): a node may run those. Settings that cannot be read lift
+    nothing (the stage stays on the home)."""
+    from ..rules import read as read_rules
+
+    out: set[str] = set()
+    for st in graph:
+        if st.placement != "home" or not st.model_rules:
+            continue
+        try:
+            cfg = (await read_rules(db, st.model_rules))[0]
+        except Exception:  # noqa: BLE001 - unreadable settings keep the stage home-only
+            _log.warning("placement_rules_unreadable", stage=st.name, rules=st.model_rules)
+            continue
+        if is_shared_url(str(getattr(cfg, "url", "") or "")):
+            out.add(st.name)
+    return frozenset(out)
+
+
 @dataclass
 class StageSelector:
     """A worker's stage selection; :attr:`served` is what the claim loop reads."""
@@ -135,6 +170,8 @@ class StageSelector:
     drain: bool = False
     #: drained from the cluster channel (`cmd drain`, this process only, until `undrain`)
     held: bool = False
+    #: home-only stages a node may run all the same (see :func:`lifted_placements`)
+    lifted: frozenset[str] = frozenset()
     served: tuple[str, ...] = ()
     stages_off: dict[str, str] = field(default_factory=dict)
     #: the text behind each ``unavailable`` code
@@ -154,6 +191,7 @@ class StageSelector:
             switches=self.switches,
             drain=self.drain or self.held,
             detail=detail,
+            lifted=self.lifted,
         )
         self.detail = detail
         changed = tuple(served) != self.served or off != self.stages_off

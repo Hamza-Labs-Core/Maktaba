@@ -23,6 +23,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -195,6 +197,9 @@ func resolveBinary(name, overrideEnv, binDir string) (string, error) {
 		return "", fmt.Errorf("%w: %s=%q is not an executable file", ErrBinaryNotFound, overrideEnv, p)
 	}
 
+	if runtime.GOOS == "windows" {
+		name += ".exe" // exec.LookPath adds it on its own; the directory candidates need it
+	}
 	candidates := []string{}
 	if binDir != "" {
 		candidates = append(candidates, filepath.Join(binDir, name))
@@ -217,6 +222,9 @@ func isExecutable(p string) bool {
 	info, err := os.Stat(p)
 	if err != nil || info.IsDir() {
 		return false
+	}
+	if runtime.GOOS == "windows" { // no execute bits: Windows runs a program by its suffix
+		return strings.EqualFold(filepath.Ext(p), ".exe")
 	}
 	return info.Mode()&0o111 != 0
 }

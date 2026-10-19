@@ -105,8 +105,9 @@ __all__ = [
     "suggest_channels",
 ]
 
-PLANNER_VERSION: int = 3  # 2: TV grid (show slots with queues), Quran channel; 3: the
-#: lineup (at most max_channels, each with a month of content), presenter slots, blocks
+PLANNER_VERSION: int = 5  # 2: TV grid (show slots with queues), Quran channel; 3: the
+#: lineup (at most max_channels, each with a month of content), presenter slots, blocks;
+#: 4: a show joins a theme whole only when its episodes agree, no general filler on themes
 DAY_MINUTES = 24 * 60
 WEEKDAYS: tuple[str, ...] = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 TIER_NAMES: dict[int, str] = {0: "static", 1: "talk", 2: "produced", 3: "cinematic"}
@@ -270,13 +271,53 @@ class ThemeSpec:
     min_hours: float | None = None
     occasions: tuple[str, ...] = ()
     exclude: tuple[str, ...] = ()
+    #: libraries (part of the library's, presenter's or folder's name) this channel is
+    #: mainly made of: their shows join it, make it their home, and take its slots first
+    libraries: tuple[str, ...] = ()
+    #: libraries never on this channel, whatever their tags
+    exclude_libraries: tuple[str, ...] = ()
+    #: shows (part of the show's name) this channel is made of; with ``libraries``, only
+    #: those shows of those libraries («قصص الأنبياء» of «نبيل العوضي»)
+    series: tuple[str, ...] = ()
+    #: the channel type. ``theme``: a show grid of the shows its tags (and libraries)
+    #: take. ``quran``: the Quran's recitation non-stop, reciter lanes. ``nonstop``: only
+    #: its own shows (``libraries`` / ``series``) one after another in their order, one
+    #: every ``slot_minutes`` all day, filler between, the first again after the last
+    #: episode; no show grid, no month rule (``min_hours`` or nothing)
+    kind: str = "theme"
+    #: nonstop: an episode starts every this many minutes and filler pads the rest
+    #: (0: back to back, no clock: the next episode as soon as one ends)
+    slot_minutes: int = 0
+    #: second-choice filler (its breaks), after the clips on its own topics: clips on
+    #: these topics («islamic_history») …
+    filler_topics: tuple[str, ...] = ()
+    #: … that are also one of these («nasheed», «poetry»; empty: any clip) …
+    filler_with: tuple[str, ...] = ()
+    #: … or the short clips of these libraries («استوديو القمة»; on ``filler_with`` if set)
+    filler_libraries: tuple[str, ...] = ()
+    #: False: no clips at all, programmes only (a back-to-back nonstop channel)
+    filler: bool = True
+
+
+def _lib_in(names: Sequence[str], *where: str) -> bool:
+    """Any of ``names`` is part of the library's / presenter's / folder's name."""
+    return any(n and any(n in w for w in where if w) for n in names)
+
+
+def _owns(t: ThemeSpec, name: str, library: str, presenter: str, folder: str) -> bool:
+    """The show is one the channel is made of (its ``libraries`` and ``series``)."""
+    if not t.libraries and not t.series:
+        return False
+    if t.libraries and not _lib_in(t.libraries, library, presenter, folder):
+        return False
+    return not t.series or _lib_in(t.series, name)
 
 
 #: In priority order: when more themes have enough content than the lineup has room
 #: for (:attr:`PlannerConfig.max_channels`), the earlier ones get a channel.
 DEFAULT_THEMES: tuple[ThemeSpec, ...] = (
     ThemeSpec("quran", "Quran", "القرآن الكريم", 101, ("quran_recitation",),
-              formats=("recitation",), category="quran", min_hours=100.0),
+              formats=("recitation",), category="quran", min_hours=100.0, kind="quran"),
     ThemeSpec("kids", "Kids & Family", "الأطفال والأسرة", 110, ("seerah", "prophets_stories"),
               audiences=("kids", "kids_friendly", "beginners"), category="kids",
               exclude=("audience:adults",)),
@@ -419,6 +460,37 @@ class PlannerConfig:
     #: Palestine episodes), as one collection per presenter in air order
     theme_episodes: bool = True
     theme_episode_min_score: float = 0.6
+    #: a show a theme claims by a topic or occasion tag (not its genre) joins whole only
+    #: when at least this share of its hours are episodes tagged so themselves; else
+    #: only those episodes join, as a special run (4 of 114 episodes on Gaza do not make
+    #: a show a Palestine show). Shows without episode tags are kept. 0: off
+    theme_show_min_episode_share: float = 0.5
+    #: theme channels also fill with the library's general filler (clips on any topic);
+    #: off: only their own topic's filler and their shows' promos
+    theme_general_filler: bool = False
+    #: every channel's breaks (between shows, like a TV channel's ads) also play the
+    #: library's break filler: nasheeds, dua, and short clips from chosen libraries
+    break_filler: bool = True
+    #: break filler: clips tagged one of these topics …
+    break_filler_topics: tuple[str, ...] = ("nasheed", "dua_dhikr")
+    #: … and any short clip from these libraries (folder or presenter name contains it)
+    break_filler_libraries: tuple[str, ...] = ("سَعيد الكَمَلي", "سعيد الكملي")
+    #: … up to this long
+    break_filler_max_minutes: float = 5.0
+    #: a break clip plays only where it clearly belongs: on a topic channel its topic
+    #: score is at least this; on an audience channel (Kids) it is among its own filler
+    break_related_min_score: float = 0.7
+    #: the lighter channels whose breaks may play nasheeds (still related to the channel)
+    break_nasheed_channels: tuple[str, ...] = (
+        "kids", "family", "stories", "history", "prophets", "seerah", "palestine", "akhlaq",
+        "nasheed", "mix",
+    )  # fmt: skip
+    #: on a topic channel, shows of the channel's own topic take the slots first
+    #: (variety there means another presenter, not another topic)
+    theme_core_first: bool = True
+    #: … and among them the presenters whose library is mostly that topic (a hadith
+    #: scholar on the Hadith channel), by their share of it
+    theme_specialists_first: bool = True
     theme_episode_min_minutes: float = 10.0
     #: a presenter's collection needs at least this many such episodes
     theme_episode_min_count: int = 2
@@ -456,6 +528,10 @@ class PlannerConfig:
     #: topic's channel before an audience or format one, then the fewest hours. Wherever
     #: it airs, never at the same time on two channels.
     show_max_channels: int = 0
+    #: a channel left short by show_max_channels takes back shows it also matches (the
+    #: closest first, whole shows) until it has its month: a show on a second channel
+    #: rather than no channel
+    show_reuse_to_fill: bool = True
     #: False: a show never holds the same time of day on two channels
     show_same_time: bool = False
     #: presenter channels only for the largest libraries: at most this many
@@ -559,6 +635,9 @@ class PlannerConfig:
     quran_filler_exclude_formats: tuple[str, ...] = (
         "lecture", "qa_fatwa", "program", "interview", "podcast", "khutbah",
     )  # fmt: skip
+    #: of the Quran channel's filler topics, these count only when recited (a dua read
+    #: out, not a talk about dua: «سبعة أعمال تجلب لك دعاء الملائكة»)
+    quran_filler_recited_topics: tuple[str, ...] = ("dua_dhikr",)
     # unknown tier is ranked by format: these formats rank like "produced-ish"
     prime_unknown_formats: tuple[str, ...] = ("program", "documentary", "drama")
     # prime-time rank of a show (higher airs at prime time): a base of 1, plus …
@@ -573,10 +652,25 @@ class PlannerConfig:
     format_min_score: float = 0.5
     timezone: str | None = None  # IANA name written into mode_config; None = server local
     # dizqueTV schedule knobs
-    dz_lateness_ms: int = 15 * 60_000
+    #: a slot started later than this is all filler: a day, never (programmes all day)
+    dz_lateness_ms: int = 24 * 60 * 60_000
+    #: the most filler a slot ends on: past it the next episode plays though it runs past
+    #: the slot's end (0: never; a nonstop channel's filler to the hour is its design)
+    slot_max_filler_minutes: int = 20
     dz_max_days: int = 365
     dz_pad_ms: int = 1
     dz_filler_cooldown_ms: int = 30 * 60_000
+    #: how often dizqueTV picks each of a channel's filler lists (relative weights)
+    dz_weight_topic: int = 300
+    dz_weight_promos: int = 150
+    dz_weight_breaks: int = 200
+    dz_weight_general: int = 100
+    #: the guide shows what runs: programmes from this long are listed (shorter ones are
+    #: filler), and filler time from this long gets its own entry (dz_guide_filler_title)
+    #: instead of being added to the programme before it
+    dz_guide_min_program_s: int = 60
+    dz_guide_max_padding_s: int = 120
+    dz_guide_filler_title: str = "فواصل"
     #: a dizqueTV filler list holds at most this many clips (the first of the pool, which
     #: is in priority order): a pool can hold 75,000 clips, more than dizqueTV accepts in
     #: one request (50 MB) and far more than a filler list needs
@@ -587,6 +681,9 @@ class PlannerConfig:
     #: the picture in a corner of the video on every channel (an animated GIF loops);
     #: "" = none
     dz_watermark_file: str = ""
+    #: a folder of per-channel watermarks: <channel key>.gif (or .png), else
+    #: dz_watermark_file; "" = the one file on every channel
+    dz_watermark_dir: str = ""
     dz_watermark_position: str = "top-right"
     dz_watermark_width: float = 12.0  # % of the picture's width
     dz_watermark_margin: float = 2.0  # % from the edges
@@ -840,6 +937,12 @@ def _tag_rank(genre: str, tags: Mapping[str, float], names: Sequence[str],
 def _in_theme(s: SeasonCandidate, t: ThemeSpec, cfg: PlannerConfig) -> bool:
     if _excluded(s.tags, t.exclude, cfg):
         return False
+    if _lib_in(t.exclude_libraries, s.library, s.presenter, s.folder):
+        return False
+    if _owns(t, s.name, s.library, s.presenter, s.folder) and not _is_recitation(s, cfg):
+        return True
+    if t.kind == "nonstop":
+        return False  # only its own shows
     if s.genre in t.topics:
         return True
     if _is_recitation(s, cfg) and not _is_khutbah(s, cfg):
@@ -883,7 +986,9 @@ def _unit(s: SeasonCandidate, cfg: PlannerConfig) -> ProgramUnit:
         genre=s.genre,
         tier=s.tier,
         style=s.style,
-        ramadan=s.tags.get("occasion:ramadan", 0.0) >= cfg.ramadan_min_score,
+        # about Ramadan, or aired in a Ramadan season: both belong on the Ramadan grid
+        ramadan=max(s.tags.get("occasion:ramadan", 0.0), s.tags.get("occasion:ramadan_season", 0.0))
+        >= cfg.ramadan_min_score,
         first_air=s.first_air or "9999",
         series_key=s.series_key or s.name,
         episodes=tuple(e for e in s.episodes if e.duration_s > 0),
@@ -979,14 +1084,14 @@ def _filler_items(
                 promo_of=v.promo_of,
             )
         )  # fmt: skip
+    return items, notes
+
+
+def _held_back(f: FillerItem, cfg: PlannerConfig) -> bool:
+    """Filler of a topic kept out of the breaks (current affairs: dated news), except on
+    the channel of that very topic."""
     excluded = set(cfg.filler_exclude_topics)
-    keep = [
-        i
-        for i in items
-        if i.genre not in excluded
-        and _score(i.tags, "topic", excluded) < cfg.filler_topic_min_score
-    ]
-    return keep, notes
+    return f.genre in excluded or _score(f.tags, "topic", excluded) >= cfg.filler_topic_min_score
 
 
 def _pool(key: str, name: str, items: Iterable[FillerItem], fallback: str | None,
@@ -1318,8 +1423,15 @@ def _show_grid(
     *,
     ramadan: bool = False,
     busy: dict[str, list[tuple[int, int]]] | None = None,
+    focus: tuple[str, ...] = (),
+    specialist: Mapping[str, float] | None = None,
+    prefer: tuple[str, ...] = (),
 ) -> tuple[list[Slot], list[Lane], list[str]]:
     """A TV week: every slot is owned by a show and keeps a queue.
+
+    ``focus``: a topic channel's topics; its shows take the slots first, and among them
+    the presenters with the largest ``specialist`` share (presenter → share of his
+    library in the topic).
 
     ``busy``: the times of day (minutes) each show (by name: two uploads of one series
     are one show to a viewer) already holds on the channels
@@ -1405,11 +1517,21 @@ def _show_grid(
             if d.exclude and _excluded(s.tags, d.exclude, cfg):
                 continue
             miss = 0 if s.genre in topics else 1
+            core = bool(focus) and cfg.theme_core_first
             k = (
                 (0 if s.ramadan else 1) if ramadan_first else 0,
                 # a block (the kids' hour) takes its kind of show first, in its order
                 _tag_rank(s.genre, s.tags, d.topics, cfg) if block else 0,
-                1 if s.genre == prev else 0,  # variety first: never the same genre twice in a row
+                # the libraries the channel is mainly made of first
+                (0 if _lib_in(prefer, s.presenter, s.folder) else 1) if prefer else 0,
+                # a topic channel: its topic's shows first, the topic's specialists first
+                (0 if s.genre in focus else 1) if core else 0,
+                -round((specialist or {}).get(s.presenter, 0.0), 1)
+                if core and cfg.theme_specialists_first
+                else 0,
+                # variety: never the same genre twice in a row (on a topic channel, where
+                # every show is its topic, the presenter rule below does it)
+                1 if s.genre == prev and not core else 0,
                 # a presenter owns one slot: his other shows follow in it
                 1 if cfg.slot_owner == "presenter" and s.presenter in heads else 0,
                 -s.rank if d.role != "low" else miss,
@@ -1901,6 +2023,9 @@ def suggest_channels(
     # promos air only next to the show they advertise, never as anyone's general filler
     promos = [f for f in fillers if f.promo_of]
     fillers = [f for f in fillers if not f.promo_of]
+    # a held-back topic's clips (current affairs) pad only its own channel (News)
+    held_fillers = [f for f in fillers if _held_back(f, cfg)]
+    fillers = [f for f in fillers if not _held_back(f, cfg)]
     filler_ids = {s.series_id for s in all_seasons if s.kind == "clips"} | {
         s.series_id
         for s in all_seasons
@@ -1952,6 +2077,69 @@ def suggest_channels(
         general.key, f"filler tagged {', '.join(cfg.dawn_filler_topics)}",
     )  # fmt: skip
     pools[dawn.key] = dawn
+    libs = tuple(x for x in cfg.break_filler_libraries if x)
+    break_short = [
+        f for f in fillers if f.duration_s <= cfg.break_filler_max_minutes * 60 and not f.promo_of
+    ]
+    break_any = [f for f in break_short if f.topic_score(cfg.break_filler_topics) >= fmin]
+    break_lib = [f for f in break_short if any(x in f.folder or x in f.presenter for x in libs)]
+
+    def second_choice(t: ThemeSpec) -> list[FillerItem]:
+        """A theme's second-choice filler (``filler_topics`` / ``filler_with`` /
+        ``filler_libraries``): the history poems of a prophets' stories channel."""
+        if not t.filler_topics and not t.filler_libraries:
+            return []
+
+        def ok(f: FillerItem) -> bool:
+            if f.promo_of or _excluded(f.tags, t.exclude, cfg):
+                return False
+            if t.filler_with and f.topic_score(t.filler_with) < fmin:
+                return False
+            if t.filler_topics and f.topic_score(t.filler_topics) >= fmin:
+                return True
+            return _lib_in(t.filler_libraries, f.folder, f.presenter, f.plex_library or "")
+
+        return [f for f in {f.path: f for f in [*fillers, *held_fillers]}.values() if ok(f)]
+
+    def break_pool(key: str, label: str, focus: tuple[str, ...], exclude: tuple[str, ...],
+                   own: str | None, mix: bool, audiences: tuple[str, ...] = (),
+                   extra: Sequence[FillerItem] = ()) -> str | None:  # fmt: skip
+        """The channel's breaks: nasheeds and dua, and the chosen libraries' short clips
+        that clearly belong to it: on a topic channel scored on its topic; on an audience
+        or format channel (Kids) among its own filler; any on the mix or a presenter's."""
+        if not cfg.break_filler and not extra:
+            return None
+        mine = {i.path for i in pools[own].items} if own in pools else set()
+
+        def related(f: FillerItem) -> bool:
+            if mix:
+                return True
+            if audiences:  # Kids: made for its audience (a nasheed from its own filler)
+                return _score(f.tags, "audience", audiences) >= cfg.topic_min_score or (
+                    f.path in mine and f.topic_score(("nasheed",)) >= fmin
+                )
+            if focus:
+                return f.topic_score(focus) >= cfg.break_related_min_score
+            return f.path in mine
+
+        nasheed_ok = key in cfg.break_nasheed_channels
+        items = [
+            f for f in {f.path: f for f in break_any + break_lib}.values()
+            if cfg.break_filler and related(f) and not _excluded(f.tags, exclude, cfg)
+            and (nasheed_ok or f.topic_score(("nasheed",)) < fmin)
+        ]  # fmt: skip
+        have = {f.path for f in items}
+        items += [f for f in extra if f.path not in have]  # its own settings: as they say
+        if not items:
+            return None
+        p = _pool(f"{key}.breaks", f"{label} · فواصل", items, None,
+                  f"nasheed / dua clips and short clips of {', '.join(libs) or '-'} "
+                  + (f"on {'/'.join(focus)} (≥ {cfg.break_related_min_score})" if focus else "")
+                  + f" (≤ {cfg.break_filler_max_minutes:g} min)"
+                  + (f"; {len(extra)} second-choice clip(s) of its settings" if extra
+                     else ""))  # fmt: skip
+        pools[p.key] = p
+        return p.key
 
     def lib_lane(key: str, name: str, ids: set[str], special: str) -> Lane | None:
         us = _order_units(units[i] for i in ids)
@@ -2034,7 +2222,9 @@ def suggest_channels(
     def make_channel(
         key: str, number: int, name: str, name_ar: str, kind: str, category: str,
         member_ids: set[str], why: list[str], pool_keys: dict[str, str | None], *, mix: bool,
-        exclude: tuple[str, ...] = (),
+        exclude: tuple[str, ...] = (), focus: tuple[str, ...] = (),
+        audiences: tuple[str, ...] = (), prefer: tuple[str, ...] = (),
+        extra: Sequence[FillerItem] = (),
     ) -> None:  # fmt: skip
         member_ids = whole_shows(member_ids)
         reg = regular(member_ids)
@@ -2047,8 +2237,18 @@ def suggest_channels(
         shows = _shows(reg, tags_of, cfg)
         q = quran_lane if cfg.dawn_quran else None
         k = khutbah_lane if (khutbah_lane and (mix or member_ids & khutbah_ids)) else None
+        spec = (
+            {p: specialist_share(p, focus) for p in {s.presenter for s in shows}} if focus else {}
+        )
+        if focus or prefer:  # its libraries, its topic's shows, specialists first
+            shows = sorted(shows, key=lambda s: (
+                (0 if _lib_in(prefer, s.presenter, s.folder) else 1) if prefer else 0,
+                (0 if s.genre in focus else 1) if cfg.theme_core_first else 0,
+                -round(spec.get(s.presenter, 0.0), 1) if cfg.theme_specialists_first else 0,
+                -s.rank, s.first_air, s.name, s.key))  # fmt: skip
         slots, used, warn = _show_grid(key, label, shows, cfg.dayparts, q, k, pool_keys, cfg,
-                                       busy=None if cfg.show_same_time else held)  # fmt: skip
+                                       busy=None if cfg.show_same_time else held,
+                                       focus=focus, specialist=spec, prefer=prefer)  # fmt: skip
         r_slots: list[Slot] = []
         r_used: list[Lane] = []
         # the Ramadan grid sees every show, also those ramadan_exclusive keeps off the
@@ -2061,7 +2261,8 @@ def suggest_channels(
         ram = [s for s in r_shows if s.ramadan]
         if cfg.ramadan_grid and ram:
             r_slots, r_used, w2 = _show_grid(key, label, r_shows, cfg.ramadan_dayparts, q, k,
-                                             pool_keys, cfg, ramadan=True,
+                                             pool_keys, cfg, ramadan=True, focus=focus,
+                                             specialist=spec, prefer=prefer,
                                              busy=None if cfg.show_same_time
                                              else held_r)  # fmt: skip
             warn += w2
@@ -2122,7 +2323,11 @@ def suggest_channels(
                 slots=tuple(slots), ramadan_slots=tuple(r_slots),
                 filler_pools=tuple(dict.fromkeys(
                     p for p in [pool_keys.get("topic"), promo_key, pool_keys.get("dawn"),
-                                *slot_pools.values(), general.key] if p is not None)),
+                                *slot_pools.values(),
+                                general.key if kind != "theme" or cfg.theme_general_filler
+                                else None,
+                                break_pool(key, label, focus, exclude, pool_keys.get("topic"),
+                                           mix, audiences, extra)] if p is not None)),
                 hours=hours, reasons=tuple(why), warnings=tuple(warn),
             )
         )  # fmt: skip
@@ -2133,9 +2338,19 @@ def suggest_channels(
         hours = sum(u.duration_s for u in rec) / 3600
         reciters = _reciter_lanes(rec, cfg)
         talk = cfg.quran_filler_exclude_formats
+        plain = tuple(
+            t for t in cfg.quran_filler_topics if t not in cfg.quran_filler_recited_topics
+        )
+
+        def recitation_or_dua(f: FillerItem) -> bool:
+            if f.topic_score(plain) >= fmin:
+                return True
+            return (f.topic_score(cfg.quran_filler_recited_topics) >= fmin
+                    and _format_score(f.tags, "recitation") >= cfg.format_min_score)  # fmt: skip
+
         items = [
             f for f in fillers
-            if f.topic_score(cfg.quran_filler_topics) >= fmin
+            if recitation_or_dua(f)
             and max((_format_score(f.tags, x) for x in talk), default=0.0) < cfg.format_min_score
         ]  # fmt: skip
         pk_: str | None = None
@@ -2169,6 +2384,38 @@ def suggest_channels(
     held: dict[str, list[tuple[int, int]]] = {}  # show → times it holds on channels so far
     held_r: dict[str, list[tuple[int, int]]] = {}  # the same on the Ramadan grids
 
+    presenter_genre_s: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    for u in units.values():
+        presenter_genre_s[u.presenter][u.genre] += u.duration_s
+
+    def specialist_share(presenter: str, topics: tuple[str, ...]) -> float:
+        """How much of a presenter's library is the topic (al-Adawi: mostly hadith)."""
+        g = presenter_genre_s.get(presenter)
+        total = sum(g.values()) if g else 0.0
+        return sum(g.get(t, 0.0) for t in topics) / total if g and total else 0.0
+
+    def episodes_agree(i: str, t: ThemeSpec) -> bool:
+        """A show claimed by a topic/occasion tag (not by its genre, an audience or a
+        format) needs enough of its own episodes tagged so too."""
+        s = by_id[i]
+        if cfg.theme_show_min_episode_share <= 0 or s.genre in t.topics:
+            return True
+        if _owns(t, s.name, s.library, s.presenter, s.folder):
+            return True  # a library the channel is made of: all its shows
+        lo = cfg.topic_min_score
+        if (_score(s.tags, "audience", t.audiences) >= lo
+                or _score(s.tags, "format", t.formats) >= lo):  # fmt: skip
+            return True
+        eps = units[i].episodes
+        if not any(e.tags for e in eps):
+            return True  # nothing to check against
+        keys = [f"topic:{x}" for x in t.topics] + [f"occasion:{o}" for o in t.occasions]
+        on = sum(e.duration_s for e in eps
+                 if max((e.tags.get(k, 0.0) for k in keys), default=0.0)
+                 >= cfg.theme_episode_min_score)  # fmt: skip
+        total = sum(e.duration_s for e in eps) or 1.0
+        return on / total >= cfg.theme_show_min_episode_share
+
     def theme_episode_units(t: ThemeSpec, have: set[str]) -> set[str]:
         """One collection per presenter of the episodes whose own title is about the
         theme (its topics, audiences, occasions), from every show not in ``have``."""
@@ -2182,11 +2429,23 @@ def suggest_channels(
         for i, u in units.items():
             if i in have or i in synthetic or _excluded(tags_of.get(i, {}), t.exclude, cfg):
                 continue
+            if _lib_in(t.exclude_libraries, u.library, u.presenter, u.folder):
+                continue  # a library never on this channel: not even single episodes
             if _is_recitation(by_id[i], cfg) and by_id[i].genre not in t.topics:
                 continue  # the Quran is never a theme's special run (as in _in_theme)
+            lesson = "recitation" not in t.formats and "qiyam" not in t.topics
             for e in u.episodes:
                 if e.duration_s < mins or not e.tags or _excluded(e.tags, t.exclude, cfg):
                     continue
+                if (
+                    lesson
+                    and max(
+                        e.tags.get("topic:quran_recitation", 0.0),
+                        e.tags.get("format:recitation", 0.0),
+                    )
+                    >= cfg.topic_min_score
+                ):
+                    continue  # a recited Taraweeh night is not a lesson on prayer
                 if max(e.tags.get(k, 0.0) for k in keys) >= cfg.theme_episode_min_score:
                     by_src[u.presenter or u.library or u.folder].append((u, e))
         out: set[str] = set()
@@ -2258,9 +2517,11 @@ def suggest_channels(
     def build_theme(t: ThemeSpec, ids: set[str]) -> set[str]:
         hours = hours_of(ids)
         topics = t.topics or ("__none__",)
+        own_held = set(t.topics) & set(cfg.filler_exclude_topics)
+        pool_from = fillers + [f for f in held_fillers if f.topic_score(own_held) >= fmin]
         pk = channel_pools(
             t.key, t.name,
-            (f for f in fillers
+            (f for f in pool_from
              if not _excluded(f.tags, t.exclude, cfg)
              and (f.topic_score(topics) >= fmin
                   or _score(f.tags, "audience", t.audiences) >= fmin
@@ -2279,12 +2540,113 @@ def suggest_channels(
             + (f", never {', '.join(t.exclude)}" if t.exclude else "")
         ]
         make_channel(t.key, t.number, t.name, t.name_ar, "theme", t.category, ids, why, pk,
-                     mix=False, exclude=t.exclude)  # fmt: skip
+                     mix=False, exclude=t.exclude, focus=t.topics,
+                     audiences=t.audiences, prefer=t.libraries,
+                     extra=second_choice(t))  # fmt: skip
         return whole_shows(ids)
 
+    def build_nonstop(t: ThemeSpec, ids: set[str]) -> set[str]:
+        """Its own shows one after another in their order: an episode every
+        ``slot_minutes`` all day, the clips on its topics (then its second choice) between."""
+        us = _order_units(units[i] for i in ids)
+        hours = sum(u.duration_s for u in us) / 3600
+        shows = tuple(dict.fromkeys(u.name for u in us))
+        longest = max((u.max_episode_s for u in us), default=0.0) / 60
+        step = cfg.slot_round_minutes or 30
+        every = max(0, t.slot_minutes)  # 0: back to back
+        if 0 < every < longest:  # never cut an episode: the slot grows to the longest one
+            every = int(step * math.ceil(longest / step))
+        label = t.name_ar or t.name
+        ln = Lane(
+            key=f"{t.key}.nonstop", name=label, tier_group="mixed", units=tuple(us), rank=0.0,
+            pattern="nonstop", cadence="strip", slot_minutes=every, shows=shows,
+            reasons=(f"{', '.join(u.label for u in us)}: {sum(len(u.episodes) for u in us)} "
+                     "episodes in order; after the last the first starts again",),
+        )  # fmt: skip
+        lanes[ln.key] = ln
+        topics = t.topics or ("__none__",)
+        pk = channel_pools(
+            t.key, t.name,
+            (f for f in fillers if not f.promo_of and not _excluded(f.tags, t.exclude, cfg)
+             and f.topic_score(topics) >= fmin),
+            f"filler on {'/'.join(t.topics) or '-'} (≥ {fmin})",
+        )  # fmt: skip
+        brk = break_pool(t.key, label, t.topics, t.exclude, pk["topic"], False, t.audiences,
+                         second_choice(t))  # fmt: skip
+        if every:
+            starts = list(range(0, DAY_MINUTES, every))
+            slots = [Slot(a, min(a + every, DAY_MINUTES) if k < len(starts) - 1 else DAY_MINUTES,
+                          ln.key, "nonstop", pk["topic"], kind="program",
+                          reasons=(f"an episode every {every} min, filler to the hour",))
+                     for k, a in enumerate(starts)]  # fmt: skip
+        else:
+            why_b2b = ("back to back: the next episode as soon as one ends",)
+            slots = [Slot(0, DAY_MINUTES, ln.key, "nonstop", pk["topic"], kind="program",
+                          reasons=why_b2b)]  # fmt: skip
+        n_eps = sum(len(u.episodes) for u in us)
+        run_days = n_eps * every / DAY_MINUTES if every else hours / 24
+        channels.append(
+            ChannelSuggestion(
+                key=t.key, number=t.number, name=t.name, name_ar=t.name_ar, kind="nonstop",
+                category=t.category, lanes=(ln.key,), slots=tuple(slots), ramadan_slots=(),
+                filler_pools=tuple(p for p in (pk["topic"], brk) if p is not None),
+                hours=hours,
+                reasons=(f"{len(us)} season(s) of {', '.join(shows)}, {hours:.1f} h: "
+                         + (f"an episode every {every} min all day" if every
+                            else "back to back all day")
+                         + f", no show grid; the whole run every {run_days:.1f} days",
+                         f"filler: clips on {'/'.join(t.topics) or '-'}"
+                         + (", then its second choice (" + ", ".join(
+                             x for x in ("/".join(t.filler_topics), "/".join(t.filler_with),
+                                         "/".join(t.filler_libraries)) if x) + ")"
+                            if t.filler_topics or t.filler_libraries else "")),
+            )
+        )  # fmt: skip
+        return set(ids)
+
+    def without_filler(build: Callable[[set[str]], set[str]]) -> Callable[[set[str]], set[str]]:
+        """``filler: false``: the channel the build adds keeps its programmes only."""
+
+        def run(ids: set[str]) -> set[str]:
+            n = len(channels)
+            out = build(ids)
+            for k in range(n, len(channels)):
+                ch = channels[k]
+                channels[k] = replace(
+                    ch, filler_pools=(),
+                    slots=tuple(replace(sl, filler_pool=None) for sl in ch.slots),
+                    ramadan_slots=tuple(replace(sl, filler_pool=None) for sl in ch.ramadan_slots),
+                    reasons=(*ch.reasons, "no filler (its settings): programmes only"),
+                )  # fmt: skip
+            return out
+
+        return run
+
+    kinds = ("theme", "quran", "nonstop")
     for n_t, t in enumerate(cfg.themes):
+        if t.kind not in kinds:
+            unplaced.append((f"theme {t.key}", f"kind {t.kind!r} is none of {', '.join(kinds)}"))
+            continue
+        if t.kind == "nonstop":
+            # its own shows only, whole; no month rule: a run of a series repeats by nature
+            own = regular_ids | khutbah_ids
+            ids = {i for i in own if i in by_id and _in_theme(by_id[i], t, cfg)}
+            ids = {i for i in whole_shows(ids) if i in own}
+            if not ids:
+                unplaced.append((f"theme {t.key}", "non-stop: none of its libraries' / series' "
+                                                   "shows are in the library"))  # fmt: skip
+                continue
+            need = t.min_hours or 0.0
+            if hours_of(ids) < need:
+                short(f"theme {t.key}", hours_of(ids), need)
+                continue
+            b = partial(build_nonstop, t)
+            offer(
+                "theme", n_t, f"theme {t.key}", ids, need, b if t.filler else without_filler(b), t
+            )
+            continue
         need = t.min_hours if t.min_hours is not None else max(cfg.theme_min_hours, month_h)
-        if t.key == "quran":
+        if t.kind == "quran":
             q_hours = sum(units[i].duration_s for i in quran_ids) / 3600
             if not quran_ids:
                 continue
@@ -2293,8 +2655,9 @@ def suggest_channels(
                 continue
             offer("quran", n_t, f"theme {t.key}", set(), need, partial(build_quran, t))
             continue
-        ids = {i for i in regular_ids if i in by_id and _in_theme(by_id[i], t, cfg)}
-        ids |= {i for i in khutbah_ids if _in_theme(by_id[i], t, cfg)}
+        ids = {i for i in regular_ids if i in by_id and _in_theme(by_id[i], t, cfg)
+               and episodes_agree(i, t)}  # fmt: skip
+        ids |= {i for i in khutbah_ids if _in_theme(by_id[i], t, cfg) and episodes_agree(i, t)}
         # a show joins whole or not at all, so the hours counted are the hours it airs
         ids = {i for i in whole_shows(ids) if i in regular_ids or i in khutbah_ids}
         ids |= theme_episode_units(t, ids)
@@ -2304,7 +2667,8 @@ def suggest_channels(
         if hours < need:
             short(f"theme {t.key}", hours, need)
             continue
-        offer("theme", n_t, f"theme {t.key}", ids, need, partial(build_theme, t), t)
+        b = partial(build_theme, t)
+        offer("theme", n_t, f"theme {t.key}", ids, need, b if t.filler else without_filler(b), t)
 
     # ---- mix channel
     excluded = set(cfg.mix_exclude_topics)
@@ -2396,6 +2760,8 @@ def suggest_channels(
         if t is None:
             return 3
         u, tg = units[i], tags_of.get(i, {})
+        if _owns(t, u.name, u.library, u.presenter, u.folder):
+            return -1  # a library the channel is mainly made of: its home
         if u.genre in t.topics:
             return 0
         if (_score(tg, "topic", t.topics) >= cfg.topic_min_score
@@ -2431,14 +2797,30 @@ def suggest_channels(
     while True:  # a channel left short once its shows went to more specific ones drops out
         chosen = live[: cfg.max_channels]
         owned = share(chosen)
+        if cfg.show_reuse_to_fill and cfg.show_max_channels > 0:
+            for c in chosen:
+                if not c.ids or hours_of(owned[c.label]) >= c.need:
+                    continue
+                spare: dict[tuple[str, str], list[str]] = defaultdict(list)
+                for i in c.ids - owned[c.label]:
+                    spare[show_of(i)].append(i)
+                # its own topic's shows first, then the most hours (fewest shows reused)
+                order = sorted(spare.items(), key=lambda kv: (
+                    min(claim(c, i) for i in kv[1]), -hours_of(kv[1]), kv[0]))  # fmt: skip
+                for _, show_ids in order:
+                    if hours_of(owned[c.label]) >= c.need:
+                        break
+                    owned[c.label] = owned[c.label] | set(show_ids)
         thin = [c for c in chosen if c.ids and hours_of(owned[c.label]) < c.need]
         if not thin:
             break
         for c in thin:
-            unplaced.append((c.label, f"only {hours_of(owned[c.label]):.1f} h of its own once "
-                                      "each show airs on its most specific channel "
-                                      f"(show_max_channels {cfg.show_max_channels}), needs "
-                                      f"{c.need:.0f} h"))  # fmt: skip
+            took_back = " even after taking back every show it matches" if (
+                cfg.show_reuse_to_fill and cfg.show_max_channels > 0) else ""  # fmt: skip
+            unplaced.append((c.label, f"only {hours_of(owned[c.label]):.1f} h once each show "
+                                      "airs on its most specific channel "
+                                      f"(show_max_channels {cfg.show_max_channels}){took_back}, "
+                                      f"needs {c.need:.0f} h"))  # fmt: skip
             live.remove(c)
     for c in live[cfg.max_channels :]:
         unplaced.append((c.label, f"past max_channels ({cfg.max_channels}): the channels "
@@ -2579,17 +2961,22 @@ def simulate(
                 tt = t
                 c = cursors[lane.key]
                 tol = cfg.overrun_tolerance_minutes * 60.0
+                clock = lane.pattern == "nonstop" and lane.slot_minutes > 0  # one a slot
+                b2b = lane.pattern == "nonstop" and not clock  # back to back: never a gap
+                gap = 0.0 if clock else 1.0 if b2b else cfg.slot_max_filler_minutes * 60.0
                 while eps:
                     u, e = eps[c % len(eps)]
                     # doesn't fit what is left (an episode may end up to the tolerance past
                     # the slot): pad and wait for the next window, unless the episode is
-                    # longer than the whole slot (then it overruns)
-                    if tt + e.duration_s > we + tol and (picks or e.duration_s <= we - ws + tol):
+                    # longer than the whole slot (then it overruns), or the filler left
+                    # would be longer than slot_max_filler_minutes (it plays, past the end)
+                    if (tt + e.duration_s > we + tol and (picks or e.duration_s <= we - ws + tol)
+                            and not (picks and gap and we - tt > gap)):  # fmt: skip
                         break
                     picks.append((u, e))
                     tt += e.duration_s
                     c += 1
-                    if tt >= we:
+                    if tt >= we or clock:
                         break
                 spare = max(0.0, we - tt)
                 between = cfg.filler_between_episodes and len(picks) > 1
@@ -2755,18 +3142,28 @@ def dizquetv_time_slots(
             show = f"lane:{s.lane}" if s.lane else "flex."
             raw.append((off + s.start * 60_000, show, "next" if s.lane else "shuffle"))
     raw.sort()
+    # a nonstop channel: one episode a slot, each padded to the slot (dizqueTV's pad), and
+    # its slots kept apart, so a slot started late costs that slot, never the whole day
+    lane = plan.lanes.get(src[0].lane or "") if channel.kind == "nonstop" and src else None
+    max_flex = cfg.slot_max_filler_minutes * 60_000
+    if lane is not None and not lane.slot_minutes:
+        lane = None  # back to back: one slot all day, as any other …
+        max_flex = 1  # … and never a gap: the next episode whatever room is left
+    pad = lane.slot_minutes * 60_000 if lane is not None else cfg.dz_pad_ms
     merged: list[tuple[int, str, str]] = []
     for item in raw:
-        if merged and merged[-1][1] == item[1]:
+        if merged and merged[-1][1] == item[1] and lane is None:
             continue
         merged.append(item)
-    if len(merged) > 1 and merged[0][1] == merged[-1][1]:
+    if lane is None and len(merged) > 1 and merged[0][1] == merged[-1][1]:
         merged = merged[1:]  # the last slot wraps past the period end into the first one
     return {
         "period": period,
         "lateness": cfg.dz_lateness_ms,
         "maxDays": cfg.dz_max_days,
         "flexPreference": "distribute",
-        "pad": cfg.dz_pad_ms,
+        "pad": pad,
+        # dizqueTV (Maktaba's build): a longer gap takes the next episode, past the slot
+        "maxFlex": 0 if lane is not None else max_flex,
         "slots": [{"time": t, "showId": sh, "order": o} for t, sh, o in merged],
     }

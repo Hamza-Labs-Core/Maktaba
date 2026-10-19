@@ -23,7 +23,7 @@ from ..engine.sync import stages_ahead
 from ..engine.workers import update_worker_stages
 from ..log import get_logger
 from . import exitcodes, nodes_db
-from .stages import StageSelector
+from .stages import StageSelector, lifted_placements
 from .storage import LibrarySample, candidate_roots, check_storage, infer_path_map, load_samples
 
 __all__ = ["STAGE_REFRESH_SEC", "STORAGE_CHECK_SEC", "WorkerAgent", "path_map_from_json"]
@@ -100,6 +100,7 @@ class WorkerAgent:
             inferred_path_map=inferred or None,
         )
         self.selector.switches = await nodes_db.stage_switches(self.db, self.node_id)
+        self.selector.lifted = await lifted_placements(self.db, self.graph)
 
     def _infer(self) -> dict[str, str]:
         paths = [p for lib in self.samples for p, _ in lib.videos]
@@ -144,6 +145,7 @@ class WorkerAgent:
         self.selector.ahead = await stages_ahead(self.db, self.graph)
         if self.node_id is not None:
             self.selector.switches = await nodes_db.stage_switches(self.db, self.node_id)
+            self.selector.lifted = await lifted_placements(self.db, self.graph)
             if time.monotonic() - self._last_storage >= self.storage_check_sec:
                 storage = await self._check_storage()
                 await nodes_db.report(self.db, self.node_id, storage=storage)

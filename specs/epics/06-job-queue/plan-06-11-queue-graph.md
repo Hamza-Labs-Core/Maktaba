@@ -1465,9 +1465,10 @@ The input fingerprint of `plan_channels` also covers the latest `topic_collectio
 scan -> plex_index -> plex_collection, dizquetv_show, plex_groups
 probe / thumb_hash / link / fingerprint -> detect
 detect -> tag, rate_style, topic_collections, promo_links, review_pages, plex_collection, dizquetv_show
-topic_collections, promo_links, tag -> clip_groups
+topic_collections, promo_links, check_clips -> clip_groups
+tag -> check_tags -> books; tag -> check_clips   (section 19)
 topic_collections, clip_groups -> plex_groups
-detect, tag, rate_style, topic_collections, promo_links, clip_groups -> plan_channels -> write_channels, dizquetv_channels
+detect, tag, check_tags, check_clips, books, rate_style, topic_collections, promo_links, clip_groups -> plan_channels -> write_channels, dizquetv_channels
 ```
 
 A library retrigger (`POST /api/queue/retrigger` with a library and no stage) re-adds the library to every library entry queue: `youtube_sync`, `plex_index`, `detect`, `topic_collections`, `promo_links`, `clip_groups`, `plex_groups` and `review_pages`.
@@ -1510,3 +1511,38 @@ Ported from mediaintel: `scripts/mediaintel/thumbs.py` (an app thumbnail cache, 
 **Independence from the Plex and dizqueTV queues** is structural, not a priority setting: the stage has its own pool (it never holds a `cpu`, `network_plex` or `network_tv` slot), no stage has an edge or request into anything because of it, and it reads only the database and the local cache. A slow or failing page leaves every write queue running (`test_a_running_review_page_never_holds_a_slot_writes_need`).
 
 **Hosts.** Both caches are per host, so `thumb_small` and `review_pages` should run on the same worker (the default single-host setup). The pages are files in that cache (the API does not serve them); the control centre shows both queues as ordinary cards (`Small thumbnail`, `Review pages`).
+
+---
+
+## 19. The model's and the book's corrections (parity with mediaintel `check-tags`, `check-clips`, `books`)
+
+The prototype's tagger is followed by three steps that correct what the keyword tagger made. They are stages (slots 0102 to 0105), all in the `lookup` pool (global, one at a time: the model server and the encyclopedia answer one question at a time), and all read the settings `rules.tagcheck` / `rules.books`.
+
+| Stage | Subject | Does | Cache |
+|---|---|---|---|
+| `check_tags` | season | The model reads the series' name, library and sampled episode titles and names its topics; the verdict damps the keyword topics it does not confirm and adds the ones it saw (`tag_check.apply`). | `tag_checks` (per season: input hash, model, answer, `applied_hash`) |
+| `check_clips` | library | The model keeps the topics each short clip (in no season, up to `clip_max_minutes`, topic tag at least 0.5) is really about, `clip_batch` titles per question; the rest are damped in `video_topic_tags`, so topic channels and clip groups no longer take the clip by them. One job per library, saved per answered batch: a stop or a dead model server loses nothing, the retry asks the rest. | `clip_checks` (per video) |
+| `books` | season | A series named after a book («شرح بلوغ المرام»): the book is looked up once in the encyclopedia and its subject corrects the tags (`books.apply`). | `books` (per name), `series_books` (per season) |
+
+The corrections are written over the keyword tags, so they must survive and be re-applied:
+
+* `tag` does not rewrite when its keyword tags equal the last run's (the output hash is the keyword tags'); when they differ it rewrites, and its edges (`tag -> check_tags`, `tag -> check_clips`) make the checks apply their cached verdicts again **without asking** (a verdict is cached under a hash of what was asked; `applied_hash` records the tags it was last applied to).
+* Each stage's output hash is the hash of the tags it left, and each input fingerprint holds the newest output of the stage before it, the settings it reads and the question itself. `plan_channels` reads all three outputs; `clip_groups` follows `check_clips`.
+* `tag` also tags each episode by its own title and chapter playlist into `episode_tags` (read by the planner, `EpisodeRef.tags`), strips the channel's branding, ignores playlists holding several shows, and reads the detection settings (`rules.detect`) for what is a short. Tag version 6; slot 0105 re-tags once.
+
+**Import.** `import_mediaintel` brings `tag_checks`, `clip_checks`, `books`, `series_books` and `episode_tags`. A cached answer gets its input hash computed from Maktaba's own name, library and titles (the cache's was computed from its own labels), is applied to the stored tags where they do not carry it yet (a version sweep may have restored the keyword tags), and the stages that are then complete are recorded as synthetic done jobs. Existing rows are never overwritten: an import run again adds only what the earlier one lacked. A cache that is being written (a `-wal` file beside it) is first copied to a consistent snapshot with SQLite's backup API.
+
+## 20. Mediaintel parity: the dizqueTV export, exact dates, the channel audit, repair
+
+The stand-alone tool's last TV-side steps, in the queue. Every rule is a setting (`rules.<section>`, defaults = what the tool does without its flags); the file work and the judging are the same library code the tool imports (`integrations/dizquetv_export.py`, `schedule/channel_audit.py`, `library_mgmt/repair.py`, `integrations/youtube.py`).
+
+**`dizquetv_channels`, now the same channels as `export_dizquetv`.** Settings `rules.dizquetv` (`prune`, `clear_channels`, `replace_existing`, `ramadan`, `keep_airing`, `only_channels`). Removing what the plan dropped (only objects with this tool's mark, unless `clear_channels`); logos and corner watermarks from the plan's `dz_logo_dir`, `dz_watermark_*`, uploaded once per run or checked on `dz_art_url`, linked at `dz_public_url`; the guide settings; `dz_filler_max_items`; the padded grid keeps every slot; the Ramadan grid; filler weights from `dz_weight_*`; and a rewrite that never drops a programme or leaves a gap (the queue goes on after the last episode aired, what is on air finishes, an unchanged timeline is not saved). Changing a rule re-runs the stage.
+
+**`exact_dates`** (core, library, pool `network_yt`, `youtube_sync -> exact_dates -> detect`). Per-video exact upload dates for series members whose date is approximate. Off until `rules.exactdates.enabled`; `delay_s` between requests, `max_per_run`, `scope`, `cookies_from_browser`. A bot check fails the job (`youtube_bot_check`, not retried); what was fetched stays.
+
+**`dizquetv_audit`** (dizquetv extension, catalog, pool `audits`, `dizquetv_channels -> dizquetv_audit`). Reads dizqueTV, judges every programme and filler clip against its channel's theme with the planner's rules, stores `channel_audits` / `channel_audit_channels` and writes `channel-audit.html` and `.txt` to `~/.maktaba/cache/reviews/` for the control centre. Settings `rules.audit` (`enabled`, `window_days`, `keep`).
+
+**`repair_broken`** (core, library, pool `repairs`, not an entry queue, `external_write`). Files whose probe failed are read again, then fetched from YouTube (H.264 first, at most `max_height`) into a local folder, checked, copied beside the original and swapped in; the broken file stays as `<name>.broken`; `probe` and `content_hash` are asked again; `video_repairs` records each outcome. Off until `rules.repair.enabled`.
+
+Migrations: `0106` (stages, pools `audits` and `repairs`, the `youtube_sync` edge), `0107` (`channel_audits`, `channel_audit_channels`), `0108` (`video_repairs`).
+

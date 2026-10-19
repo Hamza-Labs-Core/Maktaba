@@ -214,6 +214,8 @@ func (h *Handler) PutExtension(w http.ResponseWriter, r *http.Request) {
 	for _, f := range def.Fields {
 		fields[f.Key] = f
 	}
+	h.extMu.Lock()
+	defer h.extMu.Unlock()
 	rows, err := h.loadExtensionRows(r.Context())
 	if err != nil {
 		writeErr(w, r, "extensions", err)

@@ -30,6 +30,7 @@ from uuid import UUID
 from ...classify.series_detector import VideoFacts
 from ...classify.series_detector import is_short as detector_is_short
 from ...db.jobs import Job
+from ...log import get_logger
 from ...rules import read as read_rules
 from ...schedule.channel_planner import (
     PLANNER_VERSION,
@@ -55,6 +56,7 @@ __all__ = [
     "reset_plan_exporters",
 ]
 
+_log = get_logger()
 SUCCESS = "('changed','unchanged','skipped_unchanged','imported')"
 _EXPORTERS: dict[str, PlanExporter] = {}
 
@@ -137,6 +139,10 @@ async def load_inputs(
     if not style:
         notes.append("no season styles yet: production tier unknown for every season")
 
+    # an episode's own tags, from its title and chapter playlist (the tag stage)
+    ep_tags: dict[str, dict[str, float]] = defaultdict(dict)
+    for r in await db.fetch("SELECT video_id, tag, score FROM episode_tags"):
+        ep_tags[str(r["video_id"])][str(r["tag"])] = float(r["score"])
     eps: dict[str, list[Any]] = defaultdict(list)
     for r in await db.fetch(_EPISODES_SQL):
         eps[str(r["season_id"])].append(r)
@@ -181,6 +187,7 @@ async def load_inputs(
                 air_date=_iso(x["upload_date"]),
                 # the grid reads a show's cadence (daily strip, weekly) from exact dates only
                 date_exact=x["date_quality"] == "exact",
+                tags=ep_tags.get(str(x["vid"]), {}),
             )
             for x in rows
             if x["dur"]
@@ -320,8 +327,8 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
     """Hash of every latest ``detect`` / ``tag`` / ``rate_style`` output plus the planner config."""
     rows = await db.fetch(
         "SELECT j.stage AS stage, j.subject_id AS sid, j.output_hash AS h FROM processing_jobs j"
-        " WHERE j.stage IN ('detect','tag','rate_style','topic_collections','promo_links',"
-        "'clip_groups') AND j.state = 'done'"
+        " WHERE j.stage IN ('detect','tag','check_tags','check_clips','books','rate_style',"
+        "'topic_collections','promo_links','clip_groups') AND j.state = 'done'"
         f" AND j.outcome IN {SUCCESS}"
         " AND j.id = (SELECT max(k.id) FROM processing_jobs k WHERE k.subject_kind = j.subject_kind"
         "  AND k.subject_id = j.subject_id AND k.stage = j.stage AND k.state = 'done'"
@@ -383,7 +390,23 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     )
 
 
+async def _write_page(plan: Mapping[str, Any]) -> None:
+    """The stored plan as a page in the reports folder (Reports → Channel plan). A folder
+    that cannot be written is logged, never a failed plan: the page is only a view."""
+    from ..plan_page import write_plan_page
+
+    try:
+        await asyncio.to_thread(write_plan_page, plan)
+    except OSError as exc:
+        _log.warning("plan_page_not_written", error=str(exc))
+
+
 async def _store(db: Any, plan: Mapping[str, Any], input_hash: str) -> None:
+    await _insert(db, plan, input_hash)
+    await _write_page(plan)
+
+
+async def _insert(db: Any, plan: Mapping[str, Any], input_hash: str) -> None:
     await db.execute(
         "INSERT INTO channel_plans (created_at, planner_version, input_hash, plan)"
         " VALUES ($1,$2,$3,$4)",

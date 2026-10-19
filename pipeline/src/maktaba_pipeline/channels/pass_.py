@@ -15,17 +15,23 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 from datetime import UTC, datetime, timedelta, tzinfo
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..log import get_logger
 from . import packer, slate
+from .base import ChannelMode
+from .filler import FillerPicker
 from .planner import make_planner
 from .repo import ScheduleRepo, ScheduleState, SqlRepo
 
 __all__ = [
+    "channel_tz",
+    "local_zone",
     "run_schedule",
     "topup_all",
     "run_topup_loop",
@@ -49,6 +55,8 @@ TOPUP_INTERVAL_S = 600.0
 # pg advisory lock class: (this key, the channel) — one writer per channel.
 TOPUP_ADVISORY_LOCK_KEY = 0x6D6B_7470  # "mktp"
 
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
 
 # Per-channel seed so a regen is deterministic for a given channel (the
 # shuffle bag still varies channel-to-channel) without a wall-clock seed.
@@ -60,8 +68,55 @@ def channel_tz(mode_config: dict[str, Any]) -> tzinfo:
             return ZoneInfo(name)
         except (ZoneInfoNotFoundError, ValueError):
             _log.warning("channel.unknown_timezone", timezone=name)
+    return local_zone()
+
+
+def local_zone() -> tzinfo:
+    """The server's zone as a real IANA zone (its DST rules included): ``TZ``, then
+    ``/etc/localtime`` (its link name, else the file), then ``/etc/timezone``. Only when
+    none names one (a host without tzdata): the current fixed offset."""
+    name = os.environ.get("TZ", "").lstrip(":").strip()
+    if name:
+        with contextlib.suppress(ZoneInfoNotFoundError, ValueError, OSError):
+            return ZoneInfo(name)
+    link = Path("/etc/localtime")
+    if link.exists():
+        target = str(link.resolve()).replace("\\", "/")
+        if "/zoneinfo/" in target:
+            with contextlib.suppress(ZoneInfoNotFoundError, ValueError, OSError):
+                return ZoneInfo(target.split("/zoneinfo/", 1)[1])
+        with contextlib.suppress(ValueError, OSError), link.open("rb") as fh:
+            return ZoneInfo.from_file(fh, key="localtime")
+    with contextlib.suppress(ZoneInfoNotFoundError, ValueError, OSError):
+        named = Path("/etc/timezone").read_text(encoding="utf-8").strip()
+        if named:
+            return ZoneInfo(named)
     local = datetime.now().astimezone().tzinfo
     return local if local is not None else UTC
+
+
+def _filler_state_before(state: Any, anchor: datetime) -> dict[str, Any] | None:
+    """The saved filler plays that aired before ``anchor``. A rewrite replaces the
+    timeline from the anchor, so a play at or after it never aired; kept, it would put
+    a clip "last played" in the future of the new plan and keep it out of every gap."""
+    if not isinstance(state, dict):
+        return None
+    cut = int((anchor - _EPOCH) / timedelta(milliseconds=1))
+    out: dict[str, Any] = {}
+    for key in ("clips", "lists"):
+        got = state.get(key)
+        if isinstance(got, dict):
+            out[key] = {
+                k: m for k, v in got.items() if (m := _ms_or_none(v)) is not None and m < cut
+            }
+    return out
+
+
+def _ms_or_none(v: Any) -> int | None:
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
 
 
 def _seed_for(channel_id: UUID) -> int:
@@ -103,24 +158,42 @@ async def run_schedule(
         # Already covered past the requested horizon; nothing to do.
         return 0
 
+    tv = await repo.load_tv()
     slot_content = await repo.resolve_slot_content(channel)
     planner = make_planner(
-        channel, cursor=state.cursor, seed=_seed_for(channel_id), slot_content=slot_content
+        channel, cursor=state.cursor, seed=_seed_for(channel_id), slot_content=slot_content, tv=tv
     )
     content = await repo.resolve_content(channel)
-    filler = await repo.load_filler(channel)
+    if state.horizon_until is not None and anchor < state.horizon_until:
+        # a rewrite of a future already planned (a stale channel): each queue goes on
+        # from the first programme the rewrite drops, not from where that plan ended
+        rewind = getattr(planner, "rewind", None)
+        if rewind is not None:
+            rewind(await repo.future_programs(channel_id, anchor), content)
+    picker = FillerPicker(
+        await repo.load_filler(channel),
+        max_per_gap=tv.max_filler_per_gap,
+        slot_first=tv.slot_filler_first,
+        seed=_seed_for(channel_id) ^ int(anchor.timestamp()),
+        state=_filler_state_before((state.cursor or {}).get("filler"), anchor),
+    )
 
     # slot times are wall-clock times in the channel's timezone (server local when
     # the plan names none): the planner reads hours and weekdays off these datetimes
     tz = channel_tz(channel.mode_config)
     items = planner.plan(content, start_at=anchor.astimezone(tz), until=until.astimezone(tz))
+    if channel.mode == ChannelMode.SCHEDULE:
+        # the grid's last slot is planned to its end: the timeline runs to it, so the
+        # next top-up starts on a slot boundary and no episode is cut at the horizon
+        planned = anchor + timedelta(milliseconds=sum(i.duration_ms for i in items))
+        until = max(until, planned)
     base_seq = await repo.max_seq_before(channel_id, anchor) + 1
     blocks = packer.pack(
         items,
         channel_id=channel_id,
         start_at=anchor,
         until=until,
-        filler=filler,
+        filler=picker,
         base_seq=base_seq,
     )
     if not blocks:
@@ -129,6 +202,9 @@ async def run_schedule(
         s.seq = base_seq
         blocks = [s]
 
+    cursor = planner.export_state()
+    if fstate := picker.export_state(keep_after=until):
+        cursor["filler"] = fstate
     await repo.replace_future_blocks(channel_id, from_at=anchor, blocks=blocks)
     await repo.save_state(
         ScheduleState(
@@ -136,7 +212,7 @@ async def run_schedule(
             anchor_at=state.anchor_at or anchor,
             horizon_until=until,
             last_generated_at=now,
-            cursor=planner.export_state(),
+            cursor=cursor,
             stale=False,
         )
     )

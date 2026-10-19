@@ -119,7 +119,7 @@ func TestWriteXMLTV_EpisodeNums(t *testing.T) {
 		Snapshot:  Snapshot{Title: "Show", Season: season(1), Episode: season(3)},
 	}}
 	var sb strings.Builder
-	writeXMLTV(&sb, chans, rows)
+	writeXMLTV(&sb, "https://maktaba.local", chans, rows)
 	out := sb.String()
 	if !strings.Contains(out, `<channel id="kids">`) {
 		t.Error("missing channel element with slug id")
@@ -129,6 +129,30 @@ func TestWriteXMLTV_EpisodeNums(t *testing.T) {
 	}
 	if !strings.Contains(out, `system="onscreen">S1E3`) {
 		t.Errorf("onscreen episode-num wrong:\n%s", out)
+	}
+}
+
+func TestGuideNeverShowsAServerLogoPath(t *testing.T) {
+	file, remote := "/srv/art/kids.png", "https://cdn.example/news.png"
+	chans := []ChannelMeta{
+		{ID: "uuid-1", Slug: "kids", Name: "Kids", LogoPath: &file},
+		{ID: "uuid-2", Slug: "news", Name: "News", LogoPath: &remote},
+	}
+	var sb strings.Builder
+	writeXMLTV(&sb, "https://maktaba.local", chans, nil)
+	for name, out := range map[string]string{"xmltv": sb.String(), "m3u": buildM3U("https://maktaba.local", chans)} {
+		if strings.Contains(out, "/srv/art") {
+			t.Errorf("%s leaks the logo path:\n%s", name, out)
+		}
+		if !strings.Contains(out, "https://maktaba.local/api/channels/uuid-1/logo") || !strings.Contains(out, remote) {
+			t.Errorf("%s logo refs wrong:\n%s", name, out)
+		}
+	}
+	if h := toHeader(chans[0]); h.Logo != "" || h.LogoURL != "/api/channels/uuid-1/logo" {
+		t.Errorf("header %+v", h)
+	}
+	if h := toHeader(chans[1]); h.Logo != remote {
+		t.Errorf("header %+v", h)
 	}
 }
 

@@ -17,8 +17,10 @@ from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 from ..audio.chromaprint import AUDIO_FP_VERSION
+from ..classify.books import BOOKS_VERSION
 from ..classify.production_style import STYLE_VERSION
 from ..classify.series_detector import DETECTOR_VERSION
+from ..classify.tag_check import CLIP_CHECK_VERSION, TAG_CHECK_VERSION
 from ..classify.topic_tags import TAGGER_VERSION
 from ..schedule.channel_planner import PLANNER_VERSION
 from ..search.semantic import INDEX_VERSION
@@ -72,7 +74,10 @@ TOPIC_VERSION = 1
 PROMO_VERSION = 1
 CLIP_GROUPS_VERSION = 1
 YT_SYNC_VERSION = 1
-CH_WRITE_VERSION = 1
+CH_WRITE_VERSION = 2
+#: exact_dates / repair_broken (plan 06-11, mediaintel parity)
+EXACT_DATES_VERSION = 1
+REPAIR_VERSION = 1
 #: transcribe / subtitle_gen (plan 03-10): stages/transcribe.py, stages/subtitle_gen.py
 TRANSCRIBE_VERSION = 1
 SUBTITLE_VERSION = 1
@@ -171,8 +176,14 @@ POOLS: tuple[PoolDef, ...] = (
     PoolDef("network_plex", "Plex", "global", 2, 2),
     PoolDef("network_tv", "dizqueTV", "global", 1, 1),
     PoolDef("network_yt", "YouTube", "global", 1, 1),
+    # the language model (Ollama) and the encyclopedia answer one question at a time
+    PoolDef("lookup", "Model and encyclopedia", "global", 1, 1),
     # review pages only: they never take a cpu or network slot from the stages that write
     PoolDef("reports", "Review pages", "global", 1, 1),
+    # the channel audit reads dizqueTV for minutes; a repair downloads for hours: neither
+    # takes the slot that writes the channels or lists YouTube
+    PoolDef("audits", "Channel audit", "global", 1, 1),
+    PoolDef("repairs", "Repairs", "global", 1, 1),
 )
 
 
@@ -203,6 +214,10 @@ class StageDef:
     #: local directory the home's API or search reads: the vector index, thumbnails,
     #: review pages)
     placement: Literal["any", "home"] = "any"
+    #: a home-only stage that asks a language model at ``rules.<this>.url``: a node may
+    #: run it too when that address is not the machine itself (localhost), since every
+    #: machine then asks the same model server
+    model_rules: str | None = None
 
     def edges_json(self) -> list[dict[str, Any]]:
         return [e.to_json() for e in self.edges]
@@ -245,7 +260,23 @@ GRAPH: tuple[StageDef, ...] = (
         edges=(
             Edge("link", "videos_of"),
             Edge("detect", "same"),
+            Edge("exact_dates", "same"),
         ),
+        entry_for=("library",),
+        debounce_sec=300,
+        debounce_max_sec=3600,
+    ),
+    # Exact upload dates per video for series members (mediaintel "exact"); off until the
+    # "exactdates" rules enable it. Detect runs again on the dates it finds.
+    StageDef(
+        name="exact_dates",
+        label="Exact dates",
+        subject_kinds=("library",),
+        pool="network_yt",
+        lane="sources",
+        lane_order=1,
+        version=EXACT_DATES_VERSION,
+        edges=(Edge("detect", "same"),),
         entry_for=("library",),
         debounce_sec=300,
         debounce_max_sec=3600,
@@ -375,12 +406,62 @@ GRAPH: tuple[StageDef, ...] = (
         lane="seasons",
         lane_order=2,
         version=TAGGER_VERSION,
-        # a topic tag decides a leftover's clip group
-        edges=(Edge("plan_channels", "catalog"), Edge("clip_groups", "library_of")),
+        # a new run rewrites the tags, so the model's and the book's corrections are
+        # applied again (from their cached answers) before a clip group or a channel
+        # reads them
+        edges=(
+            Edge("plan_channels", "catalog"),
+            Edge("check_tags", "same"),
+            Edge("check_clips", "library_of"),
+        ),
         entry_for=("season",),
         # transcripts arrive one video at a time: a season's are tagged together
         debounce_sec=300,
         debounce_max_sec=3600,
+    ),
+    # ---- what a language model and the book behind a series say about the tags ----
+    StageDef(
+        name="check_tags",
+        label="Check series tags",
+        subject_kinds=("season",),
+        pool="lookup",
+        lane="seasons",
+        lane_order=3,
+        version=TAG_CHECK_VERSION,
+        edges=(Edge("books", "same"), Edge("plan_channels", "catalog")),
+        entry_for=("season",),
+        # the model server defaults to localhost: the home's own (a node would ask
+        # another model, or none) unless the settings name a shared one
+        placement="home",
+        model_rules="tagcheck",
+    ),
+    StageDef(
+        name="check_clips",
+        label="Check clip tags",
+        subject_kinds=("library",),
+        pool="lookup",
+        lane="seasons",
+        lane_order=3,
+        version=CLIP_CHECK_VERSION,
+        edges=(Edge("clip_groups", "same"), Edge("plan_channels", "catalog")),
+        entry_for=("library",),
+        debounce_sec=30,
+        debounce_max_sec=300,
+        # the model server defaults to localhost: the home's own (a node would ask
+        # another model, or none) unless the settings name a shared one
+        placement="home",
+        model_rules="tagcheck",
+    ),
+    StageDef(
+        name="books",
+        label="Books",
+        subject_kinds=("season",),
+        pool="lookup",
+        lane="seasons",
+        lane_order=4,
+        version=BOOKS_VERSION,
+        edges=(Edge("plan_channels", "catalog"),),
+        entry_for=("season",),
     ),
     # ---- what detection left over: topics, promos, clip groups (section 17) ----
     StageDef(
@@ -463,6 +544,9 @@ GRAPH: tuple[StageDef, ...] = (
         entry_for=("catalog",),
         debounce_sec=300,
         debounce_max_sec=3600,
+        # the logo / watermark / loading pictures are files on the home (dz_logo_dir,
+        # dz_watermark_*), and the plan page is written there
+        placement="home",
     ),
     # Core write_channels writes Maktaba Live TV only (a cpu-bound DB write);
     # the dizqueTV channel export is the dizquetv extension's own stage.
@@ -474,6 +558,9 @@ GRAPH: tuple[StageDef, ...] = (
         lane="channels",
         lane_order=2,
         version=CH_WRITE_VERSION,
+        # the art it stores is looked up as files on the home (dz_logo_dir,
+        # dz_watermark_*): on a node the paths would not exist
+        placement="home",
     ),
     # ---- media lane (legacy) -------------------------------------------
     _legacy(
@@ -540,6 +627,21 @@ GRAPH: tuple[StageDef, ...] = (
         "nas_read",
         5,
         edges=(Edge("thumb_small", "same"),),
+    ),
+    # Files whose probe failed, fetched from YouTube again and swapped in on the share
+    # (mediaintel repair-broken). Writes to the share: off until the "repair" rules enable it.
+    StageDef(
+        name="repair_broken",
+        label="Repair broken files",
+        subject_kinds=("library",),
+        pool="repairs",
+        lane="media",
+        lane_order=10,
+        version=REPAIR_VERSION,
+        may_request=("probe", "content_hash"),
+        # not an entry queue: a library retrigger never starts it, an operator runs it
+        external_write=True,
+        max_attempts=1,
     ),
     _legacy("topic_recluster", "Recluster topics", ("library",), "cpu", 6),
     _legacy("topic_assign", "Assign topics", ("video",), "cpu", 7),

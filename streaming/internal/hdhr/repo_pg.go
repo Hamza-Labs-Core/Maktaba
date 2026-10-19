@@ -3,6 +3,7 @@ package hdhr
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -86,4 +87,63 @@ func strUpperHex(b []byte) string {
 		out[i*2+1] = hex[c&0x0f]
 	}
 	return string(out)
+}
+
+// GuideChannels returns the enabled channels for the XMLTV/M3U guide.
+func (r *PGRepo) GuideChannels(ctx context.Context) ([]GuideChannel, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, number, name, slug, COALESCE(logo_path, ''), category FROM channels
+		WHERE enabled = true ORDER BY sort_order ASC, number ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []GuideChannel
+	for rows.Next() {
+		var c GuideChannel
+		if err := rows.Scan(&c.ID, &c.Number, &c.Name, &c.Slug, &c.LogoPath, &c.Category); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// GuidePrograms returns blocks of enabled channels overlapping
+// [start, end), ordered by channel then time.
+func (r *PGRepo) GuidePrograms(ctx context.Context, start, end time.Time) ([]GuideProgram, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT cp.channel_id, cp.kind, cp.start_at, cp.end_at, cp.title_snapshot
+		FROM channel_programs cp
+		JOIN channels c ON c.id = cp.channel_id AND c.enabled = true
+		WHERE cp.start_at < $2 AND cp.end_at > $1
+		ORDER BY cp.channel_id ASC, cp.start_at ASC
+	`, start, end)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []GuideProgram
+	for rows.Next() {
+		var p GuideProgram
+		if err := rows.Scan(&p.ChannelID, &p.Kind, &p.StartAt, &p.EndAt, &p.Snapshot); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// ChannelLogo returns a channel's logo_path ("" when unset).
+func (r *PGRepo) ChannelLogo(ctx context.Context, id uuid.UUID) (string, error) {
+	var logo *string
+	err := r.pool.QueryRow(ctx, `SELECT logo_path FROM channels WHERE id = $1`, id).Scan(&logo)
+	if err != nil {
+		return "", err
+	}
+	if logo == nil {
+		return "", nil
+	}
+	return *logo, nil
 }

@@ -15,7 +15,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Card } from "@ds/components/Card/Card";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { useI18n } from "../lib/i18n";
-import { channelsApi, progressFraction, type NowEntry } from "../lib/channels";
+import { channelLogo, channelsApi, progressFraction, type NowEntry } from "../lib/channels";
 
 // Cap how many channels appear inline; the rest are reached via the guide
 // (AC7). Kept small so a 50-channel lineup doesn't flood the home screen.
@@ -92,8 +92,8 @@ export function WhatsOnNow() {
                     ) : (
                       <span className="mkt-won__poster-empty" aria-hidden="true" />
                     )}
-                    {e.channel.logo_path && (
-                      <img className="mkt-won__logo" src={e.channel.logo_path} alt="" />
+                    {channelLogo(e.channel) && (
+                      <img className="mkt-won__logo" src={channelLogo(e.channel) ?? ""} alt="" />
                     )}
                   </div>
                   <div className="mkt-won__meta">
