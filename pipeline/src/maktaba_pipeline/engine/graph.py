@@ -224,6 +224,10 @@ class StageDef:
     #: run it too when that address is not the machine itself (localhost), since every
     #: machine then asks the same model server
     model_rules: str | None = None
+    #: a home-only stage whose only reason is an extension secret (the Plex token): a
+    #: node may run it too when the home's extension relay is on (rules ``relay``), its
+    #: client then calling through the home, which adds the secret (story 31.R)
+    relay: str | None = None
     #: enqueued (catalog subject) whenever the scheduler's top-up extended a channel's
     #: timeline: a stage that tells another system the guide grew (Plex Live TV)
     after_topup: bool = False

@@ -52,6 +52,9 @@ Each machine pulls only from the queues it can do:
 - a step that needs something the machine does not have is skipped (for example
   transcription needs an Apple Silicon Mac),
 - a few steps always run on the home (the search index, thumbnails, review pages),
+- the Plex steps (index, collections) run on a machine through the home, which adds the Plex
+  token: the token never leaves the home (Admin > Machines > Relay; switch it off there and
+  they run on the home only),
 - a machine whose NAS is not reachable does not pull steps that read the videos,
 - you can switch any queue off for any machine, or **drain** a machine (finish what it is
   doing, take nothing new), on **Admin > Machines**. Changes apply within a second or two.

@@ -15,9 +15,11 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/agent"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/cache"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
 	clusterh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
 )
 
@@ -29,7 +31,10 @@ const clusterTick = 30 * time.Second
 // the instance identity row (name = this machine's stable host name on
 // first start), the mDNS announcement (unless MAKTABA_DISCOVERY_MDNS=0)
 // and the housekeeping loop. It returns a cleanup func for shutdown.
-func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, logger *slog.Logger) func() {
+//
+// store is the home's sealed secrets (nil: none); the extension relay
+// reads the secrets it adds to the calls it relays from it.
+func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secrets.Store, logger *slog.Logger) func() {
 	driver := "postgres"
 	if isSQLiteDSN(dsn) {
 		driver = "sqlite"
@@ -71,7 +76,7 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, logger *slog
 
 	// Epic 31 phase 2 — the cluster channel: every process's sealed
 	// WebSocket, the browsers' hub, the cluster files, the LLM router.
-	hub := mountClusterHub(r, h, db, driver, logger)
+	hub := mountClusterHub(r, h, db, driver, store, logger)
 	hubDone := make(chan struct{})
 	go func() {
 		defer close(hubDone)
@@ -96,7 +101,7 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, logger *slog
 // cluster key pair (~/.maktaba/cluster/home-cluster.key,
 // MAKTABA_HOME_CLUSTER_KEY), whose public half goes into every approved
 // machine's sealed credentials; then it mounts the hub.
-func mountClusterHub(r chi.Router, h *clusterh.Handler, db *sql.DB, driver string, logger *slog.Logger) *agent.Hub {
+func mountClusterHub(r chi.Router, h *clusterh.Handler, db *sql.DB, driver string, store secrets.Store, logger *slog.Logger) *agent.Hub {
 	cfg, warnings := agent.FromEnv(os.Getenv)
 	for _, w := range warnings {
 		logger.Warn("p31: cluster hub setting ignored", "detail", w, "event", "p31_hub_setting")
@@ -121,6 +126,12 @@ func mountClusterHub(r chi.Router, h *clusterh.Handler, db *sql.DB, driver strin
 		h.ClusterPub = cluster.EncodeKey(pub)
 	}
 	cfg.Logger = logger
+	if db != nil {
+		// the extension service door (story 31.R): nodes run the Plex
+		// stages without the token; rules.relay switches it
+		cfg.Relay = relay.New(relay.Config{Settings: relay.DBSettings(db),
+			Upstream: relay.DBUpstream(db, store, os.Getenv), Logger: logger})
+	}
 	deps := router.P31AgentDeps{DB: db, Driver: driver, Config: cfg}
 	var hub *agent.Hub
 	if db != nil && driver != "sqlite" {

@@ -498,7 +498,7 @@ func runServe() error {
 			// Epic 31 (multi-instance) — instance identity, the LAN
 			// announcement (MAKTABA_DISCOVERY_MDNS=0 turns it off), the
 			// machine join/approve/revoke surface and its housekeeping.
-			clusterClose := mountCluster(r, appDB, dsn, publicAddr, logger)
+			clusterClose := mountCluster(r, appDB, dsn, publicAddr, homeSecrets, logger)
 			defer clusterClose()
 
 			// Story 15.6 pairing reaper. Mirrors the idempotency sweeper

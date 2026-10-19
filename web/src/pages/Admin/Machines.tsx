@@ -49,6 +49,8 @@ import {
 } from "../../components/cluster/machineSummary";
 import { queueLabeller } from "../../components/cluster/names";
 import { QueuesPanel } from "../../components/cluster/QueuesPanel";
+import { RelayDoorCard } from "../../components/cluster/RelayDoorCard";
+import { RelayPanel } from "../../components/cluster/RelayPanel";
 import { useClusterFiles } from "../../components/cluster/useClusterFiles";
 import { useFmt } from "../../components/queue/format";
 import { useClusterStream, type ClusterStream } from "../../lib/clusterStream";
@@ -141,7 +143,12 @@ function MachinesPage() {
             id: "machines",
             label: t("cluster.tabs.machines"),
             content: (
-              <MachinesOverview stream={stream} queueLabel={queueLabel} onOpenLogs={openLogs} />
+              <MachinesOverview
+                stream={stream}
+                queueLabel={queueLabel}
+                onOpenLogs={openLogs}
+                extra={<RelayDoorCard />}
+              />
             ),
           },
           {
@@ -170,6 +177,11 @@ function MachinesPage() {
             id: "llm",
             label: t("cluster.tabs.llm"),
             content: <LlmPanel stream={stream} />,
+          },
+          {
+            id: "relay",
+            label: t("cluster.tabs.relay"),
+            content: <RelayPanel />,
           },
         ]}
       />

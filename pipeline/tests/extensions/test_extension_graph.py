@@ -147,8 +147,16 @@ async def test_extension_removed_from_the_graph_leaves_core_intact(db: Database)
     assert await stage_state(db, "detect") == (True, None)
 
 
-def test_plex_stages_run_on_the_home_only() -> None:
-    """The Plex token is in home_secrets (slot 0120), which a node cannot read."""
+def test_plex_stages_are_home_only_unless_the_relay_carries_them() -> None:
+    """The Plex token is in home_secrets (slot 0120), which a node cannot read: the stages
+    that only need the token name the relay (a node runs them through the home, story
+    31.R); plex_livetv stays beside write_channels on the home."""
     graph = build_full_graph(discover(include_entry_points=False))
-    plex = {s.name: s.placement for s in graph if s.name.startswith("plex_")}
-    assert plex and set(plex.values()) == {"home"}, plex
+    plex = {s.name: (s.placement, s.relay) for s in graph if s.name.startswith("plex_")}
+    assert plex == {
+        "plex_index": ("home", "plex"),
+        "plex_collection": ("home", "plex"),
+        "plex_groups": ("home", "plex"),
+        "plex_livetv": ("home", None),
+    }, plex
+    assert not any(s.relay for s in graph if s.extension in ("dizquetv", "cloudflare_stream"))
