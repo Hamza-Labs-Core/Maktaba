@@ -2,10 +2,18 @@ import { describe, expect, it } from "vitest";
 import { localizeSections } from "./RulesSection";
 import type { RuleSection } from "../../lib/rulesApi";
 import en from "../../i18n/en.json";
-import schema from "../../../../api/internal/handlers/rules/schema.json";
+// The live schema the API serves, read from disk at run time: the web image builds from web/
+// alone, so a static import of a file outside it fails tsc there (hence no typed node imports).
+const FS = "node:fs";
+const { readFileSync } = (await import(/* @vite-ignore */ FS)) as {
+  readFileSync: (path: string, encoding: "utf8") => string;
+};
+const schema = JSON.parse(
+  readFileSync("../api/internal/handlers/rules/schema.json", "utf8") // vitest runs in web/
+) as { sections: RuleSection[] };
 
 const sections = (): RuleSection[] =>
-  (schema as { sections: RuleSection[] }).sections.map((s) => ({
+  schema.sections.map((s) => ({
     ...s,
     fields: s.fields.map((f) => ({ ...f, value: f.default, changed: false })),
   }));
@@ -17,7 +25,9 @@ describe("localizeSections", () => {
     const enc = out.fields.find((f) => f.name === "encoder")!;
     expect(enc.label).toBe("مُرمِّز الفيديو");
     expect(enc.choices).toEqual(["auto", "nvenc", "videotoolbox", "software"]);
-    expect(out.fields.find((f) => f.name === "nvenc_max_sessions")!.group).toBe("المُرمِّز العتادي");
+    expect(out.fields.find((f) => f.name === "nvenc_max_sessions")!.group).toBe(
+      "المُرمِّز العتادي"
+    );
     const tv = localizeSections(sections(), "ar").find((s) => s.key === "tv")!;
     expect(tv.fields.find((f) => f.name === "horizon_days")!.label).toBe("أيام الدليل القادمة");
   });

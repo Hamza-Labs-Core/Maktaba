@@ -34,7 +34,9 @@ def schema_at_117() -> sqlite3.Connection:
         "INSERT INTO hdhr_device (id, device_id, device_uuid, tuner_count, enabled)"
         " VALUES (1, 'ABCD1234', 'u-1', 4, 1)"
     )
-    for stmt in up_statements((MIGRATIONS_DIR / "0117_tv_core_runtime.sqlite.sql").read_text("utf-8")):
+    for stmt in up_statements(
+        (MIGRATIONS_DIR / "0117_tv_core_runtime.sqlite.sql").read_text("utf-8")
+    ):
         apply_statement(conn, stmt)
     return conn
 
@@ -42,9 +44,24 @@ def schema_at_117() -> sqlite3.Connection:
 def test_up_and_down(schema_at_117: sqlite3.Connection) -> None:
     conn = schema_at_117
     rt = _cols(conn, "channel_runtime")
-    assert {"host_id", "stream_base_url", "encoder", "restarts", "nvenc_fallbacks", "heartbeat_at"} <= set(rt)
+    assert {
+        "host_id",
+        "stream_base_url",
+        "encoder",
+        "restarts",
+        "nvenc_fallbacks",
+        "heartbeat_at",
+    } <= set(rt)
     hosts = _cols(conn, "streaming_hosts")
-    assert {"host_id", "role", "max_active", "active_channels", "nvenc_free", "vt_free", "heartbeat_at"} <= set(hosts)
+    assert {
+        "host_id",
+        "role",
+        "max_active",
+        "active_channels",
+        "nvenc_free",
+        "vt_free",
+        "heartbeat_at",
+    } <= set(hosts)
     assert _cols(conn, "hdhr_device")["tuner_count"] == "20"
     assert conn.execute("SELECT device_id, tuner_count, enabled FROM hdhr_device").fetchall() == [
         ("ABCD1234", 4, 1)

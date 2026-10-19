@@ -34,17 +34,17 @@ type EncoderGate struct {
 	now          func() time.Time
 }
 
-// NewEncoderGate builds a gate with max slots (<= 0: no cap).
-func NewEncoderGate(max int) *EncoderGate {
-	return &EncoderGate{max: max, held: map[uuid.UUID]int{}, wake: make(chan struct{}), now: time.Now}
+// NewEncoderGate builds a gate with limit slots (<= 0: no cap).
+func NewEncoderGate(limit int) *EncoderGate {
+	return &EncoderGate{max: limit, held: map[uuid.UUID]int{}, wake: make(chan struct{}), now: time.Now}
 }
 
 // SetMax changes the cap (a settings change). Slots already held over a
 // lower cap are kept until released.
-// max <= 0 removes the cap.
-func (g *EncoderGate) SetMax(max int) {
+// limit <= 0 removes the cap.
+func (g *EncoderGate) SetMax(limit int) {
 	g.mu.Lock()
-	g.max = max
+	g.max = limit
 	g.signalLocked()
 	g.mu.Unlock()
 }

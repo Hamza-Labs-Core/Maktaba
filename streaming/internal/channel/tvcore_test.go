@@ -389,7 +389,7 @@ func (statsPipe) Stats() StationStats {
 func TestEngine_LimitsRuntimeAndStaleRows(t *testing.T) {
 	repo := &runtimeRepo{}
 	root := t.TempDir()
-	start := func(_ context.Context, id uuid.UUID, dir string) (Pipeline, error) {
+	start := func(_ context.Context, _ uuid.UUID, dir string) (Pipeline, error) {
 		return statsPipe{newFakePipeline(dir, 0)}, nil
 	}
 	e := NewEngine(repo, fakeLayout{root: root}, start, 8, nil)
@@ -443,7 +443,7 @@ func TestEngine_LimitsRuntimeAndStaleRows(t *testing.T) {
 func TestEngine_RefusesAChannelLiveOnAnotherHost(t *testing.T) {
 	repo := &runtimeRepo{}
 	now := time.Now()
-	start := func(_ context.Context, id uuid.UUID, dir string) (Pipeline, error) {
+	start := func(_ context.Context, _ uuid.UUID, dir string) (Pipeline, error) {
 		return newFakePipeline(dir, 0), nil
 	}
 	e := NewEngine(repo, fakeLayout{root: t.TempDir()}, start, 8, func() time.Time { return now })
@@ -514,6 +514,11 @@ func programBlocks(t *testing.T) []ProgramBlock {
 }
 
 func TestStation_FullGateEncodesOneBlockInSoftwareThenBackToNVENC(t *testing.T) {
+	if testing.Short() {
+		// waits for two wall-clock block boundaries (~1-2 s): over the unit tier's
+		// per-test cap, so it runs in the integration tier (no -short)
+		t.Skip("block-boundary timing test skipped in -short mode")
+	}
 	gate := NewEncoderGate(1)
 	release, _ := gate.Acquire(context.Background(), uuid.New(), 0) // another channel holds the only session
 	now := time.Now()

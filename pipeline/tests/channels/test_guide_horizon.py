@@ -23,7 +23,7 @@ def test_defaults_are_a_week_topped_up_below_three_days() -> None:
     tv = MaktabaTvConfig()
     assert (tv.horizon_days, tv.topup_below_days) == (7, 3)
     assert pass_.guide_window(tv) == (timedelta(days=7), timedelta(days=3))
-    assert pass_.DEFAULT_HORIZON == timedelta(days=7)
+    assert timedelta(days=7) == pass_.DEFAULT_HORIZON
     # the low water never exceeds the horizon
     assert pass_.guide_window(MaktabaTvConfig(horizon_days=2, topup_below_days=5))[1] == (
         timedelta(days=2)
