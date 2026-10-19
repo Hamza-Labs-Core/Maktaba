@@ -34,6 +34,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/auth"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/grpcsrv"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/probe"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/session"
@@ -172,7 +173,13 @@ func TestVODSignedPlaybackThroughSharedStore(t *testing.T) {
 			files = append(files, p)
 			return nil
 		})
-		t.Fatalf("the rendition playlist %s never listed two segments (%v); cache: %v", rendition, segs, files)
+		stderr := ""
+		if row, ok, _ := sessions.Get(context.Background(), uuid.MustParse(resp.SessionID)); ok {
+			if h, ok := row.Transcoder.(*ffmpeg.Handle); ok {
+				stderr = h.Stderr()
+			}
+		}
+		t.Fatalf("the rendition playlist %s never listed two segments (%v); cache: %v; ffmpeg: %s", rendition, segs, files, stderr)
 	}
 	renditionDir := rendition[:strings.LastIndex(rendition, "/")+1]
 	for _, s := range segs[:2] {

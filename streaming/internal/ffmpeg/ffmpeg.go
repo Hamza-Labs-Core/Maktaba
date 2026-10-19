@@ -54,42 +54,29 @@ type Process struct {
 	mu      sync.Mutex
 	wg      sync.WaitGroup
 	exitErr error
-	stdout  io.ReadCloser
-	stderr  io.ReadCloser
 	tail    *tailBuf
 }
 
-// Spawn starts a new FFmpeg process with args. Stdout/stderr are
-// piped to the caller for log scraping. Cancel ctx to terminate.
+// Spawn starts a new FFmpeg process with args. Stdout goes to the null
+// device; stderr is kept (its last 8 KiB, Stderr) — never an undrained pipe,
+// which fills and stalls ffmpeg mid-encode. Cancel ctx to terminate.
 func Spawn(ctx context.Context, bin Binary, args Args) (*Process, error) {
 	if bin.FFmpeg == "" {
 		bin.FFmpeg = "ffmpeg"
 	}
 	cmd := exec.CommandContext(ctx, bin.FFmpeg, args...)
 	procattr.Tie(cmd) // dies with this process, however it dies (Story 22.9)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, err
-	}
+	p := &Process{cmd: cmd, tail: &tailBuf{max: 8 << 10}}
+	cmd.Stderr = p.tail
+	// a child that outlives ffmpeg (a wrapper script's) must not hold Wait
+	// open on the stderr copy
+	cmd.WaitDelay = 2 * time.Second
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	p := &Process{cmd: cmd, stdout: stdout, stderr: stderr, tail: &tailBuf{max: 8 << 10}}
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
-		// Drain both pipes (nobody else reads them): an undrained pipe fills
-		// and blocks ffmpeg mid-encode. The last 8 KiB of stderr is kept for
-		// diagnostics. Wait only after the reads end (os/exec contract).
-		var drain sync.WaitGroup
-		drain.Add(2)
-		go func() { defer drain.Done(); _, _ = io.Copy(io.Discard, stdout) }()
-		go func() { defer drain.Done(); _, _ = io.Copy(p.tail, stderr) }()
-		drain.Wait()
 		err := cmd.Wait()
 		p.mu.Lock()
 		p.exitErr = err

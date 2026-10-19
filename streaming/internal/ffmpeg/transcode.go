@@ -52,6 +52,14 @@ type Handle struct {
 	actFn      func() bool
 }
 
+// Stderr is the encoder's recent stderr (empty for a test handle).
+func (h *Handle) Stderr() string {
+	if h == nil || h.proc == nil {
+		return ""
+	}
+	return h.proc.tail.String()
+}
+
 // Stop terminates the underlying process. Idempotent.
 //
 // procCancel() is invoked IN ADDITION to Process.Stop so that the

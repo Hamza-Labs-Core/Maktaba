@@ -33,7 +33,7 @@ func streamURLSigner(authKeys *keys.Set, logger *slog.Logger) streaming.URLSigne
 			"event", "stream_signing_jwt_key")
 		return signedurl.New(authKeys)
 	}
-	logger.Warn("no stream signing key ("+signedurl.EnvKeyFile+" unset, no JWT keys): video playback will be refused",
-		"event", "stream_signing_missing")
+	logger.Warn("no stream signing key and no JWT keys: video playback will be refused",
+		"env", signedurl.EnvKeyFile, "event", "stream_signing_missing")
 	return nil
 }
