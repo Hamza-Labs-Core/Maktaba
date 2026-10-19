@@ -469,7 +469,7 @@ func (c *Controller) manual(ctx context.Context, actor, id, what string) error {
 	if err := c.st.setAttachment(ctx, id, cols); err != nil {
 		return err
 	}
-	c.log().Info("tv_simulcast: manual "+what, "attachment_id", id, "by", actor, "event", "tv_simulcast_manual")
+	c.log().Info("tv_simulcast: manual start or stop", "what", what, "attachment_id", id, "by", actor, "event", "tv_simulcast_manual")
 	c.audit(ctx, "tv_simulcast."+what, actor, id, map[string]any{"channel_id": a.ChannelID, "destination_id": a.DestinationID})
 	c.Wake()
 	return nil
