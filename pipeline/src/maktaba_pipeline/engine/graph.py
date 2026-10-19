@@ -602,7 +602,8 @@ GRAPH: tuple[StageDef, ...] = (
     ),
     # Epic 33: TV changes. The API's change controller enqueues them (payload
     # {"change_id"}): build a change's release and schedule generation, put an approved
-    # change on the air (the interim swap until the two-slot runtime), the daily GC.
+    # change on the air (the swap commit; the front door switches the streams), the daily
+    # GC.
     StageDef(
         name="tv_stage",
         label="Stage TV change",
@@ -635,6 +636,19 @@ GRAPH: tuple[StageDef, ...] = (
         lane_order=5,
         version=1,
         placement="home",
+    ),
+    # story 33.9: the reverse commit of a rollback (warm: the front door switches the
+    # streams back; the API or the controller enqueues it)
+    StageDef(
+        name="tv_rollback",
+        label="Roll back TV change",
+        subject_kinds=("catalog",),
+        pool="cpu",
+        lane="channels",
+        lane_order=6,
+        version=1,
+        placement="home",
+        max_attempts=2,
     ),
     # ---- media lane (legacy) -------------------------------------------
     _legacy(

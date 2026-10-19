@@ -28,7 +28,8 @@ ffmpeg -hide_banner -version | head -1
 # module | package | tests (exact names)
 suites=(
   "api|./internal/tvremote/|TestRemoteEndToEnd TestSimulcastReachesRTMPDestination"
-  "api|./internal/tvremote/rtmptest/|TestFFmpegPublishes"
+  "api|./internal/tvremote/rtmptest/|TestFFmpegPublishes TestTapRepublishes"
+  "api|./internal/tvremote/|TestSwapRollbackEndToEnd"
   "streaming|.|TestTwoHostsOneMachine"
   "streaming|./internal/channel/|TestStation_RealFFmpeg_ContinuousWallClock TestEngine_RealFFmpeg_LazyHLSAndSharedTS TestStation_RealFFmpeg_MuxerRestart TestBlockArgs_RealFFmpegVariants TestStripRendersArabic TestStripRendersPages"
 )

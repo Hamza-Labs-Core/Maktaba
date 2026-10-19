@@ -204,7 +204,7 @@ func (s *Slots) StageStart(ctx context.Context, plan StagingPlan) (StagingView, 
 		firstSeg: map[uuid.UUID]time.Time{}, previews: map[uuid.UUID]time.Time{}}
 	s.mu.Lock()
 	if s.staging == "" {
-		s.staging = s.otherThan(s.live, s.standby)
+		s.staging = s.freeInstanceLocked()
 	}
 	name := s.staging
 	if name != "" {

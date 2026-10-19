@@ -400,12 +400,23 @@ export const notifications = {
 };
 
 /** The API answer for a path (GET), for the mocked api.get of the tests. */
+/** GET /api/tv/rollback (story 33.9): the previous slot is up for 12 more minutes. */
+export const rollbackPoint = {
+  mode: "warm",
+  change_id: "33333333-3333-4333-8333-333333333333",
+  change_number: 40,
+  release_id: "rel-prev",
+  until: new Date(Date.now() + 12 * 60_000 - 1_000).toISOString(),
+  slot: "blue",
+};
+
 export function answer(path: string): unknown {
   const p = path.split("?")[0]!;
   if (p === "/api/tv/changes") return changeList;
   if (p === "/api/tv/slots") return slots;
   if (p === "/api/tv/releases") return releases;
   if (p === "/api/notifications") return notifications;
+  if (p === "/api/tv/rollback") return rollbackPoint;
   const m = p.match(/^\/api\/tv\/changes\/([^/]+)(\/.*)?$/);
   if (m) {
     const c = changeList.items.find((x) => x.id === m[1]);

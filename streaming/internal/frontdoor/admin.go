@@ -106,6 +106,10 @@ func (h *Handler) internalSwitch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.Slots.Switch(r.Context(), b.Slot, b.Epoch); err != nil {
+		if errors.Is(err, ErrSwapInProgress) {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "swap_in_progress", "detail": err.Error()})
+			return
+		}
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}

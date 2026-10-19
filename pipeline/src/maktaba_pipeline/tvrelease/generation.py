@@ -95,6 +95,28 @@ async def boundary(db: Any, channel_id: str, gen: int, at: datetime) -> datetime
     return got if got is not None and got > at else at
 
 
+async def max_wait(db: Any) -> timedelta:
+    """``boundary_max_wait_minutes`` (``tv_staging``): how long a swap waits at most
+    for the programme on the air to end (0: no cap)."""
+    from .. import rules
+
+    cfg, _, _ = await rules.read(db, "tv_staging")
+    return timedelta(minutes=max(0, int(cfg.boundary_max_wait_minutes)))
+
+
+async def swap_boundary(
+    db: Any, channel_id: str, gen: int, at: datetime, cap: timedelta
+) -> tuple[datetime, bool]:
+    """Where a channel switches for a swap at ``at``: the end of the programme on the
+    air (:func:`boundary`), at most ``cap`` later - the same instant the Changes page
+    shows and the front door switches at (README ``boundary_max_wait_minutes``).
+    Returns ``(instant, capped)``."""
+    b = await boundary(db, channel_id, gen, at)
+    if cap > timedelta(0) and b > at + cap:
+        return at + cap, True
+    return b, False
+
+
 async def _copy_channel(db: Any, channel_id: str, src: int, dst: int) -> int:
     """Generation ``dst`` of a channel := a copy of generation ``src`` (blocks and the
     generator state). Returns the blocks copied."""
@@ -143,6 +165,7 @@ async def _build_channel(
     base_gen: int,
     at: datetime,
     clock: datetime,
+    cap: timedelta = timedelta(0),
 ) -> datetime | None:
     """One channel of generation N+1, in its own transaction (as a top-up writes one
     channel: short locks). Returns the divergence boundary of a regenerated channel."""
@@ -167,7 +190,17 @@ async def _build_channel(
             # a channel generation N does not have (an addition): it starts now
             b = clock
         else:
-            b = await boundary(db, channel_id, base_gen, at)
+            b, capped = await swap_boundary(db, channel_id, base_gen, at, cap)
+            if capped:
+                # the programme on the air runs past boundary_max_wait: in this
+                # generation it ends at the cap, where the new schedule starts
+                await db.execute(
+                    "UPDATE channel_programs SET end_at = $3 WHERE channel_id = $1"
+                    " AND sched_gen = $2 AND start_at < $3 AND end_at > $3",
+                    channel_id,
+                    rel.sched_gen,
+                    b,
+                )
         await run_schedule(repo, UUID(channel_id), now=max(at, clock), anchor=b)
         await db.execute(
             "UPDATE tv_release_channels SET boundary_at = $3 WHERE release_id = $1"
@@ -194,9 +227,12 @@ async def build_generation(
     base_gen = await live_gen(db)
     view = await release_view(db, rel, pending)
     out: dict[str, str] = {}
+    cap = await max_wait(db)
     for cid in sorted(rel.defs):
         try:
-            b = await _build_channel(db, rel, view, cid, base_gen=base_gen, at=at, clock=clock)
+            b = await _build_channel(
+                db, rel, view, cid, base_gen=base_gen, at=at, clock=clock, cap=cap
+            )
         except Exception:
             _log.exception("tv.generation_channel_failed", channel_id=cid, gen=rel.sched_gen)
             raise
@@ -230,13 +266,14 @@ async def reanchor(
         rel.id,
         True if is_pg(db) else 1,
     )
+    cap = await max_wait(db)
     for r in rows:
         cid = str(r["channel_id"])
         old = parse_ts(r["boundary_at"])
-        new = await boundary(db, cid, base_gen, at)
+        new, _ = await swap_boundary(db, cid, base_gen, at, cap)
         if old is not None and old == new:
             continue
-        b = await _build_channel(db, rel, view, cid, base_gen=base_gen, at=at, clock=clock)
+        b = await _build_channel(db, rel, view, cid, base_gen=base_gen, at=at, clock=clock, cap=cap)
         if b is not None:
             out[cid] = b.isoformat()
     return out

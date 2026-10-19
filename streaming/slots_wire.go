@@ -83,6 +83,9 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 		time.Sleep(2 * time.Second)
 	}
 	go slots.Run(context.Background())
+	// story 33.7/33.9: the swap and rollback operations the change controller
+	// (and the automatic rollback) write for this host
+	go slots.RunOps(context.Background())
 
 	fd := &frontdoor.Handler{Svc: svc, Settings: csettings, Self: ident.ID, Keyring: keyring, Tracker: tracker,
 		Logger: logger, Slots: slots, CacheRoot: b.cfg.Cache.Root,

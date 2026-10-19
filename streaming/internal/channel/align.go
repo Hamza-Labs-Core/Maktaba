@@ -2,7 +2,6 @@ package channel
 
 import (
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -35,24 +34,13 @@ var (
 // broken streaming binary on purpose so the staging verification of a TV release
 // (Epic 33 story 33.5) can be shown to catch it: "pids" moves the PMT and the
 // elementary stream PIDs (0x1100, 0x200, 0x201), "pts:<ms>" shifts every
-// timestamp off the wall clock by ms. A release build never sets it.
+// timestamp off the wall clock by ms. It takes effect only in a build with the
+// tvdefect tag (align_defect_on.go); any other build refuses to start with it
+// set (align_defect_off.go), so a release build can never ship it.
 var BuildDefect = ""
 
 // ptsShiftTicks is BuildDefect's timestamp shift (0: none).
 var ptsShiftTicks int64
-
-func init() { applyBuildDefect(BuildDefect) }
-
-func applyBuildDefect(d string) {
-	switch {
-	case d == "pids":
-		TSPMTPID, TSVideoPID, TSAudioPID = 0x1100, 0x200, 0x201
-	case strings.HasPrefix(d, "pts:"):
-		if ms, err := strconv.Atoi(strings.TrimPrefix(d, "pts:")); err == nil {
-			ptsShiftTicks = int64(ms) * 90
-		}
-	}
-}
 
 // PTSWrapTicks is the 33-bit PTS modulus.
 const PTSWrapTicks = int64(1) << 33

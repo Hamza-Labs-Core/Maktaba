@@ -34,9 +34,11 @@ func (s relaySource) Stream(ctx context.Context, ch uuid.UUID, w io.Writer, star
 	if p.Host == h.Self && h.Slots != nil {
 		// story 33.1: the live slot's TS; a failover (or a swap) ends it and the
 		// relay's next Stream reads the new live slot, one push session
-		err = h.slotTS(ctx, ch, cw, func(name string) {
-			started(relay.Origin{Host: p.Host, Gen: p.Gen, Slot: name})
-		})
+		// story 33.8: a swap's or rollback's switch is spliced at the IDR both
+		// slots share, inside this one Stream (spliced: the relay's retimer
+		// learns a new source starts — PAT/PMT then that IDR, no offset)
+		origin := func(name string) { started(relay.Origin{Host: p.Host, Gen: p.Gen, Slot: name}) }
+		err = h.slotTS(ctx, ch, cw, origin, origin)
 		if err == nil && ctx.Err() == nil {
 			err = errors.New("frontdoor: the slot's stream ended")
 		}

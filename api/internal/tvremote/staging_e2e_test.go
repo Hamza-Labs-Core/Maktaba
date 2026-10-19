@@ -114,7 +114,11 @@ func (f *fakeSupervisor) running(name string) bool {
 
 func buildStreaming(t *testing.T, dir, out string, ldflags string) {
 	t.Helper()
-	args := []string{"build", "-tags", "tvstaging", "-o", out}
+	tags := "tvstaging"
+	if strings.Contains(ldflags, "BuildDefect=") {
+		tags += ",tvdefect" // a deliberately broken release: only a tvdefect build applies it
+	}
+	args := []string{"build", "-tags", tags, "-o", out}
 	if ldflags != "" {
 		args = append(args, "-ldflags", ldflags)
 	}

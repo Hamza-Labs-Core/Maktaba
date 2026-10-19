@@ -66,6 +66,7 @@ var table = map[string]map[string]string{
 	},
 	StateSwapping: {
 		ActionSwap:       StateLive,
+		ActionSwapDone:   StateLive,
 		ActionSwapFailed: StateReady,
 		ActionRollback:   StateRolledBack,
 	},
@@ -119,7 +120,8 @@ func AllowedActions(state, sourceKind string) []string {
 		out = append(out, a)
 	}
 	if state == StateLive || state == StateSwapping {
-		// rollback is offered; it answers 501 until story 33.9 lands
+		// story 33.9: warm while the previous slot is up, cold within the retention
+		// (the page asks GET /api/tv/rollback for which, and disables it when none)
 		out = appendOnce(out, ActionRollback)
 	}
 	sort.Strings(out)

@@ -41,7 +41,7 @@ UNIT_PER_TEST_SOFT_CAP  ?= 400ms
 # binaries. 2m30s keeps the same headroom.
 INTEGRATION_TIER_BUDGET ?= 2m30s
 E2E_TIER_BUDGET         ?= 5m
-MEDIA_E2E_TIER_BUDGET   ?= 5m
+MEDIA_E2E_TIER_BUDGET   ?= 9m
 PERF_CI_TIER_BUDGET     ?= 2m
 
 ARTIFACT_DIR ?= artifacts

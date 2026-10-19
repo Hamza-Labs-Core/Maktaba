@@ -84,7 +84,7 @@ func (h *Handler) slotGet(ctx context.Context, name, path string, hdr http.Heade
 func (h *Handler) serveSlotPlaylist(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
 	ctx := r.Context()
 	if !strings.HasSuffix(r.URL.Path, "/index.m3u8") {
-		live, _ := h.Slots.Live()
+		live := h.Slots.Route(id)
 		resp, err := h.slotGet(ctx, live, r.URL.Path, nil)
 		if err != nil {
 			h.Slots.Suspect(ctx, live)
@@ -96,20 +96,52 @@ func (h *Handler) serveSlotPlaylist(w http.ResponseWriter, r *http.Request, id u
 		return
 	}
 	st := h.stitch.get(id)
+	// story 33.7: a planned switch (swap, rollback) of this channel
+	if plan, ok := h.Slots.Plan(id); ok && plan.To != plan.From && st.Source() != plan.To {
+		now := time.Now()
+		if plan.Removed && !now.Before(plan.At) {
+			if st.Len() == 0 {
+				http.NotFound(w, r)
+				return
+			}
+			st.End()
+			writePlaylist(w, st.Render())
+			return
+		}
+		if st.Len() > 0 && plan.At.Sub(now) <= swapPrepLead {
+			if !plan.Removed {
+				st.Plan(plan.To, plan.At)
+			}
+			fromOK := h.stitchFrom(ctx, st, id, plan.From)
+			// the instant reached on the old slot — or the old slot is gone (a
+			// crash: an automatic rollback, a failover inside a swap)
+			if (st.Reached() || (!fromOK && !now.Before(plan.At))) && !plan.Removed {
+				if h.stitchFrom(ctx, st, id, plan.To) && st.Source() == plan.To {
+					tvmetrics.HLSStitches.Inc(plan.Kind)
+				}
+			}
+			writePlaylist(w, st.Render())
+			return
+		}
+	}
+	// no planned switch in reach (none, or its operation ended unfinished, or
+	// the channel was skipped): a plan left over must not hold the playlist at
+	// its instant
+	st.ClearPlan()
 	for attempt := 0; attempt < 3; attempt++ {
-		live, _ := h.Slots.Live()
-		resp, err := h.slotGet(ctx, live, "/stream/channel/"+id.String()+"/index.m3u8", nil)
+		src := h.Slots.Route(id)
+		resp, err := h.slotGet(ctx, src, "/stream/channel/"+id.String()+"/index.m3u8", nil)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
 			}
-			h.Slots.Suspect(ctx, live)
+			h.Slots.Suspect(ctx, src)
 			continue
 		}
 		if resp.StatusCode != http.StatusOK {
 			if resp.StatusCode >= 500 && resp.StatusCode != http.StatusServiceUnavailable && attempt < 2 {
 				_ = resp.Body.Close()
-				h.Slots.Suspect(ctx, live)
+				h.Slots.Suspect(ctx, src)
 				continue
 			}
 			copyResponse(w, resp, nil) // today's answers (starting, busy, no such channel)
@@ -118,7 +150,7 @@ func (h *Handler) serveSlotPlaylist(w http.ResponseWriter, r *http.Request, id u
 		body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		_ = resp.Body.Close()
 		if err != nil {
-			h.Slots.Suspect(ctx, live)
+			h.Slots.Suspect(ctx, src)
 			continue
 		}
 		pl, err := parseMediaPlaylist(body)
@@ -126,7 +158,11 @@ func (h *Handler) serveSlotPlaylist(w http.ResponseWriter, r *http.Request, id u
 			http.Error(w, "bad playlist from the TV slot", http.StatusBadGateway)
 			return
 		}
-		st.Update(live, pl)
+		before := st.Source()
+		st.Update(src, pl)
+		if before != "" && before != src && st.Source() == src {
+			tvmetrics.HLSStitches.Inc("failover")
+		}
 		writePlaylist(w, st.Render())
 		return
 	}
@@ -136,6 +172,28 @@ func (h *Handler) serveSlotPlaylist(w http.ResponseWriter, r *http.Request, id u
 	}
 	w.Header().Set("Retry-After", "2")
 	http.Error(w, "channel unavailable", http.StatusBadGateway)
+}
+
+// stitchFrom merges one slot's current playlist of a channel into st.
+func (h *Handler) stitchFrom(ctx context.Context, st *Stitcher, id uuid.UUID, src string) bool {
+	resp, err := h.slotGet(ctx, src, "/stream/channel/"+id.String()+"/index.m3u8", nil)
+	if err != nil {
+		if ctx.Err() == nil {
+			h.Slots.Suspect(ctx, src)
+		}
+		return false
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	_ = resp.Body.Close()
+	if err != nil || resp.StatusCode != http.StatusOK {
+		return false
+	}
+	pl, err := parseMediaPlaylist(body)
+	if err != nil {
+		return false
+	}
+	st.Update(src, pl)
+	return true
 }
 
 func writePlaylist(w http.ResponseWriter, b []byte) {
@@ -231,67 +289,6 @@ func (h *Handler) proxyLiveSlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	copyResponse(w, resp, h.count("hls", "slot:"+live))
-}
-
-// slotTS copies the live slot's TS of a channel to w until it ends, or until
-// the routing moves to another slot (then the caller splices onto it).
-func (h *Handler) slotTS(ctx context.Context, ch uuid.UUID, w io.Writer, started func(name string)) error {
-	live, epoch := h.Slots.Live()
-	sctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	moved := make(chan struct{})
-	go func() {
-		t := time.NewTicker(200 * time.Millisecond)
-		defer t.Stop()
-		for {
-			select {
-			case <-sctx.Done():
-				return
-			case <-t.C:
-				if _, e := h.Slots.Live(); e != epoch {
-					close(moved)
-					cancel()
-					return
-				}
-			}
-		}
-	}()
-	resp, err := h.slotGet(sctx, live, "/stream/channel/"+ch.String()+"/live.ts", nil)
-	if err != nil {
-		if ctx.Err() == nil && !isClosed(moved) {
-			h.Slots.Suspect(ctx, live)
-		}
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		if resp.StatusCode >= 500 && resp.StatusCode != http.StatusServiceUnavailable {
-			h.Slots.Suspect(ctx, live)
-		}
-		return errors.New("frontdoor: TV slot answered " + resp.Status)
-	}
-	if started != nil {
-		started(live)
-	}
-	n, err := copyFlush(w, resp.Body)
-	h.count("ts", "slot:"+live)(n)
-	if isClosed(moved) {
-		return nil // routed elsewhere: splice
-	}
-	if ctx.Err() == nil {
-		// the slot's stream broke under a live client
-		h.Slots.Suspect(ctx, live)
-	}
-	return err
-}
-
-func isClosed(c chan struct{}) bool {
-	select {
-	case <-c:
-		return true
-	default:
-		return false
-	}
 }
 
 // retimeWriter turns a client's sequence of TS sources into one continuous

@@ -169,6 +169,10 @@ func (c *Controller) onEvent(ctx context.Context, cfg Config, e feedEvent) error
 		}
 		params["cause"] = cause
 		params["automatic"] = !e.Actor.Valid
+		if auto, ok := e.Detail["automatic"].(bool); ok {
+			// the reverse commit (tv_rollback) says: its job is the actor either way
+			params["automatic"] = auto
+		}
 	default:
 		return nil
 	}

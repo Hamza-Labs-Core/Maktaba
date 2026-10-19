@@ -112,8 +112,9 @@ describe("Processing pages with ?host=", () => {
     });
     renderAt(<QueueOverview />, "/queue?host=n1", "/queue");
     const panel = (await screen.findByRole("heading", { name: /Running on/ })).closest("section")!;
-    expect(get).toHaveBeenCalledWith("/api/queues/running?host=n1");
+    // the panel's heading renders before its fetch: wait for the job, then check the call
     expect(await within(panel).findByText(/Lecture 4/)).toBeInTheDocument();
+    expect(get).toHaveBeenCalledWith("/api/queues/running?host=n1");
     expect(
       within(panel).getByRole("progressbar", { name: "Progress of Lecture 4" })
     ).toHaveAttribute("aria-valuenow", "25");

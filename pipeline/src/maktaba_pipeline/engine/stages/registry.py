@@ -60,6 +60,7 @@ CORE_MODULES: dict[str, str] = {
     "tv_stage": "maktaba_pipeline.engine.stages.tv_stage",
     "tv_swap": "maktaba_pipeline.engine.stages.tv_swap",
     "tv_gc": "maktaba_pipeline.engine.stages.tv_gc",
+    "tv_rollback": "maktaba_pipeline.engine.stages.tv_rollback",
     "exact_dates": "maktaba_pipeline.engine.stages.exact_dates",
     "repair_broken": "maktaba_pipeline.engine.stages.repair_broken",
     "storage_canonicalize": "maktaba_pipeline.engine.stages.storage_canonicalize",

@@ -46,6 +46,9 @@ type Server struct {
 	EncodersUsed func() int
 	// Now (tests).
 	Now func() time.Time
+	// Bind pins an unbound slot to a release (POST /internal/tv/slot/bind;
+	// nil: not offered).
+	Bind func(ctx context.Context, release string) error
 
 	started time.Time
 }
@@ -83,6 +86,7 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/internal/tv/slot/status", s.status)
 	r.Post("/internal/tv/slot/warm", s.warm)
 	r.Post("/internal/tv/slot/drain", s.drain)
+	r.Post("/internal/tv/slot/bind", s.bind)
 	if s.Channels != nil {
 		s.Channels(r)
 	}
@@ -164,7 +168,7 @@ func stationInfo(id uuid.UUID, st channel.StationStats) StationInfo {
 // Snapshot is the slot's status.
 func (s *Server) Snapshot() Status {
 	role, epoch := s.State.Role()
-	st := Status{Slot: s.State.Name, Role: role, Epoch: epoch, HostID: s.HostID, Release: s.State.Release,
+	st := Status{Slot: s.State.Name, Role: role, Epoch: epoch, HostID: s.HostID, Release: s.State.ReleaseID(),
 		Mismatch: s.State.Mismatch(), Version: s.Version, PID: os.Getpid(),
 		StartedAt: s.started.UTC().Format(time.RFC3339), Budget: s.State.Budget(),
 		PMTPID: channel.TSPMTPID, VideoPID: channel.TSVideoPID, AudioPID: channel.TSAudioPID,
@@ -236,6 +240,38 @@ func (s *Server) warm(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	go s.holdOnce(context.Background())
+	writeJSON(w, http.StatusOK, s.Snapshot())
+}
+
+// BindRequest is POST /internal/tv/slot/bind: the release an unbound slot airs
+// from now on (its definitions, generation and settings).
+type BindRequest struct {
+	ReleaseID string `json:"release_id"`
+}
+
+func (s *Server) bind(w http.ResponseWriter, r *http.Request) {
+	var req BindRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil || req.ReleaseID == "" {
+		http.Error(w, "bad body", http.StatusBadRequest)
+		return
+	}
+	if cur := s.State.ReleaseID(); cur != "" {
+		if cur != req.ReleaseID {
+			http.Error(w, "the slot airs release "+cur, http.StatusConflict)
+			return
+		}
+		writeJSON(w, http.StatusOK, s.Snapshot())
+		return
+	}
+	if s.Bind == nil {
+		http.Error(w, "binding not offered", http.StatusNotImplemented)
+		return
+	}
+	if err := s.Bind(r.Context(), req.ReleaseID); err != nil {
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+	s.log().Info("tv slot: bound to the live release", "release_id", req.ReleaseID, "event", "tv_slot_release")
 	writeJSON(w, http.StatusOK, s.Snapshot())
 }
 

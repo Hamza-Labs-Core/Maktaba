@@ -80,6 +80,7 @@ type slotStatus struct {
 	Role     string   `json:"role"`
 	Epoch    int64    `json:"epoch"`
 	Stations []string `json:"stations"`
+	Rel      string   `json:"release"`
 	PMTPID   int      `json:"pmt_pid"`
 	VideoPID int      `json:"video_pid"`
 	AudioPID int      `json:"audio_pid"`

@@ -89,15 +89,12 @@ func runSlot(args []string) error {
 
 	chRepo := channel.NewPGRepo(pool, b.hostname)
 	chRepo.HostID = ident.ID
-	repo := slot.Repo{PGRepo: chRepo, State: state}
-	var base channel.Settings = b.settings
-	var reads channel.Repo = chRepo
-	// story 33.2: a slot started for a TV release airs that release's lineup,
-	// schedule generation and settings, never "whatever is in channels now"
-	if rel := os.Getenv("MAKTABA_TV_RELEASE"); rel != "" {
+	binding := &slot.Binding{}
+	repo := slot.Repo{PGRepo: chRepo, State: state, Bound: binding}
+	bindTo := func(ctx context.Context, rel string) error {
 		id, err := uuid.Parse(rel)
 		if err != nil {
-			return fmt.Errorf("MAKTABA_TV_RELEASE %q is not a release id", rel)
+			return fmt.Errorf("%q is not a release id", rel)
 		}
 		rctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		rr, err := channel.NewReleaseRepo(rctx, pool, b.hostname, id)
@@ -106,12 +103,28 @@ func runSlot(args []string) error {
 			return fmt.Errorf("TV release %s: %w", rel, err)
 		}
 		rr.HostID = ident.ID
-		repo.Reads, reads = rr, rr
-		base = slot.ReleaseSettings{Raw: rr.Settings}
+		binding.Set(rr, rr.Settings)
+		state.BindRelease(rel)
 		logger.Info("tv slot: bound to its release", "release_id", rel, "sched_gen", rr.SchedGen,
 			"event", "tv_slot_release")
+		return nil
 	}
-	settings := slot.Settings{Settings: base, State: state}
+	// story 33.2: a slot started for a TV release airs that release's lineup,
+	// schedule generation and settings, never "whatever is in channels now";
+	// story 33.7: a slot started without one airs the live release (when there
+	// is one), so a swap's generation flip never moves what it airs
+	if rel := os.Getenv("MAKTABA_TV_RELEASE"); rel != "" {
+		if err := bindTo(ctx, rel); err != nil {
+			return fmt.Errorf("MAKTABA_TV_RELEASE: %w", err)
+		}
+	} else if rel := liveRelease(ctx, pool); rel != "" {
+		if err := bindTo(ctx, rel); err != nil {
+			logger.Warn("tv slot: binding to the live release failed; airing the live generation", "err", err.Error(),
+				"event", "tv_slot_release_failed")
+		}
+	}
+	var reads channel.Repo = repo
+	settings := slot.Settings{Settings: slot.BoundSettings{Base: b.settings, Bound: binding}, State: state}
 	scfg := b.stationConfig(reads)
 	scfg.AlignSegments = true // two slots' segments start at the same instants (33.4)
 	start := channel.SettingsStarter(scfg, settings, b.encoders)
@@ -125,7 +138,7 @@ func runSlot(args []string) error {
 	})
 
 	srv := &slot.Server{State: state, HostID: ident.ID, BaseURL: "http://" + *listen, Version: version.Version,
-		Engine: engine, Pool: pool, Logger: logger,
+		Engine: engine, Pool: pool, Logger: logger, Bind: bindTo,
 		Channels:     (&channel.HTTPHandler{Engine: engine}).Mount,
 		EncodersUsed: func() int { return channel.DefaultEncoderGate().Active() + channel.DefaultVTGate().Active() }}
 	go srv.Run(ctx)
@@ -188,6 +201,17 @@ func slotSchemaReady(ctx context.Context, pool *pgxpool.Pool) bool {
 	qctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	return pool.QueryRow(qctx, `SELECT to_regproc('tv_slot_beat') IS NOT NULL`).Scan(&ok) == nil && ok
+}
+
+// liveRelease is tv_routing's live release ("" : none yet).
+func liveRelease(ctx context.Context, pool *pgxpool.Pool) string {
+	qctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	var rel *string
+	if pool.QueryRow(qctx, `SELECT live_release_id::text FROM tv_routing WHERE scope = 'cluster'`).Scan(&rel) != nil || rel == nil {
+		return ""
+	}
+	return *rel
 }
 
 // readRole adopts the slot's role from tv_slots (written by the front door).

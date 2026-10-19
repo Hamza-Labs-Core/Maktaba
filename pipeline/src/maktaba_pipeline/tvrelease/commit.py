@@ -2,16 +2,24 @@
 transaction - its lineup into ``channels``, its art and settings, the producer's
 bookkeeping (links, filler pools), and ``tv_routing`` flipped to its generation.
 
-**Interim (until stories 33.1 / 33.4 / 33.7 land).** With one TV process there is no
-second slot to switch to: the commit is the whole swap. It is still a swap at each
-channel's programme boundary, by construction: generation N+1 equals N up to every
-changed channel's boundary ``B_c`` (:mod:`.generation`), and the commit first re-anchors
-the generation at the commit instant (a boundary that already passed moves to the end
-of the programme on the air now), so the live engine, which re-reads the live view as
-time advances, plays the same programme to its end and the new schedule from ``B_c``.
-The lineup (numbers, names, added and removed channels) changes at the commit, as a
-direct write does today. The two-slot runtime keeps this commit and moves the
-per-channel switch into the front door (``tv_channel_switch``).
+**With TV slots (stories 33.1 / 33.7, the default on a Postgres home)** the commit is the
+database half of the swap: in the same transaction it writes the front door's swap
+operation - ``tv_swap_ops`` (kind ``swap``) and one ``tv_channel_switch`` row per channel
+of both lineups with its planned instant (swap_wait ``boundary``: the end of the
+programme on the air in generation N at the commit, capped at
+``boundary_max_wait_minutes``; ``immediate``, an added channel: the commit instant; a
+removed channel: its boundary, flagged ``removed``). The change stays ``swapping``; the
+front door switches every channel make-before-break at its instant (HLS stitch, TS
+splice, the push relay's source switch) and the controller moves the change to ``live``
+when the operation is done (api ``tvchange/swap.go``). The guide and the lineup change at
+the commit; for a channel that switches later the stream agrees with the guide because
+N+1 equals N before ``B_c``.
+
+**Without slots** (one TV process: SQLite, ``[tv] slots = off``, or no live slot beating)
+the commit is the whole swap, at each channel's programme boundary by construction: the
+commit first re-anchors the generation at the commit instant, so the engine, which
+re-reads the live view as time advances, plays the programme on the air to its end and
+the new schedule from ``B_c``; the change is ``live`` at once.
 """
 
 from __future__ import annotations
@@ -23,11 +31,11 @@ from .. import rules
 from ..engine.sql import dumps, is_pg, loads, now, to_ts
 from ..log import get_logger
 from .build import Release, filler_item_id, load_release
-from .generation import reanchor
+from .generation import reanchor, swap_boundary
 from .snapshot import DEF_COLUMNS, SETTINGS_SECTIONS, live_snapshot
-from .store import get_change, transition, update_change
+from .store import event, get_change, transition, update_change
 
-__all__ = ["commit_change", "readback"]
+__all__ = ["BaseMovedError", "commit_change", "readback", "slots_runtime", "write_swap_op"]
 
 _log = get_logger()
 _ART_TABLE = "channel_art_overrides"
@@ -40,7 +48,9 @@ async def _lock(db: Any) -> None:
         await db.execute("SELECT pg_advisory_xact_lock(hashtext($1))", SWAP_LOCK)
 
 
-async def _apply_lineup(db: Any, rel: Release, stamp: Any) -> dict[str, int]:
+async def _apply_lineup(
+    db: Any, rel: Release, stamp: Any, *, removed_lifecycle: str = "retired"
+) -> dict[str, int]:
     """``channels`` := the release's lineup: updates and additions (staged rows become
     live), removals retired. Numbers and slugs step aside first, so a renumbering never
     trips the live-unique indexes half way."""
@@ -62,6 +72,17 @@ async def _apply_lineup(db: Any, rel: Release, stamp: Any) -> dict[str, int]:
     for cid, life in have.items():
         if life == "live" and cid not in rel.defs:
             retired += 1
+            if removed_lifecycle == "staged":
+                # a rollback: a channel the rolled-back release added is staged again
+                # (its definition stays in that release for a re-stage)
+                await db.execute(
+                    "UPDATE channels SET lifecycle = 'staged', retired_at = NULL, enabled = $3,"
+                    " updated_at = $2 WHERE id = $1",
+                    cid,
+                    stamp,
+                    False if is_pg(db) else 0,
+                )
+                continue
             await db.execute(
                 "UPDATE channels SET lifecycle = 'retired', retired_at = $2, enabled = $3,"
                 " updated_at = $2 WHERE id = $1",
@@ -228,6 +249,76 @@ async def _apply_bookkeeping(db: Any, pending: dict[str, Any], stamp: Any) -> No
         await db.execute("UPDATE channels SET edited_at = NULL WHERE id = $1", cid)
 
 
+async def slots_runtime(db: Any) -> bool:
+    """Whether a front door with TV slots runs the swap (a live slot beat lately)."""
+    if not is_pg(db):
+        return False
+    try:
+        return bool(
+            await db.fetchval(
+                "SELECT EXISTS (SELECT 1 FROM tv_slots WHERE role = 'live'"
+                " AND beat_at > now() - interval '30 seconds')"
+            )
+        )
+    except Exception as exc:  # noqa: BLE001 - a database before slot 0129
+        if "does not exist" in str(exc):
+            return False
+        raise
+
+
+async def write_swap_op(
+    db: Any,
+    *,
+    change_id: str | None,
+    kind: str,
+    release_id: str | None,
+    from_release_id: str | None,
+    epoch: int,
+    plan: dict[str, tuple[datetime, bool]],
+    reason: str = "",
+    committed: bool,
+    created_by: str,
+) -> int:
+    """Write a front-door operation and its channel rows (``channel id -> (switch_at,
+    removed)``). Returns its id."""
+    op = await db.fetchval(
+        "INSERT INTO tv_swap_ops (change_id, kind, release_id, from_release_id, epoch, reason,"
+        " committed, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id",
+        change_id, kind, release_id, from_release_id, epoch, reason, committed, created_by,
+    )  # fmt: skip
+    for cid, (at, removed) in sorted(plan.items()):
+        await db.execute(
+            "INSERT INTO tv_channel_switch (op_id, change_id, channel_id, switch_at, removed)"
+            " VALUES ($1,$2,$3,$4,$5)",
+            op, change_id, cid, to_ts(db, at), removed,
+        )  # fmt: skip
+    return int(op)
+
+
+async def _switch_plan(
+    db: Any,
+    rel: Release,
+    old_live: set[str],
+    old_gen: int,
+    clock: datetime,
+    wait: str,
+    max_wait: timedelta,
+) -> dict[str, tuple[datetime, bool]]:
+    """Each channel's planned switch instant (design 8.2): the end of the programme on
+    the air in generation N at the commit (capped), at once for an added channel or
+    with ``swap_wait = immediate``; removed channels at their boundary, flagged."""
+    plan: dict[str, tuple[datetime, bool]] = {}
+    for cid in sorted(set(rel.defs) | old_live):
+        removed = cid not in rel.defs
+        at = clock
+        if cid in old_live and wait != "immediate":
+            # the instant generation N+1 diverges at (re-anchored at the commit, capped
+            # the same way): the stream switches where its schedule changes
+            at, _ = await swap_boundary(db, cid, old_gen, clock, max_wait)
+        plan[cid] = (at, removed)
+    return plan
+
+
 async def readback(db: Any, rel: Release) -> dict[str, Any]:
     """The lineup read back after the commit, against the release (story 33.12 AC4)."""
     snap = await live_snapshot(db)
@@ -239,6 +330,22 @@ async def readback(db: Any, rel: Release) -> dict[str, Any]:
     ]
     extra = sorted(set(snap["defs"]) - set(rel.defs))
     return {"ok": not bad and not extra, "mismatch": sorted(bad), "unexpected": extra}
+
+
+class BaseMovedError(RuntimeError):
+    """The live release is no longer the one the change was staged on (another change,
+    or a rollback, went on the air since): its lineup and generation were built against
+    another base, so applying it would undo what went live. Re-stage it."""
+
+
+def _check_base(ch: Any, route: Any) -> None:
+    base = ch.row.get("base_release_id")
+    live = None if route is None else route["live_release_id"]
+    if str(base or "") != str(live or ""):
+        raise BaseMovedError(
+            f"base_release_moved: the change was staged on release {base or 'none'}, the live"
+            f" release is {live or 'none'}; stage it again"
+        )
 
 
 async def commit_change(
@@ -256,15 +363,25 @@ async def commit_change(
         raise LookupError(f"release of change {change_id} is gone")
     cfg, _, _ = await rules.read(db, "tv_staging")
     pending = ch.pending
+    front_door = await slots_runtime(db)
+    wait = str(ch.row.get("swap_wait") or cfg.swap_wait or "boundary")
+    max_wait = timedelta(minutes=int(cfg.boundary_max_wait_minutes))
     try:
+        # before the re-anchor writes anything (and again under the lock below)
+        _check_base(ch, await db.fetchrow("SELECT * FROM tv_routing WHERE scope = 'cluster'"))
         moved = await reanchor(db, rel, at=clock, pending=pending, clock=clock)
         stamp = to_ts(db, clock)
         async with db.transaction():
             await _lock(db)
             route = await db.fetchrow("SELECT * FROM tv_routing WHERE scope = 'cluster'")
+            _check_base(ch, route)  # again under the swap lock
             old_rel = None if route is None else route["live_release_id"]
             old_gen = 0 if route is None else int(route["live_gen"] or 0)
             epoch = 0 if route is None else int(route["epoch"] or 0)
+            old_live = {
+                str(r["id"])
+                for r in await db.fetch("SELECT id FROM channels WHERE lifecycle = 'live'")
+            }
             lineup = await _apply_lineup(db, rel, stamp)
             await _apply_art(db, rel, stamp)
             settings = await _apply_settings(db, rel, stamp)
@@ -301,12 +418,32 @@ async def commit_change(
                 "epoch": epoch + 1,
                 "from_gen": old_gen,
                 "to_gen": rel.sched_gen,
-                "interim": True,
+                "interim": not front_door,
             }
-            await transition(
-                db, change_id, from_states=("swapping",), to="live", action="swap",
-                actor_source=actor_source, detail=report, swapped_at=clock,
-            )  # fmt: skip
+            if front_door:
+                # story 33.7: the front door switches each channel at its instant;
+                # the controller makes the change live when the operation is done
+                plan = await _switch_plan(db, rel, old_live, old_gen, clock, wait, max_wait)
+                op = await write_swap_op(
+                    db, change_id=change_id, kind="swap", release_id=rel.id,
+                    from_release_id=None if old_rel is None else str(old_rel), epoch=epoch + 1,
+                    plan=plan, committed=True, created_by=actor_source,
+                )  # fmt: skip
+                last = max((at for at, _ in plan.values()), default=clock)
+                report.update(
+                    {"front_door": True, "op_id": op, "swap_wait": wait,
+                     "last_switch_at": last.isoformat(), "channels": len(plan)}
+                )  # fmt: skip
+                await update_change(db, change_id, swapped_at=clock)
+                await event(
+                    db, change_id, from_state="swapping", to_state="swapping",
+                    action="swap_commit", actor_source=actor_source, detail=report,
+                )  # fmt: skip
+            else:
+                await transition(
+                    db, change_id, from_states=("swapping",), to="live", action="swap",
+                    actor_source=actor_source, detail=report, swapped_at=clock,
+                )  # fmt: skip
             if is_pg(db):
                 await db.execute("SELECT pg_notify('tv_routing', $1)", str(epoch + 1))
     except Exception as exc:

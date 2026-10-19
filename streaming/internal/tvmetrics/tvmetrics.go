@@ -61,6 +61,16 @@ func (v *Vec) Add(d float64, vals ...string) {
 // Inc adds one.
 func (v *Vec) Inc(vals ...string) { v.Add(1, vals...) }
 
+// Set sets the series with these label values (gauges).
+func (v *Vec) Set(x float64, vals ...string) {
+	if len(vals) != len(v.labels) {
+		return
+	}
+	v.mu.Lock()
+	v.vals[key(vals)] = x
+	v.mu.Unlock()
+}
+
 // Get reads a series (tests).
 func (v *Vec) Get(vals ...string) float64 {
 	v.mu.Lock()
@@ -130,6 +140,13 @@ var (
 	Bytes      = newVec("counter", FrontdoorBytes, "Bytes the front door forwarded from streaming nodes.", "kind", "host")
 	Errors     = newVec("counter", FrontdoorErrors, "Front-door requests to a node that failed.", "host", "kind")
 	PushErrors = newVec("counter", RelayPushErrors, "Push relay errors by code.", "code")
+	// Epic 33 stories 33.7-33.9 (design §15): the swap in the front door.
+	Swaps         = newVec("counter", "maktaba_tv_swaps_total", "Swap and rollback operations the front door ran, by kind and result.", "kind", "result")
+	ChannelSwitch = newVec("counter", "maktaba_tv_channel_switches_total", "Channel switches of a swap or rollback, by result.", "kind", "result")
+	TSSplices     = newVec("counter", "maktaba_tv_ts_splices_total", "TS connections spliced onto another slot, by mode (seamless|retimed).", "mode")
+	HLSStitches   = newVec("counter", "maktaba_tv_hls_stitches_total", "HLS playlists stitched onto another slot, by reason.", "reason")
+	Rollbacks     = newVec("counter", "maktaba_tv_rollbacks_total", "Rollbacks by reason.", "reason")
+	SwitchLatency = newVec("gauge", "maktaba_tv_channel_switch_latency_seconds", "The last channel switch's delay after its planned instant.", "kind")
 )
 
 func escape(s string) string {

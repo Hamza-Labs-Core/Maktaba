@@ -33,6 +33,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -49,15 +50,34 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvremote/rtmptest"
 )
 
+// e2eFreePort is a free local port, never one it handed out before in this test
+// binary: a port is only bound when its process starts, and the kernel may hand a
+// just-released port out again (a slot's admin port once landed on another slot's
+// HTTP port: "address already in use").
 func e2eFreePort(t *testing.T) int {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	e2ePortsMu.Lock()
+	defer e2ePortsMu.Unlock()
+	for i := 0; i < 100; i++ {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		port := l.Addr().(*net.TCPAddr).Port
+		_ = l.Close()
+		if !e2ePorts[port] {
+			e2ePorts[port] = true
+			return port
+		}
 	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
+	t.Fatal("no free port that was not handed out already")
+	return 0
 }
+
+var (
+	e2ePortsMu sync.Mutex
+	e2ePorts   = map[int]bool{}
+)
 
 type e2eProc struct {
 	cmd *exec.Cmd

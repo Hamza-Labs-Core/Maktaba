@@ -72,6 +72,16 @@ type Slots struct {
 	switches   int
 	lastWarm   time.Time
 	wantStby   int // 0: not asked yet, 1: started, -1: stopped (supervisor)
+	// story 33.7: the swap or rollback running now (swap.go), and the old live
+	// slot kept warm after a swap until previousUntil (the warm rollback target)
+	op            *swapOp
+	previous      string
+	previousUntil time.Time
+	boundAt       map[string]time.Time
+	// rolesDirty: the last write of the roles to tv_slots failed; Run writes
+	// them again until it succeeds (a crashed slot must not stay "live" there:
+	// on its restart readRole would make it live again)
+	rolesDirty bool
 	stage      *stagingRun
 	lastSample time.Time
 }
@@ -188,7 +198,7 @@ func (s *Slots) Bootstrap(ctx context.Context) error {
 			return err
 		}
 	}
-	live, standby, staging := "", "", ""
+	live, standby, staging, previous := "", "", "", ""
 	for name, role := range roles {
 		if _, ok := s.Addrs[name]; !ok {
 			continue
@@ -200,6 +210,8 @@ func (s *Slots) Bootstrap(ctx context.Context) error {
 			standby = name
 		case slot.RoleStaging:
 			staging = name
+		case slot.RolePrevious:
+			previous = name
 		}
 	}
 	fresh := live == ""
@@ -215,11 +227,28 @@ func (s *Slots) Bootstrap(ctx context.Context) error {
 		}
 		epoch++
 	}
-	if standby == "" || standby == live {
+	var until time.Time
+	if previous != "" && s.Pool != nil {
+		// a front door restarted inside a swap's grace keeps the previous slot
+		qctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		var t *time.Time
+		if s.Pool.QueryRow(qctx, `SELECT previous_until FROM tv_routing WHERE scope = 'cluster'`).Scan(&t) == nil && t != nil {
+			until = *t
+		}
+		cancel()
+	}
+	if previous != "" && !until.After(time.Now()) {
+		previous = ""
+	}
+	if (standby == "" && previous == "") || standby == live {
 		standby = s.otherThan(live, staging)
+		if standby == previous {
+			standby = ""
+		}
 	}
 	s.mu.Lock()
 	s.live, s.standby, s.staging, s.epoch = live, standby, staging, epoch
+	s.previous, s.previousUntil = previous, until
 	s.mu.Unlock()
 	if fresh {
 		s.log().Info("tv: slots set up", "live", live, "standby", standby, "epoch", epoch, "event", "tv_slot_bootstrap")
@@ -243,7 +272,35 @@ func (s *Slots) persist(ctx context.Context) error {
 	if s.Pool == nil {
 		return nil
 	}
+	err := s.persistOnce(ctx)
+	s.mu.Lock()
+	// a newer epoch in the table is another front door's: nothing to retry
+	s.rolesDirty = err != nil && !errors.Is(err, errRolesStale)
+	s.mu.Unlock()
+	return err
+}
+
+// errRolesStale: tv_slots has a newer routing epoch than this front door.
+var errRolesStale = errors.New("frontdoor: tv_slots has a newer routing epoch")
+
+// persistDirty writes the roles again when the last write failed.
+func (s *Slots) persistDirty(ctx context.Context) {
+	s.mu.Lock()
+	dirty := s.rolesDirty
+	s.mu.Unlock()
+	if !dirty {
+		return
+	}
+	if err := s.persist(ctx); err != nil {
+		s.log().Warn("tv: writing the slot roles failed again", "err", err.Error(), "event", "tv_slot_roles_failed")
+		return
+	}
+	s.log().Info("tv: the slot roles were written", "event", "tv_slot_roles_written")
+}
+
+func (s *Slots) persistOnce(ctx context.Context) error {
 	live, standby, staging, epoch := s.Roles()
+	previous, _ := s.Previous()
 	qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	tx, err := s.Pool.Begin(qctx)
@@ -259,7 +316,7 @@ func (s *Slots) persist(ctx context.Context) error {
 		return err
 	}
 	if cur > epoch {
-		return fmt.Errorf("frontdoor: routing epoch %d in tv_slots is newer than %d", cur, epoch)
+		return fmt.Errorf("%w: %d > %d", errRolesStale, cur, epoch)
 	}
 	if _, err := tx.Exec(qctx, `UPDATE tv_slots SET role = 'idle' WHERE host_id = $1 AND role = 'live'`, s.Host); err != nil {
 		return err
@@ -276,6 +333,8 @@ func (s *Slots) persist(ctx context.Context) error {
 			role = slot.RoleStandby
 		case staging:
 			role = slot.RoleStaging
+		case previous:
+			role = slot.RolePrevious
 		}
 		if _, err := tx.Exec(qctx, `INSERT INTO tv_slots (host_id, slot, role, role_epoch, base_url)
 			VALUES ($1, $2, $3, $4, $5)
@@ -293,6 +352,7 @@ func (s *Slots) Run(ctx context.Context) {
 	defer t.Stop()
 	for {
 		s.probeAll(ctx)
+		s.persistDirty(ctx)
 		if time.Since(s.lastWarmAt()) >= 2*time.Second {
 			s.SyncWarm(ctx)
 		}
@@ -348,10 +408,14 @@ func (s *Slots) probe(ctx context.Context, name string) (slot.Status, error) {
 
 func (s *Slots) probeAll(ctx context.Context) {
 	live, standby, staging, _ := s.Roles()
-	for _, n := range []string{live, standby, staging} {
-		if n == "" {
+	previous, _ := s.Previous()
+	_, _, _, to := s.Operation()
+	seen := map[string]bool{}
+	for _, n := range []string{live, standby, staging, previous, to} {
+		if n == "" || seen[n] {
 			continue
 		}
+		seen[n] = true
 		s.check(ctx, n)
 	}
 }
@@ -377,10 +441,13 @@ func (s *Slots) check(ctx context.Context, name string) bool {
 	}
 	h.at = now
 	fails, reported := h.fails, h.reported
-	isLive := name == s.live
+	isLive := name == s.live || (s.op != nil && name == s.op.To)
 	s.mu.Unlock()
 	if err != nil && isLive && (fails >= s.failAfter() || reported) {
 		s.Failover(ctx, name, "probe: "+err.Error())
+	}
+	if err == nil && st.Release == "" {
+		s.ensureBound(ctx, name)
 	}
 	return err == nil
 }
@@ -391,7 +458,7 @@ func (s *Slots) Suspect(ctx context.Context, name string) {
 		return
 	}
 	live, _ := s.Live()
-	if name == live {
+	if _, _, _, to := s.Operation(); name == live || name == to {
 		// a refused connection is a dead process: no second probe
 		if _, err := s.probe(context.WithoutCancel(ctx), name); err != nil {
 			s.Failover(ctx, name, "upstream: "+err.Error())
@@ -405,7 +472,7 @@ func (s *Slots) Exited(ctx context.Context, name string) {
 	if h := s.health[name]; h != nil {
 		h.ok, h.reported = false, true
 	}
-	isLive := name == s.live
+	isLive := name == s.live || (s.op != nil && name == s.op.To)
 	s.mu.Unlock()
 	if isLive {
 		s.Failover(ctx, name, "exited")
@@ -418,6 +485,15 @@ func (s *Slots) Exited(ctx context.Context, name string) {
 // the live slot is awaited (viewers stall for a moment, TS connections are
 // kept).
 func (s *Slots) Failover(ctx context.Context, from, why string) bool {
+	// story 33.7/33.9: a slot lost while a swap or rollback runs, or the new
+	// live slot lost inside the grace (automatic rollback to the previous slot;
+	// never a staged change: the staging slot is no failover target)
+	if s.failoverInOp(ctx, from, why) {
+		return true
+	}
+	if s.autoRollback(ctx, from, why) {
+		return true
+	}
 	s.mu.Lock()
 	if s.live != from || s.failing[from] {
 		s.mu.Unlock()
@@ -429,6 +505,13 @@ func (s *Slots) Failover(ctx context.Context, from, why string) bool {
 		s.mu.Unlock()
 		s.log().Warn("tv: the live slot is down and no hot standby answers; waiting for its restart",
 			"slot", from, "why", why, "event", "tv_slot_failover_unavailable")
+		return false
+	}
+	if ok, liveRel := standbyAirsLive(s.health[from], h); !ok {
+		s.mu.Unlock()
+		s.log().Warn("tv: the live slot is down and the hot standby does not run the live release; waiting for its restart",
+			"slot", from, "standby", to, "live_release", liveRel, "standby_release", h.status.Release,
+			"mismatch", h.status.Mismatch, "why", why, "event", "tv_slot_failover_refused")
 		return false
 	}
 	s.failing[from] = true
@@ -464,6 +547,9 @@ func (s *Slots) Failover(ctx context.Context, from, why string) bool {
 func (s *Slots) Switch(ctx context.Context, to string, epoch int64) error {
 	if _, ok := s.Addrs[to]; !ok {
 		return fmt.Errorf("frontdoor: unknown slot %q", to)
+	}
+	if err := s.opRunning(); err != nil {
+		return err
 	}
 	s.mu.Lock()
 	if epoch <= s.epoch {
@@ -501,7 +587,7 @@ func (s *Slots) StartStaging(ctx context.Context) (string, error) {
 	}
 	s.mu.Lock()
 	if s.staging == "" {
-		s.staging = s.otherThan(s.live, s.standby)
+		s.staging = s.freeInstanceLocked()
 	}
 	name := s.staging
 	s.mu.Unlock()
@@ -526,9 +612,43 @@ func (s *Slots) StopStaging(ctx context.Context) error {
 	return s.persist(ctx)
 }
 
-// supervise asks the supervisor to start or stop an instance.
+// standbyAirsLive reports whether a standby may take over from the live slot:
+// it is not refusing its release (Mismatch) and, when the live slot was bound
+// to a release, it is bound to the same one — never an older (or staged)
+// release. An unbound live slot (no release yet) accepts an unbound standby.
+func standbyAirsLive(live, standby *slotHealth) (bool, string) {
+	if standby == nil || standby.status.Mismatch {
+		return false, ""
+	}
+	liveRel := ""
+	if live != nil {
+		liveRel = live.status.Release
+	}
+	if liveRel == "" {
+		return true, ""
+	}
+	return standby.status.Release == liveRel, liveRel
+}
+
+// supervise asks the supervisor to start or stop an instance. A start always
+// carries the instance's binding (the supervisor keeps an instance's last
+// binding otherwise: a former staging slot would start its staged release as
+// the standby): the standby is bound to the live slot's release, any other
+// start is unbound (it binds itself to the live release).
 func (s *Slots) supervise(ctx context.Context, name string, start bool) {
 	if s.Supervisor == "" {
+		return
+	}
+	if start {
+		s.mu.Lock()
+		rel := ""
+		if name == s.standby {
+			if h := s.health[s.live]; h != nil {
+				rel = h.status.Release
+			}
+		}
+		s.mu.Unlock()
+		s.superviseRelease(ctx, name, rel)
 		return
 	}
 	verb := "stop"
@@ -679,6 +799,17 @@ func (s *Slots) SyncWarm(ctx context.Context) {
 		remote = s.RemoteViewers(ctx)
 	}
 	plan := planWarm(set, demands, remote, liveOnAir, capacity, nvencMax, vtMax)
+	if gone := s.rollingSwitched(); len(gone) > 0 {
+		// a rolling swap releases a channel on the old live slot right after its
+		// switch (design §8.6): the extra encodes stay within the budget
+		kept := plan.live[:0:0]
+		for _, id := range plan.live {
+			if !gone[id] {
+				kept = append(kept, id)
+			}
+		}
+		plan.live = kept
+	}
 	if st := s.sendWarm(ctx, live, slot.WarmRequest{Role: slot.RoleLive, Epoch: epoch,
 		Channels: ids(plan.live), Budget: plan.liveBudget}); st != nil {
 		s.remember(live, *st)
@@ -690,13 +821,88 @@ func (s *Slots) SyncWarm(ctx context.Context) {
 			s.remember(standby, *st)
 		}
 	}
-	if staging != "" {
+	// story 33.7: a swap's (or rollback's) target warms the watched channels
+	// before their instants — in a rolling swap only shortly before — and keeps
+	// those switched to it; the previous slot keeps the watched channels warm
+	// for a warm rollback (design §8.6, §10). A target that is the staging slot of
+	// a staged change keeps story 33.5's warm set (it holds the watched channels).
+	to, toRole, toChans, prev, prevChans := s.opWarm(plan.live, demands, time.Now())
+	staged := s.stageActive()
+	if staging != "" && (staging != to || staged) {
 		stby := 0
 		if set.HotStandby && standby != "" {
 			stby = len(plan.standby)
 		}
 		s.syncStaging(ctx, staging, epoch, capacity, nvencMax, vtMax, len(liveOnAir), stby, demands)
 	}
+	if to == staging && staged {
+		to = ""
+	}
+	if to != "" {
+		if st := s.sendWarm(ctx, to, slot.WarmRequest{Role: toRole, Epoch: epoch, Channels: ids(toChans),
+			Budget: extraBudget(len(toChans), nvencMax, vtMax)}); st != nil {
+			s.remember(to, *st)
+		}
+	}
+	if prev != "" && prev != to {
+		if st := s.sendWarm(ctx, prev, slot.WarmRequest{Role: slot.RolePrevious, Epoch: epoch, Channels: ids(prevChans),
+			Budget: extraBudget(len(prevChans), nvencMax, vtMax), Exclusive: true}); st != nil {
+			s.remember(prev, *st)
+		}
+	}
+}
+
+// extraBudget is the encoder budget of a slot that warms n channels besides
+// live's (a swap's target, the previous slot): exactly what it holds.
+func extraBudget(n, nvencMax, vtMax int) slot.Budget {
+	b := slot.Budget{MaxActive: maxInt(n, 1)}
+	if nvencMax > 0 {
+		b.NVENCMax = maxInt(2*n, 1)
+	}
+	if vtMax > 0 {
+		b.VTMax = maxInt(2*n, 1)
+	}
+	return b
+}
+
+// opWarm is the warm set of a running operation's target and of the previous
+// slot.
+func (s *Slots) opWarm(liveSet []uuid.UUID, demands []ChannelDemand, now time.Time) (to, toRole string,
+	toChans []uuid.UUID, prev string, prevChans []uuid.UUID) {
+	watched := map[uuid.UUID]bool{}
+	for _, d := range demands {
+		if d.Humans > 0 || d.Pushes > 0 {
+			watched[d.Channel] = true
+		}
+	}
+	for _, id := range liveSet {
+		watched[id] = true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if op := s.op; op != nil && op.To != "" && op.To != op.From {
+		to, toRole = op.To, slot.RoleStaging
+		if op.To == s.previous {
+			toRole = slot.RolePrevious
+		}
+		for ch, st := range op.state {
+			if op.removed[ch] || st == switchSkipped {
+				continue
+			}
+			if st == switchSwitched || (watched[ch] && (!op.rolling || op.at[ch].Sub(now) < rollingLead)) {
+				toChans = append(toChans, ch)
+			}
+		}
+		sort.Slice(toChans, func(i, j int) bool { return toChans[i].String() < toChans[j].String() })
+	}
+	if s.previous != "" && s.previous != s.live {
+		prev = s.previous
+		for ch := range watched {
+			prevChans = append(prevChans, ch)
+		}
+		sort.Slice(prevChans, func(i, j int) bool { return prevChans[i].String() < prevChans[j].String() })
+	}
+	return
 }
 
 // ensureStandby starts or stops the standby instance with hot_standby.
@@ -809,6 +1015,8 @@ func (s *Slots) View() map[string]any {
 			role = slot.RoleStandby
 		case s.staging:
 			role = slot.RoleStaging
+		case s.previous:
+			role = slot.RolePrevious
 		}
 		v := SlotView{Slot: n, Role: role}
 		if h := s.health[n]; h != nil {
@@ -816,6 +1024,15 @@ func (s *Slots) View() map[string]any {
 		}
 		views = append(views, v)
 	}
-	return map[string]any{"host_id": s.Host, "epoch": s.epoch, "live": s.live, "standby": s.standby,
-		"staging": s.staging, "switches": s.switches, "slots": views}
+	out := map[string]any{"host_id": s.Host, "epoch": s.epoch, "live": s.live, "standby": s.standby,
+		"staging": s.staging, "switches": s.switches, "slots": views, "previous": s.previous}
+	if !s.previousUntil.IsZero() && s.previous != "" {
+		out["previous_until"] = s.previousUntil.UTC().Format(time.RFC3339)
+	}
+	if op := s.op; op != nil {
+		sw, sk, pl := op.counts()
+		out["operation"] = map[string]any{"id": op.ID, "kind": op.Kind, "change_id": op.ChangeID, "from": op.From,
+			"to": op.To, "switched": sw, "skipped": sk, "planned": pl, "rolling": op.rolling}
+	}
+	return out
 }

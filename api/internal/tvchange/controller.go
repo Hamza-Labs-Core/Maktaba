@@ -20,6 +20,7 @@ const (
 	StageTVStage = "tv_stage"
 	StageTVSwap  = "tv_swap"
 	StageTVGC    = "tv_gc"
+	// StageTVRollback (swap.go) is the reverse commit of a rollback.
 )
 
 // controllerLock is the advisory lock that keeps the controller to one API process
@@ -214,6 +215,10 @@ func (c *Controller) Tick(ctx context.Context) error {
 			}
 		}
 	}
+	// story 33.7/33.9: swaps the front door finished, rollbacks to commit
+	if err := c.tickOps(ctx); err != nil {
+		c.Logger.Warn("tv swap operations tick failed", "event", "tv_swap_ops_failed", "error", err.Error())
+	}
 	// story 33.5: the staging slot ends with its change (cancel, fail, live)
 	c.reconcileStaging(ctx)
 	// story 33.13: notices and the audit rows of automatic transitions (best-effort:
@@ -322,8 +327,10 @@ func (c *Controller) viewers(ctx context.Context) int {
 	return int(n.Int64)
 }
 
-// startSwap moves a change to swapping and enqueues the tv_swap job (the interim swap
-// commit until the two-slot runtime; then the front door's swap).
+// startSwap moves a change to swapping and enqueues the tv_swap job: the swap commit
+// (lineup, settings, generation flip and — with TV slots — the front door's swap
+// operation, one transaction). The front door then switches each channel at its
+// programme boundary; tickOps makes the change live when it is done (swap.go).
 func (c *Controller) startSwap(ctx context.Context, ch *Change, action string, detail map[string]any) error {
 	if c.Enqueue == nil {
 		return errors.New("no queue")
@@ -337,10 +344,40 @@ func (c *Controller) startSwap(ctx context.Context, ch *Change, action string, d
 		if action == ActionAutoPromote {
 			prev = StateReady
 		}
-		_, _ = c.DB.ExecContext(ctx, `UPDATE tv_changes SET state = $2 WHERE id = $1 AND state = 'swapping'`, ch.ID, prev)
+		c.revertSwapStart(ctx, ch.ID, prev, action, nil, err)
 		return err
 	}
 	return nil
+}
+
+// ActionSwapNotStarted: the swap job could not be enqueued; the change went back
+// to where it was (the event reverts the swapping one in the history and the
+// notification feed: nothing went on the air).
+const ActionSwapNotStarted = "swap_not_started"
+
+// revertSwapStart puts a change whose swap job could not be enqueued back to
+// prev, with an event that says so (the swapping event before it stays in the
+// history, followed by this one: the feed sees swapping -> prev, never a swap).
+func (c *Controller) revertSwapStart(ctx context.Context, id, prev, action string, actor *string, cause error) {
+	tx, err := c.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.ExecContext(ctx, `UPDATE tv_changes SET state = $2 WHERE id = $1 AND state = 'swapping'`, id, prev)
+	if err != nil {
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return
+	}
+	from, to := StateSwapping, prev
+	if err := c.Store.Event(ctx, tx, id, Event{ActorUserID: actor, ActorSource: actorSource(actor, "controller"),
+		FromState: &from, ToState: &to, Action: ActionSwapNotStarted,
+		Detail: map[string]any{"reverts": action, "error": cause.Error()}}); err != nil {
+		return
+	}
+	_ = tx.Commit()
 }
 
 // Promote is Swap now: an approved change (or a ready one whose rule allows it).
@@ -370,7 +407,7 @@ func (c *Controller) startSwapBy(ctx context.Context, ch *Change, action string,
 		return err
 	}
 	if err := c.Enqueue(ctx, StageTVSwap, map[string]any{"change_id": ch.ID}, "swap TV change"); err != nil {
-		_, _ = c.DB.ExecContext(ctx, `UPDATE tv_changes SET state = $2 WHERE id = $1 AND state = 'swapping'`, ch.ID, prev)
+		c.revertSwapStart(ctx, ch.ID, prev, action, actor, err)
 		return err
 	}
 	return nil

@@ -8,12 +8,32 @@
 //   POST  /api/tv/changes/{id}/approve           {swap_at?, ack_param_change?}
 //   GET   /api/tv/changes/{id}/schedule-diff?page= | ?channel=
 //   GET   /api/tv/changes/{id}/boundaries?at=&swap_wait=
-//   POST  /api/tv/rollback                       501 until story 33.9
+//   GET   /api/tv/rollback                       the rollback point (warm / cold / none)
+//   POST  /api/tv/rollback                       {to_release_id?} → {mode, op_id?, rollback_change_id?}
 //   GET   /api/tv/slots, /api/tv/releases
 //
 // The page never re-implements the state machine: the buttons are the change's
 // allowed_actions (plan 33.11 D2).
 import { api } from "./api";
+
+/** What a rollback would do now (story 33.9 AC7): warm (the previous slot is up: instant),
+ * cold (the previous release is staged again: minutes), or none (and why). */
+export type RollbackPoint = {
+  mode: "warm" | "cold" | "none";
+  change_id?: string;
+  change_number?: number;
+  release_id?: string;
+  until?: string;
+  slot?: string;
+  reason?: string;
+};
+
+export type RollbackResult = {
+  mode: "warm" | "cold";
+  change_id: string;
+  op_id?: number;
+  rollback_change_id?: string;
+};
 
 export type ChangeState =
   | "draft"
@@ -298,7 +318,8 @@ export const tvChangesApi = {
     api.patch<TvChangeDetail>(base(id), body),
   promote: (id: string) => api.post<TvChangeDetail>(`${base(id)}/promote`),
   cancel: (id: string) => api.post<TvChangeDetail>(`${base(id)}/cancel`),
-  rollback: () => api.post<unknown>(`/api/tv/rollback`, {}),
+  rollback: () => api.post<RollbackResult>(`/api/tv/rollback`, {}),
+  rollbackPoint: () => api.get<RollbackPoint>(`/api/tv/rollback`),
   preview: (id: string) => api.post<Preview>(`${base(id)}/preview`),
   slots: () => api.get<SlotsView>(`/api/tv/slots`),
   releases: (limit = 20) => api.get<{ items: Release[] }>(`/api/tv/releases?limit=${limit}`),

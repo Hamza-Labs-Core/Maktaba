@@ -300,7 +300,8 @@ func TestReleasesSlotsAndNotYet(t *testing.T) {
 	if code != 200 || len(out["slots"].([]any)) == 0 {
 		t.Fatalf("slots: %d %v", code, out)
 	}
-	if code, _ := w.do("POST", "/api/tv/rollback", "", "u1"); code != http.StatusNotImplemented {
+	// story 33.9: nothing went live through a change yet — no rollback point
+	if code, _ := w.do("POST", "/api/tv/rollback", "", "u1"); code != http.StatusConflict {
 		t.Fatalf("rollback: %d", code)
 	}
 	code, out = w.do("POST", "/api/tv/changes", `{"title":"Hand made"}`, "u1")
