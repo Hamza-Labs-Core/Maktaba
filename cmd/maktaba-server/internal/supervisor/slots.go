@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -78,7 +77,7 @@ func BuildSlot(name string, opts Options) (Process, error) {
 	if !ValidSlot(name) {
 		return Process{}, fmt.Errorf("unknown TV slot %q (blue, green or amber)", name)
 	}
-	bin, err := resolveBinary("maktaba-streaming", "MAKTABA_STREAMING_BIN", opts.BinDir)
+	bin, err := opts.resolve("maktaba-streaming", "MAKTABA_STREAMING_BIN")
 	if err != nil {
 		return Process{}, err
 	}
@@ -144,7 +143,7 @@ func applyBinding(cmd *exec.Cmd, b *SlotBinding, base string) error {
 		}
 		return nil
 	}
-	rb, err := ResolveReleaseBinary(filepath.Dir(base), b.Version, b.SHA256, version.Version, base)
+	rb, err := ResolveReleaseBinary(releaseBinRoot(base), b.Version, b.SHA256, version.Version, base)
 	if err != nil {
 		return fmt.Errorf("tv_slot_refused: %w", err)
 	}

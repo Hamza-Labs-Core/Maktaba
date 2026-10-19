@@ -32,6 +32,14 @@ const feedCursor = "tv_change_events"
 // feedBatch bounds one tick's events.
 const feedBatch = 200
 
+// feedGapGrace is how long the feed waits at a hole in the event ids. Ids are taken
+// when a row is inserted, not when its transaction commits: the swap commit's
+// transaction (the pipeline's tv_swap) writes its "live" event early and commits after
+// other, later-numbered events are already visible. Reading past the hole would skip
+// that event for good (no notice, no audit row); a hole that stays (a rolled-back
+// insert) is passed once the events after it are this old.
+const feedGapGrace = 2 * time.Minute
+
 // ChangeLink is the Changes page of a change.
 func ChangeLink(id string) string { return "/admin/live-tv/changes/" + id }
 
@@ -44,6 +52,7 @@ type feedEvent struct {
 	To       sql.NullString
 	Action   string
 	Detail   map[string]any
+	At       time.Time
 }
 
 // notifyEvents turns the change events written since the last tick - by the API, the
@@ -67,7 +76,7 @@ func (c *Controller) notifyEvents(ctx context.Context, cfg Config) error {
 		return err
 	}
 	rows, err := c.DB.QueryContext(ctx, `SELECT id, change_id, actor_user_id, actor_source, from_state, to_state,
-		action, detail FROM tv_change_events WHERE id > $1 ORDER BY id LIMIT $2`, pos, feedBatch)
+		action, detail, at FROM tv_change_events WHERE id > $1 ORDER BY id LIMIT $2`, pos, feedBatch)
 	if err != nil {
 		return err
 	}
@@ -75,11 +84,13 @@ func (c *Controller) notifyEvents(ctx context.Context, cfg Config) error {
 	for rows.Next() {
 		var e feedEvent
 		var detail []byte
-		if err := rows.Scan(&e.ID, &e.ChangeID, &e.Actor, &e.Source, &e.From, &e.To, &e.Action, &detail); err != nil {
+		var at nullTime
+		if err := rows.Scan(&e.ID, &e.ChangeID, &e.Actor, &e.Source, &e.From, &e.To, &e.Action, &detail, &at); err != nil {
 			rows.Close()
 			return err
 		}
 		e.Detail = map[string]any{}
+		e.At = at.T
 		decodeJSON(detail, &e.Detail)
 		evs = append(evs, e)
 	}
@@ -87,14 +98,18 @@ func (c *Controller) notifyEvents(ctx context.Context, cfg Config) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	start := pos
 	for _, e := range evs {
+		if e.ID != pos+1 && c.now().Sub(e.At) < feedGapGrace {
+			break // an earlier event may still be committing: the next tick reads on
+		}
 		if err := c.onEvent(ctx, cfg, e); err != nil {
 			c.Logger.Warn("tv change notification failed", "event", "tv_change_notify_failed",
 				"change_id", e.ChangeID, "error", err.Error())
 		}
 		pos = e.ID
 	}
-	if len(evs) == 0 {
+	if pos == start {
 		return nil
 	}
 	_, err = c.DB.ExecContext(ctx, `UPDATE notification_cursors SET position = $2, updated_at = $3 WHERE name = $1`,

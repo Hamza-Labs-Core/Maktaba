@@ -62,6 +62,13 @@ func SQLite(t *testing.T) *sql.DB {
 	}
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
+	// a scratch database: no fsync per statement (keeps the unit tier's
+	// per-test budget for the many tests that build one)
+	for _, p := range []string{"PRAGMA synchronous = OFF", "PRAGMA journal_mode = MEMORY"} {
+		if _, err := db.Exec(p); err != nil {
+			t.Fatal(err)
+		}
+	}
 	stmts := splitSQL(base)
 	stmts = append(stmts, slot(t, "0127_tv_releases_changes.sqlite.sql")...)
 	stmts = append(stmts, slot(t, "0130_notifications.sqlite.sql")...)

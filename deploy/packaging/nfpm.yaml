@@ -13,9 +13,9 @@
 # (pkgroot/) by the release job before each invocation — copy the right
 # dist/<name>-linux-${ARCH} into pkgroot/<name> first.
 #
-# Ships all three Go binaries because the unified `maktaba-server`
-# supervises (forks) the api and streaming binaries as siblings on PATH;
-# a maktaba-server-only package would start but fail to spawn its roles.
+# Ships all three Go binaries plus maktaba-launcher: the service runs the
+# launcher, which starts bin/releases/<current>/maktaba-server, which forks
+# the api and streaming binaries of the same release directory.
 
 name: maktaba-server
 arch: ${ARCH}
@@ -43,20 +43,36 @@ depends:
   - python3
 
 contents:
-  # Unified server binary (primary entry point). Staged to a fixed path
-  # because nfpm does not env-expand src globs (see header).
-  - src: ./pkgroot/maktaba-server
-    dst: /usr/bin/maktaba-server
+  # Epic 35 story 35.2 (design §2.4): the package manager owns the launcher,
+  # the updater owns releases. The binaries ship to a package-owned staging
+  # directory; postinstall copies them into /var/lib/maktaba/bin/releases/<v>/
+  # (writing `current` only when newer than `watermark`) with
+  # `maktaba-server setup --self-managed`. nfpm does not env-expand
+  # contents[].src globs, so each binary is staged to a fixed pkgroot/ path.
+  - src: ./pkgroot/maktaba-launcher
+    dst: /usr/bin/maktaba-launcher
     file_info:
       mode: 0755
-
-  # Sibling role binaries the supervisor forks at runtime.
+  - src: ./pkgroot/maktaba-server
+    dst: /usr/lib/maktaba/release/maktaba-server
+    file_info:
+      mode: 0755
   - src: ./pkgroot/maktaba-api
-    dst: /usr/bin/maktaba-api
+    dst: /usr/lib/maktaba/release/maktaba-api
     file_info:
       mode: 0755
   - src: ./pkgroot/maktaba-streaming
-    dst: /usr/bin/maktaba-streaming
+    dst: /usr/lib/maktaba/release/maktaba-streaming
+    file_info:
+      mode: 0755
+  - src: ./pkgroot/maktaba-launcher
+    dst: /usr/lib/maktaba/release/maktaba-launcher
+    file_info:
+      mode: 0755
+
+  # The CLI on PATH runs the current release (falls back to the packaged one).
+  - src: ./deploy/packaging/scripts/maktaba-server-cli.sh
+    dst: /usr/bin/maktaba-server
     file_info:
       mode: 0755
 

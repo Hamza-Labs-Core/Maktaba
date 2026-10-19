@@ -49,7 +49,7 @@ type swapOp struct {
 }
 
 // frontDoorOps reports whether this database has the swap operations (Postgres with
-// slot 0132; a SQLite home runs one TV process and the commit is the whole swap).
+// slot 0133; a SQLite home runs one TV process and the commit is the whole swap).
 func (c *Controller) frontDoorOps(ctx context.Context) bool {
 	if IsSQLite(c.DB) {
 		return false

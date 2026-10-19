@@ -237,6 +237,13 @@ jobs:
             ( cd cmd/maktaba-server && \
               GOOS="${os}" GOARCH="${arch}" CGO_ENABLED=0 SOURCE_DATE_EPOCH="${SDE}" \
               go build -trimpath -tags embed_web -ldflags "${LDFLAGS}" -o "${out}" . )
+            # maktaba-launcher (Epic 35 story 35.2): the small stable process the
+            # OS service runs; it starts bin/releases/<current>/maktaba-server.
+            lout="${GITHUB_WORKSPACE}/dist/maktaba-launcher-${os}-${arch}"
+            [ "${os}" = windows ] && lout="${lout}.exe"
+            ( cd cmd/maktaba-launcher && \
+              GOOS="${os}" GOARCH="${arch}" CGO_ENABLED=0 SOURCE_DATE_EPOCH="${SDE}" \
+              go build -trimpath -ldflags "-buildid= -s -w -X main.Version=${VERSION}" -o "${lout}" . )
           done
           ls -l "${GITHUB_WORKSPACE}/dist"
 
@@ -378,13 +385,14 @@ jobs:
             ext=""; [ "${os}" = windows ] && ext=".exe"
             stage="$(mktemp -d)"
             cp "srv/maktaba-server-${os}-${arch}${ext}" "${stage}/maktaba-server${ext}"
+            cp "srv/maktaba-launcher-${os}-${arch}${ext}" "${stage}/maktaba-launcher${ext}"
             # api/streaming binaries are staged without an .exe suffix by
             # the build matrix; give them one inside windows archives.
             cp "bins/maktaba-api-${os}-${arch}"       "${stage}/maktaba-api${ext}"
             cp "bins/maktaba-streaming-${os}-${arch}" "${stage}/maktaba-streaming${ext}"
             # Artifact download drops the +x bit (artifacts are re-zipped),
             # so restore it before archiving.
-            chmod 0755 "${stage}/maktaba-server${ext}" \
+            chmod 0755 "${stage}/maktaba-server${ext}" "${stage}/maktaba-launcher${ext}" \
                        "${stage}/maktaba-api${ext}" \
                        "${stage}/maktaba-streaming${ext}"
             cp README.md LICENSE "${stage}/"
@@ -454,6 +462,7 @@ jobs:
             # nfpm doesn't env-expand contents[].src, so stage this arch's
             # binaries to the fixed pkgroot/ paths nfpm.yaml references.
             install -m 0755 "dist/maktaba-server-linux-${arch}"    pkgroot/maktaba-server
+            install -m 0755 "dist/maktaba-launcher-linux-${arch}"  pkgroot/maktaba-launcher
             install -m 0755 "dist/maktaba-api-linux-${arch}"       pkgroot/maktaba-api
             install -m 0755 "dist/maktaba-streaming-linux-${arch}" pkgroot/maktaba-streaming
             export ARCH="${arch}" VERSION="${TAG#v}"

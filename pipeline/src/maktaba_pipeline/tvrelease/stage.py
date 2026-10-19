@@ -78,33 +78,70 @@ async def stage_change(
         raise ChangeInFlight(other.id)
     cfg, _, _ = await rules.read(db, "tv_staging")
     pending = ch.pending
-    rel, diff, kinds = await build_release(db, pending, created_by=ch.row.get("created_by"))
-    if rel is None:
-        await transition(
-            db, change_id, from_states=("draft",), to="cancelled", action="noop",
-            actor_source=actor_source, detail={"why": "the change airs exactly what is live"},
-            end_reason="noop", ended_at=clock, kinds=kinds,
+    for _attempt in range(_STAGE_ATTEMPTS):
+        rel, diff, kinds = await build_release(db, pending, created_by=ch.row.get("created_by"))
+        boundaries: dict[str, str] = {}
+        at = planned_swap(ch.row.get("swap_at"), int(cfg.verify_soak_seconds), clock)
+        if rel is not None:
+            # the draft names its release while the generation is built, so the daily
+            # clean-up (which keeps the drafts' generations) never takes it half way
+            await update_change(db, change_id, release_id=rel.id)
+            boundaries = await build_generation(db, rel, at=at, pending=pending, clock=clock)
+        async with db.transaction():
+            # the drafts' lock (the API's tvchange.Drafts takes it for every save): an
+            # edit saved into this draft while it was being built is not overwritten
+            # by the built pending, and a second change cannot go in flight meanwhile
+            if is_pg(db):
+                await db.execute("SELECT pg_advisory_xact_lock(hashtext('tv_change_draft'))")
+            cur = await get_change(db, change_id)
+            if cur is None or cur.state != "draft":
+                if cur is None:
+                    raise LookupError(f"no TV change {change_id}")
+                return cur.state
+            if cur.pending != pending:
+                pending = cur.pending  # edited while it was built: build it again
+                continue
+            other = await in_flight(db)
+            if other is not None and other.id != change_id:
+                raise ChangeInFlight(other.id)
+            if rel is None:
+                await transition(
+                    db, change_id, from_states=("draft",), to="cancelled", action="noop",
+                    actor_source=actor_source,
+                    detail={"why": "the change airs exactly what is live"},
+                    end_reason="noop", ended_at=clock, kinds=kinds,
+                )  # fmt: skip
+                return "cancelled"
+            for s in diff.get("schedules") or []:
+                b = boundaries.get(str(s.get("id")))
+                if b:
+                    s["divergence_at"] = b
+            live = await db.fetchval(
+                "SELECT live_release_id FROM tv_routing WHERE scope = 'cluster'"
+            )
+            await transition(
+                db, change_id, from_states=("draft",), to="staged", action="stage",
+                actor_source=actor_source,
+                detail={"release_id": rel.id, "sched_gen": rel.sched_gen, "reused": rel.reused},
+                release_id=rel.id, base_release_id=None if live is None else str(live),
+                kinds=kinds, diff={**diff, "pending": pending}, anchor_at=at, staged_at=clock,
+                auto_rule=_strictest(cfg, kinds),
+            )  # fmt: skip
+        _log.info(
+            "tv_change_staged", change_id=change_id, release=rel.id, gen=rel.sched_gen,
+            kinds=kinds,
         )  # fmt: skip
-        return "cancelled"
-    at = planned_swap(ch.row.get("swap_at"), int(cfg.verify_soak_seconds), clock)
-    boundaries = await build_generation(db, rel, at=at, pending=pending, clock=clock)
-    for s in diff.get("schedules") or []:
-        b = boundaries.get(str(s.get("id")))
-        if b:
-            s["divergence_at"] = b
-    live = await db.fetchval("SELECT live_release_id FROM tv_routing WHERE scope = 'cluster'")
-    await transition(
-        db, change_id, from_states=("draft",), to="staged", action="stage",
-        actor_source=actor_source,
-        detail={"release_id": rel.id, "sched_gen": rel.sched_gen, "reused": rel.reused},
-        release_id=rel.id, base_release_id=None if live is None else str(live), kinds=kinds,
-        diff={**diff, "pending": pending}, anchor_at=at, staged_at=clock,
-        auto_rule=_strictest(cfg, kinds),
+        return "staged"
+    # still being edited: it stays a draft; the controller asks for the stage again
+    await event(
+        db, change_id, from_state="draft", to_state="draft", action="stage_retry",
+        actor_source=actor_source, detail={"why": "edited while it was being staged"},
     )  # fmt: skip
-    _log.info(
-        "tv_change_staged", change_id=change_id, release=rel.id, gen=rel.sched_gen, kinds=kinds
-    )
-    return "staged"
+    return "draft"
+
+
+#: how many times a draft edited while it is being built is built again in one job
+_STAGE_ATTEMPTS = 3
 
 
 def _strictest(cfg: Any, kinds: list[str]) -> str:

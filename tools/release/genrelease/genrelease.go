@@ -33,6 +33,7 @@ const (
 	SchemaGo        = "streaming/internal/cluster/schema.go"
 	EdgeProtocolGo  = "streaming/internal/frontdoor/protocol.go"
 	AgentProtocolGo = "api/internal/cluster/agent/crypto.go"
+	LauncherGo      = "cmd/maktaba-launcher/main.go"
 	PythonVersion   = "pipeline/.python-version"
 
 	// MarkerOlderNodes and MarkerPreviousRelease are the MANIFEST.md markers
@@ -49,7 +50,7 @@ type Options struct {
 	Published        time.Time // zero → now
 	Dist             string    // directory holding the built assets
 	Repo             string    // checkout root
-	LauncherProtocol int       // 0 → 1 (the launcher lands in story 35.2)
+	LauncherProtocol int       // 0 → cmd/maktaba-launcher's LauncherProtocol
 	// Previous is the previous release's release.json (nil for the first one):
 	// its schema_rev bounds breaks_previous_home, its min_upgrade_from carries over.
 	Previous *rv.Manifest
@@ -64,6 +65,7 @@ type RepoFacts struct {
 	BreaksPreviousHome bool
 	EdgeProtocol       int
 	AgentProtocol      int
+	LauncherProtocol   int
 	Python             string
 }
 
@@ -75,6 +77,7 @@ var (
 	schemaPyRe = regexp.MustCompile(`(?m)^SCHEMA_REV\s*(?::\s*int\s*)?=\s*(\d+)\s*$`)
 	schemaGoRe = regexp.MustCompile(`(?m)^const SchemaRev\s*=\s*(\d+)\s*$`)
 	edgeRe     = regexp.MustCompile(`(?m)^const EdgeProtocol\s*=\s*(\d+)\s*$`)
+	launcherRe = regexp.MustCompile(`(?m)^const LauncherProtocol\s*=\s*(\d+)\s*$`)
 	agentRe    = regexp.MustCompile(`(?m)^\s*ProtocolVersion\s*=\s*(\d+)\s*$`)
 )
 
@@ -122,6 +125,9 @@ func ReadRepo(repo string, previousRev int) (RepoFacts, error) {
 		return f, err
 	}
 	if f.AgentProtocol, err = intConst(filepath.Join(repo, AgentProtocolGo), agentRe); err != nil {
+		return f, err
+	}
+	if f.LauncherProtocol, err = intConst(filepath.Join(repo, LauncherGo), launcherRe); err != nil {
 		return f, err
 	}
 	pv, err := os.ReadFile(filepath.Join(repo, PythonVersion))
@@ -205,7 +211,7 @@ func Build(o Options) (*rv.Manifest, error) {
 	}
 	launcher := o.LauncherProtocol
 	if launcher == 0 {
-		launcher = 1
+		launcher = facts.LauncherProtocol // cmd/maktaba-launcher LauncherProtocol
 	}
 	minUp := o.MinUpgradeFrom
 	if minUp == "" && o.Previous != nil {
@@ -298,6 +304,9 @@ func Check(m *rv.Manifest, repo string, previousRev int) error {
 	}
 	if m.EdgeProtocol != facts.EdgeProtocol || m.AgentProtocol != facts.AgentProtocol {
 		errs = append(errs, fmt.Sprintf("edge/agent protocol %d/%d, source says %d/%d", m.EdgeProtocol, m.AgentProtocol, facts.EdgeProtocol, facts.AgentProtocol))
+	}
+	if m.LauncherProtocol != facts.LauncherProtocol {
+		errs = append(errs, fmt.Sprintf("launcher_protocol %d, %s says %d", m.LauncherProtocol, LauncherGo, facts.LauncherProtocol))
 	}
 	if len(errs) > 0 {
 		return fmt.Errorf("release.json disagrees with the repository: %s", strings.Join(errs, "; "))

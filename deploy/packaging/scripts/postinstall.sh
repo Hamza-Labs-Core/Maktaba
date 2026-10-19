@@ -39,6 +39,21 @@ if [ -f "${CONFIG}" ]; then
     chmod 0644 "${CONFIG}"
 fi
 
+# 2b. Side-by-side layout (Epic 35, story 35.2 AC9): copy the packaged
+#     binaries into ${DATA_DIR}/bin/releases/<version>/ and point `current`
+#     at them only when this package is newer than `watermark` (a package
+#     older than what the updater installed only refreshes the launcher).
+#     The package owns /usr/bin/maktaba-launcher; the updater owns releases.
+RELEASE_SRC=/usr/lib/maktaba/release
+if [ -x "${RELEASE_SRC}/maktaba-server" ]; then
+    if ! runuser -u "${MAKTABA_USER}" -- \
+            "${RELEASE_SRC}/maktaba-server" setup --self-managed --system --no-service \
+            --root "${DATA_DIR}" --from "${RELEASE_SRC}" --identity package; then
+        echo "maktaba-server: could not stage the release under ${DATA_DIR}/bin/releases;" \
+             "the service starts only once 'maktaba-server setup --self-managed' succeeds." >&2
+    fi
+fi
+
 # 3. Pick up the freshly installed unit file.
 if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload >/dev/null 2>&1 || true

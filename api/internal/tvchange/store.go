@@ -548,6 +548,47 @@ func (s *Store) Move(ctx context.Context, q queryer, c *Change, to, action strin
 	return nil
 }
 
+// HeldAfterSwapFailure reports whether a change's last swap failed and no admin has
+// acted on it since (the controller then promotes nothing by itself).
+func (s *Store) HeldAfterSwapFailure(ctx context.Context, q queryer, id string) (bool, error) {
+	var failed, admin int64
+	if err := q.QueryRowContext(ctx, `SELECT
+		COALESCE((SELECT MAX(id) FROM tv_change_events WHERE change_id = $1 AND action = 'swap_failed'), 0),
+		COALESCE((SELECT MAX(id) FROM tv_change_events WHERE change_id = $1 AND actor_source = 'admin'), 0)`,
+		id).Scan(&failed, &admin); err != nil {
+		return false, err
+	}
+	return failed > admin, nil
+}
+
+// Contributors are the users who created a change or saved an edit into it (its create
+// and append events, and created_by): with require_second_admin none of them approves.
+func (s *Store) Contributors(ctx context.Context, q queryer, c *Change) ([]string, error) {
+	seen := map[string]bool{}
+	out := []string{}
+	if c.CreatedBy != nil && *c.CreatedBy != "" {
+		seen[*c.CreatedBy] = true
+		out = append(out, *c.CreatedBy)
+	}
+	rows, err := q.QueryContext(ctx, `SELECT DISTINCT actor_user_id FROM tv_change_events
+		WHERE change_id = $1 AND actor_user_id IS NOT NULL AND action IN ('create', 'append')`, c.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var u string
+		if err := rows.Scan(&u); err != nil {
+			return nil, err
+		}
+		if u != "" && !seen[u] {
+			seen[u] = true
+			out = append(out, u)
+		}
+	}
+	return out, rows.Err()
+}
+
 // ConflictError is an invalid transition (409, with the current state).
 type ConflictError struct {
 	State  string

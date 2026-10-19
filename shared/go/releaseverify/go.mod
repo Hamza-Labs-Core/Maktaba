@@ -14,6 +14,7 @@ require (
 )
 
 require (
+	github.com/Hamza-Labs-Core/Maktaba/shared/go/layout v0.0.0
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
@@ -84,3 +85,5 @@ require (
 	google.golang.org/grpc v1.82.1 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
 )
+
+replace github.com/Hamza-Labs-Core/Maktaba/shared/go/layout => ../layout

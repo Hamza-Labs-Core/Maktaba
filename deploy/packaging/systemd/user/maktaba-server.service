@@ -1,0 +1,15 @@
+[Unit]
+Description=Maktaba (launcher: current release of maktaba-server)
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/share/maktaba/maktaba-launcher --root %h/.local/share/maktaba serve
+Restart=always
+RestartSec=5
+RestartForceExitStatus=75
+KillMode=mixed
+TimeoutStopSec=90
+
+[Install]
+WantedBy=default.target
