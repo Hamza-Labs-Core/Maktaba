@@ -30,6 +30,9 @@ func takenProbe(taken ...string) func() config.PortProbe {
 }
 
 func withProbe(t *testing.T, p func() config.PortProbe) {
+	oldWait := servePortWait
+	servePortWait = 0
+	t.Cleanup(func() { servePortWait = oldWait })
 	t.Helper()
 	old := portProbe
 	portProbe = p

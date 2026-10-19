@@ -301,7 +301,7 @@ func servePorts(cfg *config.Config, found bool, role string, noWeb bool) error {
 	default:
 		return nil
 	}
-	o := config.PortOptions{Keys: keys, Wait: 10 * time.Second}
+	o := config.PortOptions{Keys: keys, Wait: servePortWait}
 	if single {
 		probe := *cfg
 		moved, err := probe.ReconcilePorts(portProbe(), o)

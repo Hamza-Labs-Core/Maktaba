@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 )
@@ -38,3 +39,7 @@ func nodeWebPreference() int {
 	}
 	return 0
 }
+
+// servePortWait is how long serve waits for a taken port before moving it (a
+// previous instance may still be exiting); tests set it to 0.
+var servePortWait = 10 * time.Second
