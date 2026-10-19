@@ -24,8 +24,8 @@ func fullNodeFromEnv() bool {
 
 // buildVOD is the Epic 08 byte-pumping surface alone (direct play, HLS/DASH sessions,
 // subtitles, chapters): no HDHomeRun, guide or home TV (those are the home's).
-func buildVOD(logger *slog.Logger, backend probe.Backend, transcripts handlers.TranscriptStreamer, store session.Store) http.Handler {
-	return buildPublicHandler(logger, backend, transcripts, nil, store)
+func buildVOD(bg *background, logger *slog.Logger, backend probe.Backend, transcripts handlers.TranscriptStreamer, store session.Store) http.Handler {
+	return buildPublicHandler(bg, logger, backend, transcripts, nil, store)
 }
 
 // splitFullNode sends the channel routes the front door forwards (signed) and the

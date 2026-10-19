@@ -80,12 +80,17 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 			break
 		}
 		logger.Warn("tv: reading the slot roles failed; retrying", "err", err.Error(), "event", "tv_slot_bootstrap_failed")
-		time.Sleep(2 * time.Second)
+		select {
+		case <-ctx.Done():
+			// shutting down before the slots were read: no TV routes
+			return nil
+		case <-time.After(2 * time.Second):
+		}
 	}
-	go slots.Run(context.Background())
+	b.bg.Go(slots.Run)
 	// story 33.7/33.9: the swap and rollback operations the change controller
 	// (and the automatic rollback) write for this host
-	go slots.RunOps(context.Background())
+	b.bg.Go(slots.RunOps)
 
 	fd := &frontdoor.Handler{Svc: svc, Settings: csettings, Self: ident.ID, Keyring: keyring, Tracker: tracker,
 		Logger: logger, Slots: slots, CacheRoot: b.cfg.Cache.Root,
@@ -110,18 +115,22 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 		}}
 	_ = b.loop.BeatOnce(ctx)
 	hosts.Refresh(ctx)
-	go b.loop.Run(context.Background())
-	go placement.Listen(context.Background(), b.pool, logger, func(ch uuid.UUID) { svc.Invalidate(ch) })
+	b.bg.Go(b.loop.Run)
+	b.bg.Go(func(ctx context.Context) {
+		placement.Listen(ctx, b.pool, logger, func(ch uuid.UUID) { svc.Invalidate(ch) })
+	})
 	sweeper := &placement.Sweeper{Svc: svc, Demand: tracker.Demand, Cleaner: func(ctx context.Context) {
 		if n, err := store.CleanStaleRuntime(ctx); err == nil && n > 0 {
 			logger.Info("tv: cleaned stale on-air rows", "rows", n, "event", "tv_runtime_cleaned")
 		}
 	}}
-	go sweeper.Run(context.Background())
-	go b.runPushRelay(fd, func(ctl *relay.Ctl) {
-		relayMu.Lock()
-		relayCtl = ctl
-		relayMu.Unlock()
+	b.bg.Go(sweeper.Run)
+	b.bg.Go(func(ctx context.Context) {
+		b.runPushRelay(ctx, fd, func(ctl *relay.Ctl) {
+			relayMu.Lock()
+			relayCtl = ctl
+			relayMu.Unlock()
+		})
 	})
 
 	assets := &cluster.AssetHandler{Looks: chRepo, PathMap: pathmap.FromEnv(), Keyring: keyring}
@@ -141,7 +150,7 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 		}}
 	mounts = append(mounts, guideHandler.Mount)
 	ssdp := &hdhr.SSDPController{Repo: hdhrRepo, Logger: logger, LocationBase: publicBase}
-	go ssdp.Run(context.Background())
+	b.bg.Go(ssdp.Run)
 	return mounts
 }
 

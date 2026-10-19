@@ -180,17 +180,33 @@ func runServe() error {
 		logger.Info("streaming: cluster node mode", "node_id", node.NodeID, "full_node", fullNode, "event", "tv_node_mode")
 	}
 
-	backendCtx, backendCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Every background loop runs on bg (a child of the signal context) and is
+	// waited for before the pool closes: a loop still holding a connection
+	// would block pool.Close and the process would never exit.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	bg := newBackground(ctx)
+
+	backendCtx, backendCancel := context.WithTimeout(ctx, 10*time.Second)
 	probeBackend, transcripts, pool, closeStores := buildProbeStores(backendCtx, logger)
 	backendCancel()
-	defer closeStores()
-	shareCtx, shareCancel := context.WithCancel(context.Background())
-	defer shareCancel()
+	// deferred first, so it runs last: after the listeners shut down
+	defer func() {
+		start := time.Now()
+		if !bg.Stop(shutdownWait) {
+			logger.Warn("background loops did not stop; leaving the database pool open",
+				"event", "shutdown_loops_stuck")
+			return
+		}
+		logger.Info("background loops stopped", "took_ms", time.Since(start).Milliseconds(),
+			"event", "shutdown_loops_stopped")
+		closeStores()
+	}()
 	if nodeMode {
 		// story 31.3: a node's share map is its own cluster map (buildNodeTV)
 		pathmap.SetDefault(pathmap.FromEnv())
 	} else {
-		startShareMap(shareCtx, pool, logger)
+		startShareMap(bg, pool, logger)
 	}
 
 	// One session store for both surfaces: the gRPC OpenSession the API calls
@@ -208,12 +224,12 @@ func runServe() error {
 		cfg := config.Load()
 		layout := cache.New(cfg.Cache.Root)
 		_ = layout.EnsureTiers()
-		publicHandler = buildNodeTV(logger, cfg, pool, layout, node)
+		publicHandler = buildNodeTV(bg, logger, cfg, pool, layout, node)
 		if fullNode {
-			publicHandler = splitFullNode(publicHandler, buildVOD(logger, probeBackend, transcripts, sessions))
+			publicHandler = splitFullNode(publicHandler, buildVOD(bg, logger, probeBackend, transcripts, sessions))
 		}
 	} else {
-		publicHandler = buildPublicHandler(logger, probeBackend, transcripts, pool, sessions)
+		publicHandler = buildPublicHandler(bg, logger, probeBackend, transcripts, pool, sessions)
 	}
 
 	publicSrv := &http.Server{
@@ -227,9 +243,7 @@ func runServe() error {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	go procWatchdog.Run(ctx)
+	bg.Go(procWatchdog.Run)
 
 	errCh := make(chan error, 3)
 	go func() {
@@ -391,12 +405,12 @@ func warmPeriod() time.Duration {
 // local `serve`. The session store is still in-memory (see
 // buildGRPCServer's note); Postgres-backed sessions are a tracked
 // follow-up.
-func buildPublicHandler(logger *slog.Logger, backend probe.Backend, transcripts handlers.TranscriptStreamer, pool *pgxpool.Pool, store session.Store) http.Handler {
+func buildPublicHandler(bg *background, logger *slog.Logger, backend probe.Backend, transcripts handlers.TranscriptStreamer, pool *pgxpool.Pool, store session.Store) http.Handler {
 	cfg := config.Load()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	jwks := buildVerifierKeys(ctx, logger, cfg)
+	jwks := buildVerifierKeys(ctx, bg, logger, cfg)
 
 	layout := cache.New(cfg.Cache.Root)
 	if err := layout.EnsureTiers(); err != nil {
@@ -422,18 +436,16 @@ func buildPublicHandler(logger *slog.Logger, backend probe.Backend, transcripts 
 	gc := cache.NewGC(layout, cache.GCConfig{
 		MaxBytes: cfg.CacheMaxBytes(), Interval: cfg.GCInterval(),
 	})
-	go func() {
-		t := time.NewTicker(cfg.GCInterval())
-		defer t.Stop()
-		for range t.C {
+	bg.Go(func(ctx context.Context) {
+		tick(ctx, cfg.GCInterval(), func() {
 			if _, _, err := gc.Sweep(); err != nil {
 				logger.Warn("gc sweep failed", "err", err.Error(), "event", "cache_gc_failed")
 			}
-		}
-	}()
+		})
+	})
 
 	reaper := session.NewReaper(store, session.ReaperConfig{IdleAfter: 90 * time.Second, Interval: 30 * time.Second})
-	go reaper.Run(context.Background())
+	bg.Go(reaper.Run)
 
 	_ = allocator
 
@@ -442,7 +454,7 @@ func buildPublicHandler(logger *slog.Logger, backend probe.Backend, transcripts 
 	// channel_programs); the no-DB local `serve` skips them entirely.
 	var extraMounts []func(chi.Router)
 	if pool != nil {
-		extraMounts = buildHomeTV(logger, cfg, pool, layout)
+		extraMounts = buildHomeTV(bg, logger, cfg, pool, layout)
 	}
 
 	return server.New(server.Deps{
@@ -463,9 +475,9 @@ func buildPublicHandler(logger *slog.Logger, backend probe.Backend, transcripts 
 // the machine's stream signing key file (MAKTABA_STREAM_SIGNING_KEY, which the
 // API on this machine signs with), else the API's JWKS (MAKTABA_JWKS_URL).
 // Neither: every signed route refuses (signed-url-bad-signature), logged.
-func buildVerifierKeys(ctx context.Context, logger *slog.Logger, cfg config.Config) *auth.JWKSCache {
+func buildVerifierKeys(ctx context.Context, bg *background, logger *slog.Logger, cfg config.Config) *auth.JWKSCache {
 	if path := cfg.JWT.StreamKeyFile; path != "" {
-		c := auth.NewKeyFileCache(context.Background(), path, 2*time.Second, func(kid string) {
+		c := auth.NewKeyFileCache(bg.ctx, path, 2*time.Second, func(kid string) {
 			logger.Info("stream URLs verified with this machine's stream key", "kid", kid, "event", "stream_key_loaded")
 		})
 		if c.AnyKey() == nil {
@@ -482,7 +494,7 @@ func buildVerifierKeys(ctx context.Context, logger *slog.Logger, cfg config.Conf
 	if err != nil {
 		logger.Warn("jwks load failed at boot, will keep retrying", "err", err.Error(), "event", "jwks_boot_warn")
 	}
-	jwks.StartRefreshLoop(context.Background())
+	jwks.StartRefreshLoop(bg.ctx)
 	return jwks
 }
 
