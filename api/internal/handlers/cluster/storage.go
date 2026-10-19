@@ -20,6 +20,8 @@ import (
 //	PUT    /api/cluster/storage-servers/{name}    admin: {addresses, char_map?, exports?}
 //	DELETE /api/cluster/storage-servers/{name}    admin
 //	PUT    /api/cluster/home/path-map             admin: {path_map: {share: local} | null}
+//	GET    /api/cluster/storage/canonicalize      admin: the automatic path conversion
+//	POST   /api/cluster/storage/canonicalize      admin: {action: run | revert | resume}
 //
 // GET /api/cluster carries the home's per-share storage check and its
 // override as home.storage / home.path_map.
@@ -47,6 +49,60 @@ func (h *Handler) mountStorage(r chi.Router) {
 	r.Put("/api/cluster/storage-servers/{name}", h.PutServer)
 	r.Delete("/api/cluster/storage-servers/{name}", h.DeleteServer)
 	r.Put("/api/cluster/home/path-map", h.SetHomePathMap)
+	r.Get("/api/cluster/storage/canonicalize", h.GetCanonicalize)
+	r.Post("/api/cluster/storage/canonicalize", h.PostCanonicalize)
+}
+
+// CanonRequest is the body of POST /api/cluster/storage/canonicalize.
+type CanonRequest struct {
+	Action string `json:"action"`
+}
+
+// GetCanonicalize implements GET /api/cluster/storage/canonicalize: what the
+// home's pipeline reports of the automatic conversion ({} before its first look).
+func (h *Handler) GetCanonicalize(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) || !h.storageOr404(w, r) {
+		return
+	}
+	st, err := h.Storage.Canonicalize(r.Context())
+	if err != nil {
+		errInternal(w, r, "read the path conversion", err)
+		return
+	}
+	if st == nil {
+		st = &cluster.CanonStatus{State: json.RawMessage(`{}`)}
+	}
+	common.WriteJSON(w, r, http.StatusOK, st)
+}
+
+// PostCanonicalize implements POST /api/cluster/storage/canonicalize: the
+// admin asks the home to check now ("run"), to undo the last conversion
+// ("revert"; automatic conversion then holds) or to convert again ("resume").
+// The home's pipeline takes the request within 30 s.
+func (h *Handler) PostCanonicalize(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) || !h.storageOr404(w, r) {
+		return
+	}
+	var req CanonRequest
+	if e := common.ReadJSON(r, &req, 0); e != nil {
+		httperror.Write(w, r, e)
+		return
+	}
+	err := h.Storage.RequestCanonicalize(r.Context(), strings.TrimSpace(req.Action), actor(r))
+	if errors.Is(err, cluster.ErrBadAction) {
+		httperror.Write(w, r, httperror.BadRequest(err.Error()))
+		return
+	}
+	if err != nil {
+		errInternal(w, r, "request the path conversion", err)
+		return
+	}
+	st, err := h.Storage.Canonicalize(r.Context())
+	if err != nil {
+		errInternal(w, r, "read the path conversion", err)
+		return
+	}
+	common.WriteJSON(w, r, http.StatusAccepted, st)
 }
 
 func (h *Handler) storageOr404(w http.ResponseWriter, r *http.Request) bool {
@@ -185,4 +241,7 @@ func (h *Handler) homeStorage(r *http.Request, out *Home) {
 		return
 	}
 	out.Storage, out.PathMap = st, pm
+	if c, err := h.Storage.Canonicalize(r.Context()); err == nil && c != nil {
+		out.Canonicalize = c
+	}
 }

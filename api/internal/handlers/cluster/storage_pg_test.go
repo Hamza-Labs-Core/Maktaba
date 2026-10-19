@@ -47,3 +47,32 @@ func TestPGStorageServers(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestPGCanonicalize: the storage_canonicalize row (slot 0131) as the API
+// reads it and the admin's request it writes.
+func TestPGCanonicalize(t *testing.T) {
+	db, _ := clustertest.ScratchDB(t)
+	ctx := context.Background()
+	st := &cluster.PGStorage{DB: db}
+	c, err := st.Canonicalize(ctx)
+	if err != nil || c == nil || string(c.State) != "{}" || c.Request != nil {
+		t.Fatalf("seeded row: %+v %v", c, err)
+	}
+	if err := st.RequestCanonicalize(ctx, "bogus", "user:u1"); err != cluster.ErrBadAction {
+		t.Fatalf("bad action: %v", err)
+	}
+	if err := st.RequestCanonicalize(ctx, "run", "user:u1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE storage_canonicalize SET state = '{"phase":"done"}'::jsonb`); err != nil {
+		t.Fatal(err)
+	}
+	c, err = st.Canonicalize(ctx)
+	if err != nil || *c.Request != "run" || *c.RequestedBy != "user:u1" || c.RequestedAt == nil {
+		t.Fatalf("after request: %+v %v", c, err)
+	}
+	var state map[string]any
+	if err := json.Unmarshal(c.State, &state); err != nil || state["phase"] != "done" {
+		t.Fatalf("state %s %v", c.State, err)
+	}
+}

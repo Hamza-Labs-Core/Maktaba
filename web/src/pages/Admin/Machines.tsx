@@ -33,6 +33,7 @@ import { Tabs } from "@ds/components/Tabs/Tabs";
 import { Toggle } from "@ds/components/Choice/Toggle";
 import { useToast } from "@ds/components/Toast/Toast";
 import { AdminGate } from "../../components/AdminGate";
+import { CanonicalizePanel } from "../../components/cluster/CanonicalizePanel";
 import { pausedOf, useClusterFmt } from "../../components/cluster/format";
 import { JobsPanel } from "../../components/cluster/JobsPanel";
 import { JobsSummary } from "../../components/cluster/JobsSummary";
@@ -410,6 +411,7 @@ const HomeCard = memo(function HomeCard({
       {home.storage !== undefined && (
         <>
           <StorageCheck storage={home.storage} />
+          <CanonicalizePanel status={home.canonicalize ?? null} onChanged={onChanged} />
           <PathMapEditor
             entries={home.path_map ?? home.storage?.path_map ?? null}
             source={home.path_map ? "admin" : home.storage?.path_map ? "inferred" : null}
