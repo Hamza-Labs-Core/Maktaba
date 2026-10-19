@@ -215,7 +215,9 @@ def test_adjacent_slots_vary_the_genre() -> None:
 
 
 def test_when_a_series_ends_the_next_show_takes_its_slot() -> None:
-    seasons = many_shows(200, prefix="w", n=8)  # more shows than slots: queues of several
+    # long episodes keep the grid small (63 slots), so 80 shows overflow it into queues of
+    # several without planning 200 shows (unit-tier time budget)
+    seasons = many_shows(80, prefix="w", n=8, minutes=100)
     p = plan(seasons, dawn_quran=False)
     mix = channel(p, "mix")
     ln = next(p.lanes[s.lane] for s in mix.slots if s.lane and len(p.lanes[s.lane].shows) > 1)
