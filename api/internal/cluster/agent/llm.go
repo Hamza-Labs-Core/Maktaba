@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"errors"
 	"sort"
 	"strings"
 	"sync"
@@ -89,8 +90,9 @@ type RouterConfig struct {
 	MaxParallel  int
 	IdleTimeout  time.Duration
 	Now          func() time.Time
-	// Send delivers a frame to a session; false when it is gone.
-	Send func(session string, frame any) bool
+	// Send delivers a frame to a session: ErrFrameTooLarge when it cannot
+	// travel, ErrGone (or another error) when the session is gone.
+	Send func(session string, frame any) error
 	// Notify receives request state changes; ModelsChanged is called
 	// when the cluster's models change.
 	Notify         func(LLMEvent)
@@ -334,10 +336,12 @@ func (rt *Router) dequeueLocked(req *LLMRequest) {
 func (rt *Router) dispatch(start []*LLMRequest) {
 	for _, req := range start {
 		rt.notify(req, "started", nil, "")
-		frame := map[string]any{"t": "llm.request", "id": req.id, "model": req.Model, "op": req.Op,
-			"body": req.Body, "stream": req.Stream}
-		if !rt.cfg.Send(req.runner, frame) {
-			rt.fail(req.id, LLMMachineGone)
+		if err := rt.cfg.Send(req.runner, requestFrame(req.id, req)); err != nil {
+			code := LLMMachineGone
+			if errors.Is(err, ErrFrameTooLarge) {
+				code = LLMTooLarge
+			}
+			rt.fail(req.id, code)
 		}
 	}
 }
@@ -434,7 +438,20 @@ func (rt *Router) Cancel(id string) {
 	req.cancelled = true
 	runner := req.runner
 	rt.mu.Unlock()
-	rt.cfg.Send(runner, map[string]any{"t": "llm.cancel", "id": id})
+	_ = rt.cfg.Send(runner, map[string]any{"t": "llm.cancel", "id": id})
+}
+
+// requestFrame is the llm.request a runner receives.
+func requestFrame(id string, req *LLMRequest) map[string]any {
+	return map[string]any{"t": "llm.request", "id": id, "model": req.Model, "op": req.Op, "body": req.Body,
+		"stream": req.Stream}
+}
+
+// RequestFits reports whether req's llm.request frame fits in a sealed
+// frame (the router's ids are all the same length).
+func RequestFits(req *LLMRequest) bool {
+	b, err := json.Marshal(requestFrame("llm-"+newID(), req))
+	return err == nil && fits(len(b))
 }
 
 // CancelFrom is a process's llm.cancel for its own request id.
@@ -659,17 +676,35 @@ func (rt *Router) Snapshot() map[string]any {
 	return map[string]any{"requests": append(running, queued...), "models": models}
 }
 
-// sessionSink returns output to a requesting process.
+// sessionSink returns output to a requesting process. A chunk too large
+// for the channel ends the request for the requester with too_large
+// (what the runner still sends is dropped).
 type sessionSink struct {
-	s  *Session
-	id string
+	s      *Session
+	id     string
+	mu     sync.Mutex
+	failed bool
 }
 
 func (k *sessionSink) Chunk(data json.RawMessage) {
-	k.s.send(map[string]any{"t": "llm.chunk", "id": k.id, "data": data})
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.failed {
+		return
+	}
+	if errors.Is(k.s.sendErr(map[string]any{"t": "llm.chunk", "id": k.id, "data": data}), ErrFrameTooLarge) {
+		k.failed = true
+		k.s.send(map[string]any{"t": "llm.done", "id": k.id, "usage": nil,
+			"error": LLMError{Code: LLMTooLarge, Detail: "a chunk is over the channel's frame limit"}})
+	}
 }
 
 func (k *sessionSink) Done(usage json.RawMessage, e LLMError) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.failed {
+		return
+	}
 	f := map[string]any{"t": "llm.done", "id": k.id, "usage": usage}
 	if usage == nil {
 		f["usage"] = nil
@@ -681,10 +716,10 @@ func (k *sessionSink) Done(usage json.RawMessage, e LLMError) {
 }
 
 // sendToSession is the router's way out.
-func (h *Hub) sendToSession(session string, frame any) bool {
+func (h *Hub) sendToSession(session string, frame any) error {
 	s := h.Session(session)
 	if s == nil {
-		return false
+		return ErrGone
 	}
-	return s.send(frame)
+	return s.sendErr(frame)
 }

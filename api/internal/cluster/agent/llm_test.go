@@ -19,17 +19,20 @@ type fakeRunners struct {
 	gone   map[string]bool
 }
 
-func (f *fakeRunners) send(session string, frame any) bool {
+func (f *fakeRunners) send(session string, frame any) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.gone[session] {
-		return false
+		return ErrGone
 	}
 	b, _ := json.Marshal(frame)
+	if !fits(len(b)) {
+		return ErrFrameTooLarge
+	}
 	var m map[string]any
 	_ = json.Unmarshal(b, &m)
 	f.frames[session] = append(f.frames[session], m)
-	return true
+	return nil
 }
 
 func (f *fakeRunners) requests(session string) []map[string]any {

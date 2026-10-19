@@ -49,10 +49,6 @@ const (
 	minSamplesPerLog = 100
 )
 
-func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
-	return requireAdminP(w, r)
-}
-
 // MachineFiles is one machine folder in GET /api/cluster/files.
 type MachineFiles struct {
 	IP        string              `json:"ip"`
@@ -496,13 +492,24 @@ func dayRange(date string) (time.Time, time.Time) {
 	return d, d.AddDate(0, 0, 1)
 }
 
+// cacheRange is the day's range as far as it has happened: [the day's
+// start, min(the next day's start, now)). A cache never claims what it
+// does not hold, so asking it for the rest of today would always miss.
+func (h *Hub) cacheRange(date string) (time.Time, time.Time) {
+	from, to := dayRange(date)
+	if now := h.now(); now.Before(to) {
+		to = now
+	}
+	return from, to
+}
+
 // logsFromCache answers a logs query from the cache when it covers the
 // range; it reports whether it answered.
 func (h *Hub) logsFromCache(w http.ResponseWriter, r *http.Request, q historyQuery, worker, level, needle string) bool {
 	if h.cfg.Cache == nil {
 		return false
 	}
-	from, to := dayRange(q.date)
+	from, to := h.cacheRange(q.date)
 	if q.before != nil && q.before.Before(to) {
 		to = *q.before
 	}
@@ -546,7 +553,7 @@ func (h *Hub) metricsFromCache(w http.ResponseWriter, r *http.Request, q history
 	if h.cfg.Cache == nil {
 		return false
 	}
-	from, to := dayRange(q.date)
+	from, to := h.cacheRange(q.date)
 	if q.from != nil && q.from.After(from) {
 		from = *q.from
 	}

@@ -146,15 +146,11 @@ func shareDirs(localRoot string) error {
 		return err
 	}
 	defer func() { _ = root.Close() }()
-	rel := filepath.Join("maktaba", "cluster")
-	if err := root.MkdirAll(rel, 0o755); err != nil { //nolint:gosec // shared, readable by every machine
-		return err
-	}
-	return plainDirs(root, rel)
+	return mkdirShared(root, filepath.Join("maktaba", "cluster"))
 }
 
 func ensureWritable(dir string) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec // shared, readable by every machine
+	if err := mkdirSharedAbs(dir); err != nil {
 		return err
 	}
 	probe, err := os.CreateTemp(dir, ".maktaba-hub-probe-*")
