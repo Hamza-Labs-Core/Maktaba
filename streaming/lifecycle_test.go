@@ -199,6 +199,11 @@ func TestBackgroundStop(t *testing.T) {
 	if !bg.Stop(time.Second) {
 		t.Error("a second Stop must return at once")
 	}
+	var late atomic.Bool
+	bg.Go(func(context.Context) { late.Store(true) })
+	if !bg.Stop(time.Second) || late.Load() {
+		t.Error("Go after Stop must not run")
+	}
 
 	// a goroutine that ignores the context: Stop reports it instead of hanging
 	stuck := newBackground(context.Background())

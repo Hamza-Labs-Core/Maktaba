@@ -26,8 +26,15 @@ func newBackground(parent context.Context) *background {
 }
 
 // Go runs fn on its own goroutine with the shared context; Stop waits for it.
+// Once Stop has begun it does nothing (the context is already done).
 func (b *background) Go(fn func(ctx context.Context)) {
+	b.mu.Lock()
+	if b.ctx.Err() != nil {
+		b.mu.Unlock()
+		return
+	}
 	b.wg.Add(1)
+	b.mu.Unlock()
 	go func() {
 		defer b.wg.Done()
 		fn(b.ctx)
@@ -46,8 +53,8 @@ func (b *background) OnStop(fn func()) {
 // every goroutine. False when some are still running: the caller must then not
 // close what they use (the pool), or the exit hangs.
 func (b *background) Stop(timeout time.Duration) bool {
-	b.cancel()
 	b.mu.Lock()
+	b.cancel() // under mu: no Go adds to wg once Wait may run
 	stops := b.stops
 	b.stops = nil
 	b.mu.Unlock()
