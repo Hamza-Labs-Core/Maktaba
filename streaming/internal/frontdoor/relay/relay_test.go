@@ -397,3 +397,55 @@ func (p *stuckProc) Wait() error           { <-p.done; return nil }
 func (p *stuckProc) Kill()                 { p.once.Do(func() { _ = p.pr.Close(); close(p.done) }) }
 func (p *stuckProc) PID() int              { return 1 }
 func (p *stuckProc) Tail() string          { return "" }
+
+// stallOnceRunner: the first ffmpeg never reads (one stall), the next ones do.
+type stallOnceRunner struct {
+	fakeRunner
+	stuck *stuckProc
+}
+
+func (r *stallOnceRunner) Start(bin string, args []string) (Proc, error) {
+	r.mu.Lock()
+	if r.stuck == nil {
+		pr, pw := io.Pipe()
+		r.stuck = &stuckProc{pr: pr, pw: pw, done: make(chan struct{})}
+		r.procs = append(r.procs, nil)
+		r.mu.Unlock()
+		return r.stuck, nil
+	}
+	r.mu.Unlock()
+	return r.fakeRunner.Start(bin, args)
+}
+
+// Post-merge review: one stall restarts ffmpeg once. The stall watchdog used to
+// leave a restart token behind after killing the stuck ffmpeg, which ended the
+// next ffmpeg at once (an extra RTMPS/SRT reconnect per stall).
+func TestRelayOneStallOneRestart(t *testing.T) {
+	src := &fakeSource{gens: []*tsGen{newGen(0x1000, 0x100, 0x101, 0)}, frames: []int{1 << 20}, block: make(chan struct{}),
+		pace: 200 * time.Microsecond}
+	run := &stallOnceRunner{}
+	s := &Session{PushID: "p1", Channel: uuid.New(), Creds: Credentials{URL: "rtmps://x/live/", Key: "k", Ingest: "rtmps"},
+		Source: src, Runner: run, Stall: 30 * time.Millisecond, Restart: 5 * time.Millisecond, KillGrace: 10 * time.Millisecond}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	waitUntil(t, "a second ffmpeg", func() bool { return run.count() >= 2 })
+	time.Sleep(300 * time.Millisecond)
+	if n := run.count(); n != 2 {
+		t.Errorf("one stall started ffmpeg %d times, want 2", n)
+	}
+	cancel()
+	<-done
+}
+
+// Post-merge review: Kick before Run (Ctl registers the session first) is safe.
+func TestRelayKickBeforeRun(t *testing.T) {
+	src := &fakeSource{gens: []*tsGen{newGen(0x1000, 0x100, 0x101, 0)}, frames: []int{10}, block: make(chan struct{})}
+	s := &Session{PushID: "p1", Channel: uuid.New(), Source: src, Runner: &fakeRunner{}, Restart: 5 * time.Millisecond}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	s.Kick()
+	cancel()
+	<-done
+}
