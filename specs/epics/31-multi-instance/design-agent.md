@@ -25,7 +25,7 @@ the home's API over WebSocket on the API's own port (one port to open; works thr
 the same proxies as the web), proves who it is, then exchanges frames for as long as it
 runs, reconnecting with backoff. The home's **hub** keeps the live state of every
 connected process in memory, fans it out to browsers over Server-Sent Events, writes it
-to files per node IP, routes LLM requests to the machines that hold the models, and sends
+to the live state for browsers (each machine saves its own files on the share), routes LLM requests to the machines that hold the models, and sends
 commands (drain, stage reload, log level, disconnect on revoke) down the same channel.
 
 ## 2. Handshake and encryption
@@ -73,40 +73,50 @@ channel: the hub closes its sessions at once and refuses new ones.
 Back-pressure: the agent keeps a bounded buffer (logs 10 000 records, metrics the latest
 only); the hub's per-browser queues drop the oldest frames for slow viewers and say so.
 
-## 4. Files by node IP, on the shared storage
+## 4. Files by node IP, on the shared storage — collected by all, readable by all
 
-The files live **on the share with the videos**, under a `maktaba` folder, so every
-machine can read them through its own path to the share (owner, 2026-10-19).
+Every machine **collects its own** logs, metrics and LLM usage and saves them **on the
+share with the videos**, under a `maktaba` folder; every machine can read everyone's files
+through its own path to the share (owner, 2026-10-19). The live stream to the home (§5) is
+the real-time view; the files are the record, and they keep being written when the home is
+down.
 
+**Where.**
 - **Share root** (database form, like `libraries.root_path`): `MAKTABA_SHARE_ROOT` when
   set; otherwise the deepest directory common to every library root; when the libraries
   share nothing but the filesystem root, the root of the library with the most videos.
 - **Cluster directory**: `<share root>/maktaba/cluster`, translated to the local path by
   the process's path map (phase 1 §6: the home's API takes `MAKTABA_PATH_MAP` in the same
   format as the workers' `--path-map`; a node uses its stored map). `MAKTABA_CLUSTER_DIR`
-  overrides with a local path. If the share is not reachable the hub writes to
-  `~/.maktaba/cluster` and says so in its events and on the Machines page.
-- **Secrets stay local**: `home-agent.key` is in `~/.maktaba/` on the home, never on the share.
-- **One writer per file**: the hub writes every file; any machine reads them —
-  `maktaba-pipeline cluster logs|metrics|events [--ip IP] [--date D] [--follow]` on a node
-  reads the share directly with its own map.
+  overrides with a local path. When the share is not reachable a process writes to
+  `~/.maktaba/cluster` and reports `files: {dir, on_share, reason}` in its metrics.
+- **Secrets stay local**: `~/.maktaba/cluster/home-agent.key` on the home, never on the share.
 
-The hub writes what each process sends, one directory per **node IP** (the remote address of the
-connection; the home's own processes use the home's LAN address), JSON Lines, rotated
-daily, kept `MAKTABA_CLUSTER_RETENTION_DAYS` (default 14), each file capped at
-`MAKTABA_CLUSTER_FILE_MB` (default 256; past it records are counted, not written):
+**The machine's IP** (its folder): the local address of a socket aimed at the home's API
+host (no packet is sent); when that is a loopback address (a home process), the machine's
+first non-loopback private IPv4. IPv6 written with `:` → `-`.
+
+**Layout — one writer per file.** Several processes run on one machine and an append from
+two processes to one file is not safe on NFS/SMB, so each process writes its own files:
 
 ```
-~/.maktaba/cluster/192.168.50.31/
-    node.json                     # node id, name, host, os — rewritten on connect
-    logs/2026-10-19.jsonl         # {ts, worker_id, pid, level, event, logger, fields}
-    metrics/2026-10-19.jsonl      # one line per metrics frame
-    llm/2026-10-19.jsonl          # {ts, id, model, op, from, to, prompt_tokens, completion_tokens, ms, error}
-    events/2026-10-19.jsonl       # connect, disconnect, auth failure, commands and results
+<share>/maktaba/cluster/192.168.50.31/
+    processes/<worker_id>.json             # identity: node id, name, host, os, pid, role, started_at
+    logs/2026-10-19/<worker_id>.jsonl      # {ts, level, event, logger, fields}
+    metrics/2026-10-19/<worker_id>.jsonl   # one line per metrics frame
+    llm/2026-10-19/<worker_id>.jsonl       # requests this process ran: {ts, id, model, op, from, prompt_tokens, completion_tokens, ms, error}
+    events/2026-10-19/hub.jsonl            # the home's hub only: connect, disconnect, auth refused, commands and results
 ```
 
-IPv6 addresses are written with `:` replaced by `-`. LLM files record usage, never prompt
-or output text. History endpoints read these files; nothing goes to the database.
+Rotated daily (a new day directory), kept `MAKTABA_CLUSTER_RETENTION_DAYS` (default 14;
+each process removes its own expired files, the hub any left by processes gone for good),
+each file capped at `MAKTABA_CLUSTER_FILE_MB` (default 256; past it records are counted, not
+written). Writes are buffered and flushed at least every 2 s, never blocking the worker.
+LLM files record usage, never prompt or output text.
+
+**Readers.** The home's history endpoints and `maktaba-pipeline cluster logs|metrics|llm|events
+[--ip IP] [--date D] [--level L] [--follow]` on any machine read these files directly,
+merging a day's per-process files by timestamp. Nothing goes to the database.
 
 ## 5. Real-time view (browser)
 
