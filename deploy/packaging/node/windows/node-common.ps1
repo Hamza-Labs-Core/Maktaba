@@ -184,3 +184,139 @@ function Stop-NodeWorkerProcesses {
         Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
     }
 }
+
+# --- where the pipeline comes from ----------------------------------------------------------
+function Test-NodeUrl {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Spec)
+    return ($Spec -match '^https?://')
+}
+
+# The spec's file name without a URL's query or fragment.
+function Get-NodeSpecLeaf {
+    param([Parameter(Mandatory = $true)][string]$Spec)
+    $bare = ($Spec -split '[?#]', 2)[0]
+    return ($bare -split '[\\/]')[-1]
+}
+
+# Where the worker's pipeline comes from, decided as install-node.sh decides it (first
+# match wins): -FromWheel / -Source as given; the last install's choice (install.conf);
+# release.conf in BundleDir (the installer came from a maktaba-node-<version> archive:
+# that release's wheel); the checkout's pipeline\. Returns a hashtable: From (release,
+# wheel or source), Wheel, WheelSha256, Constraints, ConstraintsSha256, Python, Source,
+# Tag.
+function Resolve-NodePipelineOrigin {
+    param(
+        [string]$FromWheel = '',
+        [string]$Constraints = '',
+        [string]$Source = '',
+        [Parameter(Mandatory = $true)][string]$BundleDir,
+        [Parameter(Mandatory = $true)][string]$CheckoutPipeline,
+        [Parameter(Mandatory = $true)][string]$InstallConf
+    )
+    if ($FromWheel -and $Source) { throw '-FromWheel and -Source: give one (a wheel, or a source directory to build)' }
+    if ($Constraints -and $Source) { throw '-Constraints goes with -FromWheel (a source build uses its uv.lock)' }
+    $o = @{ From = ''; Wheel = $FromWheel; WheelSha256 = ''; Constraints = $Constraints; ConstraintsSha256 = '';
+        Python = ''; Source = $Source; Tag = '' }
+    $releaseConf = Join-Path $BundleDir 'release.conf'
+
+    if ($FromWheel) {
+        $o.From = 'wheel'
+    } elseif ($Source) {
+        $o.From = 'source'
+    } else {
+        $remembered = Read-NodeKeyValue $InstallConf 'FROM'
+        if ($remembered -eq 'wheel') {
+            $o.From = 'wheel'
+            $o.Wheel = Read-NodeKeyValue $InstallConf 'WHEEL'
+            if (-not $o.Constraints) { $o.Constraints = Read-NodeKeyValue $InstallConf 'CONSTRAINTS' }
+            if (-not $o.Wheel) { throw "$InstallConf says FROM=wheel but names no WHEEL: pass -FromWheel" }
+        } elseif ($remembered -eq 'source') {
+            $o.From = 'source'
+            $o.Source = Read-NodeKeyValue $InstallConf 'SOURCE'
+        } elseif ($remembered -eq 'release') {
+            $o.From = 'release'
+        } elseif ($remembered) {
+            throw "${InstallConf}: unknown FROM=$remembered"
+        } else {
+            # an install from before -FromWheel remembered only its source
+            $o.Source = Read-NodeKeyValue $InstallConf 'SOURCE'
+            if ($o.Source) { $o.From = 'source' }
+        }
+        if (-not $o.From) {
+            if (Test-Path -LiteralPath $releaseConf -PathType Leaf) { $o.From = 'release' } else { $o.From = 'source' }
+        }
+    }
+
+    if ($o.From -eq 'release') {
+        if (-not (Test-Path -LiteralPath $releaseConf -PathType Leaf)) {
+            throw "this machine's pipeline came from a release archive, and this script is not from one: run that release's install-node.ps1, or pass -FromWheel or -Source"
+        }
+        $o.Tag = Read-NodeKeyValue $releaseConf 'TAG'
+        $repo = Read-NodeKeyValue $releaseConf 'REPO'
+        $wheel = Read-NodeKeyValue $releaseConf 'WHEEL'
+        if (-not ($o.Tag -and $repo -and $wheel)) { throw "$releaseConf is incomplete (TAG, REPO, WHEEL)" }
+        $base = "https://github.com/$repo/releases/download/$($o.Tag)"
+        # the archive carries the wheel; the release has it too, for an archive without it
+        $local = Join-Path $BundleDir $wheel
+        if (Test-Path -LiteralPath $local -PathType Leaf) { $o.Wheel = $local } else { $o.Wheel = "$base/$wheel" }
+        $o.WheelSha256 = Read-NodeKeyValue $releaseConf 'WHEEL_SHA256'
+        if (-not $o.Constraints) {
+            $cons = Read-NodeKeyValue $releaseConf 'CONSTRAINTS'
+            if ($cons) {
+                $local = Join-Path $BundleDir $cons
+                if (Test-Path -LiteralPath $local -PathType Leaf) { $o.Constraints = $local } else { $o.Constraints = "$base/$cons" }
+                $o.ConstraintsSha256 = Read-NodeKeyValue $releaseConf 'CONSTRAINTS_SHA256'
+            }
+        }
+        $o.Python = Read-NodeKeyValue $releaseConf 'PYTHON'
+    }
+    if ($o.From -eq 'source') {
+        if (-not $o.Source) { $o.Source = $CheckoutPipeline }
+    } else {
+        $leaf = Get-NodeSpecLeaf $o.Wheel
+        if ($leaf -notlike '*.whl') {
+            throw "-FromWheel takes a wheel (maktaba_pipeline-<version>-py3-none-any.whl): $($o.Wheel)"
+        }
+        if ($leaf -notlike 'maktaba_pipeline-*') {
+            throw "$($o.Wheel) is not a maktaba-pipeline wheel (maktaba_pipeline-<version>-...whl)"
+        }
+        if (-not $o.Python) { $o.Python = '3.12' }
+    }
+    return $o
+}
+
+# A local file for Spec, a path or an http(s) URL (downloaded into DownloadDir). Sha256,
+# when given, must match.
+function Get-NodePipelineFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$Spec,
+        [string]$Sha256 = '',
+        [Parameter(Mandatory = $true)][string]$DownloadDir
+    )
+    if (Test-NodeUrl $Spec) {
+        New-Item -ItemType Directory -Force -Path $DownloadDir | Out-Null
+        $dest = Join-Path $DownloadDir (Get-NodeSpecLeaf $Spec)
+        Write-NodeStep "Downloading $Spec"
+        # Windows PowerShell 5.1 does not offer TLS 1.2 by default; GitHub needs it.
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $part = "$dest.part"
+        $saved = $ProgressPreference
+        $ProgressPreference = 'SilentlyContinue'   # the progress bar slows 5.1's download a lot
+        try {
+            Invoke-WebRequest -Uri $Spec -OutFile $part -UseBasicParsing
+        } catch {
+            throw "could not download ${Spec}: $($_.Exception.Message)"
+        } finally {
+            $ProgressPreference = $saved
+        }
+        Move-Item -LiteralPath $part -Destination $dest -Force
+    } else {
+        if (-not (Test-Path -LiteralPath $Spec -PathType Leaf)) { throw "no such file: $Spec" }
+        $dest = (Resolve-Path -LiteralPath $Spec).Path
+    }
+    if ($Sha256) {
+        $got = (Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($got -ne $Sha256.ToLowerInvariant()) { throw "${dest}: SHA-256 $got, the release says $Sha256" }
+    }
+    return $dest
+}

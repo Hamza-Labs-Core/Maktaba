@@ -94,6 +94,11 @@ jobs:
     if: needs.changes.outputs.docs_only != 'true'
     uses: ./.github/workflows/_build-artifacts.yml
 
+  node-packaging:
+    needs: [changes]
+    if: needs.changes.outputs.docs_only != 'true'
+    uses: ./.github/workflows/_node-packaging.yml
+
   pr-body-check:
     if: github.event_name == 'pull_request'
     uses: ./.github/workflows/_pr-body-check.yml
@@ -143,6 +148,7 @@ jobs:
       - e2e
       - perf-ci
       - build-artifacts
+      - node-packaging
       - pr-body-check
     if: always()
     runs-on: ubuntu-22.04
@@ -156,7 +162,7 @@ jobs:
           # Fail if any required gate failed or was cancelled. Skipped
           # is acceptable (docs-only PR, fork-skipped e2e/perf-ci).
           fail=0
-          for gate in lint unit integration e2e perf-ci build-artifacts pr-body-check; do
+          for gate in lint unit integration e2e perf-ci build-artifacts node-packaging pr-body-check; do
             result=$(echo "$RESULTS" | jq -r ".\"$gate\".result // \"skipped\"")
             echo "  $gate: $result"
             case "$result" in

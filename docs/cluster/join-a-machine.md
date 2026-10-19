@@ -13,10 +13,11 @@ In short:
 5. Type the code on the home to approve the machine.
 6. Start the worker, then set it up to run as a service.
 
-> **About the command.** These pages write the pipeline's command as `maktaba-pipeline`. If
-> you run the pipeline from a copy of the source code instead of an installed package, type
-> `uv run python -m maktaba_pipeline` in the `pipeline` folder wherever you see
-> `maktaba-pipeline` (for example `uv run python -m maktaba_pipeline join`).
+> **About the command.** These pages write the pipeline's command as `maktaba-pipeline`:
+> the node installer and the release's wheel both install it. Only if you run the pipeline
+> from a git checkout without installing it, type `uv run python -m maktaba_pipeline` in the
+> `pipeline` folder wherever you see `maktaba-pipeline` (for example
+> `uv run python -m maktaba_pipeline join`).
 
 ## Before you start
 
@@ -38,50 +39,84 @@ is on.
 
 ## Step 2 — On the machine: install the pipeline
 
-The pipeline needs **Python 3.12 or newer**, **uv** (the Python package tool) and
-**ffmpeg**.
-
-Use the worker installer from the Maktaba release when your release includes it (see
-[deploy/packaging](../../deploy/packaging/README.md)); it does the steps below for you. Otherwise:
-
-### macOS
+The machine needs **uv** (the Python package tool; it fetches the right Python by itself)
+and **ffmpeg**. It does **not** need git or a copy of the source code: every Maktaba release
+publishes the pipeline as a package (a wheel) and a node installer that installs it. Use
+the release your home runs: a machine and its home run the same version.
 
 ```sh
-# Homebrew (https://brew.sh) first, if you do not have it
-brew install uv ffmpeg
+brew install uv ffmpeg                                # macOS (Homebrew: https://brew.sh)
+sudo apt install -y ffmpeg curl                       # Linux (Debian, Ubuntu), then:
+curl -LsSf https://astral.sh/uv/install.sh | sh       #   uv for your user
+```
+
+```powershell
+winget install --id astral-sh.uv                      # Windows; close and reopen PowerShell after
+winget install --id Gyan.FFmpeg
+```
+
+### The easy way: the node installer
+
+Download the release's node archive and run its installer:
+
+```sh
+v=1.4.0     # your home's version (`maktaba-server --version` on the home)
+curl -fsSLO "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v$v/maktaba-node-$v.tar.gz"
+tar -xzf "maktaba-node-$v.tar.gz"
+"./maktaba-node-$v/install-node.sh"                   # macOS, Linux
+```
+
+```powershell
+$v = '1.4.0'
+Invoke-WebRequest "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v$v/maktaba-node-$v.zip" -OutFile "maktaba-node-$v.zip" -UseBasicParsing
+Expand-Archive "maktaba-node-$v.zip" -DestinationPath .
+powershell -ExecutionPolicy Bypass -File ".\maktaba-node-$v\windows\install-node.ps1"
+```
+
+It installs the release's pipeline in its own environment (dependencies pinned to the
+versions the release was tested with), then does **Steps 4, 5 and 7 for you**: it runs
+`join` (approve the code on the home when it shows it) and registers the worker as a
+service. Mount the share (Step 3) before or after; until the share is there, the worker
+leaves the work that needs it. Its options (`--home`, `--name`, extra workers, a system
+service on Linux, ...) are in [deploy/packaging/node](../../deploy/packaging/node/README.md).
+
+### By hand: the wheel
+
+To install only the `maktaba-pipeline` command and run the remaining steps yourself,
+download the release's wheel and its constraints file, and install them with uv:
+
+```sh
+v=1.4.0
+base="https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v$v"
+curl -fsSLO "$base/maktaba_pipeline-$v-py3-none-any.whl"
+curl -fsSLO "$base/maktaba-pipeline-$v-constraints.txt"
+uv tool install --python 3.12 --constraints "maktaba-pipeline-$v-constraints.txt" \
+    "./maktaba_pipeline-$v-py3-none-any.whl"          # Apple Silicon: ...whl[stt]  (transcription)
+maktaba-pipeline --version
+```
+
+On Windows the same `uv tool install` line works in PowerShell (download with
+`Invoke-WebRequest`). `--python 3.12` matters: the pinned dependencies have ready-made
+packages for the release's Python, and a newer Python would try to compile some of them.
+
+### From the source code (a git checkout)
+
+For development, or a release older than the node archives:
+
+```sh
 git clone https://github.com/Hamza-Labs-Core/Maktaba.git ~/Maktaba
 cd ~/Maktaba/pipeline
 uv sync                      # on an Apple Silicon Mac add: --extra stt   (transcription)
 ```
 
-### Linux (Debian, Ubuntu)
-
-```sh
-sudo apt install -y git ffmpeg curl
-curl -LsSf https://astral.sh/uv/install.sh | sh     # installs uv for your user
-git clone https://github.com/Hamza-Labs-Core/Maktaba.git ~/Maktaba
-cd ~/Maktaba/pipeline
-uv sync
-```
-
-### Windows
-
-In PowerShell:
-
-```powershell
-winget install --id astral-sh.uv
-winget install --id Gyan.FFmpeg
-winget install --id Git.Git
-git clone https://github.com/Hamza-Labs-Core/Maktaba.git $HOME\Maktaba
-cd $HOME\Maktaba\pipeline
-uv sync
-```
-
-Close and reopen PowerShell after installing, so the new commands are found.
+On Windows: `winget install --id Git.Git` first, then the same in PowerShell
+(`$HOME\Maktaba`). The checkout's `deploy/packaging/node/install-node.sh` (Windows:
+`deploy\packaging\node\windows\install-node.ps1`) is the same installer; from a checkout
+it builds the checkout's `pipeline/`.
 
 Optional extras: `--extra stt` (transcription, Apple Silicon Macs only), `--extra search`
-(the semantic search embedder). A machine without an extra simply does not pull the queues
-that need it.
+(the semantic search embedder); with the node installer, `--extras stt,search`. A machine
+without an extra simply does not pull the queues that need it.
 
 If ffmpeg is not on the PATH, set `MAKTABA_FFMPEG` to its full path.
 
@@ -201,24 +236,28 @@ system:
   service to the settings file's full path (and make sure the service's user can read it).
 - **The NAS first.** The service must start after the share is mounted.
 
-**The easy way: the node installer.** From a copy of Maktaba on the machine, it builds the
-worker's environment, joins the home if the machine has not joined yet, and registers the
-worker as a service for your system (launchd on macOS, systemd on Linux, a scheduled task or
-an NSSM service on Windows), with extra workers if you want them:
+**The easy way: the node installer** ([Step 2](#the-easy-way-the-node-installer); if you
+installed with it, this step is done). From the release's node archive, it installs the
+pipeline, joins the home if the machine has not joined yet, and registers the worker as a
+service for your system (launchd on macOS, systemd on Linux, a scheduled task or an NSSM
+service on Windows), with extra workers if you want them:
 
 ```sh
-deploy/packaging/node/install-node.sh                 # macOS, Linux
+./maktaba-node-1.4.0/install-node.sh                      # macOS, Linux
 ```
 
 ```powershell
-deploy\packaging\node\windows\install-node.ps1        # Windows
+.\maktaba-node-1.4.0\windows\install-node.ps1              # Windows
 ```
+
+(From a git checkout: `deploy/packaging/node/install-node.sh`,
+`deploy\packaging\node\windows\install-node.ps1`.)
 
 See [deploy/packaging/node](../../deploy/packaging/node/README.md) for its options, logs,
 updates and removal. The examples below do the same by hand.
 
-The examples use `maktaba-pipeline` as installed for your user (`~/.local/bin`). From a
-source copy, use `uv --directory /path/to/Maktaba/pipeline run maktaba-pipeline run --node`
+The examples use `maktaba-pipeline` as installed for your user (`~/.local/bin`, where
+`uv tool install` puts it). From a source copy, use `uv --directory /path/to/Maktaba/pipeline run maktaba-pipeline run --node`
 as the command. `--node` makes the worker refuse to start (exit 78) until the machine has
 joined, instead of running as a home worker on an empty database.
 

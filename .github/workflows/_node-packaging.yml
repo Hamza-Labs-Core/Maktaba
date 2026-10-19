@@ -1,0 +1,184 @@
+# Reusable node-packaging gate (Epic 31): a machine joins a home from a release archive,
+# without a git checkout. Builds the release's node assets the way release.yml does
+# (deploy/packaging/node/build-release.sh), installs the wheel into clean environments,
+# runs the installers' tests, and installs a worker for real from the archive on Linux,
+# macOS and Windows (not joined, not started).
+
+name: Node packaging
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  wheel:
+    name: wheel + archive
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    env:
+      # a dev version per run: what a tag would stamp, without a tag
+      NODE_VERSION: 0.0.1.dev${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version-file: pipeline/.python-version
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+
+      - name: Build the node release assets
+        run: deploy/packaging/node/build-release.sh --version "v${NODE_VERSION}" --out dist
+
+      # The wheel alone, in a clean environment, as a machine without the checkout gets
+      # it: once with uv, once with plain pip (what the installers fall back to).
+      - name: Wheel in a clean venv (uv)
+        run: |
+          set -euo pipefail
+          uv venv --python 3.12 "$RUNNER_TEMP/uv-venv"
+          uv pip install --python "$RUNNER_TEMP/uv-venv/bin/python" \
+            --constraint "dist/maktaba-pipeline-${NODE_VERSION}-constraints.txt" \
+            "dist/maktaba_pipeline-${NODE_VERSION}-py3-none-any.whl"
+          cd "$RUNNER_TEMP"   # not the checkout: nothing on sys.path but the venv
+          bin="$RUNNER_TEMP/uv-venv/bin/maktaba-pipeline"
+          got="$("$bin" --version)"
+          echo "maktaba-pipeline --version: $got"
+          [ "$got" = "$NODE_VERSION" ] || { echo "::error::--version says '$got', the wheel is $NODE_VERSION"; exit 1; }
+          "$bin" run --help | tee run-help.txt
+          grep -q -- '--node' run-help.txt || { echo "::error::run --help does not list --node"; exit 1; }
+
+      - name: Wheel in a clean venv (pip)
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/pip-venv"
+          "$RUNNER_TEMP/pip-venv/bin/python" -m pip install --quiet --upgrade pip
+          "$RUNNER_TEMP/pip-venv/bin/python" -m pip install --quiet \
+            --constraint "dist/maktaba-pipeline-${NODE_VERSION}-constraints.txt" \
+            "dist/maktaba_pipeline-${NODE_VERSION}-py3-none-any.whl"
+          cd "$RUNNER_TEMP"
+          [ "$("$RUNNER_TEMP/pip-venv/bin/maktaba-pipeline" --version)" = "$NODE_VERSION" ]
+          "$RUNNER_TEMP/pip-venv/bin/maktaba-pipeline" run --help | grep -q -- '--node'
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: node-release
+          path: dist/*
+          retention-days: 3
+
+  installer-tests:
+    name: installer tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: astral-sh/setup-uv@v8.1.0
+      - name: shellcheck
+        if: runner.os == 'Linux'
+        run: |
+          shellcheck deploy/packaging/node/install-node.sh deploy/packaging/node/uninstall-node.sh \
+            deploy/packaging/node/build-release.sh deploy/packaging/node/tests/install-node-dry-run.sh
+      - name: install-node.sh dry runs
+        run: deploy/packaging/node/tests/install-node-dry-run.sh
+
+  install-linux:
+    name: install from the archive (linux, --system)
+    needs: [wheel]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: astral-sh/setup-uv@v8.1.0
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: node-release
+          path: dist
+      # No checkout: the archive is all the machine has. System scope, because a CI
+      # runner has no systemd user session; enabled, not started, not joined.
+      - name: Install
+        run: |
+          set -euo pipefail
+          tar -xzf dist/maktaba-node-*.tar.gz -C "$RUNNER_TEMP"
+          bundle="$(ls -d "$RUNNER_TEMP"/maktaba-node-*/)"
+          sudo env "PATH=$PATH" "${bundle}install-node.sh" --system --no-join --no-start --extras none
+          ver="$(sed -n 's/^VERSION=//p' "${bundle}release.conf")"
+          got="$(sudo -u maktaba -H /opt/maktaba/node/bin/maktaba-pipeline --version)"
+          [ "$got" = "$ver" ] || { echo "::error::installed --version '$got', expected $ver"; exit 1; }
+          grep -qx 'FROM=release' /opt/maktaba/node/install.conf
+          systemctl is-enabled maktaba-node.service
+          sudo env "PATH=$PATH" "${bundle}uninstall-node.sh" --system --purge
+          test ! -e /opt/maktaba/node
+
+  install-macos:
+    name: install from the archive (macos)
+    needs: [wheel]
+    runs-on: macos-14
+    timeout-minutes: 15
+    steps:
+      - uses: astral-sh/setup-uv@v8.1.0
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: node-release
+          path: dist
+      - name: Install
+        run: |
+          set -euo pipefail
+          tar -xzf dist/maktaba-node-*.tar.gz -C "$RUNNER_TEMP"
+          bundle="$(ls -d "$RUNNER_TEMP"/maktaba-node-*/)"
+          "${bundle}install-node.sh" --no-join --no-start --extras none
+          node="$HOME/Library/Application Support/Maktaba/node"
+          ver="$(sed -n 's/^VERSION=//p' "${bundle}release.conf")"
+          got="$("$node/bin/maktaba-pipeline" --version)"
+          [ "$got" = "$ver" ] || { echo "::error::installed --version '$got', expected $ver"; exit 1; }
+          plutil -lint "$HOME/Library/LaunchAgents/com.maktaba.node.plist"
+          # an update: the same archive again keeps FROM=release and reinstalls
+          "${bundle}install-node.sh" --no-join --no-start
+          grep -qx 'FROM=release' "$node/install.conf"
+          "${bundle}uninstall-node.sh" --purge
+          test ! -e "$node"
+
+  install-windows:
+    name: install from the archive (windows)
+    needs: [wheel]
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          sparse-checkout: deploy/packaging/node
+      - uses: astral-sh/setup-uv@v8.1.0
+      - name: node-origin tests (Windows PowerShell 5.1)
+        shell: powershell
+        run: .\deploy\packaging\node\tests\node-origin.Tests.ps1
+      - name: node-origin tests (PowerShell 7)
+        shell: pwsh
+        run: .\deploy\packaging\node\tests\node-origin.Tests.ps1
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: node-release
+          path: dist
+      # From the archive alone (Windows PowerShell 5.1, what a stock PC has): a scheduled
+      # task, registered and not started, not joined.
+      - name: Install
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Get-ChildItem dist -Filter 'maktaba-node-*.zip' | Select-Object -First 1
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $env:RUNNER_TEMP
+          $bundle = Join-Path $env:RUNNER_TEMP $zip.BaseName
+          & (Join-Path $bundle 'windows\install-node.ps1') -NoJoin -NoStart
+          $exe = Join-Path $env:LOCALAPPDATA 'Maktaba\node\venv\Scripts\maktaba-pipeline.exe'
+          $ver = ((Get-Content (Join-Path $bundle 'release.conf')) | Where-Object { $_ -like 'VERSION=*' }).Substring(8)
+          $got = (& $exe --version).Trim()
+          if ($got -ne $ver) { throw "installed --version '$got', expected $ver" }
+          if (-not ((Get-Content (Join-Path $env:LOCALAPPDATA 'Maktaba\node\install.conf')) -contains 'FROM=release')) { throw 'install.conf: no FROM=release' }
+          Get-ScheduledTask -TaskName maktaba-node | Out-Null
+          & (Join-Path $bundle 'windows\uninstall-node.ps1') -Purge
+          if (Get-ScheduledTask -TaskName maktaba-node -ErrorAction SilentlyContinue) { throw 'the task is still registered' }

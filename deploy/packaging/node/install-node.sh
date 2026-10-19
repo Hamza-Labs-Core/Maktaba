@@ -2,7 +2,7 @@
 # Maktaba node installer for macOS and Linux (Epic 31, multi-instance).
 #
 # Makes this machine a worker of a Maktaba home: builds the pipeline's Python
-# environment, joins the home when the machine has not joined yet (`maktaba-pipeline
+# environment (from a release's wheel, or from a checkout's pipeline/), joins the home when the machine has not joined yet (`maktaba-pipeline
 # join` shows a pairing code that the admin types on the home), then installs the
 # worker as a service that starts at boot or login and restarts when it fails:
 #
@@ -13,8 +13,16 @@
 # Each worker runs the venv's `maktaba-pipeline run --node`: exit 78 (not joined yet)
 # is retried every 30 s, exit 77 (the home removed this machine) leaves it stopped.
 #
-# Running it again updates in place: rebuilds the environment from --source (after a
-# `git pull`), re-renders the units and restarts the workers. See README.md.
+# Where the pipeline comes from, first match wins:
+#   --from-wheel / --source                  as given
+#   the last install's choice                (install.conf; an update keeps it)
+#   release.conf beside this script          the release's wheel: this script came from
+#                                            a maktaba-node-<version> archive
+#   pipeline/ of the checkout holding it     the git checkout this script is in
+#
+# Running it again updates in place: reinstalls the pipeline (a newer release's
+# archive installs that release; a checkout rebuilds after a `git pull`), re-renders the
+# units and restarts the workers. See README.md.
 #
 # Usage:
 #   install-node.sh [options]              install, or update
@@ -30,8 +38,17 @@
 #                    installed (none on a first install).
 #   --extras LIST    pipeline extras, comma-separated, or "none" (default: stt on Apple
 #                    Silicon, none elsewhere; remembered for updates)
-#   --source DIR     the pipeline source (default: pipeline/ of the repo holding this
-#                    script; remembered for updates)
+#   --from-wheel URL|PATH
+#                    install the pipeline from this wheel (maktaba_pipeline-*.whl), a
+#                    file or an http(s) URL (default: the release this script came
+#                    with; remembered for updates)
+#   --constraints URL|PATH
+#                    with --from-wheel: pin its dependencies with this constraints
+#                    file (maktaba-pipeline-<version>-constraints.txt of the release;
+#                    the release's own when installing the release)
+#   --source DIR     build the pipeline from this source directory instead (default
+#                    in a checkout: pipeline/ of the repo holding this script;
+#                    remembered for updates)
 #   --system         Linux: system units, started at boot with no login (needs root)
 #   --run-as USER    with --system: the account the worker runs as (default: maktaba,
 #                    created when missing; remembered for updates)
@@ -58,6 +75,9 @@ NODE_NAME=""
 INSTANCES=""
 EXTRAS=""
 SOURCE=""
+FROM_WHEEL=""
+CONSTRAINTS=""
+FROM=""        # where the pipeline comes from: release, wheel or source
 SCOPE=user
 RUN_AS=""
 DO_JOIN=1
@@ -84,6 +104,8 @@ while [ $# -gt 0 ]; do
         --instances) need_value "$@"; INSTANCES="$2"; shift 2 ;;
         --extras)    need_value "$@"; EXTRAS="$2"; shift 2 ;;
         --source)    need_value "$@"; SOURCE="$2"; shift 2 ;;
+        --from-wheel)  need_value "$@"; FROM_WHEEL="$2"; shift 2 ;;
+        --constraints) need_value "$@"; CONSTRAINTS="$2"; shift 2 ;;
         --system)    SCOPE=system; shift ;;
         --run-as)    need_value "$@"; RUN_AS="$2"; shift 2 ;;
         --no-join)   DO_JOIN=0; shift ;;
@@ -106,6 +128,12 @@ fi
 if [ "$PURGE" = 1 ] && [ "$ACTION" != uninstall ]; then
     die "--purge goes with --uninstall"
 fi
+if [ -n "$FROM_WHEEL" ] && [ -n "$SOURCE" ]; then
+    die "--from-wheel and --source: give one (a wheel, or a source directory to build)"
+fi
+if [ -n "$CONSTRAINTS" ] && [ -n "$SOURCE" ]; then
+    die "--constraints goes with --from-wheel (a source build uses its uv.lock)"
+fi
 
 # --- platform ----------------------------------------------------------------------
 OS="$(uname -s)"
@@ -113,6 +141,9 @@ if [ -n "${MAKTABA_NODE_OS:-}" ]; then
     # Test hook: render another OS's files on this one. Dry runs only.
     [ "$DRY_RUN" = 1 ] || die "MAKTABA_NODE_OS is only honoured with --dry-run"
     OS="$MAKTABA_NODE_OS"
+fi
+if [ -n "${MAKTABA_NODE_NO_UV:-}" ] && [ "$DRY_RUN" != 1 ]; then
+    die "MAKTABA_NODE_NO_UV is only honoured with --dry-run"
 fi
 case "$OS" in
     Darwin|darwin) OS=darwin ;;
@@ -231,14 +262,84 @@ read_kv() {
 
 # Remembered choices from the last install (update = run again without them).
 if [ -z "$EXTRAS" ]; then EXTRAS="$(read_kv "$INSTALL_CONF" EXTRAS)"; fi
-if [ -z "$SOURCE" ]; then SOURCE="$(read_kv "$INSTALL_CONF" SOURCE)"; fi
 if [ "$SCOPE" = system ] && [ -z "$RUN_AS" ]; then RUN_AS="$(read_kv "$INSTALL_CONF" RUN_AS)"; fi
 if [ "$SCOPE" = system ]; then RUN_AS="${RUN_AS:-maktaba}"; fi
 if [ -z "$EXTRAS" ]; then
     if [ "$OS" = darwin ] && [ "$ARCH" = arm64 ]; then EXTRAS=stt; else EXTRAS=none; fi
 fi
-if [ -z "$SOURCE" ]; then
+
+# --- where the pipeline comes from ---------------------------------------------------------
+RELEASE_CONF="$SCRIPT_DIR/release.conf"
+WHEEL_SHA256=""         # expected digests: the release's assets only
+CONSTRAINTS_SHA256=""
+PYTHON_VERSION=""       # the Python a wheel's environment gets (uv)
+
+if [ "$ACTION" = uninstall ]; then
+    :   # removing needs none of it
+elif [ -n "$FROM_WHEEL" ]; then
+    FROM=wheel
+elif [ -n "$SOURCE" ]; then
+    FROM=source
+else
+    FROM="$(read_kv "$INSTALL_CONF" FROM)"
+    case "$FROM" in
+        wheel)
+            FROM_WHEEL="$(read_kv "$INSTALL_CONF" WHEEL)"
+            if [ -z "$CONSTRAINTS" ]; then CONSTRAINTS="$(read_kv "$INSTALL_CONF" CONSTRAINTS)"; fi
+            ;;
+        source) SOURCE="$(read_kv "$INSTALL_CONF" SOURCE)" ;;
+        release) ;;
+        '')
+            # an install from before --from-wheel remembered only its source
+            SOURCE="$(read_kv "$INSTALL_CONF" SOURCE)"
+            if [ -n "$SOURCE" ]; then FROM=source; fi
+            ;;
+        *) die "$INSTALL_CONF: unknown FROM=$FROM" ;;
+    esac
+    if [ -z "$FROM" ]; then
+        if [ -f "$RELEASE_CONF" ]; then FROM=release; else FROM=source; fi
+    fi
+fi
+if [ "$FROM" = wheel ] && [ -z "$FROM_WHEEL" ]; then
+    die "$INSTALL_CONF says FROM=wheel but names no WHEEL: pass --from-wheel"
+fi
+
+if [ "$FROM" = release ]; then
+    [ -f "$RELEASE_CONF" ] || die "this machine's pipeline came from a release archive, and this script is not from one: run that release's install-node.sh, or pass --from-wheel or --source"
+    rel_tag="$(read_kv "$RELEASE_CONF" TAG)"
+    rel_repo="$(read_kv "$RELEASE_CONF" REPO)"
+    rel_wheel="$(read_kv "$RELEASE_CONF" WHEEL)"
+    [ -n "$rel_tag" ] && [ -n "$rel_repo" ] && [ -n "$rel_wheel" ] || die "$RELEASE_CONF is incomplete (TAG, REPO, WHEEL)"
+    rel_url="https://github.com/$rel_repo/releases/download/$rel_tag"
+    # the archive carries the wheel; the release has it too, for an archive without it
+    if [ -f "$SCRIPT_DIR/$rel_wheel" ]; then FROM_WHEEL="$SCRIPT_DIR/$rel_wheel"; else FROM_WHEEL="$rel_url/$rel_wheel"; fi
+    WHEEL_SHA256="$(read_kv "$RELEASE_CONF" WHEEL_SHA256)"
+    if [ -z "$CONSTRAINTS" ]; then
+        rel_constraints="$(read_kv "$RELEASE_CONF" CONSTRAINTS)"
+        if [ -n "$rel_constraints" ]; then
+            if [ -f "$SCRIPT_DIR/$rel_constraints" ]; then
+                CONSTRAINTS="$SCRIPT_DIR/$rel_constraints"
+            else
+                CONSTRAINTS="$rel_url/$rel_constraints"
+            fi
+            CONSTRAINTS_SHA256="$(read_kv "$RELEASE_CONF" CONSTRAINTS_SHA256)"
+        fi
+    fi
+    PYTHON_VERSION="$(read_kv "$RELEASE_CONF" PYTHON)"
+fi
+if [ "$FROM" = source ] && [ -z "$SOURCE" ]; then
     SOURCE="$(cd "$SCRIPT_DIR/../../.." && pwd)/pipeline"
+fi
+if [ "$FROM" = release ] || [ "$FROM" = wheel ]; then
+    case "${FROM_WHEEL%%[?#]*}" in
+        *.whl) ;;
+        *) die "--from-wheel takes a wheel (maktaba_pipeline-<version>-py3-none-any.whl): $FROM_WHEEL" ;;
+    esac
+    case "$(basename "${FROM_WHEEL%%[?#]*}")" in
+        maktaba_pipeline-*) ;;
+        *) die "$FROM_WHEEL is not a maktaba-pipeline wheel (maktaba_pipeline-<version>-...whl)" ;;
+    esac
+    PYTHON_VERSION="${PYTHON_VERSION:-3.12}"
 fi
 
 # --- environment the services see -------------------------------------------------------
@@ -341,6 +442,8 @@ plan_instances() {
 # --- Python environment ----------------------------------------------------------------
 find_uv() {
     local c sudo_home=""
+    # Test hook (dry runs only): take the pip path.
+    if [ "${MAKTABA_NODE_NO_UV:-}" = 1 ]; then return 1; fi
     # under sudo, PATH and HOME are root's: also look where the invoking user put uv
     if [ -n "${SUDO_USER:-}" ]; then
         sudo_home="$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6 || true)"
@@ -366,7 +469,92 @@ find_python() {
     return 1
 }
 
+is_url() { case "$1" in http://*|https://*) return 0 ;; *) return 1 ;; esac; }
+
+abs_path() { printf '%s/%s' "$(cd "$(dirname "$1")" && pwd)" "$(basename "$1")"; }
+
+sha256_of() {
+    if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
+    else return 1; fi
+}
+
+# fetch SPEC [SHA256]: FETCHED = a local file for SPEC, a path or an http(s) URL (which
+# is downloaded into $NODE_DIR/dist). SHA256, when given, must match.
+FETCHED=""
+fetch() {
+    local spec="$1" want="${2:-}" dest got
+    if is_url "$spec"; then
+        dest="$NODE_DIR/dist/$(basename "${spec%%[?#]*}")"
+        info "Downloading $spec"
+        run mkdir -p "$NODE_DIR/dist"
+        if command -v curl >/dev/null 2>&1; then
+            run curl -fsSL --retry 3 -o "$dest.part" "$spec" || die "could not download $spec"
+        elif command -v wget >/dev/null 2>&1; then
+            run wget -q -O "$dest.part" "$spec" || die "could not download $spec"
+        else
+            die "neither curl nor wget found to download $spec: download it and pass the file"
+        fi
+        run mv -f "$dest.part" "$dest"
+    else
+        [ -f "$spec" ] || die "no such file: $spec"
+        dest="$(abs_path "$spec")"
+    fi
+    FETCHED="$dest"
+    if [ -n "$want" ] && [ -f "$dest" ]; then
+        got="$(sha256_of "$dest")" || { warn "no sha256sum or shasum: not checking $dest"; return 0; }
+        [ "$got" = "$want" ] || die "$dest: SHA-256 $got, the release says $want"
+    fi
+}
+
+# extras_suffix: "[a,b]" for the chosen extras, or nothing.
+extras_suffix() { if [ "$EXTRAS" != none ]; then printf '[%s]' "$EXTRAS"; fi; }
+
 build_venv() {
+    if [ "$FROM" = source ]; then build_venv_source; else build_venv_wheel; fi
+}
+
+# The release's (or a given) wheel, its dependencies pinned by the constraints file.
+build_venv_wheel() {
+    local uv py wheel constraints="" cons_args=() spec
+    run mkdir -p "$NODE_DIR"
+    fetch "$FROM_WHEEL" "$WHEEL_SHA256"
+    wheel="$FETCHED"
+    if [ -n "$CONSTRAINTS" ]; then
+        fetch "$CONSTRAINTS" "$CONSTRAINTS_SHA256"
+        constraints="$FETCHED"
+    else
+        warn "no constraints file: the wheel's dependencies are not pinned (pass --constraints)"
+    fi
+    spec="$wheel$(extras_suffix)"
+    if uv="$(find_uv)"; then
+        info "Installing $(basename "$wheel") with uv ($VENV)"
+        local uv_env=()
+        if [ "$SCOPE" = system ]; then
+            # a uv-managed Python must sit where the service account can read it
+            uv_env+=("UV_PYTHON_INSTALL_DIR=$NODE_DIR/python")
+        fi
+        if [ -n "$constraints" ]; then cons_args=(--constraint "$constraints"); fi
+        if [ ! -x "$PY" ]; then
+            run env ${uv_env[@]+"${uv_env[@]}"} "$uv" venv --python "$PYTHON_VERSION" "$VENV"
+        fi
+        # --reinstall-package: a rebuilt wheel of an unchanged version replaces the old one
+        run env ${uv_env[@]+"${uv_env[@]}"} "$uv" pip install --python "$PY" \
+            --reinstall-package maktaba-pipeline ${cons_args[@]+"${cons_args[@]}"} "$spec"
+    elif py="$(find_python)"; then
+        warn "uv not found: using $py and pip."
+        if [ -n "$constraints" ]; then cons_args=(--constraint "$constraints"); fi
+        if [ ! -x "$PY" ]; then run "$py" -m venv "$VENV"; fi
+        run "$PY" -m pip install --quiet --upgrade pip
+        run "$PY" -m pip install --quiet ${cons_args[@]+"${cons_args[@]}"} "$spec"
+        run "$PY" -m pip install --quiet --force-reinstall --no-deps "$wheel"
+    else
+        die "neither uv nor Python 3.12+ found. Install uv (https://docs.astral.sh/uv/) and run this again."
+    fi
+}
+
+# A checkout's pipeline/, its dependencies pinned by its uv.lock.
+build_venv_source() {
     local uv py extra_args=() pip_spec="$SOURCE" pyver="" e parts=()
     if [ "$EXTRAS" != none ]; then
         IFS=, read -r -a parts <<<"$EXTRAS"
@@ -433,10 +621,23 @@ EOF
             warn "$link exists and is not this node's; use $CLI"
         fi
     fi
+    # FROM=release re-reads release.conf on the next run, so a newer release's archive
+    # installs its own wheel; FROM=wheel keeps the wheel (and constraints) given.
+    local wheel_kv="" cons_kv="" src_kv=""
+    if [ "$FROM" = source ]; then src_kv="$SOURCE"; fi
+    if [ "$FROM" = wheel ]; then
+        wheel_kv="$FROM_WHEEL"
+        if ! is_url "$wheel_kv"; then wheel_kv="$(abs_path "$wheel_kv")"; fi
+        cons_kv="$CONSTRAINTS"
+        if [ -n "$cons_kv" ] && ! is_url "$cons_kv"; then cons_kv="$(abs_path "$cons_kv")"; fi
+    fi
     write_file "$INSTALL_CONF" 0644 <<EOF
 # install-node.sh remembers these for updates
+FROM=$FROM
 EXTRAS=$EXTRAS
-SOURCE=$SOURCE
+SOURCE=$src_kv
+WHEEL=$wheel_kv
+CONSTRAINTS=$cons_kv
 RUN_AS=$RUN_AS
 EOF
 }
@@ -450,7 +651,7 @@ check_node_mode() {
     help="$("$CLI" run --help 2>/dev/null || true)"
     case "$help" in
         *--node*) ;;
-        *) die "the pipeline at $SOURCE has no 'run --node' yet: update the checkout and run this again" ;;
+        *) die "the pipeline from $(pipeline_origin) has no 'run --node': install a newer one and run this again" ;;
     esac
 }
 
@@ -704,6 +905,14 @@ uninstall_systemd() {
     fi
 }
 
+pipeline_origin() {
+    case "$FROM" in
+        source)  printf '%s' "$SOURCE" ;;
+        release) printf 'release %s (%s)' "$(read_kv "$RELEASE_CONF" TAG)" "$FROM_WHEEL" ;;
+        *)       printf '%s' "$FROM_WHEEL" ;;
+    esac
+}
+
 # --- summary ---------------------------------------------------------------------------------
 summary() {
     local inst
@@ -718,6 +927,7 @@ summary() {
     fi
     echo "  Settings:     $CONF_DIR/node.env (node@<N>.env per extra worker)"
     echo "  Python:       $VENV"
+    echo "  Pipeline:     $(pipeline_origin)"
     if [ "$SCOPE" = system ]; then
         echo "  Command:      sudo -u $RUN_AS -H $CLI ... (as the worker's account: join, cluster logs, ...)"
     else
@@ -748,9 +958,12 @@ summary() {
 
 # --- main ----------------------------------------------------------------------------------------
 do_install() {
-    [ -f "$SOURCE/pyproject.toml" ] || die "no pipeline source at $SOURCE (pass --source DIR)"
-    grep -q '^name = "maktaba-pipeline"' "$SOURCE/pyproject.toml" \
-        || die "$SOURCE is not the maktaba-pipeline project"
+    if [ "$FROM" = source ]; then
+        [ -f "$SOURCE/pyproject.toml" ] \
+            || die "no pipeline source at $SOURCE (pass --source DIR, or --from-wheel URL|PATH)"
+        grep -q '^name = "maktaba-pipeline"' "$SOURCE/pyproject.toml" \
+            || die "$SOURCE is not the maktaba-pipeline project"
+    fi
     if [ "$OS" = linux ]; then check_systemd; fi
     plan_instances
     if [ "${#WANTED[@]}" -gt 0 ] && ! { [ "$OS" = darwin ] && [ "$ARCH" = arm64 ]; }; then
@@ -759,6 +972,7 @@ do_install() {
     fi
 
     info "Maktaba node: $OS/$ARCH, ${SCOPE} scope${RUN_AS:+, runs as $RUN_AS}, extras: $EXTRAS, extra workers: ${#WANTED[@]}"
+    info "Pipeline: $(pipeline_origin)"
     ensure_run_as
     build_venv
     install_helpers

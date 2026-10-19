@@ -6,7 +6,8 @@
     Makes this machine a worker of a Maktaba home:
 
       1. builds the pipeline's Python environment in %LOCALAPPDATA%\Maktaba\node\venv
-         (uv when available, else Python 3.12+ and pip);
+         (uv when available, else Python 3.12+ and pip), from a release's wheel or from a
+         checkout's pipeline\;
       2. writes %APPDATA%\Maktaba\node.env from node.env.example the first time, with
          MAKTABA_FFMPEG / MAKTABA_FFPROBE when ffmpeg is installed off the PATH;
       3. joins the home when this machine has not joined yet (`maktaba-pipeline join`
@@ -30,8 +31,14 @@
     alone cannot host the worker: Python is not a service program and would be killed
     by the service manager after 30 s.
 
-    Running it again updates in place: stops the workers, rebuilds the environment from
-    -Source (after a git pull), re-registers and restarts them.
+    Where the pipeline comes from, first match wins: -FromWheel / -Source as given; the
+    last install's choice (install.conf); release.conf in the folder above this script
+    (it came from a maktaba-node-<version> archive: that release's wheel); pipeline\ of
+    the checkout holding this script.
+
+    Running it again updates in place: stops the workers, reinstalls the pipeline (a newer
+    release's archive installs that release; a checkout rebuilds after a git pull),
+    re-registers and restarts them.
 
 .PARAMETER HomeUrl
     The home's address, for example http://192.168.1.20:8080 (skips discovery).
@@ -48,9 +55,18 @@
 .PARAMETER Extras
     Pipeline extras, comma-separated, or "none" (default: none; remembered).
 
+.PARAMETER FromWheel
+    Install the pipeline from this wheel (maktaba_pipeline-*.whl), a file or an http(s)
+    URL (default: the release this script came with; remembered).
+
+.PARAMETER Constraints
+    With -FromWheel: pin the wheel's dependencies with this constraints file, a file or
+    an http(s) URL (maktaba-pipeline-<version>-constraints.txt of the release; the
+    release's own when installing the release).
+
 .PARAMETER Source
-    The pipeline source directory (default: pipeline\ of the repository holding this
-    script; remembered).
+    Build the pipeline from this source directory instead (default in a checkout:
+    pipeline\ of the repository holding this script; remembered).
 
 .PARAMETER Ffmpeg
     Full path to ffmpeg.exe when it is not on the PATH (recorded in node.env).
@@ -65,7 +81,14 @@
     Register the worker but do not start it now.
 
 .EXAMPLE
+    powershell -ExecutionPolicy Bypass -File .\maktaba-node-1.4.0\windows\install-node.ps1 -HomeUrl http://192.168.1.20:8080
+
+    From an unpacked release archive: installs that release's wheel.
+
+.EXAMPLE
     powershell -ExecutionPolicy Bypass -File deploy\packaging\node\windows\install-node.ps1 -HomeUrl http://192.168.1.20:8080
+
+    From a git checkout: builds its pipeline\.
 #>
 [CmdletBinding()]
 param(
@@ -74,6 +97,8 @@ param(
     [int]$Instances = -1,
     [string]$Extras = '',
     [string]$Source = '',
+    [string]$FromWheel = '',
+    [string]$Constraints = '',
     [string]$Ffmpeg = '',
     [ValidateSet('Task', 'Service')][string]$Mode = '',
     [switch]$NoJoin,
@@ -96,19 +121,28 @@ function Assert-ExitCode {
 if ($Instances -gt 16) { throw '-Instances: at most 16' }
 if (-not $Extras) { $Extras = Read-NodeKeyValue $script:NodeInstallConf 'EXTRAS' }
 if (-not $Extras) { $Extras = 'none' }
-if (-not $Source) { $Source = Read-NodeKeyValue $script:NodeInstallConf 'SOURCE' }
-if (-not $Source) { $Source = Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PackagingDir))) 'pipeline' }
+$Origin = Resolve-NodePipelineOrigin -FromWheel $FromWheel -Constraints $Constraints -Source $Source `
+    -BundleDir $PackagingDir -InstallConf $script:NodeInstallConf `
+    -CheckoutPipeline (Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PackagingDir))) 'pipeline')
 if (-not $Mode) {
     # (assigning '' to $Mode would fail its ValidateSet)
     if ((Read-NodeKeyValue $script:NodeInstallConf 'MODE') -eq 'Service') { $Mode = 'Service' } else { $Mode = 'Task' }
 }
 
-$pyproject = Join-Path $Source 'pyproject.toml'
-if (-not (Test-Path -LiteralPath $pyproject -PathType Leaf)) { throw "no pipeline source at $Source (pass -Source)" }
-if (-not (Select-String -LiteralPath $pyproject -Pattern '^name = "maktaba-pipeline"' -Quiet)) {
-    throw "$Source is not the maktaba-pipeline project"
+if ($Origin.From -eq 'source') {
+    $Source = $Origin.Source
+    $pyproject = Join-Path $Source 'pyproject.toml'
+    if (-not (Test-Path -LiteralPath $pyproject -PathType Leaf)) { throw "no pipeline source at $Source (pass -Source, or -FromWheel)" }
+    if (-not (Select-String -LiteralPath $pyproject -Pattern '^name = "maktaba-pipeline"' -Quiet)) {
+        throw "$Source is not the maktaba-pipeline project"
+    }
+    $Source = (Resolve-Path -LiteralPath $Source).Path
+    $PipelineOrigin = $Source
+} elseif ($Origin.From -eq 'release') {
+    $PipelineOrigin = "release $($Origin.Tag) ($($Origin.Wheel))"
+} else {
+    $PipelineOrigin = $Origin.Wheel
 }
-$Source = (Resolve-Path -LiteralPath $Source).Path
 
 if ($UserId -like 'NT AUTHORITY\*') { throw "run this as the user the worker should run as, not $UserId" }
 $Nssm = $null
@@ -149,6 +183,7 @@ $unwanted = @($installed | Where-Object { $wanted -notcontains $_ })
 foreach ($inst in $wanted) { if (-not (Test-NodeInstanceName $inst)) { throw "bad instance name '$inst'" } }
 
 Write-NodeStep ("Maktaba node: {0}, mode {1}, extras: {2}, extra workers: {3}" -f $UserId, $Mode, $Extras, $wanted.Count)
+Write-NodeStep "Pipeline: $PipelineOrigin"
 
 # --- stop what runs (Windows cannot replace files a running Python has open) -----------
 function Stop-NodeWorkers {
@@ -201,7 +236,41 @@ if ($Extras -ne 'none') {
 }
 New-Item -ItemType Directory -Force -Path $script:NodeDir | Out-Null
 $uv = Find-Uv
-if ($uv) {
+if ($Origin.From -ne 'source') {
+    # The release's (or a given) wheel, its dependencies pinned by the constraints file.
+    $downloads = Join-Path $script:NodeDir 'dist'
+    $wheelFile = Get-NodePipelineFile -Spec $Origin.Wheel -Sha256 $Origin.WheelSha256 -DownloadDir $downloads
+    $consArgs = @()
+    if ($Origin.Constraints) {
+        $consFile = Get-NodePipelineFile -Spec $Origin.Constraints -Sha256 $Origin.ConstraintsSha256 -DownloadDir $downloads
+        $consArgs = @('--constraint', $consFile)
+    } else {
+        Write-Warning 'no constraints file: the wheel''s dependencies are not pinned (pass -Constraints)'
+    }
+    $spec = $wheelFile
+    if ($extrasList.Count -gt 0) { $spec = '{0}[{1}]' -f $wheelFile, ($extrasList -join ',') }
+    if ($uv) {
+        Write-NodeStep "Installing $(Split-Path -Leaf $wheelFile) with uv ($($script:NodeVenv))"
+        if (-not (Test-Path -LiteralPath $script:NodePython -PathType Leaf)) {
+            Assert-ExitCode (Invoke-NativeCommand -FilePath $uv -ArgumentList @('venv', '--python', $Origin.Python, $script:NodeVenv)) 'uv venv'
+        }
+        # --reinstall-package: a rebuilt wheel of an unchanged version replaces the old one
+        $uvArgs = @('pip', 'install', '--python', $script:NodePython, '--reinstall-package', 'maktaba-pipeline') + $consArgs + @($spec)
+        Assert-ExitCode (Invoke-NativeCommand -FilePath $uv -ArgumentList $uvArgs) 'uv pip install'
+    } else {
+        $basePython = Find-Python312
+        if (-not $basePython) {
+            throw 'Neither uv nor Python 3.12+ was found. Install uv (https://docs.astral.sh/uv/) and run this again.'
+        }
+        Write-Warning "uv not found: using $basePython and pip."
+        if (-not (Test-Path -LiteralPath $script:NodePython -PathType Leaf)) {
+            Assert-ExitCode (Invoke-NativeCommand -FilePath $basePython -ArgumentList @('-m', 'venv', $script:NodeVenv)) 'python -m venv'
+        }
+        Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList @('-m', 'pip', 'install', '--quiet', '--upgrade', 'pip')) 'pip upgrade'
+        Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList (@('-m', 'pip', 'install', '--quiet') + $consArgs + @($spec))) 'pip install'
+        Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList @('-m', 'pip', 'install', '--quiet', '--force-reinstall', '--no-deps', $wheelFile)) 'pip reinstall'
+    }
+} elseif ($uv) {
     Write-NodeStep "Building the worker's Python environment with uv ($($script:NodeVenv))"
     # --no-editable: the worker runs a snapshot, not the checkout being edited;
     # --reinstall-package: uv would otherwise keep a stale build of an unchanged version.
@@ -259,9 +328,22 @@ if (Test-Path -LiteralPath $script:NodeCli -PathType Leaf) {
 $nodeCommand = Get-NodeCommand
 $help = Invoke-NativeCapture -FilePath $nodeCommand.File -ArgumentList (@($nodeCommand.Prefix) + @('run', '--help'))
 if ($help.StdOut -notmatch '--node') {
-    throw "the pipeline at $Source has no 'run --node' yet: update the checkout and run this again"
+    throw "the pipeline from $PipelineOrigin has no 'run --node': install a newer one and run this again"
 }
-$conf = "# install-node.ps1 remembers these for updates`r`nEXTRAS=$Extras`r`nSOURCE=$Source`r`nMODE=$Mode`r`n"
+# FROM=release re-reads release.conf on the next run, so a newer release's archive
+# installs its own wheel; FROM=wheel keeps the wheel (and constraints) given.
+$wheelKv = ''
+$consKv = ''
+$sourceKv = ''
+if ($Origin.From -eq 'source') { $sourceKv = $Source }
+if ($Origin.From -eq 'wheel') {
+    $wheelKv = $Origin.Wheel
+    if (-not (Test-NodeUrl $wheelKv)) { $wheelKv = $wheelFile }
+    $consKv = $Origin.Constraints
+    if ($consKv -and -not (Test-NodeUrl $consKv)) { $consKv = $consFile }
+}
+$conf = "# install-node.ps1 remembers these for updates`r`nFROM=$($Origin.From)`r`nEXTRAS=$Extras`r`n" +
+    "SOURCE=$sourceKv`r`nWHEEL=$wheelKv`r`nCONSTRAINTS=$consKv`r`nMODE=$Mode`r`n"
 [System.IO.File]::WriteAllText($script:NodeInstallConf, $conf)
 
 # --- settings ------------------------------------------------------------------------------
@@ -428,6 +510,7 @@ Write-NodeStep 'Done.'
 Write-Host "  Node config:  $(Join-Path $script:NodeConfDir 'node.json')"
 Write-Host "  Settings:     $envFile (node@<N>.env per extra worker)"
 Write-Host "  Python:       $($script:NodeVenv)"
+Write-Host "  Pipeline:     $PipelineOrigin"
 Write-Host "  Command:      $NodeCommandPath (join, cluster logs, ...)"
 Write-Host "  Logs:         Get-Content -Wait '$(Join-Path $script:NodeLogDir 'node.log')'"
 if ($Mode -eq 'Task') {
