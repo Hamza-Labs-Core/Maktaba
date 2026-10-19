@@ -350,3 +350,27 @@ func TestParseProtocols(t *testing.T) {
 		t.Errorf("ab = %+v (srt is input-only here)", ab)
 	}
 }
+
+// Post-review: a pasted domain still names the right playback host, and a
+// value that is no customer code is refused on save and never used.
+func TestCustomerCodeNormalized(t *testing.T) {
+	ctx := context.Background()
+	fx := newFixture(t)
+	fx.ext.settings["customer_code"] = "customer-abc123xyz.cloudflarestream.com"
+	st, err := fx.in.Status(ctx)
+	if err != nil || st.CustomerDomain == nil || *st.CustomerDomain != "customer-abc123xyz.cloudflarestream.com" {
+		t.Fatalf("pasted domain: %+v %v", st.CustomerDomain, err)
+	}
+	fx.ext.settings["customer_code"] = "x@evil.example/"
+	if st, _ := fx.in.Status(ctx); st.CustomerDomain != nil {
+		t.Fatalf("a non-code was used: %q", *st.CustomerDomain)
+	}
+	err = fx.in.ValidateSettings(ctx, map[string]any{}, map[string]any{"customer_code": "x@evil.example/"}, nil)
+	var he *httperror.Error
+	if !errors.As(err, &he) || he.Status != http.StatusBadRequest {
+		t.Fatalf("bad code saved: %v", err)
+	}
+	if err := fx.in.ValidateSettings(ctx, map[string]any{}, map[string]any{"customer_code": "abc123xyz"}, nil); err != nil {
+		t.Fatalf("a code refused: %v", err)
+	}
+}
