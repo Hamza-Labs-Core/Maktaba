@@ -32,6 +32,7 @@ var allRoles = []supervisor.Role{
 func newServeCmd() *cobra.Command {
 	var (
 		role   string
+		slot   string
 		noMDNS bool
 		noWeb  bool
 		binDir string
@@ -56,6 +57,7 @@ In container/orchestrated deployments, start one role per container:
 			}
 			return runServe(cfg, serveOptions{
 				role:   strings.TrimSpace(strings.ToLower(role)),
+				slot:   strings.TrimSpace(strings.ToLower(slot)),
 				noMDNS: noMDNS,
 				noWeb:  noWeb,
 				binDir: binDir,
@@ -63,7 +65,8 @@ In container/orchestrated deployments, start one role per container:
 			})
 		},
 	}
-	cmd.Flags().StringVar(&role, "role", "", "run a single role: api|streaming|pipeline|web (default: all)")
+	cmd.Flags().StringVar(&role, "role", "", "run a single role: api|streaming|pipeline|web|tv-slot (default: all)")
+	cmd.Flags().StringVar(&slot, "slot", "", "with --role tv-slot: the instance, blue|green|amber")
 	cmd.Flags().BoolVar(&noMDNS, "no-mdns", false, "disable mDNS LAN advertisement")
 	cmd.Flags().BoolVar(&noWeb, "no-web", false, "do not serve the embedded web UI in-process")
 	cmd.Flags().StringVar(&binDir, "bin-dir", "", "directory to find sibling maktaba-api/maktaba-streaming binaries")
@@ -73,6 +76,7 @@ In container/orchestrated deployments, start one role per container:
 
 type serveOptions struct {
 	role   string
+	slot   string
 	noMDNS bool
 	noWeb  bool
 	binDir string
@@ -106,12 +110,33 @@ func runServe(cfg config.Config, opts serveOptions) error {
 
 	// Build the supervised processes.
 	var procs []supervisor.Process
+	sopts := supervisor.Options{Config: cfg, BinDir: opts.binDir}
 	for _, r := range roles {
-		p, err := supervisor.Build(r, supervisor.Options{Config: cfg, BinDir: opts.binDir})
+		if r == supervisor.RoleTVSlot {
+			// a single slot instance (--role tv-slot --slot blue)
+			p, err := supervisor.BuildSlot(opts.slot, sopts)
+			if err != nil {
+				return err
+			}
+			p.OnDemand = false
+			procs = append(procs, p)
+			continue
+		}
+		p, err := supervisor.Build(r, sopts)
 		if err != nil {
 			return err
 		}
 		procs = append(procs, p)
+		// Epic 33 story 33.1: the streaming role is the front door; the channel
+		// engine runs in the TV slots next to it (live + hot standby; the third
+		// on request)
+		if r == supervisor.RoleStreaming && supervisor.SlotsEnabled(cfg) {
+			slots, err := supervisor.BuildSlots(sopts)
+			if err != nil {
+				return err
+			}
+			procs = append(procs, slots...)
+		}
 	}
 
 	// If only the web role was requested, there are no child processes;
@@ -133,7 +158,8 @@ func runServe(cfg config.Config, opts serveOptions) error {
 		return err
 	}
 	sup := supervisor.New(procs, policy, supervisor.WithEventSink(
-		supervisor.NewFileSink(filepath.Join(cfg.Server.DataDir, "supervisor", "events.jsonl"), 0)))
+		supervisor.NewFileSink(filepath.Join(cfg.Server.DataDir, "supervisor", "events.jsonl"), 0)),
+		supervisor.WithExitHook(supervisor.SlotExitReporter(cfg.Server.StreamAddr)))
 	if adminSrv := startSupervisorAdmin(policy.AdminAddr, sup); adminSrv != nil {
 		defer func() { _ = shutdownWeb(adminSrv) }()
 	}
@@ -175,6 +201,8 @@ func resolveRoles(opts serveOptions) (roles []supervisor.Role, serveWeb bool) {
 		return []supervisor.Role{supervisor.RoleStreaming}, false
 	case string(supervisor.RolePipeline):
 		return []supervisor.Role{supervisor.RolePipeline}, false
+	case string(supervisor.RoleTVSlot):
+		return []supervisor.Role{supervisor.RoleTVSlot}, false
 	default:
 		// Unknown role: treat as "all" but the build step will still
 		// only launch the known set. Surface a hint.

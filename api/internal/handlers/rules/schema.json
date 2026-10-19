@@ -3515,6 +3515,16 @@
      "maximum": 10
     },
     {
+     "name": "keyint_seconds",
+     "kind": "int",
+     "group": "Maktaba TV output",
+     "label": "Keyframe every (seconds)",
+     "help": "On the wall clock, the same in every TV process and machine, so the switch from one to another (a failover, a change going live) is seamless. Lowered to a divisor of the HLS segment.",
+     "default": 2,
+     "minimum": 1,
+     "maximum": 10
+    },
+    {
      "name": "max_active_channels",
      "kind": "int",
      "group": "Channels on air",
@@ -4098,11 +4108,11 @@
      "kind": "str",
      "group": "TV staging swap",
      "label": "What the standby keeps warm",
-     "help": "demand: every channel with viewers or a push; viewers: channels with people watching first, when encoders are short.",
-     "default": "demand",
+     "help": "viewers: the channels people watch first, then the remote pushes; demand: also what the live process keeps warm after its last viewer. Live gets the encoders first; a channel the standby does not hold fails over with one short stall.",
+     "default": "viewers",
      "choices": [
-      "demand",
-      "viewers"
+      "viewers",
+      "demand"
      ]
     },
     {

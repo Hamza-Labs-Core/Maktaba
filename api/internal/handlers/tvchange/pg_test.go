@@ -292,3 +292,27 @@ func TestReleasesSlotsAndNotYet(t *testing.T) {
 		t.Fatalf("info %+v", info)
 	}
 }
+
+// GET /api/tv/slots reports the real TV slots (story 33.1): roles, the routing
+// epoch, a slot that missed three beats as unhealthy; one live slot when the
+// engine runs in one process.
+func TestSlotsReportsTheRealSlots(t *testing.T) {
+	w := newWorld(t)
+	code, out := w.do("GET", "/api/tv/slots", "", "u1")
+	if code != 200 || out["runtime"] != "single" || len(out["slots"].([]any)) != 1 {
+		t.Fatalf("no slot rows: %d %v", code, out)
+	}
+	w.exec(`INSERT INTO tv_slots (host_id, slot, role, role_epoch, state, pid, warm, encoders_used, beat_at)
+		VALUES ('home', 'blue', 'live', 2, 'healthy', 11, '["c1"]', 2, now()),
+		       ('home', 'green', 'standby', 2, 'healthy', 12, '[]', 0, now() - interval '1 minute')`)
+	code, out = w.do("GET", "/api/tv/slots", "", "u1")
+	slots, _ := out["slots"].([]any)
+	if code != 200 || out["runtime"] != "slots" || len(slots) != 2 {
+		t.Fatalf("slots: %d %v", code, out)
+	}
+	blue, green := slots[0].(map[string]any), slots[1].(map[string]any)
+	if blue["role"] != "live" || blue["state"] != "healthy" || blue["epoch"] != float64(2) ||
+		len(blue["warm"].([]any)) != 1 || green["role"] != "standby" || green["state"] != "unhealthy" {
+		t.Fatalf("blue %v green %v", blue, green)
+	}
+}

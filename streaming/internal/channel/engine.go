@@ -73,6 +73,9 @@ type Engine struct {
 	Logger *slog.Logger
 
 	gens     map[uuid.UUID]int64
+	starting map[uuid.UUID]chan struct{} // starts in flight (their database work runs unlocked)
+	rtw      *runtimeWriter
+	rtwOnce  sync.Once
 	mu       sync.Mutex
 	stations map[uuid.UUID]Pipeline
 	started  map[uuid.UUID]time.Time
@@ -120,85 +123,143 @@ func (e *Engine) Tune(ctx context.Context, channelID uuid.UUID) (TuneResult, err
 	}, nil
 }
 
-// Ensure returns the channel's running pipeline, starting it if cold.
+// dbTimeout bounds every database call the engine makes for a start, a reap
+// or a fence; none of them runs under the engine lock, so a stalled database
+// slows tunes down (readiness) but never wedges the lock the liveness probe
+// takes.
+const dbTimeout = 5 * time.Second
+
+func dbCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), dbTimeout)
+}
+
+// Ensure returns the channel's running pipeline, starting it if cold. The
+// database work of a start (the channel's look, the placement fence, the
+// runtime row) runs outside the engine lock with a timeout; a second request
+// for a channel that is starting waits for that start.
 func (e *Engine) Ensure(ctx context.Context, channelID uuid.UUID) (Pipeline, error) {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	for {
-		p, ok := e.stations[channelID]
-		if !ok {
-			break
+		if p, ok := e.stations[channelID]; ok {
+			if p.Alive() {
+				e.reg.touch(channelID)
+				e.mu.Unlock()
+				return p, nil
+			}
+			// A stopping station still owns the HLS dir and the runtime row:
+			// wait for it to finish before a new one reuses them.
+			e.mu.Unlock()
+			err := waitDone(ctx, p, stopWait)
+			e.mu.Lock()
+			if err != nil {
+				e.mu.Unlock()
+				return nil, err
+			}
+			if e.stations[channelID] == p {
+				delete(e.stations, channelID)
+				e.reg.remove(channelID)
+			}
+			continue
 		}
-		if p.Alive() {
-			e.reg.touch(channelID)
-			return p, nil
+		if ch, ok := e.starting[channelID]; ok {
+			e.mu.Unlock()
+			select {
+			case <-ch:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+			e.mu.Lock()
+			continue
 		}
-		// A stopping station still owns the HLS dir and the runtime row:
-		// wait for it to finish before a new one reuses them.
-		e.mu.Unlock()
-		err := waitDone(ctx, p, stopWait)
-		e.mu.Lock()
-		if err != nil {
-			return nil, err
-		}
-		if e.stations[channelID] == p {
-			delete(e.stations, channelID)
-			e.reg.remove(channelID)
-		}
+		break
 	}
-	if _, err := e.Repo.Look(ctx, channelID); err != nil {
+	done := make(chan struct{})
+	if e.starting == nil {
+		e.starting = map[uuid.UUID]chan struct{}{}
+	}
+	e.starting[channelID] = done
+	e.mu.Unlock()
+	finish := func() {
+		e.mu.Lock()
+		delete(e.starting, channelID)
+		e.mu.Unlock()
+		close(done)
+	}
+
+	// outside the lock: the database
+	lctx, cancel := dbCtx(ctx)
+	_, err := e.Repo.Look(lctx, channelID)
+	cancel()
+	if err != nil {
+		finish()
 		return nil, err
 	}
 	var grant Grant
+	fctx, cancel := dbCtx(ctx)
 	if e.Fence != nil {
-		g, err := e.Fence.Allow(ctx, channelID)
-		if err != nil {
-			return nil, err
-		}
-		grant = g
-	} else if err := e.ownedElsewhere(ctx, channelID); err != nil {
+		grant, err = e.Fence.Allow(fctx, channelID)
+	} else {
+		err = e.ownedElsewhere(fctx, channelID)
+	}
+	cancel()
+	if err != nil {
+		finish()
 		return nil, err
 	}
-	e.applyLimits(ctx)
+	e.applyLimits(ctx) // reads the settings (cached) before the start reads them again
+
+	e.mu.Lock()
 	evicted, err := e.reg.admitEvict(channelID)
 	if err != nil {
+		e.mu.Unlock()
+		finish()
 		return nil, err
 	}
+	var evictedGen int64
 	if evicted != uuid.Nil {
-		e.releaseLocked(evicted)
+		evictedGen = e.takeGenLocked(evicted)
 	}
 	startCtx := WithStartOptions(ctx, StartOptions{Discontinuity: grant.Discontinuity})
 	p, err := e.Start(startCtx, channelID, e.Layout.HLSDir(channelSessionID(channelID)))
 	if err != nil {
+		e.mu.Unlock()
+		e.release(evicted, evictedGen)
+		finish()
 		return nil, err
 	}
 	e.stations[channelID] = p
 	if e.Fence != nil {
 		e.gens[channelID] = grant.Gen
-		actx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-		e.Fence.Ack(actx, channelID, grant.Gen)
-		cancel()
 	}
 	// Registry stop runs under the registry lock: it must not block or
 	// call back into the engine; Pipeline.Stop is non-blocking.
 	e.reg.putWith(channelID, p.Stop, 0)
 	started := e.now()
 	e.started[channelID] = started
+	// the runtime row, in order with the clear below (the writer keeps the order)
+	e.runtimeWrites().set(e.Repo, e.runtimeOf(channelID, p, started))
+	e.mu.Unlock()
+	finish()
 	go func() {
 		<-p.Done()
 		e.mu.Lock()
 		defer e.mu.Unlock()
 		// Only the station still registered for the channel clears the
-		// runtime row, under the engine lock so it is ordered against a
-		// re-tune writing the new station's row.
+		// runtime row, queued under the engine lock so it is ordered
+		// against a re-tune writing the new station's row.
 		if e.stations[channelID] == p {
 			delete(e.stations, channelID)
 			delete(e.started, channelID)
 			e.reg.remove(channelID)
-			_ = e.Repo.ClearRuntime(context.Background(), channelID)
+			e.runtimeWrites().clear(e.Repo, channelID)
 		}
 	}()
-	_ = e.Repo.SetRuntime(ctx, e.runtimeOf(channelID, p, started))
+	e.release(evicted, evictedGen)
+	if e.Fence != nil {
+		actx, cancel := dbCtx(ctx)
+		e.Fence.Ack(actx, channelID, grant.Gen)
+		cancel()
+	}
 	return p, nil
 }
 
@@ -223,13 +284,12 @@ func (e *Engine) runtimeOf(channelID uuid.UUID, p Pipeline, started time.Time) R
 // lock so it is ordered against a stopping station clearing its row.
 func (e *Engine) SyncRuntime(ctx context.Context) {
 	e.mu.Lock()
+	w := e.runtimeWrites()
 	for id, p := range e.stations {
 		if !p.Alive() {
 			continue
 		}
-		wctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		_ = e.Repo.SetRuntime(wctx, e.runtimeOf(id, p, e.started[id]))
-		cancel()
+		w.sync(e.Repo, e.runtimeOf(id, p, e.started[id]))
 	}
 	e.mu.Unlock()
 	if w, ok := e.Repo.(HostStatusWriter); ok && !e.HostStatusOff {
@@ -370,6 +430,35 @@ func pumpTS(ctx context.Context, p Pipeline, w io.Writer, flusher http.Flusher) 
 	}
 }
 
+// Hold keeps a channel on air without a viewer: it starts the channel when cold
+// and refreshes its idle clock (a TV slot's warm hold, Epic 33 story 33.1: the
+// front door keeps the watched channels warm on the hot standby). Call it again
+// within the warm grace to keep holding.
+func (e *Engine) Hold(ctx context.Context, channelID uuid.UUID) error {
+	if _, err := e.Ensure(ctx, channelID); err != nil {
+		return err
+	}
+	e.reg.touch(channelID)
+	return nil
+}
+
+// StopChannel stops a channel's station now and gives its placement back (a
+// slot dropping a channel from its warm set).
+func (e *Engine) StopChannel(channelID uuid.UUID) bool {
+	e.mu.Lock()
+	p, ok := e.stations[channelID]
+	var gen int64
+	if ok {
+		gen = e.takeGenLocked(channelID)
+	}
+	e.mu.Unlock()
+	if ok {
+		p.Stop()
+		e.release(channelID, gen)
+	}
+	return ok
+}
+
 // Detach records that a viewer left; the channel stays warm until the
 // grace window expires.
 func (e *Engine) Detach(channelID uuid.UUID) { e.reg.detach(channelID) }
@@ -380,28 +469,43 @@ func (e *Engine) Touch(channelID uuid.UUID) { e.reg.touch(channelID) }
 // ReapIdle stops channels idle past the warm grace window and gives their
 // placements back.
 func (e *Engine) ReapIdle(ctx context.Context) []uuid.UUID {
-	ids := e.reg.reapIdle(e.applyLimits(ctx))
-	if e.Fence != nil && len(ids) > 0 {
-		e.mu.Lock()
-		for _, id := range ids {
-			e.releaseLocked(id)
-		}
-		e.mu.Unlock()
+	grace := e.applyLimits(ctx)
+	// reap and take the reaped stations' generations in one step under the
+	// engine lock: a station of the same channel starting meanwhile registers
+	// its generation only under this lock too, so it is never released here
+	e.mu.Lock()
+	ids := e.reg.reapIdle(grace)
+	gens := make([]int64, len(ids))
+	for i, id := range ids {
+		gens[i] = e.takeGenLocked(id)
+	}
+	e.mu.Unlock()
+	for i, id := range ids {
+		e.release(id, gens[i])
 	}
 	return ids
 }
 
-// releaseLocked gives a stopped station's placement back (e.mu held).
-func (e *Engine) releaseLocked(id uuid.UUID) {
+// takeGenLocked forgets a stopped station's placement generation (e.mu held);
+// release gives it back outside the lock. 0: nothing to give back.
+func (e *Engine) takeGenLocked(id uuid.UUID) int64 {
 	if e.Fence == nil {
-		return
+		return 0
 	}
 	gen, ok := e.gens[id]
 	if !ok {
-		return
+		return 0
 	}
 	delete(e.gens, id)
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	return gen
+}
+
+// release gives a placement generation back (no lock held).
+func (e *Engine) release(id uuid.UUID, gen int64) {
+	if e.Fence == nil || gen == 0 || id == uuid.Nil {
+		return
+	}
+	ctx, cancel := dbCtx(context.Background())
 	e.Fence.Release(ctx, id, gen)
 	cancel()
 }

@@ -46,8 +46,16 @@ type Handler struct {
 	// SpliceRetry is the pause between two attempts to reach a channel's source
 	// (0: 500 ms).
 	SpliceRetry time.Duration
+	// Slots, when set, is this host's TV slots (Epic 33 story 33.1): the
+	// channels placed here are served by the live slot (Engine and Local are
+	// not used for them).
+	Slots *Slots
+	// CacheRoot is the slots' cache root (<root>/tv/<slot>/…): a crashed slot's
+	// listed segments are still served from disk.
+	CacheRoot string
 
 	clientOnce sync.Once
+	stitch     stitchers
 }
 
 // NewClient is the front door's HTTP client: keep-alives, no overall timeout (TS
@@ -97,6 +105,7 @@ func (h *Handler) Mount(r chi.Router) {
 		sub.Get("/master.m3u8", h.servePlaylist)
 		sub.Get("/manifest.m3u8", h.servePlaylist)
 		sub.Get("/live.ts", h.serveLiveTS)
+		sub.Get("/s/{slot}/{segment}", h.serveSlotSegment)
 		sub.Get("/{segment}", h.serveSegment)
 	})
 }
@@ -146,6 +155,10 @@ func (h *Handler) servePlaylist(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if p.Host == h.Self {
+			if h.Slots != nil {
+				h.serveSlotPlaylist(w, r, id)
+				return
+			}
 			h.serveLocal(w, r)
 			return
 		}
@@ -172,6 +185,10 @@ func (h *Handler) serveSegment(w http.ResponseWriter, r *http.Request) {
 	}
 	seg := chi.URLParam(r, "segment")
 	if !strings.HasPrefix(seg, "seg-") || !strings.HasSuffix(seg, ".ts") || strings.ContainsAny(seg, `/\`) {
+		if h.Slots != nil {
+			h.proxyLiveSlot(w, r)
+			return
+		}
 		h.serveLocal(w, r)
 		return
 	}
@@ -187,6 +204,10 @@ func (h *Handler) serveSegment(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if p.Host == h.Self {
+		if h.Slots != nil {
+			h.proxyLiveSlot(w, r) // a playlist from before the slots
+			return
+		}
 		h.serveLocal(w, r)
 		return
 	}
@@ -327,7 +348,7 @@ func (h *Handler) serveLiveTS(w http.ResponseWriter, r *http.Request) {
 		writeResolveError(w, err)
 		return
 	}
-	if p.Host == h.Self {
+	if p.Host == h.Self && h.Slots == nil {
 		if _, err := h.Engine.Ensure(r.Context(), id); err != nil {
 			if !errors.Is(err, channel.ErrRunningElsewhere) {
 				h.serveLocal(w, r) // today's error answers

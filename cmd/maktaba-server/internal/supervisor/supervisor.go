@@ -50,6 +50,19 @@ type Process struct {
 	Role  Role
 	Cmd   *exec.Cmd
 	Probe string
+	// Instance names one of several processes of a role (tv-slot: blue,
+	// green, amber).
+	Instance string
+	// OnDemand: not started until asked for (Supervisor.Want).
+	OnDemand bool
+}
+
+// Name is the process's label: the role, or role/instance.
+func (p Process) Name() string {
+	if p.Instance != "" {
+		return string(p.Role) + "/" + p.Instance
+	}
+	return string(p.Role)
 }
 
 // Options configures process construction.

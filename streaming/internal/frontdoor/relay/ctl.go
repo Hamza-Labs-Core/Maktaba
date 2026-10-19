@@ -141,6 +141,16 @@ func (c *Ctl) Kick(ch uuid.UUID) {
 	}
 }
 
+// KickAll asks every relay to resolve its source again now (the live TV slot
+// changed: story 33.1's failover, 33.7's swap).
+func (c *Ctl) KickAll() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, r := range c.running {
+		r.sess.Kick()
+	}
+}
+
 // Sync starts and stops relays to match tv_remote_pushes.
 func (c *Ctl) Sync(ctx context.Context) {
 	qctx, cancel := context.WithTimeout(ctx, 5*time.Second)

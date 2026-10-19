@@ -20,7 +20,7 @@ import (
 
 // ProtocolVersion is the streaming cluster protocol (signing, headers, routes). A host
 // whose protocol differs from the home's is unfit (unfit: version).
-const ProtocolVersion = 1
+const ProtocolVersion = 2 // 2: the placement generation is part of the signature (Epic 33)
 
 // BeatInterval is how often each streaming host calls tv_host_beat.
 const BeatInterval = 5 * time.Second

@@ -88,6 +88,13 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		add("MAKTABA_HTTP_ADDR", cfg.Server.StreamAddr)
 		add("MAKTABA_STREAMING_HTTP_ADDR", cfg.Server.StreamAddr)
 		add("MAKTABA_ADMIN_ADDR", streamingAdminAddr)
+		// Epic 33 story 33.1: the streaming role is the front door of the TV
+		// slots (which encode); it asks the supervisor for the standby and
+		// staging instances.
+		if SlotsEnabled(cfg) {
+			add("MAKTABA_TV_SLOTS", SlotsEnv())
+			add("MAKTABA_SUPERVISOR_URL", StateURL(cfg))
+		}
 		// A machine that joined a home (Epic 31) streams as a cluster node (Epic 32.1):
 		// the home's database through its own credential, its node id; no extra flag.
 		if n := nodeConfig(); n.Joined() {
@@ -96,6 +103,9 @@ func ChildEnv(role Role, cfg config.Config) []string {
 			add("MAKTABA_TV_HOST_ROLE", "node")
 			add("MAKTABA_NODE_ID", n.NodeID)
 		}
+	case RoleTVSlot:
+		// a slot's own addresses are set by BuildSlot; it never joins as a node
+		// and serves no gRPC
 	case RolePipeline:
 		// The pipeline exposes its gRPC server so the api can call it.
 		add("MAKTABA_PIPELINE_GRPC_ADDR", "127.0.0.1:9090")

@@ -58,6 +58,11 @@ type StationConfig struct {
 	// PathMapSource, when set, is read at each station start instead of PathMap
 	// (a node's map follows the cluster's, Epic 31).
 	PathMapSource func() pathmap.Map
+	// AlignSegments starts every muxer (and every restarted one) at a video IDR
+	// on a wall-clock multiple of the segment length, so the HLS segments of two
+	// stations of the channel (two TV slots, story 33.4 AC4) begin at the same
+	// instants. It costs up to one segment length at a cold start.
+	AlignSegments bool
 }
 
 // Asset kinds an AssetResolver is asked for.
@@ -103,6 +108,9 @@ type Station struct {
 	muxMu    sync.Mutex
 	mux      *muxProc
 	restarts int
+	// gate: a fresh muxer gets only PAT/PMT until the first segment-grid IDR
+	// (AlignSegments); gateSince is when the gate closed (zero: open).
+	gateSince time.Time
 
 	stopOnce sync.Once
 	stopping chan struct{}
@@ -149,6 +157,9 @@ func StartStation(cfg StationConfig, channelID uuid.UUID, dir string) (*Station,
 		cfg.FFmpeg = "ffmpeg"
 	}
 	cfg.Profile = cfg.Profile.normalised()
+	if cfg.Profile.HLSSegmentOption == "" {
+		cfg.Profile.HLSSegmentOption = HLSSegmentOptionFor(cfg.FFmpeg)
+	}
 	if err := resetDir(dir); err != nil {
 		return nil, err
 	}
@@ -171,6 +182,7 @@ func StartStation(cfg StationConfig, channelID uuid.UUID, dir string) (*Station,
 		return nil, fmt.Errorf("channel: start muxer: %w", err)
 	}
 	s.mux = m
+	s.closeGate()
 	s.epoch = cfg.Now()
 
 	feeder := &Feeder{
@@ -238,6 +250,48 @@ func (s *Station) startMuxer(restart bool) (*muxProc, error) {
 	return &muxProc{cmd: cmd, in: in}, nil
 }
 
+// closeGate holds a fresh muxer's input until the segment grid (AlignSegments;
+// muxMu held, or before the station runs).
+func (s *Station) closeGate() {
+	if s.cfg.AlignSegments {
+		s.gateSince = time.Now()
+	}
+}
+
+// gateMax: a muxer gate that saw no segment-grid IDR for this long opens
+// anyway (an encoder ignoring forced keyframes must not keep a channel dark).
+func (s *Station) gateMax() time.Duration {
+	return time.Duration(3*s.cfg.Profile.SegmentSeconds)*time.Second + 2*time.Second
+}
+
+// gated filters the whole TS packets in b while the muxer's gate is closed:
+// PAT and PMT pass, everything else is dropped up to the first video IDR on a
+// wall-clock multiple of the segment length, which opens the gate (muxMu held).
+func (s *Station) gated(b []byte) []byte {
+	if s.gateSince.IsZero() {
+		return b
+	}
+	if time.Since(s.gateSince) > s.gateMax() {
+		s.log.Warn("channel: no keyframe on the segment grid; the HLS segments are not aligned",
+			"event", "channel_grid_gate_timeout")
+		s.gateSince = time.Time{}
+		return b
+	}
+	var keep []byte
+	for i := 0; i+tsPacket <= len(b); i += tsPacket {
+		p := b[i : i+tsPacket]
+		pid := uint16(p[1]&0x1f)<<8 | uint16(p[2])
+		if pts, ok := tsVideoKeyframe(p); ok && OnGrid(pts, s.cfg.Now(), s.cfg.Profile.SegmentSeconds) {
+			s.gateSince = time.Time{}
+			return append(keep, b[i:]...)
+		}
+		if pid == 0 || pid == TSPMTPID {
+			keep = append(keep, p...)
+		}
+	}
+	return keep
+}
+
 // supervise waits on the muxer and restarts it (with backoff) until the
 // station stops; viewers stay attached to the hub throughout.
 func (s *Station) supervise(m *muxProc) {
@@ -280,6 +334,7 @@ func (s *Station) supervise(m *muxProc) {
 				return
 			}
 			s.mux = nm
+			s.closeGate()
 			s.restarts++
 			s.muxMu.Unlock()
 			m = nm
@@ -307,6 +362,10 @@ func (s *Station) writeMux(b []byte) (int, error) {
 	// across the pipe write (a wedged muxer must not block Stop).
 	s.muxMu.Lock()
 	m := s.mux
+	out := b
+	if m != nil && s.cfg.AlignSegments {
+		out = s.gated(b)
+	}
 	s.muxMu.Unlock()
 	if m == nil {
 		if s.isStopping() {
@@ -314,7 +373,10 @@ func (s *Station) writeMux(b []byte) (int, error) {
 		}
 		return len(b), nil
 	}
-	if _, err := m.in.Write(b); err != nil {
+	if len(out) == 0 {
+		return len(b), nil
+	}
+	if _, err := m.in.Write(out); err != nil {
 		if s.isStopping() {
 			return 0, err
 		}
@@ -789,6 +851,9 @@ func (s *Station) blockInput(ctx context.Context, seg Segment, look Look) (*Bloc
 	if r := s.epoch.Add(time.Duration(s.reached() * float64(time.Second))); r.Sub(start) > 100*time.Millisecond {
 		start = r
 	}
+	// on the wall-clock frame grid: every slot's frames fall on the same
+	// instants (story 33.4)
+	start = AlignStart(start, s.cfg.Profile.FPS)
 	dur := seg.End.Sub(start)
 	if dur < minRemaining {
 		return nil, start, nil
@@ -835,7 +900,7 @@ func (s *Station) blockInput(ctx context.Context, seg Segment, look Look) (*Bloc
 		}
 		// Resolving/probing took time: recompute the remaining span.
 		if t := s.cfg.Now(); t.After(start) {
-			start = t
+			start = AlignStart(t, s.cfg.Profile.FPS)
 			in.DurationSec = seg.End.Sub(start).Seconds()
 			if seg.End.Sub(start) < minRemaining {
 				return nil, start, nil
@@ -985,8 +1050,13 @@ func lookaheadAllowance(in BlockInput) float64 {
 func (s *Station) runBlock(ctx context.Context, prof OutputProfile, in BlockInput, start time.Time, pb *stationPlayback) (blockResult, error) {
 	// The block's timestamps are its timeline position: a block started
 	// ahead of its boundary begins exactly where the previous one ends.
-	in.TSOffsetSec = start.Sub(s.epoch).Seconds()
-	pb.offsetBits.Store(math.Float64bits(in.TSOffsetSec))
+	// (pacing is relative to the station's epoch; the timestamps are the
+	// wall clock's, story 33.4)
+	rel := start.Sub(s.epoch).Seconds()
+	pb.offsetBits.Store(math.Float64bits(rel))
+	in.TSOffsetTicks = TSOffsetTicks(start)
+	in.TSOffsetSec = float64(in.TSOffsetTicks) / 90000
+	in.WallStart = start
 	q := pb.q
 	args := BlockArgs(prof, in)
 

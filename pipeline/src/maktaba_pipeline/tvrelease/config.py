@@ -54,7 +54,9 @@ class MaktabaTvStagingConfig:
     rolling_swap: str = "auto"
     auto_rollback: bool = True
     hot_standby: bool = True
-    standby_warm: str = "demand"
+    #: viewers (default, the owner's call for story 33.1: the standby never spends an
+    #: encoder on a channel nobody watches) | demand
+    standby_warm: str = "viewers"
     require_second_admin: bool = False
     param_change_push: str = "approve"
 
@@ -136,9 +138,10 @@ register(
         "standby_warm": Help(
             TSS,
             "What the standby keeps warm",
-            "demand: every channel with viewers or a push; viewers: channels with people "
-            "watching first, when encoders are short.",
-            choices=("demand", "viewers"),
+            "viewers: the channels people watch first, then the remote pushes; demand: also "
+            "what the live process keeps warm after its last viewer. Live gets the encoders "
+            "first; a channel the standby does not hold fails over with one short stall.",
+            choices=("viewers", "demand"),
         ),
         "param_change_push": Help(
             TSS,

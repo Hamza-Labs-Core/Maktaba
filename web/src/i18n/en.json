@@ -176,6 +176,8 @@
   "rules.tv_output.audio_kbps.label": "Audio bitrate (kbit/s)",
   "rules.tv_output.segment_seconds.label": "HLS segment (seconds)",
   "rules.tv_output.segment_seconds.help": "Shorter starts a channel sooner; longer is steadier on a slow network.",
+  "rules.tv_output.keyint_seconds.label": "Keyframe every (seconds)",
+  "rules.tv_output.keyint_seconds.help": "On the wall clock, the same in every TV process and machine, so the switch from one to another (a failover, a change going live) is seamless. Lowered to a divisor of the HLS segment.",
   "rules.tv_output.max_active_channels.label": "Channels on air at once",
   "rules.tv_output.max_active_channels.help": "On each streaming host. Viewers of the same channel share its one encode; a channel nobody watches makes way for a new one. 0: 16 with VideoToolbox (Apple Silicon has several media engines), else 8.",
   "rules.tv_output.warm_grace_seconds.label": "Keep on air after the last viewer (seconds)",

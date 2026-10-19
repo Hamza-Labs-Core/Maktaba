@@ -369,6 +369,10 @@ The database stays the truth about a job (state, attempts, the queue engine's ow
 | `log_level` | `level`: `debug` \| `info` \| `warning` \| `error` | the level of the records it ships **and** writes to its log file |
 | `disconnect` | `reason` | close the session; with `reason: "revoked"` the worker stops gracefully and does not reconnect |
 
+Epic 35 adds `update.prepare`, `update.apply`, `update.abort` and `update.rollback` for the machine agent
+(a node supervisor's session), with the C→S frames `update.progress` / `update.state` and the S→C
+frames `auth.revoked` / `keys` ([Epic 35 design §9.2, §10, §13](../35-cluster-full-nodes-and-updates/design.md)).
+
 Every `cmd` is answered with `cmd.result`; an unknown name gets `ok: false`. Commands are a
 fixed list; nothing else can be run through the channel.
 

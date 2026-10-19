@@ -89,18 +89,25 @@ func (k *Keyring) Ready() bool {
 	return len(k.cur) > 0
 }
 
-// Sign returns "<exp>.<hex hmac>" for method and path, expiring ttl from now.
+// Sign returns "<exp>.<hex hmac>" for method and path (no placement
+// generation), expiring ttl from now.
 func (k *Keyring) Sign(method, path string, ttl time.Duration) string {
+	return k.SignGen(method, path, 0, ttl)
+}
+
+// SignGen signs method, path and the placement generation gen (0: none): a
+// request's generation cannot be changed without breaking its signature.
+func (k *Keyring) SignGen(method, path string, gen int64, ttl time.Duration) string {
 	k.mu.RLock()
 	key := k.cur
 	k.mu.RUnlock()
 	exp := k.clock().Add(ttl).Unix()
-	return strconv.FormatInt(exp, 10) + "." + mac(key, method, path, exp)
+	return strconv.FormatInt(exp, 10) + "." + mac(key, method, path, exp, gen)
 }
 
 // SignRequest adds the front-door signature and the placement generation to r.
 func (k *Keyring) SignRequest(r *http.Request, gen int64) {
-	r.Header.Set(HeaderFront, k.Sign(r.Method, r.URL.Path, SignTTL))
+	r.Header.Set(HeaderFront, k.SignGen(r.Method, r.URL.Path, gen, SignTTL))
 	if gen > 0 {
 		r.Header.Set(HeaderPlacement, strconv.FormatInt(gen, 10))
 	}
@@ -108,15 +115,18 @@ func (k *Keyring) SignRequest(r *http.Request, gen int64) {
 
 // SignedQuery is the query string of a redirected segment URL ("fx=…&fg=…").
 func (k *Keyring) SignedQuery(path string, gen int64) string {
-	q := QueryFront + "=" + k.Sign(http.MethodGet, path, SignTTL)
+	q := QueryFront + "=" + k.SignGen(http.MethodGet, path, gen, SignTTL)
 	if gen > 0 {
 		q += "&" + QueryPlacement + "=" + strconv.FormatInt(gen, 10)
 	}
 	return q
 }
 
-// Check verifies a signature value for method and path.
-func (k *Keyring) Check(sig, method, path string) error {
+// Check verifies a signature value for method and path (no placement generation).
+func (k *Keyring) Check(sig, method, path string) error { return k.CheckGen(sig, method, path, 0) }
+
+// CheckGen verifies a signature value for method, path and placement generation.
+func (k *Keyring) CheckGen(sig, method, path string, gen int64) error {
 	expS, sum, ok := strings.Cut(sig, ".")
 	if !ok || sum == "" {
 		return ErrBadSignature
@@ -139,7 +149,7 @@ func (k *Keyring) Check(sig, method, path string) error {
 		if len(key) == 0 {
 			continue
 		}
-		if hmac.Equal([]byte(mac(key, method, path, exp)), []byte(sum)) {
+		if hmac.Equal([]byte(mac(key, method, path, exp, gen)), []byte(sum)) {
 			return nil
 		}
 	}
@@ -148,30 +158,40 @@ func (k *Keyring) Check(sig, method, path string) error {
 
 // Verify checks r's signature: the header, or (allowQuery) the fx query parameter.
 func (k *Keyring) Verify(r *http.Request, allowQuery bool) error {
-	sig := r.Header.Get(HeaderFront)
+	// the generation travels with the signature: the header's with the header,
+	// the query's with the query (it is signed, so it cannot be swapped)
+	sig, genS := r.Header.Get(HeaderFront), r.Header.Get(HeaderPlacement)
 	if sig == "" && allowQuery {
-		sig = r.URL.Query().Get(QueryFront)
+		sig, genS = r.URL.Query().Get(QueryFront), r.URL.Query().Get(QueryPlacement)
 	}
 	if sig == "" {
 		return ErrBadSignature
 	}
-	return k.Check(sig, r.Method, r.URL.Path)
+	var gen int64
+	if genS != "" {
+		n, err := strconv.ParseInt(genS, 10, 64)
+		if err != nil || n < 0 {
+			return ErrBadSignature
+		}
+		gen = n
+	}
+	return k.CheckGen(sig, r.Method, r.URL.Path, gen)
 }
 
 // PlacementGen is the generation a verified request carries (header, else query), 0
 // when none.
 func PlacementGen(r *http.Request) int64 {
 	v := r.Header.Get(HeaderPlacement)
-	if v == "" {
+	if r.Header.Get(HeaderFront) == "" { // the query form: its own (signed) generation
 		v = r.URL.Query().Get(QueryPlacement)
 	}
 	n, _ := strconv.ParseInt(v, 10, 64)
 	return n
 }
 
-func mac(key []byte, method, path string, exp int64) string {
+func mac(key []byte, method, path string, exp, gen int64) string {
 	h := hmac.New(sha256.New, key)
-	_, _ = h.Write([]byte(method + "\n" + path + "\n" + strconv.FormatInt(exp, 10)))
+	_, _ = h.Write([]byte(method + "\n" + path + "\n" + strconv.FormatInt(exp, 10) + "\n" + strconv.FormatInt(gen, 10)))
 	return hex.EncodeToString(h.Sum(nil))
 }
 
