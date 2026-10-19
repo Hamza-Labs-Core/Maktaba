@@ -230,7 +230,7 @@ export function RulesSection() {
   const [errors, setErrors] = useState<Errors>({});
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const [notice, setNotice] = useState<{ ok: boolean; text: string; link?: string } | null>(null);
   // bumped on Discard so every editor drops its typed text
   const [epoch, setEpoch] = useState(0);
   // the groups and sub-groups folded away ("section/group[/sub]")
@@ -298,10 +298,12 @@ export function RulesSection() {
     try {
       let changed = 0;
       let draft: number | null = null;
+      let draftId: string | null = null;
       try {
         const r = await rulesApi.patch(sectionKey, set, reset ?? []);
         changed = r?.changed?.length ?? 0;
         draft = r?.draft_change?.number ?? null;
+        draftId = r?.draft_change?.id ?? null;
       } catch (e) {
         const { message, field } = rulesError(e);
         if (field) {
@@ -333,6 +335,8 @@ export function RulesSection() {
             : reset
               ? t("settings.rules.resetDone")
               : t("settings.rules.saved", { n: changed }),
+        // the Changes page of the draft (a plain link: this section also renders outside the router)
+        link: draftId ? `/admin/live-tv/changes/${draftId}` : undefined,
       });
       try {
         await load();
@@ -542,6 +546,14 @@ export function RulesSection() {
             className={notice.ok ? "mkt-rules__notice" : "mkt-rules__banner mkt-rules__banner--bad"}
           >
             {notice.text}
+            {notice.link && (
+              <>
+                {" "}
+                <a href={notice.link} data-testid="rules-draft-link">
+                  {t("settings.rules.openDraft")}
+                </a>
+              </>
+            )}
           </p>
         )}
         {invalid > 0 && (

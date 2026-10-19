@@ -50,7 +50,7 @@ func LoadConfig(ctx context.Context, db *sql.DB) (Config, error) {
 		return Config{}, err
 	}
 	c := Config{
-		Enabled:            asBool(m["enabled"], false), // interim default until story 33.11
+		Enabled:            asBool(m["enabled"], true),
 		AutoPromote:        map[string]string{},
 		QuietWindow:        asStr(m["quiet_window"], "03:00-05:00"),
 		QuietMaxViewers:    asInt(m["quiet_max_viewers"], 0),

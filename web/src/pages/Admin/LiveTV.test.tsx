@@ -145,6 +145,33 @@ describe("AdminLiveTV", () => {
     Object.defineProperty(document, "execCommand", { value: exec0, configurable: true });
   });
 
+  it("shows the change in flight and the way to the Changes page (Epic 33)", async () => {
+    routes({
+      "/api/tv/info": {
+        ...info,
+        staging: {
+          enabled: true,
+          live_release: null,
+          live_gen: 0,
+          change_in_flight: "c0000000-0000-4000-8000-000000000042",
+          change_in_flight_number: 42,
+          change_in_flight_state: "ready",
+        },
+      },
+    });
+    renderPage();
+    const card = await screen.findByTestId("staging-banner");
+    expect(card).toHaveTextContent("Change #42 is Ready");
+    expect(screen.getByRole("link", { name: "Change #42 is Ready" })).toHaveAttribute(
+      "href",
+      "/admin/live-tv/changes/c0000000-0000-4000-8000-000000000042"
+    );
+    expect(screen.getByRole("link", { name: "Open Changes" })).toHaveAttribute(
+      "href",
+      "/admin/live-tv/changes"
+    );
+  });
+
   it("shows the Plex addresses and steps", async () => {
     renderPage();
     expect(await screen.findByDisplayValue("192.168.1.20:8782")).toBeInTheDocument();

@@ -2,6 +2,7 @@ package channels
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
@@ -80,7 +82,18 @@ func (h *Handler) Logo(w http.ResponseWriter, r *http.Request) { h.serveArt(w, r
 // serveArt streams (or redirects to) the effective image of kind.
 func (h *Handler) serveArt(w http.ResponseWriter, r *http.Request, kind string) {
 	id := chi.URLParam(r, "id")
-	c, err := h.repo().get(r.Context(), id)
+	var c Channel
+	var err error
+	if rel := strings.TrimSpace(r.URL.Query().Get("release")); rel != "" {
+		// ?release= (admins, the Changes page): the art a staged TV release puts on the air
+		if p := principal.FromContext(r.Context()); p == nil || !p.IsAdmin {
+			httperror.Write(w, r, httperror.Forbidden("", "admin-only"))
+			return
+		}
+		c, err = h.releaseChannel(r, rel, id)
+	} else {
+		c, err = h.repo().get(r.Context(), id)
+	}
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httperror.Write(w, r, httperror.NotFound("channel "+id))
@@ -130,4 +143,22 @@ func (h *Handler) serveArt(w http.ResponseWriter, r *http.Request, kind string) 
 	}
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	http.ServeContent(w, r, "", st.ModTime(), f)
+}
+
+// releaseChannel is channel id as TV release rel defines it (tv_release_channels.def:
+// the full channels row, its logo and look included).
+func (h *Handler) releaseChannel(r *http.Request, rel, id string) (Channel, error) {
+	var raw []byte
+	if err := h.DB.QueryRowContext(r.Context(), `SELECT def FROM tv_release_channels
+		WHERE release_id = $1 AND channel_id = $2`, rel, id).Scan(&raw); err != nil {
+		return Channel{}, err
+	}
+	var def struct {
+		LogoPath   *string         `json:"logo_path"`
+		ModeConfig json.RawMessage `json:"mode_config"`
+	}
+	if err := json.Unmarshal(raw, &def); err != nil {
+		return Channel{}, err
+	}
+	return Channel{ID: id, LogoPath: def.LogoPath, ModeConfig: def.ModeConfig}, nil
 }

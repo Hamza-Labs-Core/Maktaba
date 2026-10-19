@@ -47,13 +47,14 @@ async def _pipeline(
     33.12 AC10); on, it makes a TV change."""
     rt = await core_runtime(db)
     await _small_library_rules(db)
-    await db.execute(
-        "INSERT INTO app_settings (key, value, updated_at) VALUES ($1, $2, $3)"
-        " ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-        "rules.tv_staging",
-        dumps({"enabled": staging}),
-        to_ts(db, now()),
-    )
+    if not staging:
+        await db.execute(
+            "INSERT INTO app_settings (key, value, updated_at) VALUES ($1, $2, $3)"
+            " ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+            "rules.tv_staging",
+            dumps({"enabled": False}),
+            to_ts(db, now()),
+        )
     w = await make_show(db, name=name, episodes=episodes, loose=4)
     await enqueue_job(db, subject_kind="library", subject_id=w.library, stage="detect")
     await drain_core(db, rt)
@@ -199,7 +200,7 @@ async def test_plan_channels_stores_a_plan_and_write_channels_creates_live_tv(db
 
 @pytest.mark.asyncio
 async def test_with_staging_write_channels_stages_a_tv_change(db: Database) -> None:
-    """Story 33.12 AC1 / AC9 end to end: with staging on the plan's lineup
+    """Story 33.12 AC1 / AC9 end to end: with staging on (the default) the plan's lineup
     becomes a staged TV change - nothing on the air, no Plex refresh - and the swap
     commit puts it on the air."""
     from maktaba_pipeline.tvrelease.commit import commit_change

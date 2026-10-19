@@ -12,6 +12,7 @@ import { useShortcuts } from "../lib/keyboard/shortcuts";
 import { applyServiceWorkerUpdate, type SwUpdateDetail } from "../lib/pwa";
 import { ThemeToggle } from "./ThemeToggle";
 import { LangToggle } from "./LangToggle";
+import { NotificationsBell } from "./NotificationsBell";
 
 const NAV = [
   { to: "/library", key: "nav.library", icon: "▦" },
@@ -142,6 +143,7 @@ export function AppShell() {
           />
         </form>
         <div className="mkt-shell__actions">
+          {user && <NotificationsBell />}
           <ThemeToggle />
           <LangToggle />
           {user && (

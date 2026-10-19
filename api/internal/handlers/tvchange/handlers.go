@@ -71,6 +71,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/tv/rollback", h.Rollback)
 	r.Get("/api/tv/slots", h.Slots)
 	r.Get("/api/tv/releases", h.Releases)
+	mountPage(r, h)
 }
 
 func admin(w http.ResponseWriter, r *http.Request) (*principal.Principal, bool) {
@@ -123,7 +124,22 @@ func (h *Handler) reply(w http.ResponseWriter, r *http.Request, status int, id s
 		return
 	}
 	c.Events, _ = h.Store.Events(r.Context(), id)
-	common.WriteJSON(w, r, status, c)
+	common.WriteJSON(w, r, status, h.detail(r.Context(), c))
+}
+
+func decode(b []byte, into any) {
+	if len(b) > 0 {
+		_ = json.Unmarshal(b, into)
+	}
+}
+
+// transition is an audit payload with the states an admin action moved between.
+func transition(from, to string, extra map[string]any) map[string]any {
+	out := map[string]any{"from": from, "to": to}
+	for k, v := range extra {
+		out[k] = v
+	}
+	return out
 }
 
 // List serves GET /api/tv/changes.
@@ -142,7 +158,14 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	inflight, _ := h.Store.InFlightChange(r.Context(), h.DB)
-	out := map[string]any{"items": items}
+	cfg, _ := core.LoadConfig(r.Context(), h.DB)
+	ids := map[string]bool{}
+	for _, c := range items {
+		if c.CreatedBy != nil {
+			ids[*c.CreatedBy] = true
+		}
+	}
+	out := map[string]any{"items": items, "config": pageConfig(cfg), "users": userNames(r.Context(), h.DB, ids)}
 	if inflight != nil {
 		out["in_flight"] = inflight.ID
 	}
@@ -169,7 +192,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("create tv change: "+err.Error()))
 		return
 	}
-	h.Store.Audit(r.Context(), h.DB, p.UserID, "create", c.ID, nil)
+	h.Store.Audit(r.Context(), h.DB, p.UserID, "create", c.ID, transition("", core.StateDraft, nil))
 	h.reply(w, r, http.StatusCreated, c.ID)
 }
 
@@ -241,7 +264,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	st := c.State
 	_ = h.Store.Event(r.Context(), h.DB, c.ID, core.Event{ActorUserID: actorOf(p), ActorSource: "admin",
 		FromState: &st, ToState: &st, Action: core.ActionSchedule, Detail: map[string]any{"fields": keys(fields)}})
-	h.Store.Audit(r.Context(), h.DB, p.UserID, "patch", c.ID, map[string]any{"fields": keys(fields)})
+	h.Store.Audit(r.Context(), h.DB, p.UserID, "patch", c.ID, transition(st, st, map[string]any{"fields": keys(fields)}))
 	h.reply(w, r, http.StatusOK, c.ID)
 }
 
@@ -298,7 +321,7 @@ func (h *Handler) Stage(w http.ResponseWriter, r *http.Request) {
 	st := c.State
 	_ = h.Store.Event(r.Context(), h.DB, c.ID, core.Event{ActorUserID: actorOf(p), ActorSource: "admin",
 		FromState: &st, ToState: &st, Action: "stage_requested"})
-	h.Store.Audit(r.Context(), h.DB, p.UserID, "stage", c.ID, nil)
+	h.Store.Audit(r.Context(), h.DB, p.UserID, "stage", c.ID, transition(st, st, nil))
 	h.reply(w, r, http.StatusAccepted, c.ID)
 }
 
@@ -318,6 +341,7 @@ func (h *Handler) Verify(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Conflict("", "cannot verify a change that is "+c.State).With("state", c.State))
 		return
 	}
+	from := c.State
 	if to != c.State {
 		if err := h.Store.Move(r.Context(), h.DB, c, to, core.ActionVerify, actorOf(p), nil, nil); err != nil {
 			if conflict(w, r, err) {
@@ -327,7 +351,7 @@ func (h *Handler) Verify(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	h.Store.Audit(r.Context(), h.DB, p.UserID, "verify", c.ID, nil)
+	h.Store.Audit(r.Context(), h.DB, p.UserID, "verify", c.ID, transition(from, c.State, nil))
 	h.reply(w, r, http.StatusAccepted, c.ID)
 }
 
@@ -378,6 +402,7 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 			With("state", c.State).With("error", "ack_param_change_required"))
 		return
 	}
+	from := c.State
 	fields := map[string]any{"approved_by": append(c.ApprovedBy, p.UserID), "approved_at": time.Now().UTC()}
 	if len(body.SwapAt) > 0 {
 		at, err := parseSwapAt(body.SwapAt)
@@ -419,7 +444,8 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("approve: "+err.Error()))
 		return
 	}
-	h.Store.Audit(r.Context(), h.DB, p.UserID, "approve", c.ID, map[string]any{"ack_param_change": body.AckParamChange})
+	h.Store.Audit(r.Context(), h.DB, p.UserID, "approve", c.ID,
+		transition(from, c.State, map[string]any{"ack_param_change": body.AckParamChange}))
 	h.reply(w, r, http.StatusOK, c.ID)
 }
 
@@ -485,6 +511,7 @@ func (h *Handler) Promote(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("no change controller"))
 		return
 	}
+	from := c.State
 	if err := h.Controller.Promote(r.Context(), c, actorOf(p)); err != nil {
 		if conflict(w, r, err) {
 			return
@@ -492,7 +519,7 @@ func (h *Handler) Promote(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("promote: "+err.Error()))
 		return
 	}
-	h.Store.Audit(r.Context(), h.DB, p.UserID, "promote", c.ID, nil)
+	h.Store.Audit(r.Context(), h.DB, p.UserID, "promote", c.ID, transition(from, c.State, nil))
 	h.reply(w, r, http.StatusAccepted, c.ID)
 }
 
@@ -511,6 +538,7 @@ func (h *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Conflict("", "cannot cancel a change that is "+c.State).With("state", c.State))
 		return
 	}
+	from := c.State
 	if err := h.Store.Move(r.Context(), h.DB, c, to, core.ActionCancel, actorOf(p), nil,
 		map[string]any{"ended_at": time.Now().UTC(), "end_reason": "cancelled"}); err != nil {
 		if conflict(w, r, err) {
@@ -519,7 +547,7 @@ func (h *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("cancel: "+err.Error()))
 		return
 	}
-	h.Store.Audit(r.Context(), h.DB, p.UserID, "cancel", c.ID, nil)
+	h.Store.Audit(r.Context(), h.DB, p.UserID, "cancel", c.ID, transition(from, c.State, nil))
 	h.reply(w, r, http.StatusOK, c.ID)
 }
 
@@ -688,6 +716,9 @@ type StagingInfo struct {
 	LiveReleaseID  *string `json:"live_release"`
 	LiveGen        int64   `json:"live_gen"`
 	ChangeInFlight *string `json:"change_in_flight"`
+	// InFlightNumber / InFlightState: the "#42 verifying" of the Live TV banner.
+	InFlightNumber int64  `json:"change_in_flight_number,omitempty"`
+	InFlightState  string `json:"change_in_flight_state,omitempty"`
 }
 
 // Info is what /api/tv/info reports about staging.
@@ -706,6 +737,7 @@ func Info(ctx context.Context, db *sql.DB) any {
 	if c, err := (&core.Store{DB: db}).InFlightChange(ctx, db); err == nil && c != nil {
 		id := c.ID
 		out.ChangeInFlight = &id
+		out.InFlightNumber, out.InFlightState = c.Number, c.State
 	}
 	return out
 }

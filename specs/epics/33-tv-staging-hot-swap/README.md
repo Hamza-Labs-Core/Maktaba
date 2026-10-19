@@ -406,7 +406,7 @@ files exist (its rule). Each has a `.sqlite.sql` sibling like every channel migr
 | 0127 | 33.2, 33.10 | `0127_tv_releases_changes.sql` (NO TRANSACTION, built) | `tv_releases` (id uuid, digest unique, kinds jsonb, sched_gen bigint unique, streaming_version, streaming_sha256, settings jsonb, lineup_digest, base_release_id, created_at, created_by); `tv_release_channels` (release_id, channel_id - no foreign key: a direct write with staging off may delete a channel an old release names - def jsonb, art jsonb, sched_changed bool, boundary_at = the divergence boundary, PK both); `tv_changes` (id, number - the "#42" of the UI, release_id, base_release_id, state, kinds jsonb, title, source jsonb, change_set jsonb, digest, diff jsonb (`diff.pending` = the producer's edits), verify_report jsonb, auto_rule, approved_by jsonb, approved_at, anchor_at = the planned swap instant the generation is built for, swap_at, swap_wait, created_by, created_at, updated_at, staged_at, ready_at, swapped_at, ended_at, end_reason, superseded_by); `tv_change_events` (id bigserial, change_id, at, actor_user_id, actor_source, from_state, to_state, action, detail jsonb); `tv_routing` (scope pk: `cluster` or `host:<id>`; live_release_id, live_gen, previous_release_id, previous_gen, epoch bigint, switched_at, previous_until); sequence `tv_sched_gen_seq` (SQLite: a table). Arrays are jsonb (not text[]/uuid[]) so the SQLite twin has the same shape. |
 | 0128 | 33.3 | `0128_tv_sched_generations.sql` (NO TRANSACTION, built) | `channel_programs.sched_gen bigint not null default 0`; unique index `(channel_id, sched_gen, seq)` and lookup index `(channel_id, sched_gen, start_at, end_at)` built CONCURRENTLY, old `(channel_id, seq)` unique dropped; `channel_schedule_state` PK → `(channel_id, sched_gen)`; `channels.lifecycle text not null default 'live' check in ('staged','live','retired')`, `channels.retired_at`; number/slug unique indexes rebuilt as partial `WHERE lifecycle = 'live'`; function `tv_live_gen()` (stable, reads `tv_routing` cluster row, 0 when absent); view `channel_programs_live`; **breaking for older nodes**: `maktaba_min_node_schema()` returns 128. |
 | 0129 | 33.1, 33.7 | `0129_tv_slots.sql` (provisional) | `tv_slots` (host_id, slot 'blue'/'green'/'amber', role, state, release_id, base_url, pid, version, warm jsonb, encoders_used int, started_at, beat_at, last_exit jsonb, PK (host_id, slot)); `channel_placements` (Epic 32 placements, now proposed 0121) gains `track text not null default 'live' check in ('live','staging','standby','previous')` and `slot text`, PK → `(channel_id, track)`; `tv_slot_beat(...)` SECURITY DEFINER own-row (Epic 31 guard); `tv_channel_switch` (change_id, channel_id, switch_at, state planned/switched/skipped, switched_at, PK both). |
-| 0130 | 33.13 | `0130_notifications.sql` (provisional) | `notifications` (id, kind, severity, title_key, params jsonb, link, audience 'admins'/user_id, created_at, read_at per user via `notification_reads`) — the first user of a general in-app table (decision 8). |
+| 0130 | 33.13 | `0130_notifications.sql` (built) | `notifications` (id, kind, severity, title_key, params jsonb, link, audience 'admins'/user_id, created_at, read_at per user via `notification_reads`; `notification_cursors`; `audit_log_category_check` gains `tv_change`, `tv_remote`) — the first user of a general in-app table (decision 8). |
 
 `channel_runtime` (0083/0117) gains nothing: a slot writes its rows with `host_id = <host>/<slot>`
 so the On air page (Epic 32.5) shows both slots during a swap.
@@ -505,10 +505,10 @@ while a change is in flight; the channel editor shows "editing draft change #42"
 
 ## As built: 33.2, 33.3, 33.10, 33.12 (before the two-slot runtime)
 
-- **Interim default: `tv_staging.enabled = false`.** Until the Changes page (story 33.11) exists an
-  approval would be API-only, so staging ships off (direct writes, as before) and an admin may switch
-  it on. The owner's decision stands ("on once built"): the default flips to `true` when 33.11 lands
-  (pipeline `tvrelease/config.py`, API `tvchange.LoadConfig`, `schema.json`).
+- **Default `tv_staging.enabled = true`** (the owner's "on once built"). It shipped off as an interim
+  with these stories, because an approval was API-only, and flipped on with the Changes page (story
+  33.11; pipeline `tvrelease/config.py`, API `tvchange.LoadConfig`, `schema.json`). See "As built:
+  33.11, 33.13" below.
 
 Stories 33.2 (releases), 33.3 (generations), 33.10 (TV changes) and 33.12 (producers) landed before
 the runtime stories (33.1, 33.4, 33.7). What that means, and where the runtime hooks in:
@@ -652,3 +652,55 @@ capacity (future).
     default output (1080p30, 6 Mb/s)? The answer decides whether 22 always-on channels fit with a full
     hot standby (44 encodes) or the standby warms only channels with viewers. A benchmark belongs to
     tv-core; QSV nodes are the future capacity path.
+
+## As built: 33.11, 33.13 (Changes page, notifications)
+
+- **Default on.** `rules.tv_staging.enabled` defaults to `true` again (pipeline `tvrelease/config.py`,
+  API `tvchange.LoadConfig`, `schema.json`; the setting's help says so). Off: direct writes, as before.
+- **Changes page** (`web/src/pages/Admin/LiveTV/Changes.tsx`, `/admin/live-tv/changes`): the slot
+  bar (`GET /api/tv/slots`; one live process until 33.1, plus the change in flight as the staging
+  slot), the in-flight banner, the list (state chip, kinds, source, author, checks summary, swap
+  time) with fixed-order filters (all, drafts, in flight, live, ended), the staging settings
+  (swap wait, quiet window, auto-promote rule per kind, second admin, rollback window; read from
+  `GET /api/tv/changes` → `config`), and the release history. With staging off it explains that and
+  keeps the release history (EC2). The Live TV page shows the change in flight and links here
+  (`/api/tv/info` staging block gained `change_in_flight_number` / `_state`); the channel editor's
+  "editing draft change #n" banner and the settings save notice link to the change.
+- **Change detail** (`ChangeDetail.tsx`, `/admin/live-tv/changes/{id}`): tabs Lineup (added,
+  removed, renumbered, renamed, definition fields; a draft shows `pending_summary`), Schedules
+  (`GET /api/tv/changes/{id}/schedule-diff?page=` ten channels a page, `?channel=` the next 24 h of
+  the live and the release generation from the divergence, "unchanged" folded), Settings (key diff
+  labelled from the rules schema), Binary & art (version from → to, thumbnails before
+  `/api/channels/{id}/art/{kind}` and after `?release=<id>`, admin-only), Checks
+  (`verify_report.checks`, failures first), Preview (says story 33.6), History (events with actors
+  and the change's `audit_log` rows). Actions are `allowed_actions` in a fixed order: Approve /
+  Schedule / Swap now open one dialog (as soon as possible = each channel at its next programme
+  boundary, or a set time; the swap mode; the expected switch time per channel from
+  `GET /api/tv/changes/{id}/boundaries?at=&swap_wait=`, capped at `boundary_max_wait_minutes`; the
+  param-change acknowledgement when `push.continuity` fails; the second-admin rule), Cancel confirms,
+  Roll back is shown disabled with "arrives with story 33.9". Every change reply carries `users`
+  (id → name), `audit` and `release`.
+- **Live updates**: the page and the detail re-read every 2 s while visible; a poll that brings the
+  same data keeps the same objects (`reconcile` / `reconcileList`), sections are always present in
+  the same order (a quiet "no change in flight" line, a reserved status line), skeletons on the
+  first load only (PR #76's rules). en + ar, RTL, phone width (the list becomes cards).
+- **Notifications (33.13)**: slot **0130** `notifications` / `notification_reads` /
+  `notification_cursors` (0129 stays with the runtime branch; `SCHEMA_REV` 130). `api/internal/notify`:
+  `Notifier.Notify(kind, payload)` on a `Hub` whose first subscriber is the table (e-mail, push and
+  the review flow subscribe later); a repeat of a kind about a subject is dropped inside its window
+  (an hour; a day for "waiting" and the rollback point). `GET /api/notifications`,
+  `POST /api/notifications/{id}/read`, `POST /api/notifications/read-all`; the bell in the web header
+  (`NotificationsBell.tsx`) shows the unread count and the list, localised from `title_key` + params.
+- **Where the notices come from**: rather than calls in each transition (the pipeline's `tv_stage` /
+  `tv_swap` move states too), the controller tails `tv_change_events` (cursor in
+  `notification_cursors`; a first run starts at the newest event): verified → `tv.change.ready`
+  (needs approval) or `tv.change.auto_scheduled` (a rule switched on), failed → `tv.change.failed`,
+  swap failed → `tv.change.swap_failed`, live → `tv.change.live`, rolled back →
+  `tv.change.rolled_back` (cause, automatic or not); timers: ready for a day → `tv.change.waiting`,
+  rollback point ending within the hour → `tv.rollback.expiring`. `tv.slot.failover` and
+  `tv.slot.crash_loop` are defined for the runtime (33.1/33.9) to send through the same `Notifier`.
+- **Audit**: the same feed writes an `audit_log` row (category `tv_change`, `actor_source` = the
+  event's source, payload from / to) for every transition no admin made; admin actions keep their
+  handler's row, now with from / to. Slot 0130 also widens `audit_log_category_check` with
+  `tv_change` and `tv_remote`: on Postgres both categories were refused before (the 0054 check), so
+  the 33.10 audit rows were never written there.

@@ -230,6 +230,26 @@ describe("RulesSection", { timeout: 20_000 }, () => {
     expect(screen.getByRole("tab", { name: /Grouping/ })).toHaveTextContent("1 unsaved");
   });
 
+  it("a save that went to a TV change draft links to it (Epic 33)", async () => {
+    const data = fixture();
+    setup(data);
+    await userEvent.click(await screen.findByRole("tab", { name: /Channels/ }));
+    const input = within(await rule("Shortest slot (min)")).getByRole("spinbutton");
+    await userEvent.clear(input);
+    await userEvent.type(input, "45");
+    patch.mockResolvedValue({
+      section: "planner",
+      changed: ["min_slot_minutes"],
+      draft_change: { id: "c0000000-0000-4000-8000-000000000043", number: 43 },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText(/Saved to draft change #43/)).toBeInTheDocument();
+    expect(screen.getByTestId("rules-draft-link")).toHaveAttribute(
+      "href",
+      "/admin/live-tv/changes/c0000000-0000-4000-8000-000000000043"
+    );
+  });
+
   it("puts a changed field back to its default", async () => {
     const data = fixture();
     Object.assign(field(data, "planner", "min_slot_minutes"), { value: 45, changed: true });

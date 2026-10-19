@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
 )
 
 // CatalogID is the engine's catalog subject (pipeline engine/graph.py CATALOG_ID).
@@ -45,6 +46,9 @@ type Controller struct {
 	Interval time.Duration
 	// Location is the quiet window's zone (nil: the server's local zone).
 	Location *time.Location
+	// Notifier receives the change notices (story 33.13); nil sends none (the audit
+	// rows of automatic transitions are written either way).
+	Notifier notify.Notifier
 
 	lastGC time.Time
 }
@@ -176,6 +180,14 @@ func (c *Controller) Tick(ctx context.Context) error {
 				}
 			}
 		}
+	}
+	// story 33.13: notices and the audit rows of automatic transitions (best-effort:
+	// a failure here never holds a change back)
+	if err := c.notifyEvents(ctx, cfg); err != nil {
+		c.Logger.Warn("tv change event feed failed", "event", "tv_change_feed_failed", "error", err.Error())
+	}
+	if err := c.notifyTimers(ctx, open); err != nil {
+		c.Logger.Warn("tv change timed notices failed", "event", "tv_change_timers_failed", "error", err.Error())
 	}
 	if c.now().Sub(c.lastGC) >= 24*time.Hour {
 		if c.Enqueue != nil {
