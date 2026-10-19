@@ -101,6 +101,9 @@ class PlexExtension:
                 entry_for=("library",),
                 debounce_sec=60,
                 debounce_max_sec=600,
+                # the Plex token is in home_secrets (slot 0120), which only the home
+                # reads: every stage that talks to Plex runs there
+                placement="home",
             )
         )
         if graph.has_stage("scan"):  # a rescan may add, move or drop files Plex lists
@@ -116,6 +119,7 @@ class PlexExtension:
                 version=PLEX_EXPORT_VERSION,
                 external_write=True,
                 entry_for=("season",),
+                placement="home",  # needs the Plex token (home_secrets)
             )
         )
         graph.add_edge("detect", Edge("plex_collection", "seasons_changed"))
@@ -133,6 +137,7 @@ class PlexExtension:
                 entry_for=("library",),
                 debounce_sec=60,
                 debounce_max_sec=600,
+                placement="home",  # needs the Plex token (home_secrets)
             )
         )
         for src in ("topic_collections", "clip_groups", "plex_index"):

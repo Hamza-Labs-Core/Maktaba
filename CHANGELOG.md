@@ -11,6 +11,23 @@ don't append a line here; docs-only PRs are exempt.
 ## [Unreleased]
 
 ### Added
+- Cloudflare Stream integration (Epic 32 story 32.6): a new
+  "Cloudflare Stream" extension (account ID, API token, customer
+  subdomain code) whose Test connection checks the token, Stream on the
+  account, storage, Analytics (optional), creates the Stream signing key,
+  learns the playback domain and checks that the home can push. The
+  extensions page shows each check and the remote viewing switch (on only
+  after a passed test from the last 24 hours) and can remove the
+  integration (Maktaba's live inputs and signing key are deleted at
+  Cloudflare). `/api/tv/remote` (status, test, enabled, remove).
+  `maktaba-api cloudflare spike` runs the Stream spike against a real
+  account (tools/tv/cf-spike.md).
+- Secrets sealed on the home (slot 0120 `home_secrets`): AES-256-GCM
+  under the key file `secrets.key` beside `server.toml` (or
+  `MAKTABA_SECRETS_KEY`), never in the database and not readable by the
+  machines' role. Every extension secret lives there: the Plex token is
+  moved out of `extensions.settings` on the API's first start (once,
+  idempotent), and the Plex stages now run on the home only.
 - Process supervision (Story 22.9): `maktaba-server serve` restarts only
   the child process (api, streaming or pipeline) that crashed or hung,
   with exponential backoff, a crash-loop guard and `/healthz` liveness
