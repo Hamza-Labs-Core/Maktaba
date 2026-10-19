@@ -18,7 +18,6 @@ CREATE TABLE IF NOT EXISTS tv_slot_events (
     detail  JSONB       NOT NULL DEFAULT '{}'::jsonb,
     at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS tv_slot_events_at_idx ON tv_slot_events (at);
 -- +goose StatementEnd
 
 -- +goose StatementBegin

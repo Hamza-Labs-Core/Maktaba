@@ -14,7 +14,6 @@ CREATE TABLE IF NOT EXISTS tv_slot_events (
     detail  TEXT    NOT NULL DEFAULT '{}',
     at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
-CREATE INDEX IF NOT EXISTS tv_slot_events_at_idx ON tv_slot_events (at);
 -- +goose StatementEnd
 
 -- +goose Down

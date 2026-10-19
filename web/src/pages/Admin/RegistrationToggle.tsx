@@ -25,9 +25,9 @@ export function RegistrationToggle() {
 
   useEffect(() => {
     let alive = true;
-    api
-      .get<Record<string, unknown>>("/api/settings")
-      .then((s) => alive && setOpen(isOpen(s[OPEN_REGISTRATION])))
+    Promise.resolve()
+      .then(() => api.get<Record<string, unknown> | undefined>("/api/settings"))
+      .then((s) => alive && setOpen(isOpen(s?.[OPEN_REGISTRATION])))
       .catch(() => alive && setOpen(false));
     return () => {
       alive = false;
