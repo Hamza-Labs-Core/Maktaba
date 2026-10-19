@@ -19,7 +19,8 @@
 // the page is still showing the previous user's data.
 const BUILD = "v2";
 const SHELL_CACHE = "mkt-shell-" + BUILD;
-const SHELL = ["/", "/index.html"];
+// theme-boot.js runs before first paint (no theme flash), so it is shell too.
+const SHELL = ["/", "/index.html", "/theme-boot.js"];
 
 // Any cache name matching this is purged on activate and on logout.
 // Covers the legacy `mkt-api-v1` / `mkt-api-v2` SWR caches that older

@@ -558,8 +558,8 @@
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  .mkt-cb-block {
-    border-color: rgb(255 255 255 / 20%);
-  }
+/* follows the app theme (data-theme), not the raw OS preference, so an
+   explicit Light/Dark choice in Settings wins */
+[data-theme="dark"] .mkt-cb-block {
+  border-color: rgb(255 255 255 / 20%);
 }

@@ -12,6 +12,8 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme"
 )
 
 //go:embed all:dist
@@ -43,7 +45,7 @@ func Handler(apiPrefixes ...string) http.Handler {
 		if _, err := fs.Stat(sub, clean); err != nil {
 			for _, p := range apiPrefixes {
 				if strings.HasPrefix(r.URL.Path, p) {
-					http.NotFound(w, r)
+					pagetheme.NotFound(w, r)
 					return
 				}
 			}

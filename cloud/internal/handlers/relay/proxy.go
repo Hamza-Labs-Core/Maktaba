@@ -40,23 +40,23 @@ func (d *Deps) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		slug := slugFromHost(r.Host, d.PublicHost)
 		if slug == "" {
-			writeErr(w, http.StatusNotFound, "no_slug", "unknown subdomain")
+			writeErr(w, r, http.StatusNotFound, "no_slug", "unknown subdomain")
 			return
 		}
 		sv, err := d.Servers.BySlug(r.Context(), slug)
 		if err != nil {
-			writeErr(w, http.StatusNotFound, "no_server", "")
+			writeErr(w, r, http.StatusNotFound, "no_server", "")
 			return
 		}
 		t, err := d.Registry.Lookup(slug)
 		if err != nil {
-			writeErr(w, http.StatusBadGateway, "server_offline", "")
+			writeErr(w, r, http.StatusBadGateway, "server_offline", "")
 			return
 		}
 		// Tier gate — Free tier capped at ~50 MB/day inbound at edge.
 		if d.Meter != nil {
 			if err := d.Meter.Allow(r.Context(), sv); err != nil {
-				writeErr(w, http.StatusPaymentRequired, "tier_limit", err.Error())
+				writeErr(w, r, http.StatusPaymentRequired, "tier_limit", err.Error())
 				return
 			}
 		}
@@ -72,7 +72,7 @@ func (d *Deps) Handler() http.Handler {
 
 		resp, err := t.Proxy(ctx, req)
 		if err != nil {
-			writeErr(w, http.StatusBadGateway, "tunnel_error", err.Error())
+			writeErr(w, r, http.StatusBadGateway, "tunnel_error", err.Error())
 			return
 		}
 		defer resp.Body.Close()
@@ -157,7 +157,11 @@ func stripHopByHop(h http.Header) {
 	}
 }
 
-func writeErr(w http.ResponseWriter, code int, kind, msg string) {
+func writeErr(w http.ResponseWriter, r *http.Request, code int, kind, msg string) {
+	if wantsHTML(r) {
+		writePage(w, code, kind, msg)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": kind, "message": msg})

@@ -20,6 +20,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/webui"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme"
 )
 
 // allRoles is the default set started by a bare `serve`.
@@ -237,6 +238,23 @@ func containsRole(roles []supervisor.Role, want supervisor.Role) bool {
 // embedded UI and reverse-proxies /api to the API listen address so the
 // whole app is reachable from a single origin (the web port).
 func startWebServer(cfg config.Config) *http.Server {
+	srv := &http.Server{
+		Addr:              cfg.Server.WebListen,
+		Handler:           webHandler(cfg),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Fprintf(os.Stderr, "[serve] web server error: %v\n", err)
+		}
+	}()
+	return srv
+}
+
+// webHandler is the web port: the embedded UI, /api/ proxied to the API
+// and live TV proxied to the streaming service. Every page it renders
+// itself (errors, "restarting") follows the system theme (pagetheme).
+func webHandler(cfg config.Config) http.Handler {
 	mux := http.NewServeMux()
 
 	// Reverse-proxy /api/* to the API service so the SPA can talk to a
@@ -252,6 +270,7 @@ func startWebServer(cfg config.Config) *http.Server {
 			// agent marks its loopback calls X-Maktaba-Via: relay
 			r.Header.Del("X-Maktaba-Via")
 		}
+		proxy.ErrorHandler = apiUnreachable
 		mux.Handle("/api/", proxy)
 	}
 
@@ -267,22 +286,11 @@ func startWebServer(cfg config.Config) *http.Server {
 	if api != nil {
 		mux.Handle("/stream/", newStreamGate(streamProxy, api))
 	} else {
-		mux.Handle("/stream/", http.NotFoundHandler())
+		mux.Handle("/stream/", http.HandlerFunc(pagetheme.NotFound))
 	}
 
 	mux.Handle("/", webui.Handler("/api/", "/stream/"))
-
-	srv := &http.Server{
-		Addr:              cfg.Server.WebListen,
-		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			fmt.Fprintf(os.Stderr, "[serve] web server error: %v\n", err)
-		}
-	}()
-	return srv
+	return mux
 }
 
 // publicStreamPaths are the web-port paths the streaming service serves
@@ -303,10 +311,47 @@ func newStreamProxy(streamAddr string) http.Handler {
 		r.Header.Del("Authorization")
 	}
 	proxy.FlushInterval = -1
-	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		if pagetheme.WantsHTML(r) {
+			pagetheme.Write(w, pagetheme.Page{
+				Status:       http.StatusBadGateway,
+				Title:        "Live TV unavailable · Maktaba",
+				Heading:      "Live TV is not reachable",
+				Message:      "The streaming service on this server is not answering. It may be starting or restarting.",
+				Detail:       err.Error(),
+				RetrySeconds: 10,
+				Links:        []pagetheme.Link{{Href: "/", Text: "Back to Maktaba"}},
+			})
+			return
+		}
 		http.Error(w, "live TV is not reachable: "+err.Error(), http.StatusBadGateway)
 	}
 	return proxy
+}
+
+// apiUnreachable answers a /api/ request the API did not take (it is
+// down, starting or restarting): a browser that navigated there (a report
+// page, a link) gets a themed page that retries; the web app's fetches
+// get a problem+json body they can show.
+func apiUnreachable(w http.ResponseWriter, r *http.Request, err error) {
+	fmt.Fprintf(os.Stderr, "[serve] api proxy: %s %s: %v\n", r.Method, r.URL.Path, err)
+	if pagetheme.WantsHTML(r) {
+		pagetheme.Write(w, pagetheme.Page{
+			Status:       http.StatusBadGateway,
+			Title:        "Maktaba is restarting",
+			Heading:      "Maktaba is starting up",
+			Message:      "The Maktaba API on this server is not answering yet. It is usually starting, restarting or updating; this page reloads by itself.",
+			Detail:       err.Error(),
+			RetrySeconds: 5,
+			Links:        []pagetheme.Link{{Href: "/", Text: "Back to Maktaba"}},
+		})
+		return
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.Header().Set("Retry-After", "5")
+	w.WriteHeader(http.StatusBadGateway)
+	_, _ = fmt.Fprintf(w, `{"type":"about:blank","title":"API unreachable","status":502,"detail":%q}`,
+		"the Maktaba API is not answering (starting or restarting)")
 }
 
 // apiOrigin turns the API bind spec into a dialable loopback URL for the
