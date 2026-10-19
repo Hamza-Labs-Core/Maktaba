@@ -78,6 +78,14 @@ func (h *Handler) StreamChannelTS(ctx context.Context, ch uuid.UUID, w io.Writer
 	if cw.fl != nil {
 		cw.fl.Flush() // the client gets its 200 at once, before the first packet
 	}
+	// with TV slots every source change is spliced into one continuous program
+	// (story 33.1: a failover to the hot standby, later a swap)
+	var out io.Writer = cw
+	var rw *retimeWriter
+	if h.Slots != nil {
+		rw = newRetimeWriter(cw)
+		out = rw
+	}
 	sources := 0
 	lastData := time.Now()
 	var lastErr error
@@ -86,12 +94,18 @@ func (h *Handler) StreamChannelTS(ctx context.Context, ch uuid.UUID, w io.Writer
 			return nil
 		}
 		before := cw.n
+		if rw != nil {
+			rw.next()
+		}
 		p, err := h.Svc.Resolve(ctx, ch)
 		if err == nil {
-			if p.Host == h.Self {
+			switch {
+			case p.Host == h.Self && h.Slots != nil:
+				err = h.slotTS(ctx, ch, out, nil)
+			case p.Host == h.Self:
 				err = h.Engine.StreamChannelTS(ctx, ch, cw)
-			} else {
-				err = h.remoteTS(ctx, p.Host, p.Gen, ch, cw)
+			default:
+				err = h.remoteTS(ctx, p.Host, p.Gen, ch, out)
 			}
 		}
 		if cw.err != nil || ctx.Err() != nil {
@@ -134,7 +148,7 @@ func (h *Handler) retryDelay() time.Duration {
 }
 
 // remoteTS copies a node's live.ts to the client until it ends.
-func (h *Handler) remoteTS(ctx context.Context, hostID string, gen int64, ch uuid.UUID, cw *clientWriter) error {
+func (h *Handler) remoteTS(ctx context.Context, hostID string, gen int64, ch uuid.UUID, out io.Writer) error {
 	host, ok := h.Svc.Hosts.Get(hostID)
 	base := strings.TrimRight(host.BaseURL, "/")
 	if !ok || base == "" {
@@ -164,11 +178,22 @@ func (h *Handler) remoteTS(ctx context.Context, hostID string, gen int64, ch uui
 		return errors.New("frontdoor: node answered " + resp.Status)
 	}
 	h.Svc.Hosts.OK(hostID)
-	n, err := copyFlush(cw, resp.Body)
+	n, err := copyFlush(out, resp.Body)
 	h.count("ts", hostID)(n)
-	if cw.err == nil && ctx.Err() == nil {
+	if !clientGone(out) && ctx.Err() == nil {
 		// the node's stream broke under a live client: a failure of that host
 		h.Svc.Hosts.Fail(hostID)
 	}
 	return err
+}
+
+// clientGone reports a client writer that failed (the client went away).
+func clientGone(w io.Writer) bool {
+	switch c := w.(type) {
+	case *clientWriter:
+		return c.err != nil
+	case *retimeWriter:
+		return clientGone(c.w)
+	}
+	return false
 }

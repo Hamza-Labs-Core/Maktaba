@@ -35,6 +35,8 @@ type Supervisor struct {
 
 	fatal     chan error
 	fatalOnce sync.Once
+	// onExit, when set, hears every child exit (the TV front door's slot report).
+	onExit func(Process, ExitInfo)
 }
 
 // child is one supervised role. Everything but proc is guarded by s.mu.
@@ -46,6 +48,8 @@ type child struct {
 	exits      []time.Time // exits that led to a restart, for the crash-loop window
 	killReason string      // set before the supervisor kills the child
 	failed     bool        // in a crash loop (state failed or retrying from it)
+	wanted     bool        // run it (an on-demand process is not until asked for)
+	wake       chan struct{}
 }
 
 // Option tweaks a Supervisor (tests inject a clock, log and sink).
@@ -57,6 +61,10 @@ func WithEventSink(sink EventSink) Option { return func(s *Supervisor) { s.sink 
 
 // WithLog redirects the supervisor's own log lines (default stderr).
 func WithLog(w io.Writer) Option { return func(s *Supervisor) { s.log = w } }
+
+// WithExitHook calls f after every child exit (Epic 33: the front door hears a
+// TV slot's end at once).
+func WithExitHook(f func(Process, ExitInfo)) Option { return func(s *Supervisor) { s.onExit = f } }
 
 // maxEvents is the in-memory event ring size.
 const maxEvents = 200
@@ -76,9 +84,15 @@ func New(procs []Process, policy Policy, opts ...Option) *Supervisor {
 	s.client = &http.Client{Timeout: policy.ProbeTimeout}
 	s.started = s.now()
 	for _, p := range procs {
+		st := StateStarting
+		if p.OnDemand {
+			st = StateStopped
+		}
 		s.children = append(s.children, &child{
 			proc:   p,
-			status: ChildStatus{Role: p.Role, State: StateStarting, ProbeURL: p.Probe},
+			wanted: !p.OnDemand,
+			wake:   make(chan struct{}, 1),
+			status: ChildStatus{Role: p.Role, Instance: p.Instance, State: st, ProbeURL: p.Probe, Wanted: !p.OnDemand},
 		})
 	}
 	if s.sink != nil {
@@ -182,6 +196,19 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 			s.mu.Unlock()
 			return
 		}
+		if !c.wanted {
+			// an on-demand process (or one stopped on request): wait to be asked
+			c.status.State = StateStopped
+			s.mu.Unlock()
+			select {
+			case <-ctx.Done():
+				s.setState(c, StateStopped)
+				return
+			case <-c.wake:
+			}
+			backoff = s.policy.BackoffInitial
+			continue
+		}
 		startedAt := s.now()
 		var info ExitInfo
 		prepareTree(cmd)
@@ -191,8 +218,8 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 			c.status.PID = 0
 			c.status.StartedAt = nil
 			s.mu.Unlock()
-			s.emit(Event{Role: c.proc.Role, Kind: EventExited, Reason: ReasonStartFailed, Message: err.Error()})
-			s.logf("%s could not start: %v", c.proc.Role, err)
+			s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventExited, Reason: ReasonStartFailed, Message: err.Error()})
+			s.logf("%s could not start: %v", c.proc.Name(), err)
 		} else {
 			pid := cmd.Process.Pid
 			tree, treeErr := attachTree(cmd)
@@ -209,10 +236,10 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 				c.status.State = StateStarting
 			}
 			s.mu.Unlock()
-			s.emit(Event{Role: c.proc.Role, Kind: EventStarted, PID: pid})
-			s.logf("started %s (pid %d)", c.proc.Role, pid)
+			s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventStarted, PID: pid})
+			s.logf("started %s (pid %d)", c.proc.Name(), pid)
 			if treeErr != nil {
-				s.logf("%s (pid %d): its child processes are not tied to it: %v", c.proc.Role, pid, treeErr)
+				s.logf("%s (pid %d): its child processes are not tied to it: %v", c.proc.Name(), pid, treeErr)
 			}
 
 			probeCtx, stopProbe := context.WithCancel(ctx)
@@ -240,11 +267,18 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		s.mu.Unlock()
 		if info.Reason != ReasonStartFailed {
 			code := info.Code
-			s.emit(Event{Role: c.proc.Role, Kind: EventExited, PID: info.PID, Code: &code,
+			s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventExited, PID: info.PID, Code: &code,
 				Signal: info.Signal, Reason: info.Reason, UptimeSec: info.UptimeSec, Message: info.Error})
 		}
+		if s.onExit != nil && info.Reason != ReasonStartFailed {
+			s.onExit(c.proc, info)
+		}
+		if info.Reason == ReasonStopped && !stopping {
+			s.logf("%s stopped on request (pid %d)", c.proc.Name(), info.PID)
+			continue // waits until it is wanted again
+		}
 		if stopping {
-			s.logf("%s stopped (pid %d, %s)", c.proc.Role, info.PID, describeExit(info))
+			s.logf("%s stopped (pid %d, %s)", c.proc.Name(), info.PID, describeExit(info))
 			s.setState(c, StateStopped)
 			return
 		}
@@ -252,13 +286,13 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		// Decide what happens next.
 		switch {
 		case s.policy.Restart == RestartNever:
-			s.logf("%s exited (pid %d, %s); restart = never, stopping the stack", c.proc.Role, info.PID, describeExit(info))
+			s.logf("%s exited (pid %d, %s); restart = never, stopping the stack", c.proc.Name(), info.PID, describeExit(info))
 			s.setState(c, StateExited)
-			s.fatalOnce.Do(func() { s.fatal <- fmt.Errorf("%s exited: %s", c.proc.Role, describeExit(info)) })
+			s.fatalOnce.Do(func() { s.fatal <- fmt.Errorf("%s exited: %s", c.proc.Name(), describeExit(info)) })
 			return
 		case s.policy.Restart == RestartOnFailure && info.Reason == ReasonClean:
 			s.logf("%s exited cleanly (pid %d, uptime %s); restart = on-failure, leaving it stopped",
-				c.proc.Role, info.PID, uptime(info))
+				c.proc.Name(), info.PID, uptime(info))
 			s.setState(c, StateExited)
 			return
 		}
@@ -288,13 +322,13 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 
 		if state == StateFailed {
 			if !wasFailed {
-				s.emit(Event{Role: c.proc.Role, Kind: EventFailed, Reason: info.Reason, DelaySec: delay.Seconds(),
+				s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventFailed, Reason: info.Reason, DelaySec: delay.Seconds(),
 					Message: fmt.Sprintf("%d exits in %s", s.policy.MaxRestarts, s.policy.Window)})
 			}
 			s.logf("%s exited (pid %d, %s); crash loop: %d exits in %s, marked failed, retrying in %s",
-				c.proc.Role, info.PID, describeExit(info), s.policy.MaxRestarts, s.policy.Window, delay)
+				c.proc.Name(), info.PID, describeExit(info), s.policy.MaxRestarts, s.policy.Window, delay)
 		} else {
-			s.logf("%s exited (pid %d, %s); restarting in %s", c.proc.Role, info.PID, describeExit(info), delay)
+			s.logf("%s exited (pid %d, %s); restarting in %s", c.proc.Name(), info.PID, describeExit(info), delay)
 		}
 
 		timer := time.NewTimer(delay)
@@ -311,7 +345,7 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		c.status.LastRestartAt = &at
 		n := c.status.Restarts
 		s.mu.Unlock()
-		s.emit(Event{Role: c.proc.Role, Kind: EventRestarting, DelaySec: delay.Seconds(),
+		s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventRestarting, DelaySec: delay.Seconds(),
 			Message: fmt.Sprintf("restart #%d", n)})
 	}
 }
@@ -383,8 +417,8 @@ func (s *Supervisor) probe(ctx context.Context, c *child, cmd *exec.Cmd, started
 		s.mu.Unlock()
 		if kill {
 			s.logf("%s (pid %d) failed %d liveness probes in a row (%v); killing it",
-				c.proc.Role, cmd.Process.Pid, failures, err)
-			s.emit(Event{Role: c.proc.Role, Kind: EventHung, PID: cmd.Process.Pid, Reason: ReasonHang,
+				c.proc.Name(), cmd.Process.Pid, failures, err)
+			s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventHung, PID: cmd.Process.Pid, Reason: ReasonHang,
 				Message: err.Error()})
 			s.mu.Lock()
 			tree := c.tree
@@ -473,4 +507,56 @@ func describeExit(info ExitInfo) string {
 
 func uptime(info ExitInfo) string {
 	return time.Duration(info.UptimeSec * float64(time.Second)).Round(time.Millisecond).String()
+}
+
+// Want starts (on) or stops an instance of a role (Epic 33: the TV front door
+// asks for the hot standby and the staging slot). A stopped process is not
+// restarted until it is wanted again.
+func (s *Supervisor) Want(role Role, instance string, on bool) error {
+	s.mu.Lock()
+	var c *child
+	for _, ch := range s.children {
+		if ch.proc.Role == role && ch.proc.Instance == instance {
+			c = ch
+		}
+	}
+	if c == nil {
+		s.mu.Unlock()
+		return fmt.Errorf("no %s process %q", role, instance)
+	}
+	if c.wanted == on {
+		s.mu.Unlock()
+		return nil
+	}
+	c.wanted = on
+	c.status.Wanted = on
+	cmd := c.cmd
+	if !on && cmd != nil && cmd.Process != nil {
+		c.killReason = ReasonStopped
+	}
+	s.mu.Unlock()
+	if on {
+		select {
+		case c.wake <- struct{}{}:
+		default:
+		}
+		s.logf("%s wanted: starting it", c.proc.Name())
+		return nil
+	}
+	if cmd != nil && cmd.Process != nil {
+		s.logf("%s not wanted: stopping it (pid %d)", c.proc.Name(), cmd.Process.Pid)
+		_ = cmd.Process.Signal(terminationSignal())
+		go func() {
+			time.Sleep(10 * time.Second)
+			s.mu.Lock()
+			still := c.cmd == cmd
+			tree := c.tree
+			s.mu.Unlock()
+			if still {
+				tree.kill()
+				_ = cmd.Process.Kill()
+			}
+		}()
+	}
+	return nil
 }

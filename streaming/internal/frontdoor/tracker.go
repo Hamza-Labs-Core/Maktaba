@@ -20,14 +20,80 @@ type Tracker struct {
 	WarmGrace func() time.Duration
 	Now       func() time.Time
 
-	mu  sync.Mutex
-	ts  map[uuid.UUID]int
-	hls map[uuid.UUID]map[string]time.Time
+	mu   sync.Mutex
+	ts   map[uuid.UUID]int
+	push map[uuid.UUID]int
+	hls  map[uuid.UUID]map[string]time.Time
 }
 
 // NewTracker builds an empty tracker.
 func NewTracker() *Tracker {
-	return &Tracker{ts: map[uuid.UUID]int{}, hls: map[uuid.UUID]map[string]time.Time{}}
+	return &Tracker{ts: map[uuid.UUID]int{}, push: map[uuid.UUID]int{}, hls: map[uuid.UUID]map[string]time.Time{}}
+}
+
+// AttachPush records a push relay feeding on the channel (demand, but not a
+// human viewer: the hot standby's warm set ranks it after them, story 33.1).
+func (t *Tracker) AttachPush(ch uuid.UUID) func() {
+	t.mu.Lock()
+	if t.push == nil {
+		t.push = map[uuid.UUID]int{}
+	}
+	t.push[ch]++
+	t.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			t.mu.Lock()
+			if t.push[ch] > 1 {
+				t.push[ch]--
+			} else {
+				delete(t.push, ch)
+			}
+			t.mu.Unlock()
+		})
+	}
+}
+
+// ChannelDemand is one channel's demand: human viewers (tuners and HLS clients
+// within the warm grace) and push relays.
+type ChannelDemand struct {
+	Channel uuid.UUID
+	Humans  int
+	Pushes  int
+}
+
+// Demands lists every channel with demand.
+func (t *Tracker) Demands() []ChannelDemand {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	m := map[uuid.UUID]*ChannelDemand{}
+	get := func(ch uuid.UUID) *ChannelDemand {
+		d := m[ch]
+		if d == nil {
+			d = &ChannelDemand{Channel: ch}
+			m[ch] = d
+		}
+		return d
+	}
+	for ch, n := range t.ts {
+		get(ch).Humans += n
+	}
+	for ch, n := range t.push {
+		get(ch).Pushes += n
+	}
+	cut := t.now().Add(-t.grace())
+	for ch, hm := range t.hls {
+		for _, at := range hm {
+			if at.After(cut) {
+				get(ch).Humans++
+			}
+		}
+	}
+	out := make([]ChannelDemand, 0, len(m))
+	for _, d := range m {
+		out = append(out, *d)
+	}
+	return out
 }
 
 func (t *Tracker) now() time.Time {
@@ -89,7 +155,7 @@ func (t *Tracker) grace() time.Duration {
 func (t *Tracker) Demand(ch uuid.UUID) int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	n := t.ts[ch]
+	n := t.ts[ch] + t.push[ch]
 	cut := t.now().Add(-t.grace())
 	for k, at := range t.hls[ch] {
 		if at.After(cut) {

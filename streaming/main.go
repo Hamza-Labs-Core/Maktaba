@@ -62,6 +62,13 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "slot":
+			// Epic 33 story 33.1: a TV slot (the channel engine behind the front door)
+			if err := runSlot(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "slot: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		}
 	}
 

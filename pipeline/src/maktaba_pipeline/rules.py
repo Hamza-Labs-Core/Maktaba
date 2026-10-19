@@ -41,6 +41,7 @@ from .schedule.tv_settings import (
     MaktabaTvOutputConfig,
     MaktabaTvRemoteConfig,
     MaktabaTvSimulcastConfig,
+    MaktabaTvStagingConfig,
     PlexLiveConfig,
     RepairConfig,
     TvStripConfig,
@@ -86,6 +87,9 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
                   "sessions at once"),
     "tv_cluster": (MaktabaTvClusterConfig, "Maktaba TV machines", "which machines encode "
                    "channels and how the home spreads them; one encode per channel"),
+    "tv_staging": (MaktabaTvStagingConfig, "Maktaba TV staging", "the TV processes: the hot "
+                   "standby that takes over when the live one crashes, what it keeps warm, "
+                   "and whether changes go through staging"),
     "tv_remote": (MaktabaTvRemoteConfig, "Maktaba TV away from home", "who may watch "
                   "channels away from home through Cloudflare Stream, how many at once, the "
                   "monthly budget and the storage guard"),

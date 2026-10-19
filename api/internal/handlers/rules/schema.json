@@ -3515,6 +3515,16 @@
      "maximum": 10
     },
     {
+     "name": "keyint_seconds",
+     "kind": "int",
+     "group": "Maktaba TV output",
+     "label": "Keyframe every (seconds)",
+     "help": "On the wall clock, the same in every TV process and machine, so the switch from one to another (a failover, a change going live) is seamless. Lowered to a divisor of the HLS segment.",
+     "default": 2,
+     "minimum": 1,
+     "maximum": 10
+    },
+    {
      "name": "max_active_channels",
      "kind": "int",
      "group": "Channels on air",
@@ -3628,6 +3638,41 @@
      "label": "Preferred machine per channel",
      "help": "Channel (its slug) -> the machine that should encode it while it is up and has room. Set it on the channel's page.",
      "default": {}
+    }
+   ]
+  },
+  {
+   "key": "tv_staging",
+   "title": "Maktaba TV staging",
+   "what": "the TV processes: the hot standby that takes over when the live one crashes, what it keeps warm, and whether changes go through staging",
+   "fields": [
+    {
+     "name": "enabled",
+     "kind": "bool",
+     "group": "Staging",
+     "label": "Changes go through staging",
+     "help": "Lineup, schedule and output changes are tried on a staging TV process and switched to at a programme boundary once approved. Off: changes go on the air directly. (Arrives with the Changes page.)",
+     "default": true
+    },
+    {
+     "name": "hot_standby",
+     "kind": "bool",
+     "group": "Hot standby",
+     "label": "Hot standby",
+     "help": "A second TV process runs what is on the air and keeps the watched channels warm, so a crash of the first is invisible: viewers, Plex and the Cloudflare push continue. The watched channels are encoded twice.",
+     "default": true
+    },
+    {
+     "name": "standby_warm",
+     "kind": "str",
+     "group": "Hot standby",
+     "label": "Standby keeps warm",
+     "help": "viewers: the channels people watch first, then the remote pushes; demand: every channel on air. Live gets the encoders first; a channel the standby does not hold fails over with one short stall.",
+     "default": "viewers",
+     "choices": [
+      "viewers",
+      "demand"
+     ]
     }
    ]
   },

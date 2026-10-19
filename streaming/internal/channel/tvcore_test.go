@@ -224,7 +224,8 @@ func TestOutputSettings_EnvThenRules(t *testing.T) {
 		t.Fatalf("bad: %v", bad)
 	}
 	want := OutputSettings{Encoder: "videotoolbox", Width: 1920, Height: 1080, FPS: 25, VideoKbps: 4000,
-		AudioCodec: "ac3", AudioKbps: 256, SegmentSeconds: 2, MaxActive: 12, WarmGrace: 0, NVENCMax: 3, VTMax: 10}
+		AudioCodec: "ac3", AudioKbps: 256, SegmentSeconds: 2, KeyintSeconds: DefaultKeyintSeconds, MaxActive: 12,
+		WarmGrace: 0, NVENCMax: 3, VTMax: 10}
 	if out != want {
 		t.Fatalf("rules:\n got %+v\nwant %+v", out, want)
 	}

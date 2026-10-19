@@ -3,6 +3,7 @@ package supervisor
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -35,6 +36,7 @@ const (
 	ReasonHang        = "hang"         // killed after failing its liveness probe
 	ReasonStartFailed = "start_failed" // could not be started at all
 	ReasonShutdown    = "shutdown"     // stopped by the supervisor's shutdown
+	ReasonStopped     = "stopped"      // stopped on request (an on-demand process)
 )
 
 // Event kinds.
@@ -68,6 +70,9 @@ type ProbeInfo struct {
 // ChildStatus is one child's row in a Snapshot.
 type ChildStatus struct {
 	Role          Role       `json:"role"`
+	Instance      string     `json:"instance,omitempty"`
+	// Wanted: an on-demand process asked for (tv-slot amber; a stopped standby).
+	Wanted        bool       `json:"wanted"`
 	State         State      `json:"state"`
 	PID           int        `json:"pid,omitempty"`
 	Restarts      int        `json:"restarts"`
@@ -87,6 +92,7 @@ type Event struct {
 	Seq       int64     `json:"seq"`
 	At        time.Time `json:"at"`
 	Role      Role      `json:"role"`
+	Instance  string    `json:"instance,omitempty"`
 	Kind      string    `json:"kind"`
 	PID       int       `json:"pid,omitempty"`
 	Code      *int      `json:"code,omitempty"`
@@ -178,6 +184,25 @@ func (s *Supervisor) Handler() http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(s.Snapshot())
+	})
+	// POST /slots/{instance}/start|stop: the TV front door asks for the
+	// standby or the staging slot (Epic 33 story 33.1).
+	mux.HandleFunc("/slots/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/slots/"), "/"), "/")
+		if len(parts) != 2 || (parts[1] != "start" && parts[1] != "stop") {
+			http.Error(w, "POST /slots/{instance}/start|stop", http.StatusBadRequest)
+			return
+		}
+		if err := s.Want(RoleTVSlot, parts[0], parts[1] == "start"); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(s.Snapshot())
 	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {

@@ -1,0 +1,311 @@
+package frontdoor
+
+import (
+	"context"
+	"errors"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/frontdoor/relay"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/slot"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/tvmetrics"
+)
+
+// The front door's side of the TV slots (story 33.1): the channels placed on
+// this host are read from the live slot — HLS through the stitcher, TS through
+// a retiming splicer — and every upstream failure makes the router look at the
+// live slot at once (Slots.Suspect), so a crash fails over within a probe.
+
+// slotStitchIdle: a channel's stitched playlist nobody fetched for this long
+// starts over (its old entries are long gone).
+const slotStitchIdle = 90 * time.Second
+
+type stitchState struct {
+	st   *Stitcher
+	used time.Time
+}
+
+type stitchers struct {
+	mu sync.Mutex
+	m  map[uuid.UUID]*stitchState
+}
+
+func (s *stitchers) get(ch uuid.UUID) *Stitcher {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.m == nil {
+		s.m = map[uuid.UUID]*stitchState{}
+	}
+	now := time.Now()
+	for id, v := range s.m {
+		if now.Sub(v.used) > slotStitchIdle {
+			delete(s.m, id)
+		}
+	}
+	v := s.m[ch]
+	if v == nil {
+		v = &stitchState{st: &Stitcher{}}
+		s.m[ch] = v
+	}
+	v.used = now
+	return v.st
+}
+
+// Stitcher is a channel's stitched playlist (tests).
+func (h *Handler) Stitcher(ch uuid.UUID) *Stitcher { return h.stitch.get(ch) }
+
+// slotGet sends a GET to a slot.
+func (h *Handler) slotGet(ctx context.Context, name, path string, hdr http.Header) (*http.Response, error) {
+	base := h.Slots.Base(name)
+	if base == "" {
+		return nil, errors.New("frontdoor: no address for slot " + name)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range hdr {
+		req.Header[k] = v
+	}
+	return h.client().Do(req)
+}
+
+// serveSlotPlaylist serves a channel's playlist from the live slot: the media
+// playlist stitched (it survives a change of slot), the master as is.
+func (h *Handler) serveSlotPlaylist(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
+	ctx := r.Context()
+	if !strings.HasSuffix(r.URL.Path, "/index.m3u8") {
+		live, _ := h.Slots.Live()
+		resp, err := h.slotGet(ctx, live, r.URL.Path, nil)
+		if err != nil {
+			h.Slots.Suspect(ctx, live)
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "channel unavailable", http.StatusBadGateway)
+			return
+		}
+		copyResponse(w, resp, h.count("hls", "slot:"+live))
+		return
+	}
+	st := h.stitch.get(id)
+	for attempt := 0; attempt < 3; attempt++ {
+		live, _ := h.Slots.Live()
+		resp, err := h.slotGet(ctx, live, "/stream/channel/"+id.String()+"/index.m3u8", nil)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			h.Slots.Suspect(ctx, live)
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			if resp.StatusCode >= 500 && resp.StatusCode != http.StatusServiceUnavailable && attempt < 2 {
+				_ = resp.Body.Close()
+				h.Slots.Suspect(ctx, live)
+				continue
+			}
+			copyResponse(w, resp, nil) // today's answers (starting, busy, no such channel)
+			return
+		}
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		_ = resp.Body.Close()
+		if err != nil {
+			h.Slots.Suspect(ctx, live)
+			continue
+		}
+		pl, err := parseMediaPlaylist(body)
+		if err != nil {
+			http.Error(w, "bad playlist from the TV slot", http.StatusBadGateway)
+			return
+		}
+		st.Update(live, pl)
+		writePlaylist(w, st.Render())
+		return
+	}
+	if st.Len() > 0 {
+		writePlaylist(w, st.Render()) // what was listed: the player retries
+		return
+	}
+	w.Header().Set("Retry-After", "2")
+	http.Error(w, "channel unavailable", http.StatusBadGateway)
+}
+
+func writePlaylist(w http.ResponseWriter, b []byte) {
+	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+	w.Header().Set("Cache-Control", "no-cache, no-store")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	_, _ = w.Write(b)
+}
+
+// serveSlotSegment serves /stream/channel/{id}/s/{slot}/seg-N.ts from that slot
+// (a player holding an older playlist still gets the old slot's segments); when
+// the slot is gone, from its directory on this disk.
+func (h *Handler) serveSlotSegment(w http.ResponseWriter, r *http.Request) {
+	id, ok := channelParam(w, r)
+	if !ok {
+		return
+	}
+	name := chi.URLParam(r, "slot")
+	seg := chi.URLParam(r, "segment")
+	if h.Slots == nil || !slot.Valid(name) || !strings.HasPrefix(seg, "seg-") || !strings.HasSuffix(seg, ".ts") ||
+		strings.ContainsAny(seg, `/\`) || strings.Contains(seg, "..") {
+		http.Error(w, "bad path", http.StatusBadRequest)
+		return
+	}
+	h.Tracker.TouchHLS(id, r)
+	hdr := http.Header{}
+	if rg := r.Header.Get("Range"); rg != "" {
+		hdr.Set("Range", rg)
+	}
+	resp, err := h.slotGet(r.Context(), name, "/stream/channel/"+id.String()+"/"+seg, hdr)
+	if err == nil && resp.StatusCode == http.StatusOK || err == nil && resp.StatusCode == http.StatusPartialContent {
+		copyResponse(w, resp, h.count("hls", "slot:"+name))
+		return
+	}
+	if err == nil {
+		_ = resp.Body.Close()
+	} else if r.Context().Err() == nil {
+		if live, _ := h.Slots.Live(); live == name {
+			h.Slots.Suspect(r.Context(), name)
+		}
+	}
+	if h.CacheRoot != "" {
+		p := filepath.Join(h.CacheRoot, "tv", name, "channel-"+id.String(), seg)
+		if f, ferr := os.Open(p); ferr == nil {
+			defer f.Close()
+			w.Header().Set("Content-Type", "video/mp2t")
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			n, _ := io.Copy(w, f)
+			tvmetrics.Bytes.Add(float64(n), "hls", "slot-disk:"+name)
+			return
+		}
+	}
+	http.NotFound(w, r)
+}
+
+// proxyLiveSlot hands a request for a channel on this host to the live slot.
+func (h *Handler) proxyLiveSlot(w http.ResponseWriter, r *http.Request) {
+	live, _ := h.Slots.Live()
+	hdr := http.Header{}
+	if rg := r.Header.Get("Range"); rg != "" {
+		hdr.Set("Range", rg)
+	}
+	resp, err := h.slotGet(r.Context(), live, r.URL.Path, hdr)
+	if err != nil {
+		if r.Context().Err() == nil {
+			h.Slots.Suspect(r.Context(), live)
+		}
+		http.Error(w, "channel unavailable", http.StatusBadGateway)
+		return
+	}
+	copyResponse(w, resp, h.count("hls", "slot:"+live))
+}
+
+// slotTS copies the live slot's TS of a channel to w until it ends, or until
+// the routing moves to another slot (then the caller splices onto it).
+func (h *Handler) slotTS(ctx context.Context, ch uuid.UUID, w io.Writer, started func(name string)) error {
+	live, epoch := h.Slots.Live()
+	sctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	moved := make(chan struct{})
+	go func() {
+		t := time.NewTicker(200 * time.Millisecond)
+		defer t.Stop()
+		for {
+			select {
+			case <-sctx.Done():
+				return
+			case <-t.C:
+				if _, e := h.Slots.Live(); e != epoch {
+					close(moved)
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	resp, err := h.slotGet(sctx, live, "/stream/channel/"+ch.String()+"/live.ts", nil)
+	if err != nil {
+		if ctx.Err() == nil && !isClosed(moved) {
+			h.Slots.Suspect(ctx, live)
+		}
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode >= 500 && resp.StatusCode != http.StatusServiceUnavailable {
+			h.Slots.Suspect(ctx, live)
+		}
+		return errors.New("frontdoor: TV slot answered " + resp.Status)
+	}
+	if started != nil {
+		started(live)
+	}
+	n, err := copyFlush(w, resp.Body)
+	h.count("ts", "slot:"+live)(n)
+	if isClosed(moved) {
+		return nil // routed elsewhere: splice
+	}
+	if ctx.Err() == nil {
+		// the slot's stream broke under a live client
+		h.Slots.Suspect(ctx, live)
+	}
+	return err
+}
+
+func isClosed(c chan struct{}) bool {
+	select {
+	case <-c:
+		return true
+	default:
+		return false
+	}
+}
+
+// retimeWriter turns a client's sequence of TS sources into one continuous
+// program (the push relay's Retimer, design §8.5's re-timestamping splicer):
+// at each new source it waits for PAT/PMT and an IDR and continues the
+// timestamps and continuity counters. A source whose streams differ restarts
+// the program (a parameter change: the client's decoder starts over).
+type retimeWriter struct {
+	w  io.Writer
+	rt *relay.Retimer
+	n  int
+}
+
+func newRetimeWriter(w io.Writer) *retimeWriter { return &retimeWriter{w: w, rt: relay.NewRetimer()} }
+
+// next announces a new source.
+func (r *retimeWriter) next() {
+	if r.n > 0 {
+		r.rt.Switch()
+	}
+}
+
+func (r *retimeWriter) Write(b []byte) (int, error) {
+	out, err := r.rt.Process(b)
+	if errors.Is(err, relay.ErrParamChange) {
+		r.rt = relay.NewRetimer()
+		out, err = r.rt.Process(b)
+	}
+	if err != nil {
+		return 0, err
+	}
+	if len(out) > 0 {
+		r.n += len(out)
+		if _, werr := r.w.Write(out); werr != nil {
+			return 0, werr
+		}
+	}
+	return len(b), nil
+}
+
+// Flush satisfies http.Flusher (the client writer flushes per write).
+func (r *retimeWriter) Flush() {}

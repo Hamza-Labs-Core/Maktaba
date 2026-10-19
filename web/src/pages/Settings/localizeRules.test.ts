@@ -55,6 +55,7 @@ describe("localizeSections", () => {
       "audio_codec",
       "audio_kbps",
       "segment_seconds",
+      "keyint_seconds",
       "max_active_channels",
       "warm_grace_seconds",
       "nvenc_max_sessions",
@@ -67,7 +68,7 @@ describe("localizeSections", () => {
   it("describes every tv_cluster and tv_remote setting in English and Arabic", () => {
     const enC = en as Record<string, string>;
     const arC = ar as Record<string, string>;
-    for (const key of ["tv_cluster", "tv_remote"]) {
+    for (const key of ["tv_cluster", "tv_remote", "tv_staging"]) {
       const sec = sections().find((s) => s.key === key)!;
       expect(sec, key).toBeTruthy();
       expect(arC[`rules.${key}.title`], `${key} title`).toBeTruthy();

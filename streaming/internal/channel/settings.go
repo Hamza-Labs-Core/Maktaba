@@ -29,6 +29,8 @@ type OutputSettings struct {
 	AudioCodec     string // aac | ac3
 	AudioKbps      int
 	SegmentSeconds int
+	// KeyintSeconds is the wall-clock IDR grid (story 33.4): 1-10, default 2.
+	KeyintSeconds int
 	// MaxActive is how many channels this host keeps on air at once; 0 =
 	// auto (EffectiveMaxActive: 16 with VideoToolbox, else 8).
 	MaxActive int
@@ -76,6 +78,7 @@ func OutputSettingsFromEnv() OutputSettings {
 	return OutputSettings{
 		Encoder: enc, Width: p.Width, Height: p.Height, FPS: p.FPS, VideoKbps: p.VideoKbps,
 		AudioCodec: p.AudioCodec, AudioKbps: p.AudioKbps, SegmentSeconds: p.SegmentSeconds,
+		KeyintSeconds: clampInt(envInt("MAKTABA_CHANNEL_KEYINT_SEC", DefaultKeyintSeconds), 1, 10),
 		MaxActive: envInt("MAKTABA_CHANNEL_MAX_ACTIVE", 0),
 		WarmGrace: time.Duration(envInt("MAKTABA_CHANNEL_WARM_GRACE_SEC", int(DefaultWarmGrace/time.Second))) * time.Second,
 		NVENCMax:  envInt("MAKTABA_CHANNEL_NVENC_MAX", DefaultNVENCMaxSessions),
@@ -96,6 +99,7 @@ func (o OutputSettings) Profile(enc EncoderChoice) OutputProfile {
 	p := DefaultProfile()
 	p.Width, p.Height, p.FPS, p.VideoKbps = o.Width, o.Height, o.FPS, o.VideoKbps
 	p.AudioCodec, p.AudioKbps, p.SegmentSeconds = o.AudioCodec, o.AudioKbps, o.SegmentSeconds
+	p.KeyintSeconds = o.KeyintSeconds
 	p.Encoder, p.VTSoftware, p.VTPrioSpeed = enc.Name, enc.VTSoftware, enc.VTPrioSpeed
 	return p.normalised()
 }
@@ -138,6 +142,8 @@ func ApplyOutputRules(base OutputSettings, raw []byte) (out OutputSettings, bad 
 			ok = setInt(&out.AudioKbps, v, 64, 640)
 		case "segment_seconds":
 			ok = setInt(&out.SegmentSeconds, v, 1, 10)
+		case "keyint_seconds":
+			ok = setInt(&out.KeyintSeconds, v, 1, 10)
 		case "max_active_channels":
 			ok = setInt(&out.MaxActive, v, 0, 64)
 		case "warm_grace_seconds":

@@ -230,11 +230,15 @@ func TestStation_RealFFmpeg_ContinuousWallClock(t *testing.T) {
 		prevLag = lag
 	}
 	t.Logf("max lag change between consecutive segments: %.3fs", maxStep)
-	if maxStep > 0.2 {
+	// (a block's output is paced to the clock one read chunk at a time, so a
+	// segment completes when the chunk holding the next IDR is let through;
+	// with the IDRs on the wall-clock grid (story 33.4) and no B-frames the
+	// IDRs fall in other places of the chunks: 0.4 s of slack)
+	if maxStep > 0.4 {
 		t.Errorf("segment timing jumps by %.3fs between consecutive segments", maxStep)
 	}
 	t.Logf("steady-state segment lag spread: %.3fs (%.3f..%.3f)", maxLag-minLag, minLag, maxLag)
-	if maxLag-minLag > 0.3 {
+	if maxLag-minLag > 0.45 {
 		t.Errorf("segment timing drifts vs the wall clock by %.3fs", maxLag-minLag)
 	}
 
@@ -276,9 +280,10 @@ func TestStation_RealFFmpeg_ContinuousWallClock(t *testing.T) {
 		v, _ := strconv.ParseFloat(m[1], 64)
 		offs = append(offs, v)
 	}
-	ep := st.Epoch()
 	for i, b := range repo.blocks[1:] {
-		want := b.StartAt.Sub(ep).Seconds()
+		// story 33.4: the offset is the block's wall-clock start on the frame
+		// grid, in 90 kHz ticks modulo 2^33
+		want := float64(TSOffsetTicks(AlignStart(b.StartAt, st.cfg.Profile.FPS))) / 90000
 		if i+1 >= len(offs) {
 			break
 		}
@@ -477,7 +482,8 @@ func TestStation_RealFFmpeg_MuxerRestart(t *testing.T) {
 		t.Fatalf("restarted playlist: %s", pl)
 	}
 	stNew, _ := probeStartTime(t, filepath.Join(dir, names[len(names)-2]))
-	elapsed := time.Since(st.Epoch()).Seconds()
+	// story 33.4: the timestamps are the wall clock's (modulo the 33-bit wrap)
+	elapsed := float64(WallTicks(time.Now())%PTSWrapTicks) / 90000
 	if stNew < elapsed-8 || stNew > elapsed+5 {
 		t.Errorf("after restart pts=%.2f but %.2fs of channel time elapsed", stNew, elapsed)
 	}

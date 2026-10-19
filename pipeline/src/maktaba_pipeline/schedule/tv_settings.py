@@ -21,6 +21,7 @@ __all__ = [
     "LiveSlot",
     "MaktabaTvConfig",
     "MaktabaTvOutputConfig",
+    "MaktabaTvStagingConfig",
     "PlexLiveConfig",
     "RepairConfig",
     "StripClock",
@@ -38,6 +39,8 @@ TVG = "Guide"
 TVO = "Maktaba TV output"
 TVN = "Hardware encoder"
 TVC = "Channels on air"
+TST = "Staging"
+TSB = "Hot standby"
 TCL = "Streaming machines"
 TCP = "Placement"
 TRV = "Remote viewers"
@@ -134,6 +137,10 @@ class MaktabaTvOutputConfig:
     audio_codec: str = "aac"
     audio_kbps: int = 192
     segment_seconds: int = 4
+    #: an IDR every this many seconds, on the wall clock: every TV slot's (and host's)
+    #: output of a channel has the same keyframes and timestamps, so a switch between
+    #: them is seamless (Epic 33 story 33.4); lowered to a divisor of the segment length
+    keyint_seconds: int = 2
     #: channels this host keeps on air at once (one encode each, however many watch);
     #: 0: 16 with VideoToolbox, else 8
     max_active_channels: int = 0
@@ -167,6 +174,25 @@ class MaktabaTvClusterConfig:
     dead_after_seconds: int = 15
     #: channel slug -> the machine name it prefers (one name)
     pins: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class MaktabaTvStagingConfig:
+    """TV staging and the hot standby (Epic 33): the channels encode in TV slot processes
+    behind the front door; a hot standby runs the live release and takes over at once when
+    the live one crashes; changes go through a staging slot (story 33.5 on, behind a build
+    flag until the change management lands)."""
+
+    #: changes go through staging (the owner's default; off: changes go on the air
+    #: directly, the live slot and the hot standby still run)
+    enabled: bool = True
+    #: a second slot runs the live release, warm on the watched channels; a crash of the
+    #: live one fails over to it at once (the watched channels are encoded twice)
+    hot_standby: bool = True
+    #: ``viewers``: the standby keeps warm the channels with human viewers first, then the
+    #: pushes by remote viewers; ``demand``: every channel on air, as live; both within
+    #: the encoder budget (live always first)
+    standby_warm: str = "viewers"
 
 
 @dataclass(frozen=True)
@@ -541,6 +567,15 @@ register(
             minimum=1,
             maximum=10,
         ),
+        "keyint_seconds": Help(
+            TVO,
+            "Keyframe every (seconds)",
+            "On the wall clock, the same in every TV process and machine, so the switch "
+            "from one to another (a failover, a change going live) is seamless. Lowered to "
+            "a divisor of the HLS segment.",
+            minimum=1,
+            maximum=10,
+        ),
         "max_active_channels": Help(
             TVC,
             "Channels on air at once",
@@ -575,6 +610,33 @@ register(
             "no limit.",
             minimum=0,
             maximum=64,
+        ),
+    },
+)
+register(
+    MaktabaTvStagingConfig,
+    {
+        "enabled": Help(
+            TST,
+            "Changes go through staging",
+            "Lineup, schedule and output changes are tried on a staging TV process and "
+            "switched to at a programme boundary once approved. Off: changes go on the "
+            "air directly. (Arrives with the Changes page.)",
+        ),
+        "hot_standby": Help(
+            TSB,
+            "Hot standby",
+            "A second TV process runs what is on the air and keeps the watched channels "
+            "warm, so a crash of the first is invisible: viewers, Plex and the Cloudflare "
+            "push continue. The watched channels are encoded twice.",
+        ),
+        "standby_warm": Help(
+            TSB,
+            "Standby keeps warm",
+            "viewers: the channels people watch first, then the remote pushes; demand: "
+            "every channel on air. Live gets the encoders first; a channel the standby "
+            "does not hold fails over with one short stall.",
+            choices=("viewers", "demand"),
         ),
     },
 )

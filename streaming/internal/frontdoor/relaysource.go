@@ -22,7 +22,7 @@ type relaySource struct{ h *Handler }
 
 // Attach is the relay's front-door lease: the channel stays in demand (the
 // sweeper does not release it) while the push runs.
-func (s relaySource) Attach(ch uuid.UUID) func() { return s.h.Tracker.AttachTS(ch) }
+func (s relaySource) Attach(ch uuid.UUID) func() { return s.h.Tracker.AttachPush(ch) }
 
 func (s relaySource) Stream(ctx context.Context, ch uuid.UUID, w io.Writer, started func(relay.Origin)) error {
 	h := s.h
@@ -30,8 +30,19 @@ func (s relaySource) Stream(ctx context.Context, ch uuid.UUID, w io.Writer, star
 	if err != nil {
 		return err
 	}
-	started(relay.Origin{Host: p.Host, Gen: p.Gen})
 	cw := newClientWriter(w, nil)
+	if p.Host == h.Self && h.Slots != nil {
+		// story 33.1: the live slot's TS; a failover (or a swap) ends it and the
+		// relay's next Stream reads the new live slot, one push session
+		err = h.slotTS(ctx, ch, cw, func(name string) {
+			started(relay.Origin{Host: p.Host, Gen: p.Gen, Slot: name})
+		})
+		if err == nil && ctx.Err() == nil {
+			err = errors.New("frontdoor: the slot's stream ended")
+		}
+		return err
+	}
+	started(relay.Origin{Host: p.Host, Gen: p.Gen})
 	if p.Host == h.Self {
 		err = h.Engine.StreamChannelTS(ctx, ch, cw)
 	} else {

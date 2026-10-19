@@ -28,6 +28,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/hdhr"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pathmap"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/placement"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/slot"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/tvmetrics"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/version"
 )
@@ -178,11 +179,12 @@ func runEngineLoops(engine *channel.Engine) {
 	}
 }
 
-// beatInfo is the common part of a heartbeat.
-func (b *tvBase) beatInfo(ctx context.Context, role string, engine *channel.Engine, base string, unfit string) cluster.BeatInfo {
+// beatInfo is the common part of a heartbeat; active lists the channels on air
+// here (the engine's, or with TV slots the live slot's).
+func (b *tvBase) beatInfo(ctx context.Context, role string, onAir func() []uuid.UUID, base string, unfit string) cluster.BeatInfo {
 	_, enc := b.capacity(ctx)
 	out := b.settings.Output(ctx)
-	ids := engine.ActiveIDs()
+	ids := onAir()
 	active := make([]string, 0, len(ids))
 	for _, id := range ids {
 		active = append(active, id.String())
@@ -207,6 +209,15 @@ func buildHomeTV(logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, lay
 	ident := channel.LocalIdentity(ctx, pool, b.hostname, publicBase)
 	chRepo := channel.NewPGRepo(pool, b.hostname)
 	chRepo.HostID = ident.ID
+	// Epic 33 story 33.1: with TV slots (the supervisor sets MAKTABA_TV_SLOTS) this
+	// process is the front door only; the channel engine runs in the slots.
+	if addrs := slot.ParseAddrs(os.Getenv(slot.EnvSlots)); len(addrs) > 0 {
+		if clusterSchema(ctx, pool, 60*time.Second) && slotSchema(ctx, pool, 60*time.Second) {
+			return b.buildHomeSlots(ctx, addrs, ident, chRepo, publicBase)
+		}
+		logger.Warn("tv: the TV slot schema (slots 0123, 0127) is missing; channels encode in this process",
+			"event", "tv_slot_schema_missing")
+	}
 	start := channel.SettingsStarter(b.stationConfig(chRepo), b.settings, b.encoders)
 	engine := b.newEngine(chRepo, start, ident)
 	watchChannels(engine, pool)
@@ -266,7 +277,7 @@ func (b *tvBase) wireHomeCluster(ctx context.Context, engine *channel.Engine, lo
 
 	b.loop = &cluster.HostLoop{Store: cluster.PGBeatStore{Pool: b.pool}, HostID: ident.ID, Keyring: keyring, Logger: logger,
 		Info: func(ctx context.Context) cluster.BeatInfo {
-			info := b.beatInfo(ctx, channel.RoleHome, engine, ident.StreamBaseURL, "")
+			info := b.beatInfo(ctx, channel.RoleHome, engine.ActiveIDs, ident.StreamBaseURL, "")
 			pins, last := svc.Notices()
 			info.Load["viewers"] = tracker.Snapshot()
 			if len(pins) > 0 {
@@ -298,7 +309,7 @@ func (b *tvBase) wireHomeCluster(ctx context.Context, engine *channel.Engine, lo
 
 	// Epic 32.7 / 33.8: the push relay to Cloudflare Stream runs here, in the
 	// home's front door (never on a node), once slot 0125 exists.
-	go b.runPushRelay(fd)
+	go b.runPushRelay(fd, nil)
 
 	// channel art for the stations on nodes
 	assets := &cluster.AssetHandler{Looks: chRepo, PathMap: pathmap.FromEnv(), Keyring: keyring}
@@ -309,7 +320,7 @@ func (b *tvBase) wireHomeCluster(ctx context.Context, engine *channel.Engine, lo
 // runPushRelay waits for slot 0125 (the API migrates it, maybe after this
 // process started) and runs the relay controller: one ffmpeg per pushed
 // channel, fed by the front door, stream copy to the push's live input.
-func (b *tvBase) runPushRelay(fd *frontdoor.Handler) {
+func (b *tvBase) runPushRelay(fd *frontdoor.Handler, ready func(*relay.Ctl)) {
 	ctx := context.Background()
 	for !relay.Available(ctx, b.pool) {
 		time.Sleep(30 * time.Second)
@@ -319,6 +330,9 @@ func (b *tvBase) runPushRelay(fd *frontdoor.Handler) {
 			out := b.settings.Output(ctx)
 			return relay.Audio{Codec: out.AudioCodec, Kbps: out.AudioKbps}, out.VideoKbps + out.AudioKbps
 		}}
+	if ready != nil {
+		ready(ctl)
+	}
 	b.logger.Info("tv: push relay ready", "event", "tv_push_relay_ready")
 	ctl.Run(ctx)
 }
@@ -457,7 +471,7 @@ func buildNodeTVReady(logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool
 			if u == "" {
 				u = unfit.Load().(string)
 			}
-			return b.beatInfo(ctx, channel.RoleNode, engine, ident.StreamBaseURL, u)
+			return b.beatInfo(ctx, channel.RoleNode, engine.ActiveIDs, ident.StreamBaseURL, u)
 		}}
 	_ = b.loop.BeatOnce(ctx)
 	go b.loop.Run(context.Background())

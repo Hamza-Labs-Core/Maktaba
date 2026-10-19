@@ -32,6 +32,24 @@ type Config struct {
 	Transcription TranscriptionSection `toml:"transcription"`
 	Cloud         CloudSection         `toml:"cloud"`
 	Supervisor    SupervisorSection    `toml:"supervisor"`
+	TV            TVSection            `toml:"tv"`
+}
+
+// TVSection is the [tv] table (Epic 33 story 33.1).
+type TVSection struct {
+	// Slots: "on" (default) runs the channel engine in TV slot processes behind
+	// the streaming role's front door (live slot + hot standby); "off" keeps it
+	// in the streaming process, as before Epic 33.
+	Slots string `toml:"slots"`
+}
+
+// SlotsOn reports whether TV slots are on (anything but off/false/no/0).
+func (t TVSection) SlotsOn() bool {
+	switch strings.ToLower(strings.TrimSpace(t.Slots)) {
+	case "off", "false", "no", "0":
+		return false
+	}
+	return true
 }
 
 // ServerSection controls listen addresses and on-disk state.

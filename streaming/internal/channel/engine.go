@@ -370,6 +370,33 @@ func pumpTS(ctx context.Context, p Pipeline, w io.Writer, flusher http.Flusher) 
 	}
 }
 
+// Hold keeps a channel on air without a viewer: it starts the channel when cold
+// and refreshes its idle clock (a TV slot's warm hold, Epic 33 story 33.1: the
+// front door keeps the watched channels warm on the hot standby). Call it again
+// within the warm grace to keep holding.
+func (e *Engine) Hold(ctx context.Context, channelID uuid.UUID) error {
+	if _, err := e.Ensure(ctx, channelID); err != nil {
+		return err
+	}
+	e.reg.touch(channelID)
+	return nil
+}
+
+// StopChannel stops a channel's station now and gives its placement back (a
+// slot dropping a channel from its warm set).
+func (e *Engine) StopChannel(channelID uuid.UUID) bool {
+	e.mu.Lock()
+	p, ok := e.stations[channelID]
+	if ok {
+		e.releaseLocked(channelID)
+	}
+	e.mu.Unlock()
+	if ok {
+		p.Stop()
+	}
+	return ok
+}
+
 // Detach records that a viewer left; the channel stays warm until the
 // grace window expires.
 func (e *Engine) Detach(channelID uuid.UUID) { e.reg.detach(channelID) }
