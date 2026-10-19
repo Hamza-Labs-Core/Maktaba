@@ -101,6 +101,9 @@ services:
       MAKTABA_HOME_AGENT_KEY: /var/maktaba/keys/home-agent.key
       # group-readable, so the pipeline (uid 1000, group_add 65532) can read it
       MAKTABA_HOME_AGENT_KEY_MODE: "0640"
+      # the long-term archive of every machine's logs, jobs and LLM usage
+      # (design-agent.md §7.10): on its own volume, kept a year by default
+      MAKTABA_ARCHIVE_DIR: /var/maktaba/archive
       # The home's IP folder on the share: set it to the host's LAN address
       # (a container only knows its own bridge address).
       MAKTABA_CLUSTER_IP: ${MAKTABA_CLUSTER_IP:-}
@@ -110,6 +113,7 @@ services:
       # files, link-safe, nothing else); the media itself is never written
       - media:/var/maktaba/media
       - cluster_keys:/var/maktaba/keys
+      - cluster_archive:/var/maktaba/archive
     # the pipeline (uid 1000) writes beside the hub in the home's IP folder on
     # the share; both create group-writable folders and share each other's group
     group_add:
@@ -244,3 +248,4 @@ volumes:
   caddy_data:
   caddy_config:
   cluster_keys: # the home's cluster and agent keys (Epic 31); back it up
+  cluster_archive: # the home's long-term log archive (Epic 31)
