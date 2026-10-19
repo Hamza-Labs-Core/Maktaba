@@ -7,6 +7,7 @@ import asyncio
 import contextlib
 import json
 import random
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -529,6 +530,7 @@ async def test_files_continue_while_the_home_is_down_and_a_final_frame(tmp_path:
     shutdown = asyncio.Event()
     agent = make_agent(hub, node_key=key, files=files, collector=collector, metrics_every=0.05,
                        metrics_file_sec=0.1)  # fmt: skip
+    began = time.monotonic()
     async with running(agent, shutdown):
         # a refused connection is reported at once on Linux and macOS, after ~2 s on
         # Windows (it retries the SYN): wait for the first failure, and for a few
@@ -541,11 +543,13 @@ async def test_files_continue_while_the_home_is_down_and_a_final_frame(tmp_path:
         assert not agent.connected and agent.last_error
         shutdown.set()  # the worker stops: one last frame, final values
         await asyncio.sleep(0.2)
+    ran = time.monotonic() - began
     files.stop()
     path = next((tmp_path / "10.1.1.1" / "metrics").glob("*/w.jsonl"))
     lines = [json.loads(x) for x in path.read_text().splitlines()]
     assert len(lines) >= 3 and "system" in lines[0]
-    assert len(lines) <= 6  # every 0.1 s, not every 0.05 s frame
+    # a line every 0.1 s (plus the first and the final), not one per 0.05 s frame
+    assert len(lines) <= ran / 0.1 + 2
     assert lines[-1]["final"] is True and lines[-1]["health"] == {"stt.audio_lost:x": 3.0}
     assert all(x["health"] == {"stt.audio_lost:x": 1.0} for x in lines[:-1])
 
