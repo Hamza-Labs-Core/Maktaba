@@ -91,7 +91,7 @@ func (q *root) JobUpdates(ctx context.Context) (<-chan *job, error) {
 // read (as /ws/library/{id}); any other id is not found.
 func (q *root) LibraryEvents(ctx context.Context, args struct{ LibraryID ID }) (<-chan JSON, error) {
 	p := principal.FromContext(ctx)
-	if p == nil || !(p.IsAdmin || p.AccessAllLibraries || p.HasLibrary(string(args.LibraryID))) {
+	if p == nil || (!p.IsAdmin && !p.AccessAllLibraries && !p.HasLibrary(string(args.LibraryID))) {
 		return nil, errors.New("library " + string(args.LibraryID) + " not found")
 	}
 	return subscribe(ctx, q.rs.Hub, "library:"+string(args.LibraryID), func(e ws.Event) (JSON, bool) {
@@ -102,7 +102,7 @@ func (q *root) LibraryEvents(ctx context.Context, args struct{ LibraryID ID }) (
 // PlaybackUpdates: channel "playback:<video id>", for a video the caller
 // can read: GET /api/videos/{id} decides (the REST library rule).
 func (q *root) PlaybackUpdates(ctx context.Context, args struct{ VideoID ID }) (<-chan JSON, error) {
-	if p := principal.FromContext(ctx); p == nil || !(p.IsAdmin || p.AccessAllLibraries) {
+	if p := principal.FromContext(ctx); p == nil || (!p.IsAdmin && !p.AccessAllLibraries) {
 		var v struct {
 			ID string `json:"id"`
 		}
