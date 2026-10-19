@@ -151,6 +151,8 @@ jobs:
           # upload disjoint asset names).
           tagName: ${{ github.ref_name }}
           releaseName: ${{ github.ref_name }}
+          # v0.1.0-rc.1 is a pre-release (release.yml sets the final flags)
+          prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}
 
       # Windows "portable" deliverable: zip the raw built executable so

@@ -189,7 +189,8 @@ jobs:
           if gh release view "${TAG}" >/dev/null 2>&1; then
             gh release upload "${TAG}" out/* --clobber
           else
-            gh release create "${TAG}" --title "${TAG}" --generate-notes --verify-tag out/*
+            pre=(); case "${TAG}" in *-*) pre=(--prerelease --latest=false) ;; esac
+            gh release create "${TAG}" --title "${TAG}" --generate-notes --verify-tag "${pre[@]}" out/*
           fi
 
   ios:
