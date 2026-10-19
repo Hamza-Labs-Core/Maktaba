@@ -25,6 +25,7 @@ import type { LogTarget } from "../../components/cluster/LogViewer";
 import { LogsPanel } from "../../components/cluster/LogsPanel";
 import { queueLabeller } from "../../components/cluster/names";
 import { QueuesPanel } from "../../components/cluster/QueuesPanel";
+import { RelayPanel } from "../../components/cluster/RelayPanel";
 import { useClusterFiles } from "../../components/cluster/useClusterFiles";
 import { useFmt } from "../../components/queue/format";
 import { useClusterStream } from "../../lib/clusterStream";
@@ -138,6 +139,11 @@ function MachinesPage() {
             id: "llm",
             label: t("cluster.tabs.llm"),
             content: <LlmPanel stream={stream} />,
+          },
+          {
+            id: "relay",
+            label: t("cluster.tabs.relay"),
+            content: <RelayPanel />,
           },
         ]}
       />

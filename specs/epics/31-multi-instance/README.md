@@ -24,7 +24,9 @@ plan 19-04 (the engine already has claims, pools and a registry).
 schema, security, placement, cross-platform) · [plan.md](plan.md) (tracks, tasks, tests).
 Phase 2 (the cluster channel: live metrics, logs and jobs, files on the share, LLMs, the
 hub): [design-agent.md](design-agent.md) (requirements trace, protocol, files, hub, LLMs) ·
-[plan-agent.md](plan-agent.md) (tracks T4–T6, H1, P1, end-to-end checklist). User
+[plan-agent.md](plan-agent.md) (tracks T4–T6, H1, P1, end-to-end checklist). The service door
+(machines call Plex through the home, which adds the token): [story](story-31-relay-service-door.md)
+· [plan](plan-31-relay-service-door.md). User
 documentation: [docs/cluster](../../../docs/cluster/README.md).
 
 ---

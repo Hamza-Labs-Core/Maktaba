@@ -288,6 +288,10 @@ All frames are sealed JSON objects with `t` naming the type.
 | `llm.chunk` | both | while streaming | `id`, `data` |
 | `llm.done` | both | once per request, always | `id`, `usage` {`prompt_tokens`, `completion_tokens`, `ms`}, `error`? {`code`, `detail`}; codes `no_model`, `no_capacity`, `machine_gone`, `runtime_error`, `cancelled`, `too_large`, `no_channel` (local only) |
 | `llm.cancel` | both | the requester gave up | `id`; the runner stops and still sends `llm.done` (`cancelled`) |
+| `svc.request` | C→S | a process's extension call through the home's service door (story 31.R) | `id`, `ext`, `method`, `path` (path and query only), `accept`?, `content_type`?, `body`? (base64), `timeout_ms`? |
+| `svc.chunk` | S→C | the answer's body, in order | `id`, `data` (base64) |
+| `svc.done` | S→C | once per `svc.request`, always last | `id`, `status`, `content_type`, `bytes`, `error`? {`code`, `detail`}; codes `relay_off`, `unknown_extension`, `home_only`, `not_allowed`, `bad_request`, `not_configured`, `not_member`, `rate_limited`, `busy`, `too_large`, `timeout`, `upstream_unreachable`, `cancelled`, `no_door` |
+| `svc.cancel` | C→S | the caller gave up | `id` |
 | `cmd` | S→C | an admin or the hub acts | `id`, `name` (`drain` \| `undrain` \| `reload_stages` \| `log_level` \| `disconnect`), `args` |
 | `cmd.result` | C→S | after each `cmd` | `id`, `ok`, `detail` |
 | `ping` / `pong` | both | every 15 s | `ts` (the `pong` echoes the `ping`'s `ts`) |
@@ -494,6 +498,7 @@ from the files (§6.7).
 | POST | `/api/cluster/processes/{session}/cmd` | admin | `{name, args}` → `{id, ok, detail}`; 404 unknown session; 504 no answer in 10 s |
 | GET | `/api/cluster/files` | admin | the IP folders, with their processes (from `processes/*.json`) and the days present per kind |
 | GET | `/api/cluster/files/{ip}/{kind}?date=YYYY-MM-DD&worker_id=&level=&q=&stage=&event=&before=&limit=` | admin | JSON, the day's records of that kind merged by `ts`: `{records, next_before}` for `logs`, `jobs`, `llm`, `events` (newest first, page with `before`); `{samples: [{ts, worker_id, metrics}], thinned}` for `metrics`; `{samples}` for `queues` and `library`; a node's `events` include the hub's records about it; `kind` is `logs` \| `metrics` \| `jobs` \| `llm` \| `events` \| `queues` \| `library`; `metrics` and `logs` come from the database cache when it covers the range, else from the files (header `X-Maktaba-Source: cache\|files`, §7.9) |
+| GET | `/api/cluster/relay` | admin | the service door (story 31.R): settings, each relayable extension (set up or why not, host, allow-list), the never-relayed ones, the last 200 calls and per-machine counters; never a secret |
 | GET, POST | `/api/cluster/llm/v1/…` | admin or personal access token (others 403) | §8.3 |
 
 `{ip}`, `{kind}` and `date` are checked against strict patterns, and the resolved path must

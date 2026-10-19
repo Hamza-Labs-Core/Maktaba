@@ -28,6 +28,7 @@ from .classify.clip_groups import GroupConfig
 from .classify.series_detector import DetectorConfig
 from .classify.tag_check import TagCheckConfig
 from .classify.topic_tags import TaggerConfig
+from .relay import RelayConfig
 from .schedule import settings_help as _planner_help  # noqa: F401
 from .schedule.channel_planner import PlannerConfig
 from .schedule.tv_settings import (
@@ -85,6 +86,8 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
                  "and its guide, refreshing the guide and the channel list"),
     "repair": (RepairConfig, "Broken files", "downloads that cannot be read are fetched from "
                "YouTube again (off until switched on)"),
+    "relay": (RelayConfig, "Extension relay", "machines run the Plex stages through the home, "
+              "which adds the Plex token they never see; limits per machine"),
 }  # fmt: skip
 
 

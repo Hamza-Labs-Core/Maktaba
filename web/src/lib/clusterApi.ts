@@ -355,7 +355,54 @@ export const clusterChannelApi = {
     api.get<{ samples: LibrarySample[] }>(`/api/cluster/files/${q(ip)}/library${query(p)}`),
   cmd: (session: string, name: ProcessCommand, args: Record<string, unknown> = {}) =>
     api.post<CommandResult>(`/api/cluster/processes/${q(session)}/cmd`, { name, args }),
+  relay: () => api.get<RelayStatus>("/api/cluster/relay"),
 };
+
+/** The extension relay's settings (rules section "relay"). */
+export interface RelaySettings {
+  enabled: boolean;
+  requests_per_minute: number;
+  burst: number;
+  max_in_flight: number;
+  max_response_mb: number;
+  timeout_sec: number;
+}
+
+/** One relayed call as the home audited it (never the token, never the query). */
+export interface RelayCall {
+  ts: string;
+  kind: string;
+  node_id?: string;
+  node_name?: string;
+  worker_id?: string;
+  ip?: string;
+  ext: string;
+  method: string;
+  path: string;
+  status: number;
+  bytes: number;
+  ms: number;
+  error?: string;
+  scrubbed?: number;
+}
+
+/** GET /api/cluster/relay: the home's service door (story 31.R). */
+export interface RelayStatus {
+  available: boolean;
+  enabled: boolean;
+  settings: RelaySettings;
+  extensions: {
+    name: string;
+    configured: boolean;
+    enabled: boolean;
+    upstream?: string;
+    reason?: string;
+    allow: { method: string; path: string; use: string }[];
+  }[];
+  home_only: { name: string; reason: string }[];
+  calls: RelayCall[];
+  totals: { caller: string; calls: number; refused: number; failed: number; bytes: number }[];
+}
 
 /** A timestamp (ISO string, epoch seconds or epoch ms) as epoch ms; NaN when unreadable. */
 export function tsMs(ts: string | number | null | undefined): number {

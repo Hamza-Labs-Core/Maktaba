@@ -94,6 +94,15 @@ func (h *Hub) dispatch(s *Session, t string, raw []byte) {
 		if json.Unmarshal(raw, &f) == nil {
 			h.router.Done(s.ID, f.ID, f.Usage, parseLLMError(f.Error))
 		}
+	case "svc.request":
+		h.onRelayRequest(s, raw)
+	case "svc.cancel":
+		var f struct {
+			ID string `json:"id"`
+		}
+		if json.Unmarshal(raw, &f) == nil {
+			s.cancelRelay(f.ID)
+		}
 	case "cmd.result":
 		var f CmdResult
 		if json.Unmarshal(raw, &f) == nil {

@@ -258,6 +258,7 @@ class FakePlex:
                     md.append(
                         {
                             "ratingKey": rk,
+                            "type": "collection",
                             "librarySectionID": col["section"],
                             "Label": [{"tag": t} for t in col.get("labels", [])],
                         }
