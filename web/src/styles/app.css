@@ -2554,6 +2554,33 @@ mark {
   gap: var(--space-3);
   align-items: center;
 }
+.mkt-yt-card__match {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.mkt-yt-import__list {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.mkt-yt-import__choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.mkt-yt-import__choice:hover {
+  background: var(--color-subtle);
+}
 
 /* Story 29.4 — watch history + activity timeline (/account/history). */
 .mkt-history__panel,

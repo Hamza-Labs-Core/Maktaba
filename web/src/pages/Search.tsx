@@ -6,6 +6,9 @@
 //   POST   /api/search/save     { q, mode }
 //   GET    /api/search/saved    -> { items:[{ id, q, mode }] }
 //   DELETE /api/search/saved/{id}
+//   GET    /api/search/youtube/status -> { available }   (yt-dlp installed?)
+//   GET    /api/search/youtube?q=     -> { items, reason? }
+//   POST   /api/videos/{id}/import-youtube  { youtube_id, title, channel, ... }
 //
 // `?q=` seeds the query from the header search box. Mode (hybrid/fts/
 // semantic) persists in localStorage. Suggestions debounce at 200ms.
@@ -16,6 +19,7 @@ import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useStat
 import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { Badge } from "@ds/components/Badge/Badge";
+import { Modal } from "@ds/components/Modal/Modal";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { useToast } from "@ds/components/Toast/Toast";
@@ -43,6 +47,7 @@ interface YTItem {
   description_snippet: string;
   thumbnail: string;
   published_at?: string;
+  duration_sec?: number;
   view_count?: number;
   match?: { state: string; video_id?: string } | null;
 }
@@ -71,7 +76,7 @@ interface SavedSearch {
 
 const MODES: readonly string[] = ["hybrid", "fts", "semantic"];
 const asMode = (m: unknown): Mode => (MODES.includes(m as string) ? (m as Mode) : "hybrid");
-const YT_REASONS = new Set(["disabled", "no_key", "rate_limited", "error"]);
+const YT_REASONS = new Set(["disabled", "rate_limited", "error"]);
 
 function readMode(): Mode {
   try {
@@ -132,6 +137,13 @@ export function Search() {
   const [videos, setVideos] = useState<VideoHit[]>([]);
   const [youtube, setYoutube] = useState<YTBlock | null>(null);
   const [withYouTube, setWithYouTube] = useState(false);
+  // Story 26.8: YouTube search runs through yt-dlp on the server; without
+  // it the toggle and the "From YouTube" section are not shown at all.
+  const [ytAvailable, setYtAvailable] = useState(false);
+  const [ytPending, setYtPending] = useState(false);
+  const ytAvailableRef = useRef(false);
+  // The last search, so an import can run it again.
+  const lastSearch = useRef<{ term: string; mode: Mode; yt: boolean } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -171,6 +183,23 @@ export function Search() {
     void refreshSaved();
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<{ available: boolean }>("/api/search/youtube/status")
+      .then((r) => {
+        if (cancelled) return;
+        ytAvailableRef.current = r?.available === true;
+        setYtAvailable(ytAvailableRef.current);
+      })
+      .catch(() => {
+        if (!cancelled) setYtAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const clearResults = useCallback(() => {
     searchSeq.current += 1;
     setHits(null);
@@ -185,35 +214,46 @@ export function Search() {
       const query = term.trim();
       if (!query) return;
       const seq = ++searchSeq.current;
+      const withYt = includeYouTube && ytAvailableRef.current;
+      lastSearch.current = { term: query, mode: m, yt: includeYouTube };
       setPending(true);
       setErr(null);
+      if (!withYt) setYoutube(null);
+      const list = <T,>(v: T[] | null | undefined) =>
+        Array.isArray(v) ? v.filter((x): x is T => x != null) : [];
       try {
         const res = await api.post<SearchResponse>("/api/search", {
           q: query,
           mode: m,
           limit: SEARCH_LIMIT,
-          // Story 26.8: additive opt-in; absent ⇒ local-only behaviour.
-          ...(includeYouTube ? { include: ["youtube"] } : {}),
         });
         if (seq !== searchSeq.current) return;
-        const list = <T,>(v: T[] | null | undefined) =>
-          Array.isArray(v) ? v.filter((x): x is T => x != null) : [];
         setHits(list(res?.hits));
         setVideos(list(res?.videos));
-        const yt = res?.youtube;
-        setYoutube(
-          includeYouTube
-            ? { ...(yt ?? {}), items: list(yt?.items).filter((it) => it.youtube_id) }
-            : null
-        );
       } catch (e) {
         if (seq !== searchSeq.current) return;
         setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
         setHits([]);
         setVideos([]);
-        setYoutube(null);
       } finally {
         if (seq === searchSeq.current) setPending(false);
+      }
+      // Story 26.8: the YouTube leg runs after the local results are on
+      // screen. A yt-dlp search takes seconds and must never hold them up.
+      if (!withYt) return;
+      setYtPending(true);
+      try {
+        const block = await api.get<YTBlock>(`/api/search/youtube?q=${encodeURIComponent(query)}`);
+        if (seq === searchSeq.current) {
+          setYoutube({
+            reason: block?.reason,
+            items: list(block?.items).filter((it) => it.youtube_id),
+          });
+        }
+      } catch {
+        if (seq === searchSeq.current) setYoutube({ items: [], reason: "error" });
+      } finally {
+        if (seq === searchSeq.current) setYtPending(false);
       }
     },
     [t]
@@ -230,6 +270,13 @@ export function Search() {
     if (urlQ) void runSearch(urlQ, modeRef.current, ytRef.current);
     else clearResults();
   }, [urlQ, runSearch, clearResults]);
+
+  // Re-run the last search (after a YouTube import, so the result shows
+  // its new state).
+  const rerun = () => {
+    const last = lastSearch.current;
+    if (last) void runSearch(last.term, last.mode, last.yt);
+  };
 
   /** Shows `term` in the URL (a history entry) and searches it. */
   function search(term: string, m: Mode) {
@@ -330,14 +377,16 @@ export function Search() {
             <Button type="button" variant="secondary" onClick={saveCurrent}>
               {t("search.save")}
             </Button>
-            <label className="mkt-search__yt-toggle">
-              <input
-                type="checkbox"
-                checked={withYouTube}
-                onChange={(e) => setWithYouTube(e.target.checked)}
-              />
-              {t("search.youtube.toggle")}
-            </label>
+            {ytAvailable && (
+              <label className="mkt-search__yt-toggle">
+                <input
+                  type="checkbox"
+                  checked={withYouTube}
+                  onChange={(e) => setWithYouTube(e.target.checked)}
+                />
+                {t("search.youtube.toggle")}
+              </label>
+            )}
           </form>
 
           {err && <ErrorState kind="server" title={t("common.error")} description={err} />}
@@ -386,11 +435,13 @@ export function Search() {
             </>
           )}
 
-          {youtube && (
+          {ytAvailable && withYouTube && (ytPending || youtube) && (
             <YouTubeSection
               block={youtube}
+              pending={ytPending}
               canImport={Boolean(user?.is_admin)}
-              onImported={() => {}}
+              localVideos={videos}
+              onImported={rerun}
             />
           )}
         </div>
@@ -441,50 +492,50 @@ export function Search() {
 // YouTubeSection renders the "From YouTube" augmentation (Story 26.8),
 // visually distinct from local results. Each card links out to YouTube
 // (rel="noopener noreferrer"); a match badge links an already-in-library
-// result to the local video, or offers an import to a chosen video. A
+// result to the local video, and every other result has an Import button
+// that stages its metadata onto a local video the user picks. A
 // non-empty `reason` renders a quiet inline note, never an error toast.
 function YouTubeSection({
   block,
+  pending,
   canImport,
+  localVideos,
   onImported,
 }: {
-  block: YTBlock;
+  block: YTBlock | null;
+  pending: boolean;
   /** Importing is an editor (admin) write; the server refuses others. */
   canImport: boolean;
+  localVideos: VideoHit[];
   onImported: () => void;
 }) {
   const { t, n } = useI18n();
-  const toast = useToast();
+  const [importing, setImporting] = useState<YTItem | null>(null);
 
-  async function importTo(it: YTItem) {
-    const target = window.prompt(t("search.youtube.importPrompt"));
-    if (!target) return;
-    try {
-      await api.post(`/api/videos/${encodeURIComponent(target.trim())}/import-youtube`, {
-        youtube_id: it.youtube_id,
-      });
-      toast.show({ message: t("search.youtube.imported"), tone: "success" });
-      onImported();
-    } catch (e) {
-      toast.show({
-        message: e instanceof ApiError ? e.problem.title : t("common.error"),
-        tone: "error",
-      });
-    }
-  }
+  // "disabled" means yt-dlp went away since the page loaded: show nothing.
+  if (!pending && block?.reason === "disabled") return null;
+  const items = block?.items ?? [];
 
   return (
-    <section className="mkt-yt-section" aria-label={t("search.youtube.heading")}>
+    <section
+      className="mkt-yt-section"
+      aria-label={t("search.youtube.heading")}
+      aria-busy={pending}
+    >
       <h2 className="mkt-yt-section__title">{t("search.youtube.heading")}</h2>
-      {block.items.length === 0 ? (
+      {pending && items.length === 0 ? (
+        <p className="mkt-muted" role="status">
+          {t("search.youtube.loading")}
+        </p>
+      ) : items.length === 0 ? (
         <p className="mkt-muted">
-          {block.reason && YT_REASONS.has(block.reason)
+          {block?.reason && YT_REASONS.has(block.reason)
             ? t(`search.youtube.reason.${block.reason}`)
             : t("search.youtube.none")}
         </p>
       ) : (
         <ul className="mkt-yt-list" role="list">
-          {block.items.map((it) => (
+          {items.map((it) => (
             <li key={it.youtube_id} className="mkt-yt-card">
               <a
                 href={`https://www.youtube.com/watch?v=${encodeURIComponent(it.youtube_id)}`}
@@ -497,8 +548,16 @@ function YouTubeSection({
                   {it.title}
                 </span>
                 <span className="mkt-yt-card__channel mkt-muted" dir="auto">
-                  {it.channel}
-                  {typeof it.view_count === "number" ? ` · ${n(it.view_count)}` : ""}
+                  {[
+                    it.channel,
+                    typeof it.duration_sec === "number" ? ts(it.duration_sec) : "",
+                    it.published_at ?? "",
+                    typeof it.view_count === "number"
+                      ? t("search.youtube.views", { count: n(it.view_count) })
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </span>
               </a>
               <div className="mkt-yt-card__match">
@@ -506,16 +565,169 @@ function YouTubeSection({
                   <Link to={`/videos/${it.match.video_id}`}>
                     <Badge tone="success">{t("search.youtube.inLibrary")}</Badge>
                   </Link>
-                ) : canImport ? (
-                  <Button size="sm" variant="secondary" onClick={() => importTo(it)}>
-                    {t("search.youtube.import")}
-                  </Button>
-                ) : null}
+                ) : (
+                  <>
+                    {it.match?.state === "imported" && it.match.video_id && (
+                      <Link to={`/videos/${it.match.video_id}`}>
+                        <Badge tone="accent">{t("search.youtube.importedBadge")}</Badge>
+                      </Link>
+                    )}
+                    {canImport && (
+                      <Button size="sm" variant="secondary" onClick={() => setImporting(it)}>
+                        {t("search.youtube.import")}
+                      </Button>
+                    )}
+                  </>
+                )}
               </div>
             </li>
           ))}
         </ul>
       )}
+      {importing && (
+        <ImportModal
+          item={importing}
+          localVideos={localVideos}
+          onClose={() => setImporting(null)}
+          onImported={() => {
+            setImporting(null);
+            onImported();
+          }}
+        />
+      )}
     </section>
+  );
+}
+
+// ImportModal picks the local video a YouTube result's metadata is staged
+// onto. It starts with the title matches of the current search and can
+// look up any other video by title. Staging writes an enrichment
+// candidate: the fields reach the video when it is accepted on the
+// video's Metadata tab, so nothing the user set by hand is overwritten.
+function ImportModal({
+  item,
+  localVideos,
+  onClose,
+  onImported,
+}: {
+  item: YTItem;
+  localVideos: VideoHit[];
+  onClose: () => void;
+  onImported: () => void;
+}) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [find, setFind] = useState("");
+  const [found, setFound] = useState<VideoHit[] | null>(null);
+  const [finding, setFinding] = useState(false);
+  const [chosen, setChosen] = useState<VideoHit | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const choices = found ?? localVideos;
+
+  async function lookUp(e: FormEvent) {
+    e.preventDefault();
+    const q = find.trim();
+    if (!q) {
+      setFound(null);
+      return;
+    }
+    setFinding(true);
+    try {
+      const res = await api.post<SearchResponse>("/api/search", { q, mode: "fts", limit: 20 });
+      setFound(res.videos ?? []);
+    } catch (err) {
+      setFound([]);
+      toast.show({
+        tone: "error",
+        message: err instanceof ApiError ? err.problem.title : t("common.error"),
+      });
+    } finally {
+      setFinding(false);
+    }
+  }
+
+  async function confirm() {
+    if (!chosen) return;
+    setBusy(true);
+    try {
+      await api.post(`/api/videos/${encodeURIComponent(chosen.video_id)}/import-youtube`, {
+        youtube_id: item.youtube_id,
+        title: item.title,
+        channel: item.channel,
+        description: item.description_snippet,
+        thumbnail: item.thumbnail,
+        ...(item.published_at ? { published_at: item.published_at } : {}),
+        ...(typeof item.duration_sec === "number" ? { duration_sec: item.duration_sec } : {}),
+      });
+      toast.show({
+        tone: "success",
+        message: t("search.youtube.imported", { title: chosen.title }),
+      });
+      onImported();
+    } catch (err) {
+      setBusy(false);
+      toast.show({
+        tone: "error",
+        message:
+          err instanceof ApiError ? err.problem.detail || err.problem.title : t("common.error"),
+      });
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={t("search.youtube.importTitle")}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            {t("common.cancel")}
+          </Button>
+          <Button onClick={confirm} loading={busy} disabled={!chosen}>
+            {t("search.youtube.importConfirm")}
+          </Button>
+        </>
+      }
+    >
+      <p className="mkt-muted" dir="auto">
+        {t("search.youtube.importIntro", { title: item.title })}
+      </p>
+      <form className="mkt-search__form" onSubmit={lookUp} role="search">
+        <input
+          type="search"
+          value={find}
+          onChange={(e) => setFind(e.target.value)}
+          placeholder={t("search.youtube.importFind")}
+          aria-label={t("search.youtube.importFind")}
+        />
+        <Button type="submit" variant="secondary" loading={finding}>
+          {t("nav.search")}
+        </Button>
+      </form>
+      {choices.length === 0 ? (
+        <p className="mkt-muted">{t("search.youtube.importNoVideos")}</p>
+      ) : (
+        <ul className="mkt-yt-import__list" aria-label={t("search.youtube.importChoose")}>
+          {choices.map((v) => (
+            <li key={v.video_id}>
+              <label className="mkt-yt-import__choice">
+                <input
+                  type="radio"
+                  name="yt-import-target"
+                  checked={chosen?.video_id === v.video_id}
+                  onChange={() => setChosen(v)}
+                />
+                <span dir="auto">{v.title}</span>
+                {v.duration_sec != null && (
+                  <span className="mkt-muted"> · {ts(v.duration_sec)}</span>
+                )}
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Modal>
   );
 }

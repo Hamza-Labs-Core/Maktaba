@@ -262,6 +262,7 @@ func (h *Handler) Mount(r chi.Router) {
 	// Story 26.8 — also expose YouTube search as a GET proxy and the
 	// import endpoint that copies a YouTube match onto a local video.
 	r.Get("/api/search/youtube", h.SearchYouTube)
+	r.Get("/api/search/youtube/status", h.YouTubeStatus)
 	r.Post("/api/videos/{id}/import-youtube", h.ImportYouTube)
 }
 
@@ -381,7 +382,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	// when the caller opted in via include=["youtube"]; otherwise the
 	// response is byte-identical to the pre-26.8 shape.
 	if req.includes("youtube") {
-		resp.YouTube = h.fetchYouTube(r.Context(), req.Q)
+		resp.YouTube = h.fetchYouTube(r.Context(), req.Q, youtubeInlineTimeout)
 	}
 	common.WriteJSON(w, r, http.StatusOK, resp)
 }

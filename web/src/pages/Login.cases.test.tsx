@@ -98,11 +98,11 @@ describe("Login (test-cases/login.md)", () => {
 
   it("LGN-08: already signed in, /login goes to /library and Back does not return", async () => {
     get.mockImplementation(publicGet(amal));
-    renderAuth(["/forgot-password", "/login"]);
+    renderAuth(["/register", "/login"]);
     expect(await where()).toHaveTextContent(/^\/library$/);
     expect(screen.queryByLabelText(en["login.username"])).not.toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole("button", { name: "go back" }));
-    expect(await screen.findByRole("heading", { name: en["forgot.title"] })).toBeInTheDocument();
+    expect(await where()).toHaveTextContent(/^\/library$/);
   });
 
   it("LGN-09: already signed in with state.from goes there", async () => {
@@ -186,13 +186,14 @@ describe("Login (test-cases/login.md)", () => {
     expect(screen.getByLabelText(en["login.password"])).toBeRequired();
   });
 
-  it("LGN-18: the password-reset banner shows only after a reset", async () => {
-    const { unmount } = renderAuth([{ pathname: "/login", state: { reset: true } }]);
-    expect(await screen.findByRole("status")).toHaveTextContent(en["reset.success"]);
-    unmount();
-    renderAuth(["/login"]);
-    await screen.findByLabelText(en["login.username"]);
-    expect(screen.queryByText(en["reset.success"])).not.toBeInTheDocument();
+  it("LGN-18: a temporary password signs in to the required change form only", async () => {
+    post.mockResolvedValue({ user: { ...amal, must_change_password: true } });
+    renderAuth([{ pathname: "/login", state: { from: "/series/7" } }]);
+    await signIn("amal", "abcd-EFGH-jkmn-PQRS");
+    expect(
+      await screen.findByRole("heading", { name: en["mustChange.title"] })
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("where")).not.toBeInTheDocument();
   });
 
   it("LGN-19: on a node the cluster prompt starts SSO back to state.from", async () => {
@@ -238,18 +239,14 @@ describe("Login (test-cases/login.md)", () => {
     expect(await where()).toHaveTextContent("/library");
   });
 
-  it("LGN-21: forgot-password and register links open their pages; Back returns", async () => {
+  it("LGN-21: no forgot-password link; the register link opens its page; Back returns", async () => {
     renderAuth(["/login"]);
     const user = userEvent.setup();
-    const forgot = await screen.findByRole("link", { name: en["login.forgot"] });
-    expect(forgot).toHaveAttribute("href", "/forgot-password");
-    expect(screen.getByRole("link", { name: en["login.register"] })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: en["login.register"] })).toHaveAttribute(
       "href",
       "/register"
     );
-    await user.click(forgot);
-    expect(await screen.findByRole("heading", { name: en["forgot.title"] })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "go back" }));
+    expect(screen.queryByRole("link", { name: /forgot/i })).not.toBeInTheDocument();
     await user.click(await screen.findByRole("link", { name: en["login.register"] }));
     expect(await screen.findByRole("heading", { name: en["register.title"] })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "go back" }));
@@ -257,11 +254,13 @@ describe("Login (test-cases/login.md)", () => {
   });
 
   it("LGN-22: Back after sign-in does not return to /login", async () => {
-    renderAuth(["/forgot-password", "/library"]);
+    renderAuth(["/register", "/library"]);
     const user = await signIn();
     expect(await where()).toHaveTextContent(/^\/library$/);
     await user.click(screen.getByRole("button", { name: "go back" }));
-    expect(await screen.findByRole("heading", { name: en["forgot.title"] })).toBeInTheDocument();
+    // /register sends a signed-in user on to /library: never the login form
+    expect(await where()).toHaveTextContent(/^\/library$/);
+    expect(screen.queryByLabelText(en["login.username"])).not.toBeInTheDocument();
   });
 
   it("LGN-24: Arabic: right-to-left with translated labels and errors", async () => {
@@ -274,7 +273,6 @@ describe("Login (test-cases/login.md)", () => {
     expect(document.documentElement).toHaveAttribute("dir", "rtl");
     expect(document.documentElement).toHaveAttribute("lang", "ar");
     expect(screen.getByRole("heading", { name: ar["app.title"] })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: ar["login.forgot"] })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: ar["login.register"] })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: ar["login.submit"] }));
     expect(await screen.findByRole("alert")).toHaveTextContent(ar["login.error"]);
@@ -293,8 +291,6 @@ describe("Login (test-cases/login.md)", () => {
     expect(password).toHaveFocus();
     await user.tab();
     expect(screen.getByRole("button", { name: en["login.submit"] })).toHaveFocus();
-    await user.tab();
-    expect(screen.getByRole("link", { name: en["login.forgot"] })).toHaveFocus();
     await user.tab();
     expect(screen.getByRole("link", { name: en["login.register"] })).toHaveFocus();
     await user.click(username);

@@ -8,6 +8,14 @@
 //   POST   /api/users/{id}/unlock
 //   DELETE /api/users/{id}/sessions/{session_id}
 //   DELETE /api/users/{id}/refresh-tokens/{family_id}
+//   POST   /api/users/{id}/reset-password  { mode: "temporary" }
+//          | { mode: "set", password, must_change? }
+//          -> { temporary_password?, must_change_password, sessions_revoked }
+//
+// There is no mailer, so a forgotten password is reset here by an admin:
+// either a temporary password the user must change at the next sign-in
+// (shown once, to hand over) or a password the admin types. Either way
+// the user's sessions are signed out.
 //
 // Because no listing endpoint exists, rendering a "full roster" table
 // would be a false green (see Settings.tsx for this project's deferral
@@ -21,6 +29,7 @@ import { Badge } from "@ds/components/Badge/Badge";
 import { Modal } from "@ds/components/Modal/Modal";
 import { Input } from "@ds/components/Input/Input";
 import { Checkbox } from "@ds/components/Choice/Checkbox";
+import { Radio, RadioGroup } from "@ds/components/Choice/Radio";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../../lib/api";
@@ -83,6 +92,7 @@ function UsersInner() {
   const [editing, setEditing] = useState<AdminUser | null>(null);
   const [deleting, setDeleting] = useState<AdminUser | null>(null);
   const [revoking, setRevoking] = useState<AdminUser | null>(null);
+  const [resetting, setResetting] = useState<AdminUser | null>(null);
 
   function persist(next: AdminUser[]) {
     setUsers(next);
@@ -148,6 +158,9 @@ function UsersInner() {
                   <Button size="sm" variant="ghost" onClick={() => unlock(u)}>
                     {t("admin.users.unlock")}
                   </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setResetting(u)}>
+                    {t("admin.users.resetPassword")}
+                  </Button>
                   <Button size="sm" variant="ghost" onClick={() => setRevoking(u)}>
                     {t("admin.users.sessions")}
                   </Button>
@@ -193,6 +206,7 @@ function UsersInner() {
         />
       )}
       {revoking && <RevokeModal user={revoking} onClose={() => setRevoking(null)} />}
+      {resetting && <ResetPasswordModal user={resetting} onClose={() => setResetting(null)} />}
     </section>
   );
 }
@@ -425,6 +439,155 @@ function RevokeModal({ user, onClose }: { user: AdminUser; onClose: () => void }
           {t("admin.users.sessions.revokeFamily")}
         </Button>
       </div>
+    </Modal>
+  );
+}
+
+interface ResetResult {
+  temporary_password?: string;
+  must_change_password: boolean;
+  sessions_revoked: number;
+}
+
+// ResetPasswordModal is the admin's answer to a forgotten password (no
+// mailer): a temporary password shown once, which the user must change
+// at the next sign-in, or a password the admin types.
+function ResetPasswordModal({ user, onClose }: { user: AdminUser; onClose: () => void }) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [mode, setMode] = useState<"temporary" | "set">("temporary");
+  const [password, setPassword] = useState("");
+  const [mustChange, setMustChange] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [temporary, setTemporary] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const valid = mode === "temporary" || password.length >= 8;
+
+  async function submit() {
+    if (!valid) return;
+    setBusy(true);
+    try {
+      const body =
+        mode === "temporary"
+          ? { mode }
+          : { mode, password, ...(mustChange ? { must_change: true } : {}) };
+      const res = await api.post<ResetResult>(
+        `/api/users/${encodeURIComponent(user.id)}/reset-password`,
+        body
+      );
+      toast.show({
+        tone: "success",
+        message: t("admin.users.reset.done", { count: res.sessions_revoked }),
+      });
+      if (res.temporary_password) {
+        setTemporary(res.temporary_password);
+        setPassword("");
+        setBusy(false);
+      } else {
+        onClose();
+      }
+    } catch (e) {
+      toast.show({ tone: "error", message: errMessage(e, t) });
+      setBusy(false);
+    }
+  }
+
+  async function copy() {
+    if (!temporary) return;
+    try {
+      await navigator.clipboard.writeText(temporary);
+      setCopied(true);
+    } catch {
+      toast.show({ tone: "error", message: t("admin.users.reset.copyFailed") });
+    }
+  }
+
+  if (temporary) {
+    return (
+      <Modal
+        open
+        onClose={onClose}
+        dismissable={false}
+        title={t("admin.users.reset.title", { name: user.username })}
+        footer={<Button onClick={onClose}>{t("admin.users.reset.close")}</Button>}
+      >
+        <p>{t("admin.users.reset.tempIntro", { name: user.username })}</p>
+        <div className="mkt-form">
+          <Input
+            label={t("admin.users.reset.tempLabel")}
+            value={temporary}
+            readOnly
+            className="mkt-mono"
+            onFocus={(e) => e.currentTarget.select()}
+          />
+          <Button size="sm" variant="secondary" onClick={copy}>
+            {copied ? t("admin.users.reset.copied") : t("admin.users.reset.copy")}
+          </Button>
+        </div>
+        <p className="mkt-muted">{t("admin.users.reset.tempOnce")}</p>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={t("admin.users.reset.title", { name: user.username })}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            {t("common.cancel")}
+          </Button>
+          <Button variant="destructive" onClick={submit} loading={busy} disabled={!valid}>
+            {t("admin.users.reset.submit")}
+          </Button>
+        </>
+      }
+    >
+      <form
+        className="mkt-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        <RadioGroup legend={t("admin.users.reset.how")} name="reset-mode">
+          <Radio
+            name="reset-mode"
+            label={t("admin.users.reset.modeTemporary")}
+            checked={mode === "temporary"}
+            onChange={() => setMode("temporary")}
+          />
+          <Radio
+            name="reset-mode"
+            label={t("admin.users.reset.modeSet")}
+            checked={mode === "set"}
+            onChange={() => setMode("set")}
+          />
+        </RadioGroup>
+        {mode === "set" && (
+          <>
+            <Input
+              type="password"
+              label={t("admin.users.field.newPassword")}
+              description={t("admin.users.reset.minLength")}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password"
+              required
+              minLength={8}
+            />
+            <Checkbox
+              label={t("admin.users.reset.mustChange")}
+              checked={mustChange}
+              onChange={(e) => setMustChange(e.target.checked)}
+            />
+          </>
+        )}
+        <p className="mkt-muted">{t("admin.users.reset.signsOut")}</p>
+      </form>
     </Modal>
   );
 }

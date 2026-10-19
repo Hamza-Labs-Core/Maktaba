@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -29,7 +30,7 @@ func (s stubYT) SearchYouTube(_ context.Context, _ string) ([]YTItem, error) {
 // "disabled", and crucially the searcher is never consulted.
 func TestFetchYouTube_Disabled(t *testing.T) {
 	h := &Handler{} // nil YouTube
-	block := h.fetchYouTube(context.Background(), "matrix")
+	block := h.fetchYouTube(context.Background(), "matrix", time.Second)
 	if block == nil || block.Reason != "disabled" || len(block.Items) != 0 {
 		t.Fatalf("got %+v", block)
 	}
@@ -39,7 +40,7 @@ func TestFetchYouTube_Disabled(t *testing.T) {
 // a nil DB every item is annotated "importable".
 func TestFetchYouTube_Populated_Importable(t *testing.T) {
 	h := &Handler{YouTube: stubYT{items: []YTItem{{YouTubeID: "abc", Title: "The Matrix"}}}}
-	block := h.fetchYouTube(context.Background(), "matrix")
+	block := h.fetchYouTube(context.Background(), "matrix", time.Second)
 	if len(block.Items) != 1 {
 		t.Fatalf("want 1 item, got %d", len(block.Items))
 	}
@@ -52,19 +53,18 @@ func TestFetchYouTube_Populated_Importable(t *testing.T) {
 // an empty block with a reason, never an error.
 func TestFetchYouTube_Error_Reason(t *testing.T) {
 	h := &Handler{YouTube: stubYT{err: ErrYouTubeRateLimited}}
-	block := h.fetchYouTube(context.Background(), "x")
+	block := h.fetchYouTube(context.Background(), "x", time.Second)
 	if block.Reason != "rate_limited" || len(block.Items) != 0 {
 		t.Fatalf("got %+v", block)
 	}
 	h2 := &Handler{YouTube: stubYT{err: context.DeadlineExceeded}}
-	if h2.fetchYouTube(context.Background(), "x").Reason != "error" {
+	if h2.fetchYouTube(context.Background(), "x", time.Second).Reason != "error" {
 		t.Fatal("unknown error should map to reason=error")
 	}
 }
 
 func TestYoutubeReason_Mapping(t *testing.T) {
 	cases := map[error]string{
-		ErrYouTubeNoKey:       "no_key",
 		ErrYouTubeRateLimited: "rate_limited",
 		ErrYouTubeDisabled:    "disabled",
 	}

@@ -53,8 +53,6 @@ import { Player } from "./pages/LiveTV/Player";
 import { ServerStatus } from "./pages/Cloud/ServerStatus";
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Auth/Register";
-import { ForgotPassword } from "./pages/Auth/ForgotPassword";
-import { ResetPassword } from "./pages/Auth/ResetPassword";
 import { NotFound } from "./pages/NotFound";
 
 // ThemeSync re-applies the resolved theme whenever the OS preference
@@ -95,8 +93,6 @@ export function App() {
                     <Route element={<PublicPages />}>
                       <Route path="/login" element={<Login />} />
                       <Route path="/register" element={<Register />} />
-                      <Route path="/forgot-password" element={<ForgotPassword />} />
-                      <Route path="/reset-password" element={<ResetPassword />} />
                     </Route>
                     <Route
                       element={
