@@ -2,6 +2,8 @@ package supervisor
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -93,7 +95,7 @@ func TestChildEnvLiveTVWiring(t *testing.T) {
 	if !hasKV(streaming, "MAKTABA_HTTP_ADDR", "0.0.0.0:8782") {
 		t.Error("streaming role must bind stream_addr via MAKTABA_HTTP_ADDR")
 	}
-	for _, role := range []Role{RoleAPI, RoleStreaming} {
+	for _, role := range []Role{RoleAPI, RoleStreaming, RolePipeline} {
 		if !hasKV(ChildEnv(role, cfg), "MAKTABA_PUBLIC_BASE_URL", "http://tv.lan:8782") {
 			t.Errorf("role %s: MAKTABA_PUBLIC_BASE_URL not set from public_url", role)
 		}
@@ -101,5 +103,26 @@ func TestChildEnvLiveTVWiring(t *testing.T) {
 	// The api's streaming client speaks gRPC, not the HTTP stream port.
 	if !hasKV(ChildEnv(RoleAPI, cfg), "MAKTABA_STREAMING_ADDR", StreamingGRPCAddr) {
 		t.Error("api MAKTABA_STREAMING_ADDR must be the streaming gRPC address")
+	}
+}
+
+func TestChildEnvSharesTheSecretsKey(t *testing.T) {
+	t.Setenv("MAKTABA_SECRETS_KEY", "")
+	t.Setenv("MAKTABA_CONFIG", filepath.Join(t.TempDir(), "server.toml"))
+	want := SecretsKeyPath()
+	if filepath.Base(want) != "secrets.key" || filepath.Dir(want) != filepath.Dir(os.Getenv("MAKTABA_CONFIG")) {
+		t.Fatalf("SecretsKeyPath = %s", want)
+	}
+	cfg := config.Defaults()
+	for _, role := range []Role{RoleAPI, RoleStreaming, RolePipeline} {
+		if !hasKV(ChildEnv(role, cfg), "MAKTABA_SECRETS_KEY", want) {
+			t.Errorf("role %s: MAKTABA_SECRETS_KEY not set", role)
+		}
+	}
+	t.Setenv("MAKTABA_SECRETS_KEY", "/own/secrets.key")
+	for _, kv := range ChildEnv(RoleAPI, cfg) {
+		if strings.HasPrefix(kv, "MAKTABA_SECRETS_KEY=") {
+			t.Errorf("an operator's own key path must be kept: %s", kv)
+		}
 	}
 }

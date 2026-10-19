@@ -2,6 +2,8 @@ package supervisor
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
@@ -52,6 +54,14 @@ func ChildEnv(role Role, cfg config.Config) []string {
 	// discover.json, XMLTV/M3U links) and the api reports it to the web
 	// app (/api/tv/info).
 	add("MAKTABA_PUBLIC_BASE_URL", cfg.PublicStreamURL())
+
+	// The home's secrets key (Epic 32 story 32.6): the api seals
+	// home_secrets with it and the pipeline opens the extension secrets
+	// (the Plex token) with it, so both get the same file, beside
+	// server.toml. An operator's own MAKTABA_SECRETS_KEY is kept.
+	if os.Getenv("MAKTABA_SECRETS_KEY") == "" {
+		add("MAKTABA_SECRETS_KEY", SecretsKeyPath())
+	}
 
 	switch role {
 	case RoleAPI:
@@ -144,4 +154,10 @@ func LocalAddr(bind, defaultPort string) string {
 		port = bind[i+1:]
 	}
 	return fmt.Sprintf("127.0.0.1:%s", port)
+}
+
+// SecretsKeyPath is the home's secrets key file: secrets.key in the
+// directory of server.toml (config.Path, which honours MAKTABA_CONFIG).
+func SecretsKeyPath() string {
+	return filepath.Join(filepath.Dir(config.Path()), "secrets.key")
 }

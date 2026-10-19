@@ -17,6 +17,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/guide"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tv"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tvcluster"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 )
 
 // P27Deps bundles the dependencies for the Epic 27 handlers.
@@ -28,6 +29,8 @@ type P27Deps struct {
 	// DataDir is the data volume (MAKTABA_DATA_DIR); uploaded channel art
 	// is stored under <DataDir>/channel-art/.
 	DataDir string
+	// Secrets is the home's sealed store: the Plex token is there.
+	Secrets secrets.Store
 }
 
 // MountP27 attaches the Epic 27 route handlers onto r. Safe to skip when
@@ -38,7 +41,7 @@ func MountP27(r chi.Router, d P27Deps) {
 	}
 	// Live TV access: HDHomeRun tuner admin, where the TV streams live, and
 	// Plex Live TV (status, refresh, register).
-	tvh := &tv.Handler{DB: d.DB, PublicBaseURL: d.PublicBaseURL}
+	tvh := &tv.Handler{DB: d.DB, PublicBaseURL: d.PublicBaseURL, Secrets: d.Secrets}
 	// a channel created, edited, renumbered or deleted by hand: Plex's
 	// channel map follows (the plex_livetv stage decides what to push)
 	chh := &channels.Handler{DB: d.DB, DataDir: d.DataDir, OnLineupChange: tvh.NotifyPlex}

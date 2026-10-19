@@ -22,6 +22,7 @@ ENTRY_POINT_GROUP = "maktaba.extensions"
 BUILTIN: tuple[str, ...] = (
     "maktaba_pipeline.extensions.plex:extension",
     "maktaba_pipeline.extensions.dizquetv:extension",
+    "maktaba_pipeline.extensions.cloudflare_stream:extension",
 )
 
 _log = get_logger()

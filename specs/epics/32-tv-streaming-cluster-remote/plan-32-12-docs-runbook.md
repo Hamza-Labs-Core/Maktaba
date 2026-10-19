@@ -18,7 +18,7 @@
 **Modify**
 - `web/src/pages/Admin/LiveTV.tsx` — "Help" links per section (`#streaming-hosts`, `#cloudflare`, `#costs`, `#failures`)
 - `api/internal/handlers/rules/schema.json` — check every `tv_cluster` / `tv_remote` description (en + ar) against the doc
-- `shared/db/migrations/MANIFEST.md` — rows 0119–0121 land with their plans (32.6, 32.1, 32.7); this plan checks they are there
+- `shared/db/migrations/MANIFEST.md` — rows 0120–0122 land with their plans (32.6, 32.1, 32.7); this plan checks they are there
 - `specs/epics/32-tv-streaming-cluster-remote/README.md` — the owner questions were decided on 2026-10-18 ("Open questions — decided"); this plan records the spike answers to Q2/Q3 and revisits any "accepted default" the measurements contradict
 
 ## 2. Outline

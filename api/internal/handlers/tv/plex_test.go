@@ -10,6 +10,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	_ "modernc.org/sqlite"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 )
 
 type enqueued struct {
@@ -212,5 +214,23 @@ func TestHDHRPatchNotifiesPlex(t *testing.T) {
 	}
 	if len(*calls) != 1 || (*calls)[0] != (enqueued{"plex_livetv", false, "lineup_edited"}) {
 		t.Fatalf("enqueued: %v", *calls)
+	}
+}
+
+// Since slot 0120 the Plex token is in home_secrets, not in the settings
+// row: the handler counts it there (story 32.6 AC6a).
+func TestPlexConfiguredFromHomeSecrets(t *testing.T) {
+	db, _, _ := newPlexServer(t, "inserted")
+	if _, err := db.Exec(`UPDATE extensions SET settings = '{"url":"http://plex.lan:32400"}'`); err != nil {
+		t.Fatal(err)
+	}
+	store := secrets.NewMemory()
+	h := &Handler{DB: db, Secrets: store}
+	if h.plexExtension(context.Background()).Configured {
+		t.Fatal("no token anywhere: not configured")
+	}
+	_ = store.Put(context.Background(), secrets.ExtensionName("plex", "token"), []byte("tok"), "")
+	if e := h.plexExtension(context.Background()); !e.Configured || e.URL != "http://plex.lan:32400" {
+		t.Fatalf("token in home_secrets: %+v", e)
 	}
 }

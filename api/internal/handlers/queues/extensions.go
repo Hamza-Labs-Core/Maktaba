@@ -4,22 +4,30 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"sort"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 )
 
-// Extensions (Plex, dizqueTV) are optional add-ons, not core. Their
-// state lives in extensions(name PK, enabled, settings JSONB,
-// updated_at); the catalogue below (version, description, settings
+// Extensions (Plex, dizqueTV, Cloudflare Stream) are optional add-ons,
+// not core. Their state lives in extensions(name PK, enabled, settings
+// JSONB, updated_at); the catalogue below (version, description, settings
 // schema) is code, because the table only stores operator choices.
-// Secret settings are write-only: they are never returned, only
-// reported as "set" (see SecretMask / Extension.SecretsSet).
+//
+// Secret settings are write-only: they are never returned, only reported
+// as "set" (see SecretMask / Extension.SecretsSet). Since slot 0120 (story
+// 32.6, README Q7) they are not in extensions.settings either: every
+// `secret` field lives in home_secrets, sealed by the home's API
+// (api/internal/secrets), which the machines' role cannot read. Code that
+// needs one reads it through Handler.Secrets on the home.
 
 // SettingField describes one setting of an extension.
 type SettingField struct {
@@ -27,6 +35,13 @@ type SettingField struct {
 	Label    string `json:"label"`
 	Type     string `json:"type"` // url | text | secret | json
 	Required bool   `json:"required"`
+	Help     string `json:"help,omitempty"`
+	// HomeOnly: the value is used by the home's API only, never handed to
+	// a job. Every secret is kept in home_secrets either way.
+	HomeOnly bool `json:"home_only,omitempty"`
+	// SecretName is the home_secrets name of a secret field; empty means
+	// secrets.ExtensionName(extension, key).
+	SecretName string `json:"-"`
 }
 
 type extensionDef struct {
@@ -36,6 +51,9 @@ type extensionDef struct {
 	Description string
 	Fields      []SettingField
 }
+
+// CloudflareExtension is the Cloudflare Stream integration's name.
+const CloudflareExtension = "cloudflare_stream"
 
 var extensionCatalog = []extensionDef{
 	{
@@ -52,7 +70,57 @@ var extensionCatalog = []extensionDef{
 			{Key: "path_map", Label: "Path map (Plex path to local path, JSON)", Type: "text"},
 		},
 	},
+	{
+		// Epic 32 story 32.6: the home's own Cloudflare account, for remote
+		// viewing through Cloudflare Stream. The API token is used by the
+		// home's API only (design §7.1); "Test connection" checks it.
+		Name: CloudflareExtension, Label: "Cloudflare Stream", Version: "1",
+		Description: "Remote viewing of Maktaba's channels through your own Cloudflare Stream account.",
+		Fields: []SettingField{
+			{Key: "account_id", Label: "Account ID", Type: "text", Required: true},
+			{Key: "api_token", Label: "API token (Stream Write, Account Analytics Read)", Type: "secret",
+				Required: true, HomeOnly: true, SecretName: "cf_api_token"},
+			{Key: "customer_code", Label: "Customer subdomain code (customer-<code>.cloudflarestream.com)", Type: "text",
+				Help: "Learned by Test connection when empty."},
+		},
+	},
 }
+
+// secretName is where a secret field of ext is kept in home_secrets.
+func secretName(ext string, f SettingField) string {
+	if f.SecretName != "" {
+		return f.SecretName
+	}
+	return secrets.ExtensionName(ext, f.Key)
+}
+
+// ExtensionSecretFields is every extension's secret settings and their
+// home_secrets names, for secrets.MigrateExtensionSecrets at start.
+func ExtensionSecretFields() secrets.ExtensionSecretFields {
+	out := secrets.ExtensionSecretFields{}
+	for _, d := range extensionCatalog {
+		for _, f := range d.Fields {
+			if f.Type != "secret" {
+				continue
+			}
+			if out[d.Name] == nil {
+				out[d.Name] = map[string]string{}
+			}
+			out[d.Name][f.Key] = secretName(d.Name, f)
+		}
+	}
+	return out
+}
+
+// ExtensionTester runs an extension's "Test connection"; its result is
+// answered as is (it must carry ok and message).
+type ExtensionTester func(ctx context.Context) (any, error)
+
+// ExtensionValidator checks a settings change before it is saved (cur and
+// next are the non-secret settings; secretChanged lists the secret keys
+// being set or cleared). A non-nil error is answered (an *httperror.Error
+// keeps its status).
+type ExtensionValidator func(ctx context.Context, cur, next map[string]any, secretChanged []string) error
 
 // SecretMask is shown in place of a stored secret and ignored on write
 // (so a client can round-trip a form without clearing the secret).
@@ -111,6 +179,66 @@ func (h *Handler) loadExtensionRows(ctx context.Context) (map[string]extRow, err
 	return out, rows.Err()
 }
 
+// ExtensionSettings returns an extension's stored (non-secret) settings
+// and whether it is enabled, for integrations living in other packages.
+func (h *Handler) ExtensionSettings(ctx context.Context, name string) (map[string]any, bool, error) {
+	rows, err := h.loadExtensionRows(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	r := rows[name]
+	if r.settings == nil {
+		r.settings = map[string]any{}
+	}
+	return r.settings, r.enabled, nil
+}
+
+// SaveExtensionSetting sets (or, with "", clears) one non-secret setting
+// of an extension, keeping the rest (the Cloudflare test writes the
+// customer code it learned).
+func (h *Handler) SaveExtensionSetting(ctx context.Context, name, key, value string) error {
+	h.extMu.Lock()
+	defer h.extMu.Unlock()
+	rows, err := h.loadExtensionRows(ctx)
+	if err != nil {
+		return err
+	}
+	cur := rows[name]
+	if cur.settings == nil {
+		cur.settings = map[string]any{}
+	}
+	if value == "" {
+		delete(cur.settings, key)
+	} else {
+		cur.settings[key] = value
+	}
+	blob, _ := json.Marshal(cur.settings)
+	_, err = h.DB.ExecContext(ctx, upsertExtensionSQL, name, cur.enabled, string(blob), h.now())
+	return err
+}
+
+// ClearExtension removes an extension's settings and secrets and turns it
+// off (removing the Cloudflare integration, story 32.6 AC5).
+func (h *Handler) ClearExtension(ctx context.Context, name string) error {
+	def, ok := findExtension(name)
+	if !ok {
+		return errors.New("unknown extension " + name)
+	}
+	h.extMu.Lock()
+	defer h.extMu.Unlock()
+	if h.Secrets != nil {
+		for _, f := range def.Fields {
+			if f.Type == "secret" {
+				if err := h.Secrets.Delete(ctx, secretName(name, f)); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	_, err := h.DB.ExecContext(ctx, upsertExtensionSQL, name, false, "{}", h.now())
+	return err
+}
+
 func isSet(v any) bool {
 	if s, ok := v.(string); ok {
 		return strings.TrimSpace(s) != ""
@@ -120,8 +248,10 @@ func isSet(v any) bool {
 
 // buildExtension merges the catalogue entry with its stored row. Only
 // schema keys are echoed (anything else stored might be a secret), and
-// secret values are replaced by the mask.
-func buildExtension(def extensionDef, row extRow) Extension {
+// secret values are replaced by the mask. secretSet says which secret
+// fields have a value in home_secrets; a value still in the settings
+// (before the start-up move) counts too.
+func buildExtension(def extensionDef, row extRow, secretSet map[string]bool) Extension {
 	e := Extension{
 		Name: def.Name, Label: def.Label, Version: def.Version, Description: def.Description,
 		Enabled: row.enabled, Schema: def.Fields, Settings: map[string]any{},
@@ -130,6 +260,9 @@ func buildExtension(def extensionDef, row extRow) Extension {
 	for _, f := range def.Fields {
 		v, has := row.settings[f.Key]
 		set := has && isSet(v)
+		if f.Type == "secret" && secretSet[f.Key] {
+			set = true
+		}
 		if f.Required && !set {
 			e.Configured = false
 		}
@@ -148,6 +281,23 @@ func buildExtension(def extensionDef, row extRow) Extension {
 		}
 	}
 	return e
+}
+
+// secretSet reports which of def's secret fields are in home_secrets.
+func (h *Handler) secretSet(ctx context.Context, def extensionDef) map[string]bool {
+	out := map[string]bool{}
+	if h.Secrets == nil {
+		return out
+	}
+	for _, f := range def.Fields {
+		if f.Type != "secret" {
+			continue
+		}
+		if ok, err := h.Secrets.Has(ctx, secretName(def.Name, f)); err == nil && ok {
+			out[f.Key] = true
+		}
+	}
+	return out
 }
 
 func findExtension(name string) (extensionDef, bool) {
@@ -171,7 +321,7 @@ func (h *Handler) Extensions(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]Extension, 0, len(extensionCatalog))
 	for _, d := range extensionCatalog {
-		out = append(out, buildExtension(d, rows[d.Name]))
+		out = append(out, buildExtension(d, rows[d.Name], h.secretSet(r.Context(), d)))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"extensions": out})
@@ -190,7 +340,8 @@ ON CONFLICT (name) DO UPDATE
 
 // PutExtension implements PUT /api/extensions/{name}. Settings are
 // merged key by key: omitted keys keep their value; the mask string
-// keeps a secret; null or "" clears a key.
+// keeps a secret; null or "" clears a key. Secret values go to
+// home_secrets, never to the settings row.
 func (h *Handler) PutExtension(w http.ResponseWriter, r *http.Request) {
 	if !requireAdmin(w, r) {
 		return
@@ -225,6 +376,12 @@ func (h *Handler) PutExtension(w http.ResponseWriter, r *http.Request) {
 	if cur.settings == nil {
 		cur.settings = map[string]any{}
 	}
+	before := map[string]any{}
+	for k, v := range cur.settings {
+		before[k] = v
+	}
+	// secret changes: key -> new value; nil clears. Applied to home_secrets.
+	secretChanges := map[string]*string{}
 	for k, raw := range body.Settings {
 		f, known := fields[k]
 		if !known {
@@ -238,6 +395,9 @@ func (h *Handler) PutExtension(w http.ResponseWriter, r *http.Request) {
 		}
 		if v == nil {
 			delete(cur.settings, k)
+			if f.Type == "secret" {
+				secretChanges[k] = nil
+			}
 			continue
 		}
 		s, isStr := v.(string)
@@ -251,17 +411,82 @@ func (h *Handler) PutExtension(w http.ResponseWriter, r *http.Request) {
 		s = strings.TrimSpace(s)
 		if s == "" {
 			delete(cur.settings, k)
+			if f.Type == "secret" {
+				secretChanges[k] = nil
+			}
 			continue
 		}
 		if f.Type == "url" && !strings.HasPrefix(s, "http://") && !strings.HasPrefix(s, "https://") {
 			httperror.Write(w, r, httperror.BadRequest("setting "+k+" must be an http(s) URL"))
 			return
 		}
+		if f.Type == "secret" {
+			val := s
+			secretChanges[k] = &val
+			continue
+		}
 		cur.settings[k] = s
 	}
 	enabled := cur.enabled
 	if body.Enabled != nil {
 		enabled = *body.Enabled
+	}
+	// a secret never stays in the settings row: one left there from before
+	// the start-up move goes to home_secrets with this save
+	for _, f := range def.Fields {
+		if f.Type != "secret" {
+			continue
+		}
+		legacy, ok := cur.settings[f.Key]
+		if !ok {
+			continue
+		}
+		delete(cur.settings, f.Key)
+		if _, changing := secretChanges[f.Key]; changing || h.Secrets == nil {
+			continue
+		}
+		if ls, _ := legacy.(string); strings.TrimSpace(ls) != "" {
+			if has, _ := h.Secrets.Has(r.Context(), secretName(name, f)); !has {
+				val := strings.TrimSpace(ls)
+				secretChanges[f.Key] = &val
+			}
+		}
+	}
+	if len(secretChanges) > 0 && h.Secrets == nil {
+		httperror.Write(w, r, &httperror.Error{Status: http.StatusServiceUnavailable,
+			Title: "Service Unavailable", Detail: "the secrets store is not available on this server"})
+		return
+	}
+	if v := h.Validators[name]; v != nil {
+		changed := make([]string, 0, len(secretChanges))
+		for k := range secretChanges {
+			changed = append(changed, k)
+		}
+		sort.Strings(changed)
+		if err := v(r.Context(), before, cur.settings, changed); err != nil {
+			httperror.Write(w, r, err)
+			return
+		}
+	}
+	by := ""
+	if p := principal.FromContext(r.Context()); p != nil {
+		by = p.UserID
+	}
+	for _, f := range def.Fields {
+		val, ok := secretChanges[f.Key]
+		if !ok {
+			continue
+		}
+		var serr error
+		if val == nil {
+			serr = h.Secrets.Delete(r.Context(), secretName(name, f))
+		} else {
+			serr = h.Secrets.Put(r.Context(), secretName(name, f), []byte(*val), by)
+		}
+		if serr != nil {
+			writeErr(w, r, "save secret", serr)
+			return
+		}
 	}
 	blob, _ := json.Marshal(cur.settings)
 	now := h.now()
@@ -271,12 +496,13 @@ func (h *Handler) PutExtension(w http.ResponseWriter, r *http.Request) {
 	}
 	ts := now.Format(tsLayout)
 	common.WriteJSON(w, r, http.StatusOK,
-		buildExtension(def, extRow{enabled: enabled, settings: cur.settings, updated: &ts}))
+		buildExtension(def, extRow{enabled: enabled, settings: cur.settings, updated: &ts}, h.secretSet(r.Context(), def)))
 }
 
-// TestExtension implements POST /api/extensions/{name}/test. The
-// connection check is not implemented yet (the worker owns the client
-// code); it answers {ok:false, message:"not_implemented..."}.
+// TestExtension implements POST /api/extensions/{name}/test. An extension
+// with a tester (Cloudflare Stream, story 32.6) runs it; the others
+// answer {ok:false, message:"not_implemented..."} (the worker owns their
+// client code).
 func (h *Handler) TestExtension(w http.ResponseWriter, r *http.Request) {
 	if !requireAdmin(w, r) {
 		return
@@ -284,6 +510,15 @@ func (h *Handler) TestExtension(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if _, ok := findExtension(name); !ok {
 		httperror.Write(w, r, httperror.NotFound("extension "+name))
+		return
+	}
+	if t := h.Testers[name]; t != nil {
+		res, err := t(r.Context())
+		if err != nil {
+			common.WriteJSON(w, r, http.StatusOK, map[string]any{"ok": false, "message": err.Error()})
+			return
+		}
+		common.WriteJSON(w, r, http.StatusOK, res)
 		return
 	}
 	// 200 {ok:false} (queueApi.ts testExtension) rather than a 501 so

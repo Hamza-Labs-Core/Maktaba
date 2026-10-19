@@ -41,6 +41,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 )
 
 // MaxTuners caps tuner_count (D8). A tuner is one client pull of a
@@ -75,6 +76,10 @@ type Handler struct {
 	Enqueue EnqueueFunc
 	// NowFunc overrides the clock (tests).
 	NowFunc func() time.Time
+	// Secrets is the home's sealed store (slot 0120); the Plex token is
+	// there (ext.plex.token), not in extensions.settings. nil: only a token
+	// still in the settings (before the start-up move) counts.
+	Secrets secrets.Store
 }
 
 // Mount wires the routes.
