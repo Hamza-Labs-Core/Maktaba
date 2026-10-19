@@ -156,9 +156,13 @@ REST (history, from the files on the share): `GET /api/cluster/files`,
 `/api/cluster/files/{ip}/logs|metrics|jobs|llm|events|queues|library?date=…`;
 `POST /api/cluster/processes/{session}/cmd`.
 
-**Stage selection** stays as in phase 1 (each process applies its capabilities, placement,
-the admin's switches, drain and storage), and the hub pushes `reload_stages` the moment an
-admin changes a switch or drain, so changes apply at once instead of within 30 s.
+**Queues and pulling.** All the work is split into queues, and the queues live on the home.
+Every machine's workers **pull** jobs from the home's queues; nothing is pushed to a
+machine. A worker pulls from the queues whose work it can do (its capabilities, home-only
+queues, the admin's per-machine switches, drain, storage — phase 1 §5), and the hub sends
+`reload_stages` the moment an admin changes a switch or drain, so a machine starts or stops
+pulling from a queue at once. Every job a worker pulls reports to the hub (§3 `job`) for
+its whole life, so the Processing page shows each queue's jobs live wherever they run.
 
 ## 6. LLMs across the cluster
 
