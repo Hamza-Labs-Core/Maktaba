@@ -210,7 +210,10 @@ def list_real_dirs(path: Path) -> Iterator[Path]:
             yield p
 
 
-def list_real_files(path: Path, suffix: str = ".jsonl") -> Iterator[Path]:
+def list_real_files(path: Path, suffix: str = ".jsonl", *, hidden: bool = False) -> Iterator[Path]:
+    """The regular (non-link) files in ``path`` ending in ``suffix``. Names starting with
+    ``.`` are left out unless ``hidden``: temporary files, and the ``._<name>`` sidecars
+    macOS writes beside every file on a share that cannot keep its extended attributes."""
     if not real_dir(path):
         return
     try:
@@ -218,5 +221,5 @@ def list_real_files(path: Path, suffix: str = ".jsonl") -> Iterator[Path]:
     except OSError:
         return
     for p in entries:
-        if p.name.endswith(suffix) and real_file(p):
+        if (hidden or not p.name.startswith(".")) and p.name.endswith(suffix) and real_file(p):
             yield p
