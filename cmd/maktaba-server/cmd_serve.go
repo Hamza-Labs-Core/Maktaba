@@ -204,6 +204,13 @@ func startWebServer(cfg config.Config) *http.Server {
 	api := apiOrigin(cfg.Server.Listen)
 	if api != nil {
 		proxy := httputil.NewSingleHostReverseProxy(api)
+		apiDirector := proxy.Director
+		proxy.Director = func(r *http.Request) {
+			apiDirector(r)
+			// the web port is never the relay (Epic 32.9): only the relay
+			// agent marks its loopback calls X-Maktaba-Via: relay
+			r.Header.Del("X-Maktaba-Via")
+		}
 		mux.Handle("/api/", proxy)
 	}
 

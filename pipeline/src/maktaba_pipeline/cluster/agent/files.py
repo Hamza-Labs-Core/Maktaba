@@ -20,6 +20,13 @@ reconnected leaves every open handle dead). When the share cannot be written the
 to ``~/.maktaba/cluster`` (the records of the failed write too) and
 :meth:`ClusterFiles.status` says so (the metrics ``files`` key); the share is tried again
 every 5 minutes, 15 s after a share in use failed a write.
+
+Where the share is comes from ``locate`` (:class:`~..share.ShareLocator`), asked again at
+every retry, so a machine whose path map was not built yet (a node that started paused)
+moves to the share once it is. A directory on the share is only ever created below an
+existing share root (``share_anchor``); without one, never directly on a bare
+filesystem root (a drive or ``/``): a path another machine wrote (the home's
+``/Volumes/...`` on Windows) must not become a stray folder on this machine's disk.
 """
 
 from __future__ import annotations
@@ -101,6 +108,36 @@ def _ends_with_newline(path: Path) -> bool:
         return True
 
 
+def _bare_root(p: Path) -> bool:
+    """``p`` is a filesystem root (``/``, a drive, a UNC share)."""
+    return p == p.parent
+
+
+def make_dirs(path: Path, anchor: Path | None = None) -> None:
+    """``mkdir -p path``, refusing (``FileNotFoundError``) when ``anchor`` is given and
+    is not an existing directory containing ``path``, or (no anchor) when the nearest
+    existing ancestor is a bare filesystem root: such a path is not a mount of the share
+    but a guess that would land on whatever disk is current."""
+    if path.is_dir():
+        return
+    if anchor is not None:
+        if not anchor.is_dir():
+            raise FileNotFoundError(f"the share root {anchor} is not there (not mounted?)")
+        try:
+            path.relative_to(anchor)
+        except ValueError as exc:
+            raise FileNotFoundError(f"{path} is not under the share root {anchor}") from exc
+    else:
+        cur = path
+        while not cur.exists() and cur != cur.parent:
+            cur = cur.parent
+        if _bare_root(cur) and cur != path:
+            raise FileNotFoundError(
+                f"{path}: refusing to create it on the bare root {cur} (not a share mount)"
+            )
+    path.mkdir(parents=True, exist_ok=True)
+
+
 def _iso_now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
@@ -120,6 +157,8 @@ class ClusterFiles:
         *,
         reason: str = "",
         fallback_dir: Path | None = None,
+        locate: Callable[[], tuple[Path | None, str, Path | None]] | None = None,
+        share_anchor: Path | None = None,
         retention_days: int | None = None,
         file_cap_bytes: int | None = None,
         flush_sec: float = FLUSH_SEC,
@@ -128,6 +167,10 @@ class ClusterFiles:
         from ..share import local_dir
 
         self.share_dir = share_dir
+        #: the existing directory the share's folders are created under (the share root)
+        self.share_anchor = share_anchor
+        #: asked again at every share retry: ``(dir, how, anchor)``
+        self._locate = locate
         self.fallback_dir = fallback_dir if fallback_dir is not None else local_dir()
         self.ip = ip
         self.worker_id = worker_id
@@ -175,7 +218,7 @@ class ClusterFiles:
     def _probe(self, base: Path) -> str | None:
         """None when ``base/<ip>`` can be written, else why not."""
         try:
-            base.mkdir(parents=True, exist_ok=True)
+            make_dirs(base, self.share_anchor if base == self.share_dir else None)
             d = safefs.safe_dir(base, [self.ip, "processes"])
             safefs.write_replace(d, f".{self.name}.probe", "ok")
             safefs.remove_real_file(d / f".{self.name}.probe")
@@ -185,6 +228,13 @@ class ClusterFiles:
 
     def _choose_dir(self) -> None:
         self._last_share_try = self.clock()
+        if self._locate is not None:
+            try:
+                self.share_dir, how, self.share_anchor = self._locate()
+            except Exception as exc:  # noqa: BLE001 - the files still go somewhere
+                self.share_dir, how, self.share_anchor = None, f"share lookup failed: {exc}", None
+            if self.share_dir is None:
+                self.reason = how
         if self.share_dir is not None:
             why = self._probe(self.share_dir)
             if why is None:
@@ -208,7 +258,7 @@ class ClusterFiles:
     def _under(self, parts: list[str]) -> Path:
         """``<dir>/parts…`` as real directories (the cluster directory itself is
         configuration and may be created; nothing under it is followed if a link)."""
-        self.dir.mkdir(parents=True, exist_ok=True)
+        make_dirs(self.dir, self.share_anchor if self.on_share else None)
         return safefs.safe_dir(self.dir, parts)
 
     def status(self) -> dict[str, Any]:
@@ -222,15 +272,31 @@ class ClusterFiles:
             "dropped": sum(self.dropped.values()) + sum(self.capped.values()) + self.failed,
         }
 
-    def set_share_dir(self, share_dir: Path | None, reason: str = "") -> None:
+    def set_share_dir(
+        self, share_dir: Path | None, reason: str = "", anchor: Path | None = None
+    ) -> None:
         """The hub sent the share root (``welcome.settings``): its value wins. Takes
         effect at once when it names another directory."""
         if share_dir == self.share_dir:
             return
         with self._io:
             self.share_dir = share_dir
+            self.share_anchor = anchor
             self.reason = reason
             self._choose_dir()
+
+    def relocate(self) -> None:
+        """Ask ``locate`` again now (the share root or the path map changed): moves when
+        it names another directory, or reaches the share while on the local folder."""
+        if self._locate is None:
+            return
+        with self._io:
+            try:
+                found = self._locate()[0]
+            except Exception:  # noqa: BLE001 - the next retry asks again
+                return
+            if found != self.share_dir or not self.on_share:
+                self._choose_dir()
 
     def set_ip(self, ip: str) -> None:
         """The hub names this process's IP folder (``welcome.settings.ip``): from now on
@@ -328,7 +394,7 @@ class ClusterFiles:
         with self._io:
             if (
                 not self.on_share
-                and self.share_dir is not None
+                and (self.share_dir is not None or self._locate is not None)
                 and now - self._last_share_try >= RETRY_SHARE_SEC
             ):
                 self._choose_dir()

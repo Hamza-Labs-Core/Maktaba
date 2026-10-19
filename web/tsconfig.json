@@ -15,10 +15,11 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
-      "@ds/*": ["design-system/*"]
+      "@ds/*": ["design-system/*"],
+      "@maktaba/tvplayer": ["packages/tvplayer/src/index.ts"]
     }
   },
-  "include": ["src", "design-system/components"],
+  "include": ["src", "design-system/components", "packages"],
   "exclude": [
     "dist",
     "node_modules",

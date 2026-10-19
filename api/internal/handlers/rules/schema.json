@@ -3808,6 +3808,61 @@
    ]
   },
   {
+   "key": "tv_simulcast",
+   "title": "Simulcast",
+   "what": "sending channels on to YouTube, Facebook or any RTMP destination through Cloudflare: on or off, destinations per channel, the monthly output-hours, the margins around a scheduled window",
+   "fields": [
+    {
+     "name": "enabled",
+     "kind": "bool",
+     "group": "Simulcast",
+     "label": "Simulcast to YouTube, Facebook and RTMP",
+     "help": "Cloudflare sends a channel on to the destinations attached to it on the Live TV page; the home still uploads it once. Needs Cloudflare Stream set up with a passed Test connection; works with remote viewing off.",
+     "default": false
+    },
+    {
+     "name": "max_outputs_per_channel",
+     "kind": "int",
+     "group": "Simulcast",
+     "label": "Destinations per channel",
+     "help": "Cloudflare allows 50 per channel.",
+     "default": 3,
+     "minimum": 1,
+     "maximum": 50
+    },
+    {
+     "name": "max_hours_per_month",
+     "kind": "float",
+     "group": "Simulcast",
+     "label": "Output-hours a month",
+     "help": "Across all destinations, per calendar month (UTC). Each output is billed as minutes watched: one always-on output is about 720 hours (about $43) a month. At 80 % the admin is told; at 100 % no output starts and always-on outputs stop (scheduled ones finish their window).",
+     "default": 60.0,
+     "minimum": 0,
+     "maximum": 10000
+    },
+    {
+     "name": "lead_seconds",
+     "kind": "int",
+     "group": "Simulcast",
+     "label": "Start before a window (seconds)",
+     "help": "So the platform has the stream before the programme starts.",
+     "default": 60,
+     "minimum": 0,
+     "maximum": 3600
+    },
+    {
+     "name": "tail_seconds",
+     "kind": "int",
+     "group": "Simulcast",
+     "label": "Stop after a window (seconds)",
+     "help": "",
+     "default": 30,
+     "minimum": 0,
+     "maximum": 3600
+    }
+   ]
+  },
+  {
    "key": "tv_strip",
    "title": "Channel strip",
    "what": "the news-style bar across a channel's picture: what is on now and next, and a clock rotating between cities",

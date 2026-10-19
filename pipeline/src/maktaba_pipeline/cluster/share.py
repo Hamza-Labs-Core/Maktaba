@@ -4,7 +4,12 @@
   set; otherwise the deepest directory common to every library root; when the libraries
   share nothing but the filesystem root, the root of the library with the most videos.
 - **Cluster directory**: ``<share root>/maktaba/cluster`` translated to this machine's path
-  by its path map; ``MAKTABA_CLUSTER_DIR`` overrides with a local path.
+  by its path map (the resolver: a canonical ``smb://`` root or the home's own legacy
+  spelling, ``/Volumes/Originals/...``, both map to this machine's mount);
+  ``MAKTABA_CLUSTER_DIR`` overrides with a local path. A share root that does not
+  resolve to a directory that exists here (no mapping yet, another machine's path, the
+  share not mounted) is refused, never created: the files go to the local fallback and
+  the reason says why (:func:`locate_cluster_dir`, :class:`ShareLocator`).
 - **Local fallback** (share unreachable): ``~/.maktaba/cluster``. Secrets (the home agent
   key) stay local, never on the share.
 - **The machine's folder**: its IP, the local address of a socket aimed at the home's API
@@ -18,10 +23,11 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import platform
 import re
 import socket
 import urllib.parse
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -33,13 +39,17 @@ __all__ = [
     "ENV_IP",
     "ENV_KEY_PATH",
     "ENV_SHARE_ROOT",
+    "ShareLocator",
     "cluster_dir_for",
     "common_dir",
     "common_root",
+    "find_share_root",
     "folder_name",
+    "foreign_path",
     "home_key_path",
     "load_library_roots",
     "local_dir",
+    "locate_cluster_dir",
     "machine_ip",
     "resolve_cluster_dir",
     "share_root_from",
@@ -177,18 +187,70 @@ async def load_library_roots(db: Any) -> list[tuple[str, str, int]]:
 
 
 def cluster_dir_for(share_root: str, path_map: PathMap) -> Path:
+    """``<share root>/maktaba/cluster`` through ``path_map``, unchecked (see
+    :func:`locate_cluster_dir` for the checked form the agent uses)."""
     return Path(path_map.to_local(share_root.rstrip("/") + "/" + CLUSTER_SUBDIR))
 
 
-async def resolve_cluster_dir(
-    db: Any | None, path_map: PathMap, env: Mapping[str, str] | None = None
-) -> tuple[Path | None, str]:
-    """``(the cluster directory on the share, how it was found)``; ``(None, why not)``
-    when there is no share to use."""
+_DRIVE = re.compile(r"^[A-Za-z]:(?:/|$)")
+
+
+def foreign_path(local: str, system: str | None = None) -> str | None:
+    """Why ``local`` (a path after the path map) cannot be a path on this machine: a
+    canonical path no mount resolved, or another OS's spelling (the home's
+    ``/Volumes/...`` on Windows, where it would land on the current drive); ``None``
+    when it may be one."""
+    from ..sharepath.canonical import parse_canonical
+
+    sp = parse_canonical(local)
+    if sp is not None and sp.scheme != "file":
+        return f"no mount of {sp.scheme}://{sp.server}/{sp.share} on this machine"
+    p = local.replace("\\", "/")
+    system = system or platform.system()
+    if system == "Windows":
+        if p.startswith("/") and not p.startswith("//"):
+            return "another machine's path (no drive or UNC share maps it here)"
+    elif _DRIVE.match(p) or p.startswith("//"):
+        return "a Windows path"
+    return None
+
+
+def locate_cluster_dir(
+    share_root: str,
+    path_map: PathMap,
+    *,
+    is_dir: Callable[[str], bool] = os.path.isdir,
+    system: str | None = None,
+) -> tuple[Path | None, str, Path | None]:
+    """``(cluster directory, how, the share root here)`` when the share root resolves
+    to a directory that exists on this machine; ``(None, why not, None)`` otherwise.
+
+    The share root must exist (it holds the libraries): a path the map did not
+    translate, or a share not mounted now, would otherwise be created as a stray
+    folder on the wrong disk."""
+    root = share_root.strip()
+    trimmed = root.rstrip("/\\") or root
+    if re.fullmatch(r"[A-Za-z]:", trimmed):
+        trimmed += "/"  # a drive root keeps its slash
+    local = path_map.to_local(trimmed)
+    why = foreign_path(local, system)
+    if why is not None:
+        return None, f"share root {root} does not resolve here: {why}", None
+    try:
+        present = is_dir(local)
+    except (OSError, ValueError):
+        present = False
+    if not present:
+        return None, f"share root {root} -> {local} is not mounted here", None
+    base = Path(local)
+    return base.joinpath(*CLUSTER_SUBDIR.split("/")), f"share root {root}", base
+
+
+async def find_share_root(
+    db: Any | None, env: Mapping[str, str] | None = None
+) -> tuple[str | None, str]:
+    """``(the share root in database form, how)``; ``(None, why not)``."""
     env = os.environ if env is None else env
-    override = (env.get(ENV_CLUSTER_DIR) or "").strip()
-    if override:
-        return Path(override).expanduser(), ENV_CLUSTER_DIR
     roots: list[tuple[str, str, int]] = []
     if not (env.get(ENV_SHARE_ROOT) or "").strip():
         if db is None:
@@ -200,7 +262,63 @@ async def resolve_cluster_dir(
     root = share_root_from(roots, env)
     if root is None:
         return None, "no library roots"
-    return cluster_dir_for(root, path_map), f"share root {root}"
+    return root, f"share root {root}"
+
+
+async def resolve_cluster_dir(
+    db: Any | None,
+    path_map: PathMap,
+    env: Mapping[str, str] | None = None,
+    *,
+    is_dir: Callable[[str], bool] = os.path.isdir,
+    system: str | None = None,
+) -> tuple[Path | None, str]:
+    """``(the cluster directory on the share, how it was found)``; ``(None, why not)``
+    when there is no share to use here."""
+    env = os.environ if env is None else env
+    override = (env.get(ENV_CLUSTER_DIR) or "").strip()
+    if override:
+        return Path(override).expanduser(), ENV_CLUSTER_DIR
+    root, how = await find_share_root(db, env)
+    if root is None:
+        return None, how
+    found, how, _ = locate_cluster_dir(root, path_map, is_dir=is_dir, system=system)
+    return found, how
+
+
+class ShareLocator:
+    """Where this process's files go, asked again at every share retry: the share root
+    (from the database at start, then the hub's ``welcome.settings``) through the path
+    map active *now* — a node that starts paused, or before its resolver is built, has
+    no mapping yet and finds the share once it has (:class:`~.agent.files.ClusterFiles`
+    calls it). ``MAKTABA_CLUSTER_DIR`` wins."""
+
+    def __init__(
+        self,
+        share_root: str | None,
+        how: str,
+        *,
+        path_map: Callable[[], PathMap],
+        env: Mapping[str, str] | None = None,
+        is_dir: Callable[[str], bool] = os.path.isdir,
+        system: str | None = None,
+    ) -> None:
+        self.share_root = share_root
+        self.how = how
+        self.path_map = path_map
+        self.env = os.environ if env is None else env
+        self.is_dir = is_dir
+        self.system = system
+
+    def __call__(self) -> tuple[Path | None, str, Path | None]:
+        override = (self.env.get(ENV_CLUSTER_DIR) or "").strip()
+        if override:
+            return Path(override).expanduser(), ENV_CLUSTER_DIR, None
+        if self.share_root is None:
+            return None, self.how, None
+        return locate_cluster_dir(
+            self.share_root, self.path_map(), is_dir=self.is_dir, system=self.system
+        )
 
 
 # --- the machine's folder ---------------------------------------------------------------

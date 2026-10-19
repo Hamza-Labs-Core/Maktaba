@@ -116,7 +116,11 @@ func newRemote(t *testing.T) *remoteFx {
 	for _, s := range []string{
 		`CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT, updated_by TEXT)`,
 		`CREATE TABLE channels (id TEXT PRIMARY KEY, library_id TEXT, number INTEGER NOT NULL, name TEXT NOT NULL,
-			slug TEXT NOT NULL, mode TEXT NOT NULL DEFAULT 'shuffle', enabled INTEGER NOT NULL DEFAULT 1)`,
+			slug TEXT NOT NULL, mode TEXT NOT NULL DEFAULT 'shuffle', enabled INTEGER NOT NULL DEFAULT 1,
+			mode_config TEXT NOT NULL DEFAULT '{}')`,
+		`CREATE TABLE channel_programs (id TEXT PRIMARY KEY, channel_id TEXT NOT NULL, seq INTEGER NOT NULL,
+			kind TEXT NOT NULL DEFAULT 'program', video_id TEXT, start_at TEXT NOT NULL, end_at TEXT NOT NULL)`,
+		`CREATE TABLE series_episodes (series_id TEXT NOT NULL, video_id TEXT NOT NULL, PRIMARY KEY (series_id, video_id))`,
 		`CREATE TABLE channel_placements (channel_id TEXT PRIMARY KEY, host_id TEXT NOT NULL, generation INTEGER NOT NULL,
 			state TEXT NOT NULL, reason TEXT NOT NULL DEFAULT 'first_request')`,
 		`CREATE TABLE instance_identity (id INTEGER PRIMARY KEY, instance_id TEXT NOT NULL, name TEXT)`,
@@ -126,9 +130,13 @@ func newRemote(t *testing.T) *remoteFx {
 			t.Fatal(err)
 		}
 	}
-	for _, s := range upStatements(t, filepath.Join(migrationsDir(), "0125_tv_remote.sqlite.sql")) {
-		if _, err := db.Exec(s); err != nil {
-			t.Fatalf("%v\n%s", err, s)
+	for _, slot := range []string{"0125_tv_remote.sqlite.sql", "0126_tv_simulcast.sqlite.sql"} {
+		for _, s := range upStatements(t, filepath.Join(migrationsDir(), slot)) {
+			// the API's SQLite runner rewrites ADD COLUMN IF NOT EXISTS; here the columns are new
+			s = strings.ReplaceAll(s, "ADD COLUMN IF NOT EXISTS", "ADD COLUMN")
+			if _, err := db.Exec(s); err != nil {
+				t.Fatalf("%v\n%s", err, s)
+			}
 		}
 	}
 	fx := &remoteFx{t: t, f: cftest.New(t), db: db, store: secrets.NewMemory(),

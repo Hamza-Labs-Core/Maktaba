@@ -9,6 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/tvmetrics"
 )
 
 // Ctl runs the home's relays: it watches tv_remote_pushes (NOTIFY tv_push and
@@ -208,7 +210,9 @@ func (c *Ctl) start(ctx context.Context, push string, ch uuid.UUID) {
 		if err == pgx.ErrNoRows {
 			err = errNoCreds
 		}
-		c.log().Warn("relay: no credentials for the push", "push_id", push, "err", err, "event", "tv_push_error")
+		c.log().Warn("relay: no credentials for the push", "push_id", push, "err", err, "code", "relay_credentials",
+			"event", "tv_push_error")
+		tvmetrics.PushErrors.Inc("relay_credentials")
 		c.report(push, "error", "no ingest credentials: "+err.Error())
 		return
 	}

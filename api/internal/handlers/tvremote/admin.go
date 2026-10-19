@@ -42,6 +42,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/tv/remote/signing-key/rotate", h.RotateKey)
 	r.Post("/api/tv/remote/webhook-secret", h.NewWebhookSecret)
 	r.Post("/api/tv/remote/webhook", h.Webhook)
+	h.mountSimulcast(r)
 }
 
 func requireAdmin(w http.ResponseWriter, r *http.Request) bool {

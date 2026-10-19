@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tv"
 	tvremoteh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tvremote"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvremote"
@@ -63,8 +64,9 @@ type P32RemoteDeps struct {
 
 // WireP32Remote builds the Cloudflare Stream integration over the
 // extensions handler q (its Test connection and the account-change guard)
-// and returns a mount function for the /api/tv/remote routes.
-func WireP32Remote(q *queues.Handler, d P32RemoteDeps) (*tvremote.Integration, func(chi.Router)) {
+// and returns the remote controller (for /api/tv/info, story 32.9) and a
+// mount function for the /api/tv/remote routes.
+func WireP32Remote(q *queues.Handler, d P32RemoteDeps) (*tvremote.Integration, *tvremote.Controller, func(chi.Router)) {
 	in := &tvremote.Integration{DB: d.DB, Secrets: d.Secrets, Ext: q, Logger: d.Logger}
 	// Epic 32 stories 32.7-32.10: the remote controller (input pool, pushes,
 	// sessions, tokens, budget) and its reconcile loop.
@@ -72,6 +74,8 @@ func WireP32Remote(q *queues.Handler, d P32RemoteDeps) (*tvremote.Integration, f
 	in.StopPushes = ctl.StopAll
 	if d.DB != nil && !d.NoLoop {
 		go ctl.Run(context.Background())
+		// story 32.11: the TV numbers the control centre charts, every minute
+		go (&tvremote.HealthSampler{DB: d.DB, Remote: ctl, Logger: d.Logger}).Run(context.Background())
 	}
 	if q.Testers == nil {
 		q.Testers = map[string]queues.ExtensionTester{}
@@ -83,7 +87,7 @@ func WireP32Remote(q *queues.Handler, d P32RemoteDeps) (*tvremote.Integration, f
 		return in.Test(ctx)
 	}
 	q.Validators[queues.CloudflareExtension] = in.ValidateSettings
-	return in, func(r chi.Router) { (&tvremoteh.Handler{Integration: in, Remote: ctl}).Mount(r) }
+	return in, ctl, func(r chi.Router) { (&tvremoteh.Handler{Integration: in, Remote: ctl}).Mount(r) }
 }
 
 // remoteAudit writes remote tunes, ends and key rotations to audit_log
@@ -105,5 +109,18 @@ func remoteAudit(db *sql.DB, logger *slog.Logger) func(ctx context.Context, acti
 			VALUES ('tv_remote', $1, $2, $3, $4)`, action, who, target, string(blob)); err != nil {
 			logger.Warn("tv_remote: audit row not written", "action", action, "err", err, "event", "tv_remote_audit_failed")
 		}
+	}
+}
+
+// RemoteAvailability adapts the controller to /api/tv/info (story 32.9); a
+// nil controller: remote viewing is not available on this server.
+func RemoteAvailability(ctl *tvremote.Controller) func(ctx context.Context) tv.RemoteAvailability {
+	if ctl == nil {
+		return nil
+	}
+	return func(ctx context.Context) tv.RemoteAvailability {
+		a := ctl.Availability(ctx)
+		return tv.RemoteAvailability{Available: a.Available, Reason: a.Reason, MaxStreams: a.MaxStreams,
+			TokenTTLMinutes: a.TokenTTLMinutes, Detection: a.Detection}
 	}
 }

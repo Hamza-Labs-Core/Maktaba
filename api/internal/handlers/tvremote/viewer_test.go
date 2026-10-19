@@ -43,26 +43,7 @@ func remoteServer(t *testing.T) (http.Handler, *cftest.Server, *sql.DB, *remote.
 		`INSERT INTO channels (id, number, name, slug) VALUES ('` + chID + `', 101, 'One', 'one')`,
 		`INSERT INTO app_settings (key, value) VALUES ('tv_remote.enabled', 'true')`,
 	}
-	_, file, _, _ := runtime.Caller(0)
-	b, err := os.ReadFile(filepath.Join(filepath.Dir(file), "..", "..", "..", "..", "shared", "db", "migrations", "0125_tv_remote.sqlite.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	up, _, _ := strings.Cut(string(b), "-- +goose Down")
-	for _, blk := range strings.Split(up, "-- +goose StatementBegin") {
-		blk, _, _ = strings.Cut(blk, "-- +goose StatementEnd")
-		for _, s := range strings.Split(blk, ";") {
-			var keep []string
-			for _, l := range strings.Split(s, "\n") {
-				if x := strings.TrimSpace(l); x != "" && !strings.HasPrefix(x, "--") {
-					keep = append(keep, l)
-				}
-			}
-			if len(keep) > 0 {
-				stmts = append(stmts, strings.Join(keep, "\n"))
-			}
-		}
-	}
+	stmts = append(stmts, slotStatements(t, "0125_tv_remote.sqlite.sql", "0126_tv_simulcast.sqlite.sql")...)
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {
 			t.Fatalf("%v: %s", err, s)
@@ -194,4 +175,34 @@ func TestRemoteAdminActions(t *testing.T) {
 	if code != "ERR_GOP_OUT_OF_RANGE" {
 		t.Errorf("error code %q", code)
 	}
+}
+
+// slotStatements are the Up statements of SQLite migration files (ADD
+// COLUMN IF NOT EXISTS, which the API's runner rewrites, runs plain here).
+func slotStatements(t *testing.T, names ...string) []string {
+	t.Helper()
+	_, file, _, _ := runtime.Caller(0)
+	var stmts []string
+	for _, name := range names {
+		b, err := os.ReadFile(filepath.Join(filepath.Dir(file), "..", "..", "..", "..", "shared", "db", "migrations", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		up, _, _ := strings.Cut(string(b), "-- +goose Down")
+		for _, blk := range strings.Split(up, "-- +goose StatementBegin") {
+			blk, _, _ = strings.Cut(blk, "-- +goose StatementEnd")
+			for _, s := range strings.Split(blk, ";") {
+				var keep []string
+				for _, l := range strings.Split(s, "\n") {
+					if x := strings.TrimSpace(l); x != "" && !strings.HasPrefix(x, "--") {
+						keep = append(keep, l)
+					}
+				}
+				if len(keep) > 0 {
+					stmts = append(stmts, strings.ReplaceAll(strings.Join(keep, "\n"), "ADD COLUMN IF NOT EXISTS", "ADD COLUMN"))
+				}
+			}
+		}
+	}
+	return stmts
 }

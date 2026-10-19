@@ -526,7 +526,10 @@ whatever the number of destinations.
 - **Continuity.** Outputs belong to the input, so everything that keeps the input keeps them: a
   block change, muxer restart, Epic 33 hot swap or rollback, or failover: the home's push relay
   keeps one RTMPS/SRT session and only switches its source (§7.4, Epic 33.8); a rotation at `max_push_hours`
-  (same input, a new broadcast; the destination sees a gap of seconds).
+  (same input, a new broadcast; the destination sees a gap of seconds). An input swap (a retry
+  on a fresh input after an `ERR_*` error) deletes the old input with its outputs; the
+  controller creates them again on the new input once its push is live (the destination sees a
+  reconnect).
 - **Status.** Maktaba's own output state (`scheduled`, `starting`, `live`, `stopping`, `off`,
   `errored`) plus the input's status and lifecycle (§7.8). Cloudflare documents no per-output
   health; the 32.6 spike checks for one (README Q13).

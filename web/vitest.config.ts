@@ -14,12 +14,17 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "src"),
       "@ds": path.resolve(__dirname, "design-system"),
+      "@maktaba/tvplayer": path.resolve(__dirname, "packages/tvplayer/src"),
     },
   },
   test: {
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
-    include: ["src/**/*.test.{ts,tsx}", "design-system/**/*.test.{ts,tsx}"],
+    include: [
+      "src/**/*.test.{ts,tsx}",
+      "design-system/**/*.test.{ts,tsx}",
+      "packages/**/*.test.{ts,tsx}",
+    ],
   },
 });

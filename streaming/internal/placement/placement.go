@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/channel"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/tvmetrics"
 )
 
 // ErrNoHost is returned when no host can take a channel (R2.5). It matches
@@ -272,7 +273,8 @@ func (s *Service) Place(ctx context.Context, ch uuid.UUID, reason, host string) 
 		return p, nil
 	}
 	s.log().Info("tv: channel placed", "channel_id", ch.String(), "host_id", p.Host,
-		"generation", p.Gen, "reason", p.Reason, "event", "tv_placed")
+		"generation", p.Gen, "reason", p.Reason, "event", "tv_placement")
+	tvmetrics.Placements.Inc(p.Reason)
 	s.changed(ch)
 	s.put(p)
 	return p, nil
