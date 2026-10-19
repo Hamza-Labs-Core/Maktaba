@@ -1,0 +1,46 @@
+# Maktaba node worker (Epic 31) — systemd USER unit: the main worker of a machine
+# that joined a Maktaba home. Installed by deploy/packaging/node/install-node.sh to
+# ~/.config/systemd/user/; extra transcription workers are maktaba-node@<N>.service.
+#
+# A user unit runs as you, with your share mounts and your node config
+# (~/.config/maktaba/node.json). With lingering on (`loginctl enable-linger`, which the
+# installer turns on) it starts at boot, before anyone logs in.
+#
+# Ordering: a user manager cannot see the system's network-online.target or
+# remote-fs.target, so this unit cannot wait for them (the system variant in
+# ../system/ does). A worker started before the network or the share is up fails its
+# first database connect and is restarted below until it gets through.
+[Unit]
+Description=Maktaba node worker
+Documentation=https://github.com/Hamza-Labs-Core/Maktaba/blob/main/deploy/packaging/node/README.md
+# Keep retrying for as long as the home is unreachable (no start-rate limit).
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=%h
+Environment=MAKTABA_ENV=prod
+Environment=PYTHONUNBUFFERED=1
+# Optional settings (KEY=VALUE); they win over the lines above. (%h/.config rather than
+# %E, which needs systemd 240+.)
+EnvironmentFile=-%h/.config/maktaba/node.env
+# A node takes its database from the node config; MAKTABA_DATABASE_URL would turn the
+# worker into a home worker on that database.
+UnsetEnvironment=MAKTABA_DATABASE_URL
+# Refuse to start (exit 78) until the machine has joined: `run` without a joined config
+# would fall back to an in-memory database. Restart= retries, so the worker starts by
+# itself once `maktaba-pipeline join` completes.
+ExecStartPre=%h/.local/share/maktaba/node/venv/bin/python %h/.local/share/maktaba/node/node_check.py
+ExecStart=%h/.local/share/maktaba/node/venv/bin/python -m maktaba_pipeline run
+# Crash, failed start, home unreachable: restart. A clean exit (stopped, or revoked on
+# the home) is final.
+Restart=on-failure
+RestartSec=30
+# SIGTERM to the worker first so it hands its jobs back; SIGKILL to what is left.
+KillMode=mixed
+TimeoutStopSec=60
+SyslogIdentifier=maktaba-node
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

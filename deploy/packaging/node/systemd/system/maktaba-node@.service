@@ -1,0 +1,49 @@
+# Maktaba node worker (Epic 31) — systemd SYSTEM template unit: extra transcription
+# worker <N> of a headless machine that joined a Maktaba home, beside
+# maktaba-node.service.
+#
+#   sudo systemctl enable --now maktaba-node@1.service maktaba-node@2.service
+#
+# Each instance claims only `transcribe` and names its speech-to-text metrics with
+# MAKTABA_STT_SLOT=stt-<N>. Per-instance settings: /etc/maktaba/node@<N>.env. The
+# account comes from the installer's drop-in maktaba-node@.service.d/10-run-as.conf.
+#
+# See maktaba-node.service for the ordering, restart, join-check and hardening notes.
+[Unit]
+Description=Maktaba node worker %i (transcription)
+Documentation=https://github.com/Hamza-Labs-Core/Maktaba/blob/main/deploy/packaging/node/README.md
+After=network-online.target remote-fs.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=maktaba
+Group=maktaba
+WorkingDirectory=~
+Environment=MAKTABA_ENV=prod
+Environment=PYTHONUNBUFFERED=1
+Environment=MAKTABA_STT_SLOT=stt-%i
+Environment=MAKTABA_PIPELINE_STAGES=transcribe
+EnvironmentFile=-/etc/maktaba/node.env
+EnvironmentFile=-/etc/maktaba/node@%i.env
+UnsetEnvironment=MAKTABA_DATABASE_URL
+ExecStartPre=/opt/maktaba/node/venv/bin/python /opt/maktaba/node/node_check.py
+ExecStart=/opt/maktaba/node/venv/bin/python -m maktaba_pipeline run
+Restart=on-failure
+RestartSec=30
+KillMode=mixed
+TimeoutStopSec=60
+SyslogIdentifier=maktaba-node@%i
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
