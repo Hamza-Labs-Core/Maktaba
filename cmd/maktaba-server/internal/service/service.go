@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"text/template"
@@ -125,9 +124,26 @@ func (s Spec) withDefaults() Spec {
 // tests keep forward slashes).
 func (s Spec) join(elem ...string) string {
 	if s.Kind == KindTask || s.Kind == KindWinService {
-		return filepath.Join(elem...)
+		return winJoin(elem...)
 	}
 	return path.Join(elem...)
+}
+
+// winJoin joins Windows path elements on any OS (tests render Windows units on
+// Linux, where filepath uses "/").
+func winJoin(elem ...string) string {
+	out := ""
+	for _, e := range elem {
+		if e == "" {
+			continue
+		}
+		if out == "" {
+			out = e
+			continue
+		}
+		out = strings.TrimRight(out, `\/`) + `\` + strings.TrimLeft(e, `\/`)
+	}
+	return out
 }
 
 // UnitPath is where the unit file goes ("" for a Windows service, which

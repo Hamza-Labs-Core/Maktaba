@@ -49,6 +49,9 @@ func launcherRelease() (string, error) {
 	return rd, nil
 }
 
+// stopFilePoll is how often serve looks for the launcher's stop file.
+var stopFilePoll = 500 * time.Millisecond
+
 // watchStopFile cancels when the launcher's stop file appears.
 func watchStopFile(ctx context.Context, cancel context.CancelFunc) {
 	p := os.Getenv(envStopFile)
@@ -56,7 +59,7 @@ func watchStopFile(ctx context.Context, cancel context.CancelFunc) {
 		return
 	}
 	go func() {
-		t := time.NewTicker(500 * time.Millisecond)
+		t := time.NewTicker(stopFilePoll)
 		defer t.Stop()
 		for {
 			select {

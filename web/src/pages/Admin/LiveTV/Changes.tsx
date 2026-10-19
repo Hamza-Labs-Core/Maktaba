@@ -38,6 +38,7 @@ import {
   userName,
 } from "./changeBits";
 import { SlotBar } from "./SlotBar";
+import { HeldReleaseCard } from "./HeldReleaseCard";
 import "../../../styles/tvchanges.css";
 
 export function AdminTvChanges() {
@@ -124,6 +125,8 @@ function ChangesInner() {
         <Link to="/admin/live-tv">{t("tvchanges.backToLiveTv")}</Link>
       </header>
       <p className="mkt-tvx-hint">{t("tvchanges.intro")}</p>
+      {/* Epic 35: a release that waits for an admin's approval */}
+      <HeldReleaseCard />
 
       <div className="mkt-tvx-status" aria-live="polite">
         {error && (

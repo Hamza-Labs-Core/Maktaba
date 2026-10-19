@@ -21,6 +21,7 @@ import (
 // MAKTABA_TEST_WINDOWS_SERVICE=1 (the windows-latest CI job), never on a
 // developer's machine by accident.
 func TestWindowsServiceControl(t *testing.T) {
+	processTest(t)
 	if os.Getenv("MAKTABA_TEST_WINDOWS_SERVICE") != "1" {
 		t.Skip("set MAKTABA_TEST_WINDOWS_SERVICE=1 (CI) to install a test service")
 	}

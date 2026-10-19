@@ -309,7 +309,8 @@ func runServe() error {
 	// route's auth rides the principal middleware applySecurity installs.
 	updater := buildUpdater(logger)
 	go updater.Run(context.Background())
-	router.MountP28(r, router.P28Deps{Updater: updater})
+	updatesRef := &router.UpdatesRef{} // Epic 35: filled once the app database is open
+	router.MountP28(r, router.P28Deps{Updater: updater, Updates: updatesRef})
 	logger.Info("p28: auto-update surface mounted", "event", "p28_mounted")
 
 	// Phase 6 (Epic 7) handler wiring. Opens its own *sql.DB so the
@@ -491,6 +492,10 @@ func runServe() error {
 			// Epic 33: TV changes (/api/tv/changes, releases, slots) and the change
 			// controller (staged -> verified -> approved -> swapped)
 			router.MountP33(r, router.P33Deps{DB: appDB, Logger: logger, RunController: true})
+			// Epic 35 story 35.3: update policy, release catalog and the quiet-window
+			// scheduler (/api/cluster/updates). Verification is story 35.1's.
+			router.MountP35(r, router.P35Deps{DB: appDB, Logger: logger, Current: version.Version,
+				BaseChannel: version.Channel(), Ref: updatesRef, RunLoops: true})
 			logger.Info("p27: live-channel + guide handlers mounted",
 				"event", "p27_mounted")
 

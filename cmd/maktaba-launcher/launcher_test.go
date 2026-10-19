@@ -136,6 +136,16 @@ func switcherMain(root string) {
 
 // --- helpers -----------------------------------------------------------------
 
+// processTest skips under -short (the unit tier's 100 ms per-test cap): these
+// start real processes and wait on backoffs; they run in the launcher gate on
+// Linux, macOS and Windows and in the integration tier.
+func processTest(t *testing.T) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("starts processes: launcher gate / integration tier")
+	}
+}
+
 func selfBinary(t *testing.T) string {
 	t.Helper()
 	p, err := os.Executable()
@@ -278,6 +288,7 @@ func installed(t *testing.T, versions map[string]string, current string) layout.
 
 func TestLauncherRestartsOn75(t *testing.T) {
 	t.Parallel()
+	processTest(t)
 	l := installed(t, map[string]string{"1.0.0": "exit:75,exit:75,run"}, "1.0.0")
 	cfg := testConfig(l.Root)
 	cfg.BackoffInitial = 2 * time.Second // a 75 must not wait for the backoff
@@ -297,6 +308,7 @@ func TestLauncherRestartsOn75(t *testing.T) {
 
 func TestLauncherRestart75ReReadsCurrent(t *testing.T) {
 	t.Parallel()
+	processTest(t)
 	// what the supervisor does on a self-update (design §8): flip current, exit 75
 	l := installed(t, map[string]string{"1.0.0": "flip75:2.0.0,run", "2.0.0": "confirm-run"}, "1.0.0")
 	cfg := testConfig(l.Root)
@@ -310,6 +322,7 @@ func TestLauncherRestart75ReReadsCurrent(t *testing.T) {
 
 func TestLauncherBackoff(t *testing.T) {
 	t.Parallel()
+	processTest(t)
 	l := installed(t, map[string]string{"1.0.0": "crash"}, "1.0.0")
 	cfg := testConfig(l.Root)
 	cfg.BackoffInitial = 100 * time.Millisecond
@@ -337,6 +350,7 @@ func TestLauncherBackoff(t *testing.T) {
 
 func TestLauncherStopExits0(t *testing.T) {
 	t.Parallel()
+	processTest(t)
 	l := installed(t, map[string]string{"1.0.0": "run"}, "1.0.0")
 	stop := startLauncher(t, testConfig(l.Root))
 	waitFor(t, "running", func() bool { return countAct(readTrace(l), "1.0.0", "run") == 1 })
@@ -357,6 +371,7 @@ func TestLauncherStopExits0(t *testing.T) {
 
 func TestLauncherKillsAfterStopGrace(t *testing.T) {
 	t.Parallel()
+	processTest(t)
 	l := installed(t, map[string]string{"1.0.0": "hang"}, "1.0.0")
 	cfg := testConfig(l.Root)
 	cfg.StopGrace = 300 * time.Millisecond
@@ -373,6 +388,7 @@ func TestLauncherKillsAfterStopGrace(t *testing.T) {
 
 func TestBootLoopGuardFallsBack(t *testing.T) {
 	t.Parallel()
+	processTest(t)
 	l := installed(t, map[string]string{"1.0.0": "run", "2.0.0": "crash"}, "1.0.0")
 	if err := l.Switch("2.0.0", "run-1", time.Now()); err != nil {
 		t.Fatal(err)
@@ -396,6 +412,7 @@ func TestBootLoopGuardFallsBack(t *testing.T) {
 
 func TestPendingTimeoutFallsBack(t *testing.T) {
 	t.Parallel()
+	processTest(t)
 	l := installed(t, map[string]string{"1.0.0": "run", "2.0.0": "run"}, "1.0.0")
 	if err := l.Switch("2.0.0", "run-1", time.Now()); err != nil {
 		t.Fatal(err)
@@ -418,6 +435,7 @@ func TestPendingTimeoutFallsBack(t *testing.T) {
 
 func TestConfirmedPendingStays(t *testing.T) {
 	t.Parallel()
+	processTest(t)
 	l := installed(t, map[string]string{"1.0.0": "run", "2.0.0": "crash,confirm-run"}, "1.0.0")
 	if err := l.Switch("2.0.0", "run-1", time.Now()); err != nil {
 		t.Fatal(err)
@@ -437,6 +455,7 @@ func TestConfirmedPendingStays(t *testing.T) {
 
 func TestLauncherRefusesTamperedCurrent(t *testing.T) {
 	t.Parallel()
+	processTest(t)
 	l := installed(t, map[string]string{"1.0.0": "run", "2.0.0": "run"}, "1.0.0")
 	_ = l.Switch("2.0.0", "", time.Now())
 	_ = l.Confirm()
@@ -459,6 +478,7 @@ func TestLauncherRefusesTamperedCurrent(t *testing.T) {
 
 func TestLauncherPrunedCurrentStartsPrevious(t *testing.T) { // EC2
 	t.Parallel()
+	processTest(t)
 	l := installed(t, map[string]string{"1.0.0": "run", "2.0.0": "run"}, "1.0.0")
 	_ = l.Switch("2.0.0", "", time.Now())
 	_ = l.Confirm()
@@ -471,6 +491,7 @@ func TestLauncherPrunedCurrentStartsPrevious(t *testing.T) { // EC2
 
 func TestNoPreviousKeepsRetrying(t *testing.T) { // EC1
 	t.Parallel()
+	processTest(t)
 	l := installed(t, map[string]string{"1.0.0": "crash"}, "")
 	if err := l.Switch("1.0.0", "first", time.Now()); err != nil { // first install: pending, no previous
 		t.Fatal(err)
@@ -487,6 +508,7 @@ func TestNoPreviousKeepsRetrying(t *testing.T) { // EC1
 
 func TestSecondLauncherExits(t *testing.T) { // EC5
 	t.Parallel()
+	processTest(t)
 	l := installed(t, map[string]string{"1.0.0": "run"}, "1.0.0")
 	lk, err := l.Lock()
 	if err != nil {
@@ -510,6 +532,7 @@ func TestSecondLauncherExits(t *testing.T) { // EC5
 // the guard when it is the unconfirmed one.
 func TestPowerLossMidSwitch(t *testing.T) {
 	t.Parallel()
+	processTest(t)
 	l := installed(t, map[string]string{"1.0.0": "run", "2.0.0": "run"}, "1.0.0")
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	for i := 0; i < 25; i++ {
@@ -558,6 +581,7 @@ func TestPowerLossMidSwitch(t *testing.T) {
 
 func TestStatusAndVerifyCLI(t *testing.T) {
 	t.Parallel()
+	processTest(t)
 	l := installed(t, map[string]string{"1.0.0": "run", "2.0.0": "crash"}, "1.0.0")
 	_ = l.RaiseWatermark("1.0.0")
 	_ = l.Switch("2.0.0", "run-9", time.Now())
@@ -605,6 +629,7 @@ func TestStatusAndVerifyCLI(t *testing.T) {
 
 func TestReplaceSelf(t *testing.T) {
 	t.Parallel()
+	processTest(t)
 	dir := t.TempDir()
 	target := filepath.Join(dir, layout.Exe("maktaba-launcher"))
 	if err := os.WriteFile(target, []byte("old launcher"), 0o755); err != nil {

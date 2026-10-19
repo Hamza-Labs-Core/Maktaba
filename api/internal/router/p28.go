@@ -19,6 +19,7 @@ import (
 
 	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates"
 )
 
 // P28Deps bundles the dependencies for the Epic 28 handlers.
@@ -26,6 +27,11 @@ type P28Deps struct {
 	// Updater is the shared update-check service (its background loop is
 	// started by main.go). nil skips all Epic 28 routes.
 	Updater *system.Updater
+	// Updates is the Epic 35 updater (story 35.3), filled in by MountP35 once the
+	// database is open. Set: GET /api/system/updates gains verified / policy /
+	// next_run_at, and on builds that install by themselves POST
+	// /api/admin/system/update is Update now (returns {run_id}).
+	Updates *UpdatesRef
 }
 
 // MountP28 attaches the Epic 28 routes onto r. Safe to skip when Updater
@@ -36,8 +42,21 @@ func MountP28(r chi.Router, d P28Deps) {
 	}
 	r.Group(func(r chi.Router) {
 		r.Use(mw.BodyLimit(mw.DefaultBodyLimit))
-		r.Method(http.MethodGet, "/api/system/updates", d.Updater.Handler())
-		r.Method(http.MethodPost, "/api/admin/system/update",
-			system.NewSelfUpdater(d.Updater).Handler())
+		status := d.Updater.Handler()
+		self := system.NewSelfUpdater(d.Updater).Handler()
+		r.Method(http.MethodGet, "/api/system/updates", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if h := d.Updates.Get(); h != nil {
+				h.ExtendStatus(status).ServeHTTP(w, req)
+				return
+			}
+			status.ServeHTTP(w, req)
+		}))
+		r.Method(http.MethodPost, "/api/admin/system/update", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if h := d.Updates.Get(); h != nil && updates.AutoInstallAvailable() {
+				h.AdminUpdateHandler().ServeHTTP(w, req)
+				return
+			}
+			self.ServeHTTP(w, req)
+		}))
 	})
 }

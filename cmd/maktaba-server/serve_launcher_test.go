@@ -33,6 +33,7 @@ func TestLauncherReleaseRefusesOutsideLayout(t *testing.T) {
 }
 
 func TestWatchStopFile(t *testing.T) {
+	stopFilePoll = 10 * time.Millisecond
 	stop := filepath.Join(t.TempDir(), "stop-1")
 	t.Setenv(envStopFile, stop)
 	ctx, cancel := context.WithCancel(context.Background())
