@@ -439,7 +439,7 @@ func TestRelayOneStallOneRestart(t *testing.T) {
 }
 
 // Post-merge review: Kick before Run (Ctl registers the session first) is safe.
-func TestRelayKickBeforeRun(t *testing.T) {
+func TestRelayKickBeforeRun(_ *testing.T) {
 	src := &fakeSource{gens: []*tsGen{newGen(0x1000, 0x100, 0x101, 0)}, frames: []int{10}, block: make(chan struct{})}
 	s := &Session{PushID: "p1", Channel: uuid.New(), Source: src, Runner: &fakeRunner{}, Restart: 5 * time.Millisecond}
 	ctx, cancel := context.WithCancel(context.Background())
