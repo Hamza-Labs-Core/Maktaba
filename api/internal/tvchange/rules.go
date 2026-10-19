@@ -32,18 +32,18 @@ type Config struct {
 	// SwapStartTimeoutMin: a swap operation no front door took within this fails
 	// (rolled back, with a notice); 0: it waits for the front door however long
 	SwapStartTimeoutMin int
-	KeepWarmMinutes    int
-	RetentionHours     int
-	VerifySoakSeconds  int
-	RequireSecondAdmin bool
-	ParamChangePush    string
-	AutoRollback       bool
-	HotStandby         bool
-	StagingMaxExtra    int
-	RollingSwap        string
-	StandbyWarm        string
-	ProbeChannel       string
-	VerifyProbeSeconds int
+	KeepWarmMinutes     int
+	RetentionHours      int
+	VerifySoakSeconds   int
+	RequireSecondAdmin  bool
+	ParamChangePush     string
+	AutoRollback        bool
+	HotStandby          bool
+	StagingMaxExtra     int
+	RollingSwap         string
+	StandbyWarm         string
+	ProbeChannel        string
+	VerifyProbeSeconds  int
 }
 
 // DefaultSwapStartTimeoutMin is tv_staging.swap_start_timeout_minutes' default.
@@ -58,25 +58,25 @@ func LoadConfig(ctx context.Context, db *sql.DB) (Config, error) {
 		return Config{}, err
 	}
 	c := Config{
-		Enabled:            asBool(m["enabled"], true),
-		AutoPromote:        map[string]string{},
-		QuietWindow:        asStr(m["quiet_window"], "03:00-05:00"),
-		QuietMaxViewers:    asInt(m["quiet_max_viewers"], 0),
-		SwapWait:           asStr(m["swap_wait"], "boundary"),
-		BoundaryMaxWaitMin: asInt(m["boundary_max_wait_minutes"], 30),
+		Enabled:             asBool(m["enabled"], true),
+		AutoPromote:         map[string]string{},
+		QuietWindow:         asStr(m["quiet_window"], "03:00-05:00"),
+		QuietMaxViewers:     asInt(m["quiet_max_viewers"], 0),
+		SwapWait:            asStr(m["swap_wait"], "boundary"),
+		BoundaryMaxWaitMin:  asInt(m["boundary_max_wait_minutes"], 30),
 		SwapStartTimeoutMin: asInt(m["swap_start_timeout_minutes"], DefaultSwapStartTimeoutMin),
-		KeepWarmMinutes:    asInt(m["keep_warm_minutes"], 15),
-		RetentionHours:     asInt(m["rollback_retention_hours"], 24),
-		VerifySoakSeconds:  asInt(m["verify_soak_seconds"], 120),
-		VerifyProbeSeconds: asInt(m["verify_probe_seconds"], 30),
-		RequireSecondAdmin: asBool(m["require_second_admin"], false),
-		ParamChangePush:    asStr(m["param_change_push"], "approve"),
-		AutoRollback:       asBool(m["auto_rollback"], true),
-		HotStandby:         asBool(m["hot_standby"], true),
-		StagingMaxExtra:    asInt(m["staging_max_extra_encodes"], 0),
-		RollingSwap:        asStr(m["rolling_swap"], "auto"),
-		StandbyWarm:        asStr(m["standby_warm"], "demand"),
-		ProbeChannel:       asStr(m["probe_channel"], ""),
+		KeepWarmMinutes:     asInt(m["keep_warm_minutes"], 15),
+		RetentionHours:      asInt(m["rollback_retention_hours"], 24),
+		VerifySoakSeconds:   asInt(m["verify_soak_seconds"], 120),
+		VerifyProbeSeconds:  asInt(m["verify_probe_seconds"], 30),
+		RequireSecondAdmin:  asBool(m["require_second_admin"], false),
+		ParamChangePush:     asStr(m["param_change_push"], "approve"),
+		AutoRollback:        asBool(m["auto_rollback"], true),
+		HotStandby:          asBool(m["hot_standby"], true),
+		StagingMaxExtra:     asInt(m["staging_max_extra_encodes"], 0),
+		RollingSwap:         asStr(m["rolling_swap"], "auto"),
+		StandbyWarm:         asStr(m["standby_warm"], "demand"),
+		ProbeChannel:        asStr(m["probe_channel"], ""),
 	}
 	for _, k := range Kinds {
 		c.AutoPromote[k] = asStr(m["auto_promote_"+k], RuleApproval)
