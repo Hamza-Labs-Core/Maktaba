@@ -158,11 +158,11 @@ class FakeLiveTV:
             and parts[:3] == ["media", "grabbers", "devices"]
             and parts[4:] == ["channelmap"]
         ):
-            dev = self.devices.get(parts[3])
-            if dev is None:
+            device = self.devices.get(parts[3])
+            if device is None:
                 return None
             enabled = q.get("channelsEnabled", "").split(",")
-            dev["ChannelMapping"] = [
+            device["ChannelMapping"] = [
                 {"channelKey": n, "lineupIdentifier": n, "enabled": "1"} for n in enabled if n
             ]
             return {}
