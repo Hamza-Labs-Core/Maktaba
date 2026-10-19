@@ -736,6 +736,7 @@
   "channels.source.search.collection": "ابحث عن مجموعة",
   "channels.source.searchPlaceholder": "اكتب للبحث…",
   "channels.source.none": "لا شيء يطابق «{q}».",
+  "channels.source.nothing": "لا شيء للاختيار منه بعد.",
   "channels.source.count": "{n} حلقة · {dur}",
   "channels.dur.hm": "{h} س {m} د",
   "channels.dur.h": "{h} س",

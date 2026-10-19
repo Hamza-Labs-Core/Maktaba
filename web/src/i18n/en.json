@@ -736,6 +736,7 @@
   "channels.source.search.collection": "Find a collection",
   "channels.source.searchPlaceholder": "Type to search…",
   "channels.source.none": "Nothing matches “{q}”.",
+  "channels.source.nothing": "Nothing to pick from yet.",
   "channels.source.count": "{n} episodes · {dur}",
   "channels.dur.hm": "{h} h {m} min",
   "channels.dur.h": "{h} h",

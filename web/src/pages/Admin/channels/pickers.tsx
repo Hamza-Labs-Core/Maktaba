@@ -122,7 +122,11 @@ export function SourceSearch({
         <p className="mkt-muted">{t("common.loading")}</p>
       ) : hits.length === 0 ? (
         <p className="mkt-muted">
-          {failed ? t("common.error") : t("channels.source.none", { q: query })}
+          {failed
+            ? t("common.error")
+            : query
+              ? t("channels.source.none", { q: query })
+              : t("channels.source.nothing")}
         </p>
       ) : (
         <ul className="mkt-cb-hits" role="listbox" aria-label={label}>
