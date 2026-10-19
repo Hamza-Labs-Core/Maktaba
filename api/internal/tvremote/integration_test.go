@@ -173,7 +173,12 @@ func TestCFTestConnection(t *testing.T) {
 			t.Fatalf("%+v", r.Lines)
 		}
 	})
+}
 
+// TC3 (continued): each failing check is reported (split from TestCFTestConnection so
+// no single test runs past the unit tier's per-test cap under -race).
+func TestCFTestConnectionFailingChecks(t *testing.T) {
+	ctx := context.Background()
 	cases := []struct {
 		name   string
 		set    func(f *cftest.Server)
@@ -210,6 +215,11 @@ func TestCFTestConnection(t *testing.T) {
 		})
 	}
 
+}
+
+// TC3 (continued): the pool input and the push check.
+func TestCFTestConnectionPoolAndPush(t *testing.T) {
+	ctx := context.Background()
 	t.Run("pool input created when the account has none", func(t *testing.T) {
 		fx := newFixture(t)
 		_, _ = fx.in.Test(ctx)
