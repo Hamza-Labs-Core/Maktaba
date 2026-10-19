@@ -10,7 +10,8 @@ its series' display name and its episode number over the snapshot:
 * with ``display_titles.use_in_guide``: ``title`` (the display title), ``series``,
   ``episode`` and ``episode_title`` too; the library title stays as ``source_title``.
 
-A video with no display title yet keeps its snapshot as it was (plus ``on_air``).
+A video with no display title yet (or a block with no video) keeps its snapshot as it
+was; the strip then shows its ``title``.
 """
 
 from __future__ import annotations
@@ -75,9 +76,7 @@ def merge_snapshot(
     """``snap`` with the display parts laid over it (see the module doc)."""
     out = dict(snap)
     if info is None or (not cfg.enabled and not info.get("title")):
-        if out.get("title") and "on_air" not in out:
-            out["on_air"] = str(out["title"])
-        return out
+        return out  # the strip falls back to the title
     raw = str(out.get("source_title") or out.get("title") or "")
     title = str(info.get("title") or "")
     series = str(info.get("series") or "")

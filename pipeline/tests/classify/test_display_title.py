@@ -136,7 +136,7 @@ def test_merge_snapshot_guide_and_strip() -> None:
     assert merge_snapshot(got, info, CFG)["source_title"] == "raw ｜ title"
     off = merge_snapshot(snap, info, DisplayTitleConfig(use_in_guide=False))
     assert off["title"] == "raw ｜ title" and off["on_air"].endswith("في الخنادق")
-    assert merge_snapshot({"title": "x"}, None, CFG) == {"title": "x", "on_air": "x"}
+    assert merge_snapshot({"title": "x"}, None, CFG) == {"title": "x"}
 
 
 @pytest.mark.unit
