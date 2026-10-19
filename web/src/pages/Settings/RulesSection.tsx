@@ -21,6 +21,7 @@ import { rulesApi, rulesError, type RuleField, type RuleSection } from "../../li
 import { Editor, tableProblems, type T } from "./RuleEditors";
 import { controlOf, same, subGroups, valueProblem, weekdayNames, WEEKDAYS } from "./ruleKinds";
 import { StripRulesTools } from "./StripRulesTools";
+import { RemoteUsage } from "../Admin/RemoteUsage";
 import "./rules.css";
 
 /**
@@ -564,6 +565,11 @@ export function RulesSection() {
               readOnly={!canEdit || busy}
               onSet={(f, v) => setEdit(s.key, f, v)}
             />
+          </div>
+        )}
+        {s.key === "tv_remote" && (
+          <div className="mkt-q mkt-rules__preview">
+            <RemoteUsage admin={canEdit} />
           </div>
         )}
         {s.key === "planner" && (

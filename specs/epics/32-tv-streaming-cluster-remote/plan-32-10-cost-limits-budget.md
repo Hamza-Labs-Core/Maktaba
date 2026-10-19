@@ -1,7 +1,7 @@
 # Plan 32.10 — Cost, limits and budget — implementation
 
 > Implementation plan for [story-32-10](story-32-10-cost-limits-budget.md).
-> Uses slot 0124 (`tv_remote_usage_daily`). Design: [design.md](design.md) §9.
+> Uses slot 0125 (`tv_remote_usage_daily`). Design: [design.md](design.md) §9.
 
 ## 0. Decisions
 
