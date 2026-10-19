@@ -1,10 +1,9 @@
 # Epic 32 — Maktaba TV across the cluster, and remote viewing through Cloudflare Stream
 
-> **Status:** mostly built (checked against the code 2026-10-19). **Built:** 32.1-32.8, 32.11,
-> 32.12 (the runbook's §9 measurements wait for the Cloudflare spike, which has not been run against a
-> real account). **Partly built:** 32.9 (web only: the tvOS, Android TV and mobile apps do not tune
-> remotely or swap tokens, AC9-11); 32.10 (the 80/100 % budget notice is computed but neither shown
-> nor sent, AC4); 32.13 (the simulcast cap notice is computed but neither shown nor sent, AC9).
+> **Status:** mostly built (checked against the code 2026-10-19). **Built:** 32.1-32.8,
+> 32.10-32.13 (the runbook's §9 measurements wait for the Cloudflare spike, which has not been run
+> against a real account). **Partly built:** 32.9 (web only: the tvOS, Android TV and mobile apps do
+> not tune remotely or swap tokens, AC9-11).
 > **Source:** `specs/epics/32-tv-streaming-cluster-remote/`.
 > **Anchors:** [Epic 27 — Live Channels](../27-live-channels/README.md) (the channel engine,
 > HDHomeRun, XMLTV/M3U), [Epic 31 — Multi-instance](../31-multi-instance/README.md) (home and

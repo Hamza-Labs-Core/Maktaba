@@ -3,12 +3,12 @@
 > **Status:** partly built (checked against the code 2026-10-19). **Built:** 33.1 two slots
 > (Postgres home only), 33.2 releases, 33.3 generations, 33.4 splice-ready output, 33.7 hot swap,
 > 33.9 rollback (no post-swap health trigger or crash-loop counter yet), 33.10 state machine, 33.11
-> Changes page, 33.5 staging verification and 33.6 preview (shipped builds are built with
+> Changes page, 33.12 producers in review mode, 33.13 notifications and audit, 33.5 staging
+> verification and 33.6 preview (shipped builds are built with
 > `-tags tvstaging`: the Makefile's `STREAMING_TAGS`, the release workflow, the streaming
 > Dockerfile; a build without the tag keeps the database-only checks). **Partly built:** 33.8 push
 > continuity (no TC7 spike, `param_change_push=defer` or
-> multi-host staging placements); 33.12 producers (filler pool edits bypass staging, AC6); 33.13
-> notifications (failover and crash-loop notices have no senders); 33.15 observability (swap,
+> multi-host staging placements); 33.15 observability (swap,
 > rollback, splice and stitch metrics only). **Not built:** 33.14 upgrade through a swap, 33.16
 > docs and runbook. **Source:** `specs/epics/33-tv-staging-hot-swap/`.
 > **Anchors:** [Epic 27 — Live Channels](../27-live-channels/README.md) (channel engine, scheduler,
@@ -562,8 +562,8 @@ the runtime stories (33.1, 33.4, 33.7). What that means, and where the runtime h
 - **Since built:** preview (33.6) and rollback (33.9) are implemented (`POST
   /api/tv/changes/{id}/preview`, `POST /api/tv/rollback`), `GET /api/tv/slots` reads `tv_slots`
   (33.1), change notifications (33.13) are sent, the Changes page (33.11) is built, and shipped
-  builds include the staging slot (`-tags tvstaging`). **Still not:** the failover and crash-loop
-  notifications have no senders.
+  builds include the staging slot (`-tags tvstaging`); the failover and crash-loop notices are
+  sent from the slot events (`tvchange/slotfeed.go`).
 - **Deviations from the text above.** `auto_promote` is one setting per kind (`auto_promote_<kind>`);
   array columns are jsonb; `tv_release_channels.channel_id` has no foreign key (EC1's `RESTRICT` would
   block today's direct deletes with staging off); `tv_release_channels.boundary_at`,
