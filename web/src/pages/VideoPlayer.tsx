@@ -7,12 +7,18 @@
 //   DELETE /api/stream/sessions/{id}                       (teardown)
 //
 // HLS: native where the browser plays application/vnd.apple.mpegurl
-// (Safari/iOS); other browsers get the direct_url fallback. A bundled
-// hls.js MSE player is intentionally NOT added here — that needs a new
-// runtime dependency (lockfile change) which is out of this slice's
-// scope; see the report's deferral note. The rich control surface
-// (speed, PiP, keyboard map, chapter ticks, caption sizing, resume)
-// works on top of the native <video> regardless.
+// (Safari/iOS); elsewhere (Chrome/Firefox desktop) hls.js — lazy-loaded
+// into its own chunk only when native HLS is missing — drives the element
+// through MSE (@maktaba/tvplayer attachVod, the same loading the live player
+// uses). Direct-play sessions set direct_url straight on the element.
+//
+// Signed URLs: manifest_url carries ?sig= and every child URI the streaming
+// service serves carries it too. When the token expires mid-video (HTTP
+// 401/403 under hls.js; under native HLS a media error or stall past
+// expires_at, or a manifest probe answering 401/403) the session is reopened
+// for a fresh signed URL and playback resumes at the current position.
+// The rich control surface (speed, PiP, keyboard map, chapter ticks,
+// caption sizing, resume) works on top of the <video> either way.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
@@ -20,6 +26,7 @@ import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { api, ApiError } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { createWatchSession } from "../lib/watchSession";
+import { attachVod, carrySig } from "@maktaba/tvplayer";
 
 interface OpenSessionResponse {
   session_id: string;
@@ -27,6 +34,13 @@ interface OpenSessionResponse {
   manifest_url?: string;
   direct_url?: string;
   expires_at: string;
+  /** Sidecar subtitle tracks, when the server lists them. */
+  subtitles?: SubtitleTrack[];
+}
+interface SubtitleTrack {
+  lang: string;
+  label?: string;
+  url: string;
 }
 interface Chapter {
   id: number;
@@ -36,6 +50,8 @@ interface Chapter {
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const CAPTION_SCALES = [0.75, 1, 1.25, 1.5];
+/** Treat a signed URL as expired this long before expires_at. */
+const EXPIRY_SKEW_MS = 30_000;
 
 export function VideoPlayer() {
   const { videoId } = useParams();
@@ -50,6 +66,10 @@ export function VideoPlayer() {
   const [captionScale, setCaptionScale] = useState(1);
   const videoRef = useRef<HTMLVideoElement>(null);
   const sessionIdRef = useRef<string | null>(null);
+  // Where the next attachment starts: the ?t= deep link first, then the
+  // position playback had reached when a signed URL had to be refreshed.
+  const resumeRef = useRef<{ at: number; play: boolean } | null>(null);
+  const refreshingRef = useRef(false);
 
   const startAt = Number(params.get("t")) || 0;
 
@@ -111,7 +131,6 @@ export function VideoPlayer() {
     const onEnded = () => beat(true);
     const onLoaded = () => {
       setDuration(el.duration || 0);
-      if (startAt > 0) el.currentTime = startAt;
     };
     el.addEventListener("timeupdate", onTimeUpdate);
     el.addEventListener("pause", onPause);
@@ -123,7 +142,72 @@ export function VideoPlayer() {
       el.removeEventListener("ended", onEnded);
       el.removeEventListener("loadedmetadata", onLoaded);
     };
-  }, [session, startAt]);
+  }, [session]);
+
+  // Attach the stream. Direct play: the file URL on the element. HLS: native
+  // or hls.js (attachVod), starting at the ?t= offset or the resume point.
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || !session || !videoId) return;
+    const resume = resumeRef.current;
+    resumeRef.current = null;
+    const at = resume ? resume.at : startAt;
+    const resumePlay = () => {
+      if (resume?.play) void el.play?.()?.catch?.(() => {});
+    };
+    if (!session.manifest_url) {
+      const onMeta = () => {
+        if (at > 0) el.currentTime = at;
+        resumePlay();
+      };
+      el.addEventListener("loadedmetadata", onMeta, { once: true });
+      el.src = session.direct_url || "";
+      return () => el.removeEventListener("loadedmetadata", onMeta);
+    }
+    let cancelled = false;
+    // Expired signed URL: reopen the session (the server hands back the same
+    // session with a freshly signed URL) and re-attach where we were.
+    const refresh = (position: number, wasPlaying: boolean) => {
+      if (refreshingRef.current) return;
+      refreshingRef.current = true;
+      api
+        .post<OpenSessionResponse>("/api/stream/sessions", { video_id: videoId })
+        .then((s) => {
+          if (cancelled) {
+            // Unmounted / navigated away while reopening: close what we got.
+            void api
+              .delete(`/api/stream/sessions/${encodeURIComponent(s.session_id)}`)
+              .catch(() => {});
+            return;
+          }
+          const prev = sessionIdRef.current;
+          if (prev && prev !== s.session_id) {
+            void api.delete(`/api/stream/sessions/${encodeURIComponent(prev)}`).catch(() => {});
+          }
+          sessionIdRef.current = s.session_id;
+          resumeRef.current = { at: position, play: wasPlaying };
+          setSession(s);
+        })
+        .catch((e) => {
+          if (!cancelled) setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
+        })
+        .finally(() => {
+          refreshingRef.current = false;
+        });
+    };
+    const expiresAt = Date.parse(session.expires_at);
+    const h = attachVod(el, session.manifest_url, {
+      startAt: at,
+      onAuthError: refresh,
+      isExpired: () => Number.isFinite(expiresAt) && Date.now() >= expiresAt - EXPIRY_SKEW_MS,
+    });
+    el.addEventListener("loadedmetadata", resumePlay, { once: true });
+    return () => {
+      cancelled = true;
+      el.removeEventListener("loadedmetadata", resumePlay);
+      h.detach();
+    };
+  }, [session, videoId, startAt, t]);
 
   // Watch-analytics lifecycle (Story 29.1). Independent of the streaming
   // session above: keyed on the video itself, it opens a watch session on
@@ -208,7 +292,8 @@ export function VideoPlayer() {
   if (err) return <ErrorState kind="server" title={t("common.error")} description={err} />;
   if (!session) return <p className="mkt-loading">{t("common.loading")}</p>;
 
-  const src = session.manifest_url || session.direct_url || "";
+  const tracks = session.subtitles ?? [];
+  const sigSource = session.manifest_url || session.direct_url || "";
 
   return (
     <section
@@ -267,11 +352,20 @@ export function VideoPlayer() {
           ref={videoRef}
           data-testid="mkt-video"
           className="mkt-player__video"
-          src={src}
           controls
           playsInline
           preload="metadata"
-        />
+        >
+          {tracks.map((tr) => (
+            <track
+              key={`${tr.lang}:${tr.url}`}
+              kind="subtitles"
+              srcLang={tr.lang}
+              label={tr.label || tr.lang}
+              src={carrySig(tr.url, sigSource)}
+            />
+          ))}
+        </video>
         {duration > 0 && chapters.length > 0 && (
           <div className="mkt-player__chapters" aria-hidden="true">
             {chapters.map((c) => (

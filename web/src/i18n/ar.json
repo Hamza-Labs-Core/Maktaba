@@ -16,6 +16,8 @@
   "common.empty": "لا يوجد شيء بعد.",
   "common.error": "حدث خطأ ما.",
   "common.retry": "إعادة المحاولة",
+  "common.pageError": "حدث خطأ في هذه الصفحة ولم يمكن عرضها.",
+  "common.reloadPage": "أعد تحميل الصفحة",
   "pwa.updateAvailable": "يتوفر إصدار جديد.",
   "pwa.reload": "إعادة التحميل",
   "common.cancel": "إلغاء",

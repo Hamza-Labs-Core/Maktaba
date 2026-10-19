@@ -248,8 +248,17 @@ func (s *nodeSetup) run(ctx context.Context) error {
 	if !s.KeepWorker {
 		s.removeWorkerUnits()
 	}
-	s.say("Done: this machine is a full node. Its web UI: the address in its server.toml (default port 8088).")
+	s.say("Done: this machine is a full node. Its web UI: %s", s.webURL())
 	return nil
+}
+
+// webURL is the node's web address as server.toml now has it.
+func (s *nodeSetup) webURL() string {
+	cfg, _, err := config.LoadFrom(s.ConfigPath)
+	if err != nil {
+		return "the address in " + s.ConfigPath
+	}
+	return cfg.PublicWebURL()
 }
 
 // layoutMode: --mode service is the system install (Windows service, system unit).
@@ -613,6 +622,16 @@ func (s *nodeSetup) writeServerToml() error {
 		changed = true
 	}
 	if _, err := os.Stat(s.ConfigPath); err != nil {
+		changed = true
+	}
+	// the web, API and streaming ports: one another program holds (Splunk's 8088,
+	// 8080 on many Windows desktops) moves into the fallback range (config/ports.go)
+	moved, err := reconcilePorts(&cfg, s.ConfigPath, config.PortOptions{PreferWeb: nodeWebPreference(), KeepOurs: true},
+		s.Out, false)
+	if err != nil {
+		return err
+	}
+	if len(moved) > 0 {
 		changed = true
 	}
 	if !changed {

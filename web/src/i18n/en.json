@@ -16,6 +16,8 @@
   "common.empty": "Nothing here yet.",
   "common.error": "Something went wrong.",
   "common.retry": "Try again",
+  "common.pageError": "This page hit an error and could not be shown.",
+  "common.reloadPage": "Reload the page",
   "pwa.updateAvailable": "A new version is available.",
   "pwa.reload": "Reload",
   "common.cancel": "Cancel",

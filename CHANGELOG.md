@@ -169,6 +169,13 @@ Details of everything in this release:
   creations from Epics 9/12.
 
 ### Fixed
+- Ports taken by another program (Splunk on 8088, a backup tool on 8080): `setup`,
+  `setup --node`, `setup --self-managed` and `serve` check the web, API and
+  streaming ports first and move a taken one to the first free port of 8780-8790,
+  write it to server.toml (and `public_url` / `web_public_url` when they named the
+  old port) and log it. A Windows full node prefers 8780 for the web UI. The web
+  UI binds before serve goes on: a port it cannot bind stops serve with the reason
+  instead of a log line. `serve --role X` never moves a port.
 - Live TV in the browser with TV slots: the web port's stream gate now lets the
   stitched playlist's segments (`/stream/channel/{id}/s/{slot}/seg-N.ts`) through;
   before, every segment answered 404 and the player never started.

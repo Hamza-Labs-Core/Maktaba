@@ -4,7 +4,7 @@
 //   then play manifest_url|direct_url, then
 //   POST /api/stream/sessions/{session_id}/progress { position_sec }
 // and must NOT call the unmounted GET /api/videos/{id}/stream.
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useNavigate } from "react-router-dom";
 
@@ -41,6 +41,12 @@ describe("VideoPlayer", () => {
     del.mockResolvedValue(undefined);
     // Chapter-ticks fetch fires on mount alongside the session open.
     get.mockResolvedValue({ items: [] });
+    // These cases cover the native-HLS path (Safari): the manifest goes
+    // straight onto the element. The hls.js path is VideoPlayer.hls.test.tsx.
+    vi.spyOn(HTMLMediaElement.prototype, "canPlayType").mockReturnValue("maybe");
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("opens a stream session via POST /api/stream/sessions and plays manifest_url", async () => {

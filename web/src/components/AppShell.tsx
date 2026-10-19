@@ -5,6 +5,7 @@
 // 11.10 (update toast), 11.11 (skip-link + landmarks).
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Outlet, NavLink, useLocation, useNavigate, useNavigationType } from "react-router-dom";
+import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { useToast } from "@ds/components/Toast/Toast";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
@@ -78,6 +79,7 @@ function useScrollTopOnNavigate(): void {
 
 export function AppShell() {
   useScrollTopOnNavigate();
+  const { pathname } = useLocation();
   const { user, logout } = useAuth();
   const { t } = useI18n();
   const { focusSearchRef } = useShortcuts();
@@ -214,7 +216,9 @@ export function AppShell() {
           )}
         </nav>
         <main className="mkt-shell__main" role="main" id="mkt-main" tabIndex={-1}>
-          <Outlet />
+          <RouteErrorBoundary resetKey={pathname}>
+            <Outlet />
+          </RouteErrorBoundary>
         </main>
       </div>
       <nav className="mkt-shell__tabbar" aria-label={t("nav.primary")}>
