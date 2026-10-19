@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS cluster_cache_files (
     worker      TEXT    NOT NULL,
     root        TEXT    NOT NULL,
     read_to     INTEGER NOT NULL,
+    window_s    INTEGER NOT NULL,
     updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     PRIMARY KEY (kind, ip, day, worker)
 );

@@ -156,8 +156,8 @@ func TestPruneTheWindow(t *testing.T) {
 		c.flushLogs(bg)
 		c.flushMetrics(bg)
 		for _, day := range []string{"2026-10-17", "2026-10-18", "2026-10-19"} {
-			if _, err := c.exec(bg, db, `INSERT INTO cluster_cache_files (kind, ip, day, worker, root, read_to)
-VALUES ('logs', '10.0.0.1', $1, 'w', '/x', 10)`, day); err != nil {
+			if _, err := c.exec(bg, db, `INSERT INTO cluster_cache_files (kind, ip, day, worker, root, read_to, window_s)
+VALUES ('logs', '10.0.0.1', $1, 'w', '/x', 10, 21600)`, day); err != nil {
 				t.Fatal(err)
 			}
 		}

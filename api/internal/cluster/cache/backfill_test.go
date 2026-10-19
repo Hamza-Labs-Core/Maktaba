@@ -3,6 +3,7 @@ package cache
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -253,6 +254,75 @@ func TestBackfillRateIsBounded(t *testing.T) {
 	}
 	if n := count(t, db, `SELECT count(*) FROM cluster_log_cache`); n != 60 {
 		t.Fatalf("rows = %d", n)
+	}
+}
+
+// A longer window reads every file again from its start (its older lines
+// were read past), so the cache never claims the new hours empty.
+func TestBackfillLongerWindowReadsAgain(t *testing.T) {
+	eachDB(t, func(t *testing.T, db *sql.DB, driver string) {
+		dir, _ := clusterTree(t)
+		clk := newClock("2026-10-19T12:00:00Z")
+		short := newTestCache(db, driver, clk, 6*time.Hour)
+		must(t, short.Backfill(bg, dir))
+		if got := strings.Join(events(t, db), ","); got != "v6,claimed,slow read,boom" {
+			t.Fatalf("6 h window: %s", got)
+		}
+		long := newTestCache(db, driver, clk, 48*time.Hour)
+		must(t, long.Backfill(bg, dir))
+		if got := strings.Join(events(t, db), ","); got != "too old,yesterday,v6,claimed,slow read,boom" {
+			t.Fatalf("48 h window: %s", got)
+		}
+		if !long.Covers(KindLogs, clk.Now().Add(-48*time.Hour), clk.Now()) {
+			t.Fatal("not covered after reading again")
+		}
+		// and a shorter one again reads nothing new
+		again := newTestCache(db, driver, clk, 6*time.Hour)
+		must(t, again.Backfill(bg, dir))
+		if st := again.Snapshot(); st.Logs.FromFiles != 0 {
+			t.Fatalf("a shorter window re-read: %+v", st.Logs)
+		}
+	})
+}
+
+// errReader yields its data, then fails.
+type errReader struct {
+	data []byte
+	err  error
+}
+
+func (e *errReader) Read(p []byte) (int, error) {
+	if len(e.data) == 0 {
+		return 0, e.err
+	}
+	n := copy(p, e.data)
+	e.data = e.data[n:]
+	return n, nil
+}
+
+// A read error ends the file there: the lines before it are kept (and
+// their position), the error goes up so the pass is not whole; a record
+// whose time is no time (past tomorrow) is read past.
+func TestBackfillReadErrorAndBadTimes(t *testing.T) {
+	db := sqliteDB(t)
+	clk := newClock("2026-10-19T12:00:00Z")
+	c := newTestCache(db, "sqlite", clk, 24*time.Hour)
+	first := logLineJSON("2026-10-19T08:00:01Z", "info", "one", `{}`)
+	data := first + `{"ts": 1.7e15, "level": "info", "event": "epoch micros"}` + "\n" +
+		logLineJSON("2099-01-01T00:00:00Z", "info", "future", `{}`) + `{"ts": "2026-10-19T08:00:0`
+	eio := errors.New("input/output error")
+	ch := chunk{kind: KindLogs, key: fileKey{ip: "10.0.0.1", day: "2026-10-19", worker: "w"}, root: "/r", windowS: 86400}
+	err := c.readLines(bg, &errReader{data: []byte(data), err: eio}, ch, clk.Now())
+	if !errors.Is(err, eio) {
+		t.Fatalf("err = %v", err)
+	}
+	if got := strings.Join(events(t, db), ","); got != "one" {
+		t.Fatalf("events = %s", got)
+	}
+	var readTo int64
+	must(t, db.QueryRow(`SELECT read_to FROM cluster_cache_files WHERE worker = 'w'`).Scan(&readTo))
+	if want := int64(len(data) - len(`{"ts": "2026-10-19T08:00:0`)); readTo != want {
+		t.Fatalf("read_to = %d, want %d (before the torn line)", readTo, want)
 	}
 }
 

@@ -205,7 +205,7 @@ func TestPGWorkerRoleAndPersistence(t *testing.T) {
 		`INSERT INTO cluster_log_cache (worker_id, ts, h, ip, level, rank, event, logger, fields)
 VALUES ('w', now(), 1, '10.0.0.1', 'info', 20, 'e', 'l', '{}')`,
 		`INSERT INTO cluster_metrics_cache (worker_id, slot, at, ip, frame) VALUES ('w', now(), now(), '10.0.0.1', '{}')`,
-		`INSERT INTO cluster_cache_files (kind, ip, day, worker, root, read_to) VALUES ('logs', 'x', 'd', 'w', '/', 0)`)
+		`INSERT INTO cluster_cache_files (kind, ip, day, worker, root, read_to, window_s) VALUES ('logs', 'x', 'd', 'w', '/', 0, 0)`)
 	for _, q := range denied {
 		_, err := w.Exec(q)
 		var pqe *pq.Error

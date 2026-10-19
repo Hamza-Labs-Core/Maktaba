@@ -46,6 +46,9 @@ func (c *Cache) ReadLogs(ctx context.Context, q agent.CacheQuery) ([]agent.Cache
 	if c.window <= 0 {
 		return []agent.CacheRecord{}, nil
 	}
+	// a slow or hung database: an error, and the hub reads the files
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
 	where, args := c.where("ts", q)
 	if rk := levelRank(q.Level); rk > 0 {
 		args = append(args, rk)
@@ -89,6 +92,8 @@ func (c *Cache) ReadMetrics(ctx context.Context, q agent.CacheQuery) ([]agent.Ca
 	if c.window <= 0 {
 		return []agent.CacheRecord{}, nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
 	where, args := c.where("at", q)
 	query := `SELECT worker_id, at, frame FROM cluster_metrics_cache WHERE ` + where + ` ORDER BY at, worker_id`
 	if q.Limit > 0 {

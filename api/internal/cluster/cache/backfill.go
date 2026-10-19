@@ -82,8 +82,9 @@ func (c *Cache) Backfill(ctx context.Context, dir string) error {
 type fileKey struct{ ip, day, worker string }
 
 type readPos struct {
-	root   string
-	readTo int64
+	root    string
+	readTo  int64
+	windowS int64 // the window the lines before readTo were read for
 }
 
 // pass reads dir once. The kinds it read completely are covered from the
@@ -195,7 +196,7 @@ func (c *Cache) clearStale(ctx context.Context) error {
 func (c *Cache) readPositions(ctx context.Context, kind string) (map[fileKey]readPos, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	rows, err := c.db.QueryContext(ctx, `SELECT ip, day, worker, root, read_to FROM cluster_cache_files WHERE kind = $1`, kind)
+	rows, err := c.db.QueryContext(ctx, `SELECT ip, day, worker, root, read_to, window_s FROM cluster_cache_files WHERE kind = $1`, kind)
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +205,7 @@ func (c *Cache) readPositions(ctx context.Context, kind string) (map[fileKey]rea
 	for rows.Next() {
 		var k fileKey
 		var p readPos
-		if err := rows.Scan(&k.ip, &k.day, &k.worker, &p.root, &p.readTo); err != nil {
+		if err := rows.Scan(&k.ip, &k.day, &k.worker, &p.root, &p.readTo, &p.windowS); err != nil {
 			return nil, err
 		}
 		out[k] = p
@@ -306,8 +307,11 @@ func (c *Cache) readFile(ctx context.Context, root *os.Root, dir, kind string, k
 	}
 	defer func() { _ = f.Close() }()
 	size := fi.Size()
-	from := int64(0) // a new file, one read in another directory, or one that shrank (replaced)
-	if pos.root == dir && pos.readTo <= size {
+	windowS := int64(c.window / time.Second)
+	// from the start: a new file, one read in another directory or for a
+	// shorter window (its older lines were read past), one that shrank
+	from := int64(0)
+	if pos.root == dir && pos.windowS >= windowS && pos.readTo <= size {
 		from = pos.readTo
 	}
 	if from == size {
@@ -316,12 +320,32 @@ func (c *Cache) readFile(ctx context.Context, root *os.Root, dir, kind string, k
 	if _, err := f.Seek(from, io.SeekStart); err != nil {
 		return err
 	}
-	br := bufio.NewReaderSize(io.LimitReader(f, size-from), 64<<10)
-	low := start.Add(-c.window)
-	ch := chunk{kind: kind, key: k, root: dir, at: from, committed: from}
+	if err := c.readLines(ctx, io.LimitReader(f, size-from), chunk{kind: kind, key: k, root: dir, windowS: windowS,
+		at: from, committed: from}, start); err != nil {
+		return fmt.Errorf("%s: %w", rel, err)
+	}
+	return nil
+}
+
+// readLines reads the whole lines of r (a file from the chunk's position
+// on), committing them in chunks. A read error ends it with the error,
+// after committing the lines before it, so the pass is not whole.
+func (c *Cache) readLines(ctx context.Context, r io.Reader, ch chunk, start time.Time) error {
+	br := bufio.NewReaderSize(r, 64<<10)
+	// records of the window; a time past tomorrow is not one (nor a valid
+	// timestamp to the database)
+	low, high := start.Add(-c.window), start.Add(24*time.Hour)
 	var lastSlot time.Time
 	for {
 		line, n, whole, rerr := readLine(br)
+		if rerr != nil && !errors.Is(rerr, io.EOF) {
+			if ch.at > ch.committed {
+				if err := c.commit(ctx, &ch); err != nil {
+					return err
+				}
+			}
+			return rerr
+		}
 		if n == 0 {
 			break
 		}
@@ -331,7 +355,7 @@ func (c *Cache) readFile(ctx context.Context, root *os.Root, dir, kind string, k
 		ch.at += int64(n)
 		ch.lines++
 		ch.bytes += n
-		c.parseLine(&ch, kind, k, line, low, &lastSlot)
+		c.parseLine(&ch, line, low, high, &lastSlot)
 		if ch.lines >= batchRows || ch.bytes >= chunkBytes {
 			if err := c.commit(ctx, &ch); err != nil {
 				return err
@@ -352,6 +376,7 @@ type chunk struct {
 	kind      string
 	key       fileKey
 	root      string
+	windowS   int64
 	at        int64 // the read position after the lines read
 	committed int64
 	lines     int
@@ -362,11 +387,12 @@ type chunk struct {
 
 // parseLine adds a line's row to the chunk when it is a record of the
 // window (of metrics, the first of its 10 s slot).
-func (c *Cache) parseLine(ch *chunk, kind string, k fileKey, line []byte, low time.Time, lastSlot *time.Time) {
+func (c *Cache) parseLine(ch *chunk, line []byte, low, high time.Time, lastSlot *time.Time) {
 	if len(line) == 0 {
 		return
 	}
-	switch kind {
+	k := ch.key
+	switch ch.kind {
 	case KindLogs:
 		var r struct {
 			TS     json.RawMessage `json:"ts"`
@@ -379,7 +405,7 @@ func (c *Cache) parseLine(ch *chunk, kind string, k fileKey, line []byte, low ti
 			return
 		}
 		ts, ok := parseTS(r.TS)
-		if !ok || ts.Before(low) {
+		if !ok || ts.Before(low) || ts.After(high) {
 			return
 		}
 		if row, ok := logRowOf(k.ip, k.worker, "", ts, r.Level, r.Event, r.Logger, r.Fields); ok {
@@ -387,7 +413,7 @@ func (c *Cache) parseLine(ch *chunk, kind string, k fileKey, line []byte, low ti
 		}
 	case KindMetrics:
 		at, ok := frameTS(line)
-		if !ok || at.Before(low) {
+		if !ok || at.Before(low) || at.After(high) {
 			return
 		}
 		slot := slotOf(at)
@@ -442,11 +468,11 @@ func (c *Cache) commit(ctx context.Context, ch *chunk) error {
 			newest = maxTime(newest, r.at)
 		}
 	}
-	if _, err := c.exec(ctx, tx, `INSERT INTO cluster_cache_files (kind, ip, day, worker, root, read_to, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+	if _, err := c.exec(ctx, tx, `INSERT INTO cluster_cache_files (kind, ip, day, worker, root, read_to, window_s, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (kind, ip, day, worker) DO UPDATE SET root = EXCLUDED.root, read_to = EXCLUDED.read_to,
-    updated_at = EXCLUDED.updated_at`,
-		ch.kind, ch.key.ip, ch.key.day, ch.key.worker, ch.root, ch.at, c.ts(c.now())); err != nil {
+    window_s = EXCLUDED.window_s, updated_at = EXCLUDED.updated_at`,
+		ch.kind, ch.key.ip, ch.key.day, ch.key.worker, ch.root, ch.at, ch.windowS, c.ts(c.now())); err != nil {
 		return dbError{err}
 	}
 	if err := tx.Commit(); err != nil {

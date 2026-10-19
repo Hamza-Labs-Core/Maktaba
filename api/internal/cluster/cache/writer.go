@@ -20,8 +20,9 @@ func (c *Cache) Run(ctx context.Context) {
 	if err := c.clearStale(ctx); err != nil && ctx.Err() == nil {
 		c.fail("check the cache tables", err)
 	}
-	var wg sync.WaitGroup
-	loop := func(every time.Duration, now bool, f func(context.Context), wake <-chan struct{}, onWake func(context.Context)) {
+	var wg, sweeping sync.WaitGroup
+	loop := func(wg *sync.WaitGroup, every time.Duration, now bool, f func(context.Context), wake <-chan struct{},
+		onWake func(context.Context)) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -42,11 +43,11 @@ func (c *Cache) Run(ctx context.Context) {
 			}
 		}()
 	}
-	loop(logsEvery, false, c.flushLogs, nil, nil)
-	loop(metricsEvery, false, c.flushMetrics, c.wake, c.flushFinal)
-	loop(pruneEvery, true, c.prune, nil, nil)
+	loop(&wg, logsEvery, false, c.flushLogs, nil, nil)
+	loop(&wg, metricsEvery, false, c.flushMetrics, c.wake, c.flushFinal)
+	loop(&wg, pruneEvery, true, c.prune, nil, nil)
 	if c.window > 0 {
-		loop(c.sweep, false, func(ctx context.Context) {
+		loop(&sweeping, c.sweep, false, func(ctx context.Context) {
 			if dir := c.clusterDir(); dir != "" && c.passMu.TryLock() {
 				defer c.passMu.Unlock()
 				if err := c.pass(ctx, dir); err != nil && ctx.Err() == nil {
@@ -61,6 +62,14 @@ func (c *Cache) Run(ctx context.Context) {
 	defer cancel()
 	c.flushLogs(fctx)
 	c.flushMetrics(fctx)
+	// a pass stuck in a hung share's read cannot be cancelled: wait for it
+	// only as long as the flush could have taken
+	done := make(chan struct{})
+	go func() { sweeping.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-fctx.Done():
+	}
 }
 
 func (c *Cache) clusterDir() string {
@@ -86,7 +95,8 @@ func (c *Cache) flushLogs(ctx context.Context) {
 	if len(items) == 0 {
 		return
 	}
-	low := c.now().Add(-c.window)
+	now := c.now()
+	low, high := now.Add(-c.window), now.Add(24*time.Hour)
 	rows := make([]logRow, 0, len(items))
 	invalid := 0
 	for _, it := range items {
@@ -95,7 +105,7 @@ func (c *Cache) flushLogs(ctx context.Context) {
 			continue // older than the window (a resend after a long outage)
 		}
 		r, ok2 := logRowOf(it.ip, it.worker, it.node, ts, it.rec.Level, it.rec.Event, it.rec.Logger, it.rec.Fields)
-		if !ok || !ok2 {
+		if !ok || !ok2 || ts.After(high) {
 			invalid++
 			continue
 		}
@@ -164,7 +174,7 @@ func (c *Cache) flushMetrics(ctx context.Context) {
 			continue
 		}
 		frame, ok := canonJSON(it.frame, false)
-		if !ok {
+		if !ok || it.at.After(now.Add(24*time.Hour)) {
 			invalid++
 			continue
 		}

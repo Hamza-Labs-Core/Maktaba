@@ -58,6 +58,7 @@ CREATE UNLOGGED TABLE IF NOT EXISTS cluster_cache_files (
     worker      TEXT        NOT NULL,   -- the file name without .jsonl
     root        TEXT        NOT NULL,   -- the cluster directory it was read in
     read_to     BIGINT      NOT NULL,   -- bytes read: every whole line before is cached
+    window_s    BIGINT      NOT NULL,   -- ... that was of the window then (a longer one reads again)
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (kind, ip, day, worker)
 );
