@@ -119,7 +119,10 @@ describe("no-flash boot (public/theme-boot.js)", () => {
     // blocking: a classic script (no defer/async/module) inside <head>
     expect(head).toMatch(/<script src="\/theme-boot\.js"><\/script>/);
     // the CSP (default-src 'self') forbids inline script: none may remain
-    expect(INDEX).not.toMatch(/<script>/);
+    const doc = new DOMParser().parseFromString(INDEX, "text/html");
+    const scripts = [...doc.querySelectorAll("script")];
+    expect(scripts.length).toBeGreaterThan(0);
+    expect(scripts.every((el) => el.hasAttribute("src"))).toBe(true);
     expect(INDEX.indexOf("/theme-boot.js")).toBeLessThan(INDEX.indexOf("/src/main.tsx"));
     // the UA canvas is dark before any CSS when the OS has no preference
     expect(head).toMatch(/<meta name="color-scheme" content="dark light"/);

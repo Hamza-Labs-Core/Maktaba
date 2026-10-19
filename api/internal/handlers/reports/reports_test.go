@@ -324,4 +324,3 @@ func TestPage_FollowsTheSystemTheme(t *testing.T) {
 		t.Errorf("page with its own color-scheme changed: %s", rec.Body.String())
 	}
 }
-
