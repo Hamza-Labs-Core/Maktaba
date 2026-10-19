@@ -23,6 +23,11 @@ import (
 //	         /exit exits 0; /hang makes /healthz block (a wedged process)
 //	crash  - exit FAKE_CODE (default 7) at once (a crash loop)
 //	exit0  - exit 0 at once
+//	sleep  - sleep (a grandchild standing in for ffmpeg)
+//
+// With FAKE_GRANDCHILD_PIDFILE set, "serve" first starts a "sleep"
+// grandchild (no process-group or job changes, like ffmpeg under
+// streaming) and writes its pid to that file.
 func TestMain(m *testing.M) {
 	if mode := os.Getenv("MAKTABA_FAKE_CHILD"); mode != "" {
 		fakeChild(mode)
@@ -41,7 +46,22 @@ func fakeChild(mode string) {
 		os.Exit(code)
 	case "exit0":
 		os.Exit(0)
+	case "sleep":
+		time.Sleep(time.Hour)
+		os.Exit(0)
 	case "serve":
+		if pidfile := os.Getenv("FAKE_GRANDCHILD_PIDFILE"); pidfile != "" {
+			gc := exec.Command(os.Args[0], "-test.run=^$")
+			gc.Env = append(os.Environ(), "MAKTABA_FAKE_CHILD=sleep", "FAKE_GRANDCHILD_PIDFILE=")
+			if err := gc.Start(); err != nil {
+				fmt.Fprintln(os.Stderr, "fake child: grandchild:", err)
+				os.Exit(93)
+			}
+			if err := os.WriteFile(pidfile+".tmp", []byte(strconv.Itoa(gc.Process.Pid)), 0o644); err != nil ||
+				os.Rename(pidfile+".tmp", pidfile) != nil {
+				os.Exit(94)
+			}
+		}
 		var hung atomic.Bool
 		mux := http.NewServeMux()
 		mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {

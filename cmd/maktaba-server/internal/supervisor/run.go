@@ -42,6 +42,7 @@ type child struct {
 	proc       Process
 	status     ChildStatus
 	cmd        *exec.Cmd   // the running process, nil between runs
+	tree       *procTree   // its process group / job, nil between runs
 	exits      []time.Time // exits that led to a restart, for the crash-loop window
 	killReason string      // set before the supervisor kills the child
 	failed     bool        // in a crash loop (state failed or retrying from it)
@@ -149,9 +150,15 @@ func (s *Supervisor) Run(ctx context.Context, grace time.Duration) error {
 	return result
 }
 
+// signalLocked signals every running child. A kill takes the child's
+// whole process tree; a graceful signal goes to the child only, which
+// stops its own children as it drains.
 func (s *Supervisor) signalLocked(sig os.Signal) {
 	for _, c := range s.children {
 		if c.cmd != nil && c.cmd.Process != nil {
+			if sig == os.Kill {
+				c.tree.kill()
+			}
 			_ = c.cmd.Process.Signal(sig)
 		}
 	}
@@ -177,6 +184,7 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		}
 		startedAt := s.now()
 		var info ExitInfo
+		prepareTree(cmd)
 		if err := cmd.Start(); err != nil {
 			info = ExitInfo{At: startedAt, Code: -1, Reason: ReasonStartFailed, Error: err.Error()}
 			c.status.LastExit = &info
@@ -187,7 +195,9 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 			s.logf("%s could not start: %v", c.proc.Role, err)
 		} else {
 			pid := cmd.Process.Pid
+			tree, treeErr := attachTree(cmd)
 			c.cmd = cmd
+			c.tree = tree
 			c.killReason = ""
 			c.status.PID = pid
 			c.status.StartedAt = &startedAt
@@ -201,6 +211,9 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 			s.mu.Unlock()
 			s.emit(Event{Role: c.proc.Role, Kind: EventStarted, PID: pid})
 			s.logf("started %s (pid %d)", c.proc.Role, pid)
+			if treeErr != nil {
+				s.logf("%s (pid %d): its child processes are not tied to it: %v", c.proc.Role, pid, treeErr)
+			}
 
 			probeCtx, stopProbe := context.WithCancel(ctx)
 			if c.proc.Probe != "" {
@@ -208,6 +221,9 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 			}
 			waitErr := cmd.Wait()
 			stopProbe()
+			// The child is gone: end whatever it left behind (ffmpeg,
+			// yt-dlp) so a restart never runs next to orphans.
+			tree.release()
 			info = s.exitInfo(c, cmd, waitErr, startedAt)
 		}
 
@@ -220,6 +236,7 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		c.status.PID = 0
 		c.status.StartedAt = nil
 		c.cmd = nil
+		c.tree = nil
 		s.mu.Unlock()
 		if info.Reason != ReasonStartFailed {
 			code := info.Code
@@ -369,6 +386,10 @@ func (s *Supervisor) probe(ctx context.Context, c *child, cmd *exec.Cmd, started
 				c.proc.Role, cmd.Process.Pid, failures, err)
 			s.emit(Event{Role: c.proc.Role, Kind: EventHung, PID: cmd.Process.Pid, Reason: ReasonHang,
 				Message: err.Error()})
+			s.mu.Lock()
+			tree := c.tree
+			s.mu.Unlock()
+			tree.kill()
 			_ = cmd.Process.Kill()
 			return
 		}

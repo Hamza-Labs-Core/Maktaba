@@ -65,6 +65,19 @@ complementary (32.4 needs a host whose processes come back on their own).
 - AC10. **Shutdown unchanged.** SIGINT/SIGTERM drains every child exactly as
   before (graceful signal, `--shutdown-grace`, then kill). A shutdown during
   a backoff wait starts nothing new and returns promptly.
+- AC12. **No orphans.** A child's own children (ffmpeg, yt-dlp) die with
+  it. This holds when it crashes, when it is killed for a hang, when it
+  is restarted and when the supervisor stops.
+  - POSIX: each child leads its own process group (`Setpgid`), and the
+    supervisor SIGKILLs the group on a hang kill, on the hard kill at
+    shutdown, and after the child has exited.
+  - Windows: each child is created suspended, put in a Job Object the
+    supervisor owns (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`) and then
+    resumed. The job is terminated or closed in the same cases.
+  - The streaming process also ties its own children to itself, so a
+    crash kills them even without the supervisor. On Windows it puts
+    itself in a kill-on-close job that its children inherit; on Linux its
+    ffmpeg and yt-dlp children get `Pdeathsig = SIGKILL`.
 - AC11. **Both platforms.** Windows and POSIX use the same code; only
   signal names and the graceful-stop signal differ.
 
@@ -102,6 +115,10 @@ complementary (32.4 needs a host whose processes come back on their own).
   supervisor JSON for admins, and returns `available:false` when the
   supervisor cannot be reached. The recorder writes one sample per crash
   event, idempotently.
+- TC10. Orphans: a fake child that starts a sleeping grandchild. After
+  the child crashes, is killed for a hang, or the supervisor shuts down,
+  the grandchild is gone, on Windows and Linux. When a parent tied with
+  `procattr` is hard-killed, its grandchild is gone too.
 - TC9. Web: the Processes card renders state chips, restarts and the last
   crash reason; it shows an "unavailable" note when the supervisor is not
   reachable.
@@ -112,9 +129,9 @@ complementary (32.4 needs a host whose processes come back on their own).
   crash and goes through backoff into `failed`. It does not abort the stack.
 - EC2. The api runs migrations before binding its admin port: until the
   first successful probe, probe failures only count after `startup_grace`.
-- EC3. Grandchildren (ffmpeg under streaming) are not in a process group
-  the supervisor kills. An orphaned muxer exits when its stdin pipe closes.
-  A Windows job object is a follow-up.
+- EC3. A descendant that leaves the process group or job on its own
+  (by calling setsid/setpgid, or breaking away from the job) is not
+  covered. ffmpeg and yt-dlp do neither.
 - EC4. Single-role mode (`--role streaming` in a container): the same
   policy applies; set `restart = "never"` to leave restarts to the
   orchestrator.

@@ -16,8 +16,9 @@
 | Pipeline self-health | `/healthz` on the existing logs port (thread-served). An asyncio task beats every 5 s (`log/liveness.py`), and the endpoint returns 503 when the last beat is older than 300 s (`MAKTABA_PIPELINE_LOOP_STALE`). |
 | Visibility | The supervisor serves `GET /processes` on loopback (`admin_addr`, default `127.0.0.1:9103`). The api reads it from `MAKTABA_SUPERVISOR_URL` and proxies it to `GET /api/system/processes` for admins only (`handlers/processes`). The web System Health page has a Processes card. |
 | After the fact | `<data_dir>/supervisor/events.jsonl` (rotates at 1 MiB, reloaded at boot). The api's `Recorder` copies crash and hang exits into `health_samples`. |
+| Orphans (AC12) | `supervisor/proctree_{unix,windows}.go`. POSIX uses `Setpgid`, and the group is SIGKILLed on a hang kill, a hard stop and after every exit. Windows uses `CREATE_SUSPENDED`, then a kill-on-close Job Object, then `NtResumeProcess`; the job is terminated or closed in the same cases. Streaming adds `internal/procattr`: `ContainSelf` (a Windows job that its children inherit) and `Tie` (Linux `Pdeathsig = SIGKILL` on the station muxer and block ffmpeg, `ffmpeg.Spawn` and yt-dlp). |
 | Migrations | None. `health_samples` (slot 0089) already exists on both backends. |
-| Out of scope | Cross-host failover (Epic 32.4). Killing the grandchildren of a child, such as ffmpeg (EC3). Clearing stale `channel_runtime` rows at boot, which `feat/tv-core` does (migration 0117 + `Engine.ClearStaleRuntime`). |
+| Out of scope | Cross-host failover (Epic 32.4). Clearing stale `channel_runtime` rows at boot, which `feat/tv-core` does (migration 0117 + `Engine.ClearStaleRuntime`). |
 
 ## 1. Architecture
 
@@ -83,6 +84,8 @@ the process for it would only add a crash loop to the outage.
 | `cmd/maktaba-server/internal/supervisor/supervisor.go` | `Process.Probe`, `ProbeURL`, `cloneCmd`; the old `Run` is removed |
 | `cmd/maktaba-server/internal/supervisor/env.go` | `MAKTABA_SUPERVISOR_URL` for the api, `StateURL` |
 | `cmd/maktaba-server/internal/supervisor/signal_*.go` | `signalName` (POSIX names the signal; Windows has none) |
+| `cmd/maktaba-server/internal/supervisor/proctree_*.go` | new: per-child process group (POSIX) / Job Object (Windows) |
+| `streaming/internal/procattr/` | new: `ContainSelf`, `Tie`; called from `main.go`, `channel/station.go`, `channel/ytdlp.go`, `ffmpeg/ffmpeg.go` |
 | `cmd/maktaba-server/cmd_serve.go` | builds the policy, the file sink and the admin listener |
 | `shared/health/go/livez.go` | new: `CheckedLive`, `AdminMuxWithLiveness` |
 | `streaming/internal/watchdog/` | new package |
@@ -156,6 +159,8 @@ again writes nothing new.
 | `TestOnFailureLeavesCleanExitStopped`, `TestNeverStopsTheStack` | TC5 |
 | `TestStartFailureIsACrash`, `TestHealthyRunResetsBackoff`, `TestEventsPersistAcrossSupervisorRestart`, `TestFileSinkRotates`, `TestHandlerServesSnapshot` | EC1, AC2, AC8, AC7 |
 | `signal_unix_test.go` / `supervisor_windows_test.go` | AC11: SIGKILL is recorded as a signal on POSIX; TerminateProcess shows as code 1 on Windows |
+| `supervisor/proctree_test.go` | TC10: a crash, a hang kill and a shutdown each take the fake child's sleeping grandchild down (Windows + Linux) |
+| `streaming/internal/procattr` | TC10: a hard-killed tied parent takes its grandchild down (Windows job, Linux Pdeathsig) |
 | `supervisor/policy_test.go` | TC6 |
 | `shared/health/go/livez_test.go`, `streaming/internal/watchdog`, `channel/liveness_test.go`, `streaming/watchdog_wire_test.go` | TC7 |
 | `pipeline/tests/test_log_liveness.py` | pipeline `/healthz` (the HTTP and event-loop cases are integration-marked because they open sockets) |
@@ -174,6 +179,9 @@ integration tier (`go test -tags=integration ./...` without `-short`).
 - The packaged systemd unit and launchd plist keep working unchanged. The
   supervisor exits only on a signal (or with `never`), so the unit's own
   restart policy now only covers the supervisor itself.
+- On Windows the supervisor owns each child's job handle, so if the
+  supervisor itself dies, the kernel closes the handles and the whole
+  stack goes down with it. Nothing is left running unsupervised.
 - Depends on `feat/tv-core` for clearing stale `channel_runtime` rows at
   streaming boot. Until it lands, a restarted streaming process can leave
   rows that the next tune overwrites (`SetRuntime` upserts).
