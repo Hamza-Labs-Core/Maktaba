@@ -14,7 +14,10 @@
 ARG NODE_VERSION=20
 ARG CADDY_VERSION=2-alpine
 
-FROM node:${NODE_VERSION}-alpine AS build
+# The bundle is plain JS/CSS, the same for every architecture: build it on the
+# runner's own platform. Under QEMU the arm64 leg's `pnpm install` hung until the
+# release job's 60-minute timeout (v0.2.0); only the caddy stage needs the target.
+FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-alpine AS build
 WORKDIR /src
 
 ENV CI=true \

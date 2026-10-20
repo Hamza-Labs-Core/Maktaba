@@ -15,7 +15,8 @@ don't append a line here; docs-only PRs are exempt.
 - **Release builds for desktop, Android and Android TV.** The desktop app now ships a
   (placeholder) icon set, so the macOS, Linux and Windows bundles build; the Android and
   Android TV jobs no longer ask sdkmanager for the removed `tools` package. A tag push with
-  no relay VPS configured skips the rollout instead of failing.
+  no relay VPS configured skips the rollout instead of failing. The web image builds its bundle
+  natively instead of under arm64 emulation, where `pnpm install` hung past the release timeout.
 
 ## [0.2.0] - 2026-10-19
 
