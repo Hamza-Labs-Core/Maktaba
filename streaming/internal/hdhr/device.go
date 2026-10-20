@@ -16,10 +16,15 @@ type DiscoverResponse struct {
 }
 
 // Fixed identity values media servers accept as a clear-QAM/ATSC tuner.
+// Real HDHomeRun devices report the manufacturer "Silicondust" and some Plex
+// versions filter discovered UPnP devices on it, so device.xml and
+// /discover.json both say Silicondust, like dizqueTV (src/hdhr.js: device.xml
+// "Silicondust") and Threadfin/xTeVe (src/hdhr.go: device.xml "Silicondust").
+// The model is an HDTC-2US with its firmware name, as both of them send.
 const (
-	manufacturer    = "Maktaba"
+	manufacturer    = "Silicondust"
 	modelNumber     = "HDTC-2US"
-	firmwareName    = "maktaba_atsc"
+	firmwareName    = "hdhomeruntc_atsc"
 	firmwareVersion = "20260601"
 )
 
