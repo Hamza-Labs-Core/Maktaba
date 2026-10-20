@@ -157,12 +157,12 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		states = strings.Split(s, ",")
 	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	items, err := h.Store.List(r.Context(), states, limit)
+	items, err := h.Store.ListSummaries(r.Context(), states, limit)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("list tv changes: "+err.Error()))
 		return
 	}
-	inflight, _ := h.Store.InFlightChange(r.Context(), h.DB)
+	inflight, _ := h.Store.InFlightID(r.Context(), h.DB)
 	cfg, _ := core.LoadConfig(r.Context(), h.DB)
 	ids := map[string]bool{}
 	for _, c := range items {
@@ -171,8 +171,8 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	out := map[string]any{"items": items, "config": pageConfig(cfg), "users": userNames(r.Context(), h.DB, ids)}
-	if inflight != nil {
-		out["in_flight"] = inflight.ID
+	if inflight != "" {
+		out["in_flight"] = inflight
 	}
 	common.WriteJSON(w, r, http.StatusOK, out)
 }
