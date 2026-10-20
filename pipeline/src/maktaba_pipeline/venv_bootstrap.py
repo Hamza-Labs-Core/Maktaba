@@ -288,6 +288,7 @@ class Reporter:
         error: str | None = None,
         throttle: bool = False,
         counts: tuple[int, int] | None = None,
+        to_file: bool = True,
     ) -> None:
         now = time.monotonic()
         if throttle and now - self._last_write < 0.5:
@@ -308,8 +309,9 @@ class Reporter:
             self.state["error"] = error
         self.out.write(json.dumps({"event": "status", **self.state}, ensure_ascii=False) + "\n")
         self.out.flush()
-        with contextlib.suppress(OSError):
-            write_json_atomic(self.status_file, self.state)
+        if to_file:
+            with contextlib.suppress(OSError):
+                write_json_atomic(self.status_file, self.state)
 
 
 # --- running pip -------------------------------------------------------------------------
@@ -379,11 +381,29 @@ def run_step(
                 counts=(min(len(seen), total), total) if total else None,
             )
         code = proc.wait()
+    except BaseException:
+        _stop(proc)  # SIGTERM / Ctrl-C / a failure here: pip must not go on writing
+        raise
     finally:
         _CHILD.remove(proc)
     if code != 0:
         raise BootstrapError(f"{step} failed (exit {code}):\n" + "\n".join(tail[-15:]))
     rep.emit("building", step, hi, f"{step} done", counts=(total, total) if total else None)
+
+
+def _stop(proc: subprocess.Popen[str]) -> None:
+    """Terminate ``proc`` and wait for it; kill it when it does not stop in 30 s."""
+    if proc.poll() is not None:
+        return
+    with contextlib.suppress(OSError):
+        proc.terminate()
+    try:
+        proc.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        with contextlib.suppress(OSError):
+            proc.kill()
+        with contextlib.suppress(subprocess.SubprocessError):
+            proc.wait(timeout=30)
 
 
 def _pip(venv: Path, *args: str) -> list[str]:
@@ -419,17 +439,23 @@ print(json.dumps({"version": dist.version, "missing": missing}))
 def verify(venv: Path, target: Target, rep: Reporter) -> str:
     lo, _hi = _SPAN["verify"]
     rep.emit("building", "verify", lo, "checking the installed packages")
-    out = subprocess.run(
-        [str(venv_python(venv)), "-c", _VERIFY, json.dumps(list(target.extras))],
-        capture_output=True,
-        text=True,
-        env=_child_env(),
-        timeout=300,
-        check=False,
-    )
+    try:
+        out = subprocess.run(
+            [str(venv_python(venv)), "-c", _VERIFY, json.dumps(list(target.extras))],
+            capture_output=True,
+            text=True,
+            env=_child_env(),
+            timeout=300,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise BootstrapError(f"verify failed: {exc}") from exc
     if out.returncode != 0:
         raise BootstrapError(f"verify failed: {out.stderr.strip()[-800:]}")
-    result = json.loads(out.stdout.strip().splitlines()[-1])
+    try:
+        result = json.loads(out.stdout.strip().splitlines()[-1])
+    except (IndexError, ValueError) as exc:
+        raise BootstrapError(f"verify printed no result: {out.stdout.strip()[-400:]}") from exc
     if result["missing"]:
         raise BootstrapError(
             "verify failed: the constraints do not cover "
@@ -491,10 +517,13 @@ def execute(venv: Path, target: Target, p: Plan, rep: Reporter) -> str:
         if venv.is_symlink() or venv.is_file():
             venv.unlink()
         else:
+            # the stamp first: a removal cut short leaves no "ready" venv behind
+            (venv / STAMP).unlink(missing_ok=True)
             shutil.rmtree(venv)
     if p.action in ("build", "resume"):
         # resuming: the venv is there, maybe made by a Python that has moved since
-        create_venv(venv, target, rep, upgrade=venv_python(venv).exists())
+        py = venv_python(venv)
+        create_venv(venv, target, rep, upgrade=py.exists() or py.is_symlink())
         write_json_atomic(venv / STAMP, target.stamp("building"))
         install_deps(venv, target, rep)
         install_wheel(venv, target, rep)
@@ -523,7 +552,14 @@ def locked(path: Path, rep: Reporter) -> Iterator[None]:
         try:
             fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            rep.emit("waiting", "lock", 0.0, "another build of this venv is running: waiting")
+            # stdout only: the status file is the running build's
+            rep.emit(
+                "waiting",
+                "lock",
+                0.0,
+                "another build of this venv is running: waiting",
+                to_file=False,
+            )
             fcntl.flock(fh, fcntl.LOCK_EX)
         try:
             yield
@@ -640,10 +676,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         return EXIT_FAILED
     except (_Interrupted, KeyboardInterrupt):
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)  # a second SIGTERM: we are stopping
         for proc in list(_CHILD):
-            with contextlib.suppress(OSError):
-                proc.terminate()
-                proc.wait(timeout=30)
+            _stop(proc)
         rep.emit(
             "interrupted",
             rep.state.get("step", "?"),
@@ -651,6 +686,16 @@ def main(argv: list[str] | None = None) -> int:
             "stopped; the next run resumes",
         )
         return EXIT_INTERRUPTED
+    except Exception as exc:  # noqa: BLE001 - disk full, a pip that cannot start: reported
+        sys.stderr.write(f"error: {type(exc).__name__}: {exc}\n")
+        rep.emit(
+            "failed",
+            rep.state.get("step", "?"),
+            rep.state.get("progress", 0.0),
+            f"{type(exc).__name__}: {exc}"[:200],
+            error=f"{type(exc).__name__}: {exc}",
+        )
+        return EXIT_FAILED
     finally:
         signal.signal(signal.SIGTERM, old)
 

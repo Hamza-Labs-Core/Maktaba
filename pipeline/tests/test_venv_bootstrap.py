@@ -291,3 +291,50 @@ def test_runs_from_the_wheel_with_only_the_stdlib(env: Env) -> None:
     )
     assert out.returncode == 0, out.stderr
     assert "--payload" in out.stdout
+
+
+def test_an_interrupt_stops_pip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """SIGTERM while pip runs: pip is stopped before the bootstrap lets go of the lock."""
+    started: list[subprocess.Popen[str]] = []
+    real = subprocess.Popen
+
+    def popen(*a: object, **k: object) -> subprocess.Popen[str]:
+        proc: subprocess.Popen[str] = real(*a, **k)  # type: ignore[call-overload]
+        started.append(proc)
+        return proc
+
+    monkeypatch.setattr("subprocess.Popen", popen)
+
+    class Stopping(vb.Reporter):
+        def emit(self, state: str, step: str, *a: object, **k: object) -> None:
+            if state == "building" and started:
+                raise vb._Interrupted()
+
+    rep = Stopping(tmp_path / "status.json", sys.stdout, {})
+    slow = "import time; print('Collecting fakedep_a==1.0', flush=True); time.sleep(60)"
+    with pytest.raises(vb._Interrupted):
+        vb.run_step([sys.executable, "-c", slow], rep, "deps", "x", total=1)
+    assert started and started[0].poll() is not None
+    assert not vb._CHILD
+
+
+def test_a_removal_cut_short_leaves_no_ready_stamp(
+    env: Env, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env.payload_files("0.1.0", _deps(env), REQUIRES)
+    assert env.run(capsys)[0] == vb.EXIT_OK
+
+    def cut_short(_path: object) -> None:
+        raise OSError("disk went away")
+
+    monkeypatch.setattr("shutil.rmtree", cut_short)
+    code, events = env.run(capsys, "--force")
+    assert code == vb.EXIT_FAILED  # reported, not a traceback
+    assert events[-1]["state"] == "failed" and "disk went away" in str(events[-1]["error"])
+    assert env.status()["state"] == "failed"
+    assert vb.read_stamp(env.venv) is None
+    monkeypatch.undo()
+    monkeypatch.setenv("PIP_NO_INDEX", "1")
+    monkeypatch.setenv("PIP_FIND_LINKS", str(env.index))
+    code, events = env.run(capsys, "--check")
+    assert code == vb.EXIT_NEEDS_WORK and events[0]["action"] == "build"

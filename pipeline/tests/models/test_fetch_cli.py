@@ -79,10 +79,14 @@ def _fake_hub(
             raise FileNotFoundError(item.model)
         if item.model in (refuse or set()):
             raise Refused("401 gated")
+        snap = tmp_path / "hub" / item.model.replace("/", "--")
+        if local_only:
+            return snap
+        snap.mkdir(parents=True, exist_ok=True)
         on_bytes(50, 100)
         on_bytes(100, 100)
         cached.add(item.model)
-        return tmp_path / "hub" / item.model.replace("/", "--")
+        return snap
 
     monkeypatch.setattr(fetch_cli, "hf_download", download)
     camel: dict[str, bool] = {"installed": False}
@@ -177,13 +181,25 @@ def test_download_fetches_everything_with_progress(
 def test_status_reports_what_is_missing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _fake_hub(monkeypatch, tmp_path, cached={"mlx-community/whisper-large-v3-turbo"})
+    _fake_hub(monkeypatch, tmp_path)
+    assert _run(capsys, "download", "--only", "whisper")[0] == fetch_cli.EXIT_OK
     code, events = _run(capsys, "status")
     assert code == fetch_cli.EXIT_MISSING
     final = _final(events)
     assert final["whisper"]["state"] == "ready" and final["whisper"]["source"] == "cache"
     assert final["cohere"]["state"] == "missing"
     assert final["dictionary"]["state"] == "missing"
+
+
+def test_status_does_not_trust_a_snapshot_without_the_marker(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Hugging Face writes the snapshot's ref before its files: a download cut short (or
+    one a worker made) is not called ready until ``download`` has seen it through."""
+    _fake_hub(monkeypatch, tmp_path, cached={"mlx-community/whisper-large-v3-turbo"})
+    code, events = _run(capsys, "status", "--only", "whisper")
+    assert code == fetch_cli.EXIT_MISSING
+    assert _final(events)["whisper"]["state"] == "missing"
 
 
 def test_gated_model_without_sign_in_asks_for_login(

@@ -61,9 +61,13 @@ compares the inputs with the stamp the last run left, `<venv>/maktaba-venv.json`
 |---|---|---|
 | `none` | same constraints hash, wheel hash, extras and Python | nothing (~0.2 s) |
 | `build` | no venv; no stamp; **constraints hash changed**; Python minor version changed; `--force` | removes the venv, builds it afresh |
-| `resume` | the stamp says `building` for these same constraints (an interrupted or failed run) | keeps the venv; pip skips what is installed |
+| `resume` | the stamp says `building` for these same constraints (a build that failed or was stopped after creating the venv) | keeps the venv; pip skips what is installed |
 | `repair` | the bundled Python moved (the app was moved or renamed) or got a patch release | `python -m venv --upgrade` (repoints the venv), reinstalls the wheel if it changed |
 | `wheel` | only the wheel changed (an app update with the same dependencies) | reinstalls the wheel alone |
+
+A `wheel` or `repair` run that fails keeps the previous `ready` stamp, so the next run plans
+the same action again. A `build` removes the stamp before the rest of the old venv, so a removal
+cut short is never taken for a ready venv.
 
 The venv is built in place (a venv cannot be moved), so **the supervisor stops the pipeline
 workers before a run that is not `none`** (`--check` says which, without changing anything).
@@ -98,13 +102,15 @@ below; `--check` prints one `{"event": "plan", "action": "...", "reason": "..."}
   constraints' pins, on `deps` events. `message`: a line for the UI. `error`: on `failed`, the
   failing step's last output lines.
 - Progress events are sent at most twice a second; step changes always are.
+- A run waiting on the lock says `waiting` on its own stdout only; the file stays the running
+  build's.
 
 ### Exit codes
 
 | Code | Meaning |
 |---|---|
 | 0 | the venv is ready (built, repaired, or already up to date) |
-| 1 | a step failed (network, disk, a hash mismatch, verify); the next run resumes |
+| 1 | a step failed (network, disk, a hash mismatch, verify, any unexpected error); the status says `failed`; the next run resumes |
 | 2 | bad inputs (missing file, no hashes in the constraints, not one wheel in the payload) |
 | 10 | `--check` only: a run would change the venv |
 | 130 | stopped by SIGTERM / Ctrl-C (pip is stopped too); the next run resumes |
@@ -156,7 +162,11 @@ the home published on `--share` (default `$MAKTABA_MODELS_DIR`, the share's
 ```
 
 `state`: `downloading` · `ready` (`source`: `cache` | `hf` | `share` | `share-copy` | `camel`,
-`path`) · `skipped` · `missing` (status) · `needs_login` · `failed` (`message`). Byte progress
+`path`) · `skipped` · `missing` (status) · `needs_login` · `failed` (`message`).
+`status` calls a cached Hugging Face model ready only when `download` saw it through (it writes
+`.maktaba-complete` into the snapshot; the cache's own `refs/` is written before the first file).
+A model a worker downloaded by itself shows `missing` until `download` checks it (a few
+metadata requests, no files fetched again). Byte progress
 at most twice a second. Logs go to stderr. Without `--json`, one readable line per change.
 
 **Exit codes:** 0 every item ready or skipped · 3 only the gated model is missing for want of a

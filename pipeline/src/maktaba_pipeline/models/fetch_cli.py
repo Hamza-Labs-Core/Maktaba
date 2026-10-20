@@ -48,6 +48,9 @@ EXIT_NEEDS_LOGIN = 3
 EXIT_MISSING = 10  #: status only: something is not here yet
 
 NAMES = ("whisper", "cohere", "dictionary", "embedder")
+#: written into a Hugging Face snapshot once ``download`` fetched all of it: the cache's
+#: own ``refs/`` is written before the first file, so a download cut short looks whole
+COMPLETE = ".maktaba-complete"
 CAMEL_PACKAGE = "morphology-db-msa-r13"
 
 #: what sentence-transformers never reads (other frameworks' weights)
@@ -256,9 +259,11 @@ def _status(it: Item) -> None:
         it.state = "ready" if camel_installed() else "missing"
         return
     try:
-        it.path = str(hf_download(it, lambda _n, _t: None, local_only=True))
-        it.state, it.source = "ready", "cache"
-        return
+        snap = hf_download(it, lambda _n, _t: None, local_only=True)
+        if (snap / COMPLETE).is_file():
+            it.path, it.state, it.source = str(snap), "ready", "cache"
+            return
+        it.message = "partly downloaded, or by a worker: run download to check it"
     except Exception:  # noqa: BLE001 - not in the cache
         pass
     if it.gated:
@@ -292,8 +297,9 @@ def _download(it: Item, out: _Out, share: Path | None) -> None:
         out.item(it, throttle=True)
 
     try:
-        it.path = str(hf_download(it, on_bytes, local_only=False))
-        it.state, it.source = "ready", "hf"
+        snap = hf_download(it, on_bytes, local_only=False)
+        (snap / COMPLETE).write_text("ok\n", encoding="utf-8")
+        it.path, it.state, it.source = str(snap), "ready", "hf"
     except Exception as exc:  # noqa: BLE001 - gated, offline, disk: reported
         login = it.gated and needs_login(exc)
         hf_error = f"{type(exc).__name__}: {exc}"[:300]
