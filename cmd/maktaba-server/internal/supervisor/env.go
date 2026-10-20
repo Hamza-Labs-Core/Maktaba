@@ -42,8 +42,9 @@ func ChildEnv(role Role, cfg config.Config) []string {
 	add("MAKTABA_MEDIA_ROOTS", strings.Join(cfg.Media.Roots, ","))
 
 	// The share's paths on this machine ([media] path_map): the api's cluster hub
-	// writes <share>/maktaba/cluster through it, the workers read media with it.
-	if os.Getenv("MAKTABA_PATH_MAP") == "" {
+	// writes <share>/maktaba/cluster through it (the pipeline reads it as Plex's
+	// fallback map, another thing: it gets MAKTABA_WORKER_PATH_MAP below).
+	if role != RolePipeline && os.Getenv("MAKTABA_PATH_MAP") == "" {
 		add("MAKTABA_PATH_MAP", strings.TrimSpace(cfg.Media.PathMap))
 	}
 	// The install's large state (Epic 36 story 36.2: on a Mac beside data/ in
@@ -174,8 +175,9 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		}
 		// the transcription workers (PlanSTT, BuildPipelineInstances) take the
 		// transcribe stage; the main worker leaves it to them
+		// (added to the stages an operator's own environment excludes)
 		if PlanSTT(cfg).Workers > 0 {
-			add("MAKTABA_PIPELINE_EXCLUDE_STAGES", "transcribe")
+			add("MAKTABA_PIPELINE_EXCLUDE_STAGES", withStage(os.Getenv("MAKTABA_PIPELINE_EXCLUDE_STAGES"), "transcribe"))
 		}
 	}
 
@@ -297,4 +299,15 @@ func SecretsKeyPath() string {
 // the keys directory (next to secrets.key).
 func StreamKeyPath() string {
 	return filepath.Join(config.KeysDir(), "stream-signing.key")
+}
+
+// withStage adds stage to a comma-separated stage list (once).
+func withStage(list, stage string) string {
+	var out []string
+	for _, s := range strings.Split(list, ",") {
+		if s = strings.TrimSpace(s); s != "" && s != stage {
+			out = append(out, s)
+		}
+	}
+	return strings.Join(append(out, stage), ",")
 }

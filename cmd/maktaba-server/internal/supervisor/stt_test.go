@@ -80,9 +80,10 @@ func TestPipelineWorkersOnAppleSilicon(t *testing.T) {
 		t.Setenv(k, "")
 	}
 	t.Setenv("MAKTABA_STT_GPU_GB", "30") // the operator's own wins
+	t.Setenv("MAKTABA_PIPELINE_EXCLUDE_STAGES", "index, transcribe")
 	cfg := config.Defaults()
-	if m := envMap(ChildEnv(RolePipeline, cfg)); m["MAKTABA_PIPELINE_EXCLUDE_STAGES"] != "transcribe" {
-		t.Fatalf("the main worker must leave transcribe to the workers: %v", m["MAKTABA_PIPELINE_EXCLUDE_STAGES"])
+	if m := envMap(ChildEnv(RolePipeline, cfg)); m["MAKTABA_PIPELINE_EXCLUDE_STAGES"] != "index,transcribe" {
+		t.Fatalf("the main worker must leave transcribe to the workers, keeping the operator's exclusions: %v", m["MAKTABA_PIPELINE_EXCLUDE_STAGES"])
 	}
 	procs, err := BuildPipelineInstances(Options{Config: cfg})
 	if err != nil || len(procs) != 2 {
@@ -128,6 +129,9 @@ func TestTranscriptionEnv(t *testing.T) {
 	}
 	if api := envMap(ChildEnv(RoleAPI, cfg)); api["MAKTABA_PATH_MAP"] != cfg.Media.PathMap || api["MAKTABA_STT_MODEL"] != "" {
 		t.Errorf("api env: path map %q, stt model %q", api["MAKTABA_PATH_MAP"], api["MAKTABA_STT_MODEL"])
+	}
+	if _, ok := m["MAKTABA_PATH_MAP"]; ok {
+		t.Error("the pipeline reads MAKTABA_PATH_MAP as Plex's map: it gets MAKTABA_WORKER_PATH_MAP only")
 	}
 	t.Setenv("MAKTABA_STT_MODEL", "own/model")
 	t.Setenv("MAKTABA_PATH_MAP", "/own=/x")
