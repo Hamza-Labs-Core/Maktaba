@@ -56,8 +56,13 @@ services:
       IS_PERSISTENT: "TRUE"
       ANONYMIZED_TELEMETRY: "FALSE"
     ports:
-      # Exposed for e2e tests; closed in prod via override.
-      - "${MAKTABA_CHROMA_PORT:-8000}:8000"
+      # Exposed for e2e tests; closed in prod via override. Bound to the
+      # host's loopback only: this Chroma server has no auth, and its HTTP
+      # API carries the chromadb collection-endpoint advisories
+      # (GHSA-f4j7-r4q5-qw2c, GHSA-36p7-vc44-83pf, GHSA-2wm9-hf6c-p5cr,
+      # GHSA-xph7-9rjv-w5fr), none of which has a patched release. The
+      # pipeline itself uses an embedded PersistentClient (MAKTABA_CHROMA_DIR).
+      - "127.0.0.1:${MAKTABA_CHROMA_PORT:-8000}:8000"
     volumes:
       - chroma_data:/chroma/chroma
     healthcheck:
