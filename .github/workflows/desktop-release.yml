@@ -4,7 +4,12 @@
 # desktop OSes on their native runners (Tauri does NOT cross-compile the
 # native shell) and attaches them to the GitHub Release for that tag:
 #
-#   macOS     →  .dmg            (universal: arm64 + x86_64 in one binary)
+#   macOS     →  .dmg, two of them:
+#                 arm64  — Maktaba.app WITH the server inside (Epic 36, story 36.7):
+#                          Contents/Resources/server built by tools/release/mac-app/
+#                          payload.sh (Go binaries, Postgres, ffmpeg, Python, the
+#                          pipeline wheel), macOS 15+
+#                 x86_64 — the client only (Intel Macs keep the Homebrew/node paths)
 #   Windows   →  .msi + .exe     (NSIS) + a portable .zip of the raw exe
 #   Linux     →  .deb + .AppImage
 #
@@ -19,16 +24,21 @@
 # file rather than pass `--config '{...}'` because tauri-action's arg
 # splitter mangles the JSON's quotes.)
 #
-# CODE SIGNING — DEFERRED
-# -----------------------
-# Notarised/signed installers need an Apple Developer ID (macOS), an EV /
-# Authenticode cert (Windows), and the Tauri updater private key. None are
-# provisioned yet, so these builds are UNSIGNED. When certs land, wire them
-# into tauri-action via the documented secrets:
-#   APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD / APPLE_SIGNING_IDENTITY
-#   APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID            (notarisation)
-#   WINDOWS_CERTIFICATE / WINDOWS_CERTIFICATE_PASSWORD   (Authenticode)
-#   TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD (updater)
+# CODE SIGNING
+# ------------
+# macOS signs and notarizes when the Apple secrets are set; without them the
+# build is UNSIGNED and still green (a local-style app: right-click > Open).
+#   APPLE_CERTIFICATE           base64 of the "Developer ID Application" .p12
+#   APPLE_CERTIFICATE_PASSWORD  its export password
+#   APPLE_SIGNING_IDENTITY      optional, e.g. "Developer ID Application: Hamza Labs (TEAMID)"
+#                               (default: the identity found in the certificate)
+#   APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID   notarization (an app-specific password)
+# Every Mach-O in the server payload is signed by payload.sh (hardened runtime,
+# timestamp; python3 with tools/release/mac-app/entitlements/python.plist), then
+# tauri signs + notarizes + staples the app, then the .dmg is notarized and
+# stapled here and re-uploaded.
+# Windows (WINDOWS_CERTIFICATE / WINDOWS_CERTIFICATE_PASSWORD, Authenticode)
+# stays deferred. The updater key: TAURI_SIGNING_PRIVATE_KEY(_PASSWORD).
 name: Desktop Release
 
 on:
@@ -48,11 +58,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - label: macos-universal
-            os: macos-latest
-            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
-            # Universal binary; app+dmg only (skip the macOS .app tarball).
-            args: '--target universal-apple-darwin --bundles app,dmg'
+          # Apple Silicon: the server payload rides in Contents/Resources/server
+          # (the overlay payload.sh writes adds it as a resource).
+          - label: macos-arm64
+            os: macos-15
+            rust-targets: aarch64-apple-darwin
+            payload: true
+            args: '--target aarch64-apple-darwin --bundles app,dmg --config ../../build/mac-app/tauri.mac-app.conf.json'
+          - label: macos-x86_64
+            os: macos-15
+            rust-targets: x86_64-apple-darwin
+            args: '--target x86_64-apple-darwin --bundles app,dmg'
           - label: windows
             os: windows-latest
             rust-targets: ''
@@ -62,7 +78,10 @@ jobs:
             rust-targets: ''
             args: '--bundles deb,appimage'
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 90
+    env:
+      APPLE_SIGN: ${{ startsWith(matrix.os, 'macos') && secrets.APPLE_CERTIFICATE != '' }}
+      APPLE_NOTARIZE: ${{ startsWith(matrix.os, 'macos') && secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_ID != '' && secrets.APPLE_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
     steps:
       - uses: actions/checkout@v6.0.2
 
@@ -113,6 +132,67 @@ jobs:
           node design-system/build/build-tokens.mjs
           pnpm build
 
+      # The Developer ID certificate in a throwaway keychain; its identity is
+      # what payload.sh and tauri sign with.
+      - name: Import the Developer ID certificate
+        if: env.APPLE_SIGN == 'true'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          kc="$RUNNER_TEMP/signing.keychain-db"
+          kcpw="$(openssl rand -hex 16)"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode >"$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$kcpw" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$kcpw" "$kc"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kcpw" "$kc" >/dev/null
+          # the new keychain first, the existing ones kept (one path per word)
+          # shellcheck disable=SC2046
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+          if [ -z "$IDENTITY" ]; then
+            IDENTITY="$(security find-identity -v -p codesigning "$kc" | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
+          fi
+          [ -n "$IDENTITY" ] || { echo "::error::no Developer ID Application identity in APPLE_CERTIFICATE"; exit 1; }
+          echo "APPLE_SIGNING_IDENTITY=$IDENTITY" >>"$GITHUB_ENV"
+
+      - uses: actions/setup-go@v6.4.0
+        if: matrix.payload
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: |
+            api/go.sum
+            streaming/go.sum
+            cmd/maktaba-server/go.sum
+            cmd/maktaba-launcher/go.sum
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        if: matrix.payload
+        with:
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+
+      - uses: actions/cache@v4
+        if: matrix.payload
+        with:
+          path: build/mac-app/downloads
+          key: mac-app-downloads-${{ hashFiles('tools/release/mac-app/pins.env') }}
+
+      # The server payload (signed when the identity is there) and the tauri
+      # overlay that bundles it, then a smoke test of the payload alone.
+      - name: Build the Maktaba.app server payload
+        if: matrix.payload
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          tools/release/mac-app/payload.sh --version "$VERSION"
+          tools/release/mac-app/check.sh
+
       - name: Install desktop deps (Tauri CLI + API bindings)
         working-directory: apps/desktop
         run: pnpm install --frozen-lockfile
@@ -144,6 +224,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # tauri signs with the imported identity (empty: unsigned) and, with
+          # the Apple ID trio, notarizes and staples the .app.
+          APPLE_ID: ${{ env.APPLE_NOTARIZE == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ env.APPLE_NOTARIZE == 'true' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ env.APPLE_NOTARIZE == 'true' && secrets.APPLE_TEAM_ID || '' }}
         with:
           projectPath: apps/desktop
           # Attach to the Release for the pushed tag (upsert by tag, so it
@@ -154,6 +239,41 @@ jobs:
           # v0.1.0-rc.1 is a pre-release (release.yml sets the final flags)
           prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}
+
+      - name: Check the app bundle
+        if: matrix.payload
+        run: |
+          set -euo pipefail
+          app=apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Maktaba.app
+          if [ "$APPLE_SIGN" = true ]; then
+            tools/release/mac-app/check.sh --app "$app" --signed
+          else
+            tools/release/mac-app/check.sh --app "$app"
+          fi
+          du -sh "$app" apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+
+      # tauri notarizes the .app inside the .dmg; the .dmg itself is notarized
+      # and stapled here (so it opens offline without a Gatekeeper prompt) and
+      # replaces the one tauri-action uploaded.
+      - name: Notarize + staple the .dmg
+        if: env.APPLE_NOTARIZE == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          TARGET: ${{ matrix.rust-targets }}
+        run: |
+          set -euo pipefail
+          for dmg in apps/desktop/src-tauri/target/"$TARGET"/release/bundle/dmg/*.dmg; do
+            codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$dmg"
+            xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" --wait --timeout 60m
+            xcrun stapler staple "$dmg"
+            xcrun stapler validate "$dmg"
+            gh release upload "$TAG" "$dmg" --clobber
+          done
 
       # Windows "portable" deliverable: zip the raw built executable so
       # users who can't run an installer get a self-contained .zip. Runs

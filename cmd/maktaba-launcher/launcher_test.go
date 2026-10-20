@@ -48,6 +48,9 @@ func TestMain(m *testing.M) {
 // does not carry the test's variables).
 func isFakeChild() bool {
 	rd := os.Getenv(layout.EnvReleaseDir)
+	if b := os.Getenv(EnvAppBundle); b != "" {
+		rd = filepath.Join(b, "bin")
+	}
 	if rd == "" {
 		return false
 	}
@@ -61,6 +64,12 @@ func isFakeChild() bool {
 func fakeServerMain() {
 	rel := os.Getenv(layout.EnvReleaseDir)
 	root := os.Getenv(layout.EnvInstallRoot)
+	if b := os.Getenv(EnvAppBundle); b != "" { // app-bundle mode: the launcher runs us in its state root
+		rel = filepath.Join(b, "bin")
+		root, _ = os.Getwd()
+		appendLine(filepath.Join(root, "env"), fmt.Sprintf("update_disable=%s launcher=%s release_dir=%s",
+			os.Getenv(envUpdateDisable), os.Getenv(layout.EnvLauncher), os.Getenv(layout.EnvReleaseDir)))
+	}
 	b, _ := os.ReadFile(filepath.Join(rel, "behavior"))
 	acts := strings.Split(strings.TrimSpace(string(b)), ",")
 	n := bumpCounter(filepath.Join(rel, "starts"))
