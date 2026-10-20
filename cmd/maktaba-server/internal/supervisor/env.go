@@ -41,9 +41,11 @@ func ChildEnv(role Role, cfg config.Config) []string {
 	// Media roots — comma-joined for the scanner.
 	add("MAKTABA_MEDIA_ROOTS", strings.Join(cfg.Media.Roots, ","))
 
-	// Transcription backend/model for the pipeline workers.
-	add("MAKTABA_TRANSCRIPTION_BACKEND", cfg.Transcription.Backend)
-	add("MAKTABA_TRANSCRIPTION_MODEL", cfg.Transcription.Model)
+	// The share's paths on this machine ([media] path_map): the api's cluster hub
+	// writes <share>/maktaba/cluster through it, the workers read media with it.
+	if os.Getenv("MAKTABA_PATH_MAP") == "" {
+		add("MAKTABA_PATH_MAP", strings.TrimSpace(cfg.Media.PathMap))
+	}
 	// The install's large state (Epic 36 story 36.2: on a Mac beside data/ in
 	// ~/Library/Application Support/Maktaba): models and the semantic-search index.
 	add("MAKTABA_MODELS_DIR", filepath.Join(cfg.StateDir(), "models"))
@@ -161,9 +163,18 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		// Its /healthz (event-loop heartbeat) is the pipeline's liveness
 		// probe.
 		add("MAKTABA_PIPELINE_LOGS_ADDR", pipelineLogs(cfg))
-		// extra transcription workers ([pipeline] instances, BuildPipelineInstances)
-		// take the transcribe stage; the main worker leaves it to them
-		if cfg.Pipeline.Instances > 0 {
+		// [transcription]: the models the transcribe stage loads (Epic 36 story 36.4)
+		for _, kv := range sttEnv(cfg) {
+			if k, _, _ := strings.Cut(kv, "="); os.Getenv(k) == "" {
+				env = append(env, kv)
+			}
+		}
+		if os.Getenv("MAKTABA_WORKER_PATH_MAP") == "" {
+			add("MAKTABA_WORKER_PATH_MAP", strings.TrimSpace(cfg.Media.PathMap))
+		}
+		// the transcription workers (PlanSTT, BuildPipelineInstances) take the
+		// transcribe stage; the main worker leaves it to them
+		if PlanSTT(cfg).Workers > 0 {
 			add("MAKTABA_PIPELINE_EXCLUDE_STAGES", "transcribe")
 		}
 	}

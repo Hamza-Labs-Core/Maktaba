@@ -40,6 +40,9 @@ type Config struct {
 	// DatabaseURLSet: server.toml sets [database] url (Load). Unset, a Mac with
 	// the bundled Postgres uses it (Epic 36 story 36.1).
 	DatabaseURLSet bool `toml:"-"`
+	// PipelineInstancesSet: server.toml sets [pipeline] instances (0 there means
+	// no transcription workers, even on Apple Silicon).
+	PipelineInstancesSet bool `toml:"-"`
 }
 
 // PostgresSection is the [postgres] table (Epic 36 story 36.1): the Postgres
@@ -118,12 +121,41 @@ type DatabaseSection struct {
 // MediaSection lists the library roots scanned for media.
 type MediaSection struct {
 	Roots []string `toml:"roots"`
+	// PathMap maps the paths the database stores to this machine's, in the
+	// workers' --path-map form ("/Volumes/Originals/=/Users/me/nas/", comma
+	// separated): MAKTABA_PATH_MAP for every role, MAKTABA_WORKER_PATH_MAP for
+	// the pipeline.
+	PathMap string `toml:"path_map"`
 }
 
-// TranscriptionSection selects the Whisper backend + model.
+// TranscriptionSection is the [transcription] table: what the pipeline's
+// transcribe stage loads, and (Epic 36 story 36.4) how many transcription
+// workers this machine runs and how much memory each may take.
 type TranscriptionSection struct {
-	Backend string `toml:"backend"` // "mlx-whisper" | "faster-whisper" | "openai"
-	Model   string `toml:"model"`   // e.g. "large-v3"
+	// Backend is kept for older files: the pipeline picks MLX (Apple Silicon)
+	// or torch by itself.
+	Backend string `toml:"backend"`
+	// Model is the Whisper model (a Hugging Face repo, MAKTABA_STT_MODEL);
+	// empty, or an old short name ("large-v3"): the pipeline's default
+	// (mlx-community/whisper-large-v3-turbo).
+	Model string `toml:"model"`
+	// Refine: "on" (default) lets a second listen correct Whisper's words
+	// (MAKTABA_STT_REFINE); "off" stores them as they are.
+	Refine string `toml:"refine"`
+	// RefineModel is the second listen's model (MAKTABA_STT_REFINE_MODEL);
+	// empty: CohereLabs/cohere-transcribe-arabic-07-2026.
+	RefineModel string `toml:"refine_model"`
+	// Workers is the number of transcription workers beside the main worker:
+	// 0 (default) sizes it from the RAM on Apple Silicon and runs none
+	// elsewhere (the one worker transcribes); -1 none. [pipeline] instances,
+	// when set, wins.
+	Workers int `toml:"workers"`
+	// Per transcription worker; 0: sized from the RAM (MAKTABA_STT_AUDIO_HOURS,
+	// _GPU_GB, _GPU_CACHE_GB, _MIN_FREE_PCT).
+	AudioHours float64 `toml:"audio_hours"`
+	GPUGB      float64 `toml:"gpu_gb"`
+	GPUCacheGB float64 `toml:"gpu_cache_gb"`
+	MinFreePct float64 `toml:"min_free_pct"`
 }
 
 // CloudSection holds optional cloud-link enrolment.
@@ -151,7 +183,6 @@ func Defaults() Config {
 		Media: MediaSection{Roots: []string{}},
 		Transcription: TranscriptionSection{
 			Backend: defaultTranscriptionBackend(),
-			Model:   "large-v3",
 		},
 		Cloud:      CloudSection{Enabled: false},
 		Supervisor: DefaultSupervisor(),
@@ -190,6 +221,7 @@ func LoadFrom(path string) (Config, bool, error) {
 		return cfg, true, fmt.Errorf("parse %s: %w", path, err)
 	}
 	cfg.DatabaseURLSet = meta.IsDefined("database", "url") && strings.TrimSpace(cfg.Database.URL) != ""
+	cfg.PipelineInstancesSet = meta.IsDefined("pipeline", "instances")
 	if !cfg.DatabaseURLSet {
 		cfg.Database.URL = Defaults().Database.URL
 	}

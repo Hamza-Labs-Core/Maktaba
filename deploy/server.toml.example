@@ -58,12 +58,35 @@ url = "sqlite:///var/lib/maktaba/maktaba.db"
 [media]
 # One or more library roots scanned for media.
 roots = ["/mnt/videos", "/mnt/movies"]
+# The share's paths on this machine, in the workers' --path-map form
+# ("<stored prefix>=<local prefix>", comma separated): MAKTABA_PATH_MAP for
+# every role, MAKTABA_WORKER_PATH_MAP for the pipeline.
+# path_map = "/Volumes/Originals/=/Users/me/nas-nfs/"
 
 [transcription]
-# Whisper backend: "mlx-whisper" (Apple Silicon), "faster-whisper"
-# (CUDA/CPU), or "openai".
+# The Whisper model (a Hugging Face repo): MAKTABA_STT_MODEL. Empty, or an old
+# short name such as "large-v3": the pipeline's default,
+# mlx-community/whisper-large-v3-turbo.
+# model = "mlx-community/whisper-large-v3-turbo"
+# The second listen that corrects Whisper's words: "on" (default) / "off"
+# (MAKTABA_STT_REFINE), and its model (MAKTABA_STT_REFINE_MODEL; a repo or a
+# local folder, default CohereLabs/cohere-transcribe-arabic-07-2026).
+# refine = "on"
+# refine_model = "CohereLabs/cohere-transcribe-arabic-07-2026"
+# Transcription workers beside the main worker (each one batched Whisper; the
+# main worker then skips transcribe). 0 (default): sized from the RAM on Apple
+# Silicon (96 GB and up: 2 workers, 16 h of audio, 20 GB GPU, 2 GB cache, back
+# off below 25% free, as the home Mac runs; smaller Macs less), none elsewhere.
+# -1: none. [pipeline] instances, when set, wins.
+# workers = 0
+# Per worker, 0 = sized from the RAM: MAKTABA_STT_AUDIO_HOURS, _GPU_GB,
+# _GPU_CACHE_GB, _MIN_FREE_PCT (an environment variable of your own wins).
+# audio_hours = 0
+# gpu_gb = 0
+# gpu_cache_gb = 0
+# min_free_pct = 0
+# Kept for older files: the pipeline picks MLX or torch by itself.
 backend = "mlx-whisper"
-model = "large-v3"
 
 [cloud]
 # Optional cloud-link enrolment.
