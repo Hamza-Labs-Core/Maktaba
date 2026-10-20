@@ -38,11 +38,12 @@ WHERE jsonb_typeof(c.diff -> 'pending' -> 'pools' -> 'write') = 'array'
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- A change that ended without airing (failed, cancelled, superseded) is never
--- staged again: nothing reads its pool writes, they go (the daily TV clean-up
+-- A change that ended without airing (failed, cancelled, or superseded before
+-- it swapped) is never staged again: nothing reads its pool writes, they go (the daily TV clean-up
 -- does the same from now on).
 UPDATE tv_changes SET diff = diff #- '{pending,pools}'
-WHERE state IN ('failed', 'cancelled', 'superseded') AND diff -> 'pending' ? 'pools';
+WHERE state IN ('failed', 'cancelled', 'superseded')
+  AND (state <> 'superseded' OR swapped_at IS NULL) AND diff -> 'pending' ? 'pools';
 -- +goose StatementEnd
 
 -- +goose Down

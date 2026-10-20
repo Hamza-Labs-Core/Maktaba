@@ -23,11 +23,12 @@ WHERE json_type(diff, '$.pending.pools.write') = 'array'
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- A change that ended without airing (failed, cancelled, superseded) is never
--- staged again: nothing reads its pool writes, they go (the daily TV clean-up
+-- A change that ended without airing (failed, cancelled, or superseded before
+-- it swapped) is never staged again: nothing reads its pool writes, they go (the daily TV clean-up
 -- does the same from now on).
 UPDATE tv_changes SET diff = json_remove(diff, '$.pending.pools')
 WHERE state IN ('failed', 'cancelled', 'superseded')
+  AND (state <> 'superseded' OR swapped_at IS NULL)
   AND json_type(diff, '$.pending.pools') IS NOT NULL;
 -- +goose StatementEnd
 

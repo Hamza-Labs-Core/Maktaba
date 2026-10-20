@@ -160,8 +160,17 @@ async def test_the_daily_clean_up_trims_the_ended_changes(db: Database) -> None:
             db, state="draft", title=state, source={"kind": "write_channels"}, pending=pending
         )
         await db.execute("UPDATE tv_changes SET state = $1 WHERE id = $2", state, ids[state])
+    # a change that aired, superseded by the next swap, keeps its record
+    aired = await create_change(
+        db, state="draft", title="aired", source={"kind": "write_channels"}, pending=pending
+    )
+    await db.execute(
+        "UPDATE tv_changes SET state = 'superseded', swapped_at = created_at WHERE id = $1", aired
+    )
     out = await collect(db)
     assert out["trimmed_changes"] == len(ENDED)
+    kept = await get_change(db, aired)
+    assert kept is not None and "pools" in kept.pending
     for state, cid in ids.items():
         ch = await get_change(db, cid)
         assert ch is not None

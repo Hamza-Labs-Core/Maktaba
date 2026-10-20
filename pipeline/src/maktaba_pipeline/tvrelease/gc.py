@@ -26,9 +26,11 @@ from .store import IN_FLIGHT
 
 __all__ = ["ENDED", "collect", "trim_ended"]
 
-#: the states a change never leaves and that never aired (a rolled-back change keeps
-#: its pending edits: its re-stage draft is made from them)
+#: the states a change never leaves; a superseded one is trimmed only if it never aired
+#: (a live change is superseded by the next swap). A rolled-back change keeps its
+#: pending edits: its re-stage draft is made from them.
 ENDED = ("failed", "cancelled", "superseded")
+_NEVER_AIRED = "(state <> 'superseded' OR swapped_at IS NULL)"
 
 _log = get_logger()
 
@@ -116,11 +118,12 @@ async def trim_ended(db: Any) -> int:
     if is_pg(db):
         sql = (
             "UPDATE tv_changes SET diff = diff #- '{pending,pools}'"
-            f" WHERE state IN ({marks}) AND diff -> 'pending' ? 'pools'"
+            f" WHERE state IN ({marks}) AND {_NEVER_AIRED} AND diff -> 'pending' ? 'pools'"
         )
     else:
         sql = (
             "UPDATE tv_changes SET diff = json_remove(diff, '$.pending.pools')"
-            f" WHERE state IN ({marks}) AND json_type(diff, '$.pending.pools') IS NOT NULL"
+            f" WHERE state IN ({marks}) AND {_NEVER_AIRED}"
+            " AND json_type(diff, '$.pending.pools') IS NOT NULL"
         )
     return len(await db.fetch(sql + " RETURNING id"))
