@@ -252,6 +252,16 @@ remote users itself. Maktaba sends nothing to Cloudflare for Plex: those viewers
 local Plex viewers (they count against `tuner_count`) and cost nothing in Cloudflare. Turn on
 *Remote Access* in Plex's own settings if you want it.
 
+**How Plex finds the tuner at home.** While the tuner is on, the home answers both discovery
+protocols Plex's *Set up Plex DVR* scan uses: SSDP (UDP 1900, an absolute `LOCATION` such as
+`http://192.168.50.177:8081/device.xml`, plus `ssdp:alive` every five minutes and `ssdp:byebye`
+on shutdown) and the native HDHomeRun discover protocol (UDP 65001 broadcast, the libhdhomerun
+packet format). Each reply carries the address of the interface the asking client can reach.
+Both stop when the tuner is turned off. Allow UDP 1900 and 65001 in the home's firewall. On a
+network that blocks broadcast or multicast (guest Wi-Fi, some mesh systems, Docker bridges), type
+the *HDHomeRun address* from the Live TV page (for example `192.168.50.177:8081`) into Plex's
+manual entry box.
+
 <a id="measured"></a>
 
 ## 9. Measured behaviour

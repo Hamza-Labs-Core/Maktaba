@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -265,16 +266,21 @@ func bestThumbnail(e ytdlpEntry) string {
 }
 
 // SafeThumbnailURL accepts only https URLs on YouTube's image hosts, so a
-// staged thumbnail can never point the library at an arbitrary site.
+// staged thumbnail can never point the library at an arbitrary site. The host
+// is the parsed one (a query, fragment or userinfo cannot pose as it), with no
+// port; googleusercontent.com is YouTube's avatar host only (yt3.), since
+// anyone can serve content from its other subdomains.
 func SafeThumbnailURL(u string) bool {
-	rest, ok := strings.CutPrefix(u, "https://")
-	if !ok {
+	if strings.ContainsAny(u, "\\ \t\r\n") {
 		return false
 	}
-	host, _, _ := strings.Cut(rest, "/")
-	host = strings.ToLower(host)
-	return host == "i.ytimg.com" || strings.HasSuffix(host, ".ytimg.com") ||
-		host == "yt3.ggpht.com" || strings.HasSuffix(host, ".googleusercontent.com")
+	pu, err := url.Parse(u)
+	if err != nil || pu.Scheme != "https" || pu.User != nil || pu.Port() != "" || pu.Opaque != "" {
+		return false
+	}
+	h := strings.ToLower(pu.Hostname())
+	return h == "i.ytimg.com" || strings.HasSuffix(h, ".ytimg.com") ||
+		h == "yt3.ggpht.com" || h == "yt3.googleusercontent.com"
 }
 
 func publishedAt(e ytdlpEntry) string {

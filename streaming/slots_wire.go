@@ -149,7 +149,9 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 			return time.Duration(b.settings.TV(ctx).HorizonDays) * 24 * time.Hour
 		}}
 	mounts = append(mounts, guideHandler.Mount)
-	ssdp := &hdhr.SSDPController{Repo: hdhrRepo, Logger: logger, LocationBase: publicBase}
+	// SSDP (udp/1900) and HDHomeRun discovery (udp/65001), absolute URLs only
+	ssdp := &hdhr.SSDPController{Repo: hdhrRepo, Logger: logger, LocationBase: publicBase,
+		HTTPAddr: os.Getenv("MAKTABA_HTTP_ADDR")}
 	b.bg.Go(ssdp.Run)
 	return mounts
 }

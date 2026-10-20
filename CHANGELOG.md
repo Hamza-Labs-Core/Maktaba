@@ -257,6 +257,14 @@ Details of everything in this release:
   creations from Epics 9/12.
 
 ### Fixed
+- **Plex finds the HDHomeRun tuner.** SSDP replies carry an absolute `LOCATION`
+  (`http://<the address the client reaches>:8081/device.xml`) instead of `/device.xml`, answer
+  `upnp:rootdevice` and the uuid as well, and the tuner multicasts `ssdp:alive` every five
+  minutes and `ssdp:byebye` when it stops. The native HDHomeRun discover protocol (UDP 65001,
+  libhdhomerun's packet format with CRC) is answered too, under the same tuner switch. The
+  DeviceID now carries the HDHomeRun check digit (an existing id gets its last digit fixed,
+  e.g. 87C7778E becomes 87C77788), and device.xml / discover.json report Silicondust like a
+  real tuner. On the server itself the Live TV page shows the LAN address to type into Plex.
 - Ports taken by another program (Splunk on 8088, a backup tool on 8080): `setup`,
   `setup --node`, `setup --self-managed` and `serve` check the web, API and
   streaming ports first and move a taken one to the first free port of 8780-8790,

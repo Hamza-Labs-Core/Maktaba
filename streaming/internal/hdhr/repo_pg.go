@@ -24,7 +24,7 @@ func NewPGRepo(pool *pgxpool.Pool) *PGRepo { return &PGRepo{pool: pool} }
 func (r *PGRepo) Device(ctx context.Context) (Device, error) {
 	dev, err := r.load(ctx)
 	if err == nil {
-		return dev, nil
+		return r.repairID(ctx, dev)
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return Device{}, err
@@ -72,21 +72,33 @@ func (r *PGRepo) Lineup(ctx context.Context) ([]LineupChannel, error) {
 	return out, rows.Err()
 }
 
-// newDeviceID derives an 8-hex-char HDHomeRun-style device id from a
-// fresh UUID (the format Plex expects).
-func newDeviceID() string {
-	u := uuid.New()
-	return strUpperHex(u[:4])
+// repairID gives a stored DeviceID without a valid HDHomeRun check digit
+// (ids provisioned before the check, e.g. 87C7778E) a valid one, in place:
+// only the last hex digit changes. libhdhomerun-based clients reject an id
+// that fails hdhomerun_discover_validate_device_id.
+func (r *PGRepo) repairID(ctx context.Context, dev Device) (Device, error) {
+	fixed, changed := RepairDeviceID(dev.DeviceID)
+	if !changed {
+		return dev, nil
+	}
+	if _, err := r.pool.Exec(ctx, `UPDATE hdhr_device SET device_id = $1 WHERE id = 1 AND device_id = $2`,
+		fixed, dev.DeviceID); err != nil {
+		return dev, nil // serve the old id; the next read retries
+	}
+	dev.DeviceID = fixed
+	return dev, nil
 }
 
-func strUpperHex(b []byte) string {
-	const hex = "0123456789ABCDEF"
-	out := make([]byte, len(b)*2)
-	for i, c := range b {
-		out[i*2] = hex[c>>4]
-		out[i*2+1] = hex[c&0x0f]
+// newDeviceID derives an 8-hex-char HDHomeRun device id from a fresh UUID,
+// with the check digit libhdhomerun validates (the format Plex expects).
+func newDeviceID() string {
+	for {
+		u := uuid.New()
+		id := WithCheckDigit(uint32(u[0])<<24 | uint32(u[1])<<16 | uint32(u[2])<<8 | uint32(u[3]))
+		if id != 0 && id != hdhrDeviceIDWildcard {
+			return FormatDeviceID(id)
+		}
 	}
-	return string(out)
 }
 
 // GuideChannels returns the enabled channels for the XMLTV/M3U guide.

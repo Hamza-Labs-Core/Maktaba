@@ -317,8 +317,13 @@ func (h *Handler) info(r *http.Request) Info {
 		if hn, _, err := net.SplitHostPort(host); err == nil {
 			host = hn
 		}
-		if host == "" {
-			host = "127.0.0.1"
+		if host == "" || isLoopbackHost(host) {
+			// an admin on the server itself: Plex needs the LAN address
+			if ip := lanIP(); ip != "" {
+				host = ip
+			} else if host == "" {
+				host = "127.0.0.1"
+			}
 		}
 		base = "http://" + net.JoinHostPort(host, port)
 	}
@@ -346,6 +351,31 @@ func (h *Handler) stagingInfo(ctx context.Context) any {
 
 // hostPort strips the scheme/path from a base URL: Plex's "enter the
 // HDHomeRun address" field wants host:port.
+func isLoopbackHost(h string) bool {
+	if strings.EqualFold(h, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(h, "[]"))
+	return ip != nil && ip.IsLoopback()
+}
+
+// interfaceAddrs is net.InterfaceAddrs (a test seam; reading it opens no socket).
+var interfaceAddrs = net.InterfaceAddrs
+
+// lanIP is this host's first private IPv4 address, or "".
+func lanIP() string {
+	addrs, err := interfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	for _, a := range addrs {
+		if n, ok := a.(*net.IPNet); ok && n.IP.To4() != nil && n.IP.IsPrivate() {
+			return n.IP.To4().String()
+		}
+	}
+	return ""
+}
+
 func hostPort(base string) string {
 	u, err := url.Parse(base)
 	if err != nil || u.Host == "" {
@@ -462,7 +492,32 @@ func isAdmin(r *http.Request) bool {
 	return p != nil && p.IsAdmin
 }
 
+// newDeviceID is a fresh 8-hex-digit HDHomeRun DeviceID whose last digit is
+// the check digit libhdhomerun validates (hdhomerun_discover.c,
+// hdhomerun_discover_validate_device_id); the streaming service generates and
+// repairs ids the same way (streaming/internal/hdhr/hdhrpkt.go).
 func newDeviceID() string {
-	u := uuid.New()
-	return strings.ToUpper(strings.ReplaceAll(u.String(), "-", "")[:8])
+	for {
+		u := uuid.New()
+		id := withCheckDigit(uint32(u[0])<<24 | uint32(u[1])<<16 | uint32(u[2])<<8 | uint32(u[3]))
+		if id != 0 && id != 0xFFFFFFFF {
+			return fmt.Sprintf("%08X", id)
+		}
+	}
+}
+
+// deviceIDTable is hdhomerun_discover_validate_device_id's lookup_table.
+var deviceIDTable = [16]uint32{0xA, 0x5, 0xF, 0x6, 0x7, 0xC, 0x1, 0xB, 0x9, 0x2, 0x8, 0xD, 0x4, 0x3, 0xE, 0x0}
+
+// withCheckDigit sets id's last nibble so the libhdhomerun checksum is zero:
+// it xors the 1st/3rd/5th/7th nibbles through the table and the others as is,
+// and the last nibble enters unmapped.
+func withCheckDigit(id uint32) uint32 {
+	id &^= 0x0F
+	var c uint32
+	for shift := 28; shift >= 4; shift -= 8 {
+		c ^= deviceIDTable[(id>>uint(shift))&0x0F]
+		c ^= (id >> uint(shift-4)) & 0x0F
+	}
+	return id | c
 }

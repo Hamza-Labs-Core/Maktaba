@@ -5,12 +5,12 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  tar@<7.5.11: '>=7.5.11'
+  tar@<7.5.18: '>=7.5.18'
 
 patchedDependencies:
-  '@capacitor/cli@6.2.1':
-    hash: 9f873660b7229f3f08ab4bf7df5c9d2482c5b2cc449c0db85a38c07a68183852
-    path: patches/@capacitor__cli@6.2.1.patch
+  '@capacitor/cli@6.2.2':
+    hash: aq5yi3ntksldsv4tua2p5ubozu
+    path: patches/@capacitor__cli@6.2.2.patch
 
 importers:
 
@@ -20,42 +20,42 @@ importers:
         specifier: ^6.0.1
         version: 6.0.1
       '@capacitor/android':
-        specifier: ^6.1.2
-        version: 6.2.1(@capacitor/core@6.2.1)
+        specifier: ^6.2.2
+        version: 6.2.2(@capacitor/core@6.2.2)
       '@capacitor/app':
         specifier: ^6.0.1
-        version: 6.0.3(@capacitor/core@6.2.1)
+        version: 6.0.3(@capacitor/core@6.2.2)
       '@capacitor/core':
-        specifier: ^6.1.2
-        version: 6.2.1
+        specifier: ^6.2.2
+        version: 6.2.2
       '@capacitor/haptics':
         specifier: ^6.0.1
-        version: 6.0.3(@capacitor/core@6.2.1)
+        version: 6.0.3(@capacitor/core@6.2.2)
       '@capacitor/ios':
-        specifier: ^6.1.2
-        version: 6.2.1(@capacitor/core@6.2.1)
+        specifier: ^6.2.2
+        version: 6.2.2(@capacitor/core@6.2.2)
       '@capacitor/network':
         specifier: ^6.0.3
-        version: 6.0.4(@capacitor/core@6.2.1)
+        version: 6.0.4(@capacitor/core@6.2.2)
       '@capacitor/preferences':
         specifier: ^6.0.2
-        version: 6.0.4(@capacitor/core@6.2.1)
+        version: 6.0.4(@capacitor/core@6.2.2)
       '@capacitor/push-notifications':
         specifier: ^6.0.2
-        version: 6.0.5(@capacitor/core@6.2.1)
+        version: 6.0.5(@capacitor/core@6.2.2)
       '@capacitor/share':
         specifier: ^6.0.2
-        version: 6.0.4(@capacitor/core@6.2.1)
+        version: 6.0.4(@capacitor/core@6.2.2)
       '@capacitor/splash-screen':
         specifier: ^6.0.2
-        version: 6.0.4(@capacitor/core@6.2.1)
+        version: 6.0.4(@capacitor/core@6.2.2)
       '@capacitor/status-bar':
         specifier: ^6.0.1
-        version: 6.0.3(@capacitor/core@6.2.1)
+        version: 6.0.3(@capacitor/core@6.2.2)
     devDependencies:
       '@capacitor/cli':
-        specifier: ^6.1.2
-        version: 6.2.1(patch_hash=9f873660b7229f3f08ab4bf7df5c9d2482c5b2cc449c0db85a38c07a68183852)
+        specifier: ^6.2.2
+        version: 6.2.2(patch_hash=aq5yi3ntksldsv4tua2p5ubozu)
       '@types/node':
         specifier: ^20.14.0
         version: 20.19.41
@@ -69,8 +69,8 @@ packages:
     resolution: {integrity: sha512-3enXCck7Uumg3xCvzh4EHHo4mqYAMMhVWQ1db35xDsuRCSKEGFTJVVdOMpwnrOlS6RqzmZEoGB7n5wftbRHRqQ==}
     engines: {node: '>=16.15.1'}
 
-  '@capacitor/android@6.2.1':
-    resolution: {integrity: sha512-8gd4CIiQO5LAIlPIfd5mCuodBRxMMdZZEdj8qG8m+dQ1sQ2xyemVpzHmRK8qSCHorsBUCg3D62j2cp6bEBAkdw==}
+  '@capacitor/android@6.2.2':
+    resolution: {integrity: sha512-JjIu1ryNE16PQTp51rb4NEygxP7cSCDMmUqx4f5f12xscKdGKTjO9bkEP3TroLnTa/J6p2QopIhRbrd3E/7DrA==}
     peerDependencies:
       '@capacitor/core': ^6.2.0
 
@@ -79,21 +79,21 @@ packages:
     peerDependencies:
       '@capacitor/core': ^6.0.0
 
-  '@capacitor/cli@6.2.1':
-    resolution: {integrity: sha512-JKl0FpFge8PgQNInw12kcKieQ4BmOyazQ4JGJOfEpVXlgrX1yPhSZTPjngupzTCiK3I7q7iGG5kjun0fDqgSCA==}
+  '@capacitor/cli@6.2.2':
+    resolution: {integrity: sha512-5wEYSHBzRKJKZnhD2sVJAP0t0kUT7o2/vlgEGzFE3t2w+inL9qMDN7zxg6pvqveJiPNZT2k93ZvJDdRKIn/w1w==}
     engines: {node: '>=18.0.0'}
     hasBin: true
 
-  '@capacitor/core@6.2.1':
-    resolution: {integrity: sha512-urZwxa7hVE/BnA18oCFAdizXPse6fCKanQyEqpmz6cBJ2vObwMpyJDG5jBeoSsgocS9+Ax+9vb4ducWJn0y2qQ==}
+  '@capacitor/core@6.2.2':
+    resolution: {integrity: sha512-qEI3DcwJEPzhW+hVGKH8m4jbujtkdUiGkpMLHmpR8epACU7wEsV6NF8pCHzpsMYjc80oK7Cmpcw+MIienv/YRw==}
 
   '@capacitor/haptics@6.0.3':
     resolution: {integrity: sha512-6yKF0+lRUZEEx1GDFWgnKHia974np7o1OgmRl/btL9cSMZh0TSDZTyDMH/qcy4AM39CfuIeLs4N4h5lwixXLuQ==}
     peerDependencies:
       '@capacitor/core': ^6.0.0
 
-  '@capacitor/ios@6.2.1':
-    resolution: {integrity: sha512-tbMlQdQjxe1wyaBvYVU1yTojKJjgluZQsJkALuJxv/6F8QTw5b6vd7X785O/O7cMpIAZfUWo/vtAHzFkRV+kXw==}
+  '@capacitor/ios@6.2.2':
+    resolution: {integrity: sha512-dc9upo3L5wSUVJBJnd7oRGGsiwB2rMe7ZF2bti8hvDVCAZeYMzzw8iqxuUc6cvGBhH2/LsORMBO51/vEQhdmHg==}
     peerDependencies:
       '@capacitor/core': ^6.2.0
 
@@ -180,8 +180,8 @@ packages:
   '@types/slice-ansi@4.0.0':
     resolution: {integrity: sha512-+OpjSaq85gvlZAYINyzKpLeiFkSC4EsC6IIiT6v6TLSU5k5U83fHGj9Lel8oKEXM0HqgrMVCjXPDPVICtxF7EQ==}
 
-  '@xmldom/xmldom@0.9.10':
-    resolution: {integrity: sha512-A9gOqLdi6cV4ibazAjcQufGj0B1y/vDqYrcuP6d/6x8P27gRS8643Dj9o1dEKtB6O7fwxb2FgBmJS2mX7gpvdw==}
+  '@xmldom/xmldom@0.9.12':
+    resolution: {integrity: sha512-5AXjrcMClTryPe9LgZrygpB1lj7s0S9E0+W+AHaVKAVyHanafK86iPSvG5xHVSp/jC+VH1UXu0TAEmY279xH7A==}
     engines: {node: '>=14.6'}
 
   ansi-regex@5.0.1:
@@ -214,8 +214,8 @@ packages:
     resolution: {integrity: sha512-apC2+fspHGI3mMKj+dGevkGo/tCqVB8jMb6i+OX+E29p0Iposz07fABkRIfVUPNd5A5VbuOz1bZbnmkKLYF+wQ==}
     engines: {node: '>= 5.10.0'}
 
-  brace-expansion@2.1.1:
-    resolution: {integrity: sha512-WR1cURNjuvBLMZBMbqM0UoE+WAfdUcEV1ccD8PVBVOI+Z3ND4+SZbN8RsfT2bMuG1qwz5RFvPukSZm5fF2D5eA==}
+  brace-expansion@2.1.7:
+    resolution: {integrity: sha512-uZbew1NqdmPDTMJ8ah1y+b+9QEJrfkXFk3RcTQw3X0jW/xRUvFKsg1CfQdSYGdTbXZWExtU3J3ccxtnfw1Fi0g==}
 
   buffer-crc32@0.2.13:
     resolution: {integrity: sha512-VO9Ht/+p3SN7SKWqcrgEzjGbRSJYTx+Q1pTQC0wrWqHx0vpJraQ6GtHx8tvcg1rlK1byhU5gccxgOgj7B0TDkQ==}
@@ -422,8 +422,8 @@ packages:
     resolution: {integrity: sha512-Y38VPSHcqkFrCpFnQ9vuSXmquuv5oXOKpGeT6aGrr3o3Gc9AlVa6JBfUSOCnbxGGZF+/0ooI7KrPuUSztUdU5A==}
     engines: {node: '>=8'}
 
-  tar@7.5.16:
-    resolution: {integrity: sha512-56adEpPMouktRlBLXiaYFFzZ/3+JXa8P9n7WbR+ibIjtviN55mEaOkiysCnPnWm+7kkui1Dn8J9l+g6zV8731w==}
+  tar@7.5.22:
+    resolution: {integrity: sha512-MFO/QzvtAOmJbkhOaCTvbGcFN9L9b+JunIsDwaKljSOdcLMea3NJ1k9Usz/rjdfSXTq4dfzfeS7W4p4YOAAHeA==}
     engines: {node: '>=18'}
 
   through2@4.0.2:
@@ -487,20 +487,20 @@ snapshots:
 
   '@aparajita/capacitor-secure-storage@6.0.1':
     dependencies:
-      '@capacitor/android': 6.2.1(@capacitor/core@6.2.1)
-      '@capacitor/app': 6.0.3(@capacitor/core@6.2.1)
-      '@capacitor/core': 6.2.1
-      '@capacitor/ios': 6.2.1(@capacitor/core@6.2.1)
+      '@capacitor/android': 6.2.2(@capacitor/core@6.2.2)
+      '@capacitor/app': 6.0.3(@capacitor/core@6.2.2)
+      '@capacitor/core': 6.2.2
+      '@capacitor/ios': 6.2.2(@capacitor/core@6.2.2)
 
-  '@capacitor/android@6.2.1(@capacitor/core@6.2.1)':
+  '@capacitor/android@6.2.2(@capacitor/core@6.2.2)':
     dependencies:
-      '@capacitor/core': 6.2.1
+      '@capacitor/core': 6.2.2
 
-  '@capacitor/app@6.0.3(@capacitor/core@6.2.1)':
+  '@capacitor/app@6.0.3(@capacitor/core@6.2.2)':
     dependencies:
-      '@capacitor/core': 6.2.1
+      '@capacitor/core': 6.2.2
 
-  '@capacitor/cli@6.2.1(patch_hash=9f873660b7229f3f08ab4bf7df5c9d2482c5b2cc449c0db85a38c07a68183852)':
+  '@capacitor/cli@6.2.2(patch_hash=aq5yi3ntksldsv4tua2p5ubozu)':
     dependencies:
       '@ionic/cli-framework-output': 2.2.8
       '@ionic/utils-fs': 3.1.7
@@ -516,47 +516,47 @@ snapshots:
       prompts: 2.4.2
       rimraf: 4.4.1
       semver: 7.8.2
-      tar: 7.5.16
+      tar: 7.5.22
       tslib: 2.8.1
       xml2js: 0.5.0
     transitivePeerDependencies:
       - supports-color
 
-  '@capacitor/core@6.2.1':
+  '@capacitor/core@6.2.2':
     dependencies:
       tslib: 2.8.1
 
-  '@capacitor/haptics@6.0.3(@capacitor/core@6.2.1)':
+  '@capacitor/haptics@6.0.3(@capacitor/core@6.2.2)':
     dependencies:
-      '@capacitor/core': 6.2.1
+      '@capacitor/core': 6.2.2
 
-  '@capacitor/ios@6.2.1(@capacitor/core@6.2.1)':
+  '@capacitor/ios@6.2.2(@capacitor/core@6.2.2)':
     dependencies:
-      '@capacitor/core': 6.2.1
+      '@capacitor/core': 6.2.2
 
-  '@capacitor/network@6.0.4(@capacitor/core@6.2.1)':
+  '@capacitor/network@6.0.4(@capacitor/core@6.2.2)':
     dependencies:
-      '@capacitor/core': 6.2.1
+      '@capacitor/core': 6.2.2
 
-  '@capacitor/preferences@6.0.4(@capacitor/core@6.2.1)':
+  '@capacitor/preferences@6.0.4(@capacitor/core@6.2.2)':
     dependencies:
-      '@capacitor/core': 6.2.1
+      '@capacitor/core': 6.2.2
 
-  '@capacitor/push-notifications@6.0.5(@capacitor/core@6.2.1)':
+  '@capacitor/push-notifications@6.0.5(@capacitor/core@6.2.2)':
     dependencies:
-      '@capacitor/core': 6.2.1
+      '@capacitor/core': 6.2.2
 
-  '@capacitor/share@6.0.4(@capacitor/core@6.2.1)':
+  '@capacitor/share@6.0.4(@capacitor/core@6.2.2)':
     dependencies:
-      '@capacitor/core': 6.2.1
+      '@capacitor/core': 6.2.2
 
-  '@capacitor/splash-screen@6.0.4(@capacitor/core@6.2.1)':
+  '@capacitor/splash-screen@6.0.4(@capacitor/core@6.2.2)':
     dependencies:
-      '@capacitor/core': 6.2.1
+      '@capacitor/core': 6.2.2
 
-  '@capacitor/status-bar@6.0.3(@capacitor/core@6.2.1)':
+  '@capacitor/status-bar@6.0.3(@capacitor/core@6.2.2)':
     dependencies:
-      '@capacitor/core': 6.2.1
+      '@capacitor/core': 6.2.2
 
   '@ionic/cli-framework-output@2.2.8':
     dependencies:
@@ -671,7 +671,7 @@ snapshots:
 
   '@types/slice-ansi@4.0.0': {}
 
-  '@xmldom/xmldom@0.9.10': {}
+  '@xmldom/xmldom@0.9.12': {}
 
   ansi-regex@5.0.1: {}
 
@@ -693,7 +693,7 @@ snapshots:
     dependencies:
       big-integer: 1.6.52
 
-  brace-expansion@2.1.1:
+  brace-expansion@2.1.7:
     dependencies:
       balanced-match: 1.0.2
 
@@ -779,7 +779,7 @@ snapshots:
 
   minimatch@8.0.7:
     dependencies:
-      brace-expansion: 2.1.1
+      brace-expansion: 2.1.7
 
   minipass@4.2.8: {}
 
@@ -824,7 +824,7 @@ snapshots:
 
   plist@3.1.1:
     dependencies:
-      '@xmldom/xmldom': 0.9.10
+      '@xmldom/xmldom': 0.9.12
       base64-js: 1.5.1
       xmlbuilder: 15.1.1
 
@@ -883,7 +883,7 @@ snapshots:
     dependencies:
       ansi-regex: 5.0.1
 
-  tar@7.5.16:
+  tar@7.5.22:
     dependencies:
       '@isaacs/fs-minipass': 4.0.1
       chownr: 3.0.0

@@ -35,9 +35,9 @@ func TestSSDPController_FollowsEnabledAndStreamHost(t *testing.T) {
 	c := &SSDPController{
 		Repo:    repo,
 		Allowed: func(context.Context) bool { return allowed.Load() },
-		Serve: func(ctx context.Context, id string) error {
+		Serve: func(ctx context.Context, dev Device) error {
 			serving.Add(1)
-			lastUUID.Store(id)
+			lastUUID.Store(dev.UUID)
 			<-ctx.Done()
 			serving.Add(-1)
 			return nil
@@ -74,7 +74,7 @@ func TestSSDPController_RetriesAfterBindFailureAndStopsOnCancel(t *testing.T) {
 	repo := &togglingRepo{dev: Device{UUID: "u", Enabled: true}}
 	var calls atomic.Int32
 	c := &SSDPController{Repo: repo, Interval: 20 * time.Millisecond,
-		Serve: func(ctx context.Context, _ string) error {
+		Serve: func(ctx context.Context, _ Device) error {
 			if calls.Add(1) == 1 {
 				return context.DeadlineExceeded // port 1900 busy
 			}
