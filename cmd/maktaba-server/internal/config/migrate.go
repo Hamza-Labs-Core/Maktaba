@@ -55,29 +55,37 @@ func migrateDirs(old, cur Dirs) (string, error) {
 	if !meta.IsDefined("server", "data_dir") {
 		oldData = filepath.Clean(old.Data)
 	}
-	if oldData == filepath.Clean(old.Data) && exists(oldData) {
-		if exists(cur.Data) {
-			return "", fmt.Errorf("cannot move %s to %s: it already exists", oldData, cur.Data)
-		}
-		if err := os.MkdirAll(filepath.Dir(cur.Data), 0o700); err != nil {
-			return "", err
-		}
-		if err := os.Rename(oldData, cur.Data); err != nil {
-			return "", fmt.Errorf("move %s to %s: %w", oldData, cur.Data, err)
-		}
-		// models and the caches sit beside data/ on a Mac (Config.StateDir)
-		root := stateDir("darwin", cur.Data)
-		for _, d := range []string{"models", "cache"} {
-			from := filepath.Join(cur.Data, d)
-			if exists(from) && !exists(filepath.Join(root, d)) {
-				if err := os.Rename(from, filepath.Join(root, d)); err != nil {
-					return "", fmt.Errorf("move %s: %w", from, err)
+	if oldData == filepath.Clean(old.Data) {
+		if exists(oldData) {
+			// an empty data dir in the new place (made by an earlier command) is fine
+			if exists(cur.Data) {
+				if err := os.Remove(cur.Data); err != nil {
+					return "", fmt.Errorf("cannot move %s to %s: it already exists", oldData, cur.Data)
 				}
 			}
+			if err := os.MkdirAll(filepath.Dir(cur.Data), 0o700); err != nil {
+				return "", err
+			}
+			if err := os.Rename(oldData, cur.Data); err != nil {
+				return "", fmt.Errorf("move %s to %s: %w", oldData, cur.Data, err)
+			}
 		}
-		// the old path as a whole value or a prefix (never /x/maktaba-other)
-		for _, end := range []string{`"`, `'`, "/"} {
-			text = strings.ReplaceAll(text, oldData+end, cur.Data+end)
+		// models and the caches sit beside data/ on a Mac (Config.StateDir); a run
+		// that stopped half way finishes here
+		if exists(cur.Data) {
+			root := filepath.Dir(cur.Data)
+			for _, d := range []string{"models", "cache", "chroma", "postgres", "backups"} {
+				from := filepath.Join(cur.Data, d)
+				if exists(from) && !exists(filepath.Join(root, d)) {
+					if err := os.Rename(from, filepath.Join(root, d)); err != nil {
+						return "", fmt.Errorf("move %s: %w", from, err)
+					}
+				}
+			}
+			// the old path as a whole value or a prefix (never /x/maktaba-other)
+			for _, end := range []string{`"`, `'`, "/"} {
+				text = strings.ReplaceAll(text, oldData+end, cur.Data+end)
+			}
 		}
 	}
 

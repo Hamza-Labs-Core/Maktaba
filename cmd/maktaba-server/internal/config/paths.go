@@ -90,15 +90,15 @@ func LogsDir() string {
 }
 
 // StateDir is the root of the install's large state (models/, chroma/, cache/,
-// postgres/, backups/). On macOS a data_dir named "data" sits inside that root
+// postgres/, backups/). On macOS the default data_dir sits inside that root
 // (~/Library/Application Support/Maktaba/data), so the root is its parent;
-// everywhere else, and for any other data_dir, it is data_dir itself (where these
-// always lived on Linux and Windows).
-func (c Config) StateDir() string { return stateDir(runtime.GOOS, c.Server.DataDir) }
+// everywhere else, and for any data_dir the owner chose, it is data_dir itself
+// (where these always lived on Linux and Windows).
+func (c Config) StateDir() string { return stateDir(runtime.GOOS, c.Server.DataDir, LocalDirs().Data) }
 
-func stateDir(goos, dataDir string) string {
-	if goos == "darwin" && filepath.Base(dataDir) == "data" {
-		return filepath.Dir(dataDir)
+func stateDir(goos, dataDir, defaultData string) string {
+	if goos == "darwin" && dataDir != "" && filepath.Clean(dataDir) == filepath.Clean(defaultData) {
+		return filepath.Dir(filepath.Clean(dataDir))
 	}
 	return dataDir
 }

@@ -78,8 +78,9 @@ func TestChildEnvStateDirs(t *testing.T) {
 	t.Cleanup(func() { nodeConfig = prev })
 	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
 	t.Setenv("MAKTABA_CHROMA_DIR", "")
+	t.Setenv("HOME", t.TempDir())
 	var cfg config.Config
-	cfg.Server.DataDir = filepath.Join(t.TempDir(), "Maktaba", "data")
+	cfg.Server.DataDir = config.LocalDirs().Data
 	root := cfg.StateDir()
 	if runtime.GOOS == "darwin" && root != filepath.Dir(cfg.Server.DataDir) {
 		t.Fatalf("StateDir = %s on a Mac, want the parent of data/", root)

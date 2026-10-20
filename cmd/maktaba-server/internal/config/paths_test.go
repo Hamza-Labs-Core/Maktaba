@@ -45,13 +45,16 @@ func TestDirsForWindowsUnchanged(t *testing.T) {
 
 func TestStateDir(t *testing.T) {
 	t.Parallel()
+	def := "/m/Maktaba/data"
 	for _, c := range []struct{ goos, data, want string }{
 		{"darwin", "/m/Maktaba/data", "/m/Maktaba"},
+		{"darwin", "/m/Maktaba/data/", "/m/Maktaba"},
+		{"darwin", "/Volumes/media/data", "/Volumes/media/data"}, // a chosen dir named data
 		{"darwin", "/Volumes/Big/maktaba", "/Volumes/Big/maktaba"},
-		{"linux", "/home/a/.local/share/maktaba", "/home/a/.local/share/maktaba"},
+		{"linux", "/m/Maktaba/data", "/m/Maktaba/data"},
 		{"windows", `C:\L\Maktaba\data`, `C:\L\Maktaba\data`},
 	} {
-		if got := stateDir(c.goos, c.data); got != c.want {
+		if got := stateDir(c.goos, c.data, def); got != c.want {
 			t.Errorf("stateDir(%s, %s) = %s, want %s", c.goos, c.data, got, c.want)
 		}
 	}
@@ -155,6 +158,41 @@ func TestMigrateLeavesNewInstallAlone(t *testing.T) {
 	}
 	if !exists(filepath.Join(old.Config, "server.toml")) {
 		t.Fatal("the old install must not be touched when the new one exists")
+	}
+}
+
+func TestMigrateFinishesAfterAPartialRun(t *testing.T) {
+	t.Parallel()
+	old, cur := layout(t)
+	toml := "[server]\ndata_dir = \"" + old.Data + "\"\n"
+	writeAt(t, filepath.Join(old.Config, "server.toml"), toml)
+	// a run that moved the data and stopped before server.toml
+	writeAt(t, filepath.Join(cur.Data, "maktaba.db"), "DB")
+	writeAt(t, filepath.Join(cur.Data, "models", "m"), "W")
+	if _, err := migrateDirs(old, cur); err != nil {
+		t.Fatal(err)
+	}
+	if got := readAt(t, filepath.Join(cur.Config, "server.toml")); !strings.Contains(got, cur.Data) {
+		t.Fatalf("server.toml still names the old data dir:\n%s", got)
+	}
+	if readAt(t, filepath.Join(filepath.Dir(cur.Data), "models", "m")) != "W" {
+		t.Fatal("models not moved beside data/")
+	}
+}
+
+func TestMigrateIntoEmptyDataDir(t *testing.T) {
+	t.Parallel()
+	old, cur := layout(t)
+	writeAt(t, filepath.Join(old.Config, "server.toml"), "[server]\n")
+	writeAt(t, filepath.Join(old.Data, "maktaba.db"), "DB")
+	if err := os.MkdirAll(cur.Data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := migrateDirs(old, cur); err != nil {
+		t.Fatal(err)
+	}
+	if readAt(t, filepath.Join(cur.Data, "maktaba.db")) != "DB" {
+		t.Fatal("data not moved into the empty new data dir")
 	}
 }
 
