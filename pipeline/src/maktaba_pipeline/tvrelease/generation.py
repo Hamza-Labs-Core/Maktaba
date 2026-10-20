@@ -49,25 +49,33 @@ _PROGRAM_COLS = (
 
 async def pool_overlay(db: Any, pending: dict[str, Any]) -> dict[str, list[tuple[str, str, int]]]:
     """The filler pools a pending ``write_channels`` change writes, as they will be after
-    the swap: ``key -> [(filler item id, video id, ms)]`` (kept clips keep their ids, new
-    ones get the ids the swap will insert them with)."""
+    the swap: ``key -> [(filler item id, video id, ms)]`` - the pool's clips today less
+    the dropped ones, the added ones (the ids the swap will insert them with) and the
+    retimed ones at their new length. A write's ``items`` holds the added and retimed
+    clips' lengths (older changes stored the whole pool there: the same result)."""
     out: dict[str, list[tuple[str, str, int]]] = {}
     pools = pending.get("pools") or {}
     for pw in pools.get("write") or []:
         key = str(pw["key"])
         items: dict[str, int] = {str(k): int(v) for k, v in (pw.get("items") or {}).items()}
-        have: dict[str, tuple[str, int]] = {}
+        clips: dict[str, tuple[str, int]] = {}
         if pw.get("pool_id"):
             for r in await db.fetch(
                 "SELECT id, video_id, duration_ms FROM filler_items WHERE pool_id = $1",
                 pw["pool_id"],
             ):
-                have[str(r["video_id"])] = (str(r["id"]), int(r["duration_ms"] or 0))
-        clips: list[tuple[str, str, int]] = []
-        for vid, ms in sorted(items.items()):
-            fid = have[vid][0] if vid in have else filler_item_id(key, vid)
-            clips.append((fid, vid, ms))
-        out[key] = clips
+                clips[str(r["video_id"])] = (str(r["id"]), int(r["duration_ms"] or 0))
+        for vid in pw.get("drop") or []:
+            clips.pop(str(vid), None)
+        for vid in pw.get("retime") or []:
+            vid = str(vid)
+            if vid in clips and vid in items:
+                clips[vid] = (clips[vid][0], items[vid])
+        for vid in pw.get("add") or []:
+            vid = str(vid)
+            if vid not in clips:
+                clips[vid] = (filler_item_id(key, vid), items.get(vid, 0))
+        out[key] = [(fid, vid, ms) for vid, (fid, ms) in sorted(clips.items())]
     for key, _ in pools.get("delete") or []:
         out[str(key)] = []
     return out

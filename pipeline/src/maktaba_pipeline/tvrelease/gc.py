@@ -6,6 +6,10 @@ live, nor the in-flight change's, nor the previous one within
 retention (their programmes go with them); ``staged`` channels no open change's release
 still names (a failed or cancelled change's additions). Releases themselves are kept
 (a few rows each): they are the record of what aired.
+
+Trimmed: the filler pool writes (``diff -> pending -> pools``) of the changes that
+ended without airing and can never be staged again (:data:`ENDED`): only a swap or a
+staged generation reads them, and a channel plan's can be megabytes.
 """
 
 from __future__ import annotations
@@ -20,7 +24,11 @@ from ..log import get_logger
 from .generation import GC_LOCK
 from .store import IN_FLIGHT
 
-__all__ = ["collect"]
+__all__ = ["ENDED", "collect", "trim_ended"]
+
+#: the states a change never leaves and that never aired (a rolled-back change keeps
+#: its pending edits: its re-stage draft is made from them)
+ENDED = ("failed", "cancelled", "superseded")
 
 _log = get_logger()
 
@@ -67,7 +75,10 @@ async def _sweep(db: Any, clock: datetime, retention: timedelta) -> dict[str, in
         int(r["g"])
         for r in await db.fetch("SELECT DISTINCT sched_gen AS g FROM channel_schedule_state")
     ]
-    out = {"generations": 0, "programs": 0, "retired_channels": 0, "staged_channels": 0}
+    out = {
+        "generations": 0, "programs": 0, "retired_channels": 0, "staged_channels": 0,
+        "trimmed_changes": await trim_ended(db),
+    }  # fmt: skip
     for g in sorted(set(gens) - keep):
         n = await db.fetchval("SELECT count(*) FROM channel_programs WHERE sched_gen = $1", g)
         await db.execute("DELETE FROM channel_programs WHERE sched_gen = $1", g)
@@ -96,3 +107,20 @@ async def _sweep(db: Any, clock: datetime, retention: timedelta) -> dict[str, in
             await db.execute("DELETE FROM channels WHERE id = $1", str(r["id"]))
             out["staged_channels"] += 1
     return out
+
+
+async def trim_ended(db: Any) -> int:
+    """Drop the filler pool writes of the :data:`ENDED` changes (in SQL: the rows are
+    never read whole). Returns how many changes were trimmed."""
+    marks = ",".join(f"'{s}'" for s in ENDED)
+    if is_pg(db):
+        sql = (
+            "UPDATE tv_changes SET diff = diff #- '{pending,pools}'"
+            f" WHERE state IN ({marks}) AND diff -> 'pending' ? 'pools'"
+        )
+    else:
+        sql = (
+            "UPDATE tv_changes SET diff = json_remove(diff, '$.pending.pools')"
+            f" WHERE state IN ({marks}) AND json_type(diff, '$.pending.pools') IS NOT NULL"
+        )
+    return len(await db.fetch(sql + " RETURNING id"))

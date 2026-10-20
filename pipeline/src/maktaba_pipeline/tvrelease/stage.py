@@ -187,7 +187,7 @@ async def write_plan_pending(db: Any, wp: Any) -> dict[str, Any]:
     pools = {
         "write": [
             {
-                "key": pw.key, "name": pw.name, "items": pw.items, "pool_id": pw.pool_id,
+                "key": pw.key, "name": pw.name, "items": _touched(pw), "pool_id": pw.pool_id,
                 "add": pw.add, "drop": pw.drop, "retime": pw.retime, "rename": pw.rename,
             }
             for pw in wp.pools.write
@@ -218,6 +218,14 @@ async def write_plan_pending(db: Any, wp: Any) -> dict[str, Any]:
         "pools": pools,
         "sched": sched,
     }
+
+
+def _touched(pw: Any) -> dict[str, int]:
+    """A pool write's clip durations the swap needs: the added and retimed clips only.
+    The pool as it will be is the live pool with these applied (``pool_overlay``); the
+    whole pool (thousands of clips, hundreds of pools per plan) is never stored in the
+    change (it made every channel plan's diff ~50 MB)."""
+    return {v: pw.items[v] for v in (*pw.add, *pw.retime) if v in pw.items}
 
 
 def _values(v: dict[str, Any]) -> dict[str, Any]:
