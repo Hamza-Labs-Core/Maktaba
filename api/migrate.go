@@ -17,6 +17,7 @@ import (
 	"github.com/pressly/goose/v3"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/pgdsn"
 )
 
 // runMigrate executes the `migrate` subcommand. The subcommand wraps
@@ -137,6 +138,7 @@ Flags:`)
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
+	dsn = pgdsn.ForLibPQ(ctx, dsn, pgdsn.Ping)
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)

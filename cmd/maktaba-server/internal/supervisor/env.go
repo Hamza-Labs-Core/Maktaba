@@ -161,6 +161,15 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		if cfg.Pipeline.Instances > 0 {
 			add("MAKTABA_PIPELINE_EXCLUDE_STAGES", "transcribe")
 		}
+		// Epic 35 story 35.8: a full node's pipeline works for the home as this
+		// machine's node (node.json: its database role, node id). The pipeline only
+		// reads node.json without a database URL, so [database].url above would
+		// make it a home worker against this machine's own database.
+		if n := nodeConfig(); NodeMode(cfg, n) {
+			env = setEnv(env, "DATABASE_URL", n.DatabaseURL)
+			env = setEnv(env, "MAKTABA_DATABASE_URL", n.DatabaseURL)
+			add("MAKTABA_NODE", "1")
+		}
 	}
 
 	return env

@@ -47,6 +47,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/pgdsn"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
@@ -178,6 +179,13 @@ func runServe() error {
 	nodeCfg := nodemode.FromEnv(os.Getenv)
 	if err := checkNodeEnv(nodeCfg); err != nil {
 		return err
+	}
+	// lib/pq has no sslmode=prefer, which the home hands every joined node: settle it
+	// once here, for every DATABASE_URL reader below.
+	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
+		if fixed := pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping); fixed != dsn {
+			_ = os.Setenv("DATABASE_URL", fixed)
+		}
 	}
 
 	// MAKTABA_AUTO_MIGRATE=true runs `migrate up` synchronously before
