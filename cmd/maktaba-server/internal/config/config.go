@@ -35,6 +35,24 @@ type Config struct {
 	Supervisor    SupervisorSection    `toml:"supervisor"`
 	TV            TVSection            `toml:"tv"`
 	Pipeline      PipelineSection      `toml:"pipeline"`
+	Postgres      PostgresSection      `toml:"postgres"`
+
+	// DatabaseURLSet: server.toml sets [database] url (Load). Unset, a Mac with
+	// the bundled Postgres uses it (Epic 36 story 36.1).
+	DatabaseURLSet bool `toml:"-"`
+}
+
+// PostgresSection is the [postgres] table (Epic 36 story 36.1): the Postgres
+// bundled with Maktaba.app, run by the supervisor as the postgres role.
+type PostgresSection struct {
+	// Enabled: "auto" (default: on a Mac whose payload carries Postgres, when
+	// [database] url is not set and no SQLite database is in use), "on" or "off".
+	Enabled string `toml:"enabled"`
+	// Home is the Postgres install (bin/postgres, bin/initdb, …); empty:
+	// $MAKTABA_POSTGRES_HOME, else the payload's postgres/ beside bin/.
+	Home string `toml:"home"`
+	// Port is its loopback port (default 54329).
+	Port int `toml:"port"`
 }
 
 // PipelineSection is the [pipeline] table (Epic 35 story 35.8): how many pipeline
@@ -167,8 +185,13 @@ func LoadFrom(path string) (Config, bool, error) {
 		return cfg, false, fmt.Errorf("read %s: %w", path, err)
 	}
 	// Decode over the defaults so unset keys keep their default value.
-	if err := toml.Unmarshal(raw, &cfg); err != nil {
+	meta, err := toml.Decode(string(raw), &cfg)
+	if err != nil {
 		return cfg, true, fmt.Errorf("parse %s: %w", path, err)
+	}
+	cfg.DatabaseURLSet = meta.IsDefined("database", "url") && strings.TrimSpace(cfg.Database.URL) != ""
+	if !cfg.DatabaseURLSet {
+		cfg.Database.URL = Defaults().Database.URL
 	}
 	return cfg, true, nil
 }
