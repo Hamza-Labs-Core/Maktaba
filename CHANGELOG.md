@@ -10,9 +10,16 @@ don't append a line here; docs-only PRs are exempt.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-19
+
+Closes the stub audit: features that were half built, settings that were
+stored but never read and notices nobody saw are finished, removed or gated.
+GraphQL covers every root field over the REST handlers, and the REST access
+rules behind both were tightened. Schema revision 140 (migrations 0137-0140).
+
 ### Added
 
-- **Find metadata and Re-enrich work.** A video's metadata suggestions come from
+- **Find metadata and Re-enrich work** (#133). A video's metadata suggestions come from
   Maktaba's own intel (transcripts, chapters, the book a series explains, file and
   folder names, sibling episodes, tags, speakers) and, when configured, a web search
   (Google Programmable Search, or Ollama's web search; extension "Web search", with a
@@ -21,6 +28,73 @@ don't append a line here; docs-only PRs are exempt.
   as the engine's `enrich` stage (shown in the control centre; queued jobs no longer
   pile up), are cached, and stay within daily caps (`rules.enrich`). The model gets no
   tools, its answer is validated JSON, and page text is treated as untrusted data.
+  Migration 0139.
+- **GraphQL: every root field is live** (#134). The schema runs each field through
+  the REST route that owns the operation, in process, with the same middleware
+  (rate limits, idempotency, body limits, admin checks, visibility, audit). Nested
+  video fields are batch-loaded, depth and cost limits apply
+  (`MAKTABA_GRAPHQL_MAX_DEPTH`, `MAKTABA_GRAPHQL_MAX_COMPLEXITY`), `videos` and
+  `jobs` are cursor connections, and subscriptions run over graphql-transport-ws.
+- **GraphQL persisted queries** (#136): Apollo APQ, stored in
+  `graphql_persisted_queries` (migration 0140), with an allowlist mode
+  (`graphql.persisted_only`, default off).
+- **YouTube search on the Search page through yt-dlp** (#131), no API key: results
+  load after the local ones, each has an Import button that stages a `youtube`
+  enrichment candidate, and the section hides itself when yt-dlp is missing.
+- **Admin password reset** (#131): `POST /api/users/{id}/reset-password` with a
+  one-time temporary password or an admin-set one. Every reset revokes the user's
+  sessions and is audited; a must-change session sees only "Choose a new password"
+  (migration 0138, `users.must_change_password`).
+- **Notices for budget, simulcast cap, failover and staging crash loop** (#132): the
+  80 % and 100 % crossings of the remote viewing budget and the simulcast cap, a
+  failover to the hot standby and a staging slot crash loop go to notifications
+  (migration 0137, `tv_slot_events`).
+- **Web** (#130): Account > History (watch history and the activity timeline);
+  "Revert to original" on the enrichment panel and `a`/`d` keys in the review queue;
+  an optional `rules.enrich.auto_accept_threshold` (default 0 = off); an update badge
+  on Settings, the Docker update hint up front and Markdown release notes; "Behind
+  live" / "Return to live" in the Live TV player; Scan now shows its progress.
+
+### Changed
+
+- **Dead settings wired** (#132): `search.fts_weight`/`semantic_weight`,
+  `recs.cache_ttl_sec`, `session.url_ttl_sec`, `pause.grace_sec`,
+  `ws.heartbeat_interval_sec`, `max_lanes_per_daypart` (default 0 = no limit), the
+  library `ignore_globs`, `sweep_interval_sec` (default 0 = off) and
+  `stt.initial_prompt` are now read; `auth.open_registration` has a toggle on
+  Admin > Users. Settings that could not work were removed (`subtitle.url_ttl_sec`).
+  Defaults keep today's behaviour.
+- **Filler edits go through the draft flow** (#132) when TV staging is on, and are
+  committed by the hot swap with the rest of the change.
+- **Backend gaps closed** (#128): Update now and the update scheduler say plainly that
+  automatic installs arrive with the update orchestrator instead of recording failed
+  runs; the relay overview counts servers and tunnels correctly; self-deleted accounts
+  are erased with their push logs; the pipeline `doctor` really checks the database,
+  schema, ffmpeg and directories; Windows disk-free and key-file locking work; push
+  deliveries are recorded.
+- If the self-update re-exec fails, the old binary is restored and the rollback is
+  reported (#130).
+
+### Removed
+
+- The self-service "Forgot password?" flow and its reset-token store; unused tokens
+  that were written to the log are deleted (#131).
+- The no-op `POST /v1/account/email` cloud route and the empty root `maktaba` CLI
+  package (#128).
+
+### Security
+
+- **REST access and audit** (#136): stream sessions answer only their owner or an
+  admin (also on the streaming service's signed routes); collections, series, stats,
+  tags, jobs, activity, item history, transcription summary, search suggestions,
+  YouTube matches, recommendation rails, the control-centre reads and the WebSocket
+  streams are scoped to the libraries the caller can read (404 otherwise); worker
+  and extension details are admin-only. Library create, patch, scan and delete and
+  video patch, delete, process and reprocess are audited; library scan is admin-only.
+- **Must-change on full nodes** (#135): a session holding an admin-reset temporary
+  password is held to the password form on full nodes too, and a native refresh is
+  refused until the password is changed.
+- Dependencies with known vulnerabilities updated (`fix/dependency-vulnerabilities`; details to follow when it merges).
 
 ## [0.1.0] - 2026-10-19
 
