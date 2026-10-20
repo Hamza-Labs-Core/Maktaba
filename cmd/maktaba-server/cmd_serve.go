@@ -88,6 +88,11 @@ type serveOptions struct {
 }
 
 func runServe(cfg config.Config, opts serveOptions) error {
+	// Epic 35 story 35.8: a half-written node.json stops here, once, with its path,
+	// rather than as every node role's crash loop.
+	if err := supervisor.CheckNodeConfig(cfg); err != nil {
+		return err
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	// Under maktaba-launcher (Epic 35, story 35.2): every role starts from the

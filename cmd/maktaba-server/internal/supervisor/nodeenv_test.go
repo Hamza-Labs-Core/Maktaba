@@ -20,6 +20,7 @@ func envMap(env []string) map[string]string {
 // TestStreamingNodeEnvFromNodeConfig: a joined machine's streaming role runs as a
 // cluster node from its node config (Epic 32.1 AC2), no flag needed.
 func TestStreamingNodeEnvFromNodeConfig(t *testing.T) {
+	t.Setenv("MAKTABA_ROLE", "")
 	prev := nodeConfig
 	t.Cleanup(func() { nodeConfig = prev })
 	nodeConfig = func() config.NodeConfig {
@@ -49,6 +50,7 @@ func TestStreamingNodeEnvFromNodeConfig(t *testing.T) {
 // instances) runs as the node against the home's database; it started as a home
 // worker against [database].url, a local Postgres the node never runs.
 func TestPipelineFullNodeEnv(t *testing.T) {
+	t.Setenv("MAKTABA_ROLE", "") // the shell's would force the home below
 	prev := nodeConfig
 	t.Cleanup(func() { nodeConfig = prev })
 	nodeConfig = func() config.NodeConfig {
@@ -77,6 +79,42 @@ func TestPipelineFullNodeEnv(t *testing.T) {
 	cfg.Server.Role = "home"
 	if m := envMap(ChildEnv(RolePipeline, cfg)); m["MAKTABA_NODE"] != "" || m["MAKTABA_DATABASE_URL"] != "postgresql://local/ignored" {
 		t.Fatalf("forced home got node env: %v", m)
+	}
+}
+
+// TestCheckNodeConfigPartial: a joined node.json without node_id or private_key gave
+// the pipeline MAKTABA_NODE=1 and a KeyError on every restart; serve now refuses it
+// once, naming the file and what it lacks.
+func TestCheckNodeConfigPartial(t *testing.T) {
+	t.Setenv("MAKTABA_ROLE", "")
+	t.Setenv("MAKTABA_NODE_CONFIG", filepath.Join(t.TempDir(), "node.json"))
+	prev := nodeConfig
+	t.Cleanup(func() { nodeConfig = prev })
+	full := config.NodeConfig{NodeID: "6f1c9a2e-0000-4000-8000-000000000001", PrivateKey: "AQID",
+		DatabaseURL: "postgres://node_6f1c9a2e@home:5432/maktaba?sslmode=prefer", Home: config.HomeRef{URL: "http://home:8080"}}
+	var cfg config.Config
+
+	nodeConfig = func() config.NodeConfig { return full }
+	if err := CheckNodeConfig(cfg); err != nil {
+		t.Fatalf("a complete node config: %v", err)
+	}
+	partial := full
+	partial.NodeID, partial.PrivateKey = "", " "
+	nodeConfig = func() config.NodeConfig { return partial }
+	err := CheckNodeConfig(cfg)
+	if err == nil || !strings.Contains(err.Error(), "node_id or private_key") ||
+		!strings.Contains(err.Error(), config.LocalNodeConfigPath()) || strings.Contains(err.Error(), "sslmode") {
+		t.Fatalf("partial node config: %v", err)
+	}
+	// [server] role = "home" ignores node.json; an unjoined one is no node
+	cfg.Server.Role = "home"
+	if err := CheckNodeConfig(cfg); err != nil {
+		t.Fatalf("forced home: %v", err)
+	}
+	cfg.Server.Role = ""
+	nodeConfig = func() config.NodeConfig { return config.NodeConfig{NodeID: "x"} }
+	if err := CheckNodeConfig(cfg); err != nil {
+		t.Fatalf("not joined: %v", err)
 	}
 }
 

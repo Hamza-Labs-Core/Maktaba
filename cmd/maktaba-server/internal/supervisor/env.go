@@ -188,6 +188,21 @@ func NodeMode(cfg config.Config, n config.NodeConfig) bool {
 	return !forcedHome(cfg) && n.Joined() && n.HomeURL() != ""
 }
 
+// CheckNodeConfig refuses a joined node config the node's roles cannot run with: no
+// node_id or private_key (a hand-edited or half-written node.json), on which the api
+// refused to start and the pipeline failed with a KeyError, each restarted forever.
+func CheckNodeConfig(cfg config.Config) error {
+	n := nodeConfig()
+	if forcedHome(cfg) || !n.Joined() {
+		return nil
+	}
+	if missing := n.Missing(); len(missing) > 0 {
+		return fmt.Errorf("node config %s has no %s: move it aside and re-join this machine (maktaba-pipeline join), or set [server] role = \"home\"",
+			config.LocalNodeConfigPath(), strings.Join(missing, " or "))
+	}
+	return nil
+}
+
 // forcedHome: [server] role = "home" or MAKTABA_ROLE=home.
 func forcedHome(cfg config.Config) bool {
 	role := strings.ToLower(strings.TrimSpace(os.Getenv("MAKTABA_ROLE")))

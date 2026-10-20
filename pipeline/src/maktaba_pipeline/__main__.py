@@ -151,7 +151,13 @@ def _build_runtime_config(
 
 
 async def _serve(args: argparse.Namespace, log: Any) -> int:
-    node = _node_for(args)
+    try:
+        node = _node_for(args)
+    except ValueError as exc:
+        # a node config it cannot run as (no node_id or private_key): 78, not a
+        # traceback on every restart
+        sys.stderr.write(f"{exc}\n")
+        return exitcodes.EX_CONFIG
     if getattr(args, "node", False) and node is None:
         sys.stderr.write("this machine has not joined a home: run maktaba-pipeline join\n")
         return exitcodes.EX_CONFIG

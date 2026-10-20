@@ -41,6 +41,25 @@ def test_run_node_without_a_joined_config_exits_78(
     assert "has not joined a home: run maktaba-pipeline join" in capsys.readouterr().err
 
 
+def test_run_node_with_a_partial_config_exits_78(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """node.json without its identity crashed ``run`` with a KeyError on every restart."""
+    path = tmp_path / "node.json"
+    path.write_text(
+        '{"home": {"url": "http://h:8080"}, "database_url": "postgres://n:x@h/maktaba"}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MAKTABA_NODE_CONFIG", str(path))
+    monkeypatch.setenv("MAKTABA_DATABASE_URL", "postgres://n:x@h/maktaba")
+    monkeypatch.setenv("MAKTABA_NODE", "1")
+    assert main(["run"]) == exitcodes.EX_CONFIG
+    err = capsys.readouterr().err
+    assert str(path) in err and "no node_id or private_key" in err
+
+
 def test_refusal_is_remembered_once() -> None:
     assert exitcodes.exit_code(0) == 0 and exitcodes.refused() is None
     exitcodes.mark_refused("revoked")

@@ -61,6 +61,19 @@ func (n NodeConfig) String() string {
 // Joined reports whether the machine joined a home (it holds a database credential).
 func (n NodeConfig) Joined() bool { return strings.TrimSpace(n.DatabaseURL) != "" }
 
+// Missing names what the node's roles need and the config lacks (its node id, its
+// private key): a hand-edited or half-written node.json.
+func (n NodeConfig) Missing() []string {
+	var out []string
+	if strings.TrimSpace(n.NodeID) == "" {
+		out = append(out, "node_id")
+	}
+	if strings.TrimSpace(n.PrivateKey) == "" {
+		out = append(out, "private_key")
+	}
+	return out
+}
+
 // NodeConfigPath is where the pipeline keeps the node config (cluster/config.py
 // config_path): MAKTABA_NODE_CONFIG, else per OS.
 func NodeConfigPath(getenv func(string) string, goos, userHome string) string {
