@@ -326,3 +326,37 @@ func TestPreviewStatesAndToken(t *testing.T) {
 		})
 	}
 }
+
+// The changes list carries no diff: a channel plan's is tens of MB, and the page read
+// every one of them (~500 MB, 40 s a load) to show a table that never uses it. Opening
+// a change still returns its whole diff, and the in-flight change is still named.
+func TestListLeavesTheDiffsOut(t *testing.T) {
+	for _, be := range tvchangetest.Backends(t) {
+		t.Run(be.Name, func(t *testing.T) {
+			w := newPageWorld(t, be.DB)
+			id := w.seed()
+
+			code, out := w.get("/api/tv/changes", pageAdmin)
+			items, _ := out["items"].([]any)
+			if code != 200 || len(items) != 1 {
+				t.Fatalf("list %d %v", code, out)
+			}
+			item := items[0].(map[string]any)
+			if d, _ := item["diff"].(map[string]any); len(d) != 0 {
+				t.Fatalf("the list carries a diff: %v", d)
+			}
+			if item["id"] != id || item["state"] != "staged" || item["title"] != "New grid" {
+				t.Fatalf("item %v", item)
+			}
+			if out["in_flight"] != id {
+				t.Fatalf("in_flight %v, want %s", out["in_flight"], id)
+			}
+
+			code, one := w.get("/api/tv/changes/"+id, pageAdmin)
+			diff, _ := one["diff"].(map[string]any)
+			if code != 200 || diff["lineup"] == nil || diff["schedules"] == nil {
+				t.Fatalf("the change lost its diff: %d %v", code, one)
+			}
+		})
+	}
+}
