@@ -28,6 +28,9 @@ tauri-plugin-window-state = "2"
 # Story 13.x — `maktaba://` deep links (custom scheme registration +
 # runtime on_open_url handler). On Linux/Windows the scheme is owned by
 # the running instance, so single-instance focusing is wired in lib.rs.
+# Cargo.lock holds its Linux-only rust-ini dependency at 0.21.1: 2.6.2
+# builds `ini::ParseOption` without the fields rust-ini 0.21.3 added
+# (E0063), so don't `cargo update` rust-ini until deep-link fixes that.
 tauri-plugin-deep-link = "2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 serde = { version = "1", features = ["derive"] }

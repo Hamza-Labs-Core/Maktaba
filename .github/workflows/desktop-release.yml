@@ -125,12 +125,29 @@ jobs:
       # product version from the pushed tag (Story 28.1): the Tauri
       # updater compares the app's own version against latest.json, so a
       # hardcoded "0.1.0" would mis-compare. Strip the leading "v".
+      # WiX only takes a numeric major.minor.patch[.build], and the bundler
+      # rejects a pre-release such as 0.3.0-rc.1 for the msi target, so a
+      # pre-release tag gives the MSI its numeric core (0.3.0). NSIS drops
+      # the suffix itself. Windows Installer then treats the rc and the
+      # final 0.3.0 MSI as the same version; Tauri's template allows that
+      # upgrade.
       - name: Neutralise in-config frontend rebuild + stamp version
         shell: bash
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          node -e "const fs=require('fs');const f='apps/desktop/src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(f,'utf8'));c.build.beforeBuildCommand='';c.version=(process.env.TAG||'').replace(/^v/,'')||c.version;fs.writeFileSync(f,JSON.stringify(c,null,2)+'\n');"
+          node -e "
+            const fs = require('fs');
+            const f = 'apps/desktop/src-tauri/tauri.conf.json';
+            const c = JSON.parse(fs.readFileSync(f, 'utf8'));
+            c.build.beforeBuildCommand = '';
+            const v = (process.env.TAG || '').replace(/^v/, '');
+            if (v) c.version = v;
+            const core = v.split(/[-+]/)[0];
+            if (core !== v) c.bundle.windows.wix.version = core;
+            fs.writeFileSync(f, JSON.stringify(c, null, 2) + '\n');
+            console.log('version=' + c.version + ' wix.version=' + (c.bundle.windows.wix.version || '(from version)'));
+          "
 
       # tauri-action signs each bundle and emits latest.json (the updater
       # feed) when the signing key secrets are present (Story 28.4). A
@@ -157,7 +174,9 @@ jobs:
 
       # Windows "portable" deliverable: zip the raw built executable so
       # users who can't run an installer get a self-contained .zip. Runs
-      # only on the Windows leg.
+      # only on the Windows leg. The exe is named after the Cargo [[bin]]
+      # (maktaba-desktop): tauri.conf.json sets no mainBinaryName, so the
+      # CLI does not rename it to the productName.
       - name: Package Windows portable .zip
         if: runner.os == 'Windows'
         shell: pwsh
@@ -167,9 +186,9 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $version = $env:TAG -replace '^v', ''
-          $exe = Get-ChildItem -Path 'apps/desktop/src-tauri/target/release' -Filter 'Maktaba.exe' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+          $exe = Get-ChildItem -Path 'apps/desktop/src-tauri/target/release' -Filter 'maktaba-desktop.exe' -File -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $exe) {
-            Write-Error 'Maktaba.exe not found under target/release — did the Tauri build succeed?'
+            Write-Error 'maktaba-desktop.exe not found under target/release — did the Tauri build succeed?'
           }
           New-Item -ItemType Directory -Force -Path out | Out-Null
           $zip = "out/maktaba-windows-portable-$version.zip"

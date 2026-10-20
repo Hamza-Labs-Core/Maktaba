@@ -15,8 +15,10 @@
 # -------
 # Android TV: `assembleRelease` yields an UNSIGNED apk unless a keystore is
 # provided. Signing runs only when the secrets are present (forks without
-# them still get a green "assembles" run). Reuses the same secret names as
-# the mobile workflow:
+# them still get a green "assembles" run). Only a signed APK is attached
+# to the Release; an unsigned one stays a workflow artifact
+# (`maktaba-tv-<version>-unsigned.apk`) and the run warns. Reuses the same
+# secret names as the mobile workflow:
 #   ANDROID_KEYSTORE_BASE64 / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
 # tvOS: App Store / TestFlight distribution requires an Apple Developer
 # account + Xcode app target; CI only compiles the SwiftPM core. See notes.
@@ -81,7 +83,10 @@ jobs:
             --out "app/build/outputs/apk/release/app-release-signed.apk" \
             "app/build/outputs/apk/release/app-release-unsigned.apk"
 
+      # Android won't install an unsigned APK, so an unsigned build gets an
+      # -unsigned name and is not attached to the Release.
       - name: Collect artifact
+        id: collect
         env:
           TAG: ${{ github.ref_name }}
         run: |
@@ -90,11 +95,18 @@ jobs:
           mkdir -p out
           apk_dir="apps/tv/android/app/build/outputs/apk/release"
           if [ -f "${apk_dir}/app-release-signed.apk" ]; then
-            cp "${apk_dir}/app-release-signed.apk" "out/maktaba-tv-${version}.apk"
+            apk="maktaba-tv-${version}.apk"
+            cp "${apk_dir}/app-release-signed.apk" "out/${apk}"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
           else
-            cp "${apk_dir}/app-release-unsigned.apk" "out/maktaba-tv-${version}.apk"
+            apk="maktaba-tv-${version}-unsigned.apk"
+            cp "${apk_dir}/app-release-unsigned.apk" "out/${apk}"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            msg="ANDROID_KEYSTORE_BASE64 is not set, so the Android TV APK is unsigned. It is kept in the maktaba-tv-android workflow artifact and not attached to the ${TAG} release."
+            echo "::warning title=Android TV build not signed::${msg}"
+            printf '### Android TV: not attached to the release\n\n%s\n' "${msg}" >> "$GITHUB_STEP_SUMMARY"
           fi
-          ( cd out && sha256sum "maktaba-tv-${version}.apk" > "maktaba-tv-${version}.apk.sha256" )
+          ( cd out && sha256sum "${apk}" > "${apk}.sha256" )
           ls -l out
 
       - name: Upload CI artifact
@@ -104,7 +116,12 @@ jobs:
           path: out/*
           retention-days: 14
 
+      # Signed builds only. With no web build this job is usually the first
+      # to get here, so it has been the one creating the public Release.
+      # Unsigned, it skips that too; tauri-action and release.yml still
+      # create the Release.
       - name: Attach to GitHub Release
+        if: steps.collect.outputs.signed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}

@@ -182,10 +182,12 @@ roll out the `maktaba-cloud` image on its own triggers.
     --certificate-identity https://github.com/Hamza-Labs-Core/Maktaba/.github/workflows/relay.yml@refs/tags/vX.Y.Z \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com
   ```
-- **deploy** — runs [`deploy.sh`](deploy.sh) against the VPS. Gated by the
-  `production` GitHub Environment (a manual approval gate — configure
-  required reviewers in **Settings → Environments → production**). Runs
-  on a `v*` tag or a manual dispatch.
+- **deploy** — runs [`deploy.sh`](deploy.sh) against the VPS, as the
+  `production` GitHub Environment. Runs on a manual dispatch, or on a `v*`
+  tag when the `RELAY_DEPLOY` repo variable is `true` and the image
+  built and pushed. `production` has no protection rules by default, so a
+  deploy does not wait for anyone; to gate it, add required reviewers in
+  **Settings → Environments → production**.
 
 The repo's [`release.yml`](../../.github/workflows/release.yml) *also*
 builds + signs the `cloud` binary and image as part of the full release
@@ -194,9 +196,9 @@ relay-focused, multi-arch, deploy-capable leg.
 
 ### Required GitHub secrets & variables
 
-Set these under **Settings → Secrets and variables → Actions** (the SSH
-secrets belong to the `production` environment so only approved deploys
-can read them):
+Set these under **Settings → Secrets and variables → Actions** (put the
+SSH secrets on the `production` environment so only the deploy job can
+read them):
 
 | Name | Kind | Purpose |
 |---|---|---|
@@ -206,6 +208,7 @@ can read them):
 | `REGISTRY_TOKEN` | secret | *Optional* — only if pushing to a non-GHCR registry; otherwise the auto-provisioned `GITHUB_TOKEN` is used |
 | `MAKTABA_REGISTRY` | variable | *Optional* — override the default `ghcr.io/hamza-labs-core` registry |
 | `RELAY_PUBLIC_URL` | variable | *Optional* — shown as the deployment URL on the environment |
+| `RELAY_DEPLOY` | variable | Set to `true` to roll out every `v*` tag automatically. Unset, tags only publish the image; a manual dispatch still deploys |
 
 ### Deploying by hand
 
