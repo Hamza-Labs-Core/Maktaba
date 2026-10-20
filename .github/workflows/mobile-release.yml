@@ -82,6 +82,11 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        # The default package list includes the long-removed `tools`
+        # package, which current sdkmanager rejects. Gradle installs the
+        # platform + build-tools it needs on first build.
+        with:
+          packages: platform-tools
 
       - name: Build web bundle
         working-directory: web

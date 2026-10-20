@@ -1,9 +1,9 @@
 # Bundle icons
 
-`tauri.conf.json > bundle.icon` references the icon set below. They are
-**not yet committed** — real artwork is a follow-up. The Tauri build
-requires them, so generate the full set from a single square source PNG
-(≥ 1024×1024, transparent) before the first release build:
+`tauri.conf.json > bundle.icon` references the icon set below. The
+committed set is a **placeholder** (an "M" mark) so release builds work;
+real artwork is a follow-up. To replace it, regenerate the full set from a
+single square source PNG (≥ 1024×1024, transparent):
 
 ```bash
 cd apps/desktop

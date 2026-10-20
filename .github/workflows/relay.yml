@@ -316,4 +316,12 @@ jobs:
           RELAY_SSH_USER: ${{ secrets.RELAY_SSH_USER }}
           RELAY_SSH_KEY: ${{ secrets.RELAY_SSH_KEY }}
           MAKTABA_CLOUD_TAG: ${{ steps.tag.outputs.tag }}
-        run: bash deploy/cloud-relay/deploy.sh
+        # A tag push with no VPS configured skips the rollout instead of
+        # failing the release; a manual dispatch still requires the secrets.
+        run: |
+          set -euo pipefail
+          if [ -z "${RELAY_SSH_HOST}" ] && [ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ]; then
+            echo "::notice::RELAY_SSH_HOST is not set; skipping the VPS rollout of ${MAKTABA_CLOUD_TAG}"
+            exit 0
+          fi
+          bash deploy/cloud-relay/deploy.sh
