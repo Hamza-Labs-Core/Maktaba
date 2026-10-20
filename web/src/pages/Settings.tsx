@@ -60,17 +60,19 @@ export function Settings() {
     <section className="mkt-page mkt-settings">
       <h1>{t("nav.settings")}</h1>
       <nav className="mkt-settings__nav" aria-label={t("nav.settings")}>
-        {/* NavLink marks the open tab with aria-current="page" */}
-        <NavLink to="" end>
+        {/* NavLink marks the open tab with aria-current="page". The links are
+            absolute: this page renders under the /settings/* splat route, where
+            React Router 7 resolves a relative link against the whole URL. */}
+        <NavLink to="/settings" end>
           {t("settings.section.account")}
         </NavLink>
-        <NavLink to="sessions">{t("settings.section.sessions")}</NavLink>
-        <NavLink to="appearance">{t("settings.section.appearance")}</NavLink>
-        <NavLink to="privacy">{t("settings.section.privacy")}</NavLink>
-        <NavLink to="models">{t("settings.section.models")}</NavLink>
-        <NavLink to="rules">{t("settings.section.rules")}</NavLink>
+        <NavLink to="/settings/sessions">{t("settings.section.sessions")}</NavLink>
+        <NavLink to="/settings/appearance">{t("settings.section.appearance")}</NavLink>
+        <NavLink to="/settings/privacy">{t("settings.section.privacy")}</NavLink>
+        <NavLink to="/settings/models">{t("settings.section.models")}</NavLink>
+        <NavLink to="/settings/rules">{t("settings.section.rules")}</NavLink>
         <NavLink
-          to="about"
+          to="/settings/about"
           className="mkt-settings__navlink"
           aria-describedby={hasUpdate ? "mkt-settings-update-badge" : undefined}
         >
