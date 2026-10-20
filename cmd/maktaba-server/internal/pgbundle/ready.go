@@ -15,6 +15,10 @@ import (
 // (SQLSTATE 57P03). It is alive; it does not take connections yet.
 var ErrStarting = errors.New("postgres is starting up")
 
+// ErrRefused: the server answered with another error (too many clients, a
+// missing role or database). It is up; this connection was refused.
+var ErrRefused = errors.New("postgres refused the connection")
+
 // Ready reports whether the Postgres at addr takes connections, the way
 // pg_isready does: it sends a startup message and reads the first answer. An
 // authentication request means ready (it then hangs up, which the server
@@ -66,7 +70,7 @@ func Ready(ctx context.Context, addr, user, database string) error {
 		if code == "57P03" {
 			return fmt.Errorf("%w: %s", ErrStarting, text)
 		}
-		return fmt.Errorf("postgres: %s (%s)", text, code)
+		return fmt.Errorf("%w: %s (%s)", ErrRefused, text, code)
 	}
 	return fmt.Errorf("postgres answered an unexpected %q message", head[0])
 }

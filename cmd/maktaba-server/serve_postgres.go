@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"time"
 
@@ -18,7 +19,7 @@ const backupCheckInterval = 15 * time.Minute
 // (every child gets it). With prepare (serve running the whole machine) the
 // cluster is created or finished first and the bundle is returned for the
 // postgres role; otherwise (a single role, migrate, adduser) only the URL of an
-// existing cluster is used. A machine that joined a home uses the home's database.
+// existing cluster is used, and none yet is an error. A machine that joined a home uses the home's database.
 func bundledPostgres(ctx context.Context, cfg *config.Config, prepare bool) (*pgbundle.Bundle, error) {
 	if supervisor.NodeConfig().Joined() {
 		return nil, nil
@@ -33,7 +34,8 @@ func bundledPostgres(ctx context.Context, cfg *config.Config, prepare bool) (*pg
 			return nil, err
 		}
 	} else if !b.Initialized() {
-		return nil, nil
+		// never fall back to SQLite here: the next full serve would then keep it
+		return nil, errors.New("the bundled Postgres has no database yet: start Maktaba (`maktaba-server serve`) once first")
 	}
 	url, err := b.URL()
 	if err != nil {

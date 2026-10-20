@@ -78,7 +78,7 @@ func TestReadyOtherError(t *testing.T) {
 	t.Parallel()
 	addr, _ := fakeServer(t, errorResponse("53300", "too many clients"))
 	err := Ready(context.Background(), addr, "u", "d")
-	if err == nil || errors.Is(err, ErrStarting) || !strings.Contains(err.Error(), "too many clients (53300)") {
+	if !errors.Is(err, ErrRefused) || errors.Is(err, ErrStarting) || !strings.Contains(err.Error(), "too many clients (53300)") {
 		t.Fatalf("Ready = %v", err)
 	}
 }

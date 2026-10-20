@@ -174,6 +174,13 @@ func (b Bundle) Prepare(ctx context.Context, log io.Writer) error {
 	if err := os.MkdirAll(b.Keys, 0o700); err != nil {
 		return err
 	}
+	if b.Initialized() {
+		// a cluster outlives a lost superuser password only by hand
+		if _, err := os.Stat(b.passwordFile(SuperUser)); errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("bundled postgres: %s is missing but the cluster in %s exists: restore the file, "+
+				"or move the cluster away to start a new one", b.passwordFile(SuperUser), b.Data)
+		}
+	}
 	superPW, err := ensurePassword(b.passwordFile(SuperUser))
 	if err != nil {
 		return err
@@ -213,14 +220,24 @@ func (b Bundle) initdb(ctx context.Context, superPW string, log io.Writer) error
 	if err := pwfile.Close(); err != nil {
 		return err
 	}
+	// into a directory beside, renamed into place when complete: a cluster that
+	// initdb did not finish (killed, power cut) is never taken for a real one
+	tmp := b.Data + ".initdb"
+	if err := os.RemoveAll(tmp); err != nil {
+		return err
+	}
 	fmt.Fprintf(log, "[postgres] creating the database cluster in %s\n", b.Data)
-	cmd := exec.CommandContext(ctx, b.Bin("initdb"), "-D", b.Data, "-U", SuperUser, "--pwfile="+pwfile.Name(),
+	cmd := exec.CommandContext(ctx, b.Bin("initdb"), "-D", tmp, "-U", SuperUser, "--pwfile="+pwfile.Name(),
 		"--auth=scram-sha-256", "--encoding=UTF8", "--locale=C")
 	cmd.Stdout, cmd.Stderr = log, log
 	if err := cmd.Run(); err != nil {
+		_ = os.RemoveAll(tmp)
 		return fmt.Errorf("bundled postgres: initdb %s: %w", b.Data, err)
 	}
-	return nil
+	if err := os.RemoveAll(b.Data); err != nil { // an empty or half-made directory
+		return err
+	}
+	return os.Rename(tmp, b.Data)
 }
 
 // bootstrapSQL creates (or re-keys) the app role, its database and the

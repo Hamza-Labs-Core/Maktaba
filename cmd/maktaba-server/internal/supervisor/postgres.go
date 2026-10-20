@@ -31,13 +31,22 @@ func BuildPostgres(b pgbundle.Bundle) Process {
 		Cmd:   cmd,
 		Probe: "postgres://" + b.Addr(),
 		Check: func(ctx context.Context) error {
-			err := pgbundle.Ready(ctx, b.Addr(), pgbundle.AppRole, pgbundle.AppDatabase)
-			if errors.Is(err, pgbundle.ErrStarting) {
-				return fmt.Errorf("%w: %v", ErrStarting, err)
-			}
-			return err
+			return postgresCheck(pgbundle.Ready(ctx, b.Addr(), pgbundle.AppRole, pgbundle.AppDatabase))
 		},
 		StopSignal: os.Interrupt, // fast shutdown: ends sessions, checkpoints, exits
 		First:      true,
 	}
+}
+
+// postgresCheck maps the readiness answer onto the liveness check: starting up
+// or recovering is ErrStarting; any other answer of the server (too many
+// clients) proves it alive, so a busy database is never killed as a hang.
+func postgresCheck(err error) error {
+	switch {
+	case errors.Is(err, pgbundle.ErrStarting):
+		return fmt.Errorf("%w: %v", ErrStarting, err)
+	case errors.Is(err, pgbundle.ErrRefused):
+		return nil
+	}
+	return err
 }

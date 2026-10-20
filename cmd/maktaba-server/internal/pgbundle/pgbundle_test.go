@@ -119,7 +119,7 @@ func TestPrepareFirstStart(t *testing.T) {
 		t.Fatal(err)
 	}
 	initdb := read(t, filepath.Join(logDir, "initdb.calls"))
-	for _, want := range []string{"-D " + b.Data, "-U " + SuperUser, "--auth=scram-sha-256", "--encoding=UTF8"} {
+	for _, want := range []string{"-D " + b.Data + ".initdb", "-U " + SuperUser, "--auth=scram-sha-256", "--encoding=UTF8"} {
 		if !strings.Contains(initdb, want) {
 			t.Errorf("initdb args %q lack %q", initdb, want)
 		}
@@ -189,6 +189,49 @@ func TestPrepareRekeysALostAppPassword(t *testing.T) {
 	now := strings.TrimSpace(read(t, b.passwordFile(AppRole)))
 	if now == strings.TrimSpace(old) || !strings.Contains(read(t, filepath.Join(logDir, "psql.sql")), "PASSWORD '"+now+"'") {
 		t.Fatal("a lost app password must be replaced and set on the role")
+	}
+	if n := lines(t, filepath.Join(logDir, "initdb.calls")); n != 1 {
+		t.Errorf("initdb ran %d times", n)
+	}
+}
+
+func TestPrepareRedoesAnUnfinishedInitdb(t *testing.T) {
+	b, logDir := fakeBundle(t)
+	// initdb killed half way: its directory beside, an empty data dir
+	for _, d := range []string{b.Data + ".initdb", b.Data} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(b.Data+".initdb", "PG_VERSION"), []byte("17\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Prepare(context.Background(), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if n := lines(t, filepath.Join(logDir, "initdb.calls")); n != 1 || !b.Initialized() {
+		t.Fatalf("initdb ran %d times, initialized %v", n, b.Initialized())
+	}
+	if _, err := os.Stat(b.Data + ".initdb"); !os.IsNotExist(err) {
+		t.Fatal("the initdb directory must be renamed into place")
+	}
+}
+
+func TestPrepareRefusesALostSuperuserPassword(t *testing.T) {
+	b, logDir := fakeBundle(t)
+	ctx := context.Background()
+	if err := b.Prepare(ctx, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(b.passwordFile(SuperUser)); err != nil {
+		t.Fatal(err)
+	}
+	err := b.Prepare(ctx, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "is missing but the cluster") {
+		t.Fatalf("Prepare = %v, want the lost password reported", err)
+	}
+	if _, err := os.Stat(b.passwordFile(SuperUser)); !os.IsNotExist(err) {
+		t.Fatal("no new superuser password may be invented for an existing cluster")
 	}
 	if n := lines(t, filepath.Join(logDir, "initdb.calls")); n != 1 {
 		t.Errorf("initdb ran %d times", n)
