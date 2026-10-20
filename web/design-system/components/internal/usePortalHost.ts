@@ -1,23 +1,28 @@
-import { useEffect, useState } from "react";
+import { useLayoutEffect, useState } from "react";
 
 // Shared portal-host for the overlay primitives (Modal, Drawer). Each
 // open overlay gets its own stable <div> appended directly to <body>:
 //
-//  - It is attached SYNCHRONOUSLY (state initialiser + immediate
-//    append) so it is already in the document before any component
-//    effect runs. This matters because useFocusTrap's effect runs
-//    before the overlay body's own effects and must be able to .focus()
-//    a node that is actually connected to the document.
+//  - It is attached in a LAYOUT effect: after React commits the overlay's
+//    nodes into it and before any passive effect runs. useFocusTrap's and
+//    useInertBackground's effects (passive) therefore always see it in
+//    the document: the trap can .focus() a connected node, and the inert
+//    pass can exclude it.
+//  - Nothing touches the document during render. Under StrictMode
+//    (development) React renders twice and mounts each effect, cleans it
+//    up and mounts it again; an append during render leaked the discarded
+//    render's host, and an overlay mounted already open
+//    (`{show && <Modal open />}`) was left detached by the cleanup, its
+//    dialog off the page while useInertBackground made the whole app inert
+//    (the "Add Maktaba to Plex" freeze). The layout effect re-attaches on
+//    each mount, so the double mount ends attached.
 //  - A dedicated host (not document.body directly) gives
 //    useInertBackground a precise element to exclude, so stacked
 //    overlays compose coherently (only live overlays stay interactive).
 //  - It is removed when the overlay CLOSES (and on unmount), restoring
-//    the <body> child list exactly — no orphan host lingers after close
-//    when the component stays mounted (the normal state-controlled
-//    `<Modal open={open} />` pattern). Re-opening re-appends the same
-//    stable node synchronously, so open→close→reopen yields exactly one
-//    dialog with inert correctly reapplied.
-
+//    the <body> child list exactly; re-opening re-attaches the same
+//    stable node, so open→close→reopen yields exactly one dialog with
+//    inert correctly reapplied.
 export function usePortalHost(open: boolean, kind: string): HTMLDivElement | null {
   const [host] = useState<HTMLDivElement | null>(() => {
     if (typeof document === "undefined") return null;
@@ -26,22 +31,9 @@ export function usePortalHost(open: boolean, kind: string): HTMLDivElement | nul
     return el;
   });
 
-  // Attach as early as possible: synchronously on the render that opens
-  // the overlay, so the node tree is connected before effects fire.
-  if (open && host !== null && typeof document !== "undefined" && host.parentNode === null) {
-    document.body.appendChild(host);
-  }
-
-  // Remove the host when the overlay closes (and on unmount). The
-  // synchronous append above runs on the opening render so the node is
-  // connected before any effect (notably useFocusTrap) fires; this
-  // effect's cleanup then detaches it the moment `open` flips false (or
-  // the component unmounts), so the <body> child list is restored
-  // exactly on close instead of lingering until unmount. The focus-trap
-  // stack and useInertBackground refcount are driven by their own
-  // [open]-dep effects and are unaffected by this.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!host || !open) return;
+    if (host.parentNode === null) document.body.appendChild(host);
     return () => {
       host.remove();
     };
