@@ -2,9 +2,13 @@
 #
 # `maktaba-server setup` generates this file for you interactively; this
 # example documents every field. Resolved location:
-#   Linux/macOS : $XDG_CONFIG_HOME/maktaba/server.toml (default
-#                 ~/.config/maktaba/server.toml)
-#   Windows     : %APPDATA%\Maktaba\server.toml
+#   macOS   : ~/Library/Application Support/Maktaba/server.toml (keys in keys/,
+#             data in data/, models, chroma and caches beside data/; logs in
+#             ~/Library/Logs/Maktaba). An install from before (in ~/.config/maktaba
+#             and ~/.local/share/maktaba) moves there once, on the next command.
+#   Linux   : $XDG_CONFIG_HOME/maktaba/server.toml (default
+#             ~/.config/maktaba/server.toml)
+#   Windows : %APPDATA%\Maktaba\server.toml
 # Override with the MAKTABA_CONFIG environment variable.
 
 [server]

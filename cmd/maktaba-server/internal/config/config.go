@@ -3,11 +3,12 @@
 // environment each underlying service already consumes, so the role
 // binaries need zero changes to be driven from one config file.
 //
-// Path resolution follows the platform conventions the spec calls out:
+// Path resolution follows the platform conventions (paths.go):
 //
-//	Linux/macOS : $XDG_CONFIG_HOME/maktaba/server.toml
-//	              (fallback ~/.config/maktaba/server.toml)
-//	Windows     : %APPDATA%\Maktaba\server.toml
+//	macOS   : ~/Library/Application Support/Maktaba/server.toml (Epic 36)
+//	Linux   : $XDG_CONFIG_HOME/maktaba/server.toml
+//	          (fallback ~/.config/maktaba/server.toml)
+//	Windows : %APPDATA%\Maktaba\server.toml
 //
 // $MAKTABA_CONFIG overrides the resolved path everywhere (tests, custom
 // installs, container bind-mounts).
@@ -208,38 +209,12 @@ func (c Config) SaveTo(path string) error {
 }
 
 // configDir resolves the platform config directory (parent of
-// server.toml).
-func configDir() string {
-	switch runtime.GOOS {
-	case "windows":
-		if appData := os.Getenv("APPDATA"); appData != "" {
-			return filepath.Join(appData, "Maktaba")
-		}
-		return filepath.Join(home(), "AppData", "Roaming", "Maktaba")
-	default:
-		if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-			return filepath.Join(xdg, "maktaba")
-		}
-		return filepath.Join(home(), ".config", "maktaba")
-	}
-}
+// server.toml, paths.go).
+func configDir() string { return LocalDirs().Config }
 
 // defaultDataDir resolves a writable state root for the SQLite DB,
 // downloaded models, and caches.
-func defaultDataDir() string {
-	switch runtime.GOOS {
-	case "windows":
-		if appData := os.Getenv("LOCALAPPDATA"); appData != "" {
-			return filepath.Join(appData, "Maktaba", "data")
-		}
-		return filepath.Join(home(), "AppData", "Local", "Maktaba", "data")
-	default:
-		if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
-			return filepath.Join(xdg, "maktaba")
-		}
-		return filepath.Join(home(), ".local", "share", "maktaba")
-	}
-}
+func defaultDataDir() string { return LocalDirs().Data }
 
 // defaultTranscriptionBackend picks the sensible default for the host:
 // MLX on Apple Silicon, faster-whisper everywhere else.

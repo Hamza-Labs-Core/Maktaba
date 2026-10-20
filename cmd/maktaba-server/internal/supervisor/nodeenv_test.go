@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -66,5 +67,33 @@ func TestStreamingCacheUnderDataDir(t *testing.T) {
 	}
 	if _, ok := envMap(ChildEnv(RoleAPI, cfg))["MAKTABA_CACHE_ROOT"]; ok {
 		t.Fatalf("only streaming gets the streaming cache root")
+	}
+}
+
+// TestChildEnvStateDirs (Epic 36 story 36.2): models, the semantic-search index and
+// the streaming cache sit in the install's state root; on a Mac that is the parent of
+// data_dir (~/Library/Application Support/Maktaba), elsewhere data_dir itself.
+func TestChildEnvStateDirs(t *testing.T) {
+	prev := nodeConfig
+	t.Cleanup(func() { nodeConfig = prev })
+	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
+	t.Setenv("MAKTABA_CHROMA_DIR", "")
+	t.Setenv("HOME", t.TempDir())
+	var cfg config.Config
+	cfg.Server.DataDir = config.LocalDirs().Data
+	root := cfg.StateDir()
+	if runtime.GOOS == "darwin" && root != filepath.Dir(cfg.Server.DataDir) {
+		t.Fatalf("StateDir = %s on a Mac, want the parent of data/", root)
+	}
+	m := envMap(ChildEnv(RolePipeline, cfg))
+	if m["MAKTABA_MODELS_DIR"] != filepath.Join(root, "models") || m["MAKTABA_CHROMA_DIR"] != filepath.Join(root, "chroma") {
+		t.Fatalf("models/chroma = %q / %q, want under %s", m["MAKTABA_MODELS_DIR"], m["MAKTABA_CHROMA_DIR"], root)
+	}
+	if got := envMap(ChildEnv(RoleStreaming, cfg))["MAKTABA_CACHE_ROOT"]; got != filepath.Join(root, "cache", "streaming") {
+		t.Fatalf("MAKTABA_CACHE_ROOT = %q", got)
+	}
+	t.Setenv("MAKTABA_CHROMA_DIR", "/own/chroma")
+	if v, ok := envMap(ChildEnv(RolePipeline, cfg))["MAKTABA_CHROMA_DIR"]; ok {
+		t.Fatalf("overrode the operator's chroma dir with %q", v)
 	}
 }

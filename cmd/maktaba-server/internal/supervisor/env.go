@@ -44,7 +44,12 @@ func ChildEnv(role Role, cfg config.Config) []string {
 	// Transcription backend/model for the pipeline workers.
 	add("MAKTABA_TRANSCRIPTION_BACKEND", cfg.Transcription.Backend)
 	add("MAKTABA_TRANSCRIPTION_MODEL", cfg.Transcription.Model)
-	add("MAKTABA_MODELS_DIR", cfg.Server.DataDir+"/models")
+	// The install's large state (Epic 36 story 36.2: on a Mac beside data/ in
+	// ~/Library/Application Support/Maktaba): models and the semantic-search index.
+	add("MAKTABA_MODELS_DIR", filepath.Join(cfg.StateDir(), "models"))
+	if os.Getenv("MAKTABA_CHROMA_DIR") == "" {
+		add("MAKTABA_CHROMA_DIR", filepath.Join(cfg.StateDir(), "chroma"))
+	}
 
 	// Cross-service discovery: the api needs to reach streaming +
 	// pipeline over gRPC. These default ports mirror the compose stack.
@@ -121,7 +126,7 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		// directory: the binary's default, /var/maktaba, is the containers' path,
 		// which a user cannot create on macOS or Windows. An operator's own is kept.
 		if os.Getenv("MAKTABA_CACHE_ROOT") == "" {
-			add("MAKTABA_CACHE_ROOT", filepath.Join(cfg.Server.DataDir, "cache", "streaming"))
+			add("MAKTABA_CACHE_ROOT", filepath.Join(cfg.StateDir(), "cache", "streaming"))
 		}
 		add("MAKTABA_STREAMING_HTTP_ADDR", cfg.Server.StreamAddr)
 		add("MAKTABA_ADMIN_ADDR", streamingAdmin(cfg))
@@ -271,14 +276,14 @@ func LocalAddr(bind, defaultPort string) string {
 	return fmt.Sprintf("127.0.0.1:%s", port)
 }
 
-// SecretsKeyPath is the home's secrets key file: secrets.key in the
-// directory of server.toml (config.Path, which honours MAKTABA_CONFIG).
+// SecretsKeyPath is the home's secrets key file: secrets.key in the keys
+// directory (config.KeysDir: beside server.toml, or keys/ on a Mac).
 func SecretsKeyPath() string {
-	return filepath.Join(filepath.Dir(config.Path()), "secrets.key")
+	return filepath.Join(config.KeysDir(), "secrets.key")
 }
 
 // StreamKeyPath is this machine's stream signing key: stream-signing.key in
-// the directory of server.toml (next to secrets.key).
+// the keys directory (next to secrets.key).
 func StreamKeyPath() string {
-	return filepath.Join(filepath.Dir(config.Path()), "stream-signing.key")
+	return filepath.Join(config.KeysDir(), "stream-signing.key")
 }
