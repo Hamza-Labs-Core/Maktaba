@@ -428,11 +428,13 @@ func TestController_ResponderOnlyWhileEnabled(t *testing.T) {
 			return net.ListenPacket("udp4", "127.0.0.1:0")
 		},
 		ListenDiscover: func() (net.PacketConn, error) {
-			discBinds.Add(1)
 			conn, err := net.ListenPacket("udp4", "127.0.0.1:0")
 			mu.Lock()
 			discConn = conn
 			mu.Unlock()
+			// Count the bind only once discConn is set: the test reads
+			// discConn as soon as it sees the count.
+			discBinds.Add(1)
 			return conn, err
 		},
 		Ifaces:    func() []LocalIface { return nil },
