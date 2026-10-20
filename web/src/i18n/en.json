@@ -2234,7 +2234,7 @@
   "livetv.plexTitle": "Add it in Plex",
   "livetv.plexStep1": "Turn the tuner on above.",
   "livetv.plexStep2": "In Plex, open Settings → Live TV & DVR → Set up Plex DVR.",
-  "livetv.plexStep3": "If Plex does not find Maktaba, choose to enter the address manually and type {address}.",
+  "livetv.plexStep3": "If Plex does not find Maktaba (some networks and Wi-Fi access points block the discovery broadcast), choose to enter the address manually and type {address} (copy it from HDHomeRun address above).",
   "livetv.plexStep4": "When Plex asks for a guide, pick the XMLTV option and paste {url}.",
   "livetv.plexStep5": "Check the channel list and finish. The channels then appear under Live TV.",
   "livetv.otherPlayers": "Jellyfin and Emby take the same HDHomeRun address and XMLTV guide; VLC and other IPTV players can open the M3U playlist.",
