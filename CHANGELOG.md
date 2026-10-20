@@ -10,6 +10,14 @@ don't append a line here; docs-only PRs are exempt.
 
 ## [Unreleased]
 
+### Changed
+
+- **A machine that loses its home stays readable.** A full node that cannot reach the home
+  keeps serving pages to people already signed in, with a notice on top and changes refused,
+  instead of swapping the whole app for the "cannot reach its home" page. New setting
+  `rules.cluster.offline_read_minutes` (default 10; 0 restores refusing everything). The
+  full page stays for a machine whose code does not fit the home's database.
+
 ## [0.2.0] - 2026-10-19
 
 Closes the stub audit: features that were half built, settings that were

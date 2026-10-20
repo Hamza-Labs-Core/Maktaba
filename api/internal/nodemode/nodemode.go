@@ -147,15 +147,19 @@ func CheckRole(ctx context.Context, db *sql.DB) error {
 
 // Rules is rules.cluster (app_settings; the pipeline's ClusterMachinesConfig declares
 // the section): cluster sign-in on or off, how long a node waits for an unreachable
-// home before it refuses signed-in requests, its picture cache.
+// home before it refuses signed-in requests, how long it stays readable meanwhile, its
+// picture cache.
 type Rules struct {
-	SSO          bool `json:"sso"`
-	GraceSeconds int  `json:"delegate_unreachable_grace_seconds"`
-	ProxyCacheMB int  `json:"proxy_cache_mb"`
+	SSO                bool `json:"sso"`
+	GraceSeconds       int  `json:"delegate_unreachable_grace_seconds"`
+	OfflineReadMinutes int  `json:"offline_read_minutes"`
+	ProxyCacheMB       int  `json:"proxy_cache_mb"`
 }
 
 // DefaultRules are the section's defaults.
-func DefaultRules() Rules { return Rules{SSO: true, GraceSeconds: 30, ProxyCacheMB: 2048} }
+func DefaultRules() Rules {
+	return Rules{SSO: true, GraceSeconds: 30, OfflineReadMinutes: 10, ProxyCacheMB: 2048}
+}
 
 // ReadRules reads rules.cluster; any error or bad value gives the default for it.
 func ReadRules(ctx context.Context, db *sql.DB) Rules {
@@ -178,6 +182,9 @@ func ReadRules(ctx context.Context, db *sql.DB) Rules {
 	var n int
 	if v, ok := m["delegate_unreachable_grace_seconds"]; ok && json.Unmarshal(v, &n) == nil && n >= 5 && n <= 600 {
 		out.GraceSeconds = n
+	}
+	if v, ok := m["offline_read_minutes"]; ok && json.Unmarshal(v, &n) == nil && n >= 0 && n <= 1440 {
+		out.OfflineReadMinutes = n
 	}
 	if v, ok := m["proxy_cache_mb"]; ok && json.Unmarshal(v, &n) == nil && n >= 0 {
 		out.ProxyCacheMB = n

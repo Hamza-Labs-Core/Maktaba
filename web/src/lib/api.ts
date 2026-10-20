@@ -52,9 +52,21 @@ function logApiError(method: string, path: string, status: number, detail: strin
 
 // Epic 35 (story 35.10): a node answers 503 {code: "paused"} when its code
 // does not fit the home's database, or {code: "home_unreachable"} when it
-// cannot reach its home. Every call that sees one tells the app (NodeGuard
-// shows the paused page while it holds).
+// cannot reach its home. Every call that sees one tells the app: NodeGuard
+// shows the paused page for `paused`, and for `home_unreachable` keeps the
+// app readable under a notice. A read the node still serves in a home outage
+// carries HOME_STATE_HEADER: unreachable, which tells the app the same; while
+// it holds, a change is refused here without a request (the node would).
 export const NODE_UNAVAILABLE_EVENT = "maktaba:node-unavailable";
+export const HOME_STATE_HEADER = "X-Maktaba-Home";
+
+/** The problem a change gets while this machine cannot reach its home. */
+export const HOME_UNREACHABLE_PROBLEM: Problem = {
+  type: "https://maktaba.dev/problems/home-unreachable",
+  title: "The home is not reachable",
+  status: 503,
+  detail: "changes wait until this machine can reach its home again",
+};
 
 export type NodeUnavailableCode = "paused" | "home_unreachable";
 
@@ -73,6 +85,11 @@ export function lastNodeUnavailable(): NodeUnavailableDetail | null {
 /** Forgets the last paused / home_unreachable answer (tests; a page reload does it too). */
 export function clearNodeUnavailable(): void {
   lastUnavailable = null;
+}
+
+/** Whether this machine cannot reach its home (the app is read-only). */
+export function homeUnreachable(): boolean {
+  return lastUnavailable?.code === "home_unreachable";
 }
 
 function noteUnavailable(status: number, problem: unknown): void {
@@ -127,6 +144,11 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     if (tok) {
       headers.set(CSRF_HEADER, tok);
     }
+    if (homeUnreachable()) {
+      const err = new ApiError(HOME_UNREACHABLE_PROBLEM);
+      logApiError(method, path, err.status, err.message);
+      throw err;
+    }
   }
 
   let res: Response;
@@ -143,6 +165,10 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     // status-based branch below — log it so it isn't swallowed.
     logApiError(method, path, 0, e instanceof Error ? e.message : "network error");
     throw e;
+  }
+
+  if (res.headers.get(HOME_STATE_HEADER) === "unreachable") {
+    noteUnavailable(503, { code: "home_unreachable" });
   }
 
   if (res.status === 204) {

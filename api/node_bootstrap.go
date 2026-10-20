@@ -97,7 +97,8 @@ func startNode(ctx context.Context, cfg nodemode.Config, db *sql.DB, logger *slo
 		return rules
 	}
 	rt.resolver = &nodeauth.Resolver{Link: rt.link, Logger: logger,
-		Grace: func() time.Duration { return time.Duration(rt.rules().GraceSeconds) * time.Second }}
+		Grace:       func() time.Duration { return time.Duration(rt.rules().GraceSeconds) * time.Second },
+		OfflineRead: func() time.Duration { return time.Duration(rt.rules().OfflineReadMinutes) * time.Minute }}
 	rt.link.Subscribe(rt.resolver.OnEvent)
 	rt.guard = &schemaguard.Guard{DB: db, Logger: logger}
 	rt.guard.Check(cctx)

@@ -3101,6 +3101,8 @@
   "clusterSignIn.thisMachine": "this machine",
   "clusterSignIn.theHome": "the home",
   "clusterSignIn.or": "or sign in here",
+  "homeOffline.title": "This machine can't reach its home.",
+  "homeOffline.body": "Pages stay readable; changes wait until it's back. This notice clears by itself.",
   "paused.title": "This machine is paused",
   "paused.unreachableTitle": "This machine cannot reach its home",
   "paused.unreachable": "This machine cannot reach its home. Check that the home is on and connected.",

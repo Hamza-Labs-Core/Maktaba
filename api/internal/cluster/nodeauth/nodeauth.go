@@ -5,6 +5,12 @@
 // closed — 503 home_unreachable on signed-in requests — once the home has not answered
 // for the grace period (30 s, rules.cluster.delegate_unreachable_grace_seconds).
 //
+// A home outage degrades a node to read-only instead of taking it down: a read (GET,
+// HEAD) by a credential the home confirmed before is served on that answer for
+// rules.cluster.offline_read_minutes from the outage's start, marked X-Maktaba-Home:
+// unreachable so the app shows it; a change is refused. 0 minutes: every signed-in
+// request is refused, as before.
+//
 // The principal it attaches is the home's answer; the node then runs the same
 // middleware and handlers as the home (roles, admin checks, library ACLs, CSRF double
 // submit against the session's CSRF token hash).
@@ -42,7 +48,12 @@ const (
 	DefaultGrace = 30 * time.Second
 	ProbeEvery   = 5 * time.Second
 	maxEntries   = 8192
+	// DefaultOfflineRead: how long reads stay served on the last confirmed answer.
+	DefaultOfflineRead = 10 * time.Minute
 )
+
+// HomeStateHeader marks a response served while the home is unreachable (read-only).
+const HomeStateHeader = "X-Maktaba-Home"
 
 // Cookie and header names as the home's auth handlers use them.
 const (
@@ -67,9 +78,12 @@ type entry struct {
 type Resolver struct {
 	Link homelink.Link
 	// Grace returns the fail-closed grace (nil: DefaultGrace).
-	Grace  func() time.Duration
-	Now    func() time.Time
-	Logger *slog.Logger
+	Grace func() time.Duration
+	// OfflineRead returns how long reads stay served on the last confirmed answer
+	// once the home stops answering (nil: DefaultOfflineRead; 0: not at all).
+	OfflineRead func() time.Duration
+	Now         func() time.Time
+	Logger      *slog.Logger
 
 	mu      sync.Mutex
 	cache   map[string]*entry
@@ -96,6 +110,29 @@ func (r *Resolver) grace() time.Duration {
 		}
 	}
 	return DefaultGrace
+}
+
+func (r *Resolver) offlineRead() time.Duration {
+	if r.OfflineRead != nil {
+		return r.OfflineRead()
+	}
+	return DefaultOfflineRead
+}
+
+// readableOffline: with the home not answering, reads are still served (the outage
+// is younger than the offline read window).
+func (r *Resolver) readableOffline() bool {
+	w := r.offlineRead()
+	if w <= 0 {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.failing.IsZero() || r.now().Sub(r.failing) <= w
+}
+
+func readOnly(method string) bool {
+	return method == http.MethodGet || method == http.MethodHead
 }
 
 // SessionKey is the cache key of a session id: SHA-256 hex (what auth.revoked names).
@@ -372,7 +409,8 @@ func bearer(r *http.Request) string {
 
 // Middleware attaches the home-resolved principal to a request the node serves itself
 // (`local` and `any` routes). Anonymous requests pass through (the auth gate behind
-// it decides); a credential the home cannot be asked about is a 503 home_unreachable.
+// it decides); a credential the home cannot be asked about is a 503 home_unreachable,
+// except a read within the offline read window (served read-only, see the package doc).
 func (r *Resolver) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if principal.FromContext(req.Context()) != nil {
@@ -382,26 +420,38 @@ func (r *Resolver) Middleware(next http.Handler) http.Handler {
 		var (
 			p    *principal.Principal
 			csrf string
+			key  string
 			err  error
 		)
 		if b := bearer(req); b != "" {
 			if strings.HasPrefix(b, "pat_") {
-				p, _, err = r.resolve(req.Context(), patKey(b), delegation.IntrospectRequest{PAT: b})
+				key = patKey(b)
+				p, _, err = r.resolve(req.Context(), key, delegation.IntrospectRequest{PAT: b})
 			} else {
 				p = r.verifyJWT(req.Context(), b)
 			}
 		} else if c, cerr := req.Cookie(CookieSession); cerr == nil && c.Value != "" {
-			p, csrf, err = r.resolve(req.Context(), SessionKey(c.Value), delegation.IntrospectRequest{Session: c.Value})
+			key = SessionKey(c.Value)
+			p, csrf, err = r.resolve(req.Context(), key, delegation.IntrospectRequest{Session: c.Value})
 		}
 		if err != nil {
-			// a local route (this machine's own status) keeps working with the home
-			// gone (design §10.3): the principal last confirmed for this credential,
-			// else anonymous; every other signed-in route fails closed
-			if placement.ClassFrom(req.Context()) != placement.Local {
+			switch {
+			case placement.ClassFrom(req.Context()) == placement.Local:
+				// a local route (this machine's own status) keeps working with the home
+				// gone (design §10.3): the principal last confirmed, else anonymous
+				p, csrf = r.lastKnown(key)
+			case readOnly(req.Method) && r.readableOffline():
+				// read-only while the home is out: only a credential the home confirmed
+				if p, csrf = r.lastKnown(key); p == nil {
+					WriteUnreachable(w)
+					return
+				}
+				w.Header().Set(HomeStateHeader, "unreachable")
+			default:
+				// a change (or a read past the window) fails closed
 				WriteUnreachable(w)
 				return
 			}
-			p, csrf = r.lastKnown(req)
 		}
 		if p == nil {
 			next.ServeHTTP(w, req)
@@ -415,16 +465,15 @@ func (r *Resolver) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// lastKnown is the principal last cached for the request's session, even expired
-// (local routes with the home unreachable).
-func (r *Resolver) lastKnown(req *http.Request) (*principal.Principal, string) {
-	c, err := req.Cookie(CookieSession)
-	if err != nil || c.Value == "" {
+// lastKnown is the principal last cached for a credential key, even expired (the home
+// unreachable). A revocation the home pushed has already dropped it (Evict).
+func (r *Resolver) lastKnown(key string) (*principal.Principal, string) {
+	if key == "" {
 		return nil, ""
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if e, ok := r.cache[SessionKey(c.Value)]; ok && !e.denied {
+	if e, ok := r.cache[key]; ok && !e.denied {
 		return e.p, e.csrf
 	}
 	return nil, ""

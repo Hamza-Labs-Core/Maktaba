@@ -17,8 +17,10 @@ class ClusterMachinesConfig:
 
     #: a signed-in user who opens another machine is offered "Continue with <home>"
     sso: bool = True
-    #: after this long without an answer from the home, a node refuses signed-in requests
+    #: after this long without an answer from the home, a node refuses changes
     delegate_unreachable_grace_seconds: int = 30
+    #: meanwhile a node stays readable this long (pages open, changes refused); 0: refuse
+    offline_read_minutes: int = 10
     #: a node's disk cache for the pictures it fetches from the home (posters, sprites)
     proxy_cache_mb: int = 2048
 
@@ -31,8 +33,15 @@ settings.register(ClusterMachinesConfig, {
                          "sign-in (still against the home's accounts)."),
     "delegate_unreachable_grace_seconds": settings.Help(
         _C, "Home unreachable after (s)",
-        "A machine that cannot reach the home this long refuses signed-in pages until it can "
-        "again; its own status pages keep working.", minimum=5, maximum=600),
+        "A machine that cannot reach the home this long stops taking changes until it can "
+        "again (reading follows the next setting); its own status pages keep working.",
+        minimum=5, maximum=600),
+    "offline_read_minutes": settings.Help(
+        _C, "Stay readable without the home (min)",
+        "While a machine cannot reach the home, people already signed in keep reading pages "
+        "this long, with changes refused and a notice on top. 0: refuse everything at once. "
+        "A sign-out made on the home during the outage reaches this machine only when it is back.",
+        minimum=0, maximum=1440),
     "proxy_cache_mb": settings.Help(_C, "Picture cache per machine (MB)",
                                     "Posters and sprites a machine fetched from the home.",
                                     minimum=0, maximum=1_048_576),
