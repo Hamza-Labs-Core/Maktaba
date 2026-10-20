@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { clsx } from "../internal/clsx";
@@ -75,6 +83,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     },
     [dismiss]
   );
+
+  // Clear pending auto-dismiss timers on unmount, so none fires a state
+  // update on an unmounted provider (or after a test's DOM is torn down).
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      for (const handle of pending.values()) clearTimeout(handle);
+      pending.clear();
+    };
+  }, []);
 
   const api = useMemo<ToastApi>(() => ({ show, dismiss }), [show, dismiss]);
 
