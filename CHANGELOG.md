@@ -94,7 +94,26 @@ rules behind both were tightened. Schema revision 140 (migrations 0137-0140).
 - **Must-change on full nodes** (#135): a session holding an admin-reset temporary
   password is held to the password form on full nodes too, and a native refresh is
   refused until the password is changed.
-- Dependencies with known vulnerabilities updated (`fix/dependency-vulnerabilities`; details to follow when it merges).
+- **Thumbnail host allowlist** (#137): a staged YouTube thumbnail URL is parsed with
+  `net/url` (https only, no userinfo or port, no backslashes) and must be on a YouTube
+  image host (`*.ytimg.com`, `yt3.ggpht.com`, `yt3.googleusercontent.com`); crafted
+  URLs such as `https://evil.example?x.ytimg.com/` no longer pass.
+- **Dependencies with known vulnerabilities updated** (#140): grpc 1.83.2 and
+  OpenTelemetry 1.45.0 (Go); react-router-dom v7, vite 6.4.4 and vitest 4.1.12 (web);
+  Capacitor 6.2.2 (mobile); anyio, fsspec and setuptools (pipeline). The chromadb
+  server advisories do not apply (Maktaba uses the embedded client only) and were
+  dismissed as not used; the compose `chroma` service is bound to 127.0.0.1.
+
+### Fixed
+
+- **Plex finds the HDHomeRun tuner.** SSDP replies carry an absolute `LOCATION`
+  (`http://<the address the client reaches>:8081/device.xml`) instead of `/device.xml`, answer
+  `upnp:rootdevice` and the uuid as well, and the tuner multicasts `ssdp:alive` every five
+  minutes and `ssdp:byebye` when it stops. The native HDHomeRun discover protocol (UDP 65001,
+  libhdhomerun's packet format with CRC) is answered too, under the same tuner switch. The
+  DeviceID now carries the HDHomeRun check digit (an existing id gets its last digit fixed,
+  e.g. 87C7778E becomes 87C77788), and device.xml / discover.json report Silicondust like a
+  real tuner. On the server itself the Live TV page shows the LAN address to type into Plex (#139).
 
 ## [0.1.0] - 2026-10-19
 
@@ -257,14 +276,6 @@ Details of everything in this release:
   creations from Epics 9/12.
 
 ### Fixed
-- **Plex finds the HDHomeRun tuner.** SSDP replies carry an absolute `LOCATION`
-  (`http://<the address the client reaches>:8081/device.xml`) instead of `/device.xml`, answer
-  `upnp:rootdevice` and the uuid as well, and the tuner multicasts `ssdp:alive` every five
-  minutes and `ssdp:byebye` when it stops. The native HDHomeRun discover protocol (UDP 65001,
-  libhdhomerun's packet format with CRC) is answered too, under the same tuner switch. The
-  DeviceID now carries the HDHomeRun check digit (an existing id gets its last digit fixed,
-  e.g. 87C7778E becomes 87C77788), and device.xml / discover.json report Silicondust like a
-  real tuner. On the server itself the Live TV page shows the LAN address to type into Plex.
 - Ports taken by another program (Splunk on 8088, a backup tool on 8080): `setup`,
   `setup --node`, `setup --self-managed` and `serve` check the web, API and
   streaming ports first and move a taken one to the first free port of 8780-8790,
