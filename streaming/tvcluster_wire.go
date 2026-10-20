@@ -245,7 +245,9 @@ func buildHomeTV(bg *background, logger *slog.Logger, cfg config.Config, pool *p
 		}}
 	mounts = append(mounts, guideHandler.Mount)
 	// Only the home advertises the tuner (the front door); a node never runs this.
-	ssdp := &hdhr.SSDPController{Repo: hdhrRepo, Logger: logger, LocationBase: publicBase}
+	// SSDP (udp/1900) and HDHomeRun discovery (udp/65001), absolute URLs only
+	ssdp := &hdhr.SSDPController{Repo: hdhrRepo, Logger: logger, LocationBase: publicBase,
+		HTTPAddr: os.Getenv("MAKTABA_HTTP_ADDR")}
 	bg.Go(ssdp.Run)
 	return mounts
 }

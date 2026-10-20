@@ -91,7 +91,7 @@ func (h *Handler) DeviceXML(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Content-Type", "application/xml")
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	_, _ = io.WriteString(w, deviceXML(dev, h.base(r)))
 }
 
@@ -188,8 +188,10 @@ func parseChannelParam(s string) (int, error) {
 	return strconv.Atoi(s)
 }
 
+// writeJSON writes v as UTF-8 JSON. Channel names (Arabic) go out as raw UTF-8
+// bytes, not escapes; the charset is explicit for clients that guess.
 func writeJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(v)
 }
 

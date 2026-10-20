@@ -2234,7 +2234,7 @@
   "livetv.plexTitle": "أضِفه في Plex",
   "livetv.plexStep1": "شغّل الموالف أعلاه.",
   "livetv.plexStep2": "في Plex افتح الإعدادات ← Live TV & DVR ← Set up Plex DVR.",
-  "livetv.plexStep3": "إذا لم يعثر Plex على مكتبة، اختر إدخال العنوان يدويًا واكتب {address}.",
+  "livetv.plexStep3": "إذا لم يعثر Plex على مكتبة (بعض الشبكات ونقاط Wi-Fi تحجب بث الاكتشاف)، اختر إدخال العنوان يدويًا واكتب {address} (انسخه من «عنوان HDHomeRun» أعلاه).",
   "livetv.plexStep4": "عندما يطلب Plex دليل البرامج، اختر خيار XMLTV والصق {url}.",
   "livetv.plexStep5": "راجع قائمة القنوات ثم أنهِ الإعداد. تظهر القنوات بعدها في Live TV.",
   "livetv.otherPlayers": "يقبل Jellyfin وEmby عنوان HDHomeRun ودليل XMLTV نفسيهما، ويستطيع VLC ومشغلات IPTV الأخرى فتح قائمة M3U.",
