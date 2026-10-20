@@ -217,8 +217,8 @@ func (c *SSDPController) retry(ctx context.Context, name string, fn func(context
 			msg = err.Error()
 		}
 		if msg != last {
-			c.log().Warn("hdhr: "+name+" responder failed; retrying", "err", msg,
-				"retry_in", every.String(), "event", "hdhr_"+name+"_failed")
+			c.log().Warn("hdhr: discovery responder failed; retrying", "responder", name, "err", msg,
+				"retry_in", every.String(), "event", "hdhr_discovery_failed")
 			last = msg
 		}
 		select {
