@@ -372,6 +372,9 @@ def _build_parser() -> argparse.ArgumentParser:
     from .sharepath.cli import add_parser as add_storage_parser
 
     add_storage_parser(subparsers)
+    from .models.fetch_cli import add_parser as add_models_parser
+
+    add_models_parser(subparsers)
     return parser
 
 
@@ -412,7 +415,7 @@ def main(argv: list[str] | None = None) -> int:
     # --database-url never attach to the namespace and _serve crashes
     # with AttributeError. Both the prod ENTRYPOINT (`python -m
     # maktaba_pipeline`) and the dev supervisor invoke us this way.
-    _subcommands = {"run", "doctor", "join", "cluster", "storage"}
+    _subcommands = {"run", "doctor", "join", "cluster", "storage", "models"}
     _top_level_flags = {"--version", "-V", "--help", "-h"}
     if not any(a in _subcommands for a in argv) and not any(a in _top_level_flags for a in argv):
         argv = ["run", *argv]
@@ -440,6 +443,10 @@ def main(argv: list[str] | None = None) -> int:
         return storage_main(args)
     if command == "join":
         return _join(args, parser, log)
+    if command == "models":
+        from .models.fetch_cli import main as models_main
+
+        return models_main(args)
 
     parser.print_help()
     return 2
