@@ -34,6 +34,10 @@ type releaseChannel struct {
 	Enabled      bool
 	Logo         string
 	SchedChanged bool
+	// Boundary is where a regenerated channel's new schedule starts (B_c): the end
+	// of the programme on the air at the planned swap, or the boundary_max_wait cap
+	// when that programme runs longer (the generation then ends it at the cap).
+	Boundary nullTime
 }
 
 func (c *Controller) releaseChannels(ctx context.Context, releaseID string) ([]releaseChannel, int64, error) {
@@ -41,7 +45,7 @@ func (c *Controller) releaseChannels(ctx context.Context, releaseID string) ([]r
 	if err := c.DB.QueryRowContext(ctx, `SELECT sched_gen FROM tv_releases WHERE id = $1`, releaseID).Scan(&gen); err != nil {
 		return nil, 0, err
 	}
-	rows, err := c.DB.QueryContext(ctx, `SELECT channel_id, def, sched_changed FROM tv_release_channels
+	rows, err := c.DB.QueryContext(ctx, `SELECT channel_id, def, sched_changed, boundary_at FROM tv_release_channels
 		WHERE release_id = $1`, releaseID)
 	if err != nil {
 		return nil, 0, err
@@ -52,12 +56,13 @@ func (c *Controller) releaseChannels(ctx context.Context, releaseID string) ([]r
 		var id string
 		var raw []byte
 		var sched any
-		if err := rows.Scan(&id, &raw, &sched); err != nil {
+		var boundary nullTime
+		if err := rows.Scan(&id, &raw, &sched, &boundary); err != nil {
 			return nil, 0, err
 		}
 		var d map[string]any
 		_ = json.Unmarshal(raw, &d)
-		rc := releaseChannel{ID: id, Enabled: true}
+		rc := releaseChannel{ID: id, Enabled: true, Boundary: boundary}
 		if n, ok := d["number"].(float64); ok {
 			rc.Number = int(n)
 		}
@@ -211,12 +216,7 @@ func (c *Controller) Verify(ctx context.Context, ch *Change) (map[string]any, bo
 		if err != nil {
 			return nil, true, 0, err
 		}
-		same := nb != nil && nb.video == lb.video && nb.start.T.Equal(lb.start.T) && nb.end.T.Equal(lb.end.T)
-		if same {
-			add(Check{Check: "channel.block", ChannelID: rc.ID, Result: ResultPass, Value: "the programme on the air is kept"})
-		} else {
-			add(Check{Check: "channel.block", ChannelID: rc.ID, Result: ResultFail, Value: "the new schedule would cut the programme on the air"})
-		}
+		add(blockCheck(rc, lb, nb, now))
 	}
 	report := map[string]any{
 		"checks":   checks,
@@ -226,6 +226,36 @@ func (c *Controller) Verify(ctx context.Context, ch *Change) (map[string]any, bo
 		"interim":  true,
 	}
 	return report, failed, warnings, nil
+}
+
+// blockCheck compares the block on the air now in the live generation (lb) with the
+// new generation's (nb). The same block is kept: pass. The same programme ending
+// earlier, exactly at the channel's boundary, is the boundary_max_wait cap the
+// generation applies on purpose to a programme that runs past it (the swap switches
+// there, mid-programme): a warning naming the cut, not a failure. A boundary already
+// behind now is re-anchored by the swap: pass. Anything else would cut the programme
+// on the air.
+func blockCheck(rc releaseChannel, lb, nb *block, now time.Time) Check {
+	k := Check{Check: "channel.block", ChannelID: rc.ID}
+	sameStart := nb != nil && nb.video == lb.video && nb.start.T.Equal(lb.start.T)
+	switch {
+	case sameStart && nb.end.T.Equal(lb.end.T):
+		k.Result, k.Value = ResultPass, "the programme on the air is kept"
+	case sameStart && rc.SchedChanged && rc.Boundary.Valid && nb.end.T.Equal(rc.Boundary.T) &&
+		nb.end.T.Before(lb.end.T) && nb.end.T.After(now):
+		k.Result = ResultWarn
+		k.Value = fmt.Sprintf("the programme on the air ends early, at %s (boundary_max_wait_minutes); it was to end at %s",
+			nb.end.T.Format(time.RFC3339), lb.end.T.Format(time.RFC3339))
+	case rc.SchedChanged && rc.Boundary.Valid && !rc.Boundary.T.After(now):
+		// verified after the planned swap instant (building the generation takes about
+		// as long as the soak margin): the channel's boundary is behind us, and the
+		// swap re-anchors the new schedule at the instant it really happens
+		k.Result = ResultPass
+		k.Value = "the planned boundary " + rc.Boundary.T.Format(time.RFC3339) + " has passed: the swap re-anchors the new schedule"
+	default:
+		k.Result, k.Value = ResultFail, "the new schedule would cut the programme on the air"
+	}
+	return k
 }
 
 func (c *Controller) verifyAndMove(ctx context.Context, ch *Change) error {
