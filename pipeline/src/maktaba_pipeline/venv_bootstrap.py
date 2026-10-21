@@ -54,6 +54,7 @@ import queue
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -308,20 +309,55 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def _while_open_elsewhere(op: Callable[[], None]) -> None:
+def _refused(exc: Exception) -> bool:
+    return isinstance(exc, PermissionError)
+
+
+def _while_open_elsewhere(
+    op: Callable[[], None], held: Callable[[Exception], bool] = _refused
+) -> None:
     """Run ``op`` (a replace or a removal); on Windows, again for up to 5 s while another
-    process has the file open (a reader of the status file, a virus scanner): Windows
-    refuses to replace or remove a file that is open, where POSIX does not mind."""
+    process has the file open (a reader of the status file, a virus scanner, the search
+    indexer, a program of the venv still exiting): Windows refuses to replace or remove a
+    file that is open (WinError 5 / 32), where POSIX does not mind. ``held`` says whether
+    a failure is that refusal."""
     delay, deadline = 0.01, time.monotonic() + 5.0
     while True:
         try:
             op()
             return
-        except PermissionError:
-            if sys.platform != "win32" or time.monotonic() >= deadline:
+        except Exception as exc:
+            if not held(exc) or sys.platform != "win32" or time.monotonic() >= deadline:
                 raise
         time.sleep(delay)
         delay = min(delay * 2, 0.25)
+
+
+def _removal_held(exc: Exception) -> bool:
+    """A removal refused while something is open: the file itself, or (a folder) a file
+    in it whose deletion waits for its last handle to close."""
+    return isinstance(exc, PermissionError) or (
+        isinstance(exc, OSError) and exc.errno == errno.ENOTEMPTY
+    )
+
+
+def _remove_tree(path: Path) -> None:
+    """``shutil.rmtree``; on Windows each removal refused is tried again
+    (:func:`_while_open_elsewhere`), a read-only file made writable first."""
+
+    def again(func: Callable[[str], None], name: str, exc: BaseException) -> None:
+        if (
+            sys.platform != "win32"
+            or not isinstance(exc, OSError)
+            or not _removal_held(exc)
+            or func not in (os.unlink, os.rmdir)
+        ):
+            raise exc
+        with contextlib.suppress(OSError):
+            os.chmod(name, stat.S_IWRITE)  # Windows: clears the read-only attribute
+        _while_open_elsewhere(lambda: func(name), _removal_held)
+
+    shutil.rmtree(path, onexc=again)
 
 
 def write_json_atomic(path: Path, data: dict[str, Any]) -> None:
@@ -597,6 +633,16 @@ def verify(venv: Path, target: Target, rep: Reporter) -> str:
 # --- the steps ---------------------------------------------------------------------------
 
 
+#: ``python -m venv`` refused to write a file of the venv that is open elsewhere (on
+#: Windows ``Scripts\python.exe`` while a program of the venv still exits, or a virus
+#: scanner reads it): access denied or a sharing violation
+_VENV_HELD = re.compile(r"\[WinError (?:5|32)\]|\[Errno 13\]")
+
+
+def _venv_held(exc: Exception) -> bool:
+    return isinstance(exc, BootstrapError) and _VENV_HELD.search(str(exc)) is not None
+
+
 def create_venv(venv: Path, target: Target, rep: Reporter, *, upgrade: bool = False) -> None:
     args = [str(target.python), "-m", "venv"]
     if upgrade:
@@ -609,12 +655,15 @@ def create_venv(venv: Path, target: Target, rep: Reporter, *, upgrade: bool = Fa
             for link in (venv / "bin").glob("python*"):
                 if link.is_symlink():
                     link.unlink()
-    run_step(
-        [*args, str(venv)],
-        rep,
-        "venv",
-        ("repointing" if upgrade else "creating")
-        + f" the venv with Python {target.python_version}",
+    _while_open_elsewhere(
+        lambda: run_step(
+            [*args, str(venv)],
+            rep,
+            "venv",
+            ("repointing" if upgrade else "creating")
+            + f" the venv with Python {target.python_version}",
+        ),
+        _venv_held,
     )
 
 
@@ -656,7 +705,7 @@ def execute(venv: Path, target: Target, p: Plan, rep: Reporter) -> str:
         else:
             # the stamp first: a removal cut short leaves no "ready" venv behind
             _while_open_elsewhere(lambda: (venv / STAMP).unlink(missing_ok=True))
-            shutil.rmtree(venv)
+            _remove_tree(venv)
     if p.action in ("build", "resume"):
         # resuming: the venv is there, maybe made by a Python that has moved since
         py = venv_python(venv)

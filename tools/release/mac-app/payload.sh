@@ -91,8 +91,9 @@ tar -xzf "$pg_tgz" -C "$WORK"
 pg="$WORK/postgresql-$POSTGRES_VERSION-aarch64-apple-darwin"
 [ -x "$pg/bin/postgres" ] || die "unexpected PostgreSQL archive layout"
 mkdir -p "$OUT/postgres/bin"
-# what the supervisor runs (36.1) and what a backup, a restore, an upgrade or a person needs
-for b in postgres initdb pg_ctl pg_dump pg_dumpall pg_restore psql pg_isready pg_upgrade pg_controldata pg_resetwal; do
+# what the supervisor runs (36.1) and what a backup, a restore, an upgrade or a person needs;
+# pg_basebackup: a Mac that joins another home makes its copy of that home's database with it
+for b in postgres initdb pg_ctl pg_dump pg_dumpall pg_restore psql pg_isready pg_upgrade pg_controldata pg_resetwal pg_basebackup; do
     cp "$pg/bin/$b" "$OUT/postgres/bin/"
 done
 # libraries (libpq, OpenSSL, the extensions) and share/ (catalogs, extensions, time zones),
