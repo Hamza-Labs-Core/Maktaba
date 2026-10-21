@@ -116,7 +116,7 @@ type nodeRuntime struct {
 // (streaming.Offline, vodfallback.Catalog): the copy answers for the videos.
 type nodeOffline struct{ dbs nodeDBs }
 
-func (o nodeOffline) DBDown() bool       { return o.dbs.pair.Home.Down() }
+func (o nodeOffline) DBDown() bool   { return o.dbs.pair.Home.Down() }
 func (o nodeOffline) DBFailed(error) { o.dbs.pair.Recheck() }
 
 func (o nodeOffline) Video(id string) (string, float64, bool) {
