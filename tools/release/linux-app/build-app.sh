@@ -8,7 +8,7 @@
 # Usage: build-app.sh [--version VERSION]   (extra options go to payload.sh)
 # Output: apps/desktop/src-tauri/target/release/bundle/{appimage,deb,rpm}/
 # Needs what payload.sh needs, plus Rust and tauri's Linux libraries (libwebkit2gtk-4.1-dev,
-# libgtk-3-dev, libayatana-appindicator3-dev, librsvg2-dev), dpkg-deb, rpm2cpio and cpio.
+# libgtk-3-dev, libayatana-appindicator3-dev, librsvg2-dev), dpkg-deb and bsdtar.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

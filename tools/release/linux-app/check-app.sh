@@ -7,7 +7,7 @@
 # runtime copy (Postgres, ffmpeg, Python, the venv plan), once, on the first bundle.
 #
 # Usage: check-app.sh BUNDLE...   (*.AppImage, *.deb, *.rpm)
-# Needs: bash, coreutils, dpkg-deb for a .deb, rpm2cpio and cpio for an .rpm.
+# Needs: bash, coreutils, dpkg-deb for a .deb, bsdtar (or rpm2cpio and cpio) for an .rpm.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,14 +26,21 @@ for bundle in "$@"; do
     echo "bundle: $name ($(du -h "$bundle" | awk '{print $1}'))"
     dir="$SCRATCH/$name.d"
     mkdir -p "$dir"
+    abs="$(cd "$(dirname "$bundle")" && pwd)/$name"
     case "$bundle" in
         *.AppImage)
             # --appimage-extract needs no FUSE; it unpacks into ./squashfs-root
-            (cd "$dir" && "$(cd "$(dirname "$bundle")" && pwd)/$name" --appimage-extract >/dev/null)
+            if ! out="$(cd "$dir" && "$abs" --appimage-extract 2>&1 >/dev/null)"; then
+                fail "unpack $name: $out"
+                continue
+            fi
             root="$dir/squashfs-root"
             ;;
         *.deb)
-            dpkg-deb -x "$bundle" "$dir"
+            if ! out="$(dpkg-deb -x "$abs" "$dir" 2>&1)"; then
+                fail "unpack $name: $out"
+                continue
+            fi
             root="$dir"
             deps="$(dpkg-deb -f "$bundle" Depends)"
             for want in libwebkit2gtk-4.1 libayatana-appindicator3; do
@@ -41,7 +48,12 @@ for bundle in "$@"; do
             done
             ;;
         *.rpm)
-            (cd "$dir" && rpm2cpio "$(cd "$(dirname "$bundle")" && pwd)/$name" | cpio -idm --quiet)
+            # libarchive reads an rpm whatever its payload's compression; rpm2cpio else
+            if command -v bsdtar >/dev/null 2>&1; then
+                out="$(bsdtar -xf "$abs" -C "$dir" 2>&1)" || { fail "unpack $name: $out"; continue; }
+            else
+                out="$(cd "$dir" && rpm2cpio "$abs" | cpio -idm --quiet 2>&1)" || { fail "unpack $name: $out"; continue; }
+            fi
             root="$dir"
             ;;
         *)

@@ -106,7 +106,7 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf \
-            zip rpm2cpio cpio
+            zip libarchive-tools
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
