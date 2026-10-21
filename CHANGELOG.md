@@ -101,6 +101,13 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **`[server] role = "home"` (or `MAKTABA_ROLE=home`) runs no role as a node.** The supervisor
+  only left the node's variables out, while streaming and the pipeline read the node config
+  themselves: beside a joined `node.json` (on Windows another install's, through the roaming
+  profile's fallback) streaming ran as that node. Every role is now told it is the home
+  (`MAKTABA_CLUSTER_ROLE`, `MAKTABA_TV_HOST_ROLE`) and pointed at a node config that is never
+  written, and the forced home runs its own bundled Postgres and TV slots whatever `node.json`
+  holds.
 - **`maktaba-server setup` (the CLI wizard) seeds the admin again.** It called `adduser` with
   `--username`/`--password` flags the api does not have; it now passes the username and a
   password file.

@@ -36,6 +36,11 @@ stream_addr = ":8081"
 # `serve --no-mdns` does for one run. An install moved into the Windows app
 # (Epic 38 story 38.13) keeps its --no-mdns here.
 # mdns = "on"
+# What this machine is (Epic 35 story 35.8): "auto" (default: a joined node
+# config makes it a full node of its home), "home" (never a node: no role reads
+# a node config, whatever one this machine holds) or "node". MAKTABA_ROLE=home
+# does the same.
+# role = "auto"
 
 [database]
 # SQLite (default, great for libraries under ~5 TB):

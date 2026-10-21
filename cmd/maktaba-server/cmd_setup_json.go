@@ -222,7 +222,7 @@ func setupStatus() (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	node := cfg.Server.Role != "home" && config.LocalNodeConfig().Joined()
+	node := supervisor.NodeJoined(cfg)
 	return map[string]any{
 		"configured":     found && (node || databaseExists(cfg)) && !adopt.UndoneHere(cfg.StateDir()),
 		"web_url":        "http://" + supervisor.LocalAddr(cfg.Server.WebListen, "8088"),
