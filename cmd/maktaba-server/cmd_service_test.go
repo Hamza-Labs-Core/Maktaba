@@ -83,7 +83,7 @@ func TestServiceInstallNeedsTheRuntime(t *testing.T) {
 		t.Errorf("ran %s", got)
 	}
 	b, err := os.ReadFile(d.unit.Path())
-	if err != nil || !strings.Contains(string(b), "ExecStart="+d.unit.Launcher+" --log-file") {
+	if err != nil || string(b) != d.unit.Render() {
 		t.Errorf("unit: %v\n%s", err, b)
 	}
 }
