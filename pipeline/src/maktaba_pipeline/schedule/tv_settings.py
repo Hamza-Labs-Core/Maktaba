@@ -137,6 +137,9 @@ class MaktabaTvConfig:
     #: programmes shorter than this are not listed: they count as filler (dizqueTV
     #: guideMinimumDurationSeconds)
     guide_min_program_s: int = 60
+    #: how long Plex (or any guide reader) may keep a guide image (a channel logo, a
+    #: programme's poster) before asking for it again
+    guide_image_max_age_s: int = 86400
 
 
 @dataclass(frozen=True)
@@ -405,6 +408,13 @@ class PlexLiveConfig:
     #: a guide reload caused only by the schedule growing waits until this long after the
     #: last one (a channel change or "Refresh Plex now" reloads at once)
     guide_refresh_min_minutes: int = 60
+    #: how often the reconciler checks that Plex still holds Maktaba's channel map (another
+    #: program, dizqueTV's own refresh, may replace it); 0: only when the channels change
+    drift_check_minutes: int = 15
+    #: the "turn off dizqueTV's channel mapping" warning after this many restores in a row
+    drift_warn_repeats: int = 3
+    #: a restore more than this long after the previous one starts the count again
+    drift_forget_hours: int = 24
     #: the tuner address Plex should use (http://host:port of the streaming service);
     #: empty: MAKTABA_PUBLIC_BASE_URL, else what /api/tv/info reported
     tuner_url: str = ""
@@ -590,6 +600,14 @@ register(
             "Programmes shorter than this are not listed in the guide: they count as filler.",
             minimum=0,
             maximum=3600,
+        ),
+        "guide_image_max_age_s": Help(
+            TVG,
+            "Guide images kept for (s)",
+            "How long Plex and other guide readers may keep a guide image (a channel's logo, "
+            "a programme's poster) before asking for it again. 0: they ask every time.",
+            minimum=0,
+            maximum=2592000,
         ),
     },
 )
@@ -1063,6 +1081,28 @@ register(
             "Guide reload at most every (min)",
             "A reload caused only by the schedule growing waits this long after the last "
             'one. A channel change or "Refresh Plex now" reloads at once.',
+            minimum=1,
+        ),
+        "drift_check_minutes": Help(
+            PL,
+            "Check Plex's channel list every (min)",
+            "Another program can replace the channels Plex shows for Maktaba's tuner: "
+            "dizqueTV's own Plex refresh writes its channel list onto every tuner. Maktaba "
+            "checks this often and, when Refresh the channels in Plex is on, puts its "
+            "channels back. 0: only checked when Maktaba's channels change.",
+            minimum=0,
+        ),
+        "drift_warn_repeats": Help(
+            PL,
+            "Warn after this many restores in a row",
+            "When Maktaba had to put its channels back this many times, the Plex panel "
+            "advises turning off channel mapping in dizqueTV's Plex settings.",
+            minimum=1,
+        ),
+        "drift_forget_hours": Help(
+            PL,
+            "Restores count as in a row within (hours)",
+            "A restore more than this long after the previous one starts the count again.",
             minimum=1,
         ),
         "tuner_url": Help(

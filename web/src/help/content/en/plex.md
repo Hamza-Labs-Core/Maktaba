@@ -141,3 +141,9 @@ No. Other tuners keep their channels, names and guides. Maktaba's guide reload d
 - **What it means:** Plex has not loaded the guide yet, or the address Plex uses for the tuner is wrong.
 - **Does Maktaba fix it itself?** It pushes the channel list and reloads the guide when channels change, if the automatic options are on.
 - **What you can do:** wait a few minutes after adding, then click **Refresh Plex now**. If it still fails, check the tuner and guide addresses under **Plex Live TV** in the rules: they must be reachable from the Plex server.
+
+### Plex's channel list was changed by another program {#channel-map-drift}
+
+- **What it means:** Plex showed other channels on Maktaba's tuner than Maktaba's own, usually dizqueTV's numbers. dizqueTV's Plex refresh writes its channel list onto every tuner in the DVR, Maktaba's too, so Plex shows no Maktaba channels until Maktaba puts them back.
+- **Does Maktaba fix it itself?** Yes, when **Refresh the channels in Plex** is on: it checks Plex every **Check Plex's channel list every (min)** (15 by default) and puts its channels back, then reloads the guide. The card then says **restored**. With that option off it only reports it (**not restored**).
+- **What you can do:** when it keeps happening, the card says **Another program replaced Maktaba's channels in Plex … times in a row**. In dizqueTV, open Settings → Plex and turn off its channel mapping ("auto refresh channels"); dizqueTV's own guide refresh can stay on. The count and the interval are under **Plex Live TV** in the [rules](/help/rules#plexlive).

@@ -4,7 +4,7 @@
 // (the menu-bar poller's last reading of the supervisor's /processes).
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../lib/i18n";
-import type { ServerStatus, SetupApi } from "../../lib/desktopSetup";
+import { NO_ANSWER, type ServerStatus, type SetupApi } from "../../lib/desktopSetup";
 
 export const STARTING_POLL_MS = 2000;
 
@@ -40,9 +40,15 @@ export function ServerStarting({ api }: { api: SetupApi }) {
   }, [api]);
 
   let line = t("setup.starting.starting");
+  // a line of server.log, in the server's own words: shown as it is, apart from the
+  // sentence of this language
+  let logLine: string | null = null;
   if (status?.kind === "problem")
     line = t("setup.starting.problem", { roles: status.roles.join(", ") });
-  else if (status?.kind === "stopped" || status?.kind === "paused")
+  else if (status?.kind === "not_answering") {
+    line = t("setup.starting.not_answering");
+    if (status.reason && status.reason !== NO_ANSWER) logLine = status.reason;
+  } else if (status?.kind === "stopped" || status?.kind === "paused")
     line = t("setup.starting.stopped");
   else if (status?.kind === "running") line = t("setup.starting.opening");
 
@@ -53,6 +59,11 @@ export function ServerStarting({ api }: { api: SetupApi }) {
           {t("setup.starting.title")}
         </h1>
         <p role="status">{line}</p>
+        {logLine && (
+          <p className="mkt-setup__note">
+            {t("setup.starting.log_says")} <code dir="ltr">{logLine}</code>
+          </p>
+        )}
         {error && (
           <p className="mkt-setup__warn" role="alert">
             {error}

@@ -343,7 +343,7 @@ def test_a_removal_cut_short_leaves_no_ready_stamp(
     env.payload_files("0.1.0", _deps(env), REQUIRES)
     assert env.run(capsys)[0] == vb.EXIT_OK
 
-    def cut_short(_path: object) -> None:
+    def cut_short(_path: object, **_kw: object) -> None:
         raise OSError("disk went away")
 
     monkeypatch.setattr("shutil.rmtree", cut_short)
@@ -598,6 +598,60 @@ def test_the_status_file_is_replaced_while_another_process_reads_it(tmp_path: Pa
         reader.close()
     assert json.loads(status.read_text(encoding="utf-8")) == {"state": "ready"}
     assert [p.name for p in tmp_path.iterdir()] == [status.name]  # no temp file left
+
+
+@pytest.mark.skipif(not WINDOWS, reason="POSIX removes a file that is open, or read-only")
+def test_a_venv_is_removed_while_a_file_in_it_is_open(tmp_path: Path) -> None:
+    """A virus scanner or the search indexer holds a file of the venv a moment: its
+    removal is refused (WinError 32) until it lets go, and tried again till then; a
+    read-only file (WinError 5 for ever) is made writable."""
+    venv = tmp_path / "venv"
+    (venv / "Lib" / "site-packages").mkdir(parents=True)
+    held = venv / "Lib" / "site-packages" / "scanned.pyd"
+    held.write_bytes(b"x")
+    readonly = venv / "Lib" / "readonly.txt"
+    readonly.write_bytes(b"x")
+    readonly.chmod(0o444)
+    scanner = open(held, "rb")  # noqa: SIM115 - closed by the timer
+    with pytest.raises(PermissionError):
+        os.unlink(held)  # what rmtree meets
+    timer = threading.Timer(0.5, scanner.close)
+    timer.start()
+    try:
+        vb._remove_tree(venv)
+    finally:
+        timer.join()
+        scanner.close()
+    assert not venv.exists()
+
+
+@pytest.mark.skipif(not WINDOWS, reason="Windows refuses to remove or write a running program")
+def test_the_venv_is_repaired_and_rebuilt_while_its_python_still_runs(
+    env: Env, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A program of the venv still exiting (the pipeline, stopped for the update) holds
+    ``Scripts\\python.exe``: ``venv --upgrade`` writing over it (Errno 13) and the
+    removal (WinError 5) are refused until it exits, and tried again till then."""
+    env.payload_files("0.1.0", _deps(env), REQUIRES)
+    assert env.run(capsys)[0] == vb.EXIT_OK
+    marker = env.mark()
+    stamp = env.stamp()
+    stamp["python"] = str(env.root / "Old Place" / "python.exe")
+    vb.write_json_atomic(env.venv / vb.STAMP, stamp)
+    for extra, action, kept in (((), "repair", True), (("--force",), "build", False)):
+        exiting = subprocess.Popen(
+            [str(vb.venv_python(env.venv)), "-c", "import time; time.sleep(1.5)"]
+        )
+        try:
+            code, events = env.run(capsys, *extra)
+        finally:
+            exiting.kill()
+            exiting.wait()
+        assert code == vb.EXIT_OK, events[-1]
+        assert str(events[0]["message"]).startswith(f"{action}:")
+        assert marker.exists() is kept  # a repair in place; a rebuild from scratch
+        assert env.stamp()["python"] == str(Path(sys.executable).resolve())
+    assert env.installed("maktaba_pipeline") == "0.1.0"
 
 
 # --- stopping -----------------------------------------------------------------------------

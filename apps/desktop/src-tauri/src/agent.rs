@@ -23,13 +23,17 @@
 // (kickstart) or the next login.
 //
 // Windows (agent_windows.rs, specs/epics/38-windows-app/contract-agent.md).
-// A sign-in task of the user, "\Maktaba Server", runs the same executable
-// with `--server-agent`, which starts <install>\server\bin\maktaba-launcher
-// in a console without a window and restarts it if it fails. A service is
-// not used: it would run in session 0, where the user's mapped NAS drives do
-// not exist. Pause sets the named event the launcher watches; Resume runs
-// the task again. The installer's hooks call `--server-start`,
-// `--server-stop` and `--server-remove`.
+// A sign-in task of the user, "\Maktaba Server <the user's SID>", runs the
+// same executable with `--server-agent`, which starts
+// <install>\server\bin\maktaba-launcher in a console without a window and
+// restarts it if it fails. The task's watchdog trigger runs it again every
+// 5 minutes (nothing happens while it runs), so an agent that died comes
+// back; one started while the server is paused, or stopped for an install,
+// in this sign-in exits at once. A service is not used: it would run in
+// session 0, where the user's mapped NAS drives do not exist. Pause sets the
+// named event the launcher watches; Resume runs the task again. The
+// installer's hooks call `--server-start`, `--server-stop` and
+// `--server-remove`.
 //
 // Linux (agent_linux.rs, specs/epics/39-linux-app/contract-runtime.md). A
 // systemd user unit runs a copy of the payload (<prefix>/share/maktaba/server)
@@ -39,6 +43,7 @@
 // boot.
 use std::ffi::OsStr;
 use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 #[cfg(not(windows))]
 use std::process::Command;
@@ -67,6 +72,9 @@ pub const STOP_FLAG: &str = "--server-stop";
 pub const REMOVE_FLAG: &str = "--server-remove";
 /// server.log is rotated to server.log.1 when it grows past this.
 const LOG_ROTATE_BYTES: u64 = 50 << 20;
+/// How much of server.log's end the tray reads for why the server does not
+/// answer: a launcher's last two starts (a crash loop's) fit in it many times.
+const LOG_TAIL_BYTES: u64 = 64 << 10;
 
 /// Where the server payload is, from the app executable's path:
 /// …/Maktaba.app/Contents/MacOS/Maktaba on a Mac, <install>\Maktaba.exe on
@@ -233,16 +241,59 @@ fn open_server_log() -> Result<(File, PathBuf), String> {
     Ok((log, path))
 }
 
+/// The end of server.log, for the tray's reason when the server does not
+/// answer (status::failure_in_log). None when there is no log.
+pub fn server_log_tail() -> Option<String> {
+    read_tail(&logs_dir()?.join("server.log"), LOG_TAIL_BYTES)
+}
+
+/// The last `max` bytes of a file, from its first whole line.
+fn read_tail(path: &Path, max: u64) -> Option<String> {
+    let mut f = File::open(path).ok()?;
+    let len = f.metadata().ok()?.len();
+    let from = len.saturating_sub(max);
+    f.seek(SeekFrom::Start(from)).ok()?;
+    let mut buf = Vec::new();
+    f.read_to_end(&mut buf).ok()?;
+    let text = String::from_utf8_lossy(&buf).into_owned();
+    // a line cut by the seek is not read as one
+    Some(match text.split_once('\n') {
+        Some((_, rest)) if from > 0 => rest.to_string(),
+        _ => text,
+    })
+}
+
 /// The pause flag: <state>/state/server-paused while the user paused the
 /// server. A paused server stays paused when the window restarts (an update
-/// relaunches it) until Resume, or until the agent starts again at the next
-/// sign-in / login, which clears it.
+/// relaunches it) until Resume, or until the next sign-in / login. On a Mac
+/// the agent clears it when launchd starts it; on Windows the flag names the
+/// sign-in it was set in and holds only in that one, so the task's watchdog
+/// (which starts the agent again and again) never undoes it.
 fn pause_flag_path() -> Option<PathBuf> {
     state_root().map(|r| r.join("state").join("server-paused"))
 }
 
+#[cfg(windows)]
+pub fn paused_flag() -> bool {
+    pause_flag_path().is_some_and(|p| win::flag_holds(&p))
+}
+
+#[cfg(not(windows))]
 pub fn paused_flag() -> bool {
     pause_flag_path().is_some_and(|p| p.is_file())
+}
+
+/// The pause flag's text: on Windows also the sign-in it belongs to.
+fn pause_text() -> String {
+    const WHAT: &str = "paused from the Maktaba app";
+    #[cfg(windows)]
+    {
+        win::flag_text(WHAT)
+    }
+    #[cfg(not(windows))]
+    {
+        format!("{WHAT}\n")
+    }
 }
 
 pub fn set_paused_flag(on: bool) {
@@ -251,7 +302,7 @@ pub fn set_paused_flag(on: bool) {
         if let Some(dir) = p.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        let _ = std::fs::write(&p, b"paused from the Maktaba app\n");
+        let _ = std::fs::write(&p, pause_text());
     } else {
         let _ = std::fs::remove_file(&p);
     }
@@ -358,11 +409,13 @@ pub use sm::{
 };
 
 // Windows: the sign-in task. Turning it on again needs no settings screen:
-// open_login_items_settings enables and runs it.
+// open_login_items_settings enables and runs it. Windows only: stopping the
+// server for an install (its files are in use while it runs), moving a task
+// of the old shared name to this user's, and whether setup ran on this PC.
 #[cfg(windows)]
 pub use win::{
-    agent_alive, control, login_item, open_login_items_settings, register, stop_and_wait,
-    unregister,
+    agent_alive, control, login_item, open_login_items_settings, register, registered_here,
+    replace_old_task, stop_for_install, unregister,
 };
 
 // Linux: the systemd user unit, through `maktaba-server service`.
@@ -583,6 +636,20 @@ mod tests {
             std::fs::read(tmp.path().join("server.log.1")).unwrap(),
             b"0123456789"
         );
+    }
+
+    #[test]
+    fn the_log_tail_starts_at_a_whole_line() {
+        let tmp = tempfile::tempdir().unwrap();
+        let log = tmp.path().join("server.log");
+        assert_eq!(read_tail(&log, 10), None);
+        std::fs::write(&log, "first line\nsecond\nthird\n").unwrap();
+        assert_eq!(
+            read_tail(&log, 100).as_deref(),
+            Some("first line\nsecond\nthird\n")
+        );
+        // 12 bytes reach into "second": that cut line is dropped
+        assert_eq!(read_tail(&log, 12).as_deref(), Some("third\n"));
     }
 
     #[test]
