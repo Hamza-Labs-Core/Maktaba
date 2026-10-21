@@ -37,8 +37,48 @@ The **Linux app** ([Epic 39](../../specs/epics/39-linux-app/README.md)) is the o
 that runs everything for a person: the AppImage / `.deb` / `.rpm` from
 [`desktop-release.yml`](../../.github/workflows/desktop-release.yml), or `install.sh --app` on a
 machine without a desktop. It runs as the user's systemd **user** service from a copy of the payload
-in `~/.local/share/maktaba/runtime`, with its own Postgres, ffmpeg and Python, and updates through
-the app (or, without a desktop, through the signed releases).
+in `~/.local/share/maktaba/runtime`, with its own Postgres, ffmpeg and Python. It starts at boot
+when linger is on: setup turns it on, and polkit may ask for an administrator's password for that
+(over SSH, in the terminal); without it the service runs while the user is logged in. Nothing else
+needs root.
+
+- **Updates.** With a desktop, the app's updater replaces the app and the app moves the server to
+  the new payload at its next start. It needs the builds signed with the updater key, which is
+  still to be set up ([auto-update](../../docs/auto-update.md)); until then a new version is a new
+  download. Without a desktop, the machine updates itself from the signed releases: Update now in
+  the web app, or `maktaba-server update` (`--check` only verifies, `--rollback` goes back to the
+  version that ran before); each verifies the release, installs its payload beside the running
+  one and switches to it. Installing updates on its own schedule (`rules.updates`) comes with
+  Epic 35's update orchestrator.
+- **A machine without a desktop, verified.** `install.sh --app` never runs a payload it has not
+  verified: it checks the Sigstore signature over the release's `checksums.txt` (with the
+  machine's cosign, or cosign's own release build, which it fetches and checks against a pinned
+  SHA-256), then the payload's SHA-256; `MAKTABA_NO_VERIFY` and root are refused. Take the script
+  from the release, where `checksums.txt` lists it, and check it first if you want the same
+  guarantee for the script itself:
+
+  ```sh
+  v=v1.5.0   # the release
+  base=https://github.com/Hamza-Labs-Core/Maktaba/releases/download/$v
+  curl -fLO "$base/install.sh" -fLO "$base/checksums.txt" -fLO "$base/checksums.txt.sigstore.json"
+  cosign verify-blob --bundle checksums.txt.sigstore.json \
+    --certificate-identity "https://github.com/Hamza-Labs-Core/Maktaba/.github/workflows/release.yml@refs/tags/$v" \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt
+  sha256sum --check --ignore-missing checksums.txt
+  MAKTABA_VERSION=$v bash install.sh --app
+  ```
+
+- **Uninstall.** `~/.local/share/maktaba/runtime/current/bin/maktaba-server service uninstall`
+  stops, disables and removes the service. Removing the `.deb` / `.rpm` (`sudo apt remove
+  maktaba`, `sudo dnf remove maktaba`) stops and disables it for every user whose systemd user
+  manager runs (logged in, or lingering); another user's starts again at their next login until
+  they run `service uninstall` or `systemctl --user disable --now maktaba-server`. An AppImage has
+  no removal step: deleting it leaves the server running until `service uninstall`. The data stays
+  in `~/.local/share/maktaba`, `~/.config/maktaba`, `~/.local/state/maktaba` and
+  `~/.cache/maktaba` until they are deleted.
+- **Systems.** x86_64 or aarch64 with glibc 2.35 or newer and a systemd user manager. The desktop
+  packages' tray library (`libayatana-appindicator`) comes from EPEL on RHEL, Alma and Rocky 10;
+  the payload for a machine without a desktop needs nothing extra.
 
 The `maktaba-server` `.deb` / `.rpm` and archives here install the server binaries alone, as a
 **system** service (`User=maktaba`, `/var/lib/maktaba`), for operators who bring their own
@@ -120,8 +160,10 @@ sudo dnf install ./maktaba-server-<ver>-1.x86_64.rpm
 brew install hamza-labs-core/tap/maktaba
 
 # Linux, the whole server for a machine without a desktop (Epic 39): the app's
-# setup in the terminal, a systemd user service, nothing as root
-curl -fsSL https://raw.githubusercontent.com/Hamza-Labs-Core/Maktaba/main/deploy/packaging/install.sh | bash -s -- --app
+# setup in the terminal, a systemd user service; run as that user, not root, with
+# the release's own install.sh (verified: "Linux: the app, or these packages")
+curl -fsSLO https://github.com/Hamza-Labs-Core/Maktaba/releases/latest/download/install.sh
+bash install.sh --app
 
 # Any Linux/macOS (script)
 curl -fsSL https://raw.githubusercontent.com/Hamza-Labs-Core/Maktaba/main/deploy/packaging/install.sh | bash

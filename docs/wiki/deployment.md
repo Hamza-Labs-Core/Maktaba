@@ -264,11 +264,16 @@ service on crash and on user login.
 **The Linux app** ([Epic 39](../../specs/epics/39-linux-app/README.md)) is the one installation
 for a person's machine: the AppImage / `.deb` / `.rpm`, or `install.sh --app` without a desktop.
 Its server runs as the user's systemd **user** unit `~/.config/systemd/user/maktaba-server.service`
-(written by `maktaba-server service install`, started at boot by linger), from a copy of the
+(written by `maktaba-server service install`; it starts at boot only with linger, which setup turns
+on and polkit may ask an administrator's password for, otherwise at login), from a copy of the
 payload in `~/.local/share/maktaba/runtime/current` (`maktaba-server runtime`), with state in
 `~/.local/share/maktaba`, config and keys in `~/.config/maktaba`, logs in
 `~/.local/state/maktaba/logs` and caches in `~/.cache/maktaba`
-([contract](../../specs/epics/39-linux-app/contract-runtime.md)).
+([contract](../../specs/epics/39-linux-app/contract-runtime.md)). Updates, the verified install
+without a desktop, uninstalling and the supported systems are in
+[deploy/packaging](../../deploy/packaging/README.md#linux-the-app-or-these-packages).
+`maktaba-server service uninstall` removes the unit; removing the app's package stops it only for
+users whose user manager runs, and the data stays until it is deleted.
 
 The system units below are for an operator's own install of the server binaries:
 

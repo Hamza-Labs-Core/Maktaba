@@ -115,18 +115,34 @@ troubleshooting, and pre-commit setup.
 
 **Linux, one installation that runs everything** ([Epic 39](specs/epics/39-linux-app/README.md)).
 The server, its database (Postgres 16), ffmpeg, Python and the transcription pipeline in one
-install, run as your systemd user service and started at boot. x86_64 or aarch64, glibc 2.35 or
-newer (Ubuntu 22.04, Debian 12, Fedora 36, RHEL 10 or later), systemd.
+install, run as your systemd user service. It starts at boot when linger is on (setup turns it on,
+which may ask for an administrator's password once), otherwise when you log in. x86_64 or aarch64,
+glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 or later; RHEL, Alma and Rocky 10 with
+EPEL for the desktop's tray library), and a systemd user manager.
 
 - **With a desktop:** download `Maktaba_<ver>_amd64.AppImage` (or the `.deb` / `.rpm`; `aarch64`
   builds too) from the [latest release](https://github.com/Hamza-Labs-Core/Maktaba/releases/latest),
-  open it and follow the setup. The window is the web app; the tray shows the server's status. The
-  app updates itself.
-- **Without a desktop** (a NAS, a mini PC, a VM): the same setup questions in the terminal:
+  open it and follow the setup. The window is the web app; the tray shows the server's status.
+  The app updates itself once its builds are signed with the updater key, which is still to be
+  set up ([auto-update](docs/auto-update.md)); until then a new version is a new download, and the
+  app moves the server to it at its next start.
+- **Without a desktop** (a NAS, a mini PC, a VM): run the release's installer as the user the
+  server is for (not as root). It downloads the server, checks its Sigstore signature before
+  anything runs (it fetches a pinned cosign when the machine has none), and asks the same setup
+  questions in the terminal:
 
   ```sh
-  curl -fsSL https://raw.githubusercontent.com/Hamza-Labs-Core/Maktaba/main/deploy/packaging/install.sh | bash -s -- --app
+  curl -fsSLO https://github.com/Hamza-Labs-Core/Maktaba/releases/latest/download/install.sh
+  bash install.sh --app
   ```
+
+  The script is in the release's signed `checksums.txt` too, so it can be checked the same way
+  first ([how](deploy/packaging/README.md#linux-the-app-or-these-packages)). This machine
+  updates itself from the signed releases: Update now in the web app, or `maktaba-server update`
+  (each installs the new version beside the running one and switches to it).
+- **Uninstall:** `~/.local/share/maktaba/runtime/current/bin/maktaba-server service uninstall`
+  stops and removes the service; removing the `.deb` / `.rpm` stops it too. Your library's data
+  stays in `~/.local/share/maktaba` and `~/.config/maktaba` until you delete them.
 
 On a Mac, Maktaba.app is the same one installation ([Epic 36](specs/epics/36-mac-app/README.md)).
 The packages below install the server alone, for operators who run it their own way.
