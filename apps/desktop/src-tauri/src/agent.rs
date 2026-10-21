@@ -12,7 +12,10 @@
 // `~` in StandardOutPath). That mode opens ~/Library/Logs/Maktaba/
 // server.log as stdout/stderr and execs
 // Contents/Resources/server/bin/maktaba-launcher serve, so launchd
-// supervises the launcher itself and signals reach it directly.
+// supervises the launcher itself and signals reach it directly. The
+// launcher sees it sits in Maktaba.app/Contents/Resources/server/bin and
+// runs in app-bundle mode (track D: state under ~/Library/Application
+// Support/Maktaba, no self-update), so no root or env is passed here.
 //
 // Pause / resume talk to launchd: SIGTERM stops the launcher, which shuts
 // the supervisor down cleanly and exits 0; the plist's KeepAlive is
@@ -115,8 +118,6 @@ pub fn run_server_agent() -> String {
     };
     let err = Command::new(paths.launcher())
         .arg("serve")
-        .env("MAKTABA_INSTALL_ROOT", &paths.server_dir)
-        .env("MAKTABA_APP_BUNDLE", "1")
         .stdout(log)
         .stderr(log2)
         .exec();
