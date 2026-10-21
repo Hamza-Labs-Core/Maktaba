@@ -155,7 +155,7 @@ func TestWriteXMLTV_EpisodeNums(t *testing.T) {
 		Snapshot:  Snapshot{Title: "Show", Season: season(1), Episode: season(3)},
 	}}
 	var sb strings.Builder
-	writeXMLTV(&sb, "https://maktaba.local", chans, rows)
+	writeXMLTV(&sb, "https://maktaba.local", "", chans, rows)
 	out := sb.String()
 	if !strings.Contains(out, `<channel id="kids">`) {
 		t.Error("missing channel element with slug id")
@@ -168,6 +168,50 @@ func TestWriteXMLTV_EpisodeNums(t *testing.T) {
 	}
 }
 
+// The programme fields match the streaming guide's (dizqueTV's): an icon on the
+// streaming service's image route (filler: the logo), a desc (series, else the
+// channel's name), previously-shown except live, genre + channel category, and
+// never the snapshot's own poster URL (it could carry a token).
+func TestWriteXMLTV_ProgrammeImageDescPreviouslyShown(t *testing.T) {
+	logo := "/srv/art/kids.png"
+	chans := []ChannelMeta{{ID: "c1", Slug: "kids", Name: "Kids", Category: "Cartoons", LogoPath: &logo}}
+	at := tm("2026-06-14T20:00:00Z")
+	rows := []ProgramRow{
+		{ChannelID: "c1", Kind: "program", StartAt: at, EndAt: at.Add(time.Hour), VideoID: "v1",
+			Snapshot: Snapshot{Title: "Ep", StripSeries: "The Show", Genre: "Animation",
+				Poster: "http://plex:32400/thumb?X-Plex-Token=SECRET"}},
+		{ChannelID: "c1", Kind: "filler", StartAt: at.Add(time.Hour), EndAt: at.Add(2 * time.Hour), VideoID: "v2"},
+		{ChannelID: "c1", Kind: "live", StartAt: at.Add(2 * time.Hour), EndAt: at.Add(3 * time.Hour),
+			Snapshot: Snapshot{Title: "News"}},
+	}
+	var sb strings.Builder
+	writeXMLTV(&sb, "https://api.lan", "http://tv.lan:8081", chans, rows)
+	out := sb.String()
+	for _, want := range []string{
+		`<icon src="http://tv.lan:8081/tv/art/channel/c1/video/v1"/>`,
+		`<desc>The Show</desc>`, `<category>Animation</category>`, `<category>Cartoons</category>`,
+		`<icon src="https://api.lan/api/channels/c1/logo"/>`, `<desc>Kids</desc>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %s:\n%s", want, out)
+		}
+	}
+	if n := strings.Count(out, "<previously-shown/>"); n != 2 {
+		t.Errorf("previously-shown ×%d:\n%s", n, out)
+	}
+	for _, bad := range []string{"SECRET", "Token", "32400", "/srv/art"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("guide leaks %q:\n%s", bad, out)
+		}
+	}
+	// without the streaming base every programme shows the logo
+	sb.Reset()
+	writeXMLTV(&sb, "https://api.lan", "", chans, rows[:1])
+	if !strings.Contains(sb.String(), `<icon src="https://api.lan/api/channels/c1/logo"/>`) || strings.Contains(sb.String(), "/tv/art/") {
+		t.Errorf("no stream base:\n%s", sb.String())
+	}
+}
+
 func TestGuideNeverShowsAServerLogoPath(t *testing.T) {
 	file, remote := "/srv/art/kids.png", "https://cdn.example/news.png"
 	chans := []ChannelMeta{
@@ -175,7 +219,7 @@ func TestGuideNeverShowsAServerLogoPath(t *testing.T) {
 		{ID: "uuid-2", Slug: "news", Name: "News", LogoPath: &remote},
 	}
 	var sb strings.Builder
-	writeXMLTV(&sb, "https://maktaba.local", chans, nil)
+	writeXMLTV(&sb, "https://maktaba.local", "", chans, nil)
 	for name, out := range map[string]string{"xmltv": sb.String(), "m3u": buildM3U("https://maktaba.local", chans)} {
 		if strings.Contains(out, "/srv/art") {
 			t.Errorf("%s leaks the logo path:\n%s", name, out)

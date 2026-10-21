@@ -1,0 +1,111 @@
+# Reusable Windows app gate (Epic 38, story 38.11): on windows-latest, build the server
+# payload (Go binaries with the web UI, pinned Postgres / ffmpeg / Python checked against
+# tools/release/win-app/pins.env, the Visual C++ runtime, the pipeline wheel + constraints),
+# bundle it with Maktaba.exe into the NSIS installer with tauri, and smoke-test both
+# (tools/release/win-app/check.sh): every program starts, every PE file is x86_64 and loads
+# nothing from outside the payload but Windows, NVENC, Postgres initdb/start/extensions on
+# the payload's runtime, an offline venv, nothing written into the payload, the launcher's
+# app-bundle mode, and a silent install + uninstall that leaves the state beside it alone.
+# Unsigned: Authenticode is the owner's decision (tools/release/win-app/README.md).
+
+name: Windows app
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  scripts:
+    # shellcheck is not on the Windows image; the scripts and payload_tool.py's tests are
+    # checked here
+    name: Windows app scripts (shellcheck, payload_tool)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: shellcheck
+        run: |
+          shellcheck --version | head -2
+          shellcheck -x tools/release/win-app/payload.sh tools/release/win-app/check.sh \
+            tools/release/win-app/build-app.sh tools/release/win-app/test-hooks.sh \
+            deploy/packaging/node/build-release.sh
+
+      - name: payload_tool.py tests
+        run: python3 tools/release/win-app/test_payload_tool.py -v
+
+  win-app:
+    name: Windows app (x86_64)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: |
+            api/go.sum
+            streaming/go.sum
+            cmd/maktaba-server/go.sum
+            cmd/maktaba-launcher/go.sum
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          # the constraints name PyTorch's index: uv export --emit-index-url needs uv 0.12+
+          # (build-release.sh checks), and one uv version writes them the same every run
+          version: "0.13.4"
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+
+      - uses: pnpm/action-setup@v6.0.8
+        with:
+          version: 9.15.4
+          run_install: false
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: pnpm
+          cache-dependency-path: |
+            web/pnpm-lock.yaml
+            apps/desktop/pnpm-lock.yaml
+
+      - name: Install web + desktop deps
+        run: |
+          pnpm -C web install --frozen-lockfile
+          pnpm -C apps/desktop install --frozen-lockfile
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+
+      # the pinned third-party downloads (~180 MB), keyed on their checksums
+      - uses: actions/cache@v4
+        with:
+          path: build/win-app/downloads
+          key: win-app-downloads-${{ hashFiles('tools/release/win-app/pins.env') }}
+
+      # make is MinGW's (C:\mingw64\bin) on the image; payload.sh builds the Go binaries with it
+      - name: Build the Windows app with the payload, and check it
+        env:
+          VERSION: v0.0.0-ci.${{ github.run_number }}
+        run: make win-app
+
+      - name: Sizes
+        if: always()
+        run: |
+          {
+            echo "### Windows app (x86_64, NSIS, unsigned)"
+            echo '```'
+            du -sh build/win-app/server/* 2>/dev/null || true
+            du -sh build/win-app/server apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe 2>/dev/null || true
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"

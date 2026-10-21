@@ -68,6 +68,40 @@ don't append a line here; docs-only PRs are exempt.
   the server runs as an administrator, as the Windows service does: Postgres refuses
   administrative rights). Groundwork for the Windows and Linux apps and for full nodes' copies of
   the home's database (#178).
+- **The Windows app runs its own Postgres** (Epic 38, story 38.10). `[postgres] enabled = "auto"`
+  now turns the bundled Postgres on inside any desktop app's payload, not only on a Mac (a
+  `[database] url` or a SQLite database in use still wins). The app's roles find the payload's
+  `ffmpeg.exe`. Loopback TCP only on Windows, the nightly dumps as on the Mac.
+
+### Changed
+
+- **Every role stops cleanly on Windows.** The supervisor starts each child in a process group of
+  its own and asks it to stop with CTRL_BREAK (the Go roles drain on it as they do on SIGTERM, the
+  pipeline on `SIGBREAK`); a child is killed with its process tree only once the shutdown grace
+  is over. Postgres keeps its `pg_ctl` fast shutdown. A `serve` with no console (started detached
+  by a program that has none) cannot send CTRL_BREAK, so it kills its children as before and says
+  so once in its log; its children then open no console window on the desktop. A child is held
+  still while it is asked, so the CTRL_BREAK never goes astray to `serve` itself.
+- **Windows keeps everything in `%LOCALAPPDATA%\Maktaba`** (Epic 38, story 38.1): `server.toml`,
+  `keys\`, `data\`, `logs\` and the node's `node.json`, with the models, caches and the bundled
+  Postgres beside `data\`. Nothing is in the roaming profile any more, so the keys and a node's
+  identity never follow the user to another PC. An install from before moves at its next
+  `maktaba-server` command, with or without a `server.toml`:
+  `server.toml`, the keys and `node.json` out of `%APPDATA%\Maktaba`, and `models\`, `chroma\`,
+  `cache\`, `postgres\` and `backups\` out of `data\` to beside it (when `data_dir` is the
+  default, `MAKTABA_CONFIG` or not). Each piece moves on its own and only while its new place is
+  empty: nothing is replaced and no two folders are merged, and a piece that finds something
+  there stays put and says so once. Across drives (a roaming profile on another drive or on a
+  server) a file is copied, flushed to disk and compared before the old one is removed, a folder
+  file by file, and a move cut short is finished by the next command, so no key is lost. One
+  command at a time moves (a lock in `%LOCALAPPDATA%\Maktaba`; a second one waits for it). A
+  `maktaba-server` inside the desktop app's payload, on Windows or a Mac, never moves an older
+  install: that comes into the app only through the app's own move, which copies it and keeps
+  the old one for going back. The node installer's `node.env` stays where
+  its scripts read it, and a machine that joined before reads its old `node.json` until it has
+  moved; the api and the pipeline, run on their own, read `keys\secrets.key` the same way. On
+  Windows the pipeline also writes its logs in UTF-8 (`PYTHONUTF8`), so an Arabic title can no
+  longer raise `UnicodeEncodeError`.
 
 ### Fixed
 

@@ -8,7 +8,11 @@
 #             and ~/.local/share/maktaba) moves there once, on the next command.
 #   Linux   : $XDG_CONFIG_HOME/maktaba/server.toml (default
 #             ~/.config/maktaba/server.toml)
-#   Windows : %APPDATA%\Maktaba\server.toml
+#   Windows : %LOCALAPPDATA%\Maktaba\server.toml (keys in keys\, data in data\,
+#             models, chroma and caches beside data\; logs in logs\). An install
+#             from before (in %APPDATA%\Maktaba) moves there once, on the next
+#             command, unless it runs inside the Windows app (whose setup moves
+#             an earlier install in instead).
 # Override with the MAKTABA_CONFIG environment variable.
 
 [server]
@@ -47,8 +51,12 @@ url = "sqlite:///var/lib/maktaba/maktaba.db"
 # postgres), loopback only plus a unix socket in that directory, scram-sha-256
 # passwords in keys/ (postgres-maktaba_admin.password, postgres-maktaba.password),
 # a nightly pg_dump into backups/ (the newest 7 kept).
-# "auto" (default): on a Mac whose app carries Postgres, unless [database] url
-# is set or a SQLite database is already in use. "on" / "off".
+# On Windows the app's Postgres is TCP-only (no unix socket), and postgres.exe
+# runs under a restricted token when the server runs as an administrator (it
+# refuses administrative rights, as pg_ctl does).
+# "auto" (default): on a Mac whose app carries Postgres, and inside the Windows
+# app's payload, unless [database] url is set or a SQLite database is already in
+# use. "on" / "off".
 # enabled = "auto"
 # The Postgres install (bin/postgres, bin/initdb, bin/psql, bin/pg_dump);
 # default $MAKTABA_POSTGRES_HOME, else the app's Resources/server/postgres.

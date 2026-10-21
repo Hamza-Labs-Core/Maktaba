@@ -70,10 +70,15 @@ func NewKey(b []byte) (*Key, error) {
 func (k *Key) String() string { return "secrets.Key(" + k.ID + ")" }
 
 // KeyPath resolves the key file: MAKTABA_SECRETS_KEY, else the directory of
-// MAKTABA_CONFIG (server.toml), else the platform config directory
-// (%APPDATA%\Maktaba on Windows, $XDG_CONFIG_HOME/maktaba or
-// ~/.config/maktaba elsewhere) — the directory server.toml lives in. The
-// pipeline (maktaba_pipeline.secrets) resolves it the same way.
+// MAKTABA_CONFIG (server.toml), else the platform's: on Windows
+// maktaba-server's keys directory (%LOCALAPPDATA%\Maktaba\keys, Epic 38), or
+// the %APPDATA%\Maktaba\secrets.key of an install from before while there is
+// none in the new place (maktaba-server moves it); elsewhere, macOS too,
+// $XDG_CONFIG_HOME/maktaba or ~/.config/maktaba (the developer stack's key,
+// which migrate-from-dev moves into Maktaba.app). The pipeline
+// (maktaba_pipeline.home_secrets) resolves it the same way. Under
+// maktaba-server MAKTABA_SECRETS_KEY is always set; this is for the api run on
+// its own.
 func KeyPath(getenv func(string) string) string {
 	if getenv == nil {
 		getenv = os.Getenv
@@ -84,21 +89,39 @@ func KeyPath(getenv func(string) string) string {
 	if p := strings.TrimSpace(getenv("MAKTABA_CONFIG")); p != "" {
 		return filepath.Join(filepath.Dir(p), KeyFileName)
 	}
-	return filepath.Join(configDir(getenv), KeyFileName)
+	return platformKeyPath(getenv, runtime.GOOS)
 }
 
-func configDir(getenv func(string) string) string {
+// platformKeyPath is KeyPath without the two overrides.
+func platformKeyPath(getenv func(string) string, goos string) string {
 	home, _ := os.UserHomeDir()
-	if runtime.GOOS == "windows" {
-		if a := getenv("APPDATA"); a != "" {
-			return filepath.Join(a, "Maktaba")
+	if goos == "windows" {
+		local := getenv("LOCALAPPDATA")
+		if local == "" {
+			local = filepath.Join(home, "AppData", "Local")
 		}
-		return filepath.Join(home, "AppData", "Roaming", "Maktaba")
+		cur := filepath.Join(local, "Maktaba", "keys", KeyFileName)
+		if isFile(cur) {
+			return cur
+		}
+		roaming := getenv("APPDATA")
+		if roaming == "" {
+			roaming = filepath.Join(home, "AppData", "Roaming")
+		}
+		if old := filepath.Join(roaming, "Maktaba", KeyFileName); isFile(old) {
+			return old
+		}
+		return cur
 	}
 	if x := getenv("XDG_CONFIG_HOME"); x != "" {
-		return filepath.Join(x, "maktaba")
+		return filepath.Join(x, "maktaba", KeyFileName)
 	}
-	return filepath.Join(home, ".config", "maktaba")
+	return filepath.Join(home, ".config", "maktaba", KeyFileName)
+}
+
+func isFile(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && !info.IsDir()
 }
 
 // LoadOrCreateKey reads the key file, or creates it (0600, random) when it

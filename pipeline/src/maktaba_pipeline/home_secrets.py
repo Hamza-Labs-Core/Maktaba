@@ -59,7 +59,12 @@ def extension_secret_name(extension: str, field: str) -> str:
 
 def key_path(env: Mapping[str, str] | None = None) -> Path:
     """``MAKTABA_SECRETS_KEY``, else beside ``MAKTABA_CONFIG`` (server.toml), else the
-    platform config directory (what ``secrets.KeyPath`` resolves in Go)."""
+    platform's (what ``secrets.KeyPath`` resolves in Go): on Windows maktaba-server's
+    keys directory, ``%LOCALAPPDATA%\\Maktaba\\keys`` (Epic 38), or the
+    ``%APPDATA%\\Maktaba\\secrets.key`` of an install from before while there is none in
+    the new place (maktaba-server moves it); elsewhere, macOS too, the XDG config
+    directory (the developer stack's key, which migrate-from-dev moves into
+    Maktaba.app)."""
     env = os.environ if env is None else env
     explicit = env.get("MAKTABA_SECRETS_KEY", "").strip()
     if explicit:
@@ -69,11 +74,15 @@ def key_path(env: Mapping[str, str] | None = None) -> Path:
         return Path(cfg).parent / KEY_FILE_NAME
     home = Path.home()
     if sys.platform == "win32":
+        local = env.get("LOCALAPPDATA", "")
+        cur = (Path(local) if local else home / "AppData" / "Local") / "Maktaba" / "keys"
+        if (cur / KEY_FILE_NAME).is_file():
+            return cur / KEY_FILE_NAME
         appdata = env.get("APPDATA", "")
-        base = Path(appdata) / "Maktaba" if appdata else home / "AppData" / "Roaming" / "Maktaba"
-    else:
-        xdg = env.get("XDG_CONFIG_HOME", "")
-        base = Path(xdg) / "maktaba" if xdg else home / ".config" / "maktaba"
+        old = (Path(appdata) if appdata else home / "AppData" / "Roaming") / "Maktaba"
+        return (old if (old / KEY_FILE_NAME).is_file() else cur) / KEY_FILE_NAME
+    xdg = env.get("XDG_CONFIG_HOME", "")
+    base = Path(xdg) / "maktaba" if xdg else home / ".config" / "maktaba"
     return base / KEY_FILE_NAME
 
 
