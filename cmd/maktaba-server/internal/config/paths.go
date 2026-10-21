@@ -126,6 +126,14 @@ func (c Config) StateDir() string {
 	return stateDir(runtime.GOOS, c.Server.DataDir, LocalDirs().Data, InAppPayload(exe))
 }
 
+// StateDirOutsideApp is StateDir as a release install outside the app resolves
+// it, wherever this runs. It is for the app's move (Epic 38 story 38.13), which
+// runs inside the app and reads an install from before with that install's own
+// rule: a default data_dir that holds the large state is that install's state root.
+func (c Config) StateDirOutsideApp() string {
+	return stateDir(runtime.GOOS, c.Server.DataDir, LocalDirs().Data, false)
+}
+
 func stateDir(goos, dataDir, defaultData string, inApp bool) string {
 	if (goos == "darwin" || goos == "windows") && dataDir != "" && filepath.Clean(dataDir) == filepath.Clean(defaultData) {
 		if goos == "windows" && !inApp && holdsState(dataDir) {

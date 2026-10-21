@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -94,6 +95,33 @@ func TestStateDirWindowsInstallFromBefore(t *testing.T) {
 	}
 	if got := stateDir("darwin", data, data, false); got != root {
 		t.Fatalf("a Mac moves its own (Epic 36): %s, want %s", got, root)
+	}
+}
+
+// The app's move (38.13) runs inside the app and reads an install from before with
+// that install's rule: StateDirOutsideApp is its data folder while the app's own
+// state root is %LOCALAPPDATA%\Maktaba. A data_dir the owner chose is the state root
+// either way. LOCALAPPDATA points at a temp dir.
+func TestStateDirOutsideApp(t *testing.T) {
+	chosen := Config{Server: ServerSection{DataDir: filepath.Join(t.TempDir(), "state")}}
+	writeAt(t, filepath.Join(chosen.Server.DataDir, "chroma", "chroma.sqlite3"), "I")
+	if got := chosen.StateDirOutsideApp(); got != chosen.Server.DataDir {
+		t.Errorf("a chosen data_dir outside the app: %s, want %s", got, chosen.Server.DataDir)
+	}
+	if got := stateDir(runtime.GOOS, chosen.Server.DataDir, LocalDirs().Data, true); got != chosen.Server.DataDir {
+		t.Errorf("a chosen data_dir inside the app: %s, want %s", got, chosen.Server.DataDir)
+	}
+	if runtime.GOOS != "windows" {
+		return // the default data_dir's rule is Windows' (TestStateDirWindowsInstallFromBefore)
+	}
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	def := Config{Server: ServerSection{DataDir: LocalDirs().Data}}
+	writeAt(t, filepath.Join(def.Server.DataDir, "chroma", "chroma.sqlite3"), "I")
+	if got := stateDir(runtime.GOOS, def.Server.DataDir, LocalDirs().Data, true); got != filepath.Dir(def.Server.DataDir) {
+		t.Errorf("inside the app: %s, want the root %s", got, filepath.Dir(def.Server.DataDir))
+	}
+	if got := def.StateDirOutsideApp(); got != def.Server.DataDir {
+		t.Errorf("the install from before, read from inside the app: %s, want its data folder %s", got, def.Server.DataDir)
 	}
 }
 
