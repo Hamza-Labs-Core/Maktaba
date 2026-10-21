@@ -32,6 +32,10 @@ don't append a line here; docs-only PRs are exempt.
   the server runs as an administrator, as the Windows service does: Postgres refuses
   administrative rights). Groundwork for the Windows and Linux apps and for full nodes' copies of
   the home's database (#178).
+- **The Windows app runs its own Postgres** (Epic 38, story 38.10). `[postgres] enabled = "auto"`
+  now turns the bundled Postgres on inside any desktop app's payload, not only on a Mac (a
+  `[database] url` or a SQLite database in use still wins). The app's roles find the payload's
+  `ffmpeg.exe`. Loopback TCP only on Windows, the nightly dumps as on the Mac.
 
 ### Changed
 
