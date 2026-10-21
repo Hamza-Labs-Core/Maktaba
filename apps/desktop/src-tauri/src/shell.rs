@@ -23,7 +23,7 @@ use tauri_plugin_updater::UpdaterExt;
 use crate::agent::{self, Action, BundlePaths, LoginItem};
 use crate::mode::{self, AppMode, Target};
 use crate::setup::{self, Progress, StepError};
-use crate::status::{self, ServerStatus, StatusView};
+use crate::status::{self, Probe, ServerStatus, StatusView};
 use crate::tray::{self, Entry};
 
 const TRAY_ID: &str = "main";
@@ -139,12 +139,15 @@ impl Shell {
         agent::set_paused_flag(true);
     }
 
-    fn compute_status(&self) -> StatusView {
+    /// The server's status with what it waits on, and the language model's
+    /// line when the supervisor runs a model server.
+    fn compute_status(&self) -> (StatusView, Option<String>) {
         let Some(AppMode::Server { supervisor_url, .. }) = self.mode() else {
-            return StatusView {
+            let view = StatusView {
                 status: ServerStatus::SetupNeeded,
                 detail: None,
             };
+            return (view, None);
         };
         let addr = status::addr_of(&supervisor_url)
             .unwrap_or_else(|| status::DEFAULT_SUPERVISOR_ADDR.into());
@@ -152,17 +155,17 @@ impl Shell {
         let just_started = self.started_at.lock().unwrap().elapsed() < START_GRACE
             || agent::agent_alive() == Some(true);
         let probe = status::probe(&addr);
-        let status = status::derive(
-            true,
-            self.paused.load(Ordering::SeqCst),
-            just_started,
-            &probe,
-        );
+        let model = match &probe {
+            Probe::Snapshot(s) => status::model_line(s.llm.as_ref()),
+            Probe::Unreachable => None,
+        };
+        let paused = self.paused.load(Ordering::SeqCst);
+        let status = status::derive(true, paused, just_started, &probe);
         let detail = match status {
             ServerStatus::Starting | ServerStatus::Problem(_) => status::waiting_on(&probe),
             _ => None,
         };
-        StatusView { status, detail }
+        (StatusView { status, detail }, model)
     }
 }
 
@@ -226,17 +229,18 @@ fn refresh(app: &AppHandle) {
     // a tray click) must reach the main thread in the order they computed.
     let _one_at_a_time = sh.refresh_lock.lock().unwrap();
     let server = sh.server_side();
-    let view = if server {
+    let (view, model) = if server {
         sh.compute_status()
     } else {
-        StatusView {
+        let view = StatusView {
             status: ServerStatus::SetupNeeded,
             detail: None,
-        }
+        };
+        (view, None)
     };
     let update_ready = sh.update_ready.load(Ordering::SeqCst);
     let (status, detail) = (&view.status, view.detail.as_deref());
-    let entries = tray::entries(server, status, detail, update_ready);
+    let entries = tray::entries_with_model(server, status, update_ready, model.as_deref(), detail);
     let badge = if server && cfg!(not(target_os = "macos")) {
         tray::badge_color(status, update_ready)
     } else {
@@ -403,7 +407,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     app.manage(Shell::new(app));
 
     let sh = shell(app);
-    let entries = tray::entries(sh.server_side(), &ServerStatus::Starting, None, false);
+    let entries = tray::entries(sh.server_side(), &ServerStatus::Starting, false);
     let mut tray = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&build_tray_menu(app, &entries)?)
         .tooltip("Maktaba")

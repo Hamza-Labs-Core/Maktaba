@@ -22,17 +22,29 @@ Design: [design.md](design.md) §11.4.
   posts `{apply:true, plan_digests:[digest]}`** to the job (`POST /api/queues/write_channels/apply`), the
   re-run stages the change, and the controller treats it as approved (no second approval), subject to
   `require_second_admin`.
-- **AC3** A plan that changed since the review (another digest) produces a new draft; the old one is
-  `superseded` (the queue already re-reviews in that case).
+- **AC3** (the owner's rule; replaces "a changed plan supersedes the draft") An update to the TV starts a
+  change, and every update after it joins that same change - same id, same number, `updated_at` bumped,
+  an `append` event naming the update - until the change is approved. Updates are a channel plan from
+  `write_channels`, a schedule regeneration (the `stale` flag), a hand edit in the channel editor
+  (channels, art, filler pools and clips), a TV settings save and a rollback's re-stage; all kinds share
+  the one open change (the newest draft no one approved). A newer plan replaces the older plan's part of
+  the change; hand and filler edits made in between are kept, laid over the newer plan field by field
+  (the rules: `pipeline/src/maktaba_pipeline/tvrelease/merge.py`, the API's `tvchange/merge.go`). A plan
+  whose digest the change already holds is not a new update. Once a change is approved (or beyond draft:
+  staged … swapping) the next update starts a new change, queued behind it. A change that fails
+  verification is not ended: it returns to `draft` with its report and the reasons (its approval
+  withdrawn, no stage asked), is the open change again, and a draft opened while it was in flight joins
+  it (that draft ends `superseded`, `end_reason = joined_change`). The owner fixes it, or approves it
+  again. `failed` stays only for the rows made before this rule (slot 0142 cleans them up).
 - **AC4** `write_channels._verify` checks the release snapshot; the read-back of `channels` runs after the
   swap commit and is reported on the change.
 - **AC5** The tool's safety rules hold for staged changes: channels edited by a person since the last write
   are left alone, conflicts are reported (both in the job summary and the change's diff).
 - **AC6** Channel editor saves (`/api/channels/*`), filler pool edits and art overrides with staging on write
-  to the open draft (created if none); the editor reads draft values; "back to plan" works on the draft.
+  to the open change (created if none; AC3); the editor reads draft values; "back to plan" works on the draft.
 - **AC7** The `stale` flag with staging on marks the draft channel `sched_changed` and never regenerates the
   live generation.
-- **AC8** Settings saves of `rules.tv` / `rules.tv_output` with staging on create/append a `settings` draft
+- **AC8** Settings saves of `rules.tv` / `rules.tv_output` with staging on create/append to the open change
   (the Settings page says "saved to draft change #43"); other sections apply directly as today.
 - **AC9** Top-ups write every open generation (33.3) and never create changes; `plan_channels` is
   unchanged; `plex_livetv` runs on the swap (33.7), not on `write_channels` completion, when staging is on.
@@ -42,7 +54,7 @@ Design: [design.md](design.md) §11.4.
 
 - **TC1** `test_write_channels_auto_stages_change` — no `channels` row changed; change staged.
 - **TC2** `test_write_channels_review_creates_draft_and_apply_stages`.
-- **TC3** `test_digest_changed_supersedes_draft`.
+- **TC3** `test_updates_join_one_change_until_it_is_approved`, `test_schedule_regeneration_joins_the_open_change`, `test_merge.py`; Go `TestSaveJoinsTheOpenChange`, `TestApprovedDraftTakesNoMoreUpdates`, `TestFailedVerificationReturnsToTheOpenChange`, `TestMergePendingRules`.
 - **TC4** `TestEditorSavesToDraft` (Go API).
 - **TC5** `TestSettingsSaveToDraft`.
 - **TC6** `test_stale_marks_draft_only`.

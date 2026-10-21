@@ -689,7 +689,9 @@ function Plex({ api, step, next, back }: StepProps) {
 
 function Install({ api, step, platform, next, back }: StepProps) {
   const { t } = useI18n();
-  const [phase, setPhase] = useState<"venv" | "models" | "finish" | "approval" | "failed">("venv");
+  const [phase, setPhase] = useState<"venv" | "models" | "llm" | "finish" | "approval" | "failed">(
+    "venv"
+  );
   const [progress, setProgress] = useState<StepProgress | null>(null);
   const [error, setError] = useState<StepError | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -723,6 +725,16 @@ function Install({ api, step, platform, next, back }: StepProps) {
           { action: "download" },
           (p) => mounted.current && setProgress(p)
         );
+        // The language model of the LLM stages (about 5 GB). Only too little disk
+        // stops setup: any other failure (no network, no bundled server) leaves it
+        // to the server, which downloads a missing model in the background.
+        setPhase("llm");
+        setProgress(null);
+        try {
+          await api.runStep("llm", {}, (p) => mounted.current && setProgress(p));
+        } catch (e) {
+          if (asError(e).code === "disk_full") throw e;
+        }
         if (!mounted.current) return;
         setPhase("finish");
         setProgress(null);
@@ -773,7 +785,9 @@ function Install({ api, step, platform, next, back }: StepProps) {
       ? t("setup.install.finishing")
       : phase === "models"
         ? t("setup.install.models")
-        : t("setup.install.venv");
+        : phase === "llm"
+          ? t("setup.install.llm")
+          : t("setup.install.venv");
   return (
     <Frame
       title={t("setup.install.title")}

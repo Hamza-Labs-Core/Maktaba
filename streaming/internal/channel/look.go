@@ -12,11 +12,12 @@ import (
 //	               "width_pct": number, "margin_pct": number},
 //	 "watermark_skip_filler": bool,
 //	 "loading_path": str|null,
-//	 "loudnorm": {"enabled": bool, "target_lufs": number}}
+//	 "loudnorm": {"enabled": bool, "filter": "speechnorm|loudnorm|dynaudnorm",
+//	              "target_lufs": number, "expansion": number}}
 //
 // Missing keys fall back to defaults: no watermark, the logo as the
-// slate card, loudness normalisation on at -16 LUFS, the watermark on
-// filler and bumpers too (a look written before rules
+// slate card, loudness levelled by speechnorm (rules tv.loudnorm_mode),
+// the watermark on filler and bumpers too (a look written before rules
 // tv.watermark_skip_filler; write_channels stages the new one).
 type Look struct {
 	Name        string
@@ -44,14 +45,22 @@ type Watermark struct {
 // Loudnorm is the audio loudness setting.
 type Loudnorm struct {
 	Enabled    bool
-	TargetLUFS float64
-	// Filter is "loudnorm" (default, EBU R128) or "dynaudnorm".
+	TargetLUFS float64 // loudnorm's target
+	// Filter is "speechnorm" (default, as dizqueTV: no look-ahead),
+	// "loudnorm" (EBU R128) or "dynaudnorm".
 	Filter string
+	// Expansion is the most speechnorm raises a quiet passage (times).
+	Expansion float64
 }
+
+// HasLookahead reports whether the filter delays the audio (loudnorm ≈ 3 s,
+// dynaudnorm's window): its tail then flushes at EOF faster than real time.
+func (l Loudnorm) HasLookahead() bool { return l.Filter == "loudnorm" || l.Filter == "dynaudnorm" }
 
 // Defaults for the look contract.
 const (
 	DefaultTargetLUFS  = -16.0
+	DefaultExpansion   = 6.25
 	DefaultWMWidthPct  = 10.0
 	DefaultWMMarginPct = 3.0
 	DefaultWMPosition  = "top-right"
@@ -59,7 +68,8 @@ const (
 
 // DefaultLook is the look of a channel with no look config.
 func DefaultLook() Look {
-	return Look{Loudnorm: Loudnorm{Enabled: true, TargetLUFS: DefaultTargetLUFS, Filter: "loudnorm"}}
+	return Look{Loudnorm: Loudnorm{Enabled: true, TargetLUFS: DefaultTargetLUFS,
+		Filter: "speechnorm", Expansion: DefaultExpansion}}
 }
 
 type lookJSON struct {
@@ -74,6 +84,7 @@ type lookJSON struct {
 		Enabled    *bool    `json:"enabled"`
 		TargetLUFS *float64 `json:"target_lufs"`
 		Filter     string   `json:"filter"`
+		Expansion  *float64 `json:"expansion"`
 	} `json:"loudnorm"`
 	Strip               json.RawMessage `json:"strip"`
 	WatermarkSkipFiller *bool           `json:"watermark_skip_filler"`
@@ -122,8 +133,12 @@ func ParseLook(raw []byte, logoPath string) Look {
 		if n.TargetLUFS != nil && *n.TargetLUFS < 0 && *n.TargetLUFS >= -70 {
 			l.Loudnorm.TargetLUFS = *n.TargetLUFS
 		}
-		if n.Filter == "dynaudnorm" {
-			l.Loudnorm.Filter = "dynaudnorm"
+		switch n.Filter {
+		case "speechnorm", "loudnorm", "dynaudnorm":
+			l.Loudnorm.Filter = n.Filter
+		}
+		if n.Expansion != nil && *n.Expansion >= 1 && *n.Expansion <= 50 {
+			l.Loudnorm.Expansion = *n.Expansion
 		}
 	}
 	return l

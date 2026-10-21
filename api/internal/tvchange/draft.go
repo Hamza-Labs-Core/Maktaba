@@ -10,8 +10,10 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 )
 
-// Producer kinds of a draft (tv_changes.source.kind): one open draft per kind (design
-// §11.2). The pipeline writes write_channels and schedule drafts; the API the others.
+// Producer kinds of an update (tv_changes.source.kind of the change it opened; the
+// append events name the kind of each update that joined). All kinds share the one
+// open change (story 33.12 AC3, merge.go). The pipeline writes write_channels and
+// schedule updates; the API the others.
 const (
 	SourceEditor        = "editor"
 	SourceSettings      = "settings"
@@ -79,9 +81,15 @@ func (p *Pending) SetChannel(id string, def map[string]any) { p.sub("channels")[
 // RemoveChannel records id's removal.
 func (p *Pending) RemoveChannel(id string) { p.sub("channels")[id] = nil }
 
-// DropChannel forgets id altogether (a channel added in this draft, then deleted).
+// DropChannel forgets id altogether (a channel added in this draft, then deleted). A
+// channel the change's plan adds stays named, as removed: forgotten, the plan layer
+// would bring it back when the next update joins (merge.go).
 func (p *Pending) DropChannel(id string) {
-	delete(p.sub("channels"), id)
+	if _, inPlan := mapOf(p.M[PlanChannels])[id]; inPlan {
+		p.sub("channels")[id] = nil
+	} else {
+		delete(p.sub("channels"), id)
+	}
 	delete(p.sub("art"), id)
 }
 
@@ -215,15 +223,16 @@ func (d *Drafts) Enabled(ctx context.Context) bool {
 	return true
 }
 
-// Open is the open draft of kind (nil when none).
-func (d *Drafts) Open(ctx context.Context, kind string) (*Change, error) {
-	return d.Store.OpenDraft(ctx, d.DB, kind)
+// Open is the open change (nil when none): every save joins it.
+func (d *Drafts) Open(ctx context.Context) (*Change, error) {
+	return d.Store.OpenDraft(ctx, d.DB)
 }
 
 func lockKey() string { return "tv_change_draft" }
 
-// Save applies fn to the open draft of kind (created with title when there is none),
-// in one transaction, and records the event and the audit row.
+// Save applies fn to the open change (a draft of kind created with title when there is
+// none), in one transaction, and records the event and the audit row. The change keeps
+// its number; each save is an append event naming what and its kind (story 33.12 AC3).
 func (d *Drafts) Save(ctx context.Context, p *principal.Principal, kind, title, what string,
 	fn func(pd *Pending) error) (DraftRef, error) {
 	tx, err := d.DB.BeginTx(ctx, nil)
@@ -236,7 +245,7 @@ func (d *Drafts) Save(ctx context.Context, p *principal.Principal, kind, title, 
 			return DraftRef{}, err
 		}
 	}
-	c, err := d.Store.OpenDraft(ctx, tx, kind)
+	c, err := d.Store.OpenDraft(ctx, tx)
 	if err != nil {
 		return DraftRef{}, err
 	}
@@ -265,28 +274,13 @@ func (d *Drafts) Save(ctx context.Context, p *principal.Principal, kind, title, 
 	}
 	diff["pending"] = pd.M
 	diff["summary"] = Summarize(pd)
-	fields := map[string]any{"diff": diff}
-	withdrawn := !created && len(c.ApprovedBy) > 0
-	if withdrawn {
-		// an approval given ahead covered what the draft held then, not this edit
-		fields["approved_by"] = []string{}
-		fields["approved_at"] = (*time.Time)(nil)
-	}
-	if err := d.Store.Set(ctx, tx, c.ID, fields); err != nil {
+	if err := d.Store.Set(ctx, tx, c.ID, map[string]any{"diff": diff}); err != nil {
 		return DraftRef{}, err
-	}
-	if withdrawn {
-		st := StateDraft
-		if err := d.Store.Event(ctx, tx, c.ID, Event{ActorUserID: by, ActorSource: actorSource(by, kind),
-			FromState: &st, ToState: &st, Action: "approval_withdrawn",
-			Detail: map[string]any{"approved_by": c.ApprovedBy, "what": what}}); err != nil {
-			return DraftRef{}, err
-		}
 	}
 	if !created {
 		st := StateDraft
 		if err := d.Store.Event(ctx, tx, c.ID, Event{ActorUserID: by, ActorSource: actorSource(by, kind),
-			FromState: &st, ToState: &st, Action: "append", Detail: map[string]any{"what": what}}); err != nil {
+			FromState: &st, ToState: &st, Action: "append", Detail: map[string]any{"what": what, "kind": kind}}); err != nil {
 			return DraftRef{}, err
 		}
 	}
@@ -420,7 +414,7 @@ func (d *Drafts) SaveSettingsDraft(ctx context.Context, p *principal.Principal, 
 
 // PendingSection implements rules.SettingsStager.
 func (d *Drafts) PendingSection(ctx context.Context, section string) (map[string]json.RawMessage, bool) {
-	c, err := d.Open(ctx, SourceSettings)
+	c, err := d.Open(ctx)
 	if err != nil || c == nil {
 		return nil, false
 	}

@@ -128,17 +128,32 @@ pub fn badge(rgba: &[u8], width: u32, height: u32, color: [u8; 3]) -> Vec<u8> {
 
 /// The tray menu. `server` is false in client mode (the window connects
 /// to another Maktaba and this Mac runs no server): then the menu has no
-/// server items and Quit is a plain Quit. `detail` is what a starting
-/// server waits on (status_line).
-pub fn entries(
+/// server items and Quit is a plain Quit.
+pub fn entries(server: bool, status: &ServerStatus, update_ready: bool) -> Vec<Entry> {
+    entries_with_model(server, status, update_ready, None, None)
+}
+
+/// The tray menu with what the server waits on in its status line (`detail`,
+/// status::waiting_on: the venv being built, the backup before an update)
+/// and the language model's line (status::model_line) under it: ready, or
+/// downloading with its progress.
+pub fn entries_with_model(
     server: bool,
     status: &ServerStatus,
-    detail: Option<&str>,
     update_ready: bool,
+    model: Option<&str>,
+    detail: Option<&str>,
 ) -> Vec<Entry> {
     let mut out = Vec::new();
     if server {
         out.push(note(status_line(status, detail)));
+        if let Some(line) = model {
+            out.push(Entry::Item {
+                id: "model-status",
+                label: line.to_string(),
+                enabled: false,
+            });
+        }
         if update_ready {
             out.push(item("update", "Update ready: restart to install"));
         }
@@ -190,7 +205,7 @@ mod tests {
 
     #[test]
     fn client_mode_has_no_server_items() {
-        let e = entries(false, &ServerStatus::Stopped, None, true);
+        let e = entries(false, &ServerStatus::Stopped, true);
         assert_eq!(
             ids(&e),
             [
@@ -206,7 +221,7 @@ mod tests {
 
     #[test]
     fn running_server_offers_pause_and_both_quits() {
-        let e = entries(true, &ServerStatus::Running, None, false);
+        let e = entries(true, &ServerStatus::Running, false);
         assert_eq!(
             ids(&e),
             [
@@ -234,7 +249,7 @@ mod tests {
     #[test]
     fn stopped_or_paused_server_offers_resume() {
         for s in [ServerStatus::Stopped, ServerStatus::Paused] {
-            let e = entries(true, &s, None, false);
+            let e = entries(true, &s, false);
             assert!(ids(&e).contains(&"server-resume"));
             assert!(!ids(&e).contains(&"server-pause"));
         }
@@ -246,13 +261,13 @@ mod tests {
             ServerStatus::Starting,
             ServerStatus::Problem(vec!["pipeline".into()]),
         ] {
-            assert!(ids(&entries(true, &s, None, false)).contains(&"server-pause"));
+            assert!(ids(&entries(true, &s, false)).contains(&"server-pause"));
         }
     }
 
     #[test]
     fn setup_needed_has_no_pause_or_stop() {
-        let e = entries(true, &ServerStatus::SetupNeeded, None, false);
+        let e = entries(true, &ServerStatus::SetupNeeded, false);
         let got = ids(&e);
         assert!(!got.contains(&"server-pause") && !got.contains(&"server-resume"));
         assert!(!got.contains(&"stop-and-quit"));
@@ -264,8 +279,26 @@ mod tests {
     }
 
     #[test]
+    fn the_language_model_line_sits_under_the_status() {
+        let line = "Language model: downloading qwen2.5:7b (42%)";
+        let e = entries_with_model(true, &ServerStatus::Running, true, Some(line), None);
+        assert_eq!(ids(&e)[..3], ["status", "model-status", "update"]);
+        assert_eq!(
+            e[1],
+            Entry::Item {
+                id: "model-status",
+                label: line.into(),
+                enabled: false
+            }
+        );
+        // client mode shows no server lines
+        let e = entries_with_model(false, &ServerStatus::Stopped, false, Some(line), None);
+        assert!(!ids(&e).contains(&"model-status"));
+    }
+
+    #[test]
     fn update_ready_adds_the_install_item_under_the_status() {
-        let e = entries(true, &ServerStatus::Running, None, true);
+        let e = entries(true, &ServerStatus::Running, true);
         assert_eq!(ids(&e)[..2], ["status", "update"]);
     }
 
@@ -299,7 +332,7 @@ mod tests {
             "Maktaba: api cannot start (the backup before the update failed)"
         );
         assert_eq!(status_line(&ServerStatus::Running, d), "Maktaba is running");
-        let e = entries(true, &ServerStatus::Starting, d, false);
+        let e = entries_with_model(true, &ServerStatus::Starting, false, None, d);
         assert_eq!(
             e[0],
             Entry::Item {

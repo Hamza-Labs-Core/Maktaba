@@ -279,7 +279,7 @@ func TestControllerResume(t *testing.T) {
 	if err := fresh.Tick(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if got := w.state(id); got != core.StateFailed {
+	if got := w.state(id); got != core.StateDraft {
 		t.Fatalf("a cut programme passed: %s", got)
 	}
 }

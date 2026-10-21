@@ -13,7 +13,7 @@ const (
 	ActionRollback    = "rollback"
 	ActionStartVerify = "start_verify"   // controller: staged -> verifying
 	ActionPass        = "pass"           // controller: verifying -> ready
-	ActionFail        = "fail"           // controller: verifying -> failed
+	ActionFail        = "fail"           // controller: staged / verifying -> draft (the open change again)
 	ActionRecheckFail = "recheck_fail"   // controller: ready -> verifying
 	ActionAutoApprove = "approved_ahead" // controller: ready -> approved (approved as a draft)
 	ActionAutoPromote = "auto_promote"   // controller: ready -> swapping (a rule switched on)
@@ -38,11 +38,11 @@ var table = map[string]map[string]string{
 		ActionSchedule:    StateStaged,
 		ActionApprove:     StateStaged,
 		ActionCancel:      StateCancelled,
-		ActionFail:        StateFailed,
+		ActionFail:        StateDraft,
 	},
 	StateVerifying: {
 		ActionPass:     StateReady,
-		ActionFail:     StateFailed,
+		ActionFail:     StateDraft,
 		ActionVerify:   StateVerifying,
 		ActionSchedule: StateVerifying,
 		ActionApprove:  StateVerifying,
@@ -74,6 +74,8 @@ var table = map[string]map[string]string{
 		ActionSupersede: StateSuperseded,
 		ActionRollback:  StateRolledBack,
 	},
+	// failed: the rows made before a failed verification returned the change to draft
+	// (story 33.12 AC3); nothing moves a change there any more
 	StateFailed:     {},
 	StateCancelled:  {},
 	StateSuperseded: {},

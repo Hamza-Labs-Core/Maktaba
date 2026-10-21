@@ -36,6 +36,7 @@ import { RemotePanel } from "./LiveTV/RemotePanel";
 import { SimulcastPanel } from "./LiveTV/Simulcast";
 import { StreamingHosts } from "./LiveTV/StreamingHosts";
 import { useTvCluster } from "./LiveTV/useTvCluster";
+import { TitleRow } from "../../help/HelpLink";
 import "../../styles/tvcluster.css";
 
 export function AdminLiveTV() {
@@ -95,7 +96,9 @@ function LiveTVInner() {
   if (loadErr) {
     return (
       <section className="mkt-page">
-        <h1>{t("livetv.title")}</h1>
+        <TitleRow>
+          <h1>{t("livetv.title")}</h1>
+        </TitleRow>
         <p role="alert">{t("livetv.loadError", { error: loadErr })}</p>
       </section>
     );
@@ -114,7 +117,9 @@ function LiveTVInner() {
   return (
     <section className="mkt-page mkt-livetv">
       <header className="mkt-page__header">
-        <h1>{t("livetv.title")}</h1>
+        <TitleRow>
+          <h1>{t("livetv.title")}</h1>
+        </TitleRow>
       </header>
       <p>{t("livetv.intro")}</p>
       <StagingBanner info={info} />

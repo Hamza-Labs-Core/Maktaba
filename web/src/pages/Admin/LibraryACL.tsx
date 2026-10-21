@@ -18,6 +18,7 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { AdminGate } from "../../components/AdminGate";
+import { TitleRow } from "../../help/HelpLink";
 
 interface UserRef {
   id: string;
@@ -133,7 +134,9 @@ function LibraryACLInner() {
   return (
     <section className="mkt-page mkt-acl">
       <header className="mkt-page__header">
-        <h1>{t("acl.title")}</h1>
+        <TitleRow>
+          <h1>{t("acl.title")}</h1>
+        </TitleRow>
         <Button onClick={save} loading={saving} disabled={changes.length === 0}>
           {changes.length > 0 ? t("acl.saveCount", { count: changes.length }) : t("common.save")}
         </Button>

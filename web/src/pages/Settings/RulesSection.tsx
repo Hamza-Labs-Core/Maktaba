@@ -22,6 +22,8 @@ import { Editor, tableProblems, type T } from "./RuleEditors";
 import { controlOf, same, subGroups, valueProblem, weekdayNames, WEEKDAYS } from "./ruleKinds";
 import { StripRulesTools } from "./StripRulesTools";
 import { RemoteUsage } from "../Admin/RemoteUsage";
+import { HelpLink } from "../../help/HelpLink";
+import { ruleHelp } from "../../help/registry";
 import "./rules.css";
 
 /**
@@ -168,6 +170,12 @@ function RuleRow({
               <strong className="mkt-rules__unsaved">{t("settings.rules.unsavedMark")}</strong>
             </>
           )}
+          {" · "}
+          <HelpLink
+            to={ruleHelp(sectionKey)}
+            className="mkt-rules__learn"
+            label={t("help.ruleHelp", { setting: f.label })}
+          />
         </p>
       </div>
       <div className="mkt-rules__editor">
