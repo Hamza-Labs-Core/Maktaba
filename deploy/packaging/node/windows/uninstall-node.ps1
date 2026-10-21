@@ -8,7 +8,8 @@
     deletes the worker's Python environment (%LOCALAPPDATA%\Maktaba\node). -Purge also
     deletes the logs and the node*.env settings.
 
-    The node config (%APPDATA%\Maktaba\node.json: this machine's identity and the home's
+    The node config (%LOCALAPPDATA%\Maktaba\node.json, or %APPDATA%\Maktaba\node.json on a
+    machine that joined before Epic 38: this machine's identity and the home's
     credentials) is kept. Remove the machine on the home (Admin -> Machines), then delete
     that file to forget the home here.
 
@@ -82,4 +83,4 @@ if ($Purge) {
 
 Write-Host ''
 Write-NodeStep 'Removed. The node config (node.json) is kept: it is this machine''s identity on the home.'
-Write-NodeStep "Remove the machine on the home (Admin -> Machines), then delete $(Join-Path $script:NodeConfDir 'node.json') to forget the home here."
+Write-NodeStep "Remove the machine on the home (Admin -> Machines), then delete $(Get-NodeConfigPath) to forget the home here."

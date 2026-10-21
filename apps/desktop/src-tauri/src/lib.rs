@@ -93,11 +93,23 @@ async fn discover_servers(timeout_ms: Option<u64>) -> Result<Vec<DiscoveredServe
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // The LaunchAgent runs this executable as `Maktaba --server-agent`:
-    // become the server launcher instead of opening a window.
-    if std::env::args().nth(1).as_deref() == Some(agent::AGENT_FLAG) {
-        eprintln!("maktaba --server-agent: {}", agent::run_server_agent());
-        std::process::exit(1);
+    // The LaunchAgent (macOS) or the sign-in task (Windows) runs this
+    // executable as `Maktaba --server-agent`: become the server's agent
+    // instead of opening a window. The Windows installer's hooks run it with
+    // --server-start / --server-stop / --server-remove.
+    match std::env::args().nth(1).as_deref() {
+        Some(agent::AGENT_FLAG) => match agent::run_server_agent() {
+            Ok(code) => std::process::exit(code),
+            Err(e) => {
+                eprintln!("maktaba --server-agent: {e}");
+                std::process::exit(1);
+            }
+        },
+        #[cfg(windows)]
+        Some(flag @ (agent::START_FLAG | agent::STOP_FLAG | agent::REMOVE_FLAG)) => {
+            std::process::exit(agent::installer_hook(flag))
+        }
+        _ => {}
     }
 
     let mut builder = tauri::Builder::default();

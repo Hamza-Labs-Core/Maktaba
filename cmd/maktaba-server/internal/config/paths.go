@@ -8,12 +8,14 @@ import (
 )
 
 // Dirs is where an install keeps its files when nothing overrides them (Epic 36
-// story 36.2):
+// story 36.2, Epic 38 story 38.1):
 //
 //	macOS   : ~/Library/Application Support/Maktaba (server.toml, keys/, data/,
 //	          models/, chroma/, postgres/, cache/, backups/), logs in ~/Library/Logs/Maktaba
 //	Linux   : $XDG_CONFIG_HOME/maktaba, $XDG_DATA_HOME/maktaba, $XDG_STATE_HOME/maktaba/logs
-//	Windows : %APPDATA%\Maktaba, %LOCALAPPDATA%\Maktaba\data, %LOCALAPPDATA%\Maktaba\logs
+//	Windows : %LOCALAPPDATA%\Maktaba (server.toml, keys\, data\, logs\, models\, chroma\,
+//	          postgres\, cache\, backups\): nothing in the roaming profile, so the keys and
+//	          the node's identity never follow the user to another PC
 type Dirs struct {
 	Config string // holds server.toml
 	Data   string // the default [server] data_dir
@@ -33,23 +35,42 @@ func DirsFor(getenv func(string) string, goos, userHome string) Dirs {
 			Keys:   filepath.Join(root, "keys"),
 		}
 	case "windows":
-		roaming := getenv("APPDATA")
-		if roaming == "" {
-			roaming = filepath.Join(userHome, "AppData", "Roaming")
-		}
-		local := getenv("LOCALAPPDATA")
-		if local == "" {
-			local = filepath.Join(userHome, "AppData", "Local")
-		}
-		cfg := filepath.Join(roaming, "Maktaba")
+		root := WindowsRoot(getenv, userHome)
 		return Dirs{
-			Config: cfg,
-			Data:   filepath.Join(local, "Maktaba", "data"),
-			Logs:   filepath.Join(local, "Maktaba", "logs"),
-			Keys:   cfg,
+			Config: root,
+			Data:   filepath.Join(root, "data"),
+			Logs:   filepath.Join(root, "logs"),
+			Keys:   filepath.Join(root, "keys"),
 		}
 	}
 	return xdgDirs(getenv, userHome)
+}
+
+// WindowsRoot is %LOCALAPPDATA%\Maktaba: the install's home on Windows (the app's
+// program and every per-user file, Epic 38).
+func WindowsRoot(getenv func(string) string, userHome string) string {
+	local := getenv("LOCALAPPDATA")
+	if local == "" {
+		local = filepath.Join(userHome, "AppData", "Local")
+	}
+	return filepath.Join(local, "Maktaba")
+}
+
+// legacyWindowsDirs is the Windows layout before Epic 38: server.toml and the keys
+// in the roaming profile (%APPDATA%\Maktaba), the data and logs already local.
+func legacyWindowsDirs(getenv func(string) string, userHome string) Dirs {
+	roaming := getenv("APPDATA")
+	if roaming == "" {
+		roaming = filepath.Join(userHome, "AppData", "Roaming")
+	}
+	cfg := filepath.Join(roaming, "Maktaba")
+	root := WindowsRoot(getenv, userHome)
+	return Dirs{
+		Config: cfg,
+		Data:   filepath.Join(root, "data"),
+		Logs:   filepath.Join(root, "logs"),
+		Keys:   cfg,
+	}
 }
 
 // xdgDirs is the XDG layout (Linux, and an install a Mac made before Epic 36).
@@ -90,14 +111,14 @@ func LogsDir() string {
 }
 
 // StateDir is the root of the install's large state (models/, chroma/, cache/,
-// postgres/, backups/). On macOS the default data_dir sits inside that root
-// (~/Library/Application Support/Maktaba/data), so the root is its parent;
-// everywhere else, and for any data_dir the owner chose, it is data_dir itself
-// (where these always lived on Linux and Windows).
+// postgres/, backups/). On macOS and Windows the default data_dir sits inside that
+// root (~/Library/Application Support/Maktaba/data, %LOCALAPPDATA%\Maktaba\data), so
+// the root is its parent; on Linux, and for any data_dir the owner chose, it is
+// data_dir itself (where these always lived on Linux).
 func (c Config) StateDir() string { return stateDir(runtime.GOOS, c.Server.DataDir, LocalDirs().Data) }
 
 func stateDir(goos, dataDir, defaultData string) string {
-	if goos == "darwin" && dataDir != "" && filepath.Clean(dataDir) == filepath.Clean(defaultData) {
+	if (goos == "darwin" || goos == "windows") && dataDir != "" && filepath.Clean(dataDir) == filepath.Clean(defaultData) {
 		return filepath.Dir(filepath.Clean(dataDir))
 	}
 	return dataDir

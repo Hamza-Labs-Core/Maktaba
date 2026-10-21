@@ -77,7 +77,7 @@ func ReleaseGuide(ctx context.Context, pool *pgxpool.Pool, release uuid.UUID, st
 		chans = append(chans, r.c)
 		ids = append(ids, r.c.ID)
 	}
-	prow, err := pool.Query(ctx, `SELECT channel_id, kind, start_at, end_at, title_snapshot FROM channel_programs
+	prow, err := pool.Query(ctx, `SELECT channel_id, kind, start_at, end_at, title_snapshot, video_id FROM channel_programs
 		WHERE sched_gen = $1 AND channel_id = ANY($2) AND start_at < $4 AND end_at > $3
 		ORDER BY channel_id ASC, start_at ASC`, gen, ids, start, end)
 	if err != nil {
@@ -87,8 +87,12 @@ func ReleaseGuide(ctx context.Context, pool *pgxpool.Pool, release uuid.UUID, st
 	var progs []GuideProgram
 	for prow.Next() {
 		var p GuideProgram
-		if err := prow.Scan(&p.ChannelID, &p.Kind, &p.StartAt, &p.EndAt, &p.Snapshot); err != nil {
+		var vid *uuid.UUID
+		if err := prow.Scan(&p.ChannelID, &p.Kind, &p.StartAt, &p.EndAt, &p.Snapshot, &vid); err != nil {
 			return nil, nil, err
+		}
+		if vid != nil {
+			p.VideoID = *vid
 		}
 		progs = append(progs, p)
 	}
@@ -96,14 +100,14 @@ func ReleaseGuide(ctx context.Context, pool *pgxpool.Pool, release uuid.UUID, st
 }
 
 // BuildM3UWith is BuildM3U with the stream and guide URLs given (the staging
-// preview's signed URLs).
-func BuildM3UWith(webBase, xmltv string, chans []GuideChannel, stream func(GuideChannel) string) string {
+// preview's signed URLs); the logos are base's logo route.
+func BuildM3UWith(base, xmltv string, chans []GuideChannel, stream func(GuideChannel) string) string {
 	var b strings.Builder
 	b.WriteString(`#EXTM3U url-tvg="` + xmltv + `" x-tvg-url="` + xmltv + `"` + "\n")
 	for _, c := range chans {
 		num := strconv.Itoa(c.Number)
 		b.WriteString(`#EXTINF:-1 tvg-id="` + num + `" tvg-chno="` + num + `" tvg-name="` + m3uAttr(c.Name) + `"`)
-		if icon := logoURL(webBase, c); icon != "" {
+		if icon := logoURL(base, c); icon != "" {
 			b.WriteString(` tvg-logo="` + m3uAttr(icon) + `"`)
 		}
 		if c.Category != "" {

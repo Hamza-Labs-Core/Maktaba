@@ -51,6 +51,33 @@ jobs:
           go test -count=1 . ./internal/service ./internal/selfmanaged
           ./internal/supervisor -run "ReleaseDir|ReleaseBinRoot|Launcher|StopFile|HealthyFor|Render|Plan|Deploy|Install|SelfManaged|Package|Convert|Homebrew"
 
+      # Epic 38 story 38.1: where an install keeps its files on each OS, the one-time
+      # move of an older layout (the Windows roaming profile, the Mac's XDG paths),
+      # and the node config's path, on the OS itself.
+      - name: maktaba-server (paths per OS)
+        working-directory: cmd/maktaba-server
+        run: go test -count=1 ./internal/config
+
+      # The bundled Postgres on Windows, against the pinned build pgbin fetches (kept
+      # between runs): postgres.exe under a restricted token (the runner is an
+      # administrator, which postgres refuses), initdb, the app role, a dump and
+      # pg_ctl's fast stop.
+      - name: Postgres download (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/pgbin
+          key: pgbin-windows-${{ hashFiles('cmd/maktaba-server/internal/pgbin/pgbin.go') }}
+
+      - name: maktaba-server (Postgres on Windows)
+        if: runner.os == 'Windows'
+        working-directory: cmd/maktaba-server
+        env:
+          MAKTABA_TEST_PG_DOWNLOAD: ${{ runner.temp }}/pgbin
+        run: >-
+          go test -count=1 -v ./internal/pgbundle
+          -run "TestPostgresToken|TestRealPostgresOnWindows"
+
   package:
     name: .deb layout + postinstall
     runs-on: ubuntu-22.04
