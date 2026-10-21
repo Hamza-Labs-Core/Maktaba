@@ -6,11 +6,12 @@ so one Windows install runs everything. This directory builds the payload and th
 | File | What it does |
 |---|---|
 | `payload.sh` | builds `build/win-app/server` (layout below), writes the tauri overlay `build/win-app/tauri.win-app.conf.json` |
-| `check.sh` | smoke test of the payload and, with `--installer`, a silent install and uninstall of the installer |
+| `check.sh` | smoke test of the payload and, with `--installer`, a silent install over a client-only app, a reinstall and an uninstall of the installer |
+| `test-hooks.sh` | the installer hooks on both kinds of `Maktaba.exe`, with stand-ins (no app build needed, only makensis) |
 | `build-app.sh` | payload → `tauri build --bundles nsis` → check. `make win-app` runs it |
 | `pins.env` | the third-party downloads: version, URL, SHA-256 |
 | `payload_tool.py` | reads PE import tables: the DLLs Postgres needs, and the check that nothing loads from outside the payload (`test_payload_tool.py`) |
-| [`apps/desktop/src-tauri/windows/installer-hooks.nsh`](../../../apps/desktop/src-tauri/windows/installer-hooks.nsh) | the NSIS installer's hooks (below) |
+| [`apps/desktop/src-tauri/windows/installer-hooks.nsh`](../../../apps/desktop/src-tauri/windows/installer-hooks.nsh), `knows-server-flags.ps1` | the NSIS installer's hooks, and how the installer tells the `Maktaba.exe` it packs takes their flags (below) |
 
 ```bash
 make win-app            # the NSIS installer, unsigned, then a test install + uninstall
@@ -88,24 +89,47 @@ administrator), puts the payload in `server\` and includes `installer-hooks.nsh`
 
 | Hook | Runs | Why |
 |---|---|---|
-| `NSIS_HOOK_PREINSTALL` | `"$INSTDIR\Maktaba.exe" --server-stop`, when it exists | the payload's files are in use while the server runs |
-| `NSIS_HOOK_POSTINSTALL` | `"$INSTDIR\Maktaba.exe" --server-start` | starts the server from the new payload (nothing on a first install: setup registers the task) |
-| `NSIS_HOOK_PREUNINSTALL` | `--server-stop`, then `--server-remove`; not during an update (`$UpdateMode` 1) | no sign-in task is left pointing at a removed program |
+| `NSIS_HOOK_PREINSTALL` | `"$INSTDIR\Maktaba.exe" --server-stop`, when the installed one takes the flags | the payload's files are in use while the server runs |
+| `NSIS_HOOK_POSTINSTALL` | `"$INSTDIR\Maktaba.exe" --server-start`, when the new one takes them | starts the server from the new payload (nothing on a first install: setup registers the task) |
+| `NSIS_HOOK_PREUNINSTALL` | `--server-stop`, then `--server-remove`, when the installed one takes them; not during an update (`$UpdateMode` 1) | no sign-in task is left pointing at a removed program |
 
 The uninstaller removes only the files the installer wrote; the state beside them stays
 (`check.sh --installer` installs into a folder that holds one and checks it is untouched).
 
-**Until story 38.3 is on main**, `Maktaba.exe` does not know the `--server-*` flags: it opens its
-window instead and the hook waits until it is quit (tray → Quit). `check.sh` ends what a hook
-leaves running after 20 s, and says so as a note while `Maktaba.exe` does not know
-`--server-remove`, as a failure once it does. A release must not be cut before 38.3.
+**Which `Maktaba.exe` takes the flags.** Only a shell with story 38.3 does. One from before it
+(the client-only app, which installs to the same `%LOCALAPPDATA%\Maktaba` under the same name,
+and this branch's own shell until 38.3 is merged) opens its window for any argument and never
+exits, so a hook would hold the install until someone closed it. So the hooks ask only a
+`Maktaba.exe` known to take them:
+
+- the one this installer packs: decided when makensis compiles the installer, by reading that
+  very program (`knows-server-flags.ps1`: a shell parses the flags by name, so a build that
+  takes them holds the literal `--server-remove`; one before 38.3 holds none);
+- the one already installed (before an install, an update, an uninstall): the installer that
+  put a flag-taking `Maktaba.exe` there recorded its size and time as `MaktabaServerFlags` in
+  the uninstall key, and the hook compares them with the file there now. A client-only
+  install has no record; a `Maktaba.exe` replaced since (a client-only installer over a server
+  install) no longer matches it; the uninstaller deletes the key, so the record goes with the
+  install. A reinstall of the same build, and an update between two flag-taking builds, find
+  their record.
+
+A file in the payload (`server\payload.json`) would not do: it tells a server build from the
+client-only app, but not a server build whose shell predates 38.3 (this branch's today).
+
+`test-hooks.sh` tests the hooks on both kinds of `Maktaba.exe` with stand-ins (a fresh install,
+a reinstall, an update to a build from before the flags, the client-only app there with or
+without a stale record, an uninstall, the uninstall an update runs); `make win-app` runs it
+after the build. `check.sh --installer` installs over a client-only app (a stand-in
+`Maktaba.exe` that takes no flag and never exits, with its registration and a stale record),
+reinstalls, uninstalls, and fails on any hook still running after 20 s; where the built
+`Maktaba.exe` takes no flag, on any run of it by a hook at all.
 
 `check.sh --installer` changes this user's registry while it runs (the uninstall entry, the
 `maktaba://` links, `HKCU\Software\<publisher>\Maktaba` for the last install folder) and puts
 it back. It refuses to run where Maktaba is installed for the user, its sign-in task exists or
 `maktaba://` is registered, and installs with `/NS` (no shortcuts). The hooks' app runs with
-`LOCALAPPDATA` and WebView2's data in its scratch folder; the empty
-`%LOCALAPPDATA%\com.hamzalabs.maktaba` a pre-38.3 window makes is removed afterwards.
+`LOCALAPPDATA` and WebView2's data in its scratch folder; an empty
+`%LOCALAPPDATA%\com.hamzalabs.maktaba` a shell window would make is removed afterwards.
 
 ## Signing
 

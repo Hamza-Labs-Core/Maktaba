@@ -11,18 +11,22 @@
 #   pipeline wheel and constraints, payload.json, the launcher's app-bundle mode.
 #
 #   --installer: a silent install (/S /NS /D=, current user) into a temporary folder, with a
-#   space in its path, that already holds a state (server.toml, keys\, data\, as an update
-#   finds it); every check above on the installed payload; the app's files and the launcher
-#   beside the real Maktaba.exe; then a silent uninstall: the program is gone, the state is
+#   space in its path, that holds a client-only app (a stand-in Maktaba.exe that takes no
+#   --server-* flag and never exits, as the real one opens its window, and its registration)
+#   and a state (server.toml, keys\, data\); every check above on the installed payload; the
+#   app's files and the launcher beside the real Maktaba.exe; the same installer again (a
+#   reinstall of the same build); then a silent uninstall: the program is gone, the state is
 #   untouched. It refuses to run where Maktaba is installed for this user or its sign-in task
 #   exists: the installer would replace that install's registration and the uninstall hook
 #   would remove the task. What the installer writes to the registry for the test install is
 #   put back as it was.
 #
-#   The hooks run `Maktaba.exe --server-stop | --server-start | --server-remove` (story
-#   38.3). An app shell from before 38.3 does not know them and opens its window instead,
-#   which never exits: what the hooks start is ended after 20 s, and that is a note while
-#   Maktaba.exe does not know --server-remove, a failure once it does.
+#   The hooks (installer-hooks.nsh) run `Maktaba.exe --server-stop | --server-start |
+#   --server-remove` (story 38.3) only on a Maktaba.exe that takes them. Every run must
+#   finish without waiting: a hook still running after 20 s is ended and fails the check.
+#   Where the installed Maktaba.exe takes no such flag (it holds no "--server-remove", as
+#   before 38.3), no hook may run it at all and the installer keeps no record of it; where it
+#   does, the record (MaktabaServerFlags in the uninstall key) must be there.
 #
 # Usage: check.sh [--payload DIR] [--installer SETUP.exe]
 #   --payload    the payload (default: build/win-app/server)
@@ -163,8 +167,10 @@ if [ -n "$SETUP" ]; then
     # exited (the uninstaller copies itself to %TEMP% and runs from there: uninstall.exe is
     # gone well before that copy has removed the registration). What its hooks start from the
     # install folder is ended once it outlives the grace (see the header), with the WebView2
-    # processes of a shell window. Prints "exit <code>" for the program and "child <name> exit
-    # <code>" for each program it started that is not the app's (the uninstaller's copy).
+    # processes of a shell window. Prints "exit <code>" for the program, "child <name> exit
+    # <code>" for each program it started that is not the app's (the uninstaller's copy), and
+    # "ran <command line>" for each of the app's it saw (a hook running Maktaba.exe; one that
+    # exits at once may come and go between two looks).
     cat >"$SCRATCH/run-watched.ps1" <<'PS'
 param(
     [Parameter(Mandatory = $true)][string]$Exe,
@@ -214,6 +220,7 @@ while ($true) {
             if ($tree.ContainsKey($id) -or -not $tree.ContainsKey($parent) -or $q.CreationDate -lt $tree[$parent]) { continue }
             $tree[$id] = $q.CreationDate
             $grew = $true
+            if (InDir $q) { Write-Output ("ran {0}" -f $q.CommandLine) }
             if (-not (InDir $q) -and $q.Name -ne 'msedgewebview2.exe') {
                 try { $c = Get-Process -Id $id; $null = $c.Handle; $copies[$id] = $c } catch { }
             }
@@ -234,10 +241,11 @@ Write-Output ("exit {0}" -f $p.ExitCode)
 PS
     # watched EXE ARGS: runs it as above; sets WATCHED_EXIT (its exit code, else the first
     # failing one of the programs it started), WATCHED_CHILDREN ("<name> exit <code>" of
-    # those) and WATCHED_ENDED (what had to be ended, one per line)
+    # those), WATCHED_RAN (the app's programs it saw run) and WATCHED_ENDED (what had to be
+    # ended), one per line
     watched() {
         local out line code ps=(-Exe "$(win "$1")" -Arguments "$2" -Dir "$(win "$INST")" -WebView "$(win "$SCRATCH/webview2")")
-        WATCHED_EXIT=none WATCHED_ENDED="" WATCHED_CHILDREN="" code=0
+        WATCHED_EXIT=none WATCHED_ENDED="" WATCHED_CHILDREN="" WATCHED_RAN="" code=0
         # the hooks' app (story 38.3) keeps its state in %LOCALAPPDATA%\Maktaba: a scratch one
         out="$(LOCALAPPDATA="$(win "$SCRATCH/localappdata")" WEBVIEW2_USER_DATA_FOLDER="$(win "$SCRATCH/webview2")" \
             wincmd powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
@@ -249,6 +257,7 @@ PS
                     WATCHED_CHILDREN+="${line#child } "
                     if [ "$code" = 0 ] && [ "${line##* exit }" != 0 ]; then code="${line##* exit } (${line#child })"; fi ;;
                 "ended "*) WATCHED_ENDED+="${line#ended }"$'\n' ;;
+                "ran "*)   WATCHED_RAN+="${line#ran }"$'\n' ;;
                 "") ;;
                 *) printf '        %s\n' "$line" ;;
             esac
@@ -258,29 +267,76 @@ PS
     # hooks WHAT: what the hooks of the last run left running, judged by what the installed
     # Maktaba.exe knows (the header)
     hooks() {
-        local n
-        if [ -z "$WATCHED_ENDED" ]; then ok "$1: every hook exited by itself"; return; fi
+        local n ended=0
         while IFS= read -r n; do
-            [ -n "$n" ] || continue
-            if [ "$SHELL_HOOKS" = 1 ]; then
-                fail "$1: a hook did not exit within 20 s, ended: $n"
-            else
-                note "$1: this Maktaba.exe predates story 38.3 (no --server-* flags): its hook opened the app, ended: $n"
-            fi
+            if [ -n "$n" ]; then fail "$1: a hook did not exit within 20 s, ended: $n"; ended=1; fi
         done <<<"$WATCHED_ENDED"
+        if [ "$SHELL_HOOKS" = 0 ]; then
+            if [ -n "$WATCHED_RAN" ]; then
+                fail "$1: a hook ran Maktaba.exe, which takes no --server-* flag: $(printf '%s' "$WATCHED_RAN" | paste -sd'|' -)"
+            else
+                ok "$1: no hook ran Maktaba.exe (it takes no --server-* flag)"
+            fi
+        elif [ "$ended" = 0 ]; then
+            ok "$1: every hook exited by itself${WATCHED_RAN:+ (seen: $(printf '%s' "$WATCHED_RAN" | sed 's/.* //' | paste -sd' ' -))}"
+        fi
+    }
+    # flags_record: the installer's record that the installed Maktaba.exe takes the flags
+    flags_record() { reg_value "$UNINSTALL_KEY" MaktabaServerFlags; }
+    record_check() {
+        local rec
+        rec="$(flags_record)"
+        if [ "$SHELL_HOOKS" = 1 ]; then
+            if [ -n "$rec" ] && [ "$rec" != "$STALE_RECORD" ]; then ok "$1: the record that Maktaba.exe takes the flags ($rec)"; else fail "$1: no record that Maktaba.exe takes the flags ('$rec')"; fi
+        elif [ -z "$rec" ]; then
+            ok "$1: no record that Maktaba.exe takes the flags (the client-only app's stale one dropped)"
+        else
+            fail "$1: a record that Maktaba.exe takes the flags, which it does not: $rec"
+        fi
     }
 
-    echo "installer: $SETUP"
+    # A client-only app installed there before: Maktaba.exe, registered as the NSIS client
+    # installer does (an older version), with a record left by an earlier server install
+    # whose Maktaba.exe this is not. The stand-in takes no flag and, like the real app's
+    # window, does not exit; it notes every start in standin.log.
+    cat >"$SCRATCH/standin.cs" <<'CS'
+using System; using System.IO; using System.Threading;
+static class StandIn {
+    static void Main(string[] args) {
+        File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "standin.log"),
+            string.Join(" ", args) + Environment.NewLine);
+        Thread.Sleep(TimeSpan.FromMinutes(10));
+    }
+}
+CS
+    # shellcheck disable=SC2016  # PowerShell's own $ variables; the paths go in through the environment
+    SRC="$(win "$SCRATCH/standin.cs")" OUT="$(win "$INST")\\Maktaba.exe" powershell.exe -NoProfile -NonInteractive -Command \
+        'Add-Type -TypeDefinition (Get-Content -Raw -LiteralPath $env:SRC) -OutputAssembly $env:OUT -OutputType WindowsApplication' >/dev/null 2>&1 ||
+        { echo "check: cannot build the stand-in Maktaba.exe (PowerShell's Add-Type)" >&2; exit 2; }
     REGISTRY_TOUCHED=1
+    STALE_RECORD="1 2.3"
+    wincmd reg.exe add "$UNINSTALL_KEY" /v DisplayName /d Maktaba /f >/dev/null
+    wincmd reg.exe add "$UNINSTALL_KEY" /v DisplayVersion /d 0.0.1 /f >/dev/null
+    wincmd reg.exe add "$UNINSTALL_KEY" /v InstallLocation /d "\"$(win "$INST")\"" /f >/dev/null
+    wincmd reg.exe add "$UNINSTALL_KEY" /v MaktabaServerFlags /d "$STALE_RECORD" /f >/dev/null
+
+    echo "installer: $SETUP (over a client-only app)"
     watched "$SETUP" "/S /NS /D=$(win "$INST")"
-    if [ "$WATCHED_EXIT" = 0 ] && [ -f "$INST/Maktaba.exe" ]; then
+    if [ "$WATCHED_EXIT" = 0 ] && [ -f "$INST/Maktaba.exe" ] && [ -f "$INST/server/payload.json" ]; then
         ok "silent install into $(win "$INST")"
     else
         fail "silent install (exit $WATCHED_EXIT)"
     fi
+    if [ -f "$INST/standin.log" ]; then
+        fail "the client-only Maktaba.exe was run by a hook: $(tr -d '\r' <"$INST/standin.log" | paste -sd'|' -)"
+    else
+        ok "the client-only Maktaba.exe that was there was not run (it takes no --server-* flag)"
+    fi
     SHELL_HOOKS=0
     if grep -qa -- '--server-remove' "$INST/Maktaba.exe" 2>/dev/null; then SHELL_HOOKS=1; fi
+    if [ "$SHELL_HOOKS" = 1 ]; then echo "  (this Maktaba.exe takes the --server-* flags)"; else echo "  (this Maktaba.exe takes no --server-* flag: story 38.3 is not in this build)"; fi
     hooks "install"
+    record_check "install"
     publisher="$(reg_value "$UNINSTALL_KEY" Publisher)"
     if [ -n "$publisher" ] && [ "$publisher" != "$manufacturer" ]; then
         fail "the installer's publisher is '$publisher', check.sh expected '$manufacturer' (it puts HKCU\\Software\\<publisher>\\Maktaba back)"
@@ -460,6 +516,18 @@ if [ -n "$SETUP" ]; then
     loc="$(reg_value "$UNINSTALL_KEY" InstallLocation)"
     if [ "${loc//\"/}" = "$(win "$INST")" ]; then ok "registered for this user (HKCU), at the test folder"; else fail "uninstall registration: InstallLocation '$loc'"; fi
     if [ "$(state_sums)" = "$STATE_BEFORE" ]; then ok "the state beside it is untouched by the install"; else fail "the install changed the state: $(state_sums)"; fi
+
+    # the same build again: its hooks find the Maktaba.exe they installed (and its record)
+    echo "reinstall (the same installer over it)"
+    watched "$SETUP" "/S /NS /D=$(win "$INST")"
+    if [ "$WATCHED_EXIT" = 0 ] && [ -f "$INST/Maktaba.exe" ] && [ -f "$INST/server/payload.json" ]; then
+        ok "silent reinstall"
+    else
+        fail "silent reinstall (exit $WATCHED_EXIT)"
+    fi
+    hooks "reinstall"
+    record_check "reinstall"
+    if [ "$(state_sums)" = "$STATE_BEFORE" ]; then ok "the state is untouched by the reinstall"; else fail "the reinstall changed the state: $(state_sums)"; fi
 
     echo "uninstall"
     watched "$INST/uninstall.exe" "/S"

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Builds the Windows app with the server payload inside (Epic 38, story 38.11): Maktaba.exe
 # and <install>\server as one NSIS installer (current user, %LOCALAPPDATA%\Maktaba, no
-# administrator): payload.sh, then `tauri build` with the overlay it writes, then check.sh on
-# the installer (a silent install and uninstall in a temporary folder). `make win-app` runs
+# administrator): payload.sh, then `tauri build` with the overlay it writes, then the hooks'
+# test (test-hooks.sh) and check.sh on the installer (a silent install over a client-only
+# app, a reinstall and an uninstall, in a temporary folder). `make win-app` runs
 # it; so does CI's win-app gate. desktop-release.yml runs the same three steps around
 # tauri-action (which also publishes the updater feed).
 #
@@ -36,5 +37,7 @@ for f in "$target"/release/bundle/nsis/*-setup.exe; do
     if [ -f "$f" ] && { [ -z "$setup" ] || [ "$f" -nt "$setup" ]; }; then setup="$f"; fi
 done
 [ -n "$setup" ] || { echo "build-app: no installer in $target/release/bundle/nsis" >&2; exit 1; }
+# the hooks on both kinds of Maktaba.exe (this build has one of them), with tauri's makensis
+"$SCRIPT_DIR/test-hooks.sh"
 "$SCRIPT_DIR/check.sh" --installer "$setup"
 du -sh "$BUILD/server" "$setup"

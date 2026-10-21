@@ -7,22 +7,92 @@
 ; a server that cannot be stopped is reported by the app (server.log), and the install goes
 ; on (the restart manager check that follows closes Maktaba.exe itself).
 ;
+; Only a Maktaba.exe that takes the --server-* flags (story 38.3) is asked. One from before
+; them (the client-only app, which installs to the same %LOCALAPPDATA%\Maktaba under the same
+; name) opens its window for any argument and never exits, so the install would wait until
+; someone closed it. Which Maktaba.exe takes them:
+;   - the one this installer packs: decided when the installer is compiled, by reading that
+;     very program (knows-server-flags.ps1: a shell parses the flags by name, so a build that
+;     takes them holds the literal);
+;   - the one already installed (before an install, an update, an uninstall): the installer
+;     that put a flag-taking Maktaba.exe there recorded its size and time in the uninstall
+;     key (MaktabaServerFlags). A client-only install never has that value; one whose
+;     Maktaba.exe was replaced since (by a client-only installer) no longer matches it. The
+;     uninstaller deletes the key, so the record goes with the install.
+;
 ; The per-user state shares $INSTDIR with the program (%LOCALAPPDATA%\Maktaba: server.toml,
 ; keys\, data\, postgres\, venv\, ...): nothing here deletes it, and the uninstaller removes
 ; only the files the installer wrote.
 
-!macro NSIS_HOOK_PREINSTALL
-  ; Every file of the payload is in use while the server runs (server\bin, postgres, python,
-  ; ffmpeg): stop it before they are replaced. A first install has no Maktaba.exe yet.
-  ${If} ${FileExists} "$INSTDIR\${MAINBINARYNAME}.exe"
-    ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --server-stop'
+!define MAKTABA_HOOKS_DIR "${__FILEDIR__}"
+!define MAKTABA_FLAGS_VALUE "MaktabaServerFlags"
+
+; MAKTABA_STAMP: $R9 = "<size> <time>" of the installed Maktaba.exe, "" when there is none
+!macro MAKTABA_STAMP
+  Push $0
+  Push $1
+  Push $2
+  StrCpy $R9 ""
+  ClearErrors
+  FileOpen $0 "$INSTDIR\${MAINBINARYNAME}.exe" r
+  ${IfNot} ${Errors}
+    FileSeek $0 0 END $1
+    FileClose $0
+    GetFileTime "$INSTDIR\${MAINBINARYNAME}.exe" $0 $2
+    ${IfNot} ${Errors}
+      StrCpy $R9 "$1 $0.$2"
+    ${EndIf}
+  ${EndIf}
+  Pop $2
+  Pop $1
+  Pop $0
+!macroend
+
+; MAKTABA_INSTALLED_TAKES_FLAGS: $R8 = 1 when the installed Maktaba.exe is the flag-taking
+; one an installer recorded, else 0 ($R9 is used too)
+!macro MAKTABA_INSTALLED_TAKES_FLAGS
+  !insertmacro MAKTABA_STAMP
+  ReadRegStr $R8 SHCTX "${UNINSTKEY}" "${MAKTABA_FLAGS_VALUE}"
+  ${If} $R9 != ""
+  ${AndIf} $R8 == $R9
+    StrCpy $R8 1
+  ${Else}
+    StrCpy $R8 0
   ${EndIf}
 !macroend
 
+!macro NSIS_HOOK_PREINSTALL
+  ; Every file of the payload is in use while the server runs (server\bin, postgres, python,
+  ; ffmpeg): stop it before they are replaced. A first install has no Maktaba.exe yet.
+  Push $R8
+  Push $R9
+  !insertmacro MAKTABA_INSTALLED_TAKES_FLAGS
+  ${If} $R8 = 1
+    ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --server-stop'
+  ${EndIf}
+  Pop $R9
+  Pop $R8
+!macroend
+
 !macro NSIS_HOOK_POSTINSTALL
-  ; Start the server from the new payload: runs the sign-in task when it is registered and
-  ; the server is not paused (a first install does nothing: setup registers the task).
-  ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --server-start'
+  ; Does the Maktaba.exe this installer packs take the flags? (once, when compiling)
+  !system 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${MAKTABA_HOOKS_DIR}\knows-server-flags.ps1" -Exe "${MAINBINARYSRCPATH}"' MAKTABA_FLAGS_RC
+  !if ${MAKTABA_FLAGS_RC} = 0
+    ; Record it for the next installer and the uninstaller, then start the server from the
+    ; new payload: runs the sign-in task when it is registered and the server is not paused
+    ; (a first install does nothing: setup registers the task).
+    Push $R9
+    !insertmacro MAKTABA_STAMP
+    WriteRegStr SHCTX "${UNINSTKEY}" "${MAKTABA_FLAGS_VALUE}" $R9
+    Pop $R9
+    ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --server-start'
+  !else if ${MAKTABA_FLAGS_RC} = 1
+    ; a Maktaba.exe from before the flags: nothing to ask, and no record (an earlier one
+    ; described another program)
+    DeleteRegValue SHCTX "${UNINSTKEY}" "${MAKTABA_FLAGS_VALUE}"
+  !else
+    !error "installer-hooks.nsh: cannot tell whether ${MAINBINARYSRCPATH} takes the --server-* flags (knows-server-flags.ps1 exit ${MAKTABA_FLAGS_RC})"
+  !endif
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
@@ -30,8 +100,14 @@
   ; start the server around it. A real uninstall stops the server and removes the sign-in
   ; task, so no task is left pointing at a removed program.
   ${If} $UpdateMode <> 1
-  ${AndIf} ${FileExists} "$INSTDIR\${MAINBINARYNAME}.exe"
-    ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --server-stop'
-    ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --server-remove'
+    Push $R8
+    Push $R9
+    !insertmacro MAKTABA_INSTALLED_TAKES_FLAGS
+    ${If} $R8 = 1
+      ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --server-stop'
+      ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --server-remove'
+    ${EndIf}
+    Pop $R9
+    Pop $R8
   ${EndIf}
 !macroend
