@@ -17,9 +17,12 @@ package sessions
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -318,6 +321,61 @@ func (s *Store) RevokeAllForUser(ctx context.Context, userID string) (int64, err
 	             SET revoked_at = now()
 	             WHERE user_id = $1 AND revoked_at IS NULL`
 	res, err := s.DB.ExecContext(ctx, q, userID)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	NotifyRevoked(Revocation{UserID: userID, Reason: "revoked_all"})
+	return n, nil
+}
+
+// RevokeByHash revokes the active sessions whose id hashes (SHA-256, hex) to one of
+// sha256Hex: a sign-out a node made while the home did not answer names its sessions
+// so (the node keeps the hash, never the id). The number revoked; their children go
+// with them and the revocation is reported to the hook.
+func (s *Store) RevokeByHash(ctx context.Context, sha256Hex []string) (int, error) {
+	if len(sha256Hex) == 0 {
+		return 0, nil
+	}
+	want := make(map[string]bool, len(sha256Hex))
+	for _, h := range sha256Hex {
+		want[strings.ToLower(h)] = true
+	}
+	rows, err := s.DB.QueryContext(ctx, `SELECT CAST(id AS TEXT) FROM web_sessions WHERE revoked_at IS NULL`)
+	if err != nil {
+		return 0, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return 0, err
+		}
+		sum := sha256.Sum256([]byte(id))
+		if want[hex.EncodeToString(sum[:])] {
+			ids = append(ids, id)
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return 0, err
+	}
+	for _, id := range ids {
+		if err := s.Revoke(ctx, id); err != nil {
+			return 0, err
+		}
+	}
+	return len(ids), nil
+}
+
+// RevokeAllForUserBefore revokes a user's active web sessions made before a moment: a
+// "sign out everywhere" a node made while the home did not answer (a session made
+// since, once the home was back, is kept).
+func (s *Store) RevokeAllForUserBefore(ctx context.Context, userID string, before time.Time) (int64, error) {
+	const q = `UPDATE web_sessions
+	             SET revoked_at = now()
+	             WHERE user_id = $1 AND revoked_at IS NULL AND created_at < $2`
+	res, err := s.DB.ExecContext(ctx, q, userID, before)
 	if err != nil {
 		return 0, err
 	}

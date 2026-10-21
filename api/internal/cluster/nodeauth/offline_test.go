@@ -10,10 +10,17 @@ package nodeauth
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -22,6 +29,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/jwt"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homelink"
@@ -31,14 +40,23 @@ import (
 
 func init() { signInFloor = 0 }
 
+// s1's CSRF token (the home's answers and the copy's give its hash).
+const s1CSRF = "csrf-s1"
+
+var s1CSRFHash = func() string { s := sha256.Sum256([]byte(s1CSRF)); return hex.EncodeToString(s[:]) }()
+
 // fakeHome answers introspection until it goes down; its API (behind the proxy) then
 // drops every connection.
 type fakeHome struct {
-	mu      sync.Mutex
-	down    bool
-	expires time.Time // the answers' expires_at
-	proxied int
-	srv     *httptest.Server
+	mu       sync.Mutex
+	down     bool
+	expires  time.Time // the answers' expires_at
+	proxied  int
+	srv      *httptest.Server
+	signOuts []delegation.SignOutRequest // what the node handed over
+	jwks     []byte                      // nil: no keys
+	// asked, when set, holds an introspection until it is closed
+	asked chan struct{}
 }
 
 func (f *fakeHome) setDown(d bool) { f.mu.Lock(); f.down = d; f.mu.Unlock() }
@@ -50,6 +68,12 @@ func (f *fakeHome) Introspect(_ context.Context, req delegation.IntrospectReques
 	if f.isDown() {
 		return nil, homelink.ErrUnreachable
 	}
+	f.mu.Lock()
+	hold := f.asked
+	f.mu.Unlock()
+	if hold != nil {
+		<-hold
+	}
 	if req.Session == "signed-out" || req.PAT == "pat_revoked" {
 		return nil, homelink.ErrUnauthorized
 	}
@@ -59,13 +83,20 @@ func (f *fakeHome) Introspect(_ context.Context, req delegation.IntrospectReques
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return &delegation.IntrospectAnswer{Source: src, CSRFSHA256: "csrf-hash", ExpiresAt: f.expires,
+	return &delegation.IntrospectAnswer{Source: src, CSRFSHA256: s1CSRFHash, ExpiresAt: f.expires,
 		Principal: delegation.Principal{UserID: "u1", Username: "amal", Libraries: []string{"lib1"}}}, nil
 }
 func (f *fakeHome) Exchange(context.Context, delegation.ExchangeRequest) (*delegation.ExchangeAnswer, error) {
 	return nil, homelink.ErrUnauthorized
 }
-func (f *fakeHome) JWKS(context.Context) ([]byte, error) { return []byte(`{"keys":[]}`), nil }
+func (f *fakeHome) JWKS(context.Context) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.jwks != nil {
+		return f.jwks, nil
+	}
+	return []byte(`{"keys":[]}`), nil
+}
 func (f *fakeHome) Self(context.Context) (json.RawMessage, error) {
 	if f.isDown() {
 		return nil, errors.New("down")
@@ -74,6 +105,15 @@ func (f *fakeHome) Self(context.Context) (json.RawMessage, error) {
 }
 func (f *fakeHome) Subscribe(func(homelink.Event)) {}
 func (f *fakeHome) HasKey() bool                   { return true }
+func (f *fakeHome) SignOut(_ context.Context, req delegation.SignOutRequest) (*delegation.SignOutAnswer, error) {
+	if f.isDown() {
+		return nil, homelink.ErrUnreachable
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.signOuts = append(f.signOuts, req)
+	return &delegation.SignOutAnswer{Revoked: len(req.SessionSHA256)}, nil
+}
 
 func (f *fakeHome) serveAPI(w http.ResponseWriter, _ *http.Request) {
 	if f.isDown() {
@@ -114,7 +154,7 @@ func (c *fakeCopy) Introspect(_ context.Context, req delegation.IntrospectReques
 	}
 	switch {
 	case req.Session == "s1":
-		return &delegation.IntrospectAnswer{Principal: copyUsers["u1"], Source: "cookie", CSRFSHA256: "csrf-hash",
+		return &delegation.IntrospectAnswer{Principal: copyUsers["u1"], Source: "cookie", CSRFSHA256: s1CSRFHash,
 			ExpiresAt: c.expires}, nil
 	case req.PAT == "pat_1":
 		return &delegation.IntrospectAnswer{Principal: copyUsers["u1"], Source: "pat", ExpiresAt: c.expires}, nil
@@ -164,6 +204,8 @@ type offlineRig struct {
 	r    *Resolver
 	h    http.Handler
 	now  time.Time
+	// csrf is each session's CSRF token (sent with a change)
+	csrf map[string]string
 }
 
 // newOfflineRig builds a node's front over the resolver: a dispatcher with `local`
@@ -172,7 +214,8 @@ type offlineRig struct {
 // node without a copy.
 func newOfflineRig(t *testing.T, withCopy bool) *offlineRig {
 	t.Helper()
-	g := &offlineRig{home: &fakeHome{}, now: time.Date(2026, 10, 20, 4, 0, 0, 0, time.UTC)}
+	g := &offlineRig{home: &fakeHome{}, now: time.Date(2026, 10, 20, 4, 0, 0, 0, time.UTC),
+		csrf: map[string]string{"s1": s1CSRF}}
 	g.home.expires = g.now.Add(24 * time.Hour)
 	g.home.srv = httptest.NewServer(http.HandlerFunc(g.home.serveAPI))
 	t.Cleanup(g.home.srv.Close)
@@ -182,6 +225,7 @@ func newOfflineRig(t *testing.T, withCopy bool) *offlineRig {
 		g.r.Local = g.cp
 		g.r.Sessions = &LocalSessions{Path: filepath.Join(t.TempDir(), LocalSessionsFile), Now: func() time.Time { return g.now }}
 	}
+	g.r.SignOuts = &SignOuts{Path: filepath.Join(t.TempDir(), SignOutsFile), Now: func() time.Time { return g.now }}
 
 	gate := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		p := principal.FromContext(req.Context())
@@ -201,6 +245,7 @@ func newOfflineRig(t *testing.T, withCopy bool) *offlineRig {
 	routes.Get("/api/auth/me", ok)
 	routes.Post("/api/auth/login", ok)
 	routes.Post("/api/auth/logout", ok)
+	routes.Post("/api/auth/logout-all", ok)
 	routes.Get("/api/settings", ok)
 	var table placement.Table
 	table = append(table, placement.Exact(placement.Local, nil,
@@ -231,8 +276,14 @@ func (g *offlineRig) send(method, path, cred, body string) answer {
 	switch {
 	case strings.HasPrefix(cred, "pat_"):
 		req.Header.Set("Authorization", "Bearer "+cred)
+	case strings.HasPrefix(cred, "jwt "):
+		req.Header.Set("Authorization", "Bearer "+strings.TrimPrefix(cred, "jwt "))
 	case cred != "":
 		req.AddCookie(&http.Cookie{Name: CookieSession, Value: cred})
+		if tok := g.csrf[cred]; tok != "" && !readOnly(method) {
+			req.AddCookie(&http.Cookie{Name: CookieCSRF, Value: tok})
+			req.Header.Set(CSRFHeader, tok)
+		}
 	}
 	rec := httptest.NewRecorder()
 	g.h.ServeHTTP(rec, req)
@@ -253,12 +304,19 @@ func (g *offlineRig) send(method, path, cred, body string) answer {
 func (g *offlineRig) signIn(t *testing.T, user, pw string) (answer, string) {
 	t.Helper()
 	a := g.send(http.MethodPost, LoginPath, "", `{"username":"`+user+`","password":"`+pw+`"}`)
+	id, csrf := "", ""
 	for _, c := range a.cookies {
-		if c.Name == CookieSession {
-			return a, c.Value
+		switch c.Name {
+		case CookieSession:
+			id = c.Value
+		case CookieCSRF:
+			csrf = c.Value
 		}
 	}
-	return a, ""
+	if id != "" {
+		g.csrf[id] = csrf
+	}
+	return a, id
 }
 
 // goDown: the home answers (Watch's probe every 5 s) for `after` more, then goes away;
@@ -588,5 +646,229 @@ func TestOfflineAChangeOutsideLocalRoutesIsRefused(t *testing.T) {
 		if rec.Code != http.StatusServiceUnavailable {
 			t.Fatalf("%s outside a local route: %d, want 503", m, rec.Code)
 		}
+	}
+}
+
+func (a answer) cleared() bool {
+	n := 0
+	for _, c := range a.cookies {
+		if (c.Name == CookieSession || c.Name == CookieCSRF) && c.MaxAge < 0 {
+			n++
+		}
+	}
+	return n == 2
+}
+
+// #145: a sign-out of a home session while the home is away is real on this machine at
+// once (cookies cleared, the session denied here though the copy still says it is live),
+// kept by the session's hash only, and handed to the home once it answers; until the
+// home has it, nothing of that session is sent there.
+func TestSignOutOfAHomeSessionInAnOutage(t *testing.T) {
+	g := newOfflineRig(t, true)
+	g.goDown(time.Minute)
+	g.pastGrace()
+	if a := g.do(http.MethodGet, "/api/videos", "s1"); a.code != http.StatusOK {
+		t.Fatalf("before the sign-out: %+v", a)
+	}
+	// without the CSRF token: refused, still signed in
+	delete(g.csrf, "s1")
+	if a := g.do(http.MethodPost, LogoutPath, "s1"); a.code != http.StatusForbidden {
+		t.Fatalf("a sign-out without the CSRF token: %+v, want 403", a)
+	}
+	g.csrf["s1"] = s1CSRF
+	if a := g.do(http.MethodPost, LogoutPath, "s1"); a.code != http.StatusNoContent || !a.marked || !a.cleared() {
+		t.Fatalf("a sign-out in the outage: %+v, want 204 with the cookies cleared", a)
+	}
+	for _, c := range []struct{ method, path string }{
+		{http.MethodGet, "/api/videos"}, {http.MethodPost, "/api/stream/sessions"}, {http.MethodGet, MePath},
+	} {
+		if a := g.do(c.method, c.path, "s1"); a.code != http.StatusUnauthorized {
+			t.Fatalf("%s %s after the sign-out: %+v, want 401", c.method, c.path, a)
+		}
+	}
+	raw, err := os.ReadFile(g.r.SignOuts.Path)
+	if err != nil || strings.Contains(string(raw), `"s1"`) || !strings.Contains(string(raw), SessionKey("s1")) {
+		t.Fatalf("the kept sign-out: %s %v (the hash, never the id)", raw, err)
+	}
+	// a restart in the outage keeps it
+	again := &SignOuts{Path: g.r.SignOuts.Path, Now: g.r.SignOuts.Now}
+	if err := again.Load(); err != nil || !again.denied(SessionKey("s1"), "u1") || again.Waiting() != 1 {
+		t.Fatalf("after a restart: %v waiting %d", err, again.Waiting())
+	}
+	// the home is back: nothing of that session reaches it before it is told
+	g.home.setDown(false)
+	g.r.answered()
+	before := g.home.proxiedCount()
+	if a := g.do(http.MethodGet, "/api/settings", "s1"); a.code != http.StatusUnauthorized || g.home.proxiedCount() != before {
+		t.Fatalf("a home route on the signed-out session: %+v (proxied %d)", a, g.home.proxiedCount()-before)
+	}
+	if a := g.do(http.MethodGet, "/api/videos", "s1"); a.code != http.StatusUnauthorized {
+		t.Fatalf("a read with the home back, before it is told: %+v", a)
+	}
+	g.r.sendSignOuts(context.Background())
+	if len(g.home.signOuts) != 1 || len(g.home.signOuts[0].SessionSHA256) != 1 ||
+		g.home.signOuts[0].SessionSHA256[0] != SessionKey("s1") || g.r.SignOuts.Waiting() != 0 {
+		t.Fatalf("handed to the home: %+v (waiting %d)", g.home.signOuts, g.r.SignOuts.Waiting())
+	}
+	g.r.sendSignOuts(context.Background())
+	if len(g.home.signOuts) != 1 {
+		t.Fatal("handed over twice")
+	}
+	// another session of the same user is not touched
+	g.csrf["s2"] = "x"
+	if g.r.SignOuts.denied(SessionKey("s2"), "u1") {
+		t.Fatal("a sign-out denies the user's other sessions")
+	}
+}
+
+// Inside the grace the sign-out goes to the home; when the home does not answer it, this
+// machine signs the person out (the proxy's fallback).
+func TestSignOutInsideTheGraceFallsBackToThisMachine(t *testing.T) {
+	g := newOfflineRig(t, true)
+	g.goDown(time.Minute)
+	if a := g.do(http.MethodPost, LogoutPath, "s1"); a.code != http.StatusNoContent || !a.cleared() {
+		t.Fatalf("a sign-out the home does not answer: %+v", a)
+	}
+	if !g.r.SignOuts.denied(SessionKey("s1"), "u1") {
+		t.Fatal("not kept")
+	}
+}
+
+// "Sign out everywhere" in an outage: every node-local session of the user ends, their
+// home sessions are denied here until the home took it (then a session it says is live
+// was made since), and the home is told to end those made before.
+func TestSignOutEverywhereInAnOutage(t *testing.T) {
+	g := newOfflineRig(t, true)
+	g.goDown(time.Minute)
+	g.pastGrace()
+	_, local := g.signIn(t, "amal", "pw-amal")
+	at := g.now
+	if a := g.do(http.MethodPost, LogoutAllPath, "s1"); a.code != http.StatusNoContent || !a.cleared() {
+		t.Fatalf("sign out everywhere: %+v", a)
+	}
+	if a := g.do(http.MethodGet, "/api/videos", local); a.code != http.StatusUnauthorized {
+		t.Fatalf("the user's node-local session after it: %+v", a)
+	}
+	if !g.r.SignOuts.denied(SessionKey("other-session-of-u1"), "u1") {
+		t.Fatal("another home session of the user is not denied while the home has not taken it")
+	}
+	g.home.setDown(false)
+	g.r.answered()
+	g.r.sendSignOuts(context.Background())
+	var all *delegation.SignOutRequest
+	for i, req := range g.home.signOuts {
+		if req.UserID == "u1" {
+			all = &g.home.signOuts[i]
+		}
+	}
+	if all == nil || all.Before == nil || !all.Before.Equal(at) {
+		t.Fatalf("handed to the home: %+v", g.home.signOuts)
+	}
+	if g.r.SignOuts.denied(SessionKey("a-session-made-since"), "u1") {
+		t.Fatal("a session the home made after it is denied")
+	}
+}
+
+// #145: a revocation the home pushes while an introspection is under way is not undone
+// by caching that answer, and the copy's answers honour it until the copy has it.
+func TestARevocationIsNotUndoneByAnAnswerInFlight(t *testing.T) {
+	g := newOfflineRig(t, true)
+	hold := make(chan struct{})
+	g.home.mu.Lock()
+	g.home.asked = hold
+	g.home.mu.Unlock()
+	done := make(chan answer)
+	go func() { done <- g.do(http.MethodGet, "/api/videos", "s1") }()
+	time.Sleep(50 * time.Millisecond) // the introspection is waiting on the home
+	g.r.Evict(delegation.Revoked{SessionSHA256: []string{SessionKey("s1")}})
+	close(hold)
+	<-done
+	g.home.mu.Lock()
+	g.home.asked = nil
+	g.home.mu.Unlock()
+	if _, ok := g.r.get(SessionKey("s1")); ok {
+		t.Fatal("the answer asked for before the revocation was cached")
+	}
+	// the home goes away before the copy has the revocation: the copy is not believed
+	g.goDown(time.Second)
+	g.pastGrace()
+	if a := g.do(http.MethodGet, "/api/videos", "s1"); a.code != http.StatusUnauthorized {
+		t.Fatalf("a session the home revoked, on the copy that does not have it yet: %+v", a)
+	}
+	if a := g.do(http.MethodGet, "/api/videos", "pat_1"); a.code != http.StatusOK {
+		t.Fatalf("another credential of the user: %+v", a)
+	}
+}
+
+// #145: a bearer access token is held to the outage's rules: with the home away its user
+// is checked on the copy (a user the copy does not have is no one), and a change through
+// the home's database is refused as for any other credential.
+func TestABearerTokenInAnOutageIsCheckedOnTheCopy(t *testing.T) {
+	g := newOfflineRig(t, true)
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := keys.NewSet(0)
+	set.Replace(&keys.Key{KID: "k1", Private: priv, Public: &priv.PublicKey})
+	jwks, _ := json.Marshal(map[string]any{"keys": []map[string]string{{"kty": "RSA", "kid": "k1",
+		"n": base64.RawURLEncoding.EncodeToString(priv.N.Bytes()),
+		"e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(priv.E)).Bytes())}}})
+	g.home.jwks = jwks
+	sign := func(user string) string {
+		tok, err := jwt.Sign(set, jwt.Claims{Aud: "api", Sub: user, Usr: user, Exp: time.Now().Add(time.Hour).Unix()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return "jwt " + tok
+	}
+	if a := g.do(http.MethodGet, "/api/videos", sign("u1")); a.code != http.StatusOK || a.marked {
+		t.Fatalf("a bearer token with the home up: %+v", a)
+	}
+	g.goDown(time.Minute)
+	g.pastGrace()
+	if a := g.do(http.MethodGet, "/api/videos", sign("u1")); a.code != http.StatusOK || !a.marked {
+		t.Fatalf("a bearer token in the outage: %+v, want 200 marked", a)
+	}
+	if a := g.do(http.MethodGet, "/api/videos", sign("gone")); a.code != http.StatusUnauthorized {
+		t.Fatalf("a bearer token of a user the copy does not have: %+v, want anonymous (401)", a)
+	}
+	if a := g.do(http.MethodPost, "/api/videos/v1/rating", sign("u1")); !a.refusedChange() {
+		t.Fatalf("a change on a bearer token in the outage: %+v, want 503 home_unreachable", a)
+	}
+	g.cp.set(func(c *fakeCopy) { c.synced = g.now.Add(-time.Hour) }) // a copy that stopped following
+	if a := g.do(http.MethodGet, "/api/videos", sign("u1")); !a.refusedRead() {
+		t.Fatalf("a bearer token on a copy behind the home: %+v, want 503 readable false", a)
+	}
+}
+
+// #145: past the grace a page the home serves gets the notice while this machine can
+// still serve the person's reads, and the full page when it cannot (its copy behind).
+func TestAHomePagePastTheWindowIsTheFullPage(t *testing.T) {
+	g := newOfflineRig(t, true)
+	g.goDown(time.Minute)
+	g.pastGrace()
+	if a := g.do(http.MethodGet, "/api/settings", "s1"); a.code != http.StatusServiceUnavailable || a.readable != nil {
+		t.Fatalf("a home page with the copy current: %+v, want the notice (readable unset)", a)
+	}
+	g.cp.set(func(c *fakeCopy) { c.synced = g.now.Add(-time.Hour) })
+	if a := g.do(http.MethodGet, "/api/settings", "s1"); !a.refusedRead() {
+		t.Fatalf("a home page with the copy behind: %+v, want the full page (readable false)", a)
+	}
+}
+
+func TestDownForIsNotOneUnansweredProbe(t *testing.T) {
+	g := newOfflineRig(t, true)
+	g.r.unanswered()
+	if g.r.DownFor(10 * time.Second) {
+		t.Fatal("down at the first unanswered probe")
+	}
+	g.now = g.now.Add(10 * time.Second)
+	if !g.r.DownFor(10 * time.Second) {
+		t.Fatal("not down after 10 s")
+	}
+	g.r.answered()
+	if g.r.DownFor(0) {
+		t.Fatal("down once the home answered")
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"testing"
+	"time"
 
 	_ "github.com/lib/pq"
 	_ "modernc.org/sqlite"
@@ -97,5 +98,30 @@ func TestCheckRoleKeepsTheCause(t *testing.T) {
 	err = CheckRole(context.Background(), db)
 	if !errors.Is(err, ErrDDLRole) || !Unreachable(err) {
 		t.Fatalf("a database that does not answer: %v (unreachable %v)", err, Unreachable(err))
+	}
+}
+
+// #145: a caller is never held up by a database that does not answer: past the first
+// read, the section is read again in the background while the last one is answered.
+func TestCachedRulesDoNotWaitOnTheDatabase(t *testing.T) {
+	db := settingsDB(t, `{"offline_copy_max_lag_minutes": 30}`)
+	rules := CachedRules(db, 0)
+	if got := rules().OfflineCopyMaxLagMinutes; got != 30 {
+		t.Fatalf("read: %d", got)
+	}
+	// the database's one connection is held: a read waits on it
+	conn, err := db.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	start := time.Now()
+	for i := 0; i < 3; i++ {
+		if got := rules().OfflineCopyMaxLagMinutes; got != 30 {
+			t.Fatalf("while the database is busy: %d", got)
+		}
+	}
+	if d := time.Since(start); d > 500*time.Millisecond {
+		t.Fatalf("the callers waited %s on the database", d)
 	}
 }

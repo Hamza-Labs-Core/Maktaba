@@ -12,9 +12,11 @@
 // user in, and a sign-in is checked there too: a session valid on that
 // machine only (session "node"). Once the home is back, a change asks for a
 // sign-in with the home (SIGNIN_REQUIRED_EVENT): the user is signed out here
-// and the sign-in page says why. A sign-out of a home session the node refuses
-// (503 home_unreachable) keeps the user signed in and throws, so the caller can
-// say so (lib/api `isHomeUnreachable`).
+// and the sign-in page says why. A sign-out with the home away is the node's
+// own (it ends the session there and tells the home when it is back); one it
+// cannot make (503 home_unreachable), or that the home did not answer in time
+// (504 home_timeout), keeps the user signed in and throws, so the caller can
+// say so (lib/api `isHomeUnreachable`, `isHomeTimeout`).
 import {
   createContext,
   useCallback,
@@ -25,7 +27,7 @@ import {
   type ReactNode,
 } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { api, ApiError, isHomeUnreachable, SIGNIN_REQUIRED_EVENT } from "./api";
+import { api, ApiError, isHomeTimeout, isHomeUnreachable, SIGNIN_REQUIRED_EVENT } from "./api";
 import { useI18n } from "./i18n";
 import { purgeApiCacheOnLogout } from "./sw";
 import { ChangePasswordRequired } from "../pages/Auth/ChangePasswordRequired";
@@ -132,9 +134,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           await api.post("/api/auth/logout");
         } catch (e) {
-          // the home ends sessions: refused, the session (and its HttpOnly
-          // cookie) holds, so the user stays signed in and is told
-          if (isHomeUnreachable(e)) throw e;
+          // refused, or not answered in time: the session (and its HttpOnly
+          // cookie) may hold, so the user stays signed in and is told
+          if (isHomeUnreachable(e) || isHomeTimeout(e)) throw e;
           // Even if the server call fails, drop our local state — the
           // cookie is HttpOnly and will get cleared by the next 401.
           console.warn("auth: logout call failed", e);
@@ -148,7 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           await api.post("/api/auth/logout-all");
         } catch (e) {
-          if (isHomeUnreachable(e)) throw e;
+          if (isHomeUnreachable(e) || isHomeTimeout(e)) throw e;
           console.warn("auth: logout-all call failed", e);
         }
         await purgeApiCacheOnLogout();

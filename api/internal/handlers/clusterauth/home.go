@@ -88,6 +88,7 @@ func (h *Home) log() *slog.Logger {
 // Mount wires the home's routes.
 func (h *Home) Mount(r chi.Router) {
 	r.Post("/api/cluster/delegate/introspect", h.Introspect)
+	r.Post("/api/cluster/delegate/signout", h.SignOut)
 	r.Get("/api/cluster/sso/authorize", h.Authorize)
 	r.Post("/api/cluster/sso/exchange", h.Exchange)
 }
@@ -146,6 +147,49 @@ func (h *Home) Introspect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, ans)
+}
+
+// SignOut is POST /api/cluster/delegate/signout (node-signed): the sign-outs a node
+// made while this home did not answer (#145), handed over once it answers again. Its
+// sessions are named by the SHA-256 of their id (the node keeps no id); a "sign out
+// everywhere" ends the user's sessions and refresh tokens made before it. Every node
+// drops them from its cache (the revocation hook).
+func (h *Home) SignOut(w http.ResponseWriter, r *http.Request) {
+	node := delegation.NodeFrom(r.Context())
+	if node == "" {
+		unauthorized(w, r, "only a machine of this cluster may ask")
+		return
+	}
+	var req delegation.SignOutRequest
+	if e := common.ReadJSON(r, &req, 64<<10); e != nil {
+		httperror.Write(w, r, e)
+		return
+	}
+	if len(req.SessionSHA256) > 1000 || (req.Before != nil && req.UserID == "") {
+		httperror.Write(w, r, httperror.BadRequest("at most 1000 sessions; a user with before"))
+		return
+	}
+	n, err := h.Sessions.RevokeByHash(r.Context(), req.SessionSHA256)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("signout"))
+		return
+	}
+	if req.UserID != "" && req.Before != nil {
+		m, err := h.Sessions.RevokeAllForUserBefore(r.Context(), req.UserID, *req.Before)
+		if err != nil {
+			httperror.Write(w, r, httperror.Internal("signout"))
+			return
+		}
+		n += int(m)
+		if _, err := h.DB.ExecContext(r.Context(), `UPDATE refresh_tokens SET revoked_at = now()
+		             WHERE user_id = $1 AND revoked_at IS NULL AND issued_at < $2`, req.UserID, *req.Before); err != nil {
+			httperror.Write(w, r, httperror.Internal("signout"))
+			return
+		}
+	}
+	h.log().Info("home: sign-outs a machine made while this home did not answer", "node_id", node,
+		"sessions", len(req.SessionSHA256), "user_id", req.UserID, "revoked", n, "event", "cluster_node_signouts")
+	common.WriteJSON(w, r, http.StatusOK, delegation.SignOutAnswer{Revoked: n})
 }
 
 // Refusal: the credential is not a live one (Resolve); Reason says why.

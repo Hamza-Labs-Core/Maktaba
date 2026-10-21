@@ -18,7 +18,8 @@ package main
 //     publication and follows it (Epic 37, logical replication); with the home gone the node runs on that copy: a signed-in user stays
 //     in (marked X-Maktaba-Home: unreachable, a reload's /api/auth/me answered by the
 //     node), plays a video it can read and is told one it cannot is unavailable, signs
-//     in (a node-local session), and changes are refused; its local routes answer;
+//     in (a node-local session), signs out (ended on the node at once), and changes
+//     are refused; its local routes answer;
 //   - with the home's database gone too (the node's connection, and its copy's
 //     subscription, cut through a proxy), the node reads and plays from its copy, even
 //     after a restart in the outage;
@@ -709,11 +710,13 @@ slots = "off"
 			!strings.Contains(string(b), `"state":"following"`) {
 			t.Logf("the home's view of the copy: %s", tail(string(b), 400))
 		}
-		// a sign-in on the node through the home, before it goes away
-		u2 := newBrowser(t)
-		resp, _ := u2.do("POST", nodeWebURL+"/api/auth/login", map[string]string{"username": "owner", "password": "owner-pass-123"}, nil)
-		if resp.StatusCode != 200 || resp.Header.Get("X-Maktaba-Placement") != "home" {
-			t.Fatalf("sign-in through the node: %d", resp.StatusCode)
+		// sign-ins on the node through the home, before it goes away
+		u2, leaver := newBrowser(t), newBrowser(t)
+		for _, b := range []*browser{u2, leaver} {
+			resp, _ := b.do("POST", nodeWebURL+"/api/auth/login", map[string]string{"username": "owner", "password": "owner-pass-123"}, nil)
+			if resp.StatusCode != 200 || resp.Header.Get("X-Maktaba-Placement") != "home" {
+				t.Fatalf("sign-in through the node: %d", resp.StatusCode)
+			}
 		}
 		home.stop()
 		// past the grace the node answers from its copy, marked
@@ -755,9 +758,18 @@ slots = "off"
 			t.Fatalf("a wrong password with the home gone: %d", r.StatusCode)
 		}
 		// a change through the home waits for it
-		if r, b := u2.do("POST", nodeWebURL+"/api/auth/logout", nil, csrf); r.StatusCode != 503 ||
+		if r, b := u2.do("PATCH", nodeWebURL+"/api/me", map[string]string{"display_name": "x"}, csrf); r.StatusCode != 503 ||
 			!strings.Contains(string(b), "home_unreachable") {
-			t.Fatalf("a change (a home session's sign-out) with the home gone: %d %s", r.StatusCode, tail(string(b), 300))
+			t.Fatalf("a change with the home gone: %d %s", r.StatusCode, tail(string(b), 300))
+		}
+		// a sign-out is the node's own: the session ends here at once (the home is told
+		// when it is back)
+		leaverCSRF := map[string]string{"X-Maktaba-CSRF": leaver.cookie(nodeWebURL, "mkt_csrf")}
+		if r, b := leaver.do("POST", nodeWebURL+"/api/auth/logout", nil, leaverCSRF); r.StatusCode != 204 {
+			t.Fatalf("a sign-out with the home gone: %d %s", r.StatusCode, tail(string(b), 300))
+		}
+		if r, _ := leaver.do("GET", nodeWebURL+"/api/videos", nil, nil); r.StatusCode != 401 {
+			t.Fatalf("a read after the sign-out: %d, want 401", r.StatusCode)
 		}
 		// a credential the copy does not know is no one
 		if r, _ := newBrowser(t).do("GET", nodeWebURL+"/api/videos", nil, map[string]string{

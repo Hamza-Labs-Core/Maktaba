@@ -193,23 +193,39 @@ func ReadRules(ctx context.Context, db *sql.DB) Rules {
 // CachedRules reads rules.cluster at most once per `every` (each read bounded to 3 s);
 // a failed read — the home's database down too — keeps the last good section (the
 // defaults until one was read), so an outage never swaps the admin's values for them.
+// Only the first call waits for the read; later ones answer at once with the section
+// they have while it is read again in the background (a caller is never held up by a
+// database that does not answer).
 func CachedRules(db *sql.DB, every time.Duration) func() Rules {
 	var (
-		mu    sync.Mutex
-		rules = DefaultRules()
-		at    time.Time
+		mu      sync.Mutex
+		rules   = DefaultRules()
+		at      time.Time
+		reading bool
 	)
+	read := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		got, err := LoadRules(ctx, db)
+		cancel()
+		mu.Lock()
+		if err == nil {
+			rules = got
+		}
+		at, reading = time.Now(), false
+		mu.Unlock()
+	}
 	return func() Rules {
 		mu.Lock()
-		defer mu.Unlock()
-		if at.IsZero() || time.Since(at) >= every {
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			if got, err := LoadRules(ctx, db); err == nil {
-				rules = got
-			}
-			cancel()
-			at = time.Now()
+		if at.IsZero() && !reading {
+			reading = true
+			mu.Unlock()
+			read()
+			mu.Lock()
+		} else if !at.IsZero() && time.Since(at) >= every && !reading {
+			reading = true
+			go read()
 		}
+		defer mu.Unlock()
 		return rules
 	}
 }

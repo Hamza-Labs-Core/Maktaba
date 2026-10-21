@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -90,14 +89,7 @@ func (s *LocalSessions) saveLocked() error {
 	if old, err := os.ReadFile(s.Path); err == nil && bytes.Equal(old, b) {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(s.Path), 0o700); err != nil {
-		return err
-	}
-	tmp := s.Path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, s.Path)
+	return writeFile(s.Path, b)
 }
 
 func token() (string, error) {
@@ -154,6 +146,23 @@ func (s *LocalSessions) End(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.byID, sum(id))
+	return s.saveLocked()
+}
+
+// EndUser ends every session of a user ("sign out everywhere").
+func (s *LocalSessions) EndUser(userID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	changed := false
+	for k, v := range s.byID {
+		if v.UserID == userID {
+			delete(s.byID, k)
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
 	return s.saveLocked()
 }
 

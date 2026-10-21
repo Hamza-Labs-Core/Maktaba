@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -110,6 +111,23 @@ type nodeRuntime struct {
 	recent nodedb.Recent
 	// fatal carries an error the API must stop for (a DDL-capable role found late)
 	fatal chan error
+	// bg is the work whose last save the API waits for at shutdown
+	bg sync.WaitGroup
+}
+
+// homeDownAfter is how long the home must not answer before a video this machine
+// cannot read is said to be unavailable (one unanswered probe is not an outage).
+const homeDownAfter = 2 * nodeauth.ProbeEvery
+
+// waitBG waits (at most d) for the background work's last save.
+func (rt *nodeRuntime) waitBG(d time.Duration) {
+	done := make(chan struct{})
+	go func() { rt.bg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(d):
+		rt.logger.Warn("node: the last save of this machine's state did not finish in time", "event", "node_state_save_late")
+	}
 }
 
 // nodeOffline is a full node's way to play with the home's database down
@@ -215,6 +233,7 @@ func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *sl
 		LocalSessionTTL:   func() time.Duration { return time.Duration(rt.rules().OfflineSessionHours) * time.Hour },
 		LocalSessionGrace: func() time.Duration { return minutes(rt.rules().OfflineSessionGraceMinutes) },
 		Sessions:          &nodeauth.LocalSessions{Path: inDir(nodeauth.LocalSessionsFile)},
+		SignOuts:          &nodeauth.SignOuts{Path: inDir(nodeauth.SignOutsFile)},
 	}
 	if dbs.copyDB != nil {
 		rt.resolver.Local = clusterauth.NewCopy(dbs.copyDB)
@@ -226,10 +245,15 @@ func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *sl
 		logger.Warn("node: the sign-ins made here are unreadable; starting without them", "err", err,
 			"event", "node_local_sessions_unreadable")
 	}
+	if err := rt.resolver.SignOuts.Load(); err != nil {
+		logger.Warn("node: the sign-outs made here are unreadable; starting without them", "err", err,
+			"event", "node_sign_outs_unreadable")
+	}
 	rt.link.Subscribe(rt.resolver.OnEvent)
 	if p := inDir(nodeauth.HomeSeenFile); p != "" {
 		rt.resolver.LoadHomeSeen(p)
-		go rt.resolver.KeepHomeSeen(ctx, p)
+		rt.bg.Add(1)
+		go func() { defer rt.bg.Done(); rt.resolver.KeepHomeSeen(ctx, p) }()
 	}
 	rt.guard = &schemaguard.Guard{DB: dbs.app, Logger: logger}
 	rt.guard.Check(cctx)
@@ -258,7 +282,7 @@ func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *sl
 			}
 			return ""
 		},
-		HomeDown: func() bool { ok, _ := rt.resolver.Reachability(); return !ok },
+		HomeDown: func() bool { return rt.resolver.DownFor(homeDownAfter) },
 		Catalog:  rt.offline(),
 		OnChange: func(vodfallback.State) { go rt.report(context.Background()) },
 	}
@@ -568,5 +592,5 @@ func mountNode(r chi.Router, cfg nodemode.Config, dataDir string, logger *slog.L
 	rt.mountNodeRoutes(r)
 	warnUnclassified(r, logger)
 	logger.Info("node: local and any routes mounted; the rest is proxied to the home", "event", "node_mounted")
-	return rt, func() { cancel(); dbs.close() }, nil
+	return rt, func() { cancel(); rt.waitBG(3 * time.Second); dbs.close() }, nil
 }

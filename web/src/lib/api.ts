@@ -135,6 +135,14 @@ export function isHomeUnreachable(e: unknown): boolean {
   return e instanceof ApiError && e.status === 503 && e.problem.code === "home_unreachable";
 }
 
+/**
+ * Whether a call this machine passed to its home got no answer in time (504
+ * home_timeout): the home may or may not have done it.
+ */
+export function isHomeTimeout(e: unknown): boolean {
+  return e instanceof ApiError && e.status === 504 && e.problem.code === "home_timeout";
+}
+
 function noteUnavailable(status: number, problem: unknown): void {
   if (status !== 503 || !problem || typeof problem !== "object") return;
   const p = problem as { code?: unknown; reason?: unknown; readable?: unknown };

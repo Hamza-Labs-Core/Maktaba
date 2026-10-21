@@ -487,6 +487,23 @@ describe("AppShell (test-cases/app-shell.md)", () => {
     expect(screen.getByRole("button", { name: en["nav.signOut"] })).toHaveTextContent("viewer");
   });
 
+  it("SHL-14c: a sign-out the home did not answer in time keeps the user and says so", async () => {
+    post.mockRejectedValue(
+      new ApiError({
+        type: "https://maktaba.dev/problems/home-timeout",
+        title: "the home is slow to answer",
+        status: 504,
+        code: "home_timeout",
+      })
+    );
+    renderShell(["/library"]);
+    await screen.findByRole("heading", { name: "page /library" });
+    await userEvent.setup().click(screen.getByRole("button", { name: en["nav.signOut"] }));
+    expect(await screen.findByText(en["homeOffline.signOut"])).toBeInTheDocument();
+    expect(purge).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: en["nav.signOut"] })).toHaveTextContent("viewer");
+  });
+
   it("SHL-15: the theme button cycles light, dark, system", async () => {
     localStorage.setItem("mkt:theme", "light");
     renderShell(["/library"]);

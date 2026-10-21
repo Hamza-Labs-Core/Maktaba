@@ -118,8 +118,35 @@ func (r *Resolver) copyAnswer(ctx context.Context, ireq delegation.IntrospectReq
 		return nil, false
 	case !a.ExpiresAt.IsZero() && !r.now().Before(a.ExpiresAt):
 		return nil, true
+	case ireq.Session != "" && r.revokedLately(SessionKey(ireq.Session), a.Principal.UserID),
+		ireq.PAT != "" && r.revokedLately(patKey(ireq.PAT), a.Principal.UserID):
+		// the home pushed its revocation; the copy does not have it yet
+		return nil, true
 	}
 	return a, true
+}
+
+// jwtFromCopy holds a bearer access token's user to the copy while the home cannot be
+// asked: said false when the copy cannot say; nil for a user it does not have (or a
+// revocation the home pushed names); otherwise the user as the copy has them.
+func (r *Resolver) jwtFromCopy(ctx context.Context, p *principal.Principal) (*principal.Principal, bool) {
+	if p == nil || r.Local == nil || !r.CopyCurrent(ctx) {
+		return nil, false
+	}
+	lctx, cancel := context.WithTimeout(ctx, localTimeout)
+	defer cancel()
+	dp, err := r.Local.Principal(lctx, p.UserID)
+	switch {
+	case errors.Is(err, ErrNotLive):
+		return nil, true
+	case err != nil:
+		return nil, false
+	case r.revokedLately("", dp.UserID):
+		return nil, true
+	}
+	out := toPrincipal(&delegation.IntrospectAnswer{Principal: *dp})
+	out.Source, out.MustChangePassword = principal.SourceJWT, false
+	return out, true
 }
 
 // fromCopy is copyAnswer as the principal to attach and its CSRF token hash.
@@ -310,17 +337,35 @@ func (r *Resolver) SignIn(w http.ResponseWriter, req *http.Request) bool {
 }
 
 // SignOut ends a node-local session (POST /api/auth/logout with one: the home knows
-// nothing of it, so this machine answers whether the home is there or not). False: the
-// request is another one.
+// nothing of it, so this machine answers whether the home is there or not). "Sign out
+// everywhere" (/api/auth/logout-all) ends every node-local session of the user and,
+// through the home once it answers, their home sessions made before it (signout.go).
+// False: the request is another one.
 func (r *Resolver) SignOut(w http.ResponseWriter, req *http.Request) bool {
-	if req.URL.Path != LogoutPath || req.Method != http.MethodPost || r.Sessions == nil {
+	all := req.URL.Path == LogoutAllPath
+	if (req.URL.Path != LogoutPath && !all) || req.Method != http.MethodPost || r.Sessions == nil {
 		return false
 	}
 	id, ok := isLocalSession(req)
 	if !ok {
 		return false
 	}
-	if err := r.Sessions.End(id); err != nil && r.Logger != nil {
+	user, csrf, live := r.Sessions.Lookup(id)
+	if live && !csrfOK(req, csrf) {
+		writeProblem(w, http.StatusForbidden, "https://maktaba.dev/problems/csrf-mismatch", "csrf token mismatch", "")
+		return true
+	}
+	var err error
+	if all && live {
+		err = r.Sessions.EndUser(user)
+		if err == nil && r.SignOuts != nil {
+			err = r.SignOuts.add("u:"+user, signOut{User: user, All: true, At: r.now()})
+			r.Evict(delegation.Revoked{UserID: user})
+		}
+	} else {
+		err = r.Sessions.End(id)
+	}
+	if err != nil && r.Logger != nil {
 		r.Logger.Warn("node: a node-local sign-out was not saved", "err", err, "event", "node_local_sessions_failed")
 	}
 	r.setCookies(w, "", "", time.Time{})

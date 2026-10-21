@@ -106,6 +106,7 @@ func buildPlacement() placement.Table {
 		"/api/workers",
 		// story 35.9: the home's half of delegation and the cluster sign-in
 		"/api/cluster/delegate/introspect",
+		"/api/cluster/delegate/signout",
 		"/api/cluster/sso/authorize",
 		"/api/cluster/sso/exchange",
 	))

@@ -2,6 +2,7 @@
 // cluster and every machine's /api/cluster/self.
 //
 //	POST /api/cluster/delegate/introspect   home, node-signed
+//	POST /api/cluster/delegate/signout      home, node-signed
 //	GET  /api/cluster/sso/authorize         home, the browser (signed in on the home)
 //	POST /api/cluster/sso/exchange          home, node-signed
 //	GET  /api/cluster/self                  every machine, public

@@ -18,7 +18,11 @@
 // the home has not answered for the grace period (30 s,
 // rules.cluster.delegate_unreachable_grace_seconds) the node stops asking it per
 // request, and `home` routes are refused at once (Home), but for the session probe,
-// the sign-in and the sign-out, which this machine answers from its copy.
+// the sign-in and the sign-out, which this machine answers from its copy. A sign-out
+// made here is real: the session is denied here at once and the home is told when it
+// answers (signout.go). A bearer access token is held to the same rules (verified
+// here, its user checked on the copy). A revocation the home pushes is honoured on the
+// copy too until the copy has it (a copy is moments behind the home).
 //
 // The principal it attaches is the home's answer; the node then runs the same
 // middleware and handlers as the home (roles, admin checks, library ACLs, CSRF double
@@ -96,6 +100,9 @@ type Resolver struct {
 	Local Local
 	// Sessions are the node-local sign-ins (nil: this machine signs no one in).
 	Sessions *LocalSessions
+	// SignOuts are the sign-outs made here while the home did not answer (nil: none
+	// are made here; a sign-out waits for the home).
+	SignOuts *SignOuts
 	// CopyMaxLag returns how far behind the home the copy may have been when the home
 	// was last heard, for it to answer (nil: DefaultCopyMaxLag).
 	CopyMaxLag func() time.Duration
@@ -113,6 +120,11 @@ type Resolver struct {
 	failing time.Time // first unanswered call of the current outage; zero: the home answers
 	lastOK  time.Time // the home's last answer (kept across restarts: KeepHomeSeen)
 	fails   map[string][]time.Time
+	// gen moves at every revocation: an answer asked for before it is not cached
+	gen uint64
+	// revoked: what the home's revocations named lately (a session's key, or "u:"+user),
+	// when; the copy's answers honour them until it has them too
+	revoked map[string]time.Time
 
 	jmu      sync.Mutex
 	jwks     map[string]*rsa.PublicKey
@@ -210,8 +222,20 @@ func (r *Resolver) unanswered() {
 // under the offline rules, and `home` routes are refused at once).
 func (r *Resolver) Unreachable() bool {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	return !r.failing.IsZero() && r.now().Sub(r.failing) > r.grace()
+	failing := r.failing
+	r.mu.Unlock()
+	// the grace is read outside the lock: it reads the rules, which may wait on a
+	// database
+	return !failing.IsZero() && r.now().Sub(failing) > r.grace()
+}
+
+// DownFor reports whether the home has not answered for at least d (a single
+// unanswered probe is not an outage).
+func (r *Resolver) DownFor(d time.Duration) bool {
+	r.mu.Lock()
+	failing := r.failing
+	r.mu.Unlock()
+	return !failing.IsZero() && r.now().Sub(failing) >= d
 }
 
 // Reachability is for /api/cluster/self: whether the home answers and since when not.
@@ -236,6 +260,7 @@ func (r *Resolver) Watch(ctx context.Context) {
 		switch {
 		case err == nil || errors.Is(err, homelink.ErrUnauthorized):
 			r.answered()
+			r.sendSignOuts(ctx)
 		case ctx.Err() == nil:
 			r.unanswered()
 		}
@@ -247,10 +272,28 @@ func (r *Resolver) Watch(ctx context.Context) {
 	}
 }
 
-// Evict drops what a revocation names (story 35.9 AC4).
+// Evict drops what a revocation names (story 35.9 AC4). An answer the home gave before
+// it and not cached yet is not cached (gen), and the copy's answers honour it until the
+// copy has it too (revoked).
 func (r *Resolver) Evict(rv delegation.Revoked) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.gen++
+	now := r.now()
+	if r.revoked == nil {
+		r.revoked = map[string]time.Time{}
+	}
+	for k, t := range r.revoked {
+		if now.Sub(t) > revokedKeep {
+			delete(r.revoked, k)
+		}
+	}
+	for _, h := range rv.SessionSHA256 {
+		r.revoked[h] = now
+	}
+	if rv.UserID != "" {
+		r.revoked["u:"+rv.UserID] = now
+	}
 	n := 0
 	for _, h := range rv.SessionSHA256 {
 		if _, ok := r.cache[h]; ok {
@@ -280,6 +323,31 @@ func (r *Resolver) OnEvent(e homelink.Event) {
 	}
 }
 
+// revokedKeep is how long a pushed revocation is honoured on the copy's answers: the
+// copy applies the home's changes within moments.
+const revokedKeep = 5 * time.Minute
+
+// revokedLately reports whether a pushed revocation named the session (key) or its user
+// lately.
+func (r *Resolver) revokedLately(key, user string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := r.now()
+	if t, ok := r.revoked[key]; ok && now.Sub(t) <= revokedKeep {
+		return true
+	}
+	t, ok := r.revoked["u:"+user]
+	return ok && user != "" && now.Sub(t) <= revokedKeep
+}
+
+// cached is a credential's cached answer even past its lifetime (whose it was).
+func (r *Resolver) cached(key string) (*entry, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	e, ok := r.cache[key]
+	return e, ok
+}
+
 func (r *Resolver) get(key string) (*entry, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -290,9 +358,13 @@ func (r *Resolver) get(key string) (*entry, bool) {
 	return e, true
 }
 
-func (r *Resolver) put(key string, e *entry) {
+// put caches an answer asked for at generation gen, unless a revocation came since.
+func (r *Resolver) put(key string, e *entry, gen uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if gen != r.gen {
+		return
+	}
 	if r.cache == nil {
 		r.cache = map[string]*entry{}
 	}
@@ -331,11 +403,14 @@ func (r *Resolver) resolve(ctx context.Context, key string, req delegation.Intro
 		}
 		return e.p, e.csrf, nil
 	}
+	r.mu.Lock()
+	gen := r.gen
+	r.mu.Unlock()
 	a, err := r.Link.Introspect(ctx, req)
 	switch {
 	case errors.Is(err, homelink.ErrUnauthorized):
 		r.answered()
-		r.put(key, &entry{denied: true, until: r.now().Add(NegativeTTL)})
+		r.put(key, &entry{denied: true, until: r.now().Add(NegativeTTL)}, gen)
 		return nil, "", nil
 	case err != nil:
 		r.unanswered()
@@ -354,7 +429,7 @@ func (r *Resolver) resolve(ctx context.Context, key string, req delegation.Intro
 		// the home's revocation push is lost
 		return p, a.CSRFSHA256, nil
 	}
-	r.put(key, &entry{p: p, csrf: a.CSRFSHA256, user: a.Principal.UserID, until: until})
+	r.put(key, &entry{p: p, csrf: a.CSRFSHA256, user: a.Principal.UserID, until: until}, gen)
 	return p, a.CSRFSHA256, nil
 }
 
@@ -486,13 +561,19 @@ func (r *Resolver) Middleware(next http.Handler) http.Handler {
 			csrf string
 			ireq delegation.IntrospectRequest
 			err  error
+			jwt  bool
 		)
 		if b := bearer(req); b != "" {
 			if strings.HasPrefix(b, "pat_") {
 				ireq.PAT = b
 				p, _, err = r.resolve(req.Context(), patKey(b), ireq)
 			} else {
-				p = r.verifyJWT(req.Context(), b)
+				p, jwt = r.verifyJWT(req.Context(), b), true
+				if p != nil && r.Unreachable() {
+					// the home cannot be asked whether the user is still allowed in:
+					// the copy is, under the same rules as any other credential
+					err = ErrHomeUnreachable
+				}
 			}
 		} else if c, cerr := req.Cookie(CookieSession); cerr == nil && c.Value != "" {
 			ireq.Session = c.Value
@@ -500,7 +581,11 @@ func (r *Resolver) Middleware(next http.Handler) http.Handler {
 		}
 		if err != nil {
 			var said bool
-			p, csrf, said = r.fromCopy(req.Context(), ireq)
+			if jwt {
+				p, said = r.jwtFromCopy(req.Context(), p)
+			} else {
+				p, csrf, said = r.fromCopy(req.Context(), ireq)
+			}
 			switch {
 			case said && p != nil && !local && !readOnly(req.Method):
 				// a change through the home's database waits for the home
@@ -517,6 +602,10 @@ func (r *Resolver) Middleware(next http.Handler) http.Handler {
 				writeUnreachable(w, !readOnly(req.Method))
 				return
 			}
+		}
+		if p != nil && r.deniedHere(req, p.UserID) {
+			// signed out on this machine; the home is told (or was, a moment ago)
+			p = nil
 		}
 		if p == nil {
 			next.ServeHTTP(w, req)
@@ -574,7 +663,7 @@ func (r *Resolver) Me(w http.ResponseWriter, req *http.Request) bool {
 				writeUnreachable(w, false)
 				return true
 			}
-			if a != nil {
+			if a != nil && !r.deniedHere(req, a.Principal.UserID) {
 				d := a.Principal
 				d.MustChangePassword = d.MustChangePassword && ireq.Session != ""
 				dp = &d
@@ -622,23 +711,60 @@ func (r *Resolver) Home(proxy http.Handler) http.Handler {
 			}
 			return
 		}
+		if r.signedOutHere(req) {
+			// signed out on this machine and the home may not know yet: never sent there
+			r.setCookies(w, "", "", time.Time{})
+			if req.Method == http.MethodPost && (req.URL.Path == LogoutPath || req.URL.Path == LogoutAllPath) {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			writeProblem(w, http.StatusUnauthorized, "https://maktaba.dev/problems/unauthorized", "unauthorized",
+				"authentication required")
+			return
+		}
 		if !r.Unreachable() {
-			// a sign-in the home turns out not to answer (inside the grace) is answered
-			// here from the proxy's fallback (Fallback): its body is kept for that
+			// a sign-in or a sign-out the home turns out not to answer (inside the
+			// grace) is answered here from the proxy's fallback (Fallback): a sign-in's
+			// body is kept for that
 			proxy.ServeHTTP(w, keepSignIn(req))
 			return
 		}
-		if !r.Me(w, req) && !r.SignIn(w, req) {
-			writeUnreachable(w, true)
+		if !r.Me(w, req) && !r.SignIn(w, req) && !r.SignOutHere(w, req) {
+			// a read: the full page when this machine cannot serve the person's reads
+			// either (no copy, or one that was behind), else the notice
+			writeUnreachable(w, !readOnly(req.Method) || r.CopyCurrent(req.Context()))
 		}
 	})
 }
 
-// Fallback answers what the home proxy could not reach the home for and this machine
-// can answer itself (homeproxy.NewWithFallback): the session probe and the sign-in,
-// from its copy.
+// signedOutHere reports whether the request's home session was signed out on this
+// machine: by its key, or (while a "sign out everywhere" waits for the home) its user,
+// as far as this machine knows it.
+func (r *Resolver) signedOutHere(req *http.Request) bool {
+	if r.SignOuts == nil || bearer(req) != "" {
+		return false
+	}
+	c, err := req.Cookie(CookieSession)
+	if err != nil || c.Value == "" {
+		return false
+	}
+	user := ""
+	if r.SignOuts.anyAll() {
+		if e, ok := r.cached(SessionKey(c.Value)); ok && !e.denied {
+			user = e.user
+		} else if a, said := r.copyAnswer(req.Context(), delegation.IntrospectRequest{Session: c.Value}); said && a != nil {
+			user = a.Principal.UserID
+		}
+	}
+	return r.deniedHere(req, user)
+}
+
+// Fallback answers what the home proxy could not reach the home for (it did not
+// answer, or not in time) and this machine can answer itself
+// (homeproxy.NewWithFallback): the session probe and the sign-in, from its copy, and the
+// sign-out.
 func (r *Resolver) Fallback(w http.ResponseWriter, req *http.Request) bool {
-	return r.Me(w, req) || r.SignIn(w, req)
+	return r.Me(w, req) || r.SignIn(w, req) || r.SignOutHere(w, req)
 }
 
 type signInBodyKey struct{}

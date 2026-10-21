@@ -62,6 +62,12 @@ func (f *outageHome) Self(context.Context) (json.RawMessage, error) {
 }
 func (f *outageHome) Subscribe(func(homelink.Event)) {}
 func (f *outageHome) HasKey() bool                   { return true }
+func (f *outageHome) SignOut(context.Context, delegation.SignOutRequest) (*delegation.SignOutAnswer, error) {
+	if f.isDown() {
+		return nil, homelink.ErrUnreachable
+	}
+	return &delegation.SignOutAnswer{}, nil
+}
 
 // outageCopy is this machine's copy: the session the home answered for, one user.
 type outageCopy struct{}

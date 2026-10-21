@@ -204,6 +204,7 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		"/api/cluster/sso/callback":        {},
 		"/api/cluster/sso/exchange":        {},
 		"/api/cluster/delegate/introspect": {},
+		"/api/cluster/delegate/signout":    {},
 	}
 }
 

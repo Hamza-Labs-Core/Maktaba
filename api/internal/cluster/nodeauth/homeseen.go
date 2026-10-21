@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -74,12 +73,5 @@ func (r *Resolver) KeepHomeSeen(ctx context.Context, path string) {
 }
 
 func writeSeen(path string, t time.Time) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(t.UTC().Format(time.RFC3339Nano)+"\n"), 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return writeFile(path, []byte(t.UTC().Format(time.RFC3339Nano)+"\n"))
 }
