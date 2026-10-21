@@ -175,3 +175,32 @@ for the setup screens: `MAKTABA_SERVER_BIN=/path/to/maktaba-server pnpm tauri de
 - Apple Developer ID / Microsoft EV cert / Linux signing
 - The updater private key (the `pubkey` in `tauri.conf.json` is a
   placeholder until the signing key lands)
+
+## Linux runs the server too (Epic 39)
+
+On Linux the AppImage (or the .deb / .rpm) with the server payload (`/usr/lib/Maktaba/server`
+inside it, story 39.2) is the whole installation
+([spec](../../specs/epics/39-linux-app/README.md),
+[contract](../../specs/epics/39-linux-app/contract-runtime.md)). The modes, the setup screens and
+the tray menu are the Mac's. What differs is where the server runs and how it starts
+(`agent_linux.rs`):
+
+- **The runtime copy.** The server never runs from the app's files: an AppImage is mounted at a
+  new `/tmp/.mount_*` path on every run, and a package upgrade replaces `/usr/lib/Maktaba` under
+  a running server. When setup finishes, the shell runs the payload's own
+  `maktaba-server runtime install --activate --owner app`, which copies the payload into
+  `~/.local/share/maktaba/runtime/<version>` and points `current` at it.
+- **The user service.** `maktaba-server service install` writes and starts the systemd user
+  unit `maktaba-server.service`, which runs `runtime/current/bin/maktaba-launcher`.
+  `service linger` lets it start at boot without a login: polkit allows that from the desktop
+  session, and where it is refused, setup's *Allow* button asks again. Pause and Resume are
+  `service stop` and `service start`. The shell never writes the unit itself.
+- **After an update.** The Tauri updater replaces the AppImage, or installs the .deb / .rpm
+  through the system's admin prompt. The new app then sees that its payload is newer than
+  `runtime/current` and switches the unit to it. The server stops while `current` moves; a paused
+  server stays paused.
+- **The tray** is a StatusNotifier item (libayatana-appindicator). Where no StatusNotifier host
+  runs (GNOME without the AppIndicator extension), closing the window quits the app and the
+  server keeps running. With a host, `~/.config/autostart/maktaba.desktop` starts the tray at
+  login with the window hidden (`--hidden`), and the entry follows the AppImage if it moves.
+- **Logs** are in `~/.local/state/maktaba/logs` (*Open logs* uses `xdg-open`).

@@ -338,8 +338,11 @@ fn install_update(app: AppHandle) {
         match run.await {
             Ok(true) => {
                 let sh = shell(&app);
-                // a paused server stays paused; it runs the new payload on Resume
-                if matches!(sh.mode(), Some(AppMode::Server { .. }))
+                // a paused server stays paused; it runs the new payload on Resume.
+                // Linux: the server runs a copy of the payload, which the new
+                // app switches to when it starts (agent::linux::sync_runtime).
+                if cfg!(not(target_os = "linux"))
+                    && matches!(sh.mode(), Some(AppMode::Server { .. }))
                     && !sh.paused.load(Ordering::SeqCst)
                 {
                     let _ = agent::control(Action::Restart);
@@ -392,6 +395,42 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
                 if let Err(e) = agent::control(Action::Resume) {
                     show_error(&handle, format!("The Maktaba server could not start: {e}"));
                 }
+            }
+        });
+    }
+
+    // Linux: the server runs a copy of the payload (the runtime). After an app
+    // update this app's payload is newer: copy it in and switch the unit to it
+    // (stopped while `current` moves; a paused server stays paused). Then a
+    // unit that is not running starts again, unless paused; and the tray's
+    // autostart entry follows the AppImage if it moved.
+    #[cfg(target_os = "linux")]
+    {
+        let handle = app.clone();
+        std::thread::spawn(move || {
+            let sh = shell(&handle);
+            if !matches!(sh.mode(), Some(AppMode::Server { .. })) {
+                return;
+            }
+            match agent::linux::sync_runtime() {
+                Ok(true) => sh.mark_started(),
+                Ok(false) => {}
+                Err(e) => show_error(
+                    &handle,
+                    format!("Maktaba could not switch the server to this version: {e}"),
+                ),
+            }
+            if !sh.paused.load(Ordering::SeqCst)
+                && agent::agent_alive() == Some(false)
+                && agent::login_item() != LoginItem::NotRegistered
+            {
+                sh.mark_started();
+                if let Err(e) = agent::control(Action::Resume) {
+                    show_error(&handle, format!("The Maktaba server could not start: {e}"));
+                }
+            }
+            if agent::linux::tray_available() {
+                let _ = agent::linux::write_autostart();
             }
         });
     }
@@ -525,7 +564,10 @@ pub fn use_remote_server(app: AppHandle, url: String) -> Result<(), String> {
     let url = mode::valid_server_url(&url)
         .ok_or("enter an address that starts with http:// or https://")?;
     // this Mac no longer runs a server: take the login item out
-    if agent::login_item() == LoginItem::Enabled {
+    if matches!(
+        agent::login_item(),
+        LoginItem::Enabled | LoginItem::RequiresApproval
+    ) {
         agent::unregister()?;
     }
     shell(&app).set_mode(AppMode::Client {

@@ -181,12 +181,26 @@ pub fn run() {
             // Close-to-tray (Story 13.4 AC-5): closing the window hides
             // it instead of terminating the app; Quit (tray/menu) still
             // exits. In server mode the server keeps running either way.
+            // Linux (Epic 39): without a StatusNotifier host there is no tray
+            // to come back from, so closing the window quits the app (the
+            // server is a systemd unit and keeps running); started by the
+            // tray's autostart entry (`--hidden`), the window stays hidden.
+            #[cfg(target_os = "linux")]
+            let keep_in_tray = agent::linux::tray_available();
+            #[cfg(not(target_os = "linux"))]
+            let keep_in_tray = true;
             if let Some(main) = app.get_webview_window("main") {
+                #[cfg(target_os = "linux")]
+                if keep_in_tray && std::env::args().any(|a| a == agent::linux::HIDDEN_FLAG) {
+                    let _ = main.hide();
+                }
                 let win = main.clone();
                 main.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
-                        api.prevent_close();
-                        let _ = win.hide();
+                        if keep_in_tray {
+                            api.prevent_close();
+                            let _ = win.hide();
+                        }
                     }
                 });
             }
