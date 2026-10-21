@@ -113,7 +113,7 @@ func TestMigrateMovesDefaultInstall(t *testing.T) {
 	writeAt(t, filepath.Join(old.Data, "models", "m", "w.bin"), "W")
 	writeAt(t, filepath.Join(old.Data, "cache", "streaming", "seg"), "C")
 
-	from, err := migrateDirs(old, cur, nil)
+	from, err := migrateDirs(osMover, old, cur)
 	if err != nil || from != old.Config {
 		t.Fatalf("migrate = %q, %v", from, err)
 	}
@@ -139,7 +139,7 @@ func TestMigrateMovesDefaultInstall(t *testing.T) {
 		t.Error("the old server.toml and data dir should be gone")
 	}
 	// once: a second run does nothing
-	if from, err := migrateDirs(old, cur, nil); err != nil || from != "" {
+	if from, err := migrateDirs(osMover, old, cur); err != nil || from != "" {
 		t.Fatalf("second migrate = %q, %v", from, err)
 	}
 }
@@ -151,7 +151,7 @@ func TestMigrateKeepsChosenDataDir(t *testing.T) {
 	toml := "[server]\ndata_dir = '" + chosen + "'\n"
 	writeAt(t, filepath.Join(old.Config, "server.toml"), toml)
 	writeAt(t, filepath.Join(chosen, "maktaba.db"), "DB")
-	if _, err := migrateDirs(old, cur, nil); err != nil {
+	if _, err := migrateDirs(osMover, old, cur); err != nil {
 		t.Fatal(err)
 	}
 	if got := readAt(t, filepath.Join(cur.Config, "server.toml")); got != toml {
@@ -167,7 +167,7 @@ func TestMigrateLeavesNewInstallAlone(t *testing.T) {
 	old, cur := layout(t)
 	writeAt(t, filepath.Join(old.Config, "server.toml"), "[server]\n")
 	writeAt(t, filepath.Join(cur.Config, "server.toml"), "[server]\nlisten = \"x\"\n")
-	if from, err := migrateDirs(old, cur, nil); err != nil || from != "" {
+	if from, err := migrateDirs(osMover, old, cur); err != nil || from != "" {
 		t.Fatalf("migrate = %q, %v", from, err)
 	}
 	if !exists(filepath.Join(old.Config, "server.toml")) {
@@ -183,7 +183,7 @@ func TestMigrateFinishesAfterAPartialRun(t *testing.T) {
 	// a run that moved the data and stopped before server.toml
 	writeAt(t, filepath.Join(cur.Data, "maktaba.db"), "DB")
 	writeAt(t, filepath.Join(cur.Data, "models", "m"), "W")
-	if _, err := migrateDirs(old, cur, nil); err != nil {
+	if _, err := migrateDirs(osMover, old, cur); err != nil {
 		t.Fatal(err)
 	}
 	if got := readAt(t, filepath.Join(cur.Config, "server.toml")); !strings.Contains(got, cur.Data) {
@@ -202,7 +202,7 @@ func TestMigrateIntoEmptyDataDir(t *testing.T) {
 	if err := os.MkdirAll(cur.Data, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := migrateDirs(old, cur, nil); err != nil {
+	if _, err := migrateDirs(osMover, old, cur); err != nil {
 		t.Fatal(err)
 	}
 	if readAt(t, filepath.Join(cur.Data, "maktaba.db")) != "DB" {
@@ -216,7 +216,7 @@ func TestMigrateRefusesToOverwriteData(t *testing.T) {
 	writeAt(t, filepath.Join(old.Config, "server.toml"), "[server]\n")
 	writeAt(t, filepath.Join(old.Data, "maktaba.db"), "OLD")
 	writeAt(t, filepath.Join(cur.Data, "maktaba.db"), "NEW")
-	if _, err := migrateDirs(old, cur, nil); err == nil {
+	if _, err := migrateDirs(osMover, old, cur); err == nil {
 		t.Fatal("want an error when the new data dir already exists")
 	}
 	if readAt(t, filepath.Join(cur.Data, "maktaba.db")) != "NEW" || !exists(filepath.Join(old.Config, "server.toml")) {
