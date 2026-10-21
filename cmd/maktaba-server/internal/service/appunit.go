@@ -21,9 +21,15 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
-// AppUnitName is the app's unit: the name Epic 35's user units use, so one
-// machine never runs two Maktaba servers.
+// AppUnitName is the app's unit, under the name Epic 35's units use. Install
+// refuses a user unit of that name it did not write (a self-managed install's)
+// and a system-wide one (the maktaba-server package's, or setup --system):
+// either would start a second server on the same ports.
 const AppUnitName = Name + ".service"
+
+// systemUnitDirs are where a system-wide unit of that name can be.
+var systemUnitDirs = []string{"/etc/systemd/system", "/run/systemd/system", "/usr/local/lib/systemd/system",
+	"/usr/lib/systemd/system", "/lib/systemd/system"}
 
 // appMarker is the unit's first line: it tells the app's unit from another
 // maktaba-server.service (an Epic 35 self-managed install's).
@@ -38,22 +44,38 @@ type AppUnit struct {
 	Launcher string
 	// LogFile is the server's log; the launcher rotates it.
 	LogFile string
-	// Dir holds user units ($XDG_CONFIG_HOME/systemd/user).
+	// Dir holds user units: where the user's systemd looks (UserManager.UnitDir).
 	Dir string
+	// Env is the XDG directories this install uses (KEY=VALUE), written into
+	// the unit: the server started at boot by systemd has none of the shell's.
+	Env []string
+}
+
+// xdgDirs are the XDG variables a server's paths come from (config, data,
+// logs under state, caches).
+var xdgDirs = []struct{ name, def string }{
+	{"XDG_CONFIG_HOME", ".config"}, {"XDG_DATA_HOME", ".local/share"},
+	{"XDG_STATE_HOME", ".local/state"}, {"XDG_CACHE_HOME", ".cache"},
 }
 
 // AppUnitFor is the unit for a data directory (the runtime's parent) and a logs
-// directory, in the user's unit directory.
+// directory, with the XDG directories getenv gives (the defaults under home
+// otherwise) pinned in its environment. Dir is the default user unit
+// directory; UnitDir is where the manager looks.
 func AppUnitFor(getenv func(string) string, home, dataDir, logsDir string) AppUnit {
-	cfg := getenv("XDG_CONFIG_HOME")
-	if cfg == "" {
-		cfg = filepath.Join(home, ".config")
-	}
-	return AppUnit{
+	u := AppUnit{
 		Launcher: filepath.Join(dataDir, "runtime", "current", "bin", "maktaba-launcher"),
 		LogFile:  filepath.Join(logsDir, "server.log"),
-		Dir:      filepath.Join(cfg, "systemd", "user"),
+		Dir:      filepath.Join(home, ".config", "systemd", "user"),
 	}
+	for _, x := range xdgDirs {
+		v := getenv(x.name)
+		if v == "" || !filepath.IsAbs(v) { // the spec ignores a relative one
+			v = filepath.Join(home, filepath.FromSlash(x.def))
+		}
+		u.Env = append(u.Env, x.name+"="+v)
+	}
+	return u
 }
 
 // Path is the unit file.
@@ -71,7 +93,7 @@ Description=Maktaba (the server and everything it runs)
 
 [Service]
 Type=simple
-ExecStart=` + systemdArgs(u.Launcher, "--log-file", u.LogFile, "serve") + `
+` + envLines(u.Env) + `ExecStart=` + systemdArgs(u.Launcher, "--log-file", u.LogFile, "serve") + `
 Restart=always
 RestartSec=5
 RestartForceExitStatus=75
@@ -82,6 +104,16 @@ LimitNOFILE=65536
 [Install]
 WantedBy=default.target
 `
+}
+
+// envLines are Environment= lines, each assignment quoted (backslash and
+// quote escaped, % doubled: systemd expands specifiers there, not variables).
+func envLines(env []string) string {
+	var b strings.Builder
+	for _, kv := range env {
+		b.WriteString(`Environment="` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "%", "%%").Replace(kv) + "\"\n")
+	}
+	return b.String()
 }
 
 // systemdArgs is a command line in systemd's syntax: each word quoted when it
@@ -157,6 +189,8 @@ type UserManager struct {
 	Booted func() bool
 	// LingerFile is logind's linger flag for this user.
 	LingerFile string
+	// SystemUnitDirs are where a system-wide unit of the app's name can be.
+	SystemUnitDirs []string
 }
 
 // LocalUserManager is the user manager of this process's user.
@@ -173,7 +207,8 @@ func LocalUserManager() UserManager {
 			info, err := os.Stat("/run/systemd/system")
 			return err == nil && info.IsDir()
 		},
-		LingerFile: filepath.Join("/var/lib/systemd/linger", name),
+		LingerFile:     filepath.Join("/var/lib/systemd/linger", name),
+		SystemUnitDirs: systemUnitDirs,
 	}
 }
 
@@ -195,6 +230,33 @@ func (m UserManager) Available(ctx context.Context) error {
 	return nil
 }
 
+// UnitDir is where the user's systemd reads units: its own XDG_CONFIG_HOME's
+// systemd/user when its environment has one (a variable set only in a shell
+// is not the manager's), else def (~/.config/systemd/user).
+func (m UserManager) UnitDir(ctx context.Context, def string) string {
+	out, err := m.systemctl(ctx, "show-environment")
+	if err != nil {
+		return def
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(line), "XDG_CONFIG_HOME="); ok && filepath.IsAbs(v) {
+			return filepath.Join(v, "systemd", "user")
+		}
+	}
+	return def
+}
+
+// SystemUnit is a system-wide maktaba-server.service, or "".
+func (m UserManager) SystemUnit() string {
+	for _, d := range m.SystemUnitDirs {
+		p := filepath.Join(d, AppUnitName)
+		if _, err := os.Lstat(p); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
 // AppStatus is the app's unit as `service status` reports it.
 type AppStatus struct {
 	// Unit is the unit file; Installed: it is the app's.
@@ -202,6 +264,8 @@ type AppStatus struct {
 	Installed bool   `json:"installed"`
 	// Taken is the ExecStart of another maktaba-server.service in its place.
 	Taken string `json:"taken,omitempty"`
+	// SystemUnit is a system-wide maktaba-server.service (another server).
+	SystemUnit string `json:"system_unit,omitempty"`
 	// Enabled: started at boot (with linger) or login.
 	Enabled bool `json:"enabled"`
 	// Active is systemd's ActiveState (active, inactive, activating,
@@ -220,6 +284,7 @@ type AppStatus struct {
 func (m UserManager) Status(ctx context.Context, u AppUnit) AppStatus {
 	st := AppStatus{Unit: u.Path(), Manager: "ok", Active: "inactive"}
 	st.Installed, st.Taken = owned(u.Path())
+	st.SystemUnit = m.SystemUnit()
 	if m.LingerFile != "" {
 		_, err := os.Stat(m.LingerFile)
 		st.Linger = err == nil
@@ -279,6 +344,12 @@ func parseProps(out string) map[string]string {
 func (m UserManager) Install(ctx context.Context, u AppUnit, start, replace bool) error {
 	if err := m.Available(ctx); err != nil {
 		return err
+	}
+	if sys := m.SystemUnit(); sys != "" {
+		return fmt.Errorf("%w: a system-wide Maktaba service is installed (%s, from the maktaba-server package or "+
+			"setup --system), which would run a second server on the same ports. Remove it first: "+
+			"sudo systemctl disable --now maktaba-server, then remove the package (sudo apt remove maktaba-server, "+
+			"or sudo dnf remove maktaba-server)", ErrServiceTaken, sys)
 	}
 	if mine, taken := owned(u.Path()); !mine && taken != "" && !replace {
 		return fmt.Errorf("%w: %s already runs %s; it belongs to another install of Maktaba "+

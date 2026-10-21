@@ -22,7 +22,7 @@ var lockWait = 2 * time.Minute
 
 // lock takes <root>/lock (flock), waiting for another holder up to lockWait.
 func (r Runtime) lock(ctx context.Context) (func(), error) {
-	f, err := os.OpenFile(filepath.Join(r.Root, "lock"), os.O_CREATE|os.O_RDWR, 0o644)
+	f, err := os.OpenFile(filepath.Join(r.Root, "lock"), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, err
 	}

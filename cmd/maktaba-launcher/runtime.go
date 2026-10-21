@@ -4,7 +4,10 @@ package main
 // specs/epics/39-linux-app/contract-runtime.md §4): the systemd user unit runs
 // <data>/runtime/current/bin/maktaba-launcher, a copy of the app's payload the
 // user owns. It runs in app-bundle mode like Maktaba.app: the payload's server,
-// no release pointers, no self-update.
+// no release pointers, and the launcher never updates itself. The runtime's
+// owner.json says who updates it: the app (MAKTABA_UPDATE_DISABLE, one updater),
+// or the machine itself (owner headless: the server's update installs a new
+// runtime, story 39.9).
 
 import (
 	"encoding/json"
@@ -66,14 +69,56 @@ func sameDir(a, b string) bool {
 }
 
 // runtimeStateRoot is where a runtime launcher keeps its lock and log: --root,
-// $MAKTABA_INSTALL_ROOT, else the runtime's parent (the platform's data
-// directory, $XDG_DATA_HOME/maktaba on Linux).
-func runtimeStateRoot(flagRoot, payload string) string {
+// $MAKTABA_INSTALL_ROOT, else the platform's data directory, as the server's
+// config has it: $XDG_DATA_HOME/maktaba, ~/.local/share/maktaba without one.
+func runtimeStateRoot(flagRoot string) string {
 	if flagRoot != "" {
 		return flagRoot
 	}
 	if r := os.Getenv("MAKTABA_INSTALL_ROOT"); r != "" {
 		return r
 	}
-	return filepath.Dir(filepath.Dir(payload))
+	if d := os.Getenv("XDG_DATA_HOME"); d != "" {
+		return filepath.Join(d, "maktaba")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "."
+	}
+	return filepath.Join(home, ".local", "share", "maktaba")
+}
+
+// Owners of a runtime (owner.json, written by `maktaba-server runtime install --owner`).
+const (
+	runtimeOwnerFile     = "owner.json"
+	runtimeOwnerHeadless = "headless"
+	// envRuntimeOwner tells the server (and the API) who updates the runtime.
+	envRuntimeOwner = "MAKTABA_RUNTIME_OWNER"
+)
+
+// runtimeOwner is the owner recorded in a runtime root: "headless", else "app"
+// (none recorded, or one this launcher does not know).
+func runtimeOwner(root string) string {
+	var o struct {
+		Owner string `json:"owner"`
+	}
+	if b, err := os.ReadFile(filepath.Join(root, runtimeOwnerFile)); err == nil &&
+		json.Unmarshal(b, &o) == nil && o.Owner == runtimeOwnerHeadless {
+		return runtimeOwnerHeadless
+	}
+	return "app"
+}
+
+// updateEnv is the server's update environment in app-bundle mode, read at
+// every start so a change of owner applies at the next one. runtimeRoot is
+// the Linux runtime the payload is a copy in ("" for Maktaba.app).
+func updateEnv(runtimeRoot string) []string {
+	if runtimeRoot == "" {
+		return []string{envUpdateDisable + "=1"}
+	}
+	owner := runtimeOwner(runtimeRoot)
+	if owner == runtimeOwnerHeadless {
+		return []string{envRuntimeOwner + "=" + owner}
+	}
+	return []string{envRuntimeOwner + "=" + owner, envUpdateDisable + "=1"}
 }

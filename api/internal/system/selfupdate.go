@@ -51,10 +51,11 @@ import (
 type installKind int
 
 const (
-	installBinary installKind = iota // plain archive / Homebrew / manual
-	installDocker                    // container — can't self-replace
-	installDeb                       // apt-managed
-	installRPM                       // dnf/yum-managed
+	installBinary  installKind = iota // plain archive / Homebrew / manual
+	installDocker                     // container — can't self-replace
+	installDeb                        // apt-managed
+	installRPM                        // dnf/yum-managed
+	installRuntime                    // the Linux app's runtime copy, updated by the machine (Epic 39)
 )
 
 // SelfUpdater wires the self-update handler to the update-check service
@@ -70,10 +71,12 @@ type SelfUpdater struct {
 	rolledBack *RollbackInfo
 
 	// injection points for tests
-	httpc        *http.Client
-	execSelf     func(path string) error // re-exec; default syscall.Exec
-	detect       func(self string) installKind
-	runPkgMgr    func(kind installKind, version string) ([]byte, error)
+	httpc     *http.Client
+	execSelf  func(path string) error // re-exec; default syscall.Exec
+	detect    func(self string) installKind
+	runPkgMgr func(kind installKind, version string) ([]byte, error)
+	// runRuntime starts a runtime copy's update (default startRuntimeUpdate).
+	runRuntime   func(server, version string) (unit string, out []byte, err error)
 	selfPathFunc func() (string, error)
 	// trusted returns the Sigstore trust root (default: the Updater's
 	// RootStore, refreshed through TUF first, else the embedded root).
@@ -90,6 +93,7 @@ func NewSelfUpdater(u *Updater) *SelfUpdater {
 		execSelf:     reexecSelf,
 		detect:       detectInstall,
 		runPkgMgr:    runPackageManager,
+		runRuntime:   startRuntimeUpdate,
 		selfPathFunc: resolveSelf,
 		trusted:      u.trustedMaterial,
 	}
@@ -194,6 +198,9 @@ func (s *SelfUpdater) handle(w http.ResponseWriter, r *http.Request) {
 	case installRPM:
 		s.packageManagerUpdate(w, r, installRPM, status.LatestVersion)
 		return
+	case installRuntime:
+		s.runtimeUpdate(w, r, self, status.LatestVersion)
+		return
 	}
 
 	// Plain binary install: download → verify → swap → re-exec.
@@ -286,6 +293,8 @@ func (s *SelfUpdater) InstallName() string {
 		return "deb"
 	case installRPM:
 		return "rpm"
+	case installRuntime:
+		return "runtime"
 	}
 	return "binary"
 }
@@ -608,6 +617,9 @@ func resolveSelf() (string, error) {
 }
 
 func detectInstall(self string) installKind {
+	if os.Getenv(EnvRuntimeOwner) == RuntimeOwnerHeadless { // set by the runtime's launcher
+		return installRuntime
+	}
 	if fileExists("/.dockerenv") || cgroupMentionsContainer() {
 		return installDocker
 	}

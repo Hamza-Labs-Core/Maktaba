@@ -1,19 +1,18 @@
-// The operator doc of Epic 32 (story 32.12): docs/tv-cluster-and-remote.md,
-// one heading per section so the Live TV page links straight to it.
-export const DOC_URL =
-  "https://github.com/Hamza-Labs-Core/Maktaba/blob/main/docs/tv-cluster-and-remote.md";
+// The Live TV page's guide links (story 32.12), now into the in-app help
+// (Epic 41) instead of the operator doc on GitHub. help.coverage.test.ts
+// checks each of these entries exists.
+import { hrefOf, type HelpRef } from "../../../help/registry";
 
-/** The doc's anchors the Live TV page links to (plan 32.12 §1). */
+/** The help entries the Live TV page links to. */
 export const DOC_SECTIONS = {
-  streamingHosts: "streaming-hosts",
-  placement: "placement",
-  failover: "failover",
-  cloudflare: "cloudflare",
-  costs: "costs",
-  remoteViewers: "remote-viewers",
-  failures: "failures",
-  plex: "plex-remote",
-} as const;
+  streamingHosts: { topic: "live-tv-admin", anchor: "streaming-hosts" },
+  placement: { topic: "live-tv-admin", anchor: "placement" },
+  failover: { topic: "live-tv-admin", anchor: "failover" },
+  cloudflare: { topic: "remote-tv", anchor: "set-up" },
+  costs: { topic: "remote-tv", anchor: "budget" },
+  remoteViewers: { topic: "remote-tv", anchor: "limits" },
+  failures: { topic: "remote-tv", anchor: "troubleshooting" },
+  plex: { topic: "plex", anchor: "live-tv" },
+} as const satisfies Record<string, HelpRef>;
 
-export const docLink = (section: keyof typeof DOC_SECTIONS) =>
-  `${DOC_URL}#${DOC_SECTIONS[section]}`;
+export const docLink = (section: keyof typeof DOC_SECTIONS) => hrefOf(DOC_SECTIONS[section]);

@@ -52,6 +52,15 @@ func hasArg(args []string, a string) bool {
 	return false
 }
 
+func anyArgHas(args []string, sub string) bool {
+	for _, a := range args {
+		if strings.Contains(a, sub) {
+			return true
+		}
+	}
+	return false
+}
+
 func lastArgAfter(args []string, flag string) string {
 	v := ""
 	for i := 0; i+1 < len(args); i++ {
@@ -84,6 +93,11 @@ func fakeFFmpeg(mode string, args []string) int {
 		// the driver refuses the session before any output
 		_, _ = fmt.Fprintln(os.Stderr, "[h264_nvenc] OpenEncodeSessionEx failed: incompatible client key (21)")
 		return 1
+	case hasArg(args, "pipe:1") && anyArgHas(args, "stall.mp4"):
+		// a share that stops answering mid-read: a little output, then none
+		_, _ = os.Stdout.Write(pesPacket(int64(1.4 * 90000)))
+		time.Sleep(time.Hour)
+		return 0
 	case hasArg(args, "pipe:1"): // a block
 		dur, _ := strconv.ParseFloat(lastArgAfter(args, "-t"), 64)
 		off, _ := strconv.ParseFloat(lastArgAfter(args, "-output_ts_offset"), 64)

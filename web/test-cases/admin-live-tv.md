@@ -418,7 +418,7 @@ Shared data: `info`, `device` (`enabled:false`, `max_tuners:16`), `rules`, `plex
 - **Preconditions / data:** staging in flight; Plex not configured; remote not set up.
 - **Steps:**
   1. Click "Open Changes"; Back. 2. Click the in-flight link; Back. 3. Click "Open Extensions" and the remote "set up" link.
-- **Expected:** Routes `/admin/live-tv/changes`, `/admin/live-tv/changes/ch-1`, `/admin/extensions`, `/admin/extensions#cloudflare_stream`. Back returns to Live TV with fresh data. Doc links (`docLink(...)`) open in a new tab with `target="_blank" rel="noreferrer"`.
+- **Expected:** Routes `/admin/live-tv/changes`, `/admin/live-tv/changes/ch-1`, `/admin/extensions`, `/admin/extensions#cloudflare_stream`. Back returns to Live TV with fresh data. Guide links (`docLink(...)`, into the in-app help `/help/...`) open in a new tab with `target="_blank" rel="noreferrer"`.
 
 ### LTV-32 — Leaving the page stops every poll
 

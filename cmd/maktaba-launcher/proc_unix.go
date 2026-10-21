@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build !windows && !linux
 
 package main
 
@@ -17,3 +17,6 @@ func (*childHandle) kill()               {}
 func (*childHandle) release()            {}
 func askStop(cmd *exec.Cmd) error        { return cmd.Process.Signal(syscall.SIGTERM) }
 func setupConsole(_, _ bool)             {}
+
+func becomeSubreaper()     {}
+func (*childHandle) reap() {}

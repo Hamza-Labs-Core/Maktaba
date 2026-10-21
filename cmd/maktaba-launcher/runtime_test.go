@@ -37,12 +37,6 @@ func TestRuntimePayload(t *testing.T) {
 	if got, ok := runtimePayload(bin); !ok || got != filepath.Join(data, "runtime", "current") {
 		t.Errorf("with current: %q %v", got, ok)
 	}
-	if got := runtimeStateRoot("", filepath.Join(data, "runtime", "current")); got != data {
-		t.Errorf("state root %q, want %q", got, data)
-	}
-	if got := runtimeStateRoot("/flag", copyDir); got != "/flag" {
-		t.Errorf("--root ignored: %q", got)
-	}
 
 	// not a runtime: no payload.json, another platform, not a bin directory
 	if _, ok := runtimePayload(filepath.Join(t.TempDir(), "bin")); ok {
@@ -54,5 +48,27 @@ func TestRuntimePayload(t *testing.T) {
 	}
 	if _, ok := runtimePayload(copyDir); ok {
 		t.Error("the payload directory itself is not its bin/")
+	}
+}
+
+// The state root is the data directory the server's config uses, wherever the
+// runtime is (contract-runtime.md §4).
+func TestRuntimeStateRoot(t *testing.T) {
+	t.Setenv("MAKTABA_INSTALL_ROOT", "")
+	t.Setenv("XDG_DATA_HOME", "/xdg/data")
+	if got := runtimeStateRoot(""); got != "/xdg/data/maktaba" {
+		t.Errorf("with XDG_DATA_HOME: %q", got)
+	}
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("HOME", "/home/u")
+	if got := runtimeStateRoot(""); got != "/home/u/.local/share/maktaba" {
+		t.Errorf("default: %q", got)
+	}
+	t.Setenv("MAKTABA_INSTALL_ROOT", "/env/root")
+	if got := runtimeStateRoot(""); got != "/env/root" {
+		t.Errorf("MAKTABA_INSTALL_ROOT ignored: %q", got)
+	}
+	if got := runtimeStateRoot("/flag"); got != "/flag" {
+		t.Errorf("--root ignored: %q", got)
 	}
 }

@@ -2,13 +2,16 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/models"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
 
 func newModelsCmd() *cobra.Command {
@@ -16,7 +19,61 @@ func newModelsCmd() *cobra.Command {
 		Use:   "models",
 		Short: "Manage Whisper transcription models",
 	}
-	cmd.AddCommand(newModelsListCmd(), newModelsDownloadCmd(), newModelsActiveCmd())
+	cmd.AddCommand(newModelsListCmd(), newModelsDownloadCmd(), newModelsActiveCmd(), newModelsLLMCmd())
+	return cmd
+}
+
+// models llm: the language model(s) of the LLM stages, into the model server's
+// folder (the same work as the setup step `llm`).
+func newModelsLLMCmd() *cobra.Command {
+	var check bool
+	cmd := &cobra.Command{
+		Use:   "llm [model...]",
+		Short: "Download the language model(s) the LLM stages use (Ollama; default: [llm] models)",
+		Long: `llm downloads the models of the language model server (Maktaba.app's
+bundled Ollama, or the one at [llm] url) that it does not have yet, showing the
+disk space they need first. A download that stopped resumes where it was.
+Without a model name: [llm] models in server.toml (default qwen2.5:7b).`,
+		RunE: func(c *cobra.Command, args []string) error {
+			cfg, _, err := config.Load()
+			if err != nil {
+				return err
+			}
+			exe, _ := os.Executable()
+			last := ""
+			res, err := llmserver.Setup(c.Context(), llmserver.SetupOptions{
+				Config: cfg, Exe: exe, Models: args, SupervisorURL: supervisor.StateURL(cfg),
+				CheckOnly: check, Log: io.Discard,
+				Progress: func(e llmserver.Event) {
+					line := e.Message
+					if e.Total > 0 {
+						line = fmt.Sprintf("%s: %s of %s", e.Message, llmserver.HumanBytes(e.Done), llmserver.HumanBytes(e.Total))
+					}
+					if line != last {
+						fmt.Fprintf(os.Stderr, "\r%-78s", line)
+						if e.Stage != "download" {
+							fmt.Fprintln(os.Stderr)
+						}
+						last = line
+					}
+				},
+			})
+			fmt.Fprintln(os.Stderr)
+			if err != nil {
+				return err
+			}
+			for _, m := range res.Models {
+				state := "missing"
+				if m.Ready {
+					state = "ready"
+				}
+				fmt.Printf("%s\t%s\n", m.Name, state)
+			}
+			fmt.Printf("server: %s\n", res.URL)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&check, "check", false, "only show what is missing and the space it needs")
 	return cmd
 }
 

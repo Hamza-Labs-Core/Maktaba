@@ -8,9 +8,13 @@ package appruntime
 
 import (
 	"bufio"
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -42,6 +46,8 @@ type Payload struct {
 		Bytes    int64  `json:"bytes"`
 		SHA256   string `json:"sha256"`
 	} `json:"files"`
+	// raw is payload.json as read and checked: what an install writes.
+	raw []byte
 }
 
 var hexDigest = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -56,6 +62,7 @@ func ReadPayload(dir string) (Payload, error) {
 	if err := json.Unmarshal(b, &p); err != nil {
 		return p, fmt.Errorf("%w: %s: %v", ErrInvalid, filepath.Join(dir, PayloadJSON), err)
 	}
+	p.raw = b
 	switch {
 	case p.Schema != 1:
 		return p, fmt.Errorf("%w: payload.json schema %d (this server knows 1)", ErrInvalid, p.Schema)
@@ -96,37 +103,54 @@ type Entry struct {
 
 // ReadManifest reads dir's files.sha256, after checking it is the one
 // payload.json names (its SHA-256), and checks every entry's path and target.
-func ReadManifest(dir string, p Payload) ([]Entry, error) {
+// It returns the entries and the manifest's bytes as checked.
+func ReadManifest(dir string, p Payload) ([]Entry, []byte, error) {
 	mpath := filepath.Join(dir, Manifest)
-	sum, err := sha256File(mpath)
+	b, err := readLimited(mpath, maxManifest)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
+		return nil, nil, fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
-	if sum != p.Files.SHA256 {
-		return nil, fmt.Errorf("%w: %s has SHA-256 %s, payload.json says %s", ErrInvalid, mpath, sum, p.Files.SHA256)
+	sum := sha256.Sum256(b)
+	if got := hex.EncodeToString(sum[:]); got != p.Files.SHA256 {
+		return nil, nil, fmt.Errorf("%w: %s has SHA-256 %s, payload.json says %s", ErrInvalid, mpath, got, p.Files.SHA256)
 	}
-	f, err := os.Open(mpath)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
-	}
-	defer f.Close()
 	var out []Entry
-	sc := bufio.NewScanner(f)
+	sc := bufio.NewScanner(bytes.NewReader(b))
 	sc.Buffer(make([]byte, 64<<10), 1<<20)
 	for n := 1; sc.Scan(); n++ {
 		e, err := parseEntry(sc.Text())
 		if err != nil {
-			return nil, fmt.Errorf("%w: %s line %d: %v", ErrInvalid, Manifest, n, err)
+			return nil, nil, fmt.Errorf("%w: %s line %d: %v", ErrInvalid, Manifest, n, err)
 		}
 		out = append(out, e)
 	}
 	if err := sc.Err(); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
+		return nil, nil, fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
 	if len(out) != p.Files.Count {
-		return nil, fmt.Errorf("%w: %s has %d entries, payload.json says %d", ErrInvalid, Manifest, len(out), p.Files.Count)
+		return nil, nil, fmt.Errorf("%w: %s has %d entries, payload.json says %d", ErrInvalid, Manifest, len(out), p.Files.Count)
 	}
-	return out, nil
+	return out, b, nil
+}
+
+// maxManifest bounds files.sha256 (a real one is well under 2 MB).
+const maxManifest = 64 << 20
+
+// readLimited reads a file of at most limit bytes.
+func readLimited(name string, limit int64) ([]byte, error) {
+	f, err := os.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > limit {
+		return nil, fmt.Errorf("%s is larger than %d MB", name, limit>>20)
+	}
+	return b, nil
 }
 
 func parseEntry(line string) (Entry, error) {

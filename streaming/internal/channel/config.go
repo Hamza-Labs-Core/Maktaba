@@ -245,6 +245,8 @@ func SettingsStarter(base StationConfig, settings Settings, enc *EncoderResolver
 			cfg.VTGate = defaultVTGate
 		}
 		cfg.VTGate.SetMax(out.VTMax)
+		cfg.UnreadableFill, cfg.SourceTimeout, cfg.SourceStall = out.UnreadableFill, out.SourceTimeout, out.SourceStall
+		cfg.ReportUnreadable = out.ReportUnreadable
 		if cfg.PathMapSource != nil {
 			cfg.PathMap = cfg.PathMapSource()
 		}

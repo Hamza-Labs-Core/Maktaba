@@ -31,7 +31,7 @@ const controllerLock = "tv_change_controller"
 type EnqueueFunc func(ctx context.Context, stage string, payload map[string]any, why string) error
 
 // Controller drives changes through the states no admin presses (design §11.2):
-// staged -> verifying -> ready / failed, an approval given ahead, an approved change's
+// staged -> verifying -> ready (or back to draft on a fail), an approval given ahead, an approved change's
 // swap time, an auto-promote rule switched on, a queued draft whose turn came, and
 // the daily GC. All state is in the database: a restarted API resumes where the last
 // one stopped (AC9).

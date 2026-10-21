@@ -24,6 +24,7 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { AdminGate } from "../../components/AdminGate";
+import { TitleRow } from "../../help/HelpLink";
 
 export interface Device {
   id: string;
@@ -95,7 +96,9 @@ function DevicesInner() {
   return (
     <section className="mkt-page mkt-devices">
       <header className="mkt-page__header">
-        <h1>{t("devices.adminTitle")}</h1>
+        <TitleRow>
+          <h1>{t("devices.adminTitle")}</h1>
+        </TitleRow>
         <Button onClick={() => setRegisterOpen(true)}>{t("devices.register")}</Button>
       </header>
       <p className="mkt-muted mkt-admin__note">{t("devices.note")}</p>

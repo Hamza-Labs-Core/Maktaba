@@ -65,47 +65,69 @@ func Platform() string {
 	return runtime.GOOS + "-" + arch
 }
 
+// Options are Install's and Activate's.
+type Options struct {
+	// AllowDowngrade takes a version older than the runtime's watermark, the
+	// newest version it ever ran. Without it an older one is refused.
+	AllowDowngrade bool
+}
+
+// InstallResult is what Install did.
+type InstallResult struct {
+	Dir    string `json:"dir"`
+	Copied bool   `json:"copied"`
+	// First: the runtime had no `current`, so it now names Dir (no service can
+	// run without one, so none was stopped).
+	First bool `json:"first"`
+}
+
 // Install copies the payload in from into the runtime (verifying every file
 // against its manifest on the way) and returns its directory. A directory of
 // the same name already installed from the same manifest is kept as it is
-// (copied false). `current` is not moved: that is Activate's.
-func (r Runtime) Install(ctx context.Context, from string, progress Progress) (dir string, copied bool, err error) {
+// (Copied false). `current` is moved only when there is none yet; otherwise
+// that is Activate's.
+func (r Runtime) Install(ctx context.Context, from string, progress Progress, opt Options) (res InstallResult, err error) {
 	p, err := ReadPayload(from)
 	if err != nil {
-		return "", false, err
+		return res, err
 	}
 	if p.Platform != Platform() {
-		return "", false, fmt.Errorf("%w: the payload is for %s, this machine is %s", ErrInvalid, p.Platform, Platform())
+		return res, fmt.Errorf("%w: the payload is for %s, this machine is %s", ErrInvalid, p.Platform, Platform())
 	}
-	entries, err := ReadManifest(from, p)
+	entries, manifest, err := ReadManifest(from, p)
 	if err != nil {
-		return "", false, err
+		return res, err
 	}
-	if err := os.MkdirAll(r.Root, 0o755); err != nil {
-		return "", false, err
+	// the user's only: the runtime holds the server and its database's binaries
+	if err := os.MkdirAll(r.Root, 0o700); err != nil {
+		return res, err
 	}
 	unlock, err := r.lock(ctx)
 	if err != nil {
-		return "", false, err
+		return res, err
 	}
 	defer unlock()
+	r.removeStaging() // what an install cut short left takes no room from this one
 
 	name := DirName(p)
 	final := filepath.Join(r.Root, name)
+	res.Dir = final
 	if inst, err := readInstalled(final); err == nil && inst.FilesSHA256 == p.Files.SHA256 {
-		return final, false, nil
+		return res, r.firstCurrent(name, p.Version, &res)
+	}
+	if err := r.checkVersion(p.Version, opt); err != nil {
+		return res, err
 	}
 	if cur, _ := r.Current(); cur == name {
-		return "", false, fmt.Errorf("%w: the running runtime %s does not match its manifest: stop the service and install again",
+		return res, fmt.Errorf("%w: the running runtime %s does not match its manifest: stop the service and install again",
 			ErrInvalid, final)
 	}
 	if free, err := r.FreeBytes(r.Root); err == nil && free < uint64(p.Files.Bytes)+uint64(p.Files.Bytes)/10 {
-		return "", false, fmt.Errorf("%w: %s has %d MB free, the payload needs %d MB", ErrDiskFull, r.Root, free>>20, p.Files.Bytes*11/10>>20)
+		return res, fmt.Errorf("%w: %s has %d MB free, the payload needs %d MB", ErrDiskFull, r.Root, free>>20, p.Files.Bytes*11/10>>20)
 	}
-	r.removeStaging()
 	staging := filepath.Join(r.Root, ".staging-"+name+"-"+randHex())
 	if err := os.Mkdir(staging, 0o755); err != nil {
-		return "", false, err
+		return res, err
 	}
 	defer func() {
 		if err != nil {
@@ -116,34 +138,49 @@ func (r Runtime) Install(ctx context.Context, from string, progress Progress) (d
 	var done int64
 	for _, e := range entries {
 		if err := ctx.Err(); err != nil {
-			return "", false, err
+			return res, err
 		}
 		if err := copyEntry(from, staging, e, files); err != nil {
-			return "", false, err
+			return res, err
 		}
 		done += e.Size
 		if progress != nil && e.Kind == 'f' {
 			progress(done, p.Files.Bytes)
 		}
 	}
-	for _, f := range []string{PayloadJSON, Manifest} {
-		if err := copyPlain(filepath.Join(from, f), filepath.Join(staging, f)); err != nil {
-			return "", false, err
+	// the bytes that were checked, not the source read again
+	for f, b := range map[string][]byte{PayloadJSON: p.raw, Manifest: manifest} {
+		if err := os.WriteFile(filepath.Join(staging, f), b, 0o644); err != nil {
+			return res, err
 		}
 	}
 	rec, _ := json.MarshalIndent(Installed{Version: p.Version, Platform: p.Platform, FilesSHA256: p.Files.SHA256,
 		From: from, InstalledAt: r.Now().UTC()}, "", "  ")
 	if err := os.WriteFile(filepath.Join(staging, installedFn), append(rec, '\n'), 0o644); err != nil {
-		return "", false, err
+		return res, err
 	}
 	r.sync()
 	if err := os.RemoveAll(final); err != nil { // a copy cut short, or of another build
-		return "", false, err
+		return res, err
 	}
 	if err := os.Rename(staging, final); err != nil {
-		return "", false, err
+		return res, err
 	}
-	return final, true, nil
+	res.Copied = true
+	return res, r.firstCurrent(name, p.Version, &res)
+}
+
+// firstCurrent points `current` at name when the runtime has none (under the
+// lock), so an install alone leaves something the service can run.
+func (r Runtime) firstCurrent(name, version string, res *InstallResult) error {
+	if cur, err := r.Current(); err != nil || cur != "" {
+		return err
+	}
+	if err := r.setLink(CurrentLink, name); err != nil {
+		return err
+	}
+	res.First = true
+	return r.raiseWatermark(version)
 }
 
 // fileEntries indexes the manifest's files by path.
@@ -236,14 +273,6 @@ func checkFile(src string, e Entry) error {
 	return nil
 }
 
-func copyPlain(src, dst string) error {
-	b, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(dst, b, 0o644)
-}
-
 func readInstalled(dir string) (Installed, error) {
 	var inst Installed
 	b, err := os.ReadFile(filepath.Join(dir, installedFn))
@@ -254,15 +283,30 @@ func readInstalled(dir string) (Installed, error) {
 }
 
 // removeStaging removes what an install cut short left (under the lock: no
-// install is running).
+// install is running), and a download an update left hours ago (a running
+// update holds no lock while it downloads, so a recent one is kept).
 func (r Runtime) removeStaging() {
 	ents, _ := os.ReadDir(r.Root)
 	for _, e := range ents {
-		if strings.HasPrefix(e.Name(), ".staging-") {
-			_ = os.RemoveAll(filepath.Join(r.Root, e.Name()))
+		switch {
+		case strings.HasPrefix(e.Name(), ".staging-"):
+		case strings.HasPrefix(e.Name(), DownloadPrefix):
+			if info, err := e.Info(); err != nil || r.Now().Sub(info.ModTime()) < staleDownload {
+				continue
+			}
+		default:
+			continue
 		}
+		_ = os.RemoveAll(filepath.Join(r.Root, e.Name()))
 	}
 }
+
+// DownloadPrefix starts the directory an update downloads and unpacks a
+// release's payload in, inside the runtime root (the same disk as the copy).
+const DownloadPrefix = ".download-"
+
+// staleDownload is how old a download directory is before it counts as left.
+const staleDownload = 6 * time.Hour
 
 func sha256File(p string) (string, error) {
 	f, err := os.Open(p)
