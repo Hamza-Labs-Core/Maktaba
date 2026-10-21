@@ -117,9 +117,33 @@ func HTTPFetch(client *http.Client) Fetcher {
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("GET %s: %s", url, resp.Status)
 		}
+		// a length said up front that w cannot take (Ensure's capped) is refused
+		// before the body is read
+		if c, ok := w.(*capped); ok && resp.ContentLength > c.left {
+			return fmt.Errorf("GET %s: %d bytes: %w", url, resp.ContentLength, errTooLarge)
+		}
 		_, err = io.Copy(w, resp.Body)
 		return err
 	}
+}
+
+// errTooLarge: a download sent more than its pin's size.
+var errTooLarge = errors.New("more than the pinned size")
+
+// capped passes on at most left bytes, failing the write that would go past them:
+// an archive larger than its pin is refused as it arrives, not once it is on disk.
+type capped struct {
+	w    io.Writer
+	left int64
+}
+
+func (c *capped) Write(p []byte) (int, error) {
+	if int64(len(p)) > c.left {
+		return 0, errTooLarge
+	}
+	n, err := c.w.Write(p)
+	c.left -= int64(n)
+	return n, err
 }
 
 // Ensure returns the install of pin under root, downloading, checking and unpacking
@@ -139,7 +163,7 @@ func Ensure(ctx context.Context, root string, pin Pin, fetch Fetcher, log io.Wri
 	defer func() { _ = os.Remove(tmp.Name()) }()
 	fmt.Fprintf(log, "[postgres] downloading PostgreSQL %s for this machine (%s, %d MB)\n", Version, pin.Triple, pin.Size>>20)
 	h := sha256.New()
-	if err := fetch(ctx, pin.URL(), io.MultiWriter(tmp, h)); err != nil {
+	if err := fetch(ctx, pin.URL(), &capped{w: io.MultiWriter(tmp, h), left: pin.Size}); err != nil {
 		_ = tmp.Close()
 		return "", fmt.Errorf("download PostgreSQL %s: %w", Version, err)
 	}
@@ -178,10 +202,15 @@ func Ensure(ctx context.Context, root string, pin Pin, fetch Fetcher, log io.Wri
 	return home, nil
 }
 
-// inside joins name under dir, refusing a path that leaves it.
+// inside joins name under dir, refusing a name that is not local (absolute, a
+// drive's, a reserved one on Windows) or has a ".." in it, and a path that leaves dir.
 func inside(dir, name string) (string, error) {
+	name = filepath.FromSlash(name)
+	if !filepath.IsLocal(name) || strings.Contains(name, "..") {
+		return "", fmt.Errorf("archive entry %q leaves the install", name)
+	}
 	root := filepath.Clean(dir) + string(filepath.Separator)
-	p := filepath.Join(dir, filepath.FromSlash(name))
+	p := filepath.Join(dir, name)
 	if p != filepath.Clean(dir) && !strings.HasPrefix(p, root) {
 		return "", fmt.Errorf("archive entry %q leaves the install", name)
 	}
@@ -231,6 +260,12 @@ func untargz(archive, dir string) error {
 	if err != nil {
 		return err
 	}
+	// dir with its links resolved, as a link's directory is checked against it (a
+	// Mac's /var is /private/var)
+	realRoot, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return err
+	}
 	tr := tar.NewReader(gz)
 	for {
 		hdr, err := tr.Next()
@@ -257,15 +292,25 @@ func untargz(archive, dir string) error {
 				return err
 			}
 		case tar.TypeSymlink:
-			// a library's versioned name: only a link to a file beside it
+			// a library's versioned name: only a link to a file beside it (not
+			// absolute, a drive's, "" or "..": IsLocal)
 			target := filepath.Join(filepath.Dir(p), hdr.Linkname)
-			if hdr.Linkname == "" || hdr.Linkname == "." || hdr.Linkname == ".." ||
+			if hdr.Linkname == "." || !filepath.IsLocal(hdr.Linkname) ||
 				strings.ContainsAny(hdr.Linkname, `/\`) || filepath.Dir(target) != filepath.Dir(p) ||
 				!strings.HasPrefix(target, filepath.Clean(dir)+string(filepath.Separator)) {
 				return fmt.Errorf("archive link %q leaves its directory", hdr.Name)
 			}
 			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 				return err
+			}
+			// and with links resolved: the target's directory (the target itself
+			// may come later) is not reached through a link out of the install
+			parent, err := filepath.EvalSymlinks(filepath.Dir(target))
+			if err != nil {
+				return err
+			}
+			if rel, err := filepath.Rel(realRoot, parent); err != nil || (rel != "." && !filepath.IsLocal(rel)) {
+				return fmt.Errorf("archive link %q leaves the install", hdr.Name)
 			}
 			_ = os.Remove(p)
 			if err := os.Symlink(hdr.Linkname, p); err != nil {
