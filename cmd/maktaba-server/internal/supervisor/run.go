@@ -258,6 +258,10 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 	backoff := s.policy.BackoffInitial
 	tpl := c.proc.Cmd
 	first := true
+	if c.proc.Prepare != nil && !s.prepare(ctx, c) {
+		s.setState(c, StateStopped)
+		return
+	}
 	for {
 		cmd := tpl
 		if !first {

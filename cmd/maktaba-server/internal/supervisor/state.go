@@ -84,6 +84,9 @@ type ChildStatus struct {
 	NextRestartAt *time.Time `json:"next_restart_at,omitempty"`
 	LastProbe     *ProbeInfo `json:"last_probe,omitempty"`
 	ProbeURL      string     `json:"probe_url,omitempty"`
+	// Detail says what a process waits on before it starts (its Prepare: the
+	// venv being built, a dump being taken) or why that failed.
+	Detail string `json:"detail,omitempty"`
 }
 
 // Event is one entry of the supervisor's event log (start, exit,

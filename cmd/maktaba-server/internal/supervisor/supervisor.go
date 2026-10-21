@@ -66,6 +66,11 @@ type Process struct {
 	// check answered), and stopped after them (Epic 36 story 36.1: the bundled
 	// postgres).
 	First bool
+	// Prepare, when set, runs before the process's first start and must succeed
+	// before it starts (prepare.go, Epic 38 story 38.12: the desktop app builds
+	// the pipeline's venv, or takes the database's dump before an update's
+	// migrations). report sets the process's detail in /processes.
+	Prepare func(ctx context.Context, report func(detail string)) error
 }
 
 // stopSignal is the process's graceful-stop signal.
@@ -266,11 +271,11 @@ func pythonFor(opts Options) string {
 	if p := strings.TrimSpace(opts.Config.Pipeline.Python); p != "" {
 		return p
 	}
-	// Maktaba.app: the venv built from the payload's wheel (Epic 36 story 36.3)
+	// The desktop app: the venv built from the payload's wheel (Epic 36 story
+	// 36.3), also before it exists: the pipeline's Prepare builds it before the
+	// first start (Epic 38 story 38.12, serve_appbundle.go)
 	if config.AppBundle() != "" {
-		if py := venvPython(filepath.Join(opts.Config.StateDir(), "venv")); isExecutable(py) {
-			return py
-		}
+		return venvPython(filepath.Join(opts.Config.StateDir(), "venv"))
 	}
 	return pythonExecutable(opts.ReleaseDir)
 }
