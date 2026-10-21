@@ -208,7 +208,7 @@ func newOfflineRig(t *testing.T, withCopy bool) *offlineRig {
 	table = append(table, placement.Exact(placement.Any, nil, "/api/videos", "/api/videos/{id}/rating")...)
 	table = append(table, placement.Prefixes(placement.Home, "/api/auth/", "/api/settings")...)
 	g.h = &placement.Dispatcher{Routes: routes, Table: table, Local: g.r.Middleware(gate),
-		Proxy: g.r.Home(homeproxy.NewWithFallback(g.home, nil, g.r.Me))}
+		Proxy: g.r.Home(homeproxy.NewWithFallback(g.home, nil, g.r.Fallback))}
 	return g
 }
 
@@ -538,6 +538,20 @@ func TestSignOutOfANodeLocalSession(t *testing.T) {
 	before := g.home.proxiedCount()
 	if a := g.do(http.MethodPost, LogoutPath, id); a.code != http.StatusNoContent || g.home.proxiedCount() != before {
 		t.Fatalf("sign-out with the home back: %+v (proxied %d)", a, g.home.proxiedCount()-before)
+	}
+}
+
+// Inside the grace a sign-in still goes to the home; when the home does not answer it,
+// this machine answers it from its copy (the proxy may have read the body already).
+func TestSignInInsideTheGraceFallsBackToTheCopy(t *testing.T) {
+	g := newOfflineRig(t, true)
+	g.goDown(time.Minute)
+	if g.r.Unreachable() {
+		t.Fatal("past the grace already")
+	}
+	a, id := g.signIn(t, "amal", "pw-amal")
+	if a.code != http.StatusOK || !strings.HasPrefix(id, LocalSessionPrefix) {
+		t.Fatalf("a sign-in inside the grace, the home not answering: %+v", a)
 	}
 }
 

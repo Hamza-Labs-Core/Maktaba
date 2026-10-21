@@ -10,23 +10,36 @@ don't append a line here; docs-only PRs are exempt.
 
 ## [Unreleased]
 
+### Added
+
+- **Every full machine keeps a live copy of its home's database, and runs on it while the
+  home is away** (Epic 37, `specs/epics/37-node-replica`). Nothing to set up: a machine that
+  joins, or one joined before (at its first start on this version), copies the home's
+  database and follows it (a Postgres hot standby on its own loopback port, over streaming
+  replication with TLS that checks the home's certificate); the home makes the machine's
+  replication role and slot itself, and drops the slot of a machine that falls too far behind
+  (`rules.cluster.replica_wal_keep_gb`, default 20 GB; it copies anew when it is back). The
+  machine reads the library from its copy. With the home away it keeps working from that copy:
+  pages read, the videos it can read play, its own TV channels play, a reload keeps people
+  signed in, and **signing in works** (checked on the copy, valid on that machine only;
+  `offline_session_hours`, default 12, ending `offline_session_grace_minutes`, default 30,
+  after the home is back, when a change asks for a sign-in with the home). Changes wait for the
+  home. A copy that had stopped following long before the outage does not answer sign-ins
+  (`offline_copy_max_lag_minutes`, default 10). The copy's state — copying, following, how far
+  behind, copying anew, incompatible — shows on each machine's card on the Machines page and in
+  the machine's own outage notice. Revoking a machine ends its replication and wipes its copy.
+  The node's pipeline stops claiming jobs while the home's database does not answer and resumes
+  on its own. Migration 0142.
+
 ### Changed
 
-- **A machine that loses its home stays usable.** A full node that cannot reach the home
-  keeps serving pages, and playing the videos it can read, to people the home already
-  confirmed, under a notice, instead of swapping the whole app for the "cannot reach its
-  home" page; a reload keeps them signed in. Signing in or out and changes are refused until
-  the home answers, and the login page says so. A sign-in the home had already expired, or
-  confirmed long before the outage, is not used. New setting
-  `rules.cluster.offline_read_minutes` (default 10 from the outage's start; 0: none of it).
-  The node's pipeline stops claiming jobs while the home's database does not answer and
-  resumes on its own. The full page stays for a machine whose code does not fit the home's
-  database, and for one that cannot serve a person even reads (past the window).
-- **A node plays with the home's database down too.** Each full node keeps a catalog of what
-  playback needs (paths, libraries, media facts, its share map) under `<data_dir>/node`, so a
-  video on the NAS that the node can read plays, for the people the home confirmed and only
-  from libraries they may see, even when the home's Postgres is gone and even after the node
-  restarts in the outage. Browsing the library still needs the home's database.
+- **A machine that loses its home stays usable** under a notice instead of the whole app being
+  swapped for the "cannot reach its home" page (that page stays for a machine whose code does
+  not fit the home's database, and for one with no usable copy). This replaces the home's last
+  sign-in answers a node used to keep for ten minutes: `rules.cluster.offline_read_minutes` is
+  gone.
+- The Postgres bundled with Maktaba.app keeps its TLS certificate and key in the keys folder
+  (never in the database folder a machine's copy is made of).
 
 ## [0.2.0] - 2026-10-19
 

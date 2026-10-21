@@ -8,7 +8,7 @@
 |---|---|---|
 | D1 | Shared sessions resolved by the home, not redirect-to-home. | Keeps "open any machine"; nodes keep Epic 31 least privilege. |
 | D2 | Per-node HMAC delegation key delivered over the v2 channel. | The channel already authenticates both sides; HTTP proxying (WS, SSE, uploads) stays plain HTTP. |
-| D3 | 30 s positive / 5 s negative cache, pushed revocation; with the home gone, reads and local routes on its last answer for `offline_read_minutes` (PR #145), the home not asked per request after 30 s. | Bounded staleness without flooding the home. |
+| D3 | 30 s positive / 5 s negative cache, pushed revocation; with the home gone, the node's copy of the home's database answers (Epic 37), the home not asked per request after 30 s. | Bounded staleness without flooding the home. |
 | D4 | Host-only cookies, unchanged attributes and CSRF scheme. | Each machine is its own origin; no CORS changes. |
 | D5 | Cluster sign-in by top-level redirects with PKCE and single-use codes. | Standard, phishing-resistant enough for a LAN, no cross-origin cookies. |
 

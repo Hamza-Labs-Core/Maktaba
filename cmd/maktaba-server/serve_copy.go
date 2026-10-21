@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
@@ -31,7 +32,8 @@ type nodeCopy struct {
 // fetched once. Nil for a machine that is not a full node, or a platform with neither.
 func resolveNodeCopy(cfg *config.Config, wholeMachine bool) (*nodeCopy, error) {
 	n := supervisor.NodeConfig()
-	if !wholeMachine || !supervisor.NodeMode(*cfg, n) {
+	// MAKTABA_NODE_COPY=off: none (the tests that run a node without Postgres programs)
+	if !wholeMachine || !supervisor.NodeMode(*cfg, n) || strings.EqualFold(os.Getenv("MAKTABA_NODE_COPY"), "off") {
 		return nil, nil
 	}
 	c := nodecopy.Copy{NodeID: n.NodeID, HomeDSN: n.DatabaseURL, Dir: filepath.Join(cfg.StateDir(), "copy"),

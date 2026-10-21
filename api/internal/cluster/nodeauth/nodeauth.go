@@ -26,6 +26,7 @@
 package nodeauth
 
 import (
+	"bytes"
 	"context"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -34,6 +35,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"math/big"
 	"net/http"
@@ -621,13 +623,41 @@ func (r *Resolver) Home(proxy http.Handler) http.Handler {
 			return
 		}
 		if !r.Unreachable() {
-			proxy.ServeHTTP(w, req)
+			// a sign-in the home turns out not to answer (inside the grace) is answered
+			// here from the proxy's fallback (Fallback): its body is kept for that
+			proxy.ServeHTTP(w, keepSignIn(req))
 			return
 		}
 		if !r.Me(w, req) && !r.SignIn(w, req) {
 			writeUnreachable(w, true)
 		}
 	})
+}
+
+// Fallback answers what the home proxy could not reach the home for and this machine
+// can answer itself (homeproxy.NewWithFallback): the session probe and the sign-in,
+// from its copy.
+func (r *Resolver) Fallback(w http.ResponseWriter, req *http.Request) bool {
+	return r.Me(w, req) || r.SignIn(w, req)
+}
+
+type signInBodyKey struct{}
+
+// keepSignIn keeps a sign-in's body (it is small) for SignIn, since the proxy may have
+// read the request's own before the home failed to answer.
+func keepSignIn(req *http.Request) *http.Request {
+	if req.URL.Path != LoginPath || req.Method != http.MethodPost || req.Body == nil {
+		return req
+	}
+	body, err := io.ReadAll(io.LimitReader(req.Body, 8<<10+1))
+	_ = req.Body.Close()
+	if err != nil {
+		body = nil
+	}
+	out := req.WithContext(context.WithValue(req.Context(), signInBodyKey{}, body))
+	out.Body = io.NopCloser(bytes.NewReader(body))
+	out.ContentLength = int64(len(body))
+	return out
 }
 
 // writeSignInAgain answers 401 {code: signin_required}: a node-local sign-in does not

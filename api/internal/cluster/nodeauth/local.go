@@ -1,9 +1,11 @@
 package nodeauth
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -236,7 +238,11 @@ func (r *Resolver) SignIn(w http.ResponseWriter, req *http.Request) bool {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, req.Body, 8<<10)).Decode(&body); err != nil ||
+	src := io.Reader(http.MaxBytesReader(w, req.Body, 8<<10))
+	if kept, ok := req.Context().Value(signInBodyKey{}).([]byte); ok {
+		src = bytes.NewReader(kept) // the proxy read the request's own
+	}
+	if err := json.NewDecoder(src).Decode(&body); err != nil ||
 		strings.TrimSpace(body.Username) == "" || body.Password == "" {
 		writeProblem(w, http.StatusBadRequest, "https://maktaba.dev/problems/bad-request",
 			"username and password required", "")

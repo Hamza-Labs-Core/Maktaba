@@ -3,10 +3,12 @@
 // and the home's database itself. Every pooled connection is a pair of them, opened as
 // needed, and each statement picks one:
 //
-//   - a statement whose context says the copy may answer it (CopyReads: the node's
-//     reads, marked per request) goes to the copy while the copy answers;
-//   - anything else (a write, a transaction, a statement no one marked) goes to the
-//     home's;
+//   - a query whose context says the copy may answer it (CopyReads: the node's reads,
+//     marked per request), or a read-only transaction so marked, goes to the copy while
+//     the copy answers;
+//   - anything else (an Exec, a prepared statement, a read-write transaction, a query
+//     no one marked) goes to the home's: a write in a request marked a read is still
+//     the home's;
 //   - with the home's database not answering, everything goes to the copy: the reads
 //     are answered, a write fails as it would have (the copy is read only).
 //
@@ -172,12 +174,18 @@ func (c *conn) get(ctx context.Context, s *Source) (driver.Conn, error) {
 
 func (c *conn) route(ctx context.Context) (driver.Conn, error) { return c.get(ctx, c.p.pick(ctx)) }
 
+// routeWrite is route for what may write: the home's (the copy's when the home's does
+// not answer: the write then fails as it would have).
+func (c *conn) routeWrite(ctx context.Context) (driver.Conn, error) {
+	return c.get(ctx, c.p.pick(context.WithValue(ctx, copyKey{}, false)))
+}
+
 func (c *conn) Prepare(query string) (driver.Stmt, error) {
 	return c.PrepareContext(context.Background(), query)
 }
 
 func (c *conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, error) {
-	dc, err := c.route(ctx)
+	dc, err := c.routeWrite(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +208,7 @@ func (c *conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 }
 
 func (c *conn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
-	dc, err := c.route(ctx)
+	dc, err := c.routeWrite(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +224,11 @@ func (c *conn) Begin() (driver.Tx, error) {
 }
 
 func (c *conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
-	dc, err := c.route(ctx)
+	route := c.routeWrite
+	if opts.ReadOnly {
+		route = c.route
+	}
+	dc, err := route(ctx)
 	if err != nil {
 		return nil, err
 	}

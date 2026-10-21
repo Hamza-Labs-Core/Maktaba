@@ -595,47 +595,31 @@ disabled, admin revoke, session expiry sweep) calls `cluster.NotifyRevoked(sessi
 hub sends `auth.revoked` to every machine agent, which forwards it to its API; the API evicts. With
 the channel down the TTL bounds staleness.
 
-**A home outage** degrades a node to read-only instead of taking it down (PR #145). A credential the
-home cannot be asked about is honoured on the home's last answer while that answer holds offline:
-the credential's own expiry (as the home named it) has not passed, the home gave the answer no
-earlier than `offline_read_minutes` (10) before the outage began, and the outage is younger than that
-window. Then reads (GET, HEAD) and `local` routes (this machine's status, VOD playback) are served,
-marked `X-Maktaba-Home: unreachable`, and the web app shows a notice over the pages. Anything else
-gets 503 `home_unreachable` — with `readable: false` when the node cannot serve that person even
-reads (past the window, a sign-in it never saw confirmed), and the web app then shows the full
-"cannot reach its home" page; a restart in the outage changes nothing there, since the node keeps the
-home's last answers on its disk (by the credential's hash, `auth-answers.json.gz`, with when the home
-last answered: the window still runs from the outage's start); a `local` route answers anonymously instead. After
+**A home outage** degrades a node to read-only instead of taking it down, on the node's own live
+copy of the home's database (Epic 37, `specs/epics/37-node-replica`, which replaced PR #145's
+last answers): a credential the home cannot be asked about is looked up on the copy, by the home's
+own code; a sign-in is checked there too and makes a session valid on that machine only. Reads
+(GET, HEAD) and `local` routes (this machine's status, VOD playback, its own TV) are served, marked
+`X-Maktaba-Home: unreachable`, and the web app shows a notice over the pages; a change through the
+home's database gets 503 `home_unreachable`. With no usable copy, a `local` route answers anonymously
+and anything else is a 503 with `readable: false` (the full "cannot reach its home" page). After
 `delegate_unreachable_grace_seconds` (30 s) the node stops asking the home per request and refuses
-`home` routes at once, except `GET /api/auth/me`, which it answers from the last answer (a reload
-keeps a signed-in user in). Nothing creates a session meanwhile: signing in and out are the home's,
-so the login page says so and a sign-out is refused with the user kept signed in. A video the node
-cannot read is "not available while the home is unreachable" (503 `video_unavailable_offline`).
-With `offline_read_minutes` 0 no last answer is used. The node's pipeline pauses on its own signal,
+`home` routes at once, except the session probe and the sign-in, which it answers from its copy. A
+video the node cannot read is "not available while the home is unreachable" (503
+`video_unavailable_offline`). The node's pipeline pauses on its own signal,
 the home's database not answering its beat (two in a row): it claims nothing (the schema guard's
 gate), lets jobs in flight finish unless the outage nears the 90 s claim lease (then stops them:
 the home would hand them to another machine), and at the first beat answered releases what its ended
 jobs left claimed and resumes; the pause shows in its log and its local agent status
 (`maktaba-pipeline cluster status`).
 
-**The home's database down too.** Media lives on the NAS, so a node plays what it can read without
-the home's database. Each role keeps its own catalog in the node's state directory
-(`MAKTABA_NODE_STATE_DIR`, `<data_dir>/node`, set by the supervisor; gzip JSON, paths and media facts
-only, no pictures): the API every video's library, path and length plus this machine's share map
-(`api-catalog.json.gz`, refreshed every 10 min), the streaming role every probed video's probe row
-plus its path map (`streaming-catalog.json.gz`, every 15 min); both refresh at start and as soon as the
-database answers again, and an unchanged catalog is not written. Each role watches the database (a
-ping every 5 s, 2 s each; a failed call counts) and while it is down reads its catalog at once
-instead of waiting on a dead connection. Opening a session checks the video's library against the
-person's sign-in as on the home (the home's last answer, under the rules above), so no one plays what
-they could not at the home and an unconfirmed or expired sign-in plays nothing; the session's owner is
-kept on the node (the `streaming_sessions` row is not written meanwhile, nor back later), so the
-owner can close it. A video the catalog lacks is 503 `video_unavailable_offline`. The node's own
-library reads (`any` routes) answer 503 `home_unreachable` at once while the database is down: the
-app keeps its notice, and the player, which needs only the session calls, keeps playing. Both roles
-start with the database down: the API's role check waits for it (a role that can run DDL then stops
-the API, as at start), the streaming role's pool connects when it answers, and its TV channels start
-then. Not covered: browsing the library with the home's database down (only playback).
+**The home's database down too.** The node reads its own copy of the home's database (Epic 37):
+the library, playback (a video's library, path and length; the probe rows; the share map) and its
+own TV channels, for as long as the home's database does not answer; a session opened meanwhile is
+recorded on the node (the copy is read only), so its owner can close it. Both roles start with the
+home's database down: the API's role check waits for it (a role that can run DDL then stops the API,
+as at start), the streaming role's pool connects when it answers. A node with no copy plays nothing
+and serves its own routes only meanwhile.
 
 ### 10.4 Signing in on a node
 

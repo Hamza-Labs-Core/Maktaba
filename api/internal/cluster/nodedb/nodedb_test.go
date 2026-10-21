@@ -117,8 +117,8 @@ func TestMarkedReadsGoToTheCopy(t *testing.T) {
 		t.Fatalf("an unmarked statement: %s", got)
 	}
 	// a write goes to the home whatever its context says it is
-	if _, err := db.ExecContext(context.Background(), "UPDATE x SET y = 1"); err != nil {
-		t.Fatal(err)
+	if _, err := db.ExecContext(reads, "UPDATE x SET y = 1"); err != nil {
+		t.Fatalf("a write in a request marked a read: %v", err)
 	}
 	if s := home.seen(); s[len(s)-1] != "UPDATE x SET y = 1" {
 		t.Fatalf("the write did not reach the home: %v", s)
@@ -134,6 +134,18 @@ func TestMarkedReadsGoToTheCopy(t *testing.T) {
 	}
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
+	}
+	// a read-write transaction in a request marked a read is the home's; a read-only one the copy's
+	for _, ro := range []bool{false, true} {
+		tx, err := db.BeginTx(reads, &sql.TxOptions{ReadOnly: ro})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var s string
+		if err := tx.QueryRowContext(reads, "SELECT 3").Scan(&s); err != nil || s != map[bool]string{false: "home", true: "copy"}[ro] {
+			t.Fatalf("a transaction (read only %v) in a marked request: %s %v", ro, s, err)
+		}
+		_ = tx.Rollback()
 	}
 	if got := server(t, reads, db); got != "copy" {
 		t.Fatalf("a marked read after the transaction: %s", got)

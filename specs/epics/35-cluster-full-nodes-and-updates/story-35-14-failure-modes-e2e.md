@@ -47,8 +47,8 @@ Design: [design.md](design.md) §5.5, §5.6, §13.4, §13.5, §14, §15, §17; R
   configured through the test-only `MAKTABA_UPDATE_REPO` path): home steps, TV continuity (an HLS and a
   TS client connected through the swap, no disconnect, story 33.14 TC5), rollout of both nodes,
   Updates page shows all three on v0.0.2-e2e.
-- **AC11 Auth failures** — the home unreachable from a node: reads and playback go on on the home's
-  last answer within `offline_read_minutes`, sign-in and changes are refused; a sign-out on the home
+- **AC11 Auth failures** — the home unreachable from a node: reads, playback and sign-in go on from
+  the node's copy of the home's database (Epic 37), changes are refused; a sign-out on the home
   reaches a node within 1 s; a replayed delegation signature is refused.
 - **AC12** Every failure found is fixed or recorded as a known issue in the runbook (story 35.15)
   before phase E closes.

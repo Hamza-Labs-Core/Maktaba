@@ -221,8 +221,8 @@ func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *sl
 	}
 	rt.guard = &schemaguard.Guard{DB: dbs.app, Logger: logger}
 	rt.guard.Check(cctx)
-	// a session probe the home does not answer is answered here, from the copy
-	rt.proxy = homeproxy.NewWithFallback(rt.link, logger, rt.resolver.Me)
+	// a session probe or a sign-in the home does not answer is answered here, from the copy
+	rt.proxy = homeproxy.NewWithFallback(rt.link, logger, rt.resolver.Fallback)
 
 	if cfg.AgentURL != "" && cfg.AgentTokenFile != "" {
 		rt.feed = &homelink.AgentFeed{URL: cfg.AgentURL, TokenFile: cfg.AgentTokenFile, Link: rt.link, Logger: logger}

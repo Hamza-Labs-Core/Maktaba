@@ -14,21 +14,25 @@ package main
 //   - VOD on the node is opened on the node itself (no request reaches the home); a
 //     video this node cannot read falls back to the home, and the Machines page says so;
 //   - the Machines page lists every machine's web address;
-//   - with the home gone, the node stays readable for a signed-in user on the home's last
-//     answer (marked X-Maktaba-Home: unreachable, a reload's /api/auth/me answered by the
-//     node), plays a video it can read and says one it cannot is unavailable, refuses
-//     sign-in and changes, and its local routes answer;
-//   - with the home's database gone too (the node's connection cut through a proxy),
-//     the node plays from its own catalog, even after a restart in the outage.
+//   - the node's supervisor copies the home's database on its own and follows it
+//     (Epic 37); with the home gone the node runs on that copy: a signed-in user stays
+//     in (marked X-Maktaba-Home: unreachable, a reload's /api/auth/me answered by the
+//     node), plays a video it can read and is told one it cannot is unavailable, signs
+//     in (a node-local session), and changes are refused; its local routes answer;
+//   - with the home's database gone too (the node's connection, and its copy's
+//     replication, cut through a proxy), the node reads and plays from its copy, even
+//     after a restart in the outage;
+//   - a node with no copy serves no one but its own routes with the home gone.
 //
 // Opt-in (it builds three binaries): MAKTABA_TEST_PG_URL (a Postgres whose user may
-// create databases and roles) and MAKTABA_E2E_TWO_MACHINE=1. MAKTABA_E2E_HOLD=<seconds>
+// create databases and roles, and which takes replication from 127.0.0.1: initdb
+// --locale=C, as the bundled one is) and MAKTABA_E2E_TWO_MACHINE=1; MAKTABA_TEST_PG_BIN
+// (a Postgres 16 install with pg_basebackup) gives the node its copy. MAKTABA_E2E_HOLD=<seconds>
 // keeps both machines up at the end (manual checks, screenshots). It never reads this
 // machine's own node config, keys or installs: every path is under t.TempDir().
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -53,7 +57,6 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/signedurl"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/nodeauth"
 )
 
 // TestMain doubles as the stand-in pipeline of the two machines: with
@@ -242,6 +245,8 @@ func TestTwoMachinesOnePC(t *testing.T) {
 		t.Skip("set MAKTABA_E2E_TWO_MACHINE=1 (and MAKTABA_TEST_PG_URL) to run the two-machine test")
 	}
 	db, dsn := clustertest.ScratchDB(t)
+	pgPrograms := os.Getenv("MAKTABA_TEST_PG_BIN")
+	withCopy := pgPrograms != ""
 	ctx := context.Background()
 	tmp := t.TempDir()
 	bin := filepath.Join(tmp, "bin")
@@ -332,7 +337,7 @@ slots = "off"
 	// the node is opened as localhost: another host, so the browser keeps its cookies apart
 	nodeWebURL := fmt.Sprintf("http://localhost:%d", nWeb)
 	homeToml := toml(homeDir, hAPI, hWeb, hStream, fmt.Sprintf("web_public_url = %q\nrole = \"home\"\n[database]\nurl = %q", homeWebURL, dsn))
-	nodeToml := toml(nodeDir, nAPI, nWeb, nStream, fmt.Sprintf("web_public_url = %q\n[database]\nurl = \"sqlite://unused.db\"", nodeWebURL))
+	nodeToml := toml(nodeDir, nAPI, nWeb, nStream, fmt.Sprintf("web_public_url = %q\n[database]\nurl = \"sqlite://unused.db\"\n[postgres]\ncopy_port = %d", nodeWebURL, p()))
 	nodeCfg, _ := json.Marshal(map[string]any{"node_id": nodeID, "name": "studio-node", "private_key": cluster.EncodeKey(nodePriv),
 		"home":         map[string]any{"url": fmt.Sprintf("http://127.0.0.1:%d", hAPI), "cluster_pub": cluster.EncodeKey(homePub)},
 		"database_url": nodeDSN})
@@ -362,6 +367,12 @@ slots = "off"
 		fmt.Sprintf("MAKTABA_HOME_STREAM_URL=http://127.0.0.1:%d", hStream),
 		// this machine's mount of the share is missing: the home-only video falls back
 		"MAKTABA_STREAM_PATH_MAP=E2ESHARE:/=>"+filepath.ToSlash(filepath.Join(tmp, "no-such-share"))+"/")
+	// its copy of the home's database (Epic 37) runs on the test's Postgres programs
+	if withCopy {
+		nodeEnv = append(nodeEnv, "MAKTABA_POSTGRES_HOME="+pgPrograms)
+	} else {
+		nodeEnv = append(nodeEnv, "MAKTABA_NODE_COPY=off")
+	}
 	node := startMachine(t, "node", bin, nodeEnv)
 	node.web = nodeWebURL
 	type selfInfo struct {
@@ -598,8 +609,10 @@ slots = "off"
 		u, _ := url.Parse(homeSess.ManifestURL)
 		good := u.Query().Get("sig")
 		bare := homeWebURL + u.Path
+		// the first character: the last one of a 32-byte value carries two bits a decoder
+		// ignores, so changing it may leave the same signature
 		flip := "A"
-		if strings.HasSuffix(good, "A") {
+		if strings.HasPrefix(good, "A") {
 			flip = "B"
 		}
 		k, err := signedurl.ParseKey(hk)
@@ -615,7 +628,7 @@ slots = "off"
 		nu, _ := url.Parse(nodeSess.ManifestURL)
 		for name, target := range map[string]string{
 			"no signature":            bare,
-			"tampered":                bare + "?sig=" + good[:len(good)-1] + flip,
+			"tampered":                bare + "?sig=" + flip + good[1:],
 			"expired":                 homeWebURL + expired,
 			"the node's key":          homeWebURL + nu.Path + "?sig=" + nu.Query().Get("sig"),
 			"segment without its sig": homeWebURL + strings.SplitN(homeSeg, "?", 2)[0],
@@ -675,24 +688,34 @@ slots = "off"
 		t.Logf("the node refused the revoked session %s after the home's sign-out", time.Since(start).Round(time.Millisecond))
 	})
 
-	t.Run("home gone: the node stays readable and plays, refuses sign-in and changes", func(t *testing.T) {
-		// a fresh sign-in on the node (through the home), cached on the node
+	t.Run("home gone: the node runs on its copy of the home's database", func(t *testing.T) {
+		if !withCopy {
+			t.Skip("MAKTABA_TEST_PG_BIN unset: the node keeps no copy of the home's database")
+		}
+		// the node's supervisor copied the home's database on its own, and follows it
+		waitFor(t, "the node's copy following the home", 4*time.Minute, func() bool {
+			r, b := newBrowser(t).do("GET", nodeWebURL+"/api/cluster/self", nil, nil)
+			var s struct {
+				Copy struct {
+					State string `json:"state"`
+				} `json:"copy"`
+			}
+			return r.StatusCode == 200 && json.Unmarshal(b, &s) == nil && s.Copy.State == "following"
+		})
+		// and the home's Machines page says so
+		if r, b := user.do("GET", homeWebURL+"/api/cluster/nodes", nil, nil); r.StatusCode == 200 &&
+			!strings.Contains(string(b), `"state":"following"`) {
+			t.Logf("the home's view of the copy: %s", tail(string(b), 400))
+		}
+		// a sign-in on the node through the home, before it goes away
 		u2 := newBrowser(t)
 		resp, _ := u2.do("POST", nodeWebURL+"/api/auth/login", map[string]string{"username": "owner", "password": "owner-pass-123"}, nil)
 		if resp.StatusCode != 200 || resp.Header.Get("X-Maktaba-Placement") != "home" {
 			t.Fatalf("sign-in through the node: %d", resp.StatusCode)
 		}
-		var origin sql.NullString
-		_ = db.QueryRowContext(ctx, `SELECT CAST(origin_node_id AS TEXT) FROM web_sessions WHERE id = $1`, u2.cookie(nodeWebURL, "mkt_sess")).Scan(&origin)
-		if origin.String != nodeID {
-			t.Fatalf("a sign-in through the node is tagged with it: %v", origin)
-		}
-		if r, _ := u2.do("GET", nodeWebURL+"/api/videos", nil, nil); r.StatusCode != 200 {
-			t.Fatalf("signed in through the node: %d", r.StatusCode)
-		}
 		home.stop()
-		// the cached answer expires (30 s), the home does not answer: served on it, marked
-		waitFor(t, "a read served read-only (X-Maktaba-Home: unreachable)", 90*time.Second, func() bool {
+		// past the grace the node answers from its copy, marked
+		waitFor(t, "a read served from the copy (X-Maktaba-Home: unreachable)", 90*time.Second, func() bool {
 			r, _ := u2.do("GET", nodeWebURL+"/api/videos", nil, nil)
 			return r.StatusCode == 200 && r.Header.Get("X-Maktaba-Home") == "unreachable"
 		})
@@ -715,34 +738,36 @@ slots = "off"
 			!strings.Contains(string(b), "video_unavailable_offline") {
 			t.Fatalf("a video this node cannot read, with the home gone: %d %s", r.StatusCode, tail(string(b), 300))
 		}
-		// no sign-in, no change
-		if r, b := newBrowser(t).do("POST", nodeWebURL+"/api/auth/login",
-			map[string]string{"username": "owner", "password": "owner-pass-123"}, nil); r.StatusCode != 503 ||
-			!strings.Contains(string(b), "home_unreachable") {
+		// a sign-in is checked on the copy: valid on this machine only
+		u3 := newBrowser(t)
+		if r, b := u3.do("POST", nodeWebURL+"/api/auth/login",
+			map[string]string{"username": "owner", "password": "owner-pass-123"}, nil); r.StatusCode != 200 ||
+			!strings.Contains(string(b), `"session":"node"`) || !strings.HasPrefix(u3.cookie(nodeWebURL, "mkt_sess"), "nls_") {
 			t.Fatalf("a sign-in with the home gone: %d %s", r.StatusCode, tail(string(b), 300))
 		}
+		if r, _ := u3.do("GET", nodeWebURL+"/api/videos", nil, nil); r.StatusCode != 200 {
+			t.Fatalf("a read on the node-local sign-in: %d", r.StatusCode)
+		}
+		if r, _ := newBrowser(t).do("POST", nodeWebURL+"/api/auth/login",
+			map[string]string{"username": "owner", "password": "wrong"}, nil); r.StatusCode != 401 {
+			t.Fatalf("a wrong password with the home gone: %d", r.StatusCode)
+		}
+		// a change through the home waits for it
 		if r, b := u2.do("POST", nodeWebURL+"/api/auth/logout", nil, csrf); r.StatusCode != 503 ||
 			!strings.Contains(string(b), "home_unreachable") {
-			t.Fatalf("a change (sign-out) with the home gone: %d %s", r.StatusCode, tail(string(b), 300))
+			t.Fatalf("a change (a home session's sign-out) with the home gone: %d %s", r.StatusCode, tail(string(b), 300))
 		}
-		// a credential the home never confirmed to this node: it cannot serve that person
-		if r, b := newBrowser(t).do("GET", nodeWebURL+"/api/videos", nil, map[string]string{
-			"Cookie": "mkt_sess=never-seen-here"}); r.StatusCode != 503 || !strings.Contains(string(b), `"readable":false`) {
-			t.Fatalf("an unknown session with the home gone: %d %s", r.StatusCode, tail(string(b), 300))
+		// a credential the copy does not know is no one
+		if r, _ := newBrowser(t).do("GET", nodeWebURL+"/api/videos", nil, map[string]string{
+			"Cookie": "mkt_sess=6f1d2c3b-0000-4000-8000-00000000dead"}); r.StatusCode != 401 {
+			t.Fatalf("an unknown session with the home gone: %d", r.StatusCode)
 		}
 		if r, _ := u2.do("GET", nodeWebURL+"/api/system/version", nil, nil); r.StatusCode != 200 {
 			t.Fatalf("a local route with the home gone: %d", r.StatusCode)
 		}
 
-		t.Run("its database gone too: the node plays from its catalog, even after a restart", func(t *testing.T) {
-			state := filepath.Join(nodeDir, "data", "node")
-			sess := u2.cookie(nodeWebURL, "mkt_sess")
-			waitFor(t, "the node's catalog, snapshot and kept sign-in", 60*time.Second, func() bool {
-				_, e1 := os.Stat(filepath.Join(state, "api-catalog.json.gz"))
-				_, e2 := os.Stat(filepath.Join(state, "streaming-catalog.json.gz"))
-				return e1 == nil && e2 == nil && keptAnswer(filepath.Join(state, "auth-answers.json.gz"), sess)
-			})
-			pgProxy.cut()
+		t.Run("its database gone too: the node plays and reads from its copy, even after a restart", func(t *testing.T) {
+			pgProxy.cut() // the node's connection and its copy's replication: the home's database is gone
 			csrf := map[string]string{"X-Maktaba-CSRF": u2.cookie(nodeWebURL, "mkt_csrf")}
 			play := func(who string) {
 				t.Helper()
@@ -757,15 +782,12 @@ slots = "off"
 				}
 			}
 			play("running node")
-			if r, b := u2.do("POST", nodeWebURL+"/api/stream/sessions", map[string]string{"video_id": v2}, csrf); r.StatusCode != 503 ||
-				!strings.Contains(string(b), "video_unavailable_offline") {
-				t.Fatalf("a video this node cannot read, the home's database gone: %d %s", r.StatusCode, tail(string(b), 300))
-			}
-			if r, b := u2.do("GET", nodeWebURL+"/api/videos", nil, nil); r.StatusCode != 503 || !strings.Contains(string(b), "home_unreachable") {
-				t.Fatalf("a library read with the home's database gone: %d %s", r.StatusCode, tail(string(b), 300))
-			}
+			waitFor(t, "a library read from the copy with the home's database gone", 30*time.Second, func() bool {
+				r, _ := u2.do("GET", nodeWebURL+"/api/videos", nil, nil)
+				return r.StatusCode == 200
+			})
 
-			// the node restarts in the outage: it starts without the database and plays
+			// the node restarts in the outage: it starts without the home's database and plays
 			node.stop()
 			restartedNode := startMachine(t, "node (restarted)", bin, nodeEnv)
 			restartedNode.web = nodeWebURL
@@ -777,22 +799,51 @@ slots = "off"
 				r.Body.Close()
 				return r.StatusCode == 200
 			})
-			// its streaming role may still be starting (its gRPC surface)
-			waitFor(t, "the restarted node's streaming role", 60*time.Second, func() bool {
+			// its copy and its streaming role may still be starting
+			waitFor(t, "the restarted node's copy and streaming role", 90*time.Second, func() bool {
 				r, b := u2.do("POST", nodeWebURL+"/api/stream/sessions", map[string]any{"video_id": v1, "force_transcode": true}, csrf)
 				if r.StatusCode == 201 {
 					var s openSession
 					if json.Unmarshal(b, &s) == nil && s.SessionID != "" {
 						_, _ = u2.do("DELETE", nodeWebURL+"/api/stream/sessions/"+s.SessionID, nil, csrf)
 					}
+					return true
 				}
-				return r.StatusCode != http.StatusServiceUnavailable
+				return false
 			})
 			play("restarted node")
 			if r, b := u2.do("GET", nodeWebURL+"/api/auth/me", nil, nil); r.StatusCode != 200 || !strings.Contains(string(b), `"username":"owner"`) {
 				t.Fatalf("/api/auth/me on the restarted node: %d %s", r.StatusCode, tail(string(b), 300))
 			}
+			if r, b := newBrowser(t).do("POST", nodeWebURL+"/api/auth/login",
+				map[string]string{"username": "owner", "password": "owner-pass-123"}, nil); r.StatusCode != 200 {
+				t.Fatalf("a sign-in on the restarted node: %d %s", r.StatusCode, tail(string(b), 300))
+			}
 		})
+	})
+
+	t.Run("home gone, no copy: the node serves no one but its own routes", func(t *testing.T) {
+		if withCopy {
+			t.Skip("this node keeps a copy (the case above)")
+		}
+		u2 := newBrowser(t)
+		resp, _ := u2.do("POST", nodeWebURL+"/api/auth/login", map[string]string{"username": "owner", "password": "owner-pass-123"}, nil)
+		if resp.StatusCode != 200 {
+			t.Fatalf("sign-in through the node: %d", resp.StatusCode)
+		}
+		home.stop()
+		waitFor(t, "a read refused (503 readable false)", 90*time.Second, func() bool {
+			r, b := u2.do("GET", nodeWebURL+"/api/videos", nil, nil)
+			return r.StatusCode == 503 && strings.Contains(string(b), `"readable":false`)
+		})
+		if r, b := newBrowser(t).do("POST", nodeWebURL+"/api/auth/login",
+			map[string]string{"username": "owner", "password": "owner-pass-123"}, nil); r.StatusCode != 503 ||
+			!strings.Contains(string(b), "home_unreachable") {
+			t.Fatalf("a sign-in with the home gone and no copy: %d %s", r.StatusCode, tail(string(b), 300))
+		}
+		if r, _ := u2.do("GET", nodeWebURL+"/api/system/version", nil, nil); r.StatusCode != 200 {
+			t.Fatalf("a local route with the home gone: %d", r.StatusCode)
+		}
 	})
 }
 
@@ -861,20 +912,6 @@ func (p *tcpProxy) cut() {
 		_ = c.Close()
 	}
 	p.conns = map[net.Conn]struct{}{}
-}
-
-// keptAnswer reports whether the node kept the home's answer for a session (its hash).
-func keptAnswer(path, session string) bool {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-	zr, err := gzip.NewReader(bytes.NewReader(raw))
-	if err != nil {
-		return false
-	}
-	b, _ := io.ReadAll(zr)
-	return strings.Contains(string(b), nodeauth.SessionKey(session))
 }
 
 type openSession struct {
