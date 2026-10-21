@@ -21,6 +21,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 use tauri_plugin_updater::UpdaterExt;
 
 use crate::agent::{self, Action, BundlePaths, LoginItem};
+use crate::lang::Lang;
 use crate::mode::{self, AppMode, Target};
 use crate::setup::{self, Progress, StepError};
 use crate::status::{self, Probe, Quiet, ServerStatus, StatusView};
@@ -66,6 +67,8 @@ pub struct Shell {
     plain_icon: Mutex<Option<(Vec<u8>, u32, u32)>>,
     /// "Connect to another Maktaba…" was chosen: show setup until a mode is saved.
     force_setup: AtomicBool,
+    /// The tray's language: the system's UI language when the app started.
+    lang: Lang,
     /// One refresh at a time, so tray menus are queued in the order computed.
     refresh_lock: Mutex<()>,
 }
@@ -100,6 +103,7 @@ impl Shell {
             plain_icon: Mutex::new(None),
             force_setup: AtomicBool::new(false),
             refresh_lock: Mutex::new(()),
+            lang: Lang::system(),
         }
     }
 
@@ -168,7 +172,7 @@ impl Shell {
             .unwrap_or_else(|| status::DEFAULT_SUPERVISOR_ADDR.into());
         let probe = status::probe(&addr);
         let model = match &probe {
-            Probe::Snapshot(s) => status::model_line(s.llm.as_ref()),
+            Probe::Snapshot(s) => status::model_line(s.llm.as_ref(), self.lang.words()),
             Probe::Unreachable => None,
         };
         // a live agent (Windows, Linux) whose supervisor does not answer is
@@ -267,17 +271,24 @@ fn refresh(app: &AppHandle) {
         (view, None)
     };
     let update_ready = sh.update_ready.load(Ordering::SeqCst);
-    let (status, detail) = (&view.status, view.detail.as_deref());
-    let entries = tray::entries_with_model(server, status, update_ready, model.as_deref(), detail);
+    // the server's English detail, for a tray that shows it (lang.rs)
+    let detail = view
+        .detail
+        .as_ref()
+        .map(|d| d.text.as_str())
+        .filter(|t| !t.is_empty());
+    let (status, lang) = (&view.status, sh.lang);
+    let entries =
+        tray::entries_with_model(lang, server, status, update_ready, model.as_deref(), detail);
     let badge = if server && cfg!(not(target_os = "macos")) {
         tray::badge_color(status, update_ready)
     } else {
         None
     };
     let tooltip = if server {
-        tray::tooltip(&tray::status_line(status, detail))
+        tray::tooltip(&tray::status_line(lang, status, detail))
     } else {
-        "Maktaba".into()
+        lang.words().brand.into()
     };
     *sh.status.lock().unwrap() = view.clone();
     let mut last = sh.menu.lock().unwrap();
@@ -472,10 +483,10 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     app.manage(Shell::new(app));
 
     let sh = shell(app);
-    let entries = tray::entries(sh.server_side(), &ServerStatus::Starting, false);
+    let entries = tray::entries(sh.lang, sh.server_side(), &ServerStatus::Starting, false);
     let mut tray = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&build_tray_menu(app, &entries)?)
-        .tooltip("Maktaba")
+        .tooltip(sh.lang.words().brand)
         .on_menu_event(|app, event| on_tray_event(app, event.id().as_ref()));
     if let Some(icon) = app.default_window_icon() {
         *sh.plain_icon.lock().unwrap() = Some((icon.rgba().to_vec(), icon.width(), icon.height()));

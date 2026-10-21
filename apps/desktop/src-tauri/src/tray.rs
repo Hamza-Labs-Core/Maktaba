@@ -7,8 +7,10 @@
 //
 // The ids are matched in lib.rs `on_tray_event`; `media-play`,
 // `media-pause` and `preferences` are also forwarded to the web shell
-// (web/src/lib/desktop.ts KNOWN_MENU_IDS).
-use crate::status::ServerStatus;
+// (web/src/lib/desktop.ts KNOWN_MENU_IDS). The words are the system's UI
+// language's, English or Arabic (lang.rs).
+use crate::lang::{fill, Lang};
+use crate::status::{ServerStatus, NO_ANSWER};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Entry {
@@ -37,25 +39,39 @@ fn note(label: impl Into<String>) -> Entry {
 }
 
 /// The one-line status shown at the top of the menu and as the tooltip.
-/// `detail` is what the server waits on (status::waiting_on): the venv being
-/// built, the backup before an update, or why that failed. A server that
-/// does not answer has no processes to wait on: its reason (from server.log,
-/// cut to fit the tooltip) is the line.
-pub fn status_line(status: &ServerStatus, detail: Option<&str>) -> String {
-    match (status, detail) {
-        (ServerStatus::SetupNeeded, _) => "Maktaba: finish setup to start the server".into(),
-        (ServerStatus::Paused, _) => "Maktaba is paused".into(),
-        (ServerStatus::Stopped, _) => "Maktaba is stopped".into(),
-        (ServerStatus::Starting, Some(d)) => format!("Maktaba is starting: {d}"),
-        (ServerStatus::Starting, None) => "Maktaba is starting…".into(),
-        (ServerStatus::Running, _) => "Maktaba is running".into(),
-        (ServerStatus::Problem { roles }, Some(d)) => {
-            format!("Maktaba: {} cannot start ({d})", roles.join(", "))
+/// `detail` is what the server reports it waits on (status::waiting_on: the
+/// venv being built, the backup before an update, or why that failed), in
+/// its English: the English tray shows it, a tray in another language says
+/// the status in its own words without it. A server that does not answer has
+/// no processes to wait on: the line of server.log that says why (cut to fit
+/// the tooltip), as the log has it, is the reason.
+pub fn status_line(lang: Lang, status: &ServerStatus, detail: Option<&str>) -> String {
+    let w = lang.words();
+    match status {
+        ServerStatus::SetupNeeded => w.setup_needed.into(),
+        ServerStatus::Paused => w.paused.into(),
+        ServerStatus::Stopped => w.stopped.into(),
+        ServerStatus::Running => w.running.into(),
+        ServerStatus::Starting => match (detail, w.starting_on) {
+            (Some(d), Some(line)) => fill(line, &[("detail", d)]),
+            _ => w.starting.into(),
+        },
+        ServerStatus::Problem { roles } => {
+            let roles = roles.join(", ");
+            match (detail, w.cannot_start) {
+                (Some(d), Some(line)) => fill(line, &[("roles", &roles), ("detail", d)]),
+                (Some(_), None) => fill(w.cannot_start_plain, &[("roles", &roles)]),
+                (None, _) => fill(w.keeps_stopping, &[("roles", &roles)]),
+            }
         }
-        (ServerStatus::Problem { roles }, None) => {
-            format!("Maktaba: {} keeps stopping", roles.join(", "))
+        ServerStatus::NotAnswering { reason } => {
+            let reason = if reason == NO_ANSWER {
+                w.no_answer
+            } else {
+                reason
+            };
+            fill(w.has_a_problem, &[("reason", reason)])
         }
-        (ServerStatus::NotAnswering { reason }, _) => format!("Maktaba has a problem: {reason}"),
     }
 }
 
@@ -82,20 +98,26 @@ pub fn tooltip(line: &str) -> String {
     out
 }
 
+/// The badge of a problem: processes that keep failing, or a server whose
+/// agent runs but that does not answer (the tray says "Maktaba has a problem"
+/// for both).
+const BADGE_PROBLEM: [u8; 3] = [0xd3, 0x3a, 0x2c];
+/// The badge of an update ready: violet, far in hue from the icon's blue
+/// (#1E5AD8, which a blue badge vanished into at 16 px) and from the other
+/// badges, with 3:1 contrast or more on a light and on a dark taskbar.
+const BADGE_UPDATE: [u8; 3] = [0xc7, 0x52, 0xe8];
+
 /// The status badge on the tray icon (Windows and Linux; the Mac's menu-bar
-/// item keeps its plain icon): green running, amber starting, red a
-/// problem (processes that keep failing, or a server whose agent runs but
-/// that does not answer: the tray says "Maktaba has a problem" for both),
-/// grey paused or stopped, blue an update ready; none before setup.
+/// item keeps its plain icon): red a problem, then violet an update ready,
+/// else green running, amber starting, grey paused or stopped; none before
+/// setup. A problem outranks the update: it is what needs the user first.
 pub fn badge_color(status: &ServerStatus, update_ready: bool) -> Option<[u8; 3]> {
     match status {
         ServerStatus::SetupNeeded => None,
-        _ if update_ready => Some([0x2f, 0x6f, 0xd6]),
+        ServerStatus::Problem { .. } | ServerStatus::NotAnswering { .. } => Some(BADGE_PROBLEM),
+        _ if update_ready => Some(BADGE_UPDATE),
         ServerStatus::Running => Some([0x2e, 0x9d, 0x4f]),
         ServerStatus::Starting => Some([0xe0, 0xa1, 0x00]),
-        ServerStatus::Problem { .. } | ServerStatus::NotAnswering { .. } => {
-            Some([0xd3, 0x3a, 0x2c])
-        }
         ServerStatus::Paused | ServerStatus::Stopped => Some([0x8a, 0x8a, 0x8a]),
     }
 }
@@ -133,11 +155,11 @@ pub fn badge(rgba: &[u8], width: u32, height: u32, color: [u8; 3]) -> Vec<u8> {
     out
 }
 
-/// The tray menu. `server` is false in client mode (the window connects
-/// to another Maktaba and this Mac runs no server): then the menu has no
-/// server items and Quit is a plain Quit.
-pub fn entries(server: bool, status: &ServerStatus, update_ready: bool) -> Vec<Entry> {
-    entries_with_model(server, status, update_ready, None, None)
+/// The tray menu, in `lang`. `server` is false in client mode (the window
+/// connects to another Maktaba and this Mac runs no server): then the menu
+/// has no server items and Quit is a plain Quit.
+pub fn entries(lang: Lang, server: bool, status: &ServerStatus, update_ready: bool) -> Vec<Entry> {
+    entries_with_model(lang, server, status, update_ready, None, None)
 }
 
 /// The tray menu with what the server waits on in its status line (`detail`,
@@ -145,15 +167,17 @@ pub fn entries(server: bool, status: &ServerStatus, update_ready: bool) -> Vec<E
 /// and the language model's line (status::model_line) under it: ready, or
 /// downloading with its progress.
 pub fn entries_with_model(
+    lang: Lang,
     server: bool,
     status: &ServerStatus,
     update_ready: bool,
     model: Option<&str>,
     detail: Option<&str>,
 ) -> Vec<Entry> {
+    let w = lang.words();
     let mut out = Vec::new();
     if server {
-        out.push(note(status_line(status, detail)));
+        out.push(note(status_line(lang, status, detail)));
         if let Some(line) = model {
             out.push(Entry::Item {
                 id: "model-status",
@@ -162,37 +186,37 @@ pub fn entries_with_model(
             });
         }
         if update_ready {
-            out.push(item("update", "Update ready: restart to install"));
+            out.push(item("update", w.update_ready));
         }
         out.push(Entry::Separator);
     }
-    out.push(item("show", "Open Maktaba"));
+    out.push(item("show", w.open));
     if !server {
         // client mode: the way back to the setup screens (another address,
         // or this Mac when the build carries the server)
-        out.push(item("change-server", "Connect to another Maktaba…"));
+        out.push(item("change-server", w.change_server));
     }
     if server {
         match status {
             ServerStatus::SetupNeeded => {}
             ServerStatus::Paused | ServerStatus::Stopped => {
-                out.push(item("server-resume", "Resume server"))
+                out.push(item("server-resume", w.resume))
             }
-            _ => out.push(item("server-pause", "Pause server")),
+            _ => out.push(item("server-pause", w.pause)),
         }
-        out.push(item("open-logs", "Open logs"));
+        out.push(item("open-logs", w.open_logs));
     }
     out.push(Entry::Separator);
-    out.push(item("media-play", "Play"));
-    out.push(item("media-pause", "Pause playback"));
+    out.push(item("media-play", w.play));
+    out.push(item("media-pause", w.pause_playback));
     out.push(Entry::Separator);
-    out.push(item("tray-settings", "Settings"));
+    out.push(item("tray-settings", w.settings));
     out.push(Entry::Separator);
     if server && *status != ServerStatus::SetupNeeded {
-        out.push(item("quit", "Quit (server keeps running)"));
-        out.push(item("stop-and-quit", "Stop server and quit"));
+        out.push(item("quit", w.quit_server_runs));
+        out.push(item("stop-and-quit", w.stop_and_quit));
     } else {
-        out.push(item("quit", "Quit"));
+        out.push(item("quit", w.quit));
     }
     out
 }
@@ -212,7 +236,7 @@ mod tests {
 
     #[test]
     fn client_mode_has_no_server_items() {
-        let e = entries(false, &ServerStatus::Stopped, true);
+        let e = entries(Lang::En, false, &ServerStatus::Stopped, true);
         assert_eq!(
             ids(&e),
             [
@@ -228,7 +252,7 @@ mod tests {
 
     #[test]
     fn running_server_offers_pause_and_both_quits() {
-        let e = entries(true, &ServerStatus::Running, false);
+        let e = entries(Lang::En, true, &ServerStatus::Running, false);
         assert_eq!(
             ids(&e),
             [
@@ -256,7 +280,7 @@ mod tests {
     #[test]
     fn stopped_or_paused_server_offers_resume() {
         for s in [ServerStatus::Stopped, ServerStatus::Paused] {
-            let e = entries(true, &s, false);
+            let e = entries(Lang::En, true, &s, false);
             assert!(ids(&e).contains(&"server-resume"));
             assert!(!ids(&e).contains(&"server-pause"));
         }
@@ -273,14 +297,14 @@ mod tests {
                 reason: "the server does not answer".into(),
             },
         ] {
-            let got = ids(&entries(true, &s, false));
+            let got = ids(&entries(Lang::En, true, &s, false));
             assert!(got.contains(&"server-pause") && got.contains(&"open-logs"));
         }
     }
 
     #[test]
     fn setup_needed_has_no_pause_or_stop() {
-        let e = entries(true, &ServerStatus::SetupNeeded, false);
+        let e = entries(Lang::En, true, &ServerStatus::SetupNeeded, false);
         let got = ids(&e);
         assert!(!got.contains(&"server-pause") && !got.contains(&"server-resume"));
         assert!(!got.contains(&"stop-and-quit"));
@@ -294,7 +318,14 @@ mod tests {
     #[test]
     fn the_language_model_line_sits_under_the_status() {
         let line = "Language model: downloading qwen2.5:7b (42%)";
-        let e = entries_with_model(true, &ServerStatus::Running, true, Some(line), None);
+        let e = entries_with_model(
+            Lang::En,
+            true,
+            &ServerStatus::Running,
+            true,
+            Some(line),
+            None,
+        );
         assert_eq!(ids(&e)[..3], ["status", "model-status", "update"]);
         assert_eq!(
             e[1],
@@ -305,24 +336,32 @@ mod tests {
             }
         );
         // client mode shows no server lines
-        let e = entries_with_model(false, &ServerStatus::Stopped, false, Some(line), None);
+        let e = entries_with_model(
+            Lang::En,
+            false,
+            &ServerStatus::Stopped,
+            false,
+            Some(line),
+            None,
+        );
         assert!(!ids(&e).contains(&"model-status"));
     }
 
     #[test]
     fn update_ready_adds_the_install_item_under_the_status() {
-        let e = entries(true, &ServerStatus::Running, true);
+        let e = entries(Lang::En, true, &ServerStatus::Running, true);
         assert_eq!(ids(&e)[..2], ["status", "update"]);
     }
 
     #[test]
     fn status_lines() {
         assert_eq!(
-            status_line(&ServerStatus::Starting, None),
+            status_line(Lang::En, &ServerStatus::Starting, None),
             "Maktaba is starting…"
         );
         assert_eq!(
             status_line(
+                Lang::En,
                 &ServerStatus::Problem {
                     roles: vec!["pipeline".into(), "streaming".into()]
                 },
@@ -332,6 +371,7 @@ mod tests {
         );
         assert_eq!(
             status_line(
+                Lang::En,
                 &ServerStatus::NotAnswering {
                     reason: "another launcher runs this install".into()
                 },
@@ -345,11 +385,12 @@ mod tests {
     fn status_lines_say_what_the_server_waits_on() {
         let d = Some("Installing the transcription tools (40%)");
         assert_eq!(
-            status_line(&ServerStatus::Starting, d),
+            status_line(Lang::En, &ServerStatus::Starting, d),
             "Maktaba is starting: Installing the transcription tools (40%)"
         );
         assert_eq!(
             status_line(
+                Lang::En,
                 &ServerStatus::Problem {
                     roles: vec!["api".into()]
                 },
@@ -357,8 +398,11 @@ mod tests {
             ),
             "Maktaba: api cannot start (the backup before the update failed)"
         );
-        assert_eq!(status_line(&ServerStatus::Running, d), "Maktaba is running");
-        let e = entries_with_model(true, &ServerStatus::Starting, false, None, d);
+        assert_eq!(
+            status_line(Lang::En, &ServerStatus::Running, d),
+            "Maktaba is running"
+        );
+        let e = entries_with_model(Lang::En, true, &ServerStatus::Starting, false, None, d);
         assert_eq!(
             e[0],
             Entry::Item {
@@ -376,10 +420,10 @@ mod tests {
         };
         // it has no processes to wait on: the reason is the line, whatever the detail
         assert_eq!(
-            status_line(&s, Some("Installing")),
+            status_line(Lang::En, &s, Some("Installing")),
             "Maktaba has a problem: another launcher runs this install"
         );
-        let e = entries_with_model(true, &s, false, None, None);
+        let e = entries_with_model(Lang::En, true, &s, false, None, None);
         assert_eq!(
             e[0],
             Entry::Item {
@@ -393,7 +437,7 @@ mod tests {
         for word in ["x", "مكتبة"] {
             let log = format!("Error: {}", [word; 300].join(" "));
             let reason = crate::status::failure_in_log(&log).expect("a reason");
-            let line = status_line(&ServerStatus::NotAnswering { reason }, None);
+            let line = status_line(Lang::En, &ServerStatus::NotAnswering { reason }, None);
             assert_eq!(tooltip(&line), line, "cut twice: {line}");
             assert!(line.encode_utf16().count() <= TOOLTIP_MAX);
         }
@@ -427,11 +471,6 @@ mod tests {
             problem,
             "a server that does not answer is a problem"
         );
-        assert_eq!(
-            badge_color(&not_answering, true),
-            badge_color(&ServerStatus::Running, true),
-            "an update ready shows over it, as over a problem"
-        );
         let stopped = badge_color(&ServerStatus::Stopped, false);
         assert_eq!(stopped, badge_color(&ServerStatus::Paused, false));
         let update = badge_color(&ServerStatus::Running, true);
@@ -442,6 +481,167 @@ mod tests {
                 assert_ne!(a, b, "two states share a badge");
             }
         }
+    }
+
+    #[test]
+    fn a_problem_outranks_an_update_which_outranks_the_rest() {
+        let problems = [
+            ServerStatus::Problem {
+                roles: vec!["api".into()],
+            },
+            ServerStatus::NotAnswering {
+                reason: "the server does not answer".into(),
+            },
+        ];
+        for s in &problems {
+            assert_eq!(badge_color(s, true), Some(BADGE_PROBLEM), "{s:?}");
+            assert_eq!(badge_color(s, false), Some(BADGE_PROBLEM), "{s:?}");
+        }
+        for s in [
+            ServerStatus::Running,
+            ServerStatus::Starting,
+            ServerStatus::Paused,
+            ServerStatus::Stopped,
+        ] {
+            assert_eq!(badge_color(&s, true), Some(BADGE_UPDATE), "{s:?}");
+            assert_ne!(badge_color(&s, false), Some(BADGE_UPDATE), "{s:?}");
+        }
+        assert_eq!(badge_color(&ServerStatus::SetupNeeded, true), None);
+    }
+
+    /// WCAG relative luminance.
+    fn luminance([r, g, b]: [u8; 3]) -> f64 {
+        let lin = |c: u8| {
+            let c = c as f64 / 255.0;
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+    }
+
+    fn contrast(a: [u8; 3], b: [u8; 3]) -> f64 {
+        let (x, y) = (luminance(a), luminance(b));
+        (x.max(y) + 0.05) / (x.min(y) + 0.05)
+    }
+
+    fn hue([r, g, b]: [u8; 3]) -> f64 {
+        let (r, g, b) = (r as f64, g as f64, b as f64);
+        let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+        let d = max - min;
+        let h = if d == 0.0 {
+            0.0
+        } else if max == r {
+            ((g - b) / d).rem_euclid(6.0)
+        } else if max == g {
+            (b - r) / d + 2.0
+        } else {
+            (r - g) / d + 4.0
+        };
+        h * 60.0
+    }
+
+    fn hue_apart(a: [u8; 3], b: [u8; 3]) -> f64 {
+        let d = (hue(a) - hue(b)).abs();
+        d.min(360.0 - d)
+    }
+
+    #[test]
+    fn the_update_badge_stands_out_on_the_icon_and_either_taskbar() {
+        // the app icon's blue (icons/*.png) and Windows 11's light and dark taskbars
+        let icon = [0x1e, 0x5a, 0xd8];
+        let (light, dark) = ([0xf3, 0xf3, 0xf3], [0x20, 0x20, 0x20]);
+        assert!(contrast(BADGE_UPDATE, light) >= 3.0, "on a light taskbar");
+        assert!(contrast(BADGE_UPDATE, dark) >= 3.0, "on a dark taskbar");
+        // the old blue sat 4 degrees from the icon at 1.24:1
+        assert!(
+            hue_apart(BADGE_UPDATE, icon) >= 60.0,
+            "{}",
+            hue(BADGE_UPDATE)
+        );
+        assert!(contrast(BADGE_UPDATE, icon) >= 1.5);
+        // and it is not read as a problem
+        assert!(hue_apart(BADGE_UPDATE, BADGE_PROBLEM) >= 60.0);
+    }
+
+    #[test]
+    fn an_arabic_tray_says_it_in_arabic() {
+        let ar = Lang::Ar;
+        let e = entries(ar, true, &ServerStatus::Running, true);
+        let labels: Vec<&str> = e
+            .iter()
+            .filter_map(|x| match x {
+                Entry::Item { label, .. } => Some(label.as_str()),
+                Entry::Separator => None,
+            })
+            .collect();
+        assert_eq!(
+            labels,
+            [
+                "مكتبة تعمل",
+                "التحديث جاهز: أعد التشغيل لتثبيته",
+                "فتح مكتبة",
+                "إيقاف الخادم مؤقتًا",
+                "فتح السجلات",
+                "تشغيل",
+                "إيقاف التشغيل مؤقتًا",
+                "الإعدادات",
+                "إنهاء (يبقى الخادم يعمل)",
+                "إيقاف الخادم والإنهاء",
+            ]
+        );
+        // the same ids as in English: lib.rs and the web shell match them
+        assert_eq!(
+            ids(&e),
+            ids(&entries(Lang::En, true, &ServerStatus::Running, true))
+        );
+        let client = entries(ar, false, &ServerStatus::Stopped, false);
+        assert!(client.contains(&item("change-server", "الاتصال بمكتبة أخرى…")));
+        assert!(client.contains(&item("quit", "إنهاء")));
+    }
+
+    #[test]
+    fn an_arabic_tray_leaves_the_servers_english_out() {
+        let d = Some("Installing the transcription tools (40%)");
+        assert_eq!(
+            status_line(Lang::Ar, &ServerStatus::Starting, d),
+            "مكتبة قيد التشغيل…"
+        );
+        let api = ServerStatus::Problem {
+            roles: vec!["api".into()],
+        };
+        assert_eq!(
+            status_line(Lang::Ar, &api, Some("the backup before the update failed")),
+            "مكتبة: تعذّر تشغيل api"
+        );
+        assert_eq!(status_line(Lang::Ar, &api, None), "مكتبة: يتكرر توقف api");
+        // the log's own line stays as the log has it; the reason it names
+        // when the log says nothing is the tray's
+        let lock = ServerStatus::NotAnswering {
+            reason: "another launcher runs this install".into(),
+        };
+        assert_eq!(
+            status_line(Lang::Ar, &lock, None),
+            "في مكتبة مشكلة: another launcher runs this install"
+        );
+        let quiet = ServerStatus::NotAnswering {
+            reason: NO_ANSWER.into(),
+        };
+        assert_eq!(
+            status_line(Lang::Ar, &quiet, None),
+            "في مكتبة مشكلة: الخادم لا يستجيب"
+        );
+        assert_eq!(
+            status_line(Lang::En, &quiet, None),
+            "Maktaba has a problem: the server does not answer"
+        );
+        // the longest reason fits the tooltip in Arabic too
+        let log = format!("Error: {}", ["x"; 300].join(" "));
+        let reason = crate::status::failure_in_log(&log).expect("a reason");
+        let line = status_line(Lang::Ar, &ServerStatus::NotAnswering { reason }, None);
+        assert_eq!(tooltip(&line), line);
     }
 
     #[test]

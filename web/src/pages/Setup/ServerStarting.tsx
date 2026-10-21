@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../lib/i18n";
 import { NO_ANSWER, type Platform, type ServerStatus, type SetupApi } from "../../lib/desktopSetup";
+import { codedText } from "./codedText";
 import { platformWords, usePlatform } from "./platform";
 
 export const STARTING_POLL_MS = 2000;
@@ -55,6 +56,15 @@ export function ServerStarting({ api, platform }: { api: SetupApi; platform?: Pl
   } else if (status?.kind === "stopped" || status?.kind === "paused")
     line = t("setup.starting.stopped", words);
   else if (status?.kind === "running") line = t("setup.starting.opening");
+  // what the server waits on, in this language when the app has words for its
+  // code (else the line above says it generically); the server's English goes
+  // under Details
+  const waits = status?.kind === "starting" || status?.kind === "problem";
+  const waitsOn =
+    waits && status.detail_code
+      ? codedText(t, "setup.starting.detail", status.detail_code, status.detail_params, words, "")
+      : "";
+  const english = waits ? status.detail?.trim() : undefined;
 
   return (
     <main className="mkt-setup" aria-labelledby="mkt-starting-h">
@@ -63,10 +73,12 @@ export function ServerStarting({ api, platform }: { api: SetupApi; platform?: Pl
           {t("setup.starting.title")}
         </h1>
         <p role="status">{line}</p>
-        {status?.detail && (status.kind === "starting" || status.kind === "problem") && (
-          <p className="mkt-setup__note" dir="auto">
-            {status.detail}
-          </p>
+        {waitsOn && <p className="mkt-setup__note">{waitsOn}</p>}
+        {english && (
+          <details className="mkt-setup__details">
+            <summary>{t("setup.details")}</summary>
+            <pre dir="ltr">{english}</pre>
+          </details>
         )}
         {logLine && (
           <p className="mkt-setup__note">
