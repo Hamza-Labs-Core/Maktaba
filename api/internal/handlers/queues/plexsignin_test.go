@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -291,5 +292,72 @@ func TestPickConnection(t *testing.T) {
 	got := pickConnection([]plexConnection{{Protocol: "https", URI: "https://remote"}, {Protocol: "http", URI: "http://lan", Local: true}})
 	if got != "http://lan" {
 		t.Errorf("got %q", got)
+	}
+}
+
+// LinkPlex (maktaba-api plex-link, the desktop app's first-run setup): the
+// account token setup's PIN flow got picks the server on this network unless
+// another is named, stores it like the Settings sign-in (address in the row,
+// token in home_secrets, never the account token), and keeps setup's client
+// id as the install's.
+func TestLinkPlex(t *testing.T) {
+	f, fp := plexFixture(t, `{"path_map":"{\"/m\":\"E:/m\"}"}`)
+	store := secrets.NewMemory()
+	f.h.Secrets = store
+	got, err := f.h.LinkPlex(context.Background(), "setup-cid", "ACCOUNT-TOKEN", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Server != "Home" || got.URL != "https://192-168-1-5.plex.direct:32400" ||
+		strings.Join(got.Servers, ",") != "Home,Cabin" {
+		t.Fatalf("linked = %+v (the local server first)", got)
+	}
+	if fp.resToken != "ACCOUNT-TOKEN" || fp.clientIDs[len(fp.clientIDs)-1] != "setup-cid" {
+		t.Errorf("resources asked with %q / %v", fp.resToken, fp.clientIDs)
+	}
+	ups := f.db.Find("insert into extensions")
+	var saved map[string]any
+	_ = json.Unmarshal([]byte(ups[len(ups)-1].Args[2].(string)), &saved)
+	if saved["url"] != got.URL || saved["client_id"] != "setup-cid" || saved["path_map"] != `{"/m":"E:/m"}` {
+		t.Errorf("saved %v", saved)
+	}
+	if v, err := store.Get(context.Background(), secrets.ExtensionName("plex", "token")); err != nil || string(v) != "SERVER-TOKEN-1" {
+		t.Errorf("token in home_secrets = %q %v", v, err)
+	}
+	for _, u := range ups {
+		if strings.Contains(u.Args[2].(string), "ACCOUNT-TOKEN") {
+			t.Fatal("the account token must never be stored")
+		}
+	}
+
+	// a named server wins over the local one
+	got, err = f.h.LinkPlex(context.Background(), "setup-cid", "ACCOUNT-TOKEN", "Cabin")
+	if err != nil || got.Server != "Cabin" {
+		t.Fatalf("named: %+v %v", got, err)
+	}
+	// without the secrets store the token cannot be kept: refused, nothing saved
+	f.h.Secrets = nil
+	n := len(f.db.Find("insert into extensions"))
+	if _, err := f.h.LinkPlex(context.Background(), "setup-cid", "ACCOUNT-TOKEN", ""); !errors.Is(err, errNoSecretsStore) {
+		t.Fatalf("no store: %v", err)
+	}
+	if len(f.db.Find("insert into extensions")) != n {
+		t.Error("nothing may be saved without the secrets store")
+	}
+}
+
+func TestIsLocalURI(t *testing.T) {
+	for uri, want := range map[string]bool{
+		"http://192.168.1.5:32400":                 true,
+		"https://192-168-1-5.abc123.plex.direct:1": true,
+		"http://10.0.0.2:32400":                    true,
+		"https://remote.plex.direct:32400":         false,
+		"http://cabin:32400":                       false,
+		"https://8-8-8-8.abc.plex.direct:32400":    false,
+		"::bad":                                    false,
+	} {
+		if got := isLocalURI(uri); got != want {
+			t.Errorf("isLocalURI(%q) = %v, want %v", uri, got, want)
+		}
 	}
 }
