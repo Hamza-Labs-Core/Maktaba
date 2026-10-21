@@ -1,0 +1,149 @@
+# Unmodified copies of exactly the third-party files the Linux payload pins
+# (tools/release/linux-app/pins.env) in this repository's release `third-party-mirror`:
+# payload.sh's second source when a file's own host is down (MIRROR_URL there), kept only
+# as a fallback for CI. Each file is fetched by `payload.sh --fetch-only` (from main's
+# downloads cache when it has it, else upstream, each checked against its pinned SHA-256)
+# and uploaded under its digest name (`payload.sh --pinned`) when it passed; a file already
+# there is kept. THIRD-PARTY-NOTICES.md (every file, its upstream download, licence and
+# source) and the GPL-3.0 text go beside them, and an asset no pin names any more is removed.
+# The release is a prerelease, never the latest (install.sh resolves releases/latest), with
+# no version tag, so no release workflow and no update check sees it.
+name: Third-party mirror
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/release/linux-app/pins.env'
+      - 'tools/release/linux-app/payload.sh'
+      - 'tools/release/linux-app/licenses/**'
+      - '.github/workflows/third-party-mirror.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: third-party-mirror
+  cancel-in-progress: false
+
+env:
+  TAG: third-party-mirror
+
+jobs:
+  release:
+    name: the release
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the mirror release, refresh its notes
+    steps:
+      - name: Make the release, or refresh its notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          notes="Unmodified upstream builds, kept only as a fallback for CI: the Linux app's payload build (tools/release/linux-app/payload.sh) downloads a file from here when its own host is down, and checks it against the SHA-256 pinned in tools/release/linux-app/pins.env. Only files pinned there are kept here. Every file, its upstream download, licence and source: THIRD-PARTY-NOTICES.md; ffmpeg and ffprobe are under the GPL version 3 (GPL-3.0.txt)."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --prerelease --latest=false --notes "$notes"
+          else
+            gh release create "$TAG" --target "$GITHUB_SHA" --prerelease --latest=false \
+              --title "Third-party mirror (Linux payload)" --notes "$notes"
+          fi
+
+  mirror:
+    name: mirror (${{ matrix.arch }})
+    needs: release
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: write # upload to the mirror release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-22.04 }
+          - { arch: aarch64, runner: ubuntu-22.04-arm }
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      # main's downloads (ci.yml linux-app-downloads), this pins.env's or an earlier one's:
+      # what is in it needs no upstream host
+      - uses: actions/cache/restore@v4
+        with:
+          path: build/linux-app/downloads
+          key: linux-app-downloads-${{ matrix.arch }}-${{ hashFiles('tools/release/linux-app/pins.env') }}
+          restore-keys: linux-app-downloads-${{ matrix.arch }}-
+
+      - name: Fetch the pinned files, each checked against its SHA-256
+        id: fetch
+        run: |
+          if tools/release/linux-app/payload.sh --fetch-only; then
+            echo "complete=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "::warning::not every pinned file could be fetched: the others are mirrored"
+            echo "complete=false" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload each file that passed and the mirror lacks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          have="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+          up="$RUNNER_TEMP/up"
+          mkdir -p "$up"
+          tools/release/linux-app/payload.sh --pinned | while read -r arch _ name sha _ mname; do
+            [ "$arch" = "$ARCH" ] || continue
+            f="build/linux-app/downloads/$name"
+            if [ ! -f "$f" ] || [ "$(sha256sum "$f" | cut -d' ' -f1)" != "$sha" ]; then
+              echo "::warning::$name: not fetched, not mirrored"
+              continue
+            fi
+            if printf '%s\n' "$have" | grep -qxF "$mname"; then
+              echo "$mname: there already"
+              continue
+            fi
+            cp "$f" "$up/$mname"
+            gh release upload "$TAG" "$up/$mname"
+            echo "$mname: uploaded"
+          done
+
+      - name: Fail when a pinned file is not mirrored
+        if: steps.fetch.outputs.complete != 'true'
+        run: |
+          echo "::error::a pinned file could not be fetched for ${{ matrix.arch }} (the step above names it)"
+          exit 1
+
+  notices:
+    name: notices and pruning
+    needs: mirror
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # the notices, the licence text, removing what no pin names
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Upload the notices and the GPL text, remove what no pin names
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          docs="$RUNNER_TEMP/docs"
+          mkdir -p "$docs"
+          tools/release/linux-app/payload.sh --notices >"$docs/THIRD-PARTY-NOTICES.md"
+          cp tools/release/linux-app/licenses/GPL-3.0.txt "$docs/GPL-3.0.txt"
+          gh release upload "$TAG" "$docs/THIRD-PARTY-NOTICES.md" "$docs/GPL-3.0.txt" --clobber
+          keep="$(tools/release/linux-app/payload.sh --pinned | awk '{print $6}'; printf '%s\n' THIRD-PARTY-NOTICES.md GPL-3.0.txt)"
+          gh release view "$TAG" --json assets --jq '.assets[].name' | while read -r name; do
+            if ! printf '%s\n' "$keep" | grep -qxF "$name"; then
+              gh release delete-asset "$TAG" "$name" --yes
+              echo "$name: removed (no pin names it)"
+            fi
+          done
