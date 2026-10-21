@@ -103,10 +103,22 @@ for bundle in "$@"; do
     # every bundle keeps the payload's modes. Installed, the tree is root's and the user's
     # setup copies and runs it: every file readable by others, every folder open to them,
     # the executables runnable by them (this extraction is ours, so u+x would prove nothing)
-    lost="$(find "$payload" \( \( -type f ! -perm -o+r \) -o \( -type d ! -perm -o+rx \) \) -print 2>/dev/null | head -5)"
-    if [ -z "$lost" ]; then ok "every file readable by any user"; else fail "$name: not readable by other users: $lost"; continue; fi
-    lost="$(find "$payload/bin" "$payload/postgres/bin" "$payload/ffmpeg" -maxdepth 1 -type f ! -perm -o+x -print 2>/dev/null | head -5)"
-    if [ -z "$lost" ]; then ok "executables runnable by any user"; else fail "$name dropped the executable bit: $lost"; continue; fi
+    # The lists go to a file, with find's own errors (a folder it cannot read): a pipe
+    # into head ended the script on SIGPIPE under pipefail.
+    find "$payload" \( \( -type f ! -perm -o+r \) -o \( -type d ! -perm -o+rx \) \) -printf '%m %p\n' >"$SCRATCH/modes" 2>&1 || true
+    if [ ! -s "$SCRATCH/modes" ]; then
+        ok "every file readable by any user"
+    else
+        fail "$name: $(wc -l <"$SCRATCH/modes") files or folders other users cannot read (mode, path): $(sed -n '1,10p' "$SCRATCH/modes" | tr '\n' ';')"
+        continue
+    fi
+    find "$payload/bin" "$payload/postgres/bin" "$payload/ffmpeg" -maxdepth 1 -type f ! -perm -o+x -printf '%m %p\n' >"$SCRATCH/modes" 2>&1 || true
+    if [ ! -s "$SCRATCH/modes" ]; then
+        ok "executables runnable by any user"
+    else
+        fail "$name dropped the executable bit (mode, path): $(sed -n '1,10p' "$SCRATCH/modes" | tr '\n' ';')"
+        continue
+    fi
     server="$payload/bin/maktaba-server"
     data="$SCRATCH/$name.data"
     if out="$(XDG_DATA_HOME="$data" "$server" runtime install --from "$payload" 2>&1)"; then

@@ -88,7 +88,9 @@ done
 
 # Users whose manager does not run (not logged in, no linger): the app's unit in their
 # home's default unit directory (one in another XDG_CONFIG_HOME is not seen without the
-# manager), on local homes only.
+# manager), on local homes only. Without a mount table (no /proc: a chroot, an image being
+# built) no home can be told local, and no one is logged in there either: nothing to say.
+[ -r /proc/self/mounts ] || exit 0
 uid_min="$(awk '$1 == "UID_MIN" { print $2 }' /etc/login.defs 2>/dev/null)"
 case "$uid_min" in '' | *[!0-9]*) uid_min=1000 ;; esac
 uid_max="$(awk '$1 == "UID_MAX" { print $2 }' /etc/login.defs 2>/dev/null)"

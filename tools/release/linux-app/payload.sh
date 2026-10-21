@@ -225,6 +225,10 @@ log "checking every ELF file against the glibc $MAX_GLIBC baseline"
 elf="$(tool elf "$OUT" --max-glibc "$MAX_GLIBC")" || { printf '%s\n' "$elf" >&2; die "the payload needs more than its baseline"; }
 min_glibc="$("$PY" -I -c 'import json,sys; print(json.loads(sys.argv[1].splitlines()[-1])["min_glibc"])' "$elf")"
 rm -rf "$WORK"
+# Installed by a .deb or .rpm the tree is root's, and each user's setup copies it: every
+# file readable by others, every folder open to them, every executable runnable by them,
+# whatever mode an archive or this machine's umask gave it. The manifest records these.
+chmod -R go-w,a+rX "$OUT"
 manifest="$(tool manifest "$OUT")"
 WHEEL_NAME="$(basename "${whl[0]}")"
 # every value goes in through the environment, never into the program's text
