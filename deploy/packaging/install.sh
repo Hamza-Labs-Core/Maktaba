@@ -10,6 +10,13 @@
 # supervises) into a bin directory on your PATH. On Linux it can also
 # drop in and enable the systemd unit.
 #
+# With --app (Linux, Epic 39): the whole server instead, for a machine without a
+# desktop: the release's maktaba-linux-payload-<ver>-<arch>.tar.gz (the server,
+# Postgres, ffmpeg and Python the Linux app carries), verified the same way,
+# unpacked in ~/.cache/maktaba/install, then its `maktaba-server setup` asks
+# the app's setup questions in this terminal and runs it as your systemd user
+# service. Nothing needs root. Arguments after --app go to setup (--answers FILE).
+#
 # Tunables (env vars):
 #   MAKTABA_VERSION   release tag to install            (default: latest)
 #   MAKTABA_PREFIX    install dir for binaries          (default: /usr/local/bin)
@@ -97,8 +104,62 @@ valid_tag() {
     printf '%s' "$1" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
 }
 
+# payload_archive <version> <amd64|arm64>: the Linux payload asset's name.
+payload_archive() {
+    local machine
+    case "$2" in
+        amd64) machine=x86_64 ;;
+        arm64) machine=aarch64 ;;
+        *)     return 1 ;;
+    esac
+    printf 'maktaba-linux-payload-%s-%s.tar.gz' "$1" "${machine}"
+}
+
+# main_app [setup args]: the Linux app's server for a machine without a desktop.
+main_app() {
+    local arch tag ver archive base dir
+    [ "$(detect_os)" = linux ] || die "--app is for Linux (the Mac and Windows apps carry the server)"
+    arch="$(detect_arch)"
+    tag="$(resolve_version)"
+    valid_tag "${tag}" || die "invalid release tag '${tag}' (want vX.Y.Z)"
+    ver="${tag#v}"
+    archive="$(payload_archive "${ver}" "${arch}")"
+    base="https://github.com/${REPO}/releases/download/${tag}"
+    # not /tmp: often a small tmpfs, and the payload is a few hundred MB unpacked
+    dir="${XDG_CACHE_HOME:-${HOME}/.cache}/maktaba/install/${ver}"
+    rm -rf "${dir}"
+    mkdir -p "${dir}"
+    info "Installing Maktaba ${tag} (the whole server) for linux/${arch}"
+    info "Downloading ${archive}"
+    fetch "${base}/${archive}" "${dir}/${archive}" || die "download failed: ${base}/${archive}"
+    if [ "${MAKTABA_NO_VERIFY:-0}" != "1" ]; then
+        verify_release "${dir}" "${base}" "${tag}" "${archive}"
+    else
+        warn "MAKTABA_NO_VERIFY=1 - installing ${archive} without any verification"
+    fi
+    info "Unpacking"
+    tar -C "${dir}" -xzf "${dir}/${archive}"
+    rm -f "${dir}/${archive}"
+    [ -x "${dir}/server/bin/maktaba-server" ] || die "${archive} has no server/bin/maktaba-server"
+    # the questions need a terminal: curl | bash gives the script on stdin
+    if [ -r /dev/tty ] && [ -t 1 ]; then
+        "${dir}/server/bin/maktaba-server" setup "$@" </dev/tty
+    else
+        case " $* " in
+            *" --answers"*) "${dir}/server/bin/maktaba-server" setup "$@" ;;
+            *) die "setup asks questions: run this in a terminal, or pass --answers FILE" ;;
+        esac
+    fi
+    rm -rf "${dir}"
+}
+
 main() {
     local os arch tag base archive url tmp
+    if [ "${1:-}" = "--app" ]; then
+        shift
+        main_app "$@"
+        return
+    fi
     os="$(detect_os)"
     arch="$(detect_arch)"
     tag="$(resolve_version)"

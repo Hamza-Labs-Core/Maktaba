@@ -106,6 +106,19 @@ for bad in 'latest' '1.5.0' 'v1.5' 'v1.5.0/../../x' 'v1.5.0;id' 'v1.5.0 x'; do
     expect fail "bad tag '${bad}' refused" valid_tag "${bad}"
 done
 
+# --app (Epic 39): the Linux payload's asset name per CPU
+expect ok   "payload name for amd64" test "$(payload_archive 1.5.0 amd64)" = maktaba-linux-payload-1.5.0-x86_64.tar.gz
+expect ok   "payload name for arm64" test "$(payload_archive 1.5.0 arm64)" = maktaba-linux-payload-1.5.0-aarch64.tar.gz
+expect fail "no payload for another CPU" payload_archive 1.5.0 riscv64
+fresh_release
+pa="$(payload_archive 1.5.0 amd64)"
+printf 'payload bytes
+' > "${work}/release/${pa}"
+cp "${work}/release/${pa}" "${work}/dl/${pa}"
+printf '%s  ./%s
+' "$(sha "${work}/release/${pa}")" "${pa}" >> "${work}/release/checksums.txt"
+expect ok   "the payload verifies against checksums.txt" without_cosign verify_release "${work}/dl" https://example.invalid/r v1.5.0 "${pa}"
+
 if [ "${fails}" -ne 0 ]; then
     echo "${fails} case(s) failed" >&2
     exit 1
