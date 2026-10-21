@@ -3258,6 +3258,7 @@
   "setup.models.hf": "التنزيل من Hugging Face",
   "setup.models.nas": "استخدام النسخة الموجودة على الـNAS",
   "setup.models.hfNote": "نموذج الاستماع الثاني (Cohere) يحتاج إلى حساب في Hugging Face: وافق على شروط النموذج ثم أنشئ رمز قراءة.",
+  "setup.models.hfNoSignIn": "يُنزَّل Whisper ونموذج البحث من Hugging Face دون تسجيل دخول: الاستماع الثاني لا يعمل على {machine}.",
   "setup.models.hfGetToken": "احصل على رمز",
   "setup.models.hfToken": "رمز Hugging Face",
   "setup.models.nasPath": "المجلد الذي فيه النماذج",

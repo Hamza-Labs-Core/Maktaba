@@ -51,8 +51,8 @@ don't append a line here; docs-only PRs are exempt.
   the second listen was on, so a PC without an NVIDIA GPU, with one too small or too old, or with
   a driver before R580 was made to create a token and accept a gated model's licence for a model
   that never runs there. `check` now says whether this machine can run it (and why not, in the
-  app's words), the screens leave out the models step where it cannot, the models step no longer
-  asks for the token there, and the download takes only Whisper and the search model. The
+  app's words), the models step no longer asks for the token there (the NAS copy can still be
+  chosen, any model the home published), and the download takes only Whisper and the search model. The
   graphics card's compute capability and driver version come with its name and memory.
 - **The terminal setup's Plex sign-in can be skipped, and survives a moment without plex.tv.**
   Ctrl+C while it waits for the code skipped nothing: it stopped the whole setup before `finish`,

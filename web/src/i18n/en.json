@@ -3258,6 +3258,7 @@
   "setup.models.hf": "Download from Hugging Face",
   "setup.models.nas": "Use the copy on the NAS",
   "setup.models.hfNote": "The second-listen model (Cohere) needs a Hugging Face account: accept the model's terms, then make a read token.",
+  "setup.models.hfNoSignIn": "Whisper and the search model come from Hugging Face with no sign-in: the second listen does not run on {machine}.",
   "setup.models.hfGetToken": "Get a token",
   "setup.models.hfToken": "Hugging Face token",
   "setup.models.nasPath": "Folder with the models",

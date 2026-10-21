@@ -516,6 +516,24 @@ func TestSetupModels(t *testing.T) {
 	if args := strings.Join(calls[len(calls)-1].Args, " "); !strings.Contains(args, "--only whisper,embedder") {
 		t.Fatalf("download args = %s (not the second listen's model)", args)
 	}
+	// the NAS copy there: any model the home published will do (not the gated one)
+	other := filepath.Join(e.dir, "share2")
+	whisperRev := filepath.Join(other, "maktaba", "models", "Systran__faster-whisper-large-v3", "rev1")
+	if err := os.MkdirAll(whisperRev, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, ev := runStep(t, "models", map[string]string{"source": "nas", "path": other}); code != 1 || ev["code"] != "nas_missing" {
+		t.Fatalf("a copy still being written = %d %v", code, ev)
+	}
+	if err := os.WriteFile(filepath.Join(whisperRev, "manifest.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, ev := runStep(t, "models", map[string]string{"source": "nas", "path": other}); code != 0 {
+		t.Fatalf("the share's Whisper where the second listen does not run = %d %v", code, ev)
+	}
+	if p := pendingOf(t, e); p.Models == nil || p.Models.Source != "nas" || p.Models.Path != filepath.Join(other, "maktaba", "models") {
+		t.Fatalf("pending models = %+v", p.Models)
+	}
 }
 
 func venvPythonFor(venv string) string {
