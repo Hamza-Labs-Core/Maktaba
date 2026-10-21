@@ -689,8 +689,8 @@ func buildIdempotencyStore(logger *slog.Logger, node bool) (idempotency.Store, f
 		if node {
 			why = "full node: idempotency_keys is the home's"
 		}
-		logger.Info("idempotency: in-memory store ("+why+"; lost on restart)",
-			"event", "idempotency_memory")
+		logger.Info("idempotency: in-memory store (lost on restart)",
+			"reason", why, "event", "idempotency_memory")
 		return s, func() { runIdempotencySweep(s, logger) }, func() {}
 	}
 	db, err := pgdsn.Open(dsn)
