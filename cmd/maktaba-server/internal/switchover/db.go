@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/lib/pq"
 )
@@ -110,14 +111,23 @@ type Promotion struct {
 	// what the old home wrote after the cut is applied only where this home changed
 	// nothing (an emergency).
 	Fork bool
+	// Record is the switch's row, written with the term (an emergency's: a planned switch's
+	// row is the old home's, copied here); a switch the copy shows under way is cancelled.
+	Record *Record
+}
+
+// Record is an emergency's switch row: its id, who asked, the old home's name.
+type Record struct {
+	ID, FromName, RequestedBy string
 }
 
 // EmergencyGap is how far an emergency promotion moves the sequences past the copy's
 // highest values: room for what the old home wrote after the cut, which keeps its ids.
 const EmergencyGap = 1_000_000
 
-// ForkSlot is the slot (and its publication, of every table) that keeps the new home's
-// changes from an emergency's fork on: what changed here since the old home was cut off.
+// ForkSlot is the slot (and its publication, of the tables a machine's copy holds) that
+// keeps the new home's changes from an emergency's fork on: what changed here since the
+// old home was cut off.
 func ForkSlot(term int64) string { return fmt.Sprintf("maktaba_fork_%d", term) }
 
 // Promoted is what a promotion found and made.
@@ -134,101 +144,176 @@ type Promoted struct {
 
 // Promote makes this machine's copy the home's database. super is its superuser; the copy
 // must have been frozen-in (planned: it holds the marker) or not (emergency). In order:
-// the subscription ends (its position kept as the cut), the kit's rows replace the copy's
-// (the machines, the secrets...), the sequences go on from the old home's, the machines'
-// roles are made with their old passwords, this machine leaves the machines, every other
-// machine gets its publication and its slot before anything else is written, then the old
-// home's registration and the term.
-func Promote(ctx context.Context, super *sql.DB, p Promotion) (Promoted, error) {
-	var out Promoted
-	if err := super.QueryRowContext(ctx, `SELECT system_identifier::text FROM pg_control_system()`).Scan(&out.SystemID); err != nil {
-		return out, err
-	}
-	// the subscription's position: the old home's WAL up to which the copy has its changes
-	_ = super.QueryRowContext(ctx, `SELECT COALESCE(s.remote_lsn::text, '')
-	    FROM pg_replication_origin_status s JOIN pg_replication_origin o ON o.roident = s.local_id
-	    JOIN pg_subscription sub ON o.roname = 'pg_' || sub.oid WHERE sub.subname = $1`, subscription).Scan(&out.CutLSN)
-	var subs int
-	if err := super.QueryRowContext(ctx, `SELECT count(*) FROM pg_subscription WHERE subname = $1`, subscription).Scan(&subs); err != nil {
-		return out, err
-	}
-	if subs > 0 {
-		for _, q := range []string{
-			`ALTER SUBSCRIPTION ` + subscription + ` DISABLE`,
-			// the old home drops its slot itself (it may be gone)
-			`ALTER SUBSCRIPTION ` + subscription + ` SET (slot_name = NONE)`,
-			`DROP SUBSCRIPTION ` + subscription,
-		} {
-			if _, err := super.ExecContext(ctx, q); err != nil {
-				return out, fmt.Errorf("switchover: end the subscription: %w", err)
-			}
-		}
-	}
-	if _, err := super.ExecContext(ctx, `ALTER DATABASE `+database+` RESET default_transaction_read_only`); err != nil {
-		return out, err
-	}
-	var selfPath json.RawMessage
-	var selfSource sql.NullString
-	_ = super.QueryRowContext(ctx, `SELECT path_map, path_map_source FROM cluster_nodes WHERE id = $1`, p.Self).
-		Scan(&selfPath, &selfSource)
-
-	if err := load(ctx, super, p, selfPath, selfSource.String); err != nil {
-		return out, err
-	}
-	if err := roles(ctx, super, p); err != nil {
-		return out, err
-	}
-	// every other approved machine follows the new home from here: its publication and
-	// its slot, before anything is written
-	out.Slots = map[string]string{}
-	rows, err := super.QueryContext(ctx, `SELECT id::text FROM cluster_nodes WHERE state = 'approved' AND full_node`)
+// the kit's rows of the machines replace the copy's (a machine's copy has its own row
+// already, published to it: their load must not reach it); every machine that follows the
+// new home gets its publication and its slot (and an emergency its fork's), before
+// anything else is written; then, in one transaction, the subscription is stopped (its
+// position kept as the cut), the kit's other rows replace the copy's (the secrets...), the
+// sequences go on from the old home's, the machines' roles are made with their old
+// passwords, this machine leaves the machines, the old home's registration and the term
+// are written; after it the subscription is dropped. A promotion that fails leaves the
+// copy as it was (the transaction undone: it follows its old home still; of the machines'
+// rows its own alone, as a copy has it), the slots and publications it made dropped; run
+// again, it makes what is missing.
+func Promote(ctx context.Context, super *sql.DB, p Promotion) (out Promoted, err error) {
+	conn, err := super.Conn(ctx)
 	if err != nil {
 		return out, err
 	}
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			_ = rows.Close()
-			return out, err
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Close(); err != nil {
+	defer conn.Close()
+	// this session writes while the copy's readers stay read-only until the commit
+	if _, err := conn.ExecContext(ctx, `SET default_transaction_read_only = off`); err != nil {
 		return out, err
 	}
+	if err := conn.QueryRowContext(ctx, `SELECT system_identifier::text FROM pg_control_system()`).Scan(&out.SystemID); err != nil {
+		return out, err
+	}
+	// the subscription's position: the old home's WAL up to which the copy has its changes
+	_ = conn.QueryRowContext(ctx, `SELECT COALESCE(s.remote_lsn::text, '')
+	    FROM pg_replication_origin_status s JOIN pg_replication_origin o ON o.roident = s.local_id
+	    JOIN pg_subscription sub ON o.roname = 'pg_' || sub.oid WHERE sub.subname = $1`, subscription).Scan(&out.CutLSN)
+
+	// what this promotion made, dropped again when it fails
+	var madeSlots, madePubs []string
+	nodesLoaded := false
+	defer func() {
+		if err == nil {
+			return
+		}
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		for _, s := range madeSlots {
+			_, _ = conn.ExecContext(cctx, `SELECT pg_drop_replication_slot($1)`, s)
+		}
+		for _, pub := range madePubs {
+			_, _ = conn.ExecContext(cctx, `DROP PUBLICATION IF EXISTS `+pq.QuoteIdentifier(pub))
+		}
+		if nodesLoaded {
+			_ = unloadNodes(cctx, conn, p.Self)
+		}
+	}()
+	if p.Kit != nil {
+		if err := loadNodes(ctx, conn, p); err != nil {
+			return out, err
+		}
+		nodesLoaded = true
+	}
+	has := func(q, name string) (bool, error) {
+		var ok bool
+		err := conn.QueryRowContext(ctx, q, name).Scan(&ok)
+		return ok, err
+	}
+	slot := func(name string) error {
+		exists, err := has(`SELECT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = $1)`, name)
+		if err != nil || exists {
+			return err
+		}
+		if _, err := conn.ExecContext(ctx, `SELECT pg_create_logical_replication_slot($1, 'pgoutput')`, name); err != nil {
+			return err
+		}
+		madeSlots = append(madeSlots, name)
+		return nil
+	}
+	pubExists := `SELECT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = $1)`
+
+	// every other machine follows the new home from here: its publication and its slot,
+	// before anything is written
+	out.Slots = map[string]string{}
+	ids := kitMachines(p)
 	if p.OldHome != nil {
 		ids = append(ids, p.OldHome.ID)
 	}
 	for _, id := range ids {
-		slot := Machine{ID: id}.Slot()
-		if _, err := super.ExecContext(ctx, `SELECT cluster_copy_publication($1)`, id); err != nil {
+		m := Machine{ID: id}
+		existed, err := has(pubExists, m.Slot())
+		if err != nil {
+			return out, err
+		}
+		if _, err := conn.ExecContext(ctx, `SELECT cluster_copy_publication($1)`, id); err != nil {
 			return out, fmt.Errorf("switchover: the publication of %s: %w", id, err)
 		}
-		if _, err := super.ExecContext(ctx, `SELECT pg_create_logical_replication_slot($1, 'pgoutput')
-		    WHERE NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = $1)`, slot); err != nil {
+		if !existed {
+			madePubs = append(madePubs, m.Slot())
+		}
+		if err := slot(m.Slot()); err != nil {
 			return out, fmt.Errorf("switchover: the slot of %s: %w", id, err)
 		}
-		out.Slots[id] = slot
+		out.Slots[id] = m.Slot()
 	}
 	if p.Fork {
+		// the tables a machine's copy holds (what it is already published, so a replication
+		// role naming this publication reads nothing more): what is applied of an old home's
+		// writes is in them alone (the secrets and the cluster's own rows never are)
 		fork := ForkSlot(p.Term)
-		if _, err := super.ExecContext(ctx, `DO $$ BEGIN
-		    IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = '`+fork+`') THEN
-		        CREATE PUBLICATION `+fork+` FOR ALL TABLES;
-		    END IF; END $$`); err != nil {
-			return out, fmt.Errorf("switchover: the fork's publication: %w", err)
+		existed, err := has(pubExists, fork)
+		if err != nil {
+			return out, err
 		}
-		if _, err := super.ExecContext(ctx, `SELECT pg_create_logical_replication_slot($1, 'pgoutput')
-		    WHERE NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = $1)`, fork); err != nil {
+		if !existed {
+			if _, err := conn.ExecContext(ctx, `DO $$
+			    DECLARE t regclass;
+			    BEGIN
+			    CREATE PUBLICATION `+fork+` WITH (publish = 'insert, update, delete, truncate');
+			    FOR t IN SELECT * FROM cluster_copy_tables() LOOP
+			        IF NOT EXISTS (SELECT 1 FROM pg_index WHERE indrelid = t AND indisprimary)
+			           AND (SELECT relreplident FROM pg_class WHERE oid = t) = 'd' THEN
+			            EXECUTE format('ALTER TABLE %s REPLICA IDENTITY FULL', t);
+			        END IF;
+			        EXECUTE format('ALTER PUBLICATION `+fork+` ADD TABLE %s', t);
+			    END LOOP;
+			    END $$`); err != nil {
+				return out, fmt.Errorf("switchover: the fork's publication: %w", err)
+			}
+			madePubs = append(madePubs, fork)
+		}
+		if err := slot(fork); err != nil {
 			return out, fmt.Errorf("switchover: the fork's slot: %w", err)
 		}
 	}
-	// written from here on, every machine's copy gets it: the old home's registration
+
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return out, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SET TRANSACTION READ WRITE`); err != nil {
+		return out, err
+	}
+	var subs int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM pg_subscription WHERE subname = $1`, subscription).Scan(&subs); err != nil {
+		return out, err
+	}
+	if subs > 0 {
+		// stopped with the promotion (dropped after it: a drop forgets the subscription's
+		// position at once, undone or not); the old home drops its slot itself (it may be
+		// gone)
+		for _, q := range []string{
+			`ALTER SUBSCRIPTION ` + subscription + ` DISABLE`,
+			`ALTER SUBSCRIPTION ` + subscription + ` SET (slot_name = NONE)`,
+		} {
+			if _, err := tx.ExecContext(ctx, q); err != nil {
+				return out, fmt.Errorf("switchover: end the subscription: %w", err)
+			}
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `ALTER DATABASE `+database+` RESET default_transaction_read_only`); err != nil {
+		return out, err
+	}
+	var selfPath json.RawMessage
+	var selfSource sql.NullString
+	_ = tx.QueryRowContext(ctx, `SELECT path_map, path_map_source FROM cluster_nodes WHERE id = $1`, p.Self).
+		Scan(&selfPath, &selfSource)
+	if err := load(ctx, tx, p, selfPath, selfSource.String); err != nil {
+		return out, err
+	}
+	if err := roles(ctx, tx, p); err != nil {
+		return out, err
+	}
+	// every machine's copy gets what is written from here: the old home's registration
 	// (its own row reaches it), the term, the switchover's state
 	if p.OldHome != nil {
 		m := p.OldHome
-		if _, err := super.ExecContext(ctx, `INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, db_role,
+		if _, err := tx.ExecContext(ctx, `INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, db_role,
 		        approved_at, approved_by, full_node, web_url)
 		    VALUES ($1, $2, 'approved', NULLIF($3, ''), NULLIF($4, ''), $5, $6, now(), 'switchover', true, NULLIF($7, ''))
 		    ON CONFLICT (id) DO UPDATE SET state = 'approved', node_pubkey = excluded.node_pubkey,
@@ -241,50 +326,179 @@ func Promote(ctx context.Context, super *sql.DB, p Promotion) (Promoted, error) 
 	if out.CutLSN != "" && p.Reason == "emergency" {
 		cut = out.CutLSN
 	}
-	if _, err := super.ExecContext(ctx, `INSERT INTO cluster_terms (term, home_name, home_node, reason, cut_lsn)
+	if _, err := tx.ExecContext(ctx, `INSERT INTO cluster_terms (term, home_name, home_node, reason, cut_lsn)
 	    VALUES ($1, $2, $3, $4, $5::pg_lsn)`, p.Term, p.Name, p.Self, p.Reason, cut); err != nil {
 		return out, fmt.Errorf("switchover: the term: %w", err)
+	}
+	if r := p.Record; r != nil {
+		if err := record(ctx, tx, p, r); err != nil {
+			return out, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return out, fmt.Errorf("switchover: the promotion: %w", err)
+	}
+	// stopped and without a slot it is inert: one left (the drop failed) never applies
+	if subs > 0 {
+		_, _ = conn.ExecContext(ctx, `DROP SUBSCRIPTION IF EXISTS `+subscription)
 	}
 	return out, nil
 }
 
-// load replaces the copy's rows of the kit's tables with the kit's (triggers and foreign
-// keys off for the load: the rows are the old home's, consistent as they were), moves
-// the sequences on, and takes this machine out of the machines.
-func load(ctx context.Context, super *sql.DB, p Promotion, selfPath json.RawMessage, selfSource string) error {
-	tx, err := super.BeginTx(ctx, nil)
+// loadNodes replaces the copy's machines (its own row) with the kit's, triggers off (the
+// rows are the old home's, consistent as they were).
+func loadNodes(ctx context.Context, conn *sql.Conn, p Promotion) error {
+	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SET TRANSACTION READ WRITE`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `SET LOCAL session_replication_role = replica`); err != nil {
+		return err
+	}
+	if err := loadTable(ctx, tx, "cluster_nodes", p.Kit.Tables["cluster_nodes"]); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// unloadNodes leaves of the machines this machine's own row, as its copy had it (a
+// promotion that failed after loadNodes).
+func unloadNodes(ctx context.Context, conn *sql.Conn, self string) error {
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SET TRANSACTION READ WRITE`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `SET LOCAL session_replication_role = replica`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM cluster_nodes WHERE id <> $1::uuid`, self); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// loadTable replaces table t's rows with the kit's (t one of KitTables; one this database
+// lacks is left).
+func loadTable(ctx context.Context, tx *sql.Tx, t string, rows []json.RawMessage) error {
+	cols, err := insertable(ctx, tx, t)
+	if err != nil || cols == "" {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM public.`+pq.QuoteIdentifier(t)); err != nil {
+		return fmt.Errorf("switchover: empty %s: %w", t, err)
+	}
+	for i := 0; i < len(rows); i += 500 {
+		batch, err := json.Marshal(rows[i:min(i+500, len(rows))])
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO public.`+pq.QuoteIdentifier(t)+` (`+cols+`) OVERRIDING SYSTEM VALUE
+		    SELECT `+cols+` FROM json_populate_recordset(NULL::public.`+pq.QuoteIdentifier(t)+`, $1::json)`, string(batch)); err != nil {
+			return fmt.Errorf("switchover: load %s: %w", t, err)
+		}
+	}
+	return nil
+}
+
+// record writes an emergency's switch row in the promotion's tx: every machine waited for
+// (as the new home finishes it, with the drain each had), after any switch the copy showed
+// under way (the old home's, cut off with it) is cancelled.
+func record(ctx context.Context, tx *sql.Tx, p Promotion, r *Record) error {
+	if _, err := tx.ExecContext(ctx, `UPDATE cluster_switchovers SET state = 'cancelled', updated_at = now(),
+	    detail = 'the home was gone: another machine took over' WHERE state NOT IN ('done', 'failed', 'cancelled')`); err != nil {
+		return fmt.Errorf("switchover: the switches under way: %w", err)
+	}
+	machines := map[string]any{}
+	rows, err := tx.QueryContext(ctx, `SELECT id::text, name, drain FROM cluster_nodes WHERE state = 'approved'`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var id, name string
+		var drain bool
+		if err := rows.Scan(&id, &name, &drain); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		machines[id] = map[string]any{"name": name, "state": "waiting", "prior_drain": drain}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	mj, err := json.Marshal(machines)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO cluster_switchovers (id, term, kind, to_node, to_name, from_name,
+	        state, machines, requested_by, frozen_at)
+	    VALUES ($1, $2, 'emergency', $3, $4, $5, 'repointing', $6::jsonb, NULLIF($7, '')::uuid, now())`,
+		r.ID, p.Term, p.Self, p.Name, r.FromName, string(mj), r.RequestedBy); err != nil {
+		return fmt.Errorf("switchover: the switch's record: %w", err)
+	}
+	return nil
+}
+
+// PromotedAt reports whether this database is the home's of term already, as self's: a
+// promotion that went through (asked again: what its answer said).
+func PromotedAt(ctx context.Context, db *sql.DB, self string, term int64) (bool, error) {
+	var ok bool
+	err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM cluster_terms WHERE term = $1 AND home_node = $2::uuid)`,
+		term, self).Scan(&ok)
+	return ok, err
+}
+
+// kitMachines are the machines of the kit that follow the new home (approved, full; this
+// machine aside).
+func kitMachines(p Promotion) []string {
+	if p.Kit == nil {
+		return nil
+	}
+	var out []string
+	for _, raw := range p.Kit.Tables["cluster_nodes"] {
+		var row struct {
+			ID    string `json:"id"`
+			State string `json:"state"`
+			Full  bool   `json:"full_node"`
+		}
+		if json.Unmarshal(raw, &row) != nil || row.State != "approved" || !row.Full ||
+			strings.EqualFold(row.ID, p.Self) {
+			continue
+		}
+		out = append(out, row.ID)
+	}
+	return out
+}
+
+// execer is a transaction or a session of the promotion.
+type execer interface {
+	ExecContext(ctx context.Context, q string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, q string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, q string, args ...any) *sql.Row
+}
+
+// load replaces the copy's rows of the kit's tables with the kit's (triggers and foreign
+// keys off for the load: the rows are the old home's, consistent as they were), moves
+// the sequences on, and takes this machine out of the machines; in the promotion's tx.
+func load(ctx context.Context, tx *sql.Tx, p Promotion, selfPath json.RawMessage, selfSource string) error {
 	if _, err := tx.ExecContext(ctx, `SET LOCAL session_replication_role = replica`); err != nil {
 		return err
 	}
 	if p.Kit != nil {
 		for _, t := range KitTables {
 			rows, ok := p.Kit.Tables[t]
-			if !ok {
+			if !ok || t == "cluster_nodes" { // the machines: loadNodes, before their slots
 				continue
 			}
-			cols, err := insertable(ctx, tx, t)
-			if err != nil {
+			if err := loadTable(ctx, tx, t, rows); err != nil {
 				return err
-			}
-			if cols == "" {
-				continue // not a table of this database
-			}
-			if _, err := tx.ExecContext(ctx, `DELETE FROM public.`+pq.QuoteIdentifier(t)); err != nil {
-				return fmt.Errorf("switchover: empty %s: %w", t, err)
-			}
-			for i := 0; i < len(rows); i += 500 {
-				batch, err := json.Marshal(rows[i:min(i+500, len(rows))])
-				if err != nil {
-					return err
-				}
-				if _, err := tx.ExecContext(ctx, `INSERT INTO public.`+pq.QuoteIdentifier(t)+` (`+cols+`) OVERRIDING SYSTEM VALUE
-				    SELECT `+cols+` FROM json_populate_recordset(NULL::public.`+pq.QuoteIdentifier(t)+`, $1::json)`, string(batch)); err != nil {
-					return fmt.Errorf("switchover: load %s: %w", t, err)
-				}
 			}
 		}
 	}
@@ -333,7 +547,7 @@ func load(ctx context.Context, super *sql.DB, p Promotion, selfPath json.RawMess
 	} else if _, err := tx.ExecContext(ctx, `UPDATE instance_identity SET path_map = NULL, updated_at = now() WHERE id = 1`); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return nil
 }
 
 // insertable is a table's columns a row may set (not generated, not dropped), quoted
@@ -390,7 +604,7 @@ SELECT format('%I.%I', sn.nspname, s.relname),
 
 // roles makes the machines' roles as the old home had them (their passwords' SCRAM
 // verifiers: the machines keep their passwords) and the old home's own as a machine.
-func roles(ctx context.Context, super *sql.DB, p Promotion) error {
+func roles(ctx context.Context, super execer, p Promotion) error {
 	self := Machine{ID: p.Self}
 	var list []Role
 	if p.Kit != nil {
@@ -417,7 +631,7 @@ func roles(ctx context.Context, super *sql.DB, p Promotion) error {
 	return nil
 }
 
-func ensureRole(ctx context.Context, super *sql.DB, name, password string, login, replication bool, groups []string) error {
+func ensureRole(ctx context.Context, super execer, name, password string, login, replication bool, groups []string) error {
 	id := pq.QuoteIdentifier(name)
 	var exists bool
 	if err := super.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)`, name).Scan(&exists); err != nil {
@@ -463,15 +677,12 @@ func ensureRole(ctx context.Context, super *sql.DB, name, password string, login
 	return nil
 }
 
-// Demote makes the old home's database a copy of the new one, without copying it again
-// (it holds the marker: it is the new home's as of the freeze): its publications and
-// slots for the machines that followed it dropped, the home-only rows (its secrets, its
-// machines, its caches) emptied. It stays frozen for the app's roles while its home
-// processes still run (the subscription applies all the same): the copy ends the freeze
-// when this machine starts as a machine (nodecopy.Copy.EnsureReader). The subscription
-// is the copy's (nodecopy.Copy.Handover). super writes despite the freeze
-// (pgbundle.Bundle.SuperURL).
-func Demote(ctx context.Context, super *sql.DB) error {
+// StopServing ends what the old home's database serves its machines (their publications
+// and slots), first of its demotion: once it follows the new home it would pass the new
+// home's changes on to a machine still following it, which then has them twice. Nothing of
+// its own data goes (Demote, once it follows). super writes despite the freeze. Run again,
+// it finds nothing more to do.
+func StopServing(ctx context.Context, super *sql.DB) error {
 	rows, err := super.QueryContext(ctx, `SELECT pubname FROM pg_publication WHERE pubname LIKE 'maktaba\_copy\_%'`)
 	if err != nil {
 		return err
@@ -493,14 +704,45 @@ func Demote(ctx context.Context, super *sql.DB) error {
 			return err
 		}
 	}
-	if _, err := super.ExecContext(ctx, `SELECT pg_terminate_backend(active_pid) FROM pg_replication_slots
-	    WHERE slot_name LIKE 'maktaba\_copy\_%' AND active`); err != nil {
-		return err
+	// a slot in use is free a moment after its connection ends
+	for tries := 0; ; tries++ {
+		if _, err := super.ExecContext(ctx, `SELECT pg_terminate_backend(active_pid) FROM pg_replication_slots
+		    WHERE slot_name LIKE 'maktaba\_copy\_%' AND active`); err != nil {
+			return err
+		}
+		if _, err := super.ExecContext(ctx, `SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots
+		    WHERE slot_name LIKE 'maktaba\_copy\_%' AND NOT active`); err != nil {
+			return fmt.Errorf("switchover: the old home's slots: %w", err)
+		}
+		var left int
+		if err := super.QueryRowContext(ctx, `SELECT count(*) FROM pg_replication_slots
+		    WHERE slot_name LIKE 'maktaba\_copy\_%'`).Scan(&left); err != nil {
+			return err
+		}
+		if left == 0 {
+			return nil
+		}
+		if tries == 20 {
+			return fmt.Errorf("switchover: %d of the old home's slots stay in use", left)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
 	}
-	if _, err := super.ExecContext(ctx, `SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots
-	    WHERE slot_name LIKE 'maktaba\_copy\_%' AND NOT active`); err != nil {
-		return fmt.Errorf("switchover: the old home's slots: %w", err)
-	}
+}
+
+// Demote gives up what was the old home's in its database, now a copy of the new one's
+// (it holds the marker: it is the new home's as of the freeze; it serves no machine any
+// more, StopServing, and its subscription is the copy's, nodecopy.Copy.Handover, which
+// receives the new home's changes): the home-only rows (its secrets, its machines but its
+// own row as the new home's machine, self, which the new home publishes to it, its caches)
+// emptied. It stays frozen for the app's roles while its home processes still run (the
+// subscription applies all the same): the copy ends the freeze when this machine starts
+// as a machine (nodecopy.Copy.EnsureReader). super writes despite the freeze
+// (pgbundle.Bundle.SuperURL). Run again, it finds nothing more to do.
+func Demote(ctx context.Context, super *sql.DB, self string) error {
 	tx, err := super.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -513,13 +755,17 @@ func Demote(ctx context.Context, super *sql.DB) error {
 DECLARE t text;
 BEGIN
     FOREACH t IN ARRAY cluster_copy_excluded() LOOP
-        IF t NOT IN ('goose_db_version', 'maktaba_schema_version') AND to_regclass('public.' || t) IS NOT NULL THEN
+        IF t NOT IN ('goose_db_version', 'maktaba_schema_version', 'cluster_nodes')
+           AND to_regclass('public.' || t) IS NOT NULL THEN
             EXECUTE format('DELETE FROM public.%I', t);
         END IF;
     END LOOP;
 END
 $$`); err != nil {
 		return fmt.Errorf("switchover: empty the home's own tables: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM cluster_nodes WHERE id <> $1::uuid`, self); err != nil {
+		return fmt.Errorf("switchover: the home's machines: %w", err)
 	}
 	return tx.Commit()
 }

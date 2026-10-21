@@ -171,12 +171,15 @@ func (o *Orchestrator) standbysOnce(ctx context.Context, told map[string]string)
 	if err != nil {
 		return err
 	}
-	var urls []string
+	var urls, peers []string
 	var first error
 	for _, r := range rows {
 		want := r.standby && r.state == "approved" && r.full
 		if want && r.webURL != "" {
 			urls = append(urls, strings.TrimRight(r.webURL, "/"))
+		}
+		if r.state == "approved" && r.webURL != "" {
+			peers = append(peers, strings.TrimRight(r.webURL, "/"))
 		}
 		if o.Hub.MachineAgent(r.id) == "" {
 			continue // off: its kit (or its removal) waits for it
@@ -195,7 +198,8 @@ func (o *Orchestrator) standbysOnce(ctx context.Context, told map[string]string)
 		}
 	}
 	sort.Strings(urls)
-	o.tellStandbys(ctx, urls, told)
+	sort.Strings(peers)
+	o.tellStandbys(ctx, urls, peers, told)
 	return first
 }
 
@@ -249,8 +253,8 @@ func (o *Orchestrator) sendStandbyKit(ctx context.Context, r standbyRow) error {
 
 // tellStandbys tells every connected machine where the standby homes are, once per
 // agent session and again when they change.
-func (o *Orchestrator) tellStandbys(ctx context.Context, urls []string, told map[string]string) {
-	sum := sha256.Sum256([]byte(strings.Join(urls, "\n")))
+func (o *Orchestrator) tellStandbys(ctx context.Context, urls, peers []string, told map[string]string) {
+	sum := sha256.Sum256([]byte(strings.Join(urls, "\n") + "\x00" + strings.Join(peers, "\n")))
 	want := hex.EncodeToString(sum[:])
 	live := map[string]bool{}
 	for node, sid := range o.Hub.MachineAgents() {
@@ -258,7 +262,7 @@ func (o *Orchestrator) tellStandbys(ctx context.Context, urls []string, told map
 		if told[sid] == want {
 			continue
 		}
-		b, _ := json.Marshal(map[string]any{"urls": urls})
+		b, _ := json.Marshal(map[string]any{"urls": urls, "peers": peers})
 		res, err := o.Hub.CommandWithin(ctx, sid, "home.standbys", b, "switchover", 30*time.Second)
 		if err == nil && res.OK {
 			told[sid] = want

@@ -696,7 +696,8 @@ func mountHomeClusterAuth(r chi.Router, db *sql.DB, logger *slog.Logger) {
 	// the machines' copies of this database (Epic 37): the beat, the CA, the cap
 	rules := nodemode.CachedRules(db, time.Minute)
 	go (&cluster.Copies{DB: db, CAFile: os.Getenv("MAKTABA_CLUSTER_PG_CA"), Logger: logger,
-		KeepGB: func() int { return rules().ReplicaWALKeepGB }}).Run(context.Background())
+		Bundled: os.Getenv("MAKTABA_CLUSTER_PG_PORT") != "",
+		KeepGB:  func() int { return rules().ReplicaWALKeepGB }}).Run(context.Background())
 }
 
 // mountNode opens the home's database with the node's role, and this machine's copy of

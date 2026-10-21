@@ -58,7 +58,8 @@ func (h *fakeHub) called() []string {
 	return append([]string(nil), h.calls...)
 }
 
-// fakeSupervisor is this home's supervisor: it records the steps and freezes nothing.
+// fakeSupervisor is this home's supervisor: it records the steps and freezes nothing,
+// and keeps the API's records of its switches (not among the steps).
 type fakeSupervisor struct {
 	mu    sync.Mutex
 	steps []string
@@ -66,18 +67,55 @@ type fakeSupervisor struct {
 	fail  string
 	// standbyHash is the standby kit's hash it gathers (one it holds already is not sent)
 	standbyHash string
+	// records are the switches' records by id; newHome what the new home's notice says
+	records map[string]json.RawMessage
+	newHome *NewHome
 }
 
 func (s *fakeSupervisor) Call(_ context.Context, step string, req, out any) error {
 	s.mu.Lock()
-	if m, ok := req.(map[string]any); ok && step == "relay" {
+	m, _ := req.(map[string]any)
+	switch step {
+	case "record":
+		if s.records == nil {
+			s.records = map[string]json.RawMessage{}
+		}
+		raw, _ := m["progress"].(json.RawMessage)
+		s.records[m["id"].(string)] = append(json.RawMessage(nil), raw...)
+		s.mu.Unlock()
+		return nil
+	case "recorded":
+		var open []json.RawMessage
+		for _, r := range s.records {
+			var p Progress
+			if json.Unmarshal(r, &p) == nil && p.State != "handed_over" && p.State != "failed" && p.State != "done" {
+				open = append(open, r)
+			}
+		}
+		s.mu.Unlock()
+		b, _ := json.Marshal(map[string]any{"switches": open})
+		return json.Unmarshal(b, out)
+	case "relay":
 		// the relay agent stopped (false) or started again (true)
 		step = fmt.Sprintf("relay:%v", m["on"])
 	}
 	s.steps = append(s.steps, step)
+	nh := s.newHome
 	s.mu.Unlock()
 	if step == s.fail {
 		return errors.New("refused")
+	}
+	switch step {
+	case "demote":
+		if out != nil {
+			// it went through: this machine starts again (asked again, it says so)
+			return json.Unmarshal([]byte(`{"accepted": true, "done": true}`), out)
+		}
+	case "new-home":
+		if out != nil {
+			b, _ := json.Marshal(map[string]any{"home": nh})
+			return json.Unmarshal(b, out)
+		}
 	}
 	if step == "kit" && out != nil {
 		b, _ := json.Marshal(map[string]any{"path": s.kit, "chunks": 1})
@@ -149,7 +187,8 @@ func setup(t *testing.T) (*Orchestrator, *fakeHub, *fakeSupervisor, string, stri
 		"home.moved": func(json.RawMessage) (bool, any) { return true, map[string]any{"copy_kept": true} },
 	}}
 	s := &fakeSupervisor{kit: kit}
-	o := &Orchestrator{DB: db, Hub: h, Supervisor: s, HomeName: "a", SchemaRev: 145, JobsWait: time.Second}
+	o := &Orchestrator{DB: db, Hub: h, Supervisor: s, HomeName: "a", SchemaRev: 145, JobsWait: time.Second,
+		RetryEvery: 50 * time.Millisecond}
 	return o, h, s, b, c
 }
 
@@ -186,13 +225,16 @@ func TestAPlannedSwitchRunsItsStepsInOrder(t *testing.T) {
 	if m := p.Machines[c]; m.State != "following" {
 		t.Fatalf("the other machine: %+v", m)
 	}
-	// the machines' jobs held for the switch; the row is there for the new home
+	// the machines' jobs held for the switch; the row is there for the new home, as this
+	// home last wrote it (asking the promotion: the row is the new home's from then)
 	var drained int
 	_ = o.DB.QueryRowContext(ctx, `SELECT count(*) FROM cluster_nodes WHERE drain`).Scan(&drained)
 	var state string
-	_ = o.DB.QueryRowContext(ctx, `SELECT state FROM cluster_switchovers WHERE id = $1`, id).Scan(&state)
-	if drained != 2 || state != "freezing" {
-		t.Fatalf("drained %d, the row %q", drained, state)
+	var steps int
+	_ = o.DB.QueryRowContext(ctx, `SELECT state, jsonb_array_length(steps) FROM cluster_switchovers WHERE id = $1`, id).
+		Scan(&state, &steps)
+	if drained != 2 || state != "promoting" || steps < 5 {
+		t.Fatalf("drained %d, the row %q with %d steps", drained, state, steps)
 	}
 	// a second switch waits for this one... it is over here: a new one may start
 	if cs, _ := o.Candidates(ctx); len(cs) == 0 {

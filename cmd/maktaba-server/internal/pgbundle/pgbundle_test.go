@@ -457,4 +457,24 @@ func TestPrepareAnOlderClusterLetsTheAppRoleProvision(t *testing.T) {
 	if n := lines(t, filepath.Join(logDir, "psql.calls")); n != 2 {
 		t.Fatalf("the bootstrap ran %d times, want 2", n)
 	}
+
+	// a cluster an earlier release provisioned (its marker names no revision): once more,
+	// with the slot functions made the app role's alone
+	if err := os.WriteFile(filepath.Join(b.Data, clusterMarker), []byte("2026-10-01T00:00:00Z\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Prepare(ctx, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	sql = read(t, filepath.Join(logDir, "psql.sql"))
+	if !strings.Contains(sql, "REVOKE EXECUTE ON FUNCTION") || !strings.Contains(sql, "pg_logical_slot_get_changes") ||
+		strings.Contains(sql, "CREATE DATABASE") {
+		t.Fatalf("a cluster provisioned before: the provisioning again:\n%s", sql)
+	}
+	if err := b.Prepare(ctx, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if n := lines(t, filepath.Join(logDir, "psql.calls")); n != 3 {
+		t.Fatalf("the bootstrap ran %d times, want 3", n)
+	}
 }

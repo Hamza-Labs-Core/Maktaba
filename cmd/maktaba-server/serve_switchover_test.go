@@ -87,3 +87,118 @@ func TestHomeDatabaseOverTheChannel(t *testing.T) {
 		t.Fatalf("node.json with TLS off: %+v", n)
 	}
 }
+
+// homeDirs isolates a machine's files: server.toml and the keys beside it, its state, the
+// home's secrets and cluster keys.
+func homeDirs(t *testing.T) (*switching, string) {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("MAKTABA_CONFIG", filepath.Join(dir, "server.toml"))
+	t.Setenv("MAKTABA_NODE_CONFIG", filepath.Join(dir, "node.json"))
+	t.Setenv("MAKTABA_SECRETS_KEY", filepath.Join(dir, "secrets.key"))
+	t.Setenv("MAKTABA_HOME_CLUSTER_KEY", filepath.Join(dir, "home-cluster.key"))
+	s := newSwitching(config.Config{Server: config.ServerSection{DataDir: filepath.Join(dir, "state")}})
+	s.set(nil, nil, nil, "", nil)
+	return s, dir
+}
+
+// The old home, its promotion's answer lost, calls a switch off at the machine taking over
+// when it was not promoted there: from then its promotion never runs.
+func TestASwitchCalledOffIsNeverPromoted(t *testing.T) {
+	s, _ := homeDirs(t)
+	ctx := t.Context()
+	id := "4b8f7c1e-2a3d-4e5f-9a0b-1c2d3e4f5a6b"
+	st := func(abort bool) string {
+		t.Helper()
+		out, err := s.status(ctx, id, 2, abort)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out.(map[string]any)["state"].(string)
+	}
+	if got := st(false); got != "not_promoted" {
+		t.Fatalf("asked: %s", got)
+	}
+	if got := st(true); got != "called_off" {
+		t.Fatalf("called off: %s", got)
+	}
+	args, _ := json.Marshal(map[string]any{"id": id, "term": 2})
+	if handled, ok, detail := s.command(ctx, "switch.promote", args); !handled || ok {
+		t.Fatalf("a switch called off was promoted: %v %v", ok, detail)
+	}
+	if got := st(false); got != "called_off" {
+		t.Fatalf("asked again: %s", got)
+	}
+	// one promoted here answers what it answered
+	other := "9d1e2f3a-4b5c-4d6e-8f70-81a2b3c4d5e6"
+	if err := writePrivate(s.newHomeFile(other), []byte(`{"api_url":"http://b:8080","db_host":"b","db_port":54329}`)); err != nil {
+		t.Fatal(err)
+	}
+	out, err := s.status(ctx, other, 2, true)
+	if err != nil || out.(map[string]any)["state"] != "home" {
+		t.Fatalf("a switch promoted here: %v %v", out, err)
+	}
+	if h, ok := s.promoted(other); !ok || h.APIURL != "http://b:8080" {
+		t.Fatalf("its answer: %+v", h)
+	}
+}
+
+// The API's record of a switch is kept where a restart finds it, and once ended there
+// it is not taken up again.
+func TestTheRecordOfASwitch(t *testing.T) {
+	s, _ := homeDirs(t)
+	id := "4b8f7c1e-2a3d-4e5f-9a0b-1c2d3e4f5a6b"
+	if err := s.record(id, json.RawMessage(`{"id":"`+id+`","state":"promoting","promote_sent":true}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.record(id, json.RawMessage(`not json`)); err == nil {
+		t.Fatal("a record that is not one was kept")
+	}
+	open := func() int {
+		out, err := s.recorded()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(out.(map[string]any)["switches"].([]json.RawMessage))
+	}
+	if n := open(); n != 1 {
+		t.Fatalf("records: %d", n)
+	}
+	s.endRecord(id, "handed_over")
+	if n := open(); n != 0 {
+		t.Fatalf("an ended switch is taken up again: %d", n)
+	}
+}
+
+// A machine that is not the home any more keeps none of the home's keys (nor the kit, nor
+// what an earlier release set aside).
+func TestTheOldHomeKeepsNoneOfTheHomesKeys(t *testing.T) {
+	s, dir := homeDirs(t)
+	id := "4b8f7c1e-2a3d-4e5f-9a0b-1c2d3e4f5a6b"
+	paths := append(s.homeKeyFiles(), filepath.Join(dir, "home-cluster.key.was-home-1"),
+		filepath.Join(s.dir(id), "kit.chunks"), filepath.Join(s.dir(id), "old-home.json"))
+	for _, p := range paths {
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("a home's secret"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	keep := filepath.Join(dir, "postgres-ca.crt") // the CA's certificate is public
+	if err := os.WriteFile(keep, []byte("cert"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s.wipeHomeKeys(id, t.Logf)
+	for _, p := range paths {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("%s is still there: %v", p, err)
+		}
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatalf("the CA's certificate went: %v", err)
+	}
+	if err := wipeFile(filepath.Join(dir, "none")); err != nil {
+		t.Fatalf("no file: %v", err)
+	}
+}

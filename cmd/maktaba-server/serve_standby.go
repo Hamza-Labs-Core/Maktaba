@@ -278,12 +278,9 @@ func (s *switching) stepDown(ctx context.Context, me oldHome, id string, notice 
 	if err := writeNodeConfig(n); err != nil {
 		return fmt.Errorf("node.json: %w", err)
 	}
-	was := ".was-home-" + strconv.FormatInt(notice.Term-1, 10)
-	for _, p := range []string{clusterKeyPath(), supervisor.RelayCredPath(), supervisor.RelayKeyPath()} {
-		if _, err := os.Stat(p); err == nil {
-			_ = os.Rename(p, p+was)
-		}
-	}
+	// the home's keys are the new home's: this machine keeps none of them (what it wrote
+	// since the cut is sealed to the cluster's public key, which node.json has)
+	s.wipeHomeKeys("", logf)
 	if err := editConfig(func(c *config.Config) {
 		if strings.EqualFold(strings.TrimSpace(c.Server.Role), "home") {
 			c.Server.Role = ""
@@ -573,7 +570,8 @@ func (s *switching) standbyForget(id string) (any, error) {
 // machine asks them for a notice of a new home.
 func (s *switching) homeStandbys(args json.RawMessage) (bool, any) {
 	var a struct {
-		URLs []string `json:"urls"`
+		URLs  []string `json:"urls"`
+		Peers []string `json:"peers"`
 	}
 	if err := json.Unmarshal(args, &a); err != nil {
 		return false, "bad arguments"
@@ -582,16 +580,20 @@ func (s *switching) homeStandbys(args json.RawMessage) (bool, any) {
 	if !n.Joined() {
 		return false, "this machine has not joined a home"
 	}
-	var keep []string
-	for _, u := range a.URLs {
-		if p, err := url.Parse(u); err == nil && (p.Scheme == "http" || p.Scheme == "https") && p.Host != "" {
-			keep = append(keep, strings.TrimRight(u, "/"))
+	webURLs := func(in []string) []string {
+		var keep []string
+		for _, u := range in {
+			if p, err := url.Parse(u); err == nil && (p.Scheme == "http" || p.Scheme == "https") && p.Host != "" {
+				keep = append(keep, strings.TrimRight(u, "/"))
+			}
 		}
+		return keep
 	}
-	if strings.Join(keep, " ") == strings.Join(n.StandbyHomes, " ") {
+	keep, peers := webURLs(a.URLs), webURLs(a.Peers)
+	if strings.Join(keep, " ") == strings.Join(n.StandbyHomes, " ") && strings.Join(peers, " ") == strings.Join(n.Peers, " ") {
 		return true, map[string]any{"changed": false}
 	}
-	n.StandbyHomes = keep
+	n.StandbyHomes, n.Peers = keep, peers
 	if err := writeNodeConfig(n); err != nil {
 		return false, err.Error()
 	}
@@ -716,30 +718,12 @@ func (s *switching) promoteEmergency(ctx context.Context, id, by string) error {
 	if s.stopCopy != nil {
 		s.stopCopy()
 	}
+	// the switch, as the new home finishes it (switchover.Finish), written with the term
 	done, err := switchover.Promote(ctx, db, switchover.Promotion{Self: n.NodeID, Name: n.Name, Term: term,
-		Reason: "emergency", Kit: kit, OldHome: kit.OldHome, Gap: switchover.EmergencyGap, Fork: true})
+		Reason: "emergency", Kit: kit, OldHome: kit.OldHome, Gap: switchover.EmergencyGap, Fork: true,
+		Record: &switchover.Record{ID: id, FromName: oldName, RequestedBy: userID(by)}})
 	if err != nil {
 		return err
-	}
-	// the switch, as the new home finishes it (switchover.Finish): every machine waited for
-	machines := map[string]any{}
-	rows, err := db.QueryContext(ctx, `SELECT id::text, name, drain FROM cluster_nodes WHERE state = 'approved'`)
-	if err == nil {
-		for rows.Next() {
-			var nid, name string
-			var drain bool
-			if rows.Scan(&nid, &name, &drain) == nil {
-				machines[nid] = map[string]any{"name": name, "state": "waiting", "prior_drain": drain}
-			}
-		}
-		_ = rows.Close()
-	}
-	mj, _ := json.Marshal(machines)
-	if _, err := db.ExecContext(ctx, `INSERT INTO cluster_switchovers (id, term, kind, to_node, to_name, from_name,
-	        state, machines, requested_by, frozen_at)
-	    VALUES ($1, $2, 'emergency', $3, $4, $5, 'repointing', $6::jsonb, NULLIF($7, '')::uuid, now())`,
-		id, term, n.NodeID, n.Name, oldName, string(mj), userID(by)); err != nil {
-		return fmt.Errorf("the switch's record: %w", err)
 	}
 	if _, err := s.becomeHome(ctx, db, kit, id, term, n, done); err != nil {
 		return err

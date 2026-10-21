@@ -138,10 +138,23 @@ func (c *cluster) join(name string) *machine {
 		DB: pgbundle.Bundle{Home: c.programs, Data: filepath.Join(dir, "pg"), Keys: filepath.Join(dir, "keys"),
 			Backups: filepath.Join(dir, "backups"), Port: pgtest.FreePort(t)}}
 	m.srv = &pgtest.Server{}
-	t.Cleanup(func() { m.srv.Stop(m.copy.DB.StopCommand()) })
+	t.Cleanup(func() {
+		m.srv.Stop(m.copy.DB.StopCommand())
+		if t.Failed() {
+			t.Logf("---- %s's Postgres (tail) ----\n%s", name, tail(m.srv.Log(), 4000))
+		}
+	})
 	c.machines[name] = m
 	c.follow(m)
 	return m
+}
+
+// tail is the end of s, at most n bytes.
+func tail(s string, n int) string {
+	if len(s) > n {
+		return s[len(s)-n:]
+	}
+	return s
 }
 
 // dsnAs is a machine's role on a home's database, verifying the home's CA (the file ca)
@@ -279,6 +292,22 @@ func TestAPlannedSwitchover(t *testing.T) {
 	if a.CopyPassword, err = aCopy.Password(); err != nil {
 		t.Fatal(err)
 	}
+	// a promotion that fails (its term is taken) leaves B's copy as it was: of the
+	// machines its own row, no secrets, no slots, the subscription there
+	if _, err := Promote(ctx, bdb, Promotion{Self: b.id, Name: "b", Term: 1, Reason: "planned", Kit: got, OldHome: &a}); err == nil {
+		t.Fatal("a promotion to a term taken went through")
+	}
+	for q, want := range map[string]int{
+		`SELECT count(*) FROM cluster_nodes`:                                                        1,
+		`SELECT count(*) FROM home_secrets`:                                                         0,
+		`SELECT count(*) FROM pg_replication_slots WHERE slot_name LIKE 'maktaba\_copy\_%'`:         0,
+		`SELECT count(*) FROM pg_publication WHERE pubname LIKE 'maktaba\_copy\_%'`:                 0,
+		`SELECT count(*) FROM pg_subscription WHERE subname = 'maktaba_copy' AND subslotname <> ''`: 1,
+	} {
+		if n := count(ctx, bdb, q); n != want {
+			t.Fatalf("after a failed promotion %s = %d, want %d", q, n, want)
+		}
+	}
 	done, err := Promote(ctx, bdb, Promotion{Self: b.id, Name: "b", Term: 2, Reason: "planned", Kit: got, OldHome: &a})
 	if err != nil {
 		t.Fatal(err)
@@ -307,13 +336,28 @@ func TestAPlannedSwitchover(t *testing.T) {
 			SystemID: done.SystemID, Database: pgbundle.AppDatabase, CA: &ca}
 	}
 	local := int64(145)
-	// the supervisor opens its sessions after the freeze: so do these
-	if err := Demote(ctx, super(t, c.home)); err != nil {
+	// the old home serves its machines no more, then follows the new one; only once its
+	// database receives the new home's changes does it give up what was the home's (the
+	// supervisor opens its sessions after the freeze: so do these)
+	if err := StopServing(ctx, super(t, c.home)); err != nil {
 		t.Fatal(err)
 	}
 	aCopy.HomeDSN = dsnAs(a.Role(), a.RolePassword, nb.Addr(), nb.CACert())
 	if err := aCopy.Handover(ctx, grant(a.ID), local); err != nil {
 		t.Fatalf("the old home follows the new one: %v", err)
+	}
+	pgtest.WaitFor(t, "the old home receives the new home's changes", time.Minute, func() bool {
+		ok, _ := aCopy.Receiving(ctx)
+		return ok
+	})
+	if n := count(ctx, adb, `SELECT count(*) FROM home_secrets`); n != 1 {
+		t.Fatalf("the old home gave its secrets up before it followed the new home: %d", n)
+	}
+	if err := Demote(ctx, super(t, c.home), a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := Demote(ctx, super(t, c.home), a.ID); err != nil {
+		t.Fatalf("a demotion run again: %v", err)
 	}
 	cm.copy.HomeDSN = dsnAs(cm.role, cm.password, nb.Addr(), nb.CACert())
 	if err := cm.copy.Handover(ctx, grant(cm.id), local); err != nil {
@@ -466,9 +510,42 @@ func TestAnEmergencyPromotion(t *testing.T) {
 	_ = c.app.QueryRowContext(ctx, `SELECT max(id) FROM events`).Scan(&oldMax)
 	c.homeSrv.Stop(c.home.StopCommand())
 
-	done, err := Promote(ctx, bdb, Promotion{Self: b.id, Name: "b", Term: 2, Reason: "emergency", Gap: 1000, Fork: true})
+	// a promotion that fails (its term is taken) leaves the copy as it was: its
+	// subscription, no fork made, no term, no record
+	if _, err := Promote(ctx, bdb, Promotion{Self: b.id, Name: "b", Term: 1, Reason: "emergency", Gap: 1000, Fork: true,
+		Record: &Record{ID: uuid.NewString(), FromName: "a"}}); err == nil {
+		t.Fatal("a promotion to a term taken went through")
+	}
+	if n := count(ctx, bdb, `SELECT count(*) FROM pg_subscription WHERE subname = 'maktaba_copy'`); n != 1 {
+		t.Fatalf("the failed promotion ended the subscription: %d", n)
+	}
+	if n := count(ctx, bdb, `SELECT count(*) FROM pg_replication_slots WHERE slot_name = 'maktaba_fork_1'`) +
+		count(ctx, bdb, `SELECT count(*) FROM pg_publication WHERE pubname = 'maktaba_fork_1'`); n != 0 {
+		t.Fatalf("the failed promotion left its fork: %d", n)
+	}
+	if n := count(ctx, bdb, `SELECT count(*) FROM cluster_switchovers`); n != 0 {
+		t.Fatalf("the failed promotion left a record: %d", n)
+	}
+
+	recID := uuid.NewString()
+	done, err := Promote(ctx, bdb, Promotion{Self: b.id, Name: "b", Term: 2, Reason: "emergency", Gap: 1000, Fork: true,
+		Record: &Record{ID: recID, FromName: "a"}})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if n := count(ctx, bdb, `SELECT count(*) FROM cluster_switchovers WHERE id = $1 AND state = 'repointing'
+	    AND kind = 'emergency'`, recID); n != 1 {
+		t.Fatal("the emergency's record is not written with its term")
+	}
+	// the fork is published the tables a machine's copy holds, no more (a replication
+	// role naming it reads nothing a machine's own does not)
+	if n := count(ctx, bdb, `SELECT count(*) FROM pg_publication_tables WHERE pubname = 'maktaba_fork_2'
+	    AND tablename IN ('home_secrets', 'web_sessions', 'cluster_nodes', 'refresh_tokens')`); n != 0 {
+		t.Fatalf("the fork publishes %d tables a copy leaves out", n)
+	}
+	if n := count(ctx, bdb, `SELECT count(*) FROM pg_publication_tables WHERE pubname = 'maktaba_fork_2'
+	    AND tablename = 'app_settings'`); n != 1 {
+		t.Fatal("the fork does not keep the copied tables")
 	}
 	// B, the home now, changes a row the old home changed too, and takes a user name the
 	// old home gave to another user

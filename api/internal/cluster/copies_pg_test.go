@@ -95,8 +95,29 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 		exec(sup, `CREATE EXTENSION IF NOT EXISTS `+x)
 	}
 	// as the cluster bootstrap does, in the app's database (a function's grant is its
-	// database's)
+	// database's): and the SQL functions of slots are the app role's alone
 	exec(sup, `GRANT EXECUTE ON FUNCTION pg_reload_conf() TO `+app)
+	rows, err := sup.Query(`SELECT p.oid::regprocedure::text FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+	    WHERE n.nspname = 'pg_catalog' AND p.proname IN ('pg_create_logical_replication_slot',
+	          'pg_create_physical_replication_slot', 'pg_copy_logical_replication_slot', 'pg_copy_physical_replication_slot',
+	          'pg_logical_slot_get_changes', 'pg_logical_slot_get_binary_changes', 'pg_logical_slot_peek_changes',
+	          'pg_logical_slot_peek_binary_changes', 'pg_replication_slot_advance', 'pg_drop_replication_slot')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var slotFuncs []string
+	for rows.Next() {
+		var f string
+		if err := rows.Scan(&f); err != nil {
+			t.Fatal(err)
+		}
+		slotFuncs = append(slotFuncs, f)
+	}
+	_ = rows.Close()
+	for _, f := range slotFuncs {
+		exec(sup, `REVOKE EXECUTE ON FUNCTION `+f+` FROM PUBLIC`)
+		exec(sup, `GRANT EXECUTE ON FUNCTION `+f+` TO `+app)
+	}
 	home, err := sql.Open("postgres", clustertest.DSN(t, base, dbName, app, "app-pass"))
 	if err != nil {
 		t.Fatal(err)
@@ -204,6 +225,15 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	if _, err := cp.Exec(`UPDATE cluster_replica_beat SET at = now()`); err == nil {
 		t.Fatal("the copy's role may write")
 	}
+	// nor does it make, read or move a slot with SQL (its REPLICATION would decode every
+	// table with test_decoding, past its publication): it follows over the replication
+	// protocol, where the only output plugin Maktaba's Postgres has is pgoutput
+	if _, err := cp.Exec(`SELECT pg_create_logical_replication_slot('maktaba_test_evil', 'test_decoding')`); !isCode(err, "42501") {
+		t.Fatalf("the copy's role makes a slot with SQL: %v", err)
+	}
+	if _, err := cp.Exec(`SELECT * FROM pg_logical_slot_peek_changes('maktaba_test_evil', NULL, NULL)`); !isCode(err, "42501") {
+		t.Fatalf("the copy's role reads a slot with SQL: %v", err)
+	}
 	// the subscription makes the slot (here by hand); fresh drops a slot left from before
 	exec(sup, `SELECT pg_create_logical_replication_slot('`+slot+`', 'pgoutput')`)
 	if g, err := ask(node, nodeID, pw, false); err != nil || !g.SlotExists {
@@ -275,6 +305,56 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	c.KeepGB = func() int { return 0 } // no cap
 	c.holdCap(context.Background())
 	waitSetting("-1")
+
+	// the slots that are not Maktaba's are dropped; Maktaba's stay
+	nodeHex := strings.ReplaceAll(nodeID, "-", "")
+	strayHex := strings.ReplaceAll(uuid.NewString(), "-", "")
+	logical := map[string]string{
+		"maktaba_copy_" + nodeHex:  "pgoutput",      // an approved full machine's: kept
+		"maktaba_copy_" + strayHex: "pgoutput",      // no such machine: dropped
+		"maktaba_fork_7":           "pgoutput",      // an emergency's fork: kept
+		"pg_16400_sync_16500_7301": "pgoutput",      // a table's first copy: kept
+		"maktaba_test_stray":       "pgoutput",      // not Maktaba's: dropped
+		"maktaba_test_decoder":     "test_decoding", // decodes every table: dropped
+	}
+	for name, plugin := range logical {
+		exec(sup, `SELECT pg_create_logical_replication_slot($1, $2)`, name, plugin)
+	}
+	exec(sup, `SELECT pg_create_physical_replication_slot('maktaba_test_physical')`)
+	t.Cleanup(func() {
+		_, _ = admin.Exec(`SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots
+		    WHERE (slot_name LIKE 'maktaba\_%' OR slot_name LIKE 'pg\_16400\_%') AND NOT active`)
+	})
+	slotsLeft := func() map[string]bool {
+		out := map[string]bool{}
+		rows, err := sup.Query(`SELECT slot_name FROM pg_replication_slots`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var s string
+			_ = rows.Scan(&s)
+			out[s] = true
+		}
+		return out
+	}
+	c.guardSlots(context.Background())
+	got := slotsLeft()
+	for name, keep := range map[string]bool{"maktaba_copy_" + nodeHex: true, "maktaba_copy_" + strayHex: false,
+		"maktaba_fork_7": true, "pg_16400_sync_16500_7301": true, "maktaba_test_stray": false,
+		"maktaba_test_decoder": false, "maktaba_test_physical": true} {
+		if got[name] != keep {
+			t.Fatalf("slot %s kept %v, want %v", name, got[name], keep)
+		}
+	}
+	// on Maktaba's own Postgres an idle physical slot is no one's either
+	c.Bundled = true
+	c.guardSlots(context.Background())
+	if slotsLeft()["maktaba_test_physical"] {
+		t.Fatal("an idle physical slot was kept on Maktaba's own Postgres")
+	}
+	exec(sup, `SELECT pg_drop_replication_slot('maktaba_copy_`+nodeHex+`')`)
 
 	// revoked: the copy's role may not sign in, its slot and publication are gone;
 	// removed: its role too

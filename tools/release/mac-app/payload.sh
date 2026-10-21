@@ -101,6 +101,11 @@ done
 # libraries (libpq, OpenSSL, the extensions) and share/ (catalogs, extensions, time zones),
 # without static libraries and build files
 (cd "$pg" && tar -cf - --exclude='*.a' --exclude=pgxs --exclude=pkgconfig lib share) | (cd "$OUT/postgres" && tar -xf -)
+# no logical decoding output plugin but pgoutput (a full node's copy): a machine's replication
+# role may make a slot with any plugin the home's server has, and another one (test_decoding)
+# decodes every table, past what is published to it (specs/epics/37-node-replica)
+find "$OUT/postgres/lib" -type f ! -name 'pgoutput.*' -exec grep -l -a -F _PG_output_plugin_init {} + 2>/dev/null |
+    while IFS= read -r f; do rm -f "$f"; done || true
 cp "$pg/COPYRIGHT" "$OUT/licenses/postgresql.txt"
 cp "$pg/LICENSE" "$OUT/licenses/postgresql-binaries.txt"
 

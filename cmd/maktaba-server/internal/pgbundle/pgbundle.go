@@ -296,8 +296,7 @@ func (b Bundle) Prepare(ctx context.Context, log io.Writer) error {
 	// before that), in one session of a server of its own
 	_, statErr := os.Stat(b.passwordFile(AppRole))
 	_, appErr := os.Stat(filepath.Join(b.Data, bootstrapMarker))
-	_, clusterErr := os.Stat(filepath.Join(b.Data, clusterMarker))
-	needApp, needCluster := appErr != nil || statErr != nil, clusterErr != nil
+	needApp, needCluster := appErr != nil || statErr != nil, !b.clusterDone()
 	if !needApp && !needCluster {
 		return nil
 	}
@@ -315,13 +314,11 @@ func (b Bundle) Prepare(ctx context.Context, log io.Writer) error {
 	if err := b.bootstrap(ctx, superPW, sql, log); err != nil {
 		return fmt.Errorf("bundled postgres: create the %s role and database: %w", AppRole, err)
 	}
-	stamp := []byte(time.Now().UTC().Format(time.RFC3339) + "\n")
-	for _, m := range []string{bootstrapMarker, clusterMarker} {
-		if err := os.WriteFile(filepath.Join(b.Data, m), stamp, 0o600); err != nil {
-			return err
-		}
+	stamp := time.Now().UTC().Format(time.RFC3339) + "\n"
+	if err := os.WriteFile(filepath.Join(b.Data, bootstrapMarker), []byte(stamp), 0o600); err != nil {
+		return err
 	}
-	return nil
+	return os.WriteFile(filepath.Join(b.Data, clusterMarker), []byte(stamp+"rev "+strconv.Itoa(clusterRev)+"\n"), 0o600)
 }
 
 func (b Bundle) initdb(ctx context.Context, superPW string, log io.Writer) error {

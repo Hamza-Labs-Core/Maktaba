@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/agent"
 )
@@ -78,6 +79,10 @@ type Progress struct {
 	Started  time.Time              `json:"started"`
 	NewHome  *NewHome               `json:"new_home,omitempty"`
 	Integr   map[string]Integration `json:"integrations,omitempty"`
+	// PromoteSent: the promotion was asked (from then this home is never made writable
+	// again but on the machine's word); ToURLs: where that machine answers as the home
+	PromoteSent bool     `json:"promote_sent,omitempty"`
+	ToURLs      []string `json:"to_urls,omitempty"`
 }
 
 // Machine is a machine's part in a switch.
@@ -130,7 +135,11 @@ type Orchestrator struct {
 	// ClusterKeyFile is the home's cluster key: an old home's report of what it kept aside
 	// is sealed to it.
 	ClusterKeyFile string
+	// RetryEvery: retryEvery (0: 10 s).
+	RetryEvery time.Duration
 
+	// startMu makes a start's check and its row one step
+	startMu     sync.Mutex
 	mu          sync.Mutex
 	progress    map[string]*Progress
 	standbyWake chan struct{}
@@ -197,6 +206,11 @@ func (o *Orchestrator) Candidates(ctx context.Context) ([]Candidate, error) {
 		return nil, err
 	}
 	busy := o.active() != nil
+	if !busy {
+		// one under way here or on the new home (the database's row)
+		_ = o.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM cluster_switchovers
+		    WHERE state NOT IN ('done', 'failed', 'cancelled'))`).Scan(&busy)
+	}
 	var out []Candidate
 	for _, n := range ns {
 		if n.state == "revoked" || n.state == "rejected" {
@@ -268,8 +282,12 @@ func (o *Orchestrator) Progress(id string) *Progress {
 // ErrNotReady: the machine cannot take over now (Candidate.Reasons say why).
 var ErrNotReady = errors.New("switchover: that machine cannot take over now")
 
-// Start starts a planned switch to node (by: who asked); its id.
+// Start starts a planned switch to node (by: who asked); its id. One switch at a time:
+// the check and the switch's row are one step here, and the database refuses a second
+// row under way (cluster_switchovers_one_open) when two start at once.
 func (o *Orchestrator) Start(ctx context.Context, node, by string) (string, error) {
+	o.startMu.Lock()
+	defer o.startMu.Unlock()
 	cs, err := o.Candidates(ctx)
 	if err != nil {
 		return "", err
@@ -292,23 +310,37 @@ func (o *Orchestrator) Start(ctx context.Context, node, by string) (string, erro
 	}
 	p := &Progress{ID: uuid.NewString(), Term: term + 1, Kind: "planned", ToNode: node, ToName: target.Name,
 		FromName: o.HomeName, State: "checking", Machines: map[string]Machine{}, Started: time.Now().UTC()}
+	if _, err := o.DB.ExecContext(ctx, `INSERT INTO cluster_switchovers (id, term, kind, to_node, to_name, from_name,
+	        state, requested_by) VALUES ($1, $2, 'planned', $3, $4, $5, 'checking', NULLIF($6, '')::uuid)`,
+		p.ID, p.Term, p.ToNode, p.ToName, p.FromName, userOf(by)); err != nil {
+		var pe *pq.Error
+		if errors.As(err, &pe) && pe.Code == "23505" {
+			return "", fmt.Errorf("%w: %s", ErrNotReady, ReasonBusy)
+		}
+		return "", err
+	}
 	o.mu.Lock()
 	if o.progress == nil {
 		o.progress = map[string]*Progress{}
 	}
 	o.progress[p.ID] = p
 	o.mu.Unlock()
+	o.persist(ctx, p.ID)
 	o.log().Info("switchover: starting", "id", p.ID, "to", target.Name, "term", p.Term, "by", by,
 		"event", "switchover_started")
-	go o.run(p.ID, by)
+	go o.run(p.ID)
 	return p.ID, nil
 }
 
 func (o *Orchestrator) update(id string, fn func(p *Progress)) {
 	o.mu.Lock()
-	defer o.mu.Unlock()
-	if p, ok := o.progress[id]; ok {
+	p, ok := o.progress[id]
+	if ok {
 		fn(p)
+	}
+	o.mu.Unlock()
+	if ok {
+		o.persist(context.Background(), id)
 	}
 }
 
@@ -322,6 +354,45 @@ func (o *Orchestrator) step(id, name, state, detail string) {
 		}
 		p.Steps = append(p.Steps, Step{Name: name, State: state, Detail: detail, At: time.Now().UTC()})
 	})
+}
+
+// persist keeps a switch where this home finds it after a restart (the supervisor's
+// record of it), and in its row while this home is the one that writes it: until the
+// promotion is asked (from then the row is the new home's), or once the switch is undone
+// (this home writable again).
+func (o *Orchestrator) persist(ctx context.Context, id string) {
+	p := o.Progress(id)
+	if p == nil {
+		return
+	}
+	if o.Supervisor != nil {
+		if b, err := json.Marshal(p); err == nil {
+			if err := o.Supervisor.Call(ctx, "record", map[string]any{"id": id, "progress": json.RawMessage(b)}, nil); err != nil {
+				o.log().Warn("switchover: the switch's record could not be kept", "id", id, "err", err,
+					"event", "switchover_record_failed")
+			}
+		}
+	}
+	if p.PromoteSent && p.State != "failed" {
+		return
+	}
+	steps, _ := json.Marshal(p.Steps)
+	machines, _ := json.Marshal(p.Machines)
+	// the database may be frozen already (its sessions read-only): this one writes
+	tx, err := o.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SET TRANSACTION READ WRITE`); err != nil {
+		return
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE cluster_switchovers SET state = $2, detail = NULLIF($3, ''),
+	    steps = $4::jsonb, machines = $5::jsonb, updated_at = now() WHERE id = $1`,
+		id, p.State, p.Detail, string(steps), string(machines)); err != nil {
+		return
+	}
+	_ = tx.Commit()
 }
 
 // command sends a command to a machine's agent and returns its detail.
@@ -348,30 +419,35 @@ func (o *Orchestrator) command(ctx context.Context, node, name string, args any,
 	return res.Detail, nil
 }
 
+// fail ends a switch that did not go through at step: with undo everything as it was
+// (the database writable, the machines' jobs back), which only happens before the
+// promotion is asked or once the machine taking over said it called the switch off.
+func (o *Orchestrator) fail(ctx context.Context, id, step string, err error, undo bool) {
+	o.step(id, step, "failed", err.Error())
+	o.log().Warn("switchover: failed", "id", id, "step", step, "err", err, "event", "switchover_failed")
+	if undo {
+		o.undo(ctx, id)
+	}
+	o.update(id, func(p *Progress) { p.State, p.Detail = "failed", step+": "+err.Error() })
+}
+
 // run runs a planned switch: each step, and on a failure before the promotion
-// everything as it was (the database writable, the machines' jobs back).
-func (o *Orchestrator) run(id, by string) {
+// everything as it was (the database writable, the machines' jobs back). Once the
+// promotion is asked this home is never made writable again unless the machine taking
+// over says it called the switch off: its answer lost, this home stays frozen and asks it
+// (and reads the notice it seals to this home once it is the home) until it knows.
+func (o *Orchestrator) run(id string) {
 	ctx := context.Background()
 	p := o.Progress(id)
-	fail := func(step string, err error, undo bool) {
-		o.step(id, step, "failed", err.Error())
-		o.log().Warn("switchover: failed", "id", id, "step", step, "err", err, "event", "switchover_failed")
-		if undo {
-			o.undo(ctx, id)
-		}
-		o.update(id, func(p *Progress) { p.State, p.Detail = "failed", step+": "+err.Error() })
-		_, _ = o.DB.ExecContext(ctx, `UPDATE cluster_switchovers SET state = 'failed', detail = $2, updated_at = now()
-		    WHERE id = $1`, id, step+": "+err.Error())
-	}
 	// ---- the checks ----
 	o.step(id, StepCheck, "running", "")
 	if err := o.Supervisor.Call(ctx, "check", map[string]any{"id": id}, nil); err != nil {
-		fail(StepCheck, fmt.Errorf("this home cannot be switched: %w", err), false)
+		o.fail(ctx, id, StepCheck, fmt.Errorf("this home cannot be switched: %w", err), false)
 		return
 	}
 	ns, err := o.nodes(ctx)
 	if err != nil {
-		fail(StepCheck, err, false)
+		o.fail(ctx, id, StepCheck, err, false)
 		return
 	}
 	var pubkey string
@@ -385,21 +461,23 @@ func (o *Orchestrator) run(id, by string) {
 			pubkey = n.pubkey
 		}
 	}
-	o.update(id, func(p *Progress) { p.Machines = machines })
-	mj, _ := json.Marshal(machines)
-	if _, err := o.DB.ExecContext(ctx, `INSERT INTO cluster_switchovers (id, term, kind, to_node, to_name, from_name,
-	        state, machines, requested_by) VALUES ($1, $2, 'planned', $3, $4, $5, 'freezing', $6::jsonb, NULLIF($7, '')::uuid)`,
-		id, p.Term, p.ToNode, p.ToName, p.FromName, string(mj), userOf(by)); err != nil {
-		fail(StepCheck, err, false)
-		return
+	// where the machine taking over answers once it is the home
+	var urls []string
+	var web, api sql.NullString
+	_ = o.DB.QueryRowContext(ctx, `SELECT web_url, api_url FROM cluster_nodes WHERE id = $1`, p.ToNode).Scan(&web, &api)
+	for _, u := range []string{web.String, api.String} {
+		if u != "" {
+			urls = append(urls, u)
+		}
 	}
+	o.update(id, func(p *Progress) { p.Machines, p.ToURLs = machines, urls })
 	o.step(id, StepCheck, "done", "")
 
 	// ---- every machine's jobs drained ----
 	o.update(id, func(p *Progress) { p.State = "freezing" })
 	o.step(id, StepDrain, "running", "")
 	if _, err := o.DB.ExecContext(ctx, `UPDATE cluster_nodes SET drain = true, updated_at = now() WHERE state = 'approved'`); err != nil {
-		fail(StepDrain, err, true)
+		o.fail(ctx, id, StepDrain, err, true)
 		return
 	}
 	for _, sid := range o.Hub.HomeProcesses() {
@@ -430,7 +508,7 @@ func (o *Orchestrator) run(id, by string) {
 	// ---- the database frozen; the marker on the machine taking over ----
 	o.step(id, StepFreeze, "running", "")
 	if err := o.Supervisor.Call(ctx, "freeze", map[string]any{"id": id}, nil); err != nil {
-		fail(StepFreeze, err, true)
+		o.fail(ctx, id, StepFreeze, err, true)
 		return
 	}
 	o.update(id, func(p *Progress) { p.State = "frozen" })
@@ -447,7 +525,7 @@ func (o *Orchestrator) run(id, by string) {
 		if err == nil {
 			err = errors.New("its copy does not have everything this home wrote")
 		}
-		fail(StepMarker, err, true)
+		o.fail(ctx, id, StepMarker, err, true)
 		return
 	}
 	o.step(id, StepMarker, "done", "")
@@ -461,11 +539,11 @@ func (o *Orchestrator) run(id, by string) {
 	}
 	if err := o.Supervisor.Call(ctx, "kit", map[string]any{"id": id, "term": p.Term, "to_node": p.ToNode,
 		"to_pubkey": pubkey}, &kit); err != nil {
-		fail(StepKit, err, true)
+		o.fail(ctx, id, StepKit, err, true)
 		return
 	}
 	if err := o.sendKit(ctx, id, p.ToNode, kit.Path); err != nil {
-		fail(StepKit, err, true)
+		o.fail(ctx, id, StepKit, err, true)
 		return
 	}
 	o.step(id, StepKit, "done", fmt.Sprintf("%d chunks", kit.Chunks))
@@ -476,19 +554,89 @@ func (o *Orchestrator) run(id, by string) {
 	// this home's cloud relay agent stops first: the new home starts its own with the
 	// credentials in the kit, and two agents of one server take the tunnel from each other
 	if err := o.Supervisor.Call(ctx, "relay", map[string]any{"id": id, "on": false}, nil); err != nil {
-		fail(StepPromote, fmt.Errorf("stopping this home's cloud relay agent: %w", err), true)
+		o.fail(ctx, id, StepPromote, fmt.Errorf("stopping this home's cloud relay agent: %w", err), true)
 		return
 	}
+	// asked: this home is not made writable again but on the machine's word
+	o.update(id, func(p *Progress) { p.PromoteSent = true })
 	raw, err = o.command(ctx, p.ToNode, "switch.promote", map[string]any{"id": id, "term": p.Term}, 10*time.Minute)
 	var home NewHome
 	if err == nil {
 		err = json.Unmarshal(raw, &home)
 	}
-	if err != nil {
-		fail(StepPromote, err, true)
-		return
+	if err == nil && home.APIURL == "" {
+		err = errors.New("the promotion answered no address")
 	}
-	o.update(id, func(p *Progress) { p.NewHome = &home })
+	if err != nil {
+		var ok bool
+		if home, ok = o.waitNewHome(ctx, id, err); !ok {
+			return
+		}
+	}
+	o.afterPromote(ctx, id, home)
+}
+
+// RetryEvery is how often a switch whose promotion's answer did not come asks the
+// machine again (and looks for its notice), and how often a demotion under way is asked
+// after (0: 10 s).
+func (o *Orchestrator) retryEvery() time.Duration {
+	if o.RetryEvery > 0 {
+		return o.RetryEvery
+	}
+	return 10 * time.Second
+}
+
+// waitNewHome finds out where a promotion whose answer did not come (lost: why) went:
+// the machine says it is the home (or this home reads, at its address, the notice it
+// sealed to this machine once it is), or that it called the switch off (then everything
+// is as it was here: false). Until then this home stays frozen and asks again.
+func (o *Orchestrator) waitNewHome(ctx context.Context, id string, why error) (NewHome, bool) {
+	o.update(id, func(p *Progress) {
+		p.State, p.Detail = "waiting_new_home", "the promotion's answer did not come ("+why.Error()+")"
+	})
+	o.step(id, StepPromote, "running", "this home stays read-only until the machine taking over says where the "+
+		"switch is: "+why.Error())
+	o.log().Warn("switchover: the promotion's answer did not come; this home stays frozen until the machine says "+
+		"where the switch is", "id", id, "err", why, "event", "switchover_promote_unknown")
+	for {
+		p := o.Progress(id)
+		if raw, err := o.command(ctx, p.ToNode, "switch.status", map[string]any{"id": id, "term": p.Term, "abort": true},
+			30*time.Second); err == nil {
+			var st struct {
+				State string   `json:"state"`
+				Home  *NewHome `json:"home"`
+			}
+			if json.Unmarshal(raw, &st) == nil {
+				switch {
+				case st.State == "home" && st.Home != nil && st.Home.APIURL != "":
+					return *st.Home, true
+				case st.State == "called_off":
+					o.fail(ctx, id, StepPromote, errors.New("the machine taking over called the switch off: "+
+						"everything is as it was"), true)
+					return NewHome{}, false
+				}
+			}
+		}
+		var seen struct {
+			Home *NewHome `json:"home"`
+		}
+		if err := o.Supervisor.Call(ctx, "new-home", map[string]any{"id": id, "term": p.Term, "urls": p.ToURLs},
+			&seen); err == nil && seen.Home != nil && seen.Home.APIURL != "" {
+			return *seen.Home, true
+		}
+		select {
+		case <-ctx.Done():
+			return NewHome{}, false
+		case <-time.After(o.retryEvery()):
+		}
+	}
+}
+
+// afterPromote finishes a switch on this home once the machine taking over is the home:
+// every other machine told where its home is, then this machine made one of them (its
+// supervisor's demotion, asked again until it went through or this process ends with it).
+func (o *Orchestrator) afterPromote(ctx context.Context, id string, home NewHome) {
+	o.update(id, func(p *Progress) { p.NewHome, p.Detail = &home, "" })
 	// it starts again as the home: the machines follow once it answers (they keep trying
 	// on their own when it is slower than that)
 	if err := o.waitHome(ctx, home); err != nil {
@@ -498,9 +646,10 @@ func (o *Orchestrator) run(id, by string) {
 	o.step(id, StepPromote, "done", home.APIURL)
 
 	// ---- every other machine told where its home is ----
+	p := o.Progress(id)
 	o.update(id, func(p *Progress) { p.State = "repointing" })
 	o.step(id, StepRepoint, "running", "")
-	for node := range machines {
+	for node := range p.Machines {
 		if node == p.ToNode {
 			continue
 		}
@@ -525,15 +674,88 @@ func (o *Orchestrator) run(id, by string) {
 
 	// ---- this machine one of the new home's ----
 	o.step(id, StepDemote, "running", "")
-	if err := o.Supervisor.Call(ctx, "demote", map[string]any{"id": id, "term": p.Term, "home": home}, nil); err != nil {
-		o.step(id, StepDemote, "failed", err.Error())
-		o.update(id, func(p *Progress) { p.State, p.Detail = "failed", "demote: "+err.Error() })
+	for {
+		var out struct {
+			Running   bool   `json:"running"`
+			Done      bool   `json:"done"`
+			LastError string `json:"last_error"`
+		}
+		err := o.Supervisor.Call(ctx, "demote", map[string]any{"id": id, "term": p.Term, "home": home}, &out)
+		switch {
+		case err == nil && out.Done:
+			o.step(id, StepDemote, "done", "")
+			o.update(id, func(p *Progress) { p.State = "handed_over" })
+			o.log().Info("switchover: handed over; this machine starts again as one of the new home's", "id", id,
+				"home", home.APIURL, "event", "switchover_handed_over")
+			return
+		case err != nil:
+			o.step(id, StepDemote, "running", err.Error())
+		case out.LastError != "":
+			o.step(id, StepDemote, "running", "tried again: "+out.LastError)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(o.retryEvery()):
+		}
+	}
+}
+
+// Resume takes up, at this home's start, a switch its API was running when it stopped
+// (the supervisor's record of it): one whose promotion was not asked yet is undone; one
+// whose promotion was asked goes on from where it was (the machine taking over asked
+// where it went, if its answer was not in).
+func (o *Orchestrator) Resume(ctx context.Context) {
+	if o.Supervisor == nil {
 		return
 	}
-	o.step(id, StepDemote, "done", "")
-	o.update(id, func(p *Progress) { p.State = "handed_over" })
-	o.log().Info("switchover: handed over; this machine starts again as one of the new home's", "id", id,
-		"home", home.APIURL, "event", "switchover_handed_over")
+	var out struct {
+		Switches []json.RawMessage `json:"switches"`
+	}
+	if err := o.Supervisor.Call(ctx, "recorded", map[string]any{}, &out); err != nil {
+		o.log().Warn("switchover: the switches under way could not be read", "err", err, "event", "switchover_resume_failed")
+		return
+	}
+	for _, raw := range out.Switches {
+		var p Progress
+		if json.Unmarshal(raw, &p) != nil || p.ID == "" {
+			continue
+		}
+		o.mu.Lock()
+		if o.progress == nil {
+			o.progress = map[string]*Progress{}
+		}
+		if _, ok := o.progress[p.ID]; ok {
+			o.mu.Unlock()
+			continue
+		}
+		o.progress[p.ID] = &p
+		o.mu.Unlock()
+		o.log().Warn("switchover: this home started again during a switch: taking it up", "id", p.ID, "state", p.State,
+			"event", "switchover_resumed")
+		go o.resume(p.ID)
+	}
+}
+
+func (o *Orchestrator) resume(id string) {
+	ctx := context.Background()
+	p := o.Progress(id)
+	if !p.PromoteSent {
+		last := StepCheck
+		if n := len(p.Steps); n > 0 {
+			last = p.Steps[n-1].Name
+		}
+		o.fail(ctx, id, last, errors.New("this home started again during the switch: it was called off, "+
+			"everything is as it was"), true)
+		return
+	}
+	if p.NewHome != nil && p.NewHome.APIURL != "" {
+		o.afterPromote(ctx, id, *p.NewHome)
+		return
+	}
+	if home, ok := o.waitNewHome(ctx, id, errors.New("this home started again before it was answered")); ok {
+		o.afterPromote(ctx, id, home)
+	}
 }
 
 // waitHome waits for the new home to answer as the home (GET /api/cluster/self).
@@ -572,10 +794,16 @@ func (o *Orchestrator) waitHome(ctx context.Context, home NewHome) error {
 	}
 }
 
-// undo puts things back after a switch that did not reach the promotion: the database
-// writable, every machine's drain as it was, the home's own jobs back.
+// undo puts things back after a switch that did not go through: the database writable,
+// every machine's drain as it was, the home's own jobs back.
 func (o *Orchestrator) undo(ctx context.Context, id string) {
-	_ = o.Supervisor.Call(ctx, "thaw", map[string]any{"id": id}, nil)
+	if err := o.Supervisor.Call(ctx, "thaw", map[string]any{"id": id}, nil); err != nil {
+		// still frozen: said, and the switch failed all the same (it is thawed by hand, or
+		// by the next start's undo)
+		o.log().Error("switchover: this home could not be made writable again", "id", id, "err", err,
+			"event", "switchover_thaw_failed")
+		o.update(id, func(p *Progress) { p.Detail = "this home stays read-only: " + err.Error() })
+	}
 	_ = o.Supervisor.Call(ctx, "relay", map[string]any{"id": id, "on": true}, nil)
 	p := o.Progress(id)
 	if p == nil {

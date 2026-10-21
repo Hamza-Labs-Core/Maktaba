@@ -4,13 +4,18 @@ package pgbundle
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // realHome finds a Postgres install on this machine (PATH, or Debian/Ubuntu's
@@ -70,6 +75,46 @@ func TestRealPostgres(t *testing.T) {
 			t.Fatalf("not ready: %v", err)
 		}
 		time.Sleep(200 * time.Millisecond)
+	}
+	// a replication role (a machine's copy's) makes, reads or drops no slot with SQL: the
+	// functions are the app role's alone in the app's database
+	superURL, err := b.SuperURL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	super, err := sql.Open("postgres", superURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer super.Close()
+	if _, err := super.ExecContext(ctx, `CREATE ROLE maktaba_rep_test LOGIN REPLICATION PASSWORD 'rep-test-pass'`); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := sql.Open("postgres", (&url.URL{Scheme: "postgres", User: url.UserPassword("maktaba_rep_test", "rep-test-pass"),
+		Host: b.Addr(), Path: "/" + AppDatabase, RawQuery: "sslmode=disable"}).String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rep.Close()
+	var pe *pq.Error
+	if _, err := rep.ExecContext(ctx, `SELECT pg_create_logical_replication_slot('maktaba_test', 'pgoutput')`); !errors.As(err, &pe) ||
+		pe.Code != "42501" {
+		t.Fatalf("a replication role makes a slot with SQL: %v", err)
+	}
+	appURL, err := b.URL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := sql.Open("postgres", appURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+	if _, err := app.ExecContext(ctx, `SELECT pg_create_logical_replication_slot('maktaba_test', 'pgoutput')`); err != nil {
+		t.Fatalf("the app role makes a machine's slot: %v", err)
+	}
+	if _, err := app.ExecContext(ctx, `SELECT pg_drop_replication_slot('maktaba_test')`); err != nil {
+		t.Fatalf("the app role drops a machine's slot: %v", err)
 	}
 	if _, err := b.Backup(ctx, time.Now()); err != nil {
 		t.Fatal(err)

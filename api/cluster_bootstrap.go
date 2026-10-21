@@ -130,6 +130,8 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 			sw.Supervisor = sc
 		}
 		sw.Mount(r)
+		// a switch this home was running when it stopped, taken up (Epic 37)
+		go sw.Resume(ctx)
 		// the standby homes' kits of this home's secrets, kept current (Epic 37)
 		go sw.KeepStandbys(ctx)
 		stream := os.Getenv("MAKTABA_PUBLIC_BASE_URL")

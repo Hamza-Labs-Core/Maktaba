@@ -44,7 +44,8 @@ const (
 	ReasonMissingHere = "missing_here"
 	ReasonFails       = "fails"
 	// ReasonUnknown: what this home changed since the fork is not known any more (its
-	// fork slot is gone): nothing applies.
+	// fork slot is gone: nothing applies), or not kept for one of the tables (one made
+	// since the fork, its detail).
 	ReasonUnknown = "unknown"
 )
 
@@ -285,20 +286,39 @@ func (t *table) key(row map[string]*string) (string, bool) {
 }
 
 // touched are the rows this home changed since the fork of term, by table and key
-// (false: not known, its fork slot is gone).
-func touched(ctx context.Context, super *sql.DB, s *schema, term int64) (map[string]map[string]bool, bool, error) {
+// (false: not known, its fork slot is gone), and the tables its fork keeps them of (the
+// ones a machine's copy holds, as they were at the fork: one made since is not).
+func touched(ctx context.Context, super *sql.DB, s *schema, term int64) (map[string]map[string]bool, bool,
+	map[string]bool, error) {
 	fork := ForkSlot(term)
 	var exists bool
 	if err := super.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = $1
 	    AND NOT COALESCE(wal_status = 'lost', false))`, fork).Scan(&exists); err != nil {
-		return nil, false, err
+		return nil, false, nil, err
 	}
 	if !exists {
-		return nil, false, nil
+		return nil, false, nil, nil
+	}
+	tracked := map[string]bool{}
+	rows, err := super.QueryContext(ctx, `SELECT schemaname || '.' || tablename FROM pg_publication_tables
+	    WHERE pubname = $1`, fork)
+	if err != nil {
+		return nil, false, nil, err
+	}
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			_ = rows.Close()
+			return nil, false, nil, err
+		}
+		tracked[t] = true
+	}
+	if err := rows.Close(); err != nil {
+		return nil, false, nil, err
 	}
 	changed, err := KeptAside(ctx, super, fork, fork, "")
 	if err != nil {
-		return nil, false, err
+		return nil, false, nil, err
 	}
 	out := map[string]map[string]bool{}
 	for _, tx := range changed.Transactions {
@@ -319,7 +339,7 @@ func touched(ctx context.Context, super *sql.DB, s *schema, term int64) (map[str
 			}
 		}
 	}
-	return out, true, nil
+	return out, true, tracked, nil
 }
 
 // run plans (and, in tx, does) every transaction of the report: each one in a savepoint,
@@ -330,7 +350,7 @@ func run(ctx context.Context, super *sql.DB, tx *sql.Tx, id string, r keptRow) (
 	if err != nil {
 		return p, err
 	}
-	seen, known, err := touched(ctx, super, s, r.term)
+	seen, known, tracked, err := touched(ctx, super, s, r.term)
 	if err != nil {
 		return p, err
 	}
@@ -345,7 +365,7 @@ func run(ctx context.Context, super *sql.DB, tx *sql.Tx, id string, r keptRow) (
 			pt.Tables = append(pt.Tables, t)
 		}
 		sort.Strings(pt.Tables)
-		pt.Reason, pt.Detail = check(s, seen, known, kt)
+		pt.Reason, pt.Detail = check(s, seen, known, tracked, kt)
 		if pt.Reason == "" {
 			if reason, detail := apply(ctx, tx, s, kt, i); reason != "" {
 				pt.Reason, pt.Detail = reason, detail
@@ -370,7 +390,8 @@ func run(ctx context.Context, super *sql.DB, tx *sql.Tx, id string, r keptRow) (
 }
 
 // check is why a transaction is not applied before it is tried ("": it may be).
-func check(s *schema, seen map[string]map[string]bool, known bool, kt Transaction) (reason, detail string) {
+func check(s *schema, seen map[string]map[string]bool, known bool, tracked map[string]bool,
+	kt Transaction) (reason, detail string) {
 	if !known {
 		return ReasonUnknown, ""
 	}
@@ -390,6 +411,10 @@ func check(s *schema, seen map[string]map[string]bool, known bool, kt Transactio
 		k, ok := t.key(c.Row)
 		if !ok {
 			return ReasonNoKey, c.Table
+		}
+		if !tracked[c.Table] {
+			// what this home changed in it since the fork is not kept
+			return ReasonUnknown, c.Table
 		}
 		if seen[c.Table][k] || seen[c.Table]["\x02all"] {
 			return ReasonChangedHere, c.Table

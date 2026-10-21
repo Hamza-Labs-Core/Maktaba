@@ -761,6 +761,20 @@ func (c Copy) Quiesce(ctx context.Context, wait time.Duration) error {
 	}
 }
 
+// Receiving reports whether the subscription's worker receives from its home (its home's
+// position has reached it: a switch's old home gives up what was the home's only then).
+func (c Copy) Receiving(ctx context.Context) (bool, error) {
+	db, err := c.super()
+	if err != nil {
+		return false, err
+	}
+	defer db.Close()
+	var ok bool
+	err = db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_stat_subscription
+	    WHERE subname = $1 AND relid IS NULL AND received_lsn IS NOT NULL)`, Subscription).Scan(&ok)
+	return ok, err
+}
+
 // Status is how the copy is, as the machines page shows it.
 type Status struct {
 	State  string `json:"state"`

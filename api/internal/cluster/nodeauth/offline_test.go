@@ -637,6 +637,37 @@ func TestASignInWithTheHomeBackEndsTheNodeLocalOne(t *testing.T) {
 	}
 }
 
+// A sign-in answered on this machine in the first moments of an outage (inside the
+// grace, the home not answering) stays this machine's while the home is away: its home
+// routes say the home is away rather than asking for a sign-in there, which would clear
+// it and loop.
+func TestANodeLocalSignInInsideTheGraceStays(t *testing.T) {
+	g := newOfflineRig(t, true)
+	g.goDown(time.Minute)
+	g.do(http.MethodGet, "/api/videos", "s1") // the home does not answer: its clock starts
+	a, id := g.signIn(t, "amal", "pw-amal")
+	if id == "" || !strings.HasPrefix(id, LocalSessionPrefix) {
+		t.Fatalf("a sign-in inside the grace: %+v (%q)", a, id)
+	}
+	if g.r.Unreachable() {
+		t.Fatal("the rig is past the grace")
+	}
+	for _, c := range []struct{ method, path string }{
+		{http.MethodGet, "/api/settings"},
+		{http.MethodPost, "/api/videos/v1/rating"},
+	} {
+		if a := g.do(c.method, c.path, id); a.problem == "signin_required" || a.code != http.StatusServiceUnavailable {
+			t.Fatalf("%s %s on a node-local session inside the grace: %+v, want 503 home_unreachable", c.method, c.path, a)
+		}
+	}
+	if a := g.do(http.MethodGet, "/api/videos", id); a.code != http.StatusOK || !a.marked {
+		t.Fatalf("a read on it: %+v", a)
+	}
+	if a := g.do(http.MethodGet, MePath, id); a.code != http.StatusOK {
+		t.Fatalf("/api/auth/me on it: %+v", a)
+	}
+}
+
 func TestSignOutOfANodeLocalSession(t *testing.T) {
 	g := newOfflineRig(t, true)
 	g.goDown(time.Minute)

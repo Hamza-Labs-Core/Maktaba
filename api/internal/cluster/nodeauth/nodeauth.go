@@ -232,6 +232,11 @@ func (r *Resolver) Unreachable() bool {
 	return !failing.IsZero() && r.now().Sub(failing) > r.grace()
 }
 
+// away reports whether the home does not answer now (from the first call it did not
+// answer): a node-local session is one, made while the home was away (the sign-in
+// answered here from DownFor(0)), and stays this machine's until the home answers again.
+func (r *Resolver) away() bool { return r.DownFor(0) }
+
 // DownFor reports whether the home has not answered for at least d.
 func (r *Resolver) DownFor(d time.Duration) bool {
 	r.mu.Lock()
@@ -565,9 +570,9 @@ func (r *Resolver) Middleware(next http.Handler) http.Handler {
 				next.ServeHTTP(w, req)
 				return
 			case local:
-			case !r.Unreachable() && !readOnly(req.Method):
-				// a change through the home's database: the home knows nothing of this
-				// sign-in, so it asks for one there
+			case !r.away() && !readOnly(req.Method):
+				// a change through the home's database, the home back: it knows nothing of
+				// this sign-in, so it asks for one there
 				r.setCookies(w, "", "", time.Time{})
 				writeSignInAgain(w)
 				return
@@ -575,7 +580,7 @@ func (r *Resolver) Middleware(next http.Handler) http.Handler {
 				writeUnreachable(w, true)
 				return
 			}
-			if r.Unreachable() {
+			if r.away() {
 				w.Header().Set(HomeStateHeader, "unreachable")
 			}
 			serveAs(next, w, req, p, csrf)
@@ -731,7 +736,7 @@ func (r *Resolver) Home(proxy http.Handler) http.Handler {
 		if id, ok := isLocalSession(req); ok {
 			switch {
 			case r.SignOut(w, req), r.Me(w, req):
-			case r.Unreachable():
+			case r.away():
 				writeUnreachable(w, true)
 			case req.Method == http.MethodPost && req.URL.Path == LoginPath:
 				// a sign-in with the home, now that it answers: this machine's own ends

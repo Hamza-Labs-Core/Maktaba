@@ -191,6 +191,44 @@ func TestAMachineFindsTheNewHomeAtAStandby(t *testing.T) {
 	}
 }
 
+// With its old home retired and no standby, a machine that was off during a switch finds
+// its notice at another of the home's machines (every copy has the notices).
+func TestAMachineFindsTheNewHomeAtAPeer(t *testing.T) {
+	clusterPriv, clusterPub := x25519Pair(t)
+	nodePriv, nodePub := x25519Pair(t)
+	s, _ := standbyMachine(t, nodePriv, clusterPub, "http://127.0.0.1:1")
+	nodeID := config.LocalNodeConfig().NodeID
+	plain, _ := json.Marshal(movedNotice{Term: 2, Home: newHome{APIURL: "http://b:8082", DBHost: "b", DBPort: 54329, Name: "b"}})
+	notice, err := switchover.SealNotice(clusterPriv, nodePub, "sw-p", plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/cluster/moved/"+nodeID {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "sw-p", "term": 2, "notice": notice})
+	}))
+	defer peer.Close()
+	args, _ := json.Marshal(map[string]any{"urls": []string{}, "peers": []string{peer.URL}})
+	if _, ok, detail := s.command(t.Context(), "home.standbys", args); !ok {
+		t.Fatalf("the peers: %v", detail)
+	}
+	if got := config.LocalNodeConfig().Peers; len(got) != 1 || got[0] != peer.URL {
+		t.Fatalf("node.json's peers: %v", got)
+	}
+	s.checkMoved(t.Context(), &http.Client{Timeout: 2 * time.Second})
+	if n := config.LocalNodeConfig(); n.Home.APIURL != "http://b:8082" || n.Home.Term != 2 {
+		t.Fatalf("the machine did not follow the new home: %+v", n.Home)
+	}
+	select {
+	case <-reloadCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the machine does not start again with its new home")
+	}
+}
+
 // An old home's report reaches the new home sealed from the identity its kits gave it
 // to the cluster's key, at the report's public address; once taken it is marked sent.
 func TestTheOldHomeReportsWhatItKeptAside(t *testing.T) {

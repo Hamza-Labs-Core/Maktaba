@@ -46,14 +46,15 @@ func (o *Orchestrator) finishOnce(ctx context.Context, integrations Integrations
 		id, toNode, state string
 		term              int64
 		machinesRaw       json.RawMessage
-		frozen            sql.NullTime
+		since             sql.NullTime
 		integr            json.RawMessage
 	)
-	err := o.DB.QueryRowContext(ctx, `SELECT s.id::text, s.term, s.to_node::text, s.state, s.machines, s.frozen_at,
+	// since: the term's start, on this home's clock (the old home's frozen_at is on its own)
+	err := o.DB.QueryRowContext(ctx, `SELECT s.id::text, s.term, s.to_node::text, s.state, s.machines, t.started_at,
 	        s.integrations
 	    FROM cluster_switchovers s JOIN cluster_terms t ON t.term = s.term AND t.home_node = s.to_node
-	    WHERE s.state IN ('frozen', 'handing_over', 'promoting', 'repointing')
-	    ORDER BY s.requested_at DESC LIMIT 1`).Scan(&id, &term, &toNode, &state, &machinesRaw, &frozen, &integr)
+	    WHERE s.state IN ('frozen', 'handing_over', 'promoting', 'waiting_new_home', 'repointing')
+	    ORDER BY s.requested_at DESC LIMIT 1`).Scan(&id, &term, &toNode, &state, &machinesRaw, &since, &integr)
 	if err == sql.ErrNoRows {
 		return nil
 	}
@@ -65,7 +66,7 @@ func (o *Orchestrator) finishOnce(ctx context.Context, integrations Integrations
 	delete(machines, toNode) // this home
 	// the old home joined as a machine at the promotion
 	rows, err := o.DB.QueryContext(ctx, `SELECT id::text, name FROM cluster_nodes WHERE approved_by = 'switchover'
-	    AND approved_at >= $1`, frozen.Time)
+	    AND approved_at >= $1`, since.Time)
 	if err == nil {
 		for rows.Next() {
 			var nid, name string
@@ -87,9 +88,9 @@ func (o *Orchestrator) finishOnce(ctx context.Context, integrations Integrations
 		switch {
 		case err != nil || !full:
 			// gone, or a machine that keeps no copy: nothing to wait for
-		case rstate == "following" && reported.Valid && reported.Time.After(frozen.Time):
+		case rstate == "following" && reported.Valid && reported.Time.After(since.Time):
 			m.State = "following"
-		case reported.Valid && reported.Time.After(frozen.Time):
+		case reported.Valid && reported.Time.After(since.Time):
 			m.State, all = "copying_anew", false
 		default:
 			all = false
@@ -113,7 +114,7 @@ func (o *Orchestrator) finishOnce(ctx context.Context, integrations Integrations
 			all = false
 		}
 	}
-	done := all || (frozen.Valid && time.Since(frozen.Time) > FollowWithin)
+	done := all || (since.Valid && time.Since(since.Time) > FollowWithin)
 	newState := "repointing"
 	if done {
 		newState = "done"

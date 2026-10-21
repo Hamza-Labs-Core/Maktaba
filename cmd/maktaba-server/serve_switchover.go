@@ -89,6 +89,12 @@ type switching struct {
 
 	mu   sync.Mutex
 	busy string // the switchover under way here
+	// promoting is the switchover whose promotion runs here now; demoting whether this
+	// home's demotion runs, and how the last one ended
+	promoting string
+	demoting  bool
+	demoteErr string
+	demoted   string // the switchover whose demotion went through (this machine starts again)
 }
 
 func newSwitching(cfg config.Config) *switching {
@@ -178,6 +184,8 @@ func (s *switching) adminHandler(base http.Handler) http.Handler {
 				http.Error(w, "this machine keeps no copy of its home's database", http.StatusConflict)
 				return
 			}
+		case step == "record" || step == "recorded":
+			// the API's own records: kept on any home (one that cannot be switched has none)
 		case s.pg == nil:
 			http.Error(w, "this home's database is not Maktaba's own Postgres: it cannot be switched", http.StatusConflict)
 			return
@@ -198,7 +206,19 @@ func (s *switching) adminHandler(base http.Handler) http.Handler {
 		case "freeze":
 			err = s.withSuper(func(db *sql.DB) error { return switchover.Freeze(ctx, db, req.ID) })
 		case "thaw":
-			err = s.withSuper(func(db *sql.DB) error { return switchover.Thaw(ctx, db) })
+			// the switch is over here (undone): the kit made for it goes, and another may start
+			if err = s.withSuper(func(db *sql.DB) error { return switchover.Thaw(ctx, db) }); err == nil {
+				_ = wipeFile(filepath.Join(s.dir(req.ID), "kit.chunks"))
+				s.release(req.ID)
+			}
+		case "record":
+			// the switch as this home's API runs it, kept where a restart finds it
+			err = s.record(req.ID, req.Progress)
+		case "recorded":
+			out, err = s.recorded()
+		case "new-home":
+			// the promotion's answer did not come: the new home's notice to this machine
+			out, err = s.newHomeOf(ctx, req)
 		case "kit":
 			out, err = s.kit(ctx, req)
 		case "relay":
@@ -220,10 +240,10 @@ func (s *switching) adminHandler(base http.Handler) http.Handler {
 			out, err = s.keptDismiss(ctx, req)
 		case "demote":
 			// answered first: the demotion ends with this machine starting again, the API
-			// that asked among its processes
+			// that asked among its processes; asked again while it runs, it says so, and
+			// after one that failed it runs again (its error said)
 			if err = s.claim(req.ID); err == nil {
-				go s.demote(req)
-				out = map[string]any{"accepted": true}
+				out = s.startDemote(req)
 			}
 		default:
 			http.NotFound(w, r)
@@ -247,6 +267,113 @@ func (s *switching) claim(id string) error {
 	}
 	s.busy = id
 	return nil
+}
+
+// release ends switchover id here: another may start.
+func (s *switching) release(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.busy == id {
+		s.busy = ""
+	}
+}
+
+// record keeps the switch as this home's API runs it (its progress), where the API finds
+// it again after a restart: <state>/switchover/<id>/progress.json.
+func (s *switching) record(id string, progress json.RawMessage) error {
+	if id == "" || !json.Valid(progress) {
+		return errors.New("a switch's progress")
+	}
+	return writePrivate(filepath.Join(s.dir(id), "progress.json"), progress)
+}
+
+// recorded are the switches this home's API recorded that did not end (handed_over,
+// done or failed).
+func (s *switching) recorded() (any, error) {
+	paths, err := filepath.Glob(filepath.Join(s.cfg.StateDir(), "switchover", "*", "progress.json"))
+	if err != nil {
+		return nil, err
+	}
+	out := []json.RawMessage{}
+	for _, p := range paths {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		var st struct {
+			State string `json:"state"`
+		}
+		if json.Unmarshal(b, &st) != nil {
+			continue
+		}
+		switch st.State {
+		case "handed_over", "done", "failed", "cancelled":
+			continue
+		}
+		out = append(out, b)
+	}
+	return map[string]any{"switches": out}, nil
+}
+
+// endRecord marks switchover id's record as ended here (state), so a restart of this
+// machine's API does not take it up again.
+func (s *switching) endRecord(id, state string) {
+	path := filepath.Join(s.dir(id), "progress.json")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var p map[string]any
+	if json.Unmarshal(b, &p) != nil {
+		return
+	}
+	p["state"] = state
+	if b, err = json.Marshal(p); err == nil {
+		_ = writePrivate(path, b)
+	}
+}
+
+// newHomeOf is the new home of switchover req.ID as the notice it sealed to this machine
+// (its identity as one of its machines, chosen with the kit) says, read at the addresses
+// the API knows for it: what the promotion's answer would have said, once it is the home
+// (nil: not yet).
+func (s *switching) newHomeOf(ctx context.Context, req homeRequest) (any, error) {
+	me, err := readIdentity(filepath.Join(s.dir(req.ID), "old-home.json"))
+	if err != nil {
+		return nil, err
+	}
+	clusterPriv, err := os.ReadFile(clusterKeyPath())
+	if err != nil || len(clusterPriv) != 32 {
+		return nil, fmt.Errorf("this home's cluster key: %v", err)
+	}
+	clusterPub, err := curve25519.X25519(clusterPriv, curve25519.Basepoint)
+	if err != nil {
+		return nil, err
+	}
+	priv, err := base64.StdEncoding.DecodeString(me.PrivateKey)
+	if err != nil {
+		return nil, err
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	for _, base := range req.URLs {
+		var m struct {
+			ID     string `json:"id"`
+			Notice string `json:"notice"`
+		}
+		if base == "" || getJSON(ctx, client, strings.TrimRight(base, "/")+"/api/cluster/moved/"+url.PathEscape(me.NodeID), &m) != nil ||
+			m.ID != req.ID {
+			continue
+		}
+		plain, err := switchover.OpenNotice(priv, clusterPub, m.ID, m.Notice)
+		if err != nil {
+			continue
+		}
+		var notice movedNotice
+		if json.Unmarshal(plain, &notice) == nil && notice.Term == req.Term && notice.Home.APIURL != "" {
+			return map[string]any{"home": notice.Home}, nil
+		}
+	}
+	return map[string]any{"home": nil}, nil
 }
 
 func (s *switching) withSuper(fn func(*sql.DB) error) error {
@@ -278,6 +405,9 @@ type homeRequest struct {
 	// what an old home kept aside: the report, and the plan the admin saw
 	Report string `json:"report"`
 	Plan   string `json:"plan"`
+	// the API's record of a switch (record), and where the new home answers (new-home)
+	Progress json.RawMessage `json:"progress"`
+	URLs     []string        `json:"urls"`
 }
 
 // relay starts or stops this home's cloud relay agent (none here: nothing to do).
@@ -514,28 +644,56 @@ func writePrivate(path string, b []byte) error {
 	return os.Rename(tmp, path)
 }
 
-// demote makes this home a machine of the new one: its database a copy of the new
-// home's without copying again (it holds the marker), its node.json written, its home
-// role given up; then it starts again as a machine.
-func (s *switching) demote(req homeRequest) {
+// startDemote runs this home's demotion (demote) unless one runs: what it answers the
+// API (the last one's error, when it failed).
+func (s *switching) startDemote(req homeRequest) any {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.demoted == req.ID {
+		return map[string]any{"accepted": true, "done": true}
+	}
+	if s.demoting {
+		return map[string]any{"accepted": true, "running": true}
+	}
+	last := s.demoteErr
+	s.demoting, s.demoteErr = true, ""
+	go func() {
+		err := s.demote(req)
+		s.mu.Lock()
+		s.demoting = false
+		if err != nil {
+			s.demoteErr = err.Error()
+		}
+		s.mu.Unlock()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[switchover] demote: %v (this home stays frozen; it is tried again)\n", err)
+		}
+	}()
+	return map[string]any{"accepted": true, "last_error": last}
+}
+
+// demoteFollowWithin is how long the demotion waits for this database to receive the new
+// home's changes before it gives up (nothing of this home's is undone then).
+const demoteFollowWithin = 2 * time.Minute
+
+// demote makes this home a machine of the new one: its database a copy of the new home's
+// without copying again (it holds the marker); only once that copy receives the new
+// home's changes does it give up what was the home's (its machines' slots and
+// publications, its own tables, its keys); then its node.json is written and it starts
+// again as a machine. Run again after a failure, it takes up where it was.
+func (s *switching) demote(req homeRequest) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	logf := func(format string, args ...any) { fmt.Fprintf(os.Stderr, "[switchover] "+format+"\n", args...) }
-	me, err := s.oldHome(s.dir(req.ID))
+	me, err := readIdentity(filepath.Join(s.dir(req.ID), "old-home.json"))
 	if err != nil {
-		logf("this machine's identity: %v", err)
-		return
-	}
-	if err := s.withSuper(func(db *sql.DB) error { return switchover.Demote(ctx, db) }); err != nil {
-		logf("demote: %v", err)
-		return
+		return fmt.Errorf("this machine's identity: %w", err)
 	}
 	role := switchover.Machine{ID: me.NodeID}.Role()
 	h := req.Home
 	clusterPriv, err := os.ReadFile(clusterKeyPath())
 	if err != nil {
-		logf("the cluster key: %v", err)
-		return
+		return fmt.Errorf("the cluster key: %w", err)
 	}
 	clusterPub, _ := curve25519.X25519(clusterPriv, curve25519.Basepoint)
 	n := config.NodeConfig{NodeID: me.NodeID, Name: me.Name, PrivateKey: me.PrivateKey,
@@ -548,31 +706,47 @@ func (s *switching) demote(req homeRequest) {
 	h.database(&n)
 	dsn, err := n.HomeDSN(config.KeysDir())
 	if err != nil {
-		logf("the new home's database: %v", err)
-		return
+		return fmt.Errorf("the new home's database: %w", err)
 	}
 	c := nodecopy.Copy{NodeID: me.NodeID, HomeDSN: dsn, DB: *s.pg}
 	local, err := c.LocalSchema(ctx)
 	if err != nil {
-		logf("this machine's schema: %v", err)
-		return
+		return fmt.Errorf("this machine's schema: %w", err)
+	}
+	// this database serves its machines no more (following the new home, it would pass
+	// the new home's changes on to them); its own data stays
+	if err := s.withSuper(func(db *sql.DB) error { return switchover.StopServing(ctx, db) }); err != nil {
+		return fmt.Errorf("the machines' slots: %w", err)
 	}
 	if err := handover(ctx, c, h.grant(c), local, logf); err != nil {
-		logf("following the new home: %v", err)
-		return
+		return fmt.Errorf("following the new home: %w", err)
 	}
-	if err := writeNodeConfig(n); err != nil {
-		logf("node.json: %v", err)
-		return
-	}
-	// this machine's cluster key and cloud relay credentials are the new home's now; it
-	// keeps no copy of them, and runs no relay agent
-	was := ".was-home-" + strconv.FormatInt(req.Term-1, 10)
-	for _, p := range []string{clusterKeyPath(), supervisor.RelayCredPath(), supervisor.RelayKeyPath()} {
-		if _, err := os.Stat(p); err == nil {
-			_ = os.Rename(p, p+was)
+	// nothing of the home's is given up before this database receives the new home's
+	// changes: with the new home unreachable this home stays as it was, frozen
+	end := time.Now().Add(demoteFollowWithin)
+	for {
+		ok, err := c.Receiving(ctx)
+		if ok {
+			break
+		}
+		if time.Now().After(end) {
+			return fmt.Errorf("this database receives nothing from the new home (%v)", err)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
 		}
 	}
+	if err := s.withSuper(func(db *sql.DB) error { return switchover.Demote(ctx, db, me.NodeID) }); err != nil {
+		return fmt.Errorf("giving up the home's own: %w", err)
+	}
+	if err := writeNodeConfig(n); err != nil {
+		return fmt.Errorf("node.json: %w", err)
+	}
+	// the home's keys are the new home's now: this machine keeps none of them (nor the
+	// kit, nor its identity's file: node.json has it), and runs no relay agent
+	s.wipeHomeKeys(req.ID, logf)
 	if err := editConfig(func(c *config.Config) {
 		if strings.EqualFold(strings.TrimSpace(c.Server.Role), "home") {
 			c.Server.Role = ""
@@ -581,8 +755,67 @@ func (s *switching) demote(req homeRequest) {
 	}); err != nil {
 		logf("server.toml: %v", err)
 	}
+	s.endRecord(req.ID, "handed_over")
+	s.mu.Lock()
+	s.demoted = req.ID
+	s.mu.Unlock()
 	logf("this machine is a machine of the new home now (%s): starting again", h.APIURL)
-	requestReload()
+	go func() {
+		time.Sleep(2 * time.Second) // the API hears it went through first
+		requestReload()
+	}()
+	return nil
+}
+
+// homeKeyFiles are the key files that make a machine the home: once another machine is
+// the home, this one keeps none of them.
+func (s *switching) homeKeyFiles() []string {
+	priv, pub := supervisor.JWTKeyPaths()
+	caKey := filepath.Join(config.KeysDir(), kitCAKey)
+	if s.pg != nil {
+		caKey = filepath.Join(s.pg.Keys, kitCAKey)
+	}
+	return []string{secretsKeyPath(), clusterKeyPath(), caKey, priv, pub, supervisor.RelayCredPath(),
+		supervisor.RelayKeyPath()}
+}
+
+// wipeHomeKeys removes this machine's copies of the home's keys (overwritten first) and
+// the kit and identity files of switchover id (with the ones an earlier release set
+// aside as .was-home-*).
+func (s *switching) wipeHomeKeys(id string, logf func(string, ...any)) {
+	paths := s.homeKeyFiles()
+	for _, p := range s.homeKeyFiles() {
+		aside, _ := filepath.Glob(p + ".was-home-*")
+		paths = append(paths, aside...)
+	}
+	if id != "" {
+		paths = append(paths, filepath.Join(s.dir(id), "kit.chunks"), filepath.Join(s.dir(id), "old-home.json"))
+	}
+	for _, p := range paths {
+		if err := wipeFile(p); err != nil {
+			logf("removing %s: %v", p, err)
+		}
+	}
+}
+
+// wipeFile overwrites a file with zeros, flushes it and removes it (none: nothing to do).
+func wipeFile(path string) error {
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if f, err := os.OpenFile(path, os.O_WRONLY, 0); err == nil {
+		_, werr := f.Write(make([]byte, info.Size()))
+		serr := f.Sync()
+		_ = f.Close()
+		if werr != nil || serr != nil {
+			return errors.Join(werr, serr)
+		}
+	}
+	return os.Remove(path)
 }
 
 // editConfig changes server.toml as it is on disk (never what serve made of it: the
@@ -618,7 +851,7 @@ func writeNodeConfig(n config.NodeConfig) error {
 	for k, v := range ours {
 		merged[k] = v
 	}
-	for _, k := range []string{"database_ca", "database_tls", "standby_homes"} {
+	for _, k := range []string{"database_ca", "database_tls", "standby_homes", "peers"} {
 		if _, set := ours[k]; !set {
 			delete(merged, k) // omitted: none now
 		}
@@ -681,12 +914,13 @@ func (s *switching) command(ctx context.Context, name string, args json.RawMessa
 		return true, ok, detail
 	}
 	var a struct {
-		ID   string  `json:"id"`
-		Term int64   `json:"term"`
-		I    uint64  `json:"i"`
-		Last bool    `json:"last"`
-		Data string  `json:"data"`
-		Home newHome `json:"home"`
+		ID    string  `json:"id"`
+		Term  int64   `json:"term"`
+		I     uint64  `json:"i"`
+		Last  bool    `json:"last"`
+		Data  string  `json:"data"`
+		Home  newHome `json:"home"`
+		Abort bool    `json:"abort"`
 	}
 	if err := json.Unmarshal(args, &a); err != nil || a.ID == "" {
 		return strings.HasPrefix(name, "switch.") || strings.HasPrefix(name, "standby.") || name == "home.moved",
@@ -706,6 +940,8 @@ func (s *switching) command(ctx context.Context, name string, args json.RawMessa
 		err = s.chunk(a.ID, a.I, a.Last, a.Data)
 	case "switch.promote":
 		out, err = s.promote(ctx, a.ID, a.Term)
+	case "switch.status":
+		out, err = s.status(ctx, a.ID, a.Term, a.Abort)
 	case "home.moved":
 		out, err = s.follow(ctx, a.ID, a.Term, a.Home)
 	case "standby.kit":
@@ -813,25 +1049,57 @@ func openSealed(path, id string, n config.NodeConfig) (*switchover.Kit, error) {
 	return switchover.ReadKit(&plain)
 }
 
+// calledOff and newHomeFile mark, in a switch's directory on the machine taking over,
+// that its promotion will never run (the old home called it off), and what it answered
+// once it went through.
+func (s *switching) calledOff(id string) string   { return filepath.Join(s.dir(id), "called-off") }
+func (s *switching) newHomeFile(id string) string { return filepath.Join(s.dir(id), "new-home.json") }
+
 // promote makes this machine the home: its copy promoted with the kit, the home's key
 // files in place, its Postgres the bundled home's (on the LAN, TLS from the cluster's
 // CA), node.json moved aside; answered with its addresses, then it starts again as the
-// home.
+// home. Asked again (its answer was lost), it answers the same. A promotion that fails
+// leaves this copy as it was and calls the switch off here (the old home, asking,
+// learns it), and this machine starts again as the old home's machine.
 func (s *switching) promote(ctx context.Context, id string, term int64) (any, error) {
+	if h, ok := s.promoted(id); ok {
+		return h, nil
+	}
 	if err := s.claim(id); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	if _, err := os.Stat(s.calledOff(id)); err == nil {
+		s.mu.Unlock()
+		return nil, errors.New("this switch was called off: it does not run here")
+	}
+	s.promoting = id
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.promoting = ""
+		s.mu.Unlock()
+	}()
+	fail := func(err error) (any, error) {
+		_ = writePrivate(s.calledOff(id), nil)
+		s.release(id)
+		go func() {
+			time.Sleep(2 * time.Second) // the answer goes out first
+			requestReload()
+		}()
 		return nil, err
 	}
 	n := supervisor.NodeConfig()
 	kit, err := s.openKit(id, n)
 	if err != nil {
-		return nil, fmt.Errorf("the kit: %w", err)
+		return fail(fmt.Errorf("the kit: %w", err))
 	}
 	if kit.Switchover != id || kit.Term != term {
-		return nil, errors.New("the kit is another switchover's")
+		return fail(errors.New("the kit is another switchover's"))
 	}
 	db, err := s.copyDB()
 	if err != nil {
-		return nil, err
+		return fail(err)
 	}
 	defer db.Close()
 	if s.stopCopy != nil {
@@ -840,9 +1108,109 @@ func (s *switching) promote(ctx context.Context, id string, term int64) (any, er
 	done, err := switchover.Promote(ctx, db, switchover.Promotion{Self: n.NodeID, Name: n.Name, Term: term,
 		Reason: "planned", Kit: kit, OldHome: kit.OldHome})
 	if err != nil {
-		return nil, err
+		return fail(err)
 	}
 	return s.becomeHome(ctx, db, kit, id, term, n, done)
+}
+
+// finishPromotion runs again the last steps of a promotion whose database went through
+// (becomeHome).
+func (s *switching) finishPromotion(ctx context.Context, id string, term int64) (newHome, error) {
+	if err := s.claim(id); err != nil {
+		return newHome{}, err
+	}
+	s.mu.Lock()
+	s.promoting = id
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.promoting = ""
+		s.mu.Unlock()
+	}()
+	n := supervisor.NodeConfig()
+	if !n.Joined() {
+		// node.json moved aside already: the identity is in the one it was moved to
+		path := config.LocalNodeConfigPath() + ".was-node-" + strconv.FormatInt(term-1, 10)
+		if b, err := os.ReadFile(path); err == nil {
+			_ = json.Unmarshal(b, &n)
+		}
+	}
+	kit, err := s.openKit(id, n)
+	if err != nil {
+		return newHome{}, fmt.Errorf("the kit: %w", err)
+	}
+	db, err := s.copyDB()
+	if err != nil {
+		return newHome{}, err
+	}
+	defer db.Close()
+	var done switchover.Promoted
+	if err := db.QueryRowContext(ctx, `SELECT system_identifier::text FROM pg_control_system()`).Scan(&done.SystemID); err != nil {
+		return newHome{}, err
+	}
+	return s.becomeHome(ctx, db, kit, id, term, n, done)
+}
+
+// promoted is what this machine answered switchover id's promotion, when it went
+// through here.
+func (s *switching) promoted(id string) (newHome, bool) {
+	var h newHome
+	b, err := os.ReadFile(s.newHomeFile(id))
+	if err != nil || json.Unmarshal(b, &h) != nil || h.APIURL == "" {
+		return newHome{}, false
+	}
+	return h, true
+}
+
+// status answers the old home, which did not get the promotion's answer: "home" (it went
+// through: the addresses it answered), "promoting" (it runs), "called_off" (it did not and
+// never will), "not_promoted" (not asked here, or not yet). With abort a switch not
+// promoted here is called off first: its promotion never runs after.
+func (s *switching) status(ctx context.Context, id string, term int64, abort bool) (any, error) {
+	if h, ok := s.promoted(id); ok {
+		return map[string]any{"state": "home", "home": h}, nil
+	}
+	if db, err := s.copyDB(); err == nil {
+		ok, _ := switchover.PromotedAt(ctx, db, supervisor.NodeConfig().NodeID, term)
+		_ = db.Close()
+		s.mu.Lock()
+		running := s.promoting == id
+		s.mu.Unlock()
+		switch {
+		case ok && running:
+			return map[string]any{"state": "promoting"}, nil
+		case ok:
+			// the database is the home's, but the promotion's last steps did not finish
+			// (its answer was not kept): they run again
+			h, err := s.finishPromotion(ctx, id, term)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"state": "home", "home": h}, nil
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch {
+	case s.promoting == id:
+		return map[string]any{"state": "promoting"}, nil
+	case fileExists(s.calledOff(id)):
+		return map[string]any{"state": "called_off"}, nil
+	case abort:
+		if err := writePrivate(s.calledOff(id), nil); err != nil {
+			return nil, err
+		}
+		if s.busy == id {
+			s.busy = ""
+		}
+		return map[string]any{"state": "called_off"}, nil
+	}
+	return map[string]any{"state": "not_promoted"}, nil
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // becomeHome finishes a promotion: the home's key files in place, this machine's
@@ -888,7 +1256,8 @@ func (s *switching) becomeHome(ctx context.Context, db *sql.DB, kit *switchover.
 		fmt.Fprintf(os.Stderr, "[switchover] the machines reach this Postgres one look after its start: %v\n", err)
 	}
 	path := config.LocalNodeConfigPath()
-	if err := os.Rename(path, path+".was-node-"+strconv.FormatInt(term-1, 10)); err != nil {
+	aside := path + ".was-node-" + strconv.FormatInt(term-1, 10)
+	if err := os.Rename(path, aside); err != nil && !(os.IsNotExist(err) && fileExists(aside)) {
 		return newHome{}, fmt.Errorf("node.json: %w", err)
 	}
 	home := newHome{APIURL: s.cfg.PublicAPIURL(), WebURL: s.cfg.PublicWebURL(), DBPort: db2.Port,
@@ -898,14 +1267,30 @@ func (s *switching) becomeHome(ctx context.Context, db *sql.DB, kit *switchover.
 	}
 	if strings.EqualFold(strings.TrimSpace(s.cfg.Postgres.TLS), "off") {
 		home.TLSOff = true
-	} else if ca, err := os.ReadFile(db2.CACert()); err == nil {
+	} else {
+		// the machines verify this database by its CA: without it they could not follow
+		ca, err := os.ReadFile(db2.CACert())
+		if err != nil {
+			return newHome{}, fmt.Errorf("this database's CA: %w", err)
+		}
+		if err := config.CheckCA(string(ca)); err != nil {
+			return newHome{}, fmt.Errorf("this database's CA %s: %w", db2.CACert(), err)
+		}
 		home.CA = string(ca)
 	}
 	// every machine's own notice of it, for one that is off now (the old home's too: the
-	// cut is where what it wrote since begins)
+	// cut is where what it wrote since begins; it also reads its own when the answer to
+	// the promotion was lost)
 	if err := sealNotices(ctx, db, kit, id, term, n.NodeID, home, done.CutLSN); err != nil {
 		fmt.Fprintf(os.Stderr, "[switchover] the machines' notices of the new home: %v\n", err)
 	}
+	// its answer, the same when asked again; the kit is not needed any more
+	if b, err := json.Marshal(home); err == nil {
+		if err := writePrivate(s.newHomeFile(id), b); err != nil {
+			return newHome{}, fmt.Errorf("keeping its answer: %w", err)
+		}
+	}
+	_ = wipeFile(filepath.Join(s.dir(id), "kit.chunks"))
 	fmt.Fprintf(os.Stderr, "[switchover] this machine is the home now (term %d): starting again\n", term)
 	go func() {
 		time.Sleep(2 * time.Second) // the answer goes out first
@@ -1010,10 +1395,16 @@ func (s *switching) checkMoved(ctx context.Context, client *http.Client) {
 		return
 	}
 	logf := func(format string, args ...any) { fmt.Fprintf(os.Stderr, "[switchover] "+format+"\n", args...) }
-	// the home (a machine now, when it was switched), and the standby homes, one of which
-	// may have taken over while the home was gone (an emergency)
-	for _, base := range append([]string{home}, n.StandbyHomes...) {
+	// the home (a machine now, when it was switched), the standby homes, one of which may
+	// have taken over while the home was gone (an emergency), and every other machine (its
+	// copy has the notices: the old home may be gone for good)
+	seen := map[string]bool{strings.TrimRight(s.cfg.PublicWebURL(), "/"): true}
+	for _, base := range append(append([]string{home}, n.StandbyHomes...), n.Peers...) {
 		base = strings.TrimRight(base, "/")
+		if seen[base] {
+			continue
+		}
+		seen[base] = true
 		var m struct {
 			ID     string `json:"id"`
 			Notice string `json:"notice"`
@@ -1060,6 +1451,10 @@ func getJSON(ctx context.Context, client *http.Client, u string, out any) error 
 // pointed at the new home; then it starts again.
 func (s *switching) follow(ctx context.Context, id string, term int64, h newHome) (any, error) {
 	n := supervisor.NodeConfig()
+	if n.Home.Term >= term && strings.TrimRight(n.Home.APIURL, "/") == strings.TrimRight(h.APIURL, "/") {
+		// told again (the old home started again during the switch): it follows already
+		return map[string]any{"copy_kept": true}, nil
+	}
 	u, err := url.Parse(n.DatabaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("node.json's database: %w", err)

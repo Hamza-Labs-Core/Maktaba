@@ -39,6 +39,10 @@ type NodeConfig struct {
 	// in an emergency (the home tells every machine): with the home gone, this machine
 	// asks them for its notice of a new home.
 	StandbyHomes []string `json:"standby_homes,omitempty"`
+	// Peers are the web addresses of the home's other machines (the home tells every
+	// machine): one that was off during a switch, its old home gone, asks them for its
+	// notice of the new home (every copy has the notices).
+	Peers []string `json:"peers,omitempty"`
 	// Err is why node.json, which exists, could not be read (bad JSON, a truncated
 	// file): such a machine is not "not joined", which would start it as a home.
 	Err error `json:"-"`

@@ -1,3 +1,4 @@
+-- +goose NO TRANSACTION
 -- +goose Up
 -- +goose StatementBegin
 --
@@ -346,6 +347,11 @@ BEGIN
         RAISE EXCEPTION 'this database keeps no copies for machines (wal_level is %, not logical)',
             current_setting('wal_level') USING ERRCODE = 'feature_not_supported';
     END IF;
+    -- a machine's own row is published by a row filter, without its keys by a column list
+    IF current_setting('server_version_num')::int < 150000 THEN
+        RAISE EXCEPTION 'this database keeps no copies for machines (Postgres %: they need 15 or later)',
+            current_setting('server_version') USING ERRCODE = 'feature_not_supported';
+    END IF;
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = v_role) THEN
         EXECUTE format('ALTER ROLE %I WITH LOGIN REPLICATION INHERIT PASSWORD %L', v_role, p_verifier);
     ELSE
@@ -422,9 +428,13 @@ CREATE TABLE IF NOT EXISTS cluster_switchovers (
     to_node       uuid NOT NULL,
     to_name       text NOT NULL,
     from_name     text NOT NULL,
+    -- waiting_new_home: the promotion was asked and its answer did not come; the old home
+    -- stays frozen until the machine taking over says it is the home or called it off
     state         text NOT NULL CHECK (state IN ('checking', 'freezing', 'frozen', 'handing_over',
-                      'promoting', 'repointing', 'done', 'failed', 'cancelled')),
+                      'promoting', 'waiting_new_home', 'repointing', 'done', 'failed', 'cancelled')),
     detail        text,
+    -- the old home's steps as it ran them ([{name, state, detail, at}])
+    steps         jsonb NOT NULL DEFAULT '[]'::jsonb,
     -- per integration (plex, relay, ...): {"state": "moved|pending|failed|needs_you|not_used", "detail": ...}
     integrations  jsonb NOT NULL DEFAULT '{}'::jsonb,
     -- per machine: {"state": "following|copying_anew|waiting|failed", "detail": ...}
@@ -438,6 +448,12 @@ CREATE TABLE IF NOT EXISTS cluster_switchovers (
     done_at       timestamptz,
     updated_at    timestamptz NOT NULL DEFAULT now()
 );
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- one switch at a time: two asked at once, the second is refused here
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS cluster_switchovers_one_open ON cluster_switchovers ((true))
+    WHERE state NOT IN ('done', 'failed', 'cancelled');
 -- +goose StatementEnd
 
 -- +goose StatementBegin

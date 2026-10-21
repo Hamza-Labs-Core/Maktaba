@@ -22,6 +22,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -315,9 +316,14 @@ func (b Bundle) writeHBA() error {
 // tables published to the machines: specs/epics/37-node-replica), administered by the
 // app role without the app role taking its rights; and it lets the app role keep
 // Postgres's own cap on what a slot holds (max_slot_wal_keep_size) at its rule
-// (rules.cluster.replica_wal_keep_gb), so the cap holds with the API down too. Prepare
-// runs it once (the marker), in the app's database (a function's grant is that
-// database's); every statement is safe to run again.
+// (rules.cluster.replica_wal_keep_gb), so the cap holds with the API down too. The SQL
+// functions that make, read, move or drop a slot are the app role's alone in the app's
+// database: a machine's replication role follows its publication over the replication
+// protocol and needs none of them (with one it could read the slots' changes past its
+// publication). Prepare runs it once per clusterRev (the marker), in the app's database
+// (a function's grant is that database's); every statement is safe to run again. On a
+// server older than Maktaba's own Postgres 16 what it lacks is left out: a parameter's
+// grant (15), a membership without its rights (16).
 const clusterSQL = `\set ON_ERROR_STOP on
 \c ` + AppDatabase + `
 ALTER ROLE ` + AppRole + ` WITH CREATEROLE REPLICATION;
@@ -325,8 +331,6 @@ GRANT pg_monitor TO ` + AppRole + `;
 GRANT pg_signal_backend TO ` + AppRole + `;
 DO $$
 BEGIN
-    -- a parameter's grant is Postgres 15's (Maktaba's own is 16; an older install the
-    -- tests find keeps the home's own cap only)
     IF current_setting('server_version_num')::int >= 150000 THEN
         EXECUTE 'GRANT ALTER SYSTEM ON PARAMETER max_slot_wal_keep_size TO ` + AppRole + `';
     END IF;
@@ -334,11 +338,49 @@ END
 $$;
 GRANT EXECUTE ON FUNCTION pg_reload_conf() TO ` + AppRole + `;
 DO $$
+DECLARE f regprocedure;
+BEGIN
+    FOR f IN SELECT p.oid::regprocedure FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+              WHERE n.nspname = 'pg_catalog' AND p.proname IN ('pg_create_logical_replication_slot',
+                    'pg_create_physical_replication_slot', 'pg_copy_logical_replication_slot',
+                    'pg_copy_physical_replication_slot', 'pg_logical_slot_get_changes',
+                    'pg_logical_slot_get_binary_changes', 'pg_logical_slot_peek_changes',
+                    'pg_logical_slot_peek_binary_changes', 'pg_replication_slot_advance',
+                    'pg_drop_replication_slot') LOOP
+        EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', f);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO ` + AppRole + `', f);
+    END LOOP;
+END
+$$;
+DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '` + ReplicaGroup + `') THEN
         CREATE ROLE ` + ReplicaGroup + ` NOLOGIN;
     END IF;
+    IF current_setting('server_version_num')::int >= 160000 THEN
+        EXECUTE 'GRANT ` + ReplicaGroup + ` TO ` + AppRole + ` WITH ADMIN OPTION, INHERIT FALSE, SET FALSE';
+    ELSE
+        EXECUTE 'GRANT ` + ReplicaGroup + ` TO ` + AppRole + ` WITH ADMIN OPTION';
+    END IF;
 END
 $$;
-GRANT ` + ReplicaGroup + ` TO ` + AppRole + ` WITH ADMIN OPTION, INHERIT FALSE, SET FALSE;
 `
+
+// clusterRev is clusterSQL's revision: a cluster whose marker names an older one (or
+// none: the first) runs it again.
+const clusterRev = 2
+
+// clusterDone reports whether the cluster bootstrap ran at clusterRev here.
+func (b Bundle) clusterDone() bool {
+	raw, err := os.ReadFile(filepath.Join(b.Data, clusterMarker))
+	if err != nil {
+		return false
+	}
+	for _, l := range strings.Split(string(raw), "\n") {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(l), "rev "); ok {
+			n, err := strconv.Atoi(v)
+			return err == nil && n >= clusterRev
+		}
+	}
+	return false
+}

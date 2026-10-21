@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbin"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
@@ -32,6 +35,14 @@ func bundledPostgres(ctx context.Context, cfg *config.Config, prepare bool) (*pg
 	if prepare {
 		if err := b.Prepare(ctx, os.Stderr); err != nil {
 			return nil, err
+		}
+		// a machine's replication role may make a slot with any output plugin this
+		// Postgres has, and one other than pgoutput decodes every table past what is
+		// published to it: Maktaba's own builds have none, the home drops such a slot at
+		// once (the API's guard), and an install of another make is named here
+		if found, err := pgbin.OutputPlugins(b.Home); err == nil && len(found) > 0 && b.LAN {
+			fmt.Fprintf(os.Stderr, "[postgres] warning: %s has logical decoding output plugins other than pgoutput "+
+				"(%s): remove them; until then this home drops any slot made with one\n", b.Home, strings.Join(found, ", "))
 		}
 	} else if !b.Initialized() {
 		// never fall back to SQLite here: the next full serve would then keep it

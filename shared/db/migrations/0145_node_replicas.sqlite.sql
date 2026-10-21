@@ -88,8 +88,9 @@ CREATE TABLE IF NOT EXISTS cluster_switchovers (
     to_name       TEXT NOT NULL,
     from_name     TEXT NOT NULL,
     state         TEXT NOT NULL CHECK (state IN ('checking', 'freezing', 'frozen', 'handing_over',
-                      'promoting', 'repointing', 'done', 'failed', 'cancelled')),
+                      'promoting', 'waiting_new_home', 'repointing', 'done', 'failed', 'cancelled')),
     detail        TEXT,
+    steps         TEXT NOT NULL DEFAULT '[]',
     integrations  TEXT NOT NULL DEFAULT '{}',
     machines      TEXT NOT NULL DEFAULT '{}',
     notices       TEXT NOT NULL DEFAULT '{}',
@@ -99,6 +100,8 @@ CREATE TABLE IF NOT EXISTS cluster_switchovers (
     done_at       TEXT,
     updated_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE UNIQUE INDEX IF NOT EXISTS cluster_switchovers_one_open ON cluster_switchovers ((1))
+    WHERE state NOT IN ('done', 'failed', 'cancelled');
 -- +goose StatementEnd
 
 -- +goose Down
