@@ -268,29 +268,47 @@ func withSSLMode(dsn, mode string) string {
 //
 // It answers the home's clock too, as an offset from this machine's (the home's now()
 // against the middle of the call): the copy's beat is stamped on the home's clock.
-func (c Copy) Report(ctx context.Context, s Status) (offset time.Duration, err error) {
+func (c Copy) Report(ctx context.Context, s Status) (Seen, error) {
 	b, err := json.Marshal(s)
 	if err != nil {
-		return 0, err
+		return Seen{}, err
 	}
 	rctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	db, err := c.openHome(rctx)
 	if err != nil {
-		return 0, err
+		return Seen{}, err
 	}
 	defer db.Close()
 	if _, err := db.ExecContext(rctx, `SELECT cluster_node_report_replica($1, $2::jsonb)`, c.NodeID, string(b)); err != nil {
-		return 0, err
+		return Seen{}, err
 	}
 	t0 := time.Now()
 	var home time.Time
 	if err := db.QueryRowContext(rctx, `SELECT now()`).Scan(&home); err != nil {
-		return 0, err
+		return Seen{}, err
 	}
 	t1 := time.Now()
-	return home.Sub(t0.Add(t1.Sub(t0) / 2)), nil
+	seen := Seen{Offset: home.Sub(t0.Add(t1.Sub(t0) / 2)), SlotLag: -1}
+	// pg_replication_slots and the WAL position are anyone's to read
+	if err := db.QueryRowContext(rctx, `SELECT COALESCE((SELECT (pg_current_wal_lsn() - confirmed_flush_lsn)::bigint
+	    FROM pg_replication_slots WHERE slot_name = $1 AND confirmed_flush_lsn IS NOT NULL), -1)`, c.Slot()).Scan(&seen.SlotLag); err != nil {
+		seen.SlotLag = -1
+	}
+	return seen, nil
 }
+
+// Seen is what a report learns of the home: its clock's offset from this machine's, and
+// how far this machine's slot is behind the home's WAL in bytes (-1: unknown).
+type Seen struct {
+	Offset  time.Duration
+	SlotLag int64
+}
+
+// CaughtUp: a copy whose slot is within this of the home's WAL has applied every change
+// the home's database made, however late its beat (the home's API, which writes the
+// beat, not running): a WAL segment.
+const CaughtUp = 16 << 20
 
 // Marker records what the copy follows: the home's database (its system identifier),
 // the schema version this machine's database had when it subscribed, and when.
@@ -752,6 +770,9 @@ type Status struct {
 	// LocalSchema is this machine's database's schema version (a switch of the home
 	// takes only a machine at the home's)
 	LocalSchema int64 `json:"local_schema,omitempty"`
+	// late: behind only because its beat is late (the subscription enabled, its tables
+	// copied): its slot's position may still show it caught up (Manager.withSlot)
+	late bool
 }
 
 // The copy's states.
@@ -824,7 +845,7 @@ func (c Copy) Observe(ctx context.Context, now time.Time) Status {
 	case at.Valid && now.Sub(at.Time) <= FollowingWithin:
 		s.State = StateFollowing
 	default:
-		s.State = StateBehind
+		s.State, s.late = StateBehind, true
 	}
 	return s
 }

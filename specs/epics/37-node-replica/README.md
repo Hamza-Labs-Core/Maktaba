@@ -140,7 +140,9 @@ this epic converts at its first start on this version:
 4. pause the subscription while the home's schema is ahead of this machine's (it resumes once
    this machine is updated and migrated);
 5. watch it: following (the beat applied less than 30 s ago and every table ready, measured on
-   the home's clock), copying, behind, starting, incompatible; write the state to
+   the home's clock; or, with the beat late because the home's API is not running, its slot
+   within a WAL segment of the home's WAL position, as each report measures it), copying,
+   behind, starting, incompatible; write the state to
    `<data>/node/copy.json` (the node's `/api/cluster/self` shows the public part) and to the home
    (`cluster_nodes.replica`, the Machines page) when it changes, at most once a minute otherwise;
 6. the home refusing this machine three times over three minutes (revoked: `MK403`, or its role
@@ -363,6 +365,7 @@ you), with the one action a person takes. `GET /api/cluster/self` carries the te
 | Joins opened, or the last machine revoked | The home's Postgres starts again within 30 s to listen for the machines, or no longer: its connections drop for a moment and come back. |
 | The node's API restarted during an outage | The sessions it opened offline are kept on disk and written to the home's history once its database answers. |
 | A machine's clock off by minutes | Lag and read-your-writes use the home's clock: reads are neither stale nor sent to the home for nothing. |
+| The home's API stopped, its database running | The beat stops, but a copy whose slot keeps up with the home's WAL still follows. |
 
 ## Tests
 
@@ -378,8 +381,9 @@ you), with the one action a person takes. `GET /api/cluster/self` carries the te
 - `cmd/maktaba-server/internal/nodecopy/copy_pg_test.go`: **two Postgres servers on 127.0.0.1** —
   a home made by `pgbundle.Prepare` and migrated by `maktaba-api`, and the copy kept by the
   manager alone: subscribes over TLS (`verify-ca`), follows, holds no secrets nor other
-  machines' rows or keys, refuses writes, subscribes anew after the slot is dropped (also while
-  streaming), is wiped on revocation. Opt-in: `MAKTABA_TEST_PG_BIN`.
+  machines' rows or keys, refuses writes, keeps following with the home's beat stopped (its
+  slot caught up), subscribes anew after the slot is dropped (also while streaming), is wiped on
+  revocation. Opt-in: `MAKTABA_TEST_PG_BIN`.
 - `api/twomachine_e2e_test.go`: two `maktaba-server serve` machines; with `MAKTABA_TEST_PG_BIN`
   the node's supervisor makes its copy (a Linux Postgres home, the node's copy on the pinned
   Windows build), then the home is switched off (its API and its database reached through

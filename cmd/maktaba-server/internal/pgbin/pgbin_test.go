@@ -52,7 +52,7 @@ func TestPinsMatchTheMacApp(t *testing.T) {
 	}
 }
 
-var programs = []string{"postgres", "initdb", "pg_ctl", "pg_basebackup", "psql"}
+var programs = []string{"postgres", "initdb", "pg_ctl", "psql"}
 
 // archive builds an install's archive of the theseus-rs layout.
 func archive(t *testing.T, pin Pin, extra map[string]string) []byte {

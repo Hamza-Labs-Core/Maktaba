@@ -25,6 +25,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -208,9 +209,13 @@ func TestCopyFollowsTheHome(t *testing.T) {
 		t.Fatal(err)
 	}
 	exec1(`UPDATE cluster_replica_beat SET ca_pem = $1`, string(ca))
+	var beating atomic.Bool // the home's API runs
+	beating.Store(true)
 	go func() {
 		for ctx.Err() == nil {
-			_, _ = app.ExecContext(ctx, `UPDATE cluster_replica_beat SET at = now()`)
+			if beating.Load() {
+				_, _ = app.ExecContext(ctx, `UPDATE cluster_replica_beat SET at = now()`)
+			}
 			time.Sleep(time.Second)
 		}
 	}()
@@ -334,6 +339,18 @@ func TestCopyFollowsTheHome(t *testing.T) {
 		_ = app.QueryRowContext(ctx, `SELECT replica->>'state' FROM cluster_nodes WHERE id = $1`, nodeID).Scan(&reported)
 		return reported == StateFollowing
 	})
+
+	// the home's API stops, and its beat with it, while its database runs: the copy, its
+	// slot caught up with the home's WAL, still follows, and takes the home's changes
+	beating.Store(false)
+	time.Sleep(FollowingWithin + 5*time.Second)
+	if s := m.Status(); s.State != StateFollowing || !strings.Contains(s.Detail, "beat is late") {
+		t.Fatalf("the beat late, the slot caught up: the copy is %q (%s)\n%s", s.State, s.Detail, dump())
+	}
+	exec1(`UPDATE app_settings SET value = '"late beat"' WHERE key = 'test.copy'`)
+	waitFor(t, "a change while the beat is late", 30*time.Second, seen("late beat"))
+	beating.Store(true)
+	waitFor(t, "the beat back", 30*time.Second, func() bool { s := m.Status(); return s.State == StateFollowing && s.Detail == "" })
 
 	// this machine updated (its schema moved on): a fresh copy while the subscription
 	// still streams from the slot; it stops first, and the home drops the slot then

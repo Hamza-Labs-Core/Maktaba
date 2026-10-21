@@ -58,6 +58,10 @@ type Manager struct {
 	reported   Status
 	reportedAt time.Time
 	offset     time.Duration
+	// slotLag: how far this machine's slot was behind the home's WAL (bytes, -1:
+	// unknown), as the report at slotAt measured it
+	slotLag int64
+	slotAt  time.Time
 	// local is this machine's schema version, once migrated
 	local int64
 }
@@ -81,6 +85,20 @@ func (m *Manager) homeNow() time.Time {
 // reportEvery is how often an unchanged status is told to the home (a change is told
 // at once).
 const reportEvery = time.Minute
+
+// withSlot is s with what the last report saw of this machine's slot: a copy behind
+// only because its beat is late (the home's API, which writes it, not running) follows
+// when its slot has caught up with the home's WAL (CaughtUp), measured lately.
+func (m *Manager) withSlot(s Status) Status {
+	m.mu.Lock()
+	lag, at := m.slotLag, m.slotAt
+	m.mu.Unlock()
+	if s.late && !at.IsZero() && lag >= 0 && lag <= CaughtUp && m.now().Sub(at) <= 2*reportEvery+m.every() {
+		s.State, s.late = StateFollowing, false
+		s.Detail = "the home's beat is late (its API is not running?): the copy has every change its database made"
+	}
+	return s
+}
 
 func (m *Manager) logf(format string, args ...any) {
 	if m.Log != nil {
@@ -176,9 +194,9 @@ func (m *Manager) report(ctx context.Context, s Status) {
 	m.reporting = true
 	go func() {
 		for {
-			if off, err := m.Copy.Report(ctx, s); err == nil {
+			if seen, err := m.Copy.Report(ctx, s); err == nil {
 				m.mu.Lock()
-				m.offset = off
+				m.offset, m.slotLag, m.slotAt = seen.Offset, seen.SlotLag, m.now()
 				m.mu.Unlock()
 			}
 			m.mu.Lock()
@@ -457,7 +475,7 @@ func (m *Manager) resubscribe(ctx context.Context, local int64, why string) erro
 // watchState is the state to show while the home cannot be asked: the copy's own,
 // with why the home was not asked.
 func (m *Manager) watchState(ctx context.Context, detail string) Status {
-	s := m.Copy.Observe(ctx, m.homeNow())
+	s := m.withSlot(m.Copy.Observe(ctx, m.homeNow()))
 	if s.State != StateFollowing && s.State != StateCopying {
 		s.Detail = detail
 	}
@@ -469,7 +487,7 @@ func (m *Manager) watchState(ctx context.Context, detail string) Status {
 func (m *Manager) watch(ctx context.Context, d time.Duration) bool {
 	end := m.now().Add(d)
 	for {
-		s := m.Copy.Observe(ctx, m.homeNow())
+		s := m.withSlot(m.Copy.Observe(ctx, m.homeNow()))
 		m.noteErrors(s)
 		m.set(ctx, s)
 		left := end.Sub(m.now())

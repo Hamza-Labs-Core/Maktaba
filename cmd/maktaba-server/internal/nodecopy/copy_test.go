@@ -274,3 +274,34 @@ func TestWipeLeavesNothing(t *testing.T) {
 		t.Fatalf("kept: data %v, keys %v", err, left)
 	}
 }
+
+// A copy behind only because its beat is late (the home's API, which writes it, not
+// running) follows while its slot, measured lately, is caught up with the home's WAL; a
+// paused one, one far behind, or one measured long ago does not.
+func TestALateBeatWithTheSlotCaughtUpFollows(t *testing.T) {
+	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	m := &Manager{Now: func() time.Time { return now }}
+	late := Status{State: StateBehind, late: true}
+	m.slotLag, m.slotAt = 4096, now.Add(-time.Minute)
+	if s := m.withSlot(late); s.State != StateFollowing || s.Detail == "" {
+		t.Fatalf("caught up: %+v", s)
+	}
+	if s := m.withSlot(Status{State: StateBehind}); s.State != StateBehind {
+		t.Fatalf("a paused subscription: %+v", s)
+	}
+	for _, c := range []struct {
+		name string
+		lag  int64
+		at   time.Time
+	}{
+		{"far behind", CaughtUp + 1, now.Add(-time.Minute)},
+		{"no slot", -1, now.Add(-time.Minute)},
+		{"measured long ago", 0, now.Add(-10 * time.Minute)},
+		{"never measured", 0, time.Time{}},
+	} {
+		m.slotLag, m.slotAt = c.lag, c.at
+		if s := m.withSlot(late); s.State != StateBehind {
+			t.Errorf("%s: %+v", c.name, s)
+		}
+	}
+}

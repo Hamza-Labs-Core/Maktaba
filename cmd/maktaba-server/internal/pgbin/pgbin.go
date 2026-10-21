@@ -86,9 +86,10 @@ func Exe(name string) string {
 	return name
 }
 
-// Installed reports the install at home has the programs a copy needs.
+// Installed reports the install at home has the programs a copy needs (a logical
+// subscription: no pg_basebackup).
 func Installed(home string) bool {
-	for _, b := range []string{"postgres", "initdb", "pg_ctl", "pg_basebackup", "psql"} {
+	for _, b := range []string{"postgres", "initdb", "pg_ctl", "psql"} {
 		if info, err := os.Stat(filepath.Join(home, "bin", Exe(b))); err != nil || info.IsDir() {
 			return false
 		}
