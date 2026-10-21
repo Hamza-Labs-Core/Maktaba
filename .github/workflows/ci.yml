@@ -188,6 +188,13 @@ jobs:
           path: build/linux-app/downloads
           key: linux-app-downloads-${{ matrix.arch }}-${{ hashFiles('tools/release/linux-app/pins.env') }}
           lookup-only: true
+      # missing: start from an earlier pins.env's cache, so only the changed pieces download
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: build/linux-app/downloads
+          key: linux-app-downloads-${{ matrix.arch }}-${{ hashFiles('tools/release/linux-app/pins.env') }}
+          restore-keys: linux-app-downloads-${{ matrix.arch }}-
       - name: Download the pinned files
         if: steps.cache.outputs.cache-hit != 'true'
         run: tools/release/linux-app/payload.sh --fetch-only
