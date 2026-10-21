@@ -269,6 +269,19 @@ var readyTimeout = 2 * time.Minute
 // bootstrap runs a server of its own (the supervisor's has not started yet),
 // feeds psql the bootstrap SQL and stops it again.
 func (b Bundle) bootstrap(ctx context.Context, superPW, appPW string, log io.Writer) error {
+	return b.withServer(ctx, log, func() error {
+		psql := exec.CommandContext(ctx, b.Bin("psql"), "-X", "-q", "-h", "127.0.0.1", "-p", strconv.Itoa(b.Port),
+			"-U", SuperUser, "-d", "postgres")
+		psql.Env = append(os.Environ(), "PGPASSWORD="+superPW)
+		psql.Stdin = strings.NewReader(bootstrapSQL(appPW))
+		psql.Stdout, psql.Stderr = log, log
+		return psql.Run()
+	})
+}
+
+// withServer runs fn with a server of its own up (the supervisor's is not
+// running), then stops it.
+func (b Bundle) withServer(ctx context.Context, log io.Writer, fn func() error) error {
 	srv := exec.Command(b.Bin("postgres"), b.ServerArgs()...)
 	srv.Stdout, srv.Stderr = log, log
 	if err := srv.Start(); err != nil {
@@ -302,13 +315,7 @@ func (b Bundle) bootstrap(ctx context.Context, superPW, appPW string, log io.Wri
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
-
-	psql := exec.CommandContext(ctx, b.Bin("psql"), "-X", "-q", "-h", "127.0.0.1", "-p", strconv.Itoa(b.Port),
-		"-U", SuperUser, "-d", "postgres")
-	psql.Env = append(os.Environ(), "PGPASSWORD="+superPW)
-	psql.Stdin = strings.NewReader(bootstrapSQL(appPW))
-	psql.Stdout, psql.Stderr = log, log
-	return psql.Run()
+	return fn()
 }
 
 // readyCheck is Ready (tests replace it).
