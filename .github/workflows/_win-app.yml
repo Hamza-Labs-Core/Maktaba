@@ -30,7 +30,8 @@ jobs:
         run: |
           shellcheck --version | head -2
           shellcheck -x tools/release/win-app/payload.sh tools/release/win-app/check.sh \
-            tools/release/win-app/build-app.sh deploy/packaging/node/build-release.sh
+            tools/release/win-app/build-app.sh tools/release/win-app/test-hooks.sh \
+            deploy/packaging/node/build-release.sh
 
       - name: payload_tool.py tests
         run: python3 tools/release/win-app/test_payload_tool.py -v
