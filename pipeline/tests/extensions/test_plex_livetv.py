@@ -604,8 +604,43 @@ async def test_guide_auto_refresh_off_waits_for_refresh_now(db: Database) -> Non
     w.fake.calls.clear()
     row = await livetv(db, w)
     assert row["state"] == "done" and w.fake.writes() == []
+    await reloaded_minutes_ago(db, 10)  # Plex has finished loading the register's reload
     await livetv(db, w, force=True)
     assert any(p.endswith("/reloadGuide") for _, p in w.fake.writes())
+
+
+async def reloaded_minutes_ago(db: Any, minutes: float) -> None:
+    await db.execute(
+        "UPDATE plex_livetv_state SET guide_reloaded_at = $1",
+        to_ts(db, now() - timedelta(minutes=minutes)),
+    )
+
+
+@pytest.mark.asyncio
+async def test_refresh_while_plex_loads_the_guide_sends_nothing(db: Database) -> None:
+    # Plex aborts a guide load when another reload or channel map arrives meanwhile:
+    # "Add to Plex" then two "Refresh Plex now" clicks left it with no guide at all
+    w = await make_world(db)
+    await ask_register(db)
+    await livetv(db, w, force=True)  # added, mapped, reloaded just now
+    w.fake.calls.clear()
+    row = await livetv(db, w, force=True)
+    assert row["state"] == "done", error_of(row)
+    assert w.fake.writes() == []
+    assert (await status(db))["actions"] == {
+        "register": "",
+        "channel_map": "unchanged",
+        "guide": "loading",
+    }
+    # a lineup change is still pushed (and reloaded) at once
+    await add_channel(db, 7)
+    await livetv(db, w, force=True)
+    assert [p.rsplit("/", 1)[1] for _, p in w.fake.writes()] == ["channelmap", "reloadGuide"]
+    # once Plex has had time to load it, a refresh reloads again
+    w.fake.calls.clear()
+    await reloaded_minutes_ago(db, 6)
+    await livetv(db, w, force=True)
+    assert [p.rsplit("/", 1)[1] for _, p in w.fake.writes()] == ["channelmap", "reloadGuide"]
 
 
 @pytest.mark.asyncio
