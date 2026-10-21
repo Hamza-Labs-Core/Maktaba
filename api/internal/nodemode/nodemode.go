@@ -183,12 +183,14 @@ func Unreachable(err error) bool {
 // Rules is rules.cluster (app_settings; the pipeline's ClusterMachinesConfig declares
 // the section): cluster sign-in on or off, how long a node waits for an unreachable
 // home before it stops asking it per request, how current its copy of the home's
-// database must be to answer meanwhile, how long a sign-in made on it then lasts, how
-// much the home keeps for a copy behind, its picture cache.
+// database must be to answer meanwhile (and to be read from while the home answers),
+// how long a sign-in made on it then lasts, how much the home keeps for a copy behind,
+// its picture cache.
 type Rules struct {
 	SSO                        bool `json:"sso"`
 	GraceSeconds               int  `json:"delegate_unreachable_grace_seconds"`
 	OfflineCopyMaxLagMinutes   int  `json:"offline_copy_max_lag_minutes"`
+	CopyReadsMaxLagSeconds     int  `json:"copy_reads_max_lag_seconds"`
 	OfflineSessionHours        int  `json:"offline_session_hours"`
 	OfflineSessionGraceMinutes int  `json:"offline_session_grace_minutes"`
 	ReplicaWALKeepGB           int  `json:"replica_wal_keep_gb"`
@@ -197,7 +199,7 @@ type Rules struct {
 
 // DefaultRules are the section's defaults.
 func DefaultRules() Rules {
-	return Rules{SSO: true, GraceSeconds: 30, OfflineCopyMaxLagMinutes: 10, OfflineSessionHours: 12,
+	return Rules{SSO: true, GraceSeconds: 30, OfflineCopyMaxLagMinutes: 10, CopyReadsMaxLagSeconds: 30, OfflineSessionHours: 12,
 		OfflineSessionGraceMinutes: 30, ReplicaWALKeepGB: 20, ProxyCacheMB: 2048}
 }
 
@@ -279,6 +281,7 @@ func LoadRules(ctx context.Context, db *sql.DB) (Rules, error) {
 		to       *int
 	}{
 		{"offline_copy_max_lag_minutes", 1, 1440, &out.OfflineCopyMaxLagMinutes},
+		{"copy_reads_max_lag_seconds", 5, 3600, &out.CopyReadsMaxLagSeconds},
 		{"offline_session_hours", 1, 720, &out.OfflineSessionHours},
 		{"offline_session_grace_minutes", 0, 1440, &out.OfflineSessionGraceMinutes},
 		{"replica_wal_keep_gb", 1, 1024, &out.ReplicaWALKeepGB},

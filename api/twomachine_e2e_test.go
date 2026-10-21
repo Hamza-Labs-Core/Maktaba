@@ -15,13 +15,14 @@ package main
 //     video this node cannot read falls back to the home, and the Machines page says so;
 //   - the Machines page lists every machine's web address;
 //   - the node's supervisor makes its own database, subscribes it to the home's
-//     publication and follows it (Epic 37, logical replication); with the home gone the node runs on that copy: a signed-in user stays
+//     publication and follows it (Epic 37, logical replication); with the home gone
+//     (as a Mac that is switched off: its connections hang, nothing refuses them) the node runs on that copy: a signed-in user stays
 //     in (marked X-Maktaba-Home: unreachable, a reload's /api/auth/me answered by the
 //     node), plays a video it can read and is told one it cannot is unavailable, signs
 //     in (a node-local session), signs out (ended on the node at once), and changes
 //     are refused; its local routes answer;
-//   - with the home's database gone too (the node's connection, and its copy's
-//     subscription, cut through a proxy), the node reads and plays from its copy, even
+//   - with the home's database gone too (the node's connections, and its copy's
+//     subscription, hang through a proxy), the node reads and plays from its copy, even
 //     after a restart in the outage;
 //   - a node with no copy serves no one but its own routes with the home gone.
 //
@@ -315,6 +316,9 @@ func TestTwoMachinesOnePC(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(homeDir, "cluster.key"), homePriv, 0o600)
 	p := func() int { return freePort(t) }
 	hAPI, hWeb, hStream, nAPI, nWeb, nStream := p(), p(), p(), p(), p(), p()
+	// the node reaches the home's API through a proxy too: a home switched off is one
+	// whose connections hang
+	apiProxy := newTCPProxy(t, fmt.Sprintf("http://127.0.0.1:%d", hAPI))
 	toml := func(dir string, api, web, stream int, extra string) string {
 		path := filepath.Join(dir, "server.toml")
 		body := fmt.Sprintf(`[server]
@@ -342,7 +346,7 @@ slots = "off"
 	homeToml := toml(homeDir, hAPI, hWeb, hStream, fmt.Sprintf("web_public_url = %q\nrole = \"home\"\n[database]\nurl = %q", homeWebURL, dsn))
 	nodeToml := toml(nodeDir, nAPI, nWeb, nStream, fmt.Sprintf("web_public_url = %q\n[database]\nurl = \"sqlite://unused.db\"\n[postgres]\ncopy_port = %d", nodeWebURL, p()))
 	nodeCfg, _ := json.Marshal(map[string]any{"node_id": nodeID, "name": "studio-node", "private_key": cluster.EncodeKey(nodePriv),
-		"home":         map[string]any{"url": fmt.Sprintf("http://127.0.0.1:%d", hAPI), "cluster_pub": cluster.EncodeKey(homePub)},
+		"home":         map[string]any{"url": apiProxy.dsn, "cluster_pub": cluster.EncodeKey(homePub)},
 		"database_url": nodeDSN})
 	_ = os.WriteFile(filepath.Join(nodeDir, "node.json"), nodeCfg, 0o600)
 	self, _ := os.Executable()
@@ -718,7 +722,8 @@ slots = "off"
 				t.Fatalf("sign-in through the node: %d", resp.StatusCode)
 			}
 		}
-		home.stop()
+		// the home is switched off: what the node sends it hangs
+		apiProxy.hang()
 		// past the grace the node answers from its copy, marked
 		waitFor(t, "a read served from the copy (X-Maktaba-Home: unreachable)", 90*time.Second, func() bool {
 			r, _ := u2.do("GET", nodeWebURL+"/api/videos", nil, nil)
@@ -781,7 +786,7 @@ slots = "off"
 		}
 
 		t.Run("its database gone too: the node plays and reads from its copy, even after a restart", func(t *testing.T) {
-			pgProxy.cut() // the node's connection and its copy's subscription: the home's database is gone
+			pgProxy.hang() // the node's connections and its copy's subscription: the home's database is gone
 			csrf := map[string]string{"X-Maktaba-CSRF": u2.cookie(nodeWebURL, "mkt_csrf")}
 			play := func(who string) {
 				t.Helper()
@@ -861,15 +866,19 @@ slots = "off"
 	})
 }
 
-// tcpProxy forwards the node's database connections; cut makes it a database that is
-// gone (open connections dropped, new ones closed at once).
+// tcpProxy forwards the node's connections to the home (its database, its API); cut
+// makes it a home that is gone (open connections dropped, new ones closed at once),
+// hang one switched off (nothing answers, nothing is refused: open connections go
+// silent, new ones are taken and never answered).
 type tcpProxy struct {
-	dsn    string
-	ln     net.Listener
-	target string
-	mu     sync.Mutex
-	down   bool
-	conns  map[net.Conn]struct{}
+	dsn     string
+	ln      net.Listener
+	target  string
+	mu      sync.Mutex
+	down    bool
+	hanging bool
+	conns   map[net.Conn]struct{}
+	ups     map[net.Conn]struct{}
 }
 
 func newTCPProxy(t *testing.T, dsn string) *tcpProxy {
@@ -882,7 +891,7 @@ func newTCPProxy(t *testing.T, dsn string) *tcpProxy {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := &tcpProxy{ln: ln, target: u.Host, conns: map[net.Conn]struct{}{}}
+	p := &tcpProxy{ln: ln, target: u.Host, conns: map[net.Conn]struct{}{}, ups: map[net.Conn]struct{}{}}
 	u.Host = ln.Addr().String()
 	p.dsn = u.String()
 	t.Cleanup(func() { _ = ln.Close(); p.cut() })
@@ -900,9 +909,15 @@ func newTCPProxy(t *testing.T, dsn string) *tcpProxy {
 
 func (p *tcpProxy) serve(c net.Conn) {
 	p.mu.Lock()
-	if p.down {
+	switch {
+	case p.down:
 		p.mu.Unlock()
 		_ = c.Close()
+		return
+	case p.hanging:
+		p.conns[c] = struct{}{}
+		p.mu.Unlock()
+		_, _ = io.Copy(io.Discard, c) // taken, never answered
 		return
 	}
 	up, err := net.Dial("tcp", p.target)
@@ -911,10 +926,17 @@ func (p *tcpProxy) serve(c net.Conn) {
 		_ = c.Close()
 		return
 	}
-	p.conns[c], p.conns[up] = struct{}{}, struct{}{}
+	p.conns[c], p.conns[up], p.ups[up] = struct{}{}, struct{}{}, struct{}{}
 	p.mu.Unlock()
 	go func() { _, _ = io.Copy(up, c); _ = up.Close() }()
 	_, _ = io.Copy(c, up)
+	p.mu.Lock()
+	hanging := p.hanging
+	p.mu.Unlock()
+	if hanging {
+		_, _ = io.Copy(io.Discard, c) // the client's side stays open and silent
+		return
+	}
 	_ = c.Close()
 }
 
@@ -926,6 +948,18 @@ func (p *tcpProxy) cut() {
 		_ = c.Close()
 	}
 	p.conns = map[net.Conn]struct{}{}
+}
+
+// hang: the far side is switched off. The connections to it end on this side only, so
+// the node's connections go silent instead of being closed.
+func (p *tcpProxy) hang() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.hanging = true
+	for c := range p.ups {
+		_ = c.Close()
+	}
+	p.ups = map[net.Conn]struct{}{}
 }
 
 type openSession struct {

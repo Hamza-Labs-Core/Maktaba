@@ -5654,6 +5654,16 @@
      "maximum": 1440
     },
     {
+     "name": "copy_reads_max_lag_seconds",
+     "kind": "int",
+     "group": "Machines",
+     "label": "Copy current enough to read from (s)",
+     "help": "A full machine reads the library from its own copy of the home's database. While its copy is further behind the home than this, it reads from the home's database instead (as long as the home answers), so a change of rights, a removal or a new video shows at once.",
+     "default": 30,
+     "minimum": 5,
+     "maximum": 3600
+    },
+    {
      "name": "offline_session_hours",
      "kind": "int",
      "group": "Machines",

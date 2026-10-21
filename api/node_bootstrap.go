@@ -111,6 +111,8 @@ type nodeRuntime struct {
 	logger   *slog.Logger
 	// recent: who changed something a moment ago (their reads go to the home's)
 	recent nodedb.Recent
+	// fresh: whether the copy is current enough to read from while the home answers
+	fresh copyFreshness
 	// fatal carries an error the API must stop for (a DDL-capable role found late)
 	fatal chan error
 	// bg is the work whose last save the API waits for at shutdown
@@ -482,14 +484,17 @@ func (rt *nodeRuntime) handler(a *authState, r chi.Router, publicMux http.Handle
 
 // copyReads sends a request's reads to this machine's copy (nodedb.CopyReads): a GET
 // or HEAD the node serves itself, unless its author changed something a moment ago
-// (their reads go to the home's database until the copy has the change). Any other
-// request is a change: its author's reads go to the home's for a moment.
+// (their reads go to the home's database until the copy has the change), or the copy
+// is further behind the home than rules.cluster.copy_reads_max_lag_seconds (then every
+// read goes to the home's while it answers: a change of rights or a removal is not
+// read stale). Any other request is a change: its author's reads go to the home's for
+// a moment.
 func (rt *nodeRuntime) copyReads(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := nodeauth.CredentialKey(r)
 		switch r.Method {
 		case http.MethodGet, http.MethodHead:
-			if !rt.recent.Changed(key) {
+			if !rt.recent.Changed(key) && rt.copyFresh(r.Context()) {
 				r = r.WithContext(nodedb.CopyReads(r.Context()))
 			}
 		case http.MethodOptions:
@@ -498,6 +503,51 @@ func (rt *nodeRuntime) copyReads(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// copyFreshness is the last verdict on the copy's lag (read at most every
+// copyFreshEvery).
+type copyFreshness struct {
+	mu    sync.Mutex
+	at    time.Time
+	fresh bool
+	lag   time.Duration
+	said  bool // the copy was said to be behind (logged once per spell)
+}
+
+const copyFreshEvery = 2 * time.Second
+
+// copyFresh reports whether the copy may answer the node's reads while the home
+// answers: it applied the home's changes up to no more than the rule's lag ago (the
+// home's beat, written every few seconds while a machine follows it).
+func (rt *nodeRuntime) copyFresh(ctx context.Context) bool {
+	f := &rt.fresh
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.at.IsZero() && time.Since(f.at) < copyFreshEvery {
+		return f.fresh
+	}
+	f.at = time.Now()
+	if rt.resolver == nil || rt.resolver.Local == nil {
+		f.fresh = false
+		return false
+	}
+	lctx, cancel := context.WithTimeout(ctx, time.Second)
+	synced, err := rt.resolver.Local.Synced(lctx)
+	cancel()
+	max := time.Duration(rt.rules().CopyReadsMaxLagSeconds) * time.Second
+	f.lag = time.Since(synced)
+	f.fresh = err == nil && !synced.IsZero() && f.lag <= max
+	switch {
+	case !f.fresh && !f.said:
+		f.said = true
+		rt.logger.Warn("node: this machine's copy is behind the home; reads go to the home's database meanwhile",
+			"lag", f.lag.Round(time.Second).String(), "max", max.String(), "err", err, "event", "node_copy_reads_off")
+	case f.fresh && f.said:
+		f.said = false
+		rt.logger.Info("node: this machine's copy has caught up; reads go to it again", "event", "node_copy_reads_on")
+	}
+	return f.fresh
 }
 
 // limitOfflineSignIn rate-limits the sign-in this machine answers itself (the home

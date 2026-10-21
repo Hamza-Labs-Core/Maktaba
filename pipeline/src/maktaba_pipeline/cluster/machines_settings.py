@@ -24,6 +24,9 @@ class ClusterMachinesConfig:
     #: a node's copy answers for sign-ins with the home away only if it had followed the
     #: home up to this close to when the home was last heard
     offline_copy_max_lag_minutes: int = 10
+    #: with the home there, a node reads from its copy only while the copy is this close
+    #: behind it (else from the home's database: rights, removals, new videos at once)
+    copy_reads_max_lag_seconds: int = 30
     #: a sign-in made on a node while the home is away lasts this long
     offline_session_hours: int = 12
     #: and ends this long after the home answers again
@@ -54,6 +57,13 @@ settings.register(ClusterMachinesConfig, {
         "to this close to when the home was last heard: a copy further behind might not have a "
         "sign-out or a password change made since.",
         minimum=1, maximum=1440),
+    "copy_reads_max_lag_seconds": settings.Help(
+        _C, "Copy current enough to read from (s)",
+        "A full machine reads the library from its own copy of the home's database. While its "
+        "copy is further behind the home than this, it reads from the home's database instead "
+        "(as long as the home answers), so a change of rights, a removal or a new video shows "
+        "at once.",
+        minimum=5, maximum=3600),
     "offline_session_hours": settings.Help(
         _C, "Sign-in without the home lasts (h)",
         "Signing in on a machine while the home is away checks the password against the "
