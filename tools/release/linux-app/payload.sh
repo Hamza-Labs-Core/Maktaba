@@ -73,12 +73,13 @@ pin() { local v="${1}_${2:-$ARCH}"; v="${v^^}"; printf '%s' "${!v:?pins.env has 
 # the first 16 hex digits of its SHA-256 first, so a re-pinned file never meets the old one.
 pinned() {
     local a="$1" piece name key
-    for piece in postgres python ffmpeg ffprobe; do
+    for piece in postgres python ffmpeg ffprobe ffmpeg-versions; do
         case "$piece" in
             postgres) name="postgresql-$POSTGRES_VERSION-$a.tar.gz" key=POSTGRES ;;
             python) name="cpython-$PYTHON_VERSION-$a.tar.gz" key=PYTHON ;;
             ffmpeg) name="ffmpeg-$FFMPEG_VERSION-$a.zip" key=FFMPEG ;;
             ffprobe) name="ffprobe-$FFMPEG_VERSION-$a.zip" key=FFPROBE ;;
+            ffmpeg-versions) name="ffmpeg-$FFMPEG_VERSION-$a-versions.txt" key=FFMPEG_VERSIONS ;;
         esac
         printf '%s %s %s %s %s\n' "$piece" "$name" "$(pin "${key}_SHA256" "$a")" "$(pin "${key}_URL" "$a")" \
             "$(mirror_name "$(pin "${key}_SHA256" "$a")" "$name")"
@@ -129,9 +130,9 @@ EOF
 - **ffmpeg and ffprobe $FFMPEG_VERSION** (\`ffmpeg-*\`, \`ffprobe-*\`): configured with \`--enable-gpl
   --enable-version3\`, so under the GNU General Public License version 3 (\`GPL-3.0.txt\` in this
   release). Source: https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz. Built by Martin Riedl:
-  the build scripts are https://git.martin-riedl.de/ffmpeg/build-script, and the versions of every
-  library linked in are in the \`versions.txt\` beside each upstream download
-  ($(for a in "${ARCHES[@]}"; do printf '%s/versions.txt ' "$(dirname "$(pin FFMPEG_URL "$a")")"; done | sed 's/ $//')).
+  the build scripts are https://git.martin-riedl.de/ffmpeg/build-script, and each build's
+  configure line and the versions of every library linked in are in its \`versions.txt\`, mirrored
+  here (\`ffmpeg-*-versions.txt\`, $(for a in "${ARCHES[@]}"; do printf '%s ' "$(pin FFMPEG_VERSIONS_URL "$a")"; done | sed 's/ $//')).
 EOF
         exit 0
         ;;

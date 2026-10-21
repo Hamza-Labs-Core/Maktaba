@@ -73,7 +73,8 @@ jobs:
           failed=""
           while read -r arch piece name _ _ mname; do
             [ "$arch" = "$WANT_ARCH" ] || continue
-            if timeout 20m tools/release/linux-app/payload.sh --fetch-only --only "$piece"; then
+            # stdin from /dev/null: nothing it runs may read the list this loop reads
+            if timeout 20m tools/release/linux-app/payload.sh --fetch-only --only "$piece" </dev/null; then
               cp "build/linux-app/downloads/$name" "$ok/$mname"
             else
               echo "::warning::$name: not fetched, not mirrored this time"
@@ -151,7 +152,7 @@ jobs:
               failed=1
             elif printf '%s\n' "$have" | grep -qxF "$mname"; then
               echo "$mname: there already"
-            elif gh release upload "$TAG" "$f"; then
+            elif gh release upload "$TAG" "$f" </dev/null; then
               echo "$mname: uploaded"
             else
               echo "::error::$mname: the upload failed"
@@ -165,10 +166,10 @@ jobs:
           cp tools/release/linux-app/licenses/GPL-3.0.txt "$docs/GPL-3.0.txt"
           gh release upload "$TAG" "$docs/THIRD-PARTY-NOTICES.md" "$docs/GPL-3.0.txt" --clobber || failed=1
 
-          # 2 architectures x 4 pieces: a short list (a failed --pinned) never prunes
+          # 2 architectures x 5 pieces: a short list (a failed --pinned) never prunes
           keep="$(awk 'NF == 6 { print $6 }' "$pinned")"
-          if [ "$(printf '%s\n' "$keep" | grep -c .)" -ne 8 ]; then
-            echo "::error::--pinned did not name 8 files: nothing removed"
+          if [ "$(printf '%s\n' "$keep" | grep -c .)" -ne 10 ]; then
+            echo "::error::--pinned did not name 10 files: nothing removed"
             exit 1
           fi
           keep="$keep"$'\n'THIRD-PARTY-NOTICES.md$'\n'GPL-3.0.txt
