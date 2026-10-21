@@ -149,5 +149,3 @@ for the setup screens: `MAKTABA_SERVER_BIN=/path/to/maktaba-server pnpm tauri de
 - Bundle icons — generate via `pnpm exec tauri icon ./logo.png`
   (see [`src-tauri/icons/README.md`](src-tauri/icons/README.md))
 - Apple Developer ID / Microsoft EV cert / Linux signing
-- The updater private key (the `pubkey` in `tauri.conf.json` is a
-  placeholder until the signing key lands)
