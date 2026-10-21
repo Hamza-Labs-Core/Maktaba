@@ -15,6 +15,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 )
 
 // setupEnv is one install's folders for the setup tests: server.toml (which
@@ -664,6 +665,22 @@ func TestSetupFinish(t *testing.T) {
 	if err != nil || !found || len(saved.Media.Roots) != 1 || saved.Media.Roots[0] != lib ||
 		saved.Media.PathMap != string(wantMap) || saved.Server.DataDir != e.state {
 		t.Fatalf("server.toml: %+v %v", saved.Media, err)
+	}
+	// and no [database] url: the next serve runs the app's bundled Postgres, the
+	// database this finish made, not the default SQLite file
+	if saved.DatabaseURLSet {
+		t.Fatalf("finish wrote [database] url = %q", saved.Database.URL)
+	}
+	for _, k := range []string{"HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_DATA_HOME", "XDG_CONFIG_HOME"} {
+		t.Setenv(k, filepath.Join(e.dir, "home")) // no default SQLite database of this machine's
+	}
+	payload := filepath.Join(e.dir, "payload")
+	_ = os.MkdirAll(filepath.Join(payload, "postgres", "bin"), 0o755)
+	_ = os.WriteFile(filepath.Join(payload, "postgres", "bin", "postgres"), []byte("x"), 0o755)
+	t.Setenv("MAKTABA_APP_BUNDLE", payload)
+	t.Setenv("MAKTABA_POSTGRES_HOME", filepath.Join(payload, "postgres"))
+	if _, bundled, err := pgbundle.Resolve(saved, filepath.Join(payload, "bin", "maktaba-server")); !bundled || err != nil {
+		t.Fatalf("after finish the bundled Postgres is not used (%v)", err)
 	}
 	// migrate, then the admin from its hash (through a file, never argv), then plex
 	calls := fakeCalls(t, e.fakeLog)
