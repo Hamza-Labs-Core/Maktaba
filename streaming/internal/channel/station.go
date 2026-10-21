@@ -900,7 +900,7 @@ func (s *Station) blockInput(ctx context.Context, seg Segment, look Look) (*Bloc
 		in.SeekSec = float64(seekMS) / 1000
 		in.HasVideo, in.HasAudio = info.HasVideo, info.HasAudio
 		in.HWDecode = s.cfg.Profile.Encoder == EncoderNVENC || s.cfg.Profile.Encoder == EncoderVideoToolbox
-		s.applyLook(ctx, in, look)
+		s.applyLook(ctx, in, look, seg.Kind)
 	case KindLive:
 		u, err := s.cfg.Resolver.Resolve(ctx, seg.Block.SourceURL)
 		if err != nil {
@@ -924,7 +924,7 @@ func (s *Station) blockInput(ctx context.Context, seg Segment, look Look) (*Bloc
 		in.Kind = "live"
 		in.Source = u
 		in.HasVideo, in.HasAudio = info.HasVideo, info.HasAudio
-		s.applyLook(ctx, in, look)
+		s.applyLook(ctx, in, look, seg.Kind)
 	default:
 		in.Kind = "slate"
 		if p := s.localAsset(ctx, AssetKindLoading, look.LoadingPath); p != "" {
@@ -986,8 +986,12 @@ func (s *Station) removeStripFiles(in *BlockInput) {
 	}
 }
 
-func (s *Station) applyLook(ctx context.Context, in *BlockInput, look Look) {
-	if wm := look.Watermark; wm != nil {
+// applyLook sets a block's watermark and loudness. The watermark stays off
+// filler and bumper blocks when the look says so (dizqueTV's
+// disableFillerOverlay): programmes and live broadcasts always carry it.
+func (s *Station) applyLook(ctx context.Context, in *BlockInput, look Look, kind string) {
+	skip := look.WatermarkSkipFiller && (kind == KindFiller || kind == KindBumper)
+	if wm := look.Watermark; wm != nil && !skip {
 		if p := s.localAsset(ctx, AssetKindWatermark, wm.Path); p != "" {
 			w := *wm
 			w.Path = p

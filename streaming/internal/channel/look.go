@@ -10,11 +10,14 @@ import (
 //
 //	{"watermark": {"path": str, "position": "top-right|top-left|bottom-right|bottom-left",
 //	               "width_pct": number, "margin_pct": number},
+//	 "watermark_skip_filler": bool,
 //	 "loading_path": str|null,
 //	 "loudnorm": {"enabled": bool, "target_lufs": number}}
 //
 // Missing keys fall back to defaults: no watermark, the logo as the
-// slate card, loudness normalisation on at -16 LUFS.
+// slate card, loudness normalisation on at -16 LUFS, the watermark on
+// filler and bumpers too (a look written before rules
+// tv.watermark_skip_filler; write_channels stages the new one).
 type Look struct {
 	Name        string
 	LogoPath    string
@@ -24,9 +27,13 @@ type Look struct {
 	// Strip is the channel's own strip settings (mode_config.look.strip),
 	// laid over rules tv_strip (ApplyStripRules).
 	Strip json.RawMessage
+	// WatermarkSkipFiller leaves the watermark off filler and bumper
+	// blocks, as dizqueTV (rules tv.watermark_skip_filler).
+	WatermarkSkipFiller bool
 }
 
-// Watermark is the corner bug overlaid on program/filler/live blocks.
+// Watermark is the corner bug overlaid on program/live blocks, and on
+// filler/bumper blocks unless Look.WatermarkSkipFiller.
 type Watermark struct {
 	Path      string
 	Position  string  // top-right | top-left | bottom-right | bottom-left
@@ -68,7 +75,8 @@ type lookJSON struct {
 		TargetLUFS *float64 `json:"target_lufs"`
 		Filter     string   `json:"filter"`
 	} `json:"loudnorm"`
-	Strip json.RawMessage `json:"strip"`
+	Strip               json.RawMessage `json:"strip"`
+	WatermarkSkipFiller *bool           `json:"watermark_skip_filler"`
 }
 
 // ParseLook decodes the mode_config->'look' blob (nil/garbage → defaults)
@@ -97,6 +105,9 @@ func ParseLook(raw []byte, logoPath string) Look {
 			wm.MarginPct = *w.MarginPct
 		}
 		l.Watermark = wm
+	}
+	if j.WatermarkSkipFiller != nil {
+		l.WatermarkSkipFiller = *j.WatermarkSkipFiller
 	}
 	if len(j.Strip) > 0 && string(j.Strip) != "null" {
 		l.Strip = j.Strip
