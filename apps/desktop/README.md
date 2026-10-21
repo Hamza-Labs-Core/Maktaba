@@ -56,7 +56,8 @@ pnpm install
 pnpm tauri dev                  # dev window pointed at the Vite dev server
 ./scripts/build.sh macos        # .app + .dmg          (on macOS)
 ./scripts/build.sh windows      # .msi + NSIS .exe     (on Windows)
-./scripts/build.sh linux        # .deb + .AppImage     (on Linux)
+./scripts/build.sh linux        # .AppImage + .deb + .rpm, the shell only (on Linux;
+                                #   `make linux-app` builds them with the server inside)
 ./scripts/build.sh debug        # fast unsigned debug build
 ```
 
@@ -74,10 +75,13 @@ runners in parallel, attaching them to the GitHub Release for the tag:
 |---|---|
 | `macos-latest` | `.dmg` — **universal** (arm64 + x86_64 via `--target universal-apple-darwin`) |
 | `windows-latest` | `.msi` + NSIS `.exe`, plus a portable `.zip` of the raw `Maktaba.exe` |
-| `ubuntu-22.04` | `.deb` + `.AppImage` (installs `libwebkit2gtk-4.1`, `libayatana-appindicator3`, `librsvg2`, `patchelf` first) |
+| `ubuntu-22.04`, `ubuntu-22.04-arm` | `.AppImage` + `.deb` + `.rpm` with the server inside (Epic 39; installs `libwebkit2gtk-4.1`, `libayatana-appindicator3`, `librsvg2`, `patchelf`, `rpm` first) |
 
-The build uses the official
-[`tauri-apps/tauri-action@v0`](https://github.com/tauri-apps/tauri-action).
+Each runner builds with `tauri build` and checks its bundles; nothing is
+published from there. The workflow's `publish` job, after every runner,
+attaches the checked bundles to the release and then writes `latest.json`
+(the updater feed, `tools/release/cmd/updater-feed`) over all of them, so
+an updater is never pointed at a bundle that failed its checks.
 Because the repo has **no pnpm workspace**, the config's
 `beforeBuildCommand` (`pnpm --filter maktaba-web build`) can't resolve in
 CI — so the workflow builds `web/dist` itself (install → design tokens →
@@ -86,7 +90,7 @@ CI — so the workflow builds `web/dist` itself (install → design tokens →
 bundles the already-built frontend.
 
 **Signing is deferred.** These bundles are unsigned. When certificates are
-provisioned, wire them into `tauri-action` via the secrets documented at
+provisioned, wire them into the `tauri build` step via the secrets documented at
 the top of the workflow (`APPLE_*` for Developer ID + notarisation,
 `WINDOWS_CERTIFICATE*` for Authenticode, `TAURI_SIGNING_PRIVATE_KEY*` for
 the auto-updater).
@@ -114,13 +118,15 @@ has two modes, saved in `~/Library/Application Support/com.hamzalabs.maktaba/mod
 
 | Mode | The window shows | The menu bar |
 |---|---|---|
-| **server** (this Mac runs Maktaba) | "Starting…" until the server answers, then the local web app `http://127.0.0.1:<web port>` | status (running / starting / problem / paused / stopped / setup needed), *Update ready*, Open Maktaba, Pause/Resume server, Open logs, Quit (server keeps running), Stop server and quit |
+| **server** (this Mac runs Maktaba) | "Starting…" until the server answers, then the local web app `http://127.0.0.1:<web port>` | status (running / starting / problem / paused / stopped / setup needed), the language model (ready / downloading n% / not downloaded), *Update ready*, Open Maktaba, Pause/Resume server, Open logs, Quit (server keeps running), Stop server and quit |
 | **client** (connect to another Maktaba) | that Maktaba's address, or the bundled web app as before | Open Maktaba, Connect to another Maktaba… (back to setup), Play/Pause, Settings, Quit |
 
 With no saved mode the window opens the **first-run setup** (`web/src/pages/Setup/`):
 this Mac or another Maktaba → what will run + disk/RAM → admin account → library folders and
 NAS path map → models (Hugging Face token or the NAS copy) → optional Plex (PIN flow) →
-install (pipeline venv + finish) → the server starts. Each screen runs one
+install (pipeline venv + the language model + finish) → the server starts. The language
+model (`qwen2.5:7b`, about 5 GB) stops setup only when the disk is too small for it; any
+other failure leaves the download to the server, which finishes it in the background. Each screen runs one
 `maktaba-server setup --json --step <name>` ([contract](../../specs/epics/36-mac-app/contract-setup.md));
 passwords and tokens go to it on stdin only and are never logged.
 
@@ -132,7 +138,8 @@ appends to `~/Library/Logs/Maktaba/server.log` and execs
 `launchctl kill`; `KeepAlive {SuccessfulExit: false}` restarts crashes but not a clean stop.
 Resume is `launchctl kickstart`.
 
-**Status** comes from the supervisor's `GET http://127.0.0.1:9103/processes`, polled every 3 s.
+**Status** comes from the supervisor's `GET http://127.0.0.1:9103/processes`, polled every 3 s
+(its `llm` field gives the language model's line).
 
 ## Windows runs the server too (Epic 38)
 

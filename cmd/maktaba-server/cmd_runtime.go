@@ -85,12 +85,13 @@ func newRuntimeCmd() *cobra.Command {
 			"  install    copy a payload in, checking every file (--activate: and switch the service to it)\n" +
 			"  activate   switch the service to an installed runtime (stopped while `current` moves)\n" +
 			"  status     what is installed, what runs, whether this payload is newer\n" +
-			"  prune      remove all but the running runtime and the one before",
+			"  prune      remove all but the running runtime and the one before\n\n" +
+			"A version older than the newest this machine has run is refused unless --allow-downgrade.",
 	}
 	cmd.PersistentFlags().BoolVar(&jsonOut, "json", false, "NDJSON progress, then one result or error line (for the app)")
 
 	var from, owner string
-	var activate bool
+	var activate, allowDowngrade bool
 	install := &cobra.Command{
 		Use:   "install",
 		Short: "Copy a payload into the runtime, checking every file",
@@ -110,8 +111,9 @@ func newRuntimeCmd() *cobra.Command {
 				if err != nil {
 					return nil, "", err
 				}
+				opt := appruntime.Options{AllowDowngrade: allowDowngrade}
 				report := progressReporter(out, jsonOut, "copy", "Copying Maktaba "+p.Version)
-				dir, copied, err := d.rt.Install(ctx, src, report)
+				r, err := d.rt.Install(ctx, src, report, opt)
 				if err != nil {
 					return nil, "", err
 				}
@@ -120,12 +122,16 @@ func newRuntimeCmd() *cobra.Command {
 						return nil, "", err
 					}
 				}
-				res := map[string]any{"version": p.Version, "dir": dir, "copied": copied, "activated": false}
-				text := fmt.Sprintf("installed %s in %s", p.Version, dir)
-				if activate {
-					prev, err := d.rt.Activate(ctx, filepath.Base(dir), d.service)
+				res := map[string]any{"version": p.Version, "dir": r.Dir, "copied": r.Copied, "activated": r.First}
+				text := fmt.Sprintf("installed %s in %s", p.Version, r.Dir)
+				cur, _ := d.rt.Current()
+				switch {
+				case r.First:
+					text += " (current: the first runtime here)"
+				case activate && cur != filepath.Base(r.Dir):
+					prev, err := d.rt.Activate(ctx, filepath.Base(r.Dir), d.service, opt)
 					if err != nil {
-						return nil, "", &codedError{"service", err}
+						return nil, "", err
 					}
 					pruned, err := d.rt.Prune(ctx, 2)
 					if err != nil {
@@ -141,23 +147,29 @@ func newRuntimeCmd() *cobra.Command {
 	install.Flags().StringVar(&from, "from", "", "the payload directory (default: the one this binary is in)")
 	install.Flags().StringVar(&owner, "owner", "", "who updates it: app (the desktop app) or headless (the machine itself)")
 	install.Flags().BoolVar(&activate, "activate", false, "switch the service to it, then prune")
+	install.Flags().BoolVar(&allowDowngrade, "allow-downgrade", false,
+		"take a version older than the newest this machine has run (refused otherwise: its database may be migrated past it)")
 
+	var activateDowngrade bool
 	activateCmd := &cobra.Command{
-		Use:   "activate <dir>",
-		Short: "Switch the service to an installed runtime",
+		Use:   "activate <dir|previous>",
+		Short: "Switch the service to an installed runtime (previous: the one that ran before)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			d := newRuntimeDeps()
 			return runtimeOut(c.OutOrStdout(), jsonOut, func(ctx context.Context) (any, string, error) {
-				prev, err := d.rt.Activate(ctx, args[0], d.service)
+				prev, err := d.rt.Activate(ctx, args[0], d.service, appruntime.Options{AllowDowngrade: activateDowngrade})
 				if err != nil {
-					return nil, "", &codedError{"service", err}
+					return nil, "", err
 				}
-				return map[string]any{"current": filepath.Base(args[0]), "previous": prev},
-					fmt.Sprintf("current: %s (was %s)", filepath.Base(args[0]), orNone(prev)), nil
+				cur, _ := d.rt.Current()
+				return map[string]any{"current": cur, "previous": prev},
+					fmt.Sprintf("current: %s (was %s)", cur, orNone(prev)), nil
 			})
 		},
 	}
+	activateCmd.Flags().BoolVar(&activateDowngrade, "allow-downgrade", false,
+		"switch to a version older than the newest this machine has run (a rollback)")
 
 	var statusFrom string
 	status := &cobra.Command{
@@ -177,8 +189,11 @@ func newRuntimeCmd() *cobra.Command {
 				}
 				text := fmt.Sprintf("runtime %s: current %s (%s), owner %s, %d installed", st.Root, orNone(st.Current),
 					orNone(st.Version), st.Owner, len(st.Installed))
-				if st.UpdatePending {
-					text += fmt.Sprintf("; this payload (%s) is not installed as current", st.FromVersion)
+				switch {
+				case st.UpdatePending:
+					text += fmt.Sprintf("; this payload (%s) is newer than current", st.FromVersion)
+				case st.Downgrade:
+					text += fmt.Sprintf("; this payload (%s) is older than %s, the newest this machine has run", st.FromVersion, st.Watermark)
 				}
 				return st, text, nil
 			})
@@ -248,6 +263,12 @@ func runtimeCode(err error) string {
 		return "disk_full"
 	case errors.Is(err, appruntime.ErrLocked):
 		return "locked"
+	case errors.Is(err, appruntime.ErrNotInstalled):
+		return "not_installed"
+	case errors.Is(err, appruntime.ErrDowngrade):
+		return "downgrade"
+	case errors.Is(err, appruntime.ErrService):
+		return "service"
 	}
 	return "runtime"
 }

@@ -6,8 +6,12 @@
 # (and makes again the links a bundler copied as files). check.sh then runs on that
 # runtime copy (Postgres, ffmpeg, Python, the venv plan), once, on the first bundle.
 #
+# The .deb's Depends and the .rpm's Requires name the libraries the shell links, and both
+# packages carry package-remove.sh as their removal script (prerm / %preun).
+#
 # Usage: check-app.sh BUNDLE...   (*.AppImage, *.deb, *.rpm)
-# Needs: bash, coreutils, dpkg-deb for a .deb, bsdtar (or rpm2cpio and cpio) for an .rpm.
+# Needs: bash, coreutils, dpkg-deb for a .deb; rpm (its headers) and bsdtar (or rpm2cpio
+# and cpio) for an .rpm.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -43,12 +47,37 @@ for bundle in "$@"; do
             fi
             root="$dir"
             deps="$(dpkg-deb -f "$bundle" Depends)"
-            for want in libwebkit2gtk-4.1 libayatana-appindicator3; do
+            for want in libwebkit2gtk-4.1 libgtk-3 libayatana-appindicator3; do
                 case "$deps" in *"$want"*) ok "Depends: $want" ;; *) fail "Depends lacks $want ($deps)" ;; esac
             done
+            if dpkg-deb -I "$abs" prerm 2>/dev/null | cmp -s - "$SCRIPT_DIR/package-remove.sh"; then
+                ok "prerm: package-remove.sh"
+            else
+                fail "the .deb's prerm is not package-remove.sh"
+            fi
             ;;
         *.rpm)
-            # libarchive reads an rpm whatever its payload's compression; rpm2cpio else
+            # the header (Requires, scriptlets) needs rpm; libarchive unpacks the payload whatever
+            # its compression, rpm2cpio else
+            if ! command -v rpm >/dev/null 2>&1; then
+                fail "$name: rpm is needed to read the .rpm's Requires and scriptlets"
+            else
+                reqs="$(rpm -qp --requires "$abs" 2>/dev/null)"
+                for want in 'libwebkit2gtk-4.1.so.0()(64bit)' 'libgtk-3.so.0()(64bit)' 'libayatana-appindicator3.so.1()(64bit)'; do
+                    if printf '%s\n' "$reqs" | grep -qxF "$want"; then ok "Requires: $want"; else fail "Requires lacks $want ($(printf '%s' "$reqs" | tr '\n' ' '))"; fi
+                done
+                # rpm prints the scriptlet's body after its header line: it must hold the
+                # script's disable line (a literal, $ and all)
+                scripts="$(rpm -qp --scripts "$abs" 2>/dev/null)"
+                # shellcheck disable=SC2016
+                if printf '%s\n' "$scripts" | grep -q '^preuninstall scriptlet' &&
+                    printf '%s\n' "$scripts" | sed -n '/^preuninstall scriptlet/,/^[a-z]* scriptlet/p' |
+                    grep -qF 'systemctl --user --machine="$user@" disable --now "$unit"'; then
+                    ok "%preun: package-remove.sh"
+                else
+                    fail "the .rpm's %preun is not package-remove.sh"
+                fi
+            fi
             if command -v bsdtar >/dev/null 2>&1; then
                 out="$(bsdtar -xf "$abs" -C "$dir" 2>&1)" || { fail "unpack $name: $out"; continue; }
             else

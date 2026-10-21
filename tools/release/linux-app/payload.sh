@@ -249,6 +249,8 @@ EOF
 # resources in <prefix>/lib/Maktaba: linuxdeploy (the AppImage) rewrites the rpath of, and
 # strips, the ELF files it finds under usr/lib, which would no longer match files.sha256. The
 # runtime copy (39.3) checks every file, and makes again the links the .rpm copies as files.
+# The .deb and .rpm stop and disable each user's server unit when the package is removed
+# (package-remove.sh: prerm / %preun, never on an upgrade).
 # web/dist is built above (make server), so tauri does not rebuild it.
 cat >"$BUILD/tauri.linux-app.conf.json" <<EOF
 {
@@ -256,8 +258,10 @@ cat >"$BUILD/tauri.linux-app.conf.json" <<EOF
   "bundle": {
     "linux": {
       "appimage": {"files": {"/usr/share/maktaba/server": "$OUT"}},
-      "deb": {"files": {"/usr/share/maktaba/server": "$OUT"}},
-      "rpm": {"files": {"/usr/share/maktaba/server": "$OUT"}}
+      "deb": {"files": {"/usr/share/maktaba/server": "$OUT"},
+              "preRemoveScript": "$SCRIPT_DIR/package-remove.sh"},
+      "rpm": {"files": {"/usr/share/maktaba/server": "$OUT"},
+              "preRemoveScript": "$SCRIPT_DIR/package-remove.sh"}
     }
   }
 }

@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -90,23 +91,50 @@ func TestRuntimeInstallActivateStatus(t *testing.T) {
 		res.Data["activated"] != true || res.Data["version"] != "v0.3.0" {
 		t.Errorf("result %q", lines[len(lines)-1])
 	}
+	if len(svc.log) != 0 { // the first runtime: no service could run before it
+		t.Errorf("service %v", svc.log)
+	}
+	first, _ := rt.Current()
+
+	out, err = runRuntime(t, "install", "--json", "--from", onePayload(t, "v0.4.0"), "--activate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines = strings.Split(strings.TrimSpace(out), "\n")
+	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &res); err != nil || res.Data["activated"] != true ||
+		res.Data["previous"] != first {
+		t.Errorf("result %q", lines[len(lines)-1])
+	}
 	if strings.Join(svc.log, ",") != "stop,start" {
 		t.Errorf("service %v", svc.log)
 	}
 
 	out, err = runRuntime(t, "status")
-	if err != nil || !strings.Contains(out, "(v0.3.0), owner app, 1 installed") {
+	if err != nil || !strings.Contains(out, "(v0.4.0), owner app, 2 installed") {
 		t.Errorf("status %q %v", out, err)
+	}
+
+	// an older payload is refused, its code says why
+	if _, err := runRuntime(t, "install", "--from", onePayload(t, "v0.3.5")); !errors.Is(err, appruntime.ErrDowngrade) ||
+		runtimeCode(err) != "downgrade" {
+		t.Errorf("an older payload: %v", err)
+	}
+	// back to the one before
+	if out, err := runRuntime(t, "activate", "previous", "--allow-downgrade"); err != nil || !strings.Contains(out, "current: "+first) {
+		t.Errorf("activate previous: %q %v", out, err)
 	}
 }
 
 func TestRuntimeErrorCodes(t *testing.T) {
 	for err, want := range map[error]string{
-		fmt.Errorf("x: %w", appruntime.ErrInvalid):  "payload_invalid",
-		fmt.Errorf("x: %w", appruntime.ErrDiskFull): "disk_full",
-		fmt.Errorf("x: %w", appruntime.ErrLocked):   "locked",
-		&codedError{"service", os.ErrClosed}:        "service",
-		os.ErrPermission:                            "runtime",
+		fmt.Errorf("x: %w", appruntime.ErrInvalid):      "payload_invalid",
+		fmt.Errorf("x: %w", appruntime.ErrDiskFull):     "disk_full",
+		fmt.Errorf("x: %w", appruntime.ErrLocked):       "locked",
+		fmt.Errorf("x: %w", appruntime.ErrNotInstalled): "not_installed",
+		fmt.Errorf("x: %w", appruntime.ErrDowngrade):    "downgrade",
+		fmt.Errorf("x: %w", appruntime.ErrService):      "service",
+		&codedError{"payload_invalid", os.ErrClosed}:    "payload_invalid",
+		os.ErrPermission: "runtime",
 	} {
 		if got := runtimeCode(err); got != want {
 			t.Errorf("%v: %s, want %s", err, got, want)

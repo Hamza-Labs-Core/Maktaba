@@ -16,6 +16,11 @@ Subject: a library. Pool ``repairs``. **Writes to the share, so it is off until 
   ``content_hash`` are asked to look at the new file;
 * a video no longer on YouTube, or a file without a YouTube id, is reported and left alone.
 
+* Epic 40: a file an admin asked to download again (``item_requests``, action ``redownload``,
+  from the failures page) is fetched whatever the ``enabled`` switch says (the admin asked
+  for this file) and without the read-again check (a missing file cannot be read); the
+  request is marked done with what it came to.
+
 What each file came to is in ``video_repairs``. The change set (the files to be fetched) goes
 through ``apply_or_review``: in review mode nothing is downloaded until an operator applies it.
 """
@@ -43,7 +48,7 @@ from ..paths import to_db
 from ..sql import is_pg, now, to_ts, uid
 from .registry import StageImpl
 
-__all__ = ["IMPL", "Broken", "broken_files", "set_runner"]
+__all__ = ["IMPL", "Broken", "broken_files", "requested_files", "set_runner"]
 
 _run: Callable[..., Any] = subprocess.run
 
@@ -61,6 +66,8 @@ class Broken:
     video_id: UUID
     path: str
     youtube_id: str | None
+    #: an admin's ``item_requests`` row (Epic 40): fetched without the read-again check
+    request_id: int | None = None
 
 
 _BROKEN = """
@@ -88,6 +95,44 @@ async def broken_files(db: Any, library_id: UUID) -> list[Broken]:
     ]
 
 
+_REQUESTED = """
+SELECT r.id AS request_id, v.id AS id, v.path AS path, m.external_id AS youtube_id
+  FROM item_requests r
+  JOIN videos v ON v.id = r.video_id
+  LEFT JOIN media_metadata_enrichment m
+    ON m.video_id = v.id AND m.provider = 'youtube' AND m.is_dismissed = {false}
+ WHERE v.library_id = $1 AND r.action = 'redownload' AND r.done_at IS NULL
+ ORDER BY r.id
+"""
+
+
+async def requested_files(db: Any, library_id: UUID) -> list[Broken]:
+    """The library's videos an admin asked to download again (open requests, oldest first;
+    one per video)."""
+    sql = _REQUESTED.replace("{false}", "false" if is_pg(db) else "0")
+    out: dict[str, Broken] = {}
+    for r in await db.fetch(sql, uid(library_id)):
+        key = str(r["id"])
+        if key not in out:
+            out[key] = Broken(
+                UUID(key),
+                str(r["path"]),
+                None if r["youtube_id"] is None else str(r["youtube_id"]),
+                int(r["request_id"]),
+            )
+    return list(out.values())
+
+
+async def _close_requests(db: Any, video_id: UUID, result: str) -> None:
+    await db.execute(
+        "UPDATE item_requests SET done_at = $2, result = $3"
+        " WHERE video_id = $1 AND action = 'redownload' AND done_at IS NULL",
+        uid(video_id),
+        to_ts(db, now()),
+        result[:500],
+    )
+
+
 async def _cfg(db: Any) -> tuple[RepairConfig, dict[str, Any]]:
     from ... import rules
 
@@ -99,11 +144,13 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
     """The switch, the settings that change what is fetched and the files waiting."""
     cfg, changes = await _cfg(db)
     rows = await broken_files(db, subject.id) if cfg.enabled else []
+    asked = await requested_files(db, subject.id)
     return canonical_hash(
         {
             "enabled": cfg.enabled,
             "rules": changes,
             "broken": [(str(b.video_id), b.youtube_id) for b in rows],
+            "requested": [b.request_id for b in asked],
         }
     )
 
@@ -155,16 +202,19 @@ def _fetch_one(local: str, youtube_id: str, cfg: RepairConfig) -> repair.RepairO
 
 async def run(db: Any, job: Any, ctx: StageContext) -> StageResult:
     cfg: RepairConfig = await ctx.rules("repair")
-    if not cfg.enabled:
+    library_id: UUID = job.subject.id
+    asked = await requested_files(db, library_id)
+    if not cfg.enabled and not asked:
         return StageResult(
             output_hash=canonical_hash("repair_broken:off"),
             outcome="unchanged",
             summary={"enabled": False},
         )
-    library_id: UUID = job.subject.id
-    rows = await broken_files(db, library_id)
+    rows = await broken_files(db, library_id) if cfg.enabled else []
     if cfg.max_per_run > 0:
         rows = rows[: cfg.max_per_run]
+    seen = {b.video_id for b in asked}
+    rows = [*asked, *(b for b in rows if b.video_id not in seen)]
     counts = {"repaired": 0, "readable": 0, "failed": 0, "no_id": 0, "undecided": 0}
     results: list[tuple[str, str]] = []
     requests: list[Request] = []
@@ -187,6 +237,9 @@ async def run(db: Any, job: Any, ctx: StageContext) -> StageResult:
             await ctx.check_cancel()
             await ctx.progress("repair", n - 1, len(rows), Path(b.path).name)
             local = ctx.local_path(b.path)
+            if b.request_id is not None:
+                await _requested(b, local)
+                continue
             probed = await asyncio.to_thread(repair.check, local, ffprobe=FFPROBE, run=_run)
             if probed.readable:  # a passing failure: the file is fine
                 counts["readable"] += 1
@@ -216,6 +269,31 @@ async def run(db: Any, job: Any, ctx: StageContext) -> StageResult:
                 await _record(db, b, library_id, "failed", f"{probed.why}; {got.message}")
                 results.append((str(b.video_id), "failed"))
 
+    async def _requested(b: Broken, local: str) -> None:
+        """An admin's re-download: no read-again check, the request is closed."""
+        if not b.youtube_id:
+            counts["no_id"] += 1
+            msg = "asked to download again, but it has no YouTube id"
+            await _record(db, b, library_id, "no_id", msg)
+            await _close_requests(db, b.video_id, msg)
+            results.append((str(b.video_id), "no_id"))
+            return
+        got = await asyncio.to_thread(_fetch_one, local, b.youtube_id, cfg)
+        if got.ok:
+            counts["repaired"] += 1
+            await _record(db, b, library_id, "repaired", got.message, got.backup)
+            await db.execute(
+                "UPDATE videos SET missing_confirmed_at = NULL WHERE id = $1", uid(b.video_id)
+            )
+            requests.append(_ask("probe", b, "downloaded again"))
+            requests.append(_ask("content_hash", b, "downloaded again"))
+            results.append((str(b.video_id), "repaired"))
+        else:
+            counts["failed"] += 1
+            await _record(db, b, library_id, "failed", got.message)
+            results.append((str(b.video_id), "failed"))
+        await _close_requests(db, b.video_id, got.message)
+
     status = await apply_or_review(ctx, changes, apply)
     if status == "review":
         return StageResult(
@@ -225,7 +303,7 @@ async def run(db: Any, job: Any, ctx: StageContext) -> StageResult:
         output_hash=canonical_hash(sorted(results)),
         outcome="changed" if counts["repaired"] else None,
         requests=tuple(requests),
-        summary={"enabled": True, "broken": len(rows), **counts},
+        summary={"enabled": cfg.enabled, "broken": len(rows), "requested": len(asked), **counts},
     )
 
 

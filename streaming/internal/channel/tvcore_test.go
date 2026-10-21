@@ -225,7 +225,8 @@ func TestOutputSettings_EnvThenRules(t *testing.T) {
 	}
 	want := OutputSettings{Encoder: "videotoolbox", Width: 1920, Height: 1080, FPS: 25, VideoKbps: 4000,
 		AudioCodec: "ac3", AudioKbps: 256, SegmentSeconds: 2, KeyintSeconds: DefaultKeyintSeconds, MaxActive: 12,
-		WarmGrace: 0, NVENCMax: 3, VTMax: 10}
+		WarmGrace: 0, NVENCMax: 3, VTMax: 10, UnreadableFill: FillFiller, SourceTimeout: DefaultSourceTimeout,
+		SourceStall: DefaultSourceStall, ReportUnreadable: true}
 	if out != want {
 		t.Fatalf("rules:\n got %+v\nwant %+v", out, want)
 	}
@@ -276,6 +277,21 @@ func TestTVSettings_Horizon(t *testing.T) {
 	t.Setenv("MAKTABA_CHANNEL_HORIZON_DAYS", "3")
 	if TVSettingsFromEnv().HorizonDays != 3 {
 		t.Error("env fallback")
+	}
+}
+
+func TestTVSettings_GuideRules(t *testing.T) {
+	base := TVSettingsFromEnv()
+	if base.GuideMaxPaddingSeconds != 120 || base.GuideFillerTitle != "فواصل" || base.GuideMinProgramSeconds != 60 {
+		t.Fatalf("defaults: %+v", base)
+	}
+	tv, bad := ApplyTVRules(base, []byte(`{"guide_max_padding_s":300,"guide_filler_title":" Breaks ","guide_min_program_s":0}`))
+	if len(bad) != 0 || tv.GuideMaxPaddingSeconds != 300 || tv.GuideFillerTitle != "Breaks" || tv.GuideMinProgramSeconds != 0 {
+		t.Fatalf("rules: %+v %v", tv, bad)
+	}
+	tv, bad = ApplyTVRules(base, []byte(`{"guide_max_padding_s":-1,"guide_filler_title":5,"guide_min_program_s":4000}`))
+	if len(bad) != 3 || tv.GuideMaxPaddingSeconds != 120 || tv.GuideFillerTitle != "فواصل" || tv.GuideMinProgramSeconds != 60 {
+		t.Errorf("bad values kept the defaults? %+v %v", tv, bad)
 	}
 }
 

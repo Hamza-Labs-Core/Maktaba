@@ -137,6 +137,27 @@ func (r Repo) Look(ctx context.Context, id uuid.UUID) (channel.Look, error) {
 	return r.PGRepo.Look(ctx, id)
 }
 
+// FillersAround implements channel.FillerSource (the release's generation when
+// bound).
+func (r Repo) FillersAround(ctx context.Context, id uuid.UUID, at time.Time, limit int) ([]channel.ProgramBlock, error) {
+	if rr := r.reads(); rr != nil {
+		if fs, ok := rr.(channel.FillerSource); ok {
+			return fs.FillersAround(ctx, id, at, limit)
+		}
+		return nil, nil
+	}
+	return r.PGRepo.FillersAround(ctx, id, at, limit)
+}
+
+// ReportUnreadable reports a file only from the live slot: a standby or a
+// staging slot airs the same files and would report them again.
+func (r Repo) ReportUnreadable(ctx context.Context, videoID uuid.UUID, why string) error {
+	if !r.State.Live() {
+		return nil
+	}
+	return r.PGRepo.ReportUnreadable(ctx, videoID, why)
+}
+
 // Binding is the TV release a slot airs when it is pinned to one after its
 // start (story 33.7): an unbound slot airs the live generation, which the swap
 // commit flips — so before a swap the front door pins the live slot and the

@@ -102,3 +102,8 @@ func setupConsole(hide, service bool) {
 		}
 	}
 }
+
+// becomeSubreaper and reap are Linux's (proc_linux.go); the job object ties
+// the tree to the server here.
+func becomeSubreaper()     {}
+func (*childHandle) reap() {}

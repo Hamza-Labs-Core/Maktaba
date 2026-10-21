@@ -126,6 +126,15 @@ func (r *ReleaseRepo) ProgramsFrom(ctx context.Context, channelID uuid.UUID, fro
 	return out, rows.Err()
 }
 
+// FillersAround implements FillerSource over the release's generation.
+func (r *ReleaseRepo) FillersAround(ctx context.Context, channelID uuid.UUID, at time.Time, limit int) ([]ProgramBlock, error) {
+	rows, err := r.pool.Query(ctx, fillersSQL("channel_programs", " AND cp.sched_gen = $4"), channelID, at, limit, r.SchedGen)
+	if err != nil {
+		return nil, err
+	}
+	return nearestFillers(rows, at, limit)
+}
+
 // Look is the channel's look as the release defines it. ErrChannelNotFound for a
 // channel the release does not have or has disabled.
 func (r *ReleaseRepo) Look(_ context.Context, channelID uuid.UUID) (Look, error) {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appruntime"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/selfupdate"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
@@ -38,8 +39,29 @@ the previous one as <binary>.bak.
 --check only reports. --version installs one specific release (it must
 still verify and must not be below the watermark). --rollback restores
 <binary>.bak, the release that ran before the last update: the only way to
-run a lower version, and it does not lower the watermark.`,
+run a lower version, and it does not lower the watermark.
+
+In the Linux app's runtime copy (owner headless) it installs the release's
+payload as a new runtime and switches the service to it instead; --rollback
+switches back to the runtime that ran before. A runtime the app owns is
+updated by the app.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if channel == "" {
+				channel = os.Getenv("MAKTABA_UPDATE_CHANNEL")
+			}
+			// the Linux app's runtime copy: a new runtime, never this executable (Epic 39)
+			if rt, ok := appruntime.Of(payloadOfThisBinary()); ok {
+				d := newRuntimeDeps()
+				d.rt = rt
+				id, err := releaseverify.IdentityFromEnv()
+				if err != nil {
+					return err
+				}
+				c := selfupdate.New(selfupdate.Options{
+					Identity: id, Channel: channel, Token: os.Getenv("MAKTABA_GITHUB_TOKEN"),
+				})
+				return runRuntimeUpdate(cmd.Context(), cmd.OutOrStdout(), d, c, target, check, rollback)
+			}
 			// Maktaba.app updates as a whole, shell and server payload (Epic 36 story 36.8)
 			if config.AppBundle() != "" || os.Getenv("MAKTABA_UPDATE_DISABLE") == "1" {
 				return errors.New("this server is part of Maktaba.app: the app updates it (Maktaba > Check for Updates)")
@@ -66,9 +88,6 @@ run a lower version, and it does not lower the watermark.`,
 			id, err := releaseverify.IdentityFromEnv()
 			if err != nil {
 				return err
-			}
-			if channel == "" {
-				channel = os.Getenv("MAKTABA_UPDATE_CHANNEL")
 			}
 			c := selfupdate.New(selfupdate.Options{
 				Identity: id, Channel: channel, Token: os.Getenv("MAKTABA_GITHUB_TOKEN"),

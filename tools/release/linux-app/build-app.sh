@@ -3,12 +3,12 @@
 # then `tauri build` of the AppImage, the .deb and the .rpm with the overlay it writes
 # (the payload in usr/share/maktaba/server), then check-app.sh on the three.
 # `make linux-app` runs it; so does CI's Linux app gate. desktop-release.yml runs the same
-# steps around tauri-action (which also publishes the updater feed).
+# steps, then its publish job attaches what passed and writes the updater feed.
 #
 # Usage: build-app.sh [--version VERSION]   (extra options go to payload.sh)
 # Output: apps/desktop/src-tauri/target/release/bundle/{appimage,deb,rpm}/
 # Needs what payload.sh needs, plus Rust and tauri's Linux libraries (libwebkit2gtk-4.1-dev,
-# libgtk-3-dev, libayatana-appindicator3-dev, librsvg2-dev), dpkg-deb and bsdtar.
+# libgtk-3-dev, libayatana-appindicator3-dev, librsvg2-dev), dpkg-deb, rpm and bsdtar.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

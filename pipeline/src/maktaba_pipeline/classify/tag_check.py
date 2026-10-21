@@ -331,7 +331,10 @@ def _register_help() -> None:
         "enabled": Help(g, "Check tags with a model", "A local model (Ollama) reads each "
                         "series' name and episode titles and says what it is about; the "
                         "keyword tags it does not confirm are damped. Off: keyword tags only."),
-        "url": Help(g, "Model server (Ollama)"),
+        "url": Help(g, "Model server (Ollama)", "Every language model step asks this server. "
+                    "Not changed here: this machine's own (Maktaba.app's bundled server, "
+                    "or [llm] url in server.toml), else the default. A server set here "
+                    "always wins."),
         "model": Help(g, "Model", "Any model the server has; it must read Arabic well."),
         "sample_titles": Help(g, "Episode titles shown per series", minimum=1),
         "max_topics": Help(g, "Topics per series (most)", minimum=1),

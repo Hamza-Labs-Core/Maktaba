@@ -29,10 +29,12 @@ type serviceDeps struct {
 
 var newServiceDeps = func() serviceDeps {
 	home, _ := os.UserHomeDir()
-	return serviceDeps{
-		manager: service.LocalUserManager(),
-		unit:    service.AppUnitFor(os.Getenv, home, config.LocalDirs().Data, config.LogsDir()),
-	}
+	m := service.LocalUserManager()
+	u := service.AppUnitFor(os.Getenv, home, config.LocalDirs().Data, config.LogsDir())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	u.Dir = m.UnitDir(ctx, u.Dir) // where the user's systemd looks, not a shell's XDG_CONFIG_HOME
+	return serviceDeps{manager: m, unit: u}
 }
 
 func newServiceCmd() *cobra.Command {
@@ -207,6 +209,8 @@ func describeService(st service.AppStatus) string {
 		return "unsupported: " + st.Reason
 	case st.Taken != "":
 		return fmt.Sprintf("%s belongs to another install (it runs %s)", st.Unit, st.Taken)
+	case st.SystemUnit != "" && !st.Installed:
+		return fmt.Sprintf("not installed: a system-wide Maktaba service is (%s)", st.SystemUnit)
 	case !st.Installed:
 		return "not installed"
 	}
