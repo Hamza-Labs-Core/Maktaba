@@ -92,7 +92,7 @@ func runSetup(doMigrate bool) error {
 	cfg.Transcription.Backend = p.line("Transcription backend (mlx-whisper/faster-whisper/openai)", cfg.Transcription.Backend)
 	defModel := defaultModelFor(cfg.Transcription.Backend)
 	if p.yesNo(fmt.Sprintf("Download the Whisper model now (%s)?", defModel), false) {
-		if err := models.Download(cfg.Server.DataDir, defModel); err != nil {
+		if err := models.Download(cfg.StateDir(), defModel); err != nil {
 			fmt.Fprintf(os.Stderr, "  model download skipped: %v\n", err)
 		}
 	}

@@ -30,7 +30,7 @@ func newModelsListCmd() *cobra.Command {
 			_, _ = fmt.Fprintln(tw, "NAME\tBACKEND\tINSTALLED\tNOTES")
 			for _, m := range models.Catalog() {
 				installed := "no"
-				if models.Installed(cfg.Server.DataDir, m.Name) {
+				if models.Installed(cfg.StateDir(), m.Name) {
 					installed = "yes"
 				}
 				_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", m.Name, m.Backend, installed, m.Note)
@@ -48,8 +48,8 @@ func newModelsDownloadCmd() *cobra.Command {
 		RunE: func(_ *cobra.Command, args []string) error {
 			cfg, _, _ := config.Load()
 			name := args[0]
-			fmt.Printf("Downloading %s into %s ...\n", name, models.Dir(cfg.Server.DataDir))
-			if err := models.Download(cfg.Server.DataDir, name); err != nil {
+			fmt.Printf("Downloading %s into %s ...\n", name, models.Dir(cfg.StateDir()))
+			if err := models.Download(cfg.StateDir(), name); err != nil {
 				return err
 			}
 			fmt.Printf("Done. Set [transcription].model to use it (see `maktaba-server models active`).\n")
@@ -66,7 +66,7 @@ func newModelsActiveCmd() *cobra.Command {
 			cfg, _, _ := config.Load()
 			fmt.Printf("backend: %s\n", cfg.Transcription.Backend)
 			fmt.Printf("model:   %s\n", cfg.Transcription.Model)
-			fmt.Printf("dir:     %s\n", models.Dir(cfg.Server.DataDir))
+			fmt.Printf("dir:     %s\n", models.Dir(cfg.StateDir()))
 			return nil
 		},
 	}

@@ -107,8 +107,11 @@ def model_folder(model_id: str) -> str:
 
 
 def local_root() -> Path:
-    """``~/.maktaba/models``: this machine's own copies."""
-    return Path.home() / ".maktaba" / "models"
+    """This machine's own copies: ``$MAKTABA_MODEL_CACHE_DIR/share-copies``
+    (:mod:`~maktaba_pipeline.model_dirs`), else ``~/.maktaba/models``."""
+    from ..model_dirs import share_copies_dir
+
+    return share_copies_dir() or Path.home() / ".maktaba" / "models"
 
 
 def models_dir(cluster_dir: Path | None, env: Mapping[str, str] | None = None) -> Path | None:

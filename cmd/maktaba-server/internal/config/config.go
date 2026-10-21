@@ -3,11 +3,12 @@
 // environment each underlying service already consumes, so the role
 // binaries need zero changes to be driven from one config file.
 //
-// Path resolution follows the platform conventions the spec calls out:
+// Path resolution follows the platform conventions (paths.go):
 //
-//	Linux/macOS : $XDG_CONFIG_HOME/maktaba/server.toml
-//	              (fallback ~/.config/maktaba/server.toml)
-//	Windows     : %APPDATA%\Maktaba\server.toml
+//	macOS   : ~/Library/Application Support/Maktaba/server.toml (Epic 36)
+//	Linux   : $XDG_CONFIG_HOME/maktaba/server.toml
+//	          (fallback ~/.config/maktaba/server.toml)
+//	Windows : %APPDATA%\Maktaba\server.toml
 //
 // $MAKTABA_CONFIG overrides the resolved path everywhere (tests, custom
 // installs, container bind-mounts).
@@ -34,6 +35,27 @@ type Config struct {
 	Supervisor    SupervisorSection    `toml:"supervisor"`
 	TV            TVSection            `toml:"tv"`
 	Pipeline      PipelineSection      `toml:"pipeline"`
+	Postgres      PostgresSection      `toml:"postgres"`
+
+	// DatabaseURLSet: server.toml sets [database] url (Load). Unset, a Mac with
+	// the bundled Postgres uses it (Epic 36 story 36.1).
+	DatabaseURLSet bool `toml:"-"`
+	// PipelineInstancesSet: server.toml sets [pipeline] instances (0 there means
+	// no transcription workers, even on Apple Silicon).
+	PipelineInstancesSet bool `toml:"-"`
+}
+
+// PostgresSection is the [postgres] table (Epic 36 story 36.1): the Postgres
+// bundled with Maktaba.app, run by the supervisor as the postgres role.
+type PostgresSection struct {
+	// Enabled: "auto" (default: on a Mac whose payload carries Postgres, when
+	// [database] url is not set and no SQLite database is in use), "on" or "off".
+	Enabled string `toml:"enabled"`
+	// Home is the Postgres install (bin/postgres, bin/initdb, …); empty:
+	// $MAKTABA_POSTGRES_HOME, else the payload's postgres/ beside bin/.
+	Home string `toml:"home"`
+	// Port is its loopback port (default 54329).
+	Port int `toml:"port"`
 }
 
 // PipelineSection is the [pipeline] table (Epic 35 story 35.8): how many pipeline
@@ -99,12 +121,41 @@ type DatabaseSection struct {
 // MediaSection lists the library roots scanned for media.
 type MediaSection struct {
 	Roots []string `toml:"roots"`
+	// PathMap maps the paths the database stores to this machine's, in the
+	// workers' --path-map form ("/Volumes/Originals/=/Users/me/nas/", comma
+	// separated): MAKTABA_PATH_MAP for every role, MAKTABA_WORKER_PATH_MAP for
+	// the pipeline.
+	PathMap string `toml:"path_map"`
 }
 
-// TranscriptionSection selects the Whisper backend + model.
+// TranscriptionSection is the [transcription] table: what the pipeline's
+// transcribe stage loads, and (Epic 36 story 36.4) how many transcription
+// workers this machine runs and how much memory each may take.
 type TranscriptionSection struct {
-	Backend string `toml:"backend"` // "mlx-whisper" | "faster-whisper" | "openai"
-	Model   string `toml:"model"`   // e.g. "large-v3"
+	// Backend is kept for older files: the pipeline picks MLX (Apple Silicon)
+	// or torch by itself.
+	Backend string `toml:"backend"`
+	// Model is the Whisper model (a Hugging Face repo, MAKTABA_STT_MODEL);
+	// empty, or an old short name ("large-v3"): the pipeline's default
+	// (mlx-community/whisper-large-v3-turbo).
+	Model string `toml:"model"`
+	// Refine: "on" (default) lets a second listen correct Whisper's words
+	// (MAKTABA_STT_REFINE); "off" stores them as they are.
+	Refine string `toml:"refine"`
+	// RefineModel is the second listen's model (MAKTABA_STT_REFINE_MODEL);
+	// empty: CohereLabs/cohere-transcribe-arabic-07-2026.
+	RefineModel string `toml:"refine_model"`
+	// Workers is the number of transcription workers beside the main worker:
+	// 0 (default) sizes it from the RAM on Apple Silicon and runs none
+	// elsewhere (the one worker transcribes); -1 none. [pipeline] instances,
+	// when set, wins.
+	Workers int `toml:"workers"`
+	// Per transcription worker; 0: sized from the RAM (MAKTABA_STT_AUDIO_HOURS,
+	// _GPU_GB, _GPU_CACHE_GB, _MIN_FREE_PCT).
+	AudioHours float64 `toml:"audio_hours"`
+	GPUGB      float64 `toml:"gpu_gb"`
+	GPUCacheGB float64 `toml:"gpu_cache_gb"`
+	MinFreePct float64 `toml:"min_free_pct"`
 }
 
 // CloudSection holds optional cloud-link enrolment.
@@ -132,7 +183,6 @@ func Defaults() Config {
 		Media: MediaSection{Roots: []string{}},
 		Transcription: TranscriptionSection{
 			Backend: defaultTranscriptionBackend(),
-			Model:   "large-v3",
 		},
 		Cloud:      CloudSection{Enabled: false},
 		Supervisor: DefaultSupervisor(),
@@ -166,8 +216,14 @@ func LoadFrom(path string) (Config, bool, error) {
 		return cfg, false, fmt.Errorf("read %s: %w", path, err)
 	}
 	// Decode over the defaults so unset keys keep their default value.
-	if err := toml.Unmarshal(raw, &cfg); err != nil {
+	meta, err := toml.Decode(string(raw), &cfg)
+	if err != nil {
 		return cfg, true, fmt.Errorf("parse %s: %w", path, err)
+	}
+	cfg.DatabaseURLSet = meta.IsDefined("database", "url") && strings.TrimSpace(cfg.Database.URL) != ""
+	cfg.PipelineInstancesSet = meta.IsDefined("pipeline", "instances")
+	if !cfg.DatabaseURLSet {
+		cfg.Database.URL = Defaults().Database.URL
 	}
 	return cfg, true, nil
 }
@@ -208,38 +264,12 @@ func (c Config) SaveTo(path string) error {
 }
 
 // configDir resolves the platform config directory (parent of
-// server.toml).
-func configDir() string {
-	switch runtime.GOOS {
-	case "windows":
-		if appData := os.Getenv("APPDATA"); appData != "" {
-			return filepath.Join(appData, "Maktaba")
-		}
-		return filepath.Join(home(), "AppData", "Roaming", "Maktaba")
-	default:
-		if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-			return filepath.Join(xdg, "maktaba")
-		}
-		return filepath.Join(home(), ".config", "maktaba")
-	}
-}
+// server.toml, paths.go).
+func configDir() string { return LocalDirs().Config }
 
 // defaultDataDir resolves a writable state root for the SQLite DB,
 // downloaded models, and caches.
-func defaultDataDir() string {
-	switch runtime.GOOS {
-	case "windows":
-		if appData := os.Getenv("LOCALAPPDATA"); appData != "" {
-			return filepath.Join(appData, "Maktaba", "data")
-		}
-		return filepath.Join(home(), "AppData", "Local", "Maktaba", "data")
-	default:
-		if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
-			return filepath.Join(xdg, "maktaba")
-		}
-		return filepath.Join(home(), ".local", "share", "maktaba")
-	}
-}
+func defaultDataDir() string { return LocalDirs().Data }
 
 // defaultTranscriptionBackend picks the sensible default for the host:
 // MLX on Apple Silicon, faster-whisper everywhere else.

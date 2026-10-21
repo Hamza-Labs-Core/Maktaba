@@ -190,6 +190,11 @@ const changeCols = `id, number, release_id, base_release_id, state, kinds, title
 	digest, diff, verify_report, auto_rule, approved_by, approved_at, anchor_at, swap_at, swap_wait,
 	created_by, created_at, updated_at, staged_at, ready_at, swapped_at, ended_at, end_reason, superseded_by`
 
+// summaryCols is changeCols with an empty diff: a list never needs the diff,
+// and a channel plan's is tens of MB (the changes page read them all, ~500 MB a
+// load, and took 40 s). The literal keeps scanChange's column order.
+var summaryCols = strings.Replace(changeCols, "digest, diff,", "digest, '{}' AS diff,", 1)
+
 func scanChange(rs interface{ Scan(...any) error }) (*Change, error) {
 	var c Change
 	var num sql.NullInt64
@@ -251,10 +256,20 @@ func (s *Store) Get(ctx context.Context, q queryer, id string) (*Change, error) 
 
 // List returns changes, newest first, optionally of some states.
 func (s *Store) List(ctx context.Context, states []string, limit int) ([]*Change, error) {
+	return s.list(ctx, changeCols, states, limit)
+}
+
+// ListSummaries is List without each change's diff (an empty map): what the
+// changes page shows. Open a change (Get) for its diff.
+func (s *Store) ListSummaries(ctx context.Context, states []string, limit int) ([]*Change, error) {
+	return s.list(ctx, summaryCols, states, limit)
+}
+
+func (s *Store) list(ctx context.Context, cols string, states []string, limit int) ([]*Change, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 50
 	}
-	q := `SELECT ` + changeCols + ` FROM tv_changes`
+	q := `SELECT ` + cols + ` FROM tv_changes`
 	args := []any{}
 	if len(states) > 0 {
 		ph := make([]string, len(states))
@@ -280,6 +295,17 @@ func (s *Store) List(ctx context.Context, states []string, limit int) ([]*Change
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// InFlightID is the id of the change in staged…swapping, or "" (no row read).
+func (s *Store) InFlightID(ctx context.Context, q queryer) (string, error) {
+	var id string
+	err := q.QueryRowContext(ctx, `SELECT id FROM tv_changes
+		WHERE state IN ('staged','verifying','ready','approved','swapping') ORDER BY created_at LIMIT 1`).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
 }
 
 // InFlightChange is the change in staged…swapping, or nil.

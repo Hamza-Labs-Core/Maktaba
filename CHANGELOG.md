@@ -12,10 +12,10 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
-- **Release builds for desktop, Android and Android TV.** The desktop app now ships a
-  (placeholder) icon set, which the macOS and Windows bundles failed on. The Linux build
+- **Release builds for desktop, Android and Android TV.** The desktop app ships a
+  (placeholder) icon set (#152), which the macOS and Windows bundles failed on. The Linux build
   stopped earlier: `tauri-plugin-deep-link` 2.6.2 does not compile against `rust-ini` 0.21.3,
-  so the desktop app now commits its `Cargo.lock` with `rust-ini` at 0.21.1. The Windows
+  so the desktop app's `Cargo.lock` holds `rust-ini` at 0.21.1. The Windows
   portable `.zip` step looks for the exe by its real name (`maktaba-desktop.exe`), and a
   pre-release tag such as `v0.3.0-rc.1` gives the MSI the numeric version WiX requires. The
   Android and Android TV jobs no longer ask sdkmanager for the removed `tools` package.

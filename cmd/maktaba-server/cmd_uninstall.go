@@ -60,6 +60,10 @@ func runUninstall(purge bool) error {
 	if removeConfig {
 		path := config.Path()
 		removeIfExists(path, "config")
+		// a Mac keeps the key files in keys/ beside it (Epic 36 story 36.2)
+		if keys := config.KeysDir(); keys != filepath.Dir(path) {
+			removeTreeIfExists(keys, "keys dir")
+		}
 		// Remove the now-(maybe)-empty config dir.
 		_ = os.Remove(filepath.Dir(path))
 	}
@@ -67,6 +71,12 @@ func runUninstall(purge bool) error {
 	if removeData {
 		if cfg.Server.DataDir != "" {
 			removeTreeIfExists(cfg.Server.DataDir, "data dir")
+		}
+		// on a Mac the large state sits beside data/ (config.StateDir)
+		if root := cfg.StateDir(); root != cfg.Server.DataDir {
+			for _, d := range []string{"models", "chroma", "cache", "postgres", "backups"} {
+				removeTreeIfExists(filepath.Join(root, d), d)
+			}
 		}
 	}
 

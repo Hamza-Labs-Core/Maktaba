@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/exec"
 
@@ -49,6 +50,9 @@ func runAPISub(sub string, args []string) error {
 		return err
 	}
 	cfg, _, _ := config.Load()
+	if _, err := bundledPostgres(context.Background(), &cfg, false); err != nil {
+		return err
+	}
 
 	child := exec.Command(bin, append([]string{sub}, args...)...)
 	child.Stdin = os.Stdin

@@ -127,8 +127,19 @@ func runServe(cfg config.Config, opts serveOptions) error {
 		go advertiseMachine(ctx, cfg, node)
 	}
 
+	// Epic 36 story 36.1: the bundled Postgres (Maktaba.app) runs as the first
+	// role of the whole machine, and every child gets its URL.
+	pg, err := bundledPostgres(ctx, &cfg, opts.role == "" || opts.role == "all")
+	if err != nil {
+		return err
+	}
+
 	// Build the supervised processes.
 	var procs []supervisor.Process
+	if pg != nil {
+		procs = append(procs, supervisor.BuildPostgres(*pg))
+		go pg.RunBackups(ctx, backupCheckInterval, os.Stderr)
+	}
 	sopts := supervisor.Options{Config: cfg, BinDir: opts.binDir, ReleaseDir: releaseDir}
 	for _, r := range roles {
 		if r == supervisor.RoleTVSlot {

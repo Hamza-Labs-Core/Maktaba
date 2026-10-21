@@ -1,0 +1,97 @@
+# Epic 36 — Maktaba.app: one Mac installation that runs everything
+
+> **Status:** spec. **Source:** `specs/epics/36-mac-app/`.
+> **Anchors:** [Epic 35 — full machines and updates](../35-cluster-full-nodes-and-updates/README.md)
+> (the launcher layout, `maktaba-server` supervision, self-update), [Epic 22 — DevOps](../22-devops/README.md)
+> (process supervision 22.9, release pipeline 22.5), `apps/desktop` (the Tauri 2 shell),
+> `cmd/maktaba-server` (supervisor, `setup`, `ChildEnv`), `deploy/packaging` (Homebrew formula,
+> `install.sh`, the node installer), `tools/dev/stack.sh` (what the home Mac runs today).
+
+## Goal
+
+The owner's decisions (2026-10-20):
+
+1. **One Mac installation runs everything.** A home Mac installs Maktaba once and gets the API,
+   streaming (Live TV), the pipeline workers *including MLX transcription and the second listen*,
+   semantic search, the web app, the database, ffmpeg, starting at login and restarting anything
+   that stops. No Docker, no Homebrew Postgres, no terminal steps, no Claude-session-held processes.
+2. **It is a Mac app: `Maktaba.app`.** Drag to Applications, open, follow a short setup. The window
+   is the web app (as today); closing it leaves the server running; the menu-bar item shows status.
+3. **Postgres is bundled** inside the app (≈30–40 MB for Apple Silicon), private to Maktaba, so it
+   never clashes with another Postgres on the Mac.
+
+## Why (what exists on main, 127c47be)
+
+No single Mac path runs everything today (survey 2026-10-20):
+
+| Piece | Released install (`brew` / `install.sh` / `maktaba-server setup`) | Home Mac today (`tools/dev/stack.sh`) |
+|---|---|---|
+| API, streaming, web | ✅ binaries, web embedded (`-tags embed_web`, :8088) | `go run` + a Vite dev server held by a Claude session |
+| Pipeline (incl. transcription) | ❌ not installed — the supervisor's `python3 -m maktaba_pipeline` crash-loops | `uv run --all-extras` from a checkout |
+| MLX / search extras, models | ❌ | manual |
+| Database | SQLite default (no TV slots), or a Postgres you bring | Postgres in Docker |
+| Autostart | only via `brew services` or a second `setup --self-managed` | none (nohup), nothing restarts a crash |
+| Transcription settings | `[transcription]` → `MAKTABA_TRANSCRIPTION_*`, which the pipeline never reads (it reads `MAKTABA_STT_MODEL`) | env in the script |
+| Paths | XDG (`~/.config`, `~/.local/share`) on macOS | `~/.maktaba` |
+
+`apps/desktop` is a client only (no sidecar). The Mac Docker overlay (`docker-compose.mac.yml`) cannot
+work as written (macOS ffmpeg into a Linux container, an unread `MAKTABA_STT_BACKEND`).
+
+## Shape
+
+```
+Maktaba.app/Contents/
+  MacOS/Maktaba                         Tauri shell (window = web app, menu bar, setup screens)
+  Resources/server/                     the server payload, signed with the app
+    bin/  maktaba-server maktaba-api maktaba-streaming maktaba-launcher
+    postgres/  bin/{postgres,initdb,pg_ctl,pg_dump,pg_restore,psql} lib/ share/   (arm64)
+    ffmpeg/   ffmpeg ffprobe                                                       (arm64, static)
+    python/   python-build-standalone 3.12                                         (arm64)
+    pipeline/ maktaba_pipeline-<v>.whl + constraints.txt (every extra pinned)
+  Library/LaunchAgents/com.hamzalabs.maktaba.server.plist   registered with SMAppService
+```
+
+Per-user state, all under **`~/Library/Application Support/Maktaba/`** (`data/`, `postgres/` (cluster),
+`venv/` (built on first run), `models/`, `chroma/`, `keys/` (secrets, stream signing, cluster),
+`cache/streaming/`, `backups/`), logs under **`~/Library/Logs/Maktaba/`**.
+
+- **The server runs as a login item** (`SMAppService.agent`) — the bundled `maktaba-launcher serve`
+  under launchd with `KeepAlive`. It runs whether or not the window is open, and starts at login.
+- **`maktaba-server` supervises** postgres → api → streaming → pipeline (main worker) + N
+  transcription workers, with the backoff/restart and `/processes` it already has.
+- **The pipeline venv is built on first run** from the bundled wheel + constraints with the bundled
+  Python (the MLX/torch wheels, ~1–2 GB, download then; models too). The app stays a reasonable
+  download; setup shows the progress. Re-built on update only when the constraints change.
+- **Apple Silicon only** for the home app (MLX). Intel Macs keep the Homebrew/node paths.
+
+## Stories
+
+| # | Story | Scope |
+|---|---|---|
+| 36.1 | **Bundled Postgres role** | supervisor role `postgres`: `initdb` on first run (scram, random password in `keys/`), `pg_ctl` start/stop with the supervisor, loopback-only on a private port (default 54329) + unix socket in the data dir, health check, `MAKTABA_DATABASE_URL` for every child, nightly `pg_dump` into `backups/` (keep 7), clean shutdown before exit. Postgres becomes the default home DB on macOS (TV slots on). |
+| 36.2 | **Mac paths** | `config.Path()` / data dir / logs on macOS → `~/Library/Application Support/Maktaba` and `~/Library/Logs/Maktaba` (XDG kept on Linux; an existing XDG install is migrated once). Chroma dir, models dir, keys, streaming cache all set by `ChildEnv`. |
+| 36.3 | **Pipeline in the bundle** | `MAKTABA_PYTHON` → bundled Python; first-run venv bootstrap (`python -m venv` + `pip install --constraint` from the wheel, extras `stt,search` on arm64), progress reported to the supervisor/UI, resumable, re-run when constraints change. |
+| 36.4 | **Transcription the way the home runs it** | supervisor runs a main worker `--exclude-stages transcribe` + N transcribe-only workers (`MAKTABA_STT_SLOT`), N and the STT memory knobs sized from RAM (the 96 GB Mac's stack.sh values as the top tier); `[transcription]` wired to `MAKTABA_STT_MODEL` / `MAKTABA_STT_REFINE*`; `maktaba-server models` downloads exactly what the pipeline loads (turbo + Cohere second listen, or Cohere from the NAS share). |
+| 36.5 | **Login item + menu bar** | Tauri shell: register/unregister the LaunchAgent via `SMAppService`; menu-bar status (running / starting / stopped / update ready) from the supervisor's `/processes`; Open Maktaba, Pause/Resume server, Open logs, Quit (window only) vs Stop server. |
+| 36.6 | **First-run setup in the app** | screens: what will run + disk/RAM check → admin account → library folder(s) / NAS path map → models (Hugging Face sign-in for the gated Cohere model, or use the NAS copy) → optional Plex sign-in → done (opens the library). Backed by `maktaba-server setup --json` steps so the CLI and the app share one implementation. |
+| 36.7 | **Build the payload** | CI (desktop-release, macOS arm64): build the Go binaries (`embed_web`), fetch pinned Postgres, ffmpeg and python-build-standalone with checksums, build the pipeline wheel + constraints, lay out `Resources/server`, codesign every Mach-O inside, notarize the `.dmg`. A local `make mac-app` does the same unsigned. |
+| 36.8 | **Updates** | the Tauri updater replaces the whole app (shell + server payload); on next start the supervisor migrates the DB (backup first, as today), rebuilds the venv only if constraints changed, restarts the roles. The launcher's own self-update is off inside the app (one updater). |
+| 36.9 | **Move the home Mac in** | `maktaba-server migrate-from-dev`: stop stack.sh services, `pg_dump` the Docker Postgres → restore into the bundled one, copy `~/.maktaba/{chroma,stream-signing.key,…}` and HF models, carry `MAKTABA_PATH_MAP` and the STT settings into `server.toml`, verify (library count, transcripts, Live TV host check-in), then retire Docker Postgres. Reversible (the Docker volume is kept until confirmed). |
+| 36.10 | **Clean up** | drop the broken Mac compose overlay and stale plists/docs (`docs/wiki/deployment.md` §8–9, legacy `com.maktaba.*.plist`), README "Install on a Mac" → the app; keep `stack.sh` as the developer path only. |
+
+## Order and parallel tracks
+
+- **Track A (server):** 36.1 → 36.2 → 36.4 (supervisor, Go, `cmd/maktaba-server`).
+- **Track B (pipeline):** 36.3, then its half of 36.4 (pipeline settings).
+- **Track C (app shell):** 36.5 → 36.6 (Tauri, `apps/desktop`; uses A's `/processes` and `setup --json`).
+- **Track D (packaging):** 36.7 → 36.8 (CI + `make mac-app`; needs A–C's layout, starts on the fixed layout above).
+- **Then:** 36.9 on the home Mac, 36.10.
+
+Each story ships as its own PR with tests, through the usual flow (CI green, review, merge, move live).
+
+## Owner decisions still open
+
+- **Apple Developer ID** for signing/notarization (36.7): needed for a double-clickable download;
+  without it the app runs from a local build (right-click → Open).
+- **Data location** for large libraries: the defaults above, or a user-chosen folder for
+  `postgres/` and `models/` (setup can offer it).

@@ -41,10 +41,26 @@ func ChildEnv(role Role, cfg config.Config) []string {
 	// Media roots — comma-joined for the scanner.
 	add("MAKTABA_MEDIA_ROOTS", strings.Join(cfg.Media.Roots, ","))
 
-	// Transcription backend/model for the pipeline workers.
-	add("MAKTABA_TRANSCRIPTION_BACKEND", cfg.Transcription.Backend)
-	add("MAKTABA_TRANSCRIPTION_MODEL", cfg.Transcription.Model)
-	add("MAKTABA_MODELS_DIR", cfg.Server.DataDir+"/models")
+	// The share's paths on this machine ([media] path_map): the api's cluster hub
+	// writes <share>/maktaba/cluster through it (the pipeline reads it as Plex's
+	// fallback map, another thing: it gets MAKTABA_WORKER_PATH_MAP below).
+	if role != RolePipeline && os.Getenv("MAKTABA_PATH_MAP") == "" {
+		add("MAKTABA_PATH_MAP", strings.TrimSpace(cfg.Media.PathMap))
+	}
+	// The install's large state (Epic 36 story 36.2: on a Mac beside data/ in
+	// ~/Library/Application Support/Maktaba): models and the semantic-search index.
+	// (MAKTABA_MODEL_CACHE_DIR: where this machine keeps the models it downloads;
+	// MAKTABA_MODELS_DIR is the share's models folder the home publishes for the
+	// nodes, left to the operator.)
+	if os.Getenv("MAKTABA_MODEL_CACHE_DIR") == "" {
+		add("MAKTABA_MODEL_CACHE_DIR", filepath.Join(cfg.StateDir(), "models"))
+	}
+	if os.Getenv("MAKTABA_CHROMA_DIR") == "" {
+		add("MAKTABA_CHROMA_DIR", filepath.Join(cfg.StateDir(), "chroma"))
+	}
+
+	// Maktaba.app (Epic 36): the payload's ffmpeg for every role.
+	env = append(env, bundleEnv(config.AppBundle())...)
 
 	// Cross-service discovery: the api needs to reach streaming +
 	// pipeline over gRPC. These default ports mirror the compose stack.
@@ -121,7 +137,7 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		// directory: the binary's default, /var/maktaba, is the containers' path,
 		// which a user cannot create on macOS or Windows. An operator's own is kept.
 		if os.Getenv("MAKTABA_CACHE_ROOT") == "" {
-			add("MAKTABA_CACHE_ROOT", filepath.Join(cfg.Server.DataDir, "cache", "streaming"))
+			add("MAKTABA_CACHE_ROOT", filepath.Join(cfg.StateDir(), "cache", "streaming"))
 		}
 		add("MAKTABA_STREAMING_HTTP_ADDR", cfg.Server.StreamAddr)
 		add("MAKTABA_ADMIN_ADDR", streamingAdmin(cfg))
@@ -156,10 +172,20 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		// Its /healthz (event-loop heartbeat) is the pipeline's liveness
 		// probe.
 		add("MAKTABA_PIPELINE_LOGS_ADDR", pipelineLogs(cfg))
-		// extra transcription workers ([pipeline] instances, BuildPipelineInstances)
-		// take the transcribe stage; the main worker leaves it to them
-		if cfg.Pipeline.Instances > 0 {
-			add("MAKTABA_PIPELINE_EXCLUDE_STAGES", "transcribe")
+		// [transcription]: the models the transcribe stage loads (Epic 36 story 36.4)
+		for _, kv := range sttEnv(cfg) {
+			if k, _, _ := strings.Cut(kv, "="); os.Getenv(k) == "" {
+				env = append(env, kv)
+			}
+		}
+		if os.Getenv("MAKTABA_WORKER_PATH_MAP") == "" {
+			add("MAKTABA_WORKER_PATH_MAP", strings.TrimSpace(cfg.Media.PathMap))
+		}
+		// the transcription workers (PlanSTT, BuildPipelineInstances) take the
+		// transcribe stage; the main worker leaves it to them
+		// (added to the stages an operator's own environment excludes)
+		if PlanSTT(cfg).Workers > 0 {
+			add("MAKTABA_PIPELINE_EXCLUDE_STAGES", withStage(os.Getenv("MAKTABA_PIPELINE_EXCLUDE_STAGES"), "transcribe"))
 		}
 	}
 
@@ -271,14 +297,25 @@ func LocalAddr(bind, defaultPort string) string {
 	return fmt.Sprintf("127.0.0.1:%s", port)
 }
 
-// SecretsKeyPath is the home's secrets key file: secrets.key in the
-// directory of server.toml (config.Path, which honours MAKTABA_CONFIG).
+// SecretsKeyPath is the home's secrets key file: secrets.key in the keys
+// directory (config.KeysDir: beside server.toml, or keys/ on a Mac).
 func SecretsKeyPath() string {
-	return filepath.Join(filepath.Dir(config.Path()), "secrets.key")
+	return filepath.Join(config.KeysDir(), "secrets.key")
 }
 
 // StreamKeyPath is this machine's stream signing key: stream-signing.key in
-// the directory of server.toml (next to secrets.key).
+// the keys directory (next to secrets.key).
 func StreamKeyPath() string {
-	return filepath.Join(filepath.Dir(config.Path()), "stream-signing.key")
+	return filepath.Join(config.KeysDir(), "stream-signing.key")
+}
+
+// withStage adds stage to a comma-separated stage list (once).
+func withStage(list, stage string) string {
+	var out []string
+	for _, s := range strings.Split(list, ",") {
+		if s = strings.TrimSpace(s); s != "" && s != stage {
+			out = append(out, s)
+		}
+	}
+	return strings.Join(append(out, stage), ",")
 }
