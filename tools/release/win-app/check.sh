@@ -32,8 +32,8 @@
 #   none, no hook may run it at all and the installer keeps no record; where it does, the
 #   record (MaktabaServerFlags in the uninstall key) must be there and the hooks must have run
 #   it with exactly the flags each step calls for (install --server-start; reinstall
-#   --server-stop, --server-start; uninstall --server-stop, --server-remove), each run seen
-#   by a thread that looks for Maktaba.exe every 15 ms.
+#   --server-stop, --server-start; uninstall --server-stop, --server-remove). Each run is
+#   watched in a job object (run-watched.ps1), which tells of every process it starts.
 #
 # Usage: check.sh [--payload DIR] [--installer SETUP.exe]
 #   --payload    the payload (default: build/win-app/server)

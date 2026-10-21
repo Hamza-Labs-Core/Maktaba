@@ -8,6 +8,7 @@ so one Windows install runs everything. This directory builds the payload and th
 | `payload.sh` | builds `build/win-app/server` (layout below), writes the tauri overlay `build/win-app/tauri.win-app.conf.json` |
 | `check.sh` | smoke test of the payload and, with `--installer`, a silent install over a client-only app, a reinstall and an uninstall of the installer |
 | `test-hooks.sh` | the installer hooks on both kinds of `Maktaba.exe`, with stand-ins (no app build needed, only makensis) |
+| `run-watched.ps1` | runs an installer for `check.sh` in a job object and reports every process it starts |
 | `build-app.sh` | payload → `tauri build --bundles nsis` → check. `make win-app` runs it |
 | `pins.env` | the third-party downloads: version, URL, SHA-256 |
 | `payload_tool.py` | reads PE import tables: the DLLs Postgres needs, and the check that nothing loads from outside the payload (`test_payload_tool.py`) |
@@ -131,8 +132,9 @@ running (its window) when it does not. It installs over a client-only app (a sta
 `Maktaba.exe` that takes no flag and never exits, with its registration and a stale record),
 reinstalls and uninstalls, and fails on any hook still running after 20 s; where the shell
 takes the flags, on a missing record or when the hooks did not run `Maktaba.exe` with exactly
-the flags each step calls for (a thread looks for it every 15 ms: a flag-taking run takes
-0.2-1 s); where it takes none, on any run of `Maktaba.exe` by a hook at all.
+the flags each step calls for (`run-watched.ps1` runs each installer in a job object, which
+tells of every process it starts, so even a hook run of a few milliseconds is seen with its
+command line); where it takes none, on any run of `Maktaba.exe` by a hook at all.
 
 `check.sh --installer` changes this user's registry while it runs (the uninstall entry, the
 `maktaba://` links, `HKCU\Software\<publisher>\Maktaba` for the last install folder) and puts
