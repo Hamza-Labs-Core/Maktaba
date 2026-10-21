@@ -102,10 +102,11 @@ func runFakeProgram() (code int, ok bool) {
 			return 10, true
 		}
 		if fail == "venv-wait" {
-			// a long build: it stops when asked, as the real bootstrap does (130)
-			fmt.Println(`{"event":"status","state":"building","step":"deps","progress":0.1,"message":"Collecting torch"}`)
+			// a long build: it stops when asked, as the real bootstrap does (130);
+			// listening before the first line, which is when the test asks
 			stop := make(chan os.Signal, 1)
 			signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+			fmt.Println(`{"event":"status","state":"building","step":"deps","progress":0.1,"message":"Collecting torch"}`)
 			select {
 			case <-stop:
 				fmt.Println(`{"event":"status","state":"interrupted","step":"deps","progress":0.1,"message":"Stopped"}`)
