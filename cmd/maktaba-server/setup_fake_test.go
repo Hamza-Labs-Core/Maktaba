@@ -25,6 +25,16 @@ type fakeCall struct {
 	DB    string            `json:"db,omitempty"`
 }
 
+// spawnsPrograms skips, under -short, a test that runs the stand-in programs:
+// each one starts this test binary again, seconds in all under -race, past the
+// unit tier's per-test cap. They run in the integration tier (without -short).
+func spawnsPrograms(t *testing.T) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("runs the stand-in programs; runs without -short")
+	}
+}
+
 // runFakeProgram runs this test binary as a stand-in program when
 // MAKTABA_TEST_FAKE names one; ok false otherwise.
 func runFakeProgram() (code int, ok bool) {
