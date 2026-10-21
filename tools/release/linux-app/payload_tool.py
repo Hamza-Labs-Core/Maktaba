@@ -87,7 +87,13 @@ def _entries(root: Path) -> list[str]:
                 _die(f"{rel!r}: a path with a tab or newline cannot be listed")
             st = p.lstat()
             if stat.S_ISLNK(st.st_mode):
-                out.append(f"l\t{os.readlink(p)}\t{rel}")
+                # tauri's bundlers copy resources with fs::copy: a link must end at
+                # a file of the payload (the runtime copy makes the link again)
+                target = os.readlink(p)
+                end = p.resolve()
+                if os.path.isabs(target) or not _inside(root, end) or not end.is_file():
+                    _die(f"{rel} -> {target}: a link must end at a file of the payload")
+                out.append(f"l\t{target}\t{rel}")
             elif stat.S_ISREG(st.st_mode):
                 out.append(
                     f"f\t{stat.S_IMODE(st.st_mode):04o}\t{st.st_size}\t{_sha256(p)}\t{rel}"

@@ -70,6 +70,14 @@ class ManifestTest(unittest.TestCase):
         self.assertIn("added:   new", out)
         self.assertIn("missing: lib/libx.so.1", out)
 
+    def test_links_must_end_at_a_file_of_the_payload(self) -> None:
+        for name, target in (("dirlink", "lib"), ("dangling", "nothing"), ("abs", "/bin/sh")):
+            os.symlink(target, self.root / name)
+            with self.assertRaises(SystemExit):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    pt._entries(self.root)
+            (self.root / name).unlink()
+
     def test_a_mode_change_is_a_change(self) -> None:
         quiet(pt.cmd_manifest, self.root)
         os.chmod(self.root / "bin" / "tool", 0o644)
