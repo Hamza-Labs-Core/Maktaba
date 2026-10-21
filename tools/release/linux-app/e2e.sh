@@ -185,6 +185,17 @@ sys.exit(0 if any(a.get("name") == sys.argv[1] for a in json.load(sys.stdin).get
     printf '%s\n' "$dir/server"
 }
 FIRST="$(previous_release "$SCRATCH/previous")" || die "the latest release's payload"
+# a release from before the terminal setup (story 39.6) cannot be set up by this test
+if [ -n "$FIRST" ]; then
+    help="$("$FIRST/bin/maktaba-server" setup --help 2>&1 || true)"
+    case "$help" in
+        *--answers*) ;;
+        *)
+            log "the latest release's payload has no setup --answers (it is older than the terminal setup)"
+            FIRST=""
+            ;;
+    esac
+fi
 if [ -n "$FIRST" ]; then
     log "set up from the latest release's payload ($("$PY" -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$FIRST/payload.json"))"
 else
