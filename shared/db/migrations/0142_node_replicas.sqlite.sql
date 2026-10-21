@@ -14,8 +14,9 @@ ALTER TABLE cluster_nodes ADD COLUMN IF NOT EXISTS replica_reported_at TEXT;
 
 -- +goose StatementBegin
 CREATE TABLE IF NOT EXISTS cluster_replica_beat (
-    id  INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-    at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id      INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ca_pem  TEXT
 );
 -- +goose StatementEnd
 

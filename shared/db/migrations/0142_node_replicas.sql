@@ -20,7 +20,11 @@
 --      cluster_node_report_replica.
 --   4. cluster_replica_beat: this home's clock, written every few seconds while a
 --      machine follows it, so a copy knows how far it has applied the home's changes
---      (the offline sign-in's freshness rule, the lag the machines page shows).
+--      (the offline sign-in's freshness rule, the lag the machines page shows); and
+--      the CA of this database's TLS, which a machine pins for its replication.
+--   5. cluster_node_replica_grant: a machine asks for its copy over its own database
+--      connection: its replication role (maktaba_rep_<id>, with the password the
+--      machine chose) and its slot (maktaba_copy_<id>).
 --
 -- Additive.
 --
@@ -121,8 +125,9 @@ $$;
 
 -- +goose StatementBegin
 CREATE TABLE IF NOT EXISTS cluster_replica_beat (
-    id  smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-    at  timestamptz NOT NULL DEFAULT now()
+    id      smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    at      timestamptz NOT NULL DEFAULT now(),
+    ca_pem  text
 );
 INSERT INTO cluster_replica_beat (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 DO $$
@@ -163,8 +168,88 @@ END
 $$;
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+-- A machine's copy of this database, for its own database role only
+-- (cluster_node_guard): its replication role, in the replicas' group, with the password
+-- the machine chose (it knows it before it asks, so its programs are given it at their
+-- start), and its slot, which keeps the changes the machine has not applied yet.
+-- p_fresh (the machine is about to copy the database anew, its copy stopped): the slot
+-- is made anew, from now. A slot this home gave up on (past the changes it keeps for a
+-- machine behind) is made anew too, and slot_made says so: the machine's copy cannot
+-- follow from where it was and copies the database anew.
+CREATE OR REPLACE FUNCTION cluster_node_replica_grant(p_node uuid, p_password text, p_fresh boolean)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $f$
+DECLARE
+    v_id   text := replace(p_node::text, '-', '');
+    v_role text := 'maktaba_rep_' || replace(p_node::text, '-', '');
+    v_slot text := 'maktaba_copy_' || replace(p_node::text, '-', '');
+    v_has  boolean;
+    v_live boolean;
+    v_lost boolean;
+    v_made boolean := false;
+BEGIN
+    PERFORM cluster_node_guard(p_node);
+    IF NOT EXISTS (SELECT 1 FROM cluster_nodes WHERE id = p_node AND state = 'approved') THEN
+        RAISE EXCEPTION 'cluster node % is not approved', p_node USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    IF p_password IS NULL OR length(p_password) < 32 THEN
+        RAISE EXCEPTION 'a copy''s password has 32 characters at least' USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_replicas') THEN
+        RAISE EXCEPTION 'this database keeps no copies for machines (no replicas group)'
+            USING ERRCODE = 'feature_not_supported';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = v_role) THEN
+        EXECUTE format('ALTER ROLE %I WITH LOGIN REPLICATION INHERIT PASSWORD %L', v_role, p_password);
+    ELSE
+        EXECUTE format('CREATE ROLE %I WITH LOGIN REPLICATION INHERIT PASSWORD %L', v_role, p_password);
+    END IF;
+    IF NOT pg_has_role(v_role, 'maktaba_replicas', 'MEMBER') THEN
+        EXECUTE format('GRANT maktaba_replicas TO %I', v_role);
+    END IF;
+    SELECT true, active, coalesce(wal_status = 'lost', false) OR slot_type <> 'physical'
+      INTO v_has, v_live, v_lost
+      FROM pg_replication_slots WHERE slot_name = v_slot;
+    v_has := coalesce(v_has, false);
+    IF v_has AND (p_fresh OR v_lost) THEN
+        IF v_live THEN
+            RAISE EXCEPTION 'the slot % is in use: stop the copy first', v_slot USING ERRCODE = 'object_in_use';
+        END IF;
+        PERFORM pg_drop_replication_slot(v_slot);
+        v_has := false;
+    END IF;
+    IF NOT v_has THEN
+        PERFORM pg_create_physical_replication_slot(v_slot, true);
+        v_made := true;
+    END IF;
+    RETURN jsonb_build_object(
+        'role', v_role,
+        'slot', v_slot,
+        'slot_made', v_made,
+        'system_identifier', (SELECT system_identifier FROM pg_control_system())::text,
+        'server_version_num', current_setting('server_version_num')::int,
+        'database', current_database(),
+        'ca_pem', (SELECT ca_pem FROM cluster_replica_beat WHERE id = 1),
+        'node', v_id);
+END
+$f$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+REVOKE EXECUTE ON FUNCTION cluster_node_replica_grant(uuid, text, boolean) FROM PUBLIC;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_worker') THEN
+        GRANT EXECUTE ON FUNCTION cluster_node_replica_grant(uuid, text, boolean) TO maktaba_worker;
+    END IF;
+END
+$$;
+-- +goose StatementEnd
+
 -- +goose Down
 -- +goose StatementBegin
+DROP FUNCTION IF EXISTS cluster_node_replica_grant(uuid, text, boolean);
 DROP FUNCTION IF EXISTS cluster_node_report_replica(uuid, jsonb);
 DROP TABLE IF EXISTS cluster_replica_beat;
 ALTER TABLE cluster_nodes DROP COLUMN IF EXISTS replica_reported_at;

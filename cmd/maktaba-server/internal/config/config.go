@@ -46,6 +46,15 @@ type Config struct {
 	// ClusterDB is how the cluster's machines reach this home's bundled Postgres
 	// (serve fills it in; zero: they are not served by it).
 	ClusterDB ClusterDB `toml:"-"`
+	// NodeCopy is a full node's copy of its home's database (Epic 37, nodecopy), as
+	// serve resolved it ("": none).
+	NodeCopy NodeCopy `toml:"-"`
+}
+
+// NodeCopy: the address this machine's programs reach its copy of the home's database
+// at (MAKTABA_COPY_DATABASE_URL).
+type NodeCopy struct {
+	DSN string
 }
 
 // ClusterDB: the bundled Postgres's port on the LAN and the CA certificate its
@@ -74,6 +83,9 @@ type PostgresSection struct {
 	// database CA's certificate (made automatically); "off" sends them in the clear,
 	// passwords and every replicated row readable on the network.
 	TLS string `toml:"tls"`
+	// CopyPort is the loopback port of a full node's copy of its home's database
+	// (default 54330).
+	CopyPort int `toml:"copy_port"`
 }
 
 // PipelineSection is the [pipeline] table (Epic 35 story 35.8): how many pipeline

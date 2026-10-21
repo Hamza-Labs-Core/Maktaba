@@ -182,7 +182,7 @@ func (b Bundle) serverArgs(lan bool) []string {
 	args := []string{"-D", b.Data, "-p", strconv.Itoa(b.Port),
 		"-c", "listen_addresses=" + listen, "-c", "unix_socket_directories=" + sock}
 	if b.TLS && b.TLSReady() {
-		args = append(args, "-c", "ssl=on")
+		args = append(args, "-c", "ssl=on", "-c", "ssl_cert_file="+b.serverCert(), "-c", "ssl_key_file="+b.serverKey())
 	}
 	return args
 }

@@ -30,10 +30,11 @@ const (
 	// CACertFile and caKeyFile are the cluster database CA, in the keys directory.
 	CACertFile = "postgres-ca.crt"
 	caKeyFile  = "postgres-ca.key"
-	// serverCertFile and serverKeyFile are the server's, in the data directory
-	// (postgres's default names there).
-	serverCertFile = "server.crt"
-	serverKeyFile  = "server.key"
+	// serverCertFile and serverKeyFile are the server's, in the keys directory too:
+	// never in the data directory, which a machine's copy of the database is made of
+	// (pg_basebackup takes the whole directory).
+	serverCertFile = "postgres-server.crt"
+	serverKeyFile  = "postgres-server.key"
 	// clusterMarker records that the cluster bootstrap ran.
 	clusterMarker = "maktaba-bootstrap-cluster.done"
 	// WorkerGroup and ReplicaGroup are the machines' role groups.
@@ -52,10 +53,13 @@ var (
 // CACert is the path of the CA certificate the machines verify this server with.
 func (b Bundle) CACert() string { return filepath.Join(b.Keys, CACertFile) }
 
+func (b Bundle) serverCert() string { return filepath.Join(b.Keys, serverCertFile) }
+func (b Bundle) serverKey() string  { return filepath.Join(b.Keys, serverKeyFile) }
+
 // TLSReady reports whether the server's certificate and key are in place.
 func (b Bundle) TLSReady() bool {
-	_, e1 := os.Stat(filepath.Join(b.Data, serverCertFile))
-	_, e2 := os.Stat(filepath.Join(b.Data, serverKeyFile))
+	_, e1 := os.Stat(b.serverCert())
+	_, e2 := os.Stat(b.serverKey())
 	return e1 == nil && e2 == nil
 }
 
@@ -66,10 +70,10 @@ func (b Bundle) ensureTLS(now time.Time) error {
 	if err != nil {
 		return fmt.Errorf("bundled postgres: the database CA: %w", err)
 	}
-	certPath := filepath.Join(b.Data, serverCertFile)
+	certPath := b.serverCert()
 	if c, err := readCert(certPath); err == nil && c.NotAfter.Sub(now) > serverRenewBefore &&
 		c.CheckSignatureFrom(caCert) == nil {
-		if _, err := os.Stat(filepath.Join(b.Data, serverKeyFile)); err == nil {
+		if _, err := os.Stat(b.serverKey()); err == nil {
 			return nil
 		}
 	}
@@ -97,7 +101,7 @@ func (b Bundle) ensureTLS(now time.Time) error {
 		return err
 	}
 	// postgres refuses a key others may read (0600, its owner)
-	if err := writePEM(filepath.Join(b.Data, serverKeyFile), "PRIVATE KEY", keyDER); err != nil {
+	if err := writePEM(b.serverKey(), "PRIVATE KEY", keyDER); err != nil {
 		return err
 	}
 	return writePEM(certPath, "CERTIFICATE", der)

@@ -480,11 +480,16 @@ func warnUnclassified(r chi.Router, logger *slog.Logger) {
 }
 
 // mountHomeClusterAuth mounts the home's delegation and cluster sign-in endpoints and
-// its /api/cluster/self (stories 35.9, 35.11).
+// its /api/cluster/self (stories 35.9, 35.11), and runs its side of the machines'
+// copies of its database (Epic 37).
 func mountHomeClusterAuth(r chi.Router, db *sql.DB, logger *slog.Logger) {
 	webURL := os.Getenv("MAKTABA_WEB_URL")
 	router.MountClusterAuth(r, router.ClusterAuthDeps{DB: db, WebURL: webURL, Logger: logger})
 	router.MountNodeLocal(r, router.NodeLocalDeps{Self: homeSelf(&cluster.PGStore{DB: db}, webURL)})
+	// the machines' copies of this database (Epic 37): the beat, the CA, the cap
+	rules := nodemode.CachedRules(db, time.Minute)
+	go (&cluster.Copies{DB: db, CAFile: os.Getenv("MAKTABA_CLUSTER_PG_CA"), Logger: logger,
+		KeepGB: func() int { return rules().ReplicaWALKeepGB }}).Run(context.Background())
 }
 
 // mountNode opens the home's database with the node's role, and this machine's copy of

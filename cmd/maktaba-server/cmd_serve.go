@@ -134,11 +134,22 @@ func runServe(cfg config.Config, opts serveOptions) error {
 		return err
 	}
 
+	// Epic 37: a full node keeps a live copy of its home's database (its address is
+	// in the api's and streaming's environment, so it is resolved before them).
+	wholeMachine := opts.role == "" || opts.role == "all"
+	cp, err := nodeCopy(&cfg, wholeMachine)
+	if err != nil {
+		return err
+	}
+
 	// Build the supervised processes.
 	var procs []supervisor.Process
 	if pg != nil {
 		procs = append(procs, supervisor.BuildPostgres(*pg))
 		go pg.RunBackups(ctx, backupCheckInterval, os.Stderr)
+	}
+	if cp != nil {
+		procs = append(procs, supervisor.BuildCopy(*cp))
 	}
 	sopts := supervisor.Options{Config: cfg, BinDir: opts.binDir, ReleaseDir: releaseDir}
 	for _, r := range roles {
@@ -202,6 +213,9 @@ func runServe(cfg config.Config, opts serveOptions) error {
 		defer func() { _ = shutdownWeb(adminSrv) }()
 	}
 	confirmPending(ctx, sup, releaseDir)
+	if cp != nil {
+		runNodeCopy(ctx, cfg, *cp, sup)
+	}
 	runErr := sup.Run(ctx, opts.grace)
 	if webSrv != nil {
 		_ = shutdownWeb(webSrv)

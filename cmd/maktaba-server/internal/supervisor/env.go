@@ -134,8 +134,12 @@ func ChildEnv(role Role, cfg config.Config) []string {
 			add("MAKTABA_NODE_WEB_URL", cfg.PublicWebURL())
 			add("MAKTABA_AGENT_URL", StateURL(cfg))
 			add("MAKTABA_AGENT_TOKEN_FILE", LocalTokenPath(cfg))
-			// its playback catalog, kept for the home's database down (PR #145)
+			// its own state (the sign-ins made here, when the home last answered)
 			add("MAKTABA_NODE_STATE_DIR", NodeStateDir(cfg))
+			// its copy of the home's database (Epic 37)
+			if cfg.NodeCopy.DSN != "" {
+				add("MAKTABA_COPY_DATABASE_URL", cfg.NodeCopy.DSN)
+			}
 		}
 	case RoleStreaming:
 		// The streaming binary binds MAKTABA_HTTP_ADDR; the older
@@ -165,10 +169,13 @@ func ChildEnv(role Role, cfg config.Config) []string {
 			add("MAKTABA_TV_HOST_ROLE", "node")
 			add("MAKTABA_NODE_ID", n.NodeID)
 			// a full node's streaming role also serves its own VOD (Epic 35 story 35.8),
-			// from its own snapshot while the home's database is down (PR #145)
+			// from this machine's copy of the home's database while that is down (Epic 37)
 			if NodeMode(cfg, n) {
 				add("MAKTABA_FULL_NODE", "1")
 				add("MAKTABA_NODE_STATE_DIR", NodeStateDir(cfg))
+				if cfg.NodeCopy.DSN != "" {
+					add("MAKTABA_COPY_DATABASE_URL", cfg.NodeCopy.DSN)
+				}
 			}
 		}
 	case RoleTVSlot:
@@ -202,8 +209,8 @@ func ChildEnv(role Role, cfg config.Config) []string {
 	return env
 }
 
-// NodeStateDir is where a full node's roles keep their own state: the playback
-// catalog each keeps for the home's database down (PR #145).
+// NodeStateDir is where a full node's roles keep their own state: the sign-ins made
+// on it while the home was away, when the home last answered, its copy's status.
 func NodeStateDir(cfg config.Config) string { return filepath.Join(cfg.Server.DataDir, "node") }
 
 // nodeConfig reads this machine's Epic 31 node config (tests replace it).

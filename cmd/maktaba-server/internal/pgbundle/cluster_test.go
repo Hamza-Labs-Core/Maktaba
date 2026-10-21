@@ -58,11 +58,19 @@ func TestEnsureTLS(t *testing.T) {
 	if !b.TLSReady() {
 		t.Fatal("no server certificate")
 	}
+	// a machine's copy is the data directory: the server's key is never in it
+	if entries, _ := os.ReadDir(b.Data); len(entries) > 0 {
+		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), ".key") || strings.HasSuffix(e.Name(), ".crt") {
+				t.Fatalf("%s in the data directory", e.Name())
+			}
+		}
+	}
 	ca, err := readCert(b.CACert())
 	if err != nil || !ca.IsCA {
 		t.Fatalf("CA: %v %v", ca, err)
 	}
-	srv, err := readCert(filepath.Join(b.Data, serverCertFile))
+	srv, err := readCert(b.serverCert())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +80,7 @@ func TestEnsureTLS(t *testing.T) {
 		t.Fatalf("the server certificate does not verify with the CA: %v", err)
 	}
 	if runtime.GOOS != "windows" {
-		for _, f := range []string{filepath.Join(b.Data, serverKeyFile), filepath.Join(b.Keys, caKeyFile)} {
+		for _, f := range []string{b.serverKey(), filepath.Join(b.Keys, caKeyFile)} {
 			if info, err := os.Stat(f); err != nil || info.Mode().Perm() != 0o600 {
 				t.Errorf("%s: %v %v, want 0600", f, info.Mode().Perm(), err)
 			}
@@ -83,13 +91,13 @@ func TestEnsureTLS(t *testing.T) {
 	if err := b.ensureTLS(now.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if again, _ := readCert(filepath.Join(b.Data, serverCertFile)); again.SerialNumber.Cmp(srv.SerialNumber) != 0 {
+	if again, _ := readCert(b.serverCert()); again.SerialNumber.Cmp(srv.SerialNumber) != 0 {
 		t.Fatal("a valid server certificate was replaced")
 	}
 	if err := b.ensureTLS(srv.NotAfter.Add(-time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	renewed, _ := readCert(filepath.Join(b.Data, serverCertFile))
+	renewed, _ := readCert(b.serverCert())
 	if renewed.SerialNumber.Cmp(srv.SerialNumber) == 0 {
 		t.Fatal("a server certificate near its end was kept")
 	}
