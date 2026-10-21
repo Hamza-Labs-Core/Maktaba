@@ -165,6 +165,45 @@ jobs:
     if: needs.changes.outputs.linux_app == 'true'
     uses: ./.github/workflows/_linux-app.yml
 
+  # The Linux app's pinned downloads (~150 MB a runner) in a cache on main: a pull
+  # request's run restores main's caches but not another pull request's, so without
+  # this one every run downloads them again (and fails while their host is down).
+  # Only a push to main saves it; when it is there already this is one lookup.
+  linux-app-downloads:
+    if: github.event_name == 'push'
+    name: Linux app downloads (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-22.04 }
+          - { arch: aarch64, runner: ubuntu-22.04-arm }
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/linux-app/downloads
+          key: linux-app-downloads-${{ matrix.arch }}-${{ hashFiles('tools/release/linux-app/pins.env') }}
+          lookup-only: true
+      # missing: start from an earlier pins.env's cache, so only the changed pieces download
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: build/linux-app/downloads
+          key: linux-app-downloads-${{ matrix.arch }}-${{ hashFiles('tools/release/linux-app/pins.env') }}
+          restore-keys: linux-app-downloads-${{ matrix.arch }}-
+      - name: Download the pinned files
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: tools/release/linux-app/payload.sh --fetch-only
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/linux-app/downloads
+          key: linux-app-downloads-${{ matrix.arch }}-${{ hashFiles('tools/release/linux-app/pins.env') }}
+
   pr-body-check:
     if: github.event_name == 'pull_request'
     uses: ./.github/workflows/_pr-body-check.yml
