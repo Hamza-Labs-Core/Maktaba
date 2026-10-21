@@ -58,6 +58,13 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **A user's server keeps its update verification current.** `maktaba-server` gave the api and
+  streaming no data directory, so they used `/var/lib/maktaba`: in the desktop apps and every
+  per-user install the daily refresh of the Sigstore trusted root failed (permission denied), and
+  once the root built into the binary expired, Update now could no longer verify a release.
+  Uploaded channel art had the same problem. The supervisor now passes its `data_dir`
+  (`MAKTABA_DATA_DIR`), and an api or streaming server run on its own uses `/var/lib/maktaba`
+  only as root, else the user's `$XDG_DATA_HOME/maktaba`.
 - **The launcher never sends CTRL_BREAK to a server that has exited** (Windows, Epic 38 story
   38.2). It holds a handle to the server until it is reaped and asks it to stop only while it
   still runs: a CTRL_BREAK naming a pid that leads no process group (a server that exited as the

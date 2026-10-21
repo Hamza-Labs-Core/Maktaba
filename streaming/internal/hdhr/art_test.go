@@ -343,3 +343,19 @@ func TestM3U_LogosOnThisService(t *testing.T) {
 		t.Errorf("m3u: %s", body)
 	}
 }
+
+// The art's folder without MAKTABA_DATA_DIR is where the API keeps it: the
+// user's XDG data dir unless the process is a system service.
+func TestDataDirFallsBackAsTheAPIDoes(t *testing.T) {
+	home := filepath.Join(string(filepath.Separator), "home", "me")
+	if got := defaultDataDir(0, "", home); got != "/var/lib/maktaba" {
+		t.Errorf("root: %q", got)
+	}
+	if got := defaultDataDir(1000, "", home); got != filepath.Join(home, ".local", "share", "maktaba") {
+		t.Errorf("a user: %q", got)
+	}
+	xdg := t.TempDir() // absolute on every OS
+	if got := defaultDataDir(1000, xdg, home); got != filepath.Join(xdg, "maktaba") {
+		t.Errorf("XDG_DATA_HOME: %q", got)
+	}
+}
