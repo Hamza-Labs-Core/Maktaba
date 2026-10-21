@@ -120,13 +120,20 @@ export const KNOWN_CAUSES = [
   "no_handler",
   "graph_violation",
   "db_error",
+  "shm_full",
+  "disk_full",
+  "permission_denied",
+  "ffmpeg_rc",
+  "model_unavailable",
   "awaiting_review",
   "stale_graph",
 ] as const;
 
 export function causeHelp(cause: string | null | undefined): HelpRef {
-  const known = (KNOWN_CAUSES as readonly string[]).includes(cause ?? "");
-  return { topic: "failures", anchor: known ? codeAnchor(cause!) : "other" };
+  const c = cause ?? "";
+  // "model_unavailable: …" is a generated cause of a known kind
+  const known = KNOWN_CAUSES.find((k) => c === k || c.startsWith(`${k}:`));
+  return { topic: "failures", anchor: known ? codeAnchor(known) : "other" };
 }
 
 /** Why an idle queue waits (api queues/types.go WaitingReason). */
@@ -150,14 +157,19 @@ export function waitingHelp(reason: string): HelpRef {
 }
 
 /**
- * The queue-health failure classes (Epic 40, "Failing items": transient,
- * dependency:model:<section>, dependency:share:<root>, resource:disk,
- * resource:shm, item_permanent, unknown). Epic 40 adds an entry per class
- * here, keyed by the class without its detail ("dependency:model"), with its
- * section in the failures topic; until then a class links to the general
- * entry, and its causes keep their own entries (causeHelp).
+ * The queue-health failure classes (Epic 40, engine/failure_classes.py),
+ * keyed by the class without its detail: "dependency:model:tag" finds
+ * "dependency:model". A class with no entry links to its cause's entry.
  */
-export const FAILURE_CLASS_HELP: ReadonlyMap<string, HelpRef> = new Map();
+export const FAILURE_CLASS_HELP: ReadonlyMap<string, HelpRef> = new Map([
+  ["transient", { topic: "failures", anchor: "class-transient" }],
+  ["dependency:model", { topic: "failures", anchor: "class-dependency-model" }],
+  ["dependency:share", { topic: "failures", anchor: "class-dependency-share" }],
+  ["resource:disk", { topic: "failures", anchor: "class-resource-disk" }],
+  ["resource:shm", { topic: "failures", anchor: "class-resource-shm" }],
+  ["item_permanent", { topic: "failures", anchor: "class-item-permanent" }],
+  ["unknown", { topic: "failures", anchor: "class-unknown" }],
+]);
 
 export function failureClassHelp(cls: string): HelpRef {
   const parts = cls.split(":");

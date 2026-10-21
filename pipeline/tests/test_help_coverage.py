@@ -13,6 +13,12 @@ from pathlib import Path
 import pytest
 
 from maktaba_pipeline.engine.causes import _KNOWN
+from maktaba_pipeline.engine.failure_classes import (
+    DEFAULT_TABLE,
+    ITEM_PERMANENT,
+    TRANSIENT,
+    UNKNOWN,
+)
 from maktaba_pipeline.engine.loader import build_full_graph
 from maktaba_pipeline.extensions import discover
 
@@ -47,3 +53,12 @@ def test_every_cause_has_help(locale: str) -> None:
     missing = [c for c in causes if anchor(c) not in have]
     assert not missing, f"causes without an entry in web/src/help/content/{locale}/failures.md"
     assert "other" in have, "the entry for generated kind:message causes"
+
+
+@pytest.mark.parametrize("locale", ["en", "ar"])
+def test_every_failure_class_has_help(locale: str) -> None:
+    """/help/failures#class-<class> (a class's detail after its second part is dropped)."""
+    have = anchors(locale, "failures")
+    classes = {cls for _, cls in DEFAULT_TABLE} | {TRANSIENT, ITEM_PERMANENT, UNKNOWN}
+    missing = [c for c in classes if "class-" + anchor(":".join(c.split(":")[:2])) not in have]
+    assert not missing, f"failure classes without an entry in {locale}/failures.md"

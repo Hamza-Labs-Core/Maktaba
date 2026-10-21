@@ -7,6 +7,7 @@ import en from "../i18n/en.json";
 import ar from "../i18n/ar.json";
 import { anchors, headings, links } from "./parse";
 import {
+  FAILURE_CLASS_HELP,
   KNOWN_CAUSES,
   PAGE_HELP,
   WAITING_REASONS,
@@ -142,6 +143,11 @@ describe("help links from the app", () => {
     expectRef(causeHelp("ffmpeg:something new"), "generated cause");
     expectRef(causeHelp(null), "unknown cause");
     expectRef(failureClassHelp("anything"), "failure class");
+    for (const [cls, ref] of FAILURE_CLASS_HELP) expectRef(ref, `failure class ${cls}`);
+    expect(failureClassHelp("dependency:model:tagcheck").anchor).toBe("class-dependency-model");
+    expect(causeHelp("model_unavailable: the model did not answer").anchor).toBe(
+      "model-unavailable"
+    );
     for (const r of WAITING_REASONS) expectRef(waitingHelp(r), `waiting reason ${r}`);
   });
 

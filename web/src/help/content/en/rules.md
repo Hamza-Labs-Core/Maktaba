@@ -163,6 +163,16 @@ Decides how new releases are installed. **Install updates automatically** (on) i
 
 Decides how the machines of your cluster act as one Maktaba. **One sign-in for every machine** (on) lets you move from one machine to another without signing in again. **Home unreachable after (s)** (30) is how long a machine waits before it stops serving signed-in pages when it cannot reach the home. See [Machines](/help/machines).
 
+### Queue health {#queue-health}
+
+Decides how often a failure is tried, what waits instead of failing, and when a queue turns red. See [Failure classes](/help/failures#classes).
+
+- **Tries of a passing failure** (5): how many times a passing problem (a NAS timeout, a partial read) is tried before the item needs you. A step that runs once by design keeps its one try.
+- **Check every (seconds)** (60) and **Check waits (seconds)** (5): how often the model, the shares and the free disk space are checked, and how long one check waits. **Waiting jobs retried after (hours)** (24): a waiting job is tried again after this even if no check released it.
+- **Free disk needed (GB)** (5): below this, jobs that ran out of disk keep waiting. **Shared memory wait (minutes)** (10): how long jobs that ran out of Postgres shared memory wait.
+- **Look back (hours)** (6), **Failures that stay neutral (share)** (0.02) and **Red from (jobs)** (10) decide when Maktaba counts a queue as failing: only when many recent jobs fail the same new way. The queue tiles do not use them yet: a tile still shows **Failing** as soon as it has failed items.
+- **Failure classes**: rows of a signature (the start of a failure's cause code, for example `nas_timeout` or `model_unavailable`) and a class (transient, item_permanent, unknown, dependency:… or resource:…). They are checked before the built-in classes.
+
 ## What the states and messages mean {#states}
 
 - **changed**: the saved value differs from the built-in default.
