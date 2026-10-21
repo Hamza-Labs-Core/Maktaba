@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "local-server",
+  "description": "Epic 36: in server mode the window loads this Mac's own web app (http://127.0.0.1:<web port>). It may listen to the shell's events (menu, deep links) and read the app version, nothing else; the setup commands stay with the bundled app (build.rs).",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*/*", "http://localhost:*/*"]
+  },
+  "permissions": ["core:event:default", "allow-app-version"]
+}

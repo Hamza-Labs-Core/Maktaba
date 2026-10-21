@@ -1,6 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Maktaba",
+  "mainBinaryName": "Maktaba",
   "version": "0.1.0",
   "identifier": "com.hamzalabs.maktaba",
   "build": {
@@ -48,7 +49,10 @@
     "macOS": {
       "minimumSystemVersion": "13.0",
       "frameworks": [],
-      "exceptionDomain": ""
+      "exceptionDomain": "",
+      "files": {
+        "Library/LaunchAgents/com.hamzalabs.maktaba.server.plist": "./LaunchAgents/com.hamzalabs.maktaba.server.plist"
+      }
     },
     "windows": {
       "wix": {

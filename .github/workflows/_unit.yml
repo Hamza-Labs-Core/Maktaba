@@ -82,3 +82,30 @@ jobs:
       - name: Run cluster tests
         working-directory: pipeline
         run: uv run --frozen --extra dev pytest tests/cluster -q -p no:cacheprovider
+
+  # Epic 36: the Mac app shell (apps/desktop, Tauri 2): menu-bar status,
+  # login item, setup-step runner. macOS only (SMAppService, launchd).
+  desktop-shell:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      # tauri::generate_context! reads build.frontendDist; the tests never load it
+      - name: Stub the web bundle
+        run: mkdir -p web/dist
+
+      - name: Format, lint and test
+        working-directory: apps/desktop/src-tauri
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
