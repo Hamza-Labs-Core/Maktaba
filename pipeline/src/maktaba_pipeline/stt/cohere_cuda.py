@@ -5,7 +5,10 @@ transcribes on (:mod:`.ct2`).
 On that GPU only: on the CPU the 2 B model would hear an hour of lectures in hours, so a
 machine without one keeps Whisper's words and says why (:func:`problem`), as a Mac
 without the model does: no NVIDIA GPU, a torch without CUDA, transcription set to the CPU,
-or a GPU too small to hold the model beside Whisper (:data:`MIN_GPU_GB`). The model is
+a GPU too small to hold the model beside Whisper (:data:`MIN_GPU_GB`), older than torch's
+CUDA build runs on (:data:`MIN_COMPUTE`) or with a driver too old for it
+(:data:`MIN_DRIVER`). The answer comes from the driver (NVML) and torch's own version
+file, without importing torch: a worker asks it on its event loop. The model is
 4.1 GB in 16 bits (bfloat16 on a GPU that computes in it, Ampere and newer; float16 before
 that). It loads only when the GPU has room for it at that moment (:func:`room`, from
 ``torch.cuda.mem_get_info``), and it hears the stretches in batches sized from what is left
@@ -20,6 +23,7 @@ from __future__ import annotations
 
 import functools
 import importlib.util
+import re
 import sys
 import threading
 import time
@@ -27,10 +31,13 @@ from pathlib import Path
 from typing import Any
 
 from ..log import get_logger
+from . import engine
 from .settings import SAMPLE_RATE, WhisperSettings
 
 __all__ = [
     "ALLOW_PATTERNS",
+    "MIN_COMPUTE",
+    "MIN_DRIVER",
     "MIN_GPU_GB",
     "CudaRecogniser",
     "LoadError",
@@ -84,6 +91,11 @@ MARGIN_GB = 0.25
 #: int8_float16. The supervisor sizes Whisper to leave the room on such a GPU
 #: (``PlanSTT``, same threshold)
 MIN_GPU_GB = 9.5 if sys.platform == "win32" else 7.5
+#: the oldest GPU torch's CUDA 13.0 build runs on: Turing (compute capability 7.5); its
+#: kernels are built for sm_75 and newer, so an older card loads nothing
+MIN_COMPUTE = (7, 5)
+#: the oldest NVIDIA driver CUDA 13.0 runs on: R580
+MIN_DRIVER = 580
 
 
 def device_index(device: str) -> int | None:
@@ -130,6 +142,8 @@ def problem(device: str = "auto") -> str | None:
 
 @functools.cache
 def _gpu_problem(index: int) -> str | None:
+    """The machine's answer, once per GPU: the packages, torch's build, then the GPU as
+    its driver reports it (its memory first). No torch import, no CUDA started."""
     for module, package in (
         ("torch", "torch"),
         ("transformers", "transformers"),
@@ -138,51 +152,88 @@ def _gpu_problem(index: int) -> str | None:
     ):
         if importlib.util.find_spec(module) is None:
             return f"{package} is not installed (the stt extra)"
-    import torch
+    built = torch_build()
+    if built is not None and built[1] is None:
+        return (
+            f"torch {built[0]} is a CPU build: the second listen runs on an NVIDIA GPU only"
+            " (on the CPU the 2 B model is far too slow), so Whisper's words are kept"
+        )
+    from .ct2 import gpu_info
 
-    if not torch.version.cuda:
+    gpu = gpu_info(index)
+    if gpu is None:
         return (
-            f"torch {torch.__version__} is a CPU build: the second listen runs on an NVIDIA"
-            " GPU only (on the CPU the 2 B model is far too slow), so Whisper's words are kept"
+            "no NVIDIA GPU here" + (f" ({index})" if index else "") + " (the driver reports"
+            " none): the second listen runs on an NVIDIA GPU only, so Whisper's words are kept"
         )
-    try:
-        count = torch.cuda.device_count() if torch.cuda.is_available() else 0
-    except Exception as exc:  # noqa: BLE001 - a broken driver: say what it said
-        return f"CUDA: {type(exc).__name__}: {exc}"
-    if count < 1:
+    return gpu_problem(gpu)
+
+
+def gpu_problem(gpu: Any) -> str | None:
+    """Why this NVIDIA GPU (a :class:`.ct2.GpuInfo`) cannot run the second listen, or None:
+    its memory (:data:`MIN_GPU_GB`), its compute capability (:data:`MIN_COMPUTE`) and its
+    driver (:data:`MIN_DRIVER`); one its driver does not report is not held against it."""
+    if gpu.total_gb < MIN_GPU_GB:
         return (
-            f"no CUDA device torch can use (an NVIDIA GPU and a driver for CUDA"
-            f" {torch.version.cuda}): Whisper's words are kept"
-        )
-    if index >= count:
-        return f"this machine has no CUDA device {index}"
-    props = torch.cuda.get_device_properties(index)
-    capability = (int(props.major), int(props.minor))
-    archs = list(torch.cuda.get_arch_list())
-    if not _runs_on(capability, archs):
-        return (
-            f"{props.name} (compute capability {capability[0]}.{capability[1]}) is older than"
-            f" the GPUs torch's CUDA {torch.version.cuda} build runs on ({', '.join(archs)})"
-        )
-    total = props.total_memory / GIB
-    if total < MIN_GPU_GB:
-        return (
-            f"{props.name} has {total:.1f} GB: the second listen needs a GPU of"
+            f"{gpu.name} has {gpu.total_gb:.1f} GB: the second listen needs a GPU of"
             f" {MIN_GPU_GB:g} GB or more here (Cohere's {WEIGHTS_GB * GIB / 1e9:.1f} GB of"
             " weights beside Whisper), so Whisper's words are kept"
+        )
+    if gpu.compute is not None and tuple(gpu.compute) < MIN_COMPUTE:
+        return (
+            f"{gpu.name} (compute capability {gpu.compute[0]}.{gpu.compute[1]}) is older than"
+            f" the GPUs torch's CUDA build runs on ({MIN_COMPUTE[0]}.{MIN_COMPUTE[1]}, Turing,"
+            " and newer), so Whisper's words are kept"
+        )
+    if gpu.driver_major is not None and gpu.driver_major < MIN_DRIVER:
+        return (
+            f"the NVIDIA driver {gpu.driver} is older than torch's CUDA build runs on"
+            f" (R{MIN_DRIVER} or later): update it, and the second listen runs here"
         )
     return None
 
 
+_TORCH_CUDA = re.compile(r"""^cuda\s*(?::[^=]*)?=\s*['"]?([^'"\s]+?)['"]?\s*$""", re.M)
+_TORCH_VERSION = re.compile(r"""^__version__\s*(?::[^=]*)?=\s*['"]([^'"]+)['"]""", re.M)
+
+
+@functools.cache
+def torch_build() -> tuple[str, str | None] | None:
+    """``(torch's version, its CUDA version or None for a CPU build)`` from torch's own
+    ``version.py``, read as text (importing torch takes seconds); None when it cannot be
+    read, which is not held against the machine (the load says what went wrong)."""
+    spec = importlib.util.find_spec("torch")
+    origin = getattr(spec, "origin", None)
+    if not origin:
+        return None
+    try:
+        text = (Path(origin).parent / "version.py").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    version, cuda = _TORCH_VERSION.search(text), _TORCH_CUDA.search(text)
+    if version is None or cuda is None:
+        return None
+    return version.group(1), None if cuda.group(1) == "None" else cuda.group(1)
+
+
 def _local_folder(model: str) -> Path | None:
-    """``model``'s files on this machine: a folder, else its Hugging Face snapshot."""
+    """``model``'s files on this machine: a folder, else its Hugging Face snapshot (at its
+    pinned commit, :data:`.engine.SECOND_LISTEN_PINS`)."""
     folder = Path(model).expanduser()
     if folder.is_dir():
         return folder
     try:
         from huggingface_hub import snapshot_download
 
-        return Path(snapshot_download(model, allow_patterns=ALLOW_PATTERNS, local_files_only=True))
+        pin = engine.pin_for(model)
+        return Path(
+            snapshot_download(
+                model,
+                revision=pin.revision if pin else None,
+                allow_patterns=ALLOW_PATTERNS,
+                local_files_only=True,
+            )
+        )
     except Exception:  # noqa: BLE001 - not downloaded (yet)
         return None
 
@@ -232,13 +283,22 @@ class LoadError(RuntimeError):
 def model_dir(model: str) -> Path:
     """The model's folder: a local one as it is, else its Hugging Face snapshot of exactly
     :data:`ALLOW_PATTERNS` (what ``models download`` fetches), downloaded when missing
-    (gated: the account must have accepted its licence)."""
+    (gated: the account must have accepted its licence): the default model at its pinned
+    commit, its files checked once (:func:`.engine.verify`)."""
     folder = Path(model).expanduser()
     if folder.is_dir():
         return folder
     from huggingface_hub import snapshot_download
 
-    return Path(snapshot_download(model, allow_patterns=ALLOW_PATTERNS))
+    pin = engine.pin_for(model)
+    snap = Path(
+        snapshot_download(
+            model, revision=pin.revision if pin else None, allow_patterns=ALLOW_PATTERNS
+        )
+    )
+    if pin is not None:
+        engine.verify(snap, pin)
+    return snap
 
 
 class CudaRecogniser:
@@ -266,6 +326,7 @@ class CudaRecogniser:
 
         self._torch = torch
         try:
+            self._usable(settings)
             self._load(folder, model_id, settings)
         except Exception as exc:
             torch.cuda.empty_cache()  # whatever reached the GPU goes back to Whisper
@@ -287,6 +348,23 @@ class CudaRecogniser:
             batch=self.batch,
             seconds=round(time.monotonic() - t0, 1),
         )
+
+    def _usable(self, settings: WhisperSettings) -> None:
+        """What only torch can tell: CUDA works, and this GPU is one its build runs on."""
+        torch = self._torch
+        index = device_index(settings.device) or 0
+        if not torch.cuda.is_available() or index >= torch.cuda.device_count():
+            raise RuntimeError(
+                f"torch {torch.__version__} finds no CUDA device {index} (CUDA"
+                f" {torch.version.cuda}, an NVIDIA GPU and its driver)"
+            )
+        capability = tuple(int(x) for x in torch.cuda.get_device_capability(index))
+        archs = list(torch.cuda.get_arch_list())
+        if not _runs_on((capability[0], capability[1]), archs):
+            raise RuntimeError(
+                f"compute capability {capability[0]}.{capability[1]} is older than the GPUs"
+                f" torch's CUDA {torch.version.cuda} build runs on ({', '.join(archs)})"
+            )
 
     def _load(self, folder: Path, model_id: str, settings: WhisperSettings) -> None:
         torch = self._torch

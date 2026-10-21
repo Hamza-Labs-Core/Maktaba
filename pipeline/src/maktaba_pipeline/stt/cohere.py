@@ -18,7 +18,9 @@ from __future__ import annotations
 import importlib.util
 import os
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -33,6 +35,7 @@ __all__ = [
     "CohereRecogniser",
     "Recogniser",
     "dictionary",
+    "load_failure",
     "loaded",
     "recogniser",
     "unavailable",
@@ -104,6 +107,28 @@ Recogniser = Any
 _REC: dict[str, Recogniser] = {}
 _REC_LOCK = threading.Lock()
 
+#: a failed load (no licence and no copy on the share, files that would not load) is not
+#: tried again for this long, doubling each time up to RETRY_MAX_S: a load takes 20-26 s
+#: (measured on CUDA), and every file would pay it. A token added, a copy published or a
+#: GPU freed is seen at the next try (a restart tries at once).
+RETRY_AFTER_S = 600.0
+RETRY_MAX_S = 6 * 3600.0
+
+
+@dataclass
+class _Failure:
+    message: str
+    at: float
+    tries: int
+
+    def wait_s(self) -> float:
+        return min(RETRY_MAX_S, RETRY_AFTER_S * 2.0 ** (self.tries - 1))
+
+
+_FAILED: dict[str, _Failure] = {}
+#: the clock of the backoff (tests replace it)
+_clock = time.monotonic
+
 
 _PUBLISHED: set[str] = set()
 
@@ -141,14 +166,41 @@ def recogniser(
     with _REC_LOCK:
         rec = _REC.get(model_id)
         if rec is None:
+            failed = load_failure(model_id)
+            if failed is not None:
+                raise RuntimeError(failed)
             if cuda:
                 from . import cohere_cuda
 
                 full = cohere_cuda.room(model_id, settings or WhisperSettings())
-                if full is not None:
+                if full is not None:  # not a failed load: asked again next file
                     raise RuntimeError(full)
-            rec = _REC[model_id] = _open(model_id, share, settings)
+            try:
+                rec = _REC[model_id] = _open(model_id, share, settings)
+            except Exception as exc:
+                before = _FAILED.get(model_id)
+                f = _Failure(f"{type(exc).__name__}: {exc}"[:300], _clock(), 1)
+                if before is not None:
+                    f.tries = before.tries + 1
+                _FAILED[model_id] = f
+                _log.warning(
+                    "cohere.load_failed", model=model_id, error=f.message, retry_s=f.wait_s()
+                )
+                raise
+            _FAILED.pop(model_id, None)
         return rec
+
+
+def load_failure(model_id: str) -> str | None:
+    """Why ``model_id`` is not loaded here for now: its last load failed, and it is not
+    tried again until its backoff is over (:data:`RETRY_AFTER_S`); None otherwise."""
+    f = _FAILED.get(model_id)
+    if f is None:
+        return None
+    left = f.at + f.wait_s() - _clock()
+    if left <= 0:
+        return None
+    return f"{f.message} (tried {f.tries}x; next try in {round(left / 60)} min)"
 
 
 def loaded(model_id: str) -> bool:

@@ -54,7 +54,7 @@ Add a machine with a GPU that serves **Transcribe**, or change the **GPU** pool 
 
 ### Why does my Windows or Linux machine not transcribe? {#faq-windows}
 
-While the second listen is on, transcription is left to the machines that run it (the Mac), so every transcript gets it. To let a Windows or Linux machine transcribe too, turn on **Transcribe without the second listen** in [Settings, Transcription](/help/rules#transcription): its transcripts keep Whisper's words, and a machine that runs the second listen gives them theirs later. A machine whose own settings leave transcription out (its stage list) never transcribes.
+While the second listen is on, transcription is left to the machines that run it (the Mac, and a PC whose NVIDIA GPU holds it beside Whisper: 10 GB or more, an RTX 20 series card or newer, a driver of R580 or later), so every transcript gets it. To let a Windows or Linux machine transcribe too, turn on **Transcribe without the second listen** in [Settings, Transcription](/help/rules#transcription): its transcripts keep Whisper's words, and a machine that runs the second listen gives them theirs later. A machine whose own settings leave transcription out (its stage list) never transcribes.
 
 ### Why is a video transcribed but not searchable? {#faq-not-searchable}
 

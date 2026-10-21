@@ -132,7 +132,7 @@ def items(only: set[str] | None = None) -> list[Item]:
     refine = refine_model()
     no_refine = None if refine else "the second listen is off (MAKTABA_STT_REFINE=0)"
     if no_refine is None and (not only or only & {"cohere", "dictionary"}):
-        # (on Windows and Linux this imports torch and asks CUDA: only when asked about)
+        # (on Windows and Linux it asks the NVIDIA driver: only when asked about)
         no_refine = cohere.unavailable()
     ct2 = engine.current() == engine.CT2
     repo = engine.ct2_repo(whisper) if ct2 else whisper
@@ -151,6 +151,8 @@ def items(only: set[str] | None = None) -> list[Item]:
             gated=True,
             allow_patterns=_cohere_patterns(),
             skip=no_refine,
+            # transformers' files at their pinned commit (on Apple Silicon mlx-audio's)
+            pin=engine.pin_for(refine or "") if ct2 else None,
         ),
         Item("dictionary", CAMEL_PACKAGE, "camel", skip=no_refine),
         Item("embedder", embed_model(), "hf", ignore_patterns=_EMBEDDER_IGNORE),

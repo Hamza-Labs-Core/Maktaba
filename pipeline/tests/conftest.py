@@ -53,6 +53,15 @@ def _no_gpu_probe(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _no_remembered_load_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed load of the second listen's model is remembered for the process
+    (stt/cohere.py, with a backoff): each test starts with none."""
+    from maktaba_pipeline.stt import cohere
+
+    monkeypatch.setattr(cohere, "_FAILED", {})
+
+
+@pytest.fixture(autouse=True)
 def _no_model_or_encyclopedia_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     """No test reaches the language model server or the encyclopedia: the stages that ask
     them (check_tags, check_clips, books) get a stand-in from the test, or fail loudly."""

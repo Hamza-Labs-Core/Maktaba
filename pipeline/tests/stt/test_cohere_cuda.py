@@ -14,10 +14,11 @@ from typing import Any
 
 import numpy as np
 import pytest
+from huggingface_hub import snapshot_download  # noqa: F401 - loaded here, not in a timed test
 
 from maktaba_pipeline.classify.quran import verse_runs
 from maktaba_pipeline.engine.stages import transcribe as stage
-from maktaba_pipeline.stt import cohere, cohere_cuda, engine, model_share
+from maktaba_pipeline.stt import cohere, cohere_cuda, ct2, engine, model_share
 from maktaba_pipeline.stt.settings import SAMPLE_RATE, Sentence, Transcript, WhisperSettings
 from tests.conftest import NO_TEST_GPU
 
@@ -37,15 +38,17 @@ class OutOfMemory(RuntimeError):
 
 @dataclass
 class FakeCuda:
-    """torch.cuda on one machine: its GPUs (total GiB, compute capability) and free memory."""
+    """torch.cuda on one machine: its GPUs (total GiB, compute capability) and free memory,
+    which the NVIDIA driver (NVML, ``ct2.gpu_info``) reports too, with its version."""
 
-    gpus: list[tuple[str, float, tuple[int, int]]] = field(
+    gpus: list[tuple[str, float, Any]] = field(
         default_factory=lambda: [("NVIDIA GeForce RTX 3080 Ti", 12.0, (8, 6))]
     )
     free_gb: float = 10.0
     archs: list[str] = field(default_factory=lambda: ["sm_75", "sm_80", "sm_86", "sm_90"])
     broken: Exception | None = None
     emptied: int = 0
+    driver: str | None = "616.64"
     OutOfMemoryError: type[Exception] = OutOfMemory
 
     def is_available(self) -> bool:
@@ -63,7 +66,8 @@ class FakeCuda:
         )
 
     def get_device_capability(self, i: int) -> tuple[int, int]:
-        return self.gpus[i][2]
+        major, minor = self.gpus[i][2]
+        return int(major), int(minor)
 
     def get_arch_list(self) -> list[str]:
         return self.archs
@@ -73,6 +77,15 @@ class FakeCuda:
 
     def empty_cache(self) -> None:
         self.emptied += 1
+
+    def info(self, i: int) -> Any:
+        """What the driver says of GPU ``i`` (``ct2.gpu_info``)."""
+        from maktaba_pipeline.stt.ct2 import GpuInfo
+
+        if i >= len(self.gpus):
+            return None
+        name, total, compute = self.gpus[i]
+        return GpuInfo(name, total, self.free_gb, compute, self.driver)
 
 
 class _InferenceMode:
@@ -116,7 +129,10 @@ def gpu(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeCuda]:
             else real_find(name, *a)
         ),
     )
+    monkeypatch.setattr(ct2, "gpu_info", cuda.info)
+    monkeypatch.setattr(cohere_cuda, "torch_build", lambda: ("2.14.1+cu130", "13.0"))
     monkeypatch.setattr(cohere, "_REC", {})
+    monkeypatch.setattr(cohere, "_FAILED", {})
     monkeypatch.setattr(cohere, "_PUBLISHED", set())
     # a model is on this machine only as a folder (never the real Hugging Face cache)
     monkeypatch.setattr(
@@ -158,6 +174,39 @@ def test_a_gpu_with_room_runs_it(gpu: FakeCuda) -> None:
     assert cohere.unavailable() is None
 
 
+def test_the_machine_is_asked_without_importing_torch(
+    gpu: FakeCuda, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #209, item 5: a worker asks it on its event loop at its first file, and
+    in every stage selection: the driver answers in milliseconds, torch takes seconds."""
+    monkeypatch.delitem(sys.modules, "torch")
+    gpu.gpus = [("NVIDIA GeForce RTX 2060", 6.0, (7, 5))]
+    assert "RTX 2060 has 6.0 GB" in str(cohere.unavailable())  # its size first
+    assert "torch" not in sys.modules
+
+
+def test_torch_s_own_version_file_says_its_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import importlib.util
+
+    pkg = tmp_path / "torch"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    spec = types.SimpleNamespace(origin=str(pkg / "__init__.py"))
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name, *a: spec)
+    for text, want in (
+        ("__version__ = '2.14.1+cu130'\ncuda: Optional[str] = '13.0'\n", ("2.14.1+cu130", "13.0")),
+        ("__version__ = '2.14.1+cpu'\ncuda: Optional[str] = None\n", ("2.14.1+cpu", None)),
+        ("__version__ = '2.14.1'\ncuda = '12.8'\n", ("2.14.1", "12.8")),
+        ("nothing to read\n", None),
+    ):
+        (pkg / "version.py").write_text(text, encoding="utf-8")
+        cohere_cuda.torch_build.cache_clear()
+        assert cohere_cuda.torch_build() == want, text
+    cohere_cuda.torch_build.cache_clear()
+
+
 def test_on_apple_silicon_it_always_runs(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cohere_cuda, "problem", lambda _d: pytest.fail("asked the GPU"))
     assert cohere.unavailable() is None  # the tests' engine is MLX
@@ -170,31 +219,45 @@ def test_transcription_on_the_cpu_has_none(gpu: FakeCuda, monkeypatch: pytest.Mo
 
 
 def test_a_cpu_build_of_torch_says_so(gpu: FakeCuda, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(
-        sys.modules, "torch", fake_torch(gpu, version="2.14.1+cpu", cuda_version=None)
-    )
+    monkeypatch.setattr(cohere_cuda, "torch_build", lambda: ("2.14.1+cpu", None))
     why = cohere.unavailable()
     assert why is not None and "torch 2.14.1+cpu is a CPU build" in why
     assert "far too slow" in why  # never the 2 B model on the CPU
 
 
-def test_no_gpu_or_a_broken_driver(gpu: FakeCuda) -> None:
+def test_no_gpu_or_a_driver_too_old(gpu: FakeCuda) -> None:
     gpu.gpus = []
-    assert "no CUDA device torch can use" in str(cohere.unavailable())
+    assert "no NVIDIA GPU here (the driver reports none)" in str(cohere.unavailable())
     REAL_GPU_PROBLEM.cache_clear()
-    gpu.broken = RuntimeError("CUDA driver version is insufficient")
-    assert cohere.unavailable() == "CUDA: RuntimeError: CUDA driver version is insufficient"
+    gpu.gpus = [("NVIDIA GeForce RTX 3080 Ti", 12.0, (8, 6))]
+    gpu.driver = "572.16"  # CUDA 13.0 needs R580
+    why = str(cohere.unavailable())
+    assert "driver 572.16 is older than" in why and f"R{cohere_cuda.MIN_DRIVER} or later" in why
+    REAL_GPU_PROBLEM.cache_clear()
+    gpu.driver = None  # a driver that does not say: not held against it
+    assert cohere.unavailable() is None
 
 
 def test_the_gpu_asked_for_must_exist(gpu: FakeCuda) -> None:
-    assert cohere.unavailable("cuda:1") == "this machine has no CUDA device 1"
+    assert "no NVIDIA GPU here (1)" in str(cohere.unavailable("cuda:1"))
 
 
 def test_a_gpu_older_than_the_torch_build(gpu: FakeCuda) -> None:
     gpu.gpus = [("NVIDIA GeForce GTX 1080 Ti", 11.0, (6, 1))]
     why = str(cohere.unavailable())
     assert "GTX 1080 Ti (compute capability 6.1) is older than" in why
-    assert "CUDA 13.0" in why
+    assert "(7.5, Turing, and newer)" in why
+    REAL_GPU_PROBLEM.cache_clear()
+    gpu.gpus = [("NVIDIA TITAN V", 12.0, None)]  # (a driver that does not say)
+    assert cohere.unavailable() is None
+
+
+def test_the_thresholds_are_the_supervisor_s_and_setup_s() -> None:
+    """The supervisor (supervisor/stt.go) and setup (#213) read the same: a GPU of 9.5 GiB
+    or more on Windows, 7.5 elsewhere, Turing or newer, driver R580 or later."""
+    want_gb = 9.5 if sys.platform == "win32" else 7.5
+    assert want_gb == cohere_cuda.MIN_GPU_GB
+    assert cohere_cuda.MIN_COMPUTE == (7, 5) and cohere_cuda.MIN_DRIVER == 580
 
 
 def test_a_gpu_too_small_to_hold_it_beside_whisper(gpu: FakeCuda) -> None:
@@ -442,6 +505,65 @@ def test_without_a_login_the_home_s_copy_on_the_share(
     assert rec.source == "share" and transformers["loads"][0][0] == copy
 
 
+def test_a_failed_load_is_not_tried_again_for_a_while(
+    gpu: FakeCuda, transformers: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #209, item 6: every file paid a 20-26 s load that failed again."""
+    tries: list[str] = []
+
+    def refused(_model: str) -> Path:
+        tries.append("hf")
+        raise RuntimeError("401 gated repo")
+
+    def no_copy(_m: str, _s: Any) -> Path:
+        raise model_share.ShareModelError("no copy on the share")
+
+    clock = [1000.0]
+    monkeypatch.setattr(cohere, "_clock", lambda: clock[0])
+    monkeypatch.setattr(cohere_cuda, "model_dir", refused)
+    monkeypatch.setattr(model_share, "from_share", no_copy)
+    settings = WhisperSettings(max_batch=8)
+    with pytest.raises(RuntimeError, match="401 gated repo"):
+        cohere.recogniser(MODEL, tmp_path, settings)
+    with pytest.raises(RuntimeError, match="next try in 10 min"):
+        cohere.recogniser(MODEL, tmp_path, settings)  # not tried
+    assert tries == ["hf"] and cohere.load_failure(MODEL) is not None
+    assert not stage.runs_second_listen()  # for now: what it made without it stands
+    why = str(stage.waits_for_second_listen())  # ...and it leaves transcribe to those that can
+    assert "401 gated repo" in why and "next try in 10 min" in why
+    clock[0] += cohere.RETRY_AFTER_S + 1
+    with pytest.raises(RuntimeError, match="401 gated repo"):
+        cohere.recogniser(MODEL, tmp_path, settings)  # tried again, and again refused
+    assert tries == ["hf", "hf"] and "next try in 20 min" in str(cohere.load_failure(MODEL))
+    clock[0] += 2 * cohere.RETRY_AFTER_S + 1
+    monkeypatch.setattr(cohere_cuda, "model_dir", lambda _m: tmp_path)  # the licence accepted
+    assert cohere.recogniser(MODEL, None, settings).source == "hf"
+    assert cohere.load_failure(MODEL) is None
+    # no room is no failed load: asked again at the next file
+    monkeypatch.setattr(cohere, "_REC", {})
+    gpu.free_gb = 1.0
+    with pytest.raises(RuntimeError, match="too little free GPU memory"):
+        cohere.recogniser(MODEL, None, settings)
+    assert cohere.load_failure(MODEL) is None
+    assert min(cohere.RETRY_MAX_S, cohere.RETRY_AFTER_S * 2**10) == cohere.RETRY_MAX_S
+
+
+def test_cuda_that_does_not_work_fails_the_load(
+    gpu: FakeCuda, transformers: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """What only torch can tell, once it is imported to load the model (in a thread)."""
+    monkeypatch.setattr(cohere_cuda, "model_dir", lambda _m: tmp_path)
+    gpu.broken = RuntimeError("CUDA driver version is insufficient")
+    with pytest.raises(cohere_cuda.LoadError, match="driver version is insufficient"):
+        cohere.recogniser(MODEL, None, WhisperSettings(max_batch=4))
+    gpu.broken = None
+    gpu.archs = ["sm_90"]  # a build without the RTX 3080 Ti's (8.6) kernels
+    monkeypatch.setattr(cohere, "_FAILED", {})
+    with pytest.raises(cohere_cuda.LoadError, match="compute capability 8.6 is older"):
+        cohere.recogniser(MODEL, None, WhisperSettings(max_batch=4))
+    assert transformers["loads"] == []
+
+
 def test_a_model_that_does_not_load_is_not_fetched_from_the_share(
     gpu: FakeCuda, transformers: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -461,7 +583,7 @@ def test_a_model_that_does_not_load_is_not_fetched_from_the_share(
 def test_no_gpu_never_loads_anything(gpu: FakeCuda, monkeypatch: pytest.MonkeyPatch) -> None:
     gpu.gpus = []
     monkeypatch.setattr(cohere_cuda, "room", lambda *_a: pytest.fail("asked for room"))
-    with pytest.raises(RuntimeError, match="no CUDA device torch can use"):
+    with pytest.raises(RuntimeError, match="no NVIDIA GPU here"):
         cohere.recogniser(MODEL, None, WhisperSettings())
 
 
@@ -505,3 +627,104 @@ def test_the_transcript_records_what_heard_it(
 def test_the_tests_never_ask_this_machine_s_gpu(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(engine, "current", lambda: engine.CT2)
     assert cohere.unavailable() == NO_TEST_GPU
+
+
+# --- the pinned download (review of #209, item 3) ---------------------------------------------
+
+
+def test_the_model_is_pinned_file_by_file() -> None:
+    import fnmatch
+
+    pin = engine.SECOND_LISTEN_PINS[MODEL]
+    assert engine.pin_for(MODEL) is pin and len(pin.revision) == 40
+    names = {*pin.sha256, *pin.git_sha1}
+    # every file transformers loads (what the repo has under ALLOW_PATTERNS), nothing else
+    assert {"model.safetensors", "tokenizer.model", "config.json", "tokenizer.json"} <= names
+    assert all(any(fnmatch.fnmatch(n, p) for p in cohere_cuda.ALLOW_PATTERNS) for n in names)
+    assert all(len(h) == 64 for h in pin.sha256.values())
+    assert all(len(h) == 40 for h in pin.git_sha1.values())
+
+
+def test_a_small_file_is_checked_by_its_git_blob_id(tmp_path: Path) -> None:
+    """Hugging Face names a gated repo's small files by their git blob ids only."""
+    import hashlib
+
+    data = b'{"model_type": "cohere_asr"}\n'
+    blob = hashlib.sha1(b"blob %d\0" % len(data) + data, usedforsecurity=False).hexdigest()
+    weights = b"weights"
+    (tmp_path / "config.json").write_bytes(data)
+    (tmp_path / "model.safetensors").write_bytes(weights)
+    pin = engine.Pin(
+        "c" * 40,
+        {"model.safetensors": hashlib.sha256(weights).hexdigest()},
+        {"config.json": blob},
+    )
+    engine.verify(tmp_path, pin)
+    (tmp_path / engine.VERIFIED).unlink()
+    (tmp_path / "config.json").write_bytes(b"{}")
+    with pytest.raises(engine.PinMismatch, match="config.json has git blob"):
+        engine.verify(tmp_path, pin)
+    assert not (tmp_path / "config.json").exists()
+
+
+def test_the_model_is_fetched_at_its_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import huggingface_hub
+
+    asked: list[dict[str, Any]] = []
+    verified: list[Any] = []
+
+    def download(repo_id: str, **kw: Any) -> str:
+        asked.append({"repo": repo_id, **kw})
+        return str(tmp_path)
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", download)
+    monkeypatch.setattr(engine, "verify", lambda snap, pin: verified.append(pin))
+    pin = engine.SECOND_LISTEN_PINS[MODEL]
+    assert cohere_cuda.model_dir(MODEL) == tmp_path
+    assert asked[-1] == {
+        "repo": MODEL,
+        "revision": pin.revision,
+        "allow_patterns": cohere_cuda.ALLOW_PATTERNS,
+    }
+    assert verified == [pin]
+    # the size check and the share's publishing look for that snapshot (no refs/main)
+    assert cohere_cuda._local_folder(MODEL) == tmp_path
+    assert asked[-1]["revision"] == pin.revision and asked[-1]["local_files_only"]
+    revisions: list[Any] = []
+
+    def cached(repo_id: str, revision: Any = None, local_files_only: bool = False) -> str:
+        revisions.append(revision)
+        if revision is None:  # a Mac's mlx-audio download: refs/main
+            return str(tmp_path / "main")
+        raise FileNotFoundError(repo_id)
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", cached)
+    assert model_share.hf_snapshot(MODEL) == tmp_path / "main"
+    assert revisions == [pin.revision, None]
+    # someone's own model: as its repo has it
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", download)
+    cohere_cuda.model_dir("someone/cohere-like")
+    assert asked[-1]["revision"] is None
+
+
+def test_models_download_fetches_it_at_its_commit(
+    gpu: FakeCuda, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maktaba_pipeline.models import fetch_cli
+
+    for var in ("MAKTABA_STT_REFINE", "MAKTABA_STT_REFINE_MODEL"):
+        monkeypatch.delenv(var, raising=False)
+    item = {i.name: i for i in fetch_cli.items()}["cohere"]
+    assert item.pin is engine.SECOND_LISTEN_PINS[MODEL] and item.skip is None
+
+
+def test_the_driver_reports_the_gpu_whole() -> None:
+    """NVML through ctypes, where this machine has an NVIDIA driver."""
+    info = ct2.gpu_info(0)
+    if info is None:
+        pytest.skip("no NVIDIA driver here")
+    assert info.name and info.total_gb > 0 and 0 <= info.free_gb <= info.total_gb
+    assert info.compute is None or info.compute >= (3, 0)
+    assert info.driver is None or (info.driver_major or 0) > 300
