@@ -3493,6 +3493,16 @@
      "default": 60,
      "minimum": 0,
      "maximum": 3600
+    },
+    {
+     "name": "guide_image_max_age_s",
+     "kind": "int",
+     "group": "Guide",
+     "label": "Guide images kept for (s)",
+     "help": "How long Plex and other guide readers may keep a guide image (a channel's logo, a programme's poster) before asking for it again. 0: they ask every time.",
+     "default": 86400,
+     "minimum": 0,
+     "maximum": 2592000
     }
    ]
   },
@@ -5060,6 +5070,33 @@
      "label": "Guide reload at most every (min)",
      "help": "A reload caused only by the schedule growing waits this long after the last one. A channel change or \"Refresh Plex now\" reloads at once.",
      "default": 60,
+     "minimum": 1
+    },
+    {
+     "name": "drift_check_minutes",
+     "kind": "int",
+     "group": "Plex Live TV",
+     "label": "Check Plex's channel list every (min)",
+     "help": "Another program can replace the channels Plex shows for Maktaba's tuner: dizqueTV's own Plex refresh writes its channel list onto every tuner. Maktaba checks this often and, when Refresh the channels in Plex is on, puts its channels back. 0: only checked when Maktaba's channels change.",
+     "default": 15,
+     "minimum": 0
+    },
+    {
+     "name": "drift_warn_repeats",
+     "kind": "int",
+     "group": "Plex Live TV",
+     "label": "Warn after this many restores in a row",
+     "help": "When Maktaba had to put its channels back this many times, the Plex panel advises turning off channel mapping in dizqueTV's Plex settings.",
+     "default": 3,
+     "minimum": 1
+    },
+    {
+     "name": "drift_forget_hours",
+     "kind": "int",
+     "group": "Plex Live TV",
+     "label": "Restores count as in a row within (hours)",
+     "help": "A restore more than this long after the previous one starts the count again.",
+     "default": 24,
      "minimum": 1
     },
     {

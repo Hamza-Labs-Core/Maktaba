@@ -1,7 +1,8 @@
-// The Mac app around the server (Epic 36, stories 36.5 / 36.6): the
-// menu-bar item, the status poller, and the commands the setup screens
-// (web/src/pages/Setup/) call. Pure decisions live in status.rs,
-// tray.rs, mode.rs and setup.rs; this file is the glue to tauri.
+// The app around the server (Epic 36 stories 36.5 / 36.6 on a Mac, Epic 38
+// story 38.3 on Windows): the menu-bar / tray item, the status poller, and
+// the commands the setup screens (web/src/pages/Setup/) call. Pure
+// decisions live in status.rs, tray.rs, mode.rs and setup.rs; this file is
+// the glue to tauri. The OS side (launchd / the sign-in task) is agent.rs.
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -21,14 +22,30 @@ use tauri_plugin_updater::UpdaterExt;
 use crate::agent::{self, Action, BundlePaths, LoginItem};
 use crate::mode::{self, AppMode, Target};
 use crate::setup::{self, Progress, StepError};
-use crate::status::{self, Probe, ServerStatus};
+use crate::status::{self, Probe, Quiet, ServerStatus};
 use crate::tray::{self, Entry};
 
 const TRAY_ID: &str = "main";
 const POLL_EVERY: Duration = Duration::from_secs(3);
-/// How long "unreachable" reads as starting after a start or resume.
-const START_GRACE: Duration = Duration::from_secs(90);
 const UPDATE_CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
+
+/// Where mode.json is kept: the app's config folder; on Windows its local
+/// data folder (%LOCALAPPDATA%\com.hamzalabs.maktaba), not the roaming one,
+/// where it was before and is moved from once (mode::adopt).
+fn mode_path(app: &AppHandle) -> PathBuf {
+    let config = app
+        .path()
+        .app_config_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("mode.json");
+    #[cfg(windows)]
+    if let Ok(local) = app.path().app_local_data_dir() {
+        let local = local.join("mode.json");
+        let _ = mode::adopt(&config, &local, agent::registered_here());
+        return local;
+    }
+    config
+}
 
 pub struct Shell {
     mode_path: PathBuf,
@@ -37,6 +54,8 @@ pub struct Shell {
     server_bin: Option<PathBuf>,
     paused: AtomicBool,
     started_at: Mutex<Instant>,
+    /// Since when the server has not answered (status::Quiet).
+    quiet: Mutex<Quiet>,
     update_ready: AtomicBool,
     status: Mutex<ServerStatus>,
     menu: Mutex<Vec<Entry>>,
@@ -48,11 +67,7 @@ pub struct Shell {
 
 impl Shell {
     pub fn new(app: &AppHandle) -> Self {
-        let mode_path = app
-            .path()
-            .app_config_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .join("mode.json");
+        let mode_path = mode_path(app);
         // MAKTABA_SERVER_BIN points a dev build (`tauri dev`, outside
         // Maktaba.app) at a maktaba-server to run setup against.
         let server_bin = std::env::var_os("MAKTABA_SERVER_BIN")
@@ -66,8 +81,10 @@ impl Shell {
             mode: Mutex::new(mode::load(&mode_path)),
             mode_path,
             server_bin,
-            paused: AtomicBool::new(false),
+            // a pause from before this window started (an update relaunched it)
+            paused: AtomicBool::new(agent::paused_flag()),
             started_at: Mutex::new(Instant::now()),
+            quiet: Mutex::new(Quiet::new(Instant::now())),
             update_ready: AtomicBool::new(false),
             status: Mutex::new(ServerStatus::Starting),
             menu: Mutex::new(Vec::new()),
@@ -118,7 +135,13 @@ impl Shell {
 
     fn mark_started(&self) {
         self.paused.store(false, Ordering::SeqCst);
+        agent::set_paused_flag(false);
         *self.started_at.lock().unwrap() = Instant::now();
+    }
+
+    fn mark_paused(&self) {
+        self.paused.store(true, Ordering::SeqCst);
+        agent::set_paused_flag(true);
     }
 
     /// The server's status, and the language model's line when the
@@ -129,14 +152,27 @@ impl Shell {
         };
         let addr = status::addr_of(&supervisor_url)
             .unwrap_or_else(|| status::DEFAULT_SUPERVISOR_ADDR.into());
-        let just_started = self.started_at.lock().unwrap().elapsed() < START_GRACE;
         let probe = status::probe(&addr);
         let model = match &probe {
             Probe::Snapshot(s) => status::model_line(s.llm.as_ref()),
             Probe::Unreachable => None,
         };
+        // a live agent (Windows, Linux) whose supervisor does not answer is
+        // starting, until it has been quiet too long: then the log says why
+        let alive = agent::agent_alive();
+        let since_start = self.started_at.lock().unwrap().elapsed();
+        let answered = matches!(probe, Probe::Snapshot(_));
+        let quiet_for = self
+            .quiet
+            .lock()
+            .unwrap()
+            .poll(Instant::now(), answered, alive)
+            .min(since_start);
+        let waiting = status::waiting(since_start, alive, quiet_for, || {
+            agent::server_log_tail().and_then(|t| status::failure_in_log(&t))
+        });
         let paused = self.paused.load(Ordering::SeqCst);
-        let st = status::derive(true, paused, just_started, &probe);
+        let st = status::derive(true, paused, &waiting, &probe);
         (st, model)
     }
 }
@@ -255,7 +291,7 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
             app.emit("menu", "preferences").map_err(|e| e.to_string())
         }
         "server-pause" => {
-            sh.paused.store(true, Ordering::SeqCst);
+            sh.mark_paused();
             agent::control(Action::Pause)
         }
         "server-resume" => {
@@ -281,6 +317,7 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
             Ok(())
         }
         "stop-and-quit" => {
+            sh.mark_paused();
             let r = agent::control(Action::Pause);
             if r.is_ok() {
                 app.exit(0);
@@ -296,9 +333,17 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
 }
 
 /// Story 36.8 replaces the whole app (shell + server payload): install,
-/// restart the server so it runs the new payload, then relaunch.
+/// restart the server so it runs the new payload, then relaunch. On Windows
+/// (Epic 38 contract-update) the payload's files are in use while the server
+/// runs, so the server stops first; the installer replaces them, its
+/// POSTINSTALL hook starts the server again and it relaunches this window.
+/// When the stop times out or the install fails, the server is started again
+/// (unless it was paused): asked to stop, it would stay down.
 fn install_update(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
+        // the server was asked to stop for the install
+        #[cfg(windows)]
+        let stopped = AtomicBool::new(false);
         let run = async {
             let update = app
                 .updater()
@@ -309,10 +354,23 @@ fn install_update(app: AppHandle) {
             let Some(update) = update else {
                 return Ok(false);
             };
-            update
-                .download_and_install(|_, _| {}, || {})
+            let bytes = update
+                .download(|_, _| {}, || {})
                 .await
                 .map_err(|e| e.to_string())?;
+            #[cfg(windows)]
+            if matches!(shell(&app).mode(), Some(AppMode::Server { .. })) {
+                // stop the server and wait for it (the install hold keeps the
+                // task's watchdog from starting it meanwhile); the update is
+                // not installed when it does not stop in time
+                stopped.store(true, Ordering::SeqCst);
+                tauri::async_runtime::spawn_blocking(agent::stop_for_install)
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .map_err(|e| format!("the server must stop first: {e}"))?;
+            }
+            // Windows: this runs the installer and exits the app
+            update.install(bytes).map_err(|e| e.to_string())?;
             Ok::<bool, String>(true)
         };
         match run.await {
@@ -327,9 +385,39 @@ fn install_update(app: AppHandle) {
                 app.restart();
             }
             Ok(false) => shell(&app).update_ready.store(false, Ordering::SeqCst),
-            Err(e) => show_error(&app, format!("The update could not be installed: {e}")),
+            Err(e) => {
+                let msg = format!("The update could not be installed: {e}");
+                #[cfg(windows)]
+                let msg = if stopped.load(Ordering::SeqCst) {
+                    let handle = app.clone();
+                    let again = tauri::async_runtime::spawn_blocking(move || {
+                        start_after_failed_update(&handle)
+                    })
+                    .await
+                    .unwrap_or_else(|e| format!(" The server could not start again: {e}"));
+                    format!("{msg}{again}")
+                } else {
+                    msg
+                };
+                show_error(&app, msg)
+            }
         }
     });
+}
+
+/// After an update that failed once the server was asked to stop (Windows):
+/// start it again unless it was paused. The sentence for the message.
+#[cfg(windows)]
+fn start_after_failed_update(app: &AppHandle) -> String {
+    let sh = shell(app);
+    if sh.paused.load(Ordering::SeqCst) {
+        return " The server stays paused.".into();
+    }
+    sh.mark_started();
+    match agent::control(Action::Resume) {
+        Ok(()) => " The server is starting again.".into(),
+        Err(e) => format!(" The server could not start again: {e}"),
+    }
 }
 
 /// Build the tray, open the right page, start the status poller and the
@@ -352,6 +440,38 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         if let Err(e) = navigate_main(app, &url) {
             show_error(app, format!("Cannot open {url}: {e}"));
         }
+    }
+
+    // Windows: the server runs whenever this PC is set up and not paused.
+    // The sign-in task starts it, and its watchdog trigger starts an agent
+    // that died; one ended by hand (Task Scheduler's End) also starts again
+    // when the window opens, as does one an install left stopped (Resume ends
+    // the install hold). A task of the old shared name becomes this user's.
+    // (Off the main thread: schtasks takes a moment.)
+    #[cfg(windows)]
+    {
+        let handle = app.clone();
+        std::thread::spawn(move || {
+            let sh = shell(&handle);
+            if !matches!(sh.mode(), Some(AppMode::Server { .. })) {
+                return;
+            }
+            if let Err(e) = agent::replace_old_task() {
+                show_error(
+                    &handle,
+                    format!("Maktaba could not move its sign-in task to this user's name: {e}"),
+                );
+            }
+            if !sh.paused.load(Ordering::SeqCst)
+                && agent::agent_alive() == Some(false)
+                && agent::login_item() == LoginItem::Enabled
+            {
+                sh.mark_started();
+                if let Err(e) = agent::control(Action::Resume) {
+                    show_error(&handle, format!("The Maktaba server could not start: {e}"));
+                }
+            }
+        });
     }
 
     let handle = app.clone();
@@ -466,7 +586,12 @@ pub fn finish_setup(
 }
 
 #[tauri::command(async)]
-pub fn open_login_items() {
+pub fn open_login_items(app: AppHandle) {
+    // Windows: this turns the task on and starts the server, a Resume
+    #[cfg(windows)]
+    shell(&app).mark_started();
+    #[cfg(not(windows))]
+    let _ = app;
     agent::open_login_items_settings();
 }
 
@@ -490,7 +615,10 @@ pub fn use_remote_server(app: AppHandle, url: String) -> Result<(), String> {
     let url = mode::valid_server_url(&url)
         .ok_or("enter an address that starts with http:// or https://")?;
     // this Mac no longer runs a server: take the login item out
-    if agent::login_item() == LoginItem::Enabled {
+    if matches!(
+        agent::login_item(),
+        LoginItem::Enabled | LoginItem::RequiresApproval
+    ) {
         agent::unregister()?;
     }
     shell(&app).set_mode(AppMode::Client {
@@ -517,11 +645,7 @@ pub fn open_external(url: String) -> Result<(), String> {
     if !allowed_external(&url) {
         return Err(format!("not opening {url}"));
     }
-    std::process::Command::new("/usr/bin/open")
-        .arg(&url)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    agent::open_path(std::ffi::OsStr::new(&url))
 }
 
 #[cfg(test)]
