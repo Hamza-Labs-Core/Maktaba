@@ -252,7 +252,7 @@ func (s *Supervisor) signalLocked(cs []*child, kill bool) {
 				_ = c.cmd.Process.Signal(os.Kill)
 				continue
 			}
-			_ = c.cmd.Process.Signal(c.proc.stopSignal())
+			c.proc.askStop(c.cmd.Process)
 		}
 	}
 }
@@ -646,7 +646,7 @@ func (s *Supervisor) Want(role Role, instance string, on bool) error {
 	}
 	if cmd != nil && cmd.Process != nil {
 		s.logf("%s not wanted: stopping it (pid %d)", c.proc.Name(), cmd.Process.Pid)
-		_ = cmd.Process.Signal(c.proc.stopSignal())
+		c.proc.askStop(cmd.Process)
 		go func() {
 			time.Sleep(10 * time.Second)
 			s.mu.Lock()
