@@ -129,6 +129,10 @@ func Run(ctx context.Context, procs []Process, grace time.Duration) error {
 }
 
 // Run is the supervisor's main loop; see the package-level Run.
+//
+// Processes marked First start alone; the others start once every one of
+// them runs (its check answered), and on shutdown they stop before the
+// First ones do.
 func (s *Supervisor) Run(ctx context.Context, grace time.Duration) error {
 	if len(s.children) == 0 {
 		return errors.New("no processes to run")
@@ -136,52 +140,115 @@ func (s *Supervisor) Run(ctx context.Context, grace time.Duration) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	var wg sync.WaitGroup
+	var first, rest []*child
 	for _, c := range s.children {
-		wg.Add(1)
-		go func(c *child) {
-			defer wg.Done()
-			s.loop(runCtx, c)
-		}(c)
+		if c.proc.First {
+			first = append(first, c)
+		} else {
+			rest = append(rest, c)
+		}
+	}
+	var firstWG, restWG sync.WaitGroup
+	start := func(wg *sync.WaitGroup, cs []*child) {
+		for _, c := range cs {
+			wg.Add(1)
+			go func(c *child) {
+				defer wg.Done()
+				s.loop(runCtx, c)
+			}(c)
+		}
 	}
 
 	var result error
-	select {
-	case <-ctx.Done():
-	case result = <-s.fatal:
+	start(&firstWG, first)
+	ready := true
+	if len(first) > 0 && len(rest) > 0 {
+		ready, result = s.awaitRunning(ctx, first)
+	}
+	if ready {
+		start(&restWG, rest)
+		select {
+		case <-ctx.Done():
+		case result = <-s.fatal:
+		}
 	}
 
 	// Graceful: stop restarting, ask every running child to drain, then
-	// hard-kill stragglers after grace.
+	// hard-kill stragglers after grace; the First processes last.
 	s.mu.Lock()
 	s.stopping = true
 	cancel()
-	s.signalLocked(terminationSignal())
 	s.mu.Unlock()
+	s.stopAll(rest, &restWG, grace)
+	s.stopAll(first, &firstWG, grace)
+	if !ready {
+		for _, c := range rest {
+			s.setState(c, StateStopped)
+		}
+	}
+	return result
+}
 
+// awaitRunning waits until every child in cs runs. It reports false when the
+// supervisor is told to stop first (a signal, or a child's fatal exit).
+func (s *Supervisor) awaitRunning(ctx context.Context, cs []*child) (bool, error) {
+	t := time.NewTicker(250 * time.Millisecond)
+	defer t.Stop()
+	logged := false
+	for {
+		s.mu.Lock()
+		all := true
+		for _, c := range cs {
+			all = all && c.status.State == StateRunning
+		}
+		s.mu.Unlock()
+		if all {
+			return true, nil
+		}
+		if !logged {
+			s.logf("waiting for %s before starting the others", cs[0].proc.Name())
+			logged = true
+		}
+		select {
+		case <-ctx.Done():
+			return false, nil
+		case err := <-s.fatal:
+			return false, err
+		case <-t.C:
+		}
+	}
+}
+
+// stopAll sends cs their graceful-stop signal, waits up to grace for their
+// loops to end and then kills what is left.
+func (s *Supervisor) stopAll(cs []*child, wg *sync.WaitGroup, grace time.Duration) {
+	s.mu.Lock()
+	s.signalLocked(cs, false)
+	s.mu.Unlock()
 	done := make(chan struct{})
 	go func() { wg.Wait(); close(done) }()
 	select {
 	case <-done:
 	case <-time.After(grace):
 		s.mu.Lock()
-		s.signalLocked(os.Kill)
+		s.signalLocked(cs, true)
 		s.mu.Unlock()
 		<-done
 	}
-	return result
 }
 
-// signalLocked signals every running child. A kill takes the child's
+// signalLocked signals every running child of cs. A kill takes the child's
 // whole process tree; a graceful signal goes to the child only, which
 // stops its own children as it drains.
-func (s *Supervisor) signalLocked(sig os.Signal) {
-	for _, c := range s.children {
+func (s *Supervisor) signalLocked(cs []*child, kill bool) {
+	for _, c := range cs {
 		if c.cmd != nil && c.cmd.Process != nil {
-			if sig == os.Kill {
+			if kill {
 				c.tree.kill()
+				_ = c.cmd.Process.Signal(os.Kill)
+				continue
 			}
-			_ = c.cmd.Process.Signal(sig)
+			_ = c.cmd.Process.Signal(c.proc.stopSignal())
 		}
 	}
 }
@@ -396,7 +463,7 @@ func (s *Supervisor) probe(ctx context.Context, c *child, cmd *exec.Cmd, started
 			return
 		case <-t.C:
 		}
-		err := s.check(ctx, c.proc.Probe)
+		err := s.checkChild(ctx, c.proc)
 		if ctx.Err() != nil {
 			return // shutting down or the child already exited
 		}
@@ -411,6 +478,10 @@ func (s *Supervisor) probe(ctx context.Context, c *child, cmd *exec.Cmd, started
 			failures = 0
 			seenOK = true
 			c.status.State = StateRunning
+		} else if errors.Is(err, ErrStarting) {
+			// up, not ready yet (a database recovering): no failure, not running
+			failures = 0
+			c.status.State = StateStarting
 		} else if seenOK || now.Sub(startedAt) >= s.policy.StartupGrace {
 			failures++
 			if c.status.State == StateRunning {
@@ -440,6 +511,16 @@ func (s *Supervisor) probe(ctx context.Context, c *child, cmd *exec.Cmd, started
 			return
 		}
 	}
+}
+
+// checkChild runs a child's liveness check: its Check, else a GET of its Probe.
+func (s *Supervisor) checkChild(ctx context.Context, p Process) error {
+	if p.Check != nil {
+		cctx, cancel := context.WithTimeout(ctx, s.policy.ProbeTimeout)
+		defer cancel()
+		return p.Check(cctx)
+	}
+	return s.check(ctx, p.Probe)
 }
 
 // check GETs a liveness URL; any 2xx is alive.
@@ -557,7 +638,7 @@ func (s *Supervisor) Want(role Role, instance string, on bool) error {
 	}
 	if cmd != nil && cmd.Process != nil {
 		s.logf("%s not wanted: stopping it (pid %d)", c.proc.Name(), cmd.Process.Pid)
-		_ = cmd.Process.Signal(terminationSignal())
+		_ = cmd.Process.Signal(c.proc.stopSignal())
 		go func() {
 			time.Sleep(10 * time.Second)
 			s.mu.Lock()

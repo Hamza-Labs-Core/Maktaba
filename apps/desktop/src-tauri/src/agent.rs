@@ -350,5 +350,7 @@ mod tests {
         // KeepAlive restarts a crash but not a clean stop (Pause)
         assert!(plist.contains("<key>SuccessfulExit</key>\n\t\t<false/>"));
         assert!(plist.contains("<key>RunAtLoad</key>\n\t<true/>"));
+        // launchd waits out the launcher's 60 s stop grace before SIGKILL
+        assert!(plist.contains("<key>ExitTimeOut</key>\n\t<integer>90</integer>"));
     }
 }

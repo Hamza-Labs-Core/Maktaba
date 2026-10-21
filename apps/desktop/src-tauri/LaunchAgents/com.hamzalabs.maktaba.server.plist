@@ -7,6 +7,7 @@
   ~/Library/Logs/Maktaba/server.log and execs
   Contents/Resources/server/bin/maktaba-launcher serve (src/agent.rs).
   KeepAlive restarts it after a crash, not after a clean stop (Pause).
+  ExitTimeOut covers the launcher's 60 s stop grace (contract-update.md).
 -->
 <plist version="1.0">
 <dict>
@@ -28,6 +29,8 @@
 	</dict>
 	<key>ThrottleInterval</key>
 	<integer>10</integer>
+	<key>ExitTimeOut</key>
+	<integer>90</integer>
 	<key>ProcessType</key>
 	<string>Standard</string>
 	<key>AssociatedBundleIdentifiers</key>

@@ -99,15 +99,9 @@ jobs:
         with:
           workspaces: apps/desktop/src-tauri
 
-      # tauri::generate_context! reads build.frontendDist and bundle.icon;
-      # the tests load neither. Icons are stubbed only while none are committed.
-      - name: Stub the web bundle and missing icons
-        run: |
-          mkdir -p web/dist
-          if [ ! -f apps/desktop/src-tauri/icons/icon.icns ]; then
-            python3 -c "import struct,zlib;n=64;r=b''.join(b'\\x00'+b'\\x1f\\x6f\\x5a\\xff'*n for _ in range(n));c=lambda t,d:struct.pack('>I',len(d))+t+d+struct.pack('>I',zlib.crc32(t+d));open('stub.png','wb').write(b'\\x89PNG\\r\\n\\x1a\\n'+c(b'IHDR',struct.pack('>IIBBBBB',n,n,8,6,0,0,0))+c(b'IDAT',zlib.compress(r))+c(b'IEND',b''))"
-            npx --yes @tauri-apps/cli@2.12.3 icon stub.png -o apps/desktop/src-tauri/icons
-          fi
+      # tauri::generate_context! reads build.frontendDist; the tests never load it
+      - name: Stub the web bundle
+        run: mkdir -p web/dist
 
       - name: Format, lint and test
         working-directory: apps/desktop/src-tauri

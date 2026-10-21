@@ -2,9 +2,13 @@
 #
 # `maktaba-server setup` generates this file for you interactively; this
 # example documents every field. Resolved location:
-#   Linux/macOS : $XDG_CONFIG_HOME/maktaba/server.toml (default
-#                 ~/.config/maktaba/server.toml)
-#   Windows     : %APPDATA%\Maktaba\server.toml
+#   macOS   : ~/Library/Application Support/Maktaba/server.toml (keys in keys/,
+#             data in data/, models, chroma and caches beside data/; logs in
+#             ~/Library/Logs/Maktaba). An install from before (in ~/.config/maktaba
+#             and ~/.local/share/maktaba) moves there once, on the next command.
+#   Linux   : $XDG_CONFIG_HOME/maktaba/server.toml (default
+#             ~/.config/maktaba/server.toml)
+#   Windows : %APPDATA%\Maktaba\server.toml
 # Override with the MAKTABA_CONFIG environment variable.
 
 [server]
@@ -33,6 +37,23 @@ stream_addr = ":8081"
 url = "sqlite:///var/lib/maktaba/maktaba.db"
 # Postgres (recommended for large/multi-user libraries over ~5 TB):
 # url = "postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable"
+# Maktaba.app (Epic 36): leave url out and the Postgres bundled with the app is
+# used ([postgres] below), so Live TV's slots stay on.
+
+[postgres]
+# The Postgres bundled with Maktaba.app, run by `serve` as its first process
+# (started before the others, stopped after them): a cluster private to this
+# install in <state>/postgres (on a Mac ~/Library/Application Support/Maktaba/
+# postgres), loopback only plus a unix socket in that directory, scram-sha-256
+# passwords in keys/ (postgres-maktaba_admin.password, postgres-maktaba.password),
+# a nightly pg_dump into backups/ (the newest 7 kept).
+# "auto" (default): on a Mac whose app carries Postgres, unless [database] url
+# is set or a SQLite database is already in use. "on" / "off".
+# enabled = "auto"
+# The Postgres install (bin/postgres, bin/initdb, bin/psql, bin/pg_dump);
+# default $MAKTABA_POSTGRES_HOME, else the app's Resources/server/postgres.
+# home = ""
+# port = 54329
 
 [media]
 # One or more library roots scanned for media.
