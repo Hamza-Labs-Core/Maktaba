@@ -123,9 +123,9 @@ EPEL for the desktop's tray library), and a systemd user manager.
 - **With a desktop:** download `Maktaba_<ver>_amd64.AppImage` (or the `.deb` / `.rpm`; `aarch64`
   builds too) from the [latest release](https://github.com/Hamza-Labs-Core/Maktaba/releases/latest),
   open it and follow the setup. The window is the web app; the tray shows the server's status.
-  The app updates itself once its builds are signed with the updater key, which is still to be
-  set up ([auto-update](docs/auto-update.md)); until then a new version is a new download, and the
-  app moves the server to it at its next start.
+  The app updates itself from the release's signed updates, installing one only when its signature
+  matches the key built into the app ([auto-update](docs/auto-update.md)), and moves the server to
+  the new version at its next start.
 - **Without a desktop** (a NAS, a mini PC, a VM): run the release's installer as the user the
   server is for (not as root). It downloads the server, checks its Sigstore signature before
   anything runs (with the machine's cosign when it is 2.4.3 or newer, else a pinned cosign it
@@ -138,8 +138,9 @@ EPEL for the desktop's tray library), and a systemd user manager.
 
   The script is in the release's signed `checksums.txt` too, so it can be checked the same way
   first ([how](deploy/packaging/README.md#linux-the-app-or-these-packages)). This machine
-  updates itself from the signed releases: Update now in the web app, or `maktaba-server update`
-  (each installs the new version beside the running one and switches to it).
+  updates from the signed releases when an admin clicks Update now in the web app or runs
+  `maktaba-server update` (each installs the new version beside the running one and switches to
+  it); installing updates by itself, on a schedule, comes with story 39.9.
 - **Uninstall:** `~/.local/share/maktaba/runtime/current/bin/maktaba-server service uninstall`
   stops and removes the service; removing the `.deb` / `.rpm` stops it too. Your library's data
   stays in `~/.local/share/maktaba` and `~/.config/maktaba` until you delete them.
@@ -258,8 +259,9 @@ the workflows below.
 
 **Signing status.** Desktop installers and the iOS/tvOS builds are
 currently **unsigned** — code-signing certificates (Apple Developer ID,
-Windows Authenticode, the Tauri updater key) are wired in as documented
-TODOs in each workflow and land once provisioned. Android signs
+Windows Authenticode) are wired in as documented TODOs in each workflow
+and land once provisioned. The desktop apps' own updates are signed with
+the Tauri updater key ([auto-update](docs/auto-update.md)). Android signs
 automatically when the `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEY_ALIAS` /
 `ANDROID_KEY_PASSWORD` secrets are set. Without them the APKs are built
 unsigned, kept as workflow artifacts and not attached to the Release.

@@ -110,7 +110,8 @@ Per-user state, XDG throughout (`config.DirsFor` already resolves these on Linux
 - **One updater, the app's**, as on the Mac and Windows. tauri-plugin-updater 2.10+ (we lock 2.14.0)
   updates all three Linux formats: it replaces the AppImage in place, and installs a .deb/.rpm through
   the system's admin prompt. The feed is the same `latest.json` on the GitHub release, signed with
-  the same updater key.
+  the same updater key (its public half is the repository variable `TAURI_UPDATER_PUBKEY`, stamped
+  into each build).
 - **Not an apt/dnf repository.** It would be a second updater with a second trust root (a GPG repo
   key to create, host, rotate and publish). It would need hosting for the repository metadata, and
   root for every update. Updates would also land whenever the user runs `apt upgrade`, not when
@@ -193,9 +194,6 @@ Each story ships as its own PR with tests, through the usual flow (CI green, rev
 
 ## Owner decisions still open
 
-- **The Tauri updater key pair** (as for the Mac and Windows): `plugins.updater.pubkey` is still
-  `REPLACE_WITH_PUBKEY`. Without it no Linux build can update itself, and every update is a new
-  download.
 - **GNOME without the AppIndicator extension** shows no tray icon (Ubuntu ships the extension; Fedora
   Workstation does not). The app still works there (the window's menu has the same items). Should
   setup offer to open the extension's page?

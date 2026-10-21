@@ -42,14 +42,14 @@ when linger is on: setup turns it on, and polkit may ask for an administrator's 
 (over SSH, in the terminal); without it the service runs while the user is logged in. Nothing else
 needs root.
 
-- **Updates.** With a desktop, the app's updater replaces the app and the app moves the server to
-  the new payload at its next start. It needs the builds signed with the updater key, which is
-  still to be set up ([auto-update](../../docs/auto-update.md)); until then a new version is a new
-  download. Without a desktop, the machine updates itself from the signed releases: Update now in
-  the web app, or `maktaba-server update` (`--check` only verifies, `--rollback` goes back to the
-  version that ran before); each verifies the release, installs its payload beside the running
-  one and switches to it. Installing updates on its own schedule (`rules.updates`) comes with
-  Epic 35's update orchestrator.
+- **Updates.** With a desktop, the app's updater installs each release's signed update (the
+  AppImage in place, a `.deb` / `.rpm` through the system's admin prompt) once its signature
+  matches the key built into the app ([auto-update](../../docs/auto-update.md)), and the app moves
+  the server to the new payload at its next start. Without a desktop, an admin updates from the
+  signed releases: Update now in the web app, or `maktaba-server update` (`--check` only verifies,
+  `--rollback` goes back to the version that ran before); each verifies the release, installs its
+  payload beside the running one and switches to it. Installing updates by itself on a schedule
+  (`rules.updates`) comes with story 39.9, on Epic 35's update orchestrator.
 - **A machine without a desktop, verified.** `install.sh --app` never runs a payload it has not
   verified: it checks the Sigstore signature over the release's `checksums.txt` (with the
   machine's cosign, or cosign's own release build, which it fetches and checks against a pinned
