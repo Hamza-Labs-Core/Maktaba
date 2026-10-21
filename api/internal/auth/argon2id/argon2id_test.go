@@ -119,3 +119,25 @@ func TestIsDisabled(t *testing.T) {
 		t.Errorf("real PHC string should not be disabled, got %q", h)
 	}
 }
+
+// Valid accepts what Hash makes and refuses what Verify could not check.
+func TestValid(t *testing.T) {
+	h, err := Hash("pw", DefaultParams())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Valid(h); err != nil {
+		t.Fatalf("Valid(Hash) = %v", err)
+	}
+	for _, bad := range []string{
+		"", "<unsalted-disabled>", "$argon2i$v=19$m=65536,t=2,p=1$c2FsdA$a2V5",
+		"$argon2id$v=18$m=65536,t=2,p=1$c2FsdA$a2V5",
+		"$argon2id$v=19$m=0,t=2,p=1$c2FsdA$a2V5",
+		"$argon2id$v=19$m=65536,t=2,p=1$!!$a2V5",
+		"$argon2id$v=19$m=65536,t=2,p=1$c2FsdA$",
+	} {
+		if Valid(bad) == nil {
+			t.Errorf("Valid(%q) = nil", bad)
+		}
+	}
+}

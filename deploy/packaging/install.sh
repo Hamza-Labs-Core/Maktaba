@@ -10,13 +10,27 @@
 # supervises) into a bin directory on your PATH. On Linux it can also
 # drop in and enable the systemd unit.
 #
+# With --app (Linux, Epic 39): the whole server instead, for a machine without a
+# desktop: the release's maktaba-linux-payload-<ver>-<arch>.tar.gz (the server,
+# Postgres, ffmpeg and Python the Linux app carries), unpacked in
+# ~/.cache/maktaba/install, then its `maktaba-server setup` asks the app's setup
+# questions in this terminal, copies the server into your data directory and
+# runs it as your systemd user service. Arguments after --app go to setup
+# (--answers FILE). --app never runs a payload whose signature it has not
+# checked: without cosign on the PATH it fetches cosign's own release build,
+# pinned by its SHA-256 below, and MAKTABA_NO_VERIFY does not apply. It installs
+# for the user who runs it, never as root. Take this script from the release
+# (its install.sh asset, listed in checksums.txt), not from a branch.
+#
 # Tunables (env vars):
 #   MAKTABA_VERSION   release tag to install            (default: latest)
 #   MAKTABA_PREFIX    install dir for binaries          (default: /usr/local/bin)
 #   MAKTABA_SYSTEMD   1=install+enable unit, 0=skip     (default: prompt; 0 when non-interactive)
-#   MAKTABA_NO_VERIFY 1=skip checksum + signature verification (default: 0)
+#   MAKTABA_NO_VERIFY 1=skip checksum + signature verification (default: 0;
+#                     refused with --app)
 #   MAKTABA_REQUIRE_COSIGN 1=refuse to install without cosign  (default: 0;
-#                     without cosign only the SHA-256 is checked)
+#                     without cosign only the SHA-256 is checked; --app always
+#                     checks the signature, with a fetched cosign if need be)
 #
 # Verification fails closed: a release missing checksums.txt, its Sigstore
 # bundle or the archive's checksum entry is refused - release assets can be
@@ -26,6 +40,15 @@ set -euo pipefail
 REPO="Hamza-Labs-Core/Maktaba"
 PREFIX="${MAKTABA_PREFIX:-/usr/local/bin}"
 VERSION="${MAKTABA_VERSION:-latest}"
+
+# The verifier --app fetches when the machine has none: sigstore/cosign's
+# release build (the 2.6 line the release workflow signs with), checked against
+# these SHA-256s (cosign_checksums.txt of that release) before it runs.
+COSIGN_VERSION="v2.6.5"
+COSIGN_SHA256_AMD64="c3b4f5410e608af03a5eb0aaac84a4313d8da131248e08ff1759ac70c79d1644"
+COSIGN_SHA256_ARM64="426193b4c5da4d4d643e822f48fe0cc8a476ca1782a272704831f5a0cef716d7"
+# The cosign verify_signature runs (ensure_cosign may point it at the fetched one).
+COSIGN="cosign"
 
 # --- pretty output -----------------------------------------------------
 info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
@@ -97,8 +120,97 @@ valid_tag() {
     printf '%s' "$1" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
 }
 
+# payload_archive <version> <amd64|arm64>: the Linux payload asset's name.
+payload_archive() {
+    local machine
+    case "$2" in
+        amd64) machine=x86_64 ;;
+        arm64) machine=aarch64 ;;
+        *)     return 1 ;;
+    esac
+    printf 'maktaba-linux-payload-%s-%s.tar.gz' "$1" "${machine}"
+}
+
+# sha256_of <file>: its SHA-256 (sha256sum or shasum), or nothing.
+sha256_of() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
+
+# ensure_cosign <dir> <amd64|arm64>: COSIGN is a cosign that can run here: the
+# one on the PATH, else cosign's pinned release build fetched into <dir> and
+# checked against its SHA-256 before it is made executable.
+ensure_cosign() {
+    local dir="$1" arch="$2" want bin
+    if command -v cosign >/dev/null 2>&1; then
+        COSIGN="cosign"
+        return 0
+    fi
+    case "${arch}" in
+        amd64) want="${COSIGN_SHA256_AMD64}" ;;
+        arm64) want="${COSIGN_SHA256_ARM64}" ;;
+        *)     die "no pinned cosign for ${arch}" ;;
+    esac
+    mkdir -p "${dir}/cosign"
+    bin="${dir}/cosign/cosign"
+    info "Fetching cosign ${COSIGN_VERSION} to check the release's signature"
+    fetch "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-${arch}" "${bin}" \
+        || die "could not download cosign ${COSIGN_VERSION} (install cosign, then run this again)"
+    [ "$(sha256_of "${bin}")" = "${want}" ] \
+        || { rm -f "${bin}"; die "the downloaded cosign ${COSIGN_VERSION} is not the release build (SHA-256 mismatch)"; }
+    chmod 0755 "${bin}"
+    COSIGN="${bin}"
+}
+
+# main_app [setup args]: the Linux app's server for a machine without a desktop.
+main_app() {
+    local arch tag ver archive base dir
+    [ "$(detect_os)" = linux ] || die "--app is for Linux (the Mac and Windows apps carry the server)"
+    [ "$(id -u)" -ne 0 ] \
+        || die "--app installs Maktaba for one user, as a user service: run it as that user, without sudo (an administrator's password is asked only to start it at boot)"
+    [ "${MAKTABA_NO_VERIFY:-0}" != "1" ] \
+        || die "--app never runs a payload it has not verified: unset MAKTABA_NO_VERIFY"
+    arch="$(detect_arch)"
+    tag="$(resolve_version)"
+    valid_tag "${tag}" || die "invalid release tag '${tag}' (want vX.Y.Z)"
+    ver="${tag#v}"
+    archive="$(payload_archive "${ver}" "${arch}")"
+    base="https://github.com/${REPO}/releases/download/${tag}"
+    # not /tmp: often a small tmpfs, and the payload is a few hundred MB unpacked
+    dir="${XDG_CACHE_HOME:-${HOME}/.cache}/maktaba/install/${ver}"
+    rm -rf "${dir}"
+    mkdir -p "${dir}"
+    info "Installing Maktaba ${tag} (the whole server) for linux/${arch}"
+    ensure_cosign "${dir}" "${arch}"
+    info "Downloading ${archive}"
+    fetch "${base}/${archive}" "${dir}/${archive}" || die "download failed: ${base}/${archive}"
+    MAKTABA_REQUIRE_COSIGN=1 verify_release "${dir}" "${base}" "${tag}" "${archive}"
+    info "Unpacking"
+    tar -C "${dir}" -xzf "${dir}/${archive}"
+    rm -f "${dir}/${archive}"
+    [ -x "${dir}/server/bin/maktaba-server" ] || die "${archive} has no server/bin/maktaba-server"
+    # the questions need a terminal: curl | bash gives the script on stdin
+    if [ -r /dev/tty ] && [ -t 1 ]; then
+        "${dir}/server/bin/maktaba-server" setup "$@" </dev/tty
+    else
+        case " $* " in
+            *" --answers"*) "${dir}/server/bin/maktaba-server" setup "$@" ;;
+            *) die "setup asks questions: run this in a terminal, or pass --answers FILE" ;;
+        esac
+    fi
+    rm -rf "${dir}"
+}
+
 main() {
     local os arch tag base archive url tmp
+    if [ "${1:-}" = "--app" ]; then
+        shift
+        main_app "$@"
+        return
+    fi
     os="$(detect_os)"
     arch="$(detect_arch)"
     tag="$(resolve_version)"
@@ -166,9 +278,9 @@ verify_signature() {
     if ! fetch "${base}/checksums.txt.sigstore.json" "${dir}/checksums.txt.sigstore.json" 2>/dev/null; then
         die "release ${tag} has no Sigstore bundle (checksums.txt.sigstore.json) - refusing to install it (MAKTABA_NO_VERIFY=1 overrides)"
     fi
-    if command -v cosign >/dev/null 2>&1; then
+    if command -v "${COSIGN}" >/dev/null 2>&1; then
         info "Verifying the Sigstore signature of checksums.txt"
-        cosign verify-blob --bundle "${dir}/checksums.txt.sigstore.json" \
+        "${COSIGN}" verify-blob --bundle "${dir}/checksums.txt.sigstore.json" \
             --certificate-identity "${id}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${dir}/checksums.txt" >/dev/null 2>&1 \

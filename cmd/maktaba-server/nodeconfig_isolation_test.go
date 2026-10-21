@@ -14,12 +14,19 @@ import (
 // joined machine it holds a database credential and would switch the code under
 // test into node mode. A test that needs a node config sets its own (t.Setenv).
 func TestMain(m *testing.M) {
+	// the test binary is also the setup tests' stand-in for maktaba-api and
+	// the payload's Python (setup_steps_test.go)
+	if code, ok := runFakeProgram(); ok {
+		os.Exit(code)
+	}
 	dir, err := os.MkdirTemp("", "maktaba-nodecfg-")
 	if err != nil {
 		panic(err)
 	}
 	_ = os.Setenv("MAKTABA_NODE_CONFIG", filepath.Join(dir, "node.json"))
 	_ = os.Unsetenv("MAKTABA_TV_HOST_ROLE")
+	// setup's check must not depend on this machine's systemd and glibc
+	quietPlatformCheck()
 	// every port is free unless a test says otherwise: the result must not depend
 	// on what this machine happens to run (Splunk on 8088 ...)
 	portProbe = func() config.PortProbe {

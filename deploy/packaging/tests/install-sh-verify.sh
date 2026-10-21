@@ -106,6 +106,44 @@ for bad in 'latest' '1.5.0' 'v1.5' 'v1.5.0/../../x' 'v1.5.0;id' 'v1.5.0 x'; do
     expect fail "bad tag '${bad}' refused" valid_tag "${bad}"
 done
 
+# --app (Epic 39): the Linux payload's asset name per CPU
+expect ok   "payload name for amd64" test "$(payload_archive 1.5.0 amd64)" = maktaba-linux-payload-1.5.0-x86_64.tar.gz
+expect ok   "payload name for arm64" test "$(payload_archive 1.5.0 arm64)" = maktaba-linux-payload-1.5.0-aarch64.tar.gz
+expect fail "no payload for another CPU" payload_archive 1.5.0 riscv64
+fresh_release
+pa="$(payload_archive 1.5.0 amd64)"
+printf 'payload bytes\n' > "${work}/release/${pa}"
+cp "${work}/release/${pa}" "${work}/dl/${pa}"
+printf '%s  ./%s\n' "$(sha "${work}/release/${pa}")" "${pa}" >> "${work}/release/checksums.txt"
+expect ok   "the payload verifies against checksums.txt" without_cosign verify_release "${work}/dl" https://example.invalid/r v1.5.0 "${pa}"
+
+# --app's verifier: the PATH's cosign, else cosign's release build checked
+# against its pinned SHA-256 before it runs.
+printf '#!/bin/sh\nexit 0\n' > "${work}/release/cosign-linux-amd64"
+pinned_cosign() { # pinned_cosign <sha>: ensure_cosign without a cosign on PATH, pin <sha>
+    COSIGN_SHA256_AMD64="$1" PATH="${nocosign_path}" ensure_cosign "${work}/cosigndl" amd64 && [ -x "${COSIGN}" ] &&
+        [ "${COSIGN}" = "${work}/cosigndl/cosign/cosign" ]
+}
+expect ok   "the fetched cosign is used when it is the pinned build" pinned_cosign "$(sha "${work}/release/cosign-linux-amd64")"
+expect fail "a fetched cosign that is not the pinned build is refused" pinned_cosign "$(printf 'x' | { sha256sum 2>/dev/null || shasum -a 256; } | awk '{print $1}')"
+expect ok   "a cosign on the PATH is used as it is" \
+    env PATH="${work}/badcosign:${nocosign_path}" bash -c "MAKTABA_INSTALL_LIB=1 . '${here}/../install.sh'; ensure_cosign '${work}/x' amd64; [ \"\${COSIGN}\" = cosign ]"
+ensure_cosign_other_cpu() { PATH="${nocosign_path}" ensure_cosign "${work}/cosigndl" riscv64; }
+expect fail "no pinned cosign for another CPU" ensure_cosign_other_cpu
+
+# --app runs as the user it installs for, and never unverified
+app_as() { # app_as <uid> [env...]: main_app on a Linux whose `id -u` is <uid>
+    local uid="$1"
+    shift
+    env "$@" bash -c "MAKTABA_INSTALL_LIB=1 . '${here}/../install.sh'; detect_os() { echo linux; }; id() { echo ${uid}; }; resolve_version() { exit 3; }; main_app"
+}
+expect fail "--app as root is refused" app_as 0
+expect fail "--app with MAKTABA_NO_VERIFY=1 is refused" app_as 1000 MAKTABA_NO_VERIFY=1
+root_msg="$(app_as 0 2>&1)"
+case "${root_msg}" in *"without sudo"*) echo "ok   the root refusal names the fix" ;; *) echo "FAIL root refusal: ${root_msg}"; fails=$((fails + 1)) ;; esac
+nv_msg="$(app_as 1000 MAKTABA_NO_VERIFY=1 2>&1)"
+case "${nv_msg}" in *"never runs a payload"*) echo "ok   the MAKTABA_NO_VERIFY refusal says why" ;; *) echo "FAIL no-verify refusal: ${nv_msg}"; fails=$((fails + 1)) ;; esac
+
 if [ "${fails}" -ne 0 ]; then
     echo "${fails} case(s) failed" >&2
     exit 1

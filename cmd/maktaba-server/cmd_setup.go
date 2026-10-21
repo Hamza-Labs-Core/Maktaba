@@ -21,6 +21,9 @@ func newSetupCmd() *cobra.Command {
 	var nf nodeSetupFlags
 	var jsonMode bool
 	var step string
+	var answersFile string
+	var answersFD int
+	var lang string
 	cmd := &cobra.Command{
 		Use:   "setup",
 		Short: "Interactive first-run wizard",
@@ -42,12 +45,20 @@ func newSetupCmd() *cobra.Command {
 			if lf.active() {
 				return runLayoutSetup(lf)
 			}
+			// Epic 39 story 39.6: run from an app payload with no window (a Linux
+			// machine without a desktop), the app's setup steps in the terminal
+			if payloadOfThisBinary() != "" {
+				return runAppSetupCmd(answersFile, answersFD, lang)
+			}
 			return runSetup(runMigrate)
 		},
 	}
 	cmd.Flags().BoolVar(&runMigrate, "migrate", true, "run the initial database migration at the end")
 	cmd.Flags().BoolVar(&jsonMode, "json", false, "run one --step for Maktaba.app (JSON on stdin, NDJSON on stdout)")
 	cmd.Flags().StringVar(&step, "step", "", "with --json: the step (status)")
+	cmd.Flags().StringVar(&answersFile, "answers", "", "from a payload: the steps' inputs from this JSON file ({\"admin\": {...}, ...}) instead of prompts")
+	cmd.Flags().IntVar(&answersFD, "answers-fd", 0, "from a payload: the same answers from this open file descriptor (secrets never on disk)")
+	cmd.Flags().StringVar(&lang, "lang", "", "from a payload: the questions' language, en or ar (default: from LC_ALL, LC_MESSAGES or LANG)")
 	lf.register(cmd)
 	nf.register(cmd)
 	return cmd
@@ -129,7 +140,7 @@ func runSetup(doMigrate bool) error {
 			fmt.Fprintf(os.Stderr, "migration failed (run `maktaba-server migrate up` once the api binary is on PATH): %v\n", err)
 		} else if !useToken {
 			fmt.Println("Seeding admin user ...")
-			if err := runAPISub("adduser", []string{"--username", adminUser, "--password", adminPass}); err != nil {
+			if err := seedAdminCLI(adminUser, adminPass); err != nil {
 				fmt.Fprintf(os.Stderr, "adduser failed (run `maktaba-server adduser` later): %v\n", err)
 			}
 		}
@@ -141,6 +152,30 @@ func runSetup(doMigrate bool) error {
 		fmt.Printf("\nAdmin token (store it safely — shown once):\n  %s\n", adminToken)
 	}
 	return nil
+}
+
+// seedAdminCLI runs `maktaba-api adduser --password-file <f> <user>`: the api
+// takes the username as its argument and the password from a file (0600 in
+// the keys folder, removed afterwards), never argv, which every user of the
+// machine can read.
+func seedAdminCLI(user, pass string) error {
+	dir := config.KeysDir()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(dir, ".admin-password-*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(f.Name()) }()
+	if _, err := f.WriteString(pass + "\n"); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return runAPISub("adduser", []string{"--password-file", f.Name(), user})
 }
 
 func splitRoots(line string) []string {

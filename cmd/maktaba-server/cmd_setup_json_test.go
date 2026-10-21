@@ -58,7 +58,7 @@ func TestSetupJSONUsage(t *testing.T) {
 	if code, ev := setupStep(t, "status", "not json"); code != 2 || ev["code"] != "bad_input" {
 		t.Fatalf("bad input = %d %v", code, ev)
 	}
-	if code, ev := setupStep(t, "plex", "{}"); code != 2 || ev["type"] != "error" || ev["code"] != "unknown_step" {
+	if code, ev := setupStep(t, "nope", "{}"); code != 2 || ev["type"] != "error" || ev["code"] != "unknown_step" {
 		t.Fatalf("unknown step = %d %v", code, ev)
 	}
 }
