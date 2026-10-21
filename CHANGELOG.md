@@ -46,6 +46,8 @@ don't append a line here; docs-only PRs are exempt.
   gently (SIGTERM, CTRL_BREAK on Windows) so a stop never leaves pip behind. A Postgres of
   another major than the database's is refused. What a process waits on shows as its `detail`
   in `/processes`.
+  Each such detail also has a `detail_code` from a fixed list and its `detail_params`, for the
+  app's screens to say it in their own language.
 - **The API refuses a database a newer Maktaba migrated**, on every install: `maktaba-api
   migrate up` exits 3 instead of finding nothing to apply, and `serve` does not start on it.
   `migrate --timeout 0` runs with no time limit.

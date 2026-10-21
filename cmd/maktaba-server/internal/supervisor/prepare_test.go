@@ -2,8 +2,10 @@ package supervisor
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os/exec"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -20,11 +22,12 @@ func TestPrepareRunsBeforeTheFirstStart(t *testing.T) {
 	p, _ := fakeProc(t, RolePipeline, "serve")
 	var tries atomic.Int32
 	release := make(chan struct{})
-	p.Prepare = func(ctx context.Context, report func(string)) error {
+	p.Prepare = func(ctx context.Context, report func(Detail)) error {
 		if tries.Add(1) == 1 {
-			return errors.New("no network")
+			return Coded(Detail{Code: "venv_failed", Params: map[string]any{"error": "no network"}, Text: "no network"})
 		}
-		report("Installing the transcription tools (41%)")
+		report(Detail{Code: "venv_building", Params: map[string]any{"percent": 41},
+			Text: "Installing the transcription tools (41%)"})
 		select {
 		case <-release:
 			return nil
@@ -37,16 +40,18 @@ func TestPrepareRunsBeforeTheFirstStart(t *testing.T) {
 
 	waitFor(t, s, "the failure shown", func(s Snapshot) bool {
 		c := proc(s, RolePipeline)
-		return c.State == StateFailed && c.Detail == "no network" && c.NextRestartAt != nil
+		return c.State == StateFailed && c.Detail == "no network" && c.DetailCode == "venv_failed" &&
+			c.DetailParams["error"] == "no network" && c.NextRestartAt != nil
 	})
 	waitFor(t, s, "the retry's progress shown", func(s Snapshot) bool {
 		c := proc(s, RolePipeline)
-		return c.State == StateStarting && c.Detail == "Installing the transcription tools (41%)" && c.PID == 0
+		return c.State == StateStarting && c.Detail == "Installing the transcription tools (41%)" &&
+			c.DetailCode == "venv_building" && c.DetailParams["percent"] == 41 && c.PID == 0
 	})
 	close(release)
 	waitFor(t, s, "started once prepared", runningPID(RolePipeline))
-	if c := proc(s.Snapshot(), RolePipeline); c.Detail != "" {
-		t.Errorf("detail after the start = %q", c.Detail)
+	if c := proc(s.Snapshot(), RolePipeline); c.Detail != "" || c.DetailCode != "" || c.DetailParams != nil {
+		t.Errorf("detail after the start = %q %q %v", c.Detail, c.DetailCode, c.DetailParams)
 	}
 	if !hasEvent(s.Snapshot(), RolePipeline, EventFailed) {
 		t.Error("the failed Prepare is in the event log")
@@ -63,8 +68,8 @@ func TestPrepareRunsBeforeTheFirstStart(t *testing.T) {
 // the process never starts, and the others are not held up by it.
 func TestShutdownDuringPrepare(t *testing.T) {
 	p, _ := fakeProc(t, RolePipeline, "serve")
-	p.Prepare = func(ctx context.Context, report func(string)) error {
-		report("building")
+	p.Prepare = func(ctx context.Context, report func(Detail)) error {
+		report(Detail{Text: "building"})
 		<-ctx.Done()
 		return ctx.Err()
 	}
@@ -96,19 +101,28 @@ func TestHaltedPrepareIsNotTriedAgain(t *testing.T) {
 	t.Cleanup(func() { prepareRetryFirst = prev })
 	var tries atomic.Int32
 	halted := Process{Role: RoleStreaming, Cmd: exec.Command("maktaba-never-started"),
-		Prepare: func(context.Context, func(string)) error {
+		Prepare: func(context.Context, func(Detail)) error {
 			tries.Add(1)
-			return Halt(errors.New("the update's migrations failed"))
+			return Halt(Coded(Detail{Code: "db_restored", Params: map[string]any{"release": "v0.2.0"},
+				Text: "the update's migrations failed"}))
 		}}
-	if !Halted(halted.Prepare(context.Background(), nil)) || Halted(errors.New("x")) || Halt(nil) != nil {
+	err := halted.Prepare(context.Background(), nil)
+	if !Halted(err) || Halted(errors.New("x")) || Halt(nil) != nil {
 		t.Fatal("Halted does not tell a Halt")
+	}
+	if d := DetailOf(err); d.Code != "db_restored" || d.Text != "the update's migrations failed" {
+		t.Fatalf("a halt's detail = %+v", d)
+	}
+	if d := DetailOf(errors.New("plain")); d.Code != "" || d.Text != "plain" {
+		t.Fatalf("an uncoded error's detail = %+v", d)
 	}
 	tries.Store(0)
 	s := New([]Process{halted}, testPolicy(), WithLog(&syncBuffer{}))
 	stop, _ := running(t, s)
 	snap := waitFor(t, s, "the halt shown", func(s Snapshot) bool {
 		c := proc(s, RoleStreaming)
-		return c.State == StateFailed && c.Detail == "the update's migrations failed"
+		return c.State == StateFailed && c.Detail == "the update's migrations failed" && c.DetailCode == "db_restored" &&
+			c.DetailParams["release"] == "v0.2.0"
 	})
 	if c := proc(snap, RoleStreaming); c.NextRestartAt != nil || c.PID != 0 {
 		t.Fatalf("halted = %+v, want no next try and never started", c)
@@ -125,5 +139,21 @@ func TestHaltedPrepareIsNotTriedAgain(t *testing.T) {
 	}
 	if c := proc(s.Snapshot(), RoleStreaming); c.State != StateStopped {
 		t.Fatalf("after the stop = %+v", c)
+	}
+}
+
+// The coded detail is in /processes beside the English, and absent when there is none.
+func TestDetailFieldsInJSON(t *testing.T) {
+	raw, err := json.Marshal(ChildStatus{Role: RoleAPI, State: StateStarting, Detail: "Saving the library database before the update to v0.3.0",
+		DetailCode: "db_dumping", DetailParams: map[string]any{"from": "v0.2.0", "to": "v0.3.0"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"detail_code":"db_dumping","detail_params":{"from":"v0.2.0","to":"v0.3.0"}`) {
+		t.Fatalf("json = %s", raw)
+	}
+	raw, _ = json.Marshal(ChildStatus{Role: RoleAPI, State: StateRunning})
+	if strings.Contains(string(raw), "detail") {
+		t.Fatalf("json without a detail = %s", raw)
 	}
 }
