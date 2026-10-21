@@ -20,8 +20,10 @@ the server **before** the installer starts, and starts it again from the new pay
 
 1. **Download and verify** the update (`Update::download`), with the server still running.
 2. **Stop the server**: the stop event (contract-agent), then wait until the agent's mutex is free
-   (≤ 90 s: the launcher's 60 s grace, Postgres's fast shutdown). If it does not stop in time the
-   update is not installed: the tray says so and the server keeps running.
+   (≤ 90 s: the launcher's 60 s grace, Postgres's fast shutdown). If it does not stop in time, or
+   the install then fails, the update is not installed: the tray says so and the shell starts the
+   server again (its task, unless it was paused before the update). Once the stop event is set the
+   server is stopping; nothing but the shell's start brings it back.
 3. **Install** (`Update::install`): Tauri starts the NSIS installer and the shell exits. The
    installer's `PREINSTALL` hook (`--server-stop`) finds nothing running; its restart-manager check
    closes any other `Maktaba.exe` window of this user.

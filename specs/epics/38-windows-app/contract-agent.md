@@ -95,6 +95,15 @@ The NSIS installer (`bundle.windows.nsis.installerHooks`) calls the installed `M
 is stopped or was not running. `--server-start` and `--server-remove` exit 0 when there is nothing to
 do. The state in `%LOCALAPPDATA%\Maktaba` is never removed by the uninstaller.
 
+**An older `Maktaba.exe`.** The client-only Windows app (the same `Maktaba.exe`, installed in the same
+`%LOCALAPPDATA%\Maktaba`) does not know these flags: it ignores them and opens its window, so an
+`ExecWait` on it would hold the install until the user closes it. Each hook therefore calls the
+installed program only when it knows the flags: an install that carries the server payload
+(`$INSTDIR\server\payload.json`; the client-only app never has one) is one that runs the server and
+has the flags, and on any other the hook does nothing (there is no server to stop or start). The
+installer's check (`tools/release/win-app/check.sh --installer`) installs over a client-only layout
+whose stand-in ignores the flags, and must finish without waiting.
+
 ## Sign-out and shutdown
 
 At sign-out Windows ends the session's processes. The launcher and the roles get the console's
