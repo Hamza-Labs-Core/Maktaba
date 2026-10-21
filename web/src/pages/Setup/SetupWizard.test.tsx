@@ -287,14 +287,18 @@ describe("SetupWizard", () => {
         return { models: { whisper: "ready" } };
       }
     );
+    const llm = vi.fn(() => {
+      order.push("llm");
+      return { models: [{ name: "qwen2.5:7b", ready: true }] };
+    });
     const finish = vi.fn(() => {
       order.push("finish");
       return { web_url: "http://127.0.0.1:8088", supervisor_url: "http://127.0.0.1:9103" };
     });
-    const api = fakeApi({ venv, models, finish });
+    const api = fakeApi({ venv, models, llm, finish });
     renderWizard(api, "install");
     expect(await screen.findByRole("heading", { name: "Starting Maktaba" })).toBeInTheDocument();
-    expect(order).toEqual(["venv", "models:download", "finish"]);
+    expect(order).toEqual(["venv", "models:download", "llm", "finish"]);
     expect(api.finishSetup).toHaveBeenCalledWith("http://127.0.0.1:8088", "http://127.0.0.1:9103");
   });
 
@@ -331,6 +335,33 @@ describe("SetupWizard", () => {
     expect(api.openLoginItems).toHaveBeenCalled();
     expect(await screen.findByRole("heading", { name: "Starting Maktaba" })).toBeInTheDocument();
     expect(screen.getByText(/Maktaba runs in the tray \(beside the clock\)/)).toBeInTheDocument();
+  });
+
+  it("install: a language model that cannot download now is left to the server", async () => {
+    const llm = vi.fn(() => {
+      throw { code: "llm_failed", message: "no network", details: [] };
+    });
+    const api = fakeApi({ llm, finish: () => ({ web_url: "http://127.0.0.1:8088" }) });
+    renderWizard(api, "install");
+    expect(await screen.findByRole("heading", { name: "Starting Maktaba" })).toBeInTheDocument();
+    expect(llm).toHaveBeenCalledTimes(1);
+  });
+
+  it("install: too little disk for the language model stops setup", async () => {
+    const llm = vi.fn(() => {
+      throw {
+        code: "disk_full",
+        message: "4.7 GB needed, 1.2 GB free",
+        details: [],
+      };
+    });
+    const finish = vi.fn(() => ({ web_url: "http://127.0.0.1:8088" }));
+    const api = fakeApi({ llm, finish });
+    renderWizard(api, "install");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The disk is full. 4.7 GB needed, 1.2 GB free"
+    );
+    expect(finish).not.toHaveBeenCalled();
   });
 
   it("install: asks for Login Items approval when macOS turned the item off", async () => {

@@ -505,3 +505,25 @@ async def test_a_live_wal_cache_is_read_from_a_snapshot(db: Database, tmp_path: 
         assert report.matched == N and report.unmatched == []
     finally:
         writer.close()
+
+
+@pytest.mark.asyncio
+async def test_the_machines_path_map_wins_over_its_shares(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # the shares named the SMB mount; the workers (and so the import) use the NFS one
+    from maktaba_pipeline.engine import paths
+    from maktaba_pipeline.sharepath import servers as share_servers
+    from maktaba_pipeline.tools import import_mediaintel as im
+
+    async def no_db_servers(db: object) -> list[object]:
+        raise AssertionError("the shares must not be read when a path map is set")
+
+    monkeypatch.setattr(share_servers, "load_servers", no_db_servers)
+    monkeypatch.setenv("MAKTABA_PATH_MAP", "/Volumes/Originals/=/Users/me/nas-nfs/")
+    before = paths.active_path_map()
+    try:
+        await im._use_shares(object())
+        assert paths.to_local("/Volumes/Originals/a/b.mp4") == "/Users/me/nas-nfs/a/b.mp4"
+    finally:
+        paths.set_active_path_map(before)
