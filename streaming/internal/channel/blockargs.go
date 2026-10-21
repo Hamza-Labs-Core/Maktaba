@@ -162,7 +162,7 @@ func BlockArgs(p OutputProfile, in BlockInput) []string {
 			main = append(main, "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5")
 		}
 		// Bound the INPUT to the block length too: filters with
-		// look-ahead (loudnorm) then flush at EOF instead of making the
+		// look-ahead (loudnorm, dynaudnorm) then flush at EOF instead of making the
 		// block overrun its slot by their latency.
 		if in.DurationSec > 0 {
 			main = append(main, "-t", formatSec(in.DurationSec))
@@ -337,15 +337,24 @@ func audioEncoderArgs(p OutputProfile) []string {
 	return []string{"-c:a", codec, "-b:a", itoa(p.AudioKbps) + "k", "-ar", "48000", "-ac", "2"}
 }
 
+// loudnessFilter is the programme-audio leveller. speechnorm is dizqueTV's
+// default (e=6.25:r=0.00001:l=1): no look-ahead, so nothing is delayed.
 func loudnessFilter(l Loudnorm) string {
-	if l.Filter == "dynaudnorm" {
+	switch l.Filter {
+	case "dynaudnorm":
 		return "dynaudnorm=f=250:g=15"
+	case "loudnorm":
+		t := l.TargetLUFS
+		if t == 0 {
+			t = DefaultTargetLUFS
+		}
+		return "loudnorm=I=" + strconv.FormatFloat(t, 'f', -1, 64) + ":TP=-1.5:LRA=11"
 	}
-	t := l.TargetLUFS
-	if t == 0 {
-		t = DefaultTargetLUFS
+	e := l.Expansion
+	if e < 1 {
+		e = DefaultExpansion
 	}
-	return "loudnorm=I=" + strconv.FormatFloat(t, 'f', -1, 64) + ":TP=-1.5:LRA=11"
+	return "speechnorm=e=" + strconv.FormatFloat(e, 'f', -1, 64) + ":r=0.00001:l=1"
 }
 
 // imageInput returns the input args for a still or animated overlay. An
