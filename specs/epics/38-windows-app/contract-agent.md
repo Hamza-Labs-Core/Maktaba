@@ -136,9 +136,12 @@ removes this user's task (and its old-named one) even when the stop timed out, t
 `ExecWait` on it would hold the install until the user closes it. A server build whose shell
 predates the flags is the same. Each hook therefore asks only a `Maktaba.exe` known to take them:
 
-- **The one the installer packs** is read when the installer is compiled
-  (`windows/knows-server-flags.ps1`): a shell parses the flags by name, so a build that takes them
-  holds the literal `--server-remove`. A program that cannot be read fails the build.
+- **The one the installer packs** is decided when the installer is compiled, from the shell's source
+  in the same tree (`windows/knows-server-flags.ps1`: the quoted literals `"--server-start"`,
+  `"--server-stop"` and `"--server-remove"` in the code, not a comment, of `src-tauri/src/*.rs`),
+  which the same `tauri build` compiles into that `Maktaba.exe`. Not from the program: a release
+  build need not hold the flags' text (LLVM compiles `arg == "--server-remove"` into a length and
+  integer compares). A source that cannot be read fails the build.
 - **The one already installed** (before an install, an update and an uninstall): an installer that
   put a flag-taking `Maktaba.exe` there records its size and file time as `MaktabaServerFlags` in the
   app's per-user uninstall key, and the hook asks it only while that still matches the file. A
@@ -147,11 +150,17 @@ predates the flags is the same. Each hook therefore asks only a `Maktaba.exe` kn
   key with the rest.
 
 On any other the hook does nothing (there is no server to stop or start).
-`tools/release/win-app/test-hooks.sh` compiles the real hooks around stand-in programs that log each call (fresh install,
-reinstall, an update to a build before the flags, an uninstall of that, a client-only app with no
-record, a client-only `Maktaba.exe` over a server install, an update's uninstall, a real uninstall);
-the installer's check (`check.sh --installer`) installs over a client-only layout whose stand-in
-ignores the flags and never exits, and fails when a hook is still running after 20 s.
+`tools/release/win-app/test-hooks.sh` compiles the real hooks around stand-in programs that log each
+call, each kind of build with a stand-in source of its own (fresh install, reinstall, an update to a
+build before the flags, an uninstall of that, a client-only app with no record, a client-only
+`Maktaba.exe` over a server install, an update's uninstall, a real uninstall). The installer's check
+(`check.sh --installer`) decides from the tree's source as the installer does and checks that against
+the program (the installed `Maktaba.exe --server-start` exits by itself only when the source takes the
+flags). It installs over a client-only layout whose stand-in ignores the flags and never exits, then
+reinstalls and uninstalls, watching each run in a job object (`run-watched.ps1`) that reports every
+process it starts. It fails when a hook is still running after 20 s; when the shell takes the flags but
+the installer recorded nothing, or the hooks did not run `Maktaba.exe` with the flags each step calls
+for; and when the shell takes none but a hook ran it.
 
 ## Sign-out and shutdown
 
