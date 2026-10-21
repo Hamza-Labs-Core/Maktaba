@@ -16,6 +16,7 @@ import { Badge } from "@ds/components/Badge/Badge";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { useI18n } from "../../lib/i18n";
 import { api } from "../../lib/api";
+import { TitleRow } from "../../help/HelpLink";
 
 interface ServiceSnapshot {
   status?: string | null;
@@ -75,7 +76,9 @@ export function ServerStatus() {
   return (
     <section className="mkt-page mkt-cloud-status">
       <header className="mkt-page__header">
-        <h1>{t("cloud.status.title")}</h1>
+        <TitleRow>
+          <h1>{t("cloud.status.title")}</h1>
+        </TitleRow>
         <span className="mkt-muted">{t("health.autoRefresh")}</span>
       </header>
 

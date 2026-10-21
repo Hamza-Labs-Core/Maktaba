@@ -12,6 +12,7 @@ import type { Report, ReportKind } from "../../lib/reportsApi";
 import { PlanPreviewPanel } from "../../components/queue/PlanPreviewPanel";
 import { useIsAdmin } from "../../components/queue/useIsAdmin";
 import { useFmt } from "../../components/queue/format";
+import { TitleRow } from "../../help/HelpLink";
 import "../../styles/queue.css";
 
 const KIND_ORDER: ReportKind[] = ["plan", "preview", "audit", "review", "other"];
@@ -57,7 +58,9 @@ export function Reports() {
     <section className="mkt-page mkt-q">
       <header className="mkt-q-header">
         <div className="mkt-q-header__title">
-          <h1>{t("queue.reports.title")}</h1>
+          <TitleRow>
+            <h1>{t("queue.reports.title")}</h1>
+          </TitleRow>
         </div>
         <div className="mkt-q-header__actions">
           <Link className="mkt-q-linkbtn" to="/queue">

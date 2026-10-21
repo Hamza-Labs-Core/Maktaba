@@ -46,10 +46,13 @@ async def on_failure(
     message: str,
     new_state: str,
     not_before: Any,
+    failure_class: str | None = None,
+    parked_on: str | None = None,
 ) -> None:
     """Record a failure that ``mark_failed_or_retry`` just wrote.
 
-    ``new_state`` is ``pending`` (retry scheduled) or ``failed`` (terminal).
+    ``new_state`` is ``pending`` (retry scheduled, or parked on ``parked_on``: Epic 40)
+    or ``failed`` (terminal).
     A terminal failure with ``rerun_requested`` still gets its follow-up (new
     input deserves a fresh attempt); a retry clears the flag because the retry
     is the follow-up.
@@ -85,13 +88,20 @@ async def on_failure(
             cause,
             bool(row["rerun_requested"]),
         )
+    data: dict[str, Any] = {"cause": cause, "kind": kind, "attempts": int(row["attempts"])}
+    if failure_class is not None:
+        data["class"] = failure_class
+    if parked_on is not None:
+        data["parked_on"] = parked_on
     await log_event(
         db,
         **_common(row),
         level="warn" if will_retry else "error",
-        kind="retry_scheduled" if will_retry else "failed",
-        message=f"{cause}: {message}"[:500],
-        data={"cause": cause, "kind": kind, "attempts": int(row["attempts"])},
+        # a parked job is logged as ``paused`` (job_events.kind is a closed list) with
+        # ``data.parked_on`` saying on what
+        kind="paused" if parked_on else "retry_scheduled" if will_retry else "failed",
+        message=(f"waiting on {parked_on}: " if parked_on else f"{cause}: ") + message[:450],
+        data=data,
     )
     ref = await job_ref(db, job_id)
     await publish(
@@ -102,6 +112,8 @@ async def on_failure(
             "message": message[:500],
             "will_retry": will_retry,
             "not_before": None if not_before is None else str(not_before),
+            "failure_class": failure_class,
+            "parked_on": parked_on,
         },
     )
     if not will_retry and row["rerun_requested"]:

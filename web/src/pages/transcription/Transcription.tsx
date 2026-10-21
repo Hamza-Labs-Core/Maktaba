@@ -15,6 +15,9 @@ import {
 } from "../../lib/transcriptionApi";
 import { useTranscriptionSummary } from "../../lib/useTranscriptionSummary";
 import { useFmt } from "../../components/queue/format";
+import { TitleRow } from "../../help/HelpLink";
+import { HelpLink } from "../../help/HelpLink";
+import { causeHelp } from "../../help/registry";
 import "../../styles/queue.css";
 import "../../styles/transcription.css";
 
@@ -85,7 +88,9 @@ export function Transcription() {
   if (!summary) {
     return (
       <section className="mkt-page mkt-tr">
-        <h1>{t("transcription.title")}</h1>
+        <TitleRow>
+          <h1>{t("transcription.title")}</h1>
+        </TitleRow>
         {error ? (
           <div role="alert" className="mkt-q-banner">
             <p>{t("transcription.error.load")}</p>
@@ -105,7 +110,9 @@ export function Transcription() {
   return (
     <section className="mkt-page mkt-tr" aria-labelledby="mkt-tr-h">
       <header className="mkt-tr__head">
-        <h1 id="mkt-tr-h">{t("transcription.title")}</h1>
+        <TitleRow>
+          <h1 id="mkt-tr-h">{t("transcription.title")}</h1>
+        </TitleRow>
         <p className="mkt-tr__live" role="status">
           <span
             className={`mkt-tr__dot ${polling || error ? "mkt-tr__dot--off" : ""}`}
@@ -452,6 +459,12 @@ function Failures({ s }: { s: TranscriptionSummary }) {
                 <strong>{f.error_cause ?? t("transcription.fail.unknownCause")}</strong>
                 {f.error && <span> · {f.error}</span>}
               </p>
+              <HelpLink
+                to={causeHelp(f.error_cause)}
+                label={t("help.causeHelpNamed", {
+                  cause: f.error_cause ?? t("transcription.fail.unknownCause"),
+                })}
+              />
               <p className="mkt-tr-muted">
                 {[
                   f.library_name ? bidiIsolate(f.library_name) : null,

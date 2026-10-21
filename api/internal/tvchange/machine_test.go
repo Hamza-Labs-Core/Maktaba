@@ -9,9 +9,9 @@ import (
 func TestTransitionsTable(t *testing.T) {
 	want := map[string]map[string]string{
 		StateDraft:      {ActionStage: StateStaged, ActionApprove: StateDraft, ActionSchedule: StateDraft, ActionCancel: StateCancelled, ActionSupersede: StateSuperseded},
-		StateStaged:     {ActionStartVerify: StateVerifying, ActionSchedule: StateStaged, ActionApprove: StateStaged, ActionCancel: StateCancelled, ActionFail: StateFailed},
-		StateVerifying:  {ActionPass: StateReady, ActionFail: StateFailed, ActionVerify: StateVerifying, ActionSchedule: StateVerifying, ActionApprove: StateVerifying, ActionCancel: StateCancelled},
-		StateReady:      {ActionApprove: StateApproved, ActionVerify: StateVerifying, ActionSchedule: StateReady, ActionCancel: StateCancelled, ActionRecheckFail: StateVerifying, ActionAutoApprove: StateApproved, ActionAutoPromote: StateSwapping, ActionPromote: StateSwapping},
+		StateStaged:     {ActionStartVerify: StateVerifying, ActionSchedule: StateStaged, ActionApprove: StateStaged, ActionCancel: StateCancelled, ActionFail: StateDraft, ActionReopen: StateDraft, ActionSupersede: StateSuperseded},
+		StateVerifying:  {ActionPass: StateReady, ActionFail: StateDraft, ActionVerify: StateVerifying, ActionSchedule: StateVerifying, ActionApprove: StateVerifying, ActionCancel: StateCancelled, ActionReopen: StateDraft, ActionSupersede: StateSuperseded},
+		StateReady:      {ActionApprove: StateApproved, ActionVerify: StateVerifying, ActionSchedule: StateReady, ActionCancel: StateCancelled, ActionRecheckFail: StateVerifying, ActionAutoApprove: StateApproved, ActionAutoPromote: StateSwapping, ActionPromote: StateSwapping, ActionReopen: StateDraft, ActionSupersede: StateSuperseded},
 		StateApproved:   {ActionPromote: StateSwapping, ActionSwapStart: StateSwapping, ActionSchedule: StateApproved, ActionCancel: StateCancelled},
 		StateSwapping:   {ActionSwap: StateLive, ActionSwapFailed: StateReady, ActionRollback: StateRolledBack},
 		StateLive:       {ActionSupersede: StateSuperseded, ActionRollback: StateRolledBack},
@@ -22,7 +22,7 @@ func TestTransitionsTable(t *testing.T) {
 	}
 	actions := []string{ActionStage, ActionVerify, ActionApprove, ActionSchedule, ActionPromote, ActionCancel,
 		ActionRollback, ActionStartVerify, ActionPass, ActionFail, ActionRecheckFail, ActionAutoApprove,
-		ActionAutoPromote, ActionSwapStart, ActionSwap, ActionSwapFailed, ActionSupersede}
+		ActionAutoPromote, ActionSwapStart, ActionSwap, ActionSwapFailed, ActionSupersede, ActionReopen}
 	if len(States()) != len(want) {
 		t.Fatalf("states %v", States())
 	}
@@ -33,6 +33,12 @@ func TestTransitionsTable(t *testing.T) {
 			if ok != expOK || to != exp {
 				t.Errorf("%s --%s--> %q %v, want %q %v", st, a, to, ok, exp, expOK)
 			}
+		}
+	}
+	// approved, swapping or live: an update never reopens it (story 33.12 AC3)
+	for _, st := range []string{StateApproved, StateSwapping, StateLive} {
+		if _, ok := Next(st, ActionReopen); ok {
+			t.Errorf("%s can be reopened", st)
 		}
 	}
 	// never cancelled once it is being (or has been) put on the air

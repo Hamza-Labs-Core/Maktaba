@@ -318,26 +318,6 @@ func (s *Store) InFlightChange(ctx context.Context, q queryer) (*Change, error) 
 	return c, err
 }
 
-// OpenDraft is the open draft of a producer kind, or nil.
-func (s *Store) OpenDraft(ctx context.Context, q queryer, kind string) (*Change, error) {
-	rows, err := q.QueryContext(ctx, `SELECT `+changeCols+` FROM tv_changes WHERE state = 'draft'
-		ORDER BY created_at DESC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		c, err := scanChange(rows)
-		if err != nil {
-			return nil, err
-		}
-		if c.SourceKind() == kind {
-			return c, nil
-		}
-	}
-	return nil, rows.Err()
-}
-
 // Events is a change's history, oldest first.
 func (s *Store) Events(ctx context.Context, id string) ([]Event, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT id, at, actor_user_id, actor_source, from_state,
@@ -596,8 +576,11 @@ func (s *Store) Contributors(ctx context.Context, q queryer, c *Change) ([]strin
 		seen[*c.CreatedBy] = true
 		out = append(out, *c.CreatedBy)
 	}
+	// a draft that joined this change (failToDraft) brought its authors with it
 	rows, err := q.QueryContext(ctx, `SELECT DISTINCT actor_user_id FROM tv_change_events
-		WHERE change_id = $1 AND actor_user_id IS NOT NULL AND action IN ('create', 'append')`, c.ID)
+		WHERE actor_user_id IS NOT NULL AND action IN ('create', 'append')
+		  AND (change_id = $1 OR change_id IN (SELECT id FROM tv_changes WHERE superseded_by = $1
+		       AND end_reason = 'joined_change'))`, c.ID)
 	if err != nil {
 		return nil, err
 	}

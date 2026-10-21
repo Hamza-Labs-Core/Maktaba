@@ -108,20 +108,80 @@ async def test_write_channels_auto_stages_change(db: Database) -> None:
     assert fill >= 0
 
 
+async def _events(db: Database, cid: str) -> list[tuple[str, str]]:
+    from maktaba_pipeline.engine.sql import loads
+
+    rows = await db.fetch(
+        "SELECT action, detail FROM tv_change_events WHERE change_id = $1 ORDER BY id", cid
+    )
+    return [(str(r["action"]), str(loads(r["detail"]).get("what", ""))) for r in rows]
+
+
 @pytest.mark.asyncio
-async def test_digest_changed_supersedes_draft(db: Database) -> None:
-    """TC3 / AC3: a plan that changed since the review makes a new draft."""
+async def test_updates_join_one_change_until_it_is_approved(db: Database) -> None:
+    """TC3 / AC3 (the owner's rule): a plan opens change #N; a hand filler edit and a
+    second plan join #N (same id and number, an event each); the newer plan replaces
+    the older plan's part, the hand edit is kept. Approved, #N takes no more updates:
+    the next one opens #N+1."""
+    from maktaba_pipeline.tvrelease.store import update_change
+
     cs, wp = await compute_changes(db, await _plan(db, 105), MaktabaTvConfig())
     first = await stage_write_channels(
         db, wp=wp, changes=cs, job=_JOB, write_mode="review", approved=frozenset(), plan_id=1
     )
+    ch = await get_change(db, first["id"])
+    assert ch is not None and ch.state == "draft"
+    number = ch.number
+    # a filler edit saved by the API (tvchange.Drafts.Save) into the open change
+    pending = {**ch.pending, "filler": {"pools": {"p1": {"name": "Stings"}}}}
+    await update_change(db, ch.id, diff={**ch.row["diff"], "pending": pending})
     cs2, wp2 = await compute_changes(db, await _plan(db, 106), MaktabaTvConfig())
     second = await stage_write_channels(
         db, wp=wp2, changes=cs2, job=_JOB, write_mode="review", approved=frozenset(), plan_id=2
     )
-    assert second["id"] != first["id"]
+    assert second["id"] == first["id"] and second["state"] == "draft"
+    ch = await get_change(db, first["id"])
+    assert ch is not None and ch.state == "draft" and ch.number == number
+    assert ch.row["digest"] == cs2.digest() and ch.row["title"] == "Channel plan #2"
+    assert [d["number"] for d in ch.pending["channels"].values() if d] == [106]
+    assert ch.pending["filler"] == {"pools": {"p1": {"name": "Stings"}}}
+    assert await _events(db, ch.id) == [("create", ""), ("append", "channel_plan")]
+    # the same plan again is no new update
+    again = await stage_write_channels(
+        db, wp=wp2, changes=cs2, job=_JOB, write_mode="review", approved=frozenset(), plan_id=2
+    )
+    assert again["id"] == first["id"] and len(await _events(db, ch.id)) == 2
+    assert await db.fetchval("SELECT count(*) FROM tv_changes") == 1
+    # approved: the next update opens #N+1
+    await update_change(db, ch.id, approved_by=["someone"])
+    cs3, wp3 = await compute_changes(db, await _plan(db, 107), MaktabaTvConfig())
+    third = await stage_write_channels(
+        db, wp=wp3, changes=cs3, job=_JOB, write_mode="review", approved=frozenset(), plan_id=3
+    )
+    assert third["id"] != first["id"]
+    nxt = await get_change(db, third["id"])
+    assert nxt is not None and nxt.number == number + 1 and nxt.state == "draft"
     old = await get_change(db, first["id"])
-    assert old is not None and old.state == "superseded"
+    assert old is not None and old.state == "draft" and old.row["digest"] == cs2.digest()
+
+
+@pytest.mark.asyncio
+async def test_schedule_regeneration_joins_the_open_change(db: Database) -> None:
+    """Every kind shares the one open change: the stale flag joins a plan's draft."""
+    lib = await library_with(db, 6)
+    a = await add_channel(db, lib, 101)
+    await topup_once(db, now=NOW)
+    cs, wp = await compute_changes(db, await _plan(db, 105), MaktabaTvConfig())
+    first = await stage_write_channels(
+        db, wp=wp, changes=cs, job=_JOB, write_mode="review", approved=frozenset(), plan_id=1
+    )
+    await db.execute("UPDATE channel_schedule_state SET stale = true WHERE channel_id = $1", a)
+    await topup_once(db, now=NOW)
+    assert await db.fetchval("SELECT count(*) FROM tv_changes") == 1
+    ch = await get_change(db, first["id"])
+    assert ch is not None and a in ch.pending["sched"]
+    assert ch.pending["channels"]  # the plan is still there
+    assert (await _events(db, ch.id))[-1] == ("append", "schedule")
 
 
 @pytest.mark.asyncio
@@ -163,3 +223,123 @@ async def test_staging_off_is_todays_behaviour(db: Database) -> None:
     assert await stale_to_draft(db, repo) == []
     assert await db.fetchval("SELECT count(*) FROM tv_changes") == 0
     assert await repo.channels_needing_topup(NOW, NOW) == [UUID(a)]
+
+
+async def _check(db: Database, cid: str) -> None:
+    """The controller's checks passed: staged -> verifying -> ready (the API's)."""
+    from maktaba_pipeline.tvrelease.store import transition
+
+    await transition(db, cid, from_states=("staged",), to="verifying", action="start_verify")
+    await transition(
+        db, cid, from_states=("verifying",), to="ready", action="pass",
+        verify_report={"passed": True, "checks": ["one"]},
+    )  # fmt: skip
+
+
+@pytest.mark.asyncio
+async def test_updates_join_a_checked_change_until_it_is_approved(db: Database) -> None:
+    """The owner's rule (story 33.12 AC3): a plan opens #N and auto mode stages it; once
+    checked (ready, no one approved it) a rules edit joins #N and sends it back to
+    draft (its report kept in the reopen event, a stage asked once); the next plan joins
+    #N too and stages it again. Approved, #N takes no more: the next update opens #N+1."""
+    from maktaba_pipeline.engine.sql import loads
+    from maktaba_pipeline.tvrelease.stage import join
+    from maktaba_pipeline.tvrelease.store import REOPEN_WHY, open_change, update_change
+
+    cs, wp = await compute_changes(db, await _plan(db, 105), MaktabaTvConfig())
+    first = await stage_write_channels(
+        db, wp=wp, changes=cs, job=_JOB, write_mode="auto", approved=frozenset(), plan_id=1
+    )
+    assert first["state"] == "staged"
+    await _check(db, first["id"])
+    ch = await get_change(db, first["id"])
+    assert ch is not None and ch.state == "ready" and not ch.row["approved_by"]
+    number = ch.number
+    # a rules PATCH (the API's Drafts.Save; here the same join) joins #N
+    opened = await open_change(db)
+    assert opened is not None and opened.id == ch.id
+    await join(
+        db, opened, {"settings": {"tv": {"guide_hours": 6}}}, actor_source="settings",
+        detail={"what": "settings_tv", "kind": "settings"},
+    )  # fmt: skip
+    ch = await get_change(db, first["id"])
+    assert ch is not None and ch.state == "draft" and ch.number == number
+    assert ch.pending["settings"] == {"tv": {"guide_hours": 6}}
+    assert ch.pending["channels"]  # the plan is still there
+    assert ch.row["verify_report"] == {"passed": True, "checks": ["one"]}  # history
+    assert "requested_at" in ch.row["diff"]["stage"]  # auto mode: staged again, once
+    rows = await db.fetch(
+        "SELECT action, from_state, to_state, detail FROM tv_change_events"
+        " WHERE change_id = $1 ORDER BY id",
+        ch.id,
+    )
+    reopen_ev = [r for r in rows if r["action"] == "reopen"]
+    assert len(reopen_ev) == 1
+    assert (reopen_ev[0]["from_state"], reopen_ev[0]["to_state"]) == ("ready", "draft")
+    det = loads(reopen_ev[0]["detail"])
+    assert det["why"] == REOPEN_WHY and det["report"]["passed"] is True
+    assert str(rows[-1]["action"]) == "append"
+    # the next channel plan joins #N and auto mode stages it again
+    cs2, wp2 = await compute_changes(db, await _plan(db, 106), MaktabaTvConfig())
+    second = await stage_write_channels(
+        db, wp=wp2, changes=cs2, job=_JOB, write_mode="auto", approved=frozenset(), plan_id=2
+    )
+    assert second["id"] == first["id"] and second["state"] == "staged"
+    ch = await get_change(db, first["id"])
+    assert ch is not None and ch.number == number and ch.row["digest"] == cs2.digest()
+    assert ch.pending["settings"] == {"tv": {"guide_hours": 6}}  # the rules edit kept
+    assert "stage" not in ch.row["diff"]  # staged: no stage asked any more
+    assert await db.fetchval("SELECT count(*) FROM tv_changes") == 1
+    # approved: the next update opens #N+1
+    await _check(db, first["id"])
+    await update_change(db, first["id"], approved_by=["owner"])
+    assert await open_change(db) is None
+    cs3, wp3 = await compute_changes(db, await _plan(db, 107), MaktabaTvConfig())
+    third = await stage_write_channels(
+        db, wp=wp3, changes=cs3, job=_JOB, write_mode="auto", approved=frozenset(), plan_id=3
+    )
+    assert third["id"] != first["id"]
+    nxt = await get_change(db, third["id"])
+    assert nxt is not None and nxt.number == number + 1 and nxt.state == "draft"
+    assert third.get("queued_behind") == first["id"]  # #N is still in flight
+    ch = await get_change(db, first["id"])
+    assert ch is not None and ch.state == "ready" and ch.row["digest"] == cs2.digest()
+
+
+@pytest.mark.asyncio
+async def test_two_open_changes_collapse_into_the_older(db: Database) -> None:
+    """A change opened while an unapproved one was checked (live: #46 ready, #47 draft)
+    joins the older at the next update: superseded, end_reason joined_change; the older
+    goes back to draft holding both."""
+    from maktaba_pipeline.tvrelease.stage import collapse_open
+    from maktaba_pipeline.tvrelease.store import create_change, open_changes
+
+    lib = await library_with(db, 6)
+    a = await add_channel(db, lib, 101)
+    await topup_once(db, now=NOW)
+    cs, wp = await compute_changes(db, await _plan(db, 105), MaktabaTvConfig())
+    older = await stage_write_channels(
+        db, wp=wp, changes=cs, job=_JOB, write_mode="auto", approved=frozenset(), plan_id=1
+    )
+    await _check(db, older["id"])
+    newer = await create_change(
+        db, state="draft", title="TV settings", source={"kind": "settings"},
+        pending={"settings": {"tv": {"guide_hours": 6}}}, actor_source="settings",
+    )  # fmt: skip
+    assert len(await open_changes(db)) == 2
+    await db.execute("UPDATE channel_schedule_state SET stale = true WHERE channel_id = $1", a)
+    await topup_once(db, now=NOW)  # an update: the stale flag
+    opens = await open_changes(db)
+    assert [c.id for c in opens] == [older["id"]]
+    ch = opens[0]
+    assert ch.state == "draft"
+    assert ch.pending["settings"] == {"tv": {"guide_hours": 6}}
+    assert a in ch.pending["sched"] and ch.pending["channels"]
+    gone = await get_change(db, newer)
+    assert gone is not None and gone.state == "superseded"
+    assert gone.row["end_reason"] == "joined_change" and gone.row["superseded_by"] == ch.id
+    assert ("append", "joined_change") in await _events(db, ch.id)
+    # idempotent: one open change stays as it is
+    again = await collapse_open(db)
+    assert again is not None and again.id == ch.id
+    assert await db.fetchval("SELECT count(*) FROM tv_changes WHERE state = 'superseded'") == 1

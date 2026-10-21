@@ -388,6 +388,10 @@ func TestResolve(t *testing.T) {
 	if b, ok, _ := Resolve(cfg, ""); !ok || b.Home != filepath.Join(payload, "postgres") {
 		t.Errorf("MAKTABA_APP_BUNDLE not used: %+v %v", b, ok)
 	}
+	// inside an app's payload "auto" is on, on every system (the Linux app, Epic 39)
+	if b, ok, err := Resolve(config.Defaults(), ""); !ok || err != nil || b.Home != filepath.Join(payload, "postgres") {
+		t.Errorf("auto in an app payload: %+v %v %v", b, ok, err)
+	}
 	t.Setenv("MAKTABA_APP_BUNDLE", "")
 
 	// an install already on SQLite keeps it (auto only)

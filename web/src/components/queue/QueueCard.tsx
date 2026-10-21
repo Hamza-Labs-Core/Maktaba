@@ -8,6 +8,8 @@ import { bidiIsolate, useI18n } from "../../lib/i18n";
 import type { JobRef, Pool, QueueSummary, StageInfo } from "../../lib/queueApi";
 import { RingGauge } from "./RingGauge";
 import { STATE_GLYPH, queueVisualState, useFmt } from "./format";
+import { HelpIcon } from "../../help/HelpLink";
+import { hrefOf, stageHelp, tileHealthHelp, waitingHelp } from "../../help/registry";
 
 /** Display name of an external service named by the API ("plex" -> "Plex"). */
 const SERVICE_NAMES: Record<string, string> = {
@@ -18,6 +20,24 @@ const SERVICE_NAMES: Record<string, string> = {
 
 export function serviceName(service: string): string {
   return SERVICE_NAMES[service] ?? service;
+}
+
+type T = (key: string, vars?: Record<string, string | number>) => string;
+
+/** What parked jobs wait on, in words: "the model", "the share smb://nas/O", "disk space". */
+export function waitingOnLabel(on: string, t: T): string {
+  const [head, kind, ...rest] = on.split(":");
+  const name = rest.join(":");
+  if (head === "dependency" && kind === "model") return t("queue.health.on.model");
+  if (head === "dependency" && kind === "share") return t("queue.health.on.share", { root: name });
+  if (head === "resource" && kind === "disk") return t("queue.health.on.disk");
+  if (head === "resource" && kind === "shm") return t("queue.health.on.shm");
+  return kind ? `${kind}${name ? ` ${name}` : ""}` : on;
+}
+
+/** The failures page, filtered. */
+export function failuresLink(params: Record<string, string>): string {
+  return `/queue/failures?${new URLSearchParams(params).toString()}`;
 }
 
 export interface QueueCardProps {
@@ -92,6 +112,7 @@ export function QueueCard({
   const state = queueVisualState(info, summary);
   const servedBy = summary.served_by ?? [];
   const { counts, wave } = summary;
+  const health = summary.health ?? null;
   const total = Math.max(wave.total, wave.done);
   const progress = t("queue.card.doneOf", { done: n(wave.done), total: n(total) });
   const noWorker = !!summary.no_worker && counts.running === 0 && counts.pending > 0;
@@ -107,11 +128,13 @@ export function QueueCard({
           ` · ${t("queue.card.left", { time: fmt.dur(summary.eta_sec) })}`}
       </>
     ) : reasonKey ? (
-      t(`queue.waiting.${reasonKey}`, {
-        time: fmt.dur(summary.oldest_waiting_sec),
-        stage: info.label,
-        service: service ?? "",
-      })
+      <Link className="mkt-q-card__why" to={hrefOf(waitingHelp(reasonKey))}>
+        {t(`queue.waiting.${reasonKey}`, {
+          time: fmt.dur(summary.oldest_waiting_sec),
+          stage: info.label,
+          service: service ?? "",
+        })}
+      </Link>
     ) : null;
 
   return (
@@ -129,6 +152,10 @@ export function QueueCard({
         <span className={`mkt-q-state mkt-q-state--${state}`}>
           <span aria-hidden="true">{STATE_GLYPH[state]}</span> {t(`queue.state.${state}`)}
         </span>
+        <HelpIcon
+          to={stageHelp(info.stage)}
+          label={t("help.stageHelpNamed", { stage: info.label })}
+        />
       </div>
       {info.extension && (
         <span className="mkt-q-ext-badge">
@@ -151,10 +178,53 @@ export function QueueCard({
               {t("queue.card.serviceRetrying", { service })}
             </span>
           )}
-          {counts.failed_open > 0 && (
+          {health?.state === "failing" && health.failing && (
+            <span className="mkt-q-card__flag" title={health.failing.example}>
+              <span aria-hidden="true">! </span>
+              {t("queue.health.failing", {
+                n: n(health.failing.count),
+                signature: health.failing.signature,
+              })}{" "}
+              <HelpIcon to={tileHealthHelp("failing")} label={t("help.tileHealth")} />
+            </span>
+          )}
+          {health?.state === "waiting" && health.waiting[0] && (
+            <span
+              className="mkt-q-card__flag mkt-q-card__flag--waiting"
+              title={health.waiting[0].message ?? undefined}
+            >
+              <span aria-hidden="true">… </span>
+              {t("queue.health.waiting", {
+                n: n(health.waiting.reduce((a, w) => a + w.count, 0)),
+                on: waitingOnLabel(health.waiting[0].on, t),
+              })}{" "}
+              <HelpIcon to={tileHealthHelp("waiting")} label={t("help.tileHealth")} />
+            </span>
+          )}
+          {!health && counts.failed_open > 0 && (
             <span className="mkt-q-card__flag">
               <span aria-hidden="true">! </span>
               {t("queue.card.failed", { n: n(counts.failed_open) })}
+            </span>
+          )}
+          {health && (counts.failed_open > 0 || health.needs_you > 0) && (
+            <span className="mkt-q-card__health">
+              {counts.failed_open > 0 && (
+                <Link className="mkt-q-card__failedlink" to={failuresLink({ stage: info.stage })}>
+                  {t("queue.health.failedSmall", { n: n(counts.failed_open) })}
+                </Link>
+              )}
+              {health.needs_you > 0 && (
+                <Link
+                  className="mkt-q-card__needsyou"
+                  to={failuresLink({ stage: info.stage, status: "needs_you" })}
+                >
+                  {t("queue.health.needsYou", { n: n(health.needs_you) })}
+                </Link>
+              )}
+              {health.needs_you > 0 && (
+                <HelpIcon to={tileHealthHelp("needs_you")} label={t("help.tileHealth")} />
+              )}
             </span>
           )}
         </div>

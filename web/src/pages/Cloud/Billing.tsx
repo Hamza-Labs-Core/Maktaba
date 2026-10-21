@@ -21,6 +21,7 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { useAuth } from "../../lib/auth";
+import { TitleRow } from "../../help/HelpLink";
 
 interface Entitlements {
   tier: string;
@@ -89,7 +90,9 @@ export function Billing() {
     return (
       <section className="mkt-page mkt-billing">
         <header className="mkt-page__header">
-          <h1>{t("billing.title")}</h1>
+          <TitleRow>
+            <h1>{t("billing.title")}</h1>
+          </TitleRow>
         </header>
         <ErrorState
           kind="server"
@@ -109,7 +112,9 @@ export function Billing() {
     return (
       <section className="mkt-page mkt-billing">
         <header className="mkt-page__header">
-          <h1>{t("billing.title")}</h1>
+          <TitleRow>
+            <h1>{t("billing.title")}</h1>
+          </TitleRow>
         </header>
         <p className="mkt-loading">{t("common.loading")}</p>
       </section>
@@ -121,7 +126,9 @@ export function Billing() {
   return (
     <section className="mkt-page mkt-billing">
       <header className="mkt-page__header">
-        <h1>{t("billing.title")}</h1>
+        <TitleRow>
+          <h1>{t("billing.title")}</h1>
+        </TitleRow>
       </header>
 
       <Card className="mkt-plan-card" header={<strong>{t("billing.plan")}</strong>}>
