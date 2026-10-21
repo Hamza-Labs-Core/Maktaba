@@ -45,6 +45,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
+from ..db import claim_owner
 from ..db.jobs import Job, Stage
 from ..db.jobs_claim import claim_one
 from ..engine.claim import PoolConfig, claim_for_pool, load_pools
@@ -303,7 +304,8 @@ class ClaimLoop:
 
     async def _dispatch_job(self, job: Job) -> None:
         try:
-            with bind_job_id(str(job.id)):
+            # the job's writes apply while this worker holds its claim (db/claim_owner.py)
+            with bind_job_id(str(job.id)), claim_owner.running_for(self.cfg.worker_id):
                 _log.info(
                     "job_dispatched",
                     job_id=job.id,
@@ -372,7 +374,7 @@ class ClaimLoop:
 
     async def _run_job(self, job: Job, sem: asyncio.Semaphore) -> None:
         try:
-            with bind_job_id(str(job.id)):
+            with bind_job_id(str(job.id)), claim_owner.running_for(self.cfg.worker_id):
                 _log.info(
                     "job_dispatched",
                     job_id=job.id,

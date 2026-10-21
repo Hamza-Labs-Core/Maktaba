@@ -1010,6 +1010,11 @@ class ChannelAgent:
         if state == self.state:
             return
         self.state = state
+        self.write_status()
+
+    def write_status(self) -> None:
+        """The local status file (``maktaba-server status``) as things are now: at each
+        change of the channel's state, and of the worker's pause."""
         if self.status_path is None:
             return
         try:

@@ -1,6 +1,8 @@
 """A node whose home's database stops answering pauses (PR #145): it claims nothing, its
-jobs in flight finish unless the outage nears the claim lease, and it resumes by itself
-at the first beat the home answers, releasing what its ended jobs left claimed."""
+jobs in flight finish unless the outage nears the claim lease (from the last beat the home
+answered, however the beats hang), a job's late write changes nothing once another worker
+holds its claim, and it resumes by itself at the first beat the home answers, releasing
+what its ended jobs left claimed."""
 
 from __future__ import annotations
 
@@ -15,8 +17,22 @@ import pytest
 from maktaba_pipeline.cluster import exitcodes, nodes_db
 from maktaba_pipeline.cluster.agent.client import AgentIdentity, ChannelAgent
 from maktaba_pipeline.cluster.agent.logship import LogShipper
-from maktaba_pipeline.cluster.node import WorkerAgent, home_unreachable
+from maktaba_pipeline.cluster.node import (
+    STOP_JOBS_AFTER_SEC,
+    WorkerAgent,
+    home_unreachable,
+    stop_jobs_after,
+)
 from maktaba_pipeline.cluster.stages import StageSelector
+from maktaba_pipeline.db import claim_owner
+from maktaba_pipeline.db.jobs_progress import ProgressTick, tick_heartbeat, tick_progress
+from maktaba_pipeline.db.jobs_state import (
+    StageError,
+    mark_cancelled,
+    mark_done,
+    mark_failed_or_retry,
+    mark_paused,
+)
 from maktaba_pipeline.engine.claim import claim_for_pool
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import GRAPH
@@ -315,3 +331,150 @@ def test_the_agents_status_file_says_the_worker_is_paused(tmp_path: Path) -> Non
     held["why"] = None
     agent._set_state("connecting")
     assert json.loads(path.read_text(encoding="utf-8"))["paused"] is None
+
+
+def test_the_jobs_stop_with_a_margin_under_the_lease() -> None:
+    # the default lease (90 s, job heartbeats every 5 s): 70 s after the last answered beat
+    assert stop_jobs_after(90.0, 5.0) == STOP_JOBS_AFTER_SEC == 70.0
+    for lease, hb in ((90.0, 5.0), (300.0, 5.0), (30.0, 5.0)):
+        assert stop_jobs_after(lease, hb) < lease - hb
+
+
+@pytest.mark.asyncio
+async def test_a_hanging_home_stops_the_jobs_before_the_lease(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A home that hangs leaves each beat waiting its timeout (the beat loop then comes
+    round every ~26 s): the lease is watched from the last beat the home answered."""
+    agent, stop, claims = await _agent(db, await _node(db))
+    claims.run()
+    agent.beat_timeout_sec = 3600.0  # the beat loop stuck on one call
+
+    async def hangs(db: Any, node_id: str) -> None:
+        await asyncio.sleep(3600)
+
+    with monkeypatch.context() as m:
+        m.setattr(nodes_db, "beat", hangs)
+        agent.stop_jobs_after_sec = 0.3
+        beat = asyncio.ensure_future(agent.beat())
+        watch = asyncio.ensure_future(agent.run_lease_watch(interval=0.02))
+        try:
+            await asyncio.sleep(0.1)
+            assert claims.stops == 0 and not agent.paused
+            await asyncio.sleep(0.4)
+            # no beat has come back, yet the jobs were stopped and nothing more is claimed
+            assert claims.stops == 1 and agent.paused and agent.selector.current() == ()
+            await asyncio.sleep(0.1)
+            assert claims.stops == 1, "once per outage"
+        finally:
+            beat.cancel()
+            stop.set()
+            await watch
+        with contextlib.suppress(asyncio.CancelledError):
+            await beat
+    # the home answers again: claims again, and the lease is watched anew
+    stop.clear()
+    await agent.beat()
+    assert not agent.paused
+    agent.check_lease()
+    assert claims.stops == 1
+
+
+@pytest.mark.asyncio
+async def test_an_error_the_database_answers_keeps_the_lease(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    agent, _, claims = await _agent(db, await _node(db))
+    claims.run()
+    agent.stop_jobs_after_sec = 0.05
+    await asyncio.sleep(0.1)
+
+    async def broken(db: Any, node_id: str) -> None:
+        raise UndefinedTableError("function cluster_node_beat(uuid) does not exist")
+
+    monkeypatch.setattr(nodes_db, "beat", broken)
+    with pytest.raises(UndefinedTableError):
+        await agent.beat()
+    agent.check_lease()
+    assert claims.stops == 0, "the database answered"
+    for t in claims.in_flight:
+        t.cancel()
+
+
+@pytest.mark.asyncio
+async def test_a_late_write_leaves_a_job_another_worker_holds(db: Database) -> None:
+    """w1's claim lapsed and the home handed the job to w2: whatever w1 writes late (a
+    heartbeat, progress, the end) changes nothing; w2's writes apply."""
+    await sync_graph(db, GRAPH)
+    job_id = await _claimed_by_w1(db)
+    await db.execute(
+        "UPDATE processing_jobs SET claimed_by = 'w2', state = 'running',"
+        " processed_seconds = 1 WHERE id = $1",
+        job_id,
+    )
+    read = (
+        "SELECT state, claimed_by, last_heartbeat_at, processed_seconds"
+        " FROM processing_jobs WHERE id = $1"
+    )
+    before = dict(await db.fetchrow(read, job_id))
+    with claim_owner.running_for("w1"):
+        await tick_heartbeat(db, job_id=job_id)
+        await tick_progress(db, ProgressTick(job_id=job_id, processed_seconds=99.0))
+        assert await mark_paused(db, job_id=job_id, at_sec=3.0, reason="shutdown") is None
+        assert await mark_cancelled(db, job_id=job_id) is None
+        late = await mark_failed_or_retry(db, job_id=job_id, error=StageError("OSError", "late"))
+        assert late.state == "noop"
+        assert await mark_done(db, job_id=job_id) is None
+    assert dict(await db.fetchrow(read, job_id)) == before
+    with claim_owner.running_for("w2"):
+        await tick_progress(db, ProgressTick(job_id=job_id, processed_seconds=42.0))
+        assert float((await db.fetchrow(read, job_id))["processed_seconds"]) == 42.0
+        assert await mark_done(db, job_id=job_id) is not None
+    assert await _job(db, job_id) == ("done", None)
+    # outside a job the claim loop runs nothing is limited (tests, scripts)
+    other = await _claimed_by_w1(db)
+    assert claim_owner.current() is None
+    assert await mark_done(db, job_id=other) is not None
+
+
+@pytest.mark.asyncio
+async def test_the_status_file_follows_the_pause(
+    db: Database, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The channel's state may not change while the home comes and goes: the status file
+    is rewritten at each pause and resume."""
+    agent, _, _ = await _agent(db, await _node(db))
+    path = tmp_path / "w1.json"
+    channel = ChannelAgent(
+        _identity(),
+        shipper=LogShipper("info"),
+        status_path=path,
+        paused=lambda: agent.selector.paused or agent.selector.unreachable,
+    )
+    agent.pause_listeners.append(channel.write_status)
+    home = _home_goes(monkeypatch)
+    home["down"] = True
+    await agent.beat()
+    await agent.beat()
+    paused = json.loads(path.read_text(encoding="utf-8"))["paused"]
+    assert paused is not None and paused.startswith("paused: the home's database does not answer")
+    home["down"] = False
+    await agent.beat()
+    assert json.loads(path.read_text(encoding="utf-8"))["paused"] is None
+
+
+def _identity() -> AgentIdentity:
+    return AgentIdentity(
+        kind="node",
+        url="ws://127.0.0.1:1",
+        worker_id="node-ab12cd34-1",
+        host="win-box",
+        role="node",
+        node_id="ab12cd34-0000-0000-0000-000000000000",
+        node_private=None,
+        home_static=b"",
+        home_key_path=None,
+        ip="127.0.0.1",
+        os="windows",
+        version="0.0.1",
+    )
