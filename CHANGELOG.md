@@ -126,7 +126,8 @@ don't append a line here; docs-only PRs are exempt.
   is over. Postgres keeps its `pg_ctl` fast shutdown. A `serve` with no console (started detached
   by a program that has none) cannot send CTRL_BREAK, so it kills its children as before and says
   so once in its log; its children then open no console window on the desktop. A child is held
-  still while it is asked, so the CTRL_BREAK never goes astray to `serve` itself.
+  still while it is asked, so the CTRL_BREAK never goes astray to `serve` itself; so are the
+  venv bootstrap the server and setup start, and setup's model download, when they are asked.
 - **Windows keeps everything in `%LOCALAPPDATA%\Maktaba`** (Epic 38, story 38.1), for a new install:
   `server.toml`, `keys\`, `data\`, `logs\` and the node's `node.json`, with the models, caches
   and the bundled Postgres beside `data\`. A new install puts nothing in the roaming profile.
@@ -203,8 +204,10 @@ don't append a line here; docs-only PRs are exempt.
   only as root, else the user's `$XDG_DATA_HOME/maktaba`.
 - **The launcher never sends CTRL_BREAK to a server that has exited** (Windows, Epic 38 story
   38.2). It holds a handle to the server until it is reaped and asks it to stop only while it
-  still runs: a CTRL_BREAK naming a pid that leads no process group (a server that exited as the
-  launcher was stopping, its pid reused) goes astray and can end the launcher itself.
+  still runs, holding the server suspended from that check to the send so it cannot exit in
+  between: a CTRL_BREAK naming a pid that leads no process group (a server that exited as the
+  launcher was stopping, or as it rolled back a release that timed out) goes to the whole console
+  and can end the launcher itself.
 
 - **Release builds for desktop, Android and Android TV.** The desktop app ships a
   (placeholder) icon set (#152), which the macOS and Windows bundles failed on. The Linux build

@@ -68,6 +68,19 @@ jobs:
           MAKTABA_TEST_WINDOWS_TASK: ${{ runner.os == 'Windows' && '1' || '' }}
         run: go test -count=1 -v ./internal/adopt
 
+      # Epic 38 story 38.5 on Windows itself: every role, the venv bootstrap and
+      # a setup step are asked to stop with CTRL_BREAK, each held from the check
+      # that it still runs to the send (internal/ctrlbreak), so the event never
+      # reaches the whole console. These start processes, which the unit tier
+      # (-short) skips.
+      - name: maktaba-server (clean stop on Windows)
+        if: runner.os == 'Windows'
+        working-directory: cmd/maktaba-server
+        shell: bash # stops at the first failing command (pwsh would report only the last)
+        run: |
+          go test -count=1 -v ./internal/ctrlbreak ./internal/supervisor ./internal/appvenv
+          go test -count=1 -v . -run "StopGently"
+
       # The bundled Postgres on Windows, against the pinned build pgbin fetches (kept
       # between runs): postgres.exe under a restricted token (the runner is an
       # administrator, which postgres refuses), initdb, the app role, a dump and
