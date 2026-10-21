@@ -8,6 +8,8 @@ import { bidiIsolate, useI18n } from "../../lib/i18n";
 import type { JobRef, Pool, QueueSummary, StageInfo } from "../../lib/queueApi";
 import { RingGauge } from "./RingGauge";
 import { STATE_GLYPH, queueVisualState, useFmt } from "./format";
+import { HelpIcon } from "../../help/HelpLink";
+import { hrefOf, stageHelp, waitingHelp } from "../../help/registry";
 
 /** Display name of an external service named by the API ("plex" -> "Plex"). */
 const SERVICE_NAMES: Record<string, string> = {
@@ -107,11 +109,13 @@ export function QueueCard({
           ` · ${t("queue.card.left", { time: fmt.dur(summary.eta_sec) })}`}
       </>
     ) : reasonKey ? (
-      t(`queue.waiting.${reasonKey}`, {
-        time: fmt.dur(summary.oldest_waiting_sec),
-        stage: info.label,
-        service: service ?? "",
-      })
+      <Link className="mkt-q-card__why" to={hrefOf(waitingHelp(reasonKey))}>
+        {t(`queue.waiting.${reasonKey}`, {
+          time: fmt.dur(summary.oldest_waiting_sec),
+          stage: info.label,
+          service: service ?? "",
+        })}
+      </Link>
     ) : null;
 
   return (
@@ -129,6 +133,10 @@ export function QueueCard({
         <span className={`mkt-q-state mkt-q-state--${state}`}>
           <span aria-hidden="true">{STATE_GLYPH[state]}</span> {t(`queue.state.${state}`)}
         </span>
+        <HelpIcon
+          to={stageHelp(info.stage)}
+          label={t("help.stageHelpNamed", { stage: info.label })}
+        />
       </div>
       {info.extension && (
         <span className="mkt-q-ext-badge">

@@ -44,6 +44,7 @@ import { ArtDiff } from "./diff/ArtDiff";
 import { LineupDiff } from "./diff/LineupDiff";
 import { ScheduleDiff } from "./diff/ScheduleDiff";
 import { SettingsDiff } from "./diff/SettingsDiff";
+import { TitleRow } from "../../../help/HelpLink";
 import "../../../styles/tvchanges.css";
 
 export function AdminTvChangeDetail() {
@@ -208,7 +209,9 @@ function DetailInner() {
   if (error && !change) {
     return (
       <section className="mkt-page mkt-tvx">
-        <h1>{t("tvchanges.title")}</h1>
+        <TitleRow>
+          <h1>{t("tvchanges.title")}</h1>
+        </TitleRow>
         <p role="alert">{t("tvchanges.loadError", { error })}</p>
         <Link to="/admin/live-tv/changes">{t("tvchanges.back")}</Link>
       </section>
@@ -238,10 +241,12 @@ function DetailInner() {
   return (
     <section className="mkt-page mkt-tvx" data-testid="change-detail">
       <header className="mkt-page__header mkt-tvx-head">
-        <h1>
-          <span className="mkt-tvx-num">#{n(change.number)}</span>{" "}
-          {change.title || t("tvchanges.untitled")}
-        </h1>
+        <TitleRow>
+          <h1>
+            <span className="mkt-tvx-num">#{n(change.number)}</span>{" "}
+            {change.title || t("tvchanges.untitled")}
+          </h1>
+        </TitleRow>
         <Link to="/admin/live-tv/changes">{t("tvchanges.back")}</Link>
       </header>
 
