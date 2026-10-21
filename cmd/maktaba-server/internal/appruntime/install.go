@@ -23,13 +23,23 @@ var ErrDiskFull = errors.New("disk_full")
 // Runtime is one user's runtime root (<data>/runtime).
 type Runtime struct {
 	Root string
-	// Now and FreeBytes are what tests replace.
+	// Now, FreeBytes and Sync (flush to the disk before a rename) are what tests
+	// replace: a whole-system sync takes seconds on a busy machine.
 	Now       func() time.Time
 	FreeBytes func(dir string) (uint64, error)
+	Sync      func()
 }
 
 // New is the runtime at root.
-func New(root string) Runtime { return Runtime{Root: root, Now: time.Now, FreeBytes: freeBytes} }
+func New(root string) Runtime {
+	return Runtime{Root: root, Now: time.Now, FreeBytes: freeBytes, Sync: syncAll}
+}
+
+func (r Runtime) sync() {
+	if r.Sync != nil {
+		r.Sync()
+	}
+}
 
 // Installed is a runtime directory's .installed record.
 type Installed struct {
@@ -126,7 +136,7 @@ func (r Runtime) Install(ctx context.Context, from string, progress Progress) (d
 	if err := os.WriteFile(filepath.Join(staging, installedFn), append(rec, '\n'), 0o644); err != nil {
 		return "", false, err
 	}
-	syncAll()
+	r.sync()
 	if err := os.RemoveAll(final); err != nil { // a copy cut short, or of another build
 		return "", false, err
 	}

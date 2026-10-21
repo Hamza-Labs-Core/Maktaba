@@ -62,6 +62,7 @@ func runRuntime(t *testing.T, args ...string) (string, error) {
 func TestRuntimeInstallActivateStatus(t *testing.T) {
 	svc := &recordingService{}
 	rt := appruntime.New(filepath.Join(t.TempDir(), "runtime"))
+	rt.Sync = func() {}
 	old := newRuntimeDeps
 	newRuntimeDeps = func() runtimeDeps { return runtimeDeps{rt: rt, service: svc} }
 	t.Cleanup(func() { newRuntimeDeps = old })

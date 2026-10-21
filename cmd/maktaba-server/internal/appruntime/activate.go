@@ -94,7 +94,7 @@ func (r Runtime) point(name string) error {
 		_ = os.Remove(tmp)
 		return err
 	}
-	syncAll()
+	r.sync()
 	return nil
 }
 
