@@ -33,6 +33,8 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from ..log import get_logger
+from .backfill import BATCH as BACKFILL_BATCH
+from .backfill import backfill_once
 from .failure_classes import MODEL, SHARE, QueueHealthConfig
 from .failure_policy import _roots, read_config, root_answers
 from .graph import StageDef
@@ -50,6 +52,8 @@ __all__ = [
 _log = get_logger()
 
 RELEASE_BATCH = 1000
+#: batches of older failures moved per round (story 40.6)
+BACKFILL_BATCHES = 10
 
 #: (healthy, message)
 Probe = tuple[bool, str]
@@ -61,6 +65,8 @@ class WatchReport:
     leader: bool
     health: dict[str, Probe] = field(default_factory=dict)
     released: dict[str, int] = field(default_factory=dict)
+    #: rows moved from before Epic 40 this round (story 40.6)
+    backfilled: int = 0
 
 
 def _fetch(url: str, timeout: float) -> bytes:
@@ -248,6 +254,14 @@ async def _round(
 ) -> WatchReport:
     cfg = cfg or await read_config(db)
     t = at or now()
+    backfilled = 0
+    for _ in range(BACKFILL_BATCHES):
+        got = await backfill_once(db, cfg)
+        backfilled += got.classified
+        if got.classified < BACKFILL_BATCH:
+            break
+    if backfilled:
+        _log.info("failures_backfilled", rows=backfilled)
     health = await (probes or probe_all)(db, graph, cfg, t)
     released: dict[str, int] = {}
     for name, probe in sorted(health.items()):
@@ -258,7 +272,7 @@ async def _round(
                 released[name] = n
     if released:
         _log.info("parked_jobs_released", released=released)
-    return WatchReport(True, health, released)
+    return WatchReport(True, health, released, backfilled)
 
 
 async def run_watchers(db: Any, graph: Mapping[str, StageDef], stop: asyncio.Event) -> None:
