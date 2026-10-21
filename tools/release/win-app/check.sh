@@ -80,7 +80,14 @@ cleanup() {
     if [ -n "$PG_CTL" ] && [ -f "$PGDATA_DIR/postmaster.pid" ]; then
         "$PG_CTL" -D "$(win "$PGDATA_DIR")" -m immediate -w stop >/dev/null 2>&1 || true
     fi
-    if [ "$REGISTRY_TOUCHED" = 1 ]; then restore_registry; fi
+    if [ "$REGISTRY_TOUCHED" = 1 ]; then
+        # nothing of the test install keeps running (a hook's window would hold the uninstaller)
+        # shellcheck disable=SC2016  # PowerShell's own $ variables; the folder goes in through the environment
+        PREFIX="$(win "$INST")\\" powershell.exe -NoProfile -NonInteractive -Command \
+            'Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($env:PREFIX, [StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }' \
+            >/dev/null 2>&1 || true
+        restore_registry
+    fi
     rm -rf "$SCRATCH" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -152,33 +159,34 @@ if [ -n "$SETUP" ]; then
     state_sums() { (cd "$INST" && sha256sum server.toml keys/secrets.key data/supervisor/state.txt 2>&1); }
     STATE_BEFORE="$(state_sums)"
 
-    # Runs the installer or the uninstaller and ends what its hooks started from the install
-    # folder once it outlives the grace (see the header), with the WebView2 processes of a
-    # shell window. Waits until --WaitGone is gone too (the uninstaller copies itself to %TEMP%
-    # and runs from there).
+    # Runs the installer or the uninstaller and waits until it and everything it started have
+    # exited (the uninstaller copies itself to %TEMP% and runs from there: uninstall.exe is
+    # gone well before that copy has removed the registration). What its hooks start from the
+    # install folder is ended once it outlives the grace (see the header), with the WebView2
+    # processes of a shell window. Prints "exit <code>" for the program and "child <name> exit
+    # <code>" for each program it started that is not the app's (the uninstaller's copy).
     cat >"$SCRATCH/run-watched.ps1" <<'PS'
 param(
     [Parameter(Mandatory = $true)][string]$Exe,
     [Parameter(Mandatory = $true)][string]$Arguments,
     [Parameter(Mandatory = $true)][string]$Dir,
-    [string]$WaitGone = '',
     [string]$WebView = '',
     [int]$Grace = 20,
     [int]$Timeout = 900
 )
 $ErrorActionPreference = 'Stop'
 $prefix = $Dir.TrimEnd('\') + '\'
-function Sweep([double]$grace) {
+function InDir($q) { $q.ExecutablePath -and $q.ExecutablePath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) }
+function Sweep($all, [double]$grace) {
     $now = Get-Date
-    foreach ($q in Get-CimInstance Win32_Process) {
-        if (-not $q.ExecutablePath -or -not $q.ExecutablePath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { continue }
+    foreach ($q in $all) {
+        if (-not (InDir $q)) { continue }
         $age = ($now - $q.CreationDate).TotalSeconds
         if ($age -lt $grace) { continue }
         Write-Output ("ended {0} after {1:N0} s: {2}" -f $q.Name, $age, $q.CommandLine)
         Stop-Process -Id $q.ProcessId -Force -ErrorAction SilentlyContinue
         if ($WebView) {
-            Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe'" |
-                Where-Object { $_.CommandLine -and $_.CommandLine.Contains($WebView) } |
+            $all | Where-Object { $_.Name -eq 'msedgewebview2.exe' -and $_.CommandLine -and $_.CommandLine.Contains($WebView) } |
                 ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
         }
     }
@@ -186,21 +194,50 @@ function Sweep([double]$grace) {
 $p = Start-Process -FilePath $Exe -ArgumentList $Arguments -PassThru
 $null = $p.Handle   # the exit code stays readable after it exits
 $start = Get-Date
+# the processes it started, and theirs: pid -> creation time (a reused pid is younger than
+# the process that held it), and handles on those that are not the app's, for their exit
+# codes. Its own start a second early: WMI's creation times are coarser than .NET's.
+$born = try { $p.StartTime.AddSeconds(-1) } catch { $start.AddSeconds(-2) }
+$tree = @{ [int]$p.Id = $born }
+$copies = @{}
 while ($true) {
-    Sweep $Grace
-    if ($p.HasExited -and (-not $WaitGone -or -not (Test-Path -LiteralPath $WaitGone))) { break }
-    if (((Get-Date) - $start).TotalSeconds -gt $Timeout) { Write-Output "timeout after $Timeout s"; exit 3 }
+    # whether it has exited, before the list: a program starts its children before it exits,
+    # so once it has, the list holds every one of them (the uninstaller's stub exits at once)
+    $exited = $p.HasExited
+    $all = @(Get-CimInstance Win32_Process)
+    $grew = $true
+    while ($grew) {
+        $grew = $false
+        foreach ($q in $all) {
+            $id = [int]$q.ProcessId
+            $parent = [int]$q.ParentProcessId
+            if ($tree.ContainsKey($id) -or -not $tree.ContainsKey($parent) -or $q.CreationDate -lt $tree[$parent]) { continue }
+            $tree[$id] = $q.CreationDate
+            $grew = $true
+            if (-not (InDir $q) -and $q.Name -ne 'msedgewebview2.exe') {
+                try { $c = Get-Process -Id $id; $null = $c.Handle; $copies[$id] = $c } catch { }
+            }
+        }
+    }
+    Sweep $all $Grace
+    $alive = @($all | Where-Object { $tree.ContainsKey([int]$_.ProcessId) -and $_.CreationDate -ge $tree[[int]$_.ProcessId] })
+    if ($exited -and $alive.Count -eq 0) { break }
+    if (((Get-Date) - $start).TotalSeconds -gt $Timeout) {
+        Write-Output ("timeout after {0} s, still running: {1}" -f $Timeout, (($alive | ForEach-Object { $_.Name }) -join ' '))
+        exit 3
+    }
     Start-Sleep -Milliseconds 500
 }
-Sweep 0   # nothing it started may outlive it
+Sweep @(Get-CimInstance Win32_Process) 0   # nothing it started may outlive it
+foreach ($c in $copies.Values) { Write-Output ("child {0} exit {1}" -f $c.ProcessName, $c.ExitCode) }
 Write-Output ("exit {0}" -f $p.ExitCode)
 PS
-    # watched EXE ARGS [WAITGONE]: runs it as above; sets WATCHED_EXIT (its exit code) and
-    # WATCHED_ENDED (what had to be ended, one per line)
+    # watched EXE ARGS: runs it as above; sets WATCHED_EXIT (its exit code, else the first
+    # failing one of the programs it started), WATCHED_CHILDREN ("<name> exit <code>" of
+    # those) and WATCHED_ENDED (what had to be ended, one per line)
     watched() {
-        local out line ps=(-Exe "$(win "$1")" -Arguments "$2" -Dir "$(win "$INST")" -WebView "$(win "$SCRATCH/webview2")")
-        [ -z "${3:-}" ] || ps+=(-WaitGone "$(win "$3")")
-        WATCHED_EXIT=none WATCHED_ENDED=""
+        local out line code ps=(-Exe "$(win "$1")" -Arguments "$2" -Dir "$(win "$INST")" -WebView "$(win "$SCRATCH/webview2")")
+        WATCHED_EXIT=none WATCHED_ENDED="" WATCHED_CHILDREN="" code=0
         # the hooks' app (story 38.3) keeps its state in %LOCALAPPDATA%\Maktaba: a scratch one
         out="$(LOCALAPPDATA="$(win "$SCRATCH/localappdata")" WEBVIEW2_USER_DATA_FOLDER="$(win "$SCRATCH/webview2")" \
             wincmd powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
@@ -208,11 +245,15 @@ PS
         while IFS=$'\r' read -r line; do
             case "$line" in
                 "exit "*)  WATCHED_EXIT="${line#exit }" ;;
+                "child "*" exit "*)
+                    WATCHED_CHILDREN+="${line#child } "
+                    if [ "$code" = 0 ] && [ "${line##* exit }" != 0 ]; then code="${line##* exit } (${line#child })"; fi ;;
                 "ended "*) WATCHED_ENDED+="${line#ended }"$'\n' ;;
                 "") ;;
                 *) printf '        %s\n' "$line" ;;
             esac
         done <<<"$out"
+        if [ "$WATCHED_EXIT" = 0 ] && [ "$code" != 0 ]; then WATCHED_EXIT="$code"; fi
     }
     # hooks WHAT: what the hooks of the last run left running, judged by what the installed
     # Maktaba.exe knows (the header)
@@ -308,13 +349,24 @@ if "$pg/initdb.exe" -D "$(win "$PGDATA_DIR")" -U maktaba --auth=trust -E UTF8 --
     # shellcheck disable=SC2016  # PowerShell's own $ variables; the pid goes in through the environment
     mods="$(PG_PID="$pid" powershell.exe -NoProfile -NonInteractive -Command \
         '(Get-Process -Id $env:PG_PID).Modules | Where-Object { $_.ModuleName -match "^(vcruntime140|msvcp140)" } | ForEach-Object { $_.FileName }' 2>&1 | tr -d '\r' || true)"
-    pgwin="$(win "$pg")\\"
-    if [ -z "$mods" ]; then
-        fail "postgres.exe (pid $pid): could not list its Visual C++ runtime DLLs"
-    elif printf '%s\n' "$mods" | grep -viF "$pgwin" | grep -q .; then
-        fail "postgres.exe loads the Visual C++ runtime from outside the payload: $(printf '%s\n' "$mods" | grep -viF "$pgwin" | tr '\n' ' ')"
+    # Each DLL's folder must be postgres\bin itself, both in their long form: Windows reports
+    # the path a program was started from, which may hold 8.3 names (TEMP is C:\Users\
+    # RUNNER~1\... on GitHub's runners), and Windows paths compare without case.
+    pgwin="$(win "$pg")"
+    outside="" names=""
+    while IFS= read -r m; do
+        [ -n "$m" ] || continue
+        m="$(win "$m" 2>/dev/null || printf '%s' "$m")"
+        dir="${m%\\*}"
+        names+="${m##*\\} "
+        if [ "${dir,,}" != "${pgwin,,}" ]; then outside+="$m "; fi
+    done <<<"$mods"
+    if ! grep -qi 'vcruntime140\.dll' <<<"$names"; then
+        fail "postgres.exe (pid $pid): could not list its Visual C++ runtime DLLs: $mods"
+    elif [ -n "$outside" ]; then
+        fail "postgres.exe loads the Visual C++ runtime from outside the payload's postgres\\bin ($pgwin): $outside"
     else
-        ok "postgres.exe runs on the payload's Visual C++ runtime ($(printf '%s\n' "$mods" | sed 's/.*\\//' | paste -sd' ' -))"
+        ok "postgres.exe runs on the payload's Visual C++ runtime (${names% })"
     fi
     if "$PG_CTL" -D "$(win "$PGDATA_DIR")" -m fast -w -t 60 stop >/dev/null 2>&1; then ok "pg_ctl stop -m fast"; else fail "pg_ctl stop -m fast"; fi
 else
@@ -410,9 +462,17 @@ if [ -n "$SETUP" ]; then
     if [ "$(state_sums)" = "$STATE_BEFORE" ]; then ok "the state beside it is untouched by the install"; else fail "the install changed the state: $(state_sums)"; fi
 
     echo "uninstall"
-    watched "$INST/uninstall.exe" "/S" "$INST/uninstall.exe"
+    watched "$INST/uninstall.exe" "/S"
     hooks "uninstall"
-    [ "$WATCHED_EXIT" = 0 ] || fail "uninstall.exe /S exited $WATCHED_EXIT"
+    # NSIS's uninstall.exe runs the uninstall from a copy of itself in %TEMP% and exits at
+    # once: the checks below are only meaningful once that copy was waited for
+    if [ "$WATCHED_EXIT" != 0 ]; then
+        fail "uninstall.exe /S exited $WATCHED_EXIT"
+    elif [ -z "$WATCHED_CHILDREN" ]; then
+        fail "uninstall.exe /S: the copy it runs the uninstall from was never seen, so it was not waited for"
+    else
+        ok "uninstall.exe /S and the copy it ran from %TEMP% finished (${WATCHED_CHILDREN% })"
+    fi
     left=0
     for f in Maktaba.exe uninstall.exe server; do
         if [ -e "$INST/$f" ]; then
