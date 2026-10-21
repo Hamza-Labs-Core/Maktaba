@@ -70,6 +70,10 @@ type Process struct {
 	// check answered), and stopped after them (Epic 36 story 36.1: the bundled
 	// postgres).
 	First bool
+	// Args, when set, are the command's arguments at each start, read afresh (the
+	// bundled postgres: whether it listens beyond this machine follows the cluster,
+	// pgbundle.Bundle.WatchReach).
+	Args func() []string
 }
 
 // stopSignal is the process's graceful-stop signal.

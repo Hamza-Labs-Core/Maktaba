@@ -46,7 +46,8 @@ type Bundle struct {
 	Keys    string // the password files
 	Backups string // the nightly dumps
 	Port    int
-	// LAN: it listens on every interface for the cluster's machines (cluster.go);
+	// LAN: it may listen beyond this machine for the cluster's machines, while one may
+	// connect (reach.go);
 	// TLS: their connections are encrypted with the cluster database CA's certificate;
 	// MachinesFrom: the networks they may connect from (Bundle.machinesFrom).
 	LAN          bool
@@ -173,10 +174,10 @@ func (b Bundle) stop(p *os.Process) {
 func (b Bundle) Addr() string { return "127.0.0.1:" + strconv.Itoa(b.Port) }
 
 // ServerArgs are the arguments of the foreground `postgres`: this cluster, on
-// loopback (and the LAN for the cluster's machines, TLS on), the unix socket in the
-// data directory (none when that path is too long for a socket: every role connects
-// over loopback TCP anyway).
-func (b Bundle) ServerArgs() []string { return b.serverArgs(b.LAN) }
+// loopback (and the LAN while a machine of the cluster may connect, TLS on: LastReach),
+// the unix socket in the data directory (none when that path is too long for a socket:
+// every role connects over loopback TCP anyway).
+func (b Bundle) ServerArgs() []string { return b.serverArgs(b.listensOut()) }
 
 // serverArgs: lan false for the short-lived servers of Prepare (never on the LAN).
 func (b Bundle) serverArgs(lan bool) []string {

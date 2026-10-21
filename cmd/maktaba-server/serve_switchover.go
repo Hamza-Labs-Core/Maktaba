@@ -751,6 +751,11 @@ func (s *switching) promote(ctx context.Context, id string, term int64) (any, er
 	}); err != nil {
 		return nil, fmt.Errorf("server.toml: %w", err)
 	}
+	// the cluster's machines connect to it from its first start as the home, not one look
+	// of its watch later (pgbundle.WatchReach)
+	if err := db2.KeepReach(pgbundle.Reach{Open: true}); err != nil {
+		fmt.Fprintf(os.Stderr, "[switchover] the machines reach this Postgres one look after its start: %v\n", err)
+	}
 	path := config.LocalNodeConfigPath()
 	if err := os.Rename(path, path+".was-node-"+strconv.FormatInt(term-1, 10)); err != nil {
 		return nil, fmt.Errorf("node.json: %w", err)

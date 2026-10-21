@@ -10,11 +10,15 @@ import (
 	"time"
 )
 
+// clusterBundle is a bundle whose cluster has a machine (Reach open).
 func clusterBundle(t *testing.T, lan, tls bool) Bundle {
 	t.Helper()
 	dir := t.TempDir()
 	b := Bundle{Data: filepath.Join(dir, "postgres"), Keys: filepath.Join(dir, "keys"), Port: DefaultPort, LAN: lan, TLS: tls}
 	if err := os.MkdirAll(b.Data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.KeepReach(Reach{Open: true}); err != nil {
 		t.Fatal(err)
 	}
 	return b

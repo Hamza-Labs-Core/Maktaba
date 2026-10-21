@@ -418,7 +418,17 @@ func TestPrepareAnOlderClusterLetsTheAppRoleProvision(t *testing.T) {
 		!strings.Contains(sql, "CREATE DATABASE maktaba") {
 		t.Fatalf("a first start: one session with both:\n%s", sql)
 	}
-	if hba := read(t, filepath.Join(b.Data, "pg_hba.conf")); !strings.Contains(hba, "hostssl replication  +maktaba_replicas") {
+	if hba := read(t, filepath.Join(b.Data, "pg_hba.conf")); strings.Contains(hba, "maktaba_replicas") {
+		t.Fatalf("no machine may connect yet, but pg_hba.conf lets them:\n%s", hba)
+	}
+	// a machine approved (WatchReach): the next start lets the machines in
+	if err := b.KeepReach(Reach{Open: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Prepare(ctx, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if hba := read(t, filepath.Join(b.Data, "pg_hba.conf")); !strings.Contains(hba, "hostssl maktaba      +maktaba_replicas") {
 		t.Fatalf("pg_hba.conf:\n%s", hba)
 	}
 	if !b.TLSReady() {

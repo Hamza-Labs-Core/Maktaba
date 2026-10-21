@@ -21,6 +21,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/machineagent"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/mdns"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/webui"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme"
@@ -247,6 +248,11 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	sup := supervisor.New(procs, policy, supervisor.WithEventSink(
 		supervisor.NewFileSink(filepath.Join(cfg.Server.DataDir, "supervisor", "events.jsonl"), 0)),
 		supervisor.WithExitHook(supervisor.SlotExitReporter(cfg.Server.StreamAddr)))
+	if pg != nil {
+		// what the cluster's machines may reach of it follows the cluster: it listens
+		// beyond this machine only while one may connect (a start again to change that)
+		go pg.WatchReach(ctx, pgbundle.ReachEvery, func() error { return sup.Restart(supervisor.RolePostgres, "") }, os.Stderr)
+	}
 	var stopCopy func()
 	if cp != nil {
 		stopCopy = runNodeCopy(ctx, cfg, cp, procs, sup)

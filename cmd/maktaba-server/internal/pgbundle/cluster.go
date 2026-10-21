@@ -242,11 +242,13 @@ func readKey(path string) (*ecdsa.PrivateKey, error) {
 }
 
 // hbaConf is the managed pg_hba.conf: this machine with passwords; from off it, only
-// the machines' roles and their copies' replication roles, from the machines' networks
-// (MachinesFrom), into the app's database, over TLS (plain connections when TLS is
-// off, which a home only does by its own [postgres] tls = "off"). There is no
-// `replication` line: a copy is a logical subscription, which connects to the database
-// itself; a physical one (the whole cluster, every row and key) is never let in.
+// while a machine may connect (the cluster's Reach), only the machines' roles and their
+// copies' replication roles, from the machines' networks (MachinesFrom) and, with the
+// default (samenet), each approved machine's own address, into the app's database, over
+// TLS (plain connections when TLS is off, which a home only does by its own [postgres]
+// tls = "off"). There is no `replication` line: a copy is a logical subscription, which
+// connects to the database itself; a physical one (the whole cluster, every row and
+// key) is never let in.
 func (b Bundle) hbaConf() string {
 	remote := "hostssl"
 	if !b.TLS {
@@ -258,9 +260,14 @@ func (b Bundle) hbaConf() string {
 	s.WriteString("local   all          all                              scram-sha-256\n")
 	s.WriteString("host    all          all              127.0.0.1/32    scram-sha-256\n")
 	s.WriteString("host    all          all              ::1/128         scram-sha-256\n")
-	if b.LAN {
+	if r := b.LastReach(); b.LAN && r.Open {
 		s.WriteString("# The cluster's machines: their database roles, and their copies' replication roles.\n")
-		for _, from := range b.machinesFrom() {
+		from := b.machinesFrom()
+		if len(from) == 1 && from[0] == "samenet" {
+			// a machine on another network (a VPN) by its own address
+			from = append(from, r.machineAddrs()...)
+		}
+		for _, from := range from {
 			fmt.Fprintf(&s, "%-7s %-12s %-16s %-15s scram-sha-256\n", remote, AppDatabase, "+"+WorkerGroup, from)
 			fmt.Fprintf(&s, "%-7s %-12s %-16s %-15s scram-sha-256\n", remote, AppDatabase, "+"+ReplicaGroup, from)
 		}
@@ -269,8 +276,9 @@ func (b Bundle) hbaConf() string {
 }
 
 // machinesFrom is where the machines may connect from ([postgres] machines_from):
-// "samenet" (default: the networks this machine is on), "all", or networks (CIDR,
-// comma-separated; one that does not parse is left out, and with none left, samenet).
+// "samenet" (default: the networks this machine is on, and each approved machine's own
+// address), "all", or networks (CIDR, comma-separated: those only; one that does not
+// parse is left out, and with none left, samenet).
 func (b Bundle) machinesFrom() []string {
 	v := strings.TrimSpace(b.MachinesFrom)
 	switch strings.ToLower(v) {

@@ -76,7 +76,8 @@ type PostgresSection struct {
 	// Port is its port (default 54329).
 	Port int `toml:"port"`
 	// Listen: "lan" (default) also listens on this machine's network for the
-	// cluster's machines (only their roles get in, over TLS); "loopback": this
+	// cluster's machines while one may connect (one approved, or joins open:
+	// pgbundle.WatchReach), and only their roles get in, over TLS; "loopback": this
 	// machine only (no machine can join).
 	Listen string `toml:"listen"`
 	// TLS: "on" (default) encrypts the machines' connections with the cluster
@@ -84,8 +85,9 @@ type PostgresSection struct {
 	// passwords and every replicated row readable on the network.
 	TLS string `toml:"tls"`
 	// MachinesFrom: where the cluster's machines may connect from: "samenet" (default:
-	// the networks this machine is on), "all" (any address: machines over a VPN or a
-	// routed network), or networks, comma-separated CIDR ("192.168.1.0/24, 10.8.0.0/16").
+	// the networks this machine is on, and each approved machine's own address, so a
+	// machine over a VPN gets in too), "all" (any address), or networks, comma-separated
+	// CIDR ("192.168.1.0/24, 10.8.0.0/16": those only).
 	MachinesFrom string `toml:"machines_from"`
 	// CopyPort is the loopback port of a full node's copy of its home's database
 	// (default: Port; a node runs no bundled home, and its copy is the database it
