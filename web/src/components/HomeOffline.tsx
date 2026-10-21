@@ -5,6 +5,8 @@
 // once the node reports the home reachable again.
 import { useEffect, useRef, useState } from "react";
 import { NODE_AVAILABLE_EVENT, NODE_UNAVAILABLE_EVENT, homeUnreachable } from "../lib/api";
+import { Link } from "react-router-dom";
+import { useAuth } from "../lib/auth";
 import { clusterApi, type NodeCopy } from "../lib/clusterApi";
 import { useFmt } from "./queue/format";
 import { useI18n } from "../lib/i18n";
@@ -30,7 +32,26 @@ export function useHomeUnreachable(): boolean {
 export function HomeOffline({ onBack }: { onBack: () => void }) {
   const { t } = useI18n();
   const fmt = useFmt();
+  const { user } = useAuth();
   const [copy, setCopy] = useState<NodeCopy | null>(null);
+  // a standby home's admin can make it the home if the home is gone for good
+  const [standby, setStandby] = useState(false);
+  const admin = user?.is_admin === true;
+  useEffect(() => {
+    if (!admin) return;
+    let alive = true;
+    clusterApi
+      .emergency()
+      .then((s) => {
+        if (alive) setStandby(s.standby);
+      })
+      .catch(() => {
+        // not a standby home (or a home): nothing to offer
+      });
+    return () => {
+      alive = false;
+    };
+  }, [admin]);
   const back = useRef(onBack);
   useEffect(() => {
     back.current = onBack;
@@ -65,6 +86,12 @@ export function HomeOffline({ onBack }: { onBack: () => void }) {
         <span className="mkt-home-offline__copy">
           {" "}
           {t("homeOffline.copy", { ago: fmt.ago(applied) })}
+        </span>
+      )}
+      {standby && (
+        <span className="mkt-home-offline__standby">
+          {" "}
+          <Link to="/admin/machines">{t("homeOffline.standby")}</Link>
         </span>
       )}
     </div>

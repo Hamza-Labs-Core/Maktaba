@@ -4,14 +4,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { I18nProvider } from "../../lib/i18n";
-import type { SwitchProgress, SwitchStatus } from "../../lib/clusterApi";
+import type { KeptPlan, SwitchProgress, SwitchStatus } from "../../lib/clusterApi";
+import { ApiError } from "../../lib/api";
 import { ToastProvider } from "@ds/components/Toast/Toast";
 import { axeViolations } from "../../test/axe";
 
-const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
+const { get, post, put } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn() }));
 vi.mock("../../lib/api", async () => {
   const actual = await vi.importActual<typeof import("../../lib/api")>("../../lib/api");
-  return { ...actual, api: { ...actual.api, get, post } };
+  return { ...actual, api: { ...actual.api, get, post, put } };
 });
 
 import { SWITCH_POLL_MS, SwitchHomeCard } from "./SwitchHomeCard";
@@ -71,6 +72,7 @@ describe("Switching the home", () => {
     localStorage.clear();
     get.mockReset();
     post.mockReset();
+    put.mockReset();
     vi.useFakeTimers({ shouldAdvanceTime: true });
   });
   afterEach(() => {
@@ -172,6 +174,152 @@ describe("Switching the home", () => {
     );
   });
 
+  it("ticks off what needs a person on the new home after a switch", async () => {
+    get.mockResolvedValue(
+      status({
+        recent: [
+          progress({
+            state: "done",
+            integrations: {
+              youtube: {
+                state: "needs_you",
+                detail: "sign in to YouTube in firefox on this machine",
+              },
+              llm: { state: "needs_you", detail: "127.0.0.1:11434", done: true },
+            },
+          }),
+        ],
+      })
+    );
+    post.mockResolvedValue({ done: true });
+    renderCard();
+    const list = await screen.findByText("To do on", { exact: false });
+    const note = list.closest("[role='note']") as HTMLElement;
+    const youtube = within(note)
+      .getByText(/Sign in to YouTube/)
+      .closest("li") as HTMLElement;
+    expect(youtube).toHaveAttribute("data-done", "false");
+    const llm = within(note)
+      .getByText(/model runtime/)
+      .closest("li") as HTMLElement;
+    expect(llm).toHaveAttribute("data-done", "true");
+    fireEvent.click(within(youtube).getByRole("button", { name: "Mark done" }));
+    await act(async () => {});
+    expect(post).toHaveBeenCalledWith("/api/cluster/switchover/sw1/checklist", {
+      item: "youtube",
+      done: true,
+    });
+    fireEvent.click(within(llm).getByRole("button", { name: "Not done" }));
+    await act(async () => {});
+    expect(post).toHaveBeenCalledWith("/api/cluster/switchover/sw1/checklist", {
+      item: "llm",
+      done: false,
+    });
+  });
+
+  it("marks a full machine a standby home, and says what each one holds", async () => {
+    get.mockResolvedValue(
+      status({
+        standbys: [
+          {
+            node_id: "n-mac",
+            name: "Studio Mac",
+            standby: true,
+            can: true,
+            kit_at: "2026-10-21T09:58:00Z",
+            kit_term: 1,
+          },
+          { node_id: "n-nas", name: "NAS", standby: false, can: true },
+          { node_id: "n-pi", name: "Pi", standby: false, can: false },
+        ],
+      })
+    );
+    put.mockResolvedValue({ standbys: [] });
+    renderCard();
+    const mac = await screen.findByRole("switch", { name: /Studio Mac/ });
+    expect(mac).toBeChecked();
+    expect(screen.getByText(/Holds this home's keys/)).toBeInTheDocument();
+    // a machine that cannot be one is not offered
+    expect(screen.queryByRole("switch", { name: /Pi/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("switch", { name: /NAS/ }));
+    await act(async () => {});
+    expect(put).toHaveBeenCalledWith("/api/cluster/switchover/standby", {
+      node_id: "n-nas",
+      standby: true,
+    });
+  });
+
+  it("shows what an old home kept aside, what would apply and why not, and applies it", async () => {
+    const plan: KeptPlan = {
+      report: "r1",
+      hash: "plan-1",
+      apply: 1,
+      skip: 1,
+      transactions: [
+        {
+          commit_lsn: "0/1",
+          committed_at: "2026-10-21T09:00:00Z",
+          tables: ["public.app_settings"],
+          changes: 1,
+          apply: true,
+        },
+        {
+          commit_lsn: "0/2",
+          committed_at: "2026-10-21T09:01:00Z",
+          tables: ["public.users"],
+          changes: 1,
+          apply: false,
+          reason: "changed_here",
+        },
+      ],
+    };
+    get.mockImplementation((path: string) =>
+      Promise.resolve(
+        path.endsWith("/plan")
+          ? plan
+          : status({
+              reports: [
+                {
+                  id: "r1",
+                  term: 2,
+                  from_name: "Living Room PC",
+                  state: "reported",
+                  lost: false,
+                  received_at: "2026-10-21T09:30:00Z",
+                  changes: 2,
+                  transactions: 2,
+                },
+              ],
+            })
+      )
+    );
+    renderCard();
+    expect(await screen.findByText(/2 changes in 2 transactions/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Review and apply…" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(get).toHaveBeenCalledWith("/api/cluster/kept-aside/r1/plan");
+    expect(within(dialog).getByText("applies")).toBeInTheDocument();
+    expect(within(dialog).getByText("a row this home changed since")).toBeInTheDocument();
+    // the plan changed meanwhile: nothing applied, the new plan shown
+    post.mockRejectedValueOnce(
+      new ApiError({
+        type: "about:blank",
+        title: "conflict",
+        status: 409,
+        ...({ plan: { ...plan, hash: "plan-2", apply: 0, skip: 2 } } as object),
+      })
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply 1" }));
+    await act(async () => {});
+    expect(post).toHaveBeenCalledWith("/api/cluster/kept-aside/r1/apply", { plan: "plan-1" });
+    expect(await within(screen.getByRole("dialog")).findByRole("alert")).toHaveTextContent(
+      /Something changed on this home since you looked/
+    );
+    expect(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Apply 0" })
+    ).toBeDisabled();
+  });
+
   it("says when switching isn't available", async () => {
     get.mockRejectedValue(new Error("404"));
     renderCard();
@@ -181,8 +329,16 @@ describe("Switching the home", () => {
   it("has every string in Arabic too", async () => {
     const en = (await import("../../i18n/en.json")).default as Record<string, string>;
     const ar = (await import("../../i18n/ar.json")).default as Record<string, string>;
-    const keys = Object.keys(en).filter((k) => k.startsWith("machines.switch."));
-    expect(keys.length).toBeGreaterThan(50);
+    const keys = Object.keys(en).filter((k) =>
+      [
+        "machines.switch.",
+        "machines.standby.",
+        "machines.kept.",
+        "machines.checklist.",
+        "emergency.",
+      ].some((p) => k.startsWith(p))
+    );
+    expect(keys.length).toBeGreaterThan(100);
     expect(keys.filter((k) => !ar[k])).toEqual([]);
   });
 });

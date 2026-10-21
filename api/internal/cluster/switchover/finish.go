@@ -21,6 +21,9 @@ type Integrations func(ctx context.Context) map[string]Integration
 // pending (or FollowWithin has passed) gives the machines their jobs back and calls the
 // switch done.
 func (o *Orchestrator) Finish(ctx context.Context, integrations Integrations) {
+	o.mu.Lock()
+	o.checks = integrations
+	o.mu.Unlock()
 	t := time.NewTicker(15 * time.Second)
 	defer t.Stop()
 	for {
@@ -94,6 +97,8 @@ func (o *Orchestrator) finishOnce(ctx context.Context, integrations Integrations
 	_ = json.Unmarshal(integr, &cur)
 	if integrations != nil {
 		for k, v := range integrations(ctx) {
+			// what a person said they did stays done
+			v.Done = cur[k].Done
 			cur[k] = v
 		}
 	}
@@ -145,6 +150,56 @@ func (o *Orchestrator) Recorded(ctx context.Context, limit int) ([]Progress, err
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+// ChecklistDays is how long after a switch the new home shows its checklist (what a
+// person does there) and checks it again.
+const ChecklistDays = 7
+
+// MarkDone records that a person did what a switch's integration item needed (done
+// false: not done after all).
+func (o *Orchestrator) MarkDone(ctx context.Context, id, item string, done bool) error {
+	var raw []byte
+	if err := o.DB.QueryRowContext(ctx, `SELECT integrations FROM cluster_switchovers WHERE id = $1`, id).Scan(&raw); err != nil {
+		return err
+	}
+	cur := map[string]Integration{}
+	_ = json.Unmarshal(raw, &cur)
+	v, ok := cur[item]
+	if !ok {
+		return sql.ErrNoRows
+	}
+	v.Done = done
+	cur[item] = v
+	b, _ := json.Marshal(cur)
+	_, err := o.DB.ExecContext(ctx, `UPDATE cluster_switchovers SET integrations = $2::jsonb, updated_at = now()
+	    WHERE id = $1`, id, string(b))
+	return err
+}
+
+// recheck runs the checks again for what still needs a person after a switch ended on
+// this home (a model runtime started since shows as moved).
+func (o *Orchestrator) recheck(ctx context.Context, p *Progress) {
+	o.mu.Lock()
+	checks := o.checks
+	o.mu.Unlock()
+	if checks == nil || p == nil || len(p.Integr) == 0 || time.Since(p.Started) > ChecklistDays*24*time.Hour {
+		return
+	}
+	waiting := false
+	for _, v := range p.Integr {
+		waiting = waiting || ((v.State == NeedsYou || v.State == Failed) && !v.Done)
+	}
+	if !waiting {
+		return
+	}
+	now := checks(ctx)
+	for k, v := range p.Integr {
+		if n, ok := now[k]; ok && (v.State == NeedsYou || v.State == Failed) && n.State == Moved {
+			n.Done = v.Done
+			p.Integr[k] = n
+		}
+	}
 }
 
 // Term is the cluster's current term and its home.

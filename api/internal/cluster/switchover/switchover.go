@@ -88,10 +88,13 @@ type Machine struct {
 	PriorDrain bool   `json:"prior_drain"`
 }
 
-// Integration is an outside service's state after a switch.
+// Integration is an outside service's state after a switch. What needs a person is a
+// checklist on the new home: Done once they say they did it (a check that can tell, the
+// model runtime, says so itself: Moved).
 type Integration struct {
-	State  string `json:"state"` // moved | failed | needs_you | not_used
+	State  string `json:"state"` // moved | pending | failed | needs_you | not_used
 	Detail string `json:"detail,omitempty"`
+	Done   bool   `json:"done,omitempty"`
 }
 
 // NewHome is where the machines find the new home (the machine taking over's answer).
@@ -131,6 +134,8 @@ type Orchestrator struct {
 	mu          sync.Mutex
 	progress    map[string]*Progress
 	standbyWake chan struct{}
+	// checks are the outside services' checks (Finish's), run again for the checklist
+	checks Integrations
 }
 
 func (o *Orchestrator) log() *slog.Logger {

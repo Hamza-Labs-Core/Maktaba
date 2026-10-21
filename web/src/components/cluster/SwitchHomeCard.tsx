@@ -1,12 +1,14 @@
 // Switching the home on the Machines tab (Epic 37, specs/epics/37-node-replica):
 // the cluster's term and its home, the machines that could take over (and why
 // one cannot now), a switch under way step by step, and the last one's result:
-// each machine following, each outside service moved, or what it needs from a
-// person. Starting a switch asks first: changes are refused for a minute or
-// two while the home hands over.
+// each machine following, each outside service moved, and a checklist of what
+// needs a person on the new home. Starting a switch asks first: changes are
+// refused for a minute or two while the home hands over. Below: the standby
+// homes (StandbyHomes), and what an old home kept aside (KeptAside).
 //
-//   GET  /api/cluster/switchover   every 5 s while the tab is shown
-//   POST /api/cluster/switchover   {to_node}
+//   GET  /api/cluster/switchover                  every 5 s while the tab is shown
+//   POST /api/cluster/switchover                  {to_node}
+//   POST /api/cluster/switchover/{id}/checklist   {item, done}
 import { memo, useEffect, useRef, useState } from "react";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
@@ -15,11 +17,14 @@ import { useToast } from "@ds/components/Toast/Toast";
 import {
   clusterApi,
   type SwitchCandidate,
+  type SwitchIntegration,
   type SwitchProgress,
   type SwitchStatus,
 } from "../../lib/clusterApi";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { useFmt } from "../queue/format";
+import { KeptAside } from "./KeptAside";
+import { StandbyHomes } from "./StandbyHomes";
 
 export const SWITCH_POLL_MS = 5_000;
 
@@ -56,6 +61,7 @@ export function SwitchHomeCard() {
   const [status, setStatus] = useState<SwitchStatus | null>(null);
   const [error, setError] = useState(false);
   const last = useRef("");
+  const reload = useRef<() => void>(() => {});
 
   useEffect(() => {
     let alive = true;
@@ -74,6 +80,7 @@ export function SwitchHomeCard() {
           if (alive) setError(true);
         });
     };
+    reload.current = load;
     load();
     const id = setInterval(load, SWITCH_POLL_MS);
     return () => {
@@ -82,15 +89,17 @@ export function SwitchHomeCard() {
     };
   }, []);
 
-  return <SwitchHomeView status={status} error={error} />;
+  return <SwitchHomeView status={status} error={error} onRefresh={() => reload.current()} />;
 }
 
 export const SwitchHomeView = memo(function SwitchHomeView({
   status,
   error,
+  onRefresh,
 }: {
   status: SwitchStatus | null;
   error: boolean;
+  onRefresh?: () => void;
 }) {
   const { t } = useI18n();
   const f = useFmt();
@@ -167,7 +176,10 @@ export const SwitchHomeView = memo(function SwitchHomeView({
         <p className="mkt-mc-muted">{t("machines.switch.none")}</p>
       )}
 
-      {!current && lastOne && <Result p={lastOne} />}
+      {!current && lastOne && <Result p={lastOne} onRefresh={onRefresh} />}
+
+      {status && <StandbyHomes standbys={status.standbys ?? []} onChange={() => onRefresh?.()} />}
+      {status && <KeptAside reports={status.reports ?? []} onDone={() => onRefresh?.()} />}
 
       {asking && (
         <Modal
@@ -249,12 +261,29 @@ function Machines({ p }: { p: SwitchProgress }) {
   );
 }
 
-/** The outside services the switch moved, is moving, or needs a person for. */
-function Integrations({ p }: { p: SwitchProgress }) {
+/** The outside services the switch moved, is moving, or needs a person for (after it,
+ * a checklist on the new home: done once they say so, or once a check sees it). */
+function Integrations({
+  p,
+  checklist,
+  onRefresh,
+}: {
+  p: SwitchProgress;
+  checklist?: boolean;
+  onRefresh?: () => void;
+}) {
   const { t } = useI18n();
   const items = Object.entries(p.integrations ?? {}).filter(([, v]) => v.state !== "not_used");
   const needs = items.filter(([, v]) => v.state === "needs_you" || v.state === "failed");
   if (items.length === 0) return null;
+  if (checklist && needs.length > 0) {
+    return (
+      <>
+        <IntegrationList items={items} />
+        <Checklist p={p} needs={needs} onRefresh={onRefresh} />
+      </>
+    );
+  }
   return (
     <>
       <ul className="mkt-cl-switch__integrations">
@@ -278,7 +307,62 @@ function Integrations({ p }: { p: SwitchProgress }) {
   );
 }
 
-function Result({ p }: { p: SwitchProgress }) {
+function IntegrationList({ items }: { items: [string, SwitchIntegration][] }) {
+  const { t } = useI18n();
+  return (
+    <ul className="mkt-cl-switch__integrations">
+      {items.map(([name, v]) => (
+        <li key={name}>
+          <Badge tone={INTEGRATION_TONE[v.state] ?? "neutral"}>
+            {t(`machines.switch.integration.state.${v.state}`)}
+          </Badge>{" "}
+          {t(`machines.switch.integration.${name}`)}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** What a person does on the new home after a switch, ticked off as done. */
+function Checklist({
+  p,
+  needs,
+  onRefresh,
+}: {
+  p: SwitchProgress;
+  needs: [string, SwitchIntegration][];
+  onRefresh?: () => void;
+}) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const mark = (item: string, done: boolean) => {
+    setBusy(true);
+    clusterApi
+      .checklistDone(p.id, item, done)
+      .then(() => onRefresh?.())
+      .catch(() => toast.show({ id: "checklist", tone: "error", message: t("common.error") }))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div className="mkt-cl-switch__checklist" role="note">
+      <p>{t("machines.checklist.title", { name: bidiIsolate(p.to_name) })}</p>
+      <ul>
+        {needs.map(([name, v]) => (
+          <li key={name} data-done={v.done ? "true" : "false"}>
+            {v.done && <Badge tone="success">{t("machines.checklist.checked")}</Badge>}{" "}
+            <span>{t(`machines.switch.needs.${name}`, { detail: v.detail ?? "" })}</span>{" "}
+            <Button variant="ghost" size="sm" disabled={busy} onClick={() => mark(name, !v.done)}>
+              {v.done ? t("machines.checklist.undo") : t("machines.checklist.done")}
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function Result({ p, onRefresh }: { p: SwitchProgress; onRefresh?: () => void }) {
   const { t } = useI18n();
   return (
     <div className="mkt-cl-switch__result">
@@ -290,7 +374,7 @@ function Result({ p }: { p: SwitchProgress }) {
       </p>
       {p.state === "failed" && p.detail && <p className="mkt-mc-warn">{p.detail}</p>}
       <Machines p={p} />
-      <Integrations p={p} />
+      <Integrations p={p} checklist={p.state === "done"} onRefresh={onRefresh} />
     </div>
   );
 }

@@ -34,6 +34,7 @@ import { Toggle } from "@ds/components/Choice/Toggle";
 import { useToast } from "@ds/components/Toast/Toast";
 import { AdminGate } from "../../components/AdminGate";
 import { CanonicalizePanel } from "../../components/cluster/CanonicalizePanel";
+import { EmergencyCard } from "../../components/cluster/EmergencyCard";
 import { pausedOf, useClusterFmt } from "../../components/cluster/format";
 import { JobsPanel } from "../../components/cluster/JobsPanel";
 import { JobsSummary } from "../../components/cluster/JobsSummary";
@@ -158,6 +159,7 @@ function MachinesPage() {
                 onOpenLogs={openLogs}
                 extra={
                   <>
+                    <EmergencyCard />
                     <SwitchHomeCard />
                     <RelayDoorCard />
                   </>

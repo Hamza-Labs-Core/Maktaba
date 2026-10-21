@@ -459,3 +459,79 @@
   font-size: var(--font-size-sm);
   overflow-wrap: anywhere;
 }
+
+/* Standby homes, changes kept aside, the checklist after a switch, and a standby's
+   own emergency card (Epic 37) */
+.mkt-cl-switch__standby,
+.mkt-cl-switch__kept {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-block-start: var(--space-4);
+  min-inline-size: 0;
+}
+.mkt-cl-switch__standby p,
+.mkt-cl-switch__kept p,
+.mkt-cl-switch__checklist p,
+.mkt-cl-emergency p {
+  margin: 0;
+}
+.mkt-cl-switch__reports,
+.mkt-cl-switch__checklist ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mkt-cl-switch__report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 6px);
+  overflow-wrap: anywhere;
+}
+.mkt-cl-switch__plan {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+.mkt-cl-switch__plan th,
+.mkt-cl-switch__plan td {
+  padding: var(--space-1) var(--space-2);
+  text-align: start;
+  vertical-align: top;
+  border-block-end: 1px solid var(--color-border);
+  overflow-wrap: anywhere;
+}
+.mkt-cl-switch__plan tr[data-apply="false"] td {
+  color: var(--color-muted);
+}
+.mkt-cl-switch__checklist li {
+  padding: var(--space-2) var(--space-3);
+  border-inline-start: 3px solid var(--color-warn);
+  background: color-mix(in srgb, var(--color-warn) 10%, var(--color-bg));
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+.mkt-cl-switch__checklist li[data-done="true"] {
+  border-inline-start-color: var(--color-success, var(--color-border));
+  background: transparent;
+  color: var(--color-muted);
+}
+.mkt-cl-emergency {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  border-inline-start: 3px solid var(--color-error);
+  padding-inline-start: var(--space-3);
+}
+.mkt-mc-section__subtitle {
+  margin: 0;
+  font-size: var(--font-size-base, 1rem);
+  font-weight: 600;
+}

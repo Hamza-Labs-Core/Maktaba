@@ -1,6 +1,7 @@
 package switchover
 
 import (
+	"database/sql"
 	"errors"
 	"net/http"
 
@@ -24,7 +25,34 @@ func (o *Orchestrator) Mount(r chi.Router) {
 	r.Get("/api/cluster/switchover", o.getStatus)
 	r.Post("/api/cluster/switchover", o.postStart)
 	r.Put("/api/cluster/switchover/standby", o.putStandby)
+	r.Post("/api/cluster/switchover/{id}/checklist", o.postChecklist)
 	o.mountKept(r)
+}
+
+// postChecklist is POST /api/cluster/switchover/{id}/checklist {item, done}: a person
+// did (or did not) what an outside service needed after a switch.
+func (o *Orchestrator) postChecklist(w http.ResponseWriter, r *http.Request) {
+	if _, ok := admin(w, r); !ok {
+		return
+	}
+	var req struct {
+		Item string `json:"item"`
+		Done bool   `json:"done"`
+	}
+	if e := common.ReadJSON(r, &req, 4<<10); e != nil {
+		httperror.Write(w, r, e)
+		return
+	}
+	err := o.MarkDone(r.Context(), chi.URLParam(r, "id"), req.Item, req.Done)
+	if errors.Is(err, sql.ErrNoRows) {
+		httperror.Write(w, r, httperror.NotFound("checklist item"))
+		return
+	}
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("switchover"))
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"done": req.Done})
 }
 
 func admin(w http.ResponseWriter, r *http.Request) (*principal.Principal, bool) {
@@ -61,6 +89,10 @@ func (o *Orchestrator) getStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Current = o.active()
 	if rec, err := o.Recorded(ctx, 5); err == nil {
+		// the checklist of the switch that made this machine the home, checked again
+		if len(rec) > 0 && rec[0].State == "done" {
+			o.recheck(ctx, &rec[0])
+		}
 		s.Recent = rec
 		if s.Current == nil && len(rec) > 0 && rec[0].State != "done" && rec[0].State != "failed" &&
 			rec[0].State != "cancelled" {
