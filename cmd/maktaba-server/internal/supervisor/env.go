@@ -62,8 +62,8 @@ func ChildEnv(role Role, cfg config.Config) []string {
 	// Maktaba.app (Epic 36): the payload's ffmpeg for every role.
 	env = append(env, bundleEnv(config.AppBundle())...)
 
-	// The language model server every LLM stage uses (the bundled Ollama serve
-	// claimed, or [llm] url): the pipeline takes it as the model server of its
+	// The language model server every LLM stage uses (the bundled Ollama at the
+	// port serve claimed, or [llm] url): the pipeline takes it as the model server of its
 	// rules unless the rules name one; the api's dependency checks probe it. An
 	// operator's own MAKTABA_OLLAMA_URL is kept.
 	if os.Getenv("MAKTABA_OLLAMA_URL") == "" {

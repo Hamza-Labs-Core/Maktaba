@@ -6,7 +6,7 @@
 #   postgres/  bin/ lib/ share/          PostgreSQL 16, relocatable
 #   ffmpeg/    ffmpeg ffprobe            static
 #   ollama/    ollama llama-server       the language model server (arm64)
-#   python/   CPython 3.12              python-build-standalone, stdlib precompiled
+#   python/    CPython 3.12              python-build-standalone, stdlib precompiled
 #   pipeline/  maktaba_pipeline-<v>-py3-none-any.whl constraints.txt
 #   licenses/  the third-party licences and where their sources are
 #   payload.json                         what is inside, with versions and checksums
