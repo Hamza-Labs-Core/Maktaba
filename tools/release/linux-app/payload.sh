@@ -131,8 +131,9 @@ rm -rf "$py"/lib/tcl* "$py"/lib/tk* "$py"/lib/itcl* "$py"/lib/thread* "$py"/lib/
        "$py"/lib/python3.12/lib-dynload/_tkinter.* "$py"/bin/idle3*
 # Precompile the standard library with hashes that are never re-checked: the payload is
 # read-only inside the AppImage and the package, and its runtime copy (39.3) is checked
-# against files.sha256, so nothing writes __pycache__ into it later.
-"$py/bin/python3" -I -m compileall -q -j 0 --invalidation-mode unchecked-hash "$py/lib/python3.12" >/dev/null || true
+# against files.sha256, so nothing writes __pycache__ into it later. -f: the archive's own
+# .pyc files are timestamp-based, and a copy's new mtimes would make Python rewrite them.
+"$py/bin/python3" -I -m compileall -q -f -j 0 --invalidation-mode unchecked-hash "$py/lib/python3.12" >/dev/null || true
 cp "$py/lib/python3.12/LICENSE.txt" "$OUT/licenses/python.txt"
 mv "$py" "$OUT/python"
 PY="$OUT/python/bin/python3"
