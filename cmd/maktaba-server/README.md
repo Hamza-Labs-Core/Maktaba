@@ -49,6 +49,7 @@ maktaba-server serve
 | `keys`       | JWT signing-key management (delegates to `maktaba-api`)        |
 | `migrate-from-dev` | Move a Mac running `tools/dev/stack.sh` + Docker Postgres into Maktaba.app (`--dry-run`, `--verify`, `--finalize`; [runbook](../../specs/epics/36-mac-app/migrate-from-dev.md)) |
 | `setup --json --step status` | For Maktaba.app: is this Mac set up already ([contract](../../specs/epics/36-mac-app/contract-setup.md); the other steps are still to come) |
+| `service`    | The Linux app's systemd user unit: `install` (`--start`, `--replace`), `uninstall`, `start`, `stop`, `restart`, `linger [--off]`, `status`; `--json` for the app ([contract](../../specs/epics/39-linux-app/contract-runtime.md#5-maktaba-server-service--linux-a-systemd-user-unit)) |
 
 **Streaming on a cluster node (Epic 32.1).** On a machine that joined a home
 (Epic 31, `node.json` holds its database credential), `maktaba-server serve
