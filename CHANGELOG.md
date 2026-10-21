@@ -12,6 +12,11 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **The launcher never sends CTRL_BREAK to a server that has exited** (Windows, Epic 38 story
+  38.2). It holds a handle to the server until it is reaped and asks it to stop only while it
+  still runs: a CTRL_BREAK naming a pid that leads no process group (a server that exited as the
+  launcher was stopping, its pid reused) goes astray and can end the launcher itself.
+
 - **Release builds for desktop, Android and Android TV.** The desktop app ships a
   (placeholder) icon set (#152), which the macOS and Windows bundles failed on. The Linux build
   stopped earlier: `tauri-plugin-deep-link` 2.6.2 does not compile against `rust-ini` 0.21.3,
