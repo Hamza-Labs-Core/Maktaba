@@ -18,6 +18,8 @@ from ..engine.sql import dumps, is_pg, loads, now, parse_ts, to_ts
 
 __all__ = [
     "IN_FLIGHT",
+    "OPEN",
+    "REOPEN_WHY",
     "Change",
     "StateConflict",
     "create_change",
@@ -25,13 +27,20 @@ __all__ = [
     "event",
     "get_change",
     "in_flight",
-    "open_draft",
+    "open_change",
+    "open_changes",
+    "reopen",
     "transition",
     "update_change",
 ]
 
 #: the states a change is "in flight" in: at most one at a time (README R9.4)
 IN_FLIGHT = ("staged", "verifying", "ready", "approved", "swapping")
+#: the states the open change is in: an update joins it until it is approved (the
+#: owner's rule, story 33.12 AC3); approved, swapping or live, it takes no more
+OPEN = ("draft", "staged", "verifying", "ready")
+#: the reopen event's reason (a checked change an update joined goes back to draft)
+REOPEN_WHY = "updated after it was checked: it is checked again"
 _JSON_COLS = ("kinds", "source", "change_set", "diff", "verify_report", "approved_by")
 _TS_COLS = (
     "approved_at",
@@ -99,17 +108,56 @@ async def in_flight(db: Any) -> Change | None:
     return None if row is None else _decode(row)
 
 
-async def open_draft(db: Any) -> Change | None:
-    """The open change: the newest ``draft`` no one approved. Every update to the TV
-    joins it, whatever its kind (``merge``'s rules); an approved draft, like a change
-    in flight, takes no more updates."""
-    for row in await db.fetch(
-        "SELECT * FROM tv_changes WHERE state = 'draft' ORDER BY created_at DESC, number DESC"
-    ):
-        ch = _decode(row)
-        if not ch.row.get("approved_by"):
-            return ch
-    return None
+async def open_changes(db: Any) -> list[Change]:
+    """The changes no one approved in ``draft … ready``, oldest first. There is one at
+    most (the open change); a second is one opened before the rule (or while the
+    first was in flight) and joins the first (``stage.collapse_open``)."""
+    marks = ",".join(f"'{s}'" for s in OPEN)
+    rows = await db.fetch(
+        f"SELECT * FROM tv_changes WHERE state IN ({marks}) ORDER BY number, created_at"
+    )
+    return [ch for ch in map(_decode, rows) if not ch.row.get("approved_by")]
+
+
+async def open_change(db: Any) -> Change | None:
+    """The open change: the oldest change no one approved in ``draft``, ``staged``,
+    ``verifying`` or ``ready``. Every update to the TV joins it, whatever its kind
+    (``merge``'s rules); joined after it was checked, it goes back to draft
+    (:func:`reopen`). Approved, swapping or live, a change takes no more updates."""
+    got = await open_changes(db)
+    return got[0] if got else None
+
+
+async def reopen(
+    db: Any,
+    ch: Change,
+    *,
+    restage: bool,
+    actor_source: str = "system",
+    detail: dict[str, Any] | None = None,
+) -> Change:
+    """An update joined ``ch`` after it was checked (``staged`` … ``ready``): it goes
+    back to ``draft`` with a ``reopen`` event (its verify report kept in the event as
+    history; its release is built anew when it is staged again). ``restage`` (the
+    write mode stages by itself) asks the controller to stage it once more: one stage
+    per update, as a failed check asks none. A draft is returned as it is."""
+    if ch.state == "draft":
+        return ch
+    diff = dict(ch.row.get("diff") or {})
+    diff.pop("stage", None)
+    if restage:
+        diff["stage"] = {"requested_at": now().strftime("%Y-%m-%dT%H:%M:%SZ")}
+    await transition(
+        db, ch.id, from_states=(ch.state,), to="draft", action="reopen",
+        actor_source=actor_source,
+        detail={"why": REOPEN_WHY, "from": ch.state, "report": ch.row.get("verify_report") or {},
+                **(detail or {})},
+        diff=diff,
+    )  # fmt: skip
+    got = await get_change(db, ch.id)
+    if got is None:
+        raise LookupError(f"no TV change {ch.id}")
+    return got
 
 
 async def draft_with_digest(db: Any, digest: str) -> Change | None:

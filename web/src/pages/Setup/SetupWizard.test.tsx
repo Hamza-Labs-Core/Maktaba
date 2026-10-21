@@ -529,6 +529,28 @@ describe("ServerStarting", () => {
     expect(await screen.findByText("Installing the transcription tools (40%)")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("The server is starting");
   });
+
+  it("says why a server that runs does not answer, in the tray's words on Windows", async () => {
+    const api = fakeApi({}, { platform: "windows" });
+    api.serverStatus.mockResolvedValue({
+      kind: "not_answering",
+      reason: "another launcher runs this install",
+    } as never);
+    render(
+      <I18nProvider>
+        <ServerStarting api={api} />
+      </I18nProvider>
+    );
+    expect(
+      await screen.findByText(/The server does not start: another launcher runs this install/)
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Open logs from the tray (beside the clock) to see more."
+      )
+    );
+    expect(api.openLocalServer).not.toHaveBeenCalled();
+  });
 });
 
 describe("DesktopGate", () => {

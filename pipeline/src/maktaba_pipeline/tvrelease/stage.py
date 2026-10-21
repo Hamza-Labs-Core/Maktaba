@@ -7,7 +7,9 @@ stage step every change goes through (design 11.2 ``draft -> staged``).
   approved digest) stages it at once;
 * :func:`stale_to_draft` - the scheduler's ``stale`` flag with staging on: the channel
   goes into the open change; the live generation is never rewritten;
-* :func:`join` - every update joins the one open change (``merge.py`` has the rules);
+* :func:`join` - every update joins the one open change until it is approved
+  (``merge.py`` has the rules); joined after it was checked, it goes back to draft and
+  is checked again (:func:`collapse_open` brings a second open change into line);
 * :func:`stage_change` - build the release and generation N+1 of a draft (the
   ``tv_stage`` job, and the producers above in auto mode).
 """
@@ -30,13 +32,16 @@ from .store import (
     event,
     get_change,
     in_flight,
-    open_draft,
+    open_changes,
+    reopen,
     transition,
     update_change,
 )
 
 __all__ = [
     "ChangeInFlight",
+    "auto_restage",
+    "collapse_open",
     "enabled",
     "join",
     "stage_change",
@@ -158,6 +163,16 @@ def _strictest(cfg: Any, kinds: list[str]) -> str:
 # --- the open change ----------------------------------------------------------------
 
 
+async def auto_restage(db: Any) -> bool:
+    """Whether the write mode stages a change by itself (``write_channels`` in
+    ``auto``, the default): a change an update reopened is then staged again."""
+    try:
+        row = await db.fetchrow("SELECT write_mode FROM job_stages WHERE stage = 'write_channels'")
+    except Exception:  # noqa: BLE001 - a database without job_stages: the default
+        return True
+    return row is None or str(row["write_mode"]) == "auto"
+
+
 async def join(
     db: Any,
     draft: Change,
@@ -169,7 +184,14 @@ async def join(
 ) -> None:
     """An update joins the open change (merge.py): its pending edits merged into the
     change's, ``updated_at`` bumped, an ``append`` event naming the update. The
-    change keeps its id and number."""
+    change keeps its id and number. A change joined after it was checked (``staged``
+    … ``ready``) goes back to draft first (:func:`.store.reopen`), staged again when
+    the write mode stages by itself."""
+    if draft.state != "draft":
+        draft = await reopen(
+            db, draft, restage=await auto_restage(db), actor_source=actor_source,
+            detail={"update": detail},
+        )  # fmt: skip
     old = with_plan_layer(draft.pending, draft.row.get("digest"))
     merged = merge_pending(old, pending, await live_defs(db))
     await update_change(
@@ -179,6 +201,49 @@ async def join(
         db, draft.id, from_state="draft", to_state="draft", action="append",
         actor_source=actor_source, detail=detail,
     )  # fmt: skip
+
+
+async def collapse_open(db: Any, *, actor_source: str = "system") -> Change | None:
+    """The open change, with any other change no one approved joined into it: the
+    oldest is the open change; a newer one (opened before the rule, or while the
+    oldest was in flight) joins it - merged by merge.py, ended ``superseded`` with
+    ``end_reason = joined_change`` - the API's ``Store.CollapseOpen``. The oldest goes
+    back to draft when it was checked (:func:`.store.reopen`). Callers hold the
+    drafts' lock. Idempotent: with one open change it only returns it."""
+    opens = await open_changes(db)
+    if len(opens) < 2:
+        return opens[0] if opens else None
+    target = await reopen(
+        db, opens[0], restage=await auto_restage(db), actor_source=actor_source,
+        detail={"joined": [n.id for n in opens[1:]]},
+    )  # fmt: skip
+    pending = with_plan_layer(target.pending, target.row.get("digest"))
+    live = await live_defs(db)
+    fields: dict[str, Any] = {}
+    stamp = now()
+    for n in opens[1:]:
+        pending = merge_pending(pending, with_plan_layer(n.pending, n.row.get("digest")), live)
+        if n.row.get("digest"):
+            # the newer plan's: its approval is the queue's Apply of that digest
+            fields.update(digest=n.row["digest"], source=n.source)
+            if n.row.get("change_set"):
+                fields["change_set"] = n.row["change_set"]
+        await transition(
+            db, n.id, from_states=(n.state,), to="superseded", action="supersede",
+            actor_source=actor_source, detail={"joined": target.id, "number": target.number},
+            superseded_by=target.id, ended_at=stamp, end_reason="joined_change",
+        )  # fmt: skip
+        await event(
+            db, target.id, from_state="draft", to_state="draft", action="append",
+            actor_source=actor_source,
+            detail={"what": "joined_change", "kind": n.source.get("kind", ""), "change_id": n.id,
+                    "number": n.number},
+        )  # fmt: skip
+    await update_change(
+        db, target.id, **fields, diff={**(target.row.get("diff") or {}), "pending": pending}
+    )
+    _log.info("tv_change_collapsed", change_id=target.id, joined=[n.id for n in opens[1:]])
+    return await get_change(db, target.id)
 
 
 # --- write_channels -----------------------------------------------------------------
@@ -302,7 +367,9 @@ async def stage_write_channels(
             await db.execute("SELECT pg_advisory_xact_lock(hashtext('tv_change_draft'))")
         # the same plan (the queue's Apply re-running the change it approved), else the
         # open change: a newer plan joins it (merge.py), keeping its number
-        draft = await draft_with_digest(db, digest) or await open_draft(db)
+        draft = await draft_with_digest(db, digest) or await collapse_open(
+            db, actor_source="write_channels"
+        )
         if draft is None:
             cid = await create_change(
                 db, state="draft", title=title, source=source, pending=pending,
@@ -384,7 +451,7 @@ async def stale_to_draft(db: Any, repo: Any) -> list[str]:
             # the drafts' lock (the API's tvchange.Drafts takes the same): one open
             # change even with several workers topping up
             await db.execute("SELECT pg_advisory_xact_lock(hashtext('tv_change_draft'))")
-        draft = await open_draft(db)
+        draft = await collapse_open(db, actor_source="scheduler")
         if draft is None:
             await create_change(
                 db, state="draft", title="Schedule regeneration",

@@ -4,15 +4,36 @@
 // GET http://127.0.0.1:9103/processes (supervisor.Snapshot in
 // cmd/maktaba-server/internal/supervisor/state.go). This module reads it
 // with a tiny loopback HTTP/1.0 client and folds it into one status:
-// running / starting / problem / stopped / paused / setup needed.
+// running / starting / problem / not answering / stopped / paused / setup
+// needed.
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
 /// The supervisor's default admin address (config.SupervisorDefaults).
 pub const DEFAULT_SUPERVISOR_ADDR: &str = "127.0.0.1:9103";
+
+/// How long "unreachable" reads as starting after the app started or resumed
+/// the server, when no agent is known to run (on a Mac launchd knows, the app
+/// does not).
+pub const START_GRACE: Duration = Duration::from_secs(90);
+
+/// How long a server whose agent runs (Windows, Linux) may go without
+/// answering before the tray says it has a problem, and why. A healthy start
+/// answers well within it: the longest step before the supervisor serves
+/// /processes is the bundled Postgres's first-start bootstrap, which pgbundle
+/// allows 2 minutes (readyTimeout), after serve's wait of up to 10 s for busy
+/// ports (servePortWait).
+pub const NO_ANSWER_LIMIT: Duration = Duration::from_secs(180);
+
+/// The reason when the log does not tell one.
+pub const NO_ANSWER: &str = "the server does not answer";
+
+/// A reason is cut to this many characters, so the status line ("Maktaba has
+/// a problem: …") fits a Windows tray tooltip (127 characters).
+const REASON_MAX: usize = 100;
 
 /// The part of supervisor.Snapshot the app reads. Unknown fields are
 /// ignored, so the supervisor can grow without breaking the app.
@@ -104,9 +125,10 @@ impl Child {
     }
 }
 
-/// What the menu bar shows.
+/// What the menu bar shows ({"kind": "running"}, {"kind": "problem",
+/// "roles": […]}, {"kind": "not_answering", "reason": "…"}).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "kind", content = "roles", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ServerStatus {
     /// First-run setup has not finished, so there is no server to start.
     SetupNeeded,
@@ -119,7 +141,11 @@ pub enum ServerStatus {
     /// Every process is up.
     Running,
     /// These processes keep failing (crash loop, failing health check).
-    Problem(Vec<String>),
+    Problem { roles: Vec<String> },
+    /// Its agent runs, but the supervisor has not answered for
+    /// NO_ANSWER_LIMIT: the launcher keeps failing, a port is taken, another
+    /// install holds the launcher's lock…
+    NotAnswering { reason: String },
 }
 
 /// The status as the window's starting screen reads it (`server_status`):
@@ -139,19 +165,81 @@ pub enum Probe {
     Snapshot(Snapshot),
 }
 
-/// Fold what we know into one status.
-///
-/// `just_started` is true for a short while after the app started or
-/// resumed the server: launchd and the supervisor need some seconds
+/// What an unanswered probe means.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Waiting {
+    /// Nothing says the server is on its way: it is stopped.
+    Stopped,
+    /// Just started, or its agent runs and it has not been quiet for long.
+    Starting,
+    /// Its agent runs but it has not answered for NO_ANSWER_LIMIT: why.
+    NoAnswer(String),
+}
+
+/// What an unanswered probe means, from how long ago the app started or
+/// resumed the server, whether its agent runs (None: the OS does not say),
+/// and how long it has been quiet (Quiet). `reason` is read only when it is
+/// needed.
+pub fn waiting(
+    since_start: Duration,
+    alive: Option<bool>,
+    quiet_for: Duration,
+    reason: impl FnOnce() -> Option<String>,
+) -> Waiting {
+    match alive {
+        Some(true) if quiet_for < NO_ANSWER_LIMIT => Waiting::Starting,
+        Some(true) => Waiting::NoAnswer(reason().unwrap_or_else(|| NO_ANSWER.into())),
+        _ if since_start < START_GRACE => Waiting::Starting,
+        _ => Waiting::Stopped,
+    }
+}
+
+/// When the server last answered, or its agent was seen starting: the
+/// poller's measure of how long the server has been quiet.
+#[derive(Debug, Clone, Copy)]
+pub struct Quiet {
+    since: Instant,
+    alive: Option<bool>,
+}
+
+impl Quiet {
+    pub fn new(now: Instant) -> Self {
+        Self {
+            since: now,
+            alive: None,
+        }
+    }
+
+    /// One poll. An answer, or an agent that was not running at the last
+    /// poll (a new start: the watchdog, a sign-in), starts the clock again.
+    /// Returns how long the server has been quiet.
+    pub fn poll(&mut self, now: Instant, answered: bool, alive: Option<bool>) -> Duration {
+        if answered || (alive == Some(true) && self.alive == Some(false)) {
+            self.since = now;
+        }
+        self.alive = alive;
+        now.saturating_duration_since(self.since)
+    }
+}
+
+/// Fold what we know into one status. `waiting` says what an unanswered
+/// probe means: launchd or the agent and the supervisor need some seconds
 /// before /processes answers, and "stopped" would be wrong then.
-pub fn derive(setup_done: bool, paused: bool, just_started: bool, probe: &Probe) -> ServerStatus {
+pub fn derive(setup_done: bool, paused: bool, waiting: &Waiting, probe: &Probe) -> ServerStatus {
     if !setup_done {
         return ServerStatus::SetupNeeded;
     }
     let snap = match probe {
         Probe::Unreachable if paused => return ServerStatus::Paused,
-        Probe::Unreachable if just_started => return ServerStatus::Starting,
-        Probe::Unreachable => return ServerStatus::Stopped,
+        Probe::Unreachable => {
+            return match waiting {
+                Waiting::Stopped => ServerStatus::Stopped,
+                Waiting::Starting => ServerStatus::Starting,
+                Waiting::NoAnswer(reason) => ServerStatus::NotAnswering {
+                    reason: reason.clone(),
+                },
+            }
+        }
         Probe::Snapshot(s) => s,
     };
     let mut problems = Vec::new();
@@ -171,7 +259,7 @@ pub fn derive(setup_done: bool, paused: bool, just_started: bool, probe: &Probe)
         counted += 1;
     }
     if !problems.is_empty() {
-        ServerStatus::Problem(problems)
+        ServerStatus::Problem { roles: problems }
     } else if coming_up || counted == 0 {
         ServerStatus::Starting
     } else {
@@ -238,6 +326,87 @@ pub fn addr_of(url: &str) -> Option<String> {
     (!host.is_empty()).then(|| host.to_string())
 }
 
+/// Why the server does not answer, from the end of server.log, when it can
+/// tell. The latest of: the launcher's fatal line (`maktaba-launcher: …`),
+/// maktaba-server's (`Error: …`), a startup step of serve that failed
+/// (`[serve] … failed …`), a server the launcher could not start, or the
+/// agent's `cannot start …`. It looks back no further than the launcher's
+/// last two starts (the run in progress and the one before it) or a serve that
+/// got as far as serving its state; else, when the agent says the launcher
+/// keeps exiting, that.
+pub fn failure_in_log(tail: &str) -> Option<String> {
+    let mut starts = 0;
+    let mut exited = None;
+    for line in tail.lines().rev() {
+        let line = line.trim();
+        // the agent's lines: "<RFC 3339 time> [agent] …"
+        if let Some(said) = line
+            .split_once(" [agent] ")
+            .filter(|(at, _)| !at.contains(' '))
+            .map(|(_, said)| said)
+        {
+            if said.starts_with("started the launcher") {
+                starts += 1;
+                if starts == 2 {
+                    break;
+                }
+            } else if said.starts_with("cannot start ") {
+                return Some(cut(said));
+            } else if let Some(how) = said
+                .strip_prefix("the launcher exited (")
+                .and_then(|r| r.strip_suffix(')'))
+            {
+                exited.get_or_insert_with(|| format!("the launcher keeps stopping ({how})"));
+            }
+            continue;
+        }
+        if line.starts_with("[serve] supervisor state on") {
+            break;
+        }
+        if let Some(why) = line
+            .strip_prefix("maktaba-launcher: ")
+            .or_else(|| line.strip_prefix("Error: "))
+        {
+            return Some(cut(why));
+        }
+        if let Some(why) = line
+            .strip_prefix("[serve] ")
+            .filter(|s| s.contains(" failed"))
+        {
+            return Some(cut(why));
+        }
+        if let Some(why) = line
+            .strip_prefix("[launcher] ")
+            .and_then(launcher_start_error)
+        {
+            return Some(cut(&why));
+        }
+    }
+    exited.map(|e| cut(&e))
+}
+
+/// A launcher event line's reason when it could not start the server
+/// (`{"event":"launcher_start_error","detail":{"err":"…"}}`).
+fn launcher_start_error(json: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    if v.get("event")?.as_str()? != "launcher_start_error" {
+        return None;
+    }
+    let err = v.get("detail")?.get("err")?.as_str()?;
+    Some(format!("cannot start maktaba-server: {err}"))
+}
+
+/// A reason no longer than REASON_MAX characters.
+fn cut(s: &str) -> String {
+    let s = s.trim();
+    if s.chars().count() <= REASON_MAX {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(REASON_MAX - 1).collect();
+    out.push('…');
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,7 +452,7 @@ mod tests {
         );
         // the model server is one more process: it does not hold the status
         assert_eq!(
-            derive(true, false, false, &Probe::Snapshot(s)),
+            derive(true, false, &Waiting::Stopped, &Probe::Snapshot(s)),
             ServerStatus::Running
         );
     }
@@ -335,7 +504,7 @@ mod tests {
         assert_eq!(s.processes.len(), 2);
         assert_eq!(s.processes[1].instance, "standby");
         assert_eq!(
-            derive(true, false, false, &Probe::Snapshot(s)),
+            derive(true, false, &Waiting::Stopped, &Probe::Snapshot(s)),
             ServerStatus::Running
         );
     }
@@ -350,7 +519,12 @@ mod tests {
     #[test]
     fn setup_needed_wins_over_everything() {
         assert_eq!(
-            derive(false, false, false, &snap(vec![child("api", "running")])),
+            derive(
+                false,
+                false,
+                &Waiting::Stopped,
+                &snap(vec![child("api", "running")])
+            ),
             ServerStatus::SetupNeeded
         );
     }
@@ -358,29 +532,190 @@ mod tests {
     #[test]
     fn unreachable_is_paused_starting_or_stopped() {
         assert_eq!(
-            derive(true, true, false, &Probe::Unreachable),
+            derive(true, true, &Waiting::Stopped, &Probe::Unreachable),
             ServerStatus::Paused
         );
         assert_eq!(
-            derive(true, false, true, &Probe::Unreachable),
+            derive(true, false, &Waiting::Starting, &Probe::Unreachable),
             ServerStatus::Starting
         );
         assert_eq!(
-            derive(true, false, false, &Probe::Unreachable),
+            derive(true, false, &Waiting::Stopped, &Probe::Unreachable),
             ServerStatus::Stopped
+        );
+        let why = Waiting::NoAnswer("port 8080 is taken".into());
+        assert_eq!(
+            derive(true, false, &why, &Probe::Unreachable),
+            ServerStatus::NotAnswering {
+                reason: "port 8080 is taken".into()
+            }
+        );
+        // paused wins; an answer wins
+        assert_eq!(
+            derive(true, true, &why, &Probe::Unreachable),
+            ServerStatus::Paused
+        );
+        assert_eq!(
+            derive(true, false, &why, &snap(vec![child("api", "running")])),
+            ServerStatus::Running
+        );
+    }
+
+    #[test]
+    fn a_live_agent_whose_server_stays_quiet_turns_into_a_problem() {
+        let s = Duration::from_secs;
+        let none = || None;
+        // a live agent: starting, until NO_ANSWER_LIMIT of quiet
+        assert_eq!(waiting(s(600), Some(true), s(60), none), Waiting::Starting);
+        assert_eq!(
+            waiting(s(600), Some(true), NO_ANSWER_LIMIT, none),
+            Waiting::NoAnswer(NO_ANSWER.into())
+        );
+        assert_eq!(
+            waiting(s(600), Some(true), NO_ANSWER_LIMIT, || Some(
+                "another launcher runs this install".into()
+            )),
+            Waiting::NoAnswer("another launcher runs this install".into())
+        );
+        // no agent (or none known, a Mac): starting for START_GRACE, then stopped
+        assert_eq!(waiting(s(10), Some(false), s(10), none), Waiting::Starting);
+        assert_eq!(
+            waiting(START_GRACE, Some(false), s(600), none),
+            Waiting::Stopped
+        );
+        assert_eq!(waiting(START_GRACE, None, s(600), none), Waiting::Stopped);
+        // the reason is read only when it is shown
+        let read = std::cell::Cell::new(false);
+        let _ = waiting(s(600), Some(true), s(1), || {
+            read.set(true);
+            None
+        });
+        assert!(!read.get());
+    }
+
+    #[test]
+    fn the_quiet_clock_restarts_on_an_answer_or_a_new_agent() {
+        let t0 = Instant::now();
+        let at = |secs| t0 + Duration::from_secs(secs);
+        let mut q = Quiet::new(t0);
+        assert_eq!(q.poll(at(3), false, Some(true)), Duration::from_secs(3));
+        assert_eq!(q.poll(at(6), true, Some(true)), Duration::ZERO, "an answer");
+        assert_eq!(q.poll(at(9), false, Some(true)), Duration::from_secs(3));
+        // the agent died, then the watchdog started a new one
+        assert_eq!(q.poll(at(12), false, Some(false)), Duration::from_secs(6));
+        assert_eq!(q.poll(at(15), false, Some(true)), Duration::ZERO);
+        assert_eq!(q.poll(at(200), false, Some(true)), Duration::from_secs(185));
+        // a window that opens on a running agent does not restart it
+        let mut q = Quiet::new(t0);
+        assert_eq!(q.poll(at(3), false, Some(true)), Duration::from_secs(3));
+    }
+
+    #[test]
+    fn the_log_tells_why_the_server_does_not_answer() {
+        let agent = |s: &str| format!("2026-10-21T10:00:00Z [agent] {s}");
+        // an old install's launcher holds the lock: the launcher's own line
+        let lock = [
+            agent("started the launcher (pid 10)"),
+            r"maktaba-launcher: another launcher runs this install (C:\Users\me\AppData\Local\Maktaba): already_running".into(),
+            agent("the launcher exited (exit code: 1)"),
+            agent("starting it again in 2000 ms"),
+            agent("started the launcher (pid 11)"),
+        ]
+        .join("\n");
+        assert_eq!(
+            failure_in_log(&lock).as_deref(),
+            Some(
+                r"another launcher runs this install (C:\Users\me\AppData\Local\Maktaba): already_running"
+            )
+        );
+        // serve refuses a taken port (cobra's "Error: "), the launcher restarts it
+        let port = [
+            agent("started the launcher (pid 10)"),
+            r#"[launcher] {"ts":"2026-10-21T10:00:00Z","event":"launcher_start","version":"app"}"#.into(),
+            "Error: web UI cannot listen on 127.0.0.1:8088 (web_listen in server.toml): bind: address in use".into(),
+            r#"[launcher] {"ts":"2026-10-21T10:00:01Z","event":"launcher_child_exit","version":"app","detail":{"exit":1}}"#.into(),
+        ]
+        .join("\n");
+        assert_eq!(
+            failure_in_log(&port).as_deref(),
+            Some("web UI cannot listen on 127.0.0.1:8088 (web_listen in server.toml): bind: address in use")
+        );
+        // the state endpoint itself could not bind
+        let admin = "[serve] supervisor state on http://127.0.0.1:9103/processes\n\
+                     [serve] supervisor admin endpoint on 127.0.0.1:9103 failed (continuing): bind";
+        assert_eq!(
+            failure_in_log(admin).as_deref(),
+            Some("supervisor admin endpoint on 127.0.0.1:9103 failed (continuing): bind")
+        );
+        // the launcher could not start the server
+        let start = r#"[launcher] {"event":"launcher_start_error","version":"app","detail":{"err":"file does not exist"}}"#;
+        assert_eq!(
+            failure_in_log(start).as_deref(),
+            Some("cannot start maktaba-server: file does not exist")
+        );
+        // no line says why, but the launcher keeps exiting
+        let exits = [
+            agent("started the launcher (pid 10)"),
+            agent("the launcher exited (exit code: 3)"),
+            agent("starting it again in 1000 ms"),
+        ]
+        .join("\n");
+        assert_eq!(
+            failure_in_log(&exits).as_deref(),
+            Some("the launcher keeps stopping (exit code: 3)")
+        );
+        // an error from before the last two starts, or before serve got going, is old news
+        let old = [
+            "Error: an old problem".to_string(),
+            agent("started the launcher (pid 10)"),
+            agent("started the launcher (pid 11)"),
+        ]
+        .join("\n");
+        assert_eq!(failure_in_log(&old), None);
+        let served = "Error: an old problem\n[serve] supervisor state on http://127.0.0.1:9103/processes\nsome role's line";
+        assert_eq!(failure_in_log(served), None);
+        assert_eq!(failure_in_log(""), None);
+        // long reasons are cut for the tooltip
+        let long = format!("Error: {}", "x".repeat(300));
+        let got = failure_in_log(&long).unwrap();
+        assert_eq!(got.chars().count(), REASON_MAX);
+        assert!(got.ends_with('…'));
+    }
+
+    #[test]
+    fn statuses_serialize_for_the_starting_screen() {
+        let json = |s: &ServerStatus| serde_json::to_string(s).unwrap();
+        assert_eq!(json(&ServerStatus::Running), r#"{"kind":"running"}"#);
+        assert_eq!(
+            json(&ServerStatus::Problem {
+                roles: vec!["pipeline".into()]
+            }),
+            r#"{"kind":"problem","roles":["pipeline"]}"#
+        );
+        assert_eq!(
+            json(&ServerStatus::NotAnswering {
+                reason: "the server does not answer".into()
+            }),
+            r#"{"kind":"not_answering","reason":"the server does not answer"}"#
         );
     }
 
     #[test]
     fn coming_up_and_empty_are_starting() {
         assert_eq!(
-            derive(true, false, false, &snap(vec![])),
+            derive(true, false, &Waiting::Stopped, &snap(vec![])),
             ServerStatus::Starting
         );
         let s = snap(vec![child("api", "running"), child("pipeline", "starting")]);
-        assert_eq!(derive(true, false, false, &s), ServerStatus::Starting);
+        assert_eq!(
+            derive(true, false, &Waiting::Stopped, &s),
+            ServerStatus::Starting
+        );
         let s = snap(vec![child("api", "running"), child("streaming", "backoff")]);
-        assert_eq!(derive(true, false, false, &s), ServerStatus::Starting);
+        assert_eq!(
+            derive(true, false, &Waiting::Stopped, &s),
+            ServerStatus::Starting
+        );
     }
 
     #[test]
@@ -396,12 +731,10 @@ mod tests {
             child("streaming", "unhealthy"),
         ]);
         assert_eq!(
-            derive(true, false, false, &s),
-            ServerStatus::Problem(vec![
-                "pipeline".into(),
-                "transcribe 1".into(),
-                "streaming".into()
-            ])
+            derive(true, false, &Waiting::Stopped, &s),
+            ServerStatus::Problem {
+                roles: vec!["pipeline".into(), "transcribe 1".into(), "streaming".into()]
+            }
         );
     }
 
@@ -416,7 +749,7 @@ mod tests {
             derive(
                 true,
                 false,
-                false,
+                &Waiting::Stopped,
                 &snap(vec![child("api", "running"), idle.clone()])
             ),
             ServerStatus::Running
@@ -425,7 +758,7 @@ mod tests {
             derive(
                 true,
                 false,
-                false,
+                &Waiting::Stopped,
                 &snap(vec![child("api", "running"), idle, asked])
             ),
             ServerStatus::Starting
@@ -467,12 +800,42 @@ mod tests {
             serde_json::json!({"kind": "starting", "detail": "Installing"})
         );
         let v = StatusView {
-            status: ServerStatus::Problem(vec!["api".into()]),
+            status: ServerStatus::Problem {
+                roles: vec!["api".into()],
+            },
             detail: None,
         };
         assert_eq!(
             serde_json::to_value(&v).unwrap(),
             serde_json::json!({"kind": "problem", "roles": ["api"]})
+        );
+        let v = StatusView {
+            status: ServerStatus::Problem {
+                roles: vec!["api".into()],
+            },
+            detail: Some("the backup before the update failed".into()),
+        };
+        assert_eq!(
+            serde_json::to_value(&v).unwrap(),
+            serde_json::json!({
+                "kind": "problem",
+                "roles": ["api"],
+                "detail": "the backup before the update failed"
+            })
+        );
+        // a server that does not answer carries its reason beside the kind
+        let v = StatusView {
+            status: ServerStatus::NotAnswering {
+                reason: "another launcher runs this install".into(),
+            },
+            detail: None,
+        };
+        assert_eq!(
+            serde_json::to_value(&v).unwrap(),
+            serde_json::json!({
+                "kind": "not_answering",
+                "reason": "another launcher runs this install"
+            })
         );
     }
 

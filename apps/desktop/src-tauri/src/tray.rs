@@ -38,7 +38,9 @@ fn note(label: impl Into<String>) -> Entry {
 
 /// The one-line status shown at the top of the menu and as the tooltip.
 /// `detail` is what the server waits on (status::waiting_on): the venv being
-/// built, the backup before an update, or why that failed.
+/// built, the backup before an update, or why that failed. A server that
+/// does not answer has no processes to wait on: its reason (from server.log,
+/// cut to fit the tooltip) is the line.
 pub fn status_line(status: &ServerStatus, detail: Option<&str>) -> String {
     match (status, detail) {
         (ServerStatus::SetupNeeded, _) => "Maktaba: finish setup to start the server".into(),
@@ -47,12 +49,13 @@ pub fn status_line(status: &ServerStatus, detail: Option<&str>) -> String {
         (ServerStatus::Starting, Some(d)) => format!("Maktaba is starting: {d}"),
         (ServerStatus::Starting, None) => "Maktaba is starting…".into(),
         (ServerStatus::Running, _) => "Maktaba is running".into(),
-        (ServerStatus::Problem(roles), Some(d)) => {
+        (ServerStatus::Problem { roles }, Some(d)) => {
             format!("Maktaba: {} cannot start ({d})", roles.join(", "))
         }
-        (ServerStatus::Problem(roles), None) => {
+        (ServerStatus::Problem { roles }, None) => {
             format!("Maktaba: {} keeps stopping", roles.join(", "))
         }
+        (ServerStatus::NotAnswering { reason }, _) => format!("Maktaba has a problem: {reason}"),
     }
 }
 
@@ -81,14 +84,18 @@ pub fn tooltip(line: &str) -> String {
 
 /// The status badge on the tray icon (Windows and Linux; the Mac's menu-bar
 /// item keeps its plain icon): green running, amber starting, red a
-/// problem, grey paused or stopped, blue an update ready; none before setup.
+/// problem (processes that keep failing, or a server whose agent runs but
+/// that does not answer: the tray says "Maktaba has a problem" for both),
+/// grey paused or stopped, blue an update ready; none before setup.
 pub fn badge_color(status: &ServerStatus, update_ready: bool) -> Option<[u8; 3]> {
     match status {
         ServerStatus::SetupNeeded => None,
         _ if update_ready => Some([0x2f, 0x6f, 0xd6]),
         ServerStatus::Running => Some([0x2e, 0x9d, 0x4f]),
         ServerStatus::Starting => Some([0xe0, 0xa1, 0x00]),
-        ServerStatus::Problem(_) => Some([0xd3, 0x3a, 0x2c]),
+        ServerStatus::Problem { .. } | ServerStatus::NotAnswering { .. } => {
+            Some([0xd3, 0x3a, 0x2c])
+        }
         ServerStatus::Paused | ServerStatus::Stopped => Some([0x8a, 0x8a, 0x8a]),
     }
 }
@@ -259,9 +266,15 @@ mod tests {
     fn starting_and_problem_can_still_be_paused() {
         for s in [
             ServerStatus::Starting,
-            ServerStatus::Problem(vec!["pipeline".into()]),
+            ServerStatus::Problem {
+                roles: vec!["pipeline".into()],
+            },
+            ServerStatus::NotAnswering {
+                reason: "the server does not answer".into(),
+            },
         ] {
-            assert!(ids(&entries(true, &s, false)).contains(&"server-pause"));
+            let got = ids(&entries(true, &s, false));
+            assert!(got.contains(&"server-pause") && got.contains(&"open-logs"));
         }
     }
 
@@ -310,10 +323,21 @@ mod tests {
         );
         assert_eq!(
             status_line(
-                &ServerStatus::Problem(vec!["pipeline".into(), "streaming".into()]),
+                &ServerStatus::Problem {
+                    roles: vec!["pipeline".into(), "streaming".into()]
+                },
                 None
             ),
             "Maktaba: pipeline, streaming keeps stopping"
+        );
+        assert_eq!(
+            status_line(
+                &ServerStatus::NotAnswering {
+                    reason: "another launcher runs this install".into()
+                },
+                None
+            ),
+            "Maktaba has a problem: another launcher runs this install"
         );
     }
 
@@ -326,7 +350,9 @@ mod tests {
         );
         assert_eq!(
             status_line(
-                &ServerStatus::Problem(vec!["api".into()]),
+                &ServerStatus::Problem {
+                    roles: vec!["api".into()]
+                },
                 Some("the backup before the update failed")
             ),
             "Maktaba: api cannot start (the backup before the update failed)"
@@ -344,6 +370,36 @@ mod tests {
     }
 
     #[test]
+    fn a_server_that_does_not_answer_says_why_in_the_menu_and_the_tooltip() {
+        let s = ServerStatus::NotAnswering {
+            reason: "another launcher runs this install".into(),
+        };
+        // it has no processes to wait on: the reason is the line, whatever the detail
+        assert_eq!(
+            status_line(&s, Some("Installing")),
+            "Maktaba has a problem: another launcher runs this install"
+        );
+        let e = entries_with_model(true, &s, false, None, None);
+        assert_eq!(
+            e[0],
+            Entry::Item {
+                id: "status",
+                label: "Maktaba has a problem: another launcher runs this install".into(),
+                enabled: false
+            }
+        );
+        assert!(ids(&e).contains(&"server-pause") && ids(&e).contains(&"open-logs"));
+        // the longest reason the log gives fits the tooltip whole, in any script
+        for word in ["x", "مكتبة"] {
+            let log = format!("Error: {}", [word; 300].join(" "));
+            let reason = crate::status::failure_in_log(&log).expect("a reason");
+            let line = status_line(&ServerStatus::NotAnswering { reason }, None);
+            assert_eq!(tooltip(&line), line, "cut twice: {line}");
+            assert!(line.encode_utf16().count() <= TOOLTIP_MAX);
+        }
+    }
+
+    #[test]
     fn tooltips_fit_the_tray() {
         assert_eq!(tooltip("Maktaba is running"), "Maktaba is running");
         let long = format!("Maktaba is starting: {}", "مكتبة ".repeat(40));
@@ -357,7 +413,25 @@ mod tests {
         assert_eq!(badge_color(&ServerStatus::SetupNeeded, true), None);
         let running = badge_color(&ServerStatus::Running, false);
         let starting = badge_color(&ServerStatus::Starting, false);
-        let problem = badge_color(&ServerStatus::Problem(vec!["api".into()]), false);
+        let problem = badge_color(
+            &ServerStatus::Problem {
+                roles: vec!["api".into()],
+            },
+            false,
+        );
+        let not_answering = ServerStatus::NotAnswering {
+            reason: "the server does not answer".into(),
+        };
+        assert_eq!(
+            badge_color(&not_answering, false),
+            problem,
+            "a server that does not answer is a problem"
+        );
+        assert_eq!(
+            badge_color(&not_answering, true),
+            badge_color(&ServerStatus::Running, true),
+            "an update ready shows over it, as over a problem"
+        );
         let stopped = badge_color(&ServerStatus::Stopped, false);
         assert_eq!(stopped, badge_color(&ServerStatus::Paused, false));
         let update = badge_color(&ServerStatus::Running, true);

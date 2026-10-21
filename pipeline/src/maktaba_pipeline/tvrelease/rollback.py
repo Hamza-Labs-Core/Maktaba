@@ -28,11 +28,12 @@ from ..log import get_logger
 from .build import load_release
 from .commit import _apply_art, _apply_lineup, _apply_settings, _enqueue_plex, _lock
 from .merge import live_defs, merge_pending, with_plan_layer
+from .stage import auto_restage, collapse_open
 from .store import (
     create_change,
     event,
     get_change,
-    open_draft,
+    reopen,
     transition,
     update_change,
 )
@@ -155,18 +156,23 @@ async def _rollback_change(
 async def _keep_draft(db: Any, ch: Any, actor: str | None) -> str | None:
     """The rolled-back change's edits go back into the open change (created if none),
     so they can be staged again. They are older than what the open change holds: its
-    edits are laid over them (merge.py)."""
+    edits are laid over them (merge.py). An open change already checked goes back to
+    draft (an update joined it: it is checked again)."""
     pending = with_plan_layer(ch.pending or {}, ch.row.get("digest"))
     if not pending:
         return None
     try:
-        draft = await open_draft(db)
+        draft = await collapse_open(db)
         if draft is None:
             return await create_change(
                 db, state="draft", title=f"Re-stage #{ch.row.get('number') or ''}".strip(),
                 source={"kind": "restage", "change_id": ch.id}, pending=pending,
                 created_by=actor,
             )  # fmt: skip
+        draft = await reopen(
+            db, draft, restage=await auto_restage(db),
+            detail={"update": {"what": "restage", "change_id": ch.id}},
+        )  # fmt: skip
         cur = with_plan_layer(draft.pending, draft.row.get("digest"))
         merged = merge_pending(pending, cur, await live_defs(db))
         await update_change(db, draft.id, diff={**(draft.row.get("diff") or {}), "pending": merged})
