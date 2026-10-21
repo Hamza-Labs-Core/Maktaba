@@ -52,8 +52,11 @@ func (f *FFprobe) Probe(ctx context.Context, source string) (MediaInfo, error) {
 	}
 	f.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
+	if _, ok := ctx.Deadline(); !ok { // a caller's bound (the source timeout rule) wins
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+	}
 	// "--" ends option parsing so a source can never be read as a flag.
 	cmd := exec.CommandContext(ctx, f.Bin, "-v", "error", "-show_entries", "stream=codec_type",
 		"-of", "csv=p=0", "--", source)

@@ -66,6 +66,16 @@ type StationConfig struct {
 	// stations of the channel (two TV slots, story 33.4 AC4) begin at the same
 	// instants. It costs up to one segment length at a cold start.
 	AlignSegments bool
+	// A programme whose file cannot be read (rules tv_output, dizqueTV
+	// parity): UnreadableFill is what airs in its place
+	// (FillFiller, the default, or FillSlate); SourceTimeout bounds the check
+	// and the probe of a file (0: DefaultSourceTimeout); SourceStall ends a
+	// block whose output stopped that long (0: never); ReportUnreadable
+	// hands the file to the probe stage, whose failure repair_broken picks up.
+	UnreadableFill   string
+	SourceTimeout    time.Duration
+	SourceStall      time.Duration
+	ReportUnreadable bool
 }
 
 // Asset kinds an AssetResolver is asked for.
@@ -199,6 +209,7 @@ func StartStation(cfg StationConfig, channelID uuid.UUID, dir string) (*Station,
 	feeder := &Feeder{
 		Source: cfg.Repo, ChannelID: channelID, Player: s, Now: cfg.Now, LiveRetry: cfg.LiveRetry,
 		Prewarm: s.prewarmLive,
+		Check:   s.checkSource, OnUnreadable: s.reportUnreadable, UnreadableFill: cfg.UnreadableFill,
 		OnSegment: func(seg Segment) {
 			s.log.Info("channel: on air", "kind", seg.Kind, "seq", seg.Block.Seq,
 				"start", seg.Start.UTC().Format(time.RFC3339), "end", seg.End.UTC().Format(time.RFC3339),
@@ -770,10 +781,12 @@ func (p *stationPlayback) run(ctx context.Context) (bool, error) {
 	}
 	s.encoderNow.Store(prof.Encoder)
 	res, err := s.runBlock(ctx, prof, *in, start, p)
-	if hw := prof.Encoder; err != nil && ctx.Err() == nil && (hw == EncoderNVENC || hw == EncoderVideoToolbox) && res.written == 0 {
+	if hw := prof.Encoder; err != nil && ctx.Err() == nil && (hw == EncoderNVENC || hw == EncoderVideoToolbox) &&
+		res.written == 0 && !errors.Is(err, ErrSourceUnreadable) {
 		// The hardware encoder can refuse a session (GeForce session cap,
 		// a busy VideoToolbox, a driver hiccup): this block falls back to
 		// libx264, and the gate pauses that encoder briefly for everyone.
+		// (A source that stalled is no encoder's fault: not retried.)
 		release(hwRefused(err))
 		s.nvencFallbacks.Add(1)
 		s.log.Warn("channel: hardware encoder failed, block falls back to libx264", "encoder", hw,
@@ -888,11 +901,16 @@ func (s *Station) blockInput(ctx context.Context, seg Segment, look Look) (*Bloc
 	case KindProgram, KindFiller, KindBumper:
 		path, err := LocalInput(s.cfg.PathMap.Apply(seg.Block.Path))
 		if err != nil {
-			return nil, start, err
+			return nil, start, fmt.Errorf("%w: %v", ErrSourceUnreadable, err)
 		}
-		info, err := s.cfg.Prober.Probe(ctx, path)
+		pctx, cancel := context.WithTimeout(ctx, s.sourceTimeout())
+		info, err := s.cfg.Prober.Probe(pctx, path)
+		cancel()
 		if err != nil {
-			return nil, start, fmt.Errorf("probe %s: %w", path, err)
+			if ctx.Err() != nil {
+				return nil, start, ctx.Err()
+			}
+			return nil, start, fmt.Errorf("%w: probe %s: %v", ErrSourceUnreadable, path, err)
 		}
 		seekMS := seg.SeekMS + int(start.Sub(seg.Start)/time.Millisecond)
 		if b := seg.Block; b.SourceDurationMS > 0 {
@@ -1102,6 +1120,19 @@ func (s *Station) runBlock(ctx context.Context, prof OutputProfile, in BlockInpu
 	if err := cmd.Start(); err != nil {
 		return blockResult{}, err
 	}
+	// A source that stops answering (a share hanging mid-read) would hold the
+	// block, and its encoder session, for good: the watchdog ends it.
+	var lastOut atomic.Int64
+	lastOut.Store(time.Now().UnixNano())
+	var stalled atomic.Bool
+	readDone := make(chan struct{})
+	if stall := s.cfg.SourceStall; stall > 0 {
+		go stallWatch(stall, &lastOut, readDone, func() {
+			stalled.Store(true)
+			_ = cmd.Process.Kill()
+			_ = stdout.Close() // unblocks the read even if the process cannot die yet
+		})
+	}
 	// Buffer the output so ffmpeg's -re clock never stalls on the reader
 	// (a block started ahead of its boundary queues up here).
 	var written int64
@@ -1109,6 +1140,7 @@ func (s *Station) runBlock(ctx context.Context, prof OutputProfile, in BlockInpu
 	for {
 		n, rerr := stdout.Read(buf)
 		if n > 0 {
+			lastOut.Store(time.Now().UnixNano())
 			written += int64(n)
 			if !q.push(buf[:n]) {
 				_ = cmd.Process.Kill() // abandoned (station stopping)
@@ -1117,6 +1149,18 @@ func (s *Station) runBlock(ctx context.Context, prof OutputProfile, in BlockInpu
 		if rerr != nil {
 			break
 		}
+	}
+	close(readDone)
+	if stalled.Load() {
+		// A process stuck in a read of a hung share dies only when the read
+		// returns: it is not waited for longer than the stall itself.
+		waitWithin(cmd, s.cfg.SourceStall)
+		s.logf("  stalled elapsed=%.3f bytes=%d\n", time.Since(launched).Seconds(), written)
+		err := fmt.Errorf("no output for %s", s.cfg.SourceStall)
+		if in.Kind == "file" {
+			err = fmt.Errorf("%w: %s: %v", ErrSourceUnreadable, in.Source, err)
+		}
+		return blockResult{written: written}, err
 	}
 	waitErr := cmd.Wait()
 
@@ -1133,6 +1177,39 @@ func (s *Station) runBlock(ctx context.Context, prof OutputProfile, in BlockInpu
 		return res, waitErr
 	}
 	return res, nil
+}
+
+// stallWatch calls stop once lastOut (unix ns of the latest output) is older
+// than stall, unless done closes first.
+func stallWatch(stall time.Duration, lastOut *atomic.Int64, done <-chan struct{}, stop func()) {
+	t := time.NewTicker(stall / 4)
+	defer t.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-t.C:
+			if time.Since(time.Unix(0, lastOut.Load())) >= stall {
+				stop()
+				return
+			}
+		}
+	}
+}
+
+// waitWithin reaps cmd in the background and waits for it at most d.
+func waitWithin(cmd *exec.Cmd, d time.Duration) {
+	done := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(done)
+	}()
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-done:
+	case <-t.C:
+	}
 }
 
 func (s *Station) logf(format string, a ...any) {
