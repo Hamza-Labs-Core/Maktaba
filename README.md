@@ -249,7 +249,7 @@ the workflows below.
 |---|---|---|
 | **Web** (self-host the SPA) | `maktaba-web-<version>.tar.gz` | [`release.yml`](.github/workflows/release.yml) (auto) · [`web-release.yml`](.github/workflows/web-release.yml) (on-demand rebuild) |
 | **Desktop — macOS** | `.dmg` (universal arm64 + x86_64) | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
-| **Desktop — Windows** | `.msi` + NSIS `.exe` + portable `.zip` | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
+| **Desktop — Windows** | NSIS `-setup.exe` (the whole server inside, a per-user install) + portable `.zip` of the client | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
 | **Desktop — Linux** | `.AppImage` + `.deb` + `.rpm` (x86_64, aarch64), the whole server inside | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
 | **Server — Linux without a desktop** | `maktaba-linux-payload-<version>-<x86_64\|aarch64>.tar.gz` (`install.sh --app`) | [`release.yml`](.github/workflows/release.yml) |
 | **Mobile — Android** | `maktaba-<version>.apk` (sideload) + `.aab` (Play Store) | [`mobile-release.yml`](.github/workflows/mobile-release.yml) |

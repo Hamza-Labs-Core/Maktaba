@@ -107,7 +107,7 @@ package-desktop` (= `scripts/build.sh`).
 | **Deep links** | `maktaba://watch/{id}` etc. — scheme registered in `tauri.conf.json`; the Rust `on_open_url` handler emits a `deep-link` event the web shell maps to an SPA route via the same `deepLinkToPath` parser the Capacitor shell uses |
 | **Single instance** | on Windows/Linux a `maktaba://` open spawns a new process; the single-instance plugin (with the `deep-link` feature) focuses the running window and forwards the URL |
 | **mDNS** | `discover_servers` browses `_maktaba._tcp.local.` for the server picker |
-| **Auto-update** | `updater` plugin checks `releases/latest/download/latest.json`; signing key is a follow-up (`pubkey` placeholder in config) |
+| **Auto-update** | `updater` plugin checks `releases/latest/download/latest.json`; each update is signed with the updater key, whose public half (the repository variable `TAURI_UPDATER_PUBKEY`) is stamped into the build ([auto-update](../../docs/auto-update.md)) |
 
 ## Maktaba.app runs the server (Epic 36)
 
