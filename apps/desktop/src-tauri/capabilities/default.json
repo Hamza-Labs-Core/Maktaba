@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capabilities for the main window: shell, dialog, fs (limited), updater, deep links.",
+  "description": "Capabilities for the main window's bundled pages: shell, dialog, fs (limited), updater, deep links, and the app's own commands (incl. Epic 36 setup).",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -11,6 +11,16 @@
     "fs:allow-read-dir",
     "shell:allow-open",
     "updater:default",
-    "deep-link:default"
+    "deep-link:default",
+    "allow-app-version",
+    "allow-discover-servers",
+    "allow-app-state",
+    "allow-setup-step",
+    "allow-finish-setup",
+    "allow-open-login-items",
+    "allow-server-status",
+    "allow-open-local-server",
+    "allow-use-remote-server",
+    "allow-open-external"
   ]
 }

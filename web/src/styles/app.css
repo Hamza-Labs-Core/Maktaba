@@ -2515,7 +2515,7 @@ mark {
 }
 .mkt-color__hex {
   width: 6.5rem;
-  font-family: var(--font-mono, monospace);
+  font-family: ui-monospace, monospace;
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm, 4px);
@@ -2747,4 +2747,107 @@ mark {
   gap: var(--space-1);
   width: 100%;
   text-align: center;
+}
+
+/* Epic 36 (story 36.6): Maktaba.app's first-run setup screens */
+.mkt-setup {
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: var(--color-bg);
+}
+.mkt-setup__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  inline-size: 100%;
+  max-inline-size: 40rem;
+  padding: var(--space-6);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+.mkt-setup__title {
+  margin: 0;
+  font-size: var(--font-size-h1);
+}
+.mkt-setup__step,
+.mkt-setup__note {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+.mkt-setup__card p {
+  margin: 0;
+}
+.mkt-setup__form,
+.mkt-setup__choice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.mkt-setup__choice + .mkt-setup__choice {
+  padding-block-start: var(--space-4);
+  border-block-start: 1px solid var(--color-border);
+}
+.mkt-setup__choice h2 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+.mkt-setup__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: flex-end;
+}
+.mkt-setup__list {
+  margin: 0;
+  padding-inline-start: var(--space-5);
+}
+.mkt-setup__facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+}
+.mkt-setup__facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.mkt-setup__warn {
+  color: var(--color-warn);
+}
+.mkt-setup__error {
+  padding: var(--space-3);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-md);
+}
+.mkt-setup__error pre {
+  max-block-size: 12rem;
+  overflow: auto;
+  font-size: var(--font-size-sm);
+}
+.mkt-setup__radios {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.mkt-setup__link {
+  padding: 0;
+  color: var(--color-accent);
+  text-decoration: underline;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.mkt-setup__code {
+  font-family: ui-monospace, monospace;
+  font-size: var(--font-size-h1);
+  letter-spacing: 0.2em;
 }

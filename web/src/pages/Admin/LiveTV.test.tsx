@@ -252,6 +252,30 @@ describe("AdminLiveTV", () => {
     expect(screen.getByText("3 of 3 channels")).toBeInTheDocument();
   });
 
+  it("says Plex is still loading the guide for a few minutes after a reload", async () => {
+    const justNow = new Date(Date.now() - 60_000).toISOString();
+    routes({ "/api/tv/plex": { ...plexRegistered, guide_reloaded_at: justNow } });
+    renderPage();
+    expect(await screen.findByText(/Plex is loading the guide/)).toBeInTheDocument();
+  });
+
+  it("hides the loading note when the five minutes are up", async () => {
+    const almost = new Date(Date.now() - 5 * 60_000 + 300).toISOString();
+    routes({ "/api/tv/plex": { ...plexRegistered, guide_reloaded_at: almost } });
+    renderPage();
+    expect(await screen.findByText(/Plex is loading the guide/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByText(/Plex is loading the guide/)).not.toBeInTheDocument()
+    );
+  });
+
+  it("drops the loading note once Plex has had time to load the guide", async () => {
+    routes({ "/api/tv/plex": plexRegistered }); // reloaded days ago
+    renderPage();
+    expect(await screen.findByText("3 of 3 channels")).toBeInTheDocument();
+    expect(screen.queryByText(/Plex is loading the guide/)).not.toBeInTheDocument();
+  });
+
   it("cannot add Maktaba to Plex while the tuner is off", async () => {
     renderPage();
     expect(await screen.findByRole("button", { name: "Add Maktaba to Plex" })).toBeDisabled();

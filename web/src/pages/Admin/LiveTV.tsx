@@ -290,6 +290,9 @@ const when = (s: string | null | undefined) => (s ? new Date(s).toLocaleString()
 /** The automatic Plex settings (rules section "plexlive"). */
 const AUTO_FLAGS = ["auto_register", "auto_refresh_guide", "auto_refresh_channels"] as const;
 
+/** How long Plex takes to load the guide after a reload (pipeline GUIDE_LOAD_SECONDS). */
+const GUIDE_LOAD_MS = 5 * 60_000;
+
 /** How often the panel re-reads the status while a run is queued or running. */
 const PLEX_POLL_MS = 3000;
 const BUSY = new Set(["pending", "claimed", "running", "resuming"]);
@@ -338,6 +341,16 @@ function PlexPanel({ info, device }: { info: TvInfo; device: HdhrDevice }) {
     }, PLEX_POLL_MS);
     return () => window.clearTimeout(id);
   }, [st, load]);
+
+  // the "Plex is loading the guide" note goes away on its own once the time is up
+  const [, setTick] = useState(0);
+  const reloadedAt = st?.guide_reloaded_at ? new Date(st.guide_reloaded_at).getTime() : NaN;
+  useEffect(() => {
+    const left = reloadedAt + GUIDE_LOAD_MS - Date.now();
+    if (!(left > 0)) return;
+    const id = window.setTimeout(() => setTick((n) => n + 1), left + 50);
+    return () => window.clearTimeout(id);
+  }, [reloadedAt]);
 
   async function act(kind: "refresh" | "register") {
     setBusy(true);
@@ -388,6 +401,7 @@ function PlexPanel({ info, device }: { info: TvInfo; device: HdhrDevice }) {
   // no plex block (an older or partial API) reads as not set up
   const plexReady = !!st?.plex?.enabled && !!st?.plex?.configured;
   const registered = !!report.maktaba?.registered;
+  const guideLoading = registered && Date.now() - reloadedAt < GUIDE_LOAD_MS;
   const dvrs = report.dvrs ?? [];
   const ch = report.channels;
   const minNum = Number(minutes);
@@ -481,6 +495,7 @@ function PlexPanel({ info, device }: { info: TvInfo; device: HdhrDevice }) {
           )}
         </dl>
       )}
+      {guideLoading && <p className="mkt-livetv__hint">{t("livetv.plex.guideLoading")}</p>}
       {report.dizquetv_present && (
         <p className="mkt-livetv__hint">{t("livetv.plex.dizquetvKept")}</p>
       )}

@@ -22,9 +22,16 @@ apps/desktop/
     ├── tauri.conf.json     ← bundle id, window, CSP, deep-link, updater
     ├── capabilities/       ← per-window permission allowlists
     ├── icons/              ← bundle icons (see icons/README.md)
+    ├── LaunchAgents/       ← the server login item plist (Epic 36)
     └── src/
         ├── main.rs         ← thin entry → lib::run()
-        └── lib.rs          ← menu bar, tray, deep links, mDNS, updater
+        ├── lib.rs          ← menu bar, deep links, mDNS, updater
+        ├── shell.rs        ← Epic 36: menu-bar item, status poller, setup commands
+        ├── status.rs       ←   supervisor /processes → running/starting/…
+        ├── tray.rs         ←   the menu-bar menu as data
+        ├── agent.rs        ←   login item (SMAppService), launchctl, --server-agent
+        ├── setup.rs        ←   `maktaba-server setup --json` step runner
+        └── mode.rs         ←   server mode vs client mode (mode.json)
 ```
 
 ## Prerequisites
@@ -97,6 +104,38 @@ package-desktop` (= `scripts/build.sh`).
 | **Single instance** | on Windows/Linux a `maktaba://` open spawns a new process; the single-instance plugin (with the `deep-link` feature) focuses the running window and forwards the URL |
 | **mDNS** | `discover_servers` browses `_maktaba._tcp.local.` for the server picker |
 | **Auto-update** | `updater` plugin checks `releases/latest/download/latest.json`; signing key is a follow-up (`pubkey` placeholder in config) |
+
+## Maktaba.app runs the server (Epic 36)
+
+On a Mac the app is the whole installation ([spec](../../specs/epics/36-mac-app/README.md)).
+A build that carries the server payload (`Contents/Resources/server/`, built by story 36.7)
+has two modes, saved in `~/Library/Application Support/com.hamzalabs.maktaba/mode.json`:
+
+| Mode | The window shows | The menu bar |
+|---|---|---|
+| **server** (this Mac runs Maktaba) | "Starting…" until the server answers, then the local web app `http://127.0.0.1:<web port>` | status (running / starting / problem / paused / stopped / setup needed), *Update ready*, Open Maktaba, Pause/Resume server, Open logs, Quit (server keeps running), Stop server and quit |
+| **client** (connect to another Maktaba) | that Maktaba's address, or the bundled web app as before | Open Maktaba, Connect to another Maktaba… (back to setup), Play/Pause, Settings, Quit |
+
+With no saved mode the window opens the **first-run setup** (`web/src/pages/Setup/`):
+this Mac or another Maktaba → what will run + disk/RAM → admin account → library folders and
+NAS path map → models (Hugging Face token or the NAS copy) → optional Plex (PIN flow) →
+install (pipeline venv + finish) → the server starts. Each screen runs one
+`maktaba-server setup --json --step <name>` ([contract](../../specs/epics/36-mac-app/contract-setup.md));
+passwords and tokens go to it on stdin only and are never logged.
+
+**The login item.** `Contents/Library/LaunchAgents/com.hamzalabs.maktaba.server.plist` is
+registered with `SMAppService.agent(plistName:)` when setup finishes (it then shows as
+"Maktaba" in System Settings → Login Items). launchd runs `Maktaba --server-agent`, which
+appends to `~/Library/Logs/Maktaba/server.log` and execs
+`Contents/Resources/server/bin/maktaba-launcher serve`. Pause sends SIGTERM through
+`launchctl kill`; `KeepAlive {SuccessfulExit: false}` restarts crashes but not a clean stop.
+Resume is `launchctl kickstart`.
+
+**Status** comes from the supervisor's `GET http://127.0.0.1:9103/processes`, polled every 3 s.
+
+**Developing it.** `tauri dev` runs outside a bundle, so point it at a `maktaba-server`
+for the setup screens: `MAKTABA_SERVER_BIN=/path/to/maktaba-server pnpm tauri dev`.
+`cargo test` in `src-tauri/` runs the shell's tests; CI runs them on macOS (`_unit.yml`).
 
 ## Out of scope for the scaffold
 

@@ -16,26 +16,26 @@
 //   - `discover_servers` — passive mDNS browse for `_maktaba._tcp.local.`
 //     (Story 13.5) and `app_version` for the Settings→About skew check
 //     (Story 13.8), both exposed via the invoke handler.
+//   - Epic 36: the menu-bar item with the server's status, the server
+//     login item and the first-run setup commands (shell.rs), and the
+//     `--server-agent` mode the LaunchAgent runs (agent.rs).
 use std::time::Duration;
 
 use serde::Serialize;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
-    tray::TrayIconBuilder,
     Emitter, Manager, WindowEvent,
 };
 use tauri_plugin_deep_link::DeepLinkExt;
 
-/// Bring the main window forward (show + focus). Shared by the tray, the
-/// single-instance relaunch handler, and deep links so a `maktaba://`
-/// open always surfaces the app even if it was hidden to tray.
-fn focus_main(app: &tauri::AppHandle) {
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = w.show();
-        let _ = w.unminimize();
-        let _ = w.set_focus();
-    }
-}
+mod agent;
+mod mode;
+mod setup;
+mod shell;
+mod status;
+mod tray;
+
+use shell::focus_main;
 
 #[tauri::command]
 fn app_version() -> String {
@@ -93,6 +93,13 @@ async fn discover_servers(timeout_ms: Option<u64>) -> Result<Vec<DiscoveredServe
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // The LaunchAgent runs this executable as `Maktaba --server-agent`:
+    // become the server launcher instead of opening a window.
+    if std::env::args().nth(1).as_deref() == Some(agent::AGENT_FLAG) {
+        eprintln!("maktaba --server-agent: {}", agent::run_server_agent());
+        std::process::exit(1);
+    }
+
     let mut builder = tauri::Builder::default();
 
     // single-instance is desktop-only and MUST be the first plugin
@@ -103,11 +110,9 @@ pub fn run() {
     // on_open_url.
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_single_instance::init(
-            |app, _argv, _cwd| {
-                focus_main(app);
-            },
-        ));
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            focus_main(app);
+        }));
     }
 
     builder
@@ -133,8 +138,7 @@ pub fn run() {
                 #[cfg(desktop)]
                 let _ = app.deep_link().register_all();
                 app.deep_link().on_open_url(move |event| {
-                    let urls: Vec<String> =
-                        event.urls().iter().map(|u| u.to_string()).collect();
+                    let urls: Vec<String> = event.urls().iter().map(|u| u.to_string()).collect();
                     if !urls.is_empty() {
                         focus_main(&handle);
                         let _ = handle.emit("deep-link", urls);
@@ -156,83 +160,15 @@ pub fn run() {
                 let _ = app.emit("menu", id);
             });
 
-            // System tray (Story 13.4) — transport controls + window
-            // management. Play / Pause drive the active player without
-            // focusing the window: they emit the "menu" event with the
-            // `media-play` / `media-pause` ids, which the web shell maps
-            // to a `media-control` action (web/src/lib/desktop.ts). Quit
-            // exits the app (close-to-tray, below, keeps it running).
-            let tray_play = MenuItem::with_id(handle, "media-play", "Play", true, None::<&str>)?;
-            let tray_pause = MenuItem::with_id(handle, "media-pause", "Pause", true, None::<&str>)?;
-            let tray_show = MenuItem::with_id(handle, "show", "Show Maktaba", true, None::<&str>)?;
-            let tray_hide = MenuItem::with_id(handle, "hide", "Hide", true, None::<&str>)?;
-            let tray_settings = MenuItem::with_id(
-                handle,
-                "tray-settings",
-                "Settings",
-                true,
-                None::<&str>,
-            )?;
-            let tray_quit = MenuItem::with_id(handle, "quit", "Quit", true, None::<&str>)?;
-            let tray_menu = Menu::with_items(
-                handle,
-                &[
-                    &tray_play,
-                    &tray_pause,
-                    &PredefinedMenuItem::separator(handle)?,
-                    &tray_show,
-                    &tray_hide,
-                    &PredefinedMenuItem::separator(handle)?,
-                    &tray_settings,
-                    &PredefinedMenuItem::separator(handle)?,
-                    &tray_quit,
-                ],
-            )?;
-            let _tray = TrayIconBuilder::new()
-                .menu(&tray_menu)
-                .tooltip("Maktaba")
-                .on_menu_event(|app, event| {
-                    let id = event.id().as_ref();
-                    match id {
-                        // Transport controls: forward through the "menu"
-                        // channel so the web shell's media-control router
-                        // drives the active player. No window focus — the
-                        // point is to play/pause without leaving whatever
-                        // you're doing.
-                        "media-play" | "media-pause" => {
-                            let _ = app.emit("menu", id.to_string());
-                        }
-                        "show" => {
-                            if let Some(w) = app.get_webview_window("main") {
-                                let _ = w.show();
-                                let _ = w.set_focus();
-                            }
-                        }
-                        "hide" => {
-                            if let Some(w) = app.get_webview_window("main") {
-                                let _ = w.hide();
-                            }
-                        }
-                        "tray-settings" => {
-                            if let Some(w) = app.get_webview_window("main") {
-                                let _ = w.show();
-                                let _ = w.set_focus();
-                            }
-                            // Reuse the same routing path as the menu.
-                            let _ = app.emit("menu", "preferences");
-                        }
-                        "quit" => {
-                            app.exit(0);
-                        }
-                        _ => {}
-                    }
-                })
-                .build(handle)?;
+            // System tray / menu-bar item (Story 13.4, Epic 36 story
+            // 36.5): server status, Open Maktaba, Pause/Resume server,
+            // Open logs, the player's Play / Pause, Settings, Quit (the
+            // window only) and Stop server and quit. See shell.rs/tray.rs.
+            shell::init(handle)?;
 
             // Close-to-tray (Story 13.4 AC-5): closing the window hides
             // it instead of terminating the app; Quit (tray/menu) still
-            // exits. Without this, closing the window quit the app,
-            // contradicting the AC.
+            // exits. In server mode the server keeps running either way.
             if let Some(main) = app.get_webview_window("main") {
                 let win = main.clone();
                 main.on_window_event(move |event| {
@@ -245,7 +181,18 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![app_version, discover_servers])
+        .invoke_handler(tauri::generate_handler![
+            app_version,
+            discover_servers,
+            shell::app_state,
+            shell::setup_step,
+            shell::finish_setup,
+            shell::open_login_items,
+            shell::server_status,
+            shell::open_local_server,
+            shell::use_remote_server,
+            shell::open_external,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running maktaba desktop");
 }
@@ -261,13 +208,8 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     // Maktaba menu (macOS: appears as the app name; Win/Linux: leftmost)
     let about = PredefinedMenuItem::about(app, Some("About Maktaba"), None)?;
     let prefs = MenuItem::with_id(app, "preferences", "Settings…", true, Some("CmdOrCtrl+,"))?;
-    let switch_server = MenuItem::with_id(
-        app,
-        "switch-server",
-        "Switch Server…",
-        true,
-        None::<&str>,
-    )?;
+    let switch_server =
+        MenuItem::with_id(app, "switch-server", "Switch Server…", true, None::<&str>)?;
     let quit = PredefinedMenuItem::quit(app, None)?;
     let app_menu = Submenu::with_items(
         app,
@@ -328,7 +270,13 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
 
     // Library menu — Scan (Cmd+R) + Cmd+1..9 library-slot switching
     // (Story 13.7).
-    let scan = MenuItem::with_id(app, "scan-library", "Scan Library", true, Some("CmdOrCtrl+R"))?;
+    let scan = MenuItem::with_id(
+        app,
+        "scan-library",
+        "Scan Library",
+        true,
+        Some("CmdOrCtrl+R"),
+    )?;
     let mut lib_items: Vec<MenuItem<tauri::Wry>> = Vec::with_capacity(9);
     for slot in 1..=9u8 {
         lib_items.push(MenuItem::with_id(

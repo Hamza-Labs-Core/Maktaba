@@ -12,7 +12,9 @@ HDHomeRun tuner only, plus adding that tuner to Plex once:
   when the lineup differs from the one last pushed;
 * **reload the guide** (``POST /livetv/dvrs/{key}/reloadGuide``) after a channel-map push, an
   explicit refresh, or when the schedule grew (then at most every
-  ``guide_refresh_min_minutes``: an early run is given back until then).
+  ``guide_refresh_min_minutes``: an early run is given back until then). A refresh that
+  changes nothing within ``GUIDE_LOAD_SECONDS`` of the last reload sends nothing: Plex is
+  still loading that guide, and a reload or channel-map push meanwhile aborts the load.
 
 Other DVRs and tuners (dizqueTV's, an antenna's) are listed in the status and never touched:
 nothing here deletes, replaces or reloads a DVR that is not Maktaba's.
@@ -57,6 +59,11 @@ __all__ = [
 ]
 
 XMLTV_PATH = "/xmltv.xml"
+
+# Plex takes a minute or two to load a full guide (~90 s for 6,000 programmes) and a
+# reloadGuide sent meanwhile aborts the load ("EPG[xmltv]: Failed to load EPG"), so a
+# "Refresh Plex now" that changes nothing waits this long after the last reload.
+GUIDE_LOAD_SECONDS = 300.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -395,12 +402,23 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
         # ---- channel map, then the guide (Maktaba's tuner and DVR only)
         if run.ours is not None and run.ours_dvr is not None:
             want = canonical_hash(lineup)
+            changed = want != st.channelmap_hash
+            last = st.guide_reloaded_at
+            since = None if last is None else (wall() - last).total_seconds()
+            # a refresh that changes nothing while Plex still loads the last reload: leave it be
+            settling = (
+                manual
+                and not registered_now
+                and not changed
+                and since is not None
+                and since < GUIDE_LOAD_SECONDS
+            )
             pushed = False
             if not lineup:
                 run.channel_map = "no_channels"
-            elif registered_now or (
-                (manual or cfg.auto_refresh_channels) and (manual or want != st.channelmap_hash)
-            ):
+            elif settling:
+                run.channel_map = "unchanged"
+            elif registered_now or ((manual or cfg.auto_refresh_channels) and (manual or changed)):
                 await asyncio.to_thread(client.put_channel_map, run.ours.key, lineup)
                 st.channelmap_hash, st.channelmap_at, pushed = want, wall(), True
                 run.ours = replace(run.ours, mapped=tuple(lineup))
@@ -412,10 +430,20 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
                 run.warnings.append("Plex's channel list differs from Maktaba's lineup")
 
             due = guide_version != st.guide_version
-            if registered_now or manual or (pushed and cfg.auto_refresh_guide):
+            if settling:
+                if due and cfg.auto_refresh_guide:  # the guide grew too: reload once loaded
+                    run.guide = "loading"
+                    st.status = status(run, None)
+                    await _save(db, st, at=started, error=None, clear_register=asked)
+                    raise JobDeferred(
+                        "Plex is still loading the guide",
+                        GUIDE_LOAD_SECONDS - (since or 0.0),
+                    )
+                reload = False
+                run.guide = "loading"
+            elif registered_now or manual or (pushed and cfg.auto_refresh_guide):
                 reload = True
             elif cfg.auto_refresh_guide and due:
-                last = st.guide_reloaded_at
                 wait = (
                     0.0
                     if last is None
