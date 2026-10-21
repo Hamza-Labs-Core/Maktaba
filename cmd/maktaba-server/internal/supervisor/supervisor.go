@@ -19,6 +19,7 @@
 package supervisor
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -55,6 +56,24 @@ type Process struct {
 	Instance string
 	// OnDemand: not started until asked for (Supervisor.Want).
 	OnDemand bool
+	// Check, when set, is the liveness check in place of an HTTP GET of Probe
+	// (postgres speaks its own protocol); Probe then only labels it.
+	Check func(ctx context.Context) error
+	// StopSignal, when set, is the graceful-stop signal in place of SIGTERM
+	// (postgres: SIGINT, its fast shutdown).
+	StopSignal os.Signal
+	// First: started before every other process, which wait until it runs (its
+	// check answered), and stopped after them (Epic 36 story 36.1: the bundled
+	// postgres).
+	First bool
+}
+
+// stopSignal is the process's graceful-stop signal.
+func (p Process) stopSignal() os.Signal {
+	if p.StopSignal != nil {
+		return p.StopSignal
+	}
+	return terminationSignal()
 }
 
 // Name is the process's label: the role, or role/instance.
