@@ -99,6 +99,29 @@ class ElfTest(unittest.TestCase):
         finally:
             shutil.rmtree(root)
 
+    def test_resolve_runpath_and_origin_paths(self) -> None:
+        root = Path(tempfile.mkdtemp())
+        try:
+            (root / "postgres" / "bin").mkdir(parents=True)
+            (root / "postgres" / "lib").mkdir()
+            (root / "postgres" / "lib" / "libssl.so.3").write_bytes(b"x")
+            (root / "python" / "lib").mkdir(parents=True)
+            (root / "python" / "lib" / "libpython3.12.so.1.0").write_bytes(b"x")
+            psql = root / "postgres" / "bin" / "psql"
+            libpy3 = root / "python" / "lib" / "libpython3.so"
+            self.assertEqual(
+                pt._resolve(root, psql, "libssl.so.3", ["$ORIGIN/../lib"]),
+                root / "postgres" / "bin" / ".." / "lib" / "libssl.so.3",
+            )
+            self.assertIsNone(pt._resolve(root, psql, "libxml2.so.2", ["$ORIGIN/../lib"]))
+            self.assertIsNone(pt._resolve(root, psql, "libssl.so.3", []))
+            # python-build-standalone: NEEDED is a path
+            self.assertIsNotNone(pt._resolve(root, libpy3, "$ORIGIN/../lib/libpython3.12.so.1.0", []))
+            # a path outside the payload is not the payload's
+            self.assertIsNone(pt._resolve(root, psql, "libc.so.6", ["/lib/x86_64-linux-gnu"]))
+        finally:
+            shutil.rmtree(root)
+
     def test_not_an_elf_file(self) -> None:
         with self.assertRaises(ValueError):
             pt.Elf(b"#!/bin/sh\n" + bytes(64))

@@ -250,16 +250,32 @@ def cmd_elf(root: Path, max_glibc: str | None) -> int:
                 if max_glibc and got > _ver(max_glibc):
                     problems.append(f"{rel}: needs {v}, the payload's limit is GLIBC_{max_glibc}")
         needed, paths = elf.dynamic()
-        dirs = [Path(d.replace("$ORIGIN", str(p.parent)).replace("${ORIGIN}", str(p.parent))) for d in paths]
         for lib in needed:
-            if lib in BASELINE:
-                continue
-            if not any((d / lib).exists() and _inside(root, d / lib) for d in dirs):
+            if lib not in BASELINE and _resolve(root, p, lib, paths) is None:
                 problems.append(f"{rel}: needs {lib}, not found in the payload through {paths or 'no RUNPATH'}")
     for line in problems:
         print(line)
     print(json.dumps({"min_glibc": ".".join(map(str, newest)), "elf_files": count}))
     return 1 if problems else 0
+
+
+def _origin(path: str, elf: Path) -> str:
+    return path.replace("${ORIGIN}", str(elf.parent)).replace("$ORIGIN", str(elf.parent))
+
+
+def _resolve(root: Path, elf: Path, lib: str, paths: list[str]) -> Path | None:
+    """Where the dynamic loader finds ``lib`` for ``elf`` inside ``root``: a NEEDED
+    with a "/" is a path itself ($ORIGIN expanded; python-build-standalone's
+    libpython3.so names libpython3.12 that way), else it is looked for in each
+    RUNPATH / RPATH directory."""
+    if "/" in lib:
+        candidates = [Path(_origin(lib, elf))]
+    else:
+        candidates = [Path(_origin(d, elf)) / lib for d in paths]
+    for c in candidates:
+        if c.exists() and _inside(root, c):
+            return c
+    return None
 
 
 def _inside(root: Path, p: Path) -> bool:
@@ -283,7 +299,7 @@ def cmd_closure(root: Path, libs: list[Path]) -> int:
         except (ValueError, struct.error, OSError):
             continue
         for lib in needed:
-            if lib in BASELINE or lib in have or lib in seen:
+            if lib in BASELINE or lib in have or lib in seen or "/" in lib:
                 continue
             found = cache.get(lib)
             if found is None:
