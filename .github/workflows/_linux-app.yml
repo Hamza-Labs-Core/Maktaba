@@ -1,0 +1,98 @@
+# Reusable Linux app payload gate (Epic 39, story 39.2): on an x86_64 and an aarch64
+# runner, build the server payload (Go binaries with the web UI, pinned Postgres / ffmpeg /
+# Python checked against tools/release/linux-app/pins.env, Postgres's library closure from
+# the runner, the pipeline wheel + constraints) and smoke-test it with
+# tools/release/linux-app/check.sh: on the runner, and in minimal containers of the
+# distributions the app supports (the payload mounted read-only, an ordinary user), so a
+# library the payload assumes but a system lacks fails here.
+
+name: Linux app
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  payload:
+    name: Linux payload (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-22.04 }
+          - { arch: aarch64, runner: ubuntu-22.04-arm }
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: |
+            api/go.sum
+            streaming/go.sum
+            cmd/maktaba-server/go.sum
+            cmd/maktaba-launcher/go.sum
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+
+      - uses: pnpm/action-setup@v6.0.8
+        with:
+          version: 9.15.4
+          run_install: false
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install web deps and the build tools
+        run: |
+          pnpm -C web install --frozen-lockfile
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq patchelf zip shellcheck
+
+      # the pinned third-party downloads (~150 MB), keyed on their checksums
+      - uses: actions/cache@v4
+        with:
+          path: build/linux-app/downloads
+          key: linux-app-downloads-${{ matrix.arch }}-${{ hashFiles('tools/release/linux-app/pins.env') }}
+
+      - name: shellcheck and the payload tool's tests
+        run: |
+          shellcheck -x tools/release/linux-app/payload.sh tools/release/linux-app/check.sh
+          python3 tools/release/linux-app/test_payload_tool.py -v
+
+      - name: Build the payload and check it on the runner
+        env:
+          VERSION: v0.0.0-ci.${{ github.run_number }}
+        run: make linux-app-payload
+
+      - name: Check it in minimal containers
+        run: |
+          set -euo pipefail
+          for image in ubuntu:22.04 debian:12-slim fedora:40; do
+            echo "::group::$image"
+            docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:$PWD:ro" -w "$PWD" "$image" \
+              bash tools/release/linux-app/check.sh --payload build/linux-app/server
+            echo "::endgroup::"
+          done
+
+      - name: Sizes
+        if: always()
+        run: |
+          {
+            echo "### Linux payload (${{ matrix.arch }})"
+            echo '```'
+            du -sh build/linux-app/server/* 2>/dev/null || true
+            du -sh build/linux-app/server 2>/dev/null || true
+            python3 -c 'import json; d=json.load(open("build/linux-app/server/payload.json")); print("glibc", d["min_glibc"], "libraries", " ".join(d["postgres"]["libraries"]))' 2>/dev/null || true
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
