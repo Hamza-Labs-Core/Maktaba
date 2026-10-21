@@ -43,9 +43,14 @@ behaves as a node did before #145: its own routes answer, anything else is 503 w
   tokens, SSO codes, idempotency keys, the licence, devices' push tokens, the audit log), the
   machines' own rows and caches, and each database's own migration state. The node's own
   `cluster_nodes` row is published to it alone, without the home's key for it or its sealed
-  answer (a row filter and a column list). The node's routes read the tables the node role may
-  read, so every one of those is copied; a test fails when a new table is neither reviewed for
-  the copy nor left out (`api/internal/cluster/copy_tables_pg_test.go`).
+  answer (a row filter and a column list). What this machine's own code reads with the home away
+  is copied, tables the machines' role may not read on the home among them (`users` with their
+  password hashes, personal access token hashes): the copy is read by this machine's programs
+  only, under a read-only role of its own. Web sessions are not copied as they are: the copy
+  gets `web_session_keys` (the SHA-256 of each session's id and of its CSRF token, kept by a
+  trigger on `web_sessions`), and a node checks a cookie by its hash; `web_sessions` itself
+  travels only in a switch's kit. A test fails when a new table is neither reviewed for the copy
+  nor left out (`api/internal/cluster/copy_tables_pg_test.go`).
 - One **publication per node** (`maktaba_copy_<node id>`), kept current with the tables there
   are by `cluster_copy_publication` (a table left out leaves it; one with no primary key gets
   `REPLICA IDENTITY FULL`, without which the home could not update it once published); a
@@ -66,17 +71,36 @@ behaves as a node did before #145: its own routes answer, anything else is 503 w
 ### The home's side (automatic)
 
 - The bundled Postgres's cluster bootstrap (superuser, once) gives the app role `CREATEROLE`,
-  `REPLICATION`, `pg_monitor`, `pg_signal_backend`, and makes `maktaba_replicas`, which the app
-  role administers without taking its rights. Its `pg_hba.conf` (rewritten at every start) lets
-  in from the LAN only the machines' roles and their replication roles, over TLS.
+  `REPLICATION`, `pg_monitor`, `pg_signal_backend`, the right to set `max_slot_wal_keep_size` and
+  to reload the configuration, and makes `maktaba_replicas`, which the app role administers
+  without taking its rights.
+- **What the machines reach of it follows the cluster** (`pgbundle.WatchReach`, every 30 s): it
+  listens beyond this machine, and its `pg_hba.conf` lets anyone in from off it, only while a
+  machine may connect (one is approved, or joins are open). Then it lets in only the machines'
+  roles and their replication roles, into the app's database, over TLS, from the networks this
+  machine is on (`samenet`) and each approved machine's own address (a machine over a VPN);
+  `[postgres] machines_from` can name networks instead (those only) or `all`. There is no
+  `replication` line: a copy is a logical subscription, and a physical one (the whole cluster,
+  every row and key) is never let in. `pg_hba.conf` follows with a reload, the listen address
+  by starting Postgres again (the supervisor's `Restart`); `[postgres] listen = "loopback"`
+  never opens. A machine promoted by a switch opens at its first start as the home.
+- **The machines verify the home's database** (`verify-ca`) by its CA, which reaches them three
+  ways: the join's answer (`database_ca`, `database_tls`), the machine-agent channel
+  (`home.database`, sent at every connection while it changes, for a machine joined before it
+  had one), and a switch's command or notice. Each machine keeps it beside its `node.json`
+  (`home-database-ca.crt`); its connections to the home's database use it, and its copy waits
+  (state unavailable, "cannot verify its home's database yet") until it has one. Nothing is
+  trusted on first use: a grant's answer never sets it.
 - Slot 0144 (`shared/db/migrations/0144_node_replicas.sql`):
-  - `cluster_node_replica_grant(node, password, fresh)` — a machine asks for its copy **over its
-    own database connection**, for its own role only (`cluster_node_guard`). It makes or updates
-    the replication role with the password the machine chose, brings its publication up to date
-    (`cluster_copy_publication`), drops an inactive slot when `fresh`, and returns the role, the
-    slot (and whether it exists), the publication and its tables, the home's schema version,
-    system identifier, server version and CA. It refuses a home whose `wal_level` is not
-    `logical`.
+  - `cluster_node_replica_grant(node, verifier, fresh)` — a machine asks for its copy **over its
+    own database connection**, for its own role only (`cluster_node_guard`), and only an approved
+    full machine (its row read `FOR SHARE`, so a revocation waits for the grant or follows it;
+    else SQLSTATE `MK403`). It makes or updates the replication role with the SCRAM-SHA-256
+    verifier of a password the machine chose (the password never leaves the machine), brings its
+    publication up to date (`cluster_copy_publication`), drops an inactive slot when `fresh`, and
+    returns the role, the slot (and whether it exists), the publication and its tables, the
+    home's schema version, system identifier and server version. It refuses a home whose
+    `wal_level` is not `logical`.
   - `cluster_replica_beat(at, ca_pem)` — the home's clock, written every 5 s while a machine
     follows (`api/internal/cluster/copies.go`), and its database's CA.
   - `cluster_nodes.replica` + `cluster_node_report_replica` — what each machine reports of its
@@ -86,9 +110,12 @@ behaves as a node did before #145: its own routes answer, anything else is 503 w
     ones (`worker_baseline_pg_test.go`).
 - `cluster.Copies` (home API): the beat, the CA published, and **the cap**: an inactive slot that
   holds more than `rules.cluster.replica_wal_keep_gb` of changes is dropped — the home's disk
-  never fills for a machine that is off; that machine subscribes anew when it is back.
-- Revoking a machine ends its copy (its replication role may no longer sign in, its sessions are
-  ended, its slot and publication are dropped); removing it drops the role.
+  never fills for a machine that is off; that machine subscribes anew when it is back. Postgres's
+  own cap (`max_slot_wal_keep_size`) is kept at the rule too, so it holds while the API is down.
+- Revoking a machine ends its copy: the machine is revoked first (a grant after that is
+  refused), then its replication role may no longer sign in, its sessions are ended, its slot
+  and publication are dropped; a revocation that failed half way is done again by revoking
+  again. Removing it drops the role.
 
 ### The node's side (`cmd/maktaba-server/internal/nodecopy`, run by `serve`)
 
@@ -98,19 +125,24 @@ this epic converts at its first start on this version:
 1. fetch (or find) the Postgres programs; make this machine's database (a database of its own
    from before it joined is moved aside, never emptied), start it as the supervisor's on-demand
    `copy` role, make the read-only role this machine's programs read it as, and migrate it;
-2. ask the home (`cluster_node_replica_grant`); pin the CA it publishes (first grant), write a
-   passfile in the keys directory (the password never goes into the data directory);
+2. wait until it can verify the home's database (its CA, above); ask the home
+   (`cluster_node_replica_grant`) with the verifier of a password it chose, kept in a passfile
+   in the keys directory (never in the data directory);
 3. subscribe (tables emptied, then copied in parallel, `streaming = on`) when there is no copy
    yet, the home's database is another one (system identifier), this machine's Maktaba was
    updated, the home dropped the slot, or the home's changes keep failing to apply for ten
-   minutes; otherwise keep the subscription current (its connection, new tables, enabled);
+   minutes — first pausing the old subscription and waiting for its worker to stop, so the slot
+   is free; otherwise keep the subscription current (its connection over `verify-ca` with
+   keepalives and a timeout, new tables, enabled);
 4. pause the subscription while the home's schema is ahead of this machine's (it resumes once
    this machine is updated and migrated);
-5. watch it: following (the beat applied less than 30 s ago and every table ready), copying,
-   behind, starting, incompatible; write the state to `<data>/node/copy.json` (the node's
-   `/api/cluster/self`) and to the home (`cluster_nodes.replica`, the Machines page);
-6. the home refusing this machine three times over three minutes (revoked) ends the subscription
-   and wipes the copy and its secrets.
+5. watch it: following (the beat applied less than 30 s ago and every table ready, measured on
+   the home's clock), copying, behind, starting, incompatible; write the state to
+   `<data>/node/copy.json` (the node's `/api/cluster/self` shows the public part) and to the home
+   (`cluster_nodes.replica`, the Machines page) when it changes, at most once a minute otherwise;
+6. the home refusing this machine three times over three minutes (revoked: `MK403`, or its role
+   may not sign in) ends the subscription and wipes the copy and its secrets; approved again, the
+   machine copies anew by itself.
 
 The copy's directory is readable by this account only (0700 on Unix; on Windows its ACL keeps
 only this account and SYSTEM). `MAKTABA_NODE_COPY=off` exists for tests that run a node without
@@ -124,9 +156,12 @@ and, with the home there, while the copy is within `copy_reads_max_lag_seconds` 
 read goes to the home's database: a change of rights, a removal or a new video is not read
 stale); anything else — a write, a transaction, a statement no request marked — goes to the
 home's. With the home not answering (its API or its database), everything goes to the copy
-(reads answer; a write fails as it would have). **Read-your-writes:** a change sends its
-author's reads to the home for 5 s. The node's role check and its reports always go to the
-home's database.
+(reads answer; a write fails as it would have). **Lag is measured on the home's clock**: the
+node measures how far its clock is from the home database's `now()` every 30 s, so a machine
+whose clock is off neither reads a stale copy nor gives up a current one. **Read-your-writes:**
+after a change, its author's reads go to the home until the copy has applied the home's beat of
+at least the change's moment on the home's clock (plus a second), for ten minutes at most. The
+node's role check and its reports always go to the home's database.
 
 The connections to the home's database give a statement up the moment its request ends, even
 on a connection that hangs (`pgdsn.BoundedConnector`: lib/pq alone waits for as long as the
@@ -155,8 +190,14 @@ API stops only for a role found able to run DDL.
   session valid on this machine only: cookie `nls_…`, stored by the hash of its id and of its
   CSRF token in `<data>/node/local-sessions.json` (0600), lasting `offline_session_hours`; once
   the home answers again they end within `offline_session_grace_minutes`, and a change through
-  the home's database asks for a sign-in with the home (401 `signin_required`). The home's
-  lockout is mirrored on the node (five failures in 15 minutes, 423).
+  the home's database asks for a sign-in with the home (401 `signin_required`); a sign-in made
+  with the home answering again ends the node-local session and goes to the home. A user who
+  must change their password, or whose sessions the home revoked lately, cannot sign in on the
+  node (503 `password_change_waits` asks them to wait for the home); a revocation the home pushes
+  ends that user's node-local sessions. The home's lockout is mirrored on the node (five
+  failures in 15 minutes, 423); spraying other names never unlocks a locked one.
+- One probe the home misses is not an outage: the node answers from its copy after two misses in
+  a row, or after a request found the home's database not answering.
 - **Sign-out with the home away is real.** The cookies are cleared, the session is denied on
   this machine at once (though the copy still says it is live), and the home is told once it
   answers (`POST /api/cluster/delegate/signout`, node-signed: sessions by the SHA-256 of their
@@ -170,9 +211,11 @@ API stops only for a role found able to run DDL.
 
 - **VOD:** the API's and the streaming service's lookups (a video's library, length, path, probe
   facts; the share map) read the copy while the home's database does not answer. A session
-  opened meanwhile is recorded on the node (the copy is read only) and its `streaming_sessions`
-  row is written once the home's database answers again, so the progress the player then reports
-  (the home's route) finds it. A video this machine cannot read, with the home away, is
+  opened meanwhile is recorded on the node (the copy is read only), kept on disk
+  (`<data>/node/stream-sessions.json`, so a restart of the API keeps it), and its
+  `streaming_sessions` row — and its closing, when it was closed meanwhile — is written once the
+  home's database answers again, so the progress the player then reports (the home's route)
+  finds it. A video this machine cannot read, with the home away, is
   "unavailable offline", whether the home refused or never answered.
 - **TV:** a channel's position comes from its schedule and the clock (`channel_programs`,
   `tv_live_gen()`), and the copy has both. The node's streaming service runs **its own station**
@@ -184,8 +227,10 @@ API stops only for a role found able to run DDL.
 The node's pipeline pauses while the home's database does not answer: it claims nothing, lets
 jobs in flight finish, and stops them before the claim lease lapses — measured from the last
 beat the home answered, checked every 2 s (a home that hangs leaves each beat waiting its
-timeout), 70 s for the default 90 s lease. A job's late write (heartbeat, progress, its end)
-changes nothing once another worker holds its claim (`db/claim_owner.py`). It resumes on its own.
+timeout), 70 s for the default 90 s lease. A job's late write (heartbeat, progress, a
+transcript's segment, its end) changes nothing once another worker holds its claim
+(`db/claim_owner.py`; `commit_segment` takes the worker). It resumes on its own. The paused page
+reloads itself every two minutes and once the home answers again.
 
 ## Switching the home
 
@@ -273,9 +318,19 @@ you), with the one action a person takes. `GET /api/cluster/self` carries the te
   The replication role reads only what is published to it. The copy's files are readable by the
   node's own account only; revoking the machine stops its subscription at once and wipes its
   copy at its next check.
-- **On the wire.** The subscription and the grant run over TLS that verifies the home's CA
-  (`verify-ca`, pinned at the first grant). With `[postgres] tls = "off"` they run in the clear;
-  the setting's help says so.
+- **On the wire.** Every connection of a machine to the home's database (its programs', the
+  grant's, the subscription's) runs over TLS that verifies the home's CA (`verify-ca`), which
+  came with the join, over the machine channel or with a switch, never from the database itself;
+  without it the machine does not connect its copy. With `[postgres] tls = "off"` on the home
+  they run in the clear, and the machines are told so the same three ways; the setting's help
+  says so.
+- **What reaches the home's Postgres.** Off this machine, nothing while no machine may connect
+  (it does not listen beyond loopback); then only the machines' roles, into the app's database,
+  from the machines' networks and addresses, with their SCRAM passwords. No physical
+  replication; the replication roles read only what is published to them. A replication role's
+  password is never sent: the machine sends its verifier.
+- **Sessions on a copy.** The copy holds web sessions' hashes only (`web_session_keys`): a
+  copy's file, read off a stolen disk, signs no one in.
 - **Node-local sessions and sign-outs** are stored hashed and never carry a credential; the copy
   cannot be written: nothing a node does offline changes the home's data but the sign-outs and
   sessions it hands over once the home answers.
@@ -301,17 +356,27 @@ you), with the one action a person takes. `GET /api/cluster/self` carries the te
 | The new home slow to start after its promotion | The old home and the machines keep trying to follow it. |
 | A machine off during a switch | When back, its old home hands it the new home's notice; it follows, copying anew. |
 | A machine whose Plex is unreachable from the new home | The tuner stays where it was; the stage retries; the tab says being moved. |
+| A machine without its home database's CA (joined before this version) | Its copy waits, saying so; the home sends the CA over the machine channel within 30 s of its connection. |
+| Joins opened, or the last machine revoked | The home's Postgres starts again within 30 s to listen for the machines, or no longer: its connections drop for a moment and come back. |
+| The node's API restarted during an outage | The sessions it opened offline are kept on disk and written to the home's history once its database answers. |
+| A machine's clock off by minutes | Lag and read-your-writes use the home's clock: reads are neither stale nor sent to the home for nothing. |
 
 ## Tests
 
-- `api/internal/cluster/copies_pg_test.go`: the grant, the publication and what the replication
-  role may read, refusals, the beat, the CA, the cap, revoke and remove, on a real Postgres 16
-  set up as the bundled home is. `copy_tables_pg_test.go`: every table decided for the copy.
+- `api/internal/cluster/copies_pg_test.go`: the grant (a verifier, full machines only, `MK403`),
+  the publication and what the replication role may read, `web_session_keys`, refusals, the
+  beat, the CA, the cap and Postgres's own cap, revoke and remove, on a real Postgres 16 set up
+  as the bundled home is. `copy_tables_pg_test.go`: every table decided for the copy.
+- `cmd/maktaba-server/internal/pgbundle`: `pg_hba.conf` and the listen address per the cluster's
+  reach (`reach_test.go`), the watch on a real Postgres (`reach_pg_test.go`: joins opened, a
+  machine approved from another network, the last one revoked, a look the database does not
+  answer), `machines_from`, the CA never remade on its own. The supervisor's `Restart`
+  (`restart_test.go`). `config`: the home's DSN with the CA, and without one (fail closed).
 - `cmd/maktaba-server/internal/nodecopy/copy_pg_test.go`: **two Postgres servers on 127.0.0.1** —
   a home made by `pgbundle.Prepare` and migrated by `maktaba-api`, and the copy kept by the
-  manager alone: subscribes over TLS, follows, holds no secrets nor other machines' rows or keys,
-  refuses writes, subscribes anew after the slot is dropped, is wiped on revocation. Opt-in:
-  `MAKTABA_TEST_PG_BIN`.
+  manager alone: subscribes over TLS (`verify-ca`), follows, holds no secrets nor other
+  machines' rows or keys, refuses writes, subscribes anew after the slot is dropped (also while
+  streaming), is wiped on revocation. Opt-in: `MAKTABA_TEST_PG_BIN`.
 - `api/twomachine_e2e_test.go`: two `maktaba-server serve` machines; with `MAKTABA_TEST_PG_BIN`
   the node's supervisor makes its copy (a Linux Postgres home, the node's copy on the pinned
   Windows build), then the home is switched off (its API and its database reached through
@@ -334,10 +399,14 @@ you), with the one action a person takes. `GET /api/cluster/self` carries the te
   with a DVR of its own, and kept when Plex cannot reach the new home. The web's
   `SwitchHomeCard.test.tsx`.
 - Unit tests: `nodeauth` (copy-first answers, freshness, node-local sessions and sign-outs,
-  revocations in flight, bearer tokens, lockout, grace, a hanging home), `nodedb` (routing per
-  statement), `pgdsn` (bounded connections, on a real Postgres behind a hanging proxy),
-  `nodecopy` (names, secrets, decisions), `streaming` (write-back, outage classification), the
-  pipeline's lease and claim guard, the web outage pages.
+  revocations in flight and pushed, a sign-in with the home back, one missed probe, must-change
+  and lockout spraying, bearer tokens, grace, a hanging home), `nodedb` and the node's routing
+  (per statement, lag on the home's clock, read-your-writes until the copy has the change),
+  `homeproxy` (node-local cookies never reach the home), `pgdsn` (bounded connections, on a real
+  Postgres behind a hanging proxy), `nodecopy` (names, secrets, decisions, the subscription's
+  connection), `streaming` (write-back, a closing written back, sessions kept across a restart,
+  outage classification), the agent channel's `home.database`, the pipeline's lease and claim
+  guard (`commit_segment` from a worker that lost the job), the web outage and paused pages.
 
 ## Follow-ups
 

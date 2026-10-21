@@ -50,6 +50,18 @@ don't append a line here; docs-only PRs are exempt.
   the tab shows each machine and each outside service as moved, being moved, failed, or what a
   person must do (signing in to YouTube in a browser on the new home; a model runtime there). A
   switch that cannot go through is undone. `GET /api/cluster/self` carries the cluster's term.
+- **The machines reach only what they need of the home's database** (Epic 37). The bundled
+  Postgres listens beyond its own machine, and lets anyone in from off it, only while a machine
+  may connect (one is approved, or joins are open). It starts again by itself when that
+  changes. Even then it lets in only the machines' roles, from the networks the home is on and
+  each approved machine's own address (`[postgres] machines_from` can name networks instead),
+  and never as physical replication. Every machine verifies the home's database by its CA. The
+  CA comes with the join, over the machines' channel (for a machine joined earlier), or with a
+  switch; a machine without it does not connect its copy. A machine's replication password
+  never leaves it (the home gets its SCRAM verifier), only full machines get a copy, and a copy
+  holds web sessions by their hash only. A sign-in on a machine while its home is away refuses
+  a user who must change their password. The sessions it opens are written to the home's
+  history, with their closing, also after a restart of the machine.
 
 ### Changed
 
