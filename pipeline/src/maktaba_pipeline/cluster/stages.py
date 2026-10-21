@@ -46,6 +46,7 @@ __all__ = [
     "StageSelector",
     "is_shared_url",
     "lifted_placements",
+    "refresh_stages",
     "select_stages",
 ]
 
@@ -132,6 +133,24 @@ def select_stages(
         else:
             off[st.name] = reason
     return served, off
+
+
+async def refresh_stages(db: Any, graph: Iterable[StageDef], served: Collection[str]) -> None:
+    """Each stage's own refresh (``StageImpl.refresh``) before a selection: the rules its
+    ``unavailable()`` reads from the home, and the upkeep of a worker that serves it
+    (``served``). One that fails keeps what it read before."""
+    from ..engine.stages.registry import get_impl
+
+    for st in graph:
+        if st.legacy:
+            continue
+        impl = get_impl(st.name)
+        if impl is None or impl.refresh is None:
+            continue
+        try:
+            await impl.refresh(db, st.name in served)
+        except Exception:  # noqa: BLE001 - an unreadable rule keeps the last one read
+            _log.warning("stage_refresh_failed", stage=st.name, exc_info=True)
 
 
 _LOOPBACK = {"localhost", "127.0.0.1", "::1", "0.0.0.0", ""}  # noqa: S104 - names, not a bind

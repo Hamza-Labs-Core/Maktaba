@@ -194,3 +194,23 @@ func TestChildEnvStateDirs(t *testing.T) {
 		t.Fatalf("overrode the operator's chroma dir with %q", v)
 	}
 }
+
+// The api and streaming keep their data (the Sigstore root, channel art) in
+// data_dir, not in /var/lib/maktaba, which a user's server cannot write.
+func TestChildEnvDataDir(t *testing.T) {
+	prev := nodeConfig
+	t.Cleanup(func() { nodeConfig = prev })
+	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
+	t.Setenv("MAKTABA_DATA_DIR", "")
+	var cfg config.Config
+	cfg.Server.DataDir = filepath.Join(t.TempDir(), "data")
+	for _, role := range []Role{RoleAPI, RoleStreaming, RolePipeline} {
+		if got := envMap(ChildEnv(role, cfg))["MAKTABA_DATA_DIR"]; got != cfg.Server.DataDir {
+			t.Errorf("%s: MAKTABA_DATA_DIR = %q, want %s", role, got, cfg.Server.DataDir)
+		}
+	}
+	t.Setenv("MAKTABA_DATA_DIR", "/own/data")
+	if v, ok := envMap(ChildEnv(RoleAPI, cfg))["MAKTABA_DATA_DIR"]; ok {
+		t.Fatalf("overrode the operator's data dir with %q", v)
+	}
+}

@@ -52,6 +52,10 @@ Videos have different lengths. If the long ones are done first, the hours go fas
 
 Add a machine with a GPU that serves **Transcribe**, or change the **GPU** pool on the Transcribe queue's page. See [Processing](/help/processing#pools).
 
+### Why does my Windows or Linux machine not transcribe? {#faq-windows}
+
+While the second listen is on, transcription is left to the machines that run it (the Mac), so every transcript gets it. To let a Windows or Linux machine transcribe too, turn on **Transcribe without the second listen** in [Settings, Transcription](/help/rules#transcription): its transcripts keep Whisper's words, and a machine that runs the second listen gives them theirs later. A machine whose own settings leave transcription out (its stage list) never transcribes.
+
 ### Why is a video transcribed but not searchable? {#faq-not-searchable}
 
 **Search index** runs after **Transcribe**. Check its counters under **Stages**: the video may still be waiting there, or have failed.
