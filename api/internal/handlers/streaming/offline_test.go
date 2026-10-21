@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -36,11 +37,13 @@ type fakeOffline struct {
 	failed []error
 	videos map[string]catalogVideo
 	back   []func()
+	ledger string // the ledger's file ("": in memory)
 }
 
 func (f *fakeOffline) WhenDBBack(fn func()) { f.mu.Lock(); f.back = append(f.back, fn); f.mu.Unlock() }
 
-func (f *fakeOffline) DBDown() bool { f.mu.Lock(); defer f.mu.Unlock(); return f.down }
+func (f *fakeOffline) DBDown() bool       { f.mu.Lock(); defer f.mu.Unlock(); return f.down }
+func (f *fakeOffline) LedgerPath() string { return f.ledger }
 func (f *fakeOffline) DBFailed(err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -286,8 +289,8 @@ func TestOfflineSessionsAreWrittenBackWhenTheDatabaseAnswers(t *testing.T) {
 	if c, ok := rows[closed2]; !ok || !c {
 		t.Fatalf("the closed session: %v %v", ok, c)
 	}
-	if len(hd.ledger.unwritten()) != 0 {
-		t.Fatalf("still unwritten: %v", hd.ledger.unwritten())
+	if p := hd.led().pending(); len(p) != 0 {
+		t.Fatalf("still unwritten: %v", p)
 	}
 	// again: nothing written twice (the ids are there)
 	hd.Reconcile(context.Background())
@@ -302,5 +305,83 @@ func TestOfflineAVideoTheStreamingRoleLacksIsUnavailable(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &p)
 	if rec.Code != http.StatusServiceUnavailable || p.Code != "video_unavailable_offline" {
 		t.Fatalf("a video the streaming role does not know, offline: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func sessionsDB(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec(`CREATE TABLE streaming_sessions (id TEXT PRIMARY KEY, user_id TEXT, video_id TEXT,
+		client_profile TEXT, mode TEXT, audio_track_id TEXT, subtitle_lang TEXT, start_sec REAL,
+		max_bitrate_kbps INTEGER, burn_subs BOOLEAN, opened_at TIMESTAMP, last_seen_at TIMESTAMP, closed_at TIMESTAMP)`); err != nil {
+		t.Fatal(err)
+	}
+	return db
+}
+
+// The sessions opened with the home's database down are kept on disk: a restart of this
+// API still writes them back when the database answers.
+func TestOfflineSessionsOutliveARestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "stream-sessions.json")
+	off := &fakeOffline{down: true, ledger: path, videos: map[string]catalogVideo{vHere: {lib: "lib1", dur: 1800}}}
+	before := &Handler{DB: deadDB(), Service: &fakeService{}, Offline: off}
+	r := chi.NewRouter()
+	before.Mount(r)
+	id, _ := open(t, r, as("u-amal", "lib1"), vHere)
+	// this API starts again, the database answers
+	db := sessionsDB(t)
+	after := &Handler{DB: db, Service: &fakeService{}, Offline: &fakeOffline{ledger: path}}
+	after.Reconcile(context.Background())
+	var n int
+	_ = db.QueryRow(`SELECT count(*) FROM streaming_sessions WHERE id = ? AND user_id = 'u-amal'`, id).Scan(&n)
+	if n != 1 {
+		t.Fatalf("the session opened before the restart: %d rows", n)
+	}
+}
+
+// A session the database has, closed with the database down: its closing is written
+// when the database answers.
+func TestAClosingWithTheDatabaseDownIsWrittenBack(t *testing.T) {
+	off := &fakeOffline{down: true, videos: map[string]catalogVideo{vHere: {lib: "lib1", dur: 1800}}}
+	hd := &Handler{DB: deadDB(), Service: &fakeService{}, Offline: off}
+	r := chi.NewRouter()
+	hd.Mount(r)
+	amal := as("u-amal", "lib1")
+	id, _ := open(t, r, amal, vHere)
+	// the database answers: the row is written, the session goes on
+	db := sessionsDB(t)
+	hd.DB = db
+	off.mu.Lock()
+	off.down = false
+	off.mu.Unlock()
+	hd.Reconcile(context.Background())
+	var rows int
+	_ = db.QueryRow(`SELECT count(*) FROM streaming_sessions WHERE id = ? AND closed_at IS NULL`, id).Scan(&rows)
+	if rows != 1 {
+		t.Fatalf("the session's row: %d", rows)
+	}
+	// closed with the database down again
+	off.mu.Lock()
+	off.down = true
+	off.mu.Unlock()
+	if rec := call(r, amal, http.MethodDelete, "/api/stream/sessions/"+id, ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("close with the database down: %d", rec.Code)
+	}
+	off.mu.Lock()
+	off.down = false
+	off.mu.Unlock()
+	hd.Reconcile(context.Background())
+	var closed bool
+	_ = db.QueryRow(`SELECT closed_at IS NOT NULL FROM streaming_sessions WHERE id = ?`, id).Scan(&closed)
+	if !closed {
+		t.Fatal("the closing made with the database down was not written back")
+	}
+	if p := hd.led().pending(); len(p) != 0 {
+		t.Fatalf("still pending: %v", p)
 	}
 }

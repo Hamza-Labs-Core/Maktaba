@@ -121,6 +121,9 @@ type Offline interface {
 	Video(id string) (libraryID string, durationSec float64, ok bool)
 	// WhenDBBack calls fn each time the home's database answers again.
 	WhenDBBack(fn func())
+	// LedgerPath is where the sessions it opened are kept until the database has them
+	// ("": in memory only).
+	LedgerPath() string
 }
 
 // ProblemUnavailableOffline is the problem of a video a node cannot play while
@@ -149,6 +152,7 @@ type Handler struct {
 	debounce     *sessionDebouncer
 	debounceOnce sync.Once
 	ledger       ledger
+	ledgerOnce   sync.Once
 }
 
 // dbCtx bounds a database call on a node (Offline set); the home waits as before.
@@ -184,34 +188,55 @@ func streamingNotFound(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "not-found")
 }
 
-// Reconcile writes the rows of the sessions this node opened (or opened and closed)
-// while the home's database did not answer, as they were (an id the database already
-// has is left as it is). It stops at the first failure: the next time the database
-// answers again tries the rest.
+// Reconcile writes what the database lacks of the sessions this node opened while the
+// home's database did not answer: their rows, as they were (an id the database already
+// has is left as it is), and the closing of those it had and this node closed then. It
+// stops at the first failure: the next time the database answers again tries the rest.
 func (h *Handler) Reconcile(ctx context.Context) {
 	if h.Offline == nil || h.DB == nil {
 		return
 	}
-	for id, e := range h.ledger.unwritten() {
-		var closed any
-		if !e.closed.IsZero() {
-			closed = e.closed
-		}
+	for id, e := range h.led().pending() {
 		qctx, cancel := context.WithTimeout(ctx, offlineDBTimeout)
-		_, err := h.DB.ExecContext(qctx, `
-		INSERT INTO streaming_sessions
-		(id, user_id, video_id, client_profile, mode, audio_track_id, subtitle_lang,
-		 start_sec, max_bitrate_kbps, burn_subs, opened_at, last_seen_at, closed_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12)
-		ON CONFLICT (id) DO NOTHING`, id, e.owner, e.video, e.row.ClientProfile, e.mode,
-			e.row.AudioTrack, e.row.SubtitleTrack, e.row.StartSec, e.row.MaxBitrateKbps, e.row.BurnSubs,
-			e.opened, closed)
+		var err error
+		if e.Written {
+			// the row is there: its closing is not
+			_, err = h.DB.ExecContext(qctx, `UPDATE streaming_sessions SET closed_at = $1
+			    WHERE id = $2 AND closed_at IS NULL`, e.Closed, id)
+		} else {
+			var closed any
+			if !e.Closed.IsZero() {
+				closed = e.Closed
+			}
+			_, err = h.DB.ExecContext(qctx, `
+			INSERT INTO streaming_sessions
+			(id, user_id, video_id, client_profile, mode, audio_track_id, subtitle_lang,
+			 start_sec, max_bitrate_kbps, burn_subs, opened_at, last_seen_at, closed_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12)
+			ON CONFLICT (id) DO NOTHING`, id, e.Owner, e.Video, e.Row.ClientProfile, e.Mode,
+				e.Row.AudioTrack, e.Row.SubtitleTrack, e.Row.StartSec, e.Row.MaxBitrateKbps, e.Row.BurnSubs,
+				e.Opened, closed)
+		}
 		cancel()
 		if err != nil {
 			return
 		}
-		h.ledger.wrote(id)
+		if e.Written {
+			h.led().closeWritten(id)
+		} else {
+			h.led().wrote(id)
+		}
 	}
+}
+
+// led is the node's ledger, kept where the node says (Offline.LedgerPath).
+func (h *Handler) led() *ledger {
+	h.ledgerOnce.Do(func() {
+		if h.Offline != nil {
+			h.ledger.path = h.Offline.LedgerPath()
+		}
+	})
+	return &h.ledger
 }
 
 // video resolves a video's library and length: the database, or on a node whose
@@ -369,7 +394,7 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 
 	// A node keeps every session's owner itself: with the home's database
 	// down that is the only record (the row is not written meanwhile).
-	if h.Offline != nil && !h.ledger.open(resp.SessionID, p.UserID, req, resp.Mode, h.now()) {
+	if h.Offline != nil && !h.led().open(resp.SessionID, p.UserID, req, resp.Mode, h.now()) {
 		httperror.Write(w, r, httperror.Internal("persist session: session id conflict"))
 		return
 	}
@@ -400,11 +425,11 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 			if n, nerr := res.RowsAffected(); nerr == nil && n == 0 {
 				// The id is another user's session: never hand it (or a URL
 				// signed for it) to this caller.
-				h.ledger.drop(resp.SessionID)
+				h.led().drop(resp.SessionID)
 				httperror.Write(w, r, httperror.Internal("persist session: session id conflict"))
 				return
 			}
-			h.ledger.wrote(resp.SessionID)
+			h.led().wrote(resp.SessionID)
 		}
 	}
 
@@ -454,15 +479,15 @@ func (h *Handler) GetSession(w http.ResponseWriter, r *http.Request) {
 		}
 		// not asked, no row (opened here while the database was down), or a
 		// failure: the node's record answers
-		e, ok := h.ledger.get(id)
+		e, ok := h.led().get(id)
 		if !ok {
 			httperror.Write(w, r, httperror.NotFound("session "+id))
 			return
 		}
-		sess.ID, sess.UserID, sess.VideoID, sess.Mode = id, e.owner, e.video, e.mode
-		sess.OpenedAt, sess.LastSeenAt = e.opened, e.opened
-		if !e.closed.IsZero() {
-			closedAt = sql.NullTime{Time: e.closed, Valid: true}
+		sess.ID, sess.UserID, sess.VideoID, sess.Mode = id, e.Owner, e.Video, e.Mode
+		sess.OpenedAt, sess.LastSeenAt = e.Opened, e.Opened
+		if !e.Closed.IsZero() {
+			closedAt = sql.NullTime{Time: e.Closed, Valid: true}
 		}
 	}
 	if !mayActOn(p, sess.UserID) {
@@ -504,12 +529,12 @@ func (h *Handler) CloseSession(w http.ResponseWriter, r *http.Request) {
 		}
 		// a session opened here while the database was down has no row: the
 		// node's record names its owner (one already closed is no more)
-		e, ok := h.ledger.get(id)
-		if !ok || !e.closed.IsZero() {
+		e, ok := h.led().get(id)
+		if !ok || !e.Closed.IsZero() {
 			httperror.Write(w, r, httperror.NotFound("session "+id))
 			return
 		}
-		owner = e.owner
+		owner = e.Owner
 	}
 	if !mayActOn(p, owner) {
 		httperror.Write(w, r, httperror.NotFound("session "+id))
@@ -518,7 +543,7 @@ func (h *Handler) CloseSession(w http.ResponseWriter, r *http.Request) {
 	if h.Service != nil {
 		_ = h.Service.Close(r.Context(), id) // best-effort
 	}
-	h.ledger.close(id, h.now())
+	h.led().close(id, h.now())
 	if h.dbUp() {
 		qctx, cancel := h.dbCtx(r.Context())
 		_, err := h.DB.ExecContext(qctx, `
@@ -528,6 +553,9 @@ func (h *Handler) CloseSession(w http.ResponseWriter, r *http.Request) {
 		if err != nil && !h.failed(r.Context(), err) {
 			httperror.Write(w, r, httperror.Internal("close session"))
 			return
+		}
+		if err == nil {
+			h.led().closeWritten(id)
 		}
 	}
 	common.WriteNoContent(w)

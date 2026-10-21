@@ -142,7 +142,16 @@ func (rt *nodeRuntime) waitBG(d time.Duration) {
 // (streaming.Offline, vodfallback.Catalog): the copy answers for the videos.
 type nodeOffline struct{ dbs nodeDBs }
 
-func (o nodeOffline) DBDown() bool   { return o.dbs.pair.Home.Down() }
+func (o nodeOffline) DBDown() bool { return o.dbs.pair.Home.Down() }
+
+// LedgerPath keeps the sessions this machine opened, until the home's database has
+// them, in its state directory.
+func (o nodeOffline) LedgerPath() string {
+	if dir := nodeStateDir(); dir != "" {
+		return filepath.Join(dir, "stream-sessions.json")
+	}
+	return ""
+}
 func (o nodeOffline) DBFailed(error) { o.dbs.pair.Recheck() }
 
 // WhenDBBack calls fn each time the home's database answers again.
