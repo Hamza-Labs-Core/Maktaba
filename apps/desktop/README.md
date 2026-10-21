@@ -84,11 +84,15 @@ CI — so the workflow builds `web/dist` itself (install → design tokens →
 `--config {"build":{"beforeBuildCommand":""}}` so `tauri build` just
 bundles the already-built frontend.
 
-**Signing is deferred.** These bundles are unsigned. When certificates are
-provisioned, wire them into `tauri-action` via the secrets documented at
-the top of the workflow (`APPLE_*` for Developer ID + notarisation,
-`WINDOWS_CERTIFICATE*` for Authenticode, `TAURI_SIGNING_PRIVATE_KEY*` for
-the auto-updater).
+**Updates are signed; the installers are not yet.** The updater key is
+set up: `TAURI_SIGNING_PRIVATE_KEY*` sign each updater bundle, and the
+public key, the repository variable `TAURI_UPDATER_PUBKEY`, is stamped
+into `tauri.conf.json` at build time (the committed file keeps the
+`REPLACE_WITH_PUBKEY` placeholder; [auto-update](../../docs/auto-update.md)).
+OS code signing is still deferred: when certificates are provisioned,
+wire them in via the secrets documented at the top of the workflow
+(`APPLE_*` for Developer ID + notarisation, `WINDOWS_CERTIFICATE*` for
+Authenticode).
 
 Build the same installers locally for the host OS with `make
 package-desktop` (= `scripts/build.sh`).

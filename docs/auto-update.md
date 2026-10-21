@@ -68,18 +68,17 @@ pnpm exec tauri signer generate -w ~/.tauri/maktaba.key
 #    and its passphrase as:   TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 ```
 
-With the secret set, every desktop build makes its updater bundles with
-their signatures (`.sig`), and the Release's `latest.json` (the updater
-feed) lists them. The private key without the variable fails the build,
-since no app could verify its updates. A fork **without** the secrets
-still produces unsigned installers and no `latest.json` — the build stays
-green.
+`desktop-release.yml` reads those secrets so `tauri-action` signs each
+bundle and emits `latest.json` (the updater feed) onto the Release. A
+fork **without** the secrets still produces unsigned installers and skips
+`latest.json` — the build stays green.
 
-An app checks each update against the public key it was built with. So
-apps update themselves from the first tagged release built with the key
-on; an app installed from an earlier release carries the placeholder,
-can verify no update, and moves to a signed release by one download by
-hand.
+The private key without the variable fails the build, since no app could
+verify its updates. An app checks each update against the public key it
+was built with. So apps update themselves from the first tagged release
+built with the key on; an app installed from an earlier release carries
+the placeholder, can verify no update, and moves to a signed release by
+one download by hand.
 
 **Key rotation:** build one release with the new public key in
 `TAURI_UPDATER_PUBKEY` while the secrets still hold the old private key.

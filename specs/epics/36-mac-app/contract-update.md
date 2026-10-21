@@ -70,7 +70,5 @@ taken in step 1 (a `maktaba-server` restore command, a follow-up), then starting
 
 ## Open for the owner
 
-- The Tauri updater key pair: `plugins.updater.pubkey` in `tauri.conf.json` is still a
-  placeholder; the private key goes into `TAURI_SIGNING_PRIVATE_KEY(_PASSWORD)`.
 - The Developer ID (README of `tools/release/mac-app`): without it an update cannot keep the
   login-item approval across versions reliably, and Gatekeeper blocks the downloaded app.
