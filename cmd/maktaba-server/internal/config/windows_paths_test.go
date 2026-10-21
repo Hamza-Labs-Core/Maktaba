@@ -146,6 +146,38 @@ func TestMigrateWindowsNodeConfigStaysOne(t *testing.T) {
 	}
 }
 
+// uninstall --purge's list (WindowsOriginals): the originals the copy keeps, and its
+// lock and record; never node.json; none with $MAKTABA_CONFIG. Once they and their
+// copies are gone, the next command copies nothing back.
+func TestWindowsOriginals(t *testing.T) {
+	t.Parallel()
+	old, cur, env := winLayout(t)
+	plant(t, old.Config, map[string]string{"server.toml": "[server]\n", "secrets.key": "S", "postgres-maktaba.password": "P", "node.json": "{}"})
+	migrateWin(t, osMover, old, cur, env)
+	getenv := func(k string) string { return env[k] }
+	got := windowsOriginals(old, cur, getenv)
+	want := []string{
+		filepath.Join(old.Config, "server.toml"), filepath.Join(old.Keys, "secrets.key"),
+		filepath.Join(old.Keys, "stream-signing.key"), filepath.Join(old.Keys, "postgres-maktaba.password"),
+		filepath.Join(cur.Config, moveLockFile), filepath.Join(cur.Config, moveReported),
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("originals:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	for _, p := range append(got, filepath.Join(cur.Config, "server.toml"), cur.Keys) {
+		if err := os.RemoveAll(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if lines := migrateWin(t, osMover, old, cur, env); len(lines) != 0 || exists(filepath.Join(cur.Keys, "secrets.key")) {
+		t.Fatalf("after the purge nothing is copied back (%q)", lines)
+	}
+	env["MAKTABA_CONFIG"] = filepath.Join(t.TempDir(), "server.toml")
+	if got := windowsOriginals(old, cur, getenv); got != nil {
+		t.Fatalf("with $MAKTABA_CONFIG the roaming profile's are not this install's: %q", got)
+	}
+}
+
 // A copy is never replaced: a new place that holds something else stays, and so
 // does the original, with a line that says which one Maktaba uses.
 func TestMigrateWindowsNeverReplaces(t *testing.T) {
@@ -336,6 +368,40 @@ func TestMigrateMacAcrossVolumes(t *testing.T) {
 	}
 	if exists(old.Data) || exists(filepath.Join(old.Config, "secrets.key")) {
 		t.Fatal("the old data folder and key must be gone")
+	}
+}
+
+// A node config from before in a profile that roams is found (and warned about at
+// every start); one that stays on this PC, one in %LOCALAPPDATA% and one named by
+// $MAKTABA_NODE_CONFIG are not.
+func TestRoamingNodeConfig(t *testing.T) {
+	t.Parallel()
+	old, cur, env := winLayout(t)
+	getenv := func(k string) string { return env[k] }
+	base := filepath.Dir(filepath.Dir(cur.Config))
+	roams := func(string) bool { return true }
+	stays := func(string) bool { return false }
+	if p := roamingNodeConfig(getenv, base, roams); p != "" {
+		t.Fatalf("no node config: %q", p)
+	}
+	writeAt(t, filepath.Join(cur.Config, "node.json"), "{}")
+	if p := roamingNodeConfig(getenv, base, roams); p != "" {
+		t.Fatalf("a node config in %%LOCALAPPDATA%% never roams: %q", p)
+	}
+	original := filepath.Join(old.Config, "node.json")
+	writeAt(t, original, "{}")
+	if p := roamingNodeConfig(getenv, base, roams); p != original {
+		t.Fatalf("from before, on a roaming profile: %q, want %s", p, original)
+	}
+	if p := roamingNodeConfig(getenv, base, stays); p != "" {
+		t.Fatalf("a profile that stays on this PC: %q", p)
+	}
+	env["MAKTABA_NODE_CONFIG"] = filepath.Join(t.TempDir(), "node.json")
+	if p := roamingNodeConfig(getenv, base, roams); p != "" {
+		t.Fatalf("with $MAKTABA_NODE_CONFIG: %q", p)
+	}
+	if w := RoamingNodeWarning(original); !strings.Contains(w, original) || !strings.Contains(w, "maktaba-pipeline join") {
+		t.Fatalf("the warning must name the file and the fix: %s", w)
 	}
 }
 

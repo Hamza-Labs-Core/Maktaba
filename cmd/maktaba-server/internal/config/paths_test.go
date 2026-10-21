@@ -77,24 +77,73 @@ func TestStateDir(t *testing.T) {
 // Epic 38 story 38.1: a Windows install from before keeps its models, caches and
 // Postgres in its default data folder, where its older versions (and its own
 // Postgres, maybe running) use them: nothing moves them, and outside the app that
-// folder stays the state root. The app's state root is always %LOCALAPPDATA%\Maktaba.
+// folder stays the state root. The first command decides and records it
+// (recordStateRoot, state-root.json); every later resolution reads the record, so
+// the state root survives a restart whatever the folders do. Inside the app the
+// state root is always %LOCALAPPDATA%\Maktaba.
 func TestStateDirWindowsInstallFromBefore(t *testing.T) {
 	t.Parallel()
 	data := filepath.Join(t.TempDir(), "Maktaba", "data")
 	root := filepath.Dir(data)
-	writeAt(t, filepath.Join(data, "maktaba.db"), "DB")
-	if got := stateDir("windows", data, data, false); got != root {
-		t.Fatalf("no state in data yet: %s, want the new root %s", got, root)
-	}
 	writeAt(t, filepath.Join(data, "chroma", "chroma.sqlite3"), "I")
-	if got := stateDir("windows", data, data, false); got != data {
-		t.Fatalf("an install from before: %s, want its data folder %s", got, data)
-	}
 	if got := stateDir("windows", data, data, true); got != root {
 		t.Fatalf("inside the app: %s, want %s", got, root)
 	}
+	if got := stateDir("windows", data, data, false); got != data || exists(filepath.Join(root, stateRootRecord)) {
+		t.Fatalf("before the record the folders decide, and reading writes nothing: %s", got)
+	}
+	if err := recordStateRoot(root, data); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(readAt(t, filepath.Join(root, stateRootRecord)), `"data"`) {
+		t.Fatal("the decision must be recorded")
+	}
+	// a restart after the state folders went (or moved by hand): the record decides
+	if err := os.RemoveAll(filepath.Join(data, "chroma")); err != nil {
+		t.Fatal(err)
+	}
+	if err := recordStateRoot(root, data); err != nil {
+		t.Fatal(err)
+	}
+	if got := stateDir("windows", data, data, false); got != data {
+		t.Fatalf("after the restart: %s, want the recorded %s", got, data)
+	}
 	if got := stateDir("darwin", data, data, false); got != root {
 		t.Fatalf("a Mac moves its own (Epic 36): %s, want %s", got, root)
+	}
+}
+
+// A new install (no state in data\) decides on the root beside it, once: an older
+// version run later that makes data\models or data\postgres never moves the state
+// root (the bundled Postgres would start an empty cluster in data\postgres). With no
+// data\ yet there is nothing to decide on and nothing is written.
+func TestStateDirDecidedOnce(t *testing.T) {
+	t.Parallel()
+	data := filepath.Join(t.TempDir(), "Maktaba", "data")
+	root := filepath.Dir(data)
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := recordStateRoot(root, data); err != nil || exists(filepath.Join(root, stateRootRecord)) {
+		t.Fatalf("no data folder yet: %v, record made: %v", err, exists(filepath.Join(root, stateRootRecord)))
+	}
+	writeAt(t, filepath.Join(data, "maktaba.db"), "DB")
+	if err := recordStateRoot(root, data); err != nil {
+		t.Fatal(err)
+	}
+	if got := stateDir("windows", data, data, false); got != root {
+		t.Fatalf("no state in data: %s, want the new root %s", got, root)
+	}
+	writeAt(t, filepath.Join(data, "postgres", "PG_VERSION"), "16")
+	writeAt(t, filepath.Join(data, "models", "m"), "W")
+	if err := recordStateRoot(root, data); err != nil {
+		t.Fatal(err)
+	}
+	if got := stateDir("windows", data, data, false); got != root {
+		t.Fatalf("a folder that appeared later moved the state root to %s", got)
+	}
+	if !strings.Contains(readAt(t, filepath.Join(root, stateRootRecord)), `"root"`) {
+		t.Fatal("the record is never replaced")
 	}
 }
 

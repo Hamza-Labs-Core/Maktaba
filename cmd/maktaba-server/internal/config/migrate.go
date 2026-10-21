@@ -214,11 +214,20 @@ func MigrateWindowsDirs() ([]string, error) {
 	if runtime.GOOS != "windows" {
 		return nil, nil
 	}
-	return migrateWindows(osMover, legacyWindowsDirs(os.Getenv, home()), LocalDirs(), os.Getenv, moveLockWait)
+	cur := LocalDirs()
+	lines, err := migrateWindows(osMover, legacyWindowsDirs(os.Getenv, home()), cur, os.Getenv, moveLockWait)
+	// the state root, decided once (Config.StateDir); a start that cannot write the
+	// record leaves the folders to decide, as before it
+	_ = recordStateRoot(filepath.Dir(filepath.Clean(cur.Data)), cur.Data)
+	return lines, err
 }
 
-// piece is one file of a Windows install that is copied into the new place.
-type piece struct{ from, to string }
+// piece is one file of a Windows install that is copied into the new place; a
+// private one (a key, a password) is limited to this user.
+type piece struct {
+	from, to string
+	private  bool
+}
 
 // windowsPieces are what a Windows install from before Epic 38 copies, in order:
 // server.toml, the keys (never node.json: MigrateWindowsDirs).
@@ -226,18 +235,45 @@ func windowsPieces(old, cur Dirs, getenv func(string) string) ([]piece, error) {
 	var ps []piece
 	if strings.TrimSpace(getenv("MAKTABA_CONFIG")) == "" {
 		ps = append(ps,
-			piece{filepath.Join(old.Config, "server.toml"), filepath.Join(cur.Config, "server.toml")},
-			piece{filepath.Join(old.Keys, "secrets.key"), filepath.Join(cur.Keys, "secrets.key")},
-			piece{filepath.Join(old.Keys, "stream-signing.key"), filepath.Join(cur.Keys, "stream-signing.key")})
+			piece{filepath.Join(old.Config, "server.toml"), filepath.Join(cur.Config, "server.toml"), false},
+			piece{filepath.Join(old.Keys, "secrets.key"), filepath.Join(cur.Keys, "secrets.key"), true},
+			piece{filepath.Join(old.Keys, "stream-signing.key"), filepath.Join(cur.Keys, "stream-signing.key"), true})
 		passwords, err := filepath.Glob(filepath.Join(old.Keys, "postgres-*.password"))
 		if err != nil {
 			return nil, err
 		}
 		for _, p := range passwords {
-			ps = append(ps, piece{p, filepath.Join(cur.Keys, filepath.Base(p))})
+			ps = append(ps, piece{p, filepath.Join(cur.Keys, filepath.Base(p)), true})
 		}
 	}
 	return ps, nil
+}
+
+// WindowsOriginals are the files of a Windows install from before Epic 38 that
+// MigrateWindowsDirs copied and keeps (server.toml and the keys in
+// %APPDATA%\Maktaba), and the copy's own lock and record: uninstall --purge removes
+// them with their copies, or the next install's first command would copy them back.
+// None off Windows, with $MAKTABA_CONFIG set (the roaming profile's are not that
+// install's), or inside the app's payload (they are an older install's there; exe is
+// the running maktaba-server). node.json is not among them: it is the machine's
+// identity, which uninstall keeps on every OS.
+func WindowsOriginals(exe string) []string {
+	if runtime.GOOS != "windows" || InAppPayload(exe) {
+		return nil
+	}
+	return windowsOriginals(legacyWindowsDirs(os.Getenv, home()), LocalDirs(), os.Getenv)
+}
+
+func windowsOriginals(old, cur Dirs, getenv func(string) string) []string {
+	pieces, err := windowsPieces(old, cur, getenv)
+	if err != nil || len(pieces) == 0 {
+		return nil
+	}
+	var out []string
+	for _, p := range pieces {
+		out = append(out, p.from)
+	}
+	return append(out, filepath.Join(cur.Config, moveLockFile), filepath.Join(cur.Config, moveReported))
 }
 
 // keptLine says that a piece was not copied: its new place holds something else.
@@ -283,14 +319,14 @@ func migrateWindows(m mover, old, cur Dirs, getenv func(string) string, wait tim
 	var lines []string
 	var copyErr error
 	for _, p := range pieces {
-		copied, err := m.copy(p.from, p.to)
-		if err != nil && !errors.Is(err, errKept) {
+		copied, err := m.copy(p.from, p.to, p.private)
+		if err != nil && !errors.Is(err, errKept) && !errors.Is(err, errACL) {
 			copyErr = fmt.Errorf("copy %s to %s: %w", p.from, p.to, err)
 			break
 		}
 		looked[p.from] = true
 		switch {
-		case err != nil:
+		case errors.Is(err, errKept):
 			line := keptLine(p)
 			if said[p.from] != line {
 				lines = append(lines, line)
@@ -298,6 +334,9 @@ func migrateWindows(m mover, old, cur Dirs, getenv func(string) string, wait tim
 			kept[p.from] = line
 		case copied:
 			lines = append(lines, "Copied "+p.from+" to "+p.to+" (the original stays for older versions)")
+			if err != nil { // errACL: the copy stands with its folder's access
+				lines = append(lines, "Could not limit "+p.to+" to this user: "+err.Error())
+			}
 		}
 	}
 	// what a start that stopped early did not look at stays as it was said
@@ -312,8 +351,9 @@ func migrateWindows(m mover, old, cur Dirs, getenv func(string) string, wait tim
 	return lines, copyErr
 }
 
-// lockMove takes the move lock in root (LockFileEx on Windows, flock elsewhere),
-// waiting up to wait for another start that holds it; release gives it back.
+// lockMove takes the lock in root that the Mac's move and Windows' copy hold
+// (LockFileEx on Windows, flock elsewhere), waiting up to wait for another start
+// that holds it; release gives it back.
 func lockMove(root string, wait time.Duration) (release func(), err error) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, err
@@ -329,8 +369,8 @@ func lockMove(root string, wait time.Duration) (release func(), err error) {
 			return nil, fmt.Errorf("lock %s: %w", path, err)
 		}
 		if !time.Now().Before(deadline) {
-			return nil, fmt.Errorf("another maktaba-server has been moving this install for %s (it holds %s): "+
-				"run this again when it is done", wait, path)
+			return nil, fmt.Errorf("another maktaba-server has been bringing this install into its new place for %s "+
+				"(it holds %s): run this again when it is done", wait, path)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}

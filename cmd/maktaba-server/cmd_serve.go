@@ -93,6 +93,12 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	if err := supervisor.CheckNodeConfig(cfg); err != nil {
 		return err
 	}
+	// Epic 38 story 38.1: a node config from before in a Windows profile that roams
+	// is another PC's too; said at every start (never a refusal: which PC is the real
+	// node cannot be told).
+	if p := config.RoamingNodeConfig(); p != "" {
+		fmt.Fprintln(os.Stderr, "[serve] warning:", config.RoamingNodeWarning(p))
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	// Under maktaba-launcher (Epic 35, story 35.2): every role starts from the

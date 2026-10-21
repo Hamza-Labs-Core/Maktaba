@@ -25,6 +25,15 @@ function Get-NodeConfigPath {
     return (Join-Path $env:LOCALAPPDATA 'Maktaba\node.json')
 }
 
+# Get-NodeConfigFiles: every node.json this machine has (both places on Windows, or
+# MAKTABA_NODE_CONFIG): to forget the home, all of them go, or the second would take
+# the first one's place.
+function Get-NodeConfigFiles {
+    if ($env:MAKTABA_NODE_CONFIG) { return @($env:MAKTABA_NODE_CONFIG) }
+    @((Join-Path $script:NodeConfDir 'node.json'), (Join-Path $env:LOCALAPPDATA 'Maktaba\node.json')) |
+        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
+}
+
 function Write-NodeStep {
     param([Parameter(Mandatory = $true)][string]$Message)
     Write-Host "==> $Message" -ForegroundColor Cyan

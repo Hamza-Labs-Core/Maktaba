@@ -22,13 +22,15 @@ const (
 )
 
 // mover moves (MigrateMacDirs) or copies (MigrateWindowsDirs) an install's files
-// into this platform's paths. rename is os.Rename; tests replace it to act out a
-// move between two volumes.
+// into this platform's paths. rename is os.Rename; place puts a finished copy at
+// its name and never replaces a file there (renameNoReplace). Tests replace them to
+// act out a move between two volumes and a cut.
 type mover struct {
 	rename func(from, to string) error
+	place  func(part, to string) error
 }
 
-var osMover = mover{rename: os.Rename}
+var osMover = mover{rename: os.Rename, place: renameNoReplace}
 
 // crossDevice reports a rename that failed because from and to are on different
 // volumes (a roaming profile on another drive or a server, a folder linked to
@@ -87,7 +89,7 @@ func (m mover) file(from, to string) (bool, error) {
 			return false, err
 		}
 	case info.Mode().IsRegular():
-		if err := m.copyVerified(from, to, info); err != nil {
+		if err := m.copyVerified(from, to, info, false); err != nil {
 			return false, err
 		}
 	default:
@@ -96,14 +98,19 @@ func (m mover) file(from, to string) (bool, error) {
 	return true, os.Remove(from)
 }
 
+// errACL: a private copy (a key) is in place, but its access could not be limited
+// to this user (a file system without ACLs); the copy stands, and the caller says so.
+var errACL = errors.New("could not limit it to this user")
+
 // copy copies one file to to and leaves from where it is (MigrateWindowsDirs: an
 // older version of the install, or another process, may still read it). It reports
 // whether it copied. A to with the same bytes is a copy made before; one with other
 // bytes is errKept (never replaced). A link is copied as the file it names. Like a
 // move between volumes, the copy is written beside to, flushed, compared with from
-// and renamed into place, so to is only ever whole and a copy cut short is made
-// again by the next start.
-func (m mover) copy(from, to string) (bool, error) {
+// and put in place without replacing anything, so to is only ever whole and a copy
+// cut short is made again by the next start. A private copy (a key or a password)
+// is limited to this user before it gets its name (restrictToUser).
+func (m mover) copy(from, to string, private bool) (bool, error) {
 	info, err := os.Stat(from)
 	if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
@@ -114,7 +121,7 @@ func (m mover) copy(from, to string) (bool, error) {
 	if !info.Mode().IsRegular() {
 		return false, fmt.Errorf("%s is not a file", from)
 	}
-	if _, err := os.Lstat(to); err == nil {
+	there := func() (bool, error) {
 		same, err := sameBytes(from, to)
 		if err != nil {
 			return false, err
@@ -123,18 +130,26 @@ func (m mover) copy(from, to string) (bool, error) {
 			return false, errKept
 		}
 		return false, nil
+	}
+	if _, err := os.Lstat(to); err == nil {
+		return there()
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return false, err
 	}
 	if err := os.MkdirAll(filepath.Dir(to), 0o700); err != nil {
 		return false, err
 	}
-	return true, m.copyVerified(from, to, info)
+	err = m.copyVerified(from, to, info, private)
+	if errors.Is(err, fs.ErrExist) { // another process put one there meanwhile
+		return there()
+	}
+	return err == nil || errors.Is(err, errACL), err
 }
 
 // copyVerified copies from into to: into to+partSuffix, flushed to disk, compared
-// with from, then renamed to to (on to's own volume).
-func (m mover) copyVerified(from, to string, info fs.FileInfo) error {
+// with from (and, private, limited to this user), then put at to on to's own volume
+// without replacing a file there (place).
+func (m mover) copyVerified(from, to string, info fs.FileInfo, private bool) error {
 	part := to + partSuffix
 	err := copyFlushed(from, part, info)
 	if err == nil {
@@ -143,15 +158,21 @@ func (m mover) copyVerified(from, to string, info fs.FileInfo) error {
 			err = fmt.Errorf("the copy of %s differs from it", from)
 		}
 	}
+	var aclErr error
+	if err == nil && private {
+		if e := restrictToUser(part); e != nil {
+			aclErr = fmt.Errorf("%s: %w (%v)", to, errACL, e)
+		}
+	}
 	if err == nil {
-		err = m.rename(part, to)
+		err = m.place(part, to)
 	}
 	if err != nil {
 		_ = os.Remove(part)
 		return err
 	}
 	syncDir(filepath.Dir(to))
-	return nil
+	return aclErr
 }
 
 // dir moves a folder to to and reports whether it moved. to must not exist yet (an
