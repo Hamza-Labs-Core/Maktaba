@@ -102,7 +102,7 @@ func pendingOf(t *testing.T, e *setupEnv) setupPending {
 }
 
 func TestSetupCheck(t *testing.T) {
-	newSetupEnv(t)
+	e := newSetupEnv(t)
 	prevFacts, prevGPUs := hostFacts, hostGPUs
 	t.Cleanup(func() { hostFacts, hostGPUs = prevFacts, prevGPUs })
 	hostGPUs = func() []hostinfo.GPU { return []hostinfo.GPU{{Name: "NVIDIA GeForce RTX 2080 SUPER", MemoryMB: 8192}} }
@@ -171,6 +171,36 @@ func TestSetupCheck(t *testing.T) {
 	_, cpu := codes("warnings")["transcribe_cpu"]
 	if goos, _ := goosArch(); cpu != (goos != "darwin") {
 		t.Fatalf("transcription on the CPU said: %v (%s)", cpu, goos)
+	}
+
+	// whether the second listen runs here (refine is on by default), and why not
+	sl, _ := d["second_listen"].(map[string]any)
+	goos, arch := goosArch()
+	if want := goos == "darwin" && arch == "arm64"; sl == nil || sl["runs"] != want {
+		t.Fatalf("second listen with no GPU: %v", sl)
+	}
+	if goos != "darwin" {
+		if _, said := codes("warnings")["second_listen_no_gpu"]; !said || sl["code"] != "second_listen_no_gpu" {
+			t.Fatalf("no second listen without a GPU not said: %v", d["warnings"])
+		}
+	}
+	hostGPUs = func() []hostinfo.GPU { return []hostinfo.GPU{{Name: "NVIDIA GeForce RTX 2080 SUPER", MemoryMB: 8192}} }
+	_, _, ev = runStep(t, "check", map[string]any{})
+	d = data(t, ev)
+	sl, _ = d["second_listen"].(map[string]any)
+	if goos == "windows" {
+		small := codes("warnings")["second_listen_gpu_small"]
+		if sl["runs"] != false || small == nil || small["need_bytes"] != float64(uint64(secondListenMinMiBWindows)<<20) {
+			t.Fatalf("an 8 GB GPU on Windows: %v %v", sl, d["warnings"])
+		}
+	}
+	// refine off: nothing to say about it
+	if err := os.WriteFile(e.config, []byte("[server]\ndata_dir = '"+e.state+"'\n[transcription]\nrefine = 'off'\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, ev = runStep(t, "check", map[string]any{})
+	if d = data(t, ev); d["second_listen"] != nil {
+		t.Fatalf("refine off: %v", d["second_listen"])
 	}
 
 	// what a platform adds (Epic 39: the Linux checks)
@@ -394,6 +424,12 @@ func TestSetupModels(t *testing.T) {
 	spawnsPrograms(t)
 	e := newSetupEnv(t)
 	fakeHF(t)
+	prevGPUs := hostGPUs
+	t.Cleanup(func() { hostGPUs = prevGPUs })
+	// a GPU the second listen runs on (Windows and Linux; a Mac runs it on MLX)
+	hostGPUs = func() []hostinfo.GPU {
+		return []hostinfo.GPU{{Name: "NVIDIA RTX A6000", MemoryMB: 49140, ComputeCap: "8.6", Driver: "580.65.06"}}
+	}
 	for _, c := range []struct{ token, code string }{
 		{"hf_BAD", "hf_token_invalid"}, {"hf_NOTERMS", "hf_gated"}, {"", "hf_token_empty"},
 	} {
@@ -456,6 +492,48 @@ func TestSetupModels(t *testing.T) {
 	if code, _, ev := runStep(t, "models", map[string]string{"action": "download"}); code != 1 || ev["code"] != "hf_gated" {
 		t.Fatalf("gated download = %d %v", code, ev)
 	}
+	t.Setenv("MAKTABA_TEST_FAKE_FAIL", "")
+
+	// a machine the second listen does not run on: no sign-in asked for its gated
+	// model, and not downloaded (Whisper's words are kept)
+	if goos, arch := goosArch(); goos == "darwin" && arch == "arm64" {
+		return
+	}
+	hostGPUs = func() []hostinfo.GPU {
+		return []hostinfo.GPU{{Name: "NVIDIA GeForce GTX 1080 Ti", MemoryMB: 11264, ComputeCap: "6.1", Driver: "581.57"}}
+	}
+	code, _, ev = runStep(t, "models", map[string]string{"source": "huggingface", "hf_token": ""})
+	if code != 0 {
+		t.Fatalf("no token where the second listen cannot run = %d %v", code, ev)
+	}
+	if list, _ := data(t, ev)["models"].([]any); len(list) != 0 {
+		t.Fatalf("models where the second listen cannot run: %v", list)
+	}
+	if code, _, ev := runStep(t, "models", map[string]string{"action": "download"}); code != 0 {
+		t.Fatalf("download = %d %v", code, ev)
+	}
+	calls = fakeCalls(t, e.fakeLog)
+	if args := strings.Join(calls[len(calls)-1].Args, " "); !strings.Contains(args, "--only whisper,embedder") {
+		t.Fatalf("download args = %s (not the second listen's model)", args)
+	}
+	// the NAS copy there: any model the home published will do (not the gated one)
+	other := filepath.Join(e.dir, "share2")
+	whisperRev := filepath.Join(other, "maktaba", "models", "Systran__faster-whisper-large-v3", "rev1")
+	if err := os.MkdirAll(whisperRev, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, ev := runStep(t, "models", map[string]string{"source": "nas", "path": other}); code != 1 || ev["code"] != "nas_missing" {
+		t.Fatalf("a copy still being written = %d %v", code, ev)
+	}
+	if err := os.WriteFile(filepath.Join(whisperRev, "manifest.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, ev := runStep(t, "models", map[string]string{"source": "nas", "path": other}); code != 0 {
+		t.Fatalf("the share's Whisper where the second listen does not run = %d %v", code, ev)
+	}
+	if p := pendingOf(t, e); p.Models == nil || p.Models.Source != "nas" || p.Models.Path != filepath.Join(other, "maktaba", "models") {
+		t.Fatalf("pending models = %+v", p.Models)
+	}
 }
 
 func venvPythonFor(venv string) string {
@@ -469,7 +547,15 @@ func venvPythonFor(venv string) string {
 type fakePlex struct {
 	mu         sync.Mutex
 	authorised bool
+	failPolls  int // the next polls plex.tv does not answer (500)
 	clientIDs  []string
+}
+
+// requests is how many requests plex.tv has had.
+func (fp *fakePlex) requests() int {
+	fp.mu.Lock()
+	defer fp.mu.Unlock()
+	return len(fp.clientIDs)
 }
 
 func newFakePlex(t *testing.T) *fakePlex {
@@ -483,6 +569,9 @@ func newFakePlex(t *testing.T) *fakePlex {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/pins":
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"id":42,"code":"ABCD"}`))
+		case r.URL.Path == "/api/v2/pins/42" && fp.failPolls > 0:
+			fp.failPolls--
+			w.WriteHeader(http.StatusInternalServerError)
 		case r.URL.Path == "/api/v2/pins/42" && fp.authorised:
 			_, _ = w.Write([]byte(`{"id":42,"authToken":"ACCOUNT-TOKEN"}`))
 		case r.URL.Path == "/api/v2/pins/42":

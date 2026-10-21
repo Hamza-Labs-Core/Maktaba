@@ -11,9 +11,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
 
@@ -47,6 +49,20 @@ func (s *setupRun) refineOn() bool {
 	return true
 }
 
+// secondListenHere: refine is on and this machine can run the second listen
+// (secondListenOn). Only then is its gated model's sign-in asked and its model
+// downloaded: elsewhere Whisper's words are kept.
+func (s *setupRun) secondListenHere() bool {
+	if !s.refineOn() {
+		return false
+	}
+	var gpus []hostinfo.GPU
+	if runtime.GOOS != "darwin" {
+		gpus = hostGPUs()
+	}
+	return secondListenOn(runtime.GOOS, runtime.GOARCH, gpus).Runs
+}
+
 func (s *setupRun) refineModel() string {
 	if m := strings.TrimSpace(s.cfg.Transcription.RefineModel); m != "" {
 		return m
@@ -75,14 +91,15 @@ func stepModels(s *setupRun, in json.RawMessage) (any, error) {
 	if req.Action == "download" {
 		return s.downloadModels()
 	}
+	here := s.secondListenHere()
 	switch req.Source {
 	case "huggingface":
 		token := strings.TrimSpace(req.HFToken)
-		if token == "" && s.refineOn() {
+		if token == "" && here {
 			return nil, failStep("hf_token_empty", "hf_token", "Enter a Hugging Face read token.")
 		}
 		if token != "" {
-			if err := checkHFToken(s.ctx, token, s.refineModel(), s.refineOn()); err != nil {
+			if err := checkHFToken(s.ctx, token, s.refineModel(), here); err != nil {
 				return nil, err
 			}
 			if err := os.MkdirAll(filepath.Dir(s.hfTokenPath()), 0o700); err != nil {
@@ -98,7 +115,11 @@ func stepModels(s *setupRun, in json.RawMessage) (any, error) {
 			return nil, err
 		}
 	case "nas":
-		dir, err := findShareCopy(strings.TrimSpace(req.Path), s.refineModel())
+		model := s.refineModel() // the gated one, which only the share can stand in for
+		if !here {
+			model = "" // Whisper and the search model: any copy the home published
+		}
+		dir, err := findShareCopy(strings.TrimSpace(req.Path), model)
 		if err != nil {
 			return nil, err
 		}
@@ -109,6 +130,9 @@ func stepModels(s *setupRun, in json.RawMessage) (any, error) {
 		}
 	default:
 		return nil, failStep("bad_input", "source", "Choose Hugging Face or the NAS copy.")
+	}
+	if !here {
+		return map[string]any{"models": []map[string]string{}}, nil
 	}
 	return map[string]any{"models": []map[string]string{{"name": "second listen", "model": s.refineModel()}}}, nil
 }
@@ -167,21 +191,46 @@ func findShareCopy(dir, model string) (string, error) {
 		return "", failStep("nas_path_empty", "path", "Give the folder on the NAS that holds the models.")
 	}
 	for _, base := range []string{dir, filepath.Join(dir, "maktaba", "models")} {
-		revs, err := os.ReadDir(filepath.Join(base, shareModelFolder(model)))
-		if err != nil {
-			continue
-		}
-		for _, r := range revs {
-			if !r.IsDir() || strings.HasPrefix(r.Name(), ".") {
-				continue
+		folders := []string{shareModelFolder(model)}
+		if model == "" { // any model the home published (no second listen here)
+			folders = nil
+			entries, _ := os.ReadDir(base)
+			for _, e := range entries {
+				if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+					folders = append(folders, e.Name())
+				}
 			}
-			if _, err := os.Stat(filepath.Join(base, shareModelFolder(model), r.Name(), "manifest.json")); err == nil {
+		}
+		for _, folder := range folders {
+			if publishedCopy(filepath.Join(base, folder)) {
 				return base, nil
 			}
 		}
 	}
+	if model == "" {
+		return "", failStep("nas_missing", "path", "%s has no copy of the models (the home publishes them in maktaba/models on the share).", dir).
+			with("path", dir, "model", "")
+	}
 	return "", failStep("nas_missing", "path", "%s has no copy of %s (the home publishes it in maktaba/models on the share).", dir, model).
 		with("path", dir, "model", model)
+}
+
+// publishedCopy: a model's folder on the share holds a revision the home
+// finished publishing (its manifest.json written last).
+func publishedCopy(folder string) bool {
+	revs, err := os.ReadDir(folder)
+	if err != nil {
+		return false
+	}
+	for _, r := range revs {
+		if !r.IsDir() || strings.HasPrefix(r.Name(), ".") {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(folder, r.Name(), "manifest.json")); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // modelEvent is one line of `maktaba-pipeline models download --json`
@@ -211,6 +260,10 @@ func (s *setupRun) downloadModels() (any, error) {
 		return nil, err
 	}
 	args := []string{"-m", "maktaba_pipeline", "models", "download", "--json"}
+	if !s.secondListenHere() {
+		// no second listen on this machine: not its gated model, nor its dictionary
+		args = append(args, "--only", "whisper,embedder")
+	}
 	if p.Models != nil && p.Models.Source == "nas" && p.Models.Path != "" {
 		args = append(args, "--share", p.Models.Path)
 	}
