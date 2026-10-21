@@ -14,20 +14,21 @@ package main
 //   - VOD on the node is opened on the node itself (no request reaches the home); a
 //     video this node cannot read falls back to the home, and the Machines page says so;
 //   - the Machines page lists every machine's web address;
-//   - the node's supervisor copies the home's database on its own and follows it
-//     (Epic 37); with the home gone the node runs on that copy: a signed-in user stays
+//   - the node's supervisor makes its own database, subscribes it to the home's
+//     publication and follows it (Epic 37, logical replication); with the home gone the node runs on that copy: a signed-in user stays
 //     in (marked X-Maktaba-Home: unreachable, a reload's /api/auth/me answered by the
 //     node), plays a video it can read and is told one it cannot is unavailable, signs
 //     in (a node-local session), and changes are refused; its local routes answer;
 //   - with the home's database gone too (the node's connection, and its copy's
-//     replication, cut through a proxy), the node reads and plays from its copy, even
+//     subscription, cut through a proxy), the node reads and plays from its copy, even
 //     after a restart in the outage;
 //   - a node with no copy serves no one but its own routes with the home gone.
 //
 // Opt-in (it builds three binaries): MAKTABA_TEST_PG_URL (a Postgres whose user may
-// create databases and roles, and which takes replication from 127.0.0.1: initdb
-// --locale=C, as the bundled one is) and MAKTABA_E2E_TWO_MACHINE=1; MAKTABA_TEST_PG_BIN
-// (a Postgres 16 install with pg_basebackup) gives the node its copy. MAKTABA_E2E_HOLD=<seconds>
+// create databases and roles, run with wal_level=logical and taking connections from
+// 127.0.0.1: initdb --locale=C, as the bundled one is) and MAKTABA_E2E_TWO_MACHINE=1;
+// MAKTABA_TEST_PG_BIN (a Postgres 16 install: initdb, postgres, pg_ctl) gives the node
+// its copy. MAKTABA_E2E_HOLD=<seconds>
 // keeps both machines up at the end (manual checks, screenshots). It never reads this
 // machine's own node config, keys or installs: every path is under t.TempDir().
 
@@ -768,7 +769,7 @@ slots = "off"
 		}
 
 		t.Run("its database gone too: the node plays and reads from its copy, even after a restart", func(t *testing.T) {
-			pgProxy.cut() // the node's connection and its copy's replication: the home's database is gone
+			pgProxy.cut() // the node's connection and its copy's subscription: the home's database is gone
 			csrf := map[string]string{"X-Maktaba-CSRF": u2.cookie(nodeWebURL, "mkt_csrf")}
 			play := func(who string) {
 				t.Helper()
