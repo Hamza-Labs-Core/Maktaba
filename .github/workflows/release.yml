@@ -535,6 +535,9 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:
+      # one architecture failing must not cancel the other: the release ships
+      # the payloads that built (sign-and-release names a missing one)
+      fail-fast: false
       matrix:
         include:
           - { arch: x86_64, runner: ubuntu-22.04 }
@@ -581,8 +584,10 @@ jobs:
           ver="${TAG#v}"
           sde="$(git log -1 --pretty=%ct)"
           mkdir -p out
-          # deterministic: sorted names, pinned mtime, no uid/gid
-          tar --sort=name --mtime="@${sde}" --owner=0 --group=0 --numeric-owner \
+          # deterministic: sorted names, pinned mtime, no uid/gid; hard links
+          # stored as the files they are (the runtime's unpack takes files,
+          # directories and symlinks only, and check.sh refuses hard links)
+          tar --sort=name --mtime="@${sde}" --owner=0 --group=0 --numeric-owner --hard-dereference \
             -C build/linux-app -czf "out/maktaba-linux-payload-${ver}-${ARCH}.tar.gz" server
           ls -l out
 

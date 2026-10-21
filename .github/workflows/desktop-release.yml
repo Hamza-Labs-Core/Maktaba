@@ -246,9 +246,10 @@ jobs:
       # upgrade.
       # The updater (Epic 36 story 36.8, Epic 38/39): with the signing key
       # secret, the bundles get updater artifacts (.app.tar.gz, -setup.exe,
-      # .AppImage, .deb, .rpm, each with its .sig) and tauri-action writes
-      # latest.json, one key per platform and bundle type (linux-x86_64-deb,
-      # ...); the app checks them against the public key in the repository
+      # .AppImage, .deb, .rpm, each with its .sig), and the publish job writes
+      # latest.json from them once every leg is attached (updater-feed: one key
+      # per platform and bundle type, linux-x86_64-deb, ...); the app checks them
+      # against the public key in the repository
       # variable TAURI_UPDATER_PUBKEY, stamped into tauri.conf.json here. A
       # key without its public half fails the build (the apps could never
       # verify an update); no key builds as before, without updater artifacts.

@@ -3,8 +3,9 @@
 # machine but bash and coreutils, so CI runs it in minimal containers (ubuntu:22.04,
 # debian:12-slim, fedora:40) as well as on the build machine:
 #
-#   files.sha256 matches the tree, every ELF file needs no glibc above the payload's limit
-#   and finds each library it links (in the payload or the baseline), every binary starts
+#   files.sha256 matches the tree (and no file is a hard link), every ELF file needs no glibc
+#   above the payload's limit and finds each library it links (in the payload or the
+#   baseline), every binary starts
 #   (--version), Postgres initdb + start + the extensions Maktaba creates + the payload's own
 #   migrations (maktaba-api migrate up from outside any checkout) + pg_dump, ffmpeg
 #   encodes and ffprobe reads it back, the bundled Python makes a venv with pip offline,
@@ -51,6 +52,10 @@ tool() { "$PY" -I "$SCRIPT_DIR/payload_tool.py" "$@"; }
 echo "payload: $PAYLOAD ($(sed -n 's/^PRETTY_NAME=//p' /etc/os-release 2>/dev/null | tr -d '"'), $(uname -m))"
 echo "files"
 run "files.sha256" "$PY" -I "$SCRIPT_DIR/payload_tool.py" verify "$PAYLOAD"
+# a hard link would be one entry the runtime copy cannot make again (it copies files and
+# symlinks), and the release tarball stores it as a link the unpack refuses
+linked="$(find "$PAYLOAD" -type f -links +1 -print 2>/dev/null | head -5)"
+if [ -z "$linked" ]; then ok "no hard links"; else fail "hard links in the payload: $linked"; fi
 max_glibc="$("$PY" -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["min_glibc"])' "$PAYLOAD/payload.json" 2>/dev/null || echo "")"
 if [ -n "$max_glibc" ]; then
     if out="$(tool elf "$PAYLOAD" --max-glibc "$max_glibc" 2>&1)"; then

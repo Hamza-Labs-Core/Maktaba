@@ -100,10 +100,10 @@ for bundle in "$@"; do
     if find "$root/usr/lib" -path '*/server/payload.json' 2>/dev/null | grep -q .; then
         fail "a payload among the resources in usr/lib (linuxdeploy rewrites ELF files there)"
     fi
-    # the server binary as the app runs it: a copy with its mode when the package lost it
-    server="$SCRATCH/maktaba-server"
-    cp "$payload/bin/maktaba-server" "$server"
-    chmod 0755 "$server"
+    # every bundle keeps the payload's modes (the app runs these as they are installed)
+    lost="$(find "$payload/bin" "$payload/postgres/bin" "$payload/ffmpeg" -maxdepth 1 -type f ! -perm -u+x -print 2>/dev/null | head -5)"
+    if [ -z "$lost" ]; then ok "executables keep their mode"; else fail "$name dropped the executable bit: $lost"; continue; fi
+    server="$payload/bin/maktaba-server"
     data="$SCRATCH/$name.data"
     if out="$(XDG_DATA_HOME="$data" "$server" runtime install --from "$payload" 2>&1)"; then
         ok "runtime install: $(printf '%s\n' "$out" | tail -1)"

@@ -214,6 +214,12 @@ cp "${cons[0]}" "$OUT/pipeline/constraints.txt"
 log "database migrations"
 cp -R "$REPO_ROOT/shared/db/migrations" "$OUT/migrations"
 
+# --- no hard links: each file stands alone (the runtime copy makes files and symlinks, and
+# the release tarball would store a link its unpack refuses) --------------------------------
+while IFS= read -r -d '' f; do
+    cp -p "$f" "$f.unlinked" && mv -f "$f.unlinked" "$f"
+done < <(find "$OUT" -type f -links +1 -print0)
+
 # --- the files and payload.json ------------------------------------------------------------------
 log "checking every ELF file against the glibc $MAX_GLIBC baseline"
 elf="$(tool elf "$OUT" --max-glibc "$MAX_GLIBC")" || { printf '%s\n' "$elf" >&2; die "the payload needs more than its baseline"; }
