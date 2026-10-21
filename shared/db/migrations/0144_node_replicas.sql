@@ -466,8 +466,84 @@ SELECT encode(sha256(convert_to(id::text, 'UTF8')), 'hex'), user_id,
 ON CONFLICT (id_sha256) DO NOTHING;
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+-- commit_segment with its worker (slot 0013's, guarded by the claim): a segment from a
+-- worker that no longer holds the job (a machine whose home was away past the lease,
+-- the job given to another) writes nothing: neither the segment nor the job's progress
+-- and heartbeat. NULL p_worker: as slot 0013's.
+CREATE OR REPLACE FUNCTION commit_segment(
+    p_transcript_id    UUID,
+    p_job_id           BIGINT,
+    p_seq              INT,
+    p_start_sec        REAL,
+    p_end_sec          REAL,
+    p_text             TEXT,
+    p_speaker          TEXT,
+    p_confidence       REAL,
+    p_audio_sec_in_seg REAL,
+    p_wall_sec_in_seg  REAL,
+    p_total_duration   REAL,
+    p_ewma_alpha       REAL,
+    p_worker           TEXT
+) RETURNS BIGINT
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_segment_id   BIGINT;
+    v_prev_end     REAL;
+    v_prev_factor  REAL;
+    v_factor       REAL;
+    v_processed    REAL;
+    v_eta          REAL;
+BEGIN
+    SELECT last_segment_end_sec, COALESCE(realtime_factor, 0)
+      INTO v_prev_end, v_prev_factor
+      FROM processing_jobs
+     WHERE id = p_job_id AND (p_worker IS NULL OR claimed_by = p_worker)
+     FOR UPDATE;
+    IF NOT FOUND THEN
+        RETURN NULL;
+    END IF;
+
+    INSERT INTO transcript_segments
+           (transcript_id, seq, start_sec, end_sec, text, speaker, confidence)
+    VALUES (p_transcript_id, p_seq, p_start_sec, p_end_sec, p_text, p_speaker, p_confidence)
+    ON CONFLICT (transcript_id, seq) DO NOTHING
+    RETURNING id INTO v_segment_id;
+    IF v_segment_id IS NULL THEN
+        RETURN NULL;
+    END IF;
+
+    v_processed := GREATEST(0, p_end_sec - GREATEST(v_prev_end, p_start_sec));
+    IF p_wall_sec_in_seg <= 0 THEN
+        v_factor := v_prev_factor;
+    ELSE
+        v_factor := v_prev_factor * (1 - p_ewma_alpha)
+                  + (p_audio_sec_in_seg / p_wall_sec_in_seg) * p_ewma_alpha;
+    END IF;
+    IF v_factor > 0 AND p_total_duration > 0 THEN
+        v_eta := (p_total_duration - LEAST(p_end_sec, p_total_duration)) / v_factor;
+    ELSE
+        v_eta := NULL;
+    END IF;
+
+    UPDATE processing_jobs
+       SET last_segment_end_sec     = GREATEST(last_segment_end_sec, p_end_sec),
+           processed_seconds        = processed_seconds + v_processed,
+           segments_completed       = segments_completed + 1,
+           realtime_factor          = v_factor,
+           estimated_remaining_sec  = v_eta,
+           progress_updated_at      = now(),
+           last_heartbeat_at        = now()
+     WHERE id = p_job_id;
+
+    RETURN v_segment_id;
+END;
+$$;
+-- +goose StatementEnd
+
 -- +goose Down
 -- +goose StatementBegin
+DROP FUNCTION IF EXISTS commit_segment(UUID, BIGINT, INT, REAL, REAL, TEXT, TEXT, REAL, REAL, REAL, REAL, REAL, TEXT);
 DROP TRIGGER IF EXISTS web_session_keys_sync ON web_sessions;
 DROP FUNCTION IF EXISTS web_session_keys_sync();
 DROP TABLE IF EXISTS web_session_keys;
