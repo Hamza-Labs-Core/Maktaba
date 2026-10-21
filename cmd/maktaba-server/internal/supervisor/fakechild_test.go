@@ -56,6 +56,9 @@ func TestMain(m *testing.M) {
 }
 
 func fakeChild(mode string) {
+	if f := os.Getenv("FAKE_WINDOW_FILE"); f != "" {
+		_ = os.WriteFile(f, []byte(strconv.FormatBool(hasConsoleWindow())), 0o644)
+	}
 	if on := os.Getenv("FAKE_ON_STOP"); on != "" {
 		onAsk(on, os.Getenv("FAKE_MARKER"))
 	}

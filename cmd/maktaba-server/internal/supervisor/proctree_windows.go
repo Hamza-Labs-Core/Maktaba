@@ -32,14 +32,35 @@ type procTree struct {
 // CTRL_BREAK reaches without the supervisor or the other roles. CTRL_C is
 // disabled in a new group, so a Ctrl+C in serve's console reaches serve only,
 // which then stops the children in their order.
+//
+// Without a console of its own (a bare serve started detached by a GUI
+// program) each console child would get a console with a window on the
+// desktop: CREATE_NO_WINDOW gives it one without. Not while there is one:
+// the flag also gives the child a console of its own, which a CTRL_BREAK on
+// this one does not reach.
 func prepareTree(cmd *exec.Cmd) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
-	cmd.SysProcAttr.CreationFlags |= windows.CREATE_SUSPENDED | windows.CREATE_NEW_PROCESS_GROUP
+	flags := uint32(windows.CREATE_SUSPENDED | windows.CREATE_NEW_PROCESS_GROUP)
+	if !hasConsole() {
+		flags |= windows.CREATE_NO_WINDOW
+	}
+	cmd.SysProcAttr.CreationFlags |= flags
 }
 
-var procNtResumeProcess = windows.NewLazySystemDLL("ntdll.dll").NewProc("NtResumeProcess")
+// hasConsole: this process has a console its children can share (a var for
+// the tests).
+var hasConsole = func() bool {
+	_, err := windows.GetConsoleCP()
+	return err == nil
+}
+
+var (
+	ntdll                = windows.NewLazySystemDLL("ntdll.dll")
+	procNtResumeProcess  = ntdll.NewProc("NtResumeProcess")
+	procNtSuspendProcess = ntdll.NewProc("NtSuspendProcess")
+)
 
 // attachTree puts the started (suspended) child in a new kill-on-close
 // job and resumes it. A job failure still resumes the child (it then
@@ -87,20 +108,37 @@ func newKillOnCloseJob() (windows.Handle, error) {
 }
 
 // ask runs send while the child still runs: the handle held keeps its pid
-// from being reused meanwhile. A child that has exited needs no asking.
+// from being reused meanwhile, and the child is held suspended from the check
+// to the send, so it cannot exit in between. The event names the group the
+// child leads; one naming a group nobody leads goes to every process of the
+// console, the supervisor included. The child's handler runs once it is
+// resumed. A child that has exited needs no asking; one that cannot be held
+// is not asked (the caller kills it instead).
 func (t *procTree) ask(send func() error) error {
 	if t == nil {
 		return nil // attachTree failed and killed the child
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.proc == 0 {
+	if t.proc == 0 || t.exited() {
 		return nil
 	}
-	if ev, err := windows.WaitForSingleObject(t.proc, 0); err == nil && ev == windows.WAIT_OBJECT_0 {
+	if r, _, _ := procNtSuspendProcess.Call(uintptr(t.proc)); r != 0 {
+		if t.exited() {
+			return nil
+		}
+		return fmt.Errorf("hold the child to ask it: NTSTATUS 0x%x", r)
+	}
+	defer procNtResumeProcess.Call(uintptr(t.proc))
+	if t.exited() {
 		return nil
 	}
 	return send()
+}
+
+func (t *procTree) exited() bool {
+	ev, err := windows.WaitForSingleObject(t.proc, 0)
+	return err == nil && ev == windows.WAIT_OBJECT_0
 }
 
 // kill terminates every process in the job, the child included.

@@ -3,8 +3,10 @@
 package supervisor
 
 import (
+	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"syscall"
@@ -51,20 +53,29 @@ func noConsole(t *testing.T) bool { return rerunIn(t, windows.DETACHED_PROCESS) 
 
 // Every child starts suspended (attachTree resumes it in its job) and in a
 // process group of its own (CTRL_BREAK reaches it alone); the command's own
-// flags stay.
+// flags stay. Without a console to share, each also gets no window; with one,
+// never (CREATE_NO_WINDOW would give it a console of its own, out of the
+// CTRL_BREAK's reach).
 func TestPrepareTreeStartsAProcessGroup(t *testing.T) {
-	t.Parallel()
-	want := uint32(windows.CREATE_SUSPENDED | windows.CREATE_NEW_PROCESS_GROUP)
-	bare := &exec.Cmd{Path: "x"}
-	prepareTree(bare)
-	if got := bare.SysProcAttr.CreationFlags; got != want {
-		t.Errorf("flags = %#x, want %#x", got, want)
-	}
-	own := &exec.Cmd{Path: "x"}
-	own.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
-	prepareTree(own)
-	if got := own.SysProcAttr.CreationFlags; got != want|windows.CREATE_NO_WINDOW {
-		t.Errorf("flags = %#x, want %#x", got, want|windows.CREATE_NO_WINDOW)
+	prev := hasConsole
+	t.Cleanup(func() { hasConsole = prev })
+	for _, console := range []bool{true, false} {
+		hasConsole = func() bool { return console }
+		want := uint32(windows.CREATE_SUSPENDED | windows.CREATE_NEW_PROCESS_GROUP)
+		if !console {
+			want |= windows.CREATE_NO_WINDOW
+		}
+		bare := &exec.Cmd{Path: "x"}
+		prepareTree(bare)
+		if got := bare.SysProcAttr.CreationFlags; got != want {
+			t.Errorf("console %v: flags = %#x, want %#x", console, got, want)
+		}
+		own := &exec.Cmd{Path: "x"}
+		own.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_UNICODE_ENVIRONMENT}
+		prepareTree(own)
+		if got := own.SysProcAttr.CreationFlags; got != want|windows.CREATE_UNICODE_ENVIRONMENT {
+			t.Errorf("console %v: flags = %#x, want %#x", console, got, want|windows.CREATE_UNICODE_ENVIRONMENT)
+		}
 	}
 }
 
@@ -78,18 +89,18 @@ func TestWithoutAConsoleChildrenAreKilled(t *testing.T) {
 	if _, err := windows.GetConsoleCP(); err == nil {
 		t.Fatal("this run has a console")
 	}
-	// A child of a process with no console gets a console of its own; without a
-	// window, none opens on the desktop.
-	windowless := func(p Process) Process {
-		p.Cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
-		return p
+	// A child of a process with no console gets a console of its own: the
+	// supervisor gives it no window, so none opens on the desktop.
+	window := map[Role]string{}
+	for _, role := range []Role{RoleAPI, RoleStreaming, RoleTVSlot} {
+		window[role] = filepath.Join(t.TempDir(), "window")
 	}
-	api, apiAsked := askedStop(t, RoleAPI, "exit")
-	streaming, streamingAsked := askedStop(t, RoleStreaming, "exit")
-	slot, slotAsked := askedStop(t, RoleTVSlot, "exit")
+	api, apiAsked := askedStop(t, RoleAPI, "exit", "FAKE_WINDOW_FILE="+window[RoleAPI])
+	streaming, streamingAsked := askedStop(t, RoleStreaming, "exit", "FAKE_WINDOW_FILE="+window[RoleStreaming])
+	slot, slotAsked := askedStop(t, RoleTVSlot, "exit", "FAKE_WINDOW_FILE="+window[RoleTVSlot])
 	slot.Instance, slot.OnDemand = "amber", true
 	logs := &syncBuffer{}
-	s := New([]Process{windowless(api), windowless(streaming), windowless(slot)}, testPolicy(), WithLog(logs))
+	s := New([]Process{api, streaming, slot}, testPolicy(), WithLog(logs))
 	const grace = 20 * time.Second
 	stop, _ := runningGrace(t, s, grace)
 	if err := s.Want(RoleTVSlot, "amber", true); err != nil {
@@ -134,6 +145,11 @@ func TestWithoutAConsoleChildrenAreKilled(t *testing.T) {
 	if n := strings.Count(logs.String(), "cannot be asked to stop: no console"); n != 1 {
 		t.Errorf("no console logged %d times, want once:\n%s", n, logs)
 	}
+	for role, f := range window {
+		if got, err := os.ReadFile(f); err != nil || string(got) != "false" {
+			t.Errorf("%s: a console window on the desktop: %q (%v)", role, got, err)
+		}
+	}
 }
 
 // The tree sends the ask only while its child runs: never once it has been
@@ -148,9 +164,50 @@ func TestTreeAsksOnlyARunningChild(t *testing.T) {
 			t.Fatalf("no child: ask = %v, sent %d", err, sent)
 		}
 	}
-	running := &procTree{proc: windows.CurrentProcess()}
-	if err := running.ask(send); err != nil || sent != 1 {
+}
+
+// A running child is held from the check to the send (it cannot exit in
+// between, which would send the event astray) and runs on afterwards.
+func TestTreeAsksARunningChildAndResumesIt(t *testing.T) {
+	p, addr := fakeProc(t, RoleAPI, "serve")
+	prepareTree(p.Cmd)
+	if err := p.Cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	tree, err := attachTree(p.Cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { tree.kill(); _ = p.Cmd.Wait(); tree.release() })
+	waitHealthy(t, "http://"+addr+"/healthz")
+	sent := 0
+	if err := tree.ask(func() error {
+		sent++
+		if tree.exited() {
+			t.Error("the child exited while held")
+		}
+		return nil
+	}); err != nil || sent != 1 {
 		t.Fatalf("a running child: ask = %v, sent %d", err, sent)
+	}
+	waitHealthy(t, "http://"+addr+"/healthz") // resumed: it answers again
+}
+
+func waitHealthy(t *testing.T, url string) {
+	t.Helper()
+	client := &http.Client{Timeout: time.Second}
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		if resp, err := client.Get(url); err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s did not answer", url)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
