@@ -141,7 +141,7 @@ Decides the short, clean on-air titles of the guide, the channel strip and the d
 
 ### Plex Live TV {#plexlive}
 
-Decides how Maktaba's channels appear in Plex. **Add Maktaba to Plex by itself** is off: then only the **Add Maktaba to Plex** button does it. **Refresh the guide in Plex** and **Refresh the channels in Plex** (both on) keep Plex up to date. Set **Tuner address for Plex** when Plex cannot reach Maktaba at its public address. See [Plex](/help/plex).
+Decides how Maktaba's channels appear in Plex. **Add Maktaba to Plex by itself** is off: then only the **Add Maktaba to Plex** button does it. **Refresh the guide in Plex** and **Refresh the channels in Plex** (both on) keep Plex up to date. Set **Tuner address for Plex** when Plex cannot reach Maktaba at its public address. **Check Plex's channel list every (min)** (15; 0: off) checks that another program (dizqueTV's Plex refresh) has not replaced Maktaba's channels in Plex and puts them back; after **Warn after this many restores in a row** (3) restores, each within **Restores count as in a row within (hours)** (24) of the previous, the Plex card advises turning off dizqueTV's channel mapping (see [Plex](/help/plex#channel-map-drift)). See [Plex](/help/plex).
 
 ### Broken files {#repair}
 
@@ -162,6 +162,10 @@ Decides how new releases are installed. **Install updates automatically** (on) i
 ### Machines {#cluster}
 
 Decides how the machines of your cluster act as one Maktaba. **One sign-in for every machine** (on) lets you move from one machine to another without signing in again. **Home unreachable after (s)** (30) is how long a machine waits before it stops serving signed-in pages when it cannot reach the home. See [Machines](/help/machines).
+
+### Transcription {#transcription}
+
+Decides which machines transcribe. While the second listen is on, only the machines that run it (the Mac) transcribe, so every transcript has it. **Transcribe without the second listen** (off) lets a Windows or Linux machine transcribe too, with Whisper alone: faster, and a machine that runs the second listen gives those transcripts theirs later, a few at a time, after the new files. See [Transcription](/help/transcription#faq-windows).
 
 ### Queue health {#queue-health}
 

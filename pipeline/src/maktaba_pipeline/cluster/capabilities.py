@@ -44,26 +44,10 @@ def is_apple_silicon() -> bool:
 def memory_bytes() -> int | None:
     """Physical memory, or None when it cannot be read."""
     if sys.platform == "win32":
-        import ctypes
+        from ..engine.health import windows_memory
 
-        class _MemStatus(ctypes.Structure):
-            _fields_ = [  # noqa: RUF012
-                ("dwLength", ctypes.c_ulong),
-                ("dwMemoryLoad", ctypes.c_ulong),
-                ("ullTotalPhys", ctypes.c_ulonglong),
-                ("ullAvailPhys", ctypes.c_ulonglong),
-                ("ullTotalPageFile", ctypes.c_ulonglong),
-                ("ullAvailPageFile", ctypes.c_ulonglong),
-                ("ullTotalVirtual", ctypes.c_ulonglong),
-                ("ullAvailVirtual", ctypes.c_ulonglong),
-                ("sullAvailExtendedVirtual", ctypes.c_ulonglong),
-            ]
-
-        stat = _MemStatus()
-        stat.dwLength = ctypes.sizeof(_MemStatus)
-        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):  # type: ignore[attr-defined]
-            return int(stat.ullTotalPhys)
-        return None
+        mem = windows_memory()
+        return None if mem is None else mem[0]
     with contextlib.suppress(ValueError, OSError, AttributeError):
         return int(os.sysconf("SC_PAGE_SIZE")) * int(os.sysconf("SC_PHYS_PAGES"))
     return None

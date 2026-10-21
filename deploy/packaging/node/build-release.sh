@@ -40,7 +40,6 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$TAG" ] || die "--version is required"
 command -v uv >/dev/null 2>&1 || die "uv is required (https://docs.astral.sh/uv/)"
-command -v zip >/dev/null 2>&1 || die "zip is required (the Windows archive)"
 case "$TAG" in v*) ;; *) TAG="v$TAG" ;; esac
 VERSION="${TAG#v}"
 
@@ -152,6 +151,24 @@ if tar --version 2>/dev/null | grep -q 'GNU tar'; then
 else
     tar -C "$WORK" -czf "$OUT/$BUNDLE.tar.gz" "$BUNDLE"
 fi
-(cd "$WORK" && rm -f "$OUT/$BUNDLE.zip" && zip -qrX "$OUT/$BUNDLE.zip" "$BUNDLE")
+# The Windows archive. Git for Windows has no zip(1), and the Windows app's payload runs
+# this script there: Python's zipfile writes the same entries instead, sorted.
+make_zip() {
+    if command -v zip >/dev/null 2>&1; then
+        zip -qrX "$1" "$2"
+        return
+    fi
+    uv run --no-project --quiet python - "$1" "$2" <<'PY'
+import os, sys, zipfile
+archive, top = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
+    for root, dirs, files in os.walk(top):
+        dirs.sort()
+        z.write(root)
+        for name in sorted(files):
+            z.write(os.path.join(root, name))
+PY
+}
+(cd "$WORK" && rm -f "$OUT/$BUNDLE.zip" && make_zip "$OUT/$BUNDLE.zip" "$BUNDLE")
 
 printf '%s\n' "$OUT/$WHEEL" "$OUT/$CONSTRAINTS" "$OUT/$BUNDLE.tar.gz" "$OUT/$BUNDLE.zip"

@@ -3,6 +3,7 @@
 package supervisor
 
 import (
+	"errors"
 	"os"
 	"syscall"
 )
@@ -11,6 +12,15 @@ import (
 // shutdown. On Unix that's SIGTERM, which every service's
 // signal.NotifyContext already traps to begin its drain.
 func terminationSignal() os.Signal { return syscall.SIGTERM }
+
+// askChild sends the child its graceful-stop signal (the child only: it stops
+// its own children as it drains). One already gone needs no asking.
+func askChild(proc *os.Process, _ *procTree, sig os.Signal) error {
+	if err := proc.Signal(sig); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		return err
+	}
+	return nil
+}
 
 // signalName names the signal that killed a process ("SIGSEGV"), or ""
 // when it exited on its own.

@@ -21,16 +21,29 @@ export type LoginItem =
   | "not_found"
   | "unsupported";
 
+/** The OS the app runs on (Rust's std::env::consts::OS). */
+export type Platform = "macos" | "windows" | "linux";
+
 export type AppState = AppTarget & {
   server_available: boolean;
   login_item: LoginItem;
+  /** the OS the app runs on (Epic 38); absent from an Epic 36 shell: a Mac */
+  platform?: Platform;
   /** the user asked to change servers: do not adopt this Mac's configured server */
   reset?: boolean;
 };
 
 export type ServerStatus =
   | { kind: "setup_needed" | "paused" | "stopped" | "starting" | "running" }
-  | { kind: "problem"; roles: string[] };
+  | { kind: "problem"; roles: string[] }
+  /** its agent runs but the server has not answered for minutes: why, from its log
+   * (NO_ANSWER when the log says nothing) */
+  | { kind: "not_answering"; reason: string };
+
+/** The reason a not_answering status gives when server.log names none: the shell's
+ * `status::NO_ANSWER` (apps/desktop/src-tauri/src/status.rs). Any other reason is a line
+ * of the log, in the server's own words. */
+export const NO_ANSWER = "the server does not answer";
 
 export interface StepProgress {
   stage: string;
@@ -42,9 +55,19 @@ export interface StepProgress {
 /** A failed step (setup.rs StepError). */
 export interface StepError {
   code: string;
+  /** English, for a code the app has no text for (and the details box) */
   message: string;
   field?: string;
+  /** the values the code's text takes (setup.error.<code>) */
+  params?: Record<string, unknown>;
   details: string[];
+}
+
+/** One finding of the check step: setup.check.note.<code> with its params. */
+export interface CheckNote {
+  code: string;
+  params?: Record<string, unknown>;
+  message: string;
 }
 
 export function isStepError(e: unknown): e is StepError {

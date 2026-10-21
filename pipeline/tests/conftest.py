@@ -30,6 +30,15 @@ from maktaba_testtier.softcap import (  # noqa: F401,E402
 
 
 @pytest.fixture(autouse=True)
+def _mlx_engine(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The transcription tests run as Apple Silicon runs them (the MLX engine), on any
+    machine; the CTranslate2 engine's tests (tests/stt/test_ct2.py) switch to it."""
+    from maktaba_pipeline.stt import engine
+
+    monkeypatch.setattr(engine, "current", lambda: engine.MLX)
+
+
+@pytest.fixture(autouse=True)
 def _no_model_or_encyclopedia_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     """No test reaches the language model server or the encyclopedia: the stages that ask
     them (check_tags, check_clips, books) get a stand-in from the test, or fail loudly."""
