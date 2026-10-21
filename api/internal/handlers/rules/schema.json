@@ -3442,6 +3442,34 @@
      "default": 3,
      "minimum": 1,
      "maximum": 31
+    },
+    {
+     "name": "guide_max_padding_s",
+     "kind": "int",
+     "group": "Guide",
+     "label": "Filler added to the programme up to (s)",
+     "help": "Filler (clips, bumpers, the slate) up to this long is shown as part of the programme before it; longer filler gets its own guide entry with the filler title below. As dizqueTV's guide.",
+     "default": 120,
+     "minimum": 0,
+     "maximum": 3600
+    },
+    {
+     "name": "guide_filler_title",
+     "kind": "str",
+     "group": "Guide",
+     "label": "Title of filler time",
+     "help": "What the guide calls filler time that has its own entry. Empty: the channel's name.",
+     "default": "فواصل"
+    },
+    {
+     "name": "guide_min_program_s",
+     "kind": "int",
+     "group": "Guide",
+     "label": "Shortest programme listed (s)",
+     "help": "Programmes shorter than this are not listed in the guide: they count as filler.",
+     "default": 60,
+     "minimum": 0,
+     "maximum": 3600
     }
    ]
   },

@@ -279,6 +279,21 @@ func TestTVSettings_Horizon(t *testing.T) {
 	}
 }
 
+func TestTVSettings_GuideRules(t *testing.T) {
+	base := TVSettingsFromEnv()
+	if base.GuideMaxPaddingSeconds != 120 || base.GuideFillerTitle != "فواصل" || base.GuideMinProgramSeconds != 60 {
+		t.Fatalf("defaults: %+v", base)
+	}
+	tv, bad := ApplyTVRules(base, []byte(`{"guide_max_padding_s":300,"guide_filler_title":" Breaks ","guide_min_program_s":0}`))
+	if len(bad) != 0 || tv.GuideMaxPaddingSeconds != 300 || tv.GuideFillerTitle != "Breaks" || tv.GuideMinProgramSeconds != 0 {
+		t.Fatalf("rules: %+v %v", tv, bad)
+	}
+	tv, bad = ApplyTVRules(base, []byte(`{"guide_max_padding_s":-1,"guide_filler_title":5,"guide_min_program_s":4000}`))
+	if len(bad) != 3 || tv.GuideMaxPaddingSeconds != 120 || tv.GuideFillerTitle != "فواصل" || tv.GuideMinProgramSeconds != 60 {
+		t.Errorf("bad values kept the defaults? %+v %v", tv, bad)
+	}
+}
+
 func TestTVSettings_LiveLookupReuse(t *testing.T) {
 	t.Setenv("MAKTABA_CHANNEL_LIVE_LOOKUP_REUSE_SEC", "")
 	base := TVSettingsFromEnv()

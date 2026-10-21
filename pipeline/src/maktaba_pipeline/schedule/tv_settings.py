@@ -122,6 +122,15 @@ class MaktabaTvConfig:
     horizon_days: int = 7
     #: a channel is topped up when less than this many days are planned
     topup_below_days: int = 3
+    #: the guide (the web guide and the XMLTV Plex reads), as dizqueTV's: filler time up
+    #: to this long is added to the programme before it; longer filler gets its own entry
+    #: titled guide_filler_title (dizqueTV guideMaxPaddingSeconds)
+    guide_max_padding_s: int = 120
+    #: dizqueTV guideFlexPlaceholder
+    guide_filler_title: str = "فواصل"
+    #: programmes shorter than this are not listed: they count as filler (dizqueTV
+    #: guideMinimumDurationSeconds)
+    guide_min_program_s: int = 60
 
 
 @dataclass(frozen=True)
@@ -524,6 +533,27 @@ register(
             "ahead above. Checked every few minutes.",
             minimum=1,
             maximum=31,
+        ),
+        "guide_max_padding_s": Help(
+            TVG,
+            "Filler added to the programme up to (s)",
+            "Filler (clips, bumpers, the slate) up to this long is shown as part of the "
+            "programme before it; longer filler gets its own guide entry with the filler "
+            "title below. As dizqueTV's guide.",
+            minimum=0,
+            maximum=3600,
+        ),
+        "guide_filler_title": Help(
+            TVG,
+            "Title of filler time",
+            "What the guide calls filler time that has its own entry. Empty: the channel's name.",
+        ),
+        "guide_min_program_s": Help(
+            TVG,
+            "Shortest programme listed (s)",
+            "Programmes shorter than this are not listed in the guide: they count as filler.",
+            minimum=0,
+            maximum=3600,
         ),
     },
 )
