@@ -32,6 +32,8 @@ type ProgramRow struct {
 	StartAt   time.Time
 	EndAt     time.Time
 	Snapshot  Snapshot
+	// VideoID is the block's video ("" when none).
+	VideoID string
 }
 
 // channelsVisible returns enabled channels, optionally filtered by
@@ -102,7 +104,7 @@ func (rp *repo) programsOverlapping(ctx context.Context, channelIDs []string, st
 	args = append(args, start, end)
 	startPH := "$" + itoa(len(channelIDs)+1)
 	endPH := "$" + itoa(len(channelIDs)+2)
-	q := `SELECT channel_id, seq, kind, start_at, end_at, title_snapshot
+	q := `SELECT channel_id, seq, kind, start_at, end_at, title_snapshot, video_id
 	      FROM channel_programs_live
 	      WHERE channel_id IN (` + strings.Join(ph, ",") + `)
 	        AND start_at < ` + endPH + ` AND end_at > ` + startPH + `
@@ -116,10 +118,12 @@ func (rp *repo) programsOverlapping(ctx context.Context, channelIDs []string, st
 	for rows.Next() {
 		var p ProgramRow
 		var snap []byte
-		if err := rows.Scan(&p.ChannelID, &p.Seq, &p.Kind, &p.StartAt, &p.EndAt, &snap); err != nil {
+		var vid sql.NullString
+		if err := rows.Scan(&p.ChannelID, &p.Seq, &p.Kind, &p.StartAt, &p.EndAt, &snap, &vid); err != nil {
 			continue
 		}
 		p.Snapshot = parseSnapshot(snap)
+		p.VideoID = vid.String
 		out = append(out, p)
 	}
 	return out, rows.Err()

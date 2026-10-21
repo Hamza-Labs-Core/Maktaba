@@ -41,6 +41,8 @@ func TestMain(m *testing.M) {
 	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
 	// nor its GPU: the transcription plan of a test is the one it fakes (stt_test.go)
 	nvidiaSMI = func() ([]byte, error) { return nil, errors.New("no nvidia-smi in the tests") }
+	// ...nor its pipeline's Python (TestSTTProbe asks the test binary)
+	sttInstalled = func(string) bool { return true }
 	// ...nor for the children the tests start (they inherit the environment)
 	dir, err := os.MkdirTemp("", "maktaba-nodecfg-")
 	if err != nil {

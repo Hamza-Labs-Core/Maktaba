@@ -20,6 +20,7 @@ import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { AdminGate } from "../../components/AdminGate";
+import { TitleRow } from "../../help/HelpLink";
 
 interface AuditEntry {
   id: number;
@@ -184,7 +185,9 @@ function AuditInner() {
   return (
     <section className="mkt-page mkt-admin">
       <header className="mkt-page__header">
-        <h1>{t("audit.title")}</h1>
+        <TitleRow>
+          <h1>{t("audit.title")}</h1>
+        </TitleRow>
         <div className="mkt-toolbar" role="toolbar">
           <Button variant="secondary" onClick={() => load(true)}>
             {t("common.refresh")}

@@ -139,11 +139,25 @@ func runServe(cfg config.Config, opts serveOptions) error {
 		return err
 	}
 
+	// The language model server (Maktaba.app's bundled Ollama, or [llm] url):
+	// its URL goes to every child through cfg.
+	llmProc, llmOpt, err := serveLLM(ctx, &cfg, opts.role == "" || opts.role == "all")
+	if err != nil {
+		return err
+	}
+
 	// Build the supervised processes.
 	var procs []supervisor.Process
 	if pg != nil {
-		procs = append(procs, supervisor.BuildPostgres(*pg))
+		p, err := supervisor.BuildPostgres(*pg)
+		if err != nil {
+			return err
+		}
+		procs = append(procs, p)
 		go pg.RunBackups(ctx, backupCheckInterval, os.Stderr)
+	}
+	if llmProc != nil {
+		procs = append(procs, *llmProc)
 	}
 	sopts := supervisor.Options{Config: cfg, BinDir: opts.binDir, ReleaseDir: releaseDir}
 	for _, r := range roles {
@@ -200,9 +214,14 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	if err != nil {
 		return err
 	}
-	sup := supervisor.New(procs, policy, supervisor.WithEventSink(
-		supervisor.NewFileSink(filepath.Join(cfg.Server.DataDir, "supervisor", "events.jsonl"), 0)),
-		supervisor.WithExitHook(supervisor.SlotExitReporter(cfg.Server.StreamAddr)))
+	supOpts := []supervisor.Option{
+		supervisor.WithEventSink(supervisor.NewFileSink(filepath.Join(cfg.Server.DataDir, "supervisor", "events.jsonl"), 0)),
+		supervisor.WithExitHook(supervisor.SlotExitReporter(cfg.Server.StreamAddr)),
+	}
+	if llmOpt != nil {
+		supOpts = append(supOpts, llmOpt)
+	}
+	sup := supervisor.New(procs, policy, supOpts...)
 	if adminSrv := startSupervisorAdmin(policy.AdminAddr, node.adminHandler(sup.Handler())); adminSrv != nil {
 		defer func() { _ = shutdownWeb(adminSrv) }()
 	}

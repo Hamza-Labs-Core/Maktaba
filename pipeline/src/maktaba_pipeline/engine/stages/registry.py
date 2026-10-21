@@ -8,10 +8,14 @@ implementations through :func:`register_impl` (see ``engine.loader``).
 from __future__ import annotations
 
 import importlib
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 from ..graph import InputFingerprint, OutputFingerprint, StageHandler
+
+if TYPE_CHECKING:
+    from ...db.jobs import Job
 
 __all__ = ["CORE_MODULES", "StageImpl", "get_impl", "register_impl", "reset_registry"]
 
@@ -24,6 +28,14 @@ class StageImpl:
     #: why this worker cannot run the stage (a platform or an optional extra it
     #: lacks), or None; a worker never claims a stage it cannot run
     unavailable: Callable[[], str | None] | None = None
+    #: ``(job, earlier input hash, input fingerprint)``: whether the subject's last
+    #: success stands for this job on this worker (the run is skipped). None: when the
+    #: two are equal. May raise ``JobDeferred`` to give the job back for another worker.
+    still_current: Callable[[Job, str, str], bool] | None = None
+    #: ``(db, serving)``: what the worker re-reads before each stage selection (the
+    #: rules :attr:`unavailable` reads), and the upkeep a worker that serves the stage
+    #: does then; see :func:`maktaba_pipeline.cluster.stages.refresh_stages`
+    refresh: Callable[[Any, bool], Awaitable[None]] | None = None
 
 
 #: stage name -> module exposing ``IMPL: StageImpl``. ``legacy`` is special: it
@@ -63,6 +75,7 @@ CORE_MODULES: dict[str, str] = {
     "tv_rollback": "maktaba_pipeline.engine.stages.tv_rollback",
     "exact_dates": "maktaba_pipeline.engine.stages.exact_dates",
     "repair_broken": "maktaba_pipeline.engine.stages.repair_broken",
+    "access_check": "maktaba_pipeline.engine.stages.access_check",
     "storage_canonicalize": "maktaba_pipeline.engine.stages.storage_canonicalize",
     "enrich": "maktaba_pipeline.engine.stages.enrich",
 }

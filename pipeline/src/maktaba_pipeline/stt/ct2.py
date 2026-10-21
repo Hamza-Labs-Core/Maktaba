@@ -13,9 +13,13 @@ to resume a file from. CTranslate2's own batching is used instead: ``encode``,
 ``generate``, ``detect_language`` and ``align`` each take a batch of windows.
 
 Where it runs (``MAKTABA_STT_DEVICE``, default ``auto``): on an NVIDIA GPU when CUDA is
-usable, else on the CPU. CTranslate2's wheels need only the NVIDIA driver and cuBLAS 12,
-which the ``stt`` extra installs from PyPI (``nvidia-cublas-cu12``) and
-:func:`cuda_libraries` loads, once, before the model goes on the GPU. The precision
+usable and the GPU has the memory free for the model and its batch (:func:`gpu_short`,
+the driver's own count through NVML), else on the CPU; a model that fails to load on the
+GPU all the same is loaded on the CPU, and the process does not try the GPU again
+(:func:`load`). CTranslate2's wheels need only the NVIDIA driver and cuBLAS 12, which the
+``stt`` extra installs from PyPI (``nvidia-cublas-cu12``) and :func:`cuda_libraries`
+loads, once, before the model goes on the GPU. GPUs are numbered as nvidia-smi and NVML
+number them (``CUDA_DEVICE_ORDER=PCI_BUS_ID`` unless set). The precision
 (``MAKTABA_STT_COMPUTE_TYPE``, default ``auto``) is float16 on CUDA and int8 on the CPU;
 the supervisor asks for int8_float16 on a small GPU.
 
@@ -56,6 +60,9 @@ __all__ = [
     "cuda_libraries",
     "cuda_problem",
     "get_transcriber",
+    "gpu_free_gb",
+    "gpu_need_gb",
+    "gpu_short",
     "load",
     "log_mel",
     "unavailable",
@@ -83,6 +90,11 @@ DEFAULT_COMPUTE = {"cuda": "float16", "cpu": "int8"}
 
 
 # --- CUDA ----------------------------------------------------------------------------
+
+# CUDA numbers GPUs fastest first by default, nvidia-smi and NVML (and the supervisor's
+# plan, which reads nvidia-smi) by their PCI bus: one numbering for all of them. Before
+# CUDA starts in this process; an operator's own setting stands.
+os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
 
 
 def _nvidia_dirs(sub: str) -> list[Path]:
@@ -183,15 +195,20 @@ def cuda_problem() -> str | None:
     return None
 
 
+#: why Whisper would not load on the GPU in this process (:func:`load`): "auto" then
+#: transcribes on the CPU without trying again
+_GPU_FAILED: list[str] = []
+
+
 def choose_device(want: str) -> tuple[str, int]:
     """``(device, index)`` for ``MAKTABA_STT_DEVICE``: "auto" is CUDA when it is usable
-    (else the CPU, logged once); "cuda" / "cuda:<n>" must be usable (raises, saying why);
-    "cpu" is the CPU."""
+    and the model did not fail to load there (else the CPU, logged once); "cuda" /
+    "cuda:<n>" must be usable (raises, saying why); "cpu" is the CPU."""
     want = (want or "auto").strip().lower()
     if want == "cpu":
         return "cpu", 0
     if want == "auto":
-        problem = cuda_problem()
+        problem = _GPU_FAILED[0] if _GPU_FAILED else cuda_problem()
         if problem is None:
             return "cuda", 0
         _log_once("stt.cpu", "transcribing on the CPU", reason=problem)
@@ -231,6 +248,100 @@ def choose_compute_type(device: str, want: str, supported: Sequence[str]) -> str
         )
         return default
     return want
+
+
+# --- the GPU's memory -----------------------------------------------------------------
+
+#: Whisper turbo on CUDA, measured (story 38.8, RTX 2080 SUPER): what loading it takes by
+#: precision, CUDA's own buffers included (float16 and int8_float16 measured; int8 and
+#: int8_float32 keep int8 weights as int8_float16 does; float32 twice float16's weights),
+#: and what each file of a batch adds while its window is encoded. Another model takes
+#: more or less in proportion to its weights (model.bin; turbo's is 1.62 GB). The
+#: supervisor's GPU tiers (cmd/maktaba-server/internal/supervisor/stt.go) use the same
+#: figures.
+LOAD_GB = {"float16": 2.3, "int8_float16": 1.2, "int8": 1.2, "int8_float32": 1.2, "float32": 3.9}
+FILE_GB = 0.14
+TURBO_BIN_GB = 1.62
+#: left free beside it: what another program allocates between the check and the load
+MARGIN_GB = 0.25
+
+
+class _NvmlMemory(ctypes.Structure):
+    _fields_ = [  # noqa: RUF012 - ctypes' own declaration
+        ("total", ctypes.c_ulonglong),
+        ("free", ctypes.c_ulonglong),
+        ("used", ctypes.c_ulonglong),
+    ]
+
+
+def _nvml() -> Any | None:
+    """NVML, the NVIDIA driver's own library (``nvml.dll`` in System32, older drivers'
+    under NVSMI; ``libnvidia-ml.so.1``), or None without one."""
+    names = ["libnvidia-ml.so.1"]
+    if sys.platform == "win32":
+        pf = os.environ.get("PROGRAMFILES", r"C:\Program Files")
+        names = ["nvml.dll", str(Path(pf) / "NVIDIA Corporation" / "NVSMI" / "nvml.dll")]
+    for name in names:
+        try:
+            return ctypes.CDLL(name)
+        except OSError:
+            continue
+    return None
+
+
+def gpu_free_gb(index: int) -> float | None:
+    """The free memory (GiB) of NVIDIA GPU ``index`` as its driver counts it (every
+    process's allocations, the display's included), or None when it cannot say."""
+    lib = _nvml()
+    if lib is None:
+        return None
+    try:
+        if lib.nvmlInit_v2() != 0:
+            return None
+        try:
+            handle = ctypes.c_void_p()
+            mem = _NvmlMemory()
+            if lib.nvmlDeviceGetHandleByIndex_v2(ctypes.c_uint(index), ctypes.byref(handle)):
+                return None
+            if lib.nvmlDeviceGetMemoryInfo(handle, ctypes.byref(mem)):
+                return None
+            return float(mem.free) / (1 << 30)
+        finally:
+            lib.nvmlShutdown()
+    except (OSError, AttributeError):  # an NVML without these entry points
+        return None
+
+
+def gpu_need_gb(compute_type: str, batch: int, model_bin_gb: float | None = None) -> float:
+    """What Whisper needs free on the GPU to load in ``compute_type`` and decode a batch
+    of ``batch`` files (``model_bin_gb``: its weights' size, when not turbo's)."""
+    scale = (model_bin_gb / TURBO_BIN_GB) if model_bin_gb else 1.0
+    return (
+        LOAD_GB.get(compute_type, LOAD_GB["float32"]) * scale + FILE_GB * max(1, batch) + MARGIN_GB
+    )
+
+
+def gpu_short(index: int, compute_type: str, batch: int, folder: str | None = None) -> str | None:
+    """Why GPU ``index`` has too little memory free for Whisper (``folder``: its model's,
+    to size it), or None when it has enough or cannot say."""
+    free = gpu_free_gb(index)
+    if free is None:
+        return None
+    weights = Path(folder) / "model.bin" if folder else None
+    size = weights.stat().st_size / 1e9 if weights is not None and weights.is_file() else None
+    need = gpu_need_gb(compute_type, batch, size)
+    if free >= need:
+        return None
+    return (
+        f"the GPU has {free:.1f} GiB free, Whisper in {compute_type} with a batch of"
+        f" {batch} needs {need:.1f} GiB"
+    )
+
+
+def cpu_threads_default() -> int:
+    """The CPU's share when a GPU worker transcribes there instead: half the logical CPUs
+    (2 to 16), as the supervisor's CPU plan gives."""
+    return min(16, max(2, (os.cpu_count() or 4) // 2))
 
 
 _LOGGED: set[str] = set()
@@ -280,13 +391,25 @@ def model_problem(model: str) -> str | None:
 def model_dir(model: str) -> str:
     """The folder of ``model``: a local one as it is, else the Hugging Face snapshot of
     exactly the files :data:`.engine.CT2_FILES` names (what ``models download`` fetches),
-    downloaded on first use."""
+    downloaded on first use: a model Maktaba pins (:data:`.engine.CT2_PINS`) at its
+    commit, its files checked against their SHA-256 once (:func:`.engine.verify`)."""
     folder = Path(model).expanduser()
     if folder.is_dir():
         return str(folder)
     from huggingface_hub import snapshot_download
 
-    return str(snapshot_download(engine.ct2_repo(model), allow_patterns=engine.CT2_FILES))
+    repo = engine.ct2_repo(model)
+    pin = engine.CT2_PINS.get(repo)
+    snap = Path(
+        snapshot_download(
+            repo,
+            revision=pin.revision if pin else None,
+            allow_patterns=engine.CT2_FILES,
+        )
+    )
+    if pin is not None:
+        engine.verify(snap, pin)
+    return str(snap)
 
 
 @dataclass
@@ -311,8 +434,12 @@ class Loaded:
 
 
 def load(settings: WhisperSettings) -> Loaded:
-    """Load ``settings.model`` on the device and in the precision the settings ask for."""
+    """Load ``settings.model`` on the device and in the precision the settings ask for.
+    With ``auto``, a GPU with too little memory free (:func:`gpu_short`) leaves it to the
+    CPU, and so does a load that fails on the GPU, for the rest of the process."""
     _add_dll_dirs()
+    folder = model_dir(settings.model)
+    auto = (settings.device or "auto").strip().lower() == "auto"
     device, index = choose_device(settings.device)
     import ctranslate2  # type: ignore[import-untyped,import-not-found,unused-ignore]
     from faster_whisper import (  # type: ignore[import-untyped,import-not-found,unused-ignore]
@@ -325,16 +452,39 @@ def load(settings: WhisperSettings) -> Loaded:
         get_suppressed_tokens,
     )
 
+    def on_cpu(reason: str) -> tuple[str, int, str]:
+        _log_once(f"stt.cpu:{reason}", "transcribing on the CPU", reason=reason)
+        cpu = list(ctranslate2.get_supported_compute_types("cpu", 0))
+        return "cpu", 0, choose_compute_type("cpu", settings.compute_type, cpu)
+
     supported = list(ctranslate2.get_supported_compute_types(device, index))
     compute = choose_compute_type(device, settings.compute_type, supported)
-    fw = WhisperModel(
-        model_dir(settings.model),
-        device=device,
-        device_index=index,
-        compute_type=compute,
-        cpu_threads=max(0, settings.cpu_threads),
-        num_workers=1,
-    )
+    if device == "cuda" and auto:
+        short = gpu_short(index, compute, settings.max_batch, folder)
+        if short is not None:
+            device, index, compute = on_cpu(short)
+
+    def model_on(device: str, index: int, compute: str) -> Any:
+        threads = settings.cpu_threads if settings.cpu_threads > 0 else 0
+        if device == "cpu" and threads == 0 and auto:
+            threads = cpu_threads_default()  # a GPU worker's plan sets none
+        return WhisperModel(
+            folder,
+            device=device,
+            device_index=index,
+            compute_type=compute,
+            cpu_threads=threads,
+            num_workers=1,
+        )
+
+    try:
+        fw = model_on(device, index, compute)
+    except Exception as exc:
+        if device != "cuda" or not auto:
+            raise
+        _GPU_FAILED.append(f"Whisper did not load on the GPU: {type(exc).__name__}: {exc}"[:300])
+        device, index, compute = on_cpu(_GPU_FAILED[0])
+        fw = model_on(device, index, compute)
     tok = Tokenizer(
         fw.hf_tokenizer, fw.model.is_multilingual, task="transcribe", language=settings.language
     )

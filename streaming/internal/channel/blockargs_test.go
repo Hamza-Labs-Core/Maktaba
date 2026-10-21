@@ -84,7 +84,7 @@ func TestBlockArgs_AudioOnlyGetsBlackVideo(t *testing.T) {
 }
 
 func TestBlockArgs_WatermarkAndLoudnorm(t *testing.T) {
-	ln := Loudnorm{Enabled: true, TargetLUFS: -18}
+	ln := Loudnorm{Enabled: true, TargetLUFS: -18, Filter: "loudnorm"}
 	wm := &Watermark{Path: "/look/bug.gif", Position: "bottom-left", WidthPct: 12, MarginPct: 3}
 	a := BlockArgs(DefaultProfile(), BlockInput{Kind: "file", Source: "/m/a.mp4", DurationSec: 5,
 		HasVideo: true, HasAudio: true, Watermark: wm, Loudnorm: &ln})
@@ -115,6 +115,40 @@ func TestBlockArgs_WatermarkAndLoudnorm(t *testing.T) {
 		HasVideo: true, HasAudio: true, Loudnorm: &Loudnorm{Enabled: true, Filter: "dynaudnorm"}}))
 	if !strings.Contains(dyn, "dynaudnorm") {
 		t.Errorf("dynaudnorm: %s", dyn)
+	}
+}
+
+// speechnorm (dizqueTV's default) levels programme audio only: generated
+// silence (a silent source, a slate) is never filtered.
+func TestBlockArgs_Speechnorm(t *testing.T) {
+	ln := DefaultLook().Loudnorm
+	j := joined(BlockArgs(DefaultProfile(), BlockInput{Kind: "file", Source: "/m/a.mp4", DurationSec: 5,
+		HasVideo: true, HasAudio: true, Loudnorm: &ln}))
+	if !strings.Contains(j, "aresample=async=1000,speechnorm=e=6.25:r=0.00001:l=1,") {
+		t.Errorf("speechnorm missing: %s", j)
+	}
+	ln.Expansion = 3
+	if j := joined(BlockArgs(DefaultProfile(), BlockInput{Kind: "live", Source: "/m/a.mp4", DurationSec: 5,
+		HasVideo: true, HasAudio: true, Loudnorm: &ln})); !strings.Contains(j, "speechnorm=e=3:") {
+		t.Errorf("expansion: %s", j)
+	}
+	for name, in := range map[string]BlockInput{
+		"silent file": {Kind: "file", Source: "/m/a.mp4", DurationSec: 5, HasVideo: true, Loudnorm: &ln},
+		"slate":       {Kind: "slate", DurationSec: 5, Loudnorm: &ln},
+	} {
+		if j := joined(BlockArgs(DefaultProfile(), in)); strings.Contains(j, "speechnorm") || !strings.Contains(j, "anullsrc") {
+			t.Errorf("%s: silence must not be levelled: %s", name, j)
+		}
+	}
+}
+
+func TestLookaheadAllowance_OnlyLookaheadFilters(t *testing.T) {
+	base := earlyEnd.Seconds()
+	for f, extra := range map[string]bool{"speechnorm": false, "loudnorm": true, "dynaudnorm": true} {
+		got := lookaheadAllowance(BlockInput{HasAudio: true, Loudnorm: &Loudnorm{Enabled: true, Filter: f}})
+		if (got > base) != extra {
+			t.Errorf("%s: allowance %v (base %v)", f, got, base)
+		}
 	}
 }
 
@@ -194,8 +228,10 @@ func TestBlockArgs_RealFFmpegVariants(t *testing.T) {
 		}
 	}
 	prof := OutputProfile{Width: 320, Height: 180, FPS: 30, VideoKbps: 500, Encoder: EncoderSoftware}
-	ln := &Loudnorm{Enabled: true, TargetLUFS: -16}
+	ln := &Loudnorm{Enabled: true, TargetLUFS: -16, Filter: "loudnorm"}
+	sn := &Loudnorm{Enabled: true, Filter: "speechnorm", Expansion: DefaultExpansion}
 	cases := map[string]BlockInput{
+		"audio+speechnorm": {Kind: "file", Source: withAudio, DurationSec: 1, HasVideo: true, HasAudio: true, Loudnorm: sn},
 		"audio+gif+loudnorm": {Kind: "file", Source: withAudio, SeekSec: 1, DurationSec: 1, HasVideo: true, HasAudio: true,
 			Loudnorm: ln, Watermark: &Watermark{Path: gif, Position: "top-right", WidthPct: 10, MarginPct: 3}},
 		"silent+png": {Kind: "file", Source: silent, DurationSec: 1, HasVideo: true, Loudnorm: ln,

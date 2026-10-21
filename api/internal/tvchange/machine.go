@@ -13,7 +13,7 @@ const (
 	ActionRollback    = "rollback"
 	ActionStartVerify = "start_verify"   // controller: staged -> verifying
 	ActionPass        = "pass"           // controller: verifying -> ready
-	ActionFail        = "fail"           // controller: verifying -> failed
+	ActionFail        = "fail"           // controller: staged / verifying -> draft (the open change again)
 	ActionRecheckFail = "recheck_fail"   // controller: ready -> verifying
 	ActionAutoApprove = "approved_ahead" // controller: ready -> approved (approved as a draft)
 	ActionAutoPromote = "auto_promote"   // controller: ready -> swapping (a rule switched on)
@@ -24,7 +24,9 @@ const (
 )
 
 // table is design §11.2: state -> action -> next state. "Stay" actions (approve on a
-// draft, schedule) keep the state.
+// draft, schedule) keep the state. Reopen (an update joined a checked change no one
+// approved) and supersede (a second open change joined the older one) are the open
+// change's (open.go): staged, verifying and ready go back to draft or end superseded.
 var table = map[string]map[string]string{
 	StateDraft: {
 		ActionStage:     StateStaged,
@@ -34,21 +36,27 @@ var table = map[string]map[string]string{
 		ActionSupersede: StateSuperseded,
 	},
 	StateStaged: {
+		ActionReopen:      StateDraft,
+		ActionSupersede:   StateSuperseded,
 		ActionStartVerify: StateVerifying,
 		ActionSchedule:    StateStaged,
 		ActionApprove:     StateStaged,
 		ActionCancel:      StateCancelled,
-		ActionFail:        StateFailed,
+		ActionFail:        StateDraft,
 	},
 	StateVerifying: {
-		ActionPass:     StateReady,
-		ActionFail:     StateFailed,
-		ActionVerify:   StateVerifying,
-		ActionSchedule: StateVerifying,
-		ActionApprove:  StateVerifying,
-		ActionCancel:   StateCancelled,
+		ActionReopen:    StateDraft,
+		ActionSupersede: StateSuperseded,
+		ActionPass:      StateReady,
+		ActionFail:      StateDraft,
+		ActionVerify:    StateVerifying,
+		ActionSchedule:  StateVerifying,
+		ActionApprove:   StateVerifying,
+		ActionCancel:    StateCancelled,
 	},
 	StateReady: {
+		ActionReopen:      StateDraft,
+		ActionSupersede:   StateSuperseded,
 		ActionApprove:     StateApproved,
 		ActionVerify:      StateVerifying,
 		ActionSchedule:    StateReady,
@@ -74,6 +82,8 @@ var table = map[string]map[string]string{
 		ActionSupersede: StateSuperseded,
 		ActionRollback:  StateRolledBack,
 	},
+	// failed: the rows made before a failed verification returned the change to draft
+	// (story 33.12 AC3); nothing moves a change there any more
 	StateFailed:     {},
 	StateCancelled:  {},
 	StateSuperseded: {},

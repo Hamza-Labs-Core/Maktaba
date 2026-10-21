@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import os
 import sys
 import typing
 from collections.abc import Mapping
@@ -30,6 +31,7 @@ from .classify.series_detector import DetectorConfig
 from .classify.tag_check import TagCheckConfig
 from .classify.topic_tags import TaggerConfig
 from .cluster.machines_settings import ClusterMachinesConfig
+from .engine.failure_classes import QueueHealthConfig
 from .enrich.config import EnrichConfig
 from .relay import RelayConfig
 from .schedule import settings_help as _planner_help  # noqa: F401
@@ -48,6 +50,7 @@ from .schedule.tv_settings import (
     TvStripConfig,
 )
 from .sharepath.auto import StorageConfig
+from .stt.placement import TranscriptionConfig
 from .tvrelease.config import MaktabaTvStagingConfig
 from .updates_settings import UpdatesConfig
 
@@ -123,16 +126,37 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
     "updates": (UpdatesConfig, "Updates", "new signed releases installed by themselves in the "
                 "quiet window, on the home first and then on every machine; channel, pin, "
                 "defer, skip"),
+    "queue_health": (QueueHealthConfig, "Queue health", "when a queue turns red, how often "
+                     "a failure is tried, what waits on the model, a share or disk space "
+                     "and how often those are checked, which failures are of which class"),
     "cluster": (ClusterMachinesConfig, "Machines", "every machine of the cluster as the same "
                 "Maktaba: one sign-in for all of them, when a machine stops waiting for the "
                 "home"),
+    "transcription": (TranscriptionConfig, "Transcription", "which machines transcribe: "
+                      "while the second listen is on, those that run it, unless machines "
+                      "without it may too"),
 }  # fmt: skip
 
 
-def config(section: str, changes: Mapping[str, Any] | None) -> tuple[Any, dict[str, str]]:
+#: section → {setting: environment variable}: the machine's own default for a setting
+#: nobody changed. ``MAKTABA_OLLAMA_URL`` is the language model server the supervisor
+#: hands every role (Maktaba.app's bundled Ollama on its own port, or ``[llm] url`` in
+#: server.toml); every LLM stage reads its server from ``rules.tagcheck.url``.
+ENV_DEFAULTS: dict[str, dict[str, str]] = {
+    "tagcheck": {"url": "MAKTABA_OLLAMA_URL"},
+}
+
+
+def config(
+    section: str, changes: Mapping[str, Any] | None, env: Mapping[str, str] | None = None
+) -> tuple[Any, dict[str, str]]:
     """The section's config with the stored ``changes`` applied, each on its own: a value
     that cannot be used (an unknown name, a wrong shape) is skipped and returned with why,
-    so one bad edit never stops a stage; the default applies for it."""
+    so one bad edit never stops a stage; the default applies for it.
+
+    A setting in :data:`ENV_DEFAULTS` that was not changed takes its variable from
+    ``env`` (default: this process's environment) when it is set: a value the user set
+    always wins."""
     cls = SECTIONS[section][0]
     good: dict[str, Any] = {}
     bad: dict[str, str] = {}
@@ -142,6 +166,11 @@ def config(section: str, changes: Mapping[str, Any] | None) -> tuple[Any, dict[s
             good[name] = value
         except settings.SettingsError as e:
             bad[name] = str(e)
+    env = os.environ if env is None else env
+    for name, var in ENV_DEFAULTS.get(section, {}).items():
+        value = (env.get(var) or "").strip().rstrip("/")
+        if name not in good and value:
+            good[name] = value
     return settings.apply(cls, good), bad
 
 

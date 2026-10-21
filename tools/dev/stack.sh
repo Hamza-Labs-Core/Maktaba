@@ -38,9 +38,17 @@ export MAKTABA_STT_GPU_CACHE_GB=${MAKTABA_STT_GPU_CACHE_GB:-2}
 export MAKTABA_STT_MIN_FREE_PCT=${MAKTABA_STT_MIN_FREE_PCT:-25}
 mkdir -p "$LOGS"
 
+# PIDs listening on the given TCP ports. Not lsof: on this Mac it hangs in the kernel
+# on the NFS share's open files (even with -b), which left the whole stack stopped.
+port_pids() {
+  local re; re=$(printf '|\\.%s' "$@"); re="(${re#|}) "
+  netstat -anv -p tcp 2>/dev/null | grep -E " LISTEN " | grep -E "$re" \
+    | sed -E 's/.*:([0-9]+) +[0-9]{5} +[0-9a-f]{8} .*/\1/' | grep -E '^[0-9]+$' | sort -u
+}
+
 stop() {
   pkill -TERM -f "Python -m maktaba_pipeline run" 2>/dev/null
-  for p in $(lsof -nP -iTCP:8080 -sTCP:LISTEN -t 2>/dev/null); do kill "$p"; done
+  for p in $(port_pids 8080); do kill "$p"; done
   for p in $(streaming_pids); do kill "$p"; done
   for _ in {1..30}; do pgrep -f "Python -m maktaba_pipeline run" >/dev/null || break; sleep 1; done
   # a transcription worker drains minutes-long jobs on TERM; its claims are reaped anyway
@@ -48,7 +56,7 @@ stop() {
   return 0
 }
 
-api_pids() { lsof -nP -iTCP:8080 -iTCP:9100 -sTCP:LISTEN -t 2>/dev/null; }
+api_pids() { port_pids 8080 9100; }
 
 api() {
   # the old API drains open live-update streams before it lets go of its ports
@@ -67,7 +75,7 @@ api() {
 # by port, and by name: a stopping instance lets go of its ports before it exits, and
 # one that never exits (seen once) must not be left running beside the new one
 streaming_pids() {
-  { lsof -nP -iTCP:8081 -iTCP:9101 -iTCP:9050 -sTCP:LISTEN -t; pgrep -f "[/]streaming serve"; } 2>/dev/null | sort -u
+  { port_pids 8081 9101 9050; pgrep -f "[/]streaming serve"; } 2>/dev/null | sort -u
 }
 
 streaming() {

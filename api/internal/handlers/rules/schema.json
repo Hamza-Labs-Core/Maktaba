@@ -2945,7 +2945,7 @@
      "kind": "str",
      "group": "Checking tags with a language model",
      "label": "Model server (Ollama)",
-     "help": "",
+     "help": "Every language model step asks this server. Not changed here: this machine's own (Maktaba.app's bundled server, or [llm] url in server.toml), else the default. A server set here always wins.",
      "default": "http://localhost:11434"
     },
     {
@@ -3408,12 +3408,35 @@
      "default": true
     },
     {
+     "name": "loudnorm_mode",
+     "kind": "str",
+     "group": "Maktaba TV",
+     "label": "Loudness filter",
+     "help": "speechnorm: speech levelled as it plays, nothing delayed, so a channel tunes fast (what dizqueTV does). loudnorm: EBU R128 to the target below, about 3 s of look-ahead. dynaudnorm: a gentler dynamic normaliser, also with look-ahead. Only programme and filler sound is levelled, never the slate's silence.",
+     "default": "speechnorm",
+     "choices": [
+      "speechnorm",
+      "loudnorm",
+      "dynaudnorm"
+     ]
+    },
+    {
      "name": "loudnorm_target_lufs",
      "kind": "float",
      "group": "Maktaba TV",
      "label": "Loudness target (LUFS)",
-     "help": "",
+     "help": "What the loudnorm filter levels to.",
      "default": -16.0
+    },
+    {
+     "name": "speechnorm_expansion",
+     "kind": "float",
+     "group": "Maktaba TV",
+     "label": "Speech boost limit",
+     "help": "The speechnorm filter raises a quiet passage at most this many times (dizqueTV: 6.25).",
+     "default": 6.25,
+     "minimum": 1,
+     "maximum": 50
     },
     {
      "name": "watermark_skip_filler",
@@ -3470,6 +3493,16 @@
      "default": 60,
      "minimum": 0,
      "maximum": 3600
+    },
+    {
+     "name": "guide_image_max_age_s",
+     "kind": "int",
+     "group": "Guide",
+     "label": "Guide images kept for (s)",
+     "help": "How long Plex and other guide readers may keep a guide image (a channel's logo, a programme's poster) before asking for it again. 0: they ask every time.",
+     "default": 86400,
+     "minimum": 0,
+     "maximum": 2592000
     }
    ]
   },
@@ -5040,6 +5073,33 @@
      "minimum": 1
     },
     {
+     "name": "drift_check_minutes",
+     "kind": "int",
+     "group": "Plex Live TV",
+     "label": "Check Plex's channel list every (min)",
+     "help": "Another program can replace the channels Plex shows for Maktaba's tuner: dizqueTV's own Plex refresh writes its channel list onto every tuner. Maktaba checks this often and, when Refresh the channels in Plex is on, puts its channels back. 0: only checked when Maktaba's channels change.",
+     "default": 15,
+     "minimum": 0
+    },
+    {
+     "name": "drift_warn_repeats",
+     "kind": "int",
+     "group": "Plex Live TV",
+     "label": "Warn after this many restores in a row",
+     "help": "When Maktaba had to put its channels back this many times, the Plex panel advises turning off channel mapping in dizqueTV's Plex settings.",
+     "default": 3,
+     "minimum": 1
+    },
+    {
+     "name": "drift_forget_hours",
+     "kind": "int",
+     "group": "Plex Live TV",
+     "label": "Restores count as in a row within (hours)",
+     "help": "A restore more than this long after the previous one starts the count again.",
+     "default": 24,
+     "minimum": 1
+    },
+    {
      "name": "tuner_url",
      "kind": "str",
      "group": "Plex Live TV",
@@ -5490,6 +5550,114 @@
    ]
   },
   {
+   "key": "queue_health",
+   "title": "Queue health",
+   "what": "when a queue turns red, how often a failure is tried, what waits on the model, a share or disk space and how often those are checked, which failures are of which class",
+   "fields": [
+    {
+     "name": "window_hours",
+     "kind": "float",
+     "group": "Queue health",
+     "label": "Look back (hours)",
+     "help": "How far back a queue tile looks to decide its colour.",
+     "default": 6.0,
+     "minimum": 0.25,
+     "maximum": 168
+    },
+    {
+     "name": "ok_failure_share",
+     "kind": "float",
+     "group": "Queue health",
+     "label": "Failures that stay neutral (share)",
+     "help": "Below this share of failed jobs in the window a queue is never red; its failed count shows as small text (0.02 is 2%).",
+     "default": 0.02,
+     "minimum": 0,
+     "maximum": 1
+    },
+    {
+     "name": "failing_min_jobs",
+     "kind": "int",
+     "group": "Queue health",
+     "label": "Red from (jobs)",
+     "help": "A queue turns red only when at least this many jobs failed the same new way in the window: a likely bug or a bad setting.",
+     "default": 10,
+     "minimum": 1
+    },
+    {
+     "name": "transient_attempts",
+     "kind": "int",
+     "group": "Queue health",
+     "label": "Tries of a passing failure",
+     "help": "How many times a passing failure (a NAS timeout, a partial read) is tried before the item needs you. A queue that runs once by design keeps its one try.",
+     "default": 5,
+     "minimum": 1,
+     "maximum": 50
+    },
+    {
+     "name": "park_max_hours",
+     "kind": "float",
+     "group": "Queue health",
+     "label": "Waiting jobs retried after (hours)",
+     "help": "A job waiting on the model, a share or disk space is tried again after this even if no check released it. It spends no try while it waits.",
+     "default": 24.0,
+     "minimum": 0.25
+    },
+    {
+     "name": "probe_interval_seconds",
+     "kind": "int",
+     "group": "Queue health",
+     "label": "Check every (seconds)",
+     "help": "How often the model, the shares and the free disk space are checked; jobs waiting on one go back to work within this long of it coming back.",
+     "default": 60,
+     "minimum": 10
+    },
+    {
+     "name": "probe_timeout_seconds",
+     "kind": "float",
+     "group": "Queue health",
+     "label": "Check waits (seconds)",
+     "help": "How long one check waits for an answer.",
+     "default": 5.0,
+     "minimum": 1,
+     "maximum": 120
+    },
+    {
+     "name": "min_free_disk_gb",
+     "kind": "float",
+     "group": "Queue health",
+     "label": "Free disk needed (GB)",
+     "help": "Below this much free space (temporary and data folders) jobs that ran out of disk keep waiting.",
+     "default": 5.0,
+     "minimum": 0
+    },
+    {
+     "name": "resource_cooldown_minutes",
+     "kind": "float",
+     "group": "Queue health",
+     "label": "Shared memory wait (minutes)",
+     "help": "Jobs that ran out of Postgres shared memory wait this long before they are tried again (it frees when the big queries end).",
+     "default": 10.0,
+     "minimum": 1
+    },
+    {
+     "name": "class_overrides",
+     "kind": "rows",
+     "group": "Queue health",
+     "label": "Failure classes",
+     "help": "A failure whose signature starts with this is of this class: transient (tried again), item_permanent (needs you), unknown, dependency:<name> or resource:<name> (waits without spending tries). Checked before the built-in table.",
+     "default": [],
+     "columns": [
+      "signature",
+      "class"
+     ],
+     "column_kinds": [
+      "str",
+      "str"
+     ]
+    }
+   ]
+  },
+  {
    "key": "cluster",
    "title": "Machines",
    "what": "every machine of the cluster as the same Maktaba: one sign-in for all of them, when a machine stops waiting for the home",
@@ -5521,6 +5689,21 @@
      "default": 2048,
      "minimum": 0,
      "maximum": 1048576
+    }
+   ]
+  },
+  {
+   "key": "transcription",
+   "title": "Transcription",
+   "what": "which machines transcribe: while the second listen is on, those that run it, unless machines without it may too",
+   "fields": [
+    {
+     "name": "without_second_listen",
+     "kind": "bool",
+     "group": "Transcription",
+     "label": "Transcribe without the second listen",
+     "help": "Off: while the second listen is on, only the machines that run it (Apple Silicon) transcribe, so every transcript has it. On: a Windows or Linux machine transcribes too, with Whisper alone, faster; a machine that runs the second listen gives those transcripts theirs later, a few at a time, after the new files.",
+     "default": false
     }
    ]
   }

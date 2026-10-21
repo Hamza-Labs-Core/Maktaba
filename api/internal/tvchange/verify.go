@@ -269,8 +269,7 @@ func (c *Controller) verifyAndMove(ctx context.Context, ch *Change) error {
 	}
 	ch.VerifyReport = report
 	if failed {
-		return c.Store.Move(ctx, c.DB, ch, StateFailed, ActionFail, nil, map[string]any{"report": "failed checks"},
-			map[string]any{"ended_at": c.now(), "end_reason": "verification_failed"})
+		return c.failToDraft(ctx, ch, map[string]any{"report": "failed checks"}, "verification_failed")
 	}
 	return c.Store.Move(ctx, c.DB, ch, StateReady, ActionPass, nil, nil, map[string]any{"ready_at": c.now()})
 }

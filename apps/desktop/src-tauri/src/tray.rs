@@ -52,9 +52,27 @@ pub fn status_line(status: &ServerStatus) -> String {
 /// to another Maktaba and this Mac runs no server): then the menu has no
 /// server items and Quit is a plain Quit.
 pub fn entries(server: bool, status: &ServerStatus, update_ready: bool) -> Vec<Entry> {
+    entries_with_model(server, status, update_ready, None)
+}
+
+/// The tray menu with the language model's line (status::model_line) under
+/// the server's status: ready, or downloading with its progress.
+pub fn entries_with_model(
+    server: bool,
+    status: &ServerStatus,
+    update_ready: bool,
+    model: Option<&str>,
+) -> Vec<Entry> {
     let mut out = Vec::new();
     if server {
         out.push(note(status_line(status)));
+        if let Some(line) = model {
+            out.push(Entry::Item {
+                id: "model-status",
+                label: line.to_string(),
+                enabled: false,
+            });
+        }
         if update_ready {
             out.push(item("update", "Update ready: restart to install"));
         }
@@ -177,6 +195,24 @@ mod tests {
             label: "Quit".into(),
             enabled: true
         }));
+    }
+
+    #[test]
+    fn the_language_model_line_sits_under_the_status() {
+        let line = "Language model: downloading qwen2.5:7b (42%)";
+        let e = entries_with_model(true, &ServerStatus::Running, true, Some(line));
+        assert_eq!(ids(&e)[..3], ["status", "model-status", "update"]);
+        assert_eq!(
+            e[1],
+            Entry::Item {
+                id: "model-status",
+                label: line.into(),
+                enabled: false
+            }
+        );
+        // client mode shows no server lines
+        let e = entries_with_model(false, &ServerStatus::Stopped, false, Some(line));
+        assert!(!ids(&e).contains(&"model-status"));
     }
 
     #[test]

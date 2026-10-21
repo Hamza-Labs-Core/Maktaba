@@ -83,9 +83,14 @@ roots = ["/mnt/videos", "/mnt/movies"]
 # main worker then skips transcribe). 0 (default): sized from the RAM on Apple
 # Silicon (96 GB and up: 2 workers, 16 h of audio, 20 GB GPU, 2 GB cache, back
 # off below 25% free, as the home Mac runs; smaller Macs less), from the GPU's
-# memory on Windows and Linux with an NVIDIA GPU (8 GB: one worker), none on a
-# machine that transcribes on the CPU (the main worker does). -1: none.
-# [pipeline] instances, when set, wins.
+# memory on Windows and Linux with an NVIDIA GPU of 4 GB or more (8 GB: one
+# worker), none on a machine that transcribes on the CPU (the main worker does).
+# -1: none. [pipeline] instances, when set, wins. With refine on, a Windows or
+# Linux machine (no second listen there yet) plans none, and its main worker
+# transcribes only when Settings, Transcription, "Transcribe without the second
+# listen" is on. More workers than planned share its GPU memory, CPU threads and
+# audio hours. None at all while your own MAKTABA_PIPELINE_EXCLUDE_STAGES names
+# transcribe.
 # workers = 0
 # Per worker, 0 = sized from the RAM: MAKTABA_STT_AUDIO_HOURS, _MIN_FREE_PCT,
 # and on Apple Silicon MLX's GPU memory, _GPU_GB and _GPU_CACHE_GB (an

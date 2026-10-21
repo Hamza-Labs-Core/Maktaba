@@ -74,6 +74,8 @@ class Item:
     gated: bool = False
     allow_patterns: list[str] | None = None
     ignore_patterns: list[str] | None = None
+    #: the commit fetched and its files' SHA-256 (:data:`~..stt.engine.CT2_PINS`)
+    pin: Any = None
     #: why it is not needed (set: reported as skipped)
     skip: str | None = None
     state: str = "pending"
@@ -133,12 +135,14 @@ def items(only: set[str] | None = None) -> list[Item]:
         # (on Windows and Linux this imports torch and asks CUDA: only when asked about)
         no_refine = cohere.unavailable()
     ct2 = engine.current() == engine.CT2
+    repo = engine.ct2_repo(whisper) if ct2 else whisper
     out = [
         Item(
             "whisper",
-            engine.ct2_repo(whisper) if ct2 else whisper,
+            repo,
             "hf",
             allow_patterns=list(engine.CT2_FILES) if ct2 else None,
+            pin=engine.CT2_PINS.get(repo) if ct2 else None,
         ),
         Item(
             "cohere",
@@ -195,6 +199,7 @@ def hf_download(item: Item, on_bytes: Callable[[int, int], None], local_only: bo
     return Path(
         snapshot_download(
             item.model,
+            revision=item.pin.revision if item.pin is not None else None,
             allow_patterns=item.allow_patterns,
             ignore_patterns=item.ignore_patterns,
             local_files_only=local_only,
@@ -326,6 +331,10 @@ def _download(it: Item, out: _Out, share: Path | None) -> None:
 
     try:
         snap = hf_download(it, on_bytes, local_only=False)
+        if it.pin is not None:
+            from ..stt import engine
+
+            engine.verify(snap, it.pin)
         (snap / COMPLETE).write_text("ok\n", encoding="utf-8")
         it.path, it.state, it.source = str(snap), "ready", "hf"
     except Exception as exc:  # noqa: BLE001 - gated, offline, disk: reported

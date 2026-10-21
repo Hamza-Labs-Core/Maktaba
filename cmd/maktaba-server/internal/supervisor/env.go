@@ -62,6 +62,14 @@ func ChildEnv(role Role, cfg config.Config) []string {
 	// Maktaba.app (Epic 36): the payload's ffmpeg for every role.
 	env = append(env, bundleEnv(config.AppBundle())...)
 
+	// The language model server every LLM stage uses (the bundled Ollama at the
+	// port serve claimed, or [llm] url): the pipeline takes it as the model server of its
+	// rules unless the rules name one; the api's dependency checks probe it. An
+	// operator's own MAKTABA_OLLAMA_URL is kept.
+	if os.Getenv("MAKTABA_OLLAMA_URL") == "" {
+		add("MAKTABA_OLLAMA_URL", LLMURL(cfg))
+	}
+
 	// Cross-service discovery: the api needs to reach streaming +
 	// pipeline over gRPC. These default ports mirror the compose stack.
 	// (Streaming's gRPC port, not its HTTP stream_addr.)
@@ -133,11 +141,12 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		// The streaming binary binds MAKTABA_HTTP_ADDR; the older
 		// MAKTABA_STREAMING_HTTP_ADDR is kept for anything reading it.
 		add("MAKTABA_HTTP_ADDR", cfg.Server.StreamAddr)
-		// its cache (channel segments, transcodes) under this install's data
-		// directory: the binary's default, /var/maktaba, is the containers' path,
-		// which a user cannot create on macOS or Windows. An operator's own is kept.
+		// its cache (channel segments, transcodes) in this install's cache
+		// directory (config.CacheDir: <state>/cache, ~/.cache/maktaba in the Linux
+		// app): the binary's default, /var/maktaba, is the containers' path, which a
+		// user cannot create on macOS or Windows. An operator's own is kept.
 		if os.Getenv("MAKTABA_CACHE_ROOT") == "" {
-			add("MAKTABA_CACHE_ROOT", filepath.Join(cfg.StateDir(), "cache", "streaming"))
+			add("MAKTABA_CACHE_ROOT", filepath.Join(cfg.CacheDir(), "streaming"))
 		}
 		add("MAKTABA_STREAMING_HTTP_ADDR", cfg.Server.StreamAddr)
 		add("MAKTABA_ADMIN_ADDR", streamingAdmin(cfg))
@@ -181,16 +190,8 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		if os.Getenv("MAKTABA_WORKER_PATH_MAP") == "" {
 			add("MAKTABA_WORKER_PATH_MAP", strings.TrimSpace(cfg.Media.PathMap))
 		}
-		// the transcription workers (PlanSTT, BuildPipelineInstances) take the
-		// transcribe stage; the main worker leaves it to them
-		// (added to the stages an operator's own environment excludes). Without
-		// them on Windows or Linux (the CPU plan) the main worker transcribes,
-		// with the plan's knobs (story 38.8).
-		plan := PlanSTT(cfg)
-		if plan.Workers > 0 {
-			add("MAKTABA_PIPELINE_EXCLUDE_STAGES", withStage(os.Getenv("MAKTABA_PIPELINE_EXCLUDE_STAGES"), "transcribe"))
-		}
-		env = append(env, plan.mainKnobEnv()...)
+		// the main worker's share of the transcription plan is Build's (PlanFor:
+		// it asks the pipeline's Python), the workers' BuildPipelineInstances'
 		// Epic 35 story 35.8: a full node's pipeline works for the home as this
 		// machine's node (node.json: its database role, node id). The pipeline only
 		// reads node.json without a database URL, so [database].url above would
