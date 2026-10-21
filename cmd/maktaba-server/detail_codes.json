@@ -1,0 +1,22 @@
+{
+  "db_waiting": [],
+  "db_checking": ["release"],
+  "db_dumping": ["from", "to"],
+  "db_migrating": ["to"],
+  "db_restoring": ["failed", "dump"],
+  "db_restored": ["failed", "error", "dump", "release"],
+  "db_refused_older": ["release", "needed", "dump"],
+  "db_ahead": ["release", "error"],
+  "db_dump_failed": ["to", "error"],
+  "db_migrate_failed": ["release", "error"],
+  "db_restore_failed": ["failed", "error", "dump", "restore_error"],
+  "db_restore_unfinished": ["failed", "dump"],
+  "db_no_cluster": ["failed", "error", "dump"],
+  "db_record_failed": ["path", "error"],
+  "pg_unreadable": ["path", "error"],
+  "pg_major": ["cluster", "payload"],
+  "venv_waiting": [],
+  "venv_building": ["step", "done", "total", "percent", "message"],
+  "venv_interrupted": ["log"],
+  "venv_failed": ["error", "log"]
+}

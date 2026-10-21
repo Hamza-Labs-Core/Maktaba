@@ -46,7 +46,7 @@ func runMigrate(argv []string) error {
 	fs.StringVar(&dir, "dir", defaultMigrationsDir(), "Migrations directory")
 	fs.StringVar(&dsn, "dsn", os.Getenv("DATABASE_URL"), "Database DSN (default: $DATABASE_URL)")
 	fs.StringVar(&dialect, "dialect", "postgres", "SQL dialect: postgres, or sqlite (chosen automatically for sqlite:// DSNs)")
-	fs.DurationVar(&timeout, "timeout", 5*time.Minute, "Overall migration timeout")
+	fs.DurationVar(&timeout, "timeout", 5*time.Minute, "Overall migration timeout (0: none)")
 	fs.BoolVar(&showHelp, "help", false, "Show help")
 
 	fs.Usage = func() {
@@ -59,6 +59,9 @@ Actions:
   validate     Verify the migrations directory is well-formed
   down         Roll back the most recently applied migration
   down-to <v>  Roll back until the schema is at version <v>
+
+A database holding migrations newer than these (a newer Maktaba migrated
+it) is refused by up: exit status 3 (any other failure: 1).
 
 Rollback (Story 22.6 AC2): down / down-to execute the +goose Down
 blocks. They are refused when MAKTABA_DISABLE_DOWN is set to a truthy
@@ -127,7 +130,7 @@ Flags:`)
 		return errors.New("DSN is empty: pass --dsn or set DATABASE_URL")
 	}
 	if dialect == "sqlite" || dialect == "sqlite3" || (dialect == "postgres" && isSQLiteDSN(dsn)) {
-		sctx, scancel := context.WithTimeout(context.Background(), timeout)
+		sctx, scancel := migrateContext(timeout)
 		defer scancel()
 		return runSQLiteMigrate(sctx, dsn, dir, action)
 	}
@@ -135,7 +138,7 @@ Flags:`)
 		return fmt.Errorf("dialect %q is not supported (use postgres or sqlite)", dialect)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := migrateContext(timeout)
 	defer cancel()
 
 	dsn = pgdsn.ForLibPQ(ctx, dsn, pgdsn.Ping)
@@ -180,14 +183,30 @@ Flags:`)
 	}
 }
 
+// migrateContext bounds a run by timeout; 0 (or less) is no bound: the desktop
+// app's server runs an update's migrations so (nothing else uses the database
+// meanwhile, and a stop of the server ends them; a large library's migration
+// may take longer than any bound).
+func migrateContext(timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		return context.WithCancel(context.Background())
+	}
+	return context.WithTimeout(context.Background(), timeout)
+}
+
 // runGooseUp wraps goose.UpContext after copying postgres-only files
 // to a clean staging directory: goose loads every *.sql in its dir,
 // and we want SQLite-parity siblings (foo.sqlite.sql) excluded from
 // the Postgres run. We also apply slot `0000_schema_version.sql` as
 // a bootstrap step outside goose because goose/v3 refuses to parse
 // version-0 migrations ("migration version must be greater than
-// zero"); see shared/db/migrations/MANIFEST.md for the rationale.
+// zero"); see shared/db/migrations/MANIFEST.md for the rationale. A
+// database ahead of dir's migrations is refused (errSchemaAhead) before
+// anything is applied.
 func runGooseUp(ctx context.Context, db *sql.DB, dir string) error {
+	if err := refuseAheadOf(ctx, db, dir, false); err != nil {
+		return err
+	}
 	if err := bootstrapSchemaVersion(ctx, db, dir); err != nil {
 		return fmt.Errorf("bootstrap schema_version: %w", err)
 	}

@@ -80,8 +80,10 @@ A `wheel` or `repair` run that fails keeps the previous `ready` stamp, so the ne
 the same action again. A `build` removes the stamp before the rest of the old venv, so a removal
 cut short is never taken for a ready venv.
 
-The venv is built in place (a venv cannot be moved), so **the supervisor stops the pipeline
-workers before a run that is not `none`** (`--check` says which, without changing anything).
+The venv is built in place (a venv cannot be moved: pip writes each console script with its
+absolute interpreter path), so **no pipeline worker may run on it while a run that is not `none`
+does** (`--check` says which, without changing anything): the app's server runs the bootstrap
+before the workers' start, and they wait for it (contract-update.md).
 
 ### Outputs
 
@@ -125,6 +127,37 @@ below; `--check` prints one `{"event": "plan", "action": "...", "reason": "..."}
 | 2 | bad inputs (missing file, no hashes in the constraints, not one wheel in the payload) |
 | 10 | `--check` only: a run would change the venv |
 | 130 | stopped by SIGTERM / Ctrl-C, on Windows by CTRL_BREAK (`SIGBREAK`; pip, in its own process group, gets one too, else is terminated); the next run resumes. A console closed or a sign-out on Windows ends the run before it can say so: the status may stay `building` (its `pid` gone); the stamp says `building` too, so the next run resumes |
+
+### How the app's server runs it
+
+`cmd/maktaba-server/internal/appvenv` (setup's venv step, and the supervisor before the pipeline's
+first start): `--check`, then the run when it says the venv needs work, both with
+`--python <payload>/python/…` (the payload's Python, the one running it), `--payload` and
+`--venv <state>/venv`.
+
+**Its environment** is its own, not the server's: of the server's it keeps only `PATH`, `HOME`,
+`USER`, `LOGNAME`, `TMPDIR`, `TEMP`, `TMP`, `LANG`, `LC_ALL`, `LC_CTYPE`, `XDG_CACHE_HOME`,
+`XDG_CONFIG_HOME`; on Windows `SYSTEMROOT` (a Python does not start without it), `WINDIR`,
+`SYSTEMDRIVE`, `COMSPEC`, `PATHEXT`, `USERPROFILE`, `USERNAME`, `HOMEDRIVE`, `HOMEPATH`,
+`APPDATA`, `LOCALAPPDATA` (pip's cache), `PROGRAMDATA`, `PROCESSOR_ARCHITECTURE`,
+`NUMBER_OF_PROCESSORS`; a proxy (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `ALL_PROXY`, in either
+case) and its certificates (`SSL_CERT_FILE`, `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`); pip's
+`PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`, `PIP_TRUSTED_HOST`, `PIP_CERT`, `PIP_CLIENT_CERT`,
+`PIP_PROXY`, `PIP_CACHE_DIR`, `PIP_TIMEOUT`, `PIP_RETRIES` (a mirror is safe: every package is
+checked against its hash); and the variables **`MAKTABA_VENV_KEEP_ENV`** names (comma-separated:
+a network that needs another, a netrc). Then `PYTHONPATH=<the wheel>`, `PYTHONUTF8=1` and
+`PYTHONNOUSERSITE=1` (user site-packages run code at a Python's start). So the server's
+`MAKTABA_PYTHON`, `MAKTABA_PIPELINE_EXTRAS`, `MAKTABA_VENV`, `MAKTABA_PIPELINE_PAYLOAD`,
+`PYTHONHOME` or `VIRTUAL_ENV` never change what it builds (the extras are the default,
+`stt,search`).
+
+**Stopping it** (the supervisor stopping, a setup step cancelled): SIGTERM; on Windows the
+server starts it in a process group of its own on its console (`CREATE_NEW_PROCESS_GROUP`) and
+sends that group CTRL_BREAK (killed instead when there is no console to send it through, which
+the app's launcher always gives the server). It then waits up to 45 s: the bootstrap gives pip
+30 s to stop (10 s on Windows), kills it, says `interrupted` and exits 130; 45 s covers that and
+stays under the launcher's 60 s stop grace. Only then is it killed. An exit 130 is an
+interruption (setup's `interrupted`), never a failure.
 
 ### After it
 
