@@ -182,3 +182,32 @@ func TestSetupNodeDryRun(t *testing.T) {
 		t.Fatal(s.Out)
 	}
 }
+
+// Story 38.9: a Windows x86_64 machine whose GPU runs the second listen installs the
+// release's cuda pin set (torch's CUDA build); every other machine the default one.
+func TestSetupNodeChoosesTorchsBuild(t *testing.T) {
+	p := &releaseverify.Pipeline{Constraints: "c.txt", ConstraintsCUDA: "c-cuda.txt"}
+	for _, c := range []struct {
+		platform string
+		gpu      bool
+		want     string
+	}{
+		{"windows/amd64", true, "c-cuda.txt"},
+		{"windows/amd64", false, "c.txt"},
+		{"linux/amd64", true, "c.txt"}, // PyPI's Linux torch has CUDA already
+		{"darwin/arm64", true, "c.txt"},
+	} {
+		s := &nodeSetup{Platform: c.platform, CUDATorch: func() bool { return c.gpu }}
+		if got := s.constraints(p); got != c.want {
+			t.Errorf("%s, GPU runs the second listen %v: %s, want %s", c.platform, c.gpu, got, c.want)
+		}
+	}
+	old := &releaseverify.Pipeline{Constraints: "c.txt"} // a release before the cuda set
+	s := &nodeSetup{Platform: "windows/amd64", CUDATorch: func() bool { return true }}
+	if got := s.constraints(old); got != "c.txt" {
+		t.Errorf("a release without the cuda set: %s", got)
+	}
+	if !p.IsConstraints("c-cuda.txt") || !p.IsConstraints("c.txt") || p.IsConstraints("x.whl") {
+		t.Error("IsConstraints")
+	}
+}

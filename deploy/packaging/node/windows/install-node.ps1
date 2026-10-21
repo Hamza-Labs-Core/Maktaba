@@ -71,6 +71,12 @@
 .PARAMETER ConstraintsSha256
     With -Constraints: its SHA-256 (remembered, pinned the same way).
 
+.PARAMETER Torch
+    Which build of torch the stt and search extras install: auto (default) takes the
+    CUDA build (2.0 GB, from PyTorch's index: the release's constraints-cuda.txt) when this
+    machine's NVIDIA GPU runs the second listen (9.5 GiB or more, compute capability 7.5 or
+    more, driver R580 or later), else the CPU build (124 MB, PyPI's); cpu or cuda choose.
+
 .PARAMETER Source
     Build the pipeline from this source directory instead (default in a checkout:
     pipeline\ of the repository holding this script; remembered).
@@ -121,6 +127,7 @@ param(
     [string]$Sha256 = '',
     [string]$Constraints = '',
     [string]$ConstraintsSha256 = '',
+    [ValidateSet('auto', 'cpu', 'cuda')][string]$Torch = 'auto',
     [string]$Ffmpeg = '',
     [ValidateSet('Task', 'Service')][string]$Mode = '',
     [switch]$NoJoin,
@@ -145,8 +152,20 @@ function Assert-ExitCode {
 if ($Instances -gt 16) { throw '-Instances: at most 16' }
 if (-not $Extras) { $Extras = Read-NodeKeyValue $script:NodeInstallConf 'EXTRAS' }
 if (-not $Extras) { $Extras = 'none' }
+# torch's build (the stt and search extras bring torch): the CUDA one only where the GPU
+# runs the second listen
+$torchExtras = @($Extras.Split(',') | ForEach-Object { $_.Trim() }) | Where-Object { $_ -eq 'stt' -or $_ -eq 'search' }
+$CudaTorch = $false
+if ($Torch -eq 'cuda') {
+    $CudaTorch = $true
+} elseif ($Torch -eq 'auto' -and $torchExtras -and ($env:PROCESSOR_ARCHITECTURE -eq 'AMD64' -or $env:PROCESSOR_ARCHITEW6432 -eq 'AMD64')) {
+    $gap = Get-NodeSecondListenGap (Get-NodeNvidiaGpu)
+    $CudaTorch = -not $gap
+    if ($gap) { Write-NodeStep "torch: the CPU build (no second listen here: $gap)" }
+    else { Write-NodeStep 'torch: the CUDA build (this NVIDIA GPU runs the second listen)' }
+}
 $Origin = Resolve-NodePipelineOrigin -FromWheel $FromWheel -Constraints $Constraints -Source $Source `
-    -WheelSha256 $Sha256 -ConstraintsSha256 $ConstraintsSha256 `
+    -WheelSha256 $Sha256 -ConstraintsSha256 $ConstraintsSha256 -CudaTorch:$CudaTorch `
     -BundleDir $PackagingDir -InstallConf $script:NodeInstallConf `
     -CheckoutPipeline (Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PackagingDir))) 'pipeline')
 if (-not $Mode) {
@@ -305,10 +324,10 @@ if ($Origin.From -ne 'source') {
         # Hash-checking mode: every dependency must match a --hash of the constraints file,
         # the wheel its own SHA-256 (a one-line requirements file next to the constraints).
         $reqFile = New-NodeHashedRequirements -WheelFile $wheelFile -WheelSha256 $wheelPin -Extras $extrasList -ConstraintsFile $consFile
-        # The constraints name PyTorch's index beside PyPI (torch's CUDA build), which also
-        # serves packages PyPI has: uv looks for each pin on every index (by itself it stops
-        # at the first that has the package) and takes the file it finds, refusing it when
-        # it is not one of the pin's hashes.
+        # The cuda constraints name PyTorch's index beside PyPI (torch's CUDA build), which
+        # also serves packages PyPI has: uv looks for each pin on every index (by itself it
+        # stops at the first that has the package) and takes the file it finds, refusing it
+        # when it is not one of the pin's hashes.
         $installArgs = @('--require-hashes', '--index-strategy', 'unsafe-best-match', '--constraint', ('.\' + (Split-Path -Leaf $consFile)), '-r', ('.\' + (Split-Path -Leaf $reqFile)))
         # The stt and search extras bring torch, whose pins PyTorch's index also matches
         # with other files on Linux (its torch 2.14.1+cu130 for "torch==2.14.1", its triton):
@@ -370,6 +389,7 @@ if ($Origin.From -ne 'source') {
         $uvArgs += @('--python', ([System.IO.File]::ReadAllText($pythonVersionFile)).Trim())
     }
     foreach ($e in $extrasList) { $uvArgs += @('--extra', $e) }
+    if ($CudaTorch) { $uvArgs += @('--group', 'cuda') }  # torch's CUDA build (pyproject.toml)
     $env:UV_PROJECT_ENVIRONMENT = $script:NodeVenv
     try {
         Assert-ExitCode (Invoke-NativeCommand -FilePath $uv -ArgumentList $uvArgs) 'uv sync'

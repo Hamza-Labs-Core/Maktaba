@@ -256,8 +256,9 @@ jobs:
           grep -q '"state": "ready"' "$RUNNER_TEMP/App Support/Maktaba/venv-status.json"
           "$venv/bin/maktaba-pipeline" --version
           "$venv/bin/python" -c "import mlx_whisper, mlx_audio, chromadb, sentence_transformers, camel_tools, silero_vad"
-          # the constraints name PyTorch's index (Windows' torch): a Mac keeps PyPI's torch
+          # the default constraints are PyPI's (the cuda set is Windows'): a Mac has PyPI's torch
           "$venv/bin/python" -c "from importlib.metadata import version; v = version('torch'); assert '+' not in v, v; print('torch', v)"
+          grep -q '"torch": "cpu"' "$RUNNER_TEMP/App Support/Maktaba/venv-status.json"
           PYTHONPATH="$whl" "$py" -m maktaba_pipeline.venv_bootstrap --python "$py" \
             --payload dist --venv "$venv" --check
           "$venv/bin/maktaba-pipeline" models status --json || [ $? -eq 10 ]
@@ -337,8 +338,15 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or $got -ne $ver) { throw "maktaba-pipeline --version says '$got', the wheel is $ver" }
           & $vpy -c 'import chromadb, sentence_transformers, maktaba_pipeline'
           if ($LASTEXITCODE -ne 0) { throw 'the search extra does not import' }
+          # story 38.9: no NVIDIA GPU here, so torch's CPU build (PyPI's), not the cuda set's
+          if ($status.torch -ne 'cpu') { throw "venv-status.json: torch $($status.torch) ($($status.torch_why))" }
+          $tv = (& $vpy -c "from importlib.metadata import version; print(version('torch'))" | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0 -or $tv -like '*+*') { throw "torch $tv on a machine without an NVIDIA GPU (the CPU build is PyPI's 2.x without a local tag)" }
           $plan = Invoke-Bootstrap --check | Out-String
           if ($LASTEXITCODE -ne 0 -or $plan -notmatch '"action": "none"') { throw "a second run plans: $plan" }
+          # the cuda set asked for is another set of pins: it would build again
+          $plan = Invoke-Bootstrap --check --torch cuda | Out-String
+          if ($LASTEXITCODE -ne 10 -or $plan -notmatch '"action": "build"') { throw "--torch cuda plans: $plan" }
 
   install-windows:
     name: install from the archive (windows)

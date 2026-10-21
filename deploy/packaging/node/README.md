@@ -105,18 +105,23 @@ explicit flag starts a new pin. The digest comes from `sha256sum`, else `shasum`
 Python's `hashlib` (Windows: `Get-FileHash`); with none of them the installer stops
 rather than install unchecked.
 
-**Dependencies, hash-checked.** A release's constraints file carries every pinned
-dependency's hashes from `uv.lock` (`build-release.sh` refuses to publish one without), and
-the package indexes they come from: PyPI and PyTorch's, for torch's CUDA build on Windows. The
-installers install with `--require-hashes`: each package must match one of its hashes,
-whichever index served it, and the wheel its own SHA-256. A constraints file without hashes is
-refused. uv looks for each pin on both indexes (`--index-strategy unsafe-best-match`, safe
-here because every file is hash-pinned). With the `stt` or `search` extra, and without uv, the
-venv's own pip installs the constraints' pins instead (hash-checked, every extra's) and then the
-wheel; it is not upgraded from PyPI first. pip takes, for each pin, the file its hashes name
-from either index; uv takes the file it finds first and stops when that one does not match,
-which PyTorch's index makes happen for the torch those extras bring (on Linux it serves
-`torch 2.14.1+cu130` for the `torch==2.14.1` pin, and its own triton 3.8.0).
+**Dependencies, hash-checked.** A release's constraints files carry every pinned
+dependency's hashes from `uv.lock` (`build-release.sh` refuses to publish one without). There
+are two: `maktaba-pipeline-<ver>-constraints.txt`, PyPI's alone (torch's CPU build on Windows,
+124 MB), and `maktaba-pipeline-<ver>-constraints-cuda.txt`, the same with torch's CUDA build for
+Windows from PyTorch's index, which it names (2.0 GB). `install-node.ps1` takes the cuda set
+when this machine's NVIDIA GPU runs the second listen (9.5 GiB or more, compute capability 7.5
+or more, driver R580 or later, as `nvidia-smi` says) and the `stt` or `search` extra brings
+torch, else the default set (`-Torch cpu|cuda` chooses); `install-node.sh` (Linux, macOS) the
+default set, whose Linux torch is the CUDA build already. The installers install with
+`--require-hashes`: each package must match one of its hashes, whichever index served it, and
+the wheel its own SHA-256. A constraints file without hashes is refused. uv looks for each pin
+on every index the file names (`--index-strategy unsafe-best-match`, safe here because every
+file is hash-pinned). With the `stt` or `search` extra, and without uv, the venv's own pip
+installs the constraints' pins instead (hash-checked, every extra's) and then the wheel; it is
+not upgraded from PyPI first. pip takes, for each pin, the file its hashes name from either
+index; uv takes the file it finds first and stops when that one does not match, which PyTorch's
+index can make happen for the torch those extras bring.
 
 **URLs with credentials are refused.** A `--from-wheel` / `--constraints` URL is printed
 while it downloads and remembered in `install.conf`, so one with user info

@@ -49,13 +49,22 @@ type Asset struct {
 	Files   map[string]string `json:"files"`
 }
 
-// Pipeline is the pipeline wheel and its hash-checked constraints.
+// Pipeline is the pipeline wheel and its hash-checked constraints. ConstraintsCUDA
+// (story 38.9, absent before): the same pins with torch's CUDA build for Windows, for a
+// machine whose NVIDIA GPU runs the second listen (the default set has PyPI's CPU build).
 type Pipeline struct {
-	Wheel             string `json:"wheel"`
-	WheelSHA256       string `json:"wheel_sha256"`
-	Constraints       string `json:"constraints"`
-	ConstraintsSHA256 string `json:"constraints_sha256"`
-	Python            string `json:"python"`
+	Wheel                 string `json:"wheel"`
+	WheelSHA256           string `json:"wheel_sha256"`
+	Constraints           string `json:"constraints"`
+	ConstraintsSHA256     string `json:"constraints_sha256"`
+	ConstraintsCUDA       string `json:"constraints_cuda,omitempty"`
+	ConstraintsCUDASHA256 string `json:"constraints_cuda_sha256,omitempty"`
+	Python                string `json:"python"`
+}
+
+// IsConstraints reports whether name is one of the pipeline's constraints files.
+func (p *Pipeline) IsConstraints(name string) bool {
+	return p != nil && name != "" && (name == p.Constraints || name == p.ConstraintsCUDA)
 }
 
 // Checksums maps a release file name to its lowercase hex SHA-256.
@@ -182,7 +191,11 @@ func (m *Manifest) Validate(tag string, sums Checksums) error {
 		}
 	}
 	if p := m.Pipeline; p != nil {
-		for _, f := range []struct{ name, digest string }{{p.Wheel, p.WheelSHA256}, {p.Constraints, p.ConstraintsSHA256}} {
+		files := []struct{ name, digest string }{{p.Wheel, p.WheelSHA256}, {p.Constraints, p.ConstraintsSHA256}}
+		if p.ConstraintsCUDA != "" || p.ConstraintsCUDASHA256 != "" {
+			files = append(files, struct{ name, digest string }{p.ConstraintsCUDA, p.ConstraintsCUDASHA256})
+		}
+		for _, f := range files {
 			if !validFileName(f.name) || !hexRe.MatchString(f.digest) {
 				return bad("pipeline: bad entry %q", f.name)
 			}

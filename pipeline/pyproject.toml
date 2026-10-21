@@ -50,7 +50,8 @@ stt = [
     # ... and on Windows and Linux x86_64 (story 38.9, stt/cohere_cuda.py): the same model
     # through transformers (its cohere_asr model, native since 5.4) on torch's CUDA build,
     # on an NVIDIA GPU only: torch's CUDA 13 build (PyPI's on Linux; on Windows PyPI has only
-    # a CPU torch, so [tool.uv.sources] takes it from PyTorch's index there)
+    # a CPU torch: the cuda group below takes the CUDA one from PyTorch's index, on the
+    # machines whose GPU runs the second listen)
     "torch>=2.9,<3 ; (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
     "transformers>=5.4,<6 ; (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
     # transformers loads the weights straight onto the GPU (device_map) only with accelerate
@@ -79,16 +80,35 @@ search = [
     "sentence-transformers>=3.0,<7",
 ]
 
-# torch's CUDA build on Windows x86_64 (story 38.9): PyPI has only a CPU torch for Windows, so
-# it comes from PyTorch's own index there, CUDA 13.0 as PyPI's Linux torch (Turing and newer
-# GPUs, an NVIDIA driver of R580 or later). Explicit: uv takes nothing else from it. The lock
-# pins the wheel with its hash, and the release's constraints file names the index
-# (build-release.sh: uv export --emit-index-url, uv 0.12 or later). Every pin in it is
-# hash-checked, so a file from either index is installed only when it is the pinned one; the
-# installers and the app install the pins with pip, which picks that file whichever index
-# has it (uv takes one index's file and stops at a hash mismatch)
+# torch on Windows x86_64 (story 38.9): PyPI's build is the CPU one (124 MB), which the stt and
+# search extras install everywhere by default. The second listen needs the CUDA one (2.0 GB,
+# CUDA 13.0 as PyPI's Linux torch: Turing and newer GPUs, an NVIDIA driver of R580 or later),
+# which comes from PyTorch's own index with the `cuda` group, only where the machine's GPU
+# runs the second listen: the release ships both pin sets (build-release.sh:
+# ...-constraints.txt and ...-constraints-cuda.txt, uv export --group cuda), and the
+# installers and the venv bootstrap pick one by the GPU. uv locks the two builds apart only
+# for groups declared in conflict, hence `cpu`, which adds nothing to the default (PyPI's).
+# Groups, not extras: `uv sync --all-extras` stays possible. Use the cuda group on Windows
+# only (`uv sync --group cuda`); on Linux PyPI's torch has CUDA already.
+[dependency-groups]
+cpu = [
+    "torch>=2.9,<3 ; sys_platform == 'win32' and platform_machine == 'AMD64'",
+]
+cuda = [
+    "torch>=2.9,<3 ; sys_platform == 'win32' and platform_machine == 'AMD64'",
+]
+
+[tool.uv]
+conflicts = [[{ group = "cpu" }, { group = "cuda" }]]
+
+# The cuda group's torch from PyTorch's index. Explicit: uv takes nothing else from it. The
+# lock pins its wheel with its hash, and the cuda constraints file names the index
+# (uv export --emit-index-url, uv 0.12 or later). Every pin is hash-checked, so a file from
+# either index is installed only when it is the pinned one; the installers install that file
+# set with pip, which picks the pinned file whichever index has it (uv takes one index's file
+# and stops at a hash mismatch)
 [tool.uv.sources]
-torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'win32' and platform_machine == 'AMD64'" }]
+torch = [{ index = "pytorch-cu130", group = "cuda", marker = "sys_platform == 'win32' and platform_machine == 'AMD64'" }]
 
 [[tool.uv.index]]
 name = "pytorch-cu130"

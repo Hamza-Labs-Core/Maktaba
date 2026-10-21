@@ -268,6 +268,71 @@ function ConvertTo-NodeSha256 {
 # wheel or source), Wheel, WheelSha256, Constraints, ConstraintsSha256, Python, Source,
 # Tag. The digests are the release's, the given ones (-WheelSha256, -ConstraintsSha256),
 # or the ones the last install pinned; empty when not known yet.
+# --- torch's build (story 38.9) -----------------------------------------------------------
+# A release ships two pin sets: the default one (torch's CPU build on Windows, from PyPI,
+# 124 MB) and the cuda one (its CUDA build, from PyTorch's index, 2.0 GB), which only the
+# second listen needs, and only an NVIDIA GPU that runs it: as the pipeline checks it
+# (stt/cohere_cuda.py: MIN_GPU_GB on Windows, MIN_COMPUTE, MIN_DRIVER; a test keeps these
+# equal), asked of nvidia-smi. Something nvidia-smi does not report is not held against it.
+$script:NodeSecondListenMinMiB = 9728       # 9.5 GiB
+$script:NodeSecondListenMinCompute = '7.5'  # Turing
+$script:NodeSecondListenMinDriver = 580
+
+# One nvidia-smi line ("NVIDIA GeForce RTX 3080 Ti, 12288, 8.6, 591.44", or an older
+# driver's "name, MiB, driver") as @{ Name; MiB; Compute; Driver } (Compute and Driver $null
+# when it does not say); $null when it names no GPU.
+function ConvertFrom-NodeNvidiaSmi {
+    param([string]$Line)
+    $f = @($Line.Split(',') | ForEach-Object { $_.Trim() })
+    if ($f.Count -lt 2) { return $null }
+    $mib = 0
+    if (-not [int]::TryParse($f[1], [ref]$mib) -or $mib -le 0) { return $null }
+    $gpu = @{ Name = $f[0]; MiB = $mib; Compute = $null; Driver = $null }
+    if ($f.Count -ge 3 -and $f[$f.Count - 1] -and $f[$f.Count - 1] -ne '[N/A]') { $gpu.Driver = $f[$f.Count - 1] }
+    if ($f.Count -ge 4 -and $f[2] -match '^\d+\.\d+$') { $gpu.Compute = $f[2] }
+    return $gpu
+}
+
+# The first NVIDIA GPU (CUDA device 0), or $null without one or its driver.
+function Get-NodeNvidiaGpu {
+    $smi = Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+    $exe = $null
+    if ($smi) { $exe = $smi.Path }
+    if (-not $exe -and $env:SystemRoot) {
+        $p = Join-Path $env:SystemRoot 'System32\nvidia-smi.exe'
+        if (Test-Path -LiteralPath $p -PathType Leaf) { $exe = $p }
+    }
+    if (-not $exe) { return $null }
+    foreach ($query in @('name,memory.total,compute_cap,driver_version', 'name,memory.total,driver_version')) {
+        $r = Invoke-NativeCapture -FilePath $exe -ArgumentList @("--query-gpu=$query", '--format=csv,noheader,nounits')
+        if ($r.ExitCode -eq 0) {
+            $line = @($r.StdOut -split "`r?`n" | Where-Object { $_.Trim() }) | Select-Object -First 1
+            if ($line) { return (ConvertFrom-NodeNvidiaSmi $line) }
+            return $null
+        }
+    }
+    return $null
+}
+
+# Why this GPU (Get-NodeNvidiaGpu) does not run the second listen, or '' when it does.
+function Get-NodeSecondListenGap {
+    param($Gpu)
+    if (-not $Gpu) { return 'no NVIDIA GPU' }
+    if ($Gpu.MiB -lt $script:NodeSecondListenMinMiB) {
+        return ('{0} has {1:N1} GiB, under {2:N1}' -f $Gpu.Name, ($Gpu.MiB / 1024), ($script:NodeSecondListenMinMiB / 1024))
+    }
+    if ($Gpu.Compute -and ([version]$Gpu.Compute -lt [version]$script:NodeSecondListenMinCompute)) {
+        return "$($Gpu.Name) is compute capability $($Gpu.Compute), under $($script:NodeSecondListenMinCompute)"
+    }
+    if ($Gpu.Driver) {
+        $major = 0
+        if ([int]::TryParse(($Gpu.Driver.Split('.')[0]), [ref]$major) -and $major -lt $script:NodeSecondListenMinDriver) {
+            return "the NVIDIA driver $($Gpu.Driver) is older than R$($script:NodeSecondListenMinDriver)"
+        }
+    }
+    return ''
+}
+
 function Resolve-NodePipelineOrigin {
     param(
         [string]$FromWheel = '',
@@ -277,7 +342,9 @@ function Resolve-NodePipelineOrigin {
         [string]$Source = '',
         [Parameter(Mandatory = $true)][string]$BundleDir,
         [Parameter(Mandatory = $true)][string]$CheckoutPipeline,
-        [Parameter(Mandatory = $true)][string]$InstallConf
+        [Parameter(Mandatory = $true)][string]$InstallConf,
+        # the release's cuda pin set (torch's CUDA build) instead of its default one
+        [switch]$CudaTorch
     )
     if ($FromWheel -and $Source) { throw '-FromWheel and -Source: give one (a wheel, or a source directory to build)' }
     if ($Constraints -and $Source) { throw '-Constraints goes with -FromWheel (a source build uses its uv.lock)' }
@@ -339,11 +406,14 @@ function Resolve-NodePipelineOrigin {
         if (Test-Path -LiteralPath $local -PathType Leaf) { $o.Wheel = $local } else { $o.Wheel = "$base/$wheel" }
         $o.WheelSha256 = Read-NodeKeyValue $releaseConf 'WHEEL_SHA256'
         if (-not $o.Constraints) {
-            $cons = Read-NodeKeyValue $releaseConf 'CONSTRAINTS'
+            $key = 'CONSTRAINTS'
+            # a release before story 38.9 has no cuda set: its one set
+            if ($CudaTorch -and (Read-NodeKeyValue $releaseConf 'CONSTRAINTS_CUDA')) { $key = 'CONSTRAINTS_CUDA' }
+            $cons = Read-NodeKeyValue $releaseConf $key
             if ($cons) {
                 $local = Join-Path $BundleDir $cons
                 if (Test-Path -LiteralPath $local -PathType Leaf) { $o.Constraints = $local } else { $o.Constraints = "$base/$cons" }
-                $o.ConstraintsSha256 = Read-NodeKeyValue $releaseConf 'CONSTRAINTS_SHA256'
+                $o.ConstraintsSha256 = Read-NodeKeyValue $releaseConf ($key + '_SHA256')
             }
         }
         $o.Python = Read-NodeKeyValue $releaseConf 'PYTHON'

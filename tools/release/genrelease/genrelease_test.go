@@ -1,6 +1,8 @@
 package genrelease
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -120,6 +122,41 @@ func TestBuildAndCheck(t *testing.T) {
 	m.MinNodeSchema = 7
 	if err := Check(m, repo, 0); err == nil || !strings.Contains(err.Error(), "min_node_schema") {
 		t.Fatalf("Check accepted a wrong min_node_schema: %v", err)
+	}
+}
+
+// Story 38.9: release.json names the cuda pin set beside the default one.
+func TestBuildNamesTheCUDAConstraints(t *testing.T) {
+	repo := fakeRepo(t, 8, 8)
+	ss := releaseverifytest.MustNew()
+	dist := t.TempDir()
+	rel := ss.MustRelease("Hamza-Labs-Core/Maktaba", "v1.5.0", "windows/amd64")
+	for _, n := range []string{rel.Archive, rel.Wheel, rel.Cons} {
+		if err := os.WriteFile(filepath.Join(dist, n), rel.Files[n], 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cuda := filepath.Join(dist, "maktaba-pipeline-1.5.0-constraints-cuda.txt")
+	opts := Options{Tag: "v1.5.0", Commit: strings.Repeat("ab", 20), Dist: dist, Repo: repo,
+		Published: time.Date(2026, 10, 20, 10, 0, 0, 0, time.UTC)}
+	if err := os.WriteFile(cuda, []byte("torch==2.14.1+cu130\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Build(opts); err == nil {
+		t.Fatal("cuda constraints without hashes were taken")
+	}
+	body := []byte("torch==2.14.1+cu130 \\\n    --hash=sha256:" + strings.Repeat("cd", 32) + "\n")
+	if err := os.WriteFile(cuda, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Build(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(body)
+	if m.Pipeline.ConstraintsCUDA != filepath.Base(cuda) || m.Pipeline.ConstraintsCUDASHA256 != hex.EncodeToString(sum[:]) ||
+		m.Pipeline.Constraints != rel.Cons {
+		t.Fatalf("pipeline = %+v", m.Pipeline)
 	}
 }
 

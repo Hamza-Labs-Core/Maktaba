@@ -49,6 +49,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/selfmanaged"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/selfupdate"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/service"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
@@ -110,6 +111,34 @@ type nodeSetup struct {
 	// InstallService writes and enables the service (service.Install; tests replace it).
 	InstallService func(service.Spec) error
 	Now            func() time.Time
+	// CUDATorch reports whether this machine's NVIDIA GPU runs the second listen, so its
+	// pipeline takes torch's CUDA build (nil: secondListenGPUHere; tests replace it).
+	CUDATorch func() bool
+}
+
+// constraints is the pin set this machine's pipeline installs (story 38.9): the
+// release's cuda set (torch's CUDA build, 2.0 GB) on Windows x86_64 where the NVIDIA
+// GPU runs the second listen, else its default set (PyPI's torch, the CPU build on
+// Windows). A release without the cuda set has only the default.
+func (s *nodeSetup) constraints(p *releaseverify.Pipeline) string {
+	if p.ConstraintsCUDA == "" || s.Platform != "windows/amd64" {
+		return p.Constraints
+	}
+	cuda := s.CUDATorch
+	if cuda == nil {
+		cuda = secondListenGPUHere
+	}
+	if !cuda() {
+		return p.Constraints
+	}
+	return p.ConstraintsCUDA
+}
+
+// secondListenGPUHere reports whether this machine's NVIDIA GPU runs the second listen
+// (the supervisor's check: memory, compute capability, driver).
+func secondListenGPUHere() bool {
+	gpu, ok := supervisor.NvidiaGPU()
+	return ok && supervisor.SecondListenGPU(gpu) == ""
 }
 
 func flagString(cmd *cobra.Command, name string) string {
@@ -345,6 +374,7 @@ type verifiedRelease struct {
 	manifest               *releaseverify.Manifest
 	files                  map[string][]byte // release assets kept beside the binaries
 	binaries               map[string][]byte // archive entry → content, each checked against release.json
+	constraints            string            // the pin set fetched (nodeSetup.constraints)
 }
 
 // fetchVerified gets the release (--from, the home's mirror, GitHub) and verifies it.
@@ -424,7 +454,8 @@ func (s *nodeSetup) fetchVerified(ctx context.Context, ver string) (*verifiedRel
 	}
 	// the pipeline's wheel and constraints, when the release has them and they are found
 	if p := res.Manifest.Pipeline; p != nil && s.Python == "" {
-		for _, name := range []string{p.Wheel, p.Constraints} {
+		rel.constraints = s.constraints(p)
+		for _, name := range []string{p.Wheel, rel.constraints} {
 			b, err := get(name)
 			if err != nil || b == nil {
 				return nil, fmt.Errorf("%s: not found (give --python to keep the worker's interpreter)", name)
@@ -432,7 +463,7 @@ func (s *nodeSetup) fetchVerified(ctx context.Context, ver string) (*verifiedRel
 			if err := res.VerifyArtifact(releaseverify.Artifact{Name: name, Data: b}); err != nil {
 				return nil, err
 			}
-			if name == p.Constraints {
+			if p.IsConstraints(name) {
 				if err := releaseverify.CheckConstraints(name, b); err != nil {
 					return nil, err
 				}
@@ -599,7 +630,11 @@ func (s *nodeSetup) pipelineEnv(_ context.Context, rel *verifiedRelease, dir str
 	if err := s.Run(base, "-m", "venv", venv); err != nil {
 		return "", fmt.Errorf("create the pipeline's environment: %w", err)
 	}
-	if err := s.Run(py, "-m", "pip", "install", "--require-hashes", "--no-deps", "-r", filepath.Join(dir, p.Constraints)); err != nil {
+	cons := rel.constraints
+	if cons == "" {
+		cons = p.Constraints
+	}
+	if err := s.Run(py, "-m", "pip", "install", "--require-hashes", "--no-deps", "-r", filepath.Join(dir, cons)); err != nil {
 		return "", fmt.Errorf("install the pipeline's dependencies (--require-hashes): %w", err)
 	}
 	if err := s.Run(py, "-m", "pip", "install", "--no-deps", filepath.Join(dir, p.Wheel)); err != nil {

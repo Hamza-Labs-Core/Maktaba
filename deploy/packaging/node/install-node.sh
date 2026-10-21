@@ -705,10 +705,11 @@ build_venv_wheel() {
         req="$here/.maktaba-node-requirements.txt"
         printf 'maktaba-pipeline%s @ %s --hash=sha256:%s\n' "$(extras_suffix)" "$(file_url "$wheel")" "$wheel_hash" \
             | write_file "$req" 0644
-        # The constraints name PyTorch's index beside PyPI (torch's CUDA build for
-        # Windows), which also serves packages PyPI has: uv looks for each pin on every
-        # index (by itself it stops at the first that has the package) and takes the file
-        # it finds, refusing it when it is not one of the pin's hashes.
+        # A constraints file may name PyTorch's index beside PyPI (a release's cuda set,
+        # torch's CUDA build for Windows; the default set, which this installer takes,
+        # is PyPI's alone), which also serves packages PyPI has: uv looks for each pin
+        # on every index (by itself it stops at the first that has the package) and
+        # takes the file it finds, refusing it when it is not one of the pin's hashes.
         install_args=(--require-hashes --index-strategy unsafe-best-match
             --constraint "./$(basename "$constraints")" -r "./$(basename "$req")")
         # The stt and search extras bring torch, whose pins PyTorch's index also matches
