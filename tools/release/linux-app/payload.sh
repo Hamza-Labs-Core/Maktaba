@@ -244,12 +244,20 @@ with open(sys.argv[1], "w", encoding="utf-8") as f:
 EOF
 
 # --- the tauri config overlay (39.10 bundles it) -------------------------------------------------
+# The payload goes to <prefix>/share/maktaba/server in every Linux bundle, not among the app's
+# resources in <prefix>/lib/Maktaba: linuxdeploy (the AppImage) rewrites the rpath of, and
+# strips, the ELF files it finds under usr/lib, which would no longer match files.sha256. The
+# runtime copy (39.3) checks every file, and makes again the links the .rpm copies as files.
 # web/dist is built above (make server), so tauri does not rebuild it.
 cat >"$BUILD/tauri.linux-app.conf.json" <<EOF
 {
   "build": {"beforeBuildCommand": ""},
   "bundle": {
-    "resources": {"$OUT/": "server/"}
+    "linux": {
+      "appimage": {"files": {"/usr/share/maktaba/server": "$OUT"}},
+      "deb": {"files": {"/usr/share/maktaba/server": "$OUT"}},
+      "rpm": {"files": {"/usr/share/maktaba/server": "$OUT"}}
+    }
   }
 }
 EOF

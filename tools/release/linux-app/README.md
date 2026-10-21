@@ -1,7 +1,9 @@
 # The Linux server payload (Epic 39, story 39.2)
 
-The Linux app carries the whole server in `usr/lib/Maktaba/server` (AppImage, .deb, .rpm), and a
-machine without a desktop gets the same tree as a tarball. The server never runs from there: the
+The Linux app carries the whole server in `usr/share/maktaba/server` (AppImage, .deb, .rpm), and a
+machine without a desktop gets the same tree as a tarball. It is not among the app's resources
+(`usr/lib/Maktaba`): linuxdeploy rewrites the rpath of, and strips, the ELF files it finds under
+`usr/lib` when it makes the AppImage. The server never runs from there: the
 app copies it into `~/.local/share/maktaba/runtime/<v>` first (story 39.3). This directory builds
 the payload for x86_64 or aarch64.
 
