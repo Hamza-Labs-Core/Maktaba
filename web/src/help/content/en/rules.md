@@ -163,6 +163,10 @@ Decides how new releases are installed. **Install updates automatically** (on) i
 
 Decides how the machines of your cluster act as one Maktaba. **One sign-in for every machine** (on) lets you move from one machine to another without signing in again. **Home unreachable after (s)** (30) is how long a machine waits before it stops serving signed-in pages when it cannot reach the home. See [Machines](/help/machines).
 
+### Transcription {#transcription}
+
+Decides which machines transcribe. While the second listen is on, only the machines that run it (the Mac) transcribe, so every transcript has it. **Transcribe without the second listen** (off) lets a Windows or Linux machine transcribe too, with Whisper alone: faster, and a machine that runs the second listen gives those transcripts theirs later, a few at a time, after the new files. See [Transcription](/help/transcription#faq-windows).
+
 ### Queue health {#queue-health}
 
 Decides how often a failure is tried, what waits instead of failing, and when a queue turns red. See [Failure classes](/help/failures#classes).

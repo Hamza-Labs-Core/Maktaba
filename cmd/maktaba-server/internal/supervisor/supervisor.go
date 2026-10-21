@@ -71,6 +71,12 @@ type Process struct {
 	// check answered), and stopped after them (Epic 36 story 36.1: the bundled
 	// postgres).
 	First bool
+	// Prepare, when set, runs before the process's first start and must succeed
+	// before it starts (prepare.go, Epic 38 story 38.12: the desktop app builds
+	// the pipeline's venv, or takes the database's dump before an update's
+	// migrations). report sets the process's detail in /processes (an error's
+	// too: DetailOf).
+	Prepare func(ctx context.Context, report func(Detail)) error
 }
 
 // stopSignal is the process's graceful-stop signal.
@@ -161,6 +167,11 @@ func Build(role Role, opts Options) (Process, error) {
 
 	case RolePipeline:
 		cmd = exec.Command(pythonFor(opts), "-m", "maktaba_pipeline")
+		// the transcription workers (PlanFor, BuildPipelineInstances) take the
+		// transcribe stage, and the main worker leaves it to them; without them on
+		// Windows or Linux it gets the plan's knobs, for when it transcribes itself
+		// (story 38.8)
+		env = PlanFor(opts).mainEnv(env)
 
 	default:
 		return Process{}, fmt.Errorf("unknown role %q", role)
@@ -279,20 +290,28 @@ func resolveInRelease(name, overrideEnv, releaseDir string) (string, error) {
 	return "", fmt.Errorf("%w: %q is not in the release directory %s", ErrBinaryNotFound, name, releaseDir)
 }
 
-// pythonFor is pythonExecutable with [pipeline] python (a converted worker's own
-// environment, Epic 35 story 35.8) between MAKTABA_PYTHON and the release's venv.
-func pythonFor(opts Options) string {
+// PythonOverride is the pipeline's interpreter when one is named for it:
+// MAKTABA_PYTHON, else [pipeline] python (a converted worker's own environment,
+// Epic 35 story 35.8); "" when none is (the app's venv, the release's venv or
+// python3 then). The desktop app builds its venv only for a pipeline without one
+// (serve_appbundle.go).
+func PythonOverride(cfg config.Config) string {
 	if p := os.Getenv("MAKTABA_PYTHON"); p != "" {
 		return p
 	}
-	if p := strings.TrimSpace(opts.Config.Pipeline.Python); p != "" {
+	return strings.TrimSpace(cfg.Pipeline.Python)
+}
+
+// pythonFor is pythonExecutable with PythonOverride first.
+func pythonFor(opts Options) string {
+	if p := PythonOverride(opts.Config); p != "" {
 		return p
 	}
-	// Maktaba.app: the venv built from the payload's wheel (Epic 36 story 36.3)
+	// The desktop app: the venv built from the payload's wheel (Epic 36 story
+	// 36.3), also before it exists: the pipeline's Prepare builds it before the
+	// first start (Epic 38 story 38.12, serve_appbundle.go)
 	if config.AppBundle() != "" {
-		if py := venvPython(filepath.Join(opts.Config.StateDir(), "venv")); isExecutable(py) {
-			return py
-		}
+		return venvPython(filepath.Join(opts.Config.StateDir(), "venv"))
 	}
 	return pythonExecutable(opts.ReleaseDir)
 }

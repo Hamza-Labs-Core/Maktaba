@@ -134,6 +134,20 @@ func TestSetupNodeConvertsWorkerOnlyNode(t *testing.T) {
 }
 
 // A tampered binary is refused before anything is installed.
+// setup --node --instances 0 keeps the 0 (no transcription workers on this
+// node), which server.toml would otherwise leave unset.
+func TestSetupNodeKeepsInstancesZero(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "server.toml")
+	s := &nodeSetup{ConfigPath: path, Instances: 0, Out: &bytes.Buffer{}}
+	if err := s.writeServerToml(); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := config.LoadFrom(path)
+	if err != nil || !cfg.PipelineInstancesSet || cfg.Pipeline.Instances != 0 {
+		t.Fatalf("[pipeline] instances = 0 not kept: %+v set=%v (%v)", cfg.Pipeline, cfg.PipelineInstancesSet, err)
+	}
+}
+
 func TestSetupNodeRefusesTamperedRelease(t *testing.T) {
 	ss, rel, from := fakeRelease(t)
 	for name := range rel.Binaries {

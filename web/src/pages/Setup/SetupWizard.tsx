@@ -1,14 +1,24 @@
-// First-run setup in Maktaba.app (Epic 36, story 36.6).
+// First-run setup in the desktop app (Epic 36 story 36.6 on a Mac, Epic 38
+// story 38.6 on Windows and Linux; the words follow the platform).
 //
-// welcome (this Mac or another Maktaba) → what will run + disk/RAM check
-// → admin account → library folders / NAS path map → models (Hugging
+// welcome (this machine or another Maktaba) → what will run + disk/RAM
+// check → admin account → library folders / NAS path map → models (Hugging
 // Face token for the gated Cohere model, or the NAS copy) → optional
-// Plex sign-in → install (pipeline venv + finish) → the server starts.
+// Plex sign-in → install (pipeline venv, the models download, finish) →
+// the server starts.
 //
 // Every screen runs one `maktaba-server setup --json` step through the
 // SetupApi (lib/desktopSetup.ts). Passwords and tokens are typed by the
 // user, sent once on the step's stdin, and dropped from state after.
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Input } from "@ds/components/Input/Input";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
@@ -17,14 +27,36 @@ import {
   formatBytes,
   isStepError,
   progressPercent,
+  type CheckNote,
+  type Platform,
   type SetupApi,
   type StepError,
   type StepProgress,
 } from "../../lib/desktopSetup";
 import { ServerStarting } from "./ServerStarting";
+import { platformWords } from "./platform";
 
 export const PLEX_POLL_MS = 3000;
 const HF_TOKENS_URL = "https://huggingface.co/settings/tokens";
+
+/** The example paths of the library screens, as each OS writes them. */
+const EXAMPLE_PATHS: Record<Platform, { roots: string; map: string; nas: string }> = {
+  macos: {
+    roots: "/Volumes/Media/Lectures",
+    map: "/mnt/media => /Volumes/Media",
+    nas: "/Volumes/Share/maktaba/models",
+  },
+  windows: {
+    roots: String.raw`Y:\Lectures`,
+    map: "/Volumes/Media => Y:/",
+    nas: String.raw`\\NAS\Share\maktaba\models`,
+  },
+  linux: {
+    roots: "/mnt/media/Lectures",
+    map: "/Volumes/Media => /mnt/media",
+    nas: "/mnt/share/maktaba/models",
+  },
+};
 
 export type Screen =
   | "welcome"
@@ -42,9 +74,57 @@ interface CheckResult {
   disk_free_bytes: number;
   data_dir: string;
   need: { ram_bytes: number; disk_bytes: number };
+  /** no problem: Next is allowed */
   ok: boolean;
-  warnings: string[];
-  runs: { role: string; what: string }[];
+  problems: CheckNote[];
+  warnings: CheckNote[];
+  runs: { role: string; what: string; params?: Record<string, unknown> }[];
+  /** with the second listen on: whether this machine can run it (no sign-in for its
+   * gated model where it cannot; the reason is among the warnings) */
+  second_listen?: { runs: boolean; code?: string; params?: Record<string, unknown> };
+}
+
+/** The platform's words ({machine}, {tray}) for every coded text. */
+const WordsContext = createContext<Record<string, string>>({});
+
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
+
+/** The text of a step's code (`${prefix}.${code}`), its params in it (sizes
+ * formatted) with the platform's words; the step's English when the app has
+ * no text for the code. */
+export function codedText(
+  t: Translate,
+  prefix: string,
+  code: string,
+  params: Record<string, unknown> | undefined,
+  words: Record<string, string>,
+  english: string
+): string {
+  const key = `${prefix}.${code}`;
+  const vars: Record<string, string | number> = { ...words };
+  for (const [k, v] of Object.entries(params ?? {})) {
+    if (typeof v === "number") vars[k] = k.endsWith("_bytes") ? formatBytes(v) : v;
+    else if (v !== null && v !== undefined) vars[k] = String(v);
+  }
+  const text = t(key, vars);
+  return text === key ? english : text;
+}
+
+/** What will run, in the app's words: the pipeline by its number of
+ * transcription workers and the GPU it transcribes on. */
+function runText(
+  t: Translate,
+  r: CheckResult["runs"][number],
+  words: Record<string, string>
+): string {
+  if (r.role !== "pipeline")
+    return codedText(t, "setup.check.run", r.role, r.params, words, r.what);
+  const workers = Number(r.params?.workers ?? 0);
+  const key = workers > 1 ? "pipelineWorkers" : workers === 1 ? "pipelineOne" : "pipeline";
+  let text = codedText(t, "setup.check.run", key, r.params, words, r.what);
+  if (text !== r.what && typeof r.params?.gpu === "string")
+    text += codedText(t, "setup.check.run", "onGpu", r.params, words, "");
+  return text;
 }
 
 function asError(e: unknown): StepError {
@@ -99,15 +179,20 @@ function Frame({
 
 function ErrorBox({ error }: { error: StepError }) {
   const { t } = useI18n();
-  const known = `setup.error.${error.code}`;
-  const text = t(known);
+  const words = useContext(WordsContext);
+  const text = codedText(t, "setup.error", error.code, error.params, words, error.message);
+  // the step's English (what failed, the log's path) goes with the details
+  const more = [
+    ...(text !== error.message && error.message ? [error.message] : []),
+    ...error.details,
+  ];
   return (
     <div className="mkt-setup__error" role="alert">
-      <p>{text === known ? error.message : `${text} ${error.message}`}</p>
-      {error.details.length > 0 && (
+      <p>{text}</p>
+      {more.length > 0 && (
         <details>
           <summary>{t("setup.details")}</summary>
-          <pre dir="ltr">{error.details.join("\n")}</pre>
+          <pre dir="ltr">{more.join("\n")}</pre>
         </details>
       )}
     </div>
@@ -132,60 +217,84 @@ function Progress({ p, label }: { p: StepProgress | null; label: string }) {
 export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initial?: Screen }) {
   const [screen, setScreen] = useState<Screen>(initial);
   const [serverAvailable, setServerAvailable] = useState(true);
+  const [platform, setPlatform] = useState<Platform>("macos");
   useEffect(() => {
     api
       .appState()
-      .then((s) => setServerAvailable(s.server_available))
+      .then((s) => {
+        setServerAvailable(s.server_available);
+        if (s.platform) setPlatform(s.platform);
+      })
       .catch(() => {});
   }, [api]);
 
+  // whether this machine runs the second listen (check says): the models step
+  // asks for its Hugging Face sign-in only then
+  const [secondListen, setSecondListen] = useState<boolean | undefined>(undefined);
   const go = (dir: 1 | -1) => {
     const i = ORDER.indexOf(screen);
     if (dir === -1 && i <= 0) return setScreen("welcome");
     setScreen(ORDER[i + dir] ?? "starting");
   };
   const step = ORDER.indexOf(screen);
-  const props = { api, step, next: () => go(1), back: () => go(-1) };
+  const props = { api, step, platform, next: () => go(1), back: () => go(-1) };
+  const { t } = useI18n();
+  return (
+    <WordsContext.Provider value={platformWords(t, platform)}>
+      {screenOf(screen)}
+    </WordsContext.Provider>
+  );
 
-  switch (screen) {
-    case "welcome":
-      return (
-        <Welcome api={api} serverAvailable={serverAvailable} onThisMac={() => setScreen("check")} />
-      );
-    case "check":
-      return <Check {...props} />;
-    case "admin":
-      return <Admin {...props} />;
-    case "libraries":
-      return <Libraries {...props} />;
-    case "models":
-      return <Models {...props} />;
-    case "plex":
-      return <Plex {...props} />;
-    case "install":
-      return <Install {...props} />;
-    case "starting":
-      return <ServerStarting api={api} />;
+  function screenOf(screen: Screen) {
+    switch (screen) {
+      case "welcome":
+        return (
+          <Welcome
+            api={api}
+            platform={platform}
+            serverAvailable={serverAvailable}
+            onThisMachine={() => setScreen("check")}
+          />
+        );
+      case "check":
+        return <Check {...props} onChecked={(r) => setSecondListen(r.second_listen?.runs)} />;
+      case "admin":
+        return <Admin {...props} />;
+      case "libraries":
+        return <Libraries {...props} />;
+      case "models":
+        return <Models {...props} secondListen={secondListen} />;
+      case "plex":
+        return <Plex {...props} />;
+      case "install":
+        return <Install {...props} />;
+      case "starting":
+        return <ServerStarting api={api} platform={platform} />;
+    }
   }
 }
 
 interface StepProps {
   api: SetupApi;
   step: number;
+  platform: Platform;
   next: () => void;
   back: () => void;
 }
 
 function Welcome({
   api,
+  platform,
   serverAvailable,
-  onThisMac,
+  onThisMachine,
 }: {
   api: SetupApi;
+  platform: Platform;
   serverAvailable: boolean;
-  onThisMac: () => void;
+  onThisMachine: () => void;
 }) {
   const { t } = useI18n();
+  const words = platformWords(t, platform);
   const [url, setUrl] = useState("");
   const [error, setError] = useState<StepError | null>(null);
   const [busy, setBusy] = useState(false);
@@ -200,13 +309,13 @@ function Welcome({
   };
   return (
     <Frame title={t("setup.welcome.title")} error={error}>
-      <p>{t("setup.welcome.intro")}</p>
+      <p>{t("setup.welcome.intro", words)}</p>
       {serverAvailable && (
         <div className="mkt-setup__choice">
-          <h2>{t("setup.welcome.thisMac")}</h2>
-          <p className="mkt-setup__note">{t("setup.welcome.thisMacNote")}</p>
-          <Button type="button" onClick={onThisMac}>
-            {t("setup.welcome.thisMacGo")}
+          <h2>{t("setup.welcome.thisMachine", words)}</h2>
+          <p className="mkt-setup__note">{t("setup.welcome.thisMachineNote", words)}</p>
+          <Button type="button" onClick={onThisMachine}>
+            {t("setup.welcome.thisMachineGo", words)}
           </Button>
         </div>
       )}
@@ -229,9 +338,19 @@ function Welcome({
   );
 }
 
-function Check({ api, step, next, back }: StepProps) {
+function Check({
+  api,
+  step,
+  platform,
+  next,
+  back,
+  onChecked,
+}: StepProps & { onChecked?: (r: CheckResult) => void }) {
   const { t } = useI18n();
+  const words = platformWords(t, platform);
   const [res, setRes] = useState<CheckResult | null>(null);
+  const checked = useRef(onChecked);
+  checked.current = onChecked;
   const [error, setError] = useState<StepError | null>(null);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -239,7 +358,11 @@ function Check({ api, step, next, back }: StepProps) {
     setError(null);
     api
       .runStep<CheckResult>("check", {})
-      .then((r) => alive && setRes(r))
+      .then((r) => {
+        if (!alive) return;
+        setRes(r);
+        checked.current?.(r);
+      })
       .catch((e) => alive && setError(asError(e)));
     return () => {
       alive = false;
@@ -263,13 +386,13 @@ function Check({ api, step, next, back }: StepProps) {
         )
       }
     >
-      {!res && !error && <p role="status">{t("setup.check.checking")}</p>}
+      {!res && !error && <p role="status">{t("setup.check.checking", words)}</p>}
       {res && (
         <>
-          <p>{t("setup.check.intro")}</p>
+          <p>{t("setup.check.intro", words)}</p>
           <ul className="mkt-setup__list">
             {res.runs.map((r) => (
-              <li key={r.role}>{r.what}</li>
+              <li key={r.role}>{runText(t, r, words)}</li>
             ))}
           </ul>
           <dl className="mkt-setup__facts">
@@ -290,15 +413,20 @@ function Check({ api, step, next, back }: StepProps) {
             <dt>{t("setup.check.dataDir")}</dt>
             <dd dir="ltr">{res.data_dir}</dd>
           </dl>
-          {res.warnings.map((w) => (
-            <p key={w} className="mkt-setup__warn">
-              {w}
+          {res.warnings.map((n) => (
+            <p key={n.code} className="mkt-setup__warn">
+              {codedText(t, "setup.check.note", n.code, n.params, words, n.message)}
             </p>
           ))}
           {!res.ok && (
-            <p className="mkt-setup__warn" role="alert">
-              {t("setup.check.blocked")}
-            </p>
+            <div role="alert">
+              {(res.problems ?? []).map((n) => (
+                <p key={n.code} className="mkt-setup__warn">
+                  {codedText(t, "setup.check.note", n.code, n.params, words, n.message)}
+                </p>
+              ))}
+              <p className="mkt-setup__warn">{t("setup.check.blocked", words)}</p>
+            </div>
           )}
         </>
       )}
@@ -327,7 +455,12 @@ function useStep(api: SetupApi) {
       setBusy(false);
     }
   };
-  const fieldError = (f: string) => (error?.field === f ? error.message : undefined);
+  const { t } = useI18n();
+  const words = useContext(WordsContext);
+  const fieldError = (f: string) =>
+    error?.field === f
+      ? codedText(t, "setup.error", error.code, error.params, words, error.message)
+      : undefined;
   const formError = error && !error.field ? error : null;
   return { run, busy, progress, error, fieldError, formError };
 }
@@ -406,8 +539,9 @@ export function parsePathMap(text: string): { from: string; to: string }[] | nul
   return out;
 }
 
-function Libraries({ api, step, next, back }: StepProps) {
+function Libraries({ api, step, platform, next, back }: StepProps) {
   const { t } = useI18n();
+  const examples = EXAMPLE_PATHS[platform];
   const [roots, setRoots] = useState("");
   const [map, setMap] = useState("");
   const [mapError, setMapError] = useState(false);
@@ -435,7 +569,7 @@ function Libraries({ api, step, next, back }: StepProps) {
           className="mk-control"
           dir="ltr"
           rows={3}
-          placeholder="/Volumes/Media/Lectures"
+          placeholder={examples.roots}
           value={roots}
           onChange={(e) => setRoots(e.target.value)}
           aria-invalid={s.fieldError("roots") ? true : undefined}
@@ -455,7 +589,7 @@ function Libraries({ api, step, next, back }: StepProps) {
           className="mk-control"
           dir="ltr"
           rows={2}
-          placeholder="/mnt/media => /Volumes/Media"
+          placeholder={examples.map}
           value={map}
           onChange={(e) => setMap(e.target.value)}
           aria-invalid={mapError || undefined}
@@ -475,8 +609,19 @@ function Libraries({ api, step, next, back }: StepProps) {
   );
 }
 
-function Models({ api, step, next, back }: StepProps) {
+function Models({
+  api,
+  step,
+  platform,
+  next,
+  back,
+  secondListen,
+}: StepProps & { secondListen?: boolean }) {
+  // false: this machine does not run the second listen, so its gated model needs no
+  // Hugging Face sign-in (Whisper and the search model need none either)
+  const signIn = secondListen !== false;
   const { t } = useI18n();
+  const words = platformWords(t, platform);
   const [source, setSource] = useState<"huggingface" | "nas">("huggingface");
   const [token, setToken] = useState("");
   const [path, setPath] = useState("");
@@ -497,7 +642,7 @@ function Models({ api, step, next, back }: StepProps) {
       onBack={s.busy ? undefined : back}
     >
       <form className="mkt-setup__form" onSubmit={submit}>
-        <p>{t("setup.models.intro")}</p>
+        <p>{t("setup.models.intro", words)}</p>
         <fieldset className="mkt-setup__radios" disabled={s.busy}>
           <legend className="mk-field__label">{t("setup.models.source")}</legend>
           <label>
@@ -519,7 +664,9 @@ function Models({ api, step, next, back }: StepProps) {
             {t("setup.models.nas")}
           </label>
         </fieldset>
-        {source === "huggingface" ? (
+        {source === "huggingface" && !signIn ? (
+          <p className="mkt-setup__note">{t("setup.models.hfNoSignIn", words)}</p>
+        ) : source === "huggingface" ? (
           <>
             <p className="mkt-setup__note">
               {t("setup.models.hfNote")}{" "}
@@ -547,7 +694,7 @@ function Models({ api, step, next, back }: StepProps) {
           <Input
             label={t("setup.models.nasPath")}
             dir="ltr"
-            placeholder="/Volumes/Models/huggingface"
+            placeholder={EXAMPLE_PATHS[platform].nas}
             value={path}
             onChange={(e) => setPath(e.target.value)}
             error={s.fieldError("path")}
@@ -648,9 +795,11 @@ function Plex({ api, step, next, back }: StepProps) {
   );
 }
 
-function Install({ api, step, next, back }: StepProps) {
+function Install({ api, step, platform, next, back }: StepProps) {
   const { t } = useI18n();
-  const [phase, setPhase] = useState<"venv" | "llm" | "finish" | "approval" | "failed">("venv");
+  const [phase, setPhase] = useState<"venv" | "models" | "llm" | "finish" | "approval" | "failed">(
+    "venv"
+  );
   const [progress, setProgress] = useState<StepProgress | null>(null);
   const [error, setError] = useState<StepError | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -676,6 +825,14 @@ function Install({ api, step, next, back }: StepProps) {
         setPhase("venv");
         await api.runStep("venv", {}, (p) => mounted.current && setProgress(p));
         if (!mounted.current) return;
+        // the models the workers load, with the venv's own download (it resumes)
+        setPhase("models");
+        setProgress(null);
+        await api.runStep(
+          "models",
+          { action: "download" },
+          (p) => mounted.current && setProgress(p)
+        );
         // The language model of the LLM stages (about 5 GB). Only too little disk
         // stops setup: any other failure (no network, no bundled server) leaves it
         // to the server, which downloads a missing model in the background.
@@ -702,34 +859,43 @@ function Install({ api, step, next, back }: StepProps) {
     })();
   }, [api, attempt]);
 
-  const installText = t(
-    phase === "finish"
-      ? "setup.install.finishing"
-      : phase === "llm"
-        ? "setup.install.llm"
-        : "setup.install.venv"
-  );
-
   if (phase === "approval") {
+    // a Mac's user turns the login item on in System Settings, then comes back;
+    // elsewhere the app turns its sign-in task on itself
+    const mac = platform === "macos";
+    const turnOn = () =>
+      void api.openLoginItems().then(() => {
+        if (!mac) next();
+      });
     return (
       <Frame
         title={t("setup.install.approvalTitle")}
         step={step}
         next={
           <>
-            <Button type="button" variant="secondary" onClick={() => void api.openLoginItems()}>
-              {t("setup.install.openLoginItems")}
+            <Button type="button" variant={mac ? "secondary" : "primary"} onClick={turnOn}>
+              {t(`setup.install.openLoginItems.${platform}`)}
             </Button>
-            <Button type="button" onClick={next}>
-              {t("setup.install.approved")}
-            </Button>
+            {mac && (
+              <Button type="button" onClick={next}>
+                {t("setup.install.approved")}
+              </Button>
+            )}
           </>
         }
       >
-        <p>{t("setup.install.approval")}</p>
+        <p>{t(`setup.install.approval.${platform}`)}</p>
       </Frame>
     );
   }
+  const label =
+    phase === "finish"
+      ? t("setup.install.finishing")
+      : phase === "models"
+        ? t("setup.install.models")
+        : phase === "llm"
+          ? t("setup.install.llm")
+          : t("setup.install.venv");
   return (
     <Frame
       title={t("setup.install.title")}
@@ -744,8 +910,8 @@ function Install({ api, step, next, back }: StepProps) {
         ) : undefined
       }
     >
-      <p>{installText}</p>
-      {phase !== "failed" && <Progress p={progress} label={installText} />}
+      <p>{label}</p>
+      {phase !== "failed" && <Progress p={progress} label={label} />}
     </Frame>
   );
 }

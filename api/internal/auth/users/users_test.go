@@ -1,8 +1,13 @@
 package users
 
 import (
+	"context"
+	"database/sql/driver"
 	"testing"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/argon2id"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues/queuestest"
 )
 
 func TestValidateUsername(t *testing.T) {
@@ -76,3 +81,36 @@ func TestIsUniqueViolation(t *testing.T) {
 type errStr string
 
 func (e errStr) Error() string { return string(e) }
+
+// A user created from a hash made by `maktaba-api hash-password` (the
+// desktop app's setup) stores that hash as is; a malformed one is refused
+// before anything is written.
+func TestCreateWithPasswordHash(t *testing.T) {
+	cols := []string{"id", "username", "pw_hash", "is_admin", "failed_attempts", "locked_until",
+		"created_at", "updated_at", "must_change_password"}
+	now := time.Now()
+	hash, err := argon2id.Hash("pw", argon2id.DefaultParams())
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := queuestest.New(&queuestest.Rule{Match: "insert into users", Cols: cols,
+		Rows: [][]driver.Value{{"u1", "admin", hash, true, int64(0), nil, now, now, false}}})
+	s := New(db.DB)
+	u, err := s.Create(context.Background(), CreateInput{Username: "admin", PasswordHash: hash, IsAdmin: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ins := db.Find("insert into users")
+	if len(ins) != 1 || ins[0].Args[2] != hash {
+		t.Fatalf("stored %v, want the given hash", ins)
+	}
+	if err := u.VerifyPassword("pw"); err != nil {
+		t.Fatalf("the user's password does not verify: %v", err)
+	}
+	if _, err := s.Create(context.Background(), CreateInput{Username: "x", PasswordHash: "$argon2id$nope"}); err == nil {
+		t.Fatal("a malformed hash must be refused")
+	}
+	if len(db.Find("insert into users")) != 1 {
+		t.Fatal("nothing may be written for a malformed hash")
+	}
+}
