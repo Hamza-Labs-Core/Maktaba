@@ -44,6 +44,9 @@ pub enum Event {
         message: String,
         #[serde(default)]
         field: Option<String>,
+        /// The values the screen puts into the code's own text.
+        #[serde(default)]
+        params: Option<Value>,
     },
 }
 
@@ -67,6 +70,10 @@ pub struct StepError {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub field: Option<String>,
+    /// The values the screen puts into the code's own text (setup.error.<code>), boxed: a
+    /// step's `Result` stays small (clippy's result_large_err).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<Box<Value>>,
     /// The step's last stderr lines, for the "details" box.
     pub details: Vec<String>,
 }
@@ -77,6 +84,7 @@ impl StepError {
             code: code.into(),
             message: message.into(),
             field: None,
+            params: None,
             details: Vec::new(),
         }
     }
@@ -171,11 +179,13 @@ pub fn run_step(
                     code,
                     message,
                     field,
+                    params,
                 }) if outcome.is_none() => {
                     outcome = Some(Err(StepError {
                         code,
                         message,
                         field,
+                        params: params.map(Box::new),
                         details: Vec::new(),
                     }))
                 }
@@ -257,12 +267,22 @@ mod tests {
         );
         assert_eq!(
             parse_line(
-                r#"{"type":"error","code":"weak_password","message":"Too short","field":"password"}"#
+                r#"{"type":"error","code":"password_short","message":"Too short","field":"password","params":{"min":8}}"#
             ),
             Some(Event::Error {
-                code: "weak_password".into(),
+                code: "password_short".into(),
                 message: "Too short".into(),
-                field: Some("password".into())
+                field: Some("password".into()),
+                params: Some(json!({"min": 8}))
+            })
+        );
+        assert_eq!(
+            parse_line(r#"{"type":"error","code":"network","message":"m"}"#),
+            Some(Event::Error {
+                code: "network".into(),
+                message: "m".into(),
+                field: None,
+                params: None
             })
         );
         assert_eq!(parse_line(""), None);

@@ -26,10 +26,20 @@ maktaba-pipeline = "maktaba_pipeline.__main__:main"
 mediaintel = [
     "yt-dlp>=2025.11.12",
 ]
-# Speech to text on Apple Silicon (plan 03-10): Whisper on the GPU through MLX.
+# Speech to text (plan 03-10): Whisper on the GPU through MLX on Apple Silicon; on Windows
+# and Linux x86_64 through CTranslate2 (story 38.8, stt/ct2.py), on an NVIDIA GPU when CUDA
+# is usable, else on the CPU.
 stt = [
     # pinned: stt/batched.py builds on its DecodingTask and timestamp filter internals
     "mlx-whisper==0.4.3; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    # pinned: stt/ct2.py builds on its tokenizer, mel filters and word alignment
+    "faster-whisper==1.2.1 ; (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
+    # 4.6.3 runs Whisper's convolutions in its own CUDA code: no cuDNN. Its wheels load
+    # cuBLAS 12 when the model goes on the GPU (built against 12.8)
+    "ctranslate2>=4.6.3,<5 ; (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
+    # that cuBLAS, from PyPI (stt/ct2.py loads it from site-packages/nvidia/cublas): no
+    # CUDA toolkit to install; the NVIDIA driver is all the machine needs
+    "nvidia-cublas-cu12>=12.8,<13 ; (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
     "silero-vad>=6.2 ; platform_machine == 'arm64' and sys_platform == 'darwin'",
     # the second listen (stt/refine.py): Cohere Transcribe Arabic on MLX, and the
     # CAMeL Tools MSA dictionary that respells the words it hears
