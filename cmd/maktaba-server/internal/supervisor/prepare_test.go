@@ -3,6 +3,7 @@ package supervisor
 import (
 	"context"
 	"errors"
+	"os/exec"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -83,5 +84,46 @@ func TestShutdownDuringPrepare(t *testing.T) {
 	}
 	if c := proc(s.Snapshot(), RolePipeline); c.State != StateStopped || c.LastExit != nil {
 		t.Fatalf("pipeline = %+v, want stopped and never started", c)
+	}
+}
+
+// A Halt (an update that cannot go on in this run) leaves the process failed
+// with its reason and no next try: the Prepare is not run again, the others
+// run, and a stop ends it as stopped.
+func TestHaltedPrepareIsNotTriedAgain(t *testing.T) {
+	prev := prepareRetryFirst
+	prepareRetryFirst = 10 * time.Millisecond // a retry would come at once
+	t.Cleanup(func() { prepareRetryFirst = prev })
+	var tries atomic.Int32
+	halted := Process{Role: RoleStreaming, Cmd: exec.Command("maktaba-never-started"),
+		Prepare: func(context.Context, func(string)) error {
+			tries.Add(1)
+			return Halt(errors.New("the update's migrations failed"))
+		}}
+	if !Halted(halted.Prepare(context.Background(), nil)) || Halted(errors.New("x")) || Halt(nil) != nil {
+		t.Fatal("Halted does not tell a Halt")
+	}
+	tries.Store(0)
+	s := New([]Process{halted}, testPolicy(), WithLog(&syncBuffer{}))
+	stop, _ := running(t, s)
+	snap := waitFor(t, s, "the halt shown", func(s Snapshot) bool {
+		c := proc(s, RoleStreaming)
+		return c.State == StateFailed && c.Detail == "the update's migrations failed"
+	})
+	if c := proc(snap, RoleStreaming); c.NextRestartAt != nil || c.PID != 0 {
+		t.Fatalf("halted = %+v, want no next try and never started", c)
+	}
+	if !hasEvent(snap, RoleStreaming, EventFailed) {
+		t.Error("the halt is in the event log")
+	}
+	time.Sleep(100 * time.Millisecond)
+	if n := tries.Load(); n != 1 {
+		t.Fatalf("Prepare ran %d times, want 1", n)
+	}
+	if err := stop(); err != nil {
+		t.Fatal(err)
+	}
+	if c := proc(s.Snapshot(), RoleStreaming); c.State != StateStopped {
+		t.Fatalf("after the stop = %+v", c)
 	}
 }

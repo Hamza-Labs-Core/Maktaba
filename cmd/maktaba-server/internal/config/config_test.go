@@ -65,3 +65,26 @@ func TestPartialFileLayersOverDefaults(t *testing.T) {
 		t.Errorf("listen should keep default, got %q", cfg.Server.Listen)
 	}
 }
+
+// [postgres] update_dumps: how many pre-update dumps stay; unset (or not above
+// 0) keeps the default three.
+func TestKeepUpdateDumps(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "server.toml")
+	if err := writeFile(path, "[postgres]\nupdate_dumps = 5\n"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := LoadFrom(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := cfg.Postgres.KeepUpdateDumps(); n != 5 {
+		t.Errorf("update_dumps = 5 keeps %d", n)
+	}
+	for _, n := range []int{0, -2} {
+		if got := (PostgresSection{UpdateDumps: n}).KeepUpdateDumps(); got != DefaultUpdateDumps {
+			t.Errorf("update_dumps = %d keeps %d, want %d", n, got, DefaultUpdateDumps)
+		}
+	}
+}

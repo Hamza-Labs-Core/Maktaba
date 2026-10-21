@@ -23,7 +23,9 @@ const (
 	// StateBackoff: exited, waiting to be restarted.
 	StateBackoff State = "backoff"
 	// StateFailed: crash-looping (max_restarts inside the window); the
-	// others keep running and it is retried every failed_retry.
+	// others keep running and it is retried every failed_retry. Also a process
+	// whose Prepare failed: tried again at next_restart_at, or (no
+	// next_restart_at: a Halt) not before the server's next start.
 	StateFailed State = "failed"
 	// StateExited: exited and left stopped by the restart policy.
 	StateExited State = "exited"

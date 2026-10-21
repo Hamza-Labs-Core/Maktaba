@@ -78,6 +78,9 @@ func main() {
 		case "migrate":
 			if err := runMigrate(os.Args[2:]); err != nil {
 				fmt.Fprintf(os.Stderr, "migrate: %v\n", err)
+				if errors.Is(err, errSchemaAhead) {
+					os.Exit(exitSchemaAhead)
+				}
 				os.Exit(1)
 			}
 			return
@@ -217,6 +220,13 @@ func runServe() error {
 			return fmt.Errorf("auto-migrate: %w", err)
 		}
 		logger.Info("auto_migrate_complete", "event", "auto_migrate_complete")
+	}
+	// Epic 38 story 38.12: never serve on a schema a newer Maktaba migrated (a
+	// node's database is the home's, which its schema guard judges)
+	if !nodeCfg.Enabled {
+		if err := checkSchemaNotAhead(logger, os.Getenv("DATABASE_URL"), schemaguard.SchemaRev); err != nil {
+			return err
+		}
 	}
 
 	publicAddr := os.Getenv("MAKTABA_HTTP_ADDR")

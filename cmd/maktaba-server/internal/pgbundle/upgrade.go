@@ -2,40 +2,102 @@ package pgbundle
 
 import (
 	"context"
-	"fmt"
+	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
+	"regexp"
+	"sort"
 	"strings"
 )
 
-// BackupAs writes a pg_dump custom-format dump of the app database into
-// backups/<name>.dump (beside and renamed into place) and returns its path.
-// Unlike Backup's nightly dumps it is never pruned: the desktop app takes one
-// before an update's migrations (pre-<old>-to-<new>, Epic 38 story 38.12), the
-// way back to the old version. The server must be up.
-func (b Bundle) BackupAs(ctx context.Context, name string) (string, error) {
-	if strings.ContainsAny(name, `/\`) || name == "" || strings.HasPrefix(name, backupPrefix) {
-		return "", fmt.Errorf("backup name %q", name)
+// The desktop app's updates (Epic 38 story 38.12): before an update's
+// migrations the server dumps the database, backups/pre-<old>-to-<new>.dump,
+// the way back to the old version; when the migrations fail it restores that
+// dump into the cluster its postgres role runs.
+
+// updateDumpPrefix starts every pre-update dump's name (the nightly ones start
+// with backupPrefix: the two are kept apart).
+const updateDumpPrefix = "pre-"
+
+// unsafeInName is what a version may not carry into a file name.
+var unsafeInName = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
+
+// UpdateDumpName is the pre-update dump's file name for an update from → to
+// ("unknown" for a from that is not known: an install from before the
+// server kept the record).
+func UpdateDumpName(from, to string) string {
+	if from == "" {
+		from = "unknown"
 	}
-	superPW, err := readPassword(b.passwordFile(SuperUser))
+	return updateDumpPrefix + unsafeInName.ReplaceAllString(from, "_") + "-to-" +
+		unsafeInName.ReplaceAllString(to, "_") + backupSuffix
+}
+
+// DumpBeforeUpdate writes a pg_dump custom-format dump of the app database into
+// backups/UpdateDumpName(from, to) (beside and renamed into place: a dump of
+// that name there already is replaced, so the dump is always the database as
+// it is now) and keeps the newest keep pre-update dumps, this one always. The
+// server must be up.
+func (b Bundle) DumpBeforeUpdate(ctx context.Context, from, to string, keep int) (string, error) {
+	path := filepath.Join(b.Backups, UpdateDumpName(from, to))
+	if err := b.dumpTo(ctx, path); err != nil {
+		return "", err
+	}
+	return path, b.pruneUpdateDumps(path, keep)
+}
+
+// pruneUpdateDumps keeps the newest keep pre-update dumps (by the time they
+// were written: the names do not sort by it), and keep always.
+func (b Bundle) pruneUpdateDumps(keep string, n int) error {
+	n = max(n, 1)
+	entries, err := os.ReadDir(b.Backups)
 	if err != nil {
-		return "", err
+		return err
 	}
-	if err := os.MkdirAll(b.Backups, 0o700); err != nil {
-		return "", err
+	type dump struct {
+		path string
+		mod  int64
 	}
-	path := filepath.Join(b.Backups, name+backupSuffix)
-	part := path + ".partial"
-	cmd := exec.CommandContext(ctx, b.Bin("pg_dump"), "-Fc", "-h", "127.0.0.1", "-p", strconv.Itoa(b.Port),
-		"-U", SuperUser, "-f", part, AppDatabase)
-	cmd.Env = append(os.Environ(), "PGPASSWORD="+superPW)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		_ = os.Remove(part)
-		return "", fmt.Errorf("pg_dump: %w: %s", err, strings.TrimSpace(string(out)))
+	var dumps []dump
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasPrefix(name, updateDumpPrefix) || !strings.HasSuffix(name, backupSuffix) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue // gone meanwhile
+		}
+		dumps = append(dumps, dump{filepath.Join(b.Backups, name), info.ModTime().UnixNano()})
 	}
-	return path, os.Rename(part, path)
+	sort.SliceStable(dumps, func(i, j int) bool {
+		if dumps[i].path == keep || dumps[j].path == keep {
+			return dumps[i].path == keep
+		}
+		return dumps[i].mod > dumps[j].mod
+	})
+	for _, d := range dumps[min(n, len(dumps)):] {
+		if err := os.Remove(d.path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+// RestoreRunning replaces the app database with a dump of this cluster's own (a
+// pre-update dump) on the server already running (the supervisor's postgres
+// role): what is connected to the database is cut off, the database is made
+// afresh and the dump restored as Restore does. The desktop app's server does
+// this when an update's migrations failed, before any other role started.
+func (b Bundle) RestoreRunning(ctx context.Context, dump string, log io.Writer) error {
+	if _, err := os.Stat(dump); err != nil {
+		return err
+	}
+	q, err := b.NewQuerier()
+	if err != nil {
+		return err
+	}
+	return b.restoreInto(ctx, q, dump, RestoreOptions{}, log)
 }
 
 // ClusterMajor is the Postgres major version that made the cluster (its

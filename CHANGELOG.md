@@ -23,12 +23,20 @@ don't append a line here; docs-only PRs are exempt.
   `adduser --password-hash-file`, the Plex server stored with the new `maktaba-api plex-link`).
   The screens say "this PC" and "the tray" on Windows, and turn a disabled sign-in task back on.
 - **The desktop app's server takes care of an update at its next start** (Epic 38, story 38.12;
-  the Mac, Windows and Linux alike). The pipeline's workers wait for the venv bootstrap, which
-  rebuilds the venv only when the constraints, the wheel or the Python changed; with a new version
-  the api waits for a dump of the database taken before its migrations
-  (`backups/pre-<old>-to-<new>.dump`); an older release than the one that ran is refused, and so
-  is a Postgres of another major than the database's. What a process waits on shows as its
-  `detail` in `/processes`. The payload is saved as the one that ran after three healthy minutes.
+  the Mac, Windows and Linux alike). Before any role runs, the server reads the record of the
+  release whose migrations the database holds (`state/database.json`) and refuses an older
+  release; with another one (or no record yet) it dumps the database
+  (`backups/pre-<old>-to-<new>.dump`, the newest `[postgres] update_dumps` kept, default 3),
+  records the update, runs the migrations once for every role and records them done. When they
+  fail it puts the dump back and keeps every role stopped, saying what happened and what to
+  install. The pipeline's workers then wait for the venv bootstrap (not when `MAKTABA_PYTHON` or
+  `[pipeline] python` names their Python), run with an environment of its own and stopped
+  gently (SIGTERM, CTRL_BREAK on Windows) so a stop never leaves pip behind. A Postgres of
+  another major than the database's is refused. What a process waits on shows as its `detail`
+  in `/processes`.
+- **The API refuses a database a newer Maktaba migrated**, on every install: `maktaba-api
+  migrate up` exits 3 instead of finding nothing to apply, and `serve` does not start on it.
+  `migrate --timeout 0` runs with no time limit.
 
 ### Fixed
 

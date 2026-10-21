@@ -202,8 +202,9 @@ func runServe(cfg config.Config, opts serveOptions) error {
 		return shutdownWeb(webSrv)
 	}
 
-	// Epic 38 story 38.12: inside the desktop app the pipeline waits for its venv,
-	// an update's api for the database's dump, and an older release is refused
+	// Epic 38 story 38.12: inside the desktop app every role waits for the
+	// database step (an update's dump, then the migrations, the dump put back when
+	// they fail; an older release refused) and the pipeline for its venv
 	// (serve_appbundle.go).
 	bundle := config.AppBundle()
 	if bundle != "" {

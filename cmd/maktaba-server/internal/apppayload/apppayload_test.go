@@ -28,23 +28,35 @@ func TestCompareVersions(t *testing.T) {
 	}
 }
 
-func TestCompare(t *testing.T) {
-	p := func(v string) Payload { var x Payload; x.Version = v; return x }
-	if c := Compare(Payload{}, false, p("v0.3.0")); c.Upgrade || c.Downgrade {
-		t.Errorf("the first start is neither: %+v", c)
+func TestOlder(t *testing.T) {
+	if !Older("v0.2.0", "v0.3.0") || Older("v0.3.0", "v0.3.0") || Older("v0.3.0", "v0.2.0") {
+		t.Error("releases")
 	}
-	if c := Compare(p("v0.3.0"), true, p("v0.3.0")); c.Upgrade || c.Downgrade {
-		t.Errorf("the same version: %+v", c)
+	// a development build's order is unknown: never older
+	if Older("v0.2.0-5-gdeadbee", "v0.3.0") || Older("v0.2.0", "dev") {
+		t.Error("a development build")
 	}
-	if c := Compare(p("v0.2.0"), true, p("v0.3.0")); !c.Upgrade || c.From != "v0.2.0" || c.To != "v0.3.0" {
-		t.Errorf("an update: %+v", c)
+}
+
+func TestDatabaseRecord(t *testing.T) {
+	state := t.TempDir()
+	if _, ok, err := ReadDatabase(state); ok || err != nil {
+		t.Fatalf("no record yet: %v %v", ok, err)
 	}
-	if c := Compare(p("v0.3.0"), true, p("v0.2.0")); !c.Downgrade || c.Upgrade {
-		t.Errorf("an older release: %+v", c)
+	in := Database{Version: "v0.3.0", State: DatabaseMigrating, From: "v0.2.0", Dump: "/b/pre-v0.2.0-to-v0.3.0.dump"}
+	if err := WriteDatabase(state, in); err != nil {
+		t.Fatal(err)
 	}
-	// a development build's order is unknown: dumped as an update, never refused
-	if c := Compare(p("v0.3.0"), true, p("v0.2.0-5-gdeadbee")); !c.Upgrade || c.Downgrade {
-		t.Errorf("a development build: %+v", c)
+	got, ok, err := ReadDatabase(state)
+	if err != nil || !ok || got.Version != in.Version || got.State != in.State || got.From != in.From ||
+		got.Dump != in.Dump || got.At.IsZero() {
+		t.Fatalf("record = %+v %v %v", got, ok, err)
+	}
+	if err := os.WriteFile(DatabasePath(state), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := ReadDatabase(state); ok || err == nil {
+		t.Fatalf("a broken record: %v %v", ok, err)
 	}
 }
 

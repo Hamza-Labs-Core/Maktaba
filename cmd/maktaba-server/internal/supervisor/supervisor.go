@@ -262,13 +262,21 @@ func resolveInRelease(name, overrideEnv, releaseDir string) (string, error) {
 	return "", fmt.Errorf("%w: %q is not in the release directory %s", ErrBinaryNotFound, name, releaseDir)
 }
 
-// pythonFor is pythonExecutable with [pipeline] python (a converted worker's own
-// environment, Epic 35 story 35.8) between MAKTABA_PYTHON and the release's venv.
-func pythonFor(opts Options) string {
+// PythonOverride is the pipeline's interpreter when one is named for it:
+// MAKTABA_PYTHON, else [pipeline] python (a converted worker's own environment,
+// Epic 35 story 35.8); "" when none is (the app's venv, the release's venv or
+// python3 then). The desktop app builds its venv only for a pipeline without one
+// (serve_appbundle.go).
+func PythonOverride(cfg config.Config) string {
 	if p := os.Getenv("MAKTABA_PYTHON"); p != "" {
 		return p
 	}
-	if p := strings.TrimSpace(opts.Config.Pipeline.Python); p != "" {
+	return strings.TrimSpace(cfg.Pipeline.Python)
+}
+
+// pythonFor is pythonExecutable with PythonOverride first.
+func pythonFor(opts Options) string {
+	if p := PythonOverride(opts.Config); p != "" {
 		return p
 	}
 	// The desktop app: the venv built from the payload's wheel (Epic 36 story

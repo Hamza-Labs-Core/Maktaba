@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +20,43 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
+
+// This test binary is also these tests' stand-ins (run before TestMain, so
+// before the tests' flags are read): with MAKTABA_TEST_APPBUNDLE_CHILD set a
+// supervised process that runs until it is stopped; with
+// MAKTABA_TEST_APPBUNDLE_MIGRATE set the `maktaba-api migrate` of
+// TestRunMigrateUp, which says what it is told and exits with its code.
+//
+// It also lets the setup tests' stand-ins (setup_fake_test.go) be told what to
+// do through the venv bootstrap's clean environment.
+func init() {
+	_ = os.Setenv("MAKTABA_VENV_KEEP_ENV", "MAKTABA_TEST_FAKE,MAKTABA_TEST_FAKE_LOG,MAKTABA_TEST_FAKE_FAIL,MAKTABA_TEST_FAKE_VENV_READY")
+	if os.Getenv("MAKTABA_TEST_APPBUNDLE_CHILD") != "" {
+		time.Sleep(time.Hour) // a sleep, not a select{}: alone, that is a deadlock the runtime ends
+		os.Exit(0)
+	}
+	mode := os.Getenv("MAKTABA_TEST_APPBUNDLE_MIGRATE")
+	if mode == "" {
+		return
+	}
+	if strings.Join(os.Args[1:], " ") != "migrate --timeout 0 up" {
+		fmt.Fprintf(os.Stderr, "unexpected %q\n", os.Args[1:])
+		os.Exit(2)
+	}
+	switch mode {
+	case "ok":
+		fmt.Println("migrate: applying migrations")
+		os.Exit(0)
+	case "fail":
+		fmt.Fprintln(os.Stderr, "migrate: applying migrations\n2026/10/21 OK   0143_queue_health.sql\n"+
+			"migrate: ERROR 0144_x.sql: failed to run SQL migration\nrelation \"videos\" does not exist")
+		os.Exit(1)
+	case "ahead":
+		fmt.Fprintln(os.Stderr, "migrate: the database's schema is at 0150 and these migrations end at 0143")
+		os.Exit(apiExitSchemaAhead)
+	}
+	os.Exit(2)
+}
 
 func writePayload(t *testing.T, dir, version, pgVersion string) {
 	t.Helper()
@@ -37,6 +77,8 @@ func appEnv(t *testing.T, v, confirmed string) (config.Config, string) {
 	dir := t.TempDir()
 	cfg := config.Defaults()
 	cfg.Server.DataDir = filepath.Join(dir, "state")
+	cfg.Pipeline.Python = ""
+	t.Setenv("MAKTABA_PYTHON", "")
 	t.Setenv("MAKTABA_LOG_DIR", filepath.Join(dir, "logs"))
 	payload := filepath.Join(dir, "payload")
 	writePayload(t, payload, v, "16.15.0")
@@ -50,9 +92,37 @@ func appEnv(t *testing.T, v, confirmed string) (config.Config, string) {
 	return cfg, payload
 }
 
+// newPayload replaces the install's payload (an update, or the previous app
+// installed again).
+func newPayload(t *testing.T, payload, v string) {
+	t.Helper()
+	writePayload(t, payload, v, "16.15.0")
+}
+
+func record(t *testing.T, cfg config.Config, rec apppayload.Database) {
+	t.Helper()
+	if err := apppayload.WriteDatabase(cfg.StateDir(), rec); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func recorded(t *testing.T, cfg config.Config) apppayload.Database {
+	t.Helper()
+	rec, ok, err := apppayload.ReadDatabase(cfg.StateDir())
+	if err != nil || !ok {
+		t.Fatalf("no database record: %v %v", ok, err)
+	}
+	return rec
+}
+
+func testBundle(cfg config.Config) *pgbundle.Bundle {
+	return &pgbundle.Bundle{Backups: filepath.Join(cfg.StateDir(), "backups"), Data: filepath.Join(cfg.StateDir(), "postgres")}
+}
+
 func gateProcs(pg bool) []supervisor.Process {
-	ps := []supervisor.Process{{Role: supervisor.RoleAPI}, {Role: supervisor.RolePipeline},
-		{Role: supervisor.RolePipeline, Instance: "stt-1"}, {Role: supervisor.RoleStreaming}}
+	ps := []supervisor.Process{{Role: supervisor.RoleAPI, Cmd: exec.Command("maktaba-api")}, {Role: supervisor.RolePipeline},
+		{Role: supervisor.RolePipeline, Instance: "stt-1"}, {Role: supervisor.RoleStreaming},
+		{Role: supervisor.RoleTVSlot, Instance: "blue"}, {Role: supervisor.RoleOllama}}
 	if pg {
 		ps = append([]supervisor.Process{{Role: supervisor.RolePostgres}}, ps...)
 	}
@@ -70,83 +140,377 @@ func prepareOf(ps []supervisor.Process, role supervisor.Role) func(context.Conte
 
 func noReport(string) {}
 
-// An update: the api waits for the dump of the database (named after the two
-// versions, taken once), the pipeline for the venv; streaming waits on nothing.
-func TestAppBundleUpdateDumpsFirst(t *testing.T) {
-	cfg, payload := appEnv(t, "v0.3.0", "v0.2.0")
-	pg := &pgbundle.Bundle{Backups: filepath.Join(cfg.StateDir(), "backups"), Data: filepath.Join(cfg.StateDir(), "postgres")}
-	prev := backupAs
-	t.Cleanup(func() { backupAs = prev })
-	var dumps []string
-	backupAs = func(_ context.Context, b pgbundle.Bundle, name string) (string, error) {
-		dumps = append(dumps, name)
-		return filepath.Join(b.Backups, name+".dump"), nil
+// fakeDB stands in for the database step's programs: the dump, the api's
+// migrations and putting a dump back. It notes what the record said as each ran.
+type fakeDB struct {
+	mu         sync.Mutex
+	cfg        config.Config
+	dumps      []string // from->to
+	keep       int
+	migrates   []string // the record's state as each began
+	restores   []string // the dumps put back
+	migrateErr error
+	restoreErr error
+	block      chan struct{} // when set, the migrations wait on it (or the context)
+}
+
+func installFakeDB(t *testing.T, cfg config.Config) *fakeDB {
+	t.Helper()
+	f := &fakeDB{cfg: cfg}
+	prevD, prevR, prevM := dumpBeforeUpdate, restoreDump, migrateUp
+	t.Cleanup(func() { dumpBeforeUpdate, restoreDump, migrateUp = prevD, prevR, prevM })
+	dumpBeforeUpdate = func(_ context.Context, b pgbundle.Bundle, from, to string, keep int) (string, error) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.dumps = append(f.dumps, orUnknown(from)+"->"+to)
+		f.keep = keep
+		return filepath.Join(b.Backups, pgbundle.UpdateDumpName(from, to)), nil
 	}
-	ps := appBundleGates(cfg, payload, pg, gateProcs(true), &strings.Builder{})
+	migrateUp = func(ctx context.Context, _ *exec.Cmd, _ io.Writer) error {
+		rec, _, _ := apppayload.ReadDatabase(cfg.StateDir())
+		f.mu.Lock()
+		f.migrates = append(f.migrates, rec.State)
+		block, err := f.block, f.migrateErr
+		f.mu.Unlock()
+		if block != nil {
+			select {
+			case <-block:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		return err
+	}
+	restoreDump = func(_ context.Context, _ pgbundle.Bundle, dump string, _ io.Writer) error {
+		rec, _, _ := apppayload.ReadDatabase(cfg.StateDir())
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		if rec.State != apppayload.DatabaseRestoring {
+			return fmt.Errorf("the record says %q while the dump is put back", rec.State)
+		}
+		f.restores = append(f.restores, filepath.Base(dump))
+		return f.restoreErr
+	}
+	return f
+}
+
+func (f *fakeDB) counts() (dumps, migrates, restores int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.dumps), len(f.migrates), len(f.restores)
+}
+
+// Every process that uses the library database waits on the database step;
+// postgres on its major check alone, the model server on nothing; the pipeline
+// on the database, then the venv.
+func TestAppBundleGatesEveryRoleOnTheDatabase(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
 	for _, p := range ps {
-		if (p.Role == supervisor.RoleStreaming) != (p.Prepare == nil) {
-			t.Fatalf("%s: prepare = %v", p.Name(), p.Prepare != nil)
+		if (p.Role == supervisor.RoleOllama) != (p.Prepare == nil) {
+			t.Errorf("%s: prepare = %v", p.Name(), p.Prepare != nil)
 		}
 	}
-	var details []string
-	api := prepareOf(ps, supervisor.RoleAPI)
-	if err := api(context.Background(), func(d string) { details = append(details, d) }); err != nil {
-		t.Fatal(err)
-	}
-	if err := api(context.Background(), noReport); err != nil {
-		t.Fatal(err)
-	}
-	if len(dumps) != 1 || dumps[0] != "pre-v0.2.0-to-v0.3.0" {
-		t.Fatalf("dumps = %v (one, named after the update)", dumps)
-	}
-	if len(details) != 1 || !strings.Contains(details[0], "v0.3.0") {
-		t.Fatalf("details = %v", details)
+	ps = appBundleGates(cfg, payload, nil, gateProcs(true), io.Discard)
+	if prepareOf(ps, supervisor.RolePostgres) != nil {
+		t.Error("no bundled Postgres, no major check")
 	}
 }
 
-// The same version (or a first start): no dump. A dump already there (a start
-// that did not get to run healthy) is not taken again.
-func TestAppBundleNoDumpWithoutAnUpdate(t *testing.T) {
-	prev := backupAs
-	t.Cleanup(func() { backupAs = prev })
-	backupAs = func(context.Context, pgbundle.Bundle, string) (string, error) {
-		t.Fatal("no dump without an update")
-		return "", nil
+// An update: one dump named after the two versions, recorded as migrating before
+// the migrations run once for every process, then recorded as migrated; every
+// waiting process shows the step's progress.
+func TestAppBundleUpdateDumpsThenMigrates(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	cfg.Postgres.UpdateDumps = 5
+	record(t, cfg, apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseMigrated})
+	f := installFakeDB(t, cfg)
+	f.block = make(chan struct{})
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+
+	var mu sync.Mutex
+	details := map[string][]string{}
+	var wg sync.WaitGroup
+	for _, p := range ps {
+		if p.Role == supervisor.RolePostgres || p.Prepare == nil || p.Role == supervisor.RolePipeline {
+			continue
+		}
+		wg.Add(1)
+		go func(p supervisor.Process) {
+			defer wg.Done()
+			err := p.Prepare(context.Background(), func(d string) {
+				mu.Lock()
+				details[p.Name()] = append(details[p.Name()], d)
+				mu.Unlock()
+			})
+			if err != nil {
+				t.Error(err)
+			}
+		}(p)
 	}
-	for _, confirmed := range []string{"", "v0.3.0"} {
-		cfg, payload := appEnv(t, "v0.3.0", confirmed)
-		pg := &pgbundle.Bundle{Backups: filepath.Join(cfg.StateDir(), "backups")}
-		ps := appBundleGates(cfg, payload, pg, gateProcs(true), &strings.Builder{})
-		if err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
-			t.Fatal(err)
+	waitUntil(t, "the migrations run", func() bool { _, m, _ := f.counts(); return m == 1 })
+	time.Sleep(20 * time.Millisecond) // the other processes come to wait
+	close(f.block)
+	wg.Wait()
+
+	if len(f.dumps) != 1 || f.dumps[0] != "v0.2.0->v0.3.0" || f.keep != 5 {
+		t.Fatalf("dumps = %v keep %d (one, named after the update, keeping [postgres] update_dumps)", f.dumps, f.keep)
+	}
+	if len(f.migrates) != 1 || f.migrates[0] != apppayload.DatabaseMigrating {
+		t.Fatalf("migrations = %v (once, after the record said migrating)", f.migrates)
+	}
+	rec := recorded(t, cfg)
+	if rec.Version != "v0.3.0" || rec.State != apppayload.DatabaseMigrated || rec.From != "v0.2.0" ||
+		filepath.Base(rec.Dump) != "pre-v0.2.0-to-v0.3.0.dump" {
+		t.Fatalf("record = %+v", rec)
+	}
+	for _, name := range []string{"api", "streaming", "tv-slot/blue"} {
+		if !contains(details[name], "Updating the library database for v0.3.0") {
+			t.Errorf("%s showed %v", name, details[name])
 		}
 	}
-	cfg, payload := appEnv(t, "v0.3.0", "v0.2.0")
-	pg := &pgbundle.Bundle{Backups: filepath.Join(cfg.StateDir(), "backups")}
-	if err := os.MkdirAll(pg.Backups, 0o700); err != nil {
+	// done for this run: nothing runs again
+	if err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(pg.Backups, "pre-v0.2.0-to-v0.3.0.dump"), []byte("d"), 0o600); err != nil {
+	if d, m, _ := f.counts(); d != 1 || m != 1 {
+		t.Fatalf("ran again: %d dumps, %d migrations", d, m)
+	}
+}
+
+// No record (an install from before it, e.g. an Epic 36 Mac): its first start
+// here dumps as pre-unknown-to-<new>; a payload saved as the one that ran
+// stands in for the record.
+func TestAppBundleNoRecordStillDumps(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	f := installFakeDB(t, cfg)
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(ps, supervisor.RoleStreaming)(context.Background(), noReport); err != nil {
 		t.Fatal(err)
 	}
-	ps := appBundleGates(cfg, payload, pg, gateProcs(true), &strings.Builder{})
+	if len(f.dumps) != 1 || f.dumps[0] != "unknown->v0.3.0" {
+		t.Fatalf("dumps = %v", f.dumps)
+	}
+	if rec := recorded(t, cfg); rec.Version != "v0.3.0" || rec.State != apppayload.DatabaseMigrated || rec.From != "" {
+		t.Fatalf("record = %+v", rec)
+	}
+
+	cfg, payload = appEnv(t, "v0.3.0", "v0.2.0")
+	f = installFakeDB(t, cfg)
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.dumps) != 1 || f.dumps[0] != "v0.2.0->v0.3.0" {
+		t.Fatalf("dumps = %v (from the payload that ran)", f.dumps)
+	}
+}
+
+// The same release: no dump; the migrations still run (a check, at once); their
+// failure is tried again (nothing to put back), not a halt.
+func TestAppBundleSameReleaseNoDump(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated})
+	f := installFakeDB(t, cfg)
+	f.migrateErr = errors.New("ping db: connection refused")
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport)
+	if err == nil || supervisor.Halted(err) || !strings.Contains(err.Error(), "connection refused") {
+		t.Fatalf("a failed check = %v (tried again, not a halt)", err)
+	}
+	f.migrateErr = nil
+	if err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatal(err)
+	}
+	if d, m, r := f.counts(); d != 0 || m != 2 || r != 0 {
+		t.Fatalf("%d dumps, %d migrations, %d restores", d, m, r)
+	}
+}
+
+// The case of the review: v0.3.0 migrated the database but never ran three
+// healthy minutes (the payload saved as the one that ran is still v0.2.0);
+// v0.2.0 installed again is refused for every process, nothing is dumped or
+// migrated.
+func TestAppBundleRefusesAReleaseOlderThanTheDatabase(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.2.0", "v0.2.0")
+	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated, From: "v0.2.0",
+		Dump: "/b/pre-v0.2.0-to-v0.3.0.dump"})
+	f := installFakeDB(t, cfg)
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	for _, role := range []supervisor.Role{supervisor.RoleAPI, supervisor.RoleStreaming, supervisor.RolePipeline} {
+		err := prepareOf(ps, role)(context.Background(), noReport)
+		if !supervisor.Halted(err) || !strings.Contains(err.Error(), "older than the one whose changes the library database holds (v0.3.0)") ||
+			!strings.Contains(err.Error(), "pre-v0.2.0-to-v0.3.0.dump") {
+			t.Fatalf("%s: %v", role, err)
+		}
+	}
+	if d, m, r := f.counts(); d+m+r != 0 {
+		t.Fatalf("%d dumps, %d migrations, %d restores", d, m, r)
+	}
+	// a development build's order is not known: it goes on (its migrations would
+	// refuse a newer database)
+	newPayload(t, payload, "v0.2.0-5-gdeadbee")
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
 	if err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// An older release than the one that ran is refused (its code does not know the
-// newer migrations); so is a Postgres of another major than the cluster's.
-func TestAppBundleRefusesADowngradeAndAnotherPostgresMajor(t *testing.T) {
-	cfg, payload := appEnv(t, "v0.2.0", "v0.3.0")
-	pg := &pgbundle.Bundle{Data: filepath.Join(cfg.StateDir(), "postgres")}
-	ps := appBundleGates(cfg, payload, pg, gateProcs(true), &strings.Builder{})
+// A failed update: the dump is put back (with the record saying so while it
+// is), the record then names the release from before, every process halts
+// with what happened; the previous release installed again starts, the failed
+// one started again tries again.
+func TestAppBundleFailedMigrationPutsTheDumpBack(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	record(t, cfg, apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseMigrated})
+	f := installFakeDB(t, cfg)
+	f.migrateErr = errors.New(`ERROR 0144_x.sql: relation "videos" does not exist`)
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
 	err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport)
-	if err == nil || !strings.Contains(err.Error(), "older than the one that last ran here (v0.3.0)") {
-		t.Fatalf("downgrade = %v", err)
+	if !supervisor.Halted(err) {
+		t.Fatalf("a failed update = %v, want a halt", err)
+	}
+	for _, want := range []string{"the update to v0.3.0 could not change the library database", `relation "videos"`,
+		"back as it was before the update", "pre-v0.2.0-to-v0.3.0.dump", "install v0.2.0 again", "tries this update again"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("detail %q lacks %q", err, want)
+		}
+	}
+	if len(f.restores) != 1 || f.restores[0] != "pre-v0.2.0-to-v0.3.0.dump" {
+		t.Fatalf("restores = %v", f.restores)
+	}
+	rec := recorded(t, cfg)
+	if rec.Version != "v0.2.0" || rec.State != apppayload.DatabaseRestored || rec.Failed != "v0.3.0" {
+		t.Fatalf("record = %+v", rec)
+	}
+	// the other processes halt with it, nothing runs again in this run
+	if err := prepareOf(ps, supervisor.RoleStreaming)(context.Background(), noReport); !supervisor.Halted(err) {
+		t.Fatalf("streaming = %v", err)
+	}
+	if d, m, r := f.counts(); d != 1 || m != 1 || r != 1 {
+		t.Fatalf("%d dumps, %d migrations, %d restores", d, m, r)
 	}
 
-	pgGate := prepareOf(ps, supervisor.RolePostgres)
+	// v0.2.0 installed again: the database is its own, it starts
+	newPayload(t, payload, "v0.2.0")
+	f.migrateErr = nil
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatalf("the previous release again: %v", err)
+	}
+	if rec := recorded(t, cfg); rec.Version != "v0.2.0" || rec.State != apppayload.DatabaseMigrated {
+		t.Fatalf("record = %+v", rec)
+	}
+	// v0.3.0 again: the update is tried again, from a fresh dump
+	newPayload(t, payload, "v0.3.0")
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.dumps) != 2 || recorded(t, cfg).Version != "v0.3.0" {
+		t.Fatalf("dumps = %v, record %+v", f.dumps, recorded(t, cfg))
+	}
+}
+
+// Putting the dump back failed: a halt that says so, the record still says
+// restoring; the next start puts it back first (and, the failed release
+// again, stops there).
+func TestAppBundleFailedRestoreIsFinishedNextStart(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	record(t, cfg, apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseMigrated})
+	f := installFakeDB(t, cfg)
+	f.migrateErr = errors.New("ERROR 0144_x.sql")
+	f.restoreErr = errors.New("pg_restore: disk full")
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport)
+	if !supervisor.Halted(err) || !strings.Contains(err.Error(), "failed too: pg_restore: disk full") ||
+		!strings.Contains(err.Error(), "next start tries to put it back again") {
+		t.Fatalf("a failed restore = %v", err)
+	}
+	if rec := recorded(t, cfg); rec.State != apppayload.DatabaseRestoring || rec.Failed != "v0.3.0" {
+		t.Fatalf("record = %+v", rec)
+	}
+	f.restoreErr = nil
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	err = prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport)
+	if !supervisor.Halted(err) || !strings.Contains(err.Error(), "back as it was before the update") {
+		t.Fatalf("the next start = %v", err)
+	}
+	if d, m, r := f.counts(); d != 1 || m != 1 || r != 2 {
+		t.Fatalf("%d dumps, %d migrations, %d restores (the restore again, no new try)", d, m, r)
+	}
+	if rec := recorded(t, cfg); rec.State != apppayload.DatabaseRestored || rec.Version != "v0.2.0" {
+		t.Fatalf("record = %+v", rec)
+	}
+}
+
+// A start cut off while migrating goes on at the next one with the dump from
+// before (none taken of the half-migrated database), and puts that dump back
+// when the migrations fail.
+func TestAppBundleUnfinishedMigrationGoesOn(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrating, From: "v0.2.0",
+		Dump: filepath.Join(cfg.StateDir(), "backups", "pre-v0.2.0-to-v0.3.0.dump")})
+	f := installFakeDB(t, cfg)
+	f.migrateErr = errors.New("ERROR 0144_x.sql")
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport); !supervisor.Halted(err) {
+		t.Fatalf("= %v", err)
+	}
+	if d, m, r := f.counts(); d != 0 || m != 1 || r != 1 || f.restores[0] != "pre-v0.2.0-to-v0.3.0.dump" {
+		t.Fatalf("%d dumps, %d migrations, restores %v", d, m, f.restores)
+	}
+}
+
+// A stop during the migrations is no failure: nothing is put back, the record
+// still says migrating (the next start goes on).
+func TestAppBundleStopDuringTheMigrations(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	record(t, cfg, apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseMigrated})
+	f := installFakeDB(t, cfg)
+	f.block = make(chan struct{})
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- prepareOf(ps, supervisor.RoleAPI)(ctx, noReport) }()
+	waitUntil(t, "the migrations run", func() bool { _, m, _ := f.counts(); return m == 1 })
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("= %v", err)
+	}
+	if _, _, r := f.counts(); r != 0 {
+		t.Fatal("a stop put the dump back")
+	}
+	if rec := recorded(t, cfg); rec.State != apppayload.DatabaseMigrating {
+		t.Fatalf("record = %+v", rec)
+	}
+}
+
+// A database newer than this payload's migrations (a development build after a
+// newer release): a halt, nothing put back, the record as it was.
+func TestAppBundleSchemaAheadHalts(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0-2-gabc", "")
+	record(t, cfg, apppayload.Database{Version: "v0.4.0", State: apppayload.DatabaseMigrated})
+	f := installFakeDB(t, cfg)
+	f.migrateErr = fmt.Errorf("%w: the database's schema is at 0150", errSchemaAhead)
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport)
+	if !supervisor.Halted(err) || !strings.Contains(err.Error(), "changed by a newer Maktaba") {
+		t.Fatalf("= %v", err)
+	}
+	if _, _, r := f.counts(); r != 0 {
+		t.Fatal("put a dump back")
+	}
+	if rec := recorded(t, cfg); rec.Version != "v0.4.0" || rec.State != apppayload.DatabaseMigrated {
+		t.Fatalf("record = %+v (as it was)", rec)
+	}
+}
+
+// A Postgres of another major than the cluster's is refused.
+func TestAppBundleRefusesAnotherPostgresMajor(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	pg := testBundle(cfg)
+	pgGate := prepareOf(appBundleGates(cfg, payload, pg, gateProcs(true), io.Discard), supervisor.RolePostgres)
 	if err := pgGate(context.Background(), noReport); err != nil {
 		t.Fatalf("no cluster yet: %v", err)
 	}
@@ -171,6 +535,7 @@ func TestAppBundleRefusesADowngradeAndAnotherPostgresMajor(t *testing.T) {
 // one's detail; a failure names the log.
 func TestAppBundleVenvOnceForEveryWorker(t *testing.T) {
 	cfg, payload := appEnv(t, "v0.3.0", "")
+	installFakeDB(t, cfg)
 	prev := venvRun
 	t.Cleanup(func() { venvRun = prev })
 	var runs atomic.Int32
@@ -188,7 +553,7 @@ func TestAppBundleVenvOnceForEveryWorker(t *testing.T) {
 		return appvenv.Result{Pipeline: "1.4.0"}, nil
 	}
 	fail.Store(true)
-	ps := appBundleGates(cfg, payload, nil, gateProcs(false), &strings.Builder{})
+	ps := appBundleGates(cfg, payload, nil, gateProcs(false), io.Discard)
 	err := ps[1].Prepare(context.Background(), noReport)
 	if err == nil || !strings.Contains(err.Error(), "pip: no torch") || !strings.Contains(err.Error(), "venv.log") {
 		t.Fatalf("failure = %v", err)
@@ -216,12 +581,86 @@ func TestAppBundleVenvOnceForEveryWorker(t *testing.T) {
 	if runs.Load() != 1 {
 		t.Fatalf("the venv bootstrap ran %d times for two workers", runs.Load())
 	}
-	found := false
-	for _, d := range details {
-		found = found || d == "Installing the transcription tools: Collecting torch (41%)"
-	}
-	if !found {
+	if !contains(details, "Installing the transcription tools: Collecting torch (41%)") {
 		t.Fatalf("details = %v", details)
+	}
+}
+
+// A pipeline whose Python is named (MAKTABA_PYTHON, [pipeline] python) does not
+// use the app's venv: it waits for the database alone.
+func TestAppBundleNoVenvForANamedPython(t *testing.T) {
+	for _, named := range []string{"env", "config"} {
+		cfg, payload := appEnv(t, "v0.3.0", "")
+		if named == "env" {
+			t.Setenv("MAKTABA_PYTHON", "/opt/py/bin/python3")
+		} else {
+			cfg.Pipeline.Python = "/opt/py/bin/python3"
+		}
+		installFakeDB(t, cfg)
+		prev := venvRun
+		venvRun = func(context.Context, appvenv.Spec, func(appvenv.Progress)) (appvenv.Result, error) {
+			t.Errorf("%s: the venv was built", named)
+			return appvenv.Result{}, nil
+		}
+		ps := appBundleGates(cfg, payload, nil, gateProcs(false), io.Discard)
+		if err := prepareOf(ps, supervisor.RolePipeline)(context.Background(), noReport); err != nil {
+			t.Fatal(err)
+		}
+		venvRun = prev
+	}
+}
+
+// A process waiting on a shared step ends at its own stop while the step goes on.
+func TestSharedStepWaiterStops(t *testing.T) {
+	release := make(chan struct{})
+	s := &sharedStep{wait: "waiting", run: func(_ context.Context, report func(string)) error {
+		report("working")
+		<-release
+		return nil
+	}}
+	go func() { _ = s.prepare(context.Background(), noReport) }()
+	waitUntil(t, "the step runs", func() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.running != nil })
+	ctx, cancel := context.WithCancel(context.Background())
+	var shown []string
+	done := make(chan error, 1)
+	go func() { done <- s.prepare(ctx, func(d string) { shown = append(shown, d) }) }()
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("the waiter = %v", err)
+	}
+	close(release)
+	if len(shown) == 0 || shown[0] != "working" {
+		t.Fatalf("the waiter showed %v (the step's report)", shown)
+	}
+}
+
+// runMigrateUp runs `migrate --timeout 0 up` with the api's binary and
+// environment; a failure carries the last lines, the api's exit 3 is a database
+// newer than its migrations.
+func TestRunMigrateUp(t *testing.T) {
+	spawnsPrograms(t)
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := func(mode string) *exec.Cmd {
+		c := exec.Command(self)
+		c.Env = append(os.Environ(), "MAKTABA_TEST_APPBUNDLE_MIGRATE="+mode)
+		return c
+	}
+	var log strings.Builder
+	if err := runMigrateUp(context.Background(), api("ok"), &log); err != nil || !strings.Contains(log.String(), "applying") {
+		t.Fatalf("ok = %v, log %q", err, log.String())
+	}
+	err = runMigrateUp(context.Background(), api("fail"), io.Discard)
+	if err == nil || errors.Is(err, errSchemaAhead) || err.Error() != "2026/10/21 OK   0143_queue_health.sql; "+
+		"migrate: ERROR 0144_x.sql: failed to run SQL migration; relation \"videos\" does not exist" {
+		t.Fatalf("fail = %v", err)
+	}
+	err = runMigrateUp(context.Background(), api("ahead"), io.Discard)
+	if !errors.Is(err, errSchemaAhead) || !strings.Contains(err.Error(), "schema is at 0150") {
+		t.Fatalf("ahead = %v", err)
 	}
 }
 
@@ -229,13 +668,14 @@ func TestAppBundleVenvOnceForEveryWorker(t *testing.T) {
 func TestConfirmAppPayloadAfterAHealthyRun(t *testing.T) {
 	spawnsPrograms(t) // a real child under the supervisor
 	t.Setenv("MAKTABA_CONFIRM_AFTER", "1ms")
-	t.Setenv("MAKTABA_TEST_FAKE", "1")
 	cfg, payload := appEnv(t, "v0.3.0", "v0.2.0")
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := supervisor.Process{Role: supervisor.RoleAPI, Cmd: exec.Command(self, "run-until-stopped")}
+	child := exec.Command(self)
+	child.Env = append(os.Environ(), "MAKTABA_TEST_APPBUNDLE_CHILD=1")
+	p := supervisor.Process{Role: supervisor.RoleAPI, Cmd: child}
 	sup := supervisor.New([]supervisor.Process{p}, supervisor.DefaultPolicy(), supervisor.WithLog(&strings.Builder{}))
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -255,5 +695,25 @@ func TestConfirmAppPayloadAfterAHealthyRun(t *testing.T) {
 			t.Fatalf("not confirmed: %+v %v %v", got, ok, err)
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func contains(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+func waitUntil(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(2 * time.Millisecond)
 	}
 }
