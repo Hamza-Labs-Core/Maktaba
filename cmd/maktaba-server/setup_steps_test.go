@@ -2,16 +2,19 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 )
 
 // setupEnv is one install's folders for the setup tests: server.toml (which
@@ -99,8 +102,9 @@ func pendingOf(t *testing.T, e *setupEnv) setupPending {
 
 func TestSetupCheck(t *testing.T) {
 	newSetupEnv(t)
-	prev := hostFacts
-	t.Cleanup(func() { hostFacts = prev })
+	prevFacts, prevGPUs := hostFacts, hostGPUs
+	t.Cleanup(func() { hostFacts, hostGPUs = prevFacts, prevGPUs })
+	hostGPUs = func() []hostinfo.GPU { return []hostinfo.GPU{{Name: "NVIDIA GeForce RTX 2080 SUPER", MemoryMB: 8192}} }
 
 	hostFacts = func(string) (uint64, uint64) { return 32 << 30, 500 << 30 }
 	code, _, ev := runStep(t, "check", map[string]any{})
@@ -112,33 +116,90 @@ func TestSetupCheck(t *testing.T) {
 	if len(runs) < 3 {
 		t.Fatalf("runs = %v", runs)
 	}
+	// every line of what will run has a role the screens translate
+	var pipeline map[string]any
+	for _, r := range runs {
+		r := r.(map[string]any)
+		if r["role"] == "" || r["what"] == "" {
+			t.Fatalf("run = %v", r)
+		}
+		if r["role"] == "pipeline" {
+			pipeline = r
+		}
+	}
+	params, _ := pipeline["params"].(map[string]any)
+	if _, ok := params["workers"]; !ok {
+		t.Fatalf("pipeline run = %v", pipeline)
+	}
+	if goos, _ := goosArch(); goos != "darwin" && params["gpu"] != "NVIDIA GeForce RTX 2080 SUPER" {
+		t.Fatalf("the GPU transcription runs on: %v", pipeline)
+	}
 
-	// too little disk blocks; little memory only warns
-	hostFacts = func(string) (uint64, uint64) { return 6 << 30, 10 << 30 }
+	// too little disk and memory block, each by its code; a little short only warns
+	hostFacts = func(string) (uint64, uint64) { return 2 << 30, 10 << 30 }
 	_, _, ev = runStep(t, "check", map[string]any{})
 	d = data(t, ev)
-	warns, _ := d["warnings"].([]any)
-	if d["ok"] != false || len(warns) < 2 {
+	codes := func(key string) map[string]map[string]any {
+		out := map[string]map[string]any{}
+		list, _ := d[key].([]any)
+		for _, n := range list {
+			n := n.(map[string]any)
+			if n["message"] == "" {
+				t.Fatalf("a note without its English: %v", n)
+			}
+			params, _ := n["params"].(map[string]any)
+			out[n["code"].(string)] = params
+		}
+		return out
+	}
+	probs := codes("problems")
+	if d["ok"] != false || probs["disk_low"]["need_bytes"] != float64(setupNeedDisk) || probs["ram_low"]["have_bytes"] != float64(2<<30) {
 		t.Fatalf("little disk and memory: %v", d)
+	}
+	hostFacts = func(string) (uint64, uint64) { return 6 << 30, 30 << 30 }
+	_, _, ev = runStep(t, "check", map[string]any{})
+	d = data(t, ev)
+	if warns := codes("warnings"); d["ok"] != setupPlatformOK() || warns["disk_tight"] == nil || warns["ram_tight"] == nil {
+		t.Fatalf("a little short: %v", d)
+	}
+
+	// no NVIDIA GPU: transcription on the processor, said on Windows and Linux
+	hostGPUs = func() []hostinfo.GPU { return nil }
+	_, _, ev = runStep(t, "check", map[string]any{})
+	d = data(t, ev)
+	_, cpu := codes("warnings")["transcribe_cpu"]
+	if goos, _ := goosArch(); cpu != (goos != "darwin") {
+		t.Fatalf("transcription on the CPU said: %v (%s)", cpu, goos)
+	}
+
+	// what a platform adds (Epic 39: the Linux checks)
+	platformChecks = append(platformChecks, func(_ context.Context, res *checkResult) {
+		res.Problem("test_platform", "the platform says no", "why", "a test")
+	})
+	t.Cleanup(func() { platformChecks = platformChecks[:len(platformChecks)-1] })
+	_, _, ev = runStep(t, "check", map[string]any{})
+	d = data(t, ev)
+	if d["ok"] != false || codes("problems")["test_platform"]["why"] != "a test" {
+		t.Fatalf("a platform's problem: %v", d)
 	}
 }
 
 // setupPlatformOK: this test machine is one the app runs the server on.
 func setupPlatformOK() bool {
-	ok, _ := setupPlatform(goosArch())
-	return ok
+	code, _ := setupPlatform(goosArch())
+	return code == ""
 }
 
 func TestSetupPlatforms(t *testing.T) {
 	for _, c := range []struct {
 		goos, arch string
-		ok         bool
+		code       string
 	}{
-		{"darwin", "arm64", true}, {"windows", "amd64", true}, {"linux", "amd64", true}, {"linux", "arm64", true},
-		{"darwin", "amd64", false}, {"windows", "arm64", false}, {"freebsd", "amd64", false},
+		{"darwin", "arm64", ""}, {"windows", "amd64", ""}, {"linux", "amd64", ""}, {"linux", "arm64", ""},
+		{"darwin", "amd64", "platform_intel_mac"}, {"windows", "arm64", "platform_unsupported"}, {"freebsd", "amd64", "platform_unsupported"},
 	} {
-		if ok, why := setupPlatform(c.goos, c.arch); ok != c.ok || (!ok && why == "") {
-			t.Errorf("%s/%s = %v %q", c.goos, c.arch, ok, why)
+		if code, why := setupPlatform(c.goos, c.arch); code != c.code || (code != "" && why == "") {
+			t.Errorf("%s/%s = %q %q", c.goos, c.arch, code, why)
 		}
 	}
 }
@@ -146,18 +207,24 @@ func TestSetupPlatforms(t *testing.T) {
 func TestSetupAdmin(t *testing.T) {
 	e := newSetupEnv(t)
 	for _, c := range []struct {
-		in    map[string]string
-		code  string
-		field string
+		in     map[string]string
+		code   string
+		field  string
+		params map[string]any
 	}{
-		{map[string]string{"username": "", "password": "s3cret-long"}, "bad_username", "username"},
-		{map[string]string{"username": " admin", "password": "s3cret-long"}, "bad_username", "username"},
-		{map[string]string{"username": "admin", "password": "s3cret"}, "weak_password", "password"},
-		{map[string]string{"username": "admin", "password": strings.Repeat("x", 257)}, "weak_password", "password"},
+		{map[string]string{"username": "", "password": "s3cret-long"}, "username_length", "username", map[string]any{"max": float64(64)}},
+		{map[string]string{"username": " admin", "password": "s3cret-long"}, "username_space", "username", nil},
+		{map[string]string{"username": "ad\x01min", "password": "s3cret-long"}, "username_control", "username", nil},
+		{map[string]string{"username": "admin", "password": "s3cret"}, "password_short", "password", map[string]any{"min": float64(8)}},
+		{map[string]string{"username": "admin", "password": strings.Repeat("x", 257)}, "password_long", "password", map[string]any{"max": float64(256)}},
+		// the api reads the password as a line: a line break would cut it there
+		{map[string]string{"username": "admin", "password": "s3cret-long\nrest"}, "password_newline", "password", nil},
+		{map[string]string{"username": "admin", "password": "s3cret-long\r"}, "password_newline", "password", nil},
 	} {
 		code, _, ev := runStep(t, "admin", c.in)
-		if code != 1 || ev["code"] != c.code || ev["field"] != c.field {
-			t.Errorf("%v = %d %v", c.in, code, ev)
+		params, _ := ev["params"].(map[string]any)
+		if code != 1 || ev["code"] != c.code || ev["field"] != c.field || (c.params != nil && !reflect.DeepEqual(params, c.params)) {
+			t.Errorf("%q = %d %v", c.in, code, ev)
 		}
 	}
 	code, _, ev := runStep(t, "admin", map[string]string{"username": "admin", "password": "s3cret-long"})
@@ -187,13 +254,21 @@ func TestSetupLibraries(t *testing.T) {
 	if err := os.MkdirAll(lib, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	code, _, ev := runStep(t, "libraries", map[string]any{"roots": []string{filepath.Join(e.dir, "nope")}})
-	if code != 1 || ev["code"] != "root_missing" || ev["field"] != "roots" {
+	missing := filepath.Join(e.dir, "nope")
+	code, _, ev := runStep(t, "libraries", map[string]any{"roots": []string{missing}})
+	if params, _ := ev["params"].(map[string]any); code != 1 || ev["code"] != "root_missing" || ev["field"] != "roots" || params["path"] != missing {
 		t.Fatalf("missing root = %d %v", code, ev)
+	}
+	// a relative folder would resolve against wherever the server runs
+	if code, _, ev := runStep(t, "libraries", map[string]any{"roots": []string{"Lectures"}}); code != 1 || ev["code"] != "root_relative" {
+		t.Fatalf("relative root = %d %v", code, ev)
+	}
+	if code, _, ev := runStep(t, "libraries", map[string]any{"roots": []string{" "}}); code != 1 || ev["code"] != "roots_none" {
+		t.Fatalf("no root = %d %v", code, ev)
 	}
 	code, _, ev = runStep(t, "libraries", map[string]any{
 		"roots":    []string{lib + string(filepath.Separator), lib, " "},
-		"path_map": []map[string]string{{"from": "/Volumes/Originals", "to": `Y:\`}},
+		"path_map": []map[string]string{{"from": "/Volumes/Originals", "to": e.dir}},
 	})
 	if code != 0 {
 		t.Fatalf("libraries = %d %v", code, ev)
@@ -207,12 +282,84 @@ func TestSetupLibraries(t *testing.T) {
 		t.Fatalf("pending roots = %v", p.Roots)
 	}
 	var m map[string]string
-	if err := json.Unmarshal([]byte(p.PathMap), &m); err != nil || m["/Volumes/Originals"] != `Y:\` {
+	if err := json.Unmarshal([]byte(p.PathMap), &m); err != nil || m["/Volumes/Originals"] != e.dir {
 		t.Fatalf("path map = %q (%v)", p.PathMap, err)
 	}
-	if code, _, ev := runStep(t, "libraries", map[string]any{"roots": []string{lib},
-		"path_map": []map[string]string{{"from": "/a", "to": ""}}}); code != 1 || ev["code"] != "bad_path_map" {
-		t.Fatalf("half a path map line = %d %v", code, ev)
+	for _, c := range []struct {
+		entry map[string]string
+		code  string
+		line  float64
+	}{
+		{map[string]string{"from": "/a", "to": e.dir}, "", 0},
+		{map[string]string{"from": "/a", "to": ""}, "bad_path_map", 2},
+		{map[string]string{"from": "Volumes/x", "to": e.dir}, "path_map_relative", 2},
+		{map[string]string{"from": "/a", "to": "here"}, "path_map_relative", 2},
+	} {
+		entries := []map[string]string{{"from": "/b", "to": e.dir}}
+		if c.code != "" {
+			entries = append(entries, c.entry)
+		}
+		code, _, ev := runStep(t, "libraries", map[string]any{"roots": []string{lib}, "path_map": entries})
+		params, _ := ev["params"].(map[string]any)
+		if c.code == "" && code != 0 || c.code != "" && (code != 1 || ev["code"] != c.code || params["line"] != c.line) {
+			t.Errorf("path map %v = %d %v", c.entry, code, ev)
+		}
+	}
+}
+
+// Two spellings of one folder are one root where the disk ignores case
+// (Windows, the Mac), two on Linux.
+func TestSetupRootsCase(t *testing.T) {
+	e := newSetupEnv(t)
+	lower, upper := filepath.Join(e.dir, "movies"), filepath.Join(e.dir, "Movies")
+	for _, d := range []string{lower, upper} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, _ := os.ReadDir(e.dir)
+	caseSensitive := 0
+	for _, en := range entries {
+		if strings.EqualFold(en.Name(), "movies") {
+			caseSensitive++
+		}
+	}
+	code, _, ev := runStep(t, "libraries", map[string]any{"roots": []string{lower, upper}})
+	if code != 0 {
+		t.Fatalf("libraries = %d %v", code, ev)
+	}
+	roots, _ := data(t, ev)["roots"].([]any)
+	if goos, _ := goosArch(); goos == "linux" && caseSensitive == 2 && len(roots) != 2 {
+		t.Fatalf("Linux: /media/Movies and /media/movies are two folders: %v", roots)
+	} else if goos != "linux" && len(roots) != 1 {
+		t.Fatalf("%s: one folder, two spellings: %v", goos, roots)
+	}
+}
+
+func TestLocalPath(t *testing.T) {
+	if goos, _ := goosArch(); goos == "windows" {
+		for in, want := range map[string]string{`Y:`: `Y:\`, `Y:\`: `Y:\`, `Y:/Lectures/`: `Y:\Lectures`, `\\NAS\share`: `\\NAS\share`} {
+			if got, ok := localPath(in); !ok || got != want {
+				t.Errorf("localPath(%q) = %q %v, want %q", in, got, ok, want)
+			}
+		}
+		for _, in := range []string{`Y:Lectures`, `Lectures`, `\Lectures`} {
+			if _, ok := localPath(in); ok {
+				t.Errorf("localPath(%q) is whole", in)
+			}
+		}
+	} else if _, ok := localPath("Y:"); ok {
+		t.Error("a drive letter is no path off Windows")
+	}
+	for _, p := range []string{"/Volumes/Media", "Y:/", `Y:\x`, `\\NAS\share`} {
+		if !otherPath(p) {
+			t.Errorf("otherPath(%q) = false", p)
+		}
+	}
+	for _, p := range []string{"Volumes", "./x", "1:/x"} {
+		if otherPath(p) {
+			t.Errorf("otherPath(%q) = true", p)
+		}
 	}
 }
 
@@ -247,7 +394,7 @@ func TestSetupModels(t *testing.T) {
 	e := newSetupEnv(t)
 	fakeHF(t)
 	for _, c := range []struct{ token, code string }{
-		{"hf_BAD", "hf_token_invalid"}, {"hf_NOTERMS", "hf_gated"}, {"", "hf_token_invalid"},
+		{"hf_BAD", "hf_token_invalid"}, {"hf_NOTERMS", "hf_gated"}, {"", "hf_token_empty"},
 	} {
 		code, _, ev := runStep(t, "models", map[string]string{"source": "huggingface", "hf_token": c.token})
 		if code != 1 || ev["code"] != c.code || ev["field"] != "hf_token" {
@@ -492,7 +639,7 @@ func TestSetupFinish(t *testing.T) {
 		in   any
 	}{
 		{"admin", map[string]string{"username": "owner", "password": "s3cret-long"}},
-		{"libraries", map[string]any{"roots": []string{lib}, "path_map": []map[string]string{{"from": "/m", "to": "M:/"}}}},
+		{"libraries", map[string]any{"roots": []string{lib}, "path_map": []map[string]string{{"from": "/m", "to": lib}}}},
 		{"plex", map[string]string{"action": "pin"}},
 		{"plex", map[string]any{"action": "poll", "pin_id": 42}},
 	} {
@@ -513,8 +660,9 @@ func TestSetupFinish(t *testing.T) {
 	}
 	// server.toml has the libraries and the path map
 	saved, found, err := config.LoadFrom(e.config)
+	wantMap, _ := json.Marshal(map[string]string{"/m": lib})
 	if err != nil || !found || len(saved.Media.Roots) != 1 || saved.Media.Roots[0] != lib ||
-		saved.Media.PathMap != `{"/m":"M:/"}` || saved.Server.DataDir != e.state {
+		saved.Media.PathMap != string(wantMap) || saved.Server.DataDir != e.state {
 		t.Fatalf("server.toml: %+v %v", saved.Media, err)
 	}
 	// migrate, then the admin from its hash (through a file, never argv), then plex
