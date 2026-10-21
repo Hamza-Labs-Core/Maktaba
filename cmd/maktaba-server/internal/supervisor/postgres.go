@@ -42,7 +42,8 @@ func BuildPostgres(b pgbundle.Bundle) (Process, error) {
 	}
 	if runtime.GOOS == "windows" {
 		// no SIGINT for another process there: pg_ctl's fast shutdown, not a kill
-		// (which costs a crash recovery at the next start)
+		// (which costs a crash recovery at the next start); unlike the CTRL_BREAK
+		// the other roles get, it needs no console
 		p.Stop = func() { _ = b.StopCommand().Run() }
 	}
 	return p, nil

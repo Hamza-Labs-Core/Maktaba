@@ -60,11 +60,12 @@ type Process struct {
 	// (postgres speaks its own protocol); Probe then only labels it.
 	Check func(ctx context.Context) error
 	// Stop, when set, asks the child to stop gracefully in place of a signal (a
-	// program that a signal cannot ask on this OS: postgres on Windows). The kill
-	// after the grace is the same.
+	// program that a signal cannot ask on this OS: postgres on Windows, through
+	// pg_ctl, which needs no console). The kill after the grace is the same.
 	Stop func()
 	// StopSignal, when set, is the graceful-stop signal in place of SIGTERM
-	// (postgres: SIGINT, its fast shutdown).
+	// (postgres: SIGINT, its fast shutdown). POSIX only: on Windows every child
+	// is asked with CTRL_BREAK (askChild).
 	StopSignal os.Signal
 	// First: started before every other process, which wait until it runs (its
 	// check answered), and stopped after them (Epic 36 story 36.1: the bundled
@@ -80,14 +81,22 @@ func (p Process) stopSignal() os.Signal {
 	return terminationSignal()
 }
 
-// askStop asks a running child to stop gracefully: its Stop, else its signal.
-func (p Process) askStop(proc *os.Process) {
+// askStop asks a running child (proc, in tree) to stop gracefully: its Stop,
+// else askChild (its signal on POSIX, CTRL_BREAK to its process group on
+// Windows). An error means the child was not asked, and the caller kills it
+// instead.
+func (p Process) askStop(proc *os.Process, tree *procTree) error {
 	if p.Stop != nil {
 		go p.Stop()
-		return
+		return nil
 	}
-	_ = proc.Signal(p.stopSignal())
+	return askChild(proc, tree, p.stopSignal())
 }
+
+// errNoConsole: CTRL_BREAK travels through the console the supervisor shares
+// with its children, and this process has none (Windows: a bare serve started
+// detached by a GUI program), so no child can be asked that way.
+var errNoConsole = errors.New("no console to send CTRL_BREAK on (serve was started without one)")
 
 // Name is the process's label: the role, or role/instance.
 func (p Process) Name() string {
@@ -152,6 +161,11 @@ func Build(role Role, opts Options) (Process, error) {
 
 	case RolePipeline:
 		cmd = exec.Command(pythonFor(opts), "-m", "maktaba_pipeline")
+		// the transcription workers (PlanFor, BuildPipelineInstances) take the
+		// transcribe stage, and the main worker leaves it to them; without them on
+		// Windows or Linux it gets the plan's knobs, for when it transcribes itself
+		// (story 38.8)
+		env = PlanFor(opts).mainEnv(env)
 
 	default:
 		return Process{}, fmt.Errorf("unknown role %q", role)
