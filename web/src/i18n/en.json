@@ -175,6 +175,8 @@
   "rules.tv.horizon_days.help": "Every channel's schedule is planned this many days ahead; the guide (XMLTV) Plex and the apps read shows as far.",
   "rules.tv.topup_below_days.label": "Top up below (days)",
   "rules.tv.topup_below_days.help": "A channel with less than this many days planned is extended back to the days ahead above. Checked every few minutes.",
+  "rules.tv.live_lookup_reuse_seconds.label": "Live page lookup reuse (seconds)",
+  "rules.tv.live_lookup_reuse_seconds.help": "A live broadcast on a YouTube (or other) page is looked up with yt-dlp before it airs. Every channel airing the same page at the same time shares one lookup, reused this long; after a failure the next try looks again. A stream address (.m3u8 ...) needs no lookup.",
   "rules.tv_output.encoder.label": "Video encoder",
   "rules.tv_output.encoder.help": "auto: on a Mac, Apple VideoToolbox when its hardware encoder answers a test encode; elsewhere the NVIDIA GPU (NVENC) when it does; else the processor (libx264). nvenc, videotoolbox or software force one.",
   "rules.tv_output.resolution.label": "Picture size",

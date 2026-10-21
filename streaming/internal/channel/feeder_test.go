@@ -424,7 +424,7 @@ func TestYtDlp_PrewarmFillsCache(t *testing.T) {
 	}
 	st := &Station{cfg: StationConfig{Resolver: y}, log: discardLogger()}
 	st.prewarmLive(context.Background(), ProgramBlock{Seq: 1, Kind: KindLive, SourceURL: "https://www.youtube.com/watch?v=1"})
-	if u, _ := y.Resolve(context.Background(), "https://www.youtube.com/watch?v=1"); u != "https://cdn/x.m3u8" || calls != 1 {
+	if u, _ := y.Resolve(context.Background(), LiveRequest{SourceURL: "https://www.youtube.com/watch?v=1"}); u != "https://cdn/x.m3u8" || calls != 1 {
 		t.Errorf("prewarm should populate the cache: %q calls=%d", u, calls)
 	}
 }

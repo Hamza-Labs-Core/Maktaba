@@ -47,14 +47,14 @@ func TestYtDlp_DirectVsPageAndCache(t *testing.T) {
 		return []byte("\nhttps://cdn.example/live/index.m3u8?sig=1\n"), nil
 	}
 	for _, direct := range []string{"https://x.example/live.m3u8", "rtmp://x/live", "http://x/a.ts?token=1"} {
-		got, err := y.Resolve(context.Background(), direct)
+		got, err := y.Resolve(context.Background(), LiveRequest{SourceURL: direct})
 		if err != nil || got != direct {
 			t.Errorf("direct %q → %q %v", direct, got, err)
 		}
 	}
 	page := "https://www.youtube.com/watch?v=abc"
 	for i := 0; i < 3; i++ {
-		got, err := y.Resolve(context.Background(), page)
+		got, err := y.Resolve(context.Background(), LiveRequest{SourceURL: page})
 		if err != nil || got != "https://cdn.example/live/index.m3u8?sig=1" {
 			t.Fatalf("page → %q %v", got, err)
 		}
@@ -63,12 +63,12 @@ func TestYtDlp_DirectVsPageAndCache(t *testing.T) {
 		t.Errorf("yt-dlp ran %d times, want 1 (cached)", calls)
 	}
 	y.Forget(page)
-	_, _ = y.Resolve(context.Background(), page)
+	_, _ = y.Resolve(context.Background(), LiveRequest{SourceURL: page})
 	if calls != 2 {
 		t.Errorf("Forget should force a re-resolve")
 	}
 	y.run = func(context.Context, string, ...string) ([]byte, error) { return nil, errors.New("offline") }
-	if _, err := y.Resolve(context.Background(), "https://twitch.tv/x"); err == nil {
+	if _, err := y.Resolve(context.Background(), LiveRequest{SourceURL: "https://twitch.tv/x"}); err == nil {
 		t.Error("yt-dlp failure must surface")
 	}
 }
