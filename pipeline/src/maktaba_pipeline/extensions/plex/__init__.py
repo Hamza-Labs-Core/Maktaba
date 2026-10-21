@@ -48,7 +48,7 @@ __all__ = [
 PLEX_EXPORT_VERSION = 1
 PLEX_INDEX_VERSION = 1
 PLEX_GROUPS_VERSION = 1
-PLEX_LIVETV_VERSION = 1
+PLEX_LIVETV_VERSION = 2  # 2: Plex's actual channel map counts (drift repair)
 
 MANIFEST = Manifest(
     name="plex",
@@ -174,6 +174,9 @@ class PlexExtension:
                 # beside write_channels: one place reads the lineup the home just wrote
                 placement="home",
                 after_topup=True,
+                # and every rules.plexlive.drift_check_minutes: another program (dizqueTV's
+                # Plex refresh) may have replaced Maktaba's channel map in Plex
+                every_minutes_rule=("plexlive", "drift_check_minutes"),
             )
         )
         if graph.has_stage("write_channels"):

@@ -109,3 +109,35 @@ jobs:
           cargo fmt --check
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked
+
+  # Epic 38: the same shell on Windows: the sign-in task, the server agent's
+  # loop and stop event, setup steps started without a console window.
+  desktop-shell-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      # tauri::generate_context! reads build.frontendDist; the tests never load it
+      - name: Stub the web bundle
+        shell: bash
+        run: mkdir -p web/dist
+
+      - name: Format, lint and test
+        working-directory: apps/desktop/src-tauri
+        shell: bash
+        env:
+          # the runner may register (and removes) a real sign-in task
+          MAKTABA_TEST_WINDOWS_TASK: '1'
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked

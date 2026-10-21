@@ -5,8 +5,11 @@
 // - client mode: the window connects to another Maktaba, as before
 //   Epic 36; with no saved address it shows the bundled web app.
 //
-// The choice is saved in <app config dir>/mode.json by the setup screens.
-// Before it exists, a build that carries the server payload opens setup.
+// The choice is saved in mode.json by the setup screens: in the app's config
+// folder on a Mac, its local data folder on Windows (%LOCALAPPDATA%: a
+// roaming profile must not carry this PC's server mode to another PC, which
+// would then wait on a server it does not run). Before it exists, a build
+// that carries the server payload opens setup.
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -68,6 +71,30 @@ pub fn save(path: &Path, mode: &AppMode) -> std::io::Result<()> {
         serde_json::to_vec_pretty(mode).map_err(std::io::Error::other)?,
     )?;
     std::fs::rename(tmp, path)
+}
+
+/// Move a mode.json from `from` (the roaming folder Windows kept it in
+/// before) to `to`, once: only while `to` has none. A server mode moves only
+/// when `server_here` (setup registered the server on this PC): on a roaming
+/// profile it may be another PC's, which is left where it is. Copied, then
+/// removed, since the two folders may be on different drives. True when it
+/// moved.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn adopt(from: &Path, to: &Path, server_here: bool) -> std::io::Result<bool> {
+    if to.exists() {
+        return Ok(false);
+    }
+    let Some(m) = load(from) else {
+        return Ok(false);
+    };
+    if matches!(m, AppMode::Server { .. }) && !server_here {
+        return Ok(false);
+    }
+    save(to, &m)?;
+    // the copy is the one in use now; a roaming one left behind is never read
+    // again on this PC
+    let _ = std::fs::remove_file(from);
+    Ok(true)
 }
 
 /// Accept an http(s) address with a host and nothing that could run
@@ -139,6 +166,43 @@ mod tests {
         );
         std::fs::write(&p, "garbage").unwrap();
         assert_eq!(load(&p), None);
+    }
+
+    #[test]
+    fn a_roaming_mode_moves_to_this_pc_once() {
+        let tmp = tempfile::tempdir().unwrap();
+        let roaming = tmp.path().join("Roaming/com.hamzalabs.maktaba/mode.json");
+        let local = tmp.path().join("Local/com.hamzalabs.maktaba/mode.json");
+        let server = AppMode::Server {
+            web_url: "http://127.0.0.1:8088".into(),
+            supervisor_url: default_supervisor_url(),
+        };
+        let client = AppMode::Client {
+            server_url: "https://maktaba.home".into(),
+        };
+        // nothing to move
+        assert!(!adopt(&roaming, &local, true).unwrap());
+        // another PC's server mode stays where it is: this PC opens setup
+        save(&roaming, &server).unwrap();
+        assert!(!adopt(&roaming, &local, false).unwrap());
+        assert!(roaming.exists() && !local.exists());
+        // this PC's server mode moves (copied, then removed)
+        assert!(adopt(&roaming, &local, true).unwrap());
+        assert_eq!(load(&local), Some(server.clone()));
+        assert!(!roaming.exists());
+        // once: a local one is never replaced
+        save(&roaming, &client).unwrap();
+        assert!(!adopt(&roaming, &local, true).unwrap());
+        assert_eq!(load(&local), Some(server));
+        // client mode moves on any PC
+        std::fs::remove_file(&local).unwrap();
+        assert!(adopt(&roaming, &local, false).unwrap());
+        assert_eq!(load(&local), Some(client));
+        // an unreadable one is left alone
+        std::fs::remove_file(&local).unwrap();
+        std::fs::write(&roaming, "garbage").unwrap();
+        assert!(!adopt(&roaming, &local, true).unwrap());
+        assert!(roaming.exists() && !local.exists());
     }
 
     #[test]
