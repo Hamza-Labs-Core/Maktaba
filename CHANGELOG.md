@@ -10,6 +10,16 @@ don't append a line here; docs-only PRs are exempt.
 
 ## [Unreleased]
 
+### Added
+
+- **Postgres programs for every platform, and Postgres on Windows.** Maktaba can fetch the pinned
+  Postgres 16.15 build of the machine's platform (theseus-rs; size and SHA-256 pinned, unpacked
+  with path checks), and the supervisor runs Postgres on Windows (its `.exe` programs, a fast
+  shutdown through `pg_ctl` instead of a kill, and `postgres.exe` under a restricted token when
+  the server runs as an administrator, as the Windows service does: Postgres refuses
+  administrative rights). Groundwork for the Windows and Linux apps and for full nodes' copies of
+  the home's database (#178).
+
 ### Changed
 
 - **Windows installs point at the Maktaba app** (Epic 38, story 38.14). The README's install
@@ -19,6 +29,11 @@ don't append a line here; docs-only PRs are exempt.
   and moves a joined worker in.
 
 ### Fixed
+
+- **The launcher never sends CTRL_BREAK to a server that has exited** (Windows, Epic 38 story
+  38.2). It holds a handle to the server until it is reaped and asks it to stop only while it
+  still runs: a CTRL_BREAK naming a pid that leads no process group (a server that exited as the
+  launcher was stopping, its pid reused) goes astray and can end the launcher itself.
 
 - **Release builds for desktop, Android and Android TV.** The desktop app ships a
   (placeholder) icon set (#152), which the macOS and Windows bundles failed on. The Linux build
@@ -36,6 +51,12 @@ don't append a line here; docs-only PRs are exempt.
   `production` deployment is recorded.
 - **Web image release build.** The web image builds its bundle natively instead of under arm64
   emulation, where `pnpm install` hung past the release timeout.
+- **The pipeline's venv on Windows: a rebuild or repair waits for a file held open (story
+  38.7).** Removing the old venv and `venv --upgrade` writing over `Scripts\python.exe` failed
+  outright when another process had a file of the venv open: a virus scanner or the search
+  indexer, or a program of the venv still exiting (WinError 5 / 32, Errno 13). Each is now tried
+  again for up to 5 s, as the status file already was, and a read-only file is made writable
+  before it is removed.
 
 ## [0.2.0] - 2026-10-19
 

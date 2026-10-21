@@ -129,6 +129,74 @@ async def test_trigger_on_active_row_requests_rerun(db: Database, state: str) ->
 
 
 @pytest.mark.asyncio
+async def test_a_forced_trigger_clears_a_pending_rows_not_before(db: Database) -> None:
+    lib = await make_library(db)
+    v = await make_video(db, lib)
+    first = await enqueue_job(db, subject_kind="video", subject_id=v, stage="probe")
+    later = to_ts(db, now() + timedelta(minutes=50))  # a retry's backoff, say
+    await db.execute(
+        "UPDATE processing_jobs SET not_before = $2 WHERE id = $1", first.job_id, later
+    )
+    # a non-forced trigger keeps it
+    await enqueue_job(db, subject_kind="video", subject_id=v, stage="probe")
+    assert (await _row(db, first.job_id))["not_before"] is not None
+    forced = await enqueue_job(
+        db, subject_kind="video", subject_id=v, stage="probe", force=True,
+        reason={"why": "user", "by": "user:1"},
+    )  # fmt: skip
+    assert (forced.outcome, forced.job_id) == ("coalesced", first.job_id)
+    row = await _row(db, first.job_id)
+    assert row["not_before"] is None and bool(row["force"]) is True
+    assert row["state"] == "pending" and row["enqueue_count"] == 3
+
+
+@pytest.mark.asyncio
+async def test_a_forced_trigger_takes_over_a_job_given_back_for_later(db: Database) -> None:
+    # JobDeferred: paused with not_before ahead ("guide reloaded less than 60 min ago")
+    lib = await make_library(db)
+    v = await make_video(db, lib)
+    first = await enqueue_job(db, subject_kind="video", subject_id=v, stage="probe", priority=100)
+    later = to_ts(db, now() + timedelta(minutes=50))
+    await db.execute(
+        "UPDATE processing_jobs SET state = 'paused', not_before = $2 WHERE id = $1",
+        first.job_id,
+        later,
+    )
+    # not forced: the deferral stands, the trigger is the follow-up's
+    plain = await enqueue_job(db, subject_kind="video", subject_id=v, stage="probe")
+    assert plain.outcome == "rerun_requested"
+    assert (await _row(db, first.job_id))["not_before"] is not None
+    forced = await enqueue_job(
+        db, subject_kind="video", subject_id=v, stage="probe", priority=10, force=True,
+        reason={"why": "refresh now", "by": "user:1"},
+    )  # fmt: skip
+    assert (forced.outcome, forced.job_id) == ("coalesced", first.job_id)
+    row = await _row(db, first.job_id)
+    assert row["state"] == "paused" and row["not_before"] is None
+    assert bool(row["force"]) is True and row["priority"] == 10
+    assert [r["why"] for r in loads(row["reasons"])][0] == "refresh now"
+    assert await _count(db) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_forced_trigger_leaves_a_parked_job_waiting(db: Database) -> None:
+    lib = await make_library(db)
+    v = await make_video(db, lib)
+    first = await enqueue_job(db, subject_kind="video", subject_id=v, stage="probe")
+    later = to_ts(db, now() + timedelta(hours=6))
+    await db.execute(
+        "UPDATE processing_jobs SET parked_on = 'dependency:share:x', not_before = $2"
+        " WHERE id = $1",
+        first.job_id,
+        later,
+    )
+    forced = await enqueue_job(db, subject_kind="video", subject_id=v, stage="probe", force=True)
+    assert forced.outcome == "coalesced"
+    row = await _row(db, first.job_id)
+    assert row["not_before"] is not None and row["parked_on"] == "dependency:share:x"
+
+
+@pytest.mark.asyncio
 async def test_finished_rows_do_not_block_a_new_one(db: Database) -> None:
     lib = await make_library(db)
     v = await make_video(db, lib)
