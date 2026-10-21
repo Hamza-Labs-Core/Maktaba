@@ -85,6 +85,7 @@ func testRuntime(t *testing.T) Runtime {
 	n := 0
 	r.Now = func() time.Time { n++; return time.Date(2026, 10, 21, 0, 0, n, 0, time.UTC) }
 	r.FreeBytes = func(string) (uint64, error) { return 1 << 40, nil }
+	r.Sync = func() {} // what a whole-system sync flushes is not under test
 	return r
 }
 
@@ -373,7 +374,7 @@ func TestLockWaitsThenGivesUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	old := lockWait
-	lockWait = 300 * time.Millisecond
+	lockWait = 150 * time.Millisecond
 	t.Cleanup(func() { lockWait = old })
 	if _, err := r.lock(context.Background()); !errors.Is(err, ErrLocked) {
 		t.Errorf("second lock: %v", err)
