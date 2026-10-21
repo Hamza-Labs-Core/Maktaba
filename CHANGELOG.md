@@ -20,8 +20,22 @@ don't append a line here; docs-only PRs are exempt.
   the window restarting. Setup steps and `schtasks` start without a console window, an update
   stops the server before the installer replaces its files, and the installer's hooks get
   `--server-start`, `--server-stop` and `--server-remove`.
+- **The desktop app's setup works end to end** (Epic 38, story 38.6; the Mac, Windows and Linux
+  alike). `maktaba-server setup --json` gains every step the setup screens run: `check` (what will
+  run, memory and disk), `admin` (the password is hashed as it is typed, by the new
+  `maktaba-api hash-password`; only the hash waits), `libraries` (folders and the NAS path map,
+  drive letters and UNC paths too), `models` (the Hugging Face token checked against the gated
+  second-listen model, or the NAS copy found; the download after the venv, with progress),
+  `plex` (the plex.tv PIN sign-in), `venv` (the pipeline's environment, with progress) and `finish`
+  (server.toml, the database created and migrated, the admin seeded with the new
+  `adduser --password-hash-file`, the Plex server stored with the new `maktaba-api plex-link`).
+  The screens say "this PC" and "the tray" on Windows, and turn a disabled sign-in task back on.
 
 ### Fixed
+
+- **`maktaba-server setup` (the CLI wizard) seeds the admin again.** It called `adduser` with
+  `--username`/`--password` flags the api does not have; it now passes the username and a
+  password file.
 
 - **Release builds for desktop, Android and Android TV.** The desktop app ships a
   (placeholder) icon set (#152), which the macOS and Windows bundles failed on. The Linux build

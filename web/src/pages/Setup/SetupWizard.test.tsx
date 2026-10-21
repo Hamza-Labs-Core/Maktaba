@@ -176,7 +176,7 @@ describe("SetupWizard", () => {
     await userEvent.type(screen.getByLabelText("Folders (one per line)"), "/a");
     await userEvent.type(screen.getByLabelText("NAS path map (optional)"), "/mnt/media");
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("their path => this Mac's path");
+    expect(screen.getByRole("alert")).toHaveTextContent("their path => the path here");
     expect(libraries).not.toHaveBeenCalled();
   });
 
@@ -273,20 +273,64 @@ describe("SetupWizard", () => {
     });
   });
 
-  it("install: builds the venv, finishes, registers the login item, then waits for the server", async () => {
+  it("install: builds the venv, downloads the models, finishes, registers the login item, then waits for the server", async () => {
+    const order: string[] = [];
     const venv = vi.fn((_: Record<string, unknown>, onProgress?: (p: StepProgress) => void) => {
+      order.push("venv");
       onProgress?.({ stage: "venv", message: "Installing mlx", done: 3, total: 10 });
       return { reused: false };
     });
-    const finish = vi.fn(() => ({
-      web_url: "http://127.0.0.1:8088",
-      supervisor_url: "http://127.0.0.1:9103",
-    }));
-    const api = fakeApi({ venv, finish });
+    const models = vi.fn(
+      (input: Record<string, unknown>, onProgress?: (p: StepProgress) => void) => {
+        order.push(`models:${String(input.action)}`);
+        onProgress?.({ stage: "download", message: "Downloading turbo", done: 1, total: 4 });
+        return { models: { whisper: "ready" } };
+      }
+    );
+    const finish = vi.fn(() => {
+      order.push("finish");
+      return { web_url: "http://127.0.0.1:8088", supervisor_url: "http://127.0.0.1:9103" };
+    });
+    const api = fakeApi({ venv, models, finish });
     renderWizard(api, "install");
     expect(await screen.findByRole("heading", { name: "Starting Maktaba" })).toBeInTheDocument();
-    expect(venv).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["venv", "models:download", "finish"]);
     expect(api.finishSetup).toHaveBeenCalledWith("http://127.0.0.1:8088", "http://127.0.0.1:9103");
+  });
+
+  it("install: a failed models download shows why and can be retried", async () => {
+    let fail = true;
+    const models = vi.fn(() => {
+      if (fail) throw stepError("hf_gated", "Accept the terms first.");
+      return {};
+    });
+    const finish = vi.fn(() => ({ web_url: "http://127.0.0.1:8088" }));
+    renderWizard(fakeApi({ models, finish }), "install");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Accept the model's terms");
+    expect(finish).not.toHaveBeenCalled();
+    fail = false;
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("heading", { name: "Starting Maktaba" })).toBeInTheDocument();
+  });
+
+  it("on Windows: the words are a PC's, and a turned-off sign-in task is turned on from the app", async () => {
+    const api = fakeApi(
+      { finish: () => ({ web_url: "http://127.0.0.1:8088" }) },
+      { platform: "windows" }
+    );
+    const { unmount } = renderWizard(api);
+    expect(await screen.findByRole("button", { name: "Set up this PC" })).toBeInTheDocument();
+    expect(screen.getByText(/run your library on this PC/)).toBeInTheDocument();
+    unmount();
+
+    api.finishSetup.mockResolvedValue("requires_approval" as never);
+    renderWizard(api, "install");
+    expect(await screen.findByText(/Task Scheduler/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "I turned it on" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Turn it on" }));
+    expect(api.openLoginItems).toHaveBeenCalled();
+    expect(await screen.findByRole("heading", { name: "Starting Maktaba" })).toBeInTheDocument();
+    expect(screen.getByText(/Maktaba runs in the tray \(beside the clock\)/)).toBeInTheDocument();
   });
 
   it("install: asks for Login Items approval when macOS turned the item off", async () => {

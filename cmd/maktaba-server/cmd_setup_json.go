@@ -1,28 +1,82 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
 
-// setup --json --step <name> (Epic 36 story 36.6, specs/epics/36-mac-app/contract-setup.md):
-// one step per run, one JSON object on stdin, NDJSON events on stdout, exit 0
-// with a result, 1 with an error, 2 for usage. Only `status` is here so far: it
-// lets the app adopt a Mac that is set up already (one moved in by
-// migrate-from-dev); the other steps answer unknown_step.
+// setup --json --step <name> (Epic 36 story 36.6, Epic 38 story 38.6;
+// specs/epics/36-mac-app/contract-setup.md): the desktop app's setup screens,
+// one step per run. One JSON object on stdin, NDJSON events on stdout (any
+// number of progress lines, then one result or error), exit 0 with a result,
+// 1 with an error, 2 for usage. A step saves what it collected in the pending
+// setup state (setupPending); `finish` applies it. Running a step again with
+// the same input is safe (the user may go back a screen). Secrets arrive on
+// stdin only and are never printed.
 
 type setupEvent struct {
 	Type    string `json:"type"`
+	Stage   string `json:"stage,omitempty"`
 	Data    any    `json:"data,omitempty"`
 	Code    string `json:"code,omitempty"`
 	Message string `json:"message,omitempty"`
 	Field   string `json:"field,omitempty"`
+	Done    uint64 `json:"done,omitempty"`
+	Total   uint64 `json:"total,omitempty"`
+}
+
+// stepError is a step's failure as the screen shows it: a code the app maps
+// to help text, a plain message, and the input field it belongs to.
+type stepError struct {
+	code, message, field string
+}
+
+func (e *stepError) Error() string { return e.code + ": " + e.message }
+
+func failStep(code, field, format string, a ...any) *stepError {
+	return &stepError{code: code, message: fmt.Sprintf(format, a...), field: field}
+}
+
+// setupRun is one step's run: the config as it stands, the events out.
+type setupRun struct {
+	ctx   context.Context
+	cfg   config.Config
+	found bool
+	out   *json.Encoder
+	log   io.Writer
+}
+
+// progress sends a progress line (done/total: bytes or items; 0 total is an
+// indeterminate bar).
+func (s *setupRun) progress(stage, message string, done, total uint64) {
+	_ = s.out.Encode(setupEvent{Type: "progress", Stage: stage, Message: message, Done: done, Total: total})
+}
+
+type setupStepFunc func(s *setupRun, in json.RawMessage) (any, error)
+
+// setupSteps are the steps the app runs, in screen order.
+var setupSteps = map[string]setupStepFunc{
+	"status":    func(*setupRun, json.RawMessage) (any, error) { return setupStatus() },
+	"check":     stepCheck,
+	"admin":     stepAdmin,
+	"libraries": stepLibraries,
+	"models":    stepModels,
+	"plex":      stepPlex,
+	"venv":      stepVenv,
+	"finish":    stepFinish,
 }
 
 // runSetupJSON runs one step and returns the exit code.
@@ -33,24 +87,39 @@ func runSetupJSON(step string, in io.Reader, out io.Writer) int {
 		_ = enc.Encode(ev)
 		return code
 	}
-	var input map[string]any
-	if err := json.NewDecoder(in).Decode(&input); err != nil {
+	raw, err := io.ReadAll(io.LimitReader(in, 1<<20))
+	var probe map[string]json.RawMessage
+	if err != nil || json.Unmarshal(bytes.TrimSpace(raw), &probe) != nil || probe == nil {
 		return fail(2, setupEvent{Code: "bad_input", Message: "stdin must hold one JSON object"})
 	}
-	switch step {
-	case "status":
-		data, err := setupStatus()
-		if err != nil {
-			return fail(1, setupEvent{Code: "config", Message: err.Error()})
-		}
-		_ = enc.Encode(setupEvent{Type: "result", Data: data})
-		return 0
+	fn, ok := setupSteps[step]
+	if !ok {
+		return fail(2, setupEvent{Code: "unknown_step", Message: "this maktaba-server has no setup step " + step})
 	}
-	return fail(2, setupEvent{Code: "unknown_step", Message: "this maktaba-server has no setup step " + step})
+	cfg, found, err := config.Load()
+	if err != nil {
+		return fail(1, setupEvent{Code: "config", Message: err.Error()})
+	}
+	// a stop (the app quitting) ends a long step cleanly; venv and models
+	// downloads resume at the next run
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	s := &setupRun{ctx: ctx, cfg: cfg, found: found, out: enc, log: os.Stderr}
+	data, err := fn(s, raw)
+	if err != nil {
+		var se *stepError
+		if errors.As(err, &se) {
+			return fail(1, setupEvent{Code: se.code, Message: se.message, Field: se.field})
+		}
+		return fail(1, setupEvent{Code: "internal", Message: err.Error()})
+	}
+	_ = enc.Encode(setupEvent{Type: "result", Data: data})
+	return 0
 }
 
-// setupStatus: this Mac is configured when server.toml exists and its database
-// does (the bundled Postgres's cluster, a [database] url, or the SQLite file).
+// setupStatus: this machine is configured when server.toml exists and its
+// database does (the bundled Postgres's cluster, a [database] url, or the
+// SQLite file).
 func setupStatus() (map[string]any, error) {
 	cfg, found, err := config.Load()
 	if err != nil {
@@ -76,4 +145,40 @@ func databaseExists(cfg config.Config) bool {
 		return err == nil
 	}
 	return false
+}
+
+// apiSub runs `maktaba-api <args>` (the payload's, beside this binary) with
+// the api's environment for this config, the database at dbURL (when set)
+// and stdin as given. Its stdout is returned; its stderr goes to the step's
+// log (never the screen). Its exit code is returned too (-1 when it did not
+// run).
+func (s *setupRun) apiSub(dbURL string, stdin io.Reader, args ...string) ([]byte, int, error) {
+	bin, err := supervisor.LocateAPI("")
+	if err != nil {
+		return nil, -1, failStep("server_missing", "", "the API program is missing: %v", err)
+	}
+	cmd := exec.CommandContext(s.ctx, bin, args...)
+	env := append(supervisor.ChildEnv(supervisor.RoleAPI, s.cfg), os.Environ()...)
+	if dbURL != "" {
+		env = append(env, "DATABASE_URL="+dbURL)
+	}
+	cmd.Env = env
+	cmd.Stdin = stdin
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = s.log
+	err = cmd.Run()
+	code := -1
+	if cmd.ProcessState != nil {
+		code = cmd.ProcessState.ExitCode()
+	}
+	return out.Bytes(), code, err
+}
+
+// decodeInput reads a step's input into v.
+func decodeInput(in json.RawMessage, v any) error {
+	if err := json.Unmarshal(in, v); err != nil {
+		return failStep("bad_input", "", "the step's input is not what it takes: %v", err)
+	}
+	return nil
 }

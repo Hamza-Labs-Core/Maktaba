@@ -322,7 +322,7 @@ describe("Guide (test-cases/guide.md)", () => {
     await waitFor(() => expect(later).toHaveFocus());
   });
 
-  it("GDE-05: filler runs collapse into one Up next cell that opens details, also when airing", async () => {
+  it("GDE-05: filler runs collapse into one cell titled as the API says (else Up next) that opens details, also when airing", async () => {
     get.mockResolvedValue({
       server_time: iso(0),
       channels: [
@@ -330,7 +330,7 @@ describe("Guide (test-cases/guide.md)", () => {
           channel: header("c1", 1, "Movies"),
           blocks: [
             block("c1", "Now Playing", -10, 20),
-            block("c1", "Filler A", 20, 25, { kind: "filler" }),
+            block("c1", "فواصل", 20, 25, { kind: "filler" }),
             block("c1", "Bumper", 25, 27, { kind: "bumper" }),
             block("c1", "Station", 27, 30, { kind: "station_id" }),
             block("c1", "Feature", 30, 90),
@@ -338,7 +338,7 @@ describe("Guide (test-cases/guide.md)", () => {
         },
         {
           channel: header("c2", 2, "Kids"),
-          blocks: [block("c2", "Loop", -5, 10, { kind: "filler" })],
+          blocks: [block("c2", "", -5, 10, { kind: "filler" })],
         },
       ],
     });
@@ -348,7 +348,7 @@ describe("Guide (test-cases/guide.md)", () => {
     const rows = grid.querySelectorAll(".mkt-guide__row");
     const row1 = within(rows[0] as HTMLElement).getAllByTestId("guide-cell");
     expect(row1).toHaveLength(3);
-    expect(row1[1]).toHaveTextContent("Up next");
+    expect(row1[1]).toHaveTextContent("فواصل"); // the API's filler title
     expect(row1[1]).toHaveClass("mkt-guide__cell--filler");
     expect(parseFloat(row1[1].style.width)).toBe(40);
 

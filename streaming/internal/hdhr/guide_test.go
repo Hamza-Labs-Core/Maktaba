@@ -81,7 +81,7 @@ func guideFixture() (*fakeGuide, uuid.UUID, time.Time) {
 func TestXMLTV_ShapeAndCollapse(t *testing.T) {
 	g, kids, t0 := guideFixture()
 	var b strings.Builder
-	WriteXMLTV(&b, "http://web:8780", g.chans, g.progs)
+	WriteXMLTV(&b, "http://web:8780", g.chans, g.progs, testRules)
 	var doc xmltvDoc
 	if err := xml.Unmarshal([]byte(b.String()), &doc); err != nil {
 		t.Fatalf("invalid XML: %v\n%s", err, b.String())
@@ -95,9 +95,9 @@ func TestXMLTV_ShapeAndCollapse(t *testing.T) {
 	type row struct{ start, stop, title string }
 	ts := func(m int) string { return t0.Add(time.Duration(m) * time.Minute).Format("20060102150405 -0700") }
 	want := []row{
-		{ts(0), ts(32), "Show A"},       // filler lead-in absorbed; bumper+filler after folded in
-		{ts(32), ts(90), "Show B"},      // split programme merged
-		{ts(100), ts(110), "Kids & Co"}, // slate with nothing before → channel name
+		{ts(0), ts(32), "Show A"},   // filler lead-in absorbed; bumper+filler after folded in
+		{ts(32), ts(90), "Show B"},  // split programme merged
+		{ts(100), ts(110), "فواصل"}, // a 10-minute slate run: its own filler entry
 		{ts(110), ts(170), "Live"},
 	}
 	if len(doc.Programmes) != len(want) {
@@ -168,7 +168,7 @@ func TestXMLEscape_DropsIllegalControlChars(t *testing.T) {
 		t.Errorf("xmlEscape = %q", got)
 	}
 	var b strings.Builder
-	WriteXMLTV(&b, "http://h", []GuideChannel{{ID: uuid.New(), Number: 1, Name: "Bad\x07Name"}}, nil)
+	WriteXMLTV(&b, "http://h", []GuideChannel{{ID: uuid.New(), Number: 1, Name: "Bad\x07Name"}}, nil, GuideRules{})
 	var doc xmltvDoc
 	if err := xml.Unmarshal([]byte(b.String()), &doc); err != nil {
 		t.Fatalf("control char broke the XML: %v", err)

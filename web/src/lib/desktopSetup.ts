@@ -21,9 +21,14 @@ export type LoginItem =
   | "not_found"
   | "unsupported";
 
+/** The OS the app runs on (Rust's std::env::consts::OS). */
+export type Platform = "macos" | "windows" | "linux";
+
 export type AppState = AppTarget & {
   server_available: boolean;
   login_item: LoginItem;
+  /** the OS the app runs on (Epic 38); absent from an Epic 36 shell: a Mac */
+  platform?: Platform;
   /** the user asked to change servers: do not adopt this Mac's configured server */
   reset?: boolean;
 };
