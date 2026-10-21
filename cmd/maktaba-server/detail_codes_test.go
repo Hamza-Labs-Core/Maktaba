@@ -12,8 +12,9 @@ import (
 // values (detail_params), in the order the steps give them (Epic 38 stories
 // 38.4 and 38.12; contract-update.md has it as a table). The app's screens
 // translate each code (web/src/i18n, setup.starting.detail.<code>), and their
-// test reads this file; the start steps of story 38.12 (serve_appbundle.go's
-// detailCodes) embed it. One list, so the server and the screens cannot drift.
+// test reads this file; the server embeds this file (#194) as the detailCodes
+// of story 38.12's start steps. One list, so the server and the screens
+// cannot drift.
 func TestDetailCodesFile(t *testing.T) {
 	raw, err := os.ReadFile("detail_codes.json")
 	if err != nil {
