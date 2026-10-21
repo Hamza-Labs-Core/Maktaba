@@ -7,6 +7,11 @@ across Epics 1–6.
 
 __version__ = "0.0.1"
 
+# HF_HOME / CAMELTOOLS_DATA from MAKTABA_MODEL_CACHE_DIR, before any library reads them
+from .model_dirs import apply_env as _apply_model_dirs  # noqa: E402
+
+_apply_model_dirs()
+
 
 def stub_status() -> str:
     """Return a placeholder status string.

@@ -77,6 +77,12 @@ jobs:
           [ "$("$RUNNER_TEMP/pip-venv/bin/maktaba-pipeline" --version)" = "$NODE_VERSION" ]
           "$RUNNER_TEMP/pip-venv/bin/maktaba-pipeline" run --help | grep -q -- '--node'
 
+      # Maktaba.app's first-run venv (Epic 36, story 36.3): real venvs, offline, from tiny
+      # wheels (fresh, resume, no-op, rebuild); the real wheel runs on macOS below.
+      - name: venv bootstrap tests
+        working-directory: pipeline
+        run: uv run --frozen --extra dev pytest tests/test_venv_bootstrap.py -q -p no:cacheprovider
+
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: node-release
@@ -224,6 +230,27 @@ jobs:
           test ! -e "$node/dist/$wheel"
           "$node/bin/maktaba-pipeline" --version
           "${bundle}uninstall-node.sh" --purge
+
+      # Maktaba.app's first run (Epic 36, story 36.3): the venv built from the release's
+      # wheel and constraints by a python-build-standalone 3.12 (uv's), the bootstrap run
+      # from the wheel itself, into a path with a space; MLX imports; a second run is a
+      # no-op.
+      - name: Mac app venv from the wheel
+        run: |
+          set -euo pipefail
+          uv python install 3.12
+          py="$(uv python find --managed-python 3.12)"
+          whl="$(ls "$PWD"/dist/maktaba_pipeline-*.whl)"
+          venv="$RUNNER_TEMP/App Support/Maktaba/venv"
+          PYTHONPATH="$whl" "$py" -m maktaba_pipeline.venv_bootstrap --python "$py" \
+            --payload dist --venv "$venv" | tee boot.jsonl | cut -c1-200
+          tail -1 boot.jsonl | grep -q '"state": "ready"'
+          grep -q '"state": "ready"' "$RUNNER_TEMP/App Support/Maktaba/venv-status.json"
+          "$venv/bin/maktaba-pipeline" --version
+          "$venv/bin/python" -c "import mlx_whisper, mlx_audio, chromadb, sentence_transformers, camel_tools, silero_vad"
+          PYTHONPATH="$whl" "$py" -m maktaba_pipeline.venv_bootstrap --python "$py" \
+            --payload dist --venv "$venv" --check
+          "$venv/bin/maktaba-pipeline" models status --json || [ $? -eq 10 ]
 
   install-windows:
     name: install from the archive (windows)
