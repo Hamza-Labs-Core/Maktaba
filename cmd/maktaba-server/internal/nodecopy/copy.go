@@ -142,13 +142,13 @@ func (c Copy) Ask(ctx context.Context, fresh bool) (Grant, error) {
 	if err != nil {
 		return Grant{}, err
 	}
-	db, err := sql.Open("postgres", c.HomeDSN)
+	actx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	db, err := c.openHome(actx)
 	if err != nil {
 		return Grant{}, err
 	}
 	defer db.Close()
-	actx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
 	var raw []byte
 	if err := db.QueryRowContext(actx, `SELECT cluster_node_replica_grant($1, $2, $3)`, c.NodeID, pw, fresh).Scan(&raw); err != nil {
 		return Grant{}, err
@@ -169,15 +169,56 @@ func (c Copy) Report(ctx context.Context, s Status) error {
 	if err != nil {
 		return err
 	}
-	db, err := sql.Open("postgres", c.HomeDSN)
+	rctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	db, err := c.openHome(rctx)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
-	rctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
 	_, err = db.ExecContext(rctx, `SELECT cluster_node_report_replica($1, $2::jsonb)`, c.NodeID, string(b))
 	return err
+}
+
+// openHome opens the home's database as this machine's own role. The join hands a
+// node sslmode=prefer, which lib/pq does not take: it is settled as libpq settles it,
+// TLS unless the server answers that it has none (allow: plain).
+func (c Copy) openHome(ctx context.Context) (*sql.DB, error) {
+	switch sslMode(c.HomeDSN) {
+	case "allow":
+		return sql.Open("postgres", withSSLMode(c.HomeDSN, "disable"))
+	case "prefer":
+		db, err := sql.Open("postgres", withSSLMode(c.HomeDSN, "require"))
+		if err != nil {
+			return nil, err
+		}
+		if err := db.PingContext(ctx); errors.Is(err, pq.ErrSSLNotSupported) {
+			_ = db.Close()
+			return sql.Open("postgres", withSSLMode(c.HomeDSN, "disable"))
+		}
+		return db, nil
+	}
+	return sql.Open("postgres", c.HomeDSN)
+}
+
+// sslMode is a URL dsn's sslmode ("" for none, or a dsn that is not a URL).
+func sslMode(dsn string) string {
+	u, err := url.Parse(dsn)
+	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
+		return ""
+	}
+	return strings.ToLower(u.Query().Get("sslmode"))
+}
+
+func withSSLMode(dsn, mode string) string {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return dsn
+	}
+	q := u.Query()
+	q.Set("sslmode", mode)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 // Marker records what a copy is a copy of, and the home's settings it was configured

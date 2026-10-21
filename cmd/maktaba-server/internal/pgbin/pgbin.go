@@ -180,9 +180,9 @@ func Ensure(ctx context.Context, root string, pin Pin, fetch Fetcher, log io.Wri
 
 // inside joins name under dir, refusing a path that leaves it.
 func inside(dir, name string) (string, error) {
+	root := filepath.Clean(dir) + string(filepath.Separator)
 	p := filepath.Join(dir, filepath.FromSlash(name))
-	rel, err := filepath.Rel(dir, p)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+	if p != filepath.Clean(dir) && !strings.HasPrefix(p, root) {
 		return "", fmt.Errorf("archive entry %q leaves the install", name)
 	}
 	return p, nil
@@ -258,7 +258,10 @@ func untargz(archive, dir string) error {
 			}
 		case tar.TypeSymlink:
 			// a library's versioned name: only a link to a file beside it
-			if strings.Contains(hdr.Linkname, "/") || strings.Contains(hdr.Linkname, `\`) {
+			target := filepath.Join(filepath.Dir(p), hdr.Linkname)
+			if hdr.Linkname == "" || hdr.Linkname == "." || hdr.Linkname == ".." ||
+				strings.ContainsAny(hdr.Linkname, `/\`) || filepath.Dir(target) != filepath.Dir(p) ||
+				!strings.HasPrefix(target, filepath.Clean(dir)+string(filepath.Separator)) {
 				return fmt.Errorf("archive link %q leaves its directory", hdr.Name)
 			}
 			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {

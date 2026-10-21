@@ -299,7 +299,8 @@ func TestTwoMachinesOnePC(t *testing.T) {
 	t.Cleanup(func() { _ = (&cluster.PGRoles{DB: db}).Drop(context.Background(), role) })
 	exec1(`INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, db_role, approved_at, approved_by)
 	       VALUES ($1, 'studio-node', 'approved', 'linux', 'amd64', $2, $3, now(), 'test')`, nodeID, cluster.EncodeKey(nodePub), role)
-	nodeDSN := clustertest.WithUser(t, dsn, role, "node-pass-xyz")
+	// sslmode=prefer, as the join hands it (lib/pq takes no prefer: pgdsn, nodecopy)
+	nodeDSN := strings.Replace(clustertest.WithUser(t, dsn, role, "node-pass-xyz"), "sslmode=disable", "sslmode=prefer", 1)
 	// the node reaches the database through a proxy the test can cut (the home's
 	// database gone, while the test's own connection stays)
 	pgProxy := newTCPProxy(t, nodeDSN)

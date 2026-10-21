@@ -3,12 +3,14 @@ package nodecopy
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lib/pq"
 )
@@ -85,6 +87,60 @@ func TestTheReplicationConnection(t *testing.T) {
 	pass, _ := os.ReadFile(filepath.Join(c.Keys, passFile))
 	if string(pass) != "192.168.1.20:54329:*:"+c.Role()+":"+pw+"\n" {
 		t.Fatalf("passfile %q", pass)
+	}
+}
+
+// The join's sslmode=prefer (which lib/pq refuses) is settled as libpq settles it.
+func TestTheHomesSSLModeIsSettled(t *testing.T) {
+	c := testCopy(t)
+	if got := withSSLMode(c.HomeDSN, "disable"); !strings.Contains(got, "sslmode=disable") || strings.Contains(got, "require") {
+		t.Fatalf("withSSLMode: %s", got)
+	}
+	for dsn, want := range map[string]string{
+		"postgres://u:p@h:5432/m?sslmode=prefer":  "prefer",
+		"postgresql://u:p@h:5432/m?sslmode=Allow": "allow",
+		"postgres://u:p@h:5432/m":                 "",
+		"host=h user=u sslmode=prefer dbname=m":   "",
+	} {
+		if got := sslMode(dsn); got != want {
+			t.Fatalf("sslMode(%q) = %q, want %q", dsn, got, want)
+		}
+	}
+	// a home with no TLS: the prefer dsn connects in the clear (a server that answers
+	// "no SSL" to the request, then hangs up)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				buf := make([]byte, 8)
+				if _, err := io.ReadFull(conn, buf); err == nil {
+					_, _ = conn.Write([]byte("N")) // SSLRequest: no
+				}
+				_, _ = io.Copy(io.Discard, conn)
+			}()
+		}
+	}()
+	c.HomeDSN = "postgres://u:p@" + ln.Addr().String() + "/m?sslmode=prefer&connect_timeout=2"
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	db, err := c.openHome(ctx)
+	if err != nil {
+		t.Fatalf("a prefer dsn against a server with no TLS: %v", err)
+	}
+	defer db.Close()
+	// the plain connection is tried (this fake never finishes a startup): lib/pq did
+	// not refuse the dsn itself
+	if err := db.PingContext(ctx); err != nil && strings.Contains(err.Error(), "sslmode") {
+		t.Fatalf("the dsn was refused for its sslmode: %v", err)
 	}
 }
 

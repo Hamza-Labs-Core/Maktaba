@@ -208,7 +208,7 @@ func TestCopyFollowsTheHome(t *testing.T) {
 	exec1(`INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, db_role, approved_at, approved_by)
 	       VALUES ($1, 'studio', 'approved', 'windows', 'amd64', 'k', $2, now(), 'test')`, nodeID, role)
 	nodeDSN := (&url.URL{Scheme: "postgres", User: url.UserPassword(role, "node-pass-123"), Host: b.Addr(),
-		Path: "/" + pgbundle.AppDatabase, RawQuery: "sslmode=require"}).String()
+		Path: "/" + pgbundle.AppDatabase, RawQuery: "sslmode=prefer"}).String() // as the join hands it
 
 	// ---- this machine's copy, kept by the Manager alone ----
 	c := Copy{NodeID: nodeID, HomeDSN: nodeDSN, Dir: filepath.Join(tmp, "copy"), Keys: filepath.Join(tmp, "node-keys"),
