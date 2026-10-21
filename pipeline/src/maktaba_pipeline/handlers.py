@@ -435,6 +435,21 @@ async def scan_handler(
             files_skipped=result.files_skipped,
             errors=len(result.errors),
         )
+        if getattr(db, "engine_hooks", False):
+            # Epic 40: the files a job found missing are looked at again now
+            try:
+                from .engine.missing_files import confirm_missing
+
+                missing = await confirm_missing(db, job.library_id)
+                if missing.healed or missing.confirmed:
+                    _log.info(
+                        "scan_missing_files",
+                        library_id=str(job.library_id),
+                        healed=missing.healed,
+                        confirmed=missing.confirmed,
+                    )
+            except Exception:  # noqa: BLE001 - a follow-up check, never a reason to fail the scan
+                _log.exception("scan_missing_files_failed", library_id=str(job.library_id))
         await mark_done(db, job_id=job.id)
     except Exception as exc:  # noqa: BLE001 — funnel every failure to the retry helper
         _log.warning(
