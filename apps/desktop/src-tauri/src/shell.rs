@@ -506,6 +506,10 @@ pub struct AppState {
     /// The user chose "Connect to another Maktaba…": setup must not adopt
     /// an already configured server on its own.
     reset: bool,
+    /// The OS the app runs on ("macos", "windows", "linux"): the setup
+    /// screens' words follow it ("this Mac" / "this PC", the menu bar / the
+    /// tray; Epic 38 story 38.6).
+    platform: &'static str,
 }
 
 #[tauri::command(async)]
@@ -516,6 +520,7 @@ pub fn app_state(app: AppHandle) -> AppState {
         server_available: sh.server_bin.is_some(),
         login_item: agent::login_item(),
         reset: sh.force_setup.load(Ordering::SeqCst),
+        platform: std::env::consts::OS,
     }
 }
 
@@ -533,6 +538,7 @@ pub async fn setup_step(
         code: "server_missing".into(),
         message: "This build of Maktaba does not include the server.".into(),
         field: None,
+        params: None,
         details: Vec::new(),
     })?;
     tauri::async_runtime::spawn_blocking(move || {
@@ -546,6 +552,7 @@ pub async fn setup_step(
             code: "internal".into(),
             message: e.to_string(),
             field: None,
+            params: None,
             details: Vec::new(),
         })
     })

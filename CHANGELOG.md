@@ -12,6 +12,45 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **The desktop app's setup works end to end** (Epic 38, story 38.6; the Mac, Windows and Linux
+  alike). `maktaba-server setup --json` gains every step the setup screens run: `check` (what will
+  run, memory and disk), `admin` (the password is hashed as it is typed, by the new
+  `maktaba-api hash-password`; only the hash waits), `libraries` (folders and the NAS path map,
+  drive letters and UNC paths too), `models` (the Hugging Face token checked against the gated
+  second-listen model, or the NAS copy found; the download after the venv, with progress),
+  `plex` (the plex.tv PIN sign-in), `venv` (the pipeline's environment, with progress) and `finish`
+  (server.toml, the database created and migrated, the admin seeded with the new
+  `adduser --password-hash-file`, the Plex server stored with the new `maktaba-api plex-link`).
+  The screens say "this PC" and "the tray" on Windows, and turn a disabled sign-in task back on.
+  Every finding and refusal comes with a code and its values, so the screens say it in English or
+  Arabic (never the step's English beside it); `check` separates what blocks from what is worth
+  knowing and says when Windows or Linux will transcribe on the processor (no NVIDIA GPU). Library
+  folders and both sides of the path map must be whole paths (a bare `Y:` is the drive's root), a
+  password cannot hold a line break, and two spellings of one folder are one root only where the
+  disk ignores case. A stop asks the venv build and the models download to stop instead of killing
+  them under pip.
+- **`maktaba-server setup` in a terminal runs the app's setup steps** (Epic 38, story 38.6): the
+  same checks, admin rules, folders, path map, Plex sign-in and finish, plus where the data goes and
+  the database (SQLite, which `finish` now creates, or a Postgres url). Its separate wizard is gone,
+  with its admin token, which nothing ever accepted; `--migrate` is accepted and ignored (setup
+  always prepares the database).
+- **The desktop app's server takes care of an update at its next start** (Epic 38, story 38.12;
+  the Mac, Windows and Linux alike). Before any role runs, the server reads the record of the
+  release whose migrations the database holds (`state/database.json`) and refuses an older
+  release; with another one (or no record yet) it dumps the database
+  (`backups/pre-<old>-to-<new>.dump`, the newest `[postgres] update_dumps` kept, default 3),
+  records the update, runs the migrations once for every role and records them done. When they
+  fail it puts the dump back and keeps every role stopped, saying what happened and what to
+  install. The pipeline's workers then wait for the venv bootstrap (not when `MAKTABA_PYTHON` or
+  `[pipeline] python` names their Python), run with an environment of its own and stopped
+  gently (SIGTERM, CTRL_BREAK on Windows) so a stop never leaves pip behind. A Postgres of
+  another major than the database's is refused. What a process waits on shows as its `detail`
+  in `/processes`.
+  Each such detail also has a `detail_code` from a fixed list and its `detail_params`, for the
+  app's screens to say it in their own language.
+- **The API refuses a database a newer Maktaba migrated**, on every install: `maktaba-api
+  migrate up` exits 3 instead of finding nothing to apply, and `serve` does not start on it.
+  `migrate --timeout 0` runs with no time limit.
 - **Transcription on Windows and Linux (story 38.8).** The transcribe stage runs Whisper on
   CTranslate2 there (faster-whisper's `dropbox-dash/faster-whisper-large-v3-turbo`), batched
   across files as the Mac's MLX engine does: on an NVIDIA GPU when CUDA works (cuBLAS 12 comes
@@ -94,6 +133,29 @@ don't append a line here; docs-only PRs are exempt.
   model download's hash mismatch names the hashes before the folder, so a long Windows path no
   longer cuts them off. The Settings page shows the Transcription rules in Arabic, and a check
   keeps every rules section in Arabic but those not yet translated.
+- **`maktaba-server setup` (the CLI wizard) seeds the admin again.** It called `adduser` with
+  `--username`/`--password` flags the api does not have; it now passes the username and a
+  password file.
+- **Setup asks for a Hugging Face sign-in only where the second listen runs.** It asked whenever
+  the second listen was on, so a PC without an NVIDIA GPU, with one too small or too old, or with
+  a driver before R580 was made to create a token and accept a gated model's licence for a model
+  that never runs there. `check` now says whether this machine can run it (and why not, in the
+  app's words), the models step no longer asks for the token there (the NAS copy can still be
+  chosen, any model the home published), and the download takes only Whisper and the search model. The
+  graphics card's compute capability and driver version come with its name and memory.
+- **The terminal setup's Plex sign-in can be skipped, and survives a moment without plex.tv.**
+  Ctrl+C while it waits for the code skipped nothing: it stopped the whole setup before `finish`,
+  as did a single poll plex.tv did not answer. Ctrl+C now skips the sign-in and the setup goes on;
+  plex.tv not answering is said once and asked again until the code expires; a second Ctrl+C
+  elsewhere ends the setup even at a question. Every code a setup step fails with now has its
+  words in English and Arabic (a test keeps it so): the language model's, a bad request's, an
+  unknown step's, unreadable settings', an unexpected failure's.
+- **After the app's setup the server runs on the bundled Postgres, with its transcription
+  workers.** Saving `server.toml` wrote every default, so setup's `finish` left `[database] url`
+  set to the default SQLite file: the next start never ran the bundled Postgres (the database setup
+  had made sat unused, and the pipeline could not open the SQLite one), and
+  `[pipeline] instances = 0` turned the workers off. A save now writes the url only when one was
+  chosen and the count only when it was set (`setup --node --instances 0` included).
 - **A user's server keeps its update verification current.** `maktaba-server` gave the api and
   streaming no data directory, so they used `/var/lib/maktaba`: in the desktop apps and every
   per-user install the daily refresh of the Sigstore trusted root failed (permission denied), and

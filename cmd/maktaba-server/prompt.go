@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -12,10 +13,14 @@ import (
 // prompter wraps stdin for the interactive wizards. A single buffered
 // reader is shared so partial lines don't get lost between questions.
 type prompter struct {
-	r *bufio.Reader
+	r   *bufio.Reader
+	tty bool // stdin: a secret is read without echo when it is a terminal
 }
 
-func newPrompter() *prompter { return &prompter{r: bufio.NewReader(os.Stdin)} }
+func newPrompter() *prompter { return &prompter{r: bufio.NewReader(os.Stdin), tty: true} }
+
+// newPrompterFrom answers from r (tests, a file of answers).
+func newPrompterFrom(r io.Reader) *prompter { return &prompter{r: bufio.NewReader(r)} }
 
 // line asks a question with an optional default (shown in brackets) and
 // returns the trimmed answer, or def when the user just hits enter.
@@ -60,7 +65,7 @@ func (p *prompter) yesNo(question string, def bool) bool {
 func (p *prompter) secret(question string) string {
 	fmt.Printf("%s: ", question)
 	fd := int(os.Stdin.Fd())
-	if term.IsTerminal(fd) {
+	if p.tty && term.IsTerminal(fd) {
 		b, err := term.ReadPassword(fd)
 		fmt.Println()
 		if err == nil {
