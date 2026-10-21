@@ -25,6 +25,18 @@ import (
 // SIGTERM before it is killed.
 var orphanGrace = 10 * time.Second
 
+// orphanKillWait bounds the wait for what was killed to be reaped: a process in
+// uninterruptible sleep (I/O on a hung NFS or SMB mount) dies only once that
+// I/O returns, and the launcher must not hang with it. reap() collects it later.
+var orphanKillWait = 5 * time.Second
+
+// The system calls stopOrphans makes (tests replace them).
+var (
+	listOrphans = orphans
+	killOrphan  = signalOrphan
+	wait4       = syscall.Wait4
+)
+
 type childHandle struct{}
 
 func becomeSubreaper() { _ = unix.Prctl(unix.PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) }
@@ -105,7 +117,7 @@ func signalOrphan(o orphan, sig syscall.Signal) {
 }
 
 func stopOrphans(grace time.Duration) {
-	left := orphans()
+	left := listOrphans()
 	if len(left) == 0 {
 		return
 	}
@@ -114,26 +126,27 @@ func stopOrphans(grace time.Duration) {
 		sig = syscall.SIGKILL
 	}
 	for _, o := range left {
-		signalOrphan(o, sig)
+		killOrphan(o, sig)
 	}
-	deadline := time.Now().Add(grace)
+	if left = reapUntil(left, time.Now().Add(grace)); len(left) == 0 {
+		return
+	}
+	for _, o := range left {
+		killOrphan(o, syscall.SIGKILL)
+	}
+	reapUntil(left, time.Now().Add(orphanKillWait))
+}
+
+// reapUntil reaps what exits of left without ever blocking, until none is
+// left or the deadline passes, and returns what is still there.
+func reapUntil(left []orphan, deadline time.Time) []orphan {
 	for {
 		for _, o := range left {
 			var ws syscall.WaitStatus
-			_, _ = syscall.Wait4(o.pid, &ws, syscall.WNOHANG, nil)
+			_, _ = wait4(o.pid, &ws, syscall.WNOHANG, nil)
 		}
-		if left = orphans(); len(left) == 0 {
-			return
-		}
-		if time.Now().After(deadline) {
-			for _, o := range left {
-				signalOrphan(o, syscall.SIGKILL)
-			}
-			for _, o := range left {
-				var ws syscall.WaitStatus
-				_, _ = syscall.Wait4(o.pid, &ws, 0, nil)
-			}
-			return
+		if left = listOrphans(); len(left) == 0 || time.Now().After(deadline) {
+			return left
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
