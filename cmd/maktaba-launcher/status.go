@@ -115,3 +115,25 @@ func removeOldSelf(l layout.Layout) {
 		_ = os.Remove(self + ".old")
 	}
 }
+
+// BundleStatus is --status in app-bundle mode: no releases to list.
+type BundleStatus struct {
+	AppBundle       string `json:"app_bundle"`
+	Root            string `json:"root"`
+	Updates         string `json:"updates"`
+	LauncherVersion string `json:"launcher_version"`
+}
+
+func printBundleStatus(w io.Writer, bundle, root string, asJSON bool) int {
+	s := BundleStatus{AppBundle: bundle, Root: root, Updates: "with the app", LauncherVersion: Version}
+	if asJSON {
+		b, _ := json.MarshalIndent(s, "", "  ")
+		fmt.Fprintln(w, string(b))
+		return exitOK
+	}
+	fmt.Fprintf(w, "app bundle: %s\n", s.AppBundle)
+	fmt.Fprintf(w, "state:      %s\n", s.Root)
+	fmt.Fprintf(w, "updates:    %s\n", s.Updates)
+	fmt.Fprintf(w, "launcher:   %s\n", s.LauncherVersion)
+	return exitOK
+}

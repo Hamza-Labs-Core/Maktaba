@@ -15,6 +15,9 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
+// bundleRelease is the version label an app-bundle launcher logs.
+const bundleRelease = "app"
+
 // ExitRestart (EX_TEMPFAIL) is the server's "restart me": the launcher starts
 // it again at once, re-reading current (design §2.2 step 4).
 const ExitRestart = 75
@@ -26,6 +29,10 @@ const EnvStopFile = "MAKTABA_STOP_FILE"
 // Config tunes the launcher (defaults from design §2.2).
 type Config struct {
 	Root string
+	// Bundle is the app payload directory (app-bundle mode, bundle.go): when
+	// set, the launcher starts Bundle/bin/maktaba-server and Root only holds
+	// its lock and log (no release pointers, no rollback, no self-update).
+	Bundle string
 	// Args are passed to `maktaba-server serve` after "serve".
 	Args []string
 
@@ -107,7 +114,9 @@ func Run(ctx context.Context, cfg Config) error {
 	defer layout.Unlock(lk)
 	ln := &launcher{cfg: cfg, l: l, log: newEventLog(l.LauncherLog(), cfg.Stderr, cfg.Now)}
 	defer ln.log.Close()
-	removeOldSelf(l)
+	if cfg.Bundle == "" {
+		removeOldSelf(l)
+	}
 	return ln.loop(ctx)
 }
 
@@ -117,10 +126,8 @@ func (ln *launcher) loop(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil
 		}
-		if changed, err := ln.l.Reconcile(); err != nil {
-			ln.log.Event("launcher_reconcile_error", "", map[string]any{"err": err.Error()})
-		} else if changed {
-			ln.log.Event("launcher_reconciled", "", map[string]any{"detail": "dropped a pending marker that does not match current"})
+		if ln.cfg.Bundle == "" { // an app bundle has no pointers to reconcile
+			ln.reconcile()
 		}
 
 		ver := ln.choose()
@@ -180,9 +187,20 @@ func (ln *launcher) loop(ctx context.Context) error {
 	}
 }
 
+func (ln *launcher) reconcile() {
+	if changed, err := ln.l.Reconcile(); err != nil {
+		ln.log.Event("launcher_reconcile_error", "", map[string]any{"err": err.Error()})
+	} else if changed {
+		ln.log.Event("launcher_reconciled", "", map[string]any{"detail": "dropped a pending marker that does not match current"})
+	}
+}
+
 // choose picks the release to start: current when it validates, else
 // previous (story 35.2 AC3, EC1, EC2). "" means nothing can be started.
 func (ln *launcher) choose() string {
+	if ln.cfg.Bundle != "" {
+		return bundleRelease
+	}
 	cur, err := ln.l.Current()
 	if err == nil {
 		verr := ln.l.ValidateRelease(cur)
@@ -213,6 +231,9 @@ func (ln *launcher) choose() string {
 }
 
 func (ln *launcher) isPending(ver string) bool {
+	if ln.cfg.Bundle != "" {
+		return false
+	}
 	p, err := ln.l.ReadPending()
 	return err == nil && p != nil && p.Version == ver
 }
@@ -255,14 +276,25 @@ func (ln *launcher) runOnce(ctx context.Context, ver string) runResult {
 	_ = os.Remove(stopFile)
 	defer func() { _ = os.Remove(stopFile) }()
 
-	cmd := exec.Command(ln.l.ServerPath(ver), append([]string{"serve"}, ln.cfg.Args...)...)
+	server, env := ln.l.ServerPath(ver), []string{
+		layout.EnvLauncher + "=1",
+		layout.EnvReleaseDir + "=" + ln.l.ReleaseDir(ver),
+		layout.EnvInstallRoot + "=" + ln.l.Root,
+		EnvStopFile + "=" + stopFile,
+	}
+	if ln.cfg.Bundle != "" {
+		// Not MAKTABA_LAUNCHER/RELEASE_DIR/INSTALL_ROOT: the server must not
+		// treat the read-only payload as a release layout it can confirm,
+		// stage into or roll back.
+		server, env = filepath.Join(ln.cfg.Bundle, "bin", layout.Exe("maktaba-server")), []string{
+			EnvAppBundle + "=" + ln.cfg.Bundle,
+			envUpdateDisable + "=1",
+			EnvStopFile + "=" + stopFile,
+		}
+	}
+	cmd := exec.Command(server, append([]string{"serve"}, ln.cfg.Args...)...)
 	cmd.Dir = ln.l.Root
-	cmd.Env = append(os.Environ(),
-		layout.EnvLauncher+"=1",
-		layout.EnvReleaseDir+"="+ln.l.ReleaseDir(ver),
-		layout.EnvInstallRoot+"="+ln.l.Root,
-		EnvStopFile+"="+stopFile,
-	)
+	cmd.Env = append(os.Environ(), env...)
 	cmd.Stdout, cmd.Stderr = ln.cfg.Stdout, ln.cfg.Stderr
 	prepareChild(cmd)
 	start := ln.cfg.Now()
