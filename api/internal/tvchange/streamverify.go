@@ -23,9 +23,10 @@ import (
 //	channel.block · ts.conformity · hls.conformity · splice.align · splice.compat ·
 //	cloudflare.ingest · push.continuity · guide.vs_stream · encoders · encoders.budget
 //
-// A check that fails on two samples in a row fails the change at once (with the
-// reasons); otherwise the change is ready after verify_soak_seconds of samples with
-// every warm channel measured and every changed channel probed. push.continuity is
+// A check that fails on two samples in a row fails the change at once: it goes back
+// to draft with the reasons (failToDraft); otherwise the change is ready after
+// verify_soak_seconds of samples with every warm channel measured and every changed
+// channel probed. push.continuity is
 // the one fail that does not end the change: it asks for the acknowledgement at the
 // approval (param_change_push = approve) instead.
 
@@ -180,8 +181,7 @@ func (c *Controller) stageSlot(ctx context.Context, cfg Config, ch *Change) erro
 	if err := c.Store.Set(ctx, c.DB, ch.ID, map[string]any{"verify_report": report}); err != nil {
 		return err
 	}
-	return c.moveQuiet(ctx, ch, StateFailed, ActionFail, map[string]any{"report": why},
-		map[string]any{"ended_at": c.now(), "end_reason": "slot_not_healthy"})
+	return c.failToDraft(ctx, ch, map[string]any{"report": why}, "slot_not_healthy")
 }
 
 // moveQuiet is Move where a concurrent admin action (cancel) wins silently.
@@ -792,8 +792,7 @@ func (c *Controller) failRun(ctx context.Context, ch *Change, run *runState, che
 		return err
 	}
 	ch.VerifyReport = report
-	return c.moveQuiet(ctx, ch, StateFailed, ActionFail, map[string]any{"report": "failed checks", "reasons": why},
-		map[string]any{"ended_at": c.now(), "end_reason": reason})
+	return c.failToDraft(ctx, ch, map[string]any{"report": "failed checks", "reasons": why}, reason)
 }
 
 // recheck is the ready subset every minute (AC9): slot health, wallclock, block. A
