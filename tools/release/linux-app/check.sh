@@ -5,7 +5,8 @@
 #
 #   files.sha256 matches the tree, every ELF file needs no glibc above the payload's limit
 #   and finds each library it links (in the payload or the baseline), every binary starts
-#   (--version), Postgres initdb + start + the extensions Maktaba creates + pg_dump, ffmpeg
+#   (--version), Postgres initdb + start + the extensions Maktaba creates + the payload's own
+#   migrations (maktaba-api migrate up from outside any checkout) + pg_dump, ffmpeg
 #   encodes and ffprobe reads it back, the bundled Python makes a venv with pip offline,
 #   the pipeline's wheel and hashed constraints are there (and no torch), the venv bootstrap
 #   plans a build from them, and nothing the checks run writes into the payload.
@@ -86,6 +87,12 @@ if "$pg/initdb" -D "$SCRATCH/pgdata" -U maktaba --auth=trust -E UTF8 --locale=C 
                    || unaccent('Mak' || chr(233)) || ') on ' || version();"
     run "TLS (OpenSSL in the server)" "$pg/psql" -h 127.0.0.1 -p "$port" -U maktaba -d postgres -Atq \
         -c "SELECT 'ssl library: ' || current_setting('ssl_library');"
+    # the schema from the payload alone: maktaba-api finds payload/migrations beside its bin/,
+    # run from a directory that is no checkout and without MAKTABA_MIGRATIONS_DIR
+    run "createdb" "$pg/psql" -h 127.0.0.1 -p "$port" -U maktaba -d postgres -Atq -c "CREATE DATABASE maktaba_check;"
+    run "migrations (maktaba-api migrate up)" env -C "$SCRATCH" -u MAKTABA_MIGRATIONS_DIR \
+        DATABASE_URL="postgres://maktaba@127.0.0.1:$port/maktaba_check?sslmode=disable" \
+        "$PAYLOAD/bin/maktaba-api" migrate up
     run "pg_dump" "$pg/pg_dump" -h 127.0.0.1 -p "$port" -U maktaba -Fc -f "$SCRATCH/dump" postgres
     run "pg_restore --list" "$pg/pg_restore" --list "$SCRATCH/dump"
     "$pg/pg_ctl" -D "$SCRATCH/pgdata" -m fast -w stop >/dev/null 2>&1 || fail "pg_ctl stop"

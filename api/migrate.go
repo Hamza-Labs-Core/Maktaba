@@ -344,16 +344,33 @@ func validateDir(dir string) error {
 	return nil
 }
 
-// defaultMigrationsDir resolves the migrations directory by walking up
-// from the current working directory looking for shared/db/migrations.
-// This lets `go run .` and the built binary both find the directory
-// when run from anywhere inside the repo.
+// defaultMigrationsDir resolves the migrations directory: MAKTABA_MIGRATIONS_DIR,
+// else the migrations/ of the app payload this binary is in
+// (<payload>/bin/maktaba-api beside <payload>/migrations: the desktop apps and
+// the Linux runtime copy, whose working directory is the user's data, never a
+// checkout), else shared/db/migrations found by walking up from the working
+// directory, so `go run .` and the built binary both find it from anywhere
+// inside the repo.
 func defaultMigrationsDir() string {
-	if env := os.Getenv("MAKTABA_MIGRATIONS_DIR"); env != "" {
+	exe, _ := os.Executable()
+	cwd, _ := os.Getwd()
+	return migrationsDirFor(os.Getenv("MAKTABA_MIGRATIONS_DIR"), exe, cwd)
+}
+
+func migrationsDirFor(env, exe, cwd string) string {
+	if env != "" {
 		return env
 	}
-	cwd, err := os.Getwd()
-	if err != nil {
+	if exe != "" {
+		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = resolved
+		}
+		candidate := filepath.Join(filepath.Dir(filepath.Dir(exe)), "migrations")
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+	if cwd == "" {
 		return "shared/db/migrations"
 	}
 	for cur := cwd; ; {
