@@ -8,6 +8,7 @@
 #   ffmpeg/    ffmpeg ffprobe
 #   python/    CPython 3.12              python-build-standalone, stdlib precompiled
 #   pipeline/  maktaba_pipeline-<v>-py3-none-any.whl constraints.txt
+#   migrations/  the database's schema (shared/db/migrations): maktaba-api finds them beside bin/
 #   licenses/  the third-party licences and where their sources are
 #   files.sha256                         every file and symlink, with mode, size, SHA-256
 #   payload.json                         what is inside: versions, checksums, min glibc
@@ -207,6 +208,11 @@ cons=("$WORK"/node/maktaba-pipeline-*-constraints.txt)
 if [ "${#whl[@]}" -ne 1 ] || [ ! -f "${whl[0]}" ]; then die "expected one pipeline wheel"; fi
 cp "${whl[0]}" "$OUT/pipeline/"
 cp "${cons[0]}" "$OUT/pipeline/constraints.txt"
+
+# --- the database's migrations: setup's finish and the api's auto-migrate run from the user's
+# data directory, never a checkout, so the payload carries them (maktaba-api: beside bin/) -------
+log "database migrations"
+cp -R "$REPO_ROOT/shared/db/migrations" "$OUT/migrations"
 
 # --- the files and payload.json ------------------------------------------------------------------
 log "checking every ELF file against the glibc $MAX_GLIBC baseline"
