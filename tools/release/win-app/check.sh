@@ -369,7 +369,7 @@ PS
             if [ -n "$n" ]; then fail "$what: a hook did not exit within 20 s, ended: $n"; ended=1; fi
         done <<<"$WATCHED_ENDED"
         # the flag of each run of Maktaba.exe (its last word), in order
-        got="$(printf '%s' "$WATCHED_RAN" | grep -i 'Maktaba\.exe' | sed 's/.* //' | paste -sd' ' -)"
+        got="$(printf '%s' "$WATCHED_RAN" | { grep -i 'Maktaba\.exe' || true; } | sed 's/.* //' | paste -sd' ' -)"
         if [ "$SHELL_HOOKS" = 0 ]; then
             if [ -n "$WATCHED_RAN" ]; then
                 fail "$what: a hook ran Maktaba.exe, which takes no --server-* flag: $(printf '%s' "$WATCHED_RAN" | paste -sd'|' -)"
