@@ -190,10 +190,18 @@ func NodeMode(cfg config.Config, n config.NodeConfig) bool {
 
 // CheckNodeConfig refuses a joined node config the node's roles cannot run with: no
 // node_id or private_key (a hand-edited or half-written node.json), on which the api
-// refused to start and the pipeline failed with a KeyError, each restarted forever.
+// refused to start and the pipeline failed with a KeyError, each restarted forever;
+// or a node.json that cannot be read at all, which read as not joined and started the
+// node as a home (migrating its own database).
 func CheckNodeConfig(cfg config.Config) error {
 	n := nodeConfig()
-	if forcedHome(cfg) || !n.Joined() {
+	if forcedHome(cfg) {
+		return nil
+	}
+	if n.Err != nil {
+		return fmt.Errorf("%w: fix it, or move it aside and re-join this machine (maktaba-pipeline join), or set [server] role = \"home\"", n.Err)
+	}
+	if !n.Joined() {
 		return nil
 	}
 	if missing := n.Missing(); len(missing) > 0 {

@@ -60,9 +60,11 @@ func TestWithConnectTimeout(t *testing.T) {
 		{"postgres://u@h/db?sslmode=prefer", 10 * time.Second, "postgres://u@h/db?connect_timeout=10&sslmode=prefer"},
 		{"postgres://u@h/db?connect_timeout=3", 10 * time.Second, "postgres://u@h/db?connect_timeout=3"},
 		{"postgres://u@h/db", 1500 * time.Millisecond, "postgres://u@h/db?connect_timeout=2"},
-		{"host=h dbname=db", 10 * time.Second, "host=h dbname=db connect_timeout=10"},
+		{"host=h dbname=db", 10 * time.Second, "connect_timeout=10 host=h dbname=db"},
 		{"host=h connect_timeout=0", 10 * time.Second, "host=h connect_timeout=0"},
-		{"host=h password='connect_timeout=1'", 10 * time.Second, "host=h password='connect_timeout=1' connect_timeout=10"},
+		{"host=h password='connect_timeout=1'", 10 * time.Second, "connect_timeout=10 host=h password='connect_timeout=1'"},
+		// appended, the pair would be read as the empty password's value
+		{"host=h password=", 10 * time.Second, "connect_timeout=10 host=h password="},
 	} {
 		if got := WithConnectTimeout(c.dsn, c.d); got != c.want {
 			t.Errorf("WithConnectTimeout(%q, %v) = %q, want %q", c.dsn, c.d, got, c.want)
@@ -102,10 +104,16 @@ func shortConnectTimeout(t *testing.T) {
 func TestPingStalledServer(t *testing.T) {
 	shortConnectTimeout(t)
 	addr := listen(t, func(c net.Conn) { _, _ = io.Copy(io.Discard, c) })
-	start := time.Now()
-	got := ForLibPQ(context.Background(), "postgres://node_1e943eda:pw@"+addr+"/maktaba?sslmode=prefer", Ping)
-	if took := time.Since(start); took > 5*time.Second {
-		t.Fatalf("probe took %v, want about ConnectTimeout (%v)", took, ConnectTimeout)
+	// without the bound the probe blocks inside lib/pq for good: wait for it here
+	done := make(chan string, 1)
+	go func() {
+		done <- ForLibPQ(context.Background(), "postgres://node_1e943eda:pw@"+addr+"/maktaba?sslmode=prefer", Ping)
+	}()
+	var got string
+	select {
+	case got = <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("probe still blocked after 5 s against a server that never answers: connect_timeout (ConnectTimeout %v) does not bound the connection's start", ConnectTimeout)
 	}
 	if want := "postgres://node_1e943eda:pw@" + addr + "/maktaba?sslmode=require"; got != want {
 		t.Fatalf("ForLibPQ = %q, want %q (a stalled server keeps SSL)", got, want)

@@ -113,6 +113,9 @@ def load(path: Path | None = None) -> NodeConfig | None:
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None
+    except ValueError as exc:
+        # a typo or a truncated file: never "not joined", and the error names the file
+        raise ValueError(f"{path}: not a node config ({exc})") from None
     if not isinstance(data, dict):
         raise ValueError(f"{path}: not a node config")
     try:

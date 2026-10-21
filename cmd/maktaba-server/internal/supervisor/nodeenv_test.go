@@ -1,6 +1,7 @@
 package supervisor
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -115,6 +116,22 @@ func TestCheckNodeConfigPartial(t *testing.T) {
 	nodeConfig = func() config.NodeConfig { return config.NodeConfig{NodeID: "x"} }
 	if err := CheckNodeConfig(cfg); err != nil {
 		t.Fatalf("not joined: %v", err)
+	}
+
+	// a node.json that does not parse is not "not joined": that started the node as a
+	// home, migrating its own database
+	path := config.LocalNodeConfigPath()
+	if err := os.WriteFile(path, []byte(`{"node_id": "6f1c9a2e", "database_url": "postgres://n`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	nodeConfig = config.LocalNodeConfig
+	if err := CheckNodeConfig(cfg); err == nil || !strings.Contains(err.Error(), path) ||
+		!strings.Contains(err.Error(), "unexpected end of JSON input") {
+		t.Fatalf("broken node.json: %v", err)
+	}
+	cfg.Server.Role = "home"
+	if err := CheckNodeConfig(cfg); err != nil {
+		t.Fatalf("forced home with a broken node.json: %v", err)
 	}
 }
 

@@ -49,13 +49,19 @@ func TestNodeStartStalledHome(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	start := time.Now()
-	_, err = startNode(context.Background(), cfg, db, noopLogger())
+	// without the bound the role check blocks inside lib/pq for good: wait for it here
+	done := make(chan error, 1)
+	go func() {
+		_, err := startNode(context.Background(), cfg, db, noopLogger())
+		done <- err
+	}()
+	select {
+	case err = <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("role check still blocked after 5 s against a home that never answers: the node's DATABASE_URL has no connect_timeout (pgdsn.ConnectTimeout %v)", pgdsn.ConnectTimeout)
+	}
 	if !errors.Is(err, nodemode.ErrDDLRole) {
 		t.Fatalf("startNode = %v, want the role check to fail closed", err)
-	}
-	if took := time.Since(start); took > 5*time.Second {
-		t.Fatalf("role check took %v against a stalled home, want about pgdsn.ConnectTimeout", took)
 	}
 
 	// the home's own database is left as it is

@@ -448,6 +448,9 @@ func runServe() error {
 			notifyHub := notify.NewHub(appDB, logger)
 			var mountRemote func(r chi.Router)
 			var remoteCtl *tvremote.Controller
+			// BusDSN: the event bus's pq.Listener takes a connection string (lib/pq
+			// has no connector-based listener), so its sslmode is settled once, here
+			// at startup, not per connection as appDB's is.
 			router.MountP6(r, router.P6Deps{
 				Secrets: homeSecrets,
 				OnQueues: func(q *queues.Handler) {

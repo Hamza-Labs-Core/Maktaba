@@ -255,14 +255,15 @@ func kvFind(dsn, key string) []kvValue {
 }
 
 // kvSet sets key to val (which needs no quoting) in a key=value dsn: every value of
-// key is replaced, or the pair is added.
+// key is replaced, or the pair is added in front (after a dsn ending in an empty
+// value, `password=`, an appended pair would be read as that value).
 func kvSet(dsn, key, val string) string {
 	vs := kvFind(dsn, key)
 	if len(vs) == 0 {
 		if strings.TrimSpace(dsn) == "" {
 			return key + "=" + val
 		}
-		return dsn + " " + key + "=" + val
+		return key + "=" + val + " " + dsn
 	}
 	for j := len(vs) - 1; j >= 0; j-- {
 		dsn = dsn[:vs[j].start] + val + dsn[vs[j].end:]

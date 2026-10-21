@@ -324,6 +324,9 @@ func mountNode(r chi.Router, cfg nodemode.Config, dataDir string, logger *slog.L
 	}
 	router.MountP6(r, router.P6Deps{
 		DB: appDB, PipelineClient: pipelineClient, StreamingClient: streamingClient,
+		// the event bus's pq.Listener takes a connection string (lib/pq has no
+		// connector-based listener), so its sslmode is settled once, here at startup,
+		// not per connection as appDB's is
 		BusCtx: ctx, BusDSN: pgdsn.ForLibPQ(ctx, dsn, pgdsn.Ping), PerfRegistry: perf.NewRegistry(),
 		// this machine's own stream key: the node signs its own VOD sessions,
 		// which its own streaming role verifies (Story 10.8, design §11.5)
