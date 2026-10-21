@@ -3408,12 +3408,35 @@
      "default": true
     },
     {
+     "name": "loudnorm_mode",
+     "kind": "str",
+     "group": "Maktaba TV",
+     "label": "Loudness filter",
+     "help": "speechnorm: speech levelled as it plays, nothing delayed, so a channel tunes fast (what dizqueTV does). loudnorm: EBU R128 to the target below, about 3 s of look-ahead. dynaudnorm: a gentler dynamic normaliser, also with look-ahead. Only programme and filler sound is levelled, never the slate's silence.",
+     "default": "speechnorm",
+     "choices": [
+      "speechnorm",
+      "loudnorm",
+      "dynaudnorm"
+     ]
+    },
+    {
      "name": "loudnorm_target_lufs",
      "kind": "float",
      "group": "Maktaba TV",
      "label": "Loudness target (LUFS)",
-     "help": "",
+     "help": "What the loudnorm filter levels to.",
      "default": -16.0
+    },
+    {
+     "name": "speechnorm_expansion",
+     "kind": "float",
+     "group": "Maktaba TV",
+     "label": "Speech boost limit",
+     "help": "The speechnorm filter raises a quiet passage at most this many times (dizqueTV: 6.25).",
+     "default": 6.25,
+     "minimum": 1,
+     "maximum": 50
     },
     {
      "name": "watermark_skip_filler",
