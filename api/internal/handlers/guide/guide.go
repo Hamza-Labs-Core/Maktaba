@@ -18,6 +18,10 @@ import (
 type Handler struct {
 	DB      *sql.DB
 	NowFunc func() time.Time
+	// StreamBase is the streaming service's LAN-reachable base
+	// (MAKTABA_PUBLIC_BASE_URL): the XMLTV's programme icons point at its
+	// image routes. Empty: they are the channel's logo.
+	StreamBase string
 }
 
 // Mount wires the guide routes. The static segments (guide / now / xmltv

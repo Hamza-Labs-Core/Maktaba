@@ -8,7 +8,11 @@
 #             and ~/.local/share/maktaba) moves there once, on the next command.
 #   Linux   : $XDG_CONFIG_HOME/maktaba/server.toml (default
 #             ~/.config/maktaba/server.toml)
-#   Windows : %APPDATA%\Maktaba\server.toml
+#   Windows : %LOCALAPPDATA%\Maktaba\server.toml (keys in keys\, data in data\,
+#             models, chroma and caches beside data\; logs in logs\). An install
+#             from before (in %APPDATA%\Maktaba) moves there once, on the next
+#             command, unless it runs inside the Windows app (whose setup moves
+#             an earlier install in instead).
 # Override with the MAKTABA_CONFIG environment variable.
 
 [server]

@@ -81,7 +81,10 @@ func (n NodeConfig) Missing() []string {
 }
 
 // NodeConfigPath is where the pipeline keeps the node config (cluster/config.py
-// config_path): MAKTABA_NODE_CONFIG, else per OS.
+// config_path): MAKTABA_NODE_CONFIG, else per OS. On Windows it is
+// %LOCALAPPDATA%\Maktaba\node.json (Epic 38 story 38.1); a machine that joined
+// before keeps the one in its roaming profile (%APPDATA%\Maktaba\node.json) while
+// there is none in the new place.
 func NodeConfigPath(getenv func(string) string, goos, userHome string) string {
 	if p := strings.TrimSpace(getenv("MAKTABA_NODE_CONFIG")); p != "" {
 		if strings.HasPrefix(p, "~") {
@@ -93,17 +96,29 @@ func NodeConfigPath(getenv func(string) string, goos, userHome string) string {
 	case "darwin":
 		return filepath.Join(userHome, "Library", "Application Support", "Maktaba", "node.json")
 	case "windows":
-		base := getenv("APPDATA")
-		if base == "" {
-			base = filepath.Join(userHome, "AppData", "Roaming")
+		cur := filepath.Join(WindowsRoot(getenv, userHome), "node.json")
+		if isFile(cur) {
+			return cur
 		}
-		return filepath.Join(base, "Maktaba", "node.json")
+		roaming := getenv("APPDATA")
+		if roaming == "" {
+			roaming = filepath.Join(userHome, "AppData", "Roaming")
+		}
+		if old := filepath.Join(roaming, "Maktaba", "node.json"); isFile(old) {
+			return old
+		}
+		return cur
 	}
 	base := getenv("XDG_CONFIG_HOME")
 	if base == "" {
 		base = filepath.Join(userHome, ".config")
 	}
 	return filepath.Join(base, "maktaba", "node.json")
+}
+
+func isFile(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && !info.IsDir()
 }
 
 // ReadNodeConfig reads this machine's node config (zero value when there is none; Err

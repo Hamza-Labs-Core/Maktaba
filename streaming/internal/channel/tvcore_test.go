@@ -295,6 +295,19 @@ func TestTVSettings_GuideRules(t *testing.T) {
 	}
 }
 
+func TestTVSettings_GuideImageMaxAge(t *testing.T) {
+	base := TVSettingsFromEnv()
+	if base.GuideImageMaxAgeSeconds != 86400 {
+		t.Fatalf("default %d", base.GuideImageMaxAgeSeconds)
+	}
+	if tv, bad := ApplyTVRules(base, []byte(`{"guide_image_max_age_s":0}`)); len(bad) != 0 || tv.GuideImageMaxAgeSeconds != 0 {
+		t.Errorf("0: %d %v", tv.GuideImageMaxAgeSeconds, bad)
+	}
+	if tv, bad := ApplyTVRules(base, []byte(`{"guide_image_max_age_s":-5}`)); len(bad) != 1 || tv.GuideImageMaxAgeSeconds != 86400 {
+		t.Errorf("bad value: %d %v", tv.GuideImageMaxAgeSeconds, bad)
+	}
+}
+
 func TestTVSettings_LiveLookupReuse(t *testing.T) {
 	t.Setenv("MAKTABA_CHANNEL_LIVE_LOOKUP_REUSE_SEC", "")
 	base := TVSettingsFromEnv()

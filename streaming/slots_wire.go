@@ -94,7 +94,7 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 
 	fd := &frontdoor.Handler{Svc: svc, Settings: csettings, Self: ident.ID, Keyring: keyring, Tracker: tracker,
 		Logger: logger, Slots: slots, CacheRoot: b.cfg.Cache.Root,
-		PublicBase: publicBase, WebBase: os.Getenv("MAKTABA_PUBLIC_WEB_BASE")}
+		PublicBase: publicBase}
 
 	liveStations := func() []uuid.UUID { return slots.LiveStations() }
 	b.loop = &cluster.HostLoop{Store: cluster.PGBeatStore{Pool: b.pool}, HostID: ident.ID, Keyring: keyring, Logger: logger,
@@ -143,12 +143,8 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 	hdhrHandler := hdhr.New(hdhrRepo, fd)
 	hdhrHandler.PublicBase = publicBase
 	mounts = append(mounts, hdhrHandler.Mount)
-	guideHandler := &hdhr.GuideHandler{Repo: hdhrRepo, PathMap: pathmap.FromEnv(),
-		PublicBase: publicBase, WebBase: os.Getenv("MAKTABA_PUBLIC_WEB_BASE"),
-		AheadFunc: func(ctx context.Context) time.Duration {
-			return time.Duration(b.settings.TV(ctx).HorizonDays) * 24 * time.Hour
-		},
-		RulesFunc: func(ctx context.Context) hdhr.GuideRules { return guideRules(b.settings.TV(ctx)) }}
+	guideHandler := b.newGuideHandler(hdhrRepo, publicBase, nil)
+	assets.Guide = guideHandler // the guide's images for the nodes
 	mounts = append(mounts, guideHandler.Mount)
 	// SSDP (udp/1900) and HDHomeRun discovery (udp/65001), absolute URLs only
 	ssdp := &hdhr.SSDPController{Repo: hdhrRepo, Logger: logger, LocationBase: publicBase,
