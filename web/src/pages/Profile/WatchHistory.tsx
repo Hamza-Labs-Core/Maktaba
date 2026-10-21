@@ -26,6 +26,7 @@ import {
   type ActivityItem,
   type HistoryItem,
 } from "../../lib/analytics";
+import { TitleRow } from "../../help/HelpLink";
 
 export const HISTORY_PAGE = 50;
 export const ACTIVITY_PAGE = 50;
@@ -39,7 +40,9 @@ export function WatchHistory() {
   return (
     <section className="mkt-page mkt-history">
       <header className="mkt-page__header">
-        <h1>{t("history.title")}</h1>
+        <TitleRow>
+          <h1>{t("history.title")}</h1>
+        </TitleRow>
         <p className="mkt-muted">
           {t("history.desc")} <Link to="/settings/privacy">{t("history.privacyLink")}</Link>
         </p>

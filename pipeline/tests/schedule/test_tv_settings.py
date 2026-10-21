@@ -41,6 +41,8 @@ def test_maktaba_tv_defaults_are_what_the_dizquetv_channels_do() -> None:
     t = MaktabaTvConfig()
     assert t.max_filler_per_gap == 0 and t.ramadan_grids and t.hijri_adjust_days == 0
     assert t.live == () and t.loudnorm and t.loudnorm_target_lufs == -16.0
+    # dizqueTV levels with speechnorm=e=6.25 (no look-ahead: a channel tunes fast)
+    assert (t.loudnorm_mode, t.speechnorm_expansion) == ("speechnorm", 6.25)
     assert t.watermark_skip_filler  # dizqueTV's disableFillerOverlay
 
 

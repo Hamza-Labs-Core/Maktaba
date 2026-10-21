@@ -44,6 +44,7 @@ import { ArtDiff } from "./diff/ArtDiff";
 import { LineupDiff } from "./diff/LineupDiff";
 import { ScheduleDiff } from "./diff/ScheduleDiff";
 import { SettingsDiff } from "./diff/SettingsDiff";
+import { TitleRow } from "../../../help/HelpLink";
 import "../../../styles/tvchanges.css";
 
 export function AdminTvChangeDetail() {
@@ -208,7 +209,9 @@ function DetailInner() {
   if (error && !change) {
     return (
       <section className="mkt-page mkt-tvx">
-        <h1>{t("tvchanges.title")}</h1>
+        <TitleRow>
+          <h1>{t("tvchanges.title")}</h1>
+        </TitleRow>
         <p role="alert">{t("tvchanges.loadError", { error })}</p>
         <Link to="/admin/live-tv/changes">{t("tvchanges.back")}</Link>
       </section>
@@ -238,10 +241,12 @@ function DetailInner() {
   return (
     <section className="mkt-page mkt-tvx" data-testid="change-detail">
       <header className="mkt-page__header mkt-tvx-head">
-        <h1>
-          <span className="mkt-tvx-num">#{n(change.number)}</span>{" "}
-          {change.title || t("tvchanges.untitled")}
-        </h1>
+        <TitleRow>
+          <h1>
+            <span className="mkt-tvx-num">#{n(change.number)}</span>{" "}
+            {change.title || t("tvchanges.untitled")}
+          </h1>
+        </TitleRow>
         <Link to="/admin/live-tv/changes">{t("tvchanges.back")}</Link>
       </header>
 
@@ -503,8 +508,10 @@ function progressText(
 ): string {
   switch (c.state) {
     case "draft":
-      return c.diff?.stage?.requested_at
-        ? t("tvchanges.progress.queued")
+      if (c.diff?.stage?.requested_at) return t("tvchanges.progress.queued");
+      // a failed verification returns the change to draft, its report kept
+      return c.verify_report?.passed === false
+        ? t("tvchanges.progress.draftFailed")
         : t("tvchanges.progress.draft");
     case "staged":
       return t("tvchanges.progress.staged");
@@ -525,6 +532,24 @@ function progressText(
   }
 }
 
+/** What an update that joined the change was (story 33.12 AC3: every update to the
+ *  TV adds to the open change until it is approved). */
+function updateWhat(
+  e: { detail: Record<string, unknown> },
+  t: (k: string, v?: Record<string, string | number>) => string,
+  tk: (k: string, fallback: string) => string
+): string {
+  const d = e.detail ?? {};
+  if (d.what === "joined_change" && typeof d.number === "number") {
+    return t("tvchanges.update.joined", { n: d.number });
+  }
+  const kind = typeof d.kind === "string" ? d.kind : "";
+  const who = kind ? tk(`tvchanges.actor.${kind}`, kind) : String(d.what ?? "");
+  return typeof d.plan_id === "number"
+    ? `${who}, ${t("tvchanges.update.plan", { n: d.plan_id })}`
+    : who;
+}
+
 function History({ change }: { change: TvChangeDetail }) {
   const { t, formatDate } = useI18n();
   const tk = useTk();
@@ -539,6 +564,12 @@ function History({ change }: { change: TvChangeDetail }) {
             <time dateTime={e.at}>{formatDate(e.at)}</time>
             <span className="mkt-tvx-timeline__what">
               {tk(`tvchanges.event.${e.action}`, e.action)}
+              {e.action === "append" && (
+                <span className="mkt-tvx-muted" data-testid="update-what">
+                  {" "}
+                  ({updateWhat(e, t, tk)})
+                </span>
+              )}
               {e.from_state && e.to_state && e.from_state !== e.to_state && (
                 <span className="mkt-tvx-muted">
                   {" "}

@@ -169,6 +169,76 @@ describe("Change detail", () => {
     expect(audit).toHaveTextContent("the system");
   });
 
+  it("the open change: the updates that joined it, and checks that failed send it back", async () => {
+    override[draftChange.id] = {
+      ...draftChange,
+      verify_report: { passed: false, checks: [] },
+      events: [
+        {
+          id: 1,
+          at: "2026-06-15T20:04:00Z",
+          actor_source: "write_channels",
+          to_state: "draft",
+          action: "create",
+          detail: {},
+        },
+        {
+          id: 2,
+          at: "2026-06-15T20:05:00Z",
+          actor_source: "editor",
+          actor_user_id: ADMIN_ID,
+          from_state: "draft",
+          to_state: "draft",
+          action: "append",
+          detail: { what: "filler_pool_update", kind: "editor" },
+        },
+        {
+          id: 3,
+          at: "2026-06-15T21:00:00Z",
+          actor_source: "write_channels",
+          from_state: "draft",
+          to_state: "draft",
+          action: "append",
+          detail: { what: "channel_plan", kind: "write_channels", plan_id: 7 },
+        },
+        {
+          id: 4,
+          at: "2026-06-15T21:10:00Z",
+          actor_source: "system",
+          from_state: "verifying",
+          to_state: "draft",
+          action: "fail",
+          detail: { reason: "verification_failed" },
+        },
+        {
+          id: 5,
+          at: "2026-06-15T21:10:00Z",
+          actor_source: "controller",
+          from_state: "draft",
+          to_state: "draft",
+          action: "append",
+          detail: { what: "joined_change", number: 44 },
+        },
+      ],
+    };
+    renderDetail(draftChange.id);
+    expect(await screen.findByTestId("progress")).toHaveTextContent(
+      "checks failed: fix it, or approve it again"
+    );
+    await userEvent.setup().click(screen.getByRole("tab", { name: "History" }));
+    const h = await screen.findByTestId("history");
+    const what = within(h)
+      .getAllByTestId("update-what")
+      .map((x) => x.textContent);
+    expect(what).toEqual([
+      " (the channel editor)",
+      " (the channel plan, plan #7)",
+      " (change #44 joined it)",
+    ]);
+    expect(h).toHaveTextContent("Update added");
+    expect(h).toHaveTextContent("(Verifying → Draft)");
+  });
+
   it("a draft: what it holds, Stage among its actions", async () => {
     renderDetail(draftChange.id);
     const p = await screen.findByTestId("pending-summary");

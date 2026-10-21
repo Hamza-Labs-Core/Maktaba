@@ -36,6 +36,7 @@ type Config struct {
 	TV            TVSection            `toml:"tv"`
 	Pipeline      PipelineSection      `toml:"pipeline"`
 	Postgres      PostgresSection      `toml:"postgres"`
+	LLM           LLMSection           `toml:"llm"`
 
 	// DatabaseURLSet: server.toml sets [database] url (Load). Unset, a Mac with
 	// the bundled Postgres uses it (Epic 36 story 36.1).
@@ -57,6 +58,36 @@ type PostgresSection struct {
 	Home string `toml:"home"`
 	// Port is its loopback port (default 54329).
 	Port int `toml:"port"`
+}
+
+// LLMSection is the [llm] table: the local language model server every LLM stage
+// of the pipeline uses (check-tags, check-clips, enrich, display titles, the
+// cluster's LLM door). Maktaba.app bundles Ollama; the supervisor runs it as the
+// ollama role on a loopback port of its own, its models under <state>/models/ollama.
+type LLMSection struct {
+	// Enabled: "auto" (default: when the app's payload carries Ollama, or [llm]
+	// binary / $MAKTABA_OLLAMA_BIN names one), "on" or "off".
+	Enabled string `toml:"enabled"`
+	// Binary is the ollama executable; empty: $MAKTABA_OLLAMA_BIN, else the
+	// payload's ollama/ollama.
+	Binary string `toml:"binary"`
+	// Port is the bundled server's loopback port; 0 (default): 11533, or a free
+	// port when another program holds it (a user's own Ollama keeps 11434).
+	Port int `toml:"port"`
+	// URL is an Ollama server elsewhere for every LLM stage (the bundled one then
+	// does not run), e.g. "http://192.168.1.30:11434". A model server set in the
+	// pipeline's rules (Settings → Tag check → Model server) still wins.
+	URL string `toml:"url"`
+	// Models are the models the server keeps (setup and the supervisor download
+	// a missing one); empty: ["qwen2.5:7b"], the tag check's default.
+	Models []string `toml:"models"`
+	// Pull: "auto" (default) has the supervisor download a missing model in the
+	// background; "off" leaves it to setup and `maktaba-server models llm`.
+	Pull string `toml:"pull"`
+
+	// RuntimeURL is what serve hands every role as MAKTABA_OLLAMA_URL: the
+	// bundled server's address, or URL. Never in the file.
+	RuntimeURL string `toml:"-"`
 }
 
 // PipelineSection is the [pipeline] table (Epic 35 story 35.8): how many pipeline

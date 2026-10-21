@@ -8,7 +8,8 @@
 //     channel_programs as time advances, and plans each block against
 //     the wall clock (plan.go + join.go): a viewer tuning mid-block joins
 //     at offset now − start_at, every block plays exactly its scheduled
-//     span, schedule gaps and failed blocks become slates;
+//     span, schedule gaps and failed blocks become slates, and a block
+//     whose file cannot be read airs the channel's filler (unreadable.go);
 //   - each block is one ffmpeg (blockargs.go) that normalises the source
 //     to the channel's fixed output profile (resolution / fps / H.264 via
 //     NVENC or libx264 / AAC-or-AC3 48 kHz stereo), paced with -re, with

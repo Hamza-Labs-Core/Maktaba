@@ -1584,3 +1584,85 @@ summary.mkt-q-lane__title {
 .mkt-q-running {
   font-variant-numeric: tabular-nums;
 }
+
+/* Epic 40: the tile's failed count and the Needs-you badge open the failures page;
+   they sit above the card's stretched title link */
+.mkt-q-card__health {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+.mkt-q-card__failedlink,
+.mkt-q-card__needsyou {
+  position: relative;
+  z-index: 1;
+  font-size: 12px;
+}
+.mkt-q-card__failedlink {
+  color: var(--color-muted);
+}
+.mkt-q-card__needsyou {
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--q-raised);
+  color: var(--color-fg);
+  font-weight: 600;
+}
+.mkt-q-card__flag--waiting {
+  color: var(--q-running);
+}
+.mkt-q-failures__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: end;
+}
+.mkt-q-failures__filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--font-size-sm);
+}
+.mkt-q-failures__bulk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  margin-block: var(--space-3);
+}
+.mkt-q-failures__table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+.mkt-q-failures__table th,
+.mkt-q-failures__table td {
+  text-align: start;
+  vertical-align: top;
+  padding: var(--space-2);
+  border-block-end: 1px solid var(--color-border);
+}
+.mkt-q-failures__path {
+  font-family: var(--font-mono, monospace);
+  word-break: break-all;
+}
+.mkt-q-failures__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.mkt-q-failures__wrap {
+  overflow-x: auto;
+}
+.mkt-q-failures__dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--q-raised);
+  margin-block: var(--space-3);
+}

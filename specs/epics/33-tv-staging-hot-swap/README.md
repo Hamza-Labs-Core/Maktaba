@@ -257,7 +257,9 @@ draft (**accepted default**). Full list under "Decisions on the open questions" 
 
 ### R9 — TV change objects
 - R9.1 States: `draft → staged → verifying → ready → (approved) → swapping → live → superseded`;
-  side exits `failed`, `cancelled`, `rolled_back`. Transitions are recorded in `tv_change_events`.
+  side exits `cancelled`, `rolled_back` (a failed verification returns the change to `draft`;
+  `failed` is only the rows made before story 33.12 AC3). Transitions are recorded in
+  `tv_change_events`.
 - R9.2 Kinds (one change may carry several): `lineup`, `schedule`, `settings`, `art`, `live_slots`,
   `binary`. The diff lists channels added / removed / renumbered / renamed, changed definitions,
   per-channel schedule differences (first divergent block, programmes changed in the next 24 h),
@@ -287,8 +289,9 @@ draft (**accepted default**). Full list under "Decisions on the open questions" 
   (snapshot + change set) instead of `channels`; `write_mode = review` parks it as today and the
   Changes page's Approve is the queue's Apply (it posts the digest); `write_mode = auto` stages it
   right away (staged, verified, then waiting for approval under the default rules).
-- R11.2 The channel editor and the filler/art editors save into the open draft; the stale flag no
-  longer rewrites the live generation.
+- R11.2 The channel editor and the filler/art editors save into the open change; the stale flag no
+  longer rewrites the live generation. Every update joins the one open change until it is approved
+  (story 33.12 AC3).
 - R11.3 `plan_channels` stays a plan (not on air); its plan id is the change's provenance.
 - R11.4 Top-ups (horizon extension) are not changes; they write every open generation.
 

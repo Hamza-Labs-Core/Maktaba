@@ -62,6 +62,14 @@ func ChildEnv(role Role, cfg config.Config) []string {
 	// Maktaba.app (Epic 36): the payload's ffmpeg for every role.
 	env = append(env, bundleEnv(config.AppBundle())...)
 
+	// The language model server every LLM stage uses (the bundled Ollama at the
+	// port serve claimed, or [llm] url): the pipeline takes it as the model server of its
+	// rules unless the rules name one; the api's dependency checks probe it. An
+	// operator's own MAKTABA_OLLAMA_URL is kept.
+	if os.Getenv("MAKTABA_OLLAMA_URL") == "" {
+		add("MAKTABA_OLLAMA_URL", LLMURL(cfg))
+	}
+
 	// Cross-service discovery: the api needs to reach streaming +
 	// pipeline over gRPC. These default ports mirror the compose stack.
 	// (Streaming's gRPC port, not its HTTP stream_addr.)

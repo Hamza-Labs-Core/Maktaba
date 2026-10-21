@@ -7,6 +7,8 @@ import { Button } from "@ds/components/Button/Button";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import type { FailureGroup } from "../../lib/queueApi";
 import { useFmt } from "./format";
+import { HelpLink } from "../../help/HelpLink";
+import { causeHelp } from "../../help/registry";
 
 export const groupKey = (g: FailureGroup) => `${g.stage}:${g.cause}`;
 
@@ -50,6 +52,11 @@ export function IssueList({
               <p className="mkt-q-issue__meta">
                 {!hideStage && <span className="mkt-q-chip">{stageLabel(g.stage)}</span>}{" "}
                 {t("queue.issues.last", { time: fmt.ago(g.last_at) })}
+                {" · "}
+                <HelpLink
+                  to={causeHelp(g.cause)}
+                  label={t("help.causeHelpNamed", { cause: g.label })}
+                />
               </p>
               {g.sample_message && <p className="mkt-q-issue__msg">{g.sample_message}</p>}
               {g.sample_subjects.length > 0 && (

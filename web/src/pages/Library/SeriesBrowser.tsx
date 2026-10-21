@@ -18,6 +18,7 @@ import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
+import { TitleRow } from "../../help/HelpLink";
 
 interface SeriesItem {
   id: string;
@@ -77,7 +78,9 @@ export function SeriesBrowser() {
   return (
     <section className="mkt-page mkt-series-browser">
       <header className="mkt-page__header">
-        <h1>{t("series.title")}</h1>
+        <TitleRow>
+          <h1>{t("series.title")}</h1>
+        </TitleRow>
         <label className="mkt-series-browser__sort">
           {t("series.sort")}
           <select
