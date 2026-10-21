@@ -64,12 +64,31 @@ type TVSettings struct {
 	// HorizonDays is how far ahead schedules are planned; the XMLTV
 	// guide shows as far.
 	HorizonDays int
+	// The XMLTV guide's filler rules, as dizqueTV's: filler up to
+	// GuideMaxPaddingSeconds joins the programme before it, longer filler
+	// is an entry titled GuideFillerTitle (empty: the channel's name), and
+	// programmes shorter than GuideMinProgramSeconds count as filler.
+	GuideMaxPaddingSeconds int
+	GuideFillerTitle       string
+	GuideMinProgramSeconds int
+	// LiveLookupReuse is how long one yt-dlp lookup of a live page is
+	// shared by every channel airing it.
+	LiveLookupReuse time.Duration
 }
 
 // Defaults (the rules' defaults; env overrides them, settings override env).
 const (
 	DefaultHorizonDays = 7
 	maxHorizonDays     = 31
+
+	DefaultGuideMaxPaddingSeconds = 120
+	DefaultGuideFillerTitle       = "فواصل"
+	DefaultGuideMinProgramSeconds = 60
+	maxGuideSeconds               = 3600
+
+	// live_lookup_reuse_seconds' bounds.
+	minLiveLookupReuseSec = 10
+	maxLiveLookupReuseSec = 3600
 )
 
 // OutputSettingsFromEnv is today's MAKTABA_CHANNEL_* configuration.
@@ -90,6 +109,12 @@ func OutputSettingsFromEnv() OutputSettings {
 func TVSettingsFromEnv() TVSettings {
 	return TVSettings{
 		HorizonDays: clampInt(envInt("MAKTABA_CHANNEL_HORIZON_DAYS", DefaultHorizonDays), 1, maxHorizonDays),
+
+		GuideMaxPaddingSeconds: DefaultGuideMaxPaddingSeconds,
+		GuideFillerTitle:       DefaultGuideFillerTitle,
+		GuideMinProgramSeconds: DefaultGuideMinProgramSeconds,
+		LiveLookupReuse: time.Duration(clampInt(envInt("MAKTABA_CHANNEL_LIVE_LOOKUP_REUSE_SEC",
+			int(DefaultLiveLookupReuse/time.Second)), minLiveLookupReuseSec, maxLiveLookupReuseSec)) * time.Second,
 	}
 }
 
@@ -172,6 +197,27 @@ func ApplyTVRules(base TVSettings, raw []byte) (out TVSettings, bad []string) {
 		switch name {
 		case "horizon_days":
 			if !setInt(&out.HorizonDays, v, 1, maxHorizonDays) {
+				bad = append(bad, name)
+			}
+		case "guide_max_padding_s":
+			if !setInt(&out.GuideMaxPaddingSeconds, v, 0, maxGuideSeconds) {
+				bad = append(bad, name)
+			}
+		case "guide_min_program_s":
+			if !setInt(&out.GuideMinProgramSeconds, v, 0, maxGuideSeconds) {
+				bad = append(bad, name)
+			}
+		case "guide_filler_title":
+			if s, ok := jsonString(v); ok {
+				out.GuideFillerTitle = strings.TrimSpace(s)
+			} else {
+				bad = append(bad, name)
+			}
+		case "live_lookup_reuse_seconds":
+			var sec int
+			if setInt(&sec, v, minLiveLookupReuseSec, maxLiveLookupReuseSec) {
+				out.LiveLookupReuse = time.Duration(sec) * time.Second
+			} else {
 				bad = append(bad, name)
 			}
 		}

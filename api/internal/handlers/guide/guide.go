@@ -114,7 +114,7 @@ func (h *Handler) Grid(w http.ResponseWriter, r *http.Request) {
 	for _, pr := range rows {
 		byChan[pr.ChannelID] = append(byChan[pr.ChannelID], toBlock(pr, now))
 	}
-	// Filler/bumper collapse defaults on (AC10); ?collapse=false|off|0 disables.
+	// Filler collapse (rules tv.guide_*) defaults on (AC10); ?collapse=false|off|0 disables.
 	collapse := true
 	if v := r.URL.Query().Get("collapse"); v == "false" || v == "off" || v == "0" {
 		collapse = false
@@ -123,11 +123,15 @@ func (h *Handler) Grid(w http.ResponseWriter, r *http.Request) {
 		Channel ChannelHeader `json:"channel"`
 		Blocks  []Block       `json:"blocks"`
 	}
+	var gr FillerRules
+	if collapse {
+		gr = loadFillerRules(r.Context(), h.DB)
+	}
 	out := make([]chanGuide, 0, len(chans))
 	for _, c := range chans {
 		blocks := byChan[c.ID]
 		if collapse {
-			blocks = collapseFiller(blocks)
+			blocks = collapseFiller(blocks, gr, c.Name, now)
 		}
 		if blocks == nil {
 			blocks = []Block{}
@@ -177,7 +181,7 @@ func (h *Handler) ChannelGuide(w http.ResponseWriter, r *http.Request) {
 		blocks = append(blocks, toBlock(pr, now))
 	}
 	if v := r.URL.Query().Get("collapse"); v != "false" && v != "off" && v != "0" {
-		blocks = collapseFiller(blocks)
+		blocks = collapseFiller(blocks, loadFillerRules(r.Context(), h.DB), c.Name, now)
 	}
 	resp := map[string]any{
 		"server_time": now.UTC().Format(time.RFC3339),

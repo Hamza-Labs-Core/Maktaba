@@ -224,11 +224,11 @@ describe("AdminLiveTV", () => {
     expect(document.activeElement).toBe(screen.getByDisplayValue("192.168.1.20:8782"));
   });
 
-  it("shows the Plex status with the dizqueTV DVR left alone", async () => {
+  it("shows the Plex status with other tuners left alone, dizqueTV not named", async () => {
     renderPage();
     expect(await screen.findByText("Not added yet")).toBeInTheDocument();
-    expect(screen.getByText("dizqueTV: dizqueTV (left as it is)")).toBeInTheDocument();
-    expect(screen.getByText(/tuner is in Plex too/)).toBeInTheDocument();
+    expect(screen.getByText("dizqueTV: another tuner (left as it is)")).toBeInTheDocument();
+    expect(screen.queryByText(/tuner is in Plex too/)).not.toBeInTheDocument();
     expect(screen.getByText("http://plex.lan:32400 · reachable")).toBeInTheDocument();
   });
 
@@ -243,11 +243,12 @@ describe("AdminLiveTV", () => {
     expect(dialog).toHaveTextContent("http://192.168.1.20:8782 is added");
     expect(dialog).toHaveTextContent("XMLTV guide http://192.168.1.20:8782/xmltv.xml");
     expect(dialog).toHaveTextContent('as "Add Another Device" does');
-    expect(dialog).toHaveTextContent("dizqueTV's included, keep their channels, names and guides");
+    expect(dialog).toHaveTextContent("Other tuners in Plex stay as they are");
+    expect(dialog).not.toHaveTextContent(/dizqueTV/);
     routes({ "/api/tv/hdhr": { ...device, enabled: true }, "/api/tv/plex": plexRegistered });
     await user.click(screen.getByRole("button", { name: "Add to Plex" }));
     expect(post).toHaveBeenCalledWith("/api/tv/plex/register");
-    expect(await screen.findByText(/^Queued/)).toBeInTheDocument();
+    expect(await screen.findByText(/^Sent to Plex/)).toBeInTheDocument();
     expect(await screen.findByText(/Added: Maktaba is a channel source/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Add Maktaba to Plex" })).not.toBeInTheDocument();
     expect(screen.getByText("3 of 3 channels")).toBeInTheDocument();

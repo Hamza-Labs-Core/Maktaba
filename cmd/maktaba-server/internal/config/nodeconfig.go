@@ -2,6 +2,9 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -22,6 +25,9 @@ type NodeConfig struct {
 	PrivateKey  string  `json:"private_key"`
 	Home        HomeRef `json:"home"`
 	DatabaseURL string  `json:"database_url"`
+	// Err is why node.json, which exists, could not be read (bad JSON, a truncated
+	// file): such a machine is not "not joined", which would start it as a home.
+	Err error `json:"-"`
 }
 
 // HomeRef is node.json's home.
@@ -61,6 +67,19 @@ func (n NodeConfig) String() string {
 // Joined reports whether the machine joined a home (it holds a database credential).
 func (n NodeConfig) Joined() bool { return strings.TrimSpace(n.DatabaseURL) != "" }
 
+// Missing names what the node's roles need and the config lacks (its node id, its
+// private key): a hand-edited or half-written node.json.
+func (n NodeConfig) Missing() []string {
+	var out []string
+	if strings.TrimSpace(n.NodeID) == "" {
+		out = append(out, "node_id")
+	}
+	if strings.TrimSpace(n.PrivateKey) == "" {
+		out = append(out, "private_key")
+	}
+	return out
+}
+
 // NodeConfigPath is where the pipeline keeps the node config (cluster/config.py
 // config_path): MAKTABA_NODE_CONFIG, else per OS.
 func NodeConfigPath(getenv func(string) string, goos, userHome string) string {
@@ -87,11 +106,20 @@ func NodeConfigPath(getenv func(string) string, goos, userHome string) string {
 	return filepath.Join(base, "maktaba", "node.json")
 }
 
-// ReadNodeConfig reads this machine's node config (zero value when there is none).
+// ReadNodeConfig reads this machine's node config (zero value when there is none; Err
+// set when the file exists but cannot be read).
 func ReadNodeConfig(getenv func(string) string, goos, userHome string, readFile func(string) ([]byte, error)) NodeConfig {
 	var n NodeConfig
-	if b, err := readFile(NodeConfigPath(getenv, goos, userHome)); err == nil {
-		_ = json.Unmarshal(b, &n)
+	path := NodeConfigPath(getenv, goos, userHome)
+	b, err := readFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return n
+	}
+	if err == nil {
+		err = json.Unmarshal(b, &n)
+	}
+	if err != nil {
+		return NodeConfig{Err: fmt.Errorf("node config %s: %w", path, err)}
 	}
 	n.NodeID, n.DatabaseURL = strings.TrimSpace(n.NodeID), strings.TrimSpace(n.DatabaseURL)
 	n.PrivateKey = strings.TrimSpace(n.PrivateKey)
