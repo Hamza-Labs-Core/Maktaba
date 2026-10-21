@@ -41,9 +41,8 @@ don't append a line here; docs-only PRs are exempt.
   the server runs as an administrator, as the Windows service does: Postgres refuses
   administrative rights). Groundwork for the Windows and Linux apps and for full nodes' copies of
   the home's database (#178).
-- **Maktaba on a Linux machine without a desktop** (Epic 39, story 39.6). Each release carries
-  `install.sh` among its assets (in the signed `checksums.txt`; the release notes no longer pipe it
-  from a branch), and `install.sh --app` verifies the release first (with the machine's cosign when it is 2.4.3 or newer, else a pinned
+- **Maktaba on a Linux machine without a desktop** (Epic 39, story 39.6). `install.sh --app`
+  verifies the release first (with the machine's cosign when it is 2.4.3 or newer, else a pinned
   cosign it fetches), then `maktaba-server setup` asks the desktop app's questions in the terminal,
   in English or Arabic: the server is copied into `~/.local/share/maktaba/runtime`, then runs as
   the user's systemd service, started at boot through linger. The check also reports glibc, the
