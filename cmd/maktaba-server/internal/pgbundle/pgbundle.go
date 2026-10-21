@@ -53,8 +53,11 @@ type Bundle struct {
 // <payload>/postgres beside <payload>/bin/maktaba-server).
 //
 // [postgres] enabled = "off" never runs it; "on" does whenever its binaries are
-// there; "auto" (the default) on macOS and inside any desktop app's payload
-// (Windows, Epic 38 story 38.10). In every case a [database] url set in
+// there; "auto" (the default) on macOS, and on any system when this server runs
+// from a desktop app's payload (inAppPayload: MAKTABA_APP_BUNDLE, as the launcher
+// sets it for Maktaba.app, the Windows app (Epic 38 story 38.10) and the Linux
+// app's runtime copy (Epic 39 story 39.4), or payload.json beside this server's
+// bin/). In every case a [database] url set in
 // server.toml wins, and so does a SQLite database already in use at the
 // default path (an install from before keeps its data).
 func Resolve(cfg config.Config, exe string) (Bundle, bool, error) {

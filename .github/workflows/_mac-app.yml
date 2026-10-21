@@ -71,7 +71,12 @@ jobs:
       - name: shellcheck
         run: |
           brew list shellcheck >/dev/null 2>&1 || brew install shellcheck
-          shellcheck -x tools/release/mac-app/payload.sh tools/release/mac-app/check.sh tools/release/mac-app/build-app.sh
+          shellcheck -x tools/release/mac-app/payload.sh tools/release/mac-app/check.sh tools/release/mac-app/build-app.sh \
+            tools/release/mac-app/lib.sh tools/release/mac-app/pins-check.sh
+
+      # dry run of the pins (pins.env complete) and the checked download, offline
+      - name: Pins (dry run)
+        run: bash tools/release/mac-app/pins-check.sh
 
       - name: Build Maktaba.app with the payload, and check it
         env:

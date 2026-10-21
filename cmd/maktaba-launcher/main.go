@@ -7,10 +7,15 @@
 // is in the pointer files, so a power cut at any moment of an update comes
 // back up on a release that works.
 //
+// Inside the desktop app (app-bundle mode, bundle.go: Maktaba.app on a Mac,
+// <install>\server\bin beside Maktaba.exe on Windows) it starts the app's own
+// server payload instead: no release pointers, no rollback, no self-update.
+//
 // It never downloads, verifies signatures or touches the database; it uses
 // only the standard library and golang.org/x/sys.
 //
 //	maktaba-launcher [--root DIR] serve [-- server args]
+//	maktaba-launcher [--app-bundle DIR] [--root DIR] serve [-- server args]
 //	maktaba-launcher --version
 //	maktaba-launcher --status [--json]
 //	maktaba-launcher --verify <release dir>
@@ -54,16 +59,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("maktaba-launcher", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var (
-		root        = fs.String("root", "", "install root (default: $MAKTABA_INSTALL_ROOT, else the launcher's directory)")
+		root        = fs.String("root", "", "install root (default: $MAKTABA_INSTALL_ROOT, else the launcher's directory; app-bundle mode: the app's state folder)")
 		showVersion = fs.Bool("version", false, "print the launcher version and protocol")
 		status      = fs.Bool("status", false, "print current, previous, pending, watermark and the last rollback")
 		asJSON      = fs.Bool("json", false, "with --status: JSON output")
 		verify      = fs.String("verify", "", "re-check a release directory's files against its .verified record")
 		replaceSelf = fs.String("replace-self", "", "install this executable over the given launcher path (story 35.7)")
-		hideConsole = fs.Bool("hide-console", false, "Windows logon task: hide the console window")
+		hideConsole = fs.Bool("hide-console", false, "Windows logon task: hide the console window (ignored in app-bundle mode: the app starts it windowless)")
 		pendingTO   = fs.Duration("pending-timeout", 15*time.Minute, "roll back a pending release not confirmed within this")
 		stopGrace   = fs.Duration("stop-grace", time.Minute, "how long the server may take to stop before it is killed")
-		appBundle   = fs.String("app-bundle", "", "run the server payload in DIR (default: detected when the launcher is inside Maktaba.app)")
+		appBundle   = fs.String("app-bundle", "", "run the server payload in DIR (default: detected when the launcher is inside Maktaba.app, or in <install>\\server\\bin beside Maktaba.exe)")
 	)
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -134,11 +139,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 // runBundle is run in app-bundle mode (bundle.go). The app updater replaces
 // the launcher with the rest of the app, so --replace-self is refused.
+//
+// It leaves the console alone (no setupConsole, so --hide-console does
+// nothing here): on Windows the app's agent starts it with CREATE_NO_WINDOW,
+// a console without a window that the server and every role share, so
+// CTRL_BREAK reaches them and nothing flashes; allocating or showing one
+// would. The agent asks it to stop through StopEventName.
 func runBundle(rest []string, stdout, stderr io.Writer, bundle, root string, status, asJSON, replaceSelf bool,
 	stopGrace time.Duration) int {
 	switch {
 	case replaceSelf:
-		fmt.Fprintln(stderr, "maktaba-launcher: replace-self: this launcher is part of Maktaba.app; it is updated with the app")
+		fmt.Fprintln(stderr, "maktaba-launcher: replace-self: this launcher is part of the Maktaba app; it is updated with the app")
 		return exitFailure
 	case status:
 		return printBundleStatus(stdout, bundle, root, asJSON)
@@ -151,15 +162,17 @@ func runBundle(rest []string, stdout, stderr io.Writer, bundle, root string, sta
 	if len(serverArgs) > 0 && serverArgs[0] == "--" {
 		serverArgs = serverArgs[1:]
 	}
-	if _, err := os.Stat(filepath.Join(bundle, "bin", layout.Exe("maktaba-server"))); err != nil {
-		fmt.Fprintf(stderr, "maktaba-launcher: %s has no bin/maktaba-server: %v\n", bundle, err)
+	server := filepath.Join("bin", layout.Exe("maktaba-server"))
+	if _, err := os.Stat(filepath.Join(bundle, server)); err != nil {
+		fmt.Fprintf(stderr, "maktaba-launcher: %s has no %s: %v\n", bundle, server, err)
 		return exitFailure
 	}
 	if err := os.MkdirAll(layout.New(root).UpdatesDir(), 0o755); err != nil {
 		fmt.Fprintf(stderr, "maktaba-launcher: state directory: %v\n", err)
 		return exitFailure
 	}
-	cfg := Config{Root: root, Bundle: bundle, Args: serverArgs, StopGrace: stopGrace, Stdout: stdout, Stderr: stderr}
+	cfg := Config{Root: root, Bundle: bundle, Args: serverArgs, StopEvent: stopEventName, StopGrace: stopGrace,
+		Stdout: stdout, Stderr: stderr}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := Run(ctx, cfg); err != nil {

@@ -127,6 +127,115 @@ export interface QueueSummary {
   no_worker?: boolean;
   /** External service ("plex", "dizquetv") whose failures put waiting rows into backoff. */
   retrying_service?: string | null;
+  /** Epic 40: the tile's state (red only for a dominant new error) and the Needs-you count. */
+  health?: StageHealth | null;
+}
+
+export type StageHealthState = "ok" | "waiting" | "failing";
+
+export interface StageHealth {
+  state: StageHealthState;
+  window_hours: number;
+  failed_window: number;
+  finished_window: number;
+  failure_share: number;
+  /** What jobs of the stage are parked on (dependency:model:tagcheck, resource:disk ...). */
+  waiting: {
+    on: string;
+    count: number;
+    healthy: boolean | null;
+    message: string | null;
+    since: string | null;
+  }[];
+  needs_you: number;
+  ignored: number;
+  failing: {
+    signature: string;
+    class: string;
+    count: number;
+    example: string;
+    subject: string | null;
+  } | null;
+}
+
+export type FailureStatus = "needs_you" | "failing" | "waiting" | "retrying" | "ignored";
+
+export interface FailureFilter {
+  stage?: string;
+  class?: string;
+  signature?: string;
+  library?: string;
+  path_prefix?: string;
+  status?: FailureStatus | "all" | "";
+}
+
+export interface FailureItem {
+  job_id: number;
+  stage: string;
+  subject_kind: string;
+  subject_id: string;
+  label: string;
+  path: string | null;
+  library_id: string | null;
+  library_name: string | null;
+  state: string;
+  status: FailureStatus;
+  message: string;
+  signature: string | null;
+  class: string | null;
+  parked_on: string | null;
+  /** missing_confirmed, missing_unconfirmed, permission, damaged, waiting:<on> ... */
+  reason: string;
+  attempts: number;
+  max_attempts: number;
+  first_failed_at: string | null;
+  last_failed_at: string | null;
+  missing_confirmed_at: string | null;
+  youtube_id: string | null;
+  access_check: {
+    ok: boolean;
+    error: string | null;
+    host: string | null;
+    checked_at: string;
+  } | null;
+}
+
+export interface FacetCount {
+  value: string;
+  label?: string;
+  count: number;
+}
+
+export interface FailureList {
+  items: FailureItem[];
+  next: string | null;
+  facets: Record<"stage" | "class" | "signature" | "library" | "status", FacetCount[]>;
+}
+
+export type FailureAction =
+  | "retry"
+  | "ignore"
+  | "unignore"
+  | "rescan"
+  | "remove"
+  | "redownload"
+  | "fix_path"
+  | "path_map"
+  | "check_access";
+
+export interface FailureActionRequest {
+  action: FailureAction;
+  job_ids?: number[];
+  filter?: FailureFilter;
+  path?: string;
+  path_map?: { from: string; to: string };
+}
+
+export interface FailureActionResult {
+  action: FailureAction;
+  matched: number;
+  affected: number;
+  skipped: number;
 }
 
 export interface WorkerHost {
@@ -607,4 +716,20 @@ export const queueApi = {
     api.get<LibraryCollections>(`/api/items/library/${q(libraryId)}/collections`),
   insights: () => api.get<Insights>("/api/queues/insights"),
   pulse: () => api.get<Pulse>("/api/queues/pulse"),
+  /** Epic 40: every failing item, filtered (admin). */
+  failureItems: (f: FailureFilter, before?: string | null, limit = 50) =>
+    api.get<FailureList>(
+      `/api/queues/failures${qs({
+        stage: f.stage || undefined,
+        class: f.class || undefined,
+        signature: f.signature || undefined,
+        library: f.library || undefined,
+        path_prefix: f.path_prefix || undefined,
+        status: f.status || undefined,
+        before: before ?? undefined,
+        limit,
+      })}`
+    ),
+  failureAction: (req: FailureActionRequest) =>
+    api.post<FailureActionResult>("/api/queues/failures/actions", req),
 };

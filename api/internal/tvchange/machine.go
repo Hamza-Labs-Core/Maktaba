@@ -24,7 +24,9 @@ const (
 )
 
 // table is design §11.2: state -> action -> next state. "Stay" actions (approve on a
-// draft, schedule) keep the state.
+// draft, schedule) keep the state. Reopen (an update joined a checked change no one
+// approved) and supersede (a second open change joined the older one) are the open
+// change's (open.go): staged, verifying and ready go back to draft or end superseded.
 var table = map[string]map[string]string{
 	StateDraft: {
 		ActionStage:     StateStaged,
@@ -34,6 +36,8 @@ var table = map[string]map[string]string{
 		ActionSupersede: StateSuperseded,
 	},
 	StateStaged: {
+		ActionReopen:      StateDraft,
+		ActionSupersede:   StateSuperseded,
 		ActionStartVerify: StateVerifying,
 		ActionSchedule:    StateStaged,
 		ActionApprove:     StateStaged,
@@ -41,14 +45,18 @@ var table = map[string]map[string]string{
 		ActionFail:        StateDraft,
 	},
 	StateVerifying: {
-		ActionPass:     StateReady,
-		ActionFail:     StateDraft,
-		ActionVerify:   StateVerifying,
-		ActionSchedule: StateVerifying,
-		ActionApprove:  StateVerifying,
-		ActionCancel:   StateCancelled,
+		ActionReopen:    StateDraft,
+		ActionSupersede: StateSuperseded,
+		ActionPass:      StateReady,
+		ActionFail:      StateDraft,
+		ActionVerify:    StateVerifying,
+		ActionSchedule:  StateVerifying,
+		ActionApprove:   StateVerifying,
+		ActionCancel:    StateCancelled,
 	},
 	StateReady: {
+		ActionReopen:      StateDraft,
+		ActionSupersede:   StateSuperseded,
 		ActionApprove:     StateApproved,
 		ActionVerify:      StateVerifying,
 		ActionSchedule:    StateReady,
