@@ -380,7 +380,10 @@ def model_problem(model: str) -> str | None:
             from huggingface_hub import try_to_load_from_cache
         except ImportError:  # pragma: no cover - a base dependency
             return None
-        if not isinstance(try_to_load_from_cache(engine.ct2_repo(model), "model.bin"), str):
+        repo = engine.ct2_repo(model)
+        pin = engine.CT2_PINS.get(repo)  # fetched at its commit: no refs/main to look up
+        revision = pin.revision if pin else None
+        if not isinstance(try_to_load_from_cache(repo, "model.bin", revision=revision), str):
             return (
                 f"{model} is not downloaded and Hugging Face is offline (HF_HUB_OFFLINE):"
                 " run maktaba-pipeline models download"
