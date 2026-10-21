@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -26,11 +28,15 @@ import (
 //	         /exit exits 0; /hang makes /healthz block (a wedged process)
 //	crash  - exit FAKE_CODE (default 7) at once (a crash loop)
 //	exit0  - exit 0 at once
-//	sleep  - sleep (a grandchild standing in for ffmpeg)
+//	sleep  - sleep (a grandchild standing in for ffmpeg); with FAKE_PIDFILE
+//	         set, write its pid there first
 //
 // With FAKE_GRANDCHILD_PIDFILE set, "serve" first starts a "sleep"
 // grandchild (no process-group or job changes, like ffmpeg under
-// streaming) and writes its pid to that file.
+// streaming), which writes its pid to that file once it runs.
+//
+// With FAKE_ON_STOP set, any mode takes the supervisor's ask to stop as a
+// role does (onAsk): "exit" drains and exits 0, "hold" never stops.
 func TestMain(m *testing.M) {
 	if mode := os.Getenv("MAKTABA_FAKE_CHILD"); mode != "" {
 		fakeChild(mode)
@@ -50,6 +56,9 @@ func TestMain(m *testing.M) {
 }
 
 func fakeChild(mode string) {
+	if on := os.Getenv("FAKE_ON_STOP"); on != "" {
+		onAsk(on, os.Getenv("FAKE_MARKER"))
+	}
 	switch mode {
 	case "crash":
 		code, err := strconv.Atoi(os.Getenv("FAKE_CODE"))
@@ -60,19 +69,23 @@ func fakeChild(mode string) {
 	case "exit0":
 		os.Exit(0)
 	case "sleep":
+		if pidfile := os.Getenv("FAKE_PIDFILE"); pidfile != "" {
+			if err := os.WriteFile(pidfile+".tmp", []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil ||
+				os.Rename(pidfile+".tmp", pidfile) != nil {
+				os.Exit(94)
+			}
+		}
 		time.Sleep(time.Hour)
 		os.Exit(0)
 	case "serve":
 		if pidfile := os.Getenv("FAKE_GRANDCHILD_PIDFILE"); pidfile != "" {
 			gc := exec.Command(os.Args[0], "-test.run=^$")
-			gc.Env = append(os.Environ(), "MAKTABA_FAKE_CHILD=sleep", "FAKE_GRANDCHILD_PIDFILE=")
+			// the grandchild takes an ask as its parent does, but leaves the marker to it
+			gc.Env = append(os.Environ(), "MAKTABA_FAKE_CHILD=sleep", "FAKE_GRANDCHILD_PIDFILE=",
+				"FAKE_PIDFILE="+pidfile, "FAKE_MARKER=")
 			if err := gc.Start(); err != nil {
 				fmt.Fprintln(os.Stderr, "fake child: grandchild:", err)
 				os.Exit(93)
-			}
-			if err := os.WriteFile(pidfile+".tmp", []byte(strconv.Itoa(gc.Process.Pid)), 0o644); err != nil ||
-				os.Rename(pidfile+".tmp", pidfile) != nil {
-				os.Exit(94)
 			}
 		}
 		var hung atomic.Bool
@@ -115,6 +128,25 @@ func fakeChild(mode string) {
 		fmt.Fprintln(os.Stderr, "unknown fake child mode", mode)
 		os.Exit(92)
 	}
+}
+
+// onAsk catches the supervisor's ask to stop as a role's signal.NotifyContext
+// does (SIGTERM on POSIX; on Windows CTRL_BREAK, which Go delivers as
+// os.Interrupt), writes the signal to marker (when set), and then with "exit"
+// exits 0 (a drain that ends) or with "hold" runs on (one that never does).
+func onAsk(on, marker string) {
+	asked := make(chan os.Signal, 1)
+	signal.Notify(asked, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		for sig := range asked {
+			if marker != "" {
+				_ = os.WriteFile(marker, []byte(sig.String()), 0o644)
+			}
+			if on == "exit" {
+				os.Exit(0)
+			}
+		}
+	}()
 }
 
 // freeAddr returns a loopback address with a free port.
@@ -175,17 +207,23 @@ func testPolicy() Policy {
 // once it returns on its own.
 func running(t *testing.T, s *Supervisor) (stop func() error, done <-chan error) {
 	t.Helper()
+	return runningGrace(t, s, 5*time.Second)
+}
+
+// runningGrace is running with its own shutdown grace.
+func runningGrace(t *testing.T, s *Supervisor, grace time.Duration) (stop func() error, done <-chan error) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	finished := make(chan struct{})
 	var result error
-	go func() { result = s.Run(ctx, 5*time.Second); close(finished) }()
+	go func() { result = s.Run(ctx, grace); close(finished) }()
 	doneCh := make(chan error, 1)
 	go func() { <-finished; doneCh <- result }()
 	stop = func() error {
 		cancel()
 		select {
 		case <-finished:
-		case <-time.After(15 * time.Second):
+		case <-time.After(grace + 10*time.Second):
 			t.Fatal("supervisor did not shut down")
 		}
 		return result

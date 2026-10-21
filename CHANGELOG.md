@@ -18,6 +18,15 @@ don't append a line here; docs-only PRs are exempt.
   shutdown through `pg_ctl` instead of a kill). Groundwork for the Windows and Linux apps and for
   full nodes' copies of the home's database (#178).
 
+### Changed
+
+- **Every role stops cleanly on Windows.** The supervisor starts each child in a process group of
+  its own and asks it to stop with CTRL_BREAK (the Go roles drain on it as they do on SIGTERM, the
+  pipeline on `SIGBREAK`); a child is killed with its process tree only once the shutdown grace
+  is over. Postgres keeps its `pg_ctl` fast shutdown. A `serve` with no console (started detached
+  by a program that has none) cannot send CTRL_BREAK, so it kills its children as before and says
+  so once in its log.
+
 ### Fixed
 
 - **Release builds for desktop, Android and Android TV.** The desktop app ships a

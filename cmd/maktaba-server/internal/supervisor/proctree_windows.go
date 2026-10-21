@@ -17,19 +17,26 @@ import (
 // Windows the child runs in a Job Object the supervisor owns, with
 // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: closing the job (on restart, on
 // stop, or when the supervisor itself dies and the kernel closes its
-// handles) terminates every process in it.
+// handles) terminates every process in it. It also holds a handle to the
+// child until it is reaped, so the child's pid, which askChild names, is
+// never another process's while the supervisor can still ask.
 type procTree struct {
-	mu  sync.Mutex
-	job windows.Handle // 0 once released
+	mu   sync.Mutex
+	job  windows.Handle // 0 once released, or when no job could be made
+	proc windows.Handle // the child; 0 once released
 }
 
 // prepareTree runs before Start: the child is created suspended so it
-// cannot spawn anything before it is in the job; attachTree resumes it.
+// cannot spawn anything before it is in the job (attachTree resumes it), and
+// in a process group of its own (group id = its pid), which askChild's
+// CTRL_BREAK reaches without the supervisor or the other roles. CTRL_C is
+// disabled in a new group, so a Ctrl+C in serve's console reaches serve only,
+// which then stops the children in their order.
 func prepareTree(cmd *exec.Cmd) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
-	cmd.SysProcAttr.CreationFlags |= windows.CREATE_SUSPENDED
+	cmd.SysProcAttr.CreationFlags |= windows.CREATE_SUSPENDED | windows.CREATE_NEW_PROCESS_GROUP
 }
 
 var procNtResumeProcess = windows.NewLazySystemDLL("ntdll.dll").NewProc("NtResumeProcess")
@@ -39,42 +46,61 @@ var procNtResumeProcess = windows.NewLazySystemDLL("ntdll.dll").NewProc("NtResum
 // runs uncontained, and the error is returned for the log); a resume
 // failure kills it.
 func attachTree(cmd *exec.Cmd) (*procTree, error) {
-	ph, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE|windows.PROCESS_SUSPEND_RESUME,
-		false, uint32(cmd.Process.Pid))
+	ph, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE|windows.PROCESS_SUSPEND_RESUME|
+		windows.SYNCHRONIZE, false, uint32(cmd.Process.Pid))
 	if err != nil {
 		_ = cmd.Process.Kill()
 		return nil, fmt.Errorf("open child process: %w", err)
 	}
-	defer func() { _ = windows.CloseHandle(ph) }()
-
-	tree, jobErr := newKillOnCloseJob()
+	tree := &procTree{proc: ph}
+	job, jobErr := newKillOnCloseJob()
 	if jobErr == nil {
-		if err := windows.AssignProcessToJobObject(tree.job, ph); err != nil {
-			tree.release()
-			tree, jobErr = nil, fmt.Errorf("assign child to job: %w", err)
+		if err := windows.AssignProcessToJobObject(job, ph); err != nil {
+			_ = windows.CloseHandle(job)
+			jobErr = fmt.Errorf("assign child to job: %w", err)
+		} else {
+			tree.job = job
 		}
 	}
 	if r, _, _ := procNtResumeProcess.Call(uintptr(ph)); r != 0 {
 		tree.kill()
 		_ = cmd.Process.Kill()
+		tree.release()
 		return nil, errors.Join(jobErr, fmt.Errorf("resume child: NTSTATUS 0x%x", r))
 	}
 	return tree, jobErr
 }
 
-func newKillOnCloseJob() (*procTree, error) {
+func newKillOnCloseJob() (windows.Handle, error) {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("create job object: %w", err)
+		return 0, fmt.Errorf("create job object: %w", err)
 	}
 	var info windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
 	info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
 	if _, err := windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation,
 		uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info))); err != nil {
 		_ = windows.CloseHandle(job)
-		return nil, fmt.Errorf("set job limits: %w", err)
+		return 0, fmt.Errorf("set job limits: %w", err)
 	}
-	return &procTree{job: job}, nil
+	return job, nil
+}
+
+// ask runs send while the child still runs: the handle held keeps its pid
+// from being reused meanwhile. A child that has exited needs no asking.
+func (t *procTree) ask(send func() error) error {
+	if t == nil {
+		return nil // attachTree failed and killed the child
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.proc == 0 {
+		return nil
+	}
+	if ev, err := windows.WaitForSingleObject(t.proc, 0); err == nil && ev == windows.WAIT_OBJECT_0 {
+		return nil
+	}
+	return send()
 }
 
 // kill terminates every process in the job, the child included.
@@ -100,5 +126,9 @@ func (t *procTree) release() {
 	if t.job != 0 {
 		_ = windows.CloseHandle(t.job)
 		t.job = 0
+	}
+	if t.proc != 0 {
+		_ = windows.CloseHandle(t.proc)
+		t.proc = 0
 	}
 }
