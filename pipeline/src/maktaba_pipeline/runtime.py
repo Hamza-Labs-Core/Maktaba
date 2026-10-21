@@ -449,6 +449,10 @@ async def run(
         semaphores=(None if cfg.engine else {s: asyncio.Semaphore(1) for s in cfg.stages}),
         shutdown_event=shutdown,
     )
+    if agent is not None:
+        # a node that loses the home stops these jobs before their claim lease lapses
+        agent.claims = claim_loop
+        agent.stop_jobs_after_sec = cfg.stale_claim_sec * 2 / 3
 
     def node_paused() -> bool:
         return agent is not None and agent.paused
@@ -722,7 +726,10 @@ async def _worker_heartbeat(
 ) -> None:
     while not stop.is_set():
         try:
-            if not await heartbeat_worker(database, worker_id, host) and register is not None:
+            # bounded: a powered-off home leaves the call hanging, and the node beat below
+            # is what notices the home gone
+            alive = await asyncio.wait_for(heartbeat_worker(database, worker_id, host), timeout=8.0)
+            if not alive and register is not None:
                 _log.warning("worker_registered_again", worker_id=worker_id)
                 await register()
         except Exception:  # noqa: BLE001 - the registry heartbeat must not kill the worker

@@ -191,6 +191,7 @@ async def run_agent(
     health: Callable[[bool], Mapping[str, Any]] | None = None,
     check_membership: Callable[[], Awaitable[None]] | None = None,
     job_tracker: JobTracker | None = None,
+    paused: Callable[[], str | None] | None = None,
 ) -> None:
     files: ClusterFiles | None = None
     shipper: LogShipper | None = None
@@ -259,6 +260,7 @@ async def run_agent(
             ),
             on_settings=_settings_hook(files, locator),
             status_path=status_dir() / f"{safe_name(worker_id)}.json",
+            paused=paused,
         )
         jobs_sink = JobsFileSink(files)
         jt.add_sink(jobs_sink)
@@ -332,4 +334,6 @@ async def run_for_worker(
         health=None if health is None else (lambda final: health_frame(health, final=final)),
         # a node's heartbeat reads its cluster row: revoked or removed -> stop (exit 77)
         check_membership=worker.beat,
+        # the local status file says so while the home is gone (nothing reaches it)
+        paused=lambda: selector.paused or selector.unreachable,
     )

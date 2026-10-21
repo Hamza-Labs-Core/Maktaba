@@ -106,6 +106,7 @@ function AccountTab() {
   const { t } = useI18n();
   const { user, logoutAll } = useAuth();
   const nav = useNavigate();
+  const [signOutRefused, setSignOutRefused] = useState(false);
   if (!user) return null;
   return (
     <div className="mkt-settings__panel">
@@ -116,12 +117,23 @@ function AccountTab() {
       <Button
         variant="destructive"
         onClick={async () => {
-          await logoutAll();
+          try {
+            await logoutAll();
+          } catch {
+            // refused: this machine cannot reach its home (lib/auth)
+            setSignOutRefused(true);
+            return;
+          }
           nav("/login", { replace: true });
         }}
       >
         {t("settings.signOutEverywhere")}
       </Button>
+      {signOutRefused && (
+        <p className="mkt-alert" role="alert">
+          {t("homeOffline.signOut")}
+        </p>
+      )}
       <hr />
       <h2>{t("settings.tokens.title")}</h2>
       <p className="mkt-muted">{t("settings.tokens.hint")}</p>

@@ -1,15 +1,21 @@
 // Package nodeauth resolves who is asking on a full node (Epic 35 story 35.9, design
 // §10.3). A node never reads the sessions table: it asks the home (homelink.Link,
 // signed), caches a good answer 30 s and a refusal 5 s, keyed by the SHA-256 of the
-// credential, drops cached answers the moment the home pushes a revocation, and fails
-// closed — 503 home_unreachable on signed-in requests — once the home has not answered
-// for the grace period (30 s, rules.cluster.delegate_unreachable_grace_seconds).
+// credential, and drops cached answers the moment the home pushes a revocation.
 //
-// A home outage degrades a node to read-only instead of taking it down: a read (GET,
-// HEAD) by a credential the home confirmed before is served on that answer for
-// rules.cluster.offline_read_minutes from the outage's start, marked X-Maktaba-Home:
-// unreachable so the app shows it; a change is refused. 0 minutes: every signed-in
-// request is refused, as before.
+// A home outage degrades a node to read-only instead of taking it down. A credential
+// the home cannot be asked about is still honoured on the home's last answer while
+// that answer holds offline: the credential's own expiry (as the home named it) has not
+// passed, the home gave the answer no earlier than the offline window before the
+// outage began, and the outage is younger than the window
+// (rules.cluster.offline_read_minutes, 0: never). Then a read (GET, HEAD) and this
+// machine's own routes (`local`: its status, playback) are served, marked
+// X-Maktaba-Home: unreachable so the app shows it. Anything else gets 503
+// home_unreachable — a change, a read the last answer no longer covers — except a
+// `local` route, which answers anonymously (its auth gate decides). Nothing signs in
+// meanwhile: sign-in is the home's. Once the home has not answered for the grace
+// period (30 s, rules.cluster.delegate_unreachable_grace_seconds) the node stops
+// asking it per request, and `home` routes are refused at once (Home).
 //
 // The principal it attaches is the home's answer; the node then runs the same
 // middleware and handlers as the home (roles, admin checks, library ACLs, CSRF double
@@ -70,17 +76,23 @@ type entry struct {
 	p      *principal.Principal
 	csrf   string
 	user   string
+	name   string // the username (an offline /api/auth/me)
 	until  time.Time
 	denied bool
+	// for the offline rules: when the home gave this answer, and the credential's own
+	// expiry as the home named it (zero: it named none, and the answer never holds offline)
+	confirmed time.Time
+	expires   time.Time
 }
 
 // Resolver is the node's session resolver.
 type Resolver struct {
 	Link homelink.Link
-	// Grace returns the fail-closed grace (nil: DefaultGrace).
+	// Grace returns how long the home may not answer before the node stops asking it
+	// per request (nil: DefaultGrace).
 	Grace func() time.Duration
-	// OfflineRead returns how long reads stay served on the last confirmed answer
-	// once the home stops answering (nil: DefaultOfflineRead; 0: not at all).
+	// OfflineRead returns the offline window: how long the home's last answers hold
+	// once it stops answering (nil: DefaultOfflineRead; 0: not at all).
 	OfflineRead func() time.Duration
 	Now         func() time.Time
 	Logger      *slog.Logger
@@ -119,18 +131,6 @@ func (r *Resolver) offlineRead() time.Duration {
 	return DefaultOfflineRead
 }
 
-// readableOffline: with the home not answering, reads are still served (the outage
-// is younger than the offline read window).
-func (r *Resolver) readableOffline() bool {
-	w := r.offlineRead()
-	if w <= 0 {
-		return false
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.failing.IsZero() || r.now().Sub(r.failing) <= w
-}
-
 func readOnly(method string) bool {
 	return method == http.MethodGet || method == http.MethodHead
 }
@@ -160,15 +160,16 @@ func (r *Resolver) unanswered() {
 	if r.failing.IsZero() {
 		r.failing = r.now()
 		if r.Logger != nil {
-			r.Logger.Warn("node: the home does not answer; signed-in requests are refused after the grace period",
-				"grace", r.grace().String(), "event", "node_home_unreachable")
+			r.Logger.Warn("node: the home does not answer; read-only on its last answers for the offline window",
+				"grace", r.grace().String(), "offline_window", r.offlineRead().String(), "event", "node_home_unreachable")
 		}
 	}
 	r.mu.Unlock()
 }
 
 // Unreachable reports whether the home has failed to answer for longer than the
-// grace period (then every signed-in request is refused).
+// grace period (then the node no longer asks it per request: a credential holds only
+// under the offline rules, and `home` routes are refused at once).
 func (r *Resolver) Unreachable() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -303,7 +304,8 @@ func (r *Resolver) resolve(ctx context.Context, key string, req delegation.Intro
 		return nil, "", ErrHomeUnreachable
 	}
 	r.answered()
-	until := r.now().Add(PositiveTTL)
+	now := r.now()
+	until := now.Add(PositiveTTL)
 	if !a.ExpiresAt.IsZero() && a.ExpiresAt.Before(until) {
 		until = a.ExpiresAt
 	}
@@ -311,10 +313,11 @@ func (r *Resolver) resolve(ctx context.Context, key string, req delegation.Intro
 	if p.MustChangePassword {
 		// a must-change answer is never reused: the next request asks the home
 		// again, so it is let through the moment the password is changed even if
-		// the home's revocation push is lost (the entry stays for lastKnown)
-		until = r.now()
+		// the home's revocation push is lost (the entry stays for the offline rules)
+		until = now
 	}
-	r.put(key, &entry{p: p, csrf: a.CSRFSHA256, user: a.Principal.UserID, until: until})
+	r.put(key, &entry{p: p, csrf: a.CSRFSHA256, user: a.Principal.UserID, name: a.Principal.Username,
+		until: until, confirmed: now, expires: a.ExpiresAt})
 	return p, a.CSRFSHA256, nil
 }
 
@@ -409,8 +412,8 @@ func bearer(r *http.Request) string {
 
 // Middleware attaches the home-resolved principal to a request the node serves itself
 // (`local` and `any` routes). Anonymous requests pass through (the auth gate behind
-// it decides); a credential the home cannot be asked about is a 503 home_unreachable,
-// except a read within the offline read window (served read-only, see the package doc).
+// it decides); a credential the home cannot be asked about is served on the home's
+// last answer while it holds offline, else a 503 home_unreachable (see the package doc).
 func (r *Resolver) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if principal.FromContext(req.Context()) != nil {
@@ -435,21 +438,22 @@ func (r *Resolver) Middleware(next http.Handler) http.Handler {
 			p, csrf, err = r.resolve(req.Context(), key, delegation.IntrospectRequest{Session: c.Value})
 		}
 		if err != nil {
+			local := placement.ClassFrom(req.Context()) == placement.Local
+			e := r.offline(key)
 			switch {
-			case placement.ClassFrom(req.Context()) == placement.Local:
-				// a local route (this machine's own status) keeps working with the home
-				// gone (design §10.3): the principal last confirmed, else anonymous
-				p, csrf = r.lastKnown(key)
-			case readOnly(req.Method) && r.readableOffline():
-				// read-only while the home is out: only a credential the home confirmed
-				if p, csrf = r.lastKnown(key); p == nil {
-					WriteUnreachable(w)
-					return
-				}
+			case e != nil && (local || readOnly(req.Method)):
+				// the home's last answer still holds: a read, or this machine's own
+				// route (playback included)
+				p, csrf = e.p, e.csrf
+				w.Header().Set(HomeStateHeader, "unreachable")
+			case local:
+				// this machine's own routes keep answering with the home gone (design
+				// §10.3), anonymously
 				w.Header().Set(HomeStateHeader, "unreachable")
 			default:
-				// a change (or a read past the window) fails closed
-				WriteUnreachable(w)
+				// a change, or a read the last answer no longer covers: this machine
+				// cannot serve this person until the home answers
+				writeUnreachable(w, !readOnly(req.Method))
 				return
 			}
 		}
@@ -465,18 +469,112 @@ func (r *Resolver) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// lastKnown is the principal last cached for a credential key, even expired (the home
-// unreachable). A revocation the home pushed has already dropped it (Evict).
-func (r *Resolver) lastKnown(key string) (*principal.Principal, string) {
-	if key == "" {
-		return nil, ""
+// offline is the home's last answer for a credential key while it holds with the home
+// not answering, else nil: the credential's expiry has not passed, the home gave the
+// answer no earlier than the offline window before the outage began (so neither an
+// answer from days ago nor one a lost revocation push left behind long ago is used),
+// and the outage is younger than the window. A revocation the home pushed has already
+// dropped it (Evict); a refusal it gave is never used.
+func (r *Resolver) offline(key string) *entry {
+	window := r.offlineRead()
+	if key == "" || window <= 0 {
+		return nil
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if e, ok := r.cache[key]; ok && !e.denied {
-		return e.p, e.csrf
+	now := r.now()
+	start := r.failing
+	if start.IsZero() || start.After(now) {
+		start = now // the home's first unanswered call is this one
 	}
-	return nil, ""
+	e, ok := r.cache[key]
+	switch {
+	case !ok || e.denied || e.p == nil:
+		return nil
+	case now.Sub(start) > window:
+		return nil
+	case !now.Before(e.expires):
+		return nil
+	case e.confirmed.Before(start.Add(-max(window, PositiveTTL))):
+		return nil
+	}
+	return e
+}
+
+// credentialKey is the cache key of the request's credential ("" for none, and for a
+// bearer access token, which the node verifies on its own).
+func credentialKey(req *http.Request) string {
+	if b := bearer(req); b != "" {
+		if strings.HasPrefix(b, "pat_") {
+			return patKey(b)
+		}
+		return ""
+	}
+	if c, err := req.Cookie(CookieSession); err == nil && c.Value != "" {
+		return SessionKey(c.Value)
+	}
+	return ""
+}
+
+// MePath is the session probe the web app makes on every load.
+const MePath = "/api/auth/me"
+
+// Me answers GET /api/auth/me on the node while the home does not answer it (false: the
+// request is another one): the home's last answer for the credential under the offline
+// rules, shaped as the home's own handler shapes it, so a reload keeps a signed-in
+// person in the app. Without a credential it is a 401 (signing in waits for the home);
+// a credential those rules do not cover is a 503 home_unreachable with readable false
+// (this machine cannot serve that person). Marked X-Maktaba-Home: unreachable.
+func (r *Resolver) Me(w http.ResponseWriter, req *http.Request) bool {
+	if req.URL.Path != MePath || !readOnly(req.Method) {
+		return false
+	}
+	w.Header().Set(HomeStateHeader, "unreachable")
+	if bearer(req) == "" {
+		if c, err := req.Cookie(CookieSession); err != nil || c.Value == "" {
+			w.Header().Set("Content-Type", "application/problem+json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]any{"type": "https://maktaba.dev/problems/unauthorized",
+				"title": "unauthorized", "status": http.StatusUnauthorized, "detail": "authentication required"})
+			return true
+		}
+	}
+	e := r.offline(credentialKey(req))
+	if e == nil {
+		writeUnreachable(w, false)
+		return true
+	}
+	libs := e.p.Libraries
+	if libs == nil {
+		libs = []string{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	if req.Method == http.MethodHead {
+		return true
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"user_id": e.p.UserID, "is_admin": e.p.IsAdmin,
+		"libraries": libs, "id": e.p.UserID, "username": e.name,
+		"user": map[string]any{"id": e.p.UserID, "username": e.name, "is_admin": e.p.IsAdmin,
+			"must_change_password": e.p.MustChangePassword}})
+	return true
+}
+
+// Home fronts the proxy to the home for a node's `home` routes. Once the home has not
+// answered for the grace period it is not tried per request: GET /api/auth/me answers
+// from the home's last answer (Me) and every other `home` route — a sign-in, a sign-out,
+// a change — gets 503 home_unreachable at once rather than waiting on a dead address.
+func (r *Resolver) Home(proxy http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if !r.Unreachable() {
+			proxy.ServeHTTP(w, req)
+			return
+		}
+		if !r.Me(w, req) {
+			writeUnreachable(w, true)
+		}
+	})
 }
 
 // CSRF is the node's double-submit guard for cookie sessions (story 35.9 AC5): on a
@@ -511,11 +609,20 @@ func CSRF(next http.Handler) http.Handler {
 }
 
 // WriteUnreachable answers 503 {code: home_unreachable}.
-func WriteUnreachable(w http.ResponseWriter) {
+func WriteUnreachable(w http.ResponseWriter) { writeUnreachable(w, true) }
+
+// writeUnreachable: readable false adds {readable: false}, which says this machine
+// cannot serve the person's reads either, so the app swaps itself for the full "cannot
+// reach its home" page (a refused change keeps it under the notice).
+func writeUnreachable(w http.ResponseWriter, readable bool) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.Header().Set("Retry-After", "5")
 	w.WriteHeader(http.StatusServiceUnavailable)
-	_ = json.NewEncoder(w).Encode(map[string]any{"type": "https://maktaba.dev/problems/home-unreachable",
+	body := map[string]any{"type": "https://maktaba.dev/problems/home-unreachable",
 		"title": "the home is not reachable", "status": http.StatusServiceUnavailable, "code": "home_unreachable",
-		"detail": "this machine cannot reach its home to check the sign-in; it tries again"})
+		"detail": "this machine cannot reach its home to check the sign-in; it tries again"}
+	if !readable {
+		body["readable"] = false
+	}
+	_ = json.NewEncoder(w).Encode(body)
 }

@@ -1,6 +1,8 @@
 // Epic 35, story 35.10: a 503 paused from any API call swaps the app for the
-// paused page; home_unreachable keeps it readable under a notice (changes are
-// refused); otherwise the app renders as usual.
+// paused page; home_unreachable keeps it readable under a notice (the node
+// decides what still works, so every request is still sent), unless the node
+// cannot serve even reads ({readable: false}): then the paused page too;
+// otherwise the app renders as usual.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import { I18nProvider } from "../lib/i18n";
@@ -99,29 +101,89 @@ describe("NodeGuard", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("a read marked X-Maktaba-Home: unreachable shows the notice; a change is refused locally", async () => {
-    fetchMock.mockImplementation((input) =>
-      Promise.resolve(
-        String(input).endsWith("/api/cluster/self")
-          ? json(200, { role: "node", id: "n1", version: "1.5.0", sso: true })
-          : new Response(JSON.stringify({ items: [] }), {
-              status: 200,
-              headers: { "Content-Type": "application/json", [HOME_STATE_HEADER]: "unreachable" },
-            })
-      )
-    );
+  it("a read marked X-Maktaba-Home: unreachable shows the notice; a change still goes to the node", async () => {
+    const marked = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json", [HOME_STATE_HEADER]: "unreachable" },
+      });
+    fetchMock.mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/api/cluster/self"))
+        return Promise.resolve(json(200, { role: "node", id: "n1", version: "1.5.0", sso: true }));
+      // the node plays a video it can read (a `local` route) and refuses a change of the home's
+      if (url.endsWith("/api/stream/sessions") && init?.method === "POST")
+        return Promise.resolve(marked({ session_id: "s1" }, 201));
+      if (init?.method === "PATCH")
+        return Promise.resolve(
+          json(
+            503,
+            { title: "the home is not reachable", status: 503, code: "home_unreachable" },
+            "application/problem+json"
+          )
+        );
+      return Promise.resolve(marked({ items: [] }));
+    });
     renderGuard();
     await act(async () => {
       await expect(request("/api/library")).resolves.toEqual({ items: [] });
     });
     expect(screen.getByText("the app")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("This machine can't reach its home.");
-    const calls = fetchMock.mock.calls.length;
-    await expect(request("/api/library", { method: "POST", body: {} })).rejects.toMatchObject({
-      status: 503,
-      problem: { type: "https://maktaba.dev/problems/home-unreachable" },
+    await act(async () => {
+      await expect(
+        request("/api/stream/sessions", { method: "POST", body: { video_id: "v1" } })
+      ).resolves.toEqual({ session_id: "s1" });
+      await expect(
+        request("/api/videos/v1", { method: "PATCH", body: { title: "x" } })
+      ).rejects.toMatchObject({ status: 503, problem: { code: "home_unreachable" } });
     });
-    expect(fetchMock.mock.calls.length).toBe(calls);
+    // both went to the node; the refused change keeps the app under the notice
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/api/stream/sessions"))).toBe(
+      true
+    );
+    expect(screen.getByText("the app")).toBeInTheDocument();
+  });
+
+  it("swaps the app for the paused page when the node cannot serve even reads", async () => {
+    fetchMock.mockImplementation((input) =>
+      Promise.resolve(
+        String(input).endsWith("/api/cluster/self")
+          ? json(200, {
+              role: "node",
+              id: "n1",
+              version: "1.5.0",
+              sso: true,
+              home: { reachable: false },
+            })
+          : json(
+              503,
+              { title: "x", status: 503, code: "home_unreachable", readable: false },
+              "application/problem+json"
+            )
+      )
+    );
+    renderGuard();
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(NODE_UNAVAILABLE_EVENT, { detail: { code: "home_unreachable" } })
+      );
+    });
+    expect(screen.getByText("the app")).toBeInTheDocument();
+    await act(async () => {
+      await expect(request("/api/videos")).rejects.toMatchObject({ status: 503 });
+    });
+    expect(screen.queryByText("the app")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "This machine cannot reach its home" })
+    ).toBeInTheDocument();
+    // a later read marked unreachable does not bring the readable app back
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(NODE_UNAVAILABLE_EVENT, { detail: { code: "home_unreachable" } })
+      );
+    });
+    expect(screen.queryByText("the app")).not.toBeInTheDocument();
   });
 
   it("clears the notice once the home answers again", async () => {

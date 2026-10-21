@@ -53,6 +53,9 @@ type Fallback struct {
 	Home http.Handler
 	// HomeName is shown as served_by.
 	HomeName func() string
+	// HomeDown reports that the home does not answer (nil: never): a video this machine
+	// cannot read is then not available at all (WriteUnavailableOffline).
+	HomeDown func() bool
 	// OnChange reports a new state (to the home).
 	OnChange func(State)
 	Logger   *slog.Logger
@@ -190,6 +193,10 @@ func (f *Fallback) serveHome(w http.ResponseWriter, r *http.Request, body []byte
 	res := rec.Result()
 	defer res.Body.Close()
 	out, _ := io.ReadAll(res.Body)
+	if rewrite && res.StatusCode == http.StatusServiceUnavailable && homeUnreachable(out) {
+		WriteUnavailableOffline(w)
+		return
+	}
 	if rewrite && res.StatusCode < 300 {
 		out = rewriteBody(out)
 		var m map[string]any
@@ -234,6 +241,10 @@ func (f *Fallback) Wrap(next http.Handler) http.Handler {
 			_ = json.Unmarshal(body, &req)
 			if req.VideoID != "" && f.DB != nil && f.Home != nil {
 				ok, why := f.Readable(r.Context(), req.VideoID)
+				if !ok && f.HomeDown != nil && f.HomeDown() {
+					WriteUnavailableOffline(w)
+					return
+				}
 				if !ok {
 					f.set(true, why)
 					f.serveHome(w, r, body, true)
@@ -257,6 +268,30 @@ func (f *Fallback) Wrap(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		}
 	})
+}
+
+// ProblemUnavailableOffline is the problem type of a video this machine cannot read
+// while the home, which could serve it, does not answer.
+const ProblemUnavailableOffline = "https://maktaba.dev/problems/video-unavailable-offline"
+
+// WriteUnavailableOffline answers 503 {code: video_unavailable_offline}: this machine
+// cannot open the video's file, and the home does not answer to serve it instead.
+func WriteUnavailableOffline(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.Header().Set("Retry-After", "30")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	_ = json.NewEncoder(w).Encode(map[string]any{"type": ProblemUnavailableOffline,
+		"title": "this video isn't available while the home is unreachable", "status": http.StatusServiceUnavailable,
+		"code":   "video_unavailable_offline",
+		"detail": "this machine cannot open the video's file, and the home that could serve it does not answer"})
+}
+
+// homeUnreachable reports whether a problem body is the home proxy's home_unreachable.
+func homeUnreachable(body []byte) bool {
+	var p struct {
+		Code string `json:"code"`
+	}
+	return json.Unmarshal(body, &p) == nil && p.Code == "home_unreachable"
 }
 
 // PrefixMap is the streaming role's MAKTABA_STREAM_PATH_MAP ("from=>to;from2=>to2",

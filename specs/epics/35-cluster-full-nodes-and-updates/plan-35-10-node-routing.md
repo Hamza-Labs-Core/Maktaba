@@ -29,7 +29,8 @@
   public stream paths proxied to the home.
 - `cmd/maktaba-server/stream_gate.go` — gate against the node API.
 - `cmd/maktaba-server/internal/supervisor/env.go` — `MAKTABA_HOME_STREAM_URL` in node mode.
-- `web/src/lib/api*` — on 503 `paused` / `home_unreachable`, route to the paused page.
+- `web/src/lib/api*` — on 503 `paused` (or `home_unreachable` with `readable: false`), route to the
+  paused page; any other `home_unreachable` keeps the app under a notice (PR #145).
 
 ## 2. Steps
 

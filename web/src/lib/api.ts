@@ -29,6 +29,8 @@ export interface Problem {
   detail?: string;
   instance?: string;
   requestId?: string;
+  /** a node's machine-readable reason (`paused`, `home_unreachable`, ...) */
+  code?: string;
 }
 
 export class ApiError extends Error {
@@ -55,24 +57,40 @@ function logApiError(method: string, path: string, status: number, detail: strin
 // cannot reach its home. Every call that sees one tells the app: NodeGuard
 // shows the paused page for `paused`, and for `home_unreachable` keeps the
 // app readable under a notice. A read the node still serves in a home outage
-// carries HOME_STATE_HEADER: unreachable, which tells the app the same; while
-// it holds, a change is refused here without a request (the node would).
+// carries HOME_STATE_HEADER: unreachable, which tells the app the same. The
+// node decides what still works meanwhile (reads, playback on this machine),
+// so every request is still sent; one the node cannot serve this person at
+// all says {readable: false}, which swaps the app for the paused page too.
 export const NODE_UNAVAILABLE_EVENT = "maktaba:node-unavailable";
+/** Fired when the home answers again (the notice cleared it). */
+export const NODE_AVAILABLE_EVENT = "maktaba:node-available";
 export const HOME_STATE_HEADER = "X-Maktaba-Home";
-
-/** The problem a change gets while this machine cannot reach its home. */
-export const HOME_UNREACHABLE_PROBLEM: Problem = {
-  type: "https://maktaba.dev/problems/home-unreachable",
-  title: "The home is not reachable",
-  status: 503,
-  detail: "changes wait until this machine can reach its home again",
-};
+/** A video the node cannot read while the home, which could play it, does not answer. */
+export const PROBLEM_VIDEO_UNAVAILABLE_OFFLINE =
+  "https://maktaba.dev/problems/video-unavailable-offline";
 
 export type NodeUnavailableCode = "paused" | "home_unreachable";
 
 export interface NodeUnavailableDetail {
   code: NodeUnavailableCode;
   reason?: string;
+  /** home_unreachable only: false when this machine cannot serve even reads */
+  readable?: boolean;
+}
+
+/** Whether a node-unavailable answer takes the whole app (the paused page). */
+export function blocksApp(d: NodeUnavailableDetail | null): boolean {
+  return d?.code === "paused" || (d?.code === "home_unreachable" && d.readable === false);
+}
+
+/** The graver of two answers: `paused`, then a node that serves nothing, then the notice. */
+export function worseUnavailable(
+  prev: NodeUnavailableDetail | null,
+  next: NodeUnavailableDetail
+): NodeUnavailableDetail {
+  const rank = (d: NodeUnavailableDetail | null) =>
+    d === null ? 0 : d.code === "paused" ? 3 : blocksApp(d) ? 2 : 1;
+  return rank(prev) >= rank(next) && prev !== null ? prev : next;
 }
 
 let lastUnavailable: NodeUnavailableDetail | null = null;
@@ -87,20 +105,39 @@ export function clearNodeUnavailable(): void {
   lastUnavailable = null;
 }
 
-/** Whether this machine cannot reach its home (the app is read-only). */
+/** The home answers again: forget a home_unreachable and tell the app (a pause stays). */
+export function noteHomeBack(): void {
+  if (lastUnavailable?.code !== "home_unreachable") return;
+  lastUnavailable = null;
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(NODE_AVAILABLE_EVENT));
+}
+
+/** Whether this machine cannot reach its home (sign-in, sign-out and changes need it). */
 export function homeUnreachable(): boolean {
   return lastUnavailable?.code === "home_unreachable";
 }
 
+/** Whether a failed call was refused because this machine cannot reach its home. */
+export function isHomeUnreachable(e: unknown): boolean {
+  return e instanceof ApiError && e.status === 503 && e.problem.code === "home_unreachable";
+}
+
 function noteUnavailable(status: number, problem: unknown): void {
   if (status !== 503 || !problem || typeof problem !== "object") return;
-  const p = problem as { code?: unknown; reason?: unknown };
+  const p = problem as { code?: unknown; reason?: unknown; readable?: unknown };
   if (p.code !== "paused" && p.code !== "home_unreachable") return;
   const detail: NodeUnavailableDetail = { code: p.code };
   if (typeof p.reason === "string" && p.reason !== "") detail.reason = p.reason;
-  lastUnavailable = detail;
+  if (p.code === "home_unreachable" && p.readable === false) detail.readable = false;
+  lastUnavailable = worseUnavailable(lastUnavailable, detail);
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent(NODE_UNAVAILABLE_EVENT, { detail }));
+  }
+}
+
+function noteHomeState(headers: Headers | null): void {
+  if (headers?.get(HOME_STATE_HEADER) === "unreachable") {
+    noteUnavailable(503, { code: "home_unreachable" });
   }
 }
 
@@ -144,11 +181,6 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     if (tok) {
       headers.set(CSRF_HEADER, tok);
     }
-    if (homeUnreachable()) {
-      const err = new ApiError(HOME_UNREACHABLE_PROBLEM);
-      logApiError(method, path, err.status, err.message);
-      throw err;
-    }
   }
 
   let res: Response;
@@ -167,9 +199,7 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     throw e;
   }
 
-  if (res.headers.get(HOME_STATE_HEADER) === "unreachable") {
-    noteUnavailable(503, { code: "home_unreachable" });
-  }
+  noteHomeState(res.headers);
 
   if (res.status === 204) {
     return undefined as T;
@@ -224,15 +254,29 @@ export async function downloadBlob(path: string, fallbackName: string): Promise<
     logApiError("GET", path, 0, e instanceof Error ? e.message : "network error");
     throw e;
   }
+  noteHomeState(res.headers);
   if (!res.ok) {
-    const detail = (await res.text()).slice(0, 256);
-    logApiError("GET", path, res.status, detail);
-    throw new ApiError({
+    // decoded like request(): a problem+json answer (a node's paused /
+    // home_unreachable among them) keeps its type and tells the app
+    const text = await res.text();
+    let err: ApiError | null = null;
+    if ((res.headers.get("Content-Type") ?? "").includes("json")) {
+      try {
+        const parsed = JSON.parse(text) as Problem;
+        noteUnavailable(res.status, parsed);
+        err = new ApiError({ ...parsed, status: parsed.status || res.status });
+      } catch {
+        // not JSON after all: the plain answer below
+      }
+    }
+    err ??= new ApiError({
       type: "about:blank",
       title: res.statusText || "download failed",
       status: res.status,
-      detail,
+      detail: text.slice(0, 256),
     });
+    logApiError("GET", path, err.status, err.message);
+    throw err;
   }
   const blob = await res.blob();
   const disposition = res.headers.get("Content-Disposition") ?? "";

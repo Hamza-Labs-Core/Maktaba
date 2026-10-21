@@ -277,6 +277,7 @@ class ChannelAgent:
         llm_recheck_sec: float = LLM_RECHECK_SEC,
         metrics_file_sec: float | None = None,
         rng: random.Random | None = None,
+        paused: Callable[[], str | None] | None = None,
     ) -> None:
         self.identity = identity
         self.shipper = shipper
@@ -287,6 +288,8 @@ class ChannelAgent:
         self.on_settings = on_settings
         self.metrics_every = metrics_every
         self.status_path = status_path
+        #: the worker's pause (``paused: ...``: the home's schema, or its database gone)
+        self.paused = paused
         self.backoff_min = backoff_min
         self.backoff_max = backoff_max
         self.stable_sec = stable_sec
@@ -999,6 +1002,7 @@ class ChannelAgent:
             "last_error": self.last_error,
             "log_level": self.shipper.level,
             "files": None if self.files is None else self.files.status(),
+            "paused": None if self.paused is None else self.paused(),
             "updated_at": _now(),
         }
 

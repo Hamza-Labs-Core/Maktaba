@@ -29,8 +29,11 @@ Design: [design.md](design.md) §10; README R2, decision "Sessions across machin
   JWKS (cached 5 min, refetched on unknown `kid`).
 - **AC4** Every revocation path on the home (sign-out, password change, user disabled, admin revoke,
   expiry sweep) calls `cluster.NotifyRevoked`; `auth.revoked {session_ids? | user_id?}` evicts node
-  caches within 1 s while the channel is up. With the home unreachable for 30 s
-  (`delegate_unreachable_grace`), authenticated routes on the node answer 503 `home_unreachable`.
+  caches within 1 s while the channel is up. With the home unreachable, the node acts on the home's
+  last answer only for reads and its `local` routes, within the credential's expiry and
+  `offline_read_minutes` (design §10.3), marked `X-Maktaba-Home: unreachable`; anything else answers
+  503 `home_unreachable`, and after 30 s (`delegate_unreachable_grace`) `home` routes are refused at
+  once.
 - **AC5** Login, logout, password reset and MFA routes on a node are proxied to the home with
   `X-Maktaba-Origin-Node`; the session row gets `origin_node_id`; `Set-Cookie` has no `Domain`, so
   the cookie is host-only for the node; cookie attributes are `httpsec.SecureCookie`'s; CSRF double

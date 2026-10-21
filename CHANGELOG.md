@@ -12,11 +12,17 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Changed
 
-- **A machine that loses its home stays readable.** A full node that cannot reach the home
-  keeps serving pages to people already signed in, with a notice on top and changes refused,
-  instead of swapping the whole app for the "cannot reach its home" page. New setting
-  `rules.cluster.offline_read_minutes` (default 10; 0 restores refusing everything). The
-  full page stays for a machine whose code does not fit the home's database.
+- **A machine that loses its home stays usable.** A full node that cannot reach the home
+  keeps serving pages, and playing the videos it can read, to people the home already
+  confirmed, under a notice, instead of swapping the whole app for the "cannot reach its
+  home" page; a reload keeps them signed in. Signing in or out and changes are refused until
+  the home answers, and the login page says so. A sign-in the home had already expired, or
+  confirmed long before the outage, is not used. New setting
+  `rules.cluster.offline_read_minutes` (default 10 from the outage's start; 0: none of it).
+  The node's pipeline stops claiming jobs while the home's database does not answer and
+  resumes on its own. The full page stays for a machine whose code does not fit the home's
+  database, and for one that cannot serve a person even reads (past the window, after a
+  restart).
 
 ## [0.2.0] - 2026-10-19
 

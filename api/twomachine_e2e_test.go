@@ -14,8 +14,10 @@ package main
 //   - VOD on the node is opened on the node itself (no request reaches the home); a
 //     video this node cannot read falls back to the home, and the Machines page says so;
 //   - the Machines page lists every machine's web address;
-//   - with the home gone, the node fails closed for signed-in requests while its local
-//     routes answer.
+//   - with the home gone, the node stays readable for a signed-in user on the home's last
+//     answer (marked X-Maktaba-Home: unreachable, a reload's /api/auth/me answered by the
+//     node), plays a video it can read and says one it cannot is unavailable, refuses
+//     sign-in and changes, and its local routes answer.
 //
 // Opt-in (it builds three binaries): MAKTABA_TEST_PG_URL (a Postgres whose user may
 // create databases and roles) and MAKTABA_E2E_TWO_MACHINE=1. MAKTABA_E2E_HOLD=<seconds>
@@ -664,7 +666,7 @@ slots = "off"
 		t.Logf("the node refused the revoked session %s after the home's sign-out", time.Since(start).Round(time.Millisecond))
 	})
 
-	t.Run("home gone: the node fails closed, its local routes answer", func(t *testing.T) {
+	t.Run("home gone: the node stays readable and plays, refuses sign-in and changes", func(t *testing.T) {
 		// a fresh sign-in on the node (through the home), cached on the node
 		u2 := newBrowser(t)
 		resp, _ := u2.do("POST", nodeWebURL+"/api/auth/login", map[string]string{"username": "owner", "password": "owner-pass-123"}, nil)
@@ -680,10 +682,45 @@ slots = "off"
 			t.Fatalf("signed in through the node: %d", r.StatusCode)
 		}
 		home.stop()
-		waitFor(t, "503 home_unreachable on a signed-in request", 60*time.Second, func() bool {
-			r, b := u2.do("GET", nodeWebURL+"/api/videos", nil, nil)
-			return r.StatusCode == 503 && strings.Contains(string(b), "home_unreachable")
+		// the cached answer expires (30 s), the home does not answer: served on it, marked
+		waitFor(t, "a read served read-only (X-Maktaba-Home: unreachable)", 90*time.Second, func() bool {
+			r, _ := u2.do("GET", nodeWebURL+"/api/videos", nil, nil)
+			return r.StatusCode == 200 && r.Header.Get("X-Maktaba-Home") == "unreachable"
 		})
+		// a reload keeps the user signed in: the node answers the session probe
+		if r, b := u2.do("GET", nodeWebURL+"/api/auth/me", nil, nil); r.StatusCode != 200 ||
+			r.Header.Get("X-Maktaba-Home") != "unreachable" || !strings.Contains(string(b), `"username":"owner"`) {
+			t.Fatalf("/api/auth/me with the home gone: %d %s", r.StatusCode, tail(string(b), 300))
+		}
+		// playback: a video this node reads opens and closes here; one it cannot is unavailable
+		csrf := map[string]string{"X-Maktaba-CSRF": u2.cookie(nodeWebURL, "mkt_csrf")}
+		r, b := u2.do("POST", nodeWebURL+"/api/stream/sessions", map[string]string{"video_id": v1}, csrf)
+		var s openSession
+		if r.StatusCode != 201 || r.Header.Get("X-Maktaba-VOD") != "local" || json.Unmarshal(b, &s) != nil || s.SessionID == "" {
+			t.Fatalf("playback with the home gone: %d %s", r.StatusCode, tail(string(b), 300))
+		}
+		if r, b := u2.do("DELETE", nodeWebURL+"/api/stream/sessions/"+s.SessionID, nil, csrf); r.StatusCode != 204 {
+			t.Fatalf("closing the session with the home gone: %d %s", r.StatusCode, tail(string(b), 300))
+		}
+		if r, b := u2.do("POST", nodeWebURL+"/api/stream/sessions", map[string]string{"video_id": v2}, csrf); r.StatusCode != 503 ||
+			!strings.Contains(string(b), "video_unavailable_offline") {
+			t.Fatalf("a video this node cannot read, with the home gone: %d %s", r.StatusCode, tail(string(b), 300))
+		}
+		// no sign-in, no change
+		if r, b := newBrowser(t).do("POST", nodeWebURL+"/api/auth/login",
+			map[string]string{"username": "owner", "password": "owner-pass-123"}, nil); r.StatusCode != 503 ||
+			!strings.Contains(string(b), "home_unreachable") {
+			t.Fatalf("a sign-in with the home gone: %d %s", r.StatusCode, tail(string(b), 300))
+		}
+		if r, b := u2.do("POST", nodeWebURL+"/api/auth/logout", nil, csrf); r.StatusCode != 503 ||
+			!strings.Contains(string(b), "home_unreachable") {
+			t.Fatalf("a change (sign-out) with the home gone: %d %s", r.StatusCode, tail(string(b), 300))
+		}
+		// a credential the home never confirmed to this node: it cannot serve that person
+		if r, b := newBrowser(t).do("GET", nodeWebURL+"/api/videos", nil, map[string]string{
+			"Cookie": "mkt_sess=never-seen-here"}); r.StatusCode != 503 || !strings.Contains(string(b), `"readable":false`) {
+			t.Fatalf("an unknown session with the home gone: %d %s", r.StatusCode, tail(string(b), 300))
+		}
 		if r, _ := u2.do("GET", nodeWebURL+"/api/system/version", nil, nil); r.StatusCode != 200 {
 			t.Fatalf("a local route with the home gone: %d", r.StatusCode)
 		}

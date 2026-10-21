@@ -6,9 +6,14 @@
 // there with a full navigation. Any other relative path is an app route.
 // Only a path on this site is followed, never an absolute URL. On a node, the
 // cluster sign-in prompt offers to sign in through the home instead.
+//
+// A node that cannot reach its home cannot check a sign-in (PR #145): the page
+// says so instead of a form that would fail, and once the home answers it
+// probes the session again, so a user a reload landed here goes back in.
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { ClusterSignIn } from "../components/ClusterSignIn";
+import { useHomeUnreachable } from "../components/HomeOffline";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
 import { ApiError, apiUrl } from "../lib/api";
@@ -19,8 +24,10 @@ interface LocationState {
 }
 
 export function Login() {
-  const { login, user } = useAuth();
+  const { login, user, refresh } = useAuth();
   const { t } = useI18n();
+  const homeOut = useHomeUnreachable();
+  const wasOut = useRef(false);
   const nav = useNavigate();
   const location = useLocation();
   const [username, setUsername] = useState("");
@@ -48,7 +55,27 @@ export function Login() {
     if (user) leave();
   }, [user, leave]);
 
+  // the home is back: a session it could not check may hold
+  useEffect(() => {
+    if (homeOut) wasOut.current = true;
+    else if (wasOut.current) {
+      wasOut.current = false;
+      void refresh();
+    }
+  }, [homeOut, refresh]);
+
   if (user) return null;
+
+  if (homeOut)
+    return (
+      <main className="mkt-login">
+        <section className="mkt-login__form" aria-labelledby="mkt-login-offline">
+          <h1 className="mkt-login__title">{t("app.title")}</h1>
+          <h2 id="mkt-login-offline">{t("homeOffline.signInTitle")}</h2>
+          <p>{t("homeOffline.signIn")}</p>
+        </section>
+      </main>
+    );
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();

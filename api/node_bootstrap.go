@@ -17,7 +17,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -80,29 +79,15 @@ func startNode(ctx context.Context, cfg nodemode.Config, db *sql.DB, logger *slo
 	rt.link = &homelink.HTTPLink{Home: cfg.HomeAPIURL, NodeID: cfg.NodeID, Logger: logger}
 	rt.home = &clusterauth.HomeInfoCache{Link: rt.link}
 
-	var (
-		rulesMu sync.Mutex
-		rules   = nodemode.DefaultRules()
-		rulesAt time.Time
-	)
-	rt.rules = func() nodemode.Rules {
-		rulesMu.Lock()
-		defer rulesMu.Unlock()
-		if time.Since(rulesAt) > time.Minute {
-			rctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			rules = nodemode.ReadRules(rctx, db)
-			cancel()
-			rulesAt = time.Now()
-		}
-		return rules
-	}
+	rt.rules = nodemode.CachedRules(db, time.Minute)
 	rt.resolver = &nodeauth.Resolver{Link: rt.link, Logger: logger,
 		Grace:       func() time.Duration { return time.Duration(rt.rules().GraceSeconds) * time.Second },
 		OfflineRead: func() time.Duration { return time.Duration(rt.rules().OfflineReadMinutes) * time.Minute }}
 	rt.link.Subscribe(rt.resolver.OnEvent)
 	rt.guard = &schemaguard.Guard{DB: db, Logger: logger}
 	rt.guard.Check(cctx)
-	rt.proxy = homeproxy.New(rt.link, logger)
+	// a session probe the home does not answer gets the home's last answer here
+	rt.proxy = homeproxy.NewWithFallback(rt.link, logger, rt.resolver.Me)
 
 	if cfg.AgentURL != "" && cfg.AgentTokenFile != "" {
 		rt.feed = &homelink.AgentFeed{URL: cfg.AgentURL, TokenFile: cfg.AgentTokenFile, Link: rt.link, Logger: logger}
@@ -124,6 +109,7 @@ func startNode(ctx context.Context, cfg nodemode.Config, db *sql.DB, logger *slo
 			}
 			return ""
 		},
+		HomeDown: func() bool { ok, _ := rt.resolver.Reachability(); return !ok },
 		OnChange: func(vodfallback.State) { go rt.report(context.Background()) },
 	}
 	system.SetMachine(system.Machine{Role: "node", NodeID: cfg.NodeID, WebURL: cfg.WebURL})
@@ -239,7 +225,7 @@ func (rt *nodeRuntime) handler(a *authState, r chi.Router, publicMux http.Handle
 	local = rt.resolver.Middleware(local)
 	local = middleware.AdminToken(a.adminToken)(local)
 	local = mw.AuthRouteRateLimit(mw.DefaultAuthRouteLimits())(local)
-	d := &placement.Dispatcher{Routes: r, Table: router.Placement, Local: local, Proxy: rt.proxy,
+	d := &placement.Dispatcher{Routes: r, Table: router.Placement, Local: local, Proxy: rt.resolver.Home(rt.proxy),
 		Paused: rt.guard.Paused,
 		Fixed: map[string]placement.Class{"/healthz": placement.Local,
 			"/api/.well-known/jwks.json": placement.Home}}

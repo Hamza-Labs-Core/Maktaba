@@ -5421,7 +5421,7 @@
      "kind": "int",
      "group": "Machines",
      "label": "Home unreachable after (s)",
-     "help": "A machine that cannot reach the home this long stops taking changes until it can again (reading follows the next setting); its own status pages keep working.",
+     "help": "A machine that cannot reach the home this long stops asking it for every request: signing in and changes are refused at once until it answers again (reading and playback follow the next setting); its own status pages keep working.",
      "default": 30,
      "minimum": 5,
      "maximum": 600
@@ -5431,7 +5431,7 @@
      "kind": "int",
      "group": "Machines",
      "label": "Stay readable without the home (min)",
-     "help": "While a machine cannot reach the home, people already signed in keep reading pages this long, with changes refused and a notice on top. 0: refuse everything at once. A sign-out made on the home during the outage reaches this machine only when it is back.",
+     "help": "While a machine cannot reach the home, people the home already confirmed keep reading pages and playing the videos this machine can read, this long from the outage's start, under a notice. Signing in or out and changes are refused (not kept for later) until the home answers. 0: none of it. A sign-out made on the home during the outage reaches this machine only when it is back.",
      "default": 10,
      "minimum": 0,
      "maximum": 1440

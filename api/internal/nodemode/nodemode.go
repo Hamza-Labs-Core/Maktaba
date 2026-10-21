@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 )
 
 // Config is the node-mode environment of the API.
@@ -147,8 +149,8 @@ func CheckRole(ctx context.Context, db *sql.DB) error {
 
 // Rules is rules.cluster (app_settings; the pipeline's ClusterMachinesConfig declares
 // the section): cluster sign-in on or off, how long a node waits for an unreachable
-// home before it refuses signed-in requests, how long it stays readable meanwhile, its
-// picture cache.
+// home before it stops asking it per request, how long the home's last sign-in answers
+// hold meanwhile (reads, playback), its picture cache.
 type Rules struct {
 	SSO                bool `json:"sso"`
 	GraceSeconds       int  `json:"delegate_unreachable_grace_seconds"`
@@ -163,17 +165,51 @@ func DefaultRules() Rules {
 
 // ReadRules reads rules.cluster; any error or bad value gives the default for it.
 func ReadRules(ctx context.Context, db *sql.DB) Rules {
+	out, _ := LoadRules(ctx, db)
+	return out
+}
+
+// CachedRules reads rules.cluster at most once per `every` (each read bounded to 3 s);
+// a failed read — the home's database down too — keeps the last good section (the
+// defaults until one was read), so an outage never swaps the admin's values for them.
+func CachedRules(db *sql.DB, every time.Duration) func() Rules {
+	var (
+		mu    sync.Mutex
+		rules = DefaultRules()
+		at    time.Time
+	)
+	return func() Rules {
+		mu.Lock()
+		defer mu.Unlock()
+		if at.IsZero() || time.Since(at) >= every {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			if got, err := LoadRules(ctx, db); err == nil {
+				rules = got
+			}
+			cancel()
+			at = time.Now()
+		}
+		return rules
+	}
+}
+
+// LoadRules is ReadRules that reports a failed read (the defaults come with it), so a
+// caller that already has the section can keep it; no row, or a bad value, is no error.
+func LoadRules(ctx context.Context, db *sql.DB) (Rules, error) {
 	out := DefaultRules()
 	if db == nil {
-		return out
+		return out, nil
 	}
 	var raw []byte
 	if err := db.QueryRowContext(ctx, `SELECT value FROM app_settings WHERE key = 'rules.cluster'`).Scan(&raw); err != nil {
-		return out
+		if errors.Is(err, sql.ErrNoRows) {
+			return out, nil
+		}
+		return out, err
 	}
 	var m map[string]json.RawMessage
 	if json.Unmarshal(raw, &m) != nil {
-		return out
+		return out, nil
 	}
 	var b bool
 	if v, ok := m["sso"]; ok && json.Unmarshal(v, &b) == nil {
@@ -189,5 +225,5 @@ func ReadRules(ctx context.Context, db *sql.DB) Rules {
 	if v, ok := m["proxy_cache_mb"]; ok && json.Unmarshal(v, &n) == nil && n >= 0 {
 		out.ProxyCacheMB = n
 	}
-	return out
+	return out, nil
 }
