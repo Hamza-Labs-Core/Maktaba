@@ -113,6 +113,9 @@ class MaktabaTvConfig:
     #: even loudness across programmes and filler
     loudnorm: bool = True
     loudnorm_target_lufs: float = -16.0
+    #: the corner logo is left off filler and bumpers (dizqueTV's disableFillerOverlay);
+    #: programmes and live broadcasts always carry it
+    watermark_skip_filler: bool = True
     #: every channel's schedule is planned this many days ahead (what the guide shows)
     horizon_days: int = 7
     #: a channel is topped up when less than this many days are planned
@@ -488,6 +491,12 @@ register(
         ),
         "loudnorm": Help(TV, "Even loudness", "Normalise every programme's loudness."),
         "loudnorm_target_lufs": Help(TV, "Loudness target (LUFS)"),
+        "watermark_skip_filler": Help(
+            TV,
+            "No corner logo on filler",
+            "Filler clips and bumpers air without the channel's corner logo, as dizqueTV; "
+            "programmes and live broadcasts always carry it. Off: the logo on every block.",
+        ),
         "horizon_days": Help(
             TVG,
             "Guide days ahead",

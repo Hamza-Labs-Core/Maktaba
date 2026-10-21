@@ -34,6 +34,37 @@ func TestParseLook_DefaultsAndOverrides(t *testing.T) {
 	if e := ParseLook([]byte(`{"watermark":{"path":""}}`), ""); e.Watermark != nil {
 		t.Error("empty watermark path → none")
 	}
+	if d.WatermarkSkipFiller {
+		t.Error("a look without watermark_skip_filler keeps the watermark on filler")
+	}
+	if k := ParseLook([]byte(`{"watermark_skip_filler":true}`), ""); !k.WatermarkSkipFiller {
+		t.Error("watermark_skip_filler not read")
+	}
+}
+
+// TestApplyLook_WatermarkSkipFiller: with the rule the watermark is left off
+// filler and bumper blocks only; programmes and live broadcasts keep it,
+// and loudness applies to every block.
+func TestApplyLook_WatermarkSkipFiller(t *testing.T) {
+	wm := filepath.Join(t.TempDir(), "bug.png")
+	_ = os.WriteFile(wm, []byte("png"), 0o644)
+	s := &Station{}
+	for _, skip := range []bool{false, true} {
+		look := DefaultLook()
+		look.Watermark = &Watermark{Path: wm, Position: "top-right", WidthPct: 10, MarginPct: 3}
+		look.WatermarkSkipFiller = skip
+		for _, kind := range []string{KindProgram, KindFiller, KindBumper, KindLive} {
+			in := &BlockInput{}
+			s.applyLook(context.Background(), in, look, kind)
+			want := !skip || kind == KindProgram || kind == KindLive
+			if got := in.Watermark != nil; got != want {
+				t.Errorf("skip=%v %s: watermark %v, want %v", skip, kind, got, want)
+			}
+			if in.Loudnorm == nil || !in.Loudnorm.Enabled {
+				t.Errorf("skip=%v %s: loudnorm %+v", skip, kind, in.Loudnorm)
+			}
+		}
+	}
 }
 
 func TestYtDlp_DirectVsPageAndCache(t *testing.T) {

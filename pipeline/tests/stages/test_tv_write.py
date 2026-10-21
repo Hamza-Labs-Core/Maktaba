@@ -120,6 +120,7 @@ async def test_filler_pools_lists_and_look_are_written_idempotently(
                       "width_pct": 10.0, "margin_pct": 3.0},
         "loading_path": str(tmp_path / "logos" / "loading-news.png"),
         "loudnorm": {"enabled": True, "target_lufs": -16.0},
+        "watermark_skip_filler": True,  # rules tv.watermark_skip_filler, as dizqueTV
     }  # fmt: skip
     other = await db.fetchrow("SELECT logo_path, mode_config FROM channels WHERE number = 106")
     assert other["logo_path"] == str(tmp_path / "logos" / "default.png")
@@ -187,13 +188,21 @@ async def test_the_plan_carries_its_art_in_the_maktaba_keys(db: Database, tmp_pa
     assert m["logo_path"] == str(tmp_path / "logos" / "news.png")
     assert m["mode_config"]["look"]["loading_path"] == str(tmp_path / "logos" / "loading-news.png")
     assert m["mode_config"]["look"]["watermark"]["position"] == "bottom-left"
-    # write_channels takes the plan's art from there (and adds the loudness rule)
+    # write_channels takes the plan's art from there (and adds the look rules)
     m["logo_path"] = str(tmp_path / "logos" / "default.png")
     plan["channels"][0]["maktaba"] = m
     await _write(db, plan)
     row = await db.fetchrow("SELECT logo_path, mode_config FROM channels WHERE number = 105")
     assert row["logo_path"] == str(tmp_path / "logos" / "default.png")
-    assert loads(row["mode_config"])["look"]["loudnorm"] == {"enabled": True, "target_lufs": -16.0}
+    look_ = loads(row["mode_config"])["look"]
+    assert look_["loudnorm"] == {"enabled": True, "target_lufs": -16.0}
+    assert look_["watermark_skip_filler"] is True
+
+    # the corner-logo rule turned off: the channel's look changes, nothing else
+    _, wp = await compute_changes(db, plan, MaktabaTvConfig(watermark_skip_filler=False))
+    assert wp.update and not wp.user_edited
+    for _, want in wp.update:
+        assert want.values["mode_config"]["look"]["watermark_skip_filler"] is False
 
 
 @pytest.mark.asyncio
