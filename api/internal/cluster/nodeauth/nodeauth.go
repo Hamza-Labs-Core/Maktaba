@@ -13,7 +13,8 @@
 // X-Maktaba-Home: unreachable so the app shows it. Anything else gets 503
 // home_unreachable — a change, a read the last answer no longer covers — except a
 // `local` route, which answers anonymously (its auth gate decides). Nothing signs in
-// meanwhile: sign-in is the home's. Once the home has not answered for the grace
+// meanwhile: sign-in is the home's. The answers are kept on the node's disk too (Keep),
+// so a node restarted in the outage serves the same people. Once the home has not answered for the grace
 // period (30 s, rules.cluster.delegate_unreachable_grace_seconds) the node stops
 // asking it per request, and `home` routes are refused at once (Home).
 //
@@ -486,6 +487,11 @@ func (r *Resolver) offline(key string) *entry {
 	start := r.failing
 	if start.IsZero() || start.After(now) {
 		start = now // the home's first unanswered call is this one
+	}
+	// the outage began after the home's last answer: for a node that restarted in it
+	// (and never saw the home fail) that is the one it kept (Keep)
+	if !r.lastOK.IsZero() && r.lastOK.Before(start) {
+		start = r.lastOK
 	}
 	e, ok := r.cache[key]
 	switch {

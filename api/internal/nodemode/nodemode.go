@@ -8,9 +8,12 @@ package nodemode
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/url"
 	"strings"
 	"sync"
@@ -134,17 +137,30 @@ SELECT current_user,
 }
 
 // CheckRole refuses a role that can run DDL (design §9.1). A role whose privileges
-// cannot be read is refused too: the node fails closed.
+// cannot be read is refused too: the node fails closed (Unreachable tells a database
+// that does not answer from one that refuses).
 func CheckRole(ctx context.Context, db *sql.DB) error {
 	p, err := ReadPrivileges(ctx, db)
 	if err != nil {
-		return fmt.Errorf("%w: cannot read the role's privileges: %v", ErrDDLRole, err)
+		return fmt.Errorf("%w: cannot read the role's privileges: %w", ErrDDLRole, err)
 	}
 	if why := p.DDL(); len(why) > 0 {
 		return fmt.Errorf("%w: role %q has %s — use the node's own database role from node.json, never the home's",
 			ErrDDLRole, p.Role, strings.Join(why, ", "))
 	}
 	return nil
+}
+
+// Unreachable reports whether err is the database not answering — a dial or network
+// failure, a timeout, a dropped connection — rather than it answering with a refusal
+// (a bad password, a missing grant), which keeps a node from starting.
+func Unreachable(err error) bool {
+	if err == nil {
+		return false
+	}
+	var ne net.Error
+	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, driver.ErrBadConn) ||
+		errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &ne)
 }
 
 // Rules is rules.cluster (app_settings; the pipeline's ClusterMachinesConfig declares

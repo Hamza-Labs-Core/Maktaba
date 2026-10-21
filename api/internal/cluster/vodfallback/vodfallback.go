@@ -18,6 +18,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -56,6 +57,9 @@ type Fallback struct {
 	// HomeDown reports that the home does not answer (nil: never): a video this machine
 	// cannot read is then not available at all (WriteUnavailableOffline).
 	HomeDown func() bool
+	// Catalog stands in for the home's database while it does not answer (nil: none):
+	// a video's path from this machine's catalog.
+	Catalog Catalog
 	// OnChange reports a new state (to the home).
 	OnChange func(State)
 	Logger   *slog.Logger
@@ -117,11 +121,40 @@ func (f *Fallback) set(fallback bool, detail string) {
 	}
 }
 
+// Catalog is a full node's own record of the videos (cluster/catalog).
+type Catalog interface {
+	DBDown() bool
+	DBFailed(err error)
+	Path(videoID string) (string, bool)
+}
+
+// catalogDBTimeout bounds the path lookup when a catalog can answer instead.
+const catalogDBTimeout = 3 * time.Second
+
 // Readable reports whether this machine can read the video's file, and why not.
 func (f *Fallback) Readable(ctx context.Context, videoID string) (bool, string) {
 	var p string
-	if err := f.DB.QueryRowContext(ctx, `SELECT path FROM videos WHERE id = $1`, videoID).Scan(&p); err != nil {
-		// unknown video: the local handler answers 404 as usual
+	err := sql.ErrConnDone // not asked: the catalog answers
+	if f.Catalog == nil || !f.Catalog.DBDown() {
+		qctx, cancel := ctx, context.CancelFunc(func() {})
+		if f.Catalog != nil {
+			qctx, cancel = context.WithTimeout(ctx, catalogDBTimeout)
+		}
+		err = f.DB.QueryRowContext(qctx, `SELECT path FROM videos WHERE id = $1`, videoID).Scan(&p)
+		cancel()
+		if err != nil && !errors.Is(err, sql.ErrNoRows) && f.Catalog != nil {
+			f.Catalog.DBFailed(err)
+		}
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) && f.Catalog != nil {
+		// the home's database does not answer: the path this machine last read
+		if cp, ok := f.Catalog.Path(videoID); ok {
+			p, err = cp, nil
+		}
+	}
+	if err != nil {
+		// unknown video: the local handler answers 404 as usual (or, with the
+		// home's database down, that it is not available meanwhile)
 		return true, ""
 	}
 	local := p

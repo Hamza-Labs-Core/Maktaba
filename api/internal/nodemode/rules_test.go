@@ -3,8 +3,14 @@ package nodemode
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"errors"
+	"fmt"
+	"io"
+	"net"
 	"testing"
 
+	_ "github.com/lib/pq"
 	_ "modernc.org/sqlite"
 )
 
@@ -51,5 +57,41 @@ func TestCachedRulesKeepTheLastGoodSection(t *testing.T) {
 	_ = db.Close() // the home's database goes away
 	if got := rules().OfflineReadMinutes; got != 30 {
 		t.Fatalf("after a failed read: %d, want the last good 30 (not the default)", got)
+	}
+}
+
+func TestUnreachableTellsADeadDatabaseFromARefusal(t *testing.T) {
+	dial := &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connectex: No connection could be made")}
+	for _, err := range []error{
+		dial,
+		fmt.Errorf("%w: cannot read the role's privileges: %w", ErrDDLRole, dial),
+		context.DeadlineExceeded,
+		driver.ErrBadConn,
+		io.ErrUnexpectedEOF,
+	} {
+		if !Unreachable(err) {
+			t.Fatalf("not unreachable: %v", err)
+		}
+	}
+	for _, err := range []error{
+		nil,
+		errors.New(`pq: password authentication failed for user "node_6f1c"`),
+		fmt.Errorf("%w: role %q has CREATEDB", ErrDDLRole, "node"),
+	} {
+		if Unreachable(err) {
+			t.Fatalf("unreachable: %v", err)
+		}
+	}
+}
+
+func TestCheckRoleKeepsTheCause(t *testing.T) {
+	db, err := sql.Open("postgres", "postgres://node@127.0.0.1:1/maktaba?sslmode=disable&connect_timeout=2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	err = CheckRole(context.Background(), db)
+	if !errors.Is(err, ErrDDLRole) || !Unreachable(err) {
+		t.Fatalf("a database that does not answer: %v (unreachable %v)", err, Unreachable(err))
 	}
 }

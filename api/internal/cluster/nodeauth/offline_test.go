@@ -165,9 +165,11 @@ func (g *offlineRig) do(method, path, cred string) answer {
 	return a
 }
 
+// goDown: the home answers (Watch's probe every 5 s) for `after` more, then goes away.
 func (g *offlineRig) goDown(after time.Duration) {
-	g.home.setDown(true)
 	g.now = g.now.Add(after)
+	g.r.answered()
+	g.home.setDown(true)
 }
 
 func (a answer) refusedRead() bool {

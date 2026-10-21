@@ -6,8 +6,8 @@
 // swaps the app for the paused page; `home_unreachable` keeps the app readable
 // under a notice (sign-in, sign-out and changes need the home) until the home
 // answers again, unless the node said it cannot serve this person even reads
-// ({readable: false}: past its offline window, after a restart, a sign-in it
-// never saw confirmed), when the paused page takes over too. On the home
+// ({readable: false}: past its offline window, a sign-in it never saw
+// confirmed), when the paused page takes over too. On the home
 // nothing ever changes.
 import { useEffect, useState, type ReactNode } from "react";
 import {

@@ -21,8 +21,12 @@ don't append a line here; docs-only PRs are exempt.
   `rules.cluster.offline_read_minutes` (default 10 from the outage's start; 0: none of it).
   The node's pipeline stops claiming jobs while the home's database does not answer and
   resumes on its own. The full page stays for a machine whose code does not fit the home's
-  database, and for one that cannot serve a person even reads (past the window, after a
-  restart).
+  database, and for one that cannot serve a person even reads (past the window).
+- **A node plays with the home's database down too.** Each full node keeps a catalog of what
+  playback needs (paths, libraries, media facts, its share map) under `<data_dir>/node`, so a
+  video on the NAS that the node can read plays, for the people the home confirmed and only
+  from libraries they may see, even when the home's Postgres is gone and even after the node
+  restarts in the outage. Browsing the library still needs the home's database.
 
 ## [0.2.0] - 2026-10-19
 

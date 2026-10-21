@@ -6,6 +6,11 @@ package main
 // limited role (it refuses one that could run DDL, and never migrates), no home-only
 // component (hub, updater, TV controller, publishers, secrets), sessions resolved by the
 // home, every route served by its placement class, VOD read from the NAS here.
+//
+// With the home's database down (PR #145) a node still plays the videos it can read:
+// its catalog (cluster/catalog, in MAKTABA_NODE_STATE_DIR) answers for the videos and
+// the share map, and it even starts so: a role check the database cannot answer waits
+// for it (a role that turns out able to run DDL then stops the API, as at start).
 
 import (
 	"context"
@@ -15,6 +20,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -23,6 +29,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/catalog"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homelink"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homeproxy"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/nodeauth"
@@ -55,6 +62,41 @@ type nodeRuntime struct {
 	proxy    http.Handler
 	rules    func() nodemode.Rules
 	logger   *slog.Logger
+	dbWatch  *catalog.Watch
+	catalog  *catalog.Catalog
+	// fatal carries an error the API must stop for (a DDL-capable role found late)
+	fatal chan error
+}
+
+// nodeOffline is a full node's way to play with the home's database down: its watch on
+// the database and its catalog (streaming.Offline, vodfallback.Catalog).
+type nodeOffline struct {
+	watch *catalog.Watch
+	cat   *catalog.Catalog
+}
+
+func (o nodeOffline) DBDown() bool       { return o.watch.Down() }
+func (o nodeOffline) DBFailed(err error) { o.watch.Failed(err) }
+func (o nodeOffline) Video(id string) (string, float64, bool) {
+	v, ok := o.cat.Video(id)
+	return v.LibraryID, v.DurationSec, ok
+}
+func (o nodeOffline) Path(id string) (string, bool) {
+	v, ok := o.cat.Video(id)
+	return v.Path, ok && v.Path != ""
+}
+
+// nodeStateDir is where a node keeps its own state (the playback catalog):
+// MAKTABA_NODE_STATE_DIR (its supervisor sets it), else <MAKTABA_DATA_DIR>/node, else
+// none (the catalog then lives in memory only).
+func nodeStateDir() string {
+	if d := os.Getenv("MAKTABA_NODE_STATE_DIR"); d != "" {
+		return d
+	}
+	if d := os.Getenv("MAKTABA_DATA_DIR"); d != "" {
+		return filepath.Join(d, "node")
+	}
+	return ""
 }
 
 // checkNodeEnv refuses what a node never does (story 35.8 AC2): migrate.
@@ -72,10 +114,29 @@ func checkNodeEnv(cfg nodemode.Config) error {
 func startNode(ctx context.Context, cfg nodemode.Config, db *sql.DB, logger *slog.Logger) (*nodeRuntime, error) {
 	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	if err := nodemode.CheckRole(cctx, db); err != nil {
-		return nil, err
+	rt := &nodeRuntime{cfg: cfg, db: db, logger: logger, fatal: make(chan error, 1)}
+	rt.dbWatch = &catalog.Watch{DB: db, Logger: logger}
+	roleErr := nodemode.CheckRole(cctx, db)
+	switch {
+	case roleErr == nil:
+	case nodemode.Unreachable(roleErr):
+		logger.Warn("node: the home's database does not answer; starting without it, playing from this machine's catalog (the role is checked once it answers)",
+			"err", roleErr, "event", "node_start_without_db")
+		rt.dbWatch.Failed(roleErr)
+		go rt.checkRoleLater(ctx)
+	default:
+		return nil, roleErr
 	}
-	rt := &nodeRuntime{cfg: cfg, db: db, logger: logger}
+	dir := nodeStateDir()
+	if dir == "" {
+		logger.Warn("node: no state directory (MAKTABA_NODE_STATE_DIR): the playback catalog is not kept across restarts",
+			"event", "node_catalog_memory_only")
+	}
+	catalogPath := ""
+	if dir != "" {
+		catalogPath = filepath.Join(dir, catalog.FileName)
+	}
+	rt.catalog = catalog.Open(catalogPath, logger)
 	rt.link = &homelink.HTTPLink{Home: cfg.HomeAPIURL, NodeID: cfg.NodeID, Logger: logger}
 	rt.home = &clusterauth.HomeInfoCache{Link: rt.link}
 
@@ -84,6 +145,12 @@ func startNode(ctx context.Context, cfg nodemode.Config, db *sql.DB, logger *slo
 		Grace:       func() time.Duration { return time.Duration(rt.rules().GraceSeconds) * time.Second },
 		OfflineRead: func() time.Duration { return time.Duration(rt.rules().OfflineReadMinutes) * time.Minute }}
 	rt.link.Subscribe(rt.resolver.OnEvent)
+	if dir != "" {
+		// the home's last sign-in answers, for a restart in an outage
+		answers := filepath.Join(dir, nodeauth.AnswersFile)
+		rt.resolver.LoadKept(answers)
+		go rt.resolver.Keep(ctx, answers)
+	}
 	rt.guard = &schemaguard.Guard{DB: db, Logger: logger}
 	rt.guard.Check(cctx)
 	// a session probe the home does not answer gets the home's last answer here
@@ -98,7 +165,13 @@ func startNode(ctx context.Context, cfg nodemode.Config, db *sql.DB, logger *slo
 	}
 	go rt.resolver.Watch(ctx)
 	go rt.guard.Run(ctx)
-	// media through this machine's own mounts (design §11.5)
+	go rt.dbWatch.Run(ctx)
+	go rt.catalog.Run(ctx, db, cfg.NodeID, rt.dbWatch)
+	// media through this machine's own mounts (design §11.5): the map last read, until
+	// the home's database answers with its own
+	if m := rt.catalog.ShareMap(); len(m) > 0 {
+		sharepath.Set(sharepath.FromEntries(m))
+	}
 	sharepath.StartNode(ctx, db, cfg.NodeID, logger)
 	streamMap := vodfallback.PrefixMap(os.Getenv("MAKTABA_STREAM_PATH_MAP"))
 	rt.vod = &vodfallback.Fallback{DB: db, Home: rt.proxy, Logger: logger,
@@ -110,6 +183,7 @@ func startNode(ctx context.Context, cfg nodemode.Config, db *sql.DB, logger *slo
 			return ""
 		},
 		HomeDown: func() bool { ok, _ := rt.resolver.Reachability(); return !ok },
+		Catalog:  rt.offline(),
 		OnChange: func(vodfallback.State) { go rt.report(context.Background()) },
 	}
 	system.SetMachine(system.Machine{Role: "node", NodeID: cfg.NodeID, WebURL: cfg.WebURL})
@@ -124,6 +198,35 @@ func platform() string {
 		return p
 	}
 	return runtime.GOOS + "-" + runtime.GOARCH
+}
+
+func (rt *nodeRuntime) offline() nodeOffline { return nodeOffline{watch: rt.dbWatch, cat: rt.catalog} }
+
+// checkRoleLater runs the start's role check once the home's database answers: a role
+// that can run DDL stops the API then (rt.fatal), as it would have at start.
+func (rt *nodeRuntime) checkRoleLater(ctx context.Context) {
+	t := time.NewTicker(5 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		err := nodemode.CheckRole(cctx, rt.db)
+		cancel()
+		switch {
+		case err == nil:
+			rt.logger.Info("node: the home's database answers; this machine's role is checked", "event", "node_role_checked")
+			return
+		case nodemode.Unreachable(err) || ctx.Err() != nil:
+			continue
+		default:
+			rt.fatal <- err
+			return
+		}
+	}
 }
 
 // report tells the home what this machine is (cluster_node_report_full, slot 0135).
@@ -219,7 +322,7 @@ func (rt *nodeRuntime) mountNodeRoutes(r chi.Router) {
 // handler is the node's public handler: the placement dispatcher over the local
 // chain (home-resolved principal, the auth gate, CSRF per host, VOD) and the home proxy.
 func (rt *nodeRuntime) handler(a *authState, r chi.Router, publicMux http.Handler) http.Handler {
-	local := rt.vod.Wrap(publicMux)
+	local := rt.dbDownReads(rt.vod.Wrap(publicMux))
 	local = nodeauth.CSRF(local)
 	local = middleware.RequireAuthExcept(middleware.DefaultPublicAllowlist())(local)
 	local = rt.resolver.Middleware(local)
@@ -233,6 +336,27 @@ func (rt *nodeRuntime) handler(a *authState, r chi.Router, publicMux http.Handle
 	h = httpsec.CORS(a.cors)(h)
 	h = httpsec.Headers(a.headers)(h)
 	return h
+}
+
+// dbDownReads answers an `any` route (a read of the home's database) at once while that
+// database does not answer: 503 home_unreachable rather than a request that hangs on a
+// dead connection. The app keeps its notice (pages that read the database wait for it,
+// playback does not); `local` routes go on.
+func (rt *nodeRuntime) dbDownReads(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !rt.dbWatch.Down() || placement.ClassFrom(r.Context()) != placement.Any {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set(nodeauth.HomeStateHeader, "unreachable")
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.Header().Set("Retry-After", "5")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{"type": "https://maktaba.dev/problems/home-unreachable",
+			"title": "the home's database is not reachable", "status": http.StatusServiceUnavailable,
+			"code":   "home_unreachable",
+			"detail": "this page reads the home's database, which does not answer; videos this machine can read still play"})
+	})
 }
 
 // warnUnclassified logs routes the placement table does not name (they are proxied to
@@ -303,6 +427,8 @@ func mountNode(r chi.Router, cfg nodemode.Config, dataDir string, logger *slog.L
 		// this machine's own stream key: the node signs its own VOD sessions,
 		// which its own streaming role verifies (Story 10.8, design §11.5)
 		URLSigner: streamURLSigner(nil, logger),
+		// the home's database down: this machine's catalog and session record
+		StreamOffline: rt.offline(),
 	})
 	router.MountP27(r, router.P27Deps{DB: appDB, PublicBaseURL: os.Getenv("MAKTABA_PUBLIC_BASE_URL"), DataDir: dataDir})
 	rt.mountNodeRoutes(r)

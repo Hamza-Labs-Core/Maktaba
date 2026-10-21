@@ -5,6 +5,7 @@ package vodfallback
 // home proxy (PR #145).
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -85,5 +86,49 @@ func TestOfflineAVideoThisMachineCannotReadIsUnavailable(t *testing.T) {
 	down = false
 	if rec := open("gone"); !unavailable(rec) || homeCalls != 1 {
 		t.Fatalf("the home proxy's home_unreachable: %d %s, want 503 unavailable offline", rec.Code, rec.Body.String())
+	}
+}
+
+type pathCatalog struct {
+	down   bool
+	failed int
+	paths  map[string]string
+}
+
+func (c *pathCatalog) DBDown() bool       { return c.down }
+func (c *pathCatalog) DBFailed(err error) { c.failed++ }
+func (c *pathCatalog) Path(id string) (string, bool) {
+	p, ok := c.paths[id]
+	return p, ok
+}
+
+// With the home's database down too, the path comes from this machine's catalog.
+func TestOfflineTheCatalogNamesThePath(t *testing.T) {
+	db := videosDB(t)
+	_ = db.Close() // the home's database gone
+	cat := &pathCatalog{paths: map[string]string{"here": "/Volumes/Originals/a.mkv", "gone": "/Volumes/Elsewhere/b.mkv"}}
+	f := &Fallback{DB: db, Catalog: cat,
+		ToLocal: func(p string) string { return strings.Replace(p, "/Volumes/Originals/", "O:/", 1) },
+		Stat: func(p string) error {
+			if strings.HasPrefix(p, "O:/") {
+				return nil
+			}
+			return errors.New("not mounted")
+		}}
+	if ok, _ := f.Readable(context.Background(), "here"); !ok {
+		t.Fatal("a video the catalog places on a readable share")
+	}
+	if cat.failed != 1 {
+		t.Fatalf("the failed database call was not recorded: %d", cat.failed)
+	}
+	cat.down = true // known down: the database is not asked
+	if ok, why := f.Readable(context.Background(), "gone"); ok || why == "" {
+		t.Fatalf("a video the catalog places on a share this machine cannot read: %v %q", ok, why)
+	}
+	if ok, _ := f.Readable(context.Background(), "unknown"); !ok {
+		t.Fatal("a video outside the catalog is left to the session handler")
+	}
+	if cat.failed != 1 {
+		t.Fatalf("a database known down was asked: %d", cat.failed)
 	}
 }
