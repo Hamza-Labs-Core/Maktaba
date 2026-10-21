@@ -659,9 +659,18 @@ in_dir() {
     )
 }
 
+# install_pins_with_pip DIR CONSTRAINTS REQ: a venv's own pip (no unchecked upgrade from
+# PyPI) does not take hashes from a constraints file: install its pins as requirements, each
+# checked, then the wheel, checked (REQ), without resolving again (every extra's pins come
+# along). From DIR, naming the files ./<file>.
+install_pins_with_pip() {
+    in_dir "$1" "$PY" -m pip install --quiet --require-hashes --no-deps -r "./$(basename "$2")"
+    in_dir "$1" "$PY" -m pip install --quiet --require-hashes --no-deps --force-reinstall -r "./$(basename "$3")"
+}
+
 # The release's (or a given) wheel, its dependencies pinned by the constraints file.
 build_venv_wheel() {
-    local uv py wheel constraints="" cons_args=() spec here
+    local uv py wheel constraints="" spec here
     run mkdir -p "$NODE_DIR"
     fetch "$FROM_WHEEL" "$WHEEL_SHA256"
     wheel="$FETCHED"
@@ -674,13 +683,12 @@ build_venv_wheel() {
         warn "no constraints file: the wheel's dependencies are not pinned (pass --constraints)"
     fi
     spec="$wheel$(extras_suffix)"
-    # The installs run from the constraints file's directory and name it ./<file>: uv
-    # splits a --constraint path at its spaces (~/Library/Application Support/...).
+    # The installs run from the constraints file's directory and name it ./<file>: the
+    # path (~/Library/Application Support/...) never reaches a command line split at spaces.
     here="$NODE_DIR"
-    local install_args=("$spec") req="" wheel_hash
+    local install_args=("$spec") req="" wheel_hash pip_pins=""
     if [ -n "$constraints" ]; then
         here="$(dirname "$constraints")"
-        cons_args=(--constraint "./$(basename "$constraints")")
         # Hash-checking mode: every dependency must match a --hash of the constraints file
         # (build-release.sh exports them from uv.lock), and the wheel its own SHA-256,
         # through a one-line requirements file next to the constraints.
@@ -697,15 +705,40 @@ build_venv_wheel() {
         req="$here/.maktaba-node-requirements.txt"
         printf 'maktaba-pipeline%s @ %s --hash=sha256:%s\n' "$(extras_suffix)" "$(file_url "$wheel")" "$wheel_hash" \
             | write_file "$req" 0644
-        install_args=(--require-hashes ${cons_args[@]+"${cons_args[@]}"} -r "./$(basename "$req")")
+        # The constraints name PyTorch's index beside PyPI (torch's CUDA build for
+        # Windows), which also serves packages PyPI has: uv looks for each pin on every
+        # index (by itself it stops at the first that has the package) and takes the file
+        # it finds, refusing it when it is not one of the pin's hashes.
+        install_args=(--require-hashes --index-strategy unsafe-best-match
+            --constraint "./$(basename "$constraints")" -r "./$(basename "$req")")
+        # The stt and search extras bring torch, whose pins PyTorch's index also matches
+        # with other files (Linux's torch 2.14.1+cu130 for "torch==2.14.1", its triton
+        # 3.8.0): pip installs those, taking for each pin the file its hashes name,
+        # whichever index has it (every extra's pins come along).
+        case ",$EXTRAS," in *,stt,*|*,search,*) pip_pins=1 ;; esac
     fi
-    if uv="$(find_uv)"; then
-        info "Installing $(basename "$wheel") with uv ($VENV)"
-        local uv_env=()
-        if [ "$SCOPE" = system ]; then
-            # a uv-managed Python must sit where the service account can read it
-            uv_env+=("UV_PYTHON_INSTALL_DIR=$NODE_DIR/python")
+    uv="$(find_uv || true)"
+    local uv_env=()
+    if [ "$SCOPE" = system ]; then
+        # a uv-managed Python must sit where the service account can read it
+        uv_env+=("UV_PYTHON_INSTALL_DIR=$NODE_DIR/python")
+    fi
+    if [ -n "$pip_pins" ]; then
+        if [ ! -x "$PY" ]; then
+            if [ -n "$uv" ]; then
+                run env ${uv_env[@]+"${uv_env[@]}"} "$uv" venv --python "$PYTHON_VERSION" "$VENV"
+            elif py="$(find_python)"; then
+                run "$py" -m venv "$VENV"
+            else
+                die "neither uv nor Python 3.12+ found. Install uv (https://docs.astral.sh/uv/) and run this again."
+            fi
         fi
+        info "Installing $(basename "$wheel") and its pinned dependencies with pip ($VENV)"
+        # a venv uv made has no pip: its Python's own (no download, no unchecked upgrade)
+        run "$PY" -m ensurepip --default-pip
+        install_pins_with_pip "$here" "$constraints" "$req"
+    elif [ -n "$uv" ]; then
+        info "Installing $(basename "$wheel") with uv ($VENV)"
         if [ ! -x "$PY" ]; then
             run env ${uv_env[@]+"${uv_env[@]}"} "$uv" venv --python "$PYTHON_VERSION" "$VENV"
         fi
@@ -716,11 +749,7 @@ build_venv_wheel() {
         warn "uv not found: using $py and pip."
         if [ ! -x "$PY" ]; then run "$py" -m venv "$VENV"; fi
         if [ -n "$req" ]; then
-            # A venv's own pip (no unchecked upgrade from PyPI) does not take hashes from a
-            # constraints file: install its pins as requirements, each checked, then the
-            # wheel, checked, without resolving again (every extra's pins come along).
-            in_dir "$here" "$PY" -m pip install --quiet --require-hashes --no-deps -r "./$(basename "$constraints")"
-            in_dir "$here" "$PY" -m pip install --quiet --require-hashes --no-deps --force-reinstall -r "./$(basename "$req")"
+            install_pins_with_pip "$here" "$constraints" "$req"
         else
             run "$PY" -m pip install --quiet --upgrade pip
             in_dir "$here" "$PY" -m pip install --quiet "$spec"

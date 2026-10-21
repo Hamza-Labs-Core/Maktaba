@@ -236,6 +236,20 @@ function Find-Uv {
     return $null
 }
 
+# A venv's own pip (no unchecked upgrade from PyPI) does not take hashes from a constraints
+# file: install its pins as requirements, each checked, then the wheel, checked (ReqFile),
+# without resolving again (every extra's pins come along). From InstallDir, naming the files
+# .\<file>.
+function Install-NodePinsWithPip {
+    param(
+        [Parameter(Mandatory = $true)][string]$ConsFile,
+        [Parameter(Mandatory = $true)][string]$ReqFile,
+        [Parameter(Mandatory = $true)][string]$InstallDir
+    )
+    Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList @('-m', 'pip', 'install', '--quiet', '--require-hashes', '--no-deps', '-r', ('.\' + (Split-Path -Leaf $ConsFile))) -WorkingDirectory $InstallDir) 'pip install (dependencies)'
+    Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList @('-m', 'pip', 'install', '--quiet', '--require-hashes', '--no-deps', '--force-reinstall', '-r', ('.\' + (Split-Path -Leaf $ReqFile))) -WorkingDirectory $InstallDir) 'pip install (the wheel)'
+}
+
 function Find-Python312 {
     $probe = 'import sys; print(sys.executable) if sys.version_info >= (3, 12) else sys.exit(1)'
     $launcher = Get-Command py.exe -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -270,9 +284,8 @@ if ($Origin.From -ne 'source') {
     if (-not $wheelPin) { $wheelPin = $got.Sha256 }
     $consFile = ''
     $consPin = ''
-    $consArgs = @()
-    # The installs run from the constraints file's folder and name it .\<file>: uv splits
-    # a --constraint path at its spaces (C:\Users\Jane Doe\...).
+    # The installs run from the constraints file's folder and name it .\<file>: the path
+    # (C:\Users\Jane Doe\...) never reaches a command line split at spaces.
     $installDir = $script:NodeDir
     if ($Origin.Constraints) {
         $got = Get-NodePipelineFile -Spec $Origin.Constraints -Sha256 $Origin.ConstraintsSha256 -DownloadDir $downloads
@@ -280,7 +293,6 @@ if ($Origin.From -ne 'source') {
         $consPin = $Origin.ConstraintsSha256
         if (-not $consPin) { $consPin = $got.Sha256 }
         $installDir = Split-Path -Parent $consFile
-        $consArgs = @('--constraint', ('.\' + (Split-Path -Leaf $consFile)))
     } else {
         Write-Warning 'no constraints file: the wheel''s dependencies are not pinned (pass -Constraints)'
     }
@@ -288,13 +300,39 @@ if ($Origin.From -ne 'source') {
     if ($extrasList.Count -gt 0) { $spec = '{0}[{1}]' -f $wheelFile, ($extrasList -join ',') }
     $installArgs = @($spec)
     $reqFile = ''
+    $pipPins = $false
     if ($consFile) {
         # Hash-checking mode: every dependency must match a --hash of the constraints file,
         # the wheel its own SHA-256 (a one-line requirements file next to the constraints).
         $reqFile = New-NodeHashedRequirements -WheelFile $wheelFile -WheelSha256 $wheelPin -Extras $extrasList -ConstraintsFile $consFile
-        $installArgs = @('--require-hashes') + $consArgs + @('-r', ('.\' + (Split-Path -Leaf $reqFile)))
+        # The constraints name PyTorch's index beside PyPI (torch's CUDA build), which also
+        # serves packages PyPI has: uv looks for each pin on every index (by itself it stops
+        # at the first that has the package) and takes the file it finds, refusing it when
+        # it is not one of the pin's hashes.
+        $installArgs = @('--require-hashes', '--index-strategy', 'unsafe-best-match', '--constraint', ('.\' + (Split-Path -Leaf $consFile)), '-r', ('.\' + (Split-Path -Leaf $reqFile)))
+        # The stt and search extras bring torch, whose pins PyTorch's index also matches
+        # with other files on Linux (its torch 2.14.1+cu130 for "torch==2.14.1", its triton):
+        # pip installs those, as install-node.sh does, taking for each pin the file its
+        # hashes name, whichever index has it (every extra's pins come along).
+        $pipPins = ($extrasList -contains 'stt') -or ($extrasList -contains 'search')
     }
-    if ($uv) {
+    $basePython = $null
+    if (-not $uv) { $basePython = Find-Python312 }
+    if ($pipPins) {
+        if (-not (Test-Path -LiteralPath $script:NodePython -PathType Leaf)) {
+            if ($uv) {
+                Assert-ExitCode (Invoke-NativeCommand -FilePath $uv -ArgumentList @('venv', '--python', $Origin.Python, $script:NodeVenv)) 'uv venv'
+            } elseif ($basePython) {
+                Assert-ExitCode (Invoke-NativeCommand -FilePath $basePython -ArgumentList @('-m', 'venv', $script:NodeVenv)) 'python -m venv'
+            } else {
+                throw 'Neither uv nor Python 3.12+ was found. Install uv (https://docs.astral.sh/uv/) and run this again.'
+            }
+        }
+        Write-NodeStep "Installing $(Split-Path -Leaf $wheelFile) and its pinned dependencies with pip ($($script:NodeVenv))"
+        # a venv uv made has no pip: its Python's own (no download, no unchecked upgrade)
+        Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList @('-m', 'ensurepip', '--default-pip')) 'ensurepip'
+        Install-NodePinsWithPip -ConsFile $consFile -ReqFile $reqFile -InstallDir $installDir
+    } elseif ($uv) {
         Write-NodeStep "Installing $(Split-Path -Leaf $wheelFile) with uv ($($script:NodeVenv))"
         if (-not (Test-Path -LiteralPath $script:NodePython -PathType Leaf)) {
             Assert-ExitCode (Invoke-NativeCommand -FilePath $uv -ArgumentList @('venv', '--python', $Origin.Python, $script:NodeVenv)) 'uv venv'
@@ -303,7 +341,6 @@ if ($Origin.From -ne 'source') {
         $uvArgs = @('pip', 'install', '--python', $script:NodePython, '--reinstall-package', 'maktaba-pipeline') + $installArgs
         Assert-ExitCode (Invoke-NativeCommand -FilePath $uv -ArgumentList $uvArgs -WorkingDirectory $installDir) 'uv pip install'
     } else {
-        $basePython = Find-Python312
         if (-not $basePython) {
             throw 'Neither uv nor Python 3.12+ was found. Install uv (https://docs.astral.sh/uv/) and run this again.'
         }
@@ -312,11 +349,7 @@ if ($Origin.From -ne 'source') {
             Assert-ExitCode (Invoke-NativeCommand -FilePath $basePython -ArgumentList @('-m', 'venv', $script:NodeVenv)) 'python -m venv'
         }
         if ($reqFile) {
-            # A venv's own pip (no unchecked upgrade from PyPI) does not take hashes from a
-            # constraints file: install its pins as requirements, each checked, then the
-            # wheel, checked, without resolving again (every extra's pins come along).
-            Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList @('-m', 'pip', 'install', '--quiet', '--require-hashes', '--no-deps', '-r', ('.\' + (Split-Path -Leaf $consFile))) -WorkingDirectory $installDir) 'pip install (dependencies)'
-            Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList @('-m', 'pip', 'install', '--quiet', '--require-hashes', '--no-deps', '--force-reinstall', '-r', ('.\' + (Split-Path -Leaf $reqFile))) -WorkingDirectory $installDir) 'pip install (the wheel)'
+            Install-NodePinsWithPip -ConsFile $consFile -ReqFile $reqFile -InstallDir $installDir
         } else {
             Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList @('-m', 'pip', 'install', '--quiet', '--upgrade', 'pip')) 'pip upgrade'
             Assert-ExitCode (Invoke-NativeCommand -FilePath $script:NodePython -ArgumentList (@('-m', 'pip', 'install', '--quiet') + @($spec)) -WorkingDirectory $installDir) 'pip install'
