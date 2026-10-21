@@ -73,8 +73,8 @@ func TestStateDir(t *testing.T) {
 	}
 }
 
-// layout builds an old XDG install and the new Mac dirs under one temp dir.
-func layout(t *testing.T) (old, cur Dirs) {
+// macLayout builds an old XDG install and the new Mac dirs under one temp dir.
+func macLayout(t *testing.T) (old, cur Dirs) {
 	t.Helper()
 	base := t.TempDir()
 	old = xdgDirs(noEnv, base)
@@ -103,7 +103,7 @@ func readAt(t *testing.T, path string) string {
 
 func TestMigrateMovesDefaultInstall(t *testing.T) {
 	t.Parallel()
-	old, cur := layout(t)
+	old, cur := macLayout(t)
 	// literal strings: a Windows temp path has backslashes
 	toml := "# my comment\n[server]\ndata_dir = '" + old.Data + "'\n[database]\nurl = 'sqlite://" + old.Data + "/maktaba.db'\n"
 	writeAt(t, filepath.Join(old.Config, "server.toml"), toml)
@@ -146,7 +146,7 @@ func TestMigrateMovesDefaultInstall(t *testing.T) {
 
 func TestMigrateKeepsChosenDataDir(t *testing.T) {
 	t.Parallel()
-	old, cur := layout(t)
+	old, cur := macLayout(t)
 	chosen := filepath.Join(t.TempDir(), "media-state")
 	toml := "[server]\ndata_dir = '" + chosen + "'\n"
 	writeAt(t, filepath.Join(old.Config, "server.toml"), toml)
@@ -164,7 +164,7 @@ func TestMigrateKeepsChosenDataDir(t *testing.T) {
 
 func TestMigrateLeavesNewInstallAlone(t *testing.T) {
 	t.Parallel()
-	old, cur := layout(t)
+	old, cur := macLayout(t)
 	writeAt(t, filepath.Join(old.Config, "server.toml"), "[server]\n")
 	writeAt(t, filepath.Join(cur.Config, "server.toml"), "[server]\nlisten = \"x\"\n")
 	if from, err := migrateDirs(osMover, old, cur); err != nil || from != "" {
@@ -177,7 +177,7 @@ func TestMigrateLeavesNewInstallAlone(t *testing.T) {
 
 func TestMigrateFinishesAfterAPartialRun(t *testing.T) {
 	t.Parallel()
-	old, cur := layout(t)
+	old, cur := macLayout(t)
 	toml := "[server]\ndata_dir = '" + old.Data + "'\n"
 	writeAt(t, filepath.Join(old.Config, "server.toml"), toml)
 	// a run that moved the data and stopped before server.toml
@@ -196,7 +196,7 @@ func TestMigrateFinishesAfterAPartialRun(t *testing.T) {
 
 func TestMigrateIntoEmptyDataDir(t *testing.T) {
 	t.Parallel()
-	old, cur := layout(t)
+	old, cur := macLayout(t)
 	writeAt(t, filepath.Join(old.Config, "server.toml"), "[server]\n")
 	writeAt(t, filepath.Join(old.Data, "maktaba.db"), "DB")
 	if err := os.MkdirAll(cur.Data, 0o700); err != nil {
@@ -212,7 +212,7 @@ func TestMigrateIntoEmptyDataDir(t *testing.T) {
 
 func TestMigrateRefusesToOverwriteData(t *testing.T) {
 	t.Parallel()
-	old, cur := layout(t)
+	old, cur := macLayout(t)
 	writeAt(t, filepath.Join(old.Config, "server.toml"), "[server]\n")
 	writeAt(t, filepath.Join(old.Data, "maktaba.db"), "OLD")
 	writeAt(t, filepath.Join(cur.Data, "maktaba.db"), "NEW")

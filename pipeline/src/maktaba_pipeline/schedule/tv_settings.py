@@ -405,6 +405,13 @@ class PlexLiveConfig:
     #: a guide reload caused only by the schedule growing waits until this long after the
     #: last one (a channel change or "Refresh Plex now" reloads at once)
     guide_refresh_min_minutes: int = 60
+    #: how often the reconciler checks that Plex still holds Maktaba's channel map (another
+    #: program, dizqueTV's own refresh, may replace it); 0: only when the channels change
+    drift_check_minutes: int = 15
+    #: the "turn off dizqueTV's channel mapping" warning after this many restores in a row
+    drift_warn_repeats: int = 3
+    #: a restore more than this long after the previous one starts the count again
+    drift_forget_hours: int = 24
     #: the tuner address Plex should use (http://host:port of the streaming service);
     #: empty: MAKTABA_PUBLIC_BASE_URL, else what /api/tv/info reported
     tuner_url: str = ""
@@ -1063,6 +1070,28 @@ register(
             "Guide reload at most every (min)",
             "A reload caused only by the schedule growing waits this long after the last "
             'one. A channel change or "Refresh Plex now" reloads at once.',
+            minimum=1,
+        ),
+        "drift_check_minutes": Help(
+            PL,
+            "Check Plex's channel list every (min)",
+            "Another program can replace the channels Plex shows for Maktaba's tuner: "
+            "dizqueTV's own Plex refresh writes its channel list onto every tuner. Maktaba "
+            "checks this often and, when Refresh the channels in Plex is on, puts its "
+            "channels back. 0: only checked when Maktaba's channels change.",
+            minimum=0,
+        ),
+        "drift_warn_repeats": Help(
+            PL,
+            "Warn after this many restores in a row",
+            "When Maktaba had to put its channels back this many times, the Plex panel "
+            "advises turning off channel mapping in dizqueTV's Plex settings.",
+            minimum=1,
+        ),
+        "drift_forget_hours": Help(
+            PL,
+            "Restores count as in a row within (hours)",
+            "A restore more than this long after the previous one starts the count again.",
             minimum=1,
         ),
         "tuner_url": Help(

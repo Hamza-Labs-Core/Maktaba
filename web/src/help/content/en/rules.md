@@ -141,7 +141,7 @@ Decides the short, clean on-air titles of the guide, the channel strip and the d
 
 ### Plex Live TV {#plexlive}
 
-Decides how Maktaba's channels appear in Plex. **Add Maktaba to Plex by itself** is off: then only the **Add Maktaba to Plex** button does it. **Refresh the guide in Plex** and **Refresh the channels in Plex** (both on) keep Plex up to date. Set **Tuner address for Plex** when Plex cannot reach Maktaba at its public address. See [Plex](/help/plex).
+Decides how Maktaba's channels appear in Plex. **Add Maktaba to Plex by itself** is off: then only the **Add Maktaba to Plex** button does it. **Refresh the guide in Plex** and **Refresh the channels in Plex** (both on) keep Plex up to date. Set **Tuner address for Plex** when Plex cannot reach Maktaba at its public address. **Check Plex's channel list every (min)** (15; 0: off) checks that another program (dizqueTV's Plex refresh) has not replaced Maktaba's channels in Plex and puts them back; after **Warn after this many restores in a row** (3) restores, each within **Restores count as in a row within (hours)** (24) of the previous, the Plex card advises turning off dizqueTV's channel mapping (see [Plex](/help/plex#channel-map-drift)). See [Plex](/help/plex).
 
 ### Broken files {#repair}
 

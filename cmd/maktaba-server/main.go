@@ -37,9 +37,12 @@ func newRootCmd() *cobra.Command {
 		// Epic 36 story 36.2 / Epic 38 story 38.1: an install made before this
 		// platform's paths (~/Library/Application Support/Maktaba on a Mac,
 		// %LOCALAPPDATA%\Maktaba on Windows) moves into them before any command
-		// reads it; a move that stopped half way is finished here.
+		// reads it; a move that stopped half way is finished here. Never inside the
+		// desktop app's payload (config.InAppPayload): an older install comes into
+		// the app only through its move, which keeps the old one for going back.
 		PersistentPreRunE: func(*cobra.Command, []string) error {
-			lines, err := config.MigrateDirs()
+			exe, _ := os.Executable()
+			lines, err := config.MigrateDirs(exe)
 			for _, l := range lines {
 				fmt.Fprintln(os.Stderr, l)
 			}
