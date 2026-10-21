@@ -38,6 +38,7 @@ TVG = "Guide"
 TVO = "Maktaba TV output"
 TVN = "Hardware encoder"
 TVC = "Channels on air"
+TVF = "Unreadable files"
 TCL = "Streaming machines"
 TCP = "Placement"
 TRV = "Remote viewers"
@@ -147,6 +148,17 @@ class MaktabaTvOutputConfig:
     nvenc_max_sessions: int = 6
     #: VideoToolbox sessions at once (0: no cap)
     videotoolbox_max_sessions: int = 0
+    #: what airs instead of a programme whose file cannot be read (missing at its mapped
+    #: path, refused, too slow): ``filler``, the channel's filler nearest it, until the
+    #: programme's end; ``slate``, the loading card
+    unreadable_file_fill: str = "filler"
+    #: seconds a file may take to answer (found, probed) before it counts as unreadable
+    source_timeout_seconds: int = 10
+    #: seconds a programme's output may stop (a share hanging mid-read) before it is
+    #: ended and filler takes the rest of its time; 0: never
+    source_stall_seconds: int = 30
+    #: an unreadable file is probed again; a failed probe is what ``repair_broken`` fixes
+    report_unreadable_files: bool = True
 
 
 @dataclass(frozen=True)
@@ -588,6 +600,38 @@ register(
             "no limit.",
             minimum=0,
             maximum=64,
+        ),
+        "unreadable_file_fill": Help(
+            TVF,
+            "Instead of a file that cannot be read",
+            "A programme whose file is missing, refused or too slow to answer. filler: the "
+            "channel's filler scheduled nearest it airs in turn until the programme's end, so "
+            "the next programme still starts on time. slate: the loading picture for that "
+            "time.",
+            choices=("filler", "slate"),
+        ),
+        "source_timeout_seconds": Help(
+            TVF,
+            "Wait for a file (seconds)",
+            "How long a file on the share may take to be found and read before it counts as "
+            "unreadable. A slow share then holds up only this channel, and only this long.",
+            minimum=1,
+            maximum=120,
+        ),
+        "source_stall_seconds": Help(
+            TVF,
+            "Stalled programme (seconds)",
+            "A programme whose picture stops this long (a share that hangs mid-read) is ended "
+            "and the rest of its time is filled as above; its encoder session is freed for the "
+            "other channels. 0: never.",
+            minimum=0,
+            maximum=600,
+        ),
+        "report_unreadable_files": Help(
+            TVF,
+            "Report unreadable files",
+            "The file is read again by the Length (probe) step. A file it cannot read either "
+            "is listed as broken, which Repair downloads again when it is on.",
         ),
     },
 )

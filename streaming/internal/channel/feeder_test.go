@@ -46,6 +46,7 @@ type fakePlayer struct {
 	cancel    context.CancelFunc
 	fail      func(Segment) bool
 	failAfter time.Duration
+	failErr   error // what a failing segment returns (nil: "boom")
 	// events records "start:<seg>" / "done:<seg>" in order.
 	events []string
 	// holdUntilNext makes Wait return only once the following segment has
@@ -91,6 +92,9 @@ func (b *fakePlayback) Wait() (bool, error) {
 	defer func() { p.events = append(p.events, "done:"+segName(seg)) }()
 	if p.fail != nil && p.fail(seg) {
 		p.clk.set(start.Add(p.failAfter))
+		if p.failErr != nil {
+			return false, p.failErr
+		}
 		return false, errors.New("boom")
 	}
 	p.clk.set(seg.End)

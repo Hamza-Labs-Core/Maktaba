@@ -3563,6 +3563,46 @@
      "default": 0,
      "minimum": 0,
      "maximum": 64
+    },
+    {
+     "name": "unreadable_file_fill",
+     "kind": "str",
+     "group": "Unreadable files",
+     "label": "Instead of a file that cannot be read",
+     "help": "A programme whose file is missing, refused or too slow to answer. filler: the channel's filler scheduled nearest it airs in turn until the programme's end, so the next programme still starts on time. slate: the loading picture for that time.",
+     "default": "filler",
+     "choices": [
+      "filler",
+      "slate"
+     ]
+    },
+    {
+     "name": "source_timeout_seconds",
+     "kind": "int",
+     "group": "Unreadable files",
+     "label": "Wait for a file (seconds)",
+     "help": "How long a file on the share may take to be found and read before it counts as unreadable. A slow share then holds up only this channel, and only this long.",
+     "default": 10,
+     "minimum": 1,
+     "maximum": 120
+    },
+    {
+     "name": "source_stall_seconds",
+     "kind": "int",
+     "group": "Unreadable files",
+     "label": "Stalled programme (seconds)",
+     "help": "A programme whose picture stops this long (a share that hangs mid-read) is ended and the rest of its time is filled as above; its encoder session is freed for the other channels. 0: never.",
+     "default": 30,
+     "minimum": 0,
+     "maximum": 600
+    },
+    {
+     "name": "report_unreadable_files",
+     "kind": "bool",
+     "group": "Unreadable files",
+     "label": "Report unreadable files",
+     "help": "The file is read again by the Length (probe) step. A file it cannot read either is listed as broken, which Repair downloads again when it is on.",
+     "default": true
     }
    ]
   },
