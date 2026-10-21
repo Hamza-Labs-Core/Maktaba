@@ -49,7 +49,7 @@ maktaba-server serve
 |--------------|----------------------------------------------------------------|
 | `serve`      | Start all roles (or one with `--role api\|streaming\|pipeline\|web`) |
 | `setup`      | The desktop app's setup steps in the terminal (check, admin, libraries, Plex, finish) plus where the data goes and the database → writes `server.toml`, creates and migrates the database, seeds the admin |
-| `update`     | Self-update from GitHub Releases, verified in process (Sigstore bundle, exact release-workflow identity, `release.json`, no downgrade); `--check`, `--version`, `--rollback` |
+| `update`     | Self-update from GitHub Releases, verified in process (Sigstore bundle, exact release-workflow identity, `release.json`, no downgrade); `--check`, `--version`, `--rollback`. In the Linux app's runtime copy with owner `headless`: installs the release's payload tarball as a new runtime and switches the service to it (an app-owned runtime is updated by the app) |
 | `uninstall`  | Guided teardown (`--purge` for non-interactive full removal)   |
 | `models`     | Whisper model management (`list`, `download <name>`, `active`); `models llm [model…] [--check]` downloads the language model(s) of the LLM stages into the model server (default `[llm] models`, `qwen2.5:7b`), showing the disk space first; resumable |
 | `migrate`    | Database migrations (delegates to `maktaba-api`)               |
@@ -58,6 +58,7 @@ maktaba-server serve
 | `migrate-from-dev` | Move a Mac running `tools/dev/stack.sh` + Docker Postgres into Maktaba.app (`--dry-run`, `--verify`, `--finalize`; [runbook](../../specs/epics/36-mac-app/migrate-from-dev.md)) |
 | `setup --json --step <name>` | The desktop app's setup screens, one step per run: `status`, `check`, `admin`, `libraries`, `models`, `plex`, `venv`, `llm` (the language model, Epic 36 story 36.11), `finish` ([contract](../../specs/epics/36-mac-app/contract-setup.md)) |
 | `service`    | The Linux app's systemd user unit: `install` (`--start`, `--replace`), `uninstall`, `start`, `stop`, `restart`, `linger [--off]`, `status`; `--json` for the app ([contract](../../specs/epics/39-linux-app/contract-runtime.md#5-maktaba-server-service--linux-a-systemd-user-unit)) |
+| `runtime`    | The Linux app's runtime copy of the payload: `install` (`--from`, `--owner`, `--activate`; the first one becomes `current`), `activate <dir\|previous>`, `status`, `prune`; a version older than the newest this machine ran needs `--allow-downgrade`; `--json` for the app ([contract](../../specs/epics/39-linux-app/contract-runtime.md#3-maktaba-server-runtime-)) |
 
 **The language model server (`[llm]`).** Maktaba.app bundles Ollama
 (`Contents/Resources/server/ollama/`). A `serve` of the whole machine runs it as the

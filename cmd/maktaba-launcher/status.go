@@ -128,7 +128,7 @@ type BundleStatus struct {
 	LauncherVersion string `json:"launcher_version"`
 }
 
-func printBundleStatus(w io.Writer, bundle, root string, asJSON bool) int {
+func printBundleStatus(w io.Writer, bundle, runtimeRoot, root string, asJSON bool) int {
 	s := BundleStatus{
 		AppBundle:       bundle,
 		Server:          filepath.Join(bundle, "bin", layout.Exe("maktaba-server")),
@@ -137,6 +137,9 @@ func printBundleStatus(w io.Writer, bundle, root string, asJSON bool) int {
 		StopEvent:       stopEventName,
 		Updates:         "with the app",
 		LauncherVersion: Version,
+	}
+	if runtimeRoot != "" && runtimeOwner(runtimeRoot) == runtimeOwnerHeadless {
+		s.Updates = "by this machine (maktaba-server update)"
 	}
 	if asJSON {
 		b, _ := json.MarshalIndent(s, "", "  ")

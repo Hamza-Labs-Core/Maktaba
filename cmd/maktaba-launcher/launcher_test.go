@@ -67,8 +67,8 @@ func fakeServerMain() {
 	if b := os.Getenv(EnvAppBundle); b != "" { // app-bundle mode: the launcher runs us in its state root
 		rel = filepath.Join(b, "bin")
 		root, _ = os.Getwd()
-		appendLine(filepath.Join(root, "env"), fmt.Sprintf("update_disable=%s launcher=%s release_dir=%s",
-			os.Getenv(envUpdateDisable), os.Getenv(layout.EnvLauncher), os.Getenv(layout.EnvReleaseDir)))
+		appendLine(filepath.Join(root, "env"), fmt.Sprintf("update_disable=%s runtime_owner=%s launcher=%s release_dir=%s",
+			os.Getenv(envUpdateDisable), os.Getenv(envRuntimeOwner), os.Getenv(layout.EnvLauncher), os.Getenv(layout.EnvReleaseDir)))
 	}
 	b, _ := os.ReadFile(filepath.Join(rel, "behavior"))
 	acts := strings.Split(strings.TrimSpace(string(b)), ",")
