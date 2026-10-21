@@ -366,7 +366,7 @@ func probeSTT(python string) bool {
 	hideWindow(cmd)
 	err := cmd.Run()
 	var exit *exec.ExitError
-	ok := !(errors.As(err, &exit) && exit.ExitCode() == 3)
+	ok := !errors.As(err, &exit) || exit.ExitCode() != 3
 	if sttProbes.seen == nil {
 		sttProbes.seen = map[string]bool{}
 	}
