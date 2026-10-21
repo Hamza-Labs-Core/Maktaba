@@ -21,7 +21,7 @@ jobs:
   payload:
     name: Linux app (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    timeout-minutes: 110 # the build, the checks, then up to 45 minutes of end to end
     strategy:
       fail-fast: false
       matrix:
@@ -113,13 +113,14 @@ jobs:
             echo "::endgroup::"
           done
 
-      # Epic 39 story 39.11: the server as the app installs it (runtime copy, venv, the
-      # systemd user unit) runs every role on 127.0.0.1, and comes back from a restart,
-      # a SIGKILL of the launcher and a pause. Linger starts the runner's user manager.
+      # Epic 39 story 39.11: `setup --answers` as `install.sh --app` runs it (runtime copy,
+      # venv, models, finish, the systemd user unit), every role on 127.0.0.1, back from a
+      # restart, a SIGKILL of the launcher and a pause, then an update (a dump before the
+      # migrations, the venv kept). e2e.sh turns linger on for the runner's user manager and
+      # off again, in a scratch XDG home it removes.
       - name: End to end on systemd
-        run: |
-          sudo loginctl enable-linger "$USER"
-          tools/release/linux-app/e2e.sh --payload build/linux-app/server
+        timeout-minutes: 45
+        run: tools/release/linux-app/e2e.sh --payload build/linux-app/server
 
       - name: Sizes
         if: always()
