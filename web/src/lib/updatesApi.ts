@@ -94,19 +94,66 @@ export function validVersion(s: string): boolean {
   return VERSION_RE.test(s.trim());
 }
 
-/** Numeric comparison of the version cores (a prerelease ranks below its release). */
-export function compareVersions(a: string, b: string): number {
-  const pa = VERSION_RE.exec(a.trim());
-  const pb = VERSION_RE.exec(b.trim());
-  if (!pa || !pb) return 0;
-  for (let i = 1; i <= 3; i++) {
-    const d = Number(pa[i]) - Number(pb[i]);
-    if (d !== 0) return d > 0 ? 1 : -1;
+/** A `git describe` build once normalized: a tag, the commits after it, the commit. */
+const DESCRIBE_RE = /^(\d+\.\d+\.\d+(?:-[0-9a-z.]+)?)-(\d+)-g[0-9a-f]{4,40}$/;
+
+/** A version's release tag (no "v", no build metadata), its commits after the tag and
+ * whether its tree was dirty: 0.2.0-12-gabc1234 is 12 commits after 0.2.0 (the server's
+ * releaseverify.splitDescribe). */
+function splitDescribe(v: string): { tag: string; commits: number; dirty: boolean } {
+  let s = v.trim().toLowerCase().replace(/^v/, "");
+  const plus = s.indexOf("+");
+  if (plus >= 0) s = s.slice(0, plus);
+  let dirty = false;
+  if (s.endsWith("-dirty")) {
+    dirty = true;
+    s = s.slice(0, -"-dirty".length);
   }
-  const preA = a.includes("-");
-  const preB = b.includes("-");
-  if (preA === preB) return 0;
-  return preA ? -1 : 1;
+  const m = DESCRIBE_RE.exec(s);
+  return m ? { tag: m[1] ?? s, commits: Number(m[2]), dirty } : { tag: s, commits: 0, dirty };
+}
+
+const sign = (n: number): number => (n > 0 ? 1 : n < 0 ? -1 : 0);
+
+/** Two release tags: the numeric core, then a prerelease below its release, prereleases by
+ * their dot-separated identifiers (numeric ones numerically, below words). */
+function compareReleases(a: string, b: string): number {
+  const [ac = "", ...ap] = a.split("-");
+  const [bc = "", ...bp] = b.split("-");
+  const an = ac.split(".").map(Number);
+  const bn = bc.split(".").map(Number);
+  for (let i = 0; i < Math.max(an.length, bn.length); i++) {
+    const d = (an[i] ?? 0) - (bn[i] ?? 0);
+    if (d !== 0) return sign(d);
+  }
+  const apre = ap.join("-");
+  const bpre = bp.join("-");
+  if (apre === "" || bpre === "") return apre === bpre ? 0 : apre === "" ? 1 : -1;
+  const as = apre.split(".");
+  const bs = bpre.split(".");
+  for (let i = 0; i < Math.min(as.length, bs.length); i++) {
+    const x = as[i] ?? "";
+    const y = bs[i] ?? "";
+    const xn = /^\d+$/.test(x);
+    const yn = /^\d+$/.test(y);
+    if (xn && yn && Number(x) !== Number(y)) return sign(Number(x) - Number(y));
+    if (xn !== yn) return xn ? -1 : 1;
+    if (!xn && x !== y) return x < y ? -1 : 1;
+  }
+  return sign(as.length - bs.length);
+}
+
+/** The server's order of versions (releaseverify.CompareVersions): a prerelease ranks below
+ * its release, and a `git describe` build after the tag it was built from (by its commits,
+ * then dirty after clean). */
+export function compareVersions(a: string, b: string): number {
+  if (!VERSION_RE.test(a.trim()) || !VERSION_RE.test(b.trim())) return 0;
+  const da = splitDescribe(a);
+  const db = splitDescribe(b);
+  const c = compareReleases(da.tag, db.tag);
+  if (c !== 0) return c;
+  if (da.commits !== db.commits) return sign(da.commits - db.commits);
+  return da.dirty === db.dirty ? 0 : da.dirty ? 1 : -1;
 }
 
 /** Why a pin is refused ("" = fine): not a version, or below what is installed. */
