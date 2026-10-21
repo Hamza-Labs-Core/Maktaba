@@ -70,13 +70,7 @@ Bumping a piece: change `pins.env` (version, URL, SHA-256 from the publisher), t
 `make linux-app-payload`. CI's Linux app gate builds the payload on both architectures and runs
 `check.sh` on the runner and in `ubuntu:22.04`, `debian:12-slim` and `fedora:40`.
 
-**Downloads.** Each download comes from its own host, else from this repository's release
-`third-party-mirror` (`MIRROR_URL` in `pins.env`), is tried again after 15, 30, 60 and 120 s when
-neither gives it, and is kept only with its pinned SHA-256. The `third-party-mirror` workflow keeps
-that release to unmodified copies of exactly the pinned files, named by digest (`payload.sh
---pinned`), with `THIRD-PARTY-NOTICES.md` (each file's upstream download, licence and source,
-`payload.sh --notices`) and the GPL-3.0 text (`licenses/GPL-3.0.txt`) beside them; it runs when
-`pins.env` changes on main, fetching from main's cache or upstream, and removes what no pin names
-any more. The release is a prerelease, never the latest, with no version tag. CI keeps the
-downloads in a cache on main (`linux-app-downloads` in `ci.yml`), which pull requests restore:
-the cache of an earlier `pins.env` too, so a pin change downloads only the pieces it changed.
+**Downloads.** Each download is tried again after 15, 30, 60 and 120 s when it fails, and kept only
+with its pinned SHA-256. CI keeps them in a cache on main (`linux-app-downloads` in `ci.yml`),
+which pull requests restore: the cache of an earlier `pins.env` too, so a pin change downloads
+only the pieces it changed.
