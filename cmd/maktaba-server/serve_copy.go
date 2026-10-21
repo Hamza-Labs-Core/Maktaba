@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -25,25 +27,36 @@ type nodeCopy struct {
 
 // resolveNodeCopy resolves a full node's copy when serve runs the whole machine: its
 // address goes into the environment of the api and streaming roles (cfg.NodeCopy)
-// before they are built, and the copy's process is one of the supervised ones; its
-// manager starts with the supervisor (runNodeCopy). The programs are the Postgres this
-// machine already has for Maktaba (Maktaba.app's, [postgres] home,
-// MAKTABA_POSTGRES_HOME) when it is of the pinned major version, else the pinned build,
-// fetched once. Nil for a machine that is not a full node, or a platform with neither.
+// before they are built, and its database is one of the supervised processes; its
+// manager starts with the supervisor (runNodeCopy). The database is this machine's own
+// Postgres, where a home keeps its bundled one (so this machine can become the home).
+// The programs are the Postgres this machine already has for Maktaba (Maktaba.app's,
+// [postgres] home, MAKTABA_POSTGRES_HOME) when it is of the pinned major version, else
+// the pinned build, fetched once. Nil for a machine that is not a full node, or a
+// platform with neither.
 func resolveNodeCopy(cfg *config.Config, wholeMachine bool) (*nodeCopy, error) {
 	n := supervisor.NodeConfig()
 	// MAKTABA_NODE_COPY=off: none (the tests that run a node without Postgres programs)
 	if !wholeMachine || !supervisor.NodeMode(*cfg, n) || strings.EqualFold(os.Getenv("MAKTABA_NODE_COPY"), "off") {
 		return nil, nil
 	}
-	c := nodecopy.Copy{NodeID: n.NodeID, HomeDSN: n.DatabaseURL, Dir: filepath.Join(cfg.StateDir(), "copy"),
-		Keys: config.KeysDir(), Port: cfg.Postgres.CopyPort}
+	port := cfg.Postgres.CopyPort
+	if port <= 0 {
+		port = cfg.Postgres.Port
+	}
+	if port <= 0 {
+		port = pgbundle.DefaultPort
+	}
+	root := cfg.StateDir()
+	c := nodecopy.Copy{NodeID: n.NodeID, HomeDSN: n.DatabaseURL,
+		DB: pgbundle.Bundle{Data: filepath.Join(root, "postgres"), Keys: config.KeysDir(),
+			Backups: filepath.Join(root, "backups"), Port: port}}
 	nc := &nodeCopy{}
 	exe, _ := os.Executable()
 	if home := pgbundle.FindHome(*cfg, exe); home != "" && pgbin.Installed(home) && nodecopy.MajorOf(home) == pgbin.Major {
-		c.Bin, nc.programs = filepath.Join(home, "bin"), nodecopy.Installed(home)
+		c.DB.Home, nc.programs = home, nodecopy.Installed(home)
 	} else if pin, ok := pgbin.Here(); ok {
-		c.Bin = filepath.Join(copyPrograms(*cfg), pin.Dir(), "bin")
+		c.DB.Home = filepath.Join(copyPrograms(*cfg), pin.Dir())
 		nc.programs = nodecopy.ProgramsFor(copyPrograms(*cfg), pgbin.HTTPFetch(&http.Client{Timeout: 30 * time.Minute}), os.Stderr)
 	} else {
 		fmt.Fprintln(os.Stderr, "[serve] no Postgres build for this platform: this machine keeps no copy of its home's database")
@@ -58,15 +71,55 @@ func resolveNodeCopy(cfg *config.Config, wholeMachine bool) (*nodeCopy, error) {
 	return nc, nil
 }
 
-// copyPrograms is where the copy's Postgres programs are kept.
+// copyPrograms is where the copy's Postgres programs are kept when fetched.
 func copyPrograms(cfg config.Config) string {
 	return filepath.Join(cfg.StateDir(), "postgres-programs")
 }
 
-// runNodeCopy runs the copy's manager for as long as ctx: it fetches the programs,
-// copies the home's database and keeps the copy (see nodecopy).
-func runNodeCopy(ctx context.Context, cfg config.Config, nc *nodeCopy, sup *supervisor.Supervisor) {
-	m := &nodecopy.Manager{Copy: nc.copy, Major: pgbin.Major, Programs: nc.programs,
+// migrateWith runs this machine's migrations on a database as the api role's binary
+// does on a home (maktaba-api migrate up), in the api role's environment without node
+// mode (a node never migrates the home's database; its own is another matter).
+func migrateWith(api supervisor.Process) func(ctx context.Context, dsn string) error {
+	return func(ctx context.Context, dsn string) error {
+		if api.Cmd == nil {
+			return fmt.Errorf("no api program to migrate with")
+		}
+		cmd := exec.CommandContext(ctx, api.Cmd.Path, "migrate", "--dsn", dsn, "up")
+		for _, kv := range api.Cmd.Env {
+			k, _, _ := strings.Cut(kv, "=")
+			switch k {
+			case "MAKTABA_NODE_MODE", "DATABASE_URL", "MAKTABA_DATABASE_URL":
+				continue
+			}
+			cmd.Env = append(cmd.Env, kv)
+		}
+		cmd.Env = append(cmd.Env, "DATABASE_URL="+dsn)
+		var out bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &out, &out
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("%w: %s", err, strings.TrimSpace(tail(out.String(), 600)))
+		}
+		return nil
+	}
+}
+
+func tail(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[len(s)-n:]
+}
+
+// runNodeCopy runs the copy's manager for as long as ctx: it makes this machine's
+// database, subscribes it to the home's publication and keeps it (see nodecopy).
+func runNodeCopy(ctx context.Context, cfg config.Config, nc *nodeCopy, procs []supervisor.Process, sup *supervisor.Supervisor) {
+	c := nc.copy
+	for _, p := range procs {
+		if p.Role == supervisor.RoleAPI {
+			c.Migrate = migrateWith(p)
+		}
+	}
+	m := &nodecopy.Manager{Copy: c, Programs: nc.programs,
 		Want:     func(on bool) error { return sup.Want(supervisor.RoleCopy, "", on) },
 		Running:  func() bool { return sup.Running(supervisor.RoleCopy, "") },
 		StateDir: supervisor.NodeStateDir(cfg),

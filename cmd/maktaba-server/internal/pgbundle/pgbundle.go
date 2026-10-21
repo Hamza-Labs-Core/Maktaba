@@ -184,8 +184,13 @@ func (b Bundle) serverArgs(lan bool) []string {
 	if lan {
 		listen = "*"
 	}
+	// wal_level=logical: a home publishes its database to its machines' copies, and a
+	// machine's copy may become the home (specs/epics/37-node-replica). Room for every
+	// machine's slot and sender, the first copy's tables in parallel on each side.
 	args := []string{"-D", b.Data, "-p", strconv.Itoa(b.Port),
-		"-c", "listen_addresses=" + listen, "-c", "unix_socket_directories=" + sock}
+		"-c", "listen_addresses=" + listen, "-c", "unix_socket_directories=" + sock, "-c", "wal_level=logical",
+		"-c", "max_replication_slots=40", "-c", "max_wal_senders=40", "-c", "max_worker_processes=24",
+		"-c", "max_logical_replication_workers=12", "-c", "max_sync_workers_per_subscription=8"}
 	if b.TLS && b.TLSReady() {
 		args = append(args, "-c", "ssl=on", "-c", "ssl_cert_file="+b.serverCert(), "-c", "ssl_key_file="+b.serverKey())
 	}
@@ -204,6 +209,16 @@ func (b Bundle) URL() (string, error) {
 		return "", err
 	}
 	return "postgres://" + AppRole + ":" + pw + "@" + b.Addr() + "/" + AppDatabase + "?sslmode=disable", nil
+}
+
+// SuperURL is the superuser's database URL (the copy's subscription, its roles). It
+// needs Prepare to have run.
+func (b Bundle) SuperURL() (string, error) {
+	pw, err := readPassword(b.passwordFile(SuperUser))
+	if err != nil {
+		return "", err
+	}
+	return "postgres://" + SuperUser + ":" + pw + "@" + b.Addr() + "/" + AppDatabase + "?sslmode=disable", nil
 }
 
 func (b Bundle) passwordFile(role string) string {

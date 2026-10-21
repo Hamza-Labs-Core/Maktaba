@@ -84,7 +84,8 @@ type PostgresSection struct {
 	// passwords and every replicated row readable on the network.
 	TLS string `toml:"tls"`
 	// CopyPort is the loopback port of a full node's copy of its home's database
-	// (default 54330).
+	// (default: Port; a node runs no bundled home, and its copy is the database it
+	// would run as the home).
 	CopyPort int `toml:"copy_port"`
 }
 

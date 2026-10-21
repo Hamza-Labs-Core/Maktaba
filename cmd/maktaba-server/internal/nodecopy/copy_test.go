@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 )
 
 func testCopy(t *testing.T) Copy {
@@ -20,53 +22,58 @@ func testCopy(t *testing.T) Copy {
 	dir := t.TempDir()
 	return Copy{NodeID: "6F1C9A2E-0000-4000-8000-000000000001",
 		HomeDSN: "postgres://maktaba_node_x:pw@192.168.1.20:54329/maktaba?sslmode=require",
-		Dir:     filepath.Join(dir, "copy"), Keys: filepath.Join(dir, "keys")}
+		DB:      pgbundle.Bundle{Data: filepath.Join(dir, "postgres"), Keys: filepath.Join(dir, "keys"), Port: 54329}}
 }
 
 func TestNamesFollowTheHome(t *testing.T) {
 	c := testCopy(t)
-	if c.Role() != "maktaba_rep_6f1c9a2e000040008000000000000001" || c.Slot() != "maktaba_copy_6f1c9a2e000040008000000000000001" {
-		t.Fatalf("names: %s %s", c.Role(), c.Slot())
+	if c.Role() != "maktaba_rep_6f1c9a2e000040008000000000000001" || c.Slot() != "maktaba_copy_6f1c9a2e000040008000000000000001" ||
+		c.Publication() != c.Slot() {
+		t.Fatalf("names: %s %s %s", c.Role(), c.Slot(), c.Publication())
 	}
-	if c.Addr() != "127.0.0.1:54330" || c.Database() != "maktaba" {
-		t.Fatalf("address: %s %s", c.Addr(), c.Database())
+	if c.Addr() != "127.0.0.1:54329" {
+		t.Fatalf("address: %s", c.Addr())
 	}
 }
 
-// The password is chosen once and kept (the programs' environment has it before the
-// home is asked), readable by this account only.
-func TestThePasswordIsKept(t *testing.T) {
+// The passwords are chosen once and kept (the programs' environment has the copy's
+// address before the home is asked), readable by this account only; the programs read
+// the copy as the read-only role.
+func TestThePasswordsAreKept(t *testing.T) {
 	c := testCopy(t)
 	pw, err := c.Password()
 	if err != nil || len(pw) < 32 {
 		t.Fatalf("password %q %v", pw, err)
 	}
-	again, _ := c.Password()
-	if again != pw {
+	if again, _ := c.Password(); again != pw {
 		t.Fatal("a second password was made")
 	}
+	rp, _ := c.ReaderPassword()
+	if rp == pw || len(rp) < 32 {
+		t.Fatalf("the reader's password %q", rp)
+	}
 	dsn, _ := c.DSN()
-	if !strings.Contains(dsn, c.Role()+":"+pw+"@127.0.0.1:54330/maktaba") || !strings.Contains(dsn, "sslmode=disable") {
+	if !strings.Contains(dsn, Reader+":"+rp+"@127.0.0.1:54329/maktaba") || !strings.Contains(dsn, "sslmode=disable") {
 		t.Fatalf("dsn %s", dsn)
 	}
 	if runtime.GOOS != "windows" {
-		if info, err := os.Stat(filepath.Join(c.Keys, passwordFile)); err != nil || info.Mode().Perm() != 0o600 {
+		if info, err := os.Stat(filepath.Join(c.DB.Keys, passwordFile)); err != nil || info.Mode().Perm() != 0o600 {
 			t.Fatalf("password file: %v %v", info, err)
 		}
 	}
 }
 
-// The replication's connection: the passfile (never the password itself), the CA once
-// pinned, quoted for both libpq and postgresql.conf.
-func TestTheReplicationConnection(t *testing.T) {
+// The subscription's connection: the home's database, the passfile (never the password
+// itself), the CA once pinned, quoted for libpq.
+func TestTheSubscriptionsConnection(t *testing.T) {
 	c := testCopy(t)
-	c.Keys = filepath.Join(t.TempDir(), "it's keys")
-	conn, err := c.conninfo()
+	c.DB.Keys = filepath.Join(t.TempDir(), "it's keys")
+	conn, err := c.conninfo("")
 	if err != nil {
 		t.Fatal(err)
 	}
 	pw, _ := c.Password()
-	if strings.Contains(conn, pw) || !strings.Contains(conn, "host='192.168.1.20' port='54329'") ||
+	if strings.Contains(conn, pw) || !strings.Contains(conn, "host='192.168.1.20' port='54329' dbname='maktaba'") ||
 		!strings.Contains(conn, "sslmode='prefer'") || !strings.Contains(conn, `it\'s keys`) {
 		t.Fatalf("conninfo before a CA: %s", conn)
 	}
@@ -74,17 +81,18 @@ func TestTheReplicationConnection(t *testing.T) {
 	if err := c.writeAccess(Grant{CA: &ca}); err != nil {
 		t.Fatal(err)
 	}
-	conn, _ = c.conninfo()
-	if !strings.Contains(conn, "sslmode='verify-ca'") || !strings.Contains(conn, "sslrootcert=") {
+	conn, _ = c.conninfo("other")
+	if !strings.Contains(conn, "sslmode='verify-ca'") || !strings.Contains(conn, "sslrootcert=") ||
+		!strings.Contains(conn, "dbname='other'") {
 		t.Fatalf("conninfo with the CA: %s", conn)
 	}
 	// a later grant does not replace the pinned CA
 	other := "-----BEGIN CERTIFICATE-----\nBBB\n-----END CERTIFICATE-----\n"
 	_ = c.writeAccess(Grant{CA: &other})
-	if b, _ := os.ReadFile(filepath.Join(c.Keys, caFile)); string(b) != ca {
+	if b, _ := os.ReadFile(filepath.Join(c.DB.Keys, caFile)); string(b) != ca {
 		t.Fatal("the pinned CA was replaced")
 	}
-	pass, _ := os.ReadFile(filepath.Join(c.Keys, passFile))
+	pass, _ := os.ReadFile(filepath.Join(c.DB.Keys, passFile))
 	if string(pass) != "192.168.1.20:54329:*:"+c.Role()+":"+pw+"\n" {
 		t.Fatalf("passfile %q", pass)
 	}
@@ -144,24 +152,64 @@ func TestTheHomesSSLModeIsSettled(t *testing.T) {
 	}
 }
 
-func TestRebuildReason(t *testing.T) {
-	g := Grant{SystemID: "7300", Version: 160015}
-	mk := Marker{SystemID: "7300", Major: "16"}
-	for _, c := range []struct {
-		mk    Marker
-		built bool
+// A database this machine had before it joined is kept, moved aside, never emptied.
+func TestClaimKeepsADatabaseOfThisMachinesOwn(t *testing.T) {
+	c := testCopy(t)
+	if aside, err := c.Claim(time.Now()); err != nil || aside != "" {
+		t.Fatalf("nothing there: %q %v", aside, err)
+	}
+	if err := os.MkdirAll(c.DB.Data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(c.DB.Data, "PG_VERSION"), []byte("16\n"), 0o600)
+	aside, err := c.Claim(time.Date(2026, 10, 21, 1, 2, 3, 0, time.UTC))
+	if err != nil || !strings.HasSuffix(aside, ".before-copy-20261021-010203") {
+		t.Fatalf("a database of its own: %q %v", aside, err)
+	}
+	if _, err := os.Stat(filepath.Join(aside, "PG_VERSION")); err != nil {
+		t.Fatal("the moved database lost its files")
+	}
+	// the copy's own is kept where it is
+	_ = os.MkdirAll(c.DB.Data, 0o700)
+	_ = os.WriteFile(filepath.Join(c.DB.Data, "PG_VERSION"), []byte("16\n"), 0o600)
+	if err := c.writeMark(Marker{}); err != nil {
+		t.Fatal(err)
+	}
+	if aside, err := c.Claim(time.Now()); err != nil || aside != "" {
+		t.Fatalf("the copy's own: %q %v", aside, err)
+	}
+}
+
+func TestResubscribeReason(t *testing.T) {
+	c := testCopy(t)
+	m := &Manager{Copy: c}
+	g := Grant{SystemID: "7300", SlotExists: true}
+	if why := m.resubscribeReason(g, 144); !strings.Contains(why, "no copy") {
+		t.Fatalf("no marker: %q", why)
+	}
+	_ = os.MkdirAll(c.DB.Data, 0o700)
+	_ = c.writeMark(Marker{SystemID: "7300", LocalSchema: 144, Subscribed: time.Now()})
+	for _, tc := range []struct {
 		g     Grant
+		local int64
 		want  string
 	}{
-		{Marker{}, false, g, "no copy"},
-		{mk, true, g, ""},
-		{Marker{SystemID: "7301", Major: "16"}, true, g, "another one"},
-		{mk, true, Grant{SystemID: "7300", Version: 170002}, "major version"},
-		{mk, true, Grant{SystemID: "7300", Version: 160015, SlotMade: true}, "gave up"},
+		{g, 144, ""},
+		{Grant{SystemID: "7301", SlotExists: true}, 144, "another one"},
+		{g, 145, "updated"},
+		{Grant{SystemID: "7300"}, 144, "gave up"},
 	} {
-		if got := rebuildReason(c.mk, c.built, c.g); (c.want == "") != (got == "") || !strings.Contains(got, c.want) {
-			t.Fatalf("%+v %v %+v: %q, want %q", c.mk, c.built, c.g, got, c.want)
+		if got := m.resubscribeReason(tc.g, tc.local); (tc.want == "") != (got == "") || !strings.Contains(got, tc.want) {
+			t.Fatalf("%+v %d: %q, want %q", tc.g, tc.local, got, tc.want)
 		}
+	}
+	// errors applying the home's changes for long: subscribe anew
+	now := time.Now()
+	m.Now = func() time.Time { return now }
+	m.noteErrors(Status{Errors: 3, State: StateBehind})
+	now = now.Add(11 * time.Minute)
+	if got := m.resubscribeReason(g, 144); !strings.Contains(got, "keep failing") {
+		t.Fatalf("stuck: %q", got)
 	}
 }
 
@@ -173,7 +221,10 @@ func TestKindOf(t *testing.T) {
 	}{
 		{dial, kindUnreachable},
 		{context.DeadlineExceeded, kindUnreachable},
-		{&pq.Error{Code: "57P03"}, kindUnreachable},
+		{&pq.Error{Code: "57P03"}, kindUnreachable}, // starting up
+		{&pq.Error{Code: "57P01"}, kindUnreachable},
+		{&pq.Error{Code: "53300"}, kindUnreachable}, // too many clients
+		{&pq.Error{Code: "08006"}, kindUnreachable},
 		{&pq.Error{Code: "28P01"}, kindRefused},
 		{&pq.Error{Code: "28000"}, kindRefused},
 		{&pq.Error{Code: "42501"}, kindRefused},
@@ -191,16 +242,19 @@ func TestKindOf(t *testing.T) {
 func TestWipeLeavesNothing(t *testing.T) {
 	c := testCopy(t)
 	_, _ = c.Password()
+	_, _ = c.ReaderPassword()
 	_ = c.writeAccess(Grant{})
-	if err := os.MkdirAll(c.Data(), 0o700); err != nil {
+	if err := os.MkdirAll(c.DB.Data, 0o700); err != nil {
 		t.Fatal(err)
+	}
+	for _, r := range []string{pgbundle.SuperUser, pgbundle.AppRole} {
+		_ = os.WriteFile(filepath.Join(c.DB.Keys, "postgres-"+r+".password"), []byte("x"), 0o600)
 	}
 	if err := c.Wipe(); err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range []string{c.Data(), filepath.Join(c.Keys, passwordFile), filepath.Join(c.Keys, passFile)} {
-		if _, err := os.Stat(p); err == nil {
-			t.Fatalf("%s kept", p)
-		}
+	left, _ := os.ReadDir(c.DB.Keys)
+	if _, err := os.Stat(c.DB.Data); err == nil || len(left) != 0 {
+		t.Fatalf("kept: data %v, keys %v", err, left)
 	}
 }

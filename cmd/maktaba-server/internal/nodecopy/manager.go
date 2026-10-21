@@ -3,7 +3,6 @@ package nodecopy
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbin"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 )
 
 // StatusFile is the copy's status in the node's state directory (the node's API
@@ -24,13 +24,10 @@ const StatusFile = "copy.json"
 // long as the supervisor does.
 type Manager struct {
 	Copy Copy
-	// Programs fetches the Postgres programs (pgbin.Ensure for this platform): the
-	// directory that holds bin/.
+	// Programs finds or fetches the Postgres programs: the directory that holds bin/.
 	Programs func(ctx context.Context) (string, error)
-	// Major is the programs' Postgres major version.
-	Major string
-	// Want starts (true) or stops the copy's supervised process; Running reports
-	// whether it runs.
+	// Want starts (true) or stops this machine's database (the supervisor's copy role);
+	// Running reports whether it runs.
 	Want    func(on bool) error
 	Running func() bool
 	// StateDir holds StatusFile ("": not written).
@@ -44,9 +41,15 @@ type Manager struct {
 	// (0: 3 min) means it is not the home's any more: the copy is wiped.
 	WipeAfter int
 	WipeOver  time.Duration
+	// StuckAfter: errors applying the home's changes for this long (0: 10 min) mean the
+	// copy cannot follow any more: it subscribes anew.
+	StuckAfter time.Duration
 
 	mu     sync.Mutex
 	status Status
+	// erring: since when the subscription's error count keeps rising (zero: it does not)
+	erring   time.Time
+	lastErrs int64
 }
 
 func (m *Manager) now() time.Time {
@@ -90,6 +93,13 @@ func (m *Manager) wipeOver() time.Duration {
 	return 3 * time.Minute
 }
 
+func (m *Manager) stuckAfter() time.Duration {
+	if m.StuckAfter > 0 {
+		return m.StuckAfter
+	}
+	return 10 * time.Minute
+}
+
 // Status is the copy's last status.
 func (m *Manager) Status() Status {
 	m.mu.Lock()
@@ -107,7 +117,11 @@ func (m *Manager) set(ctx context.Context, s Status) {
 	m.status = s
 	m.mu.Unlock()
 	if prev.State != s.State || prev.Detail != s.Detail {
-		m.logf("%s%s", s.State, map[bool]string{true: ": " + s.Detail, false: ""}[s.Detail != ""])
+		if s.Detail != "" {
+			m.logf("%s: %s", s.State, s.Detail)
+		} else {
+			m.logf("%s", s.State)
+		}
 	}
 	if m.StateDir != "" {
 		if b, err := json.Marshal(s); err == nil {
@@ -122,9 +136,9 @@ func (m *Manager) set(ctx context.Context, s Status) {
 // state is a status of a state and detail, with what the copy's marker says.
 func (m *Manager) state(state, detail string) Status {
 	s := Status{State: state, Detail: detail, Checked: m.now().UTC()}
-	if mk, ok := m.Copy.Built(); ok {
-		b := mk.Built
-		s.Built, s.HomeMajor = &b, mk.Major
+	if mk, ok := m.Copy.Mark(); ok && !mk.Subscribed.IsZero() {
+		t := mk.Subscribed
+		s.Subscribed = &t
 	}
 	return s
 }
@@ -142,26 +156,9 @@ func sleep(ctx context.Context, d time.Duration) bool {
 
 // Run keeps the copy until ctx ends.
 func (m *Manager) Run(ctx context.Context) {
-	// the programs (fetched once, then on this machine)
-	for {
-		m.set(ctx, m.state(StatePreparing, ""))
-		bin, err := m.Programs(ctx)
-		if err == nil {
-			m.Copy.Bin = filepath.Join(bin, "bin")
-			break
-		}
-		m.set(ctx, m.state(StateError, "the Postgres programs: "+err.Error()))
-		if !sleep(ctx, 10*m.retry()) {
-			return
-		}
-	}
-	if _, err := m.Copy.Password(); err != nil {
-		m.set(ctx, m.state(StateError, "the copy's password: "+err.Error()))
+	local, ok := m.prepare(ctx)
+	if !ok {
 		return
-	}
-	// a copy made before serves at once (the home may be away right now)
-	if _, ok := m.Copy.Built(); ok {
-		_ = m.Want(true)
 	}
 	refused := 0
 	var firstRefused time.Time
@@ -198,23 +195,19 @@ func (m *Manager) Run(ctx context.Context) {
 			continue
 		}
 		refused = 0
-		if g.Major() != m.Major {
-			_ = m.Want(false)
-			m.set(ctx, m.state(StateIncompatible, fmt.Sprintf("the home runs Postgres %s, this machine's copy needs %s: "+
-				"an update of Maktaba on both brings them together", g.Major(), m.Major)))
+		if g.SchemaVersion > local {
+			// the home's changes would not apply until this machine updates
+			_ = m.Copy.Pause(ctx)
+			m.set(ctx, m.state(StateIncompatible, fmt.Sprintf("Maktaba on this machine is older than the home's "+
+				"(its database is at %d, the home's at %d): its copy follows again once it updates", local, g.SchemaVersion)))
 			if !sleep(ctx, 10*m.retry()) {
 				return
 			}
 			continue
 		}
-		mk, built := m.Copy.Built()
-		if why := rebuildReason(mk, built, g); why != "" {
-			if err := m.rebuild(ctx, built, why); err != nil {
-				st := StateError
-				if errors.Is(err, ErrIncompatible) {
-					st = StateIncompatible
-				}
-				m.set(ctx, m.state(st, err.Error()))
+		if why := m.resubscribeReason(g, local); why != "" {
+			if err := m.resubscribe(ctx, local, why); err != nil {
+				m.set(ctx, m.state(StateError, err.Error()))
 				if !sleep(ctx, backoff) {
 					return
 				}
@@ -222,60 +215,145 @@ func (m *Manager) Run(ctx context.Context) {
 				continue
 			}
 			backoff = m.retry()
-		} else if retune, err := m.Copy.Tune(g); err != nil {
-			m.set(ctx, m.state(StateError, "the copy's configuration: "+err.Error()))
-		} else if retune {
-			m.logf("the home's settings changed: restarting the copy with them")
-			_ = m.Want(false)
-			for deadline := m.now().Add(2 * time.Minute); m.Running != nil && m.Running() && m.now().Before(deadline); {
-				if !sleep(ctx, 500*time.Millisecond) {
-					return
-				}
+		} else if kept, err := m.Copy.Follow(ctx, g); err != nil {
+			m.set(ctx, m.state(StateError, "keeping the subscription: "+err.Error()))
+		} else if !kept {
+			if err := m.resubscribe(ctx, local, "the subscription is not the home's any more"); err != nil {
+				m.set(ctx, m.state(StateError, err.Error()))
 			}
 		}
-		_ = m.Want(true)
 		if !m.watch(ctx, 4*m.retry()) {
 			return
 		}
 	}
 }
 
-// rebuildReason says why the copy must be made (anew), or "".
-func rebuildReason(mk Marker, built bool, g Grant) string {
+// prepare makes this machine's database ready for the copy: the programs, the
+// database itself (a database of this machine's own from before it joined is moved
+// aside), running, its read-only role, its migrations. This machine's schema version.
+func (m *Manager) prepare(ctx context.Context) (int64, bool) {
+	for {
+		m.set(ctx, m.state(StatePreparing, ""))
+		err := m.prepareOnce(ctx)
+		if err == nil {
+			break
+		}
+		m.set(ctx, m.state(StateError, err.Error()))
+		if !sleep(ctx, m.retry()) {
+			return 0, false
+		}
+	}
+	for {
+		local, err := m.migrate(ctx)
+		if err == nil {
+			return local, true
+		}
+		m.set(ctx, m.state(StateError, "this machine's database: "+err.Error()))
+		if !sleep(ctx, m.retry()) {
+			return 0, false
+		}
+	}
+}
+
+func (m *Manager) prepareOnce(ctx context.Context) error {
+	home, err := m.Programs(ctx)
+	if err != nil {
+		return fmt.Errorf("the Postgres programs: %w", err)
+	}
+	m.Copy.DB.Home = home
+	if _, err := m.Copy.Password(); err != nil {
+		return fmt.Errorf("the copy's password: %w", err)
+	}
+	if _, err := m.Copy.ReaderPassword(); err != nil {
+		return fmt.Errorf("the copy's password: %w", err)
+	}
+	if !m.running() {
+		if aside, err := m.Copy.Claim(m.now()); err != nil {
+			return err
+		} else if aside != "" {
+			m.logf("this machine's own database from before it joined is kept, untouched, at %s", aside)
+		}
+		if err := m.Copy.DB.Prepare(ctx, m.Log); err != nil {
+			return fmt.Errorf("this machine's database: %w", err)
+		}
+		if _, ok := m.Copy.Mark(); !ok {
+			if err := m.Copy.writeMark(Marker{}); err != nil {
+				return err
+			}
+		}
+	}
+	if err := m.Want(true); err != nil {
+		return err
+	}
+	deadline := m.now().Add(5 * time.Minute)
+	for {
+		rctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		err := pgbundle.Ready(rctx, m.Copy.Addr(), pgbundle.AppRole, pgbundle.AppDatabase)
+		cancel()
+		if err == nil {
+			break
+		}
+		if m.now().After(deadline) {
+			return fmt.Errorf("this machine's database does not start: %w", err)
+		}
+		if !sleep(ctx, time.Second) {
+			return ctx.Err()
+		}
+	}
+	return m.Copy.EnsureReader(ctx)
+}
+
+// migrate brings this machine's database to this machine's schema (its own migrations)
+// and says how far that is.
+func (m *Manager) migrate(ctx context.Context) (int64, error) {
+	if m.Copy.Migrate != nil {
+		dsn, err := m.Copy.DB.URL()
+		if err != nil {
+			return 0, err
+		}
+		if err := m.Copy.Migrate(ctx, dsn); err != nil {
+			return 0, fmt.Errorf("its migrations: %w", err)
+		}
+	}
+	return m.Copy.LocalSchema(ctx)
+}
+
+func (m *Manager) running() bool { return m.Running != nil && m.Running() }
+
+// resubscribeReason says why the copy must subscribe (anew), or "".
+func (m *Manager) resubscribeReason(g Grant, local int64) string {
+	mk, ok := m.Copy.Mark()
 	switch {
-	case !built:
+	case !ok || mk.Subscribed.IsZero():
 		return "this machine has no copy yet"
 	case mk.SystemID != g.SystemID:
 		return "the home's database is another one now"
-	case mk.Major != g.Major():
-		return "the home's Postgres is of another major version now"
-	case g.SlotMade:
+	case mk.LocalSchema != local:
+		// its own migrations may have put rows the home's changes would collide with
+		return "this machine's Maktaba was updated"
+	case !g.SlotExists:
 		return "the home gave up on this copy (it fell too far behind)"
+	}
+	m.mu.Lock()
+	stuck := !m.erring.IsZero() && m.now().Sub(m.erring) >= m.stuckAfter()
+	m.mu.Unlock()
+	if stuck {
+		return "the home's changes keep failing to apply"
 	}
 	return ""
 }
 
-// rebuild stops the copy and copies the home's database (anew).
-func (m *Manager) rebuild(ctx context.Context, built bool, why string) error {
-	state := StateCopying
-	if built {
-		state = StateRebuilding
-		m.logf("copying anew: %s", why)
+// resubscribe subscribes the copy (anew): every row copied again.
+func (m *Manager) resubscribe(ctx context.Context, local int64, why string) error {
+	state := StateRebuilding
+	if mk, ok := m.Copy.Mark(); !ok || mk.Subscribed.IsZero() {
+		state = StateCopying
 	}
 	m.set(ctx, m.state(state, why))
-	_ = m.Want(false)
-	for deadline := m.now().Add(2 * time.Minute); m.Running != nil && m.Running(); {
-		if m.now().After(deadline) {
-			return errors.New("nodecopy: the copy did not stop")
-		}
-		if !sleep(ctx, 500*time.Millisecond) {
-			return ctx.Err()
-		}
-	}
 	var g Grant
 	var err error
 	for i := 0; i < 10; i++ {
-		// a slot still in use is the stopped copy's session ending on the home
+		// a slot still in use is the dropped subscription's session ending on the home
 		if g, err = m.Copy.Ask(ctx, true); err == nil || kindOf(err) != kindBusy {
 			break
 		}
@@ -284,36 +362,36 @@ func (m *Manager) rebuild(ctx context.Context, built bool, why string) error {
 		}
 	}
 	if err != nil {
-		return fmt.Errorf("nodecopy: asking the home for a fresh copy: %w", err)
+		return fmt.Errorf("asking the home for a fresh copy: %w", err)
 	}
-	started := m.now()
-	if err := m.Copy.Build(ctx, g, m.Log); err != nil {
+	if err := m.Copy.Subscribe(ctx, g); err != nil {
 		return err
 	}
-	m.logf("copied the home's database in %s", m.now().Sub(started).Round(time.Second))
-	return nil
+	m.mu.Lock()
+	m.erring, m.lastErrs = time.Time{}, 0
+	m.mu.Unlock()
+	m.logf("subscribed to the home's publication (%d tables): %s", len(g.Tables), why)
+	return m.Copy.writeMark(Marker{SystemID: g.SystemID, LocalSchema: local, Subscribed: m.now().UTC()})
 }
 
-// watchState is the state to show while the home cannot be asked: the copy's own
-// when there is one, else waiting.
+// watchState is the state to show while the home cannot be asked: the copy's own,
+// with why the home was not asked.
 func (m *Manager) watchState(ctx context.Context, detail string) Status {
-	if _, ok := m.Copy.Built(); !ok {
-		return m.state(StateWaiting, detail)
-	}
 	s := m.Copy.Observe(ctx, m.now())
-	if s.State != StateFollowing {
+	if s.State != StateFollowing && s.State != StateCopying {
 		s.Detail = detail
 	}
 	return s
 }
 
-// watch observes the running copy every period for d (false: ctx ended).
+// watch observes the copy every period for d (false: ctx ended), and notes whether
+// the home's changes keep failing to apply.
 func (m *Manager) watch(ctx context.Context, d time.Duration) bool {
 	end := m.now().Add(d)
 	for {
-		if _, ok := m.Copy.Built(); ok {
-			m.set(ctx, m.Copy.Observe(ctx, m.now()))
-		}
+		s := m.Copy.Observe(ctx, m.now())
+		m.noteErrors(s)
+		m.set(ctx, s)
 		left := end.Sub(m.now())
 		if left <= 0 {
 			return true
@@ -324,10 +402,26 @@ func (m *Manager) watch(ctx context.Context, d time.Duration) bool {
 	}
 }
 
+func (m *Manager) noteErrors(s Status) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	switch {
+	case s.Errors > m.lastErrs && m.erring.IsZero():
+		m.erring = m.now()
+	case s.Errors == m.lastErrs && !m.erring.IsZero() && s.State == StateFollowing:
+		m.erring = time.Time{}
+	}
+	m.lastErrs = s.Errors
+}
+
 // revoked wipes the copy: this machine is not the home's any more.
 func (m *Manager) revoked(ctx context.Context, cause error) {
+	if db, err := m.Copy.super(); err == nil {
+		_ = m.Copy.unsubscribe(ctx, db)
+		_ = db.Close()
+	}
 	_ = m.Want(false)
-	for deadline := m.now().Add(2 * time.Minute); m.Running != nil && m.Running() && m.now().Before(deadline); {
+	for deadline := m.now().Add(2 * time.Minute); m.running() && m.now().Before(deadline); {
 		if !sleep(ctx, 500*time.Millisecond) {
 			return
 		}

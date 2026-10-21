@@ -3,12 +3,13 @@ package nodecopy
 // Two Postgres servers on 127.0.0.1: a home set up as the Postgres bundled with
 // Maktaba.app sets one up (pgbundle.Prepare: the app role, the cluster bootstrap, TLS)
 // and migrated by maktaba-api, and this machine's copy of it, made and kept by the
-// Manager alone: it copies, follows (changes on the home show on the copy), refuses
-// writes, survives a restart, copies anew when the home gives up on its slot, and is
-// wiped when the machine is revoked.
+// Manager alone: its own database (made, migrated by maktaba-api), subscribed to the
+// home's publication. It follows (changes on the home show on the copy), holds none of
+// the home's secrets nor other machines' rows, refuses writes, subscribes anew when the
+// home gives up on its slot, and is wiped when the machine is revoked.
 //
 // Opt-in: MAKTABA_TEST_PG_BIN, a Postgres 16 install (bin/postgres, initdb, pg_ctl,
-// psql, pg_basebackup); it builds maktaba-api from the repository.
+// psql); it builds maktaba-api from the repository.
 
 import (
 	"bytes"
@@ -128,6 +129,17 @@ func repoRoot(t *testing.T) string {
 	return ""
 }
 
+type lockedWriter struct {
+	w  io.Writer
+	mu *sync.Mutex
+}
+
+func (l lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
+}
+
 func TestCopyFollowsTheHome(t *testing.T) {
 	pgHome := os.Getenv("MAKTABA_TEST_PG_BIN")
 	if pgHome == "" {
@@ -141,19 +153,29 @@ func TestCopyFollowsTheHome(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// ---- maktaba-api, which migrates both databases ----
+	api := filepath.Join(tmp, "maktaba-api"+map[bool]string{true: ".exe", false: ""}[runtime.GOOS == "windows"])
+	build := exec.Command("go", "build", "-o", api, ".")
+	build.Dir = filepath.Join(root, "api")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build maktaba-api: %v\n%s", err, out)
+	}
+	migrations := filepath.Join(root, "shared", "db", "migrations")
+	migrate := func(ctx context.Context, dsn string) error {
+		cmd := exec.CommandContext(ctx, api, "migrate", "--dir", migrations, "--dsn", dsn, "up")
+		cmd.Env = append(os.Environ(), "MAKTABA_NODE_MODE=")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("%v: %s", err, out)
+		}
+		return nil
+	}
+
 	// ---- the home: the bundled Postgres's own preparation, on loopback ----
 	b := pgbundle.Bundle{Home: pgHome, Data: filepath.Join(tmp, "home"), Keys: filepath.Join(tmp, "home-keys"),
 		Backups: filepath.Join(tmp, "backups"), Port: freePort(t), TLS: true}
 	if err := b.Prepare(ctx, io.Discard); err != nil {
 		t.Fatalf("prepare the home: %v", err)
 	}
-	// the machines reach it on its LAN rules; here on loopback, replication included
-	hba, err := os.OpenFile(filepath.Join(b.Data, "pg_hba.conf"), os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _ = fmt.Fprintln(hba, "host replication +maktaba_replicas 127.0.0.1/32 scram-sha-256")
-	_ = hba.Close()
 	home := &server{}
 	home.start(t, b.Bin("postgres"), b.ServerArgs()...)
 	defer func() { home.stop(b.StopCommand()) }()
@@ -166,16 +188,8 @@ func TestCopyFollowsTheHome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	api := filepath.Join(tmp, "maktaba-api"+map[bool]string{true: ".exe", false: ""}[runtime.GOOS == "windows"])
-	build := exec.Command("go", "build", "-o", api, ".")
-	build.Dir = filepath.Join(root, "api")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build maktaba-api: %v\n%s", err, out)
-	}
-	migrate := exec.Command(api, "migrate", "--dir", filepath.Join(root, "shared", "db", "migrations"), "--dsn", appURL, "up")
-	migrate.Env = append(os.Environ(), "MAKTABA_NODE_MODE=")
-	if out, err := migrate.CombinedOutput(); err != nil {
-		t.Fatalf("migrate the home: %v\n%s", err, out)
+	if err := migrate(ctx, appURL); err != nil {
+		t.Fatalf("migrate the home: %v", err)
 	}
 	app, err := sql.Open("postgres", appURL)
 	if err != nil {
@@ -200,44 +214,43 @@ func TestCopyFollowsTheHome(t *testing.T) {
 			time.Sleep(time.Second)
 		}
 	}()
+	// a secret the copy must never hold
+	exec1(`INSERT INTO home_secrets (name, key_id, nonce, ciphertext) VALUES ('plex.token', 'k1', '\x00'::bytea, '\x00'::bytea)
+	       ON CONFLICT DO NOTHING`)
 
-	// ---- an approved machine, with its own role ----
-	nodeID := uuid.NewString()
+	// ---- an approved machine with its own role, and another one ----
+	nodeID, otherID := uuid.NewString(), uuid.NewString()
 	role := "maktaba_node_" + strings.ReplaceAll(nodeID, "-", "")
 	exec1(`CREATE ROLE ` + role + ` LOGIN PASSWORD 'node-pass-123' IN ROLE maktaba_worker`)
-	exec1(`INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, db_role, approved_at, approved_by)
-	       VALUES ($1, 'studio', 'approved', 'windows', 'amd64', 'k', $2, now(), 'test')`, nodeID, role)
+	for _, n := range []struct{ id, role, priv string }{{nodeID, role, "node-secret-key"}, {otherID, "", "other-secret-key"}} {
+		exec1(`INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, home_privkey, db_role, approved_at, approved_by)
+		       VALUES ($1, 'studio', 'approved', 'windows', 'amd64', 'k', $2, NULLIF($3, ''), now(), 'test')`, n.id, n.priv, n.role)
+	}
 	nodeDSN := (&url.URL{Scheme: "postgres", User: url.UserPassword(role, "node-pass-123"), Host: b.Addr(),
 		Path: "/" + pgbundle.AppDatabase, RawQuery: "sslmode=prefer"}).String() // as the join hands it
 
 	// ---- this machine's copy, kept by the Manager alone ----
-	c := Copy{NodeID: nodeID, HomeDSN: nodeDSN, Dir: filepath.Join(tmp, "copy"), Keys: filepath.Join(tmp, "node-keys"),
-		Port: freePort(t)}
+	c := Copy{NodeID: nodeID, HomeDSN: nodeDSN, Migrate: migrate,
+		DB: pgbundle.Bundle{Data: filepath.Join(tmp, "node-pg"), Keys: filepath.Join(tmp, "node-keys"),
+			Backups: filepath.Join(tmp, "node-backups"), Port: freePort(t)}}
 	cp := &server{}
 	var mlog bytes.Buffer
 	var mlogMu sync.Mutex
-	m := &Manager{Copy: c, Major: "16", StateDir: filepath.Join(tmp, "node-state"),
+	m := &Manager{Copy: c, StateDir: filepath.Join(tmp, "node-state"),
 		Programs: func(context.Context) (string, error) { return pgHome, nil },
 		Every:    300 * time.Millisecond, Retry: 300 * time.Millisecond, WipeAfter: 2, WipeOver: time.Nanosecond,
 		Log: lockedWriter{w: &mlog, mu: &mlogMu}}
+	db := func() pgbundle.Bundle { d := m.Copy.DB; d.Home = pgHome; return d }
 	m.Want = func(on bool) error {
 		if on {
-			cc := m.Copy
-			cc.Bin = filepath.Join(pgHome, "bin")
-			cp.start(t, cc.Postgres(), cc.ServerArgs()...)
+			cp.start(t, db().Bin("postgres"), db().ServerArgs()...)
 		} else {
-			cc := m.Copy
-			cc.Bin = filepath.Join(pgHome, "bin")
-			cp.stop(cc.StopCommand())
+			cp.stop(db().StopCommand())
 		}
 		return nil
 	}
 	m.Running = cp.running
-	defer func() {
-		cc := m.Copy
-		cc.Bin = filepath.Join(pgHome, "bin")
-		cp.stop(cc.StopCommand())
-	}()
+	defer func() { cp.stop(db().StopCommand()) }()
 	done := make(chan struct{})
 	go func() { m.Run(ctx); close(done) }()
 	defer func() { cancel(); <-done }()
@@ -249,7 +262,7 @@ func TestCopyFollowsTheHome(t *testing.T) {
 	}
 	following := func(what string) {
 		t.Helper()
-		end := time.Now().Add(3 * time.Minute)
+		end := time.Now().Add(4 * time.Minute)
 		for state() != StateFollowing {
 			if time.Now().After(end) {
 				t.Fatalf("%s: the copy is %q (%s), want following\n%s", what, state(), m.Status().Detail, dump())
@@ -279,36 +292,37 @@ func TestCopyFollowsTheHome(t *testing.T) {
 		}
 	}
 	waitFor(t, "the home's change on the copy", 30*time.Second, seen("one"))
-	// it reads everything a sign-in needs, and writes nothing
+	// what a sign-in needs is there; the secrets, other machines' rows and this
+	// machine's keys are not
 	var n int
 	if err := copyDB.QueryRowContext(ctx, `SELECT count(*) FROM users`).Scan(&n); err != nil {
-		t.Fatalf("the copy's role reads the users: %v", err)
+		t.Fatalf("the copy's reader reads the users: %v", err)
 	}
+	_ = copyDB.QueryRowContext(ctx, `SELECT count(*) FROM home_secrets`).Scan(&n)
+	if n != 0 {
+		t.Fatalf("the copy holds %d of the home's secrets", n)
+	}
+	var nodes int
+	var priv sql.NullString
+	if err := copyDB.QueryRowContext(ctx, `SELECT count(*), max(home_privkey) FROM cluster_nodes`).Scan(&nodes, &priv); err != nil ||
+		nodes != 1 || priv.Valid {
+		t.Fatalf("cluster_nodes on the copy: %d rows, a key %v (%v)", nodes, priv.Valid, err)
+	}
+	// it writes nothing
 	if _, err := copyDB.ExecContext(ctx, `UPDATE app_settings SET value = '"x"' WHERE key = 'test.copy'`); err == nil {
 		t.Fatal("a write on the copy succeeded")
-	}
-	// its data directory holds none of the home's TLS files
-	for _, f := range []string{"server.key", "postgres-server.key"} {
-		if _, err := os.Stat(filepath.Join(c.Data(), f)); err == nil {
-			t.Fatalf("the copy holds the home's %s", f)
-		}
-	}
-	// its own configuration, with the home's hot-standby settings
-	if conf, err := os.ReadFile(filepath.Join(c.Data(), "postgresql.conf")); err != nil ||
-		!strings.HasPrefix(string(conf), "# Maktaba") || !strings.Contains(string(conf), "max_connections = ") {
-		t.Fatalf("the copy's postgresql.conf: %q %v", conf, err)
 	}
 	if _, err := os.Stat(filepath.Join(m.StateDir, StatusFile)); err != nil {
 		t.Fatalf("no status file: %v", err)
 	}
-	var reported string
-	_ = app.QueryRowContext(ctx, `SELECT replica->>'state' FROM cluster_nodes WHERE id = $1`, nodeID).Scan(&reported)
-	if reported != StateFollowing {
-		t.Fatalf("the home was told %q", reported)
-	}
+	waitFor(t, "the home told the copy follows", 30*time.Second, func() bool {
+		var reported string
+		_ = app.QueryRowContext(ctx, `SELECT replica->>'state' FROM cluster_nodes WHERE id = $1`, nodeID).Scan(&reported)
+		return reported == StateFollowing
+	})
 
-	// the home gives up on the slot (past the cap): the copy is made anew and follows
-	builtBefore, _ := c.Built()
+	// the home gives up on the slot (past the cap): the copy subscribes anew and follows
+	before, _ := c.Mark()
 	waitFor(t, "the slot dropped", 30*time.Second, func() bool {
 		_, _ = app.ExecContext(ctx, `SELECT pg_terminate_backend(active_pid) FROM pg_replication_slots
 		                              WHERE slot_name = $1 AND active`, c.Slot())
@@ -316,34 +330,23 @@ func TestCopyFollowsTheHome(t *testing.T) {
 		return err == nil
 	})
 	exec1(`UPDATE app_settings SET value = '"two"' WHERE key = 'test.copy'`)
-	waitFor(t, "the copy made anew", 3*time.Minute, func() bool {
-		mk, ok := c.Built()
-		return ok && mk.Built.After(builtBefore.Built)
+	waitFor(t, "the copy subscribed anew", 3*time.Minute, func() bool {
+		mk, ok := c.Mark()
+		return ok && mk.Subscribed.After(before.Subscribed)
 	})
 	following("after the home gave up on the slot")
-	waitFor(t, "the change on the new copy", 30*time.Second, seen("two"))
+	waitFor(t, "the change on the new subscription", 30*time.Second, seen("two"))
 
 	// revoked: the machine's role may not sign in; the copy is wiped
 	exec1(`ALTER ROLE ` + role + ` NOLOGIN`)
 	waitFor(t, "the copy wiped", 2*time.Minute, func() bool { return state() == StateRevoked })
-	if _, ok := c.Built(); ok || cp.running() {
-		t.Fatalf("after the revocation: a copy is kept %v, running %v", ok, cp.running())
+	if c.DB.Initialized() || cp.running() {
+		t.Fatalf("after the revocation: a database is kept %v, running %v", c.DB.Initialized(), cp.running())
 	}
-	if _, err := os.Stat(filepath.Join(c.Keys, passwordFile)); err == nil {
+	if _, err := os.Stat(filepath.Join(c.DB.Keys, passwordFile)); err == nil {
 		t.Fatal("the copy's password outlived the revocation")
 	}
 	mlogMu.Lock()
 	t.Logf("manager:%c%s", 10, mlog.String())
 	mlogMu.Unlock()
-}
-
-type lockedWriter struct {
-	w  io.Writer
-	mu *sync.Mutex
-}
-
-func (l lockedWriter) Write(p []byte) (int, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.w.Write(p)
 }

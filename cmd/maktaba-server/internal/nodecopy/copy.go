@@ -1,11 +1,13 @@
-// Package nodecopy is a full node's live, read-only copy of its home's database
-// (specs/epics/37-node-replica): a Postgres hot standby on this machine, made with
-// pg_basebackup and following the home's database over streaming replication, so
-// the node signs people in, plays and shows the library from it while the home is
-// away. Nothing here is a manual step: the supervisor's Manager fetches the Postgres
-// programs, asks the home for the copy (cluster_node_replica_grant, over the node's own
-// database connection), copies, runs the copy as a supervised process, watches it,
-// copies anew when it cannot follow any more, and wipes it when the machine is revoked.
+// Package nodecopy is a full node's live copy of its home's database
+// (specs/epics/37-node-replica): this machine's own Postgres, where a home keeps its
+// bundled one, migrated by this machine's own Maktaba and subscribed, by logical
+// replication, to the publication the home keeps for it (every table but the secrets
+// and other machines' rows). The node signs people in, plays and shows the library from
+// it while the home is away, and it is what makes this machine able to become the home.
+// Nothing here is a manual step: the supervisor's Manager fetches the Postgres programs,
+// makes the database, asks the home for the copy (cluster_node_replica_grant, over the
+// node's own database connection), subscribes, watches the subscription, subscribes
+// anew when it cannot follow any more, and wipes the copy when the machine is revoked.
 package nodecopy
 
 import (
@@ -20,30 +22,33 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/lib/pq"
 
-	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbin"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 )
 
-// DefaultPort is the copy's loopback port (the bundled home's is 54329).
-const DefaultPort = 54330
-
-// Files of the copy: in the keys directory the password this machine chose for its
-// replication role, the passfile the copy's replication reads it from and the home's
-// database CA it verifies the home with; in the copy's directory its data and marker.
+// Files of the copy, in the keys directory: the password this machine chose for its
+// replication role, the passfile its subscription reads it from, the home's database CA
+// it verifies the home with, the password of the read-only role this machine's programs
+// read the copy as. In the database's directory: the marker.
 const (
-	passwordFile = "copy-password"
-	passFile     = "copy.pgpass"
-	caFile       = "copy-ca.crt"
-	markerFile   = "maktaba-copy.json"
-	dataDir      = "data"
+	passwordFile       = "copy-password"
+	readerPasswordFile = "copy-reader-password"
+	passFile           = "copy.pgpass"
+	caFile             = "copy-ca.crt"
+	markerFile         = "maktaba-copy.json"
+)
+
+// Subscription and Reader are the copy's subscription and read-only role (local names).
+const (
+	Subscription = "maktaba_copy"
+	Reader       = "maktaba_reader"
 )
 
 // Copy is this machine's copy of the home's database.
@@ -51,41 +56,36 @@ type Copy struct {
 	NodeID string
 	// HomeDSN is this machine's own role on the home's database (node.json).
 	HomeDSN string
-	// Dir holds the copy (Dir/data) while Keys holds its secrets.
-	Dir, Keys string
-	Port      int
-	// Bin is the Postgres programs' directory (pgbin.Ensure's, plus bin).
-	Bin string
+	// DB is this machine's own Postgres, which holds the copy.
+	DB pgbundle.Bundle
+	// Migrate runs this machine's migrations on its own database (maktaba-api migrate).
+	Migrate func(ctx context.Context, dsn string) error
 }
 
 func (c Copy) id() string { return strings.ReplaceAll(strings.ToLower(c.NodeID), "-", "") }
 
-// Role is the copy's replication role on the home (and so on the copy).
+// Role is this machine's replication role on the home.
 func (c Copy) Role() string { return "maktaba_rep_" + c.id() }
 
-// Slot is the home's slot for the copy.
+// Slot is the home's slot for the copy (the subscription makes it).
 func (c Copy) Slot() string { return "maktaba_copy_" + c.id() }
 
-// Data is the copy's data directory.
-func (c Copy) Data() string { return filepath.Join(c.Dir, dataDir) }
+// Publication is what the home publishes to this machine.
+func (c Copy) Publication() string { return "maktaba_copy_" + c.id() }
 
 // Addr is where the copy listens (loopback only).
-func (c Copy) Addr() string { return net.JoinHostPort("127.0.0.1", strconv.Itoa(c.port())) }
-
-func (c Copy) port() int {
-	if c.Port > 0 {
-		return c.Port
-	}
-	return DefaultPort
-}
-
-func (c Copy) exe(name string) string { return filepath.Join(c.Bin, pgbin.Exe(name)) }
+func (c Copy) Addr() string { return c.DB.Addr() }
 
 // Password is the password this machine chose for its replication role: made once
-// (32 random bytes), so the programs of this machine are given the copy's address at
-// their start, before the home has been asked.
-func (c Copy) Password() (string, error) {
-	path := filepath.Join(c.Keys, passwordFile)
+// (32 random bytes), kept in the keys directory.
+func (c Copy) Password() (string, error) { return secret(filepath.Join(c.DB.Keys, passwordFile)) }
+
+// ReaderPassword is the read-only role's password (the same way).
+func (c Copy) ReaderPassword() (string, error) {
+	return secret(filepath.Join(c.DB.Keys, readerPasswordFile))
+}
+
+func secret(path string) (string, error) {
 	if b, err := os.ReadFile(path); err == nil && len(strings.TrimSpace(string(b))) >= 32 {
 		return strings.TrimSpace(string(b)), nil
 	}
@@ -100,49 +100,41 @@ func (c Copy) Password() (string, error) {
 	return pw, nil
 }
 
-// Database is the home's database name (the node's DSN's).
-func (c Copy) Database() string {
-	if u, err := url.Parse(c.HomeDSN); err == nil && strings.Trim(u.Path, "/") != "" {
-		return strings.Trim(u.Path, "/")
-	}
-	return "maktaba"
-}
-
-// DSN is the copy's address for this machine's programs (MAKTABA_COPY_DATABASE_URL).
+// DSN is the copy's address for this machine's programs (MAKTABA_COPY_DATABASE_URL):
+// the read-only role, so nothing this machine runs writes to its copy.
 func (c Copy) DSN() (string, error) {
-	pw, err := c.Password()
+	pw, err := c.ReaderPassword()
 	if err != nil {
 		return "", err
 	}
-	u := url.URL{Scheme: "postgres", User: url.UserPassword(c.Role(), pw), Host: c.Addr(),
-		Path: "/" + c.Database(), RawQuery: "sslmode=disable&connect_timeout=5"}
+	u := url.URL{Scheme: "postgres", User: url.UserPassword(Reader, pw), Host: c.Addr(),
+		Path: "/" + pgbundle.AppDatabase, RawQuery: "sslmode=disable&connect_timeout=5"}
 	return u.String(), nil
 }
 
 // Grant is the home's answer to the copy's request (slot 0144).
 type Grant struct {
-	Role     string  `json:"role"`
-	Slot     string  `json:"slot"`
-	SlotMade bool    `json:"slot_made"`
-	SystemID string  `json:"system_identifier"`
-	Version  int     `json:"server_version_num"`
-	Database string  `json:"database"`
-	CA       *string `json:"ca_pem"`
-	// Settings are the home's values a hot standby needs at least (max_connections, ...).
-	Settings map[string]string `json:"settings"`
+	Role          string   `json:"role"`
+	Slot          string   `json:"slot"`
+	SlotExists    bool     `json:"slot_exists"`
+	Publication   string   `json:"publication"`
+	Tables        []string `json:"tables"`
+	SchemaVersion int64    `json:"schema_version"`
+	SystemID      string   `json:"system_identifier"`
+	Version       int      `json:"server_version_num"`
+	Database      string   `json:"database"`
+	CA            *string  `json:"ca_pem"`
 }
 
-// Major is the home's Postgres major version.
-func (g Grant) Major() string { return strconv.Itoa(g.Version / 10000) }
-
 // Ask asks the home for the copy: its replication role (with this machine's password)
-// and its slot, made anew with fresh.
+// and its publication, up to date; with fresh, a slot left from before is dropped (the
+// subscription is about to make it anew).
 func (c Copy) Ask(ctx context.Context, fresh bool) (Grant, error) {
 	pw, err := c.Password()
 	if err != nil {
 		return Grant{}, err
 	}
-	actx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	actx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	db, err := c.openHome(actx)
 	if err != nil {
@@ -157,27 +149,10 @@ func (c Copy) Ask(ctx context.Context, fresh bool) (Grant, error) {
 	if err := json.Unmarshal(raw, &g); err != nil {
 		return Grant{}, fmt.Errorf("nodecopy: the home's answer: %w", err)
 	}
-	if g.Role != c.Role() || g.Slot != c.Slot() {
-		return Grant{}, fmt.Errorf("nodecopy: the home named %s/%s, not this machine's copy", g.Role, g.Slot)
+	if g.Role != c.Role() || g.Slot != c.Slot() || g.Publication != c.Publication() {
+		return Grant{}, fmt.Errorf("nodecopy: the home named %s/%s, not this machine's copy", g.Role, g.Publication)
 	}
 	return g, nil
-}
-
-// Report tells the home how the copy is (cluster_node_report_replica).
-func (c Copy) Report(ctx context.Context, s Status) error {
-	b, err := json.Marshal(s)
-	if err != nil {
-		return err
-	}
-	rctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	db, err := c.openHome(rctx)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	_, err = db.ExecContext(rctx, `SELECT cluster_node_report_replica($1, $2::jsonb)`, c.NodeID, string(b))
-	return err
 }
 
 // openHome opens the home's database as this machine's own role. The join hands a
@@ -221,27 +196,65 @@ func withSSLMode(dsn, mode string) string {
 	return u.String()
 }
 
-// Marker records what a copy is a copy of, and the home's settings it was configured
-// with.
-type Marker struct {
-	SystemID string            `json:"system_identifier"`
-	Major    string            `json:"major"`
-	Slot     string            `json:"slot"`
-	Built    time.Time         `json:"built"`
-	Settings map[string]string `json:"settings,omitempty"`
+// Report tells the home how the copy is (cluster_node_report_replica).
+func (c Copy) Report(ctx context.Context, s Status) error {
+	b, err := json.Marshal(s)
+	if err != nil {
+		return err
+	}
+	rctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	db, err := c.openHome(rctx)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	_, err = db.ExecContext(rctx, `SELECT cluster_node_report_replica($1, $2::jsonb)`, c.NodeID, string(b))
+	return err
 }
 
-// Built is the marker of a usable copy (false: none, or one that never finished).
-func (c Copy) Built() (Marker, bool) {
+// Marker records what the copy follows: the home's database (its system identifier),
+// the schema version this machine's database had when it subscribed, and when.
+type Marker struct {
+	SystemID    string    `json:"system_identifier"`
+	LocalSchema int64     `json:"local_schema"`
+	Subscribed  time.Time `json:"subscribed"`
+}
+
+func (c Copy) markerPath() string { return filepath.Join(c.DB.Data, markerFile) }
+
+// Mark reads the marker (false: this database is not a copy, or never subscribed).
+func (c Copy) Mark() (Marker, bool) {
 	var m Marker
-	raw, err := os.ReadFile(filepath.Join(c.Data(), markerFile))
-	if err != nil || json.Unmarshal(raw, &m) != nil || m.SystemID == "" {
-		return Marker{}, false
-	}
-	if _, err := os.Stat(filepath.Join(c.Data(), "PG_VERSION")); err != nil {
+	raw, err := os.ReadFile(c.markerPath())
+	if err != nil || json.Unmarshal(raw, &m) != nil {
 		return Marker{}, false
 	}
 	return m, true
+}
+
+func (c Copy) writeMark(m Marker) error {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	return writeSecret(c.markerPath(), b)
+}
+
+// Claim makes the database directory the copy's: a database there that is not one (this
+// machine's own before it joined) is moved aside, never deleted; true when it was.
+func (c Copy) Claim(now time.Time) (string, error) {
+	if !c.DB.Initialized() {
+		return "", nil
+	}
+	if _, err := os.Stat(c.markerPath()); err == nil {
+		return "", nil
+	}
+	aside := c.DB.Data + ".before-copy-" + now.UTC().Format("20060102-150405")
+	if err := os.Rename(c.DB.Data, aside); err != nil {
+		return "", fmt.Errorf("nodecopy: moving this machine's own database aside: %w", err)
+	}
+	return aside, nil
 }
 
 // homeAddr is the home database's host and port (the node's DSN's).
@@ -257,18 +270,23 @@ func (c Copy) homeAddr() (host, port string, err error) {
 	return u.Hostname(), port, nil
 }
 
-// conninfo is the replication's connection to the home: the passfile for the
+// conninfo is the subscription's connection to the home: the passfile for the
 // password, the pinned CA when the home has published one (verify-ca), else TLS when
 // the home offers it.
-func (c Copy) conninfo() (string, error) {
+func (c Copy) conninfo(database string) (string, error) {
 	host, port, err := c.homeAddr()
 	if err != nil {
 		return "", err
 	}
-	kv := [][2]string{{"host", host}, {"port", port}, {"user", c.Role()},
-		{"passfile", filepath.ToSlash(filepath.Join(c.Keys, passFile))}, {"application_name", c.Slot()},
+	if database == "" {
+		if u, err := url.Parse(c.HomeDSN); err == nil {
+			database = strings.Trim(u.Path, "/")
+		}
+	}
+	kv := [][2]string{{"host", host}, {"port", port}, {"dbname", database}, {"user", c.Role()},
+		{"passfile", filepath.ToSlash(filepath.Join(c.DB.Keys, passFile))}, {"application_name", c.Slot()},
 		{"connect_timeout", "10"}}
-	if ca := filepath.Join(c.Keys, caFile); fileExists(ca) {
+	if ca := filepath.Join(c.DB.Keys, caFile); fileExists(ca) {
 		kv = append(kv, [2]string{"sslmode", "verify-ca"}, [2]string{"sslrootcert", filepath.ToSlash(ca)})
 	} else {
 		kv = append(kv, [2]string{"sslmode", "prefer"})
@@ -295,12 +313,12 @@ func (c Copy) writeAccess(g Grant) error {
 	}
 	esc := strings.NewReplacer(`\`, `\\`, `:`, `\:`)
 	line := esc.Replace(host) + ":" + esc.Replace(port) + ":*:" + esc.Replace(c.Role()) + ":" + esc.Replace(pw) + "\n"
-	if err := writeSecret(filepath.Join(c.Keys, passFile), []byte(line)); err != nil {
+	if err := writeSecret(filepath.Join(c.DB.Keys, passFile), []byte(line)); err != nil {
 		return err
 	}
 	if g.CA != nil && strings.Contains(*g.CA, "BEGIN CERTIFICATE") {
 		// pinned at the first grant that carries it; a later one does not replace it
-		if p := filepath.Join(c.Keys, caFile); !fileExists(p) {
+		if p := filepath.Join(c.DB.Keys, caFile); !fileExists(p) {
 			if err := writeSecret(p, []byte(*g.CA)); err != nil {
 				return err
 			}
@@ -309,169 +327,225 @@ func (c Copy) writeAccess(g Grant) error {
 	return nil
 }
 
-// Build copies the home's database into a new data directory and makes it a standby
-// of the home on the grant's slot; the copy in place, if any, is replaced only once
-// the new one is complete. The copy must not run meanwhile (the slot is the new one's).
-func (c Copy) Build(ctx context.Context, g Grant, log io.Writer) error {
-	if err := os.MkdirAll(c.Dir, 0o700); err != nil {
+// super is this machine's database as its superuser.
+func (c Copy) super() (*sql.DB, error) {
+	dsn, err := c.DB.SuperURL()
+	if err != nil {
+		return nil, err
+	}
+	return sql.Open("postgres", dsn)
+}
+
+// EnsureReader makes the read-only role this machine's programs read the copy as.
+func (c Copy) EnsureReader(ctx context.Context) error {
+	pw, err := c.ReaderPassword()
+	if err != nil {
 		return err
 	}
-	restrict(c.Dir)
+	db, err := c.super()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	r, p := pq.QuoteIdentifier(Reader), pq.QuoteLiteral(pw)
+	for _, q := range []string{
+		`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '` + Reader + `') THEN CREATE ROLE ` + r + ` LOGIN; END IF; END $$`,
+		`ALTER ROLE ` + r + ` WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD ` + p,
+		`ALTER ROLE ` + r + ` SET default_transaction_read_only = on`,
+		`GRANT pg_read_all_data TO ` + r,
+	} {
+		if _, err := db.ExecContext(ctx, q); err != nil {
+			return fmt.Errorf("nodecopy: the copy's read-only role: %w", err)
+		}
+	}
+	return nil
+}
+
+// LocalSchema is this machine's database's schema version (its migrations).
+func (c Copy) LocalSchema(ctx context.Context) (int64, error) {
+	db, err := c.super()
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+	var v sql.NullInt64
+	err = db.QueryRowContext(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&v)
+	return v.Int64, err
+}
+
+// sub is the subscription as this machine's database has it.
+type sub struct {
+	exists, enabled bool
+	conninfo, slot  string
+	pubs            []string
+	tables          map[string]bool // the tables it subscribes, by name
+}
+
+func (c Copy) subscription(ctx context.Context, db *sql.DB) (sub, error) {
+	var s sub
+	var pubs pq.StringArray
+	var slot sql.NullString
+	err := db.QueryRowContext(ctx, `SELECT subenabled, subconninfo, subslotname, subpublications
+	  FROM pg_subscription WHERE subname = $1`, Subscription).Scan(&s.enabled, &s.conninfo, &slot, &pubs)
+	if errors.Is(err, sql.ErrNoRows) {
+		return sub{}, nil
+	}
+	if err != nil {
+		return sub{}, err
+	}
+	s.exists, s.slot, s.pubs = true, slot.String, pubs
+	s.tables = map[string]bool{}
+	rows, err := db.QueryContext(ctx, `SELECT c.relname FROM pg_subscription_rel r JOIN pg_subscription s ON s.oid = r.srsubid
+	  JOIN pg_class c ON c.oid = r.srrelid WHERE s.subname = $1`, Subscription)
+	if err != nil {
+		return sub{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var n string
+		if rows.Scan(&n) == nil {
+			s.tables[n] = true
+		}
+	}
+	return s, rows.Err()
+}
+
+// truncate empties the tables of this machine's database the home publishes (what
+// this machine's own migrations put there, or an earlier copy): the subscription's
+// first copy then starts from nothing.
+func truncate(ctx context.Context, db *sql.DB, tables []string) error {
+	var have []string
+	for _, t := range tables {
+		var ok bool
+		if err := db.QueryRowContext(ctx, `SELECT to_regclass($1) IS NOT NULL`, "public."+pq.QuoteIdentifier(t)).Scan(&ok); err != nil {
+			return err
+		}
+		if ok {
+			have = append(have, "public."+pq.QuoteIdentifier(t))
+		}
+	}
+	if len(have) == 0 {
+		return nil
+	}
+	sort.Strings(have)
+	_, err := db.ExecContext(ctx, `TRUNCATE `+strings.Join(have, ", ")+` CASCADE`)
+	return err
+}
+
+// Subscribe drops any subscription this machine's database has and subscribes anew
+// to the grant's publication: its tables emptied first, every row then copied.
+func (c Copy) Subscribe(ctx context.Context, g Grant) error {
+	db, err := c.super()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	if err := c.unsubscribe(ctx, db); err != nil {
+		return err
+	}
 	if err := c.writeAccess(g); err != nil {
 		return fmt.Errorf("nodecopy: the copy's access: %w", err)
 	}
-	conn, err := c.conninfo()
+	if err := truncate(ctx, db, g.Tables); err != nil {
+		return fmt.Errorf("nodecopy: emptying this machine's tables: %w", err)
+	}
+	conn, err := c.conninfo(g.Database)
 	if err != nil {
 		return err
 	}
-	tmp := c.Data() + ".new"
-	_ = os.RemoveAll(tmp)
-	cmd := exec.CommandContext(ctx, c.exe("pg_basebackup"), "-d", conn, "-D", tmp, "-X", "stream", "-S", g.Slot,
-		"-c", "fast", "-w")
-	cmd.Env = append(os.Environ(), "PGPASSFILE="+filepath.Join(c.Keys, passFile), "PGCONNECT_TIMEOUT=10")
-	cmd.Stdout, cmd.Stderr = log, log
-	if err := cmd.Run(); err != nil {
-		_ = os.RemoveAll(tmp)
-		return fmt.Errorf("nodecopy: pg_basebackup: %w", err)
-	}
-	if err := c.standby(tmp, conn, g); err != nil {
-		_ = os.RemoveAll(tmp)
-		return err
-	}
-	if err := c.compatible(ctx, tmp); err != nil {
-		_ = os.RemoveAll(tmp)
-		return err
-	}
-	old := c.Data() + ".old"
-	_ = os.RemoveAll(old)
-	if fileExists(c.Data()) {
-		if err := os.Rename(c.Data(), old); err != nil {
-			_ = os.RemoveAll(tmp)
-			return err
-		}
-	}
-	if err := os.Rename(tmp, c.Data()); err != nil {
-		return err
-	}
-	_ = os.RemoveAll(old)
-	return nil
-}
-
-// ErrIncompatible: this machine's Postgres cannot run a copy of the home's database
-// (its files are of another build: another architecture's layout, other build options).
-var ErrIncompatible = errors.New("this machine's Postgres cannot run a copy of the home's database")
-
-// compatible checks a copy against this machine's Postgres: reading a value of its
-// control file makes postgres check the files are of its own build.
-func (c Copy) compatible(ctx context.Context, dir string) error {
-	cctx, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
-	out, err := exec.CommandContext(cctx, c.exe("postgres"), "-D", dir, "-C", "data_checksums").CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%w: %s", ErrIncompatible, strings.TrimSpace(string(out)))
+	q := fmt.Sprintf(`CREATE SUBSCRIPTION %s CONNECTION %s PUBLICATION %s
+	  WITH (slot_name = %s, create_slot = true, copy_data = true, streaming = on, disable_on_error = false)`,
+		pq.QuoteIdentifier(Subscription), pq.QuoteLiteral(conn), pq.QuoteIdentifier(g.Publication), pq.QuoteLiteral(g.Slot))
+	if _, err := db.ExecContext(ctx, q); err != nil {
+		return fmt.Errorf("nodecopy: subscribing: %w", err)
 	}
 	return nil
 }
 
-// hbaConf: the copy listens on loopback only, and still asks for the password.
-const hbaConf = `# Maktaba: this machine's copy of its home's database (loopback only)
-local   all   all                  scram-sha-256
-host    all   all   127.0.0.1/32   scram-sha-256
-host    all   all   ::1/128        scram-sha-256
-`
-
-// standbySettings are the settings a hot standby needs at least the primary's values of.
-var standbySettings = []string{"max_connections", "max_worker_processes", "max_wal_senders",
-	"max_prepared_transactions", "max_locks_per_transaction"}
-
-// writeConfig writes the copy's own postgresql.conf and postgresql.auto.conf: the
-// home's would carry its system's settings (a Linux or Mac home's shared memory type,
-// locales Windows does not know), which can stop the copy from starting at all.
-func (c Copy) writeConfig(dir, conn string, g Grant) error {
-	var s strings.Builder
-	s.WriteString("# Maktaba: this machine's copy of its home's database (nodecopy). Its own\n" +
-		"# configuration: the settings a hot standby needs at least the home's values of.\n")
-	for _, k := range standbySettings {
-		if v := strings.TrimSpace(g.Settings[k]); v != "" && strings.Trim(v, "0123456789") == "" {
-			fmt.Fprintf(&s, "%s = %s\n", k, v)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(dir, "postgresql.conf"), []byte(s.String()), 0o600); err != nil {
+// unsubscribe drops the subscription: with the home's slot when the home answers, else
+// leaving the slot to the home (its cap, or the next subscription, drops it).
+func (c Copy) unsubscribe(ctx context.Context, db *sql.DB) error {
+	s, err := c.subscription(ctx, db)
+	if err != nil || !s.exists {
 		return err
 	}
-	q := func(v string) string { return "'" + strings.ReplaceAll(v, "'", "''") + "'" }
-	auto := fmt.Sprintf("# Maktaba: this machine's copy of its home's database\nprimary_conninfo = %s\nprimary_slot_name = %s\n",
-		q(conn), q(g.Slot))
-	return os.WriteFile(filepath.Join(dir, "postgresql.auto.conf"), []byte(auto), 0o600)
+	name := pq.QuoteIdentifier(Subscription)
+	_, _ = db.ExecContext(ctx, `ALTER SUBSCRIPTION `+name+` DISABLE`)
+	if _, err := db.ExecContext(ctx, `DROP SUBSCRIPTION `+name); err == nil {
+		return nil
+	}
+	if _, err := db.ExecContext(ctx, `ALTER SUBSCRIPTION `+name+` SET (slot_name = NONE)`); err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, `DROP SUBSCRIPTION `+name)
+	return err
 }
 
-// Tune writes the copy's configuration again when the home's settings changed since
-// (a home that allows more connections now): true when the copy needs a restart.
-func (c Copy) Tune(g Grant) (bool, error) {
-	m, ok := c.Built()
-	if !ok || len(g.Settings) == 0 || sameSettings(m.Settings, g.Settings) {
+// Follow keeps the subscription current with a grant: its connection (the home's
+// address, a CA pinned since), its tables (a table the home publishes now: emptied
+// here, then copied), enabled. False when it cannot be kept and must be made anew.
+func (c Copy) Follow(ctx context.Context, g Grant) (bool, error) {
+	db, err := c.super()
+	if err != nil {
+		return false, err
+	}
+	defer db.Close()
+	s, err := c.subscription(ctx, db)
+	if err != nil {
+		return false, err
+	}
+	if !s.exists || !g.SlotExists || s.slot != g.Slot || len(s.pubs) != 1 || s.pubs[0] != g.Publication {
 		return false, nil
 	}
-	conn, err := c.conninfo()
+	if err := c.writeAccess(g); err != nil {
+		return false, err
+	}
+	conn, err := c.conninfo(g.Database)
 	if err != nil {
 		return false, err
 	}
-	if err := c.writeConfig(c.Data(), conn, g); err != nil {
-		return false, err
-	}
-	m.Settings = g.Settings
-	b, _ := json.Marshal(m)
-	return true, os.WriteFile(filepath.Join(c.Data(), markerFile), b, 0o600)
-}
-
-func sameSettings(a, b map[string]string) bool {
-	for _, k := range standbySettings {
-		if a[k] != b[k] {
-			return false
+	name := pq.QuoteIdentifier(Subscription)
+	if s.conninfo != conn {
+		if _, err := db.ExecContext(ctx, `ALTER SUBSCRIPTION `+name+` CONNECTION `+pq.QuoteLiteral(conn)); err != nil {
+			return false, err
 		}
 	}
-	return true
+	var added []string
+	for _, t := range g.Tables {
+		if !s.tables[t] {
+			added = append(added, t)
+		}
+	}
+	if len(added) > 0 || len(s.tables) != len(g.Tables) {
+		if err := truncate(ctx, db, added); err != nil {
+			return false, err
+		}
+		if _, err := db.ExecContext(ctx, `ALTER SUBSCRIPTION `+name+` REFRESH PUBLICATION WITH (copy_data = true)`); err != nil {
+			return false, err
+		}
+	}
+	if !s.enabled {
+		if _, err := db.ExecContext(ctx, `ALTER SUBSCRIPTION `+name+` ENABLE`); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
 }
 
-// standby makes a fresh base backup this machine's copy: its own configuration and
-// pg_hba, none of the home's TLS files, the standby signal and the marker.
-func (c Copy) standby(dir, conn string, g Grant) error {
-	for _, f := range []string{"server.key", "server.crt", "postgres-server.key", "postgres-server.crt", "root.crt",
-		"standby.signal", "recovery.signal", "postmaster.opts"} {
-		_ = os.Remove(filepath.Join(dir, f))
-	}
-	if err := os.WriteFile(filepath.Join(dir, "pg_hba.conf"), []byte(hbaConf), 0o600); err != nil {
+// Pause disables the subscription (the home's schema is ahead of this machine's: its
+// changes would not apply until this machine updates).
+func (c Copy) Pause(ctx context.Context) error {
+	db, err := c.super()
+	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "standby.signal"), nil, 0o600); err != nil {
+	defer db.Close()
+	s, err := c.subscription(ctx, db)
+	if err != nil || !s.exists || !s.enabled {
 		return err
 	}
-	if err := c.writeConfig(dir, conn, g); err != nil {
-		return err
-	}
-	m, _ := json.Marshal(Marker{SystemID: g.SystemID, Major: g.Major(), Slot: g.Slot, Built: time.Now().UTC(),
-		Settings: g.Settings})
-	if err := os.WriteFile(filepath.Join(dir, markerFile), m, 0o600); err != nil {
-		return err
-	}
-	restrict(dir)
-	return nil
-}
-
-// ServerArgs are the copy's postgres arguments: a hot standby on its loopback port,
-// without TLS or a unix socket (this machine's programs reach it over TCP).
-func (c Copy) ServerArgs() []string {
-	return []string{"-D", c.Data(), "-c", "port=" + strconv.Itoa(c.port()), "-c", "listen_addresses=127.0.0.1",
-		"-c", "unix_socket_directories=", "-c", "ssl=off", "-c", "hot_standby=on",
-		"-c", "cluster_name=maktaba-copy", "-c", "archive_mode=off"}
-}
-
-// Postgres is the copy's server program.
-func (c Copy) Postgres() string { return c.exe("postgres") }
-
-// StopCommand stops the copy fast (pg_ctl: Windows has no signal for it).
-func (c Copy) StopCommand() *exec.Cmd {
-	return exec.Command(c.exe("pg_ctl"), "stop", "-D", c.Data(), "-m", "fast", "-W")
+	_, err = db.ExecContext(ctx, `ALTER SUBSCRIPTION `+pq.QuoteIdentifier(Subscription)+` DISABLE`)
+	return err
 }
 
 // Status is how the copy is, as the machines page shows it.
@@ -482,22 +556,25 @@ type Status struct {
 	// LagMS how long ago that was.
 	AppliedAt *time.Time `json:"applied_at,omitempty"`
 	LagMS     *int64     `json:"lag_ms,omitempty"`
-	ReplayLSN string     `json:"replay_lsn,omitempty"`
-	Built     *time.Time `json:"built,omitempty"`
-	HomeMajor string     `json:"home_major,omitempty"`
-	Checked   time.Time  `json:"checked"`
+	// Tables and Ready: how many tables the copy follows, and how many have their first
+	// copy done.
+	Tables     int        `json:"tables,omitempty"`
+	Ready      int        `json:"ready,omitempty"`
+	Errors     int64      `json:"errors,omitempty"`
+	Subscribed *time.Time `json:"subscribed,omitempty"`
+	Checked    time.Time  `json:"checked"`
 }
 
 // The copy's states.
 const (
-	StatePreparing    = "preparing"    // fetching the Postgres programs
+	StatePreparing    = "preparing"    // fetching the Postgres programs, making this machine's database
 	StateWaiting      = "waiting"      // no copy yet, the home does not answer
-	StateCopying      = "copying"      // the first copy
-	StateRebuilding   = "rebuilding"   // copying anew: it could not follow any more
+	StateCopying      = "copying"      // the first copy of the tables
+	StateRebuilding   = "rebuilding"   // subscribing anew: it could not follow any more
 	StateFollowing    = "following"    // applying the home's changes
-	StateBehind       = "behind"       // running, but not applying the home's changes now
-	StateStarting     = "starting"     // running, not answering yet
-	StateIncompatible = "incompatible" // the home's Postgres is of another major version
+	StateBehind       = "behind"       // not applying the home's changes now
+	StateStarting     = "starting"     // this machine's database is not answering yet
+	StateIncompatible = "incompatible" // this machine's Maktaba is older than the home's: it follows after its update
 	StateUnavailable  = "unavailable"  // the home's database keeps no copies
 	StateError        = "error"
 	StateRevoked      = "revoked" // this machine is no longer the home's: the copy is wiped
@@ -506,20 +583,15 @@ const (
 // FollowingWithin: a copy whose last applied beat is this recent follows the home.
 const FollowingWithin = 30 * time.Second
 
-// Observe reads the copy's own state: whether it answers, the home's time of the last
-// change it applied and its replay position.
+// Observe reads the copy's own state: whether it answers, its tables' first copy, the
+// home's time of the last change it applied, the subscription's errors.
 func (c Copy) Observe(ctx context.Context, now time.Time) Status {
 	s := Status{Checked: now.UTC()}
-	if m, ok := c.Built(); ok {
-		b := m.Built
-		s.Built, s.HomeMajor = &b, m.Major
+	if m, ok := c.Mark(); ok && !m.Subscribed.IsZero() {
+		t := m.Subscribed
+		s.Subscribed = &t
 	}
-	dsn, err := c.DSN()
-	if err != nil {
-		s.State, s.Detail = StateError, err.Error()
-		return s
-	}
-	db, err := sql.Open("postgres", dsn)
+	db, err := c.super()
 	if err != nil {
 		s.State, s.Detail = StateError, err.Error()
 		return s
@@ -528,30 +600,38 @@ func (c Copy) Observe(ctx context.Context, now time.Time) Status {
 	octx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	var (
-		inRecovery bool
-		lsn        sql.NullString
-		at         sql.NullTime
+		found   bool
+		enabled bool
+		errs    sql.NullInt64
+		at      sql.NullTime
 	)
-	err = db.QueryRowContext(octx, `SELECT pg_is_in_recovery(), pg_last_wal_replay_lsn()::text,
-	       (SELECT at FROM cluster_replica_beat WHERE id = 1)`).Scan(&inRecovery, &lsn, &at)
-	if err != nil {
+	err = db.QueryRowContext(octx, `SELECT s.subenabled,
+	       (SELECT count(*) FROM pg_subscription_rel r WHERE r.srsubid = s.oid),
+	       (SELECT count(*) FROM pg_subscription_rel r WHERE r.srsubid = s.oid AND r.srsubstate = 'r'),
+	       (SELECT apply_error_count + sync_error_count FROM pg_stat_subscription_stats t WHERE t.subid = s.oid)
+	  FROM pg_subscription s WHERE s.subname = $1`, Subscription).Scan(&enabled, &s.Tables, &s.Ready, &errs)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+	case err != nil:
 		s.State, s.Detail = StateStarting, err.Error()
-		if strings.Contains(err.Error(), "locale is incompatible") {
-			// the home's database collates with a locale this system does not have (the
-			// bundled Postgres's is C, which every system has)
-			s.State = StateIncompatible
-		}
 		return s
+	default:
+		found = true
 	}
-	s.ReplayLSN = lsn.String
-	if at.Valid {
+	s.Errors = errs.Int64
+	if err := db.QueryRowContext(octx, `SELECT at FROM cluster_replica_beat WHERE id = 1`).Scan(&at); err == nil && at.Valid &&
+		at.Time.After(time.Unix(0, 0)) {
 		t := at.Time.UTC()
 		lag := now.Sub(t).Milliseconds()
 		s.AppliedAt, s.LagMS = &t, &lag
 	}
 	switch {
-	case !inRecovery:
-		s.State, s.Detail = StateError, "the copy is not a standby"
+	case !found:
+		s.State = StateWaiting
+	case s.Ready < s.Tables:
+		s.State, s.Detail = StateCopying, fmt.Sprintf("%d of %d tables copied", s.Ready, s.Tables)
+	case !enabled:
+		s.State = StateBehind
 	case at.Valid && now.Sub(at.Time) <= FollowingWithin:
 		s.State = StateFollowing
 	default:
@@ -560,11 +640,15 @@ func (c Copy) Observe(ctx context.Context, now time.Time) Status {
 	return s
 }
 
-// Wipe removes the copy and its secrets (the machine was revoked).
+// Wipe removes the copy and its secrets (the machine was revoked): this machine's
+// database (it held only the copy) and its passwords.
 func (c Copy) Wipe() error {
 	var first error
-	for _, p := range []string{c.Data(), c.Data() + ".new", c.Data() + ".old",
-		filepath.Join(c.Keys, passFile), filepath.Join(c.Keys, caFile), filepath.Join(c.Keys, passwordFile)} {
+	for _, p := range []string{c.DB.Data,
+		filepath.Join(c.DB.Keys, passFile), filepath.Join(c.DB.Keys, caFile), filepath.Join(c.DB.Keys, passwordFile),
+		filepath.Join(c.DB.Keys, readerPasswordFile),
+		filepath.Join(c.DB.Keys, "postgres-"+pgbundle.SuperUser+".password"),
+		filepath.Join(c.DB.Keys, "postgres-"+pgbundle.AppRole+".password")} {
 		if err := os.RemoveAll(p); err != nil && first == nil {
 			first = err
 		}
@@ -584,14 +668,15 @@ const (
 func kindOf(err error) int {
 	var pe *pq.Error
 	if errors.As(err, &pe) {
-		switch pe.Code {
-		case "28P01", "28000", "42501":
+		switch {
+		case pe.Code == "28P01" || pe.Code == "28000" || pe.Code == "42501":
 			return kindRefused
-		case "42883", "0A000":
+		case pe.Code == "42883" || pe.Code == "0A000":
 			return kindUnsupported
-		case "55006":
+		case pe.Code == "55006":
 			return kindBusy
-		case "57P01", "57P02", "57P03", "53300":
+		case strings.HasPrefix(string(pe.Code), "08") || strings.HasPrefix(string(pe.Code), "53") ||
+			strings.HasPrefix(string(pe.Code), "57P"):
 			return kindUnreachable
 		}
 		return kindOther
@@ -611,7 +696,20 @@ func writeSecret(path string, b []byte) error {
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(b); err != nil {
+		_ = f.Close()
+		return err
+	}
+	// a power cut is this feature's main case: the file is on the disk before the rename
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {

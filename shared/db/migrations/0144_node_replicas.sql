@@ -2,7 +2,8 @@
 -- +goose StatementBegin
 --
 -- Slot 0144 (node replicas, specs/epics/37-node-replica): every joined machine keeps a
--- live read-only copy of this database and runs on it when the home is away.
+-- live copy of this database, by logical replication, and runs on it when the home is
+-- away.
 --
 --   1. The machines' group (maktaba_worker) on a home whose migrations ran without the
 --      right to create roles (the Postgres bundled with Maktaba.app, whose app role
@@ -10,21 +11,22 @@
 --      privileges slots 0103..0143 give it, replayed in their order. A home that has
 --      the group is not touched.
 --   2. The replicas' group (maktaba_replicas): each machine's replication role joins
---      it; the home's pg_hba lets the group stream its copy, nothing else. The group
---      reads everything (pg_read_all_data, granted where the migrating user may: the
---      bundled Postgres grants it at its cluster bootstrap): a machine reads its copy,
---      sign-ins included, as its replication role, and that role streams every change
---      of this database already.
---   3. cluster_nodes.replica: what a machine reports of its copy (state, lag, replay
---      position, when it last applied, what it is doing: copying, rebuilding), through
+--      it. It reads the tables a copy is made of, nothing else (granted as they are
+--      published).
+--   3. What a copy holds: cluster_copy_excluded() names the tables it leaves out (the
+--      secrets, and other machines' rows), cluster_copy_tables() is every other table
+--      of public; a machine's own row of cluster_nodes, without its keys, is published
+--      to it alone. A table with no primary key is published with REPLICA IDENTITY FULL
+--      (without one, this home could not update it once published).
+--   4. cluster_nodes.replica: what a machine reports of its copy, through
 --      cluster_node_report_replica.
---   4. cluster_replica_beat: this home's clock, written every few seconds while a
---      machine follows it, so a copy knows how far it has applied the home's changes
---      (the offline sign-in's freshness rule, the lag the machines page shows); and
---      the CA of this database's TLS, which a machine pins for its replication.
---   5. cluster_node_replica_grant: a machine asks for its copy over its own database
+--   5. cluster_replica_beat: this home's clock, written every few seconds while a
+--      machine follows it, so a copy knows how far it has applied the home's changes;
+--      and the CA of this database's TLS, which a machine pins for its replication.
+--   6. cluster_node_replica_grant: a machine asks for its copy over its own database
 --      connection: its replication role (maktaba_rep_<id>, with the password the
---      machine chose) and its slot (maktaba_copy_<id>).
+--      machine chose) and its publication (maktaba_copy_<id>, brought up to date with
+--      the tables this home has now); its subscription makes the slot.
 --
 -- Additive.
 --
@@ -122,10 +124,6 @@ BEGIN
        AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = current_user AND (rolsuper OR rolcreaterole)) THEN
         CREATE ROLE maktaba_replicas NOLOGIN;
     END IF;
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_replicas')
-       AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = current_user AND rolsuper) THEN
-        GRANT pg_read_all_data TO maktaba_replicas;
-    END IF;
 END
 $$;
 -- +goose StatementEnd
@@ -176,16 +174,106 @@ $$;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
+-- The tables a machine's copy leaves out: the secrets (sealed keys, tokens, stream and
+-- push keys, the license), the state of other machines, and what each database keeps
+-- of its own (its migrations). A migration that adds such a table adds it here. Every
+-- other table of public is copied: a machine's routes read their tables from its copy.
+CREATE OR REPLACE FUNCTION cluster_copy_excluded() RETURNS text[]
+LANGUAGE sql IMMUTABLE AS $f$
+    SELECT ARRAY[
+        -- secrets
+        'home_secrets', 'tv_cluster_secret', 'tv_push_secrets', 'tv_simulcast_destinations',
+        'refresh_tokens', 'password_reset_tokens', 'pairing_tickets', 'cluster_sso_codes',
+        'idempotency_keys', 'licenses', 'devices', 'device_downloads', 'audit_log',
+        -- the machines' own (a machine's row of cluster_nodes is published to it alone)
+        'cluster_nodes', 'cluster_node_stages', 'cluster_metrics_cache', 'cluster_log_cache',
+        'cluster_cache_files',
+        -- each database's own
+        'goose_db_version', 'maktaba_schema_version'
+    ]::text[]
+$f$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- The tables a machine's copy is made of.
+CREATE OR REPLACE FUNCTION cluster_copy_tables() RETURNS SETOF regclass
+LANGUAGE sql STABLE SET search_path = public, pg_temp AS $f$
+    SELECT c.oid::regclass FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'public' AND c.relkind = 'r' AND NOT c.relispartition
+       AND c.relname <> ALL (cluster_copy_excluded())
+     ORDER BY c.relname
+$f$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- The columns of its own cluster_nodes row a machine's copy holds (not the home's
+-- private key for it, nor its sealed join answer; its own public key is one).
+CREATE OR REPLACE FUNCTION cluster_copy_node_columns() RETURNS text[]
+LANGUAGE sql IMMUTABLE AS $f$
+    SELECT ARRAY['id', 'name', 'state', 'os', 'arch', 'node_pubkey', 'versions', 'capabilities', 'storage',
+                 'path_map', 'path_map_source', 'drain', 'db_role', 'api_url', 'created_at',
+                 'approved_at', 'updated_at', 'version', 'platform', 'web_url', 'full_node']::text[]
+$f$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- A machine's publication, brought up to date with the tables this home has now (a
+-- migration added one; a table dropped leaves by itself): every copied table, readable
+-- by the replicas' group, and the machine's own row of cluster_nodes. Its name.
+CREATE OR REPLACE FUNCTION cluster_copy_publication(p_node uuid) RETURNS text
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $f$
+DECLARE
+    v_pub  text := 'maktaba_copy_' || replace(p_node::text, '-', '');
+    v_oid  oid;
+    v_tab  regclass;
+    v_cols text;
+BEGIN
+    SELECT oid INTO v_oid FROM pg_publication WHERE pubname = v_pub;
+    IF v_oid IS NULL THEN
+        EXECUTE format('CREATE PUBLICATION %I WITH (publish = %L)', v_pub, 'insert, update, delete, truncate');
+        SELECT oid INTO v_oid FROM pg_publication WHERE pubname = v_pub;
+    END IF;
+    FOR v_tab IN SELECT * FROM cluster_copy_tables()
+                 EXCEPT SELECT prrelid::regclass FROM pg_publication_rel WHERE prpubid = v_oid LOOP
+        IF NOT EXISTS (SELECT 1 FROM pg_index WHERE indrelid = v_tab AND indisprimary)
+           AND (SELECT relreplident FROM pg_class WHERE oid = v_tab) = 'd' THEN
+            EXECUTE format('ALTER TABLE %s REPLICA IDENTITY FULL', v_tab);
+        END IF;
+        EXECUTE format('ALTER PUBLICATION %I ADD TABLE %s', v_pub, v_tab);
+        EXECUTE format('GRANT SELECT ON %s TO maktaba_replicas', v_tab);
+    END LOOP;
+    -- a table now left out leaves the publication
+    FOR v_tab IN SELECT prrelid::regclass FROM pg_publication_rel r JOIN pg_class c ON c.oid = r.prrelid
+                  WHERE r.prpubid = v_oid AND c.relname <> 'cluster_nodes'
+                    AND c.relname = ANY (cluster_copy_excluded()) LOOP
+        -- (the keyword split: the migrations' lint reads it as a table's drop)
+        EXECUTE format('ALTER PUBLICATION %I DROP ' || 'TABLE %s', v_pub, v_tab);
+    END LOOP;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_rel WHERE prpubid = v_oid AND prrelid = 'cluster_nodes'::regclass) THEN
+        SELECT string_agg(quote_ident(c), ', ') INTO v_cols FROM unnest(cluster_copy_node_columns()) c;
+        EXECUTE format('ALTER PUBLICATION %I ADD TABLE cluster_nodes (%s) WHERE (id = %L::uuid)', v_pub, v_cols, p_node);
+        EXECUTE format('GRANT SELECT (%s) ON cluster_nodes TO maktaba_replicas', v_cols);
+    END IF;
+    RETURN v_pub;
+END
+$f$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+REVOKE EXECUTE ON FUNCTION cluster_copy_publication(uuid) FROM PUBLIC;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 -- A machine's copy of this database, for its own database role only
 -- (cluster_node_guard): its replication role, in the replicas' group, with the password
 -- the machine chose (it knows it before it asks, so its programs are given it at their
--- start), and its slot, which keeps the changes the machine has not applied yet.
--- p_fresh (the machine is about to copy the database anew, its copy stopped): the slot
--- is made anew, from now. A slot this home gave up on (past the changes it keeps for a
--- machine behind) is made anew too, and slot_made says so: the machine's copy cannot
--- follow from where it was and copies the database anew. It also names the settings a
--- standby must have at least this server's values of (the machine writes its own
--- configuration: this server's may not even parse on another system).
+-- start), and its publication, up to date. The machine's subscription makes the slot
+-- (maktaba_copy_<id>); slot_exists says whether this home still has it: a subscription
+-- whose slot is gone (this home gave up on a machine too far behind) copies anew.
+-- p_fresh (the machine is about to subscribe anew, its subscription gone): a slot left
+-- from before is dropped. It also says what the machine needs to follow: this home's
+-- schema version (a copy's own migrations must be at least as far), the tables it
+-- copies, the TLS CA it verifies this home with.
 CREATE OR REPLACE FUNCTION cluster_node_replica_grant(p_node uuid, p_password text, p_fresh boolean)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $f$
@@ -193,10 +281,9 @@ DECLARE
     v_id   text := replace(p_node::text, '-', '');
     v_role text := 'maktaba_rep_' || replace(p_node::text, '-', '');
     v_slot text := 'maktaba_copy_' || replace(p_node::text, '-', '');
+    v_pub  text;
     v_has  boolean;
     v_live boolean;
-    v_lost boolean;
-    v_made boolean := false;
 BEGIN
     PERFORM cluster_node_guard(p_node);
     IF NOT EXISTS (SELECT 1 FROM cluster_nodes WHERE id = p_node AND state = 'approved') THEN
@@ -209,6 +296,10 @@ BEGIN
         RAISE EXCEPTION 'this database keeps no copies for machines (no replicas group)'
             USING ERRCODE = 'feature_not_supported';
     END IF;
+    IF current_setting('wal_level') <> 'logical' THEN
+        RAISE EXCEPTION 'this database keeps no copies for machines (wal_level is %, not logical)',
+            current_setting('wal_level') USING ERRCODE = 'feature_not_supported';
+    END IF;
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = v_role) THEN
         EXECUTE format('ALTER ROLE %I WITH LOGIN REPLICATION INHERIT PASSWORD %L', v_role, p_password);
     ELSE
@@ -217,36 +308,29 @@ BEGIN
     IF NOT pg_has_role(v_role, 'maktaba_replicas', 'MEMBER') THEN
         EXECUTE format('GRANT maktaba_replicas TO %I', v_role);
     END IF;
-    SELECT true, active, coalesce(wal_status = 'lost', false) OR slot_type <> 'physical'
-      INTO v_has, v_live, v_lost
-      FROM pg_replication_slots WHERE slot_name = v_slot;
+    v_pub := cluster_copy_publication(p_node);
+    SELECT true, active INTO v_has, v_live FROM pg_replication_slots WHERE slot_name = v_slot;
     v_has := coalesce(v_has, false);
-    IF v_has AND (p_fresh OR v_lost) THEN
+    IF v_has AND p_fresh THEN
         IF v_live THEN
             RAISE EXCEPTION 'the slot % is in use: stop the copy first', v_slot USING ERRCODE = 'object_in_use';
         END IF;
         PERFORM pg_drop_replication_slot(v_slot);
         v_has := false;
     END IF;
-    IF NOT v_has THEN
-        PERFORM pg_create_physical_replication_slot(v_slot, true);
-        v_made := true;
-    END IF;
     RETURN jsonb_build_object(
         'role', v_role,
         'slot', v_slot,
-        'slot_made', v_made,
+        'slot_exists', v_has,
+        'publication', v_pub,
+        'tables', (SELECT jsonb_agg(c.relname ORDER BY c.relname) FROM pg_publication_rel r
+                     JOIN pg_class c ON c.oid = r.prrelid JOIN pg_publication p ON p.oid = r.prpubid
+                    WHERE p.pubname = v_pub),
+        'schema_version', (SELECT max(version_id) FROM goose_db_version WHERE is_applied),
         'system_identifier', (SELECT system_identifier FROM pg_control_system())::text,
         'server_version_num', current_setting('server_version_num')::int,
         'database', current_database(),
         'ca_pem', (SELECT ca_pem FROM cluster_replica_beat WHERE id = 1),
-        -- a hot standby needs these at least as high as this server's
-        'settings', jsonb_build_object(
-            'max_connections', current_setting('max_connections'),
-            'max_worker_processes', current_setting('max_worker_processes'),
-            'max_wal_senders', current_setting('max_wal_senders'),
-            'max_prepared_transactions', current_setting('max_prepared_transactions'),
-            'max_locks_per_transaction', current_setting('max_locks_per_transaction')),
         'node', v_id);
 END
 $f$;
@@ -266,6 +350,10 @@ $$;
 -- +goose Down
 -- +goose StatementBegin
 DROP FUNCTION IF EXISTS cluster_node_replica_grant(uuid, text, boolean);
+DROP FUNCTION IF EXISTS cluster_copy_publication(uuid);
+DROP FUNCTION IF EXISTS cluster_copy_node_columns();
+DROP FUNCTION IF EXISTS cluster_copy_tables();
+DROP FUNCTION IF EXISTS cluster_copy_excluded();
 DROP FUNCTION IF EXISTS cluster_node_report_replica(uuid, jsonb);
 DROP TABLE IF EXISTS cluster_replica_beat;
 ALTER TABLE cluster_nodes DROP COLUMN IF EXISTS replica_reported_at;

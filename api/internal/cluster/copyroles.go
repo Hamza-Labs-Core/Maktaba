@@ -9,8 +9,8 @@ import (
 )
 
 // A machine's copy of the home's database (specs/epics/37-node-replica, slot 0144's
-// cluster_node_replica_grant): its replication role and its slot, named after its id
-// as its database role is.
+// cluster_node_replica_grant): its replication role, its publication and its slot (the
+// last two share a name), named after its id as its database role is.
 
 // ReplicaGroup is the group role every machine's replication role joins (slot 0144).
 const ReplicaGroup = "maktaba_replicas"
@@ -27,8 +27,9 @@ func CopyNames(role string) (copyRole, slot string, ok bool) {
 
 // endCopy stops a machine's copy from following this database: its replication role
 // may no longer sign in (password rotated), its sessions (the replication's included)
-// are ended, its slot is dropped (so the changes it kept are released); with drop the
-// role goes too. Best effort: a home whose user may not do one of these leaves it.
+// are ended, its slot is dropped (so the changes it kept are released) and so is its
+// publication; with drop the role goes too. Best effort: a home whose user may not do
+// one of these leaves it.
 func (p *PGRoles) endCopy(ctx context.Context, role string, drop bool) {
 	copyRole, slot, ok := CopyNames(role)
 	if !ok {
@@ -60,6 +61,7 @@ func (p *PGRoles) endCopy(ctx context.Context, role string, drop bool) {
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
+	_, _ = p.DB.ExecContext(ctx, `DROP PUBLICATION IF EXISTS `+pq.QuoteIdentifier(slot))
 	if drop && exists {
 		_, _ = p.DB.ExecContext(ctx, `DROP ROLE IF EXISTS `+pq.QuoteIdentifier(copyRole))
 	}

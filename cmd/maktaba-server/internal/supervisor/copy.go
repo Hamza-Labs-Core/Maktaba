@@ -10,14 +10,15 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 )
 
-// RoleCopy is a full node's copy of its home's database (Epic 37, nodecopy): a
-// Postgres hot standby on its loopback port. On demand: its manager makes the copy and
-// then wants it (and stops it while it copies anew).
+// RoleCopy is a full node's copy of its home's database (Epic 37, nodecopy): this
+// machine's own Postgres on its loopback port, subscribed to the home's publication.
+// On demand: its manager makes the database first, then wants it.
 const RoleCopy Role = "copy"
 
-// BuildCopy constructs the copy's process.
+// BuildCopy constructs the copy's process. The copy's programs are known (c.DB.Home)
+// before its manager runs: they are this machine's install, or the pinned build's place.
 func BuildCopy(c nodecopy.Copy) Process {
-	cmd := exec.Command(c.Postgres(), c.ServerArgs()...)
+	cmd := exec.Command(c.DB.Bin("postgres"), c.DB.ServerArgs()...)
 	cmd.Env = os.Environ()
 	wire(cmd)
 	p := Process{
@@ -25,13 +26,13 @@ func BuildCopy(c nodecopy.Copy) Process {
 		Cmd:   cmd,
 		Probe: "postgres://" + c.Addr(),
 		Check: func(ctx context.Context) error {
-			return postgresCheck(pgbundle.Ready(ctx, c.Addr(), c.Role(), c.Database()))
+			return postgresCheck(pgbundle.Ready(ctx, c.Addr(), pgbundle.AppRole, pgbundle.AppDatabase))
 		},
 		StopSignal: os.Interrupt, // fast shutdown
 		OnDemand:   true,
 	}
 	if runtime.GOOS == "windows" {
-		p.Stop = func() { _ = c.StopCommand().Run() }
+		p.Stop = func() { _ = c.DB.StopCommand().Run() }
 	}
 	return p
 }

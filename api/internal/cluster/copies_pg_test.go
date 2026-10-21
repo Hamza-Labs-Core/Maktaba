@@ -21,7 +21,9 @@ import (
 // home set up as the Postgres bundled with Maktaba.app sets it up: the app role owns
 // the schema, has run the migrations and was given, at the cluster bootstrap, the
 // right to make roles and slots and the replicas' group. A machine's own database role
-// asks for its copy; revoking the machine ends it, removing it drops its role.
+// asks for its copy: its role, its publication (every table but the secrets and other
+// machines' rows); revoking the machine ends it, removing it drops its role. The
+// server must run with wal_level=logical.
 func TestAMachineGetsItsCopy(t *testing.T) {
 	base := os.Getenv("MAKTABA_TEST_PG_URL")
 	if base == "" {
@@ -55,7 +57,6 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	exec(admin, `ALTER ROLE `+app+` WITH CREATEROLE REPLICATION`)
 	exec(admin, `GRANT pg_monitor, pg_signal_backend TO `+app)
 	exec(admin, `CREATE ROLE maktaba_replicas NOLOGIN`)
-	exec(admin, `GRANT pg_read_all_data TO maktaba_replicas`)
 	exec(admin, `GRANT maktaba_replicas TO `+app+` WITH ADMIN OPTION, INHERIT FALSE, SET FALSE`)
 	exec(admin, `CREATE DATABASE `+dbName+` OWNER `+app)
 	t.Cleanup(func() {
@@ -101,11 +102,13 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	}
 	defer node.Close()
 	type grant struct {
-		Role, Slot, Database, Node string
-		SlotMade                   bool    `json:"slot_made"`
-		SystemID                   string  `json:"system_identifier"`
-		Version                    int     `json:"server_version_num"`
-		CA                         *string `json:"ca_pem"`
+		Role, Slot, Database, Node, Publication string
+		SlotExists                              bool     `json:"slot_exists"`
+		Tables                                  []string `json:"tables"`
+		SchemaVersion                           int64    `json:"schema_version"`
+		SystemID                                string   `json:"system_identifier"`
+		Version                                 int      `json:"server_version_num"`
+		CA                                      *string  `json:"ca_pem"`
 	}
 	ask := func(db *sql.DB, id, pw string, fresh bool) (grant, error) {
 		var raw []byte
@@ -121,11 +124,25 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a machine asks for its copy: %v", err)
 	}
-	if g.Role != copyRole || g.Slot != slot || !g.SlotMade || g.SystemID == "" || g.Version < 160000 ||
-		g.Database != dbName || g.CA != nil {
+	if g.Role != copyRole || g.Slot != slot || g.Publication != slot || g.SlotExists || g.SystemID == "" ||
+		g.Version < 160000 || g.Database != dbName || g.CA != nil || g.SchemaVersion < 144 {
 		t.Fatalf("grant: %+v", g)
 	}
-	// its replication role reads everything, from the home too (it streams every change already)
+	published := map[string]bool{}
+	for _, tab := range g.Tables {
+		published[tab] = true
+	}
+	for _, want := range []string{"users", "web_sessions", "videos", "cluster_replica_beat", "cluster_nodes"} {
+		if !published[want] {
+			t.Fatalf("%s is not published", want)
+		}
+	}
+	for _, never := range []string{"home_secrets", "refresh_tokens", "tv_cluster_secret", "goose_db_version"} {
+		if published[never] {
+			t.Fatalf("%s is published", never)
+		}
+	}
+	// its replication role reads what is published, from the home too, and nothing else
 	cp, err := sql.Open("postgres", clustertest.DSN(t, base, dbName, copyRole, pw))
 	if err != nil {
 		t.Fatal(err)
@@ -135,14 +152,21 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	if err := cp.QueryRow(`SELECT count(*) FROM users`).Scan(&n); err != nil {
 		t.Fatalf("the copy's role reads the users: %v", err)
 	}
+	if err := cp.QueryRow(`SELECT count(*) FROM home_secrets`).Scan(&n); !isCode(err, "42501") {
+		t.Fatalf("the copy's role reads the home's secrets: %v", err)
+	}
+	if err := cp.QueryRow(`SELECT count(*) FROM cluster_nodes WHERE home_privkey IS NOT NULL`).Scan(&n); !isCode(err, "42501") {
+		t.Fatalf("the copy's role reads the machines' keys: %v", err)
+	}
 	if _, err := cp.Exec(`UPDATE cluster_replica_beat SET at = now()`); err == nil {
 		t.Fatal("the copy's role may write")
 	}
-	// again: the same slot; fresh: made anew
-	if g, err := ask(node, nodeID, pw, false); err != nil || g.SlotMade {
+	// the subscription makes the slot (here by hand); fresh drops a slot left from before
+	exec(sup, `SELECT pg_create_logical_replication_slot('`+slot+`', 'pgoutput')`)
+	if g, err := ask(node, nodeID, pw, false); err != nil || !g.SlotExists {
 		t.Fatalf("asked again: %+v %v", g, err)
 	}
-	if g, err := ask(node, nodeID, pw, true); err != nil || !g.SlotMade {
+	if g, err := ask(node, nodeID, pw, true); err != nil || g.SlotExists {
 		t.Fatalf("asked fresh: %+v %v", g, err)
 	}
 	// a machine asks for another's copy, or with a short password: refused
@@ -159,6 +183,7 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	exec(home, `UPDATE cluster_replica_beat SET at = '2000-01-01'`)
+	exec(sup, `SELECT pg_create_logical_replication_slot('`+slot+`', 'pgoutput')`) // a machine follows
 	c := &Copies{DB: home, CAFile: ca}
 	c.beat(context.Background())
 	c.publishCA(context.Background())
@@ -179,19 +204,23 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	if slots != 0 {
 		t.Fatal("a slot past the cap was kept")
 	}
-	if g, err := ask(node, nodeID, pw, false); err != nil || !g.SlotMade {
-		t.Fatalf("after the cap the slot is made anew (the copy rebuilds): %+v %v", g, err)
+	if g, err := ask(node, nodeID, pw, false); err != nil || g.SlotExists {
+		t.Fatalf("after the cap the grant says the slot is gone (the copy subscribes anew): %+v %v", g, err)
 	}
 
-	// revoked: the copy's role may not sign in, its slot is gone; removed: its role too
+	// revoked: the copy's role may not sign in, its slot and publication are gone;
+	// removed: its role too
+	exec(sup, `SELECT pg_create_logical_replication_slot('`+slot+`', 'pgoutput')`)
 	if _, err := roles.Disable(context.Background(), nodeRole); err != nil {
 		t.Fatal(err)
 	}
 	var login bool
+	var pubs int
 	_ = home.QueryRow(`SELECT rolcanlogin FROM pg_roles WHERE rolname = $1`, copyRole).Scan(&login)
 	_ = home.QueryRow(`SELECT count(*) FROM pg_replication_slots WHERE slot_name = $1`, slot).Scan(&slots)
-	if login || slots != 0 {
-		t.Fatalf("after the revocation: the copy's role may sign in %v, slots %d", login, slots)
+	_ = home.QueryRow(`SELECT count(*) FROM pg_publication WHERE pubname = $1`, slot).Scan(&pubs)
+	if login || slots != 0 || pubs != 0 {
+		t.Fatalf("after the revocation: the copy's role may sign in %v, slots %d, publications %d", login, slots, pubs)
 	}
 	if err := roles.Drop(context.Background(), nodeRole); err != nil {
 		t.Fatal(err)

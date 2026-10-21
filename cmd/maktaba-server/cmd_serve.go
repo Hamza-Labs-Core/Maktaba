@@ -219,7 +219,7 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	}
 	confirmPending(ctx, sup, releaseDir)
 	if cp != nil {
-		runNodeCopy(ctx, cfg, cp, sup)
+		runNodeCopy(ctx, cfg, cp, procs, sup)
 	}
 	runErr := sup.Run(ctx, opts.grace)
 	if webSrv != nil {
