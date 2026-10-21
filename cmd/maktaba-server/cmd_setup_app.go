@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -585,20 +586,11 @@ func readAnswers(file string, fd int) (map[string]json.RawMessage, error) {
 		return nil, fmt.Errorf("answers: %w", err)
 	}
 	for k := range m {
-		if !contains(appSteps, k) {
+		if !slices.Contains(appSteps, k) {
 			return nil, fmt.Errorf("answers: no setup step %q (%s)", k, strings.Join(appSteps, ", "))
 		}
 	}
 	return m, nil
-}
-
-func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
 }
 
 // runAppSetupCmd is `setup` run from an app payload: the terminal wizard over
