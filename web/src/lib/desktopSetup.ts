@@ -30,7 +30,9 @@ export type AppState = AppTarget & {
 
 export type ServerStatus =
   | { kind: "setup_needed" | "paused" | "stopped" | "starting" | "running" }
-  | { kind: "problem"; roles: string[] };
+  | { kind: "problem"; roles: string[] }
+  /** its agent runs but the server has not answered for minutes: why, from its log */
+  | { kind: "not_answering"; reason: string };
 
 export interface StepProgress {
   stage: string;

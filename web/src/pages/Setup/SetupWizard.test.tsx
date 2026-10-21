@@ -410,6 +410,23 @@ describe("ServerStarting", () => {
     ).toBeInTheDocument();
     expect(api.openLocalServer).not.toHaveBeenCalled();
   });
+
+  it("says why a server that runs does not answer", async () => {
+    const api = fakeApi();
+    api.serverStatus.mockResolvedValue({
+      kind: "not_answering",
+      reason: "another launcher runs this install",
+    } as never);
+    render(
+      <I18nProvider>
+        <ServerStarting api={api} />
+      </I18nProvider>
+    );
+    expect(
+      await screen.findByText(/The server does not start: another launcher runs this install/)
+    ).toBeInTheDocument();
+    expect(api.openLocalServer).not.toHaveBeenCalled();
+  });
 });
 
 describe("DesktopGate", () => {

@@ -3294,6 +3294,7 @@
   "setup.starting.opening": "Opening your library…",
   "setup.starting.stopped": "The server is stopped. Choose Resume server in the menu bar.",
   "setup.starting.problem": "Some parts keep stopping: {roles}. Open logs from the menu bar to see why.",
+  "setup.starting.not_answering": "The server does not start: {reason}. Open logs from the menu bar to see more.",
   "setup.starting.note": "Maktaba runs in the menu bar. Closing this window leaves it running.",
   "setup.error.hf_token_invalid": "Hugging Face did not accept the token.",
   "setup.error.hf_gated": "Accept the model's terms on huggingface.co with this account first.",

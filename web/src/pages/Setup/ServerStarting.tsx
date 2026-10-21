@@ -42,6 +42,8 @@ export function ServerStarting({ api }: { api: SetupApi }) {
   let line = t("setup.starting.starting");
   if (status?.kind === "problem")
     line = t("setup.starting.problem", { roles: status.roles.join(", ") });
+  else if (status?.kind === "not_answering")
+    line = t("setup.starting.not_answering", { reason: status.reason });
   else if (status?.kind === "stopped" || status?.kind === "paused")
     line = t("setup.starting.stopped");
   else if (status?.kind === "running") line = t("setup.starting.opening");
