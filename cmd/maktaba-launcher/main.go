@@ -10,7 +10,7 @@
 // It never downloads, verifies signatures or touches the database; it uses
 // only the standard library and golang.org/x/sys.
 //
-//	maktaba-launcher [--root DIR] serve [-- server args]
+//	maktaba-launcher [--root DIR] [--log-file FILE] serve [-- server args]
 //	maktaba-launcher --version
 //	maktaba-launcher --status [--json]
 //	maktaba-launcher --verify <release dir>
@@ -64,9 +64,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 		pendingTO   = fs.Duration("pending-timeout", 15*time.Minute, "roll back a pending release not confirmed within this")
 		stopGrace   = fs.Duration("stop-grace", time.Minute, "how long the server may take to stop before it is killed")
 		appBundle   = fs.String("app-bundle", "", "run the server payload in DIR (default: detected when the launcher is inside Maktaba.app)")
+		logPath     = fs.String("log-file", "", "serve: append the launcher's and the server's output to FILE (renamed to FILE.1 past 50 MB)")
 	)
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
+	}
+	// the Linux app's systemd unit has no terminal to write to (Epic 39 story 39.5)
+	if *logPath != "" && len(fs.Args()) > 0 && fs.Args()[0] == "serve" {
+		lf, err := openLogFile(*logPath, logRotateBytes)
+		if err != nil {
+			fmt.Fprintf(stderr, "maktaba-launcher: --log-file: %v\n", err)
+			return exitFailure
+		}
+		defer lf.Close()
+		stdout, stderr = lf, lf
 	}
 	if *showVersion {
 		fmt.Fprintf(stdout, "maktaba-launcher %s (launcher_protocol %d)\n", Version, LauncherProtocol)
@@ -78,6 +89,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if bundle != "" {
 		return runBundle(fs.Args(), stdout, stderr, bundle, appStateRoot(*root), *status, *asJSON,
+			*replaceSelf != "", *stopGrace)
+	}
+	// the Linux app's runtime copy (Epic 39 story 39.3): app-bundle mode too
+	if payload, ok := runtimePayload(selfDir()); ok {
+		return runBundle(fs.Args(), stdout, stderr, payload, runtimeStateRoot(*root, payload), *status, *asJSON,
 			*replaceSelf != "", *stopGrace)
 	}
 	l := layout.New(resolveRoot(*root))
