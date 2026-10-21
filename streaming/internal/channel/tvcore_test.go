@@ -279,10 +279,32 @@ func TestTVSettings_Horizon(t *testing.T) {
 	}
 }
 
+func TestTVSettings_LiveLookupReuse(t *testing.T) {
+	t.Setenv("MAKTABA_CHANNEL_LIVE_LOOKUP_REUSE_SEC", "")
+	base := TVSettingsFromEnv()
+	if base.LiveLookupReuse != DefaultLiveLookupReuse {
+		t.Fatalf("default: %v", base.LiveLookupReuse)
+	}
+	tv, bad := ApplyTVRules(base, []byte(`{"live_lookup_reuse_seconds":60}`))
+	if len(bad) != 0 || tv.LiveLookupReuse != time.Minute {
+		t.Fatalf("rule: %v %v", tv.LiveLookupReuse, bad)
+	}
+	for _, v := range []string{`5`, `7200`, `"x"`} {
+		if tv, bad := ApplyTVRules(base, []byte(`{"live_lookup_reuse_seconds":`+v+`}`)); len(bad) != 1 || tv.LiveLookupReuse != base.LiveLookupReuse {
+			t.Errorf("%s accepted: %v", v, tv.LiveLookupReuse)
+		}
+	}
+	t.Setenv("MAKTABA_CHANNEL_LIVE_LOOKUP_REUSE_SEC", "120")
+	if TVSettingsFromEnv().LiveLookupReuse != 2*time.Minute {
+		t.Error("env fallback")
+	}
+}
+
 func TestSettingsStarter_ReadsOutputAtStart(t *testing.T) {
 	gate, vt := NewEncoderGate(6), NewEncoderGate(0)
 	set := StaticSettings{Outs: OutputSettings{Encoder: "auto", Width: 640, Height: 360, FPS: 25, VideoKbps: 900,
-		AudioCodec: "aac", AudioKbps: 96, SegmentSeconds: 2, MaxActive: 3, NVENCMax: 2, VTMax: 5}}
+		AudioCodec: "aac", AudioKbps: 96, SegmentSeconds: 2, MaxActive: 3, NVENCMax: 2, VTMax: 5},
+		TVs: TVSettings{LiveLookupReuse: 90 * time.Second}}
 	enc := &EncoderResolver{GOOS: "windows", Probe: &fakeProbe{encodes: map[string]bool{"h264_nvenc": true}}}
 	t.Setenv(fakeFFmpegEnv, "1")
 	bin, _ := os.Executable()
@@ -296,6 +318,10 @@ func TestSettingsStarter_ReadsOutputAtStart(t *testing.T) {
 	defer func() { st.Stop(); <-st.Done() }()
 	if pr := st.cfg.Profile; pr.Width != 640 || pr.FPS != 25 || pr.Encoder != EncoderNVENC || pr.SegmentSeconds != 2 {
 		t.Errorf("profile: %+v", pr)
+	}
+	// A live block asks for the output's height, shared for the tv rule's time.
+	if r := st.liveRequest("https://x/live"); r.MaxHeight != 360 || r.Reuse != 90*time.Second {
+		t.Errorf("live request: %+v", r)
 	}
 	if gate.Max() != 2 || vt.Max() != 5 {
 		t.Errorf("gate max = %d / %d, want the settings' 2 / 5", gate.Max(), vt.Max())

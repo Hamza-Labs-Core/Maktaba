@@ -38,6 +38,9 @@ type StationConfig struct {
 	Now           func() time.Time
 	// LiveRetry: how long a failed live block slates before retrying.
 	LiveRetry time.Duration
+	// LiveLookupReuse: how long a live page's lookup is shared (rules tv
+	// live_lookup_reuse_seconds); 0: DefaultLiveLookupReuse.
+	LiveLookupReuse time.Duration
 	// Gate is the NVENC session semaphore shared by every station (nil:
 	// the process-wide DefaultEncoderGate); VTGate the VideoToolbox one
 	// (nil: DefaultVTGate, uncapped by default).
@@ -393,6 +396,12 @@ func (s *Station) writeMux(b []byte) (int, error) {
 	return len(b), nil
 }
 
+// liveRequest is a live block's lookup: no taller than the channel's
+// output, shared for the rules' reuse time.
+func (s *Station) liveRequest(sourceURL string) LiveRequest {
+	return LiveRequest{SourceURL: sourceURL, MaxHeight: s.cfg.Profile.Height, Reuse: s.cfg.LiveLookupReuse}
+}
+
 // prewarmLive resolves (yt-dlp) and probes an upcoming live block so the
 // result is cached when the block is queued; failures are left to the
 // normal path (which retries and slates).
@@ -400,7 +409,7 @@ func (s *Station) prewarmLive(ctx context.Context, b ProgramBlock) {
 	if b.SourceURL == "" || s.cfg.Resolver == nil {
 		return
 	}
-	u, err := s.cfg.Resolver.Resolve(ctx, b.SourceURL)
+	u, err := s.cfg.Resolver.Resolve(ctx, s.liveRequest(b.SourceURL))
 	if err != nil {
 		s.log.Info("channel: live prewarm failed", "seq", b.Seq, "err", err.Error(), "event", "channel_live_prewarm_failed")
 		return
@@ -902,7 +911,7 @@ func (s *Station) blockInput(ctx context.Context, seg Segment, look Look) (*Bloc
 		in.HWDecode = s.cfg.Profile.Encoder == EncoderNVENC || s.cfg.Profile.Encoder == EncoderVideoToolbox
 		s.applyLook(ctx, in, look, seg.Kind)
 	case KindLive:
-		u, err := s.cfg.Resolver.Resolve(ctx, seg.Block.SourceURL)
+		u, err := s.cfg.Resolver.Resolve(ctx, s.liveRequest(seg.Block.SourceURL))
 		if err != nil {
 			return nil, start, fmt.Errorf("resolve live: %w", err)
 		}

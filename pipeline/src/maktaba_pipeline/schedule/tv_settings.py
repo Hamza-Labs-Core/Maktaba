@@ -110,6 +110,8 @@ class MaktabaTvConfig:
     #: live broadcasts in the channels' grids; empty: the dizqueTV export's (rules
     #: dizquetv.live), so one list serves both
     live: tuple[LiveSlot, ...] = ()
+    #: one yt-dlp lookup of a live page is shared this long by every channel airing it
+    live_lookup_reuse_seconds: int = 600
     #: even loudness across programmes and filler
     loudnorm: bool = True
     loudnorm_target_lufs: float = -16.0
@@ -488,6 +490,16 @@ register(
             "(mon ... sun; empty: every day). No programme runs into it: what would not end "
             "before it is not started, filler fills up to it and the show goes on after. "
             "Empty: the dizqueTV export's live broadcasts.",
+        ),
+        "live_lookup_reuse_seconds": Help(
+            TV,
+            "Live page lookup reuse (seconds)",
+            "A live broadcast on a YouTube (or other) page is looked up with yt-dlp before "
+            "it airs. Every channel airing the same page at the same time shares one lookup, "
+            "reused this long; after a failure the next try looks again. A stream address "
+            "(.m3u8 ...) needs no lookup.",
+            minimum=10,
+            maximum=3600,
         ),
         "loudnorm": Help(TV, "Even loudness", "Normalise every programme's loudness."),
         "loudnorm_target_lufs": Help(TV, "Loudness target (LUFS)"),
