@@ -60,10 +60,14 @@ jobs:
           sudo apt-get install -y -qq patchelf zip shellcheck
 
       # the pinned third-party downloads (~150 MB), keyed on their checksums
+      # an earlier pins.env's cache too: payload.sh checks every file against its pinned
+      # SHA-256 and downloads only what changed, so a host outage after a pin change does
+      # not stop the pieces it did not touch
       - uses: actions/cache@v4
         with:
           path: build/linux-app/downloads
           key: linux-app-downloads-${{ matrix.arch }}-${{ hashFiles('tools/release/linux-app/pins.env') }}
+          restore-keys: linux-app-downloads-${{ matrix.arch }}-
 
       - name: shellcheck and the payload tool's tests
         run: |

@@ -587,7 +587,7 @@ foreach ($inst in @('main') + $wanted) {
 # --- summary ---------------------------------------------------------------------------------
 Write-Host ''
 Write-NodeStep 'Done.'
-Write-Host "  Node config:  $(Join-Path $script:NodeConfDir 'node.json')"
+Write-Host "  Node config:  $(Get-NodeConfigPath)"
 Write-Host "  Settings:     $envFile (node@<N>.env per extra worker)"
 Write-Host "  Python:       $($script:NodeVenv)"
 Write-Host "  Pipeline:     $PipelineOrigin"

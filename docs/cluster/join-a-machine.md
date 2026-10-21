@@ -229,7 +229,7 @@ login, readable only by your user:
 |---|---|
 | macOS | `~/Library/Application Support/Maktaba/node.json` |
 | Linux | `~/.config/maktaba/node.json` |
-| Windows | `%APPDATA%\Maktaba\node.json` |
+| Windows | `%LOCALAPPDATA%\Maktaba\node.json` (a machine that joined before Epic 38 keeps `%APPDATA%\Maktaba\node.json` until maktaba-server moves it) |
 
 ## Step 6 — Start working and check
 

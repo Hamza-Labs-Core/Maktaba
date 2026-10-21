@@ -34,15 +34,20 @@ func newRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: false,
 		Version:       version.String(),
-		// Epic 36 story 36.2: a Mac install made before the Mac paths moves into
-		// ~/Library/Application Support/Maktaba once, before any command reads it.
+		// Epic 36 story 36.2 / Epic 38 story 38.1: an install made before this
+		// platform's paths (~/Library/Application Support/Maktaba on a Mac,
+		// %LOCALAPPDATA%\Maktaba on Windows) moves into them before any command
+		// reads it; a move that stopped half way is finished here. Never inside the
+		// desktop app's payload (config.InAppPayload): an older install comes into
+		// the app only through its move, which keeps the old one for going back.
 		PersistentPreRunE: func(*cobra.Command, []string) error {
-			from, err := config.MigrateMacDirs()
+			exe, _ := os.Executable()
+			lines, err := config.MigrateDirs(exe)
+			for _, l := range lines {
+				fmt.Fprintln(os.Stderr, l)
+			}
 			if err != nil {
 				return fmt.Errorf("move this install to %s: %w", config.LocalDirs().Config, err)
-			}
-			if from != "" {
-				fmt.Fprintf(os.Stderr, "Moved this install from %s to %s\n", from, config.LocalDirs().Config)
 			}
 			return nil
 		},
@@ -60,6 +65,8 @@ func newRootCmd() *cobra.Command {
 		newAddUserCmd(),
 		newKeysCmd(),
 		newMigrateFromDevCmd(),
+		newServiceCmd(),
+		newRuntimeCmd(),
 	)
 	return root
 }
@@ -75,12 +82,7 @@ const rootLong = `maktaba-server runs all of Maktaba from a single binary.
   maktaba-server adduser   Seed the first admin user
   maktaba-server keys      Generate or rotate JWT signing keys
   maktaba-server migrate-from-dev  Move the developer stack into Maktaba.app
+  maktaba-server service   The systemd user service of the Linux app
+  maktaba-server runtime   The Linux app's runtime copy of the server payload
 
 Configuration lives in server.toml (see 'maktaba-server setup').`
-
-// fatalf prints to stderr and exits 1 — used by leaf commands that want
-// a bare error line without cobra usage noise.
-func fatalf(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, format+"\n", args...)
-	os.Exit(1)
-}

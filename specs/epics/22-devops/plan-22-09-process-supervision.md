@@ -56,8 +56,9 @@ wait for the delay (a shutdown cancels the wait) → restarts++ → start again
 
 Shutdown: `Run` sets `stopping` under the lock, cancels the loops (backoff
 waits end and probes stop), sends the graceful signal to every running
-child (SIGTERM on POSIX, Kill on Windows, as before), and kills them after
-`--shutdown-grace`.
+child (SIGTERM on POSIX, Kill on Windows, as before; since Epic 38 story
+38.5 Windows sends CTRL_BREAK to the child's own process group), and kills
+them after `--shutdown-grace`.
 
 ### Liveness, by role
 

@@ -265,6 +265,20 @@ func TestCompareVersions(t *testing.T) {
 		{"1.5", "1.5.0", 0},
 		{"1.5.0+build.7", "1.5.0", 0},
 		{"2.0.0", "10.0.0", -1},
+		// a git describe build: after the tag it was built from, before the next
+		{"v0.2.0-12-gabc1234", "v0.2.0", 1},
+		{"v0.2.0-12-gabc1234", "v0.2.1", -1},
+		{"v0.2.0-12-gabc1234", "v0.2.0-3-gdef5678", 1},
+		{"v1.0.0-rc.1-3-g1a2b3c4d", "v1.0.0-rc.1", 1},
+		{"v1.0.0-rc.1-3-g1a2b3c4d", "v1.0.0", -1},
+		// dirty after clean: v0.2.0 < v0.2.0-dirty < v0.2.0-1-g… < v0.2.0-1-g…-dirty < v0.2.1
+		{"v0.2.0-dirty", "v0.2.0", 1},
+		{"v0.2.0-dirty", "v0.2.0-1-gabc1234", -1},
+		{"v0.2.0-3-gdef5678-dirty", "v0.2.0-3-gdef5678", 1},
+		{"v0.2.0-3-gdef5678-dirty", "v0.2.1", -1},
+		// normalized first: spaces, a capital V and build metadata do not hide a describe build
+		{" V0.2.0-12-gabc1234 ", "v0.2.0", 1},
+		{"v0.2.0-12-gabc1234+build.3", "v0.2.0", 1},
 	}
 	for _, c := range cases {
 		if got := CompareVersions(c.a, c.b); got != c.want {
@@ -284,6 +298,24 @@ func TestLockIsExclusive(t *testing.T) {
 	}
 	Unlock(f)
 	g, err := l.Lock()
+	if err != nil {
+		t.Fatalf("after unlock: %v", err)
+	}
+	Unlock(g)
+}
+
+// LockFile is the same lock on any path, its folder made when missing.
+func TestLockFileIsExclusive(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "a", "b.lock")
+	f, err := LockFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LockFile(path); !errors.Is(err, ErrLocked) {
+		t.Fatalf("second lock: %v", err)
+	}
+	Unlock(f)
+	g, err := LockFile(path)
 	if err != nil {
 		t.Fatalf("after unlock: %v", err)
 	}

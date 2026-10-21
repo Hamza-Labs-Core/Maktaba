@@ -236,7 +236,7 @@ func (h *Handler) previewLineup(w http.ResponseWriter, r *http.Request) {
 		}
 		base := hdhr.BaseURL(h.PublicBase, r)
 		q := "?pt=" + url.QueryEscape(tok)
-		body := hdhr.BuildM3UWith(hdhr.BaseURL(h.WebBase, r), base+"/staging/xmltv.xml"+q, chans,
+		body := hdhr.BuildM3UWith(base, base+"/staging/xmltv.xml"+q, chans,
 			func(c hdhr.GuideChannel) string {
 				return base + "/stream/staging/channel/" + c.ID.String() + "/index.m3u8" + q
 			})
@@ -261,6 +261,7 @@ func (h *Handler) previewXMLTV(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		bw := bufio.NewWriter(w)
 		defer bw.Flush()
-		hdhr.WriteXMLTV(bw, hdhr.BaseURL(h.WebBase, r), chans, progs, rules)
+		// the staged videos are not on air: their programmes show the channel's logo
+		hdhr.WriteXMLTV(bw, hdhr.XMLTVOptions{Base: hdhr.BaseURL(h.PublicBase, r), Rules: rules}, chans, progs)
 	})
 }

@@ -157,6 +157,10 @@ class StageResult:
     requests: tuple[Request, ...] = ()
     summary: dict[str, Any] = field(default_factory=dict)
     log: tuple[tuple[str, str, dict[str, Any]], ...] = ()
+    #: the inputs this result answers, when not all the fingerprint names (a transcript
+    #: whose second listen was skipped): stored as the job's input hash, so a worker
+    #: that can do more does not take it as done
+    input_hash: str | None = None
 
 
 StageHandler = Callable[["DBConn", "Job", "StageContext"], Awaitable[StageResult]]
@@ -233,6 +237,10 @@ class StageDef:
     #: enqueued (catalog subject) whenever the scheduler's top-up extended a channel's
     #: timeline: a stage that tells another system the guide grew (Plex Live TV)
     after_topup: bool = False
+    #: a catalog stage the reconciler enqueues periodically: ``(section, field)`` names the
+    #: rule holding the interval in minutes (``rules.<section>.<field>``; 0: never). For a
+    #: stage that checks another system nothing tells Maktaba about (Plex's channel map)
+    every_minutes_rule: tuple[str, str] | None = None
 
     def edges_json(self) -> list[dict[str, Any]]:
         return [e.to_json() for e in self.edges]

@@ -44,6 +44,9 @@ pub enum Event {
         message: String,
         #[serde(default)]
         field: Option<String>,
+        /// The values the screen puts into the code's own text.
+        #[serde(default)]
+        params: Option<Value>,
     },
 }
 
@@ -67,16 +70,21 @@ pub struct StepError {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub field: Option<String>,
+    /// The values the screen puts into the code's own text (setup.error.<code>), boxed: a
+    /// step's `Result` stays small (clippy's result_large_err).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<Box<Value>>,
     /// The step's last stderr lines, for the "details" box.
     pub details: Vec<String>,
 }
 
 impl StepError {
-    fn new(code: &str, message: impl Into<String>) -> Self {
+    pub fn new(code: &str, message: impl Into<String>) -> Self {
         Self {
             code: code.into(),
             message: message.into(),
             field: None,
+            params: None,
             details: Vec::new(),
         }
     }
@@ -92,13 +100,15 @@ pub fn parse_line(line: &str) -> Option<Event> {
     serde_json::from_str(line).ok()
 }
 
-/// Run one step with `bin` (the bundled maktaba-server) and return its
-/// result data. `on_progress` gets every progress line as it arrives.
+/// Run one step with `bin` (the bundled maktaba-server, or on Linux the
+/// runtime's) and return its result data. `envs` are set for it;
+/// `on_progress` gets every progress line as it arrives.
 pub fn run_step(
     bin: &Path,
+    envs: &[(String, String)],
     step: &str,
     input: &Value,
-    mut on_progress: impl FnMut(Progress),
+    on_progress: impl FnMut(Progress),
 ) -> Result<Value, StepError> {
     if !STEPS.contains(&step) {
         return Err(StepError::new(
@@ -112,22 +122,54 @@ pub fn run_step(
             "a step's input is a JSON object",
         ));
     }
-    let mut child = Command::new(bin)
-        .args(["setup", "--json", "--step", step])
-        .stdin(Stdio::piped())
+    run_ndjson(
+        bin,
+        &["setup", "--json", "--step", step],
+        envs,
+        Some(input),
+        on_progress,
+        &format!("setup step {step}"),
+    )
+}
+
+/// Run `bin args…`, a maktaba-server command that speaks the setup contract
+/// (`progress` lines, then one `result` or `error`), and return its result
+/// data. `input` (when given) is its stdin; `what` names it in an error.
+pub fn run_ndjson(
+    bin: &Path,
+    args: &[&str],
+    envs: &[(String, String)],
+    input: Option<&Value>,
+    mut on_progress: impl FnMut(Progress),
+    what: &str,
+) -> Result<Value, StepError> {
+    let mut cmd = Command::new(bin);
+    cmd.args(args)
+        .envs(envs.iter().map(|(k, v)| (k, v)))
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| {
-            StepError::new(
-                "server_missing",
-                format!("cannot run {}: {e}", bin.display()),
-            )
-        })?;
+        .stderr(Stdio::piped());
+    // Windows (Epic 38): maktaba-server is a console program; started from
+    // the GUI shell without this, each step would flash a console window.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
+    }
+    let mut child = cmd.spawn().map_err(|e| {
+        StepError::new(
+            "server_missing",
+            format!("cannot run {}: {e}", bin.display()),
+        )
+    })?;
 
     // stdin: the input, then EOF. A step that exits without reading it
     // closes the pipe; the exit code and events tell what happened.
-    if let Some(mut stdin) = child.stdin.take() {
+    if let (Some(mut stdin), Some(input)) = (child.stdin.take(), input) {
         let _ = stdin.write_all(input.to_string().as_bytes());
     }
 
@@ -165,11 +207,13 @@ pub fn run_step(
                     code,
                     message,
                     field,
+                    params,
                 }) if outcome.is_none() => {
                     outcome = Some(Err(StepError {
                         code,
                         message,
                         field,
+                        params: params.map(Box::new),
                         details: Vec::new(),
                     }))
                 }
@@ -193,10 +237,7 @@ pub fn run_step(
                 }),
                 Err(e) => format!("could not be waited for: {e}"),
             };
-            let mut e = StepError::new(
-                "no_result",
-                format!("setup step {step} {how} without a result"),
-            );
+            let mut e = StepError::new("no_result", format!("{what} {how} without a result"));
             e.details = details;
             Err(e)
         }
@@ -207,13 +248,26 @@ pub fn run_step(
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::os::unix::fs::PermissionsExt;
 
-    /// A stand-in for maktaba-server that speaks the contract.
-    fn stub(dir: &Path, body: &str) -> std::path::PathBuf {
+    /// A stand-in for maktaba-server that speaks the contract: a shell script,
+    /// or on Windows a batch file (the same steps in cmd's words).
+    #[cfg(unix)]
+    fn stub(dir: &Path, sh: &str, _cmd: &str) -> std::path::PathBuf {
+        use std::os::unix::fs::PermissionsExt;
         let p = dir.join("maktaba-server");
-        std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::write(&p, format!("#!/bin/sh\n{sh}\n")).unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        p
+    }
+
+    #[cfg(windows)]
+    fn stub(dir: &Path, _sh: &str, cmd: &str) -> std::path::PathBuf {
+        let p = dir.join("maktaba-server.cmd");
+        std::fs::write(
+            &p,
+            format!("@echo off\r\n{}\r\n", cmd.replace('\n', "\r\n")),
+        )
+        .unwrap();
         p
     }
 
@@ -238,12 +292,22 @@ mod tests {
         );
         assert_eq!(
             parse_line(
-                r#"{"type":"error","code":"weak_password","message":"Too short","field":"password"}"#
+                r#"{"type":"error","code":"password_short","message":"Too short","field":"password","params":{"min":8}}"#
             ),
             Some(Event::Error {
-                code: "weak_password".into(),
+                code: "password_short".into(),
                 message: "Too short".into(),
-                field: Some("password".into())
+                field: Some("password".into()),
+                params: Some(json!({"min": 8}))
+            })
+        );
+        assert_eq!(
+            parse_line(r#"{"type":"error","code":"network","message":"m"}"#),
+            Some(Event::Error {
+                code: "network".into(),
+                message: "m".into(),
+                field: None,
+                params: None
             })
         );
         assert_eq!(parse_line(""), None);
@@ -261,10 +325,15 @@ mod tests {
 printf '{"type":"progress","stage":"one","message":"first"}\n'
 printf 'stray line\n'
 printf '{"type":"result","data":{"argv":"%s","input":%s}}\n' "$*" "$input""#,
+            r#"set /p input=
+echo {"type":"progress","stage":"one","message":"first"}
+echo stray line
+echo {"type":"result","data":{"argv":"%*","input":%input%}}"#,
         );
         let mut seen = Vec::new();
         let out = run_step(
             &bin,
+            &[],
             "admin",
             &json!({"username": "admin", "password": "s3cret"}),
             |p| seen.push(p.stage),
@@ -286,8 +355,11 @@ printf '{"type":"result","data":{"argv":"%s","input":%s}}\n' "$*" "$input""#,
             r#"echo "checking token" >&2
 printf '{"type":"error","code":"hf_gated","message":"Accept the terms","field":"hf_token"}\n'
 exit 1"#,
+            r#">&2 echo checking token
+echo {"type":"error","code":"hf_gated","message":"Accept the terms","field":"hf_token"}
+exit /b 1"#,
         );
-        let e = run_step(&bin, "models", &json!({}), |_| {}).unwrap_err();
+        let e = run_step(&bin, &[], "models", &json!({}), |_| {}).unwrap_err();
         assert_eq!(e.code, "hf_gated");
         assert_eq!(e.field.as_deref(), Some("hf_token"));
         assert_eq!(e.details, ["checking token"]);
@@ -296,8 +368,12 @@ exit 1"#,
     #[test]
     fn exiting_without_a_result_is_an_error() {
         let tmp = tempfile::tempdir().unwrap();
-        let bin = stub(tmp.path(), "echo boom >&2; exit 3");
-        let e = run_step(&bin, "check", &json!({}), |_| {}).unwrap_err();
+        let bin = stub(
+            tmp.path(),
+            "echo boom >&2; exit 3",
+            ">&2 echo boom\nexit /b 3",
+        );
+        let e = run_step(&bin, &[], "check", &json!({}), |_| {}).unwrap_err();
         assert_eq!(e.code, "no_result");
         assert!(e.message.contains("exited with code 3"), "{}", e.message);
         assert_eq!(e.details, ["boom"]);
@@ -305,9 +381,10 @@ exit 1"#,
         let bin = stub(
             tmp.path(),
             r#"printf '{"type":"result","data":{}}\n'; exit 1"#,
+            "echo {\"type\":\"result\",\"data\":{}}\nexit /b 1",
         );
         assert_eq!(
-            run_step(&bin, "check", &json!({}), |_| {})
+            run_step(&bin, &[], "check", &json!({}), |_| {})
                 .unwrap_err()
                 .code,
             "no_result"
@@ -318,19 +395,19 @@ exit 1"#,
     fn unknown_steps_bad_input_and_a_missing_binary_are_refused() {
         let missing = Path::new("/nonexistent/maktaba-server");
         assert_eq!(
-            run_step(missing, "rm -rf", &json!({}), |_| {})
+            run_step(missing, &[], "rm -rf", &json!({}), |_| {})
                 .unwrap_err()
                 .code,
             "unknown_step"
         );
         assert_eq!(
-            run_step(missing, "check", &json!([1]), |_| {})
+            run_step(missing, &[], "check", &json!([1]), |_| {})
                 .unwrap_err()
                 .code,
             "bad_input"
         );
         assert_eq!(
-            run_step(missing, "check", &json!({}), |_| {})
+            run_step(missing, &[], "check", &json!({}), |_| {})
                 .unwrap_err()
                 .code,
             "server_missing"
@@ -343,8 +420,56 @@ exit 1"#,
         let bin = stub(
             tmp.path(),
             r#"exec 0<&-; printf '{"type":"result","data":{"configured":false}}\n'"#,
+            r#"echo {"type":"result","data":{"configured":false}}"#,
         );
-        let out = run_step(&bin, "status", &json!({"big": "x".repeat(1 << 17)}), |_| {}).unwrap();
+        let out = run_step(
+            &bin,
+            &[],
+            "status",
+            &json!({"big": "x".repeat(1 << 17)}),
+            |_| {},
+        )
+        .unwrap();
         assert_eq!(out, json!({"configured": false}));
+    }
+
+    #[test]
+    fn a_command_gets_its_environment_and_no_stdin() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bin = stub(
+            tmp.path(),
+            r#"printf '{"type":"progress","stage":"copy","message":"Copying","done":5,"total":10}\n'
+printf '{"type":"result","data":{"bundle":"%s","argv":"%s"}}\n' "$MAKTABA_APP_BUNDLE" "$*""#,
+            r#"echo {"type":"progress","stage":"copy","message":"Copying","done":5,"total":10}
+echo {"type":"result","data":{"bundle":"%MAKTABA_APP_BUNDLE%","argv":"%*"}}"#,
+        );
+        let mut seen = Vec::new();
+        let out = run_ndjson(
+            &bin,
+            &["runtime", "install", "--json"],
+            &[("MAKTABA_APP_BUNDLE".into(), "rt-current".into())],
+            None,
+            |p| seen.push((p.stage, p.done, p.total)),
+            "runtime install",
+        )
+        .unwrap();
+        assert_eq!(out["bundle"], "rt-current");
+        assert_eq!(out["argv"], "runtime install --json");
+        assert_eq!(seen, [("copy".to_string(), Some(5), Some(10))]);
+        let bin = stub(tmp.path(), "exit 4", "exit /b 4");
+        let e = run_ndjson(
+            &bin,
+            &["runtime", "install"],
+            &[],
+            None,
+            |_| {},
+            "runtime install",
+        )
+        .unwrap_err();
+        assert!(
+            e.message.starts_with("runtime install exited with code 4"),
+            "{}",
+            e.message
+        );
     }
 }

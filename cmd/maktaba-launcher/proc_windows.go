@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"os/exec"
 	"sync"
 	"syscall"
@@ -21,7 +22,8 @@ type childHandle struct {
 	job windows.Handle
 	// proc keeps the server's pid its own until it is reaped: a CTRL_BREAK
 	// naming a pid that leads no process group goes astray (it can reach the
-	// launcher itself), so askStop asks only while this shows it running.
+	// launcher itself), so askStop asks only while this shows it running, and
+	// holds the server suspended from that check to the send (ask).
 	proc windows.Handle
 }
 
@@ -37,6 +39,7 @@ func prepareChild(cmd *exec.Cmd) {
 var (
 	ntdll            = windows.NewLazySystemDLL("ntdll.dll")
 	procResume       = ntdll.NewProc("NtResumeProcess")
+	procSuspend      = ntdll.NewProc("NtSuspendProcess")
 	kernel32         = windows.NewLazySystemDLL("kernel32.dll")
 	procAllocConsole = kernel32.NewProc("AllocConsole")
 	procGetConsoleWn = kernel32.NewProc("GetConsoleWindow")
@@ -46,7 +49,7 @@ var (
 
 func attachChild(cmd *exec.Cmd) *childHandle {
 	h := &childHandle{}
-	if p, err := windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_QUERY_LIMITED_INFORMATION,
+	if p, err := windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.PROCESS_SUSPEND_RESUME,
 		false, uint32(cmd.Process.Pid)); err == nil {
 		h.proc = p
 	}
@@ -104,17 +107,39 @@ func (h *childHandle) running() bool {
 	return err == nil && ev == uint32(windows.WAIT_TIMEOUT)
 }
 
-// askStop sends CTRL_BREAK to the server's process group (Go maps it to
-// os.Interrupt, which `serve` drains on), while the server still runs (an
-// exited one needs no asking). Without a shared console this fails; the stop
-// file the launcher wrote is the fallback.
-func askStop(cmd *exec.Cmd, child *childHandle) error {
-	child.mu.Lock()
-	defer child.mu.Unlock()
-	if !child.running() {
+// ask runs send while the server still runs, holding it suspended from the
+// check to the send so it cannot exit in between: the event names the group
+// the server leads, and once it has exited nobody leads that group and the
+// event goes to every process of the console, the launcher included (which
+// would then stop, not roll back a release that timed out). The server's
+// handler runs once it is resumed. An exited server needs no asking; one that
+// cannot be held is not asked (the stop file and stop's grace remain).
+func (h *childHandle) ask(send func() error) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if !h.running() {
 		return nil
 	}
-	return windows.GenerateConsoleCtrlEvent(windows.CTRL_BREAK_EVENT, uint32(cmd.Process.Pid))
+	if r, _, _ := procSuspend.Call(uintptr(h.proc)); r != 0 {
+		if !h.running() {
+			return nil
+		}
+		return fmt.Errorf("hold the server to ask it: NTSTATUS 0x%x", r)
+	}
+	defer func() { _, _, _ = procResume.Call(uintptr(h.proc)) }()
+	if !h.running() {
+		return nil
+	}
+	return send()
+}
+
+// askStop sends CTRL_BREAK to the server's process group (Go maps it to
+// os.Interrupt, which `serve` drains on), while the server still runs (ask).
+// Without a shared console this fails; the stop file the launcher wrote is
+// the fallback.
+func askStop(cmd *exec.Cmd, child *childHandle) error {
+	pid := uint32(cmd.Process.Pid)
+	return child.ask(func() error { return windows.GenerateConsoleCtrlEvent(windows.CTRL_BREAK_EVENT, pid) })
 }
 
 // setupConsole gives a service a console (hidden in session 0) so CTRL_BREAK
@@ -130,3 +155,8 @@ func setupConsole(hide, service bool) {
 		}
 	}
 }
+
+// becomeSubreaper and reap are Linux's (proc_linux.go); the job object ties
+// the tree to the server here.
+func becomeSubreaper()     {}
+func (*childHandle) reap() {}

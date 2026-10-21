@@ -33,7 +33,7 @@ suffix ⇒ `beta`), overridable with `MAKTABA_UPDATE_CHANNEL`. Switching
 | `MAKTABA_UPDATE_INTERVAL_SEC` | `86400` | Background check cadence; `0` disables the poller. |
 | `MAKTABA_UPDATE_DISABLE` | unset | `1`/`true` = no network checks at all. |
 | `MAKTABA_UPDATE_REPO` | `Hamza-Labs-Core/Maktaba` | Retarget a fork's releases. It changes the expected signing identity too (the fork's own `release.yml`); it is a startup setting, no API field can change it. |
-| `MAKTABA_DATA_DIR` | `/var/lib/maktaba` | The Sigstore trusted root refreshed through TUF is kept in `<data_dir>/sigstore/`. |
+| `MAKTABA_DATA_DIR` | `maktaba-server`'s `data_dir`; run on its own, `/var/lib/maktaba` as root, else `$XDG_DATA_HOME/maktaba` (`~/.local/share/maktaba`) | The Sigstore trusted root refreshed through TUF is kept in `<data_dir>/sigstore/`. |
 | `MAKTABA_GITHUB_TOKEN` | unset | Optional; raises the GitHub API rate limit. |
 
 ## Install-type behaviour for self-update

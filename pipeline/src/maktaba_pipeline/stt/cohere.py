@@ -6,7 +6,8 @@ packages, the model (a gated Hugging Face repo: the home accepts its licence and
 once with ``hf auth login``, then publishes a copy to the share that the other machines
 load from, :mod:`~.model_share`) or the dictionary's data (``camel_data -i morphology-db-msa-r13``,
 fetched here on first use) stores Whisper's transcript as it is and says why in the
-transcript's metadata.
+transcript's metadata. The second listen runs on MLX: a machine on the CTranslate2 engine
+(Windows, Linux: :mod:`.engine`) keeps Whisper's words, and says so (:func:`unavailable`).
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from ..log import get_logger
-from . import model_share
+from . import engine, model_share
 
 __all__ = [
     "DEFAULT_MODEL",
@@ -28,6 +29,7 @@ __all__ = [
     "dictionary",
     "loaded",
     "recogniser",
+    "unavailable",
 ]
 
 _log = get_logger()
@@ -96,11 +98,23 @@ _REC_LOCK = threading.Lock()
 _PUBLISHED: set[str] = set()
 
 
+def unavailable() -> str | None:
+    """Why this machine has no second listen at all, or None: Cohere Transcribe runs on
+    MLX, and a machine on the CTranslate2 engine has none (its transcripts keep Whisper's
+    words; ``models download`` does not fetch the model or the dictionary)."""
+    if engine.current() != engine.MLX:
+        return "the second listen runs on Apple Silicon (MLX) only: Whisper's words are kept"
+    return None
+
+
 def recogniser(model_id: str, share: Path | None = None) -> CohereRecogniser:
     """The process's recogniser for ``model_id``, loaded on first use: from Hugging Face,
     else from the copy on ``share`` (the share's models folder, :mod:`~.model_share`).
     Raises when the package is missing or neither has the model. A Hugging Face load
     publishes the snapshot to ``share`` (once per process, on a thread of its own)."""
+    why = unavailable()
+    if why is not None:
+        raise RuntimeError(why)
     if importlib.util.find_spec("mlx_audio") is None:
         raise RuntimeError("mlx-audio is not installed (the stt extra)")
     with _REC_LOCK:
