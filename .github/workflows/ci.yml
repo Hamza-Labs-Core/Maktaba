@@ -61,14 +61,23 @@ jobs:
         with:
           filters: |
             # code whatever its extension: the workflows and the Makefile, and the
-            # markdown the code reads (the help pages the web bundles and its coverage
-            # test checks; the migrations' MANIFEST.md, read by the schema guard and
-            # genrelease)
+            # markdown that code, tests, lint or a build read. A test that reads a
+            # markdown file says so here (test_docs_links checks its own are listed).
             meta:
               - '.github/**'
               - 'Makefile'
+              # the help pages the web bundles and its coverage tests check
               - 'web/src/help/**'
+              # the migrations' MANIFEST.md, read by the schema guard and genrelease
               - 'shared/db/migrations/**'
+              # the TV runbook and Epic 32's specs: test_docs_links checks their links,
+              # and the anchors the Live TV admin page links to
+              - 'docs/tv-cluster-and-remote.md'
+              - 'specs/epics/32-tv-streaming-cluster-remote/**'
+              # the web's markdown (test-cases/, help/): lint-web's prettier --check
+              - 'web/**/*.md'
+              # the pipeline's README: the wheel's metadata (pyproject readme)
+              - 'pipeline/README.md'
             # The Maktaba.app gate (macOS arm64, ~20 min) runs only when what goes into
             # the app or how it is built changes.
             mac_app:
