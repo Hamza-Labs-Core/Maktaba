@@ -60,6 +60,7 @@ const SECONDARY = [
   { to: "/account/history", key: "nav.history", icon: "◷" },
   { to: "/billing", key: "nav.billing", icon: "◈" },
   { to: "/cloud/status", key: "nav.cloudStatus", icon: "☁" },
+  { to: "/help", key: "nav.help", icon: "?" },
 ] as const;
 
 // Admin nav is sidebar-only and rendered only for admins. The pages
@@ -308,6 +309,7 @@ export function MoreMenu() {
   if (user?.is_admin) groups.push({ title: t("nav.admin"), items: ADMIN });
   return (
     <section className="mkt-page mkt-more">
+      {/* the menu lists Help itself, so no "?" beside the title */}
       <h1>{t("nav.more")}</h1>
       {hasUpdate && (
         <span id="mkt-more-update-badge" hidden>

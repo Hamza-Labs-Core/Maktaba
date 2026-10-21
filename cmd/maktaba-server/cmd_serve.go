@@ -173,6 +173,13 @@ func runServe(cfg config.Config, opts serveOptions) error {
 		return err
 	}
 
+	// The language model server (Maktaba.app's bundled Ollama, or [llm] url):
+	// its URL goes to every child through cfg.
+	llmProc, llmOpt, err := serveLLM(ctx, &cfg, wholeMachine)
+	if err != nil {
+		return err
+	}
+
 	// Build the supervised processes.
 	var procs []supervisor.Process
 	if pg != nil {
@@ -189,6 +196,9 @@ func runServe(cfg config.Config, opts serveOptions) error {
 			return err
 		}
 		procs = append(procs, p)
+	}
+	if llmProc != nil {
+		procs = append(procs, *llmProc)
 	}
 	sopts := supervisor.Options{Config: cfg, BinDir: opts.binDir, ReleaseDir: releaseDir}
 	for _, r := range roles {
@@ -245,9 +255,14 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	if err != nil {
 		return err
 	}
-	sup := supervisor.New(procs, policy, supervisor.WithEventSink(
-		supervisor.NewFileSink(filepath.Join(cfg.Server.DataDir, "supervisor", "events.jsonl"), 0)),
-		supervisor.WithExitHook(supervisor.SlotExitReporter(cfg.Server.StreamAddr)))
+	supOpts := []supervisor.Option{
+		supervisor.WithEventSink(supervisor.NewFileSink(filepath.Join(cfg.Server.DataDir, "supervisor", "events.jsonl"), 0)),
+		supervisor.WithExitHook(supervisor.SlotExitReporter(cfg.Server.StreamAddr)),
+	}
+	if llmOpt != nil {
+		supOpts = append(supOpts, llmOpt)
+	}
+	sup := supervisor.New(procs, policy, supOpts...)
 	if pg != nil {
 		// what the cluster's machines may reach of it follows the cluster: it listens
 		// beyond this machine only while one may connect (a start again to change that)

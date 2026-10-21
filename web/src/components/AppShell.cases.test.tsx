@@ -266,6 +266,7 @@ const USER_LINKS = [
   ["nav.history", "/account/history"],
   ["nav.billing", "/billing"],
   ["nav.cloudStatus", "/cloud/status"],
+  ["nav.help", "/help"],
 ] as const;
 
 const MORE_LINKS = [

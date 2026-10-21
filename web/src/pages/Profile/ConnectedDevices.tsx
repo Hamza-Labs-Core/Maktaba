@@ -17,6 +17,7 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { platformIcon, type Device } from "../Cloud/Devices";
+import { TitleRow } from "../../help/HelpLink";
 
 export function ConnectedDevices() {
   const { t, formatDate } = useI18n();
@@ -69,7 +70,9 @@ export function ConnectedDevices() {
   return (
     <section className="mkt-page mkt-devices">
       <header className="mkt-page__header">
-        <h1>{t("devices.title")}</h1>
+        <TitleRow>
+          <h1>{t("devices.title")}</h1>
+        </TitleRow>
       </header>
 
       {error ? (

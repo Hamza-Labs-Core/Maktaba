@@ -30,6 +30,7 @@ import {
   type Summary,
   type TopVideo,
 } from "../../lib/analytics";
+import { TitleRow } from "../../help/HelpLink";
 
 const RANGES: RangeKey[] = ["today", "7d", "30d", "90d", "1y", "all"];
 
@@ -144,7 +145,9 @@ function AnalyticsInner() {
   return (
     <section className="mkt-page mkt-analytics">
       <header className="mkt-page__header mkt-analytics__header">
-        <h1>{t("analytics.title")}</h1>
+        <TitleRow>
+          <h1>{t("analytics.title")}</h1>
+        </TitleRow>
         <div className="mkt-analytics__controls">
           <Select
             label={t("analytics.range")}

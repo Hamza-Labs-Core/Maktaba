@@ -127,7 +127,7 @@
 - **Preconditions / data:** `/me` → `{ "user": { "id": "u2", "username": "viewer", "is_admin": false } }`.
 - **Steps:**
   1. Open `/library`; read the sidebar (first `navigation` named "Primary").
-- **Expected:** Sidebar links, in order: Library `/library`, Series `/series`, TV Guide `/guide`, Search `/search`, Processing `/queue`, Transcription `/transcription`, Settings `/settings`, Account `/account`, Devices `/account/devices`, Sessions `/account/sessions`, API tokens `/account/tokens`, Billing & license `/billing`, Cloud status `/cloud/status`. No "Administration" text and no link starting with `/admin/`. Same when `is_admin` is missing from the user object.
+- **Expected:** Sidebar links, in order: Library `/library`, Series `/series`, TV Guide `/guide`, Search `/search`, Processing `/queue`, Transcription `/transcription`, Settings `/settings`, Account `/account`, Devices `/account/devices`, Sessions `/account/sessions`, API tokens `/account/tokens`, Billing & license `/billing`, Cloud status `/cloud/status`, Help `/help`. No "Administration" text and no link starting with `/admin/`. Same when `is_admin` is missing from the user object.
 
 ### SHL-09 — Admin sees the Administration group with every admin link
 

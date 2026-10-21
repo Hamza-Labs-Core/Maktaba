@@ -30,6 +30,7 @@ import {
   type UpdateStatus,
 } from "../lib/updates";
 import { Markdown } from "../lib/markdown";
+import { TitleRow } from "../help/HelpLink";
 
 const DENSITY_KEY = "mkt:density";
 type Density = "comfortable" | "compact";
@@ -58,7 +59,9 @@ export function Settings() {
   const hasUpdate = updateAvailable(useUpdateStatus());
   return (
     <section className="mkt-page mkt-settings">
-      <h1>{t("nav.settings")}</h1>
+      <TitleRow>
+        <h1>{t("nav.settings")}</h1>
+      </TitleRow>
       <nav className="mkt-settings__nav" aria-label={t("nav.settings")}>
         {/* NavLink marks the open tab with aria-current="page". The links are
             absolute: this page renders under the /settings/* splat route, where

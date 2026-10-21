@@ -105,6 +105,9 @@ func buildPlacement() placement.Table {
 		// (cluster_nodes is revoked from the node role)
 		"/api/queues",
 		"/api/queues/{stage}",
+		// Epic 40: the failures page reads the ignores and the checks, its actions write
+		"/api/queues/failures",
+		"/api/queues/failures/actions",
 		"/api/workers",
 		// story 35.9: the home's half of delegation and the cluster sign-in
 		"/api/cluster/delegate/introspect",

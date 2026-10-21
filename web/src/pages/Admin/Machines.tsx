@@ -72,6 +72,7 @@ import {
 } from "../../lib/clusterApi";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { safeHttpUrl } from "../../lib/navigation";
+import { TitleRow } from "../../help/HelpLink";
 import "../../styles/queue.css";
 import "../../styles/machines.css";
 import "../../styles/cluster.css";
@@ -117,7 +118,9 @@ function MachinesPage() {
     <section className="mkt-page mkt-mc" aria-labelledby="mkt-mc-h">
       <header className="mkt-mc__head">
         <div className="mkt-mc-row">
-          <h1 id="mkt-mc-h">{t("machines.title")}</h1>
+          <TitleRow>
+            <h1 id="mkt-mc-h">{t("machines.title")}</h1>
+          </TitleRow>
           <span className="mkt-mc-live">
             <Badge tone={tone} role="status">
               {t(statusKey)}

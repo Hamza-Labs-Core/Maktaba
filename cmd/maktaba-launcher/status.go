@@ -116,23 +116,40 @@ func removeOldSelf(l layout.Layout) {
 	}
 }
 
-// BundleStatus is --status in app-bundle mode: no releases to list.
+// BundleStatus is --status in app-bundle mode: no releases to list. Paths
+// are the platform's (backslashes and .exe names on Windows).
 type BundleStatus struct {
 	AppBundle       string `json:"app_bundle"`
+	Server          string `json:"server"` // the maktaba-server the launcher starts
 	Root            string `json:"root"`
+	LauncherLog     string `json:"launcher_log"`
+	StopEvent       string `json:"stop_event,omitempty"` // Windows: the event that stops it
 	Updates         string `json:"updates"`
 	LauncherVersion string `json:"launcher_version"`
 }
 
 func printBundleStatus(w io.Writer, bundle, root string, asJSON bool) int {
-	s := BundleStatus{AppBundle: bundle, Root: root, Updates: "with the app", LauncherVersion: Version}
+	s := BundleStatus{
+		AppBundle:       bundle,
+		Server:          filepath.Join(bundle, "bin", layout.Exe("maktaba-server")),
+		Root:            root,
+		LauncherLog:     layout.New(root).LauncherLog(),
+		StopEvent:       stopEventName,
+		Updates:         "with the app",
+		LauncherVersion: Version,
+	}
 	if asJSON {
 		b, _ := json.MarshalIndent(s, "", "  ")
 		fmt.Fprintln(w, string(b))
 		return exitOK
 	}
 	fmt.Fprintf(w, "app bundle: %s\n", s.AppBundle)
+	fmt.Fprintf(w, "server:     %s\n", s.Server)
 	fmt.Fprintf(w, "state:      %s\n", s.Root)
+	fmt.Fprintf(w, "log:        %s\n", s.LauncherLog)
+	if s.StopEvent != "" {
+		fmt.Fprintf(w, "stop event: %s\n", s.StopEvent)
+	}
 	fmt.Fprintf(w, "updates:    %s\n", s.Updates)
 	fmt.Fprintf(w, "launcher:   %s\n", s.LauncherVersion)
 	return exitOK

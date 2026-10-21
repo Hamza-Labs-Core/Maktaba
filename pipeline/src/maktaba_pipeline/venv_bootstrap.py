@@ -1,10 +1,11 @@
-"""Build the pipeline's Python environment from a release's wheel (Epic 36, story 36.3).
+"""Build the pipeline's Python environment from a release's wheel (Epic 36, story 36.3;
+Windows: Epic 38, story 38.7).
 
-Maktaba.app ships a Python (python-build-standalone 3.12), the pipeline's wheel and its
-constraints file (every dependency pinned with its hashes); the MLX and torch wheels are
-too big to ship, so the environment is built on the Mac on first run::
+Maktaba.app and Maktaba for Windows ship a Python (python-build-standalone 3.12), the
+pipeline's wheel and its constraints file (every dependency pinned with its hashes); the
+torch and MLX wheels are too big to ship, so the environment is built on first run::
 
-    python -m maktaba_pipeline.venv_bootstrap --payload <Resources/server/pipeline>
+    python -m maktaba_pipeline.venv_bootstrap --payload <server/pipeline>
 
 This module runs **before the environment exists**, with that bare Python: it imports
 nothing but the standard library, so it runs from the wheel itself (a wheel is a zip:
@@ -23,30 +24,51 @@ What it does, in order (the contract other parts of the app rely on is
 3. check that the wheel's requirements with the asked extras are all installed, then
    write the stamp as ``ready``.
 
-Progress goes to stdout as one JSON object per line and to a status file (rewritten
-whole on every change) that a process that did not start this one can read. Two runs
-never build at once: the second waits on a lock, then finds nothing to do.
+Progress goes to stdout as one JSON object per line (UTF-8) and to a status file
+(rewritten whole on every change) that a process that did not start this one can read.
+Two runs never build at once: the second waits on a lock, then finds nothing to do.
+
+The venv goes to ``~/Library/Application Support/Maktaba/venv`` on macOS,
+``%LOCALAPPDATA%\\Maktaba\\venv`` on Windows and ``$XDG_DATA_HOME/maktaba/venv`` on Linux
+(unless told otherwise); its interpreter is ``Scripts\\python.exe`` on Windows, else
+``bin/python``. The lock is ``flock`` (``msvcrt.locking`` on Windows).
+
+Stopping: SIGTERM or Ctrl-C; on Windows CTRL_BREAK (``SIGBREAK``), which is how the
+supervisor asks a child to stop there (no SIGTERM ever arrives from another process). The
+stamp stays ``building`` and the run exits 130; pip is stopped first (on Windows it runs in
+its own process group and gets a CTRL_BREAK, else it is terminated). When the console is
+closed or the user signs out, Windows ends the process as soon as its handler returns, so
+the status may still say ``building``: the stamp says so too and the next run resumes.
 """
 
 from __future__ import annotations
 
 import argparse
 import contextlib
+import errno
 import hashlib
+import io
 import json
 import os
+import queue
 import re
 import shutil
 import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import IO, Any
+from typing import IO, Any, TextIO
+
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
 
 __all__ = [
     "EXIT_BAD_INPUT",
@@ -74,24 +96,51 @@ DEFAULT_EXTRAS = "stt,search"
 #: one requirement of a constraints file starts at the line's first column
 _REQ_LINE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)")
 
+#: the signals that ask a run to stop (Ctrl-C is KeyboardInterrupt, on every platform)
+_STOP_SIGNALS: tuple[signal.Signals, ...]
+#: how pip and ``python -m venv`` are started
+_POPEN_FLAGS: int
+if sys.platform == "win32":
+    # CTRL_BREAK (SIGBREAK) is the supervisor's ask on Windows, and what a console's
+    # close or a sign-out becomes; SIGTERM only comes from signal.raise_signal there
+    _STOP_SIGNALS = (signal.SIGTERM, signal.SIGBREAK)
+    # their own process group: a CTRL_BREAK can be sent to them (and what they start)
+    # alone, and one sent to this run's group does not reach them first
+    _POPEN_FLAGS = subprocess.CREATE_NEW_PROCESS_GROUP
+else:
+    _STOP_SIGNALS = (signal.SIGTERM,)
+    _POPEN_FLAGS = 0
+
 
 class BootstrapError(RuntimeError):
     """A step failed; the message says which and why."""
 
 
 class _Interrupted(BaseException):
-    """SIGTERM (or Ctrl-C) while building: the stamp stays ``building`` to resume."""
+    """A stop signal (or Ctrl-C) while building: the stamp stays ``building`` to resume."""
 
 
 # --- inputs ------------------------------------------------------------------------------
 
 
 def default_venv() -> Path:
-    """``~/Library/Application Support/Maktaba/venv`` on macOS, else under XDG data."""
+    """``%LOCALAPPDATA%\\Maktaba\\venv`` on Windows, ``~/Library/Application
+    Support/Maktaba/venv`` on macOS, else under XDG data."""
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA", "").strip() or str(Path.home() / "AppData" / "Local")
+        return Path(base) / "Maktaba" / "venv"
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "Maktaba" / "venv"
     base = os.environ.get("XDG_DATA_HOME", "").strip() or str(Path.home() / ".local" / "share")
     return Path(base) / "maktaba" / "venv"
+
+
+if sys.platform == "win32":
+    _DEFAULT_VENV_HELP = r"%%LOCALAPPDATA%%\Maktaba\venv"  # argparse %-formats help
+elif sys.platform == "darwin":
+    _DEFAULT_VENV_HELP = "~/Library/Application Support/Maktaba/venv"
+else:
+    _DEFAULT_VENV_HELP = "$XDG_DATA_HOME/maktaba/venv"
 
 
 def sha256_file(path: Path) -> str:
@@ -207,6 +256,9 @@ def read_stamp(venv: Path) -> dict[str, Any] | None:
 
 
 def venv_python(venv: Path) -> Path:
+    """The venv's interpreter: ``Scripts\\python.exe`` on Windows, else ``bin/python``."""
+    if sys.platform == "win32":
+        return venv / "Scripts" / "python.exe"
     return venv / "bin" / "python"
 
 
@@ -234,6 +286,8 @@ def plan(venv: Path, target: Target) -> Plan:
         return Plan("build", f"Python {target.python_minor} replaces {stamp.get('python_version')}")
     if stamp.get("state") != "ready":
         return Plan("resume", "a build of these constraints was interrupted")
+    # a venv's interpreter starts the base Python it was made from (a symlink to it; on
+    # Windows a launcher that runs pyvenv.cfg's `home`): it stops running when that moved
     if (
         stamp.get("python") != str(target.python)
         or stamp.get("python_version") != target.python_version
@@ -254,6 +308,22 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+def _while_open_elsewhere(op: Callable[[], None]) -> None:
+    """Run ``op`` (a replace or a removal); on Windows, again for up to 5 s while another
+    process has the file open (a reader of the status file, a virus scanner): Windows
+    refuses to replace or remove a file that is open, where POSIX does not mind."""
+    delay, deadline = 0.01, time.monotonic() + 5.0
+    while True:
+        try:
+            op()
+            return
+        except PermissionError:
+            if sys.platform != "win32" or time.monotonic() >= deadline:
+                raise
+        time.sleep(delay)
+        delay = min(delay * 2, 0.25)
+
+
 def write_json_atomic(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
@@ -261,7 +331,7 @@ def write_json_atomic(path: Path, data: dict[str, Any]) -> None:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=1)
             fh.write("\n")
-        os.replace(tmp, path)
+        _while_open_elsewhere(lambda: os.replace(tmp, path))
     except BaseException:
         with contextlib.suppress(OSError):
             os.unlink(tmp)
@@ -269,13 +339,15 @@ def write_json_atomic(path: Path, data: dict[str, Any]) -> None:
 
 
 class Reporter:
-    """Each event: a JSON line on ``out`` and the status file, rewritten whole."""
+    """Each event: a JSON line on ``out`` and the status file, rewritten whole (not while
+    ``writes_file`` is off: a run waiting on the lock leaves the file to the running one)."""
 
     def __init__(self, status_file: Path, out: IO[str], base: dict[str, Any]) -> None:
         self.status_file = status_file
         self.out = out
         self.base = base
         self.state: dict[str, Any] = {}
+        self.writes_file = True
         self._last_write = 0.0
 
     def emit(
@@ -288,7 +360,6 @@ class Reporter:
         error: str | None = None,
         throttle: bool = False,
         counts: tuple[int, int] | None = None,
-        to_file: bool = True,
     ) -> None:
         now = time.monotonic()
         if throttle and now - self._last_write < 0.5:
@@ -309,9 +380,18 @@ class Reporter:
             self.state["error"] = error
         self.out.write(json.dumps({"event": "status", **self.state}, ensure_ascii=False) + "\n")
         self.out.flush()
-        if to_file:
+        if self.writes_file:
             with contextlib.suppress(OSError):
                 write_json_atomic(self.status_file, self.state)
+
+
+def _utf8(stream: TextIO, errors: str) -> TextIO:
+    """``stream`` (stdout, stderr), writing UTF-8: on Windows a pipe's default is the ANSI
+    code page, which cannot write every path or pip line a message carries."""
+    enc = (stream.encoding or "").lower().replace("-", "").replace("_", "")
+    if enc != "utf8" and isinstance(stream, io.TextIOWrapper):
+        stream.reconfigure(encoding="utf-8", errors=errors)
+    return stream
 
 
 # --- running pip -------------------------------------------------------------------------
@@ -321,6 +401,9 @@ _SPAN = {"venv": (0.0, 0.05), "deps": (0.05, 0.92), "wheel": (0.92, 0.97), "veri
 
 _PIP_SEEN = re.compile(r"^(Collecting|Requirement already satisfied:|Ignoring) ([A-Za-z0-9._-]+)")
 
+#: how long the main thread waits for pip's next line before it looks for a stop signal
+_POLL = 0.25
+
 
 def _child_env() -> dict[str, str]:
     env = dict(os.environ)
@@ -329,10 +412,41 @@ def _child_env() -> dict[str, str]:
     env["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
     env["PIP_NO_INPUT"] = "1"
     env["PYTHONUNBUFFERED"] = "1"
+    # pip writes its lines (paths among them) as UTF-8 into the pipe, whatever the
+    # Windows code page is, and they are read back as UTF-8
+    env["PYTHONIOENCODING"] = "utf-8"
     return env
 
 
 _CHILD: list[subprocess.Popen[str]] = []
+
+
+def _lines(proc: subprocess.Popen[str]) -> Iterator[str]:
+    """``proc``'s output lines, read by a thread: the main thread waits for each in short
+    slices, so a stop signal is taken within ``_POLL`` even while pip prints nothing for
+    minutes (a large download). On Windows a signal does not interrupt a blocking read."""
+    assert proc.stdout is not None
+    stdout = proc.stdout
+    got: queue.SimpleQueue[str | None] = queue.SimpleQueue()
+
+    def pump() -> None:
+        try:
+            for raw in stdout:
+                got.put(raw)
+        except (OSError, ValueError):
+            pass  # the pipe went away under it: the process is gone
+        finally:
+            got.put(None)
+
+    threading.Thread(target=pump, name="venv-bootstrap-output", daemon=True).start()
+    while True:
+        try:
+            raw = got.get(timeout=_POLL)
+        except queue.Empty:
+            continue
+        if raw is None:
+            return
+        yield raw
 
 
 def run_step(
@@ -354,14 +468,15 @@ def run_step(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         env=_child_env(),
         cwd=cwd,
+        creationflags=_POPEN_FLAGS,
     )
     _CHILD.append(proc)
     try:
-        assert proc.stdout is not None
-        for raw in proc.stdout:
+        for raw in _lines(proc):
             line = raw.rstrip()
             if not line:
                 continue
@@ -382,7 +497,7 @@ def run_step(
             )
         code = proc.wait()
     except BaseException:
-        _stop(proc)  # SIGTERM / Ctrl-C / a failure here: pip must not go on writing
+        _stop(proc)  # a stop signal / Ctrl-C / a failure here: pip must not go on writing
         raise
     finally:
         _CHILD.remove(proc)
@@ -392,13 +507,26 @@ def run_step(
 
 
 def _stop(proc: subprocess.Popen[str]) -> None:
-    """Terminate ``proc`` and wait for it; kill it when it does not stop in 30 s."""
+    """Stop ``proc`` and wait for it; kill it when it does not stop in time.
+
+    POSIX: SIGTERM, then SIGKILL after 30 s. Windows: CTRL_BREAK to its process group
+    (it leads one), which also reaches what it started; when there is no console to send
+    that through, TerminateProcess. Then TerminateProcess after 10 s."""
     if proc.poll() is not None:
         return
-    with contextlib.suppress(OSError):
-        proc.terminate()
+    grace = 30.0
+    if sys.platform == "win32":
+        grace = 10.0
+        try:
+            proc.send_signal(signal.CTRL_BREAK_EVENT)
+        except OSError:
+            with contextlib.suppress(OSError):
+                proc.terminate()
+    else:
+        with contextlib.suppress(OSError):
+            proc.terminate()
     try:
-        proc.wait(timeout=30)
+        proc.wait(timeout=grace)
     except subprocess.TimeoutExpired:
         with contextlib.suppress(OSError):
             proc.kill()
@@ -443,7 +571,8 @@ def verify(venv: Path, target: Target, rep: Reporter) -> str:
         out = subprocess.run(
             [str(venv_python(venv)), "-c", _VERIFY, json.dumps(list(target.extras))],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             env=_child_env(),
             timeout=300,
             check=False,
@@ -472,6 +601,14 @@ def create_venv(venv: Path, target: Target, rep: Reporter, *, upgrade: bool = Fa
     args = [str(target.python), "-m", "venv"]
     if upgrade:
         args.append("--upgrade")
+        if sys.platform != "win32":
+            # `venv --upgrade` keeps a symlink that is there, even one to a Python that
+            # has moved away: remove them, and it links the Python it runs with. (On
+            # Windows it copies its launcher over Scripts\python.exe and rewrites
+            # pyvenv.cfg's `home`, which the launcher starts.)
+            for link in (venv / "bin").glob("python*"):
+                if link.is_symlink():
+                    link.unlink()
     run_step(
         [*args, str(venv)],
         rep,
@@ -518,7 +655,7 @@ def execute(venv: Path, target: Target, p: Plan, rep: Reporter) -> str:
             venv.unlink()
         else:
             # the stamp first: a removal cut short leaves no "ready" venv behind
-            (venv / STAMP).unlink(missing_ok=True)
+            _while_open_elsewhere(lambda: (venv / STAMP).unlink(missing_ok=True))
             shutil.rmtree(venv)
     if p.action in ("build", "resume"):
         # resuming: the venv is there, maybe made by a Python that has moved since
@@ -541,30 +678,63 @@ def execute(venv: Path, target: Target, p: Plan, rep: Reporter) -> str:
 
 # --- the lock ----------------------------------------------------------------------------
 
+#: how often a run waiting on the lock tries it again (Windows)
+_LOCK_POLL = 0.25
 
-@contextlib.contextmanager
-def locked(path: Path, rep: Reporter) -> Iterator[None]:
-    """Hold ``path``'s lock (``flock``), waiting for another run to finish first."""
-    import fcntl
+if sys.platform == "win32":
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a+") as fh:
+    def _try_lock(fh: IO[str]) -> bool:
+        fh.seek(0)  # the lock is on the file's first byte, wherever the handle is
+        try:
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError as exc:
+            if exc.errno not in (errno.EACCES, errno.EDEADLOCK):
+                raise
+            return False
+        return True
+
+    def _wait_lock(fh: IO[str]) -> None:
+        # not LK_LOCK: it gives up after ~10 s, and sleeps where a stop signal is not taken
+        while not _try_lock(fh):
+            time.sleep(_LOCK_POLL)
+
+    def _unlock(fh: IO[str]) -> None:
+        fh.seek(0)
+        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+
+else:
+
+    def _try_lock(fh: IO[str]) -> bool:
         try:
             fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            # stdout only: the status file is the running build's
-            rep.emit(
-                "waiting",
-                "lock",
-                0.0,
-                "another build of this venv is running: waiting",
-                to_file=False,
-            )
-            fcntl.flock(fh, fcntl.LOCK_EX)
+            return False
+        return True
+
+    def _wait_lock(fh: IO[str]) -> None:
+        fcntl.flock(fh, fcntl.LOCK_EX)  # a signal interrupts it
+
+    def _unlock(fh: IO[str]) -> None:
+        fcntl.flock(fh, fcntl.LOCK_UN)
+
+
+@contextlib.contextmanager
+def locked(path: Path, rep: Reporter) -> Iterator[None]:
+    """Hold ``path``'s lock (``flock``; on Windows ``msvcrt.locking``), waiting for another
+    run to finish first. While it waits (and when it is stopped waiting) it reports on its
+    own stdout only: the status file is the running build's."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a+") as fh:
+        if not _try_lock(fh):
+            rep.writes_file = False
+            rep.emit("waiting", "lock", 0.0, "another build of this venv is running: waiting")
+            _wait_lock(fh)
+            rep.writes_file = True
         try:
             yield
         finally:
-            fcntl.flock(fh, fcntl.LOCK_UN)
+            with contextlib.suppress(OSError):  # closing the file lets go of it too
+                _unlock(fh)
 
 
 # --- command line ------------------------------------------------------------------------
@@ -592,9 +762,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--constraints", help="the constraints file (instead of --payload)")
     p.add_argument(
         "--venv",
-        default=env("MAKTABA_VENV") or str(default_venv()),
-        help="the venv to build (default: $MAKTABA_VENV, else "
-        "~/Library/Application Support/Maktaba/venv)",
+        help=f"the venv to build (default: $MAKTABA_VENV, else {_DEFAULT_VENV_HELP})",
     )
     p.add_argument(
         "--extras",
@@ -614,21 +782,27 @@ def _parser() -> argparse.ArgumentParser:
     return p
 
 
-def _on_sigterm(_signum: int, _frame: Any) -> None:
+def _on_stop_signal(_signum: int, _frame: Any) -> None:
     raise _Interrupted()
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    venv = Path(args.venv).expanduser()
-    if not venv.is_absolute():
-        venv = Path.cwd() / venv
+    out = _utf8(sys.stdout, "strict")
+    _utf8(sys.stderr, "backslashreplace")
+    try:
+        # the default only now: a Windows environment without a profile folder has none
+        venv = Path(args.venv or os.environ.get("MAKTABA_VENV") or default_venv())
+        venv = venv.expanduser().absolute()
+    except RuntimeError as exc:  # "Could not determine home directory."
+        sys.stderr.write(f"error: {exc} (give --venv)\n")
+        return EXIT_BAD_INPUT
     status_file = (
         Path(args.status_file).expanduser()
         if args.status_file
         else venv.parent / "venv-status.json"
     )
-    rep = Reporter(status_file, sys.stdout, {"venv": str(venv)})
+    rep = Reporter(status_file, out, {"venv": str(venv)})
     try:
         if args.wheel or args.constraints:
             if not (args.wheel and args.constraints):
@@ -650,12 +824,11 @@ def main(argv: list[str] | None = None) -> int:
         p = plan(venv, target)
         if args.force and p.action == "none":
             p = Plan("build", "--force")
-        sys.stdout.write(
-            json.dumps({"event": "plan", "action": p.action, "reason": p.reason}) + "\n"
-        )
+        out.write(json.dumps({"event": "plan", "action": p.action, "reason": p.reason}) + "\n")
+        out.flush()
         return EXIT_OK if p.action == "none" else EXIT_NEEDS_WORK
 
-    old = signal.signal(signal.SIGTERM, _on_sigterm)
+    old = {sig: signal.signal(sig, _on_stop_signal) for sig in _STOP_SIGNALS}
     try:
         with locked(venv.parent / f".{venv.name}.lock", rep):
             # decided under the lock: a run that waited sees what the other one built
@@ -676,7 +849,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         return EXIT_FAILED
     except (_Interrupted, KeyboardInterrupt):
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)  # a second SIGTERM: we are stopping
+        for sig in _STOP_SIGNALS:
+            signal.signal(sig, signal.SIG_IGN)  # asked again: we are stopping
         for proc in list(_CHILD):
             _stop(proc)
         rep.emit(
@@ -697,7 +871,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         return EXIT_FAILED
     finally:
-        signal.signal(signal.SIGTERM, old)
+        for sig, handler in old.items():
+            signal.signal(sig, signal.SIG_DFL if handler is None else handler)
 
 
 if __name__ == "__main__":

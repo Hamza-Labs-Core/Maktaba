@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
 )
 
 // State is a child's lifecycle state as reported by the supervisor.
@@ -122,6 +124,9 @@ type Snapshot struct {
 	Policy    PolicyView    `json:"policy"`
 	Processes []ChildStatus `json:"processes"`
 	Events    []Event       `json:"events"`
+	// LLM is the language model server's state (Maktaba.app's bundled Ollama,
+	// or [llm] url): is it up, is every configured model there or downloading.
+	LLM *llmserver.Status `json:"llm,omitempty"`
 }
 
 // snapshotEvents is how many recent events a Snapshot carries.
@@ -129,6 +134,11 @@ const snapshotEvents = 50
 
 // Snapshot returns a copy of the current state.
 func (s *Supervisor) Snapshot() Snapshot {
+	var llm *llmserver.Status
+	if s.llm != nil {
+		st := s.llm()
+		llm = &st
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
@@ -145,6 +155,7 @@ func (s *Supervisor) Snapshot() Snapshot {
 			ProbeFailures:     s.policy.ProbeFailures,
 		},
 		Processes: make([]ChildStatus, 0, len(s.children)),
+		LLM:       llm,
 	}
 	for _, c := range s.children {
 		st := c.status
@@ -175,9 +186,11 @@ func copyPtr[T any](p *T) *T {
 }
 
 // Handler serves the supervisor's admin surface: GET /processes (the
-// Snapshot as JSON) and GET /healthz. Bind it on loopback only.
+// Snapshot as JSON), GET /llm (the language model server) and GET /healthz.
+// Bind it on loopback only.
 func (s *Supervisor) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/llm", s.llmHandler)
 	mux.HandleFunc("/processes", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)

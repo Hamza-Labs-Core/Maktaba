@@ -19,6 +19,8 @@ import time
 import unicodedata
 from dataclasses import dataclass
 
+from ..log import get_logger
+
 __all__ = [
     "PathMap",
     "active_path_map",
@@ -110,6 +112,49 @@ _LISTING_TTL_SEC = 300.0
 _LISTING_MAX = 2048
 _listings: dict[str, tuple[float, dict[str, str], dict[str, str]]] = {}
 _listings_lock = threading.Lock()
+#: directories whose listing has not returned yet (a hung share): never listed twice at once
+_listing_now: set[str] = set()
+_log = get_logger()
+
+
+def _list_timeout() -> float:
+    """How long one directory listing may take before it counts as unavailable. A share
+    can hang in the kernel (macOS's SMB client on a folder of 150,000 files, a stale NFS
+    handle) and no timeout of its own ends that: without this the caller (a stage, the
+    mediaintel import) waits for ever. ``MAKTABA_SHARE_LIST_TIMEOUT_SEC``, default 20."""
+    try:
+        return max(0.01, float(os.environ.get("MAKTABA_SHARE_LIST_TIMEOUT_SEC", "20")))
+    except ValueError:
+        return 20.0
+
+
+def _bounded_listdir(directory: str) -> list[str] | None:
+    """``os.listdir`` with :func:`_list_timeout`; None when it did not return in time or
+    a listing of the same directory is still hanging. The listing runs in a daemon
+    thread: a hung one cannot be stopped, but it no longer holds its caller."""
+    with _listings_lock:
+        if directory in _listing_now:
+            return None
+        _listing_now.add(directory)
+    box: list[list[str]] = []
+
+    def run() -> None:
+        try:
+            box.append(os.listdir(directory))
+        except (OSError, ValueError):
+            box.append([])
+        finally:
+            with _listings_lock:
+                _listing_now.discard(directory)
+
+    t = threading.Thread(target=run, name="share-listdir", daemon=True)
+    t.start()
+    t.join(_list_timeout())
+    if box:
+        return box[0]
+    _log.warning("share_listing_timeout", directory=directory, timeout_s=_list_timeout())
+    return None
+
 
 _ROOT_RE = re.compile(r"^(?:[A-Za-z]:/|//[^/]+/[^/]+/|/)")
 
@@ -132,10 +177,10 @@ def _listing(directory: str) -> tuple[dict[str, str], dict[str, str]]:
         hit = _listings.get(directory)
         if hit is not None and now - hit[0] < _LISTING_TTL_SEC:
             return hit[1], hit[2]
-    try:
-        names = os.listdir(directory)
-    except (OSError, ValueError):
-        names = []
+    listed = _bounded_listdir(directory)
+    # unavailable: cached empty for the TTL like a real listing, so a hung share costs
+    # one timeout per TTL, not one per path under it
+    names = listed if listed is not None else []
     exact = {_nfc(n): n for n in names}
     folded = {_nfc(n).casefold(): n for n in names}
     with _listings_lock:
