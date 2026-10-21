@@ -99,7 +99,8 @@ don't append a line here; docs-only PRs are exempt.
   is over. Postgres keeps its `pg_ctl` fast shutdown. A `serve` with no console (started detached
   by a program that has none) cannot send CTRL_BREAK, so it kills its children as before and says
   so once in its log; its children then open no console window on the desktop. A child is held
-  still while it is asked, so the CTRL_BREAK never goes astray to `serve` itself.
+  still while it is asked, so the CTRL_BREAK never goes astray to `serve` itself; so are the
+  venv bootstrap the server and setup start, and setup's model download, when they are asked.
 - **Windows keeps everything in `%LOCALAPPDATA%\Maktaba`** (Epic 38, story 38.1): `server.toml`,
   `keys\`, `data\`, `logs\` and the node's `node.json`, with the models, caches and the bundled
   Postgres beside `data\`. Nothing is in the roaming profile any more, so the keys and a node's
