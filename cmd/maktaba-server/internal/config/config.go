@@ -54,8 +54,16 @@ type PostgresSection struct {
 	// Home is the Postgres install (bin/postgres, bin/initdb, …); empty:
 	// $MAKTABA_POSTGRES_HOME, else the payload's postgres/ beside bin/.
 	Home string `toml:"home"`
-	// Port is its loopback port (default 54329).
+	// Port is its port (default 54329).
 	Port int `toml:"port"`
+	// Listen: "lan" (default) also listens on this machine's network for the
+	// cluster's machines (only their roles get in, over TLS); "loopback": this
+	// machine only (no machine can join).
+	Listen string `toml:"listen"`
+	// TLS: "on" (default) encrypts the machines' connections with the cluster
+	// database CA's certificate (made automatically); "off" sends them in the clear,
+	// passwords and every replicated row readable on the network.
+	TLS string `toml:"tls"`
 }
 
 // PipelineSection is the [pipeline] table (Epic 35 story 35.8): how many pipeline

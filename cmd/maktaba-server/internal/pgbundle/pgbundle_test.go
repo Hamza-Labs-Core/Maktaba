@@ -404,3 +404,42 @@ func TestResolve(t *testing.T) {
 		}
 	}
 }
+
+// A cluster made before the machines could be served gets the provisioning grants at
+// its next start, once; and from then its pg_hba.conf and certificate are Maktaba's.
+func TestPrepareAnOlderClusterLetsTheAppRoleProvision(t *testing.T) {
+	b, logDir := fakeBundle(t)
+	b.LAN, b.TLS = true, true
+	ctx := context.Background()
+	if err := b.Prepare(ctx, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if sql := read(t, filepath.Join(logDir, "psql.sql")); !strings.Contains(sql, "CREATEROLE REPLICATION") ||
+		!strings.Contains(sql, "CREATE DATABASE maktaba") {
+		t.Fatalf("a first start: one session with both:\n%s", sql)
+	}
+	if hba := read(t, filepath.Join(b.Data, "pg_hba.conf")); !strings.Contains(hba, "hostssl replication  +maktaba_replicas") {
+		t.Fatalf("pg_hba.conf:\n%s", hba)
+	}
+	if !b.TLSReady() {
+		t.Fatal("no server certificate")
+	}
+
+	// an older cluster: only the app's bootstrap had run
+	if err := os.Remove(filepath.Join(b.Data, clusterMarker)); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Prepare(ctx, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	sql := read(t, filepath.Join(logDir, "psql.sql"))
+	if !strings.Contains(sql, "CREATEROLE REPLICATION") || strings.Contains(sql, "CREATE DATABASE") {
+		t.Fatalf("an older cluster: the provisioning grants only:\n%s", sql)
+	}
+	if err := b.Prepare(ctx, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if n := lines(t, filepath.Join(logDir, "psql.calls")); n != 2 {
+		t.Fatalf("the bootstrap ran %d times, want 2", n)
+	}
+}
