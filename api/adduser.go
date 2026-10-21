@@ -15,6 +15,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/pgdsn"
 )
 
 // runAddUser implements `maktaba-api adduser <username>` (Story 10.1
@@ -83,6 +84,7 @@ Flags:`)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	dsn = pgdsn.ForLibPQ(ctx, dsn, pgdsn.Ping)
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)

@@ -74,12 +74,18 @@ type TVSettings struct {
 	// HorizonDays is how far ahead schedules are planned; the XMLTV
 	// guide shows as far.
 	HorizonDays int
+	// LiveLookupReuse is how long one yt-dlp lookup of a live page is
+	// shared by every channel airing it.
+	LiveLookupReuse time.Duration
 }
 
 // Defaults (the rules' defaults; env overrides them, settings override env).
 const (
 	DefaultHorizonDays = 7
 	maxHorizonDays     = 31
+	// live_lookup_reuse_seconds' bounds.
+	minLiveLookupReuseSec = 10
+	maxLiveLookupReuseSec = 3600
 
 	// rules tv_output: a programme whose file cannot be read
 	DefaultUnreadableFill = FillFiller
@@ -121,6 +127,8 @@ func OutputSettingsFromEnv() OutputSettings {
 func TVSettingsFromEnv() TVSettings {
 	return TVSettings{
 		HorizonDays: clampInt(envInt("MAKTABA_CHANNEL_HORIZON_DAYS", DefaultHorizonDays), 1, maxHorizonDays),
+		LiveLookupReuse: time.Duration(clampInt(envInt("MAKTABA_CHANNEL_LIVE_LOOKUP_REUSE_SEC",
+			int(DefaultLiveLookupReuse/time.Second)), minLiveLookupReuseSec, maxLiveLookupReuseSec)) * time.Second,
 	}
 }
 
@@ -222,6 +230,13 @@ func ApplyTVRules(base TVSettings, raw []byte) (out TVSettings, bad []string) {
 		switch name {
 		case "horizon_days":
 			if !setInt(&out.HorizonDays, v, 1, maxHorizonDays) {
+				bad = append(bad, name)
+			}
+		case "live_lookup_reuse_seconds":
+			var sec int
+			if setInt(&sec, v, minLiveLookupReuseSec, maxLiveLookupReuseSec) {
+				out.LiveLookupReuse = time.Duration(sec) * time.Second
+			} else {
 				bad = append(bad, name)
 			}
 		}

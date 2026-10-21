@@ -3390,6 +3390,16 @@
      ]
     },
     {
+     "name": "live_lookup_reuse_seconds",
+     "kind": "int",
+     "group": "Maktaba TV",
+     "label": "Live page lookup reuse (seconds)",
+     "help": "A live broadcast on a YouTube (or other) page is looked up with yt-dlp before it airs. Every channel airing the same page at the same time shares one lookup, reused this long; after a failure the next try looks again. A stream address (.m3u8 ...) needs no lookup.",
+     "default": 600,
+     "minimum": 10,
+     "maximum": 3600
+    },
+    {
      "name": "loudnorm",
      "kind": "bool",
      "group": "Maktaba TV",
@@ -3404,6 +3414,14 @@
      "label": "Loudness target (LUFS)",
      "help": "",
      "default": -16.0
+    },
+    {
+     "name": "watermark_skip_filler",
+     "kind": "bool",
+     "group": "Maktaba TV",
+     "label": "No corner logo on filler",
+     "help": "Filler clips and bumpers air without the channel's corner logo, as dizqueTV; programmes and live broadcasts always carry it. Off: the logo on every block.",
+     "default": true
     },
     {
      "name": "horizon_days",

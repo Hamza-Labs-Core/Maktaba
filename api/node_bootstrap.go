@@ -37,6 +37,7 @@ import (
 	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/pgdsn"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
@@ -67,6 +68,17 @@ func checkNodeEnv(cfg nodemode.Config) error {
 		return nodemode.ErrMigrate
 	}
 	return cfg.Validate()
+}
+
+// boundNodeDatabaseURL gives a full node's DATABASE_URL, the home's database across
+// the network, a connect_timeout (pgdsn.ConnectTimeout) unless it has one: lib/pq
+// takes a context for the dial at most, so a home that accepts and never answers held
+// the role check below (its 15 s), before anything bound, and every later connection,
+// for as long as the socket lived.
+func boundNodeDatabaseURL(cfg nodemode.Config) {
+	if dsn := os.Getenv("DATABASE_URL"); cfg.Enabled && dsn != "" {
+		_ = os.Setenv("DATABASE_URL", pgdsn.WithConnectTimeout(dsn, pgdsn.ConnectTimeout))
+	}
 }
 
 // startNode checks the node's database role and starts its background work.
@@ -280,7 +292,7 @@ func mountNode(r chi.Router, cfg nodemode.Config, dataDir string, logger *slog.L
 	if dsn == "" {
 		return nil, nil, fmt.Errorf("node mode needs the home's database (DATABASE_URL, the node role's from node.json)")
 	}
-	appDB, err := sql.Open("postgres", dsn)
+	appDB, err := pgdsn.Open(dsn)
 	if err != nil {
 		return nil, nil, fmt.Errorf("node mode: open the home's database: %w", err)
 	}
@@ -312,7 +324,10 @@ func mountNode(r chi.Router, cfg nodemode.Config, dataDir string, logger *slog.L
 	}
 	router.MountP6(r, router.P6Deps{
 		DB: appDB, PipelineClient: pipelineClient, StreamingClient: streamingClient,
-		BusCtx: ctx, BusDSN: dsn, PerfRegistry: perf.NewRegistry(),
+		// the event bus's pq.Listener takes a connection string (lib/pq has no
+		// connector-based listener), so its sslmode is settled once, here at startup,
+		// not per connection as appDB's is
+		BusCtx: ctx, BusDSN: pgdsn.ForLibPQ(ctx, dsn, pgdsn.Ping), PerfRegistry: perf.NewRegistry(),
 		// this machine's own stream key: the node signs its own VOD sessions,
 		// which its own streaming role verifies (Story 10.8, design §11.5)
 		URLSigner: streamURLSigner(nil, logger),

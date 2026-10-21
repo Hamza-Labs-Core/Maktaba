@@ -1,6 +1,7 @@
 package supervisor
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -21,6 +22,7 @@ func envMap(env []string) map[string]string {
 // TestStreamingNodeEnvFromNodeConfig: a joined machine's streaming role runs as a
 // cluster node from its node config (Epic 32.1 AC2), no flag needed.
 func TestStreamingNodeEnvFromNodeConfig(t *testing.T) {
+	t.Setenv("MAKTABA_ROLE", "")
 	prev := nodeConfig
 	t.Cleanup(func() { nodeConfig = prev })
 	nodeConfig = func() config.NodeConfig {
@@ -43,6 +45,94 @@ func TestStreamingNodeEnvFromNodeConfig(t *testing.T) {
 	nodeConfig = func() config.NodeConfig { return config.NodeConfig{NodeID: "x"} }
 	if m := envMap(ChildEnv(RoleStreaming, cfg)); m["MAKTABA_TV_HOST_ROLE"] != "" || m["DATABASE_URL"] != "postgresql://local/ignored" {
 		t.Fatalf("unjoined machine got node env: %v", m)
+	}
+}
+
+// TestPipelineFullNodeEnv: a full node's pipeline (and its extra transcription
+// instances) runs as the node against the home's database; it started as a home
+// worker against [database].url, a local Postgres the node never runs.
+func TestPipelineFullNodeEnv(t *testing.T) {
+	t.Setenv("MAKTABA_ROLE", "") // the shell's would force the home below
+	prev := nodeConfig
+	t.Cleanup(func() { nodeConfig = prev })
+	nodeConfig = func() config.NodeConfig {
+		return config.NodeConfig{NodeID: "6f1c9a2e-0000-4000-8000-000000000001",
+			DatabaseURL: "postgres://node_6f1c9a2e@home:5432/maktaba?sslmode=prefer",
+			Home:        config.HomeRef{URL: "http://home:8080"}}
+	}
+	var cfg config.Config
+	cfg.Database.URL = "postgresql://local/ignored"
+	cfg.Pipeline.Instances = 1
+	m := envMap(ChildEnv(RolePipeline, cfg))
+	if m["MAKTABA_DATABASE_URL"] != "postgres://node_6f1c9a2e@home:5432/maktaba?sslmode=prefer" ||
+		m["DATABASE_URL"] != m["MAKTABA_DATABASE_URL"] || m["MAKTABA_NODE"] != "1" {
+		t.Fatalf("pipeline node env not applied: %v", m)
+	}
+	procs, err := BuildPipelineInstances(Options{Config: cfg})
+	if err != nil || len(procs) != 1 {
+		t.Fatalf("instances: %v (%d)", err, len(procs))
+	}
+	for _, p := range procs {
+		if e := envMap(p.Cmd.Env); e["MAKTABA_NODE"] != "1" || e["MAKTABA_DATABASE_URL"] != m["MAKTABA_DATABASE_URL"] {
+			t.Fatalf("transcription instance not a node: %v", e)
+		}
+	}
+	// [server] role = "home" keeps a joined machine a home worker
+	cfg.Server.Role = "home"
+	if m := envMap(ChildEnv(RolePipeline, cfg)); m["MAKTABA_NODE"] != "" || m["MAKTABA_DATABASE_URL"] != "postgresql://local/ignored" {
+		t.Fatalf("forced home got node env: %v", m)
+	}
+}
+
+// TestCheckNodeConfigPartial: a joined node.json without node_id or private_key gave
+// the pipeline MAKTABA_NODE=1 and a KeyError on every restart; serve now refuses it
+// once, naming the file and what it lacks.
+func TestCheckNodeConfigPartial(t *testing.T) {
+	t.Setenv("MAKTABA_ROLE", "")
+	t.Setenv("MAKTABA_NODE_CONFIG", filepath.Join(t.TempDir(), "node.json"))
+	prev := nodeConfig
+	t.Cleanup(func() { nodeConfig = prev })
+	full := config.NodeConfig{NodeID: "6f1c9a2e-0000-4000-8000-000000000001", PrivateKey: "AQID",
+		DatabaseURL: "postgres://node_6f1c9a2e@home:5432/maktaba?sslmode=prefer", Home: config.HomeRef{URL: "http://home:8080"}}
+	var cfg config.Config
+
+	nodeConfig = func() config.NodeConfig { return full }
+	if err := CheckNodeConfig(cfg); err != nil {
+		t.Fatalf("a complete node config: %v", err)
+	}
+	partial := full
+	partial.NodeID, partial.PrivateKey = "", " "
+	nodeConfig = func() config.NodeConfig { return partial }
+	err := CheckNodeConfig(cfg)
+	if err == nil || !strings.Contains(err.Error(), "node_id or private_key") ||
+		!strings.Contains(err.Error(), config.LocalNodeConfigPath()) || strings.Contains(err.Error(), "sslmode") {
+		t.Fatalf("partial node config: %v", err)
+	}
+	// [server] role = "home" ignores node.json; an unjoined one is no node
+	cfg.Server.Role = "home"
+	if err := CheckNodeConfig(cfg); err != nil {
+		t.Fatalf("forced home: %v", err)
+	}
+	cfg.Server.Role = ""
+	nodeConfig = func() config.NodeConfig { return config.NodeConfig{NodeID: "x"} }
+	if err := CheckNodeConfig(cfg); err != nil {
+		t.Fatalf("not joined: %v", err)
+	}
+
+	// a node.json that does not parse is not "not joined": that started the node as a
+	// home, migrating its own database
+	path := config.LocalNodeConfigPath()
+	if err := os.WriteFile(path, []byte(`{"node_id": "6f1c9a2e", "database_url": "postgres://n`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	nodeConfig = config.LocalNodeConfig
+	if err := CheckNodeConfig(cfg); err == nil || !strings.Contains(err.Error(), path) ||
+		!strings.Contains(err.Error(), "unexpected end of JSON input") {
+		t.Fatalf("broken node.json: %v", err)
+	}
+	cfg.Server.Role = "home"
+	if err := CheckNodeConfig(cfg); err != nil {
+		t.Fatalf("forced home with a broken node.json: %v", err)
 	}
 }
 

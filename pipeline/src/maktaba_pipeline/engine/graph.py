@@ -75,7 +75,7 @@ TOPIC_VERSION = 1
 PROMO_VERSION = 1
 CLIP_GROUPS_VERSION = 1
 YT_SYNC_VERSION = 1
-CH_WRITE_VERSION = 2
+CH_WRITE_VERSION = 3  # 3: look.watermark_skip_filler (rules tv)
 #: exact_dates / repair_broken (plan 06-11, mediaintel parity)
 EXACT_DATES_VERSION = 1
 REPAIR_VERSION = 1
