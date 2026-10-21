@@ -8,7 +8,9 @@ package hostcheck
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"os/user"
 	"strconv"
 	"strings"
 
@@ -52,11 +54,17 @@ type Linux struct {
 	Manager service.UserManager
 	// Unit is the app's unit (its file tells whether another install holds the name).
 	Unit service.AppUnit
+	// User is the login name the remedies name.
+	User string
 }
 
 // LocalLinux reads this machine.
 func LocalLinux(unit service.AppUnit) Linux {
-	return Linux{Glibc: localGlibc, Manager: service.LocalUserManager(), Unit: unit}
+	name := os.Getenv("USER")
+	if u, err := user.Current(); err == nil {
+		name = u.Username
+	}
+	return Linux{Glibc: localGlibc, Manager: service.LocalUserManager(), Unit: unit, User: name}
 }
 
 // localGlibc asks getconf (glibc's own), which a musl system does not answer.
@@ -86,8 +94,12 @@ func (l Linux) Check(ctx context.Context) Result {
 	st := l.Manager.Status(ctx, l.Unit)
 	switch {
 	case st.Manager != "ok":
-		r.problem("user_manager_missing", "The server runs as your systemd user service, which this computer cannot start: "+
-			st.Reason+".", "reason", st.Reason)
+		// a shell from sudo -iu or su has no user manager of its own: a login of
+		// that user starts one, and linger keeps it at boot
+		r.problem("user_manager_missing", fmt.Sprintf("The server runs as your systemd user service, which this computer "+
+			"cannot start: %s. Log in as %s directly (over SSH or at the console, not through sudo or su), or have an "+
+			"administrator run `loginctl enable-linger %s`, then run the setup again.", st.Reason, l.User, l.User),
+			"reason", st.Reason, "user", l.User)
 	case st.SystemUnit != "":
 		r.problem("service_system_wide", fmt.Sprintf("A system-wide Maktaba service is installed (%s): it would be a second "+
 			"server on the same ports. Its administrator removes it first (sudo apt remove maktaba-server, or sudo systemctl "+

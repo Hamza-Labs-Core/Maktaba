@@ -525,7 +525,7 @@ func (a *appSetup) plex(ctx context.Context) error {
 	}
 	res, err := a.run(ctx, "plex", map[string]any{"action": "pin"}, nil)
 	if err != nil {
-		return wrapStep("plex", err)
+		return a.plexLater(ctx, err)
 	}
 	var pin struct {
 		PinID   int64  `json:"pin_id"`
@@ -545,7 +545,7 @@ func (a *appSetup) plex(ctx context.Context) error {
 		}
 		res, err := a.run(ctx, "plex", map[string]any{"action": "poll", "pin_id": pin.PinID}, nil)
 		if err != nil {
-			return wrapStep("plex", err)
+			return a.plexLater(ctx, err) // an expired code, no network: link later, keep the rest
 		}
 		var st struct {
 			Linked bool `json:"linked"`
@@ -555,6 +555,19 @@ func (a *appSetup) plex(ctx context.Context) error {
 			return nil
 		}
 	}
+}
+
+// plexLater is a sign-in that did not work out (the code expired, Plex could
+// not be reached): Plex is optional, so the setup goes on without it rather
+// than losing the answers before it; the Settings link it later.
+func (a *appSetup) plexLater(ctx context.Context, cause error) error {
+	var f *stepFailure
+	if errors.As(cause, &f) {
+		a.printf("  %s\n", a.t.stepError(f))
+	}
+	a.printf("  %s\n", a.t.get("terminal.plexLater"))
+	_, err := a.run(ctx, "plex", map[string]any{"action": "skip"}, nil)
+	return wrapStep("plex", err)
 }
 
 func wrapStep(name string, err error) error {
@@ -613,15 +626,27 @@ func runAppSetupCmd(answersFile string, answersFD int, lang string) error {
 	if err != nil {
 		return err
 	}
-	a := &appSetup{run: execStepRunner(self), ask: newTermAsker(t), out: os.Stdout, t: t, answers: answers,
-		pollEvery: 2 * time.Second}
+	// status and check as the app runs them: in its payload (the bundled Postgres)
+	a := &appSetup{run: execStepRunner(self, "MAKTABA_APP_BUNDLE="+payloadOfThisBinary()), ask: newTermAsker(t),
+		out: os.Stdout, t: t, answers: answers, pollEvery: 2 * time.Second}
 	if runtimeGOOS == "linux" {
 		a.runtime = func(ctx context.Context) (stepRunner, error) { return headlessRuntime(ctx, t, os.Stdout) }
 		a.afterFinish = func(ctx context.Context) error { return headlessService(ctx, t, os.Stdout) }
 	}
-	err = a.Run(context.Background())
-	if errors.Is(err, errCancelled) {
+	return endError(t, a.Run(context.Background()))
+}
+
+// endError is what ended the setup, in the user's language: a cancel, a
+// step's failure by its code, else as it is.
+func endError(t texts, err error) error {
+	var f *stepFailure
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, errCancelled):
 		return errors.New(t.get("terminal.cancelled"))
+	case errors.As(err, &f):
+		return errors.New(t.stepError(f))
 	}
 	return err
 }
