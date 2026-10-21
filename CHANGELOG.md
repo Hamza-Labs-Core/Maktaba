@@ -35,6 +35,13 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Changed
 
+- **Every role stops cleanly on Windows.** The supervisor starts each child in a process group of
+  its own and asks it to stop with CTRL_BREAK (the Go roles drain on it as they do on SIGTERM, the
+  pipeline on `SIGBREAK`); a child is killed with its process tree only once the shutdown grace
+  is over. Postgres keeps its `pg_ctl` fast shutdown. A `serve` with no console (started detached
+  by a program that has none) cannot send CTRL_BREAK, so it kills its children as before and says
+  so once in its log; its children then open no console window on the desktop. A child is held
+  still while it is asked, so the CTRL_BREAK never goes astray to `serve` itself.
 - **Windows keeps everything in `%LOCALAPPDATA%\Maktaba`** (Epic 38, story 38.1): `server.toml`,
   `keys\`, `data\`, `logs\` and the node's `node.json`, with the models, caches and the bundled
   Postgres beside `data\`. Nothing is in the roaming profile any more, so the keys and a node's
