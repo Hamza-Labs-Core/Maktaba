@@ -8,14 +8,19 @@
 
 The items are exactly what the workers load, from the same settings:
 
-``whisper``     ``MAKTABA_STT_MODEL`` (default ``mlx-community/whisper-large-v3-turbo``),
-                the whole repo, as ``mlx_whisper.load_models`` downloads it
+``whisper``     ``MAKTABA_STT_MODEL`` in this machine's engine (:mod:`~..stt.engine`): on
+                Apple Silicon ``mlx-community/whisper-large-v3-turbo``, the whole repo, as
+                ``mlx_whisper.load_models`` downloads it; elsewhere the CTranslate2
+                ``dropbox-dash/faster-whisper-large-v3-turbo``, the files the engine loads
+                (:data:`~..stt.engine.CT2_FILES`)
 ``cohere``      the second listen, ``MAKTABA_STT_REFINE_MODEL`` (gated: the account
                 must have accepted its licence; ``HF_TOKEN`` or ``hf auth login``), with
-                mlx-audio's file patterns; skipped with ``MAKTABA_STT_REFINE=0``. When
+                mlx-audio's file patterns; skipped with ``MAKTABA_STT_REFINE=0``, and on a
+                machine with no second listen (the CTranslate2 engine). When
                 Hugging Face refuses, the home's published copy on ``--share`` (default
                 ``$MAKTABA_MODELS_DIR``) is copied here instead (:mod:`~..stt.model_share`)
-``dictionary``  CAMeL Tools' ``morphology-db-msa-r13`` (the second listen's spelling)
+``dictionary``  CAMeL Tools' ``morphology-db-msa-r13`` (the second listen's spelling;
+                skipped with it)
 ``embedder``    ``MAKTABA_EMBED_MODEL`` (default ``intfloat/multilingual-e5-small``),
                 for semantic search
 
@@ -108,25 +113,29 @@ def items(only: set[str] | None = None) -> list[Item]:
     """The models this machine's workers load, from the same settings they read."""
     from ..engine.stages.transcribe import refine_model, settings_from_env
     from ..search.semantic import embed_model
+    from ..stt import cohere, engine
 
     whisper = settings_from_env().model
     refine = refine_model()
+    no_refine = None if refine else "the second listen is off (MAKTABA_STT_REFINE=0)"
+    no_refine = no_refine or cohere.unavailable()
+    ct2 = engine.current() == engine.CT2
     out = [
-        Item("whisper", whisper, "hf"),
+        Item(
+            "whisper",
+            engine.ct2_repo(whisper) if ct2 else whisper,
+            "hf",
+            allow_patterns=list(engine.CT2_FILES) if ct2 else None,
+        ),
         Item(
             "cohere",
             refine or "",
             "hf",
             gated=True,
             allow_patterns=_cohere_patterns(),
-            skip=None if refine else "the second listen is off (MAKTABA_STT_REFINE=0)",
+            skip=no_refine,
         ),
-        Item(
-            "dictionary",
-            CAMEL_PACKAGE,
-            "camel",
-            skip=None if refine else "the second listen is off (MAKTABA_STT_REFINE=0)",
-        ),
+        Item("dictionary", CAMEL_PACKAGE, "camel", skip=no_refine),
         Item("embedder", embed_model(), "hf", ignore_patterns=_EMBEDDER_IGNORE),
     ]
     if Path(whisper).expanduser().is_dir():

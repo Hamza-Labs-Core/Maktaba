@@ -18,7 +18,8 @@ SAMPLE_RATE = 16_000
 
 @dataclass(frozen=True, slots=True)
 class WhisperSettings:
-    """Whisper's knobs, as ``mlx_whisper.transcribe`` names them."""
+    """Whisper's knobs, as ``mlx_whisper.transcribe`` names them, and each engine's own
+    (:mod:`.engine`: the GPU memory limits are MLX's, the device and precision CTranslate2's)."""
 
     model: str = "mlx-community/whisper-large-v3-turbo"
     language: str = "ar"
@@ -33,6 +34,13 @@ class WhisperSettings:
     compression_ratio_threshold: float = 2.4
     logprob_threshold: float = -1.0
     no_speech_threshold: float = 0.6
+    #: CTranslate2 (:mod:`.ct2`): "auto" (the NVIDIA GPU when CUDA is usable, else the
+    #: CPU), "cuda", "cuda:<n>" or "cpu"
+    device: str = "auto"
+    #: CTranslate2's precision: "auto" (float16 on CUDA, int8 on the CPU) or one it names
+    compute_type: str = "auto"
+    #: CTranslate2's threads on the CPU (0: its own default, 4)
+    cpu_threads: int = 0
 
 
 @dataclass(slots=True)
@@ -55,6 +63,10 @@ class Transcript:
     #: the language Whisper hears in the opening 30 s, when it is sure enough (None:
     #: not detected, or not confident); recorded as such, never the forced one
     detected_language: str | None = None
+    #: the engine that made it (``transcripts.backend``, :data:`.engine.BACKEND`)
+    backend: str = "mlx-batched"
+    #: its runtime, when the engine says (``transcripts.backend_version``)
+    backend_version: str | None = None
 
 
 @dataclass(slots=True)

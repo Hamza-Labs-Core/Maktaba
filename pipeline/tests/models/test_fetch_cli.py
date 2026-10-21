@@ -262,3 +262,66 @@ def test_progress_bar_reports_snapshot_bytes() -> None:
     files = bar_cls(total=3, desc="Fetching 3 files")
     files.update(1)
     assert seen == [(400, 1000), (1000, 1000)]
+
+
+# --- the CTranslate2 engine (Windows, Linux: story 38.8) ---------------------------------
+
+
+@pytest.fixture
+def on_ct2(monkeypatch: pytest.MonkeyPatch) -> None:
+    from maktaba_pipeline.stt import engine
+
+    monkeypatch.setattr(engine, "current", lambda: engine.CT2)
+
+
+def test_items_on_ctranslate2_are_what_its_workers_load(
+    on_ct2: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maktaba_pipeline.stt import engine
+
+    its = {i.name: i for i in fetch_cli.items()}
+    assert its["whisper"].model == "dropbox-dash/faster-whisper-large-v3-turbo"
+    assert its["whisper"].allow_patterns == engine.CT2_FILES
+    # no second listen on this engine: neither its model nor its dictionary
+    assert its["cohere"].skip and "Apple Silicon" in its["cohere"].skip
+    assert its["dictionary"].skip == its["cohere"].skip
+    assert its["embedder"].skip is None
+    # an MLX model in server.toml: the CTranslate2 conversion the worker loads instead
+    monkeypatch.setenv("MAKTABA_STT_MODEL", "mlx-community/whisper-large-v3-turbo")
+    assert fetch_cli.items({"whisper"})[0].model == "dropbox-dash/faster-whisper-large-v3-turbo"
+    monkeypatch.setenv("MAKTABA_STT_REFINE", "0")
+    assert "MAKTABA_STT_REFINE=0" in str(fetch_cli.items({"cohere"})[0].skip)
+
+
+def test_download_on_ctranslate2_fetches_the_engine_s_files_and_skips_the_rest(
+    on_ct2: None,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from maktaba_pipeline.stt import engine
+
+    patterns: dict[str, list[str] | None] = {}
+    _fake_hub(monkeypatch, tmp_path)
+    fake = fetch_cli.hf_download
+
+    def download(
+        item: fetch_cli.Item, on_bytes: Callable[[int, int], None], local_only: bool
+    ) -> Path:
+        patterns[item.name] = item.allow_patterns
+        return fake(item, on_bytes, local_only)
+
+    monkeypatch.setattr(fetch_cli, "hf_download", download)
+    code, events = _run(capsys, "download")
+    assert code == fetch_cli.EXIT_OK
+    states = {n: e["state"] for n, e in _final(events).items()}
+    assert states == {
+        "whisper": "ready",
+        "cohere": "skipped",
+        "dictionary": "skipped",
+        "embedder": "ready",
+    }
+    assert patterns["whisper"] == engine.CT2_FILES and "cohere" not in patterns
+    code, events = _run(capsys, "status")
+    assert code == fetch_cli.EXIT_OK
+    assert _final(events)["whisper"]["source"] == "cache"

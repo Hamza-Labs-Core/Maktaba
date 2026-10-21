@@ -3,18 +3,28 @@
 One job per video in the ``gpu`` pool. The audio is decoded straight off the share
 (ffmpeg: mono, 16 kHz, into memory: no extract stage, no audio cache) and handed to the
 process's :class:`~maktaba_pipeline.stt.batched.BatchedTranscriber`, which decodes one
-window of every running job per GPU pass. The transcript replaces the video's active one
+window of every running job per GPU pass: on MLX on Apple Silicon, on CTranslate2
+elsewhere (:mod:`maktaba_pipeline.stt.engine`, :mod:`maktaba_pipeline.stt.ct2`: an
+NVIDIA GPU through CUDA, else the CPU). The transcript replaces the video's active one
 in one transaction: a new ``transcripts`` row (on the stream it decoded, recorded in
-``audio_tracks`` as track 0) with one ``transcript_segments`` row per sentence.
+``audio_tracks`` as track 0; ``backend`` names the engine) with one
+``transcript_segments`` row per sentence.
 
 Settings (environment, read per run): ``MAKTABA_STT_MODEL`` (default
-``mlx-community/whisper-large-v3-turbo``), ``MAKTABA_STT_LANGUAGE`` (``ar``),
+whisper-large-v3-turbo in the engine's format: ``mlx-community/whisper-large-v3-turbo``,
+``dropbox-dash/faster-whisper-large-v3-turbo``; CTranslate2 loads the CTranslate2
+conversion of an MLX model it is given), ``MAKTABA_STT_LANGUAGE`` (``ar``),
 ``MAKTABA_STT_WORDS`` (``1``: sentence bounds from word timings),
 ``MAKTABA_STT_STORE_WORDS`` (``0``: keep each sentence's words in its metadata),
 ``MAKTABA_STT_REFINE`` (``1``: a second listen corrects Whisper's words,
 :mod:`maktaba_pipeline.stt.refine`; ``0`` stores Whisper's as they are) with
-``MAKTABA_STT_REFINE_MODEL`` (default ``CohereLabs/cohere-transcribe-arabic-07-2026``).
-The library's ``stt.initial_prompt`` (names, terms) biases every window's decoding.
+``MAKTABA_STT_REFINE_MODEL`` (default ``CohereLabs/cohere-transcribe-arabic-07-2026``;
+MLX only: on CTranslate2 the transcript keeps Whisper's words and says why),
+``MAKTABA_STT_BATCH`` (files decoded together: 32 on MLX, 8 on CTranslate2). MLX's GPU
+memory: ``MAKTABA_STT_GPU_GB`` / ``_GPU_CACHE_GB``; CTranslate2's device and precision:
+``MAKTABA_STT_DEVICE`` (``auto``), ``MAKTABA_STT_COMPUTE_TYPE`` (``auto``),
+``MAKTABA_STT_CPU_THREADS``. The library's ``stt.initial_prompt`` (names, terms) biases
+every window's decoding.
 """
 
 from __future__ import annotations
@@ -31,6 +41,7 @@ from uuid import uuid4
 from ...binaries import ffmpeg_binary
 from ...db.jobs import Job
 from ...log import get_logger
+from ...stt import engine
 from ...stt.cohere import DEFAULT_MODEL as REFINE_MODEL
 from ...stt.settings import SAMPLE_RATE, Checkpoint, FileProgress, Transcript, WhisperSettings
 from ..context import JobDeferred, StageContext, StageFailure
@@ -54,8 +65,16 @@ _log = get_logger()
 
 def unavailable() -> str | None:
     """Why this worker cannot run transcribe, or None: MLX-Whisper runs on Apple
-    Silicon only, with the ``stt`` extra. A worker without it never claims the stage
-    (it would fail every job), but still imports this module to enqueue it."""
+    Silicon only, with the ``stt`` extra; elsewhere CTranslate2, with the ``stt`` extra,
+    a model it can load and the GPU it was told to use, if any
+    (:func:`maktaba_pipeline.stt.ct2.unavailable`). A worker that cannot never claims
+    the stage (it would fail every job), but still imports this module to enqueue it."""
+    if engine.current() == engine.CT2:
+        if importlib.util.find_spec("numpy") is None:
+            return "numpy is not installed (the stt extra)"
+        from ...stt.ct2 import unavailable as ct2_unavailable
+
+        return ct2_unavailable(settings_from_env())
     if platform.system() != "Darwin" or platform.machine() != "arm64":
         return "MLX-Whisper needs Apple Silicon"
     for mod in ("numpy", "mlx_whisper"):
@@ -85,9 +104,21 @@ def _remap(result: Transcript, tmap: Any, audio_sec: float) -> Transcript:
 
 
 def get_transcriber(settings: WhisperSettings) -> BatchedTranscriber:
+    """The process's transcriber for these settings, on this machine's engine."""
+    if engine.current() == engine.CT2:
+        from ...stt.ct2 import get_transcriber as on_ct2
+
+        return on_ct2(settings)
     from ...stt.batched import get_transcriber as shared
 
     return shared(settings)
+
+
+def _where(settings: WhisperSettings) -> str:
+    """Where the files are decoded, for the job's progress line: a CTranslate2 worker
+    without a usable GPU decodes on the CPU (known once its model is loaded)."""
+    device = getattr(get_transcriber(settings), "device", None) or settings.device
+    return "on the CPU" if str(device).startswith("cpu") else "on the GPU"
 
 
 #: decoding the audio off the share: generous, a long lecture over a busy NAS
@@ -138,12 +169,28 @@ def audio_budget() -> AudioBudget:
 
 
 def settings_from_env(max_batch: int | None = None) -> WhisperSettings:
+    """This machine's settings, each engine reading its own knobs."""
     env = os.environ
+    name = engine.current()
+    model = engine.model_for(name, env.get("MAKTABA_STT_MODEL"))
+    language = env.get("MAKTABA_STT_LANGUAGE", "ar")
+    words = env.get("MAKTABA_STT_WORDS", "1") != "0"
+    batch = max_batch or int(env.get("MAKTABA_STT_BATCH") or engine.DEFAULT_BATCH[name])
+    if name == engine.CT2:
+        return WhisperSettings(
+            model=model,
+            language=language,
+            word_timestamps=words,
+            max_batch=batch,
+            device=env.get("MAKTABA_STT_DEVICE") or "auto",
+            compute_type=env.get("MAKTABA_STT_COMPUTE_TYPE") or "auto",
+            cpu_threads=int(env.get("MAKTABA_STT_CPU_THREADS") or 0),
+        )
     return WhisperSettings(
-        model=env.get("MAKTABA_STT_MODEL", "mlx-community/whisper-large-v3-turbo"),
-        language=env.get("MAKTABA_STT_LANGUAGE", "ar"),
-        word_timestamps=env.get("MAKTABA_STT_WORDS", "1") != "0",
-        max_batch=max_batch or int(env.get("MAKTABA_STT_BATCH", "32")),
+        model=model,
+        language=language,
+        word_timestamps=words,
+        max_batch=batch,
         gpu_limit_gb=float(env.get("MAKTABA_STT_GPU_GB", "24")),
         gpu_cache_gb=float(env.get("MAKTABA_STT_GPU_CACHE_GB", "2")),
     )
@@ -222,7 +269,9 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
             **({"prompt": prompt} if prompt else {}),
             "hash": None if row is None else str(row["content_hash"]),
             "size": v.size_bytes,
-            "model": s.model,
+            # one Whisper is one model on either engine: a PC does not transcribe again
+            # what a Mac did (the transcript records the engine and model that made it)
+            "model": engine.fingerprint_model(s.model),
             "language": s.language,
             "words": s.word_timestamps,
             # the setting, not whether this process could run it: every worker
@@ -387,7 +436,7 @@ async def _run_saving(
                 continue
             progress.saved_seek, progress.saved_count = cp.seek, count
             await ctx.progress(
-                "transcribe", round(cp.seek / 100 * scale), audio_sec, "on the GPU", force=True
+                "transcribe", round(cp.seek / 100 * scale), audio_sec, _where(settings), force=True
             )
     finally:
         if not task.done():
@@ -406,7 +455,7 @@ async def _transcribe_file(
 
     settings = settings_from_env()
     await ctx.progress(
-        "transcribe", 0, round(audio.size / SAMPLE_RATE), "on the GPU",
+        "transcribe", 0, round(audio.size / SAMPLE_RATE), _where(settings),
         steps=["decode", "transcribe", "store"], force=True,
     )  # fmt: skip
     total_sec = audio.size / SAMPLE_RATE
@@ -433,10 +482,12 @@ async def _transcribe_file(
     if model and result.sentences and settings.word_timestamps:
         await ctx.progress("transcribe", round(total_sec), round(total_sec), "second listen")
         from ...stt.cohere import loaded
+        from ...stt.cohere import unavailable as no_second_listen
         from ...stt.model_share import resolve_models_dir
 
-        # the share is looked for until the model is loaded (a stale mount can be slow)
-        share = None if loaded(model) else await resolve_models_dir(db)
+        # the share is looked for until the model is loaded (a stale mount can be slow),
+        # and not at all where there is no second listen (it then says why)
+        share = None if loaded(model) or no_second_listen() else await resolve_models_dir(db)
         refined = await asyncio.to_thread(_refine, result, audio, model, share)
     del audio
     if tmap is not None:
@@ -485,13 +536,13 @@ async def _store(
             INSERT INTO transcripts (id, video_id, audio_track_id, language, detected_language,
                                      backend, model, backend_version, word_level, diarized,
                                      is_active, metadata)
-            VALUES ($8, $1, $7, $2, $9, 'mlx-batched', $3, $4, $5, false, false, $6)
+            VALUES ($8, $1, $7, $2, $9, $10, $3, $4, $5, false, false, $6)
             RETURNING id
             """,
             uid(video_id),
             result.language,
             result.model,
-            _backend_version(),
+            _backend_version(result),
             settings.word_timestamps,
             dumps(
                 {
@@ -503,6 +554,7 @@ async def _store(
             track["id"],
             uid(uuid4()),  # SQLite gives the column no default
             result.detected_language,  # what Whisper heard, not the language it was told
+            result.backend,  # the engine that made it: mlx-batched, ct2-batched
         )
         tid = row["id"]
         rows = []
@@ -546,7 +598,11 @@ async def _store(
     return str(tid)
 
 
-def _backend_version() -> str | None:
+def _backend_version(result: Transcript | None = None) -> str | None:
+    """The engine's runtime: what the transcriber said (CTranslate2: faster-whisper's and
+    CTranslate2's versions, the device and the precision), else MLX-Whisper's version."""
+    if result is not None and result.backend_version:
+        return result.backend_version
     try:
         from importlib.metadata import version
 

@@ -297,7 +297,15 @@ class BatchedTranscriber:
 
     ``encode(windows, cached)`` returns the pass's encoder output, one row per window;
     ``cached[k]``, when not None, is window k's output from an earlier pass (a window
-    decoded again after a fallback) and is used as it is."""
+    decoded again after a fallback) and is used as it is.
+
+    The CTranslate2 engine (:class:`~.ct2.CT2Transcriber`, Windows and Linux) is this
+    class with CTranslate2's model behind the same hooks."""
+
+    #: what the transcripts it makes record as their engine (``transcripts.backend``)
+    backend = "mlx-batched"
+    #: and its runtime, once loaded (None: the stage names MLX-Whisper's version)
+    backend_version: str | None = None
 
     def __init__(
         self,
@@ -402,22 +410,11 @@ class BatchedTranscriber:
         self._mx = mx
         from ..engine.health import register_metric
 
-        # one series per worker (two transcription workers on one host must not
-        # overwrite each other's), named by its slot so a restart continues it
         tag = metric_tag()
         register_metric(f"stt.gpu_active_gb:{tag}", lambda: round(mx.get_active_memory() / 1e9, 2))
         register_metric(f"stt.gpu_cache_gb:{tag}", lambda: round(mx.get_cache_memory() / 1e9, 2))
         register_metric(f"stt.gpu_peak_gb:{tag}", lambda: round(mx.get_peak_memory() / 1e9, 2))
-        register_metric(f"stt.files_in_flight:{tag}", lambda: float(self.in_flight))
-        register_metric(f"stt.windows:{tag}", lambda: float(self.windows))
-        # the report's live speed: audio decoded, less what a failure or a shutdown
-        # threw away (the last sample, taken at shutdown, counts the files in flight)
-        register_metric(f"stt.audio_sec:{tag}", lambda: round(self.audio_done, 1))
-        register_metric(
-            f"stt.audio_lost:{tag}",
-            lambda: round(self.audio_lost, 1),
-            final=lambda: round(self.audio_lost + self.in_flight_audio(), 1),
-        )
+        self._register_metrics()
         model = load_model(s.model, dtype=mx.float16)
         tok = get_tokenizer(
             model.is_multilingual,
@@ -507,6 +504,24 @@ class BatchedTranscriber:
             self._align_batch = lambda items, feats: align_batch(model, tok, items, feats)
         _log.info("whisper.loaded", model=s.model, seconds=round(time.monotonic() - t0, 1))
 
+    def _register_metrics(self) -> None:
+        """The stt.* metrics every engine reports. One series per worker (two
+        transcription workers on one host must not overwrite each other's), named by
+        its slot so a restart continues it."""
+        from ..engine.health import register_metric
+
+        tag = metric_tag()
+        register_metric(f"stt.files_in_flight:{tag}", lambda: float(self.in_flight))
+        register_metric(f"stt.windows:{tag}", lambda: float(self.windows))
+        # the report's live speed: audio decoded, less what a failure or a shutdown
+        # threw away (the last sample, taken at shutdown, counts the files in flight)
+        register_metric(f"stt.audio_sec:{tag}", lambda: round(self.audio_done, 1))
+        register_metric(
+            f"stt.audio_lost:{tag}",
+            lambda: round(self.audio_lost, 1),
+            final=lambda: round(self.audio_lost + self.in_flight_audio(), 1),
+        )
+
     def _admit(self, jobs: list[_Job], block: bool) -> None:
         while len(jobs) < self.settings.max_batch:
             try:
@@ -582,6 +597,8 @@ class BatchedTranscriber:
                         model=self.settings.model,
                         gpu_sec=time.monotonic() - j.admitted,
                         detected_language=j.language or None,
+                        backend=self.backend,
+                        backend_version=self.backend_version,
                     )
                 except Exception as exc:  # noqa: BLE001 - the thread outlives one file
                     self.audio_lost += j.unsaved_sec
@@ -614,7 +631,8 @@ class BatchedTranscriber:
         return out
 
     def _take(self, features: Any, rows: list[int]) -> Any:
-        """Rows of the pass's encoder output (an MLX array) or of its windows (a list)."""
+        """Rows of the pass's encoder output (an MLX or a NumPy array) or of its windows
+        (a list)."""
         if isinstance(features, list):
             return [features[k] for k in rows]
         if self._mx is not None:
