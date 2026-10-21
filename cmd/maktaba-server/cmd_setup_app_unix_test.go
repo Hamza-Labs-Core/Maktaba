@@ -25,7 +25,7 @@ func TestStepWithoutAResultSaysItsStderr(t *testing.T) {
 	if !errors.As(err, &f) || f.Code != "no_result" || !strings.Contains(f.Message, "panic: runtime error: index out of range") {
 		t.Fatalf("%#v", err)
 	}
-	if w := (&tailWriter{max: 4}); func() bool { _, _ = w.Write([]byte("abcdef")); return string(w.b) != "cdef" }() {
+	if w := (&stderrTail{max: 4}); func() bool { _, _ = w.Write([]byte("abcdef")); return string(w.b) != "cdef" }() {
 		t.Error("the tail keeps more than its last bytes")
 	}
 }

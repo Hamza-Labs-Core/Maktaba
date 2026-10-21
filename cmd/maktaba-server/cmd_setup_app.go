@@ -76,7 +76,7 @@ func execStepRunner(server string, env ...string) stepRunner {
 		cmd := exec.CommandContext(ctx, server, "setup", "--json", "--step", step)
 		cmd.Env = append(os.Environ(), env...)
 		cmd.Stdin = strings.NewReader(string(in))
-		stderr := &tailWriter{max: 2 << 10}
+		stderr := &stderrTail{max: 2 << 10}
 		cmd.Stderr = stderr
 		out, err := cmd.StdoutPipe()
 		if err != nil {
@@ -101,13 +101,13 @@ func execStepRunner(server string, env ...string) stepRunner {
 	}
 }
 
-// tailWriter keeps the last max bytes written to it.
-type tailWriter struct {
+// stderrTail keeps the last max bytes of a step's stderr.
+type stderrTail struct {
 	max int
 	b   []byte
 }
 
-func (w *tailWriter) Write(p []byte) (int, error) {
+func (w *stderrTail) Write(p []byte) (int, error) {
 	w.b = append(w.b, p...)
 	if len(w.b) > w.max {
 		w.b = w.b[len(w.b)-w.max:]
