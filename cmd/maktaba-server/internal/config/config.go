@@ -48,8 +48,9 @@ type Config struct {
 // PostgresSection is the [postgres] table (Epic 36 story 36.1): the Postgres
 // bundled with Maktaba.app, run by the supervisor as the postgres role.
 type PostgresSection struct {
-	// Enabled: "auto" (default: on a Mac whose payload carries Postgres, when
-	// [database] url is not set and no SQLite database is in use), "on" or "off".
+	// Enabled: "auto" (default: on a Mac whose payload carries Postgres, or on
+	// any system when the server runs from an app's payload, when [database]
+	// url is not set and no SQLite database is in use), "on" or "off".
 	Enabled string `toml:"enabled"`
 	// Home is the Postgres install (bin/postgres, bin/initdb, …); empty:
 	// $MAKTABA_POSTGRES_HOME, else the payload's postgres/ beside bin/.
