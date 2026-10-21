@@ -11,19 +11,19 @@ import (
 )
 
 // errKept: the new place already holds something else, so the old one stays where
-// it is (a move never replaces a file and never merges two folders).
+// it is (a move or a copy never replaces a file and never merges two folders).
 var errKept = errors.New("already exists")
 
-// Beside a file being copied to another volume, and beside a folder moving there
-// file by file.
+// Beside a file being copied (to another volume, or as a copy that leaves the
+// original), and beside a folder moving to another volume file by file.
 const (
 	partSuffix   = ".maktaba-part"
 	movingSuffix = ".maktaba-moving"
 )
 
-// mover moves an install's files into this platform's paths (MigrateMacDirs,
-// MigrateWindowsDirs). rename is os.Rename; tests replace it to act out a move
-// between two volumes.
+// mover moves (MigrateMacDirs) or copies (MigrateWindowsDirs) an install's files
+// into this platform's paths. rename is os.Rename; tests replace it to act out a
+// move between two volumes.
 type mover struct {
 	rename func(from, to string) error
 }
@@ -87,7 +87,7 @@ func (m mover) file(from, to string) (bool, error) {
 			return false, err
 		}
 	case info.Mode().IsRegular():
-		if err := m.copyAcross(from, to, info); err != nil {
+		if err := m.copyVerified(from, to, info); err != nil {
 			return false, err
 		}
 	default:
@@ -96,9 +96,45 @@ func (m mover) file(from, to string) (bool, error) {
 	return true, os.Remove(from)
 }
 
-// copyAcross copies from into to on another volume: into to+partSuffix, flushed to
-// disk, compared with from, then renamed to to (on to's own volume).
-func (m mover) copyAcross(from, to string, info fs.FileInfo) error {
+// copy copies one file to to and leaves from where it is (MigrateWindowsDirs: an
+// older version of the install, or another process, may still read it). It reports
+// whether it copied. A to with the same bytes is a copy made before; one with other
+// bytes is errKept (never replaced). A link is copied as the file it names. Like a
+// move between volumes, the copy is written beside to, flushed, compared with from
+// and renamed into place, so to is only ever whole and a copy cut short is made
+// again by the next start.
+func (m mover) copy(from, to string) (bool, error) {
+	info, err := os.Stat(from)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !info.Mode().IsRegular() {
+		return false, fmt.Errorf("%s is not a file", from)
+	}
+	if _, err := os.Lstat(to); err == nil {
+		same, err := sameBytes(from, to)
+		if err != nil {
+			return false, err
+		}
+		if !same {
+			return false, errKept
+		}
+		return false, nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return false, err
+	}
+	if err := os.MkdirAll(filepath.Dir(to), 0o700); err != nil {
+		return false, err
+	}
+	return true, m.copyVerified(from, to, info)
+}
+
+// copyVerified copies from into to: into to+partSuffix, flushed to disk, compared
+// with from, then renamed to to (on to's own volume).
+func (m mover) copyVerified(from, to string, info fs.FileInfo) error {
 	part := to + partSuffix
 	err := copyFlushed(from, part, info)
 	if err == nil {

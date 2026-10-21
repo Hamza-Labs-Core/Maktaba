@@ -10,8 +10,9 @@ POSIX; on Windows the per-user ``%LOCALAPPDATA%`` directory is already private).
 | Linux | ``${XDG_CONFIG_HOME:-~/.config}/maktaba/node.json`` |
 | Windows | ``%LOCALAPPDATA%\\Maktaba\\node.json`` (Epic 38: never in the roaming profile) |
 
-A Windows machine that joined before Epic 38 keeps ``%APPDATA%\\Maktaba\\node.json``
-while there is none in the new place (maktaba-server moves it with its own files).
+A Windows machine that joined before Epic 38 reads ``%APPDATA%\\Maktaba\\node.json``
+while there is none in the new place (maktaba-server copies it there with its own
+files and keeps the original, which older versions read).
 ``MAKTABA_NODE_CONFIG`` names another file (two nodes on one host, tests). Go resolves
 the same path (``config.NodeConfigPath`` in maktaba-server, ``channel.NodeConfigPath``
 in streaming).
