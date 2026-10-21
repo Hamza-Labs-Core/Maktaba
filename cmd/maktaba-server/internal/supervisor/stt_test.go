@@ -20,15 +20,16 @@ import (
 // 9.5 GiB or more, as on Windows, on every OS (fakeRefineMin changes it).
 func fakeMachine(t *testing.T, apple bool, gb uint64) {
 	t.Helper()
-	prevA, prevM, prevC, prevW, prevS := appleSilicon, totalMemory, numCPU, cudaWhisper, sttInstalled
+	prevA, prevM, prevC, prevW, prevS, prevL := appleSilicon, totalMemory, numCPU, cudaWhisper, sttInstalled, secondListenModel
 	t.Cleanup(func() {
-		appleSilicon, totalMemory, numCPU, cudaWhisper, sttInstalled = prevA, prevM, prevC, prevW, prevS
+		appleSilicon, totalMemory, numCPU, cudaWhisper, sttInstalled, secondListenModel = prevA, prevM, prevC, prevW, prevS, prevL
 	})
 	appleSilicon = func() bool { return apple }
 	totalMemory = func() uint64 { return gb << 30 }
 	numCPU = func() int { return 8 }
 	cudaWhisper = func() bool { return !apple }
 	sttInstalled = func(string) bool { return true }
+	secondListenModel = func(config.Config) bool { return true } // a token, or a copy here
 	fakeGPU(t, "", errors.New("nvidia-smi: not found"))
 	fakeRefineMin(t, 9.5)
 }
@@ -266,6 +267,152 @@ func TestRefineThresholdIsThePipelines(t *testing.T) {
 	if got := strconv.FormatFloat(defaultRefineMinGB, 'f', -1, 64); got != want {
 		t.Errorf("refineMinGB = %s on %s, the pipeline's MIN_GPU_GB = %s", got, runtime.GOOS, want)
 	}
+	cc := regexp.MustCompile(`(?m)^MIN_COMPUTE = \((\d+), (\d+)\)\r?$`).FindSubmatch(src)
+	if cc == nil || string(cc[1]) != strconv.Itoa(refineMinComputeMajor) || string(cc[2]) != strconv.Itoa(refineMinComputeMinor) {
+		t.Errorf("stt/cohere_cuda.py MIN_COMPUTE = %q, the supervisor's %d.%d", cc, refineMinComputeMajor, refineMinComputeMinor)
+	}
+	drv := regexp.MustCompile(`(?m)^MIN_DRIVER = (\d+)\r?$`).FindSubmatch(src)
+	if drv == nil || string(drv[1]) != strconv.Itoa(refineMinDriver) {
+		t.Errorf("stt/cohere_cuda.py MIN_DRIVER = %q, the supervisor's %d", drv, refineMinDriver)
+	}
+	model, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "pipeline", "src", "maktaba_pipeline", "stt", "cohere.py"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := regexp.MustCompile(`(?m)^DEFAULT_MODEL = "([^"]+)"`).FindSubmatch(model); m == nil || string(m[1]) != defaultRefineModel {
+		t.Errorf("stt/cohere.py DEFAULT_MODEL = %q, the supervisor's %s", m, defaultRefineModel)
+	}
+}
+
+// Review of #209, item 4: the second listen's tiers (and its workers) only where it
+// runs: memory, compute capability, driver, transcription on the GPU, its model.
+func TestTheSecondListenNeedsTheWholeCapability(t *testing.T) {
+	noSTTEnv(t)
+	fakeMachine(t, false, 64)
+	cfg := config.Defaults() // refine on
+	for _, c := range []struct {
+		smi     string
+		workers int
+		batch   int
+	}{
+		{"NVIDIA GeForce RTX 3080 Ti, 12288, 8.6, 591.44\n", 1, 8},  // runs it: its tier
+		{"NVIDIA GeForce RTX 3080 Ti, 12288\n", 1, 8},               // nvidia-smi does not say: runs it
+		{"NVIDIA GeForce GTX 1080 Ti, 11264, 6.1, 591.44\n", 0, 16}, // Pascal: Whisper alone, no worker
+		{"NVIDIA GeForce RTX 3080 Ti, 12288, 8.6, 572.16\n", 0, 16}, // driver before R580
+		{"NVIDIA GeForce GTX 1080 Ti, 11264, 472.12\n", 0, 16},      // the old fallback's driver
+	} {
+		fakeGPU(t, c.smi, nil)
+		if p := PlanSTT(cfg); p.Workers != c.workers || p.Batch != c.batch {
+			t.Errorf("%q: %+v, want %d workers of %d files", c.smi, p, c.workers, c.batch)
+		}
+	}
+	fakeGPU(t, "NVIDIA GeForce RTX 3080 Ti, 12288, 8.6, 591.44\n", nil)
+	secondListenModel = func(config.Config) bool { return false } // no token, no copy
+	if p := PlanSTT(cfg); p.Workers != 0 || p.Batch != 16 {
+		t.Errorf("no way to the model: %+v, want Whisper alone", p)
+	}
+	secondListenModel = func(config.Config) bool { return true }
+	t.Setenv("MAKTABA_STT_DEVICE", "cpu")
+	if secondListenRuns(cfg) {
+		t.Error("transcription on the CPU (the operator's environment) has no second listen")
+	}
+	t.Setenv("MAKTABA_STT_DEVICE", "")
+	cudaWhisper = func() bool { return false }
+	if secondListenRuns(cfg) {
+		t.Error("no CUDA Whisper here (Linux aarch64): no second listen")
+	}
+}
+
+// secondListenModel looks where the pipeline looks for the model.
+func TestTheSecondListensModelCanBeHad(t *testing.T) {
+	noSTTEnv(t)
+	dir := t.TempDir()
+	for _, k := range []string{"HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HF_TOKEN_PATH", "HF_HOME", "MAKTABA_MODELS_DIR", "MAKTABA_STT_REFINE_MODEL"} {
+		t.Setenv(k, "")
+	}
+	t.Setenv("MAKTABA_MODEL_CACHE_DIR", dir)
+	cfg := config.Defaults()
+	if secondListenModel(cfg) {
+		t.Fatal("nothing here, no token: no model to be had")
+	}
+	hf := filepath.Join(dir, "huggingface")
+	mk := func(path string) {
+		t.Helper()
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk(hf)
+	tokenFile := filepath.Join(hf, "token")
+	if err := os.WriteFile(tokenFile, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !secondListenModel(cfg) {
+		t.Error("a token in the pipeline's HF_HOME (hf auth login)")
+	}
+	_ = os.Remove(tokenFile)
+	snap := filepath.Join(hf, "hub", "models--CohereLabs--cohere-transcribe-arabic-07-2026", "snapshots", "c3e911b4")
+	mk(snap)
+	if !secondListenModel(cfg) {
+		t.Error("the model in the pipeline's Hugging Face cache")
+	}
+	_ = os.RemoveAll(filepath.Join(hf, "hub"))
+	mk(filepath.Join(dir, "share-copies", "CohereLabs__cohere-transcribe-arabic-07-2026"))
+	if !secondListenModel(cfg) {
+		t.Error("a copy of the home's on this machine")
+	}
+	_ = os.RemoveAll(filepath.Join(dir, "share-copies"))
+	shared := t.TempDir()
+	mk(filepath.Join(shared, "CohereLabs__cohere-transcribe-arabic-07-2026"))
+	t.Setenv("MAKTABA_MODELS_DIR", shared)
+	if !secondListenModel(cfg) {
+		t.Error("the share's copy (MAKTABA_MODELS_DIR)")
+	}
+	t.Setenv("MAKTABA_MODELS_DIR", "")
+	cfg.Transcription.RefineModel = shared
+	if !secondListenModel(cfg) {
+		t.Error("a folder of the model")
+	}
+	cfg.Transcription.RefineModel = ""
+	t.Setenv("HF_TOKEN", "hf_x")
+	if !secondListenModel(cfg) {
+		t.Error("HF_TOKEN")
+	}
+}
+
+// TestSetupsSecondListenCheckIsTheSupervisors: setup asks whether this machine runs
+// the second listen (#213, cmd/maktaba-server/second_listen.go) with the supervisor's
+// thresholds. Skipped until that file is in this checkout.
+func TestSetupsSecondListenCheckIsTheSupervisors(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "..", "second_listen.go"))
+	if err != nil {
+		t.Skipf("setup's second-listen check is not in this checkout: %v", err)
+	}
+	read := func(name string) string {
+		t.Helper()
+		m := regexp.MustCompile(`(?m)\b` + name + `\s*=\s*([0-9.]+)`).FindSubmatch(src)
+		if m == nil {
+			t.Fatalf("second_listen.go: no %s", name)
+		}
+		return string(m[1])
+	}
+	gb := func(mib string) float64 {
+		n, err := strconv.ParseFloat(mib, 64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n / 1024
+	}
+	if w, o := gb(read("secondListenMinMiBWindows")), gb(read("secondListenMinMiB")); w != 9.5 || o != 7.5 ||
+		(runtime.GOOS == "windows" && w != defaultRefineMinGB) || (runtime.GOOS != "windows" && o != defaultRefineMinGB) {
+		t.Errorf("setup's memory thresholds %v (Windows) and %v GiB, the supervisor's %v on %s", w, o, defaultRefineMinGB, runtime.GOOS)
+	}
+	if got, want := read("secondListenMinCompute"), strconv.Itoa(refineMinComputeMajor)+"."+strconv.Itoa(refineMinComputeMinor); got != want {
+		t.Errorf("setup's compute capability %s, the supervisor's %s", got, want)
+	}
+	if got := read("secondListenMinDriver"); got != strconv.Itoa(refineMinDriver) {
+		t.Errorf("setup's driver %s, the supervisor's %d", got, refineMinDriver)
+	}
 }
 
 // withGPUAlone is cfg with the second listen off.
@@ -463,12 +610,12 @@ func TestWorkersWaitForTheSecondListen(t *testing.T) {
 	}
 	secondListen := secondListenRuns
 	t.Cleanup(func() { secondListenRuns = secondListen })
-	secondListenRuns = func() bool { return true }
+	secondListenRuns = func(config.Config) bool { return true }
 	if p := PlanSTT(cfg); p.Workers != 1 {
 		t.Errorf("a GPU that runs the second listen = %+v, want its worker", p)
 	}
 	fakeMachine(t, true, 96)
-	secondListenRuns = func() bool { return appleSilicon() }
+	secondListenRuns = secondListen
 	if p := PlanSTT(cfg); p.Workers != 2 {
 		t.Errorf("Apple Silicon runs the second listen: %+v", p)
 	}
@@ -650,8 +797,11 @@ func TestParseNvidiaSMI(t *testing.T) {
 		want GPU
 		ok   bool
 	}{
-		{rtx2080Super, GPU{"NVIDIA GeForce RTX 2080 SUPER", 8192}, true},
-		{"\r\n  Tesla T4 , 15360 \r\n", GPU{"Tesla T4", 15360}, true},
+		{rtx2080Super, GPU{Name: "NVIDIA GeForce RTX 2080 SUPER", MemoryMiB: 8192}, true},
+		{"\r\n  Tesla T4 , 15360 \r\n", GPU{Name: "Tesla T4", MemoryMiB: 15360}, true},
+		{"NVIDIA GeForce RTX 2080 SUPER, 8192, 7.5, 616.64\n", GPU{"NVIDIA GeForce RTX 2080 SUPER", 8192, 7, 5, "616.64"}, true},
+		{"NVIDIA GeForce GTX 1080 Ti, 11264, 472.12\n", GPU{Name: "NVIDIA GeForce GTX 1080 Ti", MemoryMiB: 11264, Driver: "472.12"}, true},
+		{"NVIDIA RTX A2000, 6138, [N/A], [N/A]\n", GPU{Name: "NVIDIA RTX A2000", MemoryMiB: 6138}, true},
 		{"", GPU{}, false},
 		{"Failed to initialize NVML: Driver/library version mismatch\n", GPU{}, false},
 	} {
@@ -659,8 +809,14 @@ func TestParseNvidiaSMI(t *testing.T) {
 			t.Errorf("parse %q = %+v, %v", c.out, g, ok)
 		}
 	}
-	if q := strings.Join(nvidiaSMIQuery, " "); q != "--query-gpu=name,memory.total --format=csv,noheader,nounits" {
+	if q := strings.Join(nvidiaSMIQuery, " "); q != "--query-gpu=name,memory.total,compute_cap,driver_version --format=csv,noheader,nounits" {
 		t.Errorf("query = %s", q)
+	}
+	if q := strings.Join(nvidiaSMIFallback, " "); q != "--query-gpu=name,memory.total,driver_version --format=csv,noheader,nounits" {
+		t.Errorf("fallback = %s", q)
+	}
+	if (GPU{Driver: "580.88"}).DriverMajor() != 580 || (GPU{}).DriverMajor() != 0 {
+		t.Error("DriverMajor")
 	}
 }
 

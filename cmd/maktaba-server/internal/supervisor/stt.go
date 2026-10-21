@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -167,6 +168,32 @@ var refineMinGB = func() float64 {
 // why, and does not download its model).
 func SecondListenFits(gb float64) bool { return gb >= refineMinGB }
 
+// What else the second listen needs of an NVIDIA GPU, as the pipeline checks it
+// (MIN_COMPUTE, MIN_DRIVER in stt/cohere_cuda.py, kept equal by a test): torch's CUDA
+// 13.0 build runs on Turing (compute capability 7.5) and newer, with driver R580 or
+// later. Setup's check (#213, cmd/maktaba-server/second_listen.go) reads the same.
+const (
+	refineMinComputeMajor = 7
+	refineMinComputeMinor = 5
+	refineMinDriver       = 580
+)
+
+// SecondListenGPU reports why the second listen cannot run on gpu, or "": its
+// memory (SecondListenFits), its compute capability and its driver; one its
+// nvidia-smi does not report is not held against it.
+func SecondListenGPU(gpu GPU) string {
+	switch {
+	case !SecondListenFits(gpu.MemoryGB()):
+		return "memory"
+	case gpu.ComputeMajor > 0 && (gpu.ComputeMajor < refineMinComputeMajor ||
+		gpu.ComputeMajor == refineMinComputeMajor && gpu.ComputeMinor < refineMinComputeMinor):
+		return "compute_capability"
+	case gpu.DriverMajor() > 0 && gpu.DriverMajor() < refineMinDriver:
+		return "driver"
+	}
+	return ""
+}
+
 // refineGPUTiers size a CTranslate2 plan when the second listen runs on the same GPU
 // (refine on, SecondListenFits): each worker then holds Cohere's weights, what
 // loading them takes besides, a batch of its stretches (0.09 GiB each) and Whisper,
@@ -262,7 +289,7 @@ func PlanSTT(cfg config.Config) STTPlan {
 				// asked for: the smallest tier (the pipeline checks the free memory)
 				plan, fits = PlanForGPU(gpuMinGB)
 			}
-			if p, ok := PlanForGPUWithRefine(gpuGB); ok && fits && refineOn(t) {
+			if p, ok := PlanForGPUWithRefine(gpuGB); ok && fits && refineOn(t) && secondListenRuns(cfg) {
 				plan = p // story 38.9: room for the second listen
 			}
 		}
@@ -286,7 +313,7 @@ func PlanSTT(cfg config.Config) STTPlan {
 	}
 	// the budget is the plan's own workers' (the main worker's, without any)
 	base := max(1, plan.Workers)
-	if refineOn(t) && !secondListenRuns() {
+	if refineOn(t) && !secondListenRuns(cfg) {
 		plan.Workers = 0
 	}
 	switch {
@@ -340,14 +367,89 @@ func shareBudget(p STTPlan, base, n int, gpuGB float64, ownPrecision, ownThreads
 }
 
 // secondListenRuns reports whether this machine runs the second listen (Cohere
-// Transcribe Arabic): on Apple Silicon (MLX, Epic 36 story 36.4), and on an NVIDIA
-// GPU it fits on beside Whisper (story 38.9). Tests replace it.
-var secondListenRuns = func() bool {
+// Transcribe Arabic): on Apple Silicon (MLX, Epic 36 story 36.4); on Windows and
+// Linux x86_64 (story 38.9) where transcription is not set to the CPU, the NVIDIA GPU
+// can run it beside Whisper (SecondListenGPU), and its model can be had
+// (secondListenModel). Tests replace it.
+var secondListenRuns = func(cfg config.Config) bool {
 	if appleSilicon() {
 		return true
 	}
+	device := os.Getenv("MAKTABA_STT_DEVICE")
+	if strings.TrimSpace(device) == "" {
+		device = cfg.Transcription.Device
+	}
+	if strings.EqualFold(strings.TrimSpace(device), "cpu") || !cudaWhisper() {
+		return false
+	}
 	gpu, ok := NvidiaGPU()
-	return ok && cudaWhisper() && SecondListenFits(gpu.MemoryGB())
+	return ok && SecondListenGPU(gpu) == "" && secondListenModel(cfg)
+}
+
+// defaultRefineModel is the second listen's model when [transcription] refine_model
+// and MAKTABA_STT_REFINE_MODEL are unset (the pipeline's DEFAULT_MODEL in
+// stt/cohere.py, kept equal by a test).
+const defaultRefineModel = "CohereLabs/cohere-transcribe-arabic-07-2026"
+
+// secondListenModel reports whether the second listen's model can be had on this
+// machine, as the pipeline looks for it: a folder of it, a Hugging Face token for the
+// pipeline (HF_TOKEN, or the token file of its HF_HOME: the gated repo needs an
+// accepted licence), the model already in that cache, a copy of the home's on this
+// machine (<model cache>/share-copies) or in MAKTABA_MODELS_DIR, or a home to copy it
+// from (a node: the home publishes its copy on the share). Elsewhere the pipeline
+// would keep Whisper's words anyway, so Whisper keeps its own tiers. Tests replace it.
+var secondListenModel = func(cfg config.Config) bool {
+	model := strings.TrimSpace(os.Getenv("MAKTABA_STT_REFINE_MODEL"))
+	if model == "" {
+		model = strings.TrimSpace(cfg.Transcription.RefineModel)
+	}
+	if model == "" {
+		model = defaultRefineModel
+	}
+	if isDir(model) {
+		return true
+	}
+	if strings.TrimSpace(os.Getenv("HF_TOKEN")) != "" || strings.TrimSpace(os.Getenv("HUGGING_FACE_HUB_TOKEN")) != "" {
+		return true
+	}
+	cache := strings.TrimSpace(os.Getenv("MAKTABA_MODEL_CACHE_DIR"))
+	if cache == "" {
+		cache = filepath.Join(cfg.StateDir(), "models") // as ChildEnv sets it
+	}
+	hfHome := strings.TrimSpace(os.Getenv("HF_HOME"))
+	if hfHome == "" {
+		hfHome = filepath.Join(cache, "huggingface")
+	}
+	token := strings.TrimSpace(os.Getenv("HF_TOKEN_PATH"))
+	if token == "" {
+		token = filepath.Join(hfHome, "token")
+	}
+	if st, err := os.Stat(token); err == nil && st.Mode().IsRegular() && st.Size() > 0 {
+		return true
+	}
+	org, name, ok := strings.Cut(model, "/")
+	if !ok {
+		return false
+	}
+	if snaps, err := os.ReadDir(filepath.Join(hfHome, "hub", "models--"+org+"--"+name, "snapshots")); err == nil && len(snaps) > 0 {
+		return true
+	}
+	copies := []string{filepath.Join(cache, "share-copies", org+"__"+name)}
+	if shared := strings.TrimSpace(os.Getenv("MAKTABA_MODELS_DIR")); shared != "" {
+		copies = append(copies, filepath.Join(shared, org+"__"+name))
+	}
+	for _, c := range copies {
+		if isDir(c) {
+			return true
+		}
+	}
+	return NodeMode(cfg, nodeConfig())
+}
+
+// isDir reports whether path is a folder.
+func isDir(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && st.IsDir()
 }
 
 // refineOn reports whether the workers run the second listen: the operator's own

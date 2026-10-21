@@ -189,8 +189,9 @@ type TranscriptionSection struct {
 	// memory on a machine with an NVIDIA GPU of 4 GB or more, and runs none on a
 	// machine that transcribes on the CPU (the main worker does); -1 none.
 	// [pipeline] instances, when set, wins. While the second listen is on (refine),
-	// a machine that cannot run it (Windows, Linux) plans none: its main worker
-	// transcribes only when the home's rules let it (Settings, Transcription). More
+	// a machine that cannot run it (a Windows or Linux one without an NVIDIA GPU
+	// that does, or without its model) plans none: its main worker transcribes
+	// only when the home's rules let it (Settings, Transcription). More
 	// workers than planned share the plan's GPU memory, CPU threads and audio
 	// hours. None at all when the operator's environment excludes transcribe
 	// (MAKTABA_PIPELINE_EXCLUDE_STAGES) or the pipeline has no stt extra.
