@@ -524,12 +524,16 @@ native-sync: build-web  ## Rebuild web/dist and sync it into the native platform
 package-desktop:  ## Build the Tauri desktop installers for the host OS (.dmg / .msi+.exe / .deb+.AppImage). Needs Rust.
 	@bash $(DESKTOP_DIR)/scripts/build.sh
 
-# Maktaba.app with the whole server inside (Epic 36, story 36.7): Go binaries, Postgres,
+# Maktaba.app with the whole server inside (Epic 36, story 36.7): Go binaries, Postgres, Ollama,
 # ffmpeg, Python and the pipeline wheel in Contents/Resources/server. Pinned downloads are
 # in tools/release/mac-app/pins.env. Signed when APPLE_SIGNING_IDENTITY is set.
 .PHONY: mac-app
 mac-app:  ## Build Maktaba.app + .dmg for Apple Silicon with the server payload (unsigned unless APPLE_SIGNING_IDENTITY). Needs Rust, Go, uv, pnpm.
 	@bash tools/release/mac-app/build-app.sh
+
+.PHONY: mac-app-pins
+mac-app-pins:  ## Dry run of the Maktaba.app pins (pins.env complete, checked downloads), offline; ONLINE=1 also asks each URL.
+	@bash tools/release/mac-app/pins-check.sh $(if $(ONLINE),--online,)
 
 .PHONY: mac-app-payload
 mac-app-payload:  ## Build only the Maktaba.app server payload (build/mac-app/server) and smoke-test it.
