@@ -70,9 +70,6 @@ func runFakeProgram() (code int, ok bool) {
 		return ""
 	}
 	switch {
-	case len(args) > 0 && args[0] == "run-until-stopped":
-		// a supervised process that runs until it is stopped (serve_appbundle_test.go)
-		select {}
 	case kind == "api" && len(args) > 0 && args[0] == "hash-password":
 		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 		call.Stdin = strings.TrimRight(line, "\r\n")

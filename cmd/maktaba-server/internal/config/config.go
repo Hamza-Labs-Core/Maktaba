@@ -61,6 +61,24 @@ type PostgresSection struct {
 	Home string `toml:"home"`
 	// Port is its loopback port (default 54329).
 	Port int `toml:"port"`
+	// UpdateDumps is how many dumps taken before an update's migrations
+	// (backups/pre-<old>-to-<new>.dump, Epic 38 story 38.12) stay in backups/:
+	// the newest ones, the last update's always; 0 (default): 3. The nightly
+	// dumps are kept apart (the newest 7).
+	UpdateDumps int `toml:"update_dumps"`
+}
+
+// DefaultUpdateDumps is how many pre-update dumps stay when [postgres]
+// update_dumps is not set: the way back from each of the last three updates.
+const DefaultUpdateDumps = 3
+
+// KeepUpdateDumps is [postgres] update_dumps, DefaultUpdateDumps when it is not
+// set (or not above 0).
+func (p PostgresSection) KeepUpdateDumps() int {
+	if p.UpdateDumps > 0 {
+		return p.UpdateDumps
+	}
+	return DefaultUpdateDumps
 }
 
 // LLMSection is the [llm] table: the local language model server every LLM stage
