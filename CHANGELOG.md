@@ -41,6 +41,15 @@ don't append a line here; docs-only PRs are exempt.
   the server runs as an administrator, as the Windows service does: Postgres refuses
   administrative rights). Groundwork for the Windows and Linux apps and for full nodes' copies of
   the home's database (#178).
+- **Maktaba on a Linux machine without a desktop** (Epic 39, story 39.6). `install.sh --app`
+  verifies the release first (with the machine's cosign when it is 2.4.3 or newer, else a pinned
+  cosign it fetches), then `maktaba-server setup` asks the desktop app's questions in the terminal,
+  in English or Arabic: the server is copied into `~/.local/share/maktaba/runtime`, then runs as
+  the user's systemd service, started at boot through linger. The check also reports glibc, the
+  systemd user manager, linger and a Maktaba service another install owns; where the second listen
+  cannot run, no Hugging Face sign-in is asked. A Plex code that expires (plex.tv out of reach is
+  asked again until then) or a Ctrl+C while it waits leaves Plex to Settings, and the setup goes
+  on. `--answers` (or `--answers-fd`) gives every answer without questions.
 
 ### Fixed
 

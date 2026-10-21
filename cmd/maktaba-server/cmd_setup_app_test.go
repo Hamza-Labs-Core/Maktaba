@@ -428,6 +428,90 @@ func TestAppSetupLinksPlexLater(t *testing.T) {
 	}
 }
 
+// Where the second listen cannot run (check's second_listen), the models
+// question is not asked, as the screens skip it; the download still runs.
+func TestAppSetupSkipsTheModelsQuestionWithoutTheSecondListen(t *testing.T) {
+	f := interactiveSteps()
+	check := map[string]any{"second_listen": map[string]any{"runs": false, "code": "second_listen_no_gpu"}}
+	for k, v := range checkOK {
+		check[k] = v
+	}
+	check["warnings"] = []map[string]any{{"code": "second_listen_no_gpu", "message": "No NVIDIA GPU"}}
+	f.answers["check"] = []any{check}
+	var out bytes.Buffer
+	a := &appSetup{run: f.run, ask: interactive(t), out: &out, t: textsFor("en"), pollEvery: time.Millisecond}
+	if err := a.Run(context.Background()); err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	want := "status check admin libraries libraries plex plex plex venv models llm finish"
+	if got := strings.Join(f.calls, " "); got != want {
+		t.Errorf("steps %q, want %q", got, want)
+	}
+	if got := f.inputs["models"]; len(got) != 1 || got[0] != `{"action":"download"}` {
+		t.Errorf("models inputs %v", got)
+	}
+	if strings.Contains(out.String(), "Transcription models") {
+		t.Errorf("the models question was asked:\n%s", out.String())
+	}
+	if w := "the second listen, which corrects Whisper's Arabic, does not run on this computer"; !strings.Contains(out.String(), w) {
+		t.Errorf("output lacks %q:\n%s", w, out.String())
+	}
+}
+
+// plex.tv out of reach while the code waits is said once and polled again.
+func TestAppSetupPlexWaitsOutANetworkError(t *testing.T) {
+	f := interactiveSteps()
+	offline := &stepFailure{Code: "network", Message: "plex.tv did not answer"}
+	f.answers["plex"] = []any{map[string]any{"pin_id": 7, "code": "ABCD", "link_url": "https://plex.tv/link"},
+		offline, offline, map[string]any{"linked": true}}
+	var out bytes.Buffer
+	a := &appSetup{run: f.run, ask: interactive(t), out: &out, t: textsFor("en"), pollEvery: time.Millisecond}
+	if err := a.Run(context.Background()); err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	if got := f.inputs["plex"]; len(got) != 4 || got[3] != `{"action":"poll","pin_id":7}` {
+		t.Errorf("plex inputs %v", got)
+	}
+	if n := strings.Count(out.String(), "Maktaba could not reach the internet. Trying again…"); n != 1 {
+		t.Errorf("the network error was said %d times:\n%s", n, out.String())
+	}
+	if !strings.Contains(out.String(), "Plex is linked.") {
+		t.Errorf("not linked:\n%s", out.String())
+	}
+}
+
+// A Ctrl+C while the code waits skips the Plex sign-in, not the setup.
+func TestAppSetupPlexWaitSkips(t *testing.T) {
+	f := interactiveSteps()
+	f.answers["plex"] = []any{map[string]any{"pin_id": 7, "code": "ABCD", "link_url": "https://plex.tv/link"},
+		map[string]any{"linked": false}, map[string]any{}}
+	var out bytes.Buffer
+	skip := make(chan struct{})
+	stopped := false
+	a := &appSetup{run: f.run, ask: interactive(t), out: &out, t: textsFor("en"), pollEvery: 20 * time.Millisecond,
+		skipWait: func() (<-chan struct{}, func()) {
+			time.AfterFunc(30*time.Millisecond, func() { close(skip) })
+			return skip, func() { stopped = true }
+		}}
+	if err := a.Run(context.Background()); err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	if got := f.inputs["plex"]; got[len(got)-1] != `{"action":"skip"}` {
+		t.Errorf("plex inputs %v", got)
+	}
+	if !stopped {
+		t.Error("the wait kept its claim on Ctrl+C")
+	}
+	if !strings.HasSuffix(strings.Join(f.calls, " "), "venv models llm finish") {
+		t.Errorf("steps %v", f.calls)
+	}
+	for _, w := range []string{"Press Ctrl+C to skip this", "link it later in Settings"} {
+		if !strings.Contains(out.String(), w) {
+			t.Errorf("output lacks %q:\n%s", w, out.String())
+		}
+	}
+}
+
 func TestEndError(t *testing.T) {
 	ar := textsFor("ar")
 	if err := endError(ar, nil); err != nil {
