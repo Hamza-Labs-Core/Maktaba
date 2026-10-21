@@ -350,11 +350,12 @@ jobs:
           if ($status.torch -ne 'cpu') { throw "venv-status.json: torch $($status.torch) ($($status.torch_why))" }
           $tv = (& $vpy -c "from importlib.metadata import version; print(version('torch'))" | Out-String).Trim()
           if ($LASTEXITCODE -ne 0 -or $tv -like '*+*') { throw "torch $tv on a machine without an NVIDIA GPU (the CPU build is PyPI's 2.x without a local tag)" }
-          $plan = Invoke-Bootstrap --check | Out-String
-          if ($LASTEXITCODE -ne 0 -or $plan -notmatch '"action": "none"') { throw "a second run plans: $plan" }
-          # the cuda set asked for is another set of pins: it would build again
+          # the cuda set asked for is another set of pins: it would build again (exit 10; asked
+          # first, as the step's last native command must exit 0)
           $plan = Invoke-Bootstrap --check --torch cuda | Out-String
           if ($LASTEXITCODE -ne 10 -or $plan -notmatch '"action": "build"') { throw "--torch cuda plans: $plan" }
+          $plan = Invoke-Bootstrap --check | Out-String
+          if ($LASTEXITCODE -ne 0 -or $plan -notmatch '"action": "none"') { throw "a second run plans: $plan" }
 
   install-windows:
     name: install from the archive (windows)
