@@ -9,15 +9,34 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 )
 
-// STTPlan is how this machine transcribes (Epic 36 story 36.4): Workers
-// transcribe-only workers beside the main worker, each with these memory knobs
+// STTPlan is how this machine transcribes: Workers transcribe-only workers beside
+// the main worker, each with these knobs.
+//
+// Epic 36 story 36.4, Apple Silicon (MLX): memory knobs sized from the RAM
 // (MAKTABA_STT_AUDIO_HOURS, _GPU_GB, _GPU_CACHE_GB, _MIN_FREE_PCT).
+// Story 38.8, Windows and Linux (CTranslate2): workers, Batch and ComputeType sized
+// from the NVIDIA GPU's memory, or on the CPU no workers (the main worker
+// transcribes) with a CPU batch and CPUThreads; the host's audio budget from the RAM.
 type STTPlan struct {
 	Workers    int
 	AudioHours float64
 	GPUGB      float64
 	GPUCacheGB float64
 	MinFreePct float64
+	// Batch: files decoded together, one 30 s window of each per pass (MAKTABA_STT_BATCH).
+	Batch int
+	// ComputeType: CTranslate2's precision (MAKTABA_STT_COMPUTE_TYPE); "": the pipeline's
+	// choice (float16 on CUDA, int8 on the CPU).
+	ComputeType string
+	// Device: MAKTABA_STT_DEVICE ("cuda", "cuda:1", "cpu"); "": the pipeline uses the
+	// GPU when CUDA is usable there, else the CPU.
+	Device string
+	// CPUThreads: CTranslate2's threads on the CPU (MAKTABA_STT_CPU_THREADS).
+	CPUThreads int
+
+	// ct2: a plan for the CTranslate2 engine (not Apple Silicon): its knobs reach the
+	// main worker too when it transcribes itself
+	ct2 bool
 }
 
 // sttTiers size the plan from the RAM, largest first. The top tier is what the
@@ -45,19 +64,95 @@ func PlanForRAM(totalGB float64) STTPlan {
 	return sttTiers[len(sttTiers)-1].plan
 }
 
+// gpuTiers size a CTranslate2 plan from the NVIDIA GPU's memory (GiB), largest
+// first. Measured on an RTX 2080 SUPER (8 GB, story 38.8): a worker's Whisper
+// turbo and CUDA's own buffers take 2.3 GB in float16 (1.2 GB in int8_float16),
+// each file of its batch 0.14 GB more while its window is encoded; a batch of 8
+// ran at 72x real time and one of 12 no faster (69x), and with other programs on
+// the GPU 12 ran out of room and slowed the encoder threefold. The tiers leave at
+// least a third of the card to the display and the other programs. One worker
+// keeps a GPU busy (it decodes a window of every file in flight as one batch); a
+// second only pays on a large card, where it decodes while the first does its
+// CPU work.
+var gpuTiers = []struct {
+	minGB float64
+	plan  STTPlan
+}{
+	{40, STTPlan{Workers: 2, Batch: 32}},
+	{20, STTPlan{Workers: 2, Batch: 16}},
+	{14, STTPlan{Workers: 1, Batch: 24}},
+	{10, STTPlan{Workers: 1, Batch: 16}},
+	{7, STTPlan{Workers: 1, Batch: 8}},
+	{5, STTPlan{Workers: 1, Batch: 8, ComputeType: "int8_float16"}},
+	{0, STTPlan{Workers: 1, Batch: 4, ComputeType: "int8_float16"}},
+}
+
+// PlanForGPU is the tier for a GPU with gb GiB of memory.
+func PlanForGPU(gb float64) STTPlan {
+	for _, t := range gpuTiers {
+		if gb >= t.minGB {
+			p := t.plan
+			p.ct2 = true
+			return p
+		}
+	}
+	p := gpuTiers[len(gpuTiers)-1].plan
+	p.ct2 = true
+	return p
+}
+
+// cpuBatch is the CPU plan's batch: a pass of four windows keeps CTranslate2's
+// matrix products large enough to use the cores (2.6x real time against 2.0x one
+// file at a time, on 10 threads of the story 38.8 PC) without a file waiting long
+// for its next window.
+const cpuBatch = 4
+
+// PlanForCPU is the plan without a usable GPU: no transcription workers (the main
+// worker transcribes), a CPU batch, and half the logical CPUs (2 to 16) for
+// CTranslate2, the rest left to the other stages, streaming and the api.
+func PlanForCPU(cpus int) STTPlan {
+	return STTPlan{Batch: cpuBatch, CPUThreads: min(16, max(2, cpus/2)), ct2: true}
+}
+
 // appleSilicon reports a Mac on Apple Silicon (MLX transcription); tests replace it.
 var appleSilicon = func() bool { return runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" }
 
-// PlanSTT is this machine's plan: [pipeline] instances when server.toml sets it
-// (a converted node keeps its installer's workers), else [transcription]
-// workers (-1: none), else on Apple Silicon sized from the RAM; elsewhere none
-// (the one worker transcribes). [transcription] knobs override the tier's.
+// numCPU is the machine's logical CPUs; tests replace it.
+var numCPU = runtime.NumCPU
+
+// PlanSTT is this machine's plan: on Apple Silicon sized from the RAM (MLX); else
+// (CTranslate2) from the NVIDIA GPU's memory, or the CPU plan when there is none
+// or [transcription] device = "cpu", with the audio budget from the RAM. Then
+// [pipeline] instances when server.toml sets it (a converted node keeps its
+// installer's workers), else [transcription] workers (-1: none), set the number
+// of workers, and the other [transcription] knobs override the plan's.
 func PlanSTT(cfg config.Config) STTPlan {
-	plan := STTPlan{} // elsewhere: no workers unless asked for, the pipeline's own knobs
+	t := cfg.Transcription
+	device := strings.ToLower(strings.TrimSpace(t.Device))
+	var plan STTPlan
 	if appleSilicon() {
 		plan = PlanForRAM(float64(totalMemory()) / (1 << 30))
+	} else {
+		if gpu, ok := NvidiaGPU(); ok && device != "cpu" {
+			plan = PlanForGPU(gpu.MemoryGB())
+		} else {
+			plan = PlanForCPU(numCPU())
+		}
+		// the decoded audio and its spectrogram are in the host's memory here
+		if ram := totalMemory(); ram > 0 {
+			host := PlanForRAM(float64(ram) / (1 << 30))
+			plan.AudioHours, plan.MinFreePct = host.AudioHours, host.MinFreePct
+		}
+		if device != "" && device != "auto" {
+			plan.Device = device
+		}
+		if c := strings.ToLower(strings.TrimSpace(t.ComputeType)); c != "" && c != "auto" {
+			plan.ComputeType = c
+		}
+		if t.CPUThreads > 0 {
+			plan.CPUThreads = t.CPUThreads
+		}
 	}
-	t := cfg.Transcription
 	switch {
 	case cfg.PipelineInstancesSet || cfg.Pipeline.Instances > 0:
 		plan.Workers = cfg.Pipeline.Instances
@@ -66,12 +161,21 @@ func PlanSTT(cfg config.Config) STTPlan {
 	case t.Workers > 0:
 		plan.Workers = t.Workers
 	}
-	for _, o := range []struct {
-		v   float64
-		dst *float64
-	}{{t.AudioHours, &plan.AudioHours}, {t.GPUGB, &plan.GPUGB}, {t.GPUCacheGB, &plan.GPUCacheGB}, {t.MinFreePct, &plan.MinFreePct}} {
-		if o.v > 0 {
-			*o.dst = o.v
+	if t.Batch > 0 {
+		plan.Batch = t.Batch
+	}
+	if t.AudioHours > 0 {
+		plan.AudioHours = t.AudioHours
+	}
+	if t.MinFreePct > 0 {
+		plan.MinFreePct = t.MinFreePct
+	}
+	if !plan.ct2 { // MLX's own GPU memory limits: CTranslate2 has none
+		if t.GPUGB > 0 {
+			plan.GPUGB = t.GPUGB
+		}
+		if t.GPUCacheGB > 0 {
+			plan.GPUCacheGB = t.GPUCacheGB
 		}
 	}
 	return plan
@@ -99,18 +203,38 @@ func sttEnv(cfg config.Config) []string {
 	return env
 }
 
-// knobEnv is a transcription worker's memory knobs: the ones the plan sizes
-// and the operator's environment does not set already.
+// knobEnv is a transcribing worker's knobs: the ones the plan sizes and the
+// operator's environment does not set already.
 func (p STTPlan) knobEnv() []string {
 	var env []string
-	for _, k := range []struct {
-		name string
-		v    float64
-	}{{"MAKTABA_STT_AUDIO_HOURS", p.AudioHours}, {"MAKTABA_STT_GPU_GB", p.GPUGB},
-		{"MAKTABA_STT_GPU_CACHE_GB", p.GPUCacheGB}, {"MAKTABA_STT_MIN_FREE_PCT", p.MinFreePct}} {
-		if k.v > 0 && os.Getenv(k.name) == "" {
-			env = append(env, k.name+"="+strconv.FormatFloat(k.v, 'f', -1, 64))
+	add := func(name, v string) {
+		if v != "" && os.Getenv(name) == "" {
+			env = append(env, name+"="+v)
 		}
 	}
+	num := func(v float64) string {
+		if v <= 0 {
+			return ""
+		}
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	}
+	add("MAKTABA_STT_AUDIO_HOURS", num(p.AudioHours))
+	add("MAKTABA_STT_GPU_GB", num(p.GPUGB))
+	add("MAKTABA_STT_GPU_CACHE_GB", num(p.GPUCacheGB))
+	add("MAKTABA_STT_MIN_FREE_PCT", num(p.MinFreePct))
+	add("MAKTABA_STT_BATCH", num(float64(p.Batch)))
+	add("MAKTABA_STT_DEVICE", p.Device)
+	add("MAKTABA_STT_COMPUTE_TYPE", p.ComputeType)
+	add("MAKTABA_STT_CPU_THREADS", num(float64(p.CPUThreads)))
 	return env
+}
+
+// mainKnobEnv is the main worker's share of the plan: the knobs when it is the
+// one that transcribes on the CTranslate2 engine (no transcription workers). On
+// Apple Silicon it keeps the pipeline's own, as before.
+func (p STTPlan) mainKnobEnv() []string {
+	if p.Workers > 0 || !p.ct2 {
+		return nil
+	}
+	return p.knobEnv()
 }

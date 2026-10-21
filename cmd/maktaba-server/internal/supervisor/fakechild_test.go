@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -38,6 +39,8 @@ func TestMain(m *testing.M) {
 	}
 	// never this machine's real node config (it holds a database credential)
 	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
+	// nor its GPU: the transcription plan of a test is the one it fakes (stt_test.go)
+	nvidiaSMI = func() ([]byte, error) { return nil, errors.New("no nvidia-smi in the tests") }
 	// ...nor for the children the tests start (they inherit the environment)
 	dir, err := os.MkdirTemp("", "maktaba-nodecfg-")
 	if err != nil {

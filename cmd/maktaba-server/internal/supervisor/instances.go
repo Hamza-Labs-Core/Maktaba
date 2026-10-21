@@ -13,10 +13,11 @@ const MaxPipelineInstances = 16
 // BuildPipelineInstances builds the transcription workers beside the main worker
 // (PlanSTT): [pipeline] instances = N on a converted worker-only node (Epic 35 story
 // 35.8 AC7: the workers its installer ran, maktaba-node@1..N), or on Apple Silicon a
-// number sized from the RAM (Epic 36 story 36.4, as the home Mac runs them). Worker i
-// runs only the transcribe stage with MAKTABA_STT_SLOT=stt-<i> (its stt.* metrics keep
-// their series across restarts), the plan's memory knobs, its own logs port and no
-// gRPC server; the main worker then leaves transcribe to them.
+// number sized from the RAM (Epic 36 story 36.4, as the home Mac runs them), or on
+// Windows and Linux with an NVIDIA GPU a number sized from its memory (story 38.8).
+// Worker i runs only the transcribe stage with MAKTABA_STT_SLOT=stt-<i> (its stt.*
+// metrics keep their series across restarts), the plan's knobs, its own logs port and
+// no gRPC server; the main worker then leaves transcribe to them.
 func BuildPipelineInstances(opts Options) ([]Process, error) {
 	plan := PlanSTT(opts.Config)
 	n := plan.Workers
