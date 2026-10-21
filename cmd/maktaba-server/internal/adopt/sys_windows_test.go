@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -40,6 +43,114 @@ func fakeServe() {
 func init() {
 	if strings.EqualFold(filepath.Base(os.Args[0]), "maktaba-server.exe") && len(os.Args) > 1 && os.Args[1] == "serve" {
 		fakeServe()
+	}
+	// TestRealFirewallRule's elevated run, as maktaba-server's main makes it
+	if len(os.Args) > 1 && os.Args[1] == FirewallHelperArg {
+		os.Exit(FirewallHelper(os.Args[2:]))
+	}
+}
+
+// TestAConsolesDirectoryIsRead: a running cmd.exe's current directory, from
+// its process environment block: what its relative script is resolved against.
+func TestAConsolesDirectoryIsRead(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts a cmd.exe")
+	}
+	dir := t.TempDir()
+	cmd := exec.Command(system32("cmd.exe"), "/c", "ping -n 30 127.0.0.1 >nul")
+	cmd.Dir = dir
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	if got := processCwd(cmd.Process.Pid); !samePath(got, dir) {
+		t.Errorf("cwd %q, want %q", got, dir)
+	}
+	if got := processCwd(0); got != "" {
+		t.Errorf("no such process: %q", got)
+	}
+}
+
+// TestTheFirewallIsRead: the firewall's rules and the network's profile are
+// read without an administrator (read only: nothing is changed).
+func TestTheFirewallIsRead(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs PowerShell")
+	}
+	sys := RealSys()
+	rules, err := sys.FirewallRules(t.TempDir())
+	if err != nil || len(rules) != 0 {
+		t.Errorf("rules of an empty folder: %v %+v", err, rules)
+	}
+	profiles, err := sys.ActiveProfiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range profiles {
+		if p != "Domain" && p != "Private" && p != "Public" {
+			t.Errorf("profile %q", p)
+		}
+	}
+}
+
+// TestRealFirewallRule makes, reads and removes a throwaway inbound rule for a
+// program in a temp folder through the elevated run, as a move and its Undo do.
+// It changes the machine's firewall, so it runs only where
+// MAKTABA_TEST_WINDOWS_TASK=1 (the windows-latest CI runner, an administrator).
+func TestRealFirewallRule(t *testing.T) {
+	if os.Getenv("MAKTABA_TEST_WINDOWS_TASK") != "1" {
+		t.Skip("changes the firewall: MAKTABA_TEST_WINDOWS_TASK=1 (CI)")
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the app's bin: the elevated run (this test binary as maktaba-server.exe)
+	// and the program the rule is for
+	bin := filepath.Join(t.TempDir(), "server", "bin")
+	helper, prog := filepath.Join(bin, "maktaba-server.exe"), filepath.Join(bin, "maktaba-streaming.exe")
+	for _, p := range []string{helper, prog} {
+		write(t, p, "")
+		if err := os.WriteFile(p, raw, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	prev := helperExe
+	helperExe = func() (string, error) { return helper, nil }
+	t.Cleanup(func() { helperExe = prev })
+
+	rule := FirewallRule{Program: prog, Protocol: "TCP", Ports: []string{freePort(t)}, Profiles: "Any",
+		Enabled: true, Allow: true, Inbound: true, Group: firewallGroup, Display: "Maktaba adopt test", Description: "a test's own"}
+	rule.Name = firewallPrefix + ruleID(rule)
+	sys := RealSys()
+	t.Cleanup(func() { _ = sys.RemoveFirewallRules([]string{rule.Name}) })
+	if err := sys.AddFirewallRules([]FirewallRule{rule}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := sys.FirewallRules(bin)
+	if err != nil || len(got) != 1 || got[0].Name != rule.Name || !got[0].serves() || !samePath(got[0].Program, prog) ||
+		got[0].Protocol != "TCP" || !reflect.DeepEqual(got[0].Ports, rule.Ports) {
+		t.Fatalf("read back: %v %+v", err, got)
+	}
+	if err := checkFirewall(sys, []FirewallRule{rule}); err != nil {
+		t.Errorf("check: %v", err)
+	}
+	if err := sys.RemoveFirewallRules([]string{rule.Name}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := sys.FirewallRules(bin); err != nil || len(got) != 0 {
+		t.Fatalf("after removing: %v %+v", err, got)
+	}
+	// the helper refuses what is not the app's
+	foreign := rule
+	foreign.Program = system32("cmd.exe")
+	if err := sys.AddFirewallRules([]FirewallRule{foreign}); err == nil || !strings.Contains(err.Error(), "not one of the app's programs") {
+		t.Errorf("a rule for another program: %v", err)
 	}
 }
 
@@ -240,7 +351,7 @@ func TestRealMove(t *testing.T) {
 	}
 
 	procs := []supervisor.ChildStatus{{Role: supervisor.RoleAPI, Wanted: true, State: supervisor.StateRunning}}
-	if err := Verify(context.Background(), tgt, fakeServer(t, &procs), 0); err != nil {
+	if err := Verify(context.Background(), sys, tgt, fakeServer(t, &procs), 0); err != nil {
 		t.Fatal(err)
 	}
 	if ok, err := Finish(sys, tgt.StateDir); !ok || err != nil {

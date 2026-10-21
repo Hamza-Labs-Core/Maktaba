@@ -54,9 +54,6 @@ type Source struct {
 	// Service is the Windows service's name (KindService).
 	Service string `json:"service,omitempty"`
 	Script  string `json:"script,omitempty"`
-	// scriptArg is the script as its task names it, when that is not its
-	// whole path (cmd /c start.cmd in the task's folder).
-	scriptArg string
 	// Loops: the script runs the server again when it exits, after
 	// RestartDelay (what the stop waits out before it counts it stopped).
 	Loops        bool          `json:"-"`
@@ -103,18 +100,16 @@ func (s Source) HasProgram(exe string) bool {
 }
 
 // runsScript: p is the cmd.exe (or the conhost.exe hosting it) that runs the
-// source's script, its restart loop: its command line names the script.
+// source's script, its restart loop: the batch file its command line runs,
+// whole (a relative one against the console's current directory, or a `cd /d`
+// before it), is the script. Never a part of a name: restart.cmd is not
+// start.cmd, nor another folder's start.cmd.
 func (s Source) runsScript(p Proc) bool {
 	if s.Script == "" || !isConsole(p) {
 		return false
 	}
-	cmdline := strings.ToLower(p.Cmdline)
-	for _, name := range []string{s.Script, s.scriptArg} {
-		if name != "" && strings.Contains(cmdline, strings.ToLower(filepath.Clean(name))) {
-			return true
-		}
-	}
-	return false
+	script := ConsoleScript(p.Cmdline, p.Cwd)
+	return script != "" && samePath(script, s.Script)
 }
 
 // isConsole: cmd.exe or conhost.exe.
@@ -285,7 +280,6 @@ func classify(sys Sys, t Task) (Source, bool) {
 	if script == "" {
 		return s, false
 	}
-	arg := script
 	if !filepath.IsAbs(script) && !isWinAbs(script) && t.WorkDir != "" {
 		script = filepath.Join(t.WorkDir, script)
 	}
@@ -300,9 +294,6 @@ func classify(sys Sys, t Task) (Source, bool) {
 	s.Kind, s.Script, s.Dir, s.Server, s.ServeArgs = KindScript, script, sc.Dir, sc.Server, sc.ServeArgs
 	s.Env, s.EnvOrder = sc.Env, sc.EnvOrder
 	s.Loops, s.RestartDelay = sc.Loops, sc.RestartDelay
-	if arg != script {
-		s.scriptArg = arg
-	}
 	return s, true
 }
 
@@ -325,7 +316,9 @@ func describe(sys Sys, s *Source) {
 	s.NodeConfig = config.NodeConfigPath(getenv, runtime.GOOS, home)
 	n := config.ReadNodeConfig(getenv, runtime.GOOS, home, sys.ReadFile)
 	switch {
-	case n.Joined():
+	case n.Joined() && !strings.EqualFold(strings.TrimSpace(cfg.Server.Role), "home"):
+		// a node (an install whose server.toml says role = "home" is the home,
+		// whatever node config lies about)
 		s.DB = DBNode
 		s.Home = n.Home.Name
 		if s.Home == "" {

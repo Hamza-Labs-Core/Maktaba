@@ -144,6 +144,83 @@ func ParseScript(path, text string, getenv func(string) string) (Script, bool) {
 	return s, found
 }
 
+var cmdSwitch = regexp.MustCompile(`(?i)(?:^|\s)/[ck](?:\s+|$)`)
+
+// ConsoleScript is the batch file a console's command line runs (cmd.exe /c
+// or /k, conhost.exe ... cmd.exe /c), as a whole path: a relative one against
+// a `cd /d` before it in the same line, else against cwd, the process's
+// current directory. "" when it runs none, or when a relative one cannot be
+// placed (no directory to resolve it against).
+func ConsoleScript(cmdline, cwd string) string {
+	loc := cmdSwitch.FindStringIndex(cmdline)
+	if loc == nil {
+		return ""
+	}
+	rest := strings.TrimSpace(cmdline[loc[1]:])
+	// cmd's own rule: unless the line is exactly one quoted name (two quotes,
+	// no special character between them), a leading quote and the last one are
+	// taken off
+	one := strings.Count(rest, `"`) == 2 && strings.HasSuffix(rest, `"`) && !strings.ContainsAny(strings.Trim(rest, `"`), "&<>()@^|")
+	if strings.HasPrefix(rest, `"`) && !one {
+		rest = rest[1:]
+		if i := strings.LastIndexByte(rest, '"'); i >= 0 {
+			rest = rest[:i] + rest[i+1:]
+		}
+	}
+	dir := cwd
+	for _, part := range splitCommands(rest) {
+		part = strings.TrimSpace(part)
+		if m := cdLine.FindStringSubmatch(part); m != nil {
+			d := strings.Trim(strings.TrimSpace(m[1]), `"`)
+			switch {
+			case filepath.IsAbs(d) || isWinAbs(d):
+				dir = filepath.Clean(winSlash(d))
+			case dir != "":
+				dir = filepath.Join(dir, winSlash(d))
+			}
+			continue
+		}
+		args := SplitArgs(part)
+		if len(args) > 1 && strings.EqualFold(args[0], "call") {
+			args = args[1:]
+		}
+		if len(args) == 0 {
+			continue
+		}
+		name := strings.Trim(strings.TrimSpace(args[0]), `"`)
+		if !isBatch(name) {
+			continue
+		}
+		switch {
+		case filepath.IsAbs(name) || isWinAbs(name):
+			return filepath.Clean(winSlash(name))
+		case dir != "":
+			return filepath.Join(dir, winSlash(name))
+		}
+		return ""
+	}
+	return ""
+}
+
+// splitCommands splits a cmd line at & and && (and ||) outside quotes.
+func splitCommands(line string) []string {
+	var out []string
+	in, start := false, 0
+	for i := 0; i < len(line); i++ {
+		switch c := line[i]; {
+		case c == '"':
+			in = !in
+		case !in && (c == '&' || c == '|'):
+			out = append(out, line[start:i])
+			for i+1 < len(line) && (line[i+1] == '&' || line[i+1] == '|') {
+				i++
+			}
+			start = i + 1
+		}
+	}
+	return append(out, line[start:])
+}
+
 // isWinAbs: a drive-letter or UNC path (on every OS, for the tests).
 func isWinAbs(p string) bool {
 	return (len(p) >= 3 && p[1] == ':' && (p[2] == '\\' || p[2] == '/')) || strings.HasPrefix(p, `\\`)

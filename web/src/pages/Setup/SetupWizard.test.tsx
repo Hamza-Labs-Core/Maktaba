@@ -642,6 +642,73 @@ describe("SetupWizard", () => {
       expect(api.finishSetup).not.toHaveBeenCalled();
     });
 
+    it("a move done can be undone from the welcome screen", async () => {
+      let stage = "finished";
+      const adopt = adoptStep(PLAN, undefined, () => ({
+        sources: [],
+        move: { stage, source: THIS_PC },
+      }));
+      renderWizard(fakeApi({ adopt }, { platform: "windows" }));
+      expect(await screen.findByText("The Maktaba this PC ran is in the app")).toBeInTheDocument();
+      stage = "undone";
+      await userEvent.click(screen.getByRole("button", { name: "Restore the old install" }));
+      expect(adopt).toHaveBeenCalledWith({ action: "undo" }, undefined);
+      expect(
+        await screen.findByText("The old install runs again, as before the move.")
+      ).toBeInTheDocument();
+      await waitFor(() =>
+        expect(screen.queryByText("The Maktaba this PC ran is in the app")).not.toBeInTheDocument()
+      );
+    });
+
+    it("a node config nothing runs: a fresh setup is a new home, and says so", async () => {
+      const adopt = adoptStep(PLAN, undefined, () => ({
+        sources: [],
+        leftover_node: {
+          home: "Mahmouds-Mac-Studio",
+          path: String.raw`C:\Users\me\AppData\Roaming\Maktaba\node.json`,
+        },
+      }));
+      renderWizard(fakeApi({ adopt, check: () => CHECK }, { platform: "windows" }));
+      expect(
+        await screen.findByText(
+          String.raw`this PC holds the node config of the home Mahmouds-Mac-Studio (C:\Users\me\AppData\Roaming\Maktaba\node.json), which nothing here runs: setting up fresh makes a new home and leaves that node config unused.`
+        )
+      ).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Set up this PC" }));
+      expect(await screen.findByRole("heading", { name: "What will run" })).toBeInTheDocument();
+    });
+
+    it("two findings of one code are two rows; the firewall prompt is said before the move", async () => {
+      const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+      const adopt = adoptStep({
+        ...PLAN,
+        problems: [
+          {
+            code: "key_differs",
+            params: { path: String.raw`C:\a\keys\secrets.key`, from: "x" },
+            message: "en: a",
+          },
+          {
+            code: "key_differs",
+            params: { path: String.raw`C:\a\node.json`, from: "y" },
+            message: "en: b",
+          },
+        ],
+        warnings: [{ code: "firewall_prompt", params: { count: 4 }, message: "en: firewall" }],
+      });
+      renderWizard(fakeApi({ adopt }, { platform: "windows" }));
+      await userEvent.click(await screen.findByRole("button", { name: "Move it" }));
+      expect(await screen.findAllByRole("alert")).toHaveLength(2);
+      expect(
+        screen.getByText(
+          "So that other devices still reach it, the move gives the app's programs the old install's 4 firewall rules: Windows asks you once to allow that."
+        )
+      ).toBeInTheDocument();
+      expect(errors.mock.calls.some((c) => String(c[0]).includes("same key"))).toBe(false);
+      errors.mockRestore();
+    });
+
     it("a service install is named, and its plan refuses it in the app's words", async () => {
       const svc = {
         ...THIS_PC,

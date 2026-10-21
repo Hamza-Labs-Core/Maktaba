@@ -65,17 +65,21 @@ const (
 
 // Record is what a move did, in <state>/moved/move.json.
 type Record struct {
-	Stage      string     `json:"stage"`
-	Source     Source     `json:"source"`
-	Saved      []Saved    `json:"saved_tasks"` // the old tasks' definitions
-	Carried    []Note     `json:"carried"`
-	NotCarried []Note     `json:"not_carried"`
-	Copied     []string   `json:"copied"`
-	StartedAt  time.Time  `json:"started_at"`
-	MovedAt    *time.Time `json:"moved_at,omitempty"`
-	VerifiedAt *time.Time `json:"verified_at,omitempty"`
-	FinishedAt *time.Time `json:"finished_at,omitempty"`
-	UndoneAt   *time.Time `json:"undone_at,omitempty"`
+	Stage      string   `json:"stage"`
+	Source     Source   `json:"source"`
+	Saved      []Saved  `json:"saved_tasks"` // the old tasks' definitions
+	Carried    []Note   `json:"carried"`
+	NotCarried []Note   `json:"not_carried"`
+	Copied     []string `json:"copied"`
+	// Firewall are the inbound rules the move made for the app's programs
+	// (Undo removes them); FirewallLeft those Undo could not remove.
+	Firewall     []FirewallRule `json:"firewall_rules,omitempty"`
+	FirewallLeft []string       `json:"firewall_left,omitempty"`
+	StartedAt    time.Time      `json:"started_at"`
+	MovedAt      *time.Time     `json:"moved_at,omitempty"`
+	VerifiedAt   *time.Time     `json:"verified_at,omitempty"`
+	FinishedAt   *time.Time     `json:"finished_at,omitempty"`
+	UndoneAt     *time.Time     `json:"undone_at,omitempty"`
 }
 
 // Saved is an old task's definition, kept in moved/ (Undo registers it again).
@@ -142,13 +146,17 @@ type Plan struct {
 	Warnings []Note `json:"warnings"`
 	Need     int64  `json:"need"` // bytes the copies take
 	Free     int64  `json:"free"` // free bytes where the app keeps its state (-1 unknown)
+	// Firewall are the inbound rules the move gives the app's programs, copies
+	// of the old install's (one administrator's prompt at the move).
+	Firewall []FirewallRule `json:"firewall"`
 
 	config config.Config // the app's server.toml after the move
 }
 
 // MakePlan reads what moving src into tgt does.
 func MakePlan(sys Sys, src Source, tgt Target) (Plan, error) {
-	p := Plan{Source: src, Items: []Item{}, Carried: []Note{}, NotCarried: []Note{}, Problems: []Note{}, Warnings: []Note{}, Free: -1}
+	p := Plan{Source: src, Items: []Item{}, Carried: []Note{}, NotCarried: []Note{}, Problems: []Note{}, Warnings: []Note{},
+		Firewall: []FirewallRule{}, Free: -1}
 	if src.Kind == KindService {
 		// the system's account runs it: the user's app can neither stop it nor
 		// read its settings
@@ -209,7 +217,40 @@ func MakePlan(sys Sys, src Source, tgt Target) (Plan, error) {
 	if src.Kind == KindProcess {
 		p.Warnings = append(p.Warnings, note("started_by_hand", "it was started without a task: the move ends it"))
 	}
+	planFirewall(sys, &p, tgt)
 	return p, nil
+}
+
+// planFirewall: the inbound rules that let other devices reach the old
+// install's programs (Windows asked when they first listened) are copied for
+// the app's own, or LAN devices and the home lose it while the move reports
+// success. Making them needs an administrator: the plan says the prompt is
+// coming, or refuses when this user cannot give it. The old rules are never
+// changed (they serve the old install again on Undo).
+func planFirewall(sys Sys, p *Plan, tgt Target) {
+	if tgt.AppPayload == "" || p.Source.Dir == "" {
+		return
+	}
+	old, err := sys.FirewallRules(p.Source.Dir)
+	if err == nil {
+		var app []FirewallRule
+		if app, err = sys.FirewallRules(filepath.Join(tgt.AppPayload, "bin")); err == nil {
+			p.Firewall = firewallCopies(old, app, tgt.AppPayload)
+		}
+	}
+	switch {
+	case err != nil:
+		p.Problems = append(p.Problems, note("firewall_unknown",
+			fmt.Sprintf("the firewall's rules cannot be read (%v), so the move cannot keep the old install reachable from other devices", err)))
+	case len(p.Firewall) > 0 && !sys.CanElevate():
+		p.Problems = append(p.Problems, note("firewall_needs_admin",
+			fmt.Sprintf("the app's programs need the old install's %d firewall rules, which only an administrator can allow, and this account is not one", len(p.Firewall)),
+			"count", len(p.Firewall)))
+	case len(p.Firewall) > 0:
+		p.Warnings = append(p.Warnings, note("firewall_prompt",
+			fmt.Sprintf("so that other devices still reach it, the move gives the app's programs the old install's %d firewall rules: Windows asks once to allow that", len(p.Firewall)),
+			"count", len(p.Firewall)))
+	}
 }
 
 // ProblemsText is the plan's problems in English, on one line.
@@ -429,6 +470,9 @@ func Move(ctx context.Context, sys Sys, p Plan, tgt Target, venv func(context.Co
 		}
 	}
 	if rec.Stage == StageFound {
+		if err := addFirewall(sys, p, &rec, tgt, progress); err != nil {
+			return rec, err
+		}
 		// the definitions first, in the record: a stop that fails part way has
 		// turned tasks off, and Undo turns them on again from these
 		saved := map[string]bool{}
@@ -493,10 +537,11 @@ func Move(ctx context.Context, sys Sys, p Plan, tgt Target, venv func(context.Co
 // cannot read stops the move: it cannot tell what still runs.
 func stopSource(ctx context.Context, sys Sys, src Source, me self) error {
 	for _, task := range src.Tasks() {
-		_ = sys.EndTask(task) // a task that is not running is not an error; what outlives it is ended below
+		// off first, so no trigger of it starts it again between the two
 		if err := sys.SetTaskEnabled(task, false); err != nil {
 			return codedf("adopt_task", []any{"task", task}, "disable the old task %s: %w", task, err)
 		}
+		_ = sys.EndTask(task) // a task that is not running is not an error; what outlives it is ended below
 	}
 	start := time.Now()
 	grace, deadline := start.Add(stopGrace), start.Add(stopWait)
@@ -700,6 +745,9 @@ func carrySettings(src Source, old config.Config, tgt Target) (config.Config, []
 	for _, name := range src.EnvOrder {
 		v := src.Env[name]
 		switch {
+		case name == "MAKTABA_PYTHON":
+			// it ran the pipeline on a Python of its own: said, as the app runs its own
+			notCarried = append(notCarried, note("app_python", "MAKTABA_PYTHON from its script (the app runs its own Python)", "name", name))
 		case droppedEnv[name]:
 		case carriedEnv[name] != nil:
 			carriedEnv[name](&cfg, v)
@@ -824,8 +872,51 @@ func Undo(sys Sys, tgt Target) error {
 			return fmt.Errorf("start the old task %s: %w", s.Task, err)
 		}
 	}
+	// the rules the move made for the app's programs (one prompt); the old
+	// install's own were never touched. Ones it cannot remove are recorded: they
+	// only allow the app's programs, which no longer run.
+	rec.FirewallLeft = nil
+	if len(rec.Firewall) > 0 {
+		names := make([]string, len(rec.Firewall))
+		for i, r := range rec.Firewall {
+			names[i] = r.Name
+		}
+		if err := sys.RemoveFirewallRules(names); err != nil {
+			rec.FirewallLeft = names
+		} else {
+			rec.Firewall = nil
+		}
+	}
 	rec.Stage, rec.UndoneAt = StageUndone, now()
 	return writeRecord(tgt.StateDir, rec)
+}
+
+// addFirewall makes the plan's firewall rules the record does not hold yet
+// (a run again after a refused prompt asks again), before the old install
+// stops.
+func addFirewall(sys Sys, p Plan, rec *Record, tgt Target, progress Progress) error {
+	made := map[string]bool{}
+	for _, r := range rec.Firewall {
+		made[r.Name] = true
+	}
+	var add []FirewallRule
+	for _, r := range p.Firewall {
+		if !made[r.Name] {
+			add = append(add, r)
+		}
+	}
+	if len(add) == 0 {
+		return nil
+	}
+	progress("firewall", "Windows asks to allow the firewall rules of the app's programs")
+	if err := sys.AddFirewallRules(add); err != nil {
+		if errors.Is(err, ErrDeclined) {
+			return coded("adopt_firewall_declined", err)
+		}
+		return codedf("adopt_firewall", nil, "make the app's firewall rules: %w", err)
+	}
+	rec.Firewall = append(rec.Firewall, add...)
+	return writeRecord(tgt.StateDir, *rec)
 }
 
 // sourceRuns reports whether a program of src runs (never the app's own, me).

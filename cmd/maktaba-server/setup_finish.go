@@ -75,6 +75,12 @@ func stepFinish(s *setupRun, _ json.RawMessage) (any, error) {
 	if p.PathMap != "" {
 		cfg.Media.PathMap = p.PathMap
 	}
+	// a joined node config that no install here runs (one removed, or a move
+	// undone, left it): this setup is a new home beside it, never that node
+	// (check said so)
+	if _, _, ok := nodeLeftover(); ok && (cfg.Server.Role == "" || strings.EqualFold(cfg.Server.Role, "auto")) {
+		cfg.Server.Role = "home"
+	}
 	if err := ensureDataDir(cfg.Server.DataDir); err != nil {
 		return nil, err
 	}

@@ -307,6 +307,13 @@ interface StepProps {
   back: () => void;
 }
 
+/** A finding's row key: its code and what it is about (two key_differs are
+ * two paths). */
+function findingKey(n: CheckNote, i: number): string {
+  const about = n.params?.path ?? n.params?.name ?? n.params?.where;
+  return `${n.code}-${typeof about === "string" ? about : i}`;
+}
+
 /** How the setup screens name a found install: its task, its service, or the
  * server started by hand. */
 function sourceName(
@@ -343,6 +350,7 @@ function Welcome({
   const looks = serverAvailable && platform === "windows";
   const [found, setFound] = useState<AdoptSource[] | null>(looks ? null : []);
   const [record, setRecord] = useState<AdoptRecord | null>(null);
+  const [leftover, setLeftover] = useState<{ home: string; path: string } | null>(null);
   const [findError, setFindError] = useState<StepError | null>(null);
   const [findAttempt, setFindAttempt] = useState(0);
   const [chosen, setChosen] = useState("");
@@ -354,11 +362,16 @@ function Welcome({
     setFound(null);
     setFindError(null);
     api
-      .runStep<{ sources: AdoptSource[]; move?: AdoptRecord }>("adopt", { action: "find" })
+      .runStep<{
+        sources: AdoptSource[];
+        move?: AdoptRecord;
+        leftover_node?: { home: string; path: string };
+      }>("adopt", { action: "find" })
       .then((r) => {
         if (!alive) return;
         setFound(r.sources ?? []);
         setRecord(r.move ?? null);
+        setLeftover(r.leftover_node ?? null);
         setChosen(r.sources?.[0]?.id ?? "");
       })
       // not knowing what this PC runs is not "nothing runs": no fresh setup
@@ -381,6 +394,13 @@ function Welcome({
   // the old install back as it was
   const underWay =
     record && (record.stage === "found" || record.stage === "stopped") ? record : null;
+  // a move done: the old install can be put back from here too (the app's
+  // server stops, the old one runs again)
+  const moved =
+    record &&
+    (record.stage === "moved" || record.stage === "verified" || record.stage === "finished")
+      ? record
+      : null;
   const restore = () => {
     setRestoring(true);
     setError(null);
@@ -433,7 +453,20 @@ function Welcome({
           </div>
         </div>
       )}
-      {serverAvailable && !underWay && found && found.length > 0 && (
+      {serverAvailable && moved && (
+        <div className="mkt-setup__choice">
+          <h2>{t("setup.move.moved", words)}</h2>
+          <p dir="ltr">
+            {sourceName(t, moved.source)}{" "}
+            <span className="mkt-setup__note">{moved.source.dir}</span>
+          </p>
+          <p className="mkt-setup__note">{t("setup.move.movedNote", words)}</p>
+          <Button type="button" variant="secondary" loading={restoring} onClick={restore}>
+            {t("setup.move.restore")}
+          </Button>
+        </div>
+      )}
+      {serverAvailable && !underWay && !moved && found && found.length > 0 && (
         <div className="mkt-setup__choice">
           <h2>{t("setup.move.choice", words)}</h2>
           <p className="mkt-setup__note">{t("setup.move.choiceNote", words)}</p>
@@ -469,6 +502,15 @@ function Welcome({
           {node && (
             <p className="mkt-setup__warn">
               {t("setup.move.freshNode", { ...words, home: node.home ?? "" })}
+            </p>
+          )}
+          {!node && leftover && (
+            <p className="mkt-setup__note">
+              {t("setup.move.freshLeftover", {
+                ...words,
+                home: leftover.home,
+                path: leftover.path,
+              })}
             </p>
           )}
           <Button
@@ -1309,13 +1351,13 @@ function Move({
               })}
             </p>
           ))}
-          {plan.warnings.map((n) => (
-            <p key={n.code} className="mkt-setup__warn">
+          {plan.warnings.map((n, i) => (
+            <p key={findingKey(n, i)} className="mkt-setup__warn">
               {codedText(t, "setup.move.note", n.code, n.params, words, n.message)}
             </p>
           ))}
-          {plan.problems.map((n) => (
-            <p key={n.code} className="mkt-setup__warn" role="alert">
+          {plan.problems.map((n, i) => (
+            <p key={findingKey(n, i)} className="mkt-setup__warn" role="alert">
               {codedText(t, "setup.move.note", n.code, n.params, words, n.message)}
             </p>
           ))}

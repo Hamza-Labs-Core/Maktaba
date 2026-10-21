@@ -60,13 +60,17 @@ don't append a line here; docs-only PRs are exempt.
   (its script's restart loop too, and nothing of it may come back for longer than the loop's delay;
   never the app's own programs, wherever the old folder is) and disables its task, and carries its
   settings (addresses, media, path map, transcription, the script's `MAKTABA_*` settings), keys,
-  node config, search index, caches, models and an SQLite database into the app. A move that stops
-  part way can go on, or restore the old install from the screen. The app's server removes the old
+  node config, search index, caches, models and an SQLite database into the app. The firewall
+  rules that let other devices reach the old install's programs are copied for the app's own
+  (Windows asks once, before anything stops; the plan says so), and the old task goes only once
+  they are in place on the network in use. A move that stops part way can go on, or restore the old
+  install from the screen, as can one done (the welcome screen). The app's server removes the old
   task once it ran healthy; the old folder is kept, and `maktaba-server adopt --undo` runs the old
   install again (the app's per-user task, and this user's of the old shared name, turned off; the
-  app opens its setup, which offers the move again, and never starts its server over the old
-  install). Beside a node of a home a fresh setup is refused (check and finish say why): the app
-  would be a second copy of that node. Everything the plan and the move say comes with codes, so
+  move's firewall rules removed, the old ones never touched; the app opens its setup, which offers
+  the move again, and never starts its server over the old install). Beside a node of a home a
+  fresh setup is refused (check and finish say why): the app would be a second copy of that node;
+  beside a node config nothing runs it is a new home (`[server] role = "home"`). Everything the plan and the move say comes with codes, so
   the screens say it in English or Arabic. `maktaba-server adopt` lists what it finds and `--plan
   <id>` what a move does. `[server] mdns = "off"` is new (as `serve --no-mdns`), so a moved install
   keeps that flag.

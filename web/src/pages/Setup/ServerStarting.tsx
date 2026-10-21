@@ -5,12 +5,7 @@
 // /processes).
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../lib/i18n";
-import {
-  NO_ANSWER,
-  type Platform,
-  type ServerStatus,
-  type SetupApi,
-} from "../../lib/desktopSetup";
+import { NO_ANSWER, type Platform, type ServerStatus, type SetupApi } from "../../lib/desktopSetup";
 import { platformWords, usePlatform } from "./platform";
 
 export const STARTING_POLL_MS = 2000;

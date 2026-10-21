@@ -50,7 +50,7 @@ offers the move; once the app's server ran healthy the old task is removed (--ve
 				fmt.Println("The old install runs again. The app's server is stopped and its task turned off; the app opens its setup, which offers the move again.")
 				return nil
 			case verify:
-				if err := adopt.Verify(ctx, tgt, cfg, wait); err != nil {
+				if err := adopt.Verify(ctx, sys, tgt, cfg, wait); err != nil {
 					return err
 				}
 				if _, err := adopt.Finish(sys, tgt.StateDir); err != nil {

@@ -73,15 +73,20 @@ func (f *adoptFakeSys) CreateTask(name, _ string) error {
 	f.tasks = append(f.tasks, back)
 	return nil
 }
-func (f *adoptFakeSys) RunTask(string) error                 { return nil }
-func (f *adoptFakeSys) Processes() ([]adopt.Proc, error)     { return nil, nil }
-func (f *adoptFakeSys) Kill(int) error                       { return nil }
-func (f *adoptFakeSys) EndProcess(int) error                 { return nil }
-func (f *adoptFakeSys) Services() ([]adopt.Service, error)   { return nil, nil }
-func (f *adoptFakeSys) ReadFile(path string) ([]byte, error) { return os.ReadFile(path) }
-func (f *adoptFakeSys) Getenv(name string) string            { return f.env[name] }
-func (f *adoptFakeSys) Listening(string) bool                { return false }
-func (f *adoptFakeSys) StopAppServer() error                 { return nil }
+func (f *adoptFakeSys) RunTask(string) error                               { return nil }
+func (f *adoptFakeSys) Processes() ([]adopt.Proc, error)                   { return nil, nil }
+func (f *adoptFakeSys) Kill(int) error                                     { return nil }
+func (f *adoptFakeSys) EndProcess(int) error                               { return nil }
+func (f *adoptFakeSys) Services() ([]adopt.Service, error)                 { return nil, nil }
+func (f *adoptFakeSys) FirewallRules(string) ([]adopt.FirewallRule, error) { return nil, nil }
+func (f *adoptFakeSys) ActiveProfiles() ([]string, error)                  { return []string{"Private"}, nil }
+func (f *adoptFakeSys) CanElevate() bool                                   { return true }
+func (f *adoptFakeSys) AddFirewallRules([]adopt.FirewallRule) error        { return nil }
+func (f *adoptFakeSys) RemoveFirewallRules([]string) error                 { return nil }
+func (f *adoptFakeSys) ReadFile(path string) ([]byte, error)               { return os.ReadFile(path) }
+func (f *adoptFakeSys) Getenv(name string) string                          { return f.env[name] }
+func (f *adoptFakeSys) Listening(string) bool                              { return false }
+func (f *adoptFakeSys) StopAppServer() error                               { return nil }
 func (f *adoptFakeSys) User() (adopt.User, error) {
 	return adopt.User{SID: "S-1-5-21-1000-2000-3000-1001", Name: `PC\me`}, nil
 }

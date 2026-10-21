@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -53,6 +54,15 @@ type fakeSys struct {
 	user                        User
 	services                    []Service
 	procErr                     error // the process list cannot be read
+	// the firewall: its rules, the profiles in use, whether this user may
+	// allow an administrator's change, what was asked of it
+	rules                  []FirewallRule
+	profiles               []string
+	noAdmin, declines      bool
+	fwErr                  error
+	added                  [][]FirewallRule
+	removed                [][]string
+	endedWhenRulesWereMade int // how many tasks were ended when the rules were made
 	// onList runs (locked) before each process list: a restart loop's server
 	// coming back, say
 	onList func(f *fakeSys)
@@ -197,6 +207,59 @@ func (f *fakeSys) EndProcess(pid int) error {
 }
 
 func (f *fakeSys) Services() ([]Service, error) { return f.services, nil }
+
+func (f *fakeSys) FirewallRules(dir string) ([]FirewallRule, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.fwErr != nil {
+		return nil, f.fwErr
+	}
+	var out []FirewallRule
+	for _, r := range f.rules {
+		if within(r.Program, dir) {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeSys) ActiveProfiles() ([]string, error) {
+	if f.profiles == nil {
+		return []string{"Private"}, nil
+	}
+	return f.profiles, nil
+}
+
+func (f *fakeSys) CanElevate() bool { return !f.noAdmin }
+
+func (f *fakeSys) AddFirewallRules(rules []FirewallRule) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.declines {
+		return ErrDeclined
+	}
+	f.added = append(f.added, rules)
+	f.endedWhenRulesWereMade = len(f.ended)
+	f.rules = append(f.rules, rules...)
+	return nil
+}
+
+func (f *fakeSys) RemoveFirewallRules(names []string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.declines {
+		return ErrDeclined
+	}
+	f.removed = append(f.removed, names)
+	var keep []FirewallRule
+	for _, r := range f.rules {
+		if !slices.Contains(names, r.Name) {
+			keep = append(keep, r)
+		}
+	}
+	f.rules = keep
+	return nil
+}
 
 func (f *fakeSys) Kill(pid int) error {
 	f.mu.Lock()
@@ -524,8 +587,10 @@ func TestMoveThisPC(t *testing.T) {
 	if contains(messages(plan.Carried), "[database] url") {
 		t.Error("a node's own database url is not carried: it reads the home's")
 	}
-	if len(plan.NotCarried) != 0 {
-		t.Errorf("not carried %q: the script's set lines only located its programs", plan.NotCarried)
+	// the script's set lines only located its programs: only its own Python is
+	// said (the app runs its own)
+	if len(plan.NotCarried) != 1 || plan.NotCarried[0].Code != "app_python" || plan.NotCarried[0].Params["name"] != "MAKTABA_PYTHON" {
+		t.Errorf("not carried %+v: the script's set lines only located its programs", plan.NotCarried)
 	}
 
 	venvBuilt := false
@@ -919,7 +984,7 @@ func TestVerifyFinishUndo(t *testing.T) {
 		{Role: supervisor.RoleTVSlot, Instance: "b", State: supervisor.StateStopped}, // a standby nobody asked for
 	}
 	cfg := fakeServer(t, &procs)
-	err := Verify(context.Background(), pc.tgt, cfg, 0)
+	err := Verify(context.Background(), pc.sys, pc.tgt, cfg, 0)
 	if err == nil || !strings.Contains(err.Error(), "pipeline (backoff)") {
 		t.Fatalf("a process down: %v", err)
 	}
@@ -927,7 +992,7 @@ func TestVerifyFinishUndo(t *testing.T) {
 		t.Fatalf("finished before verified: %v %v", ok, err)
 	}
 	procs[1].State = supervisor.StateRunning
-	if err := Verify(context.Background(), pc.tgt, cfg, 0); err != nil {
+	if err := Verify(context.Background(), pc.sys, pc.tgt, cfg, 0); err != nil {
 		t.Fatal(err)
 	}
 	if ok, err := Finish(pc.sys, pc.tgt.StateDir); !ok || err != nil {
@@ -940,7 +1005,7 @@ func TestVerifyFinishUndo(t *testing.T) {
 	if rec.Stage != StageFinished || rec.VerifiedAt == nil || rec.FinishedAt == nil {
 		t.Errorf("record %+v", rec)
 	}
-	if err := Verify(context.Background(), pc.tgt, cfg, 0); err != nil {
+	if err := Verify(context.Background(), pc.sys, pc.tgt, cfg, 0); err != nil {
 		t.Errorf("verifying a finished move again: %v", err)
 	}
 

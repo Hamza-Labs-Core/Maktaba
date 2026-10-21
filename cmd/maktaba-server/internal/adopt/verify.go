@@ -15,9 +15,11 @@ import (
 
 // Verify checks the app's server after a move, with the app's settings cfg:
 // its API answers and every process its supervisor runs is up (an on-demand
-// one nobody asked for may be down), retried for up to wait. On success the
-// move is verified (Finish then removes the old task).
-func Verify(ctx context.Context, tgt Target, cfg config.Config, wait time.Duration) error {
+// one nobody asked for may be down), retried for up to wait; and the firewall
+// rules the move made for the app's programs are there, on, and cover the
+// network in use, so other devices reach it as they reached the old install.
+// On success the move is verified (Finish then removes the old task).
+func Verify(ctx context.Context, sys Sys, tgt Target, cfg config.Config, wait time.Duration) error {
 	rec, ok, err := ReadRecord(tgt.StateDir)
 	if err != nil {
 		return err
@@ -41,6 +43,9 @@ func Verify(ctx context.Context, tgt Target, cfg config.Config, wait time.Durati
 		}
 	}
 	if err != nil {
+		return fmt.Errorf("not yet: %w", err)
+	}
+	if err := checkFirewall(sys, rec.Firewall); err != nil {
 		return fmt.Errorf("not yet: %w", err)
 	}
 	rec.Stage, rec.VerifiedAt = StageVerified, now()

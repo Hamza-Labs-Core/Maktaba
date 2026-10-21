@@ -11,6 +11,9 @@ type Proc struct {
 	Name    string `json:"Name"`
 	Exe     string `json:"ExecutablePath"`
 	Cmdline string `json:"CommandLine"`
+	// Cwd is a console's current directory (cmd.exe, conhost.exe), what a
+	// relative script on its command line is resolved against.
+	Cwd string `json:"-"`
 }
 
 // Service is a Windows service that runs a Maktaba program.
@@ -55,6 +58,19 @@ type Sys interface {
 	StopAppServer() error
 	// User is the user this process runs as (whose app task AppTask names).
 	User() (User, error)
+	// FirewallRules are the firewall rules bound to a program inside dir
+	// (read only).
+	FirewallRules(dir string) ([]FirewallRule, error)
+	// ActiveProfiles are the firewall profiles of the networks in use
+	// (Domain, Private, Public).
+	ActiveProfiles() ([]string, error)
+	// CanElevate: this user can allow an administrator's change with one
+	// consent prompt.
+	CanElevate() bool
+	// AddFirewallRules and RemoveFirewallRules change the firewall as an
+	// administrator: one prompt each time (ErrDeclined when refused).
+	AddFirewallRules(rules []FirewallRule) error
+	RemoveFirewallRules(names []string) error
 }
 
 // ErrUnsupported: finding and moving another install is done on Windows.

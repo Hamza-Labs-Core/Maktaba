@@ -33,7 +33,7 @@ func finishMove(ctx context.Context, sup *supervisor.Supervisor, cfg config.Conf
 		case <-t.C:
 		}
 	}
-	if err := adopt.Verify(ctx, tgt, cfg, time.Minute); err != nil {
+	if err := adopt.Verify(ctx, adoptSys(), tgt, cfg, time.Minute); err != nil {
 		fmt.Fprintf(os.Stderr, "[serve] the move of %s into the app is not verified yet: %v\n", rec.Source.ID, err)
 		return
 	}

@@ -91,6 +91,14 @@ func stepAdopt(s *setupRun, in json.RawMessage) (any, error) {
 		if rec, ok, err := adopt.ReadRecord(tgt.StateDir); err == nil && ok {
 			out["move"] = rec
 		}
+		// a node config nothing here runs: a fresh setup is a new home beside it
+		node := false
+		for _, src := range srcs {
+			node = node || src.DB == adopt.DBNode
+		}
+		if home, path, ok := nodeLeftover(); ok && !node {
+			out["leftover_node"] = map[string]string{"home": home, "path": path}
+		}
 		return out, nil
 	case "plan", "move":
 		src, err := adoptSource(sys, payload, tgt, req.Source)
@@ -154,7 +162,7 @@ func stepAdopt(s *setupRun, in json.RawMessage) (any, error) {
 		if req.WaitSec > 0 {
 			wait = time.Duration(req.WaitSec) * time.Second
 		}
-		if err := adopt.Verify(s.ctx, tgt, s.cfg, wait); err != nil {
+		if err := adopt.Verify(s.ctx, sys, tgt, s.cfg, wait); err != nil {
 			return nil, failStep("adopt_verify", "", "%v", err)
 		}
 		if _, err := adopt.Finish(sys, tgt.StateDir); err != nil {
@@ -227,4 +235,22 @@ func nodeHere() (code, message string, kv []any) {
 			src.Home, src.ID), []any{"home", src.Home, "source", src.ID}
 	}
 	return "", "", nil
+}
+
+// nodeLeftover is a joined node config where the app's roles would read it
+// (config.LocalNodeConfigPath) that no install here runs (nodeHere found
+// none): left by an install removed, or by a move undone. A fresh setup is a
+// new home beside it, pinned role = "home" (finish), never that node: a fresh
+// setup asks for a home's admin and libraries, and the node it was belongs to
+// another home. ok false when there is none.
+func nodeLeftover() (home, path string, ok bool) {
+	n := config.LocalNodeConfig()
+	if !n.Joined() {
+		return "", "", false
+	}
+	home = n.Home.Name
+	if home == "" {
+		home = n.HomeURL()
+	}
+	return home, config.LocalNodeConfigPath(), true
 }

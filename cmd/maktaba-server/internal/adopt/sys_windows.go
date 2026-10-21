@@ -145,7 +145,16 @@ func (winSys) Processes() ([]Proc, error) {
 		return nil, err
 	}
 	var procs []Proc
-	return procs, jsonList(out, &procs)
+	if err := jsonList(out, &procs); err != nil {
+		return nil, err
+	}
+	// a console's script is resolved against its current directory
+	for i := range procs {
+		if isConsole(procs[i]) {
+			procs[i].Cwd = processCwd(procs[i].PID)
+		}
+	}
+	return procs, nil
 }
 
 // jsonList reads ConvertTo-Json's output into a slice: one item is an object,

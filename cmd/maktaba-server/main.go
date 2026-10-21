@@ -15,11 +15,18 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/adopt"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
 )
 
 func main() {
+	// the elevated run a move into the Windows app makes to give the app's
+	// programs their firewall rules (Epic 38 story 38.13): before anything
+	// else, as nothing else is this run's to do
+	if len(os.Args) > 1 && os.Args[1] == adopt.FirewallHelperArg {
+		os.Exit(adopt.FirewallHelper(os.Args[2:]))
+	}
 	if err := newRootCmd().Execute(); err != nil {
 		// Cobra already prints the error; exit non-zero for scripts.
 		os.Exit(1)

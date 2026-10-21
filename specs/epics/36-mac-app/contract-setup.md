@@ -206,26 +206,41 @@ Instead of `check` … `finish` when the PC already runs Maktaba outside the app
   and the services must all be readable, or the step fails (`adopt_find`): an install it would miss
   could run beside the app. The welcome screen asks on Windows only (elsewhere nothing is found); a
   failed find is shown with Try again, never taken as "nothing runs". A recorded move at `found` or
-  `stopped` (one that stopped part way) is offered to go on, or to be undone.
+  `stopped` (one that stopped part way) is offered to go on, or to be undone; one at `moved`,
+  `verified` or `finished` to be undone (the welcome screen shows when the window opens setup, as
+  after "Connect to another Maktaba…"). `leftover_node` (`home`, `path`) is a joined node config that
+  no install found runs (below).
 - `{"action": "plan", "source": id}` → `{"source", "items": [{"code", "params"?, "what", "from",
-  "to", "size", "done"}], "carried", "not_carried", "problems", "warnings", "need", "free"}`; read
+  "to", "size", "done"}], "carried", "not_carried", "problems", "warnings", "firewall", "need",
+  "free"}`; read
   only. A move with `problems` is refused. Items are `setup.move.item.<code>` (`key` with `name`,
   `node_config`, `search_index`, `streaming_cache`, `models`, `database`, `database_wal`,
   `database_shm`, `hf_token`). Every other entry is `{"code", "params"?, "message"}`, shown as its
   own text (the English `message` for a code the app does not know): `carried` as
   `setup.move.carry.<code>` (`section` `name`, `database_url`, `pipeline_instances` `count`, `env`
-  `name`, `no_mdns`), `not_carried` as `setup.move.nocarry.<code>` (`pipeline_python`, `env` `name`,
-  `serve_flag` `flag`), `problems` and `warnings` as `setup.move.note.<code>`: problems `space_low`
+  `name`, `no_mdns`), `not_carried` as `setup.move.nocarry.<code>` (`pipeline_python`, `app_python`
+  `name`: the script's `MAKTABA_PYTHON`, `env` `name`, `serve_flag` `flag`), `problems` and
+  `warnings` as `setup.move.note.<code>`: problems `space_low`
   (`need_bytes`, `free_bytes`), `worker_not_joined` (`path`), `postgres_down` (`where`),
   `key_differs` (`path`, `from`: the app holds another key or node config there, which is never
   replaced; found in the plan, before anything is stopped), `service_install` (`name`: a Windows
-  service, run by the system's account); warnings `postgres_stays` (`where`), `started_by_hand`.
+  service, run by the system's account), `firewall_needs_admin` (`count`), `firewall_unknown`;
+  warnings `postgres_stays` (`where`), `started_by_hand`, `firewall_prompt` (`count`). `firewall` is
+  the inbound rules the app's programs get: one copy of each enabled inbound allow rule bound to a
+  program in the old install's folder whose program the app's payload has (`bin\<the same name>`),
+  the same protocol, ports and profiles, none the app has already. Making them needs an
+  administrator: the plan says Windows asks once (`firewall_prompt`), or refuses when this user
+  cannot allow it (a standard user).
 - `{"action": "move", "source": id}` → `{"move": <record>, "web_url", "supervisor_url"}`, with
   `progress` events whose `stage` the screens say in their own words (`setup.move.progress.<stage>`:
-  `venv`, as the venv step's, then `stop`, `copy`, `settings`; the models download's `download`, the
-  `llm` step's `start` / `check` / `download`). The old install is stopped (its tasks ended and
-  disabled, the cmd.exe running its script ended at once, its processes given their grace, its ports
-  free, then nothing of it back for longer than its script's restart delay), its files copied,
+  `venv`, as the venv step's, then `firewall`, `stop`, `copy`, `settings`; the models download's
+  `download`, the `llm` step's `start` / `check` / `download`). After the venv and before anything of
+  the old install stops, the plan's firewall rules are made in one elevated run of the payload's
+  `maktaba-server` (one consent prompt, no console window; its input on a file, which it checks: only
+  the app's own rule ids, inbound allow rules for a program beside it); a No changes nothing
+  (`adopt_firewall_declined`). The old install is stopped (its tasks disabled, then ended, the
+  cmd.exe running its script ended at once, its processes given their grace, its ports free, then
+  nothing of it back for longer than its script's restart delay), its files copied,
   `server.toml` written; what a fresh setup collected is dropped. The app's own install, its venv
   and the step's own process are never stopped, wherever the old install's folder is. Run again
   after a failure it goes on from its last step. The app then runs `models` `{"action": "download"}`
@@ -234,15 +249,19 @@ Instead of `check` … `finish` when the PC already runs Maktaba outside the app
 - `{"action": "undo"}` → `{"move": <record>}`: the old install runs again, as below; also for a move
   that stopped part way (the screen's "Restore the old install", beside Try again).
 - `{"action": "verify", "wait_sec": n}` → `{"move": <record>}`: the app's API answers and every
-  process runs, then the old task is removed. The server does the same by itself once every role
-  ran healthy for three minutes, so the screens need not wait for it.
+  process runs, and the firewall rules the move made are there, on, inbound, allowing the app's
+  programs, on the network profile in use (a connection from this PC to its own LAN address never
+  passes the inbound filter, so the rules themselves are read); then the old task is removed. The
+  server does the same by itself once every role ran healthy for three minutes, so the screens need
+  not wait for it.
 
 Errors: `adopt_find`, `adopt_gone` (field `source`), `adopt_blocked` (the plan's problems), and
 the move's own reasons, each with its params: `adopt_moved_already` / `adopt_under_way`
 (`source`), `adopt_task` (`task`: Task Scheduler refused to read or turn off an old task),
 `adopt_still_running` (`pids`), `adopt_port_busy` (`port`), `adopt_key_differs` (`path`, `from`: a
 key that turned different after the plan), `adopt_processes_unknown` (the running programs cannot
-be listed: not sure is not "stopped"); `interrupted` (a stop: the next run goes on), `adopt_failed`
+be listed: not sure is not "stopped"), `adopt_firewall_declined` / `adopt_firewall` (the app's
+firewall rules not made; nothing changed); `interrupted` (a stop: the next run goes on), `adopt_failed`
 for anything else, `adopt_verify`, `adopt_no_move` and `adopt_undo` (undo), and the venv step's.
 
 `check` (a problem: Next is blocked) and `finish` (an error, before anything is written) refuse a
@@ -250,14 +269,21 @@ fresh setup beside a node: `node_here` (`home`, `source`) when an install outsid
 of a home, its task enabled or not, running or not (the app would read the same node config, or the
 copy an undone move left, and run as a second copy of that node), `install_unknown` when what runs
 cannot be looked at. The terminal setup of that very install (its own `maktaba-server`) is not a
-second copy. The welcome screen does not offer Start fresh there, and says why.
+second copy. The welcome screen does not offer Start fresh there, and says why. A joined node
+config at the place the app's roles read it (`%LOCALAPPDATA%\Maktaba\node.json`, else the roaming
+one) that no install here runs, left by an install removed or a move undone, is not in the way:
+`check` warns `node_config_unused` (`home`, `path`), the welcome screen says a fresh setup makes a
+new home and leaves it unused, and `finish` writes `[server] role = "home"`, so no role of the app
+ever runs as that node.
 
 Undo (the step's `undo`, or `maktaba-server adopt --undo` in a terminal) runs the old install again:
 the pause flag, the app's server stopped, this user's app tasks disabled (`\Maktaba Server <SID>`,
 and a task of the old shared name `\Maktaba Server` that runs as this user), the window's
 `mode.json` out of server mode (Windows: `%LOCALAPPDATA%\com.hamzalabs.maktaba\mode.json`; a client
 mode stays), the old tasks registered again from their XML (or turned on again) and run, unless the
-old install still runs, the record `undone`. The pause flag ends with the sign-in; what keeps the
+old install still runs, the firewall rules the move made removed (one prompt; the old install's own
+rules were never touched, and a rule Undo cannot remove is recorded as `firewall_left`), the record
+`undone`. The pause flag ends with the sign-in; what keeps the
 app's server from starting over the old install after it is the disabled task (the window starts
 only an enabled one) and `status` above: the window opens setup, whose welcome screen finds the old
 install and offers the move again.
