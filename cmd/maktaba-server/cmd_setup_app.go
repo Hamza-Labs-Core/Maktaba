@@ -683,6 +683,10 @@ func headlessService(ctx context.Context, t texts, out io.Writer) error {
 		return err
 	}
 	fmt.Fprintln(out, t.get("terminal.started", "unit", sd.unit.Path()))
+	if sd.manager.Status(ctx, sd.unit).Linger { // nothing to ask an administrator for
+		fmt.Fprintln(out, t.get("terminal.linger"))
+		return nil
+	}
 	if err := sd.manager.Linger(ctx, true); err != nil {
 		fmt.Fprintln(out, t.get("terminal.noLinger", "user", os.Getenv("USER"), "err", err.Error()))
 	} else {
