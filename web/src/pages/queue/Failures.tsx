@@ -18,6 +18,8 @@ import type {
 import { useIsAdmin } from "../../components/queue/useIsAdmin";
 import { useFmt } from "../../components/queue/format";
 import { waitingOnLabel } from "../../components/queue/QueueCard";
+import { HelpLink, TitleRow } from "../../help/HelpLink";
+import { failureClassHelp, failureStatusHelp } from "../../help/registry";
 import "../../styles/queue.css";
 
 const FILTER_KEYS = ["stage", "class", "signature", "library", "path_prefix", "status"] as const;
@@ -187,7 +189,9 @@ export function Failures() {
   if (!admin) {
     return (
       <section className="mkt-page mkt-q">
-        <h1>{t("queue.failures.title")}</h1>
+        <TitleRow>
+          <h1>{t("queue.failures.title")}</h1>
+        </TitleRow>
         <p className="mkt-q-empty">{t("queue.failures.adminOnly")}</p>
       </section>
     );
@@ -197,7 +201,9 @@ export function Failures() {
     <section className="mkt-page mkt-q">
       <header className="mkt-q-header">
         <div className="mkt-q-header__title">
-          <h1>{t("queue.failures.title")}</h1>
+          <TitleRow>
+            <h1>{t("queue.failures.title")}</h1>
+          </TitleRow>
         </div>
         <div className="mkt-q-header__actions">
           <Link className="mkt-q-linkbtn" to="/queue">
@@ -449,7 +455,13 @@ export function Failures() {
                     <div dir="auto">{it.message}</div>
                     <div className="mkt-q-muted">
                       {t(`queue.failures.status.${it.status}`)}
-                      {it.class ? ` · ${it.class}` : ""}
+                      {it.class ? ` · ${it.class}` : ""}{" "}
+                      <HelpLink
+                        to={it.class ? failureClassHelp(it.class) : failureStatusHelp(it.status)}
+                        label={t("help.causeHelpNamed", {
+                          cause: it.class ?? t(`queue.failures.status.${it.status}`),
+                        })}
+                      />
                       {it.signature ? (
                         <>
                           {" · "}
