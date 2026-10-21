@@ -19,6 +19,7 @@ The [`release.yml`](../../.github/workflows/release.yml) workflow runs on a
 | `maktaba.rb` (Homebrew formula) | `sign-and-release` | macOS arm64 + amd64 |
 | `maktaba-cloud-<os>-<arch>` (relay) | `build-artifacts` | linux/{amd64,arm64} |
 | `maktaba-web-<tag>.tar.gz` (web bundle) | `build-artifacts` | n/a |
+| `maktaba-linux-payload-<ver>-<x86_64\|aarch64>.tar.gz` | `package-linux-payload` ([`tools/release/linux-app`](../../tools/release/linux-app/README.md)) | the Linux app's server payload (Go binaries, Postgres 16 with its libraries, ffmpeg, Python, the pipeline wheel) for a machine without a desktop: `install.sh --app` ([Epic 39](../../specs/epics/39-linux-app/headless.md)) |
 | `maktaba-node-<ver>.tar.gz` / `.zip` (node installer + wheel) | `package-node` | macOS + Linux / Windows; see [`node/README.md`](node/README.md#getting-the-installer) |
 | `maktaba_pipeline-<ver>-py3-none-any.whl` + `maktaba-pipeline-<ver>-constraints.txt` | `package-node` | any (pure Python, 3.12+) |
 | `release.json` | `sign-and-release` (`tools/release/cmd/gen-release-json`) | version, schema revisions, protocol numbers, per-platform archive + binary digests ([Epic 35 design §3.1](../../specs/epics/35-cluster-full-nodes-and-updates/design.md)); listed in `checksums.txt` |
@@ -29,6 +30,21 @@ Each archive is flat and contains the `maktaba-server`, `maktaba-api`, and
 `maktaba-streaming` binaries (the unified server forks the latter two at
 runtime), plus `README.md`, `LICENSE`, `server.toml.example`, and — on
 Linux — the systemd unit.
+
+### Linux: the app, or these packages
+
+The **Linux app** ([Epic 39](../../specs/epics/39-linux-app/README.md)) is the one installation
+that runs everything for a person: the AppImage / `.deb` / `.rpm` from
+[`desktop-release.yml`](../../.github/workflows/desktop-release.yml), or `install.sh --app` on a
+machine without a desktop. It runs as the user's systemd **user** service from a copy of the payload
+in `~/.local/share/maktaba/runtime`, with its own Postgres, ffmpeg and Python, and updates through
+the app (or, without a desktop, through the signed releases).
+
+The `maktaba-server` `.deb` / `.rpm` and archives here install the server binaries alone, as a
+**system** service (`User=maktaba`, `/var/lib/maktaba`), for operators who bring their own
+Postgres, ffmpeg and pipeline environment. The app's user unit has the name a self-managed user
+install (`setup --self-managed`) uses; `maktaba-server service install` refuses a unit that another
+install wrote.
 
 ## Files in this directory
 
@@ -102,6 +118,10 @@ sudo dnf install ./maktaba-server-<ver>-1.x86_64.rpm
 
 # macOS (Homebrew tap)
 brew install hamza-labs-core/tap/maktaba
+
+# Linux, the whole server for a machine without a desktop (Epic 39): the app's
+# setup in the terminal, a systemd user service, nothing as root
+curl -fsSL https://raw.githubusercontent.com/Hamza-Labs-Core/Maktaba/main/deploy/packaging/install.sh | bash -s -- --app
 
 # Any Linux/macOS (script)
 curl -fsSL https://raw.githubusercontent.com/Hamza-Labs-Core/Maktaba/main/deploy/packaging/install.sh | bash

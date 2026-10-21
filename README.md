@@ -113,6 +113,24 @@ troubleshooting, and pre-commit setup.
 
 ## Install the home server
 
+**Linux, one installation that runs everything** ([Epic 39](specs/epics/39-linux-app/README.md)).
+The server, its database (Postgres 16), ffmpeg, Python and the transcription pipeline in one
+install, run as your systemd user service and started at boot. x86_64 or aarch64, glibc 2.35 or
+newer (Ubuntu 22.04, Debian 12, Fedora 36, RHEL 10 or later), systemd.
+
+- **With a desktop:** download `Maktaba_<ver>_amd64.AppImage` (or the `.deb` / `.rpm`; `aarch64`
+  builds too) from the [latest release](https://github.com/Hamza-Labs-Core/Maktaba/releases/latest),
+  open it and follow the setup. The window is the web app; the tray shows the server's status. The
+  app updates itself.
+- **Without a desktop** (a NAS, a mini PC, a VM): the same setup questions in the terminal:
+
+  ```sh
+  curl -fsSL https://raw.githubusercontent.com/Hamza-Labs-Core/Maktaba/main/deploy/packaging/install.sh | bash -s -- --app
+  ```
+
+On a Mac, Maktaba.app is the same one installation ([Epic 36](specs/epics/36-mac-app/README.md)).
+The packages below install the server alone, for operators who run it their own way.
+
 The home server ships as the single `maktaba-server` binary (with the API,
 streaming, and pipeline roles plus the web UI). Pick the method for your OS —
 every artifact is checksummed and signed with keyless cosign:
@@ -215,7 +233,8 @@ the workflows below.
 | **Web** (self-host the SPA) | `maktaba-web-<version>.tar.gz` | [`release.yml`](.github/workflows/release.yml) (auto) · [`web-release.yml`](.github/workflows/web-release.yml) (on-demand rebuild) |
 | **Desktop — macOS** | `.dmg` (universal arm64 + x86_64) | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
 | **Desktop — Windows** | `.msi` + NSIS `.exe` + portable `.zip` | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
-| **Desktop — Linux** | `.deb` + `.AppImage` | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
+| **Desktop — Linux** | `.AppImage` + `.deb` + `.rpm` (x86_64, aarch64), the whole server inside | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
+| **Server — Linux without a desktop** | `maktaba-linux-payload-<version>-<x86_64\|aarch64>.tar.gz` (`install.sh --app`) | [`release.yml`](.github/workflows/release.yml) |
 | **Mobile — Android** | `maktaba-<version>.apk` (sideload) + `.aab` (Play Store) | [`mobile-release.yml`](.github/workflows/mobile-release.yml) |
 | **Mobile — iOS** | `maktaba-<version>.ipa` *(signing deferred — see workflow)* | [`mobile-release.yml`](.github/workflows/mobile-release.yml) |
 | **TV — Android TV** | `maktaba-tv-<version>.apk` | [`tv-release.yml`](.github/workflows/tv-release.yml) |

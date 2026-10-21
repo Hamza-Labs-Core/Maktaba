@@ -261,6 +261,17 @@ service on crash and on user login.
 
 ## 10. Linux native install — systemd units
 
+**The Linux app** ([Epic 39](../../specs/epics/39-linux-app/README.md)) is the one installation
+for a person's machine: the AppImage / `.deb` / `.rpm`, or `install.sh --app` without a desktop.
+Its server runs as the user's systemd **user** unit `~/.config/systemd/user/maktaba-server.service`
+(written by `maktaba-server service install`, started at boot by linger), from a copy of the
+payload in `~/.local/share/maktaba/runtime/current` (`maktaba-server runtime`), with state in
+`~/.local/share/maktaba`, config and keys in `~/.config/maktaba`, logs in
+`~/.local/state/maktaba/logs` and caches in `~/.cache/maktaba`
+([contract](../../specs/epics/39-linux-app/contract-runtime.md)).
+
+The system units below are for an operator's own install of the server binaries:
+
 `deploy/packaging/systemd/maktaba-api.service`,
 `maktaba-streaming.service`, `maktaba-pipeline.service`. The deb/rpm
 postinst (`deploy/packaging/postinst.sh`) creates a `maktaba` system
