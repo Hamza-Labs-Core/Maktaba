@@ -126,6 +126,20 @@ don't append a line here; docs-only PRs are exempt.
 - **`maktaba-server setup` (the CLI wizard) seeds the admin again.** It called `adduser` with
   `--username`/`--password` flags the api does not have; it now passes the username and a
   password file.
+- **Setup asks for a Hugging Face sign-in only where the second listen runs.** It asked whenever
+  the second listen was on, so a PC without an NVIDIA GPU, with one too small or too old, or with
+  a driver before R580 was made to create a token and accept a gated model's licence for a model
+  that never runs there. `check` now says whether this machine can run it (and why not, in the
+  app's words), the models step no longer asks for the token there (the NAS copy can still be
+  chosen, any model the home published), and the download takes only Whisper and the search model. The
+  graphics card's compute capability and driver version come with its name and memory.
+- **The terminal setup's Plex sign-in can be skipped, and survives a moment without plex.tv.**
+  Ctrl+C while it waits for the code skipped nothing: it stopped the whole setup before `finish`,
+  as did a single poll plex.tv did not answer. Ctrl+C now skips the sign-in and the setup goes on;
+  plex.tv not answering is said once and asked again until the code expires; a second Ctrl+C
+  elsewhere ends the setup even at a question. Every code a setup step fails with now has its
+  words in English and Arabic (a test keeps it so): the language model's, a bad request's, an
+  unknown step's, unreadable settings', an unexpected failure's.
 - **After the app's setup the server runs on the bundled Postgres, with its transcription
   workers.** Saving `server.toml` wrote every default, so setup's `finish` left `[database] url`
   set to the default SQLite file: the next start never ran the bundled Postgres (the database setup
