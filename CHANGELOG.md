@@ -12,6 +12,21 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Transcription on Windows and Linux (story 38.8).** The transcribe stage runs Whisper on
+  CTranslate2 there (faster-whisper's `dropbox-dash/faster-whisper-large-v3-turbo`), batched
+  across files as the Mac's MLX engine does: on an NVIDIA GPU when CUDA works (cuBLAS 12 comes
+  with the `stt` extra; no CUDA toolkit), else on the CPU. The supervisor sizes the workers and
+  their batch from the GPU's memory (`nvidia-smi`; an 8 GB card gets one worker); without a GPU
+  the main worker transcribes. New `[transcription]` keys: `device`, `compute_type`, `batch`,
+  `cpu_threads`. Transcripts record their engine (`ct2-batched`); the second listen stays on
+  the Mac for now, so while it is on a Windows or Linux machine leaves transcription to the
+  machines that run it, unless the new rule Transcription, "Transcribe without the second
+  listen", lets it transcribe too; a machine that runs the second listen then gives those
+  transcripts theirs later. The operator's own stage exclusion always stands. A GPU under 4 GB,
+  or one without the memory free, leaves Whisper to the CPU, as does a failed load on the GPU;
+  more workers than planned share the GPU or the CPU; the Whisper download is pinned to a commit
+  and its files' SHA-256; the free-memory floor works on Windows. On an RTX 2080 SUPER: 72x real
+  time for eight files at once, 31x for one; 2-3x on the CPU.
 - **The desktop app runs the server on Windows** (Epic 38, story 38.3). When setup finishes on
   a Windows PC, the app registers the user's own sign-in task `\Maktaba Server <SID>` (the
   user's session, so mapped NAS drives work; each user of the PC has their own). The task runs

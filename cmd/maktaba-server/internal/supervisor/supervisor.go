@@ -161,6 +161,11 @@ func Build(role Role, opts Options) (Process, error) {
 
 	case RolePipeline:
 		cmd = exec.Command(pythonFor(opts), "-m", "maktaba_pipeline")
+		// the transcription workers (PlanFor, BuildPipelineInstances) take the
+		// transcribe stage, and the main worker leaves it to them; without them on
+		// Windows or Linux it gets the plan's knobs, for when it transcribes itself
+		// (story 38.8)
+		env = PlanFor(opts).mainEnv(env)
 
 	default:
 		return Process{}, fmt.Errorf("unknown role %q", role)

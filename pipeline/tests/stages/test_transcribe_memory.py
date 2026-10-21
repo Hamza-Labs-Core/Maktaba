@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from typing import Any
 
 import pytest
@@ -58,6 +59,28 @@ async def test_registered_metrics_and_memory_are_measured() -> None:
         assert health.health_frame(health.HealthCollector())["stt.test_gauge"] == 4.5
     finally:
         health._METRICS.pop("stt.test_gauge", None)
+
+
+@pytest.mark.unit
+def test_windows_counts_its_own_free_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The memory floor reads GlobalMemoryStatusEx on Windows (review of story 38.8, item
+    4): before, nothing was read there and a job never waited."""
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(health, "windows_memory", lambda: (100 << 30, 5 << 30))
+    assert health.system_memory() == (float(100 << 30), float(5 << 30))
+    monkeypatch.setattr(health, "windows_memory", lambda: None)
+    assert health.system_memory() is None
+
+
+@pytest.mark.unit
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows' own count")
+def test_windows_memory_is_this_machine_s() -> None:
+    from maktaba_pipeline.cluster.capabilities import memory_bytes
+
+    mem = health.windows_memory()
+    assert mem is not None and 0 < mem[1] <= mem[0] == memory_bytes()
+    total, avail = health.system_memory() or (0.0, 0.0)
+    assert total == mem[0] and 0 < avail <= total
 
 
 @pytest.mark.asyncio

@@ -202,12 +202,8 @@ func ChildEnv(role Role, cfg config.Config) []string {
 				}
 			}
 		}
-		// the transcription workers (PlanSTT, BuildPipelineInstances) take the
-		// transcribe stage; the main worker leaves it to them
-		// (added to the stages an operator's own environment excludes)
-		if PlanSTT(cfg).Workers > 0 {
-			add("MAKTABA_PIPELINE_EXCLUDE_STAGES", withStage(os.Getenv("MAKTABA_PIPELINE_EXCLUDE_STAGES"), "transcribe"))
-		}
+		// the main worker's share of the transcription plan is Build's (PlanFor:
+		// it asks the pipeline's Python), the workers' BuildPipelineInstances'
 		// Epic 35 story 35.8: a full node's pipeline works for the home as this
 		// machine's node (node.json: its database role, node id). The pipeline only
 		// reads node.json without a database URL, so [database].url above would

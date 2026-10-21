@@ -4,7 +4,10 @@ Module map:
 
 - :mod:`.protocol`        Story 3.1 — :class:`STTBackend` Protocol + ``Segment`` schema
 - :mod:`.mlx`             Story 3.2 — Whisper MLX backend
-- :mod:`.faster_whisper`  Story 3.3 — Faster-Whisper CUDA / CPU backend
+- :mod:`.faster_whisper`  Story 3.3 — Faster-Whisper CUDA / CPU backend (on :mod:`.ct2`)
+- :mod:`.engine`          Story 38.8 — which Whisper engine a machine runs (MLX, CTranslate2)
+- :mod:`.batched`         Plan 03-10 — the transcribe stage's batched Whisper (MLX)
+- :mod:`.ct2`             Story 38.8 — the same on CTranslate2 (Windows, Linux; CUDA or CPU)
 - :mod:`.openai_api`      Story 3.4 — OpenAI Whisper API backend (chunked, budget-capped)
 - :mod:`.registry`        Story 3.5 — health-filtered registry + fallback walk
 - :mod:`.segment_commit`  Story 3.6 — atomic per-segment DB commit
