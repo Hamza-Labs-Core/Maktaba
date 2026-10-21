@@ -61,7 +61,10 @@ func TestWithoutACopy(t *testing.T) {
 	defer bg.Stop(time.Second)
 	w := &dbWatch{logger: quietLogger(), ping: func(context.Context) error { return errors.New("down") }}
 	w.Failed(errors.New("not answering at start"))
-	b := withCopy(bg, quietLogger(), nil, "node-1", w)
+	if openCopy(bg, quietLogger()) != nil {
+		t.Fatal("a copy pool without a copy")
+	}
+	b := withCopy(bg, nil, nil, quietLogger(), "node-1", w)
 	o, ok := b.(*probe.Offline)
 	if !ok || o.Copy != nil {
 		t.Fatalf("backend %T copy %v", b, o)

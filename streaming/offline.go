@@ -107,29 +107,16 @@ func (w *dbWatch) wait(ctx context.Context) error {
 const copyEnv = "MAKTABA_COPY_DATABASE_URL"
 
 // withCopy wraps a full node's probe backend with this machine's copy of the home's
-// database: the copy answers while the home's does not, and gives this machine's path
-// map (until the home's database answers with its own, buildNodeTV). The watch runs
-// on bg; the copy's pool closes with it.
-func withCopy(bg *background, logger *slog.Logger, pg *probe.PGBackend, nodeID string, watch *dbWatch) probe.Backend {
+// database (openCopy; nil: none): the copy answers while the home's does not, and
+// gives this machine's path map (until the home's database answers with its own,
+// buildNodeTV). The watch runs on bg.
+func withCopy(bg *background, pg *probe.PGBackend, pool *pgxpool.Pool, logger *slog.Logger, nodeID string, watch *dbWatch) probe.Backend {
 	o := &probe.Offline{Primary: pg, Down: watch.Down, Failed: watch.Failed}
 	bg.Go(watch.run)
-	dsn := os.Getenv(copyEnv)
-	if dsn == "" {
-		logger.Warn("streaming: no copy of the home's database ("+copyEnv+"); with the home's database down nothing plays",
-			"event", "stream_no_copy")
-		return o
-	}
-	pool, err := pgxpool.New(context.Background(), dsn)
-	if err != nil {
-		logger.Warn("streaming: this machine's copy of the home's database is not usable", "err", err.Error(),
-			"event", "stream_copy_unusable")
+	if pool == nil {
 		return o
 	}
 	o.Copy = probe.NewPGBackend(pool)
-	bg.Go(func(ctx context.Context) {
-		<-ctx.Done()
-		pool.Close()
-	})
 	if os.Getenv(pathmap.EnvVar) == "" && nodeID != "" {
 		bg.Go(func(ctx context.Context) { copyPathMap(ctx, logger, pool, nodeID, watch) })
 	}

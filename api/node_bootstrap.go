@@ -340,8 +340,16 @@ func (rt *nodeRuntime) self(ctx context.Context) clusterauth.SelfInfo {
 	if st := rt.vod.Current(); st.Fallback {
 		info.VOD = st
 	}
+	if dir := nodeStateDir(); dir != "" {
+		if b, err := os.ReadFile(filepath.Join(dir, copyStatusFile)); err == nil && json.Valid(b) {
+			info.Copy = b
+		}
+	}
 	return info
 }
+
+// copyStatusFile is the supervisor's status of this machine's copy (nodecopy.StatusFile).
+const copyStatusFile = "copy.json"
 
 // homeSelf is the home's GET /api/cluster/self: its identity, web address and the
 // machines' addresses (the apps learn the cluster from any machine, story 35.11 EC2).

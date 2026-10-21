@@ -61,6 +61,10 @@ type Node struct {
 	FullNode    bool            `json:"full_node"`
 	VOD         json.RawMessage `json:"vod"`
 	UpdateState json.RawMessage `json:"update_state"`
+	// Copy: the full node's copy of this database (Epic 37): its state, how far
+	// behind, when it last applied the home's changes; copy_reported_at when it said so.
+	Copy           json.RawMessage `json:"copy"`
+	CopyReportedAt *time.Time      `json:"copy_reported_at"`
 }
 
 func view(n cluster.Node, workers []cluster.NodeWorker, stages map[string]bool, now time.Time) Node {
@@ -74,7 +78,10 @@ func view(n cluster.Node, workers []cluster.NodeWorker, stages map[string]bool, 
 		LastSeenAt: n.LastSeenAt, UpdatedAt: n.UpdatedAt,
 		Workers: []NodeWorker{}, StageOverrides: map[string]bool{},
 		Version: n.Version, Platform: n.Platform, WebURL: n.WebURL, FullNode: n.FullNode,
-		VOD: n.VOD, UpdateState: n.UpdateState,
+		VOD: n.VOD, UpdateState: n.UpdateState, Copy: n.Copy, CopyReportedAt: n.CopyReportedAt,
+	}
+	if out.Copy == nil {
+		out.Copy = json.RawMessage("{}")
 	}
 	if out.VOD == nil {
 		out.VOD = json.RawMessage("{}")

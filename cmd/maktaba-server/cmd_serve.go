@@ -381,7 +381,7 @@ func webHandler(cfg config.Config, node *nodeServices) http.Handler {
 	if node != nil {
 		home := homeStreamProxy(supervisor.HomeStreamURL(node.node))
 		publicProxy = home
-		gated = nodeStreamRouter(streamProxy, home)
+		gated = nodeStreamRouter(streamProxy, home, node.HomeAway)
 		allow = allowedNodeStreamPath
 	}
 	for _, p := range publicStreamPaths {

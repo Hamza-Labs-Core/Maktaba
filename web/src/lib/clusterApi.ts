@@ -143,7 +143,34 @@ export interface ClusterNode {
   vod?: NodeVod;
   /** Epic 35 (story 35.12): the update rollout's view of this machine */
   update_state?: Record<string, unknown>;
+  /** Epic 37: the machine's copy of this home's database; {} before it reported one */
+  copy?: NodeCopy;
 }
+
+/** A full machine's copy of its home's database (Epic 37), as its supervisor keeps it. */
+export interface NodeCopy {
+  state?: NodeCopyState;
+  detail?: string;
+  /** the home's time of the last change the copy applied */
+  applied_at?: string;
+  lag_ms?: number;
+  built?: string;
+  home_major?: string;
+  checked?: string;
+}
+
+export type NodeCopyState =
+  | "preparing"
+  | "waiting"
+  | "copying"
+  | "rebuilding"
+  | "following"
+  | "behind"
+  | "starting"
+  | "incompatible"
+  | "unavailable"
+  | "error"
+  | "revoked";
 
 /** A machine's VOD fallback (design §11.5); {} when it serves its own. */
 export interface NodeVod {
@@ -176,6 +203,8 @@ export interface ClusterSelf {
   sso: boolean;
   agent_connected?: boolean;
   vod?: NodeVod & { checked_at: string };
+  /** a full node's copy of its home's database (Epic 37) */
+  copy?: NodeCopy;
   machines?: { role: "home" | "node"; id: string; name: string; web_url?: string }[];
   accept_joins?: boolean;
   served_at: string;

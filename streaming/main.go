@@ -211,12 +211,17 @@ func runServe() error {
 		startShareMap(bg, pool, logger)
 	}
 	var watch *dbWatch
+	// Epic 37: a full node's copy of its home's database
+	var copyPool *pgxpool.Pool
+	if fullNode {
+		copyPool = openCopy(bg, logger)
+	}
 	if pg, ok := probeBackend.(*probe.PGBackend); ok && fullNode && pool != nil {
 		watch = &dbWatch{ping: pool.Ping, logger: logger}
 		if !dbUp {
 			watch.Failed(errors.New("not answering at start"))
 		}
-		probeBackend = withCopy(bg, logger, pg, node.NodeID, watch)
+		probeBackend = withCopy(bg, pg, copyPool, logger, node.NodeID, watch)
 	}
 
 	// One session store for both surfaces: the gRPC OpenSession the API calls
@@ -247,7 +252,8 @@ func runServe() error {
 			publicHandler = buildNodeTV(bg, logger, cfg, pool, layout, node)
 		}
 		if fullNode {
-			publicHandler = splitFullNode(publicHandler, buildVOD(bg, logger, probeBackend, transcripts, sessions))
+			publicHandler = splitFullNode(publicHandler, buildVOD(bg, logger, probeBackend, transcripts, sessions),
+				buildOfflineTV(bg, logger, cfg, copyPool))
 		}
 	} else {
 		publicHandler = buildPublicHandler(bg, logger, probeBackend, transcripts, pool, sessions)

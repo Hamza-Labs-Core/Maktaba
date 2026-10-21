@@ -1,11 +1,12 @@
-// The notice a node shows while it cannot reach its home: pages stay readable
-// and videos it can read play (the node serves them on the sign-in the home
-// last confirmed); signing in or out and changes need the home. It polls
-// /api/cluster/self every HOME_OFFLINE_POLL_MS and calls onBack once the node
-// reports the home reachable again.
+// The notice a node shows while it cannot reach its home: pages stay readable,
+// signing in works and videos it can read play, from the node's own copy of the
+// home's database (Epic 37; the notice says how recent it is); changes need the
+// home. It polls /api/cluster/self every HOME_OFFLINE_POLL_MS and calls onBack
+// once the node reports the home reachable again.
 import { useEffect, useRef, useState } from "react";
 import { NODE_AVAILABLE_EVENT, NODE_UNAVAILABLE_EVENT, homeUnreachable } from "../lib/api";
-import { clusterApi } from "../lib/clusterApi";
+import { clusterApi, type NodeCopy } from "../lib/clusterApi";
+import { useFmt } from "./queue/format";
 import { useI18n } from "../lib/i18n";
 
 export const HOME_OFFLINE_POLL_MS = 5_000;
@@ -28,6 +29,8 @@ export function useHomeUnreachable(): boolean {
 
 export function HomeOffline({ onBack }: { onBack: () => void }) {
   const { t } = useI18n();
+  const fmt = useFmt();
+  const [copy, setCopy] = useState<NodeCopy | null>(null);
   const back = useRef(onBack);
   useEffect(() => {
     back.current = onBack;
@@ -39,11 +42,14 @@ export function HomeOffline({ onBack }: { onBack: () => void }) {
       clusterApi
         .getSelf()
         .then((s) => {
-          if (alive && s.home?.reachable === true) back.current();
+          if (!alive) return;
+          setCopy(s.copy ?? null);
+          if (s.home?.reachable === true) back.current();
         })
         .catch(() => {
           // this machine is restarting too: look again later
         });
+    void look();
     const timer = setInterval(() => void look(), HOME_OFFLINE_POLL_MS);
     return () => {
       alive = false;
@@ -51,9 +57,16 @@ export function HomeOffline({ onBack }: { onBack: () => void }) {
     };
   }, []);
 
+  const applied = copy?.applied_at;
   return (
     <div className="mkt-home-offline" role="status">
       <strong>{t("homeOffline.title")}</strong> {t("homeOffline.body")}
+      {applied && (
+        <span className="mkt-home-offline__copy">
+          {" "}
+          {t("homeOffline.copy", { ago: fmt.ago(applied) })}
+        </span>
+      )}
     </div>
   );
 }

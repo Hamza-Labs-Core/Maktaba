@@ -39,8 +39,11 @@ type SelfInfo struct {
 	SSO       bool      `json:"sso"`
 	AgentLink *bool     `json:"agent_connected,omitempty"`
 	VOD       any       `json:"vod,omitempty"`
-	ServedAt  time.Time `json:"served_at"`
-	Machines  []SelfRow `json:"machines,omitempty"`
+	// Copy is a full node's copy of its home's database (Epic 37): its supervisor's
+	// status of it (state, lag, when it last applied the home's changes).
+	Copy     json.RawMessage `json:"copy,omitempty"`
+	ServedAt time.Time       `json:"served_at"`
+	Machines []SelfRow       `json:"machines,omitempty"`
 	// AcceptJoins: the home's "accept new machines" switch (its mDNS join=1).
 	AcceptJoins bool `json:"accept_joins,omitempty"`
 }

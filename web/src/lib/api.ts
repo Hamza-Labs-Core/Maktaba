@@ -112,7 +112,20 @@ export function noteHomeBack(): void {
   if (typeof window !== "undefined") window.dispatchEvent(new Event(NODE_AVAILABLE_EVENT));
 }
 
-/** Whether this machine cannot reach its home (sign-in, sign-out and changes need it). */
+/**
+ * Fired when a sign-in made on this machine while its home was away meets a
+ * change once the home is back (401 {code: "signin_required"}): the home knows
+ * nothing of it, so the app asks for a sign-in with the home.
+ */
+export const SIGNIN_REQUIRED_EVENT = "maktaba:signin-required";
+
+function noteSignInRequired(status: number, problem: unknown): void {
+  if (status !== 401 || !problem || typeof problem !== "object") return;
+  if ((problem as { code?: unknown }).code !== "signin_required") return;
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(SIGNIN_REQUIRED_EVENT));
+}
+
+/** Whether this machine cannot reach its home (changes need it). */
 export function homeUnreachable(): boolean {
   return lastUnavailable?.code === "home_unreachable";
 }
@@ -213,6 +226,7 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
       try {
         const parsed = JSON.parse(text) as Problem;
         noteUnavailable(res.status, parsed);
+        noteSignInRequired(res.status, parsed);
         const err = new ApiError({ ...parsed, status: parsed.status || res.status });
         logApiError(method, path, err.status, err.message);
         throw err;

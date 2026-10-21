@@ -70,6 +70,8 @@ type tvBase struct {
 	caps     cluster.Capabilities
 	cpu      cpuLoad
 	loop     *cluster.HostLoop
+	// readOnly: the database is this machine's copy of the home's (offline_tv.go)
+	readOnly bool
 }
 
 type cpuLoad interface{ Load() float64 }
@@ -144,6 +146,9 @@ func (b *tvBase) newEngine(repo *channel.PGRepo, start channel.StartFunc, ident 
 			NVENCFree: channel.DefaultEncoderGate().Free(),
 			VTFree:    channel.DefaultVTGate().Free(),
 		}
+	}
+	if b.readOnly {
+		return engine
 	}
 	clearCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	if n, err := engine.ClearStaleRuntime(clearCtx); err != nil {
