@@ -280,12 +280,12 @@ jobs:
     # Manual rollout, or automatically once a tag's image is published,
     # but only in a repo that has a VPS: set the RELAY_DEPLOY repo
     # variable to 'true'. Without it a tag skips this job, so no
-    # deployment is recorded on `production`. `always()` lets a
-    # workflow_dispatch run (where `docker` is skipped) reach deploy; a
-    # tag needs docker to have succeeded, not been skipped because lint,
-    # test or build failed.
+    # deployment is recorded on `production`. `!cancelled()` lets a
+    # workflow_dispatch run (where `docker` is skipped) reach deploy, but
+    # not a cancelled run (`always()` would); a tag needs docker to have
+    # succeeded, not been skipped because lint, test or build failed.
     if: >-
-      always() &&
+      !cancelled() &&
       (
         (github.event_name == 'workflow_dispatch' && needs.docker.result == 'skipped') ||
         (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') &&

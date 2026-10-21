@@ -297,9 +297,9 @@ jobs:
 
       # Windows "portable" deliverable: zip the raw built executable so
       # users who can't run an installer get a self-contained .zip. Runs
-      # only on the Windows leg. The exe is named after the Cargo [[bin]]
-      # (maktaba-desktop): tauri.conf.json sets no mainBinaryName, so the
-      # CLI does not rename it to the productName.
+      # only on the Windows leg. The Tauri CLI renames the built exe to
+      # tauri.conf.json's mainBinaryName (Maktaba.exe); without one it keeps
+      # the Cargo [[bin]] name. Both are read here rather than hard-coded.
       - name: Package Windows portable .zip
         if: runner.os == 'Windows'
         shell: pwsh
@@ -309,9 +309,15 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $version = $env:TAG -replace '^v', ''
-          $exe = Get-ChildItem -Path 'apps/desktop/src-tauri/target/release' -Filter 'maktaba-desktop.exe' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+          $src = 'apps/desktop/src-tauri'
+          $name = (Get-Content "$src/tauri.conf.json" -Raw | ConvertFrom-Json).mainBinaryName
+          if (-not $name) {
+            $meta = cargo metadata --no-deps --format-version 1 --manifest-path "$src/Cargo.toml" | ConvertFrom-Json
+            $name = ($meta.packages[0].targets | Where-Object { $_.kind -contains 'bin' } | Select-Object -First 1).name
+          }
+          $exe = Get-Item -LiteralPath "$src/target/release/$name.exe" -ErrorAction SilentlyContinue
           if (-not $exe) {
-            Write-Error 'maktaba-desktop.exe not found under target/release — did the Tauri build succeed?'
+            Write-Error "$name.exe not found under $src/target/release — did the Tauri build succeed?"
           }
           New-Item -ItemType Directory -Force -Path out | Out-Null
           $zip = "out/maktaba-windows-portable-$version.zip"

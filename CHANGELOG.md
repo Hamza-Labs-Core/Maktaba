@@ -15,8 +15,9 @@ don't append a line here; docs-only PRs are exempt.
 - **Release builds for desktop, Android and Android TV.** The desktop app ships a
   (placeholder) icon set (#152), which the macOS and Windows bundles failed on. The Linux build
   stopped earlier: `tauri-plugin-deep-link` 2.6.2 does not compile against `rust-ini` 0.21.3,
-  so the desktop app's `Cargo.lock` holds `rust-ini` at 0.21.1. The Windows
-  portable `.zip` step looks for the exe by its real name (`maktaba-desktop.exe`), and a
+  so the desktop app pins `rust-ini` to 0.21.1 on Linux (`Cargo.toml` and `Cargo.lock`). The
+  Windows portable `.zip` step finds the exe under the name the Tauri CLI gives it
+  (`mainBinaryName`, else the Cargo bin name) instead of a hard-coded one, and a
   pre-release tag such as `v0.3.0-rc.1` gives the MSI the numeric version WiX requires. The
   Android and Android TV jobs no longer ask sdkmanager for the removed `tools` package.
 - **Unsigned Android builds stay off the release.** Without the keystore secrets the APK and
