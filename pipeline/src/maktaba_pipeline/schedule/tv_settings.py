@@ -137,6 +137,9 @@ class MaktabaTvConfig:
     #: programmes shorter than this are not listed: they count as filler (dizqueTV
     #: guideMinimumDurationSeconds)
     guide_min_program_s: int = 60
+    #: how long Plex (or any guide reader) may keep a guide image (a channel logo, a
+    #: programme's poster) before asking for it again
+    guide_image_max_age_s: int = 86400
 
 
 @dataclass(frozen=True)
@@ -597,6 +600,14 @@ register(
             "Programmes shorter than this are not listed in the guide: they count as filler.",
             minimum=0,
             maximum=3600,
+        ),
+        "guide_image_max_age_s": Help(
+            TVG,
+            "Guide images kept for (s)",
+            "How long Plex and other guide readers may keep a guide image (a channel's logo, "
+            "a programme's poster) before asking for it again. 0: they ask every time.",
+            minimum=0,
+            maximum=2592000,
         ),
     },
 )

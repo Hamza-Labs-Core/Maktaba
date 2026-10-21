@@ -44,6 +44,21 @@ roots = ["/var/lib/maktaba/media"]
 # (CUDA/CPU), or "openai". Linux servers default to faster-whisper.
 backend = "faster-whisper"
 model = "large-v3"
+# Linux transcribes with CTranslate2 (faster-whisper's models): on an NVIDIA
+# GPU when CUDA works there, else on the CPU. Every key below is optional;
+# 0 / "auto" is the default.
+# Where: "auto", "cuda" ("cuda:1": the second GPU) or "cpu".
+# device = "auto"
+# Precision: "auto" (float16 on the GPU, int8_float16 on one under 7 GB, int8
+# on the CPU), or float16, int8_float16, int8, int8_float32, float32.
+# compute_type = "auto"
+# Transcription workers beside the main worker, and how many files each
+# decodes together per GPU pass: sized from the GPU's memory (an 8 GB card:
+# one worker, 8 files); without a GPU the main worker transcribes, 4 at a time.
+# workers = 0
+# batch = 0
+# Threads on the CPU: half the logical CPUs (2 to 16).
+# cpu_threads = 0
 
 [cloud]
 # Optional cloud-link enrolment.

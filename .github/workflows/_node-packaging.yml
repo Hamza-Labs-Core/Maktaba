@@ -256,8 +256,9 @@ jobs:
 
   # Maktaba for Windows's first run (Epic 38, story 38.7): the bootstrap's tests on Windows
   # (real venvs, the msvcrt lock, CTRL_BREAK mid-download), then the venv built from the
-  # release's wheel and constraints by the python-build-standalone the app ships (pinned,
-  # checked by its SHA-256, laid out as <install>\server\python), the bootstrap run from
+  # release's wheel and constraints by the python-build-standalone the app ships (the pin in
+  # tools/release/win-app/pins.env, the payload's own, checked by its SHA-256, laid out as
+  # <install>\server\python), the bootstrap run from
   # the wheel itself, into its default %LOCALAPPDATA%\Maktaba\venv under a path with a
   # space; the search extra imports; a second run has nothing to do.
   venv-windows:
@@ -265,11 +266,18 @@ jobs:
     needs: [wheel]
     runs-on: windows-latest
     timeout-minutes: 45
-    env:
-      PBS_URL: https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.12.15%2B20261003-x86_64-pc-windows-msvc-install_only_stripped.tar.gz
-      PBS_SHA256: 6fba7f2ae506facf41d457ea8293c7497910a675c69a4e954875169410a50402
     steps:
       - uses: actions/checkout@v6.0.2
+
+      # the Python the Windows app ships: one pin, the payload's (it cannot drift from it)
+      - name: The app's python-build-standalone (pins.env)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # shellcheck source=/dev/null
+          . tools/release/win-app/pins.env
+          [ -n "${PYTHON_URL:-}" ] && [ -n "${PYTHON_SHA256:-}" ] || { echo "::error::pins.env has no PYTHON_URL / PYTHON_SHA256"; exit 1; }
+          { echo "PBS_URL=$PYTHON_URL"; echo "PBS_SHA256=$PYTHON_SHA256"; } >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v6.2.0
         with:

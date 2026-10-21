@@ -34,12 +34,24 @@ type AssetLooker interface {
 	Look(ctx context.Context, channelID uuid.UUID) (channel.Look, error)
 }
 
+// GuideArtFiles resolves the guide's images on the home (hdhr.GuideHandler):
+// the servable file, "" when there is none (or the video is not on air).
+type GuideArtFiles interface {
+	LogoFile(ctx context.Context, channelID uuid.UUID) string
+	ProgrammeFile(ctx context.Context, channelID, videoID uuid.UUID) string
+}
+
 // AssetHandler serves a channel's art from the home's disk to the nodes (signed,
 // ETag = sha256 of the file).
 type AssetHandler struct {
 	Looks   AssetLooker
 	PathMap pathmap.Map
 	Keyring *Keyring
+	// Guide, when set, also serves the guide's images a node's guide image
+	// routes show: kind "guide-logo" and "guide-video/{video}"
+	// (hdhr.AssetGuideLogo, hdhr.AssetGuideVideo), with the same checks as
+	// the home's public routes.
+	Guide GuideArtFiles
 
 	mu   sync.Mutex
 	sums map[string]assetSum // path → hash at (size, mtime)
@@ -54,6 +66,24 @@ type assetSum struct {
 // Mount wires the route behind the signature check.
 func (h *AssetHandler) Mount(r chi.Router) {
 	r.With(VerifyMiddleware(h.Keyring, nil)).Get(AssetsPath, h.serve)
+	r.With(VerifyMiddleware(h.Keyring, nil)).Get(GuideVideoAssetPath, h.serveGuideVideo)
+}
+
+// The guide's images on the signed route (hdhr.AssetGuideLogo, hdhr.AssetGuideVideo).
+const (
+	assetGuideLogo = "guide-logo"
+	// GuideVideoAssetPath is a programme's image.
+	GuideVideoAssetPath = "/internal/tv/assets/{channel}/guide-video/{video}"
+)
+
+func (h *AssetHandler) serveGuideVideo(w http.ResponseWriter, r *http.Request) {
+	ch, err1 := uuid.Parse(chi.URLParam(r, "channel"))
+	vid, err2 := uuid.Parse(chi.URLParam(r, "video"))
+	if err1 != nil || err2 != nil || h.Guide == nil {
+		http.NotFound(w, r)
+		return
+	}
+	h.serveFile(w, r, h.Guide.ProgrammeFile(r.Context(), ch, vid))
 }
 
 // assetPath picks the look's path for kind.
@@ -77,6 +107,14 @@ func (h *AssetHandler) serve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad channel", http.StatusBadRequest)
 		return
 	}
+	if chi.URLParam(r, "kind") == assetGuideLogo {
+		if h.Guide == nil {
+			http.NotFound(w, r)
+			return
+		}
+		h.serveFile(w, r, h.Guide.LogoFile(r.Context(), id))
+		return
+	}
 	look, err := h.Looks.Look(r.Context(), id)
 	if err != nil {
 		http.NotFound(w, r)
@@ -87,7 +125,15 @@ func (h *AssetHandler) serve(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	full := h.PathMap.Apply(p)
+	h.serveFile(w, r, h.PathMap.Apply(p))
+}
+
+// serveFile serves full ("" → 404) with its content hash as the ETag.
+func (h *AssetHandler) serveFile(w http.ResponseWriter, r *http.Request, full string) {
+	if full == "" {
+		http.NotFound(w, r)
+		return
+	}
 	fi, err := os.Stat(full)
 	if err != nil || fi.IsDir() {
 		http.NotFound(w, r)

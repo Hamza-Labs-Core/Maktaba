@@ -20,7 +20,15 @@ variables. This binary:
    that child, with backoff and a crash-loop guard, and the state is
    served at `GET /processes` on `[supervisor] admin_addr` (default
    `127.0.0.1:9103`). The api shows it at `/api/system/processes`
-   (Story 22.9; settings in `deploy/server.toml.example`).
+   (Story 22.9; settings in `deploy/server.toml.example`). On shutdown
+   each child is asked to stop, then killed with its process tree once
+   `--shutdown-grace` (default 30 s) is over: SIGTERM on Linux and
+   macOS; on Windows CTRL_BREAK to the child's own process group (Go
+   roles see `os.Interrupt`, the pipeline `SIGBREAK`), and
+   `pg_ctl stop -m fast` for Postgres. A `serve` without a console
+   (started detached by a program that has none) cannot send
+   CTRL_BREAK, so it kills those children at once and says so in its
+   log.
 4. Serves the embedded SPA in-process and reverse-proxies `/api` to the
    API service, so the whole app is reachable from one origin.
 

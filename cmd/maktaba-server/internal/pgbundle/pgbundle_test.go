@@ -341,7 +341,7 @@ func TestResolve(t *testing.T) {
 		t.Fatal(err)
 	}
 	payload := filepath.Join(tmp, "server")
-	for _, f := range []string{"bin/maktaba-server", "postgres/bin/postgres"} {
+	for _, f := range []string{filepath.Join("bin", exe("maktaba-server")), filepath.Join("postgres", "bin", exe("postgres"))} {
 		p := filepath.Join(payload, f)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
@@ -350,7 +350,7 @@ func TestResolve(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	exe := filepath.Join(payload, "bin", "maktaba-server")
+	exe := filepath.Join(payload, "bin", exe("maktaba-server"))
 	cfg := config.Defaults()
 
 	b, ok, err := Resolve(cfg, exe)
