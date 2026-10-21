@@ -1,0 +1,173 @@
+# Epic 39 — Maktaba for Linux: one installation that runs everything
+
+> **Status:** spec. **Source:** `specs/epics/39-linux-app/`.
+> **Anchors:** [Epic 36 — Maktaba.app](../36-mac-app/README.md) (the same app on a Mac: payload,
+> `setup --json`, the update contract), [Epic 35 — full machines and updates](../35-cluster-full-nodes-and-updates/README.md)
+> (the launcher, verified releases, `rules.updates`), Epic 37 — the node's copy of the home's
+> database (`feat/node-replica`: `pgbin`), **Epic 38 — the Windows app**, which builds the pieces
+> every platform shares (the setup steps, the next start after an update, the transcription engine
+> off Apple Silicon). This epic uses those pieces and adds what is Linux's own.
+
+## Goal
+
+The owner's decision (2026-10-20): *"also need the same one app setup on windows similar to mac … and
+another for linux"*.
+
+1. **One Linux installation runs everything**: the API, streaming (Live TV), the pipeline workers
+   *including transcription and the second listen*, semantic search, the web app, the database and
+   ffmpeg. It starts at boot and restarts anything that stops. No Docker, no distro Postgres, no
+   terminal steps.
+2. **It is a desktop app where there is a desktop**: install the AppImage (or the .deb / .rpm), open
+   it and follow the same short setup as on the Mac. The window is the web app. Closing it leaves the
+   server running, and the tray icon shows the server's status.
+3. **The same payload runs a machine without a desktop** (a NAS, a mini PC, a VM): unpack it, then
+   `maktaba-server setup` asks the same questions in the terminal. No window is needed.
+4. **Postgres is bundled** (Postgres 16.15 for x86_64 and aarch64), private to Maktaba, so it never
+   clashes with a distro Postgres.
+
+## Why (what exists on main, 1159ba47)
+
+| Piece | Released Linux install (`install.sh` / nfpm .deb / node installer) | What Maktaba.app does |
+|---|---|---|
+| API, streaming, web | ✅ binaries; system unit as user `maktaba` (nfpm) | the same binaries in the payload |
+| Pipeline | node installer only: a venv from the wheel; the home install has none | venv built on first run from the payload |
+| Transcription | ❌ the engine's `transcribe` stage is MLX only (`engine/stages/transcribe.py:55`), and the `stt` extra installs nothing off Apple Silicon (Epic 38.8 adds the engine for Windows and Linux) | MLX turbo + the Cohere second listen |
+| Database | SQLite by default, or a Postgres you bring | bundled Postgres 16.15 (36.1) |
+| ffmpeg / Python | distro packages (`Depends: ffmpeg, python3`) | bundled, pinned |
+| Autostart | system unit (root to install) or the node's user unit + linger | login item |
+| Setup | `maktaba-server setup` (CLI wizard, SQLite-oriented) | screens over `setup --json` (only `status` exists on main; Epic 38.6 adds the rest) |
+| Updates | `maktaba-server update` / Epic 35 rollouts (Go binaries only) | the app updater (the next-start contract is Epic 38.12) |
+
+`apps/desktop` already builds a Linux .deb and AppImage (`desktop-release.yml`), but only as a client:
+no payload, no service, and macOS-only code in `agent.rs` (SMAppService, launchctl, `/usr/bin/open`).
+
+## Shape
+
+```
+Maktaba_<v>_amd64.AppImage  ·  maktaba_<v>_amd64.deb  ·  maktaba-<v>-1.x86_64.rpm      (and aarch64)
+  usr/bin/Maktaba                 the Tauri shell: window = web app, tray, setup screens
+  usr/lib/Maktaba/server/         the server payload, the same tree as Maktaba.app's Resources/server
+    bin/       maktaba-server (web embedded) maktaba-api maktaba-streaming maktaba-launcher
+    postgres/  bin/ lib/ share/   theseus-rs 16.15.0 <arch>-unknown-linux-gnu, plus the libraries it
+                                  links that a minimal system can lack (OpenSSL 3, libxml2, lz4, zstd,
+                                  krb5), with an $ORIGIN rpath
+    ffmpeg/    ffmpeg ffprobe     ffmpeg.martin-riedl.de 8.1.2 (the Mac's source), linux amd64/arm64
+    python/    CPython 3.12.15    python-build-standalone <arch>-unknown-linux-gnu
+    pipeline/  maktaba_pipeline-<v>-py3-none-any.whl  constraints.txt
+    licenses/  payload.json       versions, sources, SHA-256s, and every file's SHA-256 (new)
+
+maktaba-server-<v>-linux-<arch>.tar.gz     the same server/ tree, for a machine without a desktop
+```
+
+Per-user state, XDG throughout (`config.DirsFor` already resolves these on Linux):
+
+| Where | What |
+|---|---|
+| `~/.config/maktaba/` | `server.toml`, keys (`secrets.key`, `stream-signing.key`, `postgres-*.password`) |
+| `~/.local/share/maktaba/` (data_dir) | `postgres/` (cluster), `venv/`, `models/`, `chroma/`, `backups/`, `runtime/` (below), `state/` |
+| `~/.cache/maktaba/` | the streaming cache (`MAKTABA_CACHE_ROOT`), pip's cache for the venv build, update downloads |
+| `~/.local/state/maktaba/logs/` | `server.log` (rotated), `venv.log`, `launcher.log` |
+| `~/.config/systemd/user/maktaba-server.service` | the server's unit; linger keeps it running at boot without a login |
+| `~/.config/autostart/maktaba.desktop` | the tray at login (desktop installs only) |
+
+- **The server runs from a per-user copy of the payload, `runtime/<v>/`** (story 39.3), never from
+  the AppImage or `/usr/lib`. An AppImage is mounted at a new `/tmp/.mount_*` path on every run and only
+  while it runs. A package upgrade replaces files under a running server, and a Python worker would
+  then start against a venv built for the old payload. The copy makes updates inert until the server
+  is stopped: install `runtime/<new>`, stop the unit, point `runtime/current` at the new version,
+  start it. The previous version is kept: its Postgres can `pg_upgrade` a future major bump, which
+  Maktaba.app cannot do. See [contract-runtime.md](contract-runtime.md).
+- **The server is a systemd user service** (`maktaba-server.service`, story 39.5). It runs
+  `runtime/current/bin/maktaba-launcher serve` in app-bundle mode, with `Restart=always`,
+  `KillMode=mixed` and `TimeoutStopSec=90` (the launcher's 60 s stop grace). Linger
+  (`loginctl enable-linger`) starts it at boot. Pause and Resume are `systemctl --user stop|start`.
+- **`maktaba-server` supervises** postgres → api → streaming → pipeline (main worker) + N
+  transcription workers, as on the Mac.
+- **The venv is built on first run** from the payload (`venv_bootstrap`, already POSIX) with
+  progress in setup. It is built against `runtime/current/python` (the unresolved path), so a payload
+  update with the same Python minor version needs no rebuild.
+- **Supported systems:** x86_64 and aarch64, glibc ≥ 2.35, with a systemd user manager: Ubuntu 22.04+,
+  Debian 12+, Fedora 36+, RHEL/Alma/Rocky 10, Linux Mint 21+, Pop!_OS 22.04+. The baseline is set by
+  the ffmpeg and Tauri builds (glibc 2.35, libstdc++ of GCC 12). The bundled Postgres needs 2.34.
+  `check` refuses lower (story 39.6).
+
+## Decisions
+
+### Packaging and updates: the Tauri updater, AppImage first; no apt/dnf repository
+
+- **AppImage** is the main download: per-user, no root to install or update, and one file for every
+  distro on the baseline. **.deb and .rpm** come from the same `tauri build` for people who want
+  package-manager integration (menu entry, `apt remove`). They carry the same payload and declare
+  their libraries (`webkit2gtk-4.1`, `libayatana-appindicator3`) as dependencies.
+- **One updater, the app's**, as on the Mac and Windows. tauri-plugin-updater 2.10+ (we lock 2.14.0)
+  updates all three Linux formats: it replaces the AppImage in place, and installs a .deb/.rpm through
+  the system's admin prompt. The feed is the same `latest.json` on the GitHub release, signed with
+  the same updater key.
+- **Not an apt/dnf repository.** It would be a second updater with a second trust root (a GPG repo
+  key to create, host, rotate and publish). It would need hosting for the repository metadata, and
+  root for every update. Updates would also land whenever the user runs `apt upgrade`, not when
+  Maktaba is ready for them. With the runtime copy, a package manager's upgrade is harmless anyway:
+  the new payload only runs once the shell activates it, in the order the update contract needs
+  (backup, migrate, venv).
+- **Headless machines** have no shell to run the Tauri updater. They update through Epic 35's
+  verified-release path (Sigstore-signed `checksums.txt`, the watermark, `rules.updates`' quiet
+  window and rollout). The artifact is the payload tarball, installed as a new runtime (story 39.9).
+
+### Transcription: Epic 38's engine
+
+Linux uses the engine Epic 38 builds for every machine off Apple Silicon: Whisper on CTranslate2 (38.8;
+CUDA on an NVIDIA GPU, `int8` on the CPU) and the Cohere second listen through transformers (38.9).
+What Linux adds is in [contract-stt-linux.md](contract-stt-linux.md): NVIDIA detection through
+`/proc/driver/nvidia`, the pip CUDA libraries on the loader's path, aarch64 as CPU, and CI on both
+architectures.
+
+## Stories
+
+| # | Story | Scope |
+|---|---|---|
+| 39.1 | **This spec** | this README, [contract-runtime.md](contract-runtime.md), [contract-stt-linux.md](contract-stt-linux.md), [headless.md](headless.md) |
+| 39.2 | **The Linux payload** | `tools/release/linux-app/` (beside `mac-app/` and Epic 38's `win-app/`): `pins.env` per architecture (the Postgres SHA-256s equal `pgbin`'s, and a test keeps them equal), `payload.sh` (Go binaries for linux/amd64 or arm64, Postgres plus its library closure from the build host with an `$ORIGIN` rpath, ffmpeg, Python, the wheel and constraints; payload.json with `files`, every file's SHA-256, and `min_glibc`), and `check.sh`. `check.sh` scans every ELF for its newest GLIBC symbol, runs `initdb`, starts and queries a cluster, and runs `ffprobe`, the bundled Python and `venv_bootstrap --check`. `make linux-app-payload`. CI `_linux-app.yml` on ubuntu-22.04 and ubuntu-22.04-arm builds the payload and runs `check.sh` inside `ubuntu:22.04`, `debian:12-slim` and `fedora:40` |
+| 39.3 | **Runtime copy** | `maktaba-server runtime install --from <payload> \| activate \| status \| prune` ([contract-runtime.md](contract-runtime.md)): copy into `runtime/.staging-*`, verify against `files`, rename, flip `current` while the unit is stopped, keep the previous version, prune the rest, all under a lock. On top of 38.2's payload detection in the launcher: `MAKTABA_APP_BUNDLE` is the unresolved `runtime/current`, the state root is XDG on Linux, `--log-file` with rotation, and `owner` decides whether the app or the machine updates it |
+| 39.4 | **Linux paths in app-bundle mode** | `MAKTABA_CACHE_ROOT` and pip's cache under `$XDG_CACHE_HOME/maktaba`; the venv's log under the logs dir. The bundled Postgres's `enabled = "auto"` inside any payload is 38.10's |
+| 39.5 | **The systemd user service** | `internal/service`: the app's user unit (the `runtime/current` launcher, `--log-file`), and `maktaba-server service install \| uninstall \| status \| start \| stop \| restart \| linger` (`--json`). The shell and the headless setup both call it, so neither writes units itself. Linger: polkit allows it without a password from an active desktop session; over SSH, `loginctl` asks in the terminal. `status` reports a missing user manager (no systemd as PID 1, e.g. WSL) as `unsupported` with the reason |
+| 39.6 | **Setup on Linux** | the Linux part of 38.6's `check` (architecture, glibc ≥ 2.35, the systemd user manager and linger, a self-managed install that owns the unit already, disk, RAM). The `venv` step installs the runtime first (`stage: runtime`), and `finish` installs the service. `maktaba-server setup` on a machine with a payload and no window runs the same steps in the terminal ([headless.md](headless.md)), with `--answers` for automation |
+| 39.7 | **Transcription on Linux** | per [contract-stt-linux.md](contract-stt-linux.md), on 38.8/38.9: NVIDIA detection on Linux, the driver checks, `LD_LIBRARY_PATH` to the venv's CUDA wheels, `CUDA_VISIBLE_DEVICES` per worker, aarch64 as CPU, and the Linux CI of the engine |
+| 39.8 | **The desktop shell on Linux** | `apps/desktop`: the payload from tauri's resource dir (`/usr/lib/Maktaba/server`, `$APPDIR/usr/lib/Maktaba/server`), a linux server-service module (beside macOS's and Windows') that drives `maktaba-server service`, and a runtime install on start when the bundled payload differs from `runtime/current`. The tray uses StatusNotifier/AppIndicator (libayatana-appindicator). Where no `org.kde.StatusNotifierWatcher` exists (GNOME without the extension), closing the window quits the shell (the server keeps running) and the window's menu carries the tray's items. Plus the autostart entry for the tray, `xdg-open` for logs and links, and setup's Linux examples |
+| 39.9 | **Updates on Linux** | on 38.12's next start: the Linux updater artifacts (`createUpdaterArtifacts`, the `linux-*` keys of `latest.json` for AppImage/deb/rpm). After an update, the new shell runs `runtime install --activate`. Headless: `maktaba-server update` and the Epic 35 rollout fetch the payload tarball, verify it against the release's signed `checksums.txt`, `runtime install` it and restart into it (launcher exit 75 → systemd starts the new `current`); a payload that does not confirm rolls back to the previous runtime |
+| 39.10 | **Release CI** | `desktop-release.yml` Linux legs on ubuntu-22.04 (x86_64) and ubuntu-22.04-arm (aarch64): payload, then `tauri build --bundles appimage,deb,rpm` with the payload overlay, then `check.sh --app`. `release.yml` publishes `maktaba-server-<v>-linux-<arch>.tar.gz` in `checksums.txt` / `release.json`, so headless installs verify it. `install.sh --app` installs a headless machine ([headless.md](headless.md)) |
+| 39.11 | **End-to-end on a real systemd** | CI on an ubuntu runner with a user manager (linger on, `XDG_RUNTIME_DIR`): unpack the payload, `setup --answers`, and the unit runs every role. The web app and API answer on 127.0.0.1. A restart and a `systemctl --user kill` come back, and an update from a previous payload takes the backup, migrates, and keeps the venv when the constraints are unchanged |
+| 39.12 | **Clean up** | docs (`docs/wiki/deployment.md`, `apps/desktop/README.md`, `deploy/packaging/README.md`): "Install on Linux" → the app or the headless payload. The nfpm system-unit .deb stays for operators who want a system service, documented as such |
+
+## Order and parallel tracks
+
+- **Track A (server, Go):** 39.3 → 39.4 → 39.5, then 39.6 (after 38.6) and 39.9 (after 38.12).
+- **Track B (pipeline):** 39.7 (after 38.8).
+- **Track C (shell, Rust + web):** 39.8 (needs 39.3, 39.5, and 38.3's split of `agent.rs` per OS).
+- **Track D (packaging, CI):** 39.2 → 39.10 → 39.11 (39.2 starts on the layout above).
+- **Then:** 39.12.
+
+Each story ships as its own PR with tests, through the usual flow (CI green, review, merge).
+
+## Shared with Epic 36 and Epic 38
+
+| Piece | Built in | Linux adds |
+|---|---|---|
+| `setup --json` steps, the screens' platform wording | 38.6 | `check`'s Linux items, the terminal wizard (39.6) |
+| supervisor's next start after an update | 38.12 | runtime activation before it (39.9) |
+| launcher payload detection beyond `.app`, per-OS state root | 38.2 | the unresolved `runtime/current`, `--log-file` (39.3) |
+| `[postgres] enabled = "auto"` in any payload | 38.10 | nothing |
+| Whisper off Apple Silicon (CTranslate2), the second listen on torch | 38.8, 38.9 | Linux GPU detection and libraries (39.7) |
+| `pgbin` (Postgres 16.15 per platform) | Epic 37 | the payload's pins equal its pins (39.2) |
+
+## Owner decisions still open
+
+- **The Tauri updater key pair** (as for the Mac and Windows): `plugins.updater.pubkey` is still
+  `REPLACE_WITH_PUBKEY`. Without it no Linux build can update itself, and every update is a new
+  download.
+- **GNOME without the AppIndicator extension** shows no tray icon (Ubuntu ships the extension; Fedora
+  Workstation does not). The app still works there (the window's menu has the same items). Should
+  setup offer to open the extension's page?
+- **CPU-only torch.** torch from PyPI brings its CUDA 13 libraries (~3 GB) to every Linux x86_64
+  venv, NVIDIA or not. A CPU-only constraints variant (torch from the PyTorch CPU index) would save
+  that on machines without NVIDIA, at the cost of a second exported lock. This is a follow-up, measured
+  after 39.7.
