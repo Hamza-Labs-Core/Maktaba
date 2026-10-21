@@ -90,6 +90,13 @@ don't append a line here; docs-only PRs are exempt.
   now turns the bundled Postgres on inside any desktop app's payload, not only on a Mac (a
   `[database] url` or a SQLite database in use still wins). The app's roles find the payload's
   `ffmpeg.exe`. Loopback TCP only on Windows, the nightly dumps as on the Mac.
+- **The desktop app runs the server on Linux** (Epic 39, story 39.8). When setup finishes, the
+  app copies its server into `~/.local/share/maktaba/runtime` and runs it as the user's systemd
+  service, started at boot through linger; after an app update it moves the server to the new
+  version at its next start (an app older than the server leaves it alone and says so). Pause,
+  Resume and Stop server work from the tray, or from the window's Server menu where the desktop
+  shows no tray; the tray starts at login when it can be shown. The tray, the Server menu and the
+  app's dialogs follow the session's language (English or Arabic).
 
 ### Changed
 
