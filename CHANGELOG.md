@@ -41,8 +41,9 @@ don't append a line here; docs-only PRs are exempt.
   the server runs as an administrator, as the Windows service does: Postgres refuses
   administrative rights). Groundwork for the Windows and Linux apps and for full nodes' copies of
   the home's database (#178).
-- **Maktaba on a Linux machine without a desktop** (Epic 39, story 39.6). `install.sh --app`
-  verifies the release first (with the machine's cosign when it is 2.4.3 or newer, else a pinned
+- **Maktaba on a Linux machine without a desktop** (Epic 39, story 39.6). Each release carries
+  `install.sh` among its assets (in the signed `checksums.txt`; the release notes no longer pipe it
+  from a branch), and `install.sh --app` verifies the release first (with the machine's cosign when it is 2.4.3 or newer, else a pinned
   cosign it fetches), then `maktaba-server setup` asks the desktop app's questions in the terminal,
   in English or Arabic: the server is copied into `~/.local/share/maktaba/runtime`, then runs as
   the user's systemd service, started at boot through linger. The check also reports glibc, the
@@ -80,15 +81,6 @@ don't append a line here; docs-only PRs are exempt.
   38.2). It holds a handle to the server until it is reaped and asks it to stop only while it
   still runs: a CTRL_BREAK naming a pid that leads no process group (a server that exited as the
   launcher was stopping, its pid reused) goes astray and can end the launcher itself.
-- **`maktaba-server setup` (the CLI wizard) seeds the admin again.** It called `adduser` with
-  `--username`/`--password` flags the api does not have; it now passes the username and a
-  password file.
-- **After the app's setup the server runs on the bundled Postgres, with its transcription
-  workers.** Saving `server.toml` wrote every default, so setup's `finish` left `[database] url`
-  set to the default SQLite file: the next start never ran the bundled Postgres (the database setup
-  had made sat unused, and the pipeline could not open the SQLite one), and
-  `[pipeline] instances = 0` turned the workers off. A save now writes the url only when one was
-  chosen and the count only when it was set (`setup --node --instances 0` included).
 
 - **Release builds for desktop, Android and Android TV.** The desktop app ships a
   (placeholder) icon set (#152), which the macOS and Windows bundles failed on. The Linux build

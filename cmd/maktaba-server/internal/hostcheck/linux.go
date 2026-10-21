@@ -93,6 +93,10 @@ func (l Linux) Check(ctx context.Context) Result {
 	}
 	st := l.Manager.Status(ctx, l.Unit)
 	switch {
+	case l.Manager.Booted != nil && !l.Manager.Booted():
+		// no login of the user starts a manager here: nothing they can do
+		r.problem("systemd_missing", "systemd does not run this system (a container, or WSL without systemd): the server "+
+			"runs as a systemd user service, so Maktaba needs a Linux that starts with systemd.")
 	case st.Manager != "ok":
 		// a shell from sudo -iu or su has no user manager of its own: a login of
 		// that user starts one, and linger keeps it at boot

@@ -3527,6 +3527,7 @@
   "setup.check.note.transcribe_cpu": "لا توجد بطاقة رسوميات من NVIDIA: يفرّغ {machine} على معالجه، وهذا أبطأ بأضعاف من بطاقة الرسوميات.",
   "setup.check.note.glibc_missing": "لا توجد في نظام لينكس هذا مكتبة GNU C (glibc) التي تحتاجها نسخ Postgres وffmpeg وPython المرفقة (لا تستطيع Alpine وغيرها من أنظمة musl تشغيلها).",
   "setup.check.note.glibc_old": "في نظام لينكس هذا glibc {have}، وتحتاج مكتبة إلى {need} أو أحدث (Ubuntu 22.04 أو Debian 12 أو Fedora 36 أو RHEL 10 أو أحدث).",
+  "setup.check.note.systemd_missing": "لا يعمل systemd على هذا النظام (حاوية، أو WSL دون systemd): يعمل الخادم كخدمة systemd خاصة بالمستخدم، فتحتاج مكتبة إلى نظام لينكس يبدأ بـsystemd.",
   "setup.check.note.user_manager_missing": "يعمل الخادم كخدمة systemd خاصة بك، ولا يستطيع {machine} تشغيلها: {reason}. سجّل الدخول باسم {user} مباشرةً (عبر SSH أو من الشاشة، لا عبر sudo أو su)، أو اطلب من المسؤول تشغيل `loginctl enable-linger {user}`، ثم شغّل الإعداد من جديد.",
   "setup.check.note.service_system_wide": "خدمة مكتبة مثبّتة على مستوى النظام ({unit}): ستكون خادمًا ثانيًا على المنافذ نفسها. يزيلها مسؤول النظام أولًا (sudo apt remove maktaba-server أو sudo systemctl disable --now maktaba-server).",
   "setup.check.note.service_taken": "تثبيت آخر لمكتبة يملك الخدمة {unit} (يشغّل {runs}). أزِله أولًا (maktaba-server uninstall من ذلك التثبيت).",

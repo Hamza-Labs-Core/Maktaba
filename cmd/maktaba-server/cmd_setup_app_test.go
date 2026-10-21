@@ -390,16 +390,16 @@ func TestReadAnswers(t *testing.T) {
 	dir := t.TempDir()
 	good := filepath.Join(dir, "a.json")
 	_ = os.WriteFile(good, []byte(`{"admin":{"username":"a","password":"b"},"plex":{"action":"skip"},"llm":{}}`), 0o600)
-	m, err := readAnswers(good, 0)
+	m, err := readAnswers(textsFor("en"), good, 0)
 	if err != nil || len(m) != 3 {
 		t.Errorf("answers %v %v", m, err)
 	}
 	bad := filepath.Join(dir, "b.json")
 	_ = os.WriteFile(bad, []byte(`{"admn":{}}`), 0o600)
-	if _, err := readAnswers(bad, 0); err == nil || !strings.Contains(err.Error(), `"admn"`) {
+	if _, err := readAnswers(textsFor("en"), bad, 0); err == nil || !strings.Contains(err.Error(), "names admn, which is not a setup step") {
 		t.Errorf("a misspelt step: %v", err)
 	}
-	if m, err := readAnswers("", 0); m != nil || err != nil {
+	if m, err := readAnswers(textsFor("en"), "", 0); m != nil || err != nil {
 		t.Errorf("no answers: %v %v", m, err)
 	}
 }
@@ -421,10 +421,43 @@ func TestAppSetupLinksPlexLater(t *testing.T) {
 	if !strings.HasSuffix(strings.Join(f.calls, " "), "venv models llm finish") {
 		t.Errorf("steps %v", f.calls)
 	}
-	for _, w := range []string{"The Plex code expired. Try again.", "link it later in Settings"} {
-		if !strings.Contains(out.String(), w) {
-			t.Errorf("output lacks %q:\n%s", w, out.String())
-		}
+	// one line: no "try again" beside "later"
+	if !strings.Contains(out.String(), "  The Plex code expired: link Plex later in Settings.\n") ||
+		strings.Contains(out.String(), "Try again") {
+		t.Errorf("output:\n%s", out.String())
+	}
+}
+
+// A poll that fails otherwise (not an expired code, not the network) ends the
+// setup with its failure, as the CLI wizard does, instead of passing for
+// "later"; plex.tv out of reach for the code itself leaves Plex for later.
+func TestAppSetupPlexFailures(t *testing.T) {
+	f := interactiveSteps()
+	f.answers["plex"] = []any{map[string]any{"pin_id": 7, "code": "ABCD", "link_url": "https://plex.tv/link"},
+		&stepFailure{Code: "disk_full", Message: "no space left on device"}}
+	var out bytes.Buffer
+	a := &appSetup{run: f.run, ask: interactive(t), out: &out, t: textsFor("en"), pollEvery: time.Millisecond}
+	err := a.Run(context.Background())
+	var sf *stepFailure
+	if !errors.As(err, &sf) || sf.Code != "disk_full" {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	if got := f.inputs["plex"]; len(got) != 2 {
+		t.Errorf("plex inputs %v", got)
+	}
+
+	f = interactiveSteps()
+	f.answers["plex"] = []any{&stepFailure{Code: "network", Message: "plex.tv did not answer"}, map[string]any{}}
+	out.Reset()
+	a = &appSetup{run: f.run, ask: interactive(t), out: &out, t: textsFor("en"), pollEvery: time.Millisecond}
+	if err := a.Run(context.Background()); err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	if got := f.inputs["plex"]; len(got) != 2 || got[1] != `{"action":"skip"}` {
+		t.Errorf("plex inputs %v", got)
+	}
+	if w := "  Maktaba could not reach the internet. Plex is not linked now: link it later in Settings.\n"; !strings.Contains(out.String(), w) {
+		t.Errorf("output lacks %q:\n%s", w, out.String())
 	}
 }
 
@@ -517,9 +550,17 @@ func TestEndError(t *testing.T) {
 	if err := endError(ar, nil); err != nil {
 		t.Errorf("nil: %v", err)
 	}
-	if err := endError(ar, wrapStep("venv", &stepFailure{Code: "venv_failed", Message: "pip failed"})); err == nil ||
-		err.Error() != ar.get("setup.error.venv_failed") {
+	// the step's own words below its code's: the build's last lines, its log
+	venv := &stepFailure{Code: "venv_failed", Message: "uv: no matching wheel\nfull log: /home/me/.local/state/maktaba/logs/venv.log"}
+	if err := endError(ar, wrapStep("venv", venv)); err == nil || err.Error() != ar.get("setup.error.venv_failed")+
+		"\n  uv: no matching wheel\n  full log: /home/me/.local/state/maktaba/logs/venv.log" {
 		t.Errorf("a step's failure: %v", err)
+	}
+	// nothing twice where the step's words are its code's
+	en := textsFor("en")
+	same := &stepFailure{Code: "disk_full", Message: en.get("setup.error.disk_full")}
+	if err := endError(en, same); err == nil || err.Error() != en.get("setup.error.disk_full") {
+		t.Errorf("the same words: %v", err)
 	}
 	if err := endError(ar, errCancelled); err == nil || err.Error() != ar.get("terminal.cancelled") {
 		t.Errorf("cancel: %v", err)
