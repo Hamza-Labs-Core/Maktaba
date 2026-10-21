@@ -40,7 +40,10 @@ Resume, or the next sign-in runs the server again (an update offered again finis
 Built in this story for the Mac, Windows and Linux; the full rules are Epic 36's contract
 ([What the supervisor does on its next start](../36-mac-app/contract-update.md)). One **database
 step** runs before every process but Postgres and the model server, which wait on it and show its
-progress as their `detail`:
+progress as their `detail`. Not on a machine that joined a home (the api in node mode: it reads
+the home's database and never migrates, and Epic 37 keeps its copy): there is no database step,
+nothing is dumped, migrated or recorded, and every role starts at once. Nor does a `serve --role`
+without the api write a record.
 
 - **The record** `<state>\state\database.json` names the release whose migrations the database
   holds, written before any role runs (`state\payload.json`, the copy saved after three healthy
