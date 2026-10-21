@@ -1,10 +1,17 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
+
+// waitDelay bounds how long Wait waits for a server's output after the server
+// exits: a writer that is not a file is copied through a pipe its children
+// inherit (run.go), and they may outlive it.
+var waitDelay = 5 * time.Second
 
 // logRotateBytes is when --log-file is renamed to <file>.1 (one old copy kept).
 const logRotateBytes = 50 << 20
@@ -22,7 +29,8 @@ type logFile struct {
 }
 
 func openLogFile(path string, limit int64) (*logFile, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	// the server's output can hold paths and names of the library: the user's only
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
 	l := &logFile{path: path, limit: limit}
@@ -36,7 +44,7 @@ func openLogFile(path string, limit int64) (*logFile, error) {
 }
 
 func (l *logFile) open() error {
-	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
 	}
@@ -71,4 +79,35 @@ func (l *logFile) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.f.Close()
+}
+
+// logPipe is serve's --log-file: a pipe whose write end the launcher and the
+// server write to, copied into the rotating log. The server gets a real file
+// descriptor (not a writer exec must copy for it), so its exit is seen at once
+// even while children it left behind still hold the pipe. done closes the
+// write end and waits a little for the copy to finish.
+func logPipe(path string) (w *os.File, done func(), err error) {
+	lf, err := openLogFile(path, logRotateBytes)
+	if err != nil {
+		return nil, nil, err
+	}
+	r, w, err := os.Pipe()
+	if err != nil {
+		_ = lf.Close()
+		return nil, nil, err
+	}
+	copied := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(lf, r)
+		close(copied)
+	}()
+	return w, func() {
+		_ = w.Close()
+		select {
+		case <-copied:
+		case <-time.After(2 * time.Second): // a child still holds the pipe
+		}
+		_ = r.Close()
+		_ = lf.Close()
+	}, nil
 }

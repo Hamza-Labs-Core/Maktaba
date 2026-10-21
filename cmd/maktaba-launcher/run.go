@@ -112,6 +112,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 	defer layout.Unlock(lk)
+	becomeSubreaper() // Linux: what a crashed server leaves behind comes back to us
 	ln := &launcher{cfg: cfg, l: l, log: newEventLog(l.LauncherLog(), cfg.Stderr, cfg.Now)}
 	defer ln.log.Close()
 	if cfg.Bundle == "" {
@@ -296,6 +297,9 @@ func (ln *launcher) runOnce(ctx context.Context, ver string) runResult {
 	cmd.Dir = ln.l.Root
 	cmd.Env = append(os.Environ(), env...)
 	cmd.Stdout, cmd.Stderr = ln.cfg.Stdout, ln.cfg.Stderr
+	// A writer that is not a file is fed through a pipe the server's own children
+	// inherit: Wait must not wait for them once the server is gone.
+	cmd.WaitDelay = waitDelay
 	prepareChild(cmd)
 	start := ln.cfg.Now()
 	if err := cmd.Start(); err != nil {
@@ -326,6 +330,7 @@ func (ln *launcher) runOnce(ctx context.Context, ver string) runResult {
 		case <-ctx.Done():
 			return finish(ln.stop(cmd, child, done, stopFile), runResult{stopped: true})
 		case <-tick.C:
+			child.reap()
 			if ln.guardVersion == ver && ln.isPending(ver) &&
 				ln.cfg.Now().Sub(ln.firstStart) >= ln.cfg.PendingTimeout {
 				ln.log.Event("launcher_pending_timeout", ver, map[string]any{"after_s": int(ln.cfg.PendingTimeout.Seconds())})
