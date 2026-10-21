@@ -553,6 +553,35 @@ func TestAppSetupPlexWaitSkips(t *testing.T) {
 	}
 }
 
+// A Ctrl+C that ends the poll's process too (one process group) is a skip, even
+// when the poll's failure comes back before the signal is seen.
+func TestAppSetupPlexSkipThatEndsThePoll(t *testing.T) {
+	f := interactiveSteps()
+	skip := make(chan struct{})
+	polls := 0
+	run := func(ctx context.Context, step string, input any, progress func(stepEvent)) (json.RawMessage, error) {
+		if in, _ := json.Marshal(input); step == "plex" && strings.Contains(string(in), `"poll"`) {
+			polls++
+			time.AfterFunc(50*time.Millisecond, func() { close(skip) }) // the signal, seen late
+			return nil, &stepFailure{Code: "no_result", Message: "setup step plex gave no result (signal: interrupt)"}
+		}
+		return f.run(ctx, step, input, progress)
+	}
+	f.answers["plex"] = []any{map[string]any{"pin_id": 7, "code": "ABCD", "link_url": "https://plex.tv/link"}, map[string]any{}}
+	var out bytes.Buffer
+	a := &appSetup{run: run, ask: interactive(t), out: &out, t: textsFor("en"), pollEvery: time.Millisecond,
+		skipWait: func() (<-chan struct{}, func()) { return skip, func() {} }}
+	if err := a.Run(context.Background()); err != nil {
+		t.Fatalf("the skip ended the setup: %v\n%s", err, out.String())
+	}
+	if polls != 1 || !strings.Contains(out.String(), "link it later in Settings") {
+		t.Errorf("polls %d:\n%s", polls, out.String())
+	}
+	if got := f.inputs["plex"]; got[len(got)-1] != `{"action":"skip"}` {
+		t.Errorf("plex inputs %v", got)
+	}
+}
+
 func TestEndError(t *testing.T) {
 	ar := textsFor("ar")
 	if err := endError(ar, nil); err != nil {

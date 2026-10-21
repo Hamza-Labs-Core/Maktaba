@@ -613,10 +613,17 @@ func (a *appSetup) plex(ctx context.Context) error {
 			return a.plexLater(ctx, a.t.get("terminal.plexExpired"))
 		}
 		res, err := a.run(ctx, "plex", map[string]any{"action": "poll", "pin_id": pin.PinID}, nil)
+		// A Ctrl+C reaches the poll's process too (one process group): when the poll
+		// failed, give the signal's delivery a moment to say so before taking the
+		// failure for the poll's own.
+		grace := time.Duration(0)
+		if err != nil && skipped != nil {
+			grace = skipGrace
+		}
 		select {
-		case <-skipped: // the Ctrl+C reached the poll as well
+		case <-skipped:
 			return a.plexLater(ctx, a.t.get("terminal.plexLater"))
-		default:
+		case <-time.After(grace):
 		}
 		switch {
 		case errors.As(err, &f) && f.Code == "pin_expired":
@@ -718,6 +725,10 @@ func runAppSetupCmd(answersFile string, answersFD int, lang string) error {
 	}
 	return endError(t, a.Run(context.Background()))
 }
+
+// skipGrace is how long a failed poll waits for the Ctrl+C that may have ended it
+// to show as one: the signal reaches this process and the poll's together.
+var skipGrace = 500 * time.Millisecond
 
 // interruptSkips is appSetup.skipWait on a terminal: while the wait is on, a
 // Ctrl+C ends it instead of the setup (the step it reaches as well ends, and
