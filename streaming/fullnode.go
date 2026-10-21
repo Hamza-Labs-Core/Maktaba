@@ -28,12 +28,14 @@ func buildVOD(bg *background, logger *slog.Logger, backend probe.Backend, transc
 	return buildPublicHandler(bg, logger, backend, transcripts, nil, store)
 }
 
-// splitFullNode sends the channel routes the front door forwards (signed) and the
-// node's internal TV routes to the TV handler, everything else to VOD.
+// splitFullNode sends the channel routes the front door forwards (signed), the
+// node's internal TV routes and the guide's image routes to the TV handler,
+// everything else to VOD.
 func splitFullNode(tv, vod http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
-		if strings.HasPrefix(p, "/stream/channel/") || strings.HasPrefix(p, "/internal/") {
+		if strings.HasPrefix(p, "/stream/channel/") || strings.HasPrefix(p, "/internal/") ||
+			strings.HasPrefix(p, "/channel/") || strings.HasPrefix(p, "/tv/art/") {
 			tv.ServeHTTP(w, r)
 			return
 		}
