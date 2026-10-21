@@ -11,10 +11,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The Mac's pin (what Maktaba.app ships) and ours are one: a node's copy needs the
@@ -135,6 +139,73 @@ func TestEnsureRefusesAnArchiveNotPinned(t *testing.T) {
 	}
 }
 
+// An archive larger than its pin is refused as the byte past the pin arrives,
+// before its hash is checked, and the partial download is removed.
+func TestEnsureRefusesADownloadLargerThanPinned(t *testing.T) {
+	root := t.TempDir()
+	raw := archive(t, Pin{Triple: "test-triple", Zip: true}, nil)
+	pin := pinFor(raw, true)
+	var refused error
+	more := func(_ context.Context, _ string, w io.Writer) error {
+		if _, err := w.Write(raw); err != nil {
+			return err
+		}
+		_, refused = w.Write([]byte{0}) // pin.Size+1
+		return refused
+	}
+	_, err := Ensure(context.Background(), root, pin, more, io.Discard)
+	if !errors.Is(refused, errTooLarge) || !errors.Is(err, errTooLarge) || strings.Contains(err.Error(), "SHA-256") {
+		t.Fatalf("%d bytes for a pin of %d: %v (the write past it: %v)", pin.Size+1, pin.Size, err, refused)
+	}
+	if left, _ := filepath.Glob(filepath.Join(root, ".*")); len(left) != 0 || Installed(filepath.Join(root, pin.Dir())) {
+		t.Fatalf("leftovers %v, installed %v", left, Installed(filepath.Join(root, pin.Dir())))
+	}
+}
+
+// A Content-Length past what Ensure takes is refused before the body is read.
+func TestHTTPFetchRefusesALengthPastThePin(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "11")
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		// no body: a fetch that read it would wait here
+		select {
+		case <-r.Context().Done():
+		case <-time.After(10 * time.Second):
+		}
+	}))
+	defer srv.Close()
+	var got bytes.Buffer
+	err := HTTPFetch(srv.Client())(context.Background(), srv.URL, &capped{w: &got, left: 10})
+	if !errors.Is(err, errTooLarge) || got.Len() != 0 {
+		t.Fatalf("%v (%d bytes taken)", err, got.Len())
+	}
+}
+
+// A name that is not local to the install (a ".." in it, absolute, a drive's) is
+// refused before anything is written, in a zip as in a tarball.
+func TestEnsureRefusesANameNotLocal(t *testing.T) {
+	names := []string{"../x", "a/../../x", "test-triple/../../x", "/x"}
+	if runtime.GOOS == "windows" {
+		names = append(names, `C:\x`, "C:x", `\\host\share\x`)
+	}
+	for _, zipped := range []bool{true, false} {
+		for _, name := range names {
+			root := t.TempDir()
+			raw := archive(t, Pin{Triple: "test-triple", Zip: zipped}, map[string]string{name: "x"})
+			pin := pinFor(raw, zipped)
+			calls := 0
+			if _, err := Ensure(context.Background(), root, pin, serve(raw, &calls), io.Discard); err == nil ||
+				!strings.Contains(err.Error(), "leaves the install") {
+				t.Fatalf("zip=%v %q: %v", zipped, name, err)
+			}
+			if _, err := os.Stat(filepath.Join(root, "x")); err == nil || Installed(filepath.Join(root, pin.Dir())) {
+				t.Fatalf("zip=%v %q: written or installed anyway", zipped, name)
+			}
+		}
+	}
+}
+
 func TestEnsureRefusesAPathOutOfTheInstall(t *testing.T) {
 	for _, zipped := range []bool{true, false} {
 		root := t.TempDir()
@@ -161,7 +232,11 @@ func TestEnsureReportsAFailedDownload(t *testing.T) {
 // A link may only name a file beside it: "..", ".", or a path would let a later entry
 // be written outside the install through it.
 func TestUntarRefusesALinkThatLeaves(t *testing.T) {
-	for _, target := range []string{"..", ".", "../lib", "sub/libpq.so", `..\x`, ""} {
+	targets := []string{"..", ".", "../lib", "../../x", "sub/libpq.so", `..\x`, "", "/etc/passwd"}
+	if runtime.GOOS == "windows" {
+		targets = append(targets, `C:\Windows`, "C:x")
+	}
+	for _, target := range targets {
 		var buf bytes.Buffer
 		gz := gzip.NewWriter(&buf)
 		tw := tar.NewWriter(gz)
@@ -188,5 +263,32 @@ func TestUntarRefusesALinkThatLeaves(t *testing.T) {
 	_ = os.WriteFile(arc, buf.Bytes(), 0o600)
 	if err := untargz(arc, t.TempDir()); err != nil && !os.IsPermission(err) && !strings.Contains(err.Error(), "privilege") {
 		t.Fatalf("a link beside it: %v", err)
+	}
+}
+
+// A link whose name looks local but whose directory is reached through links out of
+// the install (the archive's own "a" -> "b", and "b" a link outside, as an earlier
+// symlinked directory would be) is refused once its directory is resolved.
+func TestUntarRefusesALinkThroughALinkedDirectory(t *testing.T) {
+	dir, outside := t.TempDir(), t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(dir, "b")); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	_ = tw.WriteHeader(&tar.Header{Name: "a", Linkname: "b", Typeflag: tar.TypeSymlink})
+	_ = tw.WriteHeader(&tar.Header{Name: "a/libpq.so.5", Linkname: "libpq.so.5.16", Typeflag: tar.TypeSymlink})
+	_ = tw.Close()
+	_ = gz.Close()
+	arc := filepath.Join(t.TempDir(), "a.tar.gz")
+	if err := os.WriteFile(arc, buf.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := untargz(arc, dir); err == nil || !strings.Contains(err.Error(), `"a/libpq.so.5" leaves the install`) {
+		t.Fatalf("a link through a link out: %v", err)
+	}
+	if made, _ := os.ReadDir(outside); len(made) != 0 {
+		t.Fatalf("made outside the install: %v", made)
 	}
 }
