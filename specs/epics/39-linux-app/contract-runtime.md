@@ -12,7 +12,7 @@ The payload ships inside something that is not a good place to run a server from
 | Ships in | Problem |
 |---|---|
 | the AppImage | mounted at a new `/tmp/.mount_*` on every run, only while it runs, and through FUSE: the venv's interpreter path would move every start |
-| the .deb / .rpm (`/usr/lib/Maktaba/server`) | the package manager replaces files under a running server: a worker started after that runs the new Python against the old venv |
+| the .deb / .rpm (`/usr/share/maktaba/server`) | the package manager replaces files under a running server: a worker started after that runs the new Python against the old venv |
 So the server always runs from a copy the user owns, and a new payload starts only when Maktaba
 switches to it, with the server stopped.
 
