@@ -96,7 +96,7 @@ type pathCatalog struct {
 }
 
 func (c *pathCatalog) DBDown() bool       { return c.down }
-func (c *pathCatalog) DBFailed(err error) { c.failed++ }
+func (c *pathCatalog) DBFailed(error) { c.failed++ }
 func (c *pathCatalog) Path(id string) (string, bool) {
 	p, ok := c.paths[id]
 	return p, ok

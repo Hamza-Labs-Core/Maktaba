@@ -97,7 +97,7 @@ func rig() (*sql.DB, *Pair, *fakeServer, *fakeServer) {
 	return db, p, cp, home
 }
 
-func server(t *testing.T, ctx context.Context, db *sql.DB) string {
+func server(ctx context.Context, t *testing.T, db *sql.DB) string {
 	t.Helper()
 	var s string
 	if err := db.QueryRowContext(ctx, "SELECT 1").Scan(&s); err != nil {
@@ -110,10 +110,10 @@ func TestMarkedReadsGoToTheCopy(t *testing.T) {
 	db, _, _, home := rig()
 	defer db.Close()
 	reads := CopyReads(context.Background())
-	if got := server(t, reads, db); got != "copy" {
+	if got := server(reads, t, db); got != "copy" {
 		t.Fatalf("a marked read: %s", got)
 	}
-	if got := server(t, context.Background(), db); got != "home" {
+	if got := server(context.Background(), t, db); got != "home" {
 		t.Fatalf("an unmarked statement: %s", got)
 	}
 	// a write goes to the home whatever its context says it is
@@ -147,7 +147,7 @@ func TestMarkedReadsGoToTheCopy(t *testing.T) {
 		}
 		_ = tx.Rollback()
 	}
-	if got := server(t, reads, db); got != "copy" {
+	if got := server(reads, t, db); got != "copy" {
 		t.Fatalf("a marked read after the transaction: %s", got)
 	}
 }
@@ -157,7 +157,7 @@ func TestACopyThatDoesNotAnswerIsSkipped(t *testing.T) {
 	defer db.Close()
 	cp.down.Store(true) // being made, or rebuilt
 	reads := CopyReads(context.Background())
-	if got := server(t, reads, db); got != "home" {
+	if got := server(reads, t, db); got != "home" {
 		t.Fatalf("a marked read with the copy down: %s", got)
 	}
 	if !p.Copy.Down() {
@@ -165,7 +165,7 @@ func TestACopyThatDoesNotAnswerIsSkipped(t *testing.T) {
 	}
 	cp.down.Store(false)
 	p.CheckAll(context.Background())
-	if got := server(t, reads, db); got != "copy" {
+	if got := server(reads, t, db); got != "copy" {
 		t.Fatalf("a marked read with the copy back: %s", got)
 	}
 }
@@ -173,12 +173,12 @@ func TestACopyThatDoesNotAnswerIsSkipped(t *testing.T) {
 func TestTheHomeDownSendsEverythingToTheCopy(t *testing.T) {
 	db, p, _, home := rig()
 	defer db.Close()
-	if got := server(t, context.Background(), db); got != "home" {
+	if got := server(context.Background(), t, db); got != "home" {
 		t.Fatalf("home up: %s", got)
 	}
 	home.down.Store(true)
 	p.CheckAll(context.Background())
-	if got := server(t, context.Background(), db); got != "copy" {
+	if got := server(context.Background(), t, db); got != "copy" {
 		t.Fatalf("an unmarked read with the home down: %s", got)
 	}
 	// a write fails as the copy fails it
@@ -187,7 +187,7 @@ func TestTheHomeDownSendsEverythingToTheCopy(t *testing.T) {
 	}
 	home.down.Store(false)
 	p.CheckAll(context.Background())
-	if got := server(t, context.Background(), db); got != "home" {
+	if got := server(context.Background(), t, db); got != "home" {
 		t.Fatalf("the home back: %s", got)
 	}
 }
@@ -199,7 +199,7 @@ func TestTheHomeFoundDownOnConnect(t *testing.T) {
 	defer db.Close()
 	db.SetMaxIdleConns(0) // every statement connects anew
 	home.down.Store(true)
-	if got := server(t, context.Background(), db); got != "copy" {
+	if got := server(context.Background(), t, db); got != "copy" {
 		t.Fatalf("an unmarked read with the home just gone: %s", got)
 	}
 	if !p.Home.Down() {
@@ -212,7 +212,7 @@ func TestWithoutACopyEverythingIsTheHomes(t *testing.T) {
 	p := &Pair{Home: &Source{Name: "home", Conn: home}}
 	db := p.Open(0)
 	defer db.Close()
-	if got := server(t, CopyReads(context.Background()), db); got != "home" {
+	if got := server(CopyReads(context.Background()), t, db); got != "home" {
 		t.Fatalf("a marked read with no copy: %s", got)
 	}
 }

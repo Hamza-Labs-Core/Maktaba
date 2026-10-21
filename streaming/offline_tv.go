@@ -35,7 +35,7 @@ const offlinePrefix = "/stream/offline"
 func openCopy(bg *background, logger *slog.Logger) *pgxpool.Pool {
 	dsn := os.Getenv(copyEnv)
 	if dsn == "" {
-		logger.Warn("streaming: no copy of the home's database ("+copyEnv+"); with the home away nothing plays",
+		logger.Warn("streaming: no copy of the home's database (MAKTABA_COPY_DATABASE_URL); with the home away nothing plays",
 			"event", "stream_no_copy")
 		return nil
 	}

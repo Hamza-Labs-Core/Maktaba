@@ -117,7 +117,7 @@ type nodeRuntime struct {
 type nodeOffline struct{ dbs nodeDBs }
 
 func (o nodeOffline) DBDown() bool       { return o.dbs.pair.Home.Down() }
-func (o nodeOffline) DBFailed(err error) { o.dbs.pair.Recheck() }
+func (o nodeOffline) DBFailed(error) { o.dbs.pair.Recheck() }
 
 func (o nodeOffline) Video(id string) (string, float64, bool) {
 	var lib string
