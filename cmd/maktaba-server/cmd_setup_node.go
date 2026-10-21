@@ -616,8 +616,8 @@ func (s *nodeSetup) writeServerToml() error {
 		return err
 	}
 	changed := false
-	if s.Instances >= 0 && cfg.Pipeline.Instances != s.Instances {
-		cfg.Pipeline.Instances = s.Instances
+	if s.Instances >= 0 && (!cfg.PipelineInstancesSet || cfg.Pipeline.Instances != s.Instances) {
+		cfg.Pipeline.Instances, cfg.PipelineInstancesSet = s.Instances, true // a 0 is kept too
 		changed = true
 	}
 	if s.Python != "" && cfg.Pipeline.Python != s.Python {

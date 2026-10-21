@@ -52,11 +52,12 @@ func TestAppBundleFFmpegAndVenv(t *testing.T) {
 		t.Error("the operator's own MAKTABA_FFMPEG must be kept")
 	}
 
-	// no venv yet: python3; once built: the venv's
-	if py := pythonFor(Options{Config: cfg}); py != "python3" {
-		t.Errorf("python before the venv = %s", py)
-	}
+	// always the app's venv, also before it exists (the pipeline's Prepare builds
+	// it before the first start, Epic 38 story 38.12)
 	venvPy := filepath.Join(cfg.StateDir(), "venv", "bin", "python")
+	if py := pythonFor(Options{Config: cfg}); py != venvPy {
+		t.Errorf("python before the venv = %s, want %s", py, venvPy)
+	}
 	if err := os.MkdirAll(filepath.Dir(venvPy), 0o755); err != nil {
 		t.Fatal(err)
 	}
