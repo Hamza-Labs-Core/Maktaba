@@ -148,6 +148,16 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **The second listen's retries back off and stop (follow-up of story 38.8).** A machine that
+  runs the second listen queued the same 20 oldest transcripts made without it every 10 minutes,
+  forever, when it could not give them theirs (a file it cannot read, a model that does not load),
+  so newer ones never got their turn. Each video's tries are now recorded (new table
+  `relisten_attempts`, slot 0145): after a try it waits 1 hour, doubling up to a day, the untried
+  videos go first, and after 6 tries it stops and says so once, as a warning in Processing,
+  Activity. A transcript with the second listen, or a new transcribe run, starts over. The
+  model download's hash mismatch names the hashes before the folder, so a long Windows path no
+  longer cuts them off. The Settings page shows the Transcription rules in Arabic, and a check
+  keeps every rules section in Arabic but those not yet translated.
 - **`maktaba-server setup` (the CLI wizard) seeds the admin again.** It called `adduser` with
   `--username`/`--password` flags the api does not have; it now passes the username and a
   password file.
