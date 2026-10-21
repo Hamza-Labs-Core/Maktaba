@@ -63,8 +63,8 @@ type StationConfig struct {
 	// stations of the channel (two TV slots, story 33.4 AC4) begin at the same
 	// instants. It costs up to one segment length at a cold start.
 	AlignSegments bool
-	// A programme whose file cannot be read (rules tv_output, README
-	// dizqueTV parity row 5): UnreadableFill is what airs in its place
+	// A programme whose file cannot be read (rules tv_output, dizqueTV
+	// parity): UnreadableFill is what airs in its place
 	// (FillFiller, the default, or FillSlate); SourceTimeout bounds the check
 	// and the probe of a file (0: DefaultSourceTimeout); SourceStall ends a
 	// block whose output stopped that long (0: never); ReportUnreadable

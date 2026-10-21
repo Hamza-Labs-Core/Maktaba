@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// A programme whose file cannot be read (README dizqueTV parity, row 5):
+// A programme whose file cannot be read (dizqueTV parity):
 // missing at its mapped path, refused, answering too slowly or stalling
 // mid-read. The feeder airs the channel's filler in its place (feeder.go,
 // standIn) instead of an hour of slate, the timeline stays on the wall clock,

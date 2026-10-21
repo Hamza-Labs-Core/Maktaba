@@ -41,7 +41,7 @@ type OutputSettings struct {
 	// VideoToolbox one (0 = no cap).
 	NVENCMax int
 	VTMax    int
-	// A programme whose file cannot be read (README dizqueTV parity, row 5):
+	// A programme whose file cannot be read (dizqueTV parity):
 	// UnreadableFill is what airs in its place (filler | slate), SourceTimeout
 	// how long its file may take to answer, SourceStall how long a block's
 	// output may stop before the block is ended (0: never), ReportUnreadable

@@ -80,7 +80,7 @@ func unreadableRun(t *testing.T, repo ScheduleSource, clk *fakeClock, n int, fil
 	return append([]Segment(nil), p.played...), append([]int64(nil), reported...)
 }
 
-// README dizqueTV parity row 5: a 1-hour programme whose file is missing airs
+// dizqueTV parity: a 1-hour programme whose file is missing airs
 // the channel's filler (nearest first, in turn) until its scheduled end, not an
 // hour of slate; the next programme starts on time and the file is reported once.
 func TestFeeder_UnreadableFileAirsFillerUntilBlockEnd(t *testing.T) {
