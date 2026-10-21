@@ -93,6 +93,8 @@ func TestFindStackAndSettings(t *testing.T) {
 		CacheRoot:  "/c/streaming",
 		HFHome:     filepath.Join(home, ".cache", "huggingface"),
 		CamelData:  filepath.Join(home, ".camel_tools"),
+		// the Homebrew Ollama's models (the LLM stages' model)
+		OllamaModels: filepath.Join(home, ".ollama", "models"),
 	}
 	if !reflect.DeepEqual(s, want) {
 		t.Fatalf("settings =\n%+v\nwant\n%+v", s, want)
@@ -176,6 +178,13 @@ func TestItemsCopy(t *testing.T) {
 	if err := os.Symlink("../../blobs/abc", filepath.Join(repo, "snapshots", "r1", "model.bin")); err != nil {
 		t.Fatal(err)
 	}
+	// the dev setup's Ollama models; the app's server already made its (empty)
+	// folders before the move: the copy takes their place
+	write(filepath.Join(s.OllamaModels, "manifests", "registry.ollama.ai", "library", "qwen2.5", "7b"), "manifest")
+	write(filepath.Join(s.OllamaModels, "blobs", "sha256-1"), "gguf")
+	if err := os.MkdirAll(filepath.Join(state, "models", "ollama", "blobs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	items := Items(s, state, keys)
 	byWhat := map[string]Item{}
 	for _, it := range items {
@@ -198,6 +207,12 @@ func TestItemsCopy(t *testing.T) {
 	}
 	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
 		t.Fatalf("the snapshot link is not a link: %v", err)
+	}
+	if it := byWhat["language models (Ollama)"]; !it.Exists || it.Done || it.Size != int64(len("manifest")+len("gguf")) {
+		t.Fatalf("ollama item = %+v", it)
+	}
+	if b, err := os.ReadFile(filepath.Join(state, "models", "ollama", "blobs", "sha256-1")); err != nil || string(b) != "gguf" {
+		t.Fatalf("ollama blob in the app = %q, %v", b, err)
 	}
 	// again: everything is there, nothing changes
 	for _, it := range Items(s, state, keys) {

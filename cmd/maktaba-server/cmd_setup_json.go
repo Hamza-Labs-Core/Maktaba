@@ -10,10 +10,12 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
@@ -34,14 +36,16 @@ type setupEvent struct {
 	Code    string `json:"code,omitempty"`
 	Message string `json:"message,omitempty"`
 	Field   string `json:"field,omitempty"`
-	Done    uint64 `json:"done,omitempty"`
-	Total   uint64 `json:"total,omitempty"`
+	Done    int64  `json:"done,omitempty"`
+	Total   int64  `json:"total,omitempty"`
 }
 
 // stepError is a step's failure as the screen shows it: a code the app maps
-// to help text, a plain message, and the input field it belongs to.
+// to help text, a plain message, and the input field it belongs to. usage
+// marks input the step cannot take (exit 2, as unreadable stdin).
 type stepError struct {
 	code, message, field string
+	usage                bool
 }
 
 func (e *stepError) Error() string { return e.code + ": " + e.message }
@@ -62,7 +66,7 @@ type setupRun struct {
 // progress sends a progress line (done/total: bytes or items; 0 total is an
 // indeterminate bar).
 func (s *setupRun) progress(stage, message string, done, total uint64) {
-	_ = s.out.Encode(setupEvent{Type: "progress", Stage: stage, Message: message, Done: done, Total: total})
+	_ = s.out.Encode(setupEvent{Type: "progress", Stage: stage, Message: message, Done: int64(done), Total: int64(total)})
 }
 
 type setupStepFunc func(s *setupRun, in json.RawMessage) (any, error)
@@ -76,8 +80,75 @@ var setupSteps = map[string]setupStepFunc{
 	"models":    stepModels,
 	"plex":      stepPlex,
 	"venv":      stepVenv,
+	"llm":       stepLLM,
 	"adopt":     stepAdopt,
 	"finish":    stepFinish,
+}
+
+// llmSetup is the llm step's work (tests replace it).
+var llmSetup = llmserver.Setup
+
+// stepLLM: the `llm` step (Epic 36 story 36.11), the language model the LLM
+// stages use. Input {"models": [...]?, "check_only": bool?}; progress check →
+// start → download (bytes); result llmserver.Result. Errors llm_unavailable,
+// disk_full, llm_failed.
+func stepLLM(s *setupRun, in json.RawMessage) (any, error) {
+	var req struct {
+		Models    json.RawMessage `json:"models"`
+		CheckOnly bool            `json:"check_only"`
+	}
+	if err := decodeInput(in, &req); err != nil {
+		return nil, err
+	}
+	var models []string
+	if len(req.Models) > 0 && string(req.Models) != "null" {
+		var list []string
+		bad := &stepError{code: "bad_input", message: "models must be a list of model names", field: "models", usage: true}
+		if json.Unmarshal(req.Models, &list) != nil {
+			return nil, bad
+		}
+		for _, m := range list {
+			if strings.TrimSpace(m) == "" {
+				return nil, bad
+			}
+			models = append(models, strings.TrimSpace(m))
+		}
+	}
+	exe, _ := os.Executable()
+	logw := s.log
+	if f, err := openLLMLog(); err == nil {
+		defer func() { _ = f.Close() }()
+		logw = f
+	}
+	res, err := llmSetup(s.ctx, llmserver.SetupOptions{
+		Config:        s.cfg,
+		Exe:           exe,
+		Models:        models,
+		SupervisorURL: supervisor.StateURL(s.cfg),
+		CheckOnly:     req.CheckOnly,
+		Log:           logw,
+		Progress: func(e llmserver.Event) {
+			_ = s.out.Encode(setupEvent{Type: "progress", Stage: e.Stage, Message: e.Message, Done: e.Done, Total: e.Total})
+		},
+	})
+	switch {
+	case errors.Is(err, llmserver.ErrUnavailable):
+		return nil, failStep("llm_unavailable", "", "%v", err)
+	case errors.Is(err, llmserver.ErrDiskFull):
+		return nil, failStep("disk_full", "", "%v", err)
+	case err != nil:
+		return nil, failStep("llm_failed", "", "%v", err)
+	}
+	return res, nil
+}
+
+// openLLMLog appends to the model server's log in the logs directory.
+func openLLMLog() (*os.File, error) {
+	p := filepath.Join(config.LogsDir(), llmserver.LogName)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return nil, err
+	}
+	return os.OpenFile(p, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 }
 
 // runSetupJSON runs one step and returns the exit code.
@@ -110,7 +181,11 @@ func runSetupJSON(step string, in io.Reader, out io.Writer) int {
 	if err != nil {
 		var se *stepError
 		if errors.As(err, &se) {
-			return fail(1, setupEvent{Code: se.code, Message: se.message, Field: se.field})
+			code := 1
+			if se.usage {
+				code = 2
+			}
+			return fail(code, setupEvent{Code: se.code, Message: se.message, Field: se.field})
 		}
 		return fail(1, setupEvent{Code: "internal", Message: err.Error()})
 	}

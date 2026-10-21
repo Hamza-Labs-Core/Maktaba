@@ -816,7 +816,9 @@ function Approval({
 
 function Install({ api, step, platform, next, back }: StepProps) {
   const { t } = useI18n();
-  const [phase, setPhase] = useState<"venv" | "models" | "finish" | "approval" | "failed">("venv");
+  const [phase, setPhase] = useState<"venv" | "models" | "llm" | "finish" | "approval" | "failed">(
+    "venv"
+  );
   const [progress, setProgress] = useState<StepProgress | null>(null);
   const [error, setError] = useState<StepError | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -850,6 +852,16 @@ function Install({ api, step, platform, next, back }: StepProps) {
           { action: "download" },
           (p) => mounted.current && setProgress(p)
         );
+        // The language model of the LLM stages (about 5 GB). Only too little disk
+        // stops setup: any other failure (no network, no bundled server) leaves it
+        // to the server, which downloads a missing model in the background.
+        setPhase("llm");
+        setProgress(null);
+        try {
+          await api.runStep("llm", {}, (p) => mounted.current && setProgress(p));
+        } catch (e) {
+          if (asError(e).code === "disk_full") throw e;
+        }
         if (!mounted.current) return;
         setPhase("finish");
         setProgress(null);
@@ -873,7 +885,9 @@ function Install({ api, step, platform, next, back }: StepProps) {
       ? t("setup.install.finishing")
       : phase === "models"
         ? t("setup.install.models")
-        : t("setup.install.venv");
+        : phase === "llm"
+          ? t("setup.install.llm")
+          : t("setup.install.venv");
   return (
     <Frame
       title={t("setup.install.title")}
@@ -894,7 +908,7 @@ function Install({ api, step, platform, next, back }: StepProps) {
   );
 }
 
-type MovePhase = "moving" | "models" | "signin" | "finish" | "approval" | "failed";
+type MovePhase = "moving" | "models" | "signin" | "llm" | "finish" | "approval" | "failed";
 
 /** Moving the Maktaba this PC runs into the app (Epic 38 story 38.13,
  * move-an-install.md): its plan, then the move with progress, the models
@@ -969,6 +983,16 @@ function Move({
         return;
       }
       if (!mounted.current) return;
+      // the language model, as a fresh install gets it: only too little disk
+      // stops here, the server downloads a missing one itself
+      setPhase("llm");
+      setProgress(null);
+      try {
+        await api.runStep("llm", {}, onProgress);
+      } catch (e) {
+        if (asError(e).code === "disk_full") throw e;
+      }
+      if (!mounted.current) return;
       setPhase("finish");
       setProgress(null);
       const u = urls.current;
@@ -992,9 +1016,11 @@ function Move({
     const label =
       phase === "models"
         ? t("setup.install.models")
-        : phase === "finish"
-          ? t("setup.move.starting")
-          : t("setup.move.moving");
+        : phase === "llm"
+          ? t("setup.install.llm")
+          : phase === "finish"
+            ? t("setup.move.starting")
+            : t("setup.move.moving");
     return (
       <Frame
         title={t("setup.move.moving")}

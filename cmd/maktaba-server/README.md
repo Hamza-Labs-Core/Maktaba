@@ -43,13 +43,34 @@ maktaba-server serve
 | `setup`      | Interactive first-run wizard → writes `server.toml`, migrates  |
 | `update`     | Self-update from GitHub Releases, verified in process (Sigstore bundle, exact release-workflow identity, `release.json`, no downgrade); `--check`, `--version`, `--rollback` |
 | `uninstall`  | Guided teardown (`--purge` for non-interactive full removal)   |
-| `models`     | Whisper model management (`list`, `download <name>`, `active`) |
+| `models`     | Whisper model management (`list`, `download <name>`, `active`); `models llm [model…] [--check]` downloads the language model(s) of the LLM stages into the model server (default `[llm] models`, `qwen2.5:7b`), showing the disk space first; resumable |
 | `migrate`    | Database migrations (delegates to `maktaba-api`)               |
 | `adduser`    | Seed the first admin user (delegates to `maktaba-api`)         |
 | `keys`       | JWT signing-key management (delegates to `maktaba-api`)        |
 | `migrate-from-dev` | Move a Mac running `tools/dev/stack.sh` + Docker Postgres into Maktaba.app (`--dry-run`, `--verify`, `--finalize`; [runbook](../../specs/epics/36-mac-app/migrate-from-dev.md)) |
 | `adopt` | The Maktaba a PC runs outside the Windows app: list it, `--plan <id>` (what moving it in does), `--verify` (after the move: removes the old task), `--undo` (runs the old install again); the move itself is setup's `adopt` step ([spec](../../specs/epics/38-windows-app/move-an-install.md)) |
-| `setup --json --step <name>` | The desktop app's setup screens, one step per run: `status`, `check`, `admin`, `libraries`, `models`, `plex`, `venv`, `finish`, `adopt` (find / plan / move / verify an install this PC runs) ([contract](../../specs/epics/36-mac-app/contract-setup.md)) |
+| `setup --json --step <name>` | The desktop app's setup screens, one step per run: `status`, `check`, `admin`, `libraries`, `models`, `plex`, `venv`, `llm` (the language model, Epic 36 story 36.11), `finish`, `adopt` (find / plan / move / verify an install this PC runs) ([contract](../../specs/epics/36-mac-app/contract-setup.md)) |
+
+**The language model server (`[llm]`).** Maktaba.app bundles Ollama
+(`Contents/Resources/server/ollama/`). A `serve` of the whole machine runs it as the
+`ollama` role: `ollama serve` on `127.0.0.1:11533` (a free loopback port when another
+program holds 11533; a user's own Ollama keeps 11434), its models in
+`<state>/models/ollama`, its output in `~/Library/Logs/Maktaba/ollama.log`, restarted like
+every role. Every role gets its address as `MAKTABA_OLLAMA_URL`; the pipeline uses it as
+the model server of `rules.tagcheck` (check-tags, check-clips, enrich, display titles)
+unless the Settings name one. The supervisor downloads a configured model it does not
+have in the background, and serves the server's state in `/processes` (`llm`) and at
+`GET /llm` (200 when every model is there, 503 otherwise).
+
+```toml
+[llm]
+enabled = "auto"         # auto (when the payload carries ollama) | on | off
+# binary = "/path/to/ollama"   # else $MAKTABA_OLLAMA_BIN, else the payload's
+# port = 11533           # set: never moved
+# url = "http://192.168.1.30:11434"   # an Ollama elsewhere; the bundled one does not run
+models = ["qwen2.5:7b"]  # what the server keeps
+pull = "auto"            # auto: the supervisor downloads a missing model | off
+```
 
 **Streaming on a cluster node (Epic 32.1).** On a machine that joined a home
 (Epic 31, `node.json` holds its database credential), `maktaba-server serve

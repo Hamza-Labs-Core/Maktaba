@@ -85,6 +85,16 @@ rules behind both were tightened. Schema revision 140 (migrations 0137-0140).
 
 ### Added
 
+- **Maktaba.app runs its own language model** (Epic 36, story 36.11). The app bundles Ollama
+  0.40.2 (pinned and checksum-verified in `make mac-app`) and the supervisor runs it as the
+  `ollama` role on its own loopback port (11533, so a user's own Ollama keeps 11434), with its
+  models in the app's `models/ollama` and its log in `~/Library/Logs/Maktaba/ollama.log`. Every
+  LLM stage (check-tags, check-clips, enrich, display titles) uses it through
+  `MAKTABA_OLLAMA_URL` unless Settings name another model server. First-run setup (step `llm`)
+  and `maktaba-server models llm` download `qwen2.5:7b` with progress after showing the disk
+  space it needs; the server downloads a missing model in the background, the menu bar shows
+  it as ready or downloading, and `GET /llm` on the supervisor reports its health.
+  `migrate-from-dev` carries the dev setup's `~/.ollama/models` over.
 - **Find metadata and Re-enrich work** (#133). A video's metadata suggestions come from
   Maktaba's own intel (transcripts, chapters, the book a series explains, file and
   folder names, sibling episodes, tags, speakers) and, when configured, a web search

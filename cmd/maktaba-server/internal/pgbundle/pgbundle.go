@@ -53,15 +53,17 @@ type Bundle struct {
 // <payload>/postgres beside <payload>/bin/maktaba-server).
 //
 // [postgres] enabled = "off" never runs it; "on" does whenever its binaries are
-// there; "auto" (the default) only on macOS. In every case a [database] url set
-// in server.toml wins, and so does a SQLite database already in use at the
+// there; "auto" (the default) on macOS, and on any system when this server runs
+// from an app's payload (MAKTABA_APP_BUNDLE: Maktaba.app, the Linux app's
+// runtime copy, Epic 39 story 39.4). In every case a [database] url set in
+// server.toml wins, and so does a SQLite database already in use at the
 // default path (an install from before keeps its data).
 func Resolve(cfg config.Config, exe string) (Bundle, bool, error) {
 	mode := strings.ToLower(strings.TrimSpace(cfg.Postgres.Enabled))
 	if mode == "off" || cfg.DatabaseURLSet {
 		return Bundle{}, false, nil
 	}
-	if mode != "on" && (runtime.GOOS != "darwin" || sqliteInUse()) {
+	if mode != "on" && ((runtime.GOOS != "darwin" && config.AppBundle() == "") || sqliteInUse()) {
 		return Bundle{}, false, nil
 	}
 	home := findHome(cfg, exe)

@@ -115,7 +115,12 @@ class MaktabaTvConfig:
     live_lookup_reuse_seconds: int = 600
     #: even loudness across programmes and filler
     loudnorm: bool = True
+    #: how: ``speechnorm`` (dizqueTV's default: no look-ahead, nothing delayed),
+    #: ``loudnorm`` (EBU R128 to the target below) or ``dynaudnorm``
+    loudnorm_mode: str = "speechnorm"
     loudnorm_target_lufs: float = -16.0
+    #: speechnorm: the most a quiet passage is raised (times; dizqueTV's 6.25)
+    speechnorm_expansion: float = 6.25
     #: the corner logo is left off filler and bumpers (dizqueTV's disableFillerOverlay);
     #: programmes and live broadcasts always carry it
     watermark_skip_filler: bool = True
@@ -523,7 +528,26 @@ register(
             maximum=3600,
         ),
         "loudnorm": Help(TV, "Even loudness", "Normalise every programme's loudness."),
-        "loudnorm_target_lufs": Help(TV, "Loudness target (LUFS)"),
+        "loudnorm_mode": Help(
+            TV,
+            "Loudness filter",
+            "speechnorm: speech levelled as it plays, nothing delayed, so a channel tunes "
+            "fast (what dizqueTV does). loudnorm: EBU R128 to the target below, about 3 s "
+            "of look-ahead. dynaudnorm: a gentler dynamic normaliser, also with look-ahead. "
+            "Only programme and filler sound is levelled, never the slate's silence.",
+            choices=("speechnorm", "loudnorm", "dynaudnorm"),
+        ),
+        "loudnorm_target_lufs": Help(
+            TV, "Loudness target (LUFS)", "What the loudnorm filter levels to."
+        ),
+        "speechnorm_expansion": Help(
+            TV,
+            "Speech boost limit",
+            "The speechnorm filter raises a quiet passage at most this many times "
+            "(dizqueTV: 6.25).",
+            minimum=1,
+            maximum=50,
+        ),
         "watermark_skip_filler": Help(
             TV,
             "No corner logo on filler",

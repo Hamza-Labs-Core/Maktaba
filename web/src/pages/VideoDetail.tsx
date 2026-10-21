@@ -31,6 +31,7 @@ import {
   formatWatchTime,
   type VideoStats,
 } from "../lib/analytics";
+import { TitleRow } from "../help/HelpLink";
 
 interface Video extends DisplayTitleVideo {
   id: string;
@@ -224,7 +225,9 @@ export function VideoDetail() {
   return (
     <section className="mkt-page mkt-video">
       <header className="mkt-page__header">
-        <h1 dir="auto">{video.title || video.filename}</h1>
+        <TitleRow>
+          <h1 dir="auto">{video.title || video.filename}</h1>
+        </TitleRow>
         <div className="mkt-video__flags">
           {video.detected_language && <Badge>{video.detected_language}</Badge>}
           <Badge tone={video.state === "ready" ? "success" : "neutral"}>{video.state}</Badge>

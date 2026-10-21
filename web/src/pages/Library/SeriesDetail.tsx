@@ -21,6 +21,7 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
+import { TitleRow } from "../../help/HelpLink";
 
 interface Episode {
   video_id: string;
@@ -186,7 +187,9 @@ export function SeriesDetail() {
           <img className="mkt-series-detail__poster" src={header.poster_path} alt="" />
         )}
         <div>
-          <h1 dir="auto">{title}</h1>
+          <TitleRow>
+            <h1 dir="auto">{title}</h1>
+          </TitleRow>
           <div className="mkt-series-detail__flags">
             {header?.year ? (
               <Badge tone="neutral">{n(header.year, { useGrouping: false })}</Badge>

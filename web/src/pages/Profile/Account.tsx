@@ -16,6 +16,7 @@ import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
+import { TitleRow } from "../../help/HelpLink";
 
 interface Profile {
   id: string;
@@ -54,7 +55,9 @@ export function Account() {
   return (
     <section className="mkt-page mkt-account">
       <header className="mkt-page__header">
-        <h1>{t("account.title")}</h1>
+        <TitleRow>
+          <h1>{t("account.title")}</h1>
+        </TitleRow>
       </header>
 
       {error ? (
