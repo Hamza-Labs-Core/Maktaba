@@ -76,8 +76,8 @@ started again. Then the supervisor's next start runs [36.8's contract](../36-mac
 - **The state root** (its lock and `launcher.log` in `updates/`) is the platform's default data
   directory: `$XDG_DATA_HOME/maktaba` on Linux (macOS and Windows as 38.2 has them).
 - **`--log-file PATH`** sends the launcher's and the server's output to PATH. It is renamed to
-  `PATH.1` at start when larger than 50 MB, and again when it grows past that (checked each minute;
-  one old copy kept).
+  `PATH.1` at start when larger than 50 MB, and again as soon as a write would take it past that
+  (one old copy kept). Built in 39.5, since the unit uses it.
 - **Updates:** with `owner: app`, the launcher sets `MAKTABA_UPDATE_DISABLE=1` (one updater, the
   app's). With `owner: headless`, it does not, and `maktaba-server update` installs a new runtime
   (39.9) instead of replacing its own executable.
