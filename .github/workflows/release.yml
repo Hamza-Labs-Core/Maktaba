@@ -909,7 +909,7 @@ jobs:
 
           ### Install
 
-          - **Linux/macOS (script):** \`curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPOSITORY:-Hamza-Labs-Core/Maktaba}/${TAG}/deploy/packaging/install.sh | bash\`
+          - **Linux/macOS (script):** download \`install.sh\` below with \`checksums.txt\` and \`checksums.txt.sigstore.json\`, verify them (below), then \`bash install.sh\`; on Linux, \`bash install.sh --app\` installs the whole server for a machine without a desktop
           - **Debian/Ubuntu:** download the \`.deb\` below, then \`sudo apt install ./maktaba-server_*.deb\`
           - **Fedora/RHEL:** download the \`.rpm\` below, then \`sudo dnf install ./maktaba-server-*.rpm\`
           - **macOS (Homebrew):** \`maktaba.rb\` formula is attached (and pushed to the tap when configured)

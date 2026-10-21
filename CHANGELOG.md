@@ -73,6 +73,13 @@ don't append a line here; docs-only PRs are exempt.
   cannot run, no Hugging Face sign-in is asked. A Plex code that expires (plex.tv out of reach is
   asked again until then) or a Ctrl+C while it waits leaves Plex to Settings, and the setup goes
   on. `--answers` (or `--answers-fd`) gives every answer without questions.
+- **The Linux app's downloads** (Epic 39, story 39.10). Each release builds the app as an
+  AppImage, a `.deb` and an `.rpm` for x86_64 and aarch64, each with the whole server inside
+  (its own Postgres, ffmpeg and Python), checked before anything is published; the `.deb` and
+  `.rpm` stop the app's server when they are removed. For machines without a desktop the release
+  carries the server payload (`maktaba-linux-payload-<version>-<arch>.tar.gz`) and `install.sh`
+  among its assets, both in the signed `checksums.txt`: the notes say to verify the script and
+  run it, no longer to pipe it from a branch.
 
 ### Fixed
 
