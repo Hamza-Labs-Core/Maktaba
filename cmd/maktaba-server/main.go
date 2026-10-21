@@ -65,6 +65,8 @@ func newRootCmd() *cobra.Command {
 		newAddUserCmd(),
 		newKeysCmd(),
 		newMigrateFromDevCmd(),
+		newServiceCmd(),
+		newRuntimeCmd(),
 	)
 	return root
 }
@@ -80,5 +82,7 @@ const rootLong = `maktaba-server runs all of Maktaba from a single binary.
   maktaba-server adduser   Seed the first admin user
   maktaba-server keys      Generate or rotate JWT signing keys
   maktaba-server migrate-from-dev  Move the developer stack into Maktaba.app
+  maktaba-server service   The systemd user service of the Linux app
+  maktaba-server runtime   The Linux app's runtime copy of the server payload
 
 Configuration lives in server.toml (see 'maktaba-server setup').`
