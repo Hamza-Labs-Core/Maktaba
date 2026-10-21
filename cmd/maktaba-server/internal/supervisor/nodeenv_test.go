@@ -129,3 +129,24 @@ func TestFullNodeStateDir(t *testing.T) {
 		}
 	}
 }
+
+// TestClusterDBEnv: a home serving its machines from the bundled Postgres tells its
+// api the port they reach it on and the CA they verify it with (the api hands both
+// out at a join); without it the api keeps its default.
+func TestClusterDBEnv(t *testing.T) {
+	prev := nodeConfig
+	t.Cleanup(func() { nodeConfig = prev })
+	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
+	var cfg config.Config
+	if _, ok := envMap(ChildEnv(RoleAPI, cfg))["MAKTABA_CLUSTER_PG_PORT"]; ok {
+		t.Fatal("a port without the bundled Postgres serving the machines")
+	}
+	cfg.ClusterDB = config.ClusterDB{Port: 54329, CA: filepath.Join("keys", "postgres-ca.crt")}
+	m := envMap(ChildEnv(RoleAPI, cfg))
+	if m["MAKTABA_CLUSTER_PG_PORT"] != "54329" || m["MAKTABA_CLUSTER_PG_CA"] != cfg.ClusterDB.CA {
+		t.Fatalf("api env: port %q ca %q", m["MAKTABA_CLUSTER_PG_PORT"], m["MAKTABA_CLUSTER_PG_CA"])
+	}
+	if _, ok := envMap(ChildEnv(RoleStreaming, cfg))["MAKTABA_CLUSTER_PG_PORT"]; ok {
+		t.Fatal("only the api provisions the machines")
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
@@ -108,6 +109,11 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		// supervisor's state to GET /api/system/processes and records
 		// crashes into health_samples.
 		add("MAKTABA_SUPERVISOR_URL", StateURL(cfg))
+		// the machines reach the bundled Postgres on its own port, verifying its CA
+		if cfg.ClusterDB.Port > 0 {
+			add("MAKTABA_CLUSTER_PG_PORT", strconv.Itoa(cfg.ClusterDB.Port))
+			add("MAKTABA_CLUSTER_PG_CA", cfg.ClusterDB.CA)
+		}
 		// Maktaba TV across the cluster (Epic 32): the api forwards move/stop/drain to
 		// the home streaming service's loopback internal routes.
 		add("MAKTABA_STREAMING_HTTP_URL", "http://"+LocalAddr(cfg.Server.StreamAddr, "8081"))

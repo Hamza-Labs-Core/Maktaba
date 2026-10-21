@@ -42,6 +42,12 @@ func bundledPostgres(ctx context.Context, cfg *config.Config, prepare bool) (*pg
 		return nil, err
 	}
 	cfg.Database.URL = url
+	if b.LAN {
+		cfg.ClusterDB = config.ClusterDB{Port: b.Port}
+		if b.TLS {
+			cfg.ClusterDB.CA = b.CACert()
+		}
+	}
 	if !prepare {
 		return nil, nil
 	}

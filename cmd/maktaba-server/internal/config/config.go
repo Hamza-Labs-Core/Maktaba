@@ -43,6 +43,16 @@ type Config struct {
 	// PipelineInstancesSet: server.toml sets [pipeline] instances (0 there means
 	// no transcription workers, even on Apple Silicon).
 	PipelineInstancesSet bool `toml:"-"`
+	// ClusterDB is how the cluster's machines reach this home's bundled Postgres
+	// (serve fills it in; zero: they are not served by it).
+	ClusterDB ClusterDB `toml:"-"`
+}
+
+// ClusterDB: the bundled Postgres's port on the LAN and the CA certificate its
+// clients verify it with ("" with TLS off).
+type ClusterDB struct {
+	Port int
+	CA   string
 }
 
 // PostgresSection is the [postgres] table (Epic 36 story 36.1): the Postgres
