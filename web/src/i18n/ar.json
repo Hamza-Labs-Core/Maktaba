@@ -2268,6 +2268,7 @@
   "livetv.plex.running": "جارٍ الاتصال بـ Plex…",
   "livetv.plex.waiting": "في الانتظار: {reason}",
   "livetv.plex.error": "آخر خطأ",
+  "livetv.plex.guideLoading": "يحمّل Plex الدليل الآن: تظهر القنوات والبرامج في Plex خلال بضع دقائق. التحديث في أثناء ذلك لا يسرّعه.",
   "livetv.plex.dizquetvKept": "موالف dizqueTV موجود في Plex أيضًا. تتركه مكتبة هو وجهاز DVR الخاص به كما هما؛ احذفه من Plex بنفسك عند إيقاف dizqueTV.",
   "livetv.plex.add": "إضافة مكتبة إلى Plex",
   "livetv.plex.refresh": "تحديث Plex الآن",

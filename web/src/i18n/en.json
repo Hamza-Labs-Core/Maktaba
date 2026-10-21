@@ -2268,6 +2268,7 @@
   "livetv.plex.running": "Talking to Plex…",
   "livetv.plex.waiting": "Waiting: {reason}",
   "livetv.plex.error": "Last error",
+  "livetv.plex.guideLoading": "Plex is loading the guide: channels and programmes show up in Plex in a few minutes. Refreshing meanwhile won't speed it up.",
   "livetv.plex.dizquetvKept": "dizqueTV's tuner is in Plex too. Maktaba leaves it and its DVR as they are; remove it in Plex yourself when you switch dizqueTV off.",
   "livetv.plex.add": "Add Maktaba to Plex",
   "livetv.plex.refresh": "Refresh Plex now",
