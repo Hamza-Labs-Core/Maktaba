@@ -303,7 +303,9 @@ func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *sl
 	// while the home's database does not answer
 	sharepath.StartNode(ctx, dbs.app, cfg.NodeID, logger)
 	streamMap := vodfallback.PrefixMap(os.Getenv("MAKTABA_STREAM_PATH_MAP"))
-	rt.vod = &vodfallback.Fallback{DB: dbs.app, Home: rt.proxy, Logger: logger,
+	// what the home serves goes through the resolver's front (a node-local sign-in is
+	// answered here, never sent to the home, which would sign the person out)
+	rt.vod = &vodfallback.Fallback{DB: dbs.app, Home: rt.resolver.Home(rt.proxy), Logger: logger,
 		ToLocal: func(p string) string { return streamMap(sharepath.ToLocal(p)) },
 		HomeName: func() string {
 			if s, ok := rt.home.Get(context.Background()); ok {
@@ -522,7 +524,7 @@ func (rt *nodeRuntime) copyReads(next http.Handler) http.Handler {
 // as long as the copy is current (copyFresh); while it does not (its API, or its
 // database), always: the copy falls behind in an outage, and the home cannot be read.
 func (rt *nodeRuntime) copyMayRead(ctx context.Context) bool {
-	if (rt.resolver != nil && rt.resolver.DownFor(0)) || (rt.dbs.pair != nil && rt.dbs.pair.Home.Down()) {
+	if (rt.resolver != nil && rt.resolver.Down()) || (rt.dbs.pair != nil && rt.dbs.pair.Home.Down()) {
 		return true
 	}
 	return rt.copyFresh(ctx)

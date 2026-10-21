@@ -58,6 +58,8 @@ type fakeHome struct {
 	hang     bool                        // down as a machine switched off: nothing answers
 	// asked, when set, holds an introspection until it is closed
 	asked chan struct{}
+	// what the last proxied request carried: its cookies and its delegated session
+	cookie, delegated string
 }
 
 func (f *fakeHome) setDown(d bool) { f.mu.Lock(); f.down = d; f.mu.Unlock() }
@@ -132,8 +134,15 @@ func (f *fakeHome) serveAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	f.mu.Lock()
 	f.proxied++
+	f.cookie, f.delegated = r.Header.Get("Cookie"), r.Header.Get(delegation.HeaderDelegatedSession)
 	f.mu.Unlock()
 	w.WriteHeader(http.StatusTeapot)
+}
+
+func (f *fakeHome) seen() (cookie, delegated string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.cookie, f.delegated
 }
 
 func (f *fakeHome) proxiedCount() int { f.mu.Lock(); defer f.mu.Unlock(); return f.proxied }
@@ -586,6 +595,46 @@ func TestSignInOnTheCopyWhileTheHomeIsAway(t *testing.T) {
 	}
 }
 
+// With the home back, a person signed in on this machine signs in with the home: the
+// sign-in goes there without this machine's cookies, and the node-local session ends. A
+// change that asks for a sign-in clears the node-local cookie.
+func TestASignInWithTheHomeBackEndsTheNodeLocalOne(t *testing.T) {
+	g := newOfflineRig(t, true)
+	g.goDown(time.Minute)
+	g.pastGrace()
+	_, id := g.signIn(t, "amal", "pw-amal")
+	g.home.setDown(false)
+	g.r.answered()
+	cleared := func(a answer) bool {
+		for _, c := range a.cookies {
+			if c.Name == CookieSession && c.Value == "" && c.MaxAge < 0 {
+				return true
+			}
+		}
+		return false
+	}
+	if a := g.do(http.MethodPost, "/api/videos/v1/rating", id); a.problem != "signin_required" || !cleared(a) {
+		t.Fatalf("a change on a node-local session with the home back: %+v, want signin_required and the cookie cleared", a)
+	}
+	if a := g.do(http.MethodGet, "/api/settings", id); a.problem != "signin_required" || !cleared(a) {
+		t.Fatalf("a home page on a node-local session with the home back: %+v", a)
+	}
+	before := g.home.proxiedCount()
+	a := g.send(http.MethodPost, LoginPath, id, `{"username":"amal","password":"pw-amal"}`)
+	if a.code != http.StatusTeapot || g.home.proxiedCount() != before+1 {
+		t.Fatalf("a sign-in with the home back: %+v, want the home's own answer", a)
+	}
+	if c, d := g.home.seen(); strings.Contains(c, LocalSessionPrefix) || strings.Contains(c, CookieCSRF) || d != "" {
+		t.Fatalf("the home got this machine's session: cookie %q, delegated %q", c, d)
+	}
+	if a := g.do(http.MethodGet, "/api/videos", id); a.code != http.StatusUnauthorized {
+		t.Fatalf("the node-local session after the sign-in with the home: %+v, want ended (401)", a)
+	}
+	if a := g.do(http.MethodGet, "/api/videos", id); !cleared(a) {
+		t.Fatalf("an ended node-local session's cookie is not cleared: %+v", a)
+	}
+}
+
 func TestSignOutOfANodeLocalSession(t *testing.T) {
 	g := newOfflineRig(t, true)
 	g.goDown(time.Minute)
@@ -906,5 +955,26 @@ func TestAHangingHomeIsNotWaitedOnForWhatThisMachineAnswers(t *testing.T) {
 	}
 	if d := time.Since(start); d > 2*time.Second {
 		t.Fatalf("waited %s on a home that does not answer", d)
+	}
+}
+
+// One call the home does not answer is not an outage, and a caller that went away is not
+// one either: the outage is the home silent for a probe's interval.
+func TestOneMissIsNotAnOutage(t *testing.T) {
+	g := newOfflineRig(t, true)
+	g.home.setDown(true)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _, _ = g.r.resolve(ctx, "k-gone", delegation.IntrospectRequest{Session: "s-gone"})
+	if ok, _ := g.r.Reachability(); !ok || g.r.DownFor(0) {
+		t.Fatal("a caller that went away counted as the home not answering")
+	}
+	_, _, _ = g.r.resolve(context.Background(), "k-miss", delegation.IntrospectRequest{Session: "s-miss"})
+	if ok, _ := g.r.Reachability(); !ok || g.r.Down() || !g.r.DownFor(0) {
+		t.Fatal("one call the home did not answer: reported as an outage")
+	}
+	g.now = g.now.Add(ProbeEvery)
+	if ok, since := g.r.Reachability(); ok || since == nil || !g.r.Down() {
+		t.Fatal("the home silent for a probe's interval is not reported")
 	}
 }

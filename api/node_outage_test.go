@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -26,6 +27,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homeproxy"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/nodeauth"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/vodfallback"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
 )
 
 const outageCSRF = "csrf-token-1"
@@ -119,8 +121,8 @@ func TestNodeOutageKeepsReadsAndPlayback(t *testing.T) {
 	r.Post("/api/stream/sessions", ok)               // local: playback starts
 	r.Delete("/api/stream/sessions/{id}", ok)        // local: and stops
 	r.Post("/api/stream/sessions/{id}/progress", ok) // home: viewing data
-	rt := &nodeRuntime{resolver: resolver, vod: &vodfallback.Fallback{},
-		proxy: homeproxy.NewWithFallback(home, nil, resolver.Me)}
+	rt := &nodeRuntime{resolver: resolver, vod: &vodfallback.Fallback{}, rules: nodemode.DefaultRules,
+		logger: slog.Default(), proxy: homeproxy.NewWithFallback(home, nil, resolver.Me)}
 	h := rt.handler(&authState{}, r, r)
 
 	do := func(method, path string, signedIn bool) *httptest.ResponseRecorder {

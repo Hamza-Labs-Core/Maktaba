@@ -43,29 +43,25 @@ type nodeServices struct {
 func (ns *nodeServices) HomeAway() bool { return ns != nil && ns.homeAway.Load() }
 
 // watchHome follows the API's view of the home (/api/cluster/self, every 5 s): an API
-// that does not answer leaves the last view.
+// that does not answer leaves the last view, and live TV moves only on two answers alike
+// in a row (one blip does not move every viewer).
 func (ns *nodeServices) watchHome(ctx context.Context, api *url.URL) {
 	if api == nil {
 		return
 	}
 	client := &http.Client{Timeout: 3 * time.Second}
+	last, have := false, false
 	for {
-		if resp, err := client.Get(api.String() + "/api/cluster/self"); err == nil {
-			var s struct {
-				Home *struct {
-					Reachable bool `json:"reachable"`
-				} `json:"home"`
-			}
-			if json.NewDecoder(resp.Body).Decode(&s) == nil && s.Home != nil {
-				if was := ns.homeAway.Swap(!s.Home.Reachable); was != !s.Home.Reachable {
-					if was {
-						fmt.Fprintln(os.Stderr, "[serve] node: the home answers again: live TV from its front door")
-					} else {
-						fmt.Fprintln(os.Stderr, "[serve] node: the home is away: live TV from this machine's own channels")
-					}
+		if away, ok := homeAway(client, api); ok {
+			if have && away == last && ns.homeAway.Load() != away {
+				ns.homeAway.Store(away)
+				if away {
+					fmt.Fprintln(os.Stderr, "[serve] node: the home is away: live TV from this machine's own channels")
+				} else {
+					fmt.Fprintln(os.Stderr, "[serve] node: the home answers again: live TV from its front door")
 				}
 			}
-			_ = resp.Body.Close()
+			last, have = away, true
 		}
 		select {
 		case <-ctx.Done():
@@ -73,6 +69,24 @@ func (ns *nodeServices) watchHome(ctx context.Context, api *url.URL) {
 		case <-time.After(5 * time.Second):
 		}
 	}
+}
+
+// homeAway asks the API whether the home is away (ok false: the API did not answer).
+func homeAway(client *http.Client, api *url.URL) (away, ok bool) {
+	resp, err := client.Get(api.String() + "/api/cluster/self")
+	if err != nil {
+		return false, false
+	}
+	defer resp.Body.Close()
+	var s struct {
+		Home *struct {
+			Reachable bool `json:"reachable"`
+		} `json:"home"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&s) != nil || s.Home == nil {
+		return false, false
+	}
+	return !s.Home.Reachable, true
 }
 
 // startNodeServices starts the machine agent when this machine is a full node.

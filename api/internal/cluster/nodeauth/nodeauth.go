@@ -229,8 +229,7 @@ func (r *Resolver) Unreachable() bool {
 	return !failing.IsZero() && r.now().Sub(failing) > r.grace()
 }
 
-// DownFor reports whether the home has not answered for at least d (a single
-// unanswered probe is not an outage).
+// DownFor reports whether the home has not answered for at least d.
 func (r *Resolver) DownFor(d time.Duration) bool {
 	r.mu.Lock()
 	failing := r.failing
@@ -238,8 +237,17 @@ func (r *Resolver) DownFor(d time.Duration) bool {
 	return !failing.IsZero() && r.now().Sub(failing) >= d
 }
 
-// Reachability is for /api/cluster/self: whether the home answers and since when not.
+// Down reports whether the home has not answered for a probe's interval: what other
+// machines and the viewers see (/api/cluster/self, live TV, the copy's reads) does not
+// move on one call it did not answer (the next probe tells).
+func (r *Resolver) Down() bool { return r.DownFor(ProbeEvery) }
+
+// Reachability is for /api/cluster/self: whether the home answers and since when not
+// (Down: one call it did not answer is not reported).
 func (r *Resolver) Reachability() (ok bool, failingSince *time.Time) {
+	if !r.Down() {
+		return true, nil
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.failing.IsZero() {
@@ -413,7 +421,11 @@ func (r *Resolver) resolve(ctx context.Context, key string, req delegation.Intro
 		r.put(key, &entry{denied: true, until: r.now().Add(NegativeTTL)}, gen)
 		return nil, "", nil
 	case err != nil:
-		r.unanswered()
+		// only the home not answering counts: not the caller going away, nor an answer
+		// the call did not expect
+		if ctx.Err() == nil && errors.Is(err, homelink.ErrUnreachable) {
+			r.unanswered()
+		}
 		return nil, "", ErrHomeUnreachable
 	}
 	r.answered()
@@ -537,13 +549,15 @@ func (r *Resolver) Middleware(next http.Handler) http.Handler {
 			p, csrf, ok := r.localSession(req.Context(), id)
 			switch {
 			case !ok:
-				// ended, or of another machine: anonymous
+				// ended, or of another machine: anonymous, and the cookie cleared
+				r.setCookies(w, "", "", time.Time{})
 				next.ServeHTTP(w, req)
 				return
 			case local:
 			case !r.Unreachable() && !readOnly(req.Method):
 				// a change through the home's database: the home knows nothing of this
 				// sign-in, so it asks for one there
+				r.setCookies(w, "", "", time.Time{})
 				writeSignInAgain(w)
 				return
 			case !readOnly(req.Method):
@@ -694,19 +708,29 @@ func (r *Resolver) Me(w http.ResponseWriter, req *http.Request) bool {
 
 // Home fronts the proxy to the home for a node's `home` routes. A node-local session
 // never goes to the home (it knows nothing of it): this machine answers its session
-// probe and sign-out, and any other `home` route asks for a sign-in with the home
-// (or, with the home away, gets 503 home_unreachable). Once the home has not answered
+// probe and sign-out; a sign-in with the home, once it answers, ends the node-local one
+// and goes to the home without it; any other `home` route asks for a sign-in with the
+// home and clears the node-local cookie (or, with the home away, gets 503
+// home_unreachable). Once the home has not answered
 // for the grace period it is not tried per request: the session probe and the sign-in
 // are answered from this machine's copy (Me, SignIn), and every other `home` route
 // gets 503 home_unreachable at once rather than waiting on a dead address.
 func (r *Resolver) Home(proxy http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if _, ok := isLocalSession(req); ok {
+		if id, ok := isLocalSession(req); ok {
 			switch {
 			case r.SignOut(w, req), r.Me(w, req):
 			case r.Unreachable():
 				writeUnreachable(w, true)
+			case req.Method == http.MethodPost && req.URL.Path == LoginPath:
+				// a sign-in with the home, now that it answers: this machine's own ends
+				// and the home never sees it (it sets its own cookies)
+				if r.Sessions != nil {
+					_ = r.Sessions.End(id)
+				}
+				proxy.ServeHTTP(w, keepSignIn(withoutLocalSession(req)))
 			default:
+				r.setCookies(w, "", "", time.Time{})
 				writeSignInAgain(w)
 			}
 			return
@@ -725,6 +749,8 @@ func (r *Resolver) Home(proxy http.Handler) http.Handler {
 		if !r.Unreachable() {
 			// the home not answering its probes (inside the grace): what this machine
 			// can answer itself is answered here at once, rather than waiting on it
+			// (from the first call it did not answer: a home switched off is not waited
+			// on; the caller going away does not count, unanswered)
 			if r.DownFor(0) && (r.Me(w, req) || r.SignIn(w, req) || r.SignOutHere(w, req)) {
 				return
 			}
@@ -769,6 +795,20 @@ func (r *Resolver) signedOutHere(req *http.Request) bool {
 // sign-out.
 func (r *Resolver) Fallback(w http.ResponseWriter, req *http.Request) bool {
 	return r.Me(w, req) || r.SignIn(w, req) || r.SignOutHere(w, req)
+}
+
+// withoutLocalSession is req without this machine's session cookies: a sign-in with the
+// home starts afresh (the home would clear a cookie it does not know, and refuse its CSRF
+// token).
+func withoutLocalSession(req *http.Request) *http.Request {
+	out := req.Clone(req.Context())
+	out.Header.Del("Cookie")
+	for _, c := range req.Cookies() {
+		if c.Name != CookieSession && c.Name != CookieCSRF {
+			out.AddCookie(c)
+		}
+	}
+	return out
 }
 
 type signInBodyKey struct{}

@@ -41,8 +41,25 @@ type Options struct {
 	Failing  func() bool
 }
 
-// SessionCookie is the session cookie name.
-const SessionCookie = "mkt_sess"
+// SessionCookie and CSRFCookie are the session's cookie names; LocalSessionPrefix marks
+// a node-local session's value (nodeauth: a sign-in made on the node, which the home
+// knows nothing of).
+const (
+	SessionCookie      = "mkt_sess"
+	CSRFCookie         = "mkt_csrf"
+	LocalSessionPrefix = "nls_"
+)
+
+// withoutSession drops the session's cookies from an outgoing request.
+func withoutSession(out *http.Request) {
+	cookies := out.Cookies()
+	out.Header.Del("Cookie")
+	for _, c := range cookies {
+		if c.Name != SessionCookie && c.Name != CSRFCookie {
+			out.AddCookie(c)
+		}
+	}
+}
 
 // New builds the proxy over a link.
 func New(link homelink.Link, logger *slog.Logger) http.Handler {
@@ -84,7 +101,12 @@ func NewWith(link homelink.Link, logger *slog.Logger, o Options) http.Handler {
 			pr.SetXForwarded()
 			pr.Out.Header.Set("X-Forwarded-Host", host)
 			if c, err := pr.In.Cookie(SessionCookie); err == nil && c.Value != "" {
-				pr.Out.Header.Set(delegation.HeaderDelegatedSession, c.Value)
+				if strings.HasPrefix(c.Value, LocalSessionPrefix) {
+					// a node-local sign-in never reaches the home (it would clear it)
+					withoutSession(pr.Out)
+				} else {
+					pr.Out.Header.Set(delegation.HeaderDelegatedSession, c.Value)
+				}
 			}
 		},
 		Transport:     timeoutTransport{base: link.Transport(), failing: o.Failing},

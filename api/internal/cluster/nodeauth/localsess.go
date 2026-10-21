@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homeproxy"
 )
 
 // Node-local sessions (specs/epics/37-node-replica): a sign-in made on this machine
@@ -23,8 +25,8 @@ import (
 // there).
 
 // LocalSessionPrefix marks a node-local session's cookie value (a home session's is a
-// UUID).
-const LocalSessionPrefix = "nls_"
+// UUID); the home proxy never forwards one.
+const LocalSessionPrefix = homeproxy.LocalSessionPrefix
 
 // LocalSessionsFile is the store's file in the node's state directory.
 const LocalSessionsFile = "local-sessions.json"
