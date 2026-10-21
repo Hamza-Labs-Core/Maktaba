@@ -23,6 +23,14 @@ func TestSetupTextsMatchTheApp(t *testing.T) {
 		}
 		web[lang] = m
 	}
+	// every code the app translates, the terminal translates too
+	for key := range web["en"] {
+		for _, prefix := range []string{"setup.check.note.", "setup.check.run.", "setup.error."} {
+			if _, ok := setupTexts[key]; strings.HasPrefix(key, prefix) && !ok {
+				t.Errorf("%s is the app's and not the terminal's: add it to setupTexts", key)
+			}
+		}
+	}
 	for key, v := range setupTexts {
 		if v[0] == "" || v[1] == "" {
 			t.Errorf("%s lacks a language", key)

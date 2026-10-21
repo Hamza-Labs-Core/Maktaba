@@ -504,6 +504,7 @@ pub async fn setup_step(
         code: "server_missing".into(),
         message: "This build of Maktaba does not include the server.".into(),
         field: None,
+        params: None,
         details: Vec::new(),
     })?;
     tauri::async_runtime::spawn_blocking(move || {
@@ -517,6 +518,7 @@ pub async fn setup_step(
             code: "internal".into(),
             message: e.to_string(),
             field: None,
+            params: None,
             details: Vec::new(),
         })
     })

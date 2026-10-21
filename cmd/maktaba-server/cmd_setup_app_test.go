@@ -91,8 +91,11 @@ func (s *script) yesNo(q string, _ bool) (bool, error) {
 	return v, nil
 }
 
-var checkOK = map[string]any{"ok": true, "data_dir": "/home/me/.local/share/maktaba",
-	"warnings": []string{"Less than 40 GB free"}, "runs": []map[string]string{{"role": "postgres", "what": "The library database"}}}
+var checkOK = map[string]any{"ok": true, "data_dir": "/home/me/.local/share/maktaba", "problems": []any{},
+	"warnings": []map[string]any{{"code": "disk_tight", "message": "Less than 40 GB free",
+		"params": map[string]any{"free_bytes": 30 << 30, "comfortable_bytes": 40 << 30}}},
+	"runs": []map[string]any{{"role": "postgres", "what": "The library database"},
+		{"role": "pipeline", "what": "Indexing", "params": map[string]any{"workers": 2, "gpu": "RTX 4090"}}}}
 
 // interactive is a whole interactive run's script: admin (a mismatch, then the
 // same twice), libraries (a folder the step refuses, then a path map without
@@ -106,11 +109,12 @@ func interactive(t *testing.T) *script {
 
 func interactiveSteps() *fakeSteps {
 	return &fakeSteps{answers: map[string][]any{
-		"status":    {map[string]any{"configured": false}},
-		"check":     {checkOK},
-		"libraries": {&stepFailure{Code: "root_missing", Message: "/media/x does not exist", Field: "roots"}, map[string]any{}},
-		"plex":      {map[string]any{"pin_id": 7, "code": "ABCD", "link_url": "https://plex.tv/link"}, map[string]any{"linked": false}, map[string]any{"linked": true}},
-		"finish":    {map[string]any{"web_url": "http://127.0.0.1:8088"}},
+		"status": {map[string]any{"configured": false}},
+		"check":  {checkOK},
+		"libraries": {&stepFailure{Code: "root_missing", Message: "/media/x is not a folder", Field: "roots",
+			Params: map[string]any{"path": "/media/x"}}, map[string]any{}},
+		"plex":   {map[string]any{"pin_id": 7, "code": "ABCD", "link_url": "https://plex.tv/link"}, map[string]any{"linked": false}, map[string]any{"linked": true}},
+		"finish": {map[string]any{"web_url": "http://127.0.0.1:8088"}},
 	}}
 }
 
@@ -148,8 +152,11 @@ func TestAppSetupInteractive(t *testing.T) {
 	if got := f.inputs["plex"][1]; got != `{"action":"poll","pin_id":7}` {
 		t.Errorf("plex poll %s", got)
 	}
-	for _, w := range []string{"/media/x does not exist", "The two passwords are not the same.",
-		`Write each line as "their path => the path here".`, "Note: Less than 40 GB free",
+	for _, w := range []string{"/media/x is not a folder on this computer.", "The two passwords are not the same.",
+		`Write each line as "their path => the path here".`,
+		"Note: Less than 40.0 GB free: the database, the models and the caches grow with the library.",
+		"  - The library database (private to Maktaba)\n",
+		"  - Indexing, transcription (2 workers) and search, transcribing on RTX 4090\n",
 		"Enter this code at https://plex.tv/link: ABCD", "Plex is linked.", "Open http://127.0.0.1:8088",
 		"working on venv (50%)"} {
 		if !strings.Contains(out.String(), w) {
@@ -167,18 +174,54 @@ func TestAppSetupInArabic(t *testing.T) {
 	if err := a.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	ar := textsFor("ar")
+	note := ar.coded("setup.check.note", "disk_tight", map[string]any{"comfortable_bytes": float64(40 << 30)}, "")
 	for _, w := range []string{"كلمتا المرور غير متطابقتين.", "تم ربط Plex.", "اكتمل إعداد مكتبة. افتح http://127.0.0.1:8088",
-		"ملاحظة: Less than 40 GB free"} {
+		"ملاحظة: " + note, "40.0 GB", ar.coded("setup.error", "root_missing", map[string]any{"path": "/media/x"}, "")} {
 		if !strings.Contains(out.String(), w) {
 			t.Errorf("output lacks %q:\n%s", w, out.String())
 		}
 	}
+	if strings.Contains(note, "{") || !strings.Contains(ar.coded("setup.error", "root_missing", map[string]any{"path": "/media/x"}, ""), "/media/x") {
+		t.Errorf("params not filled: %q", note)
+	}
 	// a step's error by its code, in Arabic; the step's message when the app has no text for it
-	if got := textsFor("ar").stepError(&stepFailure{Code: "hf_token_invalid", Message: "Hugging Face did not accept this token."}); got != "لم يقبل Hugging Face الرمز." {
+	if got := ar.stepError(&stepFailure{Code: "hf_token_invalid", Message: "Hugging Face did not accept this token."}); got != "لم يقبل Hugging Face الرمز." {
 		t.Errorf("hf_token_invalid in Arabic: %q", got)
 	}
-	if got := textsFor("ar").stepError(&stepFailure{Code: "root_missing", Message: "/x does not exist"}); got != "/x does not exist" {
+	if got := ar.stepError(&stepFailure{Code: "a_new_code", Message: "/x is odd"}); got != "/x is odd" {
 		t.Errorf("an unknown code: %q", got)
+	}
+}
+
+func TestCodedTexts(t *testing.T) {
+	en := textsFor("en")
+	if got := en.coded("setup.check.note", "disk_low", map[string]any{"free_bytes": float64(5 << 30), "need_bytes": float64(20 << 30),
+		"dir": "/data"}, "english"); got != "Only 5.0 GB free on the disk of /data: Maktaba needs 20.0 GB to start." {
+		t.Errorf("disk_low: %q", got)
+	}
+	if got := en.coded("setup.check.note", "ram_low", map[string]any{"have_bytes": float64(3 << 30), "need_bytes": float64(4 << 30)}, ""); !strings.Contains(got, "this computer") {
+		t.Errorf("the platform's words: %q", got)
+	}
+	for _, c := range []struct {
+		params map[string]any
+		want   string
+	}{
+		{nil, "Indexing, transcription and search"},
+		{map[string]any{"workers": float64(1)}, "Indexing, transcription (1 worker) and search"},
+		{map[string]any{"workers": float64(3), "gpu": "RTX 3060"}, "Indexing, transcription (3 workers) and search, transcribing on RTX 3060"},
+	} {
+		if got := en.runText("pipeline", "english", c.params); got != c.want {
+			t.Errorf("runText(%v) = %q", c.params, got)
+		}
+	}
+	if got := en.runText("a_new_role", "what it does", nil); got != "what it does" {
+		t.Errorf("an unknown role: %q", got)
+	}
+	for n, want := range map[float64]string{512: "512 B", 1536: "1.5 KB", 5 << 30: "5.0 GB"} {
+		if got := formatBytes(n); got != want {
+			t.Errorf("formatBytes(%v) = %q", n, got)
+		}
 	}
 }
 
@@ -223,11 +266,11 @@ func TestAppSetupFromAnswers(t *testing.T) {
 
 	// an answered step that fails is not retried
 	f = &fakeSteps{answers: map[string][]any{"check": {checkOK},
-		"admin": {&stepFailure{Code: "weak_password", Message: "too short", Field: "password"}}}}
+		"admin": {&stepFailure{Code: "password_short", Message: "too short", Field: "password", Params: map[string]any{"min": float64(8)}}}}}
 	a = &appSetup{run: f.run, ask: &script{t: t}, out: &bytes.Buffer{}, t: textsFor("en"), answers: answers}
 	err := a.Run(context.Background())
 	var fail *stepFailure
-	if !errors.As(err, &fail) || fail.Code != "weak_password" {
+	if !errors.As(err, &fail) || fail.Code != "password_short" {
 		t.Errorf("err = %v", err)
 	}
 }
@@ -257,7 +300,9 @@ func TestAppSetupLanguageModel(t *testing.T) {
 }
 
 func TestAppSetupStopsWhenTheComputerCannotRunIt(t *testing.T) {
-	f := &fakeSteps{answers: map[string][]any{"check": {map[string]any{"ok": false, "warnings": []string{"glibc 2.31; Maktaba needs 2.35"}}}}}
+	f := &fakeSteps{answers: map[string][]any{"check": {map[string]any{"ok": false, "warnings": []any{},
+		"problems": []map[string]any{{"code": "glibc_old", "message": "glibc 2.31; Maktaba needs 2.35",
+			"params": map[string]any{"have": "2.31", "need": "2.35"}}}}}}}
 	var out bytes.Buffer
 	ran := false
 	a := &appSetup{run: f.run, ask: &script{t: t}, out: &out, t: textsFor("en"),
@@ -265,7 +310,7 @@ func TestAppSetupStopsWhenTheComputerCannotRunIt(t *testing.T) {
 	if err := a.Run(context.Background()); err == nil {
 		t.Fatal("setup went on")
 	}
-	if !strings.Contains(out.String(), "cannot run its server on this computer:\n  - glibc 2.31; Maktaba needs 2.35") {
+	if !strings.Contains(out.String(), "cannot run its server on this computer:\n  - This Linux has glibc 2.31; Maktaba needs 2.35 or newer") {
 		t.Errorf("output %s", out.String())
 	}
 	if strings.Join(f.calls, " ") != "status check" || ran {

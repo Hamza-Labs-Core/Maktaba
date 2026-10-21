@@ -10,7 +10,15 @@
 // Every screen runs one `maktaba-server setup --json` step through the
 // SetupApi (lib/desktopSetup.ts). Passwords and tokens are typed by the
 // user, sent once on the step's stdin, and dropped from state after.
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Input } from "@ds/components/Input/Input";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
@@ -19,6 +27,7 @@ import {
   formatBytes,
   isStepError,
   progressPercent,
+  type CheckNote,
   type Platform,
   type SetupApi,
   type StepError,
@@ -65,9 +74,54 @@ interface CheckResult {
   disk_free_bytes: number;
   data_dir: string;
   need: { ram_bytes: number; disk_bytes: number };
+  /** no problem: Next is allowed */
   ok: boolean;
-  warnings: string[];
-  runs: { role: string; what: string }[];
+  problems: CheckNote[];
+  warnings: CheckNote[];
+  runs: { role: string; what: string; params?: Record<string, unknown> }[];
+}
+
+/** The platform's words ({machine}, {tray}) for every coded text. */
+const WordsContext = createContext<Record<string, string>>({});
+
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
+
+/** The text of a step's code (`${prefix}.${code}`), its params in it (sizes
+ * formatted) with the platform's words; the step's English when the app has
+ * no text for the code. */
+export function codedText(
+  t: Translate,
+  prefix: string,
+  code: string,
+  params: Record<string, unknown> | undefined,
+  words: Record<string, string>,
+  english: string
+): string {
+  const key = `${prefix}.${code}`;
+  const vars: Record<string, string | number> = { ...words };
+  for (const [k, v] of Object.entries(params ?? {})) {
+    if (typeof v === "number") vars[k] = k.endsWith("_bytes") ? formatBytes(v) : v;
+    else if (v !== null && v !== undefined) vars[k] = String(v);
+  }
+  const text = t(key, vars);
+  return text === key ? english : text;
+}
+
+/** What will run, in the app's words: the pipeline by its number of
+ * transcription workers and the GPU it transcribes on. */
+function runText(
+  t: Translate,
+  r: CheckResult["runs"][number],
+  words: Record<string, string>
+): string {
+  if (r.role !== "pipeline")
+    return codedText(t, "setup.check.run", r.role, r.params, words, r.what);
+  const workers = Number(r.params?.workers ?? 0);
+  const key = workers > 1 ? "pipelineWorkers" : workers === 1 ? "pipelineOne" : "pipeline";
+  let text = codedText(t, "setup.check.run", key, r.params, words, r.what);
+  if (text !== r.what && typeof r.params?.gpu === "string")
+    text += codedText(t, "setup.check.run", "onGpu", r.params, words, "");
+  return text;
 }
 
 function asError(e: unknown): StepError {
@@ -122,15 +176,20 @@ function Frame({
 
 function ErrorBox({ error }: { error: StepError }) {
   const { t } = useI18n();
-  const known = `setup.error.${error.code}`;
-  const text = t(known);
+  const words = useContext(WordsContext);
+  const text = codedText(t, "setup.error", error.code, error.params, words, error.message);
+  // the step's English (what failed, the log's path) goes with the details
+  const more = [
+    ...(text !== error.message && error.message ? [error.message] : []),
+    ...error.details,
+  ];
   return (
     <div className="mkt-setup__error" role="alert">
-      <p>{text === known ? error.message : `${text} ${error.message}`}</p>
-      {error.details.length > 0 && (
+      <p>{text}</p>
+      {more.length > 0 && (
         <details>
           <summary>{t("setup.details")}</summary>
-          <pre dir="ltr">{error.details.join("\n")}</pre>
+          <pre dir="ltr">{more.join("\n")}</pre>
         </details>
       )}
     </div>
@@ -173,31 +232,39 @@ export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initi
   };
   const step = ORDER.indexOf(screen);
   const props = { api, step, platform, next: () => go(1), back: () => go(-1) };
+  const { t } = useI18n();
+  return (
+    <WordsContext.Provider value={platformWords(t, platform)}>
+      {screenOf(screen)}
+    </WordsContext.Provider>
+  );
 
-  switch (screen) {
-    case "welcome":
-      return (
-        <Welcome
-          api={api}
-          platform={platform}
-          serverAvailable={serverAvailable}
-          onThisMachine={() => setScreen("check")}
-        />
-      );
-    case "check":
-      return <Check {...props} />;
-    case "admin":
-      return <Admin {...props} />;
-    case "libraries":
-      return <Libraries {...props} />;
-    case "models":
-      return <Models {...props} />;
-    case "plex":
-      return <Plex {...props} />;
-    case "install":
-      return <Install {...props} />;
-    case "starting":
-      return <ServerStarting api={api} platform={platform} />;
+  function screenOf(screen: Screen) {
+    switch (screen) {
+      case "welcome":
+        return (
+          <Welcome
+            api={api}
+            platform={platform}
+            serverAvailable={serverAvailable}
+            onThisMachine={() => setScreen("check")}
+          />
+        );
+      case "check":
+        return <Check {...props} />;
+      case "admin":
+        return <Admin {...props} />;
+      case "libraries":
+        return <Libraries {...props} />;
+      case "models":
+        return <Models {...props} />;
+      case "plex":
+        return <Plex {...props} />;
+      case "install":
+        return <Install {...props} />;
+      case "starting":
+        return <ServerStarting api={api} platform={platform} />;
+    }
   }
 }
 
@@ -306,7 +373,7 @@ function Check({ api, step, platform, next, back }: StepProps) {
           <p>{t("setup.check.intro", words)}</p>
           <ul className="mkt-setup__list">
             {res.runs.map((r) => (
-              <li key={r.role}>{r.what}</li>
+              <li key={r.role}>{runText(t, r, words)}</li>
             ))}
           </ul>
           <dl className="mkt-setup__facts">
@@ -327,15 +394,20 @@ function Check({ api, step, platform, next, back }: StepProps) {
             <dt>{t("setup.check.dataDir")}</dt>
             <dd dir="ltr">{res.data_dir}</dd>
           </dl>
-          {res.warnings.map((w) => (
-            <p key={w} className="mkt-setup__warn">
-              {w}
+          {res.warnings.map((n) => (
+            <p key={n.code} className="mkt-setup__warn">
+              {codedText(t, "setup.check.note", n.code, n.params, words, n.message)}
             </p>
           ))}
           {!res.ok && (
-            <p className="mkt-setup__warn" role="alert">
-              {t("setup.check.blocked", words)}
-            </p>
+            <div role="alert">
+              {(res.problems ?? []).map((n) => (
+                <p key={n.code} className="mkt-setup__warn">
+                  {codedText(t, "setup.check.note", n.code, n.params, words, n.message)}
+                </p>
+              ))}
+              <p className="mkt-setup__warn">{t("setup.check.blocked", words)}</p>
+            </div>
           )}
         </>
       )}
@@ -364,7 +436,12 @@ function useStep(api: SetupApi) {
       setBusy(false);
     }
   };
-  const fieldError = (f: string) => (error?.field === f ? error.message : undefined);
+  const { t } = useI18n();
+  const words = useContext(WordsContext);
+  const fieldError = (f: string) =>
+    error?.field === f
+      ? codedText(t, "setup.error", error.code, error.params, words, error.message)
+      : undefined;
   const formError = error && !error.field ? error : null;
   return { run, busy, progress, error, fieldError, formError };
 }
