@@ -305,12 +305,18 @@ func (b Bundle) writeHBA() error {
 // the replication's progress, and end a revoked machine's sessions at once; and it
 // makes the replicas' group (each machine's replication role joins it; it reads the
 // tables published to the machines: specs/epics/37-node-replica), administered by the
-// app role without the app role taking its rights. Prepare runs it once (the marker); every
-// statement is safe to run again.
+// app role without the app role taking its rights; and it lets the app role keep
+// Postgres's own cap on what a slot holds (max_slot_wal_keep_size) at its rule
+// (rules.cluster.replica_wal_keep_gb), so the cap holds with the API down too. Prepare
+// runs it once (the marker), in the app's database (a function's grant is that
+// database's); every statement is safe to run again.
 const clusterSQL = `\set ON_ERROR_STOP on
+\c ` + AppDatabase + `
 ALTER ROLE ` + AppRole + ` WITH CREATEROLE REPLICATION;
 GRANT pg_monitor TO ` + AppRole + `;
 GRANT pg_signal_backend TO ` + AppRole + `;
+GRANT ALTER SYSTEM ON PARAMETER max_slot_wal_keep_size TO ` + AppRole + `;
+GRANT EXECUTE ON FUNCTION pg_reload_conf() TO ` + AppRole + `;
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '` + ReplicaGroup + `') THEN

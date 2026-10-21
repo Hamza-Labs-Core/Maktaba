@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -23,6 +24,10 @@ type Copies struct {
 	// KeepGB returns the cap (0: none).
 	KeepGB func() int
 	Logger *slog.Logger
+
+	// kept is the cap Postgres was last set to (-1: never)
+	kept int
+	set  bool
 }
 
 // BeatEvery is how often the home writes its beat while a machine follows it.
@@ -83,9 +88,39 @@ func (c *Copies) holdCap(ctx context.Context) {
 	if c.KeepGB == nil {
 		return
 	}
-	if gb := c.KeepGB(); gb > 0 {
+	gb := c.KeepGB()
+	if gb > 0 {
 		c.dropOver(ctx, int64(gb)<<30)
 	}
+	c.keepAtMost(ctx, gb)
+}
+
+// keepAtMost sets Postgres's own cap on what a slot holds (max_slot_wal_keep_size) to
+// the rule when it changed, so the cap holds while this API does not run (the bundled
+// Postgres lets the app role set it; another database does not, which is said once).
+func (c *Copies) keepAtMost(ctx context.Context, gb int) {
+	if c.set && c.kept == gb {
+		return
+	}
+	kctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	q := `ALTER SYSTEM RESET max_slot_wal_keep_size`
+	if gb > 0 {
+		q = fmt.Sprintf(`ALTER SYSTEM SET max_slot_wal_keep_size = '%dGB'`, gb)
+	}
+	_, err := c.DB.ExecContext(kctx, q)
+	if err == nil {
+		_, err = c.DB.ExecContext(kctx, `SELECT pg_reload_conf()`)
+	}
+	if err != nil {
+		if !c.set && c.Logger != nil {
+			c.Logger.Info("cluster: the database's own cap on what a machine's copy keeps cannot be set: the home "+
+				"holds the cap alone", "err", err, "event", "cluster_wal_keep_unset")
+		}
+		c.set, c.kept = true, -1
+		return
+	}
+	c.set, c.kept = true, gb
 }
 
 // dropOver drops the slots of the machines that do not follow and that the home keeps

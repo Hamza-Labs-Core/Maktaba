@@ -129,6 +129,32 @@ func runNodeCopy(ctx context.Context, cfg config.Config, nc *nodeCopy, procs []s
 	}
 	mctx, stop := context.WithCancel(ctx)
 	done := make(chan struct{})
-	go func() { m.Run(mctx); close(done) }()
+	go func() {
+		m.Run(mctx)
+		close(done)
+		if mctx.Err() == nil && m.Status().State == nodecopy.StateRevoked {
+			watchRejoin(mctx)
+		}
+	}()
 	return func() { stop(); <-done }
+}
+
+// watchRejoin starts serve again once node.json is a new one: the machine, revoked and
+// its copy wiped, joined its home again; its copy is made anew then, with no restart.
+func watchRejoin(ctx context.Context) {
+	was := supervisor.NodeConfig().DatabaseURL
+	t := time.NewTicker(30 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		if n := supervisor.NodeConfig(); n.Joined() && n.DatabaseURL != was {
+			fmt.Fprintln(os.Stderr, "[serve] node: this machine joined its home again: starting again")
+			requestReload()
+			return
+		}
+	}
 }

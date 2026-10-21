@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -89,5 +90,21 @@ func TestAChangeIsReadFromTheHomeUntilTheCopyHasIt(t *testing.T) {
 	// a beat after the change: the copy has it
 	if rt.recent.Changed("author", now.Add(-18*time.Second)) {
 		t.Fatal("the author is kept on the home after the copy has the change")
+	}
+}
+
+// /api/cluster/self is public: the copy's state and progress, never its detail (an
+// error names roles and paths).
+func TestTheCopysPublicStatus(t *testing.T) {
+	raw := []byte(`{"state":"error","detail":"pq: role \"maktaba_rep_x\" at C:\\Users\\me\\keys","lag_ms":1200,
+	  "errors":3,"local_schema":144,"checked":"2026-10-21T10:00:00Z","applied_at":"2026-10-21T09:59:58Z"}`)
+	got := string(publicCopy(raw))
+	if strings.Contains(got, "detail") || strings.Contains(got, "maktaba_rep") || strings.Contains(got, "local_schema") ||
+		!strings.Contains(got, `"state":"error"`) || !strings.Contains(got, `"lag_ms":1200`) ||
+		!strings.Contains(got, "applied_at") {
+		t.Fatalf("public copy status: %s", got)
+	}
+	if publicCopy([]byte("not json")) != nil {
+		t.Fatal("garbage shown")
 	}
 }

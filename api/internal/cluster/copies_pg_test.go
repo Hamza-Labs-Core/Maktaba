@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,6 +67,8 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	exec(admin, `GRANT pg_monitor, pg_signal_backend TO `+app)
 	exec(admin, `CREATE ROLE maktaba_replicas NOLOGIN`)
 	exec(admin, `GRANT maktaba_replicas TO `+app+` WITH ADMIN OPTION, INHERIT FALSE, SET FALSE`)
+	exec(admin, `GRANT ALTER SYSTEM ON PARAMETER max_slot_wal_keep_size TO `+app)
+
 	exec(admin, `CREATE DATABASE `+dbName+` OWNER `+app)
 	t.Cleanup(func() {
 		_, _ = admin.Exec(`SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE slot_name LIKE 'maktaba\_copy\_%' AND NOT active`)
@@ -73,6 +76,9 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 		if _, err := admin.Exec(`DROP DATABASE IF EXISTS ` + dbName); err != nil {
 			t.Logf("drop %s: %v", dbName, err)
 		}
+		_, _ = admin.Exec(`ALTER SYSTEM RESET max_slot_wal_keep_size`)
+		_, _ = admin.Exec(`SELECT pg_reload_conf()`)
+		_, _ = admin.Exec(`REVOKE ALTER SYSTEM ON PARAMETER max_slot_wal_keep_size FROM ` + app)
 		for _, r := range []string{nodeRole, otherRole, copyRole, "maktaba_rep_" + strings.TrimPrefix(otherRole, "maktaba_node_"),
 			"maktaba_worker", "maktaba_replicas", app} {
 			if _, err := admin.Exec(`DROP ROLE IF EXISTS ` + pq.QuoteIdentifier(r)); err != nil {
@@ -88,6 +94,9 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	for _, x := range []string{"pg_trgm", "unaccent", "pgcrypto"} {
 		exec(sup, `CREATE EXTENSION IF NOT EXISTS `+x)
 	}
+	// as the cluster bootstrap does, in the app's database (a function's grant is its
+	// database's)
+	exec(sup, `GRANT EXECUTE ON FUNCTION pg_reload_conf() TO `+app)
 	home, err := sql.Open("postgres", clustertest.DSN(t, base, dbName, app, "app-pass"))
 	if err != nil {
 		t.Fatal(err)
@@ -224,7 +233,7 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	}
 	exec(home, `UPDATE cluster_replica_beat SET at = '2000-01-01'`)
 	exec(sup, `SELECT pg_create_logical_replication_slot('`+slot+`', 'pgoutput')`) // a machine follows
-	c := &Copies{DB: home, CAFile: ca}
+	c := &Copies{DB: home, CAFile: ca, Logger: slog.Default()}
 	c.beat(context.Background())
 	c.publishCA(context.Background())
 	var at time.Time
@@ -247,6 +256,25 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	if g, err := ask(node, nodeID, pw, false); err != nil || g.SlotExists {
 		t.Fatalf("after the cap the grant says the slot is gone (the copy subscribes anew): %+v %v", g, err)
 	}
+	// Postgres holds the cap too (it holds with the API down)
+	c.KeepGB = func() int { return 7 }
+	c.holdCap(context.Background())
+	waitSetting := func(want string) {
+		t.Helper()
+		var got string
+		for i := 0; i < 50; i++ {
+			_ = admin.QueryRow(`SHOW max_slot_wal_keep_size`).Scan(&got)
+			if got == want {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		t.Fatalf("max_slot_wal_keep_size = %q, want %q", got, want)
+	}
+	waitSetting("7GB")
+	c.KeepGB = func() int { return 0 } // no cap
+	c.holdCap(context.Background())
+	waitSetting("-1")
 
 	// revoked: the copy's role may not sign in, its slot and publication are gone;
 	// removed: its role too

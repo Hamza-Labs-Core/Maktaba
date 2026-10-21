@@ -29,6 +29,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lib/pq"
@@ -362,7 +363,9 @@ func (c Copy) conninfo(database string) (string, error) {
 	}
 	kv := [][2]string{{"host", host}, {"port", port}, {"dbname", database}, {"user", c.Role()},
 		{"passfile", filepath.ToSlash(filepath.Join(c.DB.Keys, passFile))}, {"application_name", c.Slot()},
-		{"connect_timeout", "10"}}
+		{"connect_timeout", "10"},
+		// a home switched off mid-copy is noticed (its socket would otherwise live on)
+		{"keepalives", "1"}, {"keepalives_idle", "30"}, {"keepalives_interval", "10"}, {"keepalives_count", "3"}}
 	tls, err := c.homeTLS()
 	if err != nil {
 		return "", err
@@ -531,7 +534,13 @@ func truncate(ctx context.Context, db *sql.DB, tables []string) error {
 
 // Subscribe drops any subscription this machine's database has and subscribes anew
 // to the grant's publication: its tables emptied first, every row then copied.
+// subscriptionTimeout bounds a statement that makes or changes the subscription (it
+// connects to the home from this machine's database).
+const subscriptionTimeout = 2 * time.Minute
+
 func (c Copy) Subscribe(ctx context.Context, g Grant) error {
+	ctx, cancel := context.WithTimeout(ctx, subscriptionTimeout)
+	defer cancel()
 	db, err := c.super()
 	if err != nil {
 		return err
@@ -568,6 +577,8 @@ func (c Copy) Subscribe(ctx context.Context, g Grant) error {
 // database. c.HomeDSN is this machine's role on the new home's database; local is this
 // machine's schema version.
 func (c Copy) Handover(ctx context.Context, g Grant, local int64) error {
+	ctx, cancel := context.WithTimeout(ctx, subscriptionTimeout)
+	defer cancel()
 	db, err := c.super()
 	if err != nil {
 		return err
@@ -625,6 +636,8 @@ func (c Copy) unsubscribe(ctx context.Context, db *sql.DB) error {
 // address, a CA pinned since), its tables (a table the home publishes now: emptied
 // here, then copied), enabled. False when it cannot be kept and must be made anew.
 func (c Copy) Follow(ctx context.Context, g Grant) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, subscriptionTimeout)
+	defer cancel()
 	db, err := c.super()
 	if err != nil {
 		return false, err
@@ -922,11 +935,22 @@ func writeSecret(path string, b []byte) error {
 	return nil
 }
 
-// restrict lets only this account (and the system) read a path: on Unix the mode
-// does it (0700 / 0600), on Windows the ACL (no inherited entries).
+// restricted are the directories whose ACL this process has set.
+var restricted sync.Map
+
+// restrict lets only this account (and the system) read a path: on Unix the mode does
+// it (0700 / 0600), on Windows its directory's ACL (no inherited entries; the files in
+// it inherit it), set once per directory by this process, its failure said.
 func restrict(path string) {
 	if runtime.GOOS != "windows" {
 		return
 	}
-	restrictACL(path)
+	dir := filepath.Dir(path)
+	if _, done := restricted.LoadOrStore(dir, true); done {
+		return
+	}
+	if err := restrictACL(dir); err != nil {
+		restricted.Delete(dir)
+		fmt.Fprintf(os.Stderr, "[copy] %s: its ACL could not be kept to this account: %v\n", dir, err)
+	}
 }

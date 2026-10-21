@@ -419,11 +419,33 @@ func (rt *nodeRuntime) self(ctx context.Context) clusterauth.SelfInfo {
 		info.VOD = st
 	}
 	if dir := nodeStateDir(); dir != "" {
-		if b, err := os.ReadFile(filepath.Join(dir, copyStatusFile)); err == nil && json.Valid(b) {
-			info.Copy = b
+		if b, err := os.ReadFile(filepath.Join(dir, copyStatusFile)); err == nil {
+			info.Copy = publicCopy(b)
 		}
 	}
 	return info
+}
+
+// publicCopy is the copy's status as /api/cluster/self (public) shows it: its state and
+// how far it has applied the home's changes; never its detail (errors name roles and
+// paths: the home's Machines page shows them to its admins).
+func publicCopy(raw []byte) json.RawMessage {
+	var s struct {
+		State     string     `json:"state"`
+		AppliedAt *time.Time `json:"applied_at,omitempty"`
+		LagMS     *int64     `json:"lag_ms,omitempty"`
+		Tables    int        `json:"tables,omitempty"`
+		Ready     int        `json:"ready,omitempty"`
+		Checked   *time.Time `json:"checked,omitempty"`
+	}
+	if json.Unmarshal(raw, &s) != nil || s.State == "" {
+		return nil
+	}
+	b, err := json.Marshal(s)
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 // copyStatusFile is the supervisor's status of this machine's copy (nodecopy.StatusFile).
