@@ -551,6 +551,23 @@ mac-app-payload:  ## Build only the Maktaba.app server payload (build/mac-app/se
 	@bash tools/release/mac-app/payload.sh
 	@bash tools/release/mac-app/check.sh
 
+# The Windows app with the whole server inside (Epic 38, story 38.11): Maktaba.exe and
+# <install>\server (Go binaries, Postgres, ffmpeg, Python, the pipeline wheel) as one NSIS
+# installer for the current user. Pinned downloads are in tools/release/win-app/pins.env.
+# Unsigned. Run in Git Bash on Windows x64; payload.sh builds the Go binaries with this make
+# (Git for Windows has none: MinGW's make, Strawberry Perl's gmake, ...). Through a variable
+# of its own: a recipe line naming $(MAKE) itself runs even under `make -n`.
+WIN_APP_MAKE := $(MAKE)
+
+.PHONY: win-app
+win-app:  ## Build the Windows app's NSIS installer with the server payload (unsigned) and test-install it. Needs Git Bash, Rust, Go, uv, pnpm, Visual Studio's C++ tools.
+	@MAKE="$(WIN_APP_MAKE)" bash tools/release/win-app/build-app.sh
+
+.PHONY: win-app-payload
+win-app-payload:  ## Build only the Windows app's server payload (build/win-app/server) and smoke-test it.
+	@MAKE="$(WIN_APP_MAKE)" bash tools/release/win-app/payload.sh
+	@bash tools/release/win-app/check.sh
+
 # The Linux server payload (Epic 39, story 39.2): the same tree for this machine's
 # architecture (x86_64 or aarch64), with Postgres's libraries from this machine. Pinned
 # downloads are in tools/release/linux-app/pins.env.
