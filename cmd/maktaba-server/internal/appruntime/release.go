@@ -45,7 +45,7 @@ const maxUnpacked = 4 << 30
 
 // Unpack extracts a payload tarball (gzip) into dir, which must be empty, and
 // returns the payload directory in it. Only directories, regular files and
-// symlinks are taken; a path that leaves dir is refused. Links are made last,
+// symlinks are taken; a path with ".." or an absolute one is refused. Links are made last,
 // so no file is written through one. Install then checks every file against
 // the manifest.
 func Unpack(tarball, dir string) (string, error) {
@@ -70,6 +70,10 @@ func Unpack(tarball, dir string) (string, error) {
 		}
 		if err != nil {
 			return "", fmt.Errorf("%w: %s: %v", ErrInvalid, filepath.Base(tarball), err)
+		}
+		// no ".." anywhere (no payload file has one in its name), and no absolute path
+		if strings.Contains(h.Name, "..") {
+			return "", fmt.Errorf("%w: %s: %q leaves the payload", ErrInvalid, filepath.Base(tarball), h.Name)
 		}
 		name := path.Clean(strings.TrimPrefix(h.Name, "./"))
 		if name == "." {

@@ -119,6 +119,7 @@ func TestUnpackRefuses(t *testing.T) {
 	for name, entries := range map[string][]tarEntry{
 		"a path out":       {{name: "server/payload.json", body: "{}"}, {name: "../escape", body: "x"}},
 		"an absolute path": {{name: "/etc/x", body: "x"}},
+		"a .. that stays":  {{name: "server/bin/../payload.json", body: "{}"}},
 		"a device":         nil, // below
 		"a file through a link": {{name: "server/payload.json", body: "{}"}, {name: "server/lib", link: "/tmp"},
 			{name: "server/lib/x", body: "x"}},
