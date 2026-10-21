@@ -11,9 +11,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
 
@@ -47,6 +49,20 @@ func (s *setupRun) refineOn() bool {
 	return true
 }
 
+// secondListenHere: refine is on and this machine can run the second listen
+// (secondListenOn). Only then is its gated model's sign-in asked and its model
+// downloaded: elsewhere Whisper's words are kept.
+func (s *setupRun) secondListenHere() bool {
+	if !s.refineOn() {
+		return false
+	}
+	var gpus []hostinfo.GPU
+	if runtime.GOOS != "darwin" {
+		gpus = hostGPUs()
+	}
+	return secondListenOn(runtime.GOOS, runtime.GOARCH, gpus).Runs
+}
+
 func (s *setupRun) refineModel() string {
 	if m := strings.TrimSpace(s.cfg.Transcription.RefineModel); m != "" {
 		return m
@@ -75,14 +91,15 @@ func stepModels(s *setupRun, in json.RawMessage) (any, error) {
 	if req.Action == "download" {
 		return s.downloadModels()
 	}
+	here := s.secondListenHere()
 	switch req.Source {
 	case "huggingface":
 		token := strings.TrimSpace(req.HFToken)
-		if token == "" && s.refineOn() {
+		if token == "" && here {
 			return nil, failStep("hf_token_empty", "hf_token", "Enter a Hugging Face read token.")
 		}
 		if token != "" {
-			if err := checkHFToken(s.ctx, token, s.refineModel(), s.refineOn()); err != nil {
+			if err := checkHFToken(s.ctx, token, s.refineModel(), here); err != nil {
 				return nil, err
 			}
 			if err := os.MkdirAll(filepath.Dir(s.hfTokenPath()), 0o700); err != nil {
@@ -109,6 +126,9 @@ func stepModels(s *setupRun, in json.RawMessage) (any, error) {
 		}
 	default:
 		return nil, failStep("bad_input", "source", "Choose Hugging Face or the NAS copy.")
+	}
+	if !here {
+		return map[string]any{"models": []map[string]string{}}, nil
 	}
 	return map[string]any{"models": []map[string]string{{"name": "second listen", "model": s.refineModel()}}}, nil
 }
@@ -211,6 +231,10 @@ func (s *setupRun) downloadModels() (any, error) {
 		return nil, err
 	}
 	args := []string{"-m", "maktaba_pipeline", "models", "download", "--json"}
+	if !s.secondListenHere() {
+		// no second listen on this machine: not its gated model, nor its dictionary
+		args = append(args, "--only", "whisper,embedder")
+	}
 	if p.Models != nil && p.Models.Source == "nas" && p.Models.Path != "" {
 		args = append(args, "--share", p.Models.Path)
 	}

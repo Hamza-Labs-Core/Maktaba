@@ -47,6 +47,13 @@ don't append a line here; docs-only PRs are exempt.
 - **`maktaba-server setup` (the CLI wizard) seeds the admin again.** It called `adduser` with
   `--username`/`--password` flags the api does not have; it now passes the username and a
   password file.
+- **Setup asks for a Hugging Face sign-in only where the second listen runs.** It asked whenever
+  the second listen was on, so a PC without an NVIDIA GPU, with one too small or too old, or with
+  a driver before R580 was made to create a token and accept a gated model's licence for a model
+  that never runs there. `check` now says whether this machine can run it (and why not, in the
+  app's words), the screens leave out the models step where it cannot, the models step no longer
+  asks for the token there, and the download takes only Whisper and the search model. The
+  graphics card's compute capability and driver version come with its name and memory.
 - **The terminal setup's Plex sign-in can be skipped, and survives a moment without plex.tv.**
   Ctrl+C while it waits for the code skipped nothing: it stopped the whole setup before `finish`,
   as did a single poll plex.tv did not answer. Ctrl+C now skips the sign-in and the setup goes on;
