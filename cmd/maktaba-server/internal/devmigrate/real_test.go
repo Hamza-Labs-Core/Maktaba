@@ -170,8 +170,15 @@ INSERT INTO streaming_hosts (host_id, host, role) VALUES ('1e943eda-0064-42e9-86
 					rest = rest[1:]
 				}
 				tool := rest[1] // rest[0] is the container
-				cmd := exec.CommandContext(ctx, src.Bin(tool), append([]string{"-h", "127.0.0.1", "-p", strconv.Itoa(src.Port)}, rest[2:]...)...)
-				cmd.Env = append(os.Environ(), "PGPASSWORD="+appPW)
+				// the compose image's maktaba user is its superuser: stand in with this cluster's
+				targs := append([]string{"-h", "127.0.0.1", "-p", strconv.Itoa(src.Port)}, rest[2:]...)
+				for i := range targs {
+					if targs[i] == "-U" && i+1 < len(targs) {
+						targs[i+1] = pgbundle.SuperUser
+					}
+				}
+				cmd := exec.CommandContext(ctx, src.Bin(tool), targs...)
+				cmd.Env = append(os.Environ(), "PGPASSWORD="+superPW)
 				return cmd
 			}
 			return exec.CommandContext(ctx, "true")
@@ -260,6 +267,35 @@ INSERT INTO streaming_hosts (host_id, host, role) VALUES ('1e943eda-0064-42e9-86
 		t.Fatalf("the app role writes: %v %s", err, b)
 	}
 
+	// the joined machine's login is off in the source (Undo turns it on again)
+	if got := psql(pgbundle.SuperUser, superPW, "SELECT rolcanlogin FROM pg_roles WHERE rolname = 'maktaba_node_1e943eda006442e98692851ebab36f54'"); got != "f" {
+		t.Fatalf("machine role can still log in: %s", got)
+	}
+
+	// --replace: a move made again keeps the database it replaces in backups/
+	m.Replace = true
+	if err := srv.Process.Signal(os.Interrupt); err != nil {
+		t.Fatal(err)
+	}
+	_ = srv.Wait()
+	p2 := m.MakePlan(ctx)
+	if len(p2.Problems) > 0 {
+		t.Fatalf("replace problems: %q", p2.Problems)
+	}
+	if err := m.Run(ctx, p2); err != nil {
+		t.Fatalf("replace: %v\n%s", err, out.String())
+	}
+	if kept, _ := filepath.Glob(filepath.Join(target.Backups, "maktaba-*.dump")); len(kept) != 1 {
+		t.Fatalf("no safety dump of the replaced database: %v", kept)
+	}
+	srv = exec.Command(target.Bin("postgres"), target.ServerArgs()...)
+	if err := srv.Start(); err != nil {
+		t.Fatal(err)
+	}
+	for pgbundle.Ready(ctx, target.Addr(), pgbundle.SuperUser, "postgres") != nil {
+		time.Sleep(100 * time.Millisecond)
+	}
+
 	// the files, server.toml and the marker
 	if b, _ := os.ReadFile(filepath.Join(target.Keys, "secrets.key")); string(b) != "0123456789abcdef0123456789abcdef" {
 		t.Fatalf("secrets.key = %q", b)
@@ -279,7 +315,8 @@ INSERT INTO streaming_hosts (host_id, host, role) VALUES ('1e943eda-0064-42e9-86
 		t.Fatalf("marker %+v %v", mk, err)
 	}
 	t.Log(out.String())
-	if !strings.Contains(out.String(), "docker start "+DefaultContainer) {
+	if !strings.Contains(out.String(), "docker start "+DefaultContainer) ||
+		!strings.Contains(out.String(), "ALTER ROLE maktaba_node_1e943eda006442e98692851ebab36f54 LOGIN;") {
 		t.Fatalf("no undo steps:\n%s", out.String())
 	}
 }

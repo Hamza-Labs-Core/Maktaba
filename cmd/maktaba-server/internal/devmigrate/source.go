@@ -10,9 +10,12 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 )
 
 // Source is the stack's database in its Docker container.
@@ -182,12 +185,13 @@ var CheckTables = []string{"libraries", "videos", "transcripts", "transcript_seg
 
 // Facts are what the source holds, at one snapshot.
 type Facts struct {
-	Counts  map[string]int64  `json:"counts"`
-	Roles   []string          `json:"roles,omitempty"`
-	Members map[string]string `json:"members,omitempty"`
-	HostID  string            `json:"host_id,omitempty"` // this home's Live TV host (instance_identity)
-	Size    int64             `json:"size"`              // pg_database_size
-	Nodes   []string          `json:"nodes,omitempty"`   // the machines' Live TV hosts
+	Counts     map[string]int64 `json:"counts"`
+	Roles      []string         `json:"roles,omitempty"`
+	Members    [][2]string      `json:"members,omitempty"`
+	Extensions []string         `json:"extensions,omitempty"`
+	HostID     string           `json:"host_id,omitempty"` // this home's Live TV host (instance_identity)
+	Size       int64            `json:"size"`              // pg_database_size
+	Nodes      []string         `json:"nodes,omitempty"`   // the machines' Live TV hosts
 }
 
 // querier is one statement in, its first row out: a snapshot session, the
@@ -196,7 +200,7 @@ type querier func(sql string) (string, error)
 
 // ReadFacts reads the counts and the roles.
 func ReadFacts(q querier) (Facts, error) {
-	f := Facts{Counts: map[string]int64{}, Members: map[string]string{}}
+	f := Facts{Counts: map[string]int64{}}
 	have, err := q(`SELECT coalesce(string_agg(relname, ','), '') FROM pg_class WHERE relkind IN ('r', 'p') ` +
 		`AND relnamespace = 'public'::regnamespace AND relname IN ('` + strings.Join(append(CheckTables, "goose_db_version", "instance_identity"), "','") + `')`)
 	if err != nil {
@@ -258,9 +262,14 @@ func ReadFacts(q querier) (Facts, error) {
 	}
 	for _, mg := range splitList(members) {
 		if m, g, ok := strings.Cut(mg, ">"); ok {
-			f.Members[m] = g
+			f.Members = append(f.Members, [2]string{m, g})
 		}
 	}
+	ext, err := q("SELECT coalesce(string_agg(extname, ',' ORDER BY extname), '') FROM pg_extension")
+	if err != nil {
+		return f, err
+	}
+	f.Extensions = splitList(ext)
 	return f, nil
 }
 
@@ -272,6 +281,48 @@ func splitList(s string) []string {
 		}
 	}
 	return out
+}
+
+// Unrestorable names what the bundled Postgres cannot take as the app role:
+// extensions it does not make, role names it cannot create.
+func (f Facts) Unrestorable() []string {
+	var out []string
+	for _, e := range f.Extensions {
+		if !slices.Contains(pgbundle.Extensions, e) {
+			out = append(out, "the extension "+e)
+		}
+	}
+	for _, r := range f.Roles {
+		if !pgbundle.ValidRoleName(r) {
+			out = append(out, "the role "+r)
+		}
+	}
+	return out
+}
+
+// Fence keeps every other writer out before the snapshot: the other login
+// roles (the machines that joined this home) become NOLOGIN and every other
+// session on the database ends, so nothing is written after the dump that the
+// move would lose. It returns the roles it disabled (Undo logs them in again).
+func (s Source) Fence(ctx context.Context) ([]string, error) {
+	list, err := s.Query(ctx, "SELECT coalesce(string_agg(rolname, ',' ORDER BY rolname), '') FROM pg_roles "+
+		"WHERE rolcanlogin AND NOT rolsuper AND rolname <> current_user AND rolname !~ '^pg_'")
+	if err != nil {
+		return nil, err
+	}
+	var off []string
+	for _, r := range splitList(list) {
+		if !pgbundle.ValidRoleName(r) {
+			return off, fmt.Errorf("cannot disable the role %q", r)
+		}
+		if _, err := s.Query(ctx, "ALTER ROLE "+r+" NOLOGIN"); err != nil {
+			return off, err
+		}
+		off = append(off, r)
+	}
+	_, err = s.Query(ctx, "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity "+
+		"WHERE datname = current_database() AND pid <> pg_backend_pid() AND backend_type = 'client backend'")
+	return off, err
 }
 
 // MachineRoles are the roles of machines that joined this home.

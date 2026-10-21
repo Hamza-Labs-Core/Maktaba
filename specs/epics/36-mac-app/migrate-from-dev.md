@@ -19,10 +19,10 @@ S="/Applications/Maktaba.app/Contents/Resources/server/bin/maktaba-server"
 |---|---|---|
 | 1 | build the pipeline venv | track B's `venv_bootstrap` from the payload, while the stack still runs (minutes the first time) |
 | 2 | stop the stack | `zsh <checkout>/tools/dev/stack.sh stop`; waits until the processes are gone and ports 8080/8081 are free |
-| 3 | dump | one read-only snapshot: the counts and `pg_dump -Fc --snapshot` see the same rows, so a joined machine that still writes cannot skew the check. The dump is `backups/from-dev-<time>.dump` and is kept |
+| 3 | dump | first the other login roles (the machines that joined) go `NOLOGIN` and every other session on the database ends, so nothing is written after the dump. Then one read-only snapshot: the counts and `pg_dump -Fc --snapshot` see the same rows, so a joined machine that still writes cannot skew the check. The dump is `backups/from-dev-<time>.dump` and is kept |
 | 4 | stop the container | `docker stop` (the volume is kept): joined machines cannot write to the old database any more |
 | 5 | restore | a fresh `maktaba` database in the bundled Postgres; the extensions are created by its superuser, everything else is restored with `--role=maktaba --no-owner`, so the app role owns it. The source's other roles (`maktaba_worker`, the machines' roles) are created `NOLOGIN`, so the grants restore. The counts must match exactly |
-| 6 | copy | `secrets.key` (`~/.config/maktaba`), `stream-signing.key`, the Chroma index, the streaming cache, the Hugging Face repos the pipeline loads (Whisper, the second listen, the embedder) and the HF token, CAMeL Tools data. APFS clones: no extra space. A key file already in the app's place is never replaced |
+| 6 | copy | `secrets.key` (`~/.config/maktaba`), `stream-signing.key`, the Chroma index, the streaming cache, the Hugging Face repos the pipeline loads (Whisper, the second listen, the embedder) and the HF token, CAMeL Tools data. APFS clones: no extra space. A key file already in the app's place is never replaced; other folders are replaced only with `--replace` |
 | 7 | server.toml | `[media] path_map` and the STT settings (`workers`, `audio_hours`, `gpu_gb`, `gpu_cache_gb`, `min_free_pct`, the models) from the running stack (`ps -E`), else the shell, else stack.sh's defaults. Never a `[database] url`: the bundled Postgres is used |
 
 The settings and the checkout come from the running processes, so run it while the stack runs.
@@ -39,9 +39,13 @@ Until `--finalize`, nothing of the stack is deleted:
 
 1. quit Maktaba (or `launchctl bootout gui/$(id -u)/com.hamzalabs.maktaba.server`)
 2. `docker start maktaba-postgres-1`
-3. `cd <checkout> && CGO_ENABLED=0 zsh tools/dev/stack.sh start 2`
+3. log the joined machines in again (the run prints the exact `ALTER ROLE … LOGIN` line)
+4. `cd <checkout> && CGO_ENABLED=0 zsh tools/dev/stack.sh start 2`
 
 What changed in the app after the move stays in the app's database, not in the stack's.
+`--replace` dumps an app database that has data into `backups/maktaba-<time>.dump` before replacing it.
+`--finalize` needs the move verified, the dump still in `backups/`, and Maktaba running (it checks
+once more), then asks before it deletes the container and its volume.
 
 ## Known gaps
 

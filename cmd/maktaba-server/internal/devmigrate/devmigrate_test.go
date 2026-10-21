@@ -2,6 +2,7 @@ package devmigrate
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 )
@@ -183,7 +185,7 @@ func TestItemsCopy(t *testing.T) {
 		t.Fatalf("items = %+v", items)
 	}
 	for _, it := range items {
-		if err := it.Copy(); err != nil {
+		if err := it.Copy(false); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -202,15 +204,42 @@ func TestItemsCopy(t *testing.T) {
 		if it.Exists && !it.Done {
 			t.Fatalf("%s not marked done", it.What)
 		}
-		if err := it.Copy(); err != nil {
+		if err := it.Copy(false); err != nil {
 			t.Fatal(err)
 		}
 	}
+	// a move made again replaces the folders (not the keys), atomically
+	write(filepath.Join(s.ChromaDir, "chroma.sqlite3"), "newer index")
+	for _, it := range Items(s, state, keys) {
+		if err := it.Copy(true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(state, "chroma", "chroma.sqlite3")); string(b) != "newer index" {
+		t.Fatalf("chroma after a replace = %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(state, "chroma.old")); err == nil {
+		t.Fatal("chroma.old left behind")
+	}
+	// a key that is a link is copied as the file
+	keyLink := filepath.Join(home, "linked.key")
+	if err := os.Symlink(s.SecretsKey, keyLink); err != nil {
+		t.Fatal(err)
+	}
+	ki := Item{What: "k", From: keyLink, To: filepath.Join(keys, "linked.key"), Key: true}
+	ki.stat()
+	if err := ki.Copy(false); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Lstat(ki.To); err != nil || fi.Mode()&os.ModeSymlink != 0 {
+		t.Fatalf("linked key copied as a link: %v", err)
+	}
+
 	// a different key in the app's place is never replaced
 	write(filepath.Join(keys, "secrets.key"), "another")
 	for _, it := range Items(s, state, keys) {
 		if it.What == "secrets key" {
-			if err := it.Copy(); err == nil || !strings.Contains(err.Error(), "never replaced") {
+			if err := it.Copy(false); err == nil || !strings.Contains(err.Error(), "never replaced") {
 				t.Fatalf("copy over a different key: %v", err)
 			}
 		}
@@ -254,6 +283,8 @@ func TestReadFactsAndCompare(t *testing.T) {
 			return "maktaba_node_aa,maktaba_worker", nil
 		case strings.Contains(sql, "pg_auth_members"):
 			return "maktaba_node_aa>maktaba_worker", nil
+		case strings.Contains(sql, "pg_extension"):
+			return "pg_trgm,plpgsql", nil
 		}
 		return answers[sql], nil
 	}
@@ -263,9 +294,17 @@ func TestReadFactsAndCompare(t *testing.T) {
 	}
 	want := Facts{Counts: map[string]int64{"videos": 10, "transcripts": 3, "streaming_hosts": 2, "goose": 141}, Size: 4096,
 		HostID: "host-1", Nodes: []string{"PC"}, Roles: []string{"maktaba_node_aa", "maktaba_worker"},
-		Members: map[string]string{"maktaba_node_aa": "maktaba_worker"}}
+		Members: [][2]string{{"maktaba_node_aa", "maktaba_worker"}}, Extensions: []string{"pg_trgm", "plpgsql"}}
 	if !reflect.DeepEqual(f, want) {
 		t.Fatalf("facts =\n%+v\nwant\n%+v", f, want)
+	}
+	if u := f.Unrestorable(); u != nil {
+		t.Fatalf("unrestorable = %q", u)
+	}
+	f2 := f
+	f2.Extensions, f2.Roles = []string{"vector"}, []string{"Bad-Name"}
+	if u := f2.Unrestorable(); !reflect.DeepEqual(u, []string{"the extension vector", "the role Bad-Name"}) {
+		t.Fatalf("unrestorable = %q", u)
 	}
 	if got := f.MachineRoles(); !reflect.DeepEqual(got, []string{"maktaba_node_aa"}) {
 		t.Fatalf("machine roles = %v", got)
@@ -301,12 +340,15 @@ func TestFinalizeNeedsAVerifiedMove(t *testing.T) {
 		Home:   t.TempDir(),
 	}
 	var out strings.Builder
-	m := &Migration{Sys: sys, Target: Target{State: state, Keys: filepath.Join(state, "keys")}, Out: &out}
+	checked := 0
+	m := &Migration{Sys: sys, Target: Target{State: state, Keys: filepath.Join(state, "keys")}, Out: &out,
+		check: func(context.Context, Marker) error { checked++; return nil }}
 	yes := func(string) bool { return true }
 	if err := m.Finalize(context.Background(), yes); err == nil || !strings.Contains(err.Error(), "no move") {
 		t.Fatalf("finalize with no move: %v", err)
 	}
-	mk := Marker{Stage: "migrated", Container: "maktaba-postgres-1", Volume: "maktaba_pg_data", Dump: "/d.dump"}
+	dump := filepath.Join(state, "from-dev.dump")
+	mk := Marker{Stage: "migrated", Container: "maktaba-postgres-1", Volume: "maktaba_pg_data", Dump: dump}
 	if err := m.writeMarker(mk); err != nil {
 		t.Fatal(err)
 	}
@@ -317,6 +359,17 @@ func TestFinalizeNeedsAVerifiedMove(t *testing.T) {
 	if err := m.writeMarker(mk); err != nil {
 		t.Fatal(err)
 	}
+	if err := m.Finalize(context.Background(), yes); err == nil || !strings.Contains(err.Error(), "is gone") {
+		t.Fatalf("finalize without the dump: %v", err)
+	}
+	if err := os.WriteFile(dump, []byte("PGDMP"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.check = func(context.Context, Marker) error { return errors.New("the API does not answer") }
+	if err := m.Finalize(context.Background(), yes); err == nil || !strings.Contains(err.Error(), "nothing was deleted") {
+		t.Fatalf("finalize with the app down: %v", err)
+	}
+	m.check = func(context.Context, Marker) error { checked++; return nil }
 	if err := m.Finalize(context.Background(), func(string) bool { return false }); err == nil {
 		t.Fatal("finalize went ahead unconfirmed")
 	}
@@ -328,12 +381,15 @@ func TestFinalizeNeedsAVerifiedMove(t *testing.T) {
 	if err := m.Finalize(context.Background(), yes); err != nil {
 		t.Fatal(err)
 	}
-	if !contains(ran, "docker rm maktaba-postgres-1") || !contains(ran, "docker volume rm maktaba_pg_data") {
-		t.Fatalf("ran %q", ran)
+	if !contains(ran, "docker rm maktaba-postgres-1") || !contains(ran, "docker volume rm maktaba_pg_data") || checked != 2 {
+		t.Fatalf("ran %q, checked %d", ran, checked)
 	}
 	got, err := m.readMarker()
 	if err != nil || got.Stage != "finalized" || got.FinalizedAt == nil {
 		t.Fatalf("marker = %+v, %v", got, err)
+	}
+	if err := m.Verify(context.Background(), time.Second); err == nil || !strings.Contains(err.Error(), "finalized") {
+		t.Fatalf("verify after finalize: %v", err)
 	}
 }
 

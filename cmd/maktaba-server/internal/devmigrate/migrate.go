@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -48,6 +47,8 @@ type Migration struct {
 	StopWait time.Duration
 	// Ports must be free once the stack stopped (default StackPorts).
 	Ports []string
+	// check is verifyOnce (tests replace it).
+	check func(context.Context, Marker) error
 }
 
 func (m *Migration) ports() []string {
@@ -59,7 +60,7 @@ func (m *Migration) ports() []string {
 
 // Marker records a move: <state>/migrate-from-dev.json.
 type Marker struct {
-	Stage       string           `json:"stage"` // migrated, verified, finalized
+	Stage       string           `json:"stage"` // stopped, dumped, migrated, verified, finalized
 	MigratedAt  time.Time        `json:"migrated_at"`
 	VerifiedAt  *time.Time       `json:"verified_at,omitempty"`
 	FinalizedAt *time.Time       `json:"finalized_at,omitempty"`
@@ -70,6 +71,8 @@ type Marker struct {
 	Workers     int              `json:"workers"`
 	Counts      map[string]int64 `json:"counts"`
 	HostID      string           `json:"host_id,omitempty"`
+	// Disabled are the stack database's login roles the move set NOLOGIN.
+	Disabled []string `json:"disabled_roles,omitempty"`
 }
 
 func (m *Migration) markerPath() string {
@@ -91,6 +94,9 @@ func (m *Migration) readMarker() (Marker, error) {
 func (m *Migration) writeMarker(mk Marker) error {
 	raw, err := json.MarshalIndent(mk, "", "  ")
 	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(m.Target.State, 0o700); err != nil {
 		return err
 	}
 	tmp := m.markerPath() + ".tmp"
@@ -136,6 +142,9 @@ func (m *Migration) MakePlan(ctx context.Context) Plan {
 		p.Facts, p.FactsErr = ReadFacts(func(sql string) (string, error) { return src.Query(ctx, sql) })
 		if p.FactsErr != nil {
 			p.Problems = append(p.Problems, "read the database: "+p.FactsErr.Error())
+		}
+		for _, u := range p.Facts.Unrestorable() {
+			p.Problems = append(p.Problems, "the bundled Postgres cannot restore "+u)
 		}
 	}
 	if p.Container.Exists && p.Container.Volume == "" {
@@ -242,7 +251,8 @@ func (m *Migration) Print(p Plan) {
 		stop = "zsh " + p.Stack.Script() + " stop"
 	}
 	m.say("  2. stop the stack           %s", stop)
-	m.say("  3. dump the database        docker exec %s pg_dump -Fc -> %s (at most %s)", m.Container,
+	m.say("  3. dump the database        the other login roles NOLOGIN (machines that joined), their sessions ended, then")
+	m.say("                              docker exec %s pg_dump -Fc -> %s (at most %s)", m.Container,
 		filepath.Join(t.State, "backups", "from-dev-<time>.dump"), human(p.Facts.Size))
 	m.say("  4. stop the container       docker stop %s (its volume %s is kept)", m.Container, orDefault(p.Container.Volume, "-"))
 	m.say("  5. restore                  into the bundled Postgres (%s), then check the counts above", human(p.Facts.Size))
@@ -252,6 +262,8 @@ func (m *Migration) Print(p Plan) {
 		switch {
 		case !it.Exists:
 			state = "none"
+		case it.Done && m.Replace && !it.Key:
+			state += ", there already: replaced"
 		case it.Done:
 			state += ", there already"
 		case it.Clone:
@@ -309,28 +321,47 @@ func (m *Migration) Run(ctx context.Context, p Plan) error {
 		}
 	}
 
+	// from here on the stack is down: every failure says how to go back
+	mk := Marker{Stage: "stopped", MigratedAt: time.Now().UTC(), Repo: p.Stack.Repo, Container: m.Container,
+		Volume: p.Container.Volume, Workers: p.Stack.Workers()}
+	fail := func(err error) error { return fmt.Errorf("%w\n%s", err, m.Undo(mk)) }
+
 	// 2. stop the stack
 	if len(p.Stack.Procs) > 0 {
 		m.say("==> stopping the developer stack")
 		cmd := m.Sys.Command(ctx, "zsh", p.Stack.Script(), "stop")
 		cmd.Stdout, cmd.Stderr = m.Out, m.Out
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("stack.sh stop: %w", err)
+			return fail(fmt.Errorf("stack.sh stop: %w", err))
 		}
 		if err := m.waitStopped(ctx); err != nil {
-			return err
+			return fail(err)
 		}
 	}
+	if err := m.writeMarker(mk); err != nil {
+		return fail(err)
+	}
 
-	// 3. dump at one snapshot, counted in it
+	// 3. keep the other writers out, then dump at one snapshot, counted in it
 	m.say("==> dumping the database (%s)", human(p.Facts.Size))
+	off, err := p.Source.Fence(ctx)
+	mk.Disabled = off
+	if werr := m.writeMarker(mk); err == nil {
+		err = werr
+	}
+	if err != nil {
+		return fail(fmt.Errorf("keep other writers out of the database: %w", err))
+	}
+	if len(off) > 0 {
+		m.say("    logins off for %s", strings.Join(off, ", "))
+	}
 	if err := os.MkdirAll(filepath.Join(t.State, "backups"), 0o700); err != nil {
-		return err
+		return fail(err)
 	}
 	dump := filepath.Join(t.State, "backups", "from-dev-"+time.Now().Format("20060102-150405")+".dump")
 	sn, err := p.Source.Snapshot(ctx)
 	if err != nil {
-		return fmt.Errorf("open a snapshot of the database: %w", err)
+		return fail(fmt.Errorf("open a snapshot of the database: %w", err))
 	}
 	facts, err := ReadFacts(sn.Query)
 	if err == nil {
@@ -340,19 +371,18 @@ func (m *Migration) Run(ctx context.Context, p Plan) error {
 		err = cerr
 	}
 	if err != nil {
-		return err
+		return fail(err)
 	}
 	m.say("    %s (%s): %s", dump, human(fileSize(dump)), countsLine(facts.Counts))
 
-	// 4. stop the container: machines that joined must not write to it any more
+	// 4. stop the container: nothing reaches the old database any more
 	m.say("==> stopping the container %s (the volume stays)", m.Container)
 	if out, err := m.Sys.Command(ctx, "docker", "stop", m.Container).CombinedOutput(); err != nil {
-		return fmt.Errorf("docker stop %s: %w: %s", m.Container, err, strings.TrimSpace(string(out)))
+		return fail(fmt.Errorf("docker stop %s: %w: %s", m.Container, err, strings.TrimSpace(string(out))))
 	}
-	mk := Marker{Stage: "dumped", MigratedAt: time.Now().UTC(), Repo: p.Stack.Repo, Container: m.Container,
-		Volume: p.Container.Volume, Dump: dump, Workers: p.Stack.Workers(), Counts: facts.Counts, HostID: facts.HostID}
+	mk.Stage, mk.Dump, mk.Counts, mk.HostID = "dumped", dump, facts.Counts, facts.HostID
 	if err := m.writeMarker(mk); err != nil {
-		return err
+		return fail(err)
 	}
 
 	// 5. restore and check
@@ -372,7 +402,7 @@ func (m *Migration) Run(ctx context.Context, p Plan) error {
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("%w (the restore's log: %s)\n%s", err, m.restoreLogPath(), m.Undo(mk))
+		return fail(fmt.Errorf("%w (the restore's log: %s)", err, m.restoreLogPath()))
 	}
 
 	// 6. the files (and a look at the models the venv finds)
@@ -381,8 +411,8 @@ func (m *Migration) Run(ctx context.Context, p Plan) error {
 		if !it.Exists {
 			continue
 		}
-		if err := it.Copy(); err != nil {
-			return fmt.Errorf("%w\n%s", err, m.Undo(mk))
+		if err := it.Copy(m.Replace); err != nil {
+			return fail(err)
 		}
 		m.say("    %-24s %s", it.What, it.To)
 	}
@@ -396,11 +426,11 @@ func (m *Migration) Run(ctx context.Context, p Plan) error {
 	cfg := t.Config
 	p.Settings.Apply(&cfg)
 	if err := cfg.SaveTo(t.ConfigPath); err != nil {
-		return err
+		return fail(err)
 	}
 	mk.Stage = "migrated"
 	if err := m.writeMarker(mk); err != nil {
-		return err
+		return fail(err)
 	}
 	m.say("")
 	m.say("Moved. Next:")
@@ -466,13 +496,25 @@ func (m *Migration) Undo(mk Marker) string {
 	if workers <= 0 {
 		workers = 2
 	}
-	return strings.Join([]string{
+	lines := []string{
 		"To go back to the developer stack (nothing of it was deleted):",
 		"  1. quit Maktaba (menu bar > Quit), or: launchctl bootout gui/$(id -u)/com.hamzalabs.maktaba.server",
 		"  2. docker start " + mk.Container,
-		"  3. cd " + repo + " && CGO_ENABLED=0 zsh tools/dev/stack.sh start " + strconv.Itoa(workers),
-		"  What changed in Maktaba.app since the move stays in " + m.Target.State + " (not in the stack's database).",
-	}, "\n")
+	}
+	n := 3
+	if len(mk.Disabled) > 0 {
+		var sql []string
+		for _, r := range mk.Disabled {
+			sql = append(sql, "ALTER ROLE "+r+" LOGIN;")
+		}
+		lines = append(lines, fmt.Sprintf("  %d. docker exec %s psql -U maktaba -d maktaba -c %q   (the joined machines log in again)",
+			n, mk.Container, strings.Join(sql, " ")))
+		n++
+	}
+	return strings.Join(append(lines,
+		fmt.Sprintf("  %d. cd %s && CGO_ENABLED=0 zsh tools/dev/stack.sh start %d", n, repo, workers),
+		"  What changed in Maktaba.app since the move stays in "+m.Target.State+" (not in the stack's database).",
+	), "\n")
 }
 
 // payloadPython is the payload's Python and the pipeline wheel folder.
@@ -546,8 +588,11 @@ func (m *Migration) Verify(ctx context.Context, wait time.Duration) error {
 	if err != nil {
 		return err
 	}
-	if mk.Stage == "dumped" {
-		return errors.New("the move did not finish: run `maktaba-server migrate-from-dev --replace` again")
+	switch mk.Stage {
+	case "stopped", "dumped":
+		return fmt.Errorf("the move did not finish: docker start %s, then run `maktaba-server migrate-from-dev --replace` again", mk.Container)
+	case "finalized":
+		return errors.New("the move was finalized already")
 	}
 	t := m.Target
 	if t.Bundle == nil {
@@ -613,7 +658,11 @@ func (m *Migration) verifyOnce(ctx context.Context, mk Marker) error {
 			return fmt.Errorf("the Live TV host %s has not checked in since the move", mk.HostID)
 		}
 	}
-	m.say("    the API answers; %s; the Live TV host checked in", countsLine(got.Counts))
+	host := "; the Live TV host checked in"
+	if mk.HostID == "" {
+		host = " (no Live TV host to check)"
+	}
+	m.say("    the API answers; %s%s", countsLine(got.Counts), host)
 	return nil
 }
 
@@ -631,6 +680,20 @@ func (m *Migration) Finalize(ctx context.Context, confirm func(prompt string) bo
 	}
 	if mk.Stage != "verified" {
 		return errors.New("the move is not verified: open Maktaba, then run `maktaba-server migrate-from-dev --verify`")
+	}
+	if info, err := os.Stat(mk.Dump); err != nil || info.Size() == 0 {
+		return fmt.Errorf("the dump %s is gone: it is the last copy outside the app once the volume goes; nothing was deleted", mk.Dump)
+	}
+	if m.Target.Bundle == nil && m.check == nil {
+		return errors.New("no bundled Postgres: " + m.Target.NoBundle)
+	}
+	m.say("Checking Maktaba once more (it must be running)...")
+	check := m.check
+	if check == nil {
+		check = m.verifyOnce
+	}
+	if err := check(ctx, mk); err != nil {
+		return fmt.Errorf("%w: nothing was deleted", err)
 	}
 	src := Source{sys: m.Sys, Container: mk.Container}
 	c := src.Inspect(ctx)
@@ -651,7 +714,8 @@ func (m *Migration) Finalize(ctx context.Context, confirm func(prompt string) bo
 		}
 	}
 	if mk.Volume != "" {
-		if out, err := m.Sys.Command(ctx, "docker", "volume", "rm", mk.Volume).CombinedOutput(); err != nil {
+		if out, err := m.Sys.Command(ctx, "docker", "volume", "rm", mk.Volume).CombinedOutput(); err != nil &&
+			!strings.Contains(string(out), "no such volume") {
 			return fmt.Errorf("docker volume rm %s: %w: %s", mk.Volume, err, strings.TrimSpace(string(out)))
 		}
 	}

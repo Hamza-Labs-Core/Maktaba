@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Epic 36 story 36.9: a Mac that ran the developer stack moves its database into
@@ -30,10 +31,10 @@ func (b Bundle) Listening(ctx context.Context) bool {
 // RestoreOptions shape a restore.
 type RestoreOptions struct {
 	// Roles are the source's other roles (maktaba_worker, the machines' roles):
-	// made NOLOGIN here, so the dump's grants to them restore. Members lists
-	// the group each one is in ("role" -> "group").
+	// made NOLOGIN here, so the dump's grants to them restore. Members are
+	// the memberships among them ({role, group}).
 	Roles   []string
-	Members map[string]string
+	Members [][2]string
 	// Jobs is pg_restore's parallelism (0: half the CPUs, at least 1).
 	Jobs int
 }
@@ -54,6 +55,16 @@ func (b Bundle) Restore(ctx context.Context, dump string, opts RestoreOptions, l
 	}
 	q := Querier{b: b, pw: superPW}
 	return b.withServer(ctx, log, func() error {
+		// a database with data there already (a --replace) is dumped first
+		if rows, err := q.Query(ctx, AppDatabase, "SELECT 1 FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind = 'r' LIMIT 1"); err != nil {
+			return err
+		} else if len(rows) > 0 {
+			path, err := b.Backup(ctx, time.Now())
+			if err != nil {
+				return fmt.Errorf("back up the database there before replacing it: %w", err)
+			}
+			_, _ = fmt.Fprintf(log, "[postgres] the database it replaces is in %s\n", path)
+		}
 		if err := q.Exec(ctx, "postgres", recreateSQL(opts)); err != nil {
 			return fmt.Errorf("make a fresh %s database: %w", AppDatabase, err)
 		}
@@ -86,6 +97,13 @@ func (b Bundle) Restore(ctx context.Context, dump string, opts RestoreOptions, l
 
 var roleName = regexp.MustCompile(`^[a-z_][a-z0-9_]*$`)
 
+// ValidRoleName: a role name Restore can make (lower case, digits, underscores).
+func ValidRoleName(r string) bool { return roleName.MatchString(r) }
+
+// Extensions are the extensions every app database has (made by Prepare and
+// Restore); a dump that needs another cannot be restored as the app role.
+var Extensions = []string{"plpgsql", "pg_trgm", "unaccent", "pgcrypto"}
+
 // recreateSQL drops the app database (and anything connected to it) and makes it
 // again, with the extensions and the source's other roles.
 func recreateSQL(opts RestoreOptions) string {
@@ -93,14 +111,14 @@ func recreateSQL(opts RestoreOptions) string {
 	sb.WriteString("DROP DATABASE IF EXISTS " + AppDatabase + " WITH (FORCE);\n")
 	sb.WriteString("CREATE DATABASE " + AppDatabase + " OWNER " + AppRole + " TEMPLATE template0 ENCODING 'UTF8';\n")
 	for _, r := range opts.Roles {
-		if !roleName.MatchString(r) || r == AppRole || r == SuperUser {
+		if !ValidRoleName(r) || r == AppRole || r == SuperUser {
 			continue
 		}
 		sb.WriteString("SELECT 'CREATE ROLE " + r + " NOLOGIN' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '" + r + "')\\gexec\n")
 	}
-	for r, g := range opts.Members {
-		if roleName.MatchString(r) && roleName.MatchString(g) {
-			sb.WriteString("GRANT " + g + " TO " + r + ";\n")
+	for _, m := range opts.Members {
+		if ValidRoleName(m[0]) && ValidRoleName(m[1]) {
+			sb.WriteString("GRANT " + m[1] + " TO " + m[0] + ";\n")
 		}
 	}
 	sb.WriteString("\\c " + AppDatabase + "\n")

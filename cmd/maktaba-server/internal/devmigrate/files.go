@@ -77,16 +77,33 @@ func diskSize(p string) int64 {
 }
 
 // Copy copies it.From to it.To (a clone where the volume can), beside and
-// renamed into place. A key already there must be the same.
-func (it Item) Copy() error {
+// renamed into place. A key already there must be the same; anything else
+// there stays, unless replace (a move made again: the copy there is older
+// than the database it now goes with).
+func (it Item) Copy(replace bool) error {
 	if !it.Exists {
 		return nil
 	}
-	if _, err := os.Lstat(it.To); err == nil {
-		if it.Key && !sameFile(it.From, it.To) {
-			return fmt.Errorf("%s exists and differs from %s: move it away first (it is never replaced)", it.To, it.From)
+	from := it.From
+	if it.Key { // a linked key file is copied as the file, never as the link
+		r, err := filepath.EvalSymlinks(from)
+		if err != nil {
+			return err
 		}
-		return nil
+		from = r
+	}
+	there := false
+	if _, err := os.Lstat(it.To); err == nil {
+		if it.Key {
+			if !sameFile(from, it.To) {
+				return fmt.Errorf("%s exists and differs from %s: move it away first (it is never replaced)", it.To, it.From)
+			}
+			return nil
+		}
+		if !replace {
+			return nil
+		}
+		there = true
 	}
 	if err := os.MkdirAll(filepath.Dir(it.To), 0o700); err != nil {
 		return err
@@ -95,9 +112,19 @@ func (it Item) Copy() error {
 	if err := os.RemoveAll(part); err != nil {
 		return err
 	}
-	if err := cloneOrCopy(it.From, part); err != nil {
+	if err := cloneOrCopy(from, part); err != nil {
 		_ = os.RemoveAll(part)
 		return fmt.Errorf("copy %s: %w", it.From, err)
+	}
+	if there {
+		old := it.To + ".old"
+		if err := os.RemoveAll(old); err != nil {
+			return err
+		}
+		if err := os.Rename(it.To, old); err != nil {
+			return err
+		}
+		defer func() { _ = os.RemoveAll(old) }()
 	}
 	return os.Rename(part, it.To)
 }
