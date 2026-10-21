@@ -40,14 +40,19 @@ Resume, or the next sign-in runs the server again (an update offered again finis
 Built in this story for the Mac, Windows and Linux; the full rules are Epic 36's contract
 ([What the supervisor does on its next start](../36-mac-app/contract-update.md)). One **database
 step** runs before every process but Postgres and the model server, which wait on it and show its
-progress as their `detail`. Not on a machine that joined a home (the api in node mode: it reads
-the home's database and never migrates, and Epic 37 keeps its copy): there is no database step,
-nothing is dumped, migrated or recorded, and every role starts at once. Nor does a `serve --role`
-without the api write a record.
+progress as their `detail`.
 
 - **The record** `<state>\state\database.json` names the release whose migrations the database
   holds, written before any role runs (`state\payload.json`, the copy saved after three healthy
   minutes, stands in only where there is no record).
+- **A joined full node** (a joined node config, unless `[server] role = "home"`: the test that puts
+  its api in node mode) has no database step: its api reads the home's database and never migrates,
+  so no process waits on the step, nothing is dumped or migrated and no `state\database.json` is
+  written there (the home's own start does all three; a record there would later refuse an older app
+  on a machine with no database of its own). The pipeline still waits for the venv bootstrap, and
+  `state\payload.json` is still saved after three healthy minutes. A run without the api
+  (`serve --role …`) dumps nothing and leaves the record alone; it only refuses an older release
+  than the record, or a database whose putting back has not finished.
 - **The same release:** the migrations run (nothing to apply). **An older release:** refused for
   every process, naming the release to install and the dump from before the update. **Another, or
   no record:** `pg_dump -Fc` into `backups\pre-<old>-to-<new>.dump` (`pre-unknown-to-<new>`
