@@ -49,6 +49,15 @@ const (
 	markerFile         = "maktaba-copy.json"
 )
 
+// A standby home's kit (the home's secrets and keys, sealed to this machine for an
+// emergency), in the keys directory: the sealed chunks, what they are (StandbyKitMeta),
+// and a kit being received. A revoked machine's copy is wiped with them.
+const (
+	StandbyKitFile = "standby-kit.chunks"
+	StandbyKitMeta = "standby-kit.json"
+	StandbyKitPart = "standby-kit.part"
+)
+
 // Subscription and Reader are the copy's subscription and read-only role (local names).
 const (
 	Subscription = "maktaba_copy"
@@ -857,6 +866,8 @@ func (c Copy) Wipe() error {
 	for _, p := range []string{c.DB.Data,
 		filepath.Join(c.DB.Keys, passFile), filepath.Join(c.DB.Keys, caFile), filepath.Join(c.DB.Keys, passwordFile),
 		filepath.Join(c.DB.Keys, readerPasswordFile),
+		filepath.Join(c.DB.Keys, StandbyKitFile), filepath.Join(c.DB.Keys, StandbyKitMeta),
+		filepath.Join(c.DB.Keys, StandbyKitPart),
 		filepath.Join(c.DB.Keys, "postgres-"+pgbundle.SuperUser+".password"),
 		filepath.Join(c.DB.Keys, "postgres-"+pgbundle.AppRole+".password")} {
 		if err := os.RemoveAll(p); err != nil && first == nil {

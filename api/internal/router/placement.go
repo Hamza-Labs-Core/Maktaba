@@ -38,6 +38,8 @@ func buildPlacement() placement.Table {
 		"/api/cluster/self",
 		// a switch's notice of the new home, from this machine's copy (Epic 37)
 		"/api/cluster/moved/{node}",
+		// a standby home taking over when its home is gone (Epic 37)
+		"/api/cluster/emergency",
 		// the cluster sign-in's node half (story 35.9 AC6)
 		"/api/cluster/sso/start",
 		"/api/cluster/sso/callback",

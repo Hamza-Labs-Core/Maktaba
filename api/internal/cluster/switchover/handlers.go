@@ -13,12 +13,18 @@ import (
 
 // Mount wires the control centre's routes (admins only):
 //
-//	GET  /api/cluster/switchover  the term, the switch under way or the last ones, the
-//	                              machines that could take over and why not
-//	POST /api/cluster/switchover  {to_node}: start a planned switch
+//	GET  /api/cluster/switchover          the term, the switch under way or the last ones,
+//	                                      the machines that could take over and why not,
+//	                                      the standby homes, the old homes' reports
+//	POST /api/cluster/switchover          {to_node}: start a planned switch
+//	PUT  /api/cluster/switchover/standby  {node_id, standby}: mark a standby home
+//
+// and the old homes' reports (mountKept).
 func (o *Orchestrator) Mount(r chi.Router) {
 	r.Get("/api/cluster/switchover", o.getStatus)
 	r.Post("/api/cluster/switchover", o.postStart)
+	r.Put("/api/cluster/switchover/standby", o.putStandby)
+	o.mountKept(r)
 }
 
 func admin(w http.ResponseWriter, r *http.Request) (*principal.Principal, bool) {
@@ -36,10 +42,12 @@ func admin(w http.ResponseWriter, r *http.Request) (*principal.Principal, bool) 
 
 // Status is GET /api/cluster/switchover.
 type Status struct {
-	Term       *Term       `json:"term"`
-	Current    *Progress   `json:"current"`
-	Recent     []Progress  `json:"recent"`
-	Candidates []Candidate `json:"candidates"`
+	Term       *Term          `json:"term"`
+	Current    *Progress      `json:"current"`
+	Recent     []Progress     `json:"recent"`
+	Candidates []Candidate    `json:"candidates"`
+	Standbys   []StandbyState `json:"standbys"`
+	Reports    []KeptReport   `json:"reports"`
 }
 
 func (o *Orchestrator) getStatus(w http.ResponseWriter, r *http.Request) {
@@ -72,7 +80,45 @@ func (o *Orchestrator) getStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Candidates = cs
+	if s.Standbys, err = o.Standbys(ctx); err != nil {
+		httperror.Write(w, r, httperror.Internal("switchover"))
+		return
+	}
+	if s.Reports, err = o.Reports(r); err != nil {
+		httperror.Write(w, r, httperror.Internal("switchover"))
+		return
+	}
 	common.WriteJSON(w, r, http.StatusOK, s)
+}
+
+func (o *Orchestrator) putStandby(w http.ResponseWriter, r *http.Request) {
+	if _, ok := admin(w, r); !ok {
+		return
+	}
+	var req struct {
+		NodeID  string `json:"node_id"`
+		Standby bool   `json:"standby"`
+	}
+	if e := common.ReadJSON(r, &req, 4<<10); e != nil {
+		httperror.Write(w, r, e)
+		return
+	}
+	err := o.SetStandby(r.Context(), req.NodeID, req.Standby)
+	if errors.Is(err, ErrNotStandby) {
+		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.dev/problems/not-standby",
+			Title: "that machine cannot be a standby home", Status: http.StatusConflict, Detail: err.Error()})
+		return
+	}
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("switchover"))
+		return
+	}
+	ss, err := o.Standbys(r.Context())
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("switchover"))
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"standbys": ss})
 }
 
 func (o *Orchestrator) postStart(w http.ResponseWriter, r *http.Request) {

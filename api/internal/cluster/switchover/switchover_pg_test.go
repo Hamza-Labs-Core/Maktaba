@@ -26,10 +26,19 @@ type fakeHub struct {
 	mu      sync.Mutex
 	calls   []string
 	answers map[string]func(args json.RawMessage) (bool, any)
+	// nodes are the machines whose agents MachineAgents lists
+	nodes []string
 }
 
 func (h *fakeHub) MachineAgent(node string) string { return "s-" + node }
 func (h *fakeHub) HomeProcesses() []string         { return []string{"home-worker"} }
+func (h *fakeHub) MachineAgents() map[string]string {
+	out := map[string]string{}
+	for _, n := range h.nodes {
+		out[n] = "s-" + n
+	}
+	return out
+}
 func (h *fakeHub) CommandWithin(_ context.Context, sid, name string, args json.RawMessage, _ string, _ time.Duration) (agent.CmdResult, error) {
 	h.mu.Lock()
 	h.calls = append(h.calls, name+"@"+sid)
@@ -55,6 +64,8 @@ type fakeSupervisor struct {
 	steps []string
 	kit   string
 	fail  string
+	// standbyHash is the standby kit's hash it gathers (one it holds already is not sent)
+	standbyHash string
 }
 
 func (s *fakeSupervisor) Call(_ context.Context, step string, req, out any) error {
@@ -70,6 +81,15 @@ func (s *fakeSupervisor) Call(_ context.Context, step string, req, out any) erro
 	}
 	if step == "kit" && out != nil {
 		b, _ := json.Marshal(map[string]any{"path": s.kit, "chunks": 1})
+		return json.Unmarshal(b, out)
+	}
+	if step == "standby-kit" && out != nil {
+		m, _ := req.(map[string]any)
+		ans := map[string]any{"hash": s.standbyHash, "path": s.kit, "term": 2}
+		if m["have"] == s.standbyHash {
+			ans = map[string]any{"hash": s.standbyHash, "unchanged": true}
+		}
+		b, _ := json.Marshal(ans)
 		return json.Unmarshal(b, out)
 	}
 	return nil

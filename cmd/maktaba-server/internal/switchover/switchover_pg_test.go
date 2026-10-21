@@ -16,6 +16,8 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -440,23 +442,39 @@ func TestAnEmergencyPromotion(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		c.exec(c.app, `INSERT INTO events (channel, type) VALUES ('test', 'before')`)
 	}
+	for _, k := range []string{"test.shared", "test.untouched", "test.gone"} {
+		c.exec(c.app, `INSERT INTO app_settings (key, value, updated_at) VALUES ($1, '"before"', now())`, k)
+	}
 	c.following(b, "the first copy")
 	bdb := b.super(t)
-	pgtest.WaitFor(t, "the copy has the events", time.Minute, func() bool {
-		return count(ctx, bdb, `SELECT count(*) FROM events WHERE channel = 'test'`) == 3
+	pgtest.WaitFor(t, "the copy has the events and settings", time.Minute, func() bool {
+		return count(ctx, bdb, `SELECT count(*) FROM events WHERE channel = 'test'`) == 3 &&
+			count(ctx, bdb, `SELECT count(*) FROM app_settings WHERE key LIKE 'test.%'`) == 3
 	})
-	// the home is cut off: a change it makes never reaches B
+	// the home is cut off: what it writes never reaches B (its beat goes on too)
 	b.halt()
 	c.exec(bdb, `ALTER SUBSCRIPTION maktaba_copy DISABLE`)
 	c.exec(c.app, `INSERT INTO app_settings (key, value, updated_at) VALUES ('test.lost', '"only on the old home"', now())`)
+	c.exec(c.app, `UPDATE app_settings SET value = '"a"' WHERE key = 'test.shared'`)
+	c.exec(c.app, `UPDATE app_settings SET value = '"a"' WHERE key = 'test.untouched'`)
+	c.exec(c.app, `DELETE FROM app_settings WHERE key = 'test.gone'`)
+	c.exec(c.app, `INSERT INTO events (channel, type) VALUES ('test', 'on the old home')`)
+	c.exec(c.app, `UPDATE cluster_replica_beat SET at = now()`)
+	userA := uuid.NewString()
+	c.exec(c.app, `INSERT INTO users (id, username, pw_hash) VALUES ($1, 'zed', 'x')`, userA)
 	var oldMax int64
 	_ = c.app.QueryRowContext(ctx, `SELECT max(id) FROM events`).Scan(&oldMax)
 	c.homeSrv.Stop(c.home.StopCommand())
 
-	done, err := Promote(ctx, bdb, Promotion{Self: b.id, Name: "b", Term: 2, Reason: "emergency", Gap: 1000})
+	done, err := Promote(ctx, bdb, Promotion{Self: b.id, Name: "b", Term: 2, Reason: "emergency", Gap: 1000, Fork: true})
 	if err != nil {
 		t.Fatal(err)
 	}
+	// B, the home now, changes a row the old home changed too, and takes a user name the
+	// old home gave to another user
+	c.exec(bdb, `UPDATE app_settings SET value = '"b"' WHERE key = 'test.shared'`)
+	userB := uuid.NewString()
+	c.exec(bdb, `INSERT INTO users (id, username, pw_hash) VALUES ($1, 'zed', 'y')`, userB)
 	if done.CutLSN == "" {
 		t.Fatal("no cut recorded")
 	}
@@ -500,9 +518,103 @@ func TestAnEmergencyPromotion(t *testing.T) {
 	}
 	for _, tx := range aside.Transactions {
 		for _, ch := range tx.Changes {
-			if ch.Table == "public.events" {
+			if ch.Table == "public.events" && ch.Row["type"] != nil && *ch.Row["type"] == "before" {
 				t.Fatalf("a change the new home had is reported as kept aside: %+v", ch)
 			}
 		}
+	}
+
+	// ---- the report on the new home: what applies, and what does not and why ----
+	report, _ := json.Marshal(aside)
+	reportID := uuid.NewString()
+	c.exec(bdb, `INSERT INTO cluster_kept_aside (id, term, from_node, from_name, cut_lsn, report)
+	    VALUES ($1, 2, $2, 'a', $3, $4::jsonb)`, reportID, uuid.NewString(), done.CutLSN, string(report))
+	plan, err := PlanReport(ctx, bdb, reportID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reasonOf := func(table, key string) (PlannedTx, bool) {
+		for i, kt := range aside.Transactions {
+			for _, ch := range kt.Changes {
+				if ch.Table != table {
+					continue
+				}
+				for _, col := range []string{"key", "username", "type"} {
+					if v := ch.Row[col]; v != nil && *v == key {
+						return plan.Transactions[i], true
+					}
+				}
+			}
+		}
+		return PlannedTx{}, false
+	}
+	for _, want := range []struct {
+		table, key, reason string
+		apply              bool
+	}{
+		{"public.app_settings", "test.lost", "", true},
+		{"public.app_settings", "test.untouched", "", true},
+		{"public.app_settings", "test.shared", ReasonChangedHere, false},
+		{"public.events", "on the old home", "", true},
+		{"public.users", "zed", ReasonFails, false},
+	} {
+		pt, ok := reasonOf(want.table, want.key)
+		if !ok {
+			t.Fatalf("the plan has no transaction of %s %s", want.table, want.key)
+		}
+		if pt.Apply != want.apply || pt.Reason != want.reason {
+			t.Errorf("%s %s: applies %v (%s %s), want %v %q", want.table, want.key, pt.Apply, pt.Reason, pt.Detail,
+				want.apply, want.reason)
+		}
+	}
+	beatSkipped := false
+	for _, pt := range plan.Transactions {
+		for _, tb := range pt.Tables {
+			if tb == "public.cluster_replica_beat" {
+				beatSkipped = !pt.Apply && pt.Reason == ReasonClusterRows
+			}
+		}
+	}
+	if !beatSkipped {
+		t.Error("the old home's cluster rows (its beat) would be applied")
+	}
+	if value(ctx, bdb, "test.lost") != "" {
+		t.Fatal("a plan applied something")
+	}
+	// a plan that is not the one shown applies nothing
+	if _, err := ApplyReport(ctx, bdb, reportID, "not-the-plan", ""); !errors.Is(err, ErrPlanChanged) {
+		t.Fatalf("an old plan: %v", err)
+	}
+	if value(ctx, bdb, "test.lost") != "" {
+		t.Fatal("an old plan applied something")
+	}
+	applied, err := ApplyReport(ctx, bdb, reportID, plan.Hash, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied.Apply != plan.Apply {
+		t.Fatalf("applied %d of the %d the plan applies", applied.Apply, plan.Apply)
+	}
+	if value(ctx, bdb, "test.lost") != `"only on the old home"` || value(ctx, bdb, "test.untouched") != `"a"` ||
+		value(ctx, bdb, "test.shared") != `"b"` || value(ctx, bdb, "test.gone") != "" ||
+		count(ctx, bdb, `SELECT count(*) FROM events WHERE type = 'on the old home'`) != 1 ||
+		count(ctx, bdb, `SELECT count(*) FROM users WHERE username = 'zed' AND id = $1`, userB) != 1 {
+		t.Fatal("the new home after applying: not what the plan said")
+	}
+	var state string
+	var recorded []byte
+	_ = bdb.QueryRowContext(ctx, `SELECT state, applied FROM cluster_kept_aside WHERE id = $1`, reportID).
+		Scan(&state, &recorded)
+	if state != "applied" || !bytes.Contains(recorded, []byte(ReasonChangedHere)) {
+		t.Fatalf("what was applied is not recorded: %s %s", state, recorded)
+	}
+	if _, err := ApplyReport(ctx, bdb, reportID, plan.Hash, ""); !errors.Is(err, ErrNotReported) {
+		t.Fatalf("applied twice: %v", err)
+	}
+	if err := DropFork(ctx, bdb, 2); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(ctx, bdb, `SELECT count(*) FROM pg_replication_slots WHERE slot_name = $1`, ForkSlot(2)); n != 0 {
+		t.Fatal("the fork's slot is kept")
 	}
 }

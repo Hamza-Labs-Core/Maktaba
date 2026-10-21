@@ -139,7 +139,13 @@ func runServe(cfg config.Config, opts serveOptions) error {
 		if node != nil {
 			// a switch of the home while this machine was off (serve_switchover.go)
 			go sw.watchMoved(ctx)
+		} else {
+			// a home: an emergency that took the home from it while it was away
+			// (serve_standby.go)
+			go sw.watchTerm(ctx)
 		}
+		// what this machine kept aside as a home, until the new home has it
+		go sw.watchKept(ctx)
 	}
 
 	// Start the in-process web server (and mDNS) when web is in scope.

@@ -12,13 +12,16 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/lib/pq"
 )
@@ -33,8 +36,30 @@ var KitTables = []string{
 	"home_secrets", "tv_cluster_secret", "tv_push_secrets", "tv_simulcast_destinations",
 	"refresh_tokens", "password_reset_tokens", "pairing_tickets", "cluster_sso_codes",
 	"idempotency_keys", "licenses", "devices", "device_downloads", "audit_log", "web_sessions",
-	"cluster_nodes", "cluster_node_stages",
+	"cluster_nodes", "cluster_node_stages", "cluster_kept_aside",
 }
+
+// StandbyTables are the kit's tables a standby home keeps for an emergency: KitTables but
+// the history and the tokens that last minutes (the audit log, idempotency keys, reset
+// tokens, pairing tickets, SSO codes). The home gathers it again whenever its secrets,
+// keys or machines change, so it stays small.
+var StandbyTables = []string{
+	"home_secrets", "tv_cluster_secret", "tv_push_secrets", "tv_simulcast_destinations",
+	"refresh_tokens", "licenses", "devices", "device_downloads", "web_sessions",
+	"cluster_nodes", "cluster_node_stages", "cluster_kept_aside",
+}
+
+// standbyStable are the tables whose change makes a standby's kit stale (the others, the
+// sessions and devices, ride along whenever it is sent); of cluster_nodes, only what a
+// machine is (stableNode).
+var standbyStable = []string{"home_secrets", "tv_cluster_secret", "tv_push_secrets",
+	"tv_simulcast_destinations", "licenses", "cluster_node_stages", "cluster_nodes"}
+
+var stableNode = []string{"id", "state", "node_pubkey", "home_pubkey", "home_privkey", "db_role",
+	"full_node", "standby"}
+
+// StandbyKitID is the id a standby's kit is sealed under (KitKey): one per machine.
+func StandbyKitID(node string) string { return "standby:" + strings.ToLower(node) }
 
 // Sequence is a sequence's position.
 type Sequence struct {
@@ -56,12 +81,14 @@ type Role struct {
 // Kit is what the new home takes from the old one besides its copy. Files are the
 // home's key files by name (secrets.key, the cluster key, the Postgres CA...).
 type Kit struct {
-	Switchover string                       `json:"switchover"`
-	Term       int64                        `json:"term"`
-	Tables     map[string][]json.RawMessage `json:"-"`
-	Sequences  []Sequence                   `json:"sequences"`
-	Roles      []Role                       `json:"roles"`
-	Files      map[string][]byte            `json:"files"`
+	Switchover string `json:"switchover"`
+	Term       int64  `json:"term"`
+	// MadeAt is when the kit was gathered (a standby's: how recent its secrets are).
+	MadeAt    time.Time                    `json:"made_at,omitempty"`
+	Tables    map[string][]json.RawMessage `json:"-"`
+	Sequences []Sequence                   `json:"sequences"`
+	Roles     []Role                       `json:"roles"`
+	Files     map[string][]byte            `json:"files"`
 	// OldHome is the old home's registration as a machine of the new one (its id,
 	// public key and passwords: sealed with the kit, never elsewhere).
 	OldHome *Machine `json:"old_home,omitempty"`
@@ -76,8 +103,15 @@ func machineRole(name string) bool {
 // Gather reads the kit from the old home, frozen: super is its superuser (it reads the
 // roles' verifiers), files the key files to carry.
 func Gather(ctx context.Context, super *sql.DB, id string, term int64, files map[string][]byte) (*Kit, error) {
-	k := &Kit{Switchover: id, Term: term, Tables: map[string][]json.RawMessage{}, Files: files}
-	for _, t := range KitTables {
+	return GatherTables(ctx, super, id, term, files, KitTables)
+}
+
+// GatherTables is Gather of tables (a standby's kit: StandbyTables, the home running).
+func GatherTables(ctx context.Context, super *sql.DB, id string, term int64, files map[string][]byte,
+	tables []string) (*Kit, error) {
+	k := &Kit{Switchover: id, Term: term, Tables: map[string][]json.RawMessage{}, Files: files,
+		MadeAt: time.Now().UTC()}
+	for _, t := range tables {
 		var exists bool
 		if err := super.QueryRowContext(ctx, `SELECT to_regclass('public.' || $1) IS NOT NULL`, t).Scan(&exists); err != nil {
 			return nil, err
@@ -140,6 +174,55 @@ SELECT r.rolname, COALESCE(r.rolpassword, ''), r.rolcanlogin, r.rolreplication,
 		return nil, err
 	}
 	return k, nil
+}
+
+// StableHash is the hash of what a standby must hold of the kit: the term, the key files,
+// the machines' roles, the secrets' and the machines' rows (standbyStable). Sessions,
+// devices and sequences are not in it: a kit whose hash is unchanged is not sent again
+// for them.
+func (k *Kit) StableHash() string {
+	h := sha256.New()
+	fmt.Fprintf(h, "term %d\n", k.Term)
+	names := make([]string, 0, len(k.Files))
+	for n := range k.Files {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		fmt.Fprintf(h, "file %s %x\n", n, sha256.Sum256(k.Files[n]))
+	}
+	for _, r := range k.Roles {
+		fmt.Fprintf(h, "role %s %s %v %v %s\n", r.Name, r.Verifier, r.Login, r.Replication, strings.Join(r.Groups, ","))
+	}
+	if m := k.OldHome; m != nil {
+		fmt.Fprintf(h, "old home %s %s\n", m.ID, m.PublicKey)
+	}
+	for _, t := range standbyStable {
+		rows := make([]string, 0, len(k.Tables[t]))
+		for _, raw := range k.Tables[t] {
+			if t != "cluster_nodes" {
+				rows = append(rows, string(raw))
+				continue
+			}
+			var all map[string]json.RawMessage
+			if json.Unmarshal(raw, &all) != nil {
+				rows = append(rows, string(raw))
+				continue
+			}
+			keep := map[string]json.RawMessage{}
+			for _, c := range stableNode {
+				keep[c] = all[c]
+			}
+			b, _ := json.Marshal(keep)
+			rows = append(rows, string(b))
+		}
+		sort.Strings(rows)
+		fmt.Fprintf(h, "table %s %d\n", t, len(rows))
+		for _, r := range rows {
+			fmt.Fprintf(h, "%s\n", r)
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // sequences are public's sequences, qualified.

@@ -71,15 +71,62 @@ func OpenNotice(nodePriv, clusterPub []byte, id, sealed string) ([]byte, error) 
 }
 
 func noticeAEAD(priv, peer []byte, id string) (cipher.AEAD, error) {
+	return pairAEAD(priv, peer, id, "maktaba-home-moved")
+}
+
+// pairAEAD is the AEAD between one end's X25519 private key and the other's public key,
+// for salt and purpose (HKDF-SHA256 info).
+func pairAEAD(priv, peer []byte, salt, info string) (cipher.AEAD, error) {
 	shared, err := curve25519.X25519(priv, peer)
 	if err != nil {
-		return nil, fmt.Errorf("switchover: the notice's key: %w", err)
+		return nil, fmt.Errorf("switchover: the key of %s: %w", info, err)
 	}
-	key, err := hkdf.Key(sha256.New, shared, []byte(id), "maktaba-home-moved", chacha20poly1305.KeySize)
+	key, err := hkdf.Key(sha256.New, shared, []byte(salt), info, chacha20poly1305.KeySize)
 	if err != nil {
 		return nil, err
 	}
 	return chacha20poly1305.New(key)
+}
+
+// ReportInfo is the purpose an old home's report of what it kept aside is sealed for
+// (the new home's API opens it: api/internal/cluster/switchover).
+const ReportInfo = "maktaba-kept-aside"
+
+// SealReport seals an old home's report of what it wrote after an emergency's cut, from
+// its machine key (oldPriv: the identity the standby kit registered it with) to the
+// cluster's public key, for term: only the new home (which holds the cluster key) opens
+// it, and only the old home can have made it. base64 of a random nonce and the sealed
+// report, the term its associated data.
+func SealReport(oldPriv, clusterPub []byte, term int64, report []byte) (string, error) {
+	salt := fmt.Sprintf("term-%d", term)
+	aead, err := pairAEAD(oldPriv, clusterPub, salt, ReportInfo)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(aead.Seal(nonce, nonce, report, []byte(salt))), nil
+}
+
+// OpenReport opens SealReport's report with the cluster key's private half and the old
+// home's public key.
+func OpenReport(clusterPriv, oldPub []byte, term int64, sealed string) ([]byte, error) {
+	salt := fmt.Sprintf("term-%d", term)
+	aead, err := pairAEAD(clusterPriv, oldPub, salt, ReportInfo)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := base64.StdEncoding.DecodeString(sealed)
+	if err != nil || len(raw) < aead.NonceSize() {
+		return nil, errors.New("switchover: a report that is not one")
+	}
+	out, err := aead.Open(nil, raw[:aead.NonceSize()], raw[aead.NonceSize():], []byte(salt))
+	if err != nil {
+		return nil, errors.New("switchover: a report that does not open (not sealed by that machine for this cluster)")
+	}
+	return out, nil
 }
 
 func chunkAD(id string, i uint64, last bool) []byte {

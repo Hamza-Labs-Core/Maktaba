@@ -106,7 +106,19 @@ type Promotion struct {
 	// does not say where the old home's were (an emergency: what it wrote after the copy's
 	// last change is kept aside on it, and keeps its ids).
 	Gap int64
+	// Fork: the new home keeps every change it makes from the promotion on (ForkSlot), so
+	// what the old home wrote after the cut is applied only where this home changed
+	// nothing (an emergency).
+	Fork bool
 }
+
+// EmergencyGap is how far an emergency promotion moves the sequences past the copy's
+// highest values: room for what the old home wrote after the cut, which keeps its ids.
+const EmergencyGap = 1_000_000
+
+// ForkSlot is the slot (and its publication, of every table) that keeps the new home's
+// changes from an emergency's fork on: what changed here since the old home was cut off.
+func ForkSlot(term int64) string { return fmt.Sprintf("maktaba_fork_%d", term) }
 
 // Promoted is what a promotion found and made.
 type Promoted struct {
@@ -198,6 +210,19 @@ func Promote(ctx context.Context, super *sql.DB, p Promotion) (Promoted, error) 
 			return out, fmt.Errorf("switchover: the slot of %s: %w", id, err)
 		}
 		out.Slots[id] = slot
+	}
+	if p.Fork {
+		fork := ForkSlot(p.Term)
+		if _, err := super.ExecContext(ctx, `DO $$ BEGIN
+		    IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = '`+fork+`') THEN
+		        CREATE PUBLICATION `+fork+` FOR ALL TABLES;
+		    END IF; END $$`); err != nil {
+			return out, fmt.Errorf("switchover: the fork's publication: %w", err)
+		}
+		if _, err := super.ExecContext(ctx, `SELECT pg_create_logical_replication_slot($1, 'pgoutput')
+		    WHERE NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = $1)`, fork); err != nil {
+			return out, fmt.Errorf("switchover: the fork's slot: %w", err)
+		}
 	}
 	// written from here on, every machine's copy gets it: the old home's registration
 	// (its own row reaches it), the term, the switchover's state

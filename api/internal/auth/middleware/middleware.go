@@ -197,6 +197,9 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		// Epic 37 — a switch's notice of the new home for a machine that was off; it is
 		// sealed to that machine (only it opens it).
 		"/api/cluster/moved/*": {},
+		// Epic 37 — an old home's report of what it wrote after an emergency took the
+		// home from it: sealed by its key to the cluster's (the handler refuses any other).
+		"/api/cluster/kept-aside/report": {},
 		// Epic 35 story 35.9 — the cluster sign-in: authorize sends a browser
 		// that is not signed in to the home's sign-in page (and checks the
 		// session itself); start and callback run before the node holds a

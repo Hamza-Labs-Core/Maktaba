@@ -35,6 +35,10 @@ type NodeConfig struct {
 	// [postgres] tls = "off"). HomeDSN reaches the home with them.
 	DatabaseCA  string `json:"database_ca,omitempty"`
 	DatabaseTLS string `json:"database_tls,omitempty"`
+	// StandbyHomes are the web addresses of the machines that may take over as the home
+	// in an emergency (the home tells every machine): with the home gone, this machine
+	// asks them for its notice of a new home.
+	StandbyHomes []string `json:"standby_homes,omitempty"`
 	// Err is why node.json, which exists, could not be read (bad JSON, a truncated
 	// file): such a machine is not "not joined", which would start it as a home.
 	Err error `json:"-"`

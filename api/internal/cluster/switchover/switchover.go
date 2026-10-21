@@ -32,6 +32,8 @@ import (
 // Hub is the cluster channel as a switch uses it (agent.Hub).
 type Hub interface {
 	MachineAgent(nodeID string) string
+	// MachineAgents are the connected machines' agent sessions, by machine.
+	MachineAgents() map[string]string
 	HomeProcesses() []string
 	CommandWithin(ctx context.Context, sessionID, name string, args json.RawMessage, by string, wait time.Duration) (agent.CmdResult, error)
 }
@@ -122,9 +124,13 @@ type Orchestrator struct {
 	// HomeWait is how long the new home may take to answer as the home after its
 	// promotion (it starts again: 0, 5 minutes) before the machines are told anyway.
 	HomeWait time.Duration
+	// ClusterKeyFile is the home's cluster key: an old home's report of what it kept aside
+	// is sealed to it.
+	ClusterKeyFile string
 
-	mu       sync.Mutex
-	progress map[string]*Progress
+	mu          sync.Mutex
+	progress    map[string]*Progress
+	standbyWake chan struct{}
 }
 
 func (o *Orchestrator) log() *slog.Logger {

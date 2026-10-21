@@ -154,6 +154,36 @@ $$;
 -- +goose StatementBegin
 ALTER TABLE cluster_nodes ADD COLUMN IF NOT EXISTS replica jsonb NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE cluster_nodes ADD COLUMN IF NOT EXISTS replica_reported_at timestamptz;
+-- A standby home: a full machine the admin marks may take over as the home when the
+-- home is gone for good (an emergency). It keeps a kit of the home's secrets and keys
+-- sealed to it, which the home keeps current; standby_kit is what it holds
+-- ({"hash", "at", "term"}: NULL, none). The mark removed, the kit is removed.
+ALTER TABLE cluster_nodes ADD COLUMN IF NOT EXISTS standby boolean NOT NULL DEFAULT false;
+ALTER TABLE cluster_nodes ADD COLUMN IF NOT EXISTS standby_kit jsonb;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- What an old home wrote after the cut of the emergency that took the home from it: it
+-- reports them when it is back (sealed to the cluster), before it becomes a machine. The
+-- admin downloads them, or applies the ones that do not conflict, in one transaction
+-- (applied: which were, and why the others were not).
+CREATE TABLE IF NOT EXISTS cluster_kept_aside (
+    id           uuid PRIMARY KEY,
+    term         bigint NOT NULL,
+    from_node    uuid NOT NULL,
+    from_name    text NOT NULL,
+    cut_lsn      text,
+    -- the changes, per transaction of the old home (its commit position and time)
+    report       jsonb NOT NULL,
+    -- the old home no longer had the slot that kept them: what it wrote is not known
+    lost         boolean NOT NULL DEFAULT false,
+    state        text NOT NULL DEFAULT 'reported' CHECK (state IN ('reported', 'applied', 'dismissed')),
+    applied      jsonb,
+    applied_at   timestamptz,
+    applied_by   uuid,
+    received_at  timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (term, from_node)
+);
 -- +goose StatementEnd
 
 -- +goose StatementBegin
@@ -197,6 +227,9 @@ LANGUAGE sql IMMUTABLE AS $f$
         -- the machines' own (a machine's row of cluster_nodes is published to it alone)
         'cluster_nodes', 'cluster_node_stages', 'cluster_metrics_cache', 'cluster_log_cache',
         'cluster_cache_files',
+        -- what an old home wrote after an emergency took the home from it (the home's to
+        -- apply or not)
+        'cluster_kept_aside',
         -- each database's own
         'goose_db_version', 'maktaba_schema_version'
     ]::text[]
@@ -558,4 +591,7 @@ DROP FUNCTION IF EXISTS cluster_node_report_replica(uuid, jsonb);
 DROP TABLE IF EXISTS cluster_replica_beat;
 ALTER TABLE cluster_nodes DROP COLUMN IF EXISTS replica_reported_at;
 ALTER TABLE cluster_nodes DROP COLUMN IF EXISTS replica;
+ALTER TABLE cluster_nodes DROP COLUMN IF EXISTS standby_kit;
+ALTER TABLE cluster_nodes DROP COLUMN IF EXISTS standby;
+DROP TABLE IF EXISTS cluster_kept_aside;
 -- +goose StatementEnd

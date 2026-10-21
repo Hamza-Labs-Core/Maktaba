@@ -13,6 +13,32 @@ ALTER TABLE cluster_nodes ADD COLUMN IF NOT EXISTS replica_reported_at TEXT;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
+ALTER TABLE cluster_nodes ADD COLUMN IF NOT EXISTS standby INTEGER NOT NULL DEFAULT 0;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE cluster_nodes ADD COLUMN IF NOT EXISTS standby_kit TEXT;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE TABLE IF NOT EXISTS cluster_kept_aside (
+    id           TEXT PRIMARY KEY,
+    term         INTEGER NOT NULL,
+    from_node    TEXT NOT NULL,
+    from_name    TEXT NOT NULL,
+    cut_lsn      TEXT,
+    report       TEXT NOT NULL,
+    lost         INTEGER NOT NULL DEFAULT 0,
+    state        TEXT NOT NULL DEFAULT 'reported' CHECK (state IN ('reported', 'applied', 'dismissed')),
+    applied      TEXT,
+    applied_at   TEXT,
+    applied_by   TEXT,
+    received_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (term, from_node)
+);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 CREATE TABLE IF NOT EXISTS cluster_replica_beat (
     id      INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
     at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -77,6 +103,7 @@ CREATE TABLE IF NOT EXISTS cluster_switchovers (
 
 -- +goose Down
 -- +goose StatementBegin
+DROP TABLE IF EXISTS cluster_kept_aside;
 DROP TABLE IF EXISTS cluster_switchovers;
 DROP TABLE IF EXISTS web_session_keys;
 -- +goose StatementEnd

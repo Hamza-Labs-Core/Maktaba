@@ -266,6 +266,10 @@ func TestWipeLeavesNothing(t *testing.T) {
 	for _, r := range []string{pgbundle.SuperUser, pgbundle.AppRole} {
 		_ = os.WriteFile(filepath.Join(c.DB.Keys, "postgres-"+r+".password"), []byte("x"), 0o600)
 	}
+	// a standby home's kit of the home's secrets goes with the copy
+	for _, f := range []string{StandbyKitFile, StandbyKitMeta, StandbyKitPart} {
+		_ = os.WriteFile(filepath.Join(c.DB.Keys, f), []byte("x"), 0o600)
+	}
 	if err := c.Wipe(); err != nil {
 		t.Fatal(err)
 	}

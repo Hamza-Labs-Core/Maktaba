@@ -125,11 +125,13 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 	// switching the home to another machine (Epic 37): run here, finished on the new home
 	if driver == "postgres" {
 		sw := &switchover.Orchestrator{DB: db, Hub: hub, Logger: logger, HomeName: cluster.StableHostName(),
-			SchemaRev: schemaguard.SchemaRev}
+			SchemaRev: schemaguard.SchemaRev, ClusterKeyFile: agent.ClusterKeyPath(os.Getenv("MAKTABA_HOME_CLUSTER_KEY"))}
 		if sc := switchover.SupervisorFromEnv(); sc != nil {
 			sw.Supervisor = sc
 		}
 		sw.Mount(r)
+		// the standby homes' kits of this home's secrets, kept current (Epic 37)
+		go sw.KeepStandbys(ctx)
 		stream := os.Getenv("MAKTABA_PUBLIC_BASE_URL")
 		go sw.Finish(ctx, switchover.HomeIntegrations(db, store,
 			switchover.HFTokenPath(os.Getenv("MAKTABA_DATA_DIR")), func() string { return stream }))

@@ -503,10 +503,15 @@ func (rt *nodeRuntime) mountNodeRoutes(r chi.Router) {
 	if movedDB == nil {
 		movedDB = rt.dbs.home
 	}
+	// a standby home taking over when its home is gone: its supervisor checks and does it
+	em := &switchover.Emergency{}
+	if sc := switchover.SupervisorFromEnv(); sc != nil {
+		em.Supervisor = sc
+	}
 	router.MountNodeLocal(r, router.NodeLocalDeps{Self: rt.self, Node: &clusterauth.Node{
 		Link: rt.link, NodeID: rt.cfg.NodeID, Self: rt.self, SecureCookies: cookiesSecure(), Logger: rt.logger,
 		SSOEnabled: func(context.Context) bool { return rt.rules().SSO },
-	}, Moved: switchover.MovedHandler(movedDB)})
+	}, Moved: switchover.MovedHandler(movedDB), EmergencyStatus: em.Status, Emergency: em.Start})
 }
 
 // handler is the node's public handler: the placement dispatcher over the local
