@@ -27,7 +27,12 @@
 #   --build       work directory (default: build/linux-app); the payload is <build>/server
 #   --cache       downloads (default: <build>/downloads, or $LINUX_APP_CACHE)
 #   --fetch-only  only download the pinned files into the cache and check them (CI keeps
-#                 that cache on main, so a pull request's build does not download them)
+#                 that cache on main, so a pull request's build does not download them);
+#                 it tries every file and fails after, naming the ones it could not get
+#   --pinned      print the pinned downloads of both architectures and stop, one per line:
+#                 ARCH PIECE NAME SHA256 URL MIRROR-NAME (the third-party-mirror workflow)
+#   --notices     print the mirror's notices (each file, its upstream download, SHA-256,
+#                 licence and source) and stop
 set -euo pipefail
 # a failure inside $(...) (a download) stops the build there, not at what follows
 shopt -s inherit_errexit
@@ -42,9 +47,11 @@ VERSION="${VERSION:-}"
 BUILD="$REPO_ROOT/build/linux-app"
 CACHE="${LINUX_APP_CACHE:-}"
 FETCH_ONLY=0
+LIST=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --fetch-only) FETCH_ONLY=1; shift ;;
+        --pinned | --notices) LIST="${1#--}"; shift ;;
         --version) [ $# -ge 2 ] || die "--version needs a value"; VERSION="$2"; shift 2 ;;
         --build)   [ $# -ge 2 ] || die "--build needs a value"; BUILD="$2"; shift 2 ;;
         --cache)   [ $# -ge 2 ] || die "--cache needs a value"; CACHE="$2"; shift 2 ;;
@@ -52,6 +59,81 @@ while [ $# -gt 0 ]; do
         *)         die "unknown option '$1'" ;;
     esac
 done
+
+# shellcheck source-path=SCRIPTDIR source=pins.env
+. "$SCRIPT_DIR/pins.env"
+# pin KEY [ARCH]: the pins.env value of KEY for ARCH (this machine's by default)
+pin() { local v="${1}_${2:-$ARCH}"; v="${v^^}"; printf '%s' "${!v:?pins.env has no $v}"; }
+
+# pinned ARCH: the downloads of an architecture, one per line: PIECE NAME SHA256 URL
+# MIRROR-NAME. NAME is the file's name in the cache; MIRROR-NAME its name on the mirror,
+# the first 16 hex digits of its SHA-256 first, so a re-pinned file never meets the old one.
+pinned() {
+    local a="$1" piece name key
+    for piece in postgres python ffmpeg ffprobe; do
+        case "$piece" in
+            postgres) name="postgresql-$POSTGRES_VERSION-$a.tar.gz" key=POSTGRES ;;
+            python) name="cpython-$PYTHON_VERSION-$a.tar.gz" key=PYTHON ;;
+            ffmpeg) name="ffmpeg-$FFMPEG_VERSION-$a.zip" key=FFMPEG ;;
+            ffprobe) name="ffprobe-$FFMPEG_VERSION-$a.zip" key=FFPROBE ;;
+        esac
+        printf '%s %s %s %s %s\n' "$piece" "$name" "$(pin "${key}_SHA256" "$a")" "$(pin "${key}_URL" "$a")" \
+            "$(mirror_name "$(pin "${key}_SHA256" "$a")" "$name")"
+    done
+}
+
+mirror_name() { printf '%s-%s' "${1:0:16}" "$2"; }
+
+ARCHES=(x86_64 aarch64)
+case "$LIST" in
+    pinned)
+        for a in "${ARCHES[@]}"; do
+            pinned "$a" | sed "s/^/$a /"
+        done
+        exit 0
+        ;;
+    notices)
+        pyshort="${PYTHON_VERSION%.*}"
+        cat <<EOF
+# Third-party mirror (Linux payload)
+
+Unmodified upstream builds, byte for byte, kept here only as a fallback for CI: when a file's own
+host is down, \`tools/release/linux-app/payload.sh\` downloads it from here and checks it against
+the SHA-256 pinned in \`tools/release/linux-app/pins.env\`, as it checks the upstream download.
+Only the files pinned there are kept here. An asset's name starts with the first 16 hex digits
+of its SHA-256.
+
+| Asset | Upstream download | SHA-256 |
+|---|---|---|
+EOF
+        for a in "${ARCHES[@]}"; do
+            pinned "$a" | while read -r _ _ sha url mname; do
+                # shellcheck disable=SC2016 # the backquotes are Markdown's
+                printf '| `%s` | %s | `%s` |\n' "$mname" "$url" "$sha"
+            done
+        done
+        cat <<EOF
+
+## Licences and sources
+
+- **PostgreSQL ${POSTGRES_VERSION%.*}** (\`postgresql-*\`): the PostgreSQL Licence (\`COPYRIGHT\`
+  inside each archive). Source: https://ftp.postgresql.org/pub/source/v${POSTGRES_VERSION%.*}/postgresql-${POSTGRES_VERSION%.*}.tar.bz2.
+  Built by https://github.com/theseus-rs/postgresql-binaries (its \`LICENSE\` inside each archive).
+- **CPython $PYTHON_VERSION** (\`cpython-*\`): the Python Software Foundation License and the
+  licences of what it bundles (\`python/lib/python$pyshort/LICENSE.txt\` inside each archive).
+  Source: https://www.python.org/ftp/python/$PYTHON_VERSION/Python-$PYTHON_VERSION.tar.xz. Built by
+  https://github.com/astral-sh/python-build-standalone.
+- **ffmpeg and ffprobe $FFMPEG_VERSION** (\`ffmpeg-*\`, \`ffprobe-*\`): configured with \`--enable-gpl
+  --enable-version3\`, so under the GNU General Public License version 3 (\`GPL-3.0.txt\` in this
+  release). Source: https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz. Built by Martin Riedl:
+  the build scripts are https://git.martin-riedl.de/ffmpeg/build-script, and the versions of every
+  library linked in are in the \`versions.txt\` beside each upstream download
+  ($(for a in "${ARCHES[@]}"; do printf '%s/versions.txt ' "$(dirname "$(pin FFMPEG_URL "$a")")"; done | sed 's/ $//')).
+EOF
+        exit 0
+        ;;
+esac
+
 [ "$(uname -s)" = Linux ] || die "the Linux payload is built on Linux (its libraries come from this machine)"
 case "$(uname -m)" in
     x86_64)        ARCH=x86_64;  GOARCH=amd64 ;;
@@ -65,10 +147,6 @@ for t in "${tools[@]}"; do
 done
 [ -n "$VERSION" ] || VERSION="$(git -C "$REPO_ROOT" describe --tags --match 'v*' --dirty --always 2>/dev/null || echo dev)"
 
-# shellcheck source-path=SCRIPTDIR source=pins.env
-. "$SCRIPT_DIR/pins.env"
-pin() { local v="${1}_${ARCH^^}"; printf '%s' "${!v:?pins.env has no $v}"; }
-
 mkdir -p "$BUILD"
 BUILD="$(cd "$BUILD" && pwd)"
 CACHE="${CACHE:-$BUILD/downloads}"
@@ -76,44 +154,60 @@ mkdir -p "$CACHE"
 
 sha256() { sha256sum "$1" | awk '{print $1}'; }
 
-# fetch URL SHA256 NAME: the file in the cache, downloaded once, always checked: it is kept
-# only when it has SHA256. A download that fails (or gives other bytes) is tried again
-# after 15, 30, 60, then 120 s: a host down for a while (a 5xx such as Cloudflare's 521, a
-# reset) is asked again. curl's --retry never retries a 521, and its --retry-all-errors
-# needs a newer curl than some build hosts have. One try gives up after 15 minutes.
+# fetch URL SHA256 NAME MIRROR-NAME: the file in the cache, downloaded once, always checked:
+# it comes from its own host, else from the mirror (pins.env MIRROR_URL), and is kept only
+# when it has SHA256. A round that gets it from neither is tried again after 15, 30, 60,
+# then 120 s: a host down for a while (a 5xx such as Cloudflare's 521, a reset) is asked
+# again. curl's --retry never retries a 521, and its --retry-all-errors needs a newer curl
+# than some build hosts have. One try gives up after 15 minutes.
 fetch() {
-    local url="$1" want="$2" dst="$CACHE/$3" delay
+    local url="$1" want="$2" dst="$CACHE/$3" delay src
     if [ -f "$dst" ] && [ "$(sha256 "$dst")" = "$want" ]; then
         printf '%s\n' "$dst"
         return
     fi
     log "downloading $3"
     for delay in 15 30 60 120 0; do
-        if curl -fsSL --connect-timeout 30 --max-time 900 -o "$dst.part" "$url" &&
-            [ "$(sha256 "$dst.part")" = "$want" ]; then
-            mv "$dst.part" "$dst"
-            printf '%s\n' "$dst"
-            return
-        fi
-        rm -f "$dst.part"
+        for src in "$url" "$MIRROR_URL/$4"; do
+            if curl -fsSL --connect-timeout 30 --max-time 900 -o "$dst.part" "$src" &&
+                [ "$(sha256 "$dst.part")" = "$want" ]; then
+                mv "$dst.part" "$dst"
+                printf '%s\n' "$dst"
+                return
+            fi
+            rm -f "$dst.part"
+        done
         [ "$delay" -gt 0 ] || break
         log "$3: not downloaded, again in $delay s"
         sleep "$delay"
     done
-    die "$3: no download from $url had the SHA-256 pins.env names ($want)"
+    die "$3: neither $url nor the mirror gave the SHA-256 pins.env names ($want)"
+}
+
+# get PIECE: this machine's download of PIECE (postgres, python, ffmpeg, ffprobe), fetched
+# and checked: its path in the cache
+get() {
+    local piece name sha url mname
+    while read -r piece name sha url mname; do
+        if [ "$piece" = "$1" ]; then
+            fetch "$url" "$sha" "$name" "$mname"
+            return
+        fi
+    done < <(pinned "$ARCH")
+    die "pins.env pins no $1"
 }
 
 if [ "$FETCH_ONLY" = 1 ]; then
-    names=("postgresql-$POSTGRES_VERSION-$ARCH.tar.gz" "cpython-$PYTHON_VERSION-$ARCH.tar.gz"
-        "ffmpeg-$FFMPEG_VERSION-$ARCH.zip" "ffprobe-$FFMPEG_VERSION-$ARCH.zip")
-    fetch "$(pin POSTGRES_URL)" "$(pin POSTGRES_SHA256)" "${names[0]}" >/dev/null
-    fetch "$(pin PYTHON_URL)" "$(pin PYTHON_SHA256)" "${names[1]}" >/dev/null
-    fetch "$(pin FFMPEG_URL)" "$(pin FFMPEG_SHA256)" "${names[2]}" >/dev/null
-    fetch "$(pin FFPROBE_URL)" "$(pin FFPROBE_SHA256)" "${names[3]}" >/dev/null
+    names=() failed=()
+    while read -r piece name _; do
+        names+=("$name")
+        (get "$piece" >/dev/null) || failed+=("$name")
+    done < <(pinned "$ARCH")
     # an earlier pins.env's files (from a cache restored by its prefix) are not kept
     for f in "$CACHE"/*; do
         case " ${names[*]} " in *" ${f##*/} "*) ;; *) rm -f "$f" ;; esac
     done
+    [ "${#failed[@]}" -eq 0 ] || die "not downloaded: ${failed[*]}"
     log "the pinned downloads for $ARCH are in $CACHE"
     exit 0
 fi
@@ -137,7 +231,7 @@ cp "$REPO_ROOT/cmd/maktaba-server/bin/linux-$GOARCH/maktaba-server" \
 
 # --- PostgreSQL ----------------------------------------------------------------------------------
 log "PostgreSQL $POSTGRES_VERSION"
-pg_tgz="$(fetch "$(pin POSTGRES_URL)" "$(pin POSTGRES_SHA256)" "postgresql-$POSTGRES_VERSION-$ARCH.tar.gz")"
+pg_tgz="$(get postgres)"
 tar -xzf "$pg_tgz" -C "$WORK"
 pg="$WORK/postgresql-$POSTGRES_VERSION-$ARCH-unknown-linux-gnu"
 [ -x "$pg/bin/postgres" ] || die "unexpected PostgreSQL archive layout"
@@ -160,7 +254,7 @@ cp "$pg/LICENSE" "$OUT/licenses/postgresql-binaries.txt"
 
 # --- Python (first: the payload's own tools run with it) ------------------------------------
 log "Python $PYTHON_VERSION"
-tar -xzf "$(fetch "$(pin PYTHON_URL)" "$(pin PYTHON_SHA256)" "cpython-$PYTHON_VERSION-$ARCH.tar.gz")" -C "$WORK"
+tar -xzf "$(get python)" -C "$WORK"
 py="$WORK/python"
 [ -x "$py/bin/python3" ] || die "unexpected python-build-standalone layout"
 # Tk, IDLE and the Tcl runtime are never used by the pipeline (~10 MB).
@@ -214,8 +308,8 @@ EOF
 
 # --- ffmpeg --------------------------------------------------------------------------------------
 log "ffmpeg $FFMPEG_VERSION"
-unzip_to "$(fetch "$(pin FFMPEG_URL)" "$(pin FFMPEG_SHA256)" "ffmpeg-$FFMPEG_VERSION-$ARCH.zip")" "$OUT/ffmpeg"
-unzip_to "$(fetch "$(pin FFPROBE_URL)" "$(pin FFPROBE_SHA256)" "ffprobe-$FFMPEG_VERSION-$ARCH.zip")" "$OUT/ffmpeg"
+unzip_to "$(get ffmpeg)" "$OUT/ffmpeg"
+unzip_to "$(get ffprobe)" "$OUT/ffmpeg"
 chmod 0755 "$OUT/ffmpeg/ffmpeg" "$OUT/ffmpeg/ffprobe"
 cat >"$OUT/licenses/ffmpeg.txt" <<EOF
 ffmpeg and ffprobe $FFMPEG_VERSION, built by Martin Riedl (https://ffmpeg.martin-riedl.de),
