@@ -76,7 +76,7 @@ func (ns *nodeServices) watchHome(ctx context.Context, api *url.URL) {
 }
 
 // startNodeServices starts the machine agent when this machine is a full node.
-func startNodeServices(ctx context.Context, cfg config.Config) *nodeServices {
+func startNodeServices(ctx context.Context, cfg config.Config, commands machineagent.Command) *nodeServices {
 	n := supervisor.NodeConfig()
 	if !supervisor.NodeMode(cfg, n) {
 		return nil
@@ -99,6 +99,8 @@ func startNodeServices(ctx context.Context, cfg config.Config) *nodeServices {
 			return machineagent.UpdateState{Version: version.Version, Platform: runtime.GOOS + "-" + runtime.GOARCH,
 				Layout: layout}
 		},
+		// the home's switch to another machine (serve_switchover.go)
+		Commands: commands,
 	}
 	go ns.agent.Run(ctx)
 	go ns.watchHome(ctx, apiOrigin(cfg.Server.Listen))

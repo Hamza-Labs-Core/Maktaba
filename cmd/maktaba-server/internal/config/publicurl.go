@@ -79,3 +79,19 @@ func (c Config) PublicWebURL() string {
 	}
 	return "http://" + net.JoinHostPort(strings.Trim(host, "[]"), port)
 }
+
+// PublicAPIURL is this machine's API as the cluster's other machines reach it (a home's
+// address in their node.json): http://<host>:<port of listen>, the host taken as
+// PublicWebURL takes it.
+func (c Config) PublicAPIURL() string {
+	_, port, err := net.SplitHostPort(strings.TrimSpace(c.Server.Listen))
+	if err != nil || port == "" {
+		port = "8080"
+	}
+	web := strings.TrimPrefix(strings.TrimPrefix(c.PublicWebURL(), "http://"), "https://")
+	host := web
+	if h, _, err := net.SplitHostPort(web); err == nil {
+		host = h
+	}
+	return "http://" + net.JoinHostPort(strings.Trim(host, "[]"), port)
+}

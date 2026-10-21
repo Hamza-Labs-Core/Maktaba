@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -11,12 +12,14 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/machineagent"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/mdns"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/webui"
@@ -52,21 +55,28 @@ In container/orchestrated deployments, start one role per container:
   maktaba-server serve --role pipeline
   maktaba-server serve --role web`,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			cfg, found, err := config.Load()
-			if err != nil {
-				return err
+			for {
+				cfg, found, err := config.Load()
+				if err != nil {
+					return err
+				}
+				if err := servePorts(&cfg, found, strings.TrimSpace(strings.ToLower(role)), noWeb); err != nil {
+					return err
+				}
+				err = runServe(cfg, serveOptions{
+					role:   strings.TrimSpace(strings.ToLower(role)),
+					slot:   strings.TrimSpace(strings.ToLower(slot)),
+					noMDNS: noMDNS,
+					noWeb:  noWeb,
+					binDir: binDir,
+					grace:  time.Duration(graceS) * time.Second,
+				})
+				if !errors.Is(err, errReload) {
+					return err
+				}
+				// a switch of the home changed this machine's part: start again in it
+				fmt.Fprintln(os.Stderr, "[serve] starting again: this machine's part in the cluster changed")
 			}
-			if err := servePorts(&cfg, found, strings.TrimSpace(strings.ToLower(role)), noWeb); err != nil {
-				return err
-			}
-			return runServe(cfg, serveOptions{
-				role:   strings.TrimSpace(strings.ToLower(role)),
-				slot:   strings.TrimSpace(strings.ToLower(slot)),
-				noMDNS: noMDNS,
-				noWeb:  noWeb,
-				binDir: binDir,
-				grace:  time.Duration(graceS) * time.Second,
-			})
 		},
 	}
 	cmd.Flags().StringVar(&role, "role", "", "run a single role: api|streaming|pipeline|web|tv-slot (default: all)")
@@ -104,6 +114,17 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	restart := watchLauncher(ctx, cancel, releaseDir)
+	// a switch of the home asks serve to start again (serve_switchover.go)
+	reloaded := new(atomic.Bool)
+	go func() {
+		select {
+		case <-reloadCh:
+			reloaded.Store(true)
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	sw := newSwitching(cfg)
 
 	// The `web` role is served in-process; every other role is a
 	// supervised subprocess. Decide which we're running.
@@ -113,7 +134,7 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	// machine agent; the api in node mode; the web port's TV to the home).
 	var node *nodeServices
 	if containsRole(roles, supervisor.RoleAPI) {
-		node = startNodeServices(ctx, cfg)
+		node = startNodeServices(ctx, cfg, sw.command)
 	}
 
 	// Start the in-process web server (and mDNS) when web is in scope.
@@ -214,19 +235,33 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	sup := supervisor.New(procs, policy, supervisor.WithEventSink(
 		supervisor.NewFileSink(filepath.Join(cfg.Server.DataDir, "supervisor", "events.jsonl"), 0)),
 		supervisor.WithExitHook(supervisor.SlotExitReporter(cfg.Server.StreamAddr)))
-	if adminSrv := startSupervisorAdmin(policy.AdminAddr, node.adminHandler(sup.Handler())); adminSrv != nil {
+	var stopCopy func()
+	if cp != nil {
+		stopCopy = runNodeCopy(ctx, cfg, cp, procs, sup)
+	}
+	token := ""
+	if node != nil {
+		token = node.token
+	} else if containsRole(roles, supervisor.RoleAPI) {
+		// the home's API calls the supervisor's switchover endpoints with it
+		if t, err := machineagent.WriteToken(supervisor.LocalTokenPath(cfg)); err == nil {
+			token = t
+		}
+	}
+	sw.set(pg, cp, stopCopy, token)
+	if adminSrv := startSupervisorAdmin(policy.AdminAddr, sw.adminHandler(node.adminHandler(sup.Handler()))); adminSrv != nil {
 		defer func() { _ = shutdownWeb(adminSrv) }()
 	}
 	confirmPending(ctx, sup, releaseDir)
-	if cp != nil {
-		runNodeCopy(ctx, cfg, cp, procs, sup)
-	}
 	runErr := sup.Run(ctx, opts.grace)
 	if webSrv != nil {
 		_ = shutdownWeb(webSrv)
 	}
 	if restart.Load() {
 		os.Exit(exitRestart) // drained: the launcher starts current again
+	}
+	if reloaded.Load() {
+		return errReload
 	}
 	return runErr
 }

@@ -109,6 +109,9 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		// supervisor's state to GET /api/system/processes and records
 		// crashes into health_samples.
 		add("MAKTABA_SUPERVISOR_URL", StateURL(cfg))
+		// the supervisor's switchover endpoints take its per-boot local token (the home's
+		// API runs a switch of the home: specs/epics/37-node-replica)
+		add("MAKTABA_SUPERVISOR_TOKEN_FILE", LocalTokenPath(cfg))
 		// the machines reach the bundled Postgres on its own port, verifying its CA
 		if cfg.ClusterDB.Port > 0 {
 			add("MAKTABA_CLUSTER_PG_PORT", strconv.Itoa(cfg.ClusterDB.Port))

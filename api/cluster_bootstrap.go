@@ -18,6 +18,8 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/cache"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/relay"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/schemaguard"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/switchover"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
 	clusterh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
@@ -106,6 +108,18 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 		defer close(hubDone)
 		hub.Run(ctx)
 	}()
+	// switching the home to another machine (Epic 37): run here, finished on the new home
+	if driver == "postgres" {
+		sw := &switchover.Orchestrator{DB: db, Hub: hub, Logger: logger, HomeName: cluster.StableHostName(),
+			SchemaRev: schemaguard.SchemaRev}
+		if sc := switchover.SupervisorFromEnv(); sc != nil {
+			sw.Supervisor = sc
+		}
+		sw.Mount(r)
+		stream := os.Getenv("MAKTABA_PUBLIC_BASE_URL")
+		go sw.Finish(ctx, switchover.HomeIntegrations(db, store,
+			switchover.HFTokenPath(os.Getenv("MAKTABA_DATA_DIR")), func() string { return stream }))
+	}
 	return func() {
 		cancel()
 		select {

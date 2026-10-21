@@ -53,6 +53,8 @@ type Manager struct {
 	// reporting: a report to the home is under way; pending: the status to report next
 	reporting bool
 	pending   *Status
+	// local is this machine's schema version, once migrated
+	local int64
 }
 
 func (m *Manager) now() time.Time {
@@ -116,6 +118,9 @@ func (m *Manager) set(ctx context.Context, s Status) {
 		s.Checked = m.now().UTC()
 	}
 	m.mu.Lock()
+	if s.LocalSchema == 0 {
+		s.LocalSchema = m.local
+	}
 	prev := m.status
 	m.status = s
 	m.mu.Unlock()
@@ -188,6 +193,9 @@ func (m *Manager) Run(ctx context.Context) {
 	if !ok {
 		return
 	}
+	m.mu.Lock()
+	m.local = local
+	m.mu.Unlock()
 	refused := 0
 	var firstRefused time.Time
 	backoff := m.retry()

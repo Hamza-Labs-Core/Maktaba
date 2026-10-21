@@ -7,9 +7,12 @@ import (
 	"time"
 )
 
-// Commands a process accepts (design-agent.md §3).
+// Commands a process accepts (design-agent.md §3), and the ones a machine agent takes
+// for a switch of the home (specs/epics/37-node-replica: its copy's marker, the kit's
+// chunks, the promotion, the new home's address).
 var commandNames = map[string]bool{
 	"drain": true, "undrain": true, "reload_stages": true, "log_level": true, "disconnect": true,
+	"switch.prepare": true, "switch.kit": true, "switch.promote": true, "home.moved": true,
 }
 
 // Command errors.
@@ -50,6 +53,11 @@ func (s *Session) failPendingCmds() {
 // most CmdTimeout). "disconnect" closes the session once answered (or at
 // the timeout). by names who asked (for the events file).
 func (h *Hub) Command(ctx context.Context, sessionID, name string, args json.RawMessage, by string) (CmdResult, error) {
+	return h.CommandWithin(ctx, sessionID, name, args, by, CmdTimeout)
+}
+
+// CommandWithin is Command waiting up to wait (a promotion takes minutes).
+func (h *Hub) CommandWithin(ctx context.Context, sessionID, name string, args json.RawMessage, by string, wait time.Duration) (CmdResult, error) {
 	s := h.Session(sessionID)
 	if s == nil {
 		return CmdResult{}, ErrNoSession
@@ -84,7 +92,7 @@ func (h *Hub) Command(ctx context.Context, sessionID, name string, args json.Raw
 		s.mu.Unlock()
 		return CmdResult{}, ErrNoSession
 	}
-	t := time.NewTimer(CmdTimeout)
+	t := time.NewTimer(wait)
 	defer t.Stop()
 	var res CmdResult
 	var err error
@@ -126,4 +134,28 @@ func (h *Hub) Command(ctx context.Context, sessionID, name string, args json.Raw
 	h.event(map[string]any{"event": "cmd.result", "session": s.ID, "ip": s.IP, "id": id, "name": name, "ok": res.OK,
 		"detail": res.Detail})
 	return res, nil
+}
+
+// MachineAgent is the session of a machine's own agent (its supervisor), "" when it is
+// not connected.
+func (h *Hub) MachineAgent(nodeID string) string {
+	for _, s := range h.nodeSessions(nodeID) {
+		if s.Process == "supervisor" {
+			return s.ID
+		}
+	}
+	return ""
+}
+
+// HomeProcesses are the sessions of the home's own processes (its workers).
+func (h *Hub) HomeProcesses() []string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	var out []string
+	for id, s := range h.sessions {
+		if s.Kind == "home" {
+			out = append(out, id)
+		}
+	}
+	return out
 }

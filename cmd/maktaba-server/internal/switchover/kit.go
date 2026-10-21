@@ -61,6 +61,9 @@ type Kit struct {
 	Sequences  []Sequence                   `json:"sequences"`
 	Roles      []Role                       `json:"roles"`
 	Files      map[string][]byte            `json:"files"`
+	// OldHome is the old home's registration as a machine of the new one (its id,
+	// public key and passwords: sealed with the kit, never elsewhere).
+	OldHome *Machine `json:"old_home,omitempty"`
 }
 
 // machineRole: the roles of the machines and of their copies (cluster.RoleName,

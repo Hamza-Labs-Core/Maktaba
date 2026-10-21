@@ -111,8 +111,10 @@ func tail(s string, n int) string {
 }
 
 // runNodeCopy runs the copy's manager for as long as ctx: it makes this machine's
-// database, subscribes it to the home's publication and keeps it (see nodecopy).
-func runNodeCopy(ctx context.Context, cfg config.Config, nc *nodeCopy, procs []supervisor.Process, sup *supervisor.Supervisor) {
+// database, subscribes it to the home's publication and keeps it (see nodecopy). The
+// func it returns stops the manager (the copy's database runs on): a switch of the home
+// takes the copy over.
+func runNodeCopy(ctx context.Context, cfg config.Config, nc *nodeCopy, procs []supervisor.Process, sup *supervisor.Supervisor) func() {
 	c := nc.copy
 	for _, p := range procs {
 		if p.Role == supervisor.RoleAPI {
@@ -125,5 +127,8 @@ func runNodeCopy(ctx context.Context, cfg config.Config, nc *nodeCopy, procs []s
 		StateDir: supervisor.NodeStateDir(cfg),
 		Log:      os.Stderr,
 	}
-	go m.Run(ctx)
+	mctx, stop := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() { m.Run(mctx); close(done) }()
+	return func() { stop(); <-done }
 }

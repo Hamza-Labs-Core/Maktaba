@@ -644,6 +644,9 @@ type Status struct {
 	Errors     int64      `json:"errors,omitempty"`
 	Subscribed *time.Time `json:"subscribed,omitempty"`
 	Checked    time.Time  `json:"checked"`
+	// LocalSchema is this machine's database's schema version (a switch of the home
+	// takes only a machine at the home's)
+	LocalSchema int64 `json:"local_schema,omitempty"`
 }
 
 // The copy's states.
