@@ -91,6 +91,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runBundle(fs.Args(), stdout, stderr, bundle, appStateRoot(*root), *status, *asJSON,
 			*replaceSelf != "", *stopGrace)
 	}
+	// the Linux app's runtime copy (Epic 39 story 39.3): app-bundle mode too
+	if payload, ok := runtimePayload(selfDir()); ok {
+		return runBundle(fs.Args(), stdout, stderr, payload, runtimeStateRoot(*root, payload), *status, *asJSON,
+			*replaceSelf != "", *stopGrace)
+	}
 	l := layout.New(resolveRoot(*root))
 	switch {
 	case *status:
