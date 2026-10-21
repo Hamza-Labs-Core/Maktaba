@@ -104,3 +104,28 @@ func TestChildEnvStateDirs(t *testing.T) {
 		t.Fatalf("overrode the operator's chroma dir with %q", v)
 	}
 }
+
+// TestFullNodeStateDir: a full node's api and streaming roles keep their playback
+// catalog under the install's data directory (PR #145), so it outlives a restart in a
+// home outage; a machine that joined no home gets none.
+func TestFullNodeStateDir(t *testing.T) {
+	prev := nodeConfig
+	t.Cleanup(func() { nodeConfig = prev })
+	n := config.NodeConfig{NodeID: "6f1c9a2e-0000-4000-8000-000000000001", DatabaseURL: "postgresql://node@home/maktaba"}
+	n.Home.URL = "http://home.lan:8080"
+	nodeConfig = func() config.NodeConfig { return n }
+	var cfg config.Config
+	cfg.Server.DataDir = filepath.Join("C:", "Users", "x", "AppData", "Local", "Maktaba")
+	want := filepath.Join(cfg.Server.DataDir, "node")
+	for _, role := range []Role{RoleAPI, RoleStreaming} {
+		if got := envMap(ChildEnv(role, cfg))["MAKTABA_NODE_STATE_DIR"]; got != want {
+			t.Fatalf("%s: MAKTABA_NODE_STATE_DIR = %q, want %q", role, got, want)
+		}
+	}
+	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
+	for _, role := range []Role{RoleAPI, RoleStreaming} {
+		if got, ok := envMap(ChildEnv(role, cfg))["MAKTABA_NODE_STATE_DIR"]; ok {
+			t.Fatalf("%s off a node: MAKTABA_NODE_STATE_DIR = %q", role, got)
+		}
+	}
+}

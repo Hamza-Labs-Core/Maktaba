@@ -8,11 +8,16 @@ package nodemode
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 )
 
 // Config is the node-mode environment of the API.
@@ -132,11 +137,12 @@ SELECT current_user,
 }
 
 // CheckRole refuses a role that can run DDL (design §9.1). A role whose privileges
-// cannot be read is refused too: the node fails closed.
+// cannot be read is refused too: the node fails closed (Unreachable tells a database
+// that does not answer from one that refuses).
 func CheckRole(ctx context.Context, db *sql.DB) error {
 	p, err := ReadPrivileges(ctx, db)
 	if err != nil {
-		return fmt.Errorf("%w: cannot read the role's privileges: %v", ErrDDLRole, err)
+		return fmt.Errorf("%w: cannot read the role's privileges: %w", ErrDDLRole, err)
 	}
 	if why := p.DDL(); len(why) > 0 {
 		return fmt.Errorf("%w: role %q has %s — use the node's own database role from node.json, never the home's",
@@ -145,31 +151,81 @@ func CheckRole(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
+// Unreachable reports whether err is the database not answering — a dial or network
+// failure, a timeout, a dropped connection — rather than it answering with a refusal
+// (a bad password, a missing grant), which keeps a node from starting.
+func Unreachable(err error) bool {
+	if err == nil {
+		return false
+	}
+	var ne net.Error
+	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, driver.ErrBadConn) ||
+		errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &ne)
+}
+
 // Rules is rules.cluster (app_settings; the pipeline's ClusterMachinesConfig declares
 // the section): cluster sign-in on or off, how long a node waits for an unreachable
-// home before it refuses signed-in requests, its picture cache.
+// home before it stops asking it per request, how long the home's last sign-in answers
+// hold meanwhile (reads, playback), its picture cache.
 type Rules struct {
-	SSO          bool `json:"sso"`
-	GraceSeconds int  `json:"delegate_unreachable_grace_seconds"`
-	ProxyCacheMB int  `json:"proxy_cache_mb"`
+	SSO                bool `json:"sso"`
+	GraceSeconds       int  `json:"delegate_unreachable_grace_seconds"`
+	OfflineReadMinutes int  `json:"offline_read_minutes"`
+	ProxyCacheMB       int  `json:"proxy_cache_mb"`
 }
 
 // DefaultRules are the section's defaults.
-func DefaultRules() Rules { return Rules{SSO: true, GraceSeconds: 30, ProxyCacheMB: 2048} }
+func DefaultRules() Rules {
+	return Rules{SSO: true, GraceSeconds: 30, OfflineReadMinutes: 10, ProxyCacheMB: 2048}
+}
 
 // ReadRules reads rules.cluster; any error or bad value gives the default for it.
 func ReadRules(ctx context.Context, db *sql.DB) Rules {
+	out, _ := LoadRules(ctx, db)
+	return out
+}
+
+// CachedRules reads rules.cluster at most once per `every` (each read bounded to 3 s);
+// a failed read — the home's database down too — keeps the last good section (the
+// defaults until one was read), so an outage never swaps the admin's values for them.
+func CachedRules(db *sql.DB, every time.Duration) func() Rules {
+	var (
+		mu    sync.Mutex
+		rules = DefaultRules()
+		at    time.Time
+	)
+	return func() Rules {
+		mu.Lock()
+		defer mu.Unlock()
+		if at.IsZero() || time.Since(at) >= every {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			if got, err := LoadRules(ctx, db); err == nil {
+				rules = got
+			}
+			cancel()
+			at = time.Now()
+		}
+		return rules
+	}
+}
+
+// LoadRules is ReadRules that reports a failed read (the defaults come with it), so a
+// caller that already has the section can keep it; no row, or a bad value, is no error.
+func LoadRules(ctx context.Context, db *sql.DB) (Rules, error) {
 	out := DefaultRules()
 	if db == nil {
-		return out
+		return out, nil
 	}
 	var raw []byte
 	if err := db.QueryRowContext(ctx, `SELECT value FROM app_settings WHERE key = 'rules.cluster'`).Scan(&raw); err != nil {
-		return out
+		if errors.Is(err, sql.ErrNoRows) {
+			return out, nil
+		}
+		return out, err
 	}
 	var m map[string]json.RawMessage
 	if json.Unmarshal(raw, &m) != nil {
-		return out
+		return out, nil
 	}
 	var b bool
 	if v, ok := m["sso"]; ok && json.Unmarshal(v, &b) == nil {
@@ -179,8 +235,11 @@ func ReadRules(ctx context.Context, db *sql.DB) Rules {
 	if v, ok := m["delegate_unreachable_grace_seconds"]; ok && json.Unmarshal(v, &n) == nil && n >= 5 && n <= 600 {
 		out.GraceSeconds = n
 	}
+	if v, ok := m["offline_read_minutes"]; ok && json.Unmarshal(v, &n) == nil && n >= 0 && n <= 1440 {
+		out.OfflineReadMinutes = n
+	}
 	if v, ok := m["proxy_cache_mb"]; ok && json.Unmarshal(v, &n) == nil && n >= 0 {
 		out.ProxyCacheMB = n
 	}
-	return out
+	return out, nil
 }

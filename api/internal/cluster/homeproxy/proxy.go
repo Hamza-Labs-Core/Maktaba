@@ -34,6 +34,13 @@ const SessionCookie = "mkt_sess"
 
 // New builds the proxy over a link.
 func New(link homelink.Link, logger *slog.Logger) http.Handler {
+	return NewWithFallback(link, logger, nil)
+}
+
+// NewWithFallback is New whose requests the home did not answer go to fallback first:
+// it answers the ones it can on the node (true) — a node's /api/auth/me from the home's
+// last answer — and the rest get the 503 home_unreachable.
+func NewWithFallback(link homelink.Link, logger *slog.Logger, fallback func(http.ResponseWriter, *http.Request) bool) http.Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -74,6 +81,9 @@ func New(link homelink.Link, logger *slog.Logger) http.Handler {
 			}
 			logger.Warn("node: the home did not answer a proxied request", "path", r.URL.Path, "err", err,
 				"event", "node_home_proxy_failed")
+			if fallback != nil && fallback(w, r) {
+				return
+			}
 			if errors.Is(err, errHeaderTimeout) {
 				w.Header().Set("Content-Type", "application/problem+json")
 				w.WriteHeader(http.StatusGatewayTimeout)

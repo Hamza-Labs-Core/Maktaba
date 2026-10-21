@@ -13,6 +13,12 @@
 // Watch-progress (Story 7.11) keeps a per-(user,video) row in
 // playback_state with a debounced upsert: at most one persisted write
 // per second per session, regardless of how often the player POSTs.
+//
+// On a full node (Offline set, PR #145) playback goes on with the home's
+// database down: the video's library and length come from the node's
+// catalog, the session's owner is kept here (the streaming_sessions row is
+// not written meanwhile), and every database call is bounded so a dead
+// connection is not waited on.
 package streaming
 
 import (
@@ -100,6 +106,26 @@ type Slots struct {
 	Capacity int `json:"capacity"`
 }
 
+// Offline is a full node's way to play with the home's database down (nil on
+// the home).
+type Offline interface {
+	// DBDown: the home's database does not answer (it is skipped, not waited on).
+	DBDown() bool
+	// DBFailed records a call that failed on it.
+	DBFailed(err error)
+	// Video is a video's library and length from the node's catalog.
+	Video(id string) (libraryID string, durationSec float64, ok bool)
+}
+
+// ProblemUnavailableOffline is the problem of a video a node cannot play while
+// the home's database does not answer (it is not in the node's catalog).
+const ProblemUnavailableOffline = "https://maktaba.dev/problems/video-unavailable-offline"
+
+// offlineDBTimeout bounds a node's database call: past it the catalog answers.
+const offlineDBTimeout = 3 * time.Second
+
+var errNotInCatalog = errors.New("streaming: video not in this machine's catalog")
+
 // Handler bundles deps. Service is mandatory in production; tests can
 // inject a fake. NowFunc / TTL are testable.
 type Handler struct {
@@ -109,11 +135,63 @@ type Handler struct {
 	SessionTTL time.Duration
 	// Settings holds the runtime session URL TTL (session.url_ttl_sec; nil
 	// or unset: SessionTTL, else 30 min).
-	Settings     *runtimecfg.Reader
+	Settings *runtimecfg.Reader
+	// Offline: a full node playing on with the home's database down (nil: the home).
+	Offline      Offline
 	NowFunc      func() time.Time
 	CapCache     *capCache
 	debounce     *sessionDebouncer
 	debounceOnce sync.Once
+	ledger       ledger
+}
+
+// dbCtx bounds a database call on a node (Offline set); the home waits as before.
+func (h *Handler) dbCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	if h.Offline == nil {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, offlineDBTimeout)
+}
+
+// dbUp: the database is worth asking (the home's always is; a node's while it answers).
+func (h *Handler) dbUp() bool { return h.Offline == nil || !h.Offline.DBDown() }
+
+// failed reports whether err is a database failure the node's catalog stands in for
+// (recording it); "no rows" is an answer, and the home has no catalog.
+func (h *Handler) failed(err error) bool {
+	if err == nil || errors.Is(err, sql.ErrNoRows) || h.Offline == nil {
+		return false
+	}
+	h.Offline.DBFailed(err)
+	return true
+}
+
+// video resolves a video's library and length: the database, or on a node whose
+// database does not answer, its catalog (errNotInCatalog when the video is not there).
+func (h *Handler) video(ctx context.Context, id string) (string, sql.NullFloat64, error) {
+	if h.dbUp() {
+		qctx, cancel := h.dbCtx(ctx)
+		var lib string
+		var dur sql.NullFloat64
+		err := h.DB.QueryRowContext(qctx, `SELECT library_id, duration_sec FROM videos WHERE id=$1`, id).Scan(&lib, &dur)
+		cancel()
+		if !h.failed(err) {
+			return lib, dur, err
+		}
+	}
+	lib, d, ok := h.Offline.Video(id)
+	if !ok {
+		return "", sql.NullFloat64{}, errNotInCatalog
+	}
+	return lib, sql.NullFloat64{Float64: d, Valid: d > 0}, nil
+}
+
+func writeUnavailableOffline(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Retry-After", "30")
+	e := &httperror.Error{Type: ProblemUnavailableOffline, Status: http.StatusServiceUnavailable,
+		Title:  "this video isn't available while the home is unreachable",
+		Detail: "this machine has no record of the video, and the home's database does not answer"}
+	httperror.Write(w, r, e.With("code", "video_unavailable_offline"))
 }
 
 // Mount wires the routes.
@@ -148,14 +226,16 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 
 	// Resolve the library_id so we can authorise + later anchor the
 	// signed URL's lib[] claim.
-	var libraryID string
-	err := h.DB.QueryRowContext(r.Context(), `SELECT library_id FROM videos WHERE id=$1`, req.VideoID).Scan(&libraryID)
+	libraryID, duration, err := h.video(r.Context(), req.VideoID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
 			httperror.Write(w, r, httperror.NotFound("video "+req.VideoID))
-			return
+		case errors.Is(err, errNotInCatalog):
+			writeUnavailableOffline(w, r)
+		default:
+			httperror.Write(w, r, httperror.Internal("load video"))
 		}
-		httperror.Write(w, r, httperror.Internal("load video"))
 		return
 	}
 	if !p.AccessAllLibraries && !p.HasLibrary(libraryID) {
@@ -169,8 +249,6 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Clamp start_sec to duration_sec - 5 if too large (EC).
-	var duration sql.NullFloat64
-	_ = h.DB.QueryRowContext(r.Context(), `SELECT duration_sec FROM videos WHERE id=$1`, req.VideoID).Scan(&duration)
 	clampedHeader := ""
 	if duration.Valid && req.StartSec > duration.Float64 {
 		req.StartSec = duration.Float64 - 5
@@ -231,10 +309,19 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// A node keeps every session's owner itself: with the home's database
+	// down that is the only record (the row is not written meanwhile).
+	if h.Offline != nil && !h.ledger.open(resp.SessionID, p.UserID, req.VideoID, resp.Mode, h.now()) {
+		httperror.Write(w, r, httperror.Internal("persist session: session id conflict"))
+		return
+	}
+
 	// Persist row. The streaming service hands back the open session of the
 	// same (user, video) when there is one (a reload, a second tab): that is
 	// the row already stored, refreshed instead of a duplicate-key 500.
-	res, err := h.DB.ExecContext(r.Context(), `
+	if h.dbUp() {
+		qctx, cancel := h.dbCtx(r.Context())
+		res, err := h.DB.ExecContext(qctx, `
 		INSERT INTO streaming_sessions
 		(id, user_id, video_id, client_profile, mode, audio_track_id, subtitle_lang,
 		 start_sec, max_bitrate_kbps, burn_subs, opened_at, last_seen_at)
@@ -242,17 +329,24 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 		ON CONFLICT (id) DO UPDATE SET last_seen_at = EXCLUDED.last_seen_at, closed_at = NULL
 		WHERE streaming_sessions.user_id = EXCLUDED.user_id
 	`, resp.SessionID, p.UserID, req.VideoID, req.ClientProfile, resp.Mode,
-		req.AudioTrack, req.SubtitleTrack, req.StartSec, req.MaxBitrateKbps,
-		req.BurnSubs, h.now())
-	if err != nil {
-		httperror.Write(w, r, httperror.Internal("persist session: "+err.Error()))
-		return
-	}
-	if n, nerr := res.RowsAffected(); nerr == nil && n == 0 {
-		// The id is another user's session: never hand it (or a URL
-		// signed for it) to this caller.
-		httperror.Write(w, r, httperror.Internal("persist session: session id conflict"))
-		return
+			req.AudioTrack, req.SubtitleTrack, req.StartSec, req.MaxBitrateKbps,
+			req.BurnSubs, h.now())
+		cancel()
+		switch {
+		case h.failed(err):
+			// the node's own record holds it
+		case err != nil:
+			httperror.Write(w, r, httperror.Internal("persist session: "+err.Error()))
+			return
+		default:
+			if n, nerr := res.RowsAffected(); nerr == nil && n == 0 {
+				// The id is another user's session: never hand it (or a URL
+				// signed for it) to this caller.
+				h.ledger.close(resp.SessionID)
+				httperror.Write(w, r, httperror.Internal("persist session: session id conflict"))
+				return
+			}
+		}
 	}
 
 	if clampedHeader != "" {
@@ -274,10 +368,6 @@ func (h *Handler) GetSession(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.BadRequest("malformed id"))
 		return
 	}
-	row := h.DB.QueryRowContext(r.Context(), `
-		SELECT id, user_id, video_id, mode, opened_at, last_seen_at, closed_at
-		FROM streaming_sessions WHERE id=$1
-	`, id)
 	var sess struct {
 		ID         string     `json:"session_id"`
 		UserID     string     `json:"user_id"`
@@ -288,13 +378,30 @@ func (h *Handler) GetSession(w http.ResponseWriter, r *http.Request) {
 		ClosedAt   *time.Time `json:"closed_at,omitempty"`
 	}
 	var closedAt sql.NullTime
-	if err := row.Scan(&sess.ID, &sess.UserID, &sess.VideoID, &sess.Mode, &sess.OpenedAt, &sess.LastSeenAt, &closedAt); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	asked := h.dbUp()
+	var err error
+	if asked {
+		qctx, cancel := h.dbCtx(r.Context())
+		err = h.DB.QueryRowContext(qctx, `
+		SELECT id, user_id, video_id, mode, opened_at, last_seen_at, closed_at
+		FROM streaming_sessions WHERE id=$1
+	`, id).Scan(&sess.ID, &sess.UserID, &sess.VideoID, &sess.Mode, &sess.OpenedAt, &sess.LastSeenAt, &closedAt)
+		cancel()
+	}
+	if !asked || err != nil {
+		if asked && !errors.Is(err, sql.ErrNoRows) && !h.failed(err) {
+			httperror.Write(w, r, httperror.Internal("load session"))
+			return
+		}
+		// not asked, no row (opened here while the database was down), or a
+		// failure: the node's record answers
+		e, ok := h.ledger.get(id)
+		if !ok {
 			httperror.Write(w, r, httperror.NotFound("session "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load session"))
-		return
+		sess.ID, sess.UserID, sess.VideoID, sess.Mode = id, e.owner, e.video, e.mode
+		sess.OpenedAt, sess.LastSeenAt = e.opened, e.opened
 	}
 	if !mayActOn(p, sess.UserID) {
 		httperror.Write(w, r, httperror.NotFound("session "+id))
@@ -320,14 +427,27 @@ func (h *Handler) CloseSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var owner string
-	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT user_id FROM streaming_sessions WHERE id = $1`, id).Scan(&owner); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	asked := h.dbUp()
+	var err error
+	if asked {
+		qctx, cancel := h.dbCtx(r.Context())
+		err = h.DB.QueryRowContext(qctx,
+			`SELECT user_id FROM streaming_sessions WHERE id = $1`, id).Scan(&owner)
+		cancel()
+	}
+	if !asked || err != nil {
+		if asked && !errors.Is(err, sql.ErrNoRows) && !h.failed(err) {
+			httperror.Write(w, r, httperror.Internal("load session"))
+			return
+		}
+		// a session opened here while the database was down has no row: the
+		// node's record names its owner
+		e, ok := h.ledger.get(id)
+		if !ok {
 			httperror.Write(w, r, httperror.NotFound("session "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load session"))
-		return
+		owner = e.owner
 	}
 	if !mayActOn(p, owner) {
 		httperror.Write(w, r, httperror.NotFound("session "+id))
@@ -336,11 +456,17 @@ func (h *Handler) CloseSession(w http.ResponseWriter, r *http.Request) {
 	if h.Service != nil {
 		_ = h.Service.Close(r.Context(), id) // best-effort
 	}
-	if _, err := h.DB.ExecContext(r.Context(), `
+	h.ledger.close(id)
+	if h.dbUp() {
+		qctx, cancel := h.dbCtx(r.Context())
+		_, err := h.DB.ExecContext(qctx, `
 		UPDATE streaming_sessions SET closed_at = $1 WHERE id = $2
-	`, h.now(), id); err != nil {
-		httperror.Write(w, r, httperror.Internal("close session"))
-		return
+	`, h.now(), id)
+		cancel()
+		if err != nil && !h.failed(err) {
+			httperror.Write(w, r, httperror.Internal("close session"))
+			return
+		}
 	}
 	common.WriteNoContent(w)
 }
@@ -482,8 +608,13 @@ func (h *Handler) now() time.Time {
 }
 
 func (h *Handler) ttl(ctx context.Context) time.Duration {
-	if d, ok := h.Settings.Seconds(ctx, runtimecfg.SessionURLTTL); ok {
-		return d
+	if h.dbUp() {
+		qctx, cancel := h.dbCtx(ctx)
+		d, ok := h.Settings.Seconds(qctx, runtimecfg.SessionURLTTL)
+		cancel()
+		if ok {
+			return d
+		}
 	}
 	if h.SessionTTL > 0 {
 		return h.SessionTTL

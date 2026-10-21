@@ -36,6 +36,7 @@ from .signals import install_shutdown_handlers
 __all__ = [
     "DEFAULT_SHUTDOWN_GRACE_SEC",
     "ShutdownOrchestrator",
+    "release_claims",
 ]
 
 
@@ -259,6 +260,16 @@ class ShutdownOrchestrator:
         if row is None:
             return 0
         return int(row["n"])
+
+
+async def release_claims(db: Any, worker_id: str) -> list[int]:
+    """Put every row ``worker_id`` still holds back to ``paused`` at once (the force step
+    above, without the cooperative wait); the ids. For a worker with nothing in flight:
+    what is still claimed by it is left over (a node whose jobs ended while it could not
+    reach the home's database), and the lease would release it only later."""
+    sql = _FORCE_PAUSE_PG if getattr(db, "dialect", "sqlite") == "postgres" else _FORCE_PAUSE_SQLITE
+    rows = await _fetch_all(db, sql, worker_id)
+    return [int(r["id"]) for r in rows if r is not None]
 
 
 async def _fetch_all(db: Any, sql: str, *args: Any) -> list[Any]:

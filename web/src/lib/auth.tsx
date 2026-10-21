@@ -6,9 +6,23 @@
 // row). The session-restore path on app load probes /api/auth/me; that
 // endpoint is owned by Story 10.1 AC-3 — until it lands the SPA
 // optimistically assumes "unknown" and lets handlers 401 redirect.
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+//
+// Epic 35 (PR #145): on a node that cannot reach its home, /api/auth/me is
+// answered by the node from the home's last answer, so a reload keeps the
+// user in; signing in and out need the home: a sign-out the node refuses
+// (503 home_unreachable) keeps the user signed in and throws, so the caller
+// can say so (lib/api `isHomeUnreachable`).
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { api, ApiError } from "./api";
+import { api, ApiError, isHomeUnreachable } from "./api";
 import { useI18n } from "./i18n";
 import { purgeApiCacheOnLogout } from "./sw";
 import { ChangePasswordRequired } from "../pages/Auth/ChangePasswordRequired";
@@ -26,8 +40,12 @@ export interface AuthState {
   loading: boolean;
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, email: string, password: string) => Promise<void>;
+  /** Throws (and keeps the user) when this machine cannot reach its home. */
   logout: () => Promise<void>;
+  /** Throws (and keeps the user) when this machine cannot reach its home. */
   logoutAll: () => Promise<void>;
+  /** Probe the session again (the home is back: a session may hold). */
+  refresh: () => Promise<void>;
   /** The required password change is done: lift the gate. */
   passwordChanged: () => void;
 }
@@ -46,28 +64,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const probe = useCallback(async (live: () => boolean) => {
     // Probe the server for an existing session. Endpoint is best-effort:
     // a 401 means "no session", not an error.
-    let cancelled = false;
-    (async () => {
-      try {
-        const me = await api.get<{ user: User }>("/api/auth/me");
-        if (!cancelled) setUser(me.user);
-      } catch (e) {
-        if (!(e instanceof ApiError) || e.status !== 401) {
-          // log; we still treat as logged-out so the SPA can boot.
-          console.warn("auth: /me probe failed", e);
-        }
-        if (!cancelled) setUser(null);
-      } finally {
-        if (!cancelled) setLoading(false);
+    try {
+      const me = await api.get<{ user: User }>("/api/auth/me");
+      if (live()) setUser(me.user);
+    } catch (e) {
+      if (!(e instanceof ApiError) || e.status !== 401) {
+        // log; we still treat as logged-out so the SPA can boot.
+        console.warn("auth: /me probe failed", e);
       }
-    })();
+      if (live()) setUser(null);
+    } finally {
+      if (live()) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void probe(() => !cancelled);
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [probe]);
 
   const value = useMemo<AuthState>(
     () => ({
@@ -91,6 +111,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           await api.post("/api/auth/logout");
         } catch (e) {
+          // the home ends sessions: refused, the session (and its HttpOnly
+          // cookie) holds, so the user stays signed in and is told
+          if (isHomeUnreachable(e)) throw e;
           // Even if the server call fails, drop our local state — the
           // cookie is HttpOnly and will get cleared by the next 401.
           console.warn("auth: logout call failed", e);
@@ -104,16 +127,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           await api.post("/api/auth/logout-all");
         } catch (e) {
+          if (isHomeUnreachable(e)) throw e;
           console.warn("auth: logout-all call failed", e);
         }
         await purgeApiCacheOnLogout();
         setUser(null);
       },
+      async refresh() {
+        await probe(() => true);
+      },
       passwordChanged() {
         setUser((u) => (u ? { ...u, must_change_password: false } : u));
       },
     }),
-    [user, loading]
+    [user, loading, probe]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

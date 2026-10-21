@@ -96,6 +96,56 @@ LEFT JOIN LATERAL (
 ) at ON true
 WHERE v.id = $1`
 
+// allRowsSQL is lookupSQL for every probed video (a full node's snapshot, PR #145).
+const allRowsSQL = `
+SELECT
+  v.id,
+  v.library_id,
+  v.content_hash,
+  v.path,
+  COALESCE(mi.container, ''),
+  COALESCE(mi.video_codec, ''),
+  COALESCE(at.codec, ''),
+  COALESCE(mi.height, 0),
+  COALESCE(mi.width, 0),
+  COALESCE(v.duration_sec, 0),
+  COALESCE(mi.bitrate_kbps, 0),
+  COALESCE(at.channels, 0),
+  v.size_bytes,
+  v.mtime
+FROM videos v
+JOIN media_info mi ON mi.video_id = v.id
+LEFT JOIN LATERAL (
+  SELECT codec, channels
+  FROM audio_tracks
+  WHERE video_id = v.id
+  ORDER BY is_default DESC, track_index ASC
+  LIMIT 1
+) at ON true`
+
+// AllRows reads every probed video's row (SnapshotSource).
+func (b *PGBackend) AllRows(ctx context.Context) ([]Row, error) {
+	rows, err := b.pool.Query(ctx, allRowsSQL)
+	if err != nil {
+		return nil, fmt.Errorf("probe: all rows: %w", err)
+	}
+	defer rows.Close()
+	var out []Row
+	for rows.Next() {
+		r := Row{Probed: true}
+		if err := rows.Scan(&r.VideoID, &r.LibraryID, &r.ContentHash, &r.Path, &r.Container, &r.VideoCodec,
+			&r.AudioCodec, &r.Height, &r.Width, &r.DurationSec, &r.BitrateKbps, &r.AudioChannels, &r.Size,
+			&r.ModTime); err != nil {
+			return nil, fmt.Errorf("probe: all rows: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("probe: all rows: %w", err)
+	}
+	return out, nil
+}
+
 // Lookup implements Backend. Returns ErrNotFound when no videos row
 // exists and ErrNotProbed when the video exists but Pipeline has not
 // written its media_info row yet.
