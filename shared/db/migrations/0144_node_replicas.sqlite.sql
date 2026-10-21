@@ -42,6 +42,18 @@ WHERE NOT EXISTS (SELECT 1 FROM cluster_terms);
 -- +goose StatementEnd
 
 -- +goose StatementBegin
+-- The web sessions as a copy holds them (Postgres keeps them from web_sessions by
+-- triggers; a SQLite home keeps no copies): parity only.
+CREATE TABLE IF NOT EXISTS web_session_keys (
+    id_sha256       TEXT PRIMARY KEY,
+    user_id         TEXT NOT NULL,
+    csrf_sha256     TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    expires_at      TEXT NOT NULL,
+    revoked_at      TEXT,
+    origin_node_id  TEXT
+);
+
 CREATE TABLE IF NOT EXISTS cluster_switchovers (
     id            TEXT PRIMARY KEY,
     term          INTEGER NOT NULL,
@@ -66,6 +78,7 @@ CREATE TABLE IF NOT EXISTS cluster_switchovers (
 -- +goose Down
 -- +goose StatementBegin
 DROP TABLE IF EXISTS cluster_switchovers;
+DROP TABLE IF EXISTS web_session_keys;
 -- +goose StatementEnd
 
 -- +goose StatementBegin

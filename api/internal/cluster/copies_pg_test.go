@@ -2,9 +2,16 @@ package cluster
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/pbkdf2"
+	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,6 +51,7 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	suffix := strings.ReplaceAll(uuid.NewString()[:8], "-", "")
 	app, dbName := "app_"+suffix, "t_copy_"+suffix
 	nodeID, otherID := uuid.NewString(), uuid.NewString()
+	sessUser, sessID := uuid.NewString(), uuid.NewString()
 	nodeRole, otherRole := RoleName(nodeID), RoleName(otherID)
 	copyRole, slot, _ := CopyNames(nodeRole)
 	exec := func(db *sql.DB, q string, args ...any) {
@@ -93,8 +101,8 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 		if err := roles.Create(context.Background(), n.role, "node-pass-"+suffix); err != nil {
 			t.Fatal(err)
 		}
-		exec(home, `INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, db_role, approved_at, approved_by)
-		       VALUES ($1, 'n', 'approved', 'windows', 'amd64', 'k', $2, now(), 'test')`, n.id, n.role)
+		exec(home, `INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, db_role, approved_at, approved_by,
+		       full_node) VALUES ($1, 'n', 'approved', 'windows', 'amd64', 'k', $2, now(), 'test', true)`, n.id, n.role)
 	}
 	node, err := sql.Open("postgres", clustertest.DSN(t, base, dbName, nodeRole, "node-pass-"+suffix))
 	if err != nil {
@@ -110,14 +118,18 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 		Version                                 int      `json:"server_version_num"`
 		CA                                      *string  `json:"ca_pem"`
 	}
-	ask := func(db *sql.DB, id, pw string, fresh bool) (grant, error) {
+	// a machine sends its password's SCRAM verifier, never the password
+	askWith := func(db *sql.DB, id, verifier string, fresh bool) (grant, error) {
 		var raw []byte
-		err := db.QueryRow(`SELECT cluster_node_replica_grant($1, $2, $3)`, id, pw, fresh).Scan(&raw)
+		err := db.QueryRow(`SELECT cluster_node_replica_grant($1, $2, $3)`, id, verifier, fresh).Scan(&raw)
 		var g grant
 		if err == nil {
 			err = json.Unmarshal(raw, &g)
 		}
 		return g, err
+	}
+	ask := func(db *sql.DB, id, pw string, fresh bool) (grant, error) {
+		return askWith(db, id, scramVerifier(t, pw), fresh)
 	}
 	pw := strings.Repeat("p", 40)
 	g, err := ask(node, nodeID, pw, false)
@@ -132,12 +144,13 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	for _, tab := range g.Tables {
 		published[tab] = true
 	}
-	for _, want := range []string{"users", "web_sessions", "videos", "cluster_replica_beat", "cluster_nodes"} {
+	for _, want := range []string{"users", "web_session_keys", "videos", "cluster_replica_beat", "cluster_nodes"} {
 		if !published[want] {
 			t.Fatalf("%s is not published", want)
 		}
 	}
-	for _, never := range []string{"home_secrets", "refresh_tokens", "tv_cluster_secret", "goose_db_version"} {
+	// a session's id and CSRF token are live cookies: a copy holds their hashes only
+	for _, never := range []string{"web_sessions", "home_secrets", "refresh_tokens", "tv_cluster_secret", "goose_db_version"} {
 		if published[never] {
 			t.Fatalf("%s is published", never)
 		}
@@ -154,6 +167,27 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	}
 	if err := cp.QueryRow(`SELECT count(*) FROM home_secrets`).Scan(&n); !isCode(err, "42501") {
 		t.Fatalf("the copy's role reads the home's secrets: %v", err)
+	}
+	if err := cp.QueryRow(`SELECT count(*) FROM web_sessions`).Scan(&n); !isCode(err, "42501") {
+		t.Fatalf("the copy's role reads the home's session cookies: %v", err)
+	}
+	// a session as a copy holds it: the hashes of its id and CSRF token, kept by trigger
+	exec(home, `INSERT INTO users (id, username, pw_hash, is_admin) VALUES ($1, 'sam', 'x', false)`, sessUser)
+	exec(home, `INSERT INTO web_sessions (id, user_id, csrf_token, created_at, last_seen_at, expires_at)
+	       VALUES ($1, $2, 'csrf-value', now(), now(), now() + interval '1 day')`, sessID, sessUser)
+	var idHash, csrfHash string
+	if err := cp.QueryRow(`SELECT id_sha256, csrf_sha256 FROM web_session_keys WHERE user_id = $1`, sessUser).
+		Scan(&idHash, &csrfHash); err != nil || idHash != sha256Hex(sessID) || csrfHash != sha256Hex("csrf-value") {
+		t.Fatalf("the session's hashes: %q %q %v", idHash, csrfHash, err)
+	}
+	exec(home, `UPDATE web_sessions SET revoked_at = now() WHERE id = $1`, sessID)
+	var revoked bool
+	_ = cp.QueryRow(`SELECT revoked_at IS NOT NULL FROM web_session_keys WHERE id_sha256 = $1`, idHash).Scan(&revoked)
+	exec(home, `DELETE FROM web_sessions WHERE id = $1`, sessID)
+	var kept int
+	_ = cp.QueryRow(`SELECT count(*) FROM web_session_keys WHERE id_sha256 = $1`, idHash).Scan(&kept)
+	if !revoked || kept != 0 {
+		t.Fatalf("the session's hashes follow it: revoked %v, kept %d", revoked, kept)
 	}
 	if err := cp.QueryRow(`SELECT count(*) FROM cluster_nodes WHERE home_privkey IS NOT NULL`).Scan(&n); !isCode(err, "42501") {
 		t.Fatalf("the copy's role reads the machines' keys: %v", err)
@@ -173,9 +207,15 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	if _, err := ask(node, otherID, pw, false); !isCode(err, "42501") {
 		t.Fatalf("another machine's copy: %v, want insufficient_privilege", err)
 	}
-	if _, err := ask(node, nodeID, "short", false); !isCode(err, "22023") {
-		t.Fatalf("a short password: %v, want invalid_parameter_value", err)
+	if _, err := askWith(node, nodeID, strings.Repeat("p", 40), false); !isCode(err, "22023") {
+		t.Fatalf("a password, not its verifier: %v, want invalid_parameter_value", err)
 	}
+	// a worker-only machine keeps no copy
+	exec(home, `UPDATE cluster_nodes SET full_node = false WHERE id = $1`, nodeID)
+	if _, err := ask(node, nodeID, pw, false); !isCode(err, "MK403") {
+		t.Fatalf("a machine that is not a full one: %v, want MK403", err)
+	}
+	exec(home, `UPDATE cluster_nodes SET full_node = true WHERE id = $1`, nodeID)
 
 	// the home's loop: the beat (a slot exists), the CA, the cap
 	ca := filepath.Join(t.TempDir(), "ca.crt")
@@ -230,6 +270,33 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	if left {
 		t.Fatal("the copy's role outlived the machine")
 	}
+}
+
+// scramVerifier is the SCRAM-SHA-256 verifier a machine sends for its copy's password
+// (nodecopy computes it the same way).
+func scramVerifier(t *testing.T, password string) string {
+	t.Helper()
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		t.Fatal(err)
+	}
+	salted, err := pbkdf2.Key(sha256.New, password, salt, 4096, sha256.Size)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mac := func(msg string) []byte {
+		h := hmac.New(sha256.New, salted)
+		h.Write([]byte(msg))
+		return h.Sum(nil)
+	}
+	stored := sha256.Sum256(mac("Client Key"))
+	b64 := base64.StdEncoding.EncodeToString
+	return fmt.Sprintf("SCRAM-SHA-256$4096:%s$%s:%s", b64(salt), b64(stored[:]), b64(mac("Server Key")))
+}
+
+func sha256Hex(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
 }
 
 func isCode(err error, code string) bool {

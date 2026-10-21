@@ -214,17 +214,23 @@ func TestCopyFollowsTheHome(t *testing.T) {
 			time.Sleep(time.Second)
 		}
 	}()
-	// a secret the copy must never hold
+	// a secret the copy must never hold, and a web session: its id and CSRF token are
+	// live cookies (the copy holds their hashes only)
 	exec1(`INSERT INTO home_secrets (name, key_id, nonce, ciphertext) VALUES ('plex.token', 'k1', '\x00'::bytea, '\x00'::bytea)
 	       ON CONFLICT DO NOTHING`)
+	sessUser, sessID := uuid.NewString(), uuid.NewString()
+	exec1(`INSERT INTO users (id, username, pw_hash) VALUES ($1, 'sam', 'x')`, sessUser)
+	exec1(`INSERT INTO web_sessions (id, user_id, csrf_token, created_at, last_seen_at, expires_at)
+	       VALUES ($1, $2, 'csrf-value', now(), now(), now() + interval '1 day')`, sessID, sessUser)
 
 	// ---- an approved machine with its own role, and another one ----
 	nodeID, otherID := uuid.NewString(), uuid.NewString()
 	role := "maktaba_node_" + strings.ReplaceAll(nodeID, "-", "")
 	exec1(`CREATE ROLE ` + role + ` LOGIN PASSWORD 'node-pass-123' IN ROLE maktaba_worker`)
 	for _, n := range []struct{ id, role, priv string }{{nodeID, role, "node-secret-key"}, {otherID, "", "other-secret-key"}} {
-		exec1(`INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, home_privkey, db_role, approved_at, approved_by)
-		       VALUES ($1, 'studio', 'approved', 'windows', 'amd64', 'k', $2, NULLIF($3, ''), now(), 'test')`, n.id, n.priv, n.role)
+		exec1(`INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, home_privkey, db_role, approved_at, approved_by,
+		       full_node) VALUES ($1, 'studio', 'approved', 'windows', 'amd64', 'k', $2, NULLIF($3, ''), now(), 'test', true)`,
+			n.id, n.priv, n.role)
 	}
 	nodeDSN := (&url.URL{Scheme: "postgres", User: url.UserPassword(role, "node-pass-123"), Host: b.Addr(),
 		Path: "/" + pgbundle.AppDatabase, RawQuery: "sslmode=prefer"}).String() // as the join hands it
@@ -301,6 +307,12 @@ func TestCopyFollowsTheHome(t *testing.T) {
 	_ = copyDB.QueryRowContext(ctx, `SELECT count(*) FROM home_secrets`).Scan(&n)
 	if n != 0 {
 		t.Fatalf("the copy holds %d of the home's secrets", n)
+	}
+	_ = copyDB.QueryRowContext(ctx, `SELECT count(*) FROM web_sessions`).Scan(&n)
+	var keys int
+	_ = copyDB.QueryRowContext(ctx, `SELECT count(*) FROM web_session_keys WHERE user_id = $1`, sessUser).Scan(&keys)
+	if n != 0 || keys != 1 {
+		t.Fatalf("the copy holds %d web sessions (want none) and %d of their hashes (want 1)", n, keys)
 	}
 	var nodes int
 	var priv sql.NullString

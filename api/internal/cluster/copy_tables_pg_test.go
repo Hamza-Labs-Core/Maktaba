@@ -43,7 +43,7 @@ var copyReviewed = []string{
 	"update_runs", "update_targets", "update_watermark", "user_analytics_prefs", "user_recs",
 	"users", "video_classification", "video_embeddings", "video_entities", "video_repairs",
 	"video_signals", "video_tags", "video_topic_tags", "video_topics", "videos", "watch_sessions",
-	"web_metadata_cache", "web_sessions", "worker_pools", "workers", "youtube_channels",
+	"web_metadata_cache", "web_session_keys", "worker_pools", "workers", "youtube_channels",
 	"youtube_imports", "youtube_playlist_items", "youtube_playlists", "youtube_search_cache",
 	"youtube_videos",
 }

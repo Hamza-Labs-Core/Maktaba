@@ -24,14 +24,15 @@ import (
 )
 
 // KitTables are the tables replication leaves out that the new home needs as they are:
-// the home's secrets and tokens, the machines and their stage switches, the licence, the
-// devices, the audit log (cluster_copy_excluded() but each database's own state and the
-// caches, which the new home makes again). A table this home lacks (an older schema) is
+// the home's secrets and tokens, the web sessions (live cookies: a copy holds their
+// hashes only), the machines and their stage switches, the licence, the devices, the
+// audit log (cluster_copy_excluded() but each database's own state and the caches,
+// which the new home makes again). A table this home lacks (an older schema) is
 // skipped.
 var KitTables = []string{
 	"home_secrets", "tv_cluster_secret", "tv_push_secrets", "tv_simulcast_destinations",
 	"refresh_tokens", "password_reset_tokens", "pairing_tickets", "cluster_sso_codes",
-	"idempotency_keys", "licenses", "devices", "device_downloads", "audit_log",
+	"idempotency_keys", "licenses", "devices", "device_downloads", "audit_log", "web_sessions",
 	"cluster_nodes", "cluster_node_stages",
 }
 

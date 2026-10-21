@@ -54,6 +54,10 @@ url = "sqlite:///var/lib/maktaba/maktaba.db"
 # default $MAKTABA_POSTGRES_HOME, else the app's Resources/server/postgres.
 # home = ""
 # port = 54329
+# Where the cluster's machines may connect to it from: "samenet" (default: the
+# networks this machine is on), "all" (machines over a VPN or a routed network), or
+# networks, comma-separated CIDR.
+# machines_from = "samenet"
 
 [media]
 # One or more library roots scanned for media.

@@ -23,10 +23,17 @@
 --   5. cluster_replica_beat: this home's clock, written every few seconds while a
 --      machine follows it, so a copy knows how far it has applied the home's changes;
 --      and the CA of this database's TLS, which a machine pins for its replication.
---   6. cluster_node_replica_grant: a machine asks for its copy over its own database
---      connection: its replication role (maktaba_rep_<id>, with the password the
---      machine chose) and its publication (maktaba_copy_<id>, brought up to date with
---      the tables this home has now); its subscription makes the slot.
+--   7. web_session_keys: the web sessions as a copy holds them: the SHA-256 of each
+--      session's id and of its CSRF token, never the values (a session id is a live
+--      cookie: a copy of it would sign in at this home as its person), kept by triggers
+--      from web_sessions, which a copy leaves out.
+--   6. cluster_node_replica_grant: an approved full machine asks for its copy over its
+--      own database connection: its replication role (maktaba_rep_<id>, with the SCRAM
+--      verifier of the password the machine chose: the password never leaves it) and
+--      its publication (maktaba_copy_<id>, brought up to date with the tables this home
+--      has now); its subscription makes the slot. Its row is read FOR SHARE: a
+--      revocation under way waits for the call, and one made before it is seen. A
+--      machine that may not have a copy is refused with SQLSTATE MK403.
 --
 -- Additive.
 --
@@ -185,6 +192,8 @@ LANGUAGE sql IMMUTABLE AS $f$
         'home_secrets', 'tv_cluster_secret', 'tv_push_secrets', 'tv_simulcast_destinations',
         'refresh_tokens', 'password_reset_tokens', 'pairing_tickets', 'cluster_sso_codes',
         'idempotency_keys', 'licenses', 'devices', 'device_downloads', 'audit_log',
+        -- live cookies (their hashes are copied: web_session_keys)
+        'web_sessions',
         -- the machines' own (a machine's row of cluster_nodes is published to it alone)
         'cluster_nodes', 'cluster_node_stages', 'cluster_metrics_cache', 'cluster_log_cache',
         'cluster_cache_files',
@@ -274,7 +283,7 @@ REVOKE EXECUTE ON FUNCTION cluster_copy_publication(uuid) FROM PUBLIC;
 -- from before is dropped. It also says what the machine needs to follow: this home's
 -- schema version (a copy's own migrations must be at least as far), the tables it
 -- copies, the TLS CA it verifies this home with.
-CREATE OR REPLACE FUNCTION cluster_node_replica_grant(p_node uuid, p_password text, p_fresh boolean)
+CREATE OR REPLACE FUNCTION cluster_node_replica_grant(p_node uuid, p_verifier text, p_fresh boolean)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $f$
 DECLARE
@@ -286,11 +295,15 @@ DECLARE
     v_live boolean;
 BEGIN
     PERFORM cluster_node_guard(p_node);
-    IF NOT EXISTS (SELECT 1 FROM cluster_nodes WHERE id = p_node AND state = 'approved') THEN
-        RAISE EXCEPTION 'cluster node % is not approved', p_node USING ERRCODE = 'insufficient_privilege';
+    PERFORM 1 FROM cluster_nodes WHERE id = p_node AND state = 'approved' AND full_node FOR SHARE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'cluster node % may not have a copy (not approved, or not a full machine)', p_node
+            USING ERRCODE = 'MK403';
     END IF;
-    IF p_password IS NULL OR length(p_password) < 32 THEN
-        RAISE EXCEPTION 'a copy''s password has 32 characters at least' USING ERRCODE = 'invalid_parameter_value';
+    IF p_verifier IS NULL
+       OR p_verifier !~ '^SCRAM-SHA-256\$[0-9]+:[A-Za-z0-9+/=]+\$[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$' THEN
+        RAISE EXCEPTION 'a copy''s password is given as its SCRAM-SHA-256 verifier'
+            USING ERRCODE = 'invalid_parameter_value';
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_replicas') THEN
         RAISE EXCEPTION 'this database keeps no copies for machines (no replicas group)'
@@ -301,9 +314,9 @@ BEGIN
             current_setting('wal_level') USING ERRCODE = 'feature_not_supported';
     END IF;
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = v_role) THEN
-        EXECUTE format('ALTER ROLE %I WITH LOGIN REPLICATION INHERIT PASSWORD %L', v_role, p_password);
+        EXECUTE format('ALTER ROLE %I WITH LOGIN REPLICATION INHERIT PASSWORD %L', v_role, p_verifier);
     ELSE
-        EXECUTE format('CREATE ROLE %I WITH LOGIN REPLICATION INHERIT PASSWORD %L', v_role, p_password);
+        EXECUTE format('CREATE ROLE %I WITH LOGIN REPLICATION INHERIT PASSWORD %L', v_role, p_verifier);
     END IF;
     IF NOT pg_has_role(v_role, 'maktaba_replicas', 'MEMBER') THEN
         EXECUTE format('GRANT maktaba_replicas TO %I', v_role);
@@ -404,8 +417,60 @@ END
 $$;
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+-- The web sessions as a copy holds them (7.): by the SHA-256 of the session's id (its
+-- cookie) and of its CSRF token, and what a sign-in check needs.
+CREATE TABLE IF NOT EXISTS web_session_keys (
+    id_sha256       text PRIMARY KEY,
+    user_id         uuid NOT NULL,
+    csrf_sha256     text NOT NULL,
+    created_at      timestamptz NOT NULL,
+    expires_at      timestamptz NOT NULL,
+    revoked_at      timestamptz,
+    origin_node_id  uuid
+);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION web_session_keys_sync() RETURNS trigger
+LANGUAGE plpgsql SET search_path = public, pg_temp AS $f$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM web_session_keys WHERE id_sha256 = encode(sha256(convert_to(OLD.id::text, 'UTF8')), 'hex');
+        RETURN OLD;
+    END IF;
+    INSERT INTO web_session_keys (id_sha256, user_id, csrf_sha256, created_at, expires_at, revoked_at,
+                                  origin_node_id)
+    VALUES (encode(sha256(convert_to(NEW.id::text, 'UTF8')), 'hex'), NEW.user_id,
+            encode(sha256(convert_to(NEW.csrf_token, 'UTF8')), 'hex'), NEW.created_at, NEW.expires_at,
+            NEW.revoked_at, NEW.origin_node_id)
+    ON CONFLICT (id_sha256) DO UPDATE SET user_id = EXCLUDED.user_id, csrf_sha256 = EXCLUDED.csrf_sha256,
+        expires_at = EXCLUDED.expires_at, revoked_at = EXCLUDED.revoked_at,
+        origin_node_id = EXCLUDED.origin_node_id;
+    RETURN NEW;
+END
+$f$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE OR REPLACE TRIGGER web_session_keys_sync
+    AFTER INSERT OR DELETE OR UPDATE OF user_id, csrf_token, expires_at, revoked_at, origin_node_id
+    ON web_sessions FOR EACH ROW EXECUTE FUNCTION web_session_keys_sync();
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+INSERT INTO web_session_keys (id_sha256, user_id, csrf_sha256, created_at, expires_at, revoked_at, origin_node_id)
+SELECT encode(sha256(convert_to(id::text, 'UTF8')), 'hex'), user_id,
+       encode(sha256(convert_to(csrf_token, 'UTF8')), 'hex'), created_at, expires_at, revoked_at, origin_node_id
+  FROM web_sessions
+ON CONFLICT (id_sha256) DO NOTHING;
+-- +goose StatementEnd
+
 -- +goose Down
 -- +goose StatementBegin
+DROP TRIGGER IF EXISTS web_session_keys_sync ON web_sessions;
+DROP FUNCTION IF EXISTS web_session_keys_sync();
+DROP TABLE IF EXISTS web_session_keys;
 DROP TABLE IF EXISTS cluster_switchovers;
 DROP TABLE IF EXISTS cluster_terms;
 DROP FUNCTION IF EXISTS cluster_node_replica_grant(uuid, text, boolean);

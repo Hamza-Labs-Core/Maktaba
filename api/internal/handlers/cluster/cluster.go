@@ -795,10 +795,19 @@ func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if n.State != cluster.StateApproved {
+	if n.State != cluster.StateApproved && n.State != cluster.StateRevoked {
 		httperror.Write(w, r, problem(http.StatusConflict, "not_approved", "not approved",
 			"only an approved machine can be revoked").With("state", n.State))
 		return
+	}
+	// the state first: a copy's grant reads it under a lock (slot 0144), so one under way
+	// ends before and one after is refused; then its roles, which no grant re-enables now
+	// (a revoked one again: its roles, if disabling them failed the first time)
+	if n.State == cluster.StateApproved {
+		if err := h.Store.Revoke(ctx, n.ID, h.now()); err != nil {
+			errInternal(w, r, "revoke", err)
+			return
+		}
 	}
 	if n.DBRole != nil && *n.DBRole != "" {
 		ended, err := h.Roles.Disable(ctx, *n.DBRole)
@@ -807,10 +816,6 @@ func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.log().Info("cluster: machine revoked", "node_id", n.ID, "sessions_ended", ended, "event", "cluster_revoked")
-	}
-	if err := h.Store.Revoke(ctx, n.ID, h.now()); err != nil {
-		errInternal(w, r, "revoke", err)
-		return
 	}
 	if h.OnRevoke != nil {
 		h.OnRevoke(n.ID)

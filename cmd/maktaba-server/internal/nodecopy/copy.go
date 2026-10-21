@@ -12,7 +12,10 @@ package nodecopy
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/pbkdf2"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -134,6 +137,11 @@ func (c Copy) Ask(ctx context.Context, fresh bool) (Grant, error) {
 	if err != nil {
 		return Grant{}, err
 	}
+	// the home stores the password's verifier, which is all it is sent
+	verifier, err := scramVerifier(pw)
+	if err != nil {
+		return Grant{}, err
+	}
 	actx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	db, err := c.openHome(actx)
@@ -142,7 +150,7 @@ func (c Copy) Ask(ctx context.Context, fresh bool) (Grant, error) {
 	}
 	defer db.Close()
 	var raw []byte
-	if err := db.QueryRowContext(actx, `SELECT cluster_node_replica_grant($1, $2, $3)`, c.NodeID, pw, fresh).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(actx, `SELECT cluster_node_replica_grant($1, $2, $3)`, c.NodeID, verifier, fresh).Scan(&raw); err != nil {
 		return Grant{}, err
 	}
 	var g Grant
@@ -409,6 +417,33 @@ func (c Copy) EnsureReader(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// ForgetSessions empties the copy's web_sessions: a copy holds no session id (a live
+// cookie; their hashes come in web_session_keys), and one made before they were left out
+// had them. Triggers stay off (the hashes the copy holds are the home's).
+func (c Copy) ForgetSessions(ctx context.Context) error {
+	db, err := c.super()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SET LOCAL session_replication_role = replica`); err != nil {
+		return err
+	}
+	var has bool
+	if err := tx.QueryRowContext(ctx, `SELECT to_regclass('public.web_sessions') IS NOT NULL`).Scan(&has); err != nil || !has {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM web_sessions`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // LocalSchema is this machine's database's schema version (its migrations).
@@ -766,11 +801,38 @@ const (
 	kindOther
 )
 
+// scramVerifier is Postgres's SCRAM-SHA-256 verifier of password (RFC 5802 / 7677: a
+// random salt, 4096 iterations), as the home stores it for the role: the home checks the
+// password at sign-in without ever being sent it.
+func scramVerifier(password string) (string, error) {
+	const iterations = 4096
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		return "", err
+	}
+	salted, err := pbkdf2.Key(sha256.New, password, salt, iterations, sha256.Size)
+	if err != nil {
+		return "", err
+	}
+	mac := func(key []byte, msg string) []byte {
+		h := hmac.New(sha256.New, key)
+		h.Write([]byte(msg))
+		return h.Sum(nil)
+	}
+	stored := sha256.Sum256(mac(salted, "Client Key"))
+	b64 := base64.StdEncoding.EncodeToString
+	return fmt.Sprintf("SCRAM-SHA-256$%d:%s$%s:%s", iterations, b64(salt), b64(stored[:]),
+		b64(mac(salted, "Server Key"))), nil
+}
+
+// kindOf sorts a call's error. Refused is the home saying this machine may have no copy
+// (MK403: not approved, or not a full machine) or its role may no longer sign in (a
+// revocation): not a permission error elsewhere, a password or a pg_hba rule.
 func kindOf(err error) int {
 	var pe *pq.Error
 	if errors.As(err, &pe) {
 		switch {
-		case pe.Code == "28P01" || pe.Code == "28000" || pe.Code == "42501":
+		case pe.Code == "MK403" || (pe.Code == "28000" && strings.Contains(pe.Message, "not permitted to log in")):
 			return kindRefused
 		case pe.Code == "42883" || pe.Code == "0A000":
 			return kindUnsupported

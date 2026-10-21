@@ -37,6 +37,8 @@ type fakeRoles struct {
 	disabled  []string
 	dropped   []string
 	createErr error
+	// disableErr fails the next Disable
+	disableErr error
 }
 
 func (f *fakeRoles) Supported(context.Context) (bool, string) { return f.supported, f.reason }
@@ -55,6 +57,10 @@ func (f *fakeRoles) Create(_ context.Context, role, pw string) error {
 func (f *fakeRoles) Disable(_ context.Context, role string) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.disableErr; err != nil {
+		f.disableErr = nil
+		return 0, err
+	}
 	f.disabled = append(f.disabled, role)
 	return 1, nil
 }
@@ -459,6 +465,17 @@ func TestRejectRevokeRemove(t *testing.T) {
 	decode(t, f.approve(nodeCode(t, jr.HomePubkey)), 200, nil)
 	problemOf(t, f.do("POST", "/api/cluster/nodes/"+nodeID+"/reject", "", admin()), 409, "not_pending")
 
+	// the state goes first (a copy's grant reads it under a lock), the roles after: a
+	// failure there leaves it revoked, and revoking again disables them
+	f.roles.disableErr = errors.New("the database went away")
+	if rec := f.do("POST", "/api/cluster/nodes/"+nodeID+"/revoke", "", admin()); rec.Code != http.StatusInternalServerError {
+		t.Fatalf("revoke with the roles failing: %d", rec.Code)
+	}
+	var mid PollResponse
+	decode(t, f.poll(nodePubB64), 200, &mid)
+	if mid.State != "revoked" || len(f.roles.disabled) != 0 {
+		t.Fatalf("after a failed revoke: %+v, disabled %v", mid, f.roles.disabled)
+	}
 	var nv Node
 	decode(t, f.do("POST", "/api/cluster/nodes/"+nodeID+"/revoke", "", admin()), 200, &nv)
 	if nv.State != "revoked" || nv.RevokedAt == nil || len(f.roles.disabled) != 1 || f.roles.disabled[0] != "maktaba_node_6f1c2a3b4d5e4f608a7192b3c4d5e6f7" {

@@ -47,9 +47,11 @@ type Bundle struct {
 	Backups string // the nightly dumps
 	Port    int
 	// LAN: it listens on every interface for the cluster's machines (cluster.go);
-	// TLS: their connections are encrypted with the cluster database CA's certificate.
-	LAN bool
-	TLS bool
+	// TLS: their connections are encrypted with the cluster database CA's certificate;
+	// MachinesFrom: the networks they may connect from (Bundle.machinesFrom).
+	LAN          bool
+	TLS          bool
+	MachinesFrom string
 }
 
 // Resolve reports whether this install runs the bundled Postgres, and where.
@@ -89,6 +91,8 @@ func Resolve(cfg config.Config, exe string) (Bundle, bool, error) {
 		Port:    port,
 		LAN:     !strings.EqualFold(strings.TrimSpace(cfg.Postgres.Listen), "loopback"),
 		TLS:     !strings.EqualFold(strings.TrimSpace(cfg.Postgres.TLS), "off"),
+		// the networks the machines connect from
+		MachinesFrom: cfg.Postgres.MachinesFrom,
 	}, true, nil
 }
 

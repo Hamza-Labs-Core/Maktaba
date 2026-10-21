@@ -197,6 +197,11 @@ func TestAPlannedSwitchover(t *testing.T) {
 	b, cm := c.join("b"), c.join("c")
 	c.exec(c.app, `INSERT INTO home_secrets (name, key_id, nonce, ciphertext) VALUES ('ext.plex.token', 'k1', '\x01'::bytea, '\x02'::bytea)`)
 	c.exec(c.app, `INSERT INTO app_settings (key, value, updated_at) VALUES ('test.switch', '"before"', now())`)
+	// a person signed in: the session (a live cookie, never in a copy) moves with the kit
+	sessUser, sessID := uuid.NewString(), uuid.NewString()
+	c.exec(c.app, `INSERT INTO users (id, username, pw_hash) VALUES ($1, 'sam', 'x')`, sessUser)
+	c.exec(c.app, `INSERT INTO web_sessions (id, user_id, csrf_token, created_at, last_seen_at, expires_at)
+	    VALUES ($1, $2, 'csrf-value', now(), now(), now() + interval '1 day')`, sessID, sessUser)
 	for i := 0; i < 5; i++ {
 		c.exec(c.app, `INSERT INTO events (channel, type) VALUES ('test', 'before')`)
 	}
@@ -353,6 +358,17 @@ func TestAPlannedSwitchover(t *testing.T) {
 	}
 	if n := count(ctx, adb, `SELECT count(*) FROM home_secrets`); n != 0 {
 		t.Fatalf("the old home kept %d secrets", n)
+	}
+	// the person stays signed in on the new home; the old home, a copy now, holds the
+	// session's hashes only
+	if n := count(ctx, bdb, `SELECT count(*) FROM web_sessions WHERE id = $1`, sessID); n != 1 {
+		t.Fatalf("the session on the new home: %d", n)
+	}
+	if n := count(ctx, adb, `SELECT count(*) FROM web_sessions`); n != 0 {
+		t.Fatalf("the old home kept %d web sessions", n)
+	}
+	if n := count(ctx, adb, `SELECT count(*) FROM web_session_keys WHERE user_id = $1`, sessUser); n != 1 {
+		t.Fatalf("the session's hashes on the old home: %d", n)
 	}
 	if n := count(ctx, bdb, `SELECT count(*) FROM cluster_nodes WHERE id = $1`, b.id); n != 0 {
 		t.Fatal("the new home is still one of its machines")

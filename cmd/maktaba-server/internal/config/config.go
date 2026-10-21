@@ -83,6 +83,10 @@ type PostgresSection struct {
 	// database CA's certificate (made automatically); "off" sends them in the clear,
 	// passwords and every replicated row readable on the network.
 	TLS string `toml:"tls"`
+	// MachinesFrom: where the cluster's machines may connect from: "samenet" (default:
+	// the networks this machine is on), "all" (any address: machines over a VPN or a
+	// routed network), or networks, comma-separated CIDR ("192.168.1.0/24, 10.8.0.0/16").
+	MachinesFrom string `toml:"machines_from"`
 	// CopyPort is the loopback port of a full node's copy of its home's database
 	// (default: Port; a node runs no bundled home, and its copy is the database it
 	// would run as the home).

@@ -225,9 +225,14 @@ func TestKindOf(t *testing.T) {
 		{&pq.Error{Code: "57P01"}, kindUnreachable},
 		{&pq.Error{Code: "53300"}, kindUnreachable}, // too many clients
 		{&pq.Error{Code: "08006"}, kindUnreachable},
-		{&pq.Error{Code: "28P01"}, kindRefused},
-		{&pq.Error{Code: "28000"}, kindRefused},
-		{&pq.Error{Code: "42501"}, kindRefused},
+		// refused: the home says this machine may have no copy, or its role may no longer
+		// sign in (a revocation); a permission error elsewhere, a password or a pg_hba
+		// rule is not that
+		{&pq.Error{Code: "MK403"}, kindRefused},
+		{&pq.Error{Code: "28000", Message: `role "maktaba_node_x" is not permitted to log in`}, kindRefused},
+		{&pq.Error{Code: "28000", Message: `no pg_hba.conf entry for host "10.0.0.5"`}, kindOther},
+		{&pq.Error{Code: "28P01"}, kindOther},
+		{&pq.Error{Code: "42501"}, kindOther},
 		{&pq.Error{Code: "42883"}, kindUnsupported},
 		{&pq.Error{Code: "0A000"}, kindUnsupported},
 		{&pq.Error{Code: "55006"}, kindBusy},

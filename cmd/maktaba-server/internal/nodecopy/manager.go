@@ -282,6 +282,9 @@ func (m *Manager) prepare(ctx context.Context) (int64, bool) {
 	for {
 		local, err := m.migrate(ctx)
 		if err == nil {
+			if err := m.Copy.ForgetSessions(ctx); err != nil {
+				m.logf("emptying this machine's copy of the home's web sessions: %v", err)
+			}
 			return local, true
 		}
 		m.set(ctx, m.state(StateError, "this machine's database: "+err.Error()))

@@ -27,13 +27,16 @@ func TestHBAConf(t *testing.T) {
 	}
 	lan := clusterBundle(t, true, true).hbaConf()
 	for _, want := range []string{
-		"hostssl maktaba      +maktaba_worker",
-		"hostssl maktaba      +maktaba_replicas",
-		"hostssl replication  +maktaba_replicas",
+		"hostssl maktaba      +maktaba_worker  samenet",
+		"hostssl maktaba      +maktaba_replicas samenet",
 	} {
 		if !strings.Contains(lan, want) {
 			t.Errorf("LAN pg_hba lacks %q:\n%s", want, lan)
 		}
+	}
+	// a copy is a logical subscription: no physical replication (the whole cluster)
+	if strings.Contains(lan, "replication") && strings.Contains(lan, " replication ") {
+		t.Errorf("a physical replication line:\n%s", lan)
 	}
 	for _, line := range strings.Split(lan, "\n") {
 		if strings.HasPrefix(line, "host ") && !strings.Contains(line, "127.0.0.1/32") && !strings.Contains(line, "::1/128") {
@@ -41,8 +44,34 @@ func TestHBAConf(t *testing.T) {
 		}
 	}
 	plain := clusterBundle(t, true, false).hbaConf()
-	if strings.Contains(plain, "hostssl") || !strings.Contains(plain, "host    replication  +maktaba_replicas") {
+	if strings.Contains(plain, "hostssl") || !strings.Contains(plain, "host    maktaba      +maktaba_replicas samenet") {
 		t.Fatalf("TLS off:\n%s", plain)
+	}
+}
+
+func TestMachinesFrom(t *testing.T) {
+	for in, want := range map[string]string{
+		"":                            "samenet",
+		"SameNet":                     "samenet",
+		"all":                         "all",
+		"192.168.1.0/24, 10.8.0.0/16": "192.168.1.0/24 10.8.0.0/16",
+		"192.168.1.7/24":              "192.168.1.0/24",
+		"nonsense":                    "samenet",
+		"fd00::/8,not-a-network":      "fd00::/8",
+	} {
+		b := clusterBundle(t, true, true)
+		b.MachinesFrom = in
+		if got := strings.Join(b.machinesFrom(), " "); got != want {
+			t.Errorf("machines_from %q: %q, want %q", in, got, want)
+		}
+	}
+	b := clusterBundle(t, true, true)
+	b.MachinesFrom = "192.168.1.0/24, 10.8.0.0/16"
+	hba := b.hbaConf()
+	for _, want := range []string{"+maktaba_worker  192.168.1.0/24", "+maktaba_replicas 10.8.0.0/16"} {
+		if !strings.Contains(hba, want) {
+			t.Errorf("pg_hba lacks %q:\n%s", want, hba)
+		}
 	}
 }
 
