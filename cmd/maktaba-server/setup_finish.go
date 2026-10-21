@@ -59,6 +59,11 @@ func stepFinish(s *setupRun, _ json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	// never a second copy of a node that runs here outside the app (check says
+	// so first; this is the last word before anything is written)
+	if code, msg, kv := nodeHere(); code != "" {
+		return nil, failStep(code, "", "%s", msg).with(kv...)
+	}
 	if p.Admin == nil || p.Admin.PasswordHash == "" {
 		return nil, failStep("admin_missing", "", "Create the admin account first (the admin step).")
 	}

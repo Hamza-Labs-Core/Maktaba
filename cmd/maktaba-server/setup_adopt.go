@@ -30,10 +30,12 @@ const appIdentifier = "com.hamzalabs.maktaba"
 
 // adoptTarget is the app's side of a move: its server.toml, state root, keys
 // and node config (on Windows the new place, story 38.1, whatever an old
-// install still reads), and on Windows the app window's mode.json.
+// install still reads), its own install (the payload, never stopped as the old
+// install's), and on Windows the app window's mode.json.
 func adoptTarget(cfg config.Config) adopt.Target {
 	tgt := adopt.Target{ConfigPath: config.Path(), StateDir: cfg.StateDir(), KeysDir: config.KeysDir(),
 		NodeConfig: config.LocalNodeConfigPath()}
+	tgt.AppPayload, _ = setupPayload()
 	if runtime.GOOS == "windows" {
 		home, _ := os.UserHomeDir()
 		root := config.WindowsRoot(os.Getenv, home) // %LOCALAPPDATA%\Maktaba
@@ -62,7 +64,8 @@ func (s *setupRun) adoptLog() (io.Writer, func()) {
 // 38.13, move-an-install.md): {"action": "find"} lists what runs and the move
 // under way, "plan" (with "source": its id) says what a move does, "move" makes
 // it (the result carries the urls finish gives: the app then starts its
-// server), "verify" checks the app's server and removes the old task.
+// server), "verify" checks the app's server and removes the old task, "undo"
+// runs the old install again (a move that stopped part way included).
 func stepAdopt(s *setupRun, in json.RawMessage) (any, error) {
 	var req struct {
 		Action  string `json:"action"`
@@ -74,7 +77,7 @@ func stepAdopt(s *setupRun, in json.RawMessage) (any, error) {
 	}
 	sys := adoptSys()
 	tgt := adoptTarget(s.cfg)
-	payload, _ := setupPayload()
+	payload := tgt.AppPayload
 	switch req.Action {
 	case "find":
 		srcs, err := adopt.Find(sys, payload)
@@ -133,6 +136,19 @@ func stepAdopt(s *setupRun, in json.RawMessage) (any, error) {
 			"web_url":        "http://" + supervisor.LocalAddr(cfg.Server.WebListen, "8088"),
 			"supervisor_url": supervisor.StateURL(cfg),
 		}, nil
+	case "undo":
+		if err := adopt.Undo(sys, tgt); err != nil {
+			var ae *adopt.Error
+			if errors.As(err, &ae) {
+				return nil, adoptFailure(err)
+			}
+			return nil, failStep("adopt_undo", "", "%v", err)
+		}
+		rec, _, err := adopt.ReadRecord(tgt.StateDir)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"move": rec}, nil
 	case "verify":
 		wait := adoptVerifyWait
 		if req.WaitSec > 0 {
@@ -150,7 +166,7 @@ func stepAdopt(s *setupRun, in json.RawMessage) (any, error) {
 		}
 		return map[string]any{"move": rec}, nil
 	}
-	return nil, failStep("bad_input", "action", "The action is find, plan, move or verify.")
+	return nil, failStep("bad_input", "action", "The action is find, plan, move, verify or undo.")
 }
 
 // adoptFailure is a move's failure as the screens say it: its own code and
@@ -187,4 +203,28 @@ func adoptSource(sys adopt.Sys, payload string, tgt adopt.Target, id string) (ad
 		return rec.Source, nil
 	}
 	return adopt.Source{}, failStep("adopt_gone", "source", "%s no longer runs on this PC.", id)
+}
+
+// nodeHere is why a fresh setup cannot run on this machine: an install outside
+// the app (Find, its task enabled or not, running or not) is a node of a home.
+// The app would read the same node config (or the copy an undone move left in
+// %LOCALAPPDATA%) and run as a second copy of that node, so the node moves into
+// the app instead. The terminal setup of that very install (this maktaba-server
+// is its own, outside any app) is not a second copy. One that cannot be looked
+// for is not taken as none. Empty code: nothing stands in the way.
+func nodeHere() (code, message string, kv []any) {
+	payload, _ := setupPayload()
+	srcs, err := adopt.Find(adoptSys(), payload)
+	if err != nil {
+		return "install_unknown", fmt.Sprintf("Maktaba could not look at what this machine runs (%v), so it cannot tell whether a Maktaba node runs here.", err), nil
+	}
+	self, _ := os.Executable()
+	for _, src := range srcs {
+		if src.DB != adopt.DBNode || (payload == "" && self != "" && src.HasProgram(self)) {
+			continue
+		}
+		return "node_here", fmt.Sprintf("This machine runs a node of the home %s outside the app (%s): the app would be a second copy of it. Move it into the app instead.",
+			src.Home, src.ID), []any{"home", src.Home, "source", src.ID}
+	}
+	return "", "", nil
 }

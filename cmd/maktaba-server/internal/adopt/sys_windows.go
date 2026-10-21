@@ -134,35 +134,59 @@ func (winSys) RunTask(name string) error {
 }
 
 func (winSys) Processes() ([]Proc, error) {
-	// Maktaba's programs, and the pipeline's workers (WQL's _ is any one
-	// character: maktaba_pipeline and maktaba-pipeline)
-	const query = `Get-CimInstance Win32_Process -Filter "Name LIKE 'maktaba-%' OR CommandLine LIKE '%maktaba_pipeline%'" | ` +
+	// Maktaba's programs, the pipeline's workers (WQL's _ is any one
+	// character: maktaba_pipeline and maktaba-pipeline), and the consoles that
+	// run a batch file (a script's restart loop)
+	const query = `Get-CimInstance Win32_Process -Filter "Name LIKE 'maktaba-%' OR CommandLine LIKE '%maktaba_pipeline%' OR ` +
+		`((Name = 'cmd.exe' OR Name = 'conhost.exe') AND (CommandLine LIKE '%.cmd%' OR CommandLine LIKE '%.bat%'))" | ` +
 		`Select-Object ProcessId,Name,ExecutablePath,CommandLine | ConvertTo-Json -Compress`
 	out, err := run(system32(`WindowsPowerShell\v1.0\powershell.exe`), "-NoProfile", "-NonInteractive", "-Command", query)
 	if err != nil {
 		return nil, err
 	}
-	out = bytes.TrimSpace(out)
-	if len(out) == 0 {
-		return nil, nil
-	}
 	var procs []Proc
-	if out[0] == '{' { // one process: ConvertTo-Json gives an object, not an array
-		var p Proc
-		if err := json.Unmarshal(out, &p); err != nil {
-			return nil, err
+	return procs, jsonList(out, &procs)
+}
+
+// jsonList reads ConvertTo-Json's output into a slice: one item is an object,
+// not an array; nothing is no output at all.
+func jsonList[T any](out []byte, into *[]T) error {
+	out = bytes.TrimSpace(out)
+	switch {
+	case len(out) == 0:
+		return nil
+	case out[0] == '{':
+		var one T
+		if err := json.Unmarshal(out, &one); err != nil {
+			return err
 		}
-		return []Proc{p}, nil
+		*into = []T{one}
+		return nil
 	}
-	if err := json.Unmarshal(out, &procs); err != nil {
-		return nil, err
-	}
-	return procs, nil
+	return json.Unmarshal(out, into)
 }
 
 func (winSys) Kill(pid int) error {
 	_, err := run(system32("taskkill.exe"), "/F", "/T", "/PID", strconv.Itoa(pid))
 	return err
+}
+
+func (winSys) EndProcess(pid int) error {
+	_, err := run(system32("taskkill.exe"), "/F", "/PID", strconv.Itoa(pid))
+	return err
+}
+
+// Services: the service list is readable by every user (a process of the
+// system's is not), so a service install shows here.
+func (winSys) Services() ([]Service, error) {
+	const query = `Get-CimInstance Win32_Service -Filter "PathName LIKE '%maktaba-launcher%' OR PathName LIKE '%maktaba-server%'" | ` +
+		`Select-Object Name,PathName,State | ConvertTo-Json -Compress`
+	out, err := run(system32(`WindowsPowerShell\v1.0\powershell.exe`), "-NoProfile", "-NonInteractive", "-Command", query)
+	if err != nil {
+		return nil, err
+	}
+	var svcs []Service
+	return svcs, jsonList(out, &svcs)
 }
 
 func (winSys) ReadFile(path string) ([]byte, error) { return readFile(path) }

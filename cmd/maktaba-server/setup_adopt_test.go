@@ -14,6 +14,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/adopt"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 )
 
 // adoptFakeSys is a PC with one Maktaba node task, stopped already (nothing
@@ -23,6 +24,7 @@ type adoptFakeSys struct {
 	tasks   []adopt.Task
 	env     map[string]string
 	deleted []string
+	removed []adopt.Task // what DeleteTask took: CreateTask (from its XML) brings it back
 }
 
 func (f *adoptFakeSys) Tasks() ([]adopt.Task, error) { return f.tasks, nil }
@@ -49,16 +51,33 @@ func (f *adoptFakeSys) SetTaskEnabled(name string, on bool) error {
 }
 func (f *adoptFakeSys) DeleteTask(name string) error {
 	f.deleted = append(f.deleted, name)
-	f.tasks = nil
+	var keep []adopt.Task
+	for _, t := range f.tasks {
+		if t.Name == name {
+			f.removed = append(f.removed, t)
+		} else {
+			keep = append(keep, t)
+		}
+	}
+	f.tasks = keep
 	return nil
 }
 func (f *adoptFakeSys) CreateTask(name, _ string) error {
-	f.tasks = append(f.tasks, adopt.Task{Name: name, Enabled: true})
+	back := adopt.Task{Name: name}
+	for _, t := range f.removed {
+		if t.Name == name {
+			back = t
+		}
+	}
+	back.Enabled = true
+	f.tasks = append(f.tasks, back)
 	return nil
 }
 func (f *adoptFakeSys) RunTask(string) error                 { return nil }
 func (f *adoptFakeSys) Processes() ([]adopt.Proc, error)     { return nil, nil }
 func (f *adoptFakeSys) Kill(int) error                       { return nil }
+func (f *adoptFakeSys) EndProcess(int) error                 { return nil }
+func (f *adoptFakeSys) Services() ([]adopt.Service, error)   { return nil, nil }
 func (f *adoptFakeSys) ReadFile(path string) ([]byte, error) { return os.ReadFile(path) }
 func (f *adoptFakeSys) Getenv(name string) string            { return f.env[name] }
 func (f *adoptFakeSys) Listening(string) bool                { return false }
@@ -127,6 +146,9 @@ func TestSetupAdopt(t *testing.T) {
 	if code, _, ev := runStep(t, "admin", map[string]string{"username": "admin", "password": "s3cret-long"}); code != 0 {
 		t.Fatalf("admin = %d %v", code, ev)
 	}
+	// ... but beside a node of a home it cannot go on: the app would be a
+	// second copy of that node (check says so, finish refuses)
+	freshRefused(t, name)
 
 	code, _, ev := runStep(t, "adopt", map[string]string{"action": "find"})
 	if code != 0 {
@@ -142,8 +164,14 @@ func TestSetupAdopt(t *testing.T) {
 		t.Fatalf("plan = %d %v", code, ev)
 	}
 	plan := data(t, ev)
-	if items, _ := plan["items"].([]any); len(items) != 2 {
+	if items, _ := plan["items"].([]any); len(items) != 2 || items[0].(map[string]any)["code"] != "key" ||
+		items[1].(map[string]any)["code"] != "node_config" {
 		t.Fatalf("items = %v", plan["items"])
+	}
+	// what is carried, in codes the screens translate
+	carried, _ := plan["carried"].([]any)
+	if len(carried) == 0 || carried[len(carried)-1].(map[string]any)["code"] != "no_mdns" {
+		t.Fatalf("carried = %v", plan["carried"])
 	}
 	if code, _, ev := runStep(t, "adopt", map[string]string{"action": "plan", "source": `\Gone`}); code != 1 || ev["code"] != "adopt_gone" {
 		t.Fatalf("an unknown source = %d %v", code, ev)
@@ -218,8 +246,9 @@ func TestSetupAdopt(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := adopt.Undo(sys, tgt); err != nil {
-		t.Fatal(err)
+	code, _, ev = runStep(t, "adopt", map[string]string{"action": "undo"})
+	if code != 0 || data(t, ev)["move"].(map[string]any)["stage"] != adopt.StageUndone {
+		t.Fatalf("undo = %d %v", code, ev)
 	}
 	if !sys.HasTask(name) {
 		t.Error("the old task is not back")
@@ -229,5 +258,36 @@ func TestSetupAdopt(t *testing.T) {
 	}
 	if code, ev := setupStep(t, "status", "{}"); code != 0 || data(t, ev)["configured"] != false {
 		t.Fatalf("status after an undo = %d %v", code, ev)
+	}
+	// and a fresh setup after the undo is refused as before the move: the old
+	// node runs again (the node config the move copied stays in the app's place)
+	freshRefused(t, name)
+	if code, _, ev := runStep(t, "adopt", map[string]string{"action": "undo"}); code != 1 || ev["code"] != "adopt_no_move" {
+		t.Fatalf("undo twice = %d %v", code, ev)
+	}
+}
+
+// freshRefused: check reports node_here (a problem: Next is blocked) and
+// finish refuses it, while a node of a home (the task source) runs here.
+func freshRefused(t *testing.T, source string) {
+	t.Helper()
+	prevFacts, prevGPUs := hostFacts, hostGPUs
+	t.Cleanup(func() { hostFacts, hostGPUs = prevFacts, prevGPUs })
+	hostFacts = func(string) (uint64, uint64) { return 32 << 30, 500 << 30 }
+	hostGPUs = func() []hostinfo.GPU { return nil }
+	_, _, ev := runStep(t, "check", map[string]any{})
+	d := data(t, ev)
+	problems, _ := d["problems"].([]any)
+	found := false
+	for _, p := range problems {
+		n := p.(map[string]any)
+		params, _ := n["params"].(map[string]any)
+		found = found || (n["code"] == "node_here" && params["home"] == "Home" && params["source"] == source)
+	}
+	if d["ok"] != false || !found {
+		t.Fatalf("check beside a node = %v", d)
+	}
+	if code, _, ev := runStep(t, "finish", map[string]any{}); code != 1 || ev["code"] != "node_here" {
+		t.Fatalf("finish beside a node = %d %v", code, ev)
 	}
 }

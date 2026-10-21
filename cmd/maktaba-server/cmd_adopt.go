@@ -41,7 +41,7 @@ offers the move; once the app's server ran healthy the old task is removed (--ve
 			}
 			sys := adoptSys()
 			tgt := adoptTarget(cfg)
-			payload, _ := setupPayload()
+			payload := tgt.AppPayload
 			switch {
 			case undo:
 				if err := adopt.Undo(sys, tgt); err != nil {
@@ -101,6 +101,9 @@ offers the move; once the app's server ran healthy the old task is removed (--ve
 
 func printAdoptSource(s adopt.Source) {
 	fmt.Printf("%s\n  kind:   %s\n", s.ID, s.Kind)
+	if s.Service != "" {
+		fmt.Printf("  service: %s (runs as the system: only an administrator can stop it)\n", s.Service)
+	}
 	if s.Script != "" {
 		fmt.Printf("  script: %s\n", s.Script)
 	}
@@ -134,7 +137,11 @@ func printAdoptSource(s adopt.Source) {
 func printAdoptPlan(p adopt.Plan) {
 	printAdoptSource(p.Source)
 	if len(p.Carried) > 0 {
-		fmt.Println("Carried into the app's server.toml:", strings.Join(p.Carried, ", "))
+		carried := make([]string, len(p.Carried))
+		for i, n := range p.Carried {
+			carried[i] = n.Message
+		}
+		fmt.Println("Carried into the app's server.toml:", strings.Join(carried, ", "))
 	}
 	for _, n := range p.NotCarried {
 		fmt.Println("Not carried:", n)

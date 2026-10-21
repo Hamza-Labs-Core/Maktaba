@@ -199,22 +199,40 @@ Instead of `check` … `finish` when the PC already runs Maktaba outside the app
 ([move-an-install.md](../38-windows-app/move-an-install.md)).
 
 - `{"action": "find"}` → `{"sources": [<source>], "move": <record>}`: what runs (`id` — the task's
-  name or `pid:<n>` —, `kind` `launcher` / `script` / `node-worker` / `process`, `dir`, `config`,
-  `db` `node` / `sqlite` / `postgres` / `own-postgres` with `db_where`, `home` for a node, `ports`,
-  `pids`; never a script's environment) and the move recorded in `<state>/moved/move.json`, if any.
-  The welcome screen asks on Windows only (elsewhere nothing is found).
-- `{"action": "plan", "source": id}` → `{"source", "items": [{"what", "from", "to", "size",
-  "done"}], "carried", "not_carried", "problems", "warnings", "need", "free"}`; read only. A move
-  with `problems` is refused. Each finding is `{"code", "params"?, "message"}`, shown as
-  `setup.move.note.<code>` (the English `message` for a code the app does not know): problems
-  `space_low` (`need_bytes`, `free_bytes`), `worker_not_joined` (`path`), `postgres_down` (`where`);
-  warnings `postgres_stays` (`where`), `started_by_hand`.
+  name, `pid:<n>` or `service:<name>` —, `kind` `launcher` / `script` / `node-worker` / `process` /
+  `service`, `dir`, `config`, `db` `node` / `sqlite` / `postgres` / `own-postgres` with `db_where`
+  (empty for a service), `home` for a node, `service`, `ports`, `pids`; never a script's
+  environment) and the move recorded in `<state>/moved/move.json`, if any. The tasks, the processes
+  and the services must all be readable, or the step fails (`adopt_find`): an install it would miss
+  could run beside the app. The welcome screen asks on Windows only (elsewhere nothing is found); a
+  failed find is shown with Try again, never taken as "nothing runs". A recorded move at `found` or
+  `stopped` (one that stopped part way) is offered to go on, or to be undone.
+- `{"action": "plan", "source": id}` → `{"source", "items": [{"code", "params"?, "what", "from",
+  "to", "size", "done"}], "carried", "not_carried", "problems", "warnings", "need", "free"}`; read
+  only. A move with `problems` is refused. Items are `setup.move.item.<code>` (`key` with `name`,
+  `node_config`, `search_index`, `streaming_cache`, `models`, `database`, `database_wal`,
+  `database_shm`, `hf_token`). Every other entry is `{"code", "params"?, "message"}`, shown as its
+  own text (the English `message` for a code the app does not know): `carried` as
+  `setup.move.carry.<code>` (`section` `name`, `database_url`, `pipeline_instances` `count`, `env`
+  `name`, `no_mdns`), `not_carried` as `setup.move.nocarry.<code>` (`pipeline_python`, `env` `name`,
+  `serve_flag` `flag`), `problems` and `warnings` as `setup.move.note.<code>`: problems `space_low`
+  (`need_bytes`, `free_bytes`), `worker_not_joined` (`path`), `postgres_down` (`where`),
+  `key_differs` (`path`, `from`: the app holds another key or node config there, which is never
+  replaced; found in the plan, before anything is stopped), `service_install` (`name`: a Windows
+  service, run by the system's account); warnings `postgres_stays` (`where`), `started_by_hand`.
 - `{"action": "move", "source": id}` → `{"move": <record>, "web_url", "supervisor_url"}`, with
-  `progress` events (`venv` as the venv step's, then `stop`, `copy`, `settings`). The old install is
-  stopped and its task disabled, its files copied, `server.toml` written; what a fresh setup
-  collected is dropped. Run again after a failure it goes on from its last step. The app then runs
-  `models` `{"action": "download"}` (on `hf_gated` the models screen first), `llm` as a fresh install
-  does (only `disk_full` stops it), and registers the login item, as after `finish`.
+  `progress` events whose `stage` the screens say in their own words (`setup.move.progress.<stage>`:
+  `venv`, as the venv step's, then `stop`, `copy`, `settings`; the models download's `download`, the
+  `llm` step's `start` / `check` / `download`). The old install is stopped (its tasks ended and
+  disabled, the cmd.exe running its script ended at once, its processes given their grace, its ports
+  free, then nothing of it back for longer than its script's restart delay), its files copied,
+  `server.toml` written; what a fresh setup collected is dropped. The app's own install, its venv
+  and the step's own process are never stopped, wherever the old install's folder is. Run again
+  after a failure it goes on from its last step. The app then runs `models` `{"action": "download"}`
+  (on `hf_gated` the models screen first), `llm` as a fresh install does (only `disk_full` stops
+  it), and registers the login item, as after `finish`.
+- `{"action": "undo"}` → `{"move": <record>}`: the old install runs again, as below; also for a move
+  that stopped part way (the screen's "Restore the old install", beside Try again).
 - `{"action": "verify", "wait_sec": n}` → `{"move": <record>}`: the app's API answers and every
   process runs, then the old task is removed. The server does the same by itself once every role
   ran healthy for three minutes, so the screens need not wait for it.
@@ -223,17 +241,26 @@ Errors: `adopt_find`, `adopt_gone` (field `source`), `adopt_blocked` (the plan's
 the move's own reasons, each with its params: `adopt_moved_already` / `adopt_under_way`
 (`source`), `adopt_task` (`task`: Task Scheduler refused to read or turn off an old task),
 `adopt_still_running` (`pids`), `adopt_port_busy` (`port`), `adopt_key_differs` (`path`, `from`: a
-key already in the app is another one, never replaced); `interrupted` (a stop: the next run goes
-on), `adopt_failed` for anything else, `adopt_verify`, and the venv step's.
+key that turned different after the plan), `adopt_processes_unknown` (the running programs cannot
+be listed: not sure is not "stopped"); `interrupted` (a stop: the next run goes on), `adopt_failed`
+for anything else, `adopt_verify`, `adopt_no_move` and `adopt_undo` (undo), and the venv step's.
 
-`maktaba-server adopt --undo` (a terminal; no step) runs the old install again: the pause flag, the
-app's server stopped, this user's app tasks disabled (`\Maktaba Server <SID>`, and a task of the old
-shared name `\Maktaba Server` that runs as this user), the window's `mode.json` out of server mode
-(Windows: `%LOCALAPPDATA%\com.hamzalabs.maktaba\mode.json`; a client mode stays), the old tasks
-registered again from their XML and run, the record `undone`. The pause flag ends with the sign-in;
-what keeps the app's server from starting over the old install after it is the disabled task (the
-window starts only an enabled one) and `status` above: the window opens setup, whose welcome screen
-finds the old install and offers the move again.
+`check` (a problem: Next is blocked) and `finish` (an error, before anything is written) refuse a
+fresh setup beside a node: `node_here` (`home`, `source`) when an install outside the app is a node
+of a home, its task enabled or not, running or not (the app would read the same node config, or the
+copy an undone move left, and run as a second copy of that node), `install_unknown` when what runs
+cannot be looked at. The terminal setup of that very install (its own `maktaba-server`) is not a
+second copy. The welcome screen does not offer Start fresh there, and says why.
+
+Undo (the step's `undo`, or `maktaba-server adopt --undo` in a terminal) runs the old install again:
+the pause flag, the app's server stopped, this user's app tasks disabled (`\Maktaba Server <SID>`,
+and a task of the old shared name `\Maktaba Server` that runs as this user), the window's
+`mode.json` out of server mode (Windows: `%LOCALAPPDATA%\com.hamzalabs.maktaba\mode.json`; a client
+mode stays), the old tasks registered again from their XML (or turned on again) and run, unless the
+old install still runs, the record `undone`. The pause flag ends with the sign-in; what keeps the
+app's server from starting over the old install after it is the disabled task (the window starts
+only an enabled one) and `status` above: the window opens setup, whose welcome screen finds the old
+install and offers the move again.
 
 ### Stopping a step
 

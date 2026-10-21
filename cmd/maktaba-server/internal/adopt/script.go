@@ -3,7 +3,9 @@ package adopt
 import (
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Script is what a batch file that runs `maktaba-server serve` sets up for it,
@@ -18,13 +20,42 @@ type Script struct {
 	Server    string            // the maktaba-server it runs
 	ServeArgs []string          // what follows `serve`, up to a redirection
 	Log       string            // where its output goes (> file), when it says
+	// Loops: it goes back (goto) to run the server again when it exits, after
+	// RestartDelay (its `timeout /t N`, `ping -n N` or `choice /t N`; 0 when it
+	// names none).
+	Loops        bool
+	RestartDelay time.Duration
 }
 
 var (
 	cdLine  = regexp.MustCompile(`(?i)^cd(?:\s+/d)?\s+(.+)$`)
 	setLine = regexp.MustCompile(`(?i)^set\s+"?([A-Za-z_][A-Za-z0-9_]*)=(.*?)"?$`)
 	envRef  = regexp.MustCompile(`%([A-Za-z_][A-Za-z0-9_]*)%`)
+	// the waits a restart loop makes between two runs of the server
+	timeoutLine = regexp.MustCompile(`(?i)^timeout(?:\.exe)?\s+(?:/t\s+)?(\d+)\b`)
+	pingLine    = regexp.MustCompile(`(?i)^ping(?:\.exe)?\s.*-n\s+(\d+)\b`)
+	choiceLine  = regexp.MustCompile(`(?i)^choice(?:\.exe)?\s.*/t\s+(\d+)\b`)
 )
+
+// waitOf is how long a line of a batch file waits (timeout, ping -n, choice /t).
+func waitOf(line string) time.Duration {
+	if m := timeoutLine.FindStringSubmatch(line); m != nil {
+		n, _ := strconv.Atoi(m[1])
+		return time.Duration(n) * time.Second
+	}
+	if m := pingLine.FindStringSubmatch(line); m != nil {
+		n, _ := strconv.Atoi(m[1])
+		if n > 1 {
+			return time.Duration(n-1) * time.Second // ping -n N waits a second between its N echoes
+		}
+		return 0
+	}
+	if m := choiceLine.FindStringSubmatch(line); m != nil {
+		n, _ := strconv.Atoi(m[1])
+		return time.Duration(n) * time.Second
+	}
+	return 0
+}
 
 // ParseScript reads a batch file's text. ok false when it never runs
 // maktaba-server serve.
@@ -59,6 +90,12 @@ func ParseScript(path, text string, getenv func(string) string) (Script, bool) {
 		line := strings.TrimSpace(strings.TrimSuffix(raw, "\r"))
 		line = strings.TrimPrefix(line, "@")
 		low := strings.ToLower(line)
+		if strings.HasPrefix(low, "goto ") && found {
+			s.Loops = true // back to run the server again
+		}
+		if d := waitOf(line); d > s.RestartDelay {
+			s.RestartDelay = d
+		}
 		switch {
 		case line == "", strings.HasPrefix(low, "rem ") || low == "rem", strings.HasPrefix(line, "::"),
 			strings.HasPrefix(line, ":"), strings.HasPrefix(low, "echo "), strings.HasPrefix(low, "goto "):
@@ -100,6 +137,9 @@ func ParseScript(path, text string, getenv func(string) string) (Script, bool) {
 			found = true
 			break
 		}
+	}
+	if !s.Loops {
+		s.RestartDelay = 0
 	}
 	return s, found
 }

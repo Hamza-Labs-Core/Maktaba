@@ -7,11 +7,9 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -78,12 +76,14 @@ func freePort(t *testing.T) string {
 	return strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
 }
 
-// TestRealMove moves a real install out of a real scheduled task: the task's
-// definition exported as UTF-16, the task disabled, the server found among the
-// processes and ended with its tree, its port freed, the task removed, then
-// registered again from the saved definition (undo). It changes the machine's
-// tasks, so it runs only where MAKTABA_TEST_WINDOWS_TASK=1 (the windows-latest
-// CI runner).
+// TestRealMove moves a real install out of a real scheduled task: a script
+// with a restart loop like this PC's (serve, `timeout /t 3`, `goto run`),
+// started by its task under conhost --headless. The task's definition is
+// exported as UTF-16, the task disabled, the loop and the server found among
+// the processes and ended, its port freed and still free once the loop's delay
+// is over; the task removed, then registered again from the saved definition
+// (undo), and run. It changes the machine's tasks, so it runs only where
+// MAKTABA_TEST_WINDOWS_TASK=1 (the windows-latest CI runner).
 func TestRealMove(t *testing.T) {
 	if os.Getenv("MAKTABA_TEST_WINDOWS_TASK") != "1" {
 		t.Skip("registers a scheduled task: MAKTABA_TEST_WINDOWS_TASK=1 (CI)")
@@ -111,15 +111,40 @@ func TestRealMove(t *testing.T) {
 	write(t, filepath.Join(root, "stream-signing.key"), "key")
 	script := filepath.Join(root, "start.cmd")
 	write(t, script, "@echo off\r\ncd /d \"%~dp0\"\r\nset MAKTABA_CONFIG=%~dp0server.toml\r\nset "+fakeServeEnv+"="+port+"\r\n"+
-		"bin\\maktaba-server.exe serve --no-mdns > maktaba.log 2>&1\r\n")
+		":run\r\nbin\\maktaba-server.exe serve --no-mdns > maktaba.log 2>&1\r\ntimeout /t 3 /nobreak >nul\r\ngoto run\r\n")
 
 	sys := RealSys()
 	name := fmt.Sprintf(`\Maktaba adopt test %d`, os.Getpid())
-	def := filepath.Join(root, "task.xml")
-	if err := os.WriteFile(def, utf16File(`<?xml version="1.0" encoding="UTF-16"?>
+	// what the task started (and the loop starts again) holds the folder's files
+	endAll := func() {
+		for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
+			procs, _ := sys.Processes()
+			left := false
+			for _, p := range procs {
+				if within(p.Exe, root) || (isConsole(p) && strings.Contains(strings.ToLower(p.Cmdline), strings.ToLower(script))) {
+					left = true
+					_ = sys.Kill(p.PID)
+				}
+			}
+			if !left {
+				return
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+	t.Cleanup(func() {
+		_ = sys.EndTask(name)
+		_ = sys.DeleteTask(name)
+		endAll()
+	})
+	// the task as this PC's: at the user's sign-in (InteractiveToken). Where
+	// no sign-in runs it (a runner without a session), the same task as S4U.
+	register := func(principal string) {
+		def := filepath.Join(root, "task.xml")
+		if err := os.WriteFile(def, utf16File(`<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo><URI>`+name+`</URI></RegistrationInfo>
-  <Principals><Principal id="Author"><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Principals><Principal id="Author">`+principal+`<RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
   <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><Enabled>true</Enabled><ExecutionTimeLimit>PT0S</ExecutionTimeLimit></Settings>
   <Actions Context="Author"><Exec>
     <Command>C:\Windows\System32\conhost.exe</Command>
@@ -127,44 +152,36 @@ func TestRealMove(t *testing.T) {
     <WorkingDirectory>`+root+`</WorkingDirectory>
   </Exec></Actions>
 </Task>`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := sys.CreateTask(name, def); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = sys.EndTask(name)
-		_ = sys.DeleteTask(name)
-		// what the task started again (Undo runs it) holds the folder's files
-		for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
-			procs, _ := sys.Processes()
-			left := false
-			for _, p := range procs {
-				if within(p.Exe, root) {
-					left = true
-					_ = sys.Kill(p.PID)
-				}
-			}
-			if !left {
-				break
-			}
-			time.Sleep(200 * time.Millisecond)
+			t.Fatal(err)
 		}
-	})
-
-	// the old install runs (started here: a sign-in task may not run on a CI
-	// runner), as its task would run it
-	cmd := exec.Command(`C:\Windows\System32\cmd.exe`, "/c", script)
-	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW | windows.CREATE_NEW_PROCESS_GROUP}
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
+		if err := sys.CreateTask(name, def); err != nil {
+			t.Fatal(err)
+		}
+		if err := sys.RunTask(name); err != nil {
+			t.Fatal(err)
+		}
 	}
-	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
-	for deadline := time.Now().Add(30 * time.Second); !sys.Listening(port); {
-		if time.Now().After(deadline) {
+	listens := func(d time.Duration) bool {
+		for deadline := time.Now().Add(d); !sys.Listening(port); time.Sleep(200 * time.Millisecond) {
+			if time.Now().After(deadline) {
+				return false
+			}
+		}
+		return true
+	}
+	register("<LogonType>InteractiveToken</LogonType>")
+	if !listens(20 * time.Second) {
+		u, err := sys.User()
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("the sign-in task did not run here: the same task as S4U")
+		_ = sys.EndTask(name)
+		endAll()
+		register("<UserId>" + u.SID + "</UserId><LogonType>S4U</LogonType>")
+		if !listens(30 * time.Second) {
 			t.Fatalf("the old install's server never listened on %s (%s)", port, read(t, filepath.Join(root, "maktaba.log")))
 		}
-		time.Sleep(200 * time.Millisecond)
 	}
 
 	srcs, err := Find(sys, "")
@@ -177,7 +194,8 @@ func TestRealMove(t *testing.T) {
 			src = s
 		}
 	}
-	if src.Kind != KindScript || !samePath(src.Dir, root) || !src.ConfigFound || len(src.PIDs) != 1 || !src.TaskEnabled {
+	if src.Kind != KindScript || !samePath(src.Dir, root) || !src.ConfigFound || len(src.PIDs) != 1 || !src.TaskEnabled ||
+		!src.Loops || src.RestartDelay != 3*time.Second {
 		t.Fatalf("found %+v (all: %+v)", src, srcs)
 	}
 
@@ -195,9 +213,14 @@ func TestRealMove(t *testing.T) {
 	if sys.Listening(port) {
 		t.Error("the old server still holds its port")
 	}
+	// the loop's delay over, and more: nothing came back
+	time.Sleep(src.RestartDelay + 2*time.Second)
+	if sys.Listening(port) {
+		t.Error("the old server came back after the stop: its restart loop still runs")
+	}
 	if procs, _ := sys.Processes(); len(procs) > 0 {
 		for _, p := range procs {
-			if within(p.Exe, root) {
+			if within(p.Exe, root) || src.runsScript(p) {
 				t.Errorf("still running: %+v", p)
 			}
 		}

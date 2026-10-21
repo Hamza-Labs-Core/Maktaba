@@ -225,6 +225,11 @@ func stepCheck(s *setupRun, _ json.RawMessage) (any, error) {
 	for _, check := range platformChecks {
 		check(s.ctx, &res)
 	}
+	// a node of a home already runs here outside the app: a fresh setup would be
+	// a second copy of it (Epic 38 story 38.13; the welcome screen offers its move)
+	if code, msg, kv := nodeHere(); code != "" {
+		res.Problem(code, msg, kv...)
+	}
 
 	exe, _ := os.Executable()
 	if _, ok, err := pgbundle.Resolve(s.cfg, exe); err == nil && ok {

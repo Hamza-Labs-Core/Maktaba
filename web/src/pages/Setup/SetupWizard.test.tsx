@@ -394,11 +394,25 @@ describe("SetupWizard", () => {
     const PLAN = {
       source: THIS_PC,
       items: [
-        { what: "stream-signing.key", from: "a", to: "b", size: 1704, done: false },
-        { what: "node config", from: "c", to: "d", size: 587, done: false },
+        {
+          code: "key",
+          params: { name: "stream-signing.key" },
+          what: "stream-signing.key",
+          from: "a",
+          to: "b",
+          size: 1704,
+          done: false,
+        },
+        { code: "node_config", what: "node config", from: "c", to: "d", size: 587, done: false },
       ],
-      carried: ["[server]", "[media]", '--no-mdns as [server] mdns = "off"'],
-      not_carried: [],
+      carried: [
+        { code: "section", params: { name: "[server]" }, message: "[server]" },
+        { code: "section", params: { name: "[media]" }, message: "[media]" },
+        { code: "no_mdns", message: 'en: --no-mdns as [server] mdns = "off"' },
+      ],
+      not_carried: [
+        { code: "env", params: { name: "MAKTABA_FANCY" }, message: "en: MAKTABA_FANCY" },
+      ],
       problems: [],
       warnings: [],
       need: 2291,
@@ -406,19 +420,30 @@ describe("SetupWizard", () => {
     };
     const URLS = { web_url: "http://127.0.0.1:8780", supervisor_url: "http://127.0.0.1:9103" };
 
-    function adoptStep(plan: unknown = PLAN, move: Handler = () => URLS) {
+    function adoptStep(
+      plan: unknown = PLAN,
+      move: Handler = () => URLS,
+      find: Handler = () => ({ sources: [THIS_PC] })
+    ) {
       return vi.fn((input: Record<string, unknown>, onProgress?: (p: StepProgress) => void) => {
-        if (input.action === "find") return { sources: [THIS_PC] };
+        if (input.action === "find") return find(input, onProgress);
         if (input.action === "plan") return plan;
+        if (input.action === "undo") return { move: { stage: "undone", source: THIS_PC } };
         return move(input, onProgress);
       });
     }
 
     it("offers the move first, shows its plan, moves, downloads the models and starts the server", async () => {
       const order: string[] = [];
-      const adopt = adoptStep(PLAN, (_, onProgress) => {
+      let seen = "";
+      const adopt = adoptStep(PLAN, async (_, onProgress) => {
         order.push("move");
-        onProgress?.({ stage: "stop", message: "Stopping the old install" });
+        onProgress?.({ stage: "stop", message: "en: Stopping the old install" });
+        // the line under the bar, while the move runs: the app's own words
+        await waitFor(() => {
+          seen = screen.getByText("Stopping the old install").textContent ?? "";
+        });
+        expect(screen.queryByText(/en: Stopping/)).not.toBeInTheDocument();
         return URLS;
       });
       const models = vi.fn((input: Record<string, unknown>) => {
@@ -438,12 +463,26 @@ describe("SetupWizard", () => {
       expect(
         screen.getByText("web 0.0.0.0:8780, api 127.0.0.1:8781, stream 0.0.0.0:8782")
       ).toBeInTheDocument();
-      expect(screen.getByText(/stream-signing\.key/)).toBeInTheDocument();
+      expect(screen.getByText(/Its key stream-signing\.key/)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Its node config \(the home's address and the node's own key\)/)
+      ).toBeInTheDocument();
       expect(screen.getByText("Copied into the app (2.2 KB)")).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          'Settings carried: [server], [media], no announcing on the network (--no-mdns, as [server] mdns = "off")'
+        )
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("Not carried: MAKTABA_FANCY from its script (no server.toml setting)")
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/en:/)).not.toBeInTheDocument();
       await userEvent.click(screen.getByRole("button", { name: "Move" }));
 
       expect(await screen.findByRole("heading", { name: "Starting Maktaba" })).toBeInTheDocument();
       expect(order).toEqual(["move", "models:download"]);
+      // the step's English line became the app's own
+      expect(seen).toBe("Stopping the old install");
       expect(adopt).toHaveBeenCalledWith(
         { action: "move", source: THIS_PC.id },
         expect.any(Function)
@@ -451,16 +490,72 @@ describe("SetupWizard", () => {
       expect(api.finishSetup).toHaveBeenCalledWith(URLS.web_url, URLS.supervisor_url);
     });
 
-    it("is not looked for on a Mac; Start fresh is the usual setup", async () => {
+    it("is not looked for on a Mac; Start fresh is the usual setup beside a home", async () => {
       const adopt = adoptStep();
       const { unmount } = renderWizard(fakeApi({ adopt }));
       expect(await screen.findByRole("button", { name: "Set up this Mac" })).toBeInTheDocument();
       expect(adopt).not.toHaveBeenCalled();
       unmount();
 
-      renderWizard(fakeApi({ adopt, check: () => CHECK }, { platform: "windows" }));
+      const home = { ...THIS_PC, db: "sqlite", home: undefined };
+      const besideAHome = adoptStep(PLAN, undefined, () => ({ sources: [home] }));
+      renderWizard(fakeApi({ adopt: besideAHome, check: () => CHECK }, { platform: "windows" }));
       await userEvent.click(await screen.findByRole("button", { name: "Start fresh" }));
       expect(await screen.findByRole("heading", { name: "What will run" })).toBeInTheDocument();
+    });
+
+    it("beside a node of a home Start fresh is not offered: the app would be its second copy", async () => {
+      renderWizard(fakeApi({ adopt: adoptStep() }, { platform: "windows" }));
+      expect(
+        await screen.findByText(
+          "this PC runs a node of the home Mahmouds-Mac-Studio outside the app: a fresh setup would be a second copy of that node. Move it into the app instead."
+        )
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Start fresh" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Move it" })).toBeEnabled();
+    });
+
+    it("a find that fails is said, with Try again, and does not fall through to a fresh setup", async () => {
+      let fails = true;
+      const adopt = adoptStep(PLAN, undefined, () => {
+        if (fails) throw stepError("adopt_find", "en: schtasks failed");
+        return { sources: [] };
+      });
+      renderWizard(fakeApi({ adopt, check: () => CHECK }, { platform: "windows" }));
+      expect(
+        await screen.findByText("Maktaba could not look at what this PC runs.")
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Set up this PC" })).toBeDisabled();
+      fails = false;
+      await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Set up this PC" })).toBeEnabled()
+      );
+      expect(adopt).toHaveBeenCalledTimes(2);
+    });
+
+    it("a move recorded part way is offered to go on, or to restore the old install", async () => {
+      let stage = "stopped";
+      const adopt = adoptStep(PLAN, undefined, () => ({
+        sources: [{ ...THIS_PC, task_enabled: false }],
+        move: { stage, source: THIS_PC },
+      }));
+      adopt.mockImplementationOnce(() => ({
+        sources: [{ ...THIS_PC, task_enabled: false }],
+        move: { stage, source: THIS_PC },
+      }));
+      renderWizard(fakeApi({ adopt }, { platform: "windows" }));
+      expect(await screen.findByText("A move into the app stopped part way")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Go on with the move" })).toBeInTheDocument();
+      stage = "undone";
+      await userEvent.click(screen.getByRole("button", { name: "Restore the old install" }));
+      expect(adopt).toHaveBeenCalledWith({ action: "undo" }, undefined);
+      expect(
+        await screen.findByText("The old install runs again, as before the move.")
+      ).toBeInTheDocument();
+      // looked again: the old install is offered to move, as before
+      expect(await screen.findByRole("button", { name: "Move it" })).toBeInTheDocument();
+      expect(screen.queryByText("A move into the app stopped part way")).not.toBeInTheDocument();
     });
 
     it("a problem in the plan stops it before anything changes, each finding in the app's words", async () => {
@@ -519,6 +614,62 @@ describe("SetupWizard", () => {
       await userEvent.click(screen.getByRole("button", { name: "Try again" }));
       expect(await screen.findByRole("heading", { name: "Starting Maktaba" })).toBeInTheDocument();
       expect(move).toHaveBeenCalledTimes(2);
+    });
+
+    it("a move that failed can restore the old install from the screen", async () => {
+      const adopt = adoptStep(PLAN, () => {
+        throw stepError("adopt_key_differs", "en: differs");
+      });
+      const api = fakeApi({ adopt }, { platform: "windows" });
+      renderWizard(api);
+      await userEvent.click(await screen.findByRole("button", { name: "Move it" }));
+      await userEvent.click(await screen.findByRole("button", { name: "Move" }));
+      expect(await screen.findByRole("button", { name: "Try again" })).toBeInTheDocument();
+      expect(screen.getByText(/turns its task back on and runs it/)).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Restore the old install" }));
+      expect(adopt).toHaveBeenCalledWith({ action: "undo" }, undefined);
+      expect(
+        await screen.findByText("The old install runs again, as before the move.")
+      ).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Welcome to Maktaba" })).toBeInTheDocument();
+      expect(api.finishSetup).not.toHaveBeenCalled();
+    });
+
+    it("a service install is named, and its plan refuses it in the app's words", async () => {
+      const svc = {
+        ...THIS_PC,
+        id: "service:Maktaba",
+        kind: "service",
+        task: undefined,
+        service: "Maktaba",
+        db: "",
+        dir: String.raw`C:\ProgramData\Maktaba`,
+        ports: null,
+      };
+      const adopt = adoptStep(
+        {
+          ...PLAN,
+          source: svc,
+          items: [],
+          carried: [],
+          not_carried: [],
+          problems: [
+            { code: "service_install", params: { name: "Maktaba" }, message: "en: a service" },
+          ],
+        },
+        undefined,
+        () => ({ sources: [svc] })
+      );
+      renderWizard(fakeApi({ adopt }, { platform: "windows" }));
+      expect(await screen.findByText("The Windows service Maktaba")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Move it" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "It runs as the Windows service Maktaba, under the system's account: only an administrator can stop it, so the app cannot move it."
+      );
+      expect(
+        screen.getByText("A Windows service (it runs under the system's account)")
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Move" })).toBeDisabled();
     });
 
     it("a gated model asks for the Hugging Face sign-in, then the move goes on", async () => {

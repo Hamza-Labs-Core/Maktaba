@@ -1,6 +1,7 @@
 package adopt
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -29,6 +32,10 @@ type Target struct {
 	// ModeFile is the app window's mode.json (the shell's mode.rs; on Windows
 	// %LOCALAPPDATA%\com.hamzalabs.maktaba): Undo takes its server mode out.
 	ModeFile string
+	// AppPayload is the app's own install (the payload the setup step runs
+	// from): its programs, and this process, are never stopped as the old
+	// install's.
+	AppPayload string
 }
 
 // pausedFlag is the shell's pause flag (agent.rs): a paused server is not
@@ -36,6 +43,15 @@ type Target struct {
 // sign-in it was set in (one without a sign-in line: written after this
 // sign-in began); the next sign-in ends it.
 func (t Target) pausedFlag() string { return filepath.Join(t.StateDir, "state", "server-paused") }
+
+// self is the app's own side: its install, its pipeline venv, this process.
+func (t Target) self() self {
+	venv := ""
+	if t.StateDir != "" {
+		venv = filepath.Join(t.StateDir, "venv")
+	}
+	return selfOf(t.AppPayload, venv)
+}
 
 // The stages of a move, in its record (moved/move.json).
 const (
@@ -52,8 +68,8 @@ type Record struct {
 	Stage      string     `json:"stage"`
 	Source     Source     `json:"source"`
 	Saved      []Saved    `json:"saved_tasks"` // the old tasks' definitions
-	Carried    []string   `json:"carried"`
-	NotCarried []string   `json:"not_carried"`
+	Carried    []Note     `json:"carried"`
+	NotCarried []Note     `json:"not_carried"`
 	Copied     []string   `json:"copied"`
 	StartedAt  time.Time  `json:"started_at"`
 	MovedAt    *time.Time `json:"moved_at,omitempty"`
@@ -100,22 +116,27 @@ func now() *time.Time {
 	return &t
 }
 
-// Item is one file or folder the move copies into the app.
+// Item is one file or folder the move copies into the app: Code (and Params)
+// name it for the screens (setup.move.item.<code>), What in English.
 type Item struct {
-	What string `json:"what"`
-	From string `json:"from"`
-	To   string `json:"to"`
-	Size int64  `json:"size"`
-	Done bool   `json:"done"` // already in the app (left as it is)
-	item devmigrate.Item
+	Code   string         `json:"code"`
+	Params map[string]any `json:"params,omitempty"`
+	What   string         `json:"what"`
+	From   string         `json:"from"`
+	To     string         `json:"to"`
+	Size   int64          `json:"size"`
+	Done   bool           `json:"done"` // already in the app, the same (left as it is)
+	item   devmigrate.Item
 }
 
 // Plan is what a move of one source would do, read without changing anything.
+// Carried and NotCarried are the settings (setup.move.carry.<code>,
+// setup.move.nocarry.<code>).
 type Plan struct {
-	Source     Source   `json:"source"`
-	Items      []Item   `json:"items"`
-	Carried    []string `json:"carried"`
-	NotCarried []string `json:"not_carried"`
+	Source     Source `json:"source"`
+	Items      []Item `json:"items"`
+	Carried    []Note `json:"carried"`
+	NotCarried []Note `json:"not_carried"`
 	// Problems stop the move (nothing is changed while any is left).
 	Problems []Note `json:"problems"`
 	Warnings []Note `json:"warnings"`
@@ -127,7 +148,15 @@ type Plan struct {
 
 // MakePlan reads what moving src into tgt does.
 func MakePlan(sys Sys, src Source, tgt Target) (Plan, error) {
-	p := Plan{Source: src, Items: []Item{}, Problems: []Note{}, Warnings: []Note{}, Free: -1}
+	p := Plan{Source: src, Items: []Item{}, Carried: []Note{}, NotCarried: []Note{}, Problems: []Note{}, Warnings: []Note{}, Free: -1}
+	if src.Kind == KindService {
+		// the system's account runs it: the user's app can neither stop it nor
+		// read its settings
+		p.Problems = append(p.Problems, note("service_install",
+			"it runs as the Windows service "+src.Service+", under the system's account: only an administrator can stop it, so the app cannot move it",
+			"name", src.Service))
+		return p, nil
+	}
 	old := config.Defaults()
 	if src.ConfigFound {
 		c, _, err := config.LoadFrom(src.Config)
@@ -143,6 +172,12 @@ func MakePlan(sys Sys, src Source, tgt Target) (Plan, error) {
 	p.config, p.Carried, p.NotCarried = cfg, carried, notCarried
 	p.Items = moveItems(src, old, cfg, tgt, src.getenv(sys))
 	for _, it := range p.Items {
+		if it.item.Key && it.Done && !sameBytes(it.From, it.To) {
+			// never replaced: found now, before anything is stopped
+			p.Problems = append(p.Problems, note("key_differs",
+				fmt.Sprintf("the app has another %s at %s than the old install's %s: a key is never replaced, so it cannot move in", it.What, it.To, it.From),
+				"path", it.To, "from", it.From))
+		}
 		if !it.Done {
 			p.Need += it.Size
 		}
@@ -190,34 +225,43 @@ func (p Plan) ProblemsText() string {
 // (never replaced when the app has a different one), the search index, the
 // streaming cache, the models, the Hugging Face sign-in and an SQLite database.
 func moveItems(src Source, old, cfg config.Config, tgt Target, getenv func(string) string) []Item {
-	var items []devmigrate.Item
+	type want struct {
+		code   string
+		params map[string]any
+		item   devmigrate.Item
+	}
+	var items []want
+	add := func(code string, it devmigrate.Item, kv ...any) {
+		items = append(items, want{code: code, params: params(kv), item: it})
+	}
 	for _, k := range src.Keys {
-		items = append(items, devmigrate.Item{What: filepath.Base(k), From: k, To: filepath.Join(tgt.KeysDir, filepath.Base(k)), Key: true})
+		name := filepath.Base(k)
+		add("key", devmigrate.Item{What: name, From: k, To: filepath.Join(tgt.KeysDir, name), Key: true}, "name", name)
 	}
 	if src.DB == DBNode && src.NodeConfig != "" {
-		items = append(items, devmigrate.Item{What: "node config", From: src.NodeConfig, To: tgt.NodeConfig, Key: true})
+		add("node_config", devmigrate.Item{What: "node config", From: src.NodeConfig, To: tgt.NodeConfig, Key: true})
 	}
 	if src.Kind != KindNodeWorker && src.ConfigFound {
 		state := old.StateDir()
-		items = append(items,
-			devmigrate.Item{What: "search index", From: filepath.Join(state, "chroma"), To: filepath.Join(tgt.StateDir, "chroma")},
-			devmigrate.Item{What: "streaming cache", From: filepath.Join(state, "cache", "streaming"), To: filepath.Join(tgt.StateDir, "cache", "streaming")},
-			devmigrate.Item{What: "models", From: filepath.Join(state, "models"), To: filepath.Join(tgt.StateDir, "models")},
-		)
+		add("search_index", devmigrate.Item{What: "search index", From: filepath.Join(state, "chroma"), To: filepath.Join(tgt.StateDir, "chroma")})
+		add("streaming_cache", devmigrate.Item{What: "streaming cache", From: filepath.Join(state, "cache", "streaming"),
+			To: filepath.Join(tgt.StateDir, "cache", "streaming")})
+		add("models", devmigrate.Item{What: "models", From: filepath.Join(state, "models"), To: filepath.Join(tgt.StateDir, "models")})
 		if from, ok := sqliteFile(src, old); ok {
 			to := sqliteTarget(cfg)
 			for _, ext := range []string{"", "-wal", "-shm"} {
-				items = append(items, devmigrate.Item{What: "library database" + ext, From: from + ext, To: to + ext})
+				add("database"+strings.ReplaceAll(ext, "-", "_"), devmigrate.Item{What: "library database" + ext, From: from + ext, To: to + ext})
 			}
 		}
 	}
 	// after the models (a sign-in among them stays): the second listen's model is gated
 	if token := hfToken(getenv); token != "" {
-		items = append(items, devmigrate.Item{What: "Hugging Face sign-in", From: token,
+		add("hf_token", devmigrate.Item{What: "Hugging Face sign-in", From: token,
 			To: filepath.Join(tgt.StateDir, "models", "huggingface", "token")})
 	}
 	out := []Item{}
-	for _, it := range items {
+	for _, w := range items {
+		it := w.item
 		if samePath(it.From, it.To) {
 			continue
 		}
@@ -225,7 +269,7 @@ func moveItems(src Source, old, cfg config.Config, tgt Target, getenv func(strin
 		if !it.Exists {
 			continue
 		}
-		out = append(out, Item{What: it.What, From: it.From, To: it.To, Size: it.Size, Done: it.Done, item: it})
+		out = append(out, Item{Code: w.code, Params: w.params, What: it.What, From: it.From, To: it.To, Size: it.Size, Done: it.Done, item: it})
 	}
 	return out
 }
@@ -246,6 +290,16 @@ func hfToken(getenv func(string) string) string {
 		return filepath.Join(home, ".cache", "huggingface", "token")
 	}
 	return ""
+}
+
+// sameBytes: both files read and hold the same bytes (a key, a node config).
+func sameBytes(a, b string) bool {
+	x, err := os.ReadFile(a)
+	if err != nil {
+		return false
+	}
+	y, err := os.ReadFile(b)
+	return err == nil && bytes.Equal(x, y)
 }
 
 // statItem fills in what is there.
@@ -308,15 +362,32 @@ func existingParent(p string) string {
 // Progress hears each step.
 type Progress func(stage, message string)
 
-// The old install's stop: its task ended, its processes given stopGrace to
-// exit (an install older than the app has no stop event to ask), then ended
-// with their trees (the pipeline is a child of its maktaba-server); all of it,
-// and its ports freed, within stopWait.
+// The old install's stop: its task ended, its restart loop ended at once, its
+// processes given stopGrace to exit (an install older than the app has no
+// stop event to ask), then ended with their trees (the pipeline is a child of
+// its maktaba-server); all of it, and its ports freed, within stopWait. Then
+// nothing of it may come back for settleFor(src): longer than its script's
+// restart delay.
 var (
-	stopGrace = 15 * time.Second
-	stopWait  = 90 * time.Second
-	stopPoll  = 500 * time.Millisecond // how often it looks again
+	stopGrace  = 15 * time.Second
+	stopWait   = 90 * time.Second
+	stopPoll   = 500 * time.Millisecond // how often it looks again
+	stopSettle = 5 * time.Second        // beyond a loop's delay; a stop without a loop waits this
+	settleFor  = loopSettle             // tests shorten it
 )
+
+// loopSettle is how long the stop watches a quiet old install before it counts
+// it stopped: beyond the restart delay of a script that loops (this PC's waits
+// 10 s), three times stopSettle for a loop that names no delay.
+func loopSettle(src Source) time.Duration {
+	switch {
+	case src.Loops && src.RestartDelay > 0:
+		return src.RestartDelay + stopSettle
+	case src.Loops:
+		return 3 * stopSettle
+	}
+	return stopSettle
+}
 
 // Move moves the plan's source into the app (move-an-install.md "What a move
 // does"): the venv built first (the old install still runs), the old task's
@@ -358,8 +429,16 @@ func Move(ctx context.Context, sys Sys, p Plan, tgt Target, venv func(context.Co
 		}
 	}
 	if rec.Stage == StageFound {
-		rec.Saved = []Saved{}
+		// the definitions first, in the record: a stop that fails part way has
+		// turned tasks off, and Undo turns them on again from these
+		saved := map[string]bool{}
+		for _, s := range rec.Saved {
+			saved[s.Task] = true // a run again keeps the first (still enabled) one
+		}
 		for _, task := range src.Tasks() {
+			if saved[task] {
+				continue
+			}
 			raw, err := sys.TaskXML(task)
 			if err != nil {
 				return rec, codedf("adopt_task", []any{"task", task}, "read the old task %s: %w", task, err)
@@ -370,8 +449,11 @@ func Move(ctx context.Context, sys Sys, p Plan, tgt Target, venv func(context.Co
 			}
 			rec.Saved = append(rec.Saved, s)
 		}
+		if err := writeRecord(tgt.StateDir, rec); err != nil {
+			return rec, err
+		}
 		progress("stop", "Stopping the old install")
-		if err := stopSource(ctx, sys, src); err != nil {
+		if err := stopSource(ctx, sys, src, tgt.self()); err != nil {
 			return rec, err
 		}
 		rec.Stage = StageStopped
@@ -402,72 +484,98 @@ func Move(ctx context.Context, sys Sys, p Plan, tgt Target, venv func(context.Co
 }
 
 // stopSource ends the old install: its task ended and disabled (it must not
-// start again at the next sign-in), then its processes waited for, and ended
-// with their trees when they outlive stopGrace; its ports must be free before
-// the app's server takes them. Nothing that is not Maktaba's is touched.
-func stopSource(ctx context.Context, sys Sys, src Source) error {
+// start again at the next sign-in); the cmd.exe running its script (a restart
+// loop: started by hand, or outliving the task's end) ended at once; its
+// processes waited for, and ended with their trees when they outlive
+// stopGrace; its ports free; then nothing of it back for settleFor(src), so a
+// loop the stop did not see is caught. Nothing that is not Maktaba's is
+// touched, nor the app's own install or this process (me). A process list it
+// cannot read stops the move: it cannot tell what still runs.
+func stopSource(ctx context.Context, sys Sys, src Source, me self) error {
 	for _, task := range src.Tasks() {
-		_ = sys.EndTask(task) // a task that is not running is not an error
+		_ = sys.EndTask(task) // a task that is not running is not an error; what outlives it is ended below
 		if err := sys.SetTaskEnabled(task, false); err != nil {
 			return codedf("adopt_task", []any{"task", task}, "disable the old task %s: %w", task, err)
 		}
-	}
-	alive := func() []int {
-		procs, err := sys.Processes()
-		if err != nil {
-			return nil
-		}
-		var pids []int
-		for _, p := range procs {
-			mine := src.owns(p)
-			for _, pid := range src.PIDs {
-				mine = mine || p.PID == pid
-			}
-			if mine {
-				pids = append(pids, p.PID)
-			}
-		}
-		return pids
 	}
 	start := time.Now()
 	grace, deadline := start.Add(stopGrace), start.Add(stopWait)
 	if src.Kind == KindProcess {
 		grace = start // no task to end: nothing else asks it to stop
 	}
-	killed := map[int]bool{}
-	for left := alive(); len(left) > 0; left = alive() {
-		switch {
-		case time.Now().After(deadline):
-			pids := make([]string, len(left))
-			for i, pid := range left {
-				pids[i] = strconv.Itoa(pid)
-			}
-			return codedf("adopt_still_running", []any{"pids", strings.Join(pids, ", ")},
-				"the old install's processes (%v) are still running", left)
-		case time.Now().After(grace):
-			for _, pid := range left {
-				if !killed[pid] {
-					killed[pid] = true
-					_ = sys.Kill(pid)
+	settle := settleFor(src)
+	killed, ended := map[int]bool{}, map[int]bool{}
+	var quiet time.Time // since when nothing of it runs and its ports are free
+	for {
+		procs, err := sys.Processes()
+		if err != nil {
+			return codedf("adopt_processes_unknown", nil,
+				"cannot list the running programs, so the old install may still run: %w", err)
+		}
+		var left []int
+		for _, p := range procs {
+			switch {
+			case me.is(p):
+			case src.runsScript(p):
+				// its restart loop: ended alone, at once (the server it started
+				// keeps its grace)
+				if !ended[p.PID] {
+					ended[p.PID] = true
+					_ = sys.EndProcess(p.PID)
+				}
+				left = append(left, p.PID)
+			case src.owns(p) || (!isConsole(p) && slices.Contains(src.PIDs, p.PID)):
+				left = append(left, p.PID)
+				if time.Now().After(grace) && !killed[p.PID] {
+					killed[p.PID] = true
+					_ = sys.Kill(p.PID)
 				}
 			}
+		}
+		busy := ""
+		if len(left) == 0 {
+			busy = busyPort(sys, src)
+		}
+		now := time.Now()
+		switch {
+		case len(left) > 0 || busy != "":
+			quiet = time.Time{}
+			if now.After(deadline) {
+				if len(left) > 0 {
+					pids := make([]string, len(left))
+					for i, pid := range left {
+						pids[i] = strconv.Itoa(pid)
+					}
+					return codedf("adopt_still_running", []any{"pids", strings.Join(pids, ", ")},
+						"the old install's processes (%v) are still running", left)
+				}
+				return codedf("adopt_port_busy", []any{"port", busy}, "port %s is still in use after the old install stopped", busy)
+			}
+		case quiet.IsZero():
+			quiet = now
+		case now.Sub(quiet) >= settle:
+			return nil
 		}
 		if !sleepCtx(ctx, stopPoll) {
 			return ctx.Err()
 		}
 	}
-	for _, addr := range src.Ports {
-		port := addr[strings.LastIndexByte(addr, ':')+1:]
-		for port != "" && sys.Listening(port) {
-			if time.Now().After(deadline) {
-				return codedf("adopt_port_busy", []any{"port", port}, "port %s is still in use after the old install stopped", port)
-			}
-			if !sleepCtx(ctx, stopPoll) {
-				return ctx.Err()
-			}
+}
+
+// busyPort is the first of the source's ports something still listens on.
+func busyPort(sys Sys, src Source) string {
+	names := make([]string, 0, len(src.Ports))
+	for name := range src.Ports {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		addr := src.Ports[name]
+		if port := addr[strings.LastIndexByte(addr, ':')+1:]; port != "" && sys.Listening(port) {
+			return port
 		}
 	}
-	return nil
+	return ""
 }
 
 func sleepCtx(ctx context.Context, d time.Duration) bool {
@@ -549,7 +657,7 @@ func setFloat(dst *float64, v string) {
 // own); its database url only for a Postgres (the SQLite file is copied to the
 // app's data folder); and what its script set that is a setting. It returns
 // what was carried and what could not be.
-func carrySettings(src Source, old config.Config, tgt Target) (config.Config, []string, []string, error) {
+func carrySettings(src Source, old config.Config, tgt Target) (config.Config, []Note, []Note, error) {
 	cfg, found, err := config.LoadFrom(tgt.ConfigPath)
 	if err != nil {
 		return cfg, nil, nil, err
@@ -557,12 +665,13 @@ func carrySettings(src Source, old config.Config, tgt Target) (config.Config, []
 	if !found {
 		cfg = config.Defaults()
 	}
-	carried, notCarried := []string{}, []string{}
+	carried, notCarried := []Note{}, []Note{}
 	if src.Kind == KindNodeWorker {
 		// the app's server replaces the workers: a full node with as many pipeline
 		// workers as the installer ran (Epic 35 story 35.8)
 		cfg.Pipeline.Instances, cfg.PipelineInstancesSet = len(src.Tasks()), true
-		carried = append(carried, fmt.Sprintf("[pipeline] instances = %d", len(src.Tasks())))
+		carried = append(carried, note("pipeline_instances", fmt.Sprintf("[pipeline] instances = %d", len(src.Tasks())),
+			"count", len(src.Tasks())))
 		return cfg, carried, notCarried, nil
 	}
 	if src.ConfigFound {
@@ -573,13 +682,15 @@ func carrySettings(src Source, old config.Config, tgt Target) (config.Config, []
 		cfg.Pipeline, cfg.PipelineInstancesSet = old.Pipeline, old.PipelineInstancesSet
 		cfg.Pipeline.Python = appPython
 		if strings.TrimSpace(old.Pipeline.Python) != "" {
-			notCarried = append(notCarried, "[pipeline] python (the app runs its own)")
+			notCarried = append(notCarried, note("pipeline_python", "[pipeline] python (the app runs its own)"))
 		}
-		carried = append(carried, "[server]", "[media]", "[transcription]", "[tv]", "[pipeline]", "[cloud]", "[supervisor]")
+		for _, section := range []string{"[server]", "[media]", "[transcription]", "[tv]", "[pipeline]", "[cloud]", "[supervisor]"} {
+			carried = append(carried, note("section", section, "name", section))
+		}
 		switch src.DB {
 		case DBPostgres, DBOwnPostgres:
 			cfg.Database, cfg.DatabaseURLSet = old.Database, true
-			carried = append(carried, "[database] url")
+			carried = append(carried, note("database_url", "[database] url"))
 		case DBSQLite:
 			cfg.Database.URL, cfg.DatabaseURLSet = "sqlite://"+filepath.ToSlash(sqliteTarget(cfg)), true
 		case DBNode:
@@ -592,16 +703,16 @@ func carrySettings(src Source, old config.Config, tgt Target) (config.Config, []
 		case droppedEnv[name]:
 		case carriedEnv[name] != nil:
 			carriedEnv[name](&cfg, v)
-			carried = append(carried, name)
+			carried = append(carried, note("env", name, "name", name))
 		case strings.HasPrefix(name, "MAKTABA_"):
-			notCarried = append(notCarried, name+" (no server.toml setting)")
+			notCarried = append(notCarried, note("env", name+" (no server.toml setting)", "name", name))
 		}
 	}
 	for i := 0; i < len(src.ServeArgs); i++ {
 		switch a := src.ServeArgs[i]; {
 		case a == "--no-mdns":
 			cfg.Server.MDNS = "off"
-			carried = append(carried, `--no-mdns as [server] mdns = "off"`)
+			carried = append(carried, note("no_mdns", `--no-mdns as [server] mdns = "off"`))
 		case a == "--bin-dir" || a == "--grace":
 			i++ // the app's own programs; its own stop grace
 		case strings.HasPrefix(a, "--bin-dir=") || strings.HasPrefix(a, "--grace="):
@@ -610,7 +721,7 @@ func carrySettings(src Source, old config.Config, tgt Target) (config.Config, []
 				i++
 				a += " " + src.ServeArgs[i]
 			}
-			notCarried = append(notCarried, "serve "+a)
+			notCarried = append(notCarried, note("serve_flag", "serve "+a, "flag", a))
 		}
 	}
 	return cfg, carried, notCarried, nil
@@ -661,13 +772,18 @@ func Finish(sys Sys, stateDir string) (bool, error) {
 // window opens setup, whose status step does not take the server back while
 // the record says undone (UndoneHere): the welcome screen offers the move
 // again.
+//
+// A move that stopped part way is undone too (the setup screen's "Restore the
+// old install"): its tasks, turned off by a stop that failed, are turned on
+// again from the record. An old task is run only while nothing of the old
+// install runs (a stop that failed may have left it running).
 func Undo(sys Sys, tgt Target) error {
 	rec, ok, err := ReadRecord(tgt.StateDir)
 	if err != nil {
 		return err
 	}
-	if !ok || rec.Stage == StageUndone || rec.Stage == StageFound {
-		return errors.New("no move to undo on this PC")
+	if !ok || rec.Stage == StageUndone {
+		return coded("adopt_no_move", errors.New("no move to undo on this PC"))
 	}
 	apps, err := appTasks(sys)
 	if err != nil {
@@ -687,6 +803,11 @@ func Undo(sys Sys, tgt Target) error {
 	if err := leaveServerMode(tgt.ModeFile); err != nil {
 		return err
 	}
+	// with the app's server stopped: what still runs is the old install's
+	runs, err := sourceRuns(sys, rec.Source, tgt.self())
+	if err != nil {
+		return err
+	}
 	for _, s := range rec.Saved {
 		if !sys.HasTask(s.Task) {
 			if err := sys.CreateTask(s.Task, s.XML); err != nil {
@@ -696,12 +817,30 @@ func Undo(sys Sys, tgt Target) error {
 		if err := sys.SetTaskEnabled(s.Task, true); err != nil {
 			return fmt.Errorf("enable the old task %s again: %w", s.Task, err)
 		}
+		if runs {
+			continue // it never stopped: a second copy would fight it for its ports
+		}
 		if err := sys.RunTask(s.Task); err != nil {
 			return fmt.Errorf("start the old task %s: %w", s.Task, err)
 		}
 	}
 	rec.Stage, rec.UndoneAt = StageUndone, now()
 	return writeRecord(tgt.StateDir, rec)
+}
+
+// sourceRuns reports whether a program of src runs (never the app's own, me).
+// A process list it cannot read is an error: not sure is not "no".
+func sourceRuns(sys Sys, src Source, me self) (bool, error) {
+	procs, err := sys.Processes()
+	if err != nil {
+		return false, codedf("adopt_processes_unknown", nil, "cannot list the running programs: %w", err)
+	}
+	for _, p := range procs {
+		if !me.is(p) && (src.owns(p) || src.runsScript(p)) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // leaveServerMode takes the app window out of server mode: a mode.json that

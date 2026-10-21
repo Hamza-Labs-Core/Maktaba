@@ -20,6 +20,8 @@ func (otherSys) CreateTask(string, string) error      { return ErrUnsupported }
 func (otherSys) RunTask(string) error                 { return ErrUnsupported }
 func (otherSys) Processes() ([]Proc, error)           { return nil, nil }
 func (otherSys) Kill(int) error                       { return ErrUnsupported }
+func (otherSys) EndProcess(int) error                 { return ErrUnsupported }
+func (otherSys) Services() ([]Service, error)         { return nil, nil }
 func (otherSys) ReadFile(path string) ([]byte, error) { return readFile(path) }
 func (otherSys) Getenv(name string) string            { return os.Getenv(name) }
 func (otherSys) Listening(string) bool                { return false }

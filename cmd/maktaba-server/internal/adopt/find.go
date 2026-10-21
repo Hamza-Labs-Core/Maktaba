@@ -1,6 +1,7 @@
 package adopt
 
 import (
+	"fmt"
 	"net"
 	"net/url"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 )
@@ -26,6 +28,10 @@ const (
 	// KindProcess: a maktaba-server serve that no task explains (started by
 	// hand).
 	KindProcess = "process"
+	// KindService: a Windows service that runs maktaba-launcher or
+	// maktaba-server (setup --service --system): it runs as the system, so
+	// only an administrator can stop it; a plan refuses it.
+	KindService = "service"
 )
 
 // The database an install uses.
@@ -44,13 +50,22 @@ type Source struct {
 	TaskEnabled bool   `json:"task_enabled"`
 	// OtherTasks are the node installer's further worker tasks (maktaba-node@<n>):
 	// one install, moved together.
-	OtherTasks  []string `json:"other_tasks,omitempty"`
-	Script      string   `json:"script,omitempty"`
-	Dir         string   `json:"dir"`
-	Server      string   `json:"server,omitempty"` // the maktaba-server it runs
-	Config      string   `json:"config,omitempty"` // its server.toml
-	ConfigFound bool     `json:"config_found"`
-	ServeArgs   []string `json:"serve_args,omitempty"`
+	OtherTasks []string `json:"other_tasks,omitempty"`
+	// Service is the Windows service's name (KindService).
+	Service string `json:"service,omitempty"`
+	Script  string `json:"script,omitempty"`
+	// scriptArg is the script as its task names it, when that is not its
+	// whole path (cmd /c start.cmd in the task's folder).
+	scriptArg string
+	// Loops: the script runs the server again when it exits, after
+	// RestartDelay (what the stop waits out before it counts it stopped).
+	Loops        bool          `json:"-"`
+	RestartDelay time.Duration `json:"-"`
+	Dir          string        `json:"dir"`
+	Server       string        `json:"server,omitempty"` // the maktaba-server it runs
+	Config       string        `json:"config,omitempty"` // its server.toml
+	ConfigFound  bool          `json:"config_found"`
+	ServeArgs    []string      `json:"serve_args,omitempty"`
 	// Env is the script's set lines; it is never shown (a line may hold a secret).
 	Env        map[string]string `json:"-"`
 	EnvOrder   []string          `json:"-"`
@@ -72,12 +87,67 @@ func (s Source) Tasks() []string {
 }
 
 // owns: p is one of the source's programs (in its folder, its server, or a
-// pipeline worker of the node installer's).
+// pipeline worker of the node installer's). A console is never one (runsScript
+// is the script's).
 func (s Source) owns(p Proc) bool {
-	if p.Exe == "" {
+	if p.Exe == "" || isConsole(p) {
 		return false
 	}
 	return within(p.Exe, s.Dir) || (s.Server != "" && samePath(p.Exe, s.Server)) || (s.Kind == KindNodeWorker && isPipeline(p))
+}
+
+// HasProgram reports whether the program at exe is one of the source's (its
+// folder's, or its server).
+func (s Source) HasProgram(exe string) bool {
+	return s.owns(Proc{Name: filepath.Base(exe), Exe: exe})
+}
+
+// runsScript: p is the cmd.exe (or the conhost.exe hosting it) that runs the
+// source's script, its restart loop: its command line names the script.
+func (s Source) runsScript(p Proc) bool {
+	if s.Script == "" || !isConsole(p) {
+		return false
+	}
+	cmdline := strings.ToLower(p.Cmdline)
+	for _, name := range []string{s.Script, s.scriptArg} {
+		if name != "" && strings.Contains(cmdline, strings.ToLower(filepath.Clean(name))) {
+			return true
+		}
+	}
+	return false
+}
+
+// isConsole: cmd.exe or conhost.exe.
+func isConsole(p Proc) bool {
+	n := strings.ToLower(p.Name)
+	return n == "cmd.exe" || n == "conhost.exe"
+}
+
+// self is the app's own side of a move: its install (the payload the setup
+// step runs from) and this very process. Neither is ever the old install's,
+// even where the old install's folder holds them: a user `setup --service`
+// roots at %LOCALAPPDATA%\Maktaba, where the app is installed too.
+type self struct {
+	payload string
+	venv    string // the app's pipeline venv (<state>\venv)
+	pid     int
+	exe     string
+}
+
+func selfOf(payload, venv string) self {
+	exe, _ := os.Executable()
+	return self{payload: payload, venv: venv, pid: os.Getpid(), exe: exe}
+}
+
+func (m self) is(p Proc) bool {
+	if p.PID == m.pid {
+		return true
+	}
+	if p.Exe == "" {
+		return false
+	}
+	return (m.payload != "" && within(p.Exe, m.payload)) || (m.venv != "" && within(p.Exe, m.venv)) ||
+		(m.exe != "" && samePath(p.Exe, m.exe))
 }
 
 // getenv is the source's environment: its script's set lines over the user's.
@@ -91,13 +161,23 @@ func (s Source) getenv(sys Sys) func(string) string {
 }
 
 // Find lists the Maktaba installs this machine runs outside the app at
-// appPayload (whose own programs are left out). Nothing is changed.
+// appPayload (whose own programs, and this process, are left out). Nothing is
+// changed. What it cannot read (the tasks, the processes, the services) is an
+// error: an install it would miss could run beside the app.
 func Find(sys Sys, appPayload string) ([]Source, error) {
 	tasks, err := sys.Tasks()
 	if err != nil {
 		return nil, err
 	}
-	procs, _ := sys.Processes()
+	procs, err := sys.Processes()
+	if err != nil {
+		return nil, fmt.Errorf("list the running programs: %w", err)
+	}
+	svcs, err := sys.Services()
+	if err != nil {
+		return nil, fmt.Errorf("list the services: %w", err)
+	}
+	me := selfOf(appPayload, "")
 	var out []Source
 	worker := -1 // the node installer's tasks are one install
 	for _, t := range tasks {
@@ -118,7 +198,7 @@ func Find(sys Sys, appPayload string) ([]Source, error) {
 	// source's folder; one that does not is a server started by hand
 	for _, p := range procs {
 		exe := filepath.Clean(p.Exe)
-		if p.Exe == "" || (appPayload != "" && within(exe, appPayload)) {
+		if p.Exe == "" || me.is(p) || isConsole(p) {
 			continue
 		}
 		owned := false
@@ -137,8 +217,36 @@ func Find(sys Sys, appPayload string) ([]Source, error) {
 	for i := range out {
 		describe(sys, &out[i])
 	}
+	// a service install (its processes are the system's: no path to tell)
+	for _, sv := range svcs {
+		if s, ok := classifyService(sv); ok {
+			out = append(out, s)
+		}
+	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Kind < out[j].Kind })
 	return out, nil
+}
+
+// classifyService reads a service: ok when its program is maktaba-launcher
+// (its --root is the install) or maktaba-server.
+func classifyService(sv Service) (Source, bool) {
+	args := SplitArgs(sv.PathName)
+	if len(args) == 0 {
+		return Source{}, false
+	}
+	exe := winSlash(args[0])
+	switch strings.ToLower(filepath.Base(exe)) {
+	case "maktaba-launcher.exe", "maktaba-launcher", "maktaba-server.exe", "maktaba-server":
+	default:
+		return Source{}, false
+	}
+	s := Source{ID: "service:" + sv.Name, Kind: KindService, Service: sv.Name, Dir: filepath.Dir(exe), Server: exe}
+	for i, a := range args {
+		if a == "--root" && i+1 < len(args) {
+			s.Dir = winSlash(args[i+1])
+		}
+	}
+	return s, true
 }
 
 // classify reads one task: ok when it runs a Maktaba of its own.
@@ -177,6 +285,7 @@ func classify(sys Sys, t Task) (Source, bool) {
 	if script == "" {
 		return s, false
 	}
+	arg := script
 	if !filepath.IsAbs(script) && !isWinAbs(script) && t.WorkDir != "" {
 		script = filepath.Join(t.WorkDir, script)
 	}
@@ -190,6 +299,10 @@ func classify(sys Sys, t Task) (Source, bool) {
 	}
 	s.Kind, s.Script, s.Dir, s.Server, s.ServeArgs = KindScript, script, sc.Dir, sc.Server, sc.ServeArgs
 	s.Env, s.EnvOrder = sc.Env, sc.EnvOrder
+	s.Loops, s.RestartDelay = sc.Loops, sc.RestartDelay
+	if arg != script {
+		s.scriptArg = arg
+	}
 	return s, true
 }
 

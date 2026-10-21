@@ -46,10 +46,16 @@ type fakeSys struct {
 	env      map[string]string
 
 	ended, killed, deleted, run []string
+	endedProcs                  []int // EndProcess: one process, not its tree
 	enabled                     map[string]bool
 	created                     map[string]string
 	appStopped                  int
 	user                        User
+	services                    []Service
+	procErr                     error // the process list cannot be read
+	// onList runs (locked) before each process list: a restart loop's server
+	// coming back, say
+	onList func(f *fakeSys)
 }
 
 // fakeUser is the fake PC's user: a SID of the form Windows gives, and the
@@ -164,8 +170,33 @@ func (f *fakeSys) RunTask(name string) error {
 func (f *fakeSys) Processes() ([]Proc, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.procErr != nil {
+		return nil, f.procErr
+	}
+	if f.onList != nil {
+		f.onList(f)
+	}
 	return append([]Proc(nil), f.procs...), nil
 }
+
+func (f *fakeSys) alive(pid int) bool {
+	for _, p := range f.procs {
+		if p.PID == pid {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *fakeSys) EndProcess(pid int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.endedProcs = append(f.endedProcs, pid)
+	f.drop(pid)
+	return nil
+}
+
+func (f *fakeSys) Services() ([]Service, error) { return f.services, nil }
 
 func (f *fakeSys) Kill(pid int) error {
 	f.mu.Lock()
@@ -402,9 +433,19 @@ func newThisPC(t *testing.T) *thisPC {
 
 func fastStop(t *testing.T) {
 	t.Helper()
-	grace, wait, poll := stopGrace, stopWait, stopPoll
+	grace, wait, poll, settle := stopGrace, stopWait, stopPoll, settleFor
 	stopGrace, stopWait, stopPoll = 100*time.Millisecond, 5*time.Second, 10*time.Millisecond
-	t.Cleanup(func() { stopGrace, stopWait, stopPoll = grace, wait, poll })
+	settleFor = func(Source) time.Duration { return 30 * time.Millisecond }
+	t.Cleanup(func() { stopGrace, stopWait, stopPoll, settleFor = grace, wait, poll, settle })
+}
+
+// messages are the notes' English.
+func messages(notes []Note) []string {
+	out := make([]string, len(notes))
+	for i, n := range notes {
+		out[i] = n.Message
+	}
+	return out
 }
 
 func TestFindThisPC(t *testing.T) {
@@ -476,11 +517,11 @@ func TestMoveThisPC(t *testing.T) {
 		t.Errorf("need %d", plan.Need)
 	}
 	for _, n := range []string{"[server]", "[media]", `--no-mdns as [server] mdns = "off"`} {
-		if !contains(plan.Carried, n) {
+		if !contains(messages(plan.Carried), n) {
 			t.Errorf("carried %q lacks %q", plan.Carried, n)
 		}
 	}
-	if contains(plan.Carried, "[database] url") {
+	if contains(messages(plan.Carried), "[database] url") {
 		t.Error("a node's own database url is not carried: it reads the home's")
 	}
 	if len(plan.NotCarried) != 0 {
@@ -557,25 +598,23 @@ func contains(list []string, s string) bool {
 func TestMoveGoesOnAfterAFailure(t *testing.T) {
 	fastStop(t)
 	pc := newThisPC(t)
-	// the app has another stream key already: the copy stops the move
-	write(t, filepath.Join(pc.tgt.KeysDir, "stream-signing.key"), "another key")
+	// a file where the app keeps its caches: the copy fails after the stop
+	write(t, filepath.Join(pc.tgt.StateDir, "cache"), "in the way")
 	srcs, _ := Find(pc.sys, "")
 	plan, err := MakePlan(pc.sys, srcs[0], pc.tgt)
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || len(plan.Problems) > 0 {
+		t.Fatal(err, plan.Problems)
 	}
-	_, err = Move(context.Background(), pc.sys, plan, pc.tgt, nil, nil)
-	if ae := codeOf(err); ae == nil || ae.Code != "adopt_key_differs" || !strings.Contains(err.Error(), "differs") ||
-		ae.Params["path"] != filepath.Join(pc.tgt.KeysDir, "stream-signing.key") {
-		t.Fatalf("a different key in the app: %v (%+v)", err, ae)
+	if _, err = Move(context.Background(), pc.sys, plan, pc.tgt, nil, nil); err == nil {
+		t.Fatal("the copy went through a file")
 	}
 	rec, _, _ := ReadRecord(pc.tgt.StateDir)
-	if rec.Stage != StageStopped {
-		t.Fatalf("stage %s, want stopped", rec.Stage)
+	if rec.Stage != StageStopped || len(rec.Saved) != 1 {
+		t.Fatalf("stage %s, saved %+v; want stopped, the old task's definition kept", rec.Stage, rec.Saved)
 	}
 
 	// put right, the move goes on from the copy: the old install is not stopped again
-	if err := os.Remove(filepath.Join(pc.tgt.KeysDir, "stream-signing.key")); err != nil {
+	if err := os.Remove(filepath.Join(pc.tgt.StateDir, "cache")); err != nil {
 		t.Fatal(err)
 	}
 	pc.sys.xml = map[string][]byte{} // reading the task again would fail
@@ -591,8 +630,8 @@ func TestMoveGoesOnAfterAFailure(t *testing.T) {
 	if rec.Stage != StageMoved || len(pc.sys.ended) != 1 {
 		t.Errorf("stage %s, ended %q", rec.Stage, pc.sys.ended)
 	}
-	if read(t, filepath.Join(pc.tgt.KeysDir, "stream-signing.key")) != "the node's stream key" {
-		t.Error("the key is not in the app")
+	if read(t, filepath.Join(pc.tgt.StateDir, "cache", "streaming", "seg-1.ts")) != "a cached segment" {
+		t.Error("the cache is not in the app")
 	}
 
 	// another install cannot start while one is under way
@@ -600,6 +639,45 @@ func TestMoveGoesOnAfterAFailure(t *testing.T) {
 	_, err = Move(context.Background(), pc.sys, plan, pc.tgt, nil, nil)
 	if ae := codeOf(err); ae == nil || ae.Code != "adopt_under_way" || ae.Params["source"] != `\Other` || !strings.Contains(err.Error(), "under way") {
 		t.Errorf("a second source during a move: %v", err)
+	}
+}
+
+// TestADifferentKeyIsRefusedBeforeTheStop: a key (or node config) the app has
+// already, and different, is never replaced: the plan refuses it, and nothing
+// of the old install is stopped.
+func TestADifferentKeyIsRefusedBeforeTheStop(t *testing.T) {
+	fastStop(t)
+	pc := newThisPC(t)
+	key := filepath.Join(pc.tgt.KeysDir, "stream-signing.key")
+	write(t, key, "another key")
+	write(t, pc.tgt.NodeConfig, "another node")
+	srcs, _ := Find(pc.sys, "")
+	plan, err := MakePlan(pc.sys, srcs[0], pc.tgt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var codes []string
+	for _, n := range plan.Problems {
+		codes = append(codes, n.Code+" "+fmt.Sprint(n.Params["path"]))
+	}
+	if want := []string{"key_differs " + key, "key_differs " + pc.tgt.NodeConfig}; !reflect.DeepEqual(codes, want) {
+		t.Fatalf("problems %q, want %q", codes, want)
+	}
+	if _, err := Move(context.Background(), pc.sys, plan, pc.tgt, nil, nil); err == nil {
+		t.Fatal("moved over a different key")
+	}
+	if len(pc.sys.ended) != 0 || len(pc.sys.enabled) != 0 || len(pc.sys.killed) != 0 {
+		t.Errorf("ended %q, tasks changed %v, killed %q: nothing is stopped", pc.sys.ended, pc.sys.enabled, pc.sys.killed)
+	}
+	if _, ok, _ := ReadRecord(pc.tgt.StateDir); ok {
+		t.Error("a refused plan left a record")
+	}
+
+	// the same key and node config: left as they are, no problem
+	write(t, key, "the node's stream key")
+	write(t, pc.tgt.NodeConfig, read(t, pc.nodeJSON))
+	if plan, _ := MakePlan(pc.sys, srcs[0], pc.tgt); len(plan.Problems) != 0 {
+		t.Errorf("the same key: %+v", plan.Problems)
 	}
 }
 
@@ -618,7 +696,7 @@ func TestStopEndsWhatOutlivesItsTask(t *testing.T) {
 	pc.sys.stubborn[100] = true // the old maktaba-server ignores its console going away
 	pc.sys.procs = append(pc.sys.procs, Proc{PID: 900, Name: "node.exe", Exe: filepath.Join(t.TempDir(), "node.exe")})
 	srcs, _ := Find(pc.sys, "")
-	if err := stopSource(context.Background(), pc.sys, srcs[0]); err != nil {
+	if err := stopSource(context.Background(), pc.sys, srcs[0], pc.tgt.self()); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(pc.sys.killed, []string{"100"}) {
@@ -637,7 +715,7 @@ func TestStopEndsWhatOutlivesItsTask(t *testing.T) {
 	pc = newThisPC(t)
 	pc.sys.ports["8782"] = 999
 	srcs, _ = Find(pc.sys, "")
-	err := stopSource(context.Background(), pc.sys, srcs[0])
+	err := stopSource(context.Background(), pc.sys, srcs[0], pc.tgt.self())
 	if ae := codeOf(err); ae == nil || ae.Code != "adopt_port_busy" || ae.Params["port"] != "8782" || !strings.Contains(err.Error(), "8782") {
 		t.Errorf("a port still in use: %v", err)
 	}
@@ -653,7 +731,7 @@ func TestStopSaysWhatStillRuns(t *testing.T) {
 	src := srcs[0]
 	pc.sys.procs = append(pc.sys.procs, Proc{PID: 777, Name: "python.exe", Exe: filepath.Join(pc.dir, "venv", "python.exe")})
 	src.PIDs = append(src.PIDs, 777)
-	err := stopSource(context.Background(), &undying{fakeSys: pc.sys, pid: 777}, src)
+	err := stopSource(context.Background(), &undying{fakeSys: pc.sys, pid: 777}, src, pc.tgt.self())
 	if ae := codeOf(err); ae == nil || ae.Code != "adopt_still_running" || ae.Params["pids"] != "777" {
 		t.Errorf("a process that never ends: %v (%+v)", err, ae)
 	}
@@ -719,12 +797,12 @@ python = "C:/venv/python.exe"
 		t.Fatal(err)
 	}
 	for _, n := range []string{"MAKTABA_PATH_MAP", "MAKTABA_STT_REFINE"} {
-		if !contains(plan.Carried, n) {
+		if !contains(messages(plan.Carried), n) {
 			t.Errorf("carried %q lacks %s", plan.Carried, n)
 		}
 	}
 	for _, n := range []string{"MAKTABA_FANCY (no server.toml setting)", "serve --role all", "[pipeline] python (the app runs its own)"} {
-		if !contains(plan.NotCarried, n) {
+		if !contains(messages(plan.NotCarried), n) {
 			t.Errorf("not carried %q lacks %q", plan.NotCarried, n)
 		}
 	}
@@ -781,7 +859,7 @@ func TestPlanProblems(t *testing.T) {
 		t.Errorf("a plan with problems moved: %v (ended %q)", err, pc.sys.ended)
 	}
 	pc.sys.ports["5432"] = 1
-	if p, _ = MakePlan(pc.sys, home, pc.tgt); len(p.Problems) != 0 || !contains(p.Carried, "[database] url") {
+	if p, _ = MakePlan(pc.sys, home, pc.tgt); len(p.Problems) != 0 || !contains(messages(p.Carried), "[database] url") {
 		t.Errorf("its Postgres running: problems %q, carried %q", p.Problems, p.Carried)
 	}
 

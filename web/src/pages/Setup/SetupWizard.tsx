@@ -31,6 +31,7 @@ import {
   isStepError,
   progressPercent,
   type AdoptPlan,
+  type AdoptRecord,
   type AdoptSource,
   type CheckNote,
   type LoginItem,
@@ -223,6 +224,7 @@ export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initi
   const [serverAvailable, setServerAvailable] = useState(true);
   const [platform, setPlatform] = useState<Platform>("macos");
   const [moveSource, setMoveSource] = useState("");
+  const [restored, setRestored] = useState(false);
   useEffect(() => {
     api
       .appState()
@@ -255,9 +257,11 @@ export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initi
             api={api}
             platform={platform}
             serverAvailable={serverAvailable}
+            restored={restored}
             onThisMachine={() => setScreen("check")}
             onMove={(id) => {
               setMoveSource(id);
+              setRestored(false);
               setScreen("move");
             }}
           />
@@ -269,6 +273,10 @@ export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initi
             platform={platform}
             source={moveSource}
             back={() => setScreen("welcome")}
+            restored={() => {
+              setRestored(true);
+              setScreen("welcome");
+            }}
             done={() => setScreen("starting")}
           />
         );
@@ -299,11 +307,13 @@ interface StepProps {
   back: () => void;
 }
 
-/** How the setup screens name a found install: its task, or the server started by hand. */
+/** How the setup screens name a found install: its task, its service, or the
+ * server started by hand. */
 function sourceName(
   t: (key: string, vars?: Record<string, string | number>) => string,
   s: AdoptSource
 ) {
+  if (s.kind === "service") return t("setup.move.service", { name: s.service ?? "" });
   return s.task ? s.task.replace(/^\\/, "") : t("setup.move.byHand", { pid: s.pids?.[0] ?? "" });
 }
 
@@ -311,12 +321,15 @@ function Welcome({
   api,
   platform,
   serverAvailable,
+  restored,
   onThisMachine,
   onMove,
 }: {
   api: SetupApi;
   platform: Platform;
   serverAvailable: boolean;
+  /** the old install was just restored (a move undone) */
+  restored: boolean;
   onThisMachine: () => void;
   onMove: (source: string) => void;
 }) {
@@ -326,25 +339,35 @@ function Welcome({
   const [error, setError] = useState<StepError | null>(null);
   const [busy, setBusy] = useState(false);
   // a Maktaba this PC runs already (its scheduled task, a server started by
-  // hand) moves into the app rather than starting over beside it
-  const [found, setFound] = useState<AdoptSource[]>([]);
+  // hand, a service) moves into the app rather than starting over beside it
+  const looks = serverAvailable && platform === "windows";
+  const [found, setFound] = useState<AdoptSource[] | null>(looks ? null : []);
+  const [record, setRecord] = useState<AdoptRecord | null>(null);
+  const [findError, setFindError] = useState<StepError | null>(null);
+  const [findAttempt, setFindAttempt] = useState(0);
   const [chosen, setChosen] = useState("");
+  const [restoring, setRestoring] = useState(false);
+  const [restoredNow, setRestoredNow] = useState(restored);
   useEffect(() => {
-    if (!serverAvailable || platform !== "windows") return;
+    if (!looks) return;
     let alive = true;
+    setFound(null);
+    setFindError(null);
     api
-      .runStep<{ sources: AdoptSource[] }>("adopt", { action: "find" })
+      .runStep<{ sources: AdoptSource[]; move?: AdoptRecord }>("adopt", { action: "find" })
       .then((r) => {
         if (!alive) return;
         setFound(r.sources ?? []);
+        setRecord(r.move ?? null);
         setChosen(r.sources?.[0]?.id ?? "");
       })
-      // the PC's tasks could not be read: setting up fresh stays possible
-      .catch(() => {});
+      // not knowing what this PC runs is not "nothing runs": no fresh setup
+      // on a guess (it could be a second copy of a node), but Try again
+      .catch((e) => alive && setFindError(asError(e)));
     return () => {
       alive = false;
     };
-  }, [api, serverAvailable, platform]);
+  }, [api, looks, findAttempt]);
   const connect = (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -354,10 +377,63 @@ function Welcome({
       .catch((err) => setError(asError(err)))
       .finally(() => setBusy(false));
   };
+  // a move that stopped part way (the app closed, a failure): go on, or put
+  // the old install back as it was
+  const underWay =
+    record && (record.stage === "found" || record.stage === "stopped") ? record : null;
+  const restore = () => {
+    setRestoring(true);
+    setError(null);
+    api
+      .runStep("adopt", { action: "undo" })
+      .then(() => {
+        setRestoredNow(true);
+        setFindAttempt((n) => n + 1);
+      })
+      .catch((e) => setError(asError(e)))
+      .finally(() => setRestoring(false));
+  };
+  // a node of a home runs here: a fresh setup would be its second copy
+  const node = found?.find((s) => s.db === "node");
+  const freshBlocked = looks && (found === null || findError !== null || node !== undefined);
   return (
     <Frame title={t("setup.welcome.title")} error={error}>
       <p>{t("setup.welcome.intro", words)}</p>
-      {serverAvailable && found.length > 0 && (
+      {restoredNow && (
+        <p className="mkt-setup__note" role="status">
+          {t("setup.move.restored")}
+        </p>
+      )}
+      {looks && found === null && !findError && (
+        <p role="status">{t("setup.move.reading", words)}</p>
+      )}
+      {findError && (
+        <div className="mkt-setup__choice">
+          <ErrorBox error={findError} />
+          <Button type="button" onClick={() => setFindAttempt((n) => n + 1)}>
+            {t("common.retry")}
+          </Button>
+        </div>
+      )}
+      {serverAvailable && underWay && (
+        <div className="mkt-setup__choice">
+          <h2>{t("setup.move.underWay")}</h2>
+          <p dir="ltr">
+            {sourceName(t, underWay.source)}{" "}
+            <span className="mkt-setup__note">{underWay.source.dir}</span>
+          </p>
+          <p className="mkt-setup__note">{t("setup.move.underWayNote", words)}</p>
+          <div className="mkt-setup__actions">
+            <Button type="button" variant="secondary" loading={restoring} onClick={restore}>
+              {t("setup.move.restore")}
+            </Button>
+            <Button type="button" onClick={() => onMove(underWay.source.id)}>
+              {t("setup.move.goOn")}
+            </Button>
+          </div>
+        </div>
+      )}
+      {serverAvailable && !underWay && found && found.length > 0 && (
         <div className="mkt-setup__choice">
           <h2>{t("setup.move.choice", words)}</h2>
           <p className="mkt-setup__note">{t("setup.move.choiceNote", words)}</p>
@@ -390,12 +466,20 @@ function Welcome({
         <div className="mkt-setup__choice">
           <h2>{t("setup.welcome.thisMachine", words)}</h2>
           <p className="mkt-setup__note">{t("setup.welcome.thisMachineNote", words)}</p>
+          {node && (
+            <p className="mkt-setup__warn">
+              {t("setup.move.freshNode", { ...words, home: node.home ?? "" })}
+            </p>
+          )}
           <Button
             type="button"
-            variant={found.length > 0 ? "secondary" : "primary"}
+            variant={found && found.length > 0 ? "secondary" : "primary"}
+            disabled={freshBlocked}
             onClick={onThisMachine}
           >
-            {found.length > 0 ? t("setup.move.fresh") : t("setup.welcome.thisMachineGo", words)}
+            {found && found.length > 0
+              ? t("setup.move.fresh")
+              : t("setup.welcome.thisMachineGo", words)}
           </Button>
         </div>
       )}
@@ -997,12 +1081,15 @@ function Move({
   platform,
   source,
   back,
+  restored,
   done,
 }: {
   api: SetupApi;
   platform: Platform;
   source: string;
   back: () => void;
+  /** the old install runs again (the move undone): back to the welcome screen */
+  restored: () => void;
   done: () => void;
 }) {
   const { t } = useI18n();
@@ -1012,6 +1099,7 @@ function Move({
   const [progress, setProgress] = useState<StepProgress | null>(null);
   const [error, setError] = useState<StepError | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [restoring, setRestoring] = useState(false);
   // where a failed run goes on from: the move itself is safe to run again
   const resume = useRef<"move" | "models">("move");
   const urls = useRef<{ web_url: string; supervisor_url?: string } | null>(null);
@@ -1089,6 +1177,15 @@ function Move({
     return <Models api={api} platform={platform} next={() => void run("models")} back={back} />;
   }
   if (phase === "approval") return <Approval api={api} platform={platform} done={done} />;
+  // the old install back as it was before the move: its task on again and run
+  const restore = () => {
+    setRestoring(true);
+    api
+      .runStep("adopt", { action: "undo" })
+      .then(() => mounted.current && restored())
+      .catch((e) => mounted.current && setError(asError(e)))
+      .finally(() => mounted.current && setRestoring(false));
+  };
   if (phase) {
     const label =
       phase === "models"
@@ -1098,30 +1195,44 @@ function Move({
           : phase === "finish"
             ? t("setup.move.starting")
             : t("setup.move.moving");
+    // the line under the bar in the app's words, by the step's stage (the
+    // venv bootstrap's and the downloads' own lines are English)
+    const shown = progress && {
+      ...progress,
+      message: codedText(t, "setup.move.progress", progress.stage, undefined, words, ""),
+    };
     return (
       <Frame
         title={t("setup.move.moving")}
         error={error}
         next={
           phase === "failed" ? (
-            <Button type="button" onClick={() => void run(resume.current)}>
-              {t("common.retry")}
-            </Button>
+            <>
+              <Button type="button" variant="secondary" loading={restoring} onClick={restore}>
+                {t("setup.move.restore")}
+              </Button>
+              <Button type="button" onClick={() => void run(resume.current)}>
+                {t("common.retry")}
+              </Button>
+            </>
           ) : undefined
         }
       >
-        {phase !== "failed" && <Progress p={progress} label={label} />}
+        {phase !== "failed" && <Progress p={shown} label={label} />}
+        {phase === "failed" && <p className="mkt-setup__note">{t("setup.move.restoreNote")}</p>}
       </Frame>
     );
   }
 
   const src = plan?.source;
   const role =
-    src?.db === "node"
-      ? t("setup.move.roleNode", { home: src.home ?? "" })
-      : src?.db === "sqlite"
-        ? t("setup.move.roleSqlite")
-        : t("setup.move.rolePostgres", { where: src?.db_where ?? "" });
+    src?.kind === "service"
+      ? t("setup.move.roleService")
+      : src?.db === "node"
+        ? t("setup.move.roleNode", { home: src.home ?? "" })
+        : src?.db === "sqlite"
+          ? t("setup.move.roleSqlite")
+          : t("setup.move.rolePostgres", { where: src?.db_where ?? "" });
   const ports = src?.ports
     ? ["web", "api", "stream"]
         .filter((k) => src.ports?.[k])
@@ -1173,7 +1284,7 @@ function Move({
               <ul className="mkt-setup__list">
                 {plan.items.map((it) => (
                   <li key={it.to}>
-                    {it.what}{" "}
+                    {codedText(t, "setup.move.item", it.code, it.params, words, it.what)}{" "}
                     <span className="mkt-setup__note" dir="ltr">
                       {formatBytes(it.size)}
                     </span>
@@ -1184,12 +1295,18 @@ function Move({
           )}
           {plan.carried.length > 0 && (
             <p className="mkt-setup__note">
-              {t("setup.move.carried", { list: plan.carried.join(", ") })}
+              {t("setup.move.carried", {
+                list: plan.carried
+                  .map((n) => codedText(t, "setup.move.carry", n.code, n.params, words, n.message))
+                  .join(", "),
+              })}
             </p>
           )}
-          {plan.not_carried.map((n) => (
-            <p key={n} className="mkt-setup__warn">
-              {t("setup.move.notCarried", { what: n })}
+          {plan.not_carried.map((n, i) => (
+            <p key={`${n.code}-${i}`} className="mkt-setup__warn">
+              {t("setup.move.notCarried", {
+                what: codedText(t, "setup.move.nocarry", n.code, n.params, words, n.message),
+              })}
             </p>
           ))}
           {plan.warnings.map((n) => (

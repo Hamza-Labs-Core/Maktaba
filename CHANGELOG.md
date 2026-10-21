@@ -51,18 +51,23 @@ don't append a line here; docs-only PRs are exempt.
   `migrate --timeout 0` runs with no time limit.
 - **The Windows app moves in the Maktaba a PC already runs** (Epic 38, story 38.13). Setup finds
   it (a scheduled task that runs `maktaba-server serve` directly, through Maktaba's launcher or
-  from a script; the node installer's workers; a server started by hand) and offers to move it
-  in: the plan shows what is carried and copied, then the move builds the venv while the old
-  install still runs, keeps its task's definition, stops it and disables its task, and carries its
-  settings (addresses, media, path map, transcription, the script's `MAKTABA_*` settings),
-  keys, node config, search index, caches, models and an SQLite database into the app. The app's
-  server removes the old task once it ran healthy; the old folder is kept, and
-  `maktaba-server adopt --undo` runs the old install again (the app's per-user task, and this
-  user's of the old shared name, turned off; the app opens its setup, which offers the move again,
-  and never starts its server over the old install). The plan's findings and the move's failures
-  come with codes, so the screens say them in English or Arabic. `maktaba-server adopt` lists what
-  it finds and `--plan <id>` what a move does. `[server] mdns = "off"` is new (as
-  `serve --no-mdns`), so a moved install keeps that flag.
+  from a script; the node installer's workers; a server started by hand; a Windows service, which
+  it names but cannot move) and offers to move it in: the plan shows what is carried and copied,
+  and refuses a key or node config the app holds already and different before anything stops.
+  The move builds the venv while the old install still runs, keeps its task's definition, stops it
+  (its script's restart loop too, and nothing of it may come back for longer than the loop's delay;
+  never the app's own programs, wherever the old folder is) and disables its task, and carries its
+  settings (addresses, media, path map, transcription, the script's `MAKTABA_*` settings), keys,
+  node config, search index, caches, models and an SQLite database into the app. A move that stops
+  part way can go on, or restore the old install from the screen. The app's server removes the old
+  task once it ran healthy; the old folder is kept, and `maktaba-server adopt --undo` runs the old
+  install again (the app's per-user task, and this user's of the old shared name, turned off; the
+  app opens its setup, which offers the move again, and never starts its server over the old
+  install). Beside a node of a home a fresh setup is refused (check and finish say why): the app
+  would be a second copy of that node. Everything the plan and the move say comes with codes, so
+  the screens say it in English or Arabic. `maktaba-server adopt` lists what it finds and `--plan
+  <id>` what a move does. `[server] mdns = "off"` is new (as `serve --no-mdns`), so a moved install
+  keeps that flag.
 
 ### Changed
 
