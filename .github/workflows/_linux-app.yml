@@ -82,10 +82,17 @@ jobs:
           shellcheck -x tools/release/linux-app/*.sh
           python3 tools/release/linux-app/test_payload_tool.py -v
 
+      # On failure the last lines go into an annotation: readable on the run's
+      # page without signing in (the job log is not).
       - name: Build the app with the payload, and check its bundles
         env:
           VERSION: v0.0.0-ci.${{ github.run_number }}
-        run: make linux-app
+        run: |
+          set -o pipefail
+          if ! make linux-app 2>&1 | tee "$RUNNER_TEMP/linux-app.log"; then
+            echo "::error title=make linux-app::$(grep -v '^\s*$' "$RUNNER_TEMP/linux-app.log" | tail -n 25 | sed -e 's/%/%25/g' | sed -e ':a;N;$!ba;s/\n/%0A/g')"
+            exit 1
+          fi
 
       # an ordinary user with a passwd entry (initdb looks the user up), the
       # runner's uid so the read-only checkout is theirs; coreutils' chroot
