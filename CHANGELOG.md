@@ -29,6 +29,17 @@ don't append a line here; docs-only PRs are exempt.
   (`backups/pre-<old>-to-<new>.dump`); an older release than the one that ran is refused, and so
   is a Postgres of another major than the database's. What a process waits on shows as its
   `detail` in `/processes`. The payload is saved as the one that ran after three healthy minutes.
+- **The Windows app moves in the Maktaba a PC already runs** (Epic 38, story 38.13). Setup finds
+  it (a scheduled task that runs `maktaba-server serve` directly, through Maktaba's launcher or
+  from a script; the node installer's workers; a server started by hand) and offers to move it
+  in: the plan shows what is carried and copied, then the move builds the venv while the old
+  install still runs, keeps its task's definition, stops it and disables its task, and carries its
+  settings (addresses, media, path map, transcription, the script's `MAKTABA_*` settings),
+  keys, node config, search index, caches, models and an SQLite database into the app. The app's
+  server removes the old task once it ran healthy; the old folder is kept, and
+  `maktaba-server adopt --undo` runs the old install again. `maktaba-server adopt` lists what it
+  finds and `--plan <id>` what a move does. `[server] mdns = "off"` is new (as
+  `serve --no-mdns`), so a moved install keeps that flag.
 
 ### Changed
 

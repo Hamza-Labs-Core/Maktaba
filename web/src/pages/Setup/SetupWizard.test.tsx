@@ -333,6 +333,150 @@ describe("SetupWizard", () => {
     expect(screen.getByText(/Maktaba runs in the tray \(beside the clock\)/)).toBeInTheDocument();
   });
 
+  describe("moving the Maktaba a PC runs into the app (Epic 38 story 38.13)", () => {
+    const THIS_PC = {
+      id: String.raw`\Maktaba node (maktaba-local)`,
+      kind: "script",
+      task: String.raw`\Maktaba node (maktaba-local)`,
+      task_enabled: true,
+      dir: String.raw`E:\tv\maktaba-local`,
+      config_found: true,
+      db: "node",
+      home: "Mahmouds-Mac-Studio",
+      ports: { web: "0.0.0.0:8780", api: "127.0.0.1:8781", stream: "0.0.0.0:8782" },
+      pids: [100, 101, 102],
+    };
+    const PLAN = {
+      source: THIS_PC,
+      items: [
+        { what: "stream-signing.key", from: "a", to: "b", size: 1704, done: false },
+        { what: "node config", from: "c", to: "d", size: 587, done: false },
+      ],
+      carried: ["[server]", "[media]", '--no-mdns as [server] mdns = "off"'],
+      not_carried: [],
+      problems: [],
+      warnings: [],
+      need: 2291,
+      free: 10 ** 12,
+    };
+    const URLS = { web_url: "http://127.0.0.1:8780", supervisor_url: "http://127.0.0.1:9103" };
+
+    function adoptStep(plan: unknown = PLAN, move: Handler = () => URLS) {
+      return vi.fn((input: Record<string, unknown>, onProgress?: (p: StepProgress) => void) => {
+        if (input.action === "find") return { sources: [THIS_PC] };
+        if (input.action === "plan") return plan;
+        return move(input, onProgress);
+      });
+    }
+
+    it("offers the move first, shows its plan, moves, downloads the models and starts the server", async () => {
+      const order: string[] = [];
+      const adopt = adoptStep(PLAN, (_, onProgress) => {
+        order.push("move");
+        onProgress?.({ stage: "stop", message: "Stopping the old install" });
+        return URLS;
+      });
+      const models = vi.fn((input: Record<string, unknown>) => {
+        order.push(`models:${String(input.action)}`);
+        return {};
+      });
+      const api = fakeApi({ adopt, models }, { platform: "windows" });
+      renderWizard(api);
+      expect(
+        await screen.findByText("Move the Maktaba this PC runs into the app")
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Start fresh" })).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Move it" }));
+
+      expect(await screen.findByText("A node of the home Mahmouds-Mac-Studio")).toBeInTheDocument();
+      expect(screen.getByText(String.raw`E:\tv\maktaba-local`)).toBeInTheDocument();
+      expect(
+        screen.getByText("web 0.0.0.0:8780, api 127.0.0.1:8781, stream 0.0.0.0:8782")
+      ).toBeInTheDocument();
+      expect(screen.getByText(/stream-signing\.key/)).toBeInTheDocument();
+      expect(screen.getByText("Copied into the app (2.2 KB)")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Move" }));
+
+      expect(await screen.findByRole("heading", { name: "Starting Maktaba" })).toBeInTheDocument();
+      expect(order).toEqual(["move", "models:download"]);
+      expect(adopt).toHaveBeenCalledWith(
+        { action: "move", source: THIS_PC.id },
+        expect.any(Function)
+      );
+      expect(api.finishSetup).toHaveBeenCalledWith(URLS.web_url, URLS.supervisor_url);
+    });
+
+    it("is not looked for on a Mac; Start fresh is the usual setup", async () => {
+      const adopt = adoptStep();
+      const { unmount } = renderWizard(fakeApi({ adopt }));
+      expect(await screen.findByRole("button", { name: "Set up this Mac" })).toBeInTheDocument();
+      expect(adopt).not.toHaveBeenCalled();
+      unmount();
+
+      renderWizard(fakeApi({ adopt, check: () => CHECK }, { platform: "windows" }));
+      await userEvent.click(await screen.findByRole("button", { name: "Start fresh" }));
+      expect(await screen.findByRole("heading", { name: "What will run" })).toBeInTheDocument();
+    });
+
+    it("a problem in the plan stops it before anything changes", async () => {
+      const adopt = adoptStep({
+        ...PLAN,
+        source: { ...THIS_PC, db: "own-postgres", db_where: "127.0.0.1:5432" },
+        problems: ["its library database, the Postgres at 127.0.0.1:5432, is not running"],
+      });
+      renderWizard(fakeApi({ adopt }, { platform: "windows" }));
+      await userEvent.click(await screen.findByRole("button", { name: "Move it" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("is not running");
+      expect(screen.getByText(/stays in the Postgres at 127.0.0.1:5432/)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Move" })).toBeDisabled();
+    });
+
+    it("a move that stopped part way goes on when tried again", async () => {
+      let fail = true;
+      const move = vi.fn((): unknown => {
+        if (fail) throw stepError("adopt_failed", "port 8782 is still in use");
+        return URLS;
+      });
+      const api = fakeApi({ adopt: adoptStep(PLAN, move) }, { platform: "windows" });
+      renderWizard(api);
+      await userEvent.click(await screen.findByRole("button", { name: "Move it" }));
+      await userEvent.click(await screen.findByRole("button", { name: "Move" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "The move stopped part way; Try again goes on from there. port 8782 is still in use"
+      );
+      expect(api.finishSetup).not.toHaveBeenCalled();
+      fail = false;
+      await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+      expect(await screen.findByRole("heading", { name: "Starting Maktaba" })).toBeInTheDocument();
+      expect(move).toHaveBeenCalledTimes(2);
+    });
+
+    it("a gated model asks for the Hugging Face sign-in, then the move goes on", async () => {
+      let gated = true;
+      const models = vi.fn((input: Record<string, unknown>) => {
+        if (input.action === "download" && gated) throw stepError("hf_gated", "sign in first");
+        return {};
+      });
+      const move = vi.fn(() => URLS);
+      const api = fakeApi({ adopt: adoptStep(PLAN, move), models }, { platform: "windows" });
+      renderWizard(api);
+      await userEvent.click(await screen.findByRole("button", { name: "Move it" }));
+      await userEvent.click(await screen.findByRole("button", { name: "Move" }));
+      expect(
+        await screen.findByRole("heading", { name: "Transcription models" })
+      ).toBeInTheDocument();
+      gated = false;
+      await userEvent.type(screen.getByLabelText(/Hugging Face token/), "hf_tok");
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+      expect(await screen.findByRole("heading", { name: "Starting Maktaba" })).toBeInTheDocument();
+      expect(models).toHaveBeenCalledWith(
+        { source: "huggingface", hf_token: "hf_tok" },
+        expect.any(Function)
+      );
+      expect(move).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("install: asks for Login Items approval when macOS turned the item off", async () => {
     const api = fakeApi({ finish: () => ({ web_url: "http://127.0.0.1:8088" }) });
     api.finishSetup.mockResolvedValue("requires_approval" as never);

@@ -64,7 +64,51 @@ export type StepName =
   | "models"
   | "plex"
   | "venv"
-  | "finish";
+  | "finish"
+  | "adopt";
+
+/** A Maktaba this PC runs outside the app (the adopt step, Epic 38 story 38.13). */
+export interface AdoptSource {
+  id: string;
+  kind: "launcher" | "script" | "node-worker" | "process";
+  task?: string;
+  task_enabled: boolean;
+  script?: string;
+  dir: string;
+  config?: string;
+  config_found: boolean;
+  node_config?: string;
+  /** a node's home (its name or address) */
+  home?: string;
+  db: "own-postgres" | "postgres" | "sqlite" | "node";
+  /** host:port of its Postgres */
+  db_where?: string;
+  ports: Record<string, string> | null;
+  keys?: string[];
+  pids?: number[];
+}
+
+/** A file or folder the move copies into the app. */
+export interface AdoptItem {
+  what: string;
+  from: string;
+  to: string;
+  size: number;
+  /** already in the app (left as it is) */
+  done: boolean;
+}
+
+/** What moving a source does (adopt "plan"); problems stop it. */
+export interface AdoptPlan {
+  source: AdoptSource;
+  items: AdoptItem[];
+  carried: string[];
+  not_carried: string[];
+  problems: string[];
+  warnings: string[];
+  need: number;
+  free: number;
+}
 
 export interface SetupApi {
   appState(): Promise<AppState>;

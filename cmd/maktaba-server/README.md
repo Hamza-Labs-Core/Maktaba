@@ -48,7 +48,8 @@ maktaba-server serve
 | `adduser`    | Seed the first admin user (delegates to `maktaba-api`)         |
 | `keys`       | JWT signing-key management (delegates to `maktaba-api`)        |
 | `migrate-from-dev` | Move a Mac running `tools/dev/stack.sh` + Docker Postgres into Maktaba.app (`--dry-run`, `--verify`, `--finalize`; [runbook](../../specs/epics/36-mac-app/migrate-from-dev.md)) |
-| `setup --json --step <name>` | The desktop app's setup screens, one step per run: `status`, `check`, `admin`, `libraries`, `models`, `plex`, `venv`, `finish` ([contract](../../specs/epics/36-mac-app/contract-setup.md)) |
+| `adopt` | The Maktaba a PC runs outside the Windows app: list it, `--plan <id>` (what moving it in does), `--verify` (after the move: removes the old task), `--undo` (runs the old install again); the move itself is setup's `adopt` step ([spec](../../specs/epics/38-windows-app/move-an-install.md)) |
+| `setup --json --step <name>` | The desktop app's setup screens, one step per run: `status`, `check`, `admin`, `libraries`, `models`, `plex`, `venv`, `finish`, `adopt` (find / plan / move / verify an install this PC runs) ([contract](../../specs/epics/36-mac-app/contract-setup.md)) |
 
 **Streaming on a cluster node (Epic 32.1).** On a machine that joined a home
 (Epic 31, `node.json` holds its database credential), `maktaba-server serve

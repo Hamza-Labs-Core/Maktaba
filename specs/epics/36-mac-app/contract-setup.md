@@ -146,6 +146,31 @@ error), and, after a Plex sign-in, stores the Plex server (`maktaba-api plex-lin
 registers the login item (which starts the server), waits for `/processes` to show every role
 running, and opens `web_url`.
 
+### `adopt` — move an install this PC runs into the app (Epic 38 story 38.13)
+Instead of `check` … `finish` when the PC already runs Maktaba outside the app
+([move-an-install.md](../38-windows-app/move-an-install.md)).
+
+- `{"action": "find"}` → `{"sources": [<source>], "move": <record>}`: what runs (`id` — the task's
+  name or `pid:<n>` —, `kind` `launcher` / `script` / `node-worker` / `process`, `dir`, `config`,
+  `db` `node` / `sqlite` / `postgres` / `own-postgres` with `db_where`, `home` for a node, `ports`,
+  `pids`; never a script's environment) and the move recorded in `<state>/moved/move.json`, if any.
+  The welcome screen asks on Windows only (elsewhere nothing is found).
+- `{"action": "plan", "source": id}` → `{"source", "items": [{"what", "from", "to", "size",
+  "done"}], "carried", "not_carried", "problems", "warnings", "need", "free"}`; read only. A move
+  with `problems` is refused.
+- `{"action": "move", "source": id}` → `{"move": <record>, "web_url", "supervisor_url"}`, with
+  `progress` events (`venv` as the venv step's, then `stop`, `copy`, `settings`). The old install is
+  stopped and its task disabled, its files copied, `server.toml` written; what a fresh setup
+  collected is dropped. Run again after a failure it goes on from its last step. The app then runs
+  `models` `{"action": "download"}` (on `hf_gated` the models screen first) and registers the login
+  item, as after `finish`.
+- `{"action": "verify", "wait_sec": n}` → `{"move": <record>}`: the app's API answers and every
+  process runs, then the old task is removed. The server does the same by itself once every role
+  ran healthy for three minutes, so the screens need not wait for it.
+
+Errors: `adopt_find`, `adopt_gone` (field `source`), `adopt_blocked` (the plan's problems),
+`adopt_failed`, `adopt_verify`, and the venv step's.
+
 ## The screens' words
 
 The shell's `app_state` says the platform (`"macos"`, `"windows"`, `"linux"`); the screens say "this

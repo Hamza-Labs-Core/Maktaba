@@ -5,7 +5,10 @@
 // check → admin account → library folders / NAS path map → models (Hugging
 // Face token for the gated Cohere model, or the NAS copy) → optional
 // Plex sign-in → install (pipeline venv, the models download, finish) →
-// the server starts.
+// the server starts. On a PC that already runs Maktaba outside the app
+// (Epic 38 story 38.13) welcome offers to move it in instead: its plan →
+// the move (venv, the old install stopped, its settings, keys and files
+// carried) → the models download → the server starts with them.
 //
 // Every screen runs one `maktaba-server setup --json` step through the
 // SetupApi (lib/desktopSetup.ts). Passwords and tokens are typed by the
@@ -19,6 +22,9 @@ import {
   formatBytes,
   isStepError,
   progressPercent,
+  type AdoptPlan,
+  type AdoptSource,
+  type LoginItem,
   type Platform,
   type SetupApi,
   type StepError,
@@ -57,6 +63,7 @@ export type Screen =
   | "models"
   | "plex"
   | "install"
+  | "move"
   | "starting";
 const ORDER: Screen[] = ["check", "admin", "libraries", "models", "plex", "install"];
 
@@ -156,6 +163,7 @@ export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initi
   const [screen, setScreen] = useState<Screen>(initial);
   const [serverAvailable, setServerAvailable] = useState(true);
   const [platform, setPlatform] = useState<Platform>("macos");
+  const [moveSource, setMoveSource] = useState("");
   useEffect(() => {
     api
       .appState()
@@ -182,6 +190,20 @@ export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initi
           platform={platform}
           serverAvailable={serverAvailable}
           onThisMachine={() => setScreen("check")}
+          onMove={(id) => {
+            setMoveSource(id);
+            setScreen("move");
+          }}
+        />
+      );
+    case "move":
+      return (
+        <Move
+          api={api}
+          platform={platform}
+          source={moveSource}
+          back={() => setScreen("welcome")}
+          done={() => setScreen("starting")}
         />
       );
     case "check":
@@ -203,10 +225,19 @@ export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initi
 
 interface StepProps {
   api: SetupApi;
-  step: number;
+  /** the step counter's place (none in the move) */
+  step?: number;
   platform: Platform;
   next: () => void;
   back: () => void;
+}
+
+/** How the setup screens name a found install: its task, or the server started by hand. */
+function sourceName(
+  t: (key: string, vars?: Record<string, string | number>) => string,
+  s: AdoptSource
+) {
+  return s.task ? s.task.replace(/^\\/, "") : t("setup.move.byHand", { pid: s.pids?.[0] ?? "" });
 }
 
 function Welcome({
@@ -214,17 +245,39 @@ function Welcome({
   platform,
   serverAvailable,
   onThisMachine,
+  onMove,
 }: {
   api: SetupApi;
   platform: Platform;
   serverAvailable: boolean;
   onThisMachine: () => void;
+  onMove: (source: string) => void;
 }) {
   const { t } = useI18n();
   const words = platformWords(t, platform);
   const [url, setUrl] = useState("");
   const [error, setError] = useState<StepError | null>(null);
   const [busy, setBusy] = useState(false);
+  // a Maktaba this PC runs already (its scheduled task, a server started by
+  // hand) moves into the app rather than starting over beside it
+  const [found, setFound] = useState<AdoptSource[]>([]);
+  const [chosen, setChosen] = useState("");
+  useEffect(() => {
+    if (!serverAvailable || platform !== "windows") return;
+    let alive = true;
+    api
+      .runStep<{ sources: AdoptSource[] }>("adopt", { action: "find" })
+      .then((r) => {
+        if (!alive) return;
+        setFound(r.sources ?? []);
+        setChosen(r.sources?.[0]?.id ?? "");
+      })
+      // the PC's tasks could not be read: setting up fresh stays possible
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [api, serverAvailable, platform]);
   const connect = (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -237,12 +290,45 @@ function Welcome({
   return (
     <Frame title={t("setup.welcome.title")} error={error}>
       <p>{t("setup.welcome.intro", words)}</p>
+      {serverAvailable && found.length > 0 && (
+        <div className="mkt-setup__choice">
+          <h2>{t("setup.move.choice", words)}</h2>
+          <p className="mkt-setup__note">{t("setup.move.choiceNote", words)}</p>
+          {found.length === 1 ? (
+            <p dir="ltr">
+              {sourceName(t, found[0])} <span className="mkt-setup__note">{found[0].dir}</span>
+            </p>
+          ) : (
+            <fieldset className="mkt-setup__radios">
+              <legend className="mk-field__label">{t("setup.move.which")}</legend>
+              {found.map((s) => (
+                <label key={s.id} dir="ltr">
+                  <input
+                    type="radio"
+                    name="adopt-source"
+                    checked={chosen === s.id}
+                    onChange={() => setChosen(s.id)}
+                  />{" "}
+                  {sourceName(t, s)} <span className="mkt-setup__note">{s.dir}</span>
+                </label>
+              ))}
+            </fieldset>
+          )}
+          <Button type="button" onClick={() => onMove(chosen)}>
+            {t("setup.move.choiceGo")}
+          </Button>
+        </div>
+      )}
       {serverAvailable && (
         <div className="mkt-setup__choice">
           <h2>{t("setup.welcome.thisMachine", words)}</h2>
           <p className="mkt-setup__note">{t("setup.welcome.thisMachineNote", words)}</p>
-          <Button type="button" onClick={onThisMachine}>
-            {t("setup.welcome.thisMachineGo", words)}
+          <Button
+            type="button"
+            variant={found.length > 0 ? "secondary" : "primary"}
+            onClick={onThisMachine}
+          >
+            {found.length > 0 ? t("setup.move.fresh") : t("setup.welcome.thisMachineGo", words)}
           </Button>
         </div>
       )}
@@ -687,6 +773,47 @@ function Plex({ api, step, next, back }: StepProps) {
   );
 }
 
+/** The background item the OS turned off: on a Mac the user turns it on in
+ * System Settings and comes back; elsewhere the app turns its sign-in task on. */
+function Approval({
+  api,
+  step,
+  platform,
+  done,
+}: {
+  api: SetupApi;
+  step?: number;
+  platform: Platform;
+  done: () => void;
+}) {
+  const { t } = useI18n();
+  const mac = platform === "macos";
+  const turnOn = () =>
+    void api.openLoginItems().then(() => {
+      if (!mac) done();
+    });
+  return (
+    <Frame
+      title={t("setup.install.approvalTitle")}
+      step={step}
+      next={
+        <>
+          <Button type="button" variant={mac ? "secondary" : "primary"} onClick={turnOn}>
+            {t(`setup.install.openLoginItems.${platform}`)}
+          </Button>
+          {mac && (
+            <Button type="button" onClick={done}>
+              {t("setup.install.approved")}
+            </Button>
+          )}
+        </>
+      }
+    >
+      <p>{t(`setup.install.approval.${platform}`)}</p>
+    </Frame>
+  );
+}
+
 function Install({ api, step, platform, next, back }: StepProps) {
   const { t } = useI18n();
   const [phase, setPhase] = useState<"venv" | "models" | "finish" | "approval" | "failed">("venv");
@@ -739,35 +866,8 @@ function Install({ api, step, platform, next, back }: StepProps) {
     })();
   }, [api, attempt]);
 
-  if (phase === "approval") {
-    // a Mac's user turns the login item on in System Settings, then comes back;
-    // elsewhere the app turns its sign-in task on itself
-    const mac = platform === "macos";
-    const turnOn = () =>
-      void api.openLoginItems().then(() => {
-        if (!mac) next();
-      });
-    return (
-      <Frame
-        title={t("setup.install.approvalTitle")}
-        step={step}
-        next={
-          <>
-            <Button type="button" variant={mac ? "secondary" : "primary"} onClick={turnOn}>
-              {t(`setup.install.openLoginItems.${platform}`)}
-            </Button>
-            {mac && (
-              <Button type="button" onClick={next}>
-                {t("setup.install.approved")}
-              </Button>
-            )}
-          </>
-        }
-      >
-        <p>{t(`setup.install.approval.${platform}`)}</p>
-      </Frame>
-    );
-  }
+  if (phase === "approval")
+    return <Approval api={api} step={step} platform={platform} done={next} />;
   const label =
     phase === "finish"
       ? t("setup.install.finishing")
@@ -790,6 +890,218 @@ function Install({ api, step, platform, next, back }: StepProps) {
     >
       <p>{label}</p>
       {phase !== "failed" && <Progress p={progress} label={label} />}
+    </Frame>
+  );
+}
+
+type MovePhase = "moving" | "models" | "signin" | "finish" | "approval" | "failed";
+
+/** Moving the Maktaba this PC runs into the app (Epic 38 story 38.13,
+ * move-an-install.md): its plan, then the move with progress, the models
+ * download (a Hugging Face sign-in when the move brought none), and the
+ * app's server started with what was carried. The server finishes the move
+ * itself once it ran healthy (the old task is removed then). */
+function Move({
+  api,
+  platform,
+  source,
+  back,
+  done,
+}: {
+  api: SetupApi;
+  platform: Platform;
+  source: string;
+  back: () => void;
+  done: () => void;
+}) {
+  const { t } = useI18n();
+  const words = platformWords(t, platform);
+  const [plan, setPlan] = useState<AdoptPlan | null>(null);
+  const [phase, setPhase] = useState<MovePhase | null>(null);
+  const [progress, setProgress] = useState<StepProgress | null>(null);
+  const [error, setError] = useState<StepError | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  // where a failed run goes on from: the move itself is safe to run again
+  const resume = useRef<"move" | "models">("move");
+  const urls = useRef<{ web_url: string; supervisor_url?: string } | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    let alive = true;
+    setError(null);
+    api
+      .runStep<AdoptPlan>("adopt", { action: "plan", source })
+      .then((p) => alive && setPlan(p))
+      .catch((e) => alive && setError(asError(e)));
+    return () => {
+      alive = false;
+    };
+  }, [api, source, attempt]);
+
+  const onProgress = (p: StepProgress) => mounted.current && setProgress(p);
+  const run = async (from: "move" | "models") => {
+    setError(null);
+    resume.current = from;
+    try {
+      if (from === "move") {
+        setPhase("moving");
+        setProgress(null);
+        urls.current = await api.runStep<{ web_url: string; supervisor_url?: string }>(
+          "adopt",
+          { action: "move", source },
+          onProgress
+        );
+        if (!mounted.current) return;
+        resume.current = "models";
+      }
+      setPhase("models");
+      setProgress(null);
+      try {
+        await api.runStep("models", { action: "download" }, onProgress);
+      } catch (e) {
+        if (asError(e).code !== "hf_gated") throw e;
+        if (mounted.current) setPhase("signin");
+        return;
+      }
+      if (!mounted.current) return;
+      setPhase("finish");
+      setProgress(null);
+      const u = urls.current;
+      if (!u) throw new Error("the move gave no server address");
+      const item: LoginItem = await api.finishSetup(u.web_url, u.supervisor_url);
+      if (!mounted.current) return;
+      if (item === "requires_approval") setPhase("approval");
+      else done();
+    } catch (e) {
+      if (!mounted.current) return;
+      setPhase("failed");
+      setError(asError(e));
+    }
+  };
+
+  if (phase === "signin") {
+    return <Models api={api} platform={platform} next={() => void run("models")} back={back} />;
+  }
+  if (phase === "approval") return <Approval api={api} platform={platform} done={done} />;
+  if (phase) {
+    const label =
+      phase === "models"
+        ? t("setup.install.models")
+        : phase === "finish"
+          ? t("setup.move.starting")
+          : t("setup.move.moving");
+    return (
+      <Frame
+        title={t("setup.move.moving")}
+        error={error}
+        next={
+          phase === "failed" ? (
+            <Button type="button" onClick={() => void run(resume.current)}>
+              {t("common.retry")}
+            </Button>
+          ) : undefined
+        }
+      >
+        {phase !== "failed" && <Progress p={progress} label={label} />}
+      </Frame>
+    );
+  }
+
+  const src = plan?.source;
+  const role =
+    src?.db === "node"
+      ? t("setup.move.roleNode", { home: src.home ?? "" })
+      : src?.db === "sqlite"
+        ? t("setup.move.roleSqlite")
+        : t("setup.move.rolePostgres", { where: src?.db_where ?? "" });
+  const ports = src?.ports
+    ? ["web", "api", "stream"]
+        .filter((k) => src.ports?.[k])
+        .map((k) => `${k} ${src.ports?.[k]}`)
+        .join(", ")
+    : "";
+  return (
+    <Frame
+      title={t("setup.move.title")}
+      error={error}
+      onBack={back}
+      next={
+        error && !plan ? (
+          <Button type="button" onClick={() => setAttempt((n) => n + 1)}>
+            {t("common.retry")}
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            onClick={() => void run("move")}
+            disabled={!plan || plan.problems.length > 0}
+          >
+            {t("setup.move.go")}
+          </Button>
+        )
+      }
+    >
+      {!plan && !error && <p role="status">{t("setup.move.reading", words)}</p>}
+      {plan && src && (
+        <>
+          <p>{t("setup.move.intro", words)}</p>
+          <dl className="mkt-setup__facts">
+            <dt>{t("setup.move.what")}</dt>
+            <dd dir="ltr">{sourceName(t, src)}</dd>
+            <dt>{t("setup.move.folder")}</dt>
+            <dd dir="ltr">{src.dir}</dd>
+            <dt>{t("setup.move.role")}</dt>
+            <dd>{role}</dd>
+            {ports && (
+              <>
+                <dt>{t("setup.move.ports")}</dt>
+                <dd dir="ltr">{ports}</dd>
+              </>
+            )}
+          </dl>
+          {plan.items.length > 0 && (
+            <>
+              <h2>{t("setup.move.copied", { size: formatBytes(plan.need) })}</h2>
+              <ul className="mkt-setup__list">
+                {plan.items.map((it) => (
+                  <li key={it.to}>
+                    {it.what}{" "}
+                    <span className="mkt-setup__note" dir="ltr">
+                      {formatBytes(it.size)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {plan.carried.length > 0 && (
+            <p className="mkt-setup__note">
+              {t("setup.move.carried", { list: plan.carried.join(", ") })}
+            </p>
+          )}
+          {plan.not_carried.map((n) => (
+            <p key={n} className="mkt-setup__warn">
+              {t("setup.move.notCarried", { what: n })}
+            </p>
+          ))}
+          {plan.warnings.map((w) => (
+            <p key={w} className="mkt-setup__warn">
+              {w}
+            </p>
+          ))}
+          {plan.problems.map((p) => (
+            <p key={p} className="mkt-setup__warn" role="alert">
+              {p}
+            </p>
+          ))}
+          <p className="mkt-setup__note">{t("setup.move.kept")}</p>
+        </>
+      )}
     </Frame>
   );
 }
