@@ -3493,6 +3493,16 @@
      "default": 60,
      "minimum": 0,
      "maximum": 3600
+    },
+    {
+     "name": "guide_image_max_age_s",
+     "kind": "int",
+     "group": "Guide",
+     "label": "Guide images kept for (s)",
+     "help": "How long Plex and other guide readers may keep a guide image (a channel's logo, a programme's poster) before asking for it again. 0: they ask every time.",
+     "default": 86400,
+     "minimum": 0,
+     "maximum": 2592000
     }
    ]
   },

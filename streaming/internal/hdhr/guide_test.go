@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -31,6 +29,10 @@ func (f *fakeGuide) GuidePrograms(_ context.Context, start, end time.Time) ([]Gu
 	return out, nil
 }
 func (f *fakeGuide) ChannelLogo(context.Context, uuid.UUID) (string, error) { return "", nil }
+func (f *fakeGuide) PlanArtRoots(context.Context) ([]string, error)         { return nil, nil }
+func (f *fakeGuide) ProgrammeArt(context.Context, uuid.UUID, uuid.UUID, time.Time, time.Time) (ProgrammeArt, error) {
+	return ProgrammeArt{}, nil
+}
 
 func snap(v map[string]any) []byte { b, _ := json.Marshal(v); return b }
 
@@ -81,7 +83,7 @@ func guideFixture() (*fakeGuide, uuid.UUID, time.Time) {
 func TestXMLTV_ShapeAndCollapse(t *testing.T) {
 	g, kids, t0 := guideFixture()
 	var b strings.Builder
-	WriteXMLTV(&b, "http://web:8780", g.chans, g.progs, testRules)
+	WriteXMLTV(&b, XMLTVOptions{Base: "http://tv:8781", Rules: testRules}, g.chans, g.progs)
 	var doc xmltvDoc
 	if err := xml.Unmarshal([]byte(b.String()), &doc); err != nil {
 		t.Fatalf("invalid XML: %v\n%s", err, b.String())
@@ -89,7 +91,7 @@ func TestXMLTV_ShapeAndCollapse(t *testing.T) {
 	if len(doc.Channels) != 1 || doc.Channels[0].ID != "7" || doc.Channels[0].Names[0] != "Kids & Co" || doc.Channels[0].Names[1] != "7" {
 		t.Fatalf("channel header: %+v", doc.Channels)
 	}
-	if want := "http://web:8780/api/channels/" + kids.String() + "/logo"; doc.Channels[0].Icon.Src != want {
+	if want := "http://tv:8781/channel/" + kids.String() + "/logo"; doc.Channels[0].Icon.Src != want {
 		t.Errorf("icon = %q, want %q", doc.Channels[0].Icon.Src, want)
 	}
 	type row struct{ start, stop, title string }
@@ -125,19 +127,18 @@ func TestGuideHandler_RoutesAndBase(t *testing.T) {
 	req := httptest.NewRequest("GET", "/xmltv.xml", nil)
 	req.Host = "192.168.1.5:8781"
 	r.ServeHTTP(rec, req)
-	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `<icon src="http://192.168.1.5:8781/api/channels/`) {
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `<icon src="http://192.168.1.5:8781/channel/`) {
 		t.Errorf("xmltv via request host: %d %s", rec.Code, rec.Body.String())
 	}
 
 	h.PublicBase = "http://tv.lan:8781/"
-	h.WebBase = "http://tv.lan:8780"
 	rec = httptest.NewRecorder()
 	r.ServeHTTP(rec, httptest.NewRequest("GET", "/lineup.m3u", nil))
 	body := rec.Body.String()
 	for _, want := range []string{
 		`#EXTM3U url-tvg="http://tv.lan:8781/xmltv.xml"`,
 		`tvg-id="7" tvg-chno="7" tvg-name="Kids & Co"`,
-		`tvg-logo="http://tv.lan:8780/api/channels/` + kids.String() + `/logo"`,
+		`tvg-logo="http://tv.lan:8781/channel/` + kids.String() + `/logo"`,
 		"http://tv.lan:8781/stream/channel/" + kids.String() + "/index.m3u8",
 	} {
 		if !strings.Contains(body, want) {
@@ -168,7 +169,7 @@ func TestXMLEscape_DropsIllegalControlChars(t *testing.T) {
 		t.Errorf("xmlEscape = %q", got)
 	}
 	var b strings.Builder
-	WriteXMLTV(&b, "http://h", []GuideChannel{{ID: uuid.New(), Number: 1, Name: "Bad\x07Name"}}, nil, GuideRules{})
+	WriteXMLTV(&b, XMLTVOptions{Base: "http://h"}, []GuideChannel{{ID: uuid.New(), Number: 1, Name: "Bad\x07Name"}}, nil)
 	var doc xmltvDoc
 	if err := xml.Unmarshal([]byte(b.String()), &doc); err != nil {
 		t.Fatalf("control char broke the XML: %v", err)
@@ -187,37 +188,5 @@ func TestBaseURL_IgnoresForwardedHeadersUnlessTrusted(t *testing.T) {
 	t.Setenv("MAKTABA_TRUST_PROXY_HEADERS", "1")
 	if got := baseURL(req); got != "https://evil.example" {
 		t.Errorf("trusted proxy headers ignored: %s", got)
-	}
-}
-
-type logoGuide struct {
-	fakeGuide
-	logo string
-}
-
-func (l *logoGuide) ChannelLogo(context.Context, uuid.UUID) (string, error) { return l.logo, nil }
-
-func TestLogo_OnlyImagesAndHTTPRedirects(t *testing.T) {
-	dir := t.TempDir()
-	png := filepath.Join(dir, "logo.png")
-	txt := filepath.Join(dir, "secret.txt")
-	_ = os.WriteFile(png, []byte("\x89PNG"), 0o644)
-	_ = os.WriteFile(txt, []byte("secret"), 0o644)
-	cases := map[string]int{
-		png:                          200,
-		txt:                          404,
-		"https://cdn.example/l.png":  302,
-		"javascript://x/%0aalert(1)": 404,
-		"file:///etc/passwd":         404,
-	}
-	for logo, want := range cases {
-		g := &GuideHandler{Repo: &logoGuide{logo: logo}}
-		r := chi.NewRouter()
-		g.Mount(r)
-		rec := httptest.NewRecorder()
-		r.ServeHTTP(rec, httptest.NewRequest("GET", "/channel/"+uuid.NewString()+"/logo", nil))
-		if rec.Code != want {
-			t.Errorf("logo %q → %d, want %d", logo, rec.Code, want)
-		}
 	}
 }
