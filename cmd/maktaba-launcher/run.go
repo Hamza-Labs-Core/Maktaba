@@ -35,6 +35,10 @@ type Config struct {
 	Bundle string
 	// Args are passed to `maktaba-server serve` after "serve".
 	Args []string
+	// StopEvent names a Windows event whose signal ends Run like a stop
+	// request (app-bundle mode: StopEventName, stopevent_windows.go). Empty:
+	// none; elsewhere it is ignored.
+	StopEvent string
 
 	PendingTimeout time.Duration // no confirmation within this → previous (15 min)
 	LoopWindow     time.Duration // boot-loop window (10 min)
@@ -98,9 +102,10 @@ type launcher struct {
 	failures     []time.Time
 }
 
-// Run starts the current release and keeps it running until ctx ends (a
-// stop request), then stops it and returns nil. It returns an error only
-// when it cannot run at all (another launcher holds the install, no layout).
+// Run starts the current release and keeps it running until ctx ends or
+// cfg.StopEvent is set (a stop request), then stops it and returns nil. It
+// returns an error only when it cannot run at all (another launcher holds the
+// install, no layout).
 func Run(ctx context.Context, cfg Config) error {
 	cfg.defaults()
 	l := layout.New(cfg.Root)
@@ -116,6 +121,14 @@ func Run(ctx context.Context, cfg Config) error {
 	defer ln.log.Close()
 	if cfg.Bundle == "" {
 		removeOldSelf(l)
+	}
+	if cfg.StopEvent != "" {
+		var release func()
+		ctx, release, err = watchStopEvent(ctx, cfg.StopEvent, ln.log)
+		if err != nil { // still stoppable by a signal or the agent's job; the server runs on
+			ln.log.Event("launcher_stop_event_error", "", map[string]any{"name": cfg.StopEvent, "err": err.Error()})
+		}
+		defer release()
 	}
 	return ln.loop(ctx)
 }

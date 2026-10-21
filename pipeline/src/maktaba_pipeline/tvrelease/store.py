@@ -21,6 +21,7 @@ __all__ = [
     "Change",
     "StateConflict",
     "create_change",
+    "draft_with_digest",
     "event",
     "get_change",
     "in_flight",
@@ -98,16 +99,28 @@ async def in_flight(db: Any) -> Change | None:
     return None if row is None else _decode(row)
 
 
-async def open_draft(db: Any, kind: str) -> Change | None:
-    """The open draft of a producer kind (``write_channels``, ``editor``, ``settings``,
-    ``schedule``): at most one per kind (design 11.2)."""
+async def open_draft(db: Any) -> Change | None:
+    """The open change: the newest ``draft`` no one approved. Every update to the TV
+    joins it, whatever its kind (``merge``'s rules); an approved draft, like a change
+    in flight, takes no more updates."""
     for row in await db.fetch(
-        "SELECT * FROM tv_changes WHERE state = 'draft' ORDER BY created_at DESC"
+        "SELECT * FROM tv_changes WHERE state = 'draft' ORDER BY created_at DESC, number DESC"
     ):
         ch = _decode(row)
-        if ch.source.get("kind") == kind:
+        if not ch.row.get("approved_by"):
             return ch
     return None
+
+
+async def draft_with_digest(db: Any, digest: str) -> Change | None:
+    """The draft holding the channel plan ``digest`` (approved or not): the queue's
+    Apply re-runs that very plan into the change its Approve was given to."""
+    row = await db.fetchrow(
+        "SELECT * FROM tv_changes WHERE state = 'draft' AND digest = $1"
+        " ORDER BY created_at DESC LIMIT 1",
+        digest,
+    )
+    return None if row is None else _decode(row)
 
 
 async def create_change(

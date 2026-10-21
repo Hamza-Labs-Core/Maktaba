@@ -232,7 +232,12 @@ def look(plan: dict[str, Any], key: str, tv: MaktabaTvConfig) -> tuple[str | Non
 def _look_rules(tv: MaktabaTvConfig) -> dict[str, Any]:
     """The look settings that come from rules ``tv``, not the plan's art."""
     return {
-        "loudnorm": {"enabled": bool(tv.loudnorm), "target_lufs": float(tv.loudnorm_target_lufs)},
+        "loudnorm": {
+            "enabled": bool(tv.loudnorm),
+            "filter": str(tv.loudnorm_mode),
+            "target_lufs": float(tv.loudnorm_target_lufs),
+            "expansion": float(tv.speechnorm_expansion),
+        },
         "watermark_skip_filler": bool(tv.watermark_skip_filler),
     }
 

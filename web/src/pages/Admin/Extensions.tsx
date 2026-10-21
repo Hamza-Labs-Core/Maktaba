@@ -22,6 +22,7 @@ import { useAction } from "../../components/queue/useAction";
 import { PlexSignin } from "./PlexSignin";
 import { CloudflareRemote, RemoteTestLines } from "./CloudflareRemote";
 import type { RemoteTestResult } from "../../lib/tvRemoteApi";
+import { TitleRow } from "../../help/HelpLink";
 import "../../styles/queue.css";
 
 type Values = Record<string, string | number | boolean | null>;
@@ -272,7 +273,9 @@ function ExtensionsInner() {
     <section className="mkt-page mkt-q">
       <header className="mkt-q-detailhead">
         <div>
-          <h1>{t("queue.ext.title")}</h1>
+          <TitleRow>
+            <h1>{t("queue.ext.title")}</h1>
+          </TitleRow>
           <p className="mkt-q-muted">{t("queue.ext.intro")}</p>
         </div>
         <Link className="mkt-q-linkbtn" to="/queue">

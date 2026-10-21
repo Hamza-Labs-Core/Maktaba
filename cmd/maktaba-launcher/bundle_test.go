@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,6 +28,116 @@ func TestBundlePayload(t *testing.T) {
 		got, ok := bundlePayload(filepath.FromSlash(tc.dir))
 		if ok != tc.ok || got != filepath.FromSlash(tc.want) {
 			t.Errorf("bundlePayload(%q) = %q, %v; want %q, %v", tc.dir, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
+// mkWinInstall lays out the Windows app's marker files under install:
+// Maktaba.exe, server/payload.json and an empty server/bin. It returns the
+// payload directory.
+func mkWinInstall(t *testing.T, install string) string {
+	t.Helper()
+	payload := filepath.Join(install, "server")
+	if err := os.MkdirAll(filepath.Join(payload, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{filepath.Join(install, "Maktaba.exe"), filepath.Join(payload, "payload.json")} {
+		if err := os.WriteFile(f, []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return payload
+}
+
+// TestBundlePayloadWindowsLayout: <install>/server/bin is a payload only with
+// payload.json beside bin and Maktaba.exe beside server (the rule is the
+// files', so it runs on every OS).
+func TestBundlePayloadWindowsLayout(t *testing.T) {
+	t.Parallel()
+	install := filepath.Join(t.TempDir(), "Maktaba")
+	payload := mkWinInstall(t, install)
+	bin := filepath.Join(payload, "bin")
+	if got, ok := bundlePayload(bin); !ok || got != payload {
+		t.Fatalf("bundlePayload(%q) = %q, %v; want %q, true", bin, got, ok, payload)
+	}
+	if got, ok := bundlePayload(bin + string(filepath.Separator)); !ok || got != payload {
+		t.Fatalf("with a trailing separator: %q, %v", got, ok)
+	}
+
+	notDetected := func(what, dir string) {
+		t.Helper()
+		if got, ok := bundlePayload(dir); ok {
+			t.Errorf("%s: bundlePayload(%q) = %q, true; want not a payload", what, dir, got)
+		}
+	}
+	noPayloadJSON := mkWinInstall(t, filepath.Join(t.TempDir(), "Maktaba"))
+	if err := os.Remove(filepath.Join(noPayloadJSON, "payload.json")); err != nil {
+		t.Fatal(err)
+	}
+	notDetected("no payload.json", filepath.Join(noPayloadJSON, "bin"))
+
+	noShell := mkWinInstall(t, filepath.Join(t.TempDir(), "Maktaba"))
+	if err := os.Remove(filepath.Join(filepath.Dir(noShell), "Maktaba.exe")); err != nil {
+		t.Fatal(err)
+	}
+	notDetected("no Maktaba.exe", filepath.Join(noShell, "bin"))
+
+	shellIsDir := mkWinInstall(t, filepath.Join(t.TempDir(), "Maktaba"))
+	exe := filepath.Join(filepath.Dir(shellIsDir), "Maktaba.exe")
+	if err := os.Remove(exe); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(exe, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	notDetected("Maktaba.exe is a folder", filepath.Join(shellIsDir, "bin"))
+
+	// the same files under other folder names
+	other := filepath.Join(t.TempDir(), "Maktaba")
+	for _, f := range []string{filepath.Join(other, "Maktaba.exe"), filepath.Join(other, "payload", "payload.json")} {
+		if err := os.MkdirAll(filepath.Dir(f), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(f, []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	notDetected("payload folder not named server", filepath.Join(other, "payload", "bin"))
+	notDetected("bin folder not named bin", filepath.Join(payload, "tools"))
+	notDetected("the install folder itself", install)
+	notDetected("the payload folder itself", payload)
+}
+
+func TestAppStateRoot(t *testing.T) {
+	t.Parallel()
+	env := func(kv ...string) func(string) string {
+		m := map[string]string{}
+		for i := 0; i+1 < len(kv); i += 2 {
+			m[kv[i]] = kv[i+1]
+		}
+		return func(k string) string { return m[k] }
+	}
+	winHome, macHome := `C:\Users\amira`, "/Users/amira"
+	local := `C:\Users\amira\AppData\Local`
+	for _, tc := range []struct {
+		name, flag string
+		getenv     func(string) string
+		goos, home string
+		want       string
+	}{
+		{"windows: --root", `D:\state`, env("LOCALAPPDATA", local, layout.EnvInstallRoot, `E:\env`), "windows", winHome, `D:\state`},
+		{"windows: $MAKTABA_INSTALL_ROOT", "", env("LOCALAPPDATA", local, layout.EnvInstallRoot, `E:\env`), "windows", winHome, `E:\env`},
+		{"windows: %LOCALAPPDATA%", "", env("LOCALAPPDATA", local), "windows", winHome, filepath.Join(local, "Maktaba")},
+		{"windows: no LOCALAPPDATA", "", env(), "windows", winHome, filepath.Join(winHome, "AppData", "Local", "Maktaba")},
+		{"windows: nothing", "", env(), "windows", "", "."},
+		{"darwin: --root", "/tmp/state", env(layout.EnvInstallRoot, "/env"), "darwin", macHome, "/tmp/state"},
+		{"darwin: $MAKTABA_INSTALL_ROOT", "", env(layout.EnvInstallRoot, "/env"), "darwin", macHome, "/env"},
+		{"darwin: Application Support", "", env("LOCALAPPDATA", local), "darwin", macHome,
+			filepath.Join(macHome, "Library", "Application Support", "Maktaba")},
+		{"darwin: no home", "", env(), "darwin", "", "."},
+	} {
+		if got := appStateRootFor(tc.flag, tc.getenv, tc.goos, tc.home); got != tc.want {
+			t.Errorf("%s: appStateRootFor = %q, want %q", tc.name, got, tc.want)
 		}
 	}
 }
@@ -91,9 +202,23 @@ func TestBundleCLI(t *testing.T) {
 		!strings.Contains(out.String(), `"updates": "with the app"`) {
 		t.Fatalf("--status: code %d, out %q", code, out.String())
 	}
+	var st BundleStatus
+	if err := json.Unmarshal(out.Bytes(), &st); err != nil {
+		t.Fatalf("--status --json: %v\n%s", err, out.String())
+	}
+	// the platform's paths: backslashes and maktaba-server.exe on Windows
+	if want := filepath.Join(bundle, "bin", layout.Exe("maktaba-server")); st.AppBundle != bundle || st.Server != want ||
+		st.Root != root || st.LauncherLog != layout.New(root).LauncherLog() || st.StopEvent != stopEventName {
+		t.Fatalf("--status --json = %+v; want server %q", st, want)
+	}
+	out.Reset()
+	if code := run([]string{"--app-bundle", bundle, "--root", root, "--status"}, &out, &errb); code != exitOK ||
+		!strings.Contains(out.String(), "server:     "+st.Server+"\n") || !strings.Contains(out.String(), "state:      "+root+"\n") {
+		t.Fatalf("--status: code %d, out %q", code, out.String())
+	}
 	errb.Reset()
 	if code := run([]string{"--app-bundle", t.TempDir(), "--root", root, "serve"}, &out, &errb); code != exitFailure ||
-		!strings.Contains(errb.String(), "no bin/maktaba-server") {
+		!strings.Contains(errb.String(), "no "+filepath.Join("bin", layout.Exe("maktaba-server"))) {
 		t.Fatalf("serve without a payload: code %d, stderr %q", code, errb.String())
 	}
 }

@@ -229,3 +229,39 @@ async def test_a_repaired_file_is_not_downloaded_again(
     again = await repair_job(db, rt, w.lib)
     # the repaired file's probe is asked again, not failed any more: nothing left to fetch
     assert again["state"] == "done" and tools.downloads() == ["yt000000001"]
+
+
+async def ask_redownload(db: Any, video: UUID) -> None:
+    await db.execute(
+        "INSERT INTO item_requests (video_id, action, requested_by) VALUES ($1, 'redownload', 'u')",
+        str(video),
+    )
+
+
+@pytest.mark.asyncio
+async def test_an_admins_redownload_runs_with_repair_off_and_a_missing_file(
+    db: Database, tools: Tools, tmp_path: Path
+) -> None:
+    """Epic 40: the failures page's Re-download, whatever the switch; the file may be gone."""
+    w = await world(db, tmp_path)
+    (tmp_path / "e.mp4").unlink()  # the done one is missing from the share now
+    await ask_redownload(db, w.fine)
+    await ask_redownload(db, w.no_id)
+    await db.execute(
+        "UPDATE videos SET missing_confirmed_at = $2 WHERE id = $1", str(w.fine), to_ts(db, now())
+    )
+    rt = await setup_runtime(db, [])
+    job = await repair_job(db, rt, w.lib)
+    s = summary(job)
+    assert job["state"] == "done", error_of(job)
+    assert s["enabled"] is False and s["requested"] == 2
+    assert tools.downloads() == ["yt000000005"]  # only what was asked, no broken-probe sweep
+    assert (tmp_path / "e.mp4").read_bytes() == b"good video"
+    assert (await state_of(db, w.fine))["state"] == "repaired"
+    open_ = await db.fetchval("SELECT count(*) FROM item_requests WHERE done_at IS NULL")
+    assert open_ == 0
+    assert (
+        await db.fetchval("SELECT missing_confirmed_at FROM videos WHERE id = $1", str(w.fine))
+        is None
+    )
+    assert "no YouTube id" in (await state_of(db, w.no_id))["message"]

@@ -91,7 +91,7 @@ func (w *stagingWorld) list() []Pool {
 
 func (w *stagingWorld) draft() *tvchange.Change {
 	w.t.Helper()
-	c, err := tvchange.NewDrafts(w.db).Open(context.Background(), tvchange.SourceEditor)
+	c, err := tvchange.NewDrafts(w.db).Open(context.Background())
 	if err != nil {
 		w.t.Fatal(err)
 	}

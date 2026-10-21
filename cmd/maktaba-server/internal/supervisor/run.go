@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"sync"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
 )
 
 // Supervisor runs a set of child processes and keeps each one alive on
@@ -37,6 +39,8 @@ type Supervisor struct {
 	fatalOnce sync.Once
 	// onExit, when set, hears every child exit (the TV front door's slot report).
 	onExit func(Process, ExitInfo)
+	// llm, when set, is the model server's state (WithLLM).
+	llm func() llmserver.Status
 }
 
 // child is one supervised role. Everything but proc is guarded by s.mu.
