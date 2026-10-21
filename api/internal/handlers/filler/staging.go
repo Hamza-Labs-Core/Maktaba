@@ -40,7 +40,7 @@ func (h *Handler) editorDraft(ctx context.Context) *tvchange.Change {
 	if h.Drafts == nil {
 		return nil
 	}
-	c, err := h.Drafts.Open(ctx, tvchange.SourceEditor)
+	c, err := h.Drafts.Open(ctx)
 	if err != nil {
 		return nil
 	}
