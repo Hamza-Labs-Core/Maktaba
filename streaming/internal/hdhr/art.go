@@ -375,10 +375,26 @@ func ThumbnailRootFromEnv() string {
 	return filepath.Join(home, ".maktaba", "cache", "thumbnails")
 }
 
-// DataDirFromEnv is MAKTABA_DATA_DIR, else /var/lib/maktaba (the API's).
+// DataDirFromEnv is the API's data volume, found as the API finds it:
+// MAKTABA_DATA_DIR (maktaba-server sets it to its data_dir), else
+// /var/lib/maktaba for a system service (root), else the user's XDG data dir
+// ($XDG_DATA_HOME/maktaba, ~/.local/share/maktaba).
 func DataDirFromEnv() string {
 	if v := strings.TrimSpace(os.Getenv("MAKTABA_DATA_DIR")); v != "" {
 		return v
+	}
+	home, _ := os.UserHomeDir()
+	return defaultDataDir(os.Geteuid(), os.Getenv("XDG_DATA_HOME"), home)
+}
+
+func defaultDataDir(euid int, xdgDataHome, home string) string {
+	switch {
+	case euid == 0:
+		return "/var/lib/maktaba"
+	case filepath.IsAbs(xdgDataHome):
+		return filepath.Join(xdgDataHome, "maktaba")
+	case home != "":
+		return filepath.Join(home, ".local", "share", "maktaba")
 	}
 	return "/var/lib/maktaba"
 }

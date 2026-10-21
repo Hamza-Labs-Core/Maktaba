@@ -34,6 +34,15 @@ func ChildEnv(role Role, cfg config.Config) []string {
 	add("DATABASE_URL", cfg.Database.URL)
 	add("MAKTABA_DATABASE_URL", cfg.Database.URL)
 
+	// The data volume (data_dir): the api keeps the Sigstore root it refreshes
+	// (<data_dir>/sigstore) and uploaded channel art there, and the streaming
+	// server reads that art; left to themselves they would look in
+	// /var/lib/maktaba, which a user's server cannot write. An operator's own
+	// MAKTABA_DATA_DIR is kept.
+	if os.Getenv("MAKTABA_DATA_DIR") == "" {
+		add("MAKTABA_DATA_DIR", cfg.Server.DataDir)
+	}
+
 	// Auto-run migrations before the api binds (the api honours this),
 	// so a fresh single-binary install doesn't need a separate
 	// `migrate up` step before the first `serve`.
