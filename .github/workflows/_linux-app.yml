@@ -6,7 +6,8 @@
 # does (`maktaba-server runtime install`, every file checked) and runs check.sh on the
 # copy; check.sh also runs in minimal containers of the distributions the app supports
 # (the payload mounted read-only, an ordinary user), so a library the payload assumes but
-# a system lacks fails here. Unsigned: the updater signature comes with desktop-release.yml.
+# a system lacks fails here. Then e2e.sh runs the server the way the app installs it, as the
+# runner's systemd user unit. Unsigned: the updater signature comes with desktop-release.yml.
 
 name: Linux app
 
@@ -103,6 +104,14 @@ jobs:
                 bash tools/release/linux-app/check.sh --payload build/linux-app/server'
             echo "::endgroup::"
           done
+
+      # Epic 39 story 39.11: the server as the app installs it (runtime copy, venv, the
+      # systemd user unit) runs every role on 127.0.0.1, and comes back from a restart,
+      # a SIGKILL of the launcher and a pause. Linger starts the runner's user manager.
+      - name: End to end on systemd
+        run: |
+          sudo loginctl enable-linger "$USER"
+          tools/release/linux-app/e2e.sh --payload build/linux-app/server
 
       - name: Sizes
         if: always()
