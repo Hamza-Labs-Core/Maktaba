@@ -20,6 +20,12 @@ don't append a line here; docs-only PRs are exempt.
   the window restarting. Setup steps and `schtasks` start without a console window, an update
   stops the server before the installer replaces its files, and the installer's hooks get
   `--server-start`, `--server-stop` and `--server-remove`.
+- **The tray says what the server waits on** (Epic 38, story 38.4). While it starts, the tray's
+  status line and tooltip, and the window's starting screen, say what it waits on (the
+  transcription tools being installed, the backup before an update), or why that failed. On
+  Windows and Linux the tray icon carries a status badge (green running, amber starting, red a
+  problem, grey paused or stopped, blue an update ready), and on Windows a left click opens the
+  window (the menu is on the right button).
 - **The desktop app's setup works end to end** (Epic 38, story 38.6; the Mac, Windows and Linux
   alike). `maktaba-server setup --json` gains every step the setup screens run: `check` (what will
   run, memory and disk), `admin` (the password is hashed as it is typed, by the new

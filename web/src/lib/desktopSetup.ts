@@ -33,9 +33,12 @@ export type AppState = AppTarget & {
   reset?: boolean;
 };
 
-export type ServerStatus =
+/** The server's status; `detail` is what it waits on while it starts (the
+ * venv being built, the backup before an update) or why that failed. */
+export type ServerStatus = (
   | { kind: "setup_needed" | "paused" | "stopped" | "starting" | "running" }
-  | { kind: "problem"; roles: string[] };
+  | { kind: "problem"; roles: string[] }
+) & { detail?: string };
 
 export interface StepProgress {
   stage: string;

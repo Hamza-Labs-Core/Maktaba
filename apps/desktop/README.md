@@ -159,6 +159,13 @@ and the tray menu are the Mac's; what differs is how the server starts:
   NSIS hooks: stop the server before files are replaced, start it after, remove the task on
   uninstall). An update stops the server, lets the Tauri updater run the installer, and the
   installer's hook starts it again.
+- **The tray icon** (story 38.4) carries a status badge drawn at run time on the app icon
+  (`tray::badge`: green running, amber starting, red a problem, grey paused or stopped, blue
+  an update ready; the Mac's menu-bar item stays plain). A left click opens the window, the
+  right button the menu. While the server starts, the status line and the tooltip (up to
+  Windows' 127 characters) say what it waits on: each process's `detail` in `/processes`
+  (the venv being built, the backup before an update, or why that failed), which the
+  window's starting screen shows too.
 - Every program the shell starts (`schtasks`, the setup steps) is created without a window.
 
 `cargo test` on Windows runs the agent's loop against a stand-in launcher; CI also registers

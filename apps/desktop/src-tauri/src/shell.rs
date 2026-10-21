@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{
+    image::Image,
     ipc::Channel,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
@@ -22,7 +23,7 @@ use tauri_plugin_updater::UpdaterExt;
 use crate::agent::{self, Action, BundlePaths, LoginItem};
 use crate::mode::{self, AppMode, Target};
 use crate::setup::{self, Progress, StepError};
-use crate::status::{self, ServerStatus};
+use crate::status::{self, ServerStatus, StatusView};
 use crate::tray::{self, Entry};
 
 const TRAY_ID: &str = "main";
@@ -39,8 +40,12 @@ pub struct Shell {
     paused: AtomicBool,
     started_at: Mutex<Instant>,
     update_ready: AtomicBool,
-    status: Mutex<ServerStatus>,
+    status: Mutex<StatusView>,
     menu: Mutex<Vec<Entry>>,
+    /// The badge the tray icon shows now (tray::badge_color), and the plain
+    /// icon it is drawn on (RGBA, width, height). Not on a Mac.
+    badge: Mutex<Option<[u8; 3]>>,
+    plain_icon: Mutex<Option<(Vec<u8>, u32, u32)>>,
     /// "Connect to another Maktaba…" was chosen: show setup until a mode is saved.
     force_setup: AtomicBool,
     /// One refresh at a time, so tray menus are queued in the order computed.
@@ -71,8 +76,13 @@ impl Shell {
             paused: AtomicBool::new(agent::paused_flag()),
             started_at: Mutex::new(Instant::now()),
             update_ready: AtomicBool::new(false),
-            status: Mutex::new(ServerStatus::Starting),
+            status: Mutex::new(StatusView {
+                status: ServerStatus::Starting,
+                detail: None,
+            }),
             menu: Mutex::new(Vec::new()),
+            badge: Mutex::new(None),
+            plain_icon: Mutex::new(None),
             force_setup: AtomicBool::new(false),
             refresh_lock: Mutex::new(()),
         }
@@ -129,21 +139,30 @@ impl Shell {
         agent::set_paused_flag(true);
     }
 
-    fn compute_status(&self) -> ServerStatus {
+    fn compute_status(&self) -> StatusView {
         let Some(AppMode::Server { supervisor_url, .. }) = self.mode() else {
-            return ServerStatus::SetupNeeded;
+            return StatusView {
+                status: ServerStatus::SetupNeeded,
+                detail: None,
+            };
         };
         let addr = status::addr_of(&supervisor_url)
             .unwrap_or_else(|| status::DEFAULT_SUPERVISOR_ADDR.into());
         // a live agent (Windows) whose supervisor does not answer yet is starting
         let just_started = self.started_at.lock().unwrap().elapsed() < START_GRACE
             || agent::agent_alive() == Some(true);
-        status::derive(
+        let probe = status::probe(&addr);
+        let status = status::derive(
             true,
             self.paused.load(Ordering::SeqCst),
             just_started,
-            &status::probe(&addr),
-        )
+            &probe,
+        );
+        let detail = match status {
+            ServerStatus::Starting | ServerStatus::Problem(_) => status::waiting_on(&probe),
+            _ => None,
+        };
+        StatusView { status, detail }
     }
 }
 
@@ -207,23 +226,46 @@ fn refresh(app: &AppHandle) {
     // a tray click) must reach the main thread in the order they computed.
     let _one_at_a_time = sh.refresh_lock.lock().unwrap();
     let server = sh.server_side();
-    let status = if server {
+    let view = if server {
         sh.compute_status()
     } else {
-        ServerStatus::SetupNeeded
+        StatusView {
+            status: ServerStatus::SetupNeeded,
+            detail: None,
+        }
     };
-    let entries = tray::entries(server, &status, sh.update_ready.load(Ordering::SeqCst));
-    *sh.status.lock().unwrap() = status.clone();
+    let update_ready = sh.update_ready.load(Ordering::SeqCst);
+    let (status, detail) = (&view.status, view.detail.as_deref());
+    let entries = tray::entries(server, status, detail, update_ready);
+    let badge = if server && cfg!(not(target_os = "macos")) {
+        tray::badge_color(status, update_ready)
+    } else {
+        None
+    };
+    let tooltip = if server {
+        tray::tooltip(&tray::status_line(status, detail))
+    } else {
+        "Maktaba".into()
+    };
+    *sh.status.lock().unwrap() = view.clone();
     let mut last = sh.menu.lock().unwrap();
-    if *last == entries {
+    let mut last_badge = sh.badge.lock().unwrap();
+    let new_badge = *last_badge != badge;
+    if *last == entries && !new_badge {
         return;
     }
     *last = entries.clone();
-    drop(last);
-    let tooltip = if server {
-        tray::status_line(&status)
+    *last_badge = badge;
+    drop((last, last_badge));
+    // the icon with this badge (the plain icon without one)
+    let icon = if new_badge {
+        let plain = sh.plain_icon.lock().unwrap();
+        plain.as_ref().map(|(rgba, w, h)| match badge {
+            Some(c) => Image::new_owned(tray::badge(rgba, *w, *h, c), *w, *h),
+            None => Image::new_owned(rgba.clone(), *w, *h),
+        })
     } else {
-        "Maktaba".into()
+        None
     };
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
@@ -233,6 +275,9 @@ fn refresh(app: &AppHandle) {
         ) {
             let _ = t.set_menu(Some(menu));
             let _ = t.set_tooltip(Some(tooltip));
+            if let Some(icon) = icon {
+                let _ = t.set_icon(Some(icon));
+            }
         }
     });
 }
@@ -358,13 +403,32 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     app.manage(Shell::new(app));
 
     let sh = shell(app);
-    let entries = tray::entries(sh.server_side(), &ServerStatus::Starting, false);
+    let entries = tray::entries(sh.server_side(), &ServerStatus::Starting, None, false);
     let mut tray = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&build_tray_menu(app, &entries)?)
         .tooltip("Maktaba")
         .on_menu_event(|app, event| on_tray_event(app, event.id().as_ref()));
     if let Some(icon) = app.default_window_icon() {
+        *sh.plain_icon.lock().unwrap() = Some((icon.rgba().to_vec(), icon.width(), icon.height()));
         tray = tray.icon(icon.clone());
+    }
+    // Windows: a left click opens the window (the menu is on the right
+    // button), as Windows tray icons do
+    #[cfg(windows)]
+    {
+        use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
+        tray = tray
+            .show_menu_on_left_click(false)
+            .on_tray_icon_event(|tray, event| {
+                if let TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } = event
+                {
+                    focus_main(tray.app_handle());
+                }
+            });
     }
     tray.build(app)?;
 
@@ -511,7 +575,7 @@ pub fn open_login_items() {
 }
 
 #[tauri::command(async)]
-pub fn server_status(app: AppHandle) -> ServerStatus {
+pub fn server_status(app: AppHandle) -> StatusView {
     shell(&app).status.lock().unwrap().clone()
 }
 

@@ -424,6 +424,21 @@ describe("ServerStarting", () => {
     ).toBeInTheDocument();
     expect(api.openLocalServer).not.toHaveBeenCalled();
   });
+
+  it("says what a starting server waits on (Epic 38 story 38.4)", async () => {
+    const api = fakeApi();
+    api.serverStatus.mockResolvedValue({
+      kind: "starting",
+      detail: "Installing the transcription tools (40%)",
+    } as never);
+    render(
+      <I18nProvider>
+        <ServerStarting api={api} />
+      </I18nProvider>
+    );
+    expect(await screen.findByText("Installing the transcription tools (40%)")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("The server is starting");
+  });
 });
 
 describe("DesktopGate", () => {

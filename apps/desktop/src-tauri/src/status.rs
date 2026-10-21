@@ -34,6 +34,10 @@ pub struct Child {
     pub state: String,
     #[serde(default)]
     pub crash_loop: bool,
+    /// What it waits on before it starts (its Prepare: the venv being built,
+    /// the backup before an update) or why that failed (Epic 38 story 38.12).
+    #[serde(default)]
+    pub detail: String,
 }
 
 impl Child {
@@ -62,6 +66,16 @@ pub enum ServerStatus {
     Running,
     /// These processes keep failing (crash loop, failing health check).
     Problem(Vec<String>),
+}
+
+/// The status as the window's starting screen reads it (`server_status`):
+/// the status, and what the server waits on while it starts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StatusView {
+    #[serde(flatten)]
+    pub status: ServerStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 /// The result of asking the supervisor.
@@ -109,6 +123,20 @@ pub fn derive(setup_done: bool, paused: bool, just_started: bool, probe: &Probe)
     } else {
         ServerStatus::Running
     }
+}
+
+/// What the server waits on: the detail of the first process that is not
+/// running and says why (the venv being built, the backup before an update,
+/// or why that failed); None when every process is up or none says.
+pub fn waiting_on(probe: &Probe) -> Option<String> {
+    let Probe::Snapshot(s) = probe else {
+        return None;
+    };
+    s.processes
+        .iter()
+        .filter(|c| c.state != "running" && !c.detail.trim().is_empty())
+        .map(|c| c.detail.trim().to_string())
+        .next()
 }
 
 /// Parse a raw HTTP/1.x response carrying the /processes JSON.
@@ -167,6 +195,7 @@ mod tests {
             wanted: false,
             state: state.into(),
             crash_loop: false,
+            detail: String::new(),
         }
     }
 
@@ -281,6 +310,50 @@ mod tests {
                 &snap(vec![child("api", "running"), idle, asked])
             ),
             ServerStatus::Starting
+        );
+    }
+
+    #[test]
+    fn waiting_on_is_the_first_detail_of_a_process_not_up() {
+        let mut venv = child("pipeline", "starting");
+        venv.detail = "Installing the transcription tools (40%)".into();
+        let mut backup = child("api", "failed");
+        backup.detail = "the backup before the update failed: disk full".into();
+        let mut done = child("streaming", "running");
+        done.detail = "stale".into();
+        assert_eq!(
+            waiting_on(&snap(vec![done.clone(), venv.clone(), backup])),
+            Some("Installing the transcription tools (40%)".into())
+        );
+        assert_eq!(
+            waiting_on(&snap(vec![done, child("api", "starting")])),
+            None
+        );
+        assert_eq!(waiting_on(&Probe::Unreachable), None);
+        // the detail rides in /processes beside the state
+        let body = r#"{"processes":[{"role":"pipeline","state":"starting","detail":"Building"}]}"#;
+        let raw = format!("HTTP/1.1 200 OK\r\n\r\n{body}");
+        let s = parse_response(raw.as_bytes()).expect("parsed");
+        assert_eq!(waiting_on(&Probe::Snapshot(s)), Some("Building".into()));
+    }
+
+    #[test]
+    fn the_starting_screen_reads_the_status_with_its_detail() {
+        let v = StatusView {
+            status: ServerStatus::Starting,
+            detail: Some("Installing".into()),
+        };
+        assert_eq!(
+            serde_json::to_value(&v).unwrap(),
+            serde_json::json!({"kind": "starting", "detail": "Installing"})
+        );
+        let v = StatusView {
+            status: ServerStatus::Problem(vec!["api".into()]),
+            detail: None,
+        };
+        assert_eq!(
+            serde_json::to_value(&v).unwrap(),
+            serde_json::json!({"kind": "problem", "roles": ["api"]})
         );
     }
 

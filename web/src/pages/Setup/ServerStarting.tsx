@@ -57,6 +57,11 @@ export function ServerStarting({ api, platform }: { api: SetupApi; platform?: Pl
           {t("setup.starting.title")}
         </h1>
         <p role="status">{line}</p>
+        {status?.detail && (status.kind === "starting" || status.kind === "problem") && (
+          <p className="mkt-setup__note" dir="auto">
+            {status.detail}
+          </p>
+        )}
         {error && (
           <p className="mkt-setup__warn" role="alert">
             {error}
