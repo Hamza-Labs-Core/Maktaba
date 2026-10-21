@@ -387,9 +387,9 @@ func newThisPC(t *testing.T) *thisPC {
 
 func fastStop(t *testing.T) {
 	t.Helper()
-	grace, wait := stopGrace, stopWait
-	stopGrace, stopWait = 200*time.Millisecond, 5*time.Second
-	t.Cleanup(func() { stopGrace, stopWait = grace, wait })
+	grace, wait, poll := stopGrace, stopWait, stopPoll
+	stopGrace, stopWait, stopPoll = 100*time.Millisecond, 5*time.Second, 10*time.Millisecond
+	t.Cleanup(func() { stopGrace, stopWait, stopPoll = grace, wait, poll })
 }
 
 func TestFindThisPC(t *testing.T) {
@@ -606,7 +606,7 @@ func TestStopEndsWhatOutlivesItsTask(t *testing.T) {
 	}
 
 	// a port something else keeps: the stop fails rather than start on top of it
-	stopWait = 600 * time.Millisecond
+	stopWait = 200 * time.Millisecond
 	pc = newThisPC(t)
 	pc.sys.ports["8782"] = 999
 	srcs, _ = Find(pc.sys, "")

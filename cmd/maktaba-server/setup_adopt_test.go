@@ -74,6 +74,7 @@ func serveOn(t *testing.T, h http.Handler) string {
 }
 
 func TestSetupAdopt(t *testing.T) {
+	spawnsPrograms(t) // the venv step's stand-in Python
 	e := newSetupEnv(t)
 	fakePayload(t, e)
 	t.Setenv("MAKTABA_NODE_CONFIG", filepath.Join(e.dir, "app-node.json"))

@@ -300,6 +300,7 @@ type Progress func(stage, message string)
 var (
 	stopGrace = 15 * time.Second
 	stopWait  = 90 * time.Second
+	stopPoll  = 500 * time.Millisecond // how often it looks again
 )
 
 // Move moves the plan's source into the app (move-an-install.md "What a move
@@ -425,7 +426,7 @@ func stopSource(ctx context.Context, sys Sys, src Source) error {
 				}
 			}
 		}
-		if !sleepCtx(ctx, 500*time.Millisecond) {
+		if !sleepCtx(ctx, stopPoll) {
 			return ctx.Err()
 		}
 	}
@@ -435,7 +436,7 @@ func stopSource(ctx context.Context, sys Sys, src Source) error {
 			if time.Now().After(deadline) {
 				return fmt.Errorf("port %s is still in use after the old install stopped", port)
 			}
-			if !sleepCtx(ctx, 500*time.Millisecond) {
+			if !sleepCtx(ctx, stopPoll) {
 				return ctx.Err()
 			}
 		}
