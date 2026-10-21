@@ -39,6 +39,9 @@ type HomeRef struct {
 	// ClusterPub is the home's long-term cluster public key (channel handshake v2);
 	// empty in a config written before v2 (the machine must re-join, story 35.8 EC2).
 	ClusterPub string `json:"cluster_pub"`
+	// Term is the cluster's term this home began (Epic 37: a switch of the home starts
+	// the next); 0 before the first switch this machine followed.
+	Term int64 `json:"term,omitempty"`
 }
 
 // HomeURL is the home's API URL (home.url, or the older home.api_url).

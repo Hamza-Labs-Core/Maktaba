@@ -194,6 +194,9 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		// Epic 35 story 35.11 — every machine's identity (never a library or
 		// user name): the apps and a typed address recognise the cluster.
 		"/api/cluster/self": {},
+		// Epic 37 — a switch's notice of the new home for a machine that was off; it is
+		// sealed to that machine (only it opens it).
+		"/api/cluster/moved/*": {},
 		// Epic 35 story 35.9 — the cluster sign-in: authorize sends a browser
 		// that is not signed in to the home's sign-in page (and checks the
 		// session itself); start and callback run before the node holds a

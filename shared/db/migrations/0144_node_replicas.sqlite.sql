@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS cluster_switchovers (
     detail        TEXT,
     integrations  TEXT NOT NULL DEFAULT '{}',
     machines      TEXT NOT NULL DEFAULT '{}',
+    notices       TEXT NOT NULL DEFAULT '{}',
     requested_by  TEXT,
     requested_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     frozen_at     TEXT,

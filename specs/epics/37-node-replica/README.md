@@ -187,6 +187,73 @@ beat the home answered, checked every 2 s (a home that hangs leaves each beat wa
 timeout), 70 s for the default 90 s lease. A job's late write (heartbeat, progress, its end)
 changes nothing once another worker holds its claim (`db/claim_owner.py`). It resumes on its own.
 
+## Switching the home
+
+The user asked for a way "to switch the main node, to a joined node", carrying "all external
+connections, plex, cloudflare to that node". A **planned switch** is one button on the Machines
+tab ("Make B the home", after a confirm step) and runs by itself to the end. A is the old home,
+B the machine taking over, C the other machines.
+
+1. **Check.** Refused, with the reason on the tab, unless B is approved, a full machine, its copy
+   following and reporting, at A's schema, its machine agent connected, no switch under way, and
+   A runs Maktaba's own Postgres.
+2. **Pause.** Every machine's jobs drain (each machine's own drain kept, to give back), the
+   home's own pipeline too.
+3. **Freeze.** A's database is read-only for every session of the app's roles
+   (`default_transaction_read_only` on the database, the open sessions ended); its last write
+   sets the switch's row (`cluster_switchovers`) to `frozen`. That row is the marker: a copy
+   holding it has everything A wrote. This machine's own superuser connects read-write despite a
+   freeze (`pgbundle.Bundle.SuperURL`): the thaw and the demotion need it.
+4. **Kit.** What replication leaves out, gathered on A: the home-only tables as rows (secrets,
+   machines, tokens, devices, audit, …), the sequences, the machines' database roles with their
+   SCRAM verifiers (their passwords stay), and the key files (the secrets key, the cluster key,
+   the database CA and its key, the Hugging Face token, an operator's JWT keys). It is sealed for
+   B alone: X25519 between A's cluster key and B's machine key, HKDF-SHA256 with the switch's id,
+   ChaCha20-Poly1305 per 1 MiB chunk under its index, the last one marked (a chunk dropped, moved
+   or added is refused). It travels over the machine-agent channel, never through the replica.
+5. **Promote.** B checks it holds the marker, stops its subscription, loads the kit with triggers
+   off, sets each sequence past A's value, and makes every machine's role, publication and slot
+   before its first write, so every copy can follow it without copying again. It starts term
+   N+1 (`cluster_terms`) and seals for every machine a notice of its address (below). Its
+   `server.toml` becomes a home's (its Postgres on, on the LAN with TLS from the same CA), its
+   `node.json` is put aside, and it starts again as the home.
+6. **Move the machines.** A waits for B to answer as the home, then tells each machine where it
+   is, with B's CA: a copy holding the marker follows B from its slot (nothing copied), one
+   without it copies anew. A machine that was off asks its home when it is back; A answers as a
+   machine now and hands it the notice B sealed for it (`GET /api/cluster/moved/{node}`, from any
+   copy: the notices are in the switch's row). The machine opens it with its own key and the
+   cluster's public key, so a notice it did not get from its cluster does not open, and follows.
+7. **The old home becomes a machine.** A drops its publications and slots, empties its home-only
+   rows, follows B from its slot, writes its own `node.json` (its machine identity was chosen in
+   the kit), puts its cluster key aside and starts again as a machine. Until then its database
+   stays frozen for its app's roles (the subscription applies all the same), so its home
+   processes, still running, write nothing that would collide with B's changes; its copy ends
+   the freeze when it starts.
+8. **Finish, on B.** B marks each machine as it follows, moves and checks each outside service,
+   and once every machine follows and no service is still moving (or after an hour) gives the
+   machines their jobs back and calls the switch done.
+
+A switch that fails before the promotion is undone: A writable, the drains as they were, the
+home's jobs back, the reason on the tab. Past the promotion nothing goes back; the old home and
+the machines keep trying to follow B until it answers. Switching back is a switch the other way.
+
+**On the tab:** the term and since when this machine is the home; the machines that could take
+over, each with why it cannot now; a switch under way step by step; then each machine
+(following, copying anew, off) and each outside service (moved, being moved, failed, needs
+you), with the one action a person takes. `GET /api/cluster/self` carries the term.
+
+### Outside services
+
+| Service | What the switch does |
+|---|---|
+| Secrets (Plex token, Cloudflare Stream, simulcast and web-search keys, …) | They move with the secrets key; each is checked to open on B. |
+| Plex Live TV | The `plex_livetv` stage moves Maktaba's tuner to B's address. Plex keeps the device (the same DeviceID) and takes the new address, or else the old tuner leaves its DVR and Plex and B's is added and joined as a registration does. The guide at A's address gives way to B's, the channel map is pushed and the guide reloaded. Being moved until the stage answers. A tuner address set by hand at another machine (`rules.plexlive.tuner_url`) needs a person. |
+| Hugging Face | The token moves with the kit. |
+| JWT keys | An operator's `MAKTABA_JWT_*_PEM` move with the kit; B's supervisor hands them to its API. |
+| YouTube (yt-dlp `cookies_from_browser`) | A browser profile is its machine's: someone signs in to YouTube in a browser on B. |
+| Model runtime (Ollama on the machine) | Moved when B runs one; else B needs one, or its address in Settings. |
+| The machines' database TLS | B serves it from the same CA (it came in the kit); every machine pins the CA B sends. |
+
 ## Rules (`rules.cluster`, on the settings page)
 
 | Rule | Default | Meaning |
@@ -212,6 +279,11 @@ changes nothing once another worker holds its claim (`db/claim_owner.py`). It re
 - **Node-local sessions and sign-outs** are stored hashed and never carry a credential; the copy
   cannot be written: nothing a node does offline changes the home's data but the sign-outs and
   sessions it hands over once the home answers.
+- **A switch of the home.** Only an admin starts it. The kit (the secrets key, the cluster key,
+  the CA's key) is sealed to the machine taking over and travels over the authenticated machine
+  channel, never through the replica; it is kept on neither side once loaded. A machine follows
+  a new home only on the home's own command over that channel, or on a notice sealed to it by the
+  cluster key; the copy pins the CA that came with it.
 
 ## Failure modes
 
@@ -225,6 +297,10 @@ changes nothing once another worker holds its claim (`db/claim_owner.py`). It re
 | Home's database starting up at the node's start | The node starts on its copy and checks its role once the home answers. |
 | Copy being made | Reads go to the home; with the home away meanwhile, the node serves its own routes only. |
 | Machine revoked | Subscription refused at once; copy and secrets wiped within ~3 minutes. |
+| A switch fails before the promotion | Undone: the old home writable, the jobs back, the reason on the tab. |
+| The new home slow to start after its promotion | The old home and the machines keep trying to follow it. |
+| A machine off during a switch | When back, its old home hands it the new home's notice; it follows, copying anew. |
+| A machine whose Plex is unreachable from the new home | The tuner stays where it was; the stage retries; the tab says being moved. |
 
 ## Tests
 
@@ -242,6 +318,21 @@ changes nothing once another worker holds its claim (`db/claim_owner.py`). It re
   proxies that hang): reads, the session probe, playback, a node-local sign-in, a sign-out,
   refused changes; then its database too: reads and playback from the copy, also after a
   restart.
+- Switching the home: `cmd/maktaba-server/internal/switchover/switchover_pg_test.go`, **three
+  Postgres servers on 127.0.0.1** (`MAKTABA_TEST_PG_BIN`): a planned switch (the freeze, the
+  marker on both copies, the kit sealed and opened, the promotion, the old home and another
+  machine following without copying again, the sequences past the old home's, the secrets and
+  roles on the new home, the old home writing nothing of its own until it starts as a machine),
+  an emergency promotion's database steps (the fence, the changes kept aside), and a thaw from a
+  session opened after the freeze. `api/internal/cluster/switchover`: the steps in order, the
+  undo, the refusals, Plex Live TV's move, the notices (`MAKTABA_TEST_PG_URL`).
+  `api/switchover_e2e_test.go` (`MAKTABA_E2E_SWITCHOVER=1`): three `maktaba-server serve`
+  machines on the pinned Postgres 16.15: A the home, B and C its machines; C is switched off, the
+  admin switches the home to B; B takes over without copying again, A follows it as a machine,
+  C follows it by itself once back, the secret opens on B, B's change reaches A, and the owner
+  signs in on both. The pipeline's `test_plex_livetv.py`: the tuner moved in place, re-added,
+  with a DVR of its own, and kept when Plex cannot reach the new home. The web's
+  `SwitchHomeCard.test.tsx`.
 - Unit tests: `nodeauth` (copy-first answers, freshness, node-local sessions and sign-outs,
   revocations in flight, bearer tokens, lockout, grace, a hanging home), `nodedb` (routing per
   statement), `pgdsn` (bounded connections, on a real Postgres behind a hanging proxy),
@@ -249,6 +340,13 @@ changes nothing once another worker holds its claim (`db/claim_owner.py`). It re
   pipeline's lease and claim guard, the web outage pages.
 
 ## Follow-ups
+
+- Emergency promotion (the home gone for good), from the Machines tab of a machine with a copy,
+  with a warning: the database steps are built and tested (the fence, the changes kept aside);
+  the orchestration waits on the user's choices of where a standby kit is kept and what becomes
+  of the old home's writes it kept aside.
+- The cloud relay (`maktaba-cloudlink`) moving with the home: `maktaba-server` does not run it
+  yet; how it should is the user's choice.
 
 - Native apps: offline sign-in (an access token from the node's own key, refreshed by the home on
   its return).

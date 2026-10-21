@@ -365,6 +365,15 @@ func (c Copy) writeAccess(g Grant) error {
 	return nil
 }
 
+// PinCA pins the home's database CA in place of the one pinned before (a switch of
+// the home, its CA handed over the cluster channel).
+func (c Copy) PinCA(pem string) error {
+	if !strings.Contains(pem, "BEGIN CERTIFICATE") {
+		return errors.New("nodecopy: not a CA certificate")
+	}
+	return writeSecret(filepath.Join(c.DB.Keys, caFile), []byte(pem))
+}
+
 // super is this machine's database as its superuser.
 func (c Copy) super() (*sql.DB, error) {
 	dsn, err := c.DB.SuperURL()

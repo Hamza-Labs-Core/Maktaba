@@ -135,6 +135,10 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	var node *nodeServices
 	if containsRole(roles, supervisor.RoleAPI) {
 		node = startNodeServices(ctx, cfg, sw.command)
+		if node != nil {
+			// a switch of the home while this machine was off (serve_switchover.go)
+			go sw.watchMoved(ctx)
+		}
 	}
 
 	// Start the in-process web server (and mDNS) when web is in scope.

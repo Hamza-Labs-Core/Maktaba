@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -457,7 +458,7 @@ func (s *switching) demote(req homeRequest) {
 	clusterPub, _ := curve25519.X25519(clusterPriv, curve25519.Basepoint)
 	n := config.NodeConfig{NodeID: me.NodeID, Name: me.Name, PrivateKey: me.PrivateKey, DatabaseURL: dsn,
 		Home: config.HomeRef{URL: h.APIURL, APIURL: h.APIURL, InstanceID: h.InstanceID, Name: h.Name,
-			ClusterPub: base64.StdEncoding.EncodeToString(clusterPub)}}
+			ClusterPub: base64.StdEncoding.EncodeToString(clusterPub), Term: req.Term}}
 	if err := writeNodeConfig(n); err != nil {
 		logf("node.json: %v", err)
 		return
@@ -527,7 +528,7 @@ func (s *switching) command(ctx context.Context, name string, args json.RawMessa
 	case "switch.promote":
 		out, err = s.promote(ctx, a.ID, a.Term)
 	case "home.moved":
-		out, err = s.follow(ctx, a.ID, a.Home)
+		out, err = s.follow(ctx, a.ID, a.Term, a.Home)
 	default:
 		return false, false, nil
 	}
@@ -680,6 +681,10 @@ func (s *switching) promote(ctx context.Context, id string, term int64) (any, er
 	if ca, err := os.ReadFile(db2.CACert()); err == nil {
 		home.CA = string(ca)
 	}
+	// every machine's own notice of it, for one that is off now
+	if err := sealNotices(ctx, db, kit, id, term, n.NodeID, home); err != nil {
+		fmt.Fprintf(os.Stderr, "[switchover] the machines' notices of the new home: %v\n", err)
+	}
 	fmt.Fprintf(os.Stderr, "[switchover] this machine is the home now (term %d): starting again\n", term)
 	go func() {
 		time.Sleep(2 * time.Second) // the answer goes out first
@@ -688,10 +693,133 @@ func (s *switching) promote(ctx context.Context, id string, term int64) (any, er
 	return home, nil
 }
 
+// movedNotice is what a switch's "moved" notice says: the term it began and the new home.
+type movedNotice struct {
+	Term int64   `json:"term"`
+	Home newHome `json:"home"`
+}
+
+// sealNotices seals the new home's address for every machine of the cluster (by its
+// public key) into the switch's row, which every copy has: a machine off during the
+// switch reads its own from any machine it reaches, the old home among them, and
+// follows (watchMoved).
+func sealNotices(ctx context.Context, db *sql.DB, kit *switchover.Kit, id string, term int64, self string, home newHome) error {
+	priv := kit.Files[kitClusterKey]
+	if len(priv) != 32 {
+		return errors.New("no cluster key in the kit")
+	}
+	plain, err := json.Marshal(movedNotice{Term: term, Home: home})
+	if err != nil {
+		return err
+	}
+	out := map[string]string{}
+	for _, raw := range kit.Tables["cluster_nodes"] {
+		var row struct {
+			ID  string `json:"id"`
+			Pub string `json:"node_pubkey"`
+		}
+		if json.Unmarshal(raw, &row) != nil || row.ID == self {
+			continue
+		}
+		pub, err := base64.StdEncoding.DecodeString(row.Pub)
+		if err != nil || len(pub) != 32 {
+			continue
+		}
+		if out[row.ID], err = switchover.SealNotice(priv, pub, id, plain); err != nil {
+			return err
+		}
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, `UPDATE cluster_switchovers SET notices = $2::jsonb, updated_at = now()
+	    WHERE id = $1`, id, string(b))
+	return err
+}
+
+// watchMoved finds the new home of this machine when it was off during a switch: its
+// home answers as a machine now and hands it the notice the new home sealed for it; the
+// machine follows (its copy anew: it missed the marker).
+func (s *switching) watchMoved(ctx context.Context) {
+	select {
+	case <-s.ready:
+	case <-ctx.Done():
+		return
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		s.checkMoved(ctx, client)
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+func (s *switching) checkMoved(ctx context.Context, client *http.Client) {
+	n := supervisor.NodeConfig()
+	base := strings.TrimRight(n.HomeURL(), "/")
+	if base == "" || !n.Joined() {
+		return
+	}
+	var self struct {
+		Role string `json:"role"`
+	}
+	if getJSON(ctx, client, base+"/api/cluster/self", &self) != nil || self.Role != "node" {
+		return // the home is the home (or does not answer)
+	}
+	var m struct {
+		ID     string `json:"id"`
+		Notice string `json:"notice"`
+	}
+	if err := getJSON(ctx, client, base+"/api/cluster/moved/"+url.PathEscape(n.NodeID), &m); err != nil {
+		return
+	}
+	logf := func(format string, args ...any) { fmt.Fprintf(os.Stderr, "[switchover] "+format+"\n", args...) }
+	priv, err1 := base64.StdEncoding.DecodeString(n.PrivateKey)
+	pub, err2 := base64.StdEncoding.DecodeString(n.Home.ClusterPub)
+	if err1 != nil || err2 != nil {
+		return
+	}
+	plain, err := switchover.OpenNotice(priv, pub, m.ID, m.Notice)
+	if err != nil {
+		logf("%s handed over a notice of a new home that does not open: %v", base, err)
+		return
+	}
+	var notice movedNotice
+	if json.Unmarshal(plain, &notice) != nil || notice.Term <= n.Home.Term || notice.Home.APIURL == "" {
+		return
+	}
+	logf("the home moved to %s while this machine was off (term %d): following it", notice.Home.APIURL, notice.Term)
+	if _, err := s.follow(ctx, m.ID, notice.Term, notice.Home); err != nil {
+		logf("following the new home: %v", err)
+	}
+}
+
+func getJSON(ctx context.Context, client *http.Client, u string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s: %d", u, resp.StatusCode)
+	}
+	return json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(out)
+}
+
 // follow moves this machine to the new home: its copy without copying again when it
 // holds the switch's marker (else it copies anew once it starts again), node.json
 // pointed at the new home; then it starts again.
-func (s *switching) follow(ctx context.Context, id string, h newHome) (any, error) {
+func (s *switching) follow(ctx context.Context, id string, term int64, h newHome) (any, error) {
 	n := supervisor.NodeConfig()
 	u, err := url.Parse(n.DatabaseURL)
 	if err != nil {
@@ -725,8 +853,23 @@ func (s *switching) follow(ctx context.Context, id string, h newHome) (any, erro
 			}
 		}
 	}
+	if !moved && s.cp != nil {
+		// copied anew from the new home: the subscription to the old one paused (its slot
+		// is gone), the new home's CA pinned
+		if err := s.cp.copy.Pause(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "[switchover] pausing the copy of the old home: %v\n", err)
+		}
+		if h.CA != "" {
+			if err := s.cp.copy.PinCA(h.CA); err != nil {
+				return nil, fmt.Errorf("the new home's CA: %w", err)
+			}
+		}
+	}
 	n.DatabaseURL = dsn
 	n.Home.URL, n.Home.APIURL, n.Home.Name = h.APIURL, h.APIURL, h.Name
+	if term > n.Home.Term {
+		n.Home.Term = term
+	}
 	if err := writeNodeConfig(n); err != nil {
 		return nil, err
 	}

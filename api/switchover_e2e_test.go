@@ -57,8 +57,11 @@ func TestSwitchTheHome(t *testing.T) {
 	}
 	a := box{dir: filepath.Join(tmp, "a"), api: p(), web: p(), stream: p(), pgPort: p()}
 	b := box{dir: filepath.Join(tmp, "b"), api: p(), web: p(), stream: p(), pgPort: p()}
+	// C: a machine that is off during the switch
+	c := box{dir: filepath.Join(tmp, "c"), api: p(), web: p(), stream: p(), pgPort: p()}
 	a.webURL = fmt.Sprintf("http://127.0.0.1:%d", a.web)
 	b.webURL = fmt.Sprintf("http://localhost:%d", b.web) // another host: the browser keeps their cookies apart
+	c.webURL = fmt.Sprintf("http://127.0.0.1:%d", c.web)
 	toml := func(m box, home bool) string {
 		extra := ""
 		if home {
@@ -193,27 +196,38 @@ slots = "off"
 		t.Fatal(err)
 	}
 
-	// ---- B joins A as a full machine ----
-	nodePriv, nodePub, _ := cluster.GenerateKey()
-	nodeID := uuid.NewString()
-	role := cluster.RoleName(nodeID)
-	if err := (&cluster.PGRoles{DB: adb}).Create(ctx, role, "node-pass-0123456789"); err != nil {
-		t.Fatal(err)
+	// ---- B and C join A as full machines ----
+	join := func(m box, name string) string {
+		nodePriv, nodePub, _ := cluster.GenerateKey()
+		id := uuid.NewString()
+		role := cluster.RoleName(id)
+		if err := (&cluster.PGRoles{DB: adb}).Create(ctx, role, "node-pass-0123456789"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := adb.ExecContext(ctx, `INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, db_role, approved_at,
+		        approved_by, full_node) VALUES ($1, $2, 'approved', 'windows', 'amd64', $3, $4, now(), 'test', true)`,
+			id, name, cluster.EncodeKey(nodePub), role); err != nil {
+			t.Fatal(err)
+		}
+		nodeDSN := (&url.URL{Scheme: "postgres", User: url.UserPassword(role, "node-pass-0123456789"),
+			Host: fmt.Sprintf("127.0.0.1:%d", a.pgPort), Path: "/maktaba", RawQuery: "sslmode=prefer"}).String()
+		nodeCfg, _ := json.Marshal(map[string]any{"node_id": id, "name": name, "private_key": cluster.EncodeKey(nodePriv),
+			"home":         map[string]any{"url": fmt.Sprintf("http://127.0.0.1:%d", a.api), "cluster_pub": cluster.EncodeKey(homePub)},
+			"database_url": nodeDSN})
+		if err := os.WriteFile(filepath.Join(m.dir, "node.json"), nodeCfg, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return id
 	}
-	if _, err := adb.ExecContext(ctx, `INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, db_role, approved_at,
-	        approved_by, full_node) VALUES ($1, 'b', 'approved', 'windows', 'amd64', $2, $3, now(), 'test', true)`,
-		nodeID, cluster.EncodeKey(nodePub), role); err != nil {
-		t.Fatal(err)
-	}
-	nodeDSN := (&url.URL{Scheme: "postgres", User: url.UserPassword(role, "node-pass-0123456789"),
-		Host: fmt.Sprintf("127.0.0.1:%d", a.pgPort), Path: "/maktaba", RawQuery: "sslmode=prefer"}).String()
-	bCfg := toml(b, false)
-	nodeCfg, _ := json.Marshal(map[string]any{"node_id": nodeID, "name": "b", "private_key": cluster.EncodeKey(nodePriv),
-		"home":         map[string]any{"url": fmt.Sprintf("http://127.0.0.1:%d", a.api), "cluster_pub": cluster.EncodeKey(homePub)},
-		"database_url": nodeDSN})
-	_ = os.WriteFile(filepath.Join(b.dir, "node.json"), nodeCfg, 0o600)
+	bCfg, cCfg := toml(b, false), toml(c, false) // first: they make the machines' directories
+	nodeID := join(b, "b")
+	cID := join(c, "c")
 	mb := startMachine(t, "b", bin, env(b, bCfg))
+	mc := startMachine(t, "c", bin, env(c, cCfg))
 	waitFor(t, "B's copy following A", 6*time.Minute, func() bool { return selfOf(b.webURL).Copy.State == "following" })
+	waitFor(t, "C's copy following A", 6*time.Minute, func() bool { return selfOf(c.webURL).Copy.State == "following" })
+	// C is off during the switch: it learns of the new home when it is back
+	mc.stop()
 
 	// ---- the admin asks A to hand over to B ----
 	admin := newBrowser(t)
@@ -265,6 +279,20 @@ slots = "off"
 		s := selfOf(a.webURL)
 		return s.Role == "node" && s.Home != nil && s.Home.WebURL == b.webURL
 	})
+
+	// ---- C, back: it asks A, which hands it the new home's notice sealed for it ----
+	mc = startMachine(t, "c2", bin, env(c, cCfg))
+	waitFor(t, "C follows B by itself", 8*time.Minute, func() bool {
+		s := selfOf(c.webURL)
+		return s.Role == "node" && s.Home != nil && s.Home.WebURL == b.webURL && s.Copy.State == "following"
+	})
+	cNode, err := os.ReadFile(filepath.Join(c.dir, "node.json"))
+	if err != nil || !strings.Contains(string(cNode), fmt.Sprintf(":%d", b.pgPort)) {
+		t.Fatalf("C's node.json does not name B's database: %s %v", cNode, err)
+	}
+	if code, _ := get(fmt.Sprintf("%s/api/cluster/moved/%s", a.webURL, uuid.NewString())); code != http.StatusNotFound {
+		t.Fatalf("a notice for a machine that has none: %d", code)
+	}
 
 	// ---- after: the secret opens on B, B's change reaches A, the owner signs in on both ----
 	bdb, err := sql.Open("postgres", appDSN(b))
@@ -341,6 +369,8 @@ slots = "off"
 	}
 	_ = ma
 	_ = mb
+	_ = mc
+	_ = cID
 }
 
 // try is do that does not fail the test when the machine does not answer (it may be

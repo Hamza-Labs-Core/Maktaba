@@ -38,6 +38,18 @@ don't append a line here; docs-only PRs are exempt.
   flight before their claim lease lapses (from the last beat the home answered), and resumes on
   its own; a job the home handed to another machine meanwhile is never ended by the first.
   Migration 0144.
+- **The home can be switched to another machine** (Epic 37, "Switching the home"): "Make B the
+  home" on the Machines tab, then nothing to do by hand. The home pauses the jobs and its
+  database's changes, hands the machine what replication leaves out (the secrets and their key,
+  the machines and their database roles with their passwords, the cluster key, the database CA,
+  the Hugging Face token, an operator's JWT keys) sealed to that machine over the machines'
+  channel, and the machine takes over without copying the database again: every other machine
+  follows it from where its copy is, the old home becomes one of its machines, and a machine that
+  was off follows when it is back (its old home hands it a notice sealed to it). Plex Live TV
+  moves too (the tuner and its guide pointed at the new home, Plex's DVR and channels kept), and
+  the tab shows each machine and each outside service as moved, being moved, failed, or what a
+  person must do (signing in to YouTube in a browser on the new home; a model runtime there). A
+  switch that cannot go through is undone. `GET /api/cluster/self` carries the cluster's term.
 
 ### Changed
 

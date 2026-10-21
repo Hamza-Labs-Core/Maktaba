@@ -175,3 +175,41 @@ func TestTheKeptAsideChangesAreDecoded(t *testing.T) {
 		t.Fatal("Postgres's epoch")
 	}
 }
+
+// A switch's notice of the new home opens only on the machine it was sealed for, only
+// as the cluster key made it, and only for its switch.
+func TestANoticeOpensOnItsMachineOnly(t *testing.T) {
+	clusterPriv, clusterPub := keypair(t)
+	nodePriv, nodePub := keypair(t)
+	otherPriv, _ := keypair(t)
+	_, strangerPub := keypair(t)
+	notice := []byte(`{"term":2,"home":{"api_url":"http://b:8080"}}`)
+	sealed, err := SealNotice(clusterPriv, nodePub, "sw-1", notice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(sealed, "b:8080") {
+		t.Fatal("the notice is in the clear")
+	}
+	got, err := OpenNotice(nodePriv, clusterPub, "sw-1", sealed)
+	if err != nil || !bytes.Equal(got, notice) {
+		t.Fatalf("its machine: %q %v", got, err)
+	}
+	if _, err := OpenNotice(otherPriv, clusterPub, "sw-1", sealed); err == nil {
+		t.Fatal("another machine opened it")
+	}
+	if _, err := OpenNotice(nodePriv, strangerPub, "sw-1", sealed); err == nil {
+		t.Fatal("it opened as another cluster's")
+	}
+	if _, err := OpenNotice(nodePriv, clusterPub, "sw-2", sealed); err == nil {
+		t.Fatal("it opened for another switch")
+	}
+	raw := []byte(sealed)
+	raw[len(raw)/2] ^= 1
+	if _, err := OpenNotice(nodePriv, clusterPub, "sw-1", string(raw)); err == nil {
+		t.Fatal("a changed notice opened")
+	}
+	if a, _ := SealNotice(clusterPriv, nodePub, "sw-1", notice); a == sealed {
+		t.Fatal("two seals alike: the nonce is not random")
+	}
+}

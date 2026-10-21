@@ -28,11 +28,14 @@ const CookieSSO = "mkt_sso"
 // SelfInfo is GET /api/cluster/self (local on every machine, public): this machine,
 // its home, and whether it can serve now. Never a library or user name.
 type SelfInfo struct {
-	Role      string    `json:"role"` // home | node
-	ID        string    `json:"id"`   // instance id (home) or node id (node)
-	Name      string    `json:"name,omitempty"`
-	Version   string    `json:"version"`
-	SchemaRev int       `json:"schema_rev"`
+	Role      string `json:"role"` // home | node
+	ID        string `json:"id"`   // instance id (home) or node id (node)
+	Name      string `json:"name,omitempty"`
+	Version   string `json:"version"`
+	SchemaRev int    `json:"schema_rev"`
+	// Term is the cluster's term on the home (Epic 37: each switch of the home begins
+	// the next).
+	Term      int64     `json:"term,omitempty"`
 	WebURL    string    `json:"web_url,omitempty"`
 	Home      *SelfHome `json:"home,omitempty"`
 	Paused    string    `json:"paused,omitempty"`

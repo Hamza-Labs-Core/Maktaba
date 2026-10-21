@@ -2,8 +2,11 @@ package switchover
 
 import (
 	"bufio"
+	"crypto/cipher"
 	"crypto/hkdf"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -31,6 +34,52 @@ func KitKey(priv, peer []byte, id string) ([]byte, error) {
 		return nil, fmt.Errorf("switchover: the kit's key: %w", err)
 	}
 	return hkdf.Key(sha256.New, shared, []byte(id), "maktaba-home-kit", chacha20poly1305.KeySize)
+}
+
+// SealNotice seals a switch's "moved" notice (the new home's address) for one machine,
+// between the cluster key's private half and the machine's public key, so only that
+// machine opens it and only the holder of the cluster key can have made it: base64 of a
+// random nonce and the sealed notice, the switchover's id its associated data.
+func SealNotice(clusterPriv, nodePub []byte, id string, notice []byte) (string, error) {
+	aead, err := noticeAEAD(clusterPriv, nodePub, id)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(aead.Seal(nonce, nonce, notice, []byte(id))), nil
+}
+
+// OpenNotice opens a machine's "moved" notice with its private key and the cluster's
+// public key.
+func OpenNotice(nodePriv, clusterPub []byte, id, sealed string) ([]byte, error) {
+	aead, err := noticeAEAD(nodePriv, clusterPub, id)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := base64.StdEncoding.DecodeString(sealed)
+	if err != nil || len(raw) < aead.NonceSize() {
+		return nil, errors.New("switchover: a notice that is not one")
+	}
+	out, err := aead.Open(nil, raw[:aead.NonceSize()], raw[aead.NonceSize():], []byte(id))
+	if err != nil {
+		return nil, errors.New("switchover: a notice that does not open (not sealed for this machine by its cluster)")
+	}
+	return out, nil
+}
+
+func noticeAEAD(priv, peer []byte, id string) (cipher.AEAD, error) {
+	shared, err := curve25519.X25519(priv, peer)
+	if err != nil {
+		return nil, fmt.Errorf("switchover: the notice's key: %w", err)
+	}
+	key, err := hkdf.Key(sha256.New, shared, []byte(id), "maktaba-home-moved", chacha20poly1305.KeySize)
+	if err != nil {
+		return nil, err
+	}
+	return chacha20poly1305.New(key)
 }
 
 func chunkAD(id string, i uint64, last bool) []byte {

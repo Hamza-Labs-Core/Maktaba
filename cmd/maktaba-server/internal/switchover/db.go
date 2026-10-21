@@ -11,9 +11,11 @@ import (
 	"github.com/lib/pq"
 )
 
-// The database's name, and the copy's subscription (nodecopy.Subscription).
+// The database's name, its app role (pgbundle.AppRole), and the copy's subscription
+// (nodecopy.Subscription).
 const (
 	database     = "maktaba"
+	appRole      = "maktaba"
 	subscription = "maktaba_copy"
 )
 
@@ -423,6 +425,14 @@ func ensureRole(ctx context.Context, super *sql.DB, name, password string, login
 		}
 		if _, err := super.ExecContext(ctx, `GRANT `+pq.QuoteIdentifier(g)+` TO `+id); err != nil {
 			return fmt.Errorf("switchover: %s's group %s: %w", name, g, err)
+		}
+	}
+	// the home's app role administers the machines' roles as it does those it made
+	// itself (Postgres 16 gives a role's creator ADMIN OPTION on it): its grants, revokes
+	// and removals alter them
+	if name != appRole {
+		if _, err := super.ExecContext(ctx, `GRANT `+id+` TO `+pq.QuoteIdentifier(appRole)+` WITH ADMIN OPTION`); err != nil {
+			return fmt.Errorf("switchover: the app role administering %s: %w", name, err)
 		}
 	}
 	return nil

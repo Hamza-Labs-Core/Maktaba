@@ -379,10 +379,13 @@ CREATE TABLE IF NOT EXISTS cluster_switchovers (
     state         text NOT NULL CHECK (state IN ('checking', 'freezing', 'frozen', 'handing_over',
                       'promoting', 'repointing', 'done', 'failed', 'cancelled')),
     detail        text,
-    -- per integration (plex, relay, ...): {"state": "moved|failed|needs_you|not_used", "detail": ...}
+    -- per integration (plex, relay, ...): {"state": "moved|pending|failed|needs_you|not_used", "detail": ...}
     integrations  jsonb NOT NULL DEFAULT '{}'::jsonb,
     -- per machine: {"state": "following|copying_anew|waiting|failed", "detail": ...}
     machines      jsonb NOT NULL DEFAULT '{}'::jsonb,
+    -- per machine id: the new home's address sealed to that machine with the cluster key
+    -- (a machine off during the switch reads it from any machine it reaches)
+    notices       jsonb NOT NULL DEFAULT '{}'::jsonb,
     requested_by  uuid,
     requested_at  timestamptz NOT NULL DEFAULT now(),
     frozen_at     timestamptz,

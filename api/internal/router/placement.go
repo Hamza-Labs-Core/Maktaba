@@ -36,6 +36,8 @@ func buildPlacement() placement.Table {
 		"/api/system/sbom",
 		// this machine's identity, its home, its web address (story 35.11)
 		"/api/cluster/self",
+		// a switch's notice of the new home, from this machine's copy (Epic 37)
+		"/api/cluster/moved/{node}",
 		// the cluster sign-in's node half (story 35.9 AC6)
 		"/api/cluster/sso/start",
 		"/api/cluster/sso/callback",

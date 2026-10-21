@@ -40,6 +40,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/nodedb"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/placement"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/schemaguard"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/switchover"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/vodfallback"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
@@ -424,7 +425,7 @@ const copyStatusFile = "copy.json"
 
 // homeSelf is the home's GET /api/cluster/self: its identity, web address and the
 // machines' addresses (the apps learn the cluster from any machine, story 35.11 EC2).
-func homeSelf(store cluster.Store, webURL string) clusterauth.SelfFunc {
+func homeSelf(store cluster.Store, webURL string, term func(context.Context) int64) clusterauth.SelfFunc {
 	return func(ctx context.Context) clusterauth.SelfInfo {
 		info := clusterauth.SelfInfo{Role: "home", Version: version.Version, SchemaRev: schemaguard.SchemaRev,
 			WebURL: webURL, SSO: true}
@@ -433,6 +434,9 @@ func homeSelf(store cluster.Store, webURL string) clusterauth.SelfFunc {
 		}
 		cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
+		if term != nil {
+			info.Term = term(cctx)
+		}
 		if id, err := store.Identity(cctx); err == nil {
 			info.ID, info.Name, info.AcceptJoins = id.InstanceID, id.Name, id.AcceptJoins
 			info.Machines = append(info.Machines, clusterauth.SelfRow{Role: "home", ID: id.InstanceID, Name: id.Name, WebURL: webURL})
@@ -456,10 +460,16 @@ func homeSelf(store cluster.Store, webURL string) clusterauth.SelfFunc {
 // mountNodeRoutes mounts the node-only routes (/api/cluster/self, the sign-in's node
 // half).
 func (rt *nodeRuntime) mountNodeRoutes(r chi.Router) {
+	// a switch's notices of the new home: from the copy (it answers with the home away),
+	// else the home's database
+	movedDB := rt.dbs.copyDB
+	if movedDB == nil {
+		movedDB = rt.dbs.home
+	}
 	router.MountNodeLocal(r, router.NodeLocalDeps{Self: rt.self, Node: &clusterauth.Node{
 		Link: rt.link, NodeID: rt.cfg.NodeID, Self: rt.self, SecureCookies: cookiesSecure(), Logger: rt.logger,
 		SSOEnabled: func(context.Context) bool { return rt.rules().SSO },
-	}})
+	}, Moved: switchover.MovedHandler(movedDB)})
 }
 
 // handler is the node's public handler: the placement dispatcher over the local
@@ -622,7 +632,8 @@ func warnUnclassified(r chi.Router, logger *slog.Logger) {
 func mountHomeClusterAuth(r chi.Router, db *sql.DB, logger *slog.Logger) {
 	webURL := os.Getenv("MAKTABA_WEB_URL")
 	router.MountClusterAuth(r, router.ClusterAuthDeps{DB: db, WebURL: webURL, Logger: logger})
-	router.MountNodeLocal(r, router.NodeLocalDeps{Self: homeSelf(&cluster.PGStore{DB: db}, webURL)})
+	router.MountNodeLocal(r, router.NodeLocalDeps{Self: homeSelf(&cluster.PGStore{DB: db}, webURL,
+		func(ctx context.Context) int64 { return switchover.TermOf(ctx, db) }), Moved: switchover.MovedHandler(db)})
 	// the machines' copies of this database (Epic 37): the beat, the CA, the cap
 	rules := nodemode.CachedRules(db, time.Minute)
 	go (&cluster.Copies{DB: db, CAFile: os.Getenv("MAKTABA_CLUSTER_PG_CA"), Logger: logger,

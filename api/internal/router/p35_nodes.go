@@ -12,6 +12,7 @@ package router
 import (
 	"database/sql"
 	"log/slog"
+	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
@@ -53,10 +54,17 @@ type NodeLocalDeps struct {
 	Self clusterauth.SelfFunc
 	// Node is set on a full node; nil on the home (start / callback answer 404 there).
 	Node *clusterauth.Node
+	// Moved serves GET /api/cluster/moved/{node}: a switch's notice of the new home for
+	// a machine that was off (Epic 37); nil: not mounted.
+	Moved http.HandlerFunc
 }
 
-// MountNodeLocal mounts GET /api/cluster/self and the sign-in's start and callback.
+// MountNodeLocal mounts GET /api/cluster/self, the sign-in's start and callback, and a
+// switch's notices of the new home.
 func MountNodeLocal(r chi.Router, d NodeLocalDeps) {
 	clusterauth.MountSelf(r, d.Self)
 	d.Node.Mount(r)
+	if d.Moved != nil {
+		r.Get("/api/cluster/moved/{node}", d.Moved)
+	}
 }

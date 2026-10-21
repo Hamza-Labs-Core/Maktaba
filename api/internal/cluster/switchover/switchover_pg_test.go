@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/agent"
@@ -320,5 +321,50 @@ func TestSameHost(t *testing.T) {
 		if got := sameHost(c.a, c.b); got != c.want {
 			t.Errorf("sameHost(%q, %q) = %v", c.a, c.b, got)
 		}
+	}
+}
+
+// GET /api/cluster/moved/{node}: the latest switch's notice for that machine; 404 for a
+// machine with none.
+func TestTheMovedNoticeIsServedPerMachine(t *testing.T) {
+	db, _ := clustertest.ScratchDB(t)
+	ctx := context.Background()
+	c := uuid.NewString()
+	for term, notice := range map[int]string{2: "old", 3: "new"} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO cluster_switchovers (id, term, kind, to_node, to_name, from_name,
+		        state, notices) VALUES ($1, $2, 'planned', $3, 'b', 'a', 'done', jsonb_build_object($4::text, $5::text))`,
+			uuid.NewString(), term, uuid.NewString(), c, notice); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := chi.NewRouter()
+	r.Get("/api/cluster/moved/{node}", MovedHandler(db))
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/api/cluster/moved/" + c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Term   int64  `json:"term"`
+		Notice string `json:"notice"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&got)
+	_ = resp.Body.Close()
+	if resp.StatusCode != 200 || got.Term != 3 || got.Notice != "new" {
+		t.Fatalf("the notice: %d %+v", resp.StatusCode, got)
+	}
+	for _, other := range []string{uuid.NewString(), "not-a-machine"} {
+		resp, err := http.Get(srv.URL + "/api/cluster/moved/" + other)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("%s: %d", other, resp.StatusCode)
+		}
+	}
+	if n := TermOf(ctx, db); n != 1 {
+		t.Fatalf("the term: %d", n)
 	}
 }

@@ -374,6 +374,13 @@ func TestAPlannedSwitchover(t *testing.T) {
 	if err := cOnB.PingContext(ctx); err != nil {
 		t.Fatalf("a machine signs in to the new home with its old password: %v", err)
 	}
+	// the new home's app role administers the machines' roles, as the old home's did (its
+	// grants set their passwords, its revokes disable them)
+	for _, r := range []string{cm.role, Machine{ID: cm.id}.CopyRole(), a.Role(), a.CopyRole()} {
+		if _, err := bw.ExecContext(ctx, `ALTER ROLE `+r+` LOGIN`); err != nil {
+			t.Fatalf("the new home's app role alters %s: %v", r, err)
+		}
+	}
 }
 
 // A switch that does not go through thaws the old home, from a session opened after the
