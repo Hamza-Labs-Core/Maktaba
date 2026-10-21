@@ -76,7 +76,8 @@ jobs:
         run: make linux-app-payload
 
       # an ordinary user with a passwd entry (initdb looks the user up), the
-      # runner's uid so the read-only checkout is theirs
+      # runner's uid so the read-only checkout is theirs; coreutils' chroot
+      # --userspec drops root in every image (minimal Ubuntu has no runuser)
       - name: Check it in minimal containers
         run: |
           set -euo pipefail
@@ -86,7 +87,7 @@ jobs:
               set -e
               groupadd -g "${UID_GID#*:}" ci 2>/dev/null || true
               useradd -m -u "${UID_GID%%:*}" -g "${UID_GID#*:}" ci
-              exec runuser -u ci -- bash tools/release/linux-app/check.sh --payload build/linux-app/server'
+              exec chroot --skip-chdir --userspec="$UID_GID" / env HOME=/home/ci USER=ci                 bash tools/release/linux-app/check.sh --payload build/linux-app/server'
             echo "::endgroup::"
           done
 
