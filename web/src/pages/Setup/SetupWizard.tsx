@@ -79,7 +79,14 @@ interface CheckResult {
   problems: CheckNote[];
   warnings: CheckNote[];
   runs: { role: string; what: string; params?: Record<string, unknown> }[];
+  /** with the second listen on: whether this machine can run it (no sign-in for its
+   * gated model where it cannot; the reason is among the warnings) */
+  second_listen?: { runs: boolean; code?: string; params?: Record<string, unknown> };
 }
+
+/** How many steps the setup has on this machine (no models step where the second
+ * listen cannot run). */
+const StepsContext = createContext<number>(ORDER.length);
 
 /** The platform's words ({machine}, {tray}) for every coded text. */
 const WordsContext = createContext<Record<string, string>>({});
@@ -146,13 +153,12 @@ function Frame({
   next?: ReactNode;
 }) {
   const { t } = useI18n();
+  const total = useContext(StepsContext);
   return (
     <main className="mkt-setup" aria-labelledby="mkt-setup-h">
       <section className="mkt-setup__card">
         {step !== undefined && (
-          <p className="mkt-setup__step">
-            {t("setup.stepOf", { n: step + 1, total: ORDER.length })}
-          </p>
+          <p className="mkt-setup__step">{t("setup.stepOf", { n: step + 1, total })}</p>
         )}
         <h1 id="mkt-setup-h" className="mkt-setup__title">
           {title}
@@ -225,17 +231,20 @@ export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initi
       .catch(() => {});
   }, [api]);
 
+  // the models step only where the second listen runs (check says)
+  const [withModels, setWithModels] = useState(true);
+  const order = withModels ? ORDER : ORDER.filter((s) => s !== "models");
   const go = (dir: 1 | -1) => {
-    const i = ORDER.indexOf(screen);
+    const i = order.indexOf(screen);
     if (dir === -1 && i <= 0) return setScreen("welcome");
-    setScreen(ORDER[i + dir] ?? "starting");
+    setScreen(order[i + dir] ?? "starting");
   };
-  const step = ORDER.indexOf(screen);
+  const step = order.indexOf(screen);
   const props = { api, step, platform, next: () => go(1), back: () => go(-1) };
   const { t } = useI18n();
   return (
     <WordsContext.Provider value={platformWords(t, platform)}>
-      {screenOf(screen)}
+      <StepsContext.Provider value={order.length}>{screenOf(screen)}</StepsContext.Provider>
     </WordsContext.Provider>
   );
 
@@ -251,7 +260,9 @@ export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initi
           />
         );
       case "check":
-        return <Check {...props} />;
+        return (
+          <Check {...props} onChecked={(r) => setWithModels(r.second_listen?.runs !== false)} />
+        );
       case "admin":
         return <Admin {...props} />;
       case "libraries":
@@ -332,10 +343,19 @@ function Welcome({
   );
 }
 
-function Check({ api, step, platform, next, back }: StepProps) {
+function Check({
+  api,
+  step,
+  platform,
+  next,
+  back,
+  onChecked,
+}: StepProps & { onChecked?: (r: CheckResult) => void }) {
   const { t } = useI18n();
   const words = platformWords(t, platform);
   const [res, setRes] = useState<CheckResult | null>(null);
+  const checked = useRef(onChecked);
+  checked.current = onChecked;
   const [error, setError] = useState<StepError | null>(null);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -343,7 +363,11 @@ function Check({ api, step, platform, next, back }: StepProps) {
     setError(null);
     api
       .runStep<CheckResult>("check", {})
-      .then((r) => alive && setRes(r))
+      .then((r) => {
+        if (!alive) return;
+        setRes(r);
+        checked.current?.(r);
+      })
       .catch((e) => alive && setError(asError(e)));
     return () => {
       alive = false;
