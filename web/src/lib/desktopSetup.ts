@@ -21,9 +21,14 @@ export type LoginItem =
   | "not_found"
   | "unsupported";
 
+/** The OS the app runs on (Rust's std::env::consts::OS). */
+export type Platform = "macos" | "windows" | "linux";
+
 export type AppState = AppTarget & {
   server_available: boolean;
   login_item: LoginItem;
+  /** the OS the app runs on (Epic 38); absent from an Epic 36 shell: a Mac */
+  platform?: Platform;
   /** the user asked to change servers: do not adopt this Mac's configured server */
   reset?: boolean;
 };
@@ -50,9 +55,19 @@ export interface StepProgress {
 /** A failed step (setup.rs StepError). */
 export interface StepError {
   code: string;
+  /** English, for a code the app has no text for (and the details box) */
   message: string;
   field?: string;
+  /** the values the code's text takes (setup.error.<code>) */
+  params?: Record<string, unknown>;
   details: string[];
+}
+
+/** One finding of the check step: setup.check.note.<code> with its params. */
+export interface CheckNote {
+  code: string;
+  params?: Record<string, unknown>;
+  message: string;
 }
 
 export function isStepError(e: unknown): e is StepError {

@@ -157,6 +157,10 @@ class StageResult:
     requests: tuple[Request, ...] = ()
     summary: dict[str, Any] = field(default_factory=dict)
     log: tuple[tuple[str, str, dict[str, Any]], ...] = ()
+    #: the inputs this result answers, when not all the fingerprint names (a transcript
+    #: whose second listen was skipped): stored as the job's input hash, so a worker
+    #: that can do more does not take it as done
+    input_hash: str | None = None
 
 
 StageHandler = Callable[["DBConn", "Job", "StageContext"], Awaitable[StageResult]]

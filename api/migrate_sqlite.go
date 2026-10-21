@@ -309,6 +309,9 @@ func runSQLiteMigrate(ctx context.Context, dsn, dir, action string) error {
 		return fmt.Errorf("ping db: %w", err)
 	}
 	if action == "up" {
+		if err := refuseAheadOf(ctx, db, dir, true); err != nil {
+			return err
+		}
 		fmt.Fprintf(os.Stderr, "migrate: applying sqlite migrations from %s\n", dir)
 		done, err := applySQLiteMigrations(ctx, db, dir)
 		fmt.Fprintf(os.Stderr, "migrate: applied %d migration(s)\n", len(done))

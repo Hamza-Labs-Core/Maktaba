@@ -20,7 +20,15 @@ variables. This binary:
    that child, with backoff and a crash-loop guard, and the state is
    served at `GET /processes` on `[supervisor] admin_addr` (default
    `127.0.0.1:9103`). The api shows it at `/api/system/processes`
-   (Story 22.9; settings in `deploy/server.toml.example`).
+   (Story 22.9; settings in `deploy/server.toml.example`). On shutdown
+   each child is asked to stop, then killed with its process tree once
+   `--shutdown-grace` (default 30 s) is over: SIGTERM on Linux and
+   macOS; on Windows CTRL_BREAK to the child's own process group (Go
+   roles see `os.Interrupt`, the pipeline `SIGBREAK`), and
+   `pg_ctl stop -m fast` for Postgres. A `serve` without a console
+   (started detached by a program that has none) cannot send
+   CTRL_BREAK, so it kills those children at once and says so in its
+   log.
 4. Serves the embedded SPA in-process and reverse-proxies `/api` to the
    API service, so the whole app is reachable from one origin.
 
@@ -40,7 +48,7 @@ maktaba-server serve
 | Command      | Purpose                                                        |
 |--------------|----------------------------------------------------------------|
 | `serve`      | Start all roles (or one with `--role api\|streaming\|pipeline\|web`) |
-| `setup`      | Interactive first-run wizard → writes `server.toml`, migrates  |
+| `setup`      | The desktop app's setup steps in the terminal (check, admin, libraries, Plex, finish) plus where the data goes and the database → writes `server.toml`, creates and migrates the database, seeds the admin |
 | `update`     | Self-update from GitHub Releases, verified in process (Sigstore bundle, exact release-workflow identity, `release.json`, no downgrade); `--check`, `--version`, `--rollback`. In the Linux app's runtime copy with owner `headless`: installs the release's payload tarball as a new runtime and switches the service to it (an app-owned runtime is updated by the app) |
 | `uninstall`  | Guided teardown (`--purge` for non-interactive full removal)   |
 | `models`     | Whisper model management (`list`, `download <name>`, `active`); `models llm [model…] [--check]` downloads the language model(s) of the LLM stages into the model server (default `[llm] models`, `qwen2.5:7b`), showing the disk space first; resumable |
@@ -48,7 +56,7 @@ maktaba-server serve
 | `adduser`    | Seed the first admin user (delegates to `maktaba-api`)         |
 | `keys`       | JWT signing-key management (delegates to `maktaba-api`)        |
 | `migrate-from-dev` | Move a Mac running `tools/dev/stack.sh` + Docker Postgres into Maktaba.app (`--dry-run`, `--verify`, `--finalize`; [runbook](../../specs/epics/36-mac-app/migrate-from-dev.md)) |
-| `setup --json --step status\|llm` | For Maktaba.app: is this Mac set up already; download the language model with progress ([contract](../../specs/epics/36-mac-app/contract-setup.md); the other steps are still to come) |
+| `setup --json --step <name>` | The desktop app's setup screens, one step per run: `status`, `check`, `admin`, `libraries`, `models`, `plex`, `venv`, `llm` (the language model, Epic 36 story 36.11), `finish` ([contract](../../specs/epics/36-mac-app/contract-setup.md)) |
 | `service`    | The Linux app's systemd user unit: `install` (`--start`, `--replace`), `uninstall`, `start`, `stop`, `restart`, `linger [--off]`, `status`; `--json` for the app ([contract](../../specs/epics/39-linux-app/contract-runtime.md#5-maktaba-server-service--linux-a-systemd-user-unit)) |
 | `runtime`    | The Linux app's runtime copy of the payload: `install` (`--from`, `--owner`, `--activate`; the first one becomes `current`), `activate <dir\|previous>`, `status`, `prune`; a version older than the newest this machine ran needs `--allow-downgrade`; `--json` for the app ([contract](../../specs/epics/39-linux-app/contract-runtime.md#3-maktaba-server-runtime-)) |
 

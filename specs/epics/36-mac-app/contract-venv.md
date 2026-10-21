@@ -80,8 +80,10 @@ A `wheel` or `repair` run that fails keeps the previous `ready` stamp, so the ne
 the same action again. A `build` removes the stamp before the rest of the old venv, so a removal
 cut short is never taken for a ready venv.
 
-The venv is built in place (a venv cannot be moved), so **the supervisor stops the pipeline
-workers before a run that is not `none`** (`--check` says which, without changing anything).
+The venv is built in place (a venv cannot be moved: pip writes each console script with its
+absolute interpreter path), so **no pipeline worker may run on it while a run that is not `none`
+does** (`--check` says which, without changing anything): the app's server runs the bootstrap
+before the workers' start, and they wait for it (contract-update.md).
 
 ### Outputs
 
@@ -126,6 +128,37 @@ below; `--check` prints one `{"event": "plan", "action": "...", "reason": "..."}
 | 10 | `--check` only: a run would change the venv |
 | 130 | stopped by SIGTERM / Ctrl-C, on Windows by CTRL_BREAK (`SIGBREAK`; pip, in its own process group, gets one too, else is terminated); the next run resumes. A console closed or a sign-out on Windows ends the run before it can say so: the status may stay `building` (its `pid` gone); the stamp says `building` too, so the next run resumes |
 
+### How the app's server runs it
+
+`cmd/maktaba-server/internal/appvenv` (setup's venv step, and the supervisor before the pipeline's
+first start): `--check`, then the run when it says the venv needs work, both with
+`--python <payload>/python/…` (the payload's Python, the one running it), `--payload` and
+`--venv <state>/venv`.
+
+**Its environment** is its own, not the server's: of the server's it keeps only `PATH`, `HOME`,
+`USER`, `LOGNAME`, `TMPDIR`, `TEMP`, `TMP`, `LANG`, `LC_ALL`, `LC_CTYPE`, `XDG_CACHE_HOME`,
+`XDG_CONFIG_HOME`; on Windows `SYSTEMROOT` (a Python does not start without it), `WINDIR`,
+`SYSTEMDRIVE`, `COMSPEC`, `PATHEXT`, `USERPROFILE`, `USERNAME`, `HOMEDRIVE`, `HOMEPATH`,
+`APPDATA`, `LOCALAPPDATA` (pip's cache), `PROGRAMDATA`, `PROCESSOR_ARCHITECTURE`,
+`NUMBER_OF_PROCESSORS`; a proxy (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `ALL_PROXY`, in either
+case) and its certificates (`SSL_CERT_FILE`, `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`); pip's
+`PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`, `PIP_TRUSTED_HOST`, `PIP_CERT`, `PIP_CLIENT_CERT`,
+`PIP_PROXY`, `PIP_CACHE_DIR`, `PIP_TIMEOUT`, `PIP_RETRIES` (a mirror is safe: every package is
+checked against its hash); and the variables **`MAKTABA_VENV_KEEP_ENV`** names (comma-separated:
+a network that needs another, a netrc). Then `PYTHONPATH=<the wheel>`, `PYTHONUTF8=1` and
+`PYTHONNOUSERSITE=1` (user site-packages run code at a Python's start). So the server's
+`MAKTABA_PYTHON`, `MAKTABA_PIPELINE_EXTRAS`, `MAKTABA_VENV`, `MAKTABA_PIPELINE_PAYLOAD`,
+`PYTHONHOME` or `VIRTUAL_ENV` never change what it builds (the extras are the default,
+`stt,search`).
+
+**Stopping it** (the supervisor stopping, a setup step cancelled): SIGTERM; on Windows the
+server starts it in a process group of its own on its console (`CREATE_NEW_PROCESS_GROUP`) and
+sends that group CTRL_BREAK (killed instead when there is no console to send it through, which
+the app's launcher always gives the server). It then waits up to 45 s: the bootstrap gives pip
+30 s to stop (10 s on Windows), kills it, says `interrupted` and exits 130; 45 s covers that and
+stays under the launcher's 60 s stop grace. Only then is it killed. An exit 130 is an
+interruption (setup's `interrupted`), never a failure.
+
 ### After it
 
 The workers run `<venv>/bin/maktaba-pipeline run …` (or `<venv>/bin/python -m maktaba_pipeline`;
@@ -148,13 +181,29 @@ The items are exactly what the workers load, read from the same settings the wor
 
 | Name | Model | How the worker loads it |
 |---|---|---|
-| `whisper` | `MAKTABA_STT_MODEL` (default `mlx-community/whisper-large-v3-turbo`, ~1.6 GB) | `mlx_whisper` → `snapshot_download(repo)` (whole repo) |
+| `whisper` (Apple Silicon: MLX) | `MAKTABA_STT_MODEL` (default `mlx-community/whisper-large-v3-turbo`, ~1.6 GB) | `mlx_whisper` → `snapshot_download(repo)` (whole repo) |
+| `whisper` (Windows, Linux: CTranslate2, story 38.8) | `MAKTABA_STT_MODEL` (default `dropbox-dash/faster-whisper-large-v3-turbo`, float16, 1.6 GB; an MLX id is replaced by its CTranslate2 conversion, logged) | `stt/ct2.py` → `snapshot_download(repo, revision=<pin>, allow_patterns=engine.CT2_FILES)`: `config.json`, `preprocessor_config.json`, `model.bin`, `tokenizer.json`, `vocabulary.*` (faster-whisper's own list), then each file's SHA-256 against `engine.CT2_PINS` |
 | `cohere` | `MAKTABA_STT_REFINE_MODEL` (default `CohereLabs/cohere-transcribe-arabic-07-2026`, gated) | `mlx_audio` with its file patterns; else the home's copy on the share |
 | `dictionary` | CAMeL Tools `morphology-db-msa-r13` | `CATALOGUE.download_package` |
 | `embedder` | `MAKTABA_EMBED_MODEL` (default `intfloat/multilingual-e5-small`) | sentence-transformers |
 
-`cohere` and `dictionary` are `skipped` when `MAKTABA_STT_REFINE=0`; `whisper` when
-`MAKTABA_STT_MODEL` is a local folder. Silero VAD ships inside its wheel (nothing to fetch).
+`cohere` and `dictionary` are `skipped` when `MAKTABA_STT_REFINE=0`, and on the CTranslate2
+engine, which has no second listen yet (story 38.9: its transcripts keep Whisper's words and
+say why); `whisper` when `MAKTABA_STT_MODEL` is a local folder. Silero VAD ships inside its
+wheel (nothing to fetch).
+
+The CTranslate2 default is the conversion faster-whisper 1.2.1 itself fetches for
+`large-v3-turbo` (it names it `mobiuslabsgmbh/faster-whisper-large-v3-turbo`, a repo since
+moved to `dropbox-dash/`; the old name only redirects). It, and `Systran/faster-whisper-large-v3`
+(what an MLX large-v3 maps to), are fetched at a pinned commit (`stt/engine.py` `CT2_PINS`:
+`dropbox-dash/...turbo` at `0a363e91`, `Systran/...large-v3` at `edaa852e`) and their files
+checked against their SHA-256 once (a marker, `.maktaba-sha256`, in the snapshot); a file that
+does not match is removed, so the next download fetches it again. A model of the operator's
+own is fetched as its repo has it. Still unpinned (as on `main`): the MLX Whisper and the
+Cohere model on Apple Silicon (`mlx_whisper`, `mlx_audio`, `fetch_cli.hf_download`), the
+embedder (sentence-transformers) and the CAMeL data. Its CUDA needs cuBLAS 12 only (the
+`nvidia-cublas-cu12` wheel of the `stt` extra; CTranslate2 ≥ 4.6.3 runs Whisper without
+cuDNN) and the NVIDIA driver; no CUDA toolkit.
 
 **The gated model.** Hugging Face serves it only to an account that accepted its licence:
 `HF_TOKEN` in the environment, or a token saved by `hf auth login` **in this `HF_HOME`**
@@ -190,14 +239,54 @@ A download is resumable: run it again (Hugging Face keeps partial files).
 
 | Variable | The app's value | Read by |
 |---|---|---|
-| `MAKTABA_STT_MODEL` | `[transcription].model` (default turbo) | `engine/stages/transcribe.py` `settings_from_env` |
+| `MAKTABA_STT_MODEL` | `[transcription].model` (default turbo, in the engine's format) | `engine/stages/transcribe.py` `settings_from_env` (`stt/engine.py` `model_for`) |
 | `MAKTABA_STT_REFINE` | `1` / `0` (second listen on/off; default on) | `transcribe.refine_model` |
 | `MAKTABA_STT_REFINE_MODEL` | the Cohere repo id (default as above) | `transcribe.refine_model` |
-| `MAKTABA_STT_LANGUAGE`, `_WORDS`, `_BATCH`, `_GPU_GB`, `_GPU_CACHE_GB`, `_AUDIO_HOURS`, `_SLOT` | the RAM tiers of 36.4 | `transcribe.py`, `stt/batched.py` |
+| `MAKTABA_STT_LANGUAGE`, `_WORDS`, `_BATCH`, `_GPU_GB`, `_GPU_CACHE_GB`, `_AUDIO_HOURS`, `_SLOT` | the RAM tiers of 36.4 (`_GPU_GB`, `_GPU_CACHE_GB`: MLX only) | `transcribe.py`, `stt/batched.py` |
+| `MAKTABA_STT_BATCH` | files decoded together per pass: `[transcription].batch`, else sized by the supervisor (NVIDIA GPU tiers; 4 on the CPU; unset on a Mac: 32) | `transcribe.settings_from_env` (default 32 on MLX, 8 on CTranslate2) |
+| `MAKTABA_STT_DEVICE` (CTranslate2) | `[transcription].device`; unset: `auto` (CUDA when usable, else the CPU). `cuda` / `cuda:<n>` that cannot be used makes the worker `unavailable` for transcribe, saying why | `stt/ct2.py` `choose_device` |
+| `MAKTABA_STT_COMPUTE_TYPE` (CTranslate2) | `[transcription].compute_type`, else `int8_float16` on a GPU under 7 GB; unset: `auto` (float16 on CUDA, int8 on the CPU); one the device cannot run falls back to its default, logged | `stt/ct2.py` `choose_compute_type` |
+| `MAKTABA_STT_CPU_THREADS` (CTranslate2) | `[transcription].cpu_threads`, else half the logical CPUs (2 to 16) when the machine transcribes on the CPU | `stt/ct2.py` `load` |
+
 | **`MAKTABA_MODEL_CACHE_DIR`** (new) | `~/Library/Application Support/Maktaba/models` | `maktaba_pipeline/model_dirs.py`: sets `HF_HOME=<dir>/huggingface` and `CAMELTOOLS_DATA=<dir>/camel_tools` (each only when not already set) when the package is imported; share copies go to `<dir>/share-copies` |
 | `MAKTABA_CHROMA_DIR` | `~/Library/Application Support/Maktaba/chroma` | `search/semantic.py`, `search/index_stage.py` (default `~/.maktaba/chroma`) |
 | `MAKTABA_EMBED_MODEL` | unset (e5-small) | `search/semantic.py` |
 | `MAKTABA_MODELS_DIR` | **leave unset on a home with a NAS** (see below) | `stt/model_share.py`: the *share's* models folder |
+
+On Windows and Linux (story 38.8) the supervisor sizes the plan from the NVIDIA GPU
+(`nvidia-smi --query-gpu=name,memory.total`): the transcription workers and `MAKTABA_STT_BATCH`
+per GPU-memory tier (an 8 GB card: one worker, 8 files; under 4 GB, and Linux on aarch64, whose
+CTranslate2 has no CUDA build: the CPU plan), `MAKTABA_STT_AUDIO_HOURS` and `_MIN_FREE_PCT`
+from the RAM. Without a GPU (or `[transcription] device = "cpu"`) there are no transcription
+workers: the main worker transcribes, and it gets the knobs. `[pipeline] instances` and
+`[transcription] workers` still set the number of workers; more than the plan's share its
+budget (each its part of the GPU's batch, the CPU threads, the audio hours). A transcript records
+its engine in `transcripts.backend` (`mlx-batched`, `ct2-batched`) and the runtime in
+`backend_version` (e.g. `faster-whisper 1.2.1, ctranslate2 4.8.3, cuda float16`); the
+transcribe fingerprint names the CTranslate2 turbo as the MLX one, so a PC does not transcribe
+again what a Mac did.
+
+**Where transcription runs** (review of 38.8). The operator's own stage selection always
+stands: with `transcribe` in `MAKTABA_PIPELINE_EXCLUDE_STAGES` (or a `MAKTABA_PIPELINE_STAGES`
+without it) the supervisor starts no transcription workers and leaves the main worker's
+exclusion as it is. Planned workers run only where the pipeline's Python has the engine (a
+probe of its modules, without importing them) and, while the second listen is on, only where
+it runs too (Apple Silicon). Elsewhere the main worker leaves `transcribe` to the machines that
+run the second listen (its `unavailable()` says why), unless `rules.transcription`
+`without_second_listen` is on (Settings, Transcription: "Transcribe without the second
+listen"), read before each stage selection. A transcript made without its second listen stores
+`skipped_fingerprint(fingerprint)` as its job's input hash: a worker that runs the second
+listen does not take it as done, and every 10 minutes queues up to 20 of them (at least an hour
+old, oldest first, priority 500, payload `relisten`) once it has the model; a worker without
+the second listen gives a relisten job back for 15 minutes (for a day at most) and lets an
+ordinary job's transcript stand.
+
+**Where Whisper loads** (CTranslate2). With `MAKTABA_STT_DEVICE=auto` the GPU must have the
+memory free that the model and its batch need (NVML's count: 2.3 GB in float16, 1.2 in
+int8_float16, 0.14 a file, 0.25 to spare; another model in proportion to its `model.bin`),
+else Whisper loads on the CPU with half the logical CPUs; a load that fails on the GPU all the
+same is loaded on the CPU, and the process does not try the GPU again. GPUs are numbered as
+nvidia-smi numbers them (`CUDA_DEVICE_ORDER=PCI_BUS_ID` unless set).
 
 The pipeline never read `MAKTABA_TRANSCRIPTION_BACKEND` / `MAKTABA_TRANSCRIPTION_MODEL`, which
 `ChildEnv` sets today: track A maps `[transcription]` to the `MAKTABA_STT_*` names above.
