@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -97,43 +98,91 @@ type setupNeed struct {
 	DiskBytes uint64 `json:"disk_bytes"`
 }
 
+// setupRole is one line of what will run: the role (the screens' text is
+// setup.check.run.<role>, with params) and its English.
 type setupRole struct {
-	Role string `json:"role"`
-	What string `json:"what"`
+	Role   string         `json:"role"`
+	What   string         `json:"what"`
+	Params map[string]any `json:"params,omitempty"`
+}
+
+// checkNote is one finding of check: a code the screens translate
+// (setup.check.note.<code>, with params; a size is in bytes under a *_bytes
+// name) and its English, for a log or a screen that does not know the code.
+type checkNote struct {
+	Code    string         `json:"code"`
+	Params  map[string]any `json:"params,omitempty"`
+	Message string         `json:"message"`
 }
 
 type checkResult struct {
-	Platform      string      `json:"platform"`
-	Arch          string      `json:"arch"`
-	RAMBytes      uint64      `json:"ram_bytes"`
-	DiskFreeBytes uint64      `json:"disk_free_bytes"`
-	DataDir       string      `json:"data_dir"`
-	Need          setupNeed   `json:"need"`
-	OK            bool        `json:"ok"`
-	Warnings      []string    `json:"warnings"`
-	Runs          []setupRole `json:"runs"`
+	Platform      string    `json:"platform"`
+	Arch          string    `json:"arch"`
+	RAMBytes      uint64    `json:"ram_bytes"`
+	DiskFreeBytes uint64    `json:"disk_free_bytes"`
+	DataDir       string    `json:"data_dir"`
+	Need          setupNeed `json:"need"`
+	// OK: no problem, so the screen's Next is allowed.
+	OK bool `json:"ok"`
+	// Problems are why this machine cannot run the server (they block Next);
+	// Warnings are worth knowing and block nothing.
+	Problems []checkNote `json:"problems"`
+	Warnings []checkNote `json:"warnings"`
+	// GPUs are the NVIDIA GPUs transcription can use (Windows and Linux).
+	GPUs []hostinfo.GPU `json:"gpus"`
+	Runs []setupRole    `json:"runs"`
 }
+
+func newNote(code, message string, kv ...any) checkNote {
+	n := checkNote{Code: code, Message: message}
+	for i := 0; i+1 < len(kv); i += 2 {
+		if n.Params == nil {
+			n.Params = map[string]any{}
+		}
+		n.Params[fmt.Sprint(kv[i])] = kv[i+1]
+	}
+	return n
+}
+
+// Problem records why this machine cannot run the server.
+func (r *checkResult) Problem(code, message string, kv ...any) {
+	r.Problems = append(r.Problems, newNote(code, message, kv...))
+	r.OK = false
+}
+
+// Warn records what is worth knowing.
+func (r *checkResult) Warn(code, message string, kv ...any) {
+	r.Warnings = append(r.Warnings, newNote(code, message, kv...))
+}
+
+// platformChecks are what a platform adds to check (a Linux file adds glibc,
+// the systemd user manager and linger, Epic 39): each reads this machine and
+// records its problems and warnings.
+var platformChecks []func(ctx context.Context, res *checkResult)
 
 // hostFacts are what check reads about this machine (tests replace it).
 var hostFacts = func(dir string) (ram, disk uint64) {
 	return hostinfo.TotalMemory(), hostinfo.FreeDisk(dir)
 }
 
-// setupPlatform reports whether the app can run the server here: the desktop
-// app's server payload is built for Apple Silicon (MLX) and x86_64 Windows,
-// and Linux on x86_64 and arm64.
-func setupPlatform(goos, arch string) (bool, string) {
+// hostGPUs are the NVIDIA GPUs check reports (tests replace it).
+var hostGPUs = hostinfo.NVIDIA
+
+// setupPlatform says why the app cannot run the server here (code and its
+// English), or nothing: the desktop app's server payload is built for Apple
+// Silicon (MLX) and x86_64 Windows, and Linux on x86_64 and arm64.
+func setupPlatform(goos, arch string) (code, message string) {
 	switch goos + "/" + arch {
 	case "darwin/arm64", "windows/amd64", "linux/amd64", "linux/arm64":
-		return true, ""
+		return "", ""
 	case "darwin/amd64":
-		return false, "This Mac has an Intel processor: the Maktaba app runs the server on Apple Silicon only."
+		return "platform_intel_mac", "This Mac has an Intel processor: the Maktaba app runs the server on Apple Silicon only."
 	}
-	return false, fmt.Sprintf("Maktaba does not run its server on %s/%s.", goos, arch)
+	return "platform_unsupported", fmt.Sprintf("Maktaba does not run its server on %s/%s.", goos, arch)
 }
 
 // stepCheck: what will run, and whether this machine has the memory and the
-// disk for it. ok false blocks the screen's Next; warnings do not.
+// disk for it. A problem blocks the screen's Next; a warning does not.
 func stepCheck(s *setupRun, _ json.RawMessage) (any, error) {
 	root := s.cfg.StateDir()
 	ram, disk := hostFacts(root)
@@ -142,50 +191,70 @@ func stepCheck(s *setupRun, _ json.RawMessage) (any, error) {
 		RAMBytes: ram, DiskFreeBytes: disk, DataDir: root,
 		Need:     setupNeed{RAMBytes: setupNeedRAM, DiskBytes: setupNeedDisk},
 		OK:       true,
-		Warnings: []string{},
+		Problems: []checkNote{},
+		Warnings: []checkNote{},
+		GPUs:     []hostinfo.GPU{},
 	}
-	if ok, why := setupPlatform(runtime.GOOS, runtime.GOARCH); !ok {
-		res.OK = false
-		res.Warnings = append(res.Warnings, why)
+	if code, msg := setupPlatform(runtime.GOOS, runtime.GOARCH); code != "" {
+		res.Problem(code, msg, "os", runtime.GOOS, "arch", runtime.GOARCH)
 	}
 	switch {
 	case disk > 0 && disk < setupNeedDisk:
-		res.OK = false
-		res.Warnings = append(res.Warnings, fmt.Sprintf("Only %s free on the disk of %s: Maktaba needs %s to start.",
-			humanBytes(disk), root, humanBytes(setupNeedDisk)))
+		res.Problem("disk_low", fmt.Sprintf("Only %s free on the disk of %s: Maktaba needs %s to start.",
+			humanBytes(disk), root, humanBytes(setupNeedDisk)), "free_bytes", disk, "need_bytes", setupNeedDisk, "dir", root)
 	case disk > 0 && disk < 2*setupNeedDisk:
-		res.Warnings = append(res.Warnings, "Less than 40 GB free: the database, the models and the caches grow with the library.")
+		res.Warn("disk_tight", "Less than 40 GB free: the database, the models and the caches grow with the library.",
+			"free_bytes", disk, "comfortable_bytes", uint64(2*setupNeedDisk))
 	}
 	switch {
 	case ram > 0 && ram < setupMinRAM:
-		res.OK = false
-		res.Warnings = append(res.Warnings, fmt.Sprintf("This machine has %s of memory: Maktaba needs at least %s.",
-			humanBytes(ram), humanBytes(setupMinRAM)))
+		res.Problem("ram_low", fmt.Sprintf("This machine has %s of memory: Maktaba needs at least %s.",
+			humanBytes(ram), humanBytes(setupMinRAM)), "have_bytes", ram, "need_bytes", setupMinRAM)
 	case ram > 0 && ram < setupNeedRAM:
-		res.Warnings = append(res.Warnings, "Less than 8 GB of memory: indexing and transcription will be slow.")
+		res.Warn("ram_tight", "Less than 8 GB of memory: indexing and transcription will be slow.", "need_bytes", setupNeedRAM)
 	}
-	platformCheck(s.ctx, &res) // what is particular to this OS (setup_check_*.go)
+	// transcription on Windows and Linux: an NVIDIA GPU (CUDA), else the processor
+	gpu := ""
+	if runtime.GOOS != "darwin" {
+		if gpus := hostGPUs(); len(gpus) > 0 {
+			res.GPUs, gpu = gpus, gpus[0].Name
+		} else {
+			res.Warn("transcribe_cpu", "No NVIDIA GPU: transcription runs on the processor, many times slower than on a GPU.")
+		}
+	}
+	for _, check := range platformChecks {
+		check(s.ctx, &res)
+	}
 
 	exe, _ := os.Executable()
 	if _, ok, err := pgbundle.Resolve(s.cfg, exe); err == nil && ok {
-		res.Runs = append(res.Runs, setupRole{"postgres", "The library database (private to Maktaba)"})
+		res.Runs = append(res.Runs, setupRole{Role: "postgres", What: "The library database (private to Maktaba)"})
+	}
+	workers := supervisor.PlanSTT(s.cfg).Workers
+	pipeline := setupRole{Role: "pipeline", What: pipelineWhat(workers, gpu), Params: map[string]any{"workers": workers}}
+	if gpu != "" {
+		pipeline.Params["gpu"] = gpu
 	}
 	res.Runs = append(res.Runs,
-		setupRole{"api", "The server the app and your devices talk to"},
-		setupRole{"streaming", "Playback and Live TV"},
-		setupRole{"pipeline", pipelineWhat(supervisor.PlanSTT(s.cfg).Workers)},
+		setupRole{Role: "api", What: "The server the app and your devices talk to"},
+		setupRole{Role: "streaming", What: "Playback and Live TV"},
+		pipeline,
 	)
 	return res, nil
 }
 
-func pipelineWhat(workers int) string {
-	switch workers {
-	case 0:
-		return "Indexing, transcription and search"
-	case 1:
-		return "Indexing, transcription (1 worker) and search"
+func pipelineWhat(workers int, gpu string) string {
+	what := "Indexing, transcription and search"
+	switch {
+	case workers == 1:
+		what = "Indexing, transcription (1 worker) and search"
+	case workers > 1:
+		what = fmt.Sprintf("Indexing, transcription (%d workers) and search", workers)
 	}
-	return fmt.Sprintf("Indexing, transcription (%d workers) and search", workers)
+	if gpu != "" {
+		what += ", transcribing on " + gpu
+	}
+	return what
 }
 
 func humanBytes(n uint64) string {
@@ -205,17 +274,33 @@ const (
 	adminMaxPassword = 256
 )
 
+const adminMaxUsername = 64
+
 func validAdminName(u string) error {
-	if u == "" || len(u) > 64 {
-		return failStep("bad_username", "username", "A username is 1 to 64 characters.")
+	if u == "" || len(u) > adminMaxUsername {
+		return failStep("username_length", "username", "A username is 1 to %d characters.", adminMaxUsername).with("max", adminMaxUsername)
 	}
 	if strings.TrimSpace(u) != u {
-		return failStep("bad_username", "username", "A username cannot start or end with a space.")
+		return failStep("username_space", "username", "A username cannot start or end with a space.")
 	}
 	for _, r := range u {
 		if r < 0x20 || r == 0x7f {
-			return failStep("bad_username", "username", "A username cannot hold control characters.")
+			return failStep("username_control", "username", "A username cannot hold control characters.")
 		}
+	}
+	return nil
+}
+
+// validAdminPassword: the api's own limits, and one line (the api reads the
+// password as a line: a line break would cut it there).
+func validAdminPassword(pw string) error {
+	switch {
+	case strings.ContainsAny(pw, "\r\n"):
+		return failStep("password_newline", "password", "A password cannot hold a line break.")
+	case len([]rune(pw)) < adminMinPassword:
+		return failStep("password_short", "password", "Use at least %d characters.", adminMinPassword).with("min", adminMinPassword)
+	case len(pw) > adminMaxPassword:
+		return failStep("password_long", "password", "Use at most %d characters.", adminMaxPassword).with("max", adminMaxPassword)
 	}
 	return nil
 }
@@ -234,11 +319,8 @@ func stepAdmin(s *setupRun, in json.RawMessage) (any, error) {
 	if err := validAdminName(req.Username); err != nil {
 		return nil, err
 	}
-	switch n := len([]rune(req.Password)); {
-	case n < adminMinPassword:
-		return nil, failStep("weak_password", "password", "Use at least %d characters.", adminMinPassword)
-	case len(req.Password) > adminMaxPassword:
-		return nil, failStep("weak_password", "password", "Use at most %d characters.", adminMaxPassword)
+	if err := validAdminPassword(req.Password); err != nil {
+		return nil, err
 	}
 	out, _, err := s.apiSub("", strings.NewReader(req.Password+"\n"), "hash-password")
 	if err != nil {
@@ -268,9 +350,41 @@ type rootCheck struct {
 	Readable bool   `json:"readable"`
 }
 
-// stepLibraries: the library folders (each must exist and be readable here:
-// a drive letter, a UNC path or a mounted share) and the NAS path map (the
-// paths other machines report → this machine's, [media] path_map).
+// localPath is a path of this machine, whole: a drive letter's folder (a bare
+// "Y:" is the drive's root), a UNC path, or (elsewhere) a path from /; ok
+// false for a relative one, which would resolve against wherever the server
+// happens to run.
+func localPath(p string) (string, bool) {
+	p = strings.TrimSpace(p)
+	if runtime.GOOS == "windows" && len(p) == 2 && p[1] == ':' {
+		p += `\`
+	}
+	if !filepath.IsAbs(p) {
+		return p, false
+	}
+	return filepath.Clean(p), true
+}
+
+// otherPath: a whole path in any machine's form (the path map's left side is
+// another machine's: /Volumes/... on a Mac, Y:/... or \\NAS\... on Windows).
+func otherPath(p string) bool {
+	return strings.HasPrefix(p, "/") || strings.HasPrefix(p, `\\`) ||
+		(len(p) >= 2 && p[1] == ':' && (p[0]|0x20 >= 'a' && p[0]|0x20 <= 'z'))
+}
+
+// samePath: two folders of this machine are one (Windows and the Mac's disks
+// ignore case; Linux's do not).
+func samePath(a, b string) bool {
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
+}
+
+// stepLibraries: the library folders (each must be a whole path that exists
+// and is readable here: a drive letter, a UNC path or a mounted share) and the
+// NAS path map (the paths other machines report → this machine's, [media]
+// path_map), both sides whole paths.
 func stepLibraries(s *setupRun, in json.RawMessage) (any, error) {
 	var req struct {
 		Roots   []string `json:"roots"`
@@ -284,17 +398,21 @@ func stepLibraries(s *setupRun, in json.RawMessage) (any, error) {
 	}
 	var roots []string
 	var checks []rootCheck
-	seen := map[string]bool{}
 	for _, r := range req.Roots {
-		r = strings.TrimSpace(r)
-		if r == "" {
+		if strings.TrimSpace(r) == "" {
 			continue
 		}
-		clean := filepath.Clean(r)
-		if seen[strings.ToLower(clean)] {
+		clean, ok := localPath(r)
+		if !ok {
+			return nil, failStep("root_relative", "roots", "%s is not a whole path (it starts at a drive or at /).", clean).with("path", clean)
+		}
+		dup := false
+		for _, seen := range roots {
+			dup = dup || samePath(seen, clean)
+		}
+		if dup {
 			continue
 		}
-		seen[strings.ToLower(clean)] = true
 		c := rootCheck{Path: clean}
 		info, err := os.Stat(clean)
 		c.Exists = err == nil && info.IsDir()
@@ -305,22 +423,35 @@ func stepLibraries(s *setupRun, in json.RawMessage) (any, error) {
 		checks = append(checks, c)
 		switch {
 		case !c.Exists:
-			return nil, failStep("root_missing", "roots", "%s is not a folder on this machine.", clean)
+			return nil, failStep("root_missing", "roots", "%s is not a folder on this machine.", clean).with("path", clean)
 		case !c.Readable:
-			return nil, failStep("root_unreadable", "roots", "Maktaba cannot read %s.", clean)
+			return nil, failStep("root_unreadable", "roots", "Maktaba cannot read %s.", clean).with("path", clean)
 		}
 		roots = append(roots, clean)
 	}
 	if len(roots) == 0 {
-		return nil, failStep("root_missing", "roots", "Give at least one library folder.")
+		return nil, failStep("roots_none", "roots", "Give at least one library folder.")
 	}
 	m := map[string]string{}
-	for _, e := range req.PathMap {
+	for i, e := range req.PathMap {
 		from, to := strings.TrimSpace(e.From), strings.TrimSpace(e.To)
+		line := i + 1
 		if from == "" || to == "" {
-			return nil, failStep("bad_path_map", "path_map", "Each line needs both paths.")
+			return nil, failStep("bad_path_map", "path_map", "Line %d of the path map needs both paths.", line).with("line", line)
 		}
-		m[from] = to
+		if !otherPath(from) {
+			return nil, failStep("path_map_relative", "path_map", "Line %d: %s is not a whole path.", line, from).
+				with("line", line, "path", from)
+		}
+		here, ok := localPath(to)
+		if !ok {
+			return nil, failStep("path_map_relative", "path_map", "Line %d: %s is not a whole path.", line, to).
+				with("line", line, "path", to)
+		}
+		if strings.HasSuffix(to, "/") || strings.HasSuffix(to, `\`) {
+			here = strings.TrimRight(here, `/\`) + string(filepath.Separator) // a prefix keeps its separator
+		}
+		m[from] = here
 	}
 	pathMap := ""
 	if len(m) > 0 {

@@ -25,8 +25,6 @@ func TestMain(m *testing.M) {
 	}
 	_ = os.Setenv("MAKTABA_NODE_CONFIG", filepath.Join(dir, "node.json"))
 	_ = os.Unsetenv("MAKTABA_TV_HOST_ROLE")
-	// setup's check must not depend on this machine's systemd and glibc
-	quietPlatformCheck()
 	// every port is free unless a test says otherwise: the result must not depend
 	// on what this machine happens to run (Splunk on 8088 ...)
 	portProbe = func() config.PortProbe {

@@ -86,6 +86,7 @@ func stepVenv(s *setupRun, _ json.RawMessage) (any, error) {
 		// the bootstrap runs from the wheel itself (no -I / -E: they would drop PYTHONPATH)
 		cmd.Env = append(os.Environ(), "PYTHONPATH="+wheels[0], "PYTHONUTF8=1")
 		cmd.Stderr = io.MultiWriter(logFile, s.log)
+		stopGently(cmd) // a stop asks the bootstrap, which stops pip and says where it was
 		return cmd
 	}
 	// --check first: an up-to-date venv is a reuse, not a build

@@ -43,14 +43,17 @@ type stepEvent struct {
 	Code    string          `json:"code"`
 	Message string          `json:"message"`
 	Field   string          `json:"field"`
+	Params  map[string]any  `json:"params"`
 	Stage   string          `json:"stage"`
 	Done    int64           `json:"done"`
 	Total   int64           `json:"total"`
 }
 
-// stepFailure is a step's error event (or a run that gave no result).
+// stepFailure is a step's error event (or a run that gave no result): its
+// code, its English, the field to ask again, the params of its text.
 type stepFailure struct {
 	Code, Message, Field string
+	Params               map[string]any
 }
 
 func (f *stepFailure) Error() string { return f.Code + ": " + f.Message }
@@ -116,7 +119,7 @@ func readStepEvents(r io.Reader, progress func(stepEvent)) (json.RawMessage, *st
 			}
 		case "error":
 			if res == nil && fail == nil {
-				fail = &stepFailure{Code: ev.Code, Message: ev.Message, Field: ev.Field}
+				fail = &stepFailure{Code: ev.Code, Message: ev.Message, Field: ev.Field, Params: ev.Params}
 			}
 		}
 	}
@@ -473,36 +476,34 @@ func (a *appSetup) askModels(string) (any, error) {
 	return map[string]any{"source": "nas", "path": path}, nil
 }
 
-// showCheck prints what will run and the check's warnings; false when the
-// computer cannot run the server (ok false: the warnings say why).
+// showCheck prints what will run, the problems and the warnings
+// (checkResult's notes), in the screens' words; false when the computer cannot
+// run the server.
 func (a *appSetup) showCheck(res json.RawMessage) bool {
 	var c struct {
-		OK       bool     `json:"ok"`
-		Warnings []string `json:"warnings"`
-		Runs     []struct {
-			Role string `json:"role"`
-			What string `json:"what"`
-		} `json:"runs"`
-		DataDir string `json:"data_dir"`
+		OK       bool        `json:"ok"`
+		Problems []checkNote `json:"problems"`
+		Warnings []checkNote `json:"warnings"`
+		Runs     []setupRole `json:"runs"`
+		DataDir  string      `json:"data_dir"`
 	}
 	if json.Unmarshal(res, &c) != nil {
 		return false
 	}
 	a.printf("%s (%s: %s)\n", a.t.get("setup.check.title"), a.t.get("setup.check.dataDir"), c.DataDir)
 	for _, r := range c.Runs {
-		a.printf("  %-10s %s\n", r.Role, r.What)
+		a.printf("  - %s\n", a.t.runText(r.Role, r.What, r.Params))
 	}
 	if !c.OK {
 		a.say("terminal.blocked")
-		for _, w := range c.Warnings {
-			a.printf("  - %s\n", w)
+		for _, p := range c.Problems {
+			a.printf("  - %s\n", a.t.coded("setup.check.note", p.Code, p.Params, p.Message))
 		}
-		return false
 	}
 	for _, w := range c.Warnings {
-		a.printf("  %s\n", a.t.get("terminal.note", "text", w))
+		a.printf("  %s\n", a.t.get("terminal.note", "text", a.t.coded("setup.check.note", w.Code, w.Params, w.Message)))
 	}
-	return true
+	return c.OK
 }
 
 // plex links Plex with the PIN flow (optional): the code is shown, then
@@ -560,16 +561,6 @@ func wrapStep(name string, err error) error {
 		return fmt.Errorf("%s: %w", name, err)
 	}
 	return nil
-}
-
-func splitList(s string) []string {
-	var out []string
-	for _, p := range strings.Split(s, ",") {
-		if p = strings.TrimSpace(p); p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
 }
 
 // readAnswers reads --answers (a file) or --answers-fd (an open descriptor:

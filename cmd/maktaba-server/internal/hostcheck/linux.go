@@ -1,7 +1,8 @@
 // Package hostcheck answers setup's `check` step for what is particular to a
 // platform (Epic 39 story 39.6: Linux; specs/epics/39-linux-app/README.md,
 // "Supported systems"). The step itself (Epic 38 story 38.6) adds these to
-// what it reports for every platform (RAM, disk, what will run).
+// what it reports for every platform (the architecture, RAM, disk, what will
+// run).
 package hostcheck
 
 import (
@@ -18,17 +19,33 @@ import (
 // (tools/release/linux-app/pins.env MAX_GLIBC: the ffmpeg and tauri builds).
 const MinGlibc = "2.35"
 
+// Note is one finding: a code the setup screens translate
+// (setup.check.note.<code>, with Params), and its English.
+type Note struct {
+	Code    string
+	Message string
+	// Params are key, value pairs (the text's {key}).
+	Params []any
+}
+
 // Result is what the platform adds to the check.
 type Result struct {
 	// Problems keep the computer from running the server (`ok: false`).
-	Problems []string
+	Problems []Note
 	// Warnings do not.
-	Warnings []string
+	Warnings []Note
+}
+
+func (r *Result) problem(code, message string, params ...any) {
+	r.Problems = append(r.Problems, Note{Code: code, Message: message, Params: params})
+}
+
+func (r *Result) warn(code, message string, params ...any) {
+	r.Warnings = append(r.Warnings, Note{Code: code, Message: message, Params: params})
 }
 
 // Linux are the facts a Linux check reads (tests replace them).
 type Linux struct {
-	GOARCH string
 	// Glibc is the C library's version ("" when unknown: not glibc, e.g. musl).
 	Glibc func(ctx context.Context) string
 	// Manager is the user's systemd manager.
@@ -38,8 +55,8 @@ type Linux struct {
 }
 
 // LocalLinux reads this machine.
-func LocalLinux(goarch string, unit service.AppUnit) Linux {
-	return Linux{GOARCH: goarch, Glibc: localGlibc, Manager: service.LocalUserManager(), Unit: unit}
+func LocalLinux(unit service.AppUnit) Linux {
+	return Linux{Glibc: localGlibc, Manager: service.LocalUserManager(), Unit: unit}
 }
 
 // localGlibc asks getconf (glibc's own), which a musl system does not answer.
@@ -58,28 +75,30 @@ func localGlibc(ctx context.Context) string {
 // Check is the Linux part of setup's check.
 func (l Linux) Check(ctx context.Context) Result {
 	var r Result
-	switch l.GOARCH {
-	case "amd64", "arm64":
-	default:
-		r.Problems = append(r.Problems, fmt.Sprintf("Maktaba runs on x86_64 and aarch64 Linux, not %s.", l.GOARCH))
-	}
 	switch v := l.Glibc(ctx); {
 	case v == "":
-		r.Problems = append(r.Problems, "This Linux has no GNU C library (glibc), which the bundled Postgres, ffmpeg and Python need (Alpine and other musl systems cannot run them).")
+		r.problem("glibc_missing", "This Linux has no GNU C library (glibc), which the bundled Postgres, ffmpeg and Python "+
+			"need (Alpine and other musl systems cannot run them).")
 	case olderThan(v, MinGlibc):
-		r.Problems = append(r.Problems, fmt.Sprintf("This Linux has glibc %s; Maktaba needs %s or newer (Ubuntu 22.04, Debian 12, Fedora 36, RHEL 10 or later).", v, MinGlibc))
+		r.problem("glibc_old", fmt.Sprintf("This Linux has glibc %s; Maktaba needs %s or newer (Ubuntu 22.04, Debian 12, "+
+			"Fedora 36, RHEL 10 or later).", v, MinGlibc), "have", v, "need", MinGlibc)
 	}
 	st := l.Manager.Status(ctx, l.Unit)
 	switch {
 	case st.Manager != "ok":
-		r.Problems = append(r.Problems, "The server runs as your systemd user service, which this computer cannot start: "+st.Reason+".")
+		r.problem("user_manager_missing", "The server runs as your systemd user service, which this computer cannot start: "+
+			st.Reason+".", "reason", st.Reason)
 	case st.SystemUnit != "":
-		r.Problems = append(r.Problems, fmt.Sprintf("A system-wide Maktaba service is installed (%s): it would be a second server on the same ports. "+
-			"Its administrator removes it first (sudo apt remove maktaba-server, or sudo systemctl disable --now maktaba-server).", st.SystemUnit))
+		r.problem("service_system_wide", fmt.Sprintf("A system-wide Maktaba service is installed (%s): it would be a second "+
+			"server on the same ports. Its administrator removes it first (sudo apt remove maktaba-server, or sudo systemctl "+
+			"disable --now maktaba-server).", st.SystemUnit), "unit", st.SystemUnit)
 	case st.Taken != "":
-		r.Problems = append(r.Problems, fmt.Sprintf("Another installation of Maktaba already owns the service %s (it runs %s). Remove it first (maktaba-server uninstall from that installation).", st.Unit, st.Taken))
+		r.problem("service_taken", fmt.Sprintf("Another installation of Maktaba already owns the service %s (it runs %s). "+
+			"Remove it first (maktaba-server uninstall from that installation).", st.Unit, st.Taken),
+			"unit", st.Unit, "runs", st.Taken)
 	case !st.Linger:
-		r.Warnings = append(r.Warnings, "Your services start only when you log in. Setup asks to let the server start at boot (linger); that may need an administrator's password.")
+		r.warn("linger_off", "Your services start only when you log in. Setup asks to let the server start at boot (linger); "+
+			"that may need an administrator's password.")
 	}
 	return r
 }
