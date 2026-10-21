@@ -41,7 +41,7 @@ still verify and must not be below the watermark). --rollback restores
 run a lower version, and it does not lower the watermark.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// Maktaba.app updates as a whole, shell and server payload (Epic 36 story 36.8)
-			if config.AppBundle() != "" {
+			if config.AppBundle() != "" || os.Getenv("MAKTABA_UPDATE_DISABLE") == "1" {
 				return errors.New("this server is part of Maktaba.app: the app updates it (Maktaba > Check for Updates)")
 			}
 			self, err := selfupdate.Self()
