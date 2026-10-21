@@ -1,13 +1,13 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0143 (node replicas, specs/epics/37-node-replica): every joined machine keeps a
+-- Slot 0144 (node replicas, specs/epics/37-node-replica): every joined machine keeps a
 -- live read-only copy of this database and runs on it when the home is away.
 --
 --   1. The machines' group (maktaba_worker) on a home whose migrations ran without the
 --      right to create roles (the Postgres bundled with Maktaba.app, whose app role
 --      could not before its cluster bootstrap): created now that it can, with the
---      privileges slots 0103..0142 give it, replayed in their order. A home that has
+--      privileges slots 0103..0143 give it, replayed in their order. A home that has
 --      the group is not touched.
 --   2. The replicas' group (maktaba_replicas): each machine's replication role joins
 --      it; the home's pg_hba lets the group stream its copy, nothing else. The group
@@ -110,6 +110,13 @@ BEGIN
         GRANT SELECT ON enrich_usage TO maktaba_worker;
         -- slot 0140
         REVOKE ALL ON graphql_persisted_queries FROM maktaba_worker;
+        -- slot 0143
+        REVOKE ALL ON failure_ignores FROM maktaba_worker;
+        GRANT SELECT ON failure_ignores TO maktaba_worker;
+        REVOKE ALL ON item_requests FROM maktaba_worker;
+        GRANT SELECT, UPDATE ON item_requests TO maktaba_worker;
+        GRANT SELECT, INSERT, UPDATE ON dependency_health TO maktaba_worker;
+        GRANT SELECT, INSERT, UPDATE ON item_checks TO maktaba_worker;
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_replicas')
        AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = current_user AND (rolsuper OR rolcreaterole)) THEN

@@ -29,7 +29,7 @@ don't append a line here; docs-only PRs are exempt.
   behind, copying anew, incompatible — shows on each machine's card on the Machines page and in
   the machine's own outage notice. Revoking a machine ends its replication and wipes its copy.
   The node's pipeline stops claiming jobs while the home's database does not answer and resumes
-  on its own. Migration 0143.
+  on its own. Migration 0144.
 
 ### Changed
 

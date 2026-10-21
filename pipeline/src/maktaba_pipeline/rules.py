@@ -30,6 +30,7 @@ from .classify.series_detector import DetectorConfig
 from .classify.tag_check import TagCheckConfig
 from .classify.topic_tags import TaggerConfig
 from .cluster.machines_settings import ClusterMachinesConfig
+from .engine.failure_classes import QueueHealthConfig
 from .enrich.config import EnrichConfig
 from .relay import RelayConfig
 from .schedule import settings_help as _planner_help  # noqa: F401
@@ -123,6 +124,9 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
     "updates": (UpdatesConfig, "Updates", "new signed releases installed by themselves in the "
                 "quiet window, on the home first and then on every machine; channel, pin, "
                 "defer, skip"),
+    "queue_health": (QueueHealthConfig, "Queue health", "when a queue turns red, how often "
+                     "a failure is tried, what waits on the model, a share or disk space "
+                     "and how often those are checked, which failures are of which class"),
     "cluster": (ClusterMachinesConfig, "Machines", "every machine of the cluster as the same "
                 "Maktaba: one sign-in for all of them, when a machine stops waiting for the "
                 "home"),

@@ -14,13 +14,13 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
 )
 
-// The machines' group made late (slot 0143: a home whose migrations ran without the
+// The machines' group made late (slot 0144: a home whose migrations ran without the
 // right to create roles, as the Postgres bundled with Maktaba.app did) ends up with
 // exactly the privileges a home that had it from slot 0103 on gives it.
 //
 // Roles are a server's, privileges a database's: on a server where the group does not
 // exist yet, one database is migrated by a user who cannot create roles (no group, the
-// grants of every slot skipped), then that user may and slot 0143 runs; another
+// grants of every slot skipped), then that user may and slot 0144 runs; another
 // database is migrated by the superuser the normal way. Their grants must be the same.
 func TestWorkerGroupMadeLateGetsTheSamePrivileges(t *testing.T) {
 	base := os.Getenv("MAKTABA_TEST_PG_URL")
@@ -80,7 +80,7 @@ func TestWorkerGroupMadeLateGetsTheSamePrivileges(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer lateDB.Close()
-	clustertest.MigrateTo(t, lateDB, 142)
+	clustertest.MigrateTo(t, lateDB, 143)
 	exec(lateDB, `SELECT 1`)
 	var made bool
 	_ = admin.QueryRow(`SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_worker')`).Scan(&made)
@@ -88,7 +88,7 @@ func TestWorkerGroupMadeLateGetsTheSamePrivileges(t *testing.T) {
 		t.Fatal("a user who cannot create roles made the group")
 	}
 	exec(admin, `ALTER ROLE `+plain+` CREATEROLE`)
-	clustertest.MigrateTo(t, lateDB, 0) // slot 0143
+	clustertest.MigrateTo(t, lateDB, 0) // slot 0144
 
 	earlyDB, err := sql.Open("postgres", clustertest.DSN(t, base, early, "", ""))
 	if err != nil {

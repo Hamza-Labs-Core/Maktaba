@@ -8,11 +8,11 @@ import (
 	"github.com/lib/pq"
 )
 
-// A machine's copy of the home's database (specs/epics/37-node-replica, slot 0143's
+// A machine's copy of the home's database (specs/epics/37-node-replica, slot 0144's
 // cluster_node_replica_grant): its replication role and its slot, named after its id
 // as its database role is.
 
-// ReplicaGroup is the group role every machine's replication role joins (slot 0143).
+// ReplicaGroup is the group role every machine's replication role joins (slot 0144).
 const ReplicaGroup = "maktaba_replicas"
 
 // CopyNames are a machine's replication role and slot, from its database role (false:

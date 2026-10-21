@@ -3408,12 +3408,35 @@
      "default": true
     },
     {
+     "name": "loudnorm_mode",
+     "kind": "str",
+     "group": "Maktaba TV",
+     "label": "Loudness filter",
+     "help": "speechnorm: speech levelled as it plays, nothing delayed, so a channel tunes fast (what dizqueTV does). loudnorm: EBU R128 to the target below, about 3 s of look-ahead. dynaudnorm: a gentler dynamic normaliser, also with look-ahead. Only programme and filler sound is levelled, never the slate's silence.",
+     "default": "speechnorm",
+     "choices": [
+      "speechnorm",
+      "loudnorm",
+      "dynaudnorm"
+     ]
+    },
+    {
      "name": "loudnorm_target_lufs",
      "kind": "float",
      "group": "Maktaba TV",
      "label": "Loudness target (LUFS)",
-     "help": "",
+     "help": "What the loudnorm filter levels to.",
      "default": -16.0
+    },
+    {
+     "name": "speechnorm_expansion",
+     "kind": "float",
+     "group": "Maktaba TV",
+     "label": "Speech boost limit",
+     "help": "The speechnorm filter raises a quiet passage at most this many times (dizqueTV: 6.25).",
+     "default": 6.25,
+     "minimum": 1,
+     "maximum": 50
     },
     {
      "name": "watermark_skip_filler",
@@ -5486,6 +5509,114 @@
      "default": 2048,
      "minimum": 0,
      "maximum": 1048576
+    }
+   ]
+  },
+  {
+   "key": "queue_health",
+   "title": "Queue health",
+   "what": "when a queue turns red, how often a failure is tried, what waits on the model, a share or disk space and how often those are checked, which failures are of which class",
+   "fields": [
+    {
+     "name": "window_hours",
+     "kind": "float",
+     "group": "Queue health",
+     "label": "Look back (hours)",
+     "help": "How far back a queue tile looks to decide its colour.",
+     "default": 6.0,
+     "minimum": 0.25,
+     "maximum": 168
+    },
+    {
+     "name": "ok_failure_share",
+     "kind": "float",
+     "group": "Queue health",
+     "label": "Failures that stay neutral (share)",
+     "help": "Below this share of failed jobs in the window a queue is never red; its failed count shows as small text (0.02 is 2%).",
+     "default": 0.02,
+     "minimum": 0,
+     "maximum": 1
+    },
+    {
+     "name": "failing_min_jobs",
+     "kind": "int",
+     "group": "Queue health",
+     "label": "Red from (jobs)",
+     "help": "A queue turns red only when at least this many jobs failed the same new way in the window: a likely bug or a bad setting.",
+     "default": 10,
+     "minimum": 1
+    },
+    {
+     "name": "transient_attempts",
+     "kind": "int",
+     "group": "Queue health",
+     "label": "Tries of a passing failure",
+     "help": "How many times a passing failure (a NAS timeout, a partial read) is tried before the item needs you. A queue that runs once by design keeps its one try.",
+     "default": 5,
+     "minimum": 1,
+     "maximum": 50
+    },
+    {
+     "name": "park_max_hours",
+     "kind": "float",
+     "group": "Queue health",
+     "label": "Waiting jobs retried after (hours)",
+     "help": "A job waiting on the model, a share or disk space is tried again after this even if no check released it. It spends no try while it waits.",
+     "default": 24.0,
+     "minimum": 0.25
+    },
+    {
+     "name": "probe_interval_seconds",
+     "kind": "int",
+     "group": "Queue health",
+     "label": "Check every (seconds)",
+     "help": "How often the model, the shares and the free disk space are checked; jobs waiting on one go back to work within this long of it coming back.",
+     "default": 60,
+     "minimum": 10
+    },
+    {
+     "name": "probe_timeout_seconds",
+     "kind": "float",
+     "group": "Queue health",
+     "label": "Check waits (seconds)",
+     "help": "How long one check waits for an answer.",
+     "default": 5.0,
+     "minimum": 1,
+     "maximum": 120
+    },
+    {
+     "name": "min_free_disk_gb",
+     "kind": "float",
+     "group": "Queue health",
+     "label": "Free disk needed (GB)",
+     "help": "Below this much free space (temporary and data folders) jobs that ran out of disk keep waiting.",
+     "default": 5.0,
+     "minimum": 0
+    },
+    {
+     "name": "resource_cooldown_minutes",
+     "kind": "float",
+     "group": "Queue health",
+     "label": "Shared memory wait (minutes)",
+     "help": "Jobs that ran out of Postgres shared memory wait this long before they are tried again (it frees when the big queries end).",
+     "default": 10.0,
+     "minimum": 1
+    },
+    {
+     "name": "class_overrides",
+     "kind": "rows",
+     "group": "Queue health",
+     "label": "Failure classes",
+     "help": "A failure whose signature starts with this is of this class: transient (tried again), item_permanent (needs you), unknown, dependency:<name> or resource:<name> (waits without spending tries). Checked before the built-in table.",
+     "default": [],
+     "columns": [
+      "signature",
+      "class"
+     ],
+     "column_kinds": [
+      "str",
+      "str"
+     ]
     }
    ]
   },

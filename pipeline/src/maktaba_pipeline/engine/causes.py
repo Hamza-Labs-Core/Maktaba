@@ -36,6 +36,9 @@ _KNOWN: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
             r"|connect call failed|name or service)",
         ),
         ("readback_mismatch", r"read-?back mismatch|readback_mismatch"),
+        # Epic 40: resources, before db_error (a Postgres DiskFullError is not a query bug)
+        ("shm_full", r"could not resize shared memory|shared memory segment"),
+        ("disk_full", r"no space left on device|enospc|diskfullerror|disk is full"),
         ("no_handler", r"dispatch_unknown_stage|no handler registered"),
         ("graph_violation", r"graph_violation|undeclared request|not in may_request"),
         ("nas_partial_read", r"fp_partial|nas_partial_read"),
@@ -44,8 +47,14 @@ _KNOWN: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
             r"timed out|etimedout|winerror 121|semaphore timeout|status_io_timeout",
         ),
         ("nas_invalid_argument", r"invalid argument(?=.*(?:ffmpeg|input|opening|read failed))"),
-        ("file_missing", r"no such file|filenotfounderror|winerror [23]\b"),
+        (
+            "permission_denied",
+            r"permission denied|permissionerror|errno 13\b|access is denied|winerror 5\b",
+        ),
+        ("file_missing", r"^file_missing\b|no such file|filenotfounderror|winerror [23]\b"),
         ("ffmpeg_decode", r"invalid data found|moov atom not found|error while decoding"),
+        # an ffmpeg exit code with nothing more telling in its output (thumbnails)
+        ("ffmpeg_rc", r"thumbnail failed: \w+ rc=|chapter_frames_failed"),
         (
             "db_error",
             r"asyncpg\.|sqlite3\.|psycopg|operationalerror|integrityerror|deadlock detected",

@@ -633,6 +633,14 @@ async def _start_engine(
             lambda stop: run_topup_loop(database, stop, listeners=after_topup),
         ),
     ]
+    if not is_node:
+        # Epic 40: the dependency watchers release jobs parked on the model, a share or
+        # disk space; the home's mounts are the ones that matter (one worker probes)
+        from .engine.watchers import run_watchers
+
+        tasks.append(
+            writer("queue-health", lambda stop: run_watchers(database, runtime.graph, stop))
+        )
     if cluster_agent_enabled():
         # the live channel to the home (design-agent.md): metrics (the health numbers
         # among them: workers never write health_samples), logs, job events, LLM

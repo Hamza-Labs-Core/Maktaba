@@ -75,7 +75,7 @@ TOPIC_VERSION = 1
 PROMO_VERSION = 1
 CLIP_GROUPS_VERSION = 1
 YT_SYNC_VERSION = 1
-CH_WRITE_VERSION = 3  # 3: look.watermark_skip_filler (rules tv)
+CH_WRITE_VERSION = 4  # 3: look.watermark_skip_filler; 4: look.loudnorm filter, expansion
 #: exact_dates / repair_broken (plan 06-11, mediaintel parity)
 EXACT_DATES_VERSION = 1
 REPAIR_VERSION = 1
@@ -801,6 +801,18 @@ GRAPH: tuple[StageDef, ...] = (
         lane_order=11,
         version=1,
         placement="home",
+        max_attempts=1,
+    ),
+    # Epic 40: an admin's "check access" on the failures page reads 64 KiB of the file on
+    # the worker host; when it reads, the video's failed jobs are queued again
+    StageDef(
+        name="access_check",
+        label="Access check",
+        subject_kinds=("video",),
+        pool="nas_read",
+        lane="media",
+        lane_order=13,
+        version=1,
         max_attempts=1,
     ),
     _legacy("categorize", "Categorize", ("video",), "cpu", 8),

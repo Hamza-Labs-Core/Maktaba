@@ -67,7 +67,7 @@ func (c Copy) SignIn(ctx context.Context, username, password string) (*delegatio
 }
 
 // Synced implements nodeauth.Local: the home's beat as the copy last applied it
-// (cluster_replica_beat, slot 0143).
+// (cluster_replica_beat, slot 0144).
 func (c Copy) Synced(ctx context.Context) (time.Time, error) {
 	var at time.Time
 	err := c.Home.DB.QueryRowContext(ctx, `SELECT at FROM cluster_replica_beat WHERE id = 1`).Scan(&at)
