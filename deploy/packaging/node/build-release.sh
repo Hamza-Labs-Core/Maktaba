@@ -53,7 +53,6 @@ uv_version="$(uv --version | awk '{print $2}')"
 if [ "$(printf '%s\n%s\n' "$UV_MIN" "$uv_version" | sort -t. -k1,1n -k2,2n -k3,3n | head -n1)" != "$UV_MIN" ]; then
     die "uv $uv_version is too old: the constraints need uv $UV_MIN or later (uv export --emit-index-url). Update it with \`uv self update\` or from https://docs.astral.sh/uv/"
 fi
-command -v zip >/dev/null 2>&1 || die "zip is required (the Windows archive)"
 case "$TAG" in v*) ;; *) TAG="v$TAG" ;; esac
 VERSION="${TAG#v}"
 
@@ -204,6 +203,24 @@ if tar --version 2>/dev/null | grep -q 'GNU tar'; then
 else
     tar -C "$WORK" -czf "$OUT/$BUNDLE.tar.gz" "$BUNDLE"
 fi
-(cd "$WORK" && rm -f "$OUT/$BUNDLE.zip" && zip -qrX "$OUT/$BUNDLE.zip" "$BUNDLE")
+# The Windows archive. Git for Windows has no zip(1), and the Windows app's payload runs
+# this script there: Python's zipfile writes the same entries instead, sorted.
+make_zip() {
+    if command -v zip >/dev/null 2>&1; then
+        zip -qrX "$1" "$2"
+        return
+    fi
+    uv run --no-project --quiet python - "$1" "$2" <<'PY'
+import os, sys, zipfile
+archive, top = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
+    for root, dirs, files in os.walk(top):
+        dirs.sort()
+        z.write(root)
+        for name in sorted(files):
+            z.write(os.path.join(root, name))
+PY
+}
+(cd "$WORK" && rm -f "$OUT/$BUNDLE.zip" && make_zip "$OUT/$BUNDLE.zip" "$BUNDLE")
 
 printf '%s\n' "$OUT/$WHEEL" "$OUT/$CONSTRAINTS" "$OUT/$CONSTRAINTS_CUDA" "$OUT/$BUNDLE.tar.gz" "$OUT/$BUNDLE.zip"

@@ -57,6 +57,19 @@ don't append a line here; docs-only PRs are exempt.
   pin's hashes name from either index. Linux and macOS install the same packages as before. CI
   exports with uv 0.13.4. The semantic-search embedder no longer goes on an NVIDIA GPU of its own
   accord (`MAKTABA_EMBED_DEVICE=cuda` still puts it there): the GPU's sizing leaves it no room.
+- **The desktop app runs the server on Windows** (Epic 38, story 38.3). When setup finishes on
+  a Windows PC, the app registers the user's own sign-in task `\Maktaba Server <SID>` (the
+  user's session, so mapped NAS drives work; each user of the PC has their own). The task runs
+  `Maktaba.exe --server-agent`, which starts the bundled launcher in a console without a window
+  and restarts it if it fails; a watchdog trigger every 5 minutes starts the agent again if it
+  died. Pause, Resume, Restart and Stop server work from the tray through a stop event the
+  launcher watches; a pause lasts until Resume or the next sign-in, and Resume right after a
+  Pause waits for the server to finish stopping. A server whose agent runs but that does not
+  answer for 3 minutes shows as a problem with the reason from its log. An update stops the
+  server before the installer replaces its files, and starts it again if the install fails.
+  The app's mode is kept per PC (`%LOCALAPPDATA%`), not in the roaming profile. Setup steps and
+  `schtasks` start without a console window, and the installer's hooks get `--server-start`,
+  `--server-stop` and `--server-remove`.
 - **Postgres programs for every platform, and Postgres on Windows.** Maktaba can fetch the pinned
   Postgres 16.15 build of the machine's platform (theseus-rs; size and SHA-256 pinned, unpacked
   with path checks), and the supervisor runs Postgres on Windows (its `.exe` programs, a fast
