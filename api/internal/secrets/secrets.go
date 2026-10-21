@@ -70,10 +70,12 @@ func NewKey(b []byte) (*Key, error) {
 func (k *Key) String() string { return "secrets.Key(" + k.ID + ")" }
 
 // KeyPath resolves the key file: MAKTABA_SECRETS_KEY, else the directory of
-// MAKTABA_CONFIG (server.toml), else the platform config directory
-// (%APPDATA%\Maktaba on Windows, $XDG_CONFIG_HOME/maktaba or
-// ~/.config/maktaba elsewhere) — the directory server.toml lives in. The
-// pipeline (maktaba_pipeline.secrets) resolves it the same way.
+// MAKTABA_CONFIG (server.toml), else the platform keys directory
+// maktaba-server uses (%LOCALAPPDATA%\Maktaba\keys on Windows,
+// ~/Library/Application Support/Maktaba/keys on macOS, $XDG_CONFIG_HOME/maktaba
+// or ~/.config/maktaba elsewhere). The pipeline (maktaba_pipeline.home_secrets)
+// resolves it the same way. Under maktaba-server MAKTABA_SECRETS_KEY is always
+// set; this is for the api run on its own.
 func KeyPath(getenv func(string) string) string {
 	if getenv == nil {
 		getenv = os.Getenv
@@ -84,16 +86,21 @@ func KeyPath(getenv func(string) string) string {
 	if p := strings.TrimSpace(getenv("MAKTABA_CONFIG")); p != "" {
 		return filepath.Join(filepath.Dir(p), KeyFileName)
 	}
-	return filepath.Join(configDir(getenv), KeyFileName)
+	return filepath.Join(keysDir(getenv, runtime.GOOS), KeyFileName)
 }
 
-func configDir(getenv func(string) string) string {
+// keysDir mirrors maktaba-server's config.DirsFor(...).Keys.
+func keysDir(getenv func(string) string, goos string) string {
 	home, _ := os.UserHomeDir()
-	if runtime.GOOS == "windows" {
-		if a := getenv("APPDATA"); a != "" {
-			return filepath.Join(a, "Maktaba")
+	switch goos {
+	case "windows":
+		local := getenv("LOCALAPPDATA")
+		if local == "" {
+			local = filepath.Join(home, "AppData", "Local")
 		}
-		return filepath.Join(home, "AppData", "Roaming", "Maktaba")
+		return filepath.Join(local, "Maktaba", "keys")
+	case "darwin":
+		return filepath.Join(home, "Library", "Application Support", "Maktaba", "keys")
 	}
 	if x := getenv("XDG_CONFIG_HOME"); x != "" {
 		return filepath.Join(x, "maktaba")

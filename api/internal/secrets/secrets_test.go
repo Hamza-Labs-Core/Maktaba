@@ -112,13 +112,30 @@ func TestKeyPath(t *testing.T) {
 		t.Errorf("beside server.toml: %s", got)
 	}
 	delete(env, "MAKTABA_CONFIG")
-	env["APPDATA"], env["XDG_CONFIG_HOME"] = "appdata", "xdg"
-	want := filepath.Join("xdg", "maktaba", KeyFileName)
-	if runtime.GOOS == "windows" {
-		want = filepath.Join("appdata", "Maktaba", KeyFileName)
-	}
-	if got := KeyPath(get); got != want {
+	env["APPDATA"], env["LOCALAPPDATA"], env["XDG_CONFIG_HOME"] = "appdata", "local", "xdg"
+	if got, want := KeyPath(get), filepath.Join(keysDir(get, runtime.GOOS), KeyFileName); got != want {
 		t.Errorf("platform: %s, want %s", got, want)
+	}
+}
+
+// The keys directory is maktaba-server's (config.DirsFor(...).Keys): never the
+// roaming profile on Windows (Epic 38), keys/ beside server.toml on a Mac (Epic 36).
+func TestKeysDirFollowsTheServer(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	env := map[string]string{"APPDATA": "appdata", "LOCALAPPDATA": "local", "XDG_CONFIG_HOME": "xdg"}
+	get := func(k string) string { return env[k] }
+	for goos, want := range map[string]string{
+		"windows": filepath.Join("local", "Maktaba", "keys"),
+		"darwin":  filepath.Join(home, "Library", "Application Support", "Maktaba", "keys"),
+		"linux":   filepath.Join("xdg", "maktaba"),
+	} {
+		if got := keysDir(get, goos); got != want {
+			t.Errorf("%s: %s, want %s", goos, got, want)
+		}
+	}
+	delete(env, "LOCALAPPDATA")
+	if got, want := keysDir(get, "windows"), filepath.Join(home, "AppData", "Local", "Maktaba", "keys"); got != want {
+		t.Errorf("windows without LOCALAPPDATA: %s, want %s", got, want)
 	}
 }
 
