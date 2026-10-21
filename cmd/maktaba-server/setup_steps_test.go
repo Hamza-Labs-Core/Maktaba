@@ -677,7 +677,7 @@ func TestSetupFinish(t *testing.T) {
 	}
 	payload := filepath.Join(e.dir, "payload")
 	_ = os.MkdirAll(filepath.Join(payload, "postgres", "bin"), 0o755)
-	_ = os.WriteFile(filepath.Join(payload, "postgres", "bin", "postgres"), []byte("x"), 0o755)
+	_ = os.WriteFile(filepath.Join(payload, "postgres", "bin", exeName("postgres")), []byte("x"), 0o755)
 	t.Setenv("MAKTABA_APP_BUNDLE", payload)
 	t.Setenv("MAKTABA_POSTGRES_HOME", filepath.Join(payload, "postgres"))
 	if _, bundled, err := pgbundle.Resolve(saved, filepath.Join(payload, "bin", "maktaba-server")); !bundled || err != nil {

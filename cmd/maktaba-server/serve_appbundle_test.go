@@ -506,6 +506,153 @@ func TestAppBundleSchemaAheadHalts(t *testing.T) {
 	}
 }
 
+// joinNode makes this machine a joined full node of a home (its node.json),
+// as the supervisor reads it; role is [server] role.
+func joinNode(t *testing.T, cfg *config.Config, role string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "node.json")
+	body := `{"node_id":"0123456789abcdef0123456789abcdef","name":"desk","private_key":"k",` +
+		`"home":{"url":"http://192.168.1.20:8088"},"database_url":"postgres://node:pw@192.168.1.20:5432/maktaba"}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MAKTABA_NODE_CONFIG", path)
+	t.Setenv("MAKTABA_ROLE", "")
+	cfg.Server.Role = role
+}
+
+func hasRecord(t *testing.T, cfg config.Config) bool {
+	t.Helper()
+	_, ok, err := apppayload.ReadDatabase(cfg.StateDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ok
+}
+
+// A joined full node: its api runs in node mode against the home's database and
+// never migrates, so no process waits on the database step (the pipeline on the
+// venv alone), nothing is migrated or dumped, no record is written; an older app
+// installed there later is not refused, nor is one after the machine leaves the
+// cluster (it has no record of its own).
+func TestAppBundleFullNodeHasNoDatabaseStep(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	joinNode(t, &cfg, "")
+	f := installFakeDB(t, cfg)
+	prev := venvRun
+	t.Cleanup(func() { venvRun = prev })
+	var venvRuns atomic.Int32
+	venvRun = func(context.Context, appvenv.Spec, func(appvenv.Progress)) (appvenv.Result, error) {
+		venvRuns.Add(1)
+		return appvenv.Result{Pipeline: "1.4.0"}, nil
+	}
+	var log strings.Builder
+	ps := appBundleGates(cfg, payload, nil, gateProcs(false), &log)
+	for _, p := range ps {
+		if (p.Role == supervisor.RolePipeline) != (p.Prepare != nil) {
+			t.Fatalf("%s: prepare = %v (only the pipeline waits, on its venv)", p.Name(), p.Prepare != nil)
+		}
+		if p.Prepare != nil {
+			if err := p.Prepare(context.Background(), noReport); err != nil {
+				t.Fatalf("%s: %v", p.Name(), err)
+			}
+		}
+	}
+	if !strings.Contains(log.String(), "full node of http://192.168.1.20:8088") {
+		t.Errorf("log = %q", log.String())
+	}
+	if venvRuns.Load() != 1 {
+		t.Fatalf("the venv ran %d times", venvRuns.Load())
+	}
+	if d, m, r := f.counts(); d+m+r != 0 {
+		t.Fatalf("%d dumps, %d migrations, %d restores on a node", d, m, r)
+	}
+	if hasRecord(t, cfg) {
+		t.Fatal("a node wrote the database's record")
+	}
+	// an older app on the node: not refused
+	newPayload(t, payload, "v0.2.0")
+	for _, p := range appBundleGates(cfg, payload, nil, gateProcs(false), io.Discard) {
+		if p.Role != supervisor.RolePipeline && p.Prepare != nil {
+			t.Fatalf("%s waits on something on a node", p.Name())
+		}
+	}
+	// the machine leaves the cluster: a home with no record, whose older app is
+	// dumped and migrated as an install from before the record, not refused
+	t.Setenv("MAKTABA_NODE_CONFIG", filepath.Join(t.TempDir(), "node.json"))
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatalf("after leaving the cluster: %v", err)
+	}
+	if len(f.dumps) != 1 || f.dumps[0] != "unknown->v0.2.0" {
+		t.Fatalf("dumps = %v", f.dumps)
+	}
+}
+
+// [server] role = "home" overrides a joined node config (the api is then a home's,
+// supervisor.NodeMode): the database step runs as on any home.
+func TestAppBundleForcedHomeKeepsTheDatabaseStep(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	joinNode(t, &cfg, "home")
+	f := installFakeDB(t, cfg)
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(ps, supervisor.RoleStreaming)(context.Background(), noReport); err != nil {
+		t.Fatal(err)
+	}
+	if d, m, _ := f.counts(); d != 1 || m != 1 || !hasRecord(t, cfg) {
+		t.Fatalf("%d dumps, %d migrations, record %v", d, m, hasRecord(t, cfg))
+	}
+}
+
+// A run without the api (serve --role streaming, ...): nothing migrates here,
+// so nothing is dumped and the record is left alone; an older release than the
+// record, or a database still being put back, is still refused.
+func TestAppBundleRoleRunWithoutTheAPI(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	pg := testBundle(cfg)
+	f := installFakeDB(t, cfg)
+	streaming := func() []supervisor.Process {
+		return []supervisor.Process{{Role: supervisor.RoleStreaming}, {Role: supervisor.RoleTVSlot, Instance: "blue"}}
+	}
+	// no record: nothing written
+	ps := appBundleGates(cfg, payload, pg, streaming(), io.Discard)
+	if err := prepareOf(ps, supervisor.RoleStreaming)(context.Background(), noReport); err != nil {
+		t.Fatal(err)
+	}
+	if hasRecord(t, cfg) {
+		t.Fatal("a run without the api wrote a record")
+	}
+	// an update's record: left as it was
+	was := apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseMigrated}
+	record(t, cfg, was)
+	ps = appBundleGates(cfg, payload, pg, streaming(), io.Discard)
+	if err := prepareOf(ps, supervisor.RoleStreaming)(context.Background(), noReport); err != nil {
+		t.Fatal(err)
+	}
+	if rec := recorded(t, cfg); rec.Version != was.Version || rec.State != was.State {
+		t.Fatalf("record = %+v", rec)
+	}
+	if d, m, r := f.counts(); d+m+r != 0 {
+		t.Fatalf("%d dumps, %d migrations, %d restores without the api", d, m, r)
+	}
+	// still refused: an older release, a database being put back
+	record(t, cfg, apppayload.Database{Version: "v0.4.0", State: apppayload.DatabaseMigrated})
+	ps = appBundleGates(cfg, payload, pg, streaming(), io.Discard)
+	if err := prepareOf(ps, supervisor.RoleStreaming)(context.Background(), noReport); !supervisor.Halted(err) {
+		t.Fatalf("an older release = %v", err)
+	}
+	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseRestoring, From: "v0.2.0",
+		Dump: "/b/pre-v0.2.0-to-v0.3.0.dump", Failed: "v0.3.0"})
+	ps = appBundleGates(cfg, payload, pg, streaming(), io.Discard)
+	err := prepareOf(ps, supervisor.RoleStreaming)(context.Background(), noReport)
+	if !supervisor.Halted(err) || !strings.Contains(err.Error(), "start the whole server") {
+		t.Fatalf("a database being put back = %v", err)
+	}
+	if _, _, r := f.counts(); r != 0 {
+		t.Fatal("a run without the api put a dump back")
+	}
+}
+
 // A Postgres of another major than the cluster's is refused.
 func TestAppBundleRefusesAnotherPostgresMajor(t *testing.T) {
 	cfg, payload := appEnv(t, "v0.3.0", "")

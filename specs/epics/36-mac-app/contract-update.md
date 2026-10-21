@@ -59,6 +59,16 @@ any role runs, so it is right even when that release never ran three healthy min
 install from before the record has none (an earlier build of this story has only
 `state/payload.json`, which then stands in for it).
 
+**A joined full node has no database step** (Epic 35 story 35.8: a joined node config, unless
+`[server] role = "home"`, the same test that puts its api in node mode). Its api reads the
+home's database and never migrates; the home's own start dumps, migrates and records. So on a
+node no process waits on the step, nothing is dumped or migrated, and no `state/database.json`
+is written (one there would later refuse an older app on a machine that has no database of its
+own). The pipeline still waits for the venv bootstrap, and `state/payload.json` is still saved
+after three healthy minutes. A run without the api (`serve --role streaming`, ...) migrates
+nothing either: it dumps nothing and leaves the record alone, and only refuses an older release
+than the record, or a database whose putting back has not finished.
+
 | The payload's `version`, against the record | What the step does |
 |---|---|
 | the same | runs the migrations (`maktaba-api migrate up`: nothing to apply, done at once); nothing is dumped |
