@@ -37,7 +37,7 @@ don't append a line here; docs-only PRs are exempt.
   pipeline stops claiming jobs while the home's database does not answer, stops the jobs in
   flight before their claim lease lapses (from the last beat the home answered), and resumes on
   its own; a job the home handed to another machine meanwhile is never ended by the first.
-  Migration 0144.
+  Migration 0145.
 - **The home can be switched to another machine** (Epic 37, "Switching the home"): "Make B the
   home" on the Machines tab, then nothing to do by hand. The home pauses the jobs and its
   database's changes, hands the machine what replication leaves out (the secrets and their key,
@@ -61,7 +61,7 @@ don't append a line here; docs-only PRs are exempt.
   reported to the new home, where the admin downloads it or reviews and applies what does not
   conflict, in one transaction. Never applied automatically: a transaction touching a row the
   new home changed since, the secrets or the cluster's own data, or one that would fail. What was
-  applied is recorded. Migration 0144.
+  applied is recorded. Migration 0145.
 - **The cloud relay agent moves with the home.** The home's supervisor runs `maktaba-cloudlink`
   while `[cloud]` is enabled. A switch stops it on the old home, carries its credentials, and
   starts it on the new one. It ships with the Mac and Linux apps.
@@ -90,8 +90,20 @@ don't append a line here; docs-only PRs are exempt.
   gone.
 - The Postgres bundled with Maktaba.app keeps its TLS certificate and key in the keys folder
   (never in the database folder a machine's copy is made of).
+- **Postgres programs for every platform, and Postgres on Windows.** Maktaba can fetch the pinned
+  Postgres 16.15 build of the machine's platform (theseus-rs; size and SHA-256 pinned, unpacked
+  with path checks), and the supervisor runs Postgres on Windows (its `.exe` programs, a fast
+  shutdown through `pg_ctl` instead of a kill, and `postgres.exe` under a restricted token when
+  the server runs as an administrator, as the Windows service does: Postgres refuses
+  administrative rights). Groundwork for the Windows and Linux apps and for full nodes' copies of
+  the home's database (#178).
 
 ### Fixed
+
+- **The launcher never sends CTRL_BREAK to a server that has exited** (Windows, Epic 38 story
+  38.2). It holds a handle to the server until it is reaped and asks it to stop only while it
+  still runs: a CTRL_BREAK naming a pid that leads no process group (a server that exited as the
+  launcher was stopping, its pid reused) goes astray and can end the launcher itself.
 
 - **Release builds for desktop, Android and Android TV.** The desktop app ships a
   (placeholder) icon set (#152), which the macOS and Windows bundles failed on. The Linux build

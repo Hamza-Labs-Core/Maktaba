@@ -70,7 +70,7 @@ class CommitResult:
 
 
 # the worker that holds the job (claim_owner): a segment from one that no longer does
-# writes nothing (slot 0144's commit_segment)
+# writes nothing (slot 0145's commit_segment)
 _PG_CALL_FN = "SELECT commit_segment($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) AS id"
 
 _SQLITE_INSERT = """

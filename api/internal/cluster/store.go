@@ -83,7 +83,7 @@ type Node struct {
 	VOD         json.RawMessage
 	UpdateState json.RawMessage
 	// Copy is what a full node reports of its copy of this database (Epic 37, slot
-	// 0144: state, lag, when it last applied), and when it did.
+	// 0145: state, lag, when it last applied), and when it did.
 	Copy           json.RawMessage
 	CopyReportedAt *time.Time
 }

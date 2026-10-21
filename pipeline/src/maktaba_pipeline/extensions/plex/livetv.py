@@ -21,7 +21,14 @@ HDHomeRun tuner only, plus adding that tuner to Plex once:
   DVR and Plex and the new one joins as a registration does; the guide that lived at the old
   address gives way to this one's;
 * **channel map** (``PUT /media/grabbers/devices/{key}/channelmap``, dizqueTV's exact query)
-  when the lineup differs from the one last pushed;
+  when the lineup differs from the one last pushed, or Plex's actual map on Maktaba's tuner
+  (the DVR listing's enabled ``ChannelMapping``) differs from the lineup. The second is
+  *drift*: another program replaced the map (dizqueTV's Plex refresh writes its own channel
+  list onto every tuner in the DVR). It is restored on any run while
+  ``auto_refresh_channels`` is on, reported, and counted: after ``drift_warn_repeats``
+  restores in a row (each within ``drift_forget_hours`` of the previous) the status advises
+  turning off channel mapping in dizqueTV. After a push the listing is read again, so
+  ``channels.in_sync`` is what Plex holds, never what was sent;
 * **reload the guide** (``POST /livetv/dvrs/{key}/reloadGuide``) after a channel-map push, an
   explicit refresh, or when the schedule grew (then at most every
   ``guide_refresh_min_minutes``: an early run is given back until then). A refresh that
@@ -33,9 +40,10 @@ channel maps, names and guides stay as they are. The DVR Maktaba joins is shared
 guide reload reloads every guide that DVR carries.
 
 Triggers: the edge ``write_channels -> plex_livetv`` (the lineup changed), the scheduler's
-top-up (``StageDef.after_topup``: the schedule grew), and the API (``force``: refresh now,
-register). Everything the stage saw and did is kept in ``plex_livetv_state`` (slot 0116),
-which ``GET /api/tv/plex`` reports.
+top-up (``StageDef.after_topup``: the schedule grew), the reconciler every
+``drift_check_minutes`` (``StageDef.every_minutes_rule``: the drift check) and the API
+(``force``: refresh now, register). Everything the stage saw and did is kept in
+``plex_livetv_state`` (slot 0116), which ``GET /api/tv/plex`` reports.
 """
 
 from __future__ import annotations
@@ -44,7 +52,7 @@ import asyncio
 import os
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from ...engine.context import JobDeferred, StageContext, StageFailure
@@ -239,6 +247,27 @@ def _shown(dvrs: Sequence[PlexDvr], dvr: PlexDvr | None) -> bool:
     return dvr is not None and bool(dvrs) and dvrs[0].key == dvr.key
 
 
+DRIFT_RESTORED = "Plex's channel list was changed by another program (dizqueTV?): restored"
+DRIFT_NOT_RESTORED = (
+    "Plex's channel list was changed by another program (dizqueTV?): not restored, "
+    '"Refresh the channels in Plex" is off'
+)
+
+
+def drift_repeated(times: int) -> str:
+    """The warning once restores keep happening (``drift_warn_repeats``)."""
+    return (
+        f"Another program replaced Maktaba's channels in Plex {times} times in a row. "
+        "dizqueTV's Plex refresh writes its channel list onto every tuner in the DVR: "
+        'turn off its channel mapping ("auto refresh channels") in dizqueTV\'s Plex settings'
+    )
+
+
+def _differs(mapped: Sequence[str] | None, lineup: Sequence[str]) -> bool:
+    """Plex holds another channel list than the lineup (None: Plex listed no mapping)."""
+    return mapped is not None and sorted(mapped) != sorted(lineup)
+
+
 def _wrap(exc: Exception) -> StageFailure:
     kind = "plex_unreachable" if isinstance(exc, TransportError) else "plex_error"
     return StageFailure(kind, f"plex: {exc}", retryable=True)
@@ -268,6 +297,25 @@ def _list(client: PlexClient) -> tuple[list[PlexDvr], list[PlexTuner]]:
     except PlexError:  # the DVRs list their tuners; the device list only adds idle ones
         devices = []
     return dvrs, devices
+
+
+async def _reread(client: PlexClient, run: _Run, device_id: str, target: Target) -> None:
+    """After a channel-map push: what Plex holds now (the status reports that, not what was
+    sent). A listing that fails leaves the map unknown; the push itself went through."""
+    assert run.ours is not None
+    try:
+        dvrs, devices = await asyncio.to_thread(_list, client)
+    except (PlexError, TransportError) as exc:
+        run.ours = replace(run.ours, mapped=None)
+        run.warnings.append(f"could not read Plex's channel list back: {exc}")
+        return
+    run.dvrs, run.tuners = dvrs, _tuners(dvrs, devices)
+    fresh = find_tuner(run.tuners, device_id, target.tuner_url)
+    if fresh is None:
+        run.ours = replace(run.ours, mapped=None)
+        return
+    run.ours = fresh
+    run.ours_dvr = _dvr_of(run.dvrs, fresh) or run.ours_dvr
 
 
 async def _join(
@@ -398,6 +446,16 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
     guide_version = await _guide_version(db)
     client = service.client(settings)
     started = wall()
+    # restores of a map another program replaced, kept across runs in the status
+    prev = st.status.get("drift")
+    prev = prev if isinstance(prev, dict) else {}
+    drift_repairs = int(prev.get("repairs") or 0)
+    drift_last = parse_ts(prev.get("last_at"))
+    drift_seen = False
+    if drift_last is not None and started - drift_last > timedelta(
+        hours=float(cfg.drift_forget_hours)
+    ):
+        drift_repairs = 0  # quiet long enough: the next restore counts from one
 
     def status(run: _Run | None, error: str | None) -> dict[str, Any]:
         ours = run.ours if run else None
@@ -464,6 +522,12 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
                 "lineup": len(lineup),
                 "mapped": len(mapped) if mapped is not None else None,
                 "in_sync": None if mapped is None else sorted(mapped) == sorted(lineup),
+                # this run found Plex holding another map than the one Maktaba pushed
+                "drift": drift_seen,
+            },
+            "drift": {
+                "repairs": drift_repairs,
+                "last_at": drift_last.isoformat() if drift_last else None,
             },
             "actions": {
                 "register": run.register if run else "",
@@ -478,6 +542,7 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
                 "refresh_guide": bool(cfg.auto_refresh_guide),
                 "refresh_channels": bool(cfg.auto_refresh_channels),
                 "guide_refresh_min_minutes": int(cfg.guide_refresh_min_minutes),
+                "drift_check_minutes": int(cfg.drift_check_minutes),
             },
         }
 
@@ -552,7 +617,10 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
         # ---- channel map, then the guide (Maktaba's tuner and DVR only)
         if run.ours is not None and run.ours_dvr is not None:
             want = canonical_hash(lineup)
-            changed = want != st.channelmap_hash
+            # what Plex holds on Maktaba's tuner, not only what Maktaba sent last
+            differs = _differs(run.ours.mapped, lineup)
+            drift_seen = bool(lineup) and differs and want == st.channelmap_hash
+            changed = want != st.channelmap_hash or differs
             last = st.guide_reloaded_at
             since = None if last is None else (wall() - last).total_seconds()
             # a refresh that changes nothing while Plex still loads the last reload: leave it be
@@ -569,16 +637,26 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
             elif settling:
                 run.channel_map = "unchanged"
             elif registered_now or ((manual or cfg.auto_refresh_channels) and (manual or changed)):
-                if not joined_map:  # joining pushed it already
+                if not joined_map:  # joining pushed it already (and listed Plex after)
                     await asyncio.to_thread(client.put_channel_map, run.ours.key, lineup)
+                    await _reread(client, run, device_id, target)
                 st.channelmap_hash, st.channelmap_at, pushed = want, wall(), True
-                run.ours = replace(run.ours, mapped=tuple(lineup))
                 run.channel_map = "pushed"
                 await ctx.log("info", f"plex live tv: channel map pushed ({len(lineup)} channels)")
+                if drift_seen:
+                    drift_repairs, drift_last = drift_repairs + 1, wall()
+                    run.warnings.append(DRIFT_RESTORED)
+                    await ctx.log("warn", f"plex live tv: {DRIFT_RESTORED} ({drift_repairs})")
+            elif drift_seen:
+                run.channel_map = "off"
+                run.warnings.append(DRIFT_NOT_RESTORED)
             else:
                 run.channel_map = "unchanged" if want == st.channelmap_hash else "off"
-            if run.ours.mapped is not None and sorted(run.ours.mapped) != sorted(lineup):
+            assert run.ours is not None and run.ours_dvr is not None
+            if _differs(run.ours.mapped, lineup) and not (drift_seen and not pushed):
                 run.warnings.append("Plex's channel list differs from Maktaba's lineup")
+            if drift_repairs >= int(cfg.drift_warn_repeats):
+                run.warnings.append(drift_repeated(drift_repairs))
 
             due = guide_version != st.guide_version
             if settling:

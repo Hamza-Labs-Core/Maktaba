@@ -306,7 +306,7 @@ func TestAPlannedSwitchover(t *testing.T) {
 		return nodecopy.Grant{Role: Machine{ID: id}.CopyRole(), Slot: slot, SlotExists: true, Publication: slot,
 			SystemID: done.SystemID, Database: pgbundle.AppDatabase, CA: &ca}
 	}
-	local := int64(144)
+	local := int64(145)
 	// the supervisor opens its sessions after the freeze: so do these
 	if err := Demote(ctx, super(t, c.home)); err != nil {
 		t.Fatal(err)

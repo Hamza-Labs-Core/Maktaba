@@ -5063,6 +5063,33 @@
      "minimum": 1
     },
     {
+     "name": "drift_check_minutes",
+     "kind": "int",
+     "group": "Plex Live TV",
+     "label": "Check Plex's channel list every (min)",
+     "help": "Another program can replace the channels Plex shows for Maktaba's tuner: dizqueTV's own Plex refresh writes its channel list onto every tuner. Maktaba checks this often and, when Refresh the channels in Plex is on, puts its channels back. 0: only checked when Maktaba's channels change.",
+     "default": 15,
+     "minimum": 0
+    },
+    {
+     "name": "drift_warn_repeats",
+     "kind": "int",
+     "group": "Plex Live TV",
+     "label": "Warn after this many restores in a row",
+     "help": "When Maktaba had to put its channels back this many times, the Plex panel advises turning off channel mapping in dizqueTV's Plex settings.",
+     "default": 3,
+     "minimum": 1
+    },
+    {
+     "name": "drift_forget_hours",
+     "kind": "int",
+     "group": "Plex Live TV",
+     "label": "Restores count as in a row within (hours)",
+     "help": "A restore more than this long after the previous one starts the count again.",
+     "default": 24,
+     "minimum": 1
+    },
+    {
      "name": "tuner_url",
      "kind": "str",
      "group": "Plex Live TV",

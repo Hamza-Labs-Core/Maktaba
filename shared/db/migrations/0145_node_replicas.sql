@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0144 (node replicas, specs/epics/37-node-replica): every joined machine keeps a
+-- Slot 0145 (node replicas, specs/epics/37-node-replica): every joined machine keeps a
 -- live copy of this database, by logical replication, and runs on it when the home is
 -- away.
 --

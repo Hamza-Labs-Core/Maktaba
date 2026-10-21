@@ -9,7 +9,7 @@ import json
 import threading
 import urllib.parse
 import uuid
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
@@ -19,11 +19,20 @@ import pytest
 from maktaba_pipeline.channels.pass_ import notify_listeners
 from maktaba_pipeline.engine.claim import claim_for_pool
 from maktaba_pipeline.engine.dispatch import EngineRuntime, dispatch_job
+from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import CATALOG_ID
 from maktaba_pipeline.engine.loader import build_full_graph
+from maktaba_pipeline.engine.reconcile import reconcile_once
 from maktaba_pipeline.engine.sql import dumps, loads, now, to_ts
 from maktaba_pipeline.extensions.plex import PlexExtension
-from maktaba_pipeline.extensions.plex.livetv import Target, load_state, resolve_target
+from maktaba_pipeline.extensions.plex.livetv import (
+    DRIFT_NOT_RESTORED,
+    DRIFT_RESTORED,
+    Target,
+    drift_repeated,
+    load_state,
+    resolve_target,
+)
 from maktaba_pipeline.integrations.plex import (
     PlexClient,
     PlexTuner,
@@ -70,6 +79,8 @@ class FakeLiveTV:
     #: adding a tuner whose DeviceID Plex knows: ``update`` takes the new address in place,
     #: ``keep`` answers with the device as it was
     same_device: str = "update"
+    #: Plex answers a channel-map push but keeps the map it had
+    ignore_channelmap: bool = False
     _next: int = 10
 
     def add_device(self, uri: str, device_id: str, title: str = "HDHomeRun") -> str:
@@ -233,12 +244,22 @@ class FakeLiveTV:
             device = self.devices.get(parts[3])
             if device is None:
                 return None
+            if self.ignore_channelmap:
+                return {}
             enabled = q.get("channelsEnabled", "").split(",")
-            device["ChannelMapping"] = [
-                {"channelKey": n, "lineupIdentifier": n, "enabled": "1"} for n in enabled if n
-            ]
+            device["ChannelMapping"] = mapping(enabled)
             return {}
         return None
+
+
+def mapping(enabled: Sequence[str], disabled: Sequence[str] = ()) -> list[dict[str, str]]:
+    """A DVR listing's ``ChannelMapping`` as Plex gives it after a channel-map push."""
+    return [
+        {"channelKey": n, "deviceIdentifier": n, "lineupIdentifier": n, "enabled": on}
+        for ns, on in ((enabled, "1"), (disabled, "0"))
+        for n in ns
+        if n
+    ]
 
 
 # ------------------------------------------------------------------ client + pure helpers
@@ -968,3 +989,200 @@ async def test_the_topup_enqueues_its_listeners(db: Database) -> None:
     rows = await db.fetch("SELECT stage, state FROM processing_jobs WHERE stage = 'plex_livetv'")
     assert [(r["stage"], r["state"]) for r in rows] == [("plex_livetv", "pending")]
     assert w.rt.graph["plex_livetv"].after_topup
+
+
+# ------------------------------------------------------------------ drift (another program)
+
+
+def test_mapped_reads_the_tuners_channel_numbers_enabled_only() -> None:
+    fake = FakeLiveTV()
+    k = fake.add_device(TUNER, DEVICE_ID)
+    fake.add_dvr(k, "Maktaba")
+    # dizqueTV's refresh enabled its numbers on Maktaba's tuner; Maktaba's are switched off
+    fake.devices[k]["ChannelMapping"] = [
+        *mapping(["101", "102"], ["201", "202"]),
+        {"deviceIdentifier": "103", "lineupIdentifier": "guide-103", "enabled": "1"},
+    ]
+    (t,) = PlexClient(BASE, "T", transport=fake).dvrs()[0].devices
+    assert t.mapped == ("101", "102", "103")  # by deviceIdentifier, enabled only
+
+
+async def registered(db: Any) -> tuple[World, str]:
+    """Maktaba added to Plex next to dizqueTV, its channels (1, 2, 5) mapped."""
+    w = await make_world(db)
+    await ask_register(db)
+    row = await livetv(db, w, force=True)
+    assert row["state"] == "done", error_of(row)
+    ours = next(k for k, d in w.fake.devices.items() if d["deviceId"] == DEVICE_ID)
+    return w, ours
+
+
+def dizquetv_refresh(w: World, ours: str) -> None:
+    """dizqueTV's hourly Plex refresh: its channel map onto every tuner, Maktaba's too."""
+    w.fake.devices[ours]["ChannelMapping"] = mapping(["101", "102", "103"], ["1", "2", "5"])
+
+
+def pushed_numbers(w: World) -> list[str]:
+    raw = next(raw for m, p, raw in w.fake.calls if m == "PUT" and p.endswith("/channelmap"))
+    return dict(urllib.parse.parse_qsl(raw))["channelsEnabled"].split(",")
+
+
+@pytest.mark.asyncio
+async def test_a_map_another_program_replaced_is_restored_on_a_normal_run(
+    db: Database,
+) -> None:
+    w, ours = await registered(db)
+    await reloaded_minutes_ago(db, 10)
+    dizquetv_refresh(w, ours)
+    w.fake.calls.clear()
+    row = await livetv(db, w)  # not forced: the periodic check, the top-up
+    assert row["state"] == "done", error_of(row)
+    assert [p.rsplit("/", 1)[1] for _, p in w.fake.writes()] == ["channelmap", "reloadGuide"]
+    assert pushed_numbers(w) == ["1", "2", "5"]
+    s = await status(db)
+    assert s["channels"] == {"lineup": 3, "mapped": 3, "in_sync": True, "drift": True}
+    assert DRIFT_RESTORED in s["warnings"]
+    assert s["drift"]["repairs"] == 1 and s["drift"]["last_at"]
+    assert s["actions"]["channel_map"] == "pushed"
+    # the next check finds Plex as Maktaba left it: nothing is sent, the count stays
+    w.fake.calls.clear()
+    row = await livetv(db, w)
+    assert w.fake.writes() == [] and row["outcome"] == "unchanged"
+    s = await status(db)
+    assert s["channels"]["drift"] is False and s["drift"]["repairs"] == 1
+    assert DRIFT_RESTORED not in s["warnings"]
+
+
+@pytest.mark.asyncio
+async def test_in_sync_is_what_plex_holds_not_what_was_sent(db: Database) -> None:
+    w, ours = await registered(db)
+    dizquetv_refresh(w, ours)
+    w.fake.ignore_channelmap = True  # Plex answers but keeps dizqueTV's map
+    await reloaded_minutes_ago(db, 10)
+    await livetv(db, w)
+    s = await status(db)
+    assert s["actions"]["channel_map"] == "pushed"
+    assert s["channels"]["in_sync"] is False and s["channels"]["mapped"] == 3
+    assert "Plex's channel list differs from Maktaba's lineup" in s["warnings"]
+
+
+@pytest.mark.asyncio
+async def test_drift_is_reported_not_restored_with_auto_refresh_channels_off(
+    db: Database,
+) -> None:
+    w, ours = await registered(db)
+    await set_rules(db, {"tuner_url": TUNER, "auto_refresh_channels": False})
+    dizquetv_refresh(w, ours)
+    w.fake.calls.clear()
+    await livetv(db, w)
+    assert not any(p.endswith("/channelmap") for _, p in w.fake.writes())
+    s = await status(db)
+    assert s["channels"]["in_sync"] is False and s["channels"]["drift"] is True
+    assert DRIFT_NOT_RESTORED in s["warnings"] and s["drift"]["repairs"] == 0
+
+
+@pytest.mark.asyncio
+async def test_restores_in_a_row_advise_turning_off_dizquetvs_channel_mapping(
+    db: Database,
+) -> None:
+    w, ours = await registered(db)
+    await set_rules(db, {"tuner_url": TUNER, "drift_warn_repeats": 2})
+    for n in (1, 2):
+        dizquetv_refresh(w, ours)
+        await reloaded_minutes_ago(db, 10)
+        await livetv(db, w)
+        s = await status(db)
+        assert s["drift"]["repairs"] == n
+        assert (drift_repeated(2) in s["warnings"]) is (n == 2)
+    # it stays on the panel while it keeps happening
+    await livetv(db, w)
+    assert drift_repeated(2) in (await status(db))["warnings"]
+    # a restore long after the last one counts from one again
+    s = await status(db)
+    s["drift"]["last_at"] = (now() - timedelta(hours=25)).isoformat()
+    await db.execute("UPDATE plex_livetv_state SET status = $1 WHERE id = 1", dumps(s))
+    dizquetv_refresh(w, ours)
+    await reloaded_minutes_ago(db, 10)
+    await livetv(db, w)
+    s = await status(db)
+    assert s["drift"]["repairs"] == 1 and not any("in a row" in x for x in s["warnings"])
+
+
+# ------------------------------------------------------------------ refresh now, periodic check
+
+
+@pytest.mark.asyncio
+async def test_refresh_now_runs_at_once_while_a_guide_reload_waits_its_window(
+    db: Database,
+) -> None:
+    # the top-up's reload waits for guide_refresh_min_minutes (given back, ~50 min);
+    # "Refresh Plex now" (a forced enqueue) must not wait behind it
+    w = await make_world(db)
+    await ask_register(db)
+    await livetv(db, w, force=True)
+    await reloaded_minutes_ago(db, 10)
+    await generated(db, w.channels[0])
+    w.fake.calls.clear()
+    row = await livetv(db, w)
+    assert row["state"] == "paused" and row["not_before"] is not None
+    res = await enqueue_job(
+        db,
+        subject_kind="catalog",
+        subject_id=CATALOG_ID,
+        stage="plex_livetv",
+        force=True,
+        reason={"why": "refresh", "by": "user:1"},
+    )
+    assert (res.outcome, res.job_id) == ("coalesced", row["id"])
+    job_row = await db.fetchrow("SELECT * FROM processing_jobs WHERE id = $1", row["id"])
+    assert job_row["not_before"] is None and bool(job_row["force"]) is True
+    job = await claim_for_pool(db, worker_id="w1", pool="network_plex", stages=["plex_livetv"])
+    assert job is not None and job.id == row["id"]
+    await dispatch_job(db, job, runtime=w.rt, legacy_handlers={})
+    done = await db.fetchrow("SELECT state FROM processing_jobs WHERE id = $1", row["id"])
+    assert done["state"] == "done"
+    assert any(p.endswith("/reloadGuide") for _, p in w.fake.writes())
+
+
+async def plex_jobs(db: Any) -> list[Any]:
+    return list(
+        await db.fetch("SELECT id, state, reasons FROM processing_jobs WHERE stage = 'plex_livetv'")
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_reconciler_checks_plex_every_drift_check_minutes(db: Database) -> None:
+    w = await make_world(db)
+    graph = w.rt.graph
+    assert graph["plex_livetv"].every_minutes_rule == ("plexlive", "drift_check_minutes")
+    assert PlexLiveConfig().drift_check_minutes == 15
+    report = await reconcile_once(db, graph)
+    assert report.periodic == 1
+    (job,) = await plex_jobs(db)
+    assert job["state"] == "pending"
+    assert loads(job["reasons"])[0]["why"] == "periodic check"
+    # queued already: nothing more
+    assert (await reconcile_once(db, graph)).periodic == 0
+    # finished a minute ago: not yet
+    await db.execute(
+        "UPDATE processing_jobs SET state = 'done', finished_at = $1 WHERE id = $2",
+        to_ts(db, now() - timedelta(minutes=1)),
+        job["id"],
+    )
+    assert (await reconcile_once(db, graph)).periodic == 0
+    # finished 16 minutes ago: checked again
+    await db.execute(
+        "UPDATE processing_jobs SET finished_at = $1 WHERE id = $2",
+        to_ts(db, now() - timedelta(minutes=16)),
+        job["id"],
+    )
+    assert (await reconcile_once(db, graph)).periodic == 1
+    assert len(await plex_jobs(db)) == 2
+
+
+@pytest.mark.asyncio
+async def test_drift_check_minutes_zero_switches_the_periodic_check_off(db: Database) -> None:
+    w = await make_world(db)
+    await set_rules(db, {"tuner_url": TUNER, "drift_check_minutes": 0})
+    assert (await reconcile_once(db, w.rt.graph)).periodic == 0
+    assert await plex_jobs(db) == []
