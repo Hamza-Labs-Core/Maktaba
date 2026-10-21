@@ -226,6 +226,7 @@ while IFS='|' read -r status subject version name; do
     if [ "$version" != "$MSVC_RUNTIME_VERSION" ]; then
         die "$name from $MSVC_RUNTIME is $version, not the Visual C++ runtime $MSVC_RUNTIME_VERSION that pins.env pins"
     fi
+    log "Visual C++ runtime: $name $version, signed by Microsoft"
     if [ "$name" = vcruntime140.dll ]; then MSVC_VERSION="$version"; fi
 done <<<"$sigs"
 [ -n "$MSVC_VERSION" ] || die "no vcruntime140.dll among the runtime's DLLs Postgres loads"

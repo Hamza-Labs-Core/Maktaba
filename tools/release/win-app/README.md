@@ -72,9 +72,10 @@ The runtime is the build machine's, pinned by version (`MSVC_RUNTIME_VERSION` in
 release always carries the runtime that was reviewed. When GitHub updates `windows-latest`'s Visual
 Studio, the win-app gate and the release's Windows leg stop with
 `no Visual Studio here has the Visual C++ runtime <pinned> … (found: <new> …)`. The fix is a reviewed
-change to that line: set it to the version found, after checking that the job's log shows all three
-DLLs (`vcruntime140.dll`, `vcruntime140_1.dll`, `msvcp140.dll`) at that FileVersion and signed by
-Microsoft (the build checks both and says which one differs). Nothing else changes: the payload
+change to that line: set it to the version found, and check in that change's win-app job that the log
+shows all three DLLs (`vcruntime140.dll`, `vcruntime140_1.dll`, `msvcp140.dll`) at it, one line each
+(`[payload] Visual C++ runtime: <dll> <version>, signed by Microsoft`). The build checks the version
+and the signature of each and stops naming the one that differs. Nothing else changes: the payload
 records the version in `payload.json`, and `licenses\msvc-runtime.txt` names it.
 
 Left out of the Postgres archive: StackBuilder and its wxWidgets DLLs, `include\`, the import
