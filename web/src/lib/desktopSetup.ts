@@ -55,7 +55,8 @@ export interface StepError {
   details: string[];
 }
 
-/** One finding of the check step: setup.check.note.<code> with its params. */
+/** One finding of the check step (setup.check.note.<code>) or of a move's
+ * plan (setup.move.note.<code>), with its params and its English. */
 export interface CheckNote {
   code: string;
   params?: Record<string, unknown>;
@@ -109,14 +110,15 @@ export interface AdoptItem {
   done: boolean;
 }
 
-/** What moving a source does (adopt "plan"); problems stop it. */
+/** What moving a source does (adopt "plan"); problems stop it. Each finding
+ * is setup.move.note.<code> with its params. */
 export interface AdoptPlan {
   source: AdoptSource;
   items: AdoptItem[];
   carried: string[];
   not_carried: string[];
-  problems: string[];
-  warnings: string[];
+  problems: CheckNote[];
+  warnings: CheckNote[];
   need: number;
   free: number;
 }

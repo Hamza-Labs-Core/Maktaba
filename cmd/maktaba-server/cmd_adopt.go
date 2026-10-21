@@ -47,7 +47,7 @@ offers the move; once the app's server ran healthy the old task is removed (--ve
 				if err := adopt.Undo(sys, tgt); err != nil {
 					return err
 				}
-				fmt.Println("The old install runs again; the app's server is paused (Resume in the app starts it).")
+				fmt.Println("The old install runs again. The app's server is stopped and its task turned off; the app opens its setup, which offers the move again.")
 				return nil
 			case verify:
 				if err := adopt.Verify(ctx, tgt, cfg, wait); err != nil {

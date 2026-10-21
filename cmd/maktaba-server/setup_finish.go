@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/adopt"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dsn"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
@@ -106,6 +107,11 @@ func stepFinish(s *setupRun, _ json.RawMessage) (any, error) {
 	}
 	// done: nothing waits any more (the password's hash included)
 	if err := os.Remove(s.pendingPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	// a move into the app that was undone (adopt --undo) no longer keeps the
+	// status step from counting this setup
+	if err := adopt.ForgetUndone(s.cfg.StateDir()); err != nil {
 		return nil, err
 	}
 	return result, nil

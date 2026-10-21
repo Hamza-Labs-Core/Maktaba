@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -51,7 +52,10 @@ func (f *adoptFakeSys) DeleteTask(name string) error {
 	f.tasks = nil
 	return nil
 }
-func (f *adoptFakeSys) CreateTask(string, string) error      { return nil }
+func (f *adoptFakeSys) CreateTask(name, _ string) error {
+	f.tasks = append(f.tasks, adopt.Task{Name: name, Enabled: true})
+	return nil
+}
 func (f *adoptFakeSys) RunTask(string) error                 { return nil }
 func (f *adoptFakeSys) Processes() ([]adopt.Proc, error)     { return nil, nil }
 func (f *adoptFakeSys) Kill(int) error                       { return nil }
@@ -59,6 +63,9 @@ func (f *adoptFakeSys) ReadFile(path string) ([]byte, error) { return os.ReadFil
 func (f *adoptFakeSys) Getenv(name string) string            { return f.env[name] }
 func (f *adoptFakeSys) Listening(string) bool                { return false }
 func (f *adoptFakeSys) StopAppServer() error                 { return nil }
+func (f *adoptFakeSys) User() (adopt.User, error) {
+	return adopt.User{SID: "S-1-5-21-1000-2000-3000-1001", Name: `PC\me`}, nil
+}
 
 func serveOn(t *testing.T, h http.Handler) string {
 	t.Helper()
@@ -78,6 +85,7 @@ func TestSetupAdopt(t *testing.T) {
 	e := newSetupEnv(t)
 	fakePayload(t, e)
 	t.Setenv("MAKTABA_NODE_CONFIG", filepath.Join(e.dir, "app-node.json"))
+	t.Setenv("LOCALAPPDATA", filepath.Join(e.dir, "Local")) // the app window's mode.json (Windows)
 
 	// the app's server as verify sees it once it runs with the carried settings
 	api := serveOn(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
@@ -175,6 +183,13 @@ func TestSetupAdopt(t *testing.T) {
 	if code, ev := setupStep(t, "status", "{}"); code != 0 || data(t, ev)["configured"] != true {
 		t.Fatalf("status after the move = %d %v", code, ev)
 	}
+	// moved already: the step says so with its code and the source, for the
+	// screens' own words, and its English for Details
+	code, _, ev = runStep(t, "adopt", map[string]string{"action": "move", "source": name})
+	if params, _ := ev["params"].(map[string]any); code != 1 || ev["code"] != "adopt_moved_already" || params["source"] != name ||
+		!strings.Contains(ev["message"].(string), "moved into the app already") {
+		t.Fatalf("a second move = %d %v", code, ev)
+	}
 
 	code, _, ev = runStep(t, "adopt", map[string]any{"action": "verify", "wait_sec": 1})
 	if code != 0 {
@@ -185,5 +200,34 @@ func TestSetupAdopt(t *testing.T) {
 	}
 	if code, _, ev := runStep(t, "adopt", map[string]string{"action": "nope"}); code != 1 || ev["code"] != "bad_input" {
 		t.Fatalf("a bad action = %d %v", code, ev)
+	}
+
+	// undo (adopt --undo): the old task back, the app window out of server
+	// mode, and setup's status no longer counts the app as set up, so the
+	// window's setup does not register the app's server over the old install
+	cfg, _, _ = config.Load()
+	tgt := adoptTarget(cfg)
+	if runtime.GOOS == "windows" {
+		if want := filepath.Join(e.dir, "Local", "com.hamzalabs.maktaba", "mode.json"); tgt.ModeFile != want {
+			t.Fatalf("mode.json at %q, want %q", tgt.ModeFile, want)
+		}
+		if err := os.MkdirAll(filepath.Dir(tgt.ModeFile), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(tgt.ModeFile, []byte(`{"mode":"server","web_url":"http://127.0.0.1:8780"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := adopt.Undo(sys, tgt); err != nil {
+		t.Fatal(err)
+	}
+	if !sys.HasTask(name) {
+		t.Error("the old task is not back")
+	}
+	if _, err := os.Stat(tgt.ModeFile); tgt.ModeFile != "" && !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the window stays in server mode: %v", err)
+	}
+	if code, ev := setupStep(t, "status", "{}"); code != 0 || data(t, ev)["configured"] != false {
+		t.Fatalf("status after an undo = %d %v", code, ev)
 	}
 }

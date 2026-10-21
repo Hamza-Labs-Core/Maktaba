@@ -52,7 +52,10 @@ texts on them, so a code keeps its meaning and its params once shipped (a new re
 ### `status`
 Input `{}`. Is this Mac already set up? The app calls it before showing setup: when `configured`,
 it registers the login item again and opens `web_url` instead of a second setup (not after the user
-chose "Connect to another Maktaba…").
+chose "Connect to another Maktaba…"). Not `configured` while the move recorded in
+`<state>/moved/move.json` is `undone` (`maktaba-server adopt --undo`, below): the old install runs
+the machine's Maktaba again, and the app must not register its server over it. A `finish` (setup
+afresh) or a new move ends that.
 ```json
 {"configured": false, "web_url": "http://127.0.0.1:8088", "supervisor_url": "http://127.0.0.1:9103"}
 ```
@@ -202,7 +205,10 @@ Instead of `check` … `finish` when the PC already runs Maktaba outside the app
   The welcome screen asks on Windows only (elsewhere nothing is found).
 - `{"action": "plan", "source": id}` → `{"source", "items": [{"what", "from", "to", "size",
   "done"}], "carried", "not_carried", "problems", "warnings", "need", "free"}`; read only. A move
-  with `problems` is refused.
+  with `problems` is refused. Each finding is `{"code", "params"?, "message"}`, shown as
+  `setup.move.note.<code>` (the English `message` for a code the app does not know): problems
+  `space_low` (`need_bytes`, `free_bytes`), `worker_not_joined` (`path`), `postgres_down` (`where`);
+  warnings `postgres_stays` (`where`), `started_by_hand`.
 - `{"action": "move", "source": id}` → `{"move": <record>, "web_url", "supervisor_url"}`, with
   `progress` events (`venv` as the venv step's, then `stop`, `copy`, `settings`). The old install is
   stopped and its task disabled, its files copied, `server.toml` written; what a fresh setup
@@ -213,8 +219,21 @@ Instead of `check` … `finish` when the PC already runs Maktaba outside the app
   process runs, then the old task is removed. The server does the same by itself once every role
   ran healthy for three minutes, so the screens need not wait for it.
 
-Errors: `adopt_find`, `adopt_gone` (field `source`), `adopt_blocked` (the plan's problems),
-`adopt_failed`, `adopt_verify`, and the venv step's.
+Errors: `adopt_find`, `adopt_gone` (field `source`), `adopt_blocked` (the plan's problems), and
+the move's own reasons, each with its params: `adopt_moved_already` / `adopt_under_way`
+(`source`), `adopt_task` (`task`: Task Scheduler refused to read or turn off an old task),
+`adopt_still_running` (`pids`), `adopt_port_busy` (`port`), `adopt_key_differs` (`path`, `from`: a
+key already in the app is another one, never replaced); `interrupted` (a stop: the next run goes
+on), `adopt_failed` for anything else, `adopt_verify`, and the venv step's.
+
+`maktaba-server adopt --undo` (a terminal; no step) runs the old install again: the pause flag, the
+app's server stopped, this user's app tasks disabled (`\Maktaba Server <SID>`, and a task of the old
+shared name `\Maktaba Server` that runs as this user), the window's `mode.json` out of server mode
+(Windows: `%LOCALAPPDATA%\com.hamzalabs.maktaba\mode.json`; a client mode stays), the old tasks
+registered again from their XML and run, the record `undone`. The pause flag ends with the sign-in;
+what keeps the app's server from starting over the old install after it is the disabled task (the
+window starts only an enabled one) and `status` above: the window opens setup, whose welcome screen
+finds the old install and offers the move again.
 
 ### Stopping a step
 

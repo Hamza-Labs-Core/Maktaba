@@ -45,6 +45,29 @@ func init() {
 	}
 }
 
+// TestTheAppTaskIsThisUsers: the app's task is named by the SID of the user
+// this process runs as (the shell's task_name), read from its token; nothing
+// is registered.
+func TestTheAppTaskIsThisUsers(t *testing.T) {
+	u, err := RealSys().User()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tu, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(u.SID, "S-1-") || u.SID != tu.User.Sid.String() {
+		t.Errorf("SID %q", u.SID)
+	}
+	if got, want := AppTask(u), `\Maktaba Server `+u.SID; got != want {
+		t.Errorf("AppTask = %q, want %q", got, want)
+	}
+	if want := taskUser(os.Getenv); u.Name != want {
+		t.Errorf("name %q, want %q", u.Name, want)
+	}
+}
+
 func freePort(t *testing.T) string {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")

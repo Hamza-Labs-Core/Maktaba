@@ -1192,14 +1192,14 @@ function Move({
               {t("setup.move.notCarried", { what: n })}
             </p>
           ))}
-          {plan.warnings.map((w) => (
-            <p key={w} className="mkt-setup__warn">
-              {w}
+          {plan.warnings.map((n) => (
+            <p key={n.code} className="mkt-setup__warn">
+              {codedText(t, "setup.move.note", n.code, n.params, words, n.message)}
             </p>
           ))}
-          {plan.problems.map((p) => (
-            <p key={p} className="mkt-setup__warn" role="alert">
-              {p}
+          {plan.problems.map((n) => (
+            <p key={n.code} className="mkt-setup__warn" role="alert">
+              {codedText(t, "setup.move.note", n.code, n.params, words, n.message)}
             </p>
           ))}
           <p className="mkt-setup__note">{t("setup.move.kept")}</p>

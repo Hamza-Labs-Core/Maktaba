@@ -20,19 +20,21 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
-// AppTask is the app's own sign-in task (contract-agent).
-const AppTask = `\Maktaba Server`
-
 // Target is the app the install moves into.
 type Target struct {
 	ConfigPath string // the app's server.toml
 	StateDir   string // the app's state root (moved/, chroma/, models/, cache/)
 	KeysDir    string
 	NodeConfig string // where the app reads node.json
+	// ModeFile is the app window's mode.json (the shell's mode.rs; on Windows
+	// %LOCALAPPDATA%\com.hamzalabs.maktaba): Undo takes its server mode out.
+	ModeFile string
 }
 
 // pausedFlag is the shell's pause flag (agent.rs): a paused server is not
-// started by the app until the owner resumes it.
+// started by the app until the owner resumes it. On Windows it holds in the
+// sign-in it was set in (one without a sign-in line: written after this
+// sign-in began); the next sign-in ends it.
 func (t Target) pausedFlag() string { return filepath.Join(t.StateDir, "state", "server-paused") }
 
 // The stages of a move, in its record (moved/move.json).
@@ -115,17 +117,17 @@ type Plan struct {
 	Carried    []string `json:"carried"`
 	NotCarried []string `json:"not_carried"`
 	// Problems stop the move (nothing is changed while any is left).
-	Problems []string `json:"problems"`
-	Warnings []string `json:"warnings"`
-	Need     int64    `json:"need"` // bytes the copies take
-	Free     int64    `json:"free"` // free bytes where the app keeps its state (-1 unknown)
+	Problems []Note `json:"problems"`
+	Warnings []Note `json:"warnings"`
+	Need     int64  `json:"need"` // bytes the copies take
+	Free     int64  `json:"free"` // free bytes where the app keeps its state (-1 unknown)
 
 	config config.Config // the app's server.toml after the move
 }
 
 // MakePlan reads what moving src into tgt does.
 func MakePlan(sys Sys, src Source, tgt Target) (Plan, error) {
-	p := Plan{Source: src, Items: []Item{}, Problems: []string{}, Warnings: []string{}, Free: -1}
+	p := Plan{Source: src, Items: []Item{}, Problems: []Note{}, Warnings: []Note{}, Free: -1}
 	old := config.Defaults()
 	if src.ConfigFound {
 		c, _, err := config.LoadFrom(src.Config)
@@ -148,27 +150,40 @@ func MakePlan(sys Sys, src Source, tgt Target) (Plan, error) {
 	if free := hostinfo.FreeDisk(existingParent(tgt.StateDir)); free > 0 {
 		p.Free = int64(free)
 		if p.Need > p.Free {
-			p.Problems = append(p.Problems, fmt.Sprintf("the copies need %s and %s is free where the app keeps its files",
-				human(p.Need), human(p.Free)))
+			p.Problems = append(p.Problems, note("space_low",
+				fmt.Sprintf("the copies need %s and %s is free where the app keeps its files", human(p.Need), human(p.Free)),
+				"need_bytes", p.Need, "free_bytes", p.Free))
 		}
 	}
 	switch src.DB {
 	case DBNode:
 		if src.Kind == KindNodeWorker && src.Home == "" {
-			p.Problems = append(p.Problems, "this worker has not joined a home (no node config at "+src.NodeConfig+")")
+			p.Problems = append(p.Problems, note("worker_not_joined",
+				"this worker has not joined a home (no node config at "+src.NodeConfig+")", "path", src.NodeConfig))
 		}
 	case DBOwnPostgres:
 		if _, port, _ := net.SplitHostPort(src.DBWhere); port != "" && !sys.Listening(port) {
-			p.Problems = append(p.Problems, "its library database, the Postgres at "+src.DBWhere+
-				", is not running: the move needs it running")
+			p.Problems = append(p.Problems, note("postgres_down",
+				"its library database, the Postgres at "+src.DBWhere+", is not running: the move needs it running",
+				"where", src.DBWhere))
 		}
-		p.Warnings = append(p.Warnings, "the library database stays in the Postgres at "+src.DBWhere+
-			" on this PC, which keeps running as it does now")
+		p.Warnings = append(p.Warnings, note("postgres_stays",
+			"the library database stays in the Postgres at "+src.DBWhere+" on this PC, which keeps running as it does now",
+			"where", src.DBWhere))
 	}
 	if src.Kind == KindProcess {
-		p.Warnings = append(p.Warnings, "it was started without a task: the move ends it")
+		p.Warnings = append(p.Warnings, note("started_by_hand", "it was started without a task: the move ends it"))
 	}
 	return p, nil
+}
+
+// ProblemsText is the plan's problems in English, on one line.
+func (p Plan) ProblemsText() string {
+	parts := make([]string, len(p.Problems))
+	for i, n := range p.Problems {
+		parts[i] = n.Message
+	}
+	return strings.Join(parts, "; ")
 }
 
 // moveItems are the files the app takes over: the keys and the node config
@@ -314,7 +329,7 @@ func Move(ctx context.Context, sys Sys, p Plan, tgt Target, venv func(context.Co
 		progress = func(string, string) {}
 	}
 	if len(p.Problems) > 0 {
-		return Record{}, errors.New(strings.Join(p.Problems, "; ") + ": nothing was changed")
+		return Record{}, errors.New(p.ProblemsText() + ": nothing was changed")
 	}
 	src := p.Source
 	rec, ok, err := ReadRecord(tgt.StateDir)
@@ -325,9 +340,11 @@ func Move(ctx context.Context, sys Sys, p Plan, tgt Target, venv func(context.Co
 	case !ok || rec.Stage == StageUndone:
 		rec = Record{Stage: StageFound, StartedAt: time.Now().UTC()}
 	case rec.Stage != StageFound && rec.Stage != StageStopped:
-		return rec, fmt.Errorf("%s was moved into the app already (%s)", rec.Source.ID, RecordPath(tgt.StateDir))
+		return rec, codedf("adopt_moved_already", []any{"source", rec.Source.ID},
+			"%s was moved into the app already (%s)", rec.Source.ID, RecordPath(tgt.StateDir))
 	case rec.Source.ID != src.ID:
-		return rec, fmt.Errorf("the move of %s is under way: it goes on first", rec.Source.ID)
+		return rec, codedf("adopt_under_way", []any{"source", rec.Source.ID},
+			"the move of %s is under way: it goes on first", rec.Source.ID)
 	}
 	rec.Source = src
 	if err := writeRecord(tgt.StateDir, rec); err != nil {
@@ -345,7 +362,7 @@ func Move(ctx context.Context, sys Sys, p Plan, tgt Target, venv func(context.Co
 		for _, task := range src.Tasks() {
 			raw, err := sys.TaskXML(task)
 			if err != nil {
-				return rec, fmt.Errorf("read the old task %s: %w", task, err)
+				return rec, codedf("adopt_task", []any{"task", task}, "read the old task %s: %w", task, err)
 			}
 			s := Saved{Task: task, XML: filepath.Join(tgt.StateDir, "moved", safeName(task)+".xml")}
 			if err := layout.WriteFileAtomic(s.XML, raw, 0o600); err != nil {
@@ -367,6 +384,10 @@ func Move(ctx context.Context, sys Sys, p Plan, tgt Target, venv func(context.Co
 	rec.Copied = []string{}
 	for _, it := range p.Items {
 		if err := it.item.Copy(false); err != nil {
+			var differs *devmigrate.DiffersError
+			if errors.As(err, &differs) {
+				return rec, coded("adopt_key_differs", err, "path", differs.To, "from", differs.From)
+			}
 			return rec, err
 		}
 		rec.Copied = append(rec.Copied, it.What)
@@ -388,7 +409,7 @@ func stopSource(ctx context.Context, sys Sys, src Source) error {
 	for _, task := range src.Tasks() {
 		_ = sys.EndTask(task) // a task that is not running is not an error
 		if err := sys.SetTaskEnabled(task, false); err != nil {
-			return fmt.Errorf("disable the old task %s: %w", task, err)
+			return codedf("adopt_task", []any{"task", task}, "disable the old task %s: %w", task, err)
 		}
 	}
 	alive := func() []int {
@@ -417,7 +438,12 @@ func stopSource(ctx context.Context, sys Sys, src Source) error {
 	for left := alive(); len(left) > 0; left = alive() {
 		switch {
 		case time.Now().After(deadline):
-			return fmt.Errorf("the old install's processes (%v) are still running", left)
+			pids := make([]string, len(left))
+			for i, pid := range left {
+				pids[i] = strconv.Itoa(pid)
+			}
+			return codedf("adopt_still_running", []any{"pids", strings.Join(pids, ", ")},
+				"the old install's processes (%v) are still running", left)
 		case time.Now().After(grace):
 			for _, pid := range left {
 				if !killed[pid] {
@@ -434,7 +460,7 @@ func stopSource(ctx context.Context, sys Sys, src Source) error {
 		port := addr[strings.LastIndexByte(addr, ':')+1:]
 		for port != "" && sys.Listening(port) {
 			if time.Now().After(deadline) {
-				return fmt.Errorf("port %s is still in use after the old install stopped", port)
+				return codedf("adopt_port_busy", []any{"port", port}, "port %s is still in use after the old install stopped", port)
 			}
 			if !sleepCtx(ctx, stopPoll) {
 				return ctx.Err()
@@ -623,10 +649,18 @@ func Finish(sys Sys, stateDir string) (bool, error) {
 	return true, writeRecord(stateDir, rec)
 }
 
-// Undo runs the old install again: the app's server paused, stopped and its
-// task disabled; the old task registered again from its XML (or enabled again,
-// when it was not removed yet) and run. What changed in the app since stays in
-// the app.
+// Undo runs the old install again: the app's server paused, stopped and this
+// user's app tasks disabled (theirs, and their task of the old shared name);
+// the app window out of server mode; the old task registered again from its
+// XML (or enabled again, when it was not removed yet) and run. What changed in
+// the app since stays in the app.
+//
+// The app's server never starts over the old install by itself afterwards: in
+// this sign-in the pause flag holds and the tasks are off; at the next sign-in
+// the tasks are still off (the pause flag ends with the sign-in), and the app
+// window opens setup, whose status step does not take the server back while
+// the record says undone (UndoneHere): the welcome screen offers the move
+// again.
 func Undo(sys Sys, tgt Target) error {
 	rec, ok, err := ReadRecord(tgt.StateDir)
 	if err != nil {
@@ -635,14 +669,23 @@ func Undo(sys Sys, tgt Target) error {
 	if !ok || rec.Stage == StageUndone || rec.Stage == StageFound {
 		return errors.New("no move to undo on this PC")
 	}
+	apps, err := appTasks(sys)
+	if err != nil {
+		return err
+	}
 	if err := layout.WriteFileAtomic(tgt.pausedFlag(), []byte("paused: the install moved into the app runs again\n"), 0o600); err != nil {
 		return err
 	}
 	if err := sys.StopAppServer(); err != nil {
 		return err
 	}
-	if err := sys.SetTaskEnabled(AppTask, false); err != nil && sys.HasTask(AppTask) {
-		return fmt.Errorf("disable the app's task: %w", err)
+	for _, task := range apps {
+		if err := sys.SetTaskEnabled(task, false); err != nil && sys.HasTask(task) {
+			return fmt.Errorf("disable the app's task %s: %w", task, err)
+		}
+	}
+	if err := leaveServerMode(tgt.ModeFile); err != nil {
+		return err
 	}
 	for _, s := range rec.Saved {
 		if !sys.HasTask(s.Task) {
@@ -659,4 +702,51 @@ func Undo(sys Sys, tgt Target) error {
 	}
 	rec.Stage, rec.UndoneAt = StageUndone, now()
 	return writeRecord(tgt.StateDir, rec)
+}
+
+// leaveServerMode takes the app window out of server mode: a mode.json that
+// says server is removed, so the window opens setup instead of waiting on (and
+// offering to turn on) a server that gave this PC back to the old install. A
+// client mode, or none, stays as it is.
+func leaveServerMode(path string) error {
+	if path == "" {
+		return nil
+	}
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var m struct {
+		Mode string `json:"mode"`
+	}
+	if json.Unmarshal(raw, &m) != nil || m.Mode != "server" {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("take the app out of server mode (%s): %w", path, err)
+	}
+	return nil
+}
+
+// UndoneHere reports whether the move recorded here was undone: the old
+// install runs this PC's Maktaba again, and the app must not take it back by
+// itself (setup's status step says the app is not set up).
+func UndoneHere(stateDir string) bool {
+	rec, ok, err := ReadRecord(stateDir)
+	return err == nil && ok && rec.Stage == StageUndone
+}
+
+// ForgetUndone removes the record of a move that was undone, once the app is
+// set up afresh (setup's finish): the app is this PC's server again.
+func ForgetUndone(stateDir string) error {
+	if !UndoneHere(stateDir) {
+		return nil
+	}
+	if err := os.Remove(RecordPath(stateDir)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/adopt"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
@@ -213,7 +214,9 @@ func runSetupJSON(step string, in io.Reader, out io.Writer) int {
 // setupStatus: this machine is configured when server.toml exists and its
 // database does (the bundled Postgres's cluster, a [database] url, or the
 // SQLite file), or it is a node (a joined node config: the home's database;
-// an install moved into the app, story 38.13).
+// an install moved into the app, story 38.13). Not after the move into the
+// app was undone (adopt --undo): the old install runs this machine's Maktaba
+// again, and the app must not register its server over it.
 func setupStatus() (map[string]any, error) {
 	cfg, found, err := config.Load()
 	if err != nil {
@@ -221,7 +224,7 @@ func setupStatus() (map[string]any, error) {
 	}
 	node := cfg.Server.Role != "home" && config.LocalNodeConfig().Joined()
 	return map[string]any{
-		"configured":     found && (node || databaseExists(cfg)),
+		"configured":     found && (node || databaseExists(cfg)) && !adopt.UndoneHere(cfg.StateDir()),
 		"web_url":        "http://" + supervisor.LocalAddr(cfg.Server.WebListen, "8088"),
 		"supervisor_url": supervisor.StateURL(cfg),
 	}, nil

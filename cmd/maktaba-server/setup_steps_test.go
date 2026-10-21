@@ -13,6 +13,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/adopt"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
@@ -749,8 +750,19 @@ func TestSetupFinishAgainAndFailures(t *testing.T) {
 		t.Fatal("a failed finish keeps what was collected (it can run again)")
 	}
 	t.Setenv("MAKTABA_TEST_FAKE_FAIL", "adduser-exists")
+	// a move into the app that was undone before this setup (adopt --undo)
+	undone := filepath.Join(e.state, "moved", "move.json")
+	if err := os.MkdirAll(filepath.Dir(undone), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(undone, []byte(`{"stage":"undone","source":{"id":"old"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if code, _, ev := runStep(t, "finish", map[string]any{}); code != 0 {
 		t.Fatalf("finish again = %d %v", code, ev)
+	}
+	if adopt.UndoneHere(e.state) {
+		t.Error("after a fresh setup the undone move still keeps status from counting it")
 	}
 }
 
@@ -763,5 +775,18 @@ func TestSetupStatusAfterFinish(t *testing.T) {
 	_, _, ev := runStep(t, "status", map[string]any{})
 	if data(t, ev)["configured"] != true {
 		t.Fatalf("status = %v", ev)
+	}
+
+	// after adopt --undo the old install runs this machine's Maktaba again:
+	// the app must not register its server over it
+	undone := filepath.Join(e.state, "moved", "move.json")
+	if err := os.MkdirAll(filepath.Dir(undone), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(undone, []byte(`{"stage":"undone","source":{"id":"old"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ev := runStep(t, "status", map[string]any{}); data(t, ev)["configured"] != false {
+		t.Fatalf("status after an undo = %v", ev)
 	}
 }

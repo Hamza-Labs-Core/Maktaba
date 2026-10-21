@@ -24,16 +24,25 @@ var adoptSys = adopt.RealSys
 // by default.
 const adoptVerifyWait = 2 * time.Minute
 
+// appIdentifier is the desktop app's bundle identifier (tauri.conf.json): its
+// window keeps mode.json in %LOCALAPPDATA%\<it> on Windows (mode.rs).
+const appIdentifier = "com.hamzalabs.maktaba"
+
 // adoptTarget is the app's side of a move: its server.toml, state root, keys
 // and node config (on Windows the new place, story 38.1, whatever an old
-// install still reads).
+// install still reads), and on Windows the app window's mode.json.
 func adoptTarget(cfg config.Config) adopt.Target {
-	node := config.LocalNodeConfigPath()
-	if runtime.GOOS == "windows" && strings.TrimSpace(os.Getenv("MAKTABA_NODE_CONFIG")) == "" {
+	tgt := adopt.Target{ConfigPath: config.Path(), StateDir: cfg.StateDir(), KeysDir: config.KeysDir(),
+		NodeConfig: config.LocalNodeConfigPath()}
+	if runtime.GOOS == "windows" {
 		home, _ := os.UserHomeDir()
-		node = filepath.Join(config.WindowsRoot(os.Getenv, home), "node.json")
+		root := config.WindowsRoot(os.Getenv, home) // %LOCALAPPDATA%\Maktaba
+		if strings.TrimSpace(os.Getenv("MAKTABA_NODE_CONFIG")) == "" {
+			tgt.NodeConfig = filepath.Join(root, "node.json")
+		}
+		tgt.ModeFile = filepath.Join(filepath.Dir(root), appIdentifier, "mode.json")
 	}
-	return adopt.Target{ConfigPath: config.Path(), StateDir: cfg.StateDir(), KeysDir: config.KeysDir(), NodeConfig: node}
+	return tgt
 }
 
 // adoptLog is <logs>/adopt.log, beside the step's own log.
@@ -93,7 +102,7 @@ func stepAdopt(s *setupRun, in json.RawMessage) (any, error) {
 			return plan, nil
 		}
 		if len(plan.Problems) > 0 {
-			return nil, failStep("adopt_blocked", "", "%s", strings.Join(plan.Problems, "; "))
+			return nil, failStep("adopt_blocked", "", "%s", plan.ProblemsText())
 		}
 		log, closeLog := s.adoptLog()
 		defer closeLog()
@@ -112,7 +121,7 @@ func stepAdopt(s *setupRun, in json.RawMessage) (any, error) {
 				return nil, err // the venv's own failure
 			}
 			_, _ = fmt.Fprintf(log, "%s failed: %v\n", time.Now().Format(time.RFC3339), err)
-			return nil, failStep("adopt_failed", "", "%v", err)
+			return nil, adoptFailure(err)
 		}
 		cfg, _, err := config.LoadFrom(tgt.ConfigPath)
 		if err != nil {
@@ -142,6 +151,24 @@ func stepAdopt(s *setupRun, in json.RawMessage) (any, error) {
 		return map[string]any{"move": rec}, nil
 	}
 	return nil, failStep("bad_input", "action", "The action is find, plan, move or verify.")
+}
+
+// adoptFailure is a move's failure as the screens say it: its own code and
+// params when it has them (adopt.Error), `interrupted` for a stop (the next run
+// goes on), else adopt_failed; the English always in the message (Details).
+func adoptFailure(err error) *stepError {
+	var ae *adopt.Error
+	switch {
+	case errors.As(err, &ae):
+		se := failStep(ae.Code, "", "%v", err)
+		for k, v := range ae.Params {
+			se = se.with(k, v)
+		}
+		return se
+	case errors.Is(err, context.Canceled):
+		return failStep("interrupted", "", "The move was stopped part way: %v", err)
+	}
+	return failStep("adopt_failed", "", "%v", err)
 }
 
 // adoptSource is the source with id as Find sees it now; one the move already

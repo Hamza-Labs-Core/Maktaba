@@ -24,3 +24,4 @@ func (otherSys) ReadFile(path string) ([]byte, error) { return readFile(path) }
 func (otherSys) Getenv(name string) string            { return os.Getenv(name) }
 func (otherSys) Listening(string) bool                { return false }
 func (otherSys) StopAppServer() error                 { return ErrUnsupported }
+func (otherSys) User() (User, error)                  { return User{}, ErrUnsupported }

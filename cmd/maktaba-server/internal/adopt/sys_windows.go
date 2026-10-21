@@ -168,6 +168,16 @@ func (winSys) Kill(pid int) error {
 func (winSys) ReadFile(path string) ([]byte, error) { return readFile(path) }
 func (winSys) Getenv(name string) string            { return os.Getenv(name) }
 
+// User is the user of this process's token: its SID, and the name Task
+// Scheduler writes for it.
+func (winSys) User() (User, error) {
+	tu, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		return User{}, err
+	}
+	return User{SID: tu.User.Sid.String(), Name: taskUser(os.Getenv)}, nil
+}
+
 // The app's server agent's named objects (contract-agent).
 const (
 	stopEvent  = `Local\Maktaba.Server.Stop`

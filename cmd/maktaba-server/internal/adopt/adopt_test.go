@@ -3,6 +3,7 @@ package adopt
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -48,11 +49,16 @@ type fakeSys struct {
 	enabled                     map[string]bool
 	created                     map[string]string
 	appStopped                  int
+	user                        User
 }
+
+// fakeUser is the fake PC's user: a SID of the form Windows gives, and the
+// name Task Scheduler writes for them.
+var fakeUser = User{SID: "S-1-5-21-1000-2000-3000-1001", Name: `PC\me`}
 
 func newFakeSys(env map[string]string) *fakeSys {
 	return &fakeSys{xml: map[string][]byte{}, taskOf: map[int]string{}, stubborn: map[int]bool{},
-		ports: map[string]int{}, env: env, enabled: map[string]bool{}, created: map[string]string{}}
+		ports: map[string]int{}, env: env, enabled: map[string]bool{}, created: map[string]string{}, user: fakeUser}
 }
 
 func (f *fakeSys) Tasks() ([]Task, error) {
@@ -184,6 +190,8 @@ func (f *fakeSys) StopAppServer() error {
 	return nil
 }
 
+func (f *fakeSys) User() (User, error) { return f.user, nil }
+
 func write(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -233,6 +241,12 @@ func TestParseTasks(t *testing.T) {
 		taskEntry(`\Maktaba\maktaba-node@2`, `powershell.exe`, `-File "C:\x\run-node.ps1" -Instance 2`, ``, false),
 		`  <!-- \No actions -->
   <Task><RegistrationInfo><URI>\No actions</URI></RegistrationInfo></Task>`,
+		// the app's task of before #175, as a user's: whom its principal runs as
+		`  <!-- \Maktaba Server -->
+  <Task><RegistrationInfo><URI>\Maktaba Server</URI></RegistrationInfo>
+    <Principals><Principal id="Author"><UserId> `+fakeUser.SID+` </UserId><LogonType>InteractiveToken</LogonType></Principal></Principals>
+    <Actions Context="Author"><Exec><Command>C:\Program Files\Maktaba\Maktaba.exe</Command><Arguments>--server-agent</Arguments></Exec></Actions>
+  </Task>`,
 	)
 	tasks, err := ParseTasks(raw)
 	if err != nil {
@@ -244,6 +258,7 @@ func TestParseTasks(t *testing.T) {
 		{Name: `\dizqueTV`, Command: `C:\Program Files\nodejs\node.exe`, Args: "index.js", WorkDir: `E:\tv\dizquetv`, Enabled: true},
 		{Name: `\Maktaba\maktaba-node@2`, Command: "powershell.exe", Args: `-File "C:\x\run-node.ps1" -Instance 2`},
 		{Name: `\No actions`, Enabled: true},
+		{Name: OldAppTask, Command: `C:\Program Files\Maktaba\Maktaba.exe`, Args: "--server-agent", Enabled: true, UserID: fakeUser.SID},
 	}
 	if !reflect.DeepEqual(tasks, want) {
 		t.Fatalf("tasks:\n got %#v\nwant %#v", tasks, want)
@@ -549,8 +564,10 @@ func TestMoveGoesOnAfterAFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Move(context.Background(), pc.sys, plan, pc.tgt, nil, nil); err == nil || !strings.Contains(err.Error(), "differs") {
-		t.Fatalf("a different key in the app: %v", err)
+	_, err = Move(context.Background(), pc.sys, plan, pc.tgt, nil, nil)
+	if ae := codeOf(err); ae == nil || ae.Code != "adopt_key_differs" || !strings.Contains(err.Error(), "differs") ||
+		ae.Params["path"] != filepath.Join(pc.tgt.KeysDir, "stream-signing.key") {
+		t.Fatalf("a different key in the app: %v (%+v)", err, ae)
 	}
 	rec, _, _ := ReadRecord(pc.tgt.StateDir)
 	if rec.Stage != StageStopped {
@@ -580,9 +597,19 @@ func TestMoveGoesOnAfterAFailure(t *testing.T) {
 
 	// another install cannot start while one is under way
 	write(t, RecordPath(pc.tgt.StateDir), `{"stage":"stopped","source":{"id":"\\Other"}}`)
-	if _, err := Move(context.Background(), pc.sys, plan, pc.tgt, nil, nil); err == nil || !strings.Contains(err.Error(), "under way") {
+	_, err = Move(context.Background(), pc.sys, plan, pc.tgt, nil, nil)
+	if ae := codeOf(err); ae == nil || ae.Code != "adopt_under_way" || ae.Params["source"] != `\Other` || !strings.Contains(err.Error(), "under way") {
 		t.Errorf("a second source during a move: %v", err)
 	}
+}
+
+// codeOf is err's code and params, when it has them.
+func codeOf(err error) *Error {
+	var ae *Error
+	if errors.As(err, &ae) {
+		return ae
+	}
+	return nil
 }
 
 func TestStopEndsWhatOutlivesItsTask(t *testing.T) {
@@ -610,9 +637,39 @@ func TestStopEndsWhatOutlivesItsTask(t *testing.T) {
 	pc = newThisPC(t)
 	pc.sys.ports["8782"] = 999
 	srcs, _ = Find(pc.sys, "")
-	if err := stopSource(context.Background(), pc.sys, srcs[0]); err == nil || !strings.Contains(err.Error(), "8782") {
+	err := stopSource(context.Background(), pc.sys, srcs[0])
+	if ae := codeOf(err); ae == nil || ae.Code != "adopt_port_busy" || ae.Params["port"] != "8782" || !strings.Contains(err.Error(), "8782") {
 		t.Errorf("a port still in use: %v", err)
 	}
+}
+
+// TestStopSaysWhatStillRuns: a process of the old install that outlives the
+// wait, killed or not, stops the move with its pid.
+func TestStopSaysWhatStillRuns(t *testing.T) {
+	fastStop(t)
+	stopGrace, stopWait = 10*time.Millisecond, 50*time.Millisecond
+	pc := newThisPC(t)
+	srcs, _ := Find(pc.sys, "")
+	src := srcs[0]
+	pc.sys.procs = append(pc.sys.procs, Proc{PID: 777, Name: "python.exe", Exe: filepath.Join(pc.dir, "venv", "python.exe")})
+	src.PIDs = append(src.PIDs, 777)
+	err := stopSource(context.Background(), &undying{fakeSys: pc.sys, pid: 777}, src)
+	if ae := codeOf(err); ae == nil || ae.Code != "adopt_still_running" || ae.Params["pids"] != "777" {
+		t.Errorf("a process that never ends: %v (%+v)", err, ae)
+	}
+}
+
+// undying is a PC where one process survives every kill.
+type undying struct {
+	*fakeSys
+	pid int
+}
+
+func (u *undying) Kill(pid int) error {
+	if pid == u.pid {
+		return nil
+	}
+	return u.fakeSys.Kill(pid)
 }
 
 func TestMoveAHomeOnSQLite(t *testing.T) {
@@ -711,8 +768,14 @@ func TestPlanProblems(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(p.Problems) != 1 || !strings.Contains(p.Problems[0], "not running") || len(p.Warnings) != 1 {
-		t.Errorf("problems %q warnings %q", p.Problems, p.Warnings)
+	if len(p.Problems) != 1 || p.Problems[0].Code != "postgres_down" || p.Problems[0].Params["where"] != "127.0.0.1:5432" ||
+		!strings.Contains(p.Problems[0].Message, "not running") || len(p.Warnings) != 1 || p.Warnings[0].Code != "postgres_stays" {
+		t.Errorf("problems %+v warnings %+v", p.Problems, p.Warnings)
+	}
+	// the plan's JSON: each finding a code, its params and its English
+	raw, _ := json.Marshal(p)
+	if !strings.Contains(string(raw), `"problems":[{"code":"postgres_down","params":{"where":"127.0.0.1:5432"},"message":"its library database`) {
+		t.Errorf("the plan's findings: %s", raw)
 	}
 	if _, err := Move(context.Background(), pc.sys, p, pc.tgt, nil, nil); err == nil || len(pc.sys.ended) != 0 {
 		t.Errorf("a plan with problems moved: %v (ended %q)", err, pc.sys.ended)
@@ -724,8 +787,14 @@ func TestPlanProblems(t *testing.T) {
 
 	// a worker that never joined a home
 	worker := Source{ID: `\Maktaba\maktaba-node`, Kind: KindNodeWorker, Task: `\Maktaba\maktaba-node`, DB: DBNode, NodeConfig: "x"}
-	if p, _ := MakePlan(pc.sys, worker, pc.tgt); len(p.Problems) != 1 {
-		t.Errorf("an unjoined worker: %q", p.Problems)
+	if p, _ := MakePlan(pc.sys, worker, pc.tgt); len(p.Problems) != 1 || p.Problems[0].Code != "worker_not_joined" || p.Problems[0].Params["path"] != "x" {
+		t.Errorf("an unjoined worker: %+v", p.Problems)
+	}
+
+	// a server started by hand: the move ends it
+	byHand := Source{ID: "pid:300", Kind: KindProcess, Dir: pc.dir, DB: DBSQLite}
+	if p, _ := MakePlan(pc.sys, byHand, pc.tgt); len(p.Warnings) != 1 || p.Warnings[0].Code != "started_by_hand" {
+		t.Errorf("by hand: %+v", p.Warnings)
 	}
 }
 
@@ -797,16 +866,33 @@ func TestVerifyFinishUndo(t *testing.T) {
 		t.Errorf("verifying a finished move again: %v", err)
 	}
 
-	// undo: the app's server paused and stopped, its task off, the old task back from its XML
-	pc.sys.tasks = append(pc.sys.tasks, Task{Name: AppTask, Enabled: true})
+	// undo: the app's server paused and stopped, this user's app tasks off
+	// (theirs, and theirs of the old shared name), the window out of server
+	// mode, the old task back from its XML
+	app := AppTask(pc.sys.user)
+	pc.sys.tasks = append(pc.sys.tasks, Task{Name: app, Enabled: true}, Task{Name: OldAppTask, Enabled: true, UserID: pc.sys.user.Name})
+	pc.tgt.ModeFile = filepath.Join(t.TempDir(), "com.hamzalabs.maktaba", "mode.json")
+	write(t, pc.tgt.ModeFile, `{"mode":"server","web_url":"http://127.0.0.1:8780","supervisor_url":"http://127.0.0.1:9100"}`)
+	if UndoneHere(pc.tgt.StateDir) {
+		t.Error("undone before the undo")
+	}
 	if err := Undo(pc.sys, pc.tgt); err != nil {
 		t.Fatal(err)
 	}
-	if pc.sys.appStopped != 1 || pc.sys.enabled[AppTask] {
-		t.Errorf("the app's server: stopped %d, task enabled %v", pc.sys.appStopped, pc.sys.enabled[AppTask])
+	if pc.sys.appStopped != 1 || pc.sys.enabled[app] || pc.sys.enabled[OldAppTask] {
+		t.Errorf("the app's server: stopped %d, tasks enabled %v", pc.sys.appStopped, pc.sys.enabled)
+	}
+	if !strings.HasPrefix(app, `\Maktaba Server S-1-`) {
+		t.Errorf("the app's task %q is not named by the user's SID", app)
 	}
 	if _, err := os.Stat(filepath.Join(pc.tgt.StateDir, "state", "server-paused")); err != nil {
 		t.Error("the app's server is not paused: the app would start it over the old install")
+	}
+	if _, err := os.Stat(pc.tgt.ModeFile); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the window stays in server mode: %v", err)
+	}
+	if !UndoneHere(pc.tgt.StateDir) {
+		t.Error("the undo is not recorded: setup's status would take the server back")
 	}
 	if pc.sys.created[name] != "<Task>the old task</Task>" || !pc.sys.enabled[name] || !reflect.DeepEqual(pc.sys.run, []string{name}) {
 		t.Errorf("the old task: created %q enabled %v run %q", pc.sys.created[name], pc.sys.enabled[name], pc.sys.run)
@@ -841,6 +927,97 @@ func TestUndoBeforeFinish(t *testing.T) {
 	plan, _ = MakePlan(pc.sys, srcs[0], pc.tgt)
 	if _, err := Move(context.Background(), pc.sys, plan, pc.tgt, nil, nil); err != nil {
 		t.Errorf("moving again after an undo: %v", err)
+	}
+	if UndoneHere(pc.tgt.StateDir) {
+		t.Error("moved again, the record still says undone")
+	}
+}
+
+// TestUndoTouchesOnlyThisUsersApp: another user's task of the old shared name
+// is theirs, and a window in client mode stays so. A fresh setup afterwards
+// makes the app this PC's server again.
+func TestUndoTouchesOnlyThisUsersApp(t *testing.T) {
+	fastStop(t)
+	pc := newThisPC(t)
+	srcs, _ := Find(pc.sys, "")
+	plan, _ := MakePlan(pc.sys, srcs[0], pc.tgt)
+	if _, err := Move(context.Background(), pc.sys, plan, pc.tgt, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	pc.sys.tasks = append(pc.sys.tasks, Task{Name: OldAppTask, Enabled: true, UserID: `PC\you`})
+	pc.tgt.ModeFile = filepath.Join(t.TempDir(), "mode.json")
+	client := `{"mode":"client","server_url":"https://maktaba.home"}`
+	write(t, pc.tgt.ModeFile, client)
+	if err := Undo(pc.sys, pc.tgt); err != nil {
+		t.Fatal(err)
+	}
+	if on, set := pc.sys.enabled[OldAppTask]; set && !on {
+		t.Error("another user's app task was turned off")
+	}
+	if read(t, pc.tgt.ModeFile) != client {
+		t.Error("a client mode was changed")
+	}
+	if err := ForgetUndone(pc.tgt.StateDir); err != nil || UndoneHere(pc.tgt.StateDir) {
+		t.Errorf("a fresh setup after the undo: %v, undone %v", err, UndoneHere(pc.tgt.StateDir))
+	}
+	if err := ForgetUndone(pc.tgt.StateDir); err != nil {
+		t.Errorf("nothing to forget: %v", err)
+	}
+}
+
+// TestUndoNeedsThisUsersSID: without the SID the app's task has no name, and
+// nothing is changed.
+func TestUndoNeedsThisUsersSID(t *testing.T) {
+	fastStop(t)
+	pc := newThisPC(t)
+	srcs, _ := Find(pc.sys, "")
+	plan, _ := MakePlan(pc.sys, srcs[0], pc.tgt)
+	if _, err := Move(context.Background(), pc.sys, plan, pc.tgt, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	pc.sys.user = User{}
+	if err := Undo(pc.sys, pc.tgt); err == nil || !strings.Contains(err.Error(), "SID") {
+		t.Errorf("undo without a SID: %v", err)
+	}
+	if pc.sys.appStopped != 0 || len(pc.sys.run) != 0 {
+		t.Errorf("changed: stopped %d, run %q", pc.sys.appStopped, pc.sys.run)
+	}
+	if _, err := os.Stat(filepath.Join(pc.tgt.StateDir, "state", "server-paused")); !errors.Is(err, os.ErrNotExist) {
+		t.Error("paused before it could undo")
+	}
+}
+
+func envOf(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
+
+// TestTheOldAppTaskIsThisUsersBySIDOrName is the shell's runs_as rule.
+func TestTheOldAppTaskIsThisUsersBySIDOrName(t *testing.T) {
+	u := User{SID: fakeUser.SID, Name: `PC\me`}
+	another := strings.TrimSuffix(fakeUser.SID, "1001") + "1002" // another user of the same PC
+	for id, want := range map[string]bool{
+		fakeUser.SID:                  true,
+		strings.ToLower(fakeUser.SID): true,
+		`pc\ME`:                       true,
+		"me":                          true,
+		another:                       false,
+		`PC\you`:                      false,
+		`OTHER\me`:                    false,
+		"":                            false,
+	} {
+		if got := u.runsAs(id); got != want {
+			t.Errorf("runsAs(%q) = %v, want %v", id, got, want)
+		}
+	}
+	if (User{SID: fakeUser.SID}).runsAs("me") {
+		t.Error("a bare name matched a user without a name")
+	}
+	if got := taskUser(envOf(map[string]string{"USERNAME": "me", "USERDOMAIN": "PC"})); got != `PC\me` {
+		t.Errorf("taskUser = %q", got)
+	}
+	if got := taskUser(envOf(map[string]string{"USERNAME": "me"})); got != "me" {
+		t.Errorf("taskUser without a domain = %q", got)
+	}
+	if got := taskUser(envOf(map[string]string{"USERDOMAIN": "PC"})); got != "" {
+		t.Errorf("taskUser without a name = %q", got)
 	}
 }
 

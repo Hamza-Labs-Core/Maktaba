@@ -24,12 +24,20 @@ type Task struct {
 	Args    string
 	WorkDir string
 	Enabled bool
+	// UserID is whom its first principal runs as: a SID, DOMAIN\name or a
+	// bare name, as Task Scheduler wrote it ("" when it names none).
+	UserID string
 }
 
 type taskXML struct {
 	RegistrationInfo struct {
 		URI string `xml:"URI"`
 	} `xml:"RegistrationInfo"`
+	Principals struct {
+		Principal []struct {
+			UserID string `xml:"UserId"`
+		} `xml:"Principal"`
+	} `xml:"Principals"`
 	Settings struct {
 		Enabled *bool `xml:"Enabled"`
 	} `xml:"Settings"`
@@ -78,6 +86,9 @@ func ParseTasks(raw []byte) ([]Task, error) {
 			task := Task{Name: name, Enabled: tx.Settings.Enabled == nil || *tx.Settings.Enabled}
 			if task.Name == "" {
 				task.Name = tx.RegistrationInfo.URI
+			}
+			if len(tx.Principals.Principal) > 0 {
+				task.UserID = strings.TrimSpace(tx.Principals.Principal[0].UserID)
 			}
 			if len(tx.Actions.Exec) > 0 {
 				e := tx.Actions.Exec[0]

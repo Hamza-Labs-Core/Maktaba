@@ -38,6 +38,8 @@ type Sys interface {
 	// StopAppServer asks the app's server agent to stop (its stop event) and
 	// waits until it has exited; nil when none runs.
 	StopAppServer() error
+	// User is the user this process runs as (whose app task AppTask names).
+	User() (User, error)
 }
 
 // ErrUnsupported: finding and moving another install is done on Windows.

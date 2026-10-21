@@ -2,7 +2,7 @@
 // fake SetupApi that answers like `maktaba-server setup --json` would
 // (specs/epics/36-mac-app/contract-setup.md).
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "../../lib/i18n";
 import type { AppState, SetupApi, StepError, StepName, StepProgress } from "../../lib/desktopSetup";
@@ -463,32 +463,57 @@ describe("SetupWizard", () => {
       expect(await screen.findByRole("heading", { name: "What will run" })).toBeInTheDocument();
     });
 
-    it("a problem in the plan stops it before anything changes", async () => {
+    it("a problem in the plan stops it before anything changes, each finding in the app's words", async () => {
+      const where = "127.0.0.1:5432";
       const adopt = adoptStep({
         ...PLAN,
-        source: { ...THIS_PC, db: "own-postgres", db_where: "127.0.0.1:5432" },
-        problems: ["its library database, the Postgres at 127.0.0.1:5432, is not running"],
+        source: { ...THIS_PC, db: "own-postgres", db_where: where },
+        problems: [{ code: "postgres_down", params: { where }, message: "en: not running" }],
+        warnings: [
+          { code: "postgres_stays", params: { where }, message: "en: stays" },
+          { code: "brand_new", message: "A finding this app has no text for." },
+        ],
       });
       renderWizard(fakeApi({ adopt }, { platform: "windows" }));
       await userEvent.click(await screen.findByRole("button", { name: "Move it" }));
-      expect(await screen.findByRole("alert")).toHaveTextContent("is not running");
-      expect(screen.getByText(/stays in the Postgres at 127.0.0.1:5432/)).toBeInTheDocument();
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "Its library database, the Postgres at 127.0.0.1:5432, is not running: the move needs it running."
+      );
+      expect(
+        screen.getByText(
+          "The library database stays in the Postgres at 127.0.0.1:5432 on this PC, which keeps running as it does now."
+        )
+      ).toBeInTheDocument();
+      expect(screen.getByText("A finding this app has no text for.")).toBeInTheDocument();
+      expect(screen.queryByText(/^en:/)).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Move" })).toBeDisabled();
     });
 
-    it("a move that stopped part way goes on when tried again", async () => {
+    it("a move that stopped part way says why in the app's words and goes on when tried again", async () => {
       let fail = true;
+      const english = "port 8782 is still in use after the old install stopped";
       const move = vi.fn((): unknown => {
-        if (fail) throw stepError("adopt_failed", "port 8782 is still in use");
+        if (fail)
+          throw {
+            code: "adopt_port_busy",
+            params: { port: "8782" },
+            message: english,
+            details: ["adopt.log: stop: Stopping the old install"],
+          } satisfies StepError;
         return URLS;
       });
       const api = fakeApi({ adopt: adoptStep(PLAN, move) }, { platform: "windows" });
       renderWizard(api);
       await userEvent.click(await screen.findByRole("button", { name: "Move it" }));
       await userEvent.click(await screen.findByRole("button", { name: "Move" }));
-      expect(await screen.findByRole("alert")).toHaveTextContent(
-        "The move stopped part way; Try again goes on from there. port 8782 is still in use"
+      const alert = await screen.findByRole("alert");
+      // the app's text with the port, alone; the step's English under Details
+      expect(alert.querySelector("p")?.textContent).toBe(
+        "The move stopped part way: port 8782 is still in use after the old install stopped. Try again goes on from there."
       );
+      expect(within(alert).getByText("Details")).toBeInTheDocument();
+      expect(alert.querySelector("details pre")).toHaveTextContent(english);
+      expect(alert.querySelector("details pre")).toHaveTextContent("adopt.log: stop");
       expect(api.finishSetup).not.toHaveBeenCalled();
       fail = false;
       await userEvent.click(screen.getByRole("button", { name: "Try again" }));

@@ -57,8 +57,11 @@ don't append a line here; docs-only PRs are exempt.
   settings (addresses, media, path map, transcription, the script's `MAKTABA_*` settings),
   keys, node config, search index, caches, models and an SQLite database into the app. The app's
   server removes the old task once it ran healthy; the old folder is kept, and
-  `maktaba-server adopt --undo` runs the old install again. `maktaba-server adopt` lists what it
-  finds and `--plan <id>` what a move does. `[server] mdns = "off"` is new (as
+  `maktaba-server adopt --undo` runs the old install again (the app's per-user task, and this
+  user's of the old shared name, turned off; the app opens its setup, which offers the move again,
+  and never starts its server over the old install). The plan's findings and the move's failures
+  come with codes, so the screens say them in English or Arabic. `maktaba-server adopt` lists what
+  it finds and `--plan <id>` what a move does. `[server] mdns = "off"` is new (as
   `serve --no-mdns`), so a moved install keeps that flag.
 
 ### Changed
