@@ -45,7 +45,7 @@ run with `{"action": "find" | "plan" | "move" | "verify", "source": <id>}`
 | 4 | copy the files | the keys (`secrets.key`, `stream-signing.key` beside the old config) into `keys\`, `node.json` into `%LOCALAPPDATA%\Maktaba\` (38.1), the search index, the streaming cache, the models, the Hugging Face sign-in, and an SQLite database (with its `-wal` / `-shm`) into the app's data folder. A key or node config already in the app's place and different is never replaced: the move stops and says so |
 | 5 | the database | SQLite: the copy above, its `url` the app's. A Postgres elsewhere: its `url` is carried. A Postgres on this PC: it stays where it is, running as it does now, and its `url` is carried (the move into the app's own Postgres comes with the Windows app's Postgres, story 38.10); the plan refuses while it is not running. A node: nothing (it reads the home's database; Epic 37 keeps a copy) |
 | 6 | carry the settings | the old `server.toml`'s `[server]` (addresses: the ports other devices and the home know), `[media]` roots and `path_map`, `[transcription]`, `[tv]`, `[pipeline]` (not its `python`), `[cloud]`, `[supervisor]`; never `[server] data_dir` (the app's own) and never a node's own `[database] url`. The script's `set` lines that map to a setting are carried (`MAKTABA_PATH_MAP`, `MAKTABA_WORKER_PATH_MAP`, `MAKTABA_MEDIA_ROOTS`, `MAKTABA_STT_*`, `MAKTABA_PUBLIC_BASE_URL`, `MAKTABA_DISCOVERY_MDNS`); the ones that only located the old binaries (`MAKTABA_API_BIN`, `MAKTABA_STREAMING_BIN`, `MAKTABA_PYTHON`, `MAKTABA_MIGRATIONS_DIR`, `MAKTABA_CONFIG`, `MAKTABA_NODE_CONFIG`, `PYTHON*`) are dropped; any other `MAKTABA_*` line and `serve` flag is listed as not carried. `serve --no-mdns` becomes `[server] mdns = "off"`. A worker-only node gets `[pipeline] instances` = its number of worker tasks. What a fresh setup had collected is dropped |
-| 7 | start the app's server | the app registers `\Maktaba Server` (contract-agent) and runs it, as after `finish` |
+| 7 | start the app's server | the app registers `\Maktaba Server <SID>` (contract-agent) and runs it, as after `finish` |
 | 8 | verify | the app's API answers and `/processes` shows every role running (`maktaba-server adopt --verify`, or the setup step's `verify`); the app's server does it by itself once every role ran healthy for three minutes (the same rule as an update's payload, 38.12) |
 | 9 | finish | delete the old tasks (their XML stays in `moved\`). The old folder is **kept**; `moved\move.json` and `maktaba-server adopt` say where it is |
 
@@ -59,7 +59,7 @@ tasks not exported again). Another install cannot move while one move is under w
 
 | | Found | In the app |
 |---|---|---|
-| task | *Maktaba node (maktaba-local)* → `start-maktaba-node.cmd` (a restart loop under `conhost --headless`) | exported, ended, deleted after verify; `\Maktaba Server` instead |
+| task | *Maktaba node (maktaba-local)* → `start-maktaba-node.cmd` (a restart loop under `conhost --headless`) | exported, ended, deleted after verify; `\Maktaba Server <SID>` instead |
 | role | full node of the home *Mahmouds-Mac-Studio* (`%APPDATA%\Maktaba\node.json`) | the same node: `node.json` copied to `%LOCALAPPDATA%\Maktaba` (the old one stays for going back) |
 | ports | web `0.0.0.0:8780`, api `127.0.0.1:8781`, stream `0.0.0.0:8782`, admin `127.0.0.1:9100` | the same (carried from `server.toml`) |
 | media | `Y:/`, `O:/` | the same |
@@ -74,6 +74,6 @@ This PC is converted only after the owner's OK (the user asked for that explicit
 ## Going back
 
 `maktaba-server adopt --undo`: pauses the app's server (the shell's pause flag, so opening the app
-does not start it over the old install), stops it and disables `\Maktaba Server`, re-registers the
+does not start it over the old install), stops it and disables `\Maktaba Server <SID>`, re-registers the
 old tasks from `moved\<name>.xml` (or turns them back on, before the move finished), and runs them.
 What changed in the app after the move stays in the app.

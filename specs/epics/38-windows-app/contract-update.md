@@ -19,42 +19,56 @@ On Windows a running program's files cannot be replaced: while the server runs, 
 the server **before** the installer starts, and starts it again from the new payload afterwards:
 
 1. **Download and verify** the update (`Update::download`), with the server still running.
-2. **Stop the server**: the stop event (contract-agent), then wait until the agent's mutex is free
-   (≤ 90 s: the launcher's 60 s grace, Postgres's fast shutdown). If it does not stop in time, or
-   the install then fails, the update is not installed: the tray says so and the shell starts the
-   server again (its task, unless it was paused before the update). Once the stop event is set the
-   server is stopping; nothing but the shell's start brings it back.
-3. **Install** (`Update::install`): Tauri starts the NSIS installer and the shell exits. The
-   installer's `PREINSTALL` hook (`--server-stop`) finds nothing running; its restart-manager check
-   closes any other `Maktaba.exe` window of this user.
+2. **Stop the server**: the install hold, then the stop event (contract-agent), then wait until the
+   agent's mutex is free (≤ 100 s: the launcher's 60 s grace, Postgres's fast shutdown, the agent
+   ending the launcher). If it does not stop in time the update is not installed: the tray says so
+   and the shell starts the server again (as Resume does, unless it was paused before the update).
+3. **Install** (`Update::install`): Tauri starts the NSIS installer and the shell exits. If the
+   installer cannot be started, the shell starts the server again (unless it was paused) and says
+   why. The installer's `PREINSTALL` hook (`--server-stop`) sets the hold too and finds nothing
+   running; its restart-manager check closes any other `Maktaba.exe` window of this user.
 4. The installer relaunches `Maktaba.exe` (`/R`); its `POSTINSTALL` hook (`--server-start`) has
-   already run the task (unless the server was paused before the update). The new launcher starts the
-   new `maktaba-server serve`, whose first start does the steps below.
+   already ended the hold and run the task (unless the server was paused before the update). The new
+   launcher starts the new `maktaba-server serve`, whose first start does the steps below.
 
-A failed install (cancelled, disk full) leaves the old files: the next start of `Maktaba.exe` (the
-window or the sign-in task) runs the old server again.
+A failed install (cancelled, disk full) leaves the old files, maybe some replaced, and the hold: the
+watchdog does not start a server from them for the rest of that sign-in. The window's next start,
+Resume, or the next sign-in runs the server again (an update offered again finishes the files).
 
 ## The supervisor's next start (every platform)
 
-As specified in Epic 36's contract, built in this story for the Mac, Windows and Linux:
-`<payload>\payload.json` is compared with `<state>\state\payload.json` (the copy saved after the
-last start that ran healthy for 3 minutes):
+Built in this story for the Mac, Windows and Linux; the full rules are Epic 36's contract
+([What the supervisor does on its next start](../36-mac-app/contract-update.md)). One **database
+step** runs before every process but Postgres and the model server, which wait on it and show its
+progress as their `detail`:
 
-| Changed | Action, in order |
-|---|---|
-| nothing | start the roles |
-| `version` (higher) | `pg_dump -Fc` into `backups\pre-<old>-to-<new>.dump` (kept beside the nightly 7), then the API's migrations; a failing migration stops here with the dump intact |
-| `version` (lower) and the database's schema is newer than this build knows | do not start the API; `/processes` and the tray say "the database is newer than this Maktaba: install the newer version" |
-| `postgres.version` major | refuse with "database needs an upgrade" (no major bump is planned) |
-| `pipeline.constraints_sha256` or `python.version` | rebuild the venv (`venv_bootstrap` builds `venv` afresh; the pipeline workers are stopped while it runs; progress in `/processes`) |
-| only `pipeline.sha256` | reinstall the wheel alone (seconds) |
-| ffmpeg, Go binaries | nothing: they run from the payload |
-
-Each step is idempotent, and `state\payload.json` is written only after the healthy 3 minutes, so a
-crash part way repeats the steps at the next start.
+- **The record** `<state>\state\database.json` names the release whose migrations the database
+  holds, written before any role runs (`state\payload.json`, the copy saved after three healthy
+  minutes, stands in only where there is no record).
+- **The same release:** the migrations run (nothing to apply). **An older release:** refused for
+  every process, naming the release to install and the dump from before the update. **Another, or
+  no record:** `pg_dump -Fc` into `backups\pre-<old>-to-<new>.dump` (`pre-unknown-to-<new>`
+  without a record; the newest `[postgres] update_dumps`, default 3, are kept beside the nightly
+  7), the record says `migrating`, `maktaba-api migrate --timeout 0 up`, the record says
+  `migrated`.
+- **A failing migration:** the dump goes back into the running cluster (`restoring`, then
+  `restored`, naming the release from before) and every process stays stopped, saying why and
+  what next: install the old release again, or an update that fixes it (each start tries the
+  update again). A stop or a crash part way goes on from the record at the next start.
+- **A database ahead of the code:** the API refuses it on any install: `migrate up` exits 3 when
+  the database holds a migration newer than its folder's, and `serve` when it holds one newer
+  than the code ships.
+- **The venv:** the pipeline waits for the database step, then for the venv bootstrap. The
+  constraints or Python's minor changed: the venv is rebuilt in place (not built beside and
+  swapped: pip writes the venv's absolute path into every script, on Windows inside each `.exe`
+  launcher, so a moved venv would point at the old place). Only the wheel: the wheel alone.
+  Python's patch, or the install moved: `venv --upgrade`. A pipeline whose Python is named
+  (`MAKTABA_PYTHON`, `[pipeline] python`) waits for the database alone.
+- `postgres.version` major: refused ("database needs an upgrade"; none is planned). ffmpeg and the
+  Go binaries: nothing, they run from the payload.
 
 ## Downgrades
 
-There is no in-app rollback. Installing an older installer over a newer one is allowed by NSIS; the
-supervisor then refuses to run the API on a schema it does not know (above). The way back is the
-`pre-<old>-to-<new>.dump` (a restore command is a follow-up, as on the Mac).
+There is no in-app rollback. Installing an older installer over a newer one is allowed by NSIS;
+the database step then refuses to run any process on the newer database (above). The way back is
+the `pre-<old>-to-<new>.dump` (a restore command is a follow-up, as on the Mac).
