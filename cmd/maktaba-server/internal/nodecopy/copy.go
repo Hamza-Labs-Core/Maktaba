@@ -164,26 +164,47 @@ func (c Copy) Ask(ctx context.Context, fresh bool) (Grant, error) {
 }
 
 // openHome opens the home's database as this machine's own role, for one call under
-// ctx. The join hands a node sslmode=prefer, which lib/pq does not take: it is settled
-// as libpq settles it, TLS unless the server answers that it has none (allow: plain).
-// Its connections end with ctx's deadline (deadlineDialer): a home switched off
-// answers nothing, and lib/pq alone would wait on it for as long as the socket lives.
-func (c Copy) openHome(ctx context.Context) (*sql.DB, error) {
+// ctx: as HomeDSN says (verify-ca with the home's pinned CA, or plain on the home's word
+// that it has no TLS). A node.json from before its home sealed the CA says prefer, which
+// lib/pq does not take: TLS, with no fallback to a plain connection (and the copy waits
+// for the CA before it asks for anything: ErrNotVerified). Its connections end with
+// ctx's deadline (deadlineDialer): a home switched off answers nothing, and lib/pq
+// alone would wait on it for as long as the socket lives.
+func (c Copy) openHome(_ context.Context) (*sql.DB, error) {
 	switch sslMode(c.HomeDSN) {
-	case "allow":
-		return openBounded(withSSLMode(c.HomeDSN, "disable"))
-	case "prefer":
-		db, err := openBounded(withSSLMode(c.HomeDSN, "require"))
-		if err != nil {
-			return nil, err
-		}
-		if err := db.PingContext(ctx); errors.Is(err, pq.ErrSSLNotSupported) {
-			_ = db.Close()
-			return openBounded(withSSLMode(c.HomeDSN, "disable"))
-		}
-		return db, nil
+	case "allow", "prefer":
+		return openBounded(withSSLMode(c.HomeDSN, "require"))
 	}
 	return openBounded(c.HomeDSN)
+}
+
+// ErrNotVerified: this machine cannot verify its home's database yet (a node.json from
+// before its home sealed the CA, until the home hands it over the machine channel).
+var ErrNotVerified = errors.New("nodecopy: this machine cannot verify its home's database yet: " +
+	"its CA comes over the machine channel")
+
+// Verified reports whether this machine can verify its home's database (homeTLS).
+func (c Copy) Verified() bool {
+	_, err := c.homeTLS()
+	return err == nil
+}
+
+// homeTLS is the subscription's TLS to the home, as HomeDSN verifies the home: its
+// pinned CA (verify-ca), or plain on the home's word that it has no TLS. A home this
+// machine cannot verify gets no subscription (ErrNotVerified).
+func (c Copy) homeTLS() ([][2]string, error) {
+	u, err := url.Parse(c.HomeDSN)
+	if err != nil {
+		return nil, err
+	}
+	q := u.Query()
+	switch mode := strings.ToLower(q.Get("sslmode")); {
+	case (mode == "verify-ca" || mode == "verify-full") && q.Get("sslrootcert") != "":
+		return [][2]string{{"sslmode", mode}, {"sslrootcert", q.Get("sslrootcert")}}, nil
+	case mode == "disable":
+		return [][2]string{{"sslmode", "disable"}}, nil
+	}
+	return nil, ErrNotVerified
 }
 
 // openBounded is sql.Open("postgres", dsn) whose connections live no longer than the
@@ -317,8 +338,7 @@ func (c Copy) homeAddr() (host, port string, err error) {
 }
 
 // conninfo is the subscription's connection to the home: the passfile for the
-// password, the pinned CA when the home has published one (verify-ca), else TLS when
-// the home offers it.
+// password, and TLS as this machine verifies the home (homeTLS).
 func (c Copy) conninfo(database string) (string, error) {
 	host, port, err := c.homeAddr()
 	if err != nil {
@@ -332,11 +352,11 @@ func (c Copy) conninfo(database string) (string, error) {
 	kv := [][2]string{{"host", host}, {"port", port}, {"dbname", database}, {"user", c.Role()},
 		{"passfile", filepath.ToSlash(filepath.Join(c.DB.Keys, passFile))}, {"application_name", c.Slot()},
 		{"connect_timeout", "10"}}
-	if ca := filepath.Join(c.DB.Keys, caFile); fileExists(ca) {
-		kv = append(kv, [2]string{"sslmode", "verify-ca"}, [2]string{"sslrootcert", filepath.ToSlash(ca)})
-	} else {
-		kv = append(kv, [2]string{"sslmode", "prefer"})
+	tls, err := c.homeTLS()
+	if err != nil {
+		return "", err
 	}
+	kv = append(kv, tls...)
 	var s strings.Builder
 	for i, p := range kv {
 		if i > 0 {
@@ -347,7 +367,8 @@ func (c Copy) conninfo(database string) (string, error) {
 	return s.String(), nil
 }
 
-// writeAccess writes the passfile and pins the CA the grant carries.
+// writeAccess writes the passfile (the home's CA is node.json's: never learnt from the
+// grant, over the connection it is to verify).
 func (c Copy) writeAccess(g Grant) error {
 	host, port, err := c.homeAddr()
 	if err != nil {
@@ -359,27 +380,7 @@ func (c Copy) writeAccess(g Grant) error {
 	}
 	esc := strings.NewReplacer(`\`, `\\`, `:`, `\:`)
 	line := esc.Replace(host) + ":" + esc.Replace(port) + ":*:" + esc.Replace(c.Role()) + ":" + esc.Replace(pw) + "\n"
-	if err := writeSecret(filepath.Join(c.DB.Keys, passFile), []byte(line)); err != nil {
-		return err
-	}
-	if g.CA != nil && strings.Contains(*g.CA, "BEGIN CERTIFICATE") {
-		// pinned at the first grant that carries it; a later one does not replace it
-		if p := filepath.Join(c.DB.Keys, caFile); !fileExists(p) {
-			if err := writeSecret(p, []byte(*g.CA)); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-// PinCA pins the home's database CA in place of the one pinned before (a switch of
-// the home, its CA handed over the cluster channel).
-func (c Copy) PinCA(pem string) error {
-	if !strings.Contains(pem, "BEGIN CERTIFICATE") {
-		return errors.New("nodecopy: not a CA certificate")
-	}
-	return writeSecret(filepath.Join(c.DB.Keys, caFile), []byte(pem))
+	return writeSecret(filepath.Join(c.DB.Keys, passFile), []byte(line))
 }
 
 // super is this machine's database as its superuser.
@@ -573,11 +574,6 @@ func (c Copy) Handover(ctx context.Context, g Grant, local int64) error {
 				return fmt.Errorf("nodecopy: leaving the old home: %w", err)
 			}
 		}
-	}
-	// the new home's CA (it came over the cluster channel) replaces the old home's pin;
-	// a home without TLS leaves none
-	if err := os.Remove(filepath.Join(c.DB.Keys, caFile)); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("nodecopy: the old home's CA: %w", err)
 	}
 	if err := c.writeAccess(g); err != nil {
 		return fmt.Errorf("nodecopy: the copy's access: %w", err)

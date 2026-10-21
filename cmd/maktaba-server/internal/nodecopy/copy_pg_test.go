@@ -232,8 +232,10 @@ func TestCopyFollowsTheHome(t *testing.T) {
 		       full_node) VALUES ($1, 'studio', 'approved', 'windows', 'amd64', 'k', $2, NULLIF($3, ''), now(), 'test', true)`,
 			n.id, n.priv, n.role)
 	}
+	// as the join hands it, with the home's CA it seals (config.NodeConfig.HomeDSN)
 	nodeDSN := (&url.URL{Scheme: "postgres", User: url.UserPassword(role, "node-pass-123"), Host: b.Addr(),
-		Path: "/" + pgbundle.AppDatabase, RawQuery: "sslmode=prefer"}).String() // as the join hands it
+		Path: "/" + pgbundle.AppDatabase, RawQuery: url.Values{"sslmode": {"verify-ca"},
+			"sslrootcert": {filepath.ToSlash(b.CACert())}}.Encode()}).String()
 
 	// ---- this machine's copy, kept by the Manager alone ----
 	c := Copy{NodeID: nodeID, HomeDSN: nodeDSN, Migrate: migrate,

@@ -48,7 +48,7 @@ func resolveNodeCopy(cfg *config.Config, wholeMachine bool) (*nodeCopy, error) {
 		port = pgbundle.DefaultPort
 	}
 	root := cfg.StateDir()
-	c := nodecopy.Copy{NodeID: n.NodeID, HomeDSN: n.DatabaseURL,
+	c := nodecopy.Copy{NodeID: n.NodeID, HomeDSN: supervisor.HomeDSN(n),
 		DB: pgbundle.Bundle{Data: filepath.Join(root, "postgres"), Keys: config.KeysDir(),
 			Backups: filepath.Join(root, "backups"), Port: port}}
 	nc := &nodeCopy{}

@@ -138,8 +138,8 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		// Epic 35 story 35.8: a full node's api runs in node mode against the home's
 		// database with the node's own role; it never migrates.
 		if n := nodeConfig(); NodeMode(cfg, n) {
-			env = setEnv(env, "DATABASE_URL", n.DatabaseURL)
-			env = setEnv(env, "MAKTABA_DATABASE_URL", n.DatabaseURL)
+			env = setEnv(env, "DATABASE_URL", HomeDSN(n))
+			env = setEnv(env, "MAKTABA_DATABASE_URL", HomeDSN(n))
 			env = setEnv(env, "MAKTABA_AUTO_MIGRATE", "false")
 			add("MAKTABA_NODE_MODE", "1")
 			add("MAKTABA_NODE_ID", n.NodeID)
@@ -179,8 +179,8 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		// A machine that joined a home (Epic 31) streams as a cluster node (Epic 32.1):
 		// the home's database through its own credential, its node id; no extra flag.
 		if n := nodeConfig(); n.Joined() && !forcedHome(cfg) {
-			env = setEnv(env, "DATABASE_URL", n.DatabaseURL)
-			env = setEnv(env, "MAKTABA_DATABASE_URL", n.DatabaseURL)
+			env = setEnv(env, "DATABASE_URL", HomeDSN(n))
+			env = setEnv(env, "MAKTABA_DATABASE_URL", HomeDSN(n))
 			add("MAKTABA_TV_HOST_ROLE", "node")
 			add("MAKTABA_NODE_ID", n.NodeID)
 			// a full node's streaming role also serves its own VOD (Epic 35 story 35.8),
@@ -224,8 +224,8 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		// reads node.json without a database URL, so [database].url above would
 		// make it a home worker against this machine's own database.
 		if n := nodeConfig(); NodeMode(cfg, n) {
-			env = setEnv(env, "DATABASE_URL", n.DatabaseURL)
-			env = setEnv(env, "MAKTABA_DATABASE_URL", n.DatabaseURL)
+			env = setEnv(env, "DATABASE_URL", HomeDSN(n))
+			env = setEnv(env, "MAKTABA_DATABASE_URL", HomeDSN(n))
 			add("MAKTABA_NODE", "1")
 		}
 	}
@@ -239,6 +239,17 @@ func NodeStateDir(cfg config.Config) string { return filepath.Join(cfg.Server.Da
 
 // nodeConfig reads this machine's Epic 31 node config (tests replace it).
 var nodeConfig = config.LocalNodeConfig
+
+// HomeDSN is a node's connection to its home's database (config.NodeConfig.HomeDSN:
+// verifying the home's CA, pinned in the keys directory). A CA that cannot be pinned is
+// said: the connection still verifies, so it fails rather than trusts.
+func HomeDSN(n config.NodeConfig) string {
+	dsn, err := n.HomeDSN(config.KeysDir())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[supervisor] the home's database: %v\n", err)
+	}
+	return dsn
+}
 
 // NodeConfig is this machine's node config as the supervisor reads it.
 func NodeConfig() config.NodeConfig { return nodeConfig() }

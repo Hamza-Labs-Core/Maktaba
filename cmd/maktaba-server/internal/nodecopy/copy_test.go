@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -68,33 +69,43 @@ func TestThePasswordsAreKept(t *testing.T) {
 func TestTheSubscriptionsConnection(t *testing.T) {
 	c := testCopy(t)
 	c.DB.Keys = filepath.Join(t.TempDir(), "it's keys")
+	// a home this machine cannot verify yet gets no subscription
+	if _, err := c.conninfo(""); !errors.Is(err, ErrNotVerified) || c.Verified() {
+		t.Fatalf("conninfo before the home's CA: %v", err)
+	}
+	// with the CA node.json pins (HomeDSN): verify-ca with it
+	ca := filepath.Join(c.DB.Keys, "home-database-ca.crt")
+	c.HomeDSN = (&url.URL{Scheme: "postgres", User: url.UserPassword("maktaba_node_x", "pw"), Host: "192.168.1.20:54329",
+		Path: "/maktaba", RawQuery: url.Values{"sslmode": {"verify-ca"}, "sslrootcert": {filepath.ToSlash(ca)}}.Encode()}).String()
 	conn, err := c.conninfo("")
-	if err != nil {
+	if err != nil || !c.Verified() {
 		t.Fatal(err)
 	}
 	pw, _ := c.Password()
 	if strings.Contains(conn, pw) || !strings.Contains(conn, "host='192.168.1.20' port='54329' dbname='maktaba'") ||
-		!strings.Contains(conn, "sslmode='prefer'") || !strings.Contains(conn, `it\'s keys`) {
-		t.Fatalf("conninfo before a CA: %s", conn)
-	}
-	ca := "-----BEGIN CERTIFICATE-----\nAAA\n-----END CERTIFICATE-----\n"
-	if err := c.writeAccess(Grant{CA: &ca}); err != nil {
-		t.Fatal(err)
-	}
-	conn, _ = c.conninfo("other")
-	if !strings.Contains(conn, "sslmode='verify-ca'") || !strings.Contains(conn, "sslrootcert=") ||
-		!strings.Contains(conn, "dbname='other'") {
+		!strings.Contains(conn, "sslmode='verify-ca'") || !strings.Contains(conn, `it\'s keys`) ||
+		!strings.Contains(conn, "sslrootcert=") {
 		t.Fatalf("conninfo with the CA: %s", conn)
 	}
-	// a later grant does not replace the pinned CA
+	if conn, _ := c.conninfo("other"); !strings.Contains(conn, "dbname='other'") {
+		t.Fatalf("conninfo for another database: %s", conn)
+	}
+	// a grant's CA is never pinned: it came over the connection it would verify
 	other := "-----BEGIN CERTIFICATE-----\nBBB\n-----END CERTIFICATE-----\n"
-	_ = c.writeAccess(Grant{CA: &other})
-	if b, _ := os.ReadFile(filepath.Join(c.DB.Keys, caFile)); string(b) != ca {
-		t.Fatal("the pinned CA was replaced")
+	if err := c.writeAccess(Grant{CA: &other}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(c.DB.Keys, caFile)); !os.IsNotExist(err) {
+		t.Fatal("a grant's CA was pinned")
 	}
 	pass, _ := os.ReadFile(filepath.Join(c.DB.Keys, passFile))
 	if string(pass) != "192.168.1.20:54329:*:"+c.Role()+":"+pw+"\n" {
 		t.Fatalf("passfile %q", pass)
+	}
+	// plain only on the home's word that its database has no TLS (node.json)
+	c.HomeDSN = "postgres://maktaba_node_x:pw@192.168.1.20:54329/maktaba?sslmode=disable"
+	if conn, err := c.conninfo(""); err != nil || !strings.Contains(conn, "sslmode='disable'") {
+		t.Fatalf("conninfo with TLS off: %s %v", conn, err)
 	}
 }
 

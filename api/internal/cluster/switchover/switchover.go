@@ -101,8 +101,10 @@ type NewHome struct {
 	SystemID   string `json:"system_id"`
 	InstanceID string `json:"instance_id"`
 	Name       string `json:"name"`
-	// CA is the new home's database CA (PEM), pinned by the machines that follow it.
-	CA string `json:"ca_pem,omitempty"`
+	// CA is the new home's database CA (PEM), pinned by the machines that follow it;
+	// TLSOff: its database has no TLS (its own [postgres] tls = "off").
+	CA     string `json:"ca_pem,omitempty"`
+	TLSOff bool   `json:"tls_off,omitempty"`
 }
 
 // Orchestrator runs switches on the home.

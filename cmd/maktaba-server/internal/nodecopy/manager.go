@@ -200,6 +200,15 @@ func (m *Manager) Run(ctx context.Context) {
 	var firstRefused time.Time
 	backoff := m.retry()
 	for ctx.Err() == nil {
+		if !m.Copy.Verified() {
+			// nothing is asked of a home this machine cannot verify: its CA comes over
+			// the machine channel, and the supervisor starts again with it
+			m.set(ctx, m.state(StateUnavailable, ErrNotVerified.Error()))
+			if !sleep(ctx, m.retry()) {
+				return
+			}
+			continue
+		}
 		g, err := m.Copy.Ask(ctx, false)
 		if err != nil {
 			switch kindOf(err) {

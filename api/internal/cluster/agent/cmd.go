@@ -13,6 +13,7 @@ import (
 var commandNames = map[string]bool{
 	"drain": true, "undrain": true, "reload_stages": true, "log_level": true, "disconnect": true,
 	"switch.prepare": true, "switch.kit": true, "switch.promote": true, "home.moved": true,
+	"home.database": true,
 }
 
 // Command errors.
@@ -145,6 +146,20 @@ func (h *Hub) MachineAgent(nodeID string) string {
 		}
 	}
 	return ""
+}
+
+// MachineAgents are the connected machines' own agents (their supervisors): session
+// id by node id.
+func (h *Hub) MachineAgents() map[string]string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	out := map[string]string{}
+	for id, s := range h.sessions {
+		if s.Process == "supervisor" && s.NodeID != "" && s.Kind != "home" {
+			out[s.NodeID] = id
+		}
+	}
+	return out
 }
 
 // HomeProcesses are the sessions of the home's own processes (its workers).

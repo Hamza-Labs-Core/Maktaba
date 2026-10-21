@@ -245,8 +245,18 @@ type newHome struct {
 	SystemID   string `json:"system_id"`
 	InstanceID string `json:"instance_id"`
 	Name       string `json:"name"`
-	// CA is the new home's database CA (PEM): the machines that follow it pin it.
-	CA string `json:"ca_pem,omitempty"`
+	// CA is the new home's database CA (PEM): the machines that follow it pin it;
+	// TLSOff: its database has no TLS (its own [postgres] tls = "off").
+	CA     string `json:"ca_pem,omitempty"`
+	TLSOff bool   `json:"tls_off,omitempty"`
+}
+
+// database sets how n verifies this home's database: its CA, or no TLS.
+func (h newHome) database(n *config.NodeConfig) {
+	n.DatabaseCA, n.DatabaseTLS = h.CA, ""
+	if h.TLSOff {
+		n.DatabaseCA, n.DatabaseTLS = "", "off"
+	}
 }
 
 // grant is a machine's copy following this new home from its slot (made by the
@@ -437,9 +447,25 @@ func (s *switching) demote(req homeRequest) {
 	}
 	role := switchover.Machine{ID: me.NodeID}.Role()
 	h := req.Home
-	dsn := (&url.URL{Scheme: "postgres", User: url.UserPassword(role, me.RolePassword),
-		Host: net.JoinHostPort(h.DBHost, strconv.Itoa(h.DBPort)), Path: "/" + pgbundle.AppDatabase,
-		RawQuery: "sslmode=prefer&connect_timeout=10"}).String()
+	clusterPriv, err := os.ReadFile(clusterKeyPath())
+	if err != nil {
+		logf("the cluster key: %v", err)
+		return
+	}
+	clusterPub, _ := curve25519.X25519(clusterPriv, curve25519.Basepoint)
+	n := config.NodeConfig{NodeID: me.NodeID, Name: me.Name, PrivateKey: me.PrivateKey,
+		DatabaseURL: (&url.URL{Scheme: "postgres", User: url.UserPassword(role, me.RolePassword),
+			Host: net.JoinHostPort(h.DBHost, strconv.Itoa(h.DBPort)), Path: "/" + pgbundle.AppDatabase,
+			RawQuery: "sslmode=prefer&connect_timeout=10"}).String(),
+		Home: config.HomeRef{URL: h.APIURL, APIURL: h.APIURL, InstanceID: h.InstanceID, Name: h.Name,
+			ClusterPub: base64.StdEncoding.EncodeToString(clusterPub), Term: req.Term}}
+	// the new home's database, verified with the CA it handed over
+	h.database(&n)
+	dsn, err := n.HomeDSN(config.KeysDir())
+	if err != nil {
+		logf("the new home's database: %v", err)
+		return
+	}
 	c := nodecopy.Copy{NodeID: me.NodeID, HomeDSN: dsn, DB: *s.pg}
 	local, err := c.LocalSchema(ctx)
 	if err != nil {
@@ -450,15 +476,6 @@ func (s *switching) demote(req homeRequest) {
 		logf("following the new home: %v", err)
 		return
 	}
-	clusterPriv, err := os.ReadFile(clusterKeyPath())
-	if err != nil {
-		logf("the cluster key: %v", err)
-		return
-	}
-	clusterPub, _ := curve25519.X25519(clusterPriv, curve25519.Basepoint)
-	n := config.NodeConfig{NodeID: me.NodeID, Name: me.Name, PrivateKey: me.PrivateKey, DatabaseURL: dsn,
-		Home: config.HomeRef{URL: h.APIURL, APIURL: h.APIURL, InstanceID: h.InstanceID, Name: h.Name,
-			ClusterPub: base64.StdEncoding.EncodeToString(clusterPub), Term: req.Term}}
 	if err := writeNodeConfig(n); err != nil {
 		logf("node.json: %v", err)
 		return
@@ -490,18 +507,83 @@ func editConfig(fn func(*config.Config)) error {
 	return c.Save()
 }
 
+// writeNodeConfig writes node.json with n's fields, keeping the others the file has
+// (the pipeline's own, such as when the machine joined).
 func writeNodeConfig(n config.NodeConfig) error {
-	b, err := json.MarshalIndent(n, "", "  ")
+	path := config.LocalNodeConfigPath()
+	merged := map[string]json.RawMessage{}
+	if b, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(b, &merged)
+	}
+	fields, err := json.Marshal(n)
 	if err != nil {
 		return err
 	}
-	return writePrivate(config.LocalNodeConfigPath(), b)
+	var ours map[string]json.RawMessage
+	if err := json.Unmarshal(fields, &ours); err != nil {
+		return err
+	}
+	for k, v := range ours {
+		merged[k] = v
+	}
+	for _, k := range []string{"database_ca", "database_tls"} {
+		if _, set := ours[k]; !set {
+			delete(merged, k) // omitted: none now
+		}
+	}
+	b, err := json.MarshalIndent(merged, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writePrivate(path, b)
+}
+
+// homeDatabase takes the home's database CA (or its word that the database has no
+// TLS) over the machine channel, which the home's cluster key authenticates: node.json
+// keeps it, and this machine starts again to reach its home verifying it (a machine
+// joined before its home sealed the CA in the join, or the home's CA renewed). The home
+// sends it to every machine now and then: the same one changes nothing.
+func (s *switching) homeDatabase(args json.RawMessage) (ok bool, detail any) {
+	var a struct {
+		CA     string `json:"ca_pem"`
+		TLSOff bool   `json:"tls_off"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return false, "bad arguments"
+	}
+	if !a.TLSOff {
+		if err := config.CheckCA(a.CA); err != nil {
+			return false, err.Error()
+		}
+	}
+	n := supervisor.NodeConfig()
+	if !n.Joined() {
+		return false, "this machine has not joined a home"
+	}
+	ca, tls := n.DatabaseCA, n.DatabaseTLS
+	newHome{CA: a.CA, TLSOff: a.TLSOff}.database(&n)
+	if n.DatabaseCA == ca && n.DatabaseTLS == tls {
+		return true, map[string]any{"changed": false}
+	}
+	if err := writeNodeConfig(n); err != nil {
+		return false, err.Error()
+	}
+	fmt.Fprintln(os.Stderr, "[serve] node: the home's database certificate came over the machine channel: starting again with it")
+	go func() {
+		time.Sleep(time.Second) // the answer goes out first
+		requestReload()
+	}()
+	return true, map[string]any{"changed": true}
 }
 
 // ---------- a machine's side: the home's commands over the channel ----------
 
 // command answers the switchover's commands (machineagent.Command).
 func (s *switching) command(ctx context.Context, name string, args json.RawMessage) (handled, ok bool, detail any) {
+	if name == "home.database" {
+		ok, detail := s.homeDatabase(args)
+		return true, ok, detail
+	}
 	var a struct {
 		ID   string  `json:"id"`
 		Term int64   `json:"term"`
@@ -678,7 +760,9 @@ func (s *switching) promote(ctx context.Context, id string, term int64) (any, er
 	if u, err := url.Parse(home.APIURL); err == nil {
 		home.DBHost = u.Hostname()
 	}
-	if ca, err := os.ReadFile(db2.CACert()); err == nil {
+	if strings.EqualFold(strings.TrimSpace(s.cfg.Postgres.TLS), "off") {
+		home.TLSOff = true
+	} else if ca, err := os.ReadFile(db2.CACert()); err == nil {
 		home.CA = string(ca)
 	}
 	// every machine's own notice of it, for one that is off now
@@ -826,7 +910,13 @@ func (s *switching) follow(ctx context.Context, id string, term int64, h newHome
 		return nil, fmt.Errorf("node.json's database: %w", err)
 	}
 	u.Host = net.JoinHostPort(h.DBHost, strconv.Itoa(h.DBPort))
-	dsn := u.String()
+	n.DatabaseURL = u.String()
+	// the new home's database, verified with the CA it handed over
+	h.database(&n)
+	dsn, err := n.HomeDSN(config.KeysDir())
+	if err != nil {
+		return nil, fmt.Errorf("the new home's database: %w", err)
+	}
 	moved := false
 	if s.cp != nil {
 		if db, err := s.copyDB(); err == nil {
@@ -855,17 +945,11 @@ func (s *switching) follow(ctx context.Context, id string, term int64, h newHome
 	}
 	if !moved && s.cp != nil {
 		// copied anew from the new home: the subscription to the old one paused (its slot
-		// is gone), the new home's CA pinned
+		// is gone)
 		if err := s.cp.copy.Pause(ctx); err != nil {
 			fmt.Fprintf(os.Stderr, "[switchover] pausing the copy of the old home: %v\n", err)
 		}
-		if h.CA != "" {
-			if err := s.cp.copy.PinCA(h.CA); err != nil {
-				return nil, fmt.Errorf("the new home's CA: %w", err)
-			}
-		}
 	}
-	n.DatabaseURL = dsn
 	n.Home.URL, n.Home.APIURL, n.Home.Name = h.APIURL, h.APIURL, h.Name
 	if term > n.Home.Term {
 		n.Home.Term = term

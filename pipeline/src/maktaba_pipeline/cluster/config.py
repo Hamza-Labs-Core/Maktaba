@@ -47,6 +47,10 @@ class NodeConfig:
     home: HomeRef = field(default_factory=lambda: HomeRef(url=""))
     database_url: str = ""
     joined_at: str = ""
+    #: the home's database CA (PEM), sealed in the join's credentials (or handed over the
+    #: machine channel later); "off" in database_tls when the home's database has no TLS
+    database_ca: str = ""
+    database_tls: str = ""
 
     @property
     def node8(self) -> str:
@@ -82,6 +86,8 @@ class NodeConfig:
             ),
             database_url=str(data.get("database_url") or ""),
             joined_at=str(data.get("joined_at") or ""),
+            database_ca=str(data.get("database_ca") or ""),
+            database_tls=str(data.get("database_tls") or ""),
         )
 
 

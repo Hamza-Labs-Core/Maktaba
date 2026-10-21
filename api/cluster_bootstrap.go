@@ -73,6 +73,7 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 		return func() {}, nil
 	}
 	h.WebURL, h.Version = os.Getenv("MAKTABA_WEB_URL"), version.Version
+	h.PGBundled, h.PGCA = os.Getenv("MAKTABA_CLUSTER_PG_PORT") != "", os.Getenv("MAKTABA_CLUSTER_PG_CA")
 	ctx, cancel := context.WithCancel(context.Background())
 	bctx, bcancel := context.WithTimeout(ctx, 10*time.Second)
 	id, err := h.Bootstrap(bctx, cluster.StableHostName())
@@ -94,6 +95,11 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 		keys.DB = nil
 	}
 	hub := mountClusterHub(r, h, db, driver, store, keys, logger)
+	// the machines verify this home's bundled Postgres with its CA, handed over the
+	// machine channel (and sealed in a join's credentials)
+	if os.Getenv("MAKTABA_CLUSTER_PG_PORT") != "" {
+		go hub.PushDatabase(ctx, os.Getenv("MAKTABA_CLUSTER_PG_CA"), 30*time.Second, logger)
+	}
 	// every revocation on the home reaches the full nodes within the second (story
 	// 35.9 AC4): the session store reports it, the hub pushes auth.revoked
 	sessions.SetRevokeHook(func(rv sessions.Revocation) {

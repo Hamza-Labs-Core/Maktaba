@@ -25,6 +25,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -67,6 +68,10 @@ type Handler struct {
 	// PGPort is the database port handed to machines
 	// (MAKTABA_CLUSTER_PG_PORT); 0 means 5432.
 	PGPort int
+	// PGBundled: the database is this home's bundled Postgres, whose CA is PGCA (the
+	// file; "" with its TLS off), sealed in a join's credentials.
+	PGBundled bool
+	PGCA      string
 	// JoinRatePerMin / PollRatePerMin cap the public endpoints per IP;
 	// 0 uses the defaults, negative disables the limiter (tests).
 	JoinRatePerMin int
@@ -132,6 +137,25 @@ func (h *Handler) log() *slog.Logger {
 		return h.Logger
 	}
 	return slog.Default()
+}
+
+// pgTLS is how a machine verifies this home's database (the join's credentials): the
+// bundled Postgres's CA, or "off" with its TLS off; neither for another database (its
+// TLS is its own).
+func (h *Handler) pgTLS() (ca, tls string) {
+	switch {
+	case !h.PGBundled:
+		return "", ""
+	case h.PGCA == "":
+		return "", "off"
+	}
+	b, err := os.ReadFile(h.PGCA)
+	if err != nil {
+		h.log().Warn("cluster: this home's database CA cannot be read for a join", "err", err,
+			"event", "cluster_database_ca_unreadable")
+		return "", ""
+	}
+	return string(b), ""
 }
 
 func (h *Handler) pgPort() int {
@@ -734,7 +758,10 @@ func (h *Handler) provision(ctx context.Context, r *http.Request, n cluster.Node
 		return nil, "", err
 	}
 	role := cluster.RoleName(n.ID)
+	dbCA, dbTLS := h.pgTLS()
 	payload, err := cluster.MarshalPayload(cluster.Payload{
+		DatabaseCA:  dbCA,
+		DatabaseTLS: dbTLS,
 		DatabaseURL: cluster.DatabaseURL(role, password, host, h.pgPort(), dbName),
 		Home:        cluster.PayloadHome{APIURL: apiURL, ClusterPub: h.ClusterPub, InstanceID: id.InstanceID, Name: id.Name},
 		NodeID:      n.ID,

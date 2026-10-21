@@ -132,7 +132,7 @@ func (c *cluster) join(name string) *machine {
 	        approved_by, full_node) VALUES ($1, $2, 'approved', 'windows', 'amd64', 'pub-'||$2, 'home-key-for-'||$2, $3,
 	        now(), 'test', true)`, m.id, name, m.role)
 	dir := filepath.Join(c.tmp, name)
-	m.copy = nodecopy.Copy{NodeID: m.id, HomeDSN: dsnAs(m.role, m.password, c.home.Addr()), Migrate: c.migrate,
+	m.copy = nodecopy.Copy{NodeID: m.id, HomeDSN: dsnAs(m.role, m.password, c.home.Addr(), c.home.CACert()), Migrate: c.migrate,
 		DB: pgbundle.Bundle{Home: c.programs, Data: filepath.Join(dir, "pg"), Keys: filepath.Join(dir, "keys"),
 			Backups: filepath.Join(dir, "backups"), Port: pgtest.FreePort(t)}}
 	m.srv = &pgtest.Server{}
@@ -142,9 +142,12 @@ func (c *cluster) join(name string) *machine {
 	return m
 }
 
-func dsnAs(role, password, addr string) string {
+// dsnAs is a machine's role on a home's database, verifying the home's CA (the file ca)
+// as a machine does (config.NodeConfig.HomeDSN).
+func dsnAs(role, password, addr, ca string) string {
 	return (&url.URL{Scheme: "postgres", User: url.UserPassword(role, password), Host: addr,
-		Path: "/" + pgbundle.AppDatabase, RawQuery: "sslmode=prefer"}).String()
+		Path: "/" + pgbundle.AppDatabase, RawQuery: url.Values{"sslmode": {"verify-ca"},
+			"sslrootcert": {filepath.ToSlash(ca)}}.Encode()}).String()
 }
 
 // follow runs the machine's Manager until stopped.
@@ -306,11 +309,11 @@ func TestAPlannedSwitchover(t *testing.T) {
 	if err := Demote(ctx, super(t, c.home)); err != nil {
 		t.Fatal(err)
 	}
-	aCopy.HomeDSN = dsnAs(a.Role(), a.RolePassword, nb.Addr())
+	aCopy.HomeDSN = dsnAs(a.Role(), a.RolePassword, nb.Addr(), nb.CACert())
 	if err := aCopy.Handover(ctx, grant(a.ID), local); err != nil {
 		t.Fatalf("the old home follows the new one: %v", err)
 	}
-	cm.copy.HomeDSN = dsnAs(cm.role, cm.password, nb.Addr())
+	cm.copy.HomeDSN = dsnAs(cm.role, cm.password, nb.Addr(), nb.CACert())
 	if err := cm.copy.Handover(ctx, grant(cm.id), local); err != nil {
 		t.Fatalf("a machine follows the new home: %v", err)
 	}
@@ -386,7 +389,7 @@ func TestAPlannedSwitchover(t *testing.T) {
 		})
 	}
 	// the machines keep their passwords
-	cOnB := open(t, strings.Replace(cm.copy.HomeDSN, "sslmode=prefer", "sslmode=require", 1))
+	cOnB := open(t, cm.copy.HomeDSN)
 	if err := cOnB.PingContext(ctx); err != nil {
 		t.Fatalf("a machine signs in to the new home with its old password: %v", err)
 	}
