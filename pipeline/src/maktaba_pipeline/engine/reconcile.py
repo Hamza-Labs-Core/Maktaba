@@ -11,7 +11,10 @@ and schedules:
    success ran at an older version is queued once (bulk priority 500);
 4. the periodic library sweep (story 9.3): a library whose
    ``settings.sweep_interval_sec`` is above 0 gets a ``scan`` once its last one is
-   that old (0, the default: only scans someone asks for).
+   that old (0, the default: only scans someone asks for);
+5. the periodic stages: a catalog stage with ``every_minutes_rule`` (Plex Live TV's
+   channel-map check) is queued once that many minutes passed since its last job
+   (0: never).
 """
 
 from __future__ import annotations
@@ -27,9 +30,9 @@ from uuid import UUID
 
 from ..log import get_logger
 from .enqueue import enqueue_job
-from .graph import StageDef
+from .graph import CATALOG_ID, StageDef
 from .propagate import after_legacy_done
-from .sql import is_pg, loads, now, to_ts
+from .sql import is_pg, loads, now, to_ts, uid
 
 __all__ = ["ReconcileReport", "reconcile_once", "run_reconciler"]
 
@@ -49,6 +52,7 @@ class ReconcileReport:
     yt_refresh: int = 0
     version_sweep: int = 0
     library_sweep: int = 0
+    periodic: int = 0
 
 
 async def reconcile_once(
@@ -71,7 +75,8 @@ async def reconcile_once(
         refresh = await _youtube_refresh(db, graph, t, yt_refresh_hours)
         sweep = await _version_sweep(db, graph)
         scans = await _library_sweeps(db, graph, t)
-    return ReconcileReport(True, propagated, refresh, sweep, scans)
+        periodic = await _periodic_stages(db, graph, t)
+    return ReconcileReport(True, propagated, refresh, sweep, scans, periodic)
 
 
 async def _repair_unpropagated(db: Any, graph: Mapping[str, StageDef], t: datetime) -> int:
@@ -165,6 +170,45 @@ async def _library_sweeps(db: Any, graph: Mapping[str, StageDef], t: datetime) -
     return n
 
 
+async def _periodic_stages(db: Any, graph: Mapping[str, StageDef], t: datetime) -> int:
+    """Each stage with ``every_minutes_rule``, for the catalog, once its interval has
+    passed since its last job (queued, running or finished); none while one is live. A
+    stage that is off (its extension disabled) is answered ``disabled`` by the enqueue and
+    leaves no row."""
+    from ..rules import read
+
+    n = 0
+    for stage in graph.values():
+        if stage.every_minutes_rule is None or "catalog" not in stage.subject_kinds:
+            continue
+        section, name = stage.every_minutes_rule
+        cfg, _, _ = await read(db, section)
+        every = getattr(cfg, name, 0)
+        if isinstance(every, bool) or not isinstance(every, int | float) or every <= 0:
+            continue
+        cutoff = to_ts(db, t - timedelta(minutes=float(every)))
+        recent = await db.fetchval(
+            "SELECT 1 FROM processing_jobs WHERE subject_kind = 'catalog' AND subject_id = $1"
+            " AND stage = $2 AND (state IN ('pending','claimed','running','resuming','paused')"
+            " OR finished_at >= $3) LIMIT 1",
+            uid(CATALOG_ID),
+            stage.name,
+            cutoff,
+        )
+        if recent is not None:
+            continue
+        res = await enqueue_job(
+            db,
+            subject_kind="catalog",
+            subject_id=CATALOG_ID,
+            stage=stage.name,
+            priority=SWEEP_PRIORITY,
+            reason={"why": "periodic check", "by": "system", "every_minutes": every},
+        )
+        n += 1 if res.job_id is not None else 0
+    return n
+
+
 async def _version_sweep(db: Any, graph: Mapping[str, StageDef]) -> int:
     total = 0
     for stage in graph.values():
@@ -210,7 +254,7 @@ async def run_reconciler(
             report = await reconcile_once(db, graph)
             if report.leader and (
                 report.propagated or report.yt_refresh or report.version_sweep
-                or report.library_sweep
+                or report.library_sweep or report.periodic
             ):  # fmt: skip
                 _log.info(
                     "reconciled",
@@ -218,6 +262,7 @@ async def run_reconciler(
                     yt_refresh=report.yt_refresh,
                     version_sweep=report.version_sweep,
                     library_sweep=report.library_sweep,
+                    periodic=report.periodic,
                 )
         except Exception:  # noqa: BLE001 - the reconciler must never take the worker down
             _log.exception("reconcile_failed")

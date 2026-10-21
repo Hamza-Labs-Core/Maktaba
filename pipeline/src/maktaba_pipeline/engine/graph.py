@@ -233,6 +233,10 @@ class StageDef:
     #: enqueued (catalog subject) whenever the scheduler's top-up extended a channel's
     #: timeline: a stage that tells another system the guide grew (Plex Live TV)
     after_topup: bool = False
+    #: a catalog stage the reconciler enqueues periodically: ``(section, field)`` names the
+    #: rule holding the interval in minutes (``rules.<section>.<field>``; 0: never). For a
+    #: stage that checks another system nothing tells Maktaba about (Plex's channel map)
+    every_minutes_rule: tuple[str, str] | None = None
 
     def edges_json(self) -> list[dict[str, Any]]:
         return [e.to_json() for e in self.edges]
