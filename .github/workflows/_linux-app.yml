@@ -116,10 +116,13 @@ jobs:
       # Epic 39 story 39.11: `setup --answers` as `install.sh --app` runs it (runtime copy,
       # venv, models, finish, the systemd user unit), every role on 127.0.0.1, back from a
       # restart, a SIGKILL of the launcher and a pause, then an update (a dump before the
-      # migrations, the venv kept). e2e.sh turns linger on for the runner's user manager and
-      # off again, in a scratch XDG home it removes.
+      # migrations, the venv kept) from the latest release's payload when it has one. e2e.sh
+      # turns linger on for the runner's user manager and off again, in a scratch XDG home it
+      # removes. The token only reads the latest release.
       - name: End to end on systemd
         timeout-minutes: 45
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: tools/release/linux-app/e2e.sh --payload build/linux-app/server
 
       - name: Sizes
