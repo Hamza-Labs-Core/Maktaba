@@ -155,8 +155,10 @@ don't append a line here; docs-only PRs are exempt.
   only as root, else the user's `$XDG_DATA_HOME/maktaba`.
 - **The launcher never sends CTRL_BREAK to a server that has exited** (Windows, Epic 38 story
   38.2). It holds a handle to the server until it is reaped and asks it to stop only while it
-  still runs: a CTRL_BREAK naming a pid that leads no process group (a server that exited as the
-  launcher was stopping, its pid reused) goes astray and can end the launcher itself.
+  still runs, holding the server suspended from that check to the send so it cannot exit in
+  between: a CTRL_BREAK naming a pid that leads no process group (a server that exited as the
+  launcher was stopping, or as it rolled back a release that timed out) goes to the whole console
+  and can end the launcher itself.
 
 - **Release builds for desktop, Android and Android TV.** The desktop app ships a
   (placeholder) icon set (#152), which the macOS and Windows bundles failed on. The Linux build
