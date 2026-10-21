@@ -120,8 +120,16 @@ func findHome(cfg config.Config, exe string) string {
 }
 
 func hasServer(home string) bool {
-	info, err := os.Stat(filepath.Join(home, "bin", "postgres"))
+	info, err := os.Stat(filepath.Join(home, "bin", exe("postgres")))
 	return err == nil && !info.IsDir()
+}
+
+// exe is a program's file name on this OS.
+func exe(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
 }
 
 // sqliteInUse: the default SQLite database exists (no url is in server.toml).
@@ -135,7 +143,22 @@ func sqliteInUse() bool {
 }
 
 // Bin is one of the install's programs.
-func (b Bundle) Bin(name string) string { return filepath.Join(b.Home, "bin", name) }
+func (b Bundle) Bin(name string) string { return filepath.Join(b.Home, "bin", exe(name)) }
+
+// StopCommand is the fast shutdown where a signal cannot ask for it (Windows has no
+// SIGINT for another process): pg_ctl stop -m fast, not waiting.
+func (b Bundle) StopCommand() *exec.Cmd {
+	return exec.Command(b.Bin("pg_ctl"), "stop", "-D", b.Data, "-m", "fast", "-W")
+}
+
+// stop asks a server of this cluster to shut down fast.
+func (b Bundle) stop(p *os.Process) {
+	if runtime.GOOS == "windows" {
+		_ = b.StopCommand().Run()
+		return
+	}
+	_ = p.Signal(os.Interrupt)
+}
 
 // Addr is the loopback TCP address.
 func (b Bundle) Addr() string { return "127.0.0.1:" + strconv.Itoa(b.Port) }
@@ -149,7 +172,7 @@ func (b Bundle) ServerArgs() []string { return b.serverArgs(b.LAN) }
 // serverArgs: lan false for the short-lived servers of Prepare (never on the LAN).
 func (b Bundle) serverArgs(lan bool) []string {
 	sock := b.Data
-	if len(filepath.Join(sock, ".s.PGSQL."+strconv.Itoa(b.Port))) > maxSocketPath {
+	if len(filepath.Join(sock, ".s.PGSQL."+strconv.Itoa(b.Port))) > maxSocketPath || runtime.GOOS == "windows" {
 		sock = ""
 	}
 	listen := "127.0.0.1"
@@ -336,7 +359,7 @@ func (b Bundle) withServer(ctx context.Context, log io.Writer, fn func() error) 
 	exited := make(chan error, 1)
 	go func() { exited <- srv.Wait() }()
 	defer func() {
-		_ = srv.Process.Signal(os.Interrupt) // fast shutdown
+		b.stop(srv.Process) // fast shutdown
 		select {
 		case <-exited:
 		case <-time.After(30 * time.Second):
