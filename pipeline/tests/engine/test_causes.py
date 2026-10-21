@@ -33,6 +33,19 @@ GOLDEN = [
     ("graph_violation", "detect requested probe, not in may_request", "graph_violation"),
     ("db", "asyncpg.exceptions.DeadlockDetectedError: deadlock detected", "db_error"),
     ("db", "sqlite3.OperationalError: database is locked", "db_error"),
+    # Epic 40
+    (
+        "DiskFullError",
+        'could not resize shared memory segment "/PostgreSQL.1" to 1048576 bytes',
+        "shm_full",
+    ),
+    ("OSError", "[Errno 28] No space left on device", "disk_full"),
+    ("PermissionError", "[Errno 13] Permission denied: '/v/a.mp4'", "permission_denied"),
+    ("os", "[WinError 5] Access is denied", "permission_denied"),
+    ("file_missing", "/lib/a.mp4: not found", "file_missing"),
+    ("ffmpeg", "thumbnail failed: poster rc=1 tail=''", "ffmpeg_rc"),
+    ("chapter_frames_failed", "exit 1", "ffmpeg_rc"),
+    ("ffmpeg", "thumbnail failed: poster rc=1 tail='moov atom not found'", "ffmpeg_decode"),
 ]
 
 

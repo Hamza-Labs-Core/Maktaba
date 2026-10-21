@@ -24,6 +24,7 @@ import {
   type FillerPool,
 } from "../../lib/channels";
 import { SourceSearch, useDuration } from "./channels/pickers";
+import { TitleRow } from "../../help/HelpLink";
 import "./channels/channels.css";
 
 const FILLER_KINDS: FillerKind[] = ["filler", "bumper", "station_id"];
@@ -152,7 +153,9 @@ function FillerPoolsInner() {
   return (
     <section className="mkt-page mkt-fillerpools">
       <header className="mkt-page__header">
-        <h1>{t("fillerPools.title")}</h1>
+        <TitleRow>
+          <h1>{t("fillerPools.title")}</h1>
+        </TitleRow>
       </header>
       <p className="mkt-muted">{t("fillerPools.help")}</p>
       <div className="mkt-cb-filters">

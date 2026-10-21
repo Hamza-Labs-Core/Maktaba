@@ -7,8 +7,9 @@
 
 Three things the rest of the app calls:
 
-1. **`venv_bootstrap`** — builds `~/Library/Application Support/Maktaba/venv` from the bundled
-   wheel and constraints, with the bundled Python, before any venv exists.
+1. **`venv_bootstrap`** — builds `~/Library/Application Support/Maktaba/venv` (Windows:
+   `%LOCALAPPDATA%\Maktaba\venv`, story 38.7) from the bundled wheel and constraints, with the
+   bundled Python, before any venv exists.
 2. **`maktaba-pipeline models status|download`** — the model files the workers load.
 3. **The environment** the supervisor gives the pipeline (`MAKTABA_STT_*`,
    `MAKTABA_MODEL_CACHE_DIR`, `MAKTABA_CHROMA_DIR`).
@@ -16,8 +17,9 @@ Three things the rest of the app calls:
 ## 1. The venv bootstrap
 
 Code: `pipeline/src/maktaba_pipeline/venv_bootstrap.py` (standard library only).
-Tests: `pipeline/tests/test_venv_bootstrap.py` (run by the node-packaging CI gate, which also
-builds a real venv from the release wheel on macOS arm64).
+Tests: `pipeline/tests/test_venv_bootstrap.py` (run by the node-packaging CI gate on Linux and
+Windows, which also builds a real venv from the release wheel on macOS arm64 and on Windows x64
+with the pinned python-build-standalone the Windows app ships).
 
 ### How to run it
 
@@ -29,6 +31,14 @@ PYTHONPATH="$P/pipeline/maktaba_pipeline-<v>-py3-none-any.whl" \
   "$P/python/bin/python3" -m maktaba_pipeline.venv_bootstrap --payload "$P/pipeline"
 ```
 
+On Windows (`<install>` is `%LOCALAPPDATA%\Maktaba`, the Python is `server\python\python.exe`):
+
+```powershell
+$P = "$env:LOCALAPPDATA\Maktaba\server"
+$env:PYTHONPATH = "$P\pipeline\maktaba_pipeline-<v>-py3-none-any.whl"
+& "$P\python\python.exe" -m maktaba_pipeline.venv_bootstrap --payload "$P\pipeline"
+```
+
 (Do not pass `-I` or `-E` to Python: they make it ignore `PYTHONPATH`.)
 
 ### Inputs
@@ -38,7 +48,7 @@ PYTHONPATH="$P/pipeline/maktaba_pipeline-<v>-py3-none-any.whl" \
 | `--python PATH` | `MAKTABA_PYTHON` | the interpreter running it |
 | `--payload DIR` (one `maktaba_pipeline-*.whl` + one `*constraints.txt`) | `MAKTABA_PIPELINE_PAYLOAD` | — |
 | `--wheel F --constraints F` (instead of `--payload`) | — | — |
-| `--venv DIR` | `MAKTABA_VENV` | `~/Library/Application Support/Maktaba/venv` (Linux: `$XDG_DATA_HOME/maktaba/venv`) |
+| `--venv DIR` | `MAKTABA_VENV` | `~/Library/Application Support/Maktaba/venv` (Windows: `%LOCALAPPDATA%\Maktaba\venv`, else `%USERPROFILE%\AppData\Local\Maktaba\venv`; Linux: `$XDG_DATA_HOME/maktaba/venv`) |
 | `--extras a,b` (must be complete in the venv) | `MAKTABA_PIPELINE_EXTRAS` | `stt,search` |
 | `--status-file F` | — | `venv-status.json` beside the venv |
 | `--check` | — | change nothing; say what a run would do |
@@ -54,7 +64,8 @@ for this machine is installed at an allowed version, and fails the run if not.
 
 ### What a run does
 
-Under a lock (`.venv.lock` beside the venv; a second run waits, then finds nothing to do) it
+Under a lock (`.venv.lock` beside the venv: `flock`, on Windows `msvcrt.locking`; a second run
+waits, then finds nothing to do) it
 compares the inputs with the stamp the last run left, `<venv>/maktaba-venv.json`:
 
 | Plan (`action`) | When | What it does |
@@ -113,13 +124,14 @@ below; `--check` prints one `{"event": "plan", "action": "...", "reason": "..."}
 | 1 | a step failed (network, disk, a hash mismatch, verify, any unexpected error); the status says `failed`; the next run resumes |
 | 2 | bad inputs (missing file, no hashes in the constraints, not one wheel in the payload) |
 | 10 | `--check` only: a run would change the venv |
-| 130 | stopped by SIGTERM / Ctrl-C (pip is stopped too); the next run resumes |
+| 130 | stopped by SIGTERM / Ctrl-C, on Windows by CTRL_BREAK (`SIGBREAK`; pip, in its own process group, gets one too, else is terminated); the next run resumes. A console closed or a sign-out on Windows ends the run before it can say so: the status may stay `building` (its `pid` gone); the stamp says `building` too, so the next run resumes |
 
 ### After it
 
-The workers run `<venv>/bin/maktaba-pipeline run …` (or `<venv>/bin/python -m maktaba_pipeline`).
+The workers run `<venv>/bin/maktaba-pipeline run …` (or `<venv>/bin/python -m maktaba_pipeline`;
+on Windows `<venv>\Scripts\maktaba-pipeline.exe` / `<venv>\Scripts\python.exe`).
 **Track A:** point `MAKTABA_PYTHON` / the pipeline role's command at the venv's
-`bin/python`, not at the bundled bare Python (which has no dependencies).
+`bin/python` (`Scripts\python.exe`), not at the bundled bare Python (which has no dependencies).
 
 ## 2. `maktaba-pipeline models status|download`
 

@@ -115,7 +115,12 @@ class MaktabaTvConfig:
     live_lookup_reuse_seconds: int = 600
     #: even loudness across programmes and filler
     loudnorm: bool = True
+    #: how: ``speechnorm`` (dizqueTV's default: no look-ahead, nothing delayed),
+    #: ``loudnorm`` (EBU R128 to the target below) or ``dynaudnorm``
+    loudnorm_mode: str = "speechnorm"
     loudnorm_target_lufs: float = -16.0
+    #: speechnorm: the most a quiet passage is raised (times; dizqueTV's 6.25)
+    speechnorm_expansion: float = 6.25
     #: the corner logo is left off filler and bumpers (dizqueTV's disableFillerOverlay);
     #: programmes and live broadcasts always carry it
     watermark_skip_filler: bool = True
@@ -400,6 +405,13 @@ class PlexLiveConfig:
     #: a guide reload caused only by the schedule growing waits until this long after the
     #: last one (a channel change or "Refresh Plex now" reloads at once)
     guide_refresh_min_minutes: int = 60
+    #: how often the reconciler checks that Plex still holds Maktaba's channel map (another
+    #: program, dizqueTV's own refresh, may replace it); 0: only when the channels change
+    drift_check_minutes: int = 15
+    #: the "turn off dizqueTV's channel mapping" warning after this many restores in a row
+    drift_warn_repeats: int = 3
+    #: a restore more than this long after the previous one starts the count again
+    drift_forget_hours: int = 24
     #: the tuner address Plex should use (http://host:port of the streaming service);
     #: empty: MAKTABA_PUBLIC_BASE_URL, else what /api/tv/info reported
     tuner_url: str = ""
@@ -523,7 +535,26 @@ register(
             maximum=3600,
         ),
         "loudnorm": Help(TV, "Even loudness", "Normalise every programme's loudness."),
-        "loudnorm_target_lufs": Help(TV, "Loudness target (LUFS)"),
+        "loudnorm_mode": Help(
+            TV,
+            "Loudness filter",
+            "speechnorm: speech levelled as it plays, nothing delayed, so a channel tunes "
+            "fast (what dizqueTV does). loudnorm: EBU R128 to the target below, about 3 s "
+            "of look-ahead. dynaudnorm: a gentler dynamic normaliser, also with look-ahead. "
+            "Only programme and filler sound is levelled, never the slate's silence.",
+            choices=("speechnorm", "loudnorm", "dynaudnorm"),
+        ),
+        "loudnorm_target_lufs": Help(
+            TV, "Loudness target (LUFS)", "What the loudnorm filter levels to."
+        ),
+        "speechnorm_expansion": Help(
+            TV,
+            "Speech boost limit",
+            "The speechnorm filter raises a quiet passage at most this many times "
+            "(dizqueTV: 6.25).",
+            minimum=1,
+            maximum=50,
+        ),
         "watermark_skip_filler": Help(
             TV,
             "No corner logo on filler",
@@ -1039,6 +1070,28 @@ register(
             "Guide reload at most every (min)",
             "A reload caused only by the schedule growing waits this long after the last "
             'one. A channel change or "Refresh Plex now" reloads at once.',
+            minimum=1,
+        ),
+        "drift_check_minutes": Help(
+            PL,
+            "Check Plex's channel list every (min)",
+            "Another program can replace the channels Plex shows for Maktaba's tuner: "
+            "dizqueTV's own Plex refresh writes its channel list onto every tuner. Maktaba "
+            "checks this often and, when Refresh the channels in Plex is on, puts its "
+            "channels back. 0: only checked when Maktaba's channels change.",
+            minimum=0,
+        ),
+        "drift_warn_repeats": Help(
+            PL,
+            "Warn after this many restores in a row",
+            "When Maktaba had to put its channels back this many times, the Plex panel "
+            "advises turning off channel mapping in dizqueTV's Plex settings.",
+            minimum=1,
+        ),
+        "drift_forget_hours": Help(
+            PL,
+            "Restores count as in a row within (hours)",
+            "A restore more than this long after the previous one starts the count again.",
             minimum=1,
         ),
         "tuner_url": Help(

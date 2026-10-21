@@ -4,6 +4,7 @@
 #
 #   every binary starts (--version), every Mach-O is arm64 and links nothing outside the
 #   payload but the system, Postgres initdb + start + the extensions Maktaba creates,
+#   Ollama serves its API on a loopback port,
 #   the bundled Python builds a venv offline, and running it writes nothing into the
 #   payload (a new file would break the app's signature seal).
 #
@@ -63,6 +64,9 @@ for b in postgres initdb pg_ctl pg_dump pg_restore psql; do
 done
 run ffmpeg "$PAYLOAD/ffmpeg/ffmpeg" -hide_banner -version
 run ffprobe "$PAYLOAD/ffmpeg/ffprobe" -hide_banner -version
+# HOME in the scratch folder: ollama keeps its key in ~/.ollama
+run ollama env HOME="$SCRATCH" "$PAYLOAD/ollama/ollama" --version
+run llama-server "$PAYLOAD/ollama/llama-server" --version
 run python3 "$PAYLOAD/python/bin/python3" -I -c 'import sys, ssl, sqlite3, venv, ensurepip; print(sys.version.split()[0], ssl.OPENSSL_VERSION)'
 
 echo "Mach-O files"
@@ -94,6 +98,24 @@ if "$pg/initdb" -D "$SCRATCH/pgdata" -U maktaba --auth=trust -E UTF8 >"$SCRATCH/
 else
     fail "initdb/start: $(tail -3 "$SCRATCH/initdb.log" "$SCRATCH/pg.log" 2>/dev/null)"
 fi
+
+echo "Ollama"
+# the way the supervisor runs it (llmserver): loopback, its own port, the models folder
+# outside the payload; it answers its API
+oport=$((11600 + RANDOM % 300))
+env HOME="$SCRATCH" OLLAMA_HOST="127.0.0.1:$oport" OLLAMA_MODELS="$SCRATCH/ollama-models" OLLAMA_NOPRUNE=1 \
+    "$PAYLOAD/ollama/ollama" serve >"$SCRATCH/ollama.log" 2>&1 &
+opid=$!
+up=""
+for _ in $(seq 1 100); do
+    if up="$(curl -fsS "http://127.0.0.1:$oport/api/version" 2>/dev/null)"; then break; fi
+    up=""
+    sleep 0.2
+done
+if [ -n "$up" ]; then ok "ollama serve answers: $up"; else fail "ollama serve did not answer: $(tail -3 "$SCRATCH/ollama.log")"; fi
+if [ -n "$up" ] && curl -fsS "http://127.0.0.1:$oport/api/tags" | grep -q '"models"'; then ok "ollama /api/tags"; else fail "ollama /api/tags"; fi
+kill "$opid" 2>/dev/null || true
+wait "$opid" 2>/dev/null || true
 
 echo "Python"
 run "venv (offline, with pip)" "$PAYLOAD/python/bin/python3" -I -m venv "$SCRATCH/venv"
