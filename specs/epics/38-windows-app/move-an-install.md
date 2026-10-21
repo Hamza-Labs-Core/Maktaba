@@ -73,7 +73,18 @@ This PC is converted only after the owner's OK (the user asked for that explicit
 
 ## Going back
 
-`maktaba-server adopt --undo`: pauses the app's server (the shell's pause flag, so opening the app
-does not start it over the old install), stops it and disables `\Maktaba Server <SID>`, re-registers the
-old tasks from `moved\<name>.xml` (or turns them back on, before the move finished), and runs them.
-What changed in the app after the move stays in the app.
+`maktaba-server adopt --undo`: pauses the app's server for this sign-in (the shell's pause flag),
+stops it and disables this user's app tasks (`\Maktaba Server <SID>`, and a task of the old shared
+name `\Maktaba Server` that runs as this user), takes the window out of server mode (a `mode.json`
+that says server is removed; a client mode is left alone), re-registers the old tasks from
+`moved\<name>.xml` (or turns them back on, before the move finished), and runs them. After this
+sign-in the disabled task keeps the app's server off, and the window opens setup: its `status`
+step does not count the app as set up while the move record says `undone`, so the welcome screen
+finds the old install running and offers to move it again. A `finish` of a fresh setup forgets
+the undone move. What changed in the app after the move stays in the app.
+
+Every finding of the plan and every refusal carries a code and its values (contract-setup), which
+the screens put into words in English or Arabic: findings `space_low`, `worker_not_joined`,
+`postgres_down` (problems), `postgres_stays`, `started_by_hand` (warnings); refusals
+`adopt_moved_already`, `adopt_under_way`, `adopt_task`, `adopt_still_running`, `adopt_port_busy`
+(`port`), `adopt_key_differs`, `interrupted`, `adopt_failed`.
