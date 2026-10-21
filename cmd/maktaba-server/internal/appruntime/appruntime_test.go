@@ -159,6 +159,41 @@ func TestInstallRefusesAChangedPayload(t *testing.T) {
 	}
 }
 
+// tauri's bundlers copy resources with fs::copy, which follows symlinks: the
+// app's payload holds copies where the manifest lists links. The runtime makes
+// the links again.
+func TestInstallMakesLinksTheBundlerCopied(t *testing.T) {
+	r := testRuntime(t)
+	from := samplePayload(t, "v0.3.0")
+	for link, target := range map[string]string{"python/bin/python3": "python/bin/python3.12",
+		"postgres/lib/libpq.so.5": "postgres/lib/libpq.so.5.16"} {
+		p := filepath.Join(from, filepath.FromSlash(link))
+		b, err := os.ReadFile(filepath.Join(from, filepath.FromSlash(target)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = os.Remove(p)
+		if err := os.WriteFile(p, b, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dir, _, err := r.Install(context.Background(), from, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tgt, err := os.Readlink(filepath.Join(dir, "python", "bin", "python3")); err != nil || tgt != "python3.12" {
+		t.Errorf("python3 is not a link again: %q %v", tgt, err)
+	}
+	// a copy that is not the target's content is refused
+	from2 := samplePayload(t, "v0.3.1")
+	p := filepath.Join(from2, "python", "bin", "python3")
+	_ = os.Remove(p)
+	_ = os.WriteFile(p, []byte("something else"), 0o755)
+	if _, _, err := r.Install(context.Background(), from2, nil); !errors.Is(err, ErrInvalid) {
+		t.Errorf("a wrong copy: %v", err)
+	}
+}
+
 func TestManifestPathsStayInside(t *testing.T) {
 	for _, bad := range []string{
 		"f\t0644\t1\t" + strings.Repeat("a", 64) + "\t../escape",

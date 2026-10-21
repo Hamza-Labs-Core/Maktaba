@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -101,12 +102,13 @@ func (r Runtime) Install(ctx context.Context, from string, progress Progress) (d
 			_ = os.RemoveAll(staging)
 		}
 	}()
+	files := fileEntries(entries)
 	var done int64
 	for _, e := range entries {
 		if err := ctx.Err(); err != nil {
 			return "", false, err
 		}
-		if err := copyEntry(from, staging, e); err != nil {
+		if err := copyEntry(from, staging, e, files); err != nil {
 			return "", false, err
 		}
 		done += e.Size
@@ -134,17 +136,52 @@ func (r Runtime) Install(ctx context.Context, from string, progress Progress) (d
 	return final, true, nil
 }
 
+// fileEntries indexes the manifest's files by path.
+func fileEntries(entries []Entry) map[string]Entry {
+	m := make(map[string]Entry, len(entries))
+	for _, e := range entries {
+		m[e.Path] = e
+	}
+	return m
+}
+
+// linkedFile is the file a symlink entry ends at (following links the manifest
+// lists, at most 8), or false when it ends outside the manifest's files.
+func linkedFile(e Entry, files map[string]Entry) (Entry, bool) {
+	for i := 0; i < 8 && e.Kind == 'l'; i++ {
+		next, ok := files[path.Join(path.Dir(e.Path), e.Target)]
+		if !ok {
+			return Entry{}, false
+		}
+		e = next
+	}
+	return e, e.Kind == 'f'
+}
+
 // copyEntry copies one manifest entry from the payload into dst, checking a
-// file's size and SHA-256 as it is copied.
-func copyEntry(from, dst string, e Entry) error {
+// file's size and SHA-256 as it is copied. A symlink is made again from its
+// entry. The payload may hold a copy of the file in its place: tauri's
+// bundlers copy resources with fs::copy, which follows symlinks. That copy is
+// checked against the file the link ends at.
+func copyEntry(from, dst string, e Entry, files map[string]Entry) error {
 	src := filepath.Join(from, filepath.FromSlash(e.Path))
 	out := filepath.Join(dst, filepath.FromSlash(e.Path))
 	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 		return err
 	}
 	if e.Kind == 'l' {
-		if t, err := os.Readlink(src); err != nil || t != e.Target {
-			return fmt.Errorf("%w: %s is not the symlink to %s its manifest lists", ErrInvalid, src, e.Target)
+		if t, err := os.Readlink(src); err == nil {
+			if t != e.Target {
+				return fmt.Errorf("%w: %s is not the symlink to %s its manifest lists", ErrInvalid, src, e.Target)
+			}
+		} else {
+			target, ok := linkedFile(e, files)
+			if !ok {
+				return fmt.Errorf("%w: %s → %s ends at no file of the payload", ErrInvalid, e.Path, e.Target)
+			}
+			if err := checkFile(src, target); err != nil {
+				return err
+			}
 		}
 		return os.Symlink(e.Target, out)
 	}
@@ -174,6 +211,19 @@ func copyEntry(from, dst string, e Entry) error {
 			ErrInvalid, src, e.Size, e.SHA256)
 	}
 	return os.Chmod(out, e.Mode)
+}
+
+// checkFile checks that src holds the content of the manifest's file e.
+func checkFile(src string, e Entry) error {
+	info, err := os.Lstat(src)
+	if err != nil || !info.Mode().IsRegular() || info.Size() != e.Size {
+		return fmt.Errorf("%w: %s is missing or not the file its manifest lists", ErrInvalid, src)
+	}
+	sum, err := sha256File(src)
+	if err != nil || sum != e.SHA256 {
+		return fmt.Errorf("%w: %s changed since the payload was built", ErrInvalid, src)
+	}
+	return nil
 }
 
 func copyPlain(src, dst string) error {
