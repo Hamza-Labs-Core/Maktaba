@@ -92,6 +92,8 @@ export function Login() {
     } catch (err) {
       if (isHomeUnreachable(err)) {
         setRefused(true);
+      } else if (err instanceof ApiError && err.problem.code === "password_change_waits") {
+        setError(t("login.passwordChangeWaits"));
       } else if (err instanceof ApiError && err.status === 401) {
         setError(t("login.error"));
       } else {

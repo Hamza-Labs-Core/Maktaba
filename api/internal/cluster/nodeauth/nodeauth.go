@@ -106,6 +106,9 @@ type Resolver struct {
 	// CopyMaxLag returns how far behind the home the copy may have been when the home
 	// was last heard, for it to answer (nil: DefaultCopyMaxLag).
 	CopyMaxLag func() time.Duration
+	// HomeOffset is the home's clock minus this machine's (the copy's beat is stamped
+	// on the home's); nil: 0.
+	HomeOffset func() time.Duration
 	// LocalSessionTTL and LocalSessionGrace return a node-local sign-in's lifetime and
 	// how long it lasts once the home answers again (nil: the defaults).
 	LocalSessionTTL   func() time.Duration
@@ -324,6 +327,14 @@ func (r *Resolver) Evict(rv delegation.Revoked) int {
 func (r *Resolver) OnEvent(e homelink.Event) {
 	if e.Kind == "revoked" && e.Revoked != nil {
 		n := r.Evict(*e.Revoked)
+		// a person signed out everywhere, reset or locked: their sign-ins on this
+		// machine end too
+		if e.Revoked.UserID != "" && r.Sessions != nil {
+			if err := r.Sessions.EndUser(e.Revoked.UserID); err != nil && r.Logger != nil {
+				r.Logger.Warn("node: a revoked person's sign-ins on this machine could not be ended", "err", err,
+					"user_id", e.Revoked.UserID, "event", "node_local_sessions_failed")
+			}
+		}
 		if r.Logger != nil {
 			r.Logger.Info("node: revocation from the home applied", "evicted", n, "user_id", e.Revoked.UserID,
 				"sessions", len(e.Revoked.SessionSHA256), "event", "node_auth_revoked")

@@ -335,6 +335,22 @@ func TestCopyFollowsTheHome(t *testing.T) {
 		return reported == StateFollowing
 	})
 
+	// this machine updated (its schema moved on): a fresh copy while the subscription
+	// still streams from the slot; it stops first, and the home drops the slot then
+	updated, _ := c.Mark()
+	stale := updated
+	stale.LocalSchema--
+	if err := c.writeMark(stale); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "a fresh copy after an update", 3*time.Minute, func() bool {
+		mk, ok := c.Mark()
+		return ok && mk.Subscribed.After(updated.Subscribed) && mk.LocalSchema == updated.LocalSchema
+	})
+	following("after an update of this machine")
+	exec1(`UPDATE app_settings SET value = '"updated"' WHERE key = 'test.copy'`)
+	waitFor(t, "the change after the fresh copy", 30*time.Second, seen("updated"))
+
 	// the home gives up on the slot (past the cap): the copy subscribes anew and follows
 	before, _ := c.Mark()
 	waitFor(t, "the slot dropped", 30*time.Second, func() bool {

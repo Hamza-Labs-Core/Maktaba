@@ -106,12 +106,29 @@ func (b Bundle) ensureTLS(now time.Time) error {
 	return writePEM(certPath, "CERTIFICATE", der)
 }
 
+// ensureCA is the database CA: made once, when neither its key nor its certificate is
+// there. Every machine pins it, so it is never replaced on its own: a key or a
+// certificate that is missing beside the other, does not read, or does not go with
+// the other is an error (restore the keys folder from a backup).
 func (b Bundle) ensureCA(now time.Time) (*ecdsa.PrivateKey, *x509.Certificate, error) {
 	keyPath, certPath := filepath.Join(b.Keys, caKeyFile), b.CACert()
-	if k, err := readKey(keyPath); err == nil {
-		if c, err := readCert(certPath); err == nil {
-			return k, c, nil
+	_, keyErr := os.Stat(keyPath)
+	_, certErr := os.Stat(certPath)
+	if !os.IsNotExist(keyErr) || !os.IsNotExist(certErr) {
+		k, err := readKey(keyPath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("the CA's key %s: %w (it is never made anew while its certificate "+
+				"is there: every machine pins it; restore it from a backup)", keyPath, err)
 		}
+		c, err := readCert(certPath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("the CA's certificate %s: %w (it is never made anew while its key "+
+				"is there: every machine pins it; restore it from a backup)", certPath, err)
+		}
+		if !k.PublicKey.Equal(c.PublicKey) {
+			return nil, nil, fmt.Errorf("the CA's key %s is not its certificate's (%s)", keyPath, certPath)
+		}
+		return k, c, nil
 	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {

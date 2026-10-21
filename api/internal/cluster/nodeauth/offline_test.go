@@ -17,6 +17,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -565,7 +566,8 @@ func TestSignInOnTheCopyWhileTheHomeIsAway(t *testing.T) {
 		t.Fatalf("a native sign-in on the copy: %d, want 503", rec.Code)
 	}
 	// an account waiting on a password change waits for the home
-	if a, id := g.signIn(t, "badr", "pw-badr"); a.code != http.StatusServiceUnavailable || id != "" {
+	if a, id := g.signIn(t, "badr", "pw-badr"); a.code != http.StatusServiceUnavailable || id != "" ||
+		a.problem != "password_change_waits" {
 		t.Fatalf("a must-change account: %+v", a)
 	}
 
@@ -976,5 +978,64 @@ func TestOneMissIsNotAnOutage(t *testing.T) {
 	g.now = g.now.Add(ProbeEvery)
 	if ok, since := g.r.Reachability(); ok || since == nil || !g.r.Down() {
 		t.Fatal("the home silent for a probe's interval is not reported")
+	}
+}
+
+// A person the home signs out everywhere, resets or locks loses their sign-ins on this
+// machine too: the pushed revocation ends them; and one whose password must now change
+// (an admin reset it, as the copy says) is not let in on a node-local session.
+func TestARevocationEndsTheNodeLocalSignIns(t *testing.T) {
+	g := newOfflineRig(t, true)
+	g.goDown(time.Minute)
+	g.pastGrace()
+	_, id := g.signIn(t, "amal", "pw-amal")
+	if a := g.do(http.MethodGet, "/api/videos", id); a.code != http.StatusOK {
+		t.Fatalf("signed in on this machine: %+v", a)
+	}
+	g.r.OnEvent(homelink.Event{Kind: "revoked", Revoked: &delegation.Revoked{UserID: "u1"}})
+	if a := g.do(http.MethodGet, "/api/videos", id); a.code != http.StatusUnauthorized {
+		t.Fatalf("after the home revoked the person: %+v, want 401", a)
+	}
+
+	// signed in again later; then an admin resets the password (the copy says it must
+	// change)
+	g.now = g.now.Add(revokedKeep + time.Second)
+	_, id = g.signIn(t, "amal", "pw-amal")
+	if a := g.do(http.MethodGet, "/api/videos", id); a.code != http.StatusOK {
+		t.Fatalf("signed in again: %+v", a)
+	}
+	was := copyUsers["u1"]
+	t.Cleanup(func() { copyUsers["u1"] = was })
+	reset := was
+	reset.MustChangePassword = true
+	copyUsers["u1"] = reset
+	if a := g.do(http.MethodGet, "/api/videos", id); a.code != http.StatusUnauthorized {
+		t.Fatalf("a node-local session of a person who must change their password: %+v, want 401", a)
+	}
+}
+
+// Spraying names past the counter's room does not unlock a locked one.
+func TestSprayingNamesDoesNotUnlockOne(t *testing.T) {
+	now := time.Date(2026, 10, 21, 9, 0, 0, 0, time.UTC)
+	r := &Resolver{Now: func() time.Time { return now }}
+	for i := 0; i < lockoutThreshold; i++ {
+		r.failed("amal")
+	}
+	if !r.locked("amal") {
+		t.Fatal("not locked after the threshold")
+	}
+	for i := 0; i < maxEntries+500; i++ {
+		r.failed(fmt.Sprintf("spray-%d", i))
+	}
+	if !r.locked("amal") {
+		t.Fatal("spraying names unlocked a locked one")
+	}
+	if len(r.fails) > maxEntries {
+		t.Fatalf("the counter grew past its room: %d", len(r.fails))
+	}
+	// past the window the lock ends as always
+	now = now.Add(lockoutWindow + time.Second)
+	if r.locked("amal") {
+		t.Fatal("still locked past the window")
 	}
 }

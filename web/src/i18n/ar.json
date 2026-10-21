@@ -3394,5 +3394,6 @@
   "machines.switch.needs.llm": "شغّل مشغّل نماذج على هذا الجهاز، أو اضبط عنوانه في الإعدادات ({detail}).",
   "machines.switch.needs.relay": "الوسيط يحتاج إليك: {detail}.",
   "machines.switch.integration.state.pending": "جارٍ النقل",
-  "machines.switch.integration.jwt": "مفاتيح تسجيل الدخول (JWT)"
+  "machines.switch.integration.jwt": "مفاتيح تسجيل الدخول (JWT)",
+  "login.passwordChangeWaits": "يجب تغيير كلمة مرور هذا الحساب، وهذا يحتاج إلى الجهاز الرئيسي. سجّل الدخول من جديد حين يصل هذا الجهاز إلى جهازه الرئيسي."
 }

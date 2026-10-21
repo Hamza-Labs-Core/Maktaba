@@ -50,9 +50,14 @@ type Manager struct {
 	// erring: since when the subscription's error count keeps rising (zero: it does not)
 	erring   time.Time
 	lastErrs int64
-	// reporting: a report to the home is under way; pending: the status to report next
-	reporting bool
-	pending   *Status
+	// reporting: a report to the home is under way; pending: the status to report next;
+	// reported and reportedAt: the last one told; offset: the home's clock minus this
+	// machine's, as the last report measured it
+	reporting  bool
+	pending    *Status
+	reported   Status
+	reportedAt time.Time
+	offset     time.Duration
 	// local is this machine's schema version, once migrated
 	local int64
 }
@@ -63,6 +68,19 @@ func (m *Manager) now() time.Time {
 	}
 	return time.Now()
 }
+
+// homeNow is the home's time now (this machine's clock and the offset the last report
+// measured): the copy's beat is stamped on the home's clock.
+func (m *Manager) homeNow() time.Time {
+	m.mu.Lock()
+	off := m.offset
+	m.mu.Unlock()
+	return m.now().Add(off)
+}
+
+// reportEvery is how often an unchanged status is told to the home (a change is told
+// at once).
+const reportEvery = time.Minute
 
 func (m *Manager) logf(format string, args ...any) {
 	if m.Log != nil {
@@ -142,10 +160,15 @@ func (m *Manager) set(ctx context.Context, s Status) {
 }
 
 // report tells the home a status in the background (the latest one, one at a time):
-// a home that does not answer never holds the copy up.
+// a home that does not answer never holds the copy up. An unchanged one is told at most
+// every reportEvery.
 func (m *Manager) report(ctx context.Context, s Status) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if s.State == m.reported.State && s.Detail == m.reported.Detail && m.now().Sub(m.reportedAt) < reportEvery {
+		return
+	}
+	m.reported, m.reportedAt = s, m.now()
 	if m.reporting {
 		m.pending = &s
 		return
@@ -153,7 +176,11 @@ func (m *Manager) report(ctx context.Context, s Status) {
 	m.reporting = true
 	go func() {
 		for {
-			_ = m.Copy.Report(ctx, s)
+			if off, err := m.Copy.Report(ctx, s); err == nil {
+				m.mu.Lock()
+				m.offset = off
+				m.mu.Unlock()
+			}
 			m.mu.Lock()
 			if m.pending == nil || ctx.Err() != nil {
 				m.reporting, m.pending = false, nil
@@ -398,6 +425,11 @@ func (m *Manager) resubscribe(ctx context.Context, local int64, why string) erro
 		state = StateCopying
 	}
 	m.set(ctx, m.state(state, why))
+	// the old subscription stops streaming first: the home drops the slot of a fresh
+	// copy only once nothing streams from it
+	if err := m.Copy.Quiesce(ctx, 30*time.Second); err != nil {
+		return fmt.Errorf("stopping the copy before a fresh one: %w", err)
+	}
 	var g Grant
 	var err error
 	for i := 0; i < 10; i++ {
@@ -425,7 +457,7 @@ func (m *Manager) resubscribe(ctx context.Context, local int64, why string) erro
 // watchState is the state to show while the home cannot be asked: the copy's own,
 // with why the home was not asked.
 func (m *Manager) watchState(ctx context.Context, detail string) Status {
-	s := m.Copy.Observe(ctx, m.now())
+	s := m.Copy.Observe(ctx, m.homeNow())
 	if s.State != StateFollowing && s.State != StateCopying {
 		s.Detail = detail
 	}
@@ -437,7 +469,7 @@ func (m *Manager) watchState(ctx context.Context, detail string) Status {
 func (m *Manager) watch(ctx context.Context, d time.Duration) bool {
 	end := m.now().Add(d)
 	for {
-		s := m.Copy.Observe(ctx, m.now())
+		s := m.Copy.Observe(ctx, m.homeNow())
 		m.noteErrors(s)
 		m.set(ctx, s)
 		left := end.Sub(m.now())

@@ -398,20 +398,26 @@ func (p *Pair) Recheck() {
 	}()
 }
 
-// Recent remembers who changed something a moment ago, so their reads go to the home's
-// database until the copy has surely applied the change (read-your-writes; a copy on
-// the LAN applies the home's changes well within it).
+// Recent remembers who changed something, so their reads go to the home's database
+// until the copy has applied the change (read-your-writes): until the copy holds a beat
+// the home wrote after it (the beat and the change are stamped on the home's clock;
+// replication applies the home's transactions in their order), however far behind the
+// copy is.
 type Recent struct {
-	// For is how long after a change (0: RecentFor).
-	For time.Duration
+	// Now is the home's clock (the node's measure of it).
 	Now func() time.Time
 
 	mu sync.Mutex
-	m  map[string]time.Time
+	m  map[string]time.Time // a credential's last change, on the home's clock
 }
 
-// RecentFor is how long a change sends its author's reads to the home.
-const RecentFor = 5 * time.Second
+// RecentMargin is how much later than a change the copy's beat must be (the clocks'
+// measure is a call's half round trip off).
+const RecentMargin = time.Second
+
+// RecentKeep is how long a change is remembered at most: a copy that has not caught up
+// by then is behind the rule, and every read goes to the home anyway.
+const RecentKeep = 10 * time.Minute
 
 func (r *Recent) now() time.Time {
 	if r.Now != nil {
@@ -420,14 +426,11 @@ func (r *Recent) now() time.Time {
 	return time.Now()
 }
 
-// Wrote notes a change by key (a credential's hash).
+// Wrote notes a change by key (a credential's hash): called as it starts and once it
+// is done (the later stamp counts).
 func (r *Recent) Wrote(key string) {
 	if key == "" {
 		return
-	}
-	d := r.For
-	if d <= 0 {
-		d = RecentFor
 	}
 	now := r.now()
 	r.mu.Lock()
@@ -436,22 +439,30 @@ func (r *Recent) Wrote(key string) {
 		r.m = map[string]time.Time{}
 	}
 	if len(r.m) >= 4096 {
-		for k, until := range r.m {
-			if !now.Before(until) {
+		for k, at := range r.m {
+			if now.Sub(at) > RecentKeep {
 				delete(r.m, k)
 			}
 		}
 	}
-	r.m[key] = now.Add(d)
+	r.m[key] = now
 }
 
-// Changed reports whether key changed something a moment ago.
-func (r *Recent) Changed(key string) bool {
+// Changed reports whether key's last change may not be in the copy yet, whose beat is
+// at synced (the home's clock).
+func (r *Recent) Changed(key string, synced time.Time) bool {
 	if key == "" {
 		return false
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	until, ok := r.m[key]
-	return ok && r.now().Before(until)
+	at, ok := r.m[key]
+	switch {
+	case !ok:
+		return false
+	case !synced.Before(at.Add(RecentMargin)), r.now().Sub(at) > RecentKeep:
+		delete(r.m, key)
+		return false
+	}
+	return true
 }

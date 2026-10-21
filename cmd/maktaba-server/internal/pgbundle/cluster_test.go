@@ -35,8 +35,10 @@ func TestHBAConf(t *testing.T) {
 		}
 	}
 	// a copy is a logical subscription: no physical replication (the whole cluster)
-	if strings.Contains(lan, "replication") && strings.Contains(lan, " replication ") {
-		t.Errorf("a physical replication line:\n%s", lan)
+	for _, line := range strings.Split(lan, "\n") {
+		if f := strings.Fields(line); len(f) > 1 && !strings.HasPrefix(f[0], "#") && f[1] == "replication" {
+			t.Errorf("a physical replication line: %q", line)
+		}
 	}
 	for _, line := range strings.Split(lan, "\n") {
 		if strings.HasPrefix(line, "host ") && !strings.Contains(line, "127.0.0.1/32") && !strings.Contains(line, "::1/128") {
@@ -156,5 +158,48 @@ func TestServerArgsOnTheLAN(t *testing.T) {
 	loop := clusterBundle(t, false, true)
 	if args := strings.Join(loop.ServerArgs(), " "); !strings.Contains(args, "listen_addresses=127.0.0.1") {
 		t.Fatalf("loopback: %s", args)
+	}
+}
+
+// The database CA is made once and never anew on its own: every machine pins it. A
+// half of it missing, unreadable, or not going with the other half is an error.
+func TestTheCAIsNeverRemadeOnItsOwn(t *testing.T) {
+	b := clusterBundle(t, true, true)
+	now := time.Now()
+	if _, _, err := b.ensureCA(now); err != nil {
+		t.Fatal(err)
+	}
+	certPath, keyPath := b.CACert(), filepath.Join(b.Keys, caKeyFile)
+	cert, _ := os.ReadFile(certPath)
+	if _, c, err := b.ensureCA(now); err != nil || c == nil {
+		t.Fatalf("the CA read again: %v", err)
+	}
+	if again, _ := os.ReadFile(certPath); string(again) != string(cert) {
+		t.Fatal("the CA was made anew")
+	}
+	// its key gone: an error, and its certificate kept
+	key, _ := os.ReadFile(keyPath)
+	_ = os.Remove(keyPath)
+	if _, _, err := b.ensureCA(now); err == nil {
+		t.Fatal("a CA without its key was made anew")
+	}
+	if again, _ := os.ReadFile(certPath); string(again) != string(cert) {
+		t.Fatal("the CA's certificate was replaced")
+	}
+	// a certificate that does not read
+	_ = os.WriteFile(keyPath, key, 0o600)
+	_ = os.WriteFile(certPath, []byte("garbage"), 0o600)
+	if _, _, err := b.ensureCA(now); err == nil {
+		t.Fatal("an unreadable CA certificate was replaced")
+	}
+	// another CA's certificate beside this key
+	other := clusterBundle(t, true, true)
+	if _, _, err := other.ensureCA(now); err != nil {
+		t.Fatal(err)
+	}
+	otherCert, _ := os.ReadFile(other.CACert())
+	_ = os.WriteFile(certPath, otherCert, 0o600)
+	if _, _, err := b.ensureCA(now); err == nil {
+		t.Fatal("a key and another CA's certificate were taken")
 	}
 }

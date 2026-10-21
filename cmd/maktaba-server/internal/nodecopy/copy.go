@@ -264,20 +264,31 @@ func withSSLMode(dsn, mode string) string {
 }
 
 // Report tells the home how the copy is (cluster_node_report_replica).
-func (c Copy) Report(ctx context.Context, s Status) error {
+//
+// It answers the home's clock too, as an offset from this machine's (the home's now()
+// against the middle of the call): the copy's beat is stamped on the home's clock.
+func (c Copy) Report(ctx context.Context, s Status) (offset time.Duration, err error) {
 	b, err := json.Marshal(s)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	rctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	db, err := c.openHome(rctx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer db.Close()
-	_, err = db.ExecContext(rctx, `SELECT cluster_node_report_replica($1, $2::jsonb)`, c.NodeID, string(b))
-	return err
+	if _, err := db.ExecContext(rctx, `SELECT cluster_node_report_replica($1, $2::jsonb)`, c.NodeID, string(b)); err != nil {
+		return 0, err
+	}
+	t0 := time.Now()
+	var home time.Time
+	if err := db.QueryRowContext(rctx, `SELECT now()`).Scan(&home); err != nil {
+		return 0, err
+	}
+	t1 := time.Now()
+	return home.Sub(t0.Add(t1.Sub(t0) / 2)), nil
 }
 
 // Marker records what the copy follows: the home's database (its system identifier),
@@ -675,6 +686,39 @@ func (c Copy) Pause(ctx context.Context) error {
 	}
 	_, err = db.ExecContext(ctx, `ALTER SUBSCRIPTION `+pq.QuoteIdentifier(Subscription)+` DISABLE`)
 	return err
+}
+
+// Quiesce pauses the subscription and waits (up to wait) until its workers have
+// stopped: the home's slot is free then (a fresh copy drops it, which the home refuses
+// while a subscription streams from it).
+func (c Copy) Quiesce(ctx context.Context, wait time.Duration) error {
+	if err := c.Pause(ctx); err != nil {
+		return err
+	}
+	db, err := c.super()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	end := time.Now().Add(wait)
+	for {
+		var live int
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM pg_stat_subscription
+		    WHERE subname = $1 AND pid IS NOT NULL`, Subscription).Scan(&live); err != nil {
+			return err
+		}
+		if live == 0 {
+			return nil
+		}
+		if time.Now().After(end) {
+			return fmt.Errorf("nodecopy: the subscription's workers did not stop within %s", wait)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
 }
 
 // Status is how the copy is, as the machines page shows it.

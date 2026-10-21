@@ -111,8 +111,10 @@ type nodeRuntime struct {
 	proxy    http.Handler
 	rules    func() nodemode.Rules
 	logger   *slog.Logger
-	// recent: who changed something a moment ago (their reads go to the home's)
+	// recent: who changed something the copy may not have yet (their reads go to the
+	// home's); clock: the home's clock, which the copy's beat is stamped on
 	recent nodedb.Recent
+	clock  homeClock
 	// fresh: whether the copy is current enough to read from while the home answers
 	fresh copyFreshness
 	// fatal carries an error the API must stop for (a DDL-capable role found late)
@@ -215,6 +217,7 @@ func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *sl
 	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	rt := &nodeRuntime{cfg: cfg, dbs: dbs, logger: logger, fatal: make(chan error, 1)}
+	rt.recent.Now = rt.clock.Now
 	roleErr := nodemode.CheckRole(cctx, dbs.home)
 	checkLater := false
 	switch {
@@ -251,6 +254,7 @@ func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *sl
 		LocalSessionGrace: func() time.Duration { return minutes(rt.rules().OfflineSessionGraceMinutes) },
 		Sessions:          &nodeauth.LocalSessions{Path: inDir(nodeauth.LocalSessionsFile)},
 		SignOuts:          &nodeauth.SignOuts{Path: inDir(nodeauth.SignOutsFile)},
+		HomeOffset:        rt.clock.Offset,
 	}
 	if dbs.copyDB != nil {
 		rt.resolver.Local = clusterauth.NewCopy(dbs.copyDB)
@@ -509,12 +513,17 @@ func (rt *nodeRuntime) copyReads(next http.Handler) http.Handler {
 		key := nodeauth.CredentialKey(r)
 		switch r.Method {
 		case http.MethodGet, http.MethodHead:
-			if !rt.recent.Changed(key) && rt.copyMayRead(r.Context()) {
+			if rt.copyMayRead(r.Context()) && !rt.recent.Changed(key, rt.fresh.syncedAt()) {
 				r = r.WithContext(nodedb.CopyReads(r.Context()))
 			}
 		case http.MethodOptions:
 		default:
+			// as it starts (reads meanwhile go to the home), and once it is done: the
+			// copy has it once it holds a beat after that
 			rt.recent.Wrote(key)
+			next.ServeHTTP(w, r)
+			rt.recent.Wrote(key)
+			return
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -533,18 +542,27 @@ func (rt *nodeRuntime) copyMayRead(ctx context.Context) bool {
 // copyFreshness is the last verdict on the copy's lag (read at most every
 // copyFreshEvery).
 type copyFreshness struct {
-	mu    sync.Mutex
-	at    time.Time
-	fresh bool
-	lag   time.Duration
-	said  bool // the copy was said to be behind (logged once per spell)
+	mu     sync.Mutex
+	at     time.Time
+	fresh  bool
+	lag    time.Duration
+	synced time.Time // the copy's beat, on the home's clock
+	said   bool      // the copy was said to be behind (logged once per spell)
+}
+
+// syncedAt is the copy's beat as last read (the home's clock).
+func (f *copyFreshness) syncedAt() time.Time {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.synced
 }
 
 const copyFreshEvery = 2 * time.Second
 
 // copyFresh reports whether the copy may answer the node's reads while the home
 // answers: it applied the home's changes up to no more than the rule's lag ago (the
-// home's beat, written every few seconds while a machine follows it).
+// home's beat, written every few seconds while a machine follows it, against the
+// home's clock).
 func (rt *nodeRuntime) copyFresh(ctx context.Context) bool {
 	f := &rt.fresh
 	f.mu.Lock()
@@ -560,8 +578,10 @@ func (rt *nodeRuntime) copyFresh(ctx context.Context) bool {
 	lctx, cancel := context.WithTimeout(ctx, time.Second)
 	synced, err := rt.resolver.Local.Synced(lctx)
 	cancel()
+	rt.clock.measure(ctx, rt.dbs.home)
 	limit := time.Duration(rt.rules().CopyReadsMaxLagSeconds) * time.Second
-	f.lag = time.Since(synced)
+	f.synced = synced
+	f.lag = rt.clock.Now().Sub(synced)
 	f.fresh = err == nil && !synced.IsZero() && f.lag <= limit
 	switch {
 	case !f.fresh && !f.said:
@@ -575,12 +595,13 @@ func (rt *nodeRuntime) copyFresh(ctx context.Context) bool {
 	return f.fresh
 }
 
-// limitOfflineSignIn rate-limits the sign-in this machine answers itself (the home
-// limits the ones it is sent).
+// limitOfflineSignIn rate-limits every sign-in through this machine: the ones it answers
+// itself (the home away, in its grace, or the proxy's fallback when the home did not
+// answer) as the ones it sends on (which the home limits too).
 func (rt *nodeRuntime) limitOfflineSignIn(limit func(http.Handler) http.Handler, next http.Handler) http.Handler {
 	limited := limit(next)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == nodeauth.LoginPath && rt.resolver.Unreachable() {
+		if r.URL.Path == nodeauth.LoginPath {
 			limited.ServeHTTP(w, r)
 			return
 		}

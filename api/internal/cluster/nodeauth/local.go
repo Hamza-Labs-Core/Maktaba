@@ -81,7 +81,8 @@ func (r *Resolver) localGrace() time.Duration {
 
 // CopyCurrent reports whether the copy may answer with the home away: it had applied
 // the home's changes up to no more than the max lag before the home was last heard (or,
-// on a machine that never heard it, before now).
+// on a machine that never heard it, before now), on the home's clock, which the copy's
+// beat is stamped on (HomeOffset).
 func (r *Resolver) CopyCurrent(ctx context.Context) bool {
 	if r.Local == nil {
 		return false
@@ -97,6 +98,9 @@ func (r *Resolver) CopyCurrent(ctx context.Context) bool {
 	r.mu.Unlock()
 	if last.IsZero() {
 		last = r.now()
+	}
+	if r.HomeOffset != nil {
+		last = last.Add(r.HomeOffset())
 	}
 	return !synced.Before(last.Add(-r.copyMaxLag()))
 }
@@ -160,7 +164,8 @@ func (r *Resolver) fromCopy(ctx context.Context, ireq delegation.IntrospectReque
 
 // localPrincipal is a node-local session's user, from the copy, and its CSRF token
 // hash. The copy need not be current: the session was made against it, and the user's
-// rights are the copy's latest.
+// rights are the copy's latest. A person the home revoked lately (signed out
+// everywhere, reset, locked), or who must change their password now, is not let in.
 func (r *Resolver) localPrincipal(ctx context.Context, id string) (*delegation.Principal, string, bool) {
 	if r.Sessions == nil || r.Local == nil {
 		return nil, "", false
@@ -172,7 +177,7 @@ func (r *Resolver) localPrincipal(ctx context.Context, id string) (*delegation.P
 	lctx, cancel := context.WithTimeout(ctx, localTimeout)
 	defer cancel()
 	dp, err := r.Local.Principal(lctx, userID)
-	if err != nil {
+	if err != nil || dp.MustChangePassword || r.revokedLately("", userID) {
 		return nil, "", false
 	}
 	return dp, csrf, true
@@ -230,14 +235,31 @@ func (r *Resolver) recentFails(name string) []time.Time {
 	return kept
 }
 
+// failed counts a failed sign-in for name. With maxEntries names counted, the ones
+// whose failures are past the window go first, then those not locked: a locked name is
+// never forgotten (spraying names does not unlock one); with every one locked, a new
+// name is not counted (the sign-in's rate limit per address still holds).
 func (r *Resolver) failed(name string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.fails == nil {
 		r.fails = map[string][]time.Time{}
 	}
-	if len(r.fails) >= maxEntries {
-		r.fails = map[string][]time.Time{}
+	if _, counted := r.fails[name]; !counted && len(r.fails) >= maxEntries {
+		for n := range r.fails {
+			r.recentFails(n)
+		}
+		for n, f := range r.fails {
+			if len(r.fails) < maxEntries {
+				break
+			}
+			if len(f) < lockoutThreshold {
+				delete(r.fails, n)
+			}
+		}
+		if len(r.fails) >= maxEntries {
+			return
+		}
 	}
 	r.fails[name] = append(r.recentFails(name), r.now())
 }
@@ -313,9 +335,14 @@ func (r *Resolver) SignIn(w http.ResponseWriter, req *http.Request) bool {
 	}
 	r.signedIn(name)
 	if dp.MustChangePassword {
-		// the change it asks for is the home's
-		writeProblem(w, http.StatusServiceUnavailable, "https://maktaba.dev/problems/home-unreachable",
-			"the home is not reachable", "this account must change its password, which waits for the home")
+		// the change it asks for is the home's: the sign-in page says so
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.Header().Set("Retry-After", "5")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{"type": "https://maktaba.dev/problems/password-change-waits",
+			"title": "the password change waits for the home", "status": http.StatusServiceUnavailable,
+			"code":   "password_change_waits",
+			"detail": "this account must change its password, which waits for the home"})
 		return true
 	}
 	id, csrf, expires, err := r.Sessions.Create(dp.UserID, dp.Username, r.localTTL())

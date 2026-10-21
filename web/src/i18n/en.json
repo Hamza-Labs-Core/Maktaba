@@ -3394,5 +3394,6 @@
   "machines.switch.needs.llm": "Start a model runtime on this machine, or set its address in Settings ({detail}).",
   "machines.switch.needs.relay": "The relay needs you: {detail}.",
   "machines.switch.integration.state.pending": "being moved",
-  "machines.switch.integration.jwt": "Sign-in keys (JWT)"
+  "machines.switch.integration.jwt": "Sign-in keys (JWT)",
+  "login.passwordChangeWaits": "This account must change its password, which needs the home. Sign in again once this machine reaches its home."
 }

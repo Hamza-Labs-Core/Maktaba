@@ -58,12 +58,15 @@ describe("sign-in while this machine cannot reach its home", () => {
   let signedIn = false;
   // whether this machine can check a sign-in (it has a current copy)
   let canCheck = true;
+  // the account must change its password (an admin reset it), which waits for the home
+  let mustChange = false;
   beforeEach(() => {
     localStorage.clear();
     clearNodeUnavailable();
     homeBack = false;
     signedIn = false;
     canCheck = true;
+    mustChange = false;
     vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.stubGlobal(
@@ -89,6 +92,16 @@ describe("sign-in while this machine cannot reach its home", () => {
             return answer(
               503,
               { title: "the home is not reachable", status: 503, code: "home_unreachable" },
+              true
+            );
+          if (mustChange)
+            return answer(
+              503,
+              {
+                title: "the password change waits for the home",
+                status: 503,
+                code: "password_change_waits",
+              },
               true
             );
           signedIn = true;
@@ -152,6 +165,16 @@ describe("sign-in while this machine cannot reach its home", () => {
     expect(screen.queryByText(/your sign-in is checked here/)).not.toBeInTheDocument();
     await signIn();
     expect(await screen.findByText("the library")).toBeInTheDocument();
+  });
+
+  it("says a password that must change waits for the home", async () => {
+    mustChange = true;
+    renderApp("/library");
+    await signIn();
+    expect(
+      await screen.findByText(/must change its password, which needs the home/)
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Username")).toBeInTheDocument();
   });
 
   it("asks for a sign-in with the home when a sign-in made here meets a change", async () => {
