@@ -30,6 +30,7 @@ apps/desktop/
         ├── status.rs       ←   supervisor /processes → running/starting/…
         ├── tray.rs         ←   the menu-bar menu as data
         ├── agent.rs        ←   login item (SMAppService), launchctl, --server-agent
+        ├── agent_windows.rs ←  Epic 38: the sign-in task, the Windows agent, the stop event
         ├── setup.rs        ←   `maktaba-server setup --json` step runner
         └── mode.rs         ←   server mode vs client mode (mode.json)
 ```
@@ -135,6 +136,52 @@ Resume is `launchctl kickstart`.
 
 **Status** comes from the supervisor's `GET http://127.0.0.1:9103/processes`, polled every 3 s
 (its `llm` field gives the language model's line).
+
+## Windows runs the server too (Epic 38)
+
+On Windows the same build with the server payload (`<install>\server\`, story 38.11) is the
+whole installation ([spec](../../specs/epics/38-windows-app/README.md),
+[contract](../../specs/epics/38-windows-app/contract-agent.md)). The modes, the setup screens
+and the tray menu are the Mac's; what differs is how the server starts:
+
+- **The sign-in task.** When setup finishes the shell registers the task
+  `\Maktaba Server <the user's SID>` (one per user; this user, at sign-in + 30 s, least
+  privilege, no time limit) through `schtasks /Create /XML` and runs it. A task of the earlier
+  shared name `\Maktaba Server` that belongs to this user is moved to that name once. A Windows
+  service is not used: it would run in session 0, where the user's mapped NAS drives (`O:`,
+  `Y:`) do not exist.
+- **The agent.** The task runs `Maktaba.exe --server-agent` (`agent_windows.rs`), a GUI
+  program, which starts `server\bin\maktaba-launcher.exe --app-bundle <install>\server serve`
+  with `CREATE_NO_WINDOW`: the launcher gets a console without a window that the server and
+  every role inherit, so CTRL_BREAK reaches them and nothing flashes. The agent appends to
+  `%LOCALAPPDATA%\Maktaba\logs\server.log`, restarts a failing launcher with backoff, and holds
+  its tree in a kill-on-close job.
+- **The watchdog.** Task Scheduler's "restart on failure" only retries a task that cannot
+  start, not an action that crashed, so the task also triggers every 5 minutes; while the
+  agent runs that does nothing (`IgnoreNew`), and an agent that died starts again.
+- **Pause / Resume.** Pause sets the named event `Local\Maktaba.Server.Stop`: the launcher stops
+  the server cleanly and exits 0, the agent exits 0. The pause is kept in
+  `%LOCALAPPDATA%\Maktaba\state\server-paused` with the sign-in it belongs to: an agent the
+  watchdog starts in that sign-in exits at once, the window restarting keeps it, and Resume
+  (wait for a stopping agent, then `schtasks /Run`) or the next sign-in ends it.
+- **Installer hooks.** `Maktaba.exe --server-start | --server-stop | --server-remove` (the
+  NSIS hooks: stop the server before files are replaced, start it after, remove the task on
+  uninstall). `--server-stop` and an update also set the install hold
+  (`state\server-held`), so the watchdog does not start the server in the middle of an install;
+  `--server-start`, Resume and the window's start end it. An update that fails after the stop
+  starts the server again (unless it was paused).
+- **Status.** As on the Mac, plus: while the agent runs but the supervisor has not answered
+  for 3 minutes, the tray says "Maktaba has a problem: …" with the reason from `server.log`
+  (another launcher holds this install, a port in use…), or "the server does not answer".
+- **mode.json** is in `%LOCALAPPDATA%\com.hamzalabs.maktaba\` (not the roaming profile, which
+  would carry this PC's server mode to another PC); one in the roaming folder is moved once.
+- Every program the shell starts (`schtasks`, the setup steps) is created without a window.
+
+`cargo test` on Windows runs the agent's loop against a stand-in launcher; CI also registers
+real tasks on `windows-latest` (`MAKTABA_TEST_WINDOWS_TASK=1`, never on a PC that runs
+Maktaba): the XML is accepted, the watchdog starts a crashed stand-in agent again,
+"restart on failure" does not, a running agent is not started twice and Resume waits for one
+that is stopping, and an old-named task is replaced once.
 
 **Developing it.** `tauri dev` runs outside a bundle, so point it at a `maktaba-server`
 for the setup screens: `MAKTABA_SERVER_BIN=/path/to/maktaba-server pnpm tauri dev`.

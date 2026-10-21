@@ -112,18 +112,24 @@ pub fn run_step(
             "a step's input is a JSON object",
         ));
     }
-    let mut child = Command::new(bin)
-        .args(["setup", "--json", "--step", step])
+    let mut cmd = Command::new(bin);
+    cmd.args(["setup", "--json", "--step", step])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| {
-            StepError::new(
-                "server_missing",
-                format!("cannot run {}: {e}", bin.display()),
-            )
-        })?;
+        .stderr(Stdio::piped());
+    // Windows (Epic 38): maktaba-server is a console program; started from
+    // the GUI shell without this, each step would flash a console window.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
+    }
+    let mut child = cmd.spawn().map_err(|e| {
+        StepError::new(
+            "server_missing",
+            format!("cannot run {}: {e}", bin.display()),
+        )
+    })?;
 
     // stdin: the input, then EOF. A step that exits without reading it
     // closes the pipe; the exit code and events tell what happened.
@@ -207,13 +213,26 @@ pub fn run_step(
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::os::unix::fs::PermissionsExt;
 
-    /// A stand-in for maktaba-server that speaks the contract.
-    fn stub(dir: &Path, body: &str) -> std::path::PathBuf {
+    /// A stand-in for maktaba-server that speaks the contract: a shell script,
+    /// or on Windows a batch file (the same steps in cmd's words).
+    #[cfg(unix)]
+    fn stub(dir: &Path, sh: &str, _cmd: &str) -> std::path::PathBuf {
+        use std::os::unix::fs::PermissionsExt;
         let p = dir.join("maktaba-server");
-        std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::write(&p, format!("#!/bin/sh\n{sh}\n")).unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        p
+    }
+
+    #[cfg(windows)]
+    fn stub(dir: &Path, _sh: &str, cmd: &str) -> std::path::PathBuf {
+        let p = dir.join("maktaba-server.cmd");
+        std::fs::write(
+            &p,
+            format!("@echo off\r\n{}\r\n", cmd.replace('\n', "\r\n")),
+        )
+        .unwrap();
         p
     }
 
@@ -261,6 +280,10 @@ mod tests {
 printf '{"type":"progress","stage":"one","message":"first"}\n'
 printf 'stray line\n'
 printf '{"type":"result","data":{"argv":"%s","input":%s}}\n' "$*" "$input""#,
+            r#"set /p input=
+echo {"type":"progress","stage":"one","message":"first"}
+echo stray line
+echo {"type":"result","data":{"argv":"%*","input":%input%}}"#,
         );
         let mut seen = Vec::new();
         let out = run_step(
@@ -286,6 +309,9 @@ printf '{"type":"result","data":{"argv":"%s","input":%s}}\n' "$*" "$input""#,
             r#"echo "checking token" >&2
 printf '{"type":"error","code":"hf_gated","message":"Accept the terms","field":"hf_token"}\n'
 exit 1"#,
+            r#">&2 echo checking token
+echo {"type":"error","code":"hf_gated","message":"Accept the terms","field":"hf_token"}
+exit /b 1"#,
         );
         let e = run_step(&bin, "models", &json!({}), |_| {}).unwrap_err();
         assert_eq!(e.code, "hf_gated");
@@ -296,7 +322,11 @@ exit 1"#,
     #[test]
     fn exiting_without_a_result_is_an_error() {
         let tmp = tempfile::tempdir().unwrap();
-        let bin = stub(tmp.path(), "echo boom >&2; exit 3");
+        let bin = stub(
+            tmp.path(),
+            "echo boom >&2; exit 3",
+            ">&2 echo boom\nexit /b 3",
+        );
         let e = run_step(&bin, "check", &json!({}), |_| {}).unwrap_err();
         assert_eq!(e.code, "no_result");
         assert!(e.message.contains("exited with code 3"), "{}", e.message);
@@ -305,6 +335,7 @@ exit 1"#,
         let bin = stub(
             tmp.path(),
             r#"printf '{"type":"result","data":{}}\n'; exit 1"#,
+            "echo {\"type\":\"result\",\"data\":{}}\nexit /b 1",
         );
         assert_eq!(
             run_step(&bin, "check", &json!({}), |_| {})
@@ -343,6 +374,7 @@ exit 1"#,
         let bin = stub(
             tmp.path(),
             r#"exec 0<&-; printf '{"type":"result","data":{"configured":false}}\n'"#,
+            r#"echo {"type":"result","data":{"configured":false}}"#,
         );
         let out = run_step(&bin, "status", &json!({"big": "x".repeat(1 << 17)}), |_| {}).unwrap();
         assert_eq!(out, json!({"configured": false}));
