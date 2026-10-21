@@ -197,6 +197,23 @@ func (b Bundle) serverArgs(lan bool) []string {
 	return args
 }
 
+// ServerCommand is the foreground `postgres` of this cluster (ServerArgs). On
+// Windows, when this process runs as an administrator (an elevated session, a
+// CI runner), it gets a restricted token, as pg_ctl and initdb give theirs:
+// postgres.exe refuses to run with administrative rights.
+func (b Bundle) ServerCommand() (*exec.Cmd, error) {
+	return b.serverCommand(b.ServerArgs())
+}
+
+// serverCommand is `postgres` with args, under ServerCommand's token.
+func (b Bundle) serverCommand(args []string) (*exec.Cmd, error) {
+	cmd := exec.Command(b.Bin("postgres"), args...)
+	if err := restrict(cmd); err != nil {
+		return nil, fmt.Errorf("a restricted token for postgres: %w", err)
+	}
+	return cmd, nil
+}
+
 // maxSocketPath is the longest unix socket path macOS takes (sun_path is 104
 // bytes with its NUL).
 const maxSocketPath = 103
@@ -374,7 +391,10 @@ func (b Bundle) bootstrap(ctx context.Context, superPW, sql string, log io.Write
 // withServer runs fn with a server of its own up (the supervisor's is not
 // running), then stops it.
 func (b Bundle) withServer(ctx context.Context, log io.Writer, fn func() error) error {
-	srv := exec.Command(b.Bin("postgres"), b.serverArgs(false)...)
+	srv, err := b.serverCommand(b.serverArgs(false))
+	if err != nil {
+		return err
+	}
 	srv.Stdout, srv.Stderr = log, log
 	if err := srv.Start(); err != nil {
 		return err

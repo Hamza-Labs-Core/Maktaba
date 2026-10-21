@@ -3,7 +3,6 @@ package supervisor
 import (
 	"context"
 	"os"
-	"os/exec"
 	"runtime"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/nodecopy"
@@ -15,10 +14,14 @@ import (
 // On demand: its manager makes the database first, then wants it.
 const RoleCopy Role = "copy"
 
-// BuildCopy constructs the copy's process. The copy's programs are known (c.DB.Home)
+// BuildCopy constructs the copy's process: its ServerCommand (a restricted token for an
+// administrator on Windows, as the home's). The copy's programs are known (c.DB.Home)
 // before its manager runs: they are this machine's install, or the pinned build's place.
-func BuildCopy(c nodecopy.Copy) Process {
-	cmd := exec.Command(c.DB.Bin("postgres"), c.DB.ServerArgs()...)
+func BuildCopy(c nodecopy.Copy) (Process, error) {
+	cmd, err := c.DB.ServerCommand()
+	if err != nil {
+		return Process{}, err
+	}
 	cmd.Env = os.Environ()
 	wire(cmd)
 	p := Process{
@@ -34,7 +37,7 @@ func BuildCopy(c nodecopy.Copy) Process {
 	if runtime.GOOS == "windows" {
 		p.Stop = func() { _ = c.DB.StopCommand().Run() }
 	}
-	return p
+	return p, nil
 }
 
 // Running reports whether a role's process runs (starting, running or unhealthy).
