@@ -156,21 +156,28 @@ pub struct Words {
     pub model_failed: &'static str,
     pub model_missing: &'static str,
     // The error dialogs: a sentence, then the program's own error as it is.
+    // The words of the dialogs only Windows shows (an update that failed once
+    // the server was asked to stop, the sign-in task) exist only there.
     /// The update failed (its error follows).
     pub update_failed: &'static str,
     /// The server did not stop for the update.
     pub update_stop_failed: &'static str,
     /// After a failed update: a paused server.
+    #[cfg(windows)]
     pub update_stays_paused: &'static str,
     /// After a failed update: the server starts again.
+    #[cfg(windows)]
     pub update_starting_again: &'static str,
     /// After a failed update: it could not start again.
+    #[cfg(windows)]
     pub update_start_failed: &'static str,
     /// `{url}` could not be opened in the window.
     pub open_failed: &'static str,
     /// The sign-in task of the old shared name could not become this user's.
+    #[cfg(windows)]
     pub task_move_failed: &'static str,
     /// The server could not start when the window opened.
+    #[cfg(windows)]
     pub server_start_failed: &'static str,
     /// Pause server failed.
     pub pause_failed: &'static str,
@@ -219,11 +226,16 @@ pub static EN: Words = Words {
     model_missing: "Language model: {name} not downloaded",
     update_failed: "The update could not be installed.",
     update_stop_failed: "The update was not installed: the server could not be stopped for it.",
+    #[cfg(windows)]
     update_stays_paused: "The server stays paused.",
+    #[cfg(windows)]
     update_starting_again: "The server is starting again.",
+    #[cfg(windows)]
     update_start_failed: "The server could not start again.",
     open_failed: "Cannot open {url}.",
+    #[cfg(windows)]
     task_move_failed: "Maktaba could not move its sign-in task to this user's name.",
+    #[cfg(windows)]
     server_start_failed: "The Maktaba server could not start.",
     pause_failed: "The server could not be paused.",
     resume_failed: "The server could not be resumed.",
@@ -266,11 +278,16 @@ pub static AR: Words = Words {
     model_missing: "النموذج اللغوي: {name} غير مُنزَّل",
     update_failed: "تعذّر تثبيت التحديث.",
     update_stop_failed: "لم يُثبَّت التحديث: تعذّر إيقاف الخادم من أجله.",
+    #[cfg(windows)]
     update_stays_paused: "يبقى الخادم متوقفًا مؤقتًا.",
+    #[cfg(windows)]
     update_starting_again: "يبدأ الخادم من جديد.",
+    #[cfg(windows)]
     update_start_failed: "تعذّر تشغيل الخادم من جديد.",
     open_failed: "يتعذّر فتح {url}.",
+    #[cfg(windows)]
     task_move_failed: "تعذّر على مكتبة نقل مهمة تسجيل الدخول إلى اسم هذا المستخدم.",
+    #[cfg(windows)]
     server_start_failed: "تعذّر تشغيل خادم مكتبة.",
     pause_failed: "تعذّر إيقاف الخادم مؤقتًا.",
     resume_failed: "تعذّر استئناف الخادم.",
@@ -333,7 +350,7 @@ mod tests {
 
     /// Every line of a table, by name, with the `{names}` it fills.
     fn lines(w: &Words) -> Vec<(&'static str, Option<&'static str>)> {
-        vec![
+        let out = vec![
             ("brand", Some(w.brand)),
             ("setup_needed", Some(w.setup_needed)),
             ("paused", Some(w.paused)),
@@ -366,19 +383,28 @@ mod tests {
             ("model_missing", Some(w.model_missing)),
             ("update_failed", Some(w.update_failed)),
             ("update_stop_failed", Some(w.update_stop_failed)),
-            ("update_stays_paused", Some(w.update_stays_paused)),
-            ("update_starting_again", Some(w.update_starting_again)),
-            ("update_start_failed", Some(w.update_start_failed)),
             ("open_failed", Some(w.open_failed)),
-            ("task_move_failed", Some(w.task_move_failed)),
-            ("server_start_failed", Some(w.server_start_failed)),
             ("pause_failed", Some(w.pause_failed)),
             ("resume_failed", Some(w.resume_failed)),
             ("stop_failed", Some(w.stop_failed)),
             ("logs_failed", Some(w.logs_failed)),
             ("setup_failed", Some(w.setup_failed)),
             ("action_failed", Some(w.action_failed)),
+        ];
+        // the lines only Windows reads
+        #[cfg(windows)]
+        let out = [
+            out,
+            vec![
+                ("update_stays_paused", Some(w.update_stays_paused)),
+                ("update_starting_again", Some(w.update_starting_again)),
+                ("update_start_failed", Some(w.update_start_failed)),
+                ("task_move_failed", Some(w.task_move_failed)),
+                ("server_start_failed", Some(w.server_start_failed)),
+            ],
         ]
+        .concat();
+        out
     }
 
     fn names(template: &str) -> Vec<&str> {
@@ -473,15 +499,12 @@ mod tests {
         );
         assert_eq!(
             error_message(
-                &format!("{} {}", EN.update_failed, EN.update_start_failed),
+                &format!("{} {}", EN.update_failed, EN.resume_failed),
                 &["timed out", " ", "schtasks: access denied"]
             ),
-            "The update could not be installed. The server could not start again.\n\ntimed out\nschtasks: access denied"
+            "The update could not be installed. The server could not be resumed.\n\ntimed out\nschtasks: access denied"
         );
-        assert_eq!(
-            error_message(EN.server_start_failed, &[]),
-            EN.server_start_failed
-        );
+        assert_eq!(error_message(EN.pause_failed, &[]), EN.pause_failed);
     }
 
     #[test]
