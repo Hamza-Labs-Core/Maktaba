@@ -194,7 +194,11 @@ func migrationsDir(t *testing.T) string {
 
 // migrate applies every Postgres slot (slot 0000 is the bootstrap goose
 // cannot run; the SQLite twins are skipped) from a staged copy.
-func migrate(t *testing.T, db *sql.DB) {
+func migrate(t *testing.T, db *sql.DB) { MigrateTo(t, db, 0) }
+
+// MigrateTo applies the Postgres slots up to version (0: every one) to db, as db's
+// user.
+func MigrateTo(t *testing.T, db *sql.DB, version int64) {
 	t.Helper()
 	src := migrationsDir(t)
 	stage := t.TempDir()
@@ -217,9 +221,24 @@ func migrate(t *testing.T, db *sql.DB) {
 	goose.SetLogger(goose.NopLogger())
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	if err := goose.UpContext(ctx, db, stage); err != nil {
+	if version > 0 {
+		err = goose.UpToContext(ctx, db, stage, version)
+	} else {
+		err = goose.UpContext(ctx, db, stage)
+	}
+	if err != nil {
 		t.Fatalf("goose up: %v", err)
 	}
+}
+
+// DSN is base's URL for database name as user (password pw; "" keeps base's user).
+func DSN(t *testing.T, base, name, user, pw string) string {
+	t.Helper()
+	dsn := dsnFor(t, base, name)
+	if user == "" {
+		return dsn
+	}
+	return WithUser(t, dsn, user, pw)
 }
 
 func copyFile(from, to string) error {
