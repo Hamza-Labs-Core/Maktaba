@@ -19,6 +19,8 @@ func newSetupCmd() *cobra.Command {
 	var runMigrate bool
 	var lf layoutFlags
 	var nf nodeSetupFlags
+	var jsonMode bool
+	var step string
 	cmd := &cobra.Command{
 		Use:   "setup",
 		Short: "Interactive first-run wizard",
@@ -26,6 +28,13 @@ func newSetupCmd() *cobra.Command {
 			"\n\nWith --self-managed or --service it instead converts this install to the side-by-side layout run by maktaba-launcher (automatic updates) and writes the OS service." +
 			"\n\nWith --node it converts this worker-only node into a full node (maktaba-server in node mode, the same layout and launcher).",
 		RunE: func(c *cobra.Command, _ []string) error {
+			if jsonMode {
+				// Epic 36 story 36.6: the app's setup screens, one step per run
+				if code := runSetupJSON(step, os.Stdin, os.Stdout); code != 0 {
+					os.Exit(code)
+				}
+				return nil
+			}
 			if nf.node {
 				// Epic 35 story 35.8: a worker-only node becomes a full node
 				return runSetupNodeCmd(c, lf)
@@ -37,6 +46,8 @@ func newSetupCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&runMigrate, "migrate", true, "run the initial database migration at the end")
+	cmd.Flags().BoolVar(&jsonMode, "json", false, "run one --step for Maktaba.app (JSON on stdin, NDJSON on stdout)")
+	cmd.Flags().StringVar(&step, "step", "", "with --json: the step (status)")
 	lf.register(cmd)
 	nf.register(cmd)
 	return cmd
