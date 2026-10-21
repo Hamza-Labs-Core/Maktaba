@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -51,5 +52,47 @@ func TestDatabaseArgs(t *testing.T) {
 	}
 	if _, err := databaseArgs(filepath.Join(t.TempDir(), "missing")); err == nil {
 		t.Fatal("a CA that cannot be read")
+	}
+}
+
+// A standby home's kit goes over the channel whole, and its sealed bytes stay out of the
+// hub's event log (their size is noted).
+func TestAStandbyKitChunkIsSentAndNotLogged(t *testing.T) {
+	f := newFixture(t)
+	id, priv := f.approvedNode("studio")
+	a, err := f.dialAgent(helloOpts{kind: "node", nodeID: id, nodePriv: priv, process: "supervisor"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := strings.Repeat("c2VhbGVk", 64)
+	args := []byte(`{"id":"standby:` + id + `","i":0,"last":true,"data":"` + data + `"}`)
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.hub.CommandWithin(context.Background(), a.Session, "standby.kit", args, "switchover", 5*time.Second)
+		done <- err
+	}()
+	cmd := a.recvType("cmd")
+	got, _ := cmd["args"].(map[string]any)
+	if cmd["name"] != "standby.kit" || got["data"] != data {
+		t.Fatalf("the chunk at the machine: %v", cmd)
+	}
+	a.send(map[string]any{"t": "cmd.result", "id": cmd["id"], "ok": true})
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	// the hub writes its events in the background
+	logged := ""
+	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+		if logged = strings.Join(readLines(t, eventsPath(f)), "\n"); strings.Contains(logged, "standby.kit") {
+			break
+		}
+	}
+	if strings.Contains(logged, data) || !strings.Contains(logged, "bytes, sealed") {
+		t.Fatalf("the event log: %s", logged)
+	}
+	for _, name := range []string{"standby.commit", "standby.forget", "home.standbys"} {
+		if !commandNames[name] {
+			t.Errorf("the channel refuses %s", name)
+		}
 	}
 }

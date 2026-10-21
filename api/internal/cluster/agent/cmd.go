@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -14,7 +15,13 @@ var commandNames = map[string]bool{
 	"drain": true, "undrain": true, "reload_stages": true, "log_level": true, "disconnect": true,
 	"switch.prepare": true, "switch.kit": true, "switch.promote": true, "home.moved": true,
 	"home.database": true,
+	// a standby home's kit, and where the standbys are (Epic 37, "Emergency promotion")
+	"standby.kit": true, "standby.commit": true, "standby.forget": true, "home.standbys": true,
 }
+
+// sealedChunks are the commands that carry a sealed kit's chunk: its bytes stay out of the
+// event log (their size is noted instead).
+var sealedChunks = map[string]bool{"switch.kit": true, "standby.kit": true}
 
 // Command errors.
 var (
@@ -85,8 +92,18 @@ func (h *Hub) CommandWithin(ctx context.Context, sessionID, name string, args js
 	s.mu.Lock()
 	s.cmds[id] = ch
 	s.mu.Unlock()
+	logged := argMap
+	if sealedChunks[name] {
+		logged = map[string]any{}
+		for k, v := range argMap {
+			logged[k] = v
+		}
+		if d, ok := logged["data"].(string); ok {
+			logged["data"] = fmt.Sprintf("(%d bytes, sealed)", len(d))
+		}
+	}
 	h.event(map[string]any{"event": "cmd", "session": s.ID, "ip": s.IP, "worker_id": s.WorkerID, "id": id,
-		"name": name, "args": argMap, "by": by})
+		"name": name, "args": logged, "by": by})
 	if !s.send(map[string]any{"t": "cmd", "id": id, "name": name, "args": argMap}) {
 		s.mu.Lock()
 		delete(s.cmds, id)

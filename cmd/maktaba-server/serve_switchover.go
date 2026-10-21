@@ -874,9 +874,10 @@ func (s *switching) becomeHome(ctx context.Context, db *sql.DB, kit *switchover.
 		c.Postgres.Enabled, c.Postgres.Home, c.Postgres.Port, c.Postgres.CopyPort = "on", db2.Home, db2.Port, 0
 		c.Database.URL = ""
 		if cloud != nil {
-			claim := c.Cloud.ClaimCode
+			// the old home's relay settings, but this machine's own status address
+			claim, admin := c.Cloud.ClaimCode, c.Cloud.AdminAddr
 			c.Cloud = *cloud
-			c.Cloud.ClaimCode = claim
+			c.Cloud.ClaimCode, c.Cloud.AdminAddr = claim, admin
 		}
 	}); err != nil {
 		return newHome{}, fmt.Errorf("server.toml: %w", err)

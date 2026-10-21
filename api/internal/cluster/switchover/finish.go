@@ -30,6 +30,9 @@ func (o *Orchestrator) Finish(ctx context.Context, integrations Integrations) {
 		if err := o.finishOnce(ctx, integrations); err != nil && ctx.Err() == nil {
 			o.log().Debug("switchover: finishing", "err", err, "event", "switchover_finish_failed")
 		}
+		if err := o.dropOldForks(ctx); err != nil && ctx.Err() == nil {
+			o.log().Debug("switchover: the old forks", "err", err, "event", "switchover_fork_drop_failed")
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -150,6 +153,22 @@ func (o *Orchestrator) Recorded(ctx context.Context, limit int) ([]Progress, err
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+// ForkDays is how long an emergency's fork (what this home changed since it took over:
+// the slot that holds it) is kept for an old home that has not reported yet; after it, an
+// old home that comes back still reports what it kept aside, to download, but nothing of
+// it applies on its own (what this home changed since is not known any more).
+const ForkDays = 30
+
+// dropOldForks drops the fork slots of emergencies older than ForkDays with no report
+// waiting (the old home never came back): their changes are kept no longer.
+func (o *Orchestrator) dropOldForks(ctx context.Context) error {
+	_, err := o.DB.ExecContext(ctx, `SELECT pg_drop_replication_slot(s.slot_name)
+	    FROM pg_replication_slots s JOIN cluster_terms t ON s.slot_name = 'maktaba_fork_' || t.term
+	    WHERE NOT s.active AND t.reason = 'emergency' AND t.started_at < now() - make_interval(days => $1)
+	      AND NOT EXISTS (SELECT 1 FROM cluster_kept_aside k WHERE k.term = t.term AND k.state = 'reported')`, ForkDays)
+	return err
 }
 
 // ChecklistDays is how long after a switch the new home shows its checklist (what a

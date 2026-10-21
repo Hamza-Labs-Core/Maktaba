@@ -365,7 +365,9 @@ at all**, in its commit order, and not when it:
 The review shows each transaction (when, what it changed, applies or why not). Apply runs that
 plan in **one transaction**, only while it is still the plan shown (its hash: else nothing is
 applied and the new plan is shown), and records what was applied, what was not and why, by whom.
-Once every report of the term is applied or set aside the fork slot is dropped.
+Once every report of the term is applied or set aside the fork slot is dropped; with none
+reported, after 30 days (an old home back later still reports, to download, but nothing of it
+applies on its own: what this home changed since is not known any more).
 
 ## Rules (`rules.cluster`, on the settings page)
 

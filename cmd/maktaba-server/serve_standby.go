@@ -355,7 +355,7 @@ func uploadKept(ctx context.Context, cfg config.Config, term int64) error {
 		return err
 	}
 	body, _ := json.Marshal(map[string]any{"node_id": r.FromNode, "term": r.Term, "sealed": sealed})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(r.HomeAPI, "/")+"/api/cluster/kept-aside",
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(r.HomeAPI, "/")+"/api/cluster/kept-aside/report",
 		bytes.NewReader(body))
 	if err != nil {
 		return err

@@ -190,3 +190,65 @@ func TestAMachineFindsTheNewHomeAtAStandby(t *testing.T) {
 	case <-time.After(3 * time.Second):
 	}
 }
+
+// An old home's report reaches the new home sealed from the identity its kits gave it
+// to the cluster's key, at the report's public address; once taken it is marked sent.
+func TestTheOldHomeReportsWhatItKeptAside(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("MAKTABA_NODE_CONFIG", filepath.Join(dir, "no-node.json"))
+	t.Setenv("MAKTABA_CONFIG", filepath.Join(dir, "server.toml"))
+	clusterPriv, _ := x25519Pair(t)
+	keyFile := filepath.Join(dir, "home-cluster.key")
+	if err := os.WriteFile(keyFile, clusterPriv, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MAKTABA_HOME_CLUSTER_KEY", keyFile)
+	cfg := config.Config{}
+	cfg.Server.DataDir = filepath.Join(dir, "data")
+	me, err := identityAt(filepath.Join(cfg.StateDir(), "switchover", "standby-identity.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mePub, _ := base64.StdEncoding.DecodeString(me.PublicKey)
+	var got keptReport
+	home := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/cluster/kept-aside/report" {
+			http.Error(w, "not the report's address", http.StatusUnauthorized)
+			return
+		}
+		var req struct {
+			NodeID string `json:"node_id"`
+			Term   int64  `json:"term"`
+			Sealed string `json:"sealed"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		plain, err := switchover.OpenReport(clusterPriv, mePub, req.Term, req.Sealed)
+		if err != nil || req.NodeID != me.NodeID || json.Unmarshal(plain, &got) != nil {
+			http.Error(w, "does not open", http.StatusForbidden)
+			return
+		}
+		_, _ = w.Write([]byte(`{"received":true}`))
+	}))
+	defer home.Close()
+	r := keptReport{ID: "r1", Term: 2, FromNode: me.NodeID, FromName: "a", Cut: "0/1", HomeAPI: home.URL,
+		Aside: switchover.Aside{Counts: map[string]int{"public.app_settings": 1}}}
+	if err := saveKept(cfg, r); err != nil {
+		t.Fatal(err)
+	}
+	if err := uploadKept(t.Context(), cfg, 2); err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != "r1" || got.Aside.Counts["public.app_settings"] != 1 {
+		t.Fatalf("the new home got %+v", got)
+	}
+	b, _ := os.ReadFile(keptPath(cfg, 2))
+	var after keptReport
+	if json.Unmarshal(b, &after) != nil || !after.Uploaded {
+		t.Fatalf("the report is not marked sent: %s", b)
+	}
+	// sent: not sent again
+	home.Close()
+	if err := uploadKept(t.Context(), cfg, 2); err != nil {
+		t.Fatalf("a sent report was sent again: %v", err)
+	}
+}

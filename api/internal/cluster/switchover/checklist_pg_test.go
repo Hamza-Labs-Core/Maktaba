@@ -3,6 +3,7 @@ package switchover
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -58,5 +59,52 @@ func TestTheChecklistKeepsWhatAPersonDid(t *testing.T) {
 	o.recheck(ctx, old)
 	if old.Integr["llm"].State != NeedsYou {
 		t.Fatal("a switch long past was checked again")
+	}
+}
+
+// An emergency's fork is dropped once it is old and no report of its term waits; kept
+// while one does, or while it is recent.
+func TestAnOldForkIsDropped(t *testing.T) {
+	o, _, _, _, _ := setup(t)
+	ctx := context.Background()
+	var level string
+	if err := o.DB.QueryRowContext(ctx, `SHOW wal_level`).Scan(&level); err != nil || level != "logical" {
+		t.Skip("the test database does not run with wal_level=logical")
+	}
+	for _, f := range []struct {
+		term       int64
+		age        string
+		reportWait bool
+	}{{5, "40 days", false}, {6, "3 days", false}, {7, "40 days", true}} {
+		if _, err := o.DB.ExecContext(ctx, `INSERT INTO cluster_terms (term, home_name, reason, started_at)
+		    VALUES ($1, 'b', 'emergency', now() - $2::interval)`, f.term, f.age); err != nil {
+			t.Fatal(err)
+		}
+		slot := fmt.Sprintf("maktaba_fork_%d", f.term)
+		if _, err := o.DB.ExecContext(ctx, `SELECT pg_create_logical_replication_slot($1, 'pgoutput')`, slot); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			_, _ = o.DB.ExecContext(context.Background(), `SELECT pg_drop_replication_slot(slot_name)
+			    FROM pg_replication_slots WHERE slot_name = $1`, slot)
+		})
+		if f.reportWait {
+			if _, err := o.DB.ExecContext(ctx, `INSERT INTO cluster_kept_aside (id, term, from_node, from_name, report)
+			    VALUES ($1, $2, $3, 'a', '{}'::jsonb)`, uuid.NewString(), f.term, uuid.NewString()); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := o.dropOldForks(ctx); err != nil {
+		t.Fatal(err)
+	}
+	have := func(term int64) bool {
+		var n int
+		_ = o.DB.QueryRowContext(ctx, `SELECT count(*) FROM pg_replication_slots WHERE slot_name = $1`,
+			fmt.Sprintf("maktaba_fork_%d", term)).Scan(&n)
+		return n == 1
+	}
+	if have(5) || !have(6) || !have(7) {
+		t.Fatalf("forks kept: old %v, recent %v, a report waiting %v", have(5), have(6), have(7))
 	}
 }

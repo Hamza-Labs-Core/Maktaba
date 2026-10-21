@@ -65,6 +65,18 @@ import (
 // TestMain doubles as the stand-in pipeline of the two machines: with
 // MAKTABA_E2E_SLEEPER=1 the binary only serves /healthz on its logs port and waits.
 func TestMain(m *testing.M) {
+	// ...and of a home's cloud relay agent (switch_e2e_helpers_test.go): online on its
+	// status address (only the relay's process has its credentials' key)
+	if os.Getenv("MAKTABA_E2E_FAKE_CLOUDLINK") == "1" && os.Getenv("MAKTABA_CRED_KEY_HEX") != "" {
+		if addr := os.Getenv("MAKTABA_ADMIN_ADDR"); addr != "" {
+			http.HandleFunc("/admin/cloud-link", func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"status":"online","slug":"e2e","attempts":0}`))
+			})
+			_ = http.ListenAndServe(addr, nil)
+		}
+		select {}
+	}
 	if os.Getenv("MAKTABA_E2E_SLEEPER") == "1" {
 		if addr := os.Getenv("MAKTABA_PIPELINE_LOGS_ADDR"); addr != "" {
 			http.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
