@@ -8,14 +8,19 @@
 
 The items are exactly what the workers load, from the same settings:
 
-``whisper``     ``MAKTABA_STT_MODEL`` (default ``mlx-community/whisper-large-v3-turbo``),
-                the whole repo, as ``mlx_whisper.load_models`` downloads it
+``whisper``     ``MAKTABA_STT_MODEL`` in this machine's engine (:mod:`~..stt.engine`): on
+                Apple Silicon ``mlx-community/whisper-large-v3-turbo``, the whole repo, as
+                ``mlx_whisper.load_models`` downloads it; elsewhere the CTranslate2
+                ``dropbox-dash/faster-whisper-large-v3-turbo``, the files the engine loads
+                (:data:`~..stt.engine.CT2_FILES`)
 ``cohere``      the second listen, ``MAKTABA_STT_REFINE_MODEL`` (gated: the account
                 must have accepted its licence; ``HF_TOKEN`` or ``hf auth login``), with
-                mlx-audio's file patterns; skipped with ``MAKTABA_STT_REFINE=0``. When
+                mlx-audio's file patterns; skipped with ``MAKTABA_STT_REFINE=0``, and on a
+                machine with no second listen (the CTranslate2 engine). When
                 Hugging Face refuses, the home's published copy on ``--share`` (default
                 ``$MAKTABA_MODELS_DIR``) is copied here instead (:mod:`~..stt.model_share`)
-``dictionary``  CAMeL Tools' ``morphology-db-msa-r13`` (the second listen's spelling)
+``dictionary``  CAMeL Tools' ``morphology-db-msa-r13`` (the second listen's spelling;
+                skipped with it)
 ``embedder``    ``MAKTABA_EMBED_MODEL`` (default ``intfloat/multilingual-e5-small``),
                 for semantic search
 
@@ -65,6 +70,8 @@ class Item:
     gated: bool = False
     allow_patterns: list[str] | None = None
     ignore_patterns: list[str] | None = None
+    #: the commit fetched and its files' SHA-256 (:data:`~..stt.engine.CT2_PINS`)
+    pin: Any = None
     #: why it is not needed (set: reported as skipped)
     skip: str | None = None
     state: str = "pending"
@@ -108,25 +115,31 @@ def items(only: set[str] | None = None) -> list[Item]:
     """The models this machine's workers load, from the same settings they read."""
     from ..engine.stages.transcribe import refine_model, settings_from_env
     from ..search.semantic import embed_model
+    from ..stt import cohere, engine
 
     whisper = settings_from_env().model
     refine = refine_model()
+    no_refine = None if refine else "the second listen is off (MAKTABA_STT_REFINE=0)"
+    no_refine = no_refine or cohere.unavailable()
+    ct2 = engine.current() == engine.CT2
+    repo = engine.ct2_repo(whisper) if ct2 else whisper
     out = [
-        Item("whisper", whisper, "hf"),
+        Item(
+            "whisper",
+            repo,
+            "hf",
+            allow_patterns=list(engine.CT2_FILES) if ct2 else None,
+            pin=engine.CT2_PINS.get(repo) if ct2 else None,
+        ),
         Item(
             "cohere",
             refine or "",
             "hf",
             gated=True,
             allow_patterns=_cohere_patterns(),
-            skip=None if refine else "the second listen is off (MAKTABA_STT_REFINE=0)",
+            skip=no_refine,
         ),
-        Item(
-            "dictionary",
-            CAMEL_PACKAGE,
-            "camel",
-            skip=None if refine else "the second listen is off (MAKTABA_STT_REFINE=0)",
-        ),
+        Item("dictionary", CAMEL_PACKAGE, "camel", skip=no_refine),
         Item("embedder", embed_model(), "hf", ignore_patterns=_EMBEDDER_IGNORE),
     ]
     if Path(whisper).expanduser().is_dir():
@@ -173,6 +186,7 @@ def hf_download(item: Item, on_bytes: Callable[[int, int], None], local_only: bo
     return Path(
         snapshot_download(
             item.model,
+            revision=item.pin.revision if item.pin is not None else None,
             allow_patterns=item.allow_patterns,
             ignore_patterns=item.ignore_patterns,
             local_files_only=local_only,
@@ -298,6 +312,10 @@ def _download(it: Item, out: _Out, share: Path | None) -> None:
 
     try:
         snap = hf_download(it, on_bytes, local_only=False)
+        if it.pin is not None:
+            from ..stt import engine
+
+            engine.verify(snap, it.pin)
         (snap / COMPLETE).write_text("ok\n", encoding="utf-8")
         it.path, it.state, it.source = str(snap), "ready", "hf"
     except Exception as exc:  # noqa: BLE001 - gated, offline, disk: reported

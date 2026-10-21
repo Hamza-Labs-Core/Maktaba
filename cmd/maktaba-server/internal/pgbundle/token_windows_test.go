@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbin"
 	"golang.org/x/sys/windows"
@@ -46,6 +47,11 @@ func isAdmin(t *testing.T) bool {
 // TestMain: with MAKTABA_TEST_ADMIN_CHECK the test binary only reports whether
 // it runs as an administrator (TestPostgresTokenIsNoAdministrators' child).
 func TestMain(m *testing.M) {
+	if os.Getenv("MAKTABA_TEST_HOLD") == "1" {
+		// a running server, until it is ended (at most a minute)
+		time.Sleep(time.Minute)
+		os.Exit(0)
+	}
 	if os.Getenv("MAKTABA_TEST_ADMIN_CHECK") == "1" {
 		in, err := adminNow()
 		switch {
@@ -126,6 +132,64 @@ func forcedToken(t *testing.T) windows.Token {
 	}
 	t.Cleanup(func() { _ = tok.Close() })
 	return tok
+}
+
+// TestTheSupervisorHoldsARestrictedPostgres: postgres.exe under the restricted
+// token is a child the supervisor can still hold, as its process tree does
+// for every child (supervisor/proctree_windows.go): created suspended in a
+// group of its own, opened with SET_QUOTA, TERMINATE, SUSPEND_RESUME and
+// SYNCHRONIZE (what the process's DACL, from the token's default DACL that
+// grantUser completes, must allow), put in a kill-on-close job, resumed,
+// waited on, and ended with the job.
+func TestTheSupervisorHoldsARestrictedPostgres(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(self, "-test.run=^$")
+	cmd.Env = append(os.Environ(), "MAKTABA_TEST_HOLD=1")
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Token:         syscall.Token(forcedToken(t)),
+		CreationFlags: windows.CREATE_SUSPENDED | windows.CREATE_NEW_PROCESS_GROUP,
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+
+	ph, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE|windows.PROCESS_SUSPEND_RESUME|
+		windows.SYNCHRONIZE, false, uint32(cmd.Process.Pid))
+	if err != nil {
+		t.Fatalf("the supervisor cannot open postgres under the restricted token: %v", err)
+	}
+	defer func() { _ = windows.CloseHandle(ph) }()
+	job, err := windows.CreateJobObject(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = windows.CloseHandle(job) }()
+	var info windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+	info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+	if _, err := windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation,
+		uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info))); err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.AssignProcessToJobObject(job, ph); err != nil {
+		t.Fatalf("put postgres under the restricted token in the supervisor's job: %v", err)
+	}
+	resume := windows.NewLazySystemDLL("ntdll.dll").NewProc("NtResumeProcess")
+	if r, _, _ := resume.Call(uintptr(ph)); r != 0 {
+		t.Fatalf("resume postgres under the restricted token: NTSTATUS 0x%x", r)
+	}
+	if ev, err := windows.WaitForSingleObject(ph, 100); err != nil || ev != uint32(windows.WAIT_TIMEOUT) {
+		t.Fatalf("postgres under the restricted token is not running: %d %v", ev, err)
+	}
+	if err := windows.TerminateJobObject(job, 1); err != nil {
+		t.Fatalf("end the job: %v", err)
+	}
+	if ev, err := windows.WaitForSingleObject(ph, 10_000); err != nil || ev != windows.WAIT_OBJECT_0 {
+		t.Fatalf("postgres under the restricted token did not end with its job: %d %v", ev, err)
+	}
 }
 
 // TestRealPostgresOnWindows runs the whole first start against the pinned

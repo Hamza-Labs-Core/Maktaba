@@ -11,14 +11,17 @@ import (
 const MaxPipelineInstances = 16
 
 // BuildPipelineInstances builds the transcription workers beside the main worker
-// (PlanSTT): [pipeline] instances = N on a converted worker-only node (Epic 35 story
+// (PlanFor): [pipeline] instances = N on a converted worker-only node (Epic 35 story
 // 35.8 AC7: the workers its installer ran, maktaba-node@1..N), or on Apple Silicon a
-// number sized from the RAM (Epic 36 story 36.4, as the home Mac runs them). Worker i
-// runs only the transcribe stage with MAKTABA_STT_SLOT=stt-<i> (its stt.* metrics keep
-// their series across restarts), the plan's memory knobs, its own logs port and no
-// gRPC server; the main worker then leaves transcribe to them.
+// number sized from the RAM (Epic 36 story 36.4, as the home Mac runs them), or on
+// Windows and Linux with an NVIDIA GPU a number sized from its memory where the
+// second listen runs too (story 38.8). Worker i runs only the transcribe stage with
+// MAKTABA_STT_SLOT=stt-<i> (its stt.* metrics keep their series across restarts),
+// the plan's knobs, its own logs port and no gRPC server; the main worker then
+// leaves transcribe to them. The operator's own stage exclusions reach the workers
+// as they are (with transcribe among them there are none).
 func BuildPipelineInstances(opts Options) ([]Process, error) {
-	plan := PlanSTT(opts.Config)
+	plan := PlanFor(opts)
 	n := plan.Workers
 	if n <= 0 {
 		return nil, nil
@@ -34,7 +37,6 @@ func BuildPipelineInstances(opts Options) ([]Process, error) {
 		env = append(env, plan.knobEnv()...)
 		env = setEnv(env, "MAKTABA_STT_SLOT", "stt-"+strconv.Itoa(i))
 		env = setEnv(env, "MAKTABA_PIPELINE_STAGES", "transcribe")
-		env = setEnv(env, "MAKTABA_PIPELINE_EXCLUDE_STAGES", "")
 		env = setEnv(env, "MAKTABA_PIPELINE_GRPC_ADDR", "")
 		env = setEnv(env, "MAKTABA_PIPELINE_LOGS_ADDR", logs)
 		cmd := exec.Command(pythonFor(opts), "-m", "maktaba_pipeline")
