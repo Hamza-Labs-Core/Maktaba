@@ -25,7 +25,10 @@ import (
 // pipeline's venv to the new payload before any role runs:
 //
 //   - every process but postgres (and the model server, which keeps nothing of
-//     the library) waits for the database step, run once: it reads the record
+//     the library) waits for the database step, run once — except on a joined
+//     full node, whose api reads the home's database and never migrates (the
+//     home's own start does this): there it does not run and writes nothing. It
+//     reads the record
 //     of the release whose migrations the database holds
 //     (<state>/state/database.json) and refuses an older release than that; with
 //     another release than that one (or no record: an install from before it)
@@ -48,14 +51,23 @@ func appBundleGates(cfg config.Config, dir string, pg *pgbundle.Bundle, procs []
 		fmt.Fprintf(log, "[serve] the app's payload.json cannot be read (%v): starting without the update checks\n", err)
 		return procs
 	}
-	db := &migrationGate{stateDir: cfg.StateDir(), version: cur.Version, pg: pg,
-		keep: cfg.Postgres.KeepUpdateDumps(), log: log}
-	for _, p := range procs {
-		if p.Role == supervisor.RoleAPI && p.Cmd != nil {
-			db.api = p.Cmd
+	// a joined full node (the same test the api's environment is made by,
+	// supervisor/env.go): its api runs in node mode against the home's database,
+	// which only the home migrates and dumps; no step, no record here (one would
+	// later judge an app on a machine that has no database of its own)
+	var dbStep *sharedStep
+	if n := supervisor.NodeConfig(); supervisor.NodeMode(cfg, n) {
+		fmt.Fprintf(log, "[serve] this machine is a full node of %s: the home updates the library database\n", n.HomeURL())
+	} else {
+		db := &migrationGate{stateDir: cfg.StateDir(), version: cur.Version, pg: pg,
+			keep: cfg.Postgres.KeepUpdateDumps(), log: log}
+		for _, p := range procs {
+			if p.Role == supervisor.RoleAPI && p.Cmd != nil {
+				db.api = p.Cmd
+			}
 		}
+		dbStep = &sharedStep{wait: "Waiting for the library database", run: db.run}
 	}
-	dbStep := &sharedStep{wait: "Waiting for the library database", run: db.run}
 	var venvStep *sharedStep
 	if py := supervisor.PythonOverride(cfg); py == "" {
 		venv := &venvGate{spec: appvenv.Spec{Payload: dir, Venv: filepath.Join(cfg.StateDir(), "venv")}}
@@ -73,8 +85,12 @@ func appBundleGates(cfg config.Config, dir string, pg *pgbundle.Bundle, procs []
 		case p.Role == supervisor.RoleOllama:
 			// the model server keeps nothing of the library: it waits on nothing
 		case p.Role == supervisor.RolePipeline && venvStep != nil:
-			p.Prepare = steps(dbStep.prepare, venvStep.prepare)
-		default:
+			if dbStep != nil {
+				p.Prepare = steps(dbStep.prepare, venvStep.prepare)
+			} else {
+				p.Prepare = venvStep.prepare
+			}
+		case dbStep != nil:
 			p.Prepare = dbStep.prepare
 		}
 	}
@@ -291,6 +307,19 @@ func (g *migrationGate) run(ctx context.Context, report func(string)) error {
 	if err != nil {
 		return fmt.Errorf("the library database's record cannot be read: %w", err)
 	}
+	held := rec.Version
+	if g.api == nil {
+		// a run without the api (serve --role ...): nothing migrates here, so
+		// nothing is dumped or recorded; only what must not run is refused
+		switch {
+		case rec.State == apppayload.DatabaseRestoring:
+			return supervisor.Halt(fmt.Errorf("the library database is being put back as it was before the update "+
+				"to %s (from %s): start the whole server (`maktaba-server serve`) to finish it", rec.Failed, rec.Dump))
+		case held != "" && held != cur && apppayload.Older(cur, held):
+			return supervisor.Halt(downgrade(cur, rec))
+		}
+		return nil
+	}
 	// a putting back cut short (the server stopped meanwhile): finish it first
 	if rec.State == apppayload.DatabaseRestoring {
 		if rec, err = g.restore(ctx, rec, report); err != nil {
@@ -299,8 +328,8 @@ func (g *migrationGate) run(ctx context.Context, report func(string)) error {
 		if cur == rec.Failed {
 			return supervisor.Halt(failedUpdate(rec))
 		}
+		held = rec.Version
 	}
-	held := rec.Version
 	if held != "" && held != cur && apppayload.Older(cur, held) {
 		return supervisor.Halt(downgrade(cur, rec))
 	}
@@ -334,10 +363,6 @@ func (g *migrationGate) run(ctx context.Context, report func(string)) error {
 			return err
 		}
 	}
-	if g.api == nil {
-		return nil // no api here: nothing migrates
-	}
-
 	if update.State != "" {
 		report(fmt.Sprintf("Updating the library database for %s", cur))
 	} else {
