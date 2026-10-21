@@ -81,3 +81,42 @@ def test_ascii_existing_and_missing_paths_are_untouched(tmp_path: Path) -> None:
     assert find_existing(ok.as_posix()) == ok.as_posix()
     # unmapped paths get the same help
     assert Path(PathMap().to_local((tmp_path / _nfd(NAMES[0])).as_posix())).read_bytes() == b"z"
+
+
+def test_a_hung_listing_is_unavailable_not_a_hang(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # macOS's SMB client hung for ever listing a folder of 158,372 files; the mediaintel
+    # import (and any stage resolving a path under it) waited with it
+    import os
+    import threading
+    import time
+
+    folder = tmp_path / "share"
+    folder.mkdir()
+    (folder / _nfc(NAMES[0])).write_bytes(b"x")
+    release = threading.Event()
+    real = os.listdir
+
+    def hung(d: str) -> list[str]:
+        release.wait(30)
+        return list(real(d))
+
+    monkeypatch.setenv("MAKTABA_SHARE_LIST_TIMEOUT_SEC", "0.05")
+    monkeypatch.setattr(os, "listdir", hung)
+    paths.forget_listings()
+    start = time.monotonic()
+    assert paths._listing(str(folder)) == ({}, {})  # unavailable, but returned
+    assert time.monotonic() - start < 0.5
+    start = time.monotonic()
+    assert paths._listing(str(folder)) == ({}, {})  # the unavailable listing is cached
+    assert time.monotonic() - start < 0.5
+    # the share answers again: once the cache is dropped the folder lists
+    release.set()
+    monkeypatch.setattr(os, "listdir", real)
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and paths._listing_now:
+        time.sleep(0.05)
+    paths.forget_listings()
+    exact, _ = paths._listing(str(folder))
+    assert _nfc(NAMES[0]) in {_nfc(n) for n in exact.values()}
