@@ -5,6 +5,8 @@ import { bidiIsolate, useI18n } from "../../lib/i18n";
 import type { AppearsInEntry, StageInfo, TimelineEntry, WriteChange } from "../../lib/queueApi";
 import { useFmt } from "./format";
 import { jobHref } from "./RunningJobs";
+import { HelpLink } from "../../help/HelpLink";
+import { causeHelp } from "../../help/registry";
 
 export function KindChips({ kinds }: { kinds: string[] }) {
   const { t } = useI18n();
@@ -151,7 +153,15 @@ export function Timeline({
               )}
             </div>
             {e.changes && e.changes.length > 0 && <WriteChanges changes={e.changes} />}
-            {j.error_cause && <p className="mkt-q-tl__err">{j.error_cause}</p>}
+            {j.error_cause && (
+              <div className="mkt-q-tl__errrow">
+                <p className="mkt-q-tl__err">{j.error_cause}</p>
+                <HelpLink
+                  to={causeHelp(j.error_cause)}
+                  label={t("help.causeHelpNamed", { cause: j.error_cause })}
+                />
+              </div>
+            )}
             {e.reasons.length > 0 && (
               <p className="mkt-q-muted">
                 {t("queue.item.because")} {e.reasons.map((r) => `${r.why} (${r.by})`).join("; ")}

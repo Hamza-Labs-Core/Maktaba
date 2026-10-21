@@ -99,7 +99,12 @@ export function parseBlocks(src: string): Block[] {
 const INLINE =
   /(`[^`]+`)|(\*\*[^*]+\*\*|__[^_]+__)|(\*[^*\s][^*]*\*|_[^_\s][^_]*_)|(\[[^\]]+\]\([^)\s]+\))|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/;
 
-export function renderInline(text: string, keyBase = "i"): ReactNode[] {
+/** Options for renderInline: how to render an in-app link ("/help/…", or "#anchor" on this page). */
+export interface InlineOptions {
+  internalLink?: (href: string, children: ReactNode[], key: string) => ReactNode;
+}
+
+export function renderInline(text: string, keyBase = "i", opts?: InlineOptions): ReactNode[] {
   const out: ReactNode[] = [];
   let rest = text;
   let n = 0;
@@ -115,19 +120,25 @@ export function renderInline(text: string, keyBase = "i"): ReactNode[] {
     if (m[1]) {
       out.push(<code key={key}>{tok.slice(1, -1)}</code>);
     } else if (m[2]) {
-      out.push(<strong key={key}>{renderInline(tok.slice(2, -2), key)}</strong>);
+      out.push(<strong key={key}>{renderInline(tok.slice(2, -2), key, opts)}</strong>);
     } else if (m[3]) {
-      out.push(<em key={key}>{renderInline(tok.slice(1, -1), key)}</em>);
+      out.push(<em key={key}>{renderInline(tok.slice(1, -1), key, opts)}</em>);
     } else if (m[4]) {
       const lm = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(tok)!;
       const href = safeHref(lm[2]!);
+      const target = lm[2]!;
+      if (opts?.internalLink && /^(\/(?!\/)|#)/.test(target)) {
+        out.push(opts.internalLink(target, renderInline(lm[1]!, key, opts), key));
+        rest = rest.slice(m.index + tok.length);
+        continue;
+      }
       out.push(
         href ? (
           <a key={key} href={href} target="_blank" rel="noreferrer noopener">
-            {renderInline(lm[1]!, key)}
+            {renderInline(lm[1]!, key, opts)}
           </a>
         ) : (
-          <span key={key}>{renderInline(lm[1]!, key)}</span>
+          <span key={key}>{renderInline(lm[1]!, key, opts)}</span>
         )
       );
     } else {

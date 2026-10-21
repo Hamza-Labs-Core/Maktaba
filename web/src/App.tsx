@@ -56,6 +56,7 @@ import { ServerStatus } from "./pages/Cloud/ServerStatus";
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Auth/Register";
 import { NotFound } from "./pages/NotFound";
+import { HelpIndex, HelpTopic } from "./help/Help";
 
 // ThemeSync re-applies the resolved theme whenever the OS preference
 // flips while the user is in "system" mode (Story 11.8 live-toggle AC).
@@ -123,6 +124,8 @@ export function App() {
                         <Route path="/transcription" element={<Transcription />} />
                         <Route path="/settings/*" element={<Settings />} />
                         <Route path="/more" element={<MoreMenu />} />
+                        <Route path="/help" element={<HelpIndex />} />
+                        <Route path="/help/:topic" element={<HelpTopic />} />
                         <Route path="/account" element={<Account />} />
                         <Route path="/account/devices" element={<ConnectedDevices />} />
                         <Route path="/account/sessions" element={<Sessions />} />
