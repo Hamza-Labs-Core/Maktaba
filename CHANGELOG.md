@@ -119,9 +119,12 @@ don't append a line here; docs-only PRs are exempt.
     waits for it.
 - **`node.json` is never copied.** A machine has one node config: one that joined before keeps
   it in `%APPDATA%\Maktaba`, where every reader (Maktaba, streaming, the pipeline, the node
-  installer) and a re-join use it. If that profile roams, another PC signed in with it is the
-  same machine on the home. Maktaba says so at every start; the cluster troubleshooting guide
-  shows how to keep it on one PC.
+  installer) and a re-join use it. That profile can roam, so the file records the PC it belongs
+  to (`machine_id`, Windows' MachineGuid). The first new Maktaba that runs with it on a PC claims
+  it, keeping its ACL; the pipeline is its one writer. A PC it does not belong to skips it: it
+  is no home's machine, and its own join writes `%LOCALAPPDATA%\Maktaba\node.json`, never the
+  other PC's identity. `maktaba-server` says so once at its start, and the app's setup check
+  shows it (`node_config_other_pc`).
 - **The large state stays where it is.** The install's models, caches and Postgres stay in
   `data\`. It is decided once whether `data\` or the folder beside it is the state root, and the
   answer is kept (`state-root.json`), so a folder an older version makes later never moves it.

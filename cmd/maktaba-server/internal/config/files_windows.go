@@ -2,37 +2,26 @@ package config
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
-// profileRoams reports a profile whose AppData (appdata) leaves this PC: on a
-// server (\\server\share, a redirected folder) or a network drive, or a roaming
-// user profile (CentralProfile set in its ProfileList entry).
-func profileRoams(appdata string) bool {
-	if strings.HasPrefix(appdata, `\\`) {
-		return true
-	}
-	if vol := filepath.VolumeName(appdata); vol != "" {
-		if root, err := windows.UTF16PtrFromString(vol + `\`); err == nil && windows.GetDriveType(root) == windows.DRIVE_REMOTE {
-			return true
-		}
-	}
-	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+// machineGUID is Windows' id of this PC (HKLM\SOFTWARE\Microsoft\Cryptography
+// MachineGuid, the 64-bit view); "" when it cannot be read.
+func machineGUID() string {
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\Cryptography`,
+		registry.QUERY_VALUE|registry.WOW64_64KEY)
 	if err != nil {
-		return false
-	}
-	k, err := registry.OpenKey(registry.LOCAL_MACHINE,
-		`SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\`+user.User.Sid.String(), registry.QUERY_VALUE)
-	if err != nil {
-		return false
+		return ""
 	}
 	defer func() { _ = k.Close() }()
-	central, _, err := k.GetStringValue("CentralProfile")
-	return err == nil && strings.TrimSpace(central) != ""
+	v, _, err := k.GetStringValue("MachineGuid")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(v)
 }
 
 // renameNoReplace renames from to to unless to exists (MoveFileEx without

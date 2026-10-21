@@ -139,10 +139,10 @@ views, and it cannot use LLMs on other machines.
 2. On the home, **Admin > Machines**: **Revoke** the machine, then **Remove** it.
 3. On the machine, delete its settings file (`node.json`; where it is:
    [Join a machine, Step 5](join-a-machine.md#step-5--on-the-home-approve-with-the-code)).
-   On Windows, delete every `node.json` the machine has: `%APPDATA%\Maktaba\node.json` (a
+   On Windows, delete every `node.json` that is this PC's: `%APPDATA%\Maktaba\node.json` (a
    machine that joined before Epic 38) and `%LOCALAPPDATA%\Maktaba\node.json`. Maktaba reads
    the first and, without it, the second, so one left behind brings the old identity back. The
-   node's uninstall script names them.
+   node's uninstall script names them, and never names another PC's (see the next section).
 4. On the home, turn on **Accept new machines**; on the machine run
    `maktaba-pipeline join` and approve the new code.
 5. Start the worker again (or its service).
@@ -150,26 +150,26 @@ views, and it cannot use LLMs on other machines.
 The machine comes back as a new record: if you had set its path map or switched queues off
 for it by hand, set them again.
 
-## Two PCs show up as one machine (a Windows profile that roams)
+## "The machine settings … belong to another PC" (a Windows profile that roams)
 
 A Windows machine that joined before Epic 38 keeps its node config in the roaming part of the
-user's profile, `%APPDATA%\Maktaba\node.json`. Maktaba never copies or moves it: an older
-version of the install and the node's own scripts read it there. If that profile roams (a
-domain roaming profile, or AppData redirected to a server or a network drive), every PC the
-user signs in to reads the same file and runs as the same machine on the home. Maktaba says so
-in its log at every start ("is in a Windows profile that roams"). It does not stop the node,
-because the file cannot tell which PC is the real one.
+user's profile, `%APPDATA%\Maktaba\node.json`. Maktaba never copies or moves it, because an
+older version of the install and the node's own scripts read it there. If that profile roams
+(a domain roaming profile, or AppData redirected to a server), other PCs the user signs in to
+see the same file.
 
-1. On the PC that should stay this machine, stop Maktaba (the server, or the node's worker
-   service).
-2. Move `%APPDATA%\Maktaba\node.json` to `%LOCALAPPDATA%\Maktaba\node.json`, which stays on
-   that PC.
-3. Start Maktaba again.
-4. On any other PC that should work for the home, [join it](join-a-machine.md) as its own
-   machine before Maktaba runs there.
+Maktaba keeps them apart by itself:
 
-A machine that joins on Epic 38 or later writes `%LOCALAPPDATA%\Maktaba\node.json` from the
-start, which never roams.
+- The file records the PC it belongs to (`machine_id`, Windows' id of the PC). The first new
+  Maktaba that runs with a file that records none claims it for its PC.
+- Every other PC skips a file that is not its own. It is no home's machine, so it never runs
+  as that machine, and nothing on it changes the file.
+- `maktaba-server` says so once at its start, and the app's setup shows it (*The machine
+  settings in … belong to another PC*).
+
+To have such a PC work for a home too, [add it as its own machine](join-a-machine.md). Its own
+node config is then kept in `%LOCALAPPDATA%\Maktaba\node.json`, which stays on that PC, and the
+other PC's file is left as it was.
 
 ## Storage not reachable
 

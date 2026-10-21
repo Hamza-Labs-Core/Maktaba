@@ -229,7 +229,7 @@ login, readable only by your user:
 |---|---|
 | macOS | `~/Library/Application Support/Maktaba/node.json` |
 | Linux | `~/.config/maktaba/node.json` |
-| Windows | `%LOCALAPPDATA%\Maktaba\node.json`; a machine that joined before Epic 38 keeps `%APPDATA%\Maktaba\node.json`, which is never copied or moved (one node config per machine) |
+| Windows | `%LOCALAPPDATA%\Maktaba\node.json`; a machine that joined before Epic 38 keeps `%APPDATA%\Maktaba\node.json`, which is never copied or moved (one node config per machine) and belongs to the PC that claimed it ([another PC's](troubleshooting.md#the-machine-settings--belong-to-another-pc-a-windows-profile-that-roams) is skipped) |
 
 ## Step 6 — Start working and check
 

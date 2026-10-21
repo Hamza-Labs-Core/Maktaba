@@ -19,7 +19,8 @@ func winLayout(t *testing.T) (old, cur Dirs, env map[string]string) {
 
 // winLayoutAt is winLayout under base (a second process builds the same).
 func winLayoutAt(base string) (old, cur Dirs, env map[string]string) {
-	env = map[string]string{"APPDATA": filepath.Join(base, "Roaming"), "LOCALAPPDATA": filepath.Join(base, "Local")}
+	env = map[string]string{"APPDATA": filepath.Join(base, "Roaming"), "LOCALAPPDATA": filepath.Join(base, "Local"),
+		machineIDEnv: "this-pc"} // never this PC's real MachineGuid
 	getenv := func(k string) string { return env[k] }
 	return legacyWindowsDirs(getenv, base), DirsFor(getenv, "windows", base), env
 }
@@ -371,37 +372,54 @@ func TestMigrateMacAcrossVolumes(t *testing.T) {
 	}
 }
 
-// A node config from before in a profile that roams is found (and warned about at
-// every start); one that stays on this PC, one in %LOCALAPPDATA% and one named by
-// $MAKTABA_NODE_CONFIG are not.
-func TestRoamingNodeConfig(t *testing.T) {
+// The roaming profile's node config is the PC's that claimed it (its machine_id):
+// an unclaimed one and this PC's own are read and run; another PC's is skipped, so
+// this PC is not that machine, its join writes the local file, the other PC's stays
+// as it was, and serve and setup's check say why it runs unjoined.
+func TestNodeConfigClaimedByAnotherPC(t *testing.T) {
 	t.Parallel()
 	old, cur, env := winLayout(t)
 	getenv := func(k string) string { return env[k] }
 	base := filepath.Dir(filepath.Dir(cur.Config))
-	roams := func(string) bool { return true }
-	stays := func(string) bool { return false }
-	if p := roamingNodeConfig(getenv, base, roams); p != "" {
-		t.Fatalf("no node config: %q", p)
+	original, local := filepath.Join(old.Config, "node.json"), filepath.Join(cur.Config, "node.json")
+
+	writeAt(t, original, `{"node_id":"n1","private_key":"k","database_url":"postgres://h"}`) // unclaimed
+	if got := NodeConfigPath(getenv, "windows", base); got != original {
+		t.Fatalf("unclaimed: %s, want the original (it runs, and the pipeline claims it)", got)
 	}
-	writeAt(t, filepath.Join(cur.Config, "node.json"), "{}")
-	if p := roamingNodeConfig(getenv, base, roams); p != "" {
-		t.Fatalf("a node config in %%LOCALAPPDATA%% never roams: %q", p)
+	if p, _ := ForeignNodeConfig(getenv, "windows", base); p != "" {
+		t.Fatalf("unclaimed is not another PC's: %s", p)
 	}
-	original := filepath.Join(old.Config, "node.json")
-	writeAt(t, original, "{}")
-	if p := roamingNodeConfig(getenv, base, roams); p != original {
-		t.Fatalf("from before, on a roaming profile: %q, want %s", p, original)
+
+	writeAt(t, original, `{"node_id":"n1","private_key":"k","database_url":"postgres://h","machine_id":"THIS-PC"}`)
+	if got := NodeConfigPath(getenv, "windows", base); got != original {
+		t.Fatalf("this PC's own (case aside): %s, want the original", got)
 	}
-	if p := roamingNodeConfig(getenv, base, stays); p != "" {
-		t.Fatalf("a profile that stays on this PC: %q", p)
+
+	theirs := `{"node_id":"n1","private_key":"k","database_url":"postgres://h","machine_id":"other-pc"}`
+	writeAt(t, original, theirs)
+	if got := NodeConfigPath(getenv, "windows", base); got != local {
+		t.Fatalf("another PC's: %s, want this PC's own place %s", got, local)
 	}
-	env["MAKTABA_NODE_CONFIG"] = filepath.Join(t.TempDir(), "node.json")
-	if p := roamingNodeConfig(getenv, base, roams); p != "" {
-		t.Fatalf("with $MAKTABA_NODE_CONFIG: %q", p)
+	if n := ReadNodeConfig(getenv, "windows", base, os.ReadFile); n.Joined() || n.Err != nil {
+		t.Fatalf("this PC is not that machine: %+v", n)
 	}
-	if w := RoamingNodeWarning(original); !strings.Contains(w, original) || !strings.Contains(w, "maktaba-pipeline join") {
-		t.Fatalf("the warning must name the file and the fix: %s", w)
+	p, owner := ForeignNodeConfig(getenv, "windows", base)
+	if p != original || owner != "other-pc" || !strings.Contains(ForeignNodeLine(p, owner), "join it as its own machine") {
+		t.Fatalf("foreign: %q %q", p, owner)
+	}
+	// this PC's join writes where NodeConfigPath says: the local file
+	writeAt(t, NodeConfigPath(getenv, "windows", base), `{"node_id":"n2","private_key":"k2","database_url":"postgres://h","machine_id":"this-pc"}`)
+	if n := ReadNodeConfig(getenv, "windows", base, os.ReadFile); n.NodeID != "n2" {
+		t.Fatalf("after this PC's join: %+v", n)
+	}
+	if readAt(t, original) != theirs {
+		t.Fatal("the other PC's node config must stay as it was")
+	}
+
+	// a PC whose id cannot be known never skips a config (no working node goes down)
+	if claimedElsewhere(original, func() string { return "" }) {
+		t.Fatal("an unknown machine id must not skip a node config")
 	}
 }
 
