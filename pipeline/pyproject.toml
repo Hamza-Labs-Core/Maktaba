@@ -47,6 +47,20 @@ stt = [
     # Cohere's tokenizer; mlx-audio does not declare it
     "sentencepiece>=0.2 ; platform_machine == 'arm64' and sys_platform == 'darwin'",
     "camel-tools>=1.6,<2 ; platform_machine == 'arm64' and sys_platform == 'darwin'",
+    # ... and on Windows and Linux x86_64 (story 38.9, stt/cohere_cuda.py): the same model
+    # through transformers (its cohere_asr model, native since 5.4) on torch's CUDA build,
+    # on an NVIDIA GPU only. PyPI's Linux torch carries CUDA 13 (the nvidia-* wheels); its
+    # Windows torch is a CPU build, on which the second listen says so and keeps Whisper's
+    # words (the CUDA build is on PyTorch's own index: see contract-venv.md)
+    "torch>=2.6,<3 ; (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
+    "transformers>=5.4,<6 ; (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
+    # transformers loads the weights straight onto the GPU (device_map) only with accelerate
+    "accelerate>=1.1 ; (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
+    # the cohere_asr feature extractor's mel filters come from librosa
+    "librosa>=0.11 ; (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
+    "sentencepiece>=0.2 ; (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
+    # the dictionary: on Windows camel-tools needs no kenlm (its own marker); Linux has a wheel
+    "camel-tools>=1.6,<2 ; (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
 ]
 dev = [
     "grpcio-tools>=1.68",

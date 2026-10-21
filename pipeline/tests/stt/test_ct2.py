@@ -614,14 +614,20 @@ def test_punctuation_joins_its_word_as_whisper_merges_it() -> None:
 
 
 @pytest.mark.unit
-def test_the_second_listen_keeps_whisper_s_words_and_says_why(on_ct2: None) -> None:
+def test_without_a_gpu_for_the_second_listen_whisper_s_words_stay(on_ct2: None) -> None:
+    """(story 38.9 runs it on CUDA where the GPU holds it: tests/stt/test_cohere_cuda.py)"""
     from maktaba_pipeline.stt import cohere
     from maktaba_pipeline.stt.settings import Sentence, Transcript
+    from tests.conftest import NO_TEST_GPU
 
-    assert cohere.unavailable() is not None
+    assert cohere.unavailable() == NO_TEST_GPU
     t = Transcript([Sentence(0.0, 1.0, "قال الشيخ", -0.1, 0.0)], 1.0, "ar", "m", 1.0)
     out = stage._refine(t, np.zeros(SAMPLE_RATE, np.float32), "CohereLabs/x")
-    assert out["source"] == "skipped" and "Apple Silicon (MLX) only" in out["skipped"]
+    assert out == {
+        "model": "CohereLabs/x",
+        "source": "skipped",
+        "skipped": f"RuntimeError: {NO_TEST_GPU}",
+    }
     assert t.sentences[0].text == "قال الشيخ"
 
 

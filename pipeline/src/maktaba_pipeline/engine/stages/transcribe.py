@@ -19,7 +19,8 @@ conversion of an MLX model it is given), ``MAKTABA_STT_LANGUAGE`` (``ar``),
 ``MAKTABA_STT_REFINE`` (``1``: a second listen corrects Whisper's words,
 :mod:`maktaba_pipeline.stt.refine`; ``0`` stores Whisper's as they are) with
 ``MAKTABA_STT_REFINE_MODEL`` (default ``CohereLabs/cohere-transcribe-arabic-07-2026``;
-MLX only: on CTranslate2 the transcript keeps Whisper's words and says why),
+on Windows and Linux on the NVIDIA GPU Whisper uses, when it has room for it beside
+Whisper: else the transcript keeps Whisper's words and says why),
 ``MAKTABA_STT_BATCH`` (files decoded together: 32 on MLX, 8 on CTranslate2). MLX's GPU
 memory: ``MAKTABA_STT_GPU_GB`` / ``_GPU_CACHE_GB``; CTranslate2's device and precision:
 ``MAKTABA_STT_DEVICE`` (``auto``), ``MAKTABA_STT_COMPUTE_TYPE`` (``auto``),
@@ -204,17 +205,24 @@ def refine_model() -> str | None:
 
 
 def _refine(
-    result: Transcript, audio: Any, model: str, share: Path | None = None
+    result: Transcript,
+    audio: Any,
+    model: str,
+    share: Path | None = None,
+    settings: WhisperSettings | None = None,
 ) -> dict[str, Any]:
     """The second listen (in a thread: it decodes on the GPU). The model comes from
     Hugging Face or, on a machine without the licence, from the home's copy on the share
-    (``share``: the share's models folder); ``source`` says which. A worker that cannot
-    run it (no mlx-audio, no copy of the model) keeps Whisper's words and says why."""
+    (``share``: the share's models folder); ``source`` says which, ``runtime`` what heard
+    it on CUDA, and ``dictionary`` when the respelling had no dictionary. A worker that
+    cannot run it (no mlx-audio; no NVIDIA GPU, or one with
+    no room for it beside Whisper, whose ``settings`` say its device and batch; no copy of
+    the model) keeps Whisper's words and says why."""
     from ...stt.cohere import dictionary, recogniser
     from ...stt.refine import refine
 
     try:
-        rec = recogniser(model, share)
+        rec = recogniser(model, share, settings)
     except Exception as exc:  # noqa: BLE001 - Whisper's transcript is still a transcript
         _log.warning("transcribe.refine_unavailable", model=model, error=str(exc))
         return {
@@ -223,11 +231,16 @@ def _refine(
             "skipped": f"{type(exc).__name__}: {exc}"[:300],
         }
     source = str(getattr(rec, "source", "hf"))
+    runtime = getattr(rec, "runtime", None)
+    extra = {"source": source, **({"runtime": str(runtime)} if runtime else {})}
     try:
-        return {**refine(result, audio, rec, dictionary(), model).as_dict(), "source": source}
+        spelling = dictionary()
+        stats = refine(result, audio, rec, spelling, model).as_dict()
     except Exception as exc:  # noqa: BLE001 - each stretch is merged whole: what is done stands
         _log.warning("transcribe.refine_failed", model=model, exc_info=True)
-        return {"model": model, "source": source, "failed": f"{type(exc).__name__}: {exc}"[:300]}
+        return {"model": model, **extra, "failed": f"{type(exc).__name__}: {exc}"[:300]}
+    # without CAMeL Tools or its data, Cohere's words not seen in Whisper's are spelt as heard
+    return {**stats, **extra, **({"dictionary": "unavailable"} if spelling is None else {})}
 
 
 async def wait_for_memory(ctx: StageContext) -> None:
@@ -488,7 +501,7 @@ async def _transcribe_file(
         # the share is looked for until the model is loaded (a stale mount can be slow),
         # and not at all where there is no second listen (it then says why)
         share = None if loaded(model) or no_second_listen() else await resolve_models_dir(db)
-        refined = await asyncio.to_thread(_refine, result, audio, model, share)
+        refined = await asyncio.to_thread(_refine, result, audio, model, share, settings)
     del audio
     if tmap is not None:
         result = _remap(result, tmap, total_sec)
