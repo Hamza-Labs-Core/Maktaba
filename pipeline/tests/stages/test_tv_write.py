@@ -76,8 +76,8 @@ async def _plan(db: Database, tmp: Path) -> tuple[dict[str, Any], list[UUID], li
     return plan, clips, talks
 
 
-async def _write(db: Database, plan: dict[str, Any]) -> Any:
-    cs, wp = await compute_changes(db, plan, MaktabaTvConfig())
+async def _write(db: Database, plan: dict[str, Any], tv: MaktabaTvConfig | None = None) -> Any:
+    cs, wp = await compute_changes(db, plan, tv or MaktabaTvConfig())
     await apply_changes(db, wp)
     return cs
 
@@ -119,7 +119,7 @@ async def test_filler_pools_lists_and_look_are_written_idempotently(
         "watermark": {"path": str(tmp_path / "wm.png"), "position": "bottom-left",
                       "width_pct": 10.0, "margin_pct": 3.0},
         "loading_path": str(tmp_path / "logos" / "loading-news.png"),
-        "loudnorm": {"enabled": True, "target_lufs": -16.0},
+        "loudnorm": {"enabled": True, "filter": "speechnorm", "target_lufs": -16.0, "expansion": 6.25},
     }  # fmt: skip
     other = await db.fetchrow("SELECT logo_path, mode_config FROM channels WHERE number = 106")
     assert other["logo_path"] == str(tmp_path / "logos" / "default.png")
@@ -193,7 +193,13 @@ async def test_the_plan_carries_its_art_in_the_maktaba_keys(db: Database, tmp_pa
     await _write(db, plan)
     row = await db.fetchrow("SELECT logo_path, mode_config FROM channels WHERE number = 105")
     assert row["logo_path"] == str(tmp_path / "logos" / "default.png")
-    assert loads(row["mode_config"])["look"]["loudnorm"] == {"enabled": True, "target_lufs": -16.0}
+    assert loads(row["mode_config"])["look"]["loudnorm"]["filter"] == "speechnorm"
+    # rules tv.loudnorm_mode picks the filter the streaming service applies
+    await _write(db, plan, MaktabaTvConfig(loudnorm_mode="loudnorm", loudnorm_target_lufs=-23.0))
+    row = await db.fetchrow("SELECT mode_config FROM channels WHERE number = 105")
+    assert loads(row["mode_config"])["look"]["loudnorm"] == {
+        "enabled": True, "filter": "loudnorm", "target_lufs": -23.0, "expansion": 6.25,
+    }  # fmt: skip
 
 
 @pytest.mark.asyncio

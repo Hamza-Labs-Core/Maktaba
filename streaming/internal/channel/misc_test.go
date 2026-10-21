@@ -16,6 +16,19 @@ func TestParseLook_DefaultsAndOverrides(t *testing.T) {
 	if d.Watermark != nil || !d.Loudnorm.Enabled || d.Loudnorm.TargetLUFS != -16 || d.LogoPath != "/logos/kids.png" {
 		t.Errorf("defaults: %+v", d)
 	}
+	if d.Loudnorm.Filter != "speechnorm" || d.Loudnorm.Expansion != 6.25 { // dizqueTV's
+		t.Errorf("default leveller: %+v", d.Loudnorm)
+	}
+	for raw, want := range map[string]Loudnorm{
+		`{"loudnorm":{"filter":"loudnorm","target_lufs":-23}}`: {Enabled: true, TargetLUFS: -23, Filter: "loudnorm", Expansion: 6.25},
+		`{"loudnorm":{"filter":"dynaudnorm"}}`:                 {Enabled: true, TargetLUFS: -16, Filter: "dynaudnorm", Expansion: 6.25},
+		`{"loudnorm":{"filter":"speechnorm","expansion":3}}`:   {Enabled: true, TargetLUFS: -16, Filter: "speechnorm", Expansion: 3},
+		`{"loudnorm":{"filter":"compand","expansion":0.5}}`:    {Enabled: true, TargetLUFS: -16, Filter: "speechnorm", Expansion: 6.25},
+	} {
+		if got := ParseLook([]byte(raw), "").Loudnorm; got != want {
+			t.Errorf("%s: %+v, want %+v", raw, got, want)
+		}
+	}
 	l := ParseLook([]byte(`{"watermark":{"path":"/w.gif","position":"bottom-left","width_pct":15,"margin_pct":1},
 		"loading_path":"/load.jpg","loudnorm":{"enabled":false,"target_lufs":-23}}`), "")
 	if l.Watermark == nil || l.Watermark.Position != "bottom-left" || l.Watermark.WidthPct != 15 || l.Watermark.MarginPct != 1 {

@@ -1053,10 +1053,10 @@ type blockResult struct {
 
 // lookaheadAllowance is how much earlier than real time a block may end
 // because filters with look-ahead (loudnorm ≈ 3 s) flush their tail at
-// EOF faster than real time.
+// EOF faster than real time. speechnorm has none.
 func lookaheadAllowance(in BlockInput) float64 {
 	a := earlyEnd.Seconds()
-	if in.Loudnorm != nil && in.Loudnorm.Enabled && in.HasAudio {
+	if in.Loudnorm != nil && in.Loudnorm.Enabled && in.Loudnorm.HasLookahead() && in.HasAudio {
 		a += 3.5
 	}
 	return a

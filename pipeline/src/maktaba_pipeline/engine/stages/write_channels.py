@@ -228,7 +228,12 @@ def look(plan: dict[str, Any], key: str, tv: MaktabaTvConfig) -> tuple[str | Non
     logo, art = plan_art(plan, key)
     return logo, {
         **art,
-        "loudnorm": {"enabled": bool(tv.loudnorm), "target_lufs": float(tv.loudnorm_target_lufs)},
+        "loudnorm": {
+            "enabled": bool(tv.loudnorm),
+            "filter": str(tv.loudnorm_mode),
+            "target_lufs": float(tv.loudnorm_target_lufs),
+            "expansion": float(tv.speechnorm_expansion),
+        },
     }
 
 
