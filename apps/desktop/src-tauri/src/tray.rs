@@ -44,7 +44,10 @@ pub fn status_line(status: &ServerStatus) -> String {
         ServerStatus::Stopped => "Maktaba is stopped".into(),
         ServerStatus::Starting => "Maktaba is starting…".into(),
         ServerStatus::Running => "Maktaba is running".into(),
-        ServerStatus::Problem(roles) => format!("Maktaba: {} keeps stopping", roles.join(", ")),
+        ServerStatus::Problem { roles } => {
+            format!("Maktaba: {} keeps stopping", roles.join(", "))
+        }
+        ServerStatus::NotAnswering { reason } => format!("Maktaba has a problem: {reason}"),
     }
 }
 
@@ -178,9 +181,15 @@ mod tests {
     fn starting_and_problem_can_still_be_paused() {
         for s in [
             ServerStatus::Starting,
-            ServerStatus::Problem(vec!["pipeline".into()]),
+            ServerStatus::Problem {
+                roles: vec!["pipeline".into()],
+            },
+            ServerStatus::NotAnswering {
+                reason: "the server does not answer".into(),
+            },
         ] {
-            assert!(ids(&entries(true, &s, false)).contains(&"server-pause"));
+            let got = ids(&entries(true, &s, false));
+            assert!(got.contains(&"server-pause") && got.contains(&"open-logs"));
         }
     }
 
@@ -225,11 +234,16 @@ mod tests {
     fn status_lines() {
         assert_eq!(status_line(&ServerStatus::Starting), "Maktaba is starting…");
         assert_eq!(
-            status_line(&ServerStatus::Problem(vec![
-                "pipeline".into(),
-                "streaming".into()
-            ])),
+            status_line(&ServerStatus::Problem {
+                roles: vec!["pipeline".into(), "streaming".into()]
+            }),
             "Maktaba: pipeline, streaming keeps stopping"
+        );
+        assert_eq!(
+            status_line(&ServerStatus::NotAnswering {
+                reason: "another launcher runs this install".into()
+            }),
+            "Maktaba has a problem: another launcher runs this install"
         );
     }
 }

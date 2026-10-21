@@ -34,6 +34,7 @@ jobs:
     outputs:
       docs_only: ${{ steps.filter.outputs.docs_only }}
       mac_app: ${{ steps.filter.outputs.mac_app }}
+      win_app: ${{ steps.filter.outputs.win_app }}
       linux_app: ${{ steps.filter.outputs.linux_app }}
     steps:
       - uses: actions/checkout@v6.0.2
@@ -69,6 +70,19 @@ jobs:
               - 'pipeline/pyproject.toml'
               - 'pipeline/uv.lock'
               - '.github/workflows/_mac-app.yml'
+              - '.github/workflows/desktop-release.yml'
+              - 'Makefile'
+            # The Windows app gate (windows-latest, ~25 min): what goes into the app or its
+            # installer, or how they are built.
+            win_app:
+              - 'tools/release/win-app/**'
+              - 'apps/desktop/**'
+              - 'cmd/maktaba-launcher/**'
+              - 'deploy/packaging/node/build-release.sh'
+              - 'pipeline/pyproject.toml'
+              - 'pipeline/uv.lock'
+              - 'pipeline/src/maktaba_pipeline/venv_bootstrap.py'
+              - '.github/workflows/_win-app.yml'
               - '.github/workflows/desktop-release.yml'
               - 'Makefile'
             # The Linux payload gate (x86_64 + aarch64, ~15 min each): what goes into the
@@ -141,6 +155,11 @@ jobs:
     if: needs.changes.outputs.mac_app == 'true'
     uses: ./.github/workflows/_mac-app.yml
 
+  win-app:
+    needs: [changes]
+    if: needs.changes.outputs.win_app == 'true'
+    uses: ./.github/workflows/_win-app.yml
+
   linux-app:
     needs: [changes]
     if: needs.changes.outputs.linux_app == 'true'
@@ -199,6 +218,7 @@ jobs:
       - node-packaging
       - launcher
       - mac-app
+      - win-app
       - linux-app
       - pr-body-check
     if: always()
@@ -213,7 +233,7 @@ jobs:
           # Fail if any required gate failed or was cancelled. Skipped
           # is acceptable (docs-only PR, fork-skipped e2e/perf-ci).
           fail=0
-          for gate in lint unit integration e2e media-e2e perf-ci build-artifacts node-packaging launcher mac-app linux-app pr-body-check; do
+          for gate in lint unit integration e2e media-e2e perf-ci build-artifacts node-packaging launcher mac-app win-app linux-app pr-body-check; do
             result=$(echo "$RESULTS" | jq -r ".\"$gate\".result // \"skipped\"")
             echo "  $gate: $result"
             case "$result" in
