@@ -88,12 +88,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		bundle, _ = bundlePayload(selfDir())
 	}
 	if bundle != "" {
-		return runBundle(fs.Args(), stdout, stderr, bundle, appStateRoot(*root), *status, *asJSON,
+		return runBundle(fs.Args(), stdout, stderr, bundle, "", appStateRoot(*root), *status, *asJSON,
 			*replaceSelf != "", *stopGrace)
 	}
 	// the Linux app's runtime copy (Epic 39 story 39.3): app-bundle mode too
 	if payload, ok := runtimePayload(selfDir()); ok {
-		return runBundle(fs.Args(), stdout, stderr, payload, runtimeStateRoot(*root, payload), *status, *asJSON,
+		return runBundle(fs.Args(), stdout, stderr, payload, filepath.Dir(payload), runtimeStateRoot(*root), *status, *asJSON,
 			*replaceSelf != "", *stopGrace)
 	}
 	l := layout.New(resolveRoot(*root))
@@ -150,14 +150,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 // runBundle is run in app-bundle mode (bundle.go). The app updater replaces
 // the launcher with the rest of the app, so --replace-self is refused.
-func runBundle(rest []string, stdout, stderr io.Writer, bundle, root string, status, asJSON, replaceSelf bool,
+// runtimeRoot is the Linux runtime bundle is a copy in ("" for Maktaba.app).
+func runBundle(rest []string, stdout, stderr io.Writer, bundle, runtimeRoot, root string, status, asJSON, replaceSelf bool,
 	stopGrace time.Duration) int {
 	switch {
 	case replaceSelf:
 		fmt.Fprintln(stderr, "maktaba-launcher: replace-self: this launcher is part of Maktaba.app; it is updated with the app")
 		return exitFailure
 	case status:
-		return printBundleStatus(stdout, bundle, root, asJSON)
+		return printBundleStatus(stdout, bundle, runtimeRoot, root, asJSON)
 	}
 	if len(rest) == 0 || rest[0] != "serve" {
 		fmt.Fprintln(stderr, "usage: maktaba-launcher [--app-bundle DIR] [--root DIR] serve [-- server args] | --version | --status")
@@ -175,7 +176,8 @@ func runBundle(rest []string, stdout, stderr io.Writer, bundle, root string, sta
 		fmt.Fprintf(stderr, "maktaba-launcher: state directory: %v\n", err)
 		return exitFailure
 	}
-	cfg := Config{Root: root, Bundle: bundle, Args: serverArgs, StopGrace: stopGrace, Stdout: stdout, Stderr: stderr}
+	cfg := Config{Root: root, Bundle: bundle, RuntimeRoot: runtimeRoot, Args: serverArgs, StopGrace: stopGrace,
+		Stdout: stdout, Stderr: stderr}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := Run(ctx, cfg); err != nil {

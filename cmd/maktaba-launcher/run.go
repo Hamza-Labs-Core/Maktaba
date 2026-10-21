@@ -33,6 +33,9 @@ type Config struct {
 	// set, the launcher starts Bundle/bin/maktaba-server and Root only holds
 	// its lock and log (no release pointers, no rollback, no self-update).
 	Bundle string
+	// RuntimeRoot is the Linux runtime Bundle is a copy in (runtime.go): its
+	// owner says whether the server may update itself. "" for Maktaba.app.
+	RuntimeRoot string
 	// Args are passed to `maktaba-server serve` after "serve".
 	Args []string
 
@@ -287,11 +290,10 @@ func (ln *launcher) runOnce(ctx context.Context, ver string) runResult {
 		// Not MAKTABA_LAUNCHER/RELEASE_DIR/INSTALL_ROOT: the server must not
 		// treat the read-only payload as a release layout it can confirm,
 		// stage into or roll back.
-		server, env = filepath.Join(ln.cfg.Bundle, "bin", layout.Exe("maktaba-server")), []string{
+		server, env = filepath.Join(ln.cfg.Bundle, "bin", layout.Exe("maktaba-server")), append([]string{
 			EnvAppBundle + "=" + ln.cfg.Bundle,
-			envUpdateDisable + "=1",
 			EnvStopFile + "=" + stopFile,
-		}
+		}, updateEnv(ln.cfg.RuntimeRoot)...)
 	}
 	cmd := exec.Command(server, append([]string{"serve"}, ln.cfg.Args...)...)
 	cmd.Dir = ln.l.Root

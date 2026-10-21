@@ -68,7 +68,7 @@ func TestBundleRestartsOn75WithUpdatesOff(t *testing.T) {
 	}
 	b, _ := os.ReadFile(filepath.Join(root, "env"))
 	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
-		if line != "update_disable=1 launcher= release_dir=" {
+		if line != "update_disable=1 runtime_owner= launcher= release_dir=" {
 			t.Fatalf("server env %q: want updates off and no release layout", line)
 		}
 	}
@@ -95,5 +95,60 @@ func TestBundleCLI(t *testing.T) {
 	if code := run([]string{"--app-bundle", t.TempDir(), "--root", root, "serve"}, &out, &errb); code != exitFailure ||
 		!strings.Contains(errb.String(), "no bin/maktaba-server") {
 		t.Fatalf("serve without a payload: code %d, stderr %q", code, errb.String())
+	}
+}
+
+// A Linux runtime's owner decides who updates it (Epic 39 story 39.9): the app
+// (updates off, as in Maktaba.app), or with owner headless the machine itself.
+func TestRuntimeOwnerSaysWhoUpdates(t *testing.T) {
+	t.Parallel()
+	processTest(t)
+	bundle, root := mkBundle(t, "exit:75,run")
+	rt := t.TempDir()
+	if err := os.WriteFile(filepath.Join(rt, runtimeOwnerFile), []byte(`{"owner": "headless"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := testConfig(root)
+	cfg.Bundle, cfg.RuntimeRoot = bundle, rt
+	stop := startLauncher(t, cfg)
+	l := layout.New(root)
+	waitFor(t, "a restart after exit 75", func() bool { return countAct(readTrace(l), "bin", "run") == 1 })
+	if err := stop(); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(root, "env"))
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		if line != "update_disable= runtime_owner=headless launcher= release_dir=" {
+			t.Fatalf("server env %q: want updates on for a headless runtime", line)
+		}
+	}
+	var out bytes.Buffer
+	if code := printBundleStatus(&out, bundle, rt, root, true); code != exitOK || !strings.Contains(out.String(), "by this machine") {
+		t.Fatalf("--status of a headless runtime: %q", out.String())
+	}
+}
+
+func TestUpdateEnv(t *testing.T) {
+	t.Parallel()
+	rt := t.TempDir()
+	for _, tc := range []struct {
+		owner, root string
+		want        string
+	}{
+		{"", "", "MAKTABA_UPDATE_DISABLE=1"}, // Maktaba.app
+		{"", rt, "MAKTABA_RUNTIME_OWNER=app MAKTABA_UPDATE_DISABLE=1"},
+		{`{"owner": "app"}`, rt, "MAKTABA_RUNTIME_OWNER=app MAKTABA_UPDATE_DISABLE=1"},
+		{`{"owner": "someone"}`, rt, "MAKTABA_RUNTIME_OWNER=app MAKTABA_UPDATE_DISABLE=1"},
+		{`{"owner": "headless"}`, rt, "MAKTABA_RUNTIME_OWNER=headless"},
+	} {
+		_ = os.Remove(filepath.Join(rt, runtimeOwnerFile))
+		if tc.owner != "" {
+			if err := os.WriteFile(filepath.Join(rt, runtimeOwnerFile), []byte(tc.owner), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := strings.Join(updateEnv(tc.root), " "); got != tc.want {
+			t.Errorf("owner %q root %q: %q, want %q", tc.owner, tc.root, got, tc.want)
+		}
 	}
 }
