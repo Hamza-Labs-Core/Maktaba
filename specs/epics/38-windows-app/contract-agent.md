@@ -97,12 +97,25 @@ do. The state in `%LOCALAPPDATA%\Maktaba` is never removed by the uninstaller.
 
 **An older `Maktaba.exe`.** The client-only Windows app (the same `Maktaba.exe`, installed in the same
 `%LOCALAPPDATA%\Maktaba`) does not know these flags: it ignores them and opens its window, so an
-`ExecWait` on it would hold the install until the user closes it. Each hook therefore calls the
-installed program only when it knows the flags: an install that carries the server payload
-(`$INSTDIR\server\payload.json`; the client-only app never has one) is one that runs the server and
-has the flags, and on any other the hook does nothing (there is no server to stop or start). The
-installer's check (`tools/release/win-app/check.sh --installer`) installs over a client-only layout
-whose stand-in ignores the flags, and must finish without waiting.
+`ExecWait` on it would hold the install until the user closes it. A server build whose shell
+predates the flags is the same. Each hook therefore asks only a `Maktaba.exe` known to take them:
+
+- **The one the installer packs** is read when the installer is compiled
+  (`windows/knows-server-flags.ps1`): a shell parses the flags by name, so a build that takes them
+  holds the literal `--server-remove`. A program that cannot be read fails the build.
+- **The one already installed** (before an install, an update and an uninstall): an installer that
+  put a flag-taking `Maktaba.exe` there records its size and file time as `MaktabaServerFlags` in the
+  app's per-user uninstall key, and the hook asks it only while that still matches the file. A
+  client-only install has no record; a client-only `Maktaba.exe` put over a server install no longer
+  matches it; an installer whose program predates the flags drops it; the uninstaller deletes the
+  key with the rest.
+
+On any other the hook does nothing (there is no server to stop or start).
+`tools/release/win-app/test-hooks.sh` compiles the real hooks around stand-in programs that log each call (fresh install,
+reinstall, an update to a build before the flags, an uninstall of that, a client-only app with no
+record, a client-only `Maktaba.exe` over a server install, an update's uninstall, a real uninstall);
+the installer's check (`check.sh --installer`) installs over a client-only layout whose stand-in
+ignores the flags and never exits, and fails when a hook is still running after 20 s.
 
 ## Sign-out and shutdown
 
