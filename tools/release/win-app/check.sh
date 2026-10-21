@@ -1,0 +1,437 @@
+#!/usr/bin/env bash
+# Smoke-tests the Windows app's server payload (Epic 38, story 38.11) and, with --installer,
+# the NSIS installer built around it. Runs on Windows x86_64 in Git Bash (CI: the win-app
+# gate and desktop-release).
+#
+#   every program starts (--version), every PE file is x86_64 and loads nothing from outside
+#   the payload but Windows, ffmpeg has NVENC, Postgres initdb + start on 127.0.0.1 + the
+#   extensions Maktaba creates (postgres.exe running on the payload's Visual C++ runtime),
+#   the bundled Python builds a venv offline, and running it writes nothing into the payload
+#   (the uninstaller removes the files it installed: a new one would be left behind), the
+#   pipeline wheel and constraints, payload.json, the launcher's app-bundle mode.
+#
+#   --installer: a silent install (/S /NS /D=, current user) into a temporary folder, with a
+#   space in its path, that already holds a state (server.toml, keys\, data\, as an update
+#   finds it); every check above on the installed payload; the app's files and the launcher
+#   beside the real Maktaba.exe; then a silent uninstall: the program is gone, the state is
+#   untouched. It refuses to run where Maktaba is installed for this user or its sign-in task
+#   exists: the installer would replace that install's registration and the uninstall hook
+#   would remove the task. What the installer writes to the registry for the test install is
+#   put back as it was.
+#
+#   The hooks run `Maktaba.exe --server-stop | --server-start | --server-remove` (story
+#   38.3). An app shell from before 38.3 does not know them and opens its window instead,
+#   which never exits: what the hooks start is ended after 20 s, and that is a note while
+#   Maktaba.exe does not know --server-remove, a failure once it does.
+#
+# Usage: check.sh [--payload DIR] [--installer SETUP.exe]
+#   --payload    the payload (default: build/win-app/server)
+#   --installer  install this setup.exe (and uninstall it), and check the installed copy
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+PAYLOAD="$REPO_ROOT/build/win-app/server"
+SETUP=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --payload)   [ $# -ge 2 ] || { echo "--payload needs a value" >&2; exit 2; }; PAYLOAD="$2"; shift 2 ;;
+        --installer) [ $# -ge 2 ] || { echo "--installer needs a value" >&2; exit 2; }; SETUP="$2"; shift 2 ;;
+        -h|--help)   sed -n '2,/^set -e/p' "$0" | sed -e '$d' -e 's/^# \{0,1\}//'; exit 0 ;;
+        *)           echo "unknown option '$1'" >&2; exit 2 ;;
+    esac
+done
+case "$(uname -s)" in
+    MINGW*|MSYS*) ;;
+    *) echo "check: the Windows app is checked on Windows, in Git Bash" >&2; exit 2 ;;
+esac
+
+fails=0
+ok()   { printf '  ok    %s\n' "$*"; }
+fail() { printf '  FAIL  %s\n' "$*"; fails=$((fails + 1)); }
+note() { printf '  note  %s\n' "$*"; }
+# run NAME CMD...: CMD exits 0 within 60 s; its first output line is shown
+run() {
+    local name="$1" out rc=0; shift
+    out="$(timeout 60 "$@" 2>&1)" || rc=$?
+    out="${out//$'\r'/}"
+    if [ "$rc" -eq 0 ]; then ok "$name: $(printf '%s\n' "$out" | head -1)"; else fail "$name (exit $rc): $(printf '%s\n' "$out" | tail -3)"; fi
+}
+# win PATH...: the Windows form (long names) of each path, for the native programs
+win() { cygpath -w -l "$@"; }
+# wincmd CMD...: a Windows program whose /switches must not be taken for paths
+wincmd() { MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' "$@"; }
+# reg_value KEY [NAME]: a registry value (the default one without NAME), empty when absent
+reg_value() {
+    local out
+    if [ $# -ge 2 ]; then out="$(wincmd reg.exe query "$1" /v "$2" 2>/dev/null)" || return 0
+    else out="$(wincmd reg.exe query "$1" /ve 2>/dev/null)" || return 0; fi
+    printf '%s\n' "$out" | tr -d '\r' | sed -n 's/.*REG_[A-Z_]*[[:space:]]*//p' | head -1
+}
+reg_exists() { wincmd reg.exe query "$1" >/dev/null 2>&1; }
+
+SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/win-app-check.XXXXXX")"
+PGDATA_DIR="$SCRATCH/pgdata"
+PG_CTL=""
+REGISTRY_TOUCHED=0
+cleanup() {
+    # a check that failed half way leaves no server behind, and the registry as it was
+    if [ -n "$PG_CTL" ] && [ -f "$PGDATA_DIR/postmaster.pid" ]; then
+        "$PG_CTL" -D "$(win "$PGDATA_DIR")" -m immediate -w stop >/dev/null 2>&1 || true
+    fi
+    if [ "$REGISTRY_TOUCHED" = 1 ]; then restore_registry; fi
+    rm -rf "$SCRATCH" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+# --- the installer, part 1: install ----------------------------------------------------------
+UNINSTALL_KEY='HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Maktaba'
+DEEPLINK_KEY='HKCU\Software\Classes\maktaba'
+if [ -n "$SETUP" ]; then
+    [ -f "$SETUP" ] || { echo "check: no installer at $SETUP" >&2; exit 2; }
+    SETUP="$(cd "$(dirname "$SETUP")" && pwd)/$(basename "$SETUP")"
+    if reg_exists "$UNINSTALL_KEY"; then
+        echo "check: Maktaba is installed for this user ($(reg_value "$UNINSTALL_KEY" InstallLocation)):" \
+            "a test install would replace its registration. Run --installer as another user or on another machine." >&2
+        exit 2
+    fi
+    if wincmd schtasks.exe /Query /TN 'Maktaba Server' >/dev/null 2>&1; then
+        echo "check: the sign-in task 'Maktaba Server' exists: the test uninstall's hook would remove it." >&2
+        exit 2
+    fi
+    if reg_exists "$DEEPLINK_KEY"; then
+        echo "check: maktaba:// links are registered ($DEEPLINK_KEY): a test install would replace that." >&2
+        exit 2
+    fi
+    # The installer remembers the install folder for the next one in HKCU\Software\<publisher>\
+    # Maktaba (tauri: the publisher, else the identifier's second part); put back afterwards.
+    conf="$REPO_ROOT/apps/desktop/src-tauri/tauri.conf.json"
+    manufacturer="$(sed -n 's/^ *"publisher": *"\([^"]*\)".*/\1/p' "$conf" | head -1)"
+    [ -n "$manufacturer" ] ||
+        manufacturer="$(sed -n 's/^ *"identifier": *"\([^"]*\)".*/\1/p' "$conf" | head -1 | cut -d. -f2)"
+    [ -n "$manufacturer" ] || { echo "check: no publisher or identifier in $conf" >&2; exit 2; }
+    MANU_KEY="HKCU\\Software\\$manufacturer"
+    PRODUCT_KEY="$MANU_KEY\\Maktaba"
+    manu_had=0 product_had=0
+    if reg_exists "$MANU_KEY"; then manu_had=1; fi
+    if reg_exists "$PRODUCT_KEY"; then
+        product_had=1
+        wincmd reg.exe export "$PRODUCT_KEY" "$(win "$SCRATCH/product.reg")" /y >/dev/null
+    fi
+    # A shell that opens its window for a hook (before 38.3) makes its app data folders,
+    # empty (WebView2's data goes to the scratch folder, below): removed when it did.
+    bundle_id="$(sed -n 's/^ *"identifier": *"\([^"]*\)".*/\1/p' "$conf" | head -1)"
+    app_dirs=()
+    for d in "$(cygpath -u "${LOCALAPPDATA:-}")/$bundle_id" "$(cygpath -u "${APPDATA:-}")/$bundle_id"; do
+        [ -e "$d" ] || app_dirs+=("$d")
+    done
+    # restore_registry: what the test install wrote for this user, removed or put back (and
+    # the empty app data folders above)
+    restore_registry() {
+        REGISTRY_TOUCHED=0
+        for d in ${app_dirs[@]+"${app_dirs[@]}"}; do
+            if [ -d "$d" ]; then rmdir "$d" 2>/dev/null || note "left $(win "$d") (not empty)"; fi
+        done
+        if reg_exists "$UNINSTALL_KEY"; then wincmd reg.exe delete "$UNINSTALL_KEY" /f >/dev/null 2>&1 || true; fi
+        # the maktaba:// registration (the guard: there was none before)
+        if reg_exists "$DEEPLINK_KEY"; then wincmd reg.exe delete "$DEEPLINK_KEY" /f >/dev/null 2>&1 || true; fi
+        if [ "$manu_had" = 0 ]; then
+            if reg_exists "$MANU_KEY"; then wincmd reg.exe delete "$MANU_KEY" /f >/dev/null 2>&1 || true; fi
+        else
+            if reg_exists "$PRODUCT_KEY"; then wincmd reg.exe delete "$PRODUCT_KEY" /f >/dev/null 2>&1 || true; fi
+            if [ "$product_had" = 1 ]; then wincmd reg.exe import "$(win "$SCRATCH/product.reg")" >/dev/null 2>&1 || true; fi
+        fi
+    }
+
+    INST="$SCRATCH/install dir/Maktaba"
+    mkdir -p "$INST/keys" "$INST/data/supervisor" "$SCRATCH/localappdata" "$SCRATCH/webview2"
+    printf '[server]\n# a state the install and the uninstall leave alone\n' >"$INST/server.toml"
+    printf 'not a real key\n' >"$INST/keys/secrets.key"
+    printf 'state\n' >"$INST/data/supervisor/state.txt"
+    state_sums() { (cd "$INST" && sha256sum server.toml keys/secrets.key data/supervisor/state.txt 2>&1); }
+    STATE_BEFORE="$(state_sums)"
+
+    # Runs the installer or the uninstaller and ends what its hooks started from the install
+    # folder once it outlives the grace (see the header), with the WebView2 processes of a
+    # shell window. Waits until --WaitGone is gone too (the uninstaller copies itself to %TEMP%
+    # and runs from there).
+    cat >"$SCRATCH/run-watched.ps1" <<'PS'
+param(
+    [Parameter(Mandatory = $true)][string]$Exe,
+    [Parameter(Mandatory = $true)][string]$Arguments,
+    [Parameter(Mandatory = $true)][string]$Dir,
+    [string]$WaitGone = '',
+    [string]$WebView = '',
+    [int]$Grace = 20,
+    [int]$Timeout = 900
+)
+$ErrorActionPreference = 'Stop'
+$prefix = $Dir.TrimEnd('\') + '\'
+function Sweep([double]$grace) {
+    $now = Get-Date
+    foreach ($q in Get-CimInstance Win32_Process) {
+        if (-not $q.ExecutablePath -or -not $q.ExecutablePath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { continue }
+        $age = ($now - $q.CreationDate).TotalSeconds
+        if ($age -lt $grace) { continue }
+        Write-Output ("ended {0} after {1:N0} s: {2}" -f $q.Name, $age, $q.CommandLine)
+        Stop-Process -Id $q.ProcessId -Force -ErrorAction SilentlyContinue
+        if ($WebView) {
+            Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe'" |
+                Where-Object { $_.CommandLine -and $_.CommandLine.Contains($WebView) } |
+                ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        }
+    }
+}
+$p = Start-Process -FilePath $Exe -ArgumentList $Arguments -PassThru
+$null = $p.Handle   # the exit code stays readable after it exits
+$start = Get-Date
+while ($true) {
+    Sweep $Grace
+    if ($p.HasExited -and (-not $WaitGone -or -not (Test-Path -LiteralPath $WaitGone))) { break }
+    if (((Get-Date) - $start).TotalSeconds -gt $Timeout) { Write-Output "timeout after $Timeout s"; exit 3 }
+    Start-Sleep -Milliseconds 500
+}
+Sweep 0   # nothing it started may outlive it
+Write-Output ("exit {0}" -f $p.ExitCode)
+PS
+    # watched EXE ARGS [WAITGONE]: runs it as above; sets WATCHED_EXIT (its exit code) and
+    # WATCHED_ENDED (what had to be ended, one per line)
+    watched() {
+        local out line ps=(-Exe "$(win "$1")" -Arguments "$2" -Dir "$(win "$INST")" -WebView "$(win "$SCRATCH/webview2")")
+        [ -z "${3:-}" ] || ps+=(-WaitGone "$(win "$3")")
+        WATCHED_EXIT=none WATCHED_ENDED=""
+        # the hooks' app (story 38.3) keeps its state in %LOCALAPPDATA%\Maktaba: a scratch one
+        out="$(LOCALAPPDATA="$(win "$SCRATCH/localappdata")" WEBVIEW2_USER_DATA_FOLDER="$(win "$SCRATCH/webview2")" \
+            wincmd powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
+            -File "$(win "$SCRATCH/run-watched.ps1")" "${ps[@]}" 2>&1)" || true
+        while IFS=$'\r' read -r line; do
+            case "$line" in
+                "exit "*)  WATCHED_EXIT="${line#exit }" ;;
+                "ended "*) WATCHED_ENDED+="${line#ended }"$'\n' ;;
+                "") ;;
+                *) printf '        %s\n' "$line" ;;
+            esac
+        done <<<"$out"
+    }
+    # hooks WHAT: what the hooks of the last run left running, judged by what the installed
+    # Maktaba.exe knows (the header)
+    hooks() {
+        local n
+        if [ -z "$WATCHED_ENDED" ]; then ok "$1: every hook exited by itself"; return; fi
+        while IFS= read -r n; do
+            [ -n "$n" ] || continue
+            if [ "$SHELL_HOOKS" = 1 ]; then
+                fail "$1: a hook did not exit within 20 s, ended: $n"
+            else
+                note "$1: this Maktaba.exe predates story 38.3 (no --server-* flags): its hook opened the app, ended: $n"
+            fi
+        done <<<"$WATCHED_ENDED"
+    }
+
+    echo "installer: $SETUP"
+    REGISTRY_TOUCHED=1
+    watched "$SETUP" "/S /NS /D=$(win "$INST")"
+    if [ "$WATCHED_EXIT" = 0 ] && [ -f "$INST/Maktaba.exe" ]; then
+        ok "silent install into $(win "$INST")"
+    else
+        fail "silent install (exit $WATCHED_EXIT)"
+    fi
+    SHELL_HOOKS=0
+    if grep -qa -- '--server-remove' "$INST/Maktaba.exe" 2>/dev/null; then SHELL_HOOKS=1; fi
+    hooks "install"
+    publisher="$(reg_value "$UNINSTALL_KEY" Publisher)"
+    if [ -n "$publisher" ] && [ "$publisher" != "$manufacturer" ]; then
+        fail "the installer's publisher is '$publisher', check.sh expected '$manufacturer' (it puts HKCU\\Software\\<publisher>\\Maktaba back)"
+    fi
+    PAYLOAD="$INST/server"
+fi
+
+if [ ! -f "$PAYLOAD/payload.json" ]; then
+    fail "no payload at $PAYLOAD"
+else
+PAYLOAD="$(cd "$PAYLOAD" && pwd)"
+PY="$PAYLOAD/python/python.exe"
+tool() { "$PY" -I "$(win "$SCRIPT_DIR/payload_tool.py")" "$@"; }
+
+touch "$SCRATCH/before"
+sleep 1   # mtime granularity: anything the checks write into the payload is newer
+
+echo "payload: $(win "$PAYLOAD")"
+echo "programs"
+for b in maktaba-server maktaba-api maktaba-streaming maktaba-launcher; do
+    run "$b" "$PAYLOAD/bin/$b.exe" --version
+done
+for b in postgres initdb pg_ctl pg_dump pg_dumpall pg_restore psql pg_isready pg_upgrade pg_controldata pg_resetwal pg_basebackup; do
+    run "$b" "$PAYLOAD/postgres/bin/$b.exe" --version
+done
+run ffmpeg "$PAYLOAD/ffmpeg/ffmpeg.exe" -hide_banner -version
+run ffprobe "$PAYLOAD/ffmpeg/ffprobe.exe" -hide_banner -version
+run python "$PY" -I -c 'import sys, ssl, sqlite3, venv, ensurepip, ctypes; print(sys.version.split()[0], ssl.OPENSSL_VERSION)'
+
+echo "PE files"
+pe_out="$(tool check "$(win "$PAYLOAD")" 2>&1)" && pe_rc=0 || pe_rc=$?
+pe_out="${pe_out//$'\r'/}"
+if [ "$pe_rc" -eq 0 ]; then
+    ok "$(printf '%s\n' "$pe_out" | tail -1), all x86_64, nothing loaded from outside the payload but Windows"
+else
+    while IFS= read -r line; do fail "$line"; done < <(printf '%s\n' "$pe_out" | sed '$d' | head -20)
+fi
+
+echo "ffmpeg"
+encoders="$("$PAYLOAD/ffmpeg/ffmpeg.exe" -hide_banner -encoders 2>/dev/null || true)"
+if grep -qw h264_nvenc <<<"$encoders"; then ok "h264_nvenc (the TV's encoder on Windows)"; else fail "ffmpeg has no h264_nvenc"; fi
+hwaccels="$("$PAYLOAD/ffmpeg/ffmpeg.exe" -hide_banner -hwaccels 2>/dev/null || true)"
+if grep -qw cuda <<<"$hwaccels"; then ok "-hwaccel cuda"; else fail "ffmpeg has no cuda hwaccel"; fi
+
+echo "PostgreSQL"
+pg="$PAYLOAD/postgres/bin"
+PG_CTL="$pg/pg_ctl.exe"
+# a free port on 127.0.0.1, from the system
+port="$("$PY" -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()' | tr -d '\r')"
+# the supervisor's initdb (pgbundle): UTF8, the C locale
+if "$pg/initdb.exe" -D "$(win "$PGDATA_DIR")" -U maktaba --auth=trust -E UTF8 --locale=C >"$SCRATCH/initdb.log" 2>&1 &&
+    "$PG_CTL" -D "$(win "$PGDATA_DIR")" -l "$(win "$SCRATCH/pg.log")" -w -t 60 \
+        -o "-p $port -c listen_addresses=127.0.0.1" start >"$SCRATCH/pg_ctl.log" 2>&1; then
+    ok "initdb, started on 127.0.0.1:$port"
+    run "pg_isready" "$pg/pg_isready.exe" -h 127.0.0.1 -p "$port"
+    want="pg_trgm, pgcrypto, unaccent: true"
+    got="$(timeout 60 "$pg/psql.exe" -h 127.0.0.1 -p "$port" -U maktaba -d postgres -Atq -v ON_ERROR_STOP=1 -c \
+        "CREATE EXTENSION pg_trgm; CREATE EXTENSION pgcrypto; CREATE EXTENSION unaccent;
+         SELECT 'pg_trgm, pgcrypto, unaccent: ' || (similarity('maktaba', 'maktabah') > 0.5
+             AND encode(digest('maktaba', 'sha256'), 'hex') = '$(printf maktaba | sha256sum | awk '{print $1}')'
+             AND unaccent(U&'H\00F4tel') = 'Hotel')::text;" 2>&1 | tr -d '\r' || true)"
+    if [ "$got" = "$want" ]; then ok "$got"; else fail "extensions: $got"; fi
+    run "pg_dump" "$pg/pg_dump.exe" -h 127.0.0.1 -p "$port" -U maktaba -Fc -f "$(win "$SCRATCH/dump")" postgres
+    # postgres.exe loads the Visual C++ runtime from beside it, not from System32
+    pid="$(head -1 "$PGDATA_DIR/postmaster.pid" | tr -d '\r')"
+    # shellcheck disable=SC2016  # PowerShell's own $ variables; the pid goes in through the environment
+    mods="$(PG_PID="$pid" powershell.exe -NoProfile -NonInteractive -Command \
+        '(Get-Process -Id $env:PG_PID).Modules | Where-Object { $_.ModuleName -match "^(vcruntime140|msvcp140)" } | ForEach-Object { $_.FileName }' 2>&1 | tr -d '\r' || true)"
+    pgwin="$(win "$pg")\\"
+    if [ -z "$mods" ]; then
+        fail "postgres.exe (pid $pid): could not list its Visual C++ runtime DLLs"
+    elif printf '%s\n' "$mods" | grep -viF "$pgwin" | grep -q .; then
+        fail "postgres.exe loads the Visual C++ runtime from outside the payload: $(printf '%s\n' "$mods" | grep -viF "$pgwin" | tr '\n' ' ')"
+    else
+        ok "postgres.exe runs on the payload's Visual C++ runtime ($(printf '%s\n' "$mods" | sed 's/.*\\//' | paste -sd' ' -))"
+    fi
+    if "$PG_CTL" -D "$(win "$PGDATA_DIR")" -m fast -w -t 60 stop >/dev/null 2>&1; then ok "pg_ctl stop -m fast"; else fail "pg_ctl stop -m fast"; fi
+else
+    fail "initdb/start: $(tail -3 "$SCRATCH/initdb.log" "$SCRATCH/pg.log" "$SCRATCH/pg_ctl.log" 2>/dev/null | tr -d '\r')"
+fi
+
+echo "Python"
+run "stdlib imports" "$PY" -I -c 'import asyncio, bz2, ctypes, decimal, email.message, hashlib, http.client, json, lzma, multiprocessing, sqlite3, ssl, uuid, venv, xml.etree.ElementTree, zlib, zoneinfo; print("ok")'
+run "venv (offline, with pip)" "$PY" -I -m venv "$(win "$SCRATCH/venv")"
+if [ -f "$SCRATCH/venv/Scripts/pip.exe" ]; then ok "venv has pip"; else fail "venv has no pip"; fi
+run "venv's python" "$SCRATCH/venv/Scripts/python.exe" -I -c 'import sys; print("in a venv:", sys.prefix != sys.base_prefix)'
+
+echo "pipeline"
+whl=("$PAYLOAD"/pipeline/maktaba_pipeline-*-py3-none-any.whl)
+if [ -f "${whl[0]}" ]; then ok "wheel ${whl[0]##*/}"; else fail "no pipeline wheel"; fi
+if [ -s "$PAYLOAD/pipeline/constraints.txt" ] && grep -q -- '--hash=sha256:' "$PAYLOAD/pipeline/constraints.txt"; then
+    ok "constraints.txt (hashed)"
+else
+    fail "constraints.txt missing or without hashes"
+fi
+for heavy in torch nvidia ctranslate2 mlx; do
+    if find "$PAYLOAD" -iname "${heavy}*" -print -quit | grep -q .; then fail "$heavy is in the payload (it downloads on first run)"; fi
+done
+run "payload.json" "$PY" -I - "$(win "$PAYLOAD")" "$("$pg/postgres.exe" --version 2>&1 | tr -d '\r')" <<'PY'
+import hashlib, json, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+d = json.loads((root / "payload.json").read_text(encoding="utf-8"))
+assert d["schema"] == 1, d["schema"]
+assert d["platform"] == "windows-x86_64", d["platform"]
+assert d["version"], "no version"
+for k in ("postgres", "ffmpeg", "python"):
+    assert d[k]["version"] and d[k]["source"].startswith("https://") and len(d[k]["sha256"]) == 64, k
+pg = d["postgres"]["version"].removesuffix(".0")
+assert sys.argv[2].endswith(" " + pg), f"postgres.exe says {sys.argv[2]!r}, payload.json {pg}"
+assert sys.version.split()[0] == d["python"]["version"], (sys.version, d["python"]["version"])
+sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
+assert sha(root / "pipeline" / d["pipeline"]["wheel"]) == d["pipeline"]["sha256"], "the wheel's sha256"
+assert sha(root / "pipeline" / "constraints.txt") == d["pipeline"]["constraints_sha256"], "constraints.txt's sha256"
+for lib in d["postgres"]["libraries"]:
+    assert (root / "postgres" / "bin" / lib).is_file(), f"postgres/bin/{lib}"
+assert d["msvc_runtime"]["version"], "msvc_runtime"
+print("version", d["version"], "for", d["platform"])
+PY
+
+echo "launcher"
+launcher="$PAYLOAD/bin/maktaba-launcher.exe"
+status="$("$launcher" --app-bundle "$(win "$PAYLOAD")" --root "$(win "$SCRATCH/state")" --status 2>&1 | tr -d '\r' || true)"
+if grep -q 'updates: *with the app' <<<"$status"; then
+    ok "--app-bundle (what the agent passes): updates come with the app"
+else
+    fail "launcher --app-bundle --status: $status"
+fi
+# Story 38.2 teaches the launcher the Windows app's layout (<install>\server\bin beside
+# <install>\Maktaba.exe, with payload.json); before it, only Maktaba.app is recognised.
+help="$("$launcher" --help 2>&1 | tr -d '\r' || true)"
+if [ -n "$SETUP" ]; then
+    app_root="$INST"
+else
+    # a stand-in install: the launcher looks only for the files
+    app_root="$SCRATCH/app"
+    mkdir -p "$app_root/server/bin"
+    : >"$app_root/Maktaba.exe"
+    cp "$PAYLOAD/payload.json" "$app_root/server/"
+    cp "$launcher" "$app_root/server/bin/"
+fi
+status="$("$app_root/server/bin/maktaba-launcher.exe" --root "$(win "$SCRATCH/state")" --status 2>&1 | tr -d '\r' || true)"
+if grep -q 'updates: *with the app' <<<"$status"; then
+    ok "launcher in <install>\\server\\bin beside Maktaba.exe: app-bundle mode, detected"
+elif grep -q 'Maktaba.exe' <<<"$help"; then
+    fail "the launcher did not detect the app's layout: $status"
+else
+    note "this launcher predates story 38.2 (no Windows app layout): its detection is not checked"
+fi
+
+echo "payload untouched by the checks"
+written="$(find "$PAYLOAD" -newer "$SCRATCH/before" | sed -n '1,5p')"
+if [ -z "$written" ]; then ok "nothing written into the payload"; else fail "the checks wrote into the payload: $written"; fi
+fi
+
+# --- the installer, part 2: the app, then uninstall ---------------------------------------------
+if [ -n "$SETUP" ]; then
+    echo "the installed app: $(win "$INST")"
+    for f in Maktaba.exe uninstall.exe server/bin/maktaba-server.exe server/payload.json; do
+        if [ -f "$INST/$f" ]; then ok "$f"; else fail "no $f"; fi
+    done
+    built="$REPO_ROOT/build/win-app/server/payload.json"
+    if [ -f "$built" ] && [ -f "$INST/server/payload.json" ]; then
+        if cmp -s "$built" "$INST/server/payload.json"; then ok "server\\payload.json is the one payload.sh built"; else note "server\\payload.json differs from ${built#"$REPO_ROOT"/} (an installer from another build)"; fi
+    fi
+    loc="$(reg_value "$UNINSTALL_KEY" InstallLocation)"
+    if [ "${loc//\"/}" = "$(win "$INST")" ]; then ok "registered for this user (HKCU), at the test folder"; else fail "uninstall registration: InstallLocation '$loc'"; fi
+    if [ "$(state_sums)" = "$STATE_BEFORE" ]; then ok "the state beside it is untouched by the install"; else fail "the install changed the state: $(state_sums)"; fi
+
+    echo "uninstall"
+    watched "$INST/uninstall.exe" "/S" "$INST/uninstall.exe"
+    hooks "uninstall"
+    [ "$WATCHED_EXIT" = 0 ] || fail "uninstall.exe /S exited $WATCHED_EXIT"
+    left=0
+    for f in Maktaba.exe uninstall.exe server; do
+        if [ -e "$INST/$f" ]; then
+            fail "left behind: $f $(find "$INST/$f" -type f 2>/dev/null | sed -n '1,3p' | tr '\n' ' ')"
+            left=1
+        fi
+    done
+    [ "$left" = 1 ] || ok "Maktaba.exe, uninstall.exe and server\\ removed"
+    if [ "$(state_sums)" = "$STATE_BEFORE" ]; then ok "the state is still there, untouched (server.toml, keys\\, data\\)"; else fail "the uninstall changed the state: $(state_sums)"; fi
+    if reg_exists "$UNINSTALL_KEY"; then fail "the uninstall registration is still there"; else ok "unregistered"; fi
+    if reg_exists "$DEEPLINK_KEY"; then
+        note "the uninstaller left $DEEPLINK_KEY ($(reg_value "$DEEPLINK_KEY\\shell\\open\\command"))"
+    fi
+    # the remembered install folder and anything left, as they were
+    restore_registry
+fi
+
+if [ "$fails" -ne 0 ]; then
+    echo "$fails check(s) failed"
+    exit 1
+fi
+echo "all checks passed"
