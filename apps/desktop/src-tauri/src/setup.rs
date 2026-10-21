@@ -22,6 +22,7 @@ pub const STEPS: &[&str] = &[
     "models",
     "plex",
     "venv",
+    "llm",
     "finish",
 ];
 

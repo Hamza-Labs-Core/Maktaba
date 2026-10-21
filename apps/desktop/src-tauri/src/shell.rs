@@ -22,7 +22,7 @@ use tauri_plugin_updater::UpdaterExt;
 use crate::agent::{self, Action, BundlePaths, LoginItem};
 use crate::mode::{self, AppMode, Target};
 use crate::setup::{self, Progress, StepError};
-use crate::status::{self, ServerStatus};
+use crate::status::{self, Probe, ServerStatus};
 use crate::tray::{self, Entry};
 
 const TRAY_ID: &str = "main";
@@ -129,21 +129,25 @@ impl Shell {
         agent::set_paused_flag(true);
     }
 
-    fn compute_status(&self) -> ServerStatus {
+    /// The server's status, and the language model's line when the
+    /// supervisor runs a model server.
+    fn compute_status(&self) -> (ServerStatus, Option<String>) {
         let Some(AppMode::Server { supervisor_url, .. }) = self.mode() else {
-            return ServerStatus::SetupNeeded;
+            return (ServerStatus::SetupNeeded, None);
         };
         let addr = status::addr_of(&supervisor_url)
             .unwrap_or_else(|| status::DEFAULT_SUPERVISOR_ADDR.into());
         // a live agent (Windows) whose supervisor does not answer yet is starting
         let just_started = self.started_at.lock().unwrap().elapsed() < START_GRACE
             || agent::agent_alive() == Some(true);
-        status::derive(
-            true,
-            self.paused.load(Ordering::SeqCst),
-            just_started,
-            &status::probe(&addr),
-        )
+        let probe = status::probe(&addr);
+        let model = match &probe {
+            Probe::Snapshot(s) => status::model_line(s.llm.as_ref()),
+            Probe::Unreachable => None,
+        };
+        let paused = self.paused.load(Ordering::SeqCst);
+        let st = status::derive(true, paused, just_started, &probe);
+        (st, model)
     }
 }
 
@@ -207,12 +211,13 @@ fn refresh(app: &AppHandle) {
     // a tray click) must reach the main thread in the order they computed.
     let _one_at_a_time = sh.refresh_lock.lock().unwrap();
     let server = sh.server_side();
-    let status = if server {
+    let (status, model) = if server {
         sh.compute_status()
     } else {
-        ServerStatus::SetupNeeded
+        (ServerStatus::SetupNeeded, None)
     };
-    let entries = tray::entries(server, &status, sh.update_ready.load(Ordering::SeqCst));
+    let update_ready = sh.update_ready.load(Ordering::SeqCst);
+    let entries = tray::entries_with_model(server, &status, update_ready, model.as_deref());
     *sh.status.lock().unwrap() = status.clone();
     let mut last = sh.menu.lock().unwrap();
     if *last == entries {

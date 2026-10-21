@@ -170,6 +170,9 @@ type QueueSummary struct {
 	// whose failures put this stage's waiting rows into backoff; nil when
 	// none did. Set even while other rows run, so the card can say so.
 	RetryingService *string `json:"retrying_service"`
+	// Health is Epic 40's tile state: failing only for a dominant new
+	// signature, waiting while jobs are parked, the Needs-you count.
+	Health *StageHealth `json:"health"`
 }
 
 // Coverage is the live worker coverage of one stage.

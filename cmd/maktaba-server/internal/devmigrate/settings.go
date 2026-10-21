@@ -31,6 +31,9 @@ type Settings struct {
 	CacheRoot  string // the streaming cache
 	HFHome     string // the Hugging Face cache (hub/ inside)
 	CamelData  string // CAMeL Tools' data
+	// OllamaModels is the dev setup's Ollama models folder (OLLAMA_MODELS, else
+	// ~/.ollama/models): the language model the LLM stages use.
+	OllamaModels string
 }
 
 // The pipeline's default models (pipeline/src/maktaba_pipeline: stt/settings.py,
@@ -98,6 +101,9 @@ func ReadSettings(sys Sys, st Stack) Settings {
 		CacheRoot:   get("MAKTABA_CACHE_ROOT", filepath.Join(dot, "cache", "streaming")),
 		HFHome:      get("HF_HOME", filepath.Join(home, ".cache", "huggingface")),
 		CamelData:   get("CAMELTOOLS_DATA", filepath.Join(home, ".camel_tools")),
+		// a Homebrew Ollama (brew services) keeps its models here unless
+		// OLLAMA_MODELS says otherwise
+		OllamaModels: get("OLLAMA_MODELS", filepath.Join(home, ".ollama", "models")),
 	}
 	if s.DatabaseURL == "" {
 		s.DatabaseURL = get("MAKTABA_DATABASE_URL", "postgresql://maktaba:maktaba@localhost:5432/maktaba")

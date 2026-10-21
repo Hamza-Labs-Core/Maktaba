@@ -237,7 +237,7 @@ func TestStreamVerificationFailsAndStops(t *testing.T) {
 			w.sampled = w.now
 			w.tick()
 			got := w.get(c.ID)
-			if got.State != StateFailed || got.EndReason == nil || *got.EndReason != "verification_failed" {
+			if got.State != StateDraft || failReason(t, w, c.ID) != "verification_failed" {
 				t.Fatalf("state %s reason %v", got.State, got.EndReason)
 			}
 			if !strings.Contains(fmt.Sprint(got.VerifyReport["reasons"]), "PIDs pmt 0x1100") {
@@ -265,7 +265,7 @@ func TestStagingSlotMustRunTheRelease(t *testing.T) {
 	w.now = w.now.Add(slotStartTimeout + time.Second)
 	w.tick()
 	got := w.get(c.ID)
-	if got.State != StateFailed || *got.EndReason != "slot_not_healthy" {
+	if got.State != StateDraft || got.EndReason != nil || failReason(t, w, c.ID) != "slot_not_healthy" {
 		t.Fatalf("%s %v", got.State, got.EndReason)
 	}
 }

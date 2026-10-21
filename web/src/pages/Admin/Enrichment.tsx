@@ -21,6 +21,7 @@ import { AdminGate } from "../../components/AdminGate";
 import { EnrichmentPanel } from "../../components/EnrichmentPanel";
 import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
+import { TitleRow } from "../../help/HelpLink";
 
 interface Pending {
   video_id: string;
@@ -121,7 +122,9 @@ function EnrichmentInner() {
   return (
     <section className="mkt-page mkt-enrich-review">
       <header className="mkt-page__header">
-        <h1>{t("enrich.review.title")}</h1>
+        <TitleRow>
+          <h1>{t("enrich.review.title")}</h1>
+        </TitleRow>
         <p className="mkt-muted">{t("enrich.review.desc")}</p>
       </header>
 

@@ -42,6 +42,9 @@ func Items(s Settings, state, keys string) []Item {
 		// the Hugging Face sign-in (the second listen's model is gated)
 		Item{What: "Hugging Face token", From: filepath.Join(s.HFHome, "token"), To: filepath.Join(state, "models", "huggingface", "token"), Key: true},
 		Item{What: "CAMeL Tools data", From: s.CamelData, To: filepath.Join(state, "models", "camel_tools")},
+		// the language model(s) of the LLM stages: the bundled Ollama's folder
+		// (OLLAMA_MODELS of the ollama role), so the app does not download them again
+		Item{What: "language models (Ollama)", From: s.OllamaModels, To: filepath.Join(state, "models", "ollama")},
 	)
 	for i := range items {
 		items[i].stat()
@@ -55,7 +58,7 @@ func (it *Item) stat() {
 	}
 	it.Exists = true
 	it.Size = diskSize(it.From)
-	if _, err := os.Lstat(it.To); err == nil {
+	if _, err := os.Lstat(it.To); err == nil && !emptyDir(it.To) {
 		it.Done = true
 	}
 	it.Clone = sameVolume(it.From, it.To)
@@ -93,6 +96,13 @@ func (it Item) Copy(replace bool) error {
 		from = r
 	}
 	there := false
+	if emptyDir(it.To) {
+		// a folder the app made before anything was in it (the model server's
+		// models folder): the copy takes its place
+		if err := os.RemoveAll(it.To); err != nil {
+			return err
+		}
+	}
 	if _, err := os.Lstat(it.To); err == nil {
 		if it.Key {
 			if !sameFile(from, it.To) {
@@ -127,6 +137,24 @@ func (it Item) Copy(replace bool) error {
 		defer func() { _ = os.RemoveAll(old) }()
 	}
 	return os.Rename(part, it.To)
+}
+
+// emptyDir: p is a folder (not a link) with no file anywhere in it (the model
+// server makes its blobs/ and manifests/ folders when it starts).
+func emptyDir(p string) bool {
+	info, err := os.Lstat(p)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	empty := true
+	_ = filepath.WalkDir(p, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || !d.IsDir() {
+			empty = false
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return empty
 }
 
 func sameFile(a, b string) bool {

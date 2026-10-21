@@ -40,6 +40,10 @@ var causeLabels = map[string]causeInfo{
 	"no_handler":           {"No worker handles this stage", ActionShowWorkers},
 	"graph_violation":      {"Stage requested work its graph does not allow", ActionRetry},
 	"db_error":             {"Database error", ActionRetry},
+	"shm_full":             {"Postgres ran out of shared memory", ActionRetry},
+	"disk_full":            {"No space left on the disk", ActionRetry},
+	"permission_denied":    {"No permission to read the file", ActionRetry},
+	"ffmpeg_rc":            {"ffmpeg failed on the file", ActionRetry},
 	CauseAwaitingReview:    {"Waiting for your review", ActionApply},
 	CauseStaleGraph:        {"No worker has synced this stage recently", ActionShowWorkers},
 }

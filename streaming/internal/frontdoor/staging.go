@@ -163,6 +163,12 @@ func Expectation(rawOutput []byte) verify.Expect {
 
 // releaseExpect reads the release's tv_output.
 func (s *Slots) releaseExpect(ctx context.Context, releaseID string) verify.Expect {
+	return Expectation(s.releaseSection(ctx, releaseID, "tv_output"))
+}
+
+// releaseSection is a rules section's overrides stored with the release (nil:
+// none, or unreadable).
+func (s *Slots) releaseSection(ctx context.Context, releaseID, section string) []byte {
 	var raw []byte
 	if s.Pool != nil {
 		qctx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -170,12 +176,12 @@ func (s *Slots) releaseExpect(ctx context.Context, releaseID string) verify.Expe
 		if s.Pool.QueryRow(qctx, `SELECT settings::text FROM tv_releases WHERE id = $1`, releaseID).Scan(&settings) == nil {
 			var m map[string]json.RawMessage
 			if json.Unmarshal(settings, &m) == nil {
-				raw = m["tv_output"]
+				raw = m[section]
 			}
 		}
 		cancel()
 	}
-	return Expectation(raw)
+	return raw
 }
 
 // StageStart runs plan's release on the staging instance (idempotent: the
