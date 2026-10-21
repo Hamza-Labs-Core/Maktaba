@@ -79,7 +79,7 @@ func stepModels(s *setupRun, in json.RawMessage) (any, error) {
 	case "huggingface":
 		token := strings.TrimSpace(req.HFToken)
 		if token == "" && s.refineOn() {
-			return nil, failStep("hf_token_invalid", "hf_token", "Enter a Hugging Face read token.")
+			return nil, failStep("hf_token_empty", "hf_token", "Enter a Hugging Face read token.")
 		}
 		if token != "" {
 			if err := checkHFToken(s.ctx, token, s.refineModel(), s.refineOn()); err != nil {
@@ -150,7 +150,7 @@ func checkHFToken(ctx context.Context, token, model string, gated bool) error {
 	case code >= 200 && code < 400:
 		return nil
 	case code == http.StatusUnauthorized || code == http.StatusForbidden:
-		return failStep("hf_gated", "hf_token", "Accept the terms of %s on huggingface.co with this account, then try again.", model)
+		return failStep("hf_gated", "hf_token", "Accept the terms of %s on huggingface.co with this account, then try again.", model).with("model", model)
 	}
 	return failStep("network", "", "Hugging Face answered %d for %s.", code, model)
 }
@@ -164,7 +164,7 @@ func shareModelFolder(model string) string { return strings.ReplaceAll(model, "/
 // copy is a <revision> folder with its manifest.json (written last).
 func findShareCopy(dir, model string) (string, error) {
 	if dir == "" {
-		return "", failStep("nas_missing", "path", "Give the folder on the NAS that holds the models.")
+		return "", failStep("nas_path_empty", "path", "Give the folder on the NAS that holds the models.")
 	}
 	for _, base := range []string{dir, filepath.Join(dir, "maktaba", "models")} {
 		revs, err := os.ReadDir(filepath.Join(base, shareModelFolder(model)))
@@ -180,7 +180,8 @@ func findShareCopy(dir, model string) (string, error) {
 			}
 		}
 	}
-	return "", failStep("nas_missing", "path", "%s has no copy of %s (the home publishes it in maktaba/models on the share).", dir, model)
+	return "", failStep("nas_missing", "path", "%s has no copy of %s (the home publishes it in maktaba/models on the share).", dir, model).
+		with("path", dir, "model", model)
 }
 
 // modelEvent is one line of `maktaba-pipeline models download --json`
@@ -216,6 +217,7 @@ func (s *setupRun) downloadModels() (any, error) {
 	cmd := exec.CommandContext(s.ctx, py, args...)
 	cmd.Env = append(os.Environ(), supervisor.ChildEnv(supervisor.RolePipeline, s.cfg)...)
 	cmd.Stderr = s.log
+	stopGently(cmd) // a stop asks the download, which keeps what it has for the next run
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -251,7 +253,8 @@ func (s *setupRun) downloadModels() (any, error) {
 	case err == nil && done.Event == "done":
 		return map[string]any{"models": done.Items}, nil
 	case code == 3:
-		return nil, failStep("hf_gated", "", "The second-listen model needs a Hugging Face sign-in that accepted its terms (or the NAS copy).")
+		return nil, failStep("hf_gated", "", "The second-listen model needs a Hugging Face sign-in that accepted its terms (or the NAS copy).").
+			with("model", s.refineModel())
 	case errors.Is(s.ctx.Err(), context.Canceled):
 		return nil, failStep("interrupted", "", "The download stopped; it goes on from where it was next time.")
 	}
