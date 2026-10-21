@@ -205,7 +205,8 @@ fi
 
 # --- 1. setup --answers ------------------------------------------------------------------------
 mkdir -p "$CONFIG" "$SCRATCH/media"
-cat >"$CONFIG/server.toml" <<'EOF'
+write_config() {
+    cat >"$CONFIG/server.toml" <<'EOF'
 # e2e.sh: every listener on 127.0.0.1; no second listen (no Hugging Face token on CI);
 # no language-model server (a 5 GB download the test does not need)
 [server]
@@ -221,6 +222,8 @@ refine = "off"
 [llm]
 enabled = "off"
 EOF
+}
+write_config
 password="$(head -c 24 /dev/urandom | base64 | tr -d '/+=')"
 answers="$SCRATCH/answers.json"
 (umask 077 && "$PY" -I -c 'import json, sys
@@ -233,7 +236,19 @@ json.dump({
 
 log "setup --answers (check, runtime, admin, libraries, models, plex, venv, download, finish, service)"
 INSTALLED=1
-"$FIRST/bin/maktaba-server" setup --answers "$answers" --lang en </dev/null >"$SCRATCH/setup.log" 2>&1 || die "setup --answers"
+setup_from() { "$1/bin/maktaba-server" setup --answers "$answers" --lang en </dev/null >"$SCRATCH/setup.log" 2>&1; }
+if ! setup_from "$FIRST"; then
+    [ "$FIRST" != "$PAYLOAD" ] || die "setup --answers"
+    # the latest release's setup may want an older form of these answers: what it left is
+    # removed, and the payload under test sets up instead (the update then runs from it)
+    log "the latest release's setup --answers failed; setting up from the payload under test instead:"
+    tail -n 6 "$SCRATCH/setup.log" >&2
+    "$FIRST/bin/maktaba-server" service uninstall >/dev/null 2>&1 || true
+    rm -rf "$DATA" "$XDG_STATE_HOME/maktaba" "$XDG_CACHE_HOME/maktaba"
+    write_config
+    FIRST="$PAYLOAD"
+    setup_from "$FIRST" || die "setup --answers"
+fi
 tail -n 6 "$SCRATCH/setup.log"
 rs="$(cli runtime status --json)"
 [ "$(printf '%s' "$rs" | json_field owner)" = headless ] || die "the runtime's owner is not headless: $rs"
