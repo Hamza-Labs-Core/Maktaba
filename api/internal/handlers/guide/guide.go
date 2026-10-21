@@ -123,9 +123,9 @@ func (h *Handler) Grid(w http.ResponseWriter, r *http.Request) {
 		Channel ChannelHeader `json:"channel"`
 		Blocks  []Block       `json:"blocks"`
 	}
-	var gr GuideRules
+	var gr FillerRules
 	if collapse {
-		gr = loadGuideRules(r.Context(), h.DB)
+		gr = loadFillerRules(r.Context(), h.DB)
 	}
 	out := make([]chanGuide, 0, len(chans))
 	for _, c := range chans {
@@ -181,7 +181,7 @@ func (h *Handler) ChannelGuide(w http.ResponseWriter, r *http.Request) {
 		blocks = append(blocks, toBlock(pr, now))
 	}
 	if v := r.URL.Query().Get("collapse"); v != "false" && v != "off" && v != "0" {
-		blocks = collapseFiller(blocks, loadGuideRules(r.Context(), h.DB), c.Name, now)
+		blocks = collapseFiller(blocks, loadFillerRules(r.Context(), h.DB), c.Name, now)
 	}
 	resp := map[string]any{
 		"server_time": now.UTC().Format(time.RFC3339),

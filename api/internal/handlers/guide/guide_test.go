@@ -74,7 +74,7 @@ func TestToBlock_Liveness(t *testing.T) {
 // filler up to 120 s joins the programme before it, longer filler is a
 // «فواصل» block, and programmes shorter than 60 s are not listed.
 func TestCollapseFiller(t *testing.T) {
-	gr := loadGuideRules(context.Background(), nil)
+	gr := loadFillerRules(context.Background(), nil)
 	if gr.MaxPadding != 120*time.Second || gr.FillerTitle != "فواصل" || gr.MinProgram != 60*time.Second {
 		t.Fatalf("rules' defaults: %+v", gr)
 	}
@@ -122,7 +122,7 @@ func TestCollapseFiller(t *testing.T) {
 		t.Errorf("short lead-in: %+v", got)
 	}
 	lead = []Block{blk("slate", "", 0, 600), blk("program", "A", 600, 1800)}
-	got := collapseFiller(lead, GuideRules{MaxPadding: gr.MaxPadding, MinProgram: gr.MinProgram}, "Kids", t0)
+	got := collapseFiller(lead, FillerRules{MaxPadding: gr.MaxPadding, MinProgram: gr.MinProgram}, "Kids", t0)
 	if len(got) != 2 || got[0].Title != "Kids" || got[0].Kind != "filler" || got[1].Title != "A" {
 		t.Errorf("long lead-in: %+v", got)
 	}

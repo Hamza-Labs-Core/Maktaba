@@ -13,7 +13,7 @@ import (
 // The web guide follows what was changed in rules tv.guide_* (app_settings
 // rules.tv, written when a TV change goes live); a value out of range keeps
 // its default.
-func TestLoadGuideRules_ReadsTheTVRules(t *testing.T) {
+func TestLoadFillerRules_ReadsTheTVRules(t *testing.T) {
 	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "guide.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -27,7 +27,7 @@ func TestLoadGuideRules_ReadsTheTVRules(t *testing.T) {
 		`{"guide_max_padding_s":300,"guide_filler_title":"Breaks","guide_min_program_s":99999}`); err != nil {
 		t.Fatal(err)
 	}
-	gr := loadGuideRules(context.Background(), db)
+	gr := loadFillerRules(context.Background(), db)
 	if gr.MaxPadding != 300*time.Second || gr.FillerTitle != "Breaks" || gr.MinProgram != 60*time.Second {
 		t.Errorf("rules: %+v", gr)
 	}

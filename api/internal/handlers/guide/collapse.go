@@ -44,9 +44,9 @@ func isFiller(kind string) bool {
 	return kind == "filler" || kind == "bumper" || kind == "slate"
 }
 
-// GuideRules are how the guide shows filler, as dizqueTV's guide
+// FillerRules are how the guide shows filler, as dizqueTV's guide
 // (guideMaxPaddingSeconds, guideFlexPlaceholder, guideMinimumDurationSeconds).
-type GuideRules struct {
+type FillerRules struct {
 	// MaxPadding: a filler run up to this long joins the programme before
 	// it (or, with none before it, the one after); a longer one is a block
 	// titled FillerTitle (empty: the channel's name).
@@ -57,17 +57,17 @@ type GuideRules struct {
 	MinProgram time.Duration
 }
 
-// loadGuideRules reads rules tv.guide_* (the defaults with what was
+// loadFillerRules reads rules tv.guide_* (the defaults with what was
 // changed). A failed read keeps the rules' defaults.
-func loadGuideRules(ctx context.Context, db *sql.DB) GuideRules {
+func loadFillerRules(ctx context.Context, db *sql.DB) FillerRules {
 	m, err := rules.Effective(ctx, db, "tv")
 	if err != nil {
 		if m, err = rules.Effective(ctx, nil, "tv"); err != nil {
-			return GuideRules{}
+			return FillerRules{}
 		}
 	}
 	title, _ := m["guide_filler_title"].(string)
-	return GuideRules{
+	return FillerRules{
 		MaxPadding:  time.Duration(ruleInt(m["guide_max_padding_s"])) * time.Second,
 		FillerTitle: strings.TrimSpace(title),
 		MinProgram:  time.Duration(ruleInt(m["guide_min_program_s"])) * time.Second,
@@ -89,13 +89,13 @@ func ruleInt(v any) int64 {
 }
 
 // collapseFiller applies the guide's filler rules (dizqueTV's): filler/
-// bumper/slate blocks and programmes shorter than rules.MinProgram are
-// filler. A run of adjacent filler up to rules.MaxPadding is folded into
+// bumper/slate blocks and programmes shorter than fr.MinProgram are
+// filler. A run of adjacent filler up to fr.MaxPadding is folded into
 // the programme before it (with none before it, into the one after: a
 // short lead-in); a longer run is one "filler" block titled
-// rules.FillerTitle (empty: channelName). Liveness is recomputed for a
+// fr.FillerTitle (empty: channelName). Liveness is recomputed for a
 // block that grew. Input is assumed time-ordered for one channel.
-func collapseFiller(blocks []Block, rules GuideRules, channelName string, now time.Time) []Block {
+func collapseFiller(blocks []Block, fr FillerRules, channelName string, now time.Time) []Block {
 	type span struct {
 		b           Block
 		start, stop time.Time
@@ -103,9 +103,9 @@ func collapseFiller(blocks []Block, rules GuideRules, channelName string, now ti
 	}
 	at := func(s string) time.Time { t, _ := time.Parse(time.RFC3339, s); return t }
 	isFill := func(b Block) bool {
-		return isFiller(b.Kind) || at(b.Stop).Sub(at(b.Start)) < rules.MinProgram
+		return isFiller(b.Kind) || at(b.Stop).Sub(at(b.Start)) < fr.MinProgram
 	}
-	fillerTitle := rules.FillerTitle
+	fillerTitle := fr.FillerTitle
 	if fillerTitle == "" {
 		fillerTitle = channelName
 	}
@@ -125,7 +125,7 @@ func collapseFiller(blocks []Block, rules GuideRules, channelName string, now ti
 			}
 			stop = at(blocks[j-1].Stop)
 			i = j
-			if stop.Sub(start) <= rules.MaxPadding && last != nil && !last.filler {
+			if stop.Sub(start) <= fr.MaxPadding && last != nil && !last.filler {
 				last.stop = stop
 				continue
 			}
@@ -134,7 +134,7 @@ func collapseFiller(blocks []Block, rules GuideRules, channelName string, now ti
 			continue
 		}
 		i++
-		if last != nil && last.filler && last.stop.Sub(last.start) <= rules.MaxPadding {
+		if last != nil && last.filler && last.stop.Sub(last.start) <= fr.MaxPadding {
 			// A short filler lead-in is absorbed into the programme.
 			*last = span{b: b, start: last.start, stop: stop}
 			continue
