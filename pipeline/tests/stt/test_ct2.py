@@ -162,6 +162,9 @@ def _installed(monkeypatch: pytest.MonkeyPatch, *missing: str) -> None:
 def test_unavailable_says_why_per_engine(
     on_ct2: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    # Whisper's own needs (with the second listen on, the stage also waits for a machine
+    # that runs it: tests/stages/test_transcribe_placement.py)
+    monkeypatch.setenv("MAKTABA_STT_REFINE", "0")
     _installed(monkeypatch, "faster_whisper")
     assert stage.unavailable() == "faster-whisper is not installed (the stt extra)"
     _installed(monkeypatch)
