@@ -2,6 +2,8 @@ package hdhr
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"testing"
 	"time"
 
@@ -9,6 +11,9 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pgtest"
 )
+
+// hashOf is a valid content hash (hex sha256) for a fixture video.
+func hashOf(n string) string { s := sha256.Sum256([]byte(n)); return hex.EncodeToString(s[:]) }
 
 // The guide reads each block's video; a programme's image sources are its
 // series' poster and first episode and its own thumbnail, and it is on air only
@@ -30,7 +35,7 @@ func TestPGRepo_GuideArt(t *testing.T) {
 	for _, n := range []string{"ep1", "ep2", "film", "filler", "later"} {
 		vid[n] = uuid.New()
 		exec(`INSERT INTO videos (id, library_id, path, filename, content_hash, size_bytes, mtime, state)
-			VALUES ($1, $2, $3, $3, $4, 1, now(), 'ready')`, vid[n], lib, "/m/"+n+".mp4", "hash-"+n)
+			VALUES ($1, $2, $3, $3, $4, 1, now(), 'ready')`, vid[n], lib, "/m/"+n+".mp4", hashOf(n))
 	}
 	exec(`UPDATE videos SET poster_path = '/thumbs/hash-film/poster.jpg' WHERE id = $1`, vid["film"])
 	series := uuid.New()
@@ -60,7 +65,7 @@ func TestPGRepo_GuideArt(t *testing.T) {
 	start, end := at.Add(-time.Hour), at.Add(7*24*time.Hour)
 	a, err := r.ProgrammeArt(ctx, ch, vid["ep2"], start, end)
 	if err != nil || !a.OnAir || a.SeriesPoster != "/art/s.png" || a.SeriesCard.ID != vid["ep1"].String() ||
-		a.SeriesCard.ContentHash != "hash-ep1" || a.Video.ContentHash != "hash-ep2" {
+		a.SeriesCard.ContentHash != hashOf("ep1") || a.Video.ContentHash != hashOf("ep2") {
 		t.Errorf("episode art %+v %v", a, err)
 	}
 	a, err = r.ProgrammeArt(ctx, ch, vid["film"], start, end)
