@@ -40,6 +40,10 @@ pub struct Shell {
     update_ready: AtomicBool,
     status: Mutex<ServerStatus>,
     menu: Mutex<Vec<Entry>>,
+    /// "Connect to another Maktaba…" was chosen: show setup until a mode is saved.
+    force_setup: AtomicBool,
+    /// One refresh at a time, so tray menus are queued in the order computed.
+    refresh_lock: Mutex<()>,
 }
 
 impl Shell {
@@ -67,6 +71,8 @@ impl Shell {
             update_ready: AtomicBool::new(false),
             status: Mutex::new(ServerStatus::Starting),
             menu: Mutex::new(Vec::new()),
+            force_setup: AtomicBool::new(false),
+            refresh_lock: Mutex::new(()),
         }
     }
 
@@ -78,6 +84,19 @@ impl Shell {
         mode::save(&self.mode_path, &m)
             .map_err(|e| format!("cannot save {}: {e}", self.mode_path.display()))?;
         *self.mode.lock().unwrap() = Some(m);
+        self.force_setup.store(false, Ordering::SeqCst);
+        Ok(())
+    }
+
+    /// Forget client mode and go back to the setup screens.
+    fn clear_mode(&self) -> Result<(), String> {
+        match std::fs::remove_file(&self.mode_path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("cannot remove {}: {e}", self.mode_path.display())),
+        }
+        *self.mode.lock().unwrap() = None;
+        self.force_setup.store(true, Ordering::SeqCst);
         Ok(())
     }
 
@@ -91,6 +110,9 @@ impl Shell {
     }
 
     fn target(&self) -> Target {
+        if self.force_setup.load(Ordering::SeqCst) {
+            return Target::Setup;
+        }
         mode::start_target(self.mode().as_ref(), self.server_bin.is_some())
     }
 
@@ -133,6 +155,20 @@ fn navigate_main(app: &AppHandle, url: &str) -> Result<(), String> {
     w.navigate(url).map_err(|e| e.to_string())
 }
 
+/// The bundled web app's own address (where DesktopGate runs).
+fn bundled_url(app: &AppHandle) -> String {
+    #[cfg(dev)]
+    if let Some(u) = &app.config().build.dev_url {
+        return u.to_string();
+    }
+    let _ = app;
+    if cfg!(windows) {
+        "http://tauri.localhost/".into()
+    } else {
+        "tauri://localhost/".into()
+    }
+}
+
 fn show_error(app: &AppHandle, msg: impl Into<String>) {
     app.dialog()
         .message(msg)
@@ -157,6 +193,9 @@ fn build_tray_menu(app: &AppHandle, entries: &[Entry]) -> tauri::Result<Menu<Wry
 /// Recompute the status; rebuild the tray menu only when it changed.
 fn refresh(app: &AppHandle) {
     let sh = shell(app);
+    // Held until the menu update is queued: two refreshes (the poller and
+    // a tray click) must reach the main thread in the order they computed.
+    let _one_at_a_time = sh.refresh_lock.lock().unwrap();
     let server = sh.server_side();
     let status = if server {
         sh.compute_status()
@@ -188,7 +227,15 @@ fn refresh(app: &AppHandle) {
     });
 }
 
+/// Tray clicks arrive on the main thread; the work (launchctl,
+/// SMAppService, a status probe) runs on its own thread so the UI never
+/// waits on it.
 fn on_tray_event(app: &AppHandle, id: &str) {
+    let (app, id) = (app.clone(), id.to_string());
+    std::thread::spawn(move || handle_tray_event(&app, &id));
+}
+
+fn handle_tray_event(app: &AppHandle, id: &str) {
     let sh = shell(app);
     let result = match id {
         "show" => {
@@ -216,6 +263,10 @@ fn on_tray_event(app: &AppHandle, id: &str) {
             }
         }
         "open-logs" => agent::open_logs(),
+        "change-server" => sh.clear_mode().and_then(|()| {
+            focus_main(app);
+            navigate_main(app, &bundled_url(app))
+        }),
         "update" => {
             install_update(app.clone());
             Ok(())
@@ -261,7 +312,11 @@ fn install_update(app: AppHandle) {
         };
         match run.await {
             Ok(true) => {
-                if matches!(shell(&app).mode(), Some(AppMode::Server { .. })) {
+                let sh = shell(&app);
+                // a paused server stays paused; it runs the new payload on Resume
+                if matches!(sh.mode(), Some(AppMode::Server { .. }))
+                    && !sh.paused.load(Ordering::SeqCst)
+                {
                     let _ = agent::control(Action::Restart);
                 }
                 app.restart();
@@ -323,15 +378,19 @@ pub struct AppState {
     target: Target,
     server_available: bool,
     login_item: LoginItem,
+    /// The user chose "Connect to another Maktaba…": setup must not adopt
+    /// an already configured server on its own.
+    reset: bool,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn app_state(app: AppHandle) -> AppState {
     let sh = shell(&app);
     AppState {
         target: sh.target(),
         server_available: sh.server_bin.is_some(),
         login_item: agent::login_item(),
+        reset: sh.force_setup.load(Ordering::SeqCst),
     }
 }
 
@@ -367,9 +426,10 @@ pub async fn setup_step(
     })
 }
 
-/// After the `finish` step: remember server mode and register the login
-/// item, which starts the server.
-#[tauri::command]
+/// After the `finish` step: register the login item (which starts the
+/// server), then remember server mode. Async commands run off the main
+/// thread (SMAppService and the status probe can take seconds).
+#[tauri::command(async)]
 pub fn finish_setup(
     app: AppHandle,
     web_url: String,
@@ -381,28 +441,30 @@ pub fn finish_setup(
         .and_then(|u| mode::valid_local_url(&u))
         .unwrap_or_else(|| format!("http://{}", status::DEFAULT_SUPERVISOR_ADDR));
     let sh = shell(&app);
+    sh.mark_started();
+    // Registered first: if it fails, no server mode is saved, and the next
+    // launch shows setup again instead of waiting on a server that never starts.
+    agent::register()?;
     sh.set_mode(AppMode::Server {
         web_url,
         supervisor_url,
     })?;
-    sh.mark_started();
-    agent::register()?;
     refresh(&app);
     Ok(agent::login_item())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn open_login_items() {
     agent::open_login_items_settings();
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn server_status(app: AppHandle) -> ServerStatus {
     shell(&app).status.lock().unwrap().clone()
 }
 
 /// The starting screen calls this once the server is running.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn open_local_server(app: AppHandle) -> Result<(), String> {
     match shell(&app).mode() {
         Some(AppMode::Server { web_url, .. }) => navigate_main(&app, &web_url),
@@ -411,7 +473,7 @@ pub fn open_local_server(app: AppHandle) -> Result<(), String> {
 }
 
 /// Client mode: connect the window to another Maktaba.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn use_remote_server(app: AppHandle, url: String) -> Result<(), String> {
     let url = mode::valid_server_url(&url)
         .ok_or("enter an address that starts with http:// or https://")?;
@@ -438,7 +500,7 @@ pub fn allowed_external(url: &str) -> bool {
     .any(|p| url.starts_with(p))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn open_external(url: String) -> Result<(), String> {
     if !allowed_external(&url) {
         return Err(format!("not opening {url}"));

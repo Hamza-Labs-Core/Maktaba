@@ -582,26 +582,28 @@ function Plex({ api, step, next, back }: StepProps) {
 
   useEffect(() => {
     if (!pin) return;
+    // one poll at a time: the next waits PLEX_POLL_MS after this one settles,
+    // so a slow plex.tv never stacks up step processes
     let alive = true;
-    const timer = setInterval(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = () => {
       api
         .runStep<{ linked: boolean }>("plex", { action: "poll", pin_id: pin.pin_id })
         .then((r) => {
-          if (alive && r.linked) {
-            clearInterval(timer);
-            nextRef.current();
-          }
+          if (!alive) return;
+          if (r.linked) nextRef.current();
+          else timer = setTimeout(poll, PLEX_POLL_MS);
         })
         .catch((e) => {
           if (!alive) return;
-          clearInterval(timer);
           setPin(null);
           setPollError(asError(e));
         });
-    }, PLEX_POLL_MS);
+    };
+    timer = setTimeout(poll, PLEX_POLL_MS);
     return () => {
       alive = false;
-      clearInterval(timer);
+      clearTimeout(timer);
     };
   }, [api, pin]);
 

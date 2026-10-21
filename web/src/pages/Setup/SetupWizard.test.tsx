@@ -264,7 +264,8 @@ describe("SetupWizard", () => {
       await userEvent.click(screen.getByRole("button", { name: "Sign in with Plex" }));
       expect(await screen.findByText("ABCD")).toBeInTheDocument();
       expect(api.openExternal).toHaveBeenCalledWith("https://plex.tv/link");
-      await act(async () => vi.advanceTimersByTime(PLEX_POLL_MS * 2));
+      await act(async () => vi.advanceTimersByTime(PLEX_POLL_MS));
+      await act(async () => vi.advanceTimersByTime(PLEX_POLL_MS));
       expect(
         await screen.findByRole("heading", { name: "Getting Maktaba ready" })
       ).toBeInTheDocument();
@@ -413,6 +414,34 @@ describe("DesktopGate", () => {
 
     gate(fakeApi({}, { target: "bundled" }), true);
     expect(await screen.findByText("the app")).toBeInTheDocument();
+  });
+
+  it("adopts an already configured server instead of a second setup", async () => {
+    const api = fakeApi({
+      status: () => ({
+        configured: true,
+        web_url: "http://127.0.0.1:8088",
+        supervisor_url: "http://127.0.0.1:9103",
+      }),
+    });
+    gate(api, true);
+    expect(await screen.findByRole("heading", { name: "Starting Maktaba" })).toBeInTheDocument();
+    expect(api.finishSetup).toHaveBeenCalledWith("http://127.0.0.1:8088", "http://127.0.0.1:9103");
+  });
+
+  it("runs setup when this Mac is not configured, or when the user asked to change servers", async () => {
+    const status = vi.fn(() => ({ configured: false }));
+    const first = gate(fakeApi({ status }), true);
+    expect(await screen.findByRole("heading", { name: "Welcome to Maktaba" })).toBeInTheDocument();
+    expect(status).toHaveBeenCalled();
+    first.unmount();
+
+    const configured = vi.fn(() => ({ configured: true, web_url: "http://127.0.0.1:8088" }));
+    const api = fakeApi({ status: configured }, { reset: true });
+    gate(api, true);
+    expect(await screen.findByRole("heading", { name: "Welcome to Maktaba" })).toBeInTheDocument();
+    expect(configured).not.toHaveBeenCalled();
+    expect(api.finishSetup).not.toHaveBeenCalled();
   });
 
   it("falls back to the app if the shell does not answer", async () => {

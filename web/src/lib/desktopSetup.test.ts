@@ -22,6 +22,13 @@ describe("isBundledDesktop", () => {
     vi.stubGlobal("location", { protocol: "http:", hostname: "tauri.localhost" });
     expect(isBundledDesktop()).toBe(true);
   });
+
+  it("accepts the Vite dev server only in a dev build (tauri dev)", () => {
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    vi.stubGlobal("location", { protocol: "http:", hostname: "localhost", port: "5173" });
+    expect(isBundledDesktop(true)).toBe(true);
+    expect(isBundledDesktop(false)).toBe(false);
+  });
 });
 
 describe("formatBytes / progressPercent", () => {

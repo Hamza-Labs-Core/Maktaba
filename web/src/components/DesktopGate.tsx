@@ -8,6 +8,20 @@ import { isBundledDesktop, tauriSetupApi, type AppState, type SetupApi } from ".
 import { SetupWizard } from "../pages/Setup/SetupWizard";
 import { ServerStarting } from "../pages/Setup/ServerStarting";
 
+interface StatusStep {
+  configured: boolean;
+  web_url?: string;
+  supervisor_url?: string;
+}
+
+/** The `status` step: when this Mac is already configured, finish again. */
+async function adoptConfigured(api: SetupApi): Promise<string | null> {
+  const st = await api.runStep<StatusStep>("status", {});
+  if (!st.configured || !st.web_url) return null;
+  await api.finishSetup(st.web_url, st.supervisor_url);
+  return st.web_url;
+}
+
 export function DesktopGate({
   children,
   api = tauriSetupApi,
@@ -23,11 +37,19 @@ export function DesktopGate({
     if (!bundled) return;
     api
       .appState()
-      .then(setState)
+      .then(async (st) => {
+        if (st.target === "setup" && st.server_available && !st.reset) {
+          // the app forgot its mode (a reset config dir) but this Mac's
+          // server is set up: register it again instead of a second setup
+          const adopted = await adoptConfigured(api).catch(() => null);
+          if (adopted) return setState({ ...st, target: "starting", url: adopted });
+        }
+        setState(st);
+      })
       .catch(() => setState("failed"));
   }, [api, bundled]);
 
-  if (state === null) return null; // one quick IPC round trip
+  if (state === null) return null; // the shell answers (plus the status step on first run)
   if (state === "failed") return <>{children}</>;
   switch (state.target) {
     case "setup":

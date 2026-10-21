@@ -61,6 +61,11 @@ pub fn entries(server: bool, status: &ServerStatus, update_ready: bool) -> Vec<E
         out.push(Entry::Separator);
     }
     out.push(item("show", "Open Maktaba"));
+    if !server {
+        // client mode: the way back to the setup screens (another address,
+        // or this Mac when the build carries the server)
+        out.push(item("change-server", "Connect to another Maktaba…"));
+    }
     if server {
         match status {
             ServerStatus::SetupNeeded => {}
@@ -104,7 +109,14 @@ mod tests {
         let e = entries(false, &ServerStatus::Stopped, true);
         assert_eq!(
             ids(&e),
-            ["show", "media-play", "media-pause", "tray-settings", "quit"]
+            [
+                "show",
+                "change-server",
+                "media-play",
+                "media-pause",
+                "tray-settings",
+                "quit"
+            ]
         );
     }
 

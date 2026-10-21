@@ -114,7 +114,7 @@ has two modes, saved in `~/Library/Application Support/com.hamzalabs.maktaba/mod
 | Mode | The window shows | The menu bar |
 |---|---|---|
 | **server** (this Mac runs Maktaba) | "Starting…" until the server answers, then the local web app `http://127.0.0.1:<web port>` | status (running / starting / problem / paused / stopped / setup needed), *Update ready*, Open Maktaba, Pause/Resume server, Open logs, Quit (server keeps running), Stop server and quit |
-| **client** (connect to another Maktaba) | that Maktaba's address, or the bundled web app as before | Open Maktaba, Play/Pause, Settings, Quit |
+| **client** (connect to another Maktaba) | that Maktaba's address, or the bundled web app as before | Open Maktaba, Connect to another Maktaba… (back to setup), Play/Pause, Settings, Quit |
 
 With no saved mode the window opens the **first-run setup** (`web/src/pages/Setup/`):
 this Mac or another Maktaba → what will run + disk/RAM → admin account → library folders and

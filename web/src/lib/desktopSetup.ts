@@ -21,7 +21,12 @@ export type LoginItem =
   | "not_found"
   | "unsupported";
 
-export type AppState = AppTarget & { server_available: boolean; login_item: LoginItem };
+export type AppState = AppTarget & {
+  server_available: boolean;
+  login_item: LoginItem;
+  /** the user asked to change servers: do not adopt this Mac's configured server */
+  reset?: boolean;
+};
 
 export type ServerStatus =
   | { kind: "setup_needed" | "paused" | "stopped" | "starting" | "running" }
@@ -76,12 +81,14 @@ export interface SetupApi {
  * True only on the app's own bundled pages (tauri://localhost or
  * http://tauri.localhost), where the setup commands are allowed. The
  * local server's web app also runs inside the shell but must never
- * show setup.
+ * show setup (under `tauri dev` the pages come from Vite's :5173).
  */
-export function isBundledDesktop(): boolean {
+export function isBundledDesktop(dev: boolean = import.meta.env.DEV): boolean {
   if (!isDesktop()) return false;
-  const { protocol, hostname } = window.location;
-  return protocol === "tauri:" || hostname === "tauri.localhost";
+  const { protocol, hostname, port } = window.location;
+  if (protocol === "tauri:" || hostname === "tauri.localhost") return true;
+  // `tauri dev` serves these pages from the Vite dev server (devUrl)
+  return dev && hostname === "localhost" && port === "5173";
 }
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {

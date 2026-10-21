@@ -41,7 +41,9 @@ The CLI wizard and the app's setup screens share one implementation: every scree
 ## Steps (in screen order)
 
 ### `status`
-Input `{}`. Is this Mac already set up? The app calls it at start.
+Input `{}`. Is this Mac already set up? The app calls it before showing setup: when `configured`,
+it registers the login item again and opens `web_url` instead of a second setup (not after the user
+chose "Connect to another Maktaba…").
 ```json
 {"configured": false, "web_url": "http://127.0.0.1:8088", "supervisor_url": "http://127.0.0.1:9103"}
 ```
