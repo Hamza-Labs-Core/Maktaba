@@ -19,6 +19,10 @@ import (
 type childHandle struct {
 	mu  sync.Mutex
 	job windows.Handle
+	// proc keeps the server's pid its own until it is reaped: a CTRL_BREAK
+	// naming a pid that leads no process group goes astray (it can reach the
+	// launcher itself), so askStop asks only while this shows it running.
+	proc windows.Handle
 }
 
 // prepareChild: a new process group (CTRL_BREAK reaches only the server), and
@@ -42,6 +46,10 @@ var (
 
 func attachChild(cmd *exec.Cmd) *childHandle {
 	h := &childHandle{}
+	if p, err := windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_QUERY_LIMITED_INFORMATION,
+		false, uint32(cmd.Process.Pid)); err == nil {
+		h.proc = p
+	}
 	ph, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE|windows.PROCESS_SUSPEND_RESUME,
 		false, uint32(cmd.Process.Pid))
 	if err != nil {
@@ -80,12 +88,32 @@ func (h *childHandle) release() {
 		_ = windows.CloseHandle(h.job)
 		h.job = 0
 	}
+	if h.proc != 0 {
+		_ = windows.CloseHandle(h.proc)
+		h.proc = 0
+	}
+}
+
+// running: the server has not exited (its handle is not signalled). Without
+// a handle it cannot tell, and says so.
+func (h *childHandle) running() bool {
+	if h.proc == 0 {
+		return false
+	}
+	ev, err := windows.WaitForSingleObject(h.proc, 0)
+	return err == nil && ev == uint32(windows.WAIT_TIMEOUT)
 }
 
 // askStop sends CTRL_BREAK to the server's process group (Go maps it to
-// os.Interrupt, which `serve` drains on). Without a shared console this
-// fails; the stop file the launcher wrote is the fallback.
-func askStop(cmd *exec.Cmd) error {
+// os.Interrupt, which `serve` drains on), while the server still runs (an
+// exited one needs no asking). Without a shared console this fails; the stop
+// file the launcher wrote is the fallback.
+func askStop(cmd *exec.Cmd, child *childHandle) error {
+	child.mu.Lock()
+	defer child.mu.Unlock()
+	if !child.running() {
+		return nil
+	}
 	return windows.GenerateConsoleCtrlEvent(windows.CTRL_BREAK_EVENT, uint32(cmd.Process.Pid))
 }
 

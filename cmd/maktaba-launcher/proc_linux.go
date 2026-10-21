@@ -41,10 +41,10 @@ type childHandle struct{}
 
 func becomeSubreaper() { _ = unix.Prctl(unix.PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) }
 
-func prepareChild(*exec.Cmd)             {}
-func attachChild(*exec.Cmd) *childHandle { return &childHandle{} }
-func askStop(cmd *exec.Cmd) error        { return cmd.Process.Signal(syscall.SIGTERM) }
-func setupConsole(_, _ bool)             {}
+func prepareChild(*exec.Cmd)                      {}
+func attachChild(*exec.Cmd) *childHandle          { return &childHandle{} }
+func askStop(cmd *exec.Cmd, _ *childHandle) error { return cmd.Process.Signal(syscall.SIGTERM) }
+func setupConsole(_, _ bool)                      {}
 
 // release runs once the server has been reaped: what it left behind is
 // stopped (SIGTERM, then SIGKILL after orphanGrace) and reaped.
