@@ -86,7 +86,8 @@ func Resolve(cfg config.Config, exe string) (Bundle, bool, error) {
 	}, true, nil
 }
 
-// findHome: $MAKTABA_POSTGRES_HOME, [postgres] home, else the payload's postgres/.
+// findHome: $MAKTABA_POSTGRES_HOME, [postgres] home, else the payload's postgres/
+// ($MAKTABA_APP_BUNDLE, or beside the bin/ of this executable).
 func findHome(cfg config.Config, exe string) string {
 	for _, h := range []string{os.Getenv("MAKTABA_POSTGRES_HOME"), cfg.Postgres.Home} {
 		if h = strings.TrimSpace(h); h != "" {
@@ -95,6 +96,9 @@ func findHome(cfg config.Config, exe string) string {
 			}
 			return ""
 		}
+	}
+	if b := config.AppBundle(); b != "" && hasServer(filepath.Join(b, "postgres")) {
+		return filepath.Join(b, "postgres")
 	}
 	if exe == "" {
 		return ""

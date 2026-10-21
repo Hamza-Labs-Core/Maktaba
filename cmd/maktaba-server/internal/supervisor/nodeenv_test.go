@@ -78,6 +78,8 @@ func TestChildEnvStateDirs(t *testing.T) {
 	t.Cleanup(func() { nodeConfig = prev })
 	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
 	t.Setenv("MAKTABA_CHROMA_DIR", "")
+	t.Setenv("MAKTABA_MODEL_CACHE_DIR", "")
+	t.Setenv("MAKTABA_MODELS_DIR", "")
 	t.Setenv("HOME", t.TempDir())
 	var cfg config.Config
 	cfg.Server.DataDir = config.LocalDirs().Data
@@ -86,8 +88,13 @@ func TestChildEnvStateDirs(t *testing.T) {
 		t.Fatalf("StateDir = %s on a Mac, want the parent of data/", root)
 	}
 	m := envMap(ChildEnv(RolePipeline, cfg))
-	if m["MAKTABA_MODELS_DIR"] != filepath.Join(root, "models") || m["MAKTABA_CHROMA_DIR"] != filepath.Join(root, "chroma") {
-		t.Fatalf("models/chroma = %q / %q, want under %s", m["MAKTABA_MODELS_DIR"], m["MAKTABA_CHROMA_DIR"], root)
+	if m["MAKTABA_MODEL_CACHE_DIR"] != filepath.Join(root, "models") || m["MAKTABA_CHROMA_DIR"] != filepath.Join(root, "chroma") {
+		t.Fatalf("models/chroma = %q / %q, want under %s", m["MAKTABA_MODEL_CACHE_DIR"], m["MAKTABA_CHROMA_DIR"], root)
+	}
+	// MAKTABA_MODELS_DIR is the share's models folder (the pipeline publishes the
+	// second listen's model there for the nodes): never this machine's cache
+	if v, ok := m["MAKTABA_MODELS_DIR"]; ok {
+		t.Fatalf("MAKTABA_MODELS_DIR = %q", v)
 	}
 	if got := envMap(ChildEnv(RoleStreaming, cfg))["MAKTABA_CACHE_ROOT"]; got != filepath.Join(root, "cache", "streaming") {
 		t.Fatalf("MAKTABA_CACHE_ROOT = %q", got)

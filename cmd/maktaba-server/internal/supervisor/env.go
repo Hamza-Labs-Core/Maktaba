@@ -49,10 +49,18 @@ func ChildEnv(role Role, cfg config.Config) []string {
 	}
 	// The install's large state (Epic 36 story 36.2: on a Mac beside data/ in
 	// ~/Library/Application Support/Maktaba): models and the semantic-search index.
-	add("MAKTABA_MODELS_DIR", filepath.Join(cfg.StateDir(), "models"))
+	// (MAKTABA_MODEL_CACHE_DIR: where this machine keeps the models it downloads;
+	// MAKTABA_MODELS_DIR is the share's models folder the home publishes for the
+	// nodes, left to the operator.)
+	if os.Getenv("MAKTABA_MODEL_CACHE_DIR") == "" {
+		add("MAKTABA_MODEL_CACHE_DIR", filepath.Join(cfg.StateDir(), "models"))
+	}
 	if os.Getenv("MAKTABA_CHROMA_DIR") == "" {
 		add("MAKTABA_CHROMA_DIR", filepath.Join(cfg.StateDir(), "chroma"))
 	}
+
+	// Maktaba.app (Epic 36): the payload's ffmpeg for every role.
+	env = append(env, bundleEnv(config.AppBundle())...)
 
 	// Cross-service discovery: the api needs to reach streaming +
 	// pipeline over gRPC. These default ports mirror the compose stack.

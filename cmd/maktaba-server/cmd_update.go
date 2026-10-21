@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/selfupdate"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
@@ -39,6 +40,10 @@ still verify and must not be below the watermark). --rollback restores
 <binary>.bak, the release that ran before the last update: the only way to
 run a lower version, and it does not lower the watermark.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// Maktaba.app updates as a whole, shell and server payload (Epic 36 story 36.8)
+			if config.AppBundle() != "" {
+				return errors.New("this server is part of Maktaba.app: the app updates it (Maktaba > Check for Updates)")
+			}
 			self, err := selfupdate.Self()
 			if err != nil {
 				return err
