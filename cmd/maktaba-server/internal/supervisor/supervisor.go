@@ -59,6 +59,10 @@ type Process struct {
 	// Check, when set, is the liveness check in place of an HTTP GET of Probe
 	// (postgres speaks its own protocol); Probe then only labels it.
 	Check func(ctx context.Context) error
+	// Stop, when set, asks the child to stop gracefully in place of a signal (a
+	// program that a signal cannot ask on this OS: postgres on Windows). The kill
+	// after the grace is the same.
+	Stop func()
 	// StopSignal, when set, is the graceful-stop signal in place of SIGTERM
 	// (postgres: SIGINT, its fast shutdown).
 	StopSignal os.Signal
@@ -74,6 +78,15 @@ func (p Process) stopSignal() os.Signal {
 		return p.StopSignal
 	}
 	return terminationSignal()
+}
+
+// askStop asks a running child to stop gracefully: its Stop, else its signal.
+func (p Process) askStop(proc *os.Process) {
+	if p.Stop != nil {
+		go p.Stop()
+		return
+	}
+	_ = proc.Signal(p.stopSignal())
 }
 
 // Name is the process's label: the role, or role/instance.
