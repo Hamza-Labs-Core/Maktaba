@@ -138,8 +138,9 @@ carries the whole server: `maktaba-server`, PostgreSQL 16, ffmpeg (NVENC) and Py
 3.12. Its setup screens do the rest (the admin, the libraries and the NAS path map,
 the models, Plex), and the first start builds the pipeline's Python environment
 (CUDA on an NVIDIA GPU, else the processor). From then on the server starts at every
-sign-in with no console window, the tray shows how it is doing, and updates come
-with the app. A PC that already runs Maktaba (`maktaba-server setup --service`, the
+sign-in with no console window, the tray shows how it is doing, and the app updates
+itself through signed updates (the Tauri updater), starting with the first tagged release
+that includes it. A PC that already runs Maktaba (`maktaba-server setup --service`, the
 node installer, a script of its own) is found by the setup, which offers to move it
 into the app. See [Epic 38](specs/epics/38-windows-app/README.md).
 
@@ -235,8 +236,11 @@ the workflows below.
 
 **Signing status.** Desktop installers and the iOS/tvOS builds are
 currently **unsigned** — code-signing certificates (Apple Developer ID,
-Windows Authenticode, the Tauri updater key) are wired in as documented
-TODOs in each workflow and land once provisioned. Android signs
+Windows Authenticode) are wired in as documented TODOs in each workflow and
+land once provisioned. The desktop apps' **updates are signed** with the Tauri
+updater key: the release workflow signs them with the repository's secret and
+stamps the public key (the `TAURI_UPDATER_PUBKEY` variable) into
+`tauri.conf.json` at build time, so the apps take only updates signed with it. Android signs
 automatically when the `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEY_ALIAS` /
 `ANDROID_KEY_PASSWORD` secrets are set. Without them the APKs are built
 unsigned, kept as workflow artifacts and not attached to the Release.

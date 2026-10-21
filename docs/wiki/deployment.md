@@ -330,7 +330,8 @@ On Windows the home server is the desktop app: one NSIS installer
   Postgres listens on 127.0.0.1 only.
 - **Logs**: `logs\server.log` (the agent and the launcher) beside each role's own;
   the tray's "Open logs" opens the folder.
-- **Updates**: the app's updater stops the server, runs the new installer, and
+- **Updates** are signed (the Tauri updater key; from the first tagged release
+  that includes the app): the app's updater stops the server, runs the new installer, and
   starts the server from the new payload; its first start dumps the database
   (`backups\pre-<old>-to-<new>.dump`), migrates, and restores the dump if the
   migration fails.

@@ -104,7 +104,7 @@ package-desktop` (= `scripts/build.sh`).
 | **Deep links** | `maktaba://watch/{id}` etc. — scheme registered in `tauri.conf.json`; the Rust `on_open_url` handler emits a `deep-link` event the web shell maps to an SPA route via the same `deepLinkToPath` parser the Capacitor shell uses |
 | **Single instance** | on Windows/Linux a `maktaba://` open spawns a new process; the single-instance plugin (with the `deep-link` feature) focuses the running window and forwards the URL |
 | **mDNS** | `discover_servers` browses `_maktaba._tcp.local.` for the server picker |
-| **Auto-update** | `updater` plugin checks `releases/latest/download/latest.json`; signing key is a follow-up (`pubkey` placeholder in config) |
+| **Auto-update** | `updater` plugin checks `releases/latest/download/latest.json`; updates are signed with the Tauri updater key, whose public key `desktop-release.yml` stamps into `tauri.conf.json` at build time (the `TAURI_UPDATER_PUBKEY` variable; the repository keeps the placeholder) |
 
 ## Maktaba.app runs the server (Epic 36)
 
@@ -146,5 +146,3 @@ for the setup screens: `MAKTABA_SERVER_BIN=/path/to/maktaba-server pnpm tauri de
 - Bundle icons — generate via `pnpm exec tauri icon ./logo.png`
   (see [`src-tauri/icons/README.md`](src-tauri/icons/README.md))
 - Apple Developer ID / Microsoft EV cert / Linux signing
-- The updater private key (the `pubkey` in `tauri.conf.json` is a
-  placeholder until the signing key lands)
