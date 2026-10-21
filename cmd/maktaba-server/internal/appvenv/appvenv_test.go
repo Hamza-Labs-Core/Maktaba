@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ctrlbreak"
 )
 
 // In these tests the test binary is the payload's Python: run as
@@ -274,7 +276,7 @@ func TestRunStoppedAsksTheBootstrapToStop(t *testing.T) {
 		t.Fatalf("Run = %v, want ErrInterrupted", err)
 	}
 	if _, serr := os.Stat(filepath.Join(payload, "fake-stopped")); serr != nil {
-		if !hasConsole() {
+		if !ctrlbreak.CanAsk() {
 			t.Skip("no console here to send CTRL_BREAK through: the bootstrap was killed instead")
 		}
 		t.Fatalf("the bootstrap was not asked to stop (killed): %v", serr)
