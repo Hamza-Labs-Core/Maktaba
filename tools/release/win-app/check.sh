@@ -220,30 +220,67 @@ function Sweep($all, [double]$grace) {
     }
 }
 # Each run of a Maktaba.exe from the install folder, as a hook makes it: looked for every
-# 15 ms on a thread of its own, as a hook's run is often over before the next process list
-# below (a flag-taking one takes 0.2-1 s). Its command line is read while it runs; one gone
-# before that is noted with its path only.
-$spot = [hashtable]::Synchronized(@{ stop = $false; lines = [Collections.ArrayList]::Synchronized((New-Object Collections.ArrayList)) })
-$spotter = [powershell]::Create()
-$spotter.Runspace = [runspacefactory]::CreateRunspace()
-$spotter.Runspace.Open()
-$spotter.Runspace.SessionStateProxy.SetVariable('spot', $spot)
-$spotter.Runspace.SessionStateProxy.SetVariable('prefix', $prefix)
-[void]$spotter.AddScript({
-    $seen = @{}
-    while (-not $spot.stop) {
-        foreach ($pr in [Diagnostics.Process]::GetProcessesByName('Maktaba')) {
-            if ($seen.ContainsKey($pr.Id)) { continue }
-            $seen[$pr.Id] = $true
-            $path = try { $pr.MainModule.FileName } catch { $null }
-            if (-not $path -or -not $path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { continue }
-            $q = Get-CimInstance Win32_Process -Filter ("ProcessId = {0}" -f $pr.Id) -ErrorAction SilentlyContinue
-            if ($q -and $q.CommandLine) { [void]$spot.lines.Add($q.CommandLine) } else { [void]$spot.lines.Add('"' + $path + '" ?') }
+# 10 ms on a thread of its own, as a hook's run is over long before the next process list
+# below (a flag-taking one takes 0.2-1 s), and its command line read at once (from the
+# process itself: WMI is far too slow for that).
+Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
+public sealed class MaktabaSpotter {
+    [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(int access, bool inherit, int pid);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr h, int flags, StringBuilder name, ref int size);
+    [DllImport("ntdll.dll")] static extern int NtQueryInformationProcess(IntPtr h, int cls, IntPtr buf, int len, out int ret);
+    const int QueryLimited = 0x1000, CommandLineInformation = 60;
+    readonly string prefix;
+    readonly List<string> lines = new List<string>();
+    readonly HashSet<int> seen = new HashSet<int>();
+    volatile bool stop;
+    Thread thread;
+    public MaktabaSpotter(string prefix) { this.prefix = prefix; }
+    public void Start() { thread = new Thread(Run); thread.IsBackground = true; thread.Start(); }
+    public string[] Stop() { stop = true; thread.Join(); lock (lines) return lines.ToArray(); }
+    void Run() {
+        while (!stop) {
+            foreach (Process p in Process.GetProcessesByName("Maktaba")) {
+                using (p) {
+                    if (!seen.Add(p.Id)) continue;
+                    string path, cmd;
+                    Read(p.Id, out path, out cmd);
+                    if (path == null || !path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                    lock (lines) lines.Add(cmd ?? ("\"" + path + "\" ?"));
+                }
+            }
+            Thread.Sleep(10);
         }
-        Start-Sleep -Milliseconds 15
     }
-})
-$spotting = $spotter.BeginInvoke()
+    static void Read(int pid, out string path, out string cmd) {
+        path = null; cmd = null;
+        IntPtr h = OpenProcess(QueryLimited, false, pid);
+        if (h == IntPtr.Zero) return;
+        try {
+            var name = new StringBuilder(32768);
+            int size = name.Capacity;
+            if (QueryFullProcessImageName(h, 0, name, ref size)) path = name.ToString(0, size);
+            int len;
+            NtQueryInformationProcess(h, CommandLineInformation, IntPtr.Zero, 0, out len);
+            if (len <= 0) return;
+            IntPtr buf = Marshal.AllocHGlobal(len);
+            try {
+                // a UNICODE_STRING (Length, MaximumLength, Buffer) and the text it points at
+                if (NtQueryInformationProcess(h, CommandLineInformation, buf, len, out len) == 0)
+                    cmd = Marshal.PtrToStringUni(Marshal.ReadIntPtr(buf, IntPtr.Size), Marshal.ReadInt16(buf) / 2);
+            } finally { Marshal.FreeHGlobal(buf); }
+        } finally { CloseHandle(h); }
+    }
+}
+'@
+$spotter = New-Object MaktabaSpotter $prefix
+$spotter.Start()
 # the app's other programs (not Maktaba.exe), from the process lists below
 $seen = @{}
 function Ran($q) {
@@ -291,10 +328,7 @@ while ($true) {
     Start-Sleep -Milliseconds 500
 }
 Sweep @(Get-CimInstance Win32_Process) 0   # nothing it started may outlive it
-$spot.stop = $true
-[void]$spotter.EndInvoke($spotting)
-$spotter.Dispose()
-foreach ($l in $spot.lines) { Write-Output ("ran {0}" -f $l) }
+foreach ($l in $spotter.Stop()) { Write-Output ("ran {0}" -f $l) }
 foreach ($c in $copies.Values) { Write-Output ("child {0} exit {1}" -f $c.ProcessName, $c.ExitCode) }
 Write-Output ("exit {0}" -f $p.ExitCode)
 PS
