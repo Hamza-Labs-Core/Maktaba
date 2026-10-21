@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/adopt"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 )
 
@@ -41,9 +42,9 @@ func TestStatusBesideAnInstallThatReadsTheAppsConfig(t *testing.T) {
 }
 
 // TestALeftoverNodeConfigCopiedIsOne: on Windows the node config of an install
-// from before Epic 38 is in %APPDATA%\Maktaba, and a newer command copied it
-// into %LOCALAPPDATA%\Maktaba (story 38.1): the original and its copy are one
-// node config nothing runs, said once, the copy's (it wins on every read).
+// from before Epic 38 is in %APPDATA%\Maktaba, and another may be in
+// %LOCALAPPDATA%\Maktaba (a move undone left the app's): one node config nothing
+// runs, said once, the one the roles read (config.LocalNodeConfigPath decides).
 func TestALeftoverNodeConfigCopiedIsOne(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("the roaming profile's original and its copy are Windows's")
@@ -74,7 +75,8 @@ func TestALeftoverNodeConfigCopiedIsOne(t *testing.T) {
 			unused = append(unused, n["params"].(map[string]any)["path"].(string))
 		}
 	}
-	if want := filepath.Join(local, "Maktaba", "node.json"); len(unused) != 1 || unused[0] != want {
-		t.Fatalf("node configs nothing runs %q, want the copy alone %q", unused, want)
+	// whichever of the two the roles read (config.LocalNodeConfigPath), said once
+	if want := config.LocalNodeConfigPath(); len(unused) != 1 || unused[0] != want {
+		t.Fatalf("node configs nothing runs %q, want the one the roles read alone %q", unused, want)
 	}
 }
