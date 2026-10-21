@@ -343,3 +343,6 @@ On Windows the home server is the desktop app: one NSIS installer
 - **An install made before** (`maktaba-server setup --service`'s "Maktaba" task,
   the node installer's `maktaba-node` tasks, a script) is found by the app's
   setup, which moves it in and keeps the old folder ([move-an-install](../../specs/epics/38-windows-app/move-an-install.md)).
+  Its inbound firewall rules are copied for the app's programs (one consent prompt;
+  a standard user's move is refused, since only an administrator can allow them),
+  its `node.json` stays where it is, and Restore the old install undoes the move.

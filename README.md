@@ -142,7 +142,9 @@ sign-in with no console window, the tray shows how it is doing, and the app upda
 itself through signed updates (the Tauri updater), starting with the first tagged release
 that includes it. A PC that already runs Maktaba (`maktaba-server setup --service`, the
 node installer, a script of its own) is found by the setup, which offers to move it
-into the app. See [Epic 38](specs/epics/38-windows-app/README.md).
+into the app: its keys, settings, node identity and firewall rules come along (Windows asks
+once to allow the firewall rules), and the old folder is kept for going back. See
+[Epic 38](specs/epics/38-windows-app/README.md).
 
 Manual installs: download the matching `.tar.gz` / `.zip` from the
 [latest release](https://github.com/Hamza-Labs-Core/Maktaba/releases/latest).
