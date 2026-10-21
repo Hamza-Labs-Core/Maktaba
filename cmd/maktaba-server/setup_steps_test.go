@@ -243,6 +243,7 @@ func fakeHF(t *testing.T) {
 }
 
 func TestSetupModels(t *testing.T) {
+	spawnsPrograms(t)
 	e := newSetupEnv(t)
 	fakeHF(t)
 	for _, c := range []struct{ token, code string }{
@@ -425,6 +426,7 @@ func fakePayload(t *testing.T, e *setupEnv) string {
 }
 
 func TestSetupVenv(t *testing.T) {
+	spawnsPrograms(t)
 	e := newSetupEnv(t)
 	if code, _, ev := runStep(t, "venv", map[string]any{}); code != 1 || ev["code"] != "server_missing" {
 		t.Fatalf("outside the app = %d %v", code, ev)
@@ -469,6 +471,7 @@ func TestSetupVenv(t *testing.T) {
 }
 
 func TestSetupFinish(t *testing.T) {
+	spawnsPrograms(t)
 	e := newSetupEnv(t)
 	prev := setupDatabase
 	t.Cleanup(func() { setupDatabase = prev })
@@ -562,6 +565,7 @@ func TestSetupFinish(t *testing.T) {
 // An admin seeded by an earlier finish (adduser exits 3) is not an error, and
 // a failing migration is reported as one.
 func TestSetupFinishAgainAndFailures(t *testing.T) {
+	spawnsPrograms(t)
 	e := newSetupEnv(t)
 	prev := setupDatabase
 	t.Cleanup(func() { setupDatabase = prev })
