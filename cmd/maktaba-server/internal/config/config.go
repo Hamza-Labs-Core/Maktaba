@@ -15,6 +15,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,11 +39,13 @@ type Config struct {
 	Postgres      PostgresSection      `toml:"postgres"`
 	LLM           LLMSection           `toml:"llm"`
 
-	// DatabaseURLSet: server.toml sets [database] url (Load). Unset, a Mac with
-	// the bundled Postgres uses it (Epic 36 story 36.1).
+	// DatabaseURLSet: server.toml sets [database] url (Load), or a caller chose
+	// one to keep (setup); Save writes the url only then. Unset, a Mac with the
+	// bundled Postgres uses it (Epic 36 story 36.1).
 	DatabaseURLSet bool `toml:"-"`
-	// PipelineInstancesSet: server.toml sets [pipeline] instances (0 there means
-	// no transcription workers, even on Apple Silicon).
+	// PipelineInstancesSet: server.toml sets [pipeline] instances, or a caller
+	// chose a count to keep (setup --node); Save writes a 0 only then (0 there
+	// means no transcription workers, even on Apple Silicon).
 	PipelineInstancesSet bool `toml:"-"`
 }
 
@@ -268,6 +271,10 @@ func (c Config) Save() error {
 // SaveTo writes cfg to an explicit path, atomically (write-temp +
 // rename) so a crash mid-write can't truncate a live config.
 func (c Config) SaveTo(path string) error {
+	body, err := c.fileTOML()
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
@@ -277,10 +284,9 @@ func (c Config) SaveTo(path string) error {
 	}
 	defer func() { _ = os.Remove(tmp.Name()) }()
 
-	enc := toml.NewEncoder(tmp)
-	if err := enc.Encode(c); err != nil {
+	if _, err := tmp.Write(body); err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("encode toml: %w", err)
+		return fmt.Errorf("write temp: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temp: %w", err)
@@ -293,6 +299,42 @@ func (c Config) SaveTo(path string) error {
 		return fmt.Errorf("rename into place: %w", err)
 	}
 	return nil
+}
+
+// fileTOML is c as server.toml, without the settings Load tells apart by
+// whether the file sets them: [database] url unless DatabaseURLSet, and
+// [pipeline] instances while 0 and not PipelineInstancesSet. Written, the
+// next Load would take the default as set (a default SQLite url keeps the
+// app's bundled Postgres from running; instances = 0 means no transcription
+// workers).
+func (c Config) fileTOML() ([]byte, error) {
+	var buf bytes.Buffer
+	if err := toml.NewEncoder(&buf).Encode(c); err != nil {
+		return nil, fmt.Errorf("encode toml: %w", err)
+	}
+	var file map[string]any
+	if _, err := toml.Decode(buf.String(), &file); err != nil {
+		return nil, fmt.Errorf("encode toml: %w", err)
+	}
+	unset := func(table, key string) {
+		if t, ok := file[table].(map[string]any); ok {
+			delete(t, key)
+			if len(t) == 0 {
+				delete(file, table)
+			}
+		}
+	}
+	if !c.DatabaseURLSet || strings.TrimSpace(c.Database.URL) == "" {
+		unset("database", "url")
+	}
+	if !c.PipelineInstancesSet && c.Pipeline.Instances == 0 {
+		unset("pipeline", "instances")
+	}
+	buf.Reset()
+	if err := toml.NewEncoder(&buf).Encode(file); err != nil {
+		return nil, fmt.Errorf("encode toml: %w", err)
+	}
+	return buf.Bytes(), nil
 }
 
 // configDir resolves the platform config directory (parent of

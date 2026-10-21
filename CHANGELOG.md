@@ -40,6 +40,12 @@ don't append a line here; docs-only PRs are exempt.
 - **`maktaba-server setup` (the CLI wizard) seeds the admin again.** It called `adduser` with
   `--username`/`--password` flags the api does not have; it now passes the username and a
   password file.
+- **After the app's setup the server runs on the bundled Postgres, with its transcription
+  workers.** Saving `server.toml` wrote every default, so setup's `finish` left `[database] url`
+  set to the default SQLite file: the next start never ran the bundled Postgres (the database setup
+  had made sat unused, and the pipeline could not open the SQLite one), and
+  `[pipeline] instances = 0` turned the workers off. A save now writes the url only when one was
+  chosen and the count only when it was set (`setup --node --instances 0` included).
 
 - **Release builds for desktop, Android and Android TV.** The desktop app ships a
   (placeholder) icon set (#152), which the macOS and Windows bundles failed on. The Linux build
