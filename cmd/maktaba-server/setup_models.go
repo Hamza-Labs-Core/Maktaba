@@ -270,7 +270,7 @@ func (s *setupRun) downloadModels() (any, error) {
 	cmd := exec.CommandContext(s.ctx, py, args...)
 	cmd.Env = append(os.Environ(), supervisor.ChildEnv(supervisor.RolePipeline, s.cfg)...)
 	cmd.Stderr = s.log
-	stopGently(cmd) // a stop asks the download, which keeps what it has for the next run
+	stop := stopGently(cmd) // a stop asks the download, which keeps what it has for the next run
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -278,6 +278,7 @@ func (s *setupRun) downloadModels() (any, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start the models download: %w", err)
 	}
+	stop.Started()
 	var done modelEvent
 	sc := bufio.NewScanner(stdout)
 	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
@@ -298,6 +299,7 @@ func (s *setupRun) downloadModels() (any, error) {
 		}
 	}
 	err = cmd.Wait()
+	stop.Close()
 	code := -1
 	if cmd.ProcessState != nil {
 		code = cmd.ProcessState.ExitCode()

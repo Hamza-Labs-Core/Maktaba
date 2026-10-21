@@ -3,6 +3,7 @@
 package ctrlbreak
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -12,7 +13,6 @@ import (
 	"syscall"
 	"testing"
 	"time"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -51,17 +51,40 @@ func TestHelperProcess(t *testing.T) {
 	}
 }
 
-// helper starts TestHelperProcess in mode in a process group of its own and
-// waits until it runs. It returns the child, the file it acts on, and a handle
-// with Access.
-func helper(t *testing.T, mode string) (*exec.Cmd, string, windows.Handle) {
+// helperCmd is TestHelperProcess in mode, not started, and the file it acts on.
+func helperCmd(t *testing.T, ctx context.Context, mode string) (*exec.Cmd, string) {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("starts processes: runs without -short (the launcher gate on Windows)")
 	}
 	file := filepath.Join(t.TempDir(), "file")
-	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$")
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestHelperProcess$")
 	cmd.Env = append(os.Environ(), envHelper+"="+mode+":"+file)
+	return cmd, file
+}
+
+// started waits until the helper runs; the cleanup kills and reaps it.
+func started(t *testing.T, cmd *exec.Cmd, file string) {
+	t.Helper()
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+	for deadline := time.Now().Add(20 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if _, err := os.Stat(file + ".ready"); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the helper did not start")
+		}
+	}
+}
+
+// helper starts TestHelperProcess in mode in a process group of its own and
+// waits until it runs. It returns the child, its file, and a handle with Access.
+func helper(t *testing.T, mode string) (*exec.Cmd, string, windows.Handle) {
+	t.Helper()
+	cmd, file := helperCmd(t, context.Background(), mode)
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -71,19 +94,9 @@ func helper(t *testing.T, mode string) (*exec.Cmd, string, windows.Handle) {
 		_ = cmd.Process.Kill()
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		_ = windows.CloseHandle(h)
-	})
-	for deadline := time.Now().Add(20 * time.Second); ; time.Sleep(10 * time.Millisecond) {
-		if _, err := os.Stat(file + ".ready"); err == nil {
-			return cmd, file, h
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the helper did not start")
-		}
-	}
+	t.Cleanup(func() { _ = windows.CloseHandle(h) })
+	started(t, cmd, file)
+	return cmd, file, h
 }
 
 // From the check to the send the process is held, so it cannot exit in
@@ -112,7 +125,7 @@ func TestHoldKeepsTheProcessUntilAsked(t *testing.T) {
 
 // A process that has exited is not asked, and says so.
 func TestHoldDoesNotAskAnExitedProcess(t *testing.T) {
-	cmd, file, h := helper(t, "exit-when")
+	_, file, h := helper(t, "exit-when")
 	if err := os.WriteFile(file, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -123,27 +136,44 @@ func TestHoldDoesNotAskAnExitedProcess(t *testing.T) {
 	if !errors.Is(err, os.ErrProcessDone) {
 		t.Fatalf("Hold = %v, want os.ErrProcessDone", err)
 	}
-	// Ask too: the child is not reaped yet (its pid is still its own)
-	if err := Ask(cmd.Process.Pid); !errors.Is(err, os.ErrProcessDone) {
-		t.Fatalf("Ask = %v, want os.ErrProcessDone", err)
+}
+
+// NewStopper starts the child in a process group of its own (CTRL_BREAK names
+// it alone) and sets its Cancel.
+func TestNewStopperSetsTheGroup(t *testing.T) {
+	cmd := exec.Command("cmd.exe", "/c", "exit")
+	NewStopper(cmd)
+	if cmd.SysProcAttr == nil || cmd.SysProcAttr.CreationFlags&windows.CREATE_NEW_PROCESS_GROUP == 0 {
+		t.Fatalf("SysProcAttr = %+v: no process group of its own", cmd.SysProcAttr)
+	}
+	if cmd.Cancel == nil {
+		t.Fatal("no Cancel")
 	}
 }
 
-// Ask sends a running child CTRL_BREAK, and only it: this process is on the
-// same console and is not interrupted.
-func TestAskSendsCTRLBreakToTheChild(t *testing.T) {
-	cmd, file, _ := helper(t, "break")
-	if !hasConsole() {
+// A cancelled context asks a running child with CTRL_BREAK, and only it: this
+// process is on the same console and is not interrupted.
+func TestStopperAsksTheChildOnCancel(t *testing.T) {
+	if !CanAsk() {
 		t.Skip("no console to send CTRL_BREAK through")
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cmd, file := helperCmd(t, ctx, "break")
+	s := NewStopper(cmd)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	s.Started()
+	started(t, cmd, file)
 	self := make(chan os.Signal, 1)
 	signal.Notify(self, os.Interrupt)
 	defer signal.Stop(self)
-	if err := Ask(cmd.Process.Pid); err != nil {
-		t.Fatalf("Ask: %v", err)
-	}
-	if err := cmd.Wait(); err != nil {
-		t.Fatalf("the child, asked: %v", err)
+	cancel()
+	_ = cmd.Wait() // the context's error: it was asked
+	s.Close()
+	if code := cmd.ProcessState.ExitCode(); code != 0 {
+		t.Fatalf("the child exited %d, not on its CTRL_BREAK", code)
 	}
 	if b, _ := os.ReadFile(file); string(b) != "interrupted" {
 		t.Fatalf("the child did not take CTRL_BREAK (file %q)", b)
@@ -155,10 +185,47 @@ func TestAskSendsCTRLBreakToTheChild(t *testing.T) {
 	}
 }
 
-// hasConsole: this process has a console (a CTRL_BREAK goes through one).
-func hasConsole() bool {
-	var pids [4]uint32
-	n, _, _ := windows.NewLazySystemDLL("kernel32.dll").NewProc("GetConsoleProcessList").
-		Call(uintptr(unsafe.Pointer(&pids[0])), uintptr(len(pids)))
-	return n != 0
+// A Cancel before Started (the context ended as the child started) still asks
+// it: Wait has not run, so its pid is still its own.
+func TestStopperBeforeStarted(t *testing.T) {
+	if !CanAsk() {
+		t.Skip("no console to send CTRL_BREAK through")
+	}
+	cmd, file := helperCmd(t, context.Background(), "break")
+	s := NewStopper(cmd)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	started(t, cmd, file)
+	if err := s.cancel(); err != nil {
+		t.Fatalf("cancel before Started: %v", err)
+	}
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("the child, asked: %v", err)
+	}
+	if b, _ := os.ReadFile(file); string(b) != "interrupted" {
+		t.Fatalf("the child did not take CTRL_BREAK (file %q)", b)
+	}
+}
+
+// After Wait and Close nothing is asked and no pid is opened: the child is
+// done.
+func TestStopperAfterClose(t *testing.T) {
+	cmd, file := helperCmd(t, context.Background(), "exit-when")
+	s := NewStopper(cmd)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	s.Started()
+	started(t, cmd, file)
+	if err := os.WriteFile(file, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	if err := s.cancel(); !errors.Is(err, os.ErrProcessDone) {
+		t.Fatalf("cancel after Close = %v, want os.ErrProcessDone", err)
+	}
 }
