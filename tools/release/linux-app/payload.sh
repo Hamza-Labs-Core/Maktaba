@@ -92,7 +92,8 @@ make -C "$REPO_ROOT" --no-print-directory server build-go \
     GOOS=linux GOARCH="$GOARCH" VERSION="$VERSION" BIN_SUBDIR="linux-$GOARCH/" >/dev/null
 cp "$REPO_ROOT/cmd/maktaba-server/bin/linux-$GOARCH/maktaba-server" \
    "$REPO_ROOT/api/bin/linux-$GOARCH/maktaba-api" \
-   "$REPO_ROOT/streaming/bin/linux-$GOARCH/maktaba-streaming" "$OUT/bin/"
+   "$REPO_ROOT/streaming/bin/linux-$GOARCH/maktaba-streaming" \
+   "$REPO_ROOT/cloud/bin/linux-$GOARCH/maktaba-cloudlink" "$OUT/bin/"
 (cd "$REPO_ROOT/cmd/maktaba-launcher" && \
     GOOS=linux GOARCH="$GOARCH" CGO_ENABLED=0 \
     go build -trimpath -ldflags "-buildid= -s -w -X main.Version=$VERSION" -o "$OUT/bin/maktaba-launcher" .)

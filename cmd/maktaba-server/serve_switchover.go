@@ -67,6 +67,10 @@ const (
 	kitHFToken    = "hf-token"
 	kitJWTPrivate = "jwt-private.pem"
 	kitJWTPublic  = "jwt-public.pem"
+	// the cloud relay agent's credentials and key, and the home's [cloud] section
+	kitRelayCred = supervisor.RelayCredFile
+	kitRelayKey  = supervisor.RelayKeyFile
+	kitCloud     = "cloud.json"
 )
 
 // switching is this machine's part of a switch.
@@ -78,6 +82,8 @@ type switching struct {
 	cp       *nodeCopy
 	stopCopy func()
 	token    string
+	// want starts or stops one of this machine's processes (the supervisor's Want)
+	want func(role supervisor.Role, on bool) error
 	// ready is closed once the above are known (a command waits for it)
 	ready chan struct{}
 
@@ -91,8 +97,9 @@ func newSwitching(cfg config.Config) *switching {
 
 // set records this machine's databases (serve resolves them after the machine agent
 // starts).
-func (s *switching) set(pg *pgbundle.Bundle, cp *nodeCopy, stopCopy func(), token string) {
-	s.pg, s.cp, s.stopCopy, s.token = pg, cp, stopCopy, token
+func (s *switching) set(pg *pgbundle.Bundle, cp *nodeCopy, stopCopy func(), token string,
+	want func(role supervisor.Role, on bool) error) {
+	s.pg, s.cp, s.stopCopy, s.token, s.want = pg, cp, stopCopy, token, want
 	close(s.ready)
 }
 
@@ -138,7 +145,8 @@ func hfTokenPath(cfg config.Config) string {
 func (s *switching) kitFiles() map[string]string {
 	priv, pub := supervisor.JWTKeyPaths()
 	out := map[string]string{kitSecretsKey: secretsKeyPath(), kitClusterKey: clusterKeyPath(),
-		kitHFToken: hfTokenPath(s.cfg), kitJWTPrivate: priv, kitJWTPublic: pub}
+		kitHFToken: hfTokenPath(s.cfg), kitJWTPrivate: priv, kitJWTPublic: pub,
+		kitRelayCred: supervisor.RelayCredPath(), kitRelayKey: supervisor.RelayKeyPath()}
 	if s.pg != nil {
 		out[kitCACert] = s.pg.CACert()
 		out[kitCAKey] = filepath.Join(s.pg.Keys, kitCAKey)
@@ -151,8 +159,8 @@ func (s *switching) kitFiles() map[string]string {
 
 // ---------- the home's side: its API's loopback calls ----------
 
-// adminHandler adds POST /switchover/{freeze,thaw,kit,demote} to the supervisor's
-// loopback admin, for a caller holding the per-boot local token.
+// adminHandler adds POST /switchover/{check,freeze,thaw,kit,relay,demote} to the
+// supervisor's loopback admin, for a caller holding the per-boot local token.
 func (s *switching) adminHandler(base http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", base)
@@ -185,6 +193,11 @@ func (s *switching) adminHandler(base http.Handler) http.Handler {
 			err = s.withSuper(func(db *sql.DB) error { return switchover.Thaw(ctx, db) })
 		case "kit":
 			out, err = s.kit(ctx, req)
+		case "relay":
+			// the cloud relay agent stops on the old home before the new one starts its
+			// own (two agents of one server would take the tunnel from each other), and
+			// starts again when the switch is undone
+			out, err = s.relay(req.On)
 		case "demote":
 			// answered first: the demotion ends with this machine starting again, the API
 			// that asked among its processes
@@ -234,6 +247,19 @@ type homeRequest struct {
 	ToPubKey string `json:"to_pubkey"`
 	// the new home, for the demotion
 	Home newHome `json:"home"`
+	// On: the relay agent runs (relay)
+	On bool `json:"on"`
+}
+
+// relay starts or stops this home's cloud relay agent (none here: nothing to do).
+func (s *switching) relay(on bool) (any, error) {
+	if s.want == nil || !supervisor.RelayWanted(s.cfg) {
+		return map[string]any{"relay": false}, nil
+	}
+	if err := s.want(supervisor.RoleRelay, on); err != nil {
+		return nil, err
+	}
+	return map[string]any{"relay": true, "on": on}, nil
 }
 
 // newHome is where a machine finds its new home.
@@ -329,6 +355,12 @@ func (s *switching) kit(ctx context.Context, req homeRequest) (any, error) {
 	}
 	if len(files[kitSecretsKey]) == 0 {
 		return nil, errors.New("this home has no secrets key to hand over")
+	}
+	// the cloud relay's settings (its claim was used already: never the code)
+	if s.cfg.Cloud.Enabled {
+		if b, err := json.Marshal(s.cfg.Cloud); err == nil {
+			files[kitCloud] = b
+		}
 	}
 	var k *switchover.Kit
 	err = s.withSuper(func(db *sql.DB) error {
@@ -480,12 +512,19 @@ func (s *switching) demote(req homeRequest) {
 		logf("node.json: %v", err)
 		return
 	}
-	// this machine's cluster key is the new home's now; it keeps no copy of it
-	_ = os.Rename(clusterKeyPath(), clusterKeyPath()+".was-home-"+strconv.FormatInt(req.Term-1, 10))
+	// this machine's cluster key and cloud relay credentials are the new home's now; it
+	// keeps no copy of them, and runs no relay agent
+	was := ".was-home-" + strconv.FormatInt(req.Term-1, 10)
+	for _, p := range []string{clusterKeyPath(), supervisor.RelayCredPath(), supervisor.RelayKeyPath()} {
+		if _, err := os.Stat(p); err == nil {
+			_ = os.Rename(p, p+was)
+		}
+	}
 	if err := editConfig(func(c *config.Config) {
 		if strings.EqualFold(strings.TrimSpace(c.Server.Role), "home") {
 			c.Server.Role = ""
 		}
+		c.Cloud.Enabled = false
 	}); err != nil {
 		logf("server.toml: %v", err)
 	}
@@ -743,11 +782,24 @@ func (s *switching) promote(ctx context.Context, id string, term int64) (any, er
 		}
 	}
 	// this machine's Postgres is the home's from its next start: the bundle where the copy
-	// is, on the LAN with TLS, and no database url of its own
+	// is, on the LAN with TLS, and no database url of its own; the cloud relay as the old
+	// home had it (its supervisor runs the agent with the credentials that came along)
 	db2 := s.cp.copy.DB
+	var cloud *config.CloudSection
+	if b, ok := kit.Files[kitCloud]; ok {
+		var c config.CloudSection
+		if json.Unmarshal(b, &c) == nil {
+			cloud = &c
+		}
+	}
 	if err := editConfig(func(c *config.Config) {
 		c.Postgres.Enabled, c.Postgres.Home, c.Postgres.Port, c.Postgres.CopyPort = "on", db2.Home, db2.Port, 0
 		c.Database.URL = ""
+		if cloud != nil {
+			claim := c.Cloud.ClaimCode
+			c.Cloud = *cloud
+			c.Cloud.ClaimCode = claim
+		}
 	}); err != nil {
 		return nil, fmt.Errorf("server.toml: %w", err)
 	}

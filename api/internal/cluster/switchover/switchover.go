@@ -462,6 +462,12 @@ func (o *Orchestrator) run(id, by string) {
 	// ---- the promotion: from here the machine taking over is the home ----
 	o.update(id, func(p *Progress) { p.State = "promoting" })
 	o.step(id, StepPromote, "running", "")
+	// this home's cloud relay agent stops first: the new home starts its own with the
+	// credentials in the kit, and two agents of one server take the tunnel from each other
+	if err := o.Supervisor.Call(ctx, "relay", map[string]any{"id": id, "on": false}, nil); err != nil {
+		fail(StepPromote, fmt.Errorf("stopping this home's cloud relay agent: %w", err), true)
+		return
+	}
 	raw, err = o.command(ctx, p.ToNode, "switch.promote", map[string]any{"id": id, "term": p.Term}, 10*time.Minute)
 	var home NewHome
 	if err == nil {
@@ -559,6 +565,7 @@ func (o *Orchestrator) waitHome(ctx context.Context, home NewHome) error {
 // writable, every machine's drain as it was, the home's own jobs back.
 func (o *Orchestrator) undo(ctx context.Context, id string) {
 	_ = o.Supervisor.Call(ctx, "thaw", map[string]any{"id": id}, nil)
+	_ = o.Supervisor.Call(ctx, "relay", map[string]any{"id": id, "on": true}, nil)
 	p := o.Progress(id)
 	if p == nil {
 		return

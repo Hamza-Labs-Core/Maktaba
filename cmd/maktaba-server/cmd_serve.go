@@ -201,6 +201,14 @@ func runServe(cfg config.Config, opts serveOptions) error {
 		procs = append(procs, *llmProc)
 	}
 	sopts := supervisor.Options{Config: cfg, BinDir: opts.binDir, ReleaseDir: releaseDir}
+	// the cloud relay agent runs on the home (its credentials moved with it, Epic 37)
+	if wholeMachine && supervisor.RelayWanted(cfg) {
+		if p, err := supervisor.BuildRelay(sopts); err != nil {
+			fmt.Fprintf(os.Stderr, "[serve] the cloud relay agent does not run: %v\n", err)
+		} else {
+			procs = append(procs, p)
+		}
+	}
 	for _, r := range roles {
 		if r == supervisor.RoleTVSlot {
 			// a single slot instance (--role tv-slot --slot blue)
@@ -281,7 +289,7 @@ func runServe(cfg config.Config, opts serveOptions) error {
 			token = t
 		}
 	}
-	sw.set(pg, cp, stopCopy, token)
+	sw.set(pg, cp, stopCopy, token, func(r supervisor.Role, on bool) error { return sup.Want(r, "", on) })
 	if adminSrv := startSupervisorAdmin(policy.AdminAddr, sw.adminHandler(node.adminHandler(sup.Handler()))); adminSrv != nil {
 		defer func() { _ = shutdownWeb(adminSrv) }()
 	}

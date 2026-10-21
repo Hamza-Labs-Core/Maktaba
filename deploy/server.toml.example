@@ -98,9 +98,16 @@ roots = ["/mnt/videos", "/mnt/movies"]
 backend = "mlx-whisper"
 
 [cloud]
-# Optional cloud-link enrolment.
+# The cloud relay (Epic 25): while enabled, the home runs the relay agent
+# (maktaba-cloudlink), which keeps a tunnel from the cloud to this home's API. The
+# claim code and slug are used once, on its first run; its credentials are kept in
+# the keys folder (cloudlink.cred, cloudlink.key), and a switch of the home moves
+# them, and the agent with them, to the new home.
 enabled = false
 # claim_code = "ABCD1234"
+# slug = "my-library"
+# name = "Maktaba"
+# admin_addr = "127.0.0.1:8765"
 
 [supervisor]
 # How `serve` keeps its child processes (api, streaming, pipeline) running.

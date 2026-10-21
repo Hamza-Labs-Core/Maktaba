@@ -59,6 +59,7 @@ echo "binaries"
 for b in maktaba-server maktaba-api maktaba-streaming maktaba-launcher; do
     run "$b" "$PAYLOAD/bin/$b" --version
 done
+run "maktaba-cloudlink" "$PAYLOAD/bin/maktaba-cloudlink" version
 for b in postgres initdb pg_ctl pg_dump pg_restore psql; do
     run "$b" "$PAYLOAD/postgres/bin/$b" --version
 done

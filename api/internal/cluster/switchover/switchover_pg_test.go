@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -55,8 +57,12 @@ type fakeSupervisor struct {
 	fail  string
 }
 
-func (s *fakeSupervisor) Call(_ context.Context, step string, _, out any) error {
+func (s *fakeSupervisor) Call(_ context.Context, step string, req, out any) error {
 	s.mu.Lock()
+	if m, ok := req.(map[string]any); ok && step == "relay" {
+		// the relay agent stopped (false) or started again (true)
+		step = fmt.Sprintf("relay:%v", m["on"])
+	}
 	s.steps = append(s.steps, step)
 	s.mu.Unlock()
 	if step == s.fail {
@@ -142,7 +148,8 @@ func TestAPlannedSwitchRunsItsStepsInOrder(t *testing.T) {
 	if p.State != "handed_over" || p.NewHome == nil || p.NewHome.DBHost != "b" {
 		t.Fatalf("the switch: %+v", p)
 	}
-	if got := s.called(); len(got) != 4 || got[0] != "check" || got[1] != "freeze" || got[2] != "kit" || got[3] != "demote" {
+	// the cloud relay agent stops on this home before the new home is promoted
+	if got := strings.Join(s.called(), " "); got != "check freeze kit relay:false demote" {
 		t.Fatalf("the supervisor's steps: %v", got)
 	}
 	want := []string{"drain@home-worker", "switch.prepare@s-" + b, "switch.kit@s-" + b, "switch.promote@s-" + b,
@@ -190,8 +197,8 @@ func TestASwitchWithoutTheMarkerIsUndone(t *testing.T) {
 	if p.State != "failed" {
 		t.Fatalf("the switch: %+v", p)
 	}
-	got := s.called()
-	if got[len(got)-1] != "thaw" {
+	// the database thawed, the relay agent (if it ran) going again
+	if got := strings.Join(s.called(), " "); !strings.HasSuffix(got, "thaw relay:true") {
 		t.Fatalf("the supervisor's steps: %v (the database left frozen)", got)
 	}
 	var drainB, drainOther bool

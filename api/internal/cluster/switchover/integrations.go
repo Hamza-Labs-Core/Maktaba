@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -108,7 +110,50 @@ func HomeIntegrations(db *sql.DB, store Secrets, hfToken string, publicStream fu
 		}
 		out["youtube"] = youtube(ctx, db)
 		out["llm"] = llm(ctx, db)
+		out["relay"] = relayLink(ctx, os.Getenv("MAKTABA_CLOUDLINK_STATUS_URL"))
 		return out
+	}
+}
+
+// relayLinkTries is how many tunnel attempts the relay agent makes before a switch calls
+// its move failed (it keeps trying all the same).
+const relayLinkTries = 10
+
+// relayLink: the cloud relay agent runs where the home is (its supervisor starts it with
+// the credentials the kit carried); moved once its tunnel is up. status is the agent's
+// status address ("": this home runs none).
+func relayLink(ctx context.Context, status string) Integration {
+	if status == "" {
+		return Integration{State: NotUsed}
+	}
+	cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(cctx, http.MethodGet, status, nil)
+	if err != nil {
+		return Integration{State: Failed, Detail: err.Error()}
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		// the agent is starting (or not installed: its supervisor says why)
+		return Integration{State: Pending, Detail: "the relay agent does not answer yet"}
+	}
+	defer resp.Body.Close()
+	var st struct {
+		Status    string `json:"status"`
+		Slug      string `json:"slug"`
+		LastError string `json:"last_error"`
+		Attempts  int    `json:"attempts"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&st); err != nil {
+		return Integration{State: Failed, Detail: "the relay agent's status: " + err.Error()}
+	}
+	switch {
+	case st.Status == "online":
+		return Integration{State: Moved, Detail: st.Slug}
+	case st.Attempts >= relayLinkTries:
+		return Integration{State: Failed, Detail: st.LastError}
+	default:
+		return Integration{State: Pending, Detail: st.LastError}
 	}
 }
 

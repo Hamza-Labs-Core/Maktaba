@@ -79,7 +79,8 @@ make -C "$REPO_ROOT" --no-print-directory server build-go \
     GOOS=darwin GOARCH=arm64 VERSION="$VERSION" BIN_SUBDIR=darwin-arm64/ >/dev/null
 cp "$REPO_ROOT/cmd/maktaba-server/bin/darwin-arm64/maktaba-server" \
    "$REPO_ROOT/api/bin/darwin-arm64/maktaba-api" \
-   "$REPO_ROOT/streaming/bin/darwin-arm64/maktaba-streaming" "$OUT/bin/"
+   "$REPO_ROOT/streaming/bin/darwin-arm64/maktaba-streaming" \
+   "$REPO_ROOT/cloud/bin/darwin-arm64/maktaba-cloudlink" "$OUT/bin/"
 (cd "$REPO_ROOT/cmd/maktaba-launcher" && \
     GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 \
     go build -trimpath -ldflags "-buildid= -s -w -X main.Version=$VERSION" -o "$OUT/bin/maktaba-launcher" .)

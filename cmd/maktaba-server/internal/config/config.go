@@ -227,10 +227,22 @@ type TranscriptionSection struct {
 	MinFreePct float64 `toml:"min_free_pct"`
 }
 
-// CloudSection holds optional cloud-link enrolment.
+// CloudSection is the cloud relay (Epic 25): while enabled, the home's supervisor runs
+// the relay agent (maktaba-cloudlink), which keeps a tunnel from the cloud to this home's
+// API. Its credentials come from a claim once (ClaimCode and Slug, used on the first run
+// only) and are kept in the keys directory; a switch of the home moves them, and the
+// agent with them (specs/epics/37-node-replica).
 type CloudSection struct {
-	Enabled   bool   `toml:"enabled"`
-	ClaimCode string `toml:"claim_code"`
+	Enabled   bool   `toml:"enabled" json:"enabled"`
+	ClaimCode string `toml:"claim_code" json:"-"`
+	// Slug is the subdomain asked for at the claim; Name the server's label there.
+	Slug string `toml:"slug" json:"slug,omitempty"`
+	Name string `toml:"name" json:"name,omitempty"`
+	// API and RelayWS override the cloud's addresses (default: maktaba.app's).
+	API     string `toml:"api" json:"api,omitempty"`
+	RelayWS string `toml:"relay_ws" json:"relay_ws,omitempty"`
+	// AdminAddr is the agent's loopback status address (default 127.0.0.1:8765).
+	AdminAddr string `toml:"admin_addr" json:"admin_addr,omitempty"`
 }
 
 // Defaults returns a Config populated with the documented defaults for

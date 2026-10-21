@@ -132,6 +132,10 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		// the supervisor's switchover endpoints take its per-boot local token (the home's
 		// API runs a switch of the home: specs/epics/37-node-replica)
 		add("MAKTABA_SUPERVISOR_TOKEN_FILE", LocalTokenPath(cfg))
+		// the cloud relay agent's state (a switch checks it moved with the home)
+		if RelayWanted(cfg) {
+			add("MAKTABA_CLOUDLINK_STATUS_URL", RelayStatusURL(cfg))
+		}
 		// the machines reach the bundled Postgres on its own port, verifying its CA
 		if cfg.ClusterDB.Port > 0 {
 			add("MAKTABA_CLUSTER_PG_PORT", strconv.Itoa(cfg.ClusterDB.Port))
