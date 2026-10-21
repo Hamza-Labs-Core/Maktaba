@@ -72,10 +72,14 @@ jobs:
           workspaces: apps/desktop/src-tauri -> target
 
       # the pinned third-party downloads (~150 MB), keyed on their checksums
+      # an earlier pins.env's cache too: payload.sh checks every file against its pinned
+      # SHA-256 and downloads only what changed, so a host outage after a pin change does
+      # not stop the pieces it did not touch
       - uses: actions/cache@v4
         with:
           path: build/linux-app/downloads
           key: linux-app-downloads-${{ matrix.arch }}-${{ hashFiles('tools/release/linux-app/pins.env') }}
+          restore-keys: linux-app-downloads-${{ matrix.arch }}-
 
       - name: shellcheck, the payload tool's and the removal script's tests
         run: |

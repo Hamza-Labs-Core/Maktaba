@@ -26,7 +26,9 @@ import (
 // WaitForNotification, out of the pool, as on a real database.
 type fakePG struct {
 	ln      net.Listener
-	queries atomic.Int64
+	queries atomic.Int64 // queries read
+	logins  atomic.Int64 // connections that logged in
+	serving atomic.Int64 // connections still being read
 	wg      sync.WaitGroup
 
 	mu    sync.Mutex
@@ -52,8 +54,10 @@ func newFakePG(t *testing.T) *fakePG {
 			f.conns = append(f.conns, c)
 			f.mu.Unlock()
 			f.wg.Add(1)
+			f.serving.Add(1)
 			go func() {
 				defer f.wg.Done()
+				defer f.serving.Add(-1)
 				f.serve(c)
 			}()
 		}
@@ -84,6 +88,7 @@ func (f *fakePG) serve(c net.Conn) {
 	if _, ok := msg.(*pgproto3.StartupMessage); !ok {
 		return // a cancel request: nothing to answer
 	}
+	f.logins.Add(1)
 	be.Send(&pgproto3.AuthenticationOk{})
 	// pgx runs simple-protocol queries only with these
 	be.Send(&pgproto3.ParameterStatus{Name: "standard_conforming_strings", Value: "on"})
@@ -175,11 +180,21 @@ func TestShutdownReleasesThePool(t *testing.T) {
 		t.Fatal("pool.Close blocked: a loop still holds a connection")
 	}
 
-	// nothing touches the database after shutdown (the relay used to poll every 2 s)
-	n := pg.queries.Load()
+	// nothing touches the database after shutdown (the relay used to poll every 2 s).
+	// A query a loop sent as it was stopped can still be in the socket when the
+	// pool closes: count from when the server has read every closed connection.
+	for deadline := time.Now().Add(time.Second); pg.serving.Load() > 0; time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d connections still open after the pool closed", pg.serving.Load())
+		}
+	}
+	n, logins := pg.queries.Load(), pg.logins.Load()
 	time.Sleep(50 * time.Millisecond)
 	if got := pg.queries.Load(); got != n {
 		t.Errorf("%d queries after shutdown", got-n)
+	}
+	if got := pg.logins.Load(); got != logins {
+		t.Errorf("%d connections after shutdown", got-logins)
 	}
 }
 

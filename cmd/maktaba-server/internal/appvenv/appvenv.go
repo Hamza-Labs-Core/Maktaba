@@ -21,6 +21,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ctrlbreak"
 )
 
 // Spec is one run.
@@ -174,26 +176,36 @@ func Run(ctx context.Context, spec Spec, progress func(Progress)) (Result, error
 		logw = io.Discard
 	}
 	env := bootstrapEnv(os.Environ(), wheel)
-	bootstrap := func(extra ...string) *exec.Cmd {
+	// When ctx ends the bootstrap is asked to stop (ctrlbreak.Stopper: SIGTERM,
+	// or CTRL_BREAK to a process group of its own on Windows, through a handle
+	// opened as it starts so the event never goes astray to the server's
+	// console). It stops pip, says interrupted and exits 130; one that cannot
+	// be asked is killed after stopWait, and the next run resumes the build.
+	bootstrap := func(extra ...string) (*exec.Cmd, *ctrlbreak.Stopper) {
 		args := append([]string{"-m", "maktaba_pipeline.venv_bootstrap", "--python", py,
 			"--payload", filepath.Join(spec.Payload, "pipeline"), "--venv", spec.Venv}, extra...)
 		cmd := exec.CommandContext(ctx, py, args...)
 		cmd.Env = env
 		cmd.Stderr = logw
-		ownGroup(cmd)
-		cmd.Cancel = func() error { return askStop(cmd) }
+		stop := ctrlbreak.NewStopper(cmd)
 		cmd.WaitDelay = stopWait
-		return cmd
+		return cmd, stop
 	}
-	check := bootstrap("--check")
+	check, checkStop := bootstrap("--check")
 	check.Stdout = io.Discard
-	if err := check.Run(); err == nil {
+	err = check.Start()
+	if err == nil {
+		checkStop.Started()
+		err = check.Wait()
+		checkStop.Close()
+	}
+	if err == nil {
 		return result(spec.Payload, wheel, true), nil
 	} else if ctx.Err() != nil {
 		return Result{}, ErrInterrupted
 	}
 
-	cmd := bootstrap()
+	cmd, stop := bootstrap()
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return Result{}, err
@@ -204,6 +216,7 @@ func Run(ctx context.Context, spec Spec, progress func(Progress)) (Result, error
 		}
 		return Result{}, fmt.Errorf("cannot start the app's Python (%s): %w", py, err)
 	}
+	stop.Started()
 	var last status
 	sc := bufio.NewScanner(stdout)
 	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
@@ -218,6 +231,7 @@ func Run(ctx context.Context, spec Spec, progress func(Progress)) (Result, error
 		}
 	}
 	err = cmd.Wait()
+	stop.Close()
 	switch code := exitCode(cmd, err); {
 	case code == 0:
 		// done (Wait still says the context ended when it ended as the run did)
