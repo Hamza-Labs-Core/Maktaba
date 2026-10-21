@@ -178,7 +178,7 @@ for the setup screens: `MAKTABA_SERVER_BIN=/path/to/maktaba-server pnpm tauri de
 
 ## Linux runs the server too (Epic 39)
 
-On Linux the AppImage (or the .deb / .rpm) with the server payload (`/usr/lib/Maktaba/server`
+On Linux the AppImage (or the .deb / .rpm) with the server payload (`/usr/share/maktaba/server`
 inside it, story 39.2) is the whole installation
 ([spec](../../specs/epics/39-linux-app/README.md),
 [contract](../../specs/epics/39-linux-app/contract-runtime.md)). The modes, the setup screens and
@@ -187,7 +187,8 @@ the tray menu are the Mac's. What differs is where the server runs and how it st
 
 - **The runtime copy.** The server never runs from the app's files: an AppImage is mounted at a
   new `/tmp/.mount_*` path on every run, and a package upgrade replaces `/usr/lib/Maktaba` under
-  a running server. When setup finishes, the shell runs the payload's own
+  a running server (and linuxdeploy rewrites ELF files under `usr/lib`, so the payload is in
+  `usr/share/maktaba/server`). When setup finishes, the shell runs the payload's own
   `maktaba-server runtime install --activate --owner app`, which copies the payload into
   `~/.local/share/maktaba/runtime/<version>` and points `current` at it.
 - **The user service.** `maktaba-server service install` writes and starts the systemd user

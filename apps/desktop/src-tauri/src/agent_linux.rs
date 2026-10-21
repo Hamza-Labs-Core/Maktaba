@@ -94,16 +94,21 @@ fn home() -> Option<PathBuf> {
     env("HOME").map(PathBuf::from)
 }
 
-/// The maktaba-server to ask: this app's payload, else the runtime's (a
-/// client-only build still finds a server installed by another).
-fn server() -> Result<PathBuf, String> {
-    if let Some(p) = std::env::current_exe()
+/// This app's payload, when the build carries one.
+fn payload() -> Option<BundlePaths> {
+    std::env::current_exe()
         .ok()
         .and_then(|e| BundlePaths::from_linux_exe(&e))
-    {
-        if p.payload_present() {
-            return Ok(p.server_bin());
-        }
+        .filter(BundlePaths::payload_present)
+}
+
+/// The maktaba-server to ask: this app's payload's, else the runtime's (a
+/// client-only build still finds a server installed by another). A payload
+/// binary without its executable bit (an .rpm's files keep the packager's
+/// modes) is run from a copy in the cache that has it.
+fn server() -> Result<PathBuf, String> {
+    if let Some(p) = payload() {
+        return runnable(&p.server_bin());
     }
     let h = home().ok_or("HOME is not set")?;
     let rt = data_dir(env, &h)
@@ -115,6 +120,36 @@ fn server() -> Result<PathBuf, String> {
         return Ok(rt);
     }
     Err("this build of Maktaba does not include the server".into())
+}
+
+#[cfg(not(unix))]
+fn runnable(bin: &Path) -> Result<PathBuf, String> {
+    Ok(bin.to_path_buf())
+}
+
+#[cfg(unix)]
+fn runnable(bin: &Path) -> Result<PathBuf, String> {
+    use std::os::unix::fs::PermissionsExt;
+    let meta = std::fs::metadata(bin).map_err(|e| format!("{}: {e}", bin.display()))?;
+    if meta.permissions().mode() & 0o111 != 0 {
+        return Ok(bin.to_path_buf());
+    }
+    let cache = env("XDG_CACHE_HOME")
+        .filter(|v| Path::new(v).is_absolute())
+        .map(PathBuf::from)
+        .or_else(|| home().map(|h| h.join(".cache")))
+        .ok_or("HOME is not set")?;
+    let copy = cache
+        .join("maktaba")
+        .join("bin")
+        .join(format!("maktaba-server-{}", meta.len()));
+    if let Some(dir) = copy.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    std::fs::copy(bin, &copy).map_err(|e| format!("{}: {e}", copy.display()))?;
+    std::fs::set_permissions(&copy, std::fs::Permissions::from_mode(0o755))
+        .map_err(|e| e.to_string())?;
+    Ok(copy)
 }
 
 /// The result of one `--json` command: its last `result` line's data, or its
@@ -175,7 +210,7 @@ pub fn login_item() -> LoginItem {
 /// refused (no polkit agent) leaves a server that runs while the user is
 /// logged in: login_item says RequiresApproval, and setup offers it again.
 pub fn register() -> Result<(), String> {
-    run_json(&["runtime", "install", "--activate", "--owner", "app"])?;
+    install_runtime()?;
     run_json(&["service", "install"])?;
     let _ = run_json(&["service", "linger"]);
     if tray_available() {
@@ -223,12 +258,32 @@ pub fn agent_alive() -> Option<bool> {
 /// migrates and rebuilds the venv as the payload needs). Returns whether it
 /// switched.
 pub fn sync_runtime() -> Result<bool, String> {
-    let st = run_json(&["runtime", "status"])?;
+    let Some(p) = payload() else {
+        return Ok(false); // a client-only build carries none
+    };
+    let from = p.server_dir.to_string_lossy().to_string();
+    let st = run_json(&["runtime", "status", "--from", &from])?;
     if st.get("update_pending").and_then(Value::as_bool) != Some(true) {
         return Ok(false);
     }
-    run_json(&["runtime", "install", "--activate", "--owner", "app"])?;
+    install_runtime()?;
     Ok(true)
+}
+
+/// Copy this app's payload into the runtime and switch the unit to it.
+fn install_runtime() -> Result<(), String> {
+    let p = payload().ok_or("this build of Maktaba does not include the server")?;
+    let from = p.server_dir.to_string_lossy().to_string();
+    run_json(&[
+        "runtime",
+        "install",
+        "--from",
+        &from,
+        "--activate",
+        "--owner",
+        "app",
+    ])
+    .map(|_| ())
 }
 
 /// Is a StatusNotifier host (a tray) running in this session? Asked through

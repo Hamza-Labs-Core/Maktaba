@@ -88,16 +88,18 @@ impl BundlePaths {
         }
     }
 
-    /// <prefix>/bin/Maktaba → <prefix>/lib/Maktaba/server, where tauri puts the
-    /// bundle's resources on Linux: /usr in a .deb or an .rpm, $APPDIR/usr in
-    /// the AppImage (mounted at a new /tmp/.mount_* every run).
+    /// <prefix>/bin/Maktaba → <prefix>/share/maktaba/server, where the Linux
+    /// bundles put the payload (tools/release/linux-app/payload.sh's overlay):
+    /// /usr in a .deb or an .rpm, $APPDIR/usr in the AppImage (mounted at a new
+    /// /tmp/.mount_* every run). Not among the resources in <prefix>/lib:
+    /// linuxdeploy rewrites the ELF files it finds there.
     fn from_linux_exe(exe: &Path) -> Option<Self> {
         Some(Self {
             server_dir: exe
                 .parent()?
                 .parent()?
-                .join("lib")
-                .join("Maktaba")
+                .join("share")
+                .join("maktaba")
                 .join("server"),
         })
     }
@@ -490,14 +492,14 @@ mod tests {
         let deb = BundlePaths::from_linux_exe(Path::new("/usr/bin/Maktaba")).unwrap();
         assert_eq!(
             deb.server_dir,
-            Path::new("/usr/lib").join("Maktaba").join("server")
+            Path::new("/usr/share").join("maktaba").join("server")
         );
         let appimage =
             BundlePaths::from_linux_exe(Path::new("/tmp/.mount_MakX1/usr/bin/Maktaba")).unwrap();
         assert_eq!(
             appimage.server_dir,
-            Path::new("/tmp/.mount_MakX1/usr/lib")
-                .join("Maktaba")
+            Path::new("/tmp/.mount_MakX1/usr/share")
+                .join("maktaba")
                 .join("server")
         );
     }
