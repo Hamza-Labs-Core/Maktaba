@@ -51,8 +51,8 @@ and each `error` in the screens' words (by its code), and asks for the input fie
 | *the runtime* | `runtime install --owner headless` copies the payload into the runtime (the first runtime becomes `current` by itself); every step after this runs from `runtime/current` with `MAKTABA_APP_BUNDLE` pointing there, so the venv is built against the runtime's Python |
 | `admin` | user name and password (asked twice, not echoed) |
 | `libraries` | library folders, then the NAS path map (`/mnt/media => /srv/media`), each checked |
-| `models` | Hugging Face token (not echoed), or the path of the home's copy on the share |
-| `plex` | optional: the PIN to enter at plex.tv/link, polled until linked; an expired code or Plex out of reach leaves it to Settings, and setup goes on |
+| `models` | Hugging Face token (not echoed), or the path of the home's copy on the share; asked only where the second listen runs (on Linux an NVIDIA GPU with 7.5 GiB, compute capability 7.5 or newer and driver R580 or newer: `check`'s `second_listen`), as the screens skip it elsewhere |
+| `plex` | optional: the PIN to enter at plex.tv/link, polled until linked; plex.tv out of reach is said once and polled again; an expired code or a Ctrl+C while it waits leaves it to Settings, and setup goes on |
 | `venv` | builds the venv with a progress bar |
 | `models` (download) | downloads what the workers load, with progress (`{"action": "download"}`) |
 | `llm` | downloads the language model; only too little disk stops the setup, anything else is left to the server, which downloads it in the background |
