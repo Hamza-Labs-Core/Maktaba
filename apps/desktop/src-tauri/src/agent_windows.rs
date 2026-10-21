@@ -258,16 +258,18 @@ pub fn sign_in_time() -> Option<u64> {
     if ok == 0 {
         return None;
     }
-    let mut data: *mut SECURITY_LOGON_SESSION_DATA = std::ptr::null_mut();
+    let mut out = std::mem::MaybeUninit::<*mut SECURITY_LOGON_SESSION_DATA>::uninit();
     // SAFETY: the logon id is this process's own session (no privilege
-    // needed); data receives an LSA buffer.
-    if unsafe { LsaGetLogonSessionData(&st.AuthenticationId, &mut data) } != 0 || data.is_null() {
+    // needed); on success out receives an LSA buffer.
+    if unsafe { LsaGetLogonSessionData(&st.AuthenticationId, out.as_mut_ptr()) } != 0 {
         return None;
     }
+    // SAFETY: the call succeeded, so it wrote out.
+    let data = std::ptr::NonNull::new(unsafe { out.assume_init() })?;
     // SAFETY: data is a live LSA buffer, freed once after reading.
     let logon = unsafe {
-        let t = (*data).LogonTime;
-        LsaFreeReturnBuffer(data.cast());
+        let t = data.as_ref().LogonTime;
+        LsaFreeReturnBuffer(data.as_ptr().cast());
         t
     };
     u64::try_from(logon).ok().filter(|&t| t > 0)
