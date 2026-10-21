@@ -342,6 +342,16 @@ function PlexPanel({ info, device }: { info: TvInfo; device: HdhrDevice }) {
     return () => window.clearTimeout(id);
   }, [st, load]);
 
+  // the "Plex is loading the guide" note goes away on its own once the time is up
+  const [, setTick] = useState(0);
+  const reloadedAt = st?.guide_reloaded_at ? new Date(st.guide_reloaded_at).getTime() : NaN;
+  useEffect(() => {
+    const left = reloadedAt + GUIDE_LOAD_MS - Date.now();
+    if (!(left > 0)) return;
+    const id = window.setTimeout(() => setTick((n) => n + 1), left + 50);
+    return () => window.clearTimeout(id);
+  }, [reloadedAt]);
+
   async function act(kind: "refresh" | "register") {
     setBusy(true);
     setMsg(null);
@@ -391,7 +401,6 @@ function PlexPanel({ info, device }: { info: TvInfo; device: HdhrDevice }) {
   // no plex block (an older or partial API) reads as not set up
   const plexReady = !!st?.plex?.enabled && !!st?.plex?.configured;
   const registered = !!report.maktaba?.registered;
-  const reloadedAt = st?.guide_reloaded_at ? new Date(st.guide_reloaded_at).getTime() : NaN;
   const guideLoading = registered && Date.now() - reloadedAt < GUIDE_LOAD_MS;
   const dvrs = report.dvrs ?? [];
   const ch = report.channels;

@@ -404,22 +404,21 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
             want = canonical_hash(lineup)
             changed = want != st.channelmap_hash
             last = st.guide_reloaded_at
+            since = None if last is None else (wall() - last).total_seconds()
             # a refresh that changes nothing while Plex still loads the last reload: leave it be
             settling = (
                 manual
                 and not registered_now
                 and not changed
-                and last is not None
-                and (wall() - last).total_seconds() < GUIDE_LOAD_SECONDS
+                and since is not None
+                and since < GUIDE_LOAD_SECONDS
             )
             pushed = False
             if not lineup:
                 run.channel_map = "no_channels"
             elif settling:
                 run.channel_map = "unchanged"
-            elif registered_now or (
-                (manual or cfg.auto_refresh_channels) and (manual or changed)
-            ):
+            elif registered_now or ((manual or cfg.auto_refresh_channels) and (manual or changed)):
                 await asyncio.to_thread(client.put_channel_map, run.ours.key, lineup)
                 st.channelmap_hash, st.channelmap_at, pushed = want, wall(), True
                 run.ours = replace(run.ours, mapped=tuple(lineup))
@@ -432,6 +431,14 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
 
             due = guide_version != st.guide_version
             if settling:
+                if due and cfg.auto_refresh_guide:  # the guide grew too: reload once loaded
+                    run.guide = "loading"
+                    st.status = status(run, None)
+                    await _save(db, st, at=started, error=None, clear_register=asked)
+                    raise JobDeferred(
+                        "Plex is still loading the guide",
+                        GUIDE_LOAD_SECONDS - (since or 0.0),
+                    )
                 reload = False
                 run.guide = "loading"
             elif registered_now or manual or (pushed and cfg.auto_refresh_guide):

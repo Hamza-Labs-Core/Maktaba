@@ -644,6 +644,25 @@ async def test_refresh_while_plex_loads_the_guide_sends_nothing(db: Database) ->
 
 
 @pytest.mark.asyncio
+async def test_refresh_while_loading_keeps_a_grown_guide_for_later(db: Database) -> None:
+    # the top-up grew the guide and a refresh coalesced with it: wait, don't drop it
+    w = await make_world(db)
+    await ask_register(db)
+    await livetv(db, w, force=True)
+    await generated(db, w.channels[0])
+    w.fake.calls.clear()
+    row = await livetv(db, w, force=True)
+    assert row["state"] == "paused" and w.fake.writes() == []
+    assert (await status(db))["actions"]["guide"] == "loading"
+    await reloaded_minutes_ago(db, 6)
+    await db.execute("UPDATE processing_jobs SET not_before = NULL WHERE id = $1", row["id"])
+    job = await claim_for_pool(db, worker_id="w1", pool="network_plex", stages=["plex_livetv"])
+    assert job is not None and job.id == row["id"]
+    await dispatch_job(db, job, runtime=w.rt, legacy_handlers={})
+    assert any(p.endswith("/reloadGuide") for _, p in w.fake.writes())
+
+
+@pytest.mark.asyncio
 async def test_a_register_that_fails_half_way_keeps_the_request_for_the_retry(
     db: Database,
 ) -> None:

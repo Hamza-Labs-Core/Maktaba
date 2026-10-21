@@ -259,6 +259,16 @@ describe("AdminLiveTV", () => {
     expect(await screen.findByText(/Plex is loading the guide/)).toBeInTheDocument();
   });
 
+  it("hides the loading note when the five minutes are up", async () => {
+    const almost = new Date(Date.now() - 5 * 60_000 + 300).toISOString();
+    routes({ "/api/tv/plex": { ...plexRegistered, guide_reloaded_at: almost } });
+    renderPage();
+    expect(await screen.findByText(/Plex is loading the guide/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByText(/Plex is loading the guide/)).not.toBeInTheDocument()
+    );
+  });
+
   it("drops the loading note once Plex has had time to load the guide", async () => {
     routes({ "/api/tv/plex": plexRegistered }); // reloaded days ago
     renderPage();
