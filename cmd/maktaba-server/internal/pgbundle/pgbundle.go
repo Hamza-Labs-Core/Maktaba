@@ -61,8 +61,10 @@ type Bundle struct {
 //
 // [postgres] enabled = "off" never runs it; "on" does whenever its binaries are
 // there; "auto" (the default) on macOS, and on any system when this server runs
-// from an app's payload (MAKTABA_APP_BUNDLE: Maktaba.app, the Linux app's
-// runtime copy, Epic 39 story 39.4). In every case a [database] url set in
+// from a desktop app's payload (inAppPayload: MAKTABA_APP_BUNDLE, as the launcher
+// sets it for Maktaba.app, the Windows app (Epic 38 story 38.10) and the Linux
+// app's runtime copy (Epic 39 story 39.4), or payload.json beside this server's
+// bin/). In every case a [database] url set in
 // server.toml wins, and so does a SQLite database already in use at the
 // default path (an install from before keeps its data).
 func Resolve(cfg config.Config, exe string) (Bundle, bool, error) {
@@ -70,7 +72,8 @@ func Resolve(cfg config.Config, exe string) (Bundle, bool, error) {
 	if mode == "off" || cfg.DatabaseURLSet {
 		return Bundle{}, false, nil
 	}
-	if mode != "on" && ((runtime.GOOS != "darwin" && config.AppBundle() == "") || sqliteInUse()) {
+	auto := runtime.GOOS == "darwin" || inAppPayload(exe)
+	if mode != "on" && (!auto || sqliteInUse()) {
 		return Bundle{}, false, nil
 	}
 	home := findHome(cfg, exe)
@@ -129,6 +132,23 @@ func findHome(cfg config.Config, exe string) string {
 		return h
 	}
 	return ""
+}
+
+// inAppPayload: this maktaba-server runs from a desktop app's server payload
+// ($MAKTABA_APP_BUNDLE, which the launcher sets, or payload.json beside the
+// bin/ of exe: the app runs its setup steps with it directly).
+func inAppPayload(exe string) bool {
+	if config.AppBundle() != "" {
+		return true
+	}
+	if exe == "" {
+		return false
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	_, err := os.Stat(filepath.Join(filepath.Dir(filepath.Dir(exe)), "payload.json"))
+	return err == nil
 }
 
 func hasServer(home string) bool {

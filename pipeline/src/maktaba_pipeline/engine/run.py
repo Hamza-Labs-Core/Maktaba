@@ -101,7 +101,12 @@ async def _execute(
                 if (
                     prev is not None
                     and prev["stage_version"] == stage.version
-                    and prev["input_hash"] == input_hash
+                    and prev["input_hash"] is not None
+                    and (
+                        impl.still_current(job, str(prev["input_hash"]), input_hash)
+                        if impl.still_current is not None
+                        else prev["input_hash"] == input_hash
+                    )
                 ):
                     await finalize_success(
                         db,
@@ -110,7 +115,9 @@ async def _execute(
                         graph,
                         output_hash=str(prev["output_hash"]),
                         outcome=None,
-                        input_hash=input_hash,
+                        # what the result answers stays recorded (a transcript without
+                        # its second listen stays one)
+                        input_hash=str(prev["input_hash"]),
                         skipped_from=prev,
                     )
                     job_events.finished(job.id, "skipped")
@@ -141,7 +148,7 @@ async def _execute(
             graph,
             output_hash=result.output_hash,
             outcome=result.outcome,
-            input_hash=input_hash,
+            input_hash=result.input_hash or input_hash,
             changed_subjects=result.changed_subjects,
             requests=result.requests,
             summary=(

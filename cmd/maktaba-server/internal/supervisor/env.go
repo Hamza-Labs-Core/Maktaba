@@ -35,6 +35,15 @@ func ChildEnv(role Role, cfg config.Config) []string {
 	add("DATABASE_URL", cfg.Database.URL)
 	add("MAKTABA_DATABASE_URL", cfg.Database.URL)
 
+	// The data volume (data_dir): the api keeps the Sigstore root it refreshes
+	// (<data_dir>/sigstore) and uploaded channel art there, and the streaming
+	// server reads that art; left to themselves they would look in
+	// /var/lib/maktaba, which a user's server cannot write. An operator's own
+	// MAKTABA_DATA_DIR is kept.
+	if os.Getenv("MAKTABA_DATA_DIR") == "" {
+		add("MAKTABA_DATA_DIR", cfg.Server.DataDir)
+	}
+
 	// Auto-run migrations before the api binds (the api honours this),
 	// so a fresh single-binary install doesn't need a separate
 	// `migrate up` step before the first `serve`.
@@ -238,12 +247,8 @@ func ChildEnv(role Role, cfg config.Config) []string {
 				}
 			}
 		}
-		// the transcription workers (PlanSTT, BuildPipelineInstances) take the
-		// transcribe stage; the main worker leaves it to them
-		// (added to the stages an operator's own environment excludes)
-		if PlanSTT(cfg).Workers > 0 {
-			add("MAKTABA_PIPELINE_EXCLUDE_STAGES", withStage(os.Getenv("MAKTABA_PIPELINE_EXCLUDE_STAGES"), "transcribe"))
-		}
+		// the main worker's share of the transcription plan is Build's (PlanFor:
+		// it asks the pipeline's Python), the workers' BuildPipelineInstances'
 		// Epic 35 story 35.8: a full node's pipeline works for the home as this
 		// machine's node (node.json: its database role, node id). The pipeline only
 		// reads node.json without a database URL, so [database].url above would

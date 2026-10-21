@@ -23,7 +23,9 @@ const (
 	// StateBackoff: exited, waiting to be restarted.
 	StateBackoff State = "backoff"
 	// StateFailed: crash-looping (max_restarts inside the window); the
-	// others keep running and it is retried every failed_retry.
+	// others keep running and it is retried every failed_retry. Also a process
+	// whose Prepare failed: tried again at next_restart_at, or (no
+	// next_restart_at: a Halt) not before the server's next start.
 	StateFailed State = "failed"
 	// StateExited: exited and left stopped by the restart policy.
 	StateExited State = "exited"
@@ -87,6 +89,15 @@ type ChildStatus struct {
 	NextRestartAt *time.Time `json:"next_restart_at,omitempty"`
 	LastProbe     *ProbeInfo `json:"last_probe,omitempty"`
 	ProbeURL      string     `json:"probe_url,omitempty"`
+	// Detail says what a process waits on before it starts (its Prepare: the
+	// venv being built, a dump being taken) or why that failed.
+	Detail string `json:"detail,omitempty"`
+	// DetailCode and DetailParams are Detail for a screen to say in its own
+	// language: a snake_case code from a fixed list (the desktop app's start
+	// steps: serve_appbundle.go's detailCodes) and its values (sizes in bytes,
+	// paths whole). Detail stays the English, for the logs and older readers.
+	DetailCode   string         `json:"detail_code,omitempty"`
+	DetailParams map[string]any `json:"detail_params,omitempty"`
 }
 
 // Event is one entry of the supervisor's event log (start, exit,

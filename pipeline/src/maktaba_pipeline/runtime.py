@@ -42,7 +42,7 @@ from .cluster import exitcodes
 from .cluster.agent import enabled as cluster_agent_enabled
 from .cluster.capabilities import capabilities
 from .cluster.node import WorkerAgent, home_unreachable, stop_jobs_after
-from .cluster.stages import StageSelector, select_stages
+from .cluster.stages import StageSelector, refresh_stages, select_stages
 from .db.jobs import DBConn, Job, Stage
 from .db.jobs_state import StageError, mark_done, mark_failed_or_retry
 from .engine.dispatch import EngineRuntime, dispatch_job
@@ -588,6 +588,7 @@ async def _start_engine(
                 await clear_foreign_thumbnails(database)
             except Exception:  # noqa: BLE001 - a repair, never a reason not to start
                 _log.exception("thumbnail_foreign_repair_failed")
+    await refresh_stages(database, graph, ())
     selector.compute()
 
     collector = runtime.nas.collector

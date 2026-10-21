@@ -39,6 +39,9 @@ type Supervisor struct {
 	fatalOnce sync.Once
 	// onExit, when set, hears every child exit (the TV front door's slot report).
 	onExit func(Process, ExitInfo)
+	// noConsole: the first child that could not be asked to stop for want of a
+	// console has been logged (cannotAsk).
+	noConsole sync.Once
 	// llm, when set, is the model server's state (WithLLM).
 	llm func() llmserver.Status
 }
@@ -242,19 +245,37 @@ func (s *Supervisor) stopAll(cs []*child, wg *sync.WaitGroup, grace time.Duratio
 }
 
 // signalLocked signals every running child of cs. A kill takes the child's
-// whole process tree; a graceful signal goes to the child only, which
-// stops its own children as it drains.
+// whole process tree; a graceful ask goes to the child (on Windows, its
+// process group), which stops its own children as it drains. A child that
+// cannot be asked is killed at once.
 func (s *Supervisor) signalLocked(cs []*child, kill bool) {
 	for _, c := range cs {
 		if c.cmd != nil && c.cmd.Process != nil {
-			if kill {
-				c.tree.kill()
-				_ = c.cmd.Process.Signal(os.Kill)
-				continue
+			if !kill {
+				err := c.proc.askStop(c.cmd.Process, c.tree)
+				if err == nil {
+					continue
+				}
+				s.cannotAsk(c.proc, err)
 			}
-			c.proc.askStop(c.cmd.Process)
+			c.tree.kill()
+			_ = c.cmd.Process.Signal(os.Kill)
 		}
 	}
+}
+
+// cannotAsk logs a child that could not be asked to stop and is killed
+// instead. Having no console is this process's state, not the child's: it is
+// said once, not at every stop.
+func (s *Supervisor) cannotAsk(p Process, err error) {
+	if errors.Is(err, errNoConsole) {
+		s.noConsole.Do(func() {
+			s.logf("%s cannot be asked to stop: %v; it is killed instead, as are the other children CTRL_BREAK would ask (logged once)",
+				p.Name(), err)
+		})
+		return
+	}
+	s.logf("%s could not be asked to stop (%v); killing it instead", p.Name(), err)
 }
 
 // loop runs one child until shutdown, restarting it per the policy.
@@ -262,6 +283,10 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 	backoff := s.policy.BackoffInitial
 	tpl := c.proc.Cmd
 	first := true
+	if c.proc.Prepare != nil && !s.prepare(ctx, c) {
+		s.setState(c, StateStopped)
+		return
+	}
 	for {
 		cmd := tpl
 		if !first {
@@ -637,7 +662,7 @@ func (s *Supervisor) Restart(role Role, instance string) error {
 		s.mu.Unlock()
 		return fmt.Errorf("no %s process %q", role, instance)
 	}
-	cmd := c.cmd
+	cmd, tree := c.cmd, c.tree
 	if cmd == nil || cmd.Process == nil || s.stopping {
 		s.mu.Unlock()
 		return nil
@@ -645,17 +670,14 @@ func (s *Supervisor) Restart(role Role, instance string) error {
 	c.killReason = ReasonRestarted
 	s.mu.Unlock()
 	s.logf("%s: starting it again (pid %d)", c.proc.Name(), cmd.Process.Pid)
-	c.proc.askStop(cmd.Process)
+	if err := c.proc.askStop(cmd.Process, tree); err != nil {
+		s.cannotAsk(c.proc, err)
+		s.killRun(c, cmd)
+		return nil
+	}
 	go func() {
 		time.Sleep(restartGrace)
-		s.mu.Lock()
-		still := c.cmd == cmd
-		tree := c.tree
-		s.mu.Unlock()
-		if still {
-			tree.kill()
-			_ = cmd.Process.Kill()
-		}
+		s.killRun(c, cmd)
 	}()
 	return nil
 }
@@ -681,7 +703,7 @@ func (s *Supervisor) Want(role Role, instance string, on bool) error {
 	}
 	c.wanted = on
 	c.status.Wanted = on
-	cmd := c.cmd
+	cmd, tree := c.cmd, c.tree
 	if !on && cmd != nil && cmd.Process != nil {
 		c.killReason = ReasonStopped
 	}
@@ -696,18 +718,28 @@ func (s *Supervisor) Want(role Role, instance string, on bool) error {
 	}
 	if cmd != nil && cmd.Process != nil {
 		s.logf("%s not wanted: stopping it (pid %d)", c.proc.Name(), cmd.Process.Pid)
-		c.proc.askStop(cmd.Process)
+		if err := c.proc.askStop(cmd.Process, tree); err != nil {
+			s.cannotAsk(c.proc, err)
+			s.killRun(c, cmd)
+			return nil
+		}
 		go func() {
 			time.Sleep(10 * time.Second)
-			s.mu.Lock()
-			still := c.cmd == cmd
-			tree := c.tree
-			s.mu.Unlock()
-			if still {
-				tree.kill()
-				_ = cmd.Process.Kill()
-			}
+			s.killRun(c, cmd)
 		}()
 	}
 	return nil
+}
+
+// killRun kills c's process tree while cmd is still its running process (not
+// a later run).
+func (s *Supervisor) killRun(c *child, cmd *exec.Cmd) {
+	s.mu.Lock()
+	still := c.cmd == cmd
+	tree := c.tree
+	s.mu.Unlock()
+	if still {
+		tree.kill()
+		_ = cmd.Process.Kill()
+	}
 }

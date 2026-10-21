@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -253,6 +254,72 @@ func hasServer(provides string) bool {
 	return false
 }
 
+// plexServers lists the Plex Media Servers an account token reaches
+// (plex.tv's resources), each with the connection pickConnection prefers
+// and that server's own access token.
+func (h *Handler) plexServers(ctx context.Context, clientID, accountToken string) ([]plexServer, error) {
+	var res []plexResource
+	if err := h.plexRequest(ctx, http.MethodGet, "/api/v2/resources?includeHttps=1&includeRelay=0",
+		clientID, accountToken, &res); err != nil {
+		return nil, err
+	}
+	servers := []plexServer{}
+	for _, rs := range res {
+		if !hasServer(rs.Provides) {
+			continue
+		}
+		uri := pickConnection(rs.Connections)
+		if uri == "" {
+			continue
+		}
+		servers = append(servers, plexServer{Name: rs.Name, URI: uri, token: rs.AccessToken})
+	}
+	return servers, nil
+}
+
+// usePlexServer makes chosen the plex extension's server: its address in the
+// extension row (with clientID, when given, as the install's plex.tv client
+// id), its token in home_secrets. It returns the saved row.
+func (h *Handler) usePlexServer(ctx context.Context, chosen plexServer, clientID, by string) (extRow, error) {
+	h.extMu.Lock()
+	defer h.extMu.Unlock()
+	rows, err := h.loadExtensionRows(ctx)
+	if err != nil {
+		return extRow{}, fmt.Errorf("extensions: %w", err)
+	}
+	cur := rows["plex"]
+	if cur.settings == nil {
+		cur.settings = map[string]any{}
+	}
+	cur.settings["url"] = chosen.URI
+	if clientID != "" {
+		cur.settings[plexClientIDKey] = clientID
+		h.plexID = clientID
+	}
+	// the server's token goes to home_secrets (slot 0120), never the row
+	delete(cur.settings, "token")
+	if chosen.token != "" {
+		if h.Secrets == nil {
+			return extRow{}, errNoSecretsStore
+		}
+		if err := h.Secrets.Put(ctx, secrets.ExtensionName("plex", "token"), []byte(chosen.token), by); err != nil {
+			return extRow{}, fmt.Errorf("save secret: %w", err)
+		}
+	}
+	blob, _ := json.Marshal(cur.settings)
+	now := h.now()
+	if _, err := h.DB.ExecContext(ctx, upsertExtensionSQL, "plex", cur.enabled, string(blob), now); err != nil {
+		return extRow{}, fmt.Errorf("save extension: %w", err)
+	}
+	ts := now.Format(tsLayout)
+	cur.updated = &ts
+	return cur, nil
+}
+
+// errNoSecretsStore: the server runs without its secrets store, so the
+// Plex token cannot be kept.
+var errNoSecretsStore = errors.New("the secrets store is not available on this server")
+
 // PlexSigninStatus implements GET /api/extensions/plex/signin/{id}.
 func (h *Handler) PlexSigninStatus(w http.ResponseWriter, r *http.Request) {
 	if !requireAdmin(w, r) {
@@ -276,22 +343,10 @@ func (h *Handler) PlexSigninStatus(w http.ResponseWriter, r *http.Request) {
 			common.WriteJSON(w, r, http.StatusOK, map[string]any{"state": "waiting"})
 			return
 		}
-		var res []plexResource
-		if err := h.plexRequest(r.Context(), http.MethodGet, "/api/v2/resources?includeHttps=1&includeRelay=0",
-			p.clientID, *pin.AuthToken, &res); err != nil {
+		servers, err := h.plexServers(r.Context(), p.clientID, *pin.AuthToken)
+		if err != nil {
 			plexUpstream(w, r, err)
 			return
-		}
-		servers := []plexServer{}
-		for _, rs := range res {
-			if !hasServer(rs.Provides) {
-				continue
-			}
-			uri := pickConnection(rs.Connections)
-			if uri == "" {
-				continue
-			}
-			servers = append(servers, plexServer{Name: rs.Name, URI: uri, token: rs.AccessToken})
 		}
 		h.plexPins.mu.Lock()
 		p.servers, p.done = servers, true
@@ -343,44 +398,85 @@ func (h *Handler) PlexSigninUse(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.BadRequest("unknown server "+body.Name))
 		return
 	}
-	h.extMu.Lock()
-	defer h.extMu.Unlock()
-	rows, err := h.loadExtensionRows(r.Context())
-	if err != nil {
-		writeErr(w, r, "extensions", err)
+	by := ""
+	if pr := principal.FromContext(r.Context()); pr != nil {
+		by = pr.UserID
+	}
+	row, err := h.usePlexServer(r.Context(), *chosen, "", by)
+	if errors.Is(err, errNoSecretsStore) {
+		httperror.Write(w, r, &httperror.Error{Status: http.StatusServiceUnavailable,
+			Title: "Service Unavailable", Detail: errNoSecretsStore.Error()})
 		return
 	}
-	cur := rows["plex"]
-	if cur.settings == nil {
-		cur.settings = map[string]any{}
-	}
-	cur.settings["url"] = chosen.URI
-	// the server's token goes to home_secrets (slot 0120), never the row
-	delete(cur.settings, "token")
-	def, _ := findExtension("plex")
-	if chosen.token != "" {
-		if h.Secrets == nil {
-			httperror.Write(w, r, &httperror.Error{Status: http.StatusServiceUnavailable,
-				Title: "Service Unavailable", Detail: "the secrets store is not available on this server"})
-			return
-		}
-		by := ""
-		if pr := principal.FromContext(r.Context()); pr != nil {
-			by = pr.UserID
-		}
-		if err := h.Secrets.Put(r.Context(), secrets.ExtensionName("plex", "token"), []byte(chosen.token), by); err != nil {
-			writeErr(w, r, "save secret", err)
-			return
-		}
-	}
-	blob, _ := json.Marshal(cur.settings)
-	now := h.now()
-	if _, err := h.DB.ExecContext(r.Context(), upsertExtensionSQL, "plex", cur.enabled, string(blob), now); err != nil {
-		writeErr(w, r, "save extension", err)
+	if err != nil {
+		writeErr(w, r, "plex", err)
 		return
 	}
 	h.plexPins.drop(id)
-	ts := now.Format(tsLayout)
-	common.WriteJSON(w, r, http.StatusOK,
-		buildExtension(def, extRow{enabled: cur.enabled, settings: cur.settings, updated: &ts}, h.secretSet(r.Context(), def)))
+	def, _ := findExtension("plex")
+	common.WriteJSON(w, r, http.StatusOK, buildExtension(def, row, h.secretSet(r.Context(), def)))
+}
+
+// PlexLinked is what LinkPlex chose.
+type PlexLinked struct {
+	Server string `json:"server"`
+	URL    string `json:"url"`
+	// Servers are every server the account reaches (setup shows them; the
+	// owner picks another in Settings › Extensions › Plex).
+	Servers []string `json:"servers"`
+}
+
+// LinkPlex is "Sign in with Plex" for the desktop app's first-run setup
+// (Epic 38 story 38.6, `maktaba-api plex-link`): setup ran the PIN flow
+// before this install had a database, with clientID as its plex.tv client id,
+// and hands over the account token. The server named prefer is used when the
+// account reaches it; else the first with a local connection, else the first.
+// The account token itself is never stored, as with the PIN flow above.
+func (h *Handler) LinkPlex(ctx context.Context, clientID, accountToken, prefer string) (PlexLinked, error) {
+	servers, err := h.plexServers(ctx, clientID, accountToken)
+	if err != nil {
+		return PlexLinked{}, fmt.Errorf("plex.tv: %w", err)
+	}
+	if len(servers) == 0 {
+		return PlexLinked{}, errors.New("this Plex account reaches no Plex Media Server")
+	}
+	chosen := servers[0]
+	for _, s := range servers {
+		if s.Name == prefer {
+			chosen = s
+			break
+		}
+	}
+	if prefer == "" || chosen.Name != prefer {
+		for _, s := range servers {
+			if isLocalURI(s.URI) {
+				chosen = s
+				break
+			}
+		}
+	}
+	if _, err := h.usePlexServer(ctx, chosen, clientID, ""); err != nil {
+		return PlexLinked{}, err
+	}
+	names := make([]string, 0, len(servers))
+	for _, s := range servers {
+		names = append(names, s.Name)
+	}
+	return PlexLinked{Server: chosen.Name, URL: chosen.URI, Servers: names}, nil
+}
+
+// isLocalURI: an address on this network (a private IPv4 or the
+// plex.direct name of one), as pickConnection's local connections are.
+func isLocalURI(uri string) bool {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	// <a-b-c-d>.<hash>.plex.direct carries the address in its first label
+	if strings.HasSuffix(host, ".plex.direct") {
+		host = strings.ReplaceAll(strings.SplitN(host, ".", 2)[0], "-", ".")
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && (ip.IsPrivate() || ip.IsLoopback())
 }

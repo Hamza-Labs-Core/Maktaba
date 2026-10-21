@@ -66,27 +66,7 @@ func (b Bundle) Restore(ctx context.Context, dump string, opts RestoreOptions, l
 			}
 			_, _ = fmt.Fprintf(log, "[postgres] the database it replaces is in %s\n", path)
 		}
-		if err := q.Exec(ctx, "postgres", recreateSQL(opts)+clusterSQL); err != nil {
-			return fmt.Errorf("make a fresh %s database: %w", AppDatabase, err)
-		}
-		list, err := b.restoreList(ctx, dump, superPW)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = os.Remove(list) }()
-		jobs := opts.Jobs
-		if jobs <= 0 {
-			jobs = max(1, runtime.NumCPU()/2)
-		}
-		cmd := exec.CommandContext(ctx, b.Bin("pg_restore"), "-h", "127.0.0.1", "-p", strconv.Itoa(b.Port),
-			"-U", SuperUser, "-d", AppDatabase, "--no-owner", "--role="+AppRole, "--exit-on-error",
-			"-j", strconv.Itoa(jobs), "-L", list, dump)
-		cmd.Env = append(os.Environ(), "PGPASSWORD="+superPW)
-		cmd.Stdout, cmd.Stderr = log, log
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("pg_restore %s: %w", dump, err)
-		}
-		if err := q.Exec(ctx, AppDatabase, "ANALYZE;"); err != nil {
+		if err := b.restoreInto(ctx, q, dump, opts, log); err != nil {
 			return err
 		}
 		if fn == nil {
@@ -94,6 +74,32 @@ func (b Bundle) Restore(ctx context.Context, dump string, opts RestoreOptions, l
 		}
 		return fn(q)
 	})
+}
+
+// restoreInto makes the app database afresh on q's running server and restores
+// dump into it (Restore's work, and RestoreRunning's).
+func (b Bundle) restoreInto(ctx context.Context, q Querier, dump string, opts RestoreOptions, log io.Writer) error {
+	if err := q.Exec(ctx, "postgres", recreateSQL(opts)+clusterSQL); err != nil {
+		return fmt.Errorf("make a fresh %s database: %w", AppDatabase, err)
+	}
+	list, err := b.restoreList(ctx, dump, q.pw)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(list) }()
+	jobs := opts.Jobs
+	if jobs <= 0 {
+		jobs = max(1, runtime.NumCPU()/2)
+	}
+	cmd := exec.CommandContext(ctx, b.Bin("pg_restore"), "-h", "127.0.0.1", "-p", strconv.Itoa(b.Port),
+		"-U", SuperUser, "-d", AppDatabase, "--no-owner", "--role="+AppRole, "--exit-on-error",
+		"-j", strconv.Itoa(jobs), "-L", list, dump)
+	cmd.Env = append(os.Environ(), "PGPASSWORD="+q.pw)
+	cmd.Stdout, cmd.Stderr = log, log
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("pg_restore %s: %w", dump, err)
+	}
+	return q.Exec(ctx, AppDatabase, "ANALYZE;")
 }
 
 var roleName = regexp.MustCompile(`^[a-z_][a-z0-9_]*$`)

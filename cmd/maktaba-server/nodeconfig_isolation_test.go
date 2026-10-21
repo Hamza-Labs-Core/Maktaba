@@ -15,6 +15,11 @@ import (
 // joined machine it holds a database credential and would switch the code under
 // test into node mode. A test that needs a node config sets its own (t.Setenv).
 func TestMain(m *testing.M) {
+	// the test binary is also the setup tests' stand-in for maktaba-api and
+	// the payload's Python (setup_steps_test.go)
+	if code, ok := runFakeProgram(); ok {
+		os.Exit(code)
+	}
 	dir, err := os.MkdirTemp("", "maktaba-nodecfg-")
 	if err != nil {
 		panic(err)
