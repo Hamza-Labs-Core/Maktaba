@@ -12,7 +12,10 @@ the ``stt`` extra import it.
 
 from __future__ import annotations
 
+import hashlib
 import platform
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 from ..log import get_logger
@@ -21,14 +24,18 @@ __all__ = [
     "BACKEND",
     "CT2",
     "CT2_FILES",
+    "CT2_PINS",
     "DEFAULT_BATCH",
     "DEFAULT_MODEL",
     "MLX",
+    "Pin",
+    "PinMismatch",
     "ct2_repo",
     "current",
     "fingerprint_model",
     "for_machine",
     "model_for",
+    "verify",
 ]
 
 _log = get_logger()
@@ -72,6 +79,86 @@ CT2_FILES = [
     "tokenizer.json",
     "vocabulary.*",
 ]
+
+
+@dataclass(frozen=True)
+class Pin:
+    """A model repo at one commit, and the SHA-256 of each file Maktaba loads from it."""
+
+    revision: str
+    sha256: Mapping[str, str]
+
+
+#: the CTranslate2 conversions Maktaba downloads (the default, and the one an MLX large-v3
+#: maps to), each at the commit it was checked at, with its files' SHA-256 (the weights'
+#: from Hugging Face's own LFS record, the small files hashed at that commit; their git
+#: blob ids match the commit's): a repo that moves or is rewritten cannot change what a
+#: worker loads. A model of the operator's own (MAKTABA_STT_MODEL) is fetched as its repo
+#: has it.
+CT2_PINS: dict[str, Pin] = {
+    "dropbox-dash/faster-whisper-large-v3-turbo": Pin(
+        "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+        {
+            "config.json": "b0253ea6c0d3bea6b1e19e91a02acfd3b53f4467362efcb5a3e6b16c9b3a9b7e",
+            "preprocessor_config.json": (
+                "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711"
+            ),
+            "model.bin": "e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da",
+            "tokenizer.json": "297b13372ac43916285644fb9687add3cc62ee2a1adb60da3dc25cc94c1871fd",
+            "vocabulary.json": "c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1",
+        },
+    ),
+    "Systran/faster-whisper-large-v3": Pin(
+        "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+        {
+            "config.json": "a9306624f5ec14270a014b647e5c316b6e03a662c369758d1b90697a7b0655b9",
+            "preprocessor_config.json": (
+                "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711"
+            ),
+            "model.bin": "69f74147e3334731bc3a76048724833325d2ec74642fb52620eda87352e3d4f1",
+            "tokenizer.json": "6d8cbd7cd0d8d5815e478dac67b85a26bbe77c1f5e0c6d76d1ce2abc0e5f21ca",
+            "vocabulary.json": "c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1",
+        },
+    ),
+}
+
+#: written into a snapshot once its files matched their pin: checked once, not each load
+VERIFIED = ".maktaba-sha256"
+
+
+class PinMismatch(RuntimeError):
+    """A downloaded file is not the one pinned."""
+
+
+def verify(folder: Path, pin: Pin) -> None:
+    """Check the files of a snapshot of ``pin``'s commit against their SHA-256, once (a
+    marker remembers it). A missing or different file is removed (the next download
+    fetches it again) and raises :class:`PinMismatch`."""
+    marker = folder / VERIFIED
+    try:
+        if marker.read_text(encoding="utf-8").strip() == pin.revision:
+            return
+    except OSError:
+        pass
+    bad: list[str] = []
+    for name, want in sorted(pin.sha256.items()):
+        path = folder / name
+        h = hashlib.sha256()
+        try:
+            with path.open("rb") as f:
+                for block in iter(lambda: f.read(1 << 20), b""):
+                    h.update(block)
+        except OSError:
+            bad.append(f"{name} is missing")
+            continue
+        if h.hexdigest() != want:
+            bad.append(f"{name} has SHA-256 {h.hexdigest()}, not {want}")
+            for p in {path.resolve(), path}:  # the cache's blob and the snapshot's link
+                p.unlink(missing_ok=True)
+    if bad:
+        raise PinMismatch(f"{folder}: " + "; ".join(bad) + " (removed: it is fetched again)")
+    marker.write_text(pin.revision + "\n", encoding="utf-8")
+
 
 #: a repo that moved: its old name only redirects
 _MOVED = {"mobiuslabsgmbh/faster-whisper-large-v3-turbo": DEFAULT_MODEL[CT2]}

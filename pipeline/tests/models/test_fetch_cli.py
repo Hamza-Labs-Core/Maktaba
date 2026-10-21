@@ -302,6 +302,7 @@ def test_download_on_ctranslate2_fetches_the_engine_s_files_and_skips_the_rest(
     from maktaba_pipeline.stt import engine
 
     patterns: dict[str, list[str] | None] = {}
+    pins: dict[str, Any] = {}
     _fake_hub(monkeypatch, tmp_path)
     fake = fetch_cli.hf_download
 
@@ -309,11 +310,17 @@ def test_download_on_ctranslate2_fetches_the_engine_s_files_and_skips_the_rest(
         item: fetch_cli.Item, on_bytes: Callable[[int, int], None], local_only: bool
     ) -> Path:
         patterns[item.name] = item.allow_patterns
+        pins[item.name] = item.pin
         return fake(item, on_bytes, local_only)
 
     monkeypatch.setattr(fetch_cli, "hf_download", download)
+    # the fake hub's snapshot has no files: the pinned check is test_ct2_gpu_memory.py's
+    checked: list[Any] = []
+    monkeypatch.setattr(engine, "verify", lambda snap, pin: checked.append(pin))
     code, events = _run(capsys, "download")
     assert code == fetch_cli.EXIT_OK
+    pin = engine.CT2_PINS[engine.DEFAULT_MODEL[engine.CT2]]
+    assert pins["whisper"] is pin and checked == [pin] and pins["embedder"] is None
     states = {n: e["state"] for n, e in _final(events).items()}
     assert states == {
         "whisper": "ready",
