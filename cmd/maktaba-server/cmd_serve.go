@@ -142,7 +142,11 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	// Build the supervised processes.
 	var procs []supervisor.Process
 	if pg != nil {
-		procs = append(procs, supervisor.BuildPostgres(*pg))
+		p, err := supervisor.BuildPostgres(*pg)
+		if err != nil {
+			return err
+		}
+		procs = append(procs, p)
 		go pg.RunBackups(ctx, backupCheckInterval, os.Stderr)
 	}
 	sopts := supervisor.Options{Config: cfg, BinDir: opts.binDir, ReleaseDir: releaseDir}
