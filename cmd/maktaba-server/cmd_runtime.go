@@ -159,6 +159,7 @@ func newRuntimeCmd() *cobra.Command {
 		},
 	}
 
+	var statusFrom string
 	status := &cobra.Command{
 		Use:   "status",
 		Short: "What is installed, what runs, whether this payload is newer",
@@ -166,7 +167,11 @@ func newRuntimeCmd() *cobra.Command {
 		RunE: func(c *cobra.Command, _ []string) error {
 			d := newRuntimeDeps()
 			return runtimeOut(c.OutOrStdout(), jsonOut, func(context.Context) (any, string, error) {
-				st, err := d.rt.Status(payloadOfThisBinary())
+				src := statusFrom
+				if src == "" {
+					src = payloadOfThisBinary()
+				}
+				st, err := d.rt.Status(src)
 				if err != nil {
 					return nil, "", err
 				}
@@ -179,6 +184,8 @@ func newRuntimeCmd() *cobra.Command {
 			})
 		},
 	}
+
+	status.Flags().StringVar(&statusFrom, "from", "", "the payload to compare with current (default: the one this binary is in)")
 
 	var keep int
 	prune := &cobra.Command{
