@@ -33,11 +33,12 @@ func migrateWin(t *testing.T, m mover, old, cur Dirs, env map[string]string) []s
 	return lines
 }
 
-// Epic 38 story 38.1: a Windows install's config, keys and node.json are copied
-// out of the roaming profile, and the originals stay (an older version of the same
-// install, a node's pipeline run from a checkout or the node installer still read
-// them); the copies win. The large state stays in data\, which stays the state
-// root; nothing of the node installer's is touched.
+// Epic 38 story 38.1: a Windows install's config and keys are copied out of the
+// roaming profile, and the originals stay (an older version of the same install, a
+// node's pipeline run from a checkout or the node installer still read them); the
+// copies win. node.json is never copied: the machine's one node config stays where
+// it is. The large state stays in data\, which stays the state root; nothing of the
+// node installer's is touched.
 func TestMigrateWindowsCopiesAndKeepsTheOriginals(t *testing.T) {
 	t.Parallel()
 	old, cur, env := winLayout(t)
@@ -53,33 +54,31 @@ func TestMigrateWindowsCopiesAndKeepsTheOriginals(t *testing.T) {
 	state := map[string]string{"maktaba.db": "DB", "models/huggingface/w.bin": "W", "cache/streaming/seg": "C"}
 	plant(t, old.Data, state)
 
-	if lines := migrateWin(t, osMover, old, cur, env); len(lines) != 5 {
-		t.Fatalf("want a line for each of the 5 files copied:\n%s", strings.Join(lines, "\n"))
+	if lines := migrateWin(t, osMover, old, cur, env); len(lines) != 4 {
+		t.Fatalf("want a line for each of the 4 files copied:\n%s", strings.Join(lines, "\n"))
 	}
 	for path, body := range map[string]string{
 		filepath.Join(cur.Config, "server.toml"):             originals["server.toml"],
 		filepath.Join(cur.Keys, "secrets.key"):               "S",
 		filepath.Join(cur.Keys, "stream-signing.key"):        "K",
 		filepath.Join(cur.Keys, "postgres-maktaba.password"): "P",
-		filepath.Join(cur.Config, "node.json"):               `{"node_id":"n"}`,
 	} {
 		if b := readAt(t, path); b != body {
 			t.Errorf("%s = %q, want %q", path, b, body)
 		}
+	}
+	if exists(filepath.Join(cur.Config, "node.json")) {
+		t.Error("node.json must not be copied: one node config per machine")
 	}
 	holds(t, old.Config, originals) // every original as it was, and nothing added
 	holds(t, old.Data, state)       // the state where it was
 	if got := stateDir("windows", cur.Data, cur.Data, false); got != cur.Data {
 		t.Errorf("the state root of an install from before: %s, want its data folder %s", got, cur.Data)
 	}
-	// an older reader (Maktaba before Epic 38) still finds its node config; this
-	// version reads the copy
-	if readAt(t, filepath.Join(env["APPDATA"], "Maktaba", "node.json")) != `{"node_id":"n"}` {
-		t.Error("the roaming profile's node.json must stay for older readers")
-	}
+	// an older reader (Maktaba before Epic 38) and this version read the same file
 	base := filepath.Dir(filepath.Dir(cur.Config))
-	if got := NodeConfigPath(func(k string) string { return env[k] }, "windows", base); got != filepath.Join(cur.Config, "node.json") {
-		t.Errorf("NodeConfigPath = %s, want the copy", got)
+	if got := NodeConfigPath(func(k string) string { return env[k] }, "windows", base); got != filepath.Join(old.Config, "node.json") {
+		t.Errorf("NodeConfigPath = %s, want the original", got)
 	}
 	if lines := migrateWin(t, osMover, old, cur, env); len(lines) != 0 {
 		t.Fatalf("a second start finds the copies and does nothing:\n%s", strings.Join(lines, "\n"))
@@ -87,8 +86,8 @@ func TestMigrateWindowsCopiesAndKeepsTheOriginals(t *testing.T) {
 	holds(t, old.Config, originals)
 }
 
-// serve runs without a server.toml: such an install still gets its keys and its
-// node.json copied (a new key would leave every stored secret unreadable).
+// serve runs without a server.toml: such an install still gets its keys copied (a
+// new key would leave every stored secret unreadable).
 func TestMigrateWindowsWithoutServerToml(t *testing.T) {
 	t.Parallel()
 	old, cur, env := winLayout(t)
@@ -96,15 +95,14 @@ func TestMigrateWindowsWithoutServerToml(t *testing.T) {
 	plant(t, old.Config, originals)
 	migrateWin(t, osMover, old, cur, env)
 	holds(t, cur.Keys, map[string]string{"secrets.key": "S", "stream-signing.key": "K"})
-	if readAt(t, filepath.Join(cur.Config, "node.json")) != "{}" || exists(filepath.Join(cur.Config, "server.toml")) {
-		t.Fatal("node.json is copied; no server.toml is made")
+	if exists(filepath.Join(cur.Config, "node.json")) || exists(filepath.Join(cur.Config, "server.toml")) {
+		t.Fatal("no node.json and no server.toml are made")
 	}
 	holds(t, old.Config, originals)
 }
 
 // With $MAKTABA_CONFIG, server.toml and the keys stay beside that file (KeysDir) and
-// the roaming profile's are not that install's; node.json follows
-// $MAKTABA_NODE_CONFIG instead, and with both set nothing is copied.
+// the roaming profile's are not that install's: nothing is copied, no folder made.
 func TestMigrateWindowsOwnConfig(t *testing.T) {
 	t.Parallel()
 	old, cur, env := winLayout(t)
@@ -112,19 +110,71 @@ func TestMigrateWindowsOwnConfig(t *testing.T) {
 	env["MAKTABA_CONFIG"] = own
 	writeAt(t, own, "[server]\n")
 	plant(t, old.Config, map[string]string{"server.toml": "[server]\n", "secrets.key": "ROAMING", "node.json": "{}"})
-	migrateWin(t, osMover, old, cur, env)
-	if exists(filepath.Join(cur.Keys, "secrets.key")) || exists(filepath.Join(cur.Config, "server.toml")) {
-		t.Error("with $MAKTABA_CONFIG the keys and server.toml are not copied")
-	}
-	if readAt(t, filepath.Join(cur.Config, "node.json")) != "{}" {
-		t.Error("without $MAKTABA_NODE_CONFIG node.json is copied")
-	}
-
-	old, cur, env = winLayout(t)
-	env["MAKTABA_CONFIG"], env["MAKTABA_NODE_CONFIG"] = own, filepath.Join(t.TempDir(), "node.json")
-	writeAt(t, filepath.Join(old.Config, "node.json"), "{}")
 	if lines := migrateWin(t, osMover, old, cur, env); len(lines) != 0 || exists(cur.Config) {
-		t.Fatalf("both set: nothing to copy, no folder made (%q)", lines)
+		t.Fatalf("with $MAKTABA_CONFIG nothing is copied and no folder made (%q)", lines)
+	}
+}
+
+// One node config per machine: after the copy, a re-join (the pipeline's save()
+// writes the file it read, cluster/config.py) and a hand edit both land in the
+// roaming profile's node.json, the file maktaba-server, streaming and the pipeline
+// all read; nothing stale is left beside it to take its place later.
+func TestMigrateWindowsNodeConfigStaysOne(t *testing.T) {
+	t.Parallel()
+	old, cur, env := winLayout(t)
+	original := filepath.Join(old.Config, "node.json")
+	writeAt(t, original, `{"node_id":"first","private_key":"k1","database_url":"postgres://a"}`)
+	migrateWin(t, osMover, old, cur, env)
+	getenv := func(k string) string { return env[k] }
+	base := filepath.Dir(filepath.Dir(cur.Config))
+	read := func() NodeConfig { return ReadNodeConfig(getenv, "windows", base, os.ReadFile) }
+	if p := NodeConfigPath(getenv, "windows", base); p != original {
+		t.Fatalf("NodeConfigPath = %s, want the one node config %s", p, original)
+	}
+	// a re-join writes the file NodeConfigPath names
+	writeAt(t, NodeConfigPath(getenv, "windows", base), `{"node_id":"rejoined","private_key":"k2","database_url":"postgres://b"}`)
+	if n := read(); n.NodeID != "rejoined" {
+		t.Fatalf("after a re-join: %+v", n)
+	}
+	migrateWin(t, osMover, old, cur, env)
+	writeAt(t, original, `{"node_id":"edited","private_key":"k2","database_url":"postgres://b"}`) // by hand
+	if n := read(); n.NodeID != "edited" {
+		t.Fatalf("after a hand edit: %+v", n)
+	}
+	if exists(filepath.Join(cur.Config, "node.json")) {
+		t.Fatal("no second node config may appear")
+	}
+}
+
+// uninstall --purge's list (WindowsOriginals): the originals the copy keeps, and its
+// lock and record; never node.json; none with $MAKTABA_CONFIG. Once they and their
+// copies are gone, the next command copies nothing back.
+func TestWindowsOriginals(t *testing.T) {
+	t.Parallel()
+	old, cur, env := winLayout(t)
+	plant(t, old.Config, map[string]string{"server.toml": "[server]\n", "secrets.key": "S", "postgres-maktaba.password": "P", "node.json": "{}"})
+	migrateWin(t, osMover, old, cur, env)
+	getenv := func(k string) string { return env[k] }
+	got := windowsOriginals(old, cur, getenv)
+	want := []string{
+		filepath.Join(old.Config, "server.toml"), filepath.Join(old.Keys, "secrets.key"),
+		filepath.Join(old.Keys, "stream-signing.key"), filepath.Join(old.Keys, "postgres-maktaba.password"),
+		filepath.Join(cur.Config, moveLockFile), filepath.Join(cur.Config, moveReported),
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("originals:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	for _, p := range append(got, filepath.Join(cur.Config, "server.toml"), cur.Keys) {
+		if err := os.RemoveAll(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if lines := migrateWin(t, osMover, old, cur, env); len(lines) != 0 || exists(filepath.Join(cur.Keys, "secrets.key")) {
+		t.Fatalf("after the purge nothing is copied back (%q)", lines)
+	}
+	env["MAKTABA_CONFIG"] = filepath.Join(t.TempDir(), "server.toml")
+	if got := windowsOriginals(old, cur, getenv); got != nil {
+		t.Fatalf("with $MAKTABA_CONFIG the roaming profile's are not this install's: %q", got)
 	}
 }
 
@@ -163,12 +213,11 @@ func TestMigrateWindowsAcrossVolumes(t *testing.T) {
 	if readAt(t, filepath.Join(cur.Keys, "secrets.key")) != "S" || exists(filepath.Join(cur.Keys, "stream-signing.key")) {
 		t.Fatal("the copy made before the cut is whole; the cut one is not there under its name")
 	}
-	writeAt(t, filepath.Join(cur.Config, "node.json"+partSuffix), "{") // a crash mid-copy
+	writeAt(t, filepath.Join(cur.Keys, "stream-signing.key"+partSuffix), "") // a crash mid-copy too
 	migrateWin(t, m, old, cur, env)
-	holds(t, cur.Keys, map[string]string{"secrets.key": "S", "stream-signing.key": "K"})
-	if readAt(t, filepath.Join(cur.Config, "node.json")) != "{}" || readAt(t, filepath.Join(cur.Config, "server.toml")) != "[server]\n" ||
-		exists(filepath.Join(cur.Config, "node.json"+partSuffix)) {
-		t.Fatal("server.toml and node.json must be whole in the new place")
+	holds(t, cur.Keys, map[string]string{"secrets.key": "S", "stream-signing.key": "K"}) // and no part file
+	if readAt(t, filepath.Join(cur.Config, "server.toml")) != "[server]\n" {
+		t.Fatal("server.toml must be whole in the new place")
 	}
 	holds(t, old.Config, originals)
 	if lines := migrateWin(t, m, old, cur, env); len(lines) != 0 {
@@ -322,8 +371,43 @@ func TestMigrateMacAcrossVolumes(t *testing.T) {
 	}
 }
 
-// node.json: %LOCALAPPDATA%\Maktaba\node.json, or the roaming profile's of a
-// machine that joined before Epic 38 while there is none in the new place.
+// A node config from before in a profile that roams is found (and warned about at
+// every start); one that stays on this PC, one in %LOCALAPPDATA% and one named by
+// $MAKTABA_NODE_CONFIG are not.
+func TestRoamingNodeConfig(t *testing.T) {
+	t.Parallel()
+	old, cur, env := winLayout(t)
+	getenv := func(k string) string { return env[k] }
+	base := filepath.Dir(filepath.Dir(cur.Config))
+	roams := func(string) bool { return true }
+	stays := func(string) bool { return false }
+	if p := roamingNodeConfig(getenv, base, roams); p != "" {
+		t.Fatalf("no node config: %q", p)
+	}
+	writeAt(t, filepath.Join(cur.Config, "node.json"), "{}")
+	if p := roamingNodeConfig(getenv, base, roams); p != "" {
+		t.Fatalf("a node config in %%LOCALAPPDATA%% never roams: %q", p)
+	}
+	original := filepath.Join(old.Config, "node.json")
+	writeAt(t, original, "{}")
+	if p := roamingNodeConfig(getenv, base, roams); p != original {
+		t.Fatalf("from before, on a roaming profile: %q, want %s", p, original)
+	}
+	if p := roamingNodeConfig(getenv, base, stays); p != "" {
+		t.Fatalf("a profile that stays on this PC: %q", p)
+	}
+	env["MAKTABA_NODE_CONFIG"] = filepath.Join(t.TempDir(), "node.json")
+	if p := roamingNodeConfig(getenv, base, roams); p != "" {
+		t.Fatalf("with $MAKTABA_NODE_CONFIG: %q", p)
+	}
+	if w := RoamingNodeWarning(original); !strings.Contains(w, original) || !strings.Contains(w, "maktaba-pipeline join") {
+		t.Fatalf("the warning must name the file and the fix: %s", w)
+	}
+}
+
+// node.json: one per machine, where it is: the roaming profile's of a machine that
+// joined before Epic 38 (a stray file in the new place does not take its place),
+// else %LOCALAPPDATA%\Maktaba\node.json, where a new join writes.
 func TestNodeConfigPathWindows(t *testing.T) {
 	t.Parallel()
 	_, cur, env := winLayout(t)
@@ -339,7 +423,7 @@ func TestNodeConfigPathWindows(t *testing.T) {
 		t.Fatalf("joined before Epic 38: %s, want %s", got, oldPath)
 	}
 	writeAt(t, newPath, "{}")
-	if got := NodeConfigPath(getenv, "windows", base); got != newPath {
-		t.Fatalf("both: %s, want the new %s", got, newPath)
+	if got := NodeConfigPath(getenv, "windows", base); got != oldPath {
+		t.Fatalf("both: %s, want the original %s", got, oldPath)
 	}
 }

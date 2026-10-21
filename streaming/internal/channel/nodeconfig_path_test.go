@@ -6,9 +6,10 @@ import (
 	"testing"
 )
 
-// Epic 38 story 38.1: on Windows the node config is %LOCALAPPDATA%\Maktaba\node.json;
-// a machine that joined before keeps the roaming profile's while there is none in
-// the new place (the same rule as maktaba-server and the pipeline).
+// Epic 38 story 38.1: on Windows a machine has one node config and it stays where it
+// is: the roaming profile's for a machine that joined before (even with a stray file
+// in the new place), else %LOCALAPPDATA%\Maktaba\node.json (the same rule as
+// maktaba-server and the pipeline).
 func TestNodeConfigPathWindows(t *testing.T) {
 	base := t.TempDir()
 	env := map[string]string{"APPDATA": filepath.Join(base, "Roaming"), "LOCALAPPDATA": filepath.Join(base, "Local")}
@@ -32,8 +33,8 @@ func TestNodeConfigPathWindows(t *testing.T) {
 		t.Fatalf("joined before Epic 38: %s, want %s", got, oldPath)
 	}
 	write(newPath)
-	if got := NodeConfigPath(getenv, "windows", base); got != newPath {
-		t.Fatalf("both: %s, want %s", got, newPath)
+	if got := NodeConfigPath(getenv, "windows", base); got != oldPath {
+		t.Fatalf("both: %s, want the original %s", got, oldPath)
 	}
 	delete(env, "LOCALAPPDATA")
 	delete(env, "APPDATA")

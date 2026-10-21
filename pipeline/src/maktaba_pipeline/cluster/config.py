@@ -8,11 +8,12 @@ POSIX; on Windows the per-user ``%LOCALAPPDATA%`` directory is already private).
 |---|---|
 | macOS | ``~/Library/Application Support/Maktaba/node.json`` |
 | Linux | ``${XDG_CONFIG_HOME:-~/.config}/maktaba/node.json`` |
-| Windows | ``%LOCALAPPDATA%\\Maktaba\\node.json`` (Epic 38: never in the roaming profile) |
+| Windows | ``%LOCALAPPDATA%\\Maktaba\\node.json`` (Epic 38: a new join never roams) |
 
-A Windows machine that joined before Epic 38 reads ``%APPDATA%\\Maktaba\\node.json``
-while there is none in the new place (maktaba-server copies it there with its own
-files and keeps the original, which older versions read).
+A Windows machine that joined before Epic 38 keeps ``%APPDATA%\\Maktaba\\node.json``:
+one node config per machine, read and rewritten (a re-join) where it is, never
+copied or moved (a copy would split it in two: a re-join or a hand edit on one side
+unseen by the other).
 ``MAKTABA_NODE_CONFIG`` names another file (two nodes on one host, tests). Go resolves
 the same path (``config.NodeConfigPath`` in maktaba-server, ``channel.NodeConfigPath``
 in streaming).
@@ -103,13 +104,14 @@ def config_path(
     if system == "Darwin":
         return home / "Library" / "Application Support" / "Maktaba" / "node.json"
     if system == "Windows":
-        local = env.get("LOCALAPPDATA")
-        cur = (Path(local) if local else home / "AppData" / "Local") / "Maktaba" / "node.json"
-        if cur.is_file():
-            return cur
+        # one node config per machine, where it is: the roaming profile's of a machine
+        # that joined before Epic 38, else the new place (where a new join writes)
         appdata = env.get("APPDATA")
         old = (Path(appdata) if appdata else home / "AppData" / "Roaming") / "Maktaba" / "node.json"
-        return old if old.is_file() else cur
+        if old.is_file():
+            return old
+        local = env.get("LOCALAPPDATA")
+        return (Path(local) if local else home / "AppData" / "Local") / "Maktaba" / "node.json"
     xdg = env.get("XDG_CONFIG_HOME")
     base = Path(xdg) if xdg else home / ".config"
     return base / "maktaba" / "node.json"

@@ -10,10 +10,11 @@
 #             ~/.config/maktaba/server.toml)
 #   Windows : %LOCALAPPDATA%\Maktaba\server.toml (keys in keys\, data in data\,
 #             models, chroma and caches beside data\; logs in logs\). For an
-#             install from before, the next command copies its server.toml, keys
-#             and node.json there from %APPDATA%\Maktaba and keeps the originals
-#             (older versions still read them; the copies are used from then on);
-#             its models, caches and Postgres stay in data\, where they were.
+#             install from before, the next command copies its server.toml and keys
+#             there from %APPDATA%\Maktaba and keeps the originals (older versions
+#             still read them; the copies are used from then on); its node.json
+#             stays in %APPDATA%\Maktaba (one per machine, never copied), and its
+#             models, caches and Postgres stay in data\, where they were.
 #             Inside the Windows app nothing is copied: its setup moves an earlier
 #             install in instead, and keeps the old one for going back.
 # Override with the MAKTABA_CONFIG environment variable.

@@ -169,12 +169,12 @@ func TestTwoStartsCopyOnce(t *testing.T) {
 			copied++
 		}
 	}
-	if copied != 4 || len(lines) != 4 {
-		t.Fatalf("want each of the 4 pieces copied once:\n%s", strings.Join(lines, "\n"))
+	if copied != 3 || len(lines) != 3 {
+		t.Fatalf("want each of the 3 pieces copied once:\n%s", strings.Join(lines, "\n"))
 	}
 	holds(t, cur.Keys, map[string]string{"secrets.key": "S", "stream-signing.key": "K"})
-	if readAt(t, filepath.Join(cur.Config, "node.json")) != "{}" || readAt(t, filepath.Join(cur.Config, "server.toml")) != originals["server.toml"] {
-		t.Fatal("server.toml and node.json must be whole in the new place")
+	if readAt(t, filepath.Join(cur.Config, "server.toml")) != originals["server.toml"] || exists(filepath.Join(cur.Config, "node.json")) {
+		t.Fatal("server.toml must be whole in the new place, and node.json never copied")
 	}
 	holds(t, old.Config, originals)
 }

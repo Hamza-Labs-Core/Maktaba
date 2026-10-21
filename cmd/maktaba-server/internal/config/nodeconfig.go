@@ -81,10 +81,11 @@ func (n NodeConfig) Missing() []string {
 }
 
 // NodeConfigPath is where the pipeline keeps the node config (cluster/config.py
-// config_path): MAKTABA_NODE_CONFIG, else per OS. On Windows it is
-// %LOCALAPPDATA%\Maktaba\node.json (Epic 38 story 38.1); a machine that joined
-// before keeps the one in its roaming profile (%APPDATA%\Maktaba\node.json) while
-// there is none in the new place.
+// config_path): MAKTABA_NODE_CONFIG, else per OS. On Windows a machine has one node
+// config and it stays where it is: %APPDATA%\Maktaba\node.json for a machine that
+// joined before Epic 38 (it is never copied or moved, story 38.1), else
+// %LOCALAPPDATA%\Maktaba\node.json, where a new join writes. Streaming, the
+// pipeline and the node installer's scripts resolve it the same way.
 func NodeConfigPath(getenv func(string) string, goos, userHome string) string {
 	if p := strings.TrimSpace(getenv("MAKTABA_NODE_CONFIG")); p != "" {
 		if strings.HasPrefix(p, "~") {
@@ -96,10 +97,6 @@ func NodeConfigPath(getenv func(string) string, goos, userHome string) string {
 	case "darwin":
 		return filepath.Join(userHome, "Library", "Application Support", "Maktaba", "node.json")
 	case "windows":
-		cur := filepath.Join(WindowsRoot(getenv, userHome), "node.json")
-		if isFile(cur) {
-			return cur
-		}
 		roaming := getenv("APPDATA")
 		if roaming == "" {
 			roaming = filepath.Join(userHome, "AppData", "Roaming")
@@ -107,7 +104,7 @@ func NodeConfigPath(getenv func(string) string, goos, userHome string) string {
 		if old := filepath.Join(roaming, "Maktaba", "node.json"); isFile(old) {
 			return old
 		}
-		return cur
+		return filepath.Join(WindowsRoot(getenv, userHome), "node.json")
 	}
 	base := getenv("XDG_CONFIG_HOME")
 	if base == "" {
