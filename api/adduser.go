@@ -39,11 +39,13 @@ func runAddUser(argv []string) error {
 		dsn          string
 		isAdmin      bool
 		passwordFile string
+		hashFile     string
 		showHelp     bool
 	)
 	fs.StringVar(&dsn, "dsn", os.Getenv("DATABASE_URL"), "Database DSN (default: $DATABASE_URL)")
 	fs.BoolVar(&isAdmin, "admin", true, "Create as admin")
 	fs.StringVar(&passwordFile, "password-file", "", "Read password from file (one line). Useful for non-interactive seeding.")
+	fs.StringVar(&hashFile, "password-hash-file", "", "Read the password's argon2id hash from file (one line, from 'maktaba-api hash-password'): the first-run setup of the desktop app.")
 	fs.BoolVar(&showHelp, "help", false, "Show help")
 
 	fs.Usage = func() {
@@ -76,8 +78,16 @@ Flags:`)
 		return errors.New("DSN is empty: pass --dsn or set DATABASE_URL")
 	}
 
-	password, err := readPassword(passwordFile)
-	if err != nil {
+	if passwordFile != "" && hashFile != "" {
+		return errors.New("adduser: --password-file and --password-hash-file are exclusive")
+	}
+	var password, hash string
+	var err error
+	if hashFile != "" {
+		if hash, err = readHashFile(hashFile); err != nil {
+			return err
+		}
+	} else if password, err = readPassword(passwordFile); err != nil {
 		return err
 	}
 
@@ -100,13 +110,14 @@ Flags:`)
 		return fmt.Errorf("user count: %w", err)
 	}
 	if already {
-		return errors.New("adduser: a real user already exists; use the admin HTTP API to add more users")
+		return errUserExists
 	}
 
 	u, err := store.Create(ctx, users.CreateInput{
-		Username: username,
-		Password: password,
-		IsAdmin:  isAdmin,
+		Username:     username,
+		Password:     password,
+		PasswordHash: hash,
+		IsAdmin:      isAdmin,
 	})
 	if err != nil {
 		return err
@@ -114,6 +125,11 @@ Flags:`)
 	fmt.Fprintf(os.Stderr, "adduser: created user %s (id=%s, is_admin=%v)\n", u.Username, u.ID, u.IsAdmin)
 	return nil
 }
+
+// errUserExists: the database has a real user already (`adduser` exits 3 for
+// it, so the desktop app's setup, run again after it seeded the admin, can
+// tell it from a failure).
+var errUserExists = errors.New("adduser: a real user already exists; use the admin HTTP API to add more users")
 
 // readPassword pulls the password from --password-file when given,
 // otherwise prompts the operator on the controlling TTY without echo.
@@ -149,4 +165,18 @@ func readPassword(file string) (string, error) {
 		return "", errors.New("password: empty")
 	}
 	return pw, nil
+}
+
+// readHashFile reads a password hash from `maktaba-api hash-password` (one
+// line). Its format is checked when the user is created.
+func readHashFile(file string) (string, error) {
+	b, err := os.ReadFile(file) //nolint:gosec // the operator's own file
+	if err != nil {
+		return "", err
+	}
+	h := strings.TrimSpace(string(b))
+	if h == "" {
+		return "", errors.New("password hash: empty")
+	}
+	return h, nil
 }

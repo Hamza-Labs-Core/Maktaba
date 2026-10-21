@@ -408,3 +408,39 @@ func TestResolve(t *testing.T) {
 		}
 	}
 }
+
+// A pre-update dump is named after the update, replaces one of that name, and
+// keeps the newest of its kind beside the nightly ones.
+func TestDumpBeforeUpdate(t *testing.T) {
+	b, logDir := fakeBundle(t)
+	if err := b.Prepare(context.Background(), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Backup(context.Background(), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, v := range [][2]string{{"v0.1.0", "v0.2.0"}, {"v0.2.0", "v0.3.0"}, {"", "v0.4.0"}, {"", "v0.4.0"}} {
+		p, err := b.DumpBeforeUpdate(context.Background(), v[0], v[1], 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		paths = append(paths, p)
+		time.Sleep(20 * time.Millisecond) // a later modification time
+	}
+	if filepath.Base(paths[2]) != "pre-unknown-to-v0.4.0.dump" || paths[3] != paths[2] {
+		t.Fatalf("paths = %v", paths)
+	}
+	entries, _ := os.ReadDir(b.Backups)
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	if len(names) != 3 || !strings.HasPrefix(names[0], "maktaba-") || names[1] != "pre-unknown-to-v0.4.0.dump" ||
+		names[2] != "pre-v0.2.0-to-v0.3.0.dump" {
+		t.Fatalf("backups = %v (the nightly one and the newest two pre-update dumps)", names)
+	}
+	if n := lines(t, filepath.Join(logDir, "pg_dump.calls")); n != 5 {
+		t.Fatalf("pg_dump ran %d times, want 5", n)
+	}
+}
