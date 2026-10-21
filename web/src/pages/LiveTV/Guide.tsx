@@ -32,6 +32,7 @@ import {
   type GuideResponse,
   type Program,
 } from "../../lib/channels";
+import { TitleRow } from "../../help/HelpLink";
 
 // Pixels per minute on the time axis. The ratio between cells is what AC1
 // guarantees, so the absolute value is cosmetic — 4px/min gives a 1-hour
@@ -172,7 +173,9 @@ export function Guide() {
   return (
     <section className="mkt-page mkt-guide">
       <header className="mkt-page__header">
-        <h1>{t("guide.title")}</h1>
+        <TitleRow>
+          <h1>{t("guide.title")}</h1>
+        </TitleRow>
         <div className="mkt-toolbar" role="toolbar" aria-label={t("guide.toolbar")}>
           <label className="mkt-field">
             <span className="mkt-field__label">{t("guide.category")}</span>
