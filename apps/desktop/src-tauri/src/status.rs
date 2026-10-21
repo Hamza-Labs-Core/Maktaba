@@ -20,6 +20,60 @@ pub const DEFAULT_SUPERVISOR_ADDR: &str = "127.0.0.1:9103";
 pub struct Snapshot {
     #[serde(default)]
     pub processes: Vec<Child>,
+    /// The language model server (the bundled Ollama): absent when this
+    /// machine has none.
+    #[serde(default)]
+    pub llm: Option<Llm>,
+}
+
+/// The model server's state (llmserver.Status in cmd/maktaba-server).
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct Llm {
+    #[serde(default)]
+    pub up: bool,
+    #[serde(default)]
+    pub ready: bool,
+    #[serde(default)]
+    pub models: Vec<LlmModel>,
+}
+
+/// One configured model: ready, downloading (done/total bytes), missing,
+/// failed or unknown.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct LlmModel {
+    pub name: String,
+    pub state: String,
+    #[serde(default)]
+    pub done: u64,
+    #[serde(default)]
+    pub total: u64,
+}
+
+/// The menu bar's line about the language model, when the server has one.
+pub fn model_line(llm: Option<&Llm>) -> Option<String> {
+    let llm = llm?;
+    if let Some(m) = llm.models.iter().find(|m| m.state == "downloading") {
+        if m.total == 0 {
+            return Some(format!("Language model: downloading {}", m.name));
+        }
+        let pct = m.done.min(m.total) * 100 / m.total;
+        let line = format!("Language model: downloading {} ({pct}%)", m.name);
+        return Some(line);
+    }
+    if llm.ready {
+        return Some("Language model: ready".into());
+    }
+    if !llm.up {
+        return Some("Language model: starting…".into());
+    }
+    if let Some(m) = llm.models.iter().find(|m| m.state == "failed") {
+        let line = format!("Language model: {} did not download (retrying)", m.name);
+        return Some(line);
+    }
+    if let Some(m) = llm.models.iter().find(|m| m.state != "ready") {
+        return Some(format!("Language model: {} not downloaded", m.name));
+    }
+    Some("Language model: ready".into())
 }
 
 /// One supervised process (supervisor.ChildStatus).
@@ -173,7 +227,72 @@ mod tests {
     fn snap(children: Vec<Child>) -> Probe {
         Probe::Snapshot(Snapshot {
             processes: children,
+            llm: None,
         })
+    }
+
+    fn model(name: &str, state: &str, done: u64, total: u64) -> LlmModel {
+        LlmModel {
+            name: name.into(),
+            state: state.into(),
+            done,
+            total,
+        }
+    }
+
+    #[test]
+    fn parses_the_language_model_state() {
+        let body = r#"{"processes":[{"role":"ollama","state":"running"}],
+          "llm":{"url":"http://127.0.0.1:11533","bundled":true,"up":true,"ready":false,
+                 "models":[{"name":"qwen2.5:7b","state":"downloading","done":2341538385,"total":4683076771}],
+                 "checked_at":"2026-10-21T10:00:00Z"}}"#;
+        let raw = format!("HTTP/1.1 200 OK\r\n\r\n{body}");
+        let s = parse_response(raw.as_bytes()).expect("parsed");
+        assert_eq!(
+            model_line(s.llm.as_ref()).as_deref(),
+            Some("Language model: downloading qwen2.5:7b (49%)")
+        );
+        // the model server is one more process: it does not hold the status
+        assert_eq!(
+            derive(true, false, false, &Probe::Snapshot(s)),
+            ServerStatus::Running
+        );
+    }
+
+    #[test]
+    fn model_lines() {
+        assert_eq!(model_line(None), None);
+        let mut llm = Llm {
+            up: true,
+            ready: true,
+            models: vec![model("qwen2.5:7b", "ready", 0, 0)],
+        };
+        assert_eq!(
+            model_line(Some(&llm)).as_deref(),
+            Some("Language model: ready")
+        );
+        llm.ready = false;
+        llm.models = vec![model("qwen2.5:7b", "downloading", 0, 0)];
+        assert_eq!(
+            model_line(Some(&llm)).as_deref(),
+            Some("Language model: downloading qwen2.5:7b")
+        );
+        llm.models = vec![model("qwen2.5:7b", "failed", 0, 0)];
+        assert_eq!(
+            model_line(Some(&llm)).as_deref(),
+            Some("Language model: qwen2.5:7b did not download (retrying)")
+        );
+        llm.models = vec![model("qwen2.5:7b", "missing", 0, 0)];
+        assert_eq!(
+            model_line(Some(&llm)).as_deref(),
+            Some("Language model: qwen2.5:7b not downloaded")
+        );
+        llm.up = false;
+        llm.models = vec![model("qwen2.5:7b", "unknown", 0, 0)];
+        assert_eq!(
+            model_line(Some(&llm)).as_deref(),
+            Some("Language model: starting…")
+        );
     }
 
     #[test]

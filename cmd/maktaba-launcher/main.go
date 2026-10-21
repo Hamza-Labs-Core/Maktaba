@@ -71,13 +71,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	// the Linux app's systemd unit has no terminal to write to (Epic 39 story 39.5)
 	if *logPath != "" && len(fs.Args()) > 0 && fs.Args()[0] == "serve" {
-		lf, err := openLogFile(*logPath, logRotateBytes)
+		w, done, err := logPipe(*logPath)
 		if err != nil {
 			fmt.Fprintf(stderr, "maktaba-launcher: --log-file: %v\n", err)
 			return exitFailure
 		}
-		defer lf.Close()
-		stdout, stderr = lf, lf
+		defer done()
+		stdout, stderr = w, w
 	}
 	if *showVersion {
 		fmt.Fprintf(stdout, "maktaba-launcher %s (launcher_protocol %d)\n", Version, LauncherProtocol)

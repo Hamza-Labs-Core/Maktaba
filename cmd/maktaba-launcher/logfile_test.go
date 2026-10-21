@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -22,6 +23,14 @@ func TestLogFileAppendsAndRotates(t *testing.T) {
 	}
 	if err := l.Close(); err != nil {
 		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" { // the user's only: the log names the library's files
+		if fi, _ := os.Stat(filepath.Dir(path)); fi == nil || fi.Mode().Perm() != 0o700 {
+			t.Errorf("logs dir mode %v", fi)
+		}
+		if fi, _ := os.Stat(path); fi == nil || fi.Mode().Perm() != 0o600 {
+			t.Errorf("log mode %v", fi)
+		}
 	}
 	if b, _ := os.ReadFile(path + ".1"); string(b) != "first line\nsecond\n" {
 		t.Errorf("rotated copy %q", b)

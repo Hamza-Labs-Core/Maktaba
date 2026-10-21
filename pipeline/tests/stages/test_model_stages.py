@@ -23,6 +23,7 @@ from maktaba_pipeline.engine.graph import GRAPH, bound_graph, validate
 from maktaba_pipeline.engine.media import reset_runner
 from maktaba_pipeline.engine.stages.plan_channels import load_inputs
 from maktaba_pipeline.engine.stages.tag import _episode_tags, library_tags
+from maktaba_pipeline.engine.watchers import release
 from maktaba_pipeline.runtime import Database
 from tests.stages.world import (
     add_youtube_video,
@@ -231,7 +232,9 @@ async def test_an_unreachable_model_fails_the_job_and_leaves_the_tags(
     await _run(db, lib)
     sid = await _season(db)
     jobs = await _jobs(db, "check_tags")
-    assert jobs and all(j["state"] == "failed" for j in jobs[-1:])
+    # Epic 40: the job waits for the model, spending no try
+    assert jobs and jobs[-1]["state"] == "pending" and jobs[-1]["attempts"] == 0
+    assert jobs[-1]["parked_on"] == "dependency:model:tagcheck"
     assert "model_unavailable" in str(jobs[-1]["error"])
     assert await db.fetchval("SELECT count(*) FROM tag_checks") == 0
     assert (await _tags(db, sid))["topic:prophets_stories"] >= 0.5
@@ -326,7 +329,12 @@ async def test_clips_left_unanswered_are_kept_for_the_retry(
     await set_rules(db, "tagcheck", {"clip_batch": 1})
     await _run(db, lib)
     jobs = await _jobs(db, "check_clips")
-    assert jobs[-1]["state"] == "done" and jobs[-1]["attempts"] >= 2  # the retry asked the rest
+    # Epic 40: the lost answer parks the job on the model; the watcher releases it
+    assert jobs[-1]["state"] == "pending" and jobs[-1]["parked_on"] == "dependency:model:tagcheck"
+    assert await release(db, "dependency:model:tagcheck") == 1
+    await drain_core(db, await core_runtime(db, models=True), limit=900)
+    jobs = await _jobs(db, "check_clips")
+    assert jobs[-1]["state"] == "done" and jobs[-1]["attempts"] == 1  # the wait spent no try
     assert clip_questions == 4  # three clips, one question lost on the way
     assert await db.fetchval("SELECT count(*) FROM clip_checks") == 3
     assert sum(len(q) for q in model.clip_questions) == 3

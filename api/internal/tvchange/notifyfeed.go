@@ -152,7 +152,7 @@ func (c *Controller) onEvent(ctx context.Context, cfg Config, e feedEvent) error
 		} else {
 			kind, p.Severity = NotifyReady, notify.SeverityWarn
 		}
-	case e.To.String == StateFailed:
+	case e.Action == ActionFail: // back to draft (a row made before: to failed)
 		kind, p.Severity = NotifyFailed, notify.SeverityError
 		params["failed"] = failedChecks(ch.VerifyReport)
 	case e.Action == ActionSwapFailed:

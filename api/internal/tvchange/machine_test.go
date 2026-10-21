@@ -9,8 +9,8 @@ import (
 func TestTransitionsTable(t *testing.T) {
 	want := map[string]map[string]string{
 		StateDraft:      {ActionStage: StateStaged, ActionApprove: StateDraft, ActionSchedule: StateDraft, ActionCancel: StateCancelled, ActionSupersede: StateSuperseded},
-		StateStaged:     {ActionStartVerify: StateVerifying, ActionSchedule: StateStaged, ActionApprove: StateStaged, ActionCancel: StateCancelled, ActionFail: StateFailed},
-		StateVerifying:  {ActionPass: StateReady, ActionFail: StateFailed, ActionVerify: StateVerifying, ActionSchedule: StateVerifying, ActionApprove: StateVerifying, ActionCancel: StateCancelled},
+		StateStaged:     {ActionStartVerify: StateVerifying, ActionSchedule: StateStaged, ActionApprove: StateStaged, ActionCancel: StateCancelled, ActionFail: StateDraft},
+		StateVerifying:  {ActionPass: StateReady, ActionFail: StateDraft, ActionVerify: StateVerifying, ActionSchedule: StateVerifying, ActionApprove: StateVerifying, ActionCancel: StateCancelled},
 		StateReady:      {ActionApprove: StateApproved, ActionVerify: StateVerifying, ActionSchedule: StateReady, ActionCancel: StateCancelled, ActionRecheckFail: StateVerifying, ActionAutoApprove: StateApproved, ActionAutoPromote: StateSwapping, ActionPromote: StateSwapping},
 		StateApproved:   {ActionPromote: StateSwapping, ActionSwapStart: StateSwapping, ActionSchedule: StateApproved, ActionCancel: StateCancelled},
 		StateSwapping:   {ActionSwap: StateLive, ActionSwapFailed: StateReady, ActionRollback: StateRolledBack},

@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestAppUnitPathsFollowXDG(t *testing.T) {
+func TestAppUnitPathsAndPinnedXDG(t *testing.T) {
 	env := map[string]string{}
 	getenv := func(k string) string { return env[k] }
 	u := AppUnitFor(getenv, "/home/me", "/home/me/.local/share/maktaba", "/home/me/.local/state/maktaba/logs")
@@ -22,18 +22,32 @@ func TestAppUnitPathsFollowXDG(t *testing.T) {
 	if u.LogFile != filepath.Join("/home/me/.local/state/maktaba/logs", "server.log") {
 		t.Errorf("log %s", u.LogFile)
 	}
-	env["XDG_CONFIG_HOME"] = "/cfg"
-	if got := AppUnitFor(getenv, "/home/me", "/d", "/l").Dir; got != filepath.Join("/cfg", "systemd", "user") {
-		t.Errorf("XDG_CONFIG_HOME ignored: %s", got)
+	want := []string{"XDG_CONFIG_HOME=" + filepath.Join("/home/me", ".config"), "XDG_DATA_HOME=" + filepath.Join("/home/me", ".local", "share"),
+		"XDG_STATE_HOME=" + filepath.Join("/home/me", ".local", "state"), "XDG_CACHE_HOME=" + filepath.Join("/home/me", ".cache")}
+	if strings.Join(u.Env, "|") != strings.Join(want, "|") {
+		t.Errorf("env %q, want %q", u.Env, want)
+	}
+	// a shell's own XDG dirs are pinned into the unit (the server at boot has no shell);
+	// the unit's directory stays the manager's (UnitDir), not the shell's
+	env["XDG_CONFIG_HOME"], env["XDG_CACHE_HOME"] = "/cfg", "relative/ignored"
+	u = AppUnitFor(getenv, "/home/me", "/d", "/l")
+	if u.Dir != filepath.Join("/home/me", ".config", "systemd", "user") {
+		t.Errorf("dir %s", u.Dir)
+	}
+	if u.Env[0] != "XDG_CONFIG_HOME=/cfg" || u.Env[3] != "XDG_CACHE_HOME="+filepath.Join("/home/me", ".cache") {
+		t.Errorf("env %q", u.Env)
 	}
 }
 
 func TestAppUnitRender(t *testing.T) {
 	u := AppUnit{Launcher: "/home/me/.local/share/maktaba/runtime/current/bin/maktaba-launcher",
-		LogFile: "/home/me/.local/state/maktaba/logs/server.log"}
+		LogFile: "/home/me/.local/state/maktaba/logs/server.log",
+		Env:     []string{"XDG_DATA_HOME=/home/me/.local/share", `XDG_CACHE_HOME=/home/me/100% "x"`}}
 	got := u.Render()
 	for _, want := range []string{
 		appMarker + "\n[Unit]\n",
+		"Environment=\"XDG_DATA_HOME=/home/me/.local/share\"\n",
+		`Environment="XDG_CACHE_HOME=/home/me/100%% \"x\""` + "\n",
 		"ExecStart=/home/me/.local/share/maktaba/runtime/current/bin/maktaba-launcher --log-file /home/me/.local/state/maktaba/logs/server.log serve\n",
 		"Restart=always\n", "RestartForceExitStatus=75\n", "KillMode=mixed\n", "TimeoutStopSec=90\n",
 		"WantedBy=default.target\n",
@@ -44,6 +58,38 @@ func TestAppUnitRender(t *testing.T) {
 	}
 	if strings.Contains(got, "--root") {
 		t.Error("the app's unit runs the runtime's launcher, never a layout root")
+	}
+}
+
+func TestUnitDirIsTheManagers(t *testing.T) {
+	f := &fakeManager{answers: map[string]string{"systemctl --user show-environment": "HOME=/home/me\nXDG_CONFIG_HOME=/srv/cfg\n"}}
+	if got := f.manager(t).UnitDir(context.Background(), "/def"); got != filepath.Join("/srv/cfg", "systemd", "user") {
+		t.Errorf("with the manager's XDG_CONFIG_HOME: %s", got)
+	}
+	f = &fakeManager{answers: map[string]string{"systemctl --user show-environment": "HOME=/home/me\n"}}
+	if got := f.manager(t).UnitDir(context.Background(), "/def"); got != "/def" {
+		t.Errorf("without: %s", got)
+	}
+}
+
+func TestInstallRefusesASystemWideUnit(t *testing.T) {
+	f := &fakeManager{}
+	m := f.manager(t)
+	sys := t.TempDir()
+	m.SystemUnitDirs = []string{filepath.Join(t.TempDir(), "none"), sys}
+	if err := os.WriteFile(filepath.Join(sys, AppUnitName), []byte("[Service]\nUser=maktaba\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	u := testUnit(t)
+	err := m.Install(context.Background(), u, true, true) // not even with --replace
+	if !errors.Is(err, ErrServiceTaken) || !strings.Contains(err.Error(), filepath.Join(sys, AppUnitName)) {
+		t.Fatalf("err = %v", err)
+	}
+	if _, err := os.Stat(u.Path()); err == nil {
+		t.Error("a unit was written beside a system-wide one")
+	}
+	if st := m.Status(context.Background(), u); st.SystemUnit != filepath.Join(sys, AppUnitName) {
+		t.Errorf("status %+v", st)
 	}
 }
 
