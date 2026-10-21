@@ -811,6 +811,27 @@ func TestSignOutOfAHomeSessionInAnOutage(t *testing.T) {
 	}
 }
 
+// A sign-out in an outage of a home session this machine's copy does not have (made at the
+// home after the copy's last change) is kept by its key all the same: the home is told.
+func TestSignOutOfASessionNewerThanTheCopy(t *testing.T) {
+	g := newOfflineRig(t, true)
+	g.goDown(time.Minute)
+	g.pastGrace()
+	g.csrf["s9"] = "csrf-of-s9"
+	if a := g.do(http.MethodPost, LogoutPath, "s9"); a.code != http.StatusNoContent || !a.cleared() {
+		t.Fatalf("a sign-out of a session the copy lacks: %+v", a)
+	}
+	if !g.r.SignOuts.denied(SessionKey("s9"), "") || g.r.SignOuts.Waiting() != 1 {
+		t.Fatalf("not kept (waiting %d)", g.r.SignOuts.Waiting())
+	}
+	g.home.setDown(false)
+	g.r.answered()
+	g.r.sendSignOuts(context.Background())
+	if len(g.home.signOuts) != 1 || g.home.signOuts[0].SessionSHA256[0] != SessionKey("s9") {
+		t.Fatalf("handed to the home: %+v", g.home.signOuts)
+	}
+}
+
 // Inside the grace the sign-out goes to the home; when the home does not answer it, this
 // machine signs the person out (the proxy's fallback).
 func TestSignOutInsideTheGraceFallsBackToThisMachine(t *testing.T) {
@@ -1030,7 +1051,7 @@ func TestARevocationEndsTheNodeLocalSignIns(t *testing.T) {
 
 	// signed in again later; then an admin resets the password (the copy says it must
 	// change)
-	g.now = g.now.Add(revokedKeep + time.Second)
+	g.now = g.now.Add(g.r.revokedKeep() + time.Second)
 	_, id = g.signIn(t, "amal", "pw-amal")
 	if a := g.do(http.MethodGet, "/api/videos", id); a.code != http.StatusOK {
 		t.Fatalf("signed in again: %+v", a)
@@ -1068,5 +1089,28 @@ func TestSprayingNamesDoesNotUnlockOne(t *testing.T) {
 	now = now.Add(lockoutWindow + time.Second)
 	if r.locked("amal") {
 		t.Fatal("still locked past the window")
+	}
+}
+
+// With every name it counts locked (a spray of locked names), a name it cannot count is
+// not let try: its failures would lock nothing.
+func TestANameThatCannotBeCountedIsNotLetTry(t *testing.T) {
+	now := time.Date(2026, 10, 21, 9, 0, 0, 0, time.UTC)
+	r := &Resolver{Now: func() time.Time { return now }}
+	r.fails = map[string][]time.Time{}
+	for i := 0; i < maxEntries; i++ {
+		r.fails[fmt.Sprintf("locked-%d", i)] = []time.Time{now, now, now, now, now, now, now, now, now, now}[:lockoutThreshold]
+	}
+	if !r.locked("badr") {
+		t.Fatal("a name the full counter cannot count is let try")
+	}
+	r.failed("badr")
+	if _, counted := r.fails["badr"]; counted || len(r.fails) != maxEntries {
+		t.Fatalf("counted past the room: %v %d", counted, len(r.fails))
+	}
+	// once the decoys' window is past, it is counted again as any name
+	now = now.Add(lockoutWindow + time.Second)
+	if r.locked("badr") {
+		t.Fatal("still refused once there is room")
 	}
 }

@@ -596,8 +596,8 @@ func (o *Orchestrator) waitNewHome(ctx context.Context, id string, why error) (N
 	})
 	o.step(id, StepPromote, "running", "this home stays read-only until the machine taking over says where the "+
 		"switch is: "+why.Error())
-	o.log().Warn("switchover: the promotion's answer did not come; this home stays frozen until the machine says "+
-		"where the switch is", "id", id, "err", why, "event", "switchover_promote_unknown")
+	o.log().Warn("switchover: the promotion's answer did not come; this home stays frozen until the machine says where the switch is",
+		"id", id, "err", why, "event", "switchover_promote_unknown")
 	for {
 		p := o.Progress(id)
 		if raw, err := o.command(ctx, p.ToNode, "switch.status", map[string]any{"id": id, "term": p.Term, "abort": true},

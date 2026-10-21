@@ -372,15 +372,19 @@ async def _relist(client: PlexClient, run: _Run, device_id: str, target: Target)
     run.ours_dvr = _dvr_of(run.dvrs, run.ours)
 
 
-async def _move(client: PlexClient, run: _Run, target: Target, device_id: str) -> PlexTuner | None:
+async def _move(
+    client: PlexClient, run: _Run, target: Target, device_id: str, lineup: Sequence[str]
+) -> PlexTuner | None:
     """Maktaba's tuner, which Plex has at another machine's address, pointed at this one.
 
     Plex reads ``discover.json`` at the new address; a tuner with the same DeviceID is the
     same device to Plex, which takes the address in place (its DVR, channels and name kept:
-    ``in_place``). When Plex keeps the old address, the old tuner leaves its DVR (the DVR
-    goes when it carried that tuner only) and Plex, and is added again here (``re_added``:
-    the caller joins it to the DVR Plex shows, as a registration does). Returns the tuner
-    at the new address."""
+    ``in_place``). When Plex keeps the old address, the old tuner leaves its DVR and Plex,
+    and is added again here (``re_added``). A DVR is never deleted (its recording schedules
+    are Plex's DVR's): one that carried only Maktaba's tuner takes the new one in its place
+    (its channels mapped first); one Plex dropped with its last tuner is said (the caller
+    makes a new one, as a registration does), as is one shared with other tuners, which the
+    caller joins. Returns the tuner at the new address."""
     old = run.ours
     added = await asyncio.to_thread(client.add_grabber_device, target.tuner_url)
     await _relist(client, run, device_id, target)
@@ -390,20 +394,33 @@ async def _move(client: PlexClient, run: _Run, target: Target, device_id: str) -
         run.move = "in_place"
         run.ours, run.ours_dvr = here, _dvr_of(run.dvrs, here)
         return here
+    left: str = ""  # a DVR of Maktaba's own, left without its tuner
     for t in mine:
         if same_host(t.uri, target.tuner_url):
             continue
         dvr = _dvr_of(run.dvrs, t)
-        if dvr is not None and all(d.key == t.key for d in dvr.devices):
-            await asyncio.to_thread(client.delete_dvr, dvr.key)
-        elif dvr is not None:
+        if dvr is not None:
+            if all(d.key == t.key for d in dvr.devices):
+                left = dvr.key
             await asyncio.to_thread(client.remove_dvr_device, dvr.key, t.key)
         await asyncio.to_thread(client.delete_grabber_device, t.key)
     if here is None:
         added = await asyncio.to_thread(client.add_grabber_device, target.tuner_url)
     await _relist(client, run, device_id, target)
     run.move = "re_added"
-    return find_tuner([*run.tuners, *([added] if added else [])], device_id, target.tuner_url)
+    tuner = find_tuner([*run.tuners, *([added] if added else [])], device_id, target.tuner_url)
+    if left and tuner is not None and _dvr_of(run.dvrs, tuner) is None:
+        if any(d.key == left for d in run.dvrs):
+            # the DVR (its schedules) kept: the tuner here in the old one's place
+            await asyncio.to_thread(client.put_channel_map, tuner.key, lineup)
+            await asyncio.to_thread(client.add_dvr_device, left, tuner.key)
+            await _relist(client, run, device_id, target)
+        else:
+            run.warnings.append(
+                "Plex removed Maktaba's DVR with its last tuner: its recording schedules did "
+                "not move with it"
+            )
+    return find_tuner(run.tuners, device_id, target.tuner_url) or tuner
 
 
 async def _move_guide(client: PlexClient, run: _Run, target: Target, cfg: Any) -> None:
@@ -583,7 +600,7 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
                 tuner = run.ours
                 if elsewhere and tuner is not None:
                     run.moved_from = tuner.uri
-                    tuner = await _move(client, run, target, device_id)
+                    tuner = await _move(client, run, target, device_id, lineup)
                 elif tuner is None:
                     added = await asyncio.to_thread(client.add_grabber_device, target.tuner_url)
                     _, devices = await asyncio.to_thread(_list, client)

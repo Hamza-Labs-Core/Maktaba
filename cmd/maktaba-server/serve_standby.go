@@ -110,9 +110,10 @@ func (s *switching) standbyKit(ctx context.Context, req homeRequest) (any, error
 }
 
 // watchTerm is a home's watch for an emergency that took the home from it while it was
-// cut off or off: every minute it asks each standby home it knows for a notice sealed to
-// it (its identity in the standbys' kits); one of a newer term means another machine is
-// the home now (stepDown).
+// cut off or off: every minute it asks each standby home it knows, then its other
+// machines (their copies have the notices too), for a notice sealed to it (its identity in
+// the standbys' kits); one of a newer term means another machine is the home now
+// (stepDown).
 func (s *switching) watchTerm(ctx context.Context) {
 	select {
 	case <-s.ready:
@@ -150,8 +151,10 @@ func (s *switching) checkTerm(ctx context.Context, client *http.Client) {
 		if err := db.QueryRowContext(ctx, `SELECT COALESCE(max(term), 1) FROM cluster_terms`).Scan(&term); err != nil {
 			return err
 		}
-		rows, err := db.QueryContext(ctx, `SELECT web_url FROM cluster_nodes WHERE standby AND state = 'approved'
-		    AND COALESCE(web_url, '') <> ''`)
+		// the standbys first (one of them took over), then every other machine: its copy of
+		// the new home's database has the notice too
+		rows, err := db.QueryContext(ctx, `SELECT web_url FROM cluster_nodes WHERE state = 'approved'
+		    AND COALESCE(web_url, '') <> '' ORDER BY standby DESC, name`)
 		if err != nil {
 			return err
 		}
@@ -230,6 +233,9 @@ func (s *switching) stepDown(ctx context.Context, me oldHome, id string, notice 
 		"wrote since, and becoming one of its machines", notice.Home.APIURL, notice.Term)
 	report := keptReport{ID: uuid.NewString(), Term: notice.Term, FromNode: me.NodeID, FromName: me.Name,
 		Cut: notice.Cut, HomeAPI: notice.Home.APIURL}
+	if err := s.frozen(ctx, true); err != nil {
+		return err
+	}
 	err := s.withSuper(func(db *sql.DB) error {
 		if err := switchover.Fence(ctx, db); err != nil {
 			return err

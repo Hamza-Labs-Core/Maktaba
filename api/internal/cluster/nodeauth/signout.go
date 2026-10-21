@@ -231,17 +231,13 @@ func (r *Resolver) SignOutHere(w http.ResponseWriter, req *http.Request) bool {
 	// whose session it is, and its CSRF token's hash: this machine's copy, else the
 	// home's last answer kept here
 	user, csrf, known := "", "", false
-	if a, said := r.copyAnswer(req.Context(), delegation.IntrospectRequest{Session: c.Value}); said {
-		if a == nil {
-			// not a live session: nothing to end but the cookies
-			r.setCookies(w, "", "", time.Time{})
-			w.WriteHeader(http.StatusNoContent)
-			return true
-		}
+	if a, said := r.copyAnswer(req.Context(), delegation.IntrospectRequest{Session: c.Value}); said && a != nil {
 		user, csrf, known = a.Principal.UserID, a.CSRFSHA256, true
 	} else if e, ok := r.cached(key); ok && !e.denied {
 		user, csrf, known = e.user, e.csrf, true
 	}
+	// a session the copy does not have may be newer than the copy: it is signed out by
+	// its key all the same (the home ends it, or knows nothing of it)
 	if all && !known {
 		// whose sessions to end is not known here: that waits for the home
 		writeUnreachable(w, true)
@@ -251,7 +247,11 @@ func (r *Resolver) SignOutHere(w http.ResponseWriter, req *http.Request) bool {
 		writeProblem(w, http.StatusForbidden, "https://maktaba.dev/problems/csrf-mismatch", "csrf token mismatch", "")
 		return true
 	}
+	// on the home's clock (the sessions it ends are the ones it opened before then)
 	now := r.now()
+	if r.HomeOffset != nil {
+		now = now.Add(r.HomeOffset())
+	}
 	if err := r.SignOuts.add(key, signOut{User: user, At: now}); err != nil {
 		if r.Logger != nil {
 			r.Logger.Warn("node: a sign-out made here was not saved", "err", err, "event", "node_sign_out_failed")

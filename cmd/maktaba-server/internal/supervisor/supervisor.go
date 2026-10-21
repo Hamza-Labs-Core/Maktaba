@@ -74,6 +74,9 @@ type Process struct {
 	// bundled postgres: whether it listens beyond this machine follows the cluster,
 	// pgbundle.Bundle.WatchReach).
 	Args func() []string
+	// BeforeStart, when set, runs before each start (the bundled postgres: a lock file a
+	// postmaster that did not end cleanly left, pgbundle.Bundle.ClearStaleLock).
+	BeforeStart func()
 }
 
 // stopSignal is the process's graceful-stop signal.

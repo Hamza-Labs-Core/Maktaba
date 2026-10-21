@@ -10,6 +10,7 @@ import asyncio
 import contextlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -34,6 +35,7 @@ from maktaba_pipeline.db.jobs_state import (
     mark_paused,
 )
 from maktaba_pipeline.engine.claim import claim_for_pool
+from maktaba_pipeline.engine.context import StageContext
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import GRAPH
 from maktaba_pipeline.engine.sync import sync_graph
@@ -417,9 +419,14 @@ async def test_a_late_write_leaves_a_job_another_worker_holds(db: Database) -> N
         " FROM processing_jobs WHERE id = $1"
     )
     before = dict(await db.fetchrow(read, job_id))
+    stage_ctx = StageContext(db=db, job=SimpleNamespace(id=job_id, progress={}), stage=None)  # type: ignore[arg-type]
     with claim_owner.running_for("w1"):
         await tick_heartbeat(db, job_id=job_id)
         await tick_progress(db, ProgressTick(job_id=job_id, processed_seconds=99.0))
+        await stage_ctx.progress("late", 1, 2, force=True)
+        assert (await db.fetchrow("SELECT progress FROM processing_jobs WHERE id = $1", job_id))[
+            "progress"
+        ] in (None, "{}", {})
         assert await mark_paused(db, job_id=job_id, at_sec=3.0, reason="shutdown") is None
         assert await mark_cancelled(db, job_id=job_id) is None
         late = await mark_failed_or_retry(db, job_id=job_id, error=StageError("OSError", "late"))
@@ -429,6 +436,11 @@ async def test_a_late_write_leaves_a_job_another_worker_holds(db: Database) -> N
     with claim_owner.running_for("w2"):
         await tick_progress(db, ProgressTick(job_id=job_id, processed_seconds=42.0))
         assert float((await db.fetchrow(read, job_id))["processed_seconds"]) == 42.0
+        await stage_ctx.progress("w2's", 1, 2, force=True)
+        raw = (await db.fetchrow("SELECT progress FROM processing_jobs WHERE id = $1", job_id))[
+            "progress"
+        ]
+        assert "w2's" in (raw if isinstance(raw, str) else json.dumps(raw))
         assert await mark_done(db, job_id=job_id) is not None
     assert await _job(db, job_id) == ("done", None)
     # outside a job the claim loop runs nothing is limited (tests, scripts)

@@ -226,6 +226,9 @@ func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *sl
 	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	rt := &nodeRuntime{cfg: cfg, dbs: dbs, logger: logger, fatal: make(chan error, 1)}
+	if dir := nodeStateDir(); dir != "" {
+		rt.clock.keepAt(filepath.Join(dir, "home-clock.json"))
+	}
 	rt.recent.Now = rt.clock.Now
 	roleErr := nodemode.CheckRole(cctx, dbs.home)
 	checkLater := false

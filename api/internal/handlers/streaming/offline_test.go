@@ -344,6 +344,35 @@ func TestOfflineSessionsOutliveARestart(t *testing.T) {
 	}
 }
 
+// A session whose row does not write back does not hold the others back: they are
+// written, it stays to be tried again.
+func TestOneSessionThatDoesNotWriteBackLeavesTheOthers(t *testing.T) {
+	off := &fakeOffline{down: true, videos: map[string]catalogVideo{vHere: {lib: "lib1", dur: 1800}}}
+	hd := &Handler{DB: deadDB(), Service: &fakeService{}, Offline: off}
+	r := chi.NewRouter()
+	hd.Mount(r)
+	bad, _ := open(t, r, as("u-amal", "lib1"), vHere)
+	good, _ := open(t, r, as("u-badr", "lib1"), vHere)
+	db := sessionsDB(t)
+	if _, err := db.Exec(`CREATE TRIGGER refuse BEFORE INSERT ON streaming_sessions WHEN NEW.id = '` + bad + `'
+	    BEGIN SELECT RAISE(ABORT, 'refused'); END`); err != nil {
+		t.Fatal(err)
+	}
+	hd.DB = db
+	off.mu.Lock()
+	off.down = false
+	off.mu.Unlock()
+	hd.Reconcile(context.Background())
+	var n int
+	_ = db.QueryRow(`SELECT count(*) FROM streaming_sessions WHERE id = ?`, good).Scan(&n)
+	if n != 1 {
+		t.Fatal("a session that writes back waited for one that does not")
+	}
+	if p := hd.led().pending(); len(p) != 1 || p[bad].Owner != "u-amal" {
+		t.Fatalf("still to write: %v", p)
+	}
+}
+
 // A session the database has, closed with the database down: its closing is written
 // when the database answers.
 func TestAClosingWithTheDatabaseDownIsWrittenBack(t *testing.T) {

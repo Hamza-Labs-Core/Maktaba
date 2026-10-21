@@ -3,7 +3,6 @@ package nodecopy
 import (
 	"context"
 	"errors"
-	"io"
 	"net"
 	"net/url"
 	"os"
@@ -109,57 +108,29 @@ func TestTheSubscriptionsConnection(t *testing.T) {
 	}
 }
 
-// The join's sslmode=prefer (which lib/pq refuses) is settled as libpq settles it.
-func TestTheHomesSSLModeIsSettled(t *testing.T) {
+// A home this machine cannot verify (a node.json from before its home sealed the CA:
+// prefer, require, none) is asked and told nothing: its CA comes over the machine channel
+// first. On its word that it has no TLS, or with its pinned CA, it is.
+func TestAHomeThatCannotBeVerifiedIsNotAsked(t *testing.T) {
 	c := testCopy(t)
-	if got := withSSLMode(c.HomeDSN, "disable"); !strings.Contains(got, "sslmode=disable") || strings.Contains(got, "require") {
-		t.Fatalf("withSSLMode: %s", got)
-	}
-	for dsn, want := range map[string]string{
-		"postgres://u:p@h:5432/m?sslmode=prefer":  "prefer",
-		"postgresql://u:p@h:5432/m?sslmode=Allow": "allow",
-		"postgres://u:p@h:5432/m":                 "",
-		"host=h user=u sslmode=prefer dbname=m":   "",
-	} {
-		if got := sslMode(dsn); got != want {
-			t.Fatalf("sslMode(%q) = %q, want %q", dsn, got, want)
+	for _, dsn := range []string{"postgres://u:p@127.0.0.1:1/m?sslmode=prefer",
+		"postgres://u:p@127.0.0.1:1/m?sslmode=require", "postgres://u:p@127.0.0.1:1/m"} {
+		c.HomeDSN = dsn
+		if _, err := c.openHome(context.Background()); !errors.Is(err, ErrNotVerified) {
+			t.Fatalf("%s: %v, want ErrNotVerified", dsn, err)
+		}
+		if _, err := c.Report(context.Background(), Status{State: StateUnavailable}); !errors.Is(err, ErrNotVerified) {
+			t.Fatalf("%s: told the home: %v", dsn, err)
 		}
 	}
-	// a home with no TLS: the prefer dsn connects in the clear (a server that answers
-	// "no SSL" to the request, then hangs up)
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ln.Close()
-	go func() {
-		for {
-			conn, err := ln.Accept()
-			if err != nil {
-				return
-			}
-			go func() {
-				defer conn.Close()
-				buf := make([]byte, 8)
-				if _, err := io.ReadFull(conn, buf); err == nil {
-					_, _ = conn.Write([]byte("N")) // SSLRequest: no
-				}
-				_, _ = io.Copy(io.Discard, conn)
-			}()
+	for _, dsn := range []string{"postgres://u:p@127.0.0.1:1/m?sslmode=disable",
+		"postgres://u:p@127.0.0.1:1/m?sslmode=verify-ca&sslrootcert=" + url.QueryEscape(filepath.Join(t.TempDir(), "ca.crt"))} {
+		c.HomeDSN = dsn
+		db, err := c.openHome(context.Background())
+		if err != nil {
+			t.Fatalf("%s: %v", dsn, err)
 		}
-	}()
-	c.HomeDSN = "postgres://u:p@" + ln.Addr().String() + "/m?sslmode=prefer&connect_timeout=2"
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	db, err := c.openHome(ctx)
-	if err != nil {
-		t.Fatalf("a prefer dsn against a server with no TLS: %v", err)
-	}
-	defer db.Close()
-	// the plain connection is tried (this fake never finishes a startup): lib/pq did
-	// not refuse the dsn itself
-	if err := db.PingContext(ctx); err != nil && strings.Contains(err.Error(), "sslmode") {
-		t.Fatalf("the dsn was refused for its sslmode: %v", err)
+		_ = db.Close()
 	}
 }
 
@@ -221,6 +192,24 @@ func TestResubscribeReason(t *testing.T) {
 	now = now.Add(11 * time.Minute)
 	if got := m.resubscribeReason(g, 144); !strings.Contains(got, "keep failing") {
 		t.Fatalf("stuck: %q", got)
+	}
+	// a first copy that finishes no table for two hours: anew; one that moves: kept
+	m.erring = time.Time{}
+	m.noteErrors(Status{Errors: 3, State: StateCopying, Tables: 9, Ready: 2})
+	now = now.Add(90 * time.Minute)
+	m.noteErrors(Status{Errors: 3, State: StateCopying, Tables: 9, Ready: 3})
+	now = now.Add(90 * time.Minute)
+	if got := m.resubscribeReason(g, 144); got != "" {
+		t.Fatalf("a first copy that moves: %q", got)
+	}
+	m.noteErrors(Status{Errors: 3, State: StateCopying, Tables: 9, Ready: 3})
+	now = now.Add(31 * time.Minute)
+	if got := m.resubscribeReason(g, 144); !strings.Contains(got, "no progress") {
+		t.Fatalf("a stalled first copy: %q", got)
+	}
+	m.noteErrors(Status{Errors: 3, State: StateFollowing, Tables: 9, Ready: 9})
+	if got := m.resubscribeReason(g, 144); got != "" {
+		t.Fatalf("a copy that follows: %q", got)
 	}
 }
 

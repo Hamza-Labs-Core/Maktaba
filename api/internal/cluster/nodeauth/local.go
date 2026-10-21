@@ -212,11 +212,39 @@ const (
 	LogoutPath = "/api/auth/logout"
 )
 
-// locked reports whether a name has failed lockoutThreshold times in the window.
+// locked reports whether a name has failed lockoutThreshold times in the window, or
+// cannot be counted (every name counted is locked: a spray of them), when it is not let
+// try either: its failures would not lock it.
 func (r *Resolver) locked(name string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return len(r.recentFails(name)) >= lockoutThreshold
+	if len(r.recentFails(name)) >= lockoutThreshold {
+		return true
+	}
+	_, counted := r.fails[name]
+	return !counted && !r.room()
+}
+
+// room makes room for one more name counted (held lock): with maxEntries counted, the
+// ones whose failures are past the window go first, then those not locked, down to a
+// quarter below the cap so a spray of names costs one pass per quarter of the room, not
+// one per name. False: every one is locked.
+func (r *Resolver) room() bool {
+	if len(r.fails) < maxEntries {
+		return true
+	}
+	for n := range r.fails {
+		r.recentFails(n)
+	}
+	for n, f := range r.fails {
+		if len(r.fails) < maxEntries*3/4 {
+			break
+		}
+		if len(f) < lockoutThreshold {
+			delete(r.fails, n)
+		}
+	}
+	return len(r.fails) < maxEntries
 }
 
 func (r *Resolver) recentFails(name string) []time.Time {
@@ -235,34 +263,17 @@ func (r *Resolver) recentFails(name string) []time.Time {
 	return kept
 }
 
-// failed counts a failed sign-in for name. With maxEntries names counted, the ones
-// whose failures are past the window go first, then those not locked: a locked name is
-// never forgotten (spraying names does not unlock one); with every one locked, a new
-// name is not counted (the sign-in's rate limit per address still holds).
+// failed counts a failed sign-in for name (room: a locked name is never forgotten, so
+// spraying names does not unlock one; with every one locked a new name is not counted,
+// and locked refuses it).
 func (r *Resolver) failed(name string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.fails == nil {
 		r.fails = map[string][]time.Time{}
 	}
-	if _, counted := r.fails[name]; !counted && len(r.fails) >= maxEntries {
-		// room for many at once, so a spray of names costs one pass per quarter of the
-		// room, not one per name: the counts past their window first, then any that has
-		// not locked its name
-		for n := range r.fails {
-			r.recentFails(n)
-		}
-		for n, f := range r.fails {
-			if len(r.fails) < maxEntries*3/4 {
-				break
-			}
-			if len(f) < lockoutThreshold {
-				delete(r.fails, n)
-			}
-		}
-		if len(r.fails) >= maxEntries {
-			return
-		}
+	if _, counted := r.fails[name]; !counted && !r.room() {
+		return
 	}
 	r.fails[name] = append(r.recentFails(name), r.now())
 }

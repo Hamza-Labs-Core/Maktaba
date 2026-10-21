@@ -42,6 +42,32 @@ const reachSQL = `SELECT
 // yet: this machine only).
 func (b Bundle) reachFile() string { return filepath.Join(b.Data, "maktaba-reach.json") }
 
+// frozenMarker marks a home frozen for a switch (or fenced, a newer home known): the
+// machines' database roles are not let in (pg_hba.conf), their copies' replication roles
+// are (a copy takes the switch's marker over it).
+const frozenMarker = "maktaba-frozen"
+
+// Frozen reports whether the machines' roles are kept out (SetFrozen).
+func (b Bundle) Frozen() bool {
+	_, err := os.Stat(filepath.Join(b.Data, frozenMarker))
+	return err == nil
+}
+
+// SetFrozen keeps the machines' database roles out of this server (on) or lets them in
+// again: pg_hba.conf written at once; the caller reloads the server (and ends the
+// sessions open): a session may set itself read-write, a role not let in has none.
+func (b Bundle) SetFrozen(on bool) error {
+	path := filepath.Join(b.Data, frozenMarker)
+	if on {
+		if err := os.WriteFile(path, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
+			return err
+		}
+	} else if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return b.writeHBA()
+}
+
 // LastReach is the Reach the cluster last asked for (none yet: closed).
 func (b Bundle) LastReach() Reach {
 	var r Reach

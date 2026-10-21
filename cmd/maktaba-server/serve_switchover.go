@@ -71,7 +71,15 @@ const (
 	kitRelayCred = supervisor.RelayCredFile
 	kitRelayKey  = supervisor.RelayKeyFile
 	kitCloud     = "cloud.json"
+	// the model server the home's LLM stages used when it is another machine's ([llm] url)
+	kitLLM = "llm.json"
 )
+
+// kitLLMServer is the [llm] url and models a kit carries.
+type kitLLMServer struct {
+	URL    string   `json:"url"`
+	Models []string `json:"models,omitempty"`
+}
 
 // switching is this machine's part of a switch.
 type switching struct {
@@ -204,10 +212,16 @@ func (s *switching) adminHandler(base http.Handler) http.Handler {
 			// this home can be switched: its database is Maktaba's own (above)
 			out = map[string]any{"ok": true}
 		case "freeze":
-			err = s.withSuper(func(db *sql.DB) error { return switchover.Freeze(ctx, db, req.ID) })
+			// the machines' roles kept out first (a session may set itself read-write: a role
+			// not let in has none), then every session read-only and the marker
+			err = s.frozen(ctx, true)
+			if err == nil {
+				err = s.withSuper(func(db *sql.DB) error { return switchover.Freeze(ctx, db, req.ID) })
+			}
 		case "thaw":
 			// the switch is over here (undone): the kit made for it goes, and another may start
 			if err = s.withSuper(func(db *sql.DB) error { return switchover.Thaw(ctx, db) }); err == nil {
+				err = s.frozen(ctx, false)
 				_ = wipeFile(filepath.Join(s.dir(req.ID), "kit.chunks"))
 				s.release(req.ID)
 			}
@@ -374,6 +388,21 @@ func (s *switching) newHomeOf(ctx context.Context, req homeRequest) (any, error)
 		}
 	}
 	return map[string]any{"home": nil}, nil
+}
+
+// frozen keeps the machines' database roles out of this home's Postgres (on) or lets
+// them in again, at once (pgbundle.Bundle.SetFrozen, then a reload).
+func (s *switching) frozen(ctx context.Context, on bool) error {
+	if s.pg == nil {
+		return nil
+	}
+	if err := s.pg.SetFrozen(on); err != nil {
+		return fmt.Errorf("the machines' access: %w", err)
+	}
+	return s.withSuper(func(db *sql.DB) error {
+		_, err := db.ExecContext(ctx, `SELECT pg_reload_conf()`)
+		return err
+	})
 }
 
 func (s *switching) withSuper(fn func(*sql.DB) error) error {
@@ -549,6 +578,13 @@ func (s *switching) homeFiles() (map[string][]byte, error) {
 	if s.cfg.Cloud.Enabled {
 		if b, err := json.Marshal(s.cfg.Cloud); err == nil {
 			files[kitCloud] = b
+		}
+	}
+	// a model server of another machine (one bundled here stays here: the new home runs
+	// its own, when it has one)
+	if u := strings.TrimSpace(s.cfg.LLM.URL); u != "" {
+		if b, err := json.Marshal(kitLLMServer{URL: u, Models: s.cfg.LLM.Models}); err == nil {
+			files[kitLLM] = b
 		}
 	}
 	return files, nil
@@ -740,6 +776,10 @@ func (s *switching) demote(req homeRequest) error {
 	}
 	if err := s.withSuper(func(db *sql.DB) error { return switchover.Demote(ctx, db, me.NodeID) }); err != nil {
 		return fmt.Errorf("giving up the home's own: %w", err)
+	}
+	// a machine's own copy: no machine reaches it (it starts again as one)
+	if err := s.pg.SetFrozen(false); err != nil {
+		logf("the machines' access: %v", err)
 	}
 	if err := writeNodeConfig(n); err != nil {
 		return fmt.Errorf("node.json: %w", err)
@@ -1238,6 +1278,13 @@ func (s *switching) becomeHome(ctx context.Context, db *sql.DB, kit *switchover.
 			cloud = &c
 		}
 	}
+	var llm *kitLLMServer
+	if b, ok := kit.Files[kitLLM]; ok {
+		var l kitLLMServer
+		if json.Unmarshal(b, &l) == nil && l.URL != "" {
+			llm = &l
+		}
+	}
 	if err := editConfig(func(c *config.Config) {
 		c.Postgres.Enabled, c.Postgres.Home, c.Postgres.Port, c.Postgres.CopyPort = "on", db2.Home, db2.Port, 0
 		c.Database.URL = ""
@@ -1246,6 +1293,13 @@ func (s *switching) becomeHome(ctx context.Context, db *sql.DB, kit *switchover.
 			claim, admin := c.Cloud.ClaimCode, c.Cloud.AdminAddr
 			c.Cloud = *cloud
 			c.Cloud.ClaimCode, c.Cloud.AdminAddr = claim, admin
+		}
+		if llm != nil && strings.TrimSpace(c.LLM.URL) == "" {
+			// the old home's model server, unless this machine names its own
+			c.LLM.URL = llm.URL
+			if len(c.LLM.Models) == 0 {
+				c.LLM.Models = llm.Models
+			}
 		}
 	}); err != nil {
 		return newHome{}, fmt.Errorf("server.toml: %w", err)
@@ -1257,7 +1311,7 @@ func (s *switching) becomeHome(ctx context.Context, db *sql.DB, kit *switchover.
 	}
 	path := config.LocalNodeConfigPath()
 	aside := path + ".was-node-" + strconv.FormatInt(term-1, 10)
-	if err := os.Rename(path, aside); err != nil && !(os.IsNotExist(err) && fileExists(aside)) {
+	if err := os.Rename(path, aside); err != nil && (!os.IsNotExist(err) || !fileExists(aside)) {
 		return newHome{}, fmt.Errorf("node.json: %w", err)
 	}
 	home := newHome{APIURL: s.cfg.PublicAPIURL(), WebURL: s.cfg.PublicWebURL(), DBPort: db2.Port,

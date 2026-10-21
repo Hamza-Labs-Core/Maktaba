@@ -271,6 +271,9 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		if c.proc.Args != nil {
 			cmd.Args = append([]string{cmd.Args[0]}, c.proc.Args()...)
 		}
+		if c.proc.BeforeStart != nil {
+			c.proc.BeforeStart()
+		}
 
 		s.mu.Lock()
 		if s.stopping {

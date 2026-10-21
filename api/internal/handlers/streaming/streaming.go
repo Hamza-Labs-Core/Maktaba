@@ -153,6 +153,8 @@ type Handler struct {
 	debounceOnce sync.Once
 	ledger       ledger
 	ledgerOnce   sync.Once
+	// reconcileOnce starts the retry of the sessions not written yet (Mount)
+	reconcileOnce sync.Once
 }
 
 // dbCtx bounds a database call on a node (Offline set); the home waits as before.
@@ -197,6 +199,9 @@ func (h *Handler) Reconcile(ctx context.Context) {
 		return
 	}
 	for id, e := range h.led().pending() {
+		if ctx.Err() != nil {
+			return
+		}
 		qctx, cancel := context.WithTimeout(ctx, offlineDBTimeout)
 		var err error
 		if e.Written {
@@ -219,7 +224,11 @@ func (h *Handler) Reconcile(ctx context.Context) {
 		}
 		cancel()
 		if err != nil {
-			return
+			if h.DB.PingContext(ctx) != nil {
+				return // the database is away again: the next time it is back
+			}
+			// this one does not write (it stays to try again): the others do
+			continue
 		}
 		if e.Written {
 			h.led().closeWritten(id)
@@ -228,6 +237,10 @@ func (h *Handler) Reconcile(ctx context.Context) {
 		}
 	}
 }
+
+// reconcileEvery is how often the sessions not written yet are tried again besides the
+// database coming back (one that failed then, or a restart's while it answered).
+const reconcileEvery = 5 * time.Minute
 
 // led is the node's ledger, kept where the node says (Offline.LedgerPath).
 func (h *Handler) led() *ledger {
@@ -274,8 +287,20 @@ func (h *Handler) Mount(r chi.Router) {
 	}
 	h.debounceOnce.Do(func() { h.debounce = newSessionDebouncer(time.Second) })
 	if h.Offline != nil {
-		// the sessions opened while the database was down are written once it answers
+		// the sessions opened while the database was down are written once it answers,
+		// and tried again now and then (one that did not write then)
 		h.Offline.WhenDBBack(func() { h.Reconcile(context.Background()) })
+		h.reconcileOnce.Do(func() {
+			go func() {
+				t := time.NewTicker(reconcileEvery)
+				defer t.Stop()
+				for range t.C {
+					if len(h.led().pending()) > 0 {
+						h.Reconcile(context.Background())
+					}
+				}
+			}()
+		})
 	}
 	r.Get("/api/stream/capabilities", h.GetCapabilities)
 	r.Post("/api/stream/sessions", h.OpenSession)

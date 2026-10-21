@@ -44,12 +44,18 @@ type Manager struct {
 	// StuckAfter: errors applying the home's changes for this long (0: 10 min) mean the
 	// copy cannot follow any more: it subscribes anew.
 	StuckAfter time.Duration
+	// StallAfter: a first copy in which no table's copy finished for this long (0: 2 h)
+	// makes no progress: it subscribes anew.
+	StallAfter time.Duration
 
 	mu     sync.Mutex
 	status Status
 	// erring: since when the subscription's error count keeps rising (zero: it does not)
 	erring   time.Time
 	lastErrs int64
+	// stalled: since when the first copy has finished no table (zero: none under way)
+	stalled   time.Time
+	lastReady int
 	// reporting: a report to the home is under way; pending: the status to report next;
 	// reported and reportedAt: the last one told; offset: the home's clock minus this
 	// machine's, as the last report measured it
@@ -139,6 +145,13 @@ func (m *Manager) stuckAfter() time.Duration {
 		return m.StuckAfter
 	}
 	return 10 * time.Minute
+}
+
+func (m *Manager) stallAfter() time.Duration {
+	if m.StallAfter > 0 {
+		return m.StallAfter
+	}
+	return 2 * time.Hour
 }
 
 // Status is the copy's last status.
@@ -429,9 +442,13 @@ func (m *Manager) resubscribeReason(g Grant, local int64) string {
 	}
 	m.mu.Lock()
 	stuck := !m.erring.IsZero() && m.now().Sub(m.erring) >= m.stuckAfter()
+	stalled := !m.stalled.IsZero() && m.now().Sub(m.stalled) >= m.stallAfter()
 	m.mu.Unlock()
-	if stuck {
+	switch {
+	case stuck:
 		return "the home's changes keep failing to apply"
+	case stalled:
+		return "the first copy made no progress"
 	}
 	return ""
 }
@@ -466,7 +483,7 @@ func (m *Manager) resubscribe(ctx context.Context, local int64, why string) erro
 		return err
 	}
 	m.mu.Lock()
-	m.erring, m.lastErrs = time.Time{}, 0
+	m.erring, m.lastErrs, m.stalled, m.lastReady = time.Time{}, 0, time.Time{}, 0
 	m.mu.Unlock()
 	m.logf("subscribed to the home's publication (%d tables): %s", len(g.Tables), why)
 	return m.Copy.writeMark(Marker{SystemID: g.SystemID, LocalSchema: local, Subscribed: m.now().UTC()})
@@ -510,6 +527,13 @@ func (m *Manager) noteErrors(s Status) {
 		m.erring = time.Time{}
 	}
 	m.lastErrs = s.Errors
+	switch {
+	case s.State != StateCopying:
+		m.stalled = time.Time{}
+	case m.stalled.IsZero() || s.Ready > m.lastReady:
+		m.stalled = m.now()
+	}
+	m.lastReady = s.Ready
 }
 
 // revoked wipes the copy: this machine is not the home's any more.

@@ -292,6 +292,7 @@ func (r *Resolver) Watch(ctx context.Context) {
 // it and not cached yet is not cached (gen), and the copy's answers honour it until the
 // copy has it too (revoked).
 func (r *Resolver) Evict(rv delegation.Revoked) int {
+	keep := r.revokedKeep() // the rules are read outside the lock
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.gen++
@@ -300,7 +301,7 @@ func (r *Resolver) Evict(rv delegation.Revoked) int {
 		r.revoked = map[string]time.Time{}
 	}
 	for k, t := range r.revoked {
-		if now.Sub(t) > revokedKeep {
+		if now.Sub(t) > keep {
 			delete(r.revoked, k)
 		}
 	}
@@ -347,21 +348,27 @@ func (r *Resolver) OnEvent(e homelink.Event) {
 	}
 }
 
-// revokedKeep is how long a pushed revocation is honoured on the copy's answers: the
-// copy applies the home's changes within moments.
-const revokedKeep = 5 * time.Minute
+// revokedKeep is how long a pushed revocation is honoured on the copy's answers: past
+// the most the copy may lag and still be read (copyMaxLag; the copy applies the home's
+// changes within moments), at least minRevokedKeep.
+func (r *Resolver) revokedKeep() time.Duration {
+	return max(minRevokedKeep, r.copyMaxLag()+time.Minute)
+}
+
+const minRevokedKeep = 5 * time.Minute
 
 // revokedLately reports whether a pushed revocation named the session (key) or its user
 // lately.
 func (r *Resolver) revokedLately(key, user string) bool {
+	keep := r.revokedKeep()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	now := r.now()
-	if t, ok := r.revoked[key]; ok && now.Sub(t) <= revokedKeep {
+	if t, ok := r.revoked[key]; ok && now.Sub(t) <= keep {
 		return true
 	}
 	t, ok := r.revoked["u:"+user]
-	return ok && user != "" && now.Sub(t) <= revokedKeep
+	return ok && user != "" && now.Sub(t) <= keep
 }
 
 // cached is a credential's cached answer even past its lifetime (whose it was).

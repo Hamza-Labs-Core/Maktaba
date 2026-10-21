@@ -517,6 +517,10 @@
   font-size: var(--font-size-sm);
   overflow-wrap: anywhere;
 }
+.mkt-cl-switch__action {
+  font-weight: 600;
+  white-space: nowrap;
+}
 .mkt-cl-switch__checklist li[data-done="true"] {
   border-inline-start-color: var(--color-success, var(--color-border));
   background: transparent;

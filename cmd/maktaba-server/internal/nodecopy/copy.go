@@ -175,15 +175,14 @@ func (c Copy) Ask(ctx context.Context, fresh bool) (Grant, error) {
 
 // openHome opens the home's database as this machine's own role, for one call under
 // ctx: as HomeDSN says (verify-ca with the home's pinned CA, or plain on the home's word
-// that it has no TLS). A node.json from before its home sealed the CA says prefer, which
-// lib/pq does not take: TLS, with no fallback to a plain connection (and the copy waits
-// for the CA before it asks for anything: ErrNotVerified). Its connections end with
-// ctx's deadline (deadlineDialer): a home switched off answers nothing, and lib/pq
-// alone would wait on it for as long as the socket lives.
+// that it has no TLS). A node.json from before its home sealed the CA (prefer, require:
+// TLS that verifies nothing) gets nothing asked or told until the CA comes over the
+// machine channel: ErrNotVerified. Its connections end with ctx's deadline
+// (deadlineDialer): a home switched off answers nothing, and lib/pq alone would wait on
+// it for as long as the socket lives.
 func (c Copy) openHome(_ context.Context) (*sql.DB, error) {
-	switch sslMode(c.HomeDSN) {
-	case "allow", "prefer":
-		return openBounded(withSSLMode(c.HomeDSN, "require"))
+	if _, err := c.homeTLS(); err != nil {
+		return nil, err
 	}
 	return openBounded(c.HomeDSN)
 }
@@ -251,26 +250,6 @@ func (d deadlineDialer) DialContext(ctx context.Context, network, address string
 		_ = nc.SetDeadline(dl)
 	}
 	return nc, err
-}
-
-// sslMode is a URL dsn's sslmode ("" for none, or a dsn that is not a URL).
-func sslMode(dsn string) string {
-	u, err := url.Parse(dsn)
-	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
-		return ""
-	}
-	return strings.ToLower(u.Query().Get("sslmode"))
-}
-
-func withSSLMode(dsn, mode string) string {
-	u, err := url.Parse(dsn)
-	if err != nil {
-		return dsn
-	}
-	q := u.Query()
-	q.Set("sslmode", mode)
-	u.RawQuery = q.Encode()
-	return u.String()
 }
 
 // Report tells the home how the copy is (cluster_node_report_replica).

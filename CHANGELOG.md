@@ -45,11 +45,19 @@ don't append a line here; docs-only PRs are exempt.
   the Hugging Face token, an operator's JWT keys) sealed to that machine over the machines'
   channel, and the machine takes over without copying the database again: every other machine
   follows it from where its copy is, the old home becomes one of its machines, and a machine that
-  was off follows when it is back (its old home hands it a notice sealed to it). Plex Live TV
-  moves too (the tuner and its guide pointed at the new home, Plex's DVR and channels kept), and
-  the tab shows each machine and each outside service as moved, being moved, failed, or what a
-  person must do (signing in to YouTube in a browser on the new home; a model runtime there). A
-  switch that cannot go through is undone. `GET /api/cluster/self` carries the cluster's term.
+  was off follows when it is back (any machine of the cluster hands it a notice sealed to it).
+  Two homes never write: once the promotion is asked the old home stays read-only (the machines'
+  database roles kept out too) until the new home says it is the home or called the switch off,
+  also when its answer is lost; one switch runs at a time; a switch is taken up after a restart of
+  the old home; the promotion is one transaction (a failed one leaves the copy following the old
+  home); the old home gives up its data only once it receives the new home's changes, and then
+  keeps none of the home's keys. Plex Live TV moves too (the tuner and its guide pointed at the
+  new home, Plex's DVR, its recording schedules and channels kept), Plex and dizqueTV are checked
+  from the new home (an address that was the old home's own is moved to its network address), as
+  are Cloudflare's notifications, and the tab shows each machine and each outside service as
+  moved, being moved, failed, or what a person must do (signing in to YouTube in a browser on the
+  new home; a model runtime there). A switch that cannot go through is undone. `GET
+  /api/cluster/self` carries the cluster's term.
 - **A standby home can take over when the home is gone for good** (Epic 37, "Emergency
   promotion"). On the Machines tab the admin marks full machines as standby homes. Each one
   keeps the home's secrets and keys sealed to it alone. The home sends them again within two
@@ -66,8 +74,9 @@ don't append a line here; docs-only PRs are exempt.
   while `[cloud]` is enabled. A switch stops it on the old home, carries its credentials, and
   starts it on the new one. It ships with the Mac and Linux apps.
 - **After a switch, a checklist on the new home**: what needs a person there (YouTube in a
-  browser, a model runtime, a Live TV tuner set by hand) is ticked off by hand, or by itself
-  where Maktaba can tell (a model runtime that answers).
+  browser, a model runtime, a Live TV tuner set by hand, Cloudflare's notification address) is
+  one click from where it is done in the control centre, and ticked off by hand, or by itself
+  where Maktaba can tell (a model runtime that answers, a notification that arrives).
 - **The machines reach only what they need of the home's database** (Epic 37). The bundled
   Postgres listens beyond its own machine, and lets anyone in from off it, only while a machine
   may connect (one is approved, or joins are open). It starts again by itself when that
@@ -77,9 +86,13 @@ don't append a line here; docs-only PRs are exempt.
   CA comes with the join, over the machines' channel (for a machine joined earlier), or with a
   switch; a machine without it does not connect its copy. A machine's replication password
   never leaves it (the home gets its SCRAM verifier), only full machines get a copy, and a copy
-  holds web sessions by their hash only. A sign-in on a machine while its home is away refuses
-  a user who must change their password. The sessions it opens are written to the home's
-  history, with their closing, also after a restart of the machine.
+  holds web sessions by their hash only. A machine's replication role reads only what is
+  published to it: Maktaba's Postgres builds have no logical decoding plugin but `pgoutput`, the
+  slot functions are the home's alone, and the home drops any slot that is not Maktaba's within
+  seconds. A sign-in on a machine while its home is away refuses a user who must change their
+  password. The sessions it opens are written to the home's history, with their closing, also
+  after a restart of the machine; a sign-out there of a session newer than the copy reaches the
+  home too.
 
 ### Changed
 

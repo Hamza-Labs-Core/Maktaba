@@ -262,14 +262,21 @@ func (b Bundle) hbaConf() string {
 	s.WriteString("host    all          all              127.0.0.1/32    scram-sha-256\n")
 	s.WriteString("host    all          all              ::1/128         scram-sha-256\n")
 	if r := b.LastReach(); b.LAN && r.Open {
-		s.WriteString("# The cluster's machines: their database roles, and their copies' replication roles.\n")
+		frozen := b.Frozen()
+		if frozen {
+			s.WriteString("# Frozen for a switch of the home: the machines' database roles wait; their copies follow.\n")
+		} else {
+			s.WriteString("# The cluster's machines: their database roles, and their copies' replication roles.\n")
+		}
 		from := b.machinesFrom()
 		if len(from) == 1 && from[0] == "samenet" {
 			// a machine on another network (a VPN) by its own address
 			from = append(from, r.machineAddrs()...)
 		}
 		for _, from := range from {
-			fmt.Fprintf(&s, "%-7s %-12s %-16s %-15s scram-sha-256\n", remote, AppDatabase, "+"+WorkerGroup, from)
+			if !frozen {
+				fmt.Fprintf(&s, "%-7s %-12s %-16s %-15s scram-sha-256\n", remote, AppDatabase, "+"+WorkerGroup, from)
+			}
 			fmt.Fprintf(&s, "%-7s %-12s %-16s %-15s scram-sha-256\n", remote, AppDatabase, "+"+ReplicaGroup, from)
 		}
 	}

@@ -81,6 +81,8 @@ class FakeLiveTV:
     same_device: str = "update"
     #: Plex answers a channel-map push but keeps the map it had
     ignore_channelmap: bool = False
+    #: a DVR whose last tuner leaves it: ``kept`` (it waits for another) or ``dropped``
+    empty_dvr: str = "kept"
     _next: int = 10
 
     def add_device(self, uri: str, device_id: str, title: str = "HDHomeRun") -> str:
@@ -212,6 +214,8 @@ class FakeLiveTV:
                 return None
             dvr["devices"].remove(parts[4])
             self.devices[parts[4]].pop("parentID", None)
+            if not dvr["devices"] and self.empty_dvr == "dropped":
+                del self.dvrs[parts[2]]
             return {}
         if method == "DELETE" and parts[:3] == ["media", "grabbers", "devices"] and len(parts) == 4:
             if parts[3] not in self.devices:
@@ -933,20 +937,41 @@ async def test_a_tuner_plex_keeps_at_the_old_address_is_added_again_here(db: Dat
 @pytest.mark.asyncio
 @pytest.mark.parametrize("same_device", ["update", "keep"])
 async def test_a_dvr_of_maktabas_own_follows_the_tuner(db: Database, same_device: str) -> None:
-    # no other DVR: Maktaba made one, whose guide was the old home's
+    # no other DVR: Maktaba made one, whose guide was the old home's; it is the same DVR
+    # after the move (its recording schedules are its own): never deleted
     w = await make_world(db, dizquetv=False)
     await registered_at_the_old_home(db, w)
     assert [d["lineups"] for d in w.fake.dvrs.values()] == [[OLD_GUIDE]]
+    (before,) = w.fake.dvrs
     w.fake.same_device = same_device
     row = await livetv(db, w, force=True)
     assert row["state"] == "done", error_of(row)
-    assert len(w.fake.dvrs) == 1 and len(w.fake.devices) == 1
+    assert list(w.fake.dvrs) == [before] and len(w.fake.devices) == 1
+    assert ("DELETE", f"/livetv/dvrs/{before}") not in w.fake.writes()
     (dvr,) = w.fake.dvrs.values()
     (device,) = w.fake.devices.values()
     assert dvr["lineups"] == [NEW_GUIDE] and dvr["lineup"] == NEW_GUIDE
     assert device["uri"] == TUNER and dvr["devices"] == [device["key"]]
     s = await status(db)
     assert s["actions"]["register"] == "moved" and s["maktaba"]["registered"]
+    assert not any("schedules" in x for x in s["warnings"])
+
+
+@pytest.mark.asyncio
+async def test_a_dvr_plex_drops_with_its_last_tuner_is_made_again_and_said(db: Database) -> None:
+    w = await make_world(db, dizquetv=False)
+    await registered_at_the_old_home(db, w)
+    (before,) = w.fake.dvrs
+    w.fake.same_device, w.fake.empty_dvr = "keep", "dropped"
+    row = await livetv(db, w, force=True)
+    assert row["state"] == "done", error_of(row)
+    assert before not in w.fake.dvrs and len(w.fake.dvrs) == 1
+    (dvr,) = w.fake.dvrs.values()
+    (device,) = w.fake.devices.values()
+    assert device["uri"] == TUNER and dvr["devices"] == [device["key"]]
+    s = await status(db)
+    assert s["actions"]["register"] == "moved" and s["maktaba"]["registered"]
+    assert any("recording schedules did not move" in x for x in s["warnings"])
 
 
 @pytest.mark.asyncio

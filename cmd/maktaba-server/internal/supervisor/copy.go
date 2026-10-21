@@ -31,8 +31,9 @@ func BuildCopy(c nodecopy.Copy) (Process, error) {
 		Check: func(ctx context.Context) error {
 			return postgresCheck(pgbundle.Ready(ctx, c.Addr(), pgbundle.AppRole, pgbundle.AppDatabase))
 		},
-		StopSignal: os.Interrupt, // fast shutdown
-		OnDemand:   true,
+		StopSignal:  os.Interrupt, // fast shutdown
+		OnDemand:    true,
+		BeforeStart: c.DB.ClearStaleLock,
 	}
 	if runtime.GOOS == "windows" {
 		p.Stop = func() { _ = c.DB.StopCommand().Run() }

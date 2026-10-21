@@ -37,8 +37,12 @@ type Secrets interface {
 // each moved with the kit and checked from here, or what only a person can do.
 //
 //   - secrets: every secret the old home kept opens with the key it handed over;
-//   - plex, cloudflare_stream, simulcast, web_search: their secrets open (they are
+//   - plex, dizquetv: they answer from here at the address the pipeline has for them
+//     (an address that was the old home's own is moved to its network address when
+//     they answer there: checkService);
+//   - cloudflare_stream, simulcast, web_search: their secrets open (cloud services,
 //     bound to no machine);
+//   - cf_webhook: Cloudflare's notifications reach this home (cfWebhook);
 //   - plex_live_tv: the plex_livetv stage moves Plex's tuner and guide to this machine's
 //     address (pending until it answers);
 //   - hugging_face: the token came with the kit;
@@ -84,7 +88,7 @@ func HomeIntegrations(db *sql.DB, store Secrets, hfToken string, publicStream fu
 		} else {
 			out["secrets"] = Integration{State: Failed, Detail: strings.Join(bad, ", ")}
 		}
-		for name, prefix := range map[string]string{"plex": "ext.plex.token", "cloudflare_stream": "cf_api_token",
+		for name, prefix := range map[string]string{"cloudflare_stream": "cf_api_token",
 			"simulcast": "simulcast_", "web_search": "ext.web_search."} {
 			switch has, ok, _ := opened(prefix); {
 			case !has:
@@ -95,6 +99,10 @@ func HomeIntegrations(db *sql.DB, store Secrets, hfToken string, publicStream fu
 				out[name] = Integration{State: Failed, Detail: "its secret does not open with the key handed over"}
 			}
 		}
+		oldHost := oldHomeHost(ctx, db)
+		out["plex"] = checkService(ctx, db, store, plexService, oldHost)
+		out["dizquetv"] = checkService(ctx, db, store, dizquetvService, oldHost)
+		out["cf_webhook"] = cfWebhook(ctx, db, os.Getenv("MAKTABA_WEB_URL"))
 		out["plex_live_tv"] = liveTV(ctx, db, publicStream)
 		if hfToken != "" {
 			if _, err := os.Stat(hfToken); err == nil {

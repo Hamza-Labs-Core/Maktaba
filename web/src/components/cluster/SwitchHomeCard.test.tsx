@@ -215,6 +215,42 @@ describe("Switching the home", () => {
       item: "llm",
       done: false,
     });
+    // each item has where in the control centre it is done
+    expect(within(youtube).getByRole("link", { name: "Choose the browser" })).toHaveAttribute(
+      "href",
+      "/settings/rules?section=exactdates&q=cookies_from_browser"
+    );
+    expect(within(llm).getByRole("link", { name: "Set the model server" })).toHaveAttribute(
+      "href",
+      "/settings/rules?section=tagcheck&q=url"
+    );
+  });
+
+  it("says what a service needs when its address is not set on the new home", async () => {
+    get.mockResolvedValue(
+      status({
+        recent: [
+          progress({
+            state: "done",
+            integrations: {
+              plex: { state: "needs_you", detail: "no_address" },
+              cf_webhook: { state: "needs_you", detail: "http://b:8080/api/tv/remote/webhook" },
+            },
+          }),
+        ],
+      })
+    );
+    renderCard();
+    const list = await screen.findByText("To do on", { exact: false });
+    const note = list.closest("[role='note']") as HTMLElement;
+    expect(within(note).getByText(/Plex's address isn't set on this machine/)).toBeInTheDocument();
+    const hook = within(note)
+      .getByText(/http:\/\/b:8080\/api\/tv\/remote\/webhook/)
+      .closest("li") as HTMLElement;
+    expect(within(hook).getByRole("link", { name: "Open remote TV" })).toHaveAttribute(
+      "href",
+      "/admin/live-tv"
+    );
   });
 
   it("marks a full machine a standby home, and says what each one holds", async () => {

@@ -53,6 +53,25 @@ func TestHBAConf(t *testing.T) {
 	if strings.Contains(plain, "hostssl") || !strings.Contains(plain, "host    maktaba      +maktaba_replicas samenet") {
 		t.Fatalf("TLS off:\n%s", plain)
 	}
+	// frozen for a switch: the machines' roles wait, their copies follow; thawed, as before
+	b := clusterBundle(t, true, true)
+	if err := b.SetFrozen(true); err != nil {
+		t.Fatal(err)
+	}
+	written, err := os.ReadFile(filepath.Join(b.Data, "pg_hba.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !b.Frozen() || strings.Contains(string(written), "+maktaba_worker") ||
+		!strings.Contains(string(written), "hostssl maktaba      +maktaba_replicas samenet") {
+		t.Fatalf("frozen:\n%s", written)
+	}
+	if err := b.SetFrozen(false); err != nil {
+		t.Fatal(err)
+	}
+	if b.Frozen() || !strings.Contains(b.hbaConf(), "hostssl maktaba      +maktaba_worker  samenet") {
+		t.Fatalf("thawed:\n%s", b.hbaConf())
+	}
 }
 
 func TestMachinesFrom(t *testing.T) {

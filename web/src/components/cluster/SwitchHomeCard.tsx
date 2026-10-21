@@ -299,7 +299,7 @@ function Integrations({
       {needs.length > 0 && (
         <ul className="mkt-cl-switch__needs" role="note">
           {needs.map(([name, v]) => (
-            <li key={name}>{t(`machines.switch.needs.${name}`, { detail: v.detail ?? "" })}</li>
+            <li key={name}>{t(needKey(name, v), { detail: v.detail ?? "" })}</li>
           ))}
         </ul>
       )}
@@ -323,7 +323,31 @@ function IntegrationList({ items }: { items: [string, SwitchIntegration][] }) {
   );
 }
 
-/** What a person does on the new home after a switch, ticked off as done. */
+/** Where in the control centre a person does what an item of the checklist needs. */
+export const CHECKLIST_ACTION: Record<string, string> = {
+  youtube: "/settings/rules?section=exactdates&q=cookies_from_browser",
+  llm: "/settings/rules?section=tagcheck&q=url",
+  hugging_face: "/settings/models",
+  plex: "/admin/extensions",
+  dizquetv: "/admin/extensions",
+  web_search: "/admin/extensions",
+  secrets: "/admin/extensions",
+  plex_live_tv: "/admin/live-tv",
+  cf_webhook: "/admin/live-tv",
+  cloudflare_stream: "/admin/live-tv",
+  simulcast: "/admin/live-tv",
+  relay: "/cloud/status",
+};
+
+/** The text of what an item needs: its own when its address is not known here. */
+function needKey(name: string, v: SwitchIntegration): string {
+  return v.detail === "no_address"
+    ? `machines.switch.needs.${name}_no_address`
+    : `machines.switch.needs.${name}`;
+}
+
+/** What a person does on the new home after a switch, each with where to do it in the
+ * control centre, ticked off as done (or seen done by a check). */
 function Checklist({
   p,
   needs,
@@ -351,7 +375,12 @@ function Checklist({
         {needs.map(([name, v]) => (
           <li key={name} data-done={v.done ? "true" : "false"}>
             {v.done && <Badge tone="success">{t("machines.checklist.checked")}</Badge>}{" "}
-            <span>{t(`machines.switch.needs.${name}`, { detail: v.detail ?? "" })}</span>{" "}
+            <span>{t(needKey(name, v), { detail: v.detail ?? "" })}</span>{" "}
+            {CHECKLIST_ACTION[name] && (
+              <a className="mkt-cl-switch__action" href={CHECKLIST_ACTION[name]}>
+                {t(`machines.checklist.action.${name}`)}
+              </a>
+            )}{" "}
             <Button variant="ghost" size="sm" disabled={busy} onClick={() => mark(name, !v.done)}>
               {v.done ? t("machines.checklist.undo") : t("machines.checklist.done")}
             </Button>

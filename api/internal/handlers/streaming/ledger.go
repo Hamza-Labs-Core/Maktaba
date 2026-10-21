@@ -55,7 +55,8 @@ func (l *ledger) load() {
 	}
 }
 
-// save keeps the ledger (held lock); best-effort: a failure leaves it in memory.
+// save keeps the ledger (held lock), on disk before it replaces the last one (a power
+// cut leaves one or the other whole); best-effort: a failure leaves it in memory.
 func (l *ledger) save() {
 	if l.path == "" {
 		return
@@ -68,10 +69,23 @@ func (l *ledger) save() {
 		return
 	}
 	tmp := l.path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
 		return
 	}
-	_ = os.Rename(tmp, l.path)
+	_, werr := f.Write(b)
+	serr := f.Sync()
+	if cerr := f.Close(); werr != nil || serr != nil || cerr != nil {
+		_ = os.Remove(tmp)
+		return
+	}
+	if os.Rename(tmp, l.path) != nil {
+		return
+	}
+	if d, err := os.Open(filepath.Dir(l.path)); err == nil {
+		_ = d.Sync() // the rename itself (not on every system)
+		_ = d.Close()
+	}
 }
 
 // open records a session; false when the id is another user's session.
