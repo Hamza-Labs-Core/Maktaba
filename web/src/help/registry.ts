@@ -150,12 +150,20 @@ export function waitingHelp(reason: string): HelpRef {
 }
 
 /**
- * The queue-health epic's failure classes ("Failing items"): add each class
- * here with its entry; until then a class links to its cause's entry, or to
- * the general one.
+ * The queue-health failure classes (Epic 40, "Failing items": transient,
+ * dependency:model:<section>, dependency:share:<root>, resource:disk,
+ * resource:shm, item_permanent, unknown). Epic 40 adds an entry per class
+ * here, keyed by the class without its detail ("dependency:model"), with its
+ * section in the failures topic; until then a class links to the general
+ * entry, and its causes keep their own entries (causeHelp).
  */
 export const FAILURE_CLASS_HELP: Readonly<Record<string, HelpRef>> = {};
 
 export function failureClassHelp(cls: string): HelpRef {
-  return FAILURE_CLASS_HELP[cls] ?? causeHelp(cls);
+  const parts = cls.split(":");
+  for (let n = parts.length; n > 0; n--) {
+    const hit = FAILURE_CLASS_HELP[parts.slice(0, n).join(":")];
+    if (hit) return hit;
+  }
+  return causeHelp(cls);
 }
