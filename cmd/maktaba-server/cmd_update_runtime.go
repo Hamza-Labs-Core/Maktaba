@@ -69,7 +69,7 @@ func runRuntimeUpdate(ctx context.Context, out io.Writer, d runtimeDeps, src rel
 	}
 	fmt.Fprintf(out, "current: %s\n", orNone(st.Version))
 	fmt.Fprintf(out, "release: %s\n", rel.Tag)
-	if target == "" && !selfupdate.Newer(rel.Tag, st.Version) {
+	if target == "" && appruntime.CompareVersions(rel.Tag, st.Version) <= 0 {
 		fmt.Fprintln(out, "You are up to date.")
 		return nil
 	}

@@ -63,3 +63,30 @@ func TestProcStat(t *testing.T) {
 		t.Error("a process that does not exist")
 	}
 }
+
+// An orphan that cannot die (uninterruptible I/O on a hung NFS or SMB mount)
+// is killed and given up on after orphanKillWait: the launcher never blocks
+// on it, and reap() collects it once it is gone.
+func TestStopOrphansNeverWaitsForOneThatCannotDie(t *testing.T) {
+	prevList, prevKill, prevWait, prevKW := listOrphans, killOrphan, wait4, orphanKillWait
+	t.Cleanup(func() { listOrphans, killOrphan, wait4, orphanKillWait = prevList, prevKill, prevWait, prevKW })
+	stuck := []orphan{{pid: 1 << 30, pgid: 1 << 30}}
+	var sent []syscall.Signal
+	listOrphans = func() []orphan { return stuck }
+	killOrphan = func(_ orphan, sig syscall.Signal) { sent = append(sent, sig) }
+	wait4 = func(_ int, _ *syscall.WaitStatus, options int, _ *syscall.Rusage) (int, error) {
+		if options&syscall.WNOHANG == 0 {
+			t.Error("a wait that blocks")
+		}
+		return 0, nil
+	}
+	orphanKillWait = 200 * time.Millisecond
+	start := time.Now()
+	stopOrphans(100 * time.Millisecond)
+	if d := time.Since(start); d > 2*time.Second {
+		t.Errorf("stopOrphans took %v", d)
+	}
+	if len(sent) != 2 || sent[0] != syscall.SIGTERM || sent[1] != syscall.SIGKILL {
+		t.Errorf("signals %v", sent)
+	}
+}

@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
 // The runtime root's links and files besides the installed directories.
@@ -165,7 +163,7 @@ func (r Runtime) Watermark() string {
 
 // raiseWatermark sets the watermark to v when v is newer (it never falls).
 func (r Runtime) raiseWatermark(v string) error {
-	if w := r.Watermark(); w != "" && layout.CompareVersions(v, w) <= 0 {
+	if w := r.Watermark(); w != "" && CompareVersions(v, w) <= 0 {
 		return nil
 	}
 	tmp := filepath.Join(r.Root, watermarkFn+".new")
@@ -179,7 +177,7 @@ func (r Runtime) raiseWatermark(v string) error {
 // never older than the newest this machine ran) unless opt allows it.
 func (r Runtime) checkVersion(v string, opt Options) error {
 	w := r.Watermark()
-	if opt.AllowDowngrade || w == "" || layout.CompareVersions(v, w) >= 0 {
+	if opt.AllowDowngrade || w == "" || CompareVersions(v, w) >= 0 {
 		return nil
 	}
 	return fmt.Errorf("%w: %s is older than %s, the newest version this machine has run "+
@@ -341,10 +339,10 @@ func (r Runtime) Status(from string) (Status, error) {
 		floor = st.Version
 	}
 	switch {
-	case floor != "" && layout.CompareVersions(p.Version, floor) < 0:
+	case floor != "" && CompareVersions(p.Version, floor) < 0:
 		st.Downgrade = true
 	case st.From == cur:
-	case cur == "", layout.CompareVersions(p.Version, st.Version) >= 0:
+	case cur == "", CompareVersions(p.Version, st.Version) >= 0:
 		st.UpdatePending = true
 	}
 	return st, nil
