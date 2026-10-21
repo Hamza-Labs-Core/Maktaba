@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -65,6 +67,111 @@ func TestSetupCLIDrivesTheSteps(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(e.state, "state", "setup.json")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("the pending answers stay after finish: %v", err)
+	}
+}
+
+// plexCLI runs the terminal's Plex sign-in against the fake plex.tv, through
+// the real plex step; actions records what it asked of the step.
+func plexCLI(ctx context.Context, t *testing.T, in *interrupts) (actions *[]string, done <-chan error) {
+	t.Helper()
+	prev := plexPollEvery
+	plexPollEvery = 5 * time.Millisecond
+	t.Cleanup(func() { plexPollEvery = prev })
+	cfg, found, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &setupRun{ctx: ctx, cfg: cfg, found: found, out: json.NewEncoder(io.Discard), log: io.Discard}
+	var mu sync.Mutex
+	asked := []string{}
+	run := func(step string, v any) (any, error) {
+		raw, _ := json.Marshal(v)
+		var a struct{ Action string }
+		_ = json.Unmarshal(raw, &a)
+		mu.Lock()
+		asked = append(asked, a.Action)
+		mu.Unlock()
+		return setupSteps[step](s, raw)
+	}
+	ch := make(chan error, 1)
+	go func() { ch <- setupPlexCLI(ctx, newPrompterFrom(strings.NewReader("y\n")), run, in.skippable) }()
+	return &asked, ch
+}
+
+func waitResult(t *testing.T, done <-chan error) error {
+	t.Helper()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(20 * time.Second):
+		t.Fatal("the Plex sign-in did not end")
+		return nil
+	}
+}
+
+// plex.tv not answering for a moment is asked again; the sign-in then goes on.
+func TestSetupPlexCLIRetriesWhilePlexDoesNotAnswer(t *testing.T) {
+	newSetupEnv(t)
+	fp := newFakePlex(t)
+	fp.authorised, fp.failPolls = true, 2
+	in := &interrupts{cancel: func() { t.Error("the setup was stopped") }}
+	_, done := plexCLI(context.Background(), t, in)
+	if err := waitResult(t, done); err != nil {
+		t.Fatalf("a moment without plex.tv ended the setup: %v", err)
+	}
+	if _, err := os.Stat(plexTokenPath()); err != nil {
+		t.Fatalf("Plex is not linked: %v", err)
+	}
+}
+
+// Ctrl+C during the wait skips the sign-in, and the setup goes on (its
+// context is not cancelled); after the wait, a Ctrl+C stops the setup again.
+func TestSetupPlexCLISkipsOnCtrlC(t *testing.T) {
+	newSetupEnv(t)
+	fp := newFakePlex(t) // never signed in
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	in := &interrupts{cancel: cancel}
+	actions, done := plexCLI(ctx, t, in)
+	for deadline := time.Now().Add(10 * time.Second); fp.requests() < 3; {
+		if time.Now().After(deadline) {
+			t.Fatal("the wait did not poll plex.tv")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	in.deliver(os.Interrupt)
+	if err := waitResult(t, done); err != nil {
+		t.Fatalf("Ctrl+C ended the setup: %v", err)
+	}
+	if ctx.Err() != nil {
+		t.Fatal("Ctrl+C during the wait cancelled the setup's steps")
+	}
+	if got := *actions; got[len(got)-1] != "skip" {
+		t.Fatalf("the sign-in was not skipped: %v", got)
+	}
+	in.deliver(os.Interrupt)
+	if ctx.Err() == nil {
+		t.Fatal("a Ctrl+C after the wait did not stop the setup")
+	}
+}
+
+// A stop of the setup (SIGTERM) during the wait ends it.
+func TestSetupPlexCLIEndsWhenTheSetupStops(t *testing.T) {
+	newSetupEnv(t)
+	fp := newFakePlex(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	in := &interrupts{cancel: cancel}
+	_, done := plexCLI(ctx, t, in)
+	for deadline := time.Now().Add(10 * time.Second); fp.requests() < 2; {
+		if time.Now().After(deadline) {
+			t.Fatal("the wait did not poll plex.tv")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	in.deliver(syscall.SIGTERM)
+	if err := waitResult(t, done); !errors.Is(err, context.Canceled) {
+		t.Fatalf("a stop during the wait: %v", err)
 	}
 }
 

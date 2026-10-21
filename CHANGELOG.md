@@ -47,6 +47,13 @@ don't append a line here; docs-only PRs are exempt.
 - **`maktaba-server setup` (the CLI wizard) seeds the admin again.** It called `adduser` with
   `--username`/`--password` flags the api does not have; it now passes the username and a
   password file.
+- **The terminal setup's Plex sign-in can be skipped, and survives a moment without plex.tv.**
+  Ctrl+C while it waits for the code skipped nothing: it stopped the whole setup before `finish`,
+  as did a single poll plex.tv did not answer. Ctrl+C now skips the sign-in and the setup goes on;
+  plex.tv not answering is said once and asked again until the code expires; a second Ctrl+C
+  elsewhere ends the setup even at a question. Every code a setup step fails with now has its
+  words in English and Arabic (a test keeps it so): the language model's, a bad request's, an
+  unknown step's, unreadable settings', an unexpected failure's.
 - **After the app's setup the server runs on the bundled Postgres, with its transcription
   workers.** Saving `server.toml` wrote every default, so setup's `finish` left `[database] url`
   set to the default SQLite file: the next start never ran the bundled Postgres (the database setup

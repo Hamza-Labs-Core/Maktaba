@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -73,8 +74,10 @@ func runSetupWith(p *prompter) error {
 	if err != nil {
 		return err
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	intr := listenInterrupts(cancel)
+	defer intr.stop()
 	s := &setupRun{ctx: ctx, cfg: cfg, found: found, out: json.NewEncoder(terminalProgress{w: os.Stdout}), log: os.Stderr}
 	run := func(step string, in any) (any, error) {
 		raw, err := json.Marshal(in)
@@ -165,7 +168,7 @@ func runSetupWith(p *prompter) error {
 		break
 	}
 
-	if err := setupPlexCLI(p, run); err != nil {
+	if err := setupPlexCLI(ctx, p, run, intr.skippable); err != nil {
 		return err
 	}
 
@@ -185,9 +188,19 @@ func runSetupWith(p *prompter) error {
 	return nil
 }
 
+// The terminal's wait for the Plex sign-in: a poll this often, and at most as
+// long as a plex.tv PIN lasts (vars for the tests).
+var (
+	plexPollEvery = 3 * time.Second
+	plexWaitLimit = 30 * time.Minute
+)
+
 // setupPlexCLI is the optional Plex sign-in (the plex step's PIN flow): the
-// code to enter at plex.tv/link, then a wait until it is entered.
-func setupPlexCLI(p *prompter, run func(string, any) (any, error)) error {
+// code to enter at plex.tv/link, then a wait until it is entered. Ctrl+C
+// skips it (skippable: the setup goes on to finish); plex.tv not answering
+// for a moment is said once and asked again; a stop of the setup ends it.
+func setupPlexCLI(ctx context.Context, p *prompter, run func(string, any) (any, error),
+	skippable func() (<-chan struct{}, func())) error {
 	if !p.yesNo("\nSign in to Plex now (your Plex libraries and watch history)?", false) {
 		_, err := run("plex", map[string]string{"action": "skip"})
 		return err
@@ -197,23 +210,106 @@ func setupPlexCLI(p *prompter, run func(string, any) (any, error)) error {
 		return err
 	}
 	pin, _ := res.(map[string]any)
+	skipped, done := skippable()
+	defer done()
 	fmt.Printf("Enter this code at %v: %v\nWaiting for Plex (Ctrl+C to skip)…\n", pin["link_url"], pin["code"])
+	later := "sign in later in Settings › Extensions › Plex."
+	deadline := time.Now().Add(plexWaitLimit)
+	unreachable := false
 	for {
-		time.Sleep(3 * time.Second)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-skipped:
+			fmt.Println("  Skipped: " + later)
+			_, err := run("plex", map[string]string{"action": "skip"})
+			return err
+		case <-time.After(plexPollEvery):
+		}
+		if time.Now().After(deadline) {
+			fmt.Println("  The Plex code expired: " + later)
+			return nil
+		}
 		res, err := run("plex", map[string]any{"action": "poll", "pin_id": pin["pin_id"]})
 		var se *stepError
 		switch {
+		case ctx.Err() != nil:
+			return ctx.Err()
 		case errors.As(err, &se) && se.code == "pin_expired":
-			fmt.Println("  The Plex code expired: sign in later in Settings › Extensions › Plex.")
+			fmt.Println("  The Plex code expired: " + later)
 			return nil
+		case errors.As(err, &se) && se.code == "network":
+			if !unreachable {
+				fmt.Printf("  %s Trying again (Ctrl+C to skip)…\n", se.message)
+			}
+			unreachable = true
+			continue
 		case err != nil:
 			return err
 		}
+		unreachable = false
 		if linked, _ := res.(map[string]bool); linked["linked"] {
 			fmt.Println("  Plex is linked.")
 			return nil
 		}
 	}
+}
+
+// interrupts routes the terminal setup's stop signals: SIGTERM, or a Ctrl+C,
+// stops the setup (cancel: its steps end, as interrupted), except while a
+// wait a Ctrl+C skips is on (the Plex sign-in): then that Ctrl+C ends the
+// wait and the setup goes on.
+type interrupts struct {
+	cancel func()
+	sigs   chan os.Signal
+	mu     sync.Mutex
+	skip   chan struct{} // closed by the Ctrl+C of the wait on, if any
+}
+
+func listenInterrupts(cancel func()) *interrupts {
+	in := &interrupts{cancel: cancel, sigs: make(chan os.Signal, 1)}
+	signal.Notify(in.sigs, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		for sig := range in.sigs {
+			in.deliver(sig)
+		}
+	}()
+	return in
+}
+
+func (in *interrupts) deliver(sig os.Signal) {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if sig == os.Interrupt && in.skip != nil {
+		close(in.skip)
+		in.skip = nil
+		return
+	}
+	in.cancel()
+	// a question waiting for its answer cannot be cancelled: the next Ctrl+C
+	// ends the setup as it would any program
+	signal.Reset(os.Interrupt, syscall.SIGTERM)
+}
+
+// skippable starts a wait a Ctrl+C ends: the channel closes when one comes;
+// done ends the wait's claim on it (a later Ctrl+C stops the setup again).
+func (in *interrupts) skippable() (<-chan struct{}, func()) {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	ch := make(chan struct{})
+	in.skip = ch
+	return ch, func() {
+		in.mu.Lock()
+		defer in.mu.Unlock()
+		if in.skip == ch {
+			in.skip = nil
+		}
+	}
+}
+
+func (in *interrupts) stop() {
+	signal.Stop(in.sigs)
+	close(in.sigs) // no delivery after Stop: the goroutine ends
 }
 
 // terminalProgress prints the steps' progress lines (the NDJSON the app reads)

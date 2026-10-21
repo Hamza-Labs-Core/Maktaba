@@ -469,7 +469,15 @@ func venvPythonFor(venv string) string {
 type fakePlex struct {
 	mu         sync.Mutex
 	authorised bool
+	failPolls  int // the next polls plex.tv does not answer (500)
 	clientIDs  []string
+}
+
+// requests is how many requests plex.tv has had.
+func (fp *fakePlex) requests() int {
+	fp.mu.Lock()
+	defer fp.mu.Unlock()
+	return len(fp.clientIDs)
 }
 
 func newFakePlex(t *testing.T) *fakePlex {
@@ -483,6 +491,9 @@ func newFakePlex(t *testing.T) *fakePlex {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/pins":
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"id":42,"code":"ABCD"}`))
+		case r.URL.Path == "/api/v2/pins/42" && fp.failPolls > 0:
+			fp.failPolls--
+			w.WriteHeader(http.StatusInternalServerError)
 		case r.URL.Path == "/api/v2/pins/42" && fp.authorised:
 			_, _ = w.Write([]byte(`{"id":42,"authToken":"ACCOUNT-TOKEN"}`))
 		case r.URL.Path == "/api/v2/pins/42":
