@@ -15,7 +15,9 @@ import (
 //	Linux   : $XDG_CONFIG_HOME/maktaba, $XDG_DATA_HOME/maktaba, $XDG_STATE_HOME/maktaba/logs
 //	Windows : %LOCALAPPDATA%\Maktaba (server.toml, keys\, data\, logs\, models\, chroma\,
 //	          postgres\, cache\, backups\): nothing in the roaming profile, so the keys and
-//	          the node's identity never follow the user to another PC
+//	          the node's identity never follow the user to another PC (an install from
+//	          before keeps its originals in %APPDATA%\Maktaba, copied by
+//	          MigrateWindowsDirs, and its large state in data\, StateDir)
 type Dirs struct {
 	Config string // holds server.toml
 	Data   string // the default [server] data_dir
@@ -114,12 +116,32 @@ func LogsDir() string {
 // postgres/, backups/). On macOS and Windows the default data_dir sits inside that
 // root (~/Library/Application Support/Maktaba/data, %LOCALAPPDATA%\Maktaba\data), so
 // the root is its parent; on Linux, and for any data_dir the owner chose, it is
-// data_dir itself (where these always lived on Linux).
-func (c Config) StateDir() string { return stateDir(runtime.GOOS, c.Server.DataDir, LocalDirs().Data) }
+// data_dir itself (where these always lived on Linux). A Windows install from
+// before Epic 38 keeps them in its default data_dir, where its older versions (and
+// a Postgres of its own that may be running) use them: outside the app's payload
+// (InAppPayload), a default data_dir that holds one of them is still the state
+// root. Nothing moves or copies them (story 38.1).
+func (c Config) StateDir() string {
+	exe, _ := os.Executable()
+	return stateDir(runtime.GOOS, c.Server.DataDir, LocalDirs().Data, InAppPayload(exe))
+}
 
-func stateDir(goos, dataDir, defaultData string) string {
+func stateDir(goos, dataDir, defaultData string, inApp bool) string {
 	if (goos == "darwin" || goos == "windows") && dataDir != "" && filepath.Clean(dataDir) == filepath.Clean(defaultData) {
+		if goos == "windows" && !inApp && holdsState(dataDir) {
+			return dataDir
+		}
 		return filepath.Dir(filepath.Clean(dataDir))
 	}
 	return dataDir
+}
+
+// holdsState: dir holds one of the large state's folders (stateFolders).
+func holdsState(dir string) bool {
+	for _, d := range stateFolders {
+		if exists(filepath.Join(dir, d)) {
+			return true
+		}
+	}
+	return false
 }

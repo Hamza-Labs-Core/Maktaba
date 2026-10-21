@@ -33,203 +33,151 @@ func migrateWin(t *testing.T, m mover, old, cur Dirs, env map[string]string) []s
 	return lines
 }
 
-// Epic 38 story 38.1: a Windows install moves its config and keys out of the
-// roaming profile; the data folder was local already and stays, with the models
-// and caches moved beside it (the state root, as on a Mac); the node installer's
-// own files stay where its scripts read them.
-func TestMigrateWindowsInstall(t *testing.T) {
+// Epic 38 story 38.1: a Windows install's config, keys and node.json are copied
+// out of the roaming profile, and the originals stay (an older version of the same
+// install, a node's pipeline run from a checkout or the node installer still read
+// them); the copies win. The large state stays in data\, which stays the state
+// root; nothing of the node installer's is touched.
+func TestMigrateWindowsCopiesAndKeepsTheOriginals(t *testing.T) {
 	t.Parallel()
 	old, cur, env := winLayout(t)
-	toml := "# my PC\n[server]\nweb_listen = \"0.0.0.0:8780\"\n"
-	writeAt(t, filepath.Join(old.Config, "server.toml"), toml)
-	writeAt(t, filepath.Join(old.Config, "secrets.key"), "S")
-	writeAt(t, filepath.Join(old.Config, "stream-signing.key"), "K")
-	writeAt(t, filepath.Join(old.Config, "postgres-maktaba.password"), "P")
-	writeAt(t, filepath.Join(old.Config, "node.json"), `{"node_id":"n"}`)
-	writeAt(t, filepath.Join(old.Config, "node.env"), "MAKTABA_X=1")
-	writeAt(t, filepath.Join(old.Data, "maktaba.db"), "DB")
-	writeAt(t, filepath.Join(old.Data, "models", "huggingface", "w.bin"), "W")
-	writeAt(t, filepath.Join(old.Data, "cache", "streaming", "seg"), "C")
+	originals := map[string]string{
+		"server.toml":               "# my PC\n[server]\nweb_listen = \"0.0.0.0:8780\"\n",
+		"secrets.key":               "S",
+		"stream-signing.key":        "K",
+		"postgres-maktaba.password": "P",
+		"node.json":                 `{"node_id":"n"}`,
+		"node.env":                  "MAKTABA_X=1",
+	}
+	plant(t, old.Config, originals)
+	state := map[string]string{"maktaba.db": "DB", "models/huggingface/w.bin": "W", "cache/streaming/seg": "C"}
+	plant(t, old.Data, state)
 
-	if lines := migrateWin(t, osMover, old, cur, env); len(lines) != 7 {
-		t.Fatalf("want a line for each of the 7 pieces moved:\n%s", strings.Join(lines, "\n"))
+	if lines := migrateWin(t, osMover, old, cur, env); len(lines) != 5 {
+		t.Fatalf("want a line for each of the 5 files copied:\n%s", strings.Join(lines, "\n"))
 	}
-	if got := readAt(t, filepath.Join(cur.Config, "server.toml")); got != toml {
-		t.Fatalf("server.toml changed on the way:\n%s", got)
-	}
-	root := filepath.Dir(cur.Data)
 	for path, body := range map[string]string{
-		filepath.Join(cur.Keys, "secrets.key"):                "S",
-		filepath.Join(cur.Keys, "stream-signing.key"):         "K",
-		filepath.Join(cur.Keys, "postgres-maktaba.password"):  "P",
-		filepath.Join(cur.Config, "node.json"):                `{"node_id":"n"}`,
-		filepath.Join(cur.Data, "maktaba.db"):                 "DB",
-		filepath.Join(root, "models", "huggingface", "w.bin"): "W",
-		filepath.Join(root, "cache", "streaming", "seg"):      "C",
-		filepath.Join(old.Config, "node.env"):                 "MAKTABA_X=1",
+		filepath.Join(cur.Config, "server.toml"):             originals["server.toml"],
+		filepath.Join(cur.Keys, "secrets.key"):               "S",
+		filepath.Join(cur.Keys, "stream-signing.key"):        "K",
+		filepath.Join(cur.Keys, "postgres-maktaba.password"): "P",
+		filepath.Join(cur.Config, "node.json"):               `{"node_id":"n"}`,
 	} {
 		if b := readAt(t, path); b != body {
 			t.Errorf("%s = %q, want %q", path, b, body)
 		}
 	}
-	if note := readAt(t, filepath.Join(old.Config, movedNote)); !strings.Contains(note, "settings and keys") {
-		t.Errorf("the note says the data moved: %q", note)
+	holds(t, old.Config, originals) // every original as it was, and nothing added
+	holds(t, old.Data, state)       // the state where it was
+	if got := stateDir("windows", cur.Data, cur.Data, false); got != cur.Data {
+		t.Errorf("the state root of an install from before: %s, want its data folder %s", got, cur.Data)
 	}
-	for _, gone := range []string{"server.toml", "secrets.key", "stream-signing.key", "postgres-maktaba.password", "node.json"} {
-		if exists(filepath.Join(old.Config, gone)) {
-			t.Errorf("%s must be gone from the roaming profile", gone)
-		}
+	// an older reader (Maktaba before Epic 38) still finds its node config; this
+	// version reads the copy
+	if readAt(t, filepath.Join(env["APPDATA"], "Maktaba", "node.json")) != `{"node_id":"n"}` {
+		t.Error("the roaming profile's node.json must stay for older readers")
+	}
+	base := filepath.Dir(filepath.Dir(cur.Config))
+	if got := NodeConfigPath(func(k string) string { return env[k] }, "windows", base); got != filepath.Join(cur.Config, "node.json") {
+		t.Errorf("NodeConfigPath = %s, want the copy", got)
 	}
 	if lines := migrateWin(t, osMover, old, cur, env); len(lines) != 0 {
-		t.Fatalf("a second start moves nothing:\n%s", strings.Join(lines, "\n"))
+		t.Fatalf("a second start finds the copies and does nothing:\n%s", strings.Join(lines, "\n"))
 	}
+	holds(t, old.Config, originals)
 }
 
-// serve runs without a server.toml: such an install still moves its keys, its
-// node.json and its large state (a new key would leave every stored secret
-// unreadable; models would download again, the semantic index would be lost).
+// serve runs without a server.toml: such an install still gets its keys and its
+// node.json copied (a new key would leave every stored secret unreadable).
 func TestMigrateWindowsWithoutServerToml(t *testing.T) {
 	t.Parallel()
 	old, cur, env := winLayout(t)
-	writeAt(t, filepath.Join(old.Config, "secrets.key"), "S")
-	writeAt(t, filepath.Join(old.Config, "stream-signing.key"), "K")
-	writeAt(t, filepath.Join(old.Config, "node.json"), "{}")
-	writeAt(t, filepath.Join(old.Data, "models", "m"), "W")
-	writeAt(t, filepath.Join(old.Data, "chroma", "chroma.sqlite3"), "I")
-	writeAt(t, filepath.Join(old.Data, "cache", "seg"), "C")
+	originals := map[string]string{"secrets.key": "S", "stream-signing.key": "K", "node.json": "{}"}
+	plant(t, old.Config, originals)
 	migrateWin(t, osMover, old, cur, env)
-	root := filepath.Dir(cur.Data)
-	for path, body := range map[string]string{
-		filepath.Join(cur.Keys, "secrets.key"):          "S",
-		filepath.Join(cur.Keys, "stream-signing.key"):   "K",
-		filepath.Join(cur.Config, "node.json"):          "{}",
-		filepath.Join(root, "models", "m"):              "W",
-		filepath.Join(root, "chroma", "chroma.sqlite3"): "I",
-		filepath.Join(root, "cache", "seg"):             "C",
-	} {
-		if b := readAt(t, path); b != body {
-			t.Errorf("%s = %q, want %q", path, b, body)
-		}
+	holds(t, cur.Keys, map[string]string{"secrets.key": "S", "stream-signing.key": "K"})
+	if readAt(t, filepath.Join(cur.Config, "node.json")) != "{}" || exists(filepath.Join(cur.Config, "server.toml")) {
+		t.Fatal("node.json is copied; no server.toml is made")
 	}
-	if exists(filepath.Join(cur.Config, "server.toml")) {
-		t.Error("no server.toml is made by the move")
-	}
+	holds(t, old.Config, originals)
 }
 
-// With $MAKTABA_CONFIG naming a server.toml with the default data_dir, the large
-// state still moves beside data\; server.toml and the keys stay beside that file
-// (KeysDir), and the roaming profile's keys are not that install's.
+// With $MAKTABA_CONFIG, server.toml and the keys stay beside that file (KeysDir) and
+// the roaming profile's are not that install's; node.json follows
+// $MAKTABA_NODE_CONFIG instead, and with both set nothing is copied.
 func TestMigrateWindowsOwnConfig(t *testing.T) {
 	t.Parallel()
 	old, cur, env := winLayout(t)
 	own := filepath.Join(t.TempDir(), "server.toml")
 	env["MAKTABA_CONFIG"] = own
-	writeAt(t, own, "[server]\nweb_listen = \"0.0.0.0:8780\"\n")
-	writeAt(t, filepath.Join(filepath.Dir(own), "secrets.key"), "MINE")
-	writeAt(t, filepath.Join(old.Config, "secrets.key"), "ROAMING")
-	writeAt(t, filepath.Join(old.Config, "node.json"), "{}")
-	writeAt(t, filepath.Join(old.Data, "models", "m"), "W")
+	writeAt(t, own, "[server]\n")
+	plant(t, old.Config, map[string]string{"server.toml": "[server]\n", "secrets.key": "ROAMING", "node.json": "{}"})
 	migrateWin(t, osMover, old, cur, env)
-	if readAt(t, filepath.Join(filepath.Dir(cur.Data), "models", "m")) != "W" {
-		t.Error("the models must move beside data\\")
+	if exists(filepath.Join(cur.Keys, "secrets.key")) || exists(filepath.Join(cur.Config, "server.toml")) {
+		t.Error("with $MAKTABA_CONFIG the keys and server.toml are not copied")
 	}
-	if readAt(t, filepath.Join(old.Config, "secrets.key")) != "ROAMING" || exists(filepath.Join(cur.Keys, "secrets.key")) ||
-		readAt(t, filepath.Join(filepath.Dir(own), "secrets.key")) != "MINE" {
-		t.Error("with $MAKTABA_CONFIG the keys stay where they are")
-	}
-	if !exists(filepath.Join(cur.Config, "node.json")) {
-		t.Error("node.json follows $MAKTABA_NODE_CONFIG, not $MAKTABA_CONFIG: it moves")
+	if readAt(t, filepath.Join(cur.Config, "node.json")) != "{}" {
+		t.Error("without $MAKTABA_NODE_CONFIG node.json is copied")
 	}
 
-	// a data_dir of its own: the state stays in it
 	old, cur, env = winLayout(t)
-	chosen := filepath.Join(t.TempDir(), "state")
-	env["MAKTABA_CONFIG"] = own
-	writeAt(t, own, "[server]\ndata_dir = '"+chosen+"'\n")
-	writeAt(t, filepath.Join(old.Data, "models", "m"), "W")
-	migrateWin(t, osMover, old, cur, env)
-	if exists(filepath.Join(filepath.Dir(cur.Data), "models")) {
-		t.Error("the state of a chosen data_dir install must not move")
+	env["MAKTABA_CONFIG"], env["MAKTABA_NODE_CONFIG"] = own, filepath.Join(t.TempDir(), "node.json")
+	writeAt(t, filepath.Join(old.Config, "node.json"), "{}")
+	if lines := migrateWin(t, osMover, old, cur, env); len(lines) != 0 || exists(cur.Config) {
+		t.Fatalf("both set: nothing to copy, no folder made (%q)", lines)
 	}
 }
 
-// A Windows install whose data_dir was chosen (this PC's E:\tv\maktaba-local
-// style) keeps it: only the config and keys move.
-func TestMigrateWindowsKeepsChosenDataDir(t *testing.T) {
-	t.Parallel()
-	old, cur, env := winLayout(t)
-	chosen := filepath.Join(t.TempDir(), "maktaba-local", "data")
-	toml := "[server]\ndata_dir = '" + chosen + "'\n"
-	writeAt(t, filepath.Join(old.Config, "server.toml"), toml)
-	writeAt(t, filepath.Join(chosen, "models", "m"), "W")
-	migrateWin(t, osMover, old, cur, env)
-	if readAt(t, filepath.Join(cur.Config, "server.toml")) != toml || readAt(t, filepath.Join(chosen, "models", "m")) != "W" {
-		t.Fatal("a chosen data_dir and its models must stay where they are")
-	}
-}
-
-// Nothing is replaced and no two folders merge: a piece whose new place holds
-// something else stays, and the line says which one Maktaba uses.
+// A copy is never replaced: a new place that holds something else stays, and so
+// does the original, with a line that says which one Maktaba uses.
 func TestMigrateWindowsNeverReplaces(t *testing.T) {
 	t.Parallel()
 	old, cur, env := winLayout(t)
 	writeAt(t, filepath.Join(old.Config, "secrets.key"), "OLD")
 	writeAt(t, filepath.Join(cur.Keys, "secrets.key"), "NEW")
-	writeAt(t, filepath.Join(old.Data, "chroma", "a"), "OLD")
-	writeAt(t, filepath.Join(cur.Config, "chroma", "b"), "NEW")
 	lines := migrateWin(t, osMover, old, cur, env)
-	if len(lines) != 2 || !strings.HasPrefix(lines[0], "Left "+filepath.Join(old.Config, "secrets.key")) ||
-		!strings.Contains(lines[1], "Maktaba uses that one") {
+	if len(lines) != 1 || !strings.HasPrefix(lines[0], "Did not copy "+filepath.Join(old.Config, "secrets.key")) ||
+		!strings.HasSuffix(lines[0], "Maktaba uses "+filepath.Join(cur.Keys, "secrets.key")) {
 		t.Fatalf("lines:\n%s", strings.Join(lines, "\n"))
 	}
-	if readAt(t, filepath.Join(old.Config, "secrets.key")) != "OLD" || readAt(t, filepath.Join(cur.Keys, "secrets.key")) != "NEW" ||
-		readAt(t, filepath.Join(old.Data, "chroma", "a")) != "OLD" || exists(filepath.Join(cur.Config, "chroma", "a")) {
-		t.Fatal("both sides must stay as they were")
-	}
-	if exists(filepath.Join(old.Config, movedNote)) {
-		t.Error("nothing left the roaming profile: no note")
+	if readAt(t, filepath.Join(old.Config, "secrets.key")) != "OLD" || readAt(t, filepath.Join(cur.Keys, "secrets.key")) != "NEW" {
+		t.Fatal("both must stay as they were")
 	}
 }
 
 // This PC's case: %APPDATA% on E:, %LOCALAPPDATA% on C: (or a roaming profile on a
-// server), and here the data folder on a third drive too. Every rename between
-// them fails as between volumes; the keys, node.json and the state still move,
-// whole, and a move a power cut stopped is finished by the next start.
+// server): every rename between them fails as between volumes. The copies are made
+// whole beside their new names; one a power cut stopped is made by the next start,
+// and the originals stay throughout.
 func TestMigrateWindowsAcrossVolumes(t *testing.T) {
 	t.Parallel()
 	old, cur, env := winLayout(t)
-	m := volumes(old.Config, cur.Config, cur.Data)
-	writeAt(t, filepath.Join(old.Config, "server.toml"), "[server]\n")
-	writeAt(t, filepath.Join(old.Config, "secrets.key"), "S")
-	writeAt(t, filepath.Join(old.Config, "stream-signing.key"), "K")
-	writeAt(t, filepath.Join(old.Config, "node.json"), "{}")
-	models := map[string]string{"huggingface/hub/a.bin": "A", "huggingface/hub/b.bin": "B", "ollama/c": "C"}
-	plant(t, filepath.Join(old.Data, "models"), models)
+	m := volumes(old.Config, cur.Config)
+	originals := map[string]string{"server.toml": "[server]\n", "secrets.key": "S", "stream-signing.key": "K", "node.json": "{}"}
+	plant(t, old.Config, originals)
 
-	// the power cut: the sixth copy (the second of the models) never lands
-	if _, err := migrateWindows(cutAt(m, 6), old, cur, func(k string) string { return env[k] }, time.Second); err == nil {
-		t.Fatal("the cut move must fail")
+	// the power cut: the third copy (stream-signing.key) never lands
+	if _, err := migrateWindows(cutAt(m, 3), old, cur, func(k string) string { return env[k] }, time.Second); err == nil {
+		t.Fatal("the cut copy must fail")
 	}
-	if readAt(t, filepath.Join(cur.Keys, "secrets.key")) != "S" || exists(filepath.Join(old.Config, "secrets.key")) {
-		t.Fatal("the key moved before the cut must be whole in the new place only")
+	if readAt(t, filepath.Join(cur.Keys, "secrets.key")) != "S" || exists(filepath.Join(cur.Keys, "stream-signing.key")) {
+		t.Fatal("the copy made before the cut is whole; the cut one is not there under its name")
 	}
+	writeAt(t, filepath.Join(cur.Config, "node.json"+partSuffix), "{") // a crash mid-copy
 	migrateWin(t, m, old, cur, env)
-	root := filepath.Dir(cur.Data)
-	holds(t, filepath.Join(root, "models"), models)
 	holds(t, cur.Keys, map[string]string{"secrets.key": "S", "stream-signing.key": "K"})
-	if readAt(t, filepath.Join(cur.Config, "node.json")) != "{}" || readAt(t, filepath.Join(cur.Config, "server.toml")) != "[server]\n" {
-		t.Fatal("server.toml and node.json must be in the new place")
+	if readAt(t, filepath.Join(cur.Config, "node.json")) != "{}" || readAt(t, filepath.Join(cur.Config, "server.toml")) != "[server]\n" ||
+		exists(filepath.Join(cur.Config, "node.json"+partSuffix)) {
+		t.Fatal("server.toml and node.json must be whole in the new place")
 	}
-	if exists(filepath.Join(old.Data, "models")) || exists(filepath.Join(root, "models"+movingSuffix)) {
-		t.Fatal("the old models folder and the note must be gone")
-	}
+	holds(t, old.Config, originals)
 	if lines := migrateWin(t, m, old, cur, env); len(lines) != 0 {
-		t.Fatalf("a third start moves nothing:\n%s", strings.Join(lines, "\n"))
+		t.Fatalf("a third start copies nothing:\n%s", strings.Join(lines, "\n"))
 	}
 }
 
-// %APPDATA% and %LOCALAPPDATA% naming one folder: a file is never taken for a copy
-// of itself (and removed).
+// %APPDATA% and %LOCALAPPDATA% naming one folder: a file is its own copy (nothing
+// said, nothing removed); the key is copied into keys\.
 func TestMigrateWindowsSameFolder(t *testing.T) {
 	t.Parallel()
 	_, _, env := winLayout(t)
@@ -239,22 +187,25 @@ func TestMigrateWindowsSameFolder(t *testing.T) {
 	writeAt(t, filepath.Join(cur.Config, "server.toml"), "[server]\n")
 	writeAt(t, filepath.Join(cur.Config, "node.json"), "{}")
 	writeAt(t, filepath.Join(old.Config, "secrets.key"), "S")
-	migrateWin(t, osMover, old, cur, env)
+	if lines := migrateWin(t, osMover, old, cur, env); len(lines) != 1 {
+		t.Fatalf("only the key is copied:\n%s", strings.Join(lines, "\n"))
+	}
 	if readAt(t, filepath.Join(cur.Config, "server.toml")) != "[server]\n" || readAt(t, filepath.Join(cur.Config, "node.json")) != "{}" ||
-		readAt(t, filepath.Join(cur.Keys, "secrets.key")) != "S" {
-		t.Fatal("server.toml and node.json must stay, the key move into keys\\")
+		readAt(t, filepath.Join(cur.Keys, "secrets.key")) != "S" || readAt(t, filepath.Join(old.Config, "secrets.key")) != "S" {
+		t.Fatal("server.toml and node.json stay, the key is copied into keys\\")
 	}
 }
 
-// A piece left where it is is said once, and again only when that changes; the
-// record goes when nothing is left.
-func TestMigrateWindowsSaysLeftOnce(t *testing.T) {
+// A piece not copied is said once, and again only when that changes (an older
+// version rewrote its original after the copy); the record goes when there is
+// nothing to say.
+func TestMigrateWindowsSaysKeptOnce(t *testing.T) {
 	t.Parallel()
 	old, cur, env := winLayout(t)
 	oldKey, newKey := filepath.Join(old.Config, "secrets.key"), filepath.Join(cur.Keys, "secrets.key")
 	writeAt(t, oldKey, "OLD")
 	writeAt(t, newKey, "NEW")
-	if lines := migrateWin(t, osMover, old, cur, env); len(lines) != 1 || !strings.HasPrefix(lines[0], "Left "+oldKey) {
+	if lines := migrateWin(t, osMover, old, cur, env); len(lines) != 1 || !strings.HasPrefix(lines[0], "Did not copy "+oldKey) {
 		t.Fatalf("first start:\n%s", strings.Join(lines, "\n"))
 	}
 	if lines := migrateWin(t, osMover, old, cur, env); len(lines) != 0 {
@@ -263,15 +214,18 @@ func TestMigrateWindowsSaysLeftOnce(t *testing.T) {
 	if err := os.Remove(newKey); err != nil {
 		t.Fatal(err)
 	}
-	if lines := migrateWin(t, osMover, old, cur, env); len(lines) != 1 || !strings.HasPrefix(lines[0], "Moved "+oldKey) {
-		t.Fatalf("once the new place is empty the key moves:\n%s", strings.Join(lines, "\n"))
+	if lines := migrateWin(t, osMover, old, cur, env); len(lines) != 1 || !strings.HasPrefix(lines[0], "Copied "+oldKey) {
+		t.Fatalf("once the new place is empty the key is copied:\n%s", strings.Join(lines, "\n"))
 	}
 	if exists(filepath.Join(cur.Config, moveReported)) {
-		t.Error("nothing is left: no record")
+		t.Error("nothing to say: no record")
 	}
-	writeAt(t, oldKey, "OLDER")
-	if lines := migrateWin(t, osMover, old, cur, env); len(lines) != 1 || !strings.HasPrefix(lines[0], "Left "+oldKey) {
-		t.Fatalf("a new conflict is said again:\n%s", strings.Join(lines, "\n"))
+	writeAt(t, oldKey, "REWRITTEN")
+	if lines := migrateWin(t, osMover, old, cur, env); len(lines) != 1 || !strings.HasPrefix(lines[0], "Did not copy "+oldKey) {
+		t.Fatalf("the original changed after the copy: said again:\n%s", strings.Join(lines, "\n"))
+	}
+	if readAt(t, newKey) != "OLD" {
+		t.Fatal("the copy is never replaced")
 	}
 }
 
@@ -302,9 +256,10 @@ func TestMoveLockWaits(t *testing.T) {
 	again()
 }
 
-// Inside the desktop app's payload nothing moves (the app's move copies an older
-// install and keeps it for going back, Epic 38 story 38.13); the same install
-// moves for a maktaba-server outside it. The environment points at temp dirs.
+// Inside the desktop app's payload nothing is moved or copied (the app's move
+// copies an older install and keeps it for going back, Epic 38 story 38.13); for a
+// maktaba-server outside it the same install's key is copied on Windows (the
+// original stays) and moved on a Mac (Epic 36). The environment points at temp dirs.
 func TestMigrateDirsNotInAppPayload(t *testing.T) {
 	base := t.TempDir()
 	var oldKey, newKey string
@@ -341,21 +296,8 @@ func TestMigrateDirsNotInAppPayload(t *testing.T) {
 	if lines, err := MigrateDirs(filepath.Join(base, "release", "bin", "maktaba-server.exe")); err != nil || len(lines) == 0 {
 		t.Fatalf("outside the app: %q, %v", lines, err)
 	}
-	if exists(oldKey) || readAt(t, newKey) != "S" {
-		t.Fatal("outside the app the install moves its own key")
-	}
-}
-
-// A key copied whole to the new place by a start that stopped before it removed
-// the old one: the next start removes the old one and keeps the key.
-func TestMigrateWindowsAfterACrashBeforeTheRemove(t *testing.T) {
-	t.Parallel()
-	old, cur, env := winLayout(t)
-	writeAt(t, filepath.Join(old.Config, "secrets.key"), "S")
-	writeAt(t, filepath.Join(cur.Keys, "secrets.key"), "S")
-	migrateWin(t, volumes(old.Config, cur.Config), old, cur, env)
-	if exists(filepath.Join(old.Config, "secrets.key")) || readAt(t, filepath.Join(cur.Keys, "secrets.key")) != "S" {
-		t.Fatal("the next start must finish the move")
+	if readAt(t, newKey) != "S" || exists(oldKey) != (runtime.GOOS == "windows") {
+		t.Fatal("outside the app the install's key is copied (Windows, the original kept) or moved (Mac)")
 	}
 }
 
