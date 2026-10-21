@@ -180,7 +180,8 @@ async def drain_core(
     """Run every claimable job; returns the stages run, in order.
 
     Debounce and back-off windows are honoured *while other work is claimable* (so triggers
-    coalesce exactly as in production) and elapse only when the queue is otherwise idle.
+    coalesce exactly as in production) and elapse only when the queue is otherwise idle. A
+    job parked on a dependency (Epic 40) waits for its release, as in production.
     """
     ran: list[str] = []
     pools = {s.pool for s in rt.graph.values()}
@@ -191,7 +192,7 @@ async def drain_core(
         if job is None:
             waiting = await db.fetchval(
                 "SELECT count(*) FROM processing_jobs WHERE state = 'pending'"
-                " AND not_before IS NOT NULL"
+                " AND not_before IS NOT NULL AND parked_on IS NULL"
                 + (
                     ""
                     if only is None
@@ -202,6 +203,7 @@ async def drain_core(
                 return ran
             await db.execute(
                 "UPDATE processing_jobs SET not_before = NULL WHERE state = 'pending'"
+                " AND parked_on IS NULL"
                 + (
                     ""
                     if only is None
