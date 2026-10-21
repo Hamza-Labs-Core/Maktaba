@@ -302,10 +302,17 @@ func classify(sys Sys, t Task) (Source, bool) {
 func describe(sys Sys, s *Source) {
 	getenv := s.getenv(sys)
 	home, _ := os.UserHomeDir()
+	// an install on the default paths from before Epic 38 keeps its originals
+	// in %APPDATA%\Maktaba; a newer command copied them here (story 38.1), and a
+	// copy wins as on that install's own reads: one install, whichever it has
+	legacy := legacyDir(getenv, home)
 	if p := strings.TrimSpace(getenv("MAKTABA_CONFIG")); p != "" {
 		s.Config = p
 	} else if s.Kind != KindNodeWorker {
 		s.Config = config.Path()
+		if old := filepath.Join(legacy, "server.toml"); legacy != "" && !isFile(s.Config) && isFile(old) {
+			s.Config = old
+		}
 	}
 	cfg := config.Defaults()
 	if s.Config != "" {
@@ -344,15 +351,32 @@ func describe(sys Sys, s *Source) {
 			delete(s.Ports, k)
 		}
 	}
-	keys := filepath.Dir(s.Config)
+	keys, own := filepath.Dir(s.Config), true
 	if strings.TrimSpace(getenv("MAKTABA_CONFIG")) == "" {
-		keys = config.KeysDir()
+		keys, own = config.KeysDir(), false
 	}
 	for _, k := range []string{"secrets.key", "stream-signing.key"} {
-		if _, err := sys.ReadFile(filepath.Join(keys, k)); err == nil {
-			s.Keys = append(s.Keys, filepath.Join(keys, k))
+		p := filepath.Join(keys, k)
+		if _, err := sys.ReadFile(p); err != nil && !own && legacy != "" {
+			p = filepath.Join(legacy, k) // the original beside the roaming server.toml, not copied yet
+		}
+		if _, err := sys.ReadFile(p); err == nil {
+			s.Keys = append(s.Keys, p)
 		}
 	}
+}
+
+// legacyDir is where a Windows install from before Epic 38 kept its
+// server.toml and keys (%APPDATA%\Maktaba); "" elsewhere.
+func legacyDir(getenv func(string) string, home string) string {
+	if runtime.GOOS != "windows" {
+		return ""
+	}
+	roaming := getenv("APPDATA")
+	if roaming == "" {
+		roaming = filepath.Join(home, "AppData", "Roaming")
+	}
+	return filepath.Join(roaming, "Maktaba")
 }
 
 // pgHost is a Postgres url's host:port, never its credentials.

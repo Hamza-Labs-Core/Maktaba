@@ -70,7 +70,10 @@ don't append a line here; docs-only PRs are exempt.
   move's firewall rules removed, the old ones never touched; the app opens its setup, which offers
   the move again, and never starts its server over the old install). Beside a node of a home a
   fresh setup is refused (check and finish say why): the app would be a second copy of that node;
-  beside a node config nothing runs it is a new home (`[server] role = "home"`). Everything the plan and the move say comes with codes, so
+  beside a node config nothing runs it is a new home (`[server] role = "home"`). An install on the
+  default paths from before Epic 38 is one install whether its config, keys and node config are
+  still only in `%APPDATA%\Maktaba` or were copied into the app's place, and its state is read
+  where it keeps it (its default data folder). Everything the plan and the move say comes with codes, so
   the screens say it in English or Arabic. `maktaba-server adopt` lists what it finds and `--plan
   <id>` what a move does. `[server] mdns = "off"` is new (as `serve --no-mdns`), so a moved install
   keeps that flag.

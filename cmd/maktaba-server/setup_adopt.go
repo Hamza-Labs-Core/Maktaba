@@ -227,14 +227,59 @@ func nodeHere() (code, message string, kv []any) {
 		return "install_unknown", fmt.Sprintf("Maktaba could not look at what this machine runs (%v), so it cannot tell whether a Maktaba node runs here.", err), nil
 	}
 	self, _ := os.Executable()
+	moved := movedIn()
 	for _, src := range srcs {
-		if src.DB != adopt.DBNode || (payload == "" && self != "" && src.HasProgram(self)) {
+		if src.DB != adopt.DBNode || (payload == "" && self != "" && src.HasProgram(self)) || src.ID == moved {
 			continue
 		}
 		return "node_here", fmt.Sprintf("This machine runs a node of the home %s outside the app (%s): the app would be a second copy of it. Move it into the app instead.",
 			src.Home, src.ID), []any{"home", src.Home, "source", src.ID}
 	}
 	return "", "", nil
+}
+
+// installHere reports whether an install outside the app stands where the
+// app's own setup would: a node of a home (nodeHere), or one that reads the
+// app's own server.toml (an install on the default paths from before Epic 38,
+// whose config a newer command copied into the app's place, story 38.1). The
+// status step does not count the app as set up then: its server would start
+// over that install with its config and identity; the welcome screen offers
+// the move. One that cannot be looked for counts as there.
+func installHere() bool {
+	if code, _, _ := nodeHere(); code != "" {
+		return true
+	}
+	payload, _ := setupPayload()
+	srcs, err := adopt.Find(adoptSys(), payload)
+	if err != nil {
+		return true
+	}
+	moved := movedIn()
+	for _, src := range srcs {
+		if src.ID != moved && src.Config != "" && strings.EqualFold(filepath.Clean(src.Config), filepath.Clean(config.Path())) {
+			return true
+		}
+	}
+	return false
+}
+
+// movedIn is the install the move recorded here has stopped and moved into the
+// app (its task off until the move finishes, then gone): no longer an install
+// outside the app. "" when none.
+func movedIn() string {
+	cfg, _, err := config.Load()
+	if err != nil {
+		return ""
+	}
+	rec, ok, err := adopt.ReadRecord(cfg.StateDir())
+	if err != nil || !ok {
+		return ""
+	}
+	switch rec.Stage {
+	case adopt.StageStopped, adopt.StageMoved, adopt.StageVerified, adopt.StageFinished:
+		return rec.Source.ID
+	}
+	return ""
 }
 
 // nodeLeftover is a joined node config where the app's roles would read it

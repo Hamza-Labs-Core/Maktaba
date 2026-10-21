@@ -55,7 +55,10 @@ it registers the login item again and opens `web_url` instead of a second setup 
 chose "Connect to another Maktaba…"). Not `configured` while the move recorded in
 `<state>/moved/move.json` is `undone` (`maktaba-server adopt --undo`, below): the old install runs
 the machine's Maktaba again, and the app must not register its server over it. A `finish` (setup
-afresh) or a new move ends that.
+afresh) or a new move ends that. Nor while an install outside the app is here that is a node of a
+home, or reads the app's own `server.toml` (an install on the default paths from before Epic 38,
+whose config, keys and node config a newer command copied into `%LOCALAPPDATA%\Maktaba`, story
+38.1): the welcome screen offers its move instead.
 ```json
 {"configured": false, "web_url": "http://127.0.0.1:8088", "supervisor_url": "http://127.0.0.1:9103"}
 ```
@@ -213,7 +216,14 @@ Instead of `check` … `finish` when the PC already runs Maktaba outside the app
 - `{"action": "plan", "source": id}` → `{"source", "items": [{"code", "params"?, "what", "from",
   "to", "size", "done"}], "carried", "not_carried", "problems", "warnings", "firewall", "need",
   "free"}`; read
-  only. A move with `problems` is refused. Items are `setup.move.item.<code>` (`key` with `name`,
+  only. A move with `problems` is refused. An install on the default paths from before Epic 38 is
+  one install whether or not a newer command copied its `server.toml`, keys and node config from
+  `%APPDATA%\Maktaba` into the app's place (the copy wins, as on its own reads; the original
+  otherwise); its state is read with its own rule (`Config.StateDirOutsideApp`: a default data
+  folder that holds models, caches or the index is its state root), copied beside it into the
+  app's root and kept where it was; what is the app's file already (a key copied in, an SQLite
+  database in the shared data folder) is never copied onto itself. Items are
+  `setup.move.item.<code>` (`key` with `name`,
   `node_config`, `search_index`, `streaming_cache`, `models`, `database`, `database_wal`,
   `database_shm`, `hf_token`). Every other entry is `{"code", "params"?, "message"}`, shown as its
   own text (the English `message` for a code the app does not know): `carried` as

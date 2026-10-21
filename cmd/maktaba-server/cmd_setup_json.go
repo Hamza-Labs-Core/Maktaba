@@ -223,8 +223,15 @@ func setupStatus() (map[string]any, error) {
 		return nil, err
 	}
 	node := supervisor.NodeJoined(cfg)
+	configured := found && (node || databaseExists(cfg)) && !adopt.UndoneHere(cfg.StateDir())
+	// a server.toml and node config in the app's place that are an install's
+	// outside the app (copied there by a newer command, story 38.1): not the
+	// app's own while that install is here (installHere)
+	if configured && installHere() {
+		configured = false
+	}
 	return map[string]any{
-		"configured":     found && (node || databaseExists(cfg)) && !adopt.UndoneHere(cfg.StateDir()),
+		"configured":     configured,
 		"web_url":        "http://" + supervisor.LocalAddr(cfg.Server.WebListen, "8088"),
 		"supervisor_url": supervisor.StateURL(cfg),
 	}, nil

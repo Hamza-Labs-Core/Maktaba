@@ -23,7 +23,7 @@ func TestStopSparesTheAppAndItself(t *testing.T) {
 	app := filepath.Join(t.TempDir(), "Local", "Maktaba")
 	payload := filepath.Join(app, "server")
 	launcher := filepath.Join(app, exeName("maktaba-launcher"))
-	sys := newFakeSys(nil)
+	sys := newFakeSys(map[string]string{"MAKTABA_NODE_CONFIG": filepath.Join(t.TempDir(), "node.json")})
 	name := `\Maktaba`
 	sys.tasks = []Task{{Name: name, Command: launcher, Args: `--root "` + app + `" serve`, Enabled: true}}
 	sys.xml[name] = []byte("<Task/>")

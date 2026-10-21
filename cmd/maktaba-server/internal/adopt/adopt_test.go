@@ -29,6 +29,15 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	_ = os.Setenv("MAKTABA_CONFIG", filepath.Join(dir, "none", "server.toml"))
+	// nor this user's profile: what a source falls back to without folders of
+	// its own (the roaming %APPDATA%\Maktaba of an install from before) is a
+	// temp home's
+	for _, k := range []string{"USERPROFILE", "HOME"} {
+		_ = os.Setenv(k, filepath.Join(dir, "home"))
+	}
+	for _, k := range []string{"APPDATA", "LOCALAPPDATA"} {
+		_ = os.Setenv(k, filepath.Join(dir, "home", k))
+	}
 	code := m.Run()
 	_ = os.RemoveAll(dir)
 	os.Exit(code)

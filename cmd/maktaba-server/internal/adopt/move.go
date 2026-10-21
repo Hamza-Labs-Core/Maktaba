@@ -283,7 +283,11 @@ func moveItems(src Source, old, cfg config.Config, tgt Target, getenv func(strin
 		add("node_config", devmigrate.Item{What: "node config", From: src.NodeConfig, To: tgt.NodeConfig, Key: true})
 	}
 	if src.Kind != KindNodeWorker && src.ConfigFound {
-		state := old.StateDir()
+		// the old install's own rule, never the app's: a Windows install from before
+		// Epic 38 keeps its models, caches and index in its default data folder
+		// (which is the app's data folder too); they are copied beside it, the
+		// originals kept for going back
+		state := old.StateDirOutsideApp()
 		add("search_index", devmigrate.Item{What: "search index", From: filepath.Join(state, "chroma"), To: filepath.Join(tgt.StateDir, "chroma")})
 		add("streaming_cache", devmigrate.Item{What: "streaming cache", From: filepath.Join(state, "cache", "streaming"),
 			To: filepath.Join(tgt.StateDir, "cache", "streaming")})
