@@ -12,7 +12,7 @@ func TestNodeLiveTVFollowsTheHome(t *testing.T) {
 	var away bool
 	seen := func(name string) (http.Handler, *string) {
 		var path string
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		return http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 			path = name + " " + r.URL.Path
 		}), &path
 	}
