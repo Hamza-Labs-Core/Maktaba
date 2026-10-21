@@ -9,6 +9,8 @@
 #   ffmpeg\    ffmpeg.exe ffprobe.exe     static
 #   python\    CPython 3.12               python-build-standalone, stdlib precompiled
 #   pipeline\  maktaba_pipeline-<v>-py3-none-any.whl constraints.txt
+#   migrations\                          the database's schema (shared/db/migrations):
+#                                         maktaba-api finds them beside its bin\
 #   licenses\  the third-party licences and where their sources are
 #   payload.json                          what is inside, with versions and checksums
 #
@@ -249,6 +251,12 @@ cons=("$WORK"/node/maktaba-pipeline-*-constraints.txt)
 if [ "${#whl[@]}" -ne 1 ] || [ ! -f "${whl[0]}" ]; then die "expected one pipeline wheel"; fi
 cp "${whl[0]}" "$OUT/pipeline/"
 cp "${cons[0]}" "$OUT/pipeline/constraints.txt"
+
+# --- the database's migrations: setup's finish and the api's auto-migrate run in the user's
+# data (%LOCALAPPDATA%\Maktaba), never a checkout, so the payload carries them (maktaba-api:
+# beside its bin\) -------------------------------------------------------------------------------
+log "database migrations"
+cp -R "$REPO_ROOT/shared/db/migrations" "$OUT/migrations"
 
 # --- payload.json --------------------------------------------------------------------------------
 rm -rf "$WORK"

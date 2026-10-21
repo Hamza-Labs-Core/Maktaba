@@ -6,6 +6,7 @@
 #   every program starts (--version), every PE file is x86_64 and loads nothing from outside
 #   the payload but Windows, ffmpeg has NVENC, Postgres initdb + start on 127.0.0.1 + the
 #   extensions Maktaba creates (postgres.exe running on the payload's Visual C++ runtime),
+#   the payload's own migrations (maktaba-api migrate up from outside any checkout),
 #   the bundled Python builds a venv offline, and running it writes nothing into the payload
 #   (the uninstaller removes the files it installed: a new one would be left behind), the
 #   pipeline wheel and constraints, payload.json, the launcher's app-bundle mode.
@@ -400,6 +401,23 @@ if "$pg/initdb.exe" -D "$(win "$PGDATA_DIR")" -U maktaba --auth=trust -E UTF8 --
              AND unaccent(U&'H\00F4tel') = 'Hotel')::text;" 2>&1 | tr -d '\r' || true)"
     if [ "$got" = "$want" ]; then ok "$got"; else fail "extensions: $got"; fi
     run "pg_dump" "$pg/pg_dump.exe" -h 127.0.0.1 -p "$port" -U maktaba -Fc -f "$(win "$SCRATCH/dump")" postgres
+    # the schema from the payload alone: maktaba-api finds server\migrations beside its bin\,
+    # run from a folder that is no checkout and without MAKTABA_MIGRATIONS_DIR
+    if [ -d "$PAYLOAD/migrations" ] && diff -rq "$PAYLOAD/migrations" "$REPO_ROOT/shared/db/migrations" >/dev/null; then
+        ok "migrations\\ ($(find "$PAYLOAD/migrations" -type f | wc -l | tr -d ' ') files) = shared/db/migrations"
+    else
+        fail "the payload's migrations\\ is missing or differs from shared/db/migrations"
+    fi
+    run "createdb" "$pg/psql.exe" -h 127.0.0.1 -p "$port" -U maktaba -d postgres -Atq -c "CREATE DATABASE maktaba_check;"
+    if grep -q 'func migrationsDirFor' "$REPO_ROOT/api/migrate.go"; then
+        run "migrations (maktaba-api migrate up, outside any checkout)" \
+            env -C "$SCRATCH" -u MAKTABA_MIGRATIONS_DIR \
+            DATABASE_URL="postgres://maktaba@127.0.0.1:$port/maktaba_check?sslmode=disable" \
+            "$PAYLOAD/bin/maktaba-api.exe" migrate up
+    else
+        # this tree's maktaba-api looks only for shared/db/migrations above its working folder
+        note "this maktaba-api predates the payload's migrations\\ lookup (#184): migrate up is not checked"
+    fi
     # postgres.exe loads the Visual C++ runtime from beside it, not from System32
     pid="$(head -1 "$PGDATA_DIR/postmaster.pid" | tr -d '\r')"
     # shellcheck disable=SC2016  # PowerShell's own $ variables; the pid goes in through the environment
