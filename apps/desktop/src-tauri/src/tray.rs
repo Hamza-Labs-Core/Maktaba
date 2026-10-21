@@ -109,6 +109,37 @@ pub fn entries_with_model(
     out
 }
 
+/// The window menu's Server submenu (Linux without a tray, Epic 39 story
+/// 39.8; lib.rs builds it, shell.rs keeps it in step): the tray's server
+/// items under ids prefixed with WINDOW_PREFIX. Every menu's events reach
+/// both the tray's and the app's handler, so the ids must differ.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub const WINDOW_PREFIX: &str = "window-";
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub const WINDOW_MENU_ID: &str = "window-server";
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub const WINDOW_STATUS_ID: &str = "window-status";
+
+/// The submenu's items as (tray id, label), in order; None is a separator.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub const WINDOW_ITEMS: &[Option<(&str, &str)>] = &[
+    Some(("update", "Install update and restart")),
+    None,
+    Some(("server-pause", "Pause server")),
+    Some(("server-resume", "Resume server")),
+    Some(("open-logs", "Open logs")),
+    None,
+    Some(("stop-and-quit", "Stop server and quit")),
+];
+
+/// A window item is enabled when the tray menu would offer it.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn window_enabled(entries: &[Entry], id: &str) -> bool {
+    entries
+        .iter()
+        .any(|e| matches!(e, Entry::Item { id: i, enabled: true, .. } if *i == id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,5 +262,37 @@ mod tests {
             ])),
             "Maktaba: pipeline, streaming keeps stopping"
         );
+    }
+
+    #[test]
+    fn the_window_menu_offers_what_the_tray_offers() {
+        let window_ids: Vec<&str> = WINDOW_ITEMS.iter().flatten().map(|(id, _)| *id).collect();
+        assert_eq!(
+            window_ids,
+            [
+                "update",
+                "server-pause",
+                "server-resume",
+                "open-logs",
+                "stop-and-quit"
+            ]
+        );
+        let running = entries(true, &ServerStatus::Running, false);
+        assert!(
+            window_enabled(&running, "server-pause") && window_enabled(&running, "stop-and-quit")
+        );
+        assert!(!window_enabled(&running, "server-resume") && !window_enabled(&running, "update"));
+        let paused = entries(true, &ServerStatus::Paused, true);
+        assert!(window_enabled(&paused, "server-resume") && window_enabled(&paused, "update"));
+        assert!(!window_enabled(&paused, "server-pause"));
+        // client mode: no server items at all
+        let client = entries(false, &ServerStatus::SetupNeeded, false);
+        assert!(window_ids.iter().all(|id| !window_enabled(&client, id)));
+        // the disabled status line is never "offered"
+        assert!(!window_enabled(&running, "status"));
+        // the window's ids never collide with the tray's (both handlers see every event)
+        for id in &window_ids {
+            assert!(!ids(&running).contains(&format!("{WINDOW_PREFIX}{id}").as_str()));
+        }
     }
 }

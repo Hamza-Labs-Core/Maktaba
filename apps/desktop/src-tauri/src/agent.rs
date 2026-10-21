@@ -32,10 +32,11 @@
 // `--server-stop` and `--server-remove`.
 //
 // Linux (agent_linux.rs, specs/epics/39-linux-app/contract-runtime.md). A
-// systemd user unit runs a copy of the payload in ~/.local/share/maktaba/
-// runtime (never this app's files: an AppImage's mount moves every run),
-// written and controlled through the payload's own `maktaba-server runtime`
-// and `maktaba-server service`; linger starts it at boot.
+// systemd user unit runs a copy of the payload (<prefix>/share/maktaba/server)
+// in ~/.local/share/maktaba/runtime (never this app's files: an AppImage's
+// mount moves every run), written and controlled through the payload's own
+// `maktaba-server runtime` and `maktaba-server service`; linger starts it at
+// boot.
 use std::ffi::OsStr;
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -70,7 +71,7 @@ const LOG_ROTATE_BYTES: u64 = 50 << 20;
 /// Where the server payload is, from the app executable's path:
 /// …/Maktaba.app/Contents/MacOS/Maktaba on a Mac, <install>\Maktaba.exe on
 /// Windows (the payload is <install>\server beside it), <prefix>/bin/Maktaba
-/// on Linux (the payload is <prefix>/lib/Maktaba/server).
+/// on Linux (the payload is <prefix>/share/maktaba/server).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BundlePaths {
     /// Contents/Resources/server, or <install>\server

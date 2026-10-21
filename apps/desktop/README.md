@@ -189,22 +189,34 @@ the tray menu are the Mac's. What differs is where the server runs and how it st
 (`agent_linux.rs`):
 
 - **The runtime copy.** The server never runs from the app's files: an AppImage is mounted at a
-  new `/tmp/.mount_*` path on every run, and a package upgrade replaces `/usr/lib/Maktaba` under
-  a running server (and linuxdeploy rewrites ELF files under `usr/lib`, so the payload is in
-  `usr/share/maktaba/server`). When setup finishes, the shell runs the payload's own
-  `maktaba-server runtime install --activate --owner app`, which copies the payload into
-  `~/.local/share/maktaba/runtime/<version>` and points `current` at it.
+  new `/tmp/.mount_*` path on every run, and a package upgrade replaces
+  `/usr/share/maktaba/server` under a running server (the payload is there, not in `usr/lib`,
+  because linuxdeploy rewrites ELF files under `usr/lib`). Before the first setup step after
+  `status`, the shell runs the payload's own `maktaba-server runtime install --activate --owner
+  app`, which copies the payload into `~/.local/share/maktaba/runtime/<version>` and points
+  `current` at it. Every later step runs from `runtime/current/bin/maktaba-server` with
+  `MAKTABA_APP_BUNDLE=runtime/current`, so the venv is built against the copy's Python, not the
+  AppImage's mount.
 - **The user service.** `maktaba-server service install` writes and starts the systemd user
   unit `maktaba-server.service`, which runs `runtime/current/bin/maktaba-launcher`.
   `service linger` lets it start at boot without a login: polkit allows that from the desktop
   session, and where it is refused, setup's *Allow* button asks again. Pause and Resume are
   `service stop` and `service start`. The shell never writes the unit itself.
 - **After an update.** The Tauri updater replaces the AppImage, or installs the .deb / .rpm
-  through the system's admin prompt. The new app then sees that its payload is newer than
-  `runtime/current` and switches the unit to it. The server stops while `current` moves; a paused
-  server stays paused.
+  through the system's admin prompt. The new app then sees (`runtime status`) that its payload
+  is newer than `runtime/current` and switches the unit to it. The server stops while `current`
+  moves; a paused server stays paused until Resume or the next boot.
+- **An older app** (an old AppImage opened again, a package downgraded) never installs its
+  payload: the server's database may be migrated past it. `runtime status` says `downgrade`,
+  the newer runtime keeps running, and the app tells the user it is older than the server.
 - **The tray** is a StatusNotifier item (libayatana-appindicator). Where no StatusNotifier host
   runs (GNOME without the AppIndicator extension), closing the window quits the app and the
-  server keeps running. With a host, `~/.config/autostart/maktaba.desktop` starts the tray at
-  login with the window hidden (`--hidden`), and the entry follows the AppImage if it moves.
+  server keeps running, and the window's *Server* menu has the tray's items (status, Pause,
+  Resume, Open logs, Stop server and quit, and an update when one is ready). With a host,
+  `~/.config/autostart/maktaba.desktop` starts the tray at login with the window hidden
+  (`--hidden`). The entry is written once: removed by the user, it stays removed. It follows the
+  AppImage if it moves (never to an older app), keeps the user's on/off, and has `TryExec`, so the
+  desktop skips it once the app is gone.
+- **Language.** The shell's own dialogs follow the session's locale (Arabic when `LC_ALL`,
+  `LC_MESSAGES` or `LANG` says so); the autostart entry carries both languages.
 - **Logs** are in `~/.local/state/maktaba/logs` (*Open logs* uses `xdg-open`).
