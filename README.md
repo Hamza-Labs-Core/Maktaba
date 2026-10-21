@@ -128,8 +128,8 @@ EPEL for the desktop's tray library), and a systemd user manager.
   app moves the server to it at its next start.
 - **Without a desktop** (a NAS, a mini PC, a VM): run the release's installer as the user the
   server is for (not as root). It downloads the server, checks its Sigstore signature before
-  anything runs (it fetches a pinned cosign when the machine has none), and asks the same setup
-  questions in the terminal:
+  anything runs (with the machine's cosign when it is 2.4.3 or newer, else a pinned cosign it
+  fetches), and asks the same setup questions in the terminal, in English or Arabic:
 
   ```sh
   curl -fsSLO https://github.com/Hamza-Labs-Core/Maktaba/releases/latest/download/install.sh

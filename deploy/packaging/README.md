@@ -53,9 +53,12 @@ needs root.
 - **A machine without a desktop, verified.** `install.sh --app` never runs a payload it has not
   verified: it checks the Sigstore signature over the release's `checksums.txt` (with the
   machine's cosign, or cosign's own release build, which it fetches and checks against a pinned
-  SHA-256), then the payload's SHA-256; `MAKTABA_NO_VERIFY` and root are refused. Take the script
-  from the release, where `checksums.txt` lists it, and check it first if you want the same
-  guarantee for the script itself:
+  SHA-256), then the payload's SHA-256; `MAKTABA_NO_VERIFY` and root are refused. A cosign on the
+  PATH is used only from 2.4.3 on, the first that reads the release's (new format) Sigstore bundle;
+  an older one is passed over for the pinned build. Take the script from the release, where
+  `checksums.txt` lists it, and check it first if you want the same guarantee for the script
+  itself (with cosign 2.4.3 or newer: Debian 13 packages 2.5.0, Ubuntu from 26.04 2.6.2, Fedora
+  its own; elsewhere cosign's release build, checked against its `cosign_checksums.txt`):
 
   ```sh
   v=v1.5.0   # the release
