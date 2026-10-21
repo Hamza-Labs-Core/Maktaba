@@ -23,6 +23,7 @@ func newSetupCmd() *cobra.Command {
 	var step string
 	var answersFile string
 	var answersFD int
+	var lang string
 	cmd := &cobra.Command{
 		Use:   "setup",
 		Short: "Interactive first-run wizard",
@@ -47,7 +48,7 @@ func newSetupCmd() *cobra.Command {
 			// Epic 39 story 39.6: run from an app payload with no window (a Linux
 			// machine without a desktop), the app's setup steps in the terminal
 			if payloadOfThisBinary() != "" {
-				return runAppSetupCmd(answersFile, answersFD)
+				return runAppSetupCmd(answersFile, answersFD, lang)
 			}
 			return runSetup(runMigrate)
 		},
@@ -57,6 +58,7 @@ func newSetupCmd() *cobra.Command {
 	cmd.Flags().StringVar(&step, "step", "", "with --json: the step (status)")
 	cmd.Flags().StringVar(&answersFile, "answers", "", "from a payload: the steps' inputs from this JSON file ({\"admin\": {...}, ...}) instead of prompts")
 	cmd.Flags().IntVar(&answersFD, "answers-fd", 0, "from a payload: the same answers from this open file descriptor (secrets never on disk)")
+	cmd.Flags().StringVar(&lang, "lang", "", "from a payload: the questions' language, en or ar (default: from LC_ALL, LC_MESSAGES or LANG)")
 	lf.register(cmd)
 	nf.register(cmd)
 	return cmd

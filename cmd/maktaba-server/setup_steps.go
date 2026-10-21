@@ -164,6 +164,7 @@ func stepCheck(s *setupRun, _ json.RawMessage) (any, error) {
 	case ram > 0 && ram < setupNeedRAM:
 		res.Warnings = append(res.Warnings, "Less than 8 GB of memory: indexing and transcription will be slow.")
 	}
+	platformCheck(s.ctx, &res) // what is particular to this OS (setup_check_*.go)
 
 	exe, _ := os.Executable()
 	if _, ok, err := pgbundle.Resolve(s.cfg, exe); err == nil && ok {
