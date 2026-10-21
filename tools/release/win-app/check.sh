@@ -30,7 +30,10 @@
 #   installed Maktaba.exe does: run with --server-start it must exit by itself when the
 #   source takes the flags, and keep running (its window) when it does not. Where it takes
 #   none, no hook may run it at all and the installer keeps no record; where it does, the
-#   record (MaktabaServerFlags in the uninstall key) must be there.
+#   record (MaktabaServerFlags in the uninstall key) must be there and the hooks must have run
+#   it with exactly the flags each step calls for (install --server-start; reinstall
+#   --server-stop, --server-start; uninstall --server-stop, --server-remove), each run seen
+#   by a thread that looks for Maktaba.exe every 15 ms.
 #
 # Usage: check.sh [--payload DIR] [--installer SETUP.exe]
 #   --payload    the payload (default: build/win-app/server)
@@ -216,25 +219,37 @@ function Sweep($all, [double]$grace) {
         }
     }
 }
-# Each start of a Maktaba.exe, from WMI every 0.1 s: a hook's run often ends before the next
-# process list (below) is taken. Best effort: a run under 0.1 s can still go unseen.
+# Each run of a Maktaba.exe from the install folder, as a hook makes it: looked for every
+# 15 ms on a thread of its own, as a hook's run is often over before the next process list
+# below (a flag-taking one takes 0.2-1 s). Its command line is read while it runs; one gone
+# before that is noted with its path only.
+$spot = [hashtable]::Synchronized(@{ stop = $false; lines = [Collections.ArrayList]::Synchronized((New-Object Collections.ArrayList)) })
+$spotter = [powershell]::Create()
+$spotter.Runspace = [runspacefactory]::CreateRunspace()
+$spotter.Runspace.Open()
+$spotter.Runspace.SessionStateProxy.SetVariable('spot', $spot)
+$spotter.Runspace.SessionStateProxy.SetVariable('prefix', $prefix)
+[void]$spotter.AddScript({
+    $seen = @{}
+    while (-not $spot.stop) {
+        foreach ($pr in [Diagnostics.Process]::GetProcessesByName('Maktaba')) {
+            if ($seen.ContainsKey($pr.Id)) { continue }
+            $seen[$pr.Id] = $true
+            $path = try { $pr.MainModule.FileName } catch { $null }
+            if (-not $path -or -not $path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { continue }
+            $q = Get-CimInstance Win32_Process -Filter ("ProcessId = {0}" -f $pr.Id) -ErrorAction SilentlyContinue
+            if ($q -and $q.CommandLine) { [void]$spot.lines.Add($q.CommandLine) } else { [void]$spot.lines.Add('"' + $path + '" ?') }
+        }
+        Start-Sleep -Milliseconds 15
+    }
+})
+$spotting = $spotter.BeginInvoke()
+# the app's other programs (not Maktaba.exe), from the process lists below
 $seen = @{}
 function Ran($q) {
-    if ((InDir $q) -and -not $seen.ContainsKey([int]$q.ProcessId)) {
+    if ((InDir $q) -and $q.Name -ne 'Maktaba.exe' -and -not $seen.ContainsKey([int]$q.ProcessId)) {
         $seen[[int]$q.ProcessId] = $true
         Write-Output ("ran {0}" -f $q.CommandLine)
-    }
-}
-$events = $true
-try {
-    Register-CimIndicationEvent -SourceIdentifier MaktabaRan -ErrorAction Stop -Query `
-        "SELECT * FROM __InstanceCreationEvent WITHIN 0.1 WHERE TargetInstance ISA 'Win32_Process' AND TargetInstance.Name = 'Maktaba.exe'"
-} catch { $events = $false }
-function Drain {
-    if (-not $events) { return }
-    foreach ($e in @(Get-Event -SourceIdentifier MaktabaRan -ErrorAction SilentlyContinue)) {
-        Ran $e.SourceEventArgs.NewEvent.TargetInstance
-        Remove-Event -EventIdentifier $e.EventIdentifier
     }
 }
 $p = Start-Process -FilePath $Exe -ArgumentList $Arguments -PassThru
@@ -266,7 +281,6 @@ while ($true) {
             }
         }
     }
-    Drain
     Sweep $all $Grace
     $alive = @($all | Where-Object { $tree.ContainsKey([int]$_.ProcessId) -and $_.CreationDate -ge $tree[[int]$_.ProcessId] })
     if ($exited -and $alive.Count -eq 0) { break }
@@ -277,9 +291,10 @@ while ($true) {
     Start-Sleep -Milliseconds 500
 }
 Sweep @(Get-CimInstance Win32_Process) 0   # nothing it started may outlive it
-Start-Sleep -Milliseconds 300   # the last start events
-Drain
-if ($events) { Unregister-Event -SourceIdentifier MaktabaRan -ErrorAction SilentlyContinue }
+$spot.stop = $true
+[void]$spotter.EndInvoke($spotting)
+$spotter.Dispose()
+foreach ($l in $spot.lines) { Write-Output ("ran {0}" -f $l) }
 foreach ($c in $copies.Values) { Write-Output ("child {0} exit {1}" -f $c.ProcessName, $c.ExitCode) }
 Write-Output ("exit {0}" -f $p.ExitCode)
 PS
@@ -310,28 +325,31 @@ PS
         if [ "$WATCHED_EXIT" = 0 ] && [ "$code" != 0 ]; then WATCHED_EXIT="$code"; fi
     }
     # hooks WHAT FLAG...: what the hooks of the last run did, judged by whether this tree's
-    # shell takes the flags (the header): none may still run after 20 s; with the flags, the
-    # runs seen (FLAG... are the ones the hooks make here; one that exits within 0.1 s may go
-    # unseen, which test-hooks.sh covers); without, none at all
+    # shell takes the flags (the header): none may still run after 20 s; with the flags,
+    # Maktaba.exe must have run with exactly FLAG..., in that order (a run whose command line
+    # could not be read, "?", stands for any flag); without them, it must not have run at all
     hooks() {
-        local n ended=0 what="$1" seen missing="" f
+        local n ended=0 what="$1" got want
         shift
         while IFS= read -r n; do
             if [ -n "$n" ]; then fail "$what: a hook did not exit within 20 s, ended: $n"; ended=1; fi
         done <<<"$WATCHED_ENDED"
+        # the flag of each run of Maktaba.exe (its last word), in order
+        got="$(printf '%s' "$WATCHED_RAN" | grep -i 'Maktaba\.exe' | sed 's/.* //' | paste -sd' ' -)"
         if [ "$SHELL_HOOKS" = 0 ]; then
             if [ -n "$WATCHED_RAN" ]; then
                 fail "$what: a hook ran Maktaba.exe, which takes no --server-* flag: $(printf '%s' "$WATCHED_RAN" | paste -sd'|' -)"
             else
                 ok "$what: no hook ran Maktaba.exe (it takes no --server-* flag)"
             fi
+            return
+        fi
+        want="$*"
+        if [ "$(printf '%s' "$got" | sed 's/[^ ][^ ]*/x/g')" != "$(printf '%s' "$want" | sed 's/[^ ][^ ]*/x/g')" ] ||
+            ! printf '%s\n' "$got" | grep -qxE "$(printf '%s' "$want" | sed 's/[^ ][^ ]*/(&|[?])/g')"; then
+            fail "$what: the hooks ran Maktaba.exe with '${got}', want '${want}'"
         elif [ "$ended" = 0 ]; then
-            seen="$(printf '%s' "$WATCHED_RAN" | sed 's/.* //' | paste -sd' ' -)"
-            for f in "$@"; do
-                case " $seen " in *" $f "*) ;; *) missing+=" $f" ;; esac
-            done
-            ok "$what: every hook exited by itself (Maktaba.exe ran with: ${seen:-nothing seen})"
-            if [ -n "$missing" ]; then note "$what: not seen:$missing (a run that ends within 0.1 s can go unseen)"; fi
+            ok "$what: the hooks ran Maktaba.exe ${got// / then }, each exited by itself"
         fi
     }
     # flags_record: the installer's record that the installed Maktaba.exe takes the flags

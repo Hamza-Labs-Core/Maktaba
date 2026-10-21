@@ -129,10 +129,10 @@ does, from this tree's source, and checks that against the program: the installe
 `Maktaba.exe --server-start` must exit by itself when the source takes the flags and keep
 running (its window) when it does not. It installs over a client-only app (a stand-in
 `Maktaba.exe` that takes no flag and never exits, with its registration and a stale record),
-reinstalls and uninstalls, and fails on any hook still running after 20 s, on a missing record
-where the shell takes the flags, and, where it takes none, on any run of `Maktaba.exe` by a
-hook at all. The runs it sees (WMI start events every 0.1 s) are listed; one that ends sooner
-can go unseen, which `test-hooks.sh` covers.
+reinstalls and uninstalls, and fails on any hook still running after 20 s; where the shell
+takes the flags, on a missing record or when the hooks did not run `Maktaba.exe` with exactly
+the flags each step calls for (a thread looks for it every 15 ms: a flag-taking run takes
+0.2-1 s); where it takes none, on any run of `Maktaba.exe` by a hook at all.
 
 `check.sh --installer` changes this user's registry while it runs (the uninstall entry, the
 `maktaba://` links, `HKCU\Software\<publisher>\Maktaba` for the last install folder) and puts
