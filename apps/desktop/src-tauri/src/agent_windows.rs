@@ -709,10 +709,15 @@ fn run_task(name: &str) -> Result<(), String> {
 
 /// Run the task once the agent that is stopping (a Pause a moment ago) has
 /// exited: while it runs, Task Scheduler ignores /Run (IgnoreNew), and it
-/// would then exit and leave the server stopped.
+/// would then exit and leave the server stopped. With no agent at all the
+/// /Run is asked again too: one that exited a moment ago (its mutex free, its
+/// process not yet gone) makes Task Scheduler ignore the first.
 fn start_task(name: &str, mutex: &str, stop: &str) -> Result<(), String> {
-    if !(mutex_held(mutex) && stop_event_set(stop)) {
-        return run_task(name);
+    if !mutex_held(mutex) {
+        return run_after_stop(name, mutex);
+    }
+    if !stop_event_set(stop) {
+        return run_task(name); // an agent runs: nothing to start (IgnoreNew)
     }
     let limit = STOP_WAIT + EXIT_MARGIN;
     if !wait_mutex_free(mutex, limit) {
@@ -1878,6 +1883,27 @@ mod tests {
         });
         let _ = signal_stop_event(&stop);
         assert!(wait_mutex_free(&mutex, Duration::from_secs(30)));
+        // Resume right after it exited, no stop pending (as an agent leaves it):
+        // its process may still be going, and Task Scheduler then ignores a /Run
+        reset_event(&stop);
+        assert!(!stop_event_set(&stop));
+        start_task(&name, &mutex, &stop).unwrap();
+        wait_for(
+            Duration::from_secs(20),
+            "Resume right after an agent exited did not start it again",
+            || runs(&runs_file) == 3,
+        );
+        wait_for(Duration::from_secs(30), "the third run", || {
+            mutex_held(&mutex)
+        });
+        let _ = signal_stop_event(&stop);
+        assert!(wait_mutex_free(&mutex, Duration::from_secs(30)));
+    }
+
+    fn reset_event(name: &str) {
+        let ev = open_event(name, EVENT_MODIFY_STATE).expect("the stop event");
+        // SAFETY: ev is a live event handle opened with EVENT_MODIFY_STATE.
+        assert_ne!(unsafe { ResetEvent(ev.0) }, 0, "ResetEvent");
     }
 
     /// This user's task of the old shared name is replaced by this user's own

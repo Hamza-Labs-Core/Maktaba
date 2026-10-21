@@ -5,7 +5,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "../../lib/i18n";
-import type { AppState, SetupApi, StepError, StepName, StepProgress } from "../../lib/desktopSetup";
+import {
+  NO_ANSWER,
+  type AppState,
+  type SetupApi,
+  type StepError,
+  type StepName,
+  type StepProgress,
+} from "../../lib/desktopSetup";
 import { PLEX_POLL_MS, SetupWizard, parsePathMap, type Screen } from "./SetupWizard";
 import { STARTING_POLL_MS, ServerStarting } from "./ServerStarting";
 import { DesktopGate } from "../../components/DesktopGate";
@@ -422,10 +429,23 @@ describe("ServerStarting", () => {
         <ServerStarting api={api} />
       </I18nProvider>
     );
-    expect(
-      await screen.findByText(/The server does not start: another launcher runs this install/)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/The server does not start\./)).toBeInTheDocument();
+    // the log's own words, apart from the sentence (an Arabic screen keeps them as they are)
+    expect(screen.getByText("another launcher runs this install").tagName).toBe("CODE");
     expect(api.openLocalServer).not.toHaveBeenCalled();
+  });
+
+  it("says a server that runs does not answer, with no log line when the log names none", async () => {
+    const api = fakeApi();
+    api.serverStatus.mockResolvedValue({ kind: "not_answering", reason: NO_ANSWER } as never);
+    render(
+      <I18nProvider>
+        <ServerStarting api={api} />
+      </I18nProvider>
+    );
+    expect(await screen.findByText(/The server does not start\./)).toBeInTheDocument();
+    expect(screen.queryByText(NO_ANSWER)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Its log says/)).not.toBeInTheDocument();
   });
 });
 
