@@ -10,7 +10,12 @@
 #                          payload.sh (Go binaries, Postgres, ffmpeg, Python, the
 #                          pipeline wheel), macOS 15+
 #                 x86_64 — the client only (Intel Macs keep the Homebrew/node paths)
-#   Windows   →  .msi + .exe     (NSIS) + a portable .zip of the raw exe
+#   Windows   →  the NSIS -setup.exe WITH the server inside (Epic 38, story 38.11):
+#                <install>\server built by tools/release/win-app/payload.sh (the same
+#                pieces, x86_64, plus the Visual C++ runtime), a current-user install in
+#                %LOCALAPPDATA%\Maktaba whose hooks stop / start the server around it.
+#                No .msi: Windows Installer's per-machine install in Program Files cannot
+#                hold a per-user server. Plus a portable .zip of the raw exe (the client).
 #   Linux     →  .deb + .AppImage
 #
 # WEB FRONTEND
@@ -38,7 +43,8 @@
 # tauri signs + notarizes + staples the app, then the .dmg is notarized and
 # stapled here and re-uploaded.
 # Windows (WINDOWS_CERTIFICATE / WINDOWS_CERTIFICATE_PASSWORD, Authenticode)
-# stays deferred. The updater key: TAURI_SIGNING_PRIVATE_KEY(_PASSWORD).
+# stays deferred: the owner's decision (tools/release/win-app/README.md, Signing).
+# The updater key: TAURI_SIGNING_PRIVATE_KEY(_PASSWORD).
 name: Desktop Release
 
 on:
@@ -59,20 +65,24 @@ jobs:
       matrix:
         include:
           # Apple Silicon: the server payload rides in Contents/Resources/server
-          # (the overlay payload.sh writes adds it as a resource).
+          # (the overlay payload.sh writes adds it as a resource). `payload` names
+          # the tools/release/<payload>/ directory that builds it.
           - label: macos-arm64
             os: macos-15
             rust-targets: aarch64-apple-darwin
-            payload: true
+            payload: mac-app
             args: '--target aarch64-apple-darwin --bundles app,dmg --config ../../build/mac-app/tauri.mac-app.conf.json'
           - label: macos-x86_64
             os: macos-15
             rust-targets: x86_64-apple-darwin
             args: '--target x86_64-apple-darwin --bundles app,dmg'
+          # Windows x86_64: the server payload in <install>\server (the overlay adds
+          # it as a resource, with the NSIS installer's hooks).
           - label: windows
             os: windows-latest
             rust-targets: ''
-            args: '--bundles msi,nsis'
+            payload: win-app
+            args: '--bundles nsis --config ../../build/win-app/tauri.win-app.conf.json'
           - label: linux
             os: ubuntu-22.04
             rust-targets: ''
@@ -151,8 +161,8 @@ jobs:
       - uses: actions/cache@v4
         if: matrix.payload
         with:
-          path: build/mac-app/downloads
-          key: mac-app-downloads-${{ hashFiles('tools/release/mac-app/pins.env') }}
+          path: build/${{ matrix.payload }}/downloads
+          key: ${{ matrix.payload }}-downloads-${{ hashFiles(format('tools/release/{0}/pins.env', matrix.payload)) }}
 
       # The Developer ID certificate in a throwaway keychain; its identity is
       # what payload.sh and tauri sign with. Imported after the
@@ -183,16 +193,19 @@ jobs:
           [ -n "$IDENTITY" ] || { echo "::error::no Developer ID Application identity in APPLE_CERTIFICATE"; exit 1; }
           echo "APPLE_SIGNING_IDENTITY=$IDENTITY" >>"$GITHUB_ENV"
 
-      # The server payload (signed when the identity is there) and the tauri
-      # overlay that bundles it, then a smoke test of the payload alone.
-      - name: Build the Maktaba.app server payload
+      # The server payload (on a Mac signed when the identity is there) and the
+      # tauri overlay that bundles it, then a smoke test of the payload alone.
+      # Git Bash on Windows (make is MinGW's there).
+      - name: Build the server payload
         if: matrix.payload
+        shell: bash
         env:
           VERSION: ${{ github.ref_name }}
+          PAYLOAD: ${{ matrix.payload }}
         run: |
           set -euo pipefail
-          tools/release/mac-app/payload.sh --version "$VERSION"
-          tools/release/mac-app/check.sh
+          "tools/release/$PAYLOAD/payload.sh" --version "$VERSION"
+          "tools/release/$PAYLOAD/check.sh"
 
       - name: Install desktop deps (Tauri CLI + API bindings)
         working-directory: apps/desktop
@@ -281,7 +294,7 @@ jobs:
           args: ${{ matrix.args }}
 
       - name: Check the app bundle
-        if: matrix.payload
+        if: matrix.payload == 'mac-app'
         run: |
           set -euo pipefail
           app=apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Maktaba.app
@@ -293,6 +306,19 @@ jobs:
             tools/release/mac-app/check.sh --app "$app"
           fi
           du -sh "$app" apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+
+      # A silent install of the installer tauri-action uploaded into a temporary
+      # folder (with a state already there), the checks on the installed payload,
+      # then a silent uninstall that must leave that state alone.
+      - name: Check the Windows installer
+        if: matrix.payload == 'win-app'
+        shell: bash
+        run: |
+          set -euo pipefail
+          setup=(apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe)
+          [ "${#setup[@]}" -eq 1 ] && [ -f "${setup[0]}" ] || { echo "::error::expected one NSIS installer, got: ${setup[*]}"; exit 1; }
+          tools/release/win-app/check.sh --installer "${setup[0]}"
+          du -sh build/win-app/server "${setup[0]}"
 
       # tauri notarizes the .app inside the .dmg; the .dmg itself is notarized
       # and stapled here (so it opens offline without a Gatekeeper prompt) and

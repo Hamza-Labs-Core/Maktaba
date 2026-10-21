@@ -5,7 +5,12 @@
 // /processes).
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../lib/i18n";
-import type { Platform, ServerStatus, SetupApi } from "../../lib/desktopSetup";
+import {
+  NO_ANSWER,
+  type Platform,
+  type ServerStatus,
+  type SetupApi,
+} from "../../lib/desktopSetup";
 import { platformWords, usePlatform } from "./platform";
 
 export const STARTING_POLL_MS = 2000;
@@ -44,9 +49,15 @@ export function ServerStarting({ api, platform }: { api: SetupApi; platform?: Pl
   }, [api]);
 
   let line = t("setup.starting.starting");
+  // a line of server.log, in the server's own words: shown as it is, apart from the
+  // sentence of this language
+  let logLine: string | null = null;
   if (status?.kind === "problem")
     line = t("setup.starting.problem", { roles: status.roles.join(", "), ...words });
-  else if (status?.kind === "stopped" || status?.kind === "paused")
+  else if (status?.kind === "not_answering") {
+    line = t("setup.starting.not_answering", words);
+    if (status.reason && status.reason !== NO_ANSWER) logLine = status.reason;
+  } else if (status?.kind === "stopped" || status?.kind === "paused")
     line = t("setup.starting.stopped", words);
   else if (status?.kind === "running") line = t("setup.starting.opening");
 
@@ -57,6 +68,11 @@ export function ServerStarting({ api, platform }: { api: SetupApi; platform?: Pl
           {t("setup.starting.title")}
         </h1>
         <p role="status">{line}</p>
+        {logLine && (
+          <p className="mkt-setup__note">
+            {t("setup.starting.log_says")} <code dir="ltr">{logLine}</code>
+          </p>
+        )}
         {error && (
           <p className="mkt-setup__warn" role="alert">
             {error}
