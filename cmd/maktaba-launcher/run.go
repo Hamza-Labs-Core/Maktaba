@@ -352,7 +352,7 @@ func (ln *launcher) runOnce(ctx context.Context, ver string) runResult {
 // file), then kills it after StopGrace. It returns cmd.Wait's error.
 func (ln *launcher) stop(cmd *exec.Cmd, child *childHandle, done <-chan error, stopFile string) error {
 	_ = os.WriteFile(stopFile, []byte("stop\n"), 0o644)
-	if err := askStop(cmd); err != nil {
+	if err := askStop(cmd, child); err != nil {
 		ln.log.Event("launcher_stop_signal_error", "", map[string]any{"err": err.Error()})
 	}
 	select {

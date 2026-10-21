@@ -196,7 +196,12 @@ func (b Bundle) ServerArgs() []string {
 // CI runner), it gets a restricted token, as pg_ctl and initdb give theirs:
 // postgres.exe refuses to run with administrative rights.
 func (b Bundle) ServerCommand() (*exec.Cmd, error) {
-	cmd := exec.Command(b.Bin("postgres"), b.ServerArgs()...)
+	return b.serverCommand(b.ServerArgs())
+}
+
+// serverCommand is `postgres` with args, under ServerCommand's token.
+func (b Bundle) serverCommand(args []string) (*exec.Cmd, error) {
+	cmd := exec.Command(b.Bin("postgres"), args...)
 	if err := restrict(cmd); err != nil {
 		return nil, fmt.Errorf("a restricted token for postgres: %w", err)
 	}
@@ -339,7 +344,7 @@ func (b Bundle) bootstrap(ctx context.Context, superPW, appPW string, log io.Wri
 // withServer runs fn with a server of its own up (the supervisor's is not
 // running), then stops it.
 func (b Bundle) withServer(ctx context.Context, log io.Writer, fn func() error) error {
-	srv, err := b.ServerCommand()
+	srv, err := b.serverCommand(b.ServerArgs())
 	if err != nil {
 		return err
 	}
