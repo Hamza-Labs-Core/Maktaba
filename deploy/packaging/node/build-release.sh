@@ -4,7 +4,8 @@
 #
 #   maktaba_pipeline-<ver>-py3-none-any.whl     the pipeline, version-stamped
 #   maktaba-pipeline-<ver>-constraints.txt      its dependencies as uv.lock pins them
-#                                               (every extra but dev)
+#                                               (every extra but dev), with the package
+#                                               indexes they come from
 #   maktaba-node-<ver>.tar.gz / .zip            the node installer (this directory) with
 #                                               the wheel, the constraints and
 #                                               release.conf, which makes the installer
@@ -40,6 +41,14 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$TAG" ] || die "--version is required"
 command -v uv >/dev/null 2>&1 || die "uv is required (https://docs.astral.sh/uv/)"
+# The constraints name the indexes beside PyPI (torch's CUDA build for Windows comes from
+# PyTorch's): uv export writes them with --emit-index-url, new in uv 0.12. An older uv
+# would write a file without them, which cannot install torch on Windows.
+UV_MIN="0.12.0"
+uv_version="$(uv --version | awk '{print $2}')"
+if [ "$(printf '%s\n%s\n' "$UV_MIN" "$uv_version" | sort -t. -k1,1n -k2,2n -k3,3n | head -n1)" != "$UV_MIN" ]; then
+    die "uv $uv_version is too old: the constraints need uv $UV_MIN or later (uv export --emit-index-url). Update it with \`uv self update\` or from https://docs.astral.sh/uv/"
+fi
 command -v zip >/dev/null 2>&1 || die "zip is required (the Windows archive)"
 case "$TAG" in v*) ;; *) TAG="v$TAG" ;; esac
 VERSION="${TAG#v}"
@@ -109,11 +118,27 @@ for name in project.get("optional-dependencies", {}):
 PY
 )
 # With the hashes uv.lock records: the installers install in hash-checking mode
-# (--require-hashes), so a dependency that PyPI serves differently is refused.
-uv export --project "$src" --frozen --no-dev --no-emit-project --quiet \
+# (--require-hashes), so a dependency that PyPI serves differently is refused. And with
+# the indexes ([[tool.uv.index]]: PyTorch's, for torch's CUDA build on Windows), which the
+# installers search beside PyPI; a file that matches no hash of its pin is never taken,
+# whichever index serves it.
+uv export --project "$src" --frozen --no-dev --no-emit-project --quiet --emit-index-url \
     ${extras[@]+"${extras[@]}"} -o "$WORK/$CONSTRAINTS"
 # The export header names this script's temporary path: keep the file reproducible.
 grep -v '^#    uv export' "$WORK/$CONSTRAINTS" >"$OUT/$CONSTRAINTS"
+# every index of pyproject.toml is in the file, or torch's pin cannot be installed
+while IFS=$'\r' read -r url; do
+    [ -n "$url" ] || continue
+    grep -qxF -- "--extra-index-url $url" "$OUT/$CONSTRAINTS" \
+        || die "$CONSTRAINTS does not name the index $url (uv export --emit-index-url)"
+done < <(
+    uv run --no-project --quiet python - "$src/pyproject.toml" <<'PY'
+import sys, tomllib
+with open(sys.argv[1], "rb") as f:
+    for index in tomllib.load(f).get("tool", {}).get("uv", {}).get("index", []):
+        print(index["url"])
+PY
+)
 # every requirement carries a hash (the installers refuse the file otherwise)
 unhashed="$(awk '
     /^[A-Za-z0-9]/ { if (req != "" && !h) bad = bad " " req; req = $1; h = ($0 ~ /--hash=sha256:/); next }

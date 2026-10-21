@@ -29,6 +29,9 @@ jobs:
 
       - uses: astral-sh/setup-uv@v8.1.0
         with:
+          # the constraints name PyTorch's index: uv export --emit-index-url needs uv 0.12+
+          # (build-release.sh checks), and one uv version writes them the same every run
+          version: "0.13.4"
           enable-cache: true
           cache-dependency-glob: pipeline/uv.lock
 
@@ -47,14 +50,17 @@ jobs:
           printf 'maktaba-pipeline @ file://%s --hash=sha256:%s\n' "$whl" "$(sha256sum "$whl" | awk '{print $1}')" \
             >"$RUNNER_TEMP/req.txt"
           uv venv --python 3.12 "$RUNNER_TEMP/uv-venv"
-          # dependencies that do not match their hashes are refused
+          # dependencies that do not match their hashes are refused (uv looks for each pin
+          # on every index the constraints name, as the installers' uv does; with the stt or
+          # search extra they install the pins with the venv's pip, as the step below does)
           sed -E "s/sha256:[0-9a-f]{64}/sha256:$(printf '0%.0s' $(seq 64))/g" "$cons" >"$RUNNER_TEMP/bad-constraints.txt"
           if uv pip install --python "$RUNNER_TEMP/uv-venv/bin/python" --require-hashes \
+              --index-strategy unsafe-best-match \
               --constraint "$RUNNER_TEMP/bad-constraints.txt" -r "$RUNNER_TEMP/req.txt"; then
             echo "::error::dependencies with wrong hashes were installed"; exit 1
           fi
           uv pip install --python "$RUNNER_TEMP/uv-venv/bin/python" --require-hashes \
-            --constraint "$cons" -r "$RUNNER_TEMP/req.txt"
+            --index-strategy unsafe-best-match --constraint "$cons" -r "$RUNNER_TEMP/req.txt"
           cd "$RUNNER_TEMP"   # not the checkout: nothing on sys.path but the venv
           bin="$RUNNER_TEMP/uv-venv/bin/maktaba-pipeline"
           got="$("$bin" --version)"
@@ -248,6 +254,8 @@ jobs:
           grep -q '"state": "ready"' "$RUNNER_TEMP/App Support/Maktaba/venv-status.json"
           "$venv/bin/maktaba-pipeline" --version
           "$venv/bin/python" -c "import mlx_whisper, mlx_audio, chromadb, sentence_transformers, camel_tools, silero_vad"
+          # the constraints name PyTorch's index (Windows' torch): a Mac keeps PyPI's torch
+          "$venv/bin/python" -c "from importlib.metadata import version; v = version('torch'); assert '+' not in v, v; print('torch', v)"
           PYTHONPATH="$whl" "$py" -m maktaba_pipeline.venv_bootstrap --python "$py" \
             --payload dist --venv "$venv" --check
           "$venv/bin/maktaba-pipeline" models status --json || [ $? -eq 10 ]
