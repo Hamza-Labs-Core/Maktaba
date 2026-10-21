@@ -136,8 +136,8 @@ brew install hamza-labs-core/tap/maktaba
 installs for the current user into `%LOCALAPPDATA%\Maktaba` (no administrator) and
 carries the whole server: `maktaba-server`, PostgreSQL 16, ffmpeg (NVENC) and Python
 3.12. Its setup screens do the rest (the admin, the libraries and the NAS path map,
-the models, Plex), and the first start builds the pipeline's Python environment
-(CUDA on an NVIDIA GPU, else the processor). From then on the server starts at every
+the models, Plex), and the first start builds the pipeline's Python environment.
+From then on the server starts at every
 sign-in with no console window, the tray shows how it is doing, and the app updates
 itself through signed updates (the Tauri updater), starting with the first tagged release
 that includes it. A PC that already runs Maktaba (`maktaba-server setup --service`, the

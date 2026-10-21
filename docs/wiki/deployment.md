@@ -318,13 +318,16 @@ On Windows the home server is the desktop app: one NSIS installer
 ```
 
 - **Setup** runs in the app (`maktaba-server setup --json`, the steps every
-  platform shares); the first start builds `venv\` (CUDA on an NVIDIA GPU).
+  platform shares); the first start builds `venv\`, the pipeline's Python
+  environment, from the payload's wheel and hashed constraints.
 - **The server at sign-in.** A sign-in task of the user (`\Maktaba Server <SID>`,
   30 s after sign-in, a 5-minute watchdog) runs `Maktaba.exe --server-agent`,
   which runs `server\bin\maktaba-launcher.exe --app-bundle <install>\server serve`
   with no console window. Not a Windows service: the user's mapped NAS drives
   exist only in the user's session. Stopping goes through the named event
-  `Local\Maktaba.Server.Stop`; every role gets CTRL_BREAK and stops cleanly.
+  `Local\Maktaba.Server.Stop`. Each role is then asked to stop with CTRL_BREAK and
+  drains (Postgres stops through `pg_ctl`'s fast shutdown); a `serve` with no console
+  of its own cannot send CTRL_BREAK and ends its children instead.
 - **Ports** are `server.toml`'s, as on any install (web 8088, API 8080,
   streaming 8081, the supervisor's `/processes` on 127.0.0.1:9103); the bundled
   Postgres listens on 127.0.0.1 only.
