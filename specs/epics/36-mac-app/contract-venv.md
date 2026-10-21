@@ -50,20 +50,32 @@ $env:PYTHONPATH = "$P\pipeline\maktaba_pipeline-<v>-py3-none-any.whl"
 | `--wheel F --constraints F` (instead of `--payload`) | — | — |
 | `--venv DIR` | `MAKTABA_VENV` | `~/Library/Application Support/Maktaba/venv` (Windows: `%LOCALAPPDATA%\Maktaba\venv`, else `%USERPROFILE%\AppData\Local\Maktaba\venv`; Linux: `$XDG_DATA_HOME/maktaba/venv`) |
 | `--extras a,b` (must be complete in the venv) | `MAKTABA_PIPELINE_EXTRAS` | `stt,search` |
+| `--torch auto\|cpu\|cuda` (with `--payload`: which constraints) | `MAKTABA_PIPELINE_TORCH` | `auto` |
 | `--status-file F` | — | `venv-status.json` beside the venv |
 | `--check` | — | change nothing; say what a run would do |
 | `--force` | — | rebuild from scratch |
 
 The constraints file must pin every dependency **with its hash** (`build-release.sh` exports it
-from `uv.lock` that way), and it names the package indexes they come from: PyPI and, for
-torch's CUDA build on Windows, PyTorch's (`--index-url https://pypi.org/simple`,
-`--extra-index-url https://download.pytorch.org/whl/cu130`; story 38.9). Every pin in it is
-installed (`pip install --require-hashes --no-deps -r constraints`: pip takes no hashes from a
+from `uv.lock` that way). A release has two (story 38.9): `...-constraints.txt`, PyPI's alone
+(`--index-url https://pypi.org/simple`), whose torch on Windows is the CPU build (124 MB), and
+`...-constraints-cuda.txt`, the same pins with torch's CUDA build for Windows from PyTorch's
+index (`--extra-index-url https://download.pytorch.org/whl/cu130`, 2.0 GB; uv.lock's `cuda`
+dependency group). With `--payload` (a folder holding both) the bootstrap takes the cuda set on
+Windows x86_64 when the machine's NVIDIA GPU runs the second listen, as `nvidia-smi` reports it
+(`--query-gpu=name,memory.total,compute_cap,driver_version`, before R510 without
+`compute_cap`): 9.5 GiB or more, compute capability 7.5 or more, driver R580 or later, the
+pipeline's own thresholds (`stt/cohere_cuda.py`; a test keeps the copies equal, here and in
+the Windows installer and the supervisor), what `nvidia-smi` does not report not held against
+it; else the default set, and always elsewhere (Linux's PyPI torch is the CUDA build already;
+the cuda set's Linux lines are not for Linux). The status file and every event say which
+(`torch`: `cpu` | `cuda`, `torch_why`). A GPU added (or removed) later changes the set, and so
+the constraints' digest: the next run builds again. Every pin in the set is installed
+(`pip install --require-hashes --no-deps -r constraints`: pip takes no hashes from a
 constraints file, so the pins are installed as requirements), then the wheel, checked against
-its own SHA-256. pip looks for each pin on both indexes and takes the file one of its hashes
-names, whichever index has it, so a file from either index is installed only when it is the
-pinned one (PyTorch's index also serves some packages PyPI has, a few of them as other files:
-Linux's triton 3.8.0, and its torch 2.14.1+cu130, which `torch==2.14.1` matches). So the extras the venv gets are
+its own SHA-256. With the cuda set pip looks for each pin on both indexes and takes the file one
+of its hashes names, whichever index has it, so a file from either index is installed only when
+it is the pinned one (PyTorch's index also serves some packages PyPI has, a few of them as other
+files). So the extras the venv gets are
 the ones the constraints file was exported with (today all but `dev`: `stt`, `search`,
 `mediaintel`); `--extras` then checks that each requirement of `maktaba-pipeline[stt,search]`
 for this machine is installed at an allowed version, and fails the run if not.
@@ -173,9 +185,14 @@ moved to `dropbox-dash/`; the old name only redirects). It, and `Systran/faster-
 `dropbox-dash/...turbo` at `0a363e91`, `Systran/...large-v3` at `edaa852e`) and their files
 checked against their SHA-256 once (a marker, `.maktaba-sha256`, in the snapshot); a file that
 does not match is removed, so the next download fetches it again. A model of the operator's
-own is fetched as its repo has it. Still unpinned (as on `main`): the MLX Whisper and the
-Cohere model on Apple Silicon (`mlx_whisper`, `mlx_audio`, `fetch_cli.hf_download`), the
-embedder (sentence-transformers) and the CAMeL data. Its CUDA needs cuBLAS 12 only (the
+own is fetched as its repo has it. The second listen's model on Windows and Linux is pinned the
+same way (story 38.9, `engine.SECOND_LISTEN_PINS`: `CohereLabs/cohere-transcribe-arabic-07-2026`
+at `c3e911b4`; the repo is gated, so its small files are pinned by their git blob ids, the only
+hash Hugging Face gives without a sign-in, and the weights and `tokenizer.model` by their
+SHA-256), at load and in `models download`; the home's copy on the share is the home's, checked
+by its own manifest. Still unpinned (as on `main`): the MLX Whisper and the Cohere model on
+Apple Silicon (`mlx_whisper`, `mlx_audio`, `fetch_cli.hf_download`), the embedder
+(sentence-transformers) and the CAMeL data. Its CUDA needs cuBLAS 12 only (the
 `nvidia-cublas-cu12` wheel of the `stt` extra; CTranslate2 ≥ 4.6.3 runs Whisper without
 cuDNN) and the NVIDIA driver; no CUDA toolkit.
 
@@ -187,9 +204,22 @@ dictionary as the Mac (`camel-tools` installs on both: Windows needs no kenlm, L
 wheel; `morphology-db-msa-r13` is 39 MB). Never on the CPU: there the 2 B model would take
 hours for an hour of audio. `stt/cohere.py` `unavailable()` (and so `models`) says why a machine
 has none: transcription set to the CPU; torch, transformers, accelerate or librosa missing;
-a torch without CUDA; no CUDA device; a GPU older than torch's build runs on (CUDA 13: Turing,
-sm_75, and newer); a GPU smaller than **9.5 GiB on Windows** (a 10 GB card) **or 7.5 GiB
-elsewhere** (an 8 GB card). The Windows threshold is measured: the driver's budget (WDDM, what
+a torch without CUDA (read from torch's own `version.py`); no NVIDIA GPU; a GPU smaller than
+**9.5 GiB on Windows** (a 10 GB card) **or 7.5 GiB elsewhere** (an 8 GB card); one older than
+torch's build runs on (CUDA 13: compute capability **7.5**, Turing, and newer); a driver older
+than **R580**. The answer comes from the driver (NVML, through ctypes) without importing torch
+or starting CUDA, since a worker asks it on its event loop at each stage selection and at a
+file's end; what NVML does not report is not held against the GPU, and torch says the rest
+when it loads the model (a CUDA it cannot use, a build without the GPU's kernels: a failed
+load). A failed load (no licence and no copy on the share, files that would not load) is
+remembered: not tried again for 10 minutes, then 20, doubling to 6 hours (a load takes 20 to
+26 s; a restart tries at once), and meanwhile the worker counts as one without the second
+listen (its transcripts made without it stand, none is queued again). The thresholds live in
+`stt/cohere_cuda.py` (`MIN_GPU_GB = 9.5 if sys.platform == "win32" else 7.5`, `MIN_COMPUTE =
+(7, 5)`, `MIN_DRIVER = 580`) and are copied, each copy kept equal by a test, in the supervisor
+(`supervisor/stt.go`: `refineMinGB`, `refineMinComputeMajor/Minor`, `refineMinDriver`), the venv
+bootstrap and the Windows installer (`node-common.ps1`), and setup's check
+(`cmd/maktaba-server/second_listen.go`, #213). The Windows threshold is measured: the driver's budget (WDDM, what
 `torch.cuda.mem_get_info` reports) leaves a process 6.95 of an 8 GB card, Whisper takes 1.1 of
 it, and loading the model beside Whisper takes 1.6 GiB more than its 3.85 GiB of weights, so
 an 8 GB card has 5.8 GiB where the model, a batch and Whisper's room need 6.4. When the
@@ -204,17 +234,34 @@ reason), on CUDA `runtime` (`transformers 5.17.0, torch 2.14.1+cu130, cuda:0 flo
 
 **torch.** On Linux it comes from PyPI, whose x86_64 wheel is the CUDA 13.0 build (with the
 `nvidia-*` / `cuda-toolkit` wheels); macOS keeps PyPI's (MLX does its second listen). PyPI's
-Windows torch is a CPU build, so on Windows x86_64 `pyproject.toml` takes it from PyTorch's own
-index (`[tool.uv.sources]`, an explicit `[[tool.uv.index]]`: nothing else comes from it):
+Windows torch is a CPU build (124 MB), which every Windows machine gets by default; the
+second listen needs the CUDA one, which only a machine whose NVIDIA GPU runs it gets (above):
+`pyproject.toml`'s `cuda` dependency group takes torch from PyTorch's own index there
+(`[tool.uv.sources]`, an explicit `[[tool.uv.index]]`: nothing else comes from it),
 `torch==2.14.1+cu130`, a 2.0 GB download, CUDA 13.0 like Linux's (Turing and newer GPUs, an
-NVIDIA driver of R580 or later). The lock pins it with its hash, and `build-release.sh` exports
-the constraints with `uv export --emit-index-url` (uv 0.12 or later: it stops on an older uv,
-and on a file that does not name every index of `pyproject.toml`). A Windows install therefore
-reaches `download.pytorch.org` (and `pypi.nvidia.com`, where that index sends some NVIDIA
-wheels, the same files as PyPI's) beside PyPI. The Windows venv with every extra but `dev` is
-5.0 GB as the bootstrap's pip installs it (4.6 GB as `uv sync` does; torch 2.9 GB of it), where
-it was 2.1 GB before this story with PyPI's CPU torch; Linux's is 7.7 GB, nearly all torch's
-CUDA 13 libraries, which the `search` extra brought already.
+NVIDIA driver of R580 or later). uv locks the two builds apart only for groups declared in
+conflict (`cpu`, which adds nothing, and `cuda`); groups, not extras, so `uv sync
+--all-extras` works as before (`uv sync --all-extras --group cuda` gives a Windows checkout the
+CUDA build). The lock pins both with their hashes, and `build-release.sh` exports the default
+set (PyPI's alone: it drops the index line uv writes, and stops on a set that pins a CUDA
+torch) and the cuda one with `uv export --group cuda --emit-index-url` (uv 0.12 or later: it
+stops on an older uv, on a cuda set that does not name every index of `pyproject.toml`, and
+on one without torch's CUDA build for Windows). Only the cuda set reaches
+`download.pytorch.org` (and `pypi.nvidia.com`, where that index sends some NVIDIA wheels, the
+same files as PyPI's). The Windows venv with every extra but `dev` is 2.7 GB with the CPU
+build, 5.0 GB with the CUDA one (as the bootstrap's pip installs it, measured; torch 2.9 GB
+of the latter);
+Linux's is 7.7 GB, nearly all torch's CUDA 13 libraries, which the `search` extra brought
+already. The release names both sets in `release.json` (`pipeline.constraints`,
+`pipeline.constraints_cuda`, each with its SHA-256) and in the node archive's `release.conf`
+(`CONSTRAINTS`, `CONSTRAINTS_CUDA`): `setup --node` and `install-node.ps1` (`-Torch auto|cpu|cuda`)
+pick by the same GPU check; `install-node.sh` (Linux, macOS) the default set.
+
+**The embedder** (`search/semantic.py` `pick_device`) stays on the CPU on an NVIDIA machine
+(story 38.9): Whisper's tiers and the second listen's room check fill the GPU without its
+0.5-1 GB (the e5 model and a CUDA context); e5-small embeds a transcript's chunks in moments
+there. Apple's GPU (MPS) as before; `MAKTABA_EMBED_DEVICE=cuda` puts it on the NVIDIA GPU all
+the same.
 
 **The gated model.** Hugging Face serves it only to an account that accepted its licence:
 `HF_TOKEN` in the environment, or a token saved by `hf auth login` **in this `HF_HOME`**

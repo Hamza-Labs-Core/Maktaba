@@ -38,16 +38,25 @@ don't append a line here; docs-only PRs are exempt.
   smaller batch on such a GPU to leave it room. Transcripts record what heard them
   (`metadata.refine.runtime`) and a missing dictionary (`dictionary: "unavailable"`). The
   dictionary's data folder is now made before CAMeL Tools downloads into it (a fresh models
-  folder made it fail).
-- **torch's CUDA build on Windows (story 38.9).** PyPI only has a CPU torch for Windows, so on
-  Windows x86_64 torch now comes from PyTorch's own index (`torch 2.14.1+cu130`, a 2.0 GB
-  download; the app's venv grows from 2.1 to 5.0 GB). The release's constraints name that index
-  beside PyPI (`uv export --emit-index-url`: building a release needs uv 0.12 or later, and stops
-  on an older uv), every pin still hash-checked. The node installers look for each pin on both
-  indexes; with the `stt` or `search` extra they install the pins with the venv's pip, which
-  takes the file a pin's hashes name from either index (uv takes the first it finds, and on
-  Linux PyTorch's index also serves a torch and a triton that are not the pinned files). Linux
-  and macOS install the same packages as before. CI exports with uv 0.13.4.
+  folder made it fail). It runs only where the GPU can (its memory, compute capability 7.5 and
+  driver R580, read from the driver without importing torch) and its model can be had (the
+  supervisor gives Whisper the smaller batch only then); its model is fetched at a pinned commit
+  and checked file by file; a load that fails is not tried again for 10 minutes, doubling to 6
+  hours.
+- **torch's CUDA build on Windows, where the GPU runs the second listen (story 38.9).** PyPI only
+  has a CPU torch for Windows (124 MB), which stays the default; the CUDA build
+  (`torch 2.14.1+cu130` from PyTorch's own index, 2.0 GB; the venv grows from 2.7 to 5.0 GB) comes
+  with a new `cuda` dependency group, only on a machine whose NVIDIA GPU runs the second listen
+  (9.5 GiB or more, compute capability 7.5 or more, driver R580 or later, as `nvidia-smi` says).
+  A release ships both pin sets, every pin hash-checked (`...-constraints.txt`, PyPI's alone, and
+  `...-constraints-cuda.txt`, which names PyTorch's index: `uv export --emit-index-url`, so
+  building a release needs uv 0.12 or later), named in `release.json` and `release.conf`; the
+  venv bootstrap (`--torch auto|cpu|cuda`), `setup --node` and `install-node.ps1` (`-Torch`) pick
+  one by the GPU. With the cuda set the node installers look for each pin on both indexes, and
+  with the `stt` or `search` extra install the pins with the venv's pip, which takes the file a
+  pin's hashes name from either index. Linux and macOS install the same packages as before. CI
+  exports with uv 0.13.4. The semantic-search embedder no longer goes on an NVIDIA GPU of its own
+  accord (`MAKTABA_EMBED_DEVICE=cuda` still puts it there): the GPU's sizing leaves it no room.
 - **Postgres programs for every platform, and Postgres on Windows.** Maktaba can fetch the pinned
   Postgres 16.15 build of the machine's platform (theseus-rs; size and SHA-256 pinned, unpacked
   with path checks), and the supervisor runs Postgres on Windows (its `.exe` programs, a fast
