@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	_ "embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -48,33 +50,22 @@ import (
 
 // detailCodes are the codes of every detail the app's start steps show
 // (/processes' detail_code), each with the names of its values (detail_params):
-// a fixed list the app's screens translate. A new detail takes a new code here
-// (and in contract-update.md's list). Releases are versions ("" when not
-// known), paths are whole, error values are the programs' own English.
-var detailCodes = map[string][]string{
-	// the database step
-	"db_waiting":            nil,
-	"db_checking":           {"release"},
-	"db_dumping":            {"from", "to"},
-	"db_migrating":          {"to"},
-	"db_restoring":          {"failed", "dump"},
-	"db_restored":           {"failed", "error", "dump", "release"},
-	"db_refused_older":      {"release", "needed", "dump"},
-	"db_ahead":              {"release", "error"},
-	"db_dump_failed":        {"to", "error"},
-	"db_migrate_failed":     {"release", "error"},
-	"db_restore_failed":     {"failed", "error", "dump", "restore_error"},
-	"db_restore_unfinished": {"failed", "dump"},
-	"db_no_cluster":         {"failed", "error", "dump"},
-	"db_record_failed":      {"path", "error"},
-	// postgres
-	"pg_unreadable": {"path", "error"},
-	"pg_major":      {"cluster", "payload"},
-	// the pipeline's venv
-	"venv_waiting":     nil,
-	"venv_building":    {"step", "done", "total", "percent", "message"},
-	"venv_interrupted": {"log"},
-	"venv_failed":      {"error", "log"},
+// a fixed list the app's screens translate. It is detail_codes.json, which the
+// screens' test reads too, so the server and the screens have one list. A new
+// detail takes a new code there (and in contract-update.md's list). Releases
+// are versions ("" when not known), paths are whole, error values are the
+// programs' own English.
+var detailCodes = parseDetailCodes(detailCodesJSON)
+
+//go:embed detail_codes.json
+var detailCodesJSON []byte
+
+func parseDetailCodes(b []byte) map[string][]string {
+	var codes map[string][]string
+	if err := json.Unmarshal(b, &codes); err != nil {
+		panic("detail_codes.json: " + err.Error()) // embedded: a test run meets it first
+	}
+	return codes
 }
 
 // detail is code's Detail: values are its params in detailCodes' order, text

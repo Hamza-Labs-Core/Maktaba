@@ -87,6 +87,9 @@ interface CheckResult {
   problems: CheckNote[];
   warnings: CheckNote[];
   runs: { role: string; what: string; params?: Record<string, unknown> }[];
+  /** with the second listen on: whether this machine can run it (no sign-in for its
+   * gated model where it cannot; the reason is among the warnings) */
+  second_listen?: { runs: boolean; code?: string; params?: Record<string, unknown> };
 }
 
 /** The platform's words ({machine}, {tray}) for every coded text. */
@@ -235,6 +238,9 @@ export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initi
       .catch(() => {});
   }, [api]);
 
+  // whether this machine runs the second listen (check says): the models step
+  // asks for its Hugging Face sign-in only then
+  const [secondListen, setSecondListen] = useState<boolean | undefined>(undefined);
   const go = (dir: 1 | -1) => {
     const i = ORDER.indexOf(screen);
     if (dir === -1 && i <= 0) return setScreen("welcome");
@@ -281,13 +287,13 @@ export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initi
           />
         );
       case "check":
-        return <Check {...props} />;
+        return <Check {...props} onChecked={(r) => setSecondListen(r.second_listen?.runs)} />;
       case "admin":
         return <Admin {...props} />;
       case "libraries":
         return <Libraries {...props} />;
       case "models":
-        return <Models {...props} />;
+        return <Models {...props} secondListen={secondListen} />;
       case "plex":
         return <Plex {...props} />;
       case "install":
@@ -544,10 +550,19 @@ function Welcome({
   );
 }
 
-function Check({ api, step, platform, next, back }: StepProps) {
+function Check({
+  api,
+  step,
+  platform,
+  next,
+  back,
+  onChecked,
+}: StepProps & { onChecked?: (r: CheckResult) => void }) {
   const { t } = useI18n();
   const words = platformWords(t, platform);
   const [res, setRes] = useState<CheckResult | null>(null);
+  const checked = useRef(onChecked);
+  checked.current = onChecked;
   const [error, setError] = useState<StepError | null>(null);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -555,7 +570,11 @@ function Check({ api, step, platform, next, back }: StepProps) {
     setError(null);
     api
       .runStep<CheckResult>("check", {})
-      .then((r) => alive && setRes(r))
+      .then((r) => {
+        if (!alive) return;
+        setRes(r);
+        checked.current?.(r);
+      })
       .catch((e) => alive && setError(asError(e)));
     return () => {
       alive = false;
@@ -802,7 +821,17 @@ function Libraries({ api, step, platform, next, back }: StepProps) {
   );
 }
 
-function Models({ api, step, platform, next, back }: StepProps) {
+function Models({
+  api,
+  step,
+  platform,
+  next,
+  back,
+  secondListen,
+}: StepProps & { secondListen?: boolean }) {
+  // false: this machine does not run the second listen, so its gated model needs no
+  // Hugging Face sign-in (Whisper and the search model need none either)
+  const signIn = secondListen !== false;
   const { t } = useI18n();
   const words = platformWords(t, platform);
   const [source, setSource] = useState<"huggingface" | "nas">("huggingface");
@@ -847,7 +876,9 @@ function Models({ api, step, platform, next, back }: StepProps) {
             {t("setup.models.nas")}
           </label>
         </fieldset>
-        {source === "huggingface" ? (
+        {source === "huggingface" && !signIn ? (
+          <p className="mkt-setup__note">{t("setup.models.hfNoSignIn", words)}</p>
+        ) : source === "huggingface" ? (
           <>
             <p className="mkt-setup__note">
               {t("setup.models.hfNote")}{" "}

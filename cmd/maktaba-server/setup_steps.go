@@ -131,6 +131,9 @@ type checkResult struct {
 	// GPUs are the NVIDIA GPUs transcription can use (Windows and Linux).
 	GPUs []hostinfo.GPU `json:"gpus"`
 	Runs []setupRole    `json:"runs"`
+	// SecondListen: with refine on, whether this machine can run the second
+	// listen (the screens ask for its Hugging Face sign-in only then).
+	SecondListen *secondListen `json:"second_listen,omitempty"`
 }
 
 func newNote(code, message string, kv ...any) checkNote {
@@ -215,11 +218,19 @@ func stepCheck(s *setupRun, _ json.RawMessage) (any, error) {
 	}
 	// transcription on Windows and Linux: an NVIDIA GPU (CUDA), else the processor
 	gpu := ""
+	var gpus []hostinfo.GPU
 	if runtime.GOOS != "darwin" {
-		if gpus := hostGPUs(); len(gpus) > 0 {
+		if gpus = hostGPUs(); len(gpus) > 0 {
 			res.GPUs, gpu = gpus, gpus[0].Name
 		} else {
 			res.Warn("transcribe_cpu", "No NVIDIA GPU: transcription runs on the processor, many times slower than on a GPU.")
+		}
+	}
+	if s.refineOn() {
+		sl := secondListenOn(runtime.GOOS, runtime.GOARCH, gpus)
+		res.SecondListen = &sl
+		if !sl.Runs {
+			res.Warnings = append(res.Warnings, checkNote{Code: sl.Code, Params: sl.Params, Message: sl.Message})
 		}
 	}
 	for _, check := range platformChecks {
