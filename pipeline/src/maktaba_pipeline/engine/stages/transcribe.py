@@ -3,18 +3,36 @@
 One job per video in the ``gpu`` pool. The audio is decoded straight off the share
 (ffmpeg: mono, 16 kHz, into memory: no extract stage, no audio cache) and handed to the
 process's :class:`~maktaba_pipeline.stt.batched.BatchedTranscriber`, which decodes one
-window of every running job per GPU pass. The transcript replaces the video's active one
+window of every running job per GPU pass: on MLX on Apple Silicon, on CTranslate2
+elsewhere (:mod:`maktaba_pipeline.stt.engine`, :mod:`maktaba_pipeline.stt.ct2`: an
+NVIDIA GPU through CUDA, else the CPU). The transcript replaces the video's active one
 in one transaction: a new ``transcripts`` row (on the stream it decoded, recorded in
-``audio_tracks`` as track 0) with one ``transcript_segments`` row per sentence.
+``audio_tracks`` as track 0; ``backend`` names the engine) with one
+``transcript_segments`` row per sentence.
 
 Settings (environment, read per run): ``MAKTABA_STT_MODEL`` (default
-``mlx-community/whisper-large-v3-turbo``), ``MAKTABA_STT_LANGUAGE`` (``ar``),
+whisper-large-v3-turbo in the engine's format: ``mlx-community/whisper-large-v3-turbo``,
+``dropbox-dash/faster-whisper-large-v3-turbo``; CTranslate2 loads the CTranslate2
+conversion of an MLX model it is given), ``MAKTABA_STT_LANGUAGE`` (``ar``),
 ``MAKTABA_STT_WORDS`` (``1``: sentence bounds from word timings),
 ``MAKTABA_STT_STORE_WORDS`` (``0``: keep each sentence's words in its metadata),
 ``MAKTABA_STT_REFINE`` (``1``: a second listen corrects Whisper's words,
 :mod:`maktaba_pipeline.stt.refine`; ``0`` stores Whisper's as they are) with
-``MAKTABA_STT_REFINE_MODEL`` (default ``CohereLabs/cohere-transcribe-arabic-07-2026``).
-The library's ``stt.initial_prompt`` (names, terms) biases every window's decoding.
+``MAKTABA_STT_REFINE_MODEL`` (default ``CohereLabs/cohere-transcribe-arabic-07-2026``;
+MLX only: on CTranslate2 the transcript keeps Whisper's words and says why),
+``MAKTABA_STT_BATCH`` (files decoded together: 32 on MLX, 8 on CTranslate2). MLX's GPU
+memory: ``MAKTABA_STT_GPU_GB`` / ``_GPU_CACHE_GB``; CTranslate2's device and precision:
+``MAKTABA_STT_DEVICE`` (``auto``), ``MAKTABA_STT_COMPUTE_TYPE`` (``auto``),
+``MAKTABA_STT_CPU_THREADS``. The library's ``stt.initial_prompt`` (names, terms) biases
+every window's decoding.
+
+Where (review of story 38.8): while the second listen is on, a worker that cannot run it
+(Windows, Linux: :func:`second_listen_problem`) leaves the stage to those that can,
+unless the home's rules let it transcribe too (``rules.transcription``,
+:mod:`maktaba_pipeline.stt.placement`). A transcript made without its second listen
+records that in its job's input hash (:func:`skipped_fingerprint`): a worker that runs
+the second listen does not take it as done, and queues such transcripts again, a few at
+a time (:func:`relisten`), while one that cannot lets them stand (:func:`still_current`).
 """
 
 from __future__ import annotations
@@ -24,6 +42,8 @@ import importlib.util
 import math
 import os
 import platform
+import time
+from datetime import UTC, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
@@ -31,7 +51,9 @@ from uuid import uuid4
 from ...binaries import ffmpeg_binary
 from ...db.jobs import Job
 from ...log import get_logger
+from ...stt import engine
 from ...stt.cohere import DEFAULT_MODEL as REFINE_MODEL
+from ...stt.placement import TranscriptionConfig
 from ...stt.settings import SAMPLE_RATE, Checkpoint, FileProgress, Transcript, WhisperSettings
 from ..context import JobDeferred, StageContext, StageFailure
 from ..graph import TRANSCRIBE_VERSION, StageResult, Subject
@@ -47,15 +69,39 @@ if TYPE_CHECKING:
 
     from ...stt.batched import BatchedTranscriber
 
-__all__ = ["IMPL", "TRANSCRIBE_VERSION", "settings_from_env", "unavailable"]
+__all__ = [
+    "IMPL",
+    "TRANSCRIBE_VERSION",
+    "relisten",
+    "second_listen_problem",
+    "settings_from_env",
+    "skipped_fingerprint",
+    "still_current",
+    "unavailable",
+]
 
 _log = get_logger()
 
 
 def unavailable() -> str | None:
     """Why this worker cannot run transcribe, or None: MLX-Whisper runs on Apple
-    Silicon only, with the ``stt`` extra. A worker without it never claims the stage
-    (it would fail every job), but still imports this module to enqueue it."""
+    Silicon only, with the ``stt`` extra; elsewhere CTranslate2, with the ``stt`` extra,
+    a model it can load and the GPU it was told to use, if any
+    (:func:`maktaba_pipeline.stt.ct2.unavailable`). A worker that cannot never claims
+    the stage (it would fail every job), but still imports this module to enqueue it.
+    One that can still leaves it to the machines that run the second listen
+    (:func:`waits_for_second_listen`)."""
+    why = _engine_unavailable()
+    return why if why is not None else waits_for_second_listen()
+
+
+def _engine_unavailable() -> str | None:
+    if engine.current() == engine.CT2:
+        if importlib.util.find_spec("numpy") is None:
+            return "numpy is not installed (the stt extra)"
+        from ...stt.ct2 import unavailable as ct2_unavailable
+
+        return ct2_unavailable(settings_from_env())
     if platform.system() != "Darwin" or platform.machine() != "arm64":
         return "MLX-Whisper needs Apple Silicon"
     for mod in ("numpy", "mlx_whisper"):
@@ -85,9 +131,21 @@ def _remap(result: Transcript, tmap: Any, audio_sec: float) -> Transcript:
 
 
 def get_transcriber(settings: WhisperSettings) -> BatchedTranscriber:
+    """The process's transcriber for these settings, on this machine's engine."""
+    if engine.current() == engine.CT2:
+        from ...stt.ct2 import get_transcriber as on_ct2
+
+        return on_ct2(settings)
     from ...stt.batched import get_transcriber as shared
 
     return shared(settings)
+
+
+def _where(settings: WhisperSettings) -> str:
+    """Where the files are decoded, for the job's progress line: a CTranslate2 worker
+    without a usable GPU decodes on the CPU (known once its model is loaded)."""
+    device = getattr(get_transcriber(settings), "device", None) or settings.device
+    return "on the CPU" if str(device).startswith("cpu") else "on the GPU"
 
 
 #: decoding the audio off the share: generous, a long lecture over a busy NAS
@@ -138,12 +196,28 @@ def audio_budget() -> AudioBudget:
 
 
 def settings_from_env(max_batch: int | None = None) -> WhisperSettings:
+    """This machine's settings, each engine reading its own knobs."""
     env = os.environ
+    name = engine.current()
+    model = engine.model_for(name, env.get("MAKTABA_STT_MODEL"))
+    language = env.get("MAKTABA_STT_LANGUAGE", "ar")
+    words = env.get("MAKTABA_STT_WORDS", "1") != "0"
+    batch = max_batch or int(env.get("MAKTABA_STT_BATCH") or engine.DEFAULT_BATCH[name])
+    if name == engine.CT2:
+        return WhisperSettings(
+            model=model,
+            language=language,
+            word_timestamps=words,
+            max_batch=batch,
+            device=env.get("MAKTABA_STT_DEVICE") or "auto",
+            compute_type=env.get("MAKTABA_STT_COMPUTE_TYPE") or "auto",
+            cpu_threads=int(env.get("MAKTABA_STT_CPU_THREADS") or 0),
+        )
     return WhisperSettings(
-        model=env.get("MAKTABA_STT_MODEL", "mlx-community/whisper-large-v3-turbo"),
-        language=env.get("MAKTABA_STT_LANGUAGE", "ar"),
-        word_timestamps=env.get("MAKTABA_STT_WORDS", "1") != "0",
-        max_batch=max_batch or int(env.get("MAKTABA_STT_BATCH", "32")),
+        model=model,
+        language=language,
+        word_timestamps=words,
+        max_batch=batch,
         gpu_limit_gb=float(env.get("MAKTABA_STT_GPU_GB", "24")),
         gpu_cache_gb=float(env.get("MAKTABA_STT_GPU_CACHE_GB", "2")),
     )
@@ -154,6 +228,166 @@ def refine_model() -> str | None:
     if os.environ.get("MAKTABA_STT_REFINE", "1") == "0":
         return None
     return os.environ.get("MAKTABA_STT_REFINE_MODEL", REFINE_MODEL)
+
+
+# ------------------------------------------------------------------ where it runs
+
+#: ``rules.transcription`` as this worker last read it (:func:`refresh`, before each
+#: stage selection)
+_RULES = TranscriptionConfig()
+
+
+def second_listen_problem() -> str | None:
+    """Why this worker cannot run the second listen, or None (whether it has the model
+    shows when it loads it)."""
+    from ...stt.cohere import unavailable as no_second_listen
+
+    why = no_second_listen()
+    if why is None and engine.current() == engine.MLX and not importlib.util.find_spec("mlx_audio"):
+        why = "mlx-audio is not installed (the stt extra)"
+    return why
+
+
+def runs_second_listen() -> bool:
+    """This worker gives its transcripts their second listen: it is on, and runs here."""
+    return refine_model() is not None and second_listen_problem() is None
+
+
+def waits_for_second_listen() -> str | None:
+    """Why this worker leaves transcribe to the machines that run the second listen, or
+    None: it is on (``MAKTABA_STT_REFINE``), it cannot run here, and the home's rules do
+    not let a machine without it transcribe (``without_second_listen``)."""
+    if refine_model() is None or _RULES.without_second_listen:
+        return None
+    why = second_listen_problem()
+    if why is None:
+        return None
+    return (
+        f"the second listen does not run here ({why}): the machines that run it transcribe"
+        " (rules transcription: without_second_listen lets this one too)"
+    )
+
+
+def skipped_fingerprint(fingerprint: str) -> str:
+    """The inputs a transcript made without its second listen answers: those of
+    ``fingerprint``, the second listen left out. Its job stores this as its input hash."""
+    return canonical_hash({"inputs": fingerprint, "second_listen": "skipped"})
+
+
+#: a relisten job (:func:`relisten`) that a worker without the second listen claims goes
+#: back for this long, for one that runs it...
+RELISTEN_DEFER_S = 900.0
+#: ...for a day at most: then the transcript stands (while a machine that runs the
+#: second listen is up, its next sweep queues it again)
+RELISTEN_WAIT_S = 86_400.0
+#: the payload key of a relisten job
+RELISTEN = "relisten"
+
+
+def still_current(job: Job, prev: str, fingerprint: str) -> bool:
+    """Whether the video's last transcript, made for ``prev`` inputs, stands for this job
+    on this worker (the engine then skips the run): made for the same inputs, or for the
+    same without the second listen on a worker that cannot run it either. A relisten job
+    runs where the second listen does: a worker without it gives the job back for a
+    while (``JobDeferred``), for one that runs it."""
+    relisten = bool((job.payload or {}).get(RELISTEN))
+    here = runs_second_listen()
+    unchanged = prev in (fingerprint, skipped_fingerprint(fingerprint))
+    if relisten and unchanged and not here and _age_s(job) < RELISTEN_WAIT_S:
+        raise JobDeferred("the second listen: left to a machine that runs it", RELISTEN_DEFER_S)
+    if prev == fingerprint:
+        # a relisten job for a transcript recorded as made with its second listen
+        # (before this record): where it runs, it runs
+        return not (relisten and here)
+    return prev == skipped_fingerprint(fingerprint) and not here
+
+
+def _age_s(job: Job) -> float:
+    created = job.created_at
+    if created is None or created.year < 2000:
+        return 0.0
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=UTC)
+    return (now() - created).total_seconds()
+
+
+#: a worker that runs the second listen looks for transcripts made without it this often,
+#: queues at most this many each time (at the bulk priority: after the new files), and
+#: only those made this long ago (one whose own second listen fails to load must not
+#: queue its new transcripts again at once)
+RELISTEN_EVERY_S = 600.0
+RELISTEN_BATCH = 20
+RELISTEN_AFTER_S = 3600.0
+RELISTEN_PRIORITY = 500
+_LAST_RELISTEN: list[float] = []
+
+
+async def refresh(db: Any, serving: bool) -> None:
+    """Before each stage selection: the home's ``rules.transcription``; on a worker that
+    serves transcribe and runs the second listen, :func:`relisten`."""
+    global _RULES
+    from ...rules import read
+
+    _RULES = (await read(db, "transcription"))[0]
+    if serving and runs_second_listen():
+        await relisten(db)
+
+
+async def relisten(db: Any) -> int:
+    """Queue transcribe again for the videos whose transcript was made without its second
+    listen (``metadata.refine.source = skipped``), oldest first, as relisten jobs (a
+    worker without the second listen gives them back). Once per ``RELISTEN_EVERY_S``,
+    and only once this worker has the model (loaded, or on its disk: a machine without
+    it would make the same transcript again). Returns the jobs queued."""
+    from ..enqueue import enqueue_job
+
+    t = time.monotonic()
+    if _LAST_RELISTEN and t - _LAST_RELISTEN[0] < RELISTEN_EVERY_S:
+        return 0
+    model = refine_model()
+    if model is None or not await asyncio.to_thread(_has_second_listen_model, model):
+        return 0
+    _LAST_RELISTEN[:] = [t]
+    skipped = (
+        "t.metadata -> 'refine' ->> 'source' = 'skipped'"
+        if is_pg(db)
+        else "json_extract(t.metadata, '$.refine.source') = 'skipped'"
+    )
+    rows = await db.fetch(
+        "SELECT t.video_id FROM transcripts t"
+        f" WHERE t.is_active AND {skipped} AND t.created_at < $1"
+        " AND NOT EXISTS (SELECT 1 FROM processing_jobs j WHERE j.subject_kind = 'video'"
+        "  AND j.subject_id = t.video_id AND j.stage = 'transcribe'"
+        "  AND j.state IN ('pending','claimed','running','resuming','paused'))"
+        " ORDER BY t.created_at LIMIT $2",
+        to_ts(db, now() - timedelta(seconds=RELISTEN_AFTER_S)),
+        RELISTEN_BATCH,
+    )
+    queued = 0
+    for r in rows:
+        res = await enqueue_job(
+            db,
+            subject_kind="video",
+            subject_id=str(r["video_id"]),
+            stage="transcribe",
+            priority=RELISTEN_PRIORITY,
+            reason={"why": "transcribed without the second listen", "by": "system"},
+            payload={RELISTEN: True},
+        )
+        queued += res.job_id is not None
+    if queued:
+        _log.info("transcribe.relisten_queued", jobs=queued, model=model)
+    return queued
+
+
+def _has_second_listen_model(model: str) -> bool:
+    """The second listen's model is loaded here, or on this machine's disk (a folder, the
+    Hugging Face cache, a copy of the home's)."""
+    from ...stt import cohere, model_share
+
+    if cohere.loaded(model) or Path(model).expanduser().is_dir():
+        return True
+    return model_share.hf_snapshot(model) is not None or bool(model_share.local_snapshots(model))
 
 
 def _refine(
@@ -222,7 +456,9 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
             **({"prompt": prompt} if prompt else {}),
             "hash": None if row is None else str(row["content_hash"]),
             "size": v.size_bytes,
-            "model": s.model,
+            # one Whisper is one model on either engine: a PC does not transcribe again
+            # what a Mac did (the transcript records the engine and model that made it)
+            "model": engine.fingerprint_model(s.model),
             "language": s.language,
             "words": s.word_timestamps,
             # the setting, not whether this process could run it: every worker
@@ -387,7 +623,7 @@ async def _run_saving(
                 continue
             progress.saved_seek, progress.saved_count = cp.seek, count
             await ctx.progress(
-                "transcribe", round(cp.seek / 100 * scale), audio_sec, "on the GPU", force=True
+                "transcribe", round(cp.seek / 100 * scale), audio_sec, _where(settings), force=True
             )
     finally:
         if not task.done():
@@ -406,7 +642,7 @@ async def _transcribe_file(
 
     settings = settings_from_env()
     await ctx.progress(
-        "transcribe", 0, round(audio.size / SAMPLE_RATE), "on the GPU",
+        "transcribe", 0, round(audio.size / SAMPLE_RATE), _where(settings),
         steps=["decode", "transcribe", "store"], force=True,
     )  # fmt: skip
     total_sec = audio.size / SAMPLE_RATE
@@ -433,10 +669,12 @@ async def _transcribe_file(
     if model and result.sentences and settings.word_timestamps:
         await ctx.progress("transcribe", round(total_sec), round(total_sec), "second listen")
         from ...stt.cohere import loaded
+        from ...stt.cohere import unavailable as no_second_listen
         from ...stt.model_share import resolve_models_dir
 
-        # the share is looked for until the model is loaded (a stale mount can be slow)
-        share = None if loaded(model) else await resolve_models_dir(db)
+        # the share is looked for until the model is loaded (a stale mount can be slow),
+        # and not at all where there is no second listen (it then says why)
+        share = None if loaded(model) or no_second_listen() else await resolve_models_dir(db)
         refined = await asyncio.to_thread(_refine, result, audio, model, share)
     del audio
     if tmap is not None:
@@ -445,8 +683,11 @@ async def _transcribe_file(
     transcript_id = await _store(db, v.id, result, settings, refined)
     texts = [(s.start, s.end, s.text) for s in result.sentences]
     rtf = result.audio_sec / result.gpu_sec if result.gpu_sec > 0 else None
+    skipped = refined is not None and refined.get("source") == "skipped"
     return StageResult(
         output_hash=canonical_hash(texts),
+        # without its second listen: so recorded, for a worker that runs it
+        input_hash=skipped_fingerprint(fingerprint) if skipped and fingerprint else None,
         summary={
             "transcript_id": transcript_id,
             "segments": len(texts),
@@ -485,13 +726,13 @@ async def _store(
             INSERT INTO transcripts (id, video_id, audio_track_id, language, detected_language,
                                      backend, model, backend_version, word_level, diarized,
                                      is_active, metadata)
-            VALUES ($8, $1, $7, $2, $9, 'mlx-batched', $3, $4, $5, false, false, $6)
+            VALUES ($8, $1, $7, $2, $9, $10, $3, $4, $5, false, false, $6)
             RETURNING id
             """,
             uid(video_id),
             result.language,
             result.model,
-            _backend_version(),
+            _backend_version(result),
             settings.word_timestamps,
             dumps(
                 {
@@ -503,6 +744,7 @@ async def _store(
             track["id"],
             uid(uuid4()),  # SQLite gives the column no default
             result.detected_language,  # what Whisper heard, not the language it was told
+            result.backend,  # the engine that made it: mlx-batched, ct2-batched
         )
         tid = row["id"]
         rows = []
@@ -546,7 +788,11 @@ async def _store(
     return str(tid)
 
 
-def _backend_version() -> str | None:
+def _backend_version(result: Transcript | None = None) -> str | None:
+    """The engine's runtime: what the transcriber said (CTranslate2: faster-whisper's and
+    CTranslate2's versions, the device and the precision), else MLX-Whisper's version."""
+    if result is not None and result.backend_version:
+        return result.backend_version
     try:
         from importlib.metadata import version
 
@@ -555,4 +801,10 @@ def _backend_version() -> str | None:
         return None
 
 
-IMPL = StageImpl(run=run, input_fingerprint=input_fingerprint, unavailable=unavailable)
+IMPL = StageImpl(
+    run=run,
+    input_fingerprint=input_fingerprint,
+    unavailable=unavailable,
+    still_current=still_current,
+    refresh=refresh,
+)

@@ -50,6 +50,7 @@ from .schedule.tv_settings import (
     TvStripConfig,
 )
 from .sharepath.auto import StorageConfig
+from .stt.placement import TranscriptionConfig
 from .tvrelease.config import MaktabaTvStagingConfig
 from .updates_settings import UpdatesConfig
 
@@ -131,6 +132,9 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
     "cluster": (ClusterMachinesConfig, "Machines", "every machine of the cluster as the same "
                 "Maktaba: one sign-in for all of them, when a machine stops waiting for the "
                 "home"),
+    "transcription": (TranscriptionConfig, "Transcription", "which machines transcribe: "
+                      "while the second listen is on, those that run it, unless machines "
+                      "without it may too"),
 }  # fmt: skip
 
 
