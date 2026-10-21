@@ -94,7 +94,10 @@ placed before `db_error` / the generic ones, so a Postgres `DiskFullError` is no
 A parked job is a **live `pending` row** with `parked_on = '<class>'` and `not_before = now +
 rules.queue_health.park_max_hours` (a backstop: it is tried again then even if no watcher released
 it). Parking refunds the attempt the claim took (`attempts - 1`, never below 0), records
-`failure_class`, `error`, `error_cause`, and logs a `parked` job event. The claim clears `parked_on`.
+`failure_class`, `error`, `error_cause`, and logs a `paused` job event whose `data.parked_on`
+says on what (`job_events.kind` is a closed list). The claim clears `parked_on`. A retry within a
+class budget above the stage's `max_attempts` raises the row's `max_attempts` to it (the table checks
+`attempts <= max_attempts + 1`).
 Releasing = `parked_on = NULL, not_before = now`.
 
 ### Dependency watchers
@@ -111,8 +114,8 @@ One loop on the leader worker (advisory lock `maktaba.queue_health`, like the re
 - `resource:shm` — Postgres' shared memory cannot be measured from a worker: healthy again
   `resource_cooldown_minutes` after the last `shm_full` failure.
 
-When a dependency is healthy, every job parked on it is released (in batches of 1,000), and a
-`dependency.healthy` job event says how many. A node whose mount is down while the home's is up
+When a dependency is healthy, every job parked on it is released (in batches of 1,000) and the
+worker logs how many (`parked_jobs_released`). A node whose mount is down while the home's is up
 parks again on its own failure and spends nothing.
 
 ### Missing files and the scan
@@ -125,7 +128,8 @@ NULL` and the video's failed jobs are queued again; still gone → `missing_conf
 
 ### Tile states (read side)
 
-Over the last `window_hours` (from `job_events` kinds `failed` / `retry_scheduled` / `parked`, whose
+Over the last `window_hours` (from `job_events` kinds `failed` / `retry_scheduled` / `paused` with
+`data.parked_on`, whose
 `data` carries `cause` and `class`, and the stage's done rows):
 
 1. **Failing** (red) — `failure_share ≥ ok_failure_share` **and** one signature of class `unknown`
