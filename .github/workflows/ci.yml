@@ -32,33 +32,37 @@ jobs:
     # Path filter — short-circuits the heavy gates for docs-only PRs (EC3).
     runs-on: ubuntu-22.04
     outputs:
-      docs_only: ${{ steps.filter.outputs.docs_only }}
+      # docs only: no file outside the docs changed (code), and nothing in .github/ or the
+      # Makefile (meta), which count as code whatever their extension
+      docs_only: ${{ steps.code.outputs.code != 'true' && steps.filter.outputs.meta != 'true' }}
       mac_app: ${{ steps.filter.outputs.mac_app }}
       linux_app: ${{ steps.filter.outputs.linux_app }}
     steps:
       - uses: actions/checkout@v6.0.2
+      # A filter is true when at least one changed file matches it. Whether a file
+      # matches a filter of several patterns is the step's predicate-quantifier: 'some'
+      # (the default: any one pattern) or 'every' (all of them, an exclusion included).
+      # (A nested key in a filter is a change type, such as `added|modified:`, so an
+      # `every:` key there matches no file: docs_only was never true.)
+      - uses: dorny/paths-filter@v4.0.1
+        id: code
+        with:
+          predicate-quantifier: 'every'
+          filters: |
+            # a changed file outside the docs
+            code:
+              - '**'
+              - '!specs/**'
+              - '!docs/**'
+              - '!**/*.md'
       - uses: dorny/paths-filter@v4.0.1
         id: filter
         with:
           filters: |
-            # dorny/paths-filter's default quantifier is `any:` — the filter
-            # is true if at least one changed file matches at least one
-            # pattern. In that mode, `!Makefile` and `!.github/**` were
-            # being treated as standalone positive-by-complement predicates
-            # ("match anything that is NOT Makefile / NOT in .github/"),
-            # so nearly every non-docs file matched the filter and the
-            # heavy gates skipped.
-            #
-            # Switch to `every:` so the predicate is "every changed file is
-            # docs," and use brace expansion to express the docs-OR.
-            # Inside `every:`, negation patterns are exclusions in the
-            # intuitive sense — a file matches only if it (a) matches the
-            # positive pattern AND (b) doesn't match any negation pattern.
-            docs_only:
-              - every:
-                  - '{specs/**,docs/**,**/*.md}'
-                  - '!.github/**'
-                  - '!Makefile'
+            # the workflows and the Makefile are code, a .md among them included
+            meta:
+              - '.github/**'
+              - 'Makefile'
             # The Maktaba.app gate (macOS arm64, ~20 min) runs only when what goes into
             # the app or how it is built changes.
             mac_app:
