@@ -165,6 +165,9 @@ func (s *nodeSetup) run(ctx context.Context) error {
 		ctx = context.Background()
 	}
 	n := s.NodeConfig
+	if n.Err != nil {
+		return n.Err
+	}
 	if !n.Joined() || n.NodeID == "" {
 		return fmt.Errorf("no joined node config at %s: join the home first (maktaba-pipeline join), then run setup --node", s.NodePath)
 	}

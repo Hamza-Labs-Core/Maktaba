@@ -224,16 +224,21 @@ def _filler_spec(ch: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
 
 def look(plan: dict[str, Any], key: str, tv: MaktabaTvConfig) -> tuple[str | None, dict[str, Any]]:
     """``(logo_path, mode_config.look)`` of channel ``key``: the plan's art
-    (:func:`plan_art`) and the loudness rule."""
+    (:func:`plan_art`), the loudness rule and whether the corner logo skips filler."""
     logo, art = plan_art(plan, key)
-    return logo, {
-        **art,
+    return logo, {**art, **_look_rules(tv)}
+
+
+def _look_rules(tv: MaktabaTvConfig) -> dict[str, Any]:
+    """The look settings that come from rules ``tv``, not the plan's art."""
+    return {
         "loudnorm": {
             "enabled": bool(tv.loudnorm),
             "filter": str(tv.loudnorm_mode),
             "target_lufs": float(tv.loudnorm_target_lufs),
             "expansion": float(tv.speechnorm_expansion),
         },
+        "watermark_skip_filler": bool(tv.watermark_skip_filler),
     }
 
 
@@ -247,7 +252,7 @@ def _desired(plan: dict[str, Any], tv: MaktabaTvConfig | None = None) -> dict[st
         if "logo_path" in m or "look" in (m.get("mode_config") or {}):
             # the plan's own art (what the API shows as the plan's value)
             logo = m.get("logo_path")
-            ch_look = {**(m["mode_config"].get("look") or {}), "loudnorm": ch_look["loudnorm"]}
+            ch_look = {**(m["mode_config"].get("look") or {}), **_look_rules(tv)}
         mode_config = {
             **m["mode_config"],
             "filler": _filler_spec(ch, cfg),
@@ -657,7 +662,7 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
             "plan": None if latest is None else int(latest["id"]),  # a new row = a new lineup
             "mode": None if mode is None else mode["write_mode"],
             "v": CH_WRITE_VERSION,
-            "tv": tv_changes,  # the loudness rule is part of a channel's look
+            "tv": tv_changes,  # the loudness and corner-logo rules are part of a channel's look
         }
     )
 

@@ -236,6 +236,7 @@ func SettingsStarter(base StationConfig, settings Settings, enc *EncoderResolver
 		cfg := base
 		out := settings.Output(ctx)
 		cfg.Profile = out.Profile(enc.Resolve(ctx, out.Encoder))
+		cfg.LiveLookupReuse = settings.TV(ctx).LiveLookupReuse
 		if cfg.Gate == nil {
 			cfg.Gate = defaultGate
 		}
@@ -244,6 +245,8 @@ func SettingsStarter(base StationConfig, settings Settings, enc *EncoderResolver
 			cfg.VTGate = defaultVTGate
 		}
 		cfg.VTGate.SetMax(out.VTMax)
+		cfg.UnreadableFill, cfg.SourceTimeout, cfg.SourceStall = out.UnreadableFill, out.SourceTimeout, out.SourceStall
+		cfg.ReportUnreadable = out.ReportUnreadable
 		if cfg.PathMapSource != nil {
 			cfg.PathMap = cfg.PathMapSource()
 		}

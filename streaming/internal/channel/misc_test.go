@@ -47,6 +47,37 @@ func TestParseLook_DefaultsAndOverrides(t *testing.T) {
 	if e := ParseLook([]byte(`{"watermark":{"path":""}}`), ""); e.Watermark != nil {
 		t.Error("empty watermark path → none")
 	}
+	if d.WatermarkSkipFiller {
+		t.Error("a look without watermark_skip_filler keeps the watermark on filler")
+	}
+	if k := ParseLook([]byte(`{"watermark_skip_filler":true}`), ""); !k.WatermarkSkipFiller {
+		t.Error("watermark_skip_filler not read")
+	}
+}
+
+// TestApplyLook_WatermarkSkipFiller: with the rule the watermark is left off
+// filler and bumper blocks only; programmes and live broadcasts keep it,
+// and loudness applies to every block.
+func TestApplyLook_WatermarkSkipFiller(t *testing.T) {
+	wm := filepath.Join(t.TempDir(), "bug.png")
+	_ = os.WriteFile(wm, []byte("png"), 0o644)
+	s := &Station{}
+	for _, skip := range []bool{false, true} {
+		look := DefaultLook()
+		look.Watermark = &Watermark{Path: wm, Position: "top-right", WidthPct: 10, MarginPct: 3}
+		look.WatermarkSkipFiller = skip
+		for _, kind := range []string{KindProgram, KindFiller, KindBumper, KindLive} {
+			in := &BlockInput{}
+			s.applyLook(context.Background(), in, look, kind)
+			want := !skip || kind == KindProgram || kind == KindLive
+			if got := in.Watermark != nil; got != want {
+				t.Errorf("skip=%v %s: watermark %v, want %v", skip, kind, got, want)
+			}
+			if in.Loudnorm == nil || !in.Loudnorm.Enabled {
+				t.Errorf("skip=%v %s: loudnorm %+v", skip, kind, in.Loudnorm)
+			}
+		}
+	}
 }
 
 func TestYtDlp_DirectVsPageAndCache(t *testing.T) {
@@ -60,14 +91,14 @@ func TestYtDlp_DirectVsPageAndCache(t *testing.T) {
 		return []byte("\nhttps://cdn.example/live/index.m3u8?sig=1\n"), nil
 	}
 	for _, direct := range []string{"https://x.example/live.m3u8", "rtmp://x/live", "http://x/a.ts?token=1"} {
-		got, err := y.Resolve(context.Background(), direct)
+		got, err := y.Resolve(context.Background(), LiveRequest{SourceURL: direct})
 		if err != nil || got != direct {
 			t.Errorf("direct %q → %q %v", direct, got, err)
 		}
 	}
 	page := "https://www.youtube.com/watch?v=abc"
 	for i := 0; i < 3; i++ {
-		got, err := y.Resolve(context.Background(), page)
+		got, err := y.Resolve(context.Background(), LiveRequest{SourceURL: page})
 		if err != nil || got != "https://cdn.example/live/index.m3u8?sig=1" {
 			t.Fatalf("page → %q %v", got, err)
 		}
@@ -76,12 +107,12 @@ func TestYtDlp_DirectVsPageAndCache(t *testing.T) {
 		t.Errorf("yt-dlp ran %d times, want 1 (cached)", calls)
 	}
 	y.Forget(page)
-	_, _ = y.Resolve(context.Background(), page)
+	_, _ = y.Resolve(context.Background(), LiveRequest{SourceURL: page})
 	if calls != 2 {
 		t.Errorf("Forget should force a re-resolve")
 	}
 	y.run = func(context.Context, string, ...string) ([]byte, error) { return nil, errors.New("offline") }
-	if _, err := y.Resolve(context.Background(), "https://twitch.tv/x"); err == nil {
+	if _, err := y.Resolve(context.Background(), LiveRequest{SourceURL: "https://twitch.tv/x"}); err == nil {
 		t.Error("yt-dlp failure must surface")
 	}
 }

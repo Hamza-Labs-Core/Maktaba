@@ -14,7 +14,7 @@
 | GDE-02 | Now-line is drawn at the current time                       | Happy path    | P2       | Yes (`Guide.test.tsx`)                                                                  |
 | GDE-03 | Clicking the airing cell tunes the channel                  | Happy path    | P1       | Yes (`Guide.test.tsx`)                                                                  |
 | GDE-04 | Clicking a future cell opens the details dialog             | Happy path    | P2       | Yes (`Guide.cases.test.tsx`)                                                            |
-| GDE-05 | Filler runs collapse into one "Up next" cell                | Happy path    | P2       | Yes (`Guide.cases.test.tsx`)                                                            |
+| GDE-05 | Filler runs collapse into one cell with the filler title    | Happy path    | P2       | Yes (`Guide.cases.test.tsx`)                                                            |
 | GDE-06 | Channel logo shows, and hides when it fails to load         | Happy path    | P3       | Yes (`Guide.test.tsx`)                                                                  |
 | GDE-07 | What's on now view lists current and next, tapping tunes    | Happy path    | P1       | Yes (`Guide.cases.test.tsx`)                                                            |
 | GDE-08 | Compact view is the default on a phone                      | Responsive    | P2       | Yes (`Guide.cases.test.tsx`)                                                            |
@@ -81,17 +81,17 @@
   2. Press Escape.
 - **Expected:** `role="dialog"` titled "Later Show" shows "Starts at" with a formatted date, "Series" with "Seerah · S1E3 · Badr", "Duration" "120 min", the description, the poster `<img alt="">` and a badge "program". URL stays `/guide`. Escape closes the dialog and focus returns to the cell.
 
-### GDE-05 — Filler runs collapse into one "Up next" cell
+### GDE-05 — Filler runs collapse into one cell titled as the API says
 
 - **Priority:** P2
 - **Category:** Happy path
 - **Covered by existing test?** Yes (`Guide.cases.test.tsx`)
-- **Preconditions / data:** one channel with blocks: program (−10 → +20 min), `kind:"filler"` (+20 → +25), `kind:"bumper"` (+25 → +27), `kind:"station_id"` (+27 → +30), program (+30 → +90). Also a second channel whose airing block is `kind:"filler"`.
+- **Preconditions / data:** one channel with blocks: program (−10 → +20 min), `kind:"filler"` titled «فواصل» (+20 → +25), `kind:"bumper"` (+25 → +27), `kind:"station_id"` (+27 → +30), program (+30 → +90). Also a second channel whose airing block is `kind:"filler"` with no title.
 - **Steps:**
   1. Open `/guide`.
-  2. Click the "Up next" cell.
+  2. Click the filler cell.
   3. On the second channel, click its airing filler cell.
-- **Expected:** First channel shows 3 cells, the middle one labelled "Up next" with class `mkt-guide__cell--filler` and width 40 px (10 min). Clicking it opens details, it does not tune. The airing filler on the second channel also opens details instead of navigating to `/live/<n>`.
+- **Expected:** First channel shows 3 cells, the middle one labelled «فواصل» (the API's filler title, rules `tv.guide_filler_title`; "Up next" when a filler block has no title) with class `mkt-guide__cell--filler` and width 40 px (10 min). Clicking it opens details, it does not tune. The airing filler on the second channel also opens details instead of navigating to `/live/<n>`.
 
 ### GDE-06 — Channel logo shows, and hides when it fails to load
 

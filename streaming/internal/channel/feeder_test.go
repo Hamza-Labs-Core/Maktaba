@@ -46,6 +46,7 @@ type fakePlayer struct {
 	cancel    context.CancelFunc
 	fail      func(Segment) bool
 	failAfter time.Duration
+	failErr   error // what a failing segment returns (nil: "boom")
 	// events records "start:<seg>" / "done:<seg>" in order.
 	events []string
 	// holdUntilNext makes Wait return only once the following segment has
@@ -91,6 +92,9 @@ func (b *fakePlayback) Wait() (bool, error) {
 	defer func() { p.events = append(p.events, "done:"+segName(seg)) }()
 	if p.fail != nil && p.fail(seg) {
 		p.clk.set(start.Add(p.failAfter))
+		if p.failErr != nil {
+			return false, p.failErr
+		}
 		return false, errors.New("boom")
 	}
 	p.clk.set(seg.End)
@@ -424,7 +428,7 @@ func TestYtDlp_PrewarmFillsCache(t *testing.T) {
 	}
 	st := &Station{cfg: StationConfig{Resolver: y}, log: discardLogger()}
 	st.prewarmLive(context.Background(), ProgramBlock{Seq: 1, Kind: KindLive, SourceURL: "https://www.youtube.com/watch?v=1"})
-	if u, _ := y.Resolve(context.Background(), "https://www.youtube.com/watch?v=1"); u != "https://cdn/x.m3u8" || calls != 1 {
+	if u, _ := y.Resolve(context.Background(), LiveRequest{SourceURL: "https://www.youtube.com/watch?v=1"}); u != "https://cdn/x.m3u8" || calls != 1 {
 		t.Errorf("prewarm should populate the cache: %q calls=%d", u, calls)
 	}
 }

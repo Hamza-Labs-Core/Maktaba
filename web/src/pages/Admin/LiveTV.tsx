@@ -412,11 +412,7 @@ function PlexPanel({ info, device }: { info: TvInfo; device: HdhrDevice }) {
   const xmltvUrl = report.target?.xmltv_url || info.xmltv_url;
 
   const kindLabel = (k: PlexLiveTuner["kind"]) =>
-    k === "maktaba"
-      ? t("livetv.plex.kindMaktaba")
-      : k === "dizquetv"
-        ? t("livetv.plex.kindDizquetv")
-        : t("livetv.plex.kindOther");
+    k === "maktaba" ? t("livetv.plex.kindMaktaba") : t("livetv.plex.kindOther");
 
   return (
     <Card className="mkt-livetv__card">
@@ -498,9 +494,6 @@ function PlexPanel({ info, device }: { info: TvInfo; device: HdhrDevice }) {
       {guideLoading && <p className="mkt-livetv__hint">{t("livetv.plex.guideLoading")}</p>}
       {report.maktaba?.separate_dvr && (
         <p className="mkt-livetv__hint">{t("livetv.plex.separateDvr")}</p>
-      )}
-      {report.dizquetv_present && (
-        <p className="mkt-livetv__hint">{t("livetv.plex.dizquetvKept")}</p>
       )}
       {(report.warnings ?? []).map((w) => (
         <p key={w} className="mkt-livetv__hint">

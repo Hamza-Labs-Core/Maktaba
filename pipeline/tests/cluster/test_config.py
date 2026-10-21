@@ -79,3 +79,23 @@ def test_a_garbage_file_is_an_error(tmp_path: Path) -> None:
     path.write_text("[1]", encoding="utf-8")
     with pytest.raises(ValueError):
         config.load(path)
+
+
+def test_a_file_that_does_not_parse_names_itself(tmp_path: Path) -> None:
+    """A typo or a truncated file is never "not joined"; the error says which file."""
+    path = tmp_path / "node.json"
+    path.write_text('{"node_id": "6f1c2a3b", "database_url": "postgres://n:pw@h', encoding="utf-8")
+    with pytest.raises(ValueError, match=r"node\.json: not a node config \(") as err:
+        config.load(path)
+    assert "pw@h" not in str(err.value)
+
+
+def test_a_config_without_its_identity_is_an_error(tmp_path: Path) -> None:
+    """A KeyError from a half-written file read as a crash; it names the file instead."""
+    path = tmp_path / "node.json"
+    path.write_text('{"node_id": "6f1c2a3b", "private_key": " ", "name": "n"}', encoding="utf-8")
+    with pytest.raises(ValueError, match=r"node\.json: incomplete node config: no private_key"):
+        config.load(path)
+    path.write_text('{"database_url": "postgres://u:p@h/db"}', encoding="utf-8")
+    with pytest.raises(ValueError, match="no node_id or private_key"):
+        config.load(path)
