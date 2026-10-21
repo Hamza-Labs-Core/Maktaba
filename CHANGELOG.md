@@ -30,8 +30,10 @@ don't append a line here; docs-only PRs are exempt.
   process waits on or why it cannot start: each process's `detail` in `/processes`, which the
   server fills from story 38.12 (#194) on; a failing process's own reason comes first. The
   starting screen says it in English or Arabic from the code and values the server sends with the
-  detail, with the server's English under Details, and says only that the server is starting when
-  the app has no words for the code or the server sends none. The tray speaks the system's UI language, English or
+  detail (every code of story 38.12's list: the database step, Postgres, the transcription tools),
+  with the programs' own error messages, the log's path and the server's English under Details,
+  and says only that the server is starting when the app has no words for the code or the server
+  sends none. The tray speaks the system's UI language, English or
   Arabic, and shows the server's English detail only in English. On Windows and Linux the tray
   icon carries a status badge (red a problem or a server that does not answer, else violet an
   update ready, else green running, amber starting, grey paused or stopped), and on Windows a left

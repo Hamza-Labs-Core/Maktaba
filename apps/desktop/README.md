@@ -182,7 +182,9 @@ and the tray menu are the Mac's; what differs is how the server starts:
   a process waits on, or why it cannot start: its `detail` in `/processes`, which the server
   fills from story 38.12 (#194) on, a failing process's first. The window's starting screen
   says it in its own language from the detail's `detail_code` and `detail_params`
-  (`setup.starting.detail.<code>` in `web/src/i18n`), with the English under Details.
+  (`setup.starting.detail.<code>` in `web/src/i18n`, one for each code of `detailCodes` in
+  `cmd/maktaba-server/serve_appbundle.go`), with the `error`, `restore_error` and `log` values
+  and the English under Details.
 - **The tray's words** (`lang.rs`) are English or Arabic, from the system's UI language when the
   app starts (Windows' display language, the Mac's preferred languages, `LANGUAGE` / `LC_ALL` /
   `LC_MESSAGES` / `LANG` on Linux). An Arabic tray leaves the server's English detail out; a
