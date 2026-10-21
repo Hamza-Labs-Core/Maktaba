@@ -803,6 +803,18 @@ GRAPH: tuple[StageDef, ...] = (
         placement="home",
         max_attempts=1,
     ),
+    # Epic 40: an admin's "check access" on the failures page reads 64 KiB of the file on
+    # the worker host; when it reads, the video's failed jobs are queued again
+    StageDef(
+        name="access_check",
+        label="Access check",
+        subject_kinds=("video",),
+        pool="nas_read",
+        lane="media",
+        lane_order=13,
+        version=1,
+        max_attempts=1,
+    ),
     _legacy("categorize", "Categorize", ("video",), "cpu", 8),
     # Stub audit #4 (Story 26.5): a video's metadata suggestions from Maktaba's own intel
     # and, when configured, a web search a language model reads. The API (Find metadata,
