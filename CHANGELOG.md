@@ -10,6 +10,17 @@ don't append a line here; docs-only PRs are exempt.
 
 ## [Unreleased]
 
+### Added
+
+- **The desktop app runs the server on Windows** (Epic 38, story 38.3). When setup finishes on
+  a Windows PC, the app registers the sign-in task `\Maktaba Server` (the user's own session, so
+  mapped NAS drives work). The task runs `Maktaba.exe --server-agent`, which starts the bundled
+  launcher in a console without a window and restarts it if it fails. Pause, Resume, Restart and
+  Stop server work from the tray through a stop event the launcher watches; a pause survives
+  the window restarting. Setup steps and `schtasks` start without a console window, an update
+  stops the server before the installer replaces its files, and the installer's hooks get
+  `--server-start`, `--server-stop` and `--server-remove`.
+
 ### Fixed
 
 - **Release builds for desktop, Android and Android TV.** The desktop app ships a
