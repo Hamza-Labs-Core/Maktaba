@@ -11,8 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
 // Release file names (design §3.1).
@@ -261,15 +259,31 @@ func CheckConstraints(name string, b []byte) error {
 // numeric core first, then a prerelease ranks below its release; prereleases of
 // the same core compare by their dot-separated identifiers (numeric ones
 // numerically). Unparseable cores compare as empty, below every release. A
-// `git describe` build (layout.SplitDescribe) ranks after the tag it was built
-// from: a machine running one is not behind that release.
+// `git describe` build ranks after the tag it was built from: a machine
+// running one is not behind that release.
 func CompareVersions(a, b string) int {
-	ta, na := layout.SplitDescribe(a)
-	tb, nb := layout.SplitDescribe(b)
+	ta, na := splitDescribe(a)
+	tb, nb := splitDescribe(b)
 	if c := compareReleases(ta, tb); c != 0 {
 		return c
 	}
 	return cmpInt(na, nb)
+}
+
+// describeBuild and splitDescribe are layout.SplitDescribe's (this package
+// does not import layout, so the modules that verify releases need not).
+var describeBuild = regexp.MustCompile(`^(v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)-(\d+)-g[0-9a-f]{4,40}(?:-dirty)?$`)
+
+func splitDescribe(v string) (string, int) {
+	m := describeBuild.FindStringSubmatch(v)
+	if m == nil {
+		return v, 0
+	}
+	n, err := strconv.Atoi(m[2])
+	if err != nil {
+		return v, 0
+	}
+	return m[1], n
 }
 
 func compareReleases(a, b string) int {
