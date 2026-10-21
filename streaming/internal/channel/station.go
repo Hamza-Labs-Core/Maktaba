@@ -38,6 +38,9 @@ type StationConfig struct {
 	Now           func() time.Time
 	// LiveRetry: how long a failed live block slates before retrying.
 	LiveRetry time.Duration
+	// LiveLookupReuse: how long a live page's lookup is shared (rules tv
+	// live_lookup_reuse_seconds); 0: DefaultLiveLookupReuse.
+	LiveLookupReuse time.Duration
 	// Gate is the NVENC session semaphore shared by every station (nil:
 	// the process-wide DefaultEncoderGate); VTGate the VideoToolbox one
 	// (nil: DefaultVTGate, uncapped by default).
@@ -63,6 +66,16 @@ type StationConfig struct {
 	// stations of the channel (two TV slots, story 33.4 AC4) begin at the same
 	// instants. It costs up to one segment length at a cold start.
 	AlignSegments bool
+	// A programme whose file cannot be read (rules tv_output, dizqueTV
+	// parity): UnreadableFill is what airs in its place
+	// (FillFiller, the default, or FillSlate); SourceTimeout bounds the check
+	// and the probe of a file (0: DefaultSourceTimeout); SourceStall ends a
+	// block whose output stopped that long (0: never); ReportUnreadable
+	// hands the file to the probe stage, whose failure repair_broken picks up.
+	UnreadableFill   string
+	SourceTimeout    time.Duration
+	SourceStall      time.Duration
+	ReportUnreadable bool
 }
 
 // Asset kinds an AssetResolver is asked for.
@@ -196,6 +209,7 @@ func StartStation(cfg StationConfig, channelID uuid.UUID, dir string) (*Station,
 	feeder := &Feeder{
 		Source: cfg.Repo, ChannelID: channelID, Player: s, Now: cfg.Now, LiveRetry: cfg.LiveRetry,
 		Prewarm: s.prewarmLive,
+		Check:   s.checkSource, OnUnreadable: s.reportUnreadable, UnreadableFill: cfg.UnreadableFill,
 		OnSegment: func(seg Segment) {
 			s.log.Info("channel: on air", "kind", seg.Kind, "seq", seg.Block.Seq,
 				"start", seg.Start.UTC().Format(time.RFC3339), "end", seg.End.UTC().Format(time.RFC3339),
@@ -393,6 +407,12 @@ func (s *Station) writeMux(b []byte) (int, error) {
 	return len(b), nil
 }
 
+// liveRequest is a live block's lookup: no taller than the channel's
+// output, shared for the rules' reuse time.
+func (s *Station) liveRequest(sourceURL string) LiveRequest {
+	return LiveRequest{SourceURL: sourceURL, MaxHeight: s.cfg.Profile.Height, Reuse: s.cfg.LiveLookupReuse}
+}
+
 // prewarmLive resolves (yt-dlp) and probes an upcoming live block so the
 // result is cached when the block is queued; failures are left to the
 // normal path (which retries and slates).
@@ -400,7 +420,7 @@ func (s *Station) prewarmLive(ctx context.Context, b ProgramBlock) {
 	if b.SourceURL == "" || s.cfg.Resolver == nil {
 		return
 	}
-	u, err := s.cfg.Resolver.Resolve(ctx, b.SourceURL)
+	u, err := s.cfg.Resolver.Resolve(ctx, s.liveRequest(b.SourceURL))
 	if err != nil {
 		s.log.Info("channel: live prewarm failed", "seq", b.Seq, "err", err.Error(), "event", "channel_live_prewarm_failed")
 		return
@@ -761,10 +781,12 @@ func (p *stationPlayback) run(ctx context.Context) (bool, error) {
 	}
 	s.encoderNow.Store(prof.Encoder)
 	res, err := s.runBlock(ctx, prof, *in, start, p)
-	if hw := prof.Encoder; err != nil && ctx.Err() == nil && (hw == EncoderNVENC || hw == EncoderVideoToolbox) && res.written == 0 {
+	if hw := prof.Encoder; err != nil && ctx.Err() == nil && (hw == EncoderNVENC || hw == EncoderVideoToolbox) &&
+		res.written == 0 && !errors.Is(err, ErrSourceUnreadable) {
 		// The hardware encoder can refuse a session (GeForce session cap,
 		// a busy VideoToolbox, a driver hiccup): this block falls back to
 		// libx264, and the gate pauses that encoder briefly for everyone.
+		// (A source that stalled is no encoder's fault: not retried.)
 		release(hwRefused(err))
 		s.nvencFallbacks.Add(1)
 		s.log.Warn("channel: hardware encoder failed, block falls back to libx264", "encoder", hw,
@@ -879,11 +901,16 @@ func (s *Station) blockInput(ctx context.Context, seg Segment, look Look) (*Bloc
 	case KindProgram, KindFiller, KindBumper:
 		path, err := LocalInput(s.cfg.PathMap.Apply(seg.Block.Path))
 		if err != nil {
-			return nil, start, err
+			return nil, start, fmt.Errorf("%w: %v", ErrSourceUnreadable, err)
 		}
-		info, err := s.cfg.Prober.Probe(ctx, path)
+		pctx, cancel := context.WithTimeout(ctx, s.sourceTimeout())
+		info, err := s.cfg.Prober.Probe(pctx, path)
+		cancel()
 		if err != nil {
-			return nil, start, fmt.Errorf("probe %s: %w", path, err)
+			if ctx.Err() != nil {
+				return nil, start, ctx.Err()
+			}
+			return nil, start, fmt.Errorf("%w: probe %s: %v", ErrSourceUnreadable, path, err)
 		}
 		seekMS := seg.SeekMS + int(start.Sub(seg.Start)/time.Millisecond)
 		if b := seg.Block; b.SourceDurationMS > 0 {
@@ -900,9 +927,9 @@ func (s *Station) blockInput(ctx context.Context, seg Segment, look Look) (*Bloc
 		in.SeekSec = float64(seekMS) / 1000
 		in.HasVideo, in.HasAudio = info.HasVideo, info.HasAudio
 		in.HWDecode = s.cfg.Profile.Encoder == EncoderNVENC || s.cfg.Profile.Encoder == EncoderVideoToolbox
-		s.applyLook(ctx, in, look)
+		s.applyLook(ctx, in, look, seg.Kind)
 	case KindLive:
-		u, err := s.cfg.Resolver.Resolve(ctx, seg.Block.SourceURL)
+		u, err := s.cfg.Resolver.Resolve(ctx, s.liveRequest(seg.Block.SourceURL))
 		if err != nil {
 			return nil, start, fmt.Errorf("resolve live: %w", err)
 		}
@@ -924,7 +951,7 @@ func (s *Station) blockInput(ctx context.Context, seg Segment, look Look) (*Bloc
 		in.Kind = "live"
 		in.Source = u
 		in.HasVideo, in.HasAudio = info.HasVideo, info.HasAudio
-		s.applyLook(ctx, in, look)
+		s.applyLook(ctx, in, look, seg.Kind)
 	default:
 		in.Kind = "slate"
 		if p := s.localAsset(ctx, AssetKindLoading, look.LoadingPath); p != "" {
@@ -986,8 +1013,12 @@ func (s *Station) removeStripFiles(in *BlockInput) {
 	}
 }
 
-func (s *Station) applyLook(ctx context.Context, in *BlockInput, look Look) {
-	if wm := look.Watermark; wm != nil {
+// applyLook sets a block's watermark and loudness. The watermark stays off
+// filler and bumper blocks when the look says so (dizqueTV's
+// disableFillerOverlay): programmes and live broadcasts always carry it.
+func (s *Station) applyLook(ctx context.Context, in *BlockInput, look Look, kind string) {
+	skip := look.WatermarkSkipFiller && (kind == KindFiller || kind == KindBumper)
+	if wm := look.Watermark; wm != nil && !skip {
 		if p := s.localAsset(ctx, AssetKindWatermark, wm.Path); p != "" {
 			w := *wm
 			w.Path = p
@@ -1053,10 +1084,10 @@ type blockResult struct {
 
 // lookaheadAllowance is how much earlier than real time a block may end
 // because filters with look-ahead (loudnorm ≈ 3 s) flush their tail at
-// EOF faster than real time.
+// EOF faster than real time. speechnorm has none.
 func lookaheadAllowance(in BlockInput) float64 {
 	a := earlyEnd.Seconds()
-	if in.Loudnorm != nil && in.Loudnorm.Enabled && in.HasAudio {
+	if in.Loudnorm != nil && in.Loudnorm.Enabled && in.Loudnorm.HasLookahead() && in.HasAudio {
 		a += 3.5
 	}
 	return a
@@ -1089,6 +1120,19 @@ func (s *Station) runBlock(ctx context.Context, prof OutputProfile, in BlockInpu
 	if err := cmd.Start(); err != nil {
 		return blockResult{}, err
 	}
+	// A source that stops answering (a share hanging mid-read) would hold the
+	// block, and its encoder session, for good: the watchdog ends it.
+	var lastOut atomic.Int64
+	lastOut.Store(time.Now().UnixNano())
+	var stalled atomic.Bool
+	readDone := make(chan struct{})
+	if stall := s.cfg.SourceStall; stall > 0 {
+		go stallWatch(stall, &lastOut, readDone, func() {
+			stalled.Store(true)
+			_ = cmd.Process.Kill()
+			_ = stdout.Close() // unblocks the read even if the process cannot die yet
+		})
+	}
 	// Buffer the output so ffmpeg's -re clock never stalls on the reader
 	// (a block started ahead of its boundary queues up here).
 	var written int64
@@ -1096,6 +1140,7 @@ func (s *Station) runBlock(ctx context.Context, prof OutputProfile, in BlockInpu
 	for {
 		n, rerr := stdout.Read(buf)
 		if n > 0 {
+			lastOut.Store(time.Now().UnixNano())
 			written += int64(n)
 			if !q.push(buf[:n]) {
 				_ = cmd.Process.Kill() // abandoned (station stopping)
@@ -1104,6 +1149,18 @@ func (s *Station) runBlock(ctx context.Context, prof OutputProfile, in BlockInpu
 		if rerr != nil {
 			break
 		}
+	}
+	close(readDone)
+	if stalled.Load() {
+		// A process stuck in a read of a hung share dies only when the read
+		// returns: it is not waited for longer than the stall itself.
+		waitWithin(cmd, s.cfg.SourceStall)
+		s.logf("  stalled elapsed=%.3f bytes=%d\n", time.Since(launched).Seconds(), written)
+		err := fmt.Errorf("no output for %s", s.cfg.SourceStall)
+		if in.Kind == "file" {
+			err = fmt.Errorf("%w: %s: %v", ErrSourceUnreadable, in.Source, err)
+		}
+		return blockResult{written: written}, err
 	}
 	waitErr := cmd.Wait()
 
@@ -1120,6 +1177,39 @@ func (s *Station) runBlock(ctx context.Context, prof OutputProfile, in BlockInpu
 		return res, waitErr
 	}
 	return res, nil
+}
+
+// stallWatch calls stop once lastOut (unix ns of the latest output) is older
+// than stall, unless done closes first.
+func stallWatch(stall time.Duration, lastOut *atomic.Int64, done <-chan struct{}, stop func()) {
+	t := time.NewTicker(stall / 4)
+	defer t.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-t.C:
+			if time.Since(time.Unix(0, lastOut.Load())) >= stall {
+				stop()
+				return
+			}
+		}
+	}
+}
+
+// waitWithin reaps cmd in the background and waits for it at most d.
+func waitWithin(cmd *exec.Cmd, d time.Duration) {
+	done := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(done)
+	}()
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-done:
+	case <-t.C:
+	}
 }
 
 func (s *Station) logf(format string, a ...any) {

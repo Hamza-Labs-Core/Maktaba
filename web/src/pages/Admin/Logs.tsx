@@ -21,6 +21,7 @@ import { useI18n } from "../../lib/i18n";
 import { api, downloadBlob, ApiError } from "../../lib/api";
 import { useToast } from "@ds/components/Toast/Toast";
 import { AdminGate } from "../../components/AdminGate";
+import { TitleRow } from "../../help/HelpLink";
 
 interface StreamResponse {
   entries?: unknown[] | null;
@@ -129,7 +130,9 @@ function LogsInner() {
   return (
     <section className="mkt-page mkt-logs">
       <header className="mkt-page__header">
-        <h1>{t("logs.title")}</h1>
+        <TitleRow>
+          <h1>{t("logs.title")}</h1>
+        </TitleRow>
         <span className="mkt-muted">{t("logs.subtitle")}</span>
       </header>
 
