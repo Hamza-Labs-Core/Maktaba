@@ -176,7 +176,9 @@ $$;
 -- p_fresh (the machine is about to copy the database anew, its copy stopped): the slot
 -- is made anew, from now. A slot this home gave up on (past the changes it keeps for a
 -- machine behind) is made anew too, and slot_made says so: the machine's copy cannot
--- follow from where it was and copies the database anew.
+-- follow from where it was and copies the database anew. It also names the settings a
+-- standby must have at least this server's values of (the machine writes its own
+-- configuration: this server's may not even parse on another system).
 CREATE OR REPLACE FUNCTION cluster_node_replica_grant(p_node uuid, p_password text, p_fresh boolean)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $f$
@@ -231,6 +233,13 @@ BEGIN
         'server_version_num', current_setting('server_version_num')::int,
         'database', current_database(),
         'ca_pem', (SELECT ca_pem FROM cluster_replica_beat WHERE id = 1),
+        -- a hot standby needs these at least as high as this server's
+        'settings', jsonb_build_object(
+            'max_connections', current_setting('max_connections'),
+            'max_worker_processes', current_setting('max_worker_processes'),
+            'max_wal_senders', current_setting('max_wal_senders'),
+            'max_prepared_transactions', current_setting('max_prepared_transactions'),
+            'max_locks_per_transaction', current_setting('max_locks_per_transaction')),
         'node', v_id);
 END
 $f$;

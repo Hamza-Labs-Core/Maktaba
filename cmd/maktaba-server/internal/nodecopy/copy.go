@@ -128,6 +128,8 @@ type Grant struct {
 	Version  int     `json:"server_version_num"`
 	Database string  `json:"database"`
 	CA       *string `json:"ca_pem"`
+	// Settings are the home's values a hot standby needs at least (max_connections, ...).
+	Settings map[string]string `json:"settings"`
 }
 
 // Major is the home's Postgres major version.
@@ -178,12 +180,14 @@ func (c Copy) Report(ctx context.Context, s Status) error {
 	return err
 }
 
-// Marker records what a copy is a copy of.
+// Marker records what a copy is a copy of, and the home's settings it was configured
+// with.
 type Marker struct {
-	SystemID string    `json:"system_identifier"`
-	Major    string    `json:"major"`
-	Slot     string    `json:"slot"`
-	Built    time.Time `json:"built"`
+	SystemID string            `json:"system_identifier"`
+	Major    string            `json:"major"`
+	Slot     string            `json:"slot"`
+	Built    time.Time         `json:"built"`
+	Settings map[string]string `json:"settings,omitempty"`
 }
 
 // Built is the marker of a usable copy (false: none, or one that never finished).
@@ -335,8 +339,61 @@ host    all   all   127.0.0.1/32   scram-sha-256
 host    all   all   ::1/128        scram-sha-256
 `
 
-// standby makes a fresh base backup this machine's copy: its own pg_hba, none of the
-// home's TLS files, the standby signal, the replication's settings and the marker.
+// standbySettings are the settings a hot standby needs at least the primary's values of.
+var standbySettings = []string{"max_connections", "max_worker_processes", "max_wal_senders",
+	"max_prepared_transactions", "max_locks_per_transaction"}
+
+// writeConfig writes the copy's own postgresql.conf and postgresql.auto.conf: the
+// home's would carry its system's settings (a Linux or Mac home's shared memory type,
+// locales Windows does not know), which can stop the copy from starting at all.
+func (c Copy) writeConfig(dir, conn string, g Grant) error {
+	var s strings.Builder
+	s.WriteString("# Maktaba: this machine's copy of its home's database (nodecopy). Its own\n" +
+		"# configuration: the settings a hot standby needs at least the home's values of.\n")
+	for _, k := range standbySettings {
+		if v := strings.TrimSpace(g.Settings[k]); v != "" && strings.Trim(v, "0123456789") == "" {
+			fmt.Fprintf(&s, "%s = %s\n", k, v)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "postgresql.conf"), []byte(s.String()), 0o600); err != nil {
+		return err
+	}
+	q := func(v string) string { return "'" + strings.ReplaceAll(v, "'", "''") + "'" }
+	auto := fmt.Sprintf("# Maktaba: this machine's copy of its home's database\nprimary_conninfo = %s\nprimary_slot_name = %s\n",
+		q(conn), q(g.Slot))
+	return os.WriteFile(filepath.Join(dir, "postgresql.auto.conf"), []byte(auto), 0o600)
+}
+
+// Tune writes the copy's configuration again when the home's settings changed since
+// (a home that allows more connections now): true when the copy needs a restart.
+func (c Copy) Tune(g Grant) (bool, error) {
+	m, ok := c.Built()
+	if !ok || len(g.Settings) == 0 || sameSettings(m.Settings, g.Settings) {
+		return false, nil
+	}
+	conn, err := c.conninfo()
+	if err != nil {
+		return false, err
+	}
+	if err := c.writeConfig(c.Data(), conn, g); err != nil {
+		return false, err
+	}
+	m.Settings = g.Settings
+	b, _ := json.Marshal(m)
+	return true, os.WriteFile(filepath.Join(c.Data(), markerFile), b, 0o600)
+}
+
+func sameSettings(a, b map[string]string) bool {
+	for _, k := range standbySettings {
+		if a[k] != b[k] {
+			return false
+		}
+	}
+	return true
+}
+
+// standby makes a fresh base backup this machine's copy: its own configuration and
+// pg_hba, none of the home's TLS files, the standby signal and the marker.
 func (c Copy) standby(dir, conn string, g Grant) error {
 	for _, f := range []string{"server.key", "server.crt", "postgres-server.key", "postgres-server.crt", "root.crt",
 		"standby.signal", "recovery.signal", "postmaster.opts"} {
@@ -348,21 +405,11 @@ func (c Copy) standby(dir, conn string, g Grant) error {
 	if err := os.WriteFile(filepath.Join(dir, "standby.signal"), nil, 0o600); err != nil {
 		return err
 	}
-	auto := filepath.Join(dir, "postgresql.auto.conf")
-	f, err := os.OpenFile(auto, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
+	if err := c.writeConfig(dir, conn, g); err != nil {
 		return err
 	}
-	q := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
-	_, err = fmt.Fprintf(f, "\n# Maktaba: this machine's copy of its home's database\nprimary_conninfo = %s\nprimary_slot_name = %s\n",
-		q(conn), q(g.Slot))
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		return err
-	}
-	m, _ := json.Marshal(Marker{SystemID: g.SystemID, Major: g.Major(), Slot: g.Slot, Built: time.Now().UTC()})
+	m, _ := json.Marshal(Marker{SystemID: g.SystemID, Major: g.Major(), Slot: g.Slot, Built: time.Now().UTC(),
+		Settings: g.Settings})
 	if err := os.WriteFile(filepath.Join(dir, markerFile), m, 0o600); err != nil {
 		return err
 	}
@@ -448,6 +495,11 @@ func (c Copy) Observe(ctx context.Context, now time.Time) Status {
 	       (SELECT at FROM cluster_replica_beat WHERE id = 1)`).Scan(&inRecovery, &lsn, &at)
 	if err != nil {
 		s.State, s.Detail = StateStarting, err.Error()
+		if strings.Contains(err.Error(), "locale is incompatible") {
+			// the home's database collates with a locale this system does not have (the
+			// bundled Postgres's is C, which every system has)
+			s.State = StateIncompatible
+		}
 		return s
 	}
 	s.ReplayLSN = lsn.String

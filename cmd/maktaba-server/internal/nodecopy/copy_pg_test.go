@@ -293,6 +293,11 @@ func TestCopyFollowsTheHome(t *testing.T) {
 			t.Fatalf("the copy holds the home's %s", f)
 		}
 	}
+	// its own configuration, with the home's hot-standby settings
+	if conf, err := os.ReadFile(filepath.Join(c.Data(), "postgresql.conf")); err != nil ||
+		!strings.HasPrefix(string(conf), "# Maktaba") || !strings.Contains(string(conf), "max_connections = ") {
+		t.Fatalf("the copy's postgresql.conf: %q %v", conf, err)
+	}
 	if _, err := os.Stat(filepath.Join(m.StateDir, StatusFile)); err != nil {
 		t.Fatalf("no status file: %v", err)
 	}

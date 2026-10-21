@@ -92,6 +92,11 @@ func Resolve(cfg config.Config, exe string) (Bundle, bool, error) {
 	}, true, nil
 }
 
+// FindHome is the Postgres install this machine has for Maktaba (findHome), "" for
+// none: a full node's copy of its home's database runs on it rather than on programs
+// it fetches.
+func FindHome(cfg config.Config, exe string) string { return findHome(cfg, exe) }
+
 // findHome: $MAKTABA_POSTGRES_HOME, [postgres] home, else the payload's postgres/
 // ($MAKTABA_APP_BUNDLE, or beside the bin/ of this executable).
 func findHome(cfg config.Config, exe string) string {

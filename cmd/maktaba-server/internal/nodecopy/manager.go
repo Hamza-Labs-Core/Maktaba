@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -220,6 +222,16 @@ func (m *Manager) Run(ctx context.Context) {
 				continue
 			}
 			backoff = m.retry()
+		} else if retune, err := m.Copy.Tune(g); err != nil {
+			m.set(ctx, m.state(StateError, "the copy's configuration: "+err.Error()))
+		} else if retune {
+			m.logf("the home's settings changed: restarting the copy with them")
+			_ = m.Want(false)
+			for deadline := m.now().Add(2 * time.Minute); m.Running != nil && m.Running() && m.now().Before(deadline); {
+				if !sleep(ctx, 500*time.Millisecond) {
+					return
+				}
+			}
 		}
 		_ = m.Want(true)
 		if !m.watch(ctx, 4*m.retry()) {
@@ -326,6 +338,29 @@ func (m *Manager) revoked(ctx context.Context, cause error) {
 		detail += " (not all of it: " + err.Error() + ")"
 	}
 	m.set(ctx, m.state(StateRevoked, detail))
+}
+
+// MajorOf is the Postgres major version of the install at home ("" when it does not
+// run): `postgres --version`.
+func MajorOf(home string) string {
+	out, err := exec.Command(filepath.Join(home, "bin", pgbin.Exe("postgres")), "--version").Output()
+	if err != nil {
+		return ""
+	}
+	f := strings.Fields(string(out))
+	if len(f) == 0 {
+		return ""
+	}
+	v := f[len(f)-1]
+	if i := strings.IndexByte(v, '.'); i > 0 {
+		return v[:i]
+	}
+	return v
+}
+
+// Installed is Programs for an install this machine already has.
+func Installed(home string) func(ctx context.Context) (string, error) {
+	return func(context.Context) (string, error) { return home, nil }
 }
 
 // ProgramsFor is Programs for this platform's pinned build under root.
