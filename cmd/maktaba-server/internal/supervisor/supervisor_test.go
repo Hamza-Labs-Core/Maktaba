@@ -126,3 +126,43 @@ func TestChildEnvSharesTheSecretsKey(t *testing.T) {
 		}
 	}
 }
+
+// A switch of the home hands its JWT keys over as files: the API gets them, unless its
+// operator set its own.
+func TestChildEnvHandsTheAPIAHandedOverJWTPair(t *testing.T) {
+	t.Setenv("MAKTABA_JWT_PRIVATE_KEY_PEM", "")
+	t.Setenv("MAKTABA_JWT_PUBLIC_KEY_PEM", "")
+	t.Setenv("MAKTABA_CONFIG", filepath.Join(t.TempDir(), "server.toml"))
+	cfg := config.Defaults()
+	if hasKV(ChildEnv(RoleAPI, cfg), "MAKTABA_JWT_PRIVATE_KEY_PEM", "") {
+		t.Fatal("an empty JWT key set")
+	}
+	for _, kv := range ChildEnv(RoleAPI, cfg) {
+		if strings.HasPrefix(kv, "MAKTABA_JWT_") {
+			t.Fatalf("a JWT key with none handed over: %s", kv)
+		}
+	}
+	priv, pub := JWTKeyPaths()
+	if err := os.WriteFile(priv, []byte("PRIVATE PEM"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pub, []byte("PUBLIC PEM"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := ChildEnv(RoleAPI, cfg)
+	if !hasKV(env, "MAKTABA_JWT_PRIVATE_KEY_PEM", "PRIVATE PEM") || !hasKV(env, "MAKTABA_JWT_PUBLIC_KEY_PEM", "PUBLIC PEM") {
+		t.Fatal("the API does not get the handed-over JWT keys")
+	}
+	for _, kv := range ChildEnv(RolePipeline, cfg) {
+		if strings.HasPrefix(kv, "MAKTABA_JWT_") {
+			t.Fatalf("the pipeline got a JWT key: %s", kv)
+		}
+	}
+	t.Setenv("MAKTABA_JWT_PRIVATE_KEY_PEM", "OWN")
+	t.Setenv("MAKTABA_JWT_PUBLIC_KEY_PEM", "OWN PUB")
+	for _, kv := range ChildEnv(RoleAPI, cfg) {
+		if strings.HasPrefix(kv, "MAKTABA_JWT_") {
+			t.Errorf("an operator's own JWT keys must be kept: %s", kv)
+		}
+	}
+}

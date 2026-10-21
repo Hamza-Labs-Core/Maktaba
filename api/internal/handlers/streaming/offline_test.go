@@ -93,7 +93,6 @@ type deadDriver struct{}
 
 func (deadDriver) Open(string) (driver.Conn, error) { return nil, errors.New("dead") }
 
-
 // closedDB is the home's database gone: every call on it fails.
 func closedDB(t *testing.T) *sql.DB {
 	t.Helper()
@@ -305,4 +304,3 @@ func TestOfflineAVideoTheStreamingRoleLacksIsUnavailable(t *testing.T) {
 		t.Fatalf("a video the streaming role does not know, offline: %d %s", rec.Code, rec.Body.String())
 	}
 }
-

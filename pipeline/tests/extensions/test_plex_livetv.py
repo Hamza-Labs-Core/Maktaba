@@ -1,5 +1,6 @@
 """Plex Live TV (the Plex extension's ``plex_livetv``): the client's Live TV calls, the
-channel map exactly as dizqueTV builds it, registering once, refreshing, the throttle."""
+channel map exactly as dizqueTV builds it, registering once, refreshing, the throttle, and
+the tuner moved to a new home's address (Epic 37)."""
 
 from __future__ import annotations
 
@@ -37,6 +38,8 @@ from tests.extensions.harness import error_of, run_stage, setup_runtime, summary
 
 BASE = "http://plex.test"
 TUNER = "http://192.168.1.20:8782"
+#: the old home's address, before a switch of the home made this machine the home
+OLD_TUNER = "http://192.168.1.10:8782"
 DIZQUE = "http://192.168.1.20:8000"
 DEVICE_ID = "A1B2C3D4"
 SETTINGS = {
@@ -64,6 +67,9 @@ class FakeLiveTV:
     answer_with_objects: bool = True
     #: ``POST /livetv/dvrs`` fails this many times first (Plex timing out on the guide)
     dvr_failures: int = 0
+    #: adding a tuner whose DeviceID Plex knows: ``update`` takes the new address in place,
+    #: ``keep`` answers with the device as it was
+    same_device: str = "update"
     _next: int = 10
 
     def add_device(self, uri: str, device_id: str, title: str = "HDHomeRun") -> str:
@@ -142,7 +148,12 @@ class FakeLiveTV:
             uri = q.get("uri", "")
             if uri not in self.reachable:
                 return 400
-            key = self.add_device(uri, self.reachable[uri], "Maktaba")
+            did = self.reachable[uri]
+            key = next((k for k, d in self.devices.items() if d["deviceId"] == did), "")
+            if key and self.same_device == "update":
+                self.devices[key]["uri"] = uri
+            elif not key:
+                key = self.add_device(uri, did, "Maktaba")
             return (
                 {"MediaContainer": {"Device": [self._device_json(key)]}}
                 if self.answer_with_objects
@@ -170,6 +181,33 @@ class FakeLiveTV:
             return {}
         if method == "PUT" and parts[:2] == ["livetv", "dvrs"] and parts[3:] == ["lineups"]:
             self.dvrs[parts[2]]["lineups"].append(q["lineup"])
+            return {}
+        if method == "DELETE" and parts[:2] == ["livetv", "dvrs"] and parts[3:] == ["lineups"]:
+            dvr = self.dvrs[parts[2]]
+            if q.get("lineup") not in dvr["lineups"]:
+                return None
+            dvr["lineups"].remove(q["lineup"])
+            if dvr["lineup"] == q["lineup"]:
+                dvr["lineup"] = dvr["lineups"][0] if dvr["lineups"] else ""
+            return {}
+        if (
+            method == "DELETE"
+            and parts[:2] == ["livetv", "dvrs"]
+            and parts[3:4] == ["devices"]
+            and len(parts) == 5
+        ):
+            dvr = self.dvrs[parts[2]]
+            if parts[4] not in dvr["devices"]:
+                return None
+            dvr["devices"].remove(parts[4])
+            self.devices[parts[4]].pop("parentID", None)
+            return {}
+        if method == "DELETE" and parts[:3] == ["media", "grabbers", "devices"] and len(parts) == 4:
+            if parts[3] not in self.devices:
+                return None
+            if any(parts[3] in d["devices"] for d in self.dvrs.values()):
+                return 400  # a DVR's channel source: taken out of the DVR first
+            del self.devices[parts[3]]
             return {}
         if method == "PUT" and parts[:2] == ["livetv", "dvrs"] and parts[3:4] == ["devices"]:
             if parts[4] not in self.devices or not self.devices[parts[4]].get("ChannelMapping"):
@@ -744,6 +782,8 @@ async def test_refresh_while_plex_loads_the_guide_sends_nothing(db: Database) ->
     assert w.fake.writes() == []
     assert (await status(db))["actions"] == {
         "register": "",
+        "move": "",
+        "moved_from": "",
         "channel_map": "unchanged",
         "guide": "loading",
     }
@@ -795,6 +835,116 @@ async def test_a_register_that_fails_half_way_keeps_the_request_for_the_retry(
     s = await status(db)
     assert s["maktaba"]["registered"] and s["actions"]["register"] == "registered"
     assert (await load_state(db)).register_requested_at is None
+
+
+async def registered_at_the_old_home(db: Any, w: World) -> str:
+    """Maktaba's tuner registered at the old home's address; then the home switched to this
+    machine (its tuner at ``TUNER``) and the switch asked Plex again. Returns the tuner."""
+    await set_rules(db, {"tuner_url": OLD_TUNER})
+    w.fake.reachable[OLD_TUNER] = DEVICE_ID
+    await ask_register(db)
+    row = await livetv(db, w, force=True)
+    assert row["state"] == "done", error_of(row)
+    assert (await status(db))["maktaba"]["registered"]
+    await set_rules(db, {"tuner_url": TUNER})
+    w.fake.calls.clear()
+    await ask_register(db)
+    return next(k for k, d in w.fake.devices.items() if d["deviceId"] == DEVICE_ID)
+
+
+OLD_GUIDE = xmltv_lineup(f"{OLD_TUNER}/xmltv.xml", "Maktaba")
+NEW_GUIDE = xmltv_lineup(f"{TUNER}/xmltv.xml", "Maktaba")
+DZ_GUIDE = "lineup://tv.plex.providers.epg.xmltv/dz#dizqueTV"
+
+
+@pytest.mark.asyncio
+async def test_a_new_home_moves_the_tuner_plex_takes_in_place(db: Database) -> None:
+    w = await make_world(db)
+    dz_key, dz_dvr, dz_before = dizque_snapshot(w)
+    ours = await registered_at_the_old_home(db, w)
+    assert w.fake.dvrs[dz_dvr]["lineups"] == [DZ_GUIDE, OLD_GUIDE]
+    row = await livetv(db, w, force=True)
+    assert row["state"] == "done", error_of(row)
+    # the same device at its new address, still dizqueTV's DVR's channel source
+    assert w.fake.devices[ours]["uri"] == TUNER
+    assert w.fake.dvrs[dz_dvr]["devices"] == [dz_key, ours]
+    # the guide here instead of the old home's; dizqueTV's untouched
+    assert w.fake.dvrs[dz_dvr]["lineups"] == [DZ_GUIDE, NEW_GUIDE]
+    assert dizque_snapshot(w)[2] == dz_before
+    writes = w.fake.writes()
+    assert ("PUT", f"/media/grabbers/devices/{ours}/channelmap") in writes
+    assert writes[-1] == ("POST", f"/livetv/dvrs/{dz_dvr}/reloadGuide")
+    assert not any(p.startswith("/media/grabbers/devices/") and m == "DELETE" for m, p in writes)
+    s = await status(db)
+    assert s["actions"]["register"] == "moved" and s["actions"]["move"] == "in_place"
+    assert s["actions"]["moved_from"] == OLD_TUNER and s["maktaba"]["registered"]
+    assert (await load_state(db)).register_requested_at is None
+    # moved once: the next request finds it here
+    w.fake.calls.clear()
+    await ask_register(db)
+    await livetv(db, w, force=True)
+    assert (await status(db))["actions"]["register"] == "already_registered"
+
+
+@pytest.mark.asyncio
+async def test_a_tuner_plex_keeps_at_the_old_address_is_added_again_here(db: Database) -> None:
+    w = await make_world(db)
+    dz_key, dz_dvr, dz_before = dizque_snapshot(w)
+    old = await registered_at_the_old_home(db, w)
+    w.fake.same_device = "keep"
+    row = await livetv(db, w, force=True)
+    assert row["state"] == "done", error_of(row)
+    assert old not in w.fake.devices
+    new = next(k for k, d in w.fake.devices.items() if d["deviceId"] == DEVICE_ID)
+    assert w.fake.devices[new]["uri"] == TUNER and w.fake.devices[new]["title"] == "Maktaba"
+    assert w.fake.dvrs[dz_dvr]["devices"] == [dz_key, new]
+    assert w.fake.dvrs[dz_dvr]["lineups"] == [DZ_GUIDE, NEW_GUIDE]
+    assert dizque_snapshot(w)[2] == dz_before
+    writes = w.fake.writes()
+    out = writes.index(("DELETE", f"/livetv/dvrs/{dz_dvr}/devices/{old}"))
+    assert writes[out + 1] == ("DELETE", f"/media/grabbers/devices/{old}")
+    assert writes.index(("PUT", f"/livetv/dvrs/{dz_dvr}/devices/{new}")) > out
+    s = await status(db)
+    assert s["actions"]["register"] == "moved" and s["actions"]["move"] == "re_added"
+    assert s["maktaba"]["registered"] and s["channels"]["in_sync"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("same_device", ["update", "keep"])
+async def test_a_dvr_of_maktabas_own_follows_the_tuner(db: Database, same_device: str) -> None:
+    # no other DVR: Maktaba made one, whose guide was the old home's
+    w = await make_world(db, dizquetv=False)
+    await registered_at_the_old_home(db, w)
+    assert [d["lineups"] for d in w.fake.dvrs.values()] == [[OLD_GUIDE]]
+    w.fake.same_device = same_device
+    row = await livetv(db, w, force=True)
+    assert row["state"] == "done", error_of(row)
+    assert len(w.fake.dvrs) == 1 and len(w.fake.devices) == 1
+    (dvr,) = w.fake.dvrs.values()
+    (device,) = w.fake.devices.values()
+    assert dvr["lineups"] == [NEW_GUIDE] and dvr["lineup"] == NEW_GUIDE
+    assert device["uri"] == TUNER and dvr["devices"] == [device["key"]]
+    s = await status(db)
+    assert s["actions"]["register"] == "moved" and s["maktaba"]["registered"]
+
+
+@pytest.mark.asyncio
+async def test_plex_that_cannot_reach_the_new_home_keeps_the_tuner_where_it_was(
+    db: Database,
+) -> None:
+    w = await make_world(db)
+    _, dz_dvr, _ = dizque_snapshot(w)
+    ours = await registered_at_the_old_home(db, w)
+    del w.fake.reachable[TUNER]  # Plex can't read discover.json here
+    row = await livetv(db, w, force=True)
+    assert row["state"] in ("pending", "failed")
+    assert w.fake.devices[ours]["uri"] == OLD_TUNER and ours in w.fake.dvrs[dz_dvr]["devices"]
+    assert OLD_GUIDE in w.fake.dvrs[dz_dvr]["lineups"]
+    assert (await load_state(db)).register_requested_at is not None  # asked again on retry
+    w.fake.reachable[TUNER] = DEVICE_ID
+    row = await livetv(db, w, force=True)
+    assert row["state"] == "done", error_of(row)
+    assert w.fake.devices[ours]["uri"] == TUNER
 
 
 @pytest.mark.asyncio

@@ -429,14 +429,14 @@ func ensureRole(ctx context.Context, super *sql.DB, name, password string, login
 }
 
 // Demote makes the old home's database a copy of the new one, without copying it again
-// (it holds the marker: it is the new home's as of the freeze): writable again for
-// replication, its publications and slots for the machines that followed it dropped, the
-// home-only rows (its secrets, its machines, its caches) emptied. The subscription is
-// the copy's (nodecopy.Copy.Handover).
+// (it holds the marker: it is the new home's as of the freeze): its publications and
+// slots for the machines that followed it dropped, the home-only rows (its secrets, its
+// machines, its caches) emptied. It stays frozen for the app's roles while its home
+// processes still run (the subscription applies all the same): the copy ends the freeze
+// when this machine starts as a machine (nodecopy.Copy.EnsureReader). The subscription
+// is the copy's (nodecopy.Copy.Handover). super writes despite the freeze
+// (pgbundle.Bundle.SuperURL).
 func Demote(ctx context.Context, super *sql.DB) error {
-	if _, err := super.ExecContext(ctx, `ALTER DATABASE `+database+` RESET default_transaction_read_only`); err != nil {
-		return err
-	}
 	rows, err := super.QueryContext(ctx, `SELECT pubname FROM pg_publication WHERE pubname LIKE 'maktaba\_copy\_%'`)
 	if err != nil {
 		return err

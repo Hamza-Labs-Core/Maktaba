@@ -211,14 +211,17 @@ func (b Bundle) URL() (string, error) {
 	return "postgres://" + AppRole + ":" + pw + "@" + b.Addr() + "/" + AppDatabase + "?sslmode=disable", nil
 }
 
-// SuperURL is the superuser's database URL (the copy's subscription, its roles). It
-// needs Prepare to have run.
+// SuperURL is the superuser's database URL (the copy's subscription, its roles; a
+// switch of the home). It writes when the database is frozen too (a switch sets
+// default_transaction_read_only on it for the app's roles): only this machine's own
+// copy and switch work connects as the superuser. It needs Prepare to have run.
 func (b Bundle) SuperURL() (string, error) {
 	pw, err := readPassword(b.passwordFile(SuperUser))
 	if err != nil {
 		return "", err
 	}
-	return "postgres://" + SuperUser + ":" + pw + "@" + b.Addr() + "/" + AppDatabase + "?sslmode=disable", nil
+	return "postgres://" + SuperUser + ":" + pw + "@" + b.Addr() + "/" + AppDatabase +
+		"?sslmode=disable&default_transaction_read_only=off", nil
 }
 
 func (b Bundle) passwordFile(role string) string {

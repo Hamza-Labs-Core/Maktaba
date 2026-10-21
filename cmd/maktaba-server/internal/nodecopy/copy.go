@@ -374,7 +374,9 @@ func (c Copy) super() (*sql.DB, error) {
 	return sql.Open("postgres", dsn)
 }
 
-// EnsureReader makes the read-only role this machine's programs read the copy as.
+// EnsureReader makes the read-only role this machine's programs read the copy as, and
+// ends a switch's freeze: a machine that was the home kept its database frozen until it
+// started as a machine (its copy is written by the subscription and its migrations).
 func (c Copy) EnsureReader(ctx context.Context) error {
 	pw, err := c.ReaderPassword()
 	if err != nil {
@@ -391,6 +393,7 @@ func (c Copy) EnsureReader(ctx context.Context) error {
 		`ALTER ROLE ` + r + ` WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD ` + p,
 		`ALTER ROLE ` + r + ` SET default_transaction_read_only = on`,
 		`GRANT pg_read_all_data TO ` + r,
+		`ALTER DATABASE ` + pq.QuoteIdentifier(pgbundle.AppDatabase) + ` RESET default_transaction_read_only`,
 	} {
 		if _, err := db.ExecContext(ctx, q); err != nil {
 			return fmt.Errorf("nodecopy: the copy's read-only role: %w", err)
@@ -526,6 +529,11 @@ func (c Copy) Handover(ctx context.Context, g Grant, local int64) error {
 				return fmt.Errorf("nodecopy: leaving the old home: %w", err)
 			}
 		}
+	}
+	// the new home's CA (it came over the cluster channel) replaces the old home's pin;
+	// a home without TLS leaves none
+	if err := os.Remove(filepath.Join(c.DB.Keys, caFile)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("nodecopy: the old home's CA: %w", err)
 	}
 	if err := c.writeAccess(g); err != nil {
 		return fmt.Errorf("nodecopy: the copy's access: %w", err)

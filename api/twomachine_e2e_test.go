@@ -172,6 +172,10 @@ func startMachine(t *testing.T, name, bin string, env []string) *machine {
 		m.stop()
 		if t.Failed() {
 			t.Logf("---- %s log (tail) ----\n%s", name, tail(m.log.String(), 6000))
+			// MAKTABA_E2E_LOG_DIR keeps each machine's whole log of a failed run
+			if dir := os.Getenv("MAKTABA_E2E_LOG_DIR"); dir != "" {
+				_ = os.WriteFile(filepath.Join(dir, t.Name()+"-"+name+".log"), []byte(m.log.String()), 0o600)
+			}
 		}
 	})
 	return m

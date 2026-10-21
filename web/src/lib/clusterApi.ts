@@ -248,7 +248,64 @@ export const clusterApi = {
   deleteServer: (name: string) => api.delete<void>(`/api/cluster/storage-servers/${q(name)}`),
   canonicalize: (action: CanonAction) =>
     api.post<CanonStatus>("/api/cluster/storage/canonicalize", { action }),
+  // Epic 37: switching the home to another machine
+  switchover: () => api.get<SwitchStatus>("/api/cluster/switchover"),
+  startSwitch: (to_node: string) =>
+    api.post<{ id: string }>("/api/cluster/switchover", { to_node }),
 };
+
+/** One step of a switch of the home, as the old home runs it. */
+export interface SwitchStep {
+  name: string;
+  state: "running" | "done" | "failed";
+  detail?: string;
+  at: string;
+}
+
+/** A machine's part in a switch. */
+export interface SwitchMachine {
+  name: string;
+  state: string;
+  detail?: string;
+}
+
+/** An outside service after a switch: moved and checked, or what it needs. */
+export interface SwitchIntegration {
+  state: "moved" | "pending" | "failed" | "needs_you" | "not_used";
+  detail?: string;
+}
+
+/** A switch of the home (GET /api/cluster/switchover). */
+export interface SwitchProgress {
+  id: string;
+  term: number;
+  kind: "planned" | "emergency";
+  to_node: string;
+  to_name: string;
+  from_name: string;
+  state: string;
+  detail?: string;
+  steps?: SwitchStep[] | null;
+  machines?: Record<string, SwitchMachine> | null;
+  integrations?: Record<string, SwitchIntegration> | null;
+  started?: string;
+}
+
+/** A machine that could take over as the home, and why it cannot now. */
+export interface SwitchCandidate {
+  node_id: string;
+  name: string;
+  ready: boolean;
+  reasons?: string[] | null;
+  lag_ms?: number | null;
+}
+
+export interface SwitchStatus {
+  term: { term: number; home_name: string; reason: string; started_at: string } | null;
+  current: SwitchProgress | null;
+  recent: SwitchProgress[] | null;
+  candidates: SwitchCandidate[] | null;
+}
 
 /** "123 456", "123-456" -> "123456"; anything else -> null. */
 export function normalizePairingCode(raw: string): string | null {

@@ -297,7 +297,8 @@ func TestAPlannedSwitchover(t *testing.T) {
 			SystemID: done.SystemID, Database: pgbundle.AppDatabase, CA: &ca}
 	}
 	local := int64(144)
-	if err := Demote(ctx, adb); err != nil {
+	// the supervisor opens its sessions after the freeze: so do these
+	if err := Demote(ctx, super(t, c.home)); err != nil {
 		t.Fatal(err)
 	}
 	aCopy.HomeDSN = dsnAs(a.Role(), a.RolePassword, nb.Addr())
@@ -330,6 +331,22 @@ func TestAPlannedSwitchover(t *testing.T) {
 				count(ctx, db, `SELECT count(*) FROM events WHERE id = $1`, newID) == 1
 		})
 	}
+	// the old home's processes still run as the home's until it starts again: frozen for
+	// them, while the subscription applies; its copy ends the freeze when it starts
+	aApp, err := c.home.URL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := open(t, aApp).ExecContext(ctx, `UPDATE app_settings SET value = '"stray"' WHERE key = 'test.switch'`); err == nil {
+		t.Fatal("the demoted home took a write of its own before it started as a machine")
+	}
+	if err := aCopy.EnsureReader(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var ro string
+	if err := open(t, aApp).QueryRowContext(ctx, `SHOW default_transaction_read_only`).Scan(&ro); err != nil || ro != "off" {
+		t.Fatalf("the old home's copy still frozen once it started as a machine: %q %v", ro, err)
+	}
 	// the secrets and the machines are the new home's; the old home holds neither
 	if n := count(ctx, bdb, `SELECT count(*) FROM home_secrets`); n != 1 {
 		t.Fatalf("the new home's secrets: %d", n)
@@ -356,6 +373,37 @@ func TestAPlannedSwitchover(t *testing.T) {
 	cOnB := open(t, strings.Replace(cm.copy.HomeDSN, "sslmode=prefer", "sslmode=require", 1))
 	if err := cOnB.PingContext(ctx); err != nil {
 		t.Fatalf("a machine signs in to the new home with its old password: %v", err)
+	}
+}
+
+// A switch that does not go through thaws the old home, from a session opened after the
+// freeze (the supervisor opens its own).
+func TestAFrozenHomeThaws(t *testing.T) {
+	c := newCluster(t)
+	ctx := c.ctx
+	id := uuid.NewString()
+	c.exec(c.app, `INSERT INTO cluster_switchovers (id, term, kind, to_node, to_name, from_name, state)
+	    VALUES ($1, 2, 'planned', $2, 'b', 'a', 'freezing')`, id, uuid.NewString())
+	if err := Freeze(ctx, super(t, c.home), id); err != nil {
+		t.Fatal(err)
+	}
+	appURL, err := c.home.URL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := `INSERT INTO app_settings (key, value) VALUES ('test.thaw', '"x"')
+	    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`
+	if _, err := open(t, appURL).ExecContext(ctx, write); err == nil {
+		t.Fatal("the frozen home took a write")
+	}
+	if ok, err := HasMarker(ctx, super(t, c.home), id); !ok || err != nil {
+		t.Fatalf("no marker on the frozen home: %v", err)
+	}
+	if err := Thaw(ctx, super(t, c.home)); err != nil {
+		t.Fatalf("thaw from a session opened after the freeze: %v", err)
+	}
+	if _, err := open(t, appURL).ExecContext(ctx, write); err != nil {
+		t.Fatalf("the thawed home refuses writes: %v", err)
 	}
 }
 

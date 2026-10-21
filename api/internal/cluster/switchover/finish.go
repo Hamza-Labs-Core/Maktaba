@@ -17,8 +17,9 @@ type Integrations func(ctx context.Context) map[string]Integration
 
 // Finish finishes on this home a switch that made it the home (it runs on every home,
 // every 15 s, and does nothing otherwise): it marks the machines that follow it, moves
-// and checks the integrations, and once every machine follows (or FollowWithin has
-// passed) gives the machines their jobs back and calls the switch done.
+// and checks the integrations, and once every machine follows and no integration is
+// pending (or FollowWithin has passed) gives the machines their jobs back and calls the
+// switch done.
 func (o *Orchestrator) Finish(ctx context.Context, integrations Integrations) {
 	t := time.NewTicker(15 * time.Second)
 	defer t.Stop()
@@ -98,6 +99,12 @@ func (o *Orchestrator) finishOnce(ctx context.Context, integrations Integrations
 	}
 	mj, _ := json.Marshal(machines)
 	ij, _ := json.Marshal(cur)
+	// an outside service still moving keeps the switch open too
+	for _, v := range cur {
+		if v.State == Pending {
+			all = false
+		}
+	}
 	done := all || (frozen.Valid && time.Since(frozen.Time) > FollowWithin)
 	newState := "repointing"
 	if done {

@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -100,6 +101,8 @@ type NewHome struct {
 	SystemID   string `json:"system_id"`
 	InstanceID string `json:"instance_id"`
 	Name       string `json:"name"`
+	// CA is the new home's database CA (PEM), pinned by the machines that follow it.
+	CA string `json:"ca_pem,omitempty"`
 }
 
 // Orchestrator runs switches on the home.
@@ -114,6 +117,9 @@ type Orchestrator struct {
 	// JobsWait is how long the machines' jobs may take to end before they are paused
 	// (0: 2 minutes).
 	JobsWait time.Duration
+	// HomeWait is how long the new home may take to answer as the home after its
+	// promotion (it starts again: 0, 5 minutes) before the machines are told anyway.
+	HomeWait time.Duration
 
 	mu       sync.Mutex
 	progress map[string]*Progress
@@ -464,6 +470,12 @@ func (o *Orchestrator) run(id, by string) {
 		return
 	}
 	o.update(id, func(p *Progress) { p.NewHome = &home })
+	// it starts again as the home: the machines follow once it answers (they keep trying
+	// on their own when it is slower than that)
+	if err := o.waitHome(ctx, home); err != nil {
+		o.log().Warn("switchover: the new home does not answer yet; the machines keep trying", "id", id,
+			"home", home.APIURL, "err", err, "event", "switchover_home_slow")
+	}
 	o.step(id, StepPromote, "done", home.APIURL)
 
 	// ---- every other machine told where its home is ----
@@ -503,6 +515,42 @@ func (o *Orchestrator) run(id, by string) {
 	o.update(id, func(p *Progress) { p.State = "handed_over" })
 	o.log().Info("switchover: handed over; this machine starts again as one of the new home's", "id", id,
 		"home", home.APIURL, "event", "switchover_handed_over")
+}
+
+// waitHome waits for the new home to answer as the home (GET /api/cluster/self).
+func (o *Orchestrator) waitHome(ctx context.Context, home NewHome) error {
+	wait := o.HomeWait
+	if wait <= 0 {
+		wait = 5 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(ctx, wait)
+	defer cancel()
+	c := &http.Client{Timeout: 5 * time.Second}
+	var last error
+	for {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(home.APIURL, "/")+"/api/cluster/self", nil)
+		if err != nil {
+			return err
+		}
+		if resp, err := c.Do(req); err != nil {
+			last = err
+		} else {
+			var self struct {
+				Role string `json:"role"`
+			}
+			err := json.NewDecoder(resp.Body).Decode(&self)
+			_ = resp.Body.Close()
+			if err == nil && self.Role == "home" {
+				return nil
+			}
+			last = fmt.Errorf("%s: %d, role %q", home.APIURL, resp.StatusCode, self.Role)
+		}
+		select {
+		case <-ctx.Done():
+			return last
+		case <-time.After(time.Second):
+		}
+	}
 }
 
 // undo puts things back after a switch that did not reach the promotion: the database

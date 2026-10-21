@@ -64,6 +64,8 @@ const (
 	kitCACert     = pgbundle.CACertFile
 	kitCAKey      = "postgres-ca.key"
 	kitHFToken    = "hf-token"
+	kitJWTPrivate = "jwt-private.pem"
+	kitJWTPublic  = "jwt-public.pem"
 )
 
 // switching is this machine's part of a switch.
@@ -133,8 +135,9 @@ func hfTokenPath(cfg config.Config) string {
 
 // kitFiles are the home's key files the new home needs (the ones this home has).
 func (s *switching) kitFiles() map[string]string {
+	priv, pub := supervisor.JWTKeyPaths()
 	out := map[string]string{kitSecretsKey: secretsKeyPath(), kitClusterKey: clusterKeyPath(),
-		kitHFToken: hfTokenPath(s.cfg)}
+		kitHFToken: hfTokenPath(s.cfg), kitJWTPrivate: priv, kitJWTPublic: pub}
 	if s.pg != nil {
 		out[kitCACert] = s.pg.CACert()
 		out[kitCAKey] = filepath.Join(s.pg.Keys, kitCAKey)
@@ -241,6 +244,20 @@ type newHome struct {
 	SystemID   string `json:"system_id"`
 	InstanceID string `json:"instance_id"`
 	Name       string `json:"name"`
+	// CA is the new home's database CA (PEM): the machines that follow it pin it.
+	CA string `json:"ca_pem,omitempty"`
+}
+
+// grant is a machine's copy following this new home from its slot (made by the
+// promotion, before the new home's first write).
+func (h newHome) grant(c nodecopy.Copy) nodecopy.Grant {
+	g := nodecopy.Grant{Role: c.Role(), Slot: c.Slot(), SlotExists: true, Publication: c.Publication(),
+		SystemID: h.SystemID, Database: pgbundle.AppDatabase}
+	if h.CA != "" {
+		ca := h.CA
+		g.CA = &ca
+	}
+	return g
 }
 
 // oldHome is this machine's identity as a machine of the new home, chosen when the kit
@@ -293,6 +310,11 @@ func (s *switching) kit(ctx context.Context, req homeRequest) (any, error) {
 		if b, err := os.ReadFile(path); err == nil {
 			files[name] = b
 		}
+	}
+	// the home's JWT keys, when its operator set them (the new home's supervisor hands
+	// them to its API from the keys directory)
+	if priv, pub := os.Getenv("MAKTABA_JWT_PRIVATE_KEY_PEM"), os.Getenv("MAKTABA_JWT_PUBLIC_KEY_PEM"); priv != "" && pub != "" {
+		files[kitJWTPrivate], files[kitJWTPublic] = []byte(priv), []byte(pub)
 	}
 	if len(files[kitSecretsKey]) == 0 {
 		return nil, errors.New("this home has no secrets key to hand over")
@@ -366,6 +388,25 @@ func (s *switching) oldHome(dir string) (oldHome, error) {
 	return me, writePrivate(path, b)
 }
 
+// handover follows the new home, again while its database does not answer yet (it
+// starts again right after its promotion), until ctx ends.
+func handover(ctx context.Context, c nodecopy.Copy, g nodecopy.Grant, local int64, logf func(string, ...any)) error {
+	for tries := 1; ; tries++ {
+		err := c.Handover(ctx, g, local)
+		if err == nil {
+			return nil
+		}
+		if tries == 1 {
+			logf("the new home's database does not answer yet (%v): trying again", err)
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
 func writePrivate(path string, b []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
@@ -404,12 +445,7 @@ func (s *switching) demote(req homeRequest) {
 		logf("this machine's schema: %v", err)
 		return
 	}
-	ca, _ := os.ReadFile(s.pg.CACert())
-	pem := string(ca)
-	slot := switchover.Machine{ID: me.NodeID}.Slot()
-	g := nodecopy.Grant{Role: switchover.Machine{ID: me.NodeID}.CopyRole(), Slot: slot, SlotExists: true,
-		Publication: slot, SystemID: h.SystemID, Database: pgbundle.AppDatabase, CA: &pem}
-	if err := c.Handover(ctx, g, local); err != nil {
+	if err := handover(ctx, c, h.grant(c), local, logf); err != nil {
 		logf("following the new home: %v", err)
 		return
 	}
@@ -641,6 +677,9 @@ func (s *switching) promote(ctx context.Context, id string, term int64) (any, er
 	if u, err := url.Parse(home.APIURL); err == nil {
 		home.DBHost = u.Hostname()
 	}
+	if ca, err := os.ReadFile(db2.CACert()); err == nil {
+		home.CA = string(ca)
+	}
 	fmt.Fprintf(os.Stderr, "[switchover] this machine is the home now (term %d): starting again\n", term)
 	go func() {
 		time.Sleep(2 * time.Second) // the answer goes out first
@@ -673,9 +712,11 @@ func (s *switching) follow(ctx context.Context, id string, h newHome) (any, erro
 				c.HomeDSN = dsn
 				local, err := c.LocalSchema(ctx)
 				if err == nil {
-					slot := c.Slot()
-					err = c.Handover(ctx, nodecopy.Grant{Role: c.Role(), Slot: slot, SlotExists: true, Publication: slot,
-						SystemID: h.SystemID, Database: pgbundle.AppDatabase}, local)
+					hctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+					err = handover(hctx, c, h.grant(c), local, func(format string, args ...any) {
+						fmt.Fprintf(os.Stderr, "[switchover] "+format+"\n", args...)
+					})
+					cancel()
 				}
 				if err != nil {
 					return nil, fmt.Errorf("following the new home: %w", err)
@@ -696,4 +737,3 @@ func (s *switching) follow(ctx context.Context, id string, h newHome) (any, erro
 	}()
 	return map[string]any{"copy_kept": moved}, nil
 }
-

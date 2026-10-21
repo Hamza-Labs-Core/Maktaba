@@ -412,3 +412,50 @@
 .mkt-cl-door__bad {
   color: var(--color-warn, inherit);
 }
+
+/* Switching the home (Epic 37) */
+.mkt-cl-switch__candidates,
+.mkt-cl-switch__machines,
+.mkt-cl-switch__integrations,
+.mkt-cl-switch__needs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mkt-cl-switch__progress,
+.mkt-cl-switch__result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+.mkt-cl-switch__progress p,
+.mkt-cl-switch__result p {
+  margin: 0;
+}
+.mkt-cl-switch__steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding-inline-start: var(--space-5);
+}
+.mkt-cl-switch__steps li[data-state="done"] {
+  color: var(--color-muted);
+}
+.mkt-cl-switch__steps li[data-state="running"] {
+  font-weight: 600;
+}
+.mkt-cl-switch__steps li[data-state="failed"] {
+  color: var(--color-error);
+}
+.mkt-cl-switch__needs li {
+  padding: var(--space-2) var(--space-3);
+  border-inline-start: 3px solid var(--color-warn);
+  background: color-mix(in srgb, var(--color-warn) 10%, var(--color-bg));
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}

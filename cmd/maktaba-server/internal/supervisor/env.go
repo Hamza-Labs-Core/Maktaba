@@ -93,6 +93,18 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		add("MAKTABA_STREAM_SIGNING_KEY", StreamKeyPath())
 	}
 
+	// The home's JWT keys (Story 10.6): an operator's MAKTABA_JWT_*_PEM, else the pair a
+	// switch of the home handed over (Epic 37), in the keys directory.
+	if role == RoleAPI && os.Getenv("MAKTABA_JWT_PRIVATE_KEY_PEM") == "" && os.Getenv("MAKTABA_JWT_PUBLIC_KEY_PEM") == "" {
+		privPath, pubPath := JWTKeyPaths()
+		priv, err1 := os.ReadFile(privPath)
+		pub, err2 := os.ReadFile(pubPath)
+		if err1 == nil && err2 == nil && len(priv) > 0 && len(pub) > 0 {
+			add("MAKTABA_JWT_PRIVATE_KEY_PEM", string(priv))
+			add("MAKTABA_JWT_PUBLIC_KEY_PEM", string(pub))
+		}
+	}
+
 	switch role {
 	case RoleAPI:
 		add("MAKTABA_HTTP_ADDR", cfg.Server.Listen)
@@ -363,6 +375,12 @@ func SecretsKeyPath() string {
 // the keys directory (next to secrets.key).
 func StreamKeyPath() string {
 	return filepath.Join(config.KeysDir(), "stream-signing.key")
+}
+
+// JWTKeyPaths are the home's JWT key pair a switch of the home handed over:
+// jwt-private.pem and jwt-public.pem in the keys directory.
+func JWTKeyPaths() (private, public string) {
+	return filepath.Join(config.KeysDir(), "jwt-private.pem"), filepath.Join(config.KeysDir(), "jwt-public.pem")
 }
 
 // withStage adds stage to a comma-separated stage list (once).

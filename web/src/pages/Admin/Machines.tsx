@@ -52,6 +52,7 @@ import { queueLabeller } from "../../components/cluster/names";
 import { QueuesPanel } from "../../components/cluster/QueuesPanel";
 import { RelayDoorCard } from "../../components/cluster/RelayDoorCard";
 import { RelayPanel } from "../../components/cluster/RelayPanel";
+import { SwitchHomeCard } from "../../components/cluster/SwitchHomeCard";
 import { useClusterFiles } from "../../components/cluster/useClusterFiles";
 import { useFmt } from "../../components/queue/format";
 import { useClusterStream, type ClusterStream } from "../../lib/clusterStream";
@@ -152,7 +153,12 @@ function MachinesPage() {
                 stream={stream}
                 queueLabel={queueLabel}
                 onOpenLogs={openLogs}
-                extra={<RelayDoorCard />}
+                extra={
+                  <>
+                    <SwitchHomeCard />
+                    <RelayDoorCard />
+                  </>
+                }
               />
             ),
           },

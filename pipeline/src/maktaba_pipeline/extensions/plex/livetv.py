@@ -6,13 +6,20 @@ HDHomeRun tuner only, plus adding that tuner to Plex once:
 * **find** Plex's DVRs (``GET /livetv/dvrs``) and tuners (``GET /media/grabbers/devices``)
   and Maktaba's tuner among them, by its HDHomeRun DeviceID (``hdhr_device``) or its address;
 * **register** (``POST /media/grabbers/devices?uri=..``), only when an admin asked for it
-  (``POST /api/tv/plex/register``) or ``rules.plexlive.auto_register`` is on: Plex's settings
+  (``POST /api/tv/plex/register``, or a switch of the home: Epic 37) or
+  ``rules.plexlive.auto_register`` is on: Plex's settings
   page shows one DVR (the first; since Plex's multi-lineup DVRs further tuners are its
   "channel sources", each with its own guide), so the tuner joins that DVR as Plex web's "Add
   Another Device" does (channel map, ``PUT /livetv/dvrs/{key}/lineups`` with Maktaba's XMLTV
   guide, ``PUT /livetv/dvrs/{key}/devices/{device}``) and is named. A separate DVR holding only
   Maktaba's tuner (what earlier versions made; Plex hides it) is deleted first. With no DVR
-  at all, ``POST /livetv/dvrs`` makes one. Refused when the shown DVR has the tuner already;
+  at all, ``POST /livetv/dvrs`` makes one. Refused when the shown DVR has the tuner already,
+  unless at another address;
+* **move** the tuner Plex has at another machine's address (the home switched, or its address
+  changed) to this one's, when registering: added again at the new address, Plex keeps the
+  device (the same DeviceID) and takes the address in place, or else the old one leaves its
+  DVR and Plex and the new one joins as a registration does; the guide that lived at the old
+  address gives way to this one's;
 * **channel map** (``PUT /media/grabbers/devices/{key}/channelmap``, dizqueTV's exact query)
   when the lineup differs from the one last pushed;
 * **reload the guide** (``POST /livetv/dvrs/{key}/reloadGuide``) after a channel-map push, an
@@ -53,6 +60,7 @@ from ...integrations.plex import (
     find_tuner,
     same_host,
     xmltv_lineup,
+    xmltv_url_of,
 )
 from .collection import PlexService
 
@@ -245,6 +253,9 @@ class _Run:
     ours: PlexTuner | None = None
     ours_dvr: PlexDvr | None = None
     register: str = ""
+    #: ``in_place`` (Plex took the new address) or ``re_added``; "" when not moved
+    move: str = ""
+    moved_from: str = ""
     channel_map: str = ""
     guide: str = ""
     warnings: list[str] = field(default_factory=list)
@@ -295,6 +306,74 @@ async def _join(
         await asyncio.to_thread(client.add_dvr_device, host.key, tuner.key)
     await asyncio.to_thread(client.set_device_title, tuner.key, name)
     return "", host is not None
+
+
+def _mine(tuners: Sequence[PlexTuner], device_id: str) -> list[PlexTuner]:
+    """Plex's tuners with Maktaba's DeviceID, each once."""
+    out: dict[str, PlexTuner] = {}
+    for t in tuners:
+        if device_id and t.device_id.casefold() == device_id.casefold():
+            out.setdefault(t.key, t)
+    return list(out.values())
+
+
+async def _relist(client: PlexClient, run: _Run, device_id: str, target: Target) -> None:
+    dvrs, devices = await asyncio.to_thread(_list, client)
+    run.dvrs, run.tuners = dvrs, _tuners(dvrs, devices)
+    run.ours = find_tuner(run.tuners, device_id, target.tuner_url)
+    run.ours_dvr = _dvr_of(run.dvrs, run.ours)
+
+
+async def _move(client: PlexClient, run: _Run, target: Target, device_id: str) -> PlexTuner | None:
+    """Maktaba's tuner, which Plex has at another machine's address, pointed at this one.
+
+    Plex reads ``discover.json`` at the new address; a tuner with the same DeviceID is the
+    same device to Plex, which takes the address in place (its DVR, channels and name kept:
+    ``in_place``). When Plex keeps the old address, the old tuner leaves its DVR (the DVR
+    goes when it carried that tuner only) and Plex, and is added again here (``re_added``:
+    the caller joins it to the DVR Plex shows, as a registration does). Returns the tuner
+    at the new address."""
+    old = run.ours
+    added = await asyncio.to_thread(client.add_grabber_device, target.tuner_url)
+    await _relist(client, run, device_id, target)
+    mine = _mine([*run.tuners, *([added] if added else [])], device_id)
+    here = next((t for t in mine if same_host(t.uri, target.tuner_url)), None)
+    if here is not None and old is not None and here.key == old.key:
+        run.move = "in_place"
+        run.ours, run.ours_dvr = here, _dvr_of(run.dvrs, here)
+        return here
+    for t in mine:
+        if same_host(t.uri, target.tuner_url):
+            continue
+        dvr = _dvr_of(run.dvrs, t)
+        if dvr is not None and all(d.key == t.key for d in dvr.devices):
+            await asyncio.to_thread(client.delete_dvr, dvr.key)
+        elif dvr is not None:
+            await asyncio.to_thread(client.remove_dvr_device, dvr.key, t.key)
+        await asyncio.to_thread(client.delete_grabber_device, t.key)
+    if here is None:
+        added = await asyncio.to_thread(client.add_grabber_device, target.tuner_url)
+    await _relist(client, run, device_id, target)
+    run.move = "re_added"
+    return find_tuner([*run.tuners, *([added] if added else [])], device_id, target.tuner_url)
+
+
+async def _move_guide(client: PlexClient, run: _Run, target: Target, cfg: Any) -> None:
+    """The guide Maktaba's DVR carried from the old address gives way to this machine's."""
+    dvr = run.ours_dvr
+    if dvr is None:
+        return
+    guide = xmltv_lineup(target.xmltv_url, str(cfg.guide_title or "Maktaba"))
+    if guide not in dvr.lineups:
+        await asyncio.to_thread(client.add_dvr_lineup, dvr.key, guide)
+    for lineup in dvr.lineups:
+        url = xmltv_url_of(lineup)
+        if lineup == guide or not url or not same_host(url, run.moved_from):
+            continue
+        try:
+            await asyncio.to_thread(client.remove_dvr_lineup, dvr.key, lineup)
+        except PlexError as exc:  # the old guide only lingers: the new one is there
+            run.warnings.append(f"the guide at the old address stays in Plex: {exc}")
 
 
 async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept in order
@@ -388,6 +467,8 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
             },
             "actions": {
                 "register": run.register if run else "",
+                "move": run.move if run else "",
+                "moved_from": run.moved_from if run else "",
                 "channel_map": run.channel_map if run else "",
                 "guide": run.guide if run else "",
             },
@@ -417,9 +498,15 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
     registered_now = joined_map = False
     error: str | None = None
     try:
-        # ---- register (once; refused when a DVR already has Maktaba's tuner)
+        # ---- register (once; refused when a DVR already has Maktaba's tuner at this address)
+        elsewhere = bool(
+            run.ours is not None
+            and run.ours.uri
+            and target.tuner_url
+            and not same_host(run.ours.uri, target.tuner_url)
+        )
         if asked or (cfg.auto_register and not _shown(run.dvrs, run.ours_dvr)):
-            if _shown(run.dvrs, run.ours_dvr):
+            if _shown(run.dvrs, run.ours_dvr) and not elsewhere:
                 run.register = "already_registered"
             elif device is None or not device[2]:
                 run.register = "tuner_off"
@@ -429,7 +516,10 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
                 run.register = "no_channels"
             else:
                 tuner = run.ours
-                if tuner is None:
+                if elsewhere and tuner is not None:
+                    run.moved_from = tuner.uri
+                    tuner = await _move(client, run, target, device_id)
+                elif tuner is None:
                     added = await asyncio.to_thread(client.add_grabber_device, target.tuner_url)
                     _, devices = await asyncio.to_thread(_list, client)
                     tuner = find_tuner(
@@ -438,16 +528,25 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
                 if tuner is None or not tuner.uuid:
                     run.register = "tuner_not_added"
                 else:
-                    run.register, joined_map = await _join(
-                        client, run, tuner, lineup, target, cfg, device[1] or "Maktaba"
-                    )
-                    dvrs, devices = await asyncio.to_thread(_list, client)
-                    run.dvrs, run.tuners = dvrs, _tuners(dvrs, devices)
-                    run.ours = find_tuner(run.tuners, device_id, target.tuner_url) or tuner
+                    if not (run.move == "in_place" and _shown(run.dvrs, run.ours_dvr)):
+                        run.register, joined_map = await _join(
+                            client, run, tuner, lineup, target, cfg, device[1] or "Maktaba"
+                        )
+                    await _relist(client, run, device_id, target)
+                    if run.moved_from:
+                        run.ours = run.ours or tuner
+                        run.ours_dvr = _dvr_of(run.dvrs, run.ours)
+                        await _move_guide(client, run, target, cfg)
+                        await _relist(client, run, device_id, target)
+                    run.ours = run.ours or tuner
                     run.ours_dvr = _dvr_of(run.dvrs, run.ours)
                     registered_now = _shown(run.dvrs, run.ours_dvr)
                     if not run.register:
-                        run.register = "registered" if registered_now else "dvr_not_created"
+                        run.register = (
+                            ("moved" if run.moved_from else "registered")
+                            if registered_now
+                            else "dvr_not_created"
+                        )
             await ctx.log("info", f"plex live tv: register {run.register}")
 
         # ---- channel map, then the guide (Maktaba's tuner and DVR only)
