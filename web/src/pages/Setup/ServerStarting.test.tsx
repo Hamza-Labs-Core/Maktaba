@@ -1,9 +1,9 @@
 // Epic 38 story 38.4: the starting screen says what the server waits on in its
 // own language. The server names it by a code from a fixed list and its values
 // (`detail_code`, `detail_params` in /processes, beside its English `detail`;
-// detailCodes in cmd/maktaba-server/serve_appbundle.go); the screen has the
-// words (`setup.starting.detail.<code>`), and the programs' own English and the
-// server's English go under Details.
+// cmd/maktaba-server/detail_codes.json, which the server embeds); the screen
+// has the words (`setup.starting.detail.<code>`), and the programs' own English
+// and the server's English go under Details.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import { I18nProvider, bidiIsolate } from "../../lib/i18n";
@@ -14,29 +14,17 @@ import { ServerStarting } from "./ServerStarting";
 import { codedText } from "./codedText";
 import { APART, startingDetail } from "./startingDetail";
 
-/** The server's detail codes and the names of their values (detailCodes). */
-const DETAIL_CODES: Record<string, string[]> = {
-  db_waiting: [],
-  db_checking: ["release"],
-  db_dumping: ["from", "to"],
-  db_migrating: ["to"],
-  db_restoring: ["failed", "dump"],
-  db_restored: ["failed", "error", "dump", "release"],
-  db_refused_older: ["release", "needed", "dump"],
-  db_ahead: ["release", "error"],
-  db_dump_failed: ["to", "error"],
-  db_migrate_failed: ["release", "error"],
-  db_restore_failed: ["failed", "error", "dump", "restore_error"],
-  db_restore_unfinished: ["failed", "dump"],
-  db_no_cluster: ["failed", "error", "dump"],
-  db_record_failed: ["path", "error"],
-  pg_unreadable: ["path", "error"],
-  pg_major: ["cluster", "payload"],
-  venv_waiting: [],
-  venv_building: ["step", "done", "total", "percent", "message"],
-  venv_interrupted: ["log"],
-  venv_failed: ["error", "log"],
+// The server's detail codes and the names of their values, read from the file
+// the server embeds (the one list both sides use). Read from disk at run time,
+// as localizeRules.test.ts reads the rules schema: the web image builds from
+// web/ alone, so a static import of a file outside it fails tsc there.
+const FS = "node:fs";
+const { readFileSync } = (await import(/* @vite-ignore */ FS)) as {
+  readFileSync: (path: string, encoding: "utf8") => string;
 };
+const DETAIL_CODES = JSON.parse(
+  readFileSync("../cmd/maktaba-server/detail_codes.json", "utf8") // vitest runs in web/
+) as Record<string, string[]>;
 
 const PREFIX = "setup.starting.detail.";
 const names = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();

@@ -33,11 +33,12 @@ don't append a line here; docs-only PRs are exempt.
   detail (every code of story 38.12's list: the database step, Postgres, the transcription tools),
   with the programs' own error messages, the log's path and the server's English under Details,
   and says only that the server is starting when the app has no words for the code or the server
-  sends none. The tray speaks the system's UI language, English or
-  Arabic, and shows the server's English detail only in English. On Windows and Linux the tray
-  icon carries a status badge (red a problem or a server that does not answer, else violet an
-  update ready, else green running, amber starting, grey paused or stopped), and on Windows a left
-  click opens the window (the menu is on the right button).
+  sends none. The tray and the app's error dialogs speak the system's UI language, English or
+  Arabic; the tray shows the server's English detail only in English. On Windows and Linux the
+  tray icon carries a status badge (red a problem or a server that does not answer, else violet an
+  update ready, else green running, amber starting, grey paused or stopped; each 3:1 or more on a
+  light and a dark taskbar), and on Windows a left click opens the window (the menu is on the
+  right button).
 - **The desktop app's setup works end to end** (Epic 38, story 38.6; the Mac, Windows and Linux
   alike). `maktaba-server setup --json` gains every step the setup screens run: `check` (what will
   run, memory and disk), `admin` (the password is hashed as it is typed, by the new

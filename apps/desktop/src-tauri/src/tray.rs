@@ -104,21 +104,26 @@ pub fn tooltip(line: &str) -> String {
 const BADGE_PROBLEM: [u8; 3] = [0xd3, 0x3a, 0x2c];
 /// The badge of an update ready: violet, far in hue from the icon's blue
 /// (#1E5AD8, which a blue badge vanished into at 16 px) and from the other
-/// badges, with 3:1 contrast or more on a light and on a dark taskbar.
+/// badges.
 const BADGE_UPDATE: [u8; 3] = [0xc7, 0x52, 0xe8];
+const BADGE_RUNNING: [u8; 3] = [0x2e, 0x9d, 0x4f];
+/// A deep amber: a light one (#E0A100) was 2:1 on a light taskbar.
+const BADGE_STARTING: [u8; 3] = [0xb9, 0x7d, 0x00];
+const BADGE_STOPPED: [u8; 3] = [0x8a, 0x8a, 0x8a];
 
 /// The status badge on the tray icon (Windows and Linux; the Mac's menu-bar
 /// item keeps its plain icon): red a problem, then violet an update ready,
 /// else green running, amber starting, grey paused or stopped; none before
 /// setup. A problem outranks the update: it is what needs the user first.
+/// Every badge has 3:1 contrast or more on a light and on a dark taskbar.
 pub fn badge_color(status: &ServerStatus, update_ready: bool) -> Option<[u8; 3]> {
     match status {
         ServerStatus::SetupNeeded => None,
         ServerStatus::Problem { .. } | ServerStatus::NotAnswering { .. } => Some(BADGE_PROBLEM),
         _ if update_ready => Some(BADGE_UPDATE),
-        ServerStatus::Running => Some([0x2e, 0x9d, 0x4f]),
-        ServerStatus::Starting => Some([0xe0, 0xa1, 0x00]),
-        ServerStatus::Paused | ServerStatus::Stopped => Some([0x8a, 0x8a, 0x8a]),
+        ServerStatus::Running => Some(BADGE_RUNNING),
+        ServerStatus::Starting => Some(BADGE_STARTING),
+        ServerStatus::Paused | ServerStatus::Stopped => Some(BADGE_STOPPED),
     }
 }
 
@@ -153,6 +158,19 @@ pub fn badge(rgba: &[u8], width: u32, height: u32, color: [u8; 3]) -> Vec<u8> {
         }
     }
     out
+}
+
+/// The error dialog's sentence when the tray item `id` failed, in `lang`.
+pub fn action_failed(lang: Lang, id: &str) -> &'static str {
+    let w = lang.words();
+    match id {
+        "server-pause" => w.pause_failed,
+        "server-resume" => w.resume_failed,
+        "stop-and-quit" => w.stop_failed,
+        "open-logs" => w.logs_failed,
+        "change-server" => w.setup_failed,
+        _ => w.action_failed,
+    }
 }
 
 /// The tray menu, in `lang`. `server` is false in client mode (the window
@@ -550,11 +568,8 @@ mod tests {
 
     #[test]
     fn the_update_badge_stands_out_on_the_icon_and_either_taskbar() {
-        // the app icon's blue (icons/*.png) and Windows 11's light and dark taskbars
+        // the app icon's blue (icons/*.png)
         let icon = [0x1e, 0x5a, 0xd8];
-        let (light, dark) = ([0xf3, 0xf3, 0xf3], [0x20, 0x20, 0x20]);
-        assert!(contrast(BADGE_UPDATE, light) >= 3.0, "on a light taskbar");
-        assert!(contrast(BADGE_UPDATE, dark) >= 3.0, "on a dark taskbar");
         // the old blue sat 4 degrees from the icon at 1.24:1
         assert!(
             hue_apart(BADGE_UPDATE, icon) >= 60.0,
@@ -565,6 +580,60 @@ mod tests {
         // and it is not read as a problem
         assert!(hue_apart(BADGE_UPDATE, BADGE_PROBLEM) >= 60.0);
     }
+
+    #[test]
+    fn every_badge_reads_on_either_taskbar_and_apart_from_the_others() {
+        // Windows 11's light and dark taskbars
+        let (light, dark) = ([0xf3, 0xf3, 0xf3], [0x20, 0x20, 0x20]);
+        let all = [
+            ("problem", BADGE_PROBLEM),
+            ("update", BADGE_UPDATE),
+            ("running", BADGE_RUNNING),
+            ("starting", BADGE_STARTING),
+            ("stopped", BADGE_STOPPED),
+        ];
+        for (name, c) in all {
+            let (l, d) = (contrast(c, light), contrast(c, dark));
+            assert!(l >= 3.0, "{name} on a light taskbar: {l:.2}:1");
+            assert!(d >= 3.0, "{name} on a dark taskbar: {d:.2}:1");
+        }
+        // the coloured ones 30 degrees of hue apart or more (grey has none)
+        let coloured = &all[..4];
+        for (i, (a, ca)) in coloured.iter().enumerate() {
+            for (b, cb) in &coloured[i + 1..] {
+                let apart = hue_apart(*ca, *cb);
+                assert!(apart >= 30.0, "{a} and {b}: {apart:.0} degrees");
+            }
+        }
+        // amber stays amber, between the red and the green
+        let h = hue(BADGE_STARTING);
+        assert!((30.0..=50.0).contains(&h), "starting's hue {h:.0}");
+        assert!(hue_apart(BADGE_STARTING, BADGE_UPDATE) >= 90.0);
+    }
+
+    #[test]
+    fn a_failed_tray_item_says_which_in_the_trays_language() {
+        assert_eq!(
+            action_failed(Lang::En, "server-pause"),
+            "The server could not be paused."
+        );
+        assert_eq!(
+            action_failed(Lang::Ar, "server-resume"),
+            "تعذّر استئناف الخادم."
+        );
+        assert_eq!(action_failed(Lang::Ar, "open-logs"), "تعذّر فتح السجلات.");
+        // every item that can fail has its own sentence; the rest share one
+        let e = entries(Lang::En, true, &ServerStatus::Running, true);
+        let own = ["server-pause", "stop-and-quit", "open-logs"];
+        for id in ids(&e) {
+            let s = action_failed(Lang::En, id);
+            assert_eq!(own.contains(&id), s != EN_ACTION_FAILED, "{id}");
+        }
+        assert_ne!(action_failed(Lang::En, "change-server"), EN_ACTION_FAILED);
+        assert_ne!(action_failed(Lang::En, "server-resume"), EN_ACTION_FAILED);
+    }
+
+    const EN_ACTION_FAILED: &str = "That did not work.";
 
     #[test]
     fn an_arabic_tray_says_it_in_arabic() {

@@ -155,6 +155,35 @@ pub struct Words {
     pub model_starting: &'static str,
     pub model_failed: &'static str,
     pub model_missing: &'static str,
+    // The error dialogs: a sentence, then the program's own error as it is.
+    /// The update failed (its error follows).
+    pub update_failed: &'static str,
+    /// The server did not stop for the update.
+    pub update_stop_failed: &'static str,
+    /// After a failed update: a paused server.
+    pub update_stays_paused: &'static str,
+    /// After a failed update: the server starts again.
+    pub update_starting_again: &'static str,
+    /// After a failed update: it could not start again.
+    pub update_start_failed: &'static str,
+    /// `{url}` could not be opened in the window.
+    pub open_failed: &'static str,
+    /// The sign-in task of the old shared name could not become this user's.
+    pub task_move_failed: &'static str,
+    /// The server could not start when the window opened.
+    pub server_start_failed: &'static str,
+    /// Pause server failed.
+    pub pause_failed: &'static str,
+    /// Resume server failed.
+    pub resume_failed: &'static str,
+    /// Stop server and quit failed.
+    pub stop_failed: &'static str,
+    /// Open logs failed.
+    pub logs_failed: &'static str,
+    /// Connect to another Maktaba… failed.
+    pub setup_failed: &'static str,
+    /// Any other tray item failed.
+    pub action_failed: &'static str,
 }
 
 pub static EN: Words = Words {
@@ -188,6 +217,20 @@ pub static EN: Words = Words {
     model_starting: "Language model: starting…",
     model_failed: "Language model: {name} did not download (retrying)",
     model_missing: "Language model: {name} not downloaded",
+    update_failed: "The update could not be installed.",
+    update_stop_failed: "The update was not installed: the server could not be stopped for it.",
+    update_stays_paused: "The server stays paused.",
+    update_starting_again: "The server is starting again.",
+    update_start_failed: "The server could not start again.",
+    open_failed: "Cannot open {url}.",
+    task_move_failed: "Maktaba could not move its sign-in task to this user's name.",
+    server_start_failed: "The Maktaba server could not start.",
+    pause_failed: "The server could not be paused.",
+    resume_failed: "The server could not be resumed.",
+    stop_failed: "The server could not be stopped.",
+    logs_failed: "The logs could not be opened.",
+    setup_failed: "The setup screens could not be opened.",
+    action_failed: "That did not work.",
 };
 
 pub static AR: Words = Words {
@@ -221,7 +264,37 @@ pub static AR: Words = Words {
     model_starting: "النموذج اللغوي: قيد التشغيل…",
     model_failed: "النموذج اللغوي: لم يُنزَّل {name} (تُعاد المحاولة)",
     model_missing: "النموذج اللغوي: {name} غير مُنزَّل",
+    update_failed: "تعذّر تثبيت التحديث.",
+    update_stop_failed: "لم يُثبَّت التحديث: تعذّر إيقاف الخادم من أجله.",
+    update_stays_paused: "يبقى الخادم متوقفًا مؤقتًا.",
+    update_starting_again: "يبدأ الخادم من جديد.",
+    update_start_failed: "تعذّر تشغيل الخادم من جديد.",
+    open_failed: "يتعذّر فتح {url}.",
+    task_move_failed: "تعذّر على مكتبة نقل مهمة تسجيل الدخول إلى اسم هذا المستخدم.",
+    server_start_failed: "تعذّر تشغيل خادم مكتبة.",
+    pause_failed: "تعذّر إيقاف الخادم مؤقتًا.",
+    resume_failed: "تعذّر استئناف الخادم.",
+    stop_failed: "تعذّر إيقاف الخادم.",
+    logs_failed: "تعذّر فتح السجلات.",
+    setup_failed: "تعذّر فتح شاشات الإعداد.",
+    action_failed: "لم ينجح ذلك.",
 };
+
+/// An error dialog's text: the sentence in the tray's language, then the
+/// programs' own errors (their English), each on its own line, as they are.
+pub fn error_message(sentence: &str, errors: &[&str]) -> String {
+    let mut out = sentence.trim().to_string();
+    let errors: Vec<&str> = errors
+        .iter()
+        .map(|e| e.trim())
+        .filter(|e| !e.is_empty())
+        .collect();
+    if !errors.is_empty() {
+        out.push_str("\n\n");
+        out.push_str(&errors.join("\n"));
+    }
+    out
+}
 
 /// `template` with each `{name}` replaced by its value in `vars`, in one pass
 /// (a value that holds braces stays as it is); an unknown name is kept.
@@ -291,6 +364,20 @@ mod tests {
             ("model_starting", Some(w.model_starting)),
             ("model_failed", Some(w.model_failed)),
             ("model_missing", Some(w.model_missing)),
+            ("update_failed", Some(w.update_failed)),
+            ("update_stop_failed", Some(w.update_stop_failed)),
+            ("update_stays_paused", Some(w.update_stays_paused)),
+            ("update_starting_again", Some(w.update_starting_again)),
+            ("update_start_failed", Some(w.update_start_failed)),
+            ("open_failed", Some(w.open_failed)),
+            ("task_move_failed", Some(w.task_move_failed)),
+            ("server_start_failed", Some(w.server_start_failed)),
+            ("pause_failed", Some(w.pause_failed)),
+            ("resume_failed", Some(w.resume_failed)),
+            ("stop_failed", Some(w.stop_failed)),
+            ("logs_failed", Some(w.logs_failed)),
+            ("setup_failed", Some(w.setup_failed)),
+            ("action_failed", Some(w.action_failed)),
         ]
     }
 
@@ -376,6 +463,25 @@ mod tests {
         assert_eq!(posix_tags(env(&[("LANGUAGE", "ar"), ("LANG", "C")])), ["C"]);
         assert_eq!(pick(posix_tags(env(&[("LANG", "ar_EG.UTF-8")]))), Lang::Ar);
         assert!(posix_tags(env(&[])).is_empty());
+    }
+
+    #[test]
+    fn an_error_dialog_is_its_sentence_then_the_errors_as_they_are() {
+        assert_eq!(
+            error_message(AR.update_failed, &["signature mismatch"]),
+            "تعذّر تثبيت التحديث.\n\nsignature mismatch"
+        );
+        assert_eq!(
+            error_message(
+                &format!("{} {}", EN.update_failed, EN.update_start_failed),
+                &["timed out", " ", "schtasks: access denied"]
+            ),
+            "The update could not be installed. The server could not start again.\n\ntimed out\nschtasks: access denied"
+        );
+        assert_eq!(
+            error_message(EN.server_start_failed, &[]),
+            EN.server_start_failed
+        );
     }
 
     #[test]

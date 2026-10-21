@@ -21,7 +21,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 use tauri_plugin_updater::UpdaterExt;
 
 use crate::agent::{self, Action, BundlePaths, LoginItem};
-use crate::lang::Lang;
+use crate::lang::{self, Lang};
 use crate::mode::{self, AppMode, Target};
 use crate::setup::{self, Progress, StepError};
 use crate::status::{self, Probe, Quiet, ServerStatus, StatusView};
@@ -233,10 +233,13 @@ fn bundled_url(app: &AppHandle) -> String {
     }
 }
 
-fn show_error(app: &AppHandle, msg: impl Into<String>) {
+/// An error dialog in the tray's language: `sentence`, then the programs' own
+/// errors as they are (lang::error_message).
+fn show_error(app: &AppHandle, sentence: &str, errors: &[&str]) {
+    let lang = shell(app).lang;
     app.dialog()
-        .message(msg)
-        .title("Maktaba")
+        .message(lang::error_message(sentence, errors))
+        .title(lang.words().brand)
         .kind(MessageDialogKind::Error)
         .show(|_| {});
 }
@@ -384,7 +387,7 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
         _ => Ok(()),
     };
     if let Err(e) = result {
-        show_error(app, e);
+        show_error(app, tray::action_failed(sh.lang, id), &[&e]);
     }
     refresh(app);
 }
@@ -401,20 +404,21 @@ fn install_update(app: AppHandle) {
         // the server was asked to stop for the install
         #[cfg(windows)]
         let stopped = AtomicBool::new(false);
+        let failed = |e: String| (false, e);
         let run = async {
             let update = app
                 .updater()
-                .map_err(|e| e.to_string())?
+                .map_err(|e| failed(e.to_string()))?
                 .check()
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| failed(e.to_string()))?;
             let Some(update) = update else {
                 return Ok(false);
             };
             let bytes = update
                 .download(|_, _| {}, || {})
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| failed(e.to_string()))?;
             #[cfg(windows)]
             if matches!(shell(&app).mode(), Some(AppMode::Server { .. })) {
                 // stop the server and wait for it (the install hold keeps the
@@ -423,12 +427,13 @@ fn install_update(app: AppHandle) {
                 stopped.store(true, Ordering::SeqCst);
                 tauri::async_runtime::spawn_blocking(agent::stop_for_install)
                     .await
-                    .map_err(|e| e.to_string())?
-                    .map_err(|e| format!("the server must stop first: {e}"))?;
+                    .map_err(|e| (true, e.to_string()))?
+                    .map_err(|e| (true, e))?;
             }
             // Windows: this runs the installer and exits the app
-            update.install(bytes).map_err(|e| e.to_string())?;
-            Ok::<bool, String>(true)
+            update.install(bytes).map_err(|e| failed(e.to_string()))?;
+            // the error: whether the server would not stop for it, and why
+            Ok::<bool, (bool, String)>(true)
         };
         match run.await {
             Ok(true) => {
@@ -442,38 +447,45 @@ fn install_update(app: AppHandle) {
                 app.restart();
             }
             Ok(false) => shell(&app).update_ready.store(false, Ordering::SeqCst),
-            Err(e) => {
-                let msg = format!("The update could not be installed: {e}");
+            Err((at_stop, e)) => {
+                let w = shell(&app).lang.words();
+                let sentence = if at_stop {
+                    w.update_stop_failed
+                } else {
+                    w.update_failed
+                };
                 #[cfg(windows)]
-                let msg = if stopped.load(Ordering::SeqCst) {
+                if stopped.load(Ordering::SeqCst) {
                     let handle = app.clone();
-                    let again = tauri::async_runtime::spawn_blocking(move || {
+                    let (again, why) = tauri::async_runtime::spawn_blocking(move || {
                         start_after_failed_update(&handle)
                     })
                     .await
-                    .unwrap_or_else(|e| format!(" The server could not start again: {e}"));
-                    format!("{msg}{again}")
-                } else {
-                    msg
-                };
-                show_error(&app, msg)
+                    .unwrap_or_else(|e| (w.update_start_failed, Some(e.to_string())));
+                    let sentence = format!("{sentence} {again}");
+                    let why = why.unwrap_or_default();
+                    return show_error(&app, &sentence, &[&e, &why]);
+                }
+                show_error(&app, sentence, &[&e])
             }
         }
     });
 }
 
 /// After an update that failed once the server was asked to stop (Windows):
-/// start it again unless it was paused. The sentence for the message.
+/// start it again unless it was paused. The sentence for the message, and the
+/// error when it could not start.
 #[cfg(windows)]
-fn start_after_failed_update(app: &AppHandle) -> String {
+fn start_after_failed_update(app: &AppHandle) -> (&'static str, Option<String>) {
     let sh = shell(app);
+    let w = sh.lang.words();
     if sh.paused.load(Ordering::SeqCst) {
-        return " The server stays paused.".into();
+        return (w.update_stays_paused, None);
     }
     sh.mark_started();
     match agent::control(Action::Resume) {
-        Ok(()) => " The server is starting again.".into(),
-        Err(e) => format!(" The server could not start again: {e}"),
+        Ok(()) => (w.update_starting_again, None),
+        Err(e) => (w.update_start_failed, Some(e)),
     }
 }
 
@@ -514,7 +526,8 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
 
     if let Target::Remote(url) = sh.target() {
         if let Err(e) = navigate_main(app, &url) {
-            show_error(app, format!("Cannot open {url}: {e}"));
+            let sentence = lang::fill(sh.lang.words().open_failed, &[("url", &url)]);
+            show_error(app, &sentence, &[&e]);
         }
     }
 
@@ -533,10 +546,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
                 return;
             }
             if let Err(e) = agent::replace_old_task() {
-                show_error(
-                    &handle,
-                    format!("Maktaba could not move its sign-in task to this user's name: {e}"),
-                );
+                show_error(&handle, sh.lang.words().task_move_failed, &[&e]);
             }
             if !sh.paused.load(Ordering::SeqCst)
                 && agent::agent_alive() == Some(false)
@@ -544,7 +554,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
             {
                 sh.mark_started();
                 if let Err(e) = agent::control(Action::Resume) {
-                    show_error(&handle, format!("The Maktaba server could not start: {e}"));
+                    show_error(&handle, sh.lang.words().server_start_failed, &[&e]);
                 }
             }
         });
