@@ -45,21 +45,27 @@ def test_key_path_and_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     assert (
         hs.key_path({"MAKTABA_CONFIG": str(tmp_path / "server.toml")}) == tmp_path / "secrets.key"
     )
-    # neither set: maktaba-server's keys directory (Epic 38 story 38.1: never the
-    # roaming profile on Windows; keys/ beside server.toml on a Mac, Epic 36)
+    # neither set, Windows: maktaba-server's keys directory (Epic 38 story 38.1: never
+    # the roaming profile), or the roaming profile's key of an install from before
+    # while there is none in the new place
     monkeypatch.setattr(sys, "platform", "win32")
-    assert hs.key_path({"LOCALAPPDATA": str(tmp_path / "L"), "APPDATA": str(tmp_path / "R")}) == (
-        tmp_path / "L" / "Maktaba" / "keys" / "secrets.key"
-    )
-    monkeypatch.setattr(sys, "platform", "darwin")
-    assert hs.key_path({}) == (
-        Path.home() / "Library" / "Application Support" / "Maktaba" / "keys" / "secrets.key"
-    )
-    monkeypatch.setattr(sys, "platform", "linux")
-    assert (
-        hs.key_path({"XDG_CONFIG_HOME": str(tmp_path / "x")})
-        == tmp_path / "x" / "maktaba" / "secrets.key"
-    )
+    win = {"LOCALAPPDATA": str(tmp_path / "L"), "APPDATA": str(tmp_path / "R")}
+    cur = tmp_path / "L" / "Maktaba" / "keys" / "secrets.key"
+    old = tmp_path / "R" / "Maktaba" / "secrets.key"
+    assert hs.key_path(win) == cur
+    for p in (old, cur):
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(bytes(32))
+        assert hs.key_path(win) == p
+    # macOS keeps the XDG path, like Linux: the developer stack's key, which
+    # migrate-from-dev moves into Maktaba.app
+    for platform in ("darwin", "linux"):
+        monkeypatch.setattr(sys, "platform", platform)
+        assert (
+            hs.key_path({"XDG_CONFIG_HOME": str(tmp_path / "x")})
+            == tmp_path / "x" / "maktaba" / "secrets.key"
+        )
+        assert hs.key_path({}) == Path.home() / ".config" / "maktaba" / "secrets.key"
     monkeypatch.undo()
     path = tmp_path / "c" / "secrets.key"
     assert hs.load_key(path) is None  # the pipeline never makes the key by default
