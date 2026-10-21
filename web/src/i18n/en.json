@@ -3257,6 +3257,7 @@
   "setup.plex.skip": "Skip",
   "setup.install.title": "Getting Maktaba ready",
   "setup.install.venv": "Installing the transcription and search tools. This downloads about 2 GB and takes a few minutes.",
+  "setup.install.llm": "Downloading the language model that checks tags and finds metadata (about 5 GB). If this stops, Maktaba finishes the download in the background.",
   "setup.install.finishing": "Creating the library database…",
   "setup.install.approvalTitle": "Allow Maktaba to run in the background",
   "setup.install.approval": "macOS turned off Maktaba's background item. Turn on \"Maktaba\" in System Settings → General → Login Items, then come back.",

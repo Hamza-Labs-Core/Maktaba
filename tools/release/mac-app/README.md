@@ -9,6 +9,8 @@ everything. This directory builds it.
 | `check.sh` | smoke test of the payload and, with `--app`, of the built bundle |
 | `build-app.sh` | payload → `tauri build` → check. `make mac-app` runs it |
 | `pins.env` | the third-party downloads: version, URL, SHA-256 |
+| `lib.sh` | the checked download (`fetch`) and the pins check, shared by `payload.sh` and `pins-check.sh` |
+| `pins-check.sh` | dry run, offline: every pin is complete, and `fetch` keeps a matching download, re-fetches a bad cached one and stops on a checksum mismatch (`--online` also asks each URL) |
 | `entitlements/python.plist` | the one binary that needs entitlements |
 
 ```bash
@@ -27,15 +29,17 @@ Contents/Resources/server/
   postgres/  bin/{postgres,initdb,pg_ctl,pg_dump,pg_dumpall,pg_restore,psql,pg_isready,
                   pg_upgrade,pg_controldata,pg_resetwal}  lib/  share/
   ffmpeg/    ffmpeg ffprobe
+  ollama/    ollama llama-server          the language model server (arm64 only)
   python/    CPython 3.12 (bin/python3), stdlib precompiled
   pipeline/  maktaba_pipeline-<v>-py3-none-any.whl  constraints.txt
-  licenses/  postgresql.txt postgresql-binaries.txt ffmpeg.txt python.txt
+  licenses/  postgresql.txt postgresql-binaries.txt ffmpeg.txt python.txt ollama.txt ollama/
   payload.json   versions, sources, SHA-256s (the supervisor compares it across updates)
 Contents/Library/LaunchAgents/com.hamzalabs.maktaba.server.plist   from the app shell (36.5)
 ```
 
 Not in the app: the MLX / torch wheels (~1–2 GB) and the models. The first run builds the
-venv from `pipeline/` with the bundled Python and downloads them (36.3).
+venv from `pipeline/` with the bundled Python and downloads them (36.3); the language model
+(`qwen2.5:7b`, ~4.7 GB) comes through the bundled Ollama (setup step `llm`, 36.11).
 
 Size (2026-10-20, v0.2.0): payload 311 MB on disk — ffmpeg 125 MB, Go binaries 84 MB,
 Python 73 MB, Postgres 27 MB, pipeline 1.5 MB. The `.dmg` (compressed) is what `check`
@@ -49,6 +53,7 @@ prints at the end of `make mac-app`.
 | PostgreSQL 16.15 | [theseus-rs/postgresql-binaries](https://github.com/theseus-rs/postgresql-binaries) `aarch64-apple-darwin` tarball, SHA-256 from the release's `.sha256` (the release also has SLSA provenance) | relocatable (`@loader_path`, works from any path, spaces included), OpenSSL built in (pgcrypto), every contrib extension, pg_dump/psql. Major 16 = compose and CI. zonky's embedded build has no pg_dump/psql and 270 MB of ICU | PostgreSQL Licence (permissive); OpenSSL Apache-2.0 |
 | ffmpeg / ffprobe 8.1.2 | [ffmpeg.martin-riedl.de](https://ffmpeg.martin-riedl.de) macOS arm64 release zips, SHA-256 from the site's `.sha256` | static (system frameworks only), 8.1 is what the home Mac runs | **GPLv3** (`--enable-gpl --enable-version3`, x264/x265) — see below |
 | CPython 3.12.15 | [astral-sh/python-build-standalone](https://github.com/astral-sh/python-build-standalone) `install_only_stripped`, SHA-256 from the release's `SHA256SUMS` | relocatable, macOS 11+, what uv itself installs | PSF; bundled OpenSSL Apache-2.0, others in `python/lib/python3.12/LICENSE.txt` |
+| Ollama 0.40.2 | [ollama/ollama](https://github.com/ollama/ollama) release `ollama-darwin.tgz`, SHA-256 from the release's `sha256sum.txt` | the language model server of the LLM stages (check-tags, check-clips, enrich); `ollama` and `llama-server` (llama.cpp with Metal) thinned to arm64, both linking only the system. The x86_64 CPU backends and the MLX engine (`mlx_metal_v*/`, ~400 MB, for MLX-format models only) are left out | MIT; llama.cpp and the rest it builds in: `licenses/ollama/` |
 | pipeline wheel + constraints | `deploy/packaging/node/build-release.sh` (the node release's) | one build of the pipeline for every install | this repo's |
 
 Bumping a piece: change `pins.env` (version, URL, SHA-256 from the publisher), `make mac-app`,

@@ -5,13 +5,15 @@
 #   bin/       maktaba-server (web UI embedded) maktaba-api maktaba-streaming maktaba-launcher
 #   postgres/  bin/ lib/ share/          PostgreSQL 16, relocatable
 #   ffmpeg/    ffmpeg ffprobe            static
-#   python/    CPython 3.12              python-build-standalone, stdlib precompiled
+#   ollama/    ollama llama-server       the language model server (arm64)
+#   python/   CPython 3.12              python-build-standalone, stdlib precompiled
 #   pipeline/  maktaba_pipeline-<v>-py3-none-any.whl constraints.txt
 #   licenses/  the third-party licences and where their sources are
 #   payload.json                         what is inside, with versions and checksums
 #
 # Third-party pieces come from pins.env and are checked against its SHA-256s. The MLX /
-# torch wheels and the models are not here: the app downloads them on first run (36.3).
+# torch wheels and the models (the language model too) are not here: the app downloads
+# them on first run (36.3, setup step llm).
 #
 # With a signing identity every Mach-O file is signed (hardened runtime, secure timestamp;
 # python3 with entitlements/python.plist). Without one nothing is signed and the payload
@@ -49,7 +51,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 [ "$(uname -s)" = Darwin ] || die "the Mac app payload is built on macOS (codesign, ditto)"
-for t in go uv pnpm curl unzip shasum codesign file; do
+for t in go uv pnpm curl unzip shasum codesign file lipo; do
     command -v "$t" >/dev/null 2>&1 || die "$t is required"
 done
 [ -n "$VERSION" ] || VERSION="$(git -C "$REPO_ROOT" describe --tags --dirty --always 2>/dev/null || echo dev)"
@@ -64,22 +66,12 @@ mkdir -p "$CACHE"
 OUT="$BUILD/server"
 WORK="$BUILD/work"
 rm -rf "$OUT" "$WORK"
-mkdir -p "$OUT"/{bin,postgres,ffmpeg,pipeline,licenses} "$WORK"
+mkdir -p "$OUT"/{bin,postgres,ffmpeg,ollama,pipeline,licenses} "$WORK"
 
-sha256() { shasum -a 256 "$1" | awk '{print $1}'; }
-
-# fetch URL SHA256 NAME: the file in the cache, downloaded once, always checked.
-fetch() {
-    local url="$1" want="$2" dst="$CACHE/$3" got
-    if [ ! -f "$dst" ] || [ "$(sha256 "$dst")" != "$want" ]; then
-        log "downloading $3"
-        curl -fsSL --retry 3 -o "$dst.part" "$url"
-        mv "$dst.part" "$dst"
-    fi
-    got="$(sha256 "$dst")"
-    [ "$got" = "$want" ] || die "$3: sha256 $got, pins.env says $want"
-    printf '%s\n' "$dst"
-}
+# sha256, fetch (download once, always checked against pins.env), check_pins
+# shellcheck source-path=SCRIPTDIR source=lib.sh
+. "$SCRIPT_DIR/lib.sh"
+check_pins >&2 || die "pins.env is incomplete (above)"
 
 # --- Go binaries (the release envelope: -trimpath, stamped, web UI embedded) -----------------
 log "building the Go binaries for darwin/arm64 ($VERSION)"
@@ -127,6 +119,40 @@ Build scripts and the versions of every library linked in:
           https://ffmpeg.martin-riedl.de/download/macos/arm64/1783011502_8.1.2/versions.txt
 EOF
 
+# --- Ollama (the language model server of the LLM stages) ----------------------------------------
+log "Ollama $OLLAMA_VERSION"
+mkdir -p "$WORK/ollama" "$OUT/licenses/ollama"
+tar -xzf "$(fetch "$OLLAMA_URL" "$OLLAMA_SHA256" "ollama-$OLLAMA_VERSION-darwin.tgz")" -C "$WORK/ollama"
+# ollama runs GGUF models (qwen2.5:7b) in llama-server, its llama.cpp runner, with the Metal
+# backend built in: both self-contained on arm64. The release is universal: the x86_64
+# halves and CPU backends (lib*.so, lib*.dylib) and the MLX engine (mlx_metal_v*/, only for
+# MLX-format models, ~400 MB) stay out.
+for b in ollama llama-server; do
+    [ -f "$WORK/ollama/$b" ] || die "unexpected Ollama archive layout (no $b)"
+    case " $(lipo -archs "$WORK/ollama/$b") " in
+        *" arm64 "*) ;;
+        *) die "Ollama's $b has no arm64 code" ;;
+    esac
+    if [ "$(lipo -archs "$WORK/ollama/$b")" = arm64 ]; then
+        cp "$WORK/ollama/$b" "$OUT/ollama/$b"
+    else
+        lipo "$WORK/ollama/$b" -thin arm64 -output "$OUT/ollama/$b"
+    fi
+    chmod 0755 "$OUT/ollama/$b"
+done
+for f in "$WORK"/ollama/*LICENSE* "$WORK"/ollama/*NOTICE*; do
+    case "${f##*/}" in MLX*) continue ;; esac   # the MLX engine is not shipped
+    if [ -f "$f" ]; then cp "$f" "$OUT/licenses/ollama/"; fi
+done
+cat >"$OUT/licenses/ollama.txt" <<EOF
+Ollama $OLLAMA_VERSION (ollama, llama-server), by Ollama, licensed under the MIT License
+(https://github.com/ollama/ollama/blob/v$OLLAMA_VERSION/LICENSE). The licences of what it
+builds in (llama.cpp, ggml, Go, cpp-httplib, fmt, …) are in licenses/ollama/.
+
+Binaries: $OLLAMA_URL (arm64 halves)
+Source:   https://github.com/ollama/ollama/tree/v$OLLAMA_VERSION
+EOF
+
 # --- Python --------------------------------------------------------------------------------------
 log "Python $PYTHON_VERSION"
 tar -xzf "$(fetch "$PYTHON_URL" "$PYTHON_SHA256" "cpython-$PYTHON_VERSION.tar.gz")" -C "$WORK"
@@ -169,6 +195,7 @@ cat >"$OUT/payload.json" <<EOF
   "ffmpeg": {"version": "$FFMPEG_VERSION", "source": "$FFMPEG_URL", "sha256": "$FFMPEG_SHA256",
              "ffprobe_source": "$FFPROBE_URL", "ffprobe_sha256": "$FFPROBE_SHA256"},
   "python": {"version": "$PYTHON_VERSION", "source": "$PYTHON_URL", "sha256": "$PYTHON_SHA256"},
+  "ollama": {"version": "$OLLAMA_VERSION", "source": "$OLLAMA_URL", "sha256": "$OLLAMA_SHA256"},
   "pipeline": {"wheel": "$WHEEL_NAME", "sha256": "$(sha256 "$OUT/pipeline/$WHEEL_NAME")",
                "constraints_sha256": "$(sha256 "$OUT/pipeline/constraints.txt")"}
 }
