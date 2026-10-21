@@ -70,9 +70,10 @@ pub struct StepError {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub field: Option<String>,
-    /// The values the screen puts into the code's own text (setup.error.<code>).
+    /// The values the screen puts into the code's own text (setup.error.<code>), boxed: a
+    /// step's `Result` stays small (clippy's result_large_err).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub params: Option<Value>,
+    pub params: Option<Box<Value>>,
     /// The step's last stderr lines, for the "details" box.
     pub details: Vec<String>,
 }
@@ -178,7 +179,7 @@ pub fn run_step(
                         code,
                         message,
                         field,
-                        params,
+                        params: params.map(Box::new),
                         details: Vec::new(),
                     }))
                 }
