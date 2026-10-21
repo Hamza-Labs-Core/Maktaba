@@ -295,9 +295,17 @@ print(d.get(sys.argv[2], ""))' "$DATA/state/database.json" "$1"
 }
 before_version="$(db_record version)" || die "no database record (state/database.json) after the first start"
 [ "$(db_record state)" = migrated ] || die "the database is not recorded as migrated: $(cat "$DATA/state/database.json")"
-venv_cfg="$DATA/venv/pyvenv.cfg"
-[ -f "$venv_cfg" ] || die "no venv at $DATA/venv"
-venv_before="$(stat -c %Y "$venv_cfg")"
+# The venv: every update moves the runtime to a new folder, so the bootstrap repoints the venv
+# at the new runtime's Python (`venv --upgrade`, which rewrites pyvenv.cfg) and keeps its
+# packages when the constraints are the same. A rebuild reinstalls them: a dependency's RECORD
+# (written by pip when it installs the package, by nothing else) and the venv.log lines the
+# update adds tell the two apart.
+[ -f "$DATA/venv/pyvenv.cfg" ] || die "no venv at $DATA/venv"
+record="$(find "$DATA/venv/lib" -path '*/site-packages/*.dist-info/RECORD' ! -path '*/maktaba_pipeline-*' -print 2>/dev/null |
+    LC_ALL=C sort | head -n 1)"
+[ -n "$record" ] || die "no installed package in the venv"
+record_before="$(stat -c %y "$record")"
+venv_log_size="$(stat -c %s "$LOGS/venv.log" 2>/dev/null || echo 0)"
 same_constraints=0
 cmp -s "$FIRST/pipeline/constraints.txt" "$PAYLOAD/pipeline/constraints.txt" && same_constraints=1
 
@@ -321,8 +329,13 @@ if [ "$(db_record version)" != "$NEXT_VERSION" ] || [ "$(db_record state)" != mi
     die "the database is not recorded as migrated from $before_version to $NEXT_VERSION: $(cat "$DATA/state/database.json")"
 fi
 if [ "$same_constraints" -eq 1 ]; then
-    [ "$(stat -c %Y "$venv_cfg")" = "$venv_before" ] || die "the venv was rebuilt although the constraints did not change"
-    log "the venv was kept (the same constraints)"
+    if [ ! -f "$record" ] || [ "$(stat -c %y "$record")" != "$record_before" ]; then
+        die "the venv's packages were installed again although the constraints did not change (${record#"$DATA"/})"
+    fi
+    if tail -c +"$((venv_log_size + 1))" "$LOGS/venv.log" 2>/dev/null | grep -q 'pinned packages'; then
+        die "the venv was rebuilt although the constraints did not change (venv.log)"
+    fi
+    log "the venv was kept (the same constraints): repointed, its packages untouched"
 else
     log "the constraints changed: the venv was brought up to date"
 fi
