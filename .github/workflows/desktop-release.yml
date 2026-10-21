@@ -15,7 +15,11 @@
 #                pieces, x86_64, plus the Visual C++ runtime), a current-user install in
 #                %LOCALAPPDATA%\Maktaba whose hooks stop / start the server around it.
 #                No .msi: Windows Installer's per-machine install in Program Files cannot
-#                hold a per-user server. Plus a portable .zip of the raw exe (the client).
+#                hold a per-user server. A client from an earlier .msi (a WiX install of the
+#                same name and publisher): an interactive or passive (/P, the updater's) run
+#                of the installer removes it with its msiexec uninstall, which asks for an
+#                administrator; a silent run (/S) shows no pages and leaves it beside the new
+#                per-user app. Plus a portable .zip of the raw exe (the client).
 #   Linux     →  .AppImage + .deb + .rpm, x86_64 and aarch64, each WITH the server inside
 #                (Epic 39): usr/share/maktaba/server built by tools/release/linux-app/payload.sh
 #

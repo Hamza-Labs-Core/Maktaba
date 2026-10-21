@@ -9,6 +9,9 @@
 # Maktaba.exe is over in 0.02-1 s, far too soon for any process list. The run is over when the
 # job holds no process (its accounting, not a message).
 #
+# The job is kill-on-close: when this script ends in any way (check.sh cancelled, Ctrl+C, a
+# crash), Windows ends everything still in it, so no installer or Maktaba.exe is left behind.
+#
 # A process from the install folder (-Dir) still running after -Grace seconds is ended, with
 # everything it started (a shell that took no flag opened its window instead). Prints, one per
 # line:
@@ -48,6 +51,19 @@ public sealed class WatchedRun {
     [StructLayout(LayoutKind.Sequential)]
     struct COMPLETION_PORT { public IntPtr CompletionKey, CompletionPort; }
     [StructLayout(LayoutKind.Sequential)]
+    struct BASIC_LIMIT {
+        public long PerProcessUserTimeLimit, PerJobUserTimeLimit; public int LimitFlags;
+        public UIntPtr MinimumWorkingSetSize, MaximumWorkingSetSize; public int ActiveProcessLimit;
+        public UIntPtr Affinity; public int PriorityClass, SchedulingClass;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    struct IO_COUNTERS { public ulong Reads, Writes, Others, ReadBytes, WriteBytes, OtherBytes; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct EXTENDED_LIMIT {
+        public BASIC_LIMIT Basic; public IO_COUNTERS Io;
+        public UIntPtr ProcessMemoryLimit, JobMemoryLimit, PeakProcessMemoryUsed, PeakJobMemoryUsed;
+    }
+    [StructLayout(LayoutKind.Sequential)]
     struct ACCOUNTING {
         public long TotalUserTime, TotalKernelTime, ThisPeriodTotalUserTime, ThisPeriodTotalKernelTime;
         public int TotalPageFaultCount, TotalProcesses, ActiveProcesses, TotalTerminatedProcesses;
@@ -60,6 +76,7 @@ public sealed class WatchedRun {
         IntPtr env, string dir, ref STARTUPINFO si, out PROCESS_INFORMATION pi);
     [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr CreateJobObject(IntPtr attributes, string name);
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool SetInformationJobObject(IntPtr job, int cls, ref COMPLETION_PORT info, int len);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool SetInformationJobObject(IntPtr job, int cls, ref EXTENDED_LIMIT info, int len);
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool QueryInformationJobObject(IntPtr job, int cls, out ACCOUNTING info, int len, IntPtr ret);
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool TerminateJobObject(IntPtr job, int code);
@@ -77,6 +94,7 @@ public sealed class WatchedRun {
     const int CreateSuspended = 0x4, CreateUnicodeEnvironment = 0x400, StillActive = 259;
     const int Access = 0x1000 | 0x0001 | 0x100000;   // query (limited), terminate, synchronize
     const int MsgActiveZero = 4, MsgNewProcess = 6;
+    const int CompletionPortInformation = 7, ExtendedLimitInformation = 9, KillOnJobClose = 0x2000;
 
     public sealed class Proc {
         public int Id, Parent; public string Path = "", CommandLine = ""; public DateTime Seen; public bool Ended;
@@ -97,8 +115,13 @@ public sealed class WatchedRun {
         job = CreateJobObject(IntPtr.Zero, null);
         port = CreateIoCompletionPort(new IntPtr(-1), IntPtr.Zero, IntPtr.Zero, 1);
         var cp = new COMPLETION_PORT { CompletionKey = job, CompletionPort = port };
-        if (job == IntPtr.Zero || port == IntPtr.Zero || !SetInformationJobObject(job, 7, ref cp, Marshal.SizeOf(cp)))
+        if (job == IntPtr.Zero || port == IntPtr.Zero || !SetInformationJobObject(job, CompletionPortInformation, ref cp, Marshal.SizeOf(cp)))
             throw new Exception("cannot make the job object: " + Marshal.GetLastWin32Error());
+        // ended with this script, however it ends: the job's last handle closes with it
+        var limit = new EXTENDED_LIMIT();
+        limit.Basic.LimitFlags = KillOnJobClose;
+        if (!SetInformationJobObject(job, ExtendedLimitInformation, ref limit, Marshal.SizeOf(limit)))
+            throw new Exception("cannot make the job kill-on-close: " + Marshal.GetLastWin32Error());
         var thread = new Thread(Listen); thread.IsBackground = true; thread.Start();
         var si = new STARTUPINFO(); si.cb = Marshal.SizeOf(si);
         PROCESS_INFORMATION pi;
