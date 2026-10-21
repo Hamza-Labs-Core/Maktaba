@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 )
@@ -26,7 +27,7 @@ func BuildPostgres(b pgbundle.Bundle) Process {
 	cmd := exec.Command(b.Bin("postgres"), b.ServerArgs()...)
 	cmd.Env = os.Environ()
 	wire(cmd)
-	return Process{
+	p := Process{
 		Role:  RolePostgres,
 		Cmd:   cmd,
 		Probe: "postgres://" + b.Addr(),
@@ -36,6 +37,12 @@ func BuildPostgres(b pgbundle.Bundle) Process {
 		StopSignal: os.Interrupt, // fast shutdown: ends sessions, checkpoints, exits
 		First:      true,
 	}
+	if runtime.GOOS == "windows" {
+		// no SIGINT for another process there: pg_ctl's fast shutdown, not a kill
+		// (which costs a crash recovery at the next start)
+		p.Stop = func() { _ = b.StopCommand().Run() }
+	}
+	return p
 }
 
 // postgresCheck maps the readiness answer onto the liveness check: starting up
