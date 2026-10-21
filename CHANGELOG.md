@@ -10,7 +10,22 @@ don't append a line here; docs-only PRs are exempt.
 
 ## [Unreleased]
 
+### Added
+
+- **Postgres programs for every platform, and Postgres on Windows.** Maktaba can fetch the pinned
+  Postgres 16.15 build of the machine's platform (theseus-rs; size and SHA-256 pinned, unpacked
+  with path checks), and the supervisor runs Postgres on Windows (its `.exe` programs, a fast
+  shutdown through `pg_ctl` instead of a kill, and `postgres.exe` under a restricted token when
+  the server runs as an administrator, as the Windows service does: Postgres refuses
+  administrative rights). Groundwork for the Windows and Linux apps and for full nodes' copies of
+  the home's database (#178).
+
 ### Fixed
+
+- **The launcher never sends CTRL_BREAK to a server that has exited** (Windows, Epic 38 story
+  38.2). It holds a handle to the server until it is reaped and asks it to stop only while it
+  still runs: a CTRL_BREAK naming a pid that leads no process group (a server that exited as the
+  launcher was stopping, its pid reused) goes astray and can end the launcher itself.
 
 - **Release builds for desktop, Android and Android TV.** The desktop app ships a
   (placeholder) icon set (#152), which the macOS and Windows bundles failed on. The Linux build
@@ -38,6 +53,16 @@ rules behind both were tightened. Schema revision 140 (migrations 0137-0140).
 
 ### Added
 
+- **Maktaba.app runs its own language model** (Epic 36, story 36.11). The app bundles Ollama
+  0.40.2 (pinned and checksum-verified in `make mac-app`) and the supervisor runs it as the
+  `ollama` role on its own loopback port (11533, so a user's own Ollama keeps 11434), with its
+  models in the app's `models/ollama` and its log in `~/Library/Logs/Maktaba/ollama.log`. Every
+  LLM stage (check-tags, check-clips, enrich, display titles) uses it through
+  `MAKTABA_OLLAMA_URL` unless Settings name another model server. First-run setup (step `llm`)
+  and `maktaba-server models llm` download `qwen2.5:7b` with progress after showing the disk
+  space it needs; the server downloads a missing model in the background, the menu bar shows
+  it as ready or downloading, and `GET /llm` on the supervisor reports its health.
+  `migrate-from-dev` carries the dev setup's `~/.ollama/models` over.
 - **Find metadata and Re-enrich work** (#133). A video's metadata suggestions come from
   Maktaba's own intel (transcripts, chapters, the book a series explains, file and
   folder names, sibling episodes, tags, speakers) and, when configured, a web search

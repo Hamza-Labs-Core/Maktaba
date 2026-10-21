@@ -27,6 +27,11 @@ WITH f AS (
     SELECT DISTINCT subject_kind, subject_id, stage
       FROM processing_jobs
      WHERE state = 'failed' AND ($1::text = '' OR stage = $1::text)
+       -- Epic 40: an ignored item leaves every count
+       AND NOT EXISTS (SELECT 1 FROM failure_ignores fi
+                        WHERE fi.subject_kind = processing_jobs.subject_kind
+                          AND fi.subject_id = processing_jobs.subject_id
+                          AND fi.stage = processing_jobs.stage)
 ), latest AS (
     SELECT DISTINCT ON (j.subject_kind, j.subject_id, j.stage)
            j.id, j.stage, j.subject_kind, j.subject_id, j.state,

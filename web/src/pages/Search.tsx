@@ -26,6 +26,7 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { useAuth } from "../lib/auth";
+import { PageHelp } from "../help/HelpLink";
 
 type Mode = "hybrid" | "fts" | "semantic";
 const SEARCH_LIMIT = 50;
@@ -377,6 +378,7 @@ export function Search() {
             <Button type="button" variant="secondary" onClick={saveCurrent}>
               {t("search.save")}
             </Button>
+            <PageHelp />
             {ytAvailable && (
               <label className="mkt-search__yt-toggle">
                 <input

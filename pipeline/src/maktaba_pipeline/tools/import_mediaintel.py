@@ -70,7 +70,7 @@ from ..engine.enqueue import enqueue_job
 from ..engine.graph import SIG_VERSION, Subject
 from ..engine.hashing import canonical_hash
 from ..engine.ids import season_uuid, series_uuid
-from ..engine.paths import set_active_path_map, to_db, to_local
+from ..engine.paths import PathMap, set_active_path_map, to_db, to_local
 from ..engine.sql import dumps, is_pg, loads, now, parse_ts, to_date, to_ts, uid
 from ..engine.stages import books as books_stage
 from ..engine.stages import check_clips as check_clips_stage
@@ -1445,9 +1445,15 @@ def _parser() -> argparse.ArgumentParser:
 
 
 async def _use_shares(db: Any) -> None:
-    """Story 31.3: paths are written canonical through this machine's shares."""
+    """Story 31.3: paths are written canonical through this machine's shares. A path map
+    set for this machine (``MAKTABA_PATH_MAP``, what its workers read) wins: the shares
+    can name another mount of the same NAS (SMB where the workers use NFS), and macOS's
+    SMB client hangs listing a folder of 150,000 files that NFS lists in seconds."""
     from ..sharepath.servers import build_for_machine, load_servers
 
+    if os.environ.get("MAKTABA_PATH_MAP", "").strip():
+        set_active_path_map(PathMap.parse(os.environ["MAKTABA_PATH_MAP"]))
+        return
     servers = await load_servers(db)
     if servers:
         set_active_path_map(await asyncio.to_thread(build_for_machine, servers))

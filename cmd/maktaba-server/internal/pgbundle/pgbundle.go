@@ -53,15 +53,17 @@ type Bundle struct {
 // <payload>/postgres beside <payload>/bin/maktaba-server).
 //
 // [postgres] enabled = "off" never runs it; "on" does whenever its binaries are
-// there; "auto" (the default) only on macOS. In every case a [database] url set
-// in server.toml wins, and so does a SQLite database already in use at the
+// there; "auto" (the default) on macOS, and on any system when this server runs
+// from an app's payload (MAKTABA_APP_BUNDLE: Maktaba.app, the Linux app's
+// runtime copy, Epic 39 story 39.4). In every case a [database] url set in
+// server.toml wins, and so does a SQLite database already in use at the
 // default path (an install from before keeps its data).
 func Resolve(cfg config.Config, exe string) (Bundle, bool, error) {
 	mode := strings.ToLower(strings.TrimSpace(cfg.Postgres.Enabled))
 	if mode == "off" || cfg.DatabaseURLSet {
 		return Bundle{}, false, nil
 	}
-	if mode != "on" && (runtime.GOOS != "darwin" || sqliteInUse()) {
+	if mode != "on" && ((runtime.GOOS != "darwin" && config.AppBundle() == "") || sqliteInUse()) {
 		return Bundle{}, false, nil
 	}
 	home := findHome(cfg, exe)
@@ -114,8 +116,16 @@ func findHome(cfg config.Config, exe string) string {
 }
 
 func hasServer(home string) bool {
-	info, err := os.Stat(filepath.Join(home, "bin", "postgres"))
+	info, err := os.Stat(filepath.Join(home, "bin", exe("postgres")))
 	return err == nil && !info.IsDir()
+}
+
+// exe is a program's file name on this OS.
+func exe(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
 }
 
 // sqliteInUse: the default SQLite database exists (no url is in server.toml).
@@ -129,7 +139,22 @@ func sqliteInUse() bool {
 }
 
 // Bin is one of the install's programs.
-func (b Bundle) Bin(name string) string { return filepath.Join(b.Home, "bin", name) }
+func (b Bundle) Bin(name string) string { return filepath.Join(b.Home, "bin", exe(name)) }
+
+// StopCommand is the fast shutdown where a signal cannot ask for it (Windows has no
+// SIGINT for another process): pg_ctl stop -m fast, not waiting.
+func (b Bundle) StopCommand() *exec.Cmd {
+	return exec.Command(b.Bin("pg_ctl"), "stop", "-D", b.Data, "-m", "fast", "-W")
+}
+
+// stop asks a server of this cluster to shut down fast.
+func (b Bundle) stop(p *os.Process) {
+	if runtime.GOOS == "windows" {
+		_ = b.StopCommand().Run()
+		return
+	}
+	_ = p.Signal(os.Interrupt)
+}
 
 // Addr is the loopback TCP address.
 func (b Bundle) Addr() string { return "127.0.0.1:" + strconv.Itoa(b.Port) }
@@ -139,11 +164,28 @@ func (b Bundle) Addr() string { return "127.0.0.1:" + strconv.Itoa(b.Port) }
 // is too long for a socket: every role connects over loopback TCP anyway).
 func (b Bundle) ServerArgs() []string {
 	sock := b.Data
-	if len(filepath.Join(sock, ".s.PGSQL."+strconv.Itoa(b.Port))) > maxSocketPath {
+	if len(filepath.Join(sock, ".s.PGSQL."+strconv.Itoa(b.Port))) > maxSocketPath || runtime.GOOS == "windows" {
 		sock = ""
 	}
 	return []string{"-D", b.Data, "-p", strconv.Itoa(b.Port),
 		"-c", "listen_addresses=127.0.0.1", "-c", "unix_socket_directories=" + sock}
+}
+
+// ServerCommand is the foreground `postgres` of this cluster (ServerArgs). On
+// Windows, when this process runs as an administrator (an elevated session, a
+// CI runner), it gets a restricted token, as pg_ctl and initdb give theirs:
+// postgres.exe refuses to run with administrative rights.
+func (b Bundle) ServerCommand() (*exec.Cmd, error) {
+	return b.serverCommand(b.ServerArgs())
+}
+
+// serverCommand is `postgres` with args, under ServerCommand's token.
+func (b Bundle) serverCommand(args []string) (*exec.Cmd, error) {
+	cmd := exec.Command(b.Bin("postgres"), args...)
+	if err := restrict(cmd); err != nil {
+		return nil, fmt.Errorf("a restricted token for postgres: %w", err)
+	}
+	return cmd, nil
 }
 
 // maxSocketPath is the longest unix socket path macOS takes (sun_path is 104
@@ -282,7 +324,10 @@ func (b Bundle) bootstrap(ctx context.Context, superPW, appPW string, log io.Wri
 // withServer runs fn with a server of its own up (the supervisor's is not
 // running), then stops it.
 func (b Bundle) withServer(ctx context.Context, log io.Writer, fn func() error) error {
-	srv := exec.Command(b.Bin("postgres"), b.ServerArgs()...)
+	srv, err := b.serverCommand(b.ServerArgs())
+	if err != nil {
+		return err
+	}
 	srv.Stdout, srv.Stderr = log, log
 	if err := srv.Start(); err != nil {
 		return err
@@ -290,7 +335,7 @@ func (b Bundle) withServer(ctx context.Context, log io.Writer, fn func() error) 
 	exited := make(chan error, 1)
 	go func() { exited <- srv.Wait() }()
 	defer func() {
-		_ = srv.Process.Signal(os.Interrupt) // fast shutdown
+		b.stop(srv.Process) // fast shutdown
 		select {
 		case <-exited:
 		case <-time.After(30 * time.Second):

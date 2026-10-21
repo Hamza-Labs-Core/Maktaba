@@ -345,6 +345,11 @@ func (h *Handler) BuildSnapshot(ctx context.Context) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	failed, awaiting, issues := tallyGroups(groups)
+	hd, err := h.loadStageHealth(ctx, now)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	open := openBySignature(groups)
 	workers, err := h.loadWorkers(ctx, now)
 	if err != nil {
 		return Snapshot{}, err
@@ -377,6 +382,12 @@ func (h *Handler) BuildSnapshot(ctx context.Context) (Snapshot, error) {
 	}
 
 	for i := range queues {
+		st := queues[i].Stage
+		sh := stageHealth(healthInputs{
+			Failures: hd.failures[st], DoneWindow: hd.done[st], Waiting: hd.waiting[st],
+			FailedOpen: open[st], Ignored: hd.ignored[st],
+		}, hd.cfg)
+		queues[i].Health = &sh
 		if f := h.StageETA[queues[i].Stage]; f != nil {
 			if eta, err := f(ctx, now); err == nil && eta != nil {
 				queues[i].EtaSec = eta

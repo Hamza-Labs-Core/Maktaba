@@ -1492,11 +1492,14 @@ describe("AdminLiveTV (test-cases/admin-live-tv.md)", () => {
     await screen.findByText("A1B2C3D4");
     expect(reads("/api/tv/info")).toBeGreaterThanOrEqual(4); // fresh data each time back
 
-    const external = screen
+    // the guide links go to the in-app help (Epic 41), in a new tab
+    const guide = screen
       .getAllByRole("link")
-      .filter((a) => /^https?:/.test(a.getAttribute("href") ?? ""));
-    expect(external.length).toBeGreaterThan(0);
-    for (const a of external) {
+      .filter(
+        (a) => (a.getAttribute("href") ?? "").startsWith("/help/") && a.hasAttribute("target")
+      );
+    expect(guide.length).toBeGreaterThan(0);
+    for (const a of guide) {
       expect(a).toHaveAttribute("target", "_blank");
       expect(a).toHaveAttribute("rel", "noreferrer");
     }

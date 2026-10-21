@@ -2945,7 +2945,7 @@
      "kind": "str",
      "group": "Checking tags with a language model",
      "label": "Model server (Ollama)",
-     "help": "",
+     "help": "Every language model step asks this server. Not changed here: this machine's own (Maktaba.app's bundled server, or [llm] url in server.toml), else the default. A server set here always wins.",
      "default": "http://localhost:11434"
     },
     {

@@ -36,6 +36,7 @@ import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { AdminGate } from "../../components/AdminGate";
 import { RegistrationToggle } from "./RegistrationToggle";
+import { TitleRow } from "../../help/HelpLink";
 
 interface AdminUser {
   id: string;
@@ -116,7 +117,9 @@ function UsersInner() {
   return (
     <section className="mkt-page mkt-admin">
       <header className="mkt-page__header">
-        <h1>{t("admin.users.title")}</h1>
+        <TitleRow>
+          <h1>{t("admin.users.title")}</h1>
+        </TitleRow>
         <Button onClick={() => setCreateOpen(true)}>{t("admin.users.add")}</Button>
       </header>
 

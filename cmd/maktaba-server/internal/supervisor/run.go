@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"sync"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
 )
 
 // Supervisor runs a set of child processes and keeps each one alive on
@@ -37,6 +39,8 @@ type Supervisor struct {
 	fatalOnce sync.Once
 	// onExit, when set, hears every child exit (the TV front door's slot report).
 	onExit func(Process, ExitInfo)
+	// llm, when set, is the model server's state (WithLLM).
+	llm func() llmserver.Status
 }
 
 // child is one supervised role. Everything but proc is guarded by s.mu.
@@ -248,7 +252,7 @@ func (s *Supervisor) signalLocked(cs []*child, kill bool) {
 				_ = c.cmd.Process.Signal(os.Kill)
 				continue
 			}
-			_ = c.cmd.Process.Signal(c.proc.stopSignal())
+			c.proc.askStop(c.cmd.Process)
 		}
 	}
 }
@@ -638,7 +642,7 @@ func (s *Supervisor) Want(role Role, instance string, on bool) error {
 	}
 	if cmd != nil && cmd.Process != nil {
 		s.logf("%s not wanted: stopping it (pid %d)", c.proc.Name(), cmd.Process.Pid)
-		_ = cmd.Process.Signal(c.proc.stopSignal())
+		c.proc.askStop(cmd.Process)
 		go func() {
 			time.Sleep(10 * time.Second)
 			s.mu.Lock()

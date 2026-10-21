@@ -24,6 +24,7 @@ import { STATE_GLYPH, useFmt } from "../../components/queue/format";
 import { useAction } from "../../components/queue/useAction";
 import { useThrottledReload } from "../../components/queue/useThrottledReload";
 import { arr, safeHistory, safeTimeline } from "./safeData";
+import { TitleRow } from "../../help/HelpLink";
 import "../../styles/queue.css";
 
 const FILTERS: TimelineFilter[] = ["all", "changes", "problems"];
@@ -236,7 +237,9 @@ export function ItemHistory() {
       <header className="mkt-q-detailhead">
         <div>
           <p className="mkt-q-eyebrow">{kindName}</p>
-          <h1>{bidiIsolate(subject.label)}</h1>
+          <TitleRow>
+            <h1>{bidiIsolate(subject.label)}</h1>
+          </TitleRow>
           <KindChips kinds={data.kinds} />
           {open && (
             <p>
