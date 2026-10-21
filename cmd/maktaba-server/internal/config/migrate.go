@@ -186,13 +186,18 @@ func migrateDirs(m mover, old, cur Dirs) (string, error) {
 // MigrateDirs). The originals are never removed: an older version of the same
 // install, a node's pipeline run from a checkout or the node installer's scripts
 // may still read them, as 38.13's move into the app keeps them. The copies win:
-// this server reads the new place, and the api, the pipeline and streaming read it
-// before the old one. The pieces (windowsPieces):
+// this server reads the new place, and the api and the pipeline read it before the
+// old one. The pieces (windowsPieces):
 //
 //   - server.toml, from %APPDATA%\Maktaba to %LOCALAPPDATA%\Maktaba;
 //   - the keys (secrets.key, stream-signing.key and the bundled Postgres's
-//     postgres-*.password), from %APPDATA%\Maktaba to %LOCALAPPDATA%\Maktaba\keys;
-//   - node.json, from %APPDATA%\Maktaba to %LOCALAPPDATA%\Maktaba.
+//     postgres-*.password), from %APPDATA%\Maktaba to %LOCALAPPDATA%\Maktaba\keys.
+//
+// node.json is never copied: a machine has one node config. Every reader
+// (NodeConfigPath, streaming, the pipeline, the node installer) takes
+// %LOCALAPPDATA%\Maktaba\node.json only when there is no %APPDATA%\Maktaba\node.json,
+// and the pipeline writes (a re-join) to the one it read, so a copy would only
+// split it in two: a re-join or a hand edit on one side unseen by the other.
 //
 // Each is copied on its own, whether or not there is a server.toml, and only while
 // its new place is empty: a copy is never replaced, and one that differs from its
@@ -202,9 +207,9 @@ func migrateDirs(m mover, old, cur Dirs) (string, error) {
 // (models, cache, chroma, postgres, backups) is not copied: an install from before
 // keeps it in its data folder, which stays its state root (Config.StateDir); a
 // running Postgres's folder is never touched. With $MAKTABA_CONFIG set, server.toml
-// and the keys stay beside that file (where they always were); with
-// $MAKTABA_NODE_CONFIG set, node.json stays. The node installer's own files
-// (node.env, node@<n>.env) stay in %APPDATA%\Maktaba, where its scripts read them.
+// and the keys stay beside that file (where they always were). The node
+// installer's own files (node.env, node@<n>.env) stay in %APPDATA%\Maktaba, where
+// its scripts read them.
 func MigrateWindowsDirs() ([]string, error) {
 	if runtime.GOOS != "windows" {
 		return nil, nil
@@ -216,7 +221,7 @@ func MigrateWindowsDirs() ([]string, error) {
 type piece struct{ from, to string }
 
 // windowsPieces are what a Windows install from before Epic 38 copies, in order:
-// server.toml, the keys, node.json.
+// server.toml, the keys (never node.json: MigrateWindowsDirs).
 func windowsPieces(old, cur Dirs, getenv func(string) string) ([]piece, error) {
 	var ps []piece
 	if strings.TrimSpace(getenv("MAKTABA_CONFIG")) == "" {
@@ -231,9 +236,6 @@ func windowsPieces(old, cur Dirs, getenv func(string) string) ([]piece, error) {
 		for _, p := range passwords {
 			ps = append(ps, piece{p, filepath.Join(cur.Keys, filepath.Base(p))})
 		}
-	}
-	if strings.TrimSpace(getenv("MAKTABA_NODE_CONFIG")) == "" {
-		ps = append(ps, piece{filepath.Join(old.Config, "node.json"), filepath.Join(cur.Config, "node.json")})
 	}
 	return ps, nil
 }

@@ -63,12 +63,13 @@ don't append a line here; docs-only PRs are exempt.
   still while it is asked, so the CTRL_BREAK never goes astray to `serve` itself.
 - **Windows keeps everything in `%LOCALAPPDATA%\Maktaba`** (Epic 38, story 38.1): `server.toml`,
   `keys\`, `data\`, `logs\` and the node's `node.json`, with the models, caches and the bundled
-  Postgres beside `data\`. Nothing new goes into the roaming profile, so the keys and a node's
-  identity never follow the user to another PC. For an install from before, its next
-  `maktaba-server` command copies `server.toml`, the keys and `node.json` there from
-  `%APPDATA%\Maktaba` (with or without a `server.toml`; with `MAKTABA_CONFIG` set, only
-  `node.json`) and keeps the originals, which older versions of the install, a node's pipeline
-  run from a checkout and the node installer still read; the copies are used from then on. A
+  Postgres beside `data\`, for a new install: it puts nothing in the roaming profile. For an
+  install from before, its next `maktaba-server` command copies `server.toml` and the keys there
+  from `%APPDATA%\Maktaba` (with or without a `server.toml`; nothing with `MAKTABA_CONFIG` set)
+  and keeps the originals, which older versions of the install, a node's pipeline run from a
+  checkout and the node installer still read; the copies are used from then on. Its `node.json`
+  is never copied: a machine has one node config, and one that joined before keeps it in
+  `%APPDATA%\Maktaba`, where every reader and a re-join use it. A
   copy is never replaced: one that differs from its original stays, and the command says so
   once. Each copy is written beside its new name, flushed, compared and renamed into place, so a
   roaming profile on another drive or on a server works and a copy cut short is made again by
@@ -78,8 +79,8 @@ don't append a line here; docs-only PRs are exempt.
   hold. A `maktaba-server` inside the desktop app's payload, on Windows or a Mac, never copies or
   moves an older install: that comes into the app only through the app's own move, which copies
   it and keeps the old one for going back. The node installer's `node.env` stays where its
-  scripts read it; `node.json`, and `keys\secrets.key` for the api and the pipeline run on their
-  own, are read from the new place, or from the old one until it has been copied. On Windows the
+  scripts read it; the api and the pipeline run on their own read `keys\secrets.key`, or the old
+  one until it has been copied. On Windows the
   pipeline also writes its logs in UTF-8 (`PYTHONUTF8`), so an Arabic title can no longer raise
   `UnicodeEncodeError`.
 

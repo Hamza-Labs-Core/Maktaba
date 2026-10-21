@@ -14,18 +14,15 @@ $script:NodeCli = Join-Path $script:NodeVenv 'Scripts\maktaba-pipeline.exe'
 $script:NodeInstallConf = Join-Path $script:NodeDir 'install.conf'
 $script:WindowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 
-# Get-NodeConfigPath: this machine's node config, where the pipeline reads it
-# (cluster/config.py config_path): MAKTABA_NODE_CONFIG, else
-# %LOCALAPPDATA%\Maktaba\node.json (Epic 38: never in the roaming profile), else the
-# %APPDATA%\Maktaba\node.json of a machine that joined before, while there is none in
-# the new place.
+# Get-NodeConfigPath: this machine's one node config, where the pipeline reads it
+# (cluster/config.py config_path): MAKTABA_NODE_CONFIG, else the
+# %APPDATA%\Maktaba\node.json of a machine that joined before Epic 38 (it stays where
+# it is), else %LOCALAPPDATA%\Maktaba\node.json, where a new join writes.
 function Get-NodeConfigPath {
     if ($env:MAKTABA_NODE_CONFIG) { return $env:MAKTABA_NODE_CONFIG }
-    $cur = Join-Path $env:LOCALAPPDATA 'Maktaba\node.json'
-    if (Test-Path -LiteralPath $cur -PathType Leaf) { return $cur }
     $old = Join-Path $script:NodeConfDir 'node.json'
     if (Test-Path -LiteralPath $old -PathType Leaf) { return $old }
-    return $cur
+    return (Join-Path $env:LOCALAPPDATA 'Maktaba\node.json')
 }
 
 function Write-NodeStep {

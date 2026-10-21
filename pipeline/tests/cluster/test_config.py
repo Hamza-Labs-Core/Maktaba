@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import platform
 import stat
 from pathlib import Path
 
@@ -39,9 +41,9 @@ def test_paths_per_os() -> None:
 
 
 def test_windows_keeps_a_node_config_from_the_roaming_profile(tmp_path: Path) -> None:
-    """Epic 38: node.json moved from %APPDATA% to %LOCALAPPDATA%. A machine that joined
-    before keeps reading (and rewriting) its old file until there is one in the new
-    place; a new join writes the new place."""
+    """Epic 38: a new join writes %LOCALAPPDATA%; a machine that joined before keeps its
+    %APPDATA% file, one node config per machine, even with a stray file in the new
+    place (maktaba-server never copies it, story 38.1)."""
     env = {"LOCALAPPDATA": str(tmp_path / "Local"), "APPDATA": str(tmp_path / "Roaming")}
     cur = tmp_path / "Local" / "Maktaba" / "node.json"
     old = tmp_path / "Roaming" / "Maktaba" / "node.json"
@@ -51,7 +53,33 @@ def test_windows_keeps_a_node_config_from_the_roaming_profile(tmp_path: Path) ->
     assert config.config_path(system="Windows", env=env, home=HOME) == old
     cur.parent.mkdir(parents=True)
     cur.write_text("{}", encoding="utf-8")
-    assert config.config_path(system="Windows", env=env, home=HOME) == cur
+    assert config.config_path(system="Windows", env=env, home=HOME) == old
+
+
+def test_windows_rejoin_and_hand_edit_land_in_the_one_node_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A re-join (save) and a hand edit of a machine that joined before Epic 38 both
+    land in its %APPDATA% node.json, the file maktaba-server and streaming read too."""
+    monkeypatch.delenv(config.ENV_VAR, raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "Local"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    old = tmp_path / "Roaming" / "Maktaba" / "node.json"
+    first = NodeConfig(node_id="first", name="pc", private_key="k1", database_url="postgres://a")
+    config.save(first, old)
+    rejoined = NodeConfig(
+        node_id="rejoined", name="pc", private_key="k2", database_url="postgres://b"
+    )
+    assert config.save(rejoined) == old  # where it resolved: the one it read
+    loaded = config.load()
+    assert loaded is not None and loaded.node_id == "rejoined"
+    data = json.loads(old.read_text(encoding="utf-8"))
+    data["node_id"] = "edited"
+    old.write_text(json.dumps(data), encoding="utf-8")
+    loaded = config.load()
+    assert loaded is not None and loaded.node_id == "edited"
+    assert not (tmp_path / "Local" / "Maktaba" / "node.json").exists()
 
 
 def test_the_override_wins_on_every_os() -> None:
