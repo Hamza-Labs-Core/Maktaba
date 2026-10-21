@@ -202,6 +202,14 @@ func runServe(cfg config.Config, opts serveOptions) error {
 		return shutdownWeb(webSrv)
 	}
 
+	// Epic 38 story 38.12: inside the desktop app the pipeline waits for its venv,
+	// an update's api for the database's dump, and an older release is refused
+	// (serve_appbundle.go).
+	bundle := config.AppBundle()
+	if bundle != "" {
+		procs = appBundleGates(cfg, bundle, pg, procs, os.Stderr)
+	}
+
 	// Run children. Each one is restarted on its own when it crashes or
 	// hangs ([supervisor] in server.toml, Story 22.9); Run returns on a
 	// signal, or on a child exit with restart = "never". Then drain the
@@ -222,6 +230,9 @@ func runServe(cfg config.Config, opts serveOptions) error {
 		defer func() { _ = shutdownWeb(adminSrv) }()
 	}
 	confirmPending(ctx, sup, releaseDir)
+	if bundle != "" {
+		go confirmAppPayload(ctx, sup, cfg.StateDir(), bundle)
+	}
 	runErr := sup.Run(ctx, opts.grace)
 	if webSrv != nil {
 		_ = shutdownWeb(webSrv)

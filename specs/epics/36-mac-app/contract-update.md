@@ -42,6 +42,22 @@ The new app must be signed by the **same Team ID**: the login item approval
 
 ## What the supervisor does on its next start (track A)
 
+> **Built in Epic 38 story 38.12** for the Mac, Windows and Linux alike
+> (`cmd/maktaba-server/serve_appbundle.go`, `internal/apppayload`, `internal/appvenv`, the
+> supervisor's `Process.Prepare`). How it does the table below:
+>
+> - each process waits on its `Prepare` before its first start, and `/processes` shows what it
+>   waits on as its `detail` (a failure as `failed` with the reason, retried from 30 s up to the
+>   policy's `failed_retry`); the others start meanwhile;
+> - the pipeline's processes (the main worker and every transcription worker) wait for one run
+>   of the venv bootstrap at every start: it compares the constraints, the wheel and the Python
+>   with its own stamp and does nothing when nothing changed (well under a second), builds or
+>   repairs or reinstalls the wheel when something did;
+> - the api waits for the dump `backups/pre-<old>-to-<new>.dump` (never pruned) when the
+>   version changed, and refuses an older *release* (a development build's order is unknown:
+>   it is dumped, never refused);
+> - Postgres refuses a cluster whose `PG_VERSION` is another major than the payload's.
+
 The supervisor compares the bundle's `Resources/server/payload.json` with the copy it saved
 after the last good start, `~/Library/Application Support/Maktaba/state/payload.json`:
 
