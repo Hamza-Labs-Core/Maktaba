@@ -50,9 +50,10 @@ type Config struct {
 // PostgresSection is the [postgres] table (Epic 36 story 36.1): the Postgres
 // bundled with Maktaba.app, run by the supervisor as the postgres role.
 type PostgresSection struct {
-	// Enabled: "auto" (default: on a Mac whose payload carries Postgres, or on
-	// any system when the server runs from an app's payload, when [database]
-	// url is not set and no SQLite database is in use), "on" or "off".
+	// Enabled: "auto" (default: on a Mac whose payload carries Postgres, and on
+	// any system when the server runs from a desktop app's payload: the Windows
+	// app (Epic 38 story 38.10), the Linux app (Epic 39 story 39.4); when
+	// [database] url is not set and no SQLite database is in use), "on" or "off".
 	Enabled string `toml:"enabled"`
 	// Home is the Postgres install (bin/postgres, bin/initdb, …); empty:
 	// $MAKTABA_POSTGRES_HOME, else the payload's postgres/ beside bin/.
@@ -162,15 +163,18 @@ type MediaSection struct {
 }
 
 // TranscriptionSection is the [transcription] table: what the pipeline's
-// transcribe stage loads, and (Epic 36 story 36.4) how many transcription
-// workers this machine runs and how much memory each may take.
+// transcribe stage loads, and (Epic 36 story 36.4, story 38.8) how many
+// transcription workers this machine runs and how much each may take.
 type TranscriptionSection struct {
-	// Backend is kept for older files: the pipeline picks MLX (Apple Silicon)
-	// or torch by itself.
+	// Backend is kept for older files: the pipeline picks its engine by itself,
+	// MLX on Apple Silicon, CTranslate2 (faster-whisper) on Windows and Linux.
 	Backend string `toml:"backend"`
-	// Model is the Whisper model (a Hugging Face repo, MAKTABA_STT_MODEL);
-	// empty, or an old short name ("large-v3"): the pipeline's default
-	// (mlx-community/whisper-large-v3-turbo).
+	// Model is the Whisper model (a Hugging Face repo or a folder,
+	// MAKTABA_STT_MODEL); empty, or an old short name ("large-v3"): the
+	// pipeline's default, whisper-large-v3-turbo in the engine's format
+	// (mlx-community/whisper-large-v3-turbo on Apple Silicon,
+	// dropbox-dash/faster-whisper-large-v3-turbo elsewhere). On Windows and Linux
+	// an MLX model is replaced by the CTranslate2 one, with a line in the log.
 	Model string `toml:"model"`
 	// Refine: "on" (default) lets a second listen correct Whisper's words
 	// (MAKTABA_STT_REFINE); "off" stores them as they are.
@@ -179,16 +183,46 @@ type TranscriptionSection struct {
 	// empty: CohereLabs/cohere-transcribe-arabic-07-2026.
 	RefineModel string `toml:"refine_model"`
 	// Workers is the number of transcription workers beside the main worker:
-	// 0 (default) sizes it from the RAM on Apple Silicon and runs none
-	// elsewhere (the one worker transcribes); -1 none. [pipeline] instances,
-	// when set, wins.
+	// 0 (default) sizes it from the RAM on Apple Silicon and from the GPU's
+	// memory on a machine with an NVIDIA GPU of 4 GB or more, and runs none on a
+	// machine that transcribes on the CPU (the main worker does); -1 none.
+	// [pipeline] instances, when set, wins. While the second listen is on (refine),
+	// a machine that cannot run it (Windows, Linux) plans none: its main worker
+	// transcribes only when the home's rules let it (Settings, Transcription). More
+	// workers than planned share the plan's GPU memory, CPU threads and audio
+	// hours. None at all when the operator's environment excludes transcribe
+	// (MAKTABA_PIPELINE_EXCLUDE_STAGES) or the pipeline has no stt extra.
 	Workers int `toml:"workers"`
-	// Per transcription worker; 0: sized from the RAM (MAKTABA_STT_AUDIO_HOURS,
-	// _GPU_GB, _GPU_CACHE_GB, _MIN_FREE_PCT).
+	// Per transcription worker; 0: sized from the RAM (MAKTABA_STT_AUDIO_HOURS:
+	// the hours of audio it holds at once; _MIN_FREE_PCT: below this much free
+	// memory a job waits).
 	AudioHours float64 `toml:"audio_hours"`
+	MinFreePct float64 `toml:"min_free_pct"`
+	// Apple Silicon only (MLX), per worker; 0: sized from the RAM. GPUGB caps
+	// MLX's GPU memory (MAKTABA_STT_GPU_GB), GPUCacheGB its cache of freed
+	// buffers (MAKTABA_STT_GPU_CACHE_GB).
 	GPUGB      float64 `toml:"gpu_gb"`
 	GPUCacheGB float64 `toml:"gpu_cache_gb"`
-	MinFreePct float64 `toml:"min_free_pct"`
+	// Batch is how many files a worker decodes together, one 30 s window of each
+	// per GPU pass (MAKTABA_STT_BATCH); 0: sized from the NVIDIA GPU's memory, 4
+	// on the CPU, the pipeline's 32 on Apple Silicon. Larger batches are faster
+	// until the GPU's memory runs out.
+	Batch int `toml:"batch"`
+	// Device is where Windows and Linux transcribe (MAKTABA_STT_DEVICE): "auto"
+	// (default: the NVIDIA GPU when CUDA works there, else the CPU), "cuda" (or
+	// "cuda:1", the second GPU; a worker that cannot use it says why and
+	// transcribes nothing), or "cpu". Apple Silicon always uses its GPU.
+	Device string `toml:"device"`
+	// ComputeType is the precision CTranslate2 runs Whisper in on Windows and
+	// Linux (MAKTABA_STT_COMPUTE_TYPE): "auto" (default: float16 on the GPU,
+	// int8_float16 on a GPU under 7 GB, int8 on the CPU), or one of float16,
+	// int8_float16, int8, int8_float32, float32. One the device cannot run falls
+	// back to its default, with a line in the log.
+	ComputeType string `toml:"compute_type"`
+	// CPUThreads is how many threads CTranslate2 uses when it transcribes on the
+	// CPU (MAKTABA_STT_CPU_THREADS); 0: half the logical CPUs (2 to 16), the
+	// rest left to streaming and the other stages.
+	CPUThreads int `toml:"cpu_threads"`
 }
 
 // CloudSection holds optional cloud-link enrolment.

@@ -31,7 +31,7 @@ from ..log import get_logger
 from ..sharepath.servers import build_for_machine, load_servers
 from . import exitcodes, nodes_db
 from .schema import SCHEMA_REV, HomeSchema, pause_reason, read_home_schema
-from .stages import StageSelector, lifted_placements
+from .stages import StageSelector, lifted_placements, refresh_stages
 from .storage import (
     LibrarySample,
     candidate_roots,
@@ -341,6 +341,8 @@ class WorkerAgent:
     async def refresh(self) -> bool:
         """The 30 s re-evaluation."""
         self.selector.ahead = await stages_ahead(self.db, self.graph)
+        if not self.paused:
+            await refresh_stages(self.db, self.graph, self.selector.served)
         if self.node_id is not None:
             if self.paused or time.monotonic() - self._last_schema >= self.storage_check_sec:
                 await self.check_schema()

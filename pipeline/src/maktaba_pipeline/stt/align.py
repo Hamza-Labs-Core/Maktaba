@@ -10,6 +10,10 @@ the word / sentence bookkeeping) is MLX-Whisper's, unchanged (MIT licence). The 
 is not encoded again: the decode's encoder output is reused (encoding is the costly half
 of a forward pass, and the decoder alone takes ~0.2 s for a 24-window pass), its rows
 taken by index.
+
+The CTranslate2 engine (:mod:`.ct2`) gets its alignment from CTranslate2 (the same
+cross-attention heads and DTW, in C++) and places the words with :func:`place`, with
+:class:`WordTiming` and :func:`merge_punctuations` standing in for MLX-Whisper's.
 """
 
 from __future__ import annotations
@@ -20,7 +24,7 @@ from typing import Any
 
 import numpy as np
 
-__all__ = ["AlignItem", "align_batch"]
+__all__ = ["AlignItem", "WordTiming", "align_batch", "merge_punctuations", "place"]
 
 HOP_LENGTH = 160
 SAMPLE_RATE = 16_000
@@ -35,6 +39,42 @@ class AlignItem:
     num_frames: int
     last_speech: float
     row: int  # the window's row in the pass's encoder output
+
+
+@dataclass
+class WordTiming:
+    """A word of a window and its time in it (``mlx_whisper.timing.WordTiming``'s fields)."""
+
+    word: str
+    tokens: list[int]
+    start: float
+    end: float
+    probability: float
+
+
+def merge_punctuations(alignment: list[Any], prepended: str, appended: str) -> None:
+    """Whisper's own (``whisper.timing.merge_punctuations``, MIT licence): a quote or an
+    opening bracket joins the next word, closing punctuation the word before."""
+    i, j = len(alignment) - 2, len(alignment) - 1
+    while i >= 0:
+        previous, following = alignment[i], alignment[j]
+        if previous.word.startswith(" ") and previous.word.strip() in prepended:
+            following.word = previous.word + following.word
+            following.tokens = previous.tokens + following.tokens
+            previous.word, previous.tokens = "", []
+        else:
+            j = i
+        i -= 1
+    i, j = 0, 1
+    while j < len(alignment):
+        previous, following = alignment[i], alignment[j]
+        if not previous.word.endswith(" ") and following.word in appended:
+            previous.word = previous.word + following.word
+            previous.tokens = previous.tokens + following.tokens
+            following.word, following.tokens = "", []
+        else:
+            i = j
+        j += 1
 
 
 def align_batch(model: Any, tokenizer: Any, items: list[AlignItem], features: Any) -> None:
@@ -94,15 +134,16 @@ def align_batch(model: Any, tokenizer: Any, items: list[AlignItem], features: An
                 WordTiming(wd, tk, s, e, p)
                 for wd, tk, s, e, p in zip(words, word_tokens, starts, ends, word_p, strict=False)
             ]
-        _place(it, per_seg, alignment, merge_punctuations)
+        place(it, per_seg, alignment, merge_punctuations)
 
     for it in items:  # windows with no text
         for s in it.segments:
             s.setdefault("words", [])
 
 
-def _place(it: AlignItem, per_seg: list[list[int]], alignment: list[Any], merge: Any) -> None:
-    """``add_word_timestamps`` after ``find_alignment``, unchanged."""
+def place(it: AlignItem, per_seg: list[list[int]], alignment: list[Any], merge: Any) -> None:
+    """``add_word_timestamps`` after ``find_alignment``, unchanged: the window's words
+    (``alignment``, its text's words with their times in the window) on its sentences."""
     durations = np.array([t.end - t.start for t in alignment])
     durations = durations[durations.nonzero()]
     median = min(0.7, float(np.median(durations)) if len(durations) > 0 else 0.0)
