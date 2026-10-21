@@ -100,9 +100,13 @@ for bundle in "$@"; do
     if find "$root/usr/lib" -path '*/server/payload.json' 2>/dev/null | grep -q .; then
         fail "a payload among the resources in usr/lib (linuxdeploy rewrites ELF files there)"
     fi
-    # every bundle keeps the payload's modes (the app runs these as they are installed)
-    lost="$(find "$payload/bin" "$payload/postgres/bin" "$payload/ffmpeg" -maxdepth 1 -type f ! -perm -u+x -print 2>/dev/null | head -5)"
-    if [ -z "$lost" ]; then ok "executables keep their mode"; else fail "$name dropped the executable bit: $lost"; continue; fi
+    # every bundle keeps the payload's modes. Installed, the tree is root's and the user's
+    # setup copies and runs it: every file readable by others, every folder open to them,
+    # the executables runnable by them (this extraction is ours, so u+x would prove nothing)
+    lost="$(find "$payload" \( \( -type f ! -perm -o+r \) -o \( -type d ! -perm -o+rx \) \) -print 2>/dev/null | head -5)"
+    if [ -z "$lost" ]; then ok "every file readable by any user"; else fail "$name: not readable by other users: $lost"; continue; fi
+    lost="$(find "$payload/bin" "$payload/postgres/bin" "$payload/ffmpeg" -maxdepth 1 -type f ! -perm -o+x -print 2>/dev/null | head -5)"
+    if [ -z "$lost" ]; then ok "executables runnable by any user"; else fail "$name dropped the executable bit: $lost"; continue; fi
     server="$payload/bin/maktaba-server"
     data="$SCRATCH/$name.data"
     if out="$(XDG_DATA_HOME="$data" "$server" runtime install --from "$payload" 2>&1)"; then
