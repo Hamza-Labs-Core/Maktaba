@@ -143,7 +143,11 @@ type TranscriptionSection struct {
 	// an MLX model is replaced by the CTranslate2 one, with a line in the log.
 	Model string `toml:"model"`
 	// Refine: "on" (default) lets a second listen correct Whisper's words
-	// (MAKTABA_STT_REFINE); "off" stores them as they are.
+	// (MAKTABA_STT_REFINE); "off" stores them as they are. On Windows and Linux it
+	// runs on the NVIDIA GPU beside Whisper (story 38.9), when the GPU holds both:
+	// 10 GB and up on Windows, 8 GB and up elsewhere, and only while it has the
+	// room free; the GPU's tiers then give Whisper a smaller batch to leave it that
+	// room. Without such a GPU a transcript keeps Whisper's words and says why.
 	Refine string `toml:"refine"`
 	// RefineModel is the second listen's model (MAKTABA_STT_REFINE_MODEL);
 	// empty: CohereLabs/cohere-transcribe-arabic-07-2026.
@@ -165,9 +169,10 @@ type TranscriptionSection struct {
 	GPUGB      float64 `toml:"gpu_gb"`
 	GPUCacheGB float64 `toml:"gpu_cache_gb"`
 	// Batch is how many files a worker decodes together, one 30 s window of each
-	// per GPU pass (MAKTABA_STT_BATCH); 0: sized from the NVIDIA GPU's memory, 4
-	// on the CPU, the pipeline's 32 on Apple Silicon. Larger batches are faster
-	// until the GPU's memory runs out.
+	// per GPU pass (MAKTABA_STT_BATCH); 0: sized from the NVIDIA GPU's memory (and
+	// smaller where the second listen shares the GPU), 4 on the CPU, the
+	// pipeline's 32 on Apple Silicon. Larger batches are faster until the GPU's
+	// memory runs out.
 	Batch int `toml:"batch"`
 	// Device is where Windows and Linux transcribe (MAKTABA_STT_DEVICE): "auto"
 	// (default: the NVIDIA GPU when CUDA works there, else the CPU), "cuda" (or
@@ -176,7 +181,8 @@ type TranscriptionSection struct {
 	Device string `toml:"device"`
 	// ComputeType is the precision CTranslate2 runs Whisper in on Windows and
 	// Linux (MAKTABA_STT_COMPUTE_TYPE): "auto" (default: float16 on the GPU,
-	// int8_float16 on a GPU under 7 GB, int8 on the CPU), or one of float16,
+	// int8_float16 on a GPU under 7 GB, or on an 8 GB one beside the second listen
+	// outside Windows, int8 on the CPU), or one of float16,
 	// int8_float16, int8, int8_float32, float32. One the device cannot run falls
 	// back to its default, with a line in the log.
 	ComputeType string `toml:"compute_type"`

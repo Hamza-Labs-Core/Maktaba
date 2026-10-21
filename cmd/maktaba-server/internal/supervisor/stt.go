@@ -17,6 +17,7 @@ import (
 // Story 38.8, Windows and Linux (CTranslate2): workers, Batch and ComputeType sized
 // from the NVIDIA GPU's memory, or on the CPU no workers (the main worker
 // transcribes) with a CPU batch and CPUThreads; the host's audio budget from the RAM.
+// Story 38.9: with the second listen on and a GPU it fits on, the tiers leave it room.
 type STTPlan struct {
 	Workers    int
 	AudioHours float64
@@ -87,7 +88,7 @@ var gpuTiers = []struct {
 	{0, STTPlan{Workers: 1, Batch: 4, ComputeType: "int8_float16"}},
 }
 
-// PlanForGPU is the tier for a GPU with gb GiB of memory.
+// PlanForGPU is the tier for a GPU with gb GiB of memory, Whisper alone on it.
 func PlanForGPU(gb float64) STTPlan {
 	for _, t := range gpuTiers {
 		if gb >= t.minGB {
@@ -99,6 +100,63 @@ func PlanForGPU(gb float64) STTPlan {
 	p := gpuTiers[len(gpuTiers)-1].plan
 	p.ct2 = true
 	return p
+}
+
+// refineMinGB is the smallest NVIDIA GPU (GiB) the second listen (Cohere Transcribe
+// through torch, story 38.9) fits on beside Whisper: the pipeline's own threshold
+// (MIN_GPU_GB in stt/cohere_cuda.py), from what it took on the RTX 2080 SUPER. On
+// Windows the driver's budget (WDDM) leaves a process about 1 GiB short of the card,
+// and loading the model beside Whisper takes 1.6 GiB more than its 3.85 GiB of
+// weights: an 8 GB card has 5.8 GiB left once Whisper is loaded, short of the 6.4 the
+// model, a batch of its stretches and Whisper's room need. Elsewhere an 8 GB card
+// holds both. Tests replace it.
+var refineMinGB = func() float64 {
+	if runtime.GOOS == "windows" {
+		return 9.5
+	}
+	return 7.5
+}()
+
+// SecondListenFits reports whether the second listen fits beside Whisper on an
+// NVIDIA GPU of gb GiB (on a smaller one the pipeline keeps Whisper's words and says
+// why, and does not download its model).
+func SecondListenFits(gb float64) bool { return gb >= refineMinGB }
+
+// refineGPUTiers size a CTranslate2 plan when the second listen runs on the same GPU
+// (refine on, SecondListenFits): each worker then holds Cohere's weights, what
+// loading them takes besides, a batch of its stretches (0.09 GiB each) and Whisper,
+// whose batch the pipeline leaves room for (0.14 GiB a file). Each tier passes the
+// pipeline's check (free memory before the model loads >= 3.85 + 1.6 + 0.36 +
+// 0.14 x batch GiB) on an otherwise idle GPU, Windows' budget counted: so Whisper's
+// batch is smaller than alone. The last tier is reached only where an 8 GB card
+// fits (not Windows): Whisper in int8_float16, four files.
+var refineGPUTiers = []struct {
+	minGB float64
+	plan  STTPlan
+}{
+	{40, STTPlan{Workers: 2, Batch: 24}},
+	{20, STTPlan{Workers: 1, Batch: 32}},
+	{14, STTPlan{Workers: 1, Batch: 16}},
+	{11, STTPlan{Workers: 1, Batch: 8}},
+	{9.5, STTPlan{Workers: 1, Batch: 4}},
+	{0, STTPlan{Workers: 1, Batch: 4, ComputeType: "int8_float16"}},
+}
+
+// PlanForGPUWithRefine is the tier for a GPU with gb GiB of memory that Whisper
+// shares with the second listen; false when the second listen does not fit on it
+// (Whisper then has the GPU to itself: PlanForGPU).
+func PlanForGPUWithRefine(gb float64) (STTPlan, bool) {
+	if !SecondListenFits(gb) {
+		return STTPlan{}, false
+	}
+	for _, t := range refineGPUTiers {
+		if gb >= t.minGB {
+			p := t.plan
+			p.ct2 = true
+			return p, true
+		}
+	}
+	return STTPlan{}, false
 }
 
 // cpuBatch is the CPU plan's batch: a pass of four windows keeps CTranslate2's
@@ -121,8 +179,9 @@ var appleSilicon = func() bool { return runtime.GOOS == "darwin" && runtime.GOAR
 var numCPU = runtime.NumCPU
 
 // PlanSTT is this machine's plan: on Apple Silicon sized from the RAM (MLX); else
-// (CTranslate2) from the NVIDIA GPU's memory, or the CPU plan when there is none
-// or [transcription] device = "cpu", with the audio budget from the RAM. Then
+// (CTranslate2) from the NVIDIA GPU's memory, leaving room for the second listen
+// when [transcription] refine is on and it fits there, or the CPU plan when there is
+// no GPU or [transcription] device = "cpu", with the audio budget from the RAM. Then
 // [pipeline] instances when server.toml sets it (a converted node keeps its
 // installer's workers), else [transcription] workers (-1: none), set the number
 // of workers, and the other [transcription] knobs override the plan's.
@@ -135,6 +194,9 @@ func PlanSTT(cfg config.Config) STTPlan {
 	} else {
 		if gpu, ok := NvidiaGPU(); ok && device != "cpu" {
 			plan = PlanForGPU(gpu.MemoryGB())
+			if p, fits := PlanForGPUWithRefine(gpu.MemoryGB()); fits && refineOn(t) {
+				plan = p
+			}
 		} else {
 			plan = PlanForCPU(numCPU())
 		}
@@ -179,6 +241,20 @@ func PlanSTT(cfg config.Config) STTPlan {
 		}
 	}
 	return plan
+}
+
+// refineOn reports whether the workers run the second listen: the operator's own
+// MAKTABA_STT_REFINE when set (the pipeline's "0" is off), else [transcription]
+// refine, on unless it says off.
+func refineOn(t config.TranscriptionSection) bool {
+	if v := strings.TrimSpace(os.Getenv("MAKTABA_STT_REFINE")); v != "" {
+		return v != "0"
+	}
+	switch strings.ToLower(strings.TrimSpace(t.Refine)) {
+	case "off", "false", "no", "0":
+		return false
+	}
+	return true
 }
 
 // sttEnv is the transcription settings every pipeline process gets: the models

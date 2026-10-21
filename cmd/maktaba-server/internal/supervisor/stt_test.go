@@ -2,6 +2,10 @@ package supervisor
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
+	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -10,7 +14,8 @@ import (
 )
 
 // fakeMachine makes PlanSTT see an Apple Silicon Mac (or not) with gb of RAM, 8
-// logical CPUs and no NVIDIA GPU (fakeGPU gives it one).
+// logical CPUs and no NVIDIA GPU (fakeGPU gives it one). The second listen fits on
+// a GPU of 9.5 GiB or more, as on Windows, on every OS (fakeRefineMin changes it).
 func fakeMachine(t *testing.T, apple bool, gb uint64) {
 	t.Helper()
 	prevA, prevM, prevC := appleSilicon, totalMemory, numCPU
@@ -19,6 +24,15 @@ func fakeMachine(t *testing.T, apple bool, gb uint64) {
 	totalMemory = func() uint64 { return gb << 30 }
 	numCPU = func() int { return 8 }
 	fakeGPU(t, "", errors.New("nvidia-smi: not found"))
+	fakeRefineMin(t, 9.5)
+}
+
+// fakeRefineMin sets the smallest GPU the second listen fits on (refineMinGB).
+func fakeRefineMin(t *testing.T, gb float64) {
+	t.Helper()
+	prev := refineMinGB
+	t.Cleanup(func() { refineMinGB = prev })
+	refineMinGB = gb
 }
 
 // fakeGPU makes nvidia-smi answer out (or fail with err).
@@ -35,7 +49,7 @@ func noSTTEnv(t *testing.T) {
 	t.Helper()
 	for _, k := range []string{"MAKTABA_STT_AUDIO_HOURS", "MAKTABA_STT_GPU_GB", "MAKTABA_STT_GPU_CACHE_GB",
 		"MAKTABA_STT_MIN_FREE_PCT", "MAKTABA_STT_BATCH", "MAKTABA_STT_DEVICE", "MAKTABA_STT_COMPUTE_TYPE",
-		"MAKTABA_STT_CPU_THREADS", "MAKTABA_PIPELINE_EXCLUDE_STAGES"} {
+		"MAKTABA_STT_CPU_THREADS", "MAKTABA_STT_REFINE", "MAKTABA_PIPELINE_EXCLUDE_STAGES"} {
 		t.Setenv(k, "")
 	}
 }
@@ -93,6 +107,150 @@ func TestPlanForGPUTiers(t *testing.T) {
 	if p := PlanForGPU(6); p.ComputeType != "int8_float16" {
 		t.Errorf("a 6 GB GPU keeps the weights in int8: %+v", p)
 	}
+}
+
+// The pipeline's check before the second listen's model loads (stt/cohere_cuda.py):
+// free GPU memory >= its weights, what loading takes besides, a batch of four
+// stretches, and Whisper's room (0.14 GiB per file of its batch).
+const (
+	cohereWeightsGB = 3.85
+	stretchGB       = 0.09
+	whisperFileGB   = 0.14
+)
+
+func secondListenNeeds(loadExtra float64, batch int) float64 {
+	return cohereWeightsGB + loadExtra + 4*stretchGB + whisperFileGB*float64(batch)
+}
+
+func TestPlanForGPUWithRefine(t *testing.T) {
+	// on Windows (WDDM): a process's budget is about 1.05 GiB short of the card, loading
+	// the model beside Whisper takes 1.6 GiB more than its weights, and Whisper turbo
+	// holds 1.0 GiB of it in float16 (0.55 in int8_float16) and 0.14 per file: measured
+	// on the RTX 2080 SUPER (8 GB), which therefore keeps Whisper alone
+	fakeRefineMin(t, 9.5)
+	if _, fits := PlanForGPUWithRefine(8); fits || SecondListenFits(8) {
+		t.Error("an 8 GB card cannot hold the second listen beside Whisper under Windows")
+	}
+	type machine struct {
+		name                              string
+		minGB, reserve, extra, fp16, int8 float64
+		sizes                             []float64
+	}
+	for _, m := range []machine{
+		{"windows", 9.5, 1.05, 1.6, 1.0, 0.55, []float64{80, 48, 40, 24, 20, 16, 12, 11, 10, 9.6}},
+		// elsewhere: what the display keeps, a margin for loading, and Whisper's own
+		// figures (2.3 GiB in float16, 1.2 in int8_float16, with CUDA's buffers)
+		{"linux", 7.5, 0.3, 0.5, 2.3, 1.2, []float64{80, 40, 24, 16, 12, 11, 10, 8, 7.6}},
+	} {
+		fakeRefineMin(t, m.minGB)
+		prev, _ := PlanForGPUWithRefine(1 << 10)
+		for _, gb := range m.sizes {
+			p, fits := PlanForGPUWithRefine(gb)
+			if !fits || !p.ct2 || p.Workers < 1 || p.Batch < 1 {
+				t.Fatalf("%s %v GB: %+v, %v", m.name, gb, p, fits)
+			}
+			whisper := m.fp16
+			if p.ComputeType == "int8_float16" {
+				whisper = m.int8
+			}
+			// every worker's Whisper (after a pass) and Cohere, then the last one's check
+			perWorker := whisper + whisperFileGB*float64(p.Batch)
+			loaded := cohereWeightsGB + m.extra
+			free := gb - m.reserve - float64(p.Workers)*perWorker - float64(p.Workers-1)*loaded
+			if need := secondListenNeeds(m.extra, p.Batch); free < need {
+				t.Errorf("%s %v GB: %+v leaves %.2f GiB, the second listen needs %.2f", m.name, gb, p, free, need)
+			}
+			alone := PlanForGPU(gb)
+			if p.Workers*p.Batch > alone.Workers*alone.Batch {
+				t.Errorf("%s %v GB: %+v is more than Whisper alone (%+v)", m.name, gb, p, alone)
+			}
+			if p.Workers > prev.Workers || p.Workers*p.Batch > prev.Workers*prev.Batch {
+				t.Errorf("%s %v GB: %+v is not a step down from %+v", m.name, gb, p, prev)
+			}
+			prev = p
+		}
+	}
+	fakeRefineMin(t, 7.5)
+	if p, fits := PlanForGPUWithRefine(8); !fits || p.Batch != 4 || p.ComputeType != "int8_float16" {
+		t.Errorf("an 8 GB card beside the second listen, outside Windows = %+v, %v", p, fits)
+	}
+	if _, fits := PlanForGPUWithRefine(6); fits {
+		t.Error("a 6 GB card holds no second listen")
+	}
+}
+
+func TestPlanSTTLeavesRoomForTheSecondListen(t *testing.T) {
+	fakeMachine(t, false, 64)
+	noSTTEnv(t)
+	cfg := config.Defaults() // refine on
+	fakeGPU(t, "NVIDIA GeForce RTX 3060, 12288\n", nil)
+	if p := PlanSTT(cfg); p.Workers != 1 || p.Batch != 8 || p.ComputeType != "" {
+		t.Errorf("12 GB with the second listen = %+v", p)
+	}
+	off := cfg
+	off.Transcription.Refine = "off"
+	if p := PlanSTT(off); p != PlanSTT(withGPUAlone(cfg)) || p.Batch != 16 {
+		t.Errorf("12 GB, second listen off = %+v, want Whisper's tier alone", p)
+	}
+	t.Setenv("MAKTABA_STT_REFINE", "0") // the operator's own environment turns it off
+	if p := PlanSTT(cfg); p.Batch != 16 {
+		t.Errorf("MAKTABA_STT_REFINE=0: %+v", p)
+	}
+	t.Setenv("MAKTABA_STT_REFINE", "")
+	// this PC's 8 GB card under Windows: no room for it, so Whisper keeps its own tier
+	fakeGPU(t, rtx2080Super, nil)
+	if p := PlanSTT(cfg); p.Batch != 8 || p.ComputeType != "" {
+		t.Errorf("8 GB, Windows threshold = %+v", p)
+	}
+	fakeRefineMin(t, 7.5) // ... elsewhere it fits, Whisper made smaller
+	if p := PlanSTT(cfg); p.Batch != 4 || p.ComputeType != "int8_float16" {
+		t.Errorf("8 GB, Linux threshold = %+v", p)
+	}
+	c := cfg
+	c.Transcription.Batch, c.Transcription.ComputeType = 6, "float16" // the owner's knobs still win
+	if p := PlanSTT(c); p.Batch != 6 || p.ComputeType != "float16" {
+		t.Errorf("[transcription] overrides beside the second listen = %+v", p)
+	}
+	m := envMap(ChildEnv(RolePipeline, cfg))
+	if m["MAKTABA_PIPELINE_EXCLUDE_STAGES"] != "transcribe" {
+		t.Errorf("the main worker leaves transcribe to the GPU worker: %v", m)
+	}
+	procs, err := BuildPipelineInstances(Options{Config: cfg})
+	if err != nil || len(procs) != 1 {
+		t.Fatalf("workers = %d, %v", len(procs), err)
+	}
+	if w := envMap(procs[0].Cmd.Env); w["MAKTABA_STT_BATCH"] != "4" || w["MAKTABA_STT_COMPUTE_TYPE"] != "int8_float16" {
+		t.Errorf("the worker beside the second listen: %v", w)
+	}
+}
+
+// defaultRefineMinGB is refineMinGB as this OS has it (the tests change it).
+var defaultRefineMinGB = refineMinGB
+
+// TestRefineThresholdIsThePipelines: the supervisor leaves room for the second listen
+// on exactly the GPUs the pipeline runs it on (MIN_GPU_GB in stt/cohere_cuda.py).
+func TestRefineThresholdIsThePipelines(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "pipeline", "src", "maktaba_pipeline", "stt", "cohere_cuda.py"))
+	if err != nil {
+		t.Skipf("the pipeline's source is not in this checkout: %v", err)
+	}
+	m := regexp.MustCompile(`(?m)^MIN_GPU_GB = ([0-9.]+) if sys\.platform == "win32" else ([0-9.]+)\r?$`).FindSubmatch(src)
+	if m == nil {
+		t.Fatal("stt/cohere_cuda.py: no MIN_GPU_GB line to compare with")
+	}
+	want := string(m[2])
+	if runtime.GOOS == "windows" {
+		want = string(m[1])
+	}
+	if got := strconv.FormatFloat(defaultRefineMinGB, 'f', -1, 64); got != want {
+		t.Errorf("refineMinGB = %s on %s, the pipeline's MIN_GPU_GB = %s", got, runtime.GOOS, want)
+	}
+}
+
+// withGPUAlone is cfg with the second listen off.
+func withGPUAlone(cfg config.Config) config.Config {
+	cfg.Transcription.Refine = "off"
+	return cfg
 }
 
 func TestPlanSTT(t *testing.T) {
@@ -183,8 +341,11 @@ func TestPlanSTTOnAnNvidiaGPU(t *testing.T) {
 		t.Errorf("RTX 2080 SUPER = %+v, want %+v", p, want)
 	}
 	fakeGPU(t, "NVIDIA GeForce RTX 4090, 24564\nNVIDIA GeForce RTX 3060, 12288\n", nil)
-	if p := PlanSTT(cfg); p.Workers != 2 || p.Batch != 16 {
+	if p := PlanSTT(withGPUAlone(cfg)); p.Workers != 2 || p.Batch != 16 {
 		t.Errorf("RTX 4090 (the first GPU) = %+v", p)
+	}
+	if p := PlanSTT(cfg); p.Workers != 1 || p.Batch != 32 {
+		t.Errorf("RTX 4090 beside the second listen = %+v", p)
 	}
 	fakeGPU(t, "NVIDIA GeForce GTX 1650, 4096", nil)
 	if p := PlanSTT(cfg); p.Workers != 1 || p.Batch != 4 || p.ComputeType != "int8_float16" {
