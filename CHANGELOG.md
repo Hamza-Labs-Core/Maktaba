@@ -50,6 +50,24 @@ don't append a line here; docs-only PRs are exempt.
   the tab shows each machine and each outside service as moved, being moved, failed, or what a
   person must do (signing in to YouTube in a browser on the new home; a model runtime there). A
   switch that cannot go through is undone. `GET /api/cluster/self` carries the cluster's term.
+- **A standby home can take over when the home is gone for good** (Epic 37, "Emergency
+  promotion"). On the Machines tab the admin marks full machines as standby homes. Each one
+  keeps the home's secrets and keys sealed to it alone. The home sends them again within two
+  minutes of a change and removes them when the mark goes. With the home not answering, a
+  standby's admin makes it the home from that machine's own Machines page, after a warning and
+  the home's name typed to confirm. The other machines find the new home at the standbys by
+  themselves and follow it. If the old home comes back, it stops writing within a minute and
+  becomes one of the new home's machines. What it wrote after the switch is kept aside and
+  reported to the new home, where the admin downloads it or reviews and applies what does not
+  conflict, in one transaction. Never applied automatically: a transaction touching a row the
+  new home changed since, the secrets or the cluster's own data, or one that would fail. What was
+  applied is recorded. Migration 0144.
+- **The cloud relay agent moves with the home.** The home's supervisor runs `maktaba-cloudlink`
+  while `[cloud]` is enabled. A switch stops it on the old home, carries its credentials, and
+  starts it on the new one. It ships with the Mac and Linux apps.
+- **After a switch, a checklist on the new home**: what needs a person there (YouTube in a
+  browser, a model runtime, a Live TV tuner set by hand) is ticked off by hand, or by itself
+  where Maktaba can tell (a model runtime that answers).
 - **The machines reach only what they need of the home's database** (Epic 37). The bundled
   Postgres listens beyond its own machine, and lets anyone in from off it, only while a machine
   may connect (one is approved, or joins are open). It starts again by itself when that

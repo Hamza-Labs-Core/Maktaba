@@ -290,7 +290,10 @@ the machines keep trying to follow B until it answers. Switching back is a switc
 **On the tab:** the term and since when this machine is the home; the machines that could take
 over, each with why it cannot now; a switch under way step by step; then each machine
 (following, copying anew, off) and each outside service (moved, being moved, failed, needs
-you), with the one action a person takes. `GET /api/cluster/self` carries the term.
+you). What needs a person on the new home is a **checklist** there for a week: each item ticked
+off by hand (`POST /api/cluster/switchover/{id}/checklist`), or by itself where a check can tell
+(a model runtime started since is checked again while the list is shown). `GET
+/api/cluster/self` carries the term.
 
 ### Outside services
 
@@ -301,8 +304,68 @@ you), with the one action a person takes. `GET /api/cluster/self` carries the te
 | Hugging Face | The token moves with the kit. |
 | JWT keys | An operator's `MAKTABA_JWT_*_PEM` move with the kit; B's supervisor hands them to its API. |
 | YouTube (yt-dlp `cookies_from_browser`) | A browser profile is its machine's: someone signs in to YouTube in a browser on B. |
-| Model runtime (Ollama on the machine) | Moved when B runs one; else B needs one, or its address in Settings. |
+| Model runtime (Ollama on the machine) | Moved when B runs one (Maktaba.app's own, or one it has); else B needs one, or its address in Settings: on the checklist, ticked off by itself once one answers. |
 | The machines' database TLS | B serves it from the same CA (it came in the kit); every machine pins the CA B sends. |
+| Cloud relay (`maktaba-cloudlink`, Epic 25) | The home's supervisor runs the relay agent (`[cloud] enabled`, its credentials in the keys directory). A stops its agent before B is promoted (two agents of one server take the tunnel from each other) and starts it again if the switch is undone; the credentials, their key and the `[cloud]` section move with the kit; B runs the agent from its next start; A puts its copies aside. Moved once B's tunnel is up. |
+
+## Emergency promotion (the home gone for good)
+
+The user's choices: a kit only on **standby homes**, and the old home's late writes **reported,
+with a one-click apply of what does not conflict**.
+
+**Standby homes.** The admin marks an approved full machine a standby home on the Machines tab
+(`PUT /api/cluster/switchover/standby`). The home keeps a kit sealed to it, as a planned switch's
+(X25519 between the cluster key and the machine's key, `HKDF` with `standby:<machine>`,
+ChaCha20-Poly1305 per chunk), gathered without a freeze: the secrets and their key, the cluster
+key, the database CA and its key, the Hugging Face token, the JWT keys, the relay's credentials,
+the machines and their roles' verifiers, the sessions, refresh tokens and devices, and this
+home's own identity as a machine of the standby. It leaves out the history and the tokens that
+last minutes (the audit log, idempotency keys, reset tokens, pairing tickets, SSO codes). The
+home looks every two minutes (at once when a mark changes) and sends it again when its stable
+part changed (`Kit.StableHash`: the term, the key files, the roles, the secrets' and the
+machines' rows; not the sessions) or it is six hours old. The standby keeps it sealed in its keys
+directory (`standby-kit.chunks`, with what it is beside it) and takes only a kit that opens for
+it. The mark removed, the home tells it to forget the kit; a revoked machine's copy is wiped
+with it. Every machine is told where the standbys are (`home.standbys`, node.json
+`standby_homes`).
+
+**Taking over.** On a standby's own Machines page (its admin, signed in on it while the home is
+away) a card offers it, only while it holds the kit, has a copy and the home does not answer
+(two homes never write); the home's name is typed to confirm (`POST /api/cluster/emergency`, the
+standby's supervisor checks again). Then, as a planned promotion: its copy promoted with the kit,
+the sequences a million past the copy's highest values (the old home's late writes keep their
+ids), the old home registered as one of its machines with the identity its kit gave it, a **fork
+slot** of every table kept from the promotion on (what this home changes since), term N+1, the
+switch recorded, every machine's notice sealed (the old home's with the cut: where in its WAL
+what it wrote since begins), its Postgres and relay the home's; it starts again as the home. A
+machine whose home does not answer asks the standbys for its notice too (`GET
+/api/cluster/moved/{node}`) and follows the new home, copying it anew.
+
+**The old home's return.** Every minute a home asks the standbys it knows for a notice sealed to
+its identity in their kits. One of a newer term means it is not the home: it fences its database
+(read-only for every session), reads what it wrote after the cut from the slot the new home's
+copy had on it (`KeptAside`: peeked, never consumed), keeps it in its state directory and
+reports it to the new home sealed from its identity to the cluster's key (`POST
+/api/cluster/kept-aside/report`, again until taken), then becomes one of the new home's
+machines: its database is set aside, never emptied, and the new home's copied. Its slot gone (the
+cap), it says so: nothing to apply.
+
+**Applying it** (the new home's Machines tab, "Changes kept aside"): download the report, set it
+aside, or review what would apply. Each of the old home's transactions applies **whole or not
+at all**, in its commit order, and not when it:
+
+- touches the secrets or the cluster's own rows (the home-only tables, `cluster_*`,
+  `instance_identity`, `workers`);
+- empties a table;
+- touches a table without a primary key here (its rows cannot be matched), or one this home lacks;
+- touches a row this home inserted, changed or deleted since the fork (from the fork slot);
+- updates a row this home does not have;
+- fails when tried here (a constraint, a type, a transaction before it not applied), with why.
+
+The review shows each transaction (when, what it changed, applies or why not). Apply runs that
+plan in **one transaction**, only while it is still the plan shown (its hash: else nothing is
+applied and the new plan is shown), and records what was applied, what was not and why, by whom.
+Once every report of the term is applied or set aside the fork slot is dropped.
 
 ## Rules (`rules.cluster`, on the settings page)
 
@@ -344,6 +407,12 @@ you), with the one action a person takes. `GET /api/cluster/self` carries the te
   channel, never through the replica; it is kept on neither side once loaded. A machine follows
   a new home only on the home's own command over that channel, or on a notice sealed to it by the
   cluster key; the copy pins the CA that came with it.
+- **A standby home** holds the home's secrets and keys, sealed to it alone, in its keys directory
+  (this account's only), and only while the admin keeps the mark: unmarked or revoked, the kit is
+  removed. It can take over only with the home not answering and its admin's typed confirmation.
+  An old home's report is taken only sealed by the identity the standby's kit registered it with,
+  to the cluster key; it is never applied on its own, and what touches the secrets or the
+  cluster's rows never applies.
 
 ## Failure modes
 
@@ -366,6 +435,10 @@ you), with the one action a person takes. `GET /api/cluster/self` carries the te
 | The node's API restarted during an outage | The sessions it opened offline are kept on disk and written to the home's history once its database answers. |
 | A machine's clock off by minutes | Lag and read-your-writes use the home's clock: reads are neither stale nor sent to the home for nothing. |
 | The home's API stopped, its database running | The beat stops, but a copy whose slot keeps up with the home's WAL still follows. |
+| The home gone for good | A standby's admin makes it the home; the machines find it at the standbys and follow it, copying anew. |
+| The old home only cut off, and back | It sees the newer term within a minute, stops writing, reports what it wrote meanwhile and becomes a machine of the new home. |
+| A standby off when the home's secrets change | It gets the current kit when it is connected again (its kit says how old it is). |
+| What the old home wrote meets this home's own changes | Not applied: the review says which row this home changed, or which constraint failed. |
 
 ## Tests
 
@@ -402,9 +475,21 @@ you), with the one action a person takes. `GET /api/cluster/self` carries the te
   machines on the pinned Postgres 16.15: A the home, B and C its machines; C is switched off, the
   admin switches the home to B; B takes over without copying again, A follows it as a machine,
   C follows it by itself once back, the secret opens on B, B's change reaches A, and the owner
-  signs in on both. The pipeline's `test_plex_livetv.py`: the tuner moved in place, re-added,
-  with a DVR of its own, and kept when Plex cannot reach the new home. The web's
-  `SwitchHomeCard.test.tsx`.
+  signs in on both, and the cloud relay agent (a stand-in) moves from A to B with its
+  credentials. `api/emergency_e2e_test.go`: B marked a standby on A gets A's kit and C learns where
+  the standbys are; A is switched off; B's admin takes over; C finds B at the standby and follows
+  it; A comes back, takes a change as a home, sees the newer term, stops, reports the change
+  sealed and becomes B's machine; on B the change is reviewed and applied. The emergency's
+  database steps on real Postgres (`switchover_pg_test.go`): the fork, the plan (a new row and an
+  untouched row's change apply; a row the new home also changed, a user name the new home gave
+  another user, the old home's cluster rows do not), an old plan refused, one apply recorded, the
+  fork dropped. The standby's kit and the notices: `serve_standby_test.go`, `standby_test.go`,
+  `standby_pg_test.go` (sent, unchanged, sent again, forgotten; the machines told), the report's
+  seal on both modules against one vector, the checklist (`checklist_pg_test.go`), the relay
+  (`relay_test.go` on both sides). The pipeline's `test_plex_livetv.py`: the tuner moved in place,
+  re-added, with a DVR of its own, and kept when Plex cannot reach the new home. The web's
+  `SwitchHomeCard.test.tsx` (the checklist, the standby homes, the review and apply) and
+  `EmergencyCard.test.tsx`.
 - Unit tests: `nodeauth` (copy-first answers, freshness, node-local sessions and sign-outs,
   revocations in flight and pushed, a sign-in with the home back, one missed probe, must-change
   and lockout spraying, bearer tokens, grace, a hanging home), `nodedb` and the node's routing
@@ -417,12 +502,8 @@ you), with the one action a person takes. `GET /api/cluster/self` carries the te
 
 ## Follow-ups
 
-- Emergency promotion (the home gone for good), from the Machines tab of a machine with a copy,
-  with a warning: the database steps are built and tested (the fence, the changes kept aside);
-  the orchestration waits on the user's choices of where a standby kit is kept and what becomes
-  of the old home's writes it kept aside.
-- The cloud relay (`maktaba-cloudlink`) moving with the home: `maktaba-server` does not run it
-  yet; how it should is the user's choice.
+- The cloud relay's first claim from the control centre (today `[cloud] claim_code` and `slug`
+  in server.toml, used on the agent's first run).
 - A home on an operator's own Postgres with TLS: a setting for its CA, so its machines' copies
   verify it (today they wait; a home on Maktaba's own Postgres, or a database without TLS, needs
   nothing).
