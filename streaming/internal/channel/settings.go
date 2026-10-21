@@ -71,6 +71,9 @@ type TVSettings struct {
 	GuideMaxPaddingSeconds int
 	GuideFillerTitle       string
 	GuideMinProgramSeconds int
+	// LiveLookupReuse is how long one yt-dlp lookup of a live page is
+	// shared by every channel airing it.
+	LiveLookupReuse time.Duration
 }
 
 // Defaults (the rules' defaults; env overrides them, settings override env).
@@ -82,6 +85,10 @@ const (
 	DefaultGuideFillerTitle       = "فواصل"
 	DefaultGuideMinProgramSeconds = 60
 	maxGuideSeconds               = 3600
+
+	// live_lookup_reuse_seconds' bounds.
+	minLiveLookupReuseSec = 10
+	maxLiveLookupReuseSec = 3600
 )
 
 // OutputSettingsFromEnv is today's MAKTABA_CHANNEL_* configuration.
@@ -106,6 +113,8 @@ func TVSettingsFromEnv() TVSettings {
 		GuideMaxPaddingSeconds: DefaultGuideMaxPaddingSeconds,
 		GuideFillerTitle:       DefaultGuideFillerTitle,
 		GuideMinProgramSeconds: DefaultGuideMinProgramSeconds,
+		LiveLookupReuse: time.Duration(clampInt(envInt("MAKTABA_CHANNEL_LIVE_LOOKUP_REUSE_SEC",
+			int(DefaultLiveLookupReuse/time.Second)), minLiveLookupReuseSec, maxLiveLookupReuseSec)) * time.Second,
 	}
 }
 
@@ -201,6 +210,13 @@ func ApplyTVRules(base TVSettings, raw []byte) (out TVSettings, bad []string) {
 		case "guide_filler_title":
 			if s, ok := jsonString(v); ok {
 				out.GuideFillerTitle = strings.TrimSpace(s)
+			} else {
+				bad = append(bad, name)
+			}
+		case "live_lookup_reuse_seconds":
+			var sec int
+			if setInt(&sec, v, minLiveLookupReuseSec, maxLiveLookupReuseSec) {
+				out.LiveLookupReuse = time.Duration(sec) * time.Second
 			} else {
 				bad = append(bad, name)
 			}

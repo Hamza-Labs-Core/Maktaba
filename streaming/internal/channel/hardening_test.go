@@ -213,13 +213,13 @@ func TestYtDlp_OnlyHTTPAndEndOfOptions(t *testing.T) {
 		got = args
 		return []byte("file:///etc/passwd\n"), nil
 	}
-	if _, err := y.Resolve(context.Background(), "--exec=evil"); err == nil {
+	if _, err := y.Resolve(context.Background(), LiveRequest{SourceURL: "--exec=evil"}); err == nil {
 		t.Error("a non-URL source must be refused before yt-dlp runs")
 	}
 	if got != nil {
 		t.Fatal("yt-dlp ran for a non-http source")
 	}
-	if _, err := y.Resolve(context.Background(), "https://www.youtube.com/watch?v=x"); err == nil {
+	if _, err := y.Resolve(context.Background(), LiveRequest{SourceURL: "https://www.youtube.com/watch?v=x"}); err == nil {
 		t.Error("a non-network URL from yt-dlp must be refused")
 	}
 	if len(got) < 2 || got[len(got)-2] != "--" {

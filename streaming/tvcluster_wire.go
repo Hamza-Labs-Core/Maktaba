@@ -76,6 +76,9 @@ type tvBase struct {
 	caps     cluster.Capabilities
 	cpu      cpuLoad
 	loop     *cluster.HostLoop
+	// live is the process's one yt-dlp resolver: channels airing the same
+	// live page share its lookups.
+	live *channel.YtDlp
 }
 
 type cpuLoad interface{ Load() float64 }
@@ -113,12 +116,21 @@ func (b *tvBase) reportedCapacity(ctx context.Context) int {
 	return cluster.Capacity(out, b.encoders.Resolve(ctx, out.Encoder).Name, nil)
 }
 
+// liveResolver is the shared yt-dlp resolver, built by the first station
+// config (the engines are wired one after another at start).
+func (b *tvBase) liveResolver() *channel.YtDlp {
+	if b.live == nil {
+		b.live = channel.NewYtDlp(os.Getenv("MAKTABA_YTDLP"))
+	}
+	return b.live
+}
+
 func (b *tvBase) stationConfig(repo channel.Repo) channel.StationConfig {
 	return channel.StationConfig{
 		FFmpeg:   b.cfg.FFmpeg.Binary,
 		Repo:     repo,
 		Prober:   channel.NewFFprobe(b.cfg.FFmpeg.ProbeBinary),
-		Resolver: channel.NewYtDlp(os.Getenv("MAKTABA_YTDLP")),
+		Resolver: b.liveResolver(),
 		PathMap:  pathmap.FromEnv(),
 		FontFile: channel.FindFont(),
 		Logger:   b.logger,
