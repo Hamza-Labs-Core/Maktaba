@@ -204,15 +204,35 @@ func (n *Node) Callback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, dest, http.StatusFound)
 }
 
-// HomeInfoCache keeps the home's /api/cluster/self for a node (30 s).
+// HomeInfoCache keeps the home's /api/cluster/self for a node (30 s). Only the first
+// read waits for the home (3 s at most); past it a stale answer is given at once and
+// read again in the background, so a home that does not answer never holds up the
+// machine's own /api/cluster/self.
 type HomeInfoCache struct {
 	Link homelink.Link
 	TTL  time.Duration
 
-	mu   sync.Mutex
-	at   time.Time
-	info SelfInfo
-	ok   bool
+	mu      sync.Mutex
+	at      time.Time
+	info    SelfInfo
+	ok      bool
+	reading bool
+}
+
+func (c *HomeInfoCache) read(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	raw, err := c.Link.Self(ctx)
+	cancel()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.reading = false
+	if err != nil {
+		return
+	}
+	var s SelfInfo
+	if json.Unmarshal(raw, &s) == nil {
+		c.info, c.ok, c.at = s, true, time.Now()
+	}
 }
 
 // Get returns the home's self (cached; stale on failure).
@@ -222,18 +242,17 @@ func (c *HomeInfoCache) Get(ctx context.Context) (SelfInfo, bool) {
 		ttl = 30 * time.Second
 	}
 	c.mu.Lock()
+	switch {
+	case c.ok && time.Since(c.at) < ttl, c.reading:
+	case c.ok:
+		c.reading = true
+		go c.read(context.WithoutCancel(ctx))
+	default:
+		c.reading = true
+		c.mu.Unlock()
+		c.read(ctx)
+		c.mu.Lock()
+	}
 	defer c.mu.Unlock()
-	if c.ok && time.Since(c.at) < ttl {
-		return c.info, true
-	}
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	raw, err := c.Link.Self(ctx)
-	if err == nil {
-		var s SelfInfo
-		if json.Unmarshal(raw, &s) == nil {
-			c.info, c.ok, c.at = s, true, time.Now()
-		}
-	}
 	return c.info, c.ok
 }

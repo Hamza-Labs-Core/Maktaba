@@ -50,6 +50,9 @@ type Manager struct {
 	// erring: since when the subscription's error count keeps rising (zero: it does not)
 	erring   time.Time
 	lastErrs int64
+	// reporting: a report to the home is under way; pending: the status to report next
+	reporting bool
+	pending   *Status
 }
 
 func (m *Manager) now() time.Time {
@@ -129,8 +132,33 @@ func (m *Manager) set(ctx context.Context, s Status) {
 		}
 	}
 	if s.State != StateRevoked {
-		_ = m.Copy.Report(ctx, s)
+		m.report(ctx, s)
 	}
+}
+
+// report tells the home a status in the background (the latest one, one at a time):
+// a home that does not answer never holds the copy up.
+func (m *Manager) report(ctx context.Context, s Status) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.reporting {
+		m.pending = &s
+		return
+	}
+	m.reporting = true
+	go func() {
+		for {
+			_ = m.Copy.Report(ctx, s)
+			m.mu.Lock()
+			if m.pending == nil || ctx.Err() != nil {
+				m.reporting, m.pending = false, nil
+				m.mu.Unlock()
+				return
+			}
+			s, m.pending = *m.pending, nil
+			m.mu.Unlock()
+		}
+	}()
 }
 
 // state is a status of a state and detail, with what the copy's marker says.

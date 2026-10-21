@@ -89,6 +89,15 @@ func TestOfflineAVideoThisMachineCannotReadIsUnavailable(t *testing.T) {
 	if rec := open("gone"); !unavailable(rec) || homeCalls != 1 {
 		t.Fatalf("the home proxy's home_unreachable: %d %s, want 503 unavailable offline", rec.Code, rec.Body.String())
 	}
+	// a home switched off: the proxy's wait for it ran out (#157)
+	homeAnswer = func(w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusGatewayTimeout)
+		_, _ = w.Write([]byte(`{"code":"home_timeout","status":504}`))
+	}
+	if rec := open("gone"); !unavailable(rec) || homeCalls != 2 {
+		t.Fatalf("the home proxy's home_timeout: %d %s, want 503 unavailable offline", rec.Code, rec.Body.String())
+	}
 }
 
 // deadConnector is a database that does not answer: every connection is refused.

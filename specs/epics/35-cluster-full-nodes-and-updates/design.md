@@ -852,7 +852,7 @@ or when `catch_up = window`). A node paused by the schema guard is caught up imm
 | Node offline during rollout | `offline` target; catch-up on reconnect. |
 | Node fails | Rolls back, drained, reported; policy decides the rest. |
 | Node loses the home mid-apply | Its own journal: finish the restart and checks it can; schema guard and agent check need the home → after `node_health_timeout` it rolls back. |
-| Home unreachable for a node's API | Fails closed for authenticated routes after 30 s; paused page. |
+| Home unreachable for a node's API | Past the grace (30 s) the node runs read-only on its own copy of the home's database (Epic 37): sign-ins, reads, playback and TV go on, a sign-out is made here and handed to the home later, changes get 503 `home_unreachable`; with no current copy only its own routes answer. |
 | Supervisor handover fails (Windows job) | Degrades to an ordered restart in the window (TV interruption only if allowed by viewers ≤ max). |
 | Launcher crash-loops (corrupt launcher) | The service manager restarts it; the launcher is replaced only after a run committed, its previous file kept as `.old` until the next good start; the runbook covers restoring it by hand. |
 | Two runs at once | The supervisor's lock (`updates/lock`, flock / `LockFileEx`) and `update_runs` partial unique index on active states. |

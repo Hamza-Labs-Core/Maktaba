@@ -55,7 +55,9 @@ Design: [design.md](design.md) §10; README R2, decision "Sessions across machin
 - **TC1** `TestDelegationSignatureVectors` (Go home and node share `shared/testdata/cluster/delegation_vectors.json`).
 - **TC2** `TestDelegationRejectsSkewReplayRevoked`.
 - **TC3** `TestIntrospectCacheTTLAndNegativeCache`, `TestRevokedEvictsWithinOneSecond` (fake hub).
-- **TC4** `TestFailClosedAfterGrace`.
+- **TC4** The home away past the grace (Epic 37, `nodeauth/offline_test.go`): `TestOutageServesFromTheCopy`,
+  `TestOutageWithoutACopy`, `TestACopyBehindTheHomeDoesNotAnswer`, `TestSignOutOfAHomeSessionInAnOutage`,
+  `TestARevocationIsNotUndoneByAnAnswerInFlight`.
 - **TC5** `TestLoginThroughNodeSetsHostOnlyCookie`, `TestCSRFPerHost`.
 - **TC6** `TestSSOCodeSingleUseBoundToNodeAndPKCE`, `TestSSOReturnPathMustBeRelative`,
   `TestHomeSignOutRevokesChildren`.

@@ -236,7 +236,7 @@ func (f *Fallback) serveHome(w http.ResponseWriter, r *http.Request, body []byte
 	res := rec.Result()
 	defer res.Body.Close()
 	out, _ := io.ReadAll(res.Body)
-	if rewrite && res.StatusCode == http.StatusServiceUnavailable && homeUnreachable(out) {
+	if rewrite && homeDidNotAnswer(res.StatusCode, out) {
 		WriteUnavailableOffline(w)
 		return
 	}
@@ -329,12 +329,18 @@ func WriteUnavailableOffline(w http.ResponseWriter) {
 		"detail": "this machine cannot open the video's file, and the home that could serve it does not answer"})
 }
 
-// homeUnreachable reports whether a problem body is the home proxy's home_unreachable.
-func homeUnreachable(body []byte) bool {
+// homeDidNotAnswer reports whether the home proxy's answer says the home did not
+// answer: 503 home_unreachable (refused, or past the grace), or 504 home_timeout (a
+// home switched off leaves what is sent to it hanging).
+func homeDidNotAnswer(status int, body []byte) bool {
 	var p struct {
 		Code string `json:"code"`
 	}
-	return json.Unmarshal(body, &p) == nil && p.Code == "home_unreachable"
+	if json.Unmarshal(body, &p) != nil {
+		return false
+	}
+	return (status == http.StatusServiceUnavailable && p.Code == "home_unreachable") ||
+		(status == http.StatusGatewayTimeout && p.Code == "home_timeout")
 }
 
 // PrefixMap is the streaming role's MAKTABA_STREAM_PATH_MAP ("from=>to;from2=>to2",

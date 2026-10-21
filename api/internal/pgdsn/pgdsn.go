@@ -82,21 +82,29 @@ func Open(dsn string) (*sql.DB, error) {
 // Connector is Open's connector, for a caller that builds its own pool on it (a full
 // node's pair of databases, cluster/nodedb).
 func Connector(dsn string) (driver.Connector, error) {
+	return connector(dsn, false)
+}
+
+func connector(dsn string, bounded bool) (driver.Connector, error) {
+	open := func(dsn string) (driver.Connector, error) { return pq.NewConnector(dsn) }
+	if bounded {
+		open = boundedPQ
+	}
 	switch SSLMode(dsn) {
 	case "allow":
 		dsn = withSSLMode(dsn, "disable")
 	case "prefer":
-		secure, err := pq.NewConnector(withSSLMode(dsn, "require"))
+		secure, err := open(withSSLMode(dsn, "require"))
 		if err != nil {
 			return nil, err
 		}
-		plain, err := pq.NewConnector(withSSLMode(dsn, "disable"))
+		plain, err := open(withSSLMode(dsn, "disable"))
 		if err != nil {
 			return nil, err
 		}
 		return &preferConnector{secure: secure, plain: plain, key: dsn}, nil
 	}
-	return pq.NewConnector(dsn)
+	return open(dsn)
 }
 
 // preferConnector is sslmode=prefer for lib/pq: SSL first, plain when the server

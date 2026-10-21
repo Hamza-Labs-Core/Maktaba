@@ -26,8 +26,20 @@ import (
 )
 
 // HeaderTimeout bounds the wait for the home's answer headers on JSON calls (EC2);
-// sockets and event streams have none.
-const HeaderTimeout = 30 * time.Second
+// sockets and event streams have none. FailingTimeout is the bound while the home is
+// not answering its probes (Options.Failing): it is not waited on for long then.
+const (
+	HeaderTimeout  = 30 * time.Second
+	FailingTimeout = 5 * time.Second
+)
+
+// Options are a proxy's: Fallback answers what the home did not (true: answered);
+// Failing reports that the home is not answering its probes (its calls are bounded by
+// FailingTimeout then).
+type Options struct {
+	Fallback func(http.ResponseWriter, *http.Request) bool
+	Failing  func() bool
+}
 
 // SessionCookie is the session cookie name.
 const SessionCookie = "mkt_sess"
@@ -41,6 +53,12 @@ func New(link homelink.Link, logger *slog.Logger) http.Handler {
 // it answers the ones it can on the node (true) — a node's /api/auth/me from the home's
 // last answer — and the rest get the 503 home_unreachable.
 func NewWithFallback(link homelink.Link, logger *slog.Logger, fallback func(http.ResponseWriter, *http.Request) bool) http.Handler {
+	return NewWith(link, logger, Options{Fallback: fallback})
+}
+
+// NewWith is New with Options.
+func NewWith(link homelink.Link, logger *slog.Logger, o Options) http.Handler {
+	fallback := o.Fallback
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -69,7 +87,7 @@ func NewWithFallback(link homelink.Link, logger *slog.Logger, fallback func(http
 				pr.Out.Header.Set(delegation.HeaderDelegatedSession, c.Value)
 			}
 		},
-		Transport:     timeoutTransport{base: link.Transport()},
+		Transport:     timeoutTransport{base: link.Transport(), failing: o.Failing},
 		FlushInterval: -1,
 		ModifyResponse: func(resp *http.Response) error {
 			StripCookieDomain(resp.Header)
@@ -100,15 +118,23 @@ func NewWithFallback(link homelink.Link, logger *slog.Logger, fallback func(http
 var errHeaderTimeout = errors.New("homeproxy: the home did not answer in time")
 
 // timeoutTransport cancels a JSON call whose answer headers take longer than
-// HeaderTimeout; an upgrade or an event stream is never cut.
-type timeoutTransport struct{ base http.RoundTripper }
+// HeaderTimeout (FailingTimeout while the home is not answering its probes); an
+// upgrade or an event stream is never cut.
+type timeoutTransport struct {
+	base    http.RoundTripper
+	failing func() bool
+}
 
 func (t timeoutTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	if r.Header.Get("Upgrade") != "" || strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
 		return t.base.RoundTrip(r)
 	}
+	wait := HeaderTimeout
+	if t.failing != nil && t.failing() {
+		wait = FailingTimeout
+	}
 	ctx, cancel := context.WithCancelCause(r.Context())
-	timer := time.AfterFunc(HeaderTimeout, func() { cancel(errHeaderTimeout) })
+	timer := time.AfterFunc(wait, func() { cancel(errHeaderTimeout) })
 	resp, err := t.base.RoundTrip(r.WithContext(ctx))
 	timer.Stop()
 	if err != nil {

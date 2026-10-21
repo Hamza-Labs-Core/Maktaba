@@ -67,8 +67,9 @@ type nodeDBs struct {
 
 // openNodeDBs opens them from the home's DSN (the node role's) and the copy's ("": none).
 func openNodeDBs(homeDSN, copyDSN string, logger *slog.Logger) (nodeDBs, error) {
-	// the node's dsn says sslmode=prefer, which lib/pq does not take: pgdsn settles it
-	homeConn, err := pgdsn.Connector(homeDSN)
+	// the node's dsn says sslmode=prefer, which lib/pq does not take: pgdsn settles it;
+	// bounded: a home switched off leaves a statement hanging, cut when its request ends
+	homeConn, err := pgdsn.BoundedConnector(homeDSN)
 	if err != nil {
 		return nodeDBs{}, fmt.Errorf("node mode: the home's database: %w", err)
 	}
@@ -282,8 +283,10 @@ func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *sl
 			rt.guard.Nudge()
 		}
 	})
-	// a session probe or a sign-in the home does not answer is answered here, from the copy
-	rt.proxy = homeproxy.NewWithFallback(rt.link, logger, rt.resolver.Fallback)
+	// a session probe or a sign-in the home does not answer is answered here, from the
+	// copy; a home not answering its probes is not waited on for long
+	rt.proxy = homeproxy.NewWith(rt.link, logger, homeproxy.Options{Fallback: rt.resolver.Fallback,
+		Failing: func() bool { return rt.resolver.DownFor(0) }})
 
 	if cfg.AgentURL != "" && cfg.AgentTokenFile != "" {
 		rt.feed = &homelink.AgentFeed{URL: cfg.AgentURL, TokenFile: cfg.AgentTokenFile, Link: rt.link, Logger: logger}
@@ -494,7 +497,7 @@ func (rt *nodeRuntime) copyReads(next http.Handler) http.Handler {
 		key := nodeauth.CredentialKey(r)
 		switch r.Method {
 		case http.MethodGet, http.MethodHead:
-			if !rt.recent.Changed(key) && rt.copyFresh(r.Context()) {
+			if !rt.recent.Changed(key) && rt.copyMayRead(r.Context()) {
 				r = r.WithContext(nodedb.CopyReads(r.Context()))
 			}
 		case http.MethodOptions:
@@ -503,6 +506,16 @@ func (rt *nodeRuntime) copyReads(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// copyMayRead reports whether a read may go to the copy: while the home answers, only
+// as long as the copy is current (copyFresh); while it does not (its API, or its
+// database), always: the copy falls behind in an outage, and the home cannot be read.
+func (rt *nodeRuntime) copyMayRead(ctx context.Context) bool {
+	if (rt.resolver != nil && rt.resolver.DownFor(0)) || (rt.dbs.pair != nil && rt.dbs.pair.Home.Down()) {
+		return true
+	}
+	return rt.copyFresh(ctx)
 }
 
 // copyFreshness is the last verdict on the copy's lag (read at most every
@@ -535,14 +548,14 @@ func (rt *nodeRuntime) copyFresh(ctx context.Context) bool {
 	lctx, cancel := context.WithTimeout(ctx, time.Second)
 	synced, err := rt.resolver.Local.Synced(lctx)
 	cancel()
-	max := time.Duration(rt.rules().CopyReadsMaxLagSeconds) * time.Second
+	limit := time.Duration(rt.rules().CopyReadsMaxLagSeconds) * time.Second
 	f.lag = time.Since(synced)
-	f.fresh = err == nil && !synced.IsZero() && f.lag <= max
+	f.fresh = err == nil && !synced.IsZero() && f.lag <= limit
 	switch {
 	case !f.fresh && !f.said:
 		f.said = true
 		rt.logger.Warn("node: this machine's copy is behind the home; reads go to the home's database meanwhile",
-			"lag", f.lag.Round(time.Second).String(), "max", max.String(), "err", err, "event", "node_copy_reads_off")
+			"lag", f.lag.Round(time.Second).String(), "max", limit.String(), "err", err, "event", "node_copy_reads_off")
 	case f.fresh && f.said:
 		f.said = false
 		rt.logger.Info("node: this machine's copy has caught up; reads go to it again", "event", "node_copy_reads_on")

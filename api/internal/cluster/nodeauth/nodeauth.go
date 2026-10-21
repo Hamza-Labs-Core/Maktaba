@@ -723,9 +723,13 @@ func (r *Resolver) Home(proxy http.Handler) http.Handler {
 			return
 		}
 		if !r.Unreachable() {
-			// a sign-in or a sign-out the home turns out not to answer (inside the
-			// grace) is answered here from the proxy's fallback (Fallback): a sign-in's
-			// body is kept for that
+			// the home not answering its probes (inside the grace): what this machine
+			// can answer itself is answered here at once, rather than waiting on it
+			if r.DownFor(0) && (r.Me(w, req) || r.SignIn(w, req) || r.SignOutHere(w, req)) {
+				return
+			}
+			// a sign-in or a sign-out the home turns out not to answer is answered here
+			// from the proxy's fallback (Fallback): a sign-in's body is kept for that
 			proxy.ServeHTTP(w, keepSignIn(req))
 			return
 		}

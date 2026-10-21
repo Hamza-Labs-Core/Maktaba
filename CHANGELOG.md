@@ -14,22 +14,30 @@ don't append a line here; docs-only PRs are exempt.
 
 - **Every full machine keeps a live copy of its home's database, and runs on it while the
   home is away** (Epic 37, `specs/epics/37-node-replica`). Nothing to set up: a machine that
-  joins, or one joined before (at its first start on this version), copies the home's
-  database and follows it (a Postgres hot standby on its own loopback port, over streaming
-  replication with TLS that checks the home's certificate); the home makes the machine's
-  replication role and slot itself, and drops the slot of a machine that falls too far behind
-  (`rules.cluster.replica_wal_keep_gb`, default 20 GB; it copies anew when it is back). The
-  machine reads the library from its copy. With the home away it keeps working from that copy:
-  pages read, the videos it can read play, its own TV channels play, a reload keeps people
-  signed in, and **signing in works** (checked on the copy, valid on that machine only;
-  `offline_session_hours`, default 12, ending `offline_session_grace_minutes`, default 30,
-  after the home is back, when a change asks for a sign-in with the home). Changes wait for the
-  home. A copy that had stopped following long before the outage does not answer sign-ins
-  (`offline_copy_max_lag_minutes`, default 10). The copy's state — copying, following, how far
-  behind, copying anew, incompatible — shows on each machine's card on the Machines page and in
-  the machine's own outage notice. Revoking a machine ends its replication and wipes its copy.
-  The node's pipeline stops claiming jobs while the home's database does not answer and resumes
-  on its own. Migration 0144.
+  joins, or one joined before (at its first start on this version), makes its own Postgres
+  (the home's major version: one it has, or the pinned PostgreSQL 16.15 build, fetched and
+  checked once), migrates it and subscribes it, by logical replication over TLS that checks the
+  home's certificate, to the publication the home keeps for it: every table but the secrets,
+  other machines' rows and each database's own state. The home makes the machine's replication
+  role, publication and slot itself and drops the slot of a machine that falls too far behind
+  (`rules.cluster.replica_wal_keep_gb`, default 20 GB); the machine subscribes anew on its own
+  then, and when the home's database is another one, its own Maktaba was updated, or the
+  home's changes keep failing to apply, and it waits while the home's schema is ahead of its
+  own. Every bundled Postgres runs with `wal_level=logical`. The machine reads the library from
+  its copy while the copy is within `copy_reads_max_lag_seconds` (default 30) of the home. With
+  the home away (refusing, or switched off and leaving connections hanging) it keeps working
+  from that copy: pages read, the videos it can read play, its own TV channels play, a reload
+  keeps people signed in, **signing in works** (checked on the copy, valid on that machine only;
+  `offline_session_hours`, default 12, ending `offline_session_grace_minutes`, default 30, after
+  the home is back), and **signing out works** (the session ends there at once; the home is told
+  when it answers). Changes are refused until the home is back. A copy that had stopped
+  following long before the outage does not answer (`offline_copy_max_lag_minutes`, default
+  10). The copy's state shows on each machine's card on the Machines page and in the machine's
+  own outage notice. Revoking a machine ends its subscription and wipes its copy. The node's
+  pipeline stops claiming jobs while the home's database does not answer, stops the jobs in
+  flight before their claim lease lapses (from the last beat the home answered), and resumes on
+  its own; a job the home handed to another machine meanwhile is never ended by the first.
+  Migration 0144.
 
 ### Changed
 

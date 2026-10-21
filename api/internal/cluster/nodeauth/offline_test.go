@@ -55,6 +55,7 @@ type fakeHome struct {
 	srv      *httptest.Server
 	signOuts []delegation.SignOutRequest // what the node handed over
 	jwks     []byte                      // nil: no keys
+	hang     bool                        // down as a machine switched off: nothing answers
 	// asked, when set, holds an introspection until it is closed
 	asked chan struct{}
 }
@@ -115,7 +116,14 @@ func (f *fakeHome) SignOut(_ context.Context, req delegation.SignOutRequest) (*d
 	return &delegation.SignOutAnswer{Revoked: len(req.SessionSHA256)}, nil
 }
 
-func (f *fakeHome) serveAPI(w http.ResponseWriter, _ *http.Request) {
+func (f *fakeHome) serveAPI(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	hang := f.hang
+	f.mu.Unlock()
+	if hang {
+		<-r.Context().Done() // never answered
+		return
+	}
 	if f.isDown() {
 		if c, _, err := w.(http.Hijacker).Hijack(); err == nil {
 			_ = c.Close() // the request dies on the wire: the proxy's error path
@@ -870,5 +878,33 @@ func TestDownForIsNotOneUnansweredProbe(t *testing.T) {
 	g.r.answered()
 	if g.r.DownFor(0) {
 		t.Fatal("down once the home answered")
+	}
+}
+
+// #157: a home switched off leaves what is sent to it hanging: inside the grace, once it
+// stopped answering its probes, the session probe, a sign-in and a sign-out are
+// answered here at once, not after waiting on it.
+func TestAHangingHomeIsNotWaitedOnForWhatThisMachineAnswers(t *testing.T) {
+	g := newOfflineRig(t, true)
+	g.goDown(PositiveTTL + time.Second)
+	g.home.mu.Lock()
+	g.home.hang = true
+	g.home.mu.Unlock()
+	g.r.unanswered() // a probe the home did not answer
+	if g.r.Unreachable() {
+		t.Fatal("past the grace already")
+	}
+	start := time.Now()
+	if a := g.do(http.MethodGet, MePath, "s1"); a.code != http.StatusOK || !a.marked {
+		t.Fatalf("/api/auth/me with the home hanging: %+v", a)
+	}
+	if a, id := g.signIn(t, "amal", "pw-amal"); a.code != http.StatusOK || !strings.HasPrefix(id, LocalSessionPrefix) {
+		t.Fatalf("a sign-in with the home hanging: %+v", a)
+	}
+	if a := g.do(http.MethodPost, LogoutPath, "s1"); a.code != http.StatusNoContent {
+		t.Fatalf("a sign-out with the home hanging: %+v", a)
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("waited %s on a home that does not answer", d)
 	}
 }
