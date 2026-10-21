@@ -132,8 +132,31 @@ jobs:
           node design-system/build/build-tokens.mjs
           pnpm build
 
+      - uses: actions/setup-go@v6.4.0
+        if: matrix.payload
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: |
+            api/go.sum
+            streaming/go.sum
+            cmd/maktaba-server/go.sum
+            cmd/maktaba-launcher/go.sum
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        if: matrix.payload
+        with:
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+
+      - uses: actions/cache@v4
+        if: matrix.payload
+        with:
+          path: build/mac-app/downloads
+          key: mac-app-downloads-${{ hashFiles('tools/release/mac-app/pins.env') }}
+
       # The Developer ID certificate in a throwaway keychain; its identity is
-      # what payload.sh and tauri sign with.
+      # what payload.sh and tauri sign with. Imported after the
+      # third-party setup actions, so none of them runs with it unlocked.
       - name: Import the Developer ID certificate
         if: env.APPLE_SIGN == 'true'
         env:
@@ -159,28 +182,6 @@ jobs:
           fi
           [ -n "$IDENTITY" ] || { echo "::error::no Developer ID Application identity in APPLE_CERTIFICATE"; exit 1; }
           echo "APPLE_SIGNING_IDENTITY=$IDENTITY" >>"$GITHUB_ENV"
-
-      - uses: actions/setup-go@v6.4.0
-        if: matrix.payload
-        with:
-          go-version-file: api/go.mod
-          cache-dependency-path: |
-            api/go.sum
-            streaming/go.sum
-            cmd/maktaba-server/go.sum
-            cmd/maktaba-launcher/go.sum
-
-      - uses: astral-sh/setup-uv@v8.1.0
-        if: matrix.payload
-        with:
-          enable-cache: true
-          cache-dependency-glob: pipeline/uv.lock
-
-      - uses: actions/cache@v4
-        if: matrix.payload
-        with:
-          path: build/mac-app/downloads
-          key: mac-app-downloads-${{ hashFiles('tools/release/mac-app/pins.env') }}
 
       # The server payload (signed when the identity is there) and the tauri
       # overlay that bundles it, then a smoke test of the payload alone.
@@ -245,7 +246,9 @@ jobs:
         run: |
           set -euo pipefail
           app=apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Maktaba.app
-          if [ "$APPLE_SIGN" = true ]; then
+          if [ "$APPLE_NOTARIZE" = true ]; then
+            tools/release/mac-app/check.sh --app "$app" --notarized
+          elif [ "$APPLE_SIGN" = true ]; then
             tools/release/mac-app/check.sh --app "$app" --signed
           else
             tools/release/mac-app/check.sh --app "$app"

@@ -144,12 +144,13 @@ mv "$py" "$OUT/python"
 
 # --- the pipeline: the same wheel and constraints a node release ships ---------------------------
 log "pipeline wheel"
-# a tag is PEP 440 after the "v"; a local build is a dev version
-case "$VERSION" in
-    v[0-9]*.[0-9]*.[0-9]*-*-g*|*-dirty|*[!0-9A-Za-z.+-]*) pyver="0.0.0.dev0" ;;
-    v[0-9]*.[0-9]*.[0-9]*)                               pyver="$VERSION" ;;
-    *)                                                   pyver="0.0.0.dev0" ;;
-esac
+# a release tag (v1.2.3, v1.2.3-rc.1) is PEP 440 after the "v"; anything else (a CI run, a
+# local `git describe`) is a dev version
+if [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(rc|alpha|beta|a|b)\.?[0-9]+)?$ ]]; then
+    pyver="$VERSION"
+else
+    pyver="0.0.0.dev0"
+fi
 "$REPO_ROOT/deploy/packaging/node/build-release.sh" --version "$pyver" --out "$WORK/node" >/dev/null
 whl=("$WORK"/node/maktaba_pipeline-*-py3-none-any.whl)
 cons=("$WORK"/node/maktaba-pipeline-*-constraints.txt)

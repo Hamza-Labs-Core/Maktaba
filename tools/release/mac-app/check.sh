@@ -7,11 +7,12 @@
 #   the bundled Python builds a venv offline, and running it writes nothing into the
 #   payload (a new file would break the app's signature seal).
 #
-# Usage: check.sh [--payload DIR] [--app Maktaba.app] [--signed]
+# Usage: check.sh [--payload DIR] [--app Maktaba.app] [--signed] [--notarized]
 #   --payload  the payload (default: build/mac-app/server)
 #   --app      also check the bundle: Resources/server, the LaunchAgent (when the app shell
 #              provides one), the minimum macOS, and the launcher's app-bundle mode
-#   --signed   also require valid Developer ID signatures (codesign --verify --strict)
+#   --signed     also require valid signatures (codesign --verify --deep --strict)
+#   --notarized  also require Gatekeeper to accept the app (spctl; needs notarization)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,11 +21,13 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 PAYLOAD="$REPO_ROOT/build/mac-app/server"
 APP=""
 SIGNED=0
+NOTARIZED=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --payload) [ $# -ge 2 ] || { echo "--payload needs a value" >&2; exit 2; }; PAYLOAD="$2"; shift 2 ;;
         --app)     [ $# -ge 2 ] || { echo "--app needs a value" >&2; exit 2; }; APP="$2"; shift 2 ;;
         --signed)  SIGNED=1; shift ;;
+        --notarized) SIGNED=1; NOTARIZED=1; shift ;;
         -h|--help) sed -n '2,/^set -e/p' "$0" | sed -e '$d' -e 's/^# \{0,1\}//'; exit 0 ;;
         *)         echo "unknown option '$1'" >&2; exit 2 ;;
     esac
@@ -111,7 +114,7 @@ run "payload.json" "$PAYLOAD/python/bin/python3" -I -c \
     'import json,sys; d=json.load(open(sys.argv[1])); print("version", d["version"])' "$PAYLOAD/payload.json"
 
 echo "payload untouched by the checks"
-written="$(find "$PAYLOAD" -newer "$SCRATCH/before" | head -5)"
+written="$(find "$PAYLOAD" -newer "$SCRATCH/before" | sed -n '1,5p')"
 if [ -z "$written" ]; then ok "nothing written into the payload"; else fail "the checks wrote into the payload: $written"; fi
 
 if [ -n "$APP" ]; then
@@ -135,6 +138,8 @@ if [ -n "$APP" ]; then
     fi
     if [ "$SIGNED" -eq 1 ]; then
         run "codesign --verify --deep --strict" codesign --verify --deep --strict "$APP"
+    fi
+    if [ "$NOTARIZED" -eq 1 ]; then
         run "Gatekeeper (spctl)" spctl --assess --type execute "$APP"
     fi
 fi
