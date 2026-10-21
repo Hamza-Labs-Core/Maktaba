@@ -34,6 +34,23 @@ don't append a line here; docs-only PRs are exempt.
   the database (SQLite, which `finish` now creates, or a Postgres url). Its separate wizard is gone,
   with its admin token, which nothing ever accepted; `--migrate` is accepted and ignored (setup
   always prepares the database).
+- **The desktop app's server takes care of an update at its next start** (Epic 38, story 38.12;
+  the Mac, Windows and Linux alike). Before any role runs, the server reads the record of the
+  release whose migrations the database holds (`state/database.json`) and refuses an older
+  release; with another one (or no record yet) it dumps the database
+  (`backups/pre-<old>-to-<new>.dump`, the newest `[postgres] update_dumps` kept, default 3),
+  records the update, runs the migrations once for every role and records them done. When they
+  fail it puts the dump back and keeps every role stopped, saying what happened and what to
+  install. The pipeline's workers then wait for the venv bootstrap (not when `MAKTABA_PYTHON` or
+  `[pipeline] python` names their Python), run with an environment of its own and stopped
+  gently (SIGTERM, CTRL_BREAK on Windows) so a stop never leaves pip behind. A Postgres of
+  another major than the database's is refused. What a process waits on shows as its `detail`
+  in `/processes`.
+  Each such detail also has a `detail_code` from a fixed list and its `detail_params`, for the
+  app's screens to say it in their own language.
+- **The API refuses a database a newer Maktaba migrated**, on every install: `maktaba-api
+  migrate up` exits 3 instead of finding nothing to apply, and `serve` does not start on it.
+  `migrate --timeout 0` runs with no time limit.
 - **Transcription on Windows and Linux (story 38.8).** The transcribe stage runs Whisper on
   CTranslate2 there (faster-whisper's `dropbox-dash/faster-whisper-large-v3-turbo`), batched
   across files as the Mac's MLX engine does: on an NVIDIA GPU when CUDA works (cuBLAS 12 comes
@@ -62,23 +79,6 @@ don't append a line here; docs-only PRs are exempt.
   The app's mode is kept per PC (`%LOCALAPPDATA%`), not in the roaming profile. Setup steps and
   `schtasks` start without a console window, and the installer's hooks get `--server-start`,
   `--server-stop` and `--server-remove`.
-- **The desktop app's server takes care of an update at its next start** (Epic 38, story 38.12;
-  the Mac, Windows and Linux alike). Before any role runs, the server reads the record of the
-  release whose migrations the database holds (`state/database.json`) and refuses an older
-  release; with another one (or no record yet) it dumps the database
-  (`backups/pre-<old>-to-<new>.dump`, the newest `[postgres] update_dumps` kept, default 3),
-  records the update, runs the migrations once for every role and records them done. When they
-  fail it puts the dump back and keeps every role stopped, saying what happened and what to
-  install. The pipeline's workers then wait for the venv bootstrap (not when `MAKTABA_PYTHON` or
-  `[pipeline] python` names their Python), run with an environment of its own and stopped
-  gently (SIGTERM, CTRL_BREAK on Windows) so a stop never leaves pip behind. A Postgres of
-  another major than the database's is refused. What a process waits on shows as its `detail`
-  in `/processes`.
-  Each such detail also has a `detail_code` from a fixed list and its `detail_params`, for the
-  app's screens to say it in their own language.
-- **The API refuses a database a newer Maktaba migrated**, on every install: `maktaba-api
-  migrate up` exits 3 instead of finding nothing to apply, and `serve` does not start on it.
-  `migrate --timeout 0` runs with no time limit.
 - **Postgres programs for every platform, and Postgres on Windows.** Maktaba can fetch the pinned
   Postgres 16.15 build of the machine's platform (theseus-rs; size and SHA-256 pinned, unpacked
   with path checks), and the supervisor runs Postgres on Windows (its `.exe` programs, a fast

@@ -44,3 +44,35 @@ func TestOpenLogIsTheUsersOnly(t *testing.T) {
 	}
 	_ = f.Close()
 }
+
+// A log at a path: the file is the user's only; a folder it makes is too, and
+// a folder that was there keeps its mode (it may be anybody's).
+func TestOpenLogFileLeavesAFolderItDidNotMake(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX modes")
+	}
+	shared := t.TempDir()
+	if err := os.Chmod(shared, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f, err := OpenLogFile(filepath.Join(shared, "ollama.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+	if fi, _ := os.Stat(shared); fi == nil || fi.Mode().Perm() != 0o755 {
+		t.Errorf("an existing folder's mode changed: %v", fi)
+	}
+	if fi, _ := os.Stat(filepath.Join(shared, "ollama.log")); fi == nil || fi.Mode().Perm() != 0o600 {
+		t.Errorf("log mode %v", fi)
+	}
+	made := filepath.Join(shared, "new", "logs")
+	f, err = OpenLogFile(filepath.Join(made, "ollama.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+	if fi, _ := os.Stat(made); fi == nil || fi.Mode().Perm() != 0o700 {
+		t.Errorf("a folder it made: %v", fi)
+	}
+}

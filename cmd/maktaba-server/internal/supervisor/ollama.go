@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
@@ -31,13 +30,10 @@ func BuildOllama(s llmserver.Server) (Process, error) {
 	cmd.Env = append(os.Environ(), s.Env()...)
 	wire(cmd)
 	if s.Logs != "" {
-		if err := os.MkdirAll(filepath.Dir(s.Logs), 0o755); err != nil {
-			return Process{}, err
-		}
 		if info, err := os.Stat(s.Logs); err == nil && info.Size() > ollamaLogMax {
 			_ = os.Rename(s.Logs, s.Logs+".1")
 		}
-		f, err := os.OpenFile(s.Logs, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		f, err := config.OpenLogFile(s.Logs) // the user's only, as every log
 		if err != nil {
 			return Process{}, err
 		}

@@ -17,7 +17,16 @@ func openLogIn(dir, name string) (*os.File, error) {
 		return nil, err
 	}
 	_ = os.Chmod(dir, 0o700)
-	f, err := os.OpenFile(filepath.Join(dir, name), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	return OpenLogFile(filepath.Join(dir, name))
+}
+
+// OpenLogFile appends to the log at path, the user's only (0600): a folder it
+// makes is 0700; one that is there is left as it is (it may not be Maktaba's).
+func OpenLogFile(path string) (*os.File, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, err
 	}
