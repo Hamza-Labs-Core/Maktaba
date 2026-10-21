@@ -536,6 +536,14 @@ mac-app-payload:  ## Build only the Maktaba.app server payload (build/mac-app/se
 	@bash tools/release/mac-app/payload.sh
 	@bash tools/release/mac-app/check.sh
 
+# The Linux server payload (Epic 39, story 39.2): the same tree for this machine's
+# architecture (x86_64 or aarch64), with Postgres's libraries from this machine. Pinned
+# downloads are in tools/release/linux-app/pins.env.
+.PHONY: linux-app-payload
+linux-app-payload:  ## Build the Linux server payload (build/linux-app/server) for this machine's architecture and smoke-test it. Needs Go, uv, pnpm, patchelf.
+	@bash tools/release/linux-app/payload.sh
+	@bash tools/release/linux-app/check.sh
+
 .PHONY: package-mobile-android
 package-mobile-android: native-sync  ## Build the Android release APK + AAB (web build + cap sync + gradle). Needs Android SDK + JDK17.
 	@echo "==> assembling Android release APK + AAB"
