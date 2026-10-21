@@ -265,6 +265,13 @@ func TestCompareVersions(t *testing.T) {
 		{"1.5", "1.5.0", 0},
 		{"1.5.0+build.7", "1.5.0", 0},
 		{"2.0.0", "10.0.0", -1},
+		// a git describe build: after the tag it was built from, before the next
+		{"v0.2.0-12-gabc1234", "v0.2.0", 1},
+		{"v0.2.0-12-gabc1234", "v0.2.1", -1},
+		{"v0.2.0-12-gabc1234", "v0.2.0-3-gdef5678", 1},
+		{"v0.2.0-3-gdef5678-dirty", "v0.2.0-3-gdef5678", 0},
+		{"v1.0.0-rc.1-3-g1a2b3c4d", "v1.0.0-rc.1", 1},
+		{"v1.0.0-rc.1-3-g1a2b3c4d", "v1.0.0", -1},
 	}
 	for _, c := range cases {
 		if got := CompareVersions(c.a, c.b); got != c.want {

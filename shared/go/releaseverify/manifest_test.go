@@ -96,6 +96,10 @@ func TestCompareVersions(t *testing.T) {
 		{"dev", "0.0.1", -1},
 		{"1.5", "1.5.0", 0},
 		{"1.5.0+build", "1.5.0", 0},
+		// a machine running a git describe build is not behind its tag
+		{"v0.2.0-12-gabc1234", "v0.2.0", 1},
+		{"v0.2.0-12-gabc1234", "v0.2.1", -1},
+		{"v1.0.0-rc.1-3-g1a2b3c4d", "v1.0.0-rc.1", 1},
 	}
 	for _, c := range cases {
 		if got := rv.CompareVersions(c.a, c.b); got != c.want {

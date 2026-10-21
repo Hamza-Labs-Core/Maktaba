@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
 // Release file names (design §3.1).
@@ -258,8 +260,19 @@ func CheckConstraints(name string, b []byte) error {
 // CompareVersions compares release versions ("1.5.0", "v1.5.0", "1.5.0-rc.1"):
 // numeric core first, then a prerelease ranks below its release; prereleases of
 // the same core compare by their dot-separated identifiers (numeric ones
-// numerically). Unparseable cores compare as empty, below every release.
+// numerically). Unparseable cores compare as empty, below every release. A
+// `git describe` build (layout.SplitDescribe) ranks after the tag it was built
+// from: a machine running one is not behind that release.
 func CompareVersions(a, b string) int {
+	ta, na := layout.SplitDescribe(a)
+	tb, nb := layout.SplitDescribe(b)
+	if c := compareReleases(ta, tb); c != 0 {
+		return c
+	}
+	return cmpInt(na, nb)
+}
+
+func compareReleases(a, b string) int {
 	ac, ap := splitVersion(a)
 	bc, bp := splitVersion(b)
 	for i := 0; i < len(ac) || i < len(bc); i++ {
