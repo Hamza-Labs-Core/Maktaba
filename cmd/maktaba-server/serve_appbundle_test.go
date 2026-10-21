@@ -227,6 +227,7 @@ func TestAppBundleVenvOnceForEveryWorker(t *testing.T) {
 
 // The payload is saved as the one that ran once every process ran healthy.
 func TestConfirmAppPayloadAfterAHealthyRun(t *testing.T) {
+	spawnsPrograms(t) // a real child under the supervisor
 	t.Setenv("MAKTABA_CONFIRM_AFTER", "1ms")
 	t.Setenv("MAKTABA_TEST_FAKE", "1")
 	cfg, payload := appEnv(t, "v0.3.0", "v0.2.0")
