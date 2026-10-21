@@ -90,8 +90,8 @@ don't append a line here; docs-only PRs are exempt.
   the second listen was on, so a PC without an NVIDIA GPU, with one too small or too old, or with
   a driver before R580 was made to create a token and accept a gated model's licence for a model
   that never runs there. `check` now says whether this machine can run it (and why not, in the
-  app's words), the screens leave out the models step where it cannot, the models step no longer
-  asks for the token there, and the download takes only Whisper and the search model. The
+  app's words), the models step no longer asks for the token there (the NAS copy can still be
+  chosen, any model the home published), and the download takes only Whisper and the search model. The
   graphics card's compute capability and driver version come with its name and memory.
 - **The terminal setup's Plex sign-in can be skipped, and survives a moment without plex.tv.**
   Ctrl+C while it waits for the code skipped nothing: it stopped the whole setup before `finish`,
@@ -110,15 +110,6 @@ don't append a line here; docs-only PRs are exempt.
   38.2). It holds a handle to the server until it is reaped and asks it to stop only while it
   still runs: a CTRL_BREAK naming a pid that leads no process group (a server that exited as the
   launcher was stopping, its pid reused) goes astray and can end the launcher itself.
-- **`maktaba-server setup` (the CLI wizard) seeds the admin again.** It called `adduser` with
-  `--username`/`--password` flags the api does not have; it now passes the username and a
-  password file.
-- **After the app's setup the server runs on the bundled Postgres, with its transcription
-  workers.** Saving `server.toml` wrote every default, so setup's `finish` left `[database] url`
-  set to the default SQLite file: the next start never ran the bundled Postgres (the database setup
-  had made sat unused, and the pipeline could not open the SQLite one), and
-  `[pipeline] instances = 0` turned the workers off. A save now writes the url only when one was
-  chosen and the count only when it was set (`setup --node --instances 0` included).
 
 - **Release builds for desktop, Android and Android TV.** The desktop app ships a
   (placeholder) icon set (#152), which the macOS and Windows bundles failed on. The Linux build

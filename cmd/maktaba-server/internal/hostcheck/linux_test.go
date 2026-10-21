@@ -69,10 +69,11 @@ func TestLinuxCheckGlibc(t *testing.T) {
 }
 
 func TestLinuxCheckWithoutAUserManager(t *testing.T) {
-	// no systemd as PID 1 (a container, WSL)
-	l := Linux{Glibc: glibc("2.35"), Manager: manager(t, false, true), Unit: unit(t)}
-	if n := one(t, "no systemd", l.Check(context.Background()).Problems); n.Code != "user_manager_missing" ||
-		!strings.Contains(n.Message, "systemd user service") {
+	// no systemd as PID 1 (a container, WSL): no login would help, so no
+	// remedy about logging in
+	l := Linux{Glibc: glibc("2.35"), Manager: manager(t, false, true), Unit: unit(t), User: "media"}
+	if n := one(t, "no systemd", l.Check(context.Background()).Problems); n.Code != "systemd_missing" ||
+		!strings.Contains(n.Message, "starts with systemd") || strings.Contains(n.Message, "loginctl") {
 		t.Errorf("no systemd: %+v", n)
 	}
 	// no user manager for this user

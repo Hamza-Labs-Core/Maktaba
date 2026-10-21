@@ -94,8 +94,8 @@ too. Where it cannot, `{"runs": false, "code", "params"}` names why, and the sam
 the `warnings`: `second_listen_no_gpu`, `second_listen_gpu_small` (`gpu`, `have_bytes`,
 `need_bytes`), `second_listen_gpu_old` (`gpu`, `compute`), `second_listen_driver_old` (`gpu`,
 `driver`, `need`), `second_listen_intel_mac`. A value nvidia-smi does not report is not held against
-the GPU. The screens then leave out the models step (no Hugging Face sign-in for a model that would
-never run), and Whisper's words are kept. `runs` lines are `setup.check.run.<role>` (the pipeline by its `workers`: `pipeline`,
+the GPU. The models step then asks for no Hugging Face sign-in (for a model that would never run),
+though the NAS copy can still be chosen there, and Whisper's words are kept. `runs` lines are `setup.check.run.<role>` (the pipeline by its `workers`: `pipeline`,
 `pipelineOne`, `pipelineWorkers`, then `onGpu`). A platform adds its own findings through
 `platformChecks` (setup_steps.go; Linux's glibc, systemd user manager and linger come with Epic 39).
 
@@ -139,8 +139,8 @@ published copy is found (`<path>/<org>__<name>/<revision>/manifest.json`, `path`
 accept the model's terms on huggingface.co; `model`), `hf_token_empty`, `nas_path_empty`,
 `nas_missing` (`path`, `model`), `network`. With the second listen off
 (`[transcription] refine = "off"`), or on a machine that cannot run it (`check`'s `second_listen`), no
-token is needed and the gated model is not checked; the download then takes only Whisper and the
-search embedder (`--only whisper,embedder`).
+token is needed and the gated model is not checked (a NAS copy is any model the home published
+there); the download then takes only Whisper and the search embedder (`--only whisper,embedder`).
 
 The download itself needs the venv, so it is a second call, made by the install screen after the
 `venv` step: input `{"action": "download"}` runs the venv's `maktaba-pipeline models download

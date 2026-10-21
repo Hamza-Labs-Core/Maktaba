@@ -65,7 +65,8 @@ type stepRunner func(ctx context.Context, step string, input any, progress func(
 
 // execStepRunner runs `<server> setup --json --step <step>` with env added to
 // this process's: the input on stdin (secrets never in argv or the
-// environment), NDJSON on stdout.
+// environment), NDJSON on stdout. A run that ends without a result says the
+// last of its stderr (a panic, a library that would not load).
 func execStepRunner(server string, env ...string) stepRunner {
 	return func(ctx context.Context, step string, input any, progress func(stepEvent)) (json.RawMessage, error) {
 		in, err := json.Marshal(input)
@@ -75,7 +76,8 @@ func execStepRunner(server string, env ...string) stepRunner {
 		cmd := exec.CommandContext(ctx, server, "setup", "--json", "--step", step)
 		cmd.Env = append(os.Environ(), env...)
 		cmd.Stdin = strings.NewReader(string(in))
-		cmd.Stderr = io.Discard
+		stderr := &tailWriter{max: 2 << 10}
+		cmd.Stderr = stderr
 		out, err := cmd.StdoutPipe()
 		if err != nil {
 			return nil, err
@@ -89,10 +91,28 @@ func execStepRunner(server string, env ...string) stepRunner {
 		case fail != nil:
 			return nil, fail
 		case res == nil || werr != nil:
-			return nil, &stepFailure{Code: "no_result", Message: fmt.Sprintf("setup step %s gave no result (%v)", step, werr)}
+			msg := fmt.Sprintf("setup step %s gave no result (%v)", step, werr)
+			if tail := strings.TrimSpace(string(stderr.b)); tail != "" {
+				msg += ":\n" + tail
+			}
+			return nil, &stepFailure{Code: "no_result", Message: msg}
 		}
 		return res, nil
 	}
+}
+
+// tailWriter keeps the last max bytes written to it.
+type tailWriter struct {
+	max int
+	b   []byte
+}
+
+func (w *tailWriter) Write(p []byte) (int, error) {
+	w.b = append(w.b, p...)
+	if len(w.b) > w.max {
+		w.b = w.b[len(w.b)-w.max:]
+	}
+	return len(p), nil
 }
 
 // readStepEvents reads a step's NDJSON: progress lines to progress, then its
@@ -325,7 +345,7 @@ func (a *appSetup) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	ok, withModels := a.showCheck(res)
+	ok, signIn := a.showCheck(res)
 	if !ok {
 		return errors.New(a.t.get("terminal.blockedEnd"))
 	}
@@ -345,15 +365,19 @@ func (a *appSetup) Run(ctx context.Context) error {
 		return err
 	}
 
-	// the models question only where the second listen runs (SetupWizard.tsx):
-	// elsewhere its gated model is neither signed in to nor downloaded
-	if _, given := a.answers["models"]; withModels || given {
-		a.printf("\n%s\n", a.t.get("setup.models.title"))
-		a.say("setup.models.intro", "machine", a.t.get("setup.machine.linux"))
+	a.printf("\n%s\n", a.t.get("setup.models.title"))
+	a.say("setup.models.intro", "machine", a.t.get("setup.machine.linux"))
+	askModels := a.askModels
+	if signIn {
 		a.say("setup.models.hfNote")
-		if _, err := a.step(ctx, "models", a.askModels); err != nil {
-			return err
-		}
+	} else {
+		// no second listen here (SetupWizard.tsx): its gated model is neither
+		// signed in to nor downloaded, and the others need no sign-in
+		a.say("setup.models.hfNoSignIn", "machine", a.t.get("setup.machine.linux"))
+		askModels = a.askModelsNoSignIn
+	}
+	if _, err := a.step(ctx, "models", askModels); err != nil {
+		return err
 	}
 
 	a.printf("\n%s\n", a.t.get("setup.plex.title"))
@@ -487,11 +511,24 @@ func (a *appSetup) askModels(string) (any, error) {
 	return map[string]any{"source": "nas", "path": path}, nil
 }
 
+// askModelsNoSignIn is the models question where the second listen does not
+// run: the NAS copy's folder, or nothing for Hugging Face (no token).
+func (a *appSetup) askModelsNoSignIn(string) (any, error) {
+	path, err := a.ask.line(a.t.get("terminal.shareOrHF"), "")
+	if err != nil {
+		return nil, err
+	}
+	if path == "" {
+		return map[string]any{"source": "huggingface"}, nil
+	}
+	return map[string]any{"source": "nas", "path": path}, nil
+}
+
 // showCheck prints what will run, the problems and the warnings
 // (checkResult's notes), in the screens' words. ok is false when the computer
-// cannot run the server; models is false when the second listen cannot run
-// here (check's second_listen), so no models question is asked.
-func (a *appSetup) showCheck(res json.RawMessage) (ok, models bool) {
+// cannot run the server; signIn is false when the second listen cannot run
+// here (check's second_listen), so the models step asks for no token.
+func (a *appSetup) showCheck(res json.RawMessage) (ok, signIn bool) {
 	var c struct {
 		OK           bool          `json:"ok"`
 		Problems     []checkNote   `json:"problems"`
@@ -538,8 +575,12 @@ func (a *appSetup) plex(ctx context.Context) error {
 		return wrapStep("plex", err)
 	}
 	res, err := a.run(ctx, "plex", map[string]any{"action": "pin"}, nil)
-	if err != nil {
-		return a.plexLater(ctx, err)
+	var f *stepFailure
+	switch {
+	case errors.As(err, &f) && f.Code == "network":
+		return a.plexLater(ctx, a.t.stepError(f)+" "+a.t.get("terminal.plexLater"))
+	case err != nil:
+		return wrapStep("plex", err)
 	}
 	var pin struct {
 		PinID   int64  `json:"pin_id"`
@@ -547,7 +588,7 @@ func (a *appSetup) plex(ctx context.Context) error {
 		LinkURL string `json:"link_url"`
 	}
 	if err := json.Unmarshal(res, &pin); err != nil {
-		return fmt.Errorf("plex: %w", err)
+		return wrapStep("plex", err)
 	}
 	a.printf("%s %s\n", a.t.get("setup.plex.enterCode", "url", pin.LinkURL), pin.Code)
 	a.say("setup.plex.waiting")
@@ -565,20 +606,22 @@ func (a *appSetup) plex(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-skipped:
-			return a.plexLater(ctx, nil)
+			return a.plexLater(ctx, a.t.get("terminal.plexLater"))
 		case <-time.After(a.pollEvery):
 		}
 		if time.Now().After(deadline) {
-			return a.plexLater(ctx, &stepFailure{Code: "pin_expired", Message: "The Plex code expired."})
+			return a.plexLater(ctx, a.t.get("terminal.plexExpired"))
 		}
 		res, err := a.run(ctx, "plex", map[string]any{"action": "poll", "pin_id": pin.PinID}, nil)
 		select {
 		case <-skipped: // the Ctrl+C reached the poll as well
-			return a.plexLater(ctx, nil)
+			return a.plexLater(ctx, a.t.get("terminal.plexLater"))
 		default:
 		}
-		var f *stepFailure
 		switch {
+		case errors.As(err, &f) && f.Code == "pin_expired":
+			// link later, keeping every answer before it
+			return a.plexLater(ctx, a.t.get("terminal.plexExpired"))
 		case errors.As(err, &f) && f.Code == "network":
 			if !retrying {
 				a.printf("  %s %s\n", a.t.stepError(f), a.t.get("terminal.plexRetry"))
@@ -586,7 +629,7 @@ func (a *appSetup) plex(ctx context.Context) error {
 			retrying = true
 			continue
 		case err != nil:
-			return a.plexLater(ctx, err) // an expired code: link later, keep the rest
+			return wrapStep("plex", err)
 		}
 		retrying = false
 		var st struct {
@@ -599,16 +642,12 @@ func (a *appSetup) plex(ctx context.Context) error {
 	}
 }
 
-// plexLater is a sign-in that did not work out (the code expired, Plex could
-// not be reached, a Ctrl+C: cause nil): Plex is optional, so the setup goes on
-// without it rather than losing the answers before it; the Settings link it
-// later.
-func (a *appSetup) plexLater(ctx context.Context, cause error) error {
-	var f *stepFailure
-	if errors.As(cause, &f) {
-		a.printf("  %s\n", a.t.stepError(f))
-	}
-	a.printf("  %s\n", a.t.get("terminal.plexLater"))
+// plexLater is a sign-in that did not work out (the code expired, plex.tv out
+// of reach for its code, a Ctrl+C), said in one line: Plex is optional, so the
+// setup goes on without it rather than losing the answers before it; the
+// Settings link it later.
+func (a *appSetup) plexLater(ctx context.Context, line string) error {
+	a.printf("  %s\n", line)
 	_, err := a.run(ctx, "plex", map[string]any{"action": "skip"}, nil)
 	return wrapStep("plex", err)
 }
@@ -621,14 +660,15 @@ func wrapStep(name string, err error) error {
 }
 
 // readAnswers reads --answers (a file) or --answers-fd (an open descriptor:
-// secrets never written to disk): a JSON object of step inputs.
-func readAnswers(file string, fd int) (map[string]json.RawMessage, error) {
+// secrets never written to disk): a JSON object of step inputs. Its errors are
+// in t's language.
+func readAnswers(t texts, file string, fd int) (map[string]json.RawMessage, error) {
 	var r io.Reader
 	switch {
 	case file != "":
 		f, err := os.Open(file)
 		if err != nil {
-			return nil, err
+			return nil, errors.New(t.get("terminal.answersRead", "err", err.Error()))
 		}
 		defer f.Close()
 		r = f
@@ -639,11 +679,11 @@ func readAnswers(file string, fd int) (map[string]json.RawMessage, error) {
 	}
 	var m map[string]json.RawMessage
 	if err := json.NewDecoder(r).Decode(&m); err != nil {
-		return nil, fmt.Errorf("answers: %w", err)
+		return nil, errors.New(t.get("terminal.answersRead", "err", err.Error()))
 	}
 	for k := range m {
 		if !slices.Contains(appSteps, k) {
-			return nil, fmt.Errorf("answers: no setup step %q (%s)", k, strings.Join(appSteps, ", "))
+			return nil, errors.New(t.get("terminal.answersStep", "step", k, "steps", strings.Join(appSteps, ", ")))
 		}
 	}
 	return m, nil
@@ -661,7 +701,7 @@ func runAppSetupCmd(answersFile string, answersFD int, lang string) error {
 	if runtimeGOOS == "linux" && geteuid() == 0 {
 		return errors.New(t.get("terminal.root"))
 	}
-	answers, err := readAnswers(answersFile, answersFD)
+	answers, err := readAnswers(t, answersFile, answersFD)
 	if err != nil {
 		return err
 	}
@@ -681,7 +721,8 @@ func runAppSetupCmd(answersFile string, answersFD int, lang string) error {
 
 // interruptSkips is appSetup.skipWait on a terminal: while the wait is on, a
 // Ctrl+C ends it instead of the setup (the step it reaches as well ends, and
-// the wait says so); after stop, a Ctrl+C ends the setup again.
+// the wait says so). Only that one: the next Ctrl+C, or any after stop, ends
+// the setup again.
 func interruptSkips() (<-chan struct{}, func()) {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)
@@ -689,6 +730,7 @@ func interruptSkips() (<-chan struct{}, func()) {
 	go func() {
 		select {
 		case <-sig:
+			signal.Stop(sig)
 			close(skipped)
 		case <-done:
 		}
@@ -700,7 +742,8 @@ func interruptSkips() (<-chan struct{}, func()) {
 }
 
 // endError is what ended the setup, in the user's language: a cancel, a
-// step's failure by its code, else as it is.
+// step's failure by its code (with the step's own words below when they say
+// more: the last lines of a build, where its log is, a cause), else as it is.
 func endError(t texts, err error) error {
 	var f *stepFailure
 	switch {
@@ -709,7 +752,11 @@ func endError(t texts, err error) error {
 	case errors.Is(err, errCancelled):
 		return errors.New(t.get("terminal.cancelled"))
 	case errors.As(err, &f):
-		return errors.New(t.stepError(f))
+		text := t.stepError(f)
+		if detail := strings.TrimSpace(f.Message); detail != "" && detail != text {
+			text += "\n  " + strings.ReplaceAll(detail, "\n", "\n  ")
+		}
+		return errors.New(text)
 	}
 	return err
 }
@@ -723,11 +770,21 @@ var (
 // headlessRuntime puts this payload in the runtime (owner: the machine itself,
 // it updates through its releases) and makes it `current`, then returns the
 // runner of the steps in runtime/current, MAKTABA_APP_BUNDLE pointing there:
-// the venv is built against runtime/current/python.
+// the venv is built against runtime/current/python. Its errors are coded as
+// `runtime --json` codes them (setup.error.<code>).
 func headlessRuntime(ctx context.Context, t texts, out io.Writer) (stepRunner, error) {
+	run, err := copyToRuntime(ctx, t, out)
+	if err != nil {
+		return nil, &stepFailure{Code: runtimeCode(err), Message: err.Error()}
+	}
+	return run, nil
+}
+
+// copyToRuntime is headlessRuntime's work, its errors as they come.
+func copyToRuntime(ctx context.Context, t texts, out io.Writer) (stepRunner, error) {
 	payload := payloadOfThisBinary()
 	if payload == "" {
-		return nil, errors.New("this maktaba-server is not in a payload")
+		return nil, &codedError{"payload_invalid", errors.New("this maktaba-server is not in a payload")}
 	}
 	d := newRuntimeDeps()
 	fmt.Fprintln(out, t.get("terminal.copying", "dir", d.rt.Root))
@@ -760,7 +817,7 @@ func headlessRuntime(ctx context.Context, t texts, out io.Writer) (stepRunner, e
 func headlessService(ctx context.Context, t texts, out io.Writer) error {
 	sd := newServiceDeps()
 	if err := sd.manager.Install(ctx, sd.unit, true, false); err != nil {
-		return err
+		return errors.New(t.get("terminal.serviceFailed", "err", err.Error()))
 	}
 	fmt.Fprintln(out, t.get("terminal.started", "unit", sd.unit.Path()))
 	if sd.manager.Status(ctx, sd.unit).Linger { // nothing to ask an administrator for

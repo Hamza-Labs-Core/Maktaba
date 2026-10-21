@@ -84,10 +84,6 @@ interface CheckResult {
   second_listen?: { runs: boolean; code?: string; params?: Record<string, unknown> };
 }
 
-/** How many steps the setup has on this machine (no models step where the second
- * listen cannot run). */
-const StepsContext = createContext<number>(ORDER.length);
-
 /** The platform's words ({machine}, {tray}) for every coded text. */
 const WordsContext = createContext<Record<string, string>>({});
 
@@ -153,12 +149,13 @@ function Frame({
   next?: ReactNode;
 }) {
   const { t } = useI18n();
-  const total = useContext(StepsContext);
   return (
     <main className="mkt-setup" aria-labelledby="mkt-setup-h">
       <section className="mkt-setup__card">
         {step !== undefined && (
-          <p className="mkt-setup__step">{t("setup.stepOf", { n: step + 1, total })}</p>
+          <p className="mkt-setup__step">
+            {t("setup.stepOf", { n: step + 1, total: ORDER.length })}
+          </p>
         )}
         <h1 id="mkt-setup-h" className="mkt-setup__title">
           {title}
@@ -231,20 +228,20 @@ export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initi
       .catch(() => {});
   }, [api]);
 
-  // the models step only where the second listen runs (check says)
-  const [withModels, setWithModels] = useState(true);
-  const order = withModels ? ORDER : ORDER.filter((s) => s !== "models");
+  // whether this machine runs the second listen (check says): the models step
+  // asks for its Hugging Face sign-in only then
+  const [secondListen, setSecondListen] = useState<boolean | undefined>(undefined);
   const go = (dir: 1 | -1) => {
-    const i = order.indexOf(screen);
+    const i = ORDER.indexOf(screen);
     if (dir === -1 && i <= 0) return setScreen("welcome");
-    setScreen(order[i + dir] ?? "starting");
+    setScreen(ORDER[i + dir] ?? "starting");
   };
-  const step = order.indexOf(screen);
+  const step = ORDER.indexOf(screen);
   const props = { api, step, platform, next: () => go(1), back: () => go(-1) };
   const { t } = useI18n();
   return (
     <WordsContext.Provider value={platformWords(t, platform)}>
-      <StepsContext.Provider value={order.length}>{screenOf(screen)}</StepsContext.Provider>
+      {screenOf(screen)}
     </WordsContext.Provider>
   );
 
@@ -260,15 +257,13 @@ export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initi
           />
         );
       case "check":
-        return (
-          <Check {...props} onChecked={(r) => setWithModels(r.second_listen?.runs !== false)} />
-        );
+        return <Check {...props} onChecked={(r) => setSecondListen(r.second_listen?.runs)} />;
       case "admin":
         return <Admin {...props} />;
       case "libraries":
         return <Libraries {...props} />;
       case "models":
-        return <Models {...props} />;
+        return <Models {...props} secondListen={secondListen} />;
       case "plex":
         return <Plex {...props} />;
       case "install":
@@ -614,7 +609,17 @@ function Libraries({ api, step, platform, next, back }: StepProps) {
   );
 }
 
-function Models({ api, step, platform, next, back }: StepProps) {
+function Models({
+  api,
+  step,
+  platform,
+  next,
+  back,
+  secondListen,
+}: StepProps & { secondListen?: boolean }) {
+  // false: this machine does not run the second listen, so its gated model needs no
+  // Hugging Face sign-in (Whisper and the search model need none either)
+  const signIn = secondListen !== false;
   const { t } = useI18n();
   const words = platformWords(t, platform);
   const [source, setSource] = useState<"huggingface" | "nas">("huggingface");
@@ -659,7 +664,9 @@ function Models({ api, step, platform, next, back }: StepProps) {
             {t("setup.models.nas")}
           </label>
         </fieldset>
-        {source === "huggingface" ? (
+        {source === "huggingface" && !signIn ? (
+          <p className="mkt-setup__note">{t("setup.models.hfNoSignIn", words)}</p>
+        ) : source === "huggingface" ? (
           <>
             <p className="mkt-setup__note">
               {t("setup.models.hfNote")}{" "}
