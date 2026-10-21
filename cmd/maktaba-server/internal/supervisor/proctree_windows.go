@@ -5,11 +5,13 @@ package supervisor
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"sync"
 	"syscall"
 	"unsafe"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ctrlbreak"
 	"golang.org/x/sys/windows"
 )
 
@@ -57,9 +59,8 @@ var hasConsole = func() bool {
 }
 
 var (
-	ntdll                = windows.NewLazySystemDLL("ntdll.dll")
-	procNtResumeProcess  = ntdll.NewProc("NtResumeProcess")
-	procNtSuspendProcess = ntdll.NewProc("NtSuspendProcess")
+	ntdll               = windows.NewLazySystemDLL("ntdll.dll")
+	procNtResumeProcess = ntdll.NewProc("NtResumeProcess")
 )
 
 // attachTree puts the started (suspended) child in a new kill-on-close
@@ -109,31 +110,24 @@ func newKillOnCloseJob() (windows.Handle, error) {
 
 // ask runs send while the child still runs: the handle held keeps its pid
 // from being reused meanwhile, and the child is held suspended from the check
-// to the send, so it cannot exit in between. The event names the group the
-// child leads; one naming a group nobody leads goes to every process of the
-// console, the supervisor included. The child's handler runs once it is
-// resumed. A child that has exited needs no asking; one that cannot be held
-// is not asked (the caller kills it instead).
+// to the send, so it cannot exit in between (ctrlbreak.Hold). The event names
+// the group the child leads; one naming a group nobody leads goes to every
+// process of the console, the supervisor included. A child that has exited
+// needs no asking; one that cannot be held is not asked (the caller kills it
+// instead).
 func (t *procTree) ask(send func() error) error {
 	if t == nil {
 		return nil // attachTree failed and killed the child
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.proc == 0 || t.exited() {
+	if t.proc == 0 {
 		return nil
 	}
-	if r, _, _ := procNtSuspendProcess.Call(uintptr(t.proc)); r != 0 {
-		if t.exited() {
-			return nil
-		}
-		return fmt.Errorf("hold the child to ask it: NTSTATUS 0x%x", r)
+	if err := ctrlbreak.Hold(t.proc, send); !errors.Is(err, os.ErrProcessDone) {
+		return err
 	}
-	defer procNtResumeProcess.Call(uintptr(t.proc))
-	if t.exited() {
-		return nil
-	}
-	return send()
+	return nil
 }
 
 func (t *procTree) exited() bool {
