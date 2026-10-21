@@ -155,14 +155,15 @@ file_version() {
 if [ -z "$MSVC_RUNTIME" ]; then
     vswhere="$(cygpath -u -F 42)/Microsoft Visual Studio/Installer/vswhere.exe"   # 42: Program Files (x86)
     [ -f "$vswhere" ] || die "no Visual Studio (vswhere.exe): install its C++ build tools, or pass --msvc-runtime"
-    # every instance's current redistributable (an instance holds one), the pinned one taken
+    # every redistributable folder of every instance (VC\Redist\MSVC\<version>\x64\
+    # Microsoft.VC14x.CRT; an instance may keep more than its default one), the pinned one taken
     crts=()
     while IFS= read -r vs; do
         [ -n "$vs" ] || continue
         vs="$(cygpath -u "$vs")"
-        redist="$(tr -d '[:space:]' <"$vs/VC/Auxiliary/Build/Microsoft.VCRedistVersion.default.txt" 2>/dev/null || true)"
-        crt=("$vs/VC/Redist/MSVC/$redist/x64"/Microsoft.VC*.CRT)
-        if [ -n "$redist" ] && [ -f "${crt[0]}/vcruntime140.dll" ]; then crts+=("${crt[0]}"); fi
+        for crt in "$vs"/VC/Redist/MSVC/*/x64/Microsoft.VC*.CRT; do
+            if [ -f "$crt/vcruntime140.dll" ]; then crts+=("$crt"); fi
+        done
     done < <("$vswhere" -all -products '*' -requires Microsoft.VisualStudio.Component.VC.Redist.14.Latest \
         -property installationPath | tr -d '\r')
     [ "${#crts[@]}" -gt 0 ] || die "no Visual Studio with the C++ redistributable (Microsoft.VisualStudio.Component.VC.Redist.14.Latest)"
@@ -172,7 +173,7 @@ if [ -z "$MSVC_RUNTIME" ]; then
         found+=("${versions[$i]:-?} ($(win "${crts[$i]}"))")
         if [ "${versions[$i]:-}" = "$MSVC_RUNTIME_VERSION" ]; then MSVC_RUNTIME="${crts[$i]}"; break; fi
     done
-    [ -n "$MSVC_RUNTIME" ] || die "no Visual Studio here has the Visual C++ runtime $MSVC_RUNTIME_VERSION that pins.env pins (found: ${found[*]}): install the one that has it (Visual Studio 2022 17.14's C++ redistributable), pass --msvc-runtime a folder that holds it, or bump MSVC_RUNTIME_VERSION in pins.env (a reviewed change)"
+    [ -n "$MSVC_RUNTIME" ] || die "no Visual Studio here has the Visual C++ runtime $MSVC_RUNTIME_VERSION that pins.env pins (found: ${found[*]}): install the Visual Studio whose C++ redistributable has it, pass --msvc-runtime a folder that holds it, or, when the build machine's Visual Studio moved on (a runner image update), bump MSVC_RUNTIME_VERSION in pins.env to the version found, in a reviewed change (README.md, \"The Visual C++ runtime\")"
 fi
 MSVC_RUNTIME="$(cygpath -u "$MSVC_RUNTIME")"
 [ -f "$MSVC_RUNTIME/vcruntime140.dll" ] || die "$MSVC_RUNTIME has no vcruntime140.dll"

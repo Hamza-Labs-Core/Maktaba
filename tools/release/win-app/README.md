@@ -61,10 +61,21 @@ it takes makensis about 5 minutes.
 |---|---|---|---|
 | Go binaries | this repo, `make server build-go` (windows/amd64, `-tags embed_web`, release ldflags) + the launcher, copied to `.exe` names | the same envelope as `release.yml` | this repo's |
 | PostgreSQL 16.15 | [theseus-rs/postgresql-binaries](https://github.com/theseus-rs/postgresql-binaries) `x86_64-pc-windows-msvc` zip (EDB's Windows build), SHA-256 from the release asset's digest | every contrib extension, OpenSSL and ICU beside the programs, pg_dump/psql/pg_basebackup; the archive pgbin pins for windows/amd64 (Epic 37). Major 16 = compose and CI | PostgreSQL Licence; the DLLs' (OpenSSL Apache-2.0, ICU, zlib, libxml2/libxslt, lz4, zstd, gettext / libiconv / winpthreads LGPL) in `postgresql-third-party.txt` |
-| Visual C++ runtime | the build machine's Visual Studio: `VC\Redist\MSVC\<v>\x64\Microsoft.VC14x.CRT` of whichever installed Visual Studio (vswhere) holds `pins.env`'s `MSVC_RUNTIME_VERSION` (Visual Studio 2022 17.14's, 14.44.35211.0); each DLL checked to be signed by Microsoft and to carry that FileVersion, else the build stops; the version is in `payload.json` | Postgres's DLLs are built with Visual C++ and a PC without the Redistributable has no `msvcp140.dll` (ICU's). python-build-standalone carries `vcruntime140.dll` only, and the set must come from one release. App-local, as [Microsoft documents](https://learn.microsoft.com/cpp/windows/determining-which-dlls-to-redistribute) | Visual Studio's Distributable Code |
+| Visual C++ runtime | the build machine's Visual Studio: `VC\Redist\MSVC\<v>\x64\Microsoft.VC14x.CRT` of whichever installed Visual Studio (vswhere; every redistributable folder it keeps) holds `pins.env`'s `MSVC_RUNTIME_VERSION` (Visual Studio 2026's, 14.51.36247.0, which windows-latest carries); each DLL checked to be signed by Microsoft and to carry that FileVersion, else the build stops; the version is in `payload.json` | Postgres's DLLs are built with Visual C++ and a PC without the Redistributable has no `msvcp140.dll` (ICU's). python-build-standalone carries `vcruntime140.dll` only, and the set must come from one release. App-local, as [Microsoft documents](https://learn.microsoft.com/cpp/windows/determining-which-dlls-to-redistribute) | Visual Studio's Distributable Code |
 | ffmpeg / ffprobe 8.1.2 | [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) "essentials" build from its GitHub mirror [GyanD/codexffmpeg](https://github.com/GyanD/codexffmpeg), SHA-256 from the release asset's digest | static; has what the TV runs on Windows: `h264_nvenc`, `-hwaccel cuda` (`scale_cuda`), libx264, loudnorm, subtitles. The "full" build only adds codecs Maktaba does not use (its zip is 266 MB, not 110) | **GPLv3** (`--enable-gpl --enable-version3`) — see below |
 | CPython 3.12.15 | [astral-sh/python-build-standalone](https://github.com/astral-sh/python-build-standalone) `install_only_stripped`, SHA-256 from the release asset's digest | relocatable, what uv itself installs; the Mac's release | PSF; the bundled libraries' in `python.txt` |
 | pipeline wheel + constraints | `deploy/packaging/node/build-release.sh` (the node release's; it makes its Windows zip with Python's zipfile where there is no `zip`, as in Git for Windows) | one build of the pipeline for every install | this repo's |
+
+### The Visual C++ runtime
+
+The runtime is the build machine's, pinned by version (`MSVC_RUNTIME_VERSION` in `pins.env`), so a
+release always carries the runtime that was reviewed. When GitHub updates `windows-latest`'s Visual
+Studio, the win-app gate and the release's Windows leg stop with
+`no Visual Studio here has the Visual C++ runtime <pinned> … (found: <new> …)`. The fix is a reviewed
+change to that line: set it to the version found, after checking that the job's log shows all three
+DLLs (`vcruntime140.dll`, `vcruntime140_1.dll`, `msvcp140.dll`) at that FileVersion and signed by
+Microsoft (the build checks both and says which one differs). Nothing else changes: the payload
+records the version in `payload.json`, and `licenses\msvc-runtime.txt` names it.
 
 Left out of the Postgres archive: StackBuilder and its wxWidgets DLLs, `include\`, the import
 libraries, the client tools and test programs, and PL/Perl, PL/Python and PL/Tcl (their
