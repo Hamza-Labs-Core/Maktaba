@@ -183,8 +183,16 @@ def test_unavailable_says_why_per_engine(
     monkeypatch.setenv("HF_HUB_OFFLINE", "1")
     monkeypatch.setattr("huggingface_hub.try_to_load_from_cache", lambda *a, **k: None)
     assert "Hugging Face is offline" in str(stage.unavailable())
-    monkeypatch.setattr("huggingface_hub.try_to_load_from_cache", lambda *a, **k: "/c/model.bin")
+    asked: list[Any] = []
+
+    def cached(repo: str, name: str, revision: str | None = None) -> str:
+        asked.append(revision)
+        return "/c/model.bin"
+
+    monkeypatch.setattr("huggingface_hub.try_to_load_from_cache", cached)
     assert stage.unavailable() is None
+    # the pinned commit's file, the only snapshot a pinned download makes
+    assert asked == [engine.CT2_PINS[engine.DEFAULT_MODEL[engine.CT2]].revision]
     monkeypatch.delenv("HF_HUB_OFFLINE")
 
     # a GPU asked for that is not usable: nothing transcribes here, and it says why
