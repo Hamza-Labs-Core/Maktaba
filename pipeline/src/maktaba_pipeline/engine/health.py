@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import sys
 import time
 from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -60,12 +61,43 @@ def register_metric(
         _FINAL[name] = final
 
 
+def windows_memory() -> tuple[int, int] | None:
+    """(total bytes, available bytes) of physical memory on Windows
+    (``GlobalMemoryStatusEx``: available is what can be had without paging out, the
+    standby list included), or None when it cannot be read."""
+    import ctypes
+
+    class _MemStatus(ctypes.Structure):
+        _fields_ = [  # noqa: RUF012
+            ("dwLength", ctypes.c_ulong),
+            ("dwMemoryLoad", ctypes.c_ulong),
+            ("ullTotalPhys", ctypes.c_ulonglong),
+            ("ullAvailPhys", ctypes.c_ulonglong),
+            ("ullTotalPageFile", ctypes.c_ulonglong),
+            ("ullAvailPageFile", ctypes.c_ulonglong),
+            ("ullTotalVirtual", ctypes.c_ulonglong),
+            ("ullAvailVirtual", ctypes.c_ulonglong),
+            ("sullAvailExtendedVirtual", ctypes.c_ulonglong),
+        ]
+
+    stat = _MemStatus()
+    stat.dwLength = ctypes.sizeof(_MemStatus)
+    kernel32 = getattr(ctypes, "windll", None)
+    if kernel32 is None or not kernel32.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):
+        return None
+    return int(stat.ullTotalPhys), int(stat.ullAvailPhys)
+
+
 def system_memory() -> tuple[float, float] | None:
     """(total bytes, available bytes) of this host, or None where unknown.
 
     macOS: free + inactive + speculative + purgeable pages (what can be had without
-    swapping or compressing); Linux: MemAvailable."""
+    swapping or compressing); Linux: MemAvailable; Windows: ``GlobalMemoryStatusEx``'s
+    available physical memory (:func:`windows_memory`)."""
     try:
+        if sys.platform == "win32":
+            mem = windows_memory()
+            return None if mem is None else (float(mem[0]), float(mem[1]))
         if os.path.exists("/proc/meminfo"):
             with open("/proc/meminfo") as f:
                 info = {

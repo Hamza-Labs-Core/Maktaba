@@ -12,6 +12,21 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Transcription on Windows and Linux (story 38.8).** The transcribe stage runs Whisper on
+  CTranslate2 there (faster-whisper's `dropbox-dash/faster-whisper-large-v3-turbo`), batched
+  across files as the Mac's MLX engine does: on an NVIDIA GPU when CUDA works (cuBLAS 12 comes
+  with the `stt` extra; no CUDA toolkit), else on the CPU. The supervisor sizes the workers and
+  their batch from the GPU's memory (`nvidia-smi`; an 8 GB card gets one worker); without a GPU
+  the main worker transcribes. New `[transcription]` keys: `device`, `compute_type`, `batch`,
+  `cpu_threads`. Transcripts record their engine (`ct2-batched`); the second listen stays on
+  the Mac for now, so while it is on a Windows or Linux machine leaves transcription to the
+  machines that run it, unless the new rule Transcription, "Transcribe without the second
+  listen", lets it transcribe too; a machine that runs the second listen then gives those
+  transcripts theirs later. The operator's own stage exclusion always stands. A GPU under 4 GB,
+  or one without the memory free, leaves Whisper to the CPU, as does a failed load on the GPU;
+  more workers than planned share the GPU or the CPU; the Whisper download is pinned to a commit
+  and its files' SHA-256; the free-memory floor works on Windows. On an RTX 2080 SUPER: 72x real
+  time for eight files at once, 31x for one; 2-3x on the CPU.
 - **The desktop app runs the server on Windows** (Epic 38, story 38.3). When setup finishes on
   a Windows PC, the app registers the user's own sign-in task `\Maktaba Server <SID>` (the
   user's session, so mapped NAS drives work; each user of the PC has their own). The task runs
@@ -32,9 +47,20 @@ don't append a line here; docs-only PRs are exempt.
   the server runs as an administrator, as the Windows service does: Postgres refuses
   administrative rights). Groundwork for the Windows and Linux apps and for full nodes' copies of
   the home's database (#178).
+- **The Windows app runs its own Postgres** (Epic 38, story 38.10). `[postgres] enabled = "auto"`
+  now turns the bundled Postgres on inside any desktop app's payload, not only on a Mac (a
+  `[database] url` or a SQLite database in use still wins). The app's roles find the payload's
+  `ffmpeg.exe`. Loopback TCP only on Windows, the nightly dumps as on the Mac.
 
 ### Changed
 
+- **Every role stops cleanly on Windows.** The supervisor starts each child in a process group of
+  its own and asks it to stop with CTRL_BREAK (the Go roles drain on it as they do on SIGTERM, the
+  pipeline on `SIGBREAK`); a child is killed with its process tree only once the shutdown grace
+  is over. Postgres keeps its `pg_ctl` fast shutdown. A `serve` with no console (started detached
+  by a program that has none) cannot send CTRL_BREAK, so it kills its children as before and says
+  so once in its log; its children then open no console window on the desktop. A child is held
+  still while it is asked, so the CTRL_BREAK never goes astray to `serve` itself.
 - **Windows keeps everything in `%LOCALAPPDATA%\Maktaba`** (Epic 38, story 38.1): `server.toml`,
   `keys\`, `data\`, `logs\` and the node's `node.json`, with the models, caches and the bundled
   Postgres beside `data\`. Nothing new goes into the roaming profile, so the keys and a node's
@@ -59,6 +85,13 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **A user's server keeps its update verification current.** `maktaba-server` gave the api and
+  streaming no data directory, so they used `/var/lib/maktaba`: in the desktop apps and every
+  per-user install the daily refresh of the Sigstore trusted root failed (permission denied), and
+  once the root built into the binary expired, Update now could no longer verify a release.
+  Uploaded channel art had the same problem. The supervisor now passes its `data_dir`
+  (`MAKTABA_DATA_DIR`), and an api or streaming server run on its own uses `/var/lib/maktaba`
+  only as root, else the user's `$XDG_DATA_HOME/maktaba`.
 - **The launcher never sends CTRL_BREAK to a server that has exited** (Windows, Epic 38 story
   38.2). It holds a handle to the server until it is reaped and asks it to stop only while it
   still runs: a CTRL_BREAK naming a pid that leads no process group (a server that exited as the

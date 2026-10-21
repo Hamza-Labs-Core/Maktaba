@@ -54,8 +54,12 @@ url = "sqlite:///var/lib/maktaba/maktaba.db"
 # postgres), loopback only plus a unix socket in that directory, scram-sha-256
 # passwords in keys/ (postgres-maktaba_admin.password, postgres-maktaba.password),
 # a nightly pg_dump into backups/ (the newest 7 kept).
-# "auto" (default): on a Mac whose app carries Postgres, unless [database] url
-# is set or a SQLite database is already in use. "on" / "off".
+# On Windows the app's Postgres is TCP-only (no unix socket), and postgres.exe
+# runs under a restricted token when the server runs as an administrator (it
+# refuses administrative rights, as pg_ctl does).
+# "auto" (default): on a Mac whose app carries Postgres, and inside the Windows
+# app's payload, unless [database] url is set or a SQLite database is already in
+# use. "on" / "off".
 # enabled = "auto"
 # The Postgres install (bin/postgres, bin/initdb, bin/psql, bin/pg_dump);
 # default $MAKTABA_POSTGRES_HOME, else the app's Resources/server/postgres.
@@ -71,9 +75,11 @@ roots = ["/mnt/videos", "/mnt/movies"]
 # path_map = "/Volumes/Originals/=/Users/me/nas-nfs/"
 
 [transcription]
-# The Whisper model (a Hugging Face repo): MAKTABA_STT_MODEL. Empty, or an old
-# short name such as "large-v3": the pipeline's default,
-# mlx-community/whisper-large-v3-turbo.
+# The Whisper model (a Hugging Face repo or a folder): MAKTABA_STT_MODEL. Empty,
+# or an old short name such as "large-v3": the pipeline's default, turbo in the
+# engine's format: mlx-community/whisper-large-v3-turbo on Apple Silicon (MLX),
+# dropbox-dash/faster-whisper-large-v3-turbo on Windows and Linux (CTranslate2;
+# an MLX model given there is replaced by its CTranslate2 conversion).
 # model = "mlx-community/whisper-large-v3-turbo"
 # The second listen that corrects Whisper's words: "on" (default) / "off"
 # (MAKTABA_STT_REFINE), and its model (MAKTABA_STT_REFINE_MODEL; a repo or a
@@ -83,16 +89,37 @@ roots = ["/mnt/videos", "/mnt/movies"]
 # Transcription workers beside the main worker (each one batched Whisper; the
 # main worker then skips transcribe). 0 (default): sized from the RAM on Apple
 # Silicon (96 GB and up: 2 workers, 16 h of audio, 20 GB GPU, 2 GB cache, back
-# off below 25% free, as the home Mac runs; smaller Macs less), none elsewhere.
-# -1: none. [pipeline] instances, when set, wins.
+# off below 25% free, as the home Mac runs; smaller Macs less), from the GPU's
+# memory on Windows and Linux with an NVIDIA GPU of 4 GB or more (8 GB: one
+# worker), none on a machine that transcribes on the CPU (the main worker does).
+# -1: none. [pipeline] instances, when set, wins. With refine on, a Windows or
+# Linux machine (no second listen there yet) plans none, and its main worker
+# transcribes only when Settings, Transcription, "Transcribe without the second
+# listen" is on. More workers than planned share its GPU memory, CPU threads and
+# audio hours. None at all while your own MAKTABA_PIPELINE_EXCLUDE_STAGES names
+# transcribe.
 # workers = 0
-# Per worker, 0 = sized from the RAM: MAKTABA_STT_AUDIO_HOURS, _GPU_GB,
-# _GPU_CACHE_GB, _MIN_FREE_PCT (an environment variable of your own wins).
+# Per worker, 0 = sized from the RAM: MAKTABA_STT_AUDIO_HOURS, _MIN_FREE_PCT,
+# and on Apple Silicon MLX's GPU memory, _GPU_GB and _GPU_CACHE_GB (an
+# environment variable of your own wins).
 # audio_hours = 0
 # gpu_gb = 0
 # gpu_cache_gb = 0
 # min_free_pct = 0
-# Kept for older files: the pipeline picks MLX or torch by itself.
+# Files a worker decodes together, one 30 s window of each per pass
+# (MAKTABA_STT_BATCH). 0: sized from the GPU's memory (8 GB: 8), 4 on the CPU,
+# 32 on Apple Silicon.
+# batch = 0
+# Windows and Linux (CTranslate2) only. Where: "auto" (the NVIDIA GPU when CUDA
+# works there, else the CPU), "cuda", "cuda:1" or "cpu" (MAKTABA_STT_DEVICE).
+# Precision: "auto" (float16 on the GPU, int8_float16 on one under 7 GB, int8 on
+# the CPU) or float16, int8_float16, int8, int8_float32, float32
+# (MAKTABA_STT_COMPUTE_TYPE). Threads on the CPU, 0: half the logical CPUs
+# (MAKTABA_STT_CPU_THREADS).
+# device = "auto"
+# compute_type = "auto"
+# cpu_threads = 0
+# Kept for older files: the pipeline picks MLX or CTranslate2 by itself.
 backend = "mlx-whisper"
 
 [cloud]
