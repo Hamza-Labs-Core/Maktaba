@@ -50,6 +50,8 @@ func stepVenv(s *setupRun, _ json.RawMessage) (any, error) {
 		return nil, err
 	}
 	defer logFile.Close()
+	// a stop asks the bootstrap (appvenv: SIGTERM, on Windows CTRL_BREAK to its
+	// own process group; killed only after 45 s), which stops pip and says where it was
 	res, err := appvenv.Run(s.ctx, appvenv.Spec{
 		Payload: payload,
 		Venv:    filepath.Join(s.cfg.StateDir(), "venv"),

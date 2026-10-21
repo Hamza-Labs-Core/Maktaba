@@ -40,7 +40,7 @@ maktaba-server serve
 | Command      | Purpose                                                        |
 |--------------|----------------------------------------------------------------|
 | `serve`      | Start all roles (or one with `--role api\|streaming\|pipeline\|web`) |
-| `setup`      | Interactive first-run wizard → writes `server.toml`, migrates  |
+| `setup`      | The desktop app's setup steps in the terminal (check, admin, libraries, Plex, finish) plus where the data goes and the database → writes `server.toml`, creates and migrates the database, seeds the admin |
 | `update`     | Self-update from GitHub Releases, verified in process (Sigstore bundle, exact release-workflow identity, `release.json`, no downgrade); `--check`, `--version`, `--rollback` |
 | `uninstall`  | Guided teardown (`--purge` for non-interactive full removal)   |
 | `models`     | Whisper model management (`list`, `download <name>`, `active`); `models llm [model…] [--check]` downloads the language model(s) of the LLM stages into the model server (default `[llm] models`, `qwen2.5:7b`), showing the disk space first; resumable |

@@ -22,6 +22,18 @@ don't append a line here; docs-only PRs are exempt.
   (server.toml, the database created and migrated, the admin seeded with the new
   `adduser --password-hash-file`, the Plex server stored with the new `maktaba-api plex-link`).
   The screens say "this PC" and "the tray" on Windows, and turn a disabled sign-in task back on.
+  Every finding and refusal comes with a code and its values, so the screens say it in English or
+  Arabic (never the step's English beside it); `check` separates what blocks from what is worth
+  knowing and says when Windows or Linux will transcribe on the processor (no NVIDIA GPU). Library
+  folders and both sides of the path map must be whole paths (a bare `Y:` is the drive's root), a
+  password cannot hold a line break, and two spellings of one folder are one root only where the
+  disk ignores case. A stop asks the venv build and the models download to stop instead of killing
+  them under pip.
+- **`maktaba-server setup` in a terminal runs the app's setup steps** (Epic 38, story 38.6): the
+  same checks, admin rules, folders, path map, Plex sign-in and finish, plus where the data goes and
+  the database (SQLite, which `finish` now creates, or a Postgres url). Its separate wizard is gone,
+  with its admin token, which nothing ever accepted; `--migrate` is accepted and ignored (setup
+  always prepares the database).
 - **The desktop app's server takes care of an update at its next start** (Epic 38, story 38.12;
   the Mac, Windows and Linux alike). Before any role runs, the server reads the record of the
   release whose migrations the database holds (`state/database.json`) and refuses an older
@@ -43,6 +55,12 @@ don't append a line here; docs-only PRs are exempt.
 - **`maktaba-server setup` (the CLI wizard) seeds the admin again.** It called `adduser` with
   `--username`/`--password` flags the api does not have; it now passes the username and a
   password file.
+- **After the app's setup the server runs on the bundled Postgres, with its transcription
+  workers.** Saving `server.toml` wrote every default, so setup's `finish` left `[database] url`
+  set to the default SQLite file: the next start never ran the bundled Postgres (the database setup
+  had made sat unused, and the pipeline could not open the SQLite one), and
+  `[pipeline] instances = 0` turned the workers off. A save now writes the url only when one was
+  chosen and the count only when it was set (`setup --node --instances 0` included).
 
 - **Release builds for desktop, Android and Android TV.** The desktop app ships a
   (placeholder) icon set (#152), which the macOS and Windows bundles failed on. The Linux build
