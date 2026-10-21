@@ -33,6 +33,12 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/version"
 )
 
+// guideRules are the XMLTV guide's filler rules from the tv settings
+// (rules tv.guide_*).
+func guideRules(tv channel.TVSettings) hdhr.GuideRules {
+	return hdhr.GuideRulesFromSeconds(tv.GuideMaxPaddingSeconds, tv.GuideFillerTitle, tv.GuideMinProgramSeconds)
+}
+
 // clusterSchema waits (up to wait) for slot 0123's tv_host_beat: the API migrates the
 // database at boot, possibly after this process started. Without it the TV runs as
 // before Epic 32 (the home alone, no placements).
@@ -242,7 +248,8 @@ func buildHomeTV(bg *background, logger *slog.Logger, cfg config.Config, pool *p
 		PublicBase: publicBase, WebBase: os.Getenv("MAKTABA_PUBLIC_WEB_BASE"),
 		AheadFunc: func(ctx context.Context) time.Duration {
 			return time.Duration(b.settings.TV(ctx).HorizonDays) * 24 * time.Hour
-		}}
+		},
+		RulesFunc: func(ctx context.Context) hdhr.GuideRules { return guideRules(b.settings.TV(ctx)) }}
 	mounts = append(mounts, guideHandler.Mount)
 	// Only the home advertises the tuner (the front door); a node never runs this.
 	// SSDP (udp/1900) and HDHomeRun discovery (udp/65001), absolute URLs only

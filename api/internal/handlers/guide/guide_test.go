@@ -1,6 +1,7 @@
 package guide
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -69,26 +70,61 @@ func TestToBlock_Liveness(t *testing.T) {
 	}
 }
 
+// The guide's filler rules, as dizqueTV's (rules tv.guide_* defaults):
+// filler up to 120 s joins the programme before it, longer filler is a
+// «فواصل» block, and programmes shorter than 60 s are not listed.
 func TestCollapseFiller(t *testing.T) {
+	gr := loadGuideRules(context.Background(), nil)
+	if gr.MaxPadding != 120*time.Second || gr.FillerTitle != "فواصل" || gr.MinProgram != 60*time.Second {
+		t.Fatalf("rules' defaults: %+v", gr)
+	}
+	t0 := tm("2026-06-14T20:00:00Z")
+	at := func(s int) string { return t0.Add(time.Duration(s) * time.Second).Format(time.RFC3339) }
+	blk := func(kind, title string, from, to int) Block {
+		return Block{ChannelID: "c", Kind: kind, Title: title, Start: at(from), Stop: at(to)}
+	}
 	blocks := []Block{
-		{ChannelID: "c", Kind: "program", Title: "Movie", Start: "T0", Stop: "T1"},
-		{ChannelID: "c", Kind: "bumper", Title: "ID", Start: "T1", Stop: "T1b"},
-		{ChannelID: "c", Kind: "filler", Title: "Promo", Start: "T1b", Stop: "T2", IsLive: true, Progress: 0.3},
-		{ChannelID: "c", Kind: "program", Title: "News", Start: "T2", Stop: "T3"},
+		blk("program", "A", 0, 1800),
+		blk("bumper", "ID", 1800, 1830), blk("filler", "Promo", 1830, 1920), // 120 s: folded into A
+		blk("program", "B", 1920, 3600),
+		blk("filler", "Promo", 3600, 3700), blk("slate", "", 3700, 3721), // 121 s: its own block
+		blk("program", "C", 3721, 5400),
+		blk("program", "Tiny", 5400, 5459), // 59 s: not listed, folded into C
+		blk("program", "D", 5459, 7200),
+		blk("program", "Minute", 7200, 7260), // 60 s: listed
 	}
-	out := collapseFiller(blocks)
-	if len(out) != 3 {
-		t.Fatalf("expected 3 blocks after collapse, got %d: %+v", len(out), out)
+	// now is in the folded filler after A: A is live over its longer span
+	out := collapseFiller(blocks, gr, "Kids", t0.Add(1860*time.Second))
+	type row struct {
+		kind, title string
+		start, stop int
 	}
-	mid := out[1]
-	if mid.Kind != "filler" || mid.Title != "Up Next" {
-		t.Errorf("merged block wrong: %+v", mid)
+	want := []row{{"program", "A", 0, 1920}, {"program", "B", 1920, 3600}, {"filler", "فواصل", 3600, 3721},
+		{"program", "C", 3721, 5459}, {"program", "D", 5459, 7200}, {"program", "Minute", 7200, 7260}}
+	if len(out) != len(want) {
+		t.Fatalf("got %d blocks: %+v", len(out), out)
 	}
-	if mid.Start != "T1" || mid.Stop != "T2" {
-		t.Errorf("merged span wrong: %s..%s", mid.Start, mid.Stop)
+	for i, w := range want {
+		b := out[i]
+		if b.Kind != w.kind || b.Title != w.title || b.Start != at(w.start) || b.Stop != at(w.stop) {
+			t.Errorf("block %d = %s %q %s..%s; want %s %q %d-%d s", i, b.Kind, b.Title, b.Start, b.Stop,
+				w.kind, w.title, w.start, w.stop)
+		}
 	}
-	if !mid.IsLive || mid.Progress != 0.3 {
-		t.Errorf("merged block should carry liveness: %+v", mid)
+	if !out[0].IsLive || out[0].Progress != 1860.0/1920 || out[1].IsLive {
+		t.Errorf("liveness: %+v / %+v", out[0], out[1])
+	}
+
+	// A short lead-in joins the programme after it; a long one is its own
+	// block; an empty filler title is the channel's name.
+	lead := []Block{blk("filler", "", 0, 120), blk("program", "A", 120, 1800)}
+	if got := collapseFiller(lead, gr, "Kids", t0); len(got) != 1 || got[0].Title != "A" || got[0].Start != at(0) {
+		t.Errorf("short lead-in: %+v", got)
+	}
+	lead = []Block{blk("slate", "", 0, 600), blk("program", "A", 600, 1800)}
+	got := collapseFiller(lead, GuideRules{MaxPadding: gr.MaxPadding, MinProgram: gr.MinProgram}, "Kids", t0)
+	if len(got) != 2 || got[0].Title != "Kids" || got[0].Kind != "filler" || got[1].Title != "A" {
+		t.Errorf("long lead-in: %+v", got)
 	}
 }
 
