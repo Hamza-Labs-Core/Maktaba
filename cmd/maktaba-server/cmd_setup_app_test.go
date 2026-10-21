@@ -461,33 +461,41 @@ func TestAppSetupPlexFailures(t *testing.T) {
 	}
 }
 
-// Where the second listen cannot run (check's second_listen), the models
-// question is not asked, as the screens skip it; the download still runs.
-func TestAppSetupSkipsTheModelsQuestionWithoutTheSecondListen(t *testing.T) {
-	f := interactiveSteps()
+// Where the second listen cannot run (check's second_listen), the models step
+// asks for no Hugging Face token, as the screens do: the NAS copy's folder, or
+// nothing for Hugging Face without a sign-in.
+func TestAppSetupAsksNoTokenWithoutTheSecondListen(t *testing.T) {
 	check := map[string]any{"second_listen": map[string]any{"runs": false, "code": "second_listen_no_gpu"}}
 	for k, v := range checkOK {
 		check[k] = v
 	}
 	check["warnings"] = []map[string]any{{"code": "second_listen_no_gpu", "message": "No NVIDIA GPU"}}
-	f.answers["check"] = []any{check}
-	var out bytes.Buffer
-	a := &appSetup{run: f.run, ask: interactive(t), out: &out, t: textsFor("en"), pollEvery: time.Millisecond}
-	if err := a.Run(context.Background()); err != nil {
-		t.Fatalf("%v\n%s", err, out.String())
-	}
-	want := "status check admin libraries libraries plex plex plex venv models llm finish"
-	if got := strings.Join(f.calls, " "); got != want {
-		t.Errorf("steps %q, want %q", got, want)
-	}
-	if got := f.inputs["models"]; len(got) != 1 || got[0] != `{"action":"download"}` {
-		t.Errorf("models inputs %v", got)
-	}
-	if strings.Contains(out.String(), "Transcription models") {
-		t.Errorf("the models question was asked:\n%s", out.String())
-	}
-	if w := "the second listen, which corrects Whisper's Arabic, does not run on this computer"; !strings.Contains(out.String(), w) {
-		t.Errorf("output lacks %q:\n%s", w, out.String())
+	for _, c := range []struct{ share, want string }{
+		{"", `{"source":"huggingface"}`},
+		{"/srv/share", `{"path":"/srv/share","source":"nas"}`},
+	} {
+		f := interactiveSteps()
+		f.answers["check"] = []any{check}
+		ask := interactive(t)
+		ask.lines = append(ask.lines, c.share)
+		ask.secrets = ask.secrets[:4] // the admin's passwords: no token
+		var out bytes.Buffer
+		a := &appSetup{run: f.run, ask: ask, out: &out, t: textsFor("en"), pollEvery: time.Millisecond}
+		if err := a.Run(context.Background()); err != nil {
+			t.Fatalf("%v\n%s", err, out.String())
+		}
+		if got := f.inputs["models"]; len(got) != 2 || got[0] != c.want || got[1] != `{"action":"download"}` {
+			t.Errorf("models inputs %v, want %s", got, c.want)
+		}
+		for _, w := range []string{"the second listen, which corrects Whisper's Arabic, does not run on this computer",
+			"Whisper and the search model come from Hugging Face with no sign-in"} {
+			if !strings.Contains(out.String(), w) {
+				t.Errorf("output lacks %q:\n%s", w, out.String())
+			}
+		}
+		if strings.Contains(out.String(), "needs a Hugging Face account") {
+			t.Errorf("a sign-in was asked for:\n%s", out.String())
+		}
 	}
 }
 

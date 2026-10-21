@@ -345,7 +345,7 @@ func (a *appSetup) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	ok, withModels := a.showCheck(res)
+	ok, signIn := a.showCheck(res)
 	if !ok {
 		return errors.New(a.t.get("terminal.blockedEnd"))
 	}
@@ -365,15 +365,19 @@ func (a *appSetup) Run(ctx context.Context) error {
 		return err
 	}
 
-	// the models question only where the second listen runs (SetupWizard.tsx):
-	// elsewhere its gated model is neither signed in to nor downloaded
-	if _, given := a.answers["models"]; withModels || given {
-		a.printf("\n%s\n", a.t.get("setup.models.title"))
-		a.say("setup.models.intro", "machine", a.t.get("setup.machine.linux"))
+	a.printf("\n%s\n", a.t.get("setup.models.title"))
+	a.say("setup.models.intro", "machine", a.t.get("setup.machine.linux"))
+	askModels := a.askModels
+	if signIn {
 		a.say("setup.models.hfNote")
-		if _, err := a.step(ctx, "models", a.askModels); err != nil {
-			return err
-		}
+	} else {
+		// no second listen here (SetupWizard.tsx): its gated model is neither
+		// signed in to nor downloaded, and the others need no sign-in
+		a.say("setup.models.hfNoSignIn", "machine", a.t.get("setup.machine.linux"))
+		askModels = a.askModelsNoSignIn
+	}
+	if _, err := a.step(ctx, "models", askModels); err != nil {
+		return err
 	}
 
 	a.printf("\n%s\n", a.t.get("setup.plex.title"))
@@ -507,11 +511,24 @@ func (a *appSetup) askModels(string) (any, error) {
 	return map[string]any{"source": "nas", "path": path}, nil
 }
 
+// askModelsNoSignIn is the models question where the second listen does not
+// run: the NAS copy's folder, or nothing for Hugging Face (no token).
+func (a *appSetup) askModelsNoSignIn(string) (any, error) {
+	path, err := a.ask.line(a.t.get("terminal.shareOrHF"), "")
+	if err != nil {
+		return nil, err
+	}
+	if path == "" {
+		return map[string]any{"source": "huggingface"}, nil
+	}
+	return map[string]any{"source": "nas", "path": path}, nil
+}
+
 // showCheck prints what will run, the problems and the warnings
 // (checkResult's notes), in the screens' words. ok is false when the computer
-// cannot run the server; models is false when the second listen cannot run
-// here (check's second_listen), so no models question is asked.
-func (a *appSetup) showCheck(res json.RawMessage) (ok, models bool) {
+// cannot run the server; signIn is false when the second listen cannot run
+// here (check's second_listen), so the models step asks for no token.
+func (a *appSetup) showCheck(res json.RawMessage) (ok, signIn bool) {
 	var c struct {
 		OK           bool          `json:"ok"`
 		Problems     []checkNote   `json:"problems"`

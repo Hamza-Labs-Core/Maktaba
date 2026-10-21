@@ -86,6 +86,7 @@ var webSetupTexts = map[string][2]string{
 	"setup.libraries.mapNote":                   {"If other machines see the same files under another path, write one \"their path => the path here\" per line.", "إذا رأت أجهزة أخرى الملفات نفسها بمسار آخر، فاكتب في كل سطر \"مسارها => المسار هنا\"."},
 	"setup.libraries.title":                     {"Your library folders", "مجلدات مكتبتك"},
 	"setup.machine.linux":                       {"this computer", "هذا الحاسوب"},
+	"setup.models.hfNoSignIn":                   {"Whisper and the search model come from Hugging Face with no sign-in: the second listen does not run on {machine}.", "يُنزَّل Whisper ونموذج البحث من Hugging Face دون تسجيل دخول: الاستماع الثاني لا يعمل على {machine}."},
 	"setup.models.hfNote":                       {"The second-listen model (Cohere) needs a Hugging Face account: accept the model's terms, then make a read token.", "نموذج الاستماع الثاني (Cohere) يحتاج إلى حساب في Hugging Face: وافق على شروط النموذج ثم أنشئ رمز قراءة."},
 	"setup.models.intro":                        {"Maktaba transcribes on {machine}. It needs the speech models (a few GB).", "تفرّغ مكتبة المحاضرات على {machine}، وتحتاج إلى نماذج الكلام (بضعة غيغابايتات)."},
 	"setup.models.nasPath":                      {"Folder with the models", "المجلد الذي فيه النماذج"},

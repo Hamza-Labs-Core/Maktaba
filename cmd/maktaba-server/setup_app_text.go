@@ -30,6 +30,7 @@ var terminalTexts = map[string][2]string{
 	"terminal.roots":         {"Library folders (separate them with commas)", "مجلدات المكتبة (افصل بينها بفواصل)"},
 	"terminal.map":           {"NAS path map (separate entries with commas; empty: none)", "تحويل مسارات الـNAS (افصل بين الأسطر بفواصل؛ فارغ: لا شيء)"},
 	"terminal.hfOrShare":     {"Hugging Face token (empty: use the copy on the share)", "رمز Hugging Face (فارغ: استخدام النسخة الموجودة على الـNAS)"},
+	"terminal.shareOrHF":     {"Folder with the models on the NAS (empty: download them from Hugging Face)", "مجلد النماذج على الـNAS (فارغ: تنزيلها من Hugging Face)"},
 	"terminal.plexAsk":       {"Sign in to Plex now", "تسجيل الدخول إلى Plex الآن"},
 	"terminal.plexLater":     {"Plex is not linked now: link it later in Settings.", "لم يُربط Plex الآن: اربطه لاحقًا من الإعدادات."},
 	"terminal.plexLinked":    {"Plex is linked.", "تم ربط Plex."},
