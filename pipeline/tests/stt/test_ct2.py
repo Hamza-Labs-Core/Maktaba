@@ -679,7 +679,7 @@ def test_the_progress_line_says_where_the_files_are_decoded(
 ) -> None:
     s = WhisperSettings(model="x/where", device="auto")
     assert stage._where(s) == "on the GPU"  # not loaded yet: the GPU unless told the CPU
-    stage.get_transcriber(s).device = "cpu"  # loaded: auto found no usable GPU
+    ct2.get_transcriber(s).device = "cpu"  # the stage's one, loaded: auto found no GPU
     assert stage._where(s) == "on the CPU"
     assert stage._where(WhisperSettings(model="x/where-cpu", device="cpu")) == "on the CPU"
     monkeypatch.setattr(engine, "current", lambda: engine.MLX)
