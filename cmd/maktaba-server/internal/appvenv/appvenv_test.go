@@ -54,7 +54,7 @@ func fakeBootstrap(args []string) int {
 	out := bufio.NewWriter(os.Stdout)
 	say := func(state, step, msg, errText string, progress float64) {
 		raw, _ := json.Marshal(map[string]any{"event": "status", "state": state, "step": step,
-			"progress": progress, "message": msg, "error": errText})
+			"progress": progress, "message": msg, "error": errText, "done": 61, "total": 153})
 		_, _ = out.Write(append(raw, '\n'))
 		_ = out.Flush()
 	}
@@ -181,7 +181,8 @@ func TestRunGivesTheBootstrapItsOwnEnvironment(t *testing.T) {
 	if err != nil || res.Reused || res.Pipeline != "1.4.0" || res.Python != "3.12.15" {
 		t.Fatalf("Run = %+v, %v", res, err)
 	}
-	if len(seen) != 2 || seen[0].Fraction != 0.41 || seen[0].Message != "Collecting torch" {
+	if len(seen) != 2 || seen[0].Fraction != 0.41 || seen[0].Message != "Collecting torch" || seen[0].Step != "deps" ||
+		seen[0].Done != 61 || seen[0].Total != 153 {
 		t.Fatalf("progress = %+v", seen)
 	}
 	cs := calls(t, payload)

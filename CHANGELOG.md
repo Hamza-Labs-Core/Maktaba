@@ -54,6 +54,8 @@ don't append a line here; docs-only PRs are exempt.
   gently (SIGTERM, CTRL_BREAK on Windows) so a stop never leaves pip behind. A Postgres of
   another major than the database's is refused. What a process waits on shows as its `detail`
   in `/processes`.
+  Each such detail also has a `detail_code` from a fixed list and its `detail_params`, for the
+  app's screens to say it in their own language.
 - **The API refuses a database a newer Maktaba migrated**, on every install: `maktaba-api
   migrate up` exits 3 instead of finding nothing to apply, and `serve` does not start on it.
   `migrate --timeout 0` runs with no time limit.
@@ -127,6 +129,12 @@ don't append a line here; docs-only PRs are exempt.
   `production` deployment is recorded.
 - **Web image release build.** The web image builds its bundle natively instead of under arm64
   emulation, where `pnpm install` hung past the release timeout.
+- **The pipeline's venv on Windows: a rebuild or repair waits for a file held open (story
+  38.7).** Removing the old venv and `venv --upgrade` writing over `Scripts\python.exe` failed
+  outright when another process had a file of the venv open: a virus scanner or the search
+  indexer, or a program of the venv still exiting (WinError 5 / 32, Errno 13). Each is now tried
+  again for up to 5 s, as the status file already was, and a read-only file is made writable
+  before it is removed.
 
 ## [0.2.0] - 2026-10-19
 

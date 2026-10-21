@@ -11,6 +11,32 @@ import (
 // reasons that do not pass in a second (the network, a full disk).
 var prepareRetryFirst = 30 * time.Second
 
+// Detail is what a process waits on before its start, or why its start step
+// failed: Code, from a fixed list, and Params for a screen to say it in its own
+// language, and Text, the English, for the logs (ChildStatus's detail fields).
+// Params is not changed once the Detail is reported.
+type Detail struct {
+	Code   string
+	Params map[string]any
+	Text   string
+}
+
+// Coded is an error whose detail is d (a Prepare's failure for a screen).
+func Coded(d Detail) error { return &detailError{d: d} }
+
+type detailError struct{ d Detail }
+
+func (e *detailError) Error() string { return e.d.Text }
+
+// DetailOf is the Detail err carries (through Halt too), else its text alone.
+func DetailOf(err error) Detail {
+	var de *detailError
+	if errors.As(err, &de) {
+		return de.d
+	}
+	return Detail{Text: err.Error()}
+}
+
 // Halt marks a Prepare's error as one no retry in this run can mend (Epic 38
 // story 38.12: an update whose migrations failed and whose database was put
 // back, a release older than the database): the process stays failed, with
@@ -43,9 +69,9 @@ func (s *Supervisor) prepare(ctx context.Context, c *child) bool {
 	if fr := s.policy.FailedRetry; fr > 0 && delay > fr {
 		delay = fr
 	}
-	report := func(detail string) {
+	report := func(d Detail) {
 		s.mu.Lock()
-		c.status.Detail = detail
+		c.status.Detail, c.status.DetailCode, c.status.DetailParams = d.Text, d.Code, d.Params
 		s.mu.Unlock()
 	}
 	for {
@@ -59,7 +85,7 @@ func (s *Supervisor) prepare(ctx context.Context, c *child) bool {
 		s.mu.Unlock()
 		err := c.proc.Prepare(ctx, report)
 		if err == nil {
-			report("")
+			report(Detail{})
 			return true
 		}
 		if ctx.Err() != nil {
@@ -71,9 +97,10 @@ func (s *Supervisor) prepare(ctx context.Context, c *child) bool {
 			at := s.now().Add(delay)
 			next = &at
 		}
+		d := DetailOf(err)
 		s.mu.Lock()
 		c.status.State = StateFailed
-		c.status.Detail = err.Error()
+		c.status.Detail, c.status.DetailCode, c.status.DetailParams = d.Text, d.Code, d.Params
 		c.status.NextRestartAt = next
 		s.mu.Unlock()
 		ev := Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventFailed, Reason: ReasonStartFailed, Message: err.Error()}

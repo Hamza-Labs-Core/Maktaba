@@ -31,11 +31,13 @@ type Spec struct {
 }
 
 // Progress is one line of the bootstrap: its share of the whole run (0..1,
-// never going back), its step and a line for the screen.
+// never going back), its step, a line for the screen, and on the deps step the
+// packages seen of the constraints' pins (Done of Total; 0 of 0 otherwise).
 type Progress struct {
-	Fraction float64
-	Step     string
-	Message  string
+	Fraction    float64
+	Step        string
+	Message     string
+	Done, Total int
 }
 
 // Result is a finished run.
@@ -92,6 +94,8 @@ type status struct {
 	Progress float64 `json:"progress"`
 	Message  string  `json:"message"`
 	Error    string  `json:"error"`
+	Done     int     `json:"done"`
+	Total    int     `json:"total"`
 }
 
 // keptEnv are the variables of the server's environment the bootstrap gets
@@ -210,7 +214,7 @@ func Run(ctx context.Context, spec Spec, progress func(Progress)) (Result, error
 		}
 		last = st
 		if progress != nil {
-			progress(Progress{Fraction: st.Progress, Step: st.Step, Message: st.Message})
+			progress(Progress{Fraction: st.Progress, Step: st.Step, Message: st.Message, Done: st.Done, Total: st.Total})
 		}
 	}
 	err = cmd.Wait()

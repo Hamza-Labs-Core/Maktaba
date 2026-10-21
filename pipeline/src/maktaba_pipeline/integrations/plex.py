@@ -167,7 +167,8 @@ class PlexTuner:
     model: str = ""
     #: the DVR it belongs to (``parentID``, or the DVR that lists it)
     dvr_key: str = ""
-    #: the lineup identifiers of its enabled channel mappings; None when Plex listed none
+    #: the channel numbers Plex has enabled on it (``ChannelMapping`` with ``enabled`` 1, by
+    #: ``deviceIdentifier``: the tuner's GuideNumber); None when Plex listed no mapping
     mapped: tuple[str, ...] | None = None
 
 
@@ -205,7 +206,10 @@ def _mapped(raw: Any) -> tuple[str, ...] | None:
     for m in _list(raw):
         if str(m.get("enabled", "1")).strip().lower() in ("0", "false"):
             continue
-        ident = str(m.get("lineupIdentifier") or m.get("channelKey") or "").strip()
+        # the tuner's own channel number; an older listing without it: the guide channel
+        ident = str(
+            m.get("deviceIdentifier") or m.get("lineupIdentifier") or m.get("channelKey") or ""
+        ).strip()
         if ident and ident not in out:
             out.append(ident)
     return tuple(out)

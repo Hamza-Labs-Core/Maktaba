@@ -48,7 +48,10 @@ The new app must be signed by the **same Team ID**: the login item approval
 > `api/schema_ahead.go`). Each process waits on its `Prepare` before its first start, and
 > `/processes` shows what it waits on as its `detail`: a failure shows as `failed` with the
 > reason, retried from 30 s up to the policy's `failed_retry`, or, when no retry in this run can
-> mend it, `failed` with no `next_restart_at` until the server starts again.
+> mend it, `failed` with no `next_restart_at` until the server starts again. Beside the English
+> `detail` (for the logs and older shells) each such process has `detail_code`, a snake_case code
+> from the fixed list below, and `detail_params`, its values, for a screen to say it in its own
+> language (both left out when there is no detail).
 
 ### The database step, before any role
 
@@ -58,6 +61,16 @@ one run of the database step. It reads **the database's record**,
 any role runs, so it is right even when that release never ran three healthy minutes. An
 install from before the record has none (an earlier build of this story has only
 `state/payload.json`, which then stands in for it).
+
+**A joined full node has no database step** (Epic 35 story 35.8: a joined node config, unless
+`[server] role = "home"`, the same test that puts its api in node mode). Its api reads the
+home's database and never migrates; the home's own start dumps, migrates and records. So on a
+node no process waits on the step, nothing is dumped or migrated, and no `state/database.json`
+is written (one there would later refuse an older app on a machine that has no database of its
+own). The pipeline still waits for the venv bootstrap, and `state/payload.json` is still saved
+after three healthy minutes. A run without the api (`serve --role streaming`, ...) migrates
+nothing either: it dumps nothing and leaves the record alone, and only refuses an older release
+than the record, or a database whose putting back has not finished.
 
 | The payload's `version`, against the record | What the step does |
 |---|---|
@@ -99,6 +112,36 @@ refuses to start when it holds one newer than the newest the code ships (`schema
 
 With a database of the user's own (`[database] url` set: no bundled Postgres) nothing is dumped
 or restored; a failed migration is tried again like any start step.
+
+### The detail codes
+
+`detail_params` values are strings unless said; releases are versions (`""` when not known),
+paths are whole, `error` values are the programs' own English (pg_dump's, the migration's last
+lines). The list is fixed (`detailCodes` in `serve_appbundle.go`, checked by a test); a new detail
+takes a new code.
+
+| `detail_code` | `detail_params` | The English `detail` |
+|---|---|---|
+| `db_waiting` | — | Waiting for the library database |
+| `db_checking` | `release` | Checking the library database |
+| `db_dumping` | `from`, `to` | Saving the library database before the update to `to` |
+| `db_migrating` | `to` | Updating the library database for `to` |
+| `db_restoring` | `failed`, `dump` | The update to `failed` could not change the library database: putting it back as it was |
+| `db_restored` | `failed`, `error`, `dump`, `release` | The update to `failed` could not change the library database (`error`). The database is back as it was before the update (restored from `dump`), and Maktaba stays stopped: install `release` (`""`: the version you had before) again to go on as before, or an update that fixes this; starting Maktaba again tries this update again |
+| `db_refused_older` | `release`, `needed`, `dump` | This Maktaba (`release`) is older than the one whose changes the library database holds (`needed`): it would not know them. Install `needed` or later (when `dump` is not `""`: the database as it was before the update to `needed` is in `dump`) |
+| `db_ahead` | `release`, `error` | The library database was changed by a newer Maktaba than this one (`release`), whose code would not know those changes: install that newer version again (`error`) |
+| `db_dump_failed` | `to`, `error` | The library database could not be saved before the update to `to`, so the update waits (nothing was changed): `error` |
+| `db_migrate_failed` | `release`, `error` | The library database could not be brought up to date for `release`: `error` (no update: tried again) |
+| `db_restore_failed` | `failed`, `error`, `dump`, `restore_error` | The update to `failed` could not change the library database (`error`), and putting the database back from `dump` failed too: `restore_error`. Maktaba stays stopped; its next start tries to put it back again |
+| `db_restore_unfinished` | `failed`, `dump` | The library database is being put back as it was before the update to `failed` (from `dump`): start the whole server (`maktaba-server serve`) to finish it |
+| `db_no_cluster` | `failed`, `error`, `dump` | The update to `failed` could not change the library database (`error`), and this Maktaba runs no database of its own to put `dump` back into |
+| `db_record_failed` | `path`, `error` | The library database's record (`path`) cannot be read or saved: `error` |
+| `pg_unreadable` | `path`, `error` | The library database (`path`) cannot be read: `error` |
+| `pg_major` | `cluster`, `payload` | The library database was made by PostgreSQL `cluster` and this Maktaba carries PostgreSQL `payload`: the database needs an upgrade between the two, which no update does yet |
+| `venv_waiting` | — | Waiting for the transcription tools |
+| `venv_building` | `step`, `done` (number), `total` (number), `percent` (number), `message` | Installing the transcription tools: `message` (`percent`%). `step` is the bootstrap's (`plan`, `venv`, `deps`, `wheel`, `verify`, `done`); on `deps`, `done` of `total` packages (else 0 of 0); `message` is pip's line |
+| `venv_interrupted` | `log` | The transcription tools' install was stopped; it goes on from where it was next time (log: `log`) |
+| `venv_failed` | `error`, `log` | The transcription tools could not be installed: `error` (log: `log`) |
 
 ### The rest
 
