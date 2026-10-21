@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -13,6 +14,19 @@ import (
 
 // movedNote is left in the old config directory after a migration.
 const movedNote = "MOVED.txt"
+
+// MigrateDirs moves an install made before this platform's paths into them, once
+// (MigrateMacDirs, MigrateWindowsDirs). It returns the old config directory when it
+// moved one.
+func MigrateDirs() (string, error) {
+	switch runtime.GOOS {
+	case "darwin":
+		return MigrateMacDirs()
+	case "windows":
+		return MigrateWindowsDirs()
+	}
+	return "", nil
+}
 
 // MigrateMacDirs moves a Mac install made before Epic 36 (XDG paths:
 // ~/.config/maktaba, ~/.local/share/maktaba) into the Mac paths (story 36.2), once:
@@ -26,11 +40,31 @@ func MigrateMacDirs() (string, error) {
 	if runtime.GOOS != "darwin" || strings.TrimSpace(os.Getenv("MAKTABA_CONFIG")) != "" {
 		return "", nil
 	}
-	return migrateDirs(xdgDirs(os.Getenv, home()), LocalDirs())
+	return migrateDirs(xdgDirs(os.Getenv, home()), LocalDirs(), nil)
+}
+
+// windowsMoved are the files a Windows install moves out of the roaming profile
+// (Epic 38 story 38.1): the server's config, its keys and the node's identity. The
+// node installer's own files there (node.env, node@<n>.env) stay: its scripts read
+// them in %APPDATA%.
+var windowsMoved = []string{"secrets.key", "stream-signing.key", "node.json"}
+
+// MigrateWindowsDirs moves a Windows install made before Epic 38 (server.toml and
+// the keys in %APPDATA%\Maktaba) into %LOCALAPPDATA%\Maktaba, once: when there is no
+// server.toml in the new place yet and there is one in the old. The data directory
+// was local already and stays; models and the caches move beside it (the state
+// root, as on a Mac). Nothing happens with $MAKTABA_CONFIG set or off Windows.
+func MigrateWindowsDirs() (string, error) {
+	if runtime.GOOS != "windows" || strings.TrimSpace(os.Getenv("MAKTABA_CONFIG")) != "" {
+		return "", nil
+	}
+	return migrateDirs(legacyWindowsDirs(os.Getenv, home()), LocalDirs(), windowsMoved)
 }
 
 // migrateDirs moves an install from old to cur (tests call it with temp dirs).
-func migrateDirs(old, cur Dirs) (string, error) {
+// only names the files of the old config directory that move besides server.toml
+// (nil: every file there).
+func migrateDirs(old, cur Dirs, only []string) (string, error) {
 	newToml := filepath.Join(cur.Config, "server.toml")
 	oldToml := filepath.Join(old.Config, "server.toml")
 	if exists(newToml) || !exists(oldToml) {
@@ -56,7 +90,9 @@ func migrateDirs(old, cur Dirs) (string, error) {
 		oldData = filepath.Clean(old.Data)
 	}
 	if oldData == filepath.Clean(old.Data) {
-		if exists(oldData) {
+		// the same folder in both layouts (Windows): nothing to move but the state
+		// beside it
+		if oldData != filepath.Clean(cur.Data) && exists(oldData) {
 			// an empty data dir in the new place (made by an earlier command) is fine
 			if exists(cur.Data) {
 				if err := os.Remove(cur.Data); err != nil {
@@ -96,7 +132,7 @@ func migrateDirs(old, cur Dirs) (string, error) {
 	}
 	for _, e := range entries {
 		name := e.Name()
-		if name == "server.toml" || name == movedNote {
+		if name == "server.toml" || name == movedNote || (only != nil && !slices.Contains(only, name)) {
 			continue
 		}
 		dest := filepath.Join(cur.Config, name)
@@ -126,6 +162,9 @@ func migrateDirs(old, cur Dirs) (string, error) {
 		return "", err
 	}
 	note := "Maktaba moved this install to " + cur.Config + " (and its data to " + cur.Data + ").\n"
+	if filepath.Clean(old.Data) == filepath.Clean(cur.Data) {
+		note = "Maktaba moved this install's settings and keys to " + cur.Config + ".\n"
+	}
 	_ = os.WriteFile(filepath.Join(old.Config, movedNote), []byte(note), 0o600)
 	return old.Config, nil
 }

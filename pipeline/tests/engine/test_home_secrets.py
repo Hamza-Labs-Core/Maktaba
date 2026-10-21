@@ -5,6 +5,7 @@ read them."""
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -39,11 +40,27 @@ def test_same_format_as_the_api() -> None:
 
 
 @pytest.mark.unit
-def test_key_path_and_load(tmp_path: Path) -> None:
+def test_key_path_and_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert hs.key_path({"MAKTABA_SECRETS_KEY": "/k/secrets.key"}) == Path("/k/secrets.key")
     assert (
         hs.key_path({"MAKTABA_CONFIG": str(tmp_path / "server.toml")}) == tmp_path / "secrets.key"
     )
+    # neither set: maktaba-server's keys directory (Epic 38 story 38.1: never the
+    # roaming profile on Windows; keys/ beside server.toml on a Mac, Epic 36)
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert hs.key_path({"LOCALAPPDATA": str(tmp_path / "L"), "APPDATA": str(tmp_path / "R")}) == (
+        tmp_path / "L" / "Maktaba" / "keys" / "secrets.key"
+    )
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert hs.key_path({}) == (
+        Path.home() / "Library" / "Application Support" / "Maktaba" / "keys" / "secrets.key"
+    )
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert (
+        hs.key_path({"XDG_CONFIG_HOME": str(tmp_path / "x")})
+        == tmp_path / "x" / "maktaba" / "secrets.key"
+    )
+    monkeypatch.undo()
     path = tmp_path / "c" / "secrets.key"
     assert hs.load_key(path) is None  # the pipeline never makes the key by default
     key = hs.load_key(path, create=True)

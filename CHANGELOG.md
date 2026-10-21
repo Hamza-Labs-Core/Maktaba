@@ -10,6 +10,18 @@ don't append a line here; docs-only PRs are exempt.
 
 ## [Unreleased]
 
+### Changed
+
+- **Windows keeps everything in `%LOCALAPPDATA%\Maktaba`** (Epic 38, story 38.1): `server.toml`,
+  `keys\`, `data\`, `logs\` and the node's `node.json`, with the models, caches and the bundled
+  Postgres beside `data\`. Nothing is in the roaming profile any more, so the keys and a node's
+  identity never follow the user to another PC. An install with `server.toml` in
+  `%APPDATA%\Maktaba` moves there once, at the next `maktaba-server` command; the node
+  installer's `node.env` stays where its scripts read it, and a machine that joined before keeps
+  reading its old `node.json` until there is one in the new place. On Windows the pipeline also
+  writes its logs in UTF-8 (`PYTHONUTF8`), so an Arabic title can no longer raise
+  `UnicodeEncodeError`.
+
 ### Fixed
 
 - **Release builds for desktop, Android and Android TV.** The desktop app ships a

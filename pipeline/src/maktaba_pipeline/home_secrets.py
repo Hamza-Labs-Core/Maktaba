@@ -59,7 +59,9 @@ def extension_secret_name(extension: str, field: str) -> str:
 
 def key_path(env: Mapping[str, str] | None = None) -> Path:
     """``MAKTABA_SECRETS_KEY``, else beside ``MAKTABA_CONFIG`` (server.toml), else the
-    platform config directory (what ``secrets.KeyPath`` resolves in Go)."""
+    platform keys directory maktaba-server uses (what ``secrets.KeyPath`` resolves in
+    Go): ``%LOCALAPPDATA%\\Maktaba\\keys`` on Windows, ``~/Library/Application
+    Support/Maktaba/keys`` on macOS, the XDG config directory elsewhere."""
     env = os.environ if env is None else env
     explicit = env.get("MAKTABA_SECRETS_KEY", "").strip()
     if explicit:
@@ -69,8 +71,10 @@ def key_path(env: Mapping[str, str] | None = None) -> Path:
         return Path(cfg).parent / KEY_FILE_NAME
     home = Path.home()
     if sys.platform == "win32":
-        appdata = env.get("APPDATA", "")
-        base = Path(appdata) / "Maktaba" if appdata else home / "AppData" / "Roaming" / "Maktaba"
+        local = env.get("LOCALAPPDATA", "")
+        base = (Path(local) if local else home / "AppData" / "Local") / "Maktaba" / "keys"
+    elif sys.platform == "darwin":
+        base = home / "Library" / "Application Support" / "Maktaba" / "keys"
     else:
         xdg = env.get("XDG_CONFIG_HOME", "")
         base = Path(xdg) / "maktaba" if xdg else home / ".config" / "maktaba"
