@@ -90,9 +90,9 @@ func TestTheSubscriptionsConnection(t *testing.T) {
 	if conn, _ := c.conninfo("other"); !strings.Contains(conn, "dbname='other'") {
 		t.Fatalf("conninfo for another database: %s", conn)
 	}
-	// a grant's CA is never pinned: it came over the connection it would verify
-	other := "-----BEGIN CERTIFICATE-----\nBBB\n-----END CERTIFICATE-----\n"
-	if err := c.writeAccess(Grant{CA: &other}); err != nil {
+	// a grant's CA is never pinned (it came over the connection it would verify): the
+	// passfile is all that is written
+	if err := c.writeAccess(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(c.DB.Keys, caFile)); !os.IsNotExist(err) {
@@ -259,7 +259,7 @@ func TestWipeLeavesNothing(t *testing.T) {
 	c := testCopy(t)
 	_, _ = c.Password()
 	_, _ = c.ReaderPassword()
-	_ = c.writeAccess(Grant{})
+	_ = c.writeAccess()
 	if err := os.MkdirAll(c.DB.Data, 0o700); err != nil {
 		t.Fatal(err)
 	}

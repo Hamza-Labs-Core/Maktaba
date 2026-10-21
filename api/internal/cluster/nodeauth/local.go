@@ -246,11 +246,14 @@ func (r *Resolver) failed(name string) {
 		r.fails = map[string][]time.Time{}
 	}
 	if _, counted := r.fails[name]; !counted && len(r.fails) >= maxEntries {
+		// room for many at once, so a spray of names costs one pass per quarter of the
+		// room, not one per name: the counts past their window first, then any that has
+		// not locked its name
 		for n := range r.fails {
 			r.recentFails(n)
 		}
 		for n, f := range r.fails {
-			if len(r.fails) < maxEntries {
+			if len(r.fails) < maxEntries*3/4 {
 				break
 			}
 			if len(f) < lockoutThreshold {

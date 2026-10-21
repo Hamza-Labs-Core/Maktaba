@@ -22,6 +22,11 @@ import (
 // before any listener bound, with no log line. The node's DATABASE_URL now carries a
 // connect_timeout.
 func TestNodeStartStalledHome(t *testing.T) {
+	// the start asks the stalled home a few times, a connect timeout (whole seconds) each:
+	// seconds, past the unit tier's cap; the integration tier runs it
+	if testing.Short() {
+		t.Skip("waits on a home that never answers")
+	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

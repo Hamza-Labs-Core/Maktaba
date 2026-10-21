@@ -410,7 +410,7 @@ func (c Copy) conninfo(database string) (string, error) {
 
 // writeAccess writes the passfile (the home's CA is node.json's: never learnt from the
 // grant, over the connection it is to verify).
-func (c Copy) writeAccess(g Grant) error {
+func (c Copy) writeAccess() error {
 	host, port, err := c.homeAddr()
 	if err != nil {
 		return err
@@ -576,7 +576,7 @@ func (c Copy) Subscribe(ctx context.Context, g Grant) error {
 	if err := c.unsubscribe(ctx, db); err != nil {
 		return err
 	}
-	if err := c.writeAccess(g); err != nil {
+	if err := c.writeAccess(); err != nil {
 		return fmt.Errorf("nodecopy: the copy's access: %w", err)
 	}
 	if err := truncate(ctx, db, g.Tables); err != nil {
@@ -624,7 +624,7 @@ func (c Copy) Handover(ctx context.Context, g Grant, local int64) error {
 			}
 		}
 	}
-	if err := c.writeAccess(g); err != nil {
+	if err := c.writeAccess(); err != nil {
 		return fmt.Errorf("nodecopy: the copy's access: %w", err)
 	}
 	conn, err := c.conninfo(g.Database)
@@ -677,7 +677,7 @@ func (c Copy) Follow(ctx context.Context, g Grant) (bool, error) {
 	if !s.exists || !g.SlotExists || s.slot != g.Slot || len(s.pubs) != 1 || s.pubs[0] != g.Publication {
 		return false, nil
 	}
-	if err := c.writeAccess(g); err != nil {
+	if err := c.writeAccess(); err != nil {
 		return false, err
 	}
 	conn, err := c.conninfo(g.Database)
@@ -936,8 +936,6 @@ func kindOf(err error) int {
 	}
 	return kindOther
 }
-
-func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
 
 func writeSecret(path string, b []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

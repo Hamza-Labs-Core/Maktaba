@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -306,8 +307,8 @@ func TestServerArgsDropTheSocketOnALongPath(t *testing.T) {
 		t.Fatalf("args = %s", args)
 	}
 	b.Data = "/" + strings.Repeat("x", 100) + "/postgres"
-	if args := strings.Join(b.ServerArgs(), " "); !strings.HasSuffix(args, "unix_socket_directories=") {
-		t.Fatalf("a socket path past 103 bytes must be left out: %s", args)
+	if args := b.ServerArgs(); !slices.Contains(args, "unix_socket_directories=") {
+		t.Fatalf("a socket path past 103 bytes must be left out: %s", strings.Join(args, " "))
 	}
 }
 

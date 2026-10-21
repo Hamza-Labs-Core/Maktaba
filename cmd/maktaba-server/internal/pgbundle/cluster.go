@@ -323,7 +323,15 @@ const clusterSQL = `\set ON_ERROR_STOP on
 ALTER ROLE ` + AppRole + ` WITH CREATEROLE REPLICATION;
 GRANT pg_monitor TO ` + AppRole + `;
 GRANT pg_signal_backend TO ` + AppRole + `;
-GRANT ALTER SYSTEM ON PARAMETER max_slot_wal_keep_size TO ` + AppRole + `;
+DO $$
+BEGIN
+    -- a parameter's grant is Postgres 15's (Maktaba's own is 16; an older install the
+    -- tests find keeps the home's own cap only)
+    IF current_setting('server_version_num')::int >= 150000 THEN
+        EXECUTE 'GRANT ALTER SYSTEM ON PARAMETER max_slot_wal_keep_size TO ` + AppRole + `';
+    END IF;
+END
+$$;
 GRANT EXECUTE ON FUNCTION pg_reload_conf() TO ` + AppRole + `;
 DO $$
 BEGIN
