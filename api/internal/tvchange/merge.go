@@ -2,7 +2,6 @@ package tvchange
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -14,11 +13,12 @@ import (
 //
 // An update starts a change; every update after it joins that same change (same id,
 // same number, updated_at bumped, an "append" event naming it) until the change is
-// approved: the open change is the newest draft no one approved (Store.OpenDraft).
-// A change approved, or beyond draft, takes no more updates: the next one opens a new
-// change, queued behind it. A change that fails verification goes back to draft
-// (Controller.failToDraft) and is the open change again; a draft opened while it was
-// in flight joins it (MergePending).
+// approved: the open change is the change no one approved in draft … ready
+// (Store.OpenChange, open.go). Joined after it was checked, it goes back to draft and
+// is checked again (Store.Reopen). Only a change approved, swapping or live takes no
+// more updates: the next one opens a new change. A change that fails verification goes
+// back to draft (Controller.failToDraft); a second open change joins the older one
+// (Store.CollapseOpen, by MergePending).
 //
 // MergePending is the pipeline's tvrelease/merge.py, rule for rule (that module's
 // docstring is the full text):
@@ -343,8 +343,8 @@ func (s *Store) LiveDefs(ctx context.Context, q queryer) (map[string]map[string]
 // failToDraft is a failed verification (story 33.12 AC3, the owner's rule): the change
 // goes back to draft - the open change again, its report and reasons kept, its
 // approval withdrawn (the owner fixes it or approves it again), no stage asked - with
-// a fail event. A draft opened while it was in flight joins it (MergePending), and
-// ends superseded by it. Nothing ends "failed": that state stays for the rows made
+// a fail event. A change opened while it was in flight joins it (Store.CollapseOpen),
+// and ends superseded by it. Nothing ends "failed": that state stays for the rows made
 // before this rule. A concurrent admin action (a cancel) wins silently.
 func (c *Controller) failToDraft(ctx context.Context, ch *Change, detail map[string]any, reason string) error {
 	tx, err := c.DB.BeginTx(ctx, nil)
@@ -372,68 +372,9 @@ func (c *Controller) failToDraft(ctx context.Context, ch *Change, detail map[str
 		return err
 	}
 	ch.Diff, ch.ApprovedBy, ch.ApprovedAt = diff, []string{}, nil
-	if err := c.absorbNewer(ctx, tx, ch); err != nil {
+	// a change opened while it was in flight joins it (it is the open change again)
+	if _, err := c.Store.CollapseOpen(ctx, tx, "controller"); err != nil {
 		return err
 	}
 	return tx.Commit()
-}
-
-// absorbNewer joins into ch the drafts no one approved that were opened after it (while
-// it was in flight), oldest first.
-func (c *Controller) absorbNewer(ctx context.Context, tx *sql.Tx, ch *Change) error {
-	rows, err := tx.QueryContext(ctx, `SELECT `+changeCols+` FROM tv_changes WHERE state = 'draft'
-		AND id <> $1 AND number > $2 ORDER BY number`, ch.ID, ch.Number)
-	if err != nil {
-		return err
-	}
-	var newer []*Change
-	for rows.Next() {
-		n, err := scanChange(rows)
-		if err != nil {
-			_ = rows.Close()
-			return err
-		}
-		if len(n.ApprovedBy) == 0 {
-			newer = append(newer, n)
-		}
-	}
-	_ = rows.Close()
-	if err := rows.Err(); err != nil || len(newer) == 0 {
-		return err
-	}
-	live, err := c.Store.LiveDefs(ctx, tx)
-	if err != nil {
-		return err
-	}
-	pending := WithPlanLayer(ch.Pending().M, ch.Digest)
-	fields := map[string]any{}
-	for _, n := range newer {
-		pending = MergePending(pending, WithPlanLayer(n.Pending().M, n.Digest), live)
-		if n.Digest != nil {
-			// the newer plan's: its approval is the queue's Apply of that digest
-			fields["digest"], fields["source"] = *n.Digest, n.Source
-			if len(n.ChangeSet) > 0 {
-				fields["change_set"] = string(n.ChangeSet)
-			}
-		}
-		at := c.now()
-		if err := c.Store.Move(ctx, tx, n, StateSuperseded, ActionSupersede, nil,
-			map[string]any{"joined": ch.ID, "number": ch.Number},
-			map[string]any{"superseded_by": ch.ID, "ended_at": at, "end_reason": "joined_change"}); err != nil {
-			return err
-		}
-		st := StateDraft
-		if err := c.Store.Event(ctx, tx, ch.ID, Event{ActorSource: "controller", FromState: &st, ToState: &st,
-			Action: "append", Detail: map[string]any{"what": "joined_change", "kind": n.SourceKind(),
-				"change_id": n.ID, "number": n.Number}}); err != nil {
-			return err
-		}
-	}
-	pd := &Pending{M: pending}
-	diff := copyMap(ch.Diff)
-	diff["pending"] = pending
-	diff["summary"] = Summarize(pd)
-	fields["diff"] = diff
-	ch.Diff = diff
-	return c.Store.Set(ctx, tx, ch.ID, fields)
 }

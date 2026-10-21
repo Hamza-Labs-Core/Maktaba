@@ -29,6 +29,8 @@ import { STATE_GLYPH, queueVisualState, useFmt } from "../../components/queue/fo
 import { useAction } from "../../components/queue/useAction";
 import { useThrottledReload } from "../../components/queue/useThrottledReload";
 import { arr, safeDetail, safeLibraries, safeSnapshot } from "./safeData";
+import { HelpIcon } from "../../help/HelpLink";
+import { stageHelp } from "../../help/registry";
 import "../../styles/queue.css";
 
 function Kpi({
@@ -201,7 +203,13 @@ export function QueueDetail() {
 
       <header className="mkt-q-detailhead">
         <div>
-          <h1>{info.label}</h1>
+          <div className="mkt-titlerow">
+            <h1>{info.label}</h1>
+            <HelpIcon
+              to={stageHelp(stage)}
+              label={t("help.stageHelpNamed", { stage: info.label })}
+            />
+          </div>
           {desc !== descKey && <p className="mkt-q-muted">{desc}</p>}
           <span className={`mkt-q-state mkt-q-state--${state}`}>
             <span aria-hidden="true">{STATE_GLYPH[state]}</span> {t(`queue.state.${state}`)}

@@ -27,6 +27,7 @@ import { QueueOverview } from "./pages/queue/QueueOverview";
 import { QueueDetail } from "./pages/queue/QueueDetail";
 import { ItemHistory } from "./pages/queue/ItemHistory";
 import { Reports } from "./pages/queue/Reports";
+import { Failures } from "./pages/queue/Failures";
 import { Transcription } from "./pages/transcription/Transcription";
 import { AdminExtensions } from "./pages/Admin/Extensions";
 import { Settings } from "./pages/Settings";
@@ -55,6 +56,7 @@ import { ServerStatus } from "./pages/Cloud/ServerStatus";
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Auth/Register";
 import { NotFound } from "./pages/NotFound";
+import { HelpIndex, HelpTopic } from "./help/Help";
 
 // ThemeSync re-applies the resolved theme whenever the OS preference
 // flips while the user is in "system" mode (Story 11.8 live-toggle AC).
@@ -117,10 +119,13 @@ export function App() {
                         <Route path="/queue" element={<QueueOverview />} />
                         <Route path="/queue/items/:kind/:id" element={<ItemHistory />} />
                         <Route path="/queue/reports" element={<Reports />} />
+                        <Route path="/queue/failures" element={<Failures />} />
                         <Route path="/queue/:stage" element={<QueueDetail />} />
                         <Route path="/transcription" element={<Transcription />} />
                         <Route path="/settings/*" element={<Settings />} />
                         <Route path="/more" element={<MoreMenu />} />
+                        <Route path="/help" element={<HelpIndex />} />
+                        <Route path="/help/:topic" element={<HelpTopic />} />
                         <Route path="/account" element={<Account />} />
                         <Route path="/account/devices" element={<ConnectedDevices />} />
                         <Route path="/account/sessions" element={<Sessions />} />

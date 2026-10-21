@@ -51,12 +51,33 @@ maktaba-server serve
 | `setup`      | Interactive first-run wizard → writes `server.toml`, migrates  |
 | `update`     | Self-update from GitHub Releases, verified in process (Sigstore bundle, exact release-workflow identity, `release.json`, no downgrade); `--check`, `--version`, `--rollback` |
 | `uninstall`  | Guided teardown (`--purge` for non-interactive full removal)   |
-| `models`     | Whisper model management (`list`, `download <name>`, `active`) |
+| `models`     | Whisper model management (`list`, `download <name>`, `active`); `models llm [model…] [--check]` downloads the language model(s) of the LLM stages into the model server (default `[llm] models`, `qwen2.5:7b`), showing the disk space first; resumable |
 | `migrate`    | Database migrations (delegates to `maktaba-api`)               |
 | `adduser`    | Seed the first admin user (delegates to `maktaba-api`)         |
 | `keys`       | JWT signing-key management (delegates to `maktaba-api`)        |
 | `migrate-from-dev` | Move a Mac running `tools/dev/stack.sh` + Docker Postgres into Maktaba.app (`--dry-run`, `--verify`, `--finalize`; [runbook](../../specs/epics/36-mac-app/migrate-from-dev.md)) |
-| `setup --json --step status` | For Maktaba.app: is this Mac set up already ([contract](../../specs/epics/36-mac-app/contract-setup.md); the other steps are still to come) |
+| `setup --json --step status\|llm` | For Maktaba.app: is this Mac set up already; download the language model with progress ([contract](../../specs/epics/36-mac-app/contract-setup.md); the other steps are still to come) |
+
+**The language model server (`[llm]`).** Maktaba.app bundles Ollama
+(`Contents/Resources/server/ollama/`). A `serve` of the whole machine runs it as the
+`ollama` role: `ollama serve` on `127.0.0.1:11533` (a free loopback port when another
+program holds 11533; a user's own Ollama keeps 11434), its models in
+`<state>/models/ollama`, its output in `~/Library/Logs/Maktaba/ollama.log`, restarted like
+every role. Every role gets its address as `MAKTABA_OLLAMA_URL`; the pipeline uses it as
+the model server of `rules.tagcheck` (check-tags, check-clips, enrich, display titles)
+unless the Settings name one. The supervisor downloads a configured model it does not
+have in the background, and serves the server's state in `/processes` (`llm`) and at
+`GET /llm` (200 when every model is there, 503 otherwise).
+
+```toml
+[llm]
+enabled = "auto"         # auto (when the payload carries ollama) | on | off
+# binary = "/path/to/ollama"   # else $MAKTABA_OLLAMA_BIN, else the payload's
+# port = 11533           # set: never moved
+# url = "http://192.168.1.30:11434"   # an Ollama elsewhere; the bundled one does not run
+models = ["qwen2.5:7b"]  # what the server keeps
+pull = "auto"            # auto: the supervisor downloads a missing model | off
+```
 
 **Streaming on a cluster node (Epic 32.1).** On a machine that joined a home
 (Epic 31, `node.json` holds its database credential), `maktaba-server serve

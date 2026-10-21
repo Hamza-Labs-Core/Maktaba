@@ -38,7 +38,7 @@
 - **Preconditions / data:** `/api/auth/me` → `{ "user": { "id": "u2", "username": "viewer", "is_admin": false } }`.
 - **Steps:**
   1. Open `/more`.
-- **Expected:** `h1` "More". One list with links in this order: Transcription `/transcription`, Settings `/settings`, Account `/account`, Devices `/account/devices`, Sessions `/account/sessions`, API tokens `/account/tokens`, Billing & license `/billing`, Cloud status `/cloud/status`. (Order follows `NAV` then `SECONDARY` — Transcription comes before Settings.) A "Sign out" button below.
+- **Expected:** `h1` "More". One list with links in this order: Transcription `/transcription`, Settings `/settings`, Account `/account`, Devices `/account/devices`, Sessions `/account/sessions`, API tokens `/account/tokens`, Billing & license `/billing`, Cloud status `/cloud/status`, Help `/help`. (Order follows `NAV` then `SECONDARY` — Transcription comes before Settings.) A "Sign out" button below.
 
 ### MOR-02 — Normal user sees no Administration group
 

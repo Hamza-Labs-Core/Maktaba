@@ -27,6 +27,7 @@ import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
 import { WhatsOnNow } from "../components/WhatsOnNow";
+import { TitleRow } from "../help/HelpLink";
 
 type View = "grid" | "list";
 type SortField = "updated_at" | "title" | "duration_sec";
@@ -327,7 +328,9 @@ export function LibraryBrowser() {
   return (
     <section className="mkt-page mkt-library">
       <header className="mkt-page__header">
-        <h1>{t("nav.library")}</h1>
+        <TitleRow>
+          <h1>{t("nav.library")}</h1>
+        </TitleRow>
         <div className="mkt-toolbar" role="toolbar" aria-label={t("library.sort")}>
           <label className="mkt-field">
             <span className="mkt-field__label">{t("library.sort")}</span>

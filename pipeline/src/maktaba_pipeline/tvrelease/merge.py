@@ -5,12 +5,15 @@ An update to the TV starts a change; every update after it joins that same chang
 until the change is approved. Updates are a channel plan from ``write_channels``, a
 schedule regeneration (the ``stale`` flag), a hand edit in the channel editor
 (channels, art, filler pools and clips), a TV settings save and a rollback's re-stage.
-The open change is the newest ``draft`` no one approved (:func:`.store.open_draft`, the
-API's ``Store.OpenDraft``); a change approved, or beyond draft (staged … swapping),
-takes no more updates: the next one opens a new change, queued behind it. A change
-that fails verification goes back to ``draft`` (the API's controller) and is the open
-change again; a draft opened while it was in flight joins it (the API's
-``tvchange.MergePending``, the same rules as here).
+The open change is the change no one approved in ``draft``, ``staged``, ``verifying``
+or ``ready`` (:func:`.store.open_change`, the API's ``Store.OpenChange``). An update
+that joins it after it was checked sends it back to ``draft`` ("updated after it was
+checked: it is checked again", :func:`.store.reopen`), staged again when the write mode
+stages by itself. Only a change approved (``approved_by`` set), swapping or live takes
+no more updates: the next one opens a new change. A change that fails verification
+goes back to ``draft`` too. A second open change (opened before this rule, or while the
+first was in flight) joins the older one (:func:`.stage.collapse_open`, the API's
+``Store.CollapseOpen`` and ``tvchange.MergePending``, the same rules as here).
 
 Merge rules (``old`` = what the change holds, ``new`` = the update joining it; the
 API's ``merge.go`` is the same, rule for rule):

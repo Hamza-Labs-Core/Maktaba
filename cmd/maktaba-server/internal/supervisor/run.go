@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"sync"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
 )
 
 // Supervisor runs a set of child processes and keeps each one alive on
@@ -40,6 +42,8 @@ type Supervisor struct {
 	// noConsole: the first child that could not be asked to stop for want of a
 	// console has been logged (cannotAsk).
 	noConsole sync.Once
+	// llm, when set, is the model server's state (WithLLM).
+	llm func() llmserver.Status
 }
 
 // child is one supervised role. Everything but proc is guarded by s.mu.
