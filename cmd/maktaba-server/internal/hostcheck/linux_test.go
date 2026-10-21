@@ -78,9 +78,10 @@ func TestLinuxCheckWithoutAUserManager(t *testing.T) {
 	// no user manager for this user
 	m := manager(t, true, true)
 	m.Run = func(context.Context, []string) (string, error) { return "", errors.New("Failed to connect to bus") }
-	l = Linux{Glibc: glibc("2.35"), Manager: m, Unit: unit(t)}
+	l = Linux{Glibc: glibc("2.35"), Manager: m, Unit: unit(t), User: "media"}
 	n := one(t, "no user manager", l.Check(context.Background()).Problems)
-	if n.Code != "user_manager_missing" || !strings.Contains(param(n, "reason").(string), "Failed to connect to bus") {
+	if n.Code != "user_manager_missing" || !strings.Contains(param(n, "reason").(string), "Failed to connect to bus") ||
+		param(n, "user") != "media" || !strings.Contains(n.Message, "loginctl enable-linger media") {
 		t.Errorf("no user manager: %+v", n)
 	}
 }

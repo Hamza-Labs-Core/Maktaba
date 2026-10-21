@@ -403,3 +403,45 @@ func TestReadAnswers(t *testing.T) {
 		t.Errorf("no answers: %v %v", m, err)
 	}
 }
+
+// An expired Plex code (or Plex out of reach) is "link it later": the setup
+// goes on and keeps every answer given before it.
+func TestAppSetupLinksPlexLater(t *testing.T) {
+	f := interactiveSteps()
+	f.answers["plex"] = []any{map[string]any{"pin_id": 7, "code": "ABCD", "link_url": "https://plex.tv/link"},
+		&stepFailure{Code: "pin_expired", Message: "the PIN expired"}, map[string]any{}}
+	var out bytes.Buffer
+	a := &appSetup{run: f.run, ask: interactive(t), out: &out, t: textsFor("en"), pollEvery: time.Millisecond}
+	if err := a.Run(context.Background()); err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	if got := f.inputs["plex"]; len(got) != 3 || got[2] != `{"action":"skip"}` {
+		t.Errorf("plex inputs %v", got)
+	}
+	if !strings.HasSuffix(strings.Join(f.calls, " "), "venv models llm finish") {
+		t.Errorf("steps %v", f.calls)
+	}
+	for _, w := range []string{"The Plex code expired. Try again.", "link it later in Settings"} {
+		if !strings.Contains(out.String(), w) {
+			t.Errorf("output lacks %q:\n%s", w, out.String())
+		}
+	}
+}
+
+func TestEndError(t *testing.T) {
+	ar := textsFor("ar")
+	if err := endError(ar, nil); err != nil {
+		t.Errorf("nil: %v", err)
+	}
+	if err := endError(ar, wrapStep("venv", &stepFailure{Code: "venv_failed", Message: "pip failed"})); err == nil ||
+		err.Error() != ar.get("setup.error.venv_failed") {
+		t.Errorf("a step's failure: %v", err)
+	}
+	if err := endError(ar, errCancelled); err == nil || err.Error() != ar.get("terminal.cancelled") {
+		t.Errorf("cancel: %v", err)
+	}
+	other := errors.New("exec: not found")
+	if err := endError(ar, other); err != other {
+		t.Errorf("another error: %v", err)
+	}
+}

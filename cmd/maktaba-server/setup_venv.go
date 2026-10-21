@@ -68,12 +68,7 @@ func stepVenv(s *setupRun, _ json.RawMessage) (any, error) {
 		return nil, failStep("venv_failed", "", "The app's pipeline folder must hold one maktaba_pipeline wheel (found %d).", len(wheels))
 	}
 	venv := filepath.Join(s.cfg.StateDir(), "venv")
-	logDir := config.LogsDir()
-	if err := os.MkdirAll(logDir, 0o755); err != nil {
-		return nil, err
-	}
-	logPath := filepath.Join(logDir, "venv.log")
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	logFile, err := config.OpenLog("venv.log") // the user's only, as every log
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +125,7 @@ func stepVenv(s *setupRun, _ json.RawMessage) (any, error) {
 		if lines := strings.Split(strings.TrimSpace(msg), "\n"); len(lines) > 3 {
 			msg = strings.Join(lines[len(lines)-3:], "\n")
 		}
-		return nil, failStep("venv_failed", "", "%s (the full log: %s)", strings.TrimSpace(msg), logPath)
+		return nil, failStep("venv_failed", "", "%s (the full log: %s)", strings.TrimSpace(msg), logFile.Name())
 	}
 }
 

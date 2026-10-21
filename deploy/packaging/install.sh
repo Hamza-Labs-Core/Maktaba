@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Maktaba home-server installer.
+# Maktaba home-server installer. Take it from a release (its install.sh asset,
+# listed in the release's signed checksums.txt), not from a branch:
 #
-#   curl -fsSL https://raw.githubusercontent.com/Hamza-Labs-Core/Maktaba/main/deploy/packaging/install.sh | bash
+#   curl -fsSLO https://github.com/Hamza-Labs-Core/Maktaba/releases/latest/download/install.sh
+#   bash install.sh          # the server binaries
+#   bash install.sh --app    # Linux: the whole server, for a machine without a desktop
 #
 # Detects your OS + CPU, downloads the matching signed release archive
 # from GitHub, verifies the release's Sigstore signature (when cosign is
@@ -47,8 +50,13 @@ VERSION="${MAKTABA_VERSION:-latest}"
 COSIGN_VERSION="v2.6.5"
 COSIGN_SHA256_AMD64="c3b4f5410e608af03a5eb0aaac84a4313d8da131248e08ff1759ac70c79d1644"
 COSIGN_SHA256_ARM64="426193b4c5da4d4d643e822f48fe0cc8a476ca1782a272704831f5a0cef716d7"
+# The oldest cosign whose verify-blob reads the release's (new format) Sigstore
+# bundle: an older one on the PATH is passed over for the pinned build.
+COSIGN_MIN="2.4.3"
 # The cosign verify_signature runs (ensure_cosign may point it at the fetched one).
 COSIGN="cosign"
+# What a refusal adds; --app has no way around the verification.
+NO_VERIFY_HINT=" (MAKTABA_NO_VERIFY=1 overrides)"
 
 # --- pretty output -----------------------------------------------------
 info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
@@ -140,14 +148,40 @@ sha256_of() {
     fi
 }
 
-# ensure_cosign <dir> <amd64|arm64>: COSIGN is a cosign that can run here: the
-# one on the PATH, else cosign's pinned release build fetched into <dir> and
-# checked against its SHA-256 before it is made executable.
+# version_at_least <have> <need>: dotted versions (a leading v ignored), have >= need.
+version_at_least() {
+    local -a have need
+    local i h n
+    IFS=. read -r -a have <<<"${1#v}"
+    IFS=. read -r -a need <<<"${2#v}"
+    for i in 0 1 2; do
+        h="${have[i]:-0}" n="${need[i]:-0}"
+        h="${h%%[!0-9]*}" n="${n%%[!0-9]*}"
+        [ "${h:-0}" -gt "${n:-0}" ] && return 0
+        [ "${h:-0}" -lt "${n:-0}" ] && return 1
+    done
+    return 0
+}
+
+# cosign_version <cosign>: its version (cosign version's GitVersion), or nothing
+# (a cosign whose `version` fails is not one this script can use, never an error).
+cosign_version() {
+    { "$1" version 2>/dev/null || true; } | awk '$1 == "GitVersion:" { print $2; exit }'
+}
+
+# ensure_cosign <dir> <amd64|arm64>: COSIGN is a cosign that can check the
+# release here: the one on the PATH when it is COSIGN_MIN or newer, else
+# cosign's pinned release build fetched into <dir> and checked against its
+# SHA-256 before it is made executable.
 ensure_cosign() {
-    local dir="$1" arch="$2" want bin
+    local dir="$1" arch="$2" want bin have
     if command -v cosign >/dev/null 2>&1; then
-        COSIGN="cosign"
-        return 0
+        have="$(cosign_version cosign)"
+        if [ -n "${have}" ] && version_at_least "${have}" "${COSIGN_MIN}"; then
+            COSIGN="cosign"
+            return 0
+        fi
+        info "The cosign on the PATH (${have:-of unknown version}) is older than ${COSIGN_MIN}, which this release's signature needs"
     fi
     case "${arch}" in
         amd64) want="${COSIGN_SHA256_AMD64}" ;;
@@ -173,6 +207,7 @@ main_app() {
         || die "--app installs Maktaba for one user, as a user service: run it as that user, without sudo (an administrator's password is asked only to start it at boot)"
     [ "${MAKTABA_NO_VERIFY:-0}" != "1" ] \
         || die "--app never runs a payload it has not verified: unset MAKTABA_NO_VERIFY"
+    NO_VERIFY_HINT=""
     arch="$(detect_arch)"
     tag="$(resolve_version)"
     valid_tag "${tag}" || die "invalid release tag '${tag}' (want vX.Y.Z)"
@@ -183,6 +218,9 @@ main_app() {
     dir="${XDG_CACHE_HOME:-${HOME}/.cache}/maktaba/install/${ver}"
     rm -rf "${dir}"
     mkdir -p "${dir}"
+    # the download and the unpacked payload go, whatever happens (setup copied what it needs)
+    # shellcheck disable=SC2064 # the path, now
+    trap "rm -rf $(printf '%q' "${dir}")" EXIT
     info "Installing Maktaba ${tag} (the whole server) for linux/${arch}"
     ensure_cosign "${dir}" "${arch}"
     info "Downloading ${archive}"
@@ -265,7 +303,7 @@ identity_for() {
 verify_release() {
     local dir="$1" base="$2" tag="$3" archive="$4"
     fetch "${base}/checksums.txt" "${dir}/checksums.txt" 2>/dev/null \
-        || die "release ${tag} has no checksums.txt - refusing to install it unverified (MAKTABA_NO_VERIFY=1 overrides)"
+        || die "release ${tag} has no checksums.txt - refusing to install it unverified${NO_VERIFY_HINT}"
     verify_signature "${dir}" "${base}" "${tag}"
     info "Verifying SHA-256 checksum"
     verify_checksum "${dir}" "${archive}" \
@@ -276,7 +314,7 @@ verify_signature() {
     local dir="$1" base="$2" tag="$3" id
     id="$(identity_for "${tag}")"
     if ! fetch "${base}/checksums.txt.sigstore.json" "${dir}/checksums.txt.sigstore.json" 2>/dev/null; then
-        die "release ${tag} has no Sigstore bundle (checksums.txt.sigstore.json) - refusing to install it (MAKTABA_NO_VERIFY=1 overrides)"
+        die "release ${tag} has no Sigstore bundle (checksums.txt.sigstore.json) - refusing to install it${NO_VERIFY_HINT}"
     fi
     if command -v "${COSIGN}" >/dev/null 2>&1; then
         info "Verifying the Sigstore signature of checksums.txt"
