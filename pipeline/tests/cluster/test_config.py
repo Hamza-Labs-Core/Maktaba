@@ -28,14 +28,30 @@ def test_paths_per_os() -> None:
     )
     assert (
         config.config_path(
-            system="Windows", env={"APPDATA": r"C:\Users\u\AppData\Roaming"}, home=HOME
+            system="Windows", env={"LOCALAPPDATA": r"C:\Users\u\AppData\Local"}, home=HOME
         )
-        == Path(r"C:\Users\u\AppData\Roaming") / "Maktaba" / "node.json"
+        == Path(r"C:\Users\u\AppData\Local") / "Maktaba" / "node.json"
     )
-    # no APPDATA: the usual place under the profile
+    # no LOCALAPPDATA: the usual place under the profile
     assert config.config_path(system="Windows", env={}, home=HOME) == (
-        HOME / "AppData" / "Roaming" / "Maktaba" / "node.json"
+        HOME / "AppData" / "Local" / "Maktaba" / "node.json"
     )
+
+
+def test_windows_keeps_a_node_config_from_the_roaming_profile(tmp_path: Path) -> None:
+    """Epic 38: node.json moved from %APPDATA% to %LOCALAPPDATA%. A machine that joined
+    before keeps reading (and rewriting) its old file until there is one in the new
+    place; a new join writes the new place."""
+    env = {"LOCALAPPDATA": str(tmp_path / "Local"), "APPDATA": str(tmp_path / "Roaming")}
+    cur = tmp_path / "Local" / "Maktaba" / "node.json"
+    old = tmp_path / "Roaming" / "Maktaba" / "node.json"
+    assert config.config_path(system="Windows", env=env, home=HOME) == cur
+    old.parent.mkdir(parents=True)
+    old.write_text("{}", encoding="utf-8")
+    assert config.config_path(system="Windows", env=env, home=HOME) == old
+    cur.parent.mkdir(parents=True)
+    cur.write_text("{}", encoding="utf-8")
+    assert config.config_path(system="Windows", env=env, home=HOME) == cur
 
 
 def test_the_override_wins_on_every_os() -> None:

@@ -55,7 +55,7 @@ func MountP27(r chi.Router, d P27Deps) {
 		Drafts: tvchange.NewDrafts(d.DB)}
 	chh.Mount(r)
 	chh.MountSchedule(r) // Story 27.2 — schedule read + regenerate trigger
-	(&guide.Handler{DB: d.DB}).Mount(r)
+	(&guide.Handler{DB: d.DB, StreamBase: d.PublicBaseURL}).Mount(r)
 	tvh.Mount(r)
 	// Epic 32: streaming hosts and channels on air across the cluster (admin)
 	tvcluster.New(d.DB).Mount(r)
