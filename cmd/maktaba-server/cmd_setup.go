@@ -138,7 +138,7 @@ func runSetup(doMigrate bool) error {
 			fmt.Fprintf(os.Stderr, "migration failed (run `maktaba-server migrate up` once the api binary is on PATH): %v\n", err)
 		} else if !useToken {
 			fmt.Println("Seeding admin user ...")
-			if err := runAPISub("adduser", []string{"--username", adminUser, "--password", adminPass}); err != nil {
+			if err := seedAdminCLI(adminUser, adminPass); err != nil {
 				fmt.Fprintf(os.Stderr, "adduser failed (run `maktaba-server adduser` later): %v\n", err)
 			}
 		}
@@ -150,6 +150,30 @@ func runSetup(doMigrate bool) error {
 		fmt.Printf("\nAdmin token (store it safely — shown once):\n  %s\n", adminToken)
 	}
 	return nil
+}
+
+// seedAdminCLI runs `maktaba-api adduser --password-file <f> <user>`: the api
+// takes the username as its argument and the password from a file (0600 in
+// the keys folder, removed afterwards), never argv, which every user of the
+// machine can read.
+func seedAdminCLI(user, pass string) error {
+	dir := config.KeysDir()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(dir, ".admin-password-*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(f.Name()) }()
+	if _, err := f.WriteString(pass + "\n"); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return runAPISub("adduser", []string{"--password-file", f.Name(), user})
 }
 
 func splitRoots(line string) []string {

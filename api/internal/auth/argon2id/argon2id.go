@@ -137,6 +137,39 @@ func Verify(password, phc string) error {
 	return ErrMismatch
 }
 
+// Valid checks that `phc` is a hash Verify can check: the PHC format with
+// this library's argon2 version, and decodable salt and key. A hash made
+// elsewhere (`maktaba-api hash-password` at first-run setup) is checked with
+// it before it is stored.
+func Valid(phc string) error {
+	parts := strings.Split(phc, "$")
+	if len(parts) != 6 || parts[1] != "argon2id" {
+		return ErrInvalidHash
+	}
+	var version int
+	if _, err := fmt.Sscanf(parts[2], "v=%d", &version); err != nil {
+		return ErrInvalidHash
+	}
+	if version != argon2.Version {
+		return ErrIncompatibleVersion
+	}
+	var memory, timeCost uint32
+	var parallelism uint8
+	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &memory, &timeCost, &parallelism); err != nil ||
+		memory == 0 || timeCost == 0 || parallelism == 0 {
+		return ErrInvalidHash
+	}
+	b64 := base64.RawStdEncoding
+	salt, err := b64.DecodeString(parts[4])
+	if err != nil || len(salt) == 0 {
+		return ErrInvalidHash
+	}
+	if key, err := b64.DecodeString(parts[5]); err != nil || len(key) == 0 {
+		return ErrInvalidHash
+	}
+	return nil
+}
+
 // IsDisabled reports whether the stored hash is the
 // `<unsalted-disabled>` placeholder we put on the sentinel admin row
 // in migration 0029. A row with this value is meant to be reachable

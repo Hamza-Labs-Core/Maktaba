@@ -127,11 +127,16 @@ func New(db *sql.DB) *Store {
 // stored as SQL NULL so they don't collide on the partial-unique email
 // index.
 type CreateInput struct {
-	Username    string
-	Password    string
-	IsAdmin     bool
-	Email       string
-	DisplayName string
+	Username string
+	Password string
+	// PasswordHash, when set, is stored in place of hashing Password: an
+	// argon2id PHC string made by `maktaba-api hash-password` (the first-run
+	// setup of the desktop app hashes the admin's password when it is typed,
+	// so only the hash waits on disk until the database exists).
+	PasswordHash string
+	IsAdmin      bool
+	Email        string
+	DisplayName  string
 }
 
 // Create inserts a user row. Validates and casefolds username; hashes
@@ -144,9 +149,16 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (*User, error) {
 	if err := validateUsername(in.Username); err != nil {
 		return nil, err
 	}
-	hash, err := argon2id.Hash(in.Password, s.Params)
-	if err != nil {
-		return nil, err
+	hash := in.PasswordHash
+	if hash != "" {
+		if err := argon2id.Valid(hash); err != nil {
+			return nil, err
+		}
+	} else {
+		var err error
+		if hash, err = argon2id.Hash(in.Password, s.Params); err != nil {
+			return nil, err
+		}
 	}
 	id := uuid.NewString()
 	const q = `INSERT INTO users (id, username, pw_hash, is_admin, email, display_name)
