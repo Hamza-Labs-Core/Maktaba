@@ -185,178 +185,33 @@ if [ -n "$SETUP" ]; then
     state_sums() { (cd "$INST" && sha256sum server.toml keys/secrets.key data/supervisor/state.txt 2>&1); }
     STATE_BEFORE="$(state_sums)"
 
-    # Runs the installer or the uninstaller and waits until it and everything it started have
-    # exited (the uninstaller copies itself to %TEMP% and runs from there: uninstall.exe is
-    # gone well before that copy has removed the registration). What its hooks start from the
-    # install folder is ended once it outlives the grace (see the header), with the WebView2
-    # processes of a shell window. Prints "exit <code>" for the program, "child <name> exit
-    # <code>" for each program it started that is not the app's (the uninstaller's copy), and
-    # "ran <command line>" for each of the app's it saw (a hook running Maktaba.exe; one that
-    # exits at once may come and go between two looks).
-    cat >"$SCRATCH/run-watched.ps1" <<'PS'
-param(
-    [Parameter(Mandatory = $true)][string]$Exe,
-    [Parameter(Mandatory = $true)][string]$Arguments,
-    [Parameter(Mandatory = $true)][string]$Dir,
-    [string]$WebView = '',
-    [int]$Grace = 20,
-    [int]$Timeout = 900
-)
-$ErrorActionPreference = 'Stop'
-$prefix = $Dir.TrimEnd('\') + '\'
-function InDir($q) { $q.ExecutablePath -and $q.ExecutablePath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) }
-function Sweep($all, [double]$grace) {
-    $now = Get-Date
-    foreach ($q in $all) {
-        if (-not (InDir $q)) { continue }
-        $age = ($now - $q.CreationDate).TotalSeconds
-        if ($age -lt $grace) { continue }
-        Write-Output ("ended {0} after {1:N0} s: {2}" -f $q.Name, $age, $q.CommandLine)
-        Stop-Process -Id $q.ProcessId -Force -ErrorAction SilentlyContinue
-        if ($WebView) {
-            $all | Where-Object { $_.Name -eq 'msedgewebview2.exe' -and $_.CommandLine -and $_.CommandLine.Contains($WebView) } |
-                ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-        }
-    }
-}
-# Each run of a Maktaba.exe from the install folder, as a hook makes it: looked for every
-# 10 ms on a thread of its own, as a hook's run is over long before the next process list
-# below (a flag-taking one takes 0.2-1 s), and its command line read at once (from the
-# process itself: WMI is far too slow for that).
-Add-Type -TypeDefinition @'
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading;
-public sealed class MaktabaSpotter {
-    [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(int access, bool inherit, int pid);
-    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr h, int flags, StringBuilder name, ref int size);
-    [DllImport("ntdll.dll")] static extern int NtQueryInformationProcess(IntPtr h, int cls, IntPtr buf, int len, out int ret);
-    const int QueryLimited = 0x1000, CommandLineInformation = 60;
-    readonly string prefix;
-    readonly List<string> lines = new List<string>();
-    readonly HashSet<int> seen = new HashSet<int>();
-    volatile bool stop;
-    Thread thread;
-    public MaktabaSpotter(string prefix) { this.prefix = prefix; }
-    public void Start() { thread = new Thread(Run); thread.IsBackground = true; thread.Start(); }
-    public string[] Stop() { stop = true; thread.Join(); lock (lines) return lines.ToArray(); }
-    void Run() {
-        while (!stop) {
-            foreach (Process p in Process.GetProcessesByName("Maktaba")) {
-                using (p) {
-                    if (!seen.Add(p.Id)) continue;
-                    string path, cmd;
-                    Read(p.Id, out path, out cmd);
-                    if (path == null || !path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
-                    lock (lines) lines.Add(cmd ?? ("\"" + path + "\" ?"));
-                }
-            }
-            Thread.Sleep(10);
-        }
-    }
-    static void Read(int pid, out string path, out string cmd) {
-        path = null; cmd = null;
-        IntPtr h = OpenProcess(QueryLimited, false, pid);
-        if (h == IntPtr.Zero) return;
-        try {
-            var name = new StringBuilder(32768);
-            int size = name.Capacity;
-            if (QueryFullProcessImageName(h, 0, name, ref size)) path = name.ToString(0, size);
-            int len;
-            NtQueryInformationProcess(h, CommandLineInformation, IntPtr.Zero, 0, out len);
-            if (len <= 0) return;
-            IntPtr buf = Marshal.AllocHGlobal(len);
-            try {
-                // a UNICODE_STRING (Length, MaximumLength, Buffer) and the text it points at
-                if (NtQueryInformationProcess(h, CommandLineInformation, buf, len, out len) == 0)
-                    cmd = Marshal.PtrToStringUni(Marshal.ReadIntPtr(buf, IntPtr.Size), Marshal.ReadInt16(buf) / 2);
-            } finally { Marshal.FreeHGlobal(buf); }
-        } finally { CloseHandle(h); }
-    }
-}
-'@
-$spotter = New-Object MaktabaSpotter $prefix
-$spotter.Start()
-# the app's other programs (not Maktaba.exe), from the process lists below
-$seen = @{}
-function Ran($q) {
-    if ((InDir $q) -and $q.Name -ne 'Maktaba.exe' -and -not $seen.ContainsKey([int]$q.ProcessId)) {
-        $seen[[int]$q.ProcessId] = $true
-        Write-Output ("ran {0}" -f $q.CommandLine)
-    }
-}
-$p = Start-Process -FilePath $Exe -ArgumentList $Arguments -PassThru
-$null = $p.Handle   # the exit code stays readable after it exits
-$start = Get-Date
-# the processes it started, and theirs: pid -> creation time (a reused pid is younger than
-# the process that held it), and handles on those that are not the app's, for their exit
-# codes. Its own start a second early: WMI's creation times are coarser than .NET's.
-$born = try { $p.StartTime.AddSeconds(-1) } catch { $start.AddSeconds(-2) }
-$tree = @{ [int]$p.Id = $born }
-$copies = @{}
-while ($true) {
-    # whether it has exited, before the list: a program starts its children before it exits,
-    # so once it has, the list holds every one of them (the uninstaller's stub exits at once)
-    $exited = $p.HasExited
-    $all = @(Get-CimInstance Win32_Process)
-    $grew = $true
-    while ($grew) {
-        $grew = $false
-        foreach ($q in $all) {
-            $id = [int]$q.ProcessId
-            $parent = [int]$q.ParentProcessId
-            if ($tree.ContainsKey($id) -or -not $tree.ContainsKey($parent) -or $q.CreationDate -lt $tree[$parent]) { continue }
-            $tree[$id] = $q.CreationDate
-            $grew = $true
-            Ran $q
-            if (-not (InDir $q) -and $q.Name -ne 'msedgewebview2.exe') {
-                try { $c = Get-Process -Id $id; $null = $c.Handle; $copies[$id] = $c } catch { }
-            }
-        }
-    }
-    Sweep $all $Grace
-    $alive = @($all | Where-Object { $tree.ContainsKey([int]$_.ProcessId) -and $_.CreationDate -ge $tree[[int]$_.ProcessId] })
-    if ($exited -and $alive.Count -eq 0) { break }
-    if (((Get-Date) - $start).TotalSeconds -gt $Timeout) {
-        Write-Output ("timeout after {0} s, still running: {1}" -f $Timeout, (($alive | ForEach-Object { $_.Name }) -join ' '))
-        exit 3
-    }
-    Start-Sleep -Milliseconds 500
-}
-Sweep @(Get-CimInstance Win32_Process) 0   # nothing it started may outlive it
-foreach ($l in $spotter.Stop()) { Write-Output ("ran {0}" -f $l) }
-foreach ($c in $copies.Values) { Write-Output ("child {0} exit {1}" -f $c.ProcessName, $c.ExitCode) }
-Write-Output ("exit {0}" -f $p.ExitCode)
-PS
+    # Runs the installer, the uninstaller or Maktaba.exe in a job object and reports all it
+    # started (run-watched.ps1): the uninstaller's copy of itself in %TEMP%, which removes the
+    # registration well after uninstall.exe is gone, and each hook's run of Maktaba.exe, read
+    # the moment it starts. What runs from the install folder after the grace is ended.
     # watched EXE ARGS [GRACE]: runs it as above (GRACE seconds, default 20, before what runs
-    # from the install folder is ended); sets WATCHED_EXIT (its exit code, else the first
-    # failing one of the programs it started), WATCHED_CHILDREN ("<name> exit <code>" of
-    # those), WATCHED_RAN (the app's programs it saw run) and WATCHED_ENDED (what had to be
-    # ended), one per line
+    # from the install folder is ended); sets WATCHED_EXIT (its exit code), WATCHED_CHILDREN
+    # ("<name> exit <code>" of the other programs it started itself), WATCHED_RAN (the command
+    # line of each of the app's) and WATCHED_ENDED (what had to be ended), one per line
     watched() {
-        local out line code ps=(-Exe "$(win "$1")" -Arguments "$2" -Dir "$(win "$INST")" -WebView "$(win "$SCRATCH/webview2")" -Grace "${3:-20}")
-        WATCHED_EXIT=none WATCHED_ENDED="" WATCHED_CHILDREN="" WATCHED_RAN="" code=0
+        local out line
+        WATCHED_EXIT=none WATCHED_ENDED="" WATCHED_CHILDREN="" WATCHED_RAN=""
         # the hooks' app (story 38.3) keeps its state in %LOCALAPPDATA%\Maktaba: a scratch one
         out="$(LOCALAPPDATA="$(win "$SCRATCH/localappdata")" WEBVIEW2_USER_DATA_FOLDER="$(win "$SCRATCH/webview2")" \
             wincmd powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
-            -File "$(win "$SCRATCH/run-watched.ps1")" "${ps[@]}" 2>&1)" || true
+            -File "$(win "$SCRIPT_DIR/run-watched.ps1")" -Exe "$(win "$1")" -Arguments "$2" -Dir "$(win "$INST")" \
+            -Grace "${3:-20}" 2>&1)" || true
         while IFS=$'\r' read -r line; do
             case "$line" in
                 "exit "*)  WATCHED_EXIT="${line#exit }" ;;
-                "child "*" exit "*)
-                    WATCHED_CHILDREN+="${line#child } "
-                    if [ "$code" = 0 ] && [ "${line##* exit }" != 0 ]; then code="${line##* exit } (${line#child })"; fi ;;
+                "child "*) WATCHED_CHILDREN+="${line#child }"$'\n' ;;
                 "ended "*) WATCHED_ENDED+="${line#ended }"$'\n' ;;
                 "ran "*)   WATCHED_RAN+="${line#ran }"$'\n' ;;
+                "missed "*|"timeout "*) fail "$(basename "$1") $2: the watcher: $line" ;;
                 "") ;;
                 *) printf '        %s\n' "$line" ;;
             esac
         done <<<"$out"
-        if [ "$WATCHED_EXIT" = 0 ] && [ "$code" != 0 ]; then WATCHED_EXIT="$code"; fi
     }
     # hooks WHAT FLAG...: what the hooks of the last run did, judged by whether this tree's
     # shell takes the flags (the header): none may still run after 20 s; with the flags,
@@ -677,14 +532,18 @@ if [ -n "$SETUP" ]; then
     echo "uninstall"
     watched "$INST/uninstall.exe" "/S"
     hooks "uninstall" --server-stop --server-remove
-    # NSIS's uninstall.exe runs the uninstall from a copy of itself in %TEMP% and exits at
-    # once: the checks below are only meaningful once that copy was waited for
+    # NSIS's uninstall.exe runs the uninstall from a copy of itself in %TEMP% (Un.exe) and
+    # exits at once: the checks below mean something only once that copy has finished, and
+    # its exit code is the uninstall's
+    copy="$(printf '%s' "$WATCHED_CHILDREN" | grep -E '^(Un|Un_A|Au_) exit ' | head -1 || true)"
     if [ "$WATCHED_EXIT" != 0 ]; then
         fail "uninstall.exe /S exited $WATCHED_EXIT"
-    elif [ -z "$WATCHED_CHILDREN" ]; then
-        fail "uninstall.exe /S: the copy it runs the uninstall from was never seen, so it was not waited for"
+    elif [ -z "$copy" ]; then
+        fail "uninstall.exe /S: the copy it runs the uninstall from was not seen (it started: ${WATCHED_CHILDREN:-nothing})"
+    elif [ "${copy##* exit }" != 0 ]; then
+        fail "uninstall.exe /S: its copy failed ($copy)"
     else
-        ok "uninstall.exe /S and the copy it ran from %TEMP% finished (${WATCHED_CHILDREN% })"
+        ok "uninstall.exe /S and the copy it ran from %TEMP% finished ($copy)"
     fi
     left=0
     for f in Maktaba.exe uninstall.exe server; do
