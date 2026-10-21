@@ -11,11 +11,12 @@ package tv
 //	                            reload and channel-map push, errors
 //	POST /api/tv/plex/refresh   (admin) queue plex_livetv now (forced: the
 //	                            channel map is pushed and the guide reloaded)
-//	POST /api/tv/plex/register  (admin) ask the stage to add the tuner and a
-//	                            DVR with the XMLTV guide, once. 409 when the
-//	                            last check found a DVR with Maktaba's tuner,
-//	                            or the tuner is off. The stage checks again
-//	                            and refuses the same way (idempotent).
+//	POST /api/tv/plex/register  (admin) ask the stage to add the tuner to the
+//	                            DVR Plex's settings page shows, as another
+//	                            channel source with the XMLTV guide. 409 when
+//	                            the last check found it there already, or the
+//	                            tuner is off. The stage checks again and
+//	                            refuses the same way (idempotent).
 
 import (
 	"context"

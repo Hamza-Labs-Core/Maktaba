@@ -242,12 +242,13 @@ describe("AdminLiveTV", () => {
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveTextContent("http://192.168.1.20:8782 is added");
     expect(dialog).toHaveTextContent("XMLTV guide http://192.168.1.20:8782/xmltv.xml");
-    expect(dialog).toHaveTextContent("dizqueTV's included, stay as they are");
+    expect(dialog).toHaveTextContent('as "Add Another Device" does');
+    expect(dialog).toHaveTextContent("dizqueTV's included, keep their channels, names and guides");
     routes({ "/api/tv/hdhr": { ...device, enabled: true }, "/api/tv/plex": plexRegistered });
     await user.click(screen.getByRole("button", { name: "Add to Plex" }));
     expect(post).toHaveBeenCalledWith("/api/tv/plex/register");
     expect(await screen.findByText(/^Queued/)).toBeInTheDocument();
-    expect(await screen.findByText(/Added: a DVR uses/)).toBeInTheDocument();
+    expect(await screen.findByText(/Added: Maktaba is a channel source/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Add Maktaba to Plex" })).not.toBeInTheDocument();
     expect(screen.getByText("3 of 3 channels")).toBeInTheDocument();
   });
@@ -274,6 +275,22 @@ describe("AdminLiveTV", () => {
     renderPage();
     expect(await screen.findByText("3 of 3 channels")).toBeInTheDocument();
     expect(screen.queryByText(/Plex is loading the guide/)).not.toBeInTheDocument();
+  });
+
+  it("offers to move Maktaba out of a DVR of its own that Plex does not show", async () => {
+    routes({
+      "/api/tv/hdhr": { ...device, enabled: true },
+      "/api/tv/plex": {
+        ...plexRegistered,
+        status: {
+          ...plexRegistered.status,
+          maktaba: { tuner_key: "14", dvr_key: "17", registered: false, separate_dvr: true },
+        },
+      },
+    });
+    renderPage();
+    expect(await screen.findByText(/DVR of its own, which Plex's Live TV/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add Maktaba to Plex" })).toBeEnabled();
   });
 
   it("cannot add Maktaba to Plex while the tuner is off", async () => {
