@@ -90,6 +90,21 @@ func main() {
 		case "adduser":
 			if err := runAddUser(os.Args[2:]); err != nil {
 				fmt.Fprintf(os.Stderr, "adduser: %v\n", err)
+				if errors.Is(err, errUserExists) {
+					os.Exit(3)
+				}
+				os.Exit(1)
+			}
+			return
+		case "hash-password":
+			if err := runHashPassword(os.Stdin, os.Stdout); err != nil {
+				fmt.Fprintf(os.Stderr, "hash-password: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "plex-link":
+			if err := runPlexLink(os.Args[2:], os.Stdout); err != nil {
+				fmt.Fprintf(os.Stderr, "plex-link: %v\n", err)
 				os.Exit(1)
 			}
 			return
@@ -149,6 +164,11 @@ Commands:
   serve      Run the HTTP server (chi router + admin port + /metrics)
   migrate    Run database migrations (see "migrate --help")
   adduser    Seed the first admin user (Story 10.1 AC-4)
+  hash-password
+             Hash a password (stdin) for adduser --password-hash-file
+             (the desktop app's first-run setup)
+  plex-link  Store the Plex server an account token reaches (the desktop
+             app's first-run setup; see "plex-link --help")
   keys       Generate or rotate RS256 JWT keys (Story 10.6)
   cloudflare spike
              Run the Cloudflare Stream spike against a real account

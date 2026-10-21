@@ -12,6 +12,28 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **The desktop app's setup works end to end** (Epic 38, story 38.6; the Mac, Windows and Linux
+  alike). `maktaba-server setup --json` gains every step the setup screens run: `check` (what will
+  run, memory and disk), `admin` (the password is hashed as it is typed, by the new
+  `maktaba-api hash-password`; only the hash waits), `libraries` (folders and the NAS path map,
+  drive letters and UNC paths too), `models` (the Hugging Face token checked against the gated
+  second-listen model, or the NAS copy found; the download after the venv, with progress),
+  `plex` (the plex.tv PIN sign-in), `venv` (the pipeline's environment, with progress) and `finish`
+  (server.toml, the database created and migrated, the admin seeded with the new
+  `adduser --password-hash-file`, the Plex server stored with the new `maktaba-api plex-link`).
+  The screens say "this PC" and "the tray" on Windows, and turn a disabled sign-in task back on.
+  Every finding and refusal comes with a code and its values, so the screens say it in English or
+  Arabic (never the step's English beside it); `check` separates what blocks from what is worth
+  knowing and says when Windows or Linux will transcribe on the processor (no NVIDIA GPU). Library
+  folders and both sides of the path map must be whole paths (a bare `Y:` is the drive's root), a
+  password cannot hold a line break, and two spellings of one folder are one root only where the
+  disk ignores case. A stop asks the venv build and the models download to stop instead of killing
+  them under pip.
+- **`maktaba-server setup` in a terminal runs the app's setup steps** (Epic 38, story 38.6): the
+  same checks, admin rules, folders, path map, Plex sign-in and finish, plus where the data goes and
+  the database (SQLite, which `finish` now creates, or a Postgres url). Its separate wizard is gone,
+  with its admin token, which nothing ever accepted; `--migrate` is accepted and ignored (setup
+  always prepares the database).
 - **Transcription on Windows and Linux (story 38.8).** The transcribe stage runs Whisper on
   CTranslate2 there (faster-whisper's `dropbox-dash/faster-whisper-large-v3-turbo`), batched
   across files as the Mac's MLX engine does: on an NVIDIA GPU when CUDA works (cuBLAS 12 comes
@@ -84,6 +106,15 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **`maktaba-server setup` (the CLI wizard) seeds the admin again.** It called `adduser` with
+  `--username`/`--password` flags the api does not have; it now passes the username and a
+  password file.
+- **After the app's setup the server runs on the bundled Postgres, with its transcription
+  workers.** Saving `server.toml` wrote every default, so setup's `finish` left `[database] url`
+  set to the default SQLite file: the next start never ran the bundled Postgres (the database setup
+  had made sat unused, and the pipeline could not open the SQLite one), and
+  `[pipeline] instances = 0` turned the workers off. A save now writes the url only when one was
+  chosen and the count only when it was set (`setup --node --instances 0` included).
 - **A user's server keeps its update verification current.** `maktaba-server` gave the api and
   streaming no data directory, so they used `/var/lib/maktaba`: in the desktop apps and every
   per-user install the daily refresh of the Sigstore trusted root failed (permission denied), and

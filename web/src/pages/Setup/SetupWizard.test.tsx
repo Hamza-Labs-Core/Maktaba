@@ -25,6 +25,7 @@ const CHECK = {
   data_dir: "/Users/me/Library/Application Support/Maktaba",
   need: { ram_bytes: 16 * 2 ** 30, disk_bytes: 20 * 2 ** 30 },
   ok: true,
+  problems: [],
   warnings: [],
   runs: [
     { role: "postgres", what: "The library database" },
@@ -108,19 +109,56 @@ describe("SetupWizard", () => {
     expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
   });
 
-  it("blocks Next when the check fails", async () => {
+  it("blocks Next when the check fails, each finding in the app's words", async () => {
     renderWizard(
-      fakeApi({ check: () => ({ ...CHECK, ok: false, warnings: ["Not Apple Silicon"] }) }),
+      fakeApi({
+        check: () => ({
+          ...CHECK,
+          ok: false,
+          problems: [
+            {
+              code: "disk_low",
+              params: { free_bytes: 5 * 2 ** 30, need_bytes: 20 * 2 ** 30, dir: "/data" },
+              message: "en",
+            },
+            { code: "brand_new", message: "A finding this app has no text for." },
+          ],
+          warnings: [{ code: "transcribe_cpu", message: "No NVIDIA GPU" }],
+        }),
+      }),
       "check"
     );
-    expect(await screen.findByText("Not Apple Silicon")).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        "Only 5.0 GB free on the disk of /data: Maktaba needs 20.0 GB to start."
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByText("A finding this app has no text for.")).toBeInTheDocument();
+    expect(screen.getByText(/this Mac transcribes on its processor/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+  });
+
+  it("says what will run in the app's words, Arabic too", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    const runs = [
+      { role: "api", what: "en" },
+      { role: "pipeline", what: "en", params: { workers: 2, gpu: "RTX 2080" } },
+    ];
+    renderWizard(fakeApi({ check: () => ({ ...CHECK, runs }) }), "check");
+    expect(await screen.findByText("الخادم الذي يتصل به التطبيق وأجهزتك")).toBeInTheDocument();
+    expect(
+      screen.getByText("الفهرسة والتفريغ (2 عمّال) والبحث، والتفريغ على RTX 2080")
+    ).toBeInTheDocument();
+    document.documentElement.dir = "ltr";
   });
 
   it("admin: a password typo never reaches the server; a weak password lands on its field", async () => {
     const admin = vi.fn((input: Record<string, unknown>) => {
       if (input.password === "short")
-        throw stepError("weak_password", "Use at least 12 characters", "password");
+        throw {
+          ...stepError("password_short", "Use at least 12 characters", "password"),
+          params: { min: 12 },
+        };
       return { username: input.username };
     });
     const api = fakeApi({ admin });
@@ -135,7 +173,7 @@ describe("SetupWizard", () => {
     await userEvent.clear(again);
     await userEvent.type(again, "short");
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(await screen.findByText("Use at least 12 characters")).toBeInTheDocument();
+    expect(await screen.findByText("Use at least 12 characters.")).toBeInTheDocument();
     expect(admin).toHaveBeenCalledWith(
       { username: "admin", password: "short" },
       expect.any(Function)
@@ -183,7 +221,7 @@ describe("SetupWizard", () => {
     await userEvent.type(screen.getByLabelText("Folders (one per line)"), "/a");
     await userEvent.type(screen.getByLabelText("NAS path map (optional)"), "/mnt/media");
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("their path => this Mac's path");
+    expect(screen.getByRole("alert")).toHaveTextContent("their path => the path here");
     expect(libraries).not.toHaveBeenCalled();
   });
 
@@ -217,7 +255,10 @@ describe("SetupWizard", () => {
       "50"
     );
     await act(async () => release());
-    expect(await screen.findByText("cohere is gated")).toBeInTheDocument();
+    // the field says it in the app's words (the step's English is for a code it does not know)
+    expect(
+      await screen.findByText("Accept the model's terms on huggingface.co with this account first.")
+    ).toBeInTheDocument();
 
     await userEvent.clear(screen.getByLabelText(/Hugging Face token/));
     await userEvent.type(screen.getByLabelText(/Hugging Face token/), "hf_good");
@@ -280,23 +321,68 @@ describe("SetupWizard", () => {
     });
   });
 
-  it("install: builds the venv, finishes, registers the login item, then waits for the server", async () => {
+  it("install: builds the venv, downloads the models, finishes, registers the login item, then waits for the server", async () => {
+    const order: string[] = [];
     const venv = vi.fn((_: Record<string, unknown>, onProgress?: (p: StepProgress) => void) => {
+      order.push("venv");
       onProgress?.({ stage: "venv", message: "Installing mlx", done: 3, total: 10 });
       return { reused: false };
     });
-    const finish = vi.fn(() => ({
-      web_url: "http://127.0.0.1:8088",
-      supervisor_url: "http://127.0.0.1:9103",
-    }));
-    const llm = vi.fn(() => ({ models: [{ name: "qwen2.5:7b", ready: true }] }));
-    const api = fakeApi({ venv, llm, finish });
+    const models = vi.fn(
+      (input: Record<string, unknown>, onProgress?: (p: StepProgress) => void) => {
+        order.push(`models:${String(input.action)}`);
+        onProgress?.({ stage: "download", message: "Downloading turbo", done: 1, total: 4 });
+        return { models: { whisper: "ready" } };
+      }
+    );
+    const llm = vi.fn(() => {
+      order.push("llm");
+      return { models: [{ name: "qwen2.5:7b", ready: true }] };
+    });
+    const finish = vi.fn(() => {
+      order.push("finish");
+      return { web_url: "http://127.0.0.1:8088", supervisor_url: "http://127.0.0.1:9103" };
+    });
+    const api = fakeApi({ venv, models, llm, finish });
     renderWizard(api, "install");
     expect(await screen.findByRole("heading", { name: "Starting Maktaba" })).toBeInTheDocument();
-    expect(venv).toHaveBeenCalledTimes(1);
-    expect(llm).toHaveBeenCalledTimes(1);
-    expect(api.runStep.mock.calls.map((c) => c[0])).toEqual(["venv", "llm", "finish"]);
+    expect(order).toEqual(["venv", "models:download", "llm", "finish"]);
     expect(api.finishSetup).toHaveBeenCalledWith("http://127.0.0.1:8088", "http://127.0.0.1:9103");
+  });
+
+  it("install: a failed models download shows why and can be retried", async () => {
+    let fail = true;
+    const models = vi.fn(() => {
+      if (fail) throw stepError("hf_gated", "Accept the terms first.");
+      return {};
+    });
+    const finish = vi.fn(() => ({ web_url: "http://127.0.0.1:8088" }));
+    renderWizard(fakeApi({ models, finish }), "install");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Accept the model's terms");
+    expect(finish).not.toHaveBeenCalled();
+    fail = false;
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("heading", { name: "Starting Maktaba" })).toBeInTheDocument();
+  });
+
+  it("on Windows: the words are a PC's, and a turned-off sign-in task is turned on from the app", async () => {
+    const api = fakeApi(
+      { finish: () => ({ web_url: "http://127.0.0.1:8088" }) },
+      { platform: "windows" }
+    );
+    const { unmount } = renderWizard(api);
+    expect(await screen.findByRole("button", { name: "Set up this PC" })).toBeInTheDocument();
+    expect(screen.getByText(/run your library on this PC/)).toBeInTheDocument();
+    unmount();
+
+    api.finishSetup.mockResolvedValue("requires_approval" as never);
+    renderWizard(api, "install");
+    expect(await screen.findByText(/Task Scheduler/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "I turned it on" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Turn it on" }));
+    expect(api.openLoginItems).toHaveBeenCalled();
+    expect(await screen.findByRole("heading", { name: "Starting Maktaba" })).toBeInTheDocument();
+    expect(screen.getByText(/Maktaba runs in the tray \(beside the clock\)/)).toBeInTheDocument();
   });
 
   it("install: a language model that cannot download now is left to the server", async () => {
@@ -320,9 +406,9 @@ describe("SetupWizard", () => {
     const finish = vi.fn(() => ({ web_url: "http://127.0.0.1:8088" }));
     const api = fakeApi({ llm, finish });
     renderWizard(api, "install");
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The disk is full. 4.7 GB needed, 1.2 GB free"
-    );
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The disk is full.");
+    expect(alert.querySelector("details pre")?.textContent).toBe("4.7 GB needed, 1.2 GB free");
     expect(finish).not.toHaveBeenCalled();
   });
 
@@ -345,10 +431,12 @@ describe("SetupWizard", () => {
     });
     const api = fakeApi({ venv, finish: () => ({ web_url: "http://127.0.0.1:8088" }) });
     renderWizard(api, "install");
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Installing the tools failed. mlx 0.20 has no wheel"
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Installing the tools failed.");
+    // the step's English (what failed) and its log lines are in the details
+    expect(alert.querySelector("details pre")?.textContent).toBe(
+      "mlx 0.20 has no wheel\npip: error"
     );
-    expect(screen.getByText("pip: error")).toBeInTheDocument();
     fail = false;
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("heading", { name: "Starting Maktaba" })).toBeInTheDocument();
@@ -359,6 +447,22 @@ describe("SetupWizard", () => {
     renderWizard(fakeApi({ check: () => CHECK }), "libraries");
     await userEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByRole("heading", { name: "Your admin account" })).toBeInTheDocument();
+  });
+
+  it("a refused field says why in Arabic, never in the step's English", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    const libraries = vi.fn(() => {
+      throw {
+        ...stepError("root_missing", "Y:\\Lectures is not a folder on this machine.", "roots"),
+        params: { path: "Y:\\Lectures" },
+      };
+    });
+    renderWizard(fakeApi({ libraries }, { platform: "windows" }), "libraries");
+    await userEvent.type(await screen.findByRole("textbox", { name: /المجلدات/ }), "Y:\\Lectures");
+    await userEvent.click(screen.getByRole("button", { name: "التالي" }));
+    expect(await screen.findByText("Y:\\Lectures ليس مجلدًا على هذا الحاسوب.")).toBeInTheDocument();
+    expect(screen.queryByText(/is not a folder/)).not.toBeInTheDocument();
+    document.documentElement.dir = "ltr";
   });
 
   it("speaks Arabic", async () => {
