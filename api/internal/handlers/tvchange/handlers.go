@@ -177,7 +177,8 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, r, http.StatusOK, out)
 }
 
-// Create serves POST /api/tv/changes: a new empty draft an admin fills.
+// Create serves POST /api/tv/changes: a new empty draft an admin fills (the open change
+// when there is one: 200).
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	p, ok := admin(w, r)
 	if !ok {
@@ -188,6 +189,12 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if e := common.ReadJSON(r, &body, 16<<10); e != nil {
 		httperror.Write(w, r, e)
+		return
+	}
+	// story 33.12 AC3: one open change until it is approved - "new" while one is open
+	// is that change (a second would only join it at the controller's next tick)
+	if open, err := h.Store.OpenChange(r.Context(), h.DB); err == nil && open != nil {
+		h.reply(w, r, http.StatusOK, open.ID)
 		return
 	}
 	c := &core.Change{State: core.StateDraft, Title: strings.TrimSpace(body.Title),

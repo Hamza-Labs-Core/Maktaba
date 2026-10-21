@@ -143,6 +143,11 @@ func (c *Controller) Tick(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// story 33.12 AC3: one open change; a second (opened before the rule, or while
+	// the first was in flight) joins the older one
+	if err := c.collapseOpen(ctx); err != nil {
+		c.Logger.Warn("tv change collapse failed", "event", "tv_change_collapse_failed", "error", err.Error())
+	}
 	open, err := c.Store.List(ctx, []string{StateDraft, StateStaged, StateVerifying, StateReady, StateApproved}, 200)
 	if err != nil {
 		return err
@@ -181,10 +186,13 @@ func (c *Controller) Tick(ctx context.Context) error {
 			if ch.State == StateStaged {
 				if err := c.Store.Move(ctx, c.DB, ch, StateVerifying, ActionStartVerify, nil,
 					map[string]any{"interim": "verified on the database: no staging slot runtime"}, nil); err != nil {
+					if moved(err) {
+						continue
+					}
 					return err
 				}
 			}
-			if err := c.verifyAndMove(ctx, ch); err != nil {
+			if err := c.verifyAndMove(ctx, ch); err != nil && !moved(err) {
 				return err
 			}
 		case StateReady:
@@ -196,7 +204,7 @@ func (c *Controller) Tick(ctx context.Context) error {
 					continue
 				}
 			}
-			if err := c.ready(ctx, cfg, ch); err != nil {
+			if err := c.ready(ctx, cfg, ch); err != nil && !moved(err) {
 				return err
 			}
 		case StateApproved:
@@ -241,6 +249,13 @@ func (c *Controller) Tick(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// moved reports a change that left the state the tick read it in (an update reopened
+// it, an admin cancelled it): the next tick sees where it is.
+func moved(err error) bool {
+	var ce *ConflictError
+	return errors.As(err, &ce)
 }
 
 func stageRequested(ch *Change) bool {
