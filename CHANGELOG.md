@@ -99,6 +99,13 @@ don't append a line here; docs-only PRs are exempt.
   cannot run, no Hugging Face sign-in is asked. A Plex code that expires (plex.tv out of reach is
   asked again until then) or a Ctrl+C while it waits leaves Plex to Settings, and the setup goes
   on. `--answers` (or `--answers-fd`) gives every answer without questions.
+- **The desktop app runs the server on Linux** (Epic 39, story 39.8). When setup finishes, the
+  app copies its server into `~/.local/share/maktaba/runtime` and runs it as the user's systemd
+  service, started at boot through linger; after an app update it moves the server to the new
+  version at its next start (an app older than the server leaves it alone and says so). Pause,
+  Resume and Stop server work from the tray, or from the window's Server menu where the desktop
+  shows no tray; the tray starts at login when it can be shown. The tray, the Server menu and the
+  app's dialogs follow the session's language (English or Arabic).
 
 ### Changed
 
@@ -108,7 +115,8 @@ don't append a line here; docs-only PRs are exempt.
   is over. Postgres keeps its `pg_ctl` fast shutdown. A `serve` with no console (started detached
   by a program that has none) cannot send CTRL_BREAK, so it kills its children as before and says
   so once in its log; its children then open no console window on the desktop. A child is held
-  still while it is asked, so the CTRL_BREAK never goes astray to `serve` itself.
+  still while it is asked, so the CTRL_BREAK never goes astray to `serve` itself; so are the
+  venv bootstrap the server and setup start, and setup's model download, when they are asked.
 - **Windows keeps everything in `%LOCALAPPDATA%\Maktaba`** (Epic 38, story 38.1): `server.toml`,
   `keys\`, `data\`, `logs\` and the node's `node.json`, with the models, caches and the bundled
   Postgres beside `data\`. Nothing is in the roaming profile any more, so the keys and a node's
@@ -162,10 +170,22 @@ don't append a line here; docs-only PRs are exempt.
   Uploaded channel art had the same problem. The supervisor now passes its `data_dir`
   (`MAKTABA_DATA_DIR`), and an api or streaming server run on its own uses `/var/lib/maktaba`
   only as root, else the user's `$XDG_DATA_HOME/maktaba`.
+- **A build made from a checkout is never "older" than the release it was built from.** A
+  `git describe` version (`v0.2.0-12-gabc1234`, the version of a build off a tag) ranked before
+  `v0.2.0`, as a prerelease does: `maktaba-server update`, the API's "update available", the
+  Updates page and the scheduler offered `v0.2.0` as an update to it, the verifier refused
+  updating from it as a downgrade, and the self-managed layout's watermark and setup's conversion
+  took it for a downgrade. It now ranks after its tag (by its number of commits, a dirty tree
+  after a clean one: `v0.2.0` < `v0.2.0-dirty` < `v0.2.0-1-g…`) and before the next release, and
+  is not a prerelease when its tag is not. One order everywhere: the release verifier's, which
+  the update catalog, the API's update check and the self-managed layout follow, and the Updates
+  page's pin check matches.
 - **The launcher never sends CTRL_BREAK to a server that has exited** (Windows, Epic 38 story
   38.2). It holds a handle to the server until it is reaped and asks it to stop only while it
-  still runs: a CTRL_BREAK naming a pid that leads no process group (a server that exited as the
-  launcher was stopping, its pid reused) goes astray and can end the launcher itself.
+  still runs, holding the server suspended from that check to the send so it cannot exit in
+  between: a CTRL_BREAK naming a pid that leads no process group (a server that exited as the
+  launcher was stopping, or as it rolled back a release that timed out) goes to the whole console
+  and can end the launcher itself.
 
 - **Release builds for desktop, Android and Android TV.** The desktop app ships a
   (placeholder) icon set (#152), which the macOS and Windows bundles failed on. The Linux build
