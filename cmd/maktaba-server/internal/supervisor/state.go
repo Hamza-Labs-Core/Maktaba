@@ -91,6 +91,12 @@ type ChildStatus struct {
 	// Detail says what a process waits on before it starts (its Prepare: the
 	// venv being built, a dump being taken) or why that failed.
 	Detail string `json:"detail,omitempty"`
+	// DetailCode and DetailParams are Detail for a screen to say in its own
+	// language: a snake_case code from a fixed list (the desktop app's start
+	// steps: serve_appbundle.go's detailCodes) and its values (sizes in bytes,
+	// paths whole). Detail stays the English, for the logs and older readers.
+	DetailCode   string         `json:"detail_code,omitempty"`
+	DetailParams map[string]any `json:"detail_params,omitempty"`
 }
 
 // Event is one entry of the supervisor's event log (start, exit,

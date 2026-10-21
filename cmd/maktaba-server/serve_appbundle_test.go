@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -129,16 +130,54 @@ func gateProcs(pg bool) []supervisor.Process {
 	return ps
 }
 
-func prepareOf(ps []supervisor.Process, role supervisor.Role) func(context.Context, func(string)) error {
+func prepareOf(t *testing.T, ps []supervisor.Process, role supervisor.Role) step {
 	for _, p := range ps {
 		if p.Role == role {
-			return p.Prepare
+			return checkedStep(t, p.Prepare)
 		}
 	}
 	return nil
 }
 
-func noReport(string) {}
+// checkedStep is s, checking that every detail it shows, and its error (but a
+// stop's), carries a code of detailCodes with exactly that code's params.
+func checkedStep(t *testing.T, s step) step {
+	if s == nil {
+		return nil
+	}
+	return func(ctx context.Context, report func(supervisor.Detail)) error {
+		err := s(ctx, func(d supervisor.Detail) {
+			checkDetail(t, d)
+			report(d)
+		})
+		if err != nil && !errors.Is(err, context.Canceled) {
+			checkDetail(t, supervisor.DetailOf(err))
+		}
+		return err
+	}
+}
+
+func checkDetail(t *testing.T, d supervisor.Detail) {
+	t.Helper()
+	names, ok := detailCodes[d.Code]
+	if !ok {
+		t.Errorf("the detail %q has no code of the list (code %q)", d.Text, d.Code)
+		return
+	}
+	if strings.TrimSpace(d.Text) == "" {
+		t.Errorf("%s: no English", d.Code)
+	}
+	if len(d.Params) != len(names) {
+		t.Errorf("%s: params %v, want exactly %v", d.Code, d.Params, names)
+	}
+	for _, n := range names {
+		if _, ok := d.Params[n]; !ok {
+			t.Errorf("%s: no %q in %v", d.Code, n, d.Params)
+		}
+	}
+}
+
+func noReport(supervisor.Detail) {}
 
 // fakeDB stands in for the database step's programs: the dump, the api's
 // migrations and putting a dump back. It notes what the record said as each ran.
@@ -212,7 +251,7 @@ func TestAppBundleGatesEveryRoleOnTheDatabase(t *testing.T) {
 		}
 	}
 	ps = appBundleGates(cfg, payload, nil, gateProcs(true), io.Discard)
-	if prepareOf(ps, supervisor.RolePostgres) != nil {
+	if prepareOf(t, ps, supervisor.RolePostgres) != nil {
 		t.Error("no bundled Postgres, no major check")
 	}
 }
@@ -229,7 +268,7 @@ func TestAppBundleUpdateDumpsThenMigrates(t *testing.T) {
 	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
 
 	var mu sync.Mutex
-	details := map[string][]string{}
+	details, codes := map[string][]string{}, map[string][]string{}
 	var wg sync.WaitGroup
 	for _, p := range ps {
 		if p.Role == supervisor.RolePostgres || p.Prepare == nil || p.Role == supervisor.RolePipeline {
@@ -238,9 +277,10 @@ func TestAppBundleUpdateDumpsThenMigrates(t *testing.T) {
 		wg.Add(1)
 		go func(p supervisor.Process) {
 			defer wg.Done()
-			err := p.Prepare(context.Background(), func(d string) {
+			err := checkedStep(t, p.Prepare)(context.Background(), func(d supervisor.Detail) {
 				mu.Lock()
-				details[p.Name()] = append(details[p.Name()], d)
+				details[p.Name()] = append(details[p.Name()], d.Text)
+				codes[p.Name()] = append(codes[p.Name()], d.Code)
 				mu.Unlock()
 			})
 			if err != nil {
@@ -265,12 +305,12 @@ func TestAppBundleUpdateDumpsThenMigrates(t *testing.T) {
 		t.Fatalf("record = %+v", rec)
 	}
 	for _, name := range []string{"api", "streaming", "tv-slot/blue"} {
-		if !contains(details[name], "Updating the library database for v0.3.0") {
-			t.Errorf("%s showed %v", name, details[name])
+		if !contains(details[name], "Updating the library database for v0.3.0") || !contains(codes[name], "db_migrating") {
+			t.Errorf("%s showed %v %v", name, details[name], codes[name])
 		}
 	}
 	// done for this run: nothing runs again
-	if err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
 		t.Fatal(err)
 	}
 	if d, m, _ := f.counts(); d != 1 || m != 1 {
@@ -285,7 +325,7 @@ func TestAppBundleNoRecordStillDumps(t *testing.T) {
 	cfg, payload := appEnv(t, "v0.3.0", "")
 	f := installFakeDB(t, cfg)
 	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
-	if err := prepareOf(ps, supervisor.RoleStreaming)(context.Background(), noReport); err != nil {
+	if err := prepareOf(t, ps, supervisor.RoleStreaming)(context.Background(), noReport); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.dumps) != 1 || f.dumps[0] != "unknown->v0.3.0" {
@@ -298,7 +338,7 @@ func TestAppBundleNoRecordStillDumps(t *testing.T) {
 	cfg, payload = appEnv(t, "v0.3.0", "v0.2.0")
 	f = installFakeDB(t, cfg)
 	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
-	if err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.dumps) != 1 || f.dumps[0] != "v0.2.0->v0.3.0" {
@@ -314,12 +354,12 @@ func TestAppBundleSameReleaseNoDump(t *testing.T) {
 	f := installFakeDB(t, cfg)
 	f.migrateErr = errors.New("ping db: connection refused")
 	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
-	err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport)
+	err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport)
 	if err == nil || supervisor.Halted(err) || !strings.Contains(err.Error(), "connection refused") {
 		t.Fatalf("a failed check = %v (tried again, not a halt)", err)
 	}
 	f.migrateErr = nil
-	if err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
 		t.Fatal(err)
 	}
 	if d, m, r := f.counts(); d != 0 || m != 2 || r != 0 {
@@ -338,7 +378,7 @@ func TestAppBundleRefusesAReleaseOlderThanTheDatabase(t *testing.T) {
 	f := installFakeDB(t, cfg)
 	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
 	for _, role := range []supervisor.Role{supervisor.RoleAPI, supervisor.RoleStreaming, supervisor.RolePipeline} {
-		err := prepareOf(ps, role)(context.Background(), noReport)
+		err := prepareOf(t, ps, role)(context.Background(), noReport)
 		if !supervisor.Halted(err) || !strings.Contains(err.Error(), "older than the one whose changes the library database holds (v0.3.0)") ||
 			!strings.Contains(err.Error(), "pre-v0.2.0-to-v0.3.0.dump") {
 			t.Fatalf("%s: %v", role, err)
@@ -351,7 +391,7 @@ func TestAppBundleRefusesAReleaseOlderThanTheDatabase(t *testing.T) {
 	// refuse a newer database)
 	newPayload(t, payload, "v0.2.0-5-gdeadbee")
 	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
-	if err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -366,7 +406,7 @@ func TestAppBundleFailedMigrationPutsTheDumpBack(t *testing.T) {
 	f := installFakeDB(t, cfg)
 	f.migrateErr = errors.New(`ERROR 0144_x.sql: relation "videos" does not exist`)
 	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
-	err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport)
+	err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport)
 	if !supervisor.Halted(err) {
 		t.Fatalf("a failed update = %v, want a halt", err)
 	}
@@ -384,7 +424,7 @@ func TestAppBundleFailedMigrationPutsTheDumpBack(t *testing.T) {
 		t.Fatalf("record = %+v", rec)
 	}
 	// the other processes halt with it, nothing runs again in this run
-	if err := prepareOf(ps, supervisor.RoleStreaming)(context.Background(), noReport); !supervisor.Halted(err) {
+	if err := prepareOf(t, ps, supervisor.RoleStreaming)(context.Background(), noReport); !supervisor.Halted(err) {
 		t.Fatalf("streaming = %v", err)
 	}
 	if d, m, r := f.counts(); d != 1 || m != 1 || r != 1 {
@@ -395,7 +435,7 @@ func TestAppBundleFailedMigrationPutsTheDumpBack(t *testing.T) {
 	newPayload(t, payload, "v0.2.0")
 	f.migrateErr = nil
 	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
-	if err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
 		t.Fatalf("the previous release again: %v", err)
 	}
 	if rec := recorded(t, cfg); rec.Version != "v0.2.0" || rec.State != apppayload.DatabaseMigrated {
@@ -404,7 +444,7 @@ func TestAppBundleFailedMigrationPutsTheDumpBack(t *testing.T) {
 	// v0.3.0 again: the update is tried again, from a fresh dump
 	newPayload(t, payload, "v0.3.0")
 	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
-	if err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.dumps) != 2 || recorded(t, cfg).Version != "v0.3.0" {
@@ -422,7 +462,7 @@ func TestAppBundleFailedRestoreIsFinishedNextStart(t *testing.T) {
 	f.migrateErr = errors.New("ERROR 0144_x.sql")
 	f.restoreErr = errors.New("pg_restore: disk full")
 	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
-	err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport)
+	err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport)
 	if !supervisor.Halted(err) || !strings.Contains(err.Error(), "failed too: pg_restore: disk full") ||
 		!strings.Contains(err.Error(), "next start tries to put it back again") {
 		t.Fatalf("a failed restore = %v", err)
@@ -432,7 +472,7 @@ func TestAppBundleFailedRestoreIsFinishedNextStart(t *testing.T) {
 	}
 	f.restoreErr = nil
 	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
-	err = prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport)
+	err = prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport)
 	if !supervisor.Halted(err) || !strings.Contains(err.Error(), "back as it was before the update") {
 		t.Fatalf("the next start = %v", err)
 	}
@@ -454,7 +494,7 @@ func TestAppBundleUnfinishedMigrationGoesOn(t *testing.T) {
 	f := installFakeDB(t, cfg)
 	f.migrateErr = errors.New("ERROR 0144_x.sql")
 	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
-	if err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport); !supervisor.Halted(err) {
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); !supervisor.Halted(err) {
 		t.Fatalf("= %v", err)
 	}
 	if d, m, r := f.counts(); d != 0 || m != 1 || r != 1 || f.restores[0] != "pre-v0.2.0-to-v0.3.0.dump" {
@@ -472,7 +512,7 @@ func TestAppBundleStopDuringTheMigrations(t *testing.T) {
 	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- prepareOf(ps, supervisor.RoleAPI)(ctx, noReport) }()
+	go func() { done <- prepareOf(t, ps, supervisor.RoleAPI)(ctx, noReport) }()
 	waitUntil(t, "the migrations run", func() bool { _, m, _ := f.counts(); return m == 1 })
 	cancel()
 	if err := <-done; !errors.Is(err, context.Canceled) {
@@ -494,7 +534,7 @@ func TestAppBundleSchemaAheadHalts(t *testing.T) {
 	f := installFakeDB(t, cfg)
 	f.migrateErr = fmt.Errorf("%w: the database's schema is at 0150", errSchemaAhead)
 	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
-	err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport)
+	err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport)
 	if !supervisor.Halted(err) || !strings.Contains(err.Error(), "changed by a newer Maktaba") {
 		t.Fatalf("= %v", err)
 	}
@@ -553,7 +593,7 @@ func TestAppBundleFullNodeHasNoDatabaseStep(t *testing.T) {
 			t.Fatalf("%s: prepare = %v (only the pipeline waits, on its venv)", p.Name(), p.Prepare != nil)
 		}
 		if p.Prepare != nil {
-			if err := p.Prepare(context.Background(), noReport); err != nil {
+			if err := checkedStep(t, p.Prepare)(context.Background(), noReport); err != nil {
 				t.Fatalf("%s: %v", p.Name(), err)
 			}
 		}
@@ -581,7 +621,7 @@ func TestAppBundleFullNodeHasNoDatabaseStep(t *testing.T) {
 	// dumped and migrated as an install from before the record, not refused
 	t.Setenv("MAKTABA_NODE_CONFIG", filepath.Join(t.TempDir(), "node.json"))
 	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
-	if err := prepareOf(ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
 		t.Fatalf("after leaving the cluster: %v", err)
 	}
 	if len(f.dumps) != 1 || f.dumps[0] != "unknown->v0.2.0" {
@@ -596,7 +636,7 @@ func TestAppBundleForcedHomeKeepsTheDatabaseStep(t *testing.T) {
 	joinNode(t, &cfg, "home")
 	f := installFakeDB(t, cfg)
 	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
-	if err := prepareOf(ps, supervisor.RoleStreaming)(context.Background(), noReport); err != nil {
+	if err := prepareOf(t, ps, supervisor.RoleStreaming)(context.Background(), noReport); err != nil {
 		t.Fatal(err)
 	}
 	if d, m, _ := f.counts(); d != 1 || m != 1 || !hasRecord(t, cfg) {
@@ -616,7 +656,7 @@ func TestAppBundleRoleRunWithoutTheAPI(t *testing.T) {
 	}
 	// no record: nothing written
 	ps := appBundleGates(cfg, payload, pg, streaming(), io.Discard)
-	if err := prepareOf(ps, supervisor.RoleStreaming)(context.Background(), noReport); err != nil {
+	if err := prepareOf(t, ps, supervisor.RoleStreaming)(context.Background(), noReport); err != nil {
 		t.Fatal(err)
 	}
 	if hasRecord(t, cfg) {
@@ -626,7 +666,7 @@ func TestAppBundleRoleRunWithoutTheAPI(t *testing.T) {
 	was := apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseMigrated}
 	record(t, cfg, was)
 	ps = appBundleGates(cfg, payload, pg, streaming(), io.Discard)
-	if err := prepareOf(ps, supervisor.RoleStreaming)(context.Background(), noReport); err != nil {
+	if err := prepareOf(t, ps, supervisor.RoleStreaming)(context.Background(), noReport); err != nil {
 		t.Fatal(err)
 	}
 	if rec := recorded(t, cfg); rec.Version != was.Version || rec.State != was.State {
@@ -638,13 +678,13 @@ func TestAppBundleRoleRunWithoutTheAPI(t *testing.T) {
 	// still refused: an older release, a database being put back
 	record(t, cfg, apppayload.Database{Version: "v0.4.0", State: apppayload.DatabaseMigrated})
 	ps = appBundleGates(cfg, payload, pg, streaming(), io.Discard)
-	if err := prepareOf(ps, supervisor.RoleStreaming)(context.Background(), noReport); !supervisor.Halted(err) {
+	if err := prepareOf(t, ps, supervisor.RoleStreaming)(context.Background(), noReport); !supervisor.Halted(err) {
 		t.Fatalf("an older release = %v", err)
 	}
 	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseRestoring, From: "v0.2.0",
 		Dump: "/b/pre-v0.2.0-to-v0.3.0.dump", Failed: "v0.3.0"})
 	ps = appBundleGates(cfg, payload, pg, streaming(), io.Discard)
-	err := prepareOf(ps, supervisor.RoleStreaming)(context.Background(), noReport)
+	err := prepareOf(t, ps, supervisor.RoleStreaming)(context.Background(), noReport)
 	if !supervisor.Halted(err) || !strings.Contains(err.Error(), "start the whole server") {
 		t.Fatalf("a database being put back = %v", err)
 	}
@@ -657,7 +697,7 @@ func TestAppBundleRoleRunWithoutTheAPI(t *testing.T) {
 func TestAppBundleRefusesAnotherPostgresMajor(t *testing.T) {
 	cfg, payload := appEnv(t, "v0.3.0", "")
 	pg := testBundle(cfg)
-	pgGate := prepareOf(appBundleGates(cfg, payload, pg, gateProcs(true), io.Discard), supervisor.RolePostgres)
+	pgGate := prepareOf(t, appBundleGates(cfg, payload, pg, gateProcs(true), io.Discard), supervisor.RolePostgres)
 	if err := pgGate(context.Background(), noReport); err != nil {
 		t.Fatalf("no cluster yet: %v", err)
 	}
@@ -701,7 +741,7 @@ func TestAppBundleVenvOnceForEveryWorker(t *testing.T) {
 	}
 	fail.Store(true)
 	ps := appBundleGates(cfg, payload, nil, gateProcs(false), io.Discard)
-	err := ps[1].Prepare(context.Background(), noReport)
+	err := checkedStep(t, ps[1].Prepare)(context.Background(), noReport)
 	if err == nil || !strings.Contains(err.Error(), "pip: no torch") || !strings.Contains(err.Error(), "venv.log") {
 		t.Fatalf("failure = %v", err)
 	}
@@ -714,9 +754,9 @@ func TestAppBundleVenvOnceForEveryWorker(t *testing.T) {
 		wg.Add(1)
 		go func(p supervisor.Process) {
 			defer wg.Done()
-			err := p.Prepare(context.Background(), func(d string) {
+			err := checkedStep(t, p.Prepare)(context.Background(), func(d supervisor.Detail) {
 				mu.Lock()
-				details = append(details, d)
+				details = append(details, d.Text)
 				mu.Unlock()
 			})
 			if err != nil {
@@ -750,18 +790,119 @@ func TestAppBundleNoVenvForANamedPython(t *testing.T) {
 			return appvenv.Result{}, nil
 		}
 		ps := appBundleGates(cfg, payload, nil, gateProcs(false), io.Discard)
-		if err := prepareOf(ps, supervisor.RolePipeline)(context.Background(), noReport); err != nil {
+		if err := prepareOf(t, ps, supervisor.RolePipeline)(context.Background(), noReport); err != nil {
 			t.Fatal(err)
 		}
 		venvRun = prev
 	}
 }
 
+// The detail codes are a fixed list (the app's screens translate them): a code
+// added, gone or with other params must be added here too, and to the list in
+// contract-update.md.
+func TestDetailCodesAreAFixedList(t *testing.T) {
+	want := map[string]string{
+		"db_waiting":            "",
+		"db_checking":           "release",
+		"db_dumping":            "from to",
+		"db_migrating":          "to",
+		"db_restoring":          "failed dump",
+		"db_restored":           "failed error dump release",
+		"db_refused_older":      "release needed dump",
+		"db_ahead":              "release error",
+		"db_dump_failed":        "to error",
+		"db_migrate_failed":     "release error",
+		"db_restore_failed":     "failed error dump restore_error",
+		"db_restore_unfinished": "failed dump",
+		"db_no_cluster":         "failed error dump",
+		"db_record_failed":      "path error",
+		"pg_unreadable":         "path error",
+		"pg_major":              "cluster payload",
+		"venv_waiting":          "",
+		"venv_building":         "step done total percent message",
+		"venv_interrupted":      "log",
+		"venv_failed":           "error log",
+	}
+	if len(detailCodes) != len(want) {
+		t.Errorf("%d codes, the list has %d", len(detailCodes), len(want))
+	}
+	snake := regexp.MustCompile(`^[a-z]+(_[a-z]+)*$`)
+	for code, names := range detailCodes {
+		if !snake.MatchString(code) {
+			t.Errorf("%q is not snake_case", code)
+		}
+		if w, ok := want[code]; !ok || strings.Join(names, " ") != w {
+			t.Errorf("%s: params %v, the list says %q (in it: %v)", code, names, w, ok)
+		}
+	}
+}
+
+// The details no other test meets carry their codes too: a dump that fails, a
+// record that cannot be written, a failed update with no database of its own to
+// put back into, a cluster that cannot be read, a venv build stopped from
+// elsewhere.
+func TestAppBundleRareDetailsAreCoded(t *testing.T) {
+	codeOf := func(err error) string { return supervisor.DetailOf(err).Code }
+
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	record(t, cfg, apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseMigrated})
+	installFakeDB(t, cfg)
+	dumpBeforeUpdate = func(context.Context, pgbundle.Bundle, string, string, int) (string, error) {
+		return "", errors.New("pg_dump: disk full")
+	}
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); codeOf(err) != "db_dump_failed" ||
+		supervisor.Halted(err) {
+		t.Errorf("a failed dump = %v (%s)", err, codeOf(err))
+	}
+
+	cfg, payload = appEnv(t, "v0.3.0", "")
+	installFakeDB(t, cfg)
+	if err := os.MkdirAll(apppayload.DatabasePath(cfg.StateDir()), 0o755); err != nil { // a folder where the file goes
+		t.Fatal(err)
+	}
+	ps = appBundleGates(cfg, payload, nil, gateProcs(false), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); codeOf(err) != "db_record_failed" {
+		t.Errorf("a record that cannot be read = %v (%s)", err, codeOf(err))
+	}
+
+	cfg, payload = appEnv(t, "v0.3.0", "")
+	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseRestoring, From: "v0.2.0",
+		Dump: "/b/pre-v0.2.0-to-v0.3.0.dump", Failed: "v0.3.0", Error: "ERROR 0144"})
+	installFakeDB(t, cfg)
+	ps = appBundleGates(cfg, payload, nil, gateProcs(false), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); codeOf(err) != "db_no_cluster" ||
+		!supervisor.Halted(err) {
+		t.Errorf("no database of its own to put back into = %v (%s)", err, codeOf(err))
+	}
+
+	pg := testBundle(cfg)
+	if err := os.MkdirAll(filepath.Join(pg.Data, "PG_VERSION"), 0o700); err != nil { // unreadable as a file
+		t.Fatal(err)
+	}
+	gate := prepareOf(t, appBundleGates(cfg, payload, pg, gateProcs(true), io.Discard), supervisor.RolePostgres)
+	if err := gate(context.Background(), noReport); codeOf(err) != "pg_unreadable" {
+		t.Errorf("a cluster that cannot be read = %v (%s)", err, codeOf(err))
+	}
+
+	cfg, payload = appEnv(t, "v0.3.0", "")
+	installFakeDB(t, cfg)
+	prev := venvRun
+	t.Cleanup(func() { venvRun = prev })
+	venvRun = func(context.Context, appvenv.Spec, func(appvenv.Progress)) (appvenv.Result, error) {
+		return appvenv.Result{}, appvenv.ErrInterrupted
+	}
+	ps = appBundleGates(cfg, payload, nil, gateProcs(false), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RolePipeline)(context.Background(), noReport); codeOf(err) != "venv_interrupted" {
+		t.Errorf("a venv build stopped from elsewhere = %v (%s)", err, codeOf(err))
+	}
+}
+
 // A process waiting on a shared step ends at its own stop while the step goes on.
 func TestSharedStepWaiterStops(t *testing.T) {
 	release := make(chan struct{})
-	s := &sharedStep{wait: "waiting", run: func(_ context.Context, report func(string)) error {
-		report("working")
+	s := &sharedStep{wait: supervisor.Detail{Text: "waiting"}, run: func(_ context.Context, report func(supervisor.Detail)) error {
+		report(supervisor.Detail{Code: "db_checking", Text: "working"})
 		<-release
 		return nil
 	}}
@@ -770,7 +911,7 @@ func TestSharedStepWaiterStops(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var shown []string
 	done := make(chan error, 1)
-	go func() { done <- s.prepare(ctx, func(d string) { shown = append(shown, d) }) }()
+	go func() { done <- s.prepare(ctx, func(d supervisor.Detail) { shown = append(shown, d.Text) }) }()
 	time.Sleep(20 * time.Millisecond)
 	cancel()
 	if err := <-done; !errors.Is(err, context.Canceled) {

@@ -73,8 +73,9 @@ type Process struct {
 	// Prepare, when set, runs before the process's first start and must succeed
 	// before it starts (prepare.go, Epic 38 story 38.12: the desktop app builds
 	// the pipeline's venv, or takes the database's dump before an update's
-	// migrations). report sets the process's detail in /processes.
-	Prepare func(ctx context.Context, report func(detail string)) error
+	// migrations). report sets the process's detail in /processes (an error's
+	// too: DetailOf).
+	Prepare func(ctx context.Context, report func(Detail)) error
 }
 
 // stopSignal is the process's graceful-stop signal.
