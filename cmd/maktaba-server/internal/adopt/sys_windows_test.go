@@ -112,6 +112,21 @@ func TestRealMove(t *testing.T) {
 	t.Cleanup(func() {
 		_ = sys.EndTask(name)
 		_ = sys.DeleteTask(name)
+		// what the task started again (Undo runs it) holds the folder's files
+		for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
+			procs, _ := sys.Processes()
+			left := false
+			for _, p := range procs {
+				if within(p.Exe, root) {
+					left = true
+					_ = sys.Kill(p.PID)
+				}
+			}
+			if !left {
+				break
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
 	})
 
 	// the old install runs (started here: a sign-in task may not run on a CI
@@ -205,5 +220,12 @@ func TestRealMove(t *testing.T) {
 	}
 	if !back {
 		t.Errorf("the task that came back: %+v", tasks)
+	}
+	// and it ran: the old install's server holds its port again
+	for deadline := time.Now().Add(60 * time.Second); !sys.Listening(port); {
+		if time.Now().After(deadline) {
+			t.Fatalf("the old install's server did not come back on %s after undo", port)
+		}
+		time.Sleep(200 * time.Millisecond)
 	}
 }
