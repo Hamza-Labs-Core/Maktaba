@@ -59,10 +59,15 @@ jobs:
         id: filter
         with:
           filters: |
-            # the workflows and the Makefile are code, a .md among them included
+            # code whatever its extension: the workflows and the Makefile, and the
+            # markdown the code reads (the help pages the web bundles and its coverage
+            # test checks; the migrations' MANIFEST.md, read by the schema guard and
+            # genrelease)
             meta:
               - '.github/**'
               - 'Makefile'
+              - 'web/src/help/**'
+              - 'shared/db/migrations/**'
             # The Maktaba.app gate (macOS arm64, ~20 min) runs only when what goes into
             # the app or how it is built changes.
             mac_app:
@@ -215,8 +220,12 @@ jobs:
           echo "Gate results:"
           echo "$RESULTS"
           # Fail if any required gate failed or was cancelled. Skipped
-          # is acceptable (docs-only PR, fork-skipped e2e/perf-ci).
+          # is acceptable (docs-only PR, fork-skipped e2e/perf-ci), but not
+          # for the path filter itself: when it fails every gate is skipped.
           fail=0
+          changes=$(echo "$RESULTS" | jq -r '.changes.result // "missing"')
+          echo "  changes: $changes"
+          if [ "$changes" != success ]; then fail=1; fi
           for gate in lint unit integration e2e media-e2e perf-ci build-artifacts node-packaging launcher mac-app linux-app pr-body-check; do
             result=$(echo "$RESULTS" | jq -r ".\"$gate\".result // \"skipped\"")
             echo "  $gate: $result"
