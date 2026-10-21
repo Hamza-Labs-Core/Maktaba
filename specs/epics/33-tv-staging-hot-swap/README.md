@@ -291,7 +291,9 @@ draft (**accepted default**). Full list under "Decisions on the open questions" 
   right away (staged, verified, then waiting for approval under the default rules).
 - R11.2 The channel editor and the filler/art editors save into the open change; the stale flag no
   longer rewrites the live generation. Every update joins the one open change until it is approved
-  (story 33.12 AC3).
+  (story 33.12 AC3): a change already staged, verifying or ready that no one approved goes back to
+  draft and is checked again; only an approved (or swapping, live) change makes the next update open a
+  new change.
 - R11.3 `plan_channels` stays a plan (not on air); its plan id is the change's provenance.
 - R11.4 Top-ups (horizon extension) are not changes; they write every open generation.
 
