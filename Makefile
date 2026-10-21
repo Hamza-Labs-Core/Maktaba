@@ -539,6 +539,10 @@ mac-app-payload:  ## Build only the Maktaba.app server payload (build/mac-app/se
 # The Linux server payload (Epic 39, story 39.2): the same tree for this machine's
 # architecture (x86_64 or aarch64), with Postgres's libraries from this machine. Pinned
 # downloads are in tools/release/linux-app/pins.env.
+.PHONY: linux-app
+linux-app:  ## Build the Linux app (AppImage, .deb, .rpm) for this machine's architecture with the server payload, and check them. Needs Rust, Go, uv, pnpm, patchelf, tauri's Linux libraries.
+	@bash tools/release/linux-app/build-app.sh
+
 .PHONY: linux-app-payload
 linux-app-payload:  ## Build the Linux server payload (build/linux-app/server) for this machine's architecture and smoke-test it. Needs Go, uv, pnpm, patchelf.
 	@bash tools/release/linux-app/payload.sh

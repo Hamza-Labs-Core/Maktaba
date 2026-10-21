@@ -73,10 +73,18 @@ jobs:
             os: windows-latest
             rust-targets: ''
             args: '--bundles msi,nsis'
-          - label: linux
+          # Linux: the server payload rides in usr/share/maktaba/server (the overlay
+          # linux-app/payload.sh writes maps it into each bundle), Epic 39.
+          - label: linux-x86_64
             os: ubuntu-22.04
             rust-targets: ''
-            args: '--bundles deb,appimage'
+            linux_payload: true
+            args: '--bundles appimage,deb,rpm --config ../../build/linux-app/tauri.linux-app.conf.json'
+          - label: linux-aarch64
+            os: ubuntu-22.04-arm
+            rust-targets: ''
+            linux_payload: true
+            args: '--bundles appimage,deb,rpm --config ../../build/linux-app/tauri.linux-app.conf.json'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     env:
@@ -97,7 +105,8 @@ jobs:
             libgtk-3-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
-            patchelf
+            patchelf \
+            zip rpm2cpio cpio
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -133,7 +142,7 @@ jobs:
           pnpm build
 
       - uses: actions/setup-go@v6.4.0
-        if: matrix.payload
+        if: matrix.payload || matrix.linux_payload
         with:
           go-version-file: api/go.mod
           cache-dependency-path: |
@@ -143,7 +152,7 @@ jobs:
             cmd/maktaba-launcher/go.sum
 
       - uses: astral-sh/setup-uv@v8.1.0
-        if: matrix.payload
+        if: matrix.payload || matrix.linux_payload
         with:
           enable-cache: true
           cache-dependency-glob: pipeline/uv.lock
@@ -153,6 +162,12 @@ jobs:
         with:
           path: build/mac-app/downloads
           key: mac-app-downloads-${{ hashFiles('tools/release/mac-app/pins.env') }}
+
+      - uses: actions/cache@v4
+        if: matrix.linux_payload
+        with:
+          path: build/linux-app/downloads
+          key: linux-app-downloads-${{ runner.arch }}-${{ hashFiles('tools/release/linux-app/pins.env') }}
 
       # The Developer ID certificate in a throwaway keychain; its identity is
       # what payload.sh and tauri sign with. Imported after the
@@ -193,6 +208,14 @@ jobs:
           set -euo pipefail
           tools/release/mac-app/payload.sh --version "$VERSION"
           tools/release/mac-app/check.sh
+
+      # The Linux server payload for this runner's architecture and the overlay
+      # that maps it into the AppImage, the .deb and the .rpm (Epic 39).
+      - name: Build the Linux server payload
+        if: matrix.linux_payload
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: tools/release/linux-app/payload.sh --version "$VERSION"
 
       - name: Install desktop deps (Tauri CLI + API bindings)
         working-directory: apps/desktop
@@ -271,6 +294,16 @@ jobs:
             tools/release/mac-app/check.sh --app "$app"
           fi
           du -sh "$app" apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+
+      # Each bundle's payload installs the way the app installs it (every file
+      # checked), and the copy passes the payload smoke test.
+      - name: Check the Linux bundles
+        if: matrix.linux_payload
+        run: |
+          set -euo pipefail
+          b=apps/desktop/src-tauri/target/release/bundle
+          tools/release/linux-app/check-app.sh "$b"/appimage/*.AppImage "$b"/deb/*.deb "$b"/rpm/*.rpm
+          du -sh "$b"/appimage/*.AppImage "$b"/deb/*.deb "$b"/rpm/*.rpm
 
       # tauri notarizes the .app inside the .dmg; the .dmg itself is notarized
       # and stapled here (so it opens offline without a Gatekeeper prompt) and

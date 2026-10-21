@@ -1,10 +1,12 @@
-# Reusable Linux app payload gate (Epic 39, story 39.2): on an x86_64 and an aarch64
+# Reusable Linux app gate (Epic 39, stories 39.2 and 39.10): on an x86_64 and an aarch64
 # runner, build the server payload (Go binaries with the web UI, pinned Postgres / ffmpeg /
 # Python checked against tools/release/linux-app/pins.env, Postgres's library closure from
-# the runner, the pipeline wheel + constraints) and smoke-test it with
-# tools/release/linux-app/check.sh: on the runner, and in minimal containers of the
-# distributions the app supports (the payload mounted read-only, an ordinary user), so a
-# library the payload assumes but a system lacks fails here.
+# the runner, the pipeline wheel + constraints) and the app around it (AppImage, .deb,
+# .rpm: `make linux-app`). check-app.sh installs each bundle's payload the way the app
+# does (`maktaba-server runtime install`, every file checked) and runs check.sh on the
+# copy; check.sh also runs in minimal containers of the distributions the app supports
+# (the payload mounted read-only, an ordinary user), so a library the payload assumes but
+# a system lacks fails here. Unsigned: the updater signature comes with desktop-release.yml.
 
 name: Linux app
 
@@ -16,9 +18,9 @@ permissions:
 
 jobs:
   payload:
-    name: Linux payload (${{ matrix.arch }})
+    name: Linux app (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -51,13 +53,23 @@ jobs:
         with:
           node-version-file: web/.nvmrc
           cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+          cache-dependency-path: |
+            web/pnpm-lock.yaml
+            apps/desktop/pnpm-lock.yaml
 
-      - name: Install web deps and the build tools
+      - name: Install web + desktop deps and the build tools
         run: |
           pnpm -C web install --frozen-lockfile
+          pnpm -C apps/desktop install --frozen-lockfile
           sudo apt-get update -qq
-          sudo apt-get install -y -qq patchelf zip shellcheck
+          sudo apt-get install -y -qq patchelf zip shellcheck rpm2cpio cpio \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
 
       # the pinned third-party downloads (~150 MB), keyed on their checksums
       - uses: actions/cache@v4
@@ -67,13 +79,13 @@ jobs:
 
       - name: shellcheck and the payload tool's tests
         run: |
-          shellcheck -x tools/release/linux-app/payload.sh tools/release/linux-app/check.sh
+          shellcheck -x tools/release/linux-app/*.sh
           python3 tools/release/linux-app/test_payload_tool.py -v
 
-      - name: Build the payload and check it on the runner
+      - name: Build the app with the payload, and check its bundles
         env:
           VERSION: v0.0.0-ci.${{ github.run_number }}
-        run: make linux-app-payload
+        run: make linux-app
 
       # an ordinary user with a passwd entry (initdb looks the user up), the
       # runner's uid so the read-only checkout is theirs; coreutils' chroot
@@ -100,6 +112,7 @@ jobs:
             echo '```'
             du -sh build/linux-app/server/* 2>/dev/null || true
             du -sh build/linux-app/server 2>/dev/null || true
+            du -sh apps/desktop/src-tauri/target/release/bundle/{appimage,deb,rpm}/*.{AppImage,deb,rpm} 2>/dev/null || true
             python3 -c 'import json; d=json.load(open("build/linux-app/server/payload.json")); print("glibc", d["min_glibc"], "libraries", " ".join(d["postgres"]["libraries"]))' 2>/dev/null || true
             echo '```'
           } >>"$GITHUB_STEP_SUMMARY"
