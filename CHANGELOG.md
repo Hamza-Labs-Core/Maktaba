@@ -10,6 +10,14 @@ don't append a line here; docs-only PRs are exempt.
 
 ## [Unreleased]
 
+### Added
+
+- **Postgres programs for every platform, and Postgres on Windows.** Maktaba can fetch the pinned
+  Postgres 16.15 build of the machine's platform (theseus-rs; size and SHA-256 pinned, unpacked
+  with path checks), and the supervisor runs Postgres on Windows (its `.exe` programs, a fast
+  shutdown through `pg_ctl` instead of a kill). Groundwork for the Windows and Linux apps and for
+  full nodes' copies of the home's database (#178).
+
 ### Fixed
 
 - **Release builds for desktop, Android and Android TV.** The desktop app ships a

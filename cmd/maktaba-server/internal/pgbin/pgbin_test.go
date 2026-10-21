@@ -157,3 +157,36 @@ func TestEnsureReportsAFailedDownload(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+// A link may only name a file beside it: "..", ".", or a path would let a later entry
+// be written outside the install through it.
+func TestUntarRefusesALinkThatLeaves(t *testing.T) {
+	for _, target := range []string{"..", ".", "../lib", "sub/libpq.so", `..\x`, ""} {
+		var buf bytes.Buffer
+		gz := gzip.NewWriter(&buf)
+		tw := tar.NewWriter(gz)
+		_ = tw.WriteHeader(&tar.Header{Name: "pg/lib/libpq.so.5", Linkname: target, Typeflag: tar.TypeSymlink})
+		_ = tw.Close()
+		_ = gz.Close()
+		dir := t.TempDir()
+		arc := filepath.Join(t.TempDir(), "a.tar.gz")
+		if err := os.WriteFile(arc, buf.Bytes(), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := untargz(arc, dir); err == nil || !strings.Contains(err.Error(), "leaves its directory") {
+			t.Fatalf("link to %q: %v", target, err)
+		}
+	}
+	// a library's versioned name is fine
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	_ = tw.WriteHeader(&tar.Header{Name: "pg/lib/libpq.so.5", Linkname: "libpq.so.5.16", Typeflag: tar.TypeSymlink})
+	_ = tw.Close()
+	_ = gz.Close()
+	arc := filepath.Join(t.TempDir(), "a.tar.gz")
+	_ = os.WriteFile(arc, buf.Bytes(), 0o600)
+	if err := untargz(arc, t.TempDir()); err != nil && !os.IsPermission(err) && !strings.Contains(err.Error(), "privilege") {
+		t.Fatalf("a link beside it: %v", err)
+	}
+}
