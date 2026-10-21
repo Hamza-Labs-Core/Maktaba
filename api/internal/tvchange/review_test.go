@@ -5,58 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange/tvchangetest"
 )
-
-// Review fix: an approval given ahead to a draft covers what it held; an edit saved
-// into it afterwards withdraws the approval (else the edit went on the air approved).
-func TestDraftEditWithdrawsApprovalAhead(t *testing.T) {
-	for _, be := range tvchangetest.Backends(t) {
-		t.Run(be.Name, func(t *testing.T) {
-			ctx := context.Background()
-			d := NewDrafts(be.DB)
-			a := &principal.Principal{UserID: "11111111-1111-4111-8111-111111111111", IsAdmin: true}
-			ref, err := d.Save(ctx, a, SourceEditor, "Editor", "channel", func(pd *Pending) error {
-				pd.AddSched("c1")
-				return nil
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			b := "22222222-2222-4222-8222-222222222222"
-			if err := d.Store.Set(ctx, be.DB, ref.ID, map[string]any{"approved_by": []string{b},
-				"approved_at": time.Now().UTC()}); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := d.Save(ctx, a, SourceEditor, "Editor", "channel", func(pd *Pending) error {
-				pd.AddSched("c2")
-				return nil
-			}); err != nil {
-				t.Fatal(err)
-			}
-			c, err := d.Store.Get(ctx, be.DB, ref.ID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(c.ApprovedBy) != 0 || c.ApprovedAt != nil {
-				t.Fatalf("approval kept after a later edit: %v %v", c.ApprovedBy, c.ApprovedAt)
-			}
-			evs, _ := d.Store.Events(ctx, ref.ID)
-			found := false
-			for _, e := range evs {
-				found = found || e.Action == "approval_withdrawn"
-			}
-			if !found {
-				t.Fatalf("no approval_withdrawn event: %+v", evs)
-			}
-			authors, err := d.Store.Contributors(ctx, be.DB, c)
-			if err != nil || len(authors) != 1 || authors[0] != a.UserID {
-				t.Fatalf("contributors %v %v", authors, err)
-			}
-		})
-	}
-}
 
 // Review fix: a swap that failed puts the change back to ready; the controller does not
 // approve it again (approved_by kept) and swap it on the next tick, over and over - it

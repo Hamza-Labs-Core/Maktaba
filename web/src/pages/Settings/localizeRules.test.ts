@@ -60,6 +60,10 @@ describe("localizeSections", () => {
       "warm_grace_seconds",
       "nvenc_max_sessions",
       "videotoolbox_max_sessions",
+      "unreadable_file_fill",
+      "source_timeout_seconds",
+      "source_stall_seconds",
+      "report_unreadable_files",
     ]);
   });
 

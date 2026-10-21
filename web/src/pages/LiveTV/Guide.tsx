@@ -62,7 +62,8 @@ function cellBox(p: Program, windowStart: number): { start: number; width: numbe
 
 // collapseFiller merges runs of filler/bumper blocks into one cell so the
 // grid isn't shredded into slivers (EC2 / 27.4 AC10) — the merged cell
-// reads as an "Up Next" placeholder.
+// reads as the first block's title (the API's filler title, rules
+// tv.guide_filler_title), else an "Up next" placeholder.
 function collapseFiller(programs: Program[]): Program[] {
   const out: Program[] = [];
   for (const p of programs) {
@@ -260,7 +261,7 @@ export function Guide() {
                         onClick={() => onCellActivate(p, channel.number)}
                       >
                         <span className="mkt-guide__celltitle">
-                          {isFiller(p.kind) ? t("guide.upNext") : p.title}
+                          {isFiller(p.kind) ? p.title || t("guide.upNext") : p.title}
                         </span>
                         {airing && prog !== null && (
                           <span
