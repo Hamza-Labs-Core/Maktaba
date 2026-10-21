@@ -63,12 +63,11 @@ type logFile struct {
 
 func openLogFile(path string, limit int64) (*logFile, error) {
 	// the server's output can hold paths and names of the library: the user's
-	// only, the directory too when setup made it first
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	// only, and so is a directory made for it; one that was there is left as it
+	// is (--log-file ~/server.log must not close the home folder)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	_ = os.Chmod(dir, 0o700)
 	l := &logFile{path: path, limit: limit, now: time.Now}
 	if info, err := os.Stat(path); err == nil && info.Size() > limit {
 		_ = os.Rename(path, path+".1")

@@ -32,34 +32,52 @@ jobs:
     # Path filter — short-circuits the heavy gates for docs-only PRs (EC3).
     runs-on: ubuntu-22.04
     outputs:
-      docs_only: ${{ steps.filter.outputs.docs_only }}
+      # docs only: no file outside the docs changed (code), and nothing in .github/ or the
+      # Makefile (meta), which count as code whatever their extension
+      docs_only: ${{ steps.code.outputs.code != 'true' && steps.filter.outputs.meta != 'true' }}
       mac_app: ${{ steps.filter.outputs.mac_app }}
       win_app: ${{ steps.filter.outputs.win_app }}
       linux_app: ${{ steps.filter.outputs.linux_app }}
     steps:
       - uses: actions/checkout@v6.0.2
+      # A filter is true when at least one changed file matches it. Whether a file
+      # matches a filter of several patterns is the step's predicate-quantifier: 'some'
+      # (the default: any one pattern) or 'every' (all of them, an exclusion included).
+      # (A nested key in a filter is a change type, such as `added|modified:`, so an
+      # `every:` key there matches no file: docs_only was never true.)
+      - uses: dorny/paths-filter@v4.0.1
+        id: code
+        with:
+          predicate-quantifier: 'every'
+          filters: |
+            # a changed file outside the docs
+            code:
+              - '**'
+              - '!specs/**'
+              - '!docs/**'
+              - '!**/*.md'
       - uses: dorny/paths-filter@v4.0.1
         id: filter
         with:
           filters: |
-            # dorny/paths-filter's default quantifier is `any:` — the filter
-            # is true if at least one changed file matches at least one
-            # pattern. In that mode, `!Makefile` and `!.github/**` were
-            # being treated as standalone positive-by-complement predicates
-            # ("match anything that is NOT Makefile / NOT in .github/"),
-            # so nearly every non-docs file matched the filter and the
-            # heavy gates skipped.
-            #
-            # Switch to `every:` so the predicate is "every changed file is
-            # docs," and use brace expansion to express the docs-OR.
-            # Inside `every:`, negation patterns are exclusions in the
-            # intuitive sense — a file matches only if it (a) matches the
-            # positive pattern AND (b) doesn't match any negation pattern.
-            docs_only:
-              - every:
-                  - '{specs/**,docs/**,**/*.md}'
-                  - '!.github/**'
-                  - '!Makefile'
+            # code whatever its extension: the workflows and the Makefile, and the
+            # markdown that code, tests, lint or a build read. A test that reads a
+            # markdown file says so here (test_docs_links checks its own are listed).
+            meta:
+              - '.github/**'
+              - 'Makefile'
+              # the help pages the web bundles and its coverage tests check
+              - 'web/src/help/**'
+              # the migrations' MANIFEST.md, read by the schema guard and genrelease
+              - 'shared/db/migrations/**'
+              # the TV runbook and Epic 32's specs: test_docs_links checks their links,
+              # and the anchors the Live TV admin page links to
+              - 'docs/tv-cluster-and-remote.md'
+              - 'specs/epics/32-tv-streaming-cluster-remote/**'
+              # the web's markdown (test-cases/, help/): lint-web's prettier --check
+              - 'web/**/*.md'
+              # the pipeline's README: the wheel's metadata (pyproject readme)
+              - 'pipeline/README.md'
             # The Maktaba.app gate (macOS arm64, ~20 min) runs only when what goes into
             # the app or how it is built changes.
             mac_app:
@@ -166,6 +184,45 @@ jobs:
     if: needs.changes.outputs.linux_app == 'true'
     uses: ./.github/workflows/_linux-app.yml
 
+  # The Linux app's pinned downloads (~150 MB a runner) in a cache on main: a pull
+  # request's run restores main's caches but not another pull request's, so without
+  # this one every run downloads them again (and fails while their host is down).
+  # Only a push to main saves it; when it is there already this is one lookup.
+  linux-app-downloads:
+    if: github.event_name == 'push'
+    name: Linux app downloads (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-22.04 }
+          - { arch: aarch64, runner: ubuntu-22.04-arm }
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/linux-app/downloads
+          key: linux-app-downloads-${{ matrix.arch }}-${{ hashFiles('tools/release/linux-app/pins.env') }}
+          lookup-only: true
+      # missing: start from an earlier pins.env's cache, so only the changed pieces download
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: build/linux-app/downloads
+          key: linux-app-downloads-${{ matrix.arch }}-${{ hashFiles('tools/release/linux-app/pins.env') }}
+          restore-keys: linux-app-downloads-${{ matrix.arch }}-
+      - name: Download the pinned files
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: tools/release/linux-app/payload.sh --fetch-only
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/linux-app/downloads
+          key: linux-app-downloads-${{ matrix.arch }}-${{ hashFiles('tools/release/linux-app/pins.env') }}
+
   pr-body-check:
     if: github.event_name == 'pull_request'
     uses: ./.github/workflows/_pr-body-check.yml
@@ -232,8 +289,12 @@ jobs:
           echo "Gate results:"
           echo "$RESULTS"
           # Fail if any required gate failed or was cancelled. Skipped
-          # is acceptable (docs-only PR, fork-skipped e2e/perf-ci).
+          # is acceptable (docs-only PR, fork-skipped e2e/perf-ci), but not
+          # for the path filter itself: when it fails every gate is skipped.
           fail=0
+          changes=$(echo "$RESULTS" | jq -r '.changes.result // "missing"')
+          echo "  changes: $changes"
+          if [ "$changes" != success ]; then fail=1; fi
           for gate in lint unit integration e2e media-e2e perf-ci build-artifacts node-packaging launcher mac-app win-app linux-app pr-body-check; do
             result=$(echo "$RESULTS" | jq -r ".\"$gate\".result // \"skipped\"")
             echo "  $gate: $result"

@@ -211,14 +211,18 @@ func TestLogPipeNeverBlocksOnAFullDisk(t *testing.T) {
 	}
 }
 
-// A logs directory and a log another program made first (setup's steps) end
-// up the user's only.
+// A log another program made first ends up the user's only; the folder it is
+// in keeps its mode (it may be the home folder), and a folder made for it is
+// the user's only.
 func TestLogFileTightensExistingModes(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX modes")
 	}
 	dir := filepath.Join(t.TempDir(), "logs")
 	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o755); err != nil { // whatever the umask took off
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "server.log")
@@ -230,10 +234,19 @@ func TestLogFileTightensExistingModes(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = l.Close()
-	if fi, _ := os.Stat(dir); fi == nil || fi.Mode().Perm() != 0o700 {
-		t.Errorf("logs dir mode %v", fi)
+	if fi, _ := os.Stat(dir); fi == nil || fi.Mode().Perm() != 0o755 {
+		t.Errorf("a folder that was there changed mode: %v", fi)
 	}
 	if fi, _ := os.Stat(path); fi == nil || fi.Mode().Perm() != 0o600 {
 		t.Errorf("log mode %v", fi)
+	}
+	made := filepath.Join(t.TempDir(), "state", "logs")
+	l, err = openLogFile(filepath.Join(made, "server.log"), 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = l.Close()
+	if fi, _ := os.Stat(made); fi == nil || fi.Mode().Perm() != 0o700 {
+		t.Errorf("a folder made for the log: %v", fi)
 	}
 }

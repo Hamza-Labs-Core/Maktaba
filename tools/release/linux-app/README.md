@@ -98,3 +98,8 @@ server running until `service uninstall`.
 Bumping a piece: change `pins.env` (version, URL, SHA-256 from the publisher), then run
 `make linux-app-payload`. CI's Linux app gate builds the payload on both architectures and runs
 `check.sh` on the runner and in `ubuntu:22.04`, `debian:12-slim` and `fedora:40`.
+
+**Downloads.** Each download is tried again after 15, 30, 60 and 120 s when it fails, and kept only
+with its pinned SHA-256. CI keeps them in a cache on main (`linux-app-downloads` in `ci.yml`),
+which pull requests restore: the cache of an earlier `pins.env` too, so a pin change downloads
+only the pieces it changed.

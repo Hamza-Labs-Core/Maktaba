@@ -93,12 +93,12 @@ run() { : >"$log"; sh "$SCRIPT_DIR/package-remove.sh" "$@" >"$work/out" 2>"$work
 
 # not systemd as init: nothing
 run remove
-check "no /run/systemd/system: systemctl not called" "$([ ! -s "$log" ]; echo $?)"
+check "no /run/systemd/system: systemctl not called" "$(if [ -s "$log" ]; then echo 1; else echo 0; fi)"
 
 mkdir -p /run/systemd/system
 for arg in upgrade 1 failed-upgrade deconfigure ""; do
     run "$arg"
-    check "an upgrade ($arg): systemctl not called" "$([ ! -s "$log" ]; echo $?)"
+    check "an upgrade ($arg): systemctl not called" "$(if [ -s "$log" ]; then echo 1; else echo 0; fi)"
 done
 
 for arg in remove 0; do
@@ -122,6 +122,17 @@ for arg in remove 0; do
     check "$arg: a failed disable is reported" "$(grep -q 'user1004' "$work/err"; echo $?)"
     check "$arg: the stopped user is told about" "$(grep -q 'server of user1000' "$work/out"; echo $?)"
 done
+
+# no /proc (a chroot, an image being built): the running managers are still handled, no
+# home is looked at and nothing is said about network homes (last: it hides /proc)
+mount -t tmpfs tmpfs /proc
+rc=0
+run remove || rc=$?
+check "no /proc: exits 0" "$rc"
+check "no /proc: user1000's app unit still disabled" \
+    "$(grep -qx -- '--user --machine=user1000@ disable --now maktaba-server.service' "$log"; echo $?)"
+check "no /proc: no home looked at, no network-homes line" \
+    "$(! grep -qe 'user1002' -e 'homes on the network' "$work/err"; echo $?)"
 
 if [ "$fails" -ne 0 ]; then
     echo "$fails check(s) failed"

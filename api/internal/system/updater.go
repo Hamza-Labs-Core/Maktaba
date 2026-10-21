@@ -459,38 +459,12 @@ func splitSemver(tag string) ([]int, bool) {
 	return out, pre
 }
 
-// compareSemver returns >0 if a is newer than b, <0 if older, 0 if equal.
-// Numeric segments compare element-wise; a prerelease of the same core
-// (1.5.0-rc.1) ranks below the release (1.5.0). Unparseable cores compare
-// as 0-length (so "dev" is never newer than a real release).
-func compareSemver(a, b string) int {
-	ac, apre := splitSemver(a)
-	bc, bpre := splitSemver(b)
-	for i := 0; i < len(ac) || i < len(bc); i++ {
-		var x, y int
-		if i < len(ac) {
-			x = ac[i]
-		}
-		if i < len(bc) {
-			y = bc[i]
-		}
-		if x != y {
-			if x > y {
-				return 1
-			}
-			return -1
-		}
-	}
-	// Equal numeric core: the release outranks its prerelease.
-	switch {
-	case apre && !bpre:
-		return -1
-	case !apre && bpre:
-		return 1
-	default:
-		return 0
-	}
-}
+// compareSemver returns >0 if a is newer than b, <0 if older, 0 if equal: the
+// release verifier's order (releaseverify.CompareVersions), so "update
+// available" here and the verifier's no-downgrade rule agree. A prerelease
+// ranks below its release, a `git describe` build after its tag, and an
+// unparseable core below every release ("dev" is never newer).
+func compareSemver(a, b string) int { return releaseverify.CompareVersions(a, b) }
 
 // PlatformToken is the "<os>-<arch>" fragment release-archive names embed
 // (e.g. "maktaba-server-1.4.2-linux-amd64.tar.gz"). Exported so Story

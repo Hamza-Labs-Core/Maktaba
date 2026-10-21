@@ -23,11 +23,15 @@
 # It also writes <build>/tauri.linux-app.conf.json, the overlay `tauri build --config`
 # takes to bundle the payload into the AppImage / .deb / .rpm (story 39.10).
 #
-# Usage: payload.sh [--version VERSION] [--build DIR] [--cache DIR]
-#   --version  release tag (default: git describe)
-#   --build    work directory (default: build/linux-app); the payload is <build>/server
-#   --cache    downloads (default: <build>/downloads, or $LINUX_APP_CACHE)
+# Usage: payload.sh [--version VERSION] [--build DIR] [--cache DIR] [--fetch-only]
+#   --version     release tag (default: git describe)
+#   --build       work directory (default: build/linux-app); the payload is <build>/server
+#   --cache       downloads (default: <build>/downloads, or $LINUX_APP_CACHE)
+#   --fetch-only  only download the pinned files into the cache and check them (CI keeps
+#                 that cache on main, so a pull request's build does not download them)
 set -euo pipefail
+# a failure inside $(...) (a download) stops the build there, not at what follows
+shopt -s inherit_errexit
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
@@ -38,8 +42,10 @@ log() { printf '\033[1;36m[payload]\033[0m %s\n' "$*" >&2; }
 VERSION="${VERSION:-}"
 BUILD="$REPO_ROOT/build/linux-app"
 CACHE="${LINUX_APP_CACHE:-}"
+FETCH_ONLY=0
 while [ $# -gt 0 ]; do
     case "$1" in
+        --fetch-only) FETCH_ONLY=1; shift ;;
         --version) [ $# -ge 2 ] || die "--version needs a value"; VERSION="$2"; shift 2 ;;
         --build)   [ $# -ge 2 ] || die "--build needs a value"; BUILD="$2"; shift 2 ;;
         --cache)   [ $# -ge 2 ] || die "--cache needs a value"; CACHE="$2"; shift 2 ;;
@@ -53,10 +59,12 @@ case "$(uname -m)" in
     aarch64|arm64) ARCH=aarch64; GOARCH=arm64 ;;
     *)             die "unsupported architecture $(uname -m) (x86_64 or aarch64)" ;;
 esac
-for t in go uv pnpm curl tar sha256sum patchelf; do
+tools=(curl sha256sum)
+[ "$FETCH_ONLY" = 1 ] || tools+=(go uv pnpm tar patchelf)
+for t in "${tools[@]}"; do
     command -v "$t" >/dev/null 2>&1 || die "$t is required"
 done
-[ -n "$VERSION" ] || VERSION="$(git -C "$REPO_ROOT" describe --tags --dirty --always 2>/dev/null || echo dev)"
+[ -n "$VERSION" ] || VERSION="$(git -C "$REPO_ROOT" describe --tags --match 'v*' --dirty --always 2>/dev/null || echo dev)"
 
 # shellcheck source-path=SCRIPTDIR source=pins.env
 . "$SCRIPT_DIR/pins.env"
@@ -66,25 +74,55 @@ mkdir -p "$BUILD"
 BUILD="$(cd "$BUILD" && pwd)"
 CACHE="${CACHE:-$BUILD/downloads}"
 mkdir -p "$CACHE"
+
+sha256() { sha256sum "$1" | awk '{print $1}'; }
+
+# fetch URL SHA256 NAME: the file in the cache, downloaded once, always checked: it is kept
+# only when it has SHA256. A download that fails (or gives other bytes) is tried again
+# after 15, 30, 60, then 120 s: a host down for a while (a 5xx such as Cloudflare's 521, a
+# reset) is asked again. curl's --retry never retries a 521, and its --retry-all-errors
+# needs a newer curl than some build hosts have. One try gives up after 15 minutes.
+fetch() {
+    local url="$1" want="$2" dst="$CACHE/$3" delay
+    if [ -f "$dst" ] && [ "$(sha256 "$dst")" = "$want" ]; then
+        printf '%s\n' "$dst"
+        return
+    fi
+    log "downloading $3"
+    for delay in 15 30 60 120 0; do
+        if curl -fsSL --connect-timeout 30 --max-time 900 -o "$dst.part" "$url" &&
+            [ "$(sha256 "$dst.part")" = "$want" ]; then
+            mv "$dst.part" "$dst"
+            printf '%s\n' "$dst"
+            return
+        fi
+        rm -f "$dst.part"
+        [ "$delay" -gt 0 ] || break
+        log "$3: not downloaded, again in $delay s"
+        sleep "$delay"
+    done
+    die "$3: no download from $url had the SHA-256 pins.env names ($want)"
+}
+
+if [ "$FETCH_ONLY" = 1 ]; then
+    names=("postgresql-$POSTGRES_VERSION-$ARCH.tar.gz" "cpython-$PYTHON_VERSION-$ARCH.tar.gz"
+        "ffmpeg-$FFMPEG_VERSION-$ARCH.zip" "ffprobe-$FFMPEG_VERSION-$ARCH.zip")
+    fetch "$(pin POSTGRES_URL)" "$(pin POSTGRES_SHA256)" "${names[0]}" >/dev/null
+    fetch "$(pin PYTHON_URL)" "$(pin PYTHON_SHA256)" "${names[1]}" >/dev/null
+    fetch "$(pin FFMPEG_URL)" "$(pin FFMPEG_SHA256)" "${names[2]}" >/dev/null
+    fetch "$(pin FFPROBE_URL)" "$(pin FFPROBE_SHA256)" "${names[3]}" >/dev/null
+    # an earlier pins.env's files (from a cache restored by its prefix) are not kept
+    for f in "$CACHE"/*; do
+        case " ${names[*]} " in *" ${f##*/} "*) ;; *) rm -f "$f" ;; esac
+    done
+    log "the pinned downloads for $ARCH are in $CACHE"
+    exit 0
+fi
+
 OUT="$BUILD/server"
 WORK="$BUILD/work"
 rm -rf "$OUT" "$WORK"
 mkdir -p "$OUT"/{bin,postgres,ffmpeg,pipeline,licenses} "$WORK"
-
-sha256() { sha256sum "$1" | awk '{print $1}'; }
-
-# fetch URL SHA256 NAME: the file in the cache, downloaded once, always checked.
-fetch() {
-    local url="$1" want="$2" dst="$CACHE/$3" got
-    if [ ! -f "$dst" ] || [ "$(sha256 "$dst")" != "$want" ]; then
-        log "downloading $3"
-        curl -fsSL --retry 3 -o "$dst.part" "$url"
-        mv "$dst.part" "$dst"
-    fi
-    got="$(sha256 "$dst")"
-    [ "$got" = "$want" ] || die "$3: sha256 $got, pins.env says $want"
-    printf '%s\n' "$dst"
-}
 
 
 # --- Go binaries (the release envelope: -trimpath, stamped, web UI embedded) -----------------
