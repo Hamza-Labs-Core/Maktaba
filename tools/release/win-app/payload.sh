@@ -78,7 +78,9 @@ fi
 
 mkdir -p "$BUILD"
 BUILD="$(cd "$BUILD" && pwd)"
-CACHE="${CACHE:-$BUILD/downloads}"
+# in Git Bash's form: a Windows path (E:/..., what a native make passes on) reads as
+# host:path to tar
+CACHE="$(cygpath -u "${CACHE:-$BUILD/downloads}")"
 mkdir -p "$CACHE"
 OUT="$BUILD/server"
 WORK="$BUILD/work"
