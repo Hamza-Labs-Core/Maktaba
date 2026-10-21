@@ -11,11 +11,11 @@
 #   2. every role running (the supervisor's /processes); the web app and the API answer
 #   3. `systemctl --user restart`, a SIGKILL of the launcher (Restart=always), and
 #      `service stop` (stays stopped) / `service start`
-#   4. an update: once the payload ran healthy (state/payload.json), the same payload under
-#      a newer version is installed and activated (`runtime install --activate`, what the
-#      app runs after its updater). The next start dumps the database before the new
-#      version's migrations (backups/pre-<old>-to-<new>.dump), runs them, and keeps the venv
-#      (the constraints did not change)
+#   4. an update: the same payload under a newer version is installed and activated
+#      (`runtime install --activate`, what the app runs after its updater). The next start
+#      dumps the database before the new version's migrations
+#      (backups/pre-<old>-to-<new>.dump), runs them and records it (state/database.json:
+#      migrated, from the old version), and keeps the venv (the constraints did not change)
 #
 # Hermetic: XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_STATE_HOME and XDG_CACHE_HOME point into a
 # scratch directory (the unit pins them), so this user's own Maktaba files are never read or
@@ -210,12 +210,14 @@ log "service start"
 wait_running 300
 
 # --- 4. an update ---------------------------------------------------------------------------
-log "waiting for the payload to be confirmed (every role healthy for 3 minutes)"
-deadline=$((SECONDS + 600))
-until [ -f "$DATA/state/payload.json" ]; do
-    [ "$SECONDS" -lt "$deadline" ] || die "the payload was not confirmed within 600 s"
-    sleep 10
-done
+# state/database.json: the release whose migrations the library database holds
+db_record() {
+    "$PY" -I -c 'import json, sys
+d = json.load(open(sys.argv[1]))
+print(d.get(sys.argv[2], ""))' "$DATA/state/database.json" "$1"
+}
+before_version="$(db_record version)" || die "no database record (state/database.json) after the first start"
+[ "$(db_record state)" = migrated ] || die "the database is not recorded as migrated: $(cat "$DATA/state/database.json")"
 venv_cfg="$DATA/venv/pyvenv.cfg"
 [ -f "$venv_cfg" ] || die "no venv at $DATA/venv"
 venv_before="$(stat -c %Y "$venv_cfg")"
@@ -234,6 +236,10 @@ wait_running 900
 dump="$(find "$DATA" -name "pre-*-to-$NEXT_VERSION.dump" -print -quit)"
 [ -n "$dump" ] || die "no database dump was taken before the update"
 log "the database was saved before the update: ${dump#"$DATA"/}"
+if [ "$(db_record version)" != "$NEXT_VERSION" ] || [ "$(db_record state)" != migrated ] ||
+    [ "$(db_record from)" != "$before_version" ]; then
+    die "the database is not recorded as migrated from $before_version to $NEXT_VERSION: $(cat "$DATA/state/database.json")"
+fi
 [ "$(stat -c %Y "$venv_cfg")" = "$venv_before" ] || die "the venv was rebuilt although the constraints did not change"
 log "the venv was kept"
 rs="$("$S" runtime status --json)"
