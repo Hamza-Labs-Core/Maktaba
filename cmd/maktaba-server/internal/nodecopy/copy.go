@@ -119,7 +119,7 @@ func (c Copy) DSN() (string, error) {
 	return u.String(), nil
 }
 
-// Grant is the home's answer to the copy's request (slot 0142).
+// Grant is the home's answer to the copy's request (slot 0143).
 type Grant struct {
 	Role     string  `json:"role"`
 	Slot     string  `json:"slot"`

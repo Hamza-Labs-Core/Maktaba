@@ -62,7 +62,7 @@ behaves as a node did before #145: its own routes answer, anything else is 503 w
   `REPLICATION`, `pg_monitor`, `pg_signal_backend`, and makes `maktaba_replicas` (member of
   `pg_read_all_data`), which the app role administers without taking its rights. Its `pg_hba.conf`
   (rewritten at every start) lets `+maktaba_replicas` stream (`hostssl replication`) and read.
-- Slot 0142 (`shared/db/migrations/0142_node_replicas.sql`):
+- Slot 0143 (`shared/db/migrations/0143_node_replicas.sql`):
   - `cluster_node_replica_grant(node, password, fresh)` — a machine asks for its copy **over its own
     database connection**, for its own role only (`cluster_node_guard`). It makes or updates the
     replication role with the password the machine chose, makes the slot (anew when `fresh`, or
@@ -73,7 +73,7 @@ behaves as a node did before #145: its own routes answer, anything else is 503 w
     (`api/internal/cluster/copies.go`), and its database's CA.
   - `cluster_nodes.replica` + `cluster_node_report_replica` — what each machine reports of its copy.
   - The machines' group made late, for a home whose migrations ran before its app role could make
-    roles (Maktaba.app before this epic): created with the privileges slots 0103–0141 give it,
+    roles (Maktaba.app before this epic): created with the privileges slots 0103–0142 give it,
     proven equal to the normal ones (`worker_baseline_pg_test.go`).
 - `cluster.Copies` (home API): the beat, the CA published, and **the cap**: an inactive slot that
   holds more than `rules.cluster.replica_wal_keep_gb` of changes is dropped — the home's disk never

@@ -122,7 +122,7 @@ func TestNotifyOnTransitions(t *testing.T) {
 
 			b := w.change(StateStaged, []string{"schedule"})
 			w.move(b, StateVerifying, ActionStartVerify, nil, nil)
-			w.move(b, StateFailed, ActionFail, nil, map[string]any{"end_reason": "verification_failed"})
+			w.move(b, StateDraft, ActionFail, nil, nil) // back to draft: the open change
 			w.feed()
 			if got := w.rec.kinds(); len(got) != 3 || got[2] != NotifyFailed || w.rec.got[2].Severity != notify.SeverityError {
 				t.Fatalf("failed: %v", got)

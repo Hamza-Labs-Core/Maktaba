@@ -17,7 +17,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
 )
 
-// The home's side of a machine's copy (slot 0142, specs/epics/37-node-replica), on a
+// The home's side of a machine's copy (slot 0143, specs/epics/37-node-replica), on a
 // home set up as the Postgres bundled with Maktaba.app sets it up: the app role owns
 // the schema, has run the migrations and was given, at the cluster bootstrap, the
 // right to make roles and slots and the replicas' group. A machine's own database role
