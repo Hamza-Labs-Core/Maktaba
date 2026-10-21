@@ -149,7 +149,7 @@ The items are exactly what the workers load, read from the same settings the wor
 | Name | Model | How the worker loads it |
 |---|---|---|
 | `whisper` (Apple Silicon: MLX) | `MAKTABA_STT_MODEL` (default `mlx-community/whisper-large-v3-turbo`, ~1.6 GB) | `mlx_whisper` → `snapshot_download(repo)` (whole repo) |
-| `whisper` (Windows, Linux: CTranslate2, story 38.8) | `MAKTABA_STT_MODEL` (default `dropbox-dash/faster-whisper-large-v3-turbo`, float16, 1.6 GB; an MLX id is replaced by its CTranslate2 conversion, logged) | `stt/ct2.py` → `snapshot_download(repo, allow_patterns=engine.CT2_FILES)`: `config.json`, `preprocessor_config.json`, `model.bin`, `tokenizer.json`, `vocabulary.*` (faster-whisper's own list) |
+| `whisper` (Windows, Linux: CTranslate2, story 38.8) | `MAKTABA_STT_MODEL` (default `dropbox-dash/faster-whisper-large-v3-turbo`, float16, 1.6 GB; an MLX id is replaced by its CTranslate2 conversion, logged) | `stt/ct2.py` → `snapshot_download(repo, revision=<pin>, allow_patterns=engine.CT2_FILES)`: `config.json`, `preprocessor_config.json`, `model.bin`, `tokenizer.json`, `vocabulary.*` (faster-whisper's own list), then each file's SHA-256 against `engine.CT2_PINS` |
 | `cohere` | `MAKTABA_STT_REFINE_MODEL` (default `CohereLabs/cohere-transcribe-arabic-07-2026`, gated) | `mlx_audio` with its file patterns; else the home's copy on the share |
 | `dictionary` | CAMeL Tools `morphology-db-msa-r13` | `CATALOGUE.download_package` |
 | `embedder` | `MAKTABA_EMBED_MODEL` (default `intfloat/multilingual-e5-small`) | sentence-transformers |
@@ -161,7 +161,14 @@ wheel (nothing to fetch).
 
 The CTranslate2 default is the conversion faster-whisper 1.2.1 itself fetches for
 `large-v3-turbo` (it names it `mobiuslabsgmbh/faster-whisper-large-v3-turbo`, a repo since
-moved to `dropbox-dash/`; the old name only redirects). Its CUDA needs cuBLAS 12 only (the
+moved to `dropbox-dash/`; the old name only redirects). It, and `Systran/faster-whisper-large-v3`
+(what an MLX large-v3 maps to), are fetched at a pinned commit (`stt/engine.py` `CT2_PINS`:
+`dropbox-dash/...turbo` at `0a363e91`, `Systran/...large-v3` at `edaa852e`) and their files
+checked against their SHA-256 once (a marker, `.maktaba-sha256`, in the snapshot); a file that
+does not match is removed, so the next download fetches it again. A model of the operator's
+own is fetched as its repo has it. Still unpinned (as on `main`): the MLX Whisper and the
+Cohere model on Apple Silicon (`mlx_whisper`, `mlx_audio`, `fetch_cli.hf_download`), the
+embedder (sentence-transformers) and the CAMeL data. Its CUDA needs cuBLAS 12 only (the
 `nvidia-cublas-cu12` wheel of the `stt` extra; CTranslate2 ≥ 4.6.3 runs Whisper without
 cuDNN) and the NVIDIA driver; no CUDA toolkit.
 
@@ -208,20 +215,45 @@ A download is resumable: run it again (Hugging Face keeps partial files).
 | `MAKTABA_STT_COMPUTE_TYPE` (CTranslate2) | `[transcription].compute_type`, else `int8_float16` on a GPU under 7 GB; unset: `auto` (float16 on CUDA, int8 on the CPU); one the device cannot run falls back to its default, logged | `stt/ct2.py` `choose_compute_type` |
 | `MAKTABA_STT_CPU_THREADS` (CTranslate2) | `[transcription].cpu_threads`, else half the logical CPUs (2 to 16) when the machine transcribes on the CPU | `stt/ct2.py` `load` |
 
-On Windows and Linux (story 38.8) the supervisor sizes the plan from the NVIDIA GPU
-(`nvidia-smi --query-gpu=name,memory.total`): the transcription workers and `MAKTABA_STT_BATCH`
-per GPU-memory tier (an 8 GB card: one worker, 8 files), `MAKTABA_STT_AUDIO_HOURS` and
-`_MIN_FREE_PCT` from the RAM. Without a GPU (or `[transcription] device = "cpu"`) there are no
-transcription workers: the main worker transcribes, and it gets the knobs. `[pipeline]
-instances` and `[transcription] workers` still set the number of workers. A transcript records
-its engine in `transcripts.backend` (`mlx-batched`, `ct2-batched`) and the runtime in
-`backend_version` (e.g. `faster-whisper 1.2.1, ctranslate2 4.8.3, cuda float16`); the
-transcribe fingerprint names the CTranslate2 turbo as the MLX one, so a PC does not transcribe
-again what a Mac did.
 | **`MAKTABA_MODEL_CACHE_DIR`** (new) | `~/Library/Application Support/Maktaba/models` | `maktaba_pipeline/model_dirs.py`: sets `HF_HOME=<dir>/huggingface` and `CAMELTOOLS_DATA=<dir>/camel_tools` (each only when not already set) when the package is imported; share copies go to `<dir>/share-copies` |
 | `MAKTABA_CHROMA_DIR` | `~/Library/Application Support/Maktaba/chroma` | `search/semantic.py`, `search/index_stage.py` (default `~/.maktaba/chroma`) |
 | `MAKTABA_EMBED_MODEL` | unset (e5-small) | `search/semantic.py` |
 | `MAKTABA_MODELS_DIR` | **leave unset on a home with a NAS** (see below) | `stt/model_share.py`: the *share's* models folder |
+
+On Windows and Linux (story 38.8) the supervisor sizes the plan from the NVIDIA GPU
+(`nvidia-smi --query-gpu=name,memory.total`): the transcription workers and `MAKTABA_STT_BATCH`
+per GPU-memory tier (an 8 GB card: one worker, 8 files; under 4 GB, and Linux on aarch64, whose
+CTranslate2 has no CUDA build: the CPU plan), `MAKTABA_STT_AUDIO_HOURS` and `_MIN_FREE_PCT`
+from the RAM. Without a GPU (or `[transcription] device = "cpu"`) there are no transcription
+workers: the main worker transcribes, and it gets the knobs. `[pipeline] instances` and
+`[transcription] workers` still set the number of workers; more than the plan's share its
+budget (each its part of the GPU's batch, the CPU threads, the audio hours). A transcript records
+its engine in `transcripts.backend` (`mlx-batched`, `ct2-batched`) and the runtime in
+`backend_version` (e.g. `faster-whisper 1.2.1, ctranslate2 4.8.3, cuda float16`); the
+transcribe fingerprint names the CTranslate2 turbo as the MLX one, so a PC does not transcribe
+again what a Mac did.
+
+**Where transcription runs** (review of 38.8). The operator's own stage selection always
+stands: with `transcribe` in `MAKTABA_PIPELINE_EXCLUDE_STAGES` (or a `MAKTABA_PIPELINE_STAGES`
+without it) the supervisor starts no transcription workers and leaves the main worker's
+exclusion as it is. Planned workers run only where the pipeline's Python has the engine (a
+probe of its modules, without importing them) and, while the second listen is on, only where
+it runs too (Apple Silicon). Elsewhere the main worker leaves `transcribe` to the machines that
+run the second listen (its `unavailable()` says why), unless `rules.transcription`
+`without_second_listen` is on (Settings, Transcription: "Transcribe without the second
+listen"), read before each stage selection. A transcript made without its second listen stores
+`skipped_fingerprint(fingerprint)` as its job's input hash: a worker that runs the second
+listen does not take it as done, and every 10 minutes queues up to 20 of them (at least an hour
+old, oldest first, priority 500, payload `relisten`) once it has the model; a worker without
+the second listen gives a relisten job back for 15 minutes (for a day at most) and lets an
+ordinary job's transcript stand.
+
+**Where Whisper loads** (CTranslate2). With `MAKTABA_STT_DEVICE=auto` the GPU must have the
+memory free that the model and its batch need (NVML's count: 2.3 GB in float16, 1.2 in
+int8_float16, 0.14 a file, 0.25 to spare; another model in proportion to its `model.bin`),
+else Whisper loads on the CPU with half the logical CPUs; a load that fails on the GPU all the
+same is loaded on the CPU, and the process does not try the GPU again. GPUs are numbered as
+nvidia-smi numbers them (`CUDA_DEVICE_ORDER=PCI_BUS_ID` unless set).
 
 The pipeline never read `MAKTABA_TRANSCRIPTION_BACKEND` / `MAKTABA_TRANSCRIPTION_MODEL`, which
 `ChildEnv` sets today: track A maps `[transcription]` to the `MAKTABA_STT_*` names above.

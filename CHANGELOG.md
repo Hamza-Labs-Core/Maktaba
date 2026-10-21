@@ -19,8 +19,14 @@ don't append a line here; docs-only PRs are exempt.
   their batch from the GPU's memory (`nvidia-smi`; an 8 GB card gets one worker); without a GPU
   the main worker transcribes. New `[transcription]` keys: `device`, `compute_type`, `batch`,
   `cpu_threads`. Transcripts record their engine (`ct2-batched`); the second listen stays on
-  the Mac for now. On an RTX 2080 SUPER: 72x real time for eight files at once, 31x for one;
-  2-3x on the CPU.
+  the Mac for now, so while it is on a Windows or Linux machine leaves transcription to the
+  machines that run it, unless the new rule Transcription, "Transcribe without the second
+  listen", lets it transcribe too; a machine that runs the second listen then gives those
+  transcripts theirs later. The operator's own stage exclusion always stands. A GPU under 4 GB,
+  or one without the memory free, leaves Whisper to the CPU, as does a failed load on the GPU;
+  more workers than planned share the GPU or the CPU; the Whisper download is pinned to a commit
+  and its files' SHA-256; the free-memory floor works on Windows. On an RTX 2080 SUPER: 72x real
+  time for eight files at once, 31x for one; 2-3x on the CPU.
 - **Postgres programs for every platform, and Postgres on Windows.** Maktaba can fetch the pinned
   Postgres 16.15 build of the machine's platform (theseus-rs; size and SHA-256 pinned, unpacked
   with path checks), and the supervisor runs Postgres on Windows (its `.exe` programs, a fast
