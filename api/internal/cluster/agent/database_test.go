@@ -22,9 +22,16 @@ func TestPushDatabase(t *testing.T) {
 		t.Fatalf("the machine agents: %v (session %s)", got, a.Session)
 	}
 	ca := filepath.Join(t.TempDir(), "postgres-ca.crt")
-	if err := os.WriteFile(ca, []byte("CA one"), 0o600); err != nil {
-		t.Fatal(err)
+	writeCA := func(body string) { // as the bundle writes it: whole, then renamed
+		t.Helper()
+		if err := os.WriteFile(ca+".tmp", []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(ca+".tmp", ca); err != nil {
+			t.Fatal(err)
+		}
 	}
+	writeCA("CA one")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go f.hub.PushDatabase(ctx, ca, 50*time.Millisecond, nil)
@@ -40,9 +47,7 @@ func TestPushDatabase(t *testing.T) {
 	take("CA one")
 	// told once: the same CA is not sent again
 	time.Sleep(300 * time.Millisecond)
-	if err := os.WriteFile(ca, []byte("CA two"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeCA("CA two")
 	take("CA two")
 }
 
@@ -52,6 +57,13 @@ func TestDatabaseArgs(t *testing.T) {
 	}
 	if _, err := databaseArgs(filepath.Join(t.TempDir(), "missing")); err == nil {
 		t.Fatal("a CA that cannot be read")
+	}
+	empty := filepath.Join(t.TempDir(), "empty.crt")
+	if err := os.WriteFile(empty, []byte("\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := databaseArgs(empty); err == nil {
+		t.Fatal("an empty CA is not one to hand a machine")
 	}
 }
 

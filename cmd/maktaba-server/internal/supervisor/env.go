@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
@@ -275,6 +275,7 @@ func HomeDSN(n config.NodeConfig) string {
 	}
 	return dsn
 }
+
 // onWindows reports a Windows host (tests replace it).
 var onWindows = func() bool { return runtime.GOOS == "windows" }
 

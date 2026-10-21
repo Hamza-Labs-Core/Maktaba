@@ -1,9 +1,11 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"time"
@@ -63,6 +65,10 @@ func databaseArgs(caFile string) (json.RawMessage, error) {
 	b, err := os.ReadFile(caFile)
 	if err != nil {
 		return nil, err
+	}
+	if len(bytes.TrimSpace(b)) == 0 {
+		// one being written: a machine told an empty CA could verify nothing
+		return nil, fmt.Errorf("%s is empty", caFile)
 	}
 	return json.Marshal(map[string]string{"ca_pem": string(b)})
 }

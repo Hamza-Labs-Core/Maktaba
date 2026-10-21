@@ -187,7 +187,7 @@ func TestAMachineFindsTheNewHomeAtAStandby(t *testing.T) {
 	select {
 	case <-reloadCh:
 		t.Fatal("an old notice was followed again")
-	case <-time.After(3 * time.Second):
+	case <-time.After(5 * answerFirst):
 	}
 }
 

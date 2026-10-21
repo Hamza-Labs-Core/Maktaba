@@ -58,6 +58,10 @@ func requestReload() {
 	}
 }
 
+// answerFirst is how long a step that starts this machine again waits first, so its
+// answer reaches the API (tests make it short).
+var answerFirst = 2 * time.Second
+
 // Key files the kit carries, by name.
 const (
 	kitSecretsKey = "secrets.key"
@@ -801,7 +805,7 @@ func (s *switching) demote(req homeRequest) error {
 	s.mu.Unlock()
 	logf("this machine is a machine of the new home now (%s): starting again", h.APIURL)
 	go func() {
-		time.Sleep(2 * time.Second) // the API hears it went through first
+		time.Sleep(answerFirst) // the API hears it went through first
 		requestReload()
 	}()
 	return nil
@@ -1124,7 +1128,7 @@ func (s *switching) promote(ctx context.Context, id string, term int64) (any, er
 		_ = writePrivate(s.calledOff(id), nil)
 		s.release(id)
 		go func() {
-			time.Sleep(2 * time.Second) // the answer goes out first
+			time.Sleep(answerFirst) // the answer goes out first
 			requestReload()
 		}()
 		return nil, err
@@ -1347,7 +1351,7 @@ func (s *switching) becomeHome(ctx context.Context, db *sql.DB, kit *switchover.
 	_ = wipeFile(filepath.Join(s.dir(id), "kit.chunks"))
 	fmt.Fprintf(os.Stderr, "[switchover] this machine is the home now (term %d): starting again\n", term)
 	go func() {
-		time.Sleep(2 * time.Second) // the answer goes out first
+		time.Sleep(answerFirst) // the answer goes out first
 		requestReload()
 	}()
 	return home, nil
@@ -1563,7 +1567,7 @@ func (s *switching) follow(ctx context.Context, id string, term int64, h newHome
 	}
 	fmt.Fprintf(os.Stderr, "[switchover] the home is %s now (copy kept: %v): starting again\n", h.APIURL, moved)
 	go func() {
-		time.Sleep(2 * time.Second)
+		time.Sleep(answerFirst)
 		requestReload()
 	}()
 	return map[string]any{"copy_kept": moved}, nil
