@@ -222,6 +222,9 @@ func TestLogFileTightensExistingModes(t *testing.T) {
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(dir, 0o755); err != nil { // whatever the umask took off
+		t.Fatal(err)
+	}
 	path := filepath.Join(dir, "server.log")
 	if err := os.WriteFile(path, []byte("old\n"), 0o644); err != nil {
 		t.Fatal(err)
