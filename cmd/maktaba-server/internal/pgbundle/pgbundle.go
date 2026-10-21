@@ -53,15 +53,17 @@ type Bundle struct {
 // <payload>/postgres beside <payload>/bin/maktaba-server).
 //
 // [postgres] enabled = "off" never runs it; "on" does whenever its binaries are
-// there; "auto" (the default) only on macOS. In every case a [database] url set
-// in server.toml wins, and so does a SQLite database already in use at the
+// there; "auto" (the default) on macOS and inside any desktop app's payload
+// (Windows, Epic 38 story 38.10). In every case a [database] url set in
+// server.toml wins, and so does a SQLite database already in use at the
 // default path (an install from before keeps its data).
 func Resolve(cfg config.Config, exe string) (Bundle, bool, error) {
 	mode := strings.ToLower(strings.TrimSpace(cfg.Postgres.Enabled))
 	if mode == "off" || cfg.DatabaseURLSet {
 		return Bundle{}, false, nil
 	}
-	if mode != "on" && (runtime.GOOS != "darwin" || sqliteInUse()) {
+	auto := runtime.GOOS == "darwin" || inAppPayload(exe)
+	if mode != "on" && (!auto || sqliteInUse()) {
 		return Bundle{}, false, nil
 	}
 	home := findHome(cfg, exe)
@@ -111,6 +113,23 @@ func findHome(cfg config.Config, exe string) string {
 		return h
 	}
 	return ""
+}
+
+// inAppPayload: this maktaba-server runs from a desktop app's server payload
+// ($MAKTABA_APP_BUNDLE, which the launcher sets, or payload.json beside the
+// bin/ of exe: the app runs its setup steps with it directly).
+func inAppPayload(exe string) bool {
+	if config.AppBundle() != "" {
+		return true
+	}
+	if exe == "" {
+		return false
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	_, err := os.Stat(filepath.Join(filepath.Dir(filepath.Dir(exe)), "payload.json"))
+	return err == nil
 }
 
 func hasServer(home string) bool {
@@ -167,6 +186,18 @@ func (b Bundle) ServerArgs() []string {
 	}
 	return []string{"-D", b.Data, "-p", strconv.Itoa(b.Port),
 		"-c", "listen_addresses=127.0.0.1", "-c", "unix_socket_directories=" + sock}
+}
+
+// ServerCommand is the foreground `postgres` of this cluster (ServerArgs). On
+// Windows, when this process runs as an administrator (an elevated session, a
+// CI runner), it gets a restricted token, as pg_ctl and initdb give theirs:
+// postgres.exe refuses to run with administrative rights.
+func (b Bundle) ServerCommand() (*exec.Cmd, error) {
+	cmd := exec.Command(b.Bin("postgres"), b.ServerArgs()...)
+	if err := restrict(cmd); err != nil {
+		return nil, fmt.Errorf("a restricted token for postgres: %w", err)
+	}
+	return cmd, nil
 }
 
 // maxSocketPath is the longest unix socket path macOS takes (sun_path is 104
@@ -305,7 +336,10 @@ func (b Bundle) bootstrap(ctx context.Context, superPW, appPW string, log io.Wri
 // withServer runs fn with a server of its own up (the supervisor's is not
 // running), then stops it.
 func (b Bundle) withServer(ctx context.Context, log io.Writer, fn func() error) error {
-	srv := exec.Command(b.Bin("postgres"), b.ServerArgs()...)
+	srv, err := b.ServerCommand()
+	if err != nil {
+		return err
+	}
 	srv.Stdout, srv.Stderr = log, log
 	if err := srv.Start(); err != nil {
 		return err

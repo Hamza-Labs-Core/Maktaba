@@ -17,6 +17,13 @@ don't append a line here; docs-only PRs are exempt.
   with path checks), and the supervisor runs Postgres on Windows (its `.exe` programs, a fast
   shutdown through `pg_ctl` instead of a kill). Groundwork for the Windows and Linux apps and for
   full nodes' copies of the home's database (#178).
+- **The Windows app runs its own Postgres** (Epic 38, story 38.10). `[postgres] enabled = "auto"`
+  now turns the bundled Postgres on inside any desktop app's payload, not only on a Mac (a
+  `[database] url` or a SQLite database in use still wins). When the server runs as an
+  administrator, `postgres.exe` gets a restricted token, as `pg_ctl` and `initdb` give theirs
+  (Postgres refuses administrative rights), for the supervisor's postgres role and the
+  short-lived server of the first start alike. The app's roles find the payload's `ffmpeg.exe`.
+  Loopback TCP only on Windows, the nightly dumps as on the Mac.
 
 ### Fixed
 

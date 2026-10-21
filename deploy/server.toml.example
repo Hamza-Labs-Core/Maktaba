@@ -47,8 +47,12 @@ url = "sqlite:///var/lib/maktaba/maktaba.db"
 # postgres), loopback only plus a unix socket in that directory, scram-sha-256
 # passwords in keys/ (postgres-maktaba_admin.password, postgres-maktaba.password),
 # a nightly pg_dump into backups/ (the newest 7 kept).
-# "auto" (default): on a Mac whose app carries Postgres, unless [database] url
-# is set or a SQLite database is already in use. "on" / "off".
+# On Windows the app's Postgres is TCP-only (no unix socket), and postgres.exe
+# runs under a restricted token when the server runs as an administrator (it
+# refuses administrative rights, as pg_ctl does).
+# "auto" (default): on a Mac whose app carries Postgres, and inside the Windows
+# app's payload, unless [database] url is set or a SQLite database is already in
+# use. "on" / "off".
 # enabled = "auto"
 # The Postgres install (bin/postgres, bin/initdb, bin/psql, bin/pg_dump);
 # default $MAKTABA_POSTGRES_HOME, else the app's Resources/server/postgres.
