@@ -2997,6 +2997,7 @@
   "tvchanges.event.start_verify": "Checks started",
   "tvchanges.event.pass": "Checks passed",
   "tvchanges.event.fail": "Checks failed",
+  "tvchanges.event.reopen": "Updated after it was checked: it is checked again",
   "tvchanges.event.verify": "Re-verify",
   "tvchanges.event.recheck_fail": "Checked again",
   "tvchanges.event.approve": "Approved",

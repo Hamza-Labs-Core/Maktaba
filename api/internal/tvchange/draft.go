@@ -225,7 +225,7 @@ func (d *Drafts) Enabled(ctx context.Context) bool {
 
 // Open is the open change (nil when none): every save joins it.
 func (d *Drafts) Open(ctx context.Context) (*Change, error) {
-	return d.Store.OpenDraft(ctx, d.DB)
+	return d.Store.OpenChange(ctx, d.DB)
 }
 
 func lockKey() string { return "tv_change_draft" }
@@ -233,6 +233,8 @@ func lockKey() string { return "tv_change_draft" }
 // Save applies fn to the open change (a draft of kind created with title when there is
 // none), in one transaction, and records the event and the audit row. The change keeps
 // its number; each save is an append event naming what and its kind (story 33.12 AC3).
+// The open change joined after it was checked (staged … ready) goes back to draft and
+// is checked again (Store.Reopen); a second open change joins it first (CollapseOpen).
 func (d *Drafts) Save(ctx context.Context, p *principal.Principal, kind, title, what string,
 	fn func(pd *Pending) error) (DraftRef, error) {
 	tx, err := d.DB.BeginTx(ctx, nil)
@@ -245,7 +247,7 @@ func (d *Drafts) Save(ctx context.Context, p *principal.Principal, kind, title, 
 			return DraftRef{}, err
 		}
 	}
-	c, err := d.Store.OpenDraft(ctx, tx)
+	c, err := d.Store.CollapseOpen(ctx, tx, kind)
 	if err != nil {
 		return DraftRef{}, err
 	}
@@ -253,6 +255,20 @@ func (d *Drafts) Save(ctx context.Context, p *principal.Principal, kind, title, 
 	if p != nil && p.UserID != "" {
 		u := p.UserID
 		by = &u
+	}
+	for attempt := 0; c != nil && c.State != StateDraft; attempt++ {
+		err := d.Store.Reopen(ctx, tx, c, by, map[string]any{"update": map[string]any{"what": what, "kind": kind}})
+		if err == nil {
+			break
+		}
+		if !moved(err) || attempt >= 2 {
+			return DraftRef{}, err
+		}
+		// the controller moved it meanwhile (verified it, promoted it by its rule): the
+		// open change as it is now, if it still is one
+		if c, err = d.Store.OpenChange(ctx, tx); err != nil {
+			return DraftRef{}, err
+		}
 	}
 	created := false
 	if c == nil {

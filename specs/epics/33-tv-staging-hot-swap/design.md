@@ -530,11 +530,12 @@ admin action (category `tv_change`, `target_kind = tv_change`).
 
 | From → to | Trigger | Guard |
 |---|---|---|
-| — → `draft` | producer writes (§11.4), admin "new" | one open change (the newest draft no one approved): every update - plan, schedule, editor, filler, settings, re-stage - joins it until it is approved (story 33.12 AC3) |
+| — → `draft` | producer writes (§11.4), admin "new" | one open change (the change no one approved in `draft … ready`): every update - plan, schedule, editor, filler, settings, re-stage - joins it until it is approved (story 33.12 AC3); a second open change joins the older one |
+| `staged/verifying/ready → draft` | an update joins it (`reopen`) | no one approved it; "updated after it was checked: it is checked again": its old report kept in the event, staged again when the write mode is `auto` (one stage per update); slot stopped (story 33.12 AC3) |
 | `draft → staged` | Stage (admin) or auto (producer in `auto` mode) | no other change in `staged…swapping`; release builds; generation built |
 | `staged → verifying` | slot started on the release and healthy | a slot instance that is neither live, standby nor previous is free |
 | `verifying → ready` | report has no fail | — |
-| `staged/verifying → draft` | a fail | the report and reasons kept, the approval withdrawn, no stage asked; the open change again (a draft opened meanwhile joins it); slot stopped, staging placements released (story 33.12 AC3; `failed` is only the rows made before) |
+| `staged/verifying → draft` | a fail | the report and reasons kept, the approval withdrawn, no stage asked; the open change again (a change opened meanwhile joins it); slot stopped, staging placements released (story 33.12 AC3; `failed` is only the rows made before) |
 | `ready → approved` | Approve | admin; second admin when required; param-change ack when needed |
 | `ready → approved` is required by default for every kind | | |
 | `approved → swapping` | Swap now, or `swap_at` reached | an admin approved (all rules are `approval` by default) |
