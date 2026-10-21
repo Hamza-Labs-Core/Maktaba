@@ -384,6 +384,11 @@ func TestResolve(t *testing.T) {
 		t.Errorf("MAKTABA_POSTGRES_HOME not used: %+v %v", b, ok)
 	}
 	t.Setenv("MAKTABA_POSTGRES_HOME", "")
+	t.Setenv("MAKTABA_APP_BUNDLE", payload) // the app's launcher names the payload
+	if b, ok, _ := Resolve(cfg, ""); !ok || b.Home != filepath.Join(payload, "postgres") {
+		t.Errorf("MAKTABA_APP_BUNDLE not used: %+v %v", b, ok)
+	}
+	t.Setenv("MAKTABA_APP_BUNDLE", "")
 
 	// an install already on SQLite keeps it (auto only)
 	if cfg.Postgres.Enabled == "" {

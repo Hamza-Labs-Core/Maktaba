@@ -266,6 +266,12 @@ func pythonFor(opts Options) string {
 	if p := strings.TrimSpace(opts.Config.Pipeline.Python); p != "" {
 		return p
 	}
+	// Maktaba.app: the venv built from the payload's wheel (Epic 36 story 36.3)
+	if config.AppBundle() != "" {
+		if py := venvPython(filepath.Join(opts.Config.StateDir(), "venv")); isExecutable(py) {
+			return py
+		}
+	}
 	return pythonExecutable(opts.ReleaseDir)
 }
 
@@ -276,13 +282,17 @@ func pythonExecutable(releaseDir string) string {
 		return p
 	}
 	if releaseDir != "" {
-		venvPy := filepath.Join(releaseDir, "venv", "bin", "python")
-		if runtime.GOOS == "windows" {
-			venvPy = filepath.Join(releaseDir, "venv", "Scripts", "python.exe")
-		}
-		if isExecutable(venvPy) {
+		if venvPy := venvPython(filepath.Join(releaseDir, "venv")); isExecutable(venvPy) {
 			return venvPy
 		}
 	}
 	return "python3"
+}
+
+// venvPython is a venv's interpreter.
+func venvPython(venv string) string {
+	if runtime.GOOS == "windows" {
+		return filepath.Join(venv, "Scripts", "python.exe")
+	}
+	return filepath.Join(venv, "bin", "python")
 }
