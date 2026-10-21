@@ -33,8 +33,16 @@ export function queueVisualState(info: StageInfo | undefined, q: QueueSummary): 
   if (info && !info.enabled) return "off";
   // A switched-off or not-yet-configured queue is "off", never "failing".
   if (q.waiting_reason === "not_configured" || q.waiting_reason === "disabled") return "off";
-  if (q.counts.running > 0) return "running";
-  if (q.counts.failed_open > 0) return "failing";
+  // Epic 40: red only when the API says one new error dominates; a few failed items
+  // (or jobs parked on the model, a share, disk space) never paint a queue red
+  if (q.health) {
+    if (q.health.state === "failing") return "failing";
+    if (q.counts.running > 0) return "running";
+    if (q.health.state === "waiting") return "waiting";
+  } else {
+    if (q.counts.running > 0) return "running";
+    if (q.counts.failed_open > 0) return "failing";
+  }
   const live = q.counts.pending + q.counts.paused + q.counts.awaiting_review;
   if (live > 0 || info?.paused) return "waiting";
   return "done";
