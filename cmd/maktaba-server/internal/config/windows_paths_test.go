@@ -1,9 +1,12 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // winLayout builds the Windows layout before Epic 38 (server.toml and the keys in
@@ -11,7 +14,11 @@ import (
 // one temp dir. env is the environment migrateWindows reads.
 func winLayout(t *testing.T) (old, cur Dirs, env map[string]string) {
 	t.Helper()
-	base := t.TempDir()
+	return winLayoutAt(t.TempDir())
+}
+
+// winLayoutAt is winLayout under base (a second process builds the same).
+func winLayoutAt(base string) (old, cur Dirs, env map[string]string) {
 	env = map[string]string{"APPDATA": filepath.Join(base, "Roaming"), "LOCALAPPDATA": filepath.Join(base, "Local")}
 	getenv := func(k string) string { return env[k] }
 	return legacyWindowsDirs(getenv, base), DirsFor(getenv, "windows", base), env
@@ -19,7 +26,7 @@ func winLayout(t *testing.T) (old, cur Dirs, env map[string]string) {
 
 func migrateWin(t *testing.T, m mover, old, cur Dirs, env map[string]string) []string {
 	t.Helper()
-	lines, err := migrateWindows(m, old, cur, func(k string) string { return env[k] })
+	lines, err := migrateWindows(m, old, cur, func(k string) string { return env[k] }, time.Second)
 	if err != nil {
 		t.Fatalf("migrate: %v (%q)", err, lines)
 	}
@@ -200,7 +207,7 @@ func TestMigrateWindowsAcrossVolumes(t *testing.T) {
 	plant(t, filepath.Join(old.Data, "models"), models)
 
 	// the power cut: the sixth copy (the second of the models) never lands
-	if _, err := migrateWindows(cutAt(m, 6), old, cur, func(k string) string { return env[k] }); err == nil {
+	if _, err := migrateWindows(cutAt(m, 6), old, cur, func(k string) string { return env[k] }, time.Second); err == nil {
 		t.Fatal("the cut move must fail")
 	}
 	if readAt(t, filepath.Join(cur.Keys, "secrets.key")) != "S" || exists(filepath.Join(old.Config, "secrets.key")) {
@@ -239,6 +246,106 @@ func TestMigrateWindowsSameFolder(t *testing.T) {
 	}
 }
 
+// A piece left where it is is said once, and again only when that changes; the
+// record goes when nothing is left.
+func TestMigrateWindowsSaysLeftOnce(t *testing.T) {
+	t.Parallel()
+	old, cur, env := winLayout(t)
+	oldKey, newKey := filepath.Join(old.Config, "secrets.key"), filepath.Join(cur.Keys, "secrets.key")
+	writeAt(t, oldKey, "OLD")
+	writeAt(t, newKey, "NEW")
+	if lines := migrateWin(t, osMover, old, cur, env); len(lines) != 1 || !strings.HasPrefix(lines[0], "Left "+oldKey) {
+		t.Fatalf("first start:\n%s", strings.Join(lines, "\n"))
+	}
+	if lines := migrateWin(t, osMover, old, cur, env); len(lines) != 0 {
+		t.Fatalf("said again:\n%s", strings.Join(lines, "\n"))
+	}
+	if err := os.Remove(newKey); err != nil {
+		t.Fatal(err)
+	}
+	if lines := migrateWin(t, osMover, old, cur, env); len(lines) != 1 || !strings.HasPrefix(lines[0], "Moved "+oldKey) {
+		t.Fatalf("once the new place is empty the key moves:\n%s", strings.Join(lines, "\n"))
+	}
+	if exists(filepath.Join(cur.Config, moveReported)) {
+		t.Error("nothing is left: no record")
+	}
+	writeAt(t, oldKey, "OLDER")
+	if lines := migrateWin(t, osMover, old, cur, env); len(lines) != 1 || !strings.HasPrefix(lines[0], "Left "+oldKey) {
+		t.Fatalf("a new conflict is said again:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
+// The move lock: a second start waits for the first, a bounded time, and goes on
+// when it is released.
+func TestMoveLockWaits(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	release, err := lockMove(root, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	if _, err := lockMove(root, 100*time.Millisecond); err == nil || !strings.Contains(err.Error(), "another maktaba-server") {
+		t.Fatalf("held: %v", err)
+	}
+	if time.Since(start) < 100*time.Millisecond {
+		t.Fatal("a second start waits before it gives up")
+	}
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		release()
+	}()
+	again, err := lockMove(root, 5*time.Second)
+	if err != nil {
+		t.Fatalf("released while waiting: %v", err)
+	}
+	again()
+}
+
+// Inside the desktop app's payload nothing moves (the app's move copies an older
+// install and keeps it for going back, Epic 38 story 38.13); the same install
+// moves for a maktaba-server outside it. The environment points at temp dirs.
+func TestMigrateDirsNotInAppPayload(t *testing.T) {
+	base := t.TempDir()
+	var oldKey, newKey string
+	switch runtime.GOOS {
+	case "windows":
+		t.Setenv("APPDATA", filepath.Join(base, "Roaming"))
+		t.Setenv("LOCALAPPDATA", filepath.Join(base, "Local"))
+		oldKey = filepath.Join(base, "Roaming", "Maktaba", "secrets.key")
+		newKey = filepath.Join(base, "Local", "Maktaba", "keys", "secrets.key")
+	case "darwin":
+		t.Setenv("HOME", base)
+		for _, k := range []string{"XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"} {
+			t.Setenv(k, "")
+		}
+		writeAt(t, filepath.Join(base, ".config", "maktaba", "server.toml"), "[server]\n")
+		oldKey = filepath.Join(base, ".config", "maktaba", "secrets.key")
+		newKey = filepath.Join(base, "Library", "Application Support", "Maktaba", "keys", "secrets.key")
+	default:
+		t.Skip("nothing moves on " + runtime.GOOS)
+	}
+	t.Setenv("MAKTABA_CONFIG", "")
+	t.Setenv("MAKTABA_APP_BUNDLE", "")
+	writeAt(t, oldKey, "S")
+	payload := filepath.Join(base, "app", "server")
+	writeAt(t, filepath.Join(payload, "bin", "maktaba-server.exe"), "exe")
+	writeAt(t, filepath.Join(payload, "payload.json"), "{}")
+
+	if lines, err := MigrateDirs(filepath.Join(payload, "bin", "maktaba-server.exe")); err != nil || len(lines) != 0 {
+		t.Fatalf("in the app: %q, %v", lines, err)
+	}
+	if readAt(t, oldKey) != "S" || exists(newKey) {
+		t.Fatal("inside the app the older install's key must stay where it is")
+	}
+	if lines, err := MigrateDirs(filepath.Join(base, "release", "bin", "maktaba-server.exe")); err != nil || len(lines) == 0 {
+		t.Fatalf("outside the app: %q, %v", lines, err)
+	}
+	if exists(oldKey) || readAt(t, newKey) != "S" {
+		t.Fatal("outside the app the install moves its own key")
+	}
+}
+
 // A key copied whole to the new place by a start that stopped before it removed
 // the old one: the next start removes the old one and keeps the key.
 func TestMigrateWindowsAfterACrashBeforeTheRemove(t *testing.T) {
@@ -255,7 +362,7 @@ func TestMigrateWindowsAfterACrashBeforeTheRemove(t *testing.T) {
 // The Mac move (Epic 36) between two volumes works the same way.
 func TestMigrateMacAcrossVolumes(t *testing.T) {
 	t.Parallel()
-	old, cur := layout(t)
+	old, cur := macLayout(t)
 	m := volumes(filepath.Dir(old.Config), filepath.Dir(old.Data), cur.Config)
 	writeAt(t, filepath.Join(old.Config, "server.toml"), "[server]\n")
 	writeAt(t, filepath.Join(old.Config, "secrets.key"), "S")

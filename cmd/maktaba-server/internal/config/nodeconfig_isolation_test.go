@@ -12,6 +12,10 @@ import (
 // joined machine it holds a database credential and would switch the code under
 // test into node mode. A test that needs a node config sets its own (t.Setenv).
 func TestMain(m *testing.M) {
+	// the test binary as a second maktaba-server start (move_lock_test.go)
+	if mode := os.Getenv("MAKTABA_TEST_MOVE_CHILD"); mode != "" {
+		os.Exit(moveChild(mode))
+	}
 	dir, err := os.MkdirTemp("", "maktaba-nodecfg-")
 	if err != nil {
 		panic(err)
