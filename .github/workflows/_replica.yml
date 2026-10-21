@@ -71,14 +71,29 @@ jobs:
         env:
           MAKTABA_E2E_SWITCHOVER: "1"
           MAKTABA_E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs
-        run: go test -count=1 -timeout 45m -run 'TestSwitchTheHome|TestAnEmergencyTakesTheHome' -v .
+        # a skip is no pass here: each run must have run
+        run: |
+          set -euo pipefail
+          go test -count=1 -timeout 45m -run 'TestSwitchTheHome|TestAnEmergencyTakesTheHome' -v . | tee "$RUNNER_TEMP/e2e-switch.out"
+          for t in TestSwitchTheHome TestAnEmergencyTakesTheHome; do
+            grep -q -- "--- PASS: $t " "$RUNNER_TEMP/e2e-switch.out" || { echo "::error::$t did not run"; exit 1; }
+          done
+
+      - name: ffmpeg (the two-machine run plays a real fixture)
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update -qq
+          sudo apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends ffmpeg >/dev/null
+          ffmpeg -hide_banner -version | head -1
 
       - name: Two machines with the home away (e2e)
         working-directory: api
         env:
           MAKTABA_E2E_TWO_MACHINE: "1"
           MAKTABA_E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs
-        run: go test -count=1 -timeout 30m -run TestTwoMachinesOnePC -v .
+        run: |
+          set -euo pipefail
+          go test -count=1 -timeout 30m -run TestTwoMachinesOnePC -v . | tee "$RUNNER_TEMP/e2e-two.out"
+          grep -q -- "--- PASS: TestTwoMachinesOnePC " "$RUNNER_TEMP/e2e-two.out" || { echo "::error::TestTwoMachinesOnePC did not run"; exit 1; }
 
       - name: The servers' logs (on failure)
         if: failure()
