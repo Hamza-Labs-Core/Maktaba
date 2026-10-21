@@ -499,7 +499,7 @@ func newThisPC(t *testing.T) *thisPC {
 	app := filepath.Join(root, "Local", "Maktaba")
 	return &thisPC{sys: sys, dir: dir, nodeJSON: nodeJSON, tgt: Target{
 		ConfigPath: filepath.Join(app, "server.toml"), StateDir: app,
-		KeysDir: filepath.Join(app, "keys"), NodeConfig: filepath.Join(app, "node.json"),
+		KeysDir: filepath.Join(app, "keys"), NodeConfig: nodeJSON, // the machine's one node config, read where it is
 	}}
 }
 
@@ -582,10 +582,10 @@ func TestMoveThisPC(t *testing.T) {
 	for _, it := range plan.Items {
 		whats = append(whats, it.What)
 	}
-	if want := []string{"stream-signing.key", "node config", "streaming cache"}; !reflect.DeepEqual(whats, want) {
+	if want := []string{"stream-signing.key", "streaming cache"}; !reflect.DeepEqual(whats, want) {
 		t.Errorf("items %q, want %q", whats, want)
 	}
-	if plan.Need != int64(len("the node's stream key")+len("a cached segment")+len(read(t, pc.nodeJSON))) {
+	if plan.Need != int64(len("the node's stream key")+len("a cached segment")) {
 		t.Errorf("need %d", plan.Need)
 	}
 	for _, n := range []string{"[server]", "[media]", `--no-mdns as [server] mdns = "off"`} {
@@ -631,9 +631,8 @@ func TestMoveThisPC(t *testing.T) {
 		t.Errorf("the old task's definition: %+v", rec.Saved)
 	}
 	if read(t, filepath.Join(pc.tgt.KeysDir, "stream-signing.key")) != "the node's stream key" ||
-		read(t, pc.tgt.NodeConfig) != read(t, pc.nodeJSON) ||
 		read(t, filepath.Join(pc.tgt.StateDir, "cache", "streaming", "seg-1.ts")) != "a cached segment" {
-		t.Error("the keys, node config and cache are not in the app")
+		t.Error("the keys and cache are not in the app")
 	}
 	cfg, found, err := config.LoadFrom(pc.tgt.ConfigPath)
 	if err != nil || !found {
@@ -716,7 +715,44 @@ func TestMoveGoesOnAfterAFailure(t *testing.T) {
 	}
 }
 
-// TestADifferentKeyIsRefusedBeforeTheStop: a key (or node config) the app has
+// TestTheNodeConfigIsNeverCopied: the move leaves node.json where it is, one
+// per machine (story 38.1), so the app and a restored old install are one node.
+// A node whose node config is not the one the app reads is refused (the app
+// would not be that node, and a copy would be a second identity); one that is
+// moves, and its node config is not written.
+func TestTheNodeConfigIsNeverCopied(t *testing.T) {
+	fastStop(t)
+	pc := newThisPC(t)
+	pc.tgt.NodeConfig = filepath.Join(pc.tgt.StateDir, "node.json") // the app reads another file
+	srcs, _ := Find(pc.sys, "")
+	plan, _ := MakePlan(pc.sys, srcs[0], pc.tgt)
+	if len(plan.Problems) != 1 || plan.Problems[0].Code != "node_config_elsewhere" || plan.Problems[0].Params["path"] != pc.nodeJSON {
+		t.Fatalf("problems %+v", plan.Problems)
+	}
+	if _, err := Move(context.Background(), pc.sys, plan, pc.tgt, nil, nil); err == nil || len(pc.sys.ended) != 0 {
+		t.Fatalf("moved: %v (ended %q)", err, pc.sys.ended)
+	}
+
+	pc.tgt.NodeConfig = pc.nodeJSON // the app reads the machine's node config, where it is
+	before := read(t, pc.nodeJSON)
+	plan, _ = MakePlan(pc.sys, srcs[0], pc.tgt)
+	for _, it := range plan.Items {
+		if it.Code == "node_config" || samePath(it.To, pc.nodeJSON) {
+			t.Errorf("the node config is copied: %+v", it)
+		}
+	}
+	if _, err := Move(context.Background(), pc.sys, plan, pc.tgt, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if read(t, pc.nodeJSON) != before {
+		t.Error("the node config changed")
+	}
+	if _, err := os.Stat(filepath.Join(pc.tgt.StateDir, "node.json")); err == nil {
+		t.Error("a second node config was written")
+	}
+}
+
+// TestADifferentKeyIsRefusedBeforeTheStop: a key the app has
 // already, and different, is never replaced: the plan refuses it, and nothing
 // of the old install is stopped.
 func TestADifferentKeyIsRefusedBeforeTheStop(t *testing.T) {
@@ -724,7 +760,6 @@ func TestADifferentKeyIsRefusedBeforeTheStop(t *testing.T) {
 	pc := newThisPC(t)
 	key := filepath.Join(pc.tgt.KeysDir, "stream-signing.key")
 	write(t, key, "another key")
-	write(t, pc.tgt.NodeConfig, "another node")
 	srcs, _ := Find(pc.sys, "")
 	plan, err := MakePlan(pc.sys, srcs[0], pc.tgt)
 	if err != nil {
@@ -734,7 +769,7 @@ func TestADifferentKeyIsRefusedBeforeTheStop(t *testing.T) {
 	for _, n := range plan.Problems {
 		codes = append(codes, n.Code+" "+fmt.Sprint(n.Params["path"]))
 	}
-	if want := []string{"key_differs " + key, "key_differs " + pc.tgt.NodeConfig}; !reflect.DeepEqual(codes, want) {
+	if want := []string{"key_differs " + key}; !reflect.DeepEqual(codes, want) {
 		t.Fatalf("problems %q, want %q", codes, want)
 	}
 	if _, err := Move(context.Background(), pc.sys, plan, pc.tgt, nil, nil); err == nil {
@@ -749,7 +784,6 @@ func TestADifferentKeyIsRefusedBeforeTheStop(t *testing.T) {
 
 	// the same key and node config: left as they are, no problem
 	write(t, key, "the node's stream key")
-	write(t, pc.tgt.NodeConfig, read(t, pc.nodeJSON))
 	if plan, _ := MakePlan(pc.sys, srcs[0], pc.tgt); len(plan.Problems) != 0 {
 		t.Errorf("the same key: %+v", plan.Problems)
 	}
@@ -1209,7 +1243,7 @@ func TestMoveNodeWorkers(t *testing.T) {
 	sys.procs = append(sys.procs, Proc{PID: 900, Name: "python.exe", Exe: filepath.Join(root, "checkout", "python.exe"), Cmdline: "python -m pytest"})
 	app := filepath.Join(root, "app")
 	tgt := Target{ConfigPath: filepath.Join(app, "server.toml"), StateDir: app, KeysDir: filepath.Join(app, "keys"),
-		NodeConfig: filepath.Join(app, "node.json")}
+		NodeConfig: nodeJSON}
 
 	srcs, err := Find(sys, "")
 	if err != nil || len(srcs) != 1 {
@@ -1239,8 +1273,8 @@ func TestMoveNodeWorkers(t *testing.T) {
 	if !found || cfg.Pipeline.Instances != 2 || !cfg.PipelineInstancesSet {
 		t.Errorf("the app's server.toml: found %v, instances %d", found, cfg.Pipeline.Instances)
 	}
-	if read(t, tgt.NodeConfig) != read(t, nodeJSON) {
-		t.Error("the node config is not in the app")
+	if _, err := os.Stat(filepath.Join(app, "node.json")); err == nil {
+		t.Error("the node config was copied: one per machine, read where it is")
 	}
 
 	rec.Stage = StageVerified

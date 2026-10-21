@@ -108,7 +108,8 @@ func TestSetupAdopt(t *testing.T) {
 	spawnsPrograms(t) // the venv step's stand-in Python
 	e := newSetupEnv(t)
 	fakePayload(t, e)
-	t.Setenv("MAKTABA_NODE_CONFIG", filepath.Join(e.dir, "app-node.json"))
+	// the machine's one node config, which the app reads where it is (never a copy)
+	t.Setenv("MAKTABA_NODE_CONFIG", filepath.Join(e.dir, "maktaba-local", "node.json"))
 	t.Setenv("LOCALAPPDATA", filepath.Join(e.dir, "Local")) // the app window's mode.json (Windows)
 
 	// the app's server as verify sees it once it runs with the carried settings
@@ -169,8 +170,7 @@ func TestSetupAdopt(t *testing.T) {
 		t.Fatalf("plan = %d %v", code, ev)
 	}
 	plan := data(t, ev)
-	if items, _ := plan["items"].([]any); len(items) != 2 || items[0].(map[string]any)["code"] != "key" ||
-		items[1].(map[string]any)["code"] != "node_config" {
+	if items, _ := plan["items"].([]any); len(items) != 1 || items[0].(map[string]any)["code"] != "key" {
 		t.Fatalf("items = %v", plan["items"])
 	}
 	// what is carried, in codes the screens translate

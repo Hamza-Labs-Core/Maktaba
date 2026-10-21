@@ -60,7 +60,8 @@ don't append a line here; docs-only PRs are exempt.
   (its script's restart loop too, and nothing of it may come back for longer than the loop's delay;
   never the app's own programs, wherever the old folder is) and disables its task, and carries its
   settings (addresses, media, path map, transcription, the script's `MAKTABA_*` settings), keys,
-  node config, search index, caches, models and an SQLite database into the app. The firewall
+  search index, caches, models and an SQLite database into the app; a node's `node.json` stays
+  where it is, the machine's one, which the app reads (it is never copied). The firewall
   rules that let other devices reach the old install's programs are copied for the app's own
   (Windows asks once, before anything stops; the plan says so), and the old task goes only once
   they are in place on the network in use. A move that stops part way can go on, or restore the old

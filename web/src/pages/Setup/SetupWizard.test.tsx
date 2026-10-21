@@ -453,7 +453,6 @@ describe("SetupWizard", () => {
           size: 1704,
           done: false,
         },
-        { code: "node_config", what: "node config", from: "c", to: "d", size: 587, done: false },
       ],
       carried: [
         { code: "section", params: { name: "[server]" }, message: "[server]" },
@@ -465,7 +464,7 @@ describe("SetupWizard", () => {
       ],
       problems: [],
       warnings: [],
-      need: 2291,
+      need: 1704,
       free: 10 ** 12,
     };
     const URLS = { web_url: "http://127.0.0.1:8780", supervisor_url: "http://127.0.0.1:9103" };
@@ -514,10 +513,7 @@ describe("SetupWizard", () => {
         screen.getByText("web 0.0.0.0:8780, api 127.0.0.1:8781, stream 0.0.0.0:8782")
       ).toBeInTheDocument();
       expect(screen.getByText(/Its key stream-signing\.key/)).toBeInTheDocument();
-      expect(
-        screen.getByText(/Its node config \(the home's address and the node's own key\)/)
-      ).toBeInTheDocument();
-      expect(screen.getByText("Copied into the app (2.2 KB)")).toBeInTheDocument();
+      expect(screen.getByText("Copied into the app (1.7 KB)")).toBeInTheDocument();
       expect(
         screen.getByText(
           'Settings carried: [server], [media], no announcing on the network (--no-mdns, as [server] mdns = "off")'

@@ -236,17 +236,19 @@ Instead of `check` … `finish` when the PC already runs Maktaba outside the app
   folder that holds models, caches or the index is its state root), copied beside it into the
   app's root and kept where it was; what is the app's file already (a key copied in, an SQLite
   database in the shared data folder) is never copied onto itself. Items are
-  `setup.move.item.<code>` (`key` with `name`,
-  `node_config`, `search_index`, `streaming_cache`, `models`, `database`, `database_wal`,
-  `database_shm`, `hf_token`). Every other entry is `{"code", "params"?, "message"}`, shown as its
+  `setup.move.item.<code>` (`key` with `name`, `search_index`, `streaming_cache`, `models`,
+  `database`, `database_wal`, `database_shm`, `hf_token`). A node's `node.json` is never copied: one
+  per machine (story 38.1), read where it is by the app and by the old install on Undo alike. Every other entry is `{"code", "params"?, "message"}`, shown as its
   own text (the English `message` for a code the app does not know): `carried` as
   `setup.move.carry.<code>` (`section` `name`, `database_url`, `pipeline_instances` `count`, `env`
   `name`, `no_mdns`), `not_carried` as `setup.move.nocarry.<code>` (`pipeline_python`, `app_python`
   `name`: the script's `MAKTABA_PYTHON`, `env` `name`, `serve_flag` `flag`), `problems` and
   `warnings` as `setup.move.note.<code>`: problems `space_low`
   (`need_bytes`, `free_bytes`), `worker_not_joined` (`path`), `postgres_down` (`where`),
-  `key_differs` (`path`, `from`: the app holds another key or node config there, which is never
-  replaced; found in the plan, before anything is stopped), `service_install` (`name`: a Windows
+  `key_differs` (`path`, `from`: the app holds another key there, which is never replaced; found
+  in the plan, before anything is stopped), `node_config_elsewhere` (`path`, `app`: the node reads
+  another node config than the one the app reads, so the app would not be that node),
+  `service_install` (`name`: a Windows
   service, run by the system's account), `firewall_needs_admin` (`count`), `firewall_unknown`;
   warnings `postgres_stays` (`where`), `started_by_hand`, `firewall_prompt` (`count`). `firewall` is
   the inbound rules the app's programs get: one copy of each enabled inbound allow rule bound to a

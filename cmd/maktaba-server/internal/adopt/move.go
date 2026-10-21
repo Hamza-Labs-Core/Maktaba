@@ -28,7 +28,7 @@ type Target struct {
 	ConfigPath string // the app's server.toml
 	StateDir   string // the app's state root (moved/, chroma/, models/, cache/)
 	KeysDir    string
-	NodeConfig string // where the app reads node.json
+	NodeConfig string // the node.json the app's roles read (config.LocalNodeConfigPath)
 	// ModeFile is the app window's mode.json (the shell's mode.rs; on Windows
 	// %LOCALAPPDATA%\com.hamzalabs.maktaba): Undo takes its server mode out.
 	ModeFile string
@@ -204,6 +204,13 @@ func MakePlan(sys Sys, src Source, tgt Target) (Plan, error) {
 			p.Problems = append(p.Problems, note("worker_not_joined",
 				"this worker has not joined a home (no node config at "+src.NodeConfig+")", "path", src.NodeConfig))
 		}
+		// the node is the node config it reads; the app reads the machine's one (it
+		// is never copied: a copy would be a second file, and a second identity)
+		if src.Home != "" && tgt.NodeConfig != "" && !samePath(src.NodeConfig, tgt.NodeConfig) {
+			p.Problems = append(p.Problems, note("node_config_elsewhere",
+				fmt.Sprintf("its node config is %s, and the app reads %s: the app would not be this node, and it is never copied (one node config per machine)",
+					src.NodeConfig, tgt.NodeConfig), "path", src.NodeConfig, "app", tgt.NodeConfig))
+		}
 	case DBOwnPostgres:
 		if _, port, _ := net.SplitHostPort(src.DBWhere); port != "" && !sys.Listening(port) {
 			p.Problems = append(p.Problems, note("postgres_down",
@@ -279,9 +286,8 @@ func moveItems(src Source, old, cfg config.Config, tgt Target, getenv func(strin
 		name := filepath.Base(k)
 		add("key", devmigrate.Item{What: name, From: k, To: filepath.Join(tgt.KeysDir, name), Key: true}, "name", name)
 	}
-	if src.DB == DBNode && src.NodeConfig != "" {
-		add("node_config", devmigrate.Item{What: "node config", From: src.NodeConfig, To: tgt.NodeConfig, Key: true})
-	}
+	// never the node config: one file per machine (story 38.1), which the app
+	// reads where it is, so the app and a restored old install are one node
 	if src.Kind != KindNodeWorker && src.ConfigFound {
 		// the old install's own rule, never the app's: a Windows install from before
 		// Epic 38 keeps its models, caches and index in its default data folder

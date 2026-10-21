@@ -39,9 +39,6 @@ func adoptTarget(cfg config.Config) adopt.Target {
 	if runtime.GOOS == "windows" {
 		home, _ := os.UserHomeDir()
 		root := config.WindowsRoot(os.Getenv, home) // %LOCALAPPDATA%\Maktaba
-		if strings.TrimSpace(os.Getenv("MAKTABA_NODE_CONFIG")) == "" {
-			tgt.NodeConfig = filepath.Join(root, "node.json")
-		}
 		tgt.ModeFile = filepath.Join(filepath.Dir(root), appIdentifier, "mode.json")
 	}
 	return tgt
