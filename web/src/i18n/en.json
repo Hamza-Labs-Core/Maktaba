@@ -3371,6 +3371,7 @@
   "setup.move.movedNote": "Restore the old install stops the app's server and runs the old install again, as before the move. What changed in the app stays in the app.",
   "setup.move.freshLeftover": "{machine} holds the node config of the home {home} ({path}), which nothing here runs: setting up fresh makes a new home and leaves that node config unused.",
   "setup.error.adopt_firewall_declined": "Windows did not get your OK for the firewall rules, so nothing was changed. Try again, and choose Yes when Windows asks.",
+  "setup.error.adopt_firewall_timeout": "Windows asked for your OK for the firewall rules, and no answer came in time ({minutes} min), so nothing was changed. Try again, and choose Yes when Windows asks: its prompt may wait in the taskbar.",
   "setup.error.adopt_firewall": "The firewall rules of the app's programs could not be made, so nothing was changed. Try again goes on from there.",
   "setup.check.note.node_config_unused": "{machine} holds the node config of the home {home} ({path}), which nothing here runs: setting up fresh makes a new home and leaves that node config unused.",
   "setup.move.item.key": "Its key {name}",

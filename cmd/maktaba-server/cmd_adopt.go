@@ -44,10 +44,17 @@ offers the move; once the app's server ran healthy the old task is removed (--ve
 			payload := tgt.AppPayload
 			switch {
 			case undo:
-				if err := adopt.Undo(sys, tgt); err != nil {
+				// no app window owns Windows's prompt here: it may wait in the taskbar
+				err := adopt.Undo(sys, tgt, func(_, message string) {
+					fmt.Println(message + ": answer its prompt (it may wait in the taskbar).")
+				})
+				if err != nil {
 					return err
 				}
 				fmt.Println("The old install runs again. The app's server is stopped and its task turned off; the app opens its setup, which offers the move again.")
+				if rec, _, err := adopt.ReadRecord(tgt.StateDir); err == nil && len(rec.FirewallLeft) > 0 {
+					fmt.Println("The move's firewall rules stay (they only allow the app's programs):", strings.Join(rec.FirewallLeft, ", "))
+				}
 				return nil
 			case verify:
 				if err := adopt.Verify(ctx, sys, tgt, cfg, wait); err != nil {

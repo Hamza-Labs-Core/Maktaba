@@ -142,7 +142,8 @@ func stepAdopt(s *setupRun, in json.RawMessage) (any, error) {
 			"supervisor_url": supervisor.StateURL(cfg),
 		}, nil
 	case "undo":
-		if err := adopt.Undo(sys, tgt); err != nil {
+		err := adopt.Undo(sys, tgt, func(stage, message string) { s.progress(stage, message, 0, 0) })
+		if err != nil {
 			var ae *adopt.Error
 			if errors.As(err, &ae) {
 				return nil, adoptFailure(err)

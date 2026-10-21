@@ -25,6 +25,10 @@ The CLI wizard and the app's setup screens share one implementation: every scree
   (`<models>/huggingface/token`, 0600), the Plex account token in `keys/plex-setup.token` (0600)
   until `finish` hands it over and deletes it.
 - **Never echo secrets** in any line on stdout or stderr, including in `error.message`.
+- **The app's window (Windows):** the app passes its main window's handle in `MAKTABA_SETUP_HWND`
+  (a number, no secret). A step that asks Windows for an administrator's consent (the move's
+  firewall rules) makes that window the prompt's owner, so the prompt opens in front of the app.
+  Without it (the CLI) the prompt has no owner, as before.
 
 ### Events
 
@@ -263,7 +267,9 @@ Instead of `check` … `finish` when the PC already runs Maktaba outside the app
   the old install stops, the plan's firewall rules are made in one elevated run of the payload's
   `maktaba-server` (one consent prompt, no console window; its input on a file, which it checks: only
   the app's own rule ids, inbound allow rules for a program beside it); a No changes nothing
-  (`adopt_firewall_declined`). The old install is stopped (its tasks disabled, then ended, the
+  (`adopt_firewall_declined`), nor does a prompt not answered within three minutes
+  (`adopt_firewall_timeout`: the change is withdrawn, so a run a late Yes starts makes nothing).
+  The old install is stopped (its tasks disabled, then ended, the
   cmd.exe running its script ended at once, its processes given their grace, its ports free, then
   nothing of it back for longer than its script's restart delay), its files copied,
   `server.toml` written; what a fresh setup collected is dropped. The app's own install, its venv
@@ -272,7 +278,8 @@ Instead of `check` … `finish` when the PC already runs Maktaba outside the app
   (on `hf_gated` the models screen first), `llm` as a fresh install does (only `disk_full` stops
   it), and registers the login item, as after `finish`.
 - `{"action": "undo"}` → `{"move": <record>}`: the old install runs again, as below; also for a move
-  that stopped part way (the screen's "Restore the old install", beside Try again).
+  that stopped part way (the screen's "Restore the old install", beside Try again). A `firewall`
+  progress event comes before Windows asks to remove the move's rules.
 - `{"action": "verify", "wait_sec": n}` → `{"move": <record>}`: the app's API answers and every
   process runs, and the firewall rules the move made are there, on, inbound, allowing the app's
   programs, on the network profile in use (a connection from this PC to its own LAN address never
@@ -285,8 +292,8 @@ the move's own reasons, each with its params: `adopt_moved_already` / `adopt_und
 (`source`), `adopt_task` (`task`: Task Scheduler refused to read or turn off an old task),
 `adopt_still_running` (`pids`), `adopt_port_busy` (`port`), `adopt_key_differs` (`path`, `from`: a
 key that turned different after the plan), `adopt_processes_unknown` (the running programs cannot
-be listed: not sure is not "stopped"), `adopt_firewall_declined` / `adopt_firewall` (the app's
-firewall rules not made; nothing changed); `interrupted` (a stop: the next run goes on), `adopt_failed`
+be listed: not sure is not "stopped"), `adopt_firewall_declined` / `adopt_firewall_timeout`
+(`minutes`) / `adopt_firewall` (the app's firewall rules not made; nothing changed); `interrupted` (a stop: the next run goes on), `adopt_failed`
 for anything else, `adopt_verify`, `adopt_no_move` and `adopt_undo` (undo), and the venv step's.
 
 `check` (a problem: Next is blocked) and `finish` (an error, before anything is written) refuse a

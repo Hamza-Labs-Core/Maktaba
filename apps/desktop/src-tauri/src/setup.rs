@@ -23,11 +23,19 @@ pub const STEPS: &[&str] = &[
     "plex",
     "venv",
     "llm",
+    "adopt",
     "finish",
 ];
 
 /// How many stderr lines are kept for the "details" box of an error.
 const STDERR_TAIL: usize = 50;
+
+/// The app's main window, for a step (Windows, Epic 38 story 38.13): a move
+/// that asks Windows for an administrator's consent (the firewall rules of the
+/// app's programs) gives it this window as its owner, so the prompt opens in
+/// front of the app instead of waiting in the taskbar. Without it (the CLI) a
+/// step runs as it always did.
+pub const OWNER_WINDOW_ENV: &str = "MAKTABA_SETUP_HWND";
 
 /// One NDJSON line from a step.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -101,11 +109,14 @@ pub fn parse_line(line: &str) -> Option<Event> {
 }
 
 /// Run one step with `bin` (the bundled maktaba-server) and return its
-/// result data. `on_progress` gets every progress line as it arrives.
+/// result data. `owner` is the app's main window (its handle, as a number),
+/// passed in OWNER_WINDOW_ENV. `on_progress` gets every progress line as it
+/// arrives.
 pub fn run_step(
     bin: &Path,
     step: &str,
     input: &Value,
+    owner: Option<isize>,
     mut on_progress: impl FnMut(Progress),
 ) -> Result<Value, StepError> {
     if !STEPS.contains(&step) {
@@ -125,6 +136,11 @@ pub fn run_step(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    // only this app's own window: never one the app itself was started with
+    match owner {
+        Some(hwnd) => cmd.env(OWNER_WINDOW_ENV, hwnd.to_string()),
+        None => cmd.env_remove(OWNER_WINDOW_ENV),
+    };
     // Windows (Epic 38): maktaba-server is a console program; started from
     // the GUI shell without this, each step would flash a console window.
     #[cfg(windows)]
@@ -138,6 +154,16 @@ pub fn run_step(
             format!("cannot run {}: {e}", bin.display()),
         )
     })?;
+    // the app is in front (its screen started the step): the step may bring
+    // what it opens (the consent prompt) to the front too
+    #[cfg(windows)]
+    if owner.is_some() {
+        // SAFETY: a plain call with a process id; a refusal only leaves the
+        // prompt in the taskbar
+        unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow(child.id());
+        }
+    }
 
     // stdin: the input, then EOF. A step that exits without reading it
     // closes the pipe; the exit code and events tell what happened.
@@ -310,6 +336,7 @@ echo {"type":"result","data":{"argv":"%*","input":%input%}}"#,
             &bin,
             "admin",
             &json!({"username": "admin", "password": "s3cret"}),
+            None,
             |p| seen.push(p.stage),
         )
         .unwrap();
@@ -319,6 +346,28 @@ echo {"type":"result","data":{"argv":"%*","input":%input%}}"#,
             json!({"username": "admin", "password": "s3cret"})
         );
         assert_eq!(seen, ["one"]);
+    }
+
+    #[test]
+    fn the_app_window_reaches_the_step_only_when_given() {
+        let tmp = tempfile::tempdir().unwrap();
+        // the step reads the owner of a consent prompt from its environment
+        let bin = stub(
+            tmp.path(),
+            r#"printf '{"type":"result","data":{"owner":"%s"}}\n' "$MAKTABA_SETUP_HWND""#,
+            r#"echo {"type":"result","data":{"owner":"%MAKTABA_SETUP_HWND%"}}"#,
+        );
+        let out = run_step(
+            &bin,
+            "adopt",
+            &json!({"action": "move"}),
+            Some(4242),
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(out["owner"], "4242");
+        let out = run_step(&bin, "adopt", &json!({"action": "move"}), None, |_| {}).unwrap();
+        assert_eq!(out["owner"], "");
     }
 
     #[test]
@@ -333,7 +382,7 @@ exit 1"#,
 echo {"type":"error","code":"hf_gated","message":"Accept the terms","field":"hf_token"}
 exit /b 1"#,
         );
-        let e = run_step(&bin, "models", &json!({}), |_| {}).unwrap_err();
+        let e = run_step(&bin, "models", &json!({}), None, |_| {}).unwrap_err();
         assert_eq!(e.code, "hf_gated");
         assert_eq!(e.field.as_deref(), Some("hf_token"));
         assert_eq!(e.details, ["checking token"]);
@@ -347,7 +396,7 @@ exit /b 1"#,
             "echo boom >&2; exit 3",
             ">&2 echo boom\nexit /b 3",
         );
-        let e = run_step(&bin, "check", &json!({}), |_| {}).unwrap_err();
+        let e = run_step(&bin, "check", &json!({}), None, |_| {}).unwrap_err();
         assert_eq!(e.code, "no_result");
         assert!(e.message.contains("exited with code 3"), "{}", e.message);
         assert_eq!(e.details, ["boom"]);
@@ -358,7 +407,7 @@ exit /b 1"#,
             "echo {\"type\":\"result\",\"data\":{}}\nexit /b 1",
         );
         assert_eq!(
-            run_step(&bin, "check", &json!({}), |_| {})
+            run_step(&bin, "check", &json!({}), None, |_| {})
                 .unwrap_err()
                 .code,
             "no_result"
@@ -369,19 +418,19 @@ exit /b 1"#,
     fn unknown_steps_bad_input_and_a_missing_binary_are_refused() {
         let missing = Path::new("/nonexistent/maktaba-server");
         assert_eq!(
-            run_step(missing, "rm -rf", &json!({}), |_| {})
+            run_step(missing, "rm -rf", &json!({}), None, |_| {})
                 .unwrap_err()
                 .code,
             "unknown_step"
         );
         assert_eq!(
-            run_step(missing, "check", &json!([1]), |_| {})
+            run_step(missing, "check", &json!([1]), None, |_| {})
                 .unwrap_err()
                 .code,
             "bad_input"
         );
         assert_eq!(
-            run_step(missing, "check", &json!({}), |_| {})
+            run_step(missing, "check", &json!({}), None, |_| {})
                 .unwrap_err()
                 .code,
             "server_missing"
@@ -396,7 +445,14 @@ exit /b 1"#,
             r#"exec 0<&-; printf '{"type":"result","data":{"configured":false}}\n'"#,
             r#"echo {"type":"result","data":{"configured":false}}"#,
         );
-        let out = run_step(&bin, "status", &json!({"big": "x".repeat(1 << 17)}), |_| {}).unwrap();
+        let out = run_step(
+            &bin,
+            "status",
+            &json!({"big": "x".repeat(1 << 17)}),
+            None,
+            |_| {},
+        )
+        .unwrap();
         assert_eq!(out, json!({"configured": false}));
     }
 }

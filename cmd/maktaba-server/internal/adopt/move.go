@@ -822,7 +822,8 @@ func Finish(sys Sys, stateDir string) (bool, error) {
 // user's app tasks disabled (theirs, and their task of the old shared name);
 // the app window out of server mode; the old task registered again from its
 // XML (or enabled again, when it was not removed yet) and run. What changed in
-// the app since stays in the app.
+// the app since stays in the app. progress hears of Windows's consent prompt
+// (stage "firewall") before the move's firewall rules are removed.
 //
 // The app's server never starts over the old install by itself afterwards: in
 // this sign-in the pause flag holds and the tasks are off; at the next sign-in
@@ -835,7 +836,10 @@ func Finish(sys Sys, stateDir string) (bool, error) {
 // old install"): its tasks, turned off by a stop that failed, are turned on
 // again from the record. An old task is run only while nothing of the old
 // install runs (a stop that failed may have left it running).
-func Undo(sys Sys, tgt Target) error {
+func Undo(sys Sys, tgt Target, progress Progress) error {
+	if progress == nil {
+		progress = func(string, string) {}
+	}
 	rec, ok, err := ReadRecord(tgt.StateDir)
 	if err != nil {
 		return err
@@ -891,6 +895,7 @@ func Undo(sys Sys, tgt Target) error {
 		for i, r := range rec.Firewall {
 			names[i] = r.Name
 		}
+		progress("firewall", "Windows asks for permission to remove the firewall rules the move made")
 		if err := sys.RemoveFirewallRules(names); err != nil {
 			rec.FirewallLeft = names
 		} else {
@@ -922,6 +927,10 @@ func addFirewall(sys Sys, p Plan, rec *Record, tgt Target, progress Progress) er
 	if err := sys.AddFirewallRules(add); err != nil {
 		if errors.Is(err, ErrDeclined) {
 			return coded("adopt_firewall_declined", err)
+		}
+		var late *PromptTimeoutError
+		if errors.As(err, &late) {
+			return coded("adopt_firewall_timeout", err, "minutes", late.Minutes())
 		}
 		return codedf("adopt_firewall", nil, "make the app's firewall rules: %w", err)
 	}

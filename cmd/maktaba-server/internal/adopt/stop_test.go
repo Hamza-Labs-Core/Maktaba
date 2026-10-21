@@ -191,7 +191,7 @@ func TestAProcessListItCannotReadStops(t *testing.T) {
 	if rec.Stage != StageFound || len(rec.Saved) != 1 || pc.sys.enabled[name] {
 		t.Fatalf("stage %s saved %+v enabled %v", rec.Stage, rec.Saved, pc.sys.enabled[name])
 	}
-	if err := Undo(pc.sys, pc.tgt); codeOf(err) == nil || codeOf(err).Code != "adopt_processes_unknown" {
+	if err := Undo(pc.sys, pc.tgt, nil); codeOf(err) == nil || codeOf(err).Code != "adopt_processes_unknown" {
 		t.Errorf("undo without the process list: %v", err)
 	}
 	if len(pc.sys.run) != 0 {
@@ -218,7 +218,7 @@ func TestUndoAMoveThatStoppedPartWay(t *testing.T) {
 	if rec, _, _ := ReadRecord(pc.tgt.StateDir); rec.Stage != StageFound || len(rec.Saved) != 1 || pc.sys.enabled[name] {
 		t.Fatalf("after the failed stop: stage %s, saved %+v, enabled %v", rec.Stage, rec.Saved, pc.sys.enabled[name])
 	}
-	if err := Undo(stuck, pc.tgt); err != nil {
+	if err := Undo(stuck, pc.tgt, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !pc.sys.enabled[name] || len(pc.sys.run) != 0 {
@@ -236,7 +236,7 @@ func TestUndoAMoveThatStoppedPartWay(t *testing.T) {
 	if _, err := Move(context.Background(), pc.sys, plan, pc.tgt, nil, nil); err == nil {
 		t.Fatal("the copy went through a file")
 	}
-	if err := Undo(pc.sys, pc.tgt); err != nil {
+	if err := Undo(pc.sys, pc.tgt, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !pc.sys.enabled[name] || !reflect.DeepEqual(pc.sys.run, []string{name}) {
@@ -244,7 +244,7 @@ func TestUndoAMoveThatStoppedPartWay(t *testing.T) {
 	}
 
 	// nothing recorded: nothing to undo, said by its code
-	if err := Undo(newFakeSys(nil), Target{StateDir: t.TempDir()}); codeOf(err) == nil || codeOf(err).Code != "adopt_no_move" {
+	if err := Undo(newFakeSys(nil), Target{StateDir: t.TempDir()}, nil); codeOf(err) == nil || codeOf(err).Code != "adopt_no_move" {
 		t.Errorf("no move: %v", err)
 	}
 }

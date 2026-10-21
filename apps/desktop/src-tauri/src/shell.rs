@@ -524,6 +524,19 @@ pub fn app_state(app: AppHandle) -> AppState {
     }
 }
 
+/// The main window's handle, the owner of a consent prompt a step raises
+/// (Windows; setup::OWNER_WINDOW_ENV). None elsewhere, or with no window.
+#[cfg(windows)]
+fn owner_window(app: &AppHandle) -> Option<isize> {
+    let hwnd = app.get_webview_window("main")?.hwnd().ok()?;
+    Some(hwnd.0 as isize)
+}
+
+#[cfg(not(windows))]
+fn owner_window(_: &AppHandle) -> Option<isize> {
+    None
+}
+
 /// Run one `maktaba-server setup --json` step. Progress lines go to
 /// `on_progress`; the input (which may hold a password or token) is
 /// passed on stdin and never logged.
@@ -541,8 +554,9 @@ pub async fn setup_step(
         params: None,
         details: Vec::new(),
     })?;
+    let owner = owner_window(&app);
     tauri::async_runtime::spawn_blocking(move || {
-        setup::run_step(&bin, &step, &input, |p| {
+        setup::run_step(&bin, &step, &input, owner, |p| {
             let _ = on_progress.send(p);
         })
     })

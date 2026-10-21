@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // FirewallRule is an inbound rule of Windows Defender Firewall that lets a
@@ -208,9 +209,47 @@ func validFirewallChange(c firewallChange, binDir string) error {
 	return nil
 }
 
+// PromptTimeoutError: Windows's consent prompt was not answered within Wait
+// (Windows can open it late, or leave it in the taskbar). The change was
+// withdrawn: nothing was changed, and a run Windows starts later does nothing.
+type PromptTimeoutError struct{ Wait time.Duration }
+
+func (e *PromptTimeoutError) Error() string {
+	return fmt.Sprintf("Windows asked for permission and no answer came within %s: nothing was changed", e.Wait)
+}
+
+// Minutes is Wait in whole minutes, rounded up (the screen's words).
+func (e *PromptTimeoutError) Minutes() int {
+	return max(1, int((e.Wait+time.Minute-1)/time.Minute))
+}
+
+// The change file is the elevated run's once it took it (renamed to
+// in+takenSuffix); the move that asked withdraws it (renamed to
+// in+withdrawnSuffix) when the prompt was not answered in time. Only one
+// rename can win, so a late run never makes a change the move gave up on.
+const (
+	takenSuffix     = ".taken"
+	withdrawnSuffix = ".withdrawn"
+)
+
+// withdraw takes the change in back from the elevated run: true when it is
+// withdrawn, false when the run has taken it (it is under way).
+func withdraw(in string) bool {
+	for try := 0; ; try++ {
+		if os.Rename(in, in+withdrawnSuffix) == nil {
+			return true
+		}
+		if _, err := os.Stat(in + takenSuffix); err == nil || try == 4 {
+			return false
+		}
+		time.Sleep(100 * time.Millisecond) // a scanner holding the file a moment
+	}
+}
+
 // FirewallHelper is the elevated run: `maktaba-server __adopt-firewall <in>
-// <out>` checks the change in <in>, makes it, and writes what went wrong (if
-// anything) to <out>. Its exit code is 0 when the change is made.
+// <out>` takes the change in <in> (unless it was withdrawn), checks it, makes
+// it, and writes what went wrong (if anything) to <out>. Its exit code is 0
+// when the change is made.
 func FirewallHelper(args []string) int {
 	if len(args) != 2 {
 		return 2
@@ -219,7 +258,11 @@ func FirewallHelper(args []string) int {
 		_ = os.WriteFile(args[1], []byte(err.Error()), 0o600)
 		return 1
 	}
-	raw, err := os.ReadFile(args[0])
+	taken := args[0] + takenSuffix
+	if err := os.Rename(args[0], taken); err != nil {
+		return fail(fmt.Errorf("the change was withdrawn (the prompt was answered too late), nothing was changed: %w", err))
+	}
+	raw, err := os.ReadFile(taken)
 	if err != nil {
 		return fail(err)
 	}

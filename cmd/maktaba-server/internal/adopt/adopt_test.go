@@ -68,6 +68,7 @@ type fakeSys struct {
 	rules                  []FirewallRule
 	profiles               []string
 	noAdmin, declines      bool
+	promptErr              error // what the prompt to make rules ends in (a timeout, say)
 	fwErr                  error
 	added                  [][]FirewallRule
 	removed                [][]string
@@ -246,6 +247,9 @@ func (f *fakeSys) AddFirewallRules(rules []FirewallRule) error {
 	defer f.mu.Unlock()
 	if f.declines {
 		return ErrDeclined
+	}
+	if f.promptErr != nil {
+		return f.promptErr
 	}
 	f.added = append(f.added, rules)
 	f.endedWhenRulesWereMade = len(f.ended)
@@ -1062,7 +1066,7 @@ func TestVerifyFinishUndo(t *testing.T) {
 	if UndoneHere(pc.tgt.StateDir) {
 		t.Error("undone before the undo")
 	}
-	if err := Undo(pc.sys, pc.tgt); err != nil {
+	if err := Undo(pc.sys, pc.tgt, nil); err != nil {
 		t.Fatal(err)
 	}
 	if pc.sys.appStopped != 1 || pc.sys.enabled[app] || pc.sys.enabled[OldAppTask] {
@@ -1086,7 +1090,7 @@ func TestVerifyFinishUndo(t *testing.T) {
 	if rec, _, _ := ReadRecord(pc.tgt.StateDir); rec.Stage != StageUndone {
 		t.Errorf("stage %s", rec.Stage)
 	}
-	if err := Undo(pc.sys, pc.tgt); err == nil {
+	if err := Undo(pc.sys, pc.tgt, nil); err == nil {
 		t.Error("undone twice")
 	}
 }
@@ -1101,7 +1105,7 @@ func TestUndoBeforeFinish(t *testing.T) {
 	}
 	name := `\Maktaba node (maktaba-local)`
 	// no app task yet (setup did not register it): nothing to disable
-	if err := Undo(pc.sys, pc.tgt); err != nil {
+	if err := Undo(pc.sys, pc.tgt, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(pc.sys.created) != 0 || !pc.sys.enabled[name] || !reflect.DeepEqual(pc.sys.run, []string{name}) {
@@ -1134,7 +1138,7 @@ func TestUndoTouchesOnlyThisUsersApp(t *testing.T) {
 	pc.tgt.ModeFile = filepath.Join(t.TempDir(), "mode.json")
 	client := `{"mode":"client","server_url":"https://maktaba.home"}`
 	write(t, pc.tgt.ModeFile, client)
-	if err := Undo(pc.sys, pc.tgt); err != nil {
+	if err := Undo(pc.sys, pc.tgt, nil); err != nil {
 		t.Fatal(err)
 	}
 	if on, set := pc.sys.enabled[OldAppTask]; set && !on {
@@ -1162,7 +1166,7 @@ func TestUndoNeedsThisUsersSID(t *testing.T) {
 		t.Fatal(err)
 	}
 	pc.sys.user = User{}
-	if err := Undo(pc.sys, pc.tgt); err == nil || !strings.Contains(err.Error(), "SID") {
+	if err := Undo(pc.sys, pc.tgt, nil); err == nil || !strings.Contains(err.Error(), "SID") {
 		t.Errorf("undo without a SID: %v", err)
 	}
 	if pc.sys.appStopped != 0 || len(pc.sys.run) != 0 {
@@ -1284,7 +1288,7 @@ func TestMoveNodeWorkers(t *testing.T) {
 	if ok, err := Finish(sys, tgt.StateDir); !ok || err != nil || len(sys.deleted) != 2 {
 		t.Fatalf("finish: %v %v, deleted %q", ok, err, sys.deleted)
 	}
-	if err := Undo(sys, tgt); err != nil {
+	if err := Undo(sys, tgt, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(sys.created) != 2 || len(sys.run) != 2 || sys.created[`\Maktaba\maktaba-node@2`] != `<Task>\Maktaba\maktaba-node@2</Task>` {

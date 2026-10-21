@@ -363,7 +363,7 @@ func TestRealMove(t *testing.T) {
 	}
 
 	// undo: registered again from the saved definition, enabled and run
-	if err := Undo(sys, tgt); err != nil {
+	if err := Undo(sys, tgt, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !sys.HasTask(name) {

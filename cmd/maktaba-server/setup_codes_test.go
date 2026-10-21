@@ -10,8 +10,10 @@ import (
 )
 
 // stepCode finds the codes a setup step fails with: failStep("code", …),
-// &stepError{code: "code", …} and setupEvent{Code: "code", …}.
-var stepCode = regexp.MustCompile(`failStep\("([a-z_]+)"|stepError\{code:\s*"([a-z_]+)"|setupEvent\{[^}]*Code:\s*"([a-z_]+)"`)
+// &stepError{code: "code", …} and setupEvent{Code: "code", …}; and the move's
+// (internal/adopt: coded("code", …), codedf("code", …)), which the adopt step
+// fails with as they are.
+var stepCode = regexp.MustCompile(`failStep\("([a-z_]+)"|stepError\{code:\s*"([a-z_]+)"|setupEvent\{[^}]*Code:\s*"([a-z_]+)"|\bcodedf?\("([a-z_]+)"`)
 
 // Every code a setup step fails with has its words in both of the web's
 // languages (setup.error.<code>): the screens never fall back to the step's
@@ -21,6 +23,11 @@ func TestEveryStepErrorHasItsWords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	moves, err := filepath.Glob(filepath.Join("internal", "adopt", "*.go"))
+	if err != nil || len(moves) == 0 {
+		t.Fatalf("the move's files: %v", err)
+	}
+	files = append(files, moves...)
 	codes := map[string]bool{}
 	for _, f := range files {
 		if strings.HasSuffix(f, "_test.go") {
@@ -31,7 +38,7 @@ func TestEveryStepErrorHasItsWords(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, m := range stepCode.FindAllStringSubmatch(string(src), -1) {
-			codes[m[1]+m[2]+m[3]] = true
+			codes[m[1]+m[2]+m[3]+m[4]] = true
 		}
 	}
 	if len(codes) < 20 {

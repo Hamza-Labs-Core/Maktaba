@@ -63,8 +63,9 @@ don't append a line here; docs-only PRs are exempt.
   search index, caches, models and an SQLite database into the app; a node's `node.json` stays
   where it is, the machine's one, which the app reads (it is never copied). The firewall
   rules that let other devices reach the old install's programs are copied for the app's own
-  (Windows asks once, before anything stops; the plan says so), and the old task goes only once
-  they are in place on the network in use. A move that stops part way can go on, or restore the old
+  (Windows asks once, before anything stops; the plan says so; the prompt opens in front of the
+  app's window, and one not answered within three minutes changes nothing), and the old task goes
+  only once they are in place on the network in use. A move that stops part way can go on, or restore the old
   install from the screen, as can one done (the welcome screen). The app's server removes the old
   task once it ran healthy; the old folder is kept, and `maktaba-server adopt --undo` runs the old
   install again (the app's per-user task, and this user's of the old shared name, turned off; the

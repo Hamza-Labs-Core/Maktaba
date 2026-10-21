@@ -4,14 +4,17 @@ package adopt
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -110,6 +113,15 @@ var helperExe = os.Executable
 // ErrDeclined: the administrator's prompt was refused.
 var ErrDeclined = errors.New("the change was not allowed (Windows asked, and No was chosen)")
 
+// promptWait is how long the consent prompt may stay unanswered: Windows can
+// open it late or leave it waiting in the taskbar. Then the change is
+// withdrawn (a *PromptTimeoutError) and nothing is changed.
+var promptWait = 3 * time.Minute
+
+// applyWait bounds the elevated run's PowerShell, so the run the move waits
+// for once the prompt was answered ends.
+const applyWait = 2 * time.Minute
+
 // runFirewallHelper runs this maktaba-server once as an administrator
 // (ShellExecuteEx "runas": one consent prompt, hidden: no console window) to
 // make the change, its input in a file of this user's, and waits for it.
@@ -131,7 +143,7 @@ func runFirewallHelper(c firewallChange) error {
 	if err := os.WriteFile(in, raw, 0o600); err != nil {
 		return err
 	}
-	code, err := runElevated(exe, []string{FirewallHelperArg, in, out})
+	code, err := runElevated(exe, []string{FirewallHelperArg, in, out}, promptWait, func() bool { return withdraw(in) })
 	if err != nil {
 		return err
 	}
@@ -156,11 +168,28 @@ func longPath(p string) string {
 	return windows.UTF16ToString(buf[:n])
 }
 
+// ownerEnv carries the desktop app's main window to its setup step
+// (apps/desktop setup.rs OWNER_WINDOW_ENV): the owner of the consent prompt.
+const ownerEnv = "MAKTABA_SETUP_HWND"
+
+// ownerWindow is the app's main window from ownerEnv; 0 (no owner, as from
+// the CLI) when it is not set or names no window.
+func ownerWindow() windows.HWND {
+	n, err := strconv.ParseInt(strings.TrimSpace(os.Getenv(ownerEnv)), 10, 64)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	if h := windows.HWND(uintptr(n)); windows.IsWindow(h) {
+		return h
+	}
+	return 0
+}
+
 // shellExecuteInfo is SHELLEXECUTEINFOW.
 type shellExecuteInfo struct {
 	cbSize       uint32
 	fMask        uint32
-	hwnd         windows.Handle
+	hwnd         windows.HWND
 	lpVerb       *uint16
 	lpFile       *uint16
 	lpParameters *uint16
@@ -183,9 +212,9 @@ const (
 
 var procShellExecuteExW = windows.NewLazySystemDLL("shell32.dll").NewProc("ShellExecuteExW")
 
-// runElevated starts exe as an administrator, hidden, and waits for its exit
-// code. A refused prompt is ErrDeclined.
-func runElevated(exe string, args []string) (uint32, error) {
+// elevateInfo is the request to run exe with args as an administrator,
+// hidden, its prompt owned by owner (0: none).
+func elevateInfo(exe string, args []string, owner windows.HWND) (shellExecuteInfo, error) {
 	quoted := make([]string, len(args))
 	for i, a := range args {
 		quoted[i] = syscall.EscapeArg(a)
@@ -193,20 +222,59 @@ func runElevated(exe string, args []string) (uint32, error) {
 	verb, _ := windows.UTF16PtrFromString("runas")
 	file, err := windows.UTF16PtrFromString(exe)
 	if err != nil {
-		return 0, err
+		return shellExecuteInfo{}, err
 	}
 	params, err := windows.UTF16PtrFromString(strings.Join(quoted, " "))
 	if err != nil {
+		return shellExecuteInfo{}, err
+	}
+	info := shellExecuteInfo{fMask: seeMaskNoCloseProcess | seeMaskNoAsync | seeMaskFlagNoUI, hwnd: owner,
+		lpVerb: verb, lpFile: file, lpParameters: params, nShow: windows.SW_HIDE}
+	info.cbSize = uint32(unsafe.Sizeof(info))
+	return info, nil
+}
+
+// shellExecute asks Windows to start info's program: it returns once the
+// prompt was answered (ERROR_CANCELLED: refused) and the program started.
+var shellExecute = func(info *shellExecuteInfo) error {
+	if r, _, e := procShellExecuteExW.Call(uintptr(unsafe.Pointer(info))); r == 0 {
+		return e
+	}
+	return nil
+}
+
+// runElevated starts exe as an administrator, hidden, its prompt owned by the
+// app's window when the app gave one, and waits for its exit code. A refused
+// prompt is ErrDeclined. A prompt not answered within wait is withdrawn: when
+// withdraw reports that the run had not taken its change yet, the result is a
+// *PromptTimeoutError and a run Windows starts later finds nothing to do.
+func runElevated(exe string, args []string, wait time.Duration, withdraw func() bool) (uint32, error) {
+	info, err := elevateInfo(exe, args, ownerWindow())
+	if err != nil {
 		return 0, err
 	}
-	info := shellExecuteInfo{fMask: seeMaskNoCloseProcess | seeMaskNoAsync | seeMaskFlagNoUI, lpVerb: verb,
-		lpFile: file, lpParameters: params, nShow: windows.SW_HIDE}
-	info.cbSize = uint32(unsafe.Sizeof(info))
-	if r, _, e := procShellExecuteExW.Call(uintptr(unsafe.Pointer(&info))); r == 0 {
-		if errors.Is(e, windows.ERROR_CANCELLED) {
+	started := make(chan error, 1)
+	go func() { started <- shellExecute(&info) }()
+	deadline := time.NewTimer(wait)
+	defer deadline.Stop()
+	select {
+	case err = <-started:
+	case <-deadline.C:
+		if withdraw() {
+			go func() { // the prompt may still be up: what it starts is let go
+				if <-started == nil && info.hProcess != 0 {
+					_ = windows.CloseHandle(info.hProcess)
+				}
+			}()
+			return 0, &PromptTimeoutError{Wait: wait}
+		}
+		err = <-started // the run took the change: it is under way
+	}
+	if err != nil {
+		if errors.Is(err, windows.ERROR_CANCELLED) {
 			return 0, ErrDeclined
 		}
-		return 0, fmt.Errorf("run %s as an administrator: %w", filepath.Base(exe), e)
+		return 0, fmt.Errorf("run %s as an administrator: %w", filepath.Base(exe), err)
 	}
 	if info.hProcess == 0 {
 		return 0, fmt.Errorf("run %s as an administrator: no process", filepath.Base(exe))
@@ -248,7 +316,9 @@ func applyFirewall(c firewallChange) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(system32(`WindowsPowerShell\v1.0\powershell.exe`), "-NoProfile", "-NonInteractive", "-Command", firewallApply)
+	ctx, cancel := context.WithTimeout(context.Background(), applyWait)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, system32(`WindowsPowerShell\v1.0\powershell.exe`), "-NoProfile", "-NonInteractive", "-Command", firewallApply)
 	cmd.Stdin = bytes.NewReader(raw)
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
 	var errb bytes.Buffer

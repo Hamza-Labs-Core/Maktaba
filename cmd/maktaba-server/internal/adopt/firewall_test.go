@@ -3,10 +3,12 @@ package adopt
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
@@ -105,16 +107,30 @@ func TestTheMoveMakesTheRulesBeforeTheStop(t *testing.T) {
 	plan, _ := MakePlan(pc.sys, srcs[0], pc.tgt)
 	old := append([]FirewallRule(nil), pc.sys.rules...)
 
-	pc.sys.declines = true
-	_, err := Move(context.Background(), pc.sys, plan, pc.tgt, nil, nil)
-	if ae := codeOf(err); ae == nil || ae.Code != "adopt_firewall_declined" {
-		t.Fatalf("a refused prompt: %v", err)
-	}
-	if rec, _, _ := ReadRecord(pc.tgt.StateDir); rec.Stage != StageFound || len(rec.Firewall) != 0 || len(pc.sys.ended) != 0 || len(pc.sys.enabled) != 0 {
-		t.Fatalf("after No: stage %s, rules %d, ended %q, tasks changed %v", rec.Stage, len(rec.Firewall), pc.sys.ended, pc.sys.enabled)
+	// a No, and a prompt not answered in time (withdrawn): a refusal each, with
+	// its own words, and nothing changed
+	for _, refusal := range []struct {
+		err  error
+		code string
+	}{
+		{ErrDeclined, "adopt_firewall_declined"},
+		{&PromptTimeoutError{Wait: 3 * time.Minute}, "adopt_firewall_timeout"},
+	} {
+		pc.sys.promptErr = refusal.err
+		_, err := Move(context.Background(), pc.sys, plan, pc.tgt, nil, nil)
+		ae := codeOf(err)
+		if ae == nil || ae.Code != refusal.code {
+			t.Fatalf("%s: %v", refusal.code, err)
+		}
+		if refusal.code == "adopt_firewall_timeout" && ae.Params["minutes"] != 3 {
+			t.Errorf("the timeout's params: %v", ae.Params)
+		}
+		if rec, _, _ := ReadRecord(pc.tgt.StateDir); rec.Stage != StageFound || len(rec.Firewall) != 0 || len(pc.sys.ended) != 0 || len(pc.sys.enabled) != 0 {
+			t.Fatalf("after %s: stage %s, rules %d, ended %q, tasks changed %v", refusal.code, rec.Stage, len(rec.Firewall), pc.sys.ended, pc.sys.enabled)
+		}
 	}
 
-	pc.sys.declines = false
+	pc.sys.promptErr = nil
 	var stages []string
 	rec, err := Move(context.Background(), pc.sys, plan, pc.tgt, nil, func(stage, _ string) { stages = append(stages, stage) })
 	if err != nil {
@@ -159,9 +175,14 @@ func TestTheMoveMakesTheRulesBeforeTheStop(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Undo: the move's rules removed, the old ones untouched (they serve it again)
-	if err := Undo(pc.sys, pc.tgt); err != nil {
+	// Undo: the move's rules removed (it says Windows asks first), the old ones
+	// untouched (they serve it again)
+	stages = nil
+	if err := Undo(pc.sys, pc.tgt, func(stage, _ string) { stages = append(stages, stage) }); err != nil {
 		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(stages, []string{"firewall"}) {
+		t.Errorf("undo's stages %q", stages)
 	}
 	if len(pc.sys.removed) != 1 || len(pc.sys.removed[0]) != 4 || !strings.HasPrefix(pc.sys.removed[0][0], firewallPrefix) {
 		t.Errorf("removed %q", pc.sys.removed)
@@ -186,7 +207,7 @@ func TestUndoGoesOnWhenItCannotRemoveTheRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	pc.sys.declines = true
-	if err := Undo(pc.sys, pc.tgt); err != nil {
+	if err := Undo(pc.sys, pc.tgt, nil); err != nil {
 		t.Fatal(err)
 	}
 	rec, _, _ := ReadRecord(pc.tgt.StateDir)
@@ -261,5 +282,39 @@ func TestTheScriptsConsoleIsKnownByItsWholePath(t *testing.T) {
 	spaced := Source{Script: filepath.Join(dir, "old install", "start.cmd")}
 	if !spaced.runsScript(Proc{Name: "cmd.exe", Cmdline: `cmd.exe /c "` + spaced.Script + `"`}) {
 		t.Error("a quoted path with a space")
+	}
+}
+
+// TestALateRunFindsTheChangeWithdrawn: a move that stopped waiting for the
+// prompt withdraws its change, and the elevated run a late Yes starts cannot
+// take it: it changes nothing. A change the run took first stays its own.
+func TestALateRunFindsTheChangeWithdrawn(t *testing.T) {
+	dir := t.TempDir()
+	in, out := filepath.Join(dir, "change.json"), filepath.Join(dir, "result.txt")
+	// a change the run would refuse anyway: nothing here can reach the firewall
+	change := []byte(`{"remove":["not-the-apps"]}`)
+	if err := os.WriteFile(in, change, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !withdraw(in) {
+		t.Fatal("the change was not withdrawn")
+	}
+	if code := FirewallHelper([]string{in, out}); code != 1 {
+		t.Errorf("the late run: exit %d", code)
+	}
+	if msg, _ := os.ReadFile(out); !strings.Contains(string(msg), "withdrawn") {
+		t.Errorf("the late run: %q", msg)
+	}
+	if err := os.WriteFile(in, change, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(in, in+takenSuffix); err != nil {
+		t.Fatal(err)
+	}
+	if withdraw(in) {
+		t.Error("withdrew a change the run had taken")
+	}
+	if got := (&PromptTimeoutError{Wait: 150 * time.Second}).Minutes(); got != 3 {
+		t.Errorf("2.5 minutes are %d in the screen's words", got)
 	}
 }
