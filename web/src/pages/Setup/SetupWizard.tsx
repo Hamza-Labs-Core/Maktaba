@@ -650,7 +650,7 @@ function Plex({ api, step, next, back }: StepProps) {
 
 function Install({ api, step, next, back }: StepProps) {
   const { t } = useI18n();
-  const [phase, setPhase] = useState<"venv" | "finish" | "approval" | "failed">("venv");
+  const [phase, setPhase] = useState<"venv" | "llm" | "finish" | "approval" | "failed">("venv");
   const [progress, setProgress] = useState<StepProgress | null>(null);
   const [error, setError] = useState<StepError | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -676,6 +676,17 @@ function Install({ api, step, next, back }: StepProps) {
         setPhase("venv");
         await api.runStep("venv", {}, (p) => mounted.current && setProgress(p));
         if (!mounted.current) return;
+        // The language model of the LLM stages (about 5 GB). Only too little disk
+        // stops setup: any other failure (no network, no bundled server) leaves it
+        // to the server, which downloads a missing model in the background.
+        setPhase("llm");
+        setProgress(null);
+        try {
+          await api.runStep("llm", {}, (p) => mounted.current && setProgress(p));
+        } catch (e) {
+          if (asError(e).code === "disk_full") throw e;
+        }
+        if (!mounted.current) return;
         setPhase("finish");
         setProgress(null);
         const done = await api.runStep<{ web_url: string; supervisor_url?: string }>("finish", {});
@@ -690,6 +701,14 @@ function Install({ api, step, next, back }: StepProps) {
       }
     })();
   }, [api, attempt]);
+
+  const installText = t(
+    phase === "finish"
+      ? "setup.install.finishing"
+      : phase === "llm"
+        ? "setup.install.llm"
+        : "setup.install.venv"
+  );
 
   if (phase === "approval") {
     return (
@@ -725,13 +744,8 @@ function Install({ api, step, next, back }: StepProps) {
         ) : undefined
       }
     >
-      <p>{phase === "finish" ? t("setup.install.finishing") : t("setup.install.venv")}</p>
-      {phase !== "failed" && (
-        <Progress
-          p={progress}
-          label={phase === "finish" ? t("setup.install.finishing") : t("setup.install.venv")}
-        />
-      )}
+      <p>{installText}</p>
+      {phase !== "failed" && <Progress p={progress} label={installText} />}
     </Frame>
   );
 }

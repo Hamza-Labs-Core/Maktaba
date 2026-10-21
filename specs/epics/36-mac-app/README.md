@@ -46,19 +46,24 @@ Maktaba.app/Contents/
     bin/  maktaba-server maktaba-api maktaba-streaming maktaba-launcher
     postgres/  bin/{postgres,initdb,pg_ctl,pg_dump,pg_restore,psql} lib/ share/   (arm64)
     ffmpeg/   ffmpeg ffprobe                                                       (arm64, static)
+    ollama/   ollama llama-server       the language model server, Ollama 0.40.2 (arm64)
     python/   python-build-standalone 3.12                                         (arm64)
     pipeline/ maktaba_pipeline-<v>.whl + constraints.txt (every extra pinned)
   Library/LaunchAgents/com.hamzalabs.maktaba.server.plist   registered with SMAppService
 ```
 
 Per-user state, all under **`~/Library/Application Support/Maktaba/`** (`data/`, `postgres/` (cluster),
-`venv/` (built on first run), `models/`, `chroma/`, `keys/` (secrets, stream signing, cluster),
+`venv/` (built on first run), `models/` (`models/ollama/`: the language model), `chroma/`, `keys/` (secrets, stream signing, cluster),
 `cache/streaming/`, `backups/`), logs under **`~/Library/Logs/Maktaba/`**.
 
 - **The server runs as a login item** (`SMAppService.agent`) — the bundled `maktaba-launcher serve`
   under launchd with `KeepAlive`. It runs whether or not the window is open, and starts at login.
 - **`maktaba-server` supervises** postgres → api → streaming → pipeline (main worker) + N
-  transcription workers, with the backoff/restart and `/processes` it already has.
+  transcription workers, and the language model server (`ollama`), with the backoff/restart and
+  `/processes` it already has.
+- **The language model is local too.** The LLM stages (`check_tags`, `check_clips`, enrich,
+  display titles) ask an Ollama server; on the home Mac nothing provided one and ~7,600 jobs failed
+  with "connection refused". The app bundles Ollama (story 36.11) and runs it like every role.
 - **The pipeline venv is built on first run** from the bundled wheel + constraints with the bundled
   Python (the MLX/torch wheels, ~1–2 GB, download then; models too). The app stays a reasonable
   download; setup shows the progress. Re-built on update only when the constraints change.
@@ -78,6 +83,43 @@ Per-user state, all under **`~/Library/Application Support/Maktaba/`** (`data/`,
 | 36.8 | **Updates** | the Tauri updater replaces the whole app (shell + server payload); on next start the supervisor migrates the DB (backup first, as today), rebuilds the venv only if constraints changed, restarts the roles. The launcher's own self-update is off inside the app (one updater). |
 | 36.9 | **Move the home Mac in** | `maktaba-server migrate-from-dev`: stop stack.sh services, `pg_dump` the Docker Postgres → restore into the bundled one, copy `~/.maktaba/{chroma,stream-signing.key,…}` and HF models, carry `MAKTABA_PATH_MAP` and the STT settings into `server.toml`, verify (library count, transcripts, Live TV host check-in), then retire Docker Postgres. Reversible (the Docker volume is kept until confirmed). |
 | 36.10 | **Clean up** | drop the broken Mac compose overlay and stale plists/docs (`docs/wiki/deployment.md` §8–9, legacy `com.maktaba.*.plist`), README "Install on a Mac" → the app; keep `stack.sh` as the developer path only. |
+| 36.11 | **The language model in the app** | see below. |
+
+## 36.11 — The language model in the app
+
+**Payload.** `Resources/server/ollama/{ollama,llama-server}`: Ollama 0.40.2 (`pins.env`
+`OLLAMA_*`, the release's `ollama-darwin.tgz`, SHA-256 from its `sha256sum.txt`), both thinned to
+arm64. GGUF models such as `qwen2.5:7b` run in `llama-server` with Metal built in; the x86_64
+CPU backends and the MLX engine (`mlx_metal_v*/`, ~400 MB, only for MLX-format models) are left
+out. `pins-check.sh` is the dry run of the pins and the checked download (CI: the mac-app gate);
+`check.sh` starts `ollama serve` from the payload and asks its API.
+
+**Supervision.** `[llm]` in `server.toml` (`cmd/maktaba-server/internal/llmserver`): `enabled`
+(auto: when the payload carries Ollama), `binary`, `port`, `url`, `models`, `pull`. `serve` runs
+`ollama serve` as the `ollama` role with `OLLAMA_HOST=127.0.0.1:11533` (a set `port` is used as
+is; the default moves to a free loopback port when another program holds it, so a user's own
+Ollama keeps 11434), `OLLAMA_MODELS=<state>/models/ollama`, `OLLAMA_NOPRUNE=1` (a half-downloaded
+model survives a restart), its output in `~/Library/Logs/Maktaba/ollama.log` (moved to `.1` past
+50 MB at a start), probed at `/api/version`, restarted with the same backoff as the others.
+`[llm] url` (an Ollama elsewhere) replaces the bundled one.
+
+**The URL to the pipeline.** Every role gets `MAKTABA_OLLAMA_URL` (an operator's own is kept).
+The pipeline reads it as the default of `rules.tagcheck.url`, the model server of check-tags,
+check-clips, enrich (`rules.enrich.llm = "tagcheck"`) and display titles, and the cluster agent's
+Ollama runtime already read it. A server set in Settings (a stored `rules.tagcheck.url`) wins.
+
+**Models.** `[llm] models` (default `qwen2.5:7b`). The setup step `llm` (contract-setup.md) and
+`maktaba-server models llm` report the disk space needed (the registry manifest) against the
+space free and download with byte progress; Ollama resumes a partial download. The supervisor
+checks every few minutes and downloads a missing model itself (`[llm] pull = "auto"`).
+`migrate-from-dev` clones the dev setup's `~/.ollama/models` (or `OLLAMA_MODELS`) into
+`models/ollama`, so the home Mac downloads nothing again.
+
+**Health.** `/processes` has the `ollama` process and an `llm` object (up, ready, each model's
+state and progress); `GET /llm` on the supervisor's admin port answers 200 when ready and 503
+otherwise. The menu bar shows "Language model: ready" or "downloading qwen2.5:7b (42%)". The
+queue-health dependency watcher (Epic 40, `dependency:model:tagcheck`) reads the model server
+from `rules.tagcheck` like the stages do, so it probes the bundled server with no extra wiring.
 
 ## Order and parallel tracks
 

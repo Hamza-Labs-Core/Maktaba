@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/channel"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/hdhr"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/slot"
 )
@@ -253,10 +254,13 @@ func (h *Handler) previewXMLTV(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "guide unavailable", http.StatusInternalServerError)
 			return
 		}
+		// the staged change's own guide rules (rules tv.guide_* in the release)
+		tv, _ := channel.ApplyTVRules(channel.TVSettingsFromEnv(), h.Slots.releaseSection(r.Context(), rel.String(), "tv"))
+		rules := hdhr.GuideRulesFromSeconds(tv.GuideMaxPaddingSeconds, tv.GuideFillerTitle, tv.GuideMinProgramSeconds)
 		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		bw := bufio.NewWriter(w)
 		defer bw.Flush()
-		hdhr.WriteXMLTV(bw, hdhr.BaseURL(h.WebBase, r), chans, progs)
+		hdhr.WriteXMLTV(bw, hdhr.BaseURL(h.WebBase, r), chans, progs, rules)
 	})
 }

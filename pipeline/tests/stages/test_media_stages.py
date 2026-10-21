@@ -238,7 +238,9 @@ async def test_thumb_hash_unreadable_image_fails_with_a_cause(db: Database, tmp_
     await enqueue_job(db, subject_kind="video", subject_id=v, stage="thumb_hash")
     await drain_core(db, rt, only={"thumb_hash"}, max_jobs=1)
     j = (await _rows(db, "thumb_hash"))[0]
-    assert j["state"] == "pending" and j["error_cause"] == "ffmpeg_decode"
+    # Epic 40: a file that cannot be decoded is no passing failure: it needs an admin
+    assert j["state"] == "failed" and j["error_cause"] == "ffmpeg_decode"
+    assert j["failure_class"] == "item_permanent"
 
 
 # ------------------------------------------------------------------------------ style_sample

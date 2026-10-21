@@ -2,7 +2,10 @@ package channel
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -296,4 +299,94 @@ func nullableTime(t time.Time) any {
 		return nil
 	}
 	return t
+}
+
+// fillersSQL lists a channel's filler and bumper blocks that have a live file,
+// the `limit` before `at` and the `limit` from it; from names the programmes
+// (the live view, or channel_programs with a generation filter in and).
+func fillersSQL(from, and string) string {
+	q := func(cmp, order string) string {
+		return `(SELECT cp.seq, cp.kind, cp.video_id, cp.start_at, cp.end_at,
+		       cp.source_offset, cp.source_duration, v.path, cp.title_snapshot
+		FROM ` + from + ` cp
+		JOIN videos v ON v.id = cp.video_id AND v.deleted_at IS NULL
+		WHERE cp.channel_id = $1 AND cp.kind IN ('filler', 'bumper') AND cp.start_at ` + cmp + ` $2` + and + `
+		ORDER BY cp.start_at ` + order + ` LIMIT $3)`
+	}
+	return q("<", "DESC") + " UNION ALL " + q(">=", "ASC")
+}
+
+// FillersAround implements FillerSource over the live generation.
+func (r *PGRepo) FillersAround(ctx context.Context, channelID uuid.UUID, at time.Time, limit int) ([]ProgramBlock, error) {
+	rows, err := r.pool.Query(ctx, fillersSQL("channel_programs_live", ""), channelID, at, limit)
+	if err != nil {
+		return nil, err
+	}
+	return nearestFillers(rows, at, limit)
+}
+
+// nearestFillers scans fillersSQL rows into one block per video, nearest at
+// first.
+func nearestFillers(rows pgx.Rows, at time.Time, limit int) ([]ProgramBlock, error) {
+	defer rows.Close()
+	var out []ProgramBlock
+	for rows.Next() {
+		var b ProgramBlock
+		var snap []byte
+		if err := rows.Scan(&b.Seq, &b.Kind, &b.VideoID, &b.StartAt, &b.EndAt,
+			&b.SourceOffsetMS, &b.SourceDurationMS, &b.Path, &snap); err != nil {
+			return nil, err
+		}
+		b.Info = ParseBlockInfo(snap)
+		out = append(out, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return nearestFirst(out, at, limit), nil
+}
+
+// nearestFirst orders blocks by how far they start from at, keeps one per
+// video and at most limit.
+func nearestFirst(bs []ProgramBlock, at time.Time, limit int) []ProgramBlock {
+	dist := func(b ProgramBlock) time.Duration {
+		if d := b.StartAt.Sub(at); d >= 0 {
+			return d
+		}
+		return at.Sub(b.StartAt)
+	}
+	sort.SliceStable(bs, func(i, j int) bool { return dist(bs[i]) < dist(bs[j]) })
+	seen := map[uuid.UUID]bool{}
+	out := bs[:0]
+	for _, b := range bs {
+		if !seen[b.VideoID] && len(out) < limit {
+			seen[b.VideoID] = true
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// ReportUnreadable implements UnreadableReporter: a forced probe of the video
+// (processing_jobs_enqueue, the function the API and the pipeline enqueue
+// through). A file the probe cannot read either is a failed probe, the list
+// repair_broken works from; a file that reads fine there (only this host's
+// mapping misses it) just gets its probe again.
+func (r *PGRepo) ReportUnreadable(ctx context.Context, videoID uuid.UUID, why string) error {
+	reason, err := json.Marshal(map[string]any{"why": "unreadable on air: " + why, "by": "system", "host": r.host})
+	if err != nil {
+		return err
+	}
+	var outcome string
+	err = r.pool.QueryRow(ctx, `SELECT outcome FROM processing_jobs_enqueue(
+		'video'::text, $1::uuid, 'probe'::text, NULL::int, true, false, $2::jsonb, NULL::bigint, NULL::jsonb, NULL::int)`,
+		videoID, string(reason)).Scan(&outcome)
+	if err != nil {
+		return err
+	}
+	switch outcome {
+	case "inserted", "coalesced", "rerun_requested":
+		return nil
+	}
+	return fmt.Errorf("probe of %s not queued: %s", videoID, outcome)
 }

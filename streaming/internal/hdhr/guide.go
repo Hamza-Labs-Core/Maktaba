@@ -66,6 +66,28 @@ type GuideHandler struct {
 	// AheadFunc, when set, gives Ahead per request: the guide follows the
 	// schedule horizon setting (rules tv.horizon_days).
 	AheadFunc func(ctx context.Context) time.Duration
+	// RulesFunc gives the filler rules per request (rules tv.guide_*); nil:
+	// the zero GuideRules (every filler run its own channel-name entry).
+	RulesFunc func(ctx context.Context) GuideRules
+}
+
+// GuideRules are how the guide shows filler, as dizqueTV's guide
+// (guideMaxPaddingSeconds, guideFlexPlaceholder, guideMinimumDurationSeconds).
+type GuideRules struct {
+	// MaxPadding: a filler run up to this long joins the programme before
+	// it (or, with none before it, the one after); a longer one is an entry
+	// titled FillerTitle (empty: the channel's name).
+	MaxPadding  time.Duration
+	FillerTitle string
+	// MinProgram: programmes shorter than this are not listed; they count
+	// as filler.
+	MinProgram time.Duration
+}
+
+// GuideRulesFromSeconds builds GuideRules from the rules' seconds.
+func GuideRulesFromSeconds(maxPaddingS int, fillerTitle string, minProgramS int) GuideRules {
+	return GuideRules{MaxPadding: time.Duration(maxPaddingS) * time.Second, FillerTitle: fillerTitle,
+		MinProgram: time.Duration(minProgramS) * time.Second}
 }
 
 // Mount wires the guide routes.
@@ -107,10 +129,14 @@ func (g *GuideHandler) XMLTV(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "guide unavailable", http.StatusInternalServerError)
 		return
 	}
+	var rules GuideRules
+	if g.RulesFunc != nil {
+		rules = g.RulesFunc(r.Context())
+	}
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	bw := bufio.NewWriter(w)
 	defer bw.Flush()
-	WriteXMLTV(bw, publicBase(g.WebBase, r), chans, progs)
+	WriteXMLTV(bw, publicBase(g.WebBase, r), chans, progs, rules)
 }
 
 // M3U renders the playlist.
@@ -182,36 +208,52 @@ type guideEntry struct {
 	isFiller    bool
 }
 
-// maxLeadIn: filler before the first programme shorter than this is
-// shown as part of it; longer runs keep their own channel-name entry.
-const maxLeadIn = 5 * time.Minute
-
 func isFillerKind(k string) bool { return k == "filler" || k == "bumper" || k == "slate" }
 
-// collapse folds filler/bumper/slate blocks into the programme they
-// follow (the guide shows the show, not each bumper); a filler run with
-// no preceding programme becomes one entry titled with the channel name.
-// Consecutive pieces of the same programme (a split marathon) merge.
-func collapse(channelName string, progs []GuideProgram) []guideEntry {
+// collapse applies the guide's filler rules (dizqueTV's): filler/bumper/
+// slate blocks and programmes shorter than rules.MinProgram are filler. A
+// run of adjacent filler up to rules.MaxPadding is folded into the
+// programme before it (with none before it, into the one after: a short
+// lead-in); a longer run is one entry titled rules.FillerTitle (empty:
+// the channel name). Consecutive pieces of the same programme (a split
+// marathon) merge.
+func collapse(channelName string, progs []GuideProgram, rules GuideRules) []guideEntry {
 	var out []guideEntry
 	const adj = 2 * time.Second
-	for _, p := range progs {
+	adjacent := func(a, b time.Time) bool { return absDur(b.Sub(a)) <= adj }
+	isFill := func(p GuideProgram) bool {
+		return isFillerKind(p.Kind) || p.EndAt.Sub(p.StartAt) < rules.MinProgram
+	}
+	fillerTitle := rules.FillerTitle
+	if fillerTitle == "" {
+		fillerTitle = channelName
+	}
+	for i := 0; i < len(progs); {
+		p := progs[i]
+		var last *guideEntry
+		if n := len(out); n > 0 && adjacent(out[n-1].stop, p.StartAt) {
+			last = &out[n-1]
+		}
+		if isFill(p) {
+			// the whole run of adjacent filler [i, j)
+			j := i + 1
+			for j < len(progs) && isFill(progs[j]) && adjacent(progs[j-1].EndAt, progs[j].StartAt) {
+				j++
+			}
+			stop := progs[j-1].EndAt
+			i = j
+			if stop.Sub(p.StartAt) <= rules.MaxPadding && last != nil && !last.isFiller {
+				last.stop = stop
+				continue
+			}
+			out = append(out, guideEntry{start: p.StartAt, stop: stop,
+				snap: guideSnapshot{Title: fillerTitle}, isFiller: true})
+			continue
+		}
+		i++
 		var s guideSnapshot
 		if len(p.Snapshot) > 0 {
 			_ = json.Unmarshal(p.Snapshot, &s)
-		}
-		var last *guideEntry
-		if n := len(out); n > 0 && absDur(p.StartAt.Sub(out[n-1].stop)) <= adj {
-			last = &out[n-1]
-		}
-		if isFillerKind(p.Kind) {
-			if last != nil {
-				last.stop = p.EndAt
-				continue
-			}
-			out = append(out, guideEntry{start: p.StartAt, stop: p.EndAt,
-				snap: guideSnapshot{Title: channelName}, isFiller: true})
-			continue
 		}
 		if s.Title == "" {
 			if p.Kind == "live" {
@@ -224,9 +266,9 @@ func collapse(channelName string, progs []GuideProgram) []guideEntry {
 			last.stop = p.EndAt
 			continue
 		}
-		if last != nil && last.isFiller && last.stop.Sub(last.start) <= maxLeadIn {
+		if last != nil && last.isFiller && last.stop.Sub(last.start) <= rules.MaxPadding {
 			// A short filler lead-in is absorbed into the programme.
-			out[len(out)-1] = guideEntry{start: last.start, stop: p.EndAt, snap: s}
+			*last = guideEntry{start: last.start, stop: p.EndAt, snap: s}
 			continue
 		}
 		out = append(out, guideEntry{start: p.StartAt, stop: p.EndAt, snap: s})
@@ -259,8 +301,9 @@ type stringWriter interface {
 
 // WriteXMLTV renders the XMLTV document. Channel ids are the channel
 // numbers so they match the HDHomeRun lineup's GuideNumber in Plex;
-// icons point at the API's public logo endpoint under webBase.
-func WriteXMLTV(w stringWriter, webBase string, chans []GuideChannel, progs []GuideProgram) {
+// icons point at the API's public logo endpoint under webBase; filler is
+// shown as rules say (collapse).
+func WriteXMLTV(w stringWriter, webBase string, chans []GuideChannel, progs []GuideProgram, rules GuideRules) {
 	_, _ = w.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
 	_, _ = w.WriteString(`<!DOCTYPE tv SYSTEM "xmltv.dtd">` + "\n")
 	_, _ = w.WriteString(`<tv generator-info-name="Maktaba">` + "\n")
@@ -285,7 +328,7 @@ func WriteXMLTV(w stringWriter, webBase string, chans []GuideChannel, progs []Gu
 		c, ok := byID[progs[i].ChannelID]
 		if ok {
 			num := strconv.Itoa(c.Number)
-			for _, e := range collapse(c.Name, progs[i:j]) {
+			for _, e := range collapse(c.Name, progs[i:j], rules) {
 				writeProgramme(w, num, e)
 			}
 		}

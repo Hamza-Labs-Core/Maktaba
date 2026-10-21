@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -40,6 +41,15 @@ type OutputSettings struct {
 	// VideoToolbox one (0 = no cap).
 	NVENCMax int
 	VTMax    int
+	// A programme whose file cannot be read (dizqueTV parity):
+	// UnreadableFill is what airs in its place (filler | slate), SourceTimeout
+	// how long its file may take to answer, SourceStall how long a block's
+	// output may stop before the block is ended (0: never), ReportUnreadable
+	// whether the file is handed to the probe (and so to repair_broken).
+	UnreadableFill   string
+	SourceTimeout    time.Duration
+	SourceStall      time.Duration
+	ReportUnreadable bool
 }
 
 // DefaultPerHostCapVideoToolbox is the auto channels-on-air cap when the
@@ -64,6 +74,13 @@ type TVSettings struct {
 	// HorizonDays is how far ahead schedules are planned; the XMLTV
 	// guide shows as far.
 	HorizonDays int
+	// The XMLTV guide's filler rules, as dizqueTV's: filler up to
+	// GuideMaxPaddingSeconds joins the programme before it, longer filler
+	// is an entry titled GuideFillerTitle (empty: the channel's name), and
+	// programmes shorter than GuideMinProgramSeconds count as filler.
+	GuideMaxPaddingSeconds int
+	GuideFillerTitle       string
+	GuideMinProgramSeconds int
 	// LiveLookupReuse is how long one yt-dlp lookup of a live page is
 	// shared by every channel airing it.
 	LiveLookupReuse time.Duration
@@ -73,9 +90,29 @@ type TVSettings struct {
 const (
 	DefaultHorizonDays = 7
 	maxHorizonDays     = 31
+
+	DefaultGuideMaxPaddingSeconds = 120
+	DefaultGuideFillerTitle       = "فواصل"
+	DefaultGuideMinProgramSeconds = 60
+	maxGuideSeconds               = 3600
+
 	// live_lookup_reuse_seconds' bounds.
 	minLiveLookupReuseSec = 10
 	maxLiveLookupReuseSec = 3600
+
+	// rules tv_output: a programme whose file cannot be read
+	DefaultUnreadableFill = FillFiller
+	DefaultSourceTimeout  = 10 * time.Second
+	DefaultSourceStall    = 30 * time.Second
+	maxSourceTimeoutSec   = 120
+	maxSourceStallSec     = 600
+)
+
+// What airs instead of a file that cannot be read (rules
+// tv_output.unreadable_file_fill).
+const (
+	FillFiller = "filler" // the channel's filler nearest the block
+	FillSlate  = "slate"  // the loading card for the block's span
 )
 
 // OutputSettingsFromEnv is today's MAKTABA_CHANNEL_* configuration.
@@ -89,6 +126,13 @@ func OutputSettingsFromEnv() OutputSettings {
 		WarmGrace:     time.Duration(envInt("MAKTABA_CHANNEL_WARM_GRACE_SEC", int(DefaultWarmGrace/time.Second))) * time.Second,
 		NVENCMax:      envInt("MAKTABA_CHANNEL_NVENC_MAX", DefaultNVENCMaxSessions),
 		VTMax:         envInt("MAKTABA_CHANNEL_VT_MAX", 0),
+		UnreadableFill: envChoice("MAKTABA_CHANNEL_UNREADABLE_FILL", DefaultUnreadableFill,
+			FillFiller, FillSlate),
+		SourceTimeout: time.Duration(clampInt(envInt("MAKTABA_CHANNEL_SOURCE_TIMEOUT_SEC",
+			int(DefaultSourceTimeout/time.Second)), 1, maxSourceTimeoutSec)) * time.Second,
+		SourceStall: time.Duration(clampInt(envInt("MAKTABA_CHANNEL_SOURCE_STALL_SEC",
+			int(DefaultSourceStall/time.Second)), 0, maxSourceStallSec)) * time.Second,
+		ReportUnreadable: true,
 	}
 }
 
@@ -96,6 +140,10 @@ func OutputSettingsFromEnv() OutputSettings {
 func TVSettingsFromEnv() TVSettings {
 	return TVSettings{
 		HorizonDays: clampInt(envInt("MAKTABA_CHANNEL_HORIZON_DAYS", DefaultHorizonDays), 1, maxHorizonDays),
+
+		GuideMaxPaddingSeconds: DefaultGuideMaxPaddingSeconds,
+		GuideFillerTitle:       DefaultGuideFillerTitle,
+		GuideMinProgramSeconds: DefaultGuideMinProgramSeconds,
 		LiveLookupReuse: time.Duration(clampInt(envInt("MAKTABA_CHANNEL_LIVE_LOOKUP_REUSE_SEC",
 			int(DefaultLiveLookupReuse/time.Second)), minLiveLookupReuseSec, maxLiveLookupReuseSec)) * time.Second,
 	}
@@ -163,6 +211,25 @@ func ApplyOutputRules(base OutputSettings, raw []byte) (out OutputSettings, bad 
 			ok = setInt(&out.NVENCMax, v, 1, 64)
 		case "videotoolbox_max_sessions":
 			ok = setInt(&out.VTMax, v, 0, 64)
+		case "unreadable_file_fill":
+			s, _ := jsonString(v)
+			if s = strings.ToLower(s); s == FillFiller || s == FillSlate {
+				out.UnreadableFill = s
+			} else {
+				ok = false
+			}
+		case "source_timeout_seconds":
+			var sec int
+			if ok = setInt(&sec, v, 1, maxSourceTimeoutSec); ok {
+				out.SourceTimeout = time.Duration(sec) * time.Second
+			}
+		case "source_stall_seconds":
+			var sec int
+			if ok = setInt(&sec, v, 0, maxSourceStallSec); ok {
+				out.SourceStall = time.Duration(sec) * time.Second
+			}
+		case "report_unreadable_files":
+			ok = json.Unmarshal(v, &out.ReportUnreadable) == nil
 		default:
 			continue // a setting this service does not use
 		}
@@ -180,6 +247,20 @@ func ApplyTVRules(base TVSettings, raw []byte) (out TVSettings, bad []string) {
 		switch name {
 		case "horizon_days":
 			if !setInt(&out.HorizonDays, v, 1, maxHorizonDays) {
+				bad = append(bad, name)
+			}
+		case "guide_max_padding_s":
+			if !setInt(&out.GuideMaxPaddingSeconds, v, 0, maxGuideSeconds) {
+				bad = append(bad, name)
+			}
+		case "guide_min_program_s":
+			if !setInt(&out.GuideMinProgramSeconds, v, 0, maxGuideSeconds) {
+				bad = append(bad, name)
+			}
+		case "guide_filler_title":
+			if s, ok := jsonString(v); ok {
+				out.GuideFillerTitle = strings.TrimSpace(s)
+			} else {
 				bad = append(bad, name)
 			}
 		case "live_lookup_reuse_seconds":
@@ -200,6 +281,17 @@ func decodeRules(raw []byte) map[string]json.RawMessage {
 		return nil
 	}
 	return m
+}
+
+// envChoice is key's value when it is one of choices, else def.
+func envChoice(key, def string, choices ...string) string {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	for _, c := range choices {
+		if v == c {
+			return v
+		}
+	}
+	return def
 }
 
 func jsonString(v json.RawMessage) (string, bool) {
