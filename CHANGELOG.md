@@ -31,8 +31,16 @@ don't append a line here; docs-only PRs are exempt.
   smaller batch on such a GPU to leave it room. Transcripts record what heard them
   (`metadata.refine.runtime`) and a missing dictionary (`dictionary: "unavailable"`). The
   dictionary's data folder is now made before CAMeL Tools downloads into it (a fresh models
-  folder made it fail). On Windows the torch in the release's dependencies is still PyPI's CPU
-  build, with which the second listen says so: PyTorch's CUDA build needs a packaging decision.
+  folder made it fail).
+- **torch's CUDA build on Windows (story 38.9).** PyPI only has a CPU torch for Windows, so on
+  Windows x86_64 torch now comes from PyTorch's own index (`torch 2.14.1+cu130`, a 2.0 GB
+  download; the app's venv grows from 2.1 to 5.0 GB). The release's constraints name that index
+  beside PyPI (`uv export --emit-index-url`: building a release needs uv 0.12 or later, and stops
+  on an older uv), every pin still hash-checked. The node installers look for each pin on both
+  indexes; with the `stt` or `search` extra they install the pins with the venv's pip, which
+  takes the file a pin's hashes name from either index (uv takes the first it finds, and on
+  Linux PyTorch's index also serves a torch and a triton that are not the pinned files). Linux
+  and macOS install the same packages as before. CI exports with uv 0.13.4.
 
 ### Fixed
 

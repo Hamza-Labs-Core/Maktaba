@@ -45,9 +45,15 @@ PYTHONPATH="$P/pipeline/maktaba_pipeline-<v>-py3-none-any.whl" \
 | `--force` | — | rebuild from scratch |
 
 The constraints file must pin every dependency **with its hash** (`build-release.sh` exports it
-from `uv.lock` that way). Every pin in it is installed (`pip install --require-hashes --no-deps
--r constraints`: pip takes no hashes from a constraints file, so the pins are installed as
-requirements), then the wheel, checked against its own SHA-256. So the extras the venv gets are
+from `uv.lock` that way), and it names the package indexes they come from: PyPI and, for
+torch's CUDA build on Windows, PyTorch's (`--index-url https://pypi.org/simple`,
+`--extra-index-url https://download.pytorch.org/whl/cu130`; story 38.9). Every pin in it is
+installed (`pip install --require-hashes --no-deps -r constraints`: pip takes no hashes from a
+constraints file, so the pins are installed as requirements), then the wheel, checked against
+its own SHA-256. pip looks for each pin on both indexes and takes the file one of its hashes
+names, whichever index has it, so a file from either index is installed only when it is the
+pinned one (PyTorch's index also serves some packages PyPI has, a few of them as other files:
+Linux's triton 3.8.0, and its torch 2.14.1+cu130, which `torch==2.14.1` matches). So the extras the venv gets are
 the ones the constraints file was exported with (today all but `dev`: `stt`, `search`,
 `mediaintel`); `--extras` then checks that each requirement of `maktaba-pipeline[stt,search]`
 for this machine is installed at an allowed version, and fails the run if not.
@@ -177,16 +183,19 @@ before. A transcript's `metadata.refine` says `source` (`hf`, `share`, or `skipp
 reason), on CUDA `runtime` (`transformers 5.17.0, torch 2.14.1+cu130, cuda:0 float16`), and
 `dictionary: "unavailable"` when the respelling had no dictionary (on any machine).
 
-torch comes from PyPI: its Linux x86_64 wheel carries CUDA 13 (the `nvidia-*` / `cuda-toolkit`
-wheels); its Windows wheel is a CPU build, with which the second listen says so. torch's
-Windows CUDA build is on PyTorch's own index (`https://download.pytorch.org/whl/cu130`): a
-`[tool.uv.sources]` entry for it locks cleanly with hashes, but `uv export` then names that
-index for every package (`--emit-index-url`, uv ≥ 0.12) or not at all, and the installers'
-uv refuses pins the PyTorch index also hosts at other versions, so the release's constraints
-file cannot carry it yet (an open packaging decision). The Windows venv with every extra but
-`dev` is 2.2 GB with PyPI's CPU torch (2.1 GB before this story) and 4.6 GB with the CUDA build
-(torch 2.9 GB of it); Linux's is 7.3 GB, nearly all torch's CUDA 13 libraries, which the
-`search` extra brought already.
+**torch.** On Linux it comes from PyPI, whose x86_64 wheel is the CUDA 13.0 build (with the
+`nvidia-*` / `cuda-toolkit` wheels); macOS keeps PyPI's (MLX does its second listen). PyPI's
+Windows torch is a CPU build, so on Windows x86_64 `pyproject.toml` takes it from PyTorch's own
+index (`[tool.uv.sources]`, an explicit `[[tool.uv.index]]`: nothing else comes from it):
+`torch==2.14.1+cu130`, a 2.0 GB download, CUDA 13.0 like Linux's (Turing and newer GPUs, an
+NVIDIA driver of R580 or later). The lock pins it with its hash, and `build-release.sh` exports
+the constraints with `uv export --emit-index-url` (uv 0.12 or later: it stops on an older uv,
+and on a file that does not name every index of `pyproject.toml`). A Windows install therefore
+reaches `download.pytorch.org` (and `pypi.nvidia.com`, where that index sends some NVIDIA
+wheels, the same files as PyPI's) beside PyPI. The Windows venv with every extra but `dev` is
+5.0 GB as the bootstrap's pip installs it (4.6 GB as `uv sync` does; torch 2.9 GB of it), where
+it was 2.1 GB before this story with PyPI's CPU torch; Linux's is 7.7 GB, nearly all torch's
+CUDA 13 libraries, which the `search` extra brought already.
 
 **The gated model.** Hugging Face serves it only to an account that accepted its licence:
 `HF_TOKEN` in the environment, or a token saved by `hf auth login` **in this `HF_HOME`**
