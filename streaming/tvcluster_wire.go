@@ -39,6 +39,22 @@ func guideRules(tv channel.TVSettings) hdhr.GuideRules {
 	return hdhr.GuideRulesFromSeconds(tv.GuideMaxPaddingSeconds, tv.GuideFillerTitle, tv.GuideMinProgramSeconds)
 }
 
+// newGuideHandler is the XMLTV/M3U guide and its image routes (logos, programme
+// images), following the tv rules (horizon, filler, image max-age). remote is
+// nil on the home (the images are read from its disk); on a node it fetches
+// them from the home.
+func (b *tvBase) newGuideHandler(repo *hdhr.PGRepo, publicBase string, remote hdhr.ArtFetcher) *hdhr.GuideHandler {
+	return &hdhr.GuideHandler{Repo: repo, PathMap: pathmap.FromEnv(), PublicBase: publicBase,
+		DataDir: hdhr.DataDirFromEnv(), Remote: remote,
+		AheadFunc: func(ctx context.Context) time.Duration {
+			return time.Duration(b.settings.TV(ctx).HorizonDays) * 24 * time.Hour
+		},
+		RulesFunc: func(ctx context.Context) hdhr.GuideRules { return guideRules(b.settings.TV(ctx)) },
+		MaxAgeFunc: func(ctx context.Context) time.Duration {
+			return time.Duration(b.settings.TV(ctx).GuideImageMaxAgeSeconds) * time.Second
+		}}
+}
+
 // clusterSchema waits (up to wait) for slot 0123's tv_host_beat: the API migrates the
 // database at boot, possibly after this process started. Without it the TV runs as
 // before Epic 32 (the home alone, no placements).
@@ -238,10 +254,13 @@ func buildHomeTV(bg *background, logger *slog.Logger, cfg config.Config, pool *p
 	watchChannels(engine, pool)
 	chHandler := &channel.HTTPHandler{Engine: engine}
 
+	hdhrRepo := hdhr.NewPGRepo(pool)
+	guideHandler := b.newGuideHandler(hdhrRepo, publicBase, nil)
 	var mounts []func(chi.Router)
 	var streamer hdhr.Streamer = engine
 	if clusterSchema(ctx, pool, 60*time.Second) {
 		fd, assets := b.wireHomeCluster(ctx, engine, chHandler, ident, chRepo)
+		assets.Guide = guideHandler // the guide's images for the nodes
 		mounts = append(mounts, fd.Mount, fd.MountInternal, assets.Mount)
 		streamer = fd
 	} else {
@@ -252,16 +271,9 @@ func buildHomeTV(bg *background, logger *slog.Logger, cfg config.Config, pool *p
 	runEngineLoops(bg, engine)
 
 	// HDHomeRun emulation (Story 27.5): off until hdhr_device.enabled.
-	hdhrRepo := hdhr.NewPGRepo(pool)
 	hdhrHandler := hdhr.New(hdhrRepo, streamer)
 	hdhrHandler.PublicBase = publicBase
 	mounts = append(mounts, hdhrHandler.Mount)
-	guideHandler := &hdhr.GuideHandler{Repo: hdhrRepo, PathMap: pathmap.FromEnv(),
-		PublicBase: publicBase, WebBase: os.Getenv("MAKTABA_PUBLIC_WEB_BASE"),
-		AheadFunc: func(ctx context.Context) time.Duration {
-			return time.Duration(b.settings.TV(ctx).HorizonDays) * 24 * time.Hour
-		},
-		RulesFunc: func(ctx context.Context) hdhr.GuideRules { return guideRules(b.settings.TV(ctx)) }}
 	mounts = append(mounts, guideHandler.Mount)
 	// Only the home advertises the tuner (the front door); a node never runs this.
 	// SSDP (udp/1900) and HDHomeRun discovery (udp/65001), absolute URLs only
@@ -480,8 +492,9 @@ func buildNodeTVReady(bg *background, logger *slog.Logger, cfg config.Config, po
 	chRepo.HostID = id
 	scfg := b.stationConfig(chRepo)
 	scfg.PathMapSource = func() pathmap.Map { return pm.Load().(pathmap.Map) }
-	scfg.Assets = &cluster.AssetCache{Base: func() string { s, _ := homeBase.Load().(string); return s },
+	assetCache := &cluster.AssetCache{Base: func() string { s, _ := homeBase.Load().(string); return s },
 		Keyring: keyring, Dir: filepath.Join(cfg.Cache.Root, "tv-assets")}
+	scfg.Assets = assetCache
 	start := channel.SettingsStarter(scfg, b.settings, b.encoders)
 	engine := b.newEngine(chRepo, start, ident)
 	engine.Fence = placement.NodeFence{Store: store, Self: id}
@@ -521,5 +534,10 @@ func buildNodeTVReady(bg *background, logger *slog.Logger, cfg config.Config, po
 		return cluster.Health{HostID: id, Version: version.Version, Protocol: cluster.ProtocolVersion,
 			Active: active, Load: map[string]any{"cpu": b.cpu.Load()}}
 	})
+	// the guide's image routes (the home's guide may be read through a node): the
+	// on-air check reads the shared database, the files come from the home (signed)
+	guide := b.newGuideHandler(hdhr.NewPGRepo(pool), base, assetCache)
+	guide.PathMapSource = func() pathmap.Map { return pm.Load().(pathmap.Map) }
+	guide.MountArt(r)
 	return r
 }
