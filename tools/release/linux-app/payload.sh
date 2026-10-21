@@ -76,25 +76,34 @@ mkdir -p "$CACHE"
 
 sha256() { sha256sum "$1" | awk '{print $1}'; }
 
-# fetch URL SHA256 NAME: the file in the cache, downloaded once, always checked. A host
-# that fails for a while (a 5xx such as Cloudflare's 521, a reset) is asked again, five
-# times 30 s apart: curl's --retry alone never retries an HTTP 521, and its
-# --retry-all-errors needs a curl newer than some build hosts have.
+# fetch URL SHA256 NAME: the file in the cache, downloaded once, always checked. It comes
+# from its own host, else from the mirror (pins.env MIRROR_URL: the same file under NAME),
+# and is kept only when it has SHA256. A round that gets it from neither is tried again
+# after 15, 30, 60, then 120 s: a host down for a while (a 5xx such as Cloudflare's 521, a
+# reset) is asked again. curl's --retry never retries a 521, and its --retry-all-errors
+# needs a newer curl than some build hosts have.
 fetch() {
-    local url="$1" want="$2" dst="$CACHE/$3" got attempt
-    if [ ! -f "$dst" ] || [ "$(sha256 "$dst")" != "$want" ]; then
-        log "downloading $3"
-        for attempt in 1 2 3 4 5; do
-            curl -fsSL --connect-timeout 30 -o "$dst.part" "$url" && break
-            [ "$attempt" -lt 5 ] || die "$3: download failed 5 times ($url)"
-            log "$3: download failed, again in 30 s"
-            sleep 30
-        done
-        mv "$dst.part" "$dst"
+    local url="$1" want="$2" dst="$CACHE/$3" delay src
+    if [ -f "$dst" ] && [ "$(sha256 "$dst")" = "$want" ]; then
+        printf '%s\n' "$dst"
+        return
     fi
-    got="$(sha256 "$dst")"
-    [ "$got" = "$want" ] || die "$3: sha256 $got, pins.env says $want"
-    printf '%s\n' "$dst"
+    log "downloading $3"
+    for delay in 15 30 60 120 0; do
+        for src in "$url" ${MIRROR_URL:+"$MIRROR_URL/$3"}; do
+            if curl -fsSL --connect-timeout 30 -o "$dst.part" "$src" && [ "$(sha256 "$dst.part")" = "$want" ]; then
+                mv "$dst.part" "$dst"
+                printf '%s\n' "$dst"
+                return
+            fi
+            rm -f "$dst.part"
+            log "$3: not from $src"
+        done
+        [ "$delay" -gt 0 ] || break
+        log "$3: again in $delay s"
+        sleep "$delay"
+    done
+    die "$3: no source gave it with the SHA-256 pins.env names ($url${MIRROR_URL:+, $MIRROR_URL/$3})"
 }
 
 if [ "$FETCH_ONLY" = 1 ]; then

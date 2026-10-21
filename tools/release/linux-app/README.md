@@ -66,6 +66,14 @@ ffmpeg builds set it) and, beside glibc, only libgcc_s and libstdc++ (GCC 12's).
 22.04+, Debian 12+, Fedora 36+ and RHEL 10. `payload.sh` refuses to write a payload that needs more,
 and `check.sh` repeats the scan wherever it runs.
 
+**A second source.** Each download is tried from its own host, then from this repository's
+release `third-party-mirror` (`MIRROR_URL` in `pins.env`), several times with a growing wait, and
+kept only with its pinned SHA-256: one host's outage does not stop a build. The
+`third-party-mirror` workflow fills that release with exact copies (fetched and checked by
+`payload.sh --fetch-only`) whenever `pins.env` changes on main. The release is a prerelease, never
+the latest, and has no version tag. CI also keeps the downloads in a cache on main
+(`linux-app-downloads` in `ci.yml`), which pull requests restore.
+
 Bumping a piece: change `pins.env` (version, URL, SHA-256 from the publisher), then run
 `make linux-app-payload`. CI's Linux app gate builds the payload on both architectures and runs
 `check.sh` on the runner and in `ubuntu:22.04`, `debian:12-slim` and `fedora:40`.
