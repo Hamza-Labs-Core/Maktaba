@@ -6,14 +6,20 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"sync"
+	"syscall"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
 
 var (
-	ntdll                = windows.NewLazySystemDLL("ntdll.dll")
-	procNtSuspendProcess = ntdll.NewProc("NtSuspendProcess")
-	procNtResumeProcess  = ntdll.NewProc("NtResumeProcess")
+	kernel32                  = windows.NewLazySystemDLL("kernel32.dll")
+	procGetConsoleProcessList = kernel32.NewProc("GetConsoleProcessList")
+	ntdll                     = windows.NewLazySystemDLL("ntdll.dll")
+	procNtSuspendProcess      = ntdll.NewProc("NtSuspendProcess")
+	procNtResumeProcess       = ntdll.NewProc("NtResumeProcess")
 )
 
 // Access is the access a handle given to Hold needs.
@@ -42,29 +48,93 @@ func Hold(h windows.Handle, send func() error) error {
 	return send()
 }
 
-// Ask sends CTRL_BREAK to the process group pid leads (a child started with
-// CREATE_NEW_PROCESS_GROUP), through Hold. pid is a child the caller has not
-// reaped: exec.Cmd's, from its Cancel. (exec reaps, and frees the pid, before
-// it reads Cancel's result, so a Cancel that races the child's own exit can
-// name a pid already freed; Windows does not hand a pid out again that fast,
-// and this was so before Hold.) It returns os.ErrProcessDone when the child has
-// exited, which exec takes as done, and GenerateConsoleCtrlEvent's error when
-// there is no console to send it through.
-func Ask(pid int) error {
-	h, err := windows.OpenProcess(Access, false, uint32(pid))
-	if err != nil {
-		if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
-			return os.ErrProcessDone // no such process any more
-		}
-		return fmt.Errorf("open the process to ask it: %w", err)
-	}
-	defer func() { _ = windows.CloseHandle(h) }()
-	return Hold(h, func() error {
-		return windows.GenerateConsoleCtrlEvent(windows.CTRL_BREAK_EVENT, uint32(pid))
-	})
-}
-
 func exited(h windows.Handle) bool {
 	ev, err := windows.WaitForSingleObject(h, 0)
 	return err == nil && ev == windows.WAIT_OBJECT_0
+}
+
+// CanAsk reports whether this process has a console to send CTRL_BREAK
+// through (a child asked without one is killed instead).
+func CanAsk() bool {
+	var pids [4]uint32
+	n, _, _ := procGetConsoleProcessList.Call(uintptr(unsafe.Pointer(&pids[0])), uintptr(len(pids)))
+	return n != 0
+}
+
+// Stopper makes an exec.Cmd's Cancel ask the child to stop: CTRL_BREAK to the
+// process group it starts in (CREATE_NEW_PROCESS_GROUP), through Hold. The
+// handle is opened by Started, right after Start, while exec still holds its
+// own: exec reaps the child (and frees its pid) before it reads Cancel's
+// result, so a pid opened from Cancel could be another process's by then. A
+// child that cannot be asked (no console, or no handle) is killed instead,
+// through exec's own handle.
+type Stopper struct {
+	cmd     *exec.Cmd
+	mu      sync.Mutex
+	h       windows.Handle
+	started bool
+	closed  bool
+}
+
+// NewStopper sets cmd up before Start: a process group of its own, and the
+// Cancel. The caller calls Started after Start and Close after Wait.
+func NewStopper(cmd *exec.Cmd) *Stopper {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.CreationFlags |= windows.CREATE_NEW_PROCESS_GROUP
+	s := &Stopper{cmd: cmd}
+	cmd.Cancel = s.cancel
+	return s
+}
+
+// Started opens the child's handle. It runs right after a Start that
+// succeeded, before Wait.
+func (s *Stopper) Started() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.started = true
+	if h, err := windows.OpenProcess(Access, false, uint32(s.cmd.Process.Pid)); err == nil {
+		s.h = h
+	}
+}
+
+// Close closes the handle, after Wait (exec calls Cancel no more by then).
+func (s *Stopper) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.closed = true
+	if s.h != 0 {
+		_ = windows.CloseHandle(s.h)
+		s.h = 0
+	}
+}
+
+// cancel is cmd's Cancel. Before Started (a context that ended as the child
+// started) the caller has not called Wait yet, so the pid is still the
+// child's and is opened here. After Close the child is reaped: nothing to ask.
+func (s *Stopper) cancel() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return os.ErrProcessDone
+	}
+	h := s.h
+	if !s.started {
+		o, err := windows.OpenProcess(Access, false, uint32(s.cmd.Process.Pid))
+		if err != nil {
+			return s.cmd.Process.Kill()
+		}
+		defer func() { _ = windows.CloseHandle(o) }()
+		h = o
+	}
+	if h == 0 {
+		return s.cmd.Process.Kill()
+	}
+	pid := uint32(s.cmd.Process.Pid)
+	err := Hold(h, func() error { return windows.GenerateConsoleCtrlEvent(windows.CTRL_BREAK_EVENT, pid) })
+	if err == nil || errors.Is(err, os.ErrProcessDone) {
+		return err
+	}
+	return s.cmd.Process.Kill()
 }

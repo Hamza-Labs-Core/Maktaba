@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ctrlbreak"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 )
 
@@ -203,8 +203,8 @@ func TestSetupDatabaseSQLite(t *testing.T) {
 // (interrupted, exit 130), instead of killing it with pip under it.
 func TestSetupVenvStopsGently(t *testing.T) {
 	spawnsPrograms(t)
-	if runtime.GOOS == "windows" {
-		t.Skip("CTRL_BREAK needs a console the test shares with the stand-in; stopGently's Windows part is TestStopGentlyWindows")
+	if !ctrlbreak.CanAsk() {
+		t.Skip("no console here to send CTRL_BREAK through (the stand-in would be killed)")
 	}
 	e := newSetupEnv(t)
 	fakePayload(t, e)

@@ -69,7 +69,7 @@ jobs:
         shell: bash # stops at the first failing command (pwsh would report only the last)
         run: |
           go test -count=1 -v ./internal/ctrlbreak ./internal/supervisor ./internal/appvenv
-          go test -count=1 -v . -run "StopGently"
+          go test -count=1 -v . -run "StopGently|SetupVenvStopsGently"
 
       # The bundled Postgres on Windows, against the pinned build pgbin fetches (kept
       # between runs): postgres.exe under a restricted token (the runner is an
