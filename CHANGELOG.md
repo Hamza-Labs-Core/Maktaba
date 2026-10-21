@@ -10,6 +10,18 @@ don't append a line here; docs-only PRs are exempt.
 
 ## [Unreleased]
 
+### Added
+
+- **Transcription on Windows and Linux (story 38.8).** The transcribe stage runs Whisper on
+  CTranslate2 there (faster-whisper's `dropbox-dash/faster-whisper-large-v3-turbo`), batched
+  across files as the Mac's MLX engine does: on an NVIDIA GPU when CUDA works (cuBLAS 12 comes
+  with the `stt` extra; no CUDA toolkit), else on the CPU. The supervisor sizes the workers and
+  their batch from the GPU's memory (`nvidia-smi`; an 8 GB card gets one worker); without a GPU
+  the main worker transcribes. New `[transcription]` keys: `device`, `compute_type`, `batch`,
+  `cpu_threads`. Transcripts record their engine (`ct2-batched`); the second listen stays on
+  the Mac for now. On an RTX 2080 SUPER: 72x real time for eight files at once, 31x for one;
+  2-3x on the CPU.
+
 ### Fixed
 
 - **Release builds for desktop, Android and Android TV.** The desktop app ships a
