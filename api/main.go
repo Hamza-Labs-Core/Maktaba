@@ -466,6 +466,7 @@ func runServe() error {
 				SearchSemanticBudget: semanticBudget,
 				BusCtx:               busCtx,
 				BusDSN:               pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping),
+				BusResettle:          func(ctx context.Context) string { return pgdsn.ForLibPQ(ctx, dsn, pgdsn.Ping) },
 				EnrichAutoAcceptCtx:  busCtx,
 				PerfRegistry:         perfRegistry,
 				URLSigner:            streamURLSigner(auth.keys, logger),

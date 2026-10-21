@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // Config is the node-mode environment of the API.
@@ -136,9 +138,15 @@ SELECT current_user,
 	return p, err
 }
 
-// CheckRole refuses a role that can run DDL (design §9.1). A role whose privileges
-// cannot be read is refused too: the node fails closed (Unreachable tells a database
-// that does not answer from one that refuses).
+// ErrRoleCanDDL: the role's privileges were read and it can change the schema; the
+// node's API stops for it (it is ErrDDLRole too).
+var ErrRoleCanDDL = fmt.Errorf("%w: it can change the schema", ErrDDLRole)
+
+// CheckRole refuses a role that can run DDL (design §9.1): ErrRoleCanDDL once its
+// privileges were read and say so. A role whose privileges cannot be read is an
+// ErrDDLRole too, with the cause: the node cannot use that database yet (it does not
+// answer, starts up, has no connection to spare, refuses the password), so it runs on
+// its copy and checks again; only ErrRoleCanDDL stops it.
 func CheckRole(ctx context.Context, db *sql.DB) error {
 	p, err := ReadPrivileges(ctx, db)
 	if err != nil {
@@ -146,17 +154,26 @@ func CheckRole(ctx context.Context, db *sql.DB) error {
 	}
 	if why := p.DDL(); len(why) > 0 {
 		return fmt.Errorf("%w: role %q has %s — use the node's own database role from node.json, never the home's",
-			ErrDDLRole, p.Role, strings.Join(why, ", "))
+			ErrRoleCanDDL, p.Role, strings.Join(why, ", "))
 	}
 	return nil
 }
 
-// Unreachable reports whether err is the database not answering — a dial or network
-// failure, a timeout, a dropped connection — rather than it answering with a refusal
-// (a bad password, a missing grant), which keeps a node from starting.
+// Unreachable reports whether err is the database not answering, or not able to take a
+// connection now — a dial or network failure, a timeout, a dropped connection, or the
+// server saying so: SQLSTATE class 08 (connection exception), class 53 (insufficient
+// resources: too many clients, out of memory or disk), 57P01..57P03 (shutting down,
+// crashed, starting up) and 57P05 (an idle session ended) — rather than it answering
+// with a refusal (a bad password, a missing grant).
 func Unreachable(err error) bool {
 	if err == nil {
 		return false
+	}
+	var pe *pq.Error
+	if errors.As(err, &pe) {
+		c := string(pe.Code)
+		return strings.HasPrefix(c, "08") || strings.HasPrefix(c, "53") ||
+			c == "57P01" || c == "57P02" || c == "57P03" || c == "57P05"
 	}
 	var ne net.Error
 	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, driver.ErrBadConn) ||

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 	_ "modernc.org/sqlite"
 )
 
@@ -73,6 +73,12 @@ func TestUnreachableTellsADeadDatabaseFromARefusal(t *testing.T) {
 		context.DeadlineExceeded,
 		driver.ErrBadConn,
 		io.ErrUnexpectedEOF,
+		// the server says it cannot take the connection now (#157)
+		&pq.Error{Code: "57P03", Message: "the database system is starting up"},
+		&pq.Error{Code: "57P01", Message: "terminating connection due to administrator command"},
+		&pq.Error{Code: "53300", Message: "sorry, too many clients already"},
+		&pq.Error{Code: "08006", Message: "connection failure"},
+		fmt.Errorf("%w: cannot read the role's privileges: %w", ErrDDLRole, &pq.Error{Code: "57P03"}),
 	} {
 		if !Unreachable(err) {
 			t.Fatalf("not unreachable: %v", err)
@@ -81,6 +87,8 @@ func TestUnreachableTellsADeadDatabaseFromARefusal(t *testing.T) {
 	for _, err := range []error{
 		nil,
 		errors.New(`pq: password authentication failed for user "node_6f1c"`),
+		&pq.Error{Code: "28P01", Message: "password authentication failed"},
+		&pq.Error{Code: "42501", Message: "permission denied"},
 		fmt.Errorf("%w: role %q has CREATEDB", ErrDDLRole, "node"),
 	} {
 		if Unreachable(err) {
@@ -98,6 +106,11 @@ func TestCheckRoleKeepsTheCause(t *testing.T) {
 	err = CheckRole(context.Background(), db)
 	if !errors.Is(err, ErrDDLRole) || !Unreachable(err) {
 		t.Fatalf("a database that does not answer: %v (unreachable %v)", err, Unreachable(err))
+	}
+	// privileges that could not be read never stop a node: only a role found able to
+	// run DDL does
+	if errors.Is(err, ErrRoleCanDDL) {
+		t.Fatalf("a database that does not answer is taken for a DDL role: %v", err)
 	}
 }
 

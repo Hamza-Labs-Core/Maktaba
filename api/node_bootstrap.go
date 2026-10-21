@@ -11,13 +11,15 @@ package main
 // the home's database (MAKTABA_COPY_DATABASE_URL, its supervisor's): the node's reads go
 // to it, its writes to the home's (nodedb), and with the home away it signs people in
 // and answers them from it (nodeauth.Local), plays from it, and even starts so: a role
-// check the home's database cannot answer waits for it (a role that turns out able to
-// run DDL then stops the API, as at start).
+// check the home's database cannot answer (it does not answer, starts up, has no
+// connection to spare, refuses for now) waits for it; only a role found able to run
+// DDL stops the API, at start or later.
 
 import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -137,6 +139,15 @@ type nodeOffline struct{ dbs nodeDBs }
 func (o nodeOffline) DBDown() bool   { return o.dbs.pair.Home.Down() }
 func (o nodeOffline) DBFailed(error) { o.dbs.pair.Recheck() }
 
+// WhenDBBack calls fn each time the home's database answers again.
+func (o nodeOffline) WhenDBBack(fn func()) {
+	o.dbs.pair.WhenUp(func(s *nodedb.Source) {
+		if s == o.dbs.pair.Home {
+			fn()
+		}
+	})
+}
+
 func (o nodeOffline) Video(id string) (string, float64, bool) {
 	var lib string
 	var dur sql.NullFloat64
@@ -201,15 +212,17 @@ func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *sl
 	defer cancel()
 	rt := &nodeRuntime{cfg: cfg, dbs: dbs, logger: logger, fatal: make(chan error, 1)}
 	roleErr := nodemode.CheckRole(cctx, dbs.home)
+	checkLater := false
 	switch {
 	case roleErr == nil:
-	case nodemode.Unreachable(roleErr):
-		logger.Warn("node: the home's database does not answer; starting without it, on this machine's copy (the role is checked once it answers)",
-			"err", roleErr, "copy", dbs.copyDB != nil, "event", "node_start_without_db")
-		dbs.pair.Recheck()
-		go rt.checkRoleLater(ctx)
-	default:
+	case errors.Is(roleErr, nodemode.ErrRoleCanDDL):
 		return nil, roleErr
+	default:
+		logger.Warn("node: the home's database cannot be asked yet; starting without it, on this machine's copy (the role is checked once it answers)",
+			"err", roleErr, "unreachable", nodemode.Unreachable(roleErr), "copy", dbs.copyDB != nil,
+			"event", "node_start_without_db")
+		dbs.pair.Recheck()
+		checkLater = true
 	}
 	dir := nodeStateDir()
 	if dir == "" {
@@ -257,6 +270,16 @@ func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *sl
 	}
 	rt.guard = &schemaguard.Guard{DB: dbs.app, Logger: logger}
 	rt.guard.Check(cctx)
+	if checkLater {
+		go rt.checkRoleLater(ctx)
+	}
+	// the home's database answers again: its schema is read at once (it may have been
+	// updated meanwhile), not at the next round
+	dbs.pair.WhenUp(func(s *nodedb.Source) {
+		if s == dbs.pair.Home {
+			rt.guard.Nudge()
+		}
+	})
 	// a session probe or a sign-in the home does not answer is answered here, from the copy
 	rt.proxy = homeproxy.NewWithFallback(rt.link, logger, rt.resolver.Fallback)
 
@@ -302,11 +325,14 @@ func platform() string {
 
 func (rt *nodeRuntime) offline() nodeOffline { return nodeOffline{dbs: rt.dbs} }
 
-// checkRoleLater runs the start's role check once the home's database answers: a role
-// that can run DDL stops the API then (rt.fatal), as it would have at start.
+// checkRoleLater runs the start's role check until the home's database answers it: a
+// role found able to run DDL stops the API then (rt.fatal), as it would have at start;
+// any other failure (it does not answer, starts up, refuses for now) is tried again,
+// and said once per kind.
 func (rt *nodeRuntime) checkRoleLater(ctx context.Context) {
 	t := time.NewTicker(5 * time.Second)
 	defer t.Stop()
+	said := ""
 	for {
 		select {
 		case <-ctx.Done():
@@ -319,12 +345,16 @@ func (rt *nodeRuntime) checkRoleLater(ctx context.Context) {
 		switch {
 		case err == nil:
 			rt.logger.Info("node: the home's database answers; this machine's role is checked", "event", "node_role_checked")
+			rt.guard.Nudge()
 			return
-		case nodemode.Unreachable(err) || ctx.Err() != nil:
-			continue
-		default:
+		case errors.Is(err, nodemode.ErrRoleCanDDL):
 			rt.fatal <- err
 			return
+		case ctx.Err() != nil || nodemode.Unreachable(err):
+		case err.Error() != said:
+			said = err.Error()
+			rt.logger.Warn("node: the home's database refuses this machine's role for now; tried again", "err", err,
+				"event", "node_role_check_refused")
 		}
 	}
 }
@@ -579,9 +609,11 @@ func mountNode(r chi.Router, cfg nodemode.Config, dataDir string, logger *slog.L
 	router.MountP6(r, router.P6Deps{
 		DB: appDB, PipelineClient: pipelineClient, StreamingClient: streamingClient,
 		// the event bus's pq.Listener takes a connection string (lib/pq has no
-		// connector-based listener), so its sslmode is settled once, here at startup,
-		// not per connection as appDB's is
+		// connector-based listener), so its sslmode is settled here at startup, and
+		// again when the listener cannot connect (the database down at startup leaves
+		// it at require), not per connection as appDB's is
 		BusCtx: ctx, BusDSN: pgdsn.ForLibPQ(ctx, dsn, pgdsn.Ping), PerfRegistry: perf.NewRegistry(),
+		BusResettle: func(ctx context.Context) string { return pgdsn.ForLibPQ(ctx, dsn, pgdsn.Ping) },
 		// this machine's own stream key: the node signs its own VOD sessions,
 		// which its own streaming role verifies (Story 10.8, design §11.5)
 		URLSigner: streamURLSigner(nil, logger),

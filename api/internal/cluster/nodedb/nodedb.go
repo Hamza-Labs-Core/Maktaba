@@ -57,6 +57,32 @@ type Pair struct {
 
 	onCopy   atomic.Bool // for the log: the home's database is down and the copy answers everything
 	checking atomic.Bool
+
+	upMu sync.Mutex
+	ups  []func(*Source)
+}
+
+// WhenUp calls fn (in its own goroutine) each time a server that was down answers
+// again.
+func (p *Pair) WhenUp(fn func(*Source)) {
+	p.upMu.Lock()
+	p.ups = append(p.ups, fn)
+	p.upMu.Unlock()
+}
+
+// mark records whether s answered; a server that was down and answers again is told
+// to WhenUp's functions.
+func (p *Pair) mark(s *Source, down bool) bool {
+	was := s.down.Swap(down)
+	if was && !down {
+		p.upMu.Lock()
+		ups := append([]func(*Source){}, p.ups...)
+		p.upMu.Unlock()
+		for _, fn := range ups {
+			go fn(s)
+		}
+	}
+	return was
 }
 
 var _ driver.Connector = (*Pair)(nil)
@@ -142,7 +168,7 @@ func (c *conn) get(ctx context.Context, s *Source) (driver.Conn, error) {
 	}
 	dc, err := s.Conn.Connect(ctx)
 	if err == nil {
-		s.down.Store(false)
+		c.p.mark(s, false)
 		if c.open == nil {
 			c.open = map[*Source]driver.Conn{}
 		}
@@ -152,7 +178,7 @@ func (c *conn) get(ctx context.Context, s *Source) (driver.Conn, error) {
 	if ctx.Err() != nil {
 		return nil, err
 	}
-	s.down.Store(true)
+	c.p.mark(s, true)
 	o := c.p.other(s)
 	if o == nil {
 		return nil, err
@@ -164,7 +190,7 @@ func (c *conn) get(ctx context.Context, s *Source) (driver.Conn, error) {
 	if err2 != nil {
 		return nil, err
 	}
-	o.down.Store(false)
+	c.p.mark(o, false)
 	if c.open == nil {
 		c.open = map[*Source]driver.Conn{}
 	}
@@ -350,7 +376,7 @@ func (p *Pair) check(ctx context.Context, s *Source) {
 	if ctx.Err() != nil {
 		return
 	}
-	was := s.down.Swap(err != nil)
+	was := p.mark(s, err != nil)
 	if was != (err != nil) && p.Logger != nil {
 		if err != nil {
 			p.Logger.Warn("node: a database does not answer", "source", s.Name, "err", err, "event", "node_db_down")

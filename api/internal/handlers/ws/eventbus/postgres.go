@@ -26,6 +26,11 @@ type PostgresBackend struct {
 	db  *sql.DB
 	dsn string
 	log *slog.Logger
+	// Resettle gives the listener's connection string again (nil: dsn for good): a
+	// connection string whose sslmode was settled while the database did not answer
+	// may be the wrong one once it does (pgdsn.ForLibPQ), so when the listener cannot
+	// connect it is settled again, and the listener made anew when it changed.
+	Resettle func(ctx context.Context) string
 }
 
 // NewPostgresBackend wraps an existing pool for the table operations
@@ -110,21 +115,71 @@ func (p *PostgresBackend) Get(ctx context.Context, id int64) (Event, bool, error
 }
 
 // Listen opens a dedicated pq.Listener on 'ws.events' and streams the
-// trigger's {id,channel} frames. The returned channel closes when ctx
-// is done. A ListenerEventConnectionAttemptFailed is logged but
-// non-fatal — the Bus gap-recovery scan reconciles any missed NOTIFY
-// once the listener reconnects.
+// trigger's {id,channel} frames; it returns once the listener is connected (or
+// ctx ends). The returned channel closes when ctx is done. A
+// ListenerEventConnectionAttemptFailed is logged but non-fatal — the Bus
+// gap-recovery scan reconciles any missed NOTIFY once the listener
+// reconnects. With Resettle, a listener that cannot connect has its
+// connection string settled again, and is made anew when that changed.
 func (p *PostgresBackend) Listen(ctx context.Context) (<-chan Notification, error) {
 	out := make(chan Notification, 256)
-	l := pq.NewListener(p.dsn, 10*time.Second, time.Minute,
-		func(_ pq.ListenerEventType, err error) {
-			if err != nil {
-				p.log.Warn("eventbus: pq.Listener event error (gap-recovery will reconcile)",
-					"err", err, "event", "eventbus_listener_error")
+	// failing: the listener could not connect, or lost its connection (it retries on
+	// its own, with the same connection string)
+	failing := make(chan struct{}, 1)
+	newListener := func(dsn string) *pq.Listener {
+		return pq.NewListener(dsn, 10*time.Second, time.Minute,
+			func(ev pq.ListenerEventType, err error) {
+				if err != nil {
+					p.log.Warn("eventbus: pq.Listener event error (gap-recovery will reconcile)",
+						"err", err, "event", "eventbus_listener_error")
+				}
+				if ev == pq.ListenerEventConnectionAttemptFailed || ev == pq.ListenerEventDisconnected {
+					select {
+					case failing <- struct{}{}:
+					default:
+					}
+				}
+			})
+	}
+	// open listens on dsn, waiting until the listener is connected; while it cannot
+	// connect, the connection string is settled again and the listener made anew
+	// when it changed
+	open := func(dsn string) (*pq.Listener, string, error) {
+	again:
+		for {
+			l := newListener(dsn)
+			done := make(chan error, 1)
+			go func() { done <- l.Listen(pgNotifyChannel) }()
+			for {
+				select {
+				case err := <-done:
+					if err != nil {
+						_ = l.Close()
+						return nil, dsn, err
+					}
+					return l, dsn, nil
+				case <-ctx.Done():
+					_ = l.Close()
+					<-done
+					return nil, dsn, ctx.Err()
+				case <-failing:
+					if p.Resettle == nil {
+						continue
+					}
+					if next := p.Resettle(ctx); next != dsn && ctx.Err() == nil {
+						_ = l.Close() // its Listen returns
+						<-done
+						p.log.Info("eventbus: the listener's connection was settled again",
+							"event", "eventbus_listener_resettled")
+						dsn = next
+						continue again
+					}
+				}
 			}
-		})
-	if err := l.Listen(pgNotifyChannel); err != nil {
-		_ = l.Close()
+		}
+	}
+	l, dsn, err := open(p.dsn)
+	if err != nil {
 		close(out)
 		return out, err
 	}
@@ -135,6 +190,26 @@ func (p *PostgresBackend) Listen(ctx context.Context) (<-chan Notification, erro
 			select {
 			case <-ctx.Done():
 				return
+			case <-failing:
+				// connected before: the listener reconnects by itself, unless the
+				// connection string must change
+				if p.Resettle == nil {
+					continue
+				}
+				next := p.Resettle(ctx)
+				if next == dsn || ctx.Err() != nil {
+					continue
+				}
+				_ = l.Close()
+				var err error
+				if l, dsn, err = open(next); err != nil {
+					return
+				}
+				select {
+				case out <- ReconnectSignal:
+				case <-ctx.Done():
+					return
+				}
 			case n := <-l.NotificationChannel():
 				if n == nil {
 					// Reconnect tick: pq.Listener delivers a nil

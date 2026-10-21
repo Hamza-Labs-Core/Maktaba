@@ -29,6 +29,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
 )
 
 // ViaHome is the web-port prefix of a session served by the home.
@@ -142,8 +144,16 @@ func (f *Fallback) Readable(ctx context.Context, videoID string) (bool, string) 
 		}
 		err = f.DB.QueryRowContext(qctx, `SELECT path FROM videos WHERE id = $1`, videoID).Scan(&p)
 		cancel()
-		if err != nil && !errors.Is(err, sql.ErrNoRows) && f.Catalog != nil {
+		switch {
+		case err == nil || errors.Is(err, sql.ErrNoRows) || f.Catalog == nil:
+		case ctx.Err() != nil:
+			// the request went away: that says nothing about the database
+			return true, ""
+		case nodemode.Unreachable(err) || f.Catalog.DBDown():
 			f.Catalog.DBFailed(err)
+		default:
+			// an error the database answered with: not an outage
+			return true, ""
 		}
 	}
 	if err != nil && !errors.Is(err, sql.ErrNoRows) && f.Catalog != nil {

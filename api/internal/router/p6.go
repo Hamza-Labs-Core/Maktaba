@@ -85,6 +85,9 @@ type P6Deps struct {
 	// BusCtx so a graceful shutdown stops the loop.
 	BusCtx context.Context
 	BusDSN string
+	// BusResettle settles BusDSN's sslmode again (nil: never), for a listener that
+	// cannot connect with it (eventbus.PostgresBackend.Resettle).
+	BusResettle func(ctx context.Context) string
 	// Secrets is the home's sealed store (slot 0120, story 32.6): the
 	// extensions' secret settings live there. nil refuses secret writes.
 	Secrets secrets.Store

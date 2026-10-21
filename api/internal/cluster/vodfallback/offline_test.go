@@ -7,8 +7,10 @@ package vodfallback
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -89,6 +91,18 @@ func TestOfflineAVideoThisMachineCannotReadIsUnavailable(t *testing.T) {
 	}
 }
 
+// deadConnector is a database that does not answer: every connection is refused.
+type deadConnector struct{}
+
+func (deadConnector) Connect(context.Context) (driver.Conn, error) {
+	return nil, &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")}
+}
+func (deadConnector) Driver() driver.Driver { return deadDriver{} }
+
+type deadDriver struct{}
+
+func (deadDriver) Open(string) (driver.Conn, error) { return nil, errors.New("dead") }
+
 type pathCatalog struct {
 	down   bool
 	failed int
@@ -104,8 +118,7 @@ func (c *pathCatalog) Path(id string) (string, bool) {
 
 // With the home's database down too, the path comes from this machine's catalog.
 func TestOfflineTheCatalogNamesThePath(t *testing.T) {
-	db := videosDB(t)
-	_ = db.Close() // the home's database gone
+	db := sql.OpenDB(deadConnector{}) // the home's database gone
 	cat := &pathCatalog{paths: map[string]string{"here": "/Volumes/Originals/a.mkv", "gone": "/Volumes/Elsewhere/b.mkv"}}
 	f := &Fallback{DB: db, Catalog: cat,
 		ToLocal: func(p string) string { return strings.Replace(p, "/Volumes/Originals/", "O:/", 1) },
