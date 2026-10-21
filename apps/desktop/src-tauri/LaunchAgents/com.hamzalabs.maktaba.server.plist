@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The Maktaba server login item (Epic 36, story 36.5). Bundled at
+  Maktaba.app/Contents/Library/LaunchAgents/ and registered by the app with
+  SMAppService.agent(plistName:). Maktaba run with the server-agent flag logs to
+  ~/Library/Logs/Maktaba/server.log and execs
+  Contents/Resources/server/bin/maktaba-launcher serve (src/agent.rs).
+  KeepAlive restarts it after a crash, not after a clean stop (Pause).
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.hamzalabs.maktaba.server</string>
+	<key>BundleProgram</key>
+	<string>Contents/MacOS/Maktaba</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>Maktaba</string>
+		<string>--server-agent</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>ProcessType</key>
+	<string>Standard</string>
+	<key>AssociatedBundleIdentifiers</key>
+	<string>com.hamzalabs.maktaba</string>
+</dict>
+</plist>
