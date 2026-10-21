@@ -2992,6 +2992,7 @@
   "tvchanges.event.start_verify": "بدأت الفحوص",
   "tvchanges.event.pass": "نجحت الفحوص",
   "tvchanges.event.fail": "فشلت الفحوص",
+  "tvchanges.event.reopen": "حُدِّث بعد فحصه: يُفحص من جديد",
   "tvchanges.event.verify": "إعادة الفحص",
   "tvchanges.event.recheck_fail": "أُعيد الفحص",
   "tvchanges.event.approve": "اعتُمد",
