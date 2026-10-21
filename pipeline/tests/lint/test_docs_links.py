@@ -2,7 +2,8 @@
 
 Every relative link in ``docs/tv-cluster-and-remote.md`` and in the Epic 32 specs points at
 a file that exists, and every ``#anchor`` into the runbook names one of its anchors (the Live
-TV admin page links straight to them: web/src/pages/Admin/LiveTV/docs.ts).
+TV admin page links straight to them: web/src/pages/Admin/LiveTV/docs.ts). CI counts these
+files as code (ci.yml's ``meta`` filter), so a change to them runs this test.
 """
 
 from __future__ import annotations
@@ -10,10 +11,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[3]
 RUNBOOK = ROOT / "docs" / "tv-cluster-and-remote.md"
 SPECS = ROOT / "specs" / "epics" / "32-tv-streaming-cluster-remote"
 ADMIN_LINKS = ROOT / "web" / "src" / "pages" / "Admin" / "LiveTV" / "docs.ts"
+CI = ROOT / ".github" / "workflows" / "ci.yml"
 
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 
@@ -77,3 +81,41 @@ def test_runbook_covers_the_story_sections() -> None:
         "relay_or_public_ip",
     ):
         assert needle in text, needle
+
+
+def _meta_patterns() -> list[str]:
+    """The ``meta`` filter of ci.yml's changes job: paths that are code whatever their extension."""
+    jobs = yaml.safe_load(CI.read_text(encoding="utf-8"))["jobs"]
+    for step in jobs["changes"]["steps"]:
+        if step.get("id") == "filter":
+            patterns: list[str] = yaml.safe_load(step["with"]["filters"])["meta"]
+            return patterns
+    raise AssertionError("ci.yml's changes job has no `filter` step")
+
+
+def _matches(pattern: str, path: str) -> bool:
+    """A paths-filter (picomatch) glob: ``**`` spans folders, ``*`` stays within one."""
+    rx, i = "", 0
+    while i < len(pattern):
+        if pattern.startswith("**/", i):
+            rx, i = rx + "(?:.*/)?", i + 3
+        elif pattern.startswith("**", i):
+            rx, i = rx + ".*", i + 2
+        elif pattern[i] == "*":
+            rx, i = rx + "[^/]*", i + 1
+        else:
+            rx, i = rx + re.escape(pattern[i]), i + 1
+    return re.fullmatch(rx, path) is not None
+
+
+def test_ci_counts_these_docs_as_code() -> None:
+    patterns = _meta_patterns()
+    read = [f.relative_to(ROOT).as_posix() for f in [RUNBOOK, *sorted(SPECS.glob("*.md"))]]
+    unlisted = [f for f in read if not any(_matches(p, f) for p in patterns)]
+    assert not unlisted, (
+        f"markdown this test reads that ci.yml's meta filter does not list (a change to it would "
+        f"skip the gates as docs only): {unlisted}"
+    )
+    # and the rest of the docs are still docs
+    assert not any(_matches(p, "docs/another-page.md") for p in patterns)
+    assert not any(_matches(p, "specs/epics/38-windows-app/README.md") for p in patterns)
