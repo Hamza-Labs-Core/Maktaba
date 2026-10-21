@@ -170,7 +170,7 @@ Decides how often a failure is tried, what waits instead of failing, and when a 
 - **Tries of a passing failure** (5): how many times a passing problem (a NAS timeout, a partial read) is tried before the item needs you. A step that runs once by design keeps its one try.
 - **Check every (seconds)** (60) and **Check waits (seconds)** (5): how often the model, the shares and the free disk space are checked, and how long one check waits. **Waiting jobs retried after (hours)** (24): a waiting job is tried again after this even if no check released it.
 - **Free disk needed (GB)** (5): below this, jobs that ran out of disk keep waiting. **Shared memory wait (minutes)** (10): how long jobs that ran out of Postgres shared memory wait.
-- **Look back (hours)** (6), **Failures that stay neutral (share)** (0.02) and **Red from (jobs)** (10) decide when Maktaba counts a queue as failing: only when many recent jobs fail the same new way. The queue tiles do not use them yet: a tile still shows **Failing** as soon as it has failed items.
+- **Look back (hours)** (6), **Failures that stay neutral (share)** (0.02) and **Red from (jobs)** (10) decide when Maktaba counts a queue as failing: only when many recent jobs fail the same new way. A queue tile turns **Failing** only then; a few failed items show as a small count instead. See [Queue tile turns Failing](/help/failures#tile-failing).
 - **Failure classes**: rows of a signature (the start of a failure's cause code, for example `nas_timeout` or `model_unavailable`) and a class (transient, item_permanent, unknown, dependency:… or resource:…). They are checked before the built-in classes.
 
 ## What the states and messages mean {#states}

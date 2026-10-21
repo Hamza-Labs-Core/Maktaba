@@ -3480,5 +3480,6 @@
   "queue.failures.fixPath.title": "أصلح مسار {label}",
   "queue.failures.fixPath.help": "مكان الملف الآن كما تحفظ المكتبة المسارات. يُعاد العنصر.",
   "queue.failures.fixPath.path": "المسار",
-  "queue.failures.fixPath.save": "احفظ وأعد"
+  "queue.failures.fixPath.save": "احفظ وأعد",
+  "help.tileHealth": "ماذا يعني هذا وماذا تفعل"
 }

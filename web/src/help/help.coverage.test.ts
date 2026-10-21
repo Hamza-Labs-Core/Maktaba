@@ -12,10 +12,13 @@ import {
   PAGE_HELP,
   WAITING_REASONS,
   causeHelp,
+  failureActionHelp,
   failureClassHelp,
+  failureStatusHelp,
   pageHelp,
   ruleHelp,
   stageHelp,
+  tileHealthHelp,
   waitingHelp,
   type HelpRef,
 } from "./registry";
@@ -149,6 +152,29 @@ describe("help links from the app", () => {
       "model-unavailable"
     );
     for (const r of WAITING_REASONS) expectRef(waitingHelp(r), `waiting reason ${r}`);
+  });
+
+  it("every status, class and action of the Failing items page, and every tile note, has its entry", () => {
+    const keys = (prefix: string) =>
+      Object.keys(en)
+        .map((k) => (k.startsWith(prefix) ? k.slice(prefix.length) : null))
+        .filter((k): k is string => !!k && !k.includes("."));
+    const statuses = keys("queue.failures.status.").filter((s) => s !== "open" && s !== "all");
+    expect(statuses.length).toBeGreaterThan(3);
+    for (const s of statuses) {
+      expect(failureStatusHelp(s).anchor, `status ${s}`).toBe(`status-${s.replace(/_/g, "-")}`);
+      expectRef(failureStatusHelp(s), `status ${s}`);
+    }
+    const classes = keys("queue.failures.class.").filter((c) => c !== "any");
+    expect(classes.length).toBeGreaterThan(3);
+    for (const c of classes) {
+      expect(FAILURE_CLASS_HELP.has(c), `class ${c}`).toBe(true);
+      expectRef(failureClassHelp(c), `class ${c}`);
+    }
+    const actions = keys("queue.failures.action.");
+    expect(actions.length).toBeGreaterThan(5);
+    for (const a of actions) expectRef(failureActionHelp(a), `action ${a}`);
+    for (const h of ["failing", "waiting", "needs_you"] as const) expectRef(tileHealthHelp(h), h);
   });
 
   it("every stage named in the catalog has its entry", () => {

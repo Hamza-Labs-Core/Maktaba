@@ -48,7 +48,7 @@ The result says how many jobs were queued, how many joined jobs already waiting,
 
 ### Retry failures {#retry}
 
-In **Needs attention**, each group has one button. **Retry** (with the number of items) queues every failed item of that group again, ahead of other work. For NAS causes the button also shows the NAS open time, so you can see whether the share is still slow. On a queue's page, **Retry failed** retries every retryable group of that queue at once. See [Failures](/help/failures) for what each group means.
+In **Needs attention**, each group has one button. **Retry** (with the number of items) queues every failed item of that group again, ahead of other work. For NAS causes the button also shows the NAS open time, so you can see whether the share is still slow. On a queue's page, **Retry failed** retries every retryable group of that queue at once. See [Failures](/help/failures) for what each group means. To fix single items (retry, ignore, fix a path, download again and more), use [Failing items](/help/failures#failing-items).
 
 ### Open a queue {#queue-page}
 
@@ -78,10 +78,12 @@ Click an item's name anywhere (in Needs attention, Next up, the log) to open its
 ### Queue states {#queue-states}
 
 - **Running**: at least one job of this queue is running now.
-- **Failing**: nothing runs and some items failed for good. See Needs attention.
-- **Waiting**: there is work, but it cannot start yet. The tile says why (see below).
+- **Failing**: many recent jobs of this queue fail the same new way. The tile says how many and the error (**… failing: …**). A few failed items do not turn a tile red. See [… failing: …](/help/failures#tile-failing).
+- **Waiting**: there is work, but it cannot start yet. The tile says why (see below). Jobs that wait for the model, a share, disk space or database memory show **… waiting for …, resume by themselves**; see [that note](/help/failures#tile-waiting).
 - **Done**: nothing is waiting.
 - **Off**: the queue is switched off or not set up.
+
+Below the numbers, a tile can also show two small links: **… failed** (failed items of this queue) and **… need you** (items Maktaba will not try again by itself; see [… need you](/help/failures#needs-you)). Both open [Failing items](/help/failures#failing-items) for that queue, where an admin can fix items one by one.
 
 ### Overall state {#overall-state}
 

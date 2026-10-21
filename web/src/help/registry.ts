@@ -43,6 +43,7 @@ export const PAGE_HELP: ReadonlyArray<readonly [path: string, ref: HelpRef]> = [
   ["/queue", { topic: "processing" }],
   ["/queue/items/:kind/:id", { topic: "processing", anchor: "item-history" }],
   ["/queue/reports", { topic: "processing", anchor: "reports" }],
+  ["/queue/failures", { topic: "failures", anchor: "failing-items" }],
   ["/queue/:stage", { topic: "processing", anchor: "queue-page" }],
   ["/transcription", { topic: "transcription" }],
   ["/settings/rules", { topic: "rules" }],
@@ -169,6 +170,9 @@ export const FAILURE_CLASS_HELP: ReadonlyMap<string, HelpRef> = new Map([
   ["resource:shm", { topic: "failures", anchor: "class-resource-shm" }],
   ["item_permanent", { topic: "failures", anchor: "class-item-permanent" }],
   ["unknown", { topic: "failures", anchor: "class-unknown" }],
+  // the Failing items page filters by the class without its detail
+  ["dependency", { topic: "failures", anchor: "classes" }],
+  ["resource", { topic: "failures", anchor: "classes" }],
 ]);
 
 export function failureClassHelp(cls: string): HelpRef {
@@ -178,4 +182,20 @@ export function failureClassHelp(cls: string): HelpRef {
     if (hit) return hit;
   }
   return causeHelp(cls);
+}
+
+/** A status of the Failing items page (Epic 40). */
+export function failureStatusHelp(status: string): HelpRef {
+  const known = ["needs_you", "failing", "waiting", "retrying", "ignored"].includes(status);
+  return { topic: "failures", anchor: known ? `status-${codeAnchor(status)}` : "statuses" };
+}
+
+/** An action of the Failing items page. */
+export function failureActionHelp(action: string): HelpRef {
+  return { topic: "failures", anchor: `action-${codeAnchor(action)}` };
+}
+
+/** A queue tile's health note: failing, waiting, or the Needs-you badge. */
+export function tileHealthHelp(what: "failing" | "waiting" | "needs_you"): HelpRef {
+  return { topic: "failures", anchor: what === "needs_you" ? "needs-you" : `tile-${what}` };
 }

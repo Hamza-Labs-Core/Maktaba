@@ -9,7 +9,7 @@ import type { JobRef, Pool, QueueSummary, StageInfo } from "../../lib/queueApi";
 import { RingGauge } from "./RingGauge";
 import { STATE_GLYPH, queueVisualState, useFmt } from "./format";
 import { HelpIcon } from "../../help/HelpLink";
-import { hrefOf, stageHelp, waitingHelp } from "../../help/registry";
+import { hrefOf, stageHelp, tileHealthHelp, waitingHelp } from "../../help/registry";
 
 /** Display name of an external service named by the API ("plex" -> "Plex"). */
 const SERVICE_NAMES: Record<string, string> = {
@@ -184,7 +184,8 @@ export function QueueCard({
               {t("queue.health.failing", {
                 n: n(health.failing.count),
                 signature: health.failing.signature,
-              })}
+              })}{" "}
+              <HelpIcon to={tileHealthHelp("failing")} label={t("help.tileHealth")} />
             </span>
           )}
           {health?.state === "waiting" && health.waiting[0] && (
@@ -196,7 +197,8 @@ export function QueueCard({
               {t("queue.health.waiting", {
                 n: n(health.waiting.reduce((a, w) => a + w.count, 0)),
                 on: waitingOnLabel(health.waiting[0].on, t),
-              })}
+              })}{" "}
+              <HelpIcon to={tileHealthHelp("waiting")} label={t("help.tileHealth")} />
             </span>
           )}
           {!health && counts.failed_open > 0 && (
@@ -219,6 +221,9 @@ export function QueueCard({
                 >
                   {t("queue.health.needsYou", { n: n(health.needs_you) })}
                 </Link>
+              )}
+              {health.needs_you > 0 && (
+                <HelpIcon to={tileHealthHelp("needs_you")} label={t("help.tileHealth")} />
               )}
             </span>
           )}

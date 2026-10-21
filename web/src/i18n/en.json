@@ -3480,5 +3480,6 @@
   "queue.failures.fixPath.title": "Fix the path of {label}",
   "queue.failures.fixPath.help": "Where the file is now, as the library stores paths. The item is tried again.",
   "queue.failures.fixPath.path": "Path",
-  "queue.failures.fixPath.save": "Save and retry"
+  "queue.failures.fixPath.save": "Save and retry",
+  "help.tileHealth": "What this means and what to do"
 }
