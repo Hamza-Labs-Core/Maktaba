@@ -5,8 +5,8 @@
 # deploy/cloud-relay/. The repo-wide `ci.yml` already gates the cloud
 # module as part of the monorepo unit/integration tiers; THIS workflow
 # is the relay-focused leg that additionally builds + publishes the
-# `maktaba-cloud` image and (optionally, behind a manual approval gate)
-# rolls it out to the production VPS.
+# `maktaba-cloud` image and (optionally, when the RELAY_DEPLOY repo
+# variable is 'true') rolls it out to the production VPS.
 #
 # Flow:
 #   lint   golangci-lint over cloud/ (mirrors `make relay-ci`)
@@ -14,7 +14,8 @@
 #   build  cross-compile the relay binary for linux/{amd64,arm64}
 #   docker build cloud/Dockerfile + push to GHCR  (main + tags only)
 #   sign   keyless cosign over the pushed image digest  (tags only)
-#   deploy SSH to the VPS + roll the stack          (dispatch/tags only)
+#   deploy SSH to the VPS + roll the stack          (dispatch, or tags
+#          when vars.RELAY_DEPLOY == 'true')
 #
 # The reusable `make relay-ci` target runs lint+test+build locally so a
 # developer reproduces this workflow's PR gates without GitHub.
@@ -36,7 +37,7 @@ on:
       - 'deploy/cloud-relay/**'
       - '.github/workflows/relay.yml'
   # Manual rollout: pick a tag (or leave blank to deploy `latest`) and
-  # run the deploy job behind the `production` environment approval gate.
+  # run the deploy job against the `production` environment.
   workflow_dispatch:
     inputs:
       image_tag:
@@ -276,18 +277,25 @@ jobs:
   deploy:
     name: deploy to VPS
     needs: [docker]
-    # Manual rollout, or automatically after a tag's image is published.
-    # `always()` lets a workflow_dispatch run (which skips `docker`)
-    # still reach deploy, while gating on docker success when it ran.
+    # Manual rollout, or automatically once a tag's image is published,
+    # but only in a repo that has a VPS: set the RELAY_DEPLOY repo
+    # variable to 'true'. Without it a tag skips this job, so no
+    # deployment is recorded on `production`. `!cancelled()` lets a
+    # workflow_dispatch run (where `docker` is skipped) reach deploy, but
+    # not a cancelled run (`always()` would); a tag needs docker to have
+    # succeeded, not been skipped because lint, test or build failed.
     if: >-
-      always() &&
-      (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')) &&
-      (needs.docker.result == 'success' || needs.docker.result == 'skipped')
+      !cancelled() &&
+      (
+        (github.event_name == 'workflow_dispatch' && needs.docker.result == 'skipped') ||
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') &&
+          needs.docker.result == 'success' && vars.RELAY_DEPLOY == 'true')
+      )
     runs-on: ubuntu-22.04
     timeout-minutes: 15
-    # The `production` environment carries the manual approval gate
-    # (required reviewers, configured in repo Settings → Environments).
-    # The deploy waits here until a maintainer approves.
+    # The `production` environment has no protection rules yet, so a
+    # deploy does not wait for approval. To add a gate, add required
+    # reviewers under Settings → Environments → production.
     environment:
       name: production
       url: ${{ vars.RELAY_PUBLIC_URL }}
@@ -316,4 +324,6 @@ jobs:
           RELAY_SSH_USER: ${{ secrets.RELAY_SSH_USER }}
           RELAY_SSH_KEY: ${{ secrets.RELAY_SSH_KEY }}
           MAKTABA_CLOUD_TAG: ${{ steps.tag.outputs.tag }}
+        # deploy.sh fails if the SSH secrets are missing: once this job
+        # runs, a missing host is a misconfiguration, not a skip.
         run: bash deploy/cloud-relay/deploy.sh

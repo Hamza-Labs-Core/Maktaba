@@ -62,6 +62,13 @@ class NodeConfig:
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> NodeConfig:
+        """Raises ValueError for a config without its identity (hand-edited, half-written)."""
+        missing = [k for k in ("node_id", "private_key") if not str(data.get(k) or "").strip()]
+        if missing:
+            raise ValueError(
+                f"incomplete node config: no {' or '.join(missing)}; move it aside and re-join"
+                " this machine (maktaba-pipeline join)"
+            )
         home = data.get("home") or {}
         return cls(
             node_id=str(data["node_id"]),
@@ -106,9 +113,15 @@ def load(path: Path | None = None) -> NodeConfig | None:
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None
+    except ValueError as exc:
+        # a typo or a truncated file: never "not joined", and the error names the file
+        raise ValueError(f"{path}: not a node config ({exc})") from None
     if not isinstance(data, dict):
         raise ValueError(f"{path}: not a node config")
-    return NodeConfig.from_json(data)
+    try:
+        return NodeConfig.from_json(data)
+    except ValueError as exc:
+        raise ValueError(f"{path}: {exc}") from None
 
 
 def _restrict_to_user(path: Path) -> None:

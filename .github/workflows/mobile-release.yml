@@ -19,7 +19,10 @@
 # ---------------
 # A release APK/AAB is only installable when signed. Signing runs only
 # when the keystore secrets are present (so forks without them still get a
-# green "compiles + assembles" run, just with unsigned outputs):
+# green "compiles + assembles" run, just with unsigned outputs). Only
+# signed outputs are attached to the Release; unsigned ones stay a
+# workflow artifact (`maktaba-<version>-unsigned.apk`) and the run warns.
+# Secrets:
 #   ANDROID_KEYSTORE_BASE64  base64 of the .jks/.keystore
 #   ANDROID_KEY_ALIAS        key alias inside the store
 #   ANDROID_KEY_PASSWORD     key + store password (same value assumed)
@@ -82,6 +85,11 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        # The default package list includes the long-removed `tools`
+        # package, which current sdkmanager rejects. Gradle installs the
+        # platform + build-tools it needs on first build.
+        with:
+          packages: platform-tools
 
       - name: Build web bundle
         working-directory: web
@@ -153,9 +161,12 @@ jobs:
             "app/build/outputs/bundle/release/app-release.aab" \
             "${ANDROID_KEY_ALIAS}"
 
-      # Collect + version-stamp whatever was produced (signed if available,
-      # otherwise the unsigned release outputs).
+      # Collect + version-stamp what was produced. Android won't install an
+      # unsigned APK and Play rejects an unsigned AAB, so unsigned outputs
+      # get an -unsigned name and are not attached to the Release (see
+      # "Attach to GitHub Release").
       - name: Collect artifacts
+        id: collect
         env:
           TAG: ${{ github.ref_name }}
         run: |
@@ -166,10 +177,16 @@ jobs:
           aab="apps/mobile/android/app/build/outputs/bundle/release/app-release.aab"
           if [ -f "${apk_dir}/app-release-signed.apk" ]; then
             cp "${apk_dir}/app-release-signed.apk" "out/maktaba-${version}.apk"
+            cp "${aab}" "out/maktaba-${version}.aab"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
           else
-            cp "${apk_dir}/app-release-unsigned.apk" "out/maktaba-${version}.apk"
+            cp "${apk_dir}/app-release-unsigned.apk" "out/maktaba-${version}-unsigned.apk"
+            cp "${aab}" "out/maktaba-${version}-unsigned.aab"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            msg="ANDROID_KEYSTORE_BASE64 is not set, so the APK and AAB are unsigned. They are kept in the maktaba-android workflow artifact and not attached to the ${TAG} release."
+            echo "::warning title=Android build not signed::${msg}"
+            printf '### Android: not attached to the release\n\n%s\n' "${msg}" >> "$GITHUB_STEP_SUMMARY"
           fi
-          cp "${aab}" "out/maktaba-${version}.aab"
           ( cd out && sha256sum maktaba-*.apk maktaba-*.aab > "maktaba-${version}-android.sha256" )
           ls -l out
 
@@ -180,7 +197,11 @@ jobs:
           path: out/*
           retention-days: 14
 
+      # Signed builds only. Without the keystore this step (and the Release
+      # creation it may do) is skipped; tauri-action and release.yml still
+      # create the Release.
       - name: Attach to GitHub Release
+        if: steps.collect.outputs.signed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}

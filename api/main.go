@@ -47,6 +47,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/pgdsn"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
@@ -179,6 +180,10 @@ func runServe() error {
 	if err := checkNodeEnv(nodeCfg); err != nil {
 		return err
 	}
+	// lib/pq has no sslmode=prefer, which the home hands every joined node: every
+	// DATABASE_URL pool below opens with pgdsn.Open, which settles it per connection,
+	// and the event bus's listener with pgdsn.ForLibPQ.
+	boundNodeDatabaseURL(nodeCfg)
 
 	// MAKTABA_AUTO_MIGRATE=true runs `migrate up` synchronously before
 	// the HTTP servers bind. The dev/e2e compose stacks set this so
@@ -265,7 +270,7 @@ func runServe() error {
 	// no-DB stub). The Postgres store opens its own small pool for the
 	// same isolation reason P6 does — the replay path must not contend
 	// with handler or readiness pools.
-	idemStore, idemSweep, idemClose := buildIdempotencyStore(logger)
+	idemStore, idemSweep, idemClose := buildIdempotencyStore(logger, nodeCfg.Enabled)
 	go idemSweep()
 	defer idemClose()
 
@@ -308,9 +313,7 @@ func runServe() error {
 	// into health_samples for the control centre's health history.
 	supervisorURL := os.Getenv("MAKTABA_SUPERVISOR_URL")
 	router.MountProcesses(r, router.ProcessesDeps{SupervisorURL: supervisorURL})
-	if supervisorURL != "" && statsDB != nil {
-		host, _ := os.Hostname()
-		recorder := &processes.Recorder{SupervisorURL: supervisorURL, DB: statsDB, Host: host, Logger: logger}
+	if recorder := processRecorder(supervisorURL, statsDB, nodeCfg.Enabled, logger); recorder != nil {
 		go recorder.Run(context.Background())
 	}
 
@@ -359,7 +362,7 @@ func runServe() error {
 		nodeRT = rt
 		nodeFatal = rt.fatal
 	} else if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
-		appDB, dbErr := sql.Open("postgres", dsn)
+		appDB, dbErr := pgdsn.Open(dsn)
 		if dbErr != nil {
 			logger.Warn("p6: sql.Open failed; handlers unwired",
 				"err", dbErr, "event", "p6_db_open_failed")
@@ -447,6 +450,9 @@ func runServe() error {
 			notifyHub := notify.NewHub(appDB, logger)
 			var mountRemote func(r chi.Router)
 			var remoteCtl *tvremote.Controller
+			// BusDSN: the event bus's pq.Listener takes a connection string (lib/pq
+			// has no connector-based listener), so its sslmode is settled once, here
+			// at startup, not per connection as appDB's is.
 			router.MountP6(r, router.P6Deps{
 				Secrets: homeSecrets,
 				OnQueues: func(q *queues.Handler) {
@@ -459,7 +465,7 @@ func runServe() error {
 				StreamingClient:      streamingClient,
 				SearchSemanticBudget: semanticBudget,
 				BusCtx:               busCtx,
-				BusDSN:               dsn,
+				BusDSN:               pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping),
 				EnrichAutoAcceptCtx:  busCtx,
 				PerfRegistry:         perfRegistry,
 				URLSigner:            streamURLSigner(auth.keys, logger),
@@ -686,15 +692,23 @@ const idempotencyTTL = 24 * time.Hour
 // readiness pools (same isolation rationale as the P6 wiring). That
 // pool is closed by the returned cleanup func on graceful shutdown so
 // it doesn't leak; for the in-memory fallback the cleanup is a no-op.
-func buildIdempotencyStore(logger *slog.Logger) (idempotency.Store, func(), func()) {
+//
+// A full node (node) keeps its own in memory: its database role is denied
+// idempotency_keys (slot 0103), so the Postgres store only failed every
+// write and every sweep.
+func buildIdempotencyStore(logger *slog.Logger, node bool) (idempotency.Store, func(), func()) {
 	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
+	if dsn == "" || node {
 		s := idempotency.NewMemoryStore()
-		logger.Info("idempotency: in-memory store (DATABASE_URL unset; lost on restart)",
-			"event", "idempotency_memory")
+		why := "DATABASE_URL unset"
+		if node {
+			why = "full node: idempotency_keys is the home's"
+		}
+		logger.Info("idempotency: in-memory store (lost on restart)",
+			"reason", why, "event", "idempotency_memory")
 		return s, func() { runIdempotencySweep(s, logger) }, func() {}
 	}
-	db, err := sql.Open("postgres", dsn)
+	db, err := pgdsn.Open(dsn)
 	if err != nil {
 		s := idempotency.NewMemoryStore()
 		logger.Warn("idempotency: sql.Open failed; falling back to in-memory store",
@@ -869,7 +883,7 @@ func buildChecks(logger *slog.Logger) []health.Check {
 	checks := []health.Check{}
 
 	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
-		db, err := sql.Open("postgres", dsn)
+		db, err := pgdsn.Open(dsn)
 		if err != nil {
 			logger.Warn("readiness: skipping db check, sql.Open failed",
 				"err", err, "event", "readiness_check_skipped")
@@ -916,7 +930,7 @@ func buildAggregatorStats(logger *slog.Logger) (string, *sql.DB, func()) {
 	if dsn == "" {
 		return dataDir, nil, func() {}
 	}
-	db, err := sql.Open("postgres", dsn)
+	db, err := pgdsn.Open(dsn)
 	if err != nil {
 		logger.Warn("health stats: sql.Open failed; queue depth unwired",
 			"err", err, "event", "health_stats_db_open_failed")
@@ -930,6 +944,18 @@ func buildAggregatorStats(logger *slog.Logger) (string, *sql.DB, func()) {
 				"err", cerr, "event", "health_stats_db_close_failed")
 		}
 	}
+}
+
+// processRecorder copies the supervisor's crash and hang events into
+// health_samples (Story 22.9), or is nil: no supervisor or database, or a
+// full node (node), whose database role may not write health_samples
+// (slot 0119), so every event was dropped with a permission error.
+func processRecorder(supervisorURL string, db *sql.DB, node bool, logger *slog.Logger) *processes.Recorder {
+	if supervisorURL == "" || db == nil || node {
+		return nil
+	}
+	host, _ := os.Hostname()
+	return &processes.Recorder{SupervisorURL: supervisorURL, DB: db, Host: host, Logger: logger}
 }
 
 // buildLogPeers resolves the downstream services whose /logs/recent

@@ -204,6 +204,15 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		if PlanSTT(cfg).Workers > 0 {
 			add("MAKTABA_PIPELINE_EXCLUDE_STAGES", withStage(os.Getenv("MAKTABA_PIPELINE_EXCLUDE_STAGES"), "transcribe"))
 		}
+		// Epic 35 story 35.8: a full node's pipeline works for the home as this
+		// machine's node (node.json: its database role, node id). The pipeline only
+		// reads node.json without a database URL, so [database].url above would
+		// make it a home worker against this machine's own database.
+		if n := nodeConfig(); NodeMode(cfg, n) {
+			env = setEnv(env, "DATABASE_URL", n.DatabaseURL)
+			env = setEnv(env, "MAKTABA_DATABASE_URL", n.DatabaseURL)
+			add("MAKTABA_NODE", "1")
+		}
 	}
 
 	return env
@@ -224,6 +233,29 @@ func NodeConfig() config.NodeConfig { return nodeConfig() }
 // otherwise.
 func NodeMode(cfg config.Config, n config.NodeConfig) bool {
 	return !forcedHome(cfg) && n.Joined() && n.HomeURL() != ""
+}
+
+// CheckNodeConfig refuses a joined node config the node's roles cannot run with: no
+// node_id or private_key (a hand-edited or half-written node.json), on which the api
+// refused to start and the pipeline failed with a KeyError, each restarted forever;
+// or a node.json that cannot be read at all, which read as not joined and started the
+// node as a home (migrating its own database).
+func CheckNodeConfig(cfg config.Config) error {
+	n := nodeConfig()
+	if forcedHome(cfg) {
+		return nil
+	}
+	if n.Err != nil {
+		return fmt.Errorf("%w: fix it, or move it aside and re-join this machine (maktaba-pipeline join), or set [server] role = \"home\"", n.Err)
+	}
+	if !n.Joined() {
+		return nil
+	}
+	if missing := n.Missing(); len(missing) > 0 {
+		return fmt.Errorf("node config %s has no %s: move it aside and re-join this machine (maktaba-pipeline join), or set [server] role = \"home\"",
+			config.LocalNodeConfigPath(), strings.Join(missing, " or "))
+	}
+	return nil
 }
 
 // forcedHome: [server] role = "home" or MAKTABA_ROLE=home.

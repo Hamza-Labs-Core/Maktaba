@@ -28,6 +28,7 @@ tauri-plugin-window-state = "2"
 # Story 13.x — `maktaba://` deep links (custom scheme registration +
 # runtime on_open_url handler). On Linux/Windows the scheme is owned by
 # the running instance, so single-instance focusing is wired in lib.rs.
+# Its Linux-only rust-ini dependency is pinned below.
 tauri-plugin-deep-link = "2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 serde = { version = "1", features = ["derive"] }
@@ -45,6 +46,14 @@ objc2-service-management = { version = "0.3", default-features = false, features
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# tauri-plugin-deep-link 2.6.2 builds `ini::ParseOption` on Linux without
+# the fields rust-ini 0.21.3 added, which fails with E0063. The exact pin
+# (inside deep-link's ^0.21) keeps a `cargo update` from moving Cargo.lock
+# past 0.21.1; no PR CI builds the Linux desktop. Drop it once deep-link
+# builds against current rust-ini.
+[target.'cfg(target_os = "linux")'.dependencies]
+rust-ini = "=0.21.1"
 
 [dev-dependencies]
 tempfile = "3"

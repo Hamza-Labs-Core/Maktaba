@@ -226,7 +226,8 @@ currently **unsigned** — code-signing certificates (Apple Developer ID,
 Windows Authenticode, the Tauri updater key) are wired in as documented
 TODOs in each workflow and land once provisioned. Android signs
 automatically when the `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEY_ALIAS` /
-`ANDROID_KEY_PASSWORD` secrets are set, and ships unsigned otherwise.
+`ANDROID_KEY_PASSWORD` secrets are set. Without them the APKs are built
+unsigned, kept as workflow artifacts and not attached to the Release.
 
 To build any client package locally, mirror CI with the `make package-*`
 targets (`package-desktop`, `package-mobile-android`,

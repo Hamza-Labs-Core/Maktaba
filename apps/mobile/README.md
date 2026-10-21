@@ -120,7 +120,10 @@ build tool:
 
 **Android signing** runs only when the keystore secrets are present, so
 forks without them still get a green "assembles" run (with *unsigned*
-outputs):
+outputs). Only signed outputs are attached to the Release; unsigned ones
+are kept as the run's `maktaba-android` artifact
+(`maktaba-<version>-unsigned.apk` / `.aab`) and the run warns. The
+secrets:
 
 | Secret | Purpose |
 |---|---|

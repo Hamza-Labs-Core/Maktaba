@@ -7,7 +7,7 @@
 //   PATCH /api/tv/hdhr           { enabled?, friendly_name?, tuner_count? }
 //   GET   /api/tv/plex           what the plex_livetv stage last saw in Plex
 //   POST  /api/tv/plex/refresh   push the channel map + reload the guide now
-//   POST  /api/tv/plex/register  add the tuner and a DVR with the XMLTV guide, once
+//   POST  /api/tv/plex/register  add the tuner as a channel source of the DVR Plex shows
 //   GET   /api/rules, PATCH /api/rules/plexlive   the automatic Plex settings
 //   GET   /api/tv/cluster        streaming hosts + on air (Epic 32), every 5 s while visible
 //   GET   /api/tv/simulcast      simulcast destinations, attachments and outputs (story 32.13)
@@ -412,11 +412,7 @@ function PlexPanel({ info, device }: { info: TvInfo; device: HdhrDevice }) {
   const xmltvUrl = report.target?.xmltv_url || info.xmltv_url;
 
   const kindLabel = (k: PlexLiveTuner["kind"]) =>
-    k === "maktaba"
-      ? t("livetv.plex.kindMaktaba")
-      : k === "dizquetv"
-        ? t("livetv.plex.kindDizquetv")
-        : t("livetv.plex.kindOther");
+    k === "maktaba" ? t("livetv.plex.kindMaktaba") : t("livetv.plex.kindOther");
 
   return (
     <Card className="mkt-livetv__card">
@@ -496,8 +492,8 @@ function PlexPanel({ info, device }: { info: TvInfo; device: HdhrDevice }) {
         </dl>
       )}
       {guideLoading && <p className="mkt-livetv__hint">{t("livetv.plex.guideLoading")}</p>}
-      {report.dizquetv_present && (
-        <p className="mkt-livetv__hint">{t("livetv.plex.dizquetvKept")}</p>
+      {report.maktaba?.separate_dvr && (
+        <p className="mkt-livetv__hint">{t("livetv.plex.separateDvr")}</p>
       )}
       {(report.warnings ?? []).map((w) => (
         <p key={w} className="mkt-livetv__hint">
