@@ -47,9 +47,19 @@ export interface StepProgress {
 /** A failed step (setup.rs StepError). */
 export interface StepError {
   code: string;
+  /** English, for a code the app has no text for (and the details box) */
   message: string;
   field?: string;
+  /** the values the code's text takes (setup.error.<code>) */
+  params?: Record<string, unknown>;
   details: string[];
+}
+
+/** One finding of the check step: setup.check.note.<code> with its params. */
+export interface CheckNote {
+  code: string;
+  params?: Record<string, unknown>;
+  message: string;
 }
 
 export function isStepError(e: unknown): e is StepError {

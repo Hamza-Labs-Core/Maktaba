@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 // The setup steps run other programs: the payload's maktaba-api (hash-password,
@@ -67,9 +70,6 @@ func runFakeProgram() (code int, ok bool) {
 		return ""
 	}
 	switch {
-	case len(args) > 0 && args[0] == "run-until-stopped":
-		// a supervised process that runs until it is stopped (serve_appbundle_test.go)
-		select {}
 	case kind == "api" && len(args) > 0 && args[0] == "hash-password":
 		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 		call.Stdin = strings.TrimRight(line, "\r\n")
@@ -100,6 +100,19 @@ func runFakeProgram() (code int, ok bool) {
 				return 0, true
 			}
 			return 10, true
+		}
+		if fail == "venv-wait" {
+			// a long build: it stops when asked, as the real bootstrap does (130)
+			fmt.Println(`{"event":"status","state":"building","step":"deps","progress":0.1,"message":"Collecting torch"}`)
+			stop := make(chan os.Signal, 1)
+			signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+			select {
+			case <-stop:
+				fmt.Println(`{"event":"status","state":"interrupted","step":"deps","progress":0.1,"message":"Stopped"}`)
+				return 130, true
+			case <-time.After(30 * time.Second):
+				return 1, true
+			}
 		}
 		for _, st := range []string{
 			`{"event":"status","state":"building","step":"venv","progress":0.05,"message":"Creating the environment"}`,

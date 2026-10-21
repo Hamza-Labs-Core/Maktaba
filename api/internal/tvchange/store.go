@@ -318,28 +318,6 @@ func (s *Store) InFlightChange(ctx context.Context, q queryer) (*Change, error) 
 	return c, err
 }
 
-// OpenDraft is the open change, or nil: the newest draft no one approved. Every update
-// to the TV joins it whatever its producer (merge.go); an approved draft, like a change
-// in flight, takes no more updates (story 33.12 AC3).
-func (s *Store) OpenDraft(ctx context.Context, q queryer) (*Change, error) {
-	rows, err := q.QueryContext(ctx, `SELECT `+changeCols+` FROM tv_changes WHERE state = 'draft'
-		ORDER BY created_at DESC, number DESC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		c, err := scanChange(rows)
-		if err != nil {
-			return nil, err
-		}
-		if len(c.ApprovedBy) == 0 {
-			return c, nil
-		}
-	}
-	return nil, rows.Err()
-}
-
 // Events is a change's history, oldest first.
 func (s *Store) Events(ctx context.Context, id string) ([]Event, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT id, at, actor_user_id, actor_source, from_state,

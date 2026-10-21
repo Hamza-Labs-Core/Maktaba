@@ -81,10 +81,3 @@ const rootLong = `maktaba-server runs all of Maktaba from a single binary.
   maktaba-server adopt     The Maktaba this PC runs outside the app (its move, undo)
 
 Configuration lives in server.toml (see 'maktaba-server setup').`
-
-// fatalf prints to stderr and exits 1 — used by leaf commands that want
-// a bare error line without cobra usage noise.
-func fatalf(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, format+"\n", args...)
-	os.Exit(1)
-}

@@ -31,7 +31,7 @@ The CLI wizard and the app's setup screens share one implementation: every scree
 ```jsonc
 {"type":"progress","stage":"download","message":"Downloading whisper-large-v3-turbo","done":123,"total":456}
 {"type":"result","data":{ /* step-specific */ }}
-{"type":"error","code":"hf_gated","message":"Accept the model's terms on huggingface.co first","field":"hf_token"}
+{"type":"error","code":"root_missing","message":"Y:\\Lectures is not a folder on this machine.","field":"roots","params":{"path":"Y:\\Lectures"}}
 ```
 
 | Field | Meaning |
@@ -39,8 +39,13 @@ The CLI wizard and the app's setup screens share one implementation: every scree
 | `progress.stage` | short machine name of the current phase (`download`, `verify`, `venv`, …) |
 | `progress.message` | one plain-English line for the screen |
 | `progress.done` / `progress.total` | optional; bytes or items; `total` 0/absent → indeterminate bar |
-| `error.code` | machine code; the app maps known codes to help text and shows `message` otherwise |
+| `error.code` | machine code; the screens show their own text for it (`setup.error.<code>` in English and Arabic, web/src/i18n), and `message` only for a code they do not know |
+| `error.message` | English (a log, the terminal setup, an app older than the code); the screens put it under Details, never beside their own text |
+| `error.params` | optional; the values the code's text takes (`path`, `line`, `min`, `max`, `model`, …); a size is in bytes under a `*_bytes` name |
 | `error.field` | optional; the input field the error belongs to (the screen highlights it) |
+
+The codes are a contract: the app's screens and the terminal setup (Epic 39 story 39.6) key their
+texts on them, so a code keeps its meaning and its params once shipped (a new reason is a new code).
 
 ## Steps (in screen order)
 
@@ -61,20 +66,33 @@ Input `{}`.
   "data_dir": "/Users/me/Library/Application Support/Maktaba",
   "need": {"ram_bytes": 17179869184, "disk_bytes": 21474836480},
   "ok": true,
-  "warnings": ["Less than 32 GB of RAM: one transcription worker will run."],
+  "problems": [],
+  "warnings": [{"code": "transcribe_cpu", "message": "No NVIDIA GPU: transcription runs on the processor, many times slower than on a GPU."}],
+  "gpus": [],
   "runs": [
     {"role": "postgres", "what": "The library database (private to Maktaba)"},
     {"role": "api", "what": "The server the app and your devices talk to"},
     {"role": "streaming", "what": "Playback and Live TV"},
-    {"role": "pipeline", "what": "Indexing, transcription (2 workers) and search"}
+    {"role": "pipeline", "what": "Indexing, transcription (2 workers) and search", "params": {"workers": 2}}
   ]
 }
 ```
-`ok: false` (not Apple Silicon, too little disk) blocks the Next button; `warnings` do not.
+Each finding is `{"code", "params"?, "message"}`, shown as `setup.check.note.<code>` (the English
+`message` for a code the app does not know). `problems` block the Next button (`ok` is false while
+there is one): `platform_intel_mac`, `platform_unsupported` (`os`, `arch`), `disk_low` (`free_bytes`,
+`need_bytes`, `dir`), `ram_low` (`have_bytes`, `need_bytes`). `warnings` do not: `disk_tight`
+(`free_bytes`, `comfortable_bytes`), `ram_tight` (`need_bytes`), `transcribe_cpu` (Windows and Linux
+without an NVIDIA GPU: transcription runs on the processor). `gpus` lists the NVIDIA GPUs
+(`nvidia-smi`; `name`, `memory_mb`), and the pipeline's run line names the one it transcribes on
+(`params.gpu`). `runs` lines are `setup.check.run.<role>` (the pipeline by its `workers`: `pipeline`,
+`pipelineOne`, `pipelineWorkers`, then `onGpu`). A platform adds its own findings through
+`platformChecks` (setup_steps.go; Linux's glibc, systemd user manager and linger come with Epic 39).
 
 ### `admin` — the first account
-Input `{"username": "admin", "password": "…"}`. Errors: `weak_password` (8 to 256 characters),
-`bad_username` (1 to 64 characters, no leading/trailing space or control character), with `field`.
+Input `{"username": "admin", "password": "…"}`. Errors, with `field`: `password_short` (`min`: 8),
+`password_long` (`max`: 256 bytes), `password_newline` (the api reads the password as one line),
+`username_length` (`max`: 64), `username_space` (no leading or trailing space), `username_control`
+(no control character).
 Result `{"username": "admin"}`. The password is hashed at once by `maktaba-api hash-password` (on
 its stdin; the api's own argon2id), and only the hash waits for `finish`.
 
@@ -86,11 +104,15 @@ Input:
 ```
 `path_map` rewrites paths other machines report (`MAKTABA_PATH_MAP`); it may be empty. It is saved
 in the map's JSON form (`{"/mnt/media": "/Volumes/Media"}`), which no path's characters break (a
-Windows drive letter, a UNC path). Roots are cleaned (`Y:/` becomes `Y:` plus a backslash on
-Windows) and kept once each.
+Windows drive letter, a UNC path). A root must be a whole path of this machine (a bare drive `Y:` is
+`Y:\`; a relative one would resolve against wherever the server runs); roots are cleaned (`Y:/`
+becomes `Y:` plus a backslash on Windows) and kept once each, two spellings being one folder where
+the disk ignores case (Windows, the Mac) and two on Linux. Both sides of a path-map line are whole
+paths: the left one in its machine's form (`/…`, `X:…`, `\\…`), the right one this machine's.
 Result: `{"roots": [{"path": "/Volumes/Media/Lectures", "exists": true, "readable": true}]}`.
-Error `root_missing` / `root_unreadable` with `field: "roots"` and the path in `message`;
-`bad_path_map` (a line without both paths).
+Errors, with `field: "roots"`: `root_missing` / `root_unreadable` / `root_relative` (`path`),
+`roots_none`; with `field: "path_map"`: `bad_path_map` (`line`: a line without both paths),
+`path_map_relative` (`line`, `path`).
 
 ### `models` — transcription models
 Input, one of:
@@ -103,7 +125,8 @@ The Cohere second-listen model is gated: with `huggingface` the token is checked
 Hugging Face client reads it (`<models>/huggingface/token`, mode 0600). With `nas` the home's
 published copy is found (`<path>/<org>__<name>/<revision>/manifest.json`, `path` being the share's
 `maktaba/models` folder or the share itself). Errors: `hf_token_invalid`, `hf_gated` (the user must
-accept the model's terms on huggingface.co), `nas_missing`, `network`. With the second listen off
+accept the model's terms on huggingface.co; `model`), `hf_token_empty`, `nas_path_empty`,
+`nas_missing` (`path`, `model`), `network`. With the second listen off
 (`[transcription] refine = "off"`) no token is needed.
 
 The download itself needs the venv, so it is a second call, made by the install screen after the
@@ -157,14 +180,15 @@ background (`[llm] pull = "auto"`). `maktaba-server models llm` is the same for 
 ### `finish`
 Input `{}`. Writes `server.toml` (the libraries and the path map; ports another program holds move
 to the fallback range), creates the database (the bundled Postgres: initdb on a first run, a
-short-lived server of its own; or a Postgres `[database] url`), runs the migrations
+short-lived server of its own; a Postgres `[database] url`; or, outside the app, the SQLite file,
+its folder made), runs the migrations
 (`maktaba-api migrate up`), seeds the admin account from its hash (`maktaba-api adduser
 --password-hash-file`, through a 0600 file removed after; an admin already there, exit 3, is not an
 error), and, after a Plex sign-in, stores the Plex server (`maktaba-api plex-link`). Result
 `{"web_url": "http://127.0.0.1:8088", "supervisor_url": "…", "plex": {"linked": true, "server":
 "…"}}` (Plex is optional: a failure there is in the result, not an error). Errors: `admin_missing`,
-`database_failed`, `database_unsupported`, `migrate_failed`, `admin_failed`. After it the app
-registers the login item (which starts the server), waits for `/processes` to show every role
+`database_failed`, `database_unsupported` (`scheme`), `migrate_failed`, `admin_failed`. After it the
+app registers the login item (which starts the server), waits for `/processes` to show every role
 running, and opens `web_url`.
 
 ### `adopt` — move an install this PC runs into the app (Epic 38 story 38.13)
@@ -191,6 +215,22 @@ Instead of `check` … `finish` when the PC already runs Maktaba outside the app
 
 Errors: `adopt_find`, `adopt_gone` (field `source`), `adopt_blocked` (the plan's problems),
 `adopt_failed`, `adopt_verify`, and the venv step's.
+
+### Stopping a step
+
+A stop (the app quitting) cancels the step, which asks the program it runs to stop: the venv
+bootstrap and the models download get SIGTERM (Windows: CTRL_BREAK to the process group each starts
+in, which the bootstrap takes as SIGBREAK) and up to 45 s before they are killed, so the bootstrap
+stops pip and records where it was. The step then ends with `interrupted`, and the next run goes on.
+
+### The terminal
+
+`maktaba-server setup` (an install outside the desktop app: a release, a package) asks the same
+steps in the terminal, in this process: `check`, `admin`, `libraries`, `plex`, `finish`, with only
+two questions of its own before them (where the data goes, and the database: SQLite or a Postgres
+url; the app runs its own Postgres). A refused answer is asked again with the step's message.
+Epic 39's terminal setup (story 39.6) does the same from an app payload, in English or Arabic, by
+the codes above.
 
 ## The screens' words
 

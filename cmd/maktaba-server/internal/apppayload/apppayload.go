@@ -1,10 +1,13 @@
 // Package apppayload reads the desktop app's payload.json (what the server
 // payload carries: its version, the Postgres, Python and pipeline inside) and
-// keeps the copy of the last one that ran healthy, <state>/state/payload.json.
-// Comparing the two at the server's start tells it what an update changed
-// (specs/epics/38-windows-app/contract-update.md, Epic 36's contract-update.md):
-// a new version takes a dump of the database before its migrations, an older
-// one is refused over a database a newer one has run.
+// keeps two records under <state>/state (Epic 38 story 38.12, Epic 36's
+// contract-update.md):
+//
+//   - database.json, the release whose migrations the library database holds,
+//     written at the server's start before any role runs: a new version dumps
+//     the database before its migrations, an older one is refused;
+//   - payload.json, the copy of the last payload that ran healthy (three
+//     minutes, every process up).
 package apppayload
 
 import (
@@ -17,6 +20,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
@@ -79,30 +83,75 @@ func Confirm(stateDir, payloadDir string) error {
 	return layout.WriteFileAtomic(StatePath(stateDir), raw, 0o644)
 }
 
-// Change is what an update changed since the last healthy start.
-type Change struct {
-	From, To string
-	// Upgrade: another version than the one that ran (a newer one, or one whose
-	// order cannot be told: a development build). The database is dumped
-	// before the new version's migrations.
-	Upgrade bool
-	// Downgrade: an older release than the one that ran; its code does not know
-	// the newer one's migrations, so the API is not started.
-	Downgrade bool
+// Database is the record of the release whose migrations the library database
+// holds, <state>/state/database.json. The server writes it at its start before
+// any role runs (serve_appbundle.go): when it has dumped the database before an
+// update's migrations (migrating), once they ran (migrated), and around putting
+// the dump back when they failed (restoring, then restored).
+type Database struct {
+	// Version is the release whose migrations the database holds: once
+	// migrating, the release being updated to (its migrations may have run in
+	// part); once restored, the release from before the failed update. "" when
+	// that is not known (an install from before this record).
+	Version string `json:"version"`
+	State   string `json:"state"`
+	// From is the release before the update and Dump the dump taken before its
+	// migrations (backups/pre-<from>-to-<version>.dump).
+	From string `json:"from,omitempty"`
+	Dump string `json:"dump,omitempty"`
+	// Failed is the release whose migrations failed (restoring, restored) and
+	// Error what they said.
+	Failed string    `json:"failed,omitempty"`
+	Error  string    `json:"error,omitempty"`
+	At     time.Time `json:"at"`
 }
 
-// Compare tells what changed from the confirmed payload to the current one.
-func Compare(confirmed Payload, ok bool, current Payload) Change {
-	c := Change{From: confirmed.Version, To: current.Version}
-	if !ok || confirmed.Version == current.Version || confirmed.Version == "" {
-		return c
+// The states of a Database record.
+const (
+	// DatabaseMigrating: the dump is taken; the migrations have not finished.
+	DatabaseMigrating = "migrating"
+	// DatabaseMigrated: Version's migrations ran.
+	DatabaseMigrated = "migrated"
+	// DatabaseRestoring: Failed's migrations failed; Dump is being put back.
+	DatabaseRestoring = "restoring"
+	// DatabaseRestored: the database is as it was before the failed update.
+	DatabaseRestored = "restored"
+)
+
+// DatabasePath is the database's record.
+func DatabasePath(stateDir string) string { return filepath.Join(stateDir, "state", "database.json") }
+
+// ReadDatabase reads the database's record; ok false when there is none.
+func ReadDatabase(stateDir string) (Database, bool, error) {
+	var d Database
+	raw, err := os.ReadFile(DatabasePath(stateDir))
+	if errors.Is(err, fs.ErrNotExist) {
+		return d, false, nil
 	}
-	if cmp, known := CompareVersions(current.Version, confirmed.Version); known && cmp < 0 {
-		c.Downgrade = true
-		return c
+	if err != nil {
+		return d, false, err
 	}
-	c.Upgrade = true
-	return c
+	if err := json.Unmarshal(raw, &d); err != nil {
+		return d, false, fmt.Errorf("%s: %w", DatabasePath(stateDir), err)
+	}
+	return d, true, nil
+}
+
+// WriteDatabase saves the database's record (whole, atomically), stamped now.
+func WriteDatabase(stateDir string, d Database) error {
+	d.At = time.Now().UTC()
+	raw, err := json.MarshalIndent(d, "", "  ")
+	if err != nil {
+		return err
+	}
+	return layout.WriteFileAtomic(DatabasePath(stateDir), append(raw, '\n'), 0o644)
+}
+
+// Older reports whether release a comes before release b; false when the order
+// cannot be told (a development build: never refused).
+func Older(a, b string) bool {
+	cmp, known := CompareVersions(a, b)
+	return known && cmp < 0
 }
 
 // release is a release tag: v1.2.3, or a pre-release v1.2.3-rc.1 (as

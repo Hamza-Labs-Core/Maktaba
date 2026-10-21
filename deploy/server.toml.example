@@ -54,6 +54,11 @@ url = "sqlite:///var/lib/maktaba/maktaba.db"
 # default $MAKTABA_POSTGRES_HOME, else the app's Resources/server/postgres.
 # home = ""
 # port = 54329
+# The desktop app dumps the database before an update's migrations
+# (backups/pre-<old>-to-<new>.dump: the way back to the old version; restored by
+# itself when the migrations fail). The newest update_dumps of them stay, the
+# last update's always; the nightly dumps are counted apart.
+# update_dumps = 3
 
 [media]
 # One or more library roots scanned for media.

@@ -4,17 +4,20 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dsn"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
 
 // setupDatabase runs fn against this install's database: the bundled
 // Postgres with a short-lived server of its own (prepared first: initdb and
-// the app role on a first run), or a Postgres [database] url. Tests replace it.
+// the app role on a first run), a Postgres [database] url, or the SQLite file
+// of an install outside the app (its folder made). Tests replace it.
 var setupDatabase = func(s *setupRun, fn func(dbURL string) error) error {
 	exe, _ := os.Executable()
 	b, ok, err := pgbundle.Resolve(s.cfg, exe)
@@ -32,11 +35,18 @@ var setupDatabase = func(s *setupRun, fn func(dbURL string) error) error {
 		}
 		return b.WithServer(s.ctx, s.log, func() error { return fn(url) })
 	}
-	if u := s.cfg.Database.URL; strings.HasPrefix(u, "postgres://") || strings.HasPrefix(u, "postgresql://") {
-		return fn(u)
+	info, err := dsn.Classify(s.cfg.Database.URL)
+	switch {
+	case err == nil && info.Backend == dsn.Postgres:
+		return fn(s.cfg.Database.URL)
+	case err == nil && info.Backend == dsn.SQLite:
+		if err := os.MkdirAll(filepath.Dir(info.SQLitePath), 0o755); err != nil {
+			return failStep("database_failed", "", "The library database could not be created: %v", err)
+		}
+		return fn(s.cfg.Database.URL)
 	}
-	return failStep("database_unsupported", "", "Setup needs the bundled Postgres or a Postgres [database] url (this install uses %s).",
-		strings.SplitN(s.cfg.Database.URL, ":", 2)[0])
+	scheme := strings.SplitN(s.cfg.Database.URL, ":", 2)[0]
+	return failStep("database_unsupported", "", "Setup cannot use this [database] url (%s).", scheme).with("scheme", scheme)
 }
 
 // stepFinish applies what the steps collected: server.toml, the database

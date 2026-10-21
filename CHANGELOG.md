@@ -22,13 +22,33 @@ don't append a line here; docs-only PRs are exempt.
   (server.toml, the database created and migrated, the admin seeded with the new
   `adduser --password-hash-file`, the Plex server stored with the new `maktaba-api plex-link`).
   The screens say "this PC" and "the tray" on Windows, and turn a disabled sign-in task back on.
+  Every finding and refusal comes with a code and its values, so the screens say it in English or
+  Arabic (never the step's English beside it); `check` separates what blocks from what is worth
+  knowing and says when Windows or Linux will transcribe on the processor (no NVIDIA GPU). Library
+  folders and both sides of the path map must be whole paths (a bare `Y:` is the drive's root), a
+  password cannot hold a line break, and two spellings of one folder are one root only where the
+  disk ignores case. A stop asks the venv build and the models download to stop instead of killing
+  them under pip.
+- **`maktaba-server setup` in a terminal runs the app's setup steps** (Epic 38, story 38.6): the
+  same checks, admin rules, folders, path map, Plex sign-in and finish, plus where the data goes and
+  the database (SQLite, which `finish` now creates, or a Postgres url). Its separate wizard is gone,
+  with its admin token, which nothing ever accepted; `--migrate` is accepted and ignored (setup
+  always prepares the database).
 - **The desktop app's server takes care of an update at its next start** (Epic 38, story 38.12;
-  the Mac, Windows and Linux alike). The pipeline's workers wait for the venv bootstrap, which
-  rebuilds the venv only when the constraints, the wheel or the Python changed; with a new version
-  the api waits for a dump of the database taken before its migrations
-  (`backups/pre-<old>-to-<new>.dump`); an older release than the one that ran is refused, and so
-  is a Postgres of another major than the database's. What a process waits on shows as its
-  `detail` in `/processes`. The payload is saved as the one that ran after three healthy minutes.
+  the Mac, Windows and Linux alike). Before any role runs, the server reads the record of the
+  release whose migrations the database holds (`state/database.json`) and refuses an older
+  release; with another one (or no record yet) it dumps the database
+  (`backups/pre-<old>-to-<new>.dump`, the newest `[postgres] update_dumps` kept, default 3),
+  records the update, runs the migrations once for every role and records them done. When they
+  fail it puts the dump back and keeps every role stopped, saying what happened and what to
+  install. The pipeline's workers then wait for the venv bootstrap (not when `MAKTABA_PYTHON` or
+  `[pipeline] python` names their Python), run with an environment of its own and stopped
+  gently (SIGTERM, CTRL_BREAK on Windows) so a stop never leaves pip behind. A Postgres of
+  another major than the database's is refused. What a process waits on shows as its `detail`
+  in `/processes`.
+- **The API refuses a database a newer Maktaba migrated**, on every install: `maktaba-api
+  migrate up` exits 3 instead of finding nothing to apply, and `serve` does not start on it.
+  `migrate --timeout 0` runs with no time limit.
 - **The Windows app moves in the Maktaba a PC already runs** (Epic 38, story 38.13). Setup finds
   it (a scheduled task that runs `maktaba-server serve` directly, through Maktaba's launcher or
   from a script; the node installer's workers; a server started by hand) and offers to move it
@@ -58,6 +78,12 @@ don't append a line here; docs-only PRs are exempt.
 - **`maktaba-server setup` (the CLI wizard) seeds the admin again.** It called `adduser` with
   `--username`/`--password` flags the api does not have; it now passes the username and a
   password file.
+- **After the app's setup the server runs on the bundled Postgres, with its transcription
+  workers.** Saving `server.toml` wrote every default, so setup's `finish` left `[database] url`
+  set to the default SQLite file: the next start never ran the bundled Postgres (the database setup
+  had made sat unused, and the pipeline could not open the SQLite one), and
+  `[pipeline] instances = 0` turned the workers off. A save now writes the url only when one was
+  chosen and the count only when it was set (`setup --node --instances 0` included).
 
 - **Release builds for desktop, Android and Android TV.** The desktop app ships a
   (placeholder) icon set (#152), which the macOS and Windows bundles failed on. The Linux build

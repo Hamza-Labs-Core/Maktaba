@@ -36,15 +36,21 @@ type setupEvent struct {
 	Code    string `json:"code,omitempty"`
 	Message string `json:"message,omitempty"`
 	Field   string `json:"field,omitempty"`
-	Done    int64  `json:"done,omitempty"`
-	Total   int64  `json:"total,omitempty"`
+	// Params are the values the screens put into the code's own text
+	// (setup.error.<code> in the app's English and Arabic; message is the
+	// English fallback, for a log or an app that does not know the code).
+	Params map[string]any `json:"params,omitempty"`
+	Done   int64          `json:"done,omitempty"`
+	Total  int64          `json:"total,omitempty"`
 }
 
 // stepError is a step's failure as the screen shows it: a code the app maps
-// to help text, a plain message, and the input field it belongs to. usage
-// marks input the step cannot take (exit 2, as unreadable stdin).
+// to its text (with params), an English message, and the input field it
+// belongs to. usage marks input the step cannot take (exit 2, as unreadable
+// stdin).
 type stepError struct {
 	code, message, field string
+	params               map[string]any
 	usage                bool
 }
 
@@ -52,6 +58,17 @@ func (e *stepError) Error() string { return e.code + ": " + e.message }
 
 func failStep(code, field, format string, a ...any) *stepError {
 	return &stepError{code: code, message: fmt.Sprintf(format, a...), field: field}
+}
+
+// with sets the error's params from key, value pairs.
+func (e *stepError) with(kv ...any) *stepError {
+	if e.params == nil {
+		e.params = map[string]any{}
+	}
+	for i := 0; i+1 < len(kv); i += 2 {
+		e.params[fmt.Sprint(kv[i])] = kv[i+1]
+	}
+	return e
 }
 
 // setupRun is one step's run: the config as it stands, the events out.
@@ -185,7 +202,7 @@ func runSetupJSON(step string, in io.Reader, out io.Writer) int {
 			if se.usage {
 				code = 2
 			}
-			return fail(code, setupEvent{Code: se.code, Message: se.message, Field: se.field})
+			return fail(code, setupEvent{Code: se.code, Message: se.message, Field: se.field, Params: se.params})
 		}
 		return fail(1, setupEvent{Code: "internal", Message: err.Error()})
 	}
