@@ -54,7 +54,8 @@ cd apps/desktop
 pnpm install
 pnpm tauri dev                  # dev window pointed at the Vite dev server
 ./scripts/build.sh macos        # .app + .dmg          (on macOS)
-./scripts/build.sh windows      # .msi + NSIS .exe     (on Windows)
+./scripts/build.sh windows      # .msi + NSIS .exe     (on Windows; the client alone)
+make win-app                    # the Windows app with the server inside: NSIS only (tools/release/win-app)
 ./scripts/build.sh linux        # .deb + .AppImage     (on Linux)
 ./scripts/build.sh debug        # fast unsigned debug build
 ```
@@ -72,7 +73,7 @@ runners in parallel, attaching them to the GitHub Release for the tag:
 | Runner | Bundles |
 |---|---|
 | `macos-latest` | `.dmg` — **universal** (arm64 + x86_64 via `--target universal-apple-darwin`) |
-| `windows-latest` | `.msi` + NSIS `.exe`, plus a portable `.zip` of the raw `Maktaba.exe` |
+| `windows-latest` | the NSIS `-setup.exe` with the server inside (`tools/release/win-app/payload.sh`; current user, `%LOCALAPPDATA%\Maktaba`, no `.msi`), plus a portable `.zip` of the raw `Maktaba.exe` (the client) |
 | `ubuntu-22.04` | `.deb` + `.AppImage` (installs `libwebkit2gtk-4.1`, `libayatana-appindicator3`, `librsvg2`, `patchelf` first) |
 
 The build uses the official

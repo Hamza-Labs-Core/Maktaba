@@ -40,6 +40,12 @@
     release's archive installs that release; a checkout rebuilds after a git pull),
     re-registers and restarts them.
 
+    The Maktaba app for Windows (Maktaba_<version>_x64-setup.exe on the release, Epic 38)
+    runs a home, or this machine as a full node, with the server, its Postgres and a tray:
+    installed after this script has joined the home, its setup finds this worker and moves
+    it into the app. This script stays the way to join a home and to run a worker-only
+    machine; -Full converts in place without the app.
+
 .PARAMETER HomeUrl
     The home's address, for example http://192.168.1.20:8080 (skips discovery).
 
@@ -135,6 +141,15 @@ $ErrorActionPreference = 'Stop'
 $PackagingDir = Split-Path -Parent $PSScriptRoot           # deploy\packaging\node
 $RunScript = Join-Path $script:NodeDir 'run-node.ps1'
 $UserId = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+# The Maktaba app for Windows (Epic 38), which the summary points a full node at: the
+# release this script came with, else what a checkout builds
+$AppRepo = Read-NodeKeyValue (Join-Path $PackagingDir 'release.conf') 'REPO'
+$AppTag = Read-NodeKeyValue (Join-Path $PackagingDir 'release.conf') 'TAG'
+if ($AppRepo -and $AppTag) {
+    $AppInstaller = "the -setup.exe of https://github.com/$AppRepo/releases/tag/$AppTag"
+} else {
+    $AppInstaller = "make win-app in this checkout"
+}
 
 function Assert-ExitCode {
     param([Parameter(Mandatory = $true)][int]$Code, [Parameter(Mandatory = $true)][string]$What)
@@ -563,6 +578,7 @@ if ($Full) {
     & $server @fullArgs
     Assert-ExitCode $LASTEXITCODE 'maktaba-server setup --node'
     Write-NodeStep 'Done: this machine is a full node (the "Maktaba" task runs maktaba-server).'
+    Write-Host "  The Maktaba app runs a full node with a tray and its own updates: its setup moves this one in ($AppInstaller)."
     return
 }
 
@@ -600,3 +616,4 @@ if ($Mode -eq 'Task') {
     Write-Host "  Status:       Get-Service 'maktaba-node*'"
     Write-Host "  Restart:      Restart-Service maktaba-node"
 }
+Write-Host "  Full node:    install the Maktaba app ($AppInstaller): its setup moves this worker in"

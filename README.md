@@ -131,7 +131,19 @@ sudo dnf install ./maktaba-server-<ver>-1.x86_64.rpm
 brew install hamza-labs-core/tap/maktaba
 ```
 
-Windows and manual installs: download the matching `.tar.gz` / `.zip` from the
+**Windows: the Maktaba app.** Install `Maktaba_<ver>_x64-setup.exe` from the
+[latest release](https://github.com/Hamza-Labs-Core/Maktaba/releases/latest). It
+installs for the current user into `%LOCALAPPDATA%\Maktaba` (no administrator) and
+carries the whole server: `maktaba-server`, PostgreSQL 16, ffmpeg (NVENC) and Python
+3.12. Its setup screens do the rest (the admin, the libraries and the NAS path map,
+the models, Plex), and the first start builds the pipeline's Python environment
+(CUDA on an NVIDIA GPU, else the processor). From then on the server starts at every
+sign-in with no console window, the tray shows how it is doing, and updates come
+with the app. A PC that already runs Maktaba (`maktaba-server setup --service`, the
+node installer, a script of its own) is found by the setup, which offers to move it
+into the app. See [Epic 38](specs/epics/38-windows-app/README.md).
+
+Manual installs: download the matching `.tar.gz` / `.zip` from the
 [latest release](https://github.com/Hamza-Labs-Core/Maktaba/releases/latest).
 After installing, run `maktaba-server setup` (or edit
 `/etc/maktaba/server.toml`), then `sudo systemctl start maktaba-server` — the
@@ -214,7 +226,7 @@ the workflows below.
 |---|---|---|
 | **Web** (self-host the SPA) | `maktaba-web-<version>.tar.gz` | [`release.yml`](.github/workflows/release.yml) (auto) · [`web-release.yml`](.github/workflows/web-release.yml) (on-demand rebuild) |
 | **Desktop — macOS** | `.dmg` (universal arm64 + x86_64) | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
-| **Desktop — Windows** | `.msi` + NSIS `.exe` + portable `.zip` | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
+| **Desktop — Windows** | NSIS `-setup.exe` with the server inside (current user, `%LOCALAPPDATA%\Maktaba`) + portable `.zip` of the client | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
 | **Desktop — Linux** | `.deb` + `.AppImage` | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
 | **Mobile — Android** | `maktaba-<version>.apk` (sideload) + `.aab` (Play Store) | [`mobile-release.yml`](.github/workflows/mobile-release.yml) |
 | **Mobile — iOS** | `maktaba-<version>.ipa` *(signing deferred — see workflow)* | [`mobile-release.yml`](.github/workflows/mobile-release.yml) |

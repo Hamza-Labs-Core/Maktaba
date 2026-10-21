@@ -10,6 +10,14 @@ don't append a line here; docs-only PRs are exempt.
 
 ## [Unreleased]
 
+### Changed
+
+- **Windows installs point at the Maktaba app** (Epic 38, story 38.14). The README's install
+  section, the deployment page, the packaging and desktop READMEs describe the Windows app (one
+  NSIS `-setup.exe` with the server inside, for the current user; no `.msi`), and the node
+  installer (`install-node.ps1`) says in its help and its summary that the app runs a full node
+  and moves a joined worker in.
+
 ### Fixed
 
 - **Release builds for desktop, Android and Android TV.** The desktop app ships a
