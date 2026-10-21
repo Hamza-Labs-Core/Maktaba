@@ -4,10 +4,16 @@
 import type { Locale } from "../lib/i18n";
 import type { HelpTopicId } from "./topics";
 
-const FILES = import.meta.glob<string>("./content/*/*.md", {
-  query: "?raw",
-  import: "default",
-});
+// A Map, never an object indexed by the URL's topic: a name like
+// "__proto__" or "constructor" finds nothing instead of a prototype method.
+const FILES = new Map<string, () => Promise<string>>(
+  Object.entries(
+    import.meta.glob<string>("./content/*/*.md", {
+      query: "?raw",
+      import: "default",
+    })
+  )
+);
 
 const cache = new Map<string, Promise<string | null>>();
 
@@ -15,7 +21,7 @@ function load(locale: Locale, id: string): Promise<string | null> {
   const path = `./content/${locale}/${id}.md`;
   let hit = cache.get(path);
   if (!hit) {
-    const loader = FILES[path];
+    const loader = FILES.has(path) ? FILES.get(path) : undefined;
     hit = loader ? loader().catch(() => null) : Promise.resolve(null);
     cache.set(path, hit);
   }

@@ -157,12 +157,12 @@ export function waitingHelp(reason: string): HelpRef {
  * section in the failures topic; until then a class links to the general
  * entry, and its causes keep their own entries (causeHelp).
  */
-export const FAILURE_CLASS_HELP: Readonly<Record<string, HelpRef>> = {};
+export const FAILURE_CLASS_HELP: ReadonlyMap<string, HelpRef> = new Map();
 
 export function failureClassHelp(cls: string): HelpRef {
   const parts = cls.split(":");
   for (let n = parts.length; n > 0; n--) {
-    const hit = FAILURE_CLASS_HELP[parts.slice(0, n).join(":")];
+    const hit = FAILURE_CLASS_HELP.get(parts.slice(0, n).join(":"));
     if (hit) return hit;
   }
   return causeHelp(cls);

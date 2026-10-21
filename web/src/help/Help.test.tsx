@@ -8,7 +8,8 @@ import { HelpLink, PageHelp } from "./HelpLink";
 import { causeHelp } from "./registry";
 import { fold, searchHelp } from "./search";
 import { HelpMarkdown } from "./HelpMarkdown";
-import { HELP_TOPICS } from "./topics";
+import { HELP_TOPICS, type HelpTopicId } from "./topics";
+import { loadTopic } from "./content";
 
 const FILES = import.meta.glob<string>("./content/*/*.md", {
   query: "?raw",
@@ -86,10 +87,14 @@ describe("help area", () => {
     expect(screen.getByRole("navigation", { name: "في هذه الصفحة" })).toBeInTheDocument();
   });
 
-  it("says so for a topic that does not exist", () => {
-    renderAt("/help/nope");
-    expect(screen.getByRole("heading", { name: "There is no such help topic" })).toBeVisible();
-  });
+  it.each(["nope", "__proto__", "constructor", "toString", "hasOwnProperty"])(
+    "says so for a topic that does not exist: %s",
+    async (topic) => {
+      renderAt(`/help/${topic}`);
+      expect(screen.getByRole("heading", { name: "There is no such help topic" })).toBeVisible();
+      expect(await loadTopic("en", topic as HelpTopicId)).toBeNull();
+    }
+  );
 });
 
 describe("help links", () => {

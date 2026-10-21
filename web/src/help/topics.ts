@@ -34,8 +34,10 @@ export type HelpTopicId = (typeof HELP_CATEGORIES)[number]["topics"][number];
 
 export const HELP_TOPICS: readonly HelpTopicId[] = HELP_CATEGORIES.flatMap((c) => c.topics);
 
+const TOPIC_SET: ReadonlySet<string> = new Set(HELP_TOPICS);
+
 export function isHelpTopic(id: string): id is HelpTopicId {
-  return (HELP_TOPICS as readonly string[]).includes(id);
+  return TOPIC_SET.has(id);
 }
 
 /** The five sections every topic has, with the same anchors in every language. */
