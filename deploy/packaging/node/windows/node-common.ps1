@@ -5,7 +5,7 @@ Set-StrictMode -Version 2.0
 
 # Where things live (per user: mapped drives, saved share credentials and the node
 # config are all the user's).
-$script:NodeConfDir = Join-Path $env:APPDATA 'Maktaba'                 # node.json, node.env
+$script:NodeConfDir = Join-Path $env:APPDATA 'Maktaba'                 # node.env (node.json before Epic 38)
 $script:NodeDir = Join-Path $env:LOCALAPPDATA 'Maktaba\node'           # venv + these scripts
 $script:NodeLogDir = Join-Path $env:LOCALAPPDATA 'Maktaba\Logs'
 $script:NodeVenv = Join-Path $script:NodeDir 'venv'
@@ -13,6 +13,20 @@ $script:NodePython = Join-Path $script:NodeVenv 'Scripts\python.exe'
 $script:NodeCli = Join-Path $script:NodeVenv 'Scripts\maktaba-pipeline.exe'
 $script:NodeInstallConf = Join-Path $script:NodeDir 'install.conf'
 $script:WindowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+
+# Get-NodeConfigPath: this machine's node config, where the pipeline reads it
+# (cluster/config.py config_path): MAKTABA_NODE_CONFIG, else
+# %LOCALAPPDATA%\Maktaba\node.json (Epic 38: never in the roaming profile), else the
+# %APPDATA%\Maktaba\node.json of a machine that joined before, while there is none in
+# the new place.
+function Get-NodeConfigPath {
+    if ($env:MAKTABA_NODE_CONFIG) { return $env:MAKTABA_NODE_CONFIG }
+    $cur = Join-Path $env:LOCALAPPDATA 'Maktaba\node.json'
+    if (Test-Path -LiteralPath $cur -PathType Leaf) { return $cur }
+    $old = Join-Path $script:NodeConfDir 'node.json'
+    if (Test-Path -LiteralPath $old -PathType Leaf) { return $old }
+    return $cur
+}
 
 function Write-NodeStep {
     param([Parameter(Mandatory = $true)][string]$Message)

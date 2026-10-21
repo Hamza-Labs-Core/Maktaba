@@ -272,7 +272,7 @@ would kill it after 30 s; NSSM is the wrapper that answers the service manager.
 
 | What | Where |
 |---|---|
-| Node config | `%APPDATA%\Maktaba\node.json` |
+| Node config | `%LOCALAPPDATA%\Maktaba\node.json` (a machine that joined before Epic 38 keeps `%APPDATA%\Maktaba\node.json`) |
 | Settings | `%APPDATA%\Maktaba\node.env`, `node@<N>.env` |
 | Python environment, scripts | `%LOCALAPPDATA%\Maktaba\node\` |
 | Logs | `%LOCALAPPDATA%\Maktaba\Logs\node.log` (+ `node.err.log`), `node@<N>.log` |

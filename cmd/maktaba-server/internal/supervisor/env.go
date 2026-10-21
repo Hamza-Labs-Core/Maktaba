@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
@@ -190,6 +191,17 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		if os.Getenv("MAKTABA_WORKER_PATH_MAP") == "" {
 			add("MAKTABA_WORKER_PATH_MAP", strings.TrimSpace(cfg.Media.PathMap))
 		}
+		// Windows (Epic 38 story 38.1): Python writes its pipes in the ANSI code
+		// page unless told otherwise, which cannot hold an Arabic title (a log line
+		// with one raised UnicodeEncodeError); unbuffered, so the server's log has
+		// each line as it happens.
+		if onWindows() {
+			for _, kv := range []string{"PYTHONUTF8=1", "PYTHONIOENCODING=utf-8", "PYTHONUNBUFFERED=1"} {
+				if k, _, _ := strings.Cut(kv, "="); os.Getenv(k) == "" {
+					env = append(env, kv)
+				}
+			}
+		}
 		// the main worker's share of the transcription plan is Build's (PlanFor:
 		// it asks the pipeline's Python), the workers' BuildPipelineInstances'
 		// Epic 35 story 35.8: a full node's pipeline works for the home as this
@@ -208,6 +220,9 @@ func ChildEnv(role Role, cfg config.Config) []string {
 
 // nodeConfig reads this machine's Epic 31 node config (tests replace it).
 var nodeConfig = config.LocalNodeConfig
+
+// onWindows reports a Windows host (tests replace it).
+var onWindows = func() bool { return runtime.GOOS == "windows" }
 
 // NodeConfig is this machine's node config as the supervisor reads it.
 func NodeConfig() config.NodeConfig { return nodeConfig() }
