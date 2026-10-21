@@ -143,7 +143,7 @@
 
 ### Plex Live TV {#plexlive}
 
-يقرّر كيف تظهر قنوات مكتبة في Plex. **Add Maktaba to Plex by itself** معطّل، فلا يضيفها إلا زر **إضافة مكتبة إلى Plex**. ويُبقي **Refresh the guide in Plex** و**Refresh the channels in Plex** (مفعّلان) Plex محدّثًا. اضبط **Tuner address for Plex** إن لم يستطع Plex الوصول إلى مكتبة بعنوانها العام. انظر [Plex](/help/plex).
+يقرّر كيف تظهر قنوات مكتبة في Plex. **Add Maktaba to Plex by itself** معطّل، فلا يضيفها إلا زر **إضافة مكتبة إلى Plex**. ويُبقي **Refresh the guide in Plex** و**Refresh the channels in Plex** (مفعّلان) Plex محدّثًا. اضبط **Tuner address for Plex** إن لم يستطع Plex الوصول إلى مكتبة بعنوانها العام. ويفحص **Check Plex's channel list every (min)** (15؛ 0: معطّل) أن برنامجًا آخر (تحديث dizqueTV لـ Plex) لم يستبدل قنوات مكتبة في Plex، ويعيدها إن فعل؛ وبعد **Warn after this many restores in a row** (3) مرات إعادة، كل منها خلال **Restores count as in a row within (hours)** (24) من سابقتها، تنصح بطاقة Plex بإطفاء ربط القنوات في dizqueTV (انظر [Plex](/help/plex#channel-map-drift)). انظر [Plex](/help/plex).
 
 ### الملفات التالفة {#repair}
 

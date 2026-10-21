@@ -3,25 +3,38 @@
 //
 // The server never runs from this app's files: an AppImage is mounted at a new
 // /tmp/.mount_* path on every run, and a .deb/.rpm upgrade replaces
-// /usr/lib/Maktaba under a running server. It runs from a copy in
-// ~/.local/share/maktaba/runtime/<version> (`current`), as a systemd user
+// <prefix>/share/maktaba/server under a running server. It runs from a copy
+// in ~/.local/share/maktaba/runtime/<version> (`current`), as a systemd user
 // unit started at boot by linger. The app never writes the unit or the copy
-// itself: it runs the payload's own `maktaba-server runtime …` and
-// `maktaba-server service …` (`--json`, one result or error line), the same
-// commands the terminal setup of a machine without a desktop uses.
+// itself: it runs `maktaba-server runtime …` from its payload and
+// `maktaba-server service …` from the copy the unit runs (`--json`, one
+// result or error line), the same commands the terminal setup of a machine
+// without a desktop uses. Setup's `status` and `check` run from the payload;
+// a `check` that passes installs the copy, and the steps after it run from
+// the copy too, so the venv is built against runtime/current/python, which
+// outlives this app's mount. A desktop app that starts records itself as the
+// runtime's owner: one updater, the app's.
+//
+// An app older than the newest Maktaba this machine ran never installs its
+// payload (the server's database may be migrated past it): the newer runtime
+// keeps running, and the user is told.
 //
 // Where no StatusNotifier host is running (GNOME without the AppIndicator
 // extension), there is no tray to return to: closing the window quits the
-// app (the server keeps running), and there is no tray autostart entry.
+// app (the server keeps running), the window's menu carries the server's
+// items, and there is no tray autostart entry.
 #![cfg_attr(not(target_os = "linux"), allow(dead_code))]
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 
 use serde::Deserialize;
 use serde_json::Value;
 
 use super::{Action, BundlePaths, LoginItem};
+use crate::lang::t;
+use crate::setup::{self, Progress, StepError};
 
 /// `maktaba-server service status --json` (service.AppStatus in
 /// cmd/maktaba-server/internal/service/appunit.go).
@@ -94,6 +107,12 @@ fn home() -> Option<PathBuf> {
     env("HOME").map(PathBuf::from)
 }
 
+/// <data>/runtime/current: the copy the unit runs (unresolved, as the unit
+/// and the launcher use it).
+fn runtime_current() -> Option<PathBuf> {
+    home().map(|h| data_dir(env, &h).join("runtime").join("current"))
+}
+
 /// This app's payload, when the build carries one.
 fn payload() -> Option<BundlePaths> {
     std::env::current_exe()
@@ -102,54 +121,23 @@ fn payload() -> Option<BundlePaths> {
         .filter(BundlePaths::payload_present)
 }
 
-/// The maktaba-server to ask: this app's payload's, else the runtime's (a
-/// client-only build still finds a server installed by another). A payload
-/// binary without its executable bit (an .rpm's files keep the packager's
-/// modes) is run from a copy in the cache that has it.
-fn server() -> Result<PathBuf, String> {
-    if let Some(p) = payload() {
-        return runnable(&p.server_bin());
-    }
-    let h = home().ok_or("HOME is not set")?;
-    let rt = data_dir(env, &h)
-        .join("runtime")
-        .join("current")
-        .join("bin")
-        .join("maktaba-server");
-    if rt.is_file() {
-        return Ok(rt);
-    }
-    Err("this build of Maktaba does not include the server".into())
-}
-
-#[cfg(not(unix))]
-fn runnable(bin: &Path) -> Result<PathBuf, String> {
-    Ok(bin.to_path_buf())
-}
-
-#[cfg(unix)]
-fn runnable(bin: &Path) -> Result<PathBuf, String> {
-    use std::os::unix::fs::PermissionsExt;
-    let meta = std::fs::metadata(bin).map_err(|e| format!("{}: {e}", bin.display()))?;
-    if meta.permissions().mode() & 0o111 != 0 {
-        return Ok(bin.to_path_buf());
-    }
-    let cache = env("XDG_CACHE_HOME")
-        .filter(|v| Path::new(v).is_absolute())
-        .map(PathBuf::from)
-        .or_else(|| home().map(|h| h.join(".cache")))
-        .ok_or("HOME is not set")?;
-    let copy = cache
-        .join("maktaba")
-        .join("bin")
-        .join(format!("maktaba-server-{}", meta.len()));
-    if let Some(dir) = copy.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    std::fs::copy(bin, &copy).map_err(|e| format!("{}: {e}", copy.display()))?;
-    std::fs::set_permissions(&copy, std::fs::Permissions::from_mode(0o755))
-        .map_err(|e| e.to_string())?;
-    Ok(copy)
+/// The maktaba-server a command runs. `service …` runs from the runtime's
+/// copy, the server the unit runs, so an app older than that copy never
+/// rewrites its unit with an older template; this app's payload runs it only
+/// before there is a runtime. Everything else (`runtime …` installs this
+/// app's payload) runs from the payload, else from the runtime's copy (a
+/// client-only build still finds a server installed by another).
+fn server_for(command: &str) -> Result<PathBuf, String> {
+    let runtime = runtime_current()
+        .map(|c| c.join("bin").join("maktaba-server"))
+        .filter(|p| p.is_file());
+    let own = payload().map(|p| p.server_bin());
+    let pick = if command == "service" {
+        runtime.or(own)
+    } else {
+        own.or(runtime)
+    };
+    pick.ok_or_else(|| "this build of Maktaba does not include the server".into())
 }
 
 /// The result of one `--json` command: its last `result` line's data, or its
@@ -176,7 +164,7 @@ pub fn parse_result(stdout: &str) -> Result<Value, String> {
 }
 
 fn run_json(args: &[&str]) -> Result<Value, String> {
-    let bin = server()?;
+    let bin = server_for(args.first().copied().unwrap_or_default())?;
     let out = Command::new(&bin)
         .args(args)
         .arg("--json")
@@ -205,16 +193,16 @@ pub fn login_item() -> LoginItem {
         .unwrap_or(LoginItem::Unsupported)
 }
 
-/// Copy this app's payload into the runtime (when it is not there yet), point
-/// `current` at it, write and start the unit, and ask for linger. Linger
-/// refused (no polkit agent) leaves a server that runs while the user is
-/// logged in: login_item says RequiresApproval, and setup offers it again.
+/// Make sure the runtime runs this app's payload (or a newer one), write and
+/// start the unit, and ask for linger. Linger refused (no polkit agent)
+/// leaves a server that runs while the user is logged in: login_item says
+/// RequiresApproval, and setup offers it again.
 pub fn register() -> Result<(), String> {
-    install_runtime()?;
+    ensure_runtime(|_| {}).map_err(|e| e.message)?;
     run_json(&["service", "install"])?;
     let _ = run_json(&["service", "linger"]);
     if tray_available() {
-        let _ = write_autostart();
+        let _ = sync_autostart(false);
     }
     Ok(())
 }
@@ -252,38 +240,238 @@ pub fn agent_alive() -> Option<bool> {
         .map(|s| s.running())
 }
 
-/// After an app update (or at any start): when this app's payload is newer
-/// than the runtime the unit runs, install it and switch the unit to it (the
-/// server stops while `current` moves; the supervisor's next start backs up,
-/// migrates and rebuilds the venv as the payload needs). Returns whether it
-/// switched.
-pub fn sync_runtime() -> Result<bool, String> {
-    let Some(p) = payload() else {
-        return Ok(false); // a client-only build carries none
-    };
-    let from = p.server_dir.to_string_lossy().to_string();
-    let st = run_json(&["runtime", "status", "--from", &from])?;
-    if st.get("update_pending").and_then(Value::as_bool) != Some(true) {
-        return Ok(false);
-    }
-    install_runtime()?;
-    Ok(true)
+/// `maktaba-server runtime status --from <payload> --json`: what runs, and
+/// how this app's payload compares (#174: `update_pending` only for a newer
+/// payload or the same version built again, `downgrade` for one older than
+/// the newest version this machine ran, its watermark).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+pub struct RuntimeStatus {
+    /// who updates the runtime: "app" (this app's updater) or "headless" (the
+    /// machine itself, from the signed releases: install.sh --app)
+    #[serde(default)]
+    pub owner: String,
+    #[serde(default)]
+    pub current: String,
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub watermark: String,
+    #[serde(default)]
+    pub from_version: String,
+    #[serde(default)]
+    pub update_pending: bool,
+    #[serde(default)]
+    pub downgrade: bool,
 }
 
-/// Copy this app's payload into the runtime and switch the unit to it.
-fn install_runtime() -> Result<(), String> {
-    let p = payload().ok_or("this build of Maktaba does not include the server")?;
+/// What this app does with its payload, for a runtime status.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Plan {
+    /// Newer than what runs, or nothing runs yet: install it and switch to it.
+    Install,
+    /// What runs already.
+    Keep,
+    /// Older than the newest version this machine ran: never installed; the
+    /// newer runtime keeps running.
+    Older { app: String, server: String },
+}
+
+pub fn plan(st: &RuntimeStatus) -> Plan {
+    if st.downgrade {
+        let server = if st.watermark.is_empty() {
+            &st.version
+        } else {
+            &st.watermark
+        };
+        return Plan::Older {
+            app: st.from_version.clone(),
+            server: server.clone(),
+        };
+    }
+    if st.update_pending {
+        Plan::Install
+    } else {
+        Plan::Keep
+    }
+}
+
+/// The user's message for an app older than this machine's server.
+pub fn older_message(app: &str, server: &str) -> String {
+    t(
+        &format!(
+            "This Maktaba app ({app}) is older than the Maktaba this computer already runs \
+             ({server}). The server keeps running {server}; to manage it from here, install \
+             Maktaba {server} or newer."
+        ),
+        &format!(
+            "تطبيق مكتبة هذا ({app}) أقدم من إصدار مكتبة الذي يعمل على هذا الحاسوب ({server}). \
+             يواصل الخادم العمل بالإصدار {server}؛ ولإدارته من هنا ثبّت مكتبة {server} أو أحدث."
+        ),
+    )
+}
+
+/// What sync_runtime did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Synced {
+    /// This app's payload was installed and the unit switched to it.
+    Switched,
+    /// The runtime runs this payload already (or the build carries none).
+    Current,
+    /// This app is older than the server: nothing changed.
+    Older { app: String, server: String },
+}
+
+/// Whether the runtime was found to hold this app's payload (or a newer one)
+/// in this run: the check and the copy happen once.
+static RUNTIME_READY: Mutex<bool> = Mutex::new(false);
+
+/// At start (after an app update, or any start): when this app's payload is
+/// newer than what the unit runs, install it and switch the unit to it (the
+/// server stops while `current` moves; a paused, stopped unit stays stopped;
+/// the supervisor's next start backs up, migrates and rebuilds the venv as
+/// the payload needs). An older app changes nothing.
+pub fn sync_runtime() -> Result<Synced, String> {
+    if payload().is_none() {
+        return Ok(Synced::Current); // a client-only build carries none
+    }
+    sync_with(|_| {}).map_err(|e| e.message)
+}
+
+/// Before a setup step (and the service's registration): the runtime holds
+/// this app's payload as `current`, installed now when it is newer or the
+/// first. Progress lines of the copy go to on_progress. An older app's setup
+/// stops here with `downgrade`.
+pub fn ensure_runtime(on_progress: impl FnMut(Progress)) -> Result<(), StepError> {
+    match sync_with(on_progress)? {
+        Synced::Older { app, server } => {
+            Err(StepError::new("downgrade", older_message(&app, &server)))
+        }
+        Synced::Switched | Synced::Current => Ok(()),
+    }
+}
+
+fn sync_with(on_progress: impl FnMut(Progress)) -> Result<Synced, StepError> {
+    let mut ready = RUNTIME_READY.lock().unwrap_or_else(|e| e.into_inner());
+    if *ready {
+        return Ok(Synced::Current);
+    }
+    let p = payload().ok_or_else(|| {
+        StepError::new(
+            "server_missing",
+            "This build of Maktaba does not include the server.",
+        )
+    })?;
     let from = p.server_dir.to_string_lossy().to_string();
-    run_json(&[
-        "runtime",
-        "install",
-        "--from",
-        &from,
-        "--activate",
-        "--owner",
-        "app",
-    ])
-    .map(|_| ())
+    let st: RuntimeStatus = run_json(&["runtime", "status", "--from", &from])
+        .and_then(|v| serde_json::from_value(v).map_err(|e| e.to_string()))
+        .map_err(|e| StepError::new("runtime", e))?;
+    let synced = match plan(&st) {
+        Plan::Older { app, server } => return Ok(Synced::Older { app, server }),
+        Plan::Keep => {
+            // this payload runs already; a machine set up by install.sh --app
+            // (owner headless) that this app now manages gets one updater, the
+            // app's: an install of the running payload copies nothing and only
+            // records the owner
+            if st.owner != "app" {
+                setup::run_ndjson(
+                    &p.server_bin(),
+                    &[
+                        "runtime", "install", "--json", "--from", &from, "--owner", "app",
+                    ],
+                    &[],
+                    None,
+                    on_progress,
+                    "maktaba-server runtime install --owner app",
+                )?;
+            }
+            Synced::Current
+        }
+        Plan::Install => {
+            setup::run_ndjson(
+                &p.server_bin(),
+                &[
+                    "runtime",
+                    "install",
+                    "--json",
+                    "--from",
+                    &from,
+                    "--activate",
+                    "--owner",
+                    "app",
+                ],
+                &[],
+                None,
+                on_progress,
+                "maktaba-server runtime install",
+            )?;
+            Synced::Switched
+        }
+    };
+    *ready = true;
+    Ok(synced)
+}
+
+/// The steps that run from this app's payload: they only read, and come
+/// before anything is copied (a computer `check` refuses never waits for a
+/// copy it cannot use).
+pub fn reads_only(step: &str) -> bool {
+    matches!(step, "status" | "check")
+}
+
+/// The maktaba-server a setup step runs, and its environment. `status` (asked
+/// at every launch) and `check` run from this app's payload, as an app
+/// payload (MAKTABA_APP_BUNDLE: the bundled Postgres is what will run); a
+/// `check` that says ok then installs the runtime (after_step). Every later
+/// step runs from the runtime's copy, with MAKTABA_APP_BUNDLE the unresolved
+/// runtime/current: the venv is then built against runtime/current/python,
+/// not this app's mount. A dev build (no payload, MAKTABA_SERVER_BIN) runs
+/// `bin` as it is.
+pub fn setup_server(
+    step: &str,
+    bin: &Path,
+    on_progress: impl FnMut(Progress),
+) -> Result<(PathBuf, Vec<(String, String)>), StepError> {
+    let Some(p) = payload() else {
+        return Ok((bin.to_path_buf(), Vec::new()));
+    };
+    if reads_only(step) {
+        return Ok((
+            bin.to_path_buf(),
+            vec![(
+                "MAKTABA_APP_BUNDLE".to_string(),
+                p.server_dir.to_string_lossy().to_string(),
+            )],
+        ));
+    }
+    ensure_runtime(on_progress)?;
+    let current = runtime_current().ok_or_else(|| StepError::new("internal", "HOME is not set"))?;
+    Ok((
+        current.join("bin").join("maktaba-server"),
+        vec![(
+            "MAKTABA_APP_BUNDLE".to_string(),
+            current.to_string_lossy().to_string(),
+        )],
+    ))
+}
+
+/// Whether a step's result is a `check` that says this computer can run the
+/// server: the runtime is installed right then.
+pub fn copies_after(step: &str, result: &Value) -> bool {
+    step == "check" && result.get("ok").and_then(Value::as_bool) == Some(true)
+}
+
+/// After a setup step: a `check` that passed installs the runtime (its copy's
+/// progress goes to on_progress, while the screen says it is checking), so
+/// the steps after it run from the copy.
+pub fn after_step(
+    step: &str,
+    result: &Value,
+    on_progress: impl FnMut(Progress),
+) -> Result<(), StepError> {
+    if payload().is_some() && copies_after(step, result) {
+        ensure_runtime(on_progress)?;
+    }
+    Ok(())
 }
 
 /// Is a StatusNotifier host (a tray) running in this session? Asked through
@@ -340,6 +528,9 @@ pub fn name_has_owner(out: &str) -> Option<bool> {
 /// The argv[1] that starts the app with its window hidden (the tray at login).
 pub const HIDDEN_FLAG: &str = "--hidden";
 
+/// The key that marks an autostart entry as this app's.
+const AUTOSTART_MARK: &str = "X-Maktaba-Tray=true";
+
 /// The tray's autostart entry (the XDG autostart spec).
 fn autostart_path() -> Option<PathBuf> {
     let base = env("XDG_CONFIG_HOME")
@@ -347,6 +538,12 @@ fn autostart_path() -> Option<PathBuf> {
         .map(PathBuf::from)
         .or_else(|| home().map(|h| h.join(".config")))?;
     Some(base.join("autostart").join("maktaba.desktop"))
+}
+
+/// <state>/state/autostart-written: the entry was written once. Without the
+/// entry, it means the user removed it, and it stays removed.
+fn autostart_written_path() -> Option<PathBuf> {
+    super::state_root().map(|r| r.join("state").join("autostart-written"))
 }
 
 /// The program the entry starts: the AppImage file ($APPIMAGE, set by its
@@ -357,20 +554,46 @@ fn app_program() -> Option<PathBuf> {
         .or_else(|| std::env::current_exe().ok())
 }
 
-/// The entry's text.
-pub fn autostart_entry(program: &Path) -> String {
-    format!(
-        "[Desktop Entry]\nType=Application\nName=Maktaba\n\
+/// The entry's text. TryExec makes the desktop skip it once the program is
+/// gone (the package removed, the AppImage deleted). `enabled` false keeps a
+/// user's "off" (GNOME's X-GNOME-Autostart-enabled, KDE's Hidden).
+pub fn autostart_entry(program: &Path, enabled: bool) -> String {
+    let p = program.to_string_lossy();
+    let mut e = format!(
+        "[Desktop Entry]\nType=Application\nName=Maktaba\nName[ar]=مكتبة\n\
          Comment=The Maktaba server's status in the tray\n\
-         Exec={} {HIDDEN_FLAG}\nTerminal=false\nNoDisplay=true\n\
-         X-GNOME-Autostart-enabled=true\n",
-        exec_quote(&program.to_string_lossy())
-    )
+         Comment[ar]=حالة خادم مكتبة في شريط النظام\n\
+         TryExec={}\nExec={} {HIDDEN_FLAG}\nTerminal=false\nNoDisplay=true\n\
+         X-GNOME-Autostart-enabled={enabled}\n{AUTOSTART_MARK}\n",
+        desktop_string(&p),
+        exec_value(&p)
+    );
+    if !enabled {
+        e.push_str("Hidden=true\n");
+    }
+    e
 }
 
-/// A word of a desktop entry's Exec key: quoted when it needs it, with `"`,
-/// `` ` ``, `$` and `\` escaped inside the quotes, and `%` doubled (a field
-/// code otherwise).
+/// A desktop entry string value: `\`, newline, tab and CR escaped.
+pub fn desktop_string(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('\n', "\\n")
+        .replace('\t', "\\t")
+        .replace('\r', "\\r")
+}
+
+/// A word of a desktop entry's Exec key as it is written in the file. The
+/// Desktop Entry spec reads the value as a string first (its `\` escapes)
+/// and then splits it by its quoting rules, so the quoted word (exec_quote)
+/// is string-escaped on top: a literal `\` in a quoted path is `\\\\`, a `$`
+/// is `\\$`.
+pub fn exec_value(word: &str) -> String {
+    desktop_string(&exec_quote(word))
+}
+
+/// A word of a desktop entry's Exec key, by its quoting rules alone: quoted
+/// when it holds a reserved character, with `"`, `` ` ``, `$` and `\` escaped
+/// inside the quotes, and `%` doubled (a field code otherwise).
 pub fn exec_quote(word: &str) -> String {
     let word = word.replace('%', "%%");
     if !word.is_empty()
@@ -391,18 +614,97 @@ pub fn exec_quote(word: &str) -> String {
     out
 }
 
-pub fn write_autostart() -> Result<(), String> {
-    let path = autostart_path().ok_or("HOME is not set")?;
-    let program = app_program().ok_or("cannot find this program")?;
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&path, autostart_entry(&program)).map_err(|e| e.to_string())
+/// What to do with the autostart entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Autostart {
+    /// Write it (with the user's on/off kept).
+    Write { enabled: bool },
+    /// Leave it: the user removed it, it is not ours, it starts this program
+    /// already, or this app is older than the server.
+    Leave,
 }
 
+/// The entry is written once; after that it is only rewritten when it is
+/// this app's and starts another program (the AppImage moved, a newer app),
+/// never for an app older than the server, and never back after the user
+/// removed it.
+pub fn autostart_decision(
+    existing: Option<&str>,
+    written_before: bool,
+    program: &Path,
+    older: bool,
+) -> Autostart {
+    if older {
+        return Autostart::Leave;
+    }
+    let Some(e) = existing else {
+        return if written_before {
+            Autostart::Leave
+        } else {
+            Autostart::Write { enabled: true }
+        };
+    };
+    let lines: Vec<&str> = e.lines().map(str::trim).collect();
+    if !lines.contains(&AUTOSTART_MARK) {
+        return Autostart::Leave;
+    }
+    let exec = format!(
+        "Exec={} {HIDDEN_FLAG}",
+        exec_value(&program.to_string_lossy())
+    );
+    if lines.contains(&exec.as_str()) {
+        return Autostart::Leave;
+    }
+    let off = lines.contains(&"X-GNOME-Autostart-enabled=false") || lines.contains(&"Hidden=true");
+    Autostart::Write { enabled: !off }
+}
+
+/// Write the tray's autostart entry when autostart_decision says so.
+pub fn sync_autostart(older: bool) -> Result<(), String> {
+    let path = autostart_path().ok_or("HOME is not set")?;
+    let program = app_program().ok_or("cannot find this program")?;
+    let marker = autostart_written_path();
+    let existing = std::fs::read_to_string(&path).ok();
+    let written_before = marker.as_ref().is_some_and(|m| m.is_file());
+    let decision = autostart_decision(existing.as_deref(), written_before, &program, older);
+    if let Autostart::Write { enabled } = decision {
+        write_file_atomic(&path, &autostart_entry(&program, enabled))?;
+    }
+    // ours and present (written now or before this marker existed): its
+    // removal from now on is the user's
+    let ours = decision != Autostart::Leave
+        || existing.is_some_and(|e| e.lines().any(|l| l.trim() == AUTOSTART_MARK));
+    if let (true, Some(m)) = (ours, marker) {
+        if !written_before {
+            write_file_atomic(
+                &m,
+                "written by the Maktaba app; remove the entry to keep it off\n",
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// Write a file through a temporary file renamed over it.
+fn write_file_atomic(path: &Path, text: &str) -> Result<(), String> {
+    let dir = path.parent().ok_or("no parent directory")?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, text).map_err(|e| format!("{}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, path).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// Remove the entry (this computer no longer runs the server); a later server
+/// setup writes it again.
 pub fn remove_autostart() {
     if let Some(p) = autostart_path() {
-        let _ = std::fs::remove_file(p);
+        if std::fs::read_to_string(&p).is_ok_and(|e| e.lines().any(|l| l.trim() == AUTOSTART_MARK))
+        {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+    if let Some(m) = autostart_written_path() {
+        let _ = std::fs::remove_file(m);
     }
 }
 
@@ -473,6 +775,58 @@ mod tests {
         assert!(parse_result("not json\n").is_err());
     }
 
+    // `runtime status --json` as #174 prints it
+    fn rt(json: &str) -> RuntimeStatus {
+        serde_json::from_str(json).unwrap()
+    }
+
+    #[test]
+    fn the_plan_follows_the_runtime_status() {
+        // nothing installed yet: the first runtime
+        assert_eq!(
+            plan(&rt(
+                r#"{"root":"/r","owner":"app","installed":[],"from":"v1.5.0_1a2b3c4d",
+                       "from_version":"v1.5.0","update_pending":true,"downgrade":false}"#
+            )),
+            Plan::Install
+        );
+        // the same payload runs
+        assert_eq!(
+            plan(&rt(
+                r#"{"current":"v1.5.0_1a2b3c4d","version":"v1.5.0","watermark":"v1.5.0",
+                       "from":"v1.5.0_1a2b3c4d","from_version":"v1.5.0","update_pending":false,"downgrade":false}"#
+            )),
+            Plan::Keep
+        );
+        // an older app (an old AppImage opened again): never installed
+        assert_eq!(
+            plan(&rt(
+                r#"{"current":"v1.5.0_1a2b3c4d","version":"v1.5.0","watermark":"v1.5.0",
+                       "from_version":"v1.4.0","update_pending":false,"downgrade":true}"#
+            )),
+            Plan::Older {
+                app: "v1.4.0".into(),
+                server: "v1.5.0".into()
+            }
+        );
+        // the newest this machine ran is what an older app is compared with
+        assert_eq!(
+            plan(&rt(
+                r#"{"version":"v1.3.0","watermark":"v1.5.0","from_version":"v1.4.0","downgrade":true}"#
+            )),
+            Plan::Older {
+                app: "v1.4.0".into(),
+                server: "v1.5.0".into()
+            }
+        );
+    }
+
+    #[test]
+    fn the_older_message_names_both_versions() {
+        let m = older_message("v1.4.0", "v1.5.0");
+        assert!(m.contains("v1.4.0") && m.contains("v1.5.0"), "{m}");
+    }
+
     // XDG paths are absolute POSIX paths ("/state" is relative on Windows)
     #[cfg(unix)]
     #[test]
@@ -512,12 +866,165 @@ mod tests {
 
     #[test]
     fn autostart_entry_quotes_the_program() {
-        let e = autostart_entry(Path::new("/home/me/Applications/Maktaba.AppImage"));
+        let e = autostart_entry(Path::new("/home/me/Applications/Maktaba.AppImage"), true);
         assert!(e.contains("Exec=/home/me/Applications/Maktaba.AppImage --hidden\n"));
+        assert!(e.contains("TryExec=/home/me/Applications/Maktaba.AppImage\n"));
         assert!(e.starts_with("[Desktop Entry]\nType=Application\n"));
+        assert!(e.contains("Comment[ar]=") && e.contains("Name[ar]=مكتبة\n"));
+        assert!(e.contains("X-GNOME-Autostart-enabled=true\n") && !e.contains("Hidden=true"));
+        let off = autostart_entry(Path::new("/opt/My Apps/M.AppImage"), false);
+        assert!(off.contains("TryExec=/opt/My Apps/M.AppImage\n"));
+        assert!(off.contains("Exec=\"/opt/My Apps/M.AppImage\" --hidden\n"));
+        assert!(off.contains("X-GNOME-Autostart-enabled=false\n") && off.contains("Hidden=true\n"));
         assert_eq!(exec_quote("/home/my apps/M"), "\"/home/my apps/M\"");
         assert_eq!(exec_quote("/a$b"), "\"/a\\$b\"");
         assert_eq!(exec_quote("/100%"), "/100%%");
         assert_eq!(exec_quote("/x\"y"), "\"/x\\\"y\"");
+        assert_eq!(desktop_string("/a\\b"), "/a\\\\b");
+        // in the file: the quoting's escapes string-escaped again (the spec's
+        // "\\\\" for a literal backslash, "\\$" for a dollar sign)
+        assert_eq!(exec_value("/a$b"), "\"/a\\\\$b\"");
+        assert_eq!(exec_value("/a\\b"), "\"/a\\\\\\\\b\"");
+        assert_eq!(exec_value("/x\"y"), "\"/x\\\\\"y\"");
+        assert_eq!(exec_value("/plain/M.AppImage"), "/plain/M.AppImage");
+    }
+
+    /// An Exec value read as the Desktop Entry spec reads it: the string's
+    /// escapes first, then the quoting rules, then `%%`.
+    fn read_exec(value: &str) -> Vec<String> {
+        let mut s = String::new();
+        let mut chars = value.chars();
+        while let Some(c) = chars.next() {
+            if c != '\\' {
+                s.push(c);
+                continue;
+            }
+            match chars.next() {
+                Some('s') => s.push(' '),
+                Some('n') => s.push('\n'),
+                Some('t') => s.push('\t'),
+                Some('r') => s.push('\r'),
+                Some('\\') => s.push('\\'),
+                Some(o) => {
+                    s.push('\\');
+                    s.push(o);
+                }
+                None => s.push('\\'),
+            }
+        }
+        let (mut args, mut cur, mut quoted, mut any) = (Vec::new(), String::new(), false, false);
+        let mut it = s.chars();
+        while let Some(c) = it.next() {
+            match c {
+                '"' => {
+                    quoted = !quoted;
+                    any = true;
+                }
+                '\\' if quoted => cur.extend(it.next()),
+                ' ' if !quoted => {
+                    if any || !cur.is_empty() {
+                        args.push(std::mem::take(&mut cur));
+                    }
+                    any = false;
+                }
+                _ => cur.push(c),
+            }
+        }
+        if any || !cur.is_empty() {
+            args.push(cur);
+        }
+        args.into_iter().map(|a| a.replace("%%", "%")).collect()
+    }
+
+    #[test]
+    fn exec_values_read_back_as_the_program() {
+        for path in [
+            "/home/me/Maktaba.AppImage",
+            "/opt/My Apps/M.AppImage",
+            "/home/me/$HOME/a`b`/M",
+            "/home/me/back\\slash/M",
+            "/home/me/quote\"d/M",
+            "/home/me/100% sure/M",
+            "/home/me/tab\there/M",
+            "/home/me/(x)&;|<>~*?#'/M",
+        ] {
+            let line = format!("{} {HIDDEN_FLAG}", exec_value(path));
+            assert_eq!(
+                read_exec(&line),
+                vec![path.to_string(), HIDDEN_FLAG.to_string()],
+                "{line}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_passed_check_copies_the_runtime() {
+        let ok = serde_json::json!({"ok": true, "problems": []});
+        let refused = serde_json::json!({"ok": false, "problems": [{"code": "glibc_old"}]});
+        assert!(copies_after("check", &ok));
+        assert!(!copies_after("check", &refused));
+        assert!(!copies_after("admin", &ok));
+        assert!(reads_only("status") && reads_only("check") && !reads_only("venv"));
+    }
+
+    #[test]
+    fn the_runtime_status_names_its_owner() {
+        assert_eq!(
+            rt(r#"{"owner":"headless","current":"v1_1a"}"#).owner,
+            "headless"
+        );
+        assert_eq!(rt(r#"{"current":"v1_1a"}"#).owner, "");
+    }
+
+    #[test]
+    fn autostart_is_written_once_and_follows_only_its_own_program() {
+        let app = Path::new("/home/me/Maktaba.AppImage");
+        let ours = autostart_entry(app, true);
+        // the first time: written
+        assert_eq!(
+            autostart_decision(None, false, app, false),
+            Autostart::Write { enabled: true }
+        );
+        // the user removed it: it stays removed
+        assert_eq!(autostart_decision(None, true, app, false), Autostart::Leave);
+        // ours, this program: left as it is
+        assert_eq!(
+            autostart_decision(Some(&ours), true, app, false),
+            Autostart::Leave
+        );
+        // ours, the AppImage moved: rewritten, the user's "off" kept
+        let moved = Path::new("/home/me/Apps/Maktaba.AppImage");
+        assert_eq!(
+            autostart_decision(Some(&ours), true, moved, false),
+            Autostart::Write { enabled: true }
+        );
+        let gnome_off = ours.replace(
+            "X-GNOME-Autostart-enabled=true",
+            "X-GNOME-Autostart-enabled=false",
+        );
+        assert_eq!(
+            autostart_decision(Some(&gnome_off), true, moved, false),
+            Autostart::Write { enabled: false }
+        );
+        let kde_off = format!("{ours}Hidden=true\n");
+        assert_eq!(
+            autostart_decision(Some(&kde_off), true, moved, false),
+            Autostart::Write { enabled: false }
+        );
+        // an app older than the server never takes the entry
+        assert_eq!(
+            autostart_decision(Some(&ours), true, moved, true),
+            Autostart::Leave
+        );
+        assert_eq!(
+            autostart_decision(None, false, moved, true),
+            Autostart::Leave
+        );
+        // someone else's maktaba.desktop is left alone
+        let other = "[Desktop Entry]\nType=Application\nExec=/usr/bin/maktaba-client\n";
+        assert_eq!(
+            autostart_decision(Some(other), false, app, false),
+            Autostart::Leave
+        );
     }
 }

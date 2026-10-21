@@ -12,8 +12,9 @@ func noEnv(string) string { return "" }
 func TestDirsForMac(t *testing.T) {
 	t.Parallel()
 	d := DirsFor(func(k string) string { return "/xdg/" + k }, "darwin", "/Users/a")
-	root := "/Users/a/Library/Application Support/Maktaba"
-	want := Dirs{Config: root, Data: root + "/data", Logs: "/Users/a/Library/Logs/Maktaba", Keys: root + "/keys"}
+	root := filepath.Join("/Users/a", "Library", "Application Support", "Maktaba")
+	want := Dirs{Config: root, Data: filepath.Join(root, "data"), Logs: filepath.Join("/Users/a", "Library", "Logs", "Maktaba"),
+		Keys: filepath.Join(root, "keys")}
 	if d != want {
 		t.Fatalf("darwin dirs = %+v, want %+v (XDG is ignored on a Mac)", d, want)
 	}
@@ -22,24 +23,35 @@ func TestDirsForMac(t *testing.T) {
 func TestDirsForLinuxKeepsXDG(t *testing.T) {
 	t.Parallel()
 	d := DirsFor(noEnv, "linux", "/home/a")
-	want := Dirs{Config: "/home/a/.config/maktaba", Data: "/home/a/.local/share/maktaba",
-		Logs: "/home/a/.local/state/maktaba/logs", Keys: "/home/a/.config/maktaba"}
+	p := filepath.FromSlash
+	want := Dirs{Config: p("/home/a/.config/maktaba"), Data: p("/home/a/.local/share/maktaba"),
+		Logs: p("/home/a/.local/state/maktaba/logs"), Keys: p("/home/a/.config/maktaba")}
 	if d != want {
 		t.Fatalf("linux dirs = %+v, want %+v", d, want)
 	}
 	env := map[string]string{"XDG_CONFIG_HOME": "/c", "XDG_DATA_HOME": "/d", "XDG_STATE_HOME": "/s"}
 	d = DirsFor(func(k string) string { return env[k] }, "linux", "/home/a")
-	if d.Config != "/c/maktaba" || d.Data != "/d/maktaba" || d.Logs != "/s/maktaba/logs" {
+	if d.Config != p("/c/maktaba") || d.Data != p("/d/maktaba") || d.Logs != p("/s/maktaba/logs") {
 		t.Fatalf("XDG overrides not used: %+v", d)
 	}
 }
 
-func TestDirsForWindowsUnchanged(t *testing.T) {
+func TestDirsForWindows(t *testing.T) {
 	t.Parallel()
 	env := map[string]string{"APPDATA": `C:\R`, "LOCALAPPDATA": `C:\L`}
 	d := DirsFor(func(k string) string { return env[k] }, "windows", `C:\U`)
-	if d.Config != filepath.Join(`C:\R`, "Maktaba") || d.Data != filepath.Join(`C:\L`, "Maktaba", "data") || d.Keys != d.Config {
-		t.Fatalf("windows dirs = %+v", d)
+	root := filepath.Join(`C:\L`, "Maktaba")
+	want := Dirs{Config: root, Data: filepath.Join(root, "data"), Logs: filepath.Join(root, "logs"), Keys: filepath.Join(root, "keys")}
+	if d != want {
+		t.Fatalf("windows dirs = %+v, want %+v (nothing in the roaming profile)", d, want)
+	}
+	// no LOCALAPPDATA: the usual place under the profile
+	if d := DirsFor(noEnv, "windows", `C:\U`); d.Config != filepath.Join(`C:\U`, "AppData", "Local", "Maktaba") {
+		t.Fatalf("windows dirs without LOCALAPPDATA = %+v", d)
+	}
+	old := legacyWindowsDirs(func(k string) string { return env[k] }, `C:\U`)
+	if old.Config != filepath.Join(`C:\R`, "Maktaba") || old.Keys != old.Config || old.Data != want.Data {
+		t.Fatalf("legacy windows dirs = %+v", old)
 	}
 }
 
@@ -52,16 +64,17 @@ func TestStateDir(t *testing.T) {
 		{"darwin", "/Volumes/media/data", "/Volumes/media/data"}, // a chosen dir named data
 		{"darwin", "/Volumes/Big/maktaba", "/Volumes/Big/maktaba"},
 		{"linux", "/m/Maktaba/data", "/m/Maktaba/data"},
-		{"windows", `C:\L\Maktaba\data`, `C:\L\Maktaba\data`},
+		{"windows", "/m/Maktaba/data", "/m/Maktaba"},    // %LOCALAPPDATA%\Maktaba\data
+		{"windows", "/d/media/state", "/d/media/state"}, // a chosen dir
 	} {
-		if got := stateDir(c.goos, c.data, def); got != c.want {
+		if got := stateDir(c.goos, c.data, def); filepath.Clean(got) != filepath.Clean(c.want) {
 			t.Errorf("stateDir(%s, %s) = %s, want %s", c.goos, c.data, got, c.want)
 		}
 	}
 }
 
-// layout builds an old XDG install and the new Mac dirs under one temp dir.
-func layout(t *testing.T) (old, cur Dirs) {
+// macLayout builds an old XDG install and the new Mac dirs under one temp dir.
+func macLayout(t *testing.T) (old, cur Dirs) {
 	t.Helper()
 	base := t.TempDir()
 	old = xdgDirs(noEnv, base)
@@ -90,8 +103,9 @@ func readAt(t *testing.T, path string) string {
 
 func TestMigrateMovesDefaultInstall(t *testing.T) {
 	t.Parallel()
-	old, cur := layout(t)
-	toml := "# my comment\n[server]\ndata_dir = \"" + old.Data + "\"\n[database]\nurl = \"sqlite://" + old.Data + "/maktaba.db\"\n"
+	old, cur := macLayout(t)
+	// literal strings: a Windows temp path has backslashes
+	toml := "# my comment\n[server]\ndata_dir = '" + old.Data + "'\n[database]\nurl = 'sqlite://" + old.Data + "/maktaba.db'\n"
 	writeAt(t, filepath.Join(old.Config, "server.toml"), toml)
 	writeAt(t, filepath.Join(old.Config, "secrets.key"), "S")
 	writeAt(t, filepath.Join(old.Config, "stream-signing.key"), "K")
@@ -99,13 +113,13 @@ func TestMigrateMovesDefaultInstall(t *testing.T) {
 	writeAt(t, filepath.Join(old.Data, "models", "m", "w.bin"), "W")
 	writeAt(t, filepath.Join(old.Data, "cache", "streaming", "seg"), "C")
 
-	from, err := migrateDirs(old, cur)
+	from, err := migrateDirs(osMover, old, cur)
 	if err != nil || from != old.Config {
 		t.Fatalf("migrate = %q, %v", from, err)
 	}
 	got := readAt(t, filepath.Join(cur.Config, "server.toml"))
-	if !strings.Contains(got, "# my comment") || !strings.Contains(got, `data_dir = "`+cur.Data+`"`) ||
-		!strings.Contains(got, `url = "sqlite://`+cur.Data+`/maktaba.db"`) || strings.Contains(got, old.Data) {
+	if !strings.Contains(got, "# my comment") || !strings.Contains(got, `data_dir = '`+cur.Data+`'`) ||
+		!strings.Contains(got, `url = 'sqlite://`+cur.Data+`/maktaba.db'`) || strings.Contains(got, old.Data) {
 		t.Fatalf("rewritten server.toml:\n%s", got)
 	}
 	root := filepath.Dir(cur.Data)
@@ -125,19 +139,19 @@ func TestMigrateMovesDefaultInstall(t *testing.T) {
 		t.Error("the old server.toml and data dir should be gone")
 	}
 	// once: a second run does nothing
-	if from, err := migrateDirs(old, cur); err != nil || from != "" {
+	if from, err := migrateDirs(osMover, old, cur); err != nil || from != "" {
 		t.Fatalf("second migrate = %q, %v", from, err)
 	}
 }
 
 func TestMigrateKeepsChosenDataDir(t *testing.T) {
 	t.Parallel()
-	old, cur := layout(t)
+	old, cur := macLayout(t)
 	chosen := filepath.Join(t.TempDir(), "media-state")
-	toml := "[server]\ndata_dir = \"" + chosen + "\"\n"
+	toml := "[server]\ndata_dir = '" + chosen + "'\n"
 	writeAt(t, filepath.Join(old.Config, "server.toml"), toml)
 	writeAt(t, filepath.Join(chosen, "maktaba.db"), "DB")
-	if _, err := migrateDirs(old, cur); err != nil {
+	if _, err := migrateDirs(osMover, old, cur); err != nil {
 		t.Fatal(err)
 	}
 	if got := readAt(t, filepath.Join(cur.Config, "server.toml")); got != toml {
@@ -150,10 +164,10 @@ func TestMigrateKeepsChosenDataDir(t *testing.T) {
 
 func TestMigrateLeavesNewInstallAlone(t *testing.T) {
 	t.Parallel()
-	old, cur := layout(t)
+	old, cur := macLayout(t)
 	writeAt(t, filepath.Join(old.Config, "server.toml"), "[server]\n")
 	writeAt(t, filepath.Join(cur.Config, "server.toml"), "[server]\nlisten = \"x\"\n")
-	if from, err := migrateDirs(old, cur); err != nil || from != "" {
+	if from, err := migrateDirs(osMover, old, cur); err != nil || from != "" {
 		t.Fatalf("migrate = %q, %v", from, err)
 	}
 	if !exists(filepath.Join(old.Config, "server.toml")) {
@@ -163,13 +177,13 @@ func TestMigrateLeavesNewInstallAlone(t *testing.T) {
 
 func TestMigrateFinishesAfterAPartialRun(t *testing.T) {
 	t.Parallel()
-	old, cur := layout(t)
-	toml := "[server]\ndata_dir = \"" + old.Data + "\"\n"
+	old, cur := macLayout(t)
+	toml := "[server]\ndata_dir = '" + old.Data + "'\n"
 	writeAt(t, filepath.Join(old.Config, "server.toml"), toml)
 	// a run that moved the data and stopped before server.toml
 	writeAt(t, filepath.Join(cur.Data, "maktaba.db"), "DB")
 	writeAt(t, filepath.Join(cur.Data, "models", "m"), "W")
-	if _, err := migrateDirs(old, cur); err != nil {
+	if _, err := migrateDirs(osMover, old, cur); err != nil {
 		t.Fatal(err)
 	}
 	if got := readAt(t, filepath.Join(cur.Config, "server.toml")); !strings.Contains(got, cur.Data) {
@@ -182,13 +196,13 @@ func TestMigrateFinishesAfterAPartialRun(t *testing.T) {
 
 func TestMigrateIntoEmptyDataDir(t *testing.T) {
 	t.Parallel()
-	old, cur := layout(t)
+	old, cur := macLayout(t)
 	writeAt(t, filepath.Join(old.Config, "server.toml"), "[server]\n")
 	writeAt(t, filepath.Join(old.Data, "maktaba.db"), "DB")
 	if err := os.MkdirAll(cur.Data, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := migrateDirs(old, cur); err != nil {
+	if _, err := migrateDirs(osMover, old, cur); err != nil {
 		t.Fatal(err)
 	}
 	if readAt(t, filepath.Join(cur.Data, "maktaba.db")) != "DB" {
@@ -198,11 +212,11 @@ func TestMigrateIntoEmptyDataDir(t *testing.T) {
 
 func TestMigrateRefusesToOverwriteData(t *testing.T) {
 	t.Parallel()
-	old, cur := layout(t)
+	old, cur := macLayout(t)
 	writeAt(t, filepath.Join(old.Config, "server.toml"), "[server]\n")
 	writeAt(t, filepath.Join(old.Data, "maktaba.db"), "OLD")
 	writeAt(t, filepath.Join(cur.Data, "maktaba.db"), "NEW")
-	if _, err := migrateDirs(old, cur); err == nil {
+	if _, err := migrateDirs(osMover, old, cur); err == nil {
 		t.Fatal("want an error when the new data dir already exists")
 	}
 	if readAt(t, filepath.Join(cur.Data, "maktaba.db")) != "NEW" || !exists(filepath.Join(old.Config, "server.toml")) {

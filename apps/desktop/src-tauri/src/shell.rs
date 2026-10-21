@@ -1,8 +1,9 @@
 // The app around the server (Epic 36 stories 36.5 / 36.6 on a Mac, Epic 38
-// story 38.3 on Windows): the menu-bar / tray item, the status poller, and
-// the commands the setup screens (web/src/pages/Setup/) call. Pure
-// decisions live in status.rs, tray.rs, mode.rs and setup.rs; this file is
-// the glue to tauri. The OS side (launchd / the sign-in task) is agent.rs.
+// story 38.3 on Windows, Epic 39 story 39.8 on Linux): the menu-bar / tray
+// item, the status poller, and the commands the setup screens
+// (web/src/pages/Setup/) call. Pure decisions live in status.rs, tray.rs,
+// mode.rs and setup.rs; this file is the glue to tauri. The OS side
+// (launchd / the sign-in task / the systemd user unit) is agent.rs.
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -20,16 +21,33 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 use tauri_plugin_updater::UpdaterExt;
 
 use crate::agent::{self, Action, BundlePaths, LoginItem};
+use crate::lang::t;
 use crate::mode::{self, AppMode, Target};
 use crate::setup::{self, Progress, StepError};
-use crate::status::{self, Probe, ServerStatus};
+use crate::status::{self, Probe, Quiet, ServerStatus};
 use crate::tray::{self, Entry};
 
 const TRAY_ID: &str = "main";
 const POLL_EVERY: Duration = Duration::from_secs(3);
-/// How long "unreachable" reads as starting after a start or resume.
-const START_GRACE: Duration = Duration::from_secs(90);
 const UPDATE_CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
+
+/// Where mode.json is kept: the app's config folder; on Windows its local
+/// data folder (%LOCALAPPDATA%\com.hamzalabs.maktaba), not the roaming one,
+/// where it was before and is moved from once (mode::adopt).
+fn mode_path(app: &AppHandle) -> PathBuf {
+    let config = app
+        .path()
+        .app_config_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("mode.json");
+    #[cfg(windows)]
+    if let Ok(local) = app.path().app_local_data_dir() {
+        let local = local.join("mode.json");
+        let _ = mode::adopt(&config, &local, agent::registered_here());
+        return local;
+    }
+    config
+}
 
 pub struct Shell {
     mode_path: PathBuf,
@@ -38,6 +56,8 @@ pub struct Shell {
     server_bin: Option<PathBuf>,
     paused: AtomicBool,
     started_at: Mutex<Instant>,
+    /// Since when the server has not answered (status::Quiet).
+    quiet: Mutex<Quiet>,
     update_ready: AtomicBool,
     status: Mutex<ServerStatus>,
     menu: Mutex<Vec<Entry>>,
@@ -49,11 +69,7 @@ pub struct Shell {
 
 impl Shell {
     pub fn new(app: &AppHandle) -> Self {
-        let mode_path = app
-            .path()
-            .app_config_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .join("mode.json");
+        let mode_path = mode_path(app);
         // MAKTABA_SERVER_BIN points a dev build (`tauri dev`, outside
         // Maktaba.app) at a maktaba-server to run setup against.
         let server_bin = std::env::var_os("MAKTABA_SERVER_BIN")
@@ -70,6 +86,7 @@ impl Shell {
             // a pause from before this window started (an update relaunched it)
             paused: AtomicBool::new(agent::paused_flag()),
             started_at: Mutex::new(Instant::now()),
+            quiet: Mutex::new(Quiet::new(Instant::now())),
             update_ready: AtomicBool::new(false),
             status: Mutex::new(ServerStatus::Starting),
             menu: Mutex::new(Vec::new()),
@@ -121,6 +138,12 @@ impl Shell {
     fn mark_started(&self) {
         self.paused.store(false, Ordering::SeqCst);
         agent::set_paused_flag(false);
+        self.restart_grace();
+    }
+
+    /// "Unreachable" reads as starting again for a while (the server was
+    /// switched to a new runtime), without touching a pause.
+    fn restart_grace(&self) {
         *self.started_at.lock().unwrap() = Instant::now();
     }
 
@@ -137,16 +160,27 @@ impl Shell {
         };
         let addr = status::addr_of(&supervisor_url)
             .unwrap_or_else(|| status::DEFAULT_SUPERVISOR_ADDR.into());
-        // a live agent (Windows) whose supervisor does not answer yet is starting
-        let just_started = self.started_at.lock().unwrap().elapsed() < START_GRACE
-            || agent::agent_alive() == Some(true);
         let probe = status::probe(&addr);
         let model = match &probe {
             Probe::Snapshot(s) => status::model_line(s.llm.as_ref()),
             Probe::Unreachable => None,
         };
+        // a live agent (Windows, Linux) whose supervisor does not answer is
+        // starting, until it has been quiet too long: then the log says why
+        let alive = agent::agent_alive();
+        let since_start = self.started_at.lock().unwrap().elapsed();
+        let answered = matches!(probe, Probe::Snapshot(_));
+        let quiet_for = self
+            .quiet
+            .lock()
+            .unwrap()
+            .poll(Instant::now(), answered, alive)
+            .min(since_start);
+        let waiting = status::waiting(since_start, alive, quiet_for, || {
+            agent::server_log_tail().and_then(|t| status::failure_in_log(&t))
+        });
         let paused = self.paused.load(Ordering::SeqCst);
-        let st = status::derive(true, paused, just_started, &probe);
+        let st = status::derive(true, paused, &waiting, &probe);
         (st, model)
     }
 }
@@ -186,8 +220,17 @@ fn bundled_url(app: &AppHandle) -> String {
 fn show_error(app: &AppHandle, msg: impl Into<String>) {
     app.dialog()
         .message(msg)
-        .title("Maktaba")
+        .title(t("Maktaba", "مكتبة"))
         .kind(MessageDialogKind::Error)
+        .show(|_| {});
+}
+
+#[cfg(target_os = "linux")]
+fn show_info(app: &AppHandle, msg: impl Into<String>) {
+    app.dialog()
+        .message(msg)
+        .title(t("Maktaba", "مكتبة"))
+        .kind(MessageDialogKind::Info)
         .show(|_| {});
 }
 
@@ -230,8 +273,17 @@ fn refresh(app: &AppHandle) {
     } else {
         "Maktaba".into()
     };
+    // the window's Server menu speaks the session's language (Linux)
+    #[cfg(target_os = "linux")]
+    let window_line = if server {
+        tray::window_status_line(&status)
+    } else {
+        t("Maktaba", "مكتبة")
+    };
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
+        #[cfg(target_os = "linux")]
+        sync_window_menu(&handle, &entries, &window_line);
         if let (Some(t), Ok(menu)) = (
             handle.tray_by_id(TRAY_ID),
             build_tray_menu(&handle, &entries),
@@ -240,6 +292,41 @@ fn refresh(app: &AppHandle) {
             let _ = t.set_tooltip(Some(tooltip));
         }
     });
+}
+
+/// The window menu's Server items (lib.rs adds them on Linux when no tray
+/// shows) follow the tray's: the status line, and each item enabled when the
+/// tray would offer it.
+#[cfg(target_os = "linux")]
+fn sync_window_menu(app: &AppHandle, entries: &[Entry], status_line: &str) {
+    let Some(sub) = app
+        .menu()
+        .and_then(|m| m.get(tray::WINDOW_MENU_ID))
+        .and_then(|k| k.as_submenu().cloned())
+    else {
+        return;
+    };
+    if let Some(item) = sub
+        .get(tray::WINDOW_STATUS_ID)
+        .and_then(|k| k.as_menuitem().cloned())
+    {
+        let _ = item.set_text(status_line);
+    }
+    for (id, _, _) in tray::WINDOW_ITEMS.iter().flatten() {
+        let window_id = format!("{}{id}", tray::WINDOW_PREFIX);
+        if let Some(item) = sub
+            .get(window_id.as_str())
+            .and_then(|k| k.as_menuitem().cloned())
+        {
+            let _ = item.set_enabled(tray::window_enabled(entries, id));
+        }
+    }
+}
+
+/// A click on one of the window menu's Server items: the tray item's action.
+#[cfg(target_os = "linux")]
+pub fn on_window_menu(app: &AppHandle, tray_id: &str) {
+    on_tray_event(app, tray_id);
 }
 
 /// Tray clicks arrive on the main thread; the work (launchctl,
@@ -301,9 +388,30 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
         _ => Ok(()),
     };
     if let Err(e) = result {
-        show_error(app, e);
+        show_error(app, tray_error(id, &e));
     }
     refresh(app);
+}
+
+/// A tray (or Server menu) action's failure, in the session's language: what
+/// failed, then the server's own words.
+fn tray_error(id: &str, e: &str) -> String {
+    let (en, ar) = match id {
+        "server-pause" | "stop-and-quit" => {
+            ("The Maktaba server could not stop", "تعذّر إيقاف خادم مكتبة")
+        }
+        "server-resume" => (
+            "The Maktaba server could not start",
+            "تعذّر تشغيل خادم مكتبة",
+        ),
+        "open-logs" => ("The logs could not be opened", "تعذّر فتح السجلات"),
+        "change-server" => (
+            "Maktaba could not go back to choosing a server",
+            "تعذّر على مكتبة العودة إلى اختيار الخادم",
+        ),
+        _ => ("Maktaba could not do that", "تعذّر على مكتبة تنفيذ ذلك"),
+    };
+    t(&format!("{en}: {e}"), &format!("{ar}: {e}"))
 }
 
 /// Story 36.8 replaces the whole app (shell + server payload): install,
@@ -311,8 +419,13 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
 /// (Epic 38 contract-update) the payload's files are in use while the server
 /// runs, so the server stops first; the installer replaces them, its
 /// POSTINSTALL hook starts the server again and it relaunches this window.
+/// When the stop times out or the install fails, the server is started again
+/// (unless it was paused): asked to stop, it would stay down.
 fn install_update(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
+        // the server was asked to stop for the install
+        #[cfg(windows)]
+        let stopped = AtomicBool::new(false);
         let run = async {
             let update = app
                 .updater()
@@ -329,9 +442,11 @@ fn install_update(app: AppHandle) {
                 .map_err(|e| e.to_string())?;
             #[cfg(windows)]
             if matches!(shell(&app).mode(), Some(AppMode::Server { .. })) {
-                // stop the server and wait for it; it keeps running (and the
-                // update is not installed) when it does not stop in time
-                tauri::async_runtime::spawn_blocking(agent::stop_and_wait)
+                // stop the server and wait for it (the install hold keeps the
+                // task's watchdog from starting it meanwhile); the update is
+                // not installed when it does not stop in time
+                stopped.store(true, Ordering::SeqCst);
+                tauri::async_runtime::spawn_blocking(agent::stop_for_install)
                     .await
                     .map_err(|e| e.to_string())?
                     .map_err(|e| format!("the server must stop first: {e}"))?;
@@ -355,9 +470,42 @@ fn install_update(app: AppHandle) {
                 app.restart();
             }
             Ok(false) => shell(&app).update_ready.store(false, Ordering::SeqCst),
-            Err(e) => show_error(&app, format!("The update could not be installed: {e}")),
+            Err(e) => {
+                let msg = t(
+                    &format!("The update could not be installed: {e}"),
+                    &format!("تعذّر تثبيت التحديث: {e}"),
+                );
+                #[cfg(windows)]
+                let msg = if stopped.load(Ordering::SeqCst) {
+                    let handle = app.clone();
+                    let again = tauri::async_runtime::spawn_blocking(move || {
+                        start_after_failed_update(&handle)
+                    })
+                    .await
+                    .unwrap_or_else(|e| format!(" The server could not start again: {e}"));
+                    format!("{msg}{again}")
+                } else {
+                    msg
+                };
+                show_error(&app, msg)
+            }
         }
     });
+}
+
+/// After an update that failed once the server was asked to stop (Windows):
+/// start it again unless it was paused. The sentence for the message.
+#[cfg(windows)]
+fn start_after_failed_update(app: &AppHandle) -> String {
+    let sh = shell(app);
+    if sh.paused.load(Ordering::SeqCst) {
+        return " The server stays paused.".into();
+    }
+    sh.mark_started();
+    match agent::control(Action::Resume) {
+        Ok(()) => " The server is starting again.".into(),
+        Err(e) => format!(" The server could not start again: {e}"),
+    }
 }
 
 /// Build the tray, open the right page, start the status poller and the
@@ -378,21 +526,37 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
 
     if let Target::Remote(url) = sh.target() {
         if let Err(e) = navigate_main(app, &url) {
-            show_error(app, format!("Cannot open {url}: {e}"));
+            show_error(
+                app,
+                t(
+                    &format!("Cannot open {url}: {e}"),
+                    &format!("تعذّر فتح {url}: {e}"),
+                ),
+            );
         }
     }
 
     // Windows: the server runs whenever this PC is set up and not paused.
-    // The sign-in task starts it, and restarts its agent; one ended by hand
-    // (Task Scheduler's End) starts again when the window opens.
+    // The sign-in task starts it, and its watchdog trigger starts an agent
+    // that died; one ended by hand (Task Scheduler's End) also starts again
+    // when the window opens, as does one an install left stopped (Resume ends
+    // the install hold). A task of the old shared name becomes this user's.
     // (Off the main thread: schtasks takes a moment.)
     #[cfg(windows)]
     {
         let handle = app.clone();
         std::thread::spawn(move || {
             let sh = shell(&handle);
-            if matches!(sh.mode(), Some(AppMode::Server { .. }))
-                && !sh.paused.load(Ordering::SeqCst)
+            if !matches!(sh.mode(), Some(AppMode::Server { .. })) {
+                return;
+            }
+            if let Err(e) = agent::replace_old_task() {
+                show_error(
+                    &handle,
+                    format!("Maktaba could not move its sign-in task to this user's name: {e}"),
+                );
+            }
+            if !sh.paused.load(Ordering::SeqCst)
                 && agent::agent_alive() == Some(false)
                 && agent::login_item() == LoginItem::Enabled
             {
@@ -406,36 +570,71 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
 
     // Linux: the server runs a copy of the payload (the runtime). After an app
     // update this app's payload is newer: copy it in and switch the unit to it
-    // (stopped while `current` moves; a paused server stays paused). Then a
-    // unit that is not running starts again, unless paused; and the tray's
-    // autostart entry follows the AppImage if it moved.
+    // (stopped while `current` moves). A paused server stays paused across
+    // the switch: only Resume (or the next boot) starts it. An app older than
+    // the server installs nothing and says so. Then a unit that is not running
+    // starts again, unless paused; and the tray's autostart entry follows the
+    // AppImage if it moved (never to an older app, never back after the user
+    // removed it).
     #[cfg(target_os = "linux")]
     {
+        use crate::agent::linux::{self, Synced};
+
         let handle = app.clone();
         std::thread::spawn(move || {
             let sh = shell(&handle);
             if !matches!(sh.mode(), Some(AppMode::Server { .. })) {
                 return;
             }
-            match agent::linux::sync_runtime() {
-                Ok(true) => sh.mark_started(),
-                Ok(false) => {}
-                Err(e) => show_error(
-                    &handle,
-                    format!("Maktaba could not switch the server to this version: {e}"),
-                ),
+            let alive = agent::agent_alive();
+            // the unit runs although the app paused it: started at boot (linger)
+            // or by hand, which ends the pause
+            if sh.paused.load(Ordering::SeqCst) && alive == Some(true) {
+                sh.mark_started();
             }
+            // Some(older) once the runtime is known to hold this app's payload
+            // (or a newer one); None when that could not be told, and then the
+            // autostart entry is left as it is
+            let known: Option<bool> = match linux::sync_runtime() {
+                Ok(Synced::Switched) => {
+                    sh.restart_grace();
+                    Some(false)
+                }
+                Ok(Synced::Current) => Some(false),
+                Ok(Synced::Older { app, server }) => {
+                    show_info(&handle, linux::older_message(&app, &server));
+                    Some(true)
+                }
+                Err(e) => {
+                    show_error(
+                        &handle,
+                        t(
+                            &format!("Maktaba could not switch the server to this version: {e}"),
+                            &format!("تعذّر على مكتبة نقل الخادم إلى هذا الإصدار: {e}"),
+                        ),
+                    );
+                    None
+                }
+            };
             if !sh.paused.load(Ordering::SeqCst)
                 && agent::agent_alive() == Some(false)
                 && agent::login_item() != LoginItem::NotRegistered
             {
                 sh.mark_started();
                 if let Err(e) = agent::control(Action::Resume) {
-                    show_error(&handle, format!("The Maktaba server could not start: {e}"));
+                    show_error(
+                        &handle,
+                        t(
+                            &format!("The Maktaba server could not start: {e}"),
+                            &format!("تعذّر تشغيل خادم مكتبة: {e}"),
+                        ),
+                    );
                 }
             }
-            if agent::linux::tray_available() {
-                let _ = agent::linux::write_autostart();
+            if let Some(older) = known {
+                if linux::tray_available() {
+                    let _ = linux::sync_autostart(older);
+                }
             }
         });
     }
@@ -502,9 +701,21 @@ pub async fn setup_step(
         details: Vec::new(),
     })?;
     tauri::async_runtime::spawn_blocking(move || {
-        setup::run_step(&bin, &step, &input, |p| {
+        let send = |p: Progress| {
             let _ = on_progress.send(p);
-        })
+        };
+        // Linux: status and check from this app's payload; a check that
+        // passed installs the runtime, and every later step runs from its
+        // copy (the venv must not be built against this app's AppImage mount
+        // or package files)
+        #[cfg(target_os = "linux")]
+        let (bin, envs) = agent::linux::setup_server(&step, &bin, send)?;
+        #[cfg(not(target_os = "linux"))]
+        let envs: Vec<(String, String)> = Vec::new();
+        let result = setup::run_step(&bin, &envs, &step, &input, send)?;
+        #[cfg(target_os = "linux")]
+        agent::linux::after_step(&step, &result, send)?;
+        Ok(result)
     })
     .await
     .unwrap_or_else(|e| {
@@ -545,7 +756,12 @@ pub fn finish_setup(
 }
 
 #[tauri::command(async)]
-pub fn open_login_items() {
+pub fn open_login_items(app: AppHandle) {
+    // Windows: this turns the task on and starts the server, a Resume
+    #[cfg(windows)]
+    shell(&app).mark_started();
+    #[cfg(not(windows))]
+    let _ = app;
     agent::open_login_items_settings();
 }
 

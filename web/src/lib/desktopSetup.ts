@@ -30,7 +30,15 @@ export type AppState = AppTarget & {
 
 export type ServerStatus =
   | { kind: "setup_needed" | "paused" | "stopped" | "starting" | "running" }
-  | { kind: "problem"; roles: string[] };
+  | { kind: "problem"; roles: string[] }
+  /** its agent runs but the server has not answered for minutes: why, from its log
+   * (NO_ANSWER when the log says nothing) */
+  | { kind: "not_answering"; reason: string };
+
+/** The reason a not_answering status gives when server.log names none: the shell's
+ * `status::NO_ANSWER` (apps/desktop/src-tauri/src/status.rs). Any other reason is a line
+ * of the log, in the server's own words. */
+export const NO_ANSWER = "the server does not answer";
 
 export interface StepProgress {
   stage: string;

@@ -12,7 +12,10 @@ Semantics, in short:
   ORed, reasons are merged (newest first, capped at 20) and, for debounced
   stages, ``not_before`` is pushed out but never beyond
   ``created_at + debounce_max_sec``;
-* a trigger on a claimed / running / resuming / paused row sets
+* a *forced* trigger runs now (slot 0144): it takes over a pending row, or a paused one
+  a stage gave back for later (``JobDeferred``: ``not_before`` ahead), sets ``force``
+  and clears ``not_before``; a row parked on a dependency keeps waiting;
+* any other trigger on a claimed / running / resuming / paused row sets
   ``rerun_requested``: when that run ends the engine inserts one follow-up.
 """
 
@@ -192,7 +195,8 @@ async def _enqueue_sqlite(
         debounce = int(s["debounce_sec"])
         live = await db.fetchrow(
             "SELECT id, state, priority, force, force_cascade, reasons, created_at, payload,"
-            " rerun_force, rerun_force_cascade, rerun_reasons, enqueue_count FROM processing_jobs"
+            " rerun_force, rerun_force_cascade, rerun_reasons, enqueue_count, not_before,"
+            " parked_on FROM processing_jobs"
             " WHERE subject_kind = $1 AND subject_id = $2 AND stage = $3"
             " AND state IN ('pending','claimed','running','resuming','paused')",
             subject_kind,
@@ -246,6 +250,18 @@ async def _enqueue_sqlite(
 
         pending = live["state"] == "pending"
         new_payload = merge_payload(loads(live["payload"]), payload)
+        if force and _runs_now(live, t):
+            await db.execute(
+                "UPDATE processing_jobs SET priority = $2, force = 1, force_cascade = $3,"
+                " reasons = $4, payload = $5, enqueue_count = enqueue_count + 1,"
+                " not_before = NULL WHERE id = $1",
+                live["id"],
+                min(int(live["priority"]), 100 if priority is None else priority),
+                bool(live["force_cascade"]) or force_cascade,
+                dumps(prepend_reason(loads(live["reasons"]) or [], entry)),
+                None if new_payload is None else dumps(new_payload),
+            )
+            return EnqueueResult(int(live["id"]), "coalesced")
         if pending:
             created = _as_dt(live["created_at"])
             nb: Any = None
@@ -278,6 +294,18 @@ async def _enqueue_sqlite(
             bool(live["rerun_force_cascade"]) or force_cascade,
         )
         return EnqueueResult(int(live["id"]), "rerun_requested")
+
+
+def _runs_now(live: Any, t: Any) -> bool:
+    """A forced trigger takes over this live job and clears its ``not_before`` (slot 0144):
+    a pending one, or one a stage gave back for later (``paused`` until ``not_before``).
+    One parked on a dependency, or claimed / running / resuming, keeps its rules."""
+    if live["parked_on"] is not None:
+        return False
+    if live["state"] == "pending":
+        return True
+    nb = _as_dt(live["not_before"])
+    return bool(live["state"] == "paused" and nb is not None and nb > t)
 
 
 def _as_dt(value: Any) -> Any:

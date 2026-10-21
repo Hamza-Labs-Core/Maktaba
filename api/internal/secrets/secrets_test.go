@@ -112,13 +112,45 @@ func TestKeyPath(t *testing.T) {
 		t.Errorf("beside server.toml: %s", got)
 	}
 	delete(env, "MAKTABA_CONFIG")
-	env["APPDATA"], env["XDG_CONFIG_HOME"] = "appdata", "xdg"
-	want := filepath.Join("xdg", "maktaba", KeyFileName)
-	if runtime.GOOS == "windows" {
-		want = filepath.Join("appdata", "Maktaba", KeyFileName)
-	}
-	if got := KeyPath(get); got != want {
+	env["APPDATA"], env["LOCALAPPDATA"], env["XDG_CONFIG_HOME"] = "appdata", "local", "xdg"
+	if got, want := KeyPath(get), platformKeyPath(get, runtime.GOOS); got != want {
 		t.Errorf("platform: %s, want %s", got, want)
+	}
+}
+
+// Windows: maktaba-server's keys directory (Epic 38: never the roaming profile),
+// or the roaming profile's key of an install from before while there is none in
+// the new place. macOS keeps the XDG path, like Linux: the developer stack's key,
+// which migrate-from-dev moves into Maktaba.app.
+func TestPlatformKeyPath(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	base := t.TempDir()
+	env := map[string]string{"APPDATA": filepath.Join(base, "R"), "LOCALAPPDATA": filepath.Join(base, "L"), "XDG_CONFIG_HOME": "xdg"}
+	get := func(k string) string { return env[k] }
+	cur := filepath.Join(base, "L", "Maktaba", "keys", KeyFileName)
+	old := filepath.Join(base, "R", "Maktaba", KeyFileName)
+	if got := platformKeyPath(get, "windows"); got != cur {
+		t.Errorf("windows, no key yet: %s, want %s", got, cur)
+	}
+	for _, p := range []string{old, cur} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, make([]byte, KeySize), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := platformKeyPath(get, "windows"); got != p {
+			t.Errorf("windows with %s: %s", p, got)
+		}
+	}
+	for _, goos := range []string{"darwin", "linux"} {
+		if got, want := platformKeyPath(get, goos), filepath.Join("xdg", "maktaba", KeyFileName); got != want {
+			t.Errorf("%s: %s, want %s", goos, got, want)
+		}
+	}
+	delete(env, "XDG_CONFIG_HOME")
+	if got, want := platformKeyPath(get, "darwin"), filepath.Join(home, ".config", "maktaba", KeyFileName); got != want {
+		t.Errorf("darwin without XDG_CONFIG_HOME: %s, want %s", got, want)
 	}
 }
 
