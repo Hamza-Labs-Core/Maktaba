@@ -244,7 +244,14 @@ run the second listen (its `unavailable()` says why), unless `rules.transcriptio
 listen"), read before each stage selection. A transcript made without its second listen stores
 `skipped_fingerprint(fingerprint)` as its job's input hash: a worker that runs the second
 listen does not take it as done, and every 10 minutes queues up to 20 of them (at least an hour
-old, oldest first, priority 500, payload `relisten`) once it has the model; a worker without
+old, priority 500, payload `relisten`) once it has the model: the videos tried least first, the
+oldest among them. Each relisten job is a try (`relisten_attempts`, slot 0145): a video whose
+transcript still lacks the second listen afterwards (a file that worker cannot read, a model
+that does not load) waits 1 hour, then twice as long after each try (at most a day, the
+engine's jitter), and after 6 tries gets no more, said once as a warning in the job log of its
+last relisten job (Processing, Activity) and in the worker's log
+(`transcribe.relisten_stopped`). A transcript with the second listen, or one from an ordinary
+transcribe job (a changed file, an operator's run), clears the video's tries. A worker without
 the second listen gives a relisten job back for 15 minutes (for a day at most) and lets an
 ordinary job's transcript stand.
 
