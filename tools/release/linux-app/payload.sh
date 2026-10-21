@@ -22,13 +22,14 @@
 # It also writes <build>/tauri.linux-app.conf.json, the overlay `tauri build --config`
 # takes to bundle the payload into the AppImage / .deb / .rpm (story 39.10).
 #
-# Usage: payload.sh [--version VERSION] [--build DIR] [--cache DIR] [--fetch-only]
+# Usage: payload.sh [--version VERSION] [--build DIR] [--cache DIR] [--fetch-only [--only PIECE]]
 #   --version     release tag (default: git describe)
 #   --build       work directory (default: build/linux-app); the payload is <build>/server
 #   --cache       downloads (default: <build>/downloads, or $LINUX_APP_CACHE)
 #   --fetch-only  only download the pinned files into the cache and check them (CI keeps
 #                 that cache on main, so a pull request's build does not download them);
-#                 it tries every file and fails after, naming the ones it could not get
+#                 it tries every file and fails after, naming the ones it could not get;
+#                 --only PIECE (postgres, python, ffmpeg, ffprobe) fetches that one alone
 #   --pinned      print the pinned downloads of both architectures and stop, one per line:
 #                 ARCH PIECE NAME SHA256 URL MIRROR-NAME (the third-party-mirror workflow)
 #   --notices     print the mirror's notices (each file, its upstream download, SHA-256,
@@ -47,10 +48,12 @@ VERSION="${VERSION:-}"
 BUILD="$REPO_ROOT/build/linux-app"
 CACHE="${LINUX_APP_CACHE:-}"
 FETCH_ONLY=0
+ONLY=""
 LIST=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --fetch-only) FETCH_ONLY=1; shift ;;
+        --only)    [ $# -ge 2 ] || die "--only needs a piece"; ONLY="$2"; shift 2 ;;
         --pinned | --notices) LIST="${1#--}"; shift ;;
         --version) [ $# -ge 2 ] || die "--version needs a value"; VERSION="$2"; shift 2 ;;
         --build)   [ $# -ge 2 ] || die "--build needs a value"; BUILD="$2"; shift 2 ;;
@@ -159,7 +162,8 @@ sha256() { sha256sum "$1" | awk '{print $1}'; }
 # when it has SHA256. A round that gets it from neither is tried again after 15, 30, 60,
 # then 120 s: a host down for a while (a 5xx such as Cloudflare's 521, a reset) is asked
 # again. curl's --retry never retries a 521, and its --retry-all-errors needs a newer curl
-# than some build hosts have. One try gives up after 15 minutes.
+# than some build hosts have. One try gives up after 15 minutes, or after a minute
+# slower than 1 KB/s (a host that stalls).
 fetch() {
     local url="$1" want="$2" dst="$CACHE/$3" delay src
     if [ -f "$dst" ] && [ "$(sha256 "$dst")" = "$want" ]; then
@@ -169,7 +173,7 @@ fetch() {
     log "downloading $3"
     for delay in 15 30 60 120 0; do
         for src in "$url" "$MIRROR_URL/$4"; do
-            if curl -fsSL --connect-timeout 30 --max-time 900 -o "$dst.part" "$src" &&
+            if curl -fsSL --connect-timeout 30 --max-time 900 --speed-limit 1024 --speed-time 60 -o "$dst.part" "$src" &&
                 [ "$(sha256 "$dst.part")" = "$want" ]; then
                 mv "$dst.part" "$dst"
                 printf '%s\n' "$dst"
@@ -198,15 +202,20 @@ get() {
 }
 
 if [ "$FETCH_ONLY" = 1 ]; then
-    names=() failed=()
+    names=() failed=() tried=0
     while read -r piece name _; do
         names+=("$name")
+        [ -z "$ONLY" ] || [ "$piece" = "$ONLY" ] || continue
+        tried=$((tried + 1))
         (get "$piece" >/dev/null) || failed+=("$name")
     done < <(pinned "$ARCH")
+    [ "$tried" -gt 0 ] || die "pins.env pins no $ONLY"
     # an earlier pins.env's files (from a cache restored by its prefix) are not kept
-    for f in "$CACHE"/*; do
-        case " ${names[*]} " in *" ${f##*/} "*) ;; *) rm -f "$f" ;; esac
-    done
+    if [ -z "$ONLY" ]; then
+        for f in "$CACHE"/*; do
+            case " ${names[*]} " in *" ${f##*/} "*) ;; *) rm -f "$f" ;; esac
+        done
+    fi
     [ "${#failed[@]}" -eq 0 ] || die "not downloaded: ${failed[*]}"
     log "the pinned downloads for $ARCH are in $CACHE"
     exit 0
