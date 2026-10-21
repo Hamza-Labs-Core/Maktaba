@@ -142,6 +142,20 @@ func runFirewallHelper(c firewallChange) error {
 	return nil
 }
 
+// longPath is p with every 8.3 name written out (p as it is when that fails).
+func longPath(p string) string {
+	in, err := windows.UTF16PtrFromString(p)
+	if err != nil {
+		return p
+	}
+	buf := make([]uint16, windows.MAX_LONG_PATH)
+	n, err := windows.GetLongPathName(in, &buf[0], uint32(len(buf)))
+	if err != nil || n == 0 || int(n) > len(buf) {
+		return p
+	}
+	return windows.UTF16ToString(buf[:n])
+}
+
 // shellExecuteInfo is SHELLEXECUTEINFOW.
 type shellExecuteInfo struct {
 	cbSize       uint32
@@ -221,10 +235,15 @@ foreach ($r in @($c.add)) {
   if ($r.protocol -and $r.protocol -ne 'Any') { $a.Protocol = $r.protocol }
   $ports = @($r.ports | Where-Object { $_ -and $_ -ne 'Any' })
   if ($ports.Count -gt 0 -and ($r.protocol -eq 'TCP' -or $r.protocol -eq 'UDP')) { $a.LocalPort = $ports }
-  New-NetFirewallRule @a -ErrorAction Stop | Out-Null
+  try { New-NetFirewallRule @a -ErrorAction Stop | Out-Null }
+  catch { throw ("New-NetFirewallRule " + ($a | ConvertTo-Json -Compress) + ": " + $_.Exception.Message) }
 }`
 
 func applyFirewall(c firewallChange) error {
+	// the firewall takes a program's long path (a temp folder's may be 8.3)
+	for i := range c.Add {
+		c.Add[i].Program = longPath(c.Add[i].Program)
+	}
 	raw, err := json.Marshal(c)
 	if err != nil {
 		return err

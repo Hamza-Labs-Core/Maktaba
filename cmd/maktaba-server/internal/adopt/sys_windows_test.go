@@ -112,7 +112,8 @@ func TestRealFirewallRule(t *testing.T) {
 	}
 	// the app's bin: the elevated run (this test binary as maktaba-server.exe)
 	// and the program the rule is for
-	bin := filepath.Join(t.TempDir(), "server", "bin")
+	// the temp folder's long path (a runner's TEMP is 8.3): the firewall keeps that
+	bin := filepath.Join(longPath(t.TempDir()), "server", "bin")
 	helper, prog := filepath.Join(bin, "maktaba-server.exe"), filepath.Join(bin, "maktaba-streaming.exe")
 	for _, p := range []string{helper, prog} {
 		write(t, p, "")
