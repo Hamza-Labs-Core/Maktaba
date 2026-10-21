@@ -120,17 +120,52 @@ pub const WINDOW_MENU_ID: &str = "window-server";
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub const WINDOW_STATUS_ID: &str = "window-status";
 
-/// The submenu's items as (tray id, label), in order; None is a separator.
+/// The submenu's title, in English and Arabic (lang::t picks).
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-pub const WINDOW_ITEMS: &[Option<(&str, &str)>] = &[
-    Some(("update", "Install update and restart")),
+pub const WINDOW_MENU_TITLE: (&str, &str) = ("Server", "الخادم");
+
+/// The submenu's items as (tray id, English, Arabic), in order; None is a
+/// separator. The Arabic follows the web app's (setup.starting.stopped's
+/// «استئناف الخادم»).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub const WINDOW_ITEMS: &[Option<(&str, &str, &str)>] = &[
+    Some((
+        "update",
+        "Install update and restart",
+        "تثبيت التحديث وإعادة التشغيل",
+    )),
     None,
-    Some(("server-pause", "Pause server")),
-    Some(("server-resume", "Resume server")),
-    Some(("open-logs", "Open logs")),
+    Some(("server-pause", "Pause server", "إيقاف الخادم مؤقتًا")),
+    Some(("server-resume", "Resume server", "استئناف الخادم")),
+    Some(("open-logs", "Open logs", "فتح السجلات")),
     None,
-    Some(("stop-and-quit", "Stop server and quit")),
+    Some((
+        "stop-and-quit",
+        "Stop server and quit",
+        "إيقاف الخادم والخروج",
+    )),
 ];
+
+/// The status line in Arabic (status_line's English).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn status_line_ar(status: &ServerStatus) -> String {
+    match status {
+        ServerStatus::SetupNeeded => "مكتبة: أكمل الإعداد لتشغيل الخادم".into(),
+        ServerStatus::Paused => "مكتبة متوقفة مؤقتًا".into(),
+        ServerStatus::Stopped => "مكتبة متوقفة".into(),
+        ServerStatus::Starting => "مكتبة تبدأ العمل…".into(),
+        ServerStatus::Running => "مكتبة تعمل".into(),
+        ServerStatus::Problem(roles) => {
+            format!("مكتبة: تتوقف هذه الأجزاء مرارًا: {}", roles.join("، "))
+        }
+    }
+}
+
+/// The Server menu's status line in the session's language.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn window_status_line(status: &ServerStatus) -> String {
+    crate::lang::t(&status_line(status), &status_line_ar(status))
+}
 
 /// A window item is enabled when the tray menu would offer it.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -253,6 +288,27 @@ mod tests {
     }
 
     #[test]
+    fn the_window_menu_speaks_both_languages() {
+        for (id, en, ar) in WINDOW_ITEMS.iter().flatten() {
+            assert!(!en.is_empty() && !ar.is_empty(), "{id}");
+        }
+        for s in [
+            ServerStatus::SetupNeeded,
+            ServerStatus::Paused,
+            ServerStatus::Stopped,
+            ServerStatus::Starting,
+            ServerStatus::Running,
+        ] {
+            assert!(!status_line_ar(&s).is_empty());
+        }
+        assert!(status_line_ar(&ServerStatus::Problem(vec![
+            "pipeline".into(),
+            "streaming".into()
+        ]))
+        .contains("pipeline، streaming"));
+    }
+
+    #[test]
     fn status_lines() {
         assert_eq!(status_line(&ServerStatus::Starting), "Maktaba is starting…");
         assert_eq!(
@@ -266,7 +322,11 @@ mod tests {
 
     #[test]
     fn the_window_menu_offers_what_the_tray_offers() {
-        let window_ids: Vec<&str> = WINDOW_ITEMS.iter().flatten().map(|(id, _)| *id).collect();
+        let window_ids: Vec<&str> = WINDOW_ITEMS
+            .iter()
+            .flatten()
+            .map(|(id, _, _)| *id)
+            .collect();
         assert_eq!(
             window_ids,
             [

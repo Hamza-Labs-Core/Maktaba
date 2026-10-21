@@ -6,11 +6,14 @@
 // <prefix>/share/maktaba/server under a running server. It runs from a copy
 // in ~/.local/share/maktaba/runtime/<version> (`current`), as a systemd user
 // unit started at boot by linger. The app never writes the unit or the copy
-// itself: it runs the payload's own `maktaba-server runtime …` and
-// `maktaba-server service …` (`--json`, one result or error line), the same
-// commands the terminal setup of a machine without a desktop uses. The setup
-// steps after `status` run from the copy too, so the venv is built against
-// runtime/current/python, which outlives this app's mount.
+// itself: it runs `maktaba-server runtime …` from its payload and
+// `maktaba-server service …` from the copy the unit runs (`--json`, one
+// result or error line), the same commands the terminal setup of a machine
+// without a desktop uses. Setup's `status` and `check` run from the payload;
+// a `check` that passes installs the copy, and the steps after it run from
+// the copy too, so the venv is built against runtime/current/python, which
+// outlives this app's mount. A desktop app that starts records itself as the
+// runtime's owner: one updater, the app's.
 //
 // An app older than the newest Maktaba this machine ran never installs its
 // payload (the server's database may be migrated past it): the newer runtime
@@ -118,20 +121,23 @@ fn payload() -> Option<BundlePaths> {
         .filter(BundlePaths::payload_present)
 }
 
-/// The maktaba-server to ask: this app's payload's, else the runtime's (a
+/// The maktaba-server a command runs. `service …` runs from the runtime's
+/// copy, the server the unit runs, so an app older than that copy never
+/// rewrites its unit with an older template; this app's payload runs it only
+/// before there is a runtime. Everything else (`runtime …` installs this
+/// app's payload) runs from the payload, else from the runtime's copy (a
 /// client-only build still finds a server installed by another).
-fn server() -> Result<PathBuf, String> {
-    if let Some(p) = payload() {
-        return Ok(p.server_bin());
-    }
-    let rt = runtime_current()
-        .ok_or("HOME is not set")?
-        .join("bin")
-        .join("maktaba-server");
-    if rt.is_file() {
-        return Ok(rt);
-    }
-    Err("this build of Maktaba does not include the server".into())
+fn server_for(command: &str) -> Result<PathBuf, String> {
+    let runtime = runtime_current()
+        .map(|c| c.join("bin").join("maktaba-server"))
+        .filter(|p| p.is_file());
+    let own = payload().map(|p| p.server_bin());
+    let pick = if command == "service" {
+        runtime.or(own)
+    } else {
+        own.or(runtime)
+    };
+    pick.ok_or_else(|| "this build of Maktaba does not include the server".into())
 }
 
 /// The result of one `--json` command: its last `result` line's data, or its
@@ -158,7 +164,7 @@ pub fn parse_result(stdout: &str) -> Result<Value, String> {
 }
 
 fn run_json(args: &[&str]) -> Result<Value, String> {
-    let bin = server()?;
+    let bin = server_for(args.first().copied().unwrap_or_default())?;
     let out = Command::new(&bin)
         .args(args)
         .arg("--json")
@@ -240,6 +246,10 @@ pub fn agent_alive() -> Option<bool> {
 /// the newest version this machine ran, its watermark).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct RuntimeStatus {
+    /// who updates the runtime: "app" (this app's updater) or "headless" (the
+    /// machine itself, from the signed releases: install.sh --app)
+    #[serde(default)]
+    pub owner: String,
     #[serde(default)]
     pub current: String,
     #[serde(default)]
@@ -357,7 +367,25 @@ fn sync_with(on_progress: impl FnMut(Progress)) -> Result<Synced, StepError> {
         .map_err(|e| StepError::new("runtime", e))?;
     let synced = match plan(&st) {
         Plan::Older { app, server } => return Ok(Synced::Older { app, server }),
-        Plan::Keep => Synced::Current,
+        Plan::Keep => {
+            // this payload runs already; a machine set up by install.sh --app
+            // (owner headless) that this app now manages gets one updater, the
+            // app's: an install of the running payload copies nothing and only
+            // records the owner
+            if st.owner != "app" {
+                setup::run_ndjson(
+                    &p.server_bin(),
+                    &[
+                        "runtime", "install", "--json", "--from", &from, "--owner", "app",
+                    ],
+                    &[],
+                    None,
+                    on_progress,
+                    "maktaba-server runtime install --owner app",
+                )?;
+            }
+            Synced::Current
+        }
         Plan::Install => {
             setup::run_ndjson(
                 &p.server_bin(),
@@ -383,19 +411,37 @@ fn sync_with(on_progress: impl FnMut(Progress)) -> Result<Synced, StepError> {
     Ok(synced)
 }
 
-/// The maktaba-server a setup step runs, and its environment. `status` (read
-/// only, asked at every launch) runs from this app's payload; every other
-/// step from the runtime's copy, installed first, with MAKTABA_APP_BUNDLE the
-/// unresolved runtime/current: the venv is then built against
-/// runtime/current/python, not this app's mount. A dev build (no payload,
-/// MAKTABA_SERVER_BIN) runs `bin` as it is.
+/// The steps that run from this app's payload: they only read, and come
+/// before anything is copied (a computer `check` refuses never waits for a
+/// copy it cannot use).
+pub fn reads_only(step: &str) -> bool {
+    matches!(step, "status" | "check")
+}
+
+/// The maktaba-server a setup step runs, and its environment. `status` (asked
+/// at every launch) and `check` run from this app's payload, as an app
+/// payload (MAKTABA_APP_BUNDLE: the bundled Postgres is what will run); a
+/// `check` that says ok then installs the runtime (after_step). Every later
+/// step runs from the runtime's copy, with MAKTABA_APP_BUNDLE the unresolved
+/// runtime/current: the venv is then built against runtime/current/python,
+/// not this app's mount. A dev build (no payload, MAKTABA_SERVER_BIN) runs
+/// `bin` as it is.
 pub fn setup_server(
     step: &str,
     bin: &Path,
     on_progress: impl FnMut(Progress),
 ) -> Result<(PathBuf, Vec<(String, String)>), StepError> {
-    if step == "status" || payload().is_none() {
+    let Some(p) = payload() else {
         return Ok((bin.to_path_buf(), Vec::new()));
+    };
+    if reads_only(step) {
+        return Ok((
+            bin.to_path_buf(),
+            vec![(
+                "MAKTABA_APP_BUNDLE".to_string(),
+                p.server_dir.to_string_lossy().to_string(),
+            )],
+        ));
     }
     ensure_runtime(on_progress)?;
     let current = runtime_current().ok_or_else(|| StepError::new("internal", "HOME is not set"))?;
@@ -406,6 +452,26 @@ pub fn setup_server(
             current.to_string_lossy().to_string(),
         )],
     ))
+}
+
+/// Whether a step's result is a `check` that says this computer can run the
+/// server: the runtime is installed right then.
+pub fn copies_after(step: &str, result: &Value) -> bool {
+    step == "check" && result.get("ok").and_then(Value::as_bool) == Some(true)
+}
+
+/// After a setup step: a `check` that passed installs the runtime (its copy's
+/// progress goes to on_progress, while the screen says it is checking), so
+/// the steps after it run from the copy.
+pub fn after_step(
+    step: &str,
+    result: &Value,
+    on_progress: impl FnMut(Progress),
+) -> Result<(), StepError> {
+    if payload().is_some() && copies_after(step, result) {
+        ensure_runtime(on_progress)?;
+    }
+    Ok(())
 }
 
 /// Is a StatusNotifier host (a tray) running in this session? Asked through
@@ -500,7 +566,7 @@ pub fn autostart_entry(program: &Path, enabled: bool) -> String {
          TryExec={}\nExec={} {HIDDEN_FLAG}\nTerminal=false\nNoDisplay=true\n\
          X-GNOME-Autostart-enabled={enabled}\n{AUTOSTART_MARK}\n",
         desktop_string(&p),
-        exec_quote(&p)
+        exec_value(&p)
     );
     if !enabled {
         e.push_str("Hidden=true\n");
@@ -516,9 +582,18 @@ pub fn desktop_string(s: &str) -> String {
         .replace('\r', "\\r")
 }
 
-/// A word of a desktop entry's Exec key: quoted when it needs it, with `"`,
-/// `` ` ``, `$` and `\` escaped inside the quotes, and `%` doubled (a field
-/// code otherwise).
+/// A word of a desktop entry's Exec key as it is written in the file. The
+/// Desktop Entry spec reads the value as a string first (its `\` escapes)
+/// and then splits it by its quoting rules, so the quoted word (exec_quote)
+/// is string-escaped on top: a literal `\` in a quoted path is `\\\\`, a `$`
+/// is `\\$`.
+pub fn exec_value(word: &str) -> String {
+    desktop_string(&exec_quote(word))
+}
+
+/// A word of a desktop entry's Exec key, by its quoting rules alone: quoted
+/// when it holds a reserved character, with `"`, `` ` ``, `$` and `\` escaped
+/// inside the quotes, and `%` doubled (a field code otherwise).
 pub fn exec_quote(word: &str) -> String {
     let word = word.replace('%', "%%");
     if !word.is_empty()
@@ -575,7 +650,7 @@ pub fn autostart_decision(
     }
     let exec = format!(
         "Exec={} {HIDDEN_FLAG}",
-        exec_quote(&program.to_string_lossy())
+        exec_value(&program.to_string_lossy())
     );
     if lines.contains(&exec.as_str()) {
         return Autostart::Leave;
@@ -806,6 +881,99 @@ mod tests {
         assert_eq!(exec_quote("/100%"), "/100%%");
         assert_eq!(exec_quote("/x\"y"), "\"/x\\\"y\"");
         assert_eq!(desktop_string("/a\\b"), "/a\\\\b");
+        // in the file: the quoting's escapes string-escaped again (the spec's
+        // "\\\\" for a literal backslash, "\\$" for a dollar sign)
+        assert_eq!(exec_value("/a$b"), "\"/a\\\\$b\"");
+        assert_eq!(exec_value("/a\\b"), "\"/a\\\\\\\\b\"");
+        assert_eq!(exec_value("/x\"y"), "\"/x\\\\\"y\"");
+        assert_eq!(exec_value("/plain/M.AppImage"), "/plain/M.AppImage");
+    }
+
+    /// An Exec value read as the Desktop Entry spec reads it: the string's
+    /// escapes first, then the quoting rules, then `%%`.
+    fn read_exec(value: &str) -> Vec<String> {
+        let mut s = String::new();
+        let mut chars = value.chars();
+        while let Some(c) = chars.next() {
+            if c != '\\' {
+                s.push(c);
+                continue;
+            }
+            match chars.next() {
+                Some('s') => s.push(' '),
+                Some('n') => s.push('\n'),
+                Some('t') => s.push('\t'),
+                Some('r') => s.push('\r'),
+                Some('\\') => s.push('\\'),
+                Some(o) => {
+                    s.push('\\');
+                    s.push(o);
+                }
+                None => s.push('\\'),
+            }
+        }
+        let (mut args, mut cur, mut quoted, mut any) = (Vec::new(), String::new(), false, false);
+        let mut it = s.chars();
+        while let Some(c) = it.next() {
+            match c {
+                '"' => {
+                    quoted = !quoted;
+                    any = true;
+                }
+                '\\' if quoted => cur.extend(it.next()),
+                ' ' if !quoted => {
+                    if any || !cur.is_empty() {
+                        args.push(std::mem::take(&mut cur));
+                    }
+                    any = false;
+                }
+                _ => cur.push(c),
+            }
+        }
+        if any || !cur.is_empty() {
+            args.push(cur);
+        }
+        args.into_iter().map(|a| a.replace("%%", "%")).collect()
+    }
+
+    #[test]
+    fn exec_values_read_back_as_the_program() {
+        for path in [
+            "/home/me/Maktaba.AppImage",
+            "/opt/My Apps/M.AppImage",
+            "/home/me/$HOME/a`b`/M",
+            "/home/me/back\\slash/M",
+            "/home/me/quote\"d/M",
+            "/home/me/100% sure/M",
+            "/home/me/tab\there/M",
+            "/home/me/(x)&;|<>~*?#'/M",
+        ] {
+            let line = format!("{} {HIDDEN_FLAG}", exec_value(path));
+            assert_eq!(
+                read_exec(&line),
+                vec![path.to_string(), HIDDEN_FLAG.to_string()],
+                "{line}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_passed_check_copies_the_runtime() {
+        let ok = serde_json::json!({"ok": true, "problems": []});
+        let refused = serde_json::json!({"ok": false, "problems": [{"code": "glibc_old"}]});
+        assert!(copies_after("check", &ok));
+        assert!(!copies_after("check", &refused));
+        assert!(!copies_after("admin", &ok));
+        assert!(reads_only("status") && reads_only("check") && !reads_only("venv"));
+    }
+
+    #[test]
+    fn the_runtime_status_names_its_owner() {
+        assert_eq!(
+            rt(r#"{"owner":"headless","current":"v1_1a"}"#).owner,
+            "headless"
+        );
+        assert_eq!(rt(r#"{"current":"v1_1a"}"#).owner, "");
     }
 
     #[test]

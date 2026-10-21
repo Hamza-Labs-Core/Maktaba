@@ -371,21 +371,22 @@ fn build_menu(app: &tauri::AppHandle, server_items: bool) -> tauri::Result<Menu<
 /// The Server menu: the status line (disabled), then the tray's server items,
 /// all disabled until the first status refresh enables what applies.
 fn server_menu(app: &tauri::AppHandle) -> tauri::Result<Submenu<tauri::Wry>> {
-    let sub = Submenu::with_id(app, tray::WINDOW_MENU_ID, "Server", true)?;
+    let (title_en, title_ar) = tray::WINDOW_MENU_TITLE;
+    let sub = Submenu::with_id(app, tray::WINDOW_MENU_ID, lang::t(title_en, title_ar), true)?;
     sub.append(&MenuItem::with_id(
         app,
         tray::WINDOW_STATUS_ID,
-        "Maktaba",
+        lang::t("Maktaba", "مكتبة"),
         false,
         None::<&str>,
     )?)?;
     sub.append(&PredefinedMenuItem::separator(app)?)?;
     for entry in tray::WINDOW_ITEMS {
         match entry {
-            Some((id, label)) => sub.append(&MenuItem::with_id(
+            Some((id, en, ar)) => sub.append(&MenuItem::with_id(
                 app,
                 format!("{}{id}", tray::WINDOW_PREFIX),
-                *label,
+                lang::t(en, ar),
                 false,
                 None::<&str>,
             )?)?,
