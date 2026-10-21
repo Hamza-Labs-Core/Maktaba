@@ -114,8 +114,8 @@ func (c *Copies) keepAtMost(ctx context.Context, gb int) {
 	}
 	if err != nil {
 		if !c.set && c.Logger != nil {
-			c.Logger.Info("cluster: the database's own cap on what a machine's copy keeps cannot be set: the home "+
-				"holds the cap alone", "err", err, "event", "cluster_wal_keep_unset")
+			c.Logger.Info("cluster: the database's own cap on a copy's changes cannot be set: the home holds it alone",
+				"err", err, "event", "cluster_wal_keep_unset")
 		}
 		c.set, c.kept = true, -1
 		return
