@@ -52,7 +52,7 @@ don't append a line here; docs-only PRs are exempt.
   `...-constraints-cuda.txt`, which names PyTorch's index: `uv export --emit-index-url`, so
   building a release needs uv 0.12 or later), named in `release.json` and `release.conf`; the
   venv bootstrap (`--torch auto|cpu|cuda`), `setup --node` and `install-node.ps1` (`-Torch`) pick
-  one by the GPU. With the cuda set the node installers look for each pin on both indexes, and
+  one by the GPU; the Windows app's payload carries both (`pipeline\constraints-cuda.txt`). With the cuda set the node installers look for each pin on both indexes, and
   with the `stt` or `search` extra install the pins with the venv's pip, which takes the file a
   pin's hashes name from either index. Linux and macOS install the same packages as before. CI
   exports with uv 0.13.4. The semantic-search embedder no longer goes on an NVIDIA GPU of its own
