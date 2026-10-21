@@ -5,9 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/url"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -35,6 +32,8 @@ type GuideProgram struct {
 	StartAt   time.Time
 	EndAt     time.Time
 	Snapshot  []byte // title_snapshot JSON
+	// VideoID is the block's video (uuid.Nil: none, e.g. a slate or a live page).
+	VideoID uuid.UUID
 }
 
 // GuideSource is the data the guide endpoints read.
@@ -42,25 +41,46 @@ type GuideSource interface {
 	GuideChannels(ctx context.Context) ([]GuideChannel, error)
 	GuidePrograms(ctx context.Context, start, end time.Time) ([]GuideProgram, error)
 	ChannelLogo(ctx context.Context, id uuid.UUID) (string, error)
+	// PlanArtRoots are the art folders the latest lineup plan names (art.go).
+	PlanArtRoots(ctx context.Context) ([]string, error)
+	// ProgrammeArt reads what video's image is chosen from, and whether it is
+	// in channel's live schedule overlapping [start, end).
+	ProgrammeArt(ctx context.Context, channel, video uuid.UUID, start, end time.Time) (ProgrammeArt, error)
 }
 
 // GuideHandler serves the guide surface Plex (and IPTV players) need,
 // unauthenticated on the streaming port:
 //
-//	/xmltv.xml            XMLTV guide (channel id == channel number == HDHomeRun GuideNumber)
-//	/lineup.m3u           M3U playlist (live HLS per channel, url-tvg → /xmltv.xml)
-//	/channel/{id}/logo    the channel's logo file (XMLTV/M3U icon)
+//	/xmltv.xml                            XMLTV guide (channel id == channel number == HDHomeRun GuideNumber)
+//	/lineup.m3u                           M3U playlist (live HLS per channel, url-tvg → /xmltv.xml)
+//	/channel/{id}/logo                    the channel's logo (XMLTV/M3U icon, art.go)
+//	/tv/art/channel/{id}/video/{video}    a programme's image (XMLTV programme icon, art.go)
+//
+// Every URL they give is on this service (PublicBase, else the request's
+// host): a guide reader such as Plex fetches the icons from where it read the
+// guide.
 //
 // It is independent of the HDHomeRun device toggle.
 type GuideHandler struct {
-	Repo       GuideSource
-	PathMap    pathmap.Map
-	PublicBase string
-	// WebBase (MAKTABA_PUBLIC_WEB_BASE) is where the web/API is reachable;
-	// channel icons point at its public /api/channels/{id}/logo. Empty →
-	// the request's scheme+host.
-	WebBase string
-	Now     func() time.Time
+	Repo    GuideSource
+	PathMap pathmap.Map
+	// PathMapSource, when set, is read instead of PathMap (a node's map
+	// follows the cluster's).
+	PathMapSource func() pathmap.Map
+	PublicBase    string
+	// DataDir (MAKTABA_DATA_DIR): uploaded channel art is under
+	// <DataDir>/channel-art, an art folder logos are served from.
+	DataDir string
+	// ThumbnailRoot is the pipeline's thumbnail cache ("" →
+	// MAKTABA_THUMBNAIL_ROOT, else ~/.maktaba/cache/thumbnails).
+	ThumbnailRoot string
+	// Remote, on a cluster node, fetches the images from the home (signed);
+	// nil: they are read from this host's disk.
+	Remote ArtFetcher
+	// MaxAgeFunc gives the images' Cache-Control max-age per request (rules
+	// tv.guide_image_max_age_s); nil: DefaultImageMaxAge.
+	MaxAgeFunc func(ctx context.Context) time.Duration
+	Now        func() time.Time
 	// Back/Ahead bound the programme window (default 2 h back, 7 days ahead).
 	Back, Ahead time.Duration
 	// AheadFunc, when set, gives Ahead per request: the guide follows the
@@ -69,6 +89,8 @@ type GuideHandler struct {
 	// RulesFunc gives the filler rules per request (rules tv.guide_*); nil:
 	// the zero GuideRules (every filler run its own channel-name entry).
 	RulesFunc func(ctx context.Context) GuideRules
+
+	roots artRootCache
 }
 
 // GuideRules are how the guide shows filler, as dizqueTV's guide
@@ -94,7 +116,7 @@ func GuideRulesFromSeconds(maxPaddingS int, fillerTitle string, minProgramS int)
 func (g *GuideHandler) Mount(r chi.Router) {
 	r.Get("/xmltv.xml", g.XMLTV)
 	r.Get("/lineup.m3u", g.M3U)
-	r.Get("/channel/{id}/logo", g.Logo)
+	g.MountArt(r)
 }
 
 func (g *GuideHandler) now() time.Time {
@@ -111,20 +133,8 @@ func (g *GuideHandler) XMLTV(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "guide unavailable", http.StatusInternalServerError)
 		return
 	}
-	back, ahead := g.Back, g.Ahead
-	if g.AheadFunc != nil {
-		if a := g.AheadFunc(r.Context()); a > 0 {
-			ahead = a
-		}
-	}
-	if back <= 0 {
-		back = 2 * time.Hour
-	}
-	if ahead <= 0 {
-		ahead = 7 * 24 * time.Hour
-	}
-	now := g.now()
-	progs, err := g.Repo.GuidePrograms(r.Context(), now.Add(-back), now.Add(ahead))
+	start, end := g.window(r.Context())
+	progs, err := g.Repo.GuidePrograms(r.Context(), start, end)
 	if err != nil {
 		http.Error(w, "guide unavailable", http.StatusInternalServerError)
 		return
@@ -136,7 +146,7 @@ func (g *GuideHandler) XMLTV(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	bw := bufio.NewWriter(w)
 	defer bw.Flush()
-	WriteXMLTV(bw, publicBase(g.WebBase, r), chans, progs, rules)
+	WriteXMLTV(bw, XMLTVOptions{Base: publicBase(g.PublicBase, r), Rules: rules, ProgrammeArt: true}, chans, progs)
 }
 
 // M3U renders the playlist.
@@ -147,55 +157,18 @@ func (g *GuideHandler) M3U(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "audio/x-mpegurl; charset=utf-8")
-	_, _ = w.Write([]byte(BuildM3U(publicBase(g.PublicBase, r), publicBase(g.WebBase, r), chans)))
+	_, _ = w.Write([]byte(BuildM3U(publicBase(g.PublicBase, r), chans)))
 }
-
-// Logo serves a channel's logo_path (path-mapped) or redirects to it
-// when it is a URL.
-func (g *GuideHandler) Logo(w http.ResponseWriter, r *http.Request) {
-	id, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "bad channel id", http.StatusBadRequest)
-		return
-	}
-	logo, err := g.Repo.ChannelLogo(r.Context(), id)
-	if err != nil || logo == "" {
-		http.NotFound(w, r)
-		return
-	}
-	if strings.Contains(logo, "://") && !pathmap.IsCanonical(logo) {
-		if u, err := url.Parse(logo); err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" {
-			http.Redirect(w, r, u.String(), http.StatusFound)
-			return
-		}
-		http.NotFound(w, r)
-		return
-	}
-	p := g.PathMap.Apply(logo)
-	if !imageExt[strings.ToLower(filepath.Ext(p))] {
-		http.NotFound(w, r) // only images are served from logo_path
-		return
-	}
-	if fi, err := os.Stat(p); err != nil || fi.IsDir() {
-		http.NotFound(w, r)
-		return
-	}
-	w.Header().Set("Cache-Control", "public, max-age=3600")
-	http.ServeFile(w, r, p)
-}
-
-// imageExt lists the logo file types served (no SVG: it can carry script).
-var imageExt = map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true}
 
 // guideSnapshot is the subset of title_snapshot the guide renders (the
 // same keys the API guide reads).
 type guideSnapshot struct {
 	Title        string `json:"title"`
 	Description  string `json:"description"`
-	Poster       string `json:"poster"`
 	Genre        string `json:"genre"`
 	Rating       string `json:"rating"`
 	Series       string `json:"series"`
+	StripSeries  string `json:"strip_series"`
 	Season       *int   `json:"season"`
 	Episode      *int   `json:"episode"`
 	EpisodeTitle string `json:"episode_title"`
@@ -206,6 +179,8 @@ type guideEntry struct {
 	start, stop time.Time
 	snap        guideSnapshot
 	isFiller    bool
+	live        bool      // a live broadcast (not previously shown)
+	video       uuid.UUID // the programme's video (uuid.Nil: none)
 }
 
 func isFillerKind(k string) bool { return k == "filler" || k == "bumper" || k == "slate" }
@@ -268,10 +243,10 @@ func collapse(channelName string, progs []GuideProgram, rules GuideRules) []guid
 		}
 		if last != nil && last.isFiller && last.stop.Sub(last.start) <= rules.MaxPadding {
 			// A short filler lead-in is absorbed into the programme.
-			*last = guideEntry{start: last.start, stop: p.EndAt, snap: s}
+			*last = guideEntry{start: last.start, stop: p.EndAt, snap: s, live: p.Kind == "live", video: p.VideoID}
 			continue
 		}
-		out = append(out, guideEntry{start: p.StartAt, stop: p.EndAt, snap: s})
+		out = append(out, guideEntry{start: p.StartAt, stop: p.EndAt, snap: s, live: p.Kind == "live", video: p.VideoID})
 	}
 	return out
 }
@@ -299,11 +274,27 @@ type stringWriter interface {
 	WriteString(string) (int, error)
 }
 
+// XMLTVOptions are how WriteXMLTV renders.
+type XMLTVOptions struct {
+	// Base is this service's public base: the icons point at its image routes
+	// (art.go). No URL carries a token or a secret.
+	Base string
+	// Rules: how filler is shown (collapse).
+	Rules GuideRules
+	// ProgrammeArt gives each programme of a video its own image route; false
+	// (a staged release's guide, whose videos are not on air): the channel's
+	// logo.
+	ProgrammeArt bool
+}
+
 // WriteXMLTV renders the XMLTV document. Channel ids are the channel
-// numbers so they match the HDHomeRun lineup's GuideNumber in Plex;
-// icons point at the API's public logo endpoint under webBase; filler is
-// shown as rules say (collapse).
-func WriteXMLTV(w stringWriter, webBase string, chans []GuideChannel, progs []GuideProgram, rules GuideRules) {
+// numbers so they match the HDHomeRun lineup's GuideNumber in Plex; filler
+// is shown as the rules say (collapse). Each programme carries, as
+// dizqueTV's guide: an <icon> (its image route, the channel's logo for
+// filler), a <desc> (its description, else its series, else the channel's
+// name), <previously-shown/> (not for a live broadcast) and a <category>
+// (its genre and the channel's category).
+func WriteXMLTV(w stringWriter, o XMLTVOptions, chans []GuideChannel, progs []GuideProgram) {
 	_, _ = w.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
 	_, _ = w.WriteString(`<!DOCTYPE tv SYSTEM "xmltv.dtd">` + "\n")
 	_, _ = w.WriteString(`<tv generator-info-name="Maktaba">` + "\n")
@@ -314,7 +305,7 @@ func WriteXMLTV(w stringWriter, webBase string, chans []GuideChannel, progs []Gu
 		_, _ = w.WriteString(`  <channel id="` + num + `">` + "\n")
 		_, _ = w.WriteString(`    <display-name>` + xmlEscape(c.Name) + `</display-name>` + "\n")
 		_, _ = w.WriteString(`    <display-name>` + num + `</display-name>` + "\n")
-		if icon := logoURL(webBase, c); icon != "" {
+		if icon := logoURL(o.Base, c); icon != "" {
 			_, _ = w.WriteString(`    <icon src="` + xmlEscape(icon) + `"/>` + "\n")
 		}
 		_, _ = w.WriteString(`  </channel>` + "\n")
@@ -328,8 +319,12 @@ func WriteXMLTV(w stringWriter, webBase string, chans []GuideChannel, progs []Gu
 		c, ok := byID[progs[i].ChannelID]
 		if ok {
 			num := strconv.Itoa(c.Number)
-			for _, e := range collapse(c.Name, progs[i:j], rules) {
-				writeProgramme(w, num, e)
+			for _, e := range collapse(c.Name, progs[i:j], o.Rules) {
+				icon := logoURL(o.Base, c)
+				if o.ProgrammeArt && !e.isFiller && e.video != uuid.Nil {
+					icon = ProgrammeArtURL(o.Base, c.ID, e.video)
+				}
+				writeProgramme(w, num, c, icon, e)
 			}
 		}
 		i = j
@@ -337,7 +332,7 @@ func WriteXMLTV(w stringWriter, webBase string, chans []GuideChannel, progs []Gu
 	_, _ = w.WriteString(`</tv>` + "\n")
 }
 
-func writeProgramme(w stringWriter, channel string, e guideEntry) {
+func writeProgramme(w stringWriter, channel string, c GuideChannel, icon string, e guideEntry) {
 	s := e.snap
 	_, _ = w.WriteString(`  <programme start="` + xmltvTime(e.start) + `" stop="` + xmltvTime(e.stop) +
 		`" channel="` + channel + `">` + "\n")
@@ -345,19 +340,22 @@ func writeProgramme(w stringWriter, channel string, e guideEntry) {
 	if s.EpisodeTitle != "" {
 		_, _ = w.WriteString(`    <sub-title lang="en">` + xmlEscape(s.EpisodeTitle) + `</sub-title>` + "\n")
 	}
-	if s.Description != "" {
-		_, _ = w.WriteString(`    <desc lang="en">` + xmlEscape(s.Description) + `</desc>` + "\n")
+	if desc := programmeDesc(s, c.Name); desc != "" {
+		_, _ = w.WriteString(`    <desc lang="en">` + xmlEscape(desc) + `</desc>` + "\n")
 	}
-	if s.Genre != "" {
-		_, _ = w.WriteString(`    <category lang="en">` + xmlEscape(s.Genre) + `</category>` + "\n")
+	for _, cat := range programmeCategories(s.Genre, c.Category) {
+		_, _ = w.WriteString(`    <category lang="en">` + xmlEscape(cat) + `</category>` + "\n")
 	}
-	if strings.HasPrefix(s.Poster, "http://") || strings.HasPrefix(s.Poster, "https://") {
-		_, _ = w.WriteString(`    <icon src="` + xmlEscape(s.Poster) + `"/>` + "\n")
+	if icon != "" {
+		_, _ = w.WriteString(`    <icon src="` + xmlEscape(icon) + `"/>` + "\n")
 	}
 	if s.Season != nil && s.Episode != nil && *s.Season > 0 && *s.Episode > 0 {
 		ns := strconv.Itoa(*s.Season-1) + "." + strconv.Itoa(*s.Episode-1) + "."
 		_, _ = w.WriteString(`    <episode-num system="xmltv_ns">` + ns + `</episode-num>` + "\n")
 		_, _ = w.WriteString(`    <episode-num system="onscreen">S` + pad2(*s.Season) + `E` + pad2(*s.Episode) + `</episode-num>` + "\n")
+	}
+	if !e.live {
+		_, _ = w.WriteString(`    <previously-shown/>` + "\n")
 	}
 	if s.Rating != "" {
 		_, _ = w.WriteString(`    <rating><value>` + xmlEscape(s.Rating) + `</value></rating>` + "\n")
@@ -365,33 +363,45 @@ func writeProgramme(w stringWriter, channel string, e guideEntry) {
 	_, _ = w.WriteString(`  </programme>` + "\n")
 }
 
-// BuildM3U renders the IPTV playlist: one live HLS URL per channel,
-// tvg-id matching the XMLTV channel id.
-func BuildM3U(base, webBase string, chans []GuideChannel) string {
-	var b strings.Builder
-	xmltv := base + "/xmltv.xml"
-	b.WriteString(`#EXTM3U url-tvg="` + xmltv + `" x-tvg-url="` + xmltv + `"` + "\n")
-	for _, c := range chans {
-		num := strconv.Itoa(c.Number)
-		b.WriteString(`#EXTINF:-1 tvg-id="` + num + `" tvg-chno="` + num + `" tvg-name="` + m3uAttr(c.Name) + `"`)
-		if icon := logoURL(webBase, c); icon != "" {
-			b.WriteString(` tvg-logo="` + m3uAttr(icon) + `"`)
+// programmeDesc is a programme's <desc>: its description, else its series'
+// name, else the channel's name (dizqueTV's guide gives the show's name).
+func programmeDesc(s guideSnapshot, channelName string) string {
+	for _, d := range []string{s.Description, s.Series, s.StripSeries, channelName} {
+		if d = strings.TrimSpace(d); d != "" {
+			return d
 		}
-		if c.Category != "" {
-			b.WriteString(` group-title="` + m3uAttr(c.Category) + `"`)
-		}
-		b.WriteString("," + strings.NewReplacer("\n", " ", "\r", "").Replace(c.Name) + "\n")
-		b.WriteString(base + "/stream/channel/" + c.ID.String() + "/index.m3u8\n")
 	}
-	return b.String()
+	return ""
 }
 
-// logoURL is the API's public logo endpoint for channels with a logo.
-func logoURL(webBase string, c GuideChannel) string {
-	if c.LogoPath == "" {
+// programmeCategories are the programme's genre and the channel's category,
+// without repeats.
+func programmeCategories(genre, channelCategory string) []string {
+	var out []string
+	for _, c := range []string{genre, channelCategory} {
+		c = strings.TrimSpace(c)
+		if c == "" || (len(out) > 0 && strings.EqualFold(out[0], c)) {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// BuildM3U renders the IPTV playlist: one live HLS URL per channel,
+// tvg-id matching the XMLTV channel id, tvg-logo this service's logo route.
+func BuildM3U(base string, chans []GuideChannel) string {
+	return BuildM3UWith(base, base+"/xmltv.xml", chans, func(c GuideChannel) string {
+		return base + "/stream/channel/" + c.ID.String() + "/index.m3u8"
+	})
+}
+
+// logoURL is this service's logo route for a channel with a logo.
+func logoURL(base string, c GuideChannel) string {
+	if strings.TrimSpace(c.LogoPath) == "" {
 		return ""
 	}
-	return webBase + "/api/channels/" + c.ID.String() + "/logo"
+	return ChannelLogoURL(base, c.ID)
 }
 
 func m3uAttr(s string) string {

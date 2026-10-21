@@ -29,6 +29,7 @@ use tauri::{
 use tauri_plugin_deep_link::DeepLinkExt;
 
 mod agent;
+mod lang;
 mod mode;
 mod setup;
 mod shell;
@@ -158,17 +159,32 @@ pub fn run() {
                 });
             }
 
+            // Linux (Epic 39): without a StatusNotifier host there is no tray
+            // to come back from. Closing the window then quits the app (the
+            // server is a systemd unit and keeps running), and the window's
+            // menu carries the tray's server items.
+            #[cfg(target_os = "linux")]
+            let keep_in_tray = agent::linux::tray_available();
+            #[cfg(not(target_os = "linux"))]
+            let keep_in_tray = true;
+
             // Menu bar (Story 13.1 AC-1 / Story 13.7).
             let handle = app.handle();
-            let menu = build_menu(handle)?;
+            let menu = build_menu(handle, !keep_in_tray)?;
             app.set_menu(menu)?;
 
             // App-level menu handler (Story 13.1 / 13.7) — emit the
             // clicked item id to the frontend, which owns the routing.
             // Predefined items (quit/close/copy/…) are handled natively
-            // and never reach here, so this is purely the custom set.
+            // and never reach here, so this is purely the custom set. The
+            // window's Server items (Linux without a tray) act here.
             app.on_menu_event(|app, event| {
                 let id = event.id().as_ref().to_string();
+                #[cfg(target_os = "linux")]
+                if let Some(tray_id) = id.strip_prefix(tray::WINDOW_PREFIX) {
+                    shell::on_window_menu(app, tray_id);
+                    return;
+                }
                 let _ = app.emit("menu", id);
             });
 
@@ -181,14 +197,8 @@ pub fn run() {
             // Close-to-tray (Story 13.4 AC-5): closing the window hides
             // it instead of terminating the app; Quit (tray/menu) still
             // exits. In server mode the server keeps running either way.
-            // Linux (Epic 39): without a StatusNotifier host there is no tray
-            // to come back from, so closing the window quits the app (the
-            // server is a systemd unit and keeps running); started by the
-            // tray's autostart entry (`--hidden`), the window stays hidden.
-            #[cfg(target_os = "linux")]
-            let keep_in_tray = agent::linux::tray_available();
-            #[cfg(not(target_os = "linux"))]
-            let keep_in_tray = true;
+            // Linux: started by the tray's autostart entry (`--hidden`), the
+            // window stays hidden; without a tray, closing it quits.
             if let Some(main) = app.get_webview_window("main") {
                 #[cfg(target_os = "linux")]
                 if keep_in_tray && std::env::args().any(|a| a == agent::linux::HIDDEN_FLAG) {
@@ -223,7 +233,9 @@ pub fn run() {
         .expect("error while running maktaba desktop");
 }
 
-fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+/// The window's menu bar. `server_items`: add the tray's server items as a
+/// Server menu (Linux without a tray; shell.rs keeps them in step).
+fn build_menu(app: &tauri::AppHandle, server_items: bool) -> tauri::Result<Menu<tauri::Wry>> {
     // CROSS-LANGUAGE CONTRACT: every custom `MenuItem::with_id(...)` id
     // below (and the `format!("library-{slot}")` ids) is the cross-language
     // contract with the web shell. They MUST stay in sync with
@@ -338,7 +350,7 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let docs = MenuItem::with_id(app, "open-docs", "Documentation", true, None::<&str>)?;
     let help_menu = Submenu::with_items(app, "Help", true, &[&docs])?;
 
-    Menu::with_items(
+    let menu = Menu::with_items(
         app,
         &[
             &app_menu,
@@ -349,5 +361,37 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             &window_menu,
             &help_menu,
         ],
-    )
+    )?;
+    if server_items {
+        menu.insert(&server_menu(app)?, 1)?;
+    }
+    Ok(menu)
+}
+
+/// The Server menu: the status line (disabled), then the tray's server items,
+/// all disabled until the first status refresh enables what applies.
+fn server_menu(app: &tauri::AppHandle) -> tauri::Result<Submenu<tauri::Wry>> {
+    let (title_en, title_ar) = tray::WINDOW_MENU_TITLE;
+    let sub = Submenu::with_id(app, tray::WINDOW_MENU_ID, lang::t(title_en, title_ar), true)?;
+    sub.append(&MenuItem::with_id(
+        app,
+        tray::WINDOW_STATUS_ID,
+        lang::t("Maktaba", "مكتبة"),
+        false,
+        None::<&str>,
+    )?)?;
+    sub.append(&PredefinedMenuItem::separator(app)?)?;
+    for entry in tray::WINDOW_ITEMS {
+        match entry {
+            Some((id, en, ar)) => sub.append(&MenuItem::with_id(
+                app,
+                format!("{}{id}", tray::WINDOW_PREFIX),
+                lang::t(en, ar),
+                false,
+                None::<&str>,
+            )?)?,
+            None => sub.append(&PredefinedMenuItem::separator(app)?)?,
+        }
+    }
+    Ok(sub)
 }

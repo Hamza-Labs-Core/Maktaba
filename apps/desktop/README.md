@@ -148,28 +148,44 @@ whole installation ([spec](../../specs/epics/38-windows-app/README.md),
 [contract](../../specs/epics/38-windows-app/contract-agent.md)). The modes, the setup screens
 and the tray menu are the Mac's; what differs is how the server starts:
 
-- **The sign-in task.** When setup finishes the shell registers the task `\Maktaba Server`
-  (this user, at sign-in + 30 s, least privilege, no time limit, restarted on failure) through
-  `schtasks /Create /XML` and runs it. A Windows service is not used: it would run in
-  session 0, where the user's mapped NAS drives (`O:`, `Y:`) do not exist.
+- **The sign-in task.** When setup finishes the shell registers the task
+  `\Maktaba Server <the user's SID>` (one per user; this user, at sign-in + 30 s, least
+  privilege, no time limit) through `schtasks /Create /XML` and runs it. A task of the earlier
+  shared name `\Maktaba Server` that belongs to this user is moved to that name once. A Windows
+  service is not used: it would run in session 0, where the user's mapped NAS drives (`O:`,
+  `Y:`) do not exist.
 - **The agent.** The task runs `Maktaba.exe --server-agent` (`agent_windows.rs`), a GUI
   program, which starts `server\bin\maktaba-launcher.exe --app-bundle <install>\server serve`
   with `CREATE_NO_WINDOW`: the launcher gets a console without a window that the server and
   every role inherit, so CTRL_BREAK reaches them and nothing flashes. The agent appends to
   `%LOCALAPPDATA%\Maktaba\logs\server.log`, restarts a failing launcher with backoff, and holds
   its tree in a kill-on-close job.
+- **The watchdog.** Task Scheduler's "restart on failure" only retries a task that cannot
+  start, not an action that crashed, so the task also triggers every 5 minutes; while the
+  agent runs that does nothing (`IgnoreNew`), and an agent that died starts again.
 - **Pause / Resume.** Pause sets the named event `Local\Maktaba.Server.Stop`: the launcher stops
-  the server cleanly and exits 0, the agent exits 0, and the task waits for Resume
-  (`schtasks /Run`) or the next sign-in. The pause is kept in
-  `%LOCALAPPDATA%\Maktaba\state\server-paused`, so it survives the window restarting.
+  the server cleanly and exits 0, the agent exits 0. The pause is kept in
+  `%LOCALAPPDATA%\Maktaba\state\server-paused` with the sign-in it belongs to: an agent the
+  watchdog starts in that sign-in exits at once, the window restarting keeps it, and Resume
+  (wait for a stopping agent, then `schtasks /Run`) or the next sign-in ends it.
 - **Installer hooks.** `Maktaba.exe --server-start | --server-stop | --server-remove` (the
   NSIS hooks: stop the server before files are replaced, start it after, remove the task on
-  uninstall). An update stops the server, lets the Tauri updater run the installer, and the
-  installer's hook starts it again.
+  uninstall). `--server-stop` and an update also set the install hold
+  (`state\server-held`), so the watchdog does not start the server in the middle of an install;
+  `--server-start`, Resume and the window's start end it. An update that fails after the stop
+  starts the server again (unless it was paused).
+- **Status.** As on the Mac, plus: while the agent runs but the supervisor has not answered
+  for 3 minutes, the tray says "Maktaba has a problem: …" with the reason from `server.log`
+  (another launcher holds this install, a port in use…), or "the server does not answer".
+- **mode.json** is in `%LOCALAPPDATA%\com.hamzalabs.maktaba\` (not the roaming profile, which
+  would carry this PC's server mode to another PC); one in the roaming folder is moved once.
 - Every program the shell starts (`schtasks`, the setup steps) is created without a window.
 
 `cargo test` on Windows runs the agent's loop against a stand-in launcher; CI also registers
-a real task on `windows-latest` (`MAKTABA_TEST_WINDOWS_TASK=1`).
+real tasks on `windows-latest` (`MAKTABA_TEST_WINDOWS_TASK=1`, never on a PC that runs
+Maktaba): the XML is accepted, the watchdog starts a crashed stand-in agent again,
+"restart on failure" does not, a running agent is not started twice and Resume waits for one
+that is stopping, and an old-named task is replaced once.
 
 **Developing it.** `tauri dev` runs outside a bundle, so point it at a `maktaba-server`
 for the setup screens: `MAKTABA_SERVER_BIN=/path/to/maktaba-server pnpm tauri dev`.
@@ -193,22 +209,34 @@ the tray menu are the Mac's. What differs is where the server runs and how it st
 (`agent_linux.rs`):
 
 - **The runtime copy.** The server never runs from the app's files: an AppImage is mounted at a
-  new `/tmp/.mount_*` path on every run, and a package upgrade replaces `/usr/lib/Maktaba` under
-  a running server (and linuxdeploy rewrites ELF files under `usr/lib`, so the payload is in
-  `usr/share/maktaba/server`). When setup finishes, the shell runs the payload's own
-  `maktaba-server runtime install --activate --owner app`, which copies the payload into
-  `~/.local/share/maktaba/runtime/<version>` and points `current` at it.
+  new `/tmp/.mount_*` path on every run, and a package upgrade replaces
+  `/usr/share/maktaba/server` under a running server (the payload is there, not in `usr/lib`,
+  because linuxdeploy rewrites ELF files under `usr/lib`). Before the first setup step after
+  `status`, the shell runs the payload's own `maktaba-server runtime install --activate --owner
+  app`, which copies the payload into `~/.local/share/maktaba/runtime/<version>` and points
+  `current` at it. Every later step runs from `runtime/current/bin/maktaba-server` with
+  `MAKTABA_APP_BUNDLE=runtime/current`, so the venv is built against the copy's Python, not the
+  AppImage's mount.
 - **The user service.** `maktaba-server service install` writes and starts the systemd user
   unit `maktaba-server.service`, which runs `runtime/current/bin/maktaba-launcher`.
   `service linger` lets it start at boot without a login: polkit allows that from the desktop
   session, and where it is refused, setup's *Allow* button asks again. Pause and Resume are
   `service stop` and `service start`. The shell never writes the unit itself.
 - **After an update.** The Tauri updater replaces the AppImage, or installs the .deb / .rpm
-  through the system's admin prompt. The new app then sees that its payload is newer than
-  `runtime/current` and switches the unit to it. The server stops while `current` moves; a paused
-  server stays paused.
+  through the system's admin prompt. The new app then sees (`runtime status`) that its payload
+  is newer than `runtime/current` and switches the unit to it. The server stops while `current`
+  moves; a paused server stays paused until Resume or the next boot.
+- **An older app** (an old AppImage opened again, a package downgraded) never installs its
+  payload: the server's database may be migrated past it. `runtime status` says `downgrade`,
+  the newer runtime keeps running, and the app tells the user it is older than the server.
 - **The tray** is a StatusNotifier item (libayatana-appindicator). Where no StatusNotifier host
   runs (GNOME without the AppIndicator extension), closing the window quits the app and the
-  server keeps running. With a host, `~/.config/autostart/maktaba.desktop` starts the tray at
-  login with the window hidden (`--hidden`), and the entry follows the AppImage if it moves.
+  server keeps running, and the window's *Server* menu has the tray's items (status, Pause,
+  Resume, Open logs, Stop server and quit, and an update when one is ready). With a host,
+  `~/.config/autostart/maktaba.desktop` starts the tray at login with the window hidden
+  (`--hidden`). The entry is written once: removed by the user, it stays removed. It follows the
+  AppImage if it moves (never to an older app), keeps the user's on/off, and has `TryExec`, so the
+  desktop skips it once the app is gone.
+- **Language.** The shell's own dialogs follow the session's locale (Arabic when `LC_ALL`,
+  `LC_MESSAGES` or `LANG` says so); the autostart entry carries both languages.
 - **Logs** are in `~/.local/state/maktaba/logs` (*Open logs* uses `xdg-open`).
