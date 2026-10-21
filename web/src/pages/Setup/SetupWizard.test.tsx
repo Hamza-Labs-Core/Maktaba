@@ -131,6 +131,45 @@ describe("SetupWizard", () => {
     expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
   });
 
+  it("leaves out the models step where the second listen cannot run, and says why", async () => {
+    const admin = vi.fn((input: Record<string, unknown>) => ({ username: input.username }));
+    const libraries = vi.fn(() => ({ roots: [] }));
+    const check = () => ({
+      ...CHECK,
+      platform: "windows",
+      arch: "amd64",
+      second_listen: {
+        runs: false,
+        code: "second_listen_gpu_small",
+        params: { gpu: "RTX 2080 SUPER", have_bytes: 8 * 2 ** 30, need_bytes: 9.5 * 2 ** 30 },
+      },
+      warnings: [
+        {
+          code: "second_listen_gpu_small",
+          params: { gpu: "RTX 2080 SUPER", have_bytes: 8 * 2 ** 30, need_bytes: 9.5 * 2 ** 30 },
+          message: "en",
+        },
+      ],
+    });
+    renderWizard(fakeApi({ check, admin, libraries }), "check");
+    expect(
+      await screen.findByText(
+        /RTX 2080 SUPER has 8\.0 GB: the second listen needs a graphics card with 9\.5 GB/
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByText("Step 1 of 5")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    const [pw, again] = await screen.findAllByLabelText(/Password/);
+    await userEvent.type(pw, "a long passphrase");
+    await userEvent.type(again, "a long passphrase");
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    await userEvent.type(await screen.findByLabelText("Folders (one per line)"), "/Volumes/Media");
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    // past the libraries, Plex: no screen asks for a Hugging Face sign-in
+    expect(await screen.findByRole("heading", { name: "Plex (optional)" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Transcription models" })).not.toBeInTheDocument();
+  });
+
   it("says what will run in the app's words, Arabic too", async () => {
     localStorage.setItem("mkt:locale", "ar");
     const runs = [

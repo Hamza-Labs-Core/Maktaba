@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	goruntime "runtime"
 	"slices"
@@ -227,6 +228,10 @@ type appSetup struct {
 	afterFinish func(ctx context.Context) error
 	// pollEvery is how often a Plex PIN is checked.
 	pollEvery time.Duration
+	// skipWait starts a wait a Ctrl+C skips (the Plex sign-in) instead of
+	// ending the setup: skipped closes on one, stop ends the wait's claim
+	// (nil: nothing skips it).
+	skipWait func() (skipped <-chan struct{}, stop func())
 }
 
 func (a *appSetup) printf(format string, args ...any) { fmt.Fprintf(a.out, format, args...) }
@@ -320,7 +325,8 @@ func (a *appSetup) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if !a.showCheck(res) {
+	ok, withModels := a.showCheck(res)
+	if !ok {
 		return errors.New(a.t.get("terminal.blockedEnd"))
 	}
 	if err := a.toRuntime(ctx); err != nil {
@@ -339,11 +345,15 @@ func (a *appSetup) Run(ctx context.Context) error {
 		return err
 	}
 
-	a.printf("\n%s\n", a.t.get("setup.models.title"))
-	a.say("setup.models.intro", "machine", a.t.get("setup.machine.linux"))
-	a.say("setup.models.hfNote")
-	if _, err := a.step(ctx, "models", a.askModels); err != nil {
-		return err
+	// the models question only where the second listen runs (SetupWizard.tsx):
+	// elsewhere its gated model is neither signed in to nor downloaded
+	if _, given := a.answers["models"]; withModels || given {
+		a.printf("\n%s\n", a.t.get("setup.models.title"))
+		a.say("setup.models.intro", "machine", a.t.get("setup.machine.linux"))
+		a.say("setup.models.hfNote")
+		if _, err := a.step(ctx, "models", a.askModels); err != nil {
+			return err
+		}
 	}
 
 	a.printf("\n%s\n", a.t.get("setup.plex.title"))
@@ -478,18 +488,20 @@ func (a *appSetup) askModels(string) (any, error) {
 }
 
 // showCheck prints what will run, the problems and the warnings
-// (checkResult's notes), in the screens' words; false when the computer cannot
-// run the server.
-func (a *appSetup) showCheck(res json.RawMessage) bool {
+// (checkResult's notes), in the screens' words. ok is false when the computer
+// cannot run the server; models is false when the second listen cannot run
+// here (check's second_listen), so no models question is asked.
+func (a *appSetup) showCheck(res json.RawMessage) (ok, models bool) {
 	var c struct {
-		OK       bool        `json:"ok"`
-		Problems []checkNote `json:"problems"`
-		Warnings []checkNote `json:"warnings"`
-		Runs     []setupRole `json:"runs"`
-		DataDir  string      `json:"data_dir"`
+		OK           bool          `json:"ok"`
+		Problems     []checkNote   `json:"problems"`
+		Warnings     []checkNote   `json:"warnings"`
+		Runs         []setupRole   `json:"runs"`
+		DataDir      string        `json:"data_dir"`
+		SecondListen *secondListen `json:"second_listen"`
 	}
 	if json.Unmarshal(res, &c) != nil {
-		return false
+		return false, false
 	}
 	a.printf("%s (%s: %s)\n", a.t.get("setup.check.title"), a.t.get("setup.check.dataDir"), c.DataDir)
 	for _, r := range c.Runs {
@@ -504,11 +516,13 @@ func (a *appSetup) showCheck(res json.RawMessage) bool {
 	for _, w := range c.Warnings {
 		a.printf("  %s\n", a.t.get("terminal.note", "text", a.t.coded("setup.check.note", w.Code, w.Params, w.Message)))
 	}
-	return c.OK
+	return c.OK, c.SecondListen == nil || c.SecondListen.Runs
 }
 
 // plex links Plex with the PIN flow (optional): the code is shown, then
-// polled until it is entered at plex.tv/link or expires.
+// polled until it is entered at plex.tv/link or expires (at most
+// plexWaitLimit). Ctrl+C skips the wait; plex.tv out of reach is said once and
+// polled again.
 func (a *appSetup) plex(ctx context.Context) error {
 	if raw, ok := a.answers["plex"]; ok {
 		_, err := a.run(ctx, "plex", raw, nil)
@@ -537,16 +551,44 @@ func (a *appSetup) plex(ctx context.Context) error {
 	}
 	a.printf("%s %s\n", a.t.get("setup.plex.enterCode", "url", pin.LinkURL), pin.Code)
 	a.say("setup.plex.waiting")
+	var skipped <-chan struct{} // nil: never
+	if a.skipWait != nil {
+		var stop func()
+		skipped, stop = a.skipWait()
+		defer stop()
+		a.say("terminal.plexSkip")
+	}
+	deadline := time.Now().Add(plexWaitLimit)
+	retrying := false
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-skipped:
+			return a.plexLater(ctx, nil)
 		case <-time.After(a.pollEvery):
 		}
-		res, err := a.run(ctx, "plex", map[string]any{"action": "poll", "pin_id": pin.PinID}, nil)
-		if err != nil {
-			return a.plexLater(ctx, err) // an expired code, no network: link later, keep the rest
+		if time.Now().After(deadline) {
+			return a.plexLater(ctx, &stepFailure{Code: "pin_expired", Message: "The Plex code expired."})
 		}
+		res, err := a.run(ctx, "plex", map[string]any{"action": "poll", "pin_id": pin.PinID}, nil)
+		select {
+		case <-skipped: // the Ctrl+C reached the poll as well
+			return a.plexLater(ctx, nil)
+		default:
+		}
+		var f *stepFailure
+		switch {
+		case errors.As(err, &f) && f.Code == "network":
+			if !retrying {
+				a.printf("  %s %s\n", a.t.stepError(f), a.t.get("terminal.plexRetry"))
+			}
+			retrying = true
+			continue
+		case err != nil:
+			return a.plexLater(ctx, err) // an expired code: link later, keep the rest
+		}
+		retrying = false
 		var st struct {
 			Linked bool `json:"linked"`
 		}
@@ -558,8 +600,9 @@ func (a *appSetup) plex(ctx context.Context) error {
 }
 
 // plexLater is a sign-in that did not work out (the code expired, Plex could
-// not be reached): Plex is optional, so the setup goes on without it rather
-// than losing the answers before it; the Settings link it later.
+// not be reached, a Ctrl+C: cause nil): Plex is optional, so the setup goes on
+// without it rather than losing the answers before it; the Settings link it
+// later.
 func (a *appSetup) plexLater(ctx context.Context, cause error) error {
 	var f *stepFailure
 	if errors.As(cause, &f) {
@@ -628,12 +671,32 @@ func runAppSetupCmd(answersFile string, answersFD int, lang string) error {
 	}
 	// status and check as the app runs them: in its payload (the bundled Postgres)
 	a := &appSetup{run: execStepRunner(self, "MAKTABA_APP_BUNDLE="+payloadOfThisBinary()), ask: newTermAsker(t),
-		out: os.Stdout, t: t, answers: answers, pollEvery: 2 * time.Second}
+		out: os.Stdout, t: t, answers: answers, pollEvery: plexPollEvery, skipWait: interruptSkips}
 	if runtimeGOOS == "linux" {
 		a.runtime = func(ctx context.Context) (stepRunner, error) { return headlessRuntime(ctx, t, os.Stdout) }
 		a.afterFinish = func(ctx context.Context) error { return headlessService(ctx, t, os.Stdout) }
 	}
 	return endError(t, a.Run(context.Background()))
+}
+
+// interruptSkips is appSetup.skipWait on a terminal: while the wait is on, a
+// Ctrl+C ends it instead of the setup (the step it reaches as well ends, and
+// the wait says so); after stop, a Ctrl+C ends the setup again.
+func interruptSkips() (<-chan struct{}, func()) {
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt)
+	skipped, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		select {
+		case <-sig:
+			close(skipped)
+		case <-done:
+		}
+	}()
+	return skipped, func() {
+		signal.Stop(sig)
+		close(done)
+	}
 }
 
 // endError is what ended the setup, in the user's language: a cancel, a

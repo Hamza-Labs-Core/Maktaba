@@ -64,9 +64,41 @@ don't append a line here; docs-only PRs are exempt.
   the server runs as an administrator, as the Windows service does: Postgres refuses
   administrative rights). Groundwork for the Windows and Linux apps and for full nodes' copies of
   the home's database (#178).
+- **Maktaba on a Linux machine without a desktop** (Epic 39, story 39.6). `install.sh --app`
+  verifies the release first (with the machine's cosign when it is 2.4.3 or newer, else a pinned
+  cosign it fetches), then `maktaba-server setup` asks the desktop app's questions in the terminal,
+  in English or Arabic: the server is copied into `~/.local/share/maktaba/runtime`, then runs as
+  the user's systemd service, started at boot through linger. The check also reports glibc, the
+  systemd user manager, linger and a Maktaba service another install owns; where the second listen
+  cannot run, no Hugging Face sign-in is asked. A Plex code that expires (plex.tv out of reach is
+  asked again until then) or a Ctrl+C while it waits leaves Plex to Settings, and the setup goes
+  on. `--answers` (or `--answers-fd`) gives every answer without questions.
 
 ### Fixed
 
+- **`maktaba-server setup` (the CLI wizard) seeds the admin again.** It called `adduser` with
+  `--username`/`--password` flags the api does not have; it now passes the username and a
+  password file.
+- **Setup asks for a Hugging Face sign-in only where the second listen runs.** It asked whenever
+  the second listen was on, so a PC without an NVIDIA GPU, with one too small or too old, or with
+  a driver before R580 was made to create a token and accept a gated model's licence for a model
+  that never runs there. `check` now says whether this machine can run it (and why not, in the
+  app's words), the screens leave out the models step where it cannot, the models step no longer
+  asks for the token there, and the download takes only Whisper and the search model. The
+  graphics card's compute capability and driver version come with its name and memory.
+- **The terminal setup's Plex sign-in can be skipped, and survives a moment without plex.tv.**
+  Ctrl+C while it waits for the code skipped nothing: it stopped the whole setup before `finish`,
+  as did a single poll plex.tv did not answer. Ctrl+C now skips the sign-in and the setup goes on;
+  plex.tv not answering is said once and asked again until the code expires; a second Ctrl+C
+  elsewhere ends the setup even at a question. Every code a setup step fails with now has its
+  words in English and Arabic (a test keeps it so): the language model's, a bad request's, an
+  unknown step's, unreadable settings', an unexpected failure's.
+- **After the app's setup the server runs on the bundled Postgres, with its transcription
+  workers.** Saving `server.toml` wrote every default, so setup's `finish` left `[database] url`
+  set to the default SQLite file: the next start never ran the bundled Postgres (the database setup
+  had made sat unused, and the pipeline could not open the SQLite one), and
+  `[pipeline] instances = 0` turned the workers off. A save now writes the url only when one was
+  chosen and the count only when it was set (`setup --node --instances 0` included).
 - **The launcher never sends CTRL_BREAK to a server that has exited** (Windows, Epic 38 story
   38.2). It holds a handle to the server until it is reaped and asks it to stop only while it
   still runs: a CTRL_BREAK naming a pid that leads no process group (a server that exited as the
