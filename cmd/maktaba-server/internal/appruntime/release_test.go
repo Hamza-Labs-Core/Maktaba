@@ -119,7 +119,7 @@ func TestUnpackRefuses(t *testing.T) {
 	for name, entries := range map[string][]tarEntry{
 		"a path out":       {{name: "server/payload.json", body: "{}"}, {name: "../escape", body: "x"}},
 		"an absolute path": {{name: "/etc/x", body: "x"}},
-		"a .. that stays":  {{name: "server/bin/../payload.json", body: "{}"}},
+		"a .. that climbs": {{name: "server/payload.json", body: "{}"}, {name: "server/../../escape", body: "x"}},
 		"a device":         nil, // below
 		"a file through a link": {{name: "server/payload.json", body: "{}"}, {name: "server/lib", link: "/tmp"},
 			{name: "server/lib/x", body: "x"}},
@@ -155,6 +155,22 @@ func TestReleaseAsset(t *testing.T) {
 	for _, v := range []string{"v1.5.0", "1.5.0"} {
 		if got := ReleaseAsset(v); got != "maktaba-linux-payload-1.5.0-"+arch+".tar.gz" {
 			t.Errorf("%s: %s", v, got)
+		}
+	}
+}
+
+// ".." inside a name, and a ".." that stays inside, are no way out.
+func TestUnpackTakesDotsThatStayInside(t *testing.T) {
+	tarball := writeTarball(t, []tarEntry{{name: "server/payload.json", body: "{}"},
+		{name: "server/share/a..b", body: "x"}, {name: "server/bin/../lib/c", body: "y"}})
+	out := filepath.Join(t.TempDir(), "x")
+	payload, err := Unpack(tarball, out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"share/a..b", "lib/c"} {
+		if _, err := os.Stat(filepath.Join(payload, filepath.FromSlash(f))); err != nil {
+			t.Errorf("%s: %v", f, err)
 		}
 	}
 }
