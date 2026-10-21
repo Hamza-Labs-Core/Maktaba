@@ -290,6 +290,24 @@ func TestLockIsExclusive(t *testing.T) {
 	Unlock(g)
 }
 
+// LockFile is the same lock on any path, its folder made when missing.
+func TestLockFileIsExclusive(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "a", "b.lock")
+	f, err := LockFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LockFile(path); !errors.Is(err, ErrLocked) {
+		t.Fatalf("second lock: %v", err)
+	}
+	Unlock(f)
+	g, err := LockFile(path)
+	if err != nil {
+		t.Fatalf("after unlock: %v", err)
+	}
+	Unlock(g)
+}
+
 func TestValidateRefusesSharedWritable(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("mode bits")
