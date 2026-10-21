@@ -47,6 +47,23 @@ objc2-service-management = { version = "0.3", default-features = false, features
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# Epic 38 story 38.3 — the server at sign-in on Windows: the agent's mutex,
+# the launcher's stop event, a kill-on-close job, ShellExecute, the user's
+# SID (the task's name) and the sign-in's logon time (a pause holds for that
+# sign-in). The version tauri's own plugins already use (one copy in
+# Cargo.lock).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Authentication_Identity",
+  "Win32_Security_Authorization",
+  "Win32_System_JobObjects",
+  "Win32_System_Threading",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
 # tauri-plugin-deep-link 2.6.2 builds `ini::ParseOption` on Linux without
 # the fields rust-ini 0.21.3 added, which fails with E0063. The exact pin
 # (inside deep-link's ^0.21) keeps a `cargo update` from moving Cargo.lock

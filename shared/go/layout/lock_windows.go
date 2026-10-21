@@ -11,11 +11,16 @@ import (
 )
 
 // Lock takes <install>/updates/lock for the life of the process (EC5).
-func (l Layout) Lock() (*os.File, error) {
-	if err := os.MkdirAll(filepath.Dir(l.LockPath()), 0o755); err != nil {
+func (l Layout) Lock() (*os.File, error) { return LockFile(l.LockPath()) }
+
+// LockFile takes an exclusive lock on path (made, with its folder, when
+// missing) until Unlock or exit (LockFileEx); ErrLocked when another holder
+// has it.
+func LockFile(path string) (*os.File, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(l.LockPath(), os.O_CREATE|os.O_RDWR, 0o644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return nil, err
 	}

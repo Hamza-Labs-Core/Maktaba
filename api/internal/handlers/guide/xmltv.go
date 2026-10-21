@@ -3,6 +3,7 @@ package guide
 import (
 	"bufio"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -51,7 +52,7 @@ func (h *Handler) XMLTV(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	bw := bufio.NewWriter(w)
 	defer bw.Flush()
-	writeXMLTV(bw, baseURL(r), chans, rows)
+	writeXMLTV(bw, baseURL(r), strings.TrimRight(strings.TrimSpace(h.StreamBase), "/"), chans, rows)
 }
 
 // xmlWriter is the minimal surface writeXMLTV needs (an *bufio.Writer or
@@ -62,8 +63,13 @@ type xmlWriter interface {
 
 // writeXMLTV streams a valid XMLTV document: <channel> headers then
 // <programme> bodies. Filler/bumper blocks are collapsed into generic
-// "Up Next" programmes (AC10).
-func writeXMLTV(w xmlWriter, base string, chans []ChannelMeta, rows []ProgramRow) {
+// "Up Next" programmes (AC10). Each programme carries what the streaming
+// service's guide (streaming/internal/hdhr) gives, as dizqueTV's: an <icon>
+// (the streaming service's image route of its video under streamBase, else
+// the channel's logo), a <desc> (its description, else its series, else the
+// channel's name), <previously-shown/> (not for a live broadcast) and its
+// genre and channel category. No URL carries a token or a secret.
+func writeXMLTV(w xmlWriter, base, streamBase string, chans []ChannelMeta, rows []ProgramRow) {
 	_, _ = w.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
 	_, _ = w.WriteString(`<tv generator-info-name="Maktaba">` + "\n")
 	for _, c := range chans {
@@ -75,45 +81,54 @@ func writeXMLTV(w xmlWriter, base string, chans []ChannelMeta, rows []ProgramRow
 		}
 		_, _ = w.WriteString(`  </channel>` + "\n")
 	}
-	// Index slug by channel id for the programme rows.
-	slugByID := map[string]string{}
+	// Index the channels by id for the programme rows.
+	byID := map[string]ChannelMeta{}
 	for _, c := range chans {
-		slugByID[c.ID] = c.Slug
+		byID[c.ID] = c
 	}
 	for _, pr := range rows {
-		slug, ok := slugByID[pr.ChannelID]
+		c, ok := byID[pr.ChannelID]
 		if !ok {
 			continue // channel not visible to this consumer
 		}
-		writeProgramme(w, slug, pr)
+		writeProgramme(w, c, programmeIcon(base, streamBase, c, pr), pr)
 	}
 	_, _ = w.WriteString(`</tv>` + "\n")
 }
 
-func writeProgramme(w xmlWriter, slug string, pr ProgramRow) {
+// programmeIcon is a programme's image: the streaming service's image route
+// of its video (GET /tv/art/channel/{id}/video/{video}, public, only for a
+// video on the channel's air) when its base is known, else the channel's
+// logo.
+func programmeIcon(base, streamBase string, c ChannelMeta, pr ProgramRow) string {
+	if streamBase != "" && pr.VideoID != "" && pr.Kind == "program" {
+		return streamBase + "/tv/art/channel/" + url.PathEscape(c.ID) + "/video/" + url.PathEscape(pr.VideoID)
+	}
+	return logoRef(base, c)
+}
+
+func writeProgramme(w xmlWriter, c ChannelMeta, icon string, pr ProgramRow) {
 	s := pr.Snapshot
 	title := s.Title
 	if title == "" && isFiller(pr.Kind) {
 		title = "Up Next"
 	}
 	_, _ = w.WriteString(`  <programme start="` + xmltvTime(pr.StartAt) +
-		`" stop="` + xmltvTime(pr.EndAt) + `" channel="` + xmlEscape(slug) + `">` + "\n")
+		`" stop="` + xmltvTime(pr.EndAt) + `" channel="` + xmlEscape(c.Slug) + `">` + "\n")
 	_, _ = w.WriteString(`    <title>` + xmlEscape(title) + `</title>` + "\n")
 	if s.EpisodeTitle != "" {
 		_, _ = w.WriteString(`    <sub-title>` + xmlEscape(s.EpisodeTitle) + `</sub-title>` + "\n")
 	}
-	if s.Description != "" {
-		_, _ = w.WriteString(`    <desc>` + xmlEscape(s.Description) + `</desc>` + "\n")
+	if desc := firstNonEmpty(s.Description, s.Series, s.StripSeries, c.Name); desc != "" {
+		_, _ = w.WriteString(`    <desc>` + xmlEscape(desc) + `</desc>` + "\n")
 	}
-	if s.Genre != "" {
-		_, _ = w.WriteString(`    <category>` + xmlEscape(s.Genre) + `</category>` + "\n")
+	for _, cat := range categories(s.Genre, c.Category) {
+		_, _ = w.WriteString(`    <category>` + xmlEscape(cat) + `</category>` + "\n")
 	}
-	if s.Poster != "" {
-		_, _ = w.WriteString(`    <icon src="` + xmlEscape(s.Poster) + `"/>` + "\n")
+	if icon != "" {
+		_, _ = w.WriteString(`    <icon src="` + xmlEscape(icon) + `"/>` + "\n")
 	}
-	if s.Rating != "" {
-		_, _ = w.WriteString(`    <rating><value>` + xmlEscape(s.Rating) + `</value></rating>` + "\n")
-	}
+	// the elements in the XMLTV DTD's order
 	if s.IsEpisodic() {
 		// xmltv_ns is zero-based "season.episode."; onscreen is the
 		// human SxxExx form.
@@ -121,7 +136,36 @@ func writeProgramme(w xmlWriter, slug string, pr ProgramRow) {
 		_, _ = w.WriteString(`    <episode-num system="xmltv_ns">` + ns + `</episode-num>` + "\n")
 		_, _ = w.WriteString(`    <episode-num system="onscreen">S` + itoa(*s.Season) + `E` + itoa(*s.Episode) + `</episode-num>` + "\n")
 	}
+	if pr.Kind != "live" {
+		_, _ = w.WriteString(`    <previously-shown/>` + "\n")
+	}
+	if s.Rating != "" {
+		_, _ = w.WriteString(`    <rating><value>` + xmlEscape(s.Rating) + `</value></rating>` + "\n")
+	}
 	_, _ = w.WriteString(`  </programme>` + "\n")
+}
+
+// categories are the programme's genre and the channel's category, without
+// repeats.
+func categories(genre, channelCategory string) []string {
+	var out []string
+	for _, c := range []string{genre, channelCategory} {
+		c = strings.TrimSpace(c)
+		if c == "" || (len(out) > 0 && strings.EqualFold(out[0], c)) {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+func firstNonEmpty(ss ...string) string {
+	for _, s := range ss {
+		if s = strings.TrimSpace(s); s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 // xmltvTime formats a time as XMLTV's "YYYYMMDDHHMMSS +0000" (UTC).

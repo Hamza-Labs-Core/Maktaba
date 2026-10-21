@@ -81,6 +81,9 @@ type TVSettings struct {
 	GuideMaxPaddingSeconds int
 	GuideFillerTitle       string
 	GuideMinProgramSeconds int
+	// GuideImageMaxAgeSeconds is the Cache-Control max-age of the guide's
+	// images (channel logos, programme posters).
+	GuideImageMaxAgeSeconds int
 	// LiveLookupReuse is how long one yt-dlp lookup of a live page is
 	// shared by every channel airing it.
 	LiveLookupReuse time.Duration
@@ -95,6 +98,9 @@ const (
 	DefaultGuideFillerTitle       = "فواصل"
 	DefaultGuideMinProgramSeconds = 60
 	maxGuideSeconds               = 3600
+
+	DefaultGuideImageMaxAgeSeconds = 86400
+	maxGuideImageMaxAgeSeconds     = 30 * 86400
 
 	// live_lookup_reuse_seconds' bounds.
 	minLiveLookupReuseSec = 10
@@ -144,6 +150,8 @@ func TVSettingsFromEnv() TVSettings {
 		GuideMaxPaddingSeconds: DefaultGuideMaxPaddingSeconds,
 		GuideFillerTitle:       DefaultGuideFillerTitle,
 		GuideMinProgramSeconds: DefaultGuideMinProgramSeconds,
+
+		GuideImageMaxAgeSeconds: DefaultGuideImageMaxAgeSeconds,
 		LiveLookupReuse: time.Duration(clampInt(envInt("MAKTABA_CHANNEL_LIVE_LOOKUP_REUSE_SEC",
 			int(DefaultLiveLookupReuse/time.Second)), minLiveLookupReuseSec, maxLiveLookupReuseSec)) * time.Second,
 	}
@@ -255,6 +263,10 @@ func ApplyTVRules(base TVSettings, raw []byte) (out TVSettings, bad []string) {
 			}
 		case "guide_min_program_s":
 			if !setInt(&out.GuideMinProgramSeconds, v, 0, maxGuideSeconds) {
+				bad = append(bad, name)
+			}
+		case "guide_image_max_age_s":
+			if !setInt(&out.GuideImageMaxAgeSeconds, v, 0, maxGuideImageMaxAgeSeconds) {
 				bad = append(bad, name)
 			}
 		case "guide_filler_title":

@@ -12,6 +12,19 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **The desktop app runs the server on Windows** (Epic 38, story 38.3). When setup finishes on
+  a Windows PC, the app registers the user's own sign-in task `\Maktaba Server <SID>` (the
+  user's session, so mapped NAS drives work; each user of the PC has their own). The task runs
+  `Maktaba.exe --server-agent`, which starts the bundled launcher in a console without a window
+  and restarts it if it fails; a watchdog trigger every 5 minutes starts the agent again if it
+  died. Pause, Resume, Restart and Stop server work from the tray through a stop event the
+  launcher watches; a pause lasts until Resume or the next sign-in, and Resume right after a
+  Pause waits for the server to finish stopping. A server whose agent runs but that does not
+  answer for 3 minutes shows as a problem with the reason from its log. An update stops the
+  server before the installer replaces its files, and starts it again if the install fails.
+  The app's mode is kept per PC (`%LOCALAPPDATA%`), not in the roaming profile. Setup steps and
+  `schtasks` start without a console window, and the installer's hooks get `--server-start`,
+  `--server-stop` and `--server-remove`.
 - **Postgres programs for every platform, and Postgres on Windows.** Maktaba can fetch the pinned
   Postgres 16.15 build of the machine's platform (theseus-rs; size and SHA-256 pinned, unpacked
   with path checks), and the supervisor runs Postgres on Windows (its `.exe` programs, a fast
@@ -19,6 +32,29 @@ don't append a line here; docs-only PRs are exempt.
   the server runs as an administrator, as the Windows service does: Postgres refuses
   administrative rights). Groundwork for the Windows and Linux apps and for full nodes' copies of
   the home's database (#178).
+
+### Changed
+
+- **Windows keeps everything in `%LOCALAPPDATA%\Maktaba`** (Epic 38, story 38.1): `server.toml`,
+  `keys\`, `data\`, `logs\` and the node's `node.json`, with the models, caches and the bundled
+  Postgres beside `data\`. Nothing is in the roaming profile any more, so the keys and a node's
+  identity never follow the user to another PC. An install from before moves at its next
+  `maktaba-server` command, with or without a `server.toml`:
+  `server.toml`, the keys and `node.json` out of `%APPDATA%\Maktaba`, and `models\`, `chroma\`,
+  `cache\`, `postgres\` and `backups\` out of `data\` to beside it (when `data_dir` is the
+  default, `MAKTABA_CONFIG` or not). Each piece moves on its own and only while its new place is
+  empty: nothing is replaced and no two folders are merged, and a piece that finds something
+  there stays put and says so once. Across drives (a roaming profile on another drive or on a
+  server) a file is copied, flushed to disk and compared before the old one is removed, a folder
+  file by file, and a move cut short is finished by the next command, so no key is lost. One
+  command at a time moves (a lock in `%LOCALAPPDATA%\Maktaba`; a second one waits for it). A
+  `maktaba-server` inside the desktop app's payload, on Windows or a Mac, never moves an older
+  install: that comes into the app only through the app's own move, which copies it and keeps
+  the old one for going back. The node installer's `node.env` stays where
+  its scripts read it, and a machine that joined before reads its old `node.json` until it has
+  moved; the api and the pipeline, run on their own, read `keys\secrets.key` the same way. On
+  Windows the pipeline also writes its logs in UTF-8 (`PYTHONUTF8`), so an Arabic title can no
+  longer raise `UnicodeEncodeError`.
 
 ### Fixed
 
