@@ -181,6 +181,9 @@ class PlexDvr:
     lineup: str = ""
     language: str = ""
     devices: tuple[PlexTuner, ...] = ()
+    #: every guide the DVR carries (``Lineup``): one per channel source since Plex's
+    #: multi-lineup DVRs
+    lineups: tuple[str, ...] = ()
 
 
 def _list(raw: Any) -> list[dict[str, Any]]:
@@ -232,6 +235,8 @@ def _dvr(d: Mapping[str, Any]) -> PlexDvr:
         lineup=str(d.get("lineup") or ""),
         language=str(d.get("language") or ""),
         devices=tuple(_tuner(x, key) for x in _list(d.get("Device"))),
+        lineups=tuple(str(x["id"]) for x in _list(d.get("Lineup")) if x.get("id"))
+        or ((str(d["lineup"]),) if d.get("lineup") else ()),
     )
 
 
@@ -550,6 +555,26 @@ class PlexClient:
         mc = doc.get("MediaContainer")
         dvrs = _list(mc.get("Dvr")) if isinstance(mc, dict) else []
         return _dvr(dvrs[0]) if dvrs else None
+
+    def add_dvr_lineup(self, dvr_key: str, lineup: str) -> None:
+        """``PUT /livetv/dvrs/{key}/lineups?lineup=..``: the DVR carries this guide too
+        (Plex web's "Add Another Device", before the device itself)."""
+        self.send("PUT", self._q(f"/livetv/dvrs/{quote(dvr_key)}/lineups", {"lineup": lineup}))
+
+    def add_dvr_device(self, dvr_key: str, device_key: str) -> None:
+        """``PUT /livetv/dvrs/{key}/devices/{device}``: the tuner becomes one of the DVR's
+        channel sources."""
+        self.send("PUT", f"/livetv/dvrs/{quote(dvr_key)}/devices/{quote(device_key)}")
+
+    def delete_dvr(self, dvr_key: str) -> None:
+        """``DELETE /livetv/dvrs/{key}``: the DVR goes; its tuners stay known to Plex."""
+        self.send("DELETE", f"/livetv/dvrs/{quote(dvr_key)}")
+
+    def set_device_title(self, device_key: str, title: str) -> None:
+        """``PUT /media/grabbers/devices/{key}?title=..&enabled=1``: the name Plex shows for
+        the channel source (Plex refuses the title without ``enabled``)."""
+        path = f"/media/grabbers/devices/{quote(device_key)}"
+        self.send("PUT", self._q(path, [("title", title), ("enabled", "1")]))
 
     def reload_guide(self, dvr_key: str) -> None:
         """``POST /livetv/dvrs/{key}/reloadGuide``: Plex fetches the XMLTV guide again."""

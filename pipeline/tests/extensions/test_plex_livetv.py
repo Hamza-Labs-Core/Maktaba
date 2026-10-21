@@ -83,7 +83,12 @@ class FakeLiveTV:
     def add_dvr(self, device_key: str, title: str, lineup: str = "lineup://x") -> str:
         self._next += 1
         key = str(self._next)
-        self.dvrs[key] = {"title": title, "lineup": lineup, "devices": [device_key]}
+        self.dvrs[key] = {
+            "title": title,
+            "lineup": lineup,
+            "lineups": [lineup],
+            "devices": [device_key],
+        }
         self.devices[device_key]["parentID"] = key
         return key
 
@@ -102,6 +107,7 @@ class FakeLiveTV:
             "lineup": d["lineup"],
             "language": d.get("language", ""),
             "Device": [self._device_json(k) for k in d["devices"]],
+            "Lineup": [{"id": x} for x in d["lineups"]],
         }
 
     def request(
@@ -156,6 +162,29 @@ class FakeLiveTV:
                 if self.answer_with_objects
                 else {}
             )
+        if parts[:2] == ["livetv", "dvrs"] and len(parts) >= 3 and parts[2] not in self.dvrs:
+            return None
+        if method == "DELETE" and parts[:2] == ["livetv", "dvrs"] and len(parts) == 3:
+            for k in self.dvrs.pop(parts[2])["devices"]:
+                self.devices[k].pop("parentID", None)
+            return {}
+        if method == "PUT" and parts[:2] == ["livetv", "dvrs"] and parts[3:] == ["lineups"]:
+            self.dvrs[parts[2]]["lineups"].append(q["lineup"])
+            return {}
+        if method == "PUT" and parts[:2] == ["livetv", "dvrs"] and parts[3:4] == ["devices"]:
+            if parts[4] not in self.devices or not self.devices[parts[4]].get("ChannelMapping"):
+                return 400  # Plex web maps the channels first
+            for d in self.dvrs.values():
+                if parts[4] in d["devices"]:
+                    d["devices"].remove(parts[4])
+            self.dvrs[parts[2]]["devices"].append(parts[4])
+            self.devices[parts[4]]["parentID"] = parts[2]
+            return {"MediaContainer": {"Dvr": [self._dvr_json(parts[2])]}}
+        if method == "PUT" and parts[:3] == ["media", "grabbers", "devices"] and len(parts) == 4:
+            if parts[3] not in self.devices or "enabled" not in q:
+                return 400  # Plex refuses a title without enabled
+            self.devices[parts[3]]["title"] = q.get("title", "")
+            return {}
         if method == "POST" and parts[:2] == ["livetv", "dvrs"] and parts[3:] == ["reloadGuide"]:
             return {} if parts[2] in self.dvrs else None
         if (
@@ -258,6 +287,26 @@ def test_create_dvr_and_add_device_send_plexs_parameters() -> None:
     assert q["lineupTitle"] == ["Maktaba"]
     client.reload_guide(dvr.key)
     assert fake.calls[-1][:2] == ("POST", f"/livetv/dvrs/{dvr.key}/reloadGuide")
+
+
+def test_channel_source_calls_send_plex_webs_parameters() -> None:
+    fake = FakeLiveTV(reachable={TUNER: DEVICE_ID})
+    client = PlexClient(BASE, "T", transport=fake)
+    dz = fake.add_device(DIZQUE, "DIZQUE01", "dizqueTV")
+    dvr = fake.add_dvr(dz, "dizqueTV")
+    dev = client.add_grabber_device(TUNER)
+    assert dev is not None
+    guide = xmltv_lineup(f"{TUNER}/xmltv.xml", "Maktaba")
+    client.put_channel_map(dev.key, ["1"])
+    client.add_dvr_lineup(dvr, guide)
+    assert urllib.parse.parse_qs(fake.calls[-1][2]) == {"lineup": [guide]}
+    client.add_dvr_device(dvr, dev.key)
+    client.set_device_title(dev.key, "Maktaba TV")
+    assert urllib.parse.parse_qs(fake.calls[-1][2]) == {"title": ["Maktaba TV"], "enabled": ["1"]}
+    got = next(d for d in client.dvrs() if d.key == dvr)
+    assert [t.key for t in got.devices] == [dz, dev.key] and got.lineups[1] == guide
+    client.delete_dvr(dvr)
+    assert fake.calls[-1][:2] == ("DELETE", f"/livetv/dvrs/{dvr}") and client.dvrs() == []
 
 
 @pytest.fixture
@@ -443,33 +492,99 @@ async def test_without_maktaba_in_plex_it_only_reports(db: Database) -> None:
     assert s["actions"]["channel_map"] == "not_registered"
 
 
+def dizque_snapshot(w: World) -> Any:
+    dk = next(k for k, d in w.fake.devices.items() if d["deviceId"] == "DIZQUE01")
+    dvr = next(k for k, d in w.fake.dvrs.items() if dk in d["devices"])
+    return dk, dvr, json.dumps(w.fake.devices[dk], sort_keys=True)
+
+
 @pytest.mark.asyncio
-async def test_register_adds_tuner_and_dvr_maps_channels_and_reloads(db: Database) -> None:
+async def test_register_joins_the_dvr_plex_shows_as_another_channel_source(
+    db: Database,
+) -> None:
+    # Plex's Live TV & DVR page shows one DVR; further tuners are its channel sources,
+    # each with its own guide ("Add Another Device"). A DVR of Maktaba's own stays hidden.
     w = await make_world(db)
+    dz_key, dz_dvr, dz_before = dizque_snapshot(w)
     await ask_register(db)
     row = await livetv(db, w, force=True)
     assert row["state"] == "done", error_of(row)
-    writes = w.fake.writes()
-    assert [m for m, _ in writes] == ["POST", "POST", "PUT", "POST"]
-    assert writes[0][1] == "/media/grabbers/devices"
-    assert writes[1][1] == "/livetv/dvrs"
-    new_dvr = next(k for k, d in w.fake.dvrs.items() if d["title"] == "Maktaba")
-    ours = w.fake.dvrs[new_dvr]["devices"][0]
-    assert writes[2][1] == f"/media/grabbers/devices/{ours}/channelmap"
-    assert writes[3][1] == f"/livetv/dvrs/{new_dvr}/reloadGuide"
-    put = next(raw for m, p, raw in w.fake.calls if m == "PUT")
+    ours = next(k for k, d in w.fake.devices.items() if d["deviceId"] == DEVICE_ID)
+    assert [(m, p) for m, p in w.fake.writes()] == [
+        ("POST", "/media/grabbers/devices"),
+        ("PUT", f"/media/grabbers/devices/{ours}/channelmap"),
+        ("PUT", f"/livetv/dvrs/{dz_dvr}/lineups"),
+        ("PUT", f"/livetv/dvrs/{dz_dvr}/devices/{ours}"),
+        ("PUT", f"/media/grabbers/devices/{ours}"),
+        ("POST", f"/livetv/dvrs/{dz_dvr}/reloadGuide"),
+    ]
+    assert len(w.fake.dvrs) == 1 and w.fake.dvrs[dz_dvr]["devices"] == [dz_key, ours]
+    assert w.fake.dvrs[dz_dvr]["lineups"][1] == xmltv_lineup(f"{TUNER}/xmltv.xml", "Maktaba")
+    assert w.fake.devices[ours]["title"] == "Maktaba"
+    put = next(raw for m, p, raw in w.fake.calls if p.endswith("/channelmap"))
     assert urllib.parse.parse_qsl(put) == channel_map_query(["1", "2", "5"])
-    # the dizqueTV DVR is still there, untouched and never reloaded
-    assert len(w.fake.dvrs) == 2
-    dz_dvr = next(k for k, d in w.fake.dvrs.items() if d["title"] == "dizqueTV")
-    assert f"/livetv/dvrs/{dz_dvr}/reloadGuide" not in [p for _, p in writes]
+    # dizqueTV's tuner: same channels, name and guide
+    assert dizque_snapshot(w)[2] == dz_before
+    assert w.fake.dvrs[dz_dvr]["lineups"][0] == "lineup://tv.plex.providers.epg.xmltv/dz#dizqueTV"
     st = await load_state(db)
     assert st.register_requested_at is None and st.guide_reloaded_at is not None
     s = await status(db)
-    assert s["maktaba"]["registered"] and s["actions"]["register"] == "registered"
-    assert {d["devices"][0]["kind"] for d in s["dvrs"]} == {"maktaba", "dizquetv"}
-    assert s["channels"]["in_sync"] is True
+    assert s["maktaba"]["registered"] and not s["maktaba"]["separate_dvr"]
+    assert s["actions"]["register"] == "registered" and s["channels"]["in_sync"] is True
+    assert [t["kind"] for t in s["dvrs"][0]["devices"]] == ["dizquetv", "maktaba"]
     assert summary_of(row)["registered"] is True
+
+
+@pytest.mark.asyncio
+async def test_register_makes_a_dvr_when_plex_has_none(db: Database) -> None:
+    w = await make_world(db, dizquetv=False)
+    await ask_register(db)
+    row = await livetv(db, w, force=True)
+    assert row["state"] == "done", error_of(row)
+    assert [p.rsplit("/", 1)[-1] for _, p in w.fake.writes()] == [
+        "devices",  # the tuner
+        "dvrs",  # a DVR with Maktaba's guide
+        next(iter(w.fake.devices)),  # named
+        "channelmap",
+        "reloadGuide",
+    ]
+    assert (await status(db))["maktaba"]["registered"]
+
+
+@pytest.mark.asyncio
+async def test_a_dvr_of_its_own_is_shown_as_hidden_and_moved_in(db: Database) -> None:
+    # what earlier versions made: a second DVR, which Plex's settings page leaves out
+    w = await make_world(db)
+    _, dz_dvr, dz_before = dizque_snapshot(w)
+    ours = w.fake.add_device(TUNER, DEVICE_ID, "")
+    w.fake.devices[ours]["ChannelMapping"] = [{"channelKey": "1", "lineupIdentifier": "1"}]
+    own = w.fake.add_dvr(ours, "Maktaba", xmltv_lineup(f"{TUNER}/xmltv.xml", "Maktaba"))
+    await livetv(db, w, force=True)
+    s = await status(db)
+    assert not s["maktaba"]["registered"] and s["maktaba"]["separate_dvr"]
+    w.fake.calls.clear()
+    await ask_register(db)
+    row = await livetv(db, w, force=True)
+    assert row["state"] == "done", error_of(row)
+    assert ("DELETE", f"/livetv/dvrs/{own}") == w.fake.writes()[0]
+    assert list(w.fake.dvrs) == [dz_dvr] and ours in w.fake.dvrs[dz_dvr]["devices"]
+    assert dizque_snapshot(w)[2] == dz_before
+    s = await status(db)
+    assert s["maktaba"]["registered"] and not s["maktaba"]["separate_dvr"]
+
+
+@pytest.mark.asyncio
+async def test_a_dvr_shared_with_other_tuners_is_not_deleted(db: Database) -> None:
+    w = await make_world(db)
+    ours = w.fake.add_device(TUNER, DEVICE_ID, "")
+    own = w.fake.add_dvr(ours, "Antenna and Maktaba")
+    antenna = w.fake.add_device("http://192.168.1.30", "ANTENNA1", "Antenna")
+    w.fake.dvrs[own]["devices"].append(antenna)
+    await ask_register(db)
+    row = await livetv(db, w, force=True)
+    assert row["state"] == "done", error_of(row)
+    assert own in w.fake.dvrs and not any(m == "DELETE" for m, _ in w.fake.writes())
+    assert (await status(db))["actions"]["register"] == "in_another_dvr"
 
 
 @pytest.mark.asyncio
@@ -666,17 +781,17 @@ async def test_refresh_while_loading_keeps_a_grown_guide_for_later(db: Database)
 async def test_a_register_that_fails_half_way_keeps_the_request_for_the_retry(
     db: Database,
 ) -> None:
-    w = await make_world(db)
+    w = await make_world(db, dizquetv=False)  # no DVR yet: Maktaba makes one
     await ask_register(db)
     w.fake.dvr_failures = 1  # the tuner is added, then the DVR call times out
     row = await livetv(db, w, force=True)
     assert row["state"] in ("pending", "failed")
-    assert len(w.fake.devices) == 2 and len(w.fake.dvrs) == 1
+    assert len(w.fake.devices) == 1 and len(w.fake.dvrs) == 0
     assert (await load_state(db)).register_requested_at is not None  # not answered yet
     row = await livetv(db, w, force=True)
     assert row["state"] == "done", error_of(row)
     # the retry uses the tuner the first run added and creates the DVR
-    assert len(w.fake.devices) == 2 and len(w.fake.dvrs) == 2
+    assert len(w.fake.devices) == 1 and len(w.fake.dvrs) == 1
     s = await status(db)
     assert s["maktaba"]["registered"] and s["actions"]["register"] == "registered"
     assert (await load_state(db)).register_requested_at is None

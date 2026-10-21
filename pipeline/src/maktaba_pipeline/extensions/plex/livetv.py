@@ -5,9 +5,14 @@ HDHomeRun tuner only, plus adding that tuner to Plex once:
 
 * **find** Plex's DVRs (``GET /livetv/dvrs``) and tuners (``GET /media/grabbers/devices``)
   and Maktaba's tuner among them, by its HDHomeRun DeviceID (``hdhr_device``) or its address;
-* **register** (``POST /media/grabbers/devices?uri=..``, then ``POST /livetv/dvrs`` with the
-  XMLTV guide), only when an admin asked for it (``POST /api/tv/plex/register``) or
-  ``rules.plexlive.auto_register`` is on, and never when a DVR already has Maktaba's tuner;
+* **register** (``POST /media/grabbers/devices?uri=..``), only when an admin asked for it
+  (``POST /api/tv/plex/register``) or ``rules.plexlive.auto_register`` is on: Plex's settings
+  page shows one DVR (the first; since Plex's multi-lineup DVRs further tuners are its
+  "channel sources", each with its own guide), so the tuner joins that DVR as Plex web's "Add
+  Another Device" does (channel map, ``PUT /livetv/dvrs/{key}/lineups`` with Maktaba's XMLTV
+  guide, ``PUT /livetv/dvrs/{key}/devices/{device}``) and is named. A separate DVR holding only
+  Maktaba's tuner (what earlier versions made; Plex hides it) is deleted first. With no DVR
+  at all, ``POST /livetv/dvrs`` makes one. Refused when the shown DVR has the tuner already;
 * **channel map** (``PUT /media/grabbers/devices/{key}/channelmap``, dizqueTV's exact query)
   when the lineup differs from the one last pushed;
 * **reload the guide** (``POST /livetv/dvrs/{key}/reloadGuide``) after a channel-map push, an
@@ -16,8 +21,9 @@ HDHomeRun tuner only, plus adding that tuner to Plex once:
   changes nothing within ``GUIDE_LOAD_SECONDS`` of the last reload sends nothing: Plex is
   still loading that guide, and a reload or channel-map push meanwhile aborts the load.
 
-Other DVRs and tuners (dizqueTV's, an antenna's) are listed in the status and never touched:
-nothing here deletes, replaces or reloads a DVR that is not Maktaba's.
+Other tuners (dizqueTV's, an antenna's) are listed in the status and never changed: their
+channel maps, names and guides stay as they are. The DVR Maktaba joins is shared, so its
+guide reload reloads every guide that DVR carries.
 
 Triggers: the edge ``write_channels -> plex_livetv`` (the lineup changed), the scheduler's
 top-up (``StageDef.after_topup``: the schedule grew), and the API (``force``: refresh now,
@@ -46,6 +52,7 @@ from ...integrations.plex import (
     TransportError,
     find_tuner,
     same_host,
+    xmltv_lineup,
 )
 from .collection import PlexService
 
@@ -219,6 +226,11 @@ def _dvr_of(dvrs: Sequence[PlexDvr], tuner: PlexTuner | None) -> PlexDvr | None:
     return next((d for d in dvrs if tuner.dvr_key and d.key == tuner.dvr_key), None)
 
 
+def _shown(dvrs: Sequence[PlexDvr], dvr: PlexDvr | None) -> bool:
+    """Plex's Live TV & DVR settings show the first DVR only."""
+    return dvr is not None and bool(dvrs) and dvrs[0].key == dvr.key
+
+
 def _wrap(exc: Exception) -> StageFailure:
     kind = "plex_unreachable" if isinstance(exc, TransportError) else "plex_error"
     return StageFailure(kind, f"plex: {exc}", retryable=True)
@@ -245,6 +257,44 @@ def _list(client: PlexClient) -> tuple[list[PlexDvr], list[PlexTuner]]:
     except PlexError:  # the DVRs list their tuners; the device list only adds idle ones
         devices = []
     return dvrs, devices
+
+
+async def _join(
+    client: PlexClient,
+    run: _Run,
+    tuner: PlexTuner,
+    lineup: Sequence[str],
+    target: Target,
+    cfg: Any,
+    name: str,
+) -> tuple[str, bool]:
+    """Put Maktaba's tuner where Plex's settings page shows it. Returns why not ("" when
+    done; the caller checks) and whether the channel map was pushed on the way."""
+    title = str(cfg.guide_title or "Maktaba")
+    host = next((d for d in run.dvrs if any(t.key != tuner.key for t in d.devices)), None)
+    own = _dvr_of(run.dvrs, tuner)
+    if host is None:  # no other DVR: one of Maktaba's own is the one Plex shows
+        if own is None:
+            await asyncio.to_thread(
+                client.create_dvr,
+                tuner.uuid,
+                target.xmltv_url,
+                title,
+                str(cfg.language or "ara"),
+            )
+    else:
+        if own is not None and own.key != host.key:
+            if any(t.key != tuner.key for t in own.devices):
+                return "in_another_dvr", False  # shared: not Maktaba's to delete
+            await asyncio.to_thread(client.delete_dvr, own.key)
+        # Plex web's "Add Another Device": the channels, the guide, then the tuner
+        await asyncio.to_thread(client.put_channel_map, tuner.key, lineup)
+        guide = xmltv_lineup(target.xmltv_url, title)
+        if guide not in host.lineups:
+            await asyncio.to_thread(client.add_dvr_lineup, host.key, guide)
+        await asyncio.to_thread(client.add_dvr_device, host.key, tuner.key)
+    await asyncio.to_thread(client.set_device_title, tuner.key, name)
+    return "", host is not None
 
 
 async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept in order
@@ -322,7 +372,11 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
             "maktaba": {
                 "tuner_key": ours.key if ours else None,
                 "dvr_key": run.ours_dvr.key if run and run.ours_dvr else None,
-                "registered": bool(run and run.ours_dvr),
+                "registered": bool(run and _shown(run.dvrs, run.ours_dvr)),
+                # in a DVR of its own that Plex's settings page does not show
+                "separate_dvr": bool(
+                    run and run.ours_dvr is not None and not _shown(run.dvrs, run.ours_dvr)
+                ),
             },
             "dizquetv_present": bool(
                 run and any(classify(t, ours, dz_url) == "dizquetv" for t in run.tuners)
@@ -356,16 +410,16 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
     run = _Run(dvrs, _tuners(dvrs, devices))
     run.ours = find_tuner(run.tuners, device_id, target.tuner_url)
     run.ours_dvr = _dvr_of(run.dvrs, run.ours)
-    others = [d for d in run.dvrs if run.ours_dvr is None or d.key != run.ours_dvr.key]
+    others = [t for t in run.tuners if run.ours is None or t.key != run.ours.key]
     if others:
-        run.warnings.append(f"other DVRs left as they are: {len(others)}")
+        run.warnings.append(f"other tuners left as they are: {len(others)}")
 
-    registered_now = False
+    registered_now = joined_map = False
     error: str | None = None
     try:
         # ---- register (once; refused when a DVR already has Maktaba's tuner)
-        if asked or (cfg.auto_register and run.ours_dvr is None):
-            if run.ours_dvr is not None:
+        if asked or (cfg.auto_register and not _shown(run.dvrs, run.ours_dvr)):
+            if _shown(run.dvrs, run.ours_dvr):
                 run.register = "already_registered"
             elif device is None or not device[2]:
                 run.register = "tuner_off"
@@ -384,19 +438,16 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
                 if tuner is None or not tuner.uuid:
                     run.register = "tuner_not_added"
                 else:
-                    await asyncio.to_thread(
-                        client.create_dvr,
-                        tuner.uuid,
-                        target.xmltv_url,
-                        str(cfg.guide_title or "Maktaba"),
-                        str(cfg.language or "ara"),
+                    run.register, joined_map = await _join(
+                        client, run, tuner, lineup, target, cfg, device[1] or "Maktaba"
                     )
                     dvrs, devices = await asyncio.to_thread(_list, client)
                     run.dvrs, run.tuners = dvrs, _tuners(dvrs, devices)
                     run.ours = find_tuner(run.tuners, device_id, target.tuner_url) or tuner
                     run.ours_dvr = _dvr_of(run.dvrs, run.ours)
-                    registered_now = run.ours_dvr is not None
-                    run.register = "registered" if registered_now else "dvr_not_created"
+                    registered_now = _shown(run.dvrs, run.ours_dvr)
+                    if not run.register:
+                        run.register = "registered" if registered_now else "dvr_not_created"
             await ctx.log("info", f"plex live tv: register {run.register}")
 
         # ---- channel map, then the guide (Maktaba's tuner and DVR only)
@@ -419,7 +470,8 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
             elif settling:
                 run.channel_map = "unchanged"
             elif registered_now or ((manual or cfg.auto_refresh_channels) and (manual or changed)):
-                await asyncio.to_thread(client.put_channel_map, run.ours.key, lineup)
+                if not joined_map:  # joining pushed it already
+                    await asyncio.to_thread(client.put_channel_map, run.ours.key, lineup)
                 st.channelmap_hash, st.channelmap_at, pushed = want, wall(), True
                 run.ours = replace(run.ours, mapped=tuple(lineup))
                 run.channel_map = "pushed"
@@ -491,7 +543,7 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
         ),
         outcome="changed" if wrote else "unchanged",
         summary={
-            "registered": bool(run.ours_dvr),
+            "registered": _shown(run.dvrs, run.ours_dvr),
             "register": run.register or None,
             "channel_map": run.channel_map,
             "guide": run.guide,
