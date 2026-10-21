@@ -31,7 +31,8 @@
 #   --build         work directory (default: build/win-app); the payload is <build>/server
 #   --cache         downloads (default: <build>/downloads, or $WIN_APP_CACHE)
 #   --msvc-runtime  the Visual C++ runtime folder (…\VC\Redist\MSVC\<v>\x64\Microsoft.VC14x.CRT;
-#                   default: $WIN_APP_MSVC_RUNTIME, else the newest Visual Studio's, by vswhere)
+#                   default: $WIN_APP_MSVC_RUNTIME, else the one of pins.env's MSVC_RUNTIME_VERSION
+#                   among every Visual Studio installed, by vswhere)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -142,17 +143,36 @@ tool() { "$PY" -I "$(win "$SCRIPT_DIR/payload_tool.py")" "$@"; }
 # which a PC without the Visual C++ Redistributable does not have. python-build-standalone
 # carries vcruntime140.dll but not msvcp140.dll (ICU's), and the set must come from one
 # release, so it is taken from Visual Studio's redistributable folder.
+[ -n "${MSVC_RUNTIME_VERSION:-}" ] || die "pins.env has no MSVC_RUNTIME_VERSION"
+# file_version FILE...: each file's FileVersion, one per line
+file_version() {
+    # (PowerShell's own $ variables, in single quotes; the files go in through the environment)
+    # shellcheck disable=SC2016
+    VERSION_FILES="$(win "$@" | tr '\n' ';')" powershell.exe -NoProfile -NonInteractive -Command \
+        '$env:VERSION_FILES.TrimEnd(";") -split ";" | ForEach-Object { (Get-Item -LiteralPath $_).VersionInfo.FileVersion }' |
+        tr -d '\r'
+}
 if [ -z "$MSVC_RUNTIME" ]; then
     vswhere="$(cygpath -u -F 42)/Microsoft Visual Studio/Installer/vswhere.exe"   # 42: Program Files (x86)
     [ -f "$vswhere" ] || die "no Visual Studio (vswhere.exe): install its C++ build tools, or pass --msvc-runtime"
-    vs="$("$vswhere" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Redist.14.Latest \
-        -property installationPath | tr -d '\r')"
-    [ -n "$vs" ] || die "no Visual Studio with the C++ redistributable (Microsoft.VisualStudio.Component.VC.Redist.14.Latest)"
-    vs="$(cygpath -u "$vs")"
-    redist="$(tr -d '[:space:]' <"$vs/VC/Auxiliary/Build/Microsoft.VCRedistVersion.default.txt")"
-    crt=("$vs/VC/Redist/MSVC/$redist/x64"/Microsoft.VC*.CRT)
-    [ -d "${crt[0]}" ] || die "no x64 Visual C++ runtime in $vs/VC/Redist/MSVC/$redist"
-    MSVC_RUNTIME="${crt[0]}"
+    # every instance's current redistributable (an instance holds one), the pinned one taken
+    crts=()
+    while IFS= read -r vs; do
+        [ -n "$vs" ] || continue
+        vs="$(cygpath -u "$vs")"
+        redist="$(tr -d '[:space:]' <"$vs/VC/Auxiliary/Build/Microsoft.VCRedistVersion.default.txt" 2>/dev/null || true)"
+        crt=("$vs/VC/Redist/MSVC/$redist/x64"/Microsoft.VC*.CRT)
+        if [ -n "$redist" ] && [ -f "${crt[0]}/vcruntime140.dll" ]; then crts+=("${crt[0]}"); fi
+    done < <("$vswhere" -all -products '*' -requires Microsoft.VisualStudio.Component.VC.Redist.14.Latest \
+        -property installationPath | tr -d '\r')
+    [ "${#crts[@]}" -gt 0 ] || die "no Visual Studio with the C++ redistributable (Microsoft.VisualStudio.Component.VC.Redist.14.Latest)"
+    found=()
+    mapfile -t versions < <(file_version "${crts[@]/%//vcruntime140.dll}")
+    for i in "${!crts[@]}"; do
+        found+=("${versions[$i]:-?} ($(win "${crts[$i]}"))")
+        if [ "${versions[$i]:-}" = "$MSVC_RUNTIME_VERSION" ]; then MSVC_RUNTIME="${crts[$i]}"; break; fi
+    done
+    [ -n "$MSVC_RUNTIME" ] || die "no Visual Studio here has the Visual C++ runtime $MSVC_RUNTIME_VERSION that pins.env pins (found: ${found[*]}): install the one that has it (Visual Studio 2022 17.14's C++ redistributable), pass --msvc-runtime a folder that holds it, or bump MSVC_RUNTIME_VERSION in pins.env (a reviewed change)"
 fi
 MSVC_RUNTIME="$(cygpath -u "$MSVC_RUNTIME")"
 [ -f "$MSVC_RUNTIME/vcruntime140.dll" ] || die "$MSVC_RUNTIME has no vcruntime140.dll"
@@ -201,6 +221,9 @@ MSVC_VERSION=""
 while IFS='|' read -r status subject version name; do
     if [ "$status" != Valid ] || [[ "$subject" != *"O=Microsoft Corporation"* ]]; then
         die "$name from $MSVC_RUNTIME is not signed by Microsoft ($status, $subject)"
+    fi
+    if [ "$version" != "$MSVC_RUNTIME_VERSION" ]; then
+        die "$name from $MSVC_RUNTIME is $version, not the Visual C++ runtime $MSVC_RUNTIME_VERSION that pins.env pins"
     fi
     if [ "$name" = vcruntime140.dll ]; then MSVC_VERSION="$version"; fi
 done <<<"$sigs"
