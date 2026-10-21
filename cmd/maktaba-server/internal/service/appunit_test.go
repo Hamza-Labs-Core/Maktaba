@@ -1,3 +1,7 @@
+//go:build !windows
+
+// The app's user unit is the Linux app's: its paths are POSIX paths.
+
 package service
 
 import (
