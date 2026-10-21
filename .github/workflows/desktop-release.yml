@@ -11,7 +11,17 @@
 #                          pipeline wheel), macOS 15+
 #                 x86_64 — the client only (Intel Macs keep the Homebrew/node paths)
 #   Windows   →  .msi + .exe     (NSIS) + a portable .zip of the raw exe
-#   Linux     →  .deb + .AppImage
+#   Linux     →  .AppImage + .deb + .rpm, x86_64 and aarch64, each WITH the server inside
+#                (Epic 39): usr/share/maktaba/server built by tools/release/linux-app/payload.sh
+#
+# NOTHING IS PUBLIC BEFORE IT IS CHECKED
+# --------------------------------------
+# Each leg builds (`tauri build`: signing, notarization, the updater signatures) and
+# checks its bundles, then hands the checked files to the `publish` job as an
+# artifact. `publish` runs once, after every leg: it attaches the files to the tag's
+# release and only then writes latest.json, the updater feed, over all of them
+# (tools/release/cmd/updater-feed). A leg that fails attaches nothing, so no updater is
+# ever pointed at a bundle that failed its checks; the other platforms still publish.
 #
 # WEB FRONTEND
 # ------------
@@ -36,7 +46,7 @@
 # Every Mach-O in the server payload is signed by payload.sh (hardened runtime,
 # timestamp; python3 with tools/release/mac-app/entitlements/python.plist), then
 # tauri signs + notarizes + staples the app, then the .dmg is notarized and
-# stapled here and re-uploaded.
+# stapled here before it is staged for the publish job.
 # Windows (WINDOWS_CERTIFICATE / WINDOWS_CERTIFICATE_PASSWORD, Authenticode)
 # stays deferred. The updater key: TAURI_SIGNING_PRIVATE_KEY(_PASSWORD).
 name: Desktop Release
@@ -52,8 +62,7 @@ permissions:
 jobs:
   desktop:
     name: desktop (${{ matrix.label }})
-    permissions:
-      contents: write # tauri-action upserts the Release + uploads bundles
+    # builds and checks only; the publish job attaches what passed
     strategy:
       fail-fast: false
       matrix:
@@ -106,7 +115,7 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf \
-            zip libarchive-tools
+            zip libarchive-tools rpm
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -275,16 +284,15 @@ jobs:
               ' updater=' + (c.bundle.createUpdaterArtifacts === true));
           "
 
-      # tauri-action signs each bundle and emits latest.json (the updater
-      # feed) when the signing key secrets are present (Story 28.4). A
-      # fork without TAURI_SIGNING_* still produces UNSIGNED installers
-      # and skips updater-artifact generation — the secrets resolve empty,
-      # so the build stays green (matching the deferred Apple/Windows
-      # cert posture).
-      - name: Build + upload Tauri bundles
-        uses: tauri-apps/tauri-action@v0
+      # `tauri build`, nothing published: it signs each updater bundle (.sig) when
+      # the signing key secret is present (Story 28.4). A fork without
+      # TAURI_SIGNING_* still produces UNSIGNED installers and no updater
+      # signatures — the secrets resolve empty, so the build stays green
+      # (matching the deferred Apple/Windows cert posture).
+      - name: Build the Tauri bundles
+        working-directory: apps/desktop
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # tauri signs with the imported identity (empty: unsigned) and, with
@@ -292,16 +300,12 @@ jobs:
           APPLE_ID: ${{ env.APPLE_NOTARIZE == 'true' && secrets.APPLE_ID || '' }}
           APPLE_PASSWORD: ${{ env.APPLE_NOTARIZE == 'true' && secrets.APPLE_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ env.APPLE_NOTARIZE == 'true' && secrets.APPLE_TEAM_ID || '' }}
-        with:
-          projectPath: apps/desktop
-          # Attach to the Release for the pushed tag (upsert by tag, so it
-          # coexists with release.yml / the other client workflows — they
-          # upload disjoint asset names).
-          tagName: ${{ github.ref_name }}
-          releaseName: ${{ github.ref_name }}
-          # v0.1.0-rc.1 is a pre-release (release.yml sets the final flags)
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          args: ${{ matrix.args }}
+          ARGS: ${{ matrix.args }}
+        run: |
+          set -euo pipefail
+          # ARGS is a list of words (the targets, the bundles, the payload overlay)
+          read -r -a words <<<"$ARGS"
+          pnpm tauri build "${words[@]}"
 
       - name: Check the app bundle
         if: matrix.payload
@@ -328,16 +332,14 @@ jobs:
           du -sh "$b"/appimage/*.AppImage "$b"/deb/*.deb "$b"/rpm/*.rpm
 
       # tauri notarizes the .app inside the .dmg; the .dmg itself is notarized
-      # and stapled here (so it opens offline without a Gatekeeper prompt) and
-      # replaces the one tauri-action uploaded.
+      # and stapled here (so it opens offline without a Gatekeeper prompt),
+      # before it is staged.
       - name: Notarize + staple the .dmg
         if: env.APPLE_NOTARIZE == 'true'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
           TARGET: ${{ matrix.rust-targets }}
         run: |
           set -euo pipefail
@@ -347,7 +349,6 @@ jobs:
               --team-id "$APPLE_TEAM_ID" --wait --timeout 60m
             xcrun stapler staple "$dmg"
             xcrun stapler validate "$dmg"
-            gh release upload "$TAG" "$dmg" --clobber
           done
 
       # Windows "portable" deliverable: zip the raw built executable so
@@ -360,7 +361,6 @@ jobs:
         shell: pwsh
         env:
           TAG: ${{ github.ref_name }}
-          GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
           $version = $env:TAG -replace '^v', ''
@@ -374,7 +374,103 @@ jobs:
           if (-not $exe) {
             Write-Error "$name.exe not found under $src/target/release — did the Tauri build succeed?"
           }
-          New-Item -ItemType Directory -Force -Path out | Out-Null
-          $zip = "out/maktaba-windows-portable-$version.zip"
+          New-Item -ItemType Directory -Force -Path out/release | Out-Null
+          $zip = "out/release/maktaba-windows-portable-$version.zip"
           Compress-Archive -Path $exe.FullName -DestinationPath $zip -Force
-          gh release upload $env:TAG $zip --clobber
+
+      # This leg's checked files for the publish job: the bundles as tauri names
+      # them, with their updater signatures (.sig). The macOS updater archive is
+      # Maktaba.app.tar.gz on both architectures, so it takes the .dmg's version and
+      # architecture (Maktaba_<v>_<aarch64|x64>.app.tar.gz).
+      - name: Stage the checked bundles
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+          TARGET: ${{ matrix.rust-targets }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          v="${TAG#v}"
+          b="apps/desktop/src-tauri/target/${TARGET:+$TARGET/}release/bundle"
+          mkdir -p out/release
+          case "$RUNNER_OS" in
+            macOS)
+              arch=x64
+              [ "$TARGET" != aarch64-apple-darwin ] || arch=aarch64
+              cp "$b"/dmg/*.dmg out/release/
+              for f in "$b"/macos/*.app.tar.gz; do
+                n="$(basename "$f" .app.tar.gz)_${v}_${arch}.app.tar.gz"
+                cp "$f" "out/release/$n"
+                [ ! -f "$f.sig" ] || cp "$f.sig" "out/release/$n.sig"
+              done
+              ;;
+            Windows)
+              cp "$b"/msi/*.msi "$b"/msi/*.msi.sig "$b"/nsis/*-setup.exe "$b"/nsis/*-setup.exe.sig out/release/
+              ;;
+            Linux)
+              cp "$b"/appimage/*.AppImage "$b"/appimage/*.AppImage.sig "$b"/deb/*.deb "$b"/deb/*.deb.sig \
+                "$b"/rpm/*.rpm "$b"/rpm/*.rpm.sig out/release/
+              ;;
+          esac
+          ls -l out/release
+
+      - name: Hand them to the publish job
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: desktop-${{ matrix.label }}
+          path: out/release/*
+          if-no-files-found: error
+          retention-days: 7
+
+  # Only now is anything public: every leg's checked files are attached to the
+  # tag's release, then latest.json is written once, over all of them (no two legs
+  # race on it, and it is made from the files, not from a listing of the release).
+  # A leg that failed staged nothing: the other platforms publish, and the failed
+  # one's apps stay on the version they run.
+  publish:
+    name: publish the checked bundles
+    needs: desktop
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: write # create the release (when release.yml has not yet) and attach to it
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: tools/release/go.mod
+          cache-dependency-path: tools/release/go.sum
+
+      - name: Download the checked bundles
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: desktop-*
+          path: staged
+          merge-multiple: true
+
+      - name: Attach them to the release, then write latest.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ ! -d staged ] || [ -z "$(ls -A staged)" ]; then
+            echo "::error::no leg staged a bundle"
+            exit 1
+          fi
+          # release.yml may not have made the release yet; it sets the final flags
+          # (a pre-release for a tag with a suffix, the latest for a plain one)
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            case "$TAG" in *-*) kind=(--prerelease --latest=false) ;; *) kind=(--latest=false) ;; esac
+            gh release create "$TAG" --verify-tag --title "$TAG" --notes "" "${kind[@]}" ||
+              gh release view "$TAG" >/dev/null # made meanwhile by release.yml
+          fi
+          gh release upload "$TAG" staged/* --clobber
+          (cd tools/release && go run ./cmd/updater-feed --dir ../../staged --repo "$GITHUB_REPOSITORY" \
+            --tag "$TAG" --out ../../latest.json)
+          if [ -f latest.json ]; then
+            cat latest.json
+            gh release upload "$TAG" latest.json --clobber
+          fi

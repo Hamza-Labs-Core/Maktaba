@@ -62,7 +62,7 @@ jobs:
           pnpm -C web install --frozen-lockfile
           pnpm -C apps/desktop install --frozen-lockfile
           sudo apt-get update -qq
-          sudo apt-get install -y -qq patchelf zip shellcheck libarchive-tools \
+          sudo apt-get install -y -qq patchelf zip shellcheck libarchive-tools rpm \
             libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
 
       - uses: dtolnay/rust-toolchain@stable
@@ -77,10 +77,11 @@ jobs:
           path: build/linux-app/downloads
           key: linux-app-downloads-${{ matrix.arch }}-${{ hashFiles('tools/release/linux-app/pins.env') }}
 
-      - name: shellcheck and the payload tool's tests
+      - name: shellcheck, the payload tool's and the removal script's tests
         run: |
           shellcheck -x tools/release/linux-app/*.sh
           python3 tools/release/linux-app/test_payload_tool.py -v
+          bash tools/release/linux-app/test_package_remove.sh
 
       # On failure the last lines go into an annotation: readable on the run's
       # page without signing in (the job log is not).
