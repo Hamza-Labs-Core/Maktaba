@@ -11,7 +11,7 @@ so one Windows install runs everything. This directory builds the payload and th
 | `build-app.sh` | payload → `tauri build --bundles nsis` → check. `make win-app` runs it |
 | `pins.env` | the third-party downloads: version, URL, SHA-256 |
 | `payload_tool.py` | reads PE import tables: the DLLs Postgres needs, and the check that nothing loads from outside the payload (`test_payload_tool.py`) |
-| [`apps/desktop/src-tauri/windows/installer-hooks.nsh`](../../../apps/desktop/src-tauri/windows/installer-hooks.nsh), `knows-server-flags.ps1` | the NSIS installer's hooks, and how the installer tells the `Maktaba.exe` it packs takes their flags (below) |
+| [`apps/desktop/src-tauri/windows/installer-hooks.nsh`](../../../apps/desktop/src-tauri/windows/installer-hooks.nsh), `knows-server-flags.ps1` | the NSIS installer's hooks, and how the installer tells from the shell's source that the `Maktaba.exe` it packs takes their flags (below) |
 
 ```bash
 make win-app            # the NSIS installer, unsigned, then a test install + uninstall
@@ -103,9 +103,13 @@ and this branch's own shell until 38.3 is merged) opens its window for any argum
 exits, so a hook would hold the install until someone closed it. So the hooks ask only a
 `Maktaba.exe` known to take them:
 
-- the one this installer packs: decided when makensis compiles the installer, by reading that
-  very program (`knows-server-flags.ps1`: a shell parses the flags by name, so a build that
-  takes them holds the literal `--server-remove`; one before 38.3 holds none);
+- the one this installer packs: decided when makensis compiles the installer, from the
+  shell's source in this tree (`knows-server-flags.ps1`: the quoted literals `"--server-start"`,
+  `"--server-stop"` and `"--server-remove"` in the code, not a comment, of
+  `apps/desktop/src-tauri/src/*.rs`), which the same `tauri build` compiled into that
+  `Maktaba.exe`. Not from the program: a release build need not hold the flags' text at all
+  (LLVM compiles `arg == "--server-remove"` into a length and integer compares), so reading
+  the binary says "no" for a build that takes them;
 - the one already installed (before an install, an update, an uninstall): the installer that
   put a flag-taking `Maktaba.exe` there recorded its size and time as `MaktabaServerFlags` in
   the uninstall key, and the hook compares them with the file there now. A client-only
@@ -117,13 +121,18 @@ exits, so a hook would hold the install until someone closed it. So the hooks as
 A file in the payload (`server\payload.json`) would not do: it tells a server build from the
 client-only app, but not a server build whose shell predates 38.3 (this branch's today).
 
-`test-hooks.sh` tests the hooks on both kinds of `Maktaba.exe` with stand-ins (a fresh install,
-a reinstall, an update to a build from before the flags, the client-only app there with or
-without a stale record, an uninstall, the uninstall an update runs); `make win-app` runs it
-after the build. `check.sh --installer` installs over a client-only app (a stand-in
+`test-hooks.sh` tests the hooks on both kinds of `Maktaba.exe` with stand-ins and stand-in
+sources (a fresh install, a reinstall, an update to a build from before the flags, the
+client-only app there with or without a stale record, an uninstall, the uninstall an update
+runs); `make win-app` runs it after the build. `check.sh --installer` decides as the installer
+does, from this tree's source, and checks that against the program: the installed
+`Maktaba.exe --server-start` must exit by itself when the source takes the flags and keep
+running (its window) when it does not. It installs over a client-only app (a stand-in
 `Maktaba.exe` that takes no flag and never exits, with its registration and a stale record),
-reinstalls, uninstalls, and fails on any hook still running after 20 s; where the built
-`Maktaba.exe` takes no flag, on any run of it by a hook at all.
+reinstalls and uninstalls, and fails on any hook still running after 20 s, on a missing record
+where the shell takes the flags, and, where it takes none, on any run of `Maktaba.exe` by a
+hook at all. The runs it sees (WMI start events every 0.1 s) are listed; one that ends sooner
+can go unseen, which `test-hooks.sh` covers.
 
 `check.sh --installer` changes this user's registry while it runs (the uninstall entry, the
 `maktaba://` links, `HKCU\Software\<publisher>\Maktaba` for the last install folder) and puts

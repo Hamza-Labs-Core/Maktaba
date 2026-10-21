@@ -25,9 +25,12 @@
 #   The hooks (installer-hooks.nsh) run `Maktaba.exe --server-stop | --server-start |
 #   --server-remove` (story 38.3) only on a Maktaba.exe that takes them. Every run must
 #   finish without waiting: a hook still running after 20 s is ended and fails the check.
-#   Where the installed Maktaba.exe takes no such flag (it holds no "--server-remove", as
-#   before 38.3), no hook may run it at all and the installer keeps no record of it; where it
-#   does, the record (MaktabaServerFlags in the uninstall key) must be there.
+#   Whether this build's Maktaba.exe takes them is decided as the installer decides it, from
+#   the shell's source in this tree (knows-server-flags.ps1), and checked against what the
+#   installed Maktaba.exe does: run with --server-start it must exit by itself when the
+#   source takes the flags, and keep running (its window) when it does not. Where it takes
+#   none, no hook may run it at all and the installer keeps no record; where it does, the
+#   record (MaktabaServerFlags in the uninstall key) must be there.
 #
 # Usage: check.sh [--payload DIR] [--installer SETUP.exe]
 #   --payload    the payload (default: build/win-app/server)
@@ -108,10 +111,25 @@ if [ -n "$SETUP" ]; then
             "a test install would replace its registration. Run --installer as another user or on another machine." >&2
         exit 2
     fi
-    if wincmd schtasks.exe /Query /TN 'Maktaba Server' >/dev/null 2>&1; then
-        echo "check: the sign-in task 'Maktaba Server' exists: the test uninstall's hook would remove it." >&2
-        exit 2
-    fi
+    # the sign-in task: "Maktaba Server <this user's SID>" (story 38.3), "Maktaba Server" before
+    sid="$(powershell.exe -NoProfile -NonInteractive -Command '[Security.Principal.WindowsIdentity]::GetCurrent().User.Value' | tr -d '\r')"
+    for task in "Maktaba Server" "Maktaba Server $sid"; do
+        if wincmd schtasks.exe /Query /TN "$task" >/dev/null 2>&1; then
+            echo "check: the sign-in task '$task' exists: the test's hooks would start or remove it." >&2
+            exit 2
+        fi
+    done
+    # what the installer decides: does this tree's shell take the --server-* flags?
+    TREE_HOOKS=0
+    rc=0
+    powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
+        -File "$(win "$REPO_ROOT/apps/desktop/src-tauri/windows/knows-server-flags.ps1")" \
+        -Source "$(win "$REPO_ROOT/apps/desktop/src-tauri/src")" || rc=$?
+    case "$rc" in
+        0) TREE_HOOKS=1 ;;
+        1) ;;
+        *) echo "check: cannot tell whether this tree's shell takes the --server-* flags (exit $rc)" >&2; exit 2 ;;
+    esac
     if reg_exists "$DEEPLINK_KEY"; then
         echo "check: maktaba:// links are registered ($DEEPLINK_KEY): a test install would replace that." >&2
         exit 2
@@ -198,6 +216,27 @@ function Sweep($all, [double]$grace) {
         }
     }
 }
+# Each start of a Maktaba.exe, from WMI every 0.1 s: a hook's run often ends before the next
+# process list (below) is taken. Best effort: a run under 0.1 s can still go unseen.
+$seen = @{}
+function Ran($q) {
+    if ((InDir $q) -and -not $seen.ContainsKey([int]$q.ProcessId)) {
+        $seen[[int]$q.ProcessId] = $true
+        Write-Output ("ran {0}" -f $q.CommandLine)
+    }
+}
+$events = $true
+try {
+    Register-CimIndicationEvent -SourceIdentifier MaktabaRan -ErrorAction Stop -Query `
+        "SELECT * FROM __InstanceCreationEvent WITHIN 0.1 WHERE TargetInstance ISA 'Win32_Process' AND TargetInstance.Name = 'Maktaba.exe'"
+} catch { $events = $false }
+function Drain {
+    if (-not $events) { return }
+    foreach ($e in @(Get-Event -SourceIdentifier MaktabaRan -ErrorAction SilentlyContinue)) {
+        Ran $e.SourceEventArgs.NewEvent.TargetInstance
+        Remove-Event -EventIdentifier $e.EventIdentifier
+    }
+}
 $p = Start-Process -FilePath $Exe -ArgumentList $Arguments -PassThru
 $null = $p.Handle   # the exit code stays readable after it exits
 $start = Get-Date
@@ -221,12 +260,13 @@ while ($true) {
             if ($tree.ContainsKey($id) -or -not $tree.ContainsKey($parent) -or $q.CreationDate -lt $tree[$parent]) { continue }
             $tree[$id] = $q.CreationDate
             $grew = $true
-            if (InDir $q) { Write-Output ("ran {0}" -f $q.CommandLine) }
+            Ran $q
             if (-not (InDir $q) -and $q.Name -ne 'msedgewebview2.exe') {
                 try { $c = Get-Process -Id $id; $null = $c.Handle; $copies[$id] = $c } catch { }
             }
         }
     }
+    Drain
     Sweep $all $Grace
     $alive = @($all | Where-Object { $tree.ContainsKey([int]$_.ProcessId) -and $_.CreationDate -ge $tree[[int]$_.ProcessId] })
     if ($exited -and $alive.Count -eq 0) { break }
@@ -237,15 +277,19 @@ while ($true) {
     Start-Sleep -Milliseconds 500
 }
 Sweep @(Get-CimInstance Win32_Process) 0   # nothing it started may outlive it
+Start-Sleep -Milliseconds 300   # the last start events
+Drain
+if ($events) { Unregister-Event -SourceIdentifier MaktabaRan -ErrorAction SilentlyContinue }
 foreach ($c in $copies.Values) { Write-Output ("child {0} exit {1}" -f $c.ProcessName, $c.ExitCode) }
 Write-Output ("exit {0}" -f $p.ExitCode)
 PS
-    # watched EXE ARGS: runs it as above; sets WATCHED_EXIT (its exit code, else the first
+    # watched EXE ARGS [GRACE]: runs it as above (GRACE seconds, default 20, before what runs
+    # from the install folder is ended); sets WATCHED_EXIT (its exit code, else the first
     # failing one of the programs it started), WATCHED_CHILDREN ("<name> exit <code>" of
     # those), WATCHED_RAN (the app's programs it saw run) and WATCHED_ENDED (what had to be
     # ended), one per line
     watched() {
-        local out line code ps=(-Exe "$(win "$1")" -Arguments "$2" -Dir "$(win "$INST")" -WebView "$(win "$SCRATCH/webview2")")
+        local out line code ps=(-Exe "$(win "$1")" -Arguments "$2" -Dir "$(win "$INST")" -WebView "$(win "$SCRATCH/webview2")" -Grace "${3:-20}")
         WATCHED_EXIT=none WATCHED_ENDED="" WATCHED_CHILDREN="" WATCHED_RAN="" code=0
         # the hooks' app (story 38.3) keeps its state in %LOCALAPPDATA%\Maktaba: a scratch one
         out="$(LOCALAPPDATA="$(win "$SCRATCH/localappdata")" WEBVIEW2_USER_DATA_FOLDER="$(win "$SCRATCH/webview2")" \
@@ -265,21 +309,29 @@ PS
         done <<<"$out"
         if [ "$WATCHED_EXIT" = 0 ] && [ "$code" != 0 ]; then WATCHED_EXIT="$code"; fi
     }
-    # hooks WHAT: what the hooks of the last run left running, judged by what the installed
-    # Maktaba.exe knows (the header)
+    # hooks WHAT FLAG...: what the hooks of the last run did, judged by whether this tree's
+    # shell takes the flags (the header): none may still run after 20 s; with the flags, the
+    # runs seen (FLAG... are the ones the hooks make here; one that exits within 0.1 s may go
+    # unseen, which test-hooks.sh covers); without, none at all
     hooks() {
-        local n ended=0
+        local n ended=0 what="$1" seen missing="" f
+        shift
         while IFS= read -r n; do
-            if [ -n "$n" ]; then fail "$1: a hook did not exit within 20 s, ended: $n"; ended=1; fi
+            if [ -n "$n" ]; then fail "$what: a hook did not exit within 20 s, ended: $n"; ended=1; fi
         done <<<"$WATCHED_ENDED"
         if [ "$SHELL_HOOKS" = 0 ]; then
             if [ -n "$WATCHED_RAN" ]; then
-                fail "$1: a hook ran Maktaba.exe, which takes no --server-* flag: $(printf '%s' "$WATCHED_RAN" | paste -sd'|' -)"
+                fail "$what: a hook ran Maktaba.exe, which takes no --server-* flag: $(printf '%s' "$WATCHED_RAN" | paste -sd'|' -)"
             else
-                ok "$1: no hook ran Maktaba.exe (it takes no --server-* flag)"
+                ok "$what: no hook ran Maktaba.exe (it takes no --server-* flag)"
             fi
         elif [ "$ended" = 0 ]; then
-            ok "$1: every hook exited by itself${WATCHED_RAN:+ (seen: $(printf '%s' "$WATCHED_RAN" | sed 's/.* //' | paste -sd' ' -))}"
+            seen="$(printf '%s' "$WATCHED_RAN" | sed 's/.* //' | paste -sd' ' -)"
+            for f in "$@"; do
+                case " $seen " in *" $f "*) ;; *) missing+=" $f" ;; esac
+            done
+            ok "$what: every hook exited by itself (Maktaba.exe ran with: ${seen:-nothing seen})"
+            if [ -n "$missing" ]; then note "$what: not seen:$missing (a run that ends within 0.1 s can go unseen)"; fi
         fi
     }
     # flags_record: the installer's record that the installed Maktaba.exe takes the flags
@@ -288,11 +340,15 @@ PS
         local rec
         rec="$(flags_record)"
         if [ "$SHELL_HOOKS" = 1 ]; then
-            if [ -n "$rec" ] && [ "$rec" != "$STALE_RECORD" ]; then ok "$1: the record that Maktaba.exe takes the flags ($rec)"; else fail "$1: no record that Maktaba.exe takes the flags ('$rec')"; fi
+            if [ -n "$rec" ] && [ "$rec" != "$STALE_RECORD" ]; then
+                ok "$1: the record that Maktaba.exe takes the flags ($rec)"
+            else
+                fail "$1: this tree's shell takes the flags, but the installer recorded nothing ('$rec'): no hook would ever stop the server"
+            fi
         elif [ -z "$rec" ]; then
             ok "$1: no record that Maktaba.exe takes the flags (the client-only app's stale one dropped)"
         else
-            fail "$1: a record that Maktaba.exe takes the flags, which it does not: $rec"
+            fail "$1: a record that Maktaba.exe takes the flags, which this tree's shell does not: $rec"
         fi
     }
 
@@ -333,11 +389,30 @@ CS
     else
         ok "the client-only Maktaba.exe that was there was not run (it takes no --server-* flag)"
     fi
-    SHELL_HOOKS=0
-    if grep -qa -- '--server-remove' "$INST/Maktaba.exe" 2>/dev/null; then SHELL_HOOKS=1; fi
-    if [ "$SHELL_HOOKS" = 1 ]; then echo "  (this Maktaba.exe takes the --server-* flags)"; else echo "  (this Maktaba.exe takes no --server-* flag: story 38.3 is not in this build)"; fi
-    hooks "install"
+    SHELL_HOOKS="$TREE_HOOKS"
+    if [ "$SHELL_HOOKS" = 1 ]; then
+        echo "  (this tree's shell takes the --server-* flags)"
+    else
+        echo "  (this tree's shell takes no --server-* flag: story 38.3 is not in it)"
+    fi
+    hooks "install" --server-start
     record_check "install"
+    # The decision against the program: with --server-start (no sign-in task exists, so it has
+    # nothing to start) a Maktaba.exe that takes the flags exits by itself; one before them
+    # opens its window and is ended after 10 s.
+    watched "$INST/Maktaba.exe" "--server-start" 10
+    if [ -z "$WATCHED_ENDED" ] && [ "$WATCHED_EXIT" != none ]; then
+        probe="exited by itself (exit $WATCHED_EXIT)"
+        took=1
+    else
+        probe="did not exit (ended after 10 s)"
+        took=0
+    fi
+    if [ "$took" = "$SHELL_HOOKS" ]; then
+        ok "Maktaba.exe --server-start $probe, as the shell's source says"
+    else
+        fail "Maktaba.exe --server-start $probe, but the shell's source says it takes $([ "$SHELL_HOOKS" = 1 ] && echo the || echo no) --server-* flags"
+    fi
     publisher="$(reg_value "$UNINSTALL_KEY" Publisher)"
     if [ -n "$publisher" ] && [ "$publisher" != "$manufacturer" ]; then
         fail "the installer's publisher is '$publisher', check.sh expected '$manufacturer' (it puts HKCU\\Software\\<publisher>\\Maktaba back)"
@@ -543,13 +618,13 @@ if [ -n "$SETUP" ]; then
     else
         fail "silent reinstall (exit $WATCHED_EXIT)"
     fi
-    hooks "reinstall"
+    hooks "reinstall" --server-stop --server-start
     record_check "reinstall"
     if [ "$(state_sums)" = "$STATE_BEFORE" ]; then ok "the state is untouched by the reinstall"; else fail "the reinstall changed the state: $(state_sums)"; fi
 
     echo "uninstall"
     watched "$INST/uninstall.exe" "/S"
-    hooks "uninstall"
+    hooks "uninstall" --server-stop --server-remove
     # NSIS's uninstall.exe runs the uninstall from a copy of itself in %TEMP% and exits at
     # once: the checks below are only meaningful once that copy was waited for
     if [ "$WATCHED_EXIT" != 0 ]; then

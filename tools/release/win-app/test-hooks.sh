@@ -3,8 +3,9 @@
 # building the app: a small NSIS script inserts the hooks around a stand-in install and
 # uninstall, and stand-in Maktaba.exe programs note every run. It covers both kinds of
 # Maktaba.exe, which one build of the app cannot: one that takes the --server-* flags (story
-# 38.3; its stand-in holds the literal the installer looks for) and one from before them (the
-# client-only app):
+# 38.3) and one from before them (the client-only app). Which kind the installer packs is
+# decided from the shell's source (knows-server-flags.ps1), so each kind is compiled with a
+# source of its own: one with the flags' literals, one with them only in a comment:
 #
 #   a fresh install, a reinstall of the same build, an update to a build from before the
 #   flags, the client-only app installed there (without a record, or with a stale one), an
@@ -51,8 +52,8 @@ fails=0
 ok()   { printf '  ok    %s\n' "$*"; }
 fail() { printf '  FAIL  %s\n' "$*"; fails=$((fails + 1)); }
 
-# the stand-ins: each run is noted in standin.log beside it; "knows" also holds the literal
-# a flag-taking build holds (installer-hooks.nsh, knows-server-flags.ps1)
+# the stand-ins: each run is noted in standin.log beside it; two programs that differ (the
+# installed one is told apart by its size and time)
 cat >"$T/standin.cs" <<'CS'
 using System; using System.IO;
 static class StandIn {
@@ -66,7 +67,18 @@ CS
 SRC="$(cygpath -w "$T/standin.cs")" OUT="$(cygpath -w "$T/old.exe")" powershell.exe -NoProfile -NonInteractive -Command \
     'Add-Type -TypeDefinition (Get-Content -Raw -LiteralPath $env:SRC) -OutputAssembly $env:OUT -OutputType WindowsApplication' >/dev/null
 cp "$T/old.exe" "$T/knows.exe"
-printf '\0--server-remove\0' >>"$T/knows.exe"
+printf '\0another build\0' >>"$T/knows.exe"
+# the shells' source: with the flags, and from before them (a comment naming them does not count)
+mkdir -p "$T/src-knows" "$T/src-old"
+cat >"$T/src-knows/agent.rs" <<'RS'
+pub const START_FLAG: &str = "--server-start";
+pub const STOP_FLAG: &str = "--server-stop";
+pub const REMOVE_FLAG: &str = "--server-remove";
+RS
+cat >"$T/src-old/agent.rs" <<'RS'
+// the installer's hooks will call "--server-start", "--server-stop" and "--server-remove"
+pub const AGENT_FLAG: &str = "--server-agent";
+RS
 
 # the hooks around a stand-in install (PREINSTALL, the new Maktaba.exe and the registration,
 # POSTINSTALL) and uninstall (PREUNINSTALL, then what the uninstaller removes), as the
@@ -104,7 +116,7 @@ NSI
 for v in "install knows 0" "install old 0" "uninstall knows 0" "uninstall knows 1"; do
     read -r phase src update <<<"$v"
     "$MAKENSIS" -V1 "-DPHASE=$phase" "-DUPDATE=$update" "-DSRC=$(cygpath -w "$T/$src.exe")" \
-        "-DHOOKS=$(cygpath -w "$HOOKS")" "-DOUT=$(cygpath -w "$T/$phase-$src-$update.exe")" "$(cygpath -w "$T/harness.nsi")" >/dev/null ||
+        "-DMAKTABA_SHELL_SRC=$(cygpath -w "$T/src-$src")" "-DHOOKS=$(cygpath -w "$HOOKS")" "-DOUT=$(cygpath -w "$T/$phase-$src-$update.exe")" "$(cygpath -w "$T/harness.nsi")" >/dev/null ||
         { echo "test-hooks: makensis failed for $v" >&2; exit 1; }
 done
 

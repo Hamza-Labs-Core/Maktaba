@@ -11,9 +11,13 @@
 ; them (the client-only app, which installs to the same %LOCALAPPDATA%\Maktaba under the same
 ; name) opens its window for any argument and never exits, so the install would wait until
 ; someone closed it. Which Maktaba.exe takes them:
-;   - the one this installer packs: decided when the installer is compiled, by reading that
-;     very program (knows-server-flags.ps1: a shell parses the flags by name, so a build that
-;     takes them holds the literal);
+;   - the one this installer packs: decided when the installer is compiled, from the shell's
+;     source in this tree (knows-server-flags.ps1: the flags' literals in apps\desktop\
+;     src-tauri\src), which the same `tauri build` compiled into that Maktaba.exe. Not from
+;     the program itself: a release build need not hold the flags' text (LLVM compiles the
+;     comparison with "--server-remove" into a length and integer compares).
+;     tools/release/win-app/check.sh runs the installed Maktaba.exe with a flag and fails
+;     when what it does disagrees with this;
 ;   - the one already installed (before an install, an update, an uninstall): the installer
 ;     that put a flag-taking Maktaba.exe there recorded its size and time in the uninstall
 ;     key (MaktabaServerFlags). A client-only install never has that value; one whose
@@ -25,6 +29,10 @@
 ; only the files the installer wrote.
 
 !define MAKTABA_HOOKS_DIR "${__FILEDIR__}"
+; the shell's source the decision reads (test-hooks.sh compiles the hooks with its own)
+!ifndef MAKTABA_SHELL_SRC
+  !define MAKTABA_SHELL_SRC "${MAKTABA_HOOKS_DIR}\..\src"
+!endif
 !define MAKTABA_FLAGS_VALUE "MaktabaServerFlags"
 
 ; MAKTABA_STAMP: $R9 = "<size> <time>" of the installed Maktaba.exe, "" when there is none
@@ -75,8 +83,9 @@
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
-  ; Does the Maktaba.exe this installer packs take the flags? (once, when compiling)
-  !system 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${MAKTABA_HOOKS_DIR}\knows-server-flags.ps1" -Exe "${MAINBINARYSRCPATH}"' MAKTABA_FLAGS_RC
+  ; Does the Maktaba.exe this installer packs take the flags? (once, when compiling: from the
+  ; shell's source it was built from)
+  !system 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${MAKTABA_HOOKS_DIR}\knows-server-flags.ps1" -Source "${MAKTABA_SHELL_SRC}"' MAKTABA_FLAGS_RC
   !if ${MAKTABA_FLAGS_RC} = 0
     ; Record it for the next installer and the uninstaller, then start the server from the
     ; new payload: runs the sign-in task when it is registered and the server is not paused
@@ -91,7 +100,7 @@
     ; described another program)
     DeleteRegValue SHCTX "${UNINSTKEY}" "${MAKTABA_FLAGS_VALUE}"
   !else
-    !error "installer-hooks.nsh: cannot tell whether ${MAINBINARYSRCPATH} takes the --server-* flags (knows-server-flags.ps1 exit ${MAKTABA_FLAGS_RC})"
+    !error "installer-hooks.nsh: cannot tell whether the shell in ${MAKTABA_SHELL_SRC} takes the --server-* flags (knows-server-flags.ps1 exit ${MAKTABA_FLAGS_RC})"
   !endif
 !macroend
 
