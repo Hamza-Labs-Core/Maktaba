@@ -73,6 +73,8 @@ UPDATE processing_jobs pj
        claimed_by        = $1,
        claimed_at        = now(),
        last_heartbeat_at = now(),
+       -- a parked job (Epic 40) taken by the backstop or after its release waits no more
+       parked_on         = NULL,
        -- resuming a paused job (a worker stopped mid-run) is not a new attempt: counted,
        -- every restart pushed it past max_attempts and the claim broke the check
        attempts          = attempts + CASE WHEN state = 'paused' THEN 0 ELSE 1 END
@@ -135,6 +137,7 @@ UPDATE processing_jobs
        claimed_by        = $1,
        claimed_at        = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
        last_heartbeat_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+       parked_on         = NULL,
        -- resuming a paused job (a worker stopped mid-run) is not a new attempt: counted,
        -- every restart pushed it past max_attempts and the claim broke the check
        attempts          = attempts + CASE WHEN state = 'paused' THEN 0 ELSE 1 END
