@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -72,6 +73,11 @@ type Handler struct {
 	// file; "" with its TLS off), sealed in a join's credentials.
 	PGBundled bool
 	PGCA      string
+	// PGPlain: the database is another one (an operator's own) and has no TLS at all
+	// (`ssl` off): the machines are told so, as for a bundled one with its TLS off. One
+	// with TLS has the operator's CA, which this home does not hold: the machines'
+	// copies wait for one.
+	PGPlain atomic.Bool
 	// JoinRatePerMin / PollRatePerMin cap the public endpoints per IP;
 	// 0 uses the defaults, negative disables the limiter (tests).
 	JoinRatePerMin int
@@ -140,10 +146,12 @@ func (h *Handler) log() *slog.Logger {
 }
 
 // pgTLS is how a machine verifies this home's database (the join's credentials): the
-// bundled Postgres's CA, or "off" with its TLS off; neither for another database (its
-// TLS is its own).
+// bundled Postgres's CA, or "off" with its TLS off; for another database, "off" when it
+// has no TLS (PGPlain), else neither (its TLS is its own).
 func (h *Handler) pgTLS() (ca, tls string) {
 	switch {
+	case !h.PGBundled && h.PGPlain.Load():
+		return "", "off"
 	case !h.PGBundled:
 		return "", ""
 	case h.PGCA == "":

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -705,5 +706,32 @@ func TestChannelHooks(t *testing.T) {
 	}
 	if len(revoked) != 2 {
 		t.Fatalf("remove did not close sessions: %v", revoked)
+	}
+}
+
+// A join says how to verify the home's database: the bundled Postgres's CA, or "off"
+// with its TLS off; for another database "off" when it has no TLS at all, else
+// nothing (its TLS is the operator's, and the machines' copies wait for a CA).
+func TestTheJoinSaysHowToVerifyTheDatabase(t *testing.T) {
+	caFile := t.TempDir() + "/ca.crt"
+	if err := os.WriteFile(caFile, []byte("THE CA"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name           string
+		bundled, plain bool
+		ca             string
+		wantCA, want   string
+	}{
+		{name: "bundled, TLS on", bundled: true, ca: caFile, wantCA: "THE CA"},
+		{name: "bundled, TLS off", bundled: true, want: "off"},
+		{name: "another database without TLS", plain: true, want: "off"},
+		{name: "another database with TLS", ca: caFile},
+	} {
+		h := &Handler{PGBundled: c.bundled, PGCA: c.ca}
+		h.PGPlain.Store(c.plain)
+		if ca, tls := h.pgTLS(); ca != c.wantCA || tls != c.want {
+			t.Errorf("%s: ca %q tls %q, want %q %q", c.name, ca, tls, c.wantCA, c.want)
+		}
 	}
 }

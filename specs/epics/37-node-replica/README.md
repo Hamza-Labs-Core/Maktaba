@@ -90,7 +90,10 @@ behaves as a node did before #145: its own routes answer, anything else is 503 w
   had one), and a switch's command or notice. Each machine keeps it beside its `node.json`
   (`home-database-ca.crt`); its connections to the home's database use it, and its copy waits
   (state unavailable, "cannot verify its home's database yet") until it has one. Nothing is
-  trusted on first use: a grant's answer never sets it.
+  trusted on first use: a grant's answer never sets it. A home on another database (an
+  operator's own) tells its machines it has no TLS when it has none at all (`ssl` off: every
+  connection to it is plain); one with TLS of its own has the operator's CA, which the home does
+  not hold, and its machines' copies wait (below, follow-ups).
 - Slot 0144 (`shared/db/migrations/0144_node_replicas.sql`):
   - `cluster_node_replica_grant(node, verifier, fresh)` — a machine asks for its copy **over its
     own database connection**, for its own role only (`cluster_node_guard`), and only an approved
@@ -416,6 +419,9 @@ you), with the one action a person takes. `GET /api/cluster/self` carries the te
   of the old home's writes it kept aside.
 - The cloud relay (`maktaba-cloudlink`) moving with the home: `maktaba-server` does not run it
   yet; how it should is the user's choice.
+- A home on an operator's own Postgres with TLS: a setting for its CA, so its machines' copies
+  verify it (today they wait; a home on Maktaba's own Postgres, or a database without TLS, needs
+  nothing).
 
 - Native apps: offline sign-in (an access token from the node's own key, refreshed by the home on
   its return).

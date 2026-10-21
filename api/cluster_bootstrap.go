@@ -96,9 +96,17 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 	}
 	hub := mountClusterHub(r, h, db, driver, store, keys, logger)
 	// the machines verify this home's bundled Postgres with its CA, handed over the
-	// machine channel (and sealed in a join's credentials)
-	if os.Getenv("MAKTABA_CLUSTER_PG_PORT") != "" {
-		go hub.PushDatabase(ctx, os.Getenv("MAKTABA_CLUSTER_PG_CA"), 30*time.Second, logger)
+	// machine channel (and sealed in a join's credentials); another database is said to
+	// have no TLS when it has none
+	if h.PGBundled {
+		go hub.PushDatabase(ctx, h.PGCA, 30*time.Second, logger)
+	} else if driver == "postgres" {
+		go func() {
+			if plainDatabase(ctx, db, 30*time.Second) {
+				h.PGPlain.Store(true)
+				hub.PushDatabase(ctx, "", 30*time.Second, logger)
+			}
+		}()
 	}
 	// every revocation on the home reaches the full nodes within the second (story
 	// 35.9 AC4): the session store reports it, the hub pushes auth.revoked
@@ -203,6 +211,26 @@ func mountClusterHub(r chi.Router, h *clusterh.Handler, db *sql.DB, driver strin
 func mdnsEnabled() bool {
 	v := strings.TrimSpace(strings.ToLower(os.Getenv("MAKTABA_DISCOVERY_MDNS")))
 	return v != "0" && v != "false" && v != "off"
+}
+
+// plainDatabase reports whether this home's database has no TLS at all (`ssl` off):
+// every machine's connection to it is plain then, whatever it asks for. It asks until
+// the database answers, every interval; false once ctx ends.
+func plainDatabase(ctx context.Context, db *sql.DB, every time.Duration) bool {
+	for {
+		qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		var ssl string
+		err := db.QueryRowContext(qctx, `SHOW ssl`).Scan(&ssl)
+		cancel()
+		if err == nil {
+			return ssl == "off"
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(every):
+		}
+	}
 }
 
 // portOf extracts the port of a listen address (":8080", "0.0.0.0:8080").
