@@ -281,8 +281,8 @@ func (r *reportRepo) reported() []uuid.UUID {
 }
 
 // A share that hangs mid-read: the block's ffmpeg is ended after the stall
-// rule, the rest of its span airs a stand-in (a slate: no filler here) and the
-// video is reported; a missing file is caught before it starts.
+// rule (even with the next block already queued) and the video is reported; a
+// missing file is caught before it starts and slated (no filler here).
 func TestStation_StalledAndMissingFiles(t *testing.T) {
 	t.Setenv(fakeFFmpegEnv, "1")
 	bin, err := os.Executable()
@@ -296,15 +296,15 @@ func TestStation_StalledAndMissingFiles(t *testing.T) {
 	stallVid, goneVid := uuid.New(), uuid.New()
 	repo := &reportRepo{syncRepo: syncRepo{blocks: []ProgramBlock{
 		{Seq: 1, Kind: KindProgram, Path: stall, VideoID: stallVid, StartAt: now.Add(-time.Second),
-			EndAt: now.Add(6 * time.Second), SourceDurationMS: 7000},
+			EndAt: now.Add(time.Second), SourceDurationMS: 2000},
 		{Seq: 2, Kind: KindProgram, Path: filepath.Join(media, "gone.mp4"), VideoID: goneVid,
-			StartAt: now.Add(6 * time.Second), EndAt: now.Add(time.Minute), SourceDurationMS: 54000},
+			StartAt: now.Add(time.Second), EndAt: now.Add(time.Minute), SourceDurationMS: 59000},
 	}}}
 	st, err := StartStation(StationConfig{
 		FFmpeg: bin, Profile: OutputProfile{Width: 320, Height: 180, FPS: 30, Encoder: EncoderSoftware,
 			SegmentSeconds: 1, HLSListSize: 1},
 		Repo: repo, Prober: stubProber{}, Resolver: NewYtDlp(""), Logger: testLogger(t),
-		SourceStall: 500 * time.Millisecond, SourceTimeout: time.Second, ReportUnreadable: true,
+		SourceStall: 150 * time.Millisecond, SourceTimeout: time.Second, ReportUnreadable: true,
 	}, uuidFor(t), filepath.Join(t.TempDir(), "hls"))
 	if err != nil {
 		t.Fatal(err)
@@ -317,14 +317,14 @@ func TestStation_StalledAndMissingFiles(t *testing.T) {
 		b, _ := os.ReadFile(filepath.Join(st.Dir(), "blocks.log"))
 		return string(b)
 	}
-	if !waitForSoft(10*time.Second, func() bool {
+	if !waitForSoft(5*time.Second, func() bool {
 		l := log()
-		return strings.Contains(l, "  stalled ") && strings.Count(l, " slate src=") >= 2 && len(repo.reported()) == 2
+		return strings.Contains(l, "  stalled ") && strings.Contains(l, " slate src=") && len(repo.reported()) == 2
 	}) {
 		t.Fatalf("reported %v; blocks.log:\n%s", repo.reported(), log())
 	}
-	if r := repo.reported(); r[0] != stallVid || r[1] != goneVid {
-		t.Fatalf("reported %v, want the stalled then the missing video", r)
+	if r := repo.reported(); r[0] != goneVid || r[1] != stallVid {
+		t.Fatalf("reported %v, want the missing (checked when queued) then the stalled video", r)
 	}
 	if strings.Contains(log(), "gone.mp4") {
 		t.Fatalf("the missing file was started:\n%s", log())

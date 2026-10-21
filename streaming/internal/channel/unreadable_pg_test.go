@@ -28,7 +28,7 @@ func TestPGRepo_FillersAroundAndReport(t *testing.T) {
 	for _, n := range []string{"near", "far", "deleted", "prog"} {
 		vid[n] = uuid.New()
 		exec(`INSERT INTO videos (id, library_id, path, filename, content_hash, size_bytes, mtime, state)
-			VALUES ($1, $2, $3, $3, md5($3), 1, now(), 'ready')`, vid[n], lib, "/m/"+n+".mp4")
+			VALUES ($1, $2, $3, $3, encode(sha256(convert_to($3, 'UTF8')), 'hex'), 1, now(), 'ready')`, vid[n], lib, "/m/"+n+".mp4")
 	}
 	exec(`UPDATE videos SET deleted_at = now() WHERE id = $1`, vid["deleted"])
 	at := time.Now().UTC().Truncate(time.Second)
