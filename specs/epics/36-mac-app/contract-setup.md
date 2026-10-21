@@ -108,6 +108,27 @@ Input `{}`. Builds (or checks) the pipeline venv and streams its progress as `pr
 names the package that failed; the full log is in `~/Library/Logs/Maktaba/venv.log`).
 Track A relays track B's bootstrap here, so the app depends on this one contract only.
 
+### `llm` — the language model of the LLM stages
+Input `{}`, or `{"models": ["qwen2.5:7b"], "check_only": true}`. `models` defaults to `[llm] models`
+(`qwen2.5:7b`, what `check_tags`, `check_clips` and enrich use); `check_only` reports what is
+missing and the space it needs without downloading. The step uses the running supervisor's model
+server (its `GET /llm`), else `[llm] url`, else starts the bundled Ollama
+(`Resources/server/ollama/ollama serve`) on a free loopback port for the while, with the
+install's `models/ollama`. Progress: `stage: "start"` (that server starting), `"check"` (the space
+needed, from the registry's manifest, and the space free), then `"download"` with byte
+`done`/`total` per model. A download that stopped (the app closed, the network dropped) resumes
+where it was the next time. Running it again with everything there downloads nothing.
+```json
+{"url": "http://127.0.0.1:11533", "bundled": true,
+ "models": [{"name": "qwen2.5:7b", "ready": true, "downloaded": true, "size_bytes": 4683087332}],
+ "disk_needed_bytes": 4683087332, "disk_free_bytes": 812345678901}
+```
+`disk_free_bytes` is -1 for a server on another machine. Errors: `disk_full` (the message says how
+much is needed and free; the app stops setup), `llm_unavailable` (no bundled Ollama and no
+`[llm] url`), `llm_failed` (anything else: the network, the registry). The app runs it after
+`venv` and leaves any error but `disk_full` to the server, which downloads a missing model in the
+background (`[llm] pull = "auto"`). `maktaba-server models llm` is the same for a terminal.
+
 ### `finish`
 Input `{}`. Writes `server.toml`, creates the database, runs migrations, seeds the admin account,
 and returns `{"web_url": "http://127.0.0.1:8088"}`. After it the app registers the login item
@@ -116,5 +137,10 @@ and returns `{"web_url": "http://127.0.0.1:8088"}`. After it the app registers t
 ## Not in the contract
 
 - The supervisor's state is the existing `GET http://127.0.0.1:9103/processes` (`supervisor.Snapshot`).
+  With a language model server it has an `llm` field (`llmserver.Status`: `url`, `bundled`, `up`,
+  `ready`, `models[]` with `state` ready / downloading / missing / failed / unknown and byte
+  `done`/`total`), which the menu bar shows; the `ollama` role is one more process in `processes`.
+  `GET /llm` is the same object alone, 200 when ready and 503 otherwise (404: no model server),
+  for health checks such as the queue-health dependency watcher.
 - Pause / resume use launchd directly (`launchctl kill TERM` / `kickstart` on
   `gui/<uid>/com.hamzalabs.maktaba.server`), no server endpoint.

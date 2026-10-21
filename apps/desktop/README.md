@@ -114,13 +114,15 @@ has two modes, saved in `~/Library/Application Support/com.hamzalabs.maktaba/mod
 
 | Mode | The window shows | The menu bar |
 |---|---|---|
-| **server** (this Mac runs Maktaba) | "Starting…" until the server answers, then the local web app `http://127.0.0.1:<web port>` | status (running / starting / problem / paused / stopped / setup needed), *Update ready*, Open Maktaba, Pause/Resume server, Open logs, Quit (server keeps running), Stop server and quit |
+| **server** (this Mac runs Maktaba) | "Starting…" until the server answers, then the local web app `http://127.0.0.1:<web port>` | status (running / starting / problem / paused / stopped / setup needed), the language model (ready / downloading n% / not downloaded), *Update ready*, Open Maktaba, Pause/Resume server, Open logs, Quit (server keeps running), Stop server and quit |
 | **client** (connect to another Maktaba) | that Maktaba's address, or the bundled web app as before | Open Maktaba, Connect to another Maktaba… (back to setup), Play/Pause, Settings, Quit |
 
 With no saved mode the window opens the **first-run setup** (`web/src/pages/Setup/`):
 this Mac or another Maktaba → what will run + disk/RAM → admin account → library folders and
 NAS path map → models (Hugging Face token or the NAS copy) → optional Plex (PIN flow) →
-install (pipeline venv + finish) → the server starts. Each screen runs one
+install (pipeline venv + the language model + finish) → the server starts. The language
+model (`qwen2.5:7b`, about 5 GB) stops setup only when the disk is too small for it; any
+other failure leaves the download to the server, which finishes it in the background. Each screen runs one
 `maktaba-server setup --json --step <name>` ([contract](../../specs/epics/36-mac-app/contract-setup.md));
 passwords and tokens go to it on stdin only and are never logged.
 
@@ -132,7 +134,8 @@ appends to `~/Library/Logs/Maktaba/server.log` and execs
 `launchctl kill`; `KeepAlive {SuccessfulExit: false}` restarts crashes but not a clean stop.
 Resume is `launchctl kickstart`.
 
-**Status** comes from the supervisor's `GET http://127.0.0.1:9103/processes`, polled every 3 s.
+**Status** comes from the supervisor's `GET http://127.0.0.1:9103/processes`, polled every 3 s
+(its `llm` field gives the language model's line).
 
 ## Windows runs the server too (Epic 38)
 

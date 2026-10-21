@@ -59,6 +59,7 @@ export type StepName =
   | "models"
   | "plex"
   | "venv"
+  | "llm"
   | "finish";
 
 export interface SetupApi {

@@ -212,10 +212,20 @@ jobs:
       # the suffix itself. Windows Installer then treats the rc and the
       # final 0.3.0 MSI as the same version; Tauri's template allows that
       # upgrade.
+      # The updater (Epic 36 story 36.8, Epic 38/39): with the signing key
+      # secret, the bundles get updater artifacts (.app.tar.gz, -setup.exe,
+      # .AppImage, .deb, .rpm, each with its .sig) and tauri-action writes
+      # latest.json, one key per platform and bundle type (linux-x86_64-deb,
+      # ...); the app checks them against the public key in the repository
+      # variable TAURI_UPDATER_PUBKEY, stamped into tauri.conf.json here. A
+      # key without its public half fails the build (the apps could never
+      # verify an update); no key builds as before, without updater artifacts.
       - name: Neutralise in-config frontend rebuild + stamp version
         shell: bash
         env:
           TAG: ${{ github.ref_name }}
+          UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+          UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
         run: |
           node -e "
             const fs = require('fs');
@@ -226,8 +236,20 @@ jobs:
             if (v) c.version = v;
             const core = v.split(/[-+]/)[0];
             if (core !== v) c.bundle.windows.wix.version = core;
+            if (process.env.UPDATER_KEY === 'true') {
+              const pub = (process.env.UPDATER_PUBKEY || '').trim();
+              if (!pub) {
+                console.log('::error::TAURI_SIGNING_PRIVATE_KEY is set but the repository variable TAURI_UPDATER_PUBKEY is not: the apps could not verify their updates');
+                process.exit(1);
+              }
+              c.bundle.createUpdaterArtifacts = true;
+              c.plugins.updater.pubkey = pub;
+            } else {
+              console.log('::notice::no TAURI_SIGNING_PRIVATE_KEY: bundles without updater artifacts (no latest.json)');
+            }
             fs.writeFileSync(f, JSON.stringify(c, null, 2) + '\n');
-            console.log('version=' + c.version + ' wix.version=' + (c.bundle.windows.wix.version || '(from version)'));
+            console.log('version=' + c.version + ' wix.version=' + (c.bundle.windows.wix.version || '(from version)') +
+              ' updater=' + (c.bundle.createUpdaterArtifacts === true));
           "
 
       # tauri-action signs each bundle and emits latest.json (the updater

@@ -22,6 +22,7 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { copyText } from "../../lib/clipboard";
+import { TitleRow } from "../../help/HelpLink";
 
 interface TokenView {
   id: string;
@@ -83,7 +84,9 @@ export function APITokens() {
   return (
     <section className="mkt-page mkt-tokens">
       <header className="mkt-page__header">
-        <h1>{t("tokens.title")}</h1>
+        <TitleRow>
+          <h1>{t("tokens.title")}</h1>
+        </TitleRow>
         <Button onClick={() => setCreateOpen(true)}>{t("tokens.create")}</Button>
       </header>
       <p className="mkt-muted">{t("tokens.desc")}</p>

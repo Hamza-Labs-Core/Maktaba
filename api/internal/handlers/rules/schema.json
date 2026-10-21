@@ -2945,7 +2945,7 @@
      "kind": "str",
      "group": "Checking tags with a language model",
      "label": "Model server (Ollama)",
-     "help": "",
+     "help": "Every language model step asks this server. Not changed here: this machine's own (Maktaba.app's bundled server, or [llm] url in server.toml), else the default. A server set here always wins.",
      "default": "http://localhost:11434"
     },
     {
@@ -3408,12 +3408,35 @@
      "default": true
     },
     {
+     "name": "loudnorm_mode",
+     "kind": "str",
+     "group": "Maktaba TV",
+     "label": "Loudness filter",
+     "help": "speechnorm: speech levelled as it plays, nothing delayed, so a channel tunes fast (what dizqueTV does). loudnorm: EBU R128 to the target below, about 3 s of look-ahead. dynaudnorm: a gentler dynamic normaliser, also with look-ahead. Only programme and filler sound is levelled, never the slate's silence.",
+     "default": "speechnorm",
+     "choices": [
+      "speechnorm",
+      "loudnorm",
+      "dynaudnorm"
+     ]
+    },
+    {
      "name": "loudnorm_target_lufs",
      "kind": "float",
      "group": "Maktaba TV",
      "label": "Loudness target (LUFS)",
-     "help": "",
+     "help": "What the loudnorm filter levels to.",
      "default": -16.0
+    },
+    {
+     "name": "speechnorm_expansion",
+     "kind": "float",
+     "group": "Maktaba TV",
+     "label": "Speech boost limit",
+     "help": "The speechnorm filter raises a quiet passage at most this many times (dizqueTV: 6.25).",
+     "default": 6.25,
+     "minimum": 1,
+     "maximum": 50
     },
     {
      "name": "watermark_skip_filler",
@@ -3442,6 +3465,34 @@
      "default": 3,
      "minimum": 1,
      "maximum": 31
+    },
+    {
+     "name": "guide_max_padding_s",
+     "kind": "int",
+     "group": "Guide",
+     "label": "Filler added to the programme up to (s)",
+     "help": "Filler (clips, bumpers, the slate) up to this long is shown as part of the programme before it; longer filler gets its own guide entry with the filler title below. As dizqueTV's guide.",
+     "default": 120,
+     "minimum": 0,
+     "maximum": 3600
+    },
+    {
+     "name": "guide_filler_title",
+     "kind": "str",
+     "group": "Guide",
+     "label": "Title of filler time",
+     "help": "What the guide calls filler time that has its own entry. Empty: the channel's name.",
+     "default": "فواصل"
+    },
+    {
+     "name": "guide_min_program_s",
+     "kind": "int",
+     "group": "Guide",
+     "label": "Shortest programme listed (s)",
+     "help": "Programmes shorter than this are not listed in the guide: they count as filler.",
+     "default": 60,
+     "minimum": 0,
+     "maximum": 3600
     }
    ]
   },
@@ -3581,6 +3632,46 @@
      "default": 0,
      "minimum": 0,
      "maximum": 64
+    },
+    {
+     "name": "unreadable_file_fill",
+     "kind": "str",
+     "group": "Unreadable files",
+     "label": "Instead of a file that cannot be read",
+     "help": "A programme whose file is missing, refused or too slow to answer. filler: the channel's filler scheduled nearest it airs in turn until the programme's end, so the next programme still starts on time. slate: the loading picture for that time.",
+     "default": "filler",
+     "choices": [
+      "filler",
+      "slate"
+     ]
+    },
+    {
+     "name": "source_timeout_seconds",
+     "kind": "int",
+     "group": "Unreadable files",
+     "label": "Wait for a file (seconds)",
+     "help": "How long a file on the share may take to be found and read before it counts as unreadable. A slow share then holds up only this channel, and only this long.",
+     "default": 10,
+     "minimum": 1,
+     "maximum": 120
+    },
+    {
+     "name": "source_stall_seconds",
+     "kind": "int",
+     "group": "Unreadable files",
+     "label": "Stalled programme (seconds)",
+     "help": "A programme whose picture stops this long (a share that hangs mid-read) is ended and the rest of its time is filled as above; its encoder session is freed for the other channels. 0: never.",
+     "default": 30,
+     "minimum": 0,
+     "maximum": 600
+    },
+    {
+     "name": "report_unreadable_files",
+     "kind": "bool",
+     "group": "Unreadable files",
+     "label": "Report unreadable files",
+     "help": "The file is read again by the Length (probe) step. A file it cannot read either is listed as broken, which Repair downloads again when it is on.",
+     "default": true
     }
    ]
   },
@@ -5418,6 +5509,114 @@
      "default": 2048,
      "minimum": 0,
      "maximum": 1048576
+    }
+   ]
+  },
+  {
+   "key": "queue_health",
+   "title": "Queue health",
+   "what": "when a queue turns red, how often a failure is tried, what waits on the model, a share or disk space and how often those are checked, which failures are of which class",
+   "fields": [
+    {
+     "name": "window_hours",
+     "kind": "float",
+     "group": "Queue health",
+     "label": "Look back (hours)",
+     "help": "How far back a queue tile looks to decide its colour.",
+     "default": 6.0,
+     "minimum": 0.25,
+     "maximum": 168
+    },
+    {
+     "name": "ok_failure_share",
+     "kind": "float",
+     "group": "Queue health",
+     "label": "Failures that stay neutral (share)",
+     "help": "Below this share of failed jobs in the window a queue is never red; its failed count shows as small text (0.02 is 2%).",
+     "default": 0.02,
+     "minimum": 0,
+     "maximum": 1
+    },
+    {
+     "name": "failing_min_jobs",
+     "kind": "int",
+     "group": "Queue health",
+     "label": "Red from (jobs)",
+     "help": "A queue turns red only when at least this many jobs failed the same new way in the window: a likely bug or a bad setting.",
+     "default": 10,
+     "minimum": 1
+    },
+    {
+     "name": "transient_attempts",
+     "kind": "int",
+     "group": "Queue health",
+     "label": "Tries of a passing failure",
+     "help": "How many times a passing failure (a NAS timeout, a partial read) is tried before the item needs you. A queue that runs once by design keeps its one try.",
+     "default": 5,
+     "minimum": 1,
+     "maximum": 50
+    },
+    {
+     "name": "park_max_hours",
+     "kind": "float",
+     "group": "Queue health",
+     "label": "Waiting jobs retried after (hours)",
+     "help": "A job waiting on the model, a share or disk space is tried again after this even if no check released it. It spends no try while it waits.",
+     "default": 24.0,
+     "minimum": 0.25
+    },
+    {
+     "name": "probe_interval_seconds",
+     "kind": "int",
+     "group": "Queue health",
+     "label": "Check every (seconds)",
+     "help": "How often the model, the shares and the free disk space are checked; jobs waiting on one go back to work within this long of it coming back.",
+     "default": 60,
+     "minimum": 10
+    },
+    {
+     "name": "probe_timeout_seconds",
+     "kind": "float",
+     "group": "Queue health",
+     "label": "Check waits (seconds)",
+     "help": "How long one check waits for an answer.",
+     "default": 5.0,
+     "minimum": 1,
+     "maximum": 120
+    },
+    {
+     "name": "min_free_disk_gb",
+     "kind": "float",
+     "group": "Queue health",
+     "label": "Free disk needed (GB)",
+     "help": "Below this much free space (temporary and data folders) jobs that ran out of disk keep waiting.",
+     "default": 5.0,
+     "minimum": 0
+    },
+    {
+     "name": "resource_cooldown_minutes",
+     "kind": "float",
+     "group": "Queue health",
+     "label": "Shared memory wait (minutes)",
+     "help": "Jobs that ran out of Postgres shared memory wait this long before they are tried again (it frees when the big queries end).",
+     "default": 10.0,
+     "minimum": 1
+    },
+    {
+     "name": "class_overrides",
+     "kind": "rows",
+     "group": "Queue health",
+     "label": "Failure classes",
+     "help": "A failure whose signature starts with this is of this class: transient (tried again), item_permanent (needs you), unknown, dependency:<name> or resource:<name> (waits without spending tries). Checked before the built-in table.",
+     "default": [],
+     "columns": [
+      "signature",
+      "class"
+     ],
+     "column_kinds": [
+      "str",
+      "str"
+     ]
     }
    ]
   },

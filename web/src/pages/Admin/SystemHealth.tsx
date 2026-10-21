@@ -24,6 +24,7 @@ import { AdminGate } from "../../components/AdminGate";
 import { ProcessesCard } from "./Processes";
 import { tvClusterApi, type TvClusterView } from "../../lib/tvClusterApi";
 import { tvRemoteApi } from "../../lib/tvRemoteApi";
+import { TitleRow } from "../../help/HelpLink";
 
 interface ServiceSnapshot {
   status: string;
@@ -117,7 +118,9 @@ function HealthInner() {
   return (
     <section className="mkt-page mkt-health">
       <header className="mkt-page__header">
-        <h1>{t("health.title")}</h1>
+        <TitleRow>
+          <h1>{t("health.title")}</h1>
+        </TitleRow>
         <span className="mkt-muted">{t("health.autoRefresh")}</span>
       </header>
 

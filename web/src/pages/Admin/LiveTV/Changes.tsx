@@ -39,6 +39,7 @@ import {
 } from "./changeBits";
 import { SlotBar } from "./SlotBar";
 import { HeldReleaseCard } from "./HeldReleaseCard";
+import { TitleRow } from "../../../help/HelpLink";
 import "../../../styles/tvchanges.css";
 
 export function AdminTvChanges() {
@@ -121,7 +122,9 @@ function ChangesInner() {
   return (
     <section className="mkt-page mkt-tvx">
       <header className="mkt-page__header">
-        <h1>{t("tvchanges.title")}</h1>
+        <TitleRow>
+          <h1>{t("tvchanges.title")}</h1>
+        </TitleRow>
         <Link to="/admin/live-tv">{t("tvchanges.backToLiveTv")}</Link>
       </header>
       <p className="mkt-tvx-hint">{t("tvchanges.intro")}</p>
