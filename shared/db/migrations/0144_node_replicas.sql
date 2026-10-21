@@ -347,8 +347,64 @@ END
 $$;
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+-- The cluster's terms (specs/epics/37-node-replica, "Switching the home"): each time
+-- another machine becomes the home a term starts. A home that learns of a newer term
+-- than its own stops writing and rejoins as a machine of the new one (fencing). An
+-- emergency term keeps the old home's position (cut_lsn, its WAL) up to which the new
+-- home has its changes: what the old home wrote after it is kept aside there.
+CREATE TABLE IF NOT EXISTS cluster_terms (
+    term        bigint PRIMARY KEY CHECK (term >= 1),
+    home_name   text NOT NULL,
+    -- the machine's id while it was a joined machine (NULL: the first home)
+    home_node   uuid,
+    reason      text NOT NULL CHECK (reason IN ('initial', 'planned', 'emergency')),
+    started_at  timestamptz NOT NULL DEFAULT now(),
+    cut_lsn     pg_lsn
+);
+INSERT INTO cluster_terms (term, home_name, reason)
+SELECT 1, COALESCE((SELECT name FROM instance_identity WHERE id = 1), 'home'), 'initial'
+WHERE NOT EXISTS (SELECT 1 FROM cluster_terms);
+
+-- A switch of the home, as the home runs it: its state is what the control centre shows
+-- (and every machine's copy has it). Its row, set to "frozen" as the old home's last
+-- write, is the marker: a copy that has it has everything the old home wrote.
+CREATE TABLE IF NOT EXISTS cluster_switchovers (
+    id            uuid PRIMARY KEY,
+    term          bigint NOT NULL,
+    kind          text NOT NULL CHECK (kind IN ('planned', 'emergency')),
+    to_node       uuid NOT NULL,
+    to_name       text NOT NULL,
+    from_name     text NOT NULL,
+    state         text NOT NULL CHECK (state IN ('checking', 'freezing', 'frozen', 'handing_over',
+                      'promoting', 'repointing', 'done', 'failed', 'cancelled')),
+    detail        text,
+    -- per integration (plex, relay, ...): {"state": "moved|failed|needs_you|not_used", "detail": ...}
+    integrations  jsonb NOT NULL DEFAULT '{}'::jsonb,
+    -- per machine: {"state": "following|copying_anew|waiting|failed", "detail": ...}
+    machines      jsonb NOT NULL DEFAULT '{}'::jsonb,
+    requested_by  uuid,
+    requested_at  timestamptz NOT NULL DEFAULT now(),
+    frozen_at     timestamptz,
+    done_at       timestamptz,
+    updated_at    timestamptz NOT NULL DEFAULT now()
+);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_worker') THEN
+        GRANT SELECT ON cluster_terms, cluster_switchovers TO maktaba_worker;
+    END IF;
+END
+$$;
+-- +goose StatementEnd
+
 -- +goose Down
 -- +goose StatementBegin
+DROP TABLE IF EXISTS cluster_switchovers;
+DROP TABLE IF EXISTS cluster_terms;
 DROP FUNCTION IF EXISTS cluster_node_replica_grant(uuid, text, boolean);
 DROP FUNCTION IF EXISTS cluster_copy_publication(uuid);
 DROP FUNCTION IF EXISTS cluster_copy_node_columns();

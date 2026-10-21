@@ -1,0 +1,434 @@
+package switchover
+
+// Switching the home on real Postgres servers on 127.0.0.1 (specs/epics/37-node-replica):
+// a home A set up as Maktaba.app sets one up and migrated by maktaba-api, and two
+// machines B and C whose copies the nodecopy Manager makes and keeps. Planned: A frozen
+// with the marker as its last write, the kit gathered, sealed to B and opened there, B
+// promoted from its copy, A made a copy of B and C moved to B, both without copying
+// again; then B writes and both follow, the sequences go on from A's, the secrets and the
+// machines are B's, the machines keep their passwords. Emergency: A cut off with a change
+// B never got, B promoted alone, A back: fenced, and the change kept aside.
+//
+// Opt-in: MAKTABA_TEST_PG_BIN, a Postgres 16 install; it builds maktaba-api.
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"database/sql"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"golang.org/x/crypto/curve25519"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/nodecopy"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgtest"
+)
+
+func keypair(t *testing.T) (priv, pub []byte) {
+	t.Helper()
+	priv = make([]byte, 32)
+	if _, err := rand.Read(priv); err != nil {
+		t.Fatal(err)
+	}
+	pub, err := curve25519.X25519(priv, curve25519.Basepoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return priv, pub
+}
+
+// cluster is a home and its machines' copies, as the supervisors would keep them.
+type cluster struct {
+	t        *testing.T
+	ctx      context.Context
+	programs string
+	tmp      string
+	migrate  func(ctx context.Context, dsn string) error
+	home     pgbundle.Bundle
+	homeSrv  *pgtest.Server
+	app      *sql.DB
+	machines map[string]*machine
+}
+
+type machine struct {
+	id, role, password string
+	copy               nodecopy.Copy
+	srv                *pgtest.Server
+	stop               context.CancelFunc
+	done               chan struct{}
+	m                  *nodecopy.Manager
+}
+
+func open(t *testing.T, dsn string) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db
+}
+
+func super(t *testing.T, b pgbundle.Bundle) *sql.DB {
+	t.Helper()
+	dsn, err := b.SuperURL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return open(t, dsn)
+}
+
+func (c *cluster) exec(db *sql.DB, q string, args ...any) {
+	c.t.Helper()
+	if _, err := db.ExecContext(c.ctx, q, args...); err != nil {
+		c.t.Fatalf("%s: %v", q, err)
+	}
+}
+
+func newCluster(t *testing.T) *cluster {
+	t.Helper()
+	programs := pgtest.Programs(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	c := &cluster{t: t, ctx: ctx, programs: programs, tmp: t.TempDir(), machines: map[string]*machine{}}
+	c.migrate = pgtest.Migrator(t, c.tmp)
+	c.home, c.homeSrv = pgtest.Bundle(ctx, t, programs, filepath.Join(c.tmp, "a"), true)
+	appURL, err := c.home.URL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.migrate(ctx, appURL); err != nil {
+		t.Fatalf("migrate the home: %v", err)
+	}
+	c.app = open(t, appURL)
+	ca, err := os.ReadFile(c.home.CACert())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.exec(c.app, `UPDATE cluster_replica_beat SET ca_pem = $1`, string(ca))
+	go func() {
+		for ctx.Err() == nil {
+			_, _ = c.app.ExecContext(ctx, `UPDATE cluster_replica_beat SET at = now()`)
+			time.Sleep(time.Second)
+		}
+	}()
+	return c
+}
+
+// join registers a full machine on the home and starts its copy's Manager.
+func (c *cluster) join(name string) *machine {
+	t := c.t
+	m := &machine{id: uuid.NewString(), password: "pass-" + name + "-0123456789"}
+	m.role = "maktaba_node_" + strings.ReplaceAll(m.id, "-", "")
+	c.exec(c.app, `CREATE ROLE `+m.role+` LOGIN PASSWORD '`+m.password+`' IN ROLE maktaba_worker`)
+	c.exec(c.app, `INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, home_privkey, db_role, approved_at,
+	        approved_by, full_node) VALUES ($1, $2, 'approved', 'windows', 'amd64', 'pub-'||$2, 'home-key-for-'||$2, $3,
+	        now(), 'test', true)`, m.id, name, m.role)
+	dir := filepath.Join(c.tmp, name)
+	m.copy = nodecopy.Copy{NodeID: m.id, HomeDSN: dsnAs(m.role, m.password, c.home.Addr()), Migrate: c.migrate,
+		DB: pgbundle.Bundle{Home: c.programs, Data: filepath.Join(dir, "pg"), Keys: filepath.Join(dir, "keys"),
+			Backups: filepath.Join(dir, "backups"), Port: pgtest.FreePort(t)}}
+	m.srv = &pgtest.Server{}
+	t.Cleanup(func() { m.srv.Stop(m.copy.DB.StopCommand()) })
+	c.machines[name] = m
+	c.follow(m)
+	return m
+}
+
+func dsnAs(role, password, addr string) string {
+	return (&url.URL{Scheme: "postgres", User: url.UserPassword(role, password), Host: addr,
+		Path: "/" + pgbundle.AppDatabase, RawQuery: "sslmode=prefer"}).String()
+}
+
+// follow runs the machine's Manager until stopped.
+func (c *cluster) follow(m *machine) {
+	ctx, cancel := context.WithCancel(c.ctx)
+	m.stop, m.done = cancel, make(chan struct{})
+	m.m = &nodecopy.Manager{Copy: m.copy, StateDir: filepath.Join(c.tmp, m.id+"-state"),
+		Programs: func(context.Context) (string, error) { return c.programs, nil },
+		Every:    300 * time.Millisecond, Retry: 300 * time.Millisecond, Log: &bytes.Buffer{},
+		Want: func(on bool) error {
+			if on {
+				m.srv.Start(c.t, m.copy.DB.Bin("postgres"), m.copy.DB.ServerArgs()...)
+			} else {
+				m.srv.Stop(m.copy.DB.StopCommand())
+			}
+			return nil
+		},
+		Running: m.srv.Running}
+	go func() { m.m.Run(ctx); close(m.done) }()
+}
+
+func (m *machine) halt() { m.stop(); <-m.done }
+
+func (c *cluster) following(m *machine, what string) {
+	c.t.Helper()
+	pgtest.WaitFor(c.t, what+": "+m.copy.NodeID+" following", 4*time.Minute, func() bool {
+		return m.m.Status().State == nodecopy.StateFollowing
+	})
+}
+
+func (m *machine) super(t *testing.T) *sql.DB { return super(t, m.copy.DB) }
+
+func value(ctx context.Context, db *sql.DB, key string) string {
+	var v string
+	_ = db.QueryRowContext(ctx, `SELECT value::text FROM app_settings WHERE key = $1`, key).Scan(&v)
+	return v
+}
+
+func count(ctx context.Context, db *sql.DB, q string, args ...any) int {
+	var n int
+	if err := db.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
+		return -1
+	}
+	return n
+}
+
+func TestAPlannedSwitchover(t *testing.T) {
+	c := newCluster(t)
+	ctx := c.ctx
+	b, cm := c.join("b"), c.join("c")
+	c.exec(c.app, `INSERT INTO home_secrets (name, key_id, nonce, ciphertext) VALUES ('ext.plex.token', 'k1', '\x01'::bytea, '\x02'::bytea)`)
+	c.exec(c.app, `INSERT INTO app_settings (key, value, updated_at) VALUES ('test.switch', '"before"', now())`)
+	for i := 0; i < 5; i++ {
+		c.exec(c.app, `INSERT INTO events (channel, type) VALUES ('test', 'before')`)
+	}
+	c.following(b, "the first copy")
+	c.following(cm, "the first copy")
+	bdb, cdb := b.super(t), cm.super(t)
+	pgtest.WaitFor(t, "the copies have the home's changes", time.Minute, func() bool {
+		return strings.Contains(value(ctx, bdb, "test.switch"), "before") && strings.Contains(value(ctx, cdb, "test.switch"), "before")
+	})
+
+	// ---- the switch: A frozen, the marker its last write ----
+	id := uuid.NewString()
+	c.exec(c.app, `INSERT INTO cluster_switchovers (id, term, kind, to_node, to_name, from_name, state)
+	    VALUES ($1, 2, 'planned', $2, 'b', 'a', 'freezing')`, id, b.id)
+	adb := super(t, c.home)
+	if err := Freeze(ctx, adb, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.app.ExecContext(ctx, `UPDATE app_settings SET value = '"frozen"' WHERE key = 'test.switch'`); err == nil {
+		t.Fatal("the frozen home took a write")
+	}
+	for _, db := range []*sql.DB{bdb, cdb} {
+		pgtest.WaitFor(t, "the marker on a copy", time.Minute, func() bool { ok, _ := HasMarker(ctx, db, id); return ok })
+	}
+	b.halt()
+	cm.halt()
+
+	// ---- the kit: gathered on A, sealed to B, opened there ----
+	homePriv, homePub := keypair(t)
+	bPriv, bPub := keypair(t)
+	caCert, _ := os.ReadFile(c.home.CACert())
+	caKey, _ := os.ReadFile(filepath.Join(c.home.Keys, "postgres-ca.key"))
+	kit, err := Gather(ctx, adb, id, 2, map[string][]byte{"secrets.key": []byte("the-secrets-key"),
+		pgbundle.CACertFile: caCert, "postgres-ca.key": caKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendKey, _ := KitKey(homePriv, bPub, id)
+	var wire bytes.Buffer
+	s := NewSealer(sendKey, id, func(i uint64, last bool, sealed []byte) error { return WriteChunk(&wire, i, last, sealed) })
+	if err := kit.Write(s); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(wire.Bytes(), []byte("the-secrets-key")) {
+		t.Fatal("the sealed kit carries a secret in the clear")
+	}
+	openKey, _ := KitKey(bPriv, homePub, id)
+	var plain bytes.Buffer
+	o := NewOpener(openKey, id, &plain)
+	if err := ReadChunks(&wire, o.Chunk); err != nil || !o.Done() {
+		t.Fatalf("open the kit: %v (done %v)", err, o.Done())
+	}
+	got, err := ReadKit(&plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Tables["home_secrets"]) != 1 || len(got.Tables["cluster_nodes"]) != 2 || len(got.Roles) < 2 ||
+		string(got.Files["secrets.key"]) != "the-secrets-key" {
+		t.Fatalf("the kit: %d secrets, %d machines, %d roles", len(got.Tables["home_secrets"]),
+			len(got.Tables["cluster_nodes"]), len(got.Roles))
+	}
+
+	// ---- B promoted; A joins it as a machine ----
+	a := Machine{ID: uuid.NewString(), Name: "a", OS: "darwin", Arch: "arm64", PublicKey: "pub-a",
+		RolePassword: "pass-a-0123456789"}
+	aCopy := nodecopy.Copy{NodeID: a.ID, DB: c.home}
+	if a.CopyPassword, err = aCopy.Password(); err != nil {
+		t.Fatal(err)
+	}
+	done, err := Promote(ctx, bdb, Promotion{Self: b.id, Name: "b", Term: 2, Reason: "planned", Kit: got, OldHome: &a})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done.Slots[cm.id] == "" || done.Slots[a.ID] == "" || done.Slots[b.id] != "" {
+		t.Fatalf("the slots made: %v", done.Slots)
+	}
+	// B listens as the home: TLS from the same CA (the machines pinned it)
+	b.srv.Stop(b.copy.DB.StopCommand())
+	nb := b.copy.DB
+	nb.TLS = true
+	for name, data := range map[string][]byte{pgbundle.CACertFile: caCert, "postgres-ca.key": caKey} {
+		if err := os.WriteFile(filepath.Join(nb.Keys, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := nb.Prepare(ctx, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	b.srv.Start(t, nb.Bin("postgres"), nb.ServerArgs()...)
+	pgtest.WaitUp(ctx, t, nb)
+	ca := string(caCert)
+	grant := func(id string) nodecopy.Grant {
+		slot := Machine{ID: id}.Slot()
+		return nodecopy.Grant{Role: Machine{ID: id}.CopyRole(), Slot: slot, SlotExists: true, Publication: slot,
+			SystemID: done.SystemID, Database: pgbundle.AppDatabase, CA: &ca}
+	}
+	local := int64(144)
+	if err := Demote(ctx, adb); err != nil {
+		t.Fatal(err)
+	}
+	aCopy.HomeDSN = dsnAs(a.Role(), a.RolePassword, nb.Addr())
+	if err := aCopy.Handover(ctx, grant(a.ID), local); err != nil {
+		t.Fatalf("the old home follows the new one: %v", err)
+	}
+	cm.copy.HomeDSN = dsnAs(cm.role, cm.password, nb.Addr())
+	if err := cm.copy.Handover(ctx, grant(cm.id), local); err != nil {
+		t.Fatalf("a machine follows the new home: %v", err)
+	}
+
+	// ---- the new home writes; both follow it ----
+	bapp, err := nb.URL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bw := open(t, bapp)
+	c.exec(bw, `UPDATE app_settings SET value = '"after"' WHERE key = 'test.switch'`)
+	var newID, oldMax int64
+	_ = adb.QueryRowContext(ctx, `SELECT max(id) FROM events`).Scan(&oldMax)
+	if err := bw.QueryRowContext(ctx, `INSERT INTO events (channel, type) VALUES ('test', 'after') RETURNING id`).Scan(&newID); err != nil {
+		t.Fatal(err)
+	}
+	if newID <= oldMax {
+		t.Fatalf("the new home's sequence went back: %d after the old home's %d", newID, oldMax)
+	}
+	for name, db := range map[string]*sql.DB{"the old home": adb, "c": cdb} {
+		pgtest.WaitFor(t, name+" follows the new home", time.Minute, func() bool {
+			return strings.Contains(value(ctx, db, "test.switch"), "after") &&
+				count(ctx, db, `SELECT count(*) FROM events WHERE id = $1`, newID) == 1
+		})
+	}
+	// the secrets and the machines are the new home's; the old home holds neither
+	if n := count(ctx, bdb, `SELECT count(*) FROM home_secrets`); n != 1 {
+		t.Fatalf("the new home's secrets: %d", n)
+	}
+	if n := count(ctx, adb, `SELECT count(*) FROM home_secrets`); n != 0 {
+		t.Fatalf("the old home kept %d secrets", n)
+	}
+	if n := count(ctx, bdb, `SELECT count(*) FROM cluster_nodes WHERE id = $1`, b.id); n != 0 {
+		t.Fatal("the new home is still one of its machines")
+	}
+	if n := count(ctx, bdb, `SELECT count(*) FROM cluster_nodes WHERE id IN ($1, $2) AND home_privkey IS NOT NULL OR id = $2`, cm.id, a.ID); n != 2 {
+		t.Fatalf("the new home's machines: %d", n)
+	}
+	pgtest.WaitFor(t, "the old home's own row reaches it", time.Minute, func() bool {
+		return count(ctx, adb, `SELECT count(*) FROM cluster_nodes`) == 1 &&
+			count(ctx, adb, `SELECT count(*) FROM cluster_nodes WHERE id = $1`, a.ID) == 1
+	})
+	for name, db := range map[string]*sql.DB{"the old home": adb, "c": cdb} {
+		pgtest.WaitFor(t, name+" has the new term", time.Minute, func() bool {
+			return count(ctx, db, `SELECT count(*) FROM cluster_terms WHERE term = 2 AND reason = 'planned'`) == 1
+		})
+	}
+	// the machines keep their passwords
+	cOnB := open(t, strings.Replace(cm.copy.HomeDSN, "sslmode=prefer", "sslmode=require", 1))
+	if err := cOnB.PingContext(ctx); err != nil {
+		t.Fatalf("a machine signs in to the new home with its old password: %v", err)
+	}
+}
+
+func TestAnEmergencyPromotion(t *testing.T) {
+	c := newCluster(t)
+	ctx := c.ctx
+	b := c.join("b")
+	for i := 0; i < 3; i++ {
+		c.exec(c.app, `INSERT INTO events (channel, type) VALUES ('test', 'before')`)
+	}
+	c.following(b, "the first copy")
+	bdb := b.super(t)
+	pgtest.WaitFor(t, "the copy has the events", time.Minute, func() bool {
+		return count(ctx, bdb, `SELECT count(*) FROM events WHERE channel = 'test'`) == 3
+	})
+	// the home is cut off: a change it makes never reaches B
+	b.halt()
+	c.exec(bdb, `ALTER SUBSCRIPTION maktaba_copy DISABLE`)
+	c.exec(c.app, `INSERT INTO app_settings (key, value, updated_at) VALUES ('test.lost', '"only on the old home"', now())`)
+	var oldMax int64
+	_ = c.app.QueryRowContext(ctx, `SELECT max(id) FROM events`).Scan(&oldMax)
+	c.homeSrv.Stop(c.home.StopCommand())
+
+	done, err := Promote(ctx, bdb, Promotion{Self: b.id, Name: "b", Term: 2, Reason: "emergency", Gap: 1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done.CutLSN == "" {
+		t.Fatal("no cut recorded")
+	}
+	var newID int64
+	if err := bdb.QueryRowContext(ctx, `INSERT INTO events (channel, type) VALUES ('test', 'after') RETURNING id`).Scan(&newID); err != nil {
+		t.Fatal(err)
+	}
+	if newID < oldMax+1000 {
+		t.Fatalf("the new home's ids may meet the old home's: %d after %d", newID, oldMax)
+	}
+	if n := count(ctx, bdb, `SELECT count(*) FROM cluster_terms WHERE term = 2 AND reason = 'emergency' AND cut_lsn IS NOT NULL`); n != 1 {
+		t.Fatal("the emergency term and its cut")
+	}
+
+	// the old home is back: it learns of the term, fences itself, keeps its change aside
+	c.homeSrv.Start(t, c.home.Bin("postgres"), c.home.ServerArgs()...)
+	pgtest.WaitUp(ctx, t, c.home)
+	adb := super(t, c.home)
+	if err := Fence(ctx, adb); err != nil {
+		t.Fatal(err)
+	}
+	appAgain := open(t, func() string { u, _ := c.home.URL(); return u }())
+	if _, err := appAgain.ExecContext(ctx, `UPDATE app_settings SET value = '"x"' WHERE key = 'test.lost'`); err == nil {
+		t.Fatal("the fenced old home took a write")
+	}
+	slot := Machine{ID: b.id}.Slot()
+	aside, err := KeptAside(ctx, adb, slot, slot, done.CutLSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, tx := range aside.Transactions {
+		for _, ch := range tx.Changes {
+			if ch.Table == "public.app_settings" && ch.Kind == "insert" && ch.Row["key"] != nil && *ch.Row["key"] == "test.lost" {
+				found = true
+			}
+		}
+	}
+	if !found || aside.Counts["public.app_settings"] < 1 {
+		t.Fatalf("the change kept aside: %+v", aside)
+	}
+	for _, tx := range aside.Transactions {
+		for _, ch := range tx.Changes {
+			if ch.Table == "public.events" {
+				t.Fatalf("a change the new home had is reported as kept aside: %+v", ch)
+			}
+		}
+	}
+}
