@@ -189,7 +189,7 @@ func runServe() error {
 
 	backendCtx, backendCancel := context.WithTimeout(ctx, 10*time.Second)
 	// a full node starts with the home's database down too (PR #145): its pool connects
-	// when the database answers, playback reads the node's snapshot meanwhile
+	// when the database answers, playback reads this machine's copy of it meanwhile
 	probeBackend, transcripts, pool, dbUp, closeStores := buildProbeStores(backendCtx, logger, fullNode)
 	backendCancel()
 	// deferred first, so it runs last: after the listeners shut down
@@ -216,7 +216,7 @@ func runServe() error {
 		if !dbUp {
 			watch.Failed(errors.New("not answering at start"))
 		}
-		probeBackend = withSnapshot(bg, logger, pg, pool, node.NodeID, watch)
+		probeBackend = withCopy(bg, logger, pg, node.NodeID, watch)
 	}
 
 	// One session store for both surfaces: the gRPC OpenSession the API calls
@@ -543,7 +543,7 @@ func buildVerifierKeys(ctx context.Context, bg *background, logger *slog.Logger,
 // liveness still answers, matching the JWKS/hwaccel boot-warn pattern.
 // With lazy (a full node, PR #145) a database that does not answer keeps
 // the Postgres-backed stores on a pool that connects once it does (up
-// false); the node's snapshot answers meanwhile.
+// false); this machine's copy answers meanwhile.
 func buildProbeStores(ctx context.Context, logger *slog.Logger, lazy bool) (probe.Backend, handlers.TranscriptStreamer, *pgxpool.Pool, bool, func()) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -555,7 +555,7 @@ func buildProbeStores(ctx context.Context, logger *slog.Logger, lazy bool) (prob
 	backend, pool, err := probe.ConnectPG(ctx, dsn)
 	if err != nil && lazy {
 		if pool, err = pgxpool.New(context.Background(), dsn); err == nil {
-			logger.Warn("probe: the home's database does not answer; starting on this machine's snapshot",
+			logger.Warn("probe: the home's database does not answer; starting on this machine's copy of it",
 				"event", "probe_pg_down_at_start")
 			backend, up = probe.NewPGBackend(pool), false
 		}

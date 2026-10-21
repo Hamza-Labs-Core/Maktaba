@@ -2,91 +2,205 @@ package nodedb
 
 import (
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"io"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
 
-type fakeConn struct{ from string }
-
-func (c *fakeConn) Prepare(string) (driver.Stmt, error) { return nil, errors.New("not used") }
-func (c *fakeConn) Close() error                        { return nil }
-func (c *fakeConn) Begin() (driver.Tx, error)           { return nil, errors.New("not used") }
-func (c *fakeConn) Ping(context.Context) error          { return nil }
-
-type fakeConnector struct {
-	name  string
-	down  atomic.Bool
-	calls atomic.Int32
+// fakeServer answers every statement with one row: its own name. A write on the copy
+// fails as a read-only server's would.
+type fakeServer struct {
+	name     string
+	readOnly bool
+	down     atomic.Bool
+	mu       sync.Mutex
+	got      []string
 }
 
-func (f *fakeConnector) Connect(context.Context) (driver.Conn, error) {
-	f.calls.Add(1)
+func (f *fakeServer) seen() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.got...)
+}
+
+func (f *fakeServer) Connect(context.Context) (driver.Conn, error) {
 	if f.down.Load() {
 		return nil, errors.New(f.name + ": dial tcp: connection refused")
 	}
-	return &fakeConn{from: f.name}, nil
+	return &fakeConn{f: f}, nil
 }
-func (f *fakeConnector) Driver() driver.Driver { return nil }
+func (f *fakeServer) Driver() driver.Driver { return nil }
 
-func rig() (*Router, *fakeConnector, *fakeConnector) {
-	local, home := &fakeConnector{name: "local"}, &fakeConnector{name: "home"}
-	return &Router{Local: &Source{Name: "local", Conn: local}, Home: &Source{Name: "home", Conn: home}}, local, home
+type fakeConn struct{ f *fakeServer }
+
+func (c *fakeConn) Prepare(string) (driver.Stmt, error) { return nil, errors.New("not used") }
+func (c *fakeConn) Close() error                        { return nil }
+func (c *fakeConn) Begin() (driver.Tx, error)           { return fakeTx{}, nil }
+func (c *fakeConn) Ping(context.Context) error {
+	if c.f.down.Load() {
+		return driver.ErrBadConn
+	}
+	return nil
+}
+func (c *fakeConn) QueryContext(_ context.Context, q string, _ []driver.NamedValue) (driver.Rows, error) {
+	if c.f.down.Load() {
+		return nil, driver.ErrBadConn
+	}
+	c.f.mu.Lock()
+	c.f.got = append(c.f.got, q)
+	c.f.mu.Unlock()
+	return &oneRow{v: c.f.name}, nil
+}
+func (c *fakeConn) ExecContext(_ context.Context, q string, _ []driver.NamedValue) (driver.Result, error) {
+	if c.f.down.Load() {
+		return nil, driver.ErrBadConn
+	}
+	if c.f.readOnly {
+		return nil, errors.New("pq: cannot execute UPDATE in a read-only transaction")
+	}
+	c.f.mu.Lock()
+	c.f.got = append(c.f.got, q)
+	c.f.mu.Unlock()
+	return driver.RowsAffected(1), nil
 }
 
-func from(t *testing.T, r *Router) string {
+type fakeTx struct{}
+
+func (fakeTx) Commit() error   { return nil }
+func (fakeTx) Rollback() error { return nil }
+
+type oneRow struct {
+	v    string
+	done bool
+}
+
+func (r *oneRow) Columns() []string { return []string{"server"} }
+func (r *oneRow) Close() error      { return nil }
+func (r *oneRow) Next(dest []driver.Value) error {
+	if r.done {
+		return io.EOF
+	}
+	r.done = true
+	dest[0] = r.v
+	return nil
+}
+
+func rig() (*sql.DB, *Pair, *fakeServer, *fakeServer) {
+	cp, home := &fakeServer{name: "copy", readOnly: true}, &fakeServer{name: "home"}
+	p := &Pair{Copy: &Source{Name: "copy", Conn: cp}, Home: &Source{Name: "home", Conn: home}}
+	db := p.Open(0)
+	db.SetMaxOpenConns(1) // one pair: every statement chooses within it
+	return db, p, cp, home
+}
+
+func server(t *testing.T, ctx context.Context, db *sql.DB) string {
 	t.Helper()
-	c, err := r.Connect(context.Background())
+	var s string
+	if err := db.QueryRowContext(ctx, "SELECT 1").Scan(&s); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func TestMarkedReadsGoToTheCopy(t *testing.T) {
+	db, _, _, home := rig()
+	defer db.Close()
+	reads := CopyReads(context.Background())
+	if got := server(t, reads, db); got != "copy" {
+		t.Fatalf("a marked read: %s", got)
+	}
+	if got := server(t, context.Background(), db); got != "home" {
+		t.Fatalf("an unmarked statement: %s", got)
+	}
+	// a write goes to the home whatever its context says it is
+	if _, err := db.ExecContext(context.Background(), "UPDATE x SET y = 1"); err != nil {
+		t.Fatal(err)
+	}
+	if s := home.seen(); s[len(s)-1] != "UPDATE x SET y = 1" {
+		t.Fatalf("the write did not reach the home: %v", s)
+	}
+	// a transaction stays where it began, marked reads included
+	tx, err := db.BeginTx(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return c.(*fakeConn).from
+	var s string
+	if err := tx.QueryRowContext(reads, "SELECT 2").Scan(&s); err != nil || s != "home" {
+		t.Fatalf("a read in a transaction begun on the home: %s %v", s, err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if got := server(t, reads, db); got != "copy" {
+		t.Fatalf("a marked read after the transaction: %s", got)
+	}
 }
 
-func TestReadsGoToTheCopyWhileItAnswers(t *testing.T) {
-	r, local, home := rig()
-	if got := from(t, r); got != "local" {
-		t.Fatalf("both up: %s", got)
+func TestACopyThatDoesNotAnswerIsSkipped(t *testing.T) {
+	db, p, cp, _ := rig()
+	defer db.Close()
+	cp.down.Store(true) // being made, or rebuilt
+	reads := CopyReads(context.Background())
+	if got := server(t, reads, db); got != "home" {
+		t.Fatalf("a marked read with the copy down: %s", got)
 	}
-	local.down.Store(true) // being made, or rebuilt
-	if got := from(t, r); got != "home" {
-		t.Fatalf("the copy not answering: %s", got)
+	if !p.Copy.Down() {
+		t.Fatal("the copy is not marked down")
 	}
-	// known down: the next connection goes to the home without trying the copy
-	n := local.calls.Load()
-	if got := from(t, r); got != "home" || local.calls.Load() != n {
-		t.Fatalf("a copy known down was tried (%s)", got)
+	cp.down.Store(false)
+	p.CheckAll(context.Background())
+	if got := server(t, reads, db); got != "copy" {
+		t.Fatalf("a marked read with the copy back: %s", got)
 	}
-	local.down.Store(false)
-	r.CheckAll(context.Background()) // one round of pings
-	if got := from(t, r); got != "local" {
-		t.Fatalf("the copy back: %s", got)
-	}
+}
 
-	// the home gone (the outage): the copy answers
+func TestTheHomeDownSendsEverythingToTheCopy(t *testing.T) {
+	db, p, _, home := rig()
+	defer db.Close()
+	if got := server(t, context.Background(), db); got != "home" {
+		t.Fatalf("home up: %s", got)
+	}
 	home.down.Store(true)
-	r.CheckAll(context.Background())
-	if got := from(t, r); got != "local" {
-		t.Fatalf("the home gone: %s", got)
+	p.CheckAll(context.Background())
+	if got := server(t, context.Background(), db); got != "copy" {
+		t.Fatalf("an unmarked read with the home down: %s", got)
 	}
-	// both gone: the copy's error
-	local.down.Store(true)
-	if _, err := r.Connect(context.Background()); err == nil {
-		t.Fatal("no database answers and a connection was made")
+	// a write fails as the copy fails it
+	if _, err := db.ExecContext(context.Background(), "UPDATE x SET y = 1"); err == nil {
+		t.Fatal("a write succeeded with the home down")
+	}
+	home.down.Store(false)
+	p.CheckAll(context.Background())
+	if got := server(t, context.Background(), db); got != "home" {
+		t.Fatalf("the home back: %s", got)
 	}
 }
 
-func TestWatchMarksASourceDownAndUp(t *testing.T) {
-	r, local, _ := rig()
-	local.down.Store(true)
-	r.CheckAll(context.Background())
-	if !r.Local.Down() {
-		t.Fatal("a copy that does not answer is not marked down")
+// A home that goes away between the watch's checks: the statement's new connection
+// fails, the home is marked down and the copy answers.
+func TestTheHomeFoundDownOnConnect(t *testing.T) {
+	db, p, _, home := rig()
+	defer db.Close()
+	db.SetMaxIdleConns(0) // every statement connects anew
+	home.down.Store(true)
+	if got := server(t, context.Background(), db); got != "copy" {
+		t.Fatalf("an unmarked read with the home just gone: %s", got)
 	}
-	local.down.Store(false)
-	r.CheckAll(context.Background())
-	if r.Local.Down() {
-		t.Fatal("still down after it answered")
+	if !p.Home.Down() {
+		t.Fatal("the home is not marked down")
+	}
+}
+
+func TestWithoutACopyEverythingIsTheHomes(t *testing.T) {
+	home := &fakeServer{name: "home"}
+	p := &Pair{Home: &Source{Name: "home", Conn: home}}
+	db := p.Open(0)
+	defer db.Close()
+	if got := server(t, CopyReads(context.Background()), db); got != "home" {
+		t.Fatalf("a marked read with no copy: %s", got)
 	}
 }

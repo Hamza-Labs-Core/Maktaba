@@ -10,10 +10,17 @@
 --      privileges slots 0103..0141 give it, replayed in their order. A home that has
 --      the group is not touched.
 --   2. The replicas' group (maktaba_replicas): each machine's replication role joins
---      it; the home's pg_hba lets the group stream its copy, nothing else.
+--      it; the home's pg_hba lets the group stream its copy, nothing else. The group
+--      reads everything (pg_read_all_data, granted where the migrating user may: the
+--      bundled Postgres grants it at its cluster bootstrap): a machine reads its copy,
+--      sign-ins included, as its replication role, and that role streams every change
+--      of this database already.
 --   3. cluster_nodes.replica: what a machine reports of its copy (state, lag, replay
 --      position, when it last applied, what it is doing: copying, rebuilding), through
 --      cluster_node_report_replica.
+--   4. cluster_replica_beat: this home's clock, written every few seconds while a
+--      machine follows it, so a copy knows how far it has applied the home's changes
+--      (the offline sign-in's freshness rule, the lag the machines page shows).
 --
 -- Additive.
 --
@@ -104,6 +111,25 @@ BEGIN
        AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = current_user AND (rolsuper OR rolcreaterole)) THEN
         CREATE ROLE maktaba_replicas NOLOGIN;
     END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_replicas')
+       AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = current_user AND rolsuper) THEN
+        GRANT pg_read_all_data TO maktaba_replicas;
+    END IF;
+END
+$$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE TABLE IF NOT EXISTS cluster_replica_beat (
+    id  smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    at  timestamptz NOT NULL DEFAULT now()
+);
+INSERT INTO cluster_replica_beat (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_worker') THEN
+        REVOKE ALL ON cluster_replica_beat FROM maktaba_worker;
+    END IF;
 END
 $$;
 -- +goose StatementEnd
@@ -140,6 +166,7 @@ $$;
 -- +goose Down
 -- +goose StatementBegin
 DROP FUNCTION IF EXISTS cluster_node_report_replica(uuid, jsonb);
+DROP TABLE IF EXISTS cluster_replica_beat;
 ALTER TABLE cluster_nodes DROP COLUMN IF EXISTS replica_reported_at;
 ALTER TABLE cluster_nodes DROP COLUMN IF EXISTS replica;
 -- +goose StatementEnd

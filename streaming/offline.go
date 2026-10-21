@@ -1,17 +1,16 @@
 package main
 
-// A full node plays with the home's database down (PR #145): its probe rows come from
-// the node's own snapshot (probe.Snapshot, in MAKTABA_NODE_STATE_DIR) while the database
-// does not answer, its path map too, and the role starts without the database; the
-// channels the home's front door places here wait for it (VOD does not).
+// A full node plays with the home's database down (specs/epics/37-node-replica): its
+// probe rows come from this machine's copy of the home's database
+// (MAKTABA_COPY_DATABASE_URL) while the home's does not answer, its path map too, and
+// the role starts without the home's database; the channels the home's front door
+// places here wait for it (VOD does not).
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -47,7 +46,7 @@ func (w *dbWatch) set(down bool, err error) {
 		if err != nil {
 			msg = err.Error()
 		}
-		w.logger.Warn("streaming: the home's database does not answer; playback reads this machine's snapshot",
+		w.logger.Warn("streaming: the home's database does not answer; playback reads this machine's copy of it",
 			"err", msg, "event", "stream_home_db_down")
 		return
 	}
@@ -104,88 +103,58 @@ func (w *dbWatch) wait(ctx context.Context) error {
 	return nil
 }
 
-// snapshotSource reads the snapshot from the home's database: every probed row, and
-// this node's path map (none when MAKTABA_STREAM_PATH_MAP sets it).
-type snapshotSource struct {
-	pg     *probe.PGBackend
-	pool   *pgxpool.Pool
-	nodeID string
-}
+// copyEnv is this machine's copy of the home's database (its supervisor sets it).
+const copyEnv = "MAKTABA_COPY_DATABASE_URL"
 
-func (s snapshotSource) AllRows(ctx context.Context) ([]probe.Row, error) { return s.pg.AllRows(ctx) }
-
-func (s snapshotSource) PathMap(ctx context.Context) (map[string]string, error) {
-	if os.Getenv(pathmap.EnvVar) != "" || s.nodeID == "" {
-		return nil, nil
-	}
-	m, err := cluster.NodePathMap(ctx, s.pool, s.nodeID)
-	if err != nil {
-		return nil, err
-	}
-	out := map[string]string{}
-	for _, r := range m.Rules() {
-		out[r.From] = r.To
-	}
-	return out, nil
-}
-
-// nodeStateDir is where a node keeps its own state: MAKTABA_NODE_STATE_DIR (its
-// supervisor sets it), else none (the snapshot then lives in memory only).
-func nodeStateDir() string { return os.Getenv("MAKTABA_NODE_STATE_DIR") }
-
-// withSnapshot wraps a full node's probe backend with its snapshot: it opens the file,
-// installs the path map it holds (until the database answers with its own), and keeps
-// the watch and the refresh running on bg.
-func withSnapshot(bg *background, logger *slog.Logger, pg *probe.PGBackend, pool *pgxpool.Pool, nodeID string,
-	watch *dbWatch) probe.Backend {
-	path := ""
-	if dir := nodeStateDir(); dir != "" {
-		path = filepath.Join(dir, probe.SnapshotFile)
-	} else {
-		logger.Warn("streaming: no state directory (MAKTABA_NODE_STATE_DIR): the playback snapshot is not kept across restarts",
-			"event", "stream_snapshot_memory_only")
-	}
-	snap := probe.OpenSnapshot(path, logger)
-	if pm := snap.PathMap(); len(pm) > 0 && os.Getenv(pathmap.EnvVar) == "" {
-		if raw, err := json.Marshal(pm); err == nil {
-			if m, err := pathmap.FromJSON(raw); err == nil {
-				pathmap.SetDefault(m)
-			}
-		}
-	}
-	src := snapshotSource{pg: pg, pool: pool, nodeID: nodeID}
+// withCopy wraps a full node's probe backend with this machine's copy of the home's
+// database: the copy answers while the home's does not, and gives this machine's path
+// map (until the home's database answers with its own, buildNodeTV). The watch runs
+// on bg; the copy's pool closes with it.
+func withCopy(bg *background, logger *slog.Logger, pg *probe.PGBackend, nodeID string, watch *dbWatch) probe.Backend {
+	o := &probe.Offline{Primary: pg, Down: watch.Down, Failed: watch.Failed}
 	bg.Go(watch.run)
-	bg.Go(func(ctx context.Context) { refreshSnapshot(ctx, logger, snap, src, watch) })
-	return &probe.Offline{Primary: pg, Snap: snap, Down: watch.Down, Failed: watch.Failed}
+	dsn := os.Getenv(copyEnv)
+	if dsn == "" {
+		logger.Warn("streaming: no copy of the home's database ("+copyEnv+"); with the home's database down nothing plays",
+			"event", "stream_no_copy")
+		return o
+	}
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		logger.Warn("streaming: this machine's copy of the home's database is not usable", "err", err.Error(),
+			"event", "stream_copy_unusable")
+		return o
+	}
+	o.Copy = probe.NewPGBackend(pool)
+	bg.Go(func(ctx context.Context) {
+		<-ctx.Done()
+		pool.Close()
+	})
+	if os.Getenv(pathmap.EnvVar) == "" && nodeID != "" {
+		bg.Go(func(ctx context.Context) { copyPathMap(ctx, logger, pool, nodeID, watch) })
+	}
+	return o
 }
 
-// refreshSnapshot refreshes now, every probe.SnapshotEvery while the database answers,
-// and as soon as it answers again after an outage.
-func refreshSnapshot(ctx context.Context, logger *slog.Logger, snap *probe.Snapshot, src probe.SnapshotSource, watch *dbWatch) {
-	refresh := func() {
-		if watch.Down() {
+// copyPathMap installs this machine's path map from the copy while the home's database
+// does not answer (now, and every minute meanwhile).
+func copyPathMap(ctx context.Context, logger *slog.Logger, pool *pgxpool.Pool, nodeID string, watch *dbWatch) {
+	load := func() {
+		if !watch.Down() {
 			return
 		}
-		rctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		if err := snap.Refresh(rctx, src); err != nil && ctx.Err() == nil {
-			logger.Warn("streaming: this machine's playback snapshot was not refreshed", "err", err.Error(),
-				"event", "stream_snapshot_refresh_failed")
-		}
-	}
-	refresh()
-	t := time.NewTicker(probe.SnapshotEvery)
-	defer t.Stop()
-	for {
-		back := watch.backCh()
-		select {
-		case <-ctx.Done():
+		m, err := cluster.NodePathMap(qctx, pool, nodeID)
+		if err != nil {
+			logger.Debug("streaming: the path map was not read from the copy", "err", err.Error(),
+				"event", "stream_copy_path_map_unavailable")
 			return
-		case <-t.C:
-		case <-back:
 		}
-		refresh()
+		pathmap.SetDefault(m)
 	}
+	load()
+	tick(ctx, time.Minute, load)
 }
 
 // homeDBDownHandler answers the channel routes while the home's database does not

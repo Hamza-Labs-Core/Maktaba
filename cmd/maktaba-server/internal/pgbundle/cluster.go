@@ -255,10 +255,22 @@ func (b Bundle) writeHBA() error {
 
 // clusterSQL lets the app role provision the machines: create their roles (and
 // their groups, which it then administers), their replication roles and slots, read
-// the replication's progress, and end a revoked machine's sessions at once (Prepare
-// runs it once, the marker). Every statement is safe to run again.
+// the replication's progress, and end a revoked machine's sessions at once; and it
+// makes the replicas' group, which reads everything (a machine reads its copy as its
+// replication role: specs/epics/37-node-replica), administered by the app role
+// without the app role taking its rights. Prepare runs it once (the marker); every
+// statement is safe to run again.
 const clusterSQL = `\set ON_ERROR_STOP on
 ALTER ROLE ` + AppRole + ` WITH CREATEROLE REPLICATION;
 GRANT pg_monitor TO ` + AppRole + `;
 GRANT pg_signal_backend TO ` + AppRole + `;
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '` + ReplicaGroup + `') THEN
+        CREATE ROLE ` + ReplicaGroup + ` NOLOGIN;
+    END IF;
+END
+$$;
+GRANT pg_read_all_data TO ` + ReplicaGroup + `;
+GRANT ` + ReplicaGroup + ` TO ` + AppRole + ` WITH ADMIN OPTION, INHERIT FALSE, SET FALSE;
 `

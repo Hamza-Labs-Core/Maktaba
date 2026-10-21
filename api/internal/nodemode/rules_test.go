@@ -37,9 +37,13 @@ func TestLoadRules(t *testing.T) {
 	if got, err := LoadRules(ctx, settingsDB(t, "")); err != nil || got != DefaultRules() {
 		t.Fatalf("no row: %+v %v, want the defaults and no error", got, err)
 	}
-	got, err := LoadRules(ctx, settingsDB(t, `{"offline_read_minutes": 0, "delegate_unreachable_grace_seconds": 2}`))
-	if err != nil || got.OfflineReadMinutes != 0 || got.GraceSeconds != DefaultRules().GraceSeconds {
-		t.Fatalf("0 minutes is a value, 2 s of grace is out of range: %+v %v", got, err)
+	got, err := LoadRules(ctx, settingsDB(t, `{"offline_session_grace_minutes": 0, "delegate_unreachable_grace_seconds": 2,
+		"offline_copy_max_lag_minutes": 0, "offline_session_hours": 24, "replica_wal_keep_gb": 4096}`))
+	d := DefaultRules()
+	if err != nil || got.OfflineSessionGraceMinutes != 0 || got.GraceSeconds != d.GraceSeconds ||
+		got.OfflineCopyMaxLagMinutes != d.OfflineCopyMaxLagMinutes || got.OfflineSessionHours != 24 ||
+		got.ReplicaWALKeepGB != d.ReplicaWALKeepGB {
+		t.Fatalf("0 minutes of grace and 24 h are values; 2 s of grace, a 0 lag and 4 TB are out of range: %+v %v", got, err)
 	}
 	db := settingsDB(t, "")
 	_ = db.Close()
@@ -49,13 +53,13 @@ func TestLoadRules(t *testing.T) {
 }
 
 func TestCachedRulesKeepTheLastGoodSection(t *testing.T) {
-	db := settingsDB(t, `{"offline_read_minutes": 30}`)
+	db := settingsDB(t, `{"offline_copy_max_lag_minutes": 30}`)
 	rules := CachedRules(db, 0) // read every time
-	if got := rules().OfflineReadMinutes; got != 30 {
+	if got := rules().OfflineCopyMaxLagMinutes; got != 30 {
 		t.Fatalf("read: %d", got)
 	}
 	_ = db.Close() // the home's database goes away
-	if got := rules().OfflineReadMinutes; got != 30 {
+	if got := rules().OfflineCopyMaxLagMinutes; got != 30 {
 		t.Fatalf("after a failed read: %d, want the last good 30 (not the default)", got)
 	}
 }

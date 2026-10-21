@@ -53,43 +53,20 @@ func TestDBWatchFollowsTheDatabase(t *testing.T) {
 	}
 }
 
-type countingSource struct {
-	calls atomic.Int32
-	rows  []probe.Row
-}
-
-func (s *countingSource) AllRows(context.Context) ([]probe.Row, error) {
-	s.calls.Add(1)
-	return s.rows, nil
-}
-func (s *countingSource) PathMap(context.Context) (map[string]string, error) {
-	return map[string]string{"/Volumes/Originals/": "O:/"}, nil
-}
-
-// The snapshot is not read from a database that does not answer, and is as soon as it
-// answers again.
-func TestRefreshSnapshotWaitsForTheDatabase(t *testing.T) {
-	id := uuid.New()
-	src := &countingSource{rows: []probe.Row{{VideoID: id, Path: "/Volumes/Originals/a.mp4", Probed: true}}}
-	w := &dbWatch{logger: quietLogger(), ping: func(context.Context) error { return nil }}
+// Without a copy (none made yet) the home's database stays the only source: a lookup it
+// cannot answer is unavailable, not a crash.
+func TestWithoutACopy(t *testing.T) {
+	t.Setenv(copyEnv, "")
+	bg := newBackground(context.Background())
+	defer bg.Stop(time.Second)
+	w := &dbWatch{logger: quietLogger(), ping: func(context.Context) error { return errors.New("down") }}
 	w.Failed(errors.New("not answering at start"))
-	snap := probe.OpenSnapshot("", nil)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan struct{})
-	go func() { refreshSnapshot(ctx, quietLogger(), snap, src, w); close(done) }()
-	time.Sleep(50 * time.Millisecond)
-	if src.calls.Load() != 0 {
-		t.Fatal("the snapshot was read from a database that does not answer")
+	b := withCopy(bg, quietLogger(), nil, "node-1", w)
+	o, ok := b.(*probe.Offline)
+	if !ok || o.Copy != nil {
+		t.Fatalf("backend %T copy %v", b, o)
 	}
-	w.check(ctx) // it answers
-	deadline := time.Now().Add(2 * time.Second)
-	for snap.Len() == 0 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
+	if _, err := o.Lookup(context.Background(), uuid.New()); !errors.Is(err, probe.ErrUnavailable) {
+		t.Fatalf("a lookup with neither answering: %v", err)
 	}
-	if _, ok := snap.Lookup(id); !ok || snap.PathMap()["/Volumes/Originals/"] != "O:/" {
-		t.Fatal("the snapshot was not refreshed once the database answered")
-	}
-	cancel()
-	<-done
 }

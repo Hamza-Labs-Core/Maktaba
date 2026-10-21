@@ -1,9 +1,10 @@
 package main
 
-// A full node that loses its home (PR #145), through its real front (the placement
-// table, the home-resolved principal, the auth gate, CSRF per host, the VOD guard):
-// reads and playback go on for a signed-in person, marked X-Maktaba-Home: unreachable;
-// a reload keeps them signed in; sign-in and changes are refused at once.
+// A full node that loses its home, through its real front (the placement table, the
+// principal, the auth gate, CSRF per host, the VOD guard): reads and playback go on for
+// a signed-in person, from this machine's copy of the home's database, marked
+// X-Maktaba-Home: unreachable; a reload keeps them signed in; a sign-in is answered from
+// the copy; changes through the home are refused at once.
 
 import (
 	"context"
@@ -13,6 +14,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -61,6 +63,37 @@ func (f *outageHome) Self(context.Context) (json.RawMessage, error) {
 func (f *outageHome) Subscribe(func(homelink.Event)) {}
 func (f *outageHome) HasKey() bool                   { return true }
 
+// outageCopy is this machine's copy: the session the home answered for, one user.
+type outageCopy struct{}
+
+var outageUser = delegation.Principal{UserID: "u1", Username: "amal", Libraries: []string{}}
+
+func (outageCopy) Introspect(_ context.Context, req delegation.IntrospectRequest) (*delegation.IntrospectAnswer, error) {
+	if req.Session != outageSession {
+		return nil, nodeauth.ErrNotLive
+	}
+	sum := sha256.Sum256([]byte(outageCSRF))
+	return &delegation.IntrospectAnswer{Source: "cookie", CSRFSHA256: hex.EncodeToString(sum[:]),
+		ExpiresAt: time.Now().Add(24 * time.Hour), Principal: outageUser}, nil
+}
+func (outageCopy) Principal(_ context.Context, id string) (*delegation.Principal, error) {
+	if id != outageUser.UserID {
+		return nil, nodeauth.ErrNotLive
+	}
+	p := outageUser
+	return &p, nil
+}
+func (outageCopy) SignIn(_ context.Context, name, pw string) (*delegation.Principal, error) {
+	if name != "amal" || pw != "pw" {
+		return nil, nodeauth.ErrNotLive
+	}
+	p := outageUser
+	return &p, nil
+}
+func (outageCopy) Synced(context.Context) (time.Time, error) { return time.Now(), nil }
+
+const outageSession = "6f1d2c3b-0000-4000-8000-000000000002"
+
 func TestNodeOutageKeepsReadsAndPlayback(t *testing.T) {
 	home := &outageHome{}
 	home.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -71,7 +104,8 @@ func TestNodeOutageKeepsReadsAndPlayback(t *testing.T) {
 	}))
 	t.Cleanup(home.srv.Close)
 	now := time.Now()
-	resolver := &nodeauth.Resolver{Link: home, Now: func() time.Time { return now }}
+	resolver := &nodeauth.Resolver{Link: home, Now: func() time.Time { return now }, Local: outageCopy{},
+		Sessions: &nodeauth.LocalSessions{Now: func() time.Time { return now }}}
 
 	r := chi.NewRouter()
 	ok := func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }
@@ -87,7 +121,7 @@ func TestNodeOutageKeepsReadsAndPlayback(t *testing.T) {
 		t.Helper()
 		req := httptest.NewRequest(method, path, nil)
 		if signedIn {
-			req.AddCookie(&http.Cookie{Name: nodeauth.CookieSession, Value: "6f1d2c3b-0000-4000-8000-000000000002"})
+			req.AddCookie(&http.Cookie{Name: nodeauth.CookieSession, Value: outageSession})
 			req.AddCookie(&http.Cookie{Name: nodeauth.CookieCSRF, Value: outageCSRF})
 			req.Header.Set(nodeauth.CSRFHeader, outageCSRF)
 		}
@@ -112,7 +146,7 @@ func TestNodeOutageKeepsReadsAndPlayback(t *testing.T) {
 		{http.MethodDelete, "/api/stream/sessions/abc"},
 	} {
 		if rec := do(c.method, c.path, true); rec.Code != http.StatusOK {
-			t.Fatalf("%s %s in the outage (CSRF checked against the home's last answer): %d %s",
+			t.Fatalf("%s %s in the outage (CSRF checked against the copy's answer): %d %s",
 				c.method, c.path, rec.Code, rec.Body.String())
 		}
 	}
@@ -120,12 +154,18 @@ func TestNodeOutageKeepsReadsAndPlayback(t *testing.T) {
 		t.Fatalf("a reload's session probe: %d %s", rec.Code, rec.Body.String())
 	}
 	hits := home.hits
+	// a sign-in is checked against the copy: a node-local session
+	req := httptest.NewRequest(http.MethodPost, nodeauth.LoginPath, strings.NewReader(`{"username":"amal","password":"pw"}`))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Set-Cookie"), nodeauth.LocalSessionPrefix) {
+		t.Fatalf("a sign-in in the outage: %d %s", rec.Code, rec.Body.String())
+	}
 	for _, c := range []struct {
 		method, path string
 		signedIn     bool
 	}{
-		{http.MethodPost, "/api/auth/login", false},
-		{http.MethodPost, "/api/auth/logout", true},
+		{http.MethodPost, "/api/auth/logout", true}, // a home session's: the home's
 		{http.MethodPost, "/api/stream/sessions/abc/progress", true},
 	} {
 		rec := do(c.method, c.path, c.signedIn)

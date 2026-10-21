@@ -131,23 +131,50 @@ func (h *Home) Introspect(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, e)
 		return
 	}
-	ctx := r.Context()
+	if req.Session == "" && req.PAT == "" {
+		httperror.Write(w, r, httperror.BadRequest("session or pat required"))
+		return
+	}
+	ans, err := h.Resolve(r.Context(), req)
+	if err != nil {
+		var no *Refusal
+		if errors.As(err, &no) {
+			unauthorized(w, r, no.Reason)
+			return
+		}
+		httperror.Write(w, r, httperror.Internal("introspect"))
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, ans)
+}
+
+// Refusal: the credential is not a live one (Resolve); Reason says why.
+type Refusal struct{ Reason string }
+
+func (e *Refusal) Error() string { return "clusterauth: " + e.Reason }
+
+// Resolve introspects one credential against h's database (the home's own, or a full
+// node's copy of it, read only: the last-seen and last-used marks are best-effort):
+// the principal, the CSRF token's hash and when the credential expires; a *Refusal
+// for anything that is not a live credential, another error when the database did not
+// say.
+func (h *Home) Resolve(ctx context.Context, req IntrospectRequest) (*IntrospectAnswer, error) {
 	var ans IntrospectAnswer
 	switch {
 	case req.Session != "":
 		if _, err := uuid.Parse(req.Session); err != nil {
-			unauthorized(w, r, "not a session")
-			return
+			return nil, &Refusal{Reason: "not a session"}
 		}
 		sess, err := h.Sessions.Lookup(ctx, req.Session)
-		if err != nil {
-			unauthorized(w, r, "session ended")
-			return
+		if errors.Is(err, sessions.ErrNotFound) {
+			return nil, &Refusal{Reason: "session ended"}
 		}
-		p, err := h.principalFor(ctx, sess.UserID)
 		if err != nil {
-			unauthorized(w, r, "user gone")
-			return
+			return nil, err
+		}
+		p, err := h.livePrincipal(ctx, sess.UserID)
+		if err != nil {
+			return nil, err
 		}
 		_ = h.Sessions.TouchLastSeen(ctx, sess.ID, h.now())
 		ans = IntrospectAnswer{Principal: p, Source: string(principal.SourceCookie),
@@ -157,18 +184,18 @@ func (h *Home) Introspect(w http.ResponseWriter, r *http.Request) {
 		}
 	case req.PAT != "":
 		if h.PAT == nil || !pat.IsPAT(req.PAT) {
-			unauthorized(w, r, "not a token")
-			return
+			return nil, &Refusal{Reason: "not a token"}
 		}
 		tok, err := h.PAT.Authenticate(ctx, req.PAT)
-		if err != nil {
-			unauthorized(w, r, "token not valid")
-			return
+		if errors.Is(err, pat.ErrNotFound) || errors.Is(err, pat.ErrMalformed) {
+			return nil, &Refusal{Reason: "token not valid"}
 		}
-		p, err := h.principalFor(ctx, tok.UserID)
 		if err != nil {
-			unauthorized(w, r, "user gone")
-			return
+			return nil, err
+		}
+		p, err := h.livePrincipal(ctx, tok.UserID)
+		if err != nil {
+			return nil, err
 		}
 		// the must-change gate is a web-session rule (the home's PAT path does
 		// not apply it either)
@@ -178,10 +205,19 @@ func (h *Home) Introspect(w http.ResponseWriter, r *http.Request) {
 			ans.ExpiresAt = *tok.ExpiresAt
 		}
 	default:
-		httperror.Write(w, r, httperror.BadRequest("session or pat required"))
-		return
+		return nil, &Refusal{Reason: "session or pat required"}
 	}
-	common.WriteJSON(w, r, http.StatusOK, ans)
+	return &ans, nil
+}
+
+// livePrincipal is principalFor with a user that is gone as a *Refusal (a database
+// that does not answer is an error: no one is signed out for it).
+func (h *Home) livePrincipal(ctx context.Context, userID string) (Principal, error) {
+	p, err := h.principalFor(ctx, userID)
+	if errors.Is(err, users.ErrNotFound) {
+		return Principal{}, &Refusal{Reason: "user gone"}
+	}
+	return p, err
 }
 
 // clientIP is the browser's address the node forwarded (first X-Forwarded-For entry),
