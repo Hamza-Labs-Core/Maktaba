@@ -155,25 +155,63 @@ func (c Copy) Ask(ctx context.Context, fresh bool) (Grant, error) {
 	return g, nil
 }
 
-// openHome opens the home's database as this machine's own role. The join hands a
-// node sslmode=prefer, which lib/pq does not take: it is settled as libpq settles it,
-// TLS unless the server answers that it has none (allow: plain).
+// openHome opens the home's database as this machine's own role, for one call under
+// ctx. The join hands a node sslmode=prefer, which lib/pq does not take: it is settled
+// as libpq settles it, TLS unless the server answers that it has none (allow: plain).
+// Its connections end with ctx's deadline (deadlineDialer): a home switched off
+// answers nothing, and lib/pq alone would wait on it for as long as the socket lives.
 func (c Copy) openHome(ctx context.Context) (*sql.DB, error) {
 	switch sslMode(c.HomeDSN) {
 	case "allow":
-		return sql.Open("postgres", withSSLMode(c.HomeDSN, "disable"))
+		return openBounded(withSSLMode(c.HomeDSN, "disable"))
 	case "prefer":
-		db, err := sql.Open("postgres", withSSLMode(c.HomeDSN, "require"))
+		db, err := openBounded(withSSLMode(c.HomeDSN, "require"))
 		if err != nil {
 			return nil, err
 		}
 		if err := db.PingContext(ctx); errors.Is(err, pq.ErrSSLNotSupported) {
 			_ = db.Close()
-			return sql.Open("postgres", withSSLMode(c.HomeDSN, "disable"))
+			return openBounded(withSSLMode(c.HomeDSN, "disable"))
 		}
 		return db, nil
 	}
-	return sql.Open("postgres", c.HomeDSN)
+	return openBounded(c.HomeDSN)
+}
+
+// openBounded is sql.Open("postgres", dsn) whose connections live no longer than the
+// context they were made under.
+func openBounded(dsn string) (*sql.DB, error) {
+	conn, err := pq.NewConnector(dsn)
+	if err != nil {
+		return nil, err
+	}
+	conn.Dialer(deadlineDialer{})
+	return sql.OpenDB(conn), nil
+}
+
+// deadlineDialer gives each connection its dial context's deadline, for good.
+type deadlineDialer struct{ d net.Dialer }
+
+func (d deadlineDialer) Dial(network, address string) (net.Conn, error) {
+	return d.d.Dial(network, address)
+}
+
+func (d deadlineDialer) DialTimeout(network, address string, timeout time.Duration) (net.Conn, error) {
+	dd := d.d
+	dd.Timeout = timeout
+	nc, err := dd.Dial(network, address)
+	if err == nil {
+		_ = nc.SetDeadline(time.Now().Add(timeout))
+	}
+	return nc, err
+}
+
+func (d deadlineDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	nc, err := d.d.DialContext(ctx, network, address)
+	if dl, ok := ctx.Deadline(); ok && err == nil {
+		_ = nc.SetDeadline(dl)
+	}
+	return nc, err
 }
 
 // sslMode is a URL dsn's sslmode ("" for none, or a dsn that is not a URL).
@@ -460,6 +498,49 @@ func (c Copy) Subscribe(ctx context.Context, g Grant) error {
 		return fmt.Errorf("nodecopy: subscribing: %w", err)
 	}
 	return nil
+}
+
+// Handover moves the copy to a new home without copying it again (specs/epics/
+// 37-node-replica, "Switching the home"): the copy holds the switchover's marker, so it
+// has everything the old home wrote, which is what the new home's database was when it
+// made this machine's slot (g.Slot, existing). The subscription to the old home is
+// dropped, its slot left there (the old home drops its own); one to the new home's slot
+// is made without a first copy; the marker says the copy follows the new home's
+// database. c.HomeDSN is this machine's role on the new home's database; local is this
+// machine's schema version.
+func (c Copy) Handover(ctx context.Context, g Grant, local int64) error {
+	db, err := c.super()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	s, err := c.subscription(ctx, db)
+	if err != nil {
+		return err
+	}
+	if s.exists {
+		name := pq.QuoteIdentifier(Subscription)
+		for _, q := range []string{`ALTER SUBSCRIPTION ` + name + ` DISABLE`,
+			`ALTER SUBSCRIPTION ` + name + ` SET (slot_name = NONE)`, `DROP SUBSCRIPTION ` + name} {
+			if _, err := db.ExecContext(ctx, q); err != nil {
+				return fmt.Errorf("nodecopy: leaving the old home: %w", err)
+			}
+		}
+	}
+	if err := c.writeAccess(g); err != nil {
+		return fmt.Errorf("nodecopy: the copy's access: %w", err)
+	}
+	conn, err := c.conninfo(g.Database)
+	if err != nil {
+		return err
+	}
+	q := fmt.Sprintf(`CREATE SUBSCRIPTION %s CONNECTION %s PUBLICATION %s
+	  WITH (slot_name = %s, create_slot = false, copy_data = false, streaming = on, disable_on_error = false)`,
+		pq.QuoteIdentifier(Subscription), pq.QuoteLiteral(conn), pq.QuoteIdentifier(g.Publication), pq.QuoteLiteral(g.Slot))
+	if _, err := db.ExecContext(ctx, q); err != nil {
+		return fmt.Errorf("nodecopy: following the new home: %w", err)
+	}
+	return c.writeMark(Marker{SystemID: g.SystemID, LocalSchema: local, Subscribed: time.Now().UTC()})
 }
 
 // unsubscribe drops the subscription: with the home's slot when the home answers, else
