@@ -259,31 +259,57 @@ func CheckConstraints(name string, b []byte) error {
 // numeric core first, then a prerelease ranks below its release; prereleases of
 // the same core compare by their dot-separated identifiers (numeric ones
 // numerically). Unparseable cores compare as empty, below every release. A
-// `git describe` build ranks after the tag it was built from: a machine
-// running one is not behind that release.
+// `git describe` build ranks after the tag it was built from (a machine running
+// one is not behind that release), by its commits after the tag, then dirty
+// after clean: v0.2.0 < v0.2.0-dirty < v0.2.0-1-gabc1234 <
+// v0.2.0-1-gabc1234-dirty < v0.2.1.
 func CompareVersions(a, b string) int {
-	ta, na := splitDescribe(a)
-	tb, nb := splitDescribe(b)
+	ta, na, da := splitDescribe(a)
+	tb, nb, db := splitDescribe(b)
 	if c := compareReleases(ta, tb); c != 0 {
 		return c
 	}
-	return cmpInt(na, nb)
+	if c := cmpInt(na, nb); c != 0 {
+		return c
+	}
+	switch {
+	case da == db:
+		return 0
+	case da:
+		return 1
+	}
+	return -1
+}
+
+// IsPrerelease reports whether v is a prerelease, or a `git describe` build of
+// one (1.0.0-rc.1, 1.0.0-rc.1-3-g1a2b3c4d); a build of a release tag
+// (0.2.0-12-gabc1234) is not.
+func IsPrerelease(v string) bool {
+	tag, _, _ := splitDescribe(v)
+	_, pre := splitVersion(tag)
+	return pre != ""
 }
 
 // describeBuild and splitDescribe are layout.SplitDescribe's (this package
-// does not import layout, so the modules that verify releases need not).
-var describeBuild = regexp.MustCompile(`^(v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)-(\d+)-g[0-9a-f]{4,40}(?:-dirty)?$`)
+// does not import layout, so the modules that verify releases need not): the
+// release tag (normalized: no "v", no build metadata), the commits after it,
+// whether the tree was dirty.
+var describeBuild = regexp.MustCompile(`^(\d+\.\d+\.\d+(?:-[0-9a-z.]+)?)-(\d+)-g[0-9a-f]{4,40}$`)
 
-func splitDescribe(v string) (string, int) {
-	m := describeBuild.FindStringSubmatch(v)
-	if m == nil {
-		return v, 0
+func splitDescribe(v string) (tag string, commits int, dirty bool) {
+	v = strings.TrimPrefix(strings.TrimSpace(strings.ToLower(v)), "v")
+	if i := strings.IndexByte(v, '+'); i >= 0 {
+		v = v[:i]
 	}
-	n, err := strconv.Atoi(m[2])
-	if err != nil {
-		return v, 0
+	if t, ok := strings.CutSuffix(v, "-dirty"); ok {
+		v, dirty = t, true
 	}
-	return m[1], n
+	if m := describeBuild.FindStringSubmatch(v); m != nil {
+		if n, err := strconv.Atoi(m[2]); err == nil {
+			return m[1], n, dirty
+		}
+	}
+	return v, 0, dirty
 }
 
 func compareReleases(a, b string) int {

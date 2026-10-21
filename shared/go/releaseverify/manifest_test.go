@@ -100,6 +100,14 @@ func TestCompareVersions(t *testing.T) {
 		{"v0.2.0-12-gabc1234", "v0.2.0", 1},
 		{"v0.2.0-12-gabc1234", "v0.2.1", -1},
 		{"v1.0.0-rc.1-3-g1a2b3c4d", "v1.0.0-rc.1", 1},
+		{"v1.0.0-rc.1-3-g1a2b3c4d", "v1.0.0", -1},
+		// dirty after clean, before the next commit
+		{"v0.2.0-dirty", "v0.2.0", 1},
+		{"v0.2.0-dirty", "v0.2.0-1-gabc1234", -1},
+		{"v0.2.0-3-gdef5678-dirty", "v0.2.0-3-gdef5678", 1},
+		// normalized first
+		{" V0.2.0-12-gABC1234 ", "v0.2.0", 1},
+		{"v0.2.0-12-gabc1234+build.3", "v0.2.0", 1},
 	}
 	for _, c := range cases {
 		if got := rv.CompareVersions(c.a, c.b); got != c.want {
@@ -107,6 +115,19 @@ func TestCompareVersions(t *testing.T) {
 		}
 		if got := rv.CompareVersions(c.b, c.a); got != -c.want {
 			t.Errorf("CompareVersions(%q,%q) = %d, want %d", c.b, c.a, got, -c.want)
+		}
+	}
+}
+
+// A build made off a release tag is not a prerelease; one made off a
+// prerelease tag is.
+func TestIsPrerelease(t *testing.T) {
+	for v, want := range map[string]bool{
+		"1.5.0": false, "v1.5.0-rc.1": true, "0.2.0-12-gabc1234": false, "v0.2.0-dirty": false,
+		"v0.2.0-12-gabc1234-dirty": false, "1.0.0-rc.1-3-g1a2b3c4d": true, "1.5.0+build": false,
+	} {
+		if got := rv.IsPrerelease(v); got != want {
+			t.Errorf("IsPrerelease(%q) = %v, want %v", v, got, want)
 		}
 	}
 }

@@ -8,39 +8,57 @@ import (
 	"strings"
 )
 
-// describeBuild is a `git describe` build: a tag, the commits after it and the
-// commit (v0.2.0-12-gabc1234, v1.0.0-rc.1-3-g1a2b3c4d-dirty), the version of a
-// build made off a tag (payload.sh, `make VERSION=...` from a checkout).
-var describeBuild = regexp.MustCompile(`^(v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)-(\d+)-g[0-9a-f]{4,40}(?:-dirty)?$`)
+// describeBuild is a `git describe` build once normalized (no "v", no build
+// metadata, no -dirty): a tag, the commits after it and the commit
+// (0.2.0-12-gabc1234, 1.0.0-rc.1-3-g1a2b3c4d), the version of a build made off
+// a tag (payload.sh, `make VERSION=...` from a checkout).
+var describeBuild = regexp.MustCompile(`^(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)-(\d+)-g[0-9a-f]{4,40}$`)
 
-// SplitDescribe is a version's tag and the number of commits after it: a
-// `git describe` build is that many commits after its tag; any other version is
-// itself, 0.
-func SplitDescribe(v string) (string, int) {
-	m := describeBuild.FindStringSubmatch(v)
-	if m == nil {
-		return v, 0
+// SplitDescribe is a version's release tag (normalized: no "v", no build
+// metadata), the commits after it and whether its tree was dirty: a `git
+// describe` build (v0.2.0-12-gabc1234, -dirty too, and v0.2.0-dirty on the tag
+// itself) is that many commits after its tag; any other version is itself, 0,
+// clean. releaseverify keeps the same rule (its splitDescribe).
+func SplitDescribe(v string) (tag string, commits int, dirty bool) {
+	v = NormalizeVersion(v)
+	if i := strings.IndexByte(v, '+'); i >= 0 {
+		v = v[:i]
 	}
-	n, err := strconv.Atoi(m[2])
-	if err != nil {
-		return v, 0
+	if t, ok := strings.CutSuffix(v, "-dirty"); ok {
+		v, dirty = t, true
 	}
-	return m[1], n
+	if m := describeBuild.FindStringSubmatch(v); m != nil {
+		if n, err := strconv.Atoi(m[2]); err == nil {
+			return m[1], n, dirty
+		}
+	}
+	return v, 0, dirty
 }
 
 // CompareVersions compares two release versions numerically (1.10.0 >
 // 1.9.0): major.minor.patch, then a release ranks above its prereleases
 // (1.5.0 > 1.5.0-rc.2 > 1.5.0-rc.1). Build metadata (+...) is ignored. A
 // leading "v" is accepted. A `git describe` build ranks after the tag it was
-// built from (v0.2.0-12-gabc1234 > v0.2.0), never before it as a prerelease
-// would: running one is never "older than" that release.
+// built from, never before it as a prerelease would: running one is never
+// "older than" that release. By its commits after the tag, then dirty after
+// clean: v0.2.0 < v0.2.0-dirty < v0.2.0-1-gabc1234 < v0.2.0-1-gabc1234-dirty <
+// v0.2.1.
 func CompareVersions(a, b string) int {
-	ta, na := SplitDescribe(a)
-	tb, nb := SplitDescribe(b)
+	ta, na, da := SplitDescribe(a)
+	tb, nb, db := SplitDescribe(b)
 	if c := compareReleases(ta, tb); c != 0 {
 		return c
 	}
-	return cmp.Compare(na, nb)
+	if c := cmp.Compare(na, nb); c != 0 {
+		return c
+	}
+	switch {
+	case da == db:
+		return 0
+	case da:
+		return 1
+	}
+	return -1
 }
 
 func compareReleases(a, b string) int {

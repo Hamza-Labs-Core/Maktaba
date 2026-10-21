@@ -20,9 +20,11 @@ func TestCompareSemver(t *testing.T) {
 		{"v1.4.2", "v1.4.2", 0},    // equal
 		{"1.5.0", "1.5.0-rc.1", 1}, // release outranks its prerelease
 		{"1.5.0-rc.1", "1.5.0", -1},
-		{"1.5.0-rc.2", "1.5.0-rc.1", 0}, // same numeric core, both prerelease
+		{"1.5.0-rc.2", "1.5.0-rc.1", 1}, // prereleases by their identifiers, as the verifier
 		{"v2.0.0", "v1.99.99", 1},
-		{"dev", "v1.0.0", -1}, // unparseable never newer
+		{"dev", "v1.0.0", -1},                // unparseable never newer
+		{"v0.2.0", "v0.2.0-12-gabc1234", -1}, // a checkout's build is not behind its tag
+		{"v0.2.1", "v0.2.0-12-gabc1234", 1},
 	}
 	for _, c := range cases {
 		got := compareSemver(c.a, c.b)

@@ -86,6 +86,18 @@ describe("validators", () => {
     expect(pinProblem("1.4.9", "1.5.0")).toBe("pin_below_installed");
     expect(pinProblem("v1.5.0", "1.5.0")).toBe("");
   });
+  it("orders versions as the server does: prereleases by identifier, a checkout's build after its tag", () => {
+    expect(compareVersions("1.5.0-rc.10", "1.5.0-rc.9")).toBe(1);
+    expect(compareVersions("1.5.0-beta", "1.5.0-rc")).toBe(-1);
+    expect(compareVersions("0.2.0-12-gabc1234", "0.2.0")).toBe(1);
+    expect(compareVersions("0.2.0-12-gabc1234", "0.2.1")).toBe(-1);
+    expect(compareVersions("v0.2.0-dirty", "v0.2.0")).toBe(1);
+    expect(compareVersions("v0.2.0-dirty", "v0.2.0-1-gabc1234")).toBe(-1);
+    expect(compareVersions("1.0.0-rc.1-3-g1a2b3c4d", "1.0.0")).toBe(-1);
+    // the server refuses a pin below a checkout's build of that release
+    expect(pinProblem("0.2.0", "0.2.0-12-gabc1234")).toBe("pin_below_installed");
+    expect(pinProblem("0.2.1", "0.2.0-12-gabc1234")).toBe("");
+  });
 });
 
 describe("UpdatesSettings", () => {
