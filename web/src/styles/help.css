@@ -1,0 +1,184 @@
+/* Help (Epic 41): the "?" beside page titles, "Learn more" links, /help */
+.mkt-titlerow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.mkt-helpicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+}
+.mkt-helpicon:hover,
+.mkt-helpicon:focus-visible {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+.mkt-helplink {
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+.mkt-help {
+  max-width: 900px;
+}
+.mkt-help__muted {
+  color: var(--color-muted);
+}
+.mkt-help__search input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-3);
+  font-size: var(--font-size-lg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-fg);
+  margin-block: var(--space-3) var(--space-4);
+}
+.mkt-help__cats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: var(--space-4);
+}
+.mkt-help__cat h2 {
+  font-size: var(--font-size-lg);
+  margin: 0 0 var(--space-2);
+}
+.mkt-help__cat ul,
+.mkt-help__results,
+.mkt-help__toc ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.mkt-help__topic,
+.mkt-help__result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  color: inherit;
+}
+.mkt-help__topic:hover,
+.mkt-help__result:hover,
+.mkt-help__topic:focus-visible,
+.mkt-help__result:focus-visible {
+  background: var(--color-subtle);
+}
+.mkt-help__topic-title,
+.mkt-help__result-title {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+.mkt-help__topic-summary,
+.mkt-help__result-snippet {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+.mkt-help__crumbs {
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--space-2);
+}
+.mkt-help__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+.mkt-help__toc {
+  border-inline-start: 2px solid var(--color-border);
+  padding-inline-start: var(--space-3);
+  font-size: var(--font-size-sm);
+}
+.mkt-help__toc li {
+  padding-block: var(--space-1);
+}
+@media (min-width: 1000px) {
+  .mkt-help--topic {
+    max-width: 1100px;
+  }
+  .mkt-help__layout {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+  .mkt-help__toc {
+    position: sticky;
+    top: var(--space-4);
+    align-self: start;
+  }
+}
+.mkt-help__body {
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.mkt-help__body ul,
+.mkt-help__body ol {
+  padding-inline-start: var(--space-5);
+}
+.mkt-help__body li + li {
+  margin-top: var(--space-1);
+}
+.mkt-help__body blockquote {
+  margin-inline: 0;
+  padding-inline-start: var(--space-3);
+  border-inline-start: 3px solid var(--color-border);
+  color: var(--color-muted);
+}
+.mkt-help__h {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  scroll-margin-top: var(--space-4);
+  border-radius: var(--radius-sm);
+}
+.mkt-help__h:focus {
+  outline: none;
+}
+.mkt-help__h--target {
+  background: var(--color-subtle);
+  box-shadow: 0 0 0 var(--space-2) var(--color-subtle);
+}
+.mkt-help__copy {
+  border: 0;
+  background: none;
+  color: var(--color-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  padding: 0 var(--space-1);
+  opacity: 0.4;
+}
+.mkt-help__h:hover .mkt-help__copy,
+.mkt-help__copy:focus-visible {
+  opacity: 1;
+}
+@media (hover: none) {
+  .mkt-help__copy {
+    opacity: 1;
+  }
+}
+
+/* Help links inside the queue pages */
+.mkt-q-tl__errrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.mkt-q-card__why {
+  color: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}

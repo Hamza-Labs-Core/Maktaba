@@ -14,7 +14,8 @@ the whole rollback: the engine reads the previous generation from its next block
 
 Not reverted: ``write_channels``' links and filler pools a swapped ``write_channels``
 change wrote (the previous release plans from its own snapshot; a re-stage writes them
-again). The rolled-back change's edits are kept in a new draft (story 33.9 AC6).
+again). The rolled-back change's edits are kept in the open change, a new draft when
+there is none (story 33.9 AC6).
 """
 
 from __future__ import annotations
@@ -26,7 +27,16 @@ from ..engine.sql import is_pg, now, to_ts
 from ..log import get_logger
 from .build import load_release
 from .commit import _apply_art, _apply_lineup, _apply_settings, _enqueue_plex, _lock
-from .store import create_change, get_change, open_draft, transition
+from .merge import live_defs, merge_pending, with_plan_layer
+from .stage import auto_restage, collapse_open
+from .store import (
+    create_change,
+    event,
+    get_change,
+    reopen,
+    transition,
+    update_change,
+)
 
 __all__ = ["rollback_change"]
 
@@ -144,15 +154,35 @@ async def _rollback_change(
 
 
 async def _keep_draft(db: Any, ch: Any, actor: str | None) -> str | None:
-    """A new draft with the rolled-back change's edits, so it can be staged again."""
-    pending = ch.pending or {}
-    if not pending or await open_draft(db, "restage") is not None:
+    """The rolled-back change's edits go back into the open change (created if none),
+    so they can be staged again. They are older than what the open change holds: its
+    edits are laid over them (merge.py). An open change already checked goes back to
+    draft (an update joined it: it is checked again)."""
+    pending = with_plan_layer(ch.pending or {}, ch.row.get("digest"))
+    if not pending:
         return None
     try:
-        return await create_change(
-            db, state="draft", title=f"Re-stage #{ch.row.get('number') or ''}".strip(),
-            source={"kind": "restage", "change_id": ch.id}, pending=pending, created_by=actor,
+        draft = await collapse_open(db)
+        if draft is None:
+            return await create_change(
+                db, state="draft", title=f"Re-stage #{ch.row.get('number') or ''}".strip(),
+                source={"kind": "restage", "change_id": ch.id}, pending=pending,
+                created_by=actor,
+            )  # fmt: skip
+        draft = await reopen(
+            db, draft, restage=await auto_restage(db),
+            detail={"update": {"what": "restage", "change_id": ch.id}},
         )  # fmt: skip
+        cur = with_plan_layer(draft.pending, draft.row.get("digest"))
+        merged = merge_pending(pending, cur, await live_defs(db))
+        await update_change(db, draft.id, diff={**(draft.row.get("diff") or {}), "pending": merged})
+        await event(
+            db, draft.id, from_state="draft", to_state="draft", action="append",
+            actor_source="system", actor_user_id=actor,
+            detail={"what": "restage", "kind": "restage", "change_id": ch.id,
+                    "number": ch.row.get("number")},
+        )  # fmt: skip
+        return str(draft.id)
     except Exception:  # noqa: BLE001 - the rollback stands without it
         _log.exception("tv_rollback_restage_failed", change_id=ch.id)
         return None

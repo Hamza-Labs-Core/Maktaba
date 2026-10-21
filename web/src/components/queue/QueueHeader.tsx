@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { useI18n } from "../../lib/i18n";
 import { useFmt } from "./format";
+import { TitleRow } from "../../help/HelpLink";
 
 export type OverallState = "paused" | "attention" | "working" | "idle";
 
@@ -59,7 +60,9 @@ export function QueueHeader({
   return (
     <header className="mkt-q-header">
       <div className="mkt-q-header__title">
-        <h1>{t("queue.title")}</h1>
+        <TitleRow>
+          <h1>{t("queue.title")}</h1>
+        </TitleRow>
         <span className={`mkt-q-pill mkt-q-pill--${state}`} role="status">
           <span aria-hidden="true">{GLYPH[state]}</span> {t(`queue.overall.${state}`)}
         </span>

@@ -30,6 +30,7 @@ import {
 } from "../../lib/channels";
 import { ChannelEditor } from "./channels/ChannelEditor";
 import { ChannelList, renumber } from "./channels/ChannelList";
+import { TitleRow } from "../../help/HelpLink";
 import "./channels/channels.css";
 
 // A new channel starts as a schedule channel, off until it has a slot.
@@ -183,7 +184,9 @@ function ChannelsInner() {
   return (
     <section className="mkt-page mkt-channels">
       <header className="mkt-page__header">
-        <h1>{t("channels.title")}</h1>
+        <TitleRow>
+          <h1>{t("channels.title")}</h1>
+        </TitleRow>
         <div className="mkt-cb-toolbar">
           <Link className="mkt-cb-link" to="/admin/filler">
             {t("channels.fillerPools")}

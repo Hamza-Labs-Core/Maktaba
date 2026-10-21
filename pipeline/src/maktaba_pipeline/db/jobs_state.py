@@ -85,6 +85,9 @@ class FailureOutcome:
 
     state: str
     not_before: datetime | None = None
+    #: Epic 40, on an engine connection: the failure's class, and what it is parked on
+    failure_class: str | None = None
+    parked_on: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -311,7 +314,7 @@ async def mark_failed_or_retry(
     from ..engine.hooks import on_failure
 
     async with db.transaction():
-        outcome = await _fail_or_retry(db, job_id, error, rng, now)
+        outcome = await _fail_or_retry_engine(db, job_id, error, rng, now)
         if outcome.state in ("pending", "failed"):
             await on_failure(
                 db,
@@ -320,8 +323,99 @@ async def mark_failed_or_retry(
                 message=error.message,
                 new_state=outcome.state,
                 not_before=outcome.not_before,
+                failure_class=outcome.failure_class,
+                parked_on=outcome.parked_on,
             )
     return outcome
+
+
+_FAIL_ENGINE = """
+UPDATE processing_jobs
+   SET state         = $2,
+       not_before    = $3,
+       claimed_by    = NULL,
+       error         = $4,
+       finished_at   = $5,
+       failure_class = $6,
+       parked_on     = $7,
+       attempts      = CASE WHEN $8 THEN {refund} ELSE attempts END,
+       max_attempts  = COALESCE($9, max_attempts)
+ WHERE id = $1
+   AND state IN ('claimed', 'running', 'resuming')
+RETURNING id, state, not_before
+"""
+
+
+async def _fail_or_retry_engine(
+    db: DBConn,
+    job_id: int,
+    error: StageError,
+    rng: random.Random | None,
+    when: datetime | None,
+) -> FailureOutcome:
+    """Epic 40: the failure's class decides (``engine/failure_policy.py``): park without
+    spending the attempt, retry within the class budget, or fail."""
+    from ..engine.failure_policy import decide, not_before
+    from ..engine.sql import is_pg, to_ts
+
+    row = await db.fetchrow(
+        "SELECT attempts, max_attempts, stage, video_id FROM processing_jobs WHERE id = $1",
+        job_id,
+    )
+    if row is None:
+        return FailureOutcome(state="noop")
+    decision = await decide(
+        db,
+        stage=str(row["stage"]),
+        video_id=row["video_id"],
+        kind=error.kind,
+        message=error.message,
+        retryable=error.retryable,
+        attempts=int(row["attempts"]),
+        max_attempts=int(row["max_attempts"]),
+        rng=rng,
+    )
+    at = _now(when)
+    nb = not_before(decision, at)
+    pending = decision.action in ("park", "retry")
+    pg = is_pg(db)
+    err_json = json.dumps(
+        {
+            "kind": error.kind,
+            "message": error.message,
+            "traceback": error.traceback,
+            "retryable": error.retryable,
+        }
+    )
+    sql = _FAIL_ENGINE.replace(
+        "{refund}", "GREATEST(attempts - 1, 0)" if pg else "MAX(attempts - 1, 0)"
+    )
+    out = await db.fetchrow(
+        sql,
+        job_id,
+        "pending" if pending else "failed",
+        to_ts(db, nb),
+        err_json,
+        None if pending else to_ts(db, at),
+        decision.failure_class,
+        decision.parked_on,
+        (decision.action == "park") if pg else int(decision.action == "park"),
+        decision.max_attempts,
+    )
+    if out is None:
+        return FailureOutcome(state="noop")
+    nb_raw = out["not_before"]
+    got: datetime | None
+    if nb_raw is None or isinstance(nb_raw, datetime):
+        got = nb_raw
+    else:
+        got = datetime.fromisoformat(str(nb_raw).replace("Z", "+00:00"))
+    return FailureOutcome(
+        state=str(out["state"]),
+        not_before=got,
+        failure_class=decision.failure_class,
+        parked_on=decision.parked_on,
+    )
 
 
 def _hooked(db: DBConn) -> bool:

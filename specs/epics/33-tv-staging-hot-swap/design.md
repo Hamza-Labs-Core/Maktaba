@@ -530,11 +530,12 @@ admin action (category `tv_change`, `target_kind = tv_change`).
 
 | From → to | Trigger | Guard |
 |---|---|---|
-| — → `draft` | producer writes (§11.4), admin "new" | at most one open draft per author source; editor saves append to the open draft |
+| — → `draft` | producer writes (§11.4), admin "new" | one open change (the change no one approved in `draft … ready`): every update - plan, schedule, editor, filler, settings, re-stage - joins it until it is approved (story 33.12 AC3); a second open change joins the older one |
+| `staged/verifying/ready → draft` | an update joins it (`reopen`) | no one approved it; "updated after it was checked: it is checked again": its old report kept in the event, staged again when the write mode is `auto` (one stage per update); slot stopped (story 33.12 AC3) |
 | `draft → staged` | Stage (admin) or auto (producer in `auto` mode) | no other change in `staged…swapping`; release builds; generation built |
 | `staged → verifying` | slot started on the release and healthy | a slot instance that is neither live, standby nor previous is free |
 | `verifying → ready` | report has no fail | — |
-| `verifying → failed` | a fail | slot stopped, staging placements released, staged channels deleted |
+| `staged/verifying → draft` | a fail | the report and reasons kept, the approval withdrawn, no stage asked; the open change again (a change opened meanwhile joins it); slot stopped, staging placements released (story 33.12 AC3; `failed` is only the rows made before) |
 | `ready → approved` | Approve | admin; second admin when required; param-change ack when needed |
 | `ready → approved` is required by default for every kind | | |
 | `approved → swapping` | Swap now, or `swap_at` reached | an admin approved (all rules are `approval` by default) |
@@ -598,7 +599,7 @@ adds rules on top:
 
 | Failure | Effect | Handling |
 |---|---|---|
-| Staging slot crash / hang | none for viewers (no client reads it; the relay does not use it) | watchdog restarts it; the change returns to `verifying`; 3 crashes during verification → `failed (slot_crash_loop)` |
+| Staging slot crash / hang | none for viewers (no client reads it; the relay does not use it) | watchdog restarts it; the change returns to `verifying`; 3 crashes during verification → back to `draft` (reason `slot_crash_loop`) |
 | Live slot crash, outside grace | the front door's upstreams end | **hot standby (default on the home)**: the front door switches every channel to the standby at once (§2.4) — HLS stitch, TS splice, relay source switch; the crashed instance restarts as the new standby. Without a standby (nodes, or `hot_standby = false`): the watchdog restarts the slot (~1–3 s) and the front door re-resolves; viewers stall one ready timeout; TS connections are kept (up to 3 splices); pushes keep their session if the gap < 30 s |
 | Standby slot crash | none for viewers | watchdog restarts it; it re-warms; failover is unavailable meanwhile (event, slot bar shows it) |
 | Live slot crash, inside grace | — | automatic warm rollback to the previous slot (§10) |
