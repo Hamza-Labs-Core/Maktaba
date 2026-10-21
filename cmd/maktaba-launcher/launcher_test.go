@@ -88,6 +88,17 @@ func fakeServerMain() {
 		os.Exit(ExitRestart)
 	case act == "crash":
 		os.Exit(2)
+	case strings.HasPrefix(act, "orphan-exit:"):
+		// a role left behind: its own process group, our stdout and stderr (the
+		// log pipe), alive after we crash
+		orphan := exec.Command("sleep", "60")
+		orphan.Stdout, orphan.Stderr = os.Stdout, os.Stderr
+		orphan.SysProcAttr = orphanAttr()
+		if err := orphan.Start(); err == nil {
+			_ = os.WriteFile(filepath.Join(root, "orphan.pid"), []byte(strconv.Itoa(orphan.Process.Pid)), 0o644)
+		}
+		code, _ := strconv.Atoi(strings.TrimPrefix(act, "orphan-exit:"))
+		os.Exit(code)
 	case act == "hang":
 		// catch and drop (signal.Ignore would let Windows' default CTRL_BREAK handler end it)
 		signal.Notify(make(chan os.Signal, 1), os.Interrupt, syscall.SIGTERM)
