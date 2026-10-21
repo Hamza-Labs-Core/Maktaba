@@ -10,6 +10,25 @@ don't append a line here; docs-only PRs are exempt.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Release builds for desktop, Android and Android TV.** The desktop app ships a
+  (placeholder) icon set (#152), which the macOS and Windows bundles failed on. The Linux build
+  stopped earlier: `tauri-plugin-deep-link` 2.6.2 does not compile against `rust-ini` 0.21.3,
+  so the desktop app pins `rust-ini` to 0.21.1 on Linux (`Cargo.toml` and `Cargo.lock`). The
+  Windows portable `.zip` step finds the exe under the name the Tauri CLI gives it
+  (`mainBinaryName`, else the Cargo bin name) instead of a hard-coded one, and a
+  pre-release tag such as `v0.3.0-rc.1` gives the MSI the numeric version WiX requires. The
+  Android and Android TV jobs no longer ask sdkmanager for the removed `tools` package.
+- **Unsigned Android builds stay off the release.** Without the keystore secrets the APK and
+  AAB are kept as workflow artifacts (named `-unsigned`) and the run warns; only signed builds
+  are attached to the GitHub Release, since Android won't install an unsigned APK.
+- **Relay deploys only where a VPS is configured.** A tag push rolls out the relay only when the
+  `RELAY_DEPLOY` repo variable is `true` and the image built and pushed; otherwise no
+  `production` deployment is recorded.
+- **Web image release build.** The web image builds its bundle natively instead of under arm64
+  emulation, where `pnpm install` hung past the release timeout.
+
 ## [0.2.0] - 2026-10-19
 
 Closes the stub audit: features that were half built, settings that were

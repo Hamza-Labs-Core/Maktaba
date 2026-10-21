@@ -73,8 +73,10 @@ the two jobs are independent:
 
 **Android TV signing** reuses the same secrets as the mobile workflow
 (`ANDROID_KEYSTORE_BASE64` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`)
-and signs with `apksigner` when they're present; otherwise it ships the
-unsigned release APK. Build it locally with `make package-tv-android`.
+and signs with `apksigner` when they're present. Without them the APK is
+unsigned, so it is kept as the run's `maktaba-tv-android` artifact
+(`maktaba-tv-<version>-unsigned.apk`) and not attached to the Release.
+Build it locally with `make package-tv-android`.
 
 **tvOS distribution is manual.** Apple does not allow unsigned tvOS app
 distribution, and a shippable `.ipa` needs a full Xcode app target (not
