@@ -18,9 +18,21 @@ don't append a line here; docs-only PRs are exempt.
   with the `stt` extra; no CUDA toolkit), else on the CPU. The supervisor sizes the workers and
   their batch from the GPU's memory (`nvidia-smi`; an 8 GB card gets one worker); without a GPU
   the main worker transcribes. New `[transcription]` keys: `device`, `compute_type`, `batch`,
-  `cpu_threads`. Transcripts record their engine (`ct2-batched`); the second listen stays on
-  the Mac for now. On an RTX 2080 SUPER: 72x real time for eight files at once, 31x for one;
-  2-3x on the CPU.
+  `cpu_threads`. Transcripts record their engine (`ct2-batched`). On an RTX 2080 SUPER: 72x
+  real time for eight files at once, 31x for one; 2-3x on the CPU.
+- **The second listen on Windows and Linux (story 38.9).** Cohere Transcribe Arabic corrects
+  Whisper's words there too, through transformers on torch's CUDA build on the NVIDIA GPU
+  Whisper uses, respelt with the CAMeL dictionary as on the Mac (camel-tools now installs on
+  Windows and Linux x86_64). It runs only where the GPU holds it beside Whisper (10 GB and up on
+  Windows, where the driver keeps more of the card back; 8 GB and up on Linux) and has the room
+  free when a file is done; else the transcript keeps Whisper's words and says why, as a Mac
+  without the model does, and `models download` neither fetches the gated model nor asks for a
+  Hugging Face sign-in for it. Never on the CPU. With it on, the supervisor gives Whisper a
+  smaller batch on such a GPU to leave it room. Transcripts record what heard them
+  (`metadata.refine.runtime`) and a missing dictionary (`dictionary: "unavailable"`). The
+  dictionary's data folder is now made before CAMeL Tools downloads into it (a fresh models
+  folder made it fail). On Windows the torch in the release's dependencies is still PyPI's CPU
+  build, with which the second listen says so: PyTorch's CUDA build needs a packaging decision.
 
 ### Fixed
 

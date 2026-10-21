@@ -72,7 +72,11 @@ roots = ["/mnt/videos", "/mnt/movies"]
 # model = "mlx-community/whisper-large-v3-turbo"
 # The second listen that corrects Whisper's words: "on" (default) / "off"
 # (MAKTABA_STT_REFINE), and its model (MAKTABA_STT_REFINE_MODEL; a repo or a
-# local folder, default CohereLabs/cohere-transcribe-arabic-07-2026).
+# local folder, default CohereLabs/cohere-transcribe-arabic-07-2026). On Windows
+# and Linux it runs on the NVIDIA GPU beside Whisper, when the GPU holds both
+# (10 GB and up on Windows, 8 GB and up elsewhere) and has the room free; the
+# GPU's tiers then give Whisper a smaller batch. Elsewhere a transcript keeps
+# Whisper's words and says why, and its model is not downloaded.
 # refine = "on"
 # refine_model = "CohereLabs/cohere-transcribe-arabic-07-2026"
 # Transcription workers beside the main worker (each one batched Whisper; the
@@ -91,13 +95,14 @@ roots = ["/mnt/videos", "/mnt/movies"]
 # gpu_cache_gb = 0
 # min_free_pct = 0
 # Files a worker decodes together, one 30 s window of each per pass
-# (MAKTABA_STT_BATCH). 0: sized from the GPU's memory (8 GB: 8), 4 on the CPU,
-# 32 on Apple Silicon.
+# (MAKTABA_STT_BATCH). 0: sized from the GPU's memory (8 GB: 8; 12 GB: 16, or 8
+# beside the second listen), 4 on the CPU, 32 on Apple Silicon.
 # batch = 0
 # Windows and Linux (CTranslate2) only. Where: "auto" (the NVIDIA GPU when CUDA
 # works there, else the CPU), "cuda", "cuda:1" or "cpu" (MAKTABA_STT_DEVICE).
-# Precision: "auto" (float16 on the GPU, int8_float16 on one under 7 GB, int8 on
-# the CPU) or float16, int8_float16, int8, int8_float32, float32
+# Precision: "auto" (float16 on the GPU, int8_float16 on one under 7 GB or on an
+# 8 GB one beside the second listen outside Windows, int8 on the CPU) or
+# float16, int8_float16, int8, int8_float32, float32
 # (MAKTABA_STT_COMPUTE_TYPE). Threads on the CPU, 0: half the logical CPUs
 # (MAKTABA_STT_CPU_THREADS).
 # device = "auto"
