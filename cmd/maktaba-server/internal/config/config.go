@@ -182,9 +182,14 @@ type TranscriptionSection struct {
 	RefineModel string `toml:"refine_model"`
 	// Workers is the number of transcription workers beside the main worker:
 	// 0 (default) sizes it from the RAM on Apple Silicon and from the GPU's
-	// memory on a machine with an NVIDIA GPU, and runs none on a machine that
-	// transcribes on the CPU (the main worker does); -1 none. [pipeline]
-	// instances, when set, wins.
+	// memory on a machine with an NVIDIA GPU of 4 GB or more, and runs none on a
+	// machine that transcribes on the CPU (the main worker does); -1 none.
+	// [pipeline] instances, when set, wins. While the second listen is on (refine),
+	// a machine that cannot run it (Windows, Linux) plans none: its main worker
+	// transcribes only when the home's rules let it (Settings, Transcription). More
+	// workers than planned share the plan's GPU memory, CPU threads and audio
+	// hours. None at all when the operator's environment excludes transcribe
+	// (MAKTABA_PIPELINE_EXCLUDE_STAGES) or the pipeline has no stt extra.
 	Workers int `toml:"workers"`
 	// Per transcription worker; 0: sized from the RAM (MAKTABA_STT_AUDIO_HOURS:
 	// the hours of audio it holds at once; _MIN_FREE_PCT: below this much free

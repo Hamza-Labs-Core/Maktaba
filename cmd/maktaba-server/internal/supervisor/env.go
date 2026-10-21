@@ -190,16 +190,8 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		if os.Getenv("MAKTABA_WORKER_PATH_MAP") == "" {
 			add("MAKTABA_WORKER_PATH_MAP", strings.TrimSpace(cfg.Media.PathMap))
 		}
-		// the transcription workers (PlanSTT, BuildPipelineInstances) take the
-		// transcribe stage; the main worker leaves it to them
-		// (added to the stages an operator's own environment excludes). Without
-		// them on Windows or Linux (the CPU plan) the main worker transcribes,
-		// with the plan's knobs (story 38.8).
-		plan := PlanSTT(cfg)
-		if plan.Workers > 0 {
-			add("MAKTABA_PIPELINE_EXCLUDE_STAGES", withStage(os.Getenv("MAKTABA_PIPELINE_EXCLUDE_STAGES"), "transcribe"))
-		}
-		env = append(env, plan.mainKnobEnv()...)
+		// the main worker's share of the transcription plan is Build's (PlanFor:
+		// it asks the pipeline's Python), the workers' BuildPipelineInstances'
 		// Epic 35 story 35.8: a full node's pipeline works for the home as this
 		// machine's node (node.json: its database role, node id). The pipeline only
 		// reads node.json without a database URL, so [database].url above would
