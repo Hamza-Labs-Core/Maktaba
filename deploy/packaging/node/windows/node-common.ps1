@@ -43,25 +43,90 @@ function Test-NodeConfigOfAnotherPC {
     return [bool]$this -and ($owner -ine $this)
 }
 
+# Test-NodeConfigWhole: the file at Path holds a node config with its identity (a
+# node_id and a private_key), not a cut one.
+function Test-NodeConfigWhole {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    try {
+        $config = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    } catch { return $false }
+    if ($config -isnot [System.Management.Automation.PSCustomObject]) { return $false }
+    foreach ($key in @('node_id', 'private_key')) {
+        $field = $config.PSObject.Properties[$key]
+        if (-not $field -or -not ([string]$field.Value).Trim()) { return $false }
+    }
+    return $true
+}
+
+# Get-NodeConfigLeftovers: what a write of the node config at Path that could not finish
+# left beside it (cluster/config.py _leftovers): the old file under a backup name and the
+# new one as a temp file (.node.json-<time>-<pid>-<hex>.bak and .tmp; .node-* for
+# node.json before they carried the file's name).
+function Get-NodeConfigLeftovers {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $dir = Split-Path -Parent $Path
+    $name = Split-Path -Leaf $Path
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) { return }
+    Get-ChildItem -LiteralPath $dir -Force -File -ErrorAction SilentlyContinue | Where-Object {
+        ($_.Name.StartsWith(".$name-", [System.StringComparison]::OrdinalIgnoreCase) -and
+            ($_.Extension -eq '.bak' -or $_.Extension -eq '.tmp')) -or
+        ($name -eq 'node.json' -and $_.Name -cmatch '^\.node-(\d+-[0-9a-f]{8}\.bak|[a-z0-9_]{8}\.tmp)$')
+    } | Sort-Object -Property Name
+}
+
+# Get-NodeConfigSource: the file that holds the node config at Path, as the pipeline
+# reads it (cluster/config.py _source): Path, unless it is missing or holds no whole node
+# config (one that cannot be read is Path: its reader says why); then what the
+# pipeline's next load puts in its place, the newest whole backup a write left, else its
+# newest whole temp file; else Path.
+function Get-NodeConfigSource {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (Test-Path -LiteralPath $Path) {
+        try { $null = [System.IO.File]::ReadAllBytes($Path) } catch { return $Path }
+        if (Test-NodeConfigWhole -Path $Path) { return $Path }
+    }
+    $left = @(Get-NodeConfigLeftovers -Path $Path)
+    foreach ($ext in @('.bak', '.tmp')) {
+        $best = $null
+        foreach ($file in $left) {
+            if ($file.Extension -ne $ext -or -not (Test-NodeConfigWhole -Path $file.FullName)) { continue }
+            if ($null -eq $best -or $file.LastWriteTimeUtc -gt $best.LastWriteTimeUtc) { $best = $file }
+        }
+        if ($best) { return $best.FullName }
+    }
+    return $Path
+}
+
 # Get-NodeConfigPath: this machine's one node config, where the pipeline reads it
 # (cluster/config.py config_path): MAKTABA_NODE_CONFIG, else the
 # %APPDATA%\Maktaba\node.json of a machine that joined before Epic 38 (it stays where
 # it is) while it is this PC's or no PC's yet, else %LOCALAPPDATA%\Maktaba\node.json,
-# where a new join writes. Another PC's roaming config is not this PC's.
+# where a new join writes. Another PC's roaming config is not this PC's; what a write
+# that could not finish left of it counts as it (Get-NodeConfigSource).
 function Get-NodeConfigPath {
     if ($env:MAKTABA_NODE_CONFIG) { return $env:MAKTABA_NODE_CONFIG }
     $old = Join-Path $script:NodeConfDir 'node.json'
-    if ((Test-Path -LiteralPath $old -PathType Leaf) -and -not (Test-NodeConfigOfAnotherPC -Path $old)) { return $old }
+    $held = Get-NodeConfigSource -Path $old
+    if ((Test-Path -LiteralPath $held -PathType Leaf) -and -not (Test-NodeConfigOfAnotherPC -Path $held)) { return $old }
     return (Join-Path $env:LOCALAPPDATA 'Maktaba\node.json')
 }
 
-# Get-NodeConfigFiles: every node.json that is this PC's (both places on Windows, or
-# MAKTABA_NODE_CONFIG; never another PC's roaming one): to forget the home, all of them
-# go, or the second would take the first one's place.
+# Get-NodeConfigFiles: every file of a node config that is this PC's (both places on
+# Windows, or MAKTABA_NODE_CONFIG; never another PC's roaming one): its node.json and
+# what a write that could not finish left beside it. To forget the home, all of them go,
+# or the second would take the first one's place (and a leftover would be put back).
 function Get-NodeConfigFiles {
-    if ($env:MAKTABA_NODE_CONFIG) { return @($env:MAKTABA_NODE_CONFIG) }
-    @((Join-Path $script:NodeConfDir 'node.json'), (Join-Path $env:LOCALAPPDATA 'Maktaba\node.json')) |
-        Where-Object { (Test-Path -LiteralPath $_ -PathType Leaf) -and -not (Test-NodeConfigOfAnotherPC -Path $_) }
+    if ($env:MAKTABA_NODE_CONFIG) {
+        $env:MAKTABA_NODE_CONFIG
+        Get-NodeConfigLeftovers -Path $env:MAKTABA_NODE_CONFIG | ForEach-Object { $_.FullName }
+        return
+    }
+    foreach ($path in @((Join-Path $script:NodeConfDir 'node.json'), (Join-Path $env:LOCALAPPDATA 'Maktaba\node.json'))) {
+        $held = Get-NodeConfigSource -Path $path
+        if (-not (Test-Path -LiteralPath $held -PathType Leaf) -or (Test-NodeConfigOfAnotherPC -Path $held)) { continue }
+        if (Test-Path -LiteralPath $path -PathType Leaf) { $path }
+        Get-NodeConfigLeftovers -Path $path | ForEach-Object { $_.FullName }
+    }
 }
 
 function Write-NodeStep {
