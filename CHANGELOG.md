@@ -538,6 +538,16 @@ don't append a line here; docs-only PRs are exempt.
   sign-in page says those were not checked. And a thaw still owed by a switch that was called off
   or failed no longer makes the home writable while a later switch has it frozen: a thaw of a
   switch another came after changes nothing, and a freeze and a thaw run one at a time.
+- **Node config writes no longer undo one another on Windows, and a node.json an editor saved
+  is kept** (story 38.1, follow-up of #231). Writes of one node config, and the start that puts
+  back what a write that could not finish left, now run one at a time (a lock beside it,
+  `.node.json.lock`): two ReplaceFileW calls on one file at once could put an older node.json
+  back over a newer one. A start puts a backup back only without replacing a file there, only
+  after looking at `node.json` again, and never an older backup while a newer one is busy. A
+  `node.json` saved with a UTF-8 BOM (Notepad, PowerShell 5.1) is the node config for every
+  reader, and a broken one a backup replaces is kept beside it (`node.json.broken-…`), never
+  removed. A start that cannot make the lock (a folder it may not write, a full disk) leaves the
+  leftovers and reads past them, as before.
 
 ## [0.2.0] - 2026-10-19
 

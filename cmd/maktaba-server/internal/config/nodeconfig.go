@@ -298,10 +298,17 @@ func isNodeConfigLeftover(base, name string) bool {
 	return base == "node.json" && legacyNodeLeftover.MatchString(name)
 }
 
+// utf8BOM is what a node.json saved by an editor can start with (Notepad, PowerShell 5.1's
+// Set-Content -Encoding UTF8): every reader reads past it, as the pipeline does (utf-8-sig).
+var utf8BOM = []byte("\xef\xbb\xbf")
+
+// withoutBOM is b without a leading UTF-8 BOM.
+func withoutBOM(b []byte) []byte { return bytes.TrimPrefix(b, utf8BOM) }
+
 // wholeNodeConfig: b is a node config with its identity (not a cut file).
 func wholeNodeConfig(b []byte) bool {
 	var n NodeConfig
-	return json.Unmarshal(b, &n) == nil && len(n.Missing()) == 0
+	return json.Unmarshal(withoutBOM(b), &n) == nil && len(n.Missing()) == 0
 }
 
 // nodeConfigOwner is the machine_id a node config records: "" when it has none or
@@ -314,7 +321,7 @@ func nodeConfigOwner(path string) string {
 	var v struct {
 		MachineID string `json:"machine_id"`
 	}
-	if json.Unmarshal(b, &v) != nil {
+	if json.Unmarshal(withoutBOM(b), &v) != nil {
 		return ""
 	}
 	return strings.TrimSpace(v.MachineID)
@@ -389,7 +396,7 @@ func ReadNodeConfig(getenv func(string) string, goos, userHome string, readFile 
 		return n
 	}
 	if err == nil {
-		err = json.Unmarshal(b, &n)
+		err = json.Unmarshal(withoutBOM(b), &n)
 	}
 	if err != nil {
 		return NodeConfig{Err: fmt.Errorf("node config %s: %w", path, err)}
