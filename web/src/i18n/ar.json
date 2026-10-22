@@ -792,6 +792,7 @@
   "nav.guide": "دليل القنوات",
   "nav.admin.channels": "القنوات",
   "guide.title": "دليل القنوات",
+  "guide.watchChannel": "شاهد القناة {number}، {name}",
   "guide.toolbar": "عناصر التحكم بالدليل",
   "guide.category": "الفئة",
   "guide.allCategories": "كل الفئات",

@@ -13,7 +13,7 @@
 // uses, with `now` reconciled to the guide payload's `server_time` so a
 // wrong client clock can't misplace the line (EC4).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { Card } from "@ds/components/Card/Card";
 import { Modal } from "@ds/components/Modal/Modal";
@@ -229,11 +229,18 @@ export function Guide() {
             const cells = collapseFiller(programs);
             return (
               <div className="mkt-guide__row" key={channel.id}>
-                <div className="mkt-guide__chanhead">
+                <Link
+                  className="mkt-guide__chanhead"
+                  to={`/live/${channel.number}`}
+                  aria-label={t("guide.watchChannel", {
+                    number: channel.number,
+                    name: channel.name,
+                  })}
+                >
                   <ChannelLogo src={channelLogo(channel)} />
                   <span className="mkt-guide__channum">{channel.number}</span>
                   <span className="mkt-guide__channame">{channel.name}</span>
-                </div>
+                </Link>
                 <div className="mkt-guide__track" style={{ width: gridWidth }}>
                   {cells.length === 0 && (
                     <div

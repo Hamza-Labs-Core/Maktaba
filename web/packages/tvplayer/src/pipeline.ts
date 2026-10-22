@@ -17,7 +17,7 @@ export interface VideoPipelineOptions {
   /** The visible element's mode (native / hls / unsupported). */
   onMode?: (mode: LiveMode) => void;
   /** The browser refused sound without a tap: the picture plays muted. */
-  onMutedByPolicy?: () => void;
+  onMutedByPolicy?: (muted: boolean) => void;
   loadHls?: LiveOptions["loadHls"];
   timeoutMs?: number;
 }
@@ -46,6 +46,8 @@ export class VideoPipeline implements Pipeline {
   /** The element prepare is loading (the visible one when nothing plays yet). */
   private preparing: number | null = null;
   private wantMuted = false;
+  /** The browser, not the viewer, muted the picture: not carried to the next channel. */
+  private policyMuted = false;
   private volume = 1;
 
   constructor(
@@ -73,7 +75,9 @@ export class VideoPipeline implements Pipeline {
     const el = this.els[idx];
     const cur = this.els[this.active];
     if (this.handles[this.active]) {
-      this.wantMuted = cur.muted;
+      // a mute the browser forced is not the viewer's choice: the next channel asks
+      // for sound again (switching is itself a tap, so it is usually allowed now)
+      if (!this.policyMuted) this.wantMuted = cur.muted;
       this.volume = cur.volume;
     }
     el.muted = true; // a hidden element never makes a sound (and may autoplay)
@@ -147,13 +151,16 @@ export class VideoPipeline implements Pipeline {
     this.active = next;
     el.volume = this.volume;
     el.muted = this.wantMuted;
+    if (this.policyMuted) this.o.onMutedByPolicy?.(false);
+    this.policyMuted = false;
     const p = el.play?.();
     if (p && typeof p.catch === "function") {
       p.catch(() => {
         // sound needs a tap: keep the picture, muted
         el.muted = true;
+        this.policyMuted = true;
         void el.play?.()?.catch?.(() => {});
-        this.o.onMutedByPolicy?.();
+        this.o.onMutedByPolicy?.(true);
       });
     }
     if (old !== next) this.dropStandby(old);

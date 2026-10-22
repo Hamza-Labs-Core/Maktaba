@@ -242,6 +242,24 @@ describe("Player (live channel)", () => {
     expect(del).not.toHaveBeenCalled();
   });
 
+  it("shows tap-for-sound on the picture when the browser refuses sound, and unmutes", async () => {
+    mockGet();
+    HTMLMediaElement.prototype.play = vi.fn(function (this: HTMLMediaElement) {
+      return this.muted ? Promise.resolve() : Promise.reject(new Error("NotAllowedError"));
+    });
+    await startOn("1");
+    await flushMicrotasks();
+    const overlay = await screen.findByTestId("live-unmute-overlay");
+    expect(active().muted).toBe(true);
+    HTMLMediaElement.prototype.play = vi.fn(() => Promise.resolve());
+    act(() => overlay.click());
+    expect(active().muted).toBe(false);
+    act(() => {
+      fireEvent(active(), new Event("volumechange"));
+    });
+    await waitFor(() => expect(screen.queryByTestId("live-unmute-overlay")).toBeNull());
+  });
+
   it("shows the tuning card at once, then the channel logo in the tune banner", async () => {
     mockGet();
     renderPlayer("1");

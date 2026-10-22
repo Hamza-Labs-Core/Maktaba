@@ -121,6 +121,18 @@ describe("Guide (EPG grid)", () => {
     expect(await screen.findByText("LIVE PLAYER")).toBeInTheDocument();
   });
 
+  // The channel's name, number and logo tune too, not only the programme.
+  it("tunes when the channel name is clicked", async () => {
+    get.mockResolvedValue(guidePayload());
+    renderGuide();
+    const grid = await screen.findByTestId("guide-grid");
+    const heads = grid.querySelectorAll<HTMLAnchorElement>("a.mkt-guide__chanhead");
+    expect(heads.length).toBeGreaterThan(0);
+    expect(heads[0].getAttribute("href")).toMatch(/^\/live\/\d+$/);
+    heads[0].click();
+    expect(await screen.findByText("LIVE PLAYER")).toBeInTheDocument();
+  });
+
   // TC4 — clicking a future cell opens details, does not tune.
   it("opens details for a future cell without tuning", async () => {
     get.mockResolvedValue(guidePayload());

@@ -96,6 +96,48 @@ describe("VideoPipeline", () => {
     expect(b.muted).toBe(false);
   });
 
+  it("a mute the browser forced is not carried to the next channel", async () => {
+    const a = video(true);
+    const b = video(true);
+    // the browser refuses sound on the first channel
+    a.play = vi.fn(() => (a.muted ? Promise.resolve() : Promise.reject(new Error("NotAllowed"))));
+    const policy: boolean[] = [];
+    const p = new VideoPipeline([a, b], { onMutedByPolicy: (m) => policy.push(m) });
+    const ac = new AbortController();
+    const first = p.prepare({ url: "/one.m3u8", release() {} }, ac.signal);
+    a.dispatchEvent(new Event("playing"));
+    await first;
+    p.promote();
+    await flush();
+    expect(a.muted).toBe(true);
+    expect(policy).toEqual([true]);
+    // the next channel asks for sound again, and gets it
+    const second = p.prepare({ url: "/two.m3u8", release() {} }, ac.signal);
+    b.dispatchEvent(new Event("playing"));
+    await second;
+    p.promote();
+    await flush();
+    expect(b.muted).toBe(false);
+    expect(policy).toEqual([true, false]);
+  });
+
+  it("keeps a mute the viewer chose on the next channel", async () => {
+    const a = video(true);
+    const b = video(true);
+    const p = new VideoPipeline([a, b]);
+    const ac = new AbortController();
+    const first = p.prepare({ url: "/one.m3u8", release() {} }, ac.signal);
+    a.dispatchEvent(new Event("playing"));
+    await first;
+    p.promote();
+    a.muted = true; // the viewer muted
+    const second = p.prepare({ url: "/two.m3u8", release() {} }, ac.signal);
+    b.dispatchEvent(new Event("playing"));
+    await second;
+    p.promote();
+    expect(b.muted).toBe(true);
+  });
+
   it("drops a hidden load that is aborted or fails", async () => {
     const a = video(true);
     const b = video(true);
