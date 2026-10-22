@@ -210,7 +210,7 @@ def test_refine_is_on_by_default_and_can_be_switched_off(
 def test_a_worker_without_the_model_keeps_whisper(monkeypatch: pytest.MonkeyPatch) -> None:
     from maktaba_pipeline.stt import cohere
 
-    def missing(model: str, share: Any = None) -> Any:
+    def missing(model: str, share: Any = None, settings: Any = None) -> Any:
         raise RuntimeError("gated repo")
 
     monkeypatch.setattr(cohere, "recogniser", missing)
@@ -236,7 +236,7 @@ def test_refine_hears_a_files_stretches_together_in_order() -> None:
 def test_a_merge_error_keeps_the_transcript(monkeypatch: pytest.MonkeyPatch) -> None:
     from maktaba_pipeline.stt import cohere
 
-    monkeypatch.setattr(cohere, "recogniser", lambda _m, _share=None: lambda _s: ["x"])
+    monkeypatch.setattr(cohere, "recogniser", lambda _m, _share=None, _ws=None: lambda _s: ["x"])
     monkeypatch.setattr(cohere, "dictionary", lambda: None)
 
     def broken(*_a: Any, **_k: Any) -> Any:
@@ -250,3 +250,21 @@ def test_a_merge_error_keeps_the_transcript(monkeypatch: pytest.MonkeyPatch) -> 
         "failed": "ValueError: bug",
     }
     assert t.sentences[0].text == "قال الشيخ"
+
+
+def test_a_missing_dictionary_is_recorded(monkeypatch: pytest.MonkeyPatch) -> None:
+    from maktaba_pipeline.stt import cohere
+
+    monkeypatch.setattr(cohere, "recogniser", lambda *_a: lambda _s: ["قال الشيخ"])
+    monkeypatch.setattr(cohere, "dictionary", lambda: None)
+    out = stage._refine(transcript(sentence("قال الشيخ")), silence(), "m")
+    assert out["dictionary"] == "unavailable" and out["source"] == "hf"
+
+
+def test_the_camel_data_folder_is_made_before_camel_tools_needs_it(tmp_path: Any) -> None:
+    from maktaba_pipeline import model_dirs
+
+    env = {"CAMELTOOLS_DATA": str(tmp_path / "models" / "camel_tools")}
+    model_dirs.ensure_camel_data(env)
+    assert (tmp_path / "models" / "camel_tools").is_dir()
+    model_dirs.ensure_camel_data({})  # unset: CAMeL Tools' own default, nothing made

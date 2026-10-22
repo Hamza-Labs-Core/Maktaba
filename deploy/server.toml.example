@@ -39,6 +39,16 @@ web_listen = "0.0.0.0:8088"
 admin_addr = ":9100"
 # Streaming service public bind.
 stream_addr = ":8081"
+# Announce this machine on the LAN over multicast DNS (Epic 35 story 35.11), so
+# the apps and the home's other machines find it: "on" (default) or "off", as
+# `serve --no-mdns` does for one run. An install moved into the Windows app
+# (Epic 38 story 38.13) keeps its --no-mdns here.
+# mdns = "on"
+# What this machine is (Epic 35 story 35.8): "auto" (default: a joined node
+# config makes it a full node of its home), "home" (never a node: no role reads
+# a node config, whatever one this machine holds) or "node". MAKTABA_ROLE=home
+# does the same.
+# role = "auto"
 
 [database]
 # SQLite (default, great for libraries under ~5 TB):
@@ -98,7 +108,13 @@ roots = ["/mnt/videos", "/mnt/movies"]
 # model = "mlx-community/whisper-large-v3-turbo"
 # The second listen that corrects Whisper's words: "on" (default) / "off"
 # (MAKTABA_STT_REFINE), and its model (MAKTABA_STT_REFINE_MODEL; a repo or a
-# local folder, default CohereLabs/cohere-transcribe-arabic-07-2026).
+# local folder, default CohereLabs/cohere-transcribe-arabic-07-2026). On Windows
+# and Linux it runs on the NVIDIA GPU beside Whisper, when the GPU holds both
+# (10 GB and up on Windows, 8 GB and up elsewhere; compute capability 7.5 and up,
+# driver R580 and up), its model can be had (a Hugging Face login, a copy here or
+# a home's on the share) and the GPU has the room free; the GPU's tiers then give
+# Whisper a smaller batch. Elsewhere a transcript keeps Whisper's words and says
+# why, and its model is not downloaded.
 # refine = "on"
 # refine_model = "CohereLabs/cohere-transcribe-arabic-07-2026"
 # Transcription workers beside the main worker (each one batched Whisper; the
@@ -107,8 +123,8 @@ roots = ["/mnt/videos", "/mnt/movies"]
 # off below 25% free, as the home Mac runs; smaller Macs less), from the GPU's
 # memory on Windows and Linux with an NVIDIA GPU of 4 GB or more (8 GB: one
 # worker), none on a machine that transcribes on the CPU (the main worker does).
-# -1: none. [pipeline] instances, when set, wins. With refine on, a Windows or
-# Linux machine (no second listen there yet) plans none, and its main worker
+# -1: none. [pipeline] instances, when set, wins. With refine on, a machine that
+# cannot run the second listen (above) plans none, and its main worker
 # transcribes only when Settings, Transcription, "Transcribe without the second
 # listen" is on. More workers than planned share its GPU memory, CPU threads and
 # audio hours. None at all while your own MAKTABA_PIPELINE_EXCLUDE_STAGES names
@@ -122,13 +138,14 @@ roots = ["/mnt/videos", "/mnt/movies"]
 # gpu_cache_gb = 0
 # min_free_pct = 0
 # Files a worker decodes together, one 30 s window of each per pass
-# (MAKTABA_STT_BATCH). 0: sized from the GPU's memory (8 GB: 8), 4 on the CPU,
-# 32 on Apple Silicon.
+# (MAKTABA_STT_BATCH). 0: sized from the GPU's memory (8 GB: 8; 12 GB: 16, or 8
+# beside the second listen), 4 on the CPU, 32 on Apple Silicon.
 # batch = 0
 # Windows and Linux (CTranslate2) only. Where: "auto" (the NVIDIA GPU when CUDA
 # works there, else the CPU), "cuda", "cuda:1" or "cpu" (MAKTABA_STT_DEVICE).
-# Precision: "auto" (float16 on the GPU, int8_float16 on one under 7 GB, int8 on
-# the CPU) or float16, int8_float16, int8, int8_float32, float32
+# Precision: "auto" (float16 on the GPU, int8_float16 on one under 7 GB or on an
+# 8 GB one beside the second listen outside Windows, int8 on the CPU) or
+# float16, int8_float16, int8, int8_float32, float32
 # (MAKTABA_STT_COMPUTE_TYPE). Threads on the CPU, 0: half the logical CPUs
 # (MAKTABA_STT_CPU_THREADS).
 # device = "auto"

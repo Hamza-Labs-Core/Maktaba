@@ -40,7 +40,7 @@ Output: `<target>/release/bundle/nsis/Maktaba_<version>_x64-setup.exe`, with `<t
                lib\  share\
     ffmpeg\    ffmpeg.exe ffprobe.exe
     python\    CPython 3.12 (python.exe), stdlib precompiled
-    pipeline\  maktaba_pipeline-<v>-py3-none-any.whl  constraints.txt
+    pipeline\  maktaba_pipeline-<v>-py3-none-any.whl  constraints.txt  constraints-cuda.txt
     migrations\  the database's schema (shared/db/migrations): maktaba-api finds it beside bin\
     licenses\  postgresql*.txt msvc-runtime.txt ffmpeg*.txt python.txt
     payload.json   versions, sources, SHA-256s (the supervisor compares it across updates)

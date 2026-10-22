@@ -59,6 +59,15 @@ jobs:
         working-directory: cmd/maktaba-server
         run: go test -count=1 ./internal/config
 
+      # Epic 38 story 38.13: moving an install this PC runs (a scheduled task and its
+      # script) into the app. On windows-latest a real task is registered, its server
+      # found and stopped, the task removed and registered again from its saved XML.
+      - name: maktaba-server (moving an install into the app)
+        working-directory: cmd/maktaba-server
+        env:
+          MAKTABA_TEST_WINDOWS_TASK: ${{ runner.os == 'Windows' && '1' || '' }}
+        run: go test -count=1 -v ./internal/adopt
+
       # Epic 38 story 38.5 on Windows itself: every role, the venv bootstrap and
       # a setup step are asked to stop with CTRL_BREAK, each held from the check
       # that it still runs to the send (internal/ctrlbreak), so the event never

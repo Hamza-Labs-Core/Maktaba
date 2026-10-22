@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/adopt"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dsn"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
@@ -58,6 +59,11 @@ func stepFinish(s *setupRun, _ json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	// never a second copy of a node that runs here outside the app (check says
+	// so first; this is the last word before anything is written)
+	if code, msg, kv := nodeHere(); code != "" {
+		return nil, failStep(code, "", "%s", msg).with(kv...)
+	}
 	if p.Admin == nil || p.Admin.PasswordHash == "" {
 		return nil, failStep("admin_missing", "", "Create the admin account first (the admin step).")
 	}
@@ -68,6 +74,12 @@ func stepFinish(s *setupRun, _ json.RawMessage) (any, error) {
 	}
 	if p.PathMap != "" {
 		cfg.Media.PathMap = p.PathMap
+	}
+	// a joined node config that no install here runs (one removed, or a move
+	// undone, left it): this setup is a new home beside it, never that node
+	// (check said so)
+	if _, _, ok := nodeLeftover(); ok && (cfg.Server.Role == "" || strings.EqualFold(cfg.Server.Role, "auto")) {
+		cfg.Server.Role = "home"
 	}
 	if err := ensureDataDir(cfg.Server.DataDir); err != nil {
 		return nil, err
@@ -106,6 +118,11 @@ func stepFinish(s *setupRun, _ json.RawMessage) (any, error) {
 	}
 	// done: nothing waits any more (the password's hash included)
 	if err := os.Remove(s.pendingPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	// a move into the app that was undone (adopt --undo) no longer keeps the
+	// status step from counting this setup
+	if err := adopt.ForgetUndone(s.cfg.StateDir()); err != nil {
 		return nil, err
 	}
 	return result, nil

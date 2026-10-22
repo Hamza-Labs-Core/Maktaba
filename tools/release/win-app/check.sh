@@ -448,6 +448,17 @@ if [ -s "$PAYLOAD/pipeline/constraints.txt" ] && grep -q -- '--hash=sha256:' "$P
 else
     fail "constraints.txt missing or without hashes"
 fi
+# the default set is PyPI's (torch's CPU build); the cuda set has torch's CUDA build and names
+# PyTorch's index (story 38.9)
+if grep -q -- '--extra-index-url' "$PAYLOAD/pipeline/constraints.txt"; then
+    fail "constraints.txt names an index beside PyPI (the cuda set's)"
+fi
+if [ -s "$PAYLOAD/pipeline/constraints-cuda.txt" ] && grep -q -- '--hash=sha256:' "$PAYLOAD/pipeline/constraints-cuda.txt" \
+    && grep -qE '^torch==[^ ;]*\+cu' "$PAYLOAD/pipeline/constraints-cuda.txt"; then
+    ok "constraints-cuda.txt (hashed, torch's CUDA build)"
+else
+    fail "constraints-cuda.txt missing, without hashes or without torch's CUDA build"
+fi
 for heavy in torch nvidia ctranslate2 mlx; do
     if find "$PAYLOAD" -iname "${heavy}*" -print -quit | grep -q .; then fail "$heavy is in the payload (it downloads on first run)"; fi
 done
@@ -467,6 +478,7 @@ assert sys.version.split()[0] == d["python"]["version"], (sys.version, d["python
 sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
 assert sha(root / "pipeline" / d["pipeline"]["wheel"]) == d["pipeline"]["sha256"], "the wheel's sha256"
 assert sha(root / "pipeline" / "constraints.txt") == d["pipeline"]["constraints_sha256"], "constraints.txt's sha256"
+assert sha(root / "pipeline" / "constraints-cuda.txt") == d["pipeline"]["constraints_cuda_sha256"], "constraints-cuda.txt's sha256"
 for lib in d["postgres"]["libraries"]:
     assert (root / "postgres" / "bin" / lib).is_file(), f"postgres/bin/{lib}"
 assert d["msvc_runtime"]["version"], "msvc_runtime"

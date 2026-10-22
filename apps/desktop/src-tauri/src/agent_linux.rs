@@ -33,7 +33,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::{Action, BundlePaths, LoginItem};
-use crate::lang::t;
+use crate::lang::{fill, Lang};
 use crate::setup::{self, Progress, StepError};
 
 /// `maktaba-server service status --json` (service.AppStatus in
@@ -295,19 +295,11 @@ pub fn plan(st: &RuntimeStatus) -> Plan {
     }
 }
 
-/// The user's message for an app older than this machine's server.
+/// The user's message for an app older than this machine's server, in the
+/// system's UI language (lang.rs).
 pub fn older_message(app: &str, server: &str) -> String {
-    t(
-        &format!(
-            "This Maktaba app ({app}) is older than the Maktaba this computer already runs \
-             ({server}). The server keeps running {server}; to manage it from here, install \
-             Maktaba {server} or newer."
-        ),
-        &format!(
-            "تطبيق مكتبة هذا ({app}) أقدم من إصدار مكتبة الذي يعمل على هذا الحاسوب ({server}). \
-             يواصل الخادم العمل بالإصدار {server}؛ ولإدارته من هنا ثبّت مكتبة {server} أو أحدث."
-        ),
-    )
+    let words = Lang::system().words();
+    fill(words.older_app, &[("app", app), ("server", server)])
 }
 
 /// What sync_runtime did.
