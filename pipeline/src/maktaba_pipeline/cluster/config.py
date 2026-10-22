@@ -926,6 +926,8 @@ _USER_ONLY_DACL = re.compile(r"D:([A-Z]*)\(A;;(FA|GA|0x1f01ff);;;([^)]+)\)")
 
 def _dacl_sddl(descriptor: Any) -> str:
     """The DACL of a security descriptor as SDDL."""
+    if sys.platform != "win32":
+        raise OSError("a Windows call")
     import ctypes
     from ctypes import wintypes
 
