@@ -4,12 +4,18 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/channel"
 )
 
 // A write of node.json that does not end (its lock taken a moment ago, node.json
-// missing) never makes this host the home: after the readers' wait NodeMode is an
-// error, so streaming does not start, rather than run as the home.
+// missing) never makes this host the home: after the readers' wait (channel.ReadWait)
+// NodeMode is an error, so streaming does not start, rather than run as the home.
 func TestNodeModeDuringAWriteThatDoesNotEnd(t *testing.T) {
+	prev := channel.ReadWait
+	channel.ReadWait = 20 * time.Millisecond
+	t.Cleanup(func() { channel.ReadWait = prev })
 	dir := t.TempDir()
 	path := filepath.Join(dir, "node.json")
 	if err := os.WriteFile(filepath.Join(dir, ".node.json.lock"), nil, 0o600); err != nil {

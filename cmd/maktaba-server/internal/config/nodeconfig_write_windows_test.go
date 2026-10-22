@@ -245,16 +245,23 @@ func TestSetNodeConfigAsideFailsBeforeLeavingAWholeOne(t *testing.T) {
 // ReplaceFileW and an antivirus do): no one else can open it until release.
 func holdUnshared(t *testing.T, path, body string) (release func()) {
 	t.Helper()
-	writeAt(t, path, body)
-	name, err := windows.UTF16PtrFromString(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// the handle that makes it, as a write's ReplaceFileW and the pipeline's temp file
+	// hold theirs: no sharing from the start
+	f, err := CreateUserOnly(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	h, err := windows.CreateFile(name, windows.GENERIC_READ, 0, nil, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, 0)
-	if err != nil {
+	if _, err := f.WriteString(body); err != nil {
 		t.Fatal(err)
 	}
-	return func() { _ = windows.CloseHandle(h) }
+	if _, err := os.ReadFile(path); !isBusy(err) { //nolint:gosec // the test's temp file
+		_ = f.Close()
+		t.Fatalf("%s can be read while it is held: %v", path, err)
+	}
+	return func() { _ = f.Close() }
 }
 
 // The review's case: a write's backup and temp file held open without sharing, its lock

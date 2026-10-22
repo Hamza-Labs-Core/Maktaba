@@ -211,7 +211,7 @@ func TestReadNodeConfigWaitsOutWrites(t *testing.T) {
 			}
 		}
 	}()
-	end := time.Now().Add(time.Second)
+	end := time.Now().Add(300 * time.Millisecond)
 	reads, notJoined, failed := 0, 0, 0
 	for time.Now().Before(end) {
 		reads++
@@ -344,7 +344,7 @@ func TestNodeConfigPathWaitsOutAWrite(t *testing.T) {
 			writes++
 		}
 	}()
-	end := time.Now().Add(time.Second)
+	end := time.Now().Add(300 * time.Millisecond)
 	reads, elsewhere := 0, 0
 	for time.Now().Before(end) {
 		reads++

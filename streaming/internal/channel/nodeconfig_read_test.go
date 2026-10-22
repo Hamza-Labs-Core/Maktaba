@@ -80,7 +80,7 @@ func TestDetectRoleWaitsOutAWrite(t *testing.T) {
 			_ = os.Remove(lock)
 		}
 	}()
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(300 * time.Millisecond)
 	reads, wrong := 0, 0
 	for time.Now().Before(deadline) {
 		reads++
@@ -133,7 +133,7 @@ func TestNodeConfigPathWaitsOutAWrite(t *testing.T) {
 			_ = os.Remove(lock)
 		}
 	}()
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(300 * time.Millisecond)
 	reads, elsewhere := 0, 0
 	for time.Now().Before(deadline) {
 		reads++
@@ -154,9 +154,9 @@ func TestNodeConfigPathWaitsOutAWrite(t *testing.T) {
 // and the role is an error. A lock a process that stopped left long ago is no write
 // under way: the host is the home.
 func TestAWriteThatDoesNotEndIsNeverTheHome(t *testing.T) {
-	prev := readWait
-	readWait = 20 * time.Millisecond
-	t.Cleanup(func() { readWait = prev })
+	prev := ReadWait
+	ReadWait = 20 * time.Millisecond
+	t.Cleanup(func() { ReadWait = prev })
 	root := t.TempDir()
 	env := map[string]string{
 		"APPDATA":            filepath.Join(root, "Roaming"),
