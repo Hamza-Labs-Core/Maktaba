@@ -360,6 +360,13 @@ up on Windows, 7.5 elsewhere: the pipeline's own threshold, kept equal by a test
 give Whisper a smaller batch to leave it room: 10 GB: 4 files; 12 GB: 8; 16 GB: 16; 20 GB and
 up: 32; 40 GB and up: two workers of 24; outside Windows an 8 GB card: 4 files in
 `int8_float16`. A smaller GPU keeps Whisper's tiers (its transcripts keep Whisper's words).
+More workers than the tier's each load the second listen too: they share what the card gives
+a process (on Windows 1 GiB less) once each has Cohere's 5.81 GiB (4.71 elsewhere: its weights,
+what loading them adds, its smallest batch; the pipeline's figures, kept equal by a test). The
+second listen's tiers and workers are planned only where the venv's torch is a CUDA build: the
+engine probe reads torch's `version.py` too (a CPU build, or no torch, plans none; a probe that
+cannot say is not held against the machine), and the GPU is the first nvidia-smi lists, the one
+the pipeline's `cuda:0` is (setup's check reads the same one, kept equal by a test).
 
 **Where transcription runs** (review of 38.8). The operator's own stage selection always
 stands: with `transcribe` in `MAKTABA_PIPELINE_EXCLUDE_STAGES` (or a `MAKTABA_PIPELINE_STAGES`

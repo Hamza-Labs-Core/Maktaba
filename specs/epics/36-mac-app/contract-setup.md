@@ -95,8 +95,10 @@ more and an R580 driver or newer, which the pipeline's room check and the superv
 too. Where it cannot, `{"runs": false, "code", "params"}` names why, and the same finding is among
 the `warnings`: `second_listen_no_gpu`, `second_listen_gpu_small` (`gpu`, `have_bytes`,
 `need_bytes`), `second_listen_gpu_old` (`gpu`, `compute`), `second_listen_driver_old` (`gpu`,
-`driver`, `need`), `second_listen_intel_mac`. A value nvidia-smi does not report is not held against
-the GPU. The models step then asks for no Hugging Face sign-in (for a model that would never run),
+`driver`, `need`), `second_listen_intel_mac`, `second_listen_arch` (`arch`: Linux or Windows on
+arm64, where neither CTranslate2's nor torch's CUDA build runs). The GPU is the first nvidia-smi
+lists, the one transcription uses and the supervisor plans on. A value nvidia-smi does not report
+is not held against the GPU. The models step then asks for no Hugging Face sign-in (for a model that would never run),
 though the NAS copy can still be chosen there, and Whisper's words are kept. `runs` lines are `setup.check.run.<role>` (the pipeline by its `workers`: `pipeline`,
 `pipelineOne`, `pipelineWorkers`, then `onGpu`). A platform adds its own findings through
 `platformChecks` (setup_steps.go; Linux's glibc, systemd user manager and linger come with Epic 39).

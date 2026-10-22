@@ -3546,6 +3546,7 @@
   "setup.check.note.second_listen_gpu_old": "{gpu} أقدم مما يدعمه الاستماع الثاني (قدرة الحوسبة {compute}، ويحتاج إلى Turing أو أحدث)، فتبقى كلمات Whisper كما هي ولا حاجة إلى تسجيل الدخول في Hugging Face.",
   "setup.check.note.second_listen_driver_old": "تعريف NVIDIA {driver} أقدم مما يحتاج إليه الاستماع الثاني: حدِّثه إلى {need} أو أحدث. وإلى ذلك الحين تبقى كلمات Whisper كما هي.",
   "setup.check.note.second_listen_intel_mac": "في هذا الـMac معالج Intel: الاستماع الثاني يعمل على Apple Silicon فقط، فتبقى كلمات Whisper كما هي.",
+  "setup.check.note.second_listen_arch": "يعمل الاستماع الثاني على Apple Silicon، أو على حاسوب x86-64 فيه بطاقة رسوميات من NVIDIA، لا على {machine} ({arch})، فتبقى كلمات Whisper كما هي ولا حاجة إلى تسجيل الدخول في Hugging Face.",
   "setup.check.note.node_config_other_pc": "إعدادات الجهاز في {path} تخصّ حاسوبًا آخر: ليس {machine} ذلك الجهاز، فلا يعمل لأي جهاز رئيسي بعد. ليعمل {machine} لجهاز رئيسي، أضِفه جهازًا مستقلًّا (المساعدة: الأجهزة، إضافة جهاز)، فتُحفظ إعداداته على {machine} وحده.",
   "setup.error.username_length": "اسم المستخدم من حرف واحد إلى {max} حرفًا.",
   "setup.error.username_space": "لا يجوز أن يبدأ اسم المستخدم أو ينتهي بمسافة.",
