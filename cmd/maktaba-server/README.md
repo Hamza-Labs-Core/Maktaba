@@ -56,7 +56,8 @@ maktaba-server serve
 | `adduser`    | Seed the first admin user (delegates to `maktaba-api`)         |
 | `keys`       | JWT signing-key management (delegates to `maktaba-api`)        |
 | `migrate-from-dev` | Move a Mac running `tools/dev/stack.sh` + Docker Postgres into Maktaba.app (`--dry-run`, `--verify`, `--finalize`; [runbook](../../specs/epics/36-mac-app/migrate-from-dev.md)) |
-| `setup --json --step <name>` | The desktop app's setup screens, one step per run: `status`, `check`, `admin`, `libraries`, `models`, `plex`, `venv`, `llm` (the language model, Epic 36 story 36.11), `finish` ([contract](../../specs/epics/36-mac-app/contract-setup.md)) |
+| `adopt` | The Maktaba a PC runs outside the Windows app: list it, `--plan <id>` (what moving it in does), `--verify` (after the move: removes the old task), `--undo` (runs the old install again); the move itself is setup's `adopt` step ([spec](../../specs/epics/38-windows-app/move-an-install.md)) |
+| `setup --json --step <name>` | The desktop app's setup screens, one step per run: `status`, `check`, `admin`, `libraries`, `models`, `plex`, `venv`, `llm` (the language model, Epic 36 story 36.11), `finish`, `adopt` (find / plan / move / verify an install this PC runs) ([contract](../../specs/epics/36-mac-app/contract-setup.md)) |
 | `service`    | The Linux app's systemd user unit: `install` (`--start`, `--replace`), `uninstall`, `start`, `stop`, `restart`, `linger [--off]`, `status`; `--json` for the app ([contract](../../specs/epics/39-linux-app/contract-runtime.md#5-maktaba-server-service--linux-a-systemd-user-unit)) |
 | `runtime`    | The Linux app's runtime copy of the payload: `install` (`--from`, `--owner`, `--activate`; the first one becomes `current`), `activate <dir\|previous>`, `status`, `prune`; a version older than the newest this machine ran needs `--allow-downgrade`; `--json` for the app ([contract](../../specs/epics/39-linux-app/contract-runtime.md#3-maktaba-server-runtime-)) |
 

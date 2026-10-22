@@ -83,6 +83,11 @@ maktaba-server setup --service [--user|--system]   # only (re)write the OS servi
 | macOS | `~/Library/Application Support/Maktaba/server` | LaunchAgent (`--system`: LaunchDaemon, `/usr/local/var/maktaba`) |
 | Windows | `%LOCALAPPDATA%\Maktaba` | logon task "Maktaba" (`--system`: Windows service, `%ProgramData%\Maktaba`) |
 
+On Windows the Maktaba app (Epic 38, `Maktaba_<ver>_x64-setup.exe` on the release)
+is the install: it carries the server, Postgres, ffmpeg and Python, runs setup in
+its window and starts the server at sign-in. Its setup finds an install made here
+(the "Maktaba" task) and moves it into the app.
+
 The conversion copies (does not move) `maktaba-server`, `maktaba-api`,
 `maktaba-streaming` and `maktaba-launcher` into `bin/releases/<version>/`,
 records their digests in `.verified` (`identity: "migrated"`), writes

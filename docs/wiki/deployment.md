@@ -298,3 +298,51 @@ maktaba-pipeline scan --library NAME
 maktaba-pipeline reprocess --library NAME --from-stage transcribe
 maktaba-pipeline doctor             # ffmpeg, GPU, DB, write perms, model cache
 ```
+
+---
+
+## 12. Windows — the Maktaba app (Epic 38)
+
+On Windows the home server is the desktop app: one NSIS installer
+(`Maktaba_<ver>_x64-setup.exe`, built by `make win-app` and the release's
+`desktop-release.yml`) holds the Tauri shell and the server payload. Spec:
+[`specs/epics/38-windows-app/`](../../specs/epics/38-windows-app/README.md).
+
+```
+%LOCALAPPDATA%\Maktaba\          current-user install, no administrator
+  Maktaba.exe  uninstall.exe
+  server\     bin\ (maktaba-server, -api, -streaming, -launcher), postgres\ (16),
+              ffmpeg\, python\ (3.12), pipeline\ (wheel + hashed constraints),
+              migrations\, licenses\, payload.json
+  server.toml  keys\  node.json  data\  postgres\  backups\  venv\  logs\  state\
+```
+
+- **Setup** runs in the app (`maktaba-server setup --json`, the steps every
+  platform shares); the first start builds `venv\`, the pipeline's Python
+  environment, from the payload's wheel and hashed constraints.
+- **The server at sign-in.** A sign-in task of the user (`\Maktaba Server <SID>`,
+  30 s after sign-in, a 5-minute watchdog) runs `Maktaba.exe --server-agent`,
+  which runs `server\bin\maktaba-launcher.exe --app-bundle <install>\server serve`
+  with no console window. Not a Windows service: the user's mapped NAS drives
+  exist only in the user's session. Stopping goes through the named event
+  `Local\Maktaba.Server.Stop`. Each role is then asked to stop with CTRL_BREAK and
+  drains (Postgres stops through `pg_ctl`'s fast shutdown); a `serve` with no console
+  of its own cannot send CTRL_BREAK and ends its children instead.
+- **Ports** are `server.toml`'s, as on any install (web 8088, API 8080,
+  streaming 8081, the supervisor's `/processes` on 127.0.0.1:9103); the bundled
+  Postgres listens on 127.0.0.1 only.
+- **Logs**: `logs\server.log` (the agent and the launcher) beside each role's own;
+  the tray's "Open logs" opens the folder.
+- **Updates** are signed (the Tauri updater key; from the first tagged release
+  that includes the app): the app's updater stops the server, runs the new installer, and
+  starts the server from the new payload; its first start dumps the database
+  (`backups\pre-<old>-to-<new>.dump`), migrates, and restores the dump if the
+  migration fails.
+- **Uninstall** removes the program and the sign-in task, never the state
+  (`server.toml`, `keys\`, `data\`, the database).
+- **An install made before** (`maktaba-server setup --service`'s "Maktaba" task,
+  the node installer's `maktaba-node` tasks, a script) is found by the app's
+  setup, which moves it in and keeps the old folder ([move-an-install](../../specs/epics/38-windows-app/move-an-install.md)).
+  Its inbound firewall rules are copied for the app's programs (one consent prompt;
+  a standard user's move is refused, since only an administrator can allow them),
+  its `node.json` stays where it is, and Restore the old install undoes the move.

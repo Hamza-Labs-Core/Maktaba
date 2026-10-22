@@ -148,7 +148,7 @@ func checkArtifact(a Artifact, sums Checksums, m *Manifest) error {
 	if got != want {
 		return fail(ErrChecksum, a.Name, fmt.Sprintf("sha256 %s, checksums.txt lists %s", got, want), nil)
 	}
-	if m.Pipeline != nil && a.Name == m.Pipeline.Constraints {
+	if m.Pipeline.IsConstraints(a.Name) {
 		data := a.Data
 		if data == nil {
 			b, err := os.ReadFile(a.Path)

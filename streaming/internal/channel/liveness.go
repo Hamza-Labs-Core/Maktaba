@@ -27,10 +27,11 @@ func (e *Engine) Responsive(ctx context.Context) error {
 	}
 	done := make(chan struct{})
 	go func() {
-		defer pending.Store(false)
 		e.mu.Lock()
 		e.mu.Unlock() //nolint:staticcheck // SA2001: taking the lock is the probe
 		_ = e.reg.size()
+		// free before done: the probe after one that answered must not find it pending
+		pending.Store(false)
 		close(done)
 	}()
 	select {

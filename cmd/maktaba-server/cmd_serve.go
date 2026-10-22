@@ -72,7 +72,7 @@ In container/orchestrated deployments, start one role per container:
 	}
 	cmd.Flags().StringVar(&role, "role", "", "run a single role: api|streaming|pipeline|web|tv-slot (default: all)")
 	cmd.Flags().StringVar(&slot, "slot", "", "with --role tv-slot: the instance, blue|green|amber")
-	cmd.Flags().BoolVar(&noMDNS, "no-mdns", false, "disable mDNS LAN advertisement")
+	cmd.Flags().BoolVar(&noMDNS, "no-mdns", false, "disable mDNS LAN advertisement (as [server] mdns = \"off\")")
 	cmd.Flags().BoolVar(&noWeb, "no-web", false, "do not serve the embedded web UI in-process")
 	cmd.Flags().StringVar(&binDir, "bin-dir", "", "directory to find sibling maktaba-api/maktaba-streaming binaries")
 	cmd.Flags().IntVar(&graceS, "shutdown-grace", 30, "seconds to let children drain on shutdown")
@@ -135,7 +135,7 @@ func runServe(cfg config.Config, opts serveOptions) error {
 
 	// Epic 35 story 35.11: the supervisor is the machine's one mDNS advertiser
 	// (home or node), re-publishing when what it says changes.
-	if !opts.noMDNS && (serveWeb || containsRole(roles, supervisor.RoleAPI)) {
+	if !opts.noMDNS && cfg.Server.MDNSOn() && (serveWeb || containsRole(roles, supervisor.RoleAPI)) {
 		go advertiseMachine(ctx, cfg, node)
 	}
 
@@ -249,6 +249,7 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	confirmPending(ctx, sup, releaseDir)
 	if bundle != "" {
 		go confirmAppPayload(ctx, sup, cfg.StateDir(), bundle)
+		go finishMove(ctx, sup, cfg)
 	}
 	runErr := sup.Run(ctx, opts.grace)
 	if webSrv != nil {
