@@ -38,8 +38,15 @@ UNIT_PER_TEST_SOFT_CAP  ?= 400ms
 # Integration wall budget: 2m held at ~1m45 on main; story 35.1 links
 # sigstore-go into api and cmd/maktaba-server (in-process release
 # verification), which adds ~20s of compile/link to the tier's test
-# binaries. 2m30s keeps the same headroom.
-INTEGRATION_TIER_BUDGET ?= 2m30s
+# binaries, so 2m30s. Since then Epics 37-39 added real integration
+# tests (adopt, the Windows app, relisten on Postgres): main's last ten
+# runs (2026-10-22) took 1m42s-2m27s, the same tree differing by ~45s
+# with the runner alone (the tier is mostly compiling and linking the Go
+# modules one after another, then pytest). 2m30s failed PRs whose every
+# test passed (2m30.5s, 2m31.9s). 3m30s is the slowest of those runs plus
+# ~40%, for runner noise and the next tests; a test that hangs, or a
+# slowdown that takes the tier past it, still fails.
+INTEGRATION_TIER_BUDGET ?= 3m30s
 E2E_TIER_BUDGET         ?= 5m
 MEDIA_E2E_TIER_BUDGET   ?= 9m
 PERF_CI_TIER_BUDGET     ?= 2m
