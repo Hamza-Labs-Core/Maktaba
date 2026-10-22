@@ -141,29 +141,6 @@ def test_windows_another_pcs_roaming_config_is_skipped(
     assert roaming.read_text(encoding="utf-8") == theirs
 
 
-@pytest.mark.skipif(os.name != "nt", reason="Windows ACLs")
-def test_windows_claim_keeps_the_files_acl(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The claim replaces the file with ReplaceFileW, which keeps its ACL as it was."""
-    import subprocess
-
-    roaming = _windows_profile(tmp_path, monkeypatch, "pc-a")
-    roaming.write_text(json.dumps(_JOINED), encoding="utf-8")
-    user = os.environ["USERNAME"]
-    for args in (["/inheritance:r", "/grant:r", f"{user}:F"], ["/grant", "*S-1-5-32-545:(R)"]):
-        subprocess.run(["icacls", str(roaming), *args], check=True, capture_output=True)
-
-    def acl() -> str:
-        out = subprocess.run(["icacls", str(roaming)], check=True, capture_output=True, text=True)
-        return out.stdout
-
-    before = acl()
-    cfg = config.load()
-    assert cfg is not None and cfg.machine_id == "pc-a"
-    assert acl() == before
-    # the old file ReplaceFileW kept under its backup name is gone with the success
-    assert sorted(p.name for p in roaming.parent.iterdir()) == ["node.json"]
-
-
 def _icacls(path: Path) -> list[str]:
     """The ACEs icacls lists for path, one per line."""
     import subprocess
@@ -184,9 +161,11 @@ class _Warnings:
 
     def __init__(self) -> None:
         self.events: list[str] = []
+        self.fields: list[dict[str, object]] = []
 
-    def warning(self, event: str, **_: object) -> None:
+    def warning(self, event: str, **kw: object) -> None:
         self.events.append(event)
+        self.fields.append(kw)
 
 
 def _claim_seam(
@@ -291,6 +270,119 @@ def test_windows_claim_failing_before_the_replace(
     assert roaming.read_bytes() == before
     assert sorted(p.name for p in roaming.parent.iterdir()) == ["node.json"]
     assert warnings.events == ["node_config_claim_failed"]
+
+
+def _leftover(folder: Path, name: str, body: str, *, age: float = 120.0) -> Path:
+    """A file a write that could not finish left behind, ``age`` seconds old."""
+    import time
+
+    p = folder / name
+    p.write_text(body, encoding="utf-8")
+    config._restrict_to_user(p)
+    then = time.time() - age
+    os.utime(p, (then, then))
+    return p
+
+
+_NEW = {**_JOINED, "machine_id": "pc-a"}
+
+
+@pytest.mark.parametrize(
+    ("there", "bak", "tmp", "want"),
+    [
+        # node.json gone: the old file (the backup) first, as _settle decides
+        (None, _JOINED, _NEW, _JOINED),
+        (None, None, _NEW, _NEW),  # only the new one: it takes the name
+        (None, _JOINED, None, _JOINED),
+        ("{not json", _JOINED, None, _JOINED),  # node.json broken: the backup
+        (None, _JOINED, "{cut", _JOINED),  # a cut temp file is never used, and goes
+        (_JOINED, _JOINED, _NEW, _JOINED),  # node.json whole: stale leftovers go
+    ],
+)
+def test_leftovers_are_recovered_at_the_next_load(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    there: dict[str, str] | str | None,
+    bak: dict[str, str] | None,
+    tmp: dict[str, str] | str | None,
+    want: dict[str, str],
+) -> None:
+    """A write whose ReplaceFileW and settling both failed left node.json's old file
+    under its backup name and/or the new one as a temp file: the next load puts the
+    right one in place, removes the rest once node.json is whole and names them in its
+    warning (the ACL: test_config_acl)."""
+    from maktaba_pipeline import log
+
+    folder = tmp_path / "Maktaba"
+    folder.mkdir()
+    path = folder / "node.json"
+    if there is not None:
+        _leftover(
+            folder, "node.json", there if isinstance(there, str) else json.dumps(there), age=0
+        )
+    names: list[str] = []
+    if bak is not None:
+        names.append(_leftover(folder, ".node.json-123-abcd1234.bak", json.dumps(bak)).name)
+    if tmp is not None:
+        names.append(
+            _leftover(
+                folder, ".node-x1y2z3w4.tmp", tmp if isinstance(tmp, str) else json.dumps(tmp)
+            ).name
+        )
+    warnings = _Warnings()
+    monkeypatch.setattr(log, "get_logger", lambda: warnings)
+    monkeypatch.setattr(config, "_leftovers_said", set())
+
+    cfg = config.load(path)
+    assert cfg is not None and json.loads(path.read_text(encoding="utf-8")) == want
+    assert sorted(p.name for p in folder.iterdir()) == ["node.json"]
+    said = warnings.fields[warnings.events.index("node_config_leftovers")]
+    removed = said["removed"]
+    assert isinstance(removed, list)
+    assert {str(said["restored"]), *map(str, removed)} - {""} == set(names), said
+    assert config.load(path) == cfg  # a second load finds nothing left to do
+
+
+def test_leftovers_that_cannot_be_used_stay_and_are_named(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """node.json gone and only a cut temp file left: nothing is put in place or removed
+    (it may be all there is), the load finds no node config, and the warning names it."""
+    from maktaba_pipeline import log
+
+    folder = tmp_path / "Maktaba"
+    folder.mkdir()
+    cut = _leftover(folder, ".node-x1y2z3w4.tmp", "{cut")
+    warnings = _Warnings()
+    monkeypatch.setattr(log, "get_logger", lambda: warnings)
+    monkeypatch.setattr(config, "_leftovers_said", set())
+    assert config.load(folder / "node.json") is None
+    assert config.load(folder / "node.json") is None
+    assert cut.exists()
+    assert warnings.events == ["node_config_leftovers"]  # said once
+    assert warnings.fields[0]["left"] == [cut.name]
+
+
+def test_another_node_configs_leftovers_are_not_taken(tmp_path: Path) -> None:
+    """Two node configs in one folder (MAKTABA_NODE_CONFIG): one's leftovers, named after
+    it, never become the other."""
+    folder = tmp_path / "nodes"
+    folder.mkdir()
+    theirs = _leftover(folder, ".node-b.json-123-abcd1234.bak", json.dumps(_JOINED))
+    for mine in ("node-a.json", "node.json"):  # node.json also reads the older names
+        assert config.load(folder / mine) is None
+        assert theirs.exists() and not (folder / mine).exists()
+
+
+def test_a_write_in_progress_is_left_alone(tmp_path: Path) -> None:
+    """A temp file of a few seconds is another process's write in progress: a load that
+    finds node.json whole leaves it."""
+    folder = tmp_path / "Maktaba"
+    folder.mkdir()
+    config.save(NodeConfig(node_id="n1", name="pc", private_key="k1"), folder / "node.json")
+    fresh = _leftover(folder, ".node.json-fresh.tmp", json.dumps(_NEW), age=1.0)
+    assert config.load(folder / "node.json") is not None
+    assert fresh.exists()
 
 
 def test_the_override_wins_on_every_os() -> None:

@@ -30,8 +30,10 @@ import contextlib
 import json
 import os
 import platform
+import re
 import sys
 import tempfile
+import time
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
@@ -196,8 +198,10 @@ def _is_roaming_config(path: Path) -> bool:
 def load(path: Path | None = None) -> NodeConfig | None:
     """The node config, or None when this machine never asked to join. A roaming
     profile's node config from before Epic 38 that no PC has claimed yet is claimed for
-    this PC: its ``machine_id`` is written in, everything else kept (``_write``)."""
+    this PC: its ``machine_id`` is written in, everything else kept (``_write``). What a
+    write that could not finish left beside it is recovered first (``_recover``)."""
     path = path or config_path()
+    _recover(path)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -218,12 +222,17 @@ def load(path: Path | None = None) -> NodeConfig | None:
                 _write(path, {**data, "machine_id": this})
             except OSError as exc:
                 # the file stays as it was (_write never loses it) and the node runs on;
-                # the next start tries again
+                # the next start tries again (and recovers what it left, _recover)
                 if str(path) not in _claim_failed:
                     _claim_failed.add(str(path))
                     from ..log import get_logger
 
-                    get_logger().warning("node_config_claim_failed", path=str(path), error=str(exc))
+                    get_logger().warning(
+                        "node_config_claim_failed",
+                        path=str(path),
+                        error=str(exc),
+                        left=[p.name for p in _leftovers(path, grace=0.0)],
+                    )
             else:
                 cfg = replace(cfg, machine_id=this)
     return cfg
@@ -231,6 +240,93 @@ def load(path: Path | None = None) -> NodeConfig | None:
 
 #: the node configs whose claim this process could not write (said once each)
 _claim_failed: set[str] = set()
+
+#: a leftover younger than this may be another process's write in progress: it is left
+#: alone (a write takes milliseconds; one that could not finish is found at a later start)
+_LEFTOVER_GRACE_SEC = 60.0
+
+#: node.json's leftovers as they were named before they carried the file's name:
+#: ``.node-<pid>-<8 hex>.bak`` and mkstemp's ``.node-<8 characters>.tmp``
+_LEGACY_LEFTOVER = re.compile(r"\.node-(\d+-[0-9a-f]{8}\.bak|[a-z0-9_]{8}\.tmp)")
+
+#: the leftovers this process has already said it could not recover (said once each)
+_leftovers_said: set[tuple[str, ...]] = set()
+
+
+def _leftovers(path: Path, *, grace: float = _LEFTOVER_GRACE_SEC) -> list[Path]:
+    """What a write of the node config at ``path`` that could not finish left beside it:
+    ReplaceFileW's backup of the old file (``.<name>-*.bak``) and ``_write``'s temp file
+    with the new one (``.<name>-*.tmp``; ``.node-*`` for node.json before they were
+    named after the file), those at least ``grace`` seconds old."""
+    found = {p for ext in (".bak", ".tmp") for p in path.parent.glob(f".{path.name}-*{ext}")}
+    if path.name == "node.json":  # the names before, exactly as they were made
+        found |= {p for p in path.parent.glob(".node-*") if _LEGACY_LEFTOVER.fullmatch(p.name)}
+    now = time.time()
+    out: list[Path] = []
+    for p in sorted(found, key=lambda p: (p.suffix, p.name)):
+        with contextlib.suppress(OSError):
+            if now - p.stat().st_mtime >= grace:
+                out.append(p)
+    return out
+
+
+def _whole(path: Path) -> bool:
+    """``path`` holds a node config with its identity (a whole file, not a cut one)."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return False
+        NodeConfig.from_json(data)
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def _recover(path: Path) -> None:
+    """At load: a write whose ReplaceFileW failed and whose settling (``_settle``) failed
+    too can leave node.json's old file under its backup name, the new one as a temp file,
+    or both. When node.json is missing or broken, the right one takes its place as
+    ``_settle`` decides (the old file first, else the new one, limited to the user before
+    it gets the name); once node.json is whole, the rest go. A warning names them."""
+    left = _leftovers(path)
+    if not left:
+        return
+    used: Path | None = None
+    error = ""
+    if not _whole(path):
+        backups = [p for p in left if p.suffix == ".bak" and _whole(p)]
+        temps = [p for p in left if p.suffix == ".tmp" and _whole(p)]
+        candidates = backups or temps
+        if candidates:
+            try:
+                candidate = max(candidates, key=lambda p: p.stat().st_mtime)
+                if candidate.suffix == ".tmp":
+                    _restrict_to_user(candidate)
+                os.replace(candidate, path)
+                used = candidate
+            except OSError as exc:
+                error = str(exc)
+    removed: list[str] = []
+    if _whole(path):
+        for p in left:
+            if p != used:
+                with contextlib.suppress(OSError):
+                    p.unlink()
+                    removed.append(p.name)
+    kept = [p.name for p in left if p != used and p.name not in removed]
+    key = (str(path), *kept)
+    if not kept or key not in _leftovers_said:
+        _leftovers_said.add(key)
+        from ..log import get_logger
+
+        get_logger().warning(
+            "node_config_leftovers",
+            path=str(path),
+            restored=used.name if used is not None else "",
+            removed=removed,
+            left=kept,
+            error=error,
+        )
 
 
 def _restrict_to_user(path: Path) -> None:
@@ -376,7 +472,7 @@ def _replace_keeping_acl(path: Path, tmp: Path) -> None:
     the new one takes its name (limited to the user first). The only copy of a node's
     identity is never removed. Raises when ``path`` holds the old file again; returns when
     it holds the new one."""
-    backup = path.with_name(f".node-{os.getpid()}-{os.urandom(4).hex()}.bak")
+    backup = path.with_name(f".{path.name}-{os.getpid()}-{os.urandom(4).hex()}.bak")
     try:
         _replace_file(path, tmp, backup)
     except OSError:
@@ -410,19 +506,23 @@ def _settle(path: Path, tmp: Path, backup: Path) -> bool:
 
 def _write(path: Path, data: Mapping[str, Any]) -> Path:
     """The one writer of a node config (``save``, and ``load``'s claim): atomically (a
-    temp file in the same directory, flushed, then put in place), mode 0600 on POSIX. On
-    Windows a file already there is replaced with ReplaceFileW, which keeps its ACL; a
-    new one is limited to the user before it gets its name."""
+    temp file in the same directory, flushed, then put in place). The temp file is the
+    user's alone before a byte of the secret is in it: mode 0600 on POSIX (mkstemp), and
+    on Windows its DACL set to the user while it is still empty (the folder's may let
+    others read, ``Authenticated Users`` on a second drive). On Windows a file already
+    there is replaced with ReplaceFileW, which keeps that file's ACL."""
     path.parent.mkdir(parents=True, exist_ok=True)
     if os.name != "nt":
         with contextlib.suppress(OSError):
             os.chmod(path.parent, 0o700)
     body = json.dumps(dict(data), indent=2, sort_keys=True) + "\n"
     existed = path.exists()
-    fd, tmp = tempfile.mkstemp(prefix=".node-", suffix=".tmp", dir=path.parent)
+    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}-", suffix=".tmp", dir=path.parent)
     try:
         if os.name != "nt":
             os.fchmod(fd, 0o600)
+        if sys.platform == "win32":
+            _restrict_to_user(Path(tmp))  # empty yet
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(body)
             fh.flush()
@@ -430,8 +530,6 @@ def _write(path: Path, data: Mapping[str, Any]) -> Path:
         if sys.platform == "win32" and existed:
             _replace_keeping_acl(path, Path(tmp))
         else:
-            if sys.platform == "win32":
-                _restrict_to_user(Path(tmp))
             os.replace(tmp, path)
     except BaseException:
         # the temp file goes unless it is the only copy left (a node config that was
