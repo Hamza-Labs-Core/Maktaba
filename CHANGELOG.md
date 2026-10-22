@@ -251,6 +251,12 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **The Linux runtime copy orders versions as everything else does.** It kept its own reading of
+  `git describe` builds, so a dirty build of a tag ranked above the next commit's build and a dirty
+  build equalled the clean one: it now uses the one order (`v0.2.0` < `v0.2.0-dirty` <
+  `v0.2.0-1-g…` < `v0.2.0-1-g…-dirty`). The self-managed layout's order also puts a version that is
+  no release (`dev`) below every release, as the release verifier does, and compares prerelease
+  names whatever their case.
 - **`[server] role = "home"` (or `MAKTABA_ROLE=home`) runs no role as a node.** The supervisor
   only left the node's variables out, while streaming and the pipeline read the node config
   themselves: beside a joined `node.json` (on Windows another install's, through the roaming

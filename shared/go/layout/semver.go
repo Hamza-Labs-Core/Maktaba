@@ -62,7 +62,7 @@ func CompareVersions(a, b string) int {
 }
 
 func compareReleases(a, b string) int {
-	a, b = NormalizeVersion(a), NormalizeVersion(b)
+	a, b = strings.ToLower(NormalizeVersion(a)), strings.ToLower(NormalizeVersion(b))
 	if i := strings.IndexByte(a, '+'); i >= 0 {
 		a = a[:i]
 	}
@@ -71,6 +71,16 @@ func compareReleases(a, b string) int {
 	}
 	ac, ap, _ := strings.Cut(a, "-")
 	bc, bp, _ := strings.Cut(b, "-")
+	// a version whose core is not numbers ("dev", a branch's name) is no release:
+	// below every one, as the release verifier orders it
+	switch an, bn := numericCore(ac), numericCore(bc); {
+	case an && !bn:
+		return 1
+	case !an && bn:
+		return -1
+	case !an && !bn:
+		return strings.Compare(a, b)
+	}
 	if c := compareDotted(ac, bc, true); c != 0 {
 		return c
 	}
@@ -83,6 +93,16 @@ func compareReleases(a, b string) int {
 		return -1
 	}
 	return compareDotted(ap, bp, false)
+}
+
+// numericCore: c is dot-separated numbers ("1.5.0", "1.5").
+func numericCore(c string) bool {
+	for _, p := range strings.Split(c, ".") {
+		if _, err := strconv.ParseUint(p, 10, 64); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func compareDotted(a, b string, core bool) int {
