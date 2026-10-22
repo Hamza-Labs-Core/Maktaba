@@ -189,6 +189,18 @@ Decides when the [System health](/help/system-health) page turns a part yellow o
 - **Dependency check stale after (seconds)** (600): a check of the model, a share or the disk older than this shows as stale.
 - **One check waits (ms)** (2000) and **Reuse an answer for (seconds)** (5): how long the page waits for each part, and how long an answer is reused.
 
+### Search {#search}
+
+How the [Search](/help/search) page groups its results per video, pages them and keeps them.
+
+- **Passages under each video** (3): the best passages "In transcripts" shows under a video; "Show all" lists the rest.
+- **Videos per page (grid)** (24) and **Videos per page (list)** (20): one page of "In titles" or "In transcripts".
+- **Passages per page** (20): what "Show all" and a video's matches page load at a time.
+- **Most videos per list** (500): a search keeps at most this many videos in each list, best matches first; their match counts are always complete.
+- **Passages a meaning search finds** (200): how many passages the meaning (semantic) search asks for before grouping them per video.
+- **Keep results for (minutes)** (15): a search's results are kept this long after their last use, so their order stays the same while you page through them. Every page you open starts the time again; after that the search runs again.
+- **Recent searches kept** (20): each user's Recent searches list. The query stays after its results are no longer kept.
+
 ## What the states and messages mean {#states}
 
 - **changed**: the saved value differs from the built-in default.
