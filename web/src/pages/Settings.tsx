@@ -120,14 +120,19 @@ function AccountTab() {
       <Button
         variant="destructive"
         onClick={async () => {
+          let scope: "everywhere" | "here";
           try {
-            await logoutAll();
+            scope = await logoutAll();
           } catch {
             // refused: this machine cannot reach its home (lib/auth)
             setSignOutRefused(true);
             return;
           }
-          nav("/login", { replace: true });
+          // only this machine's sessions ended: the sign-in page says the others stay
+          nav("/login", {
+            replace: true,
+            state: scope === "here" ? { signedOutHere: true } : undefined,
+          });
         }}
       >
         {t("settings.signOutEverywhere")}

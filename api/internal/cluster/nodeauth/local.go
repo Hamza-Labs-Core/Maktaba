@@ -408,10 +408,10 @@ func (r *Resolver) SignIn(w http.ResponseWriter, req *http.Request) bool {
 // through the home once it answers, their home sessions made before it (signout.go).
 // The home takes that only from a machine the person signed in through at the home (it
 // cannot tell a node-local sign-in from a machine's word): for a person whose sessions
-// here are all node-local, it waits for the home (503 home_unreachable, still signed
-// in, as a sign-out everywhere this machine cannot place: SignOutHere), rather than end
-// this machine's sessions alone and have the home refuse the rest later. False: the
-// request is another one.
+// here are all node-local, this machine ends those, which are all it can end, and says
+// so (200, signed_out "here", code signed_out_here_only: their sessions elsewhere stay,
+// to be ended through the home), whether the home answers or not; nothing is handed to
+// the home, which would refuse it. False: the request is another one.
 func (r *Resolver) SignOut(w http.ResponseWriter, req *http.Request) bool {
 	all := req.URL.Path == LogoutAllPath
 	if (req.URL.Path != LogoutPath && !all) || req.Method != http.MethodPost || r.Sessions == nil {
@@ -427,11 +427,19 @@ func (r *Resolver) SignOut(w http.ResponseWriter, req *http.Request) bool {
 		return true
 	}
 	if all && live && !r.homeTakesEverywhere(req.Context(), user) {
-		if r.Logger != nil {
-			r.Logger.Info("node: a sign-out everywhere of a person signed in here only from the copy waits for the home",
-				"user_id", user, "event", "node_local_sign_out_all_waits")
+		if err := r.Sessions.EndUser(user); err != nil && r.Logger != nil {
+			r.Logger.Warn("node: a node-local sign-out was not saved", "err", err, "event", "node_local_sessions_failed")
 		}
-		writeUnreachable(w, true)
+		if r.Logger != nil {
+			r.Logger.Info("node: signed out everywhere on this machine only: the person signed in here only from the copy",
+				"user_id", user, "event", "node_local_sign_out_all_here")
+		}
+		r.setCookies(w, "", "", time.Time{})
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{"signed_out": "here", "code": "signed_out_here_only",
+			"detail": "signed out on this machine; sessions elsewhere end through the home"})
 		return true
 	}
 	var err error

@@ -49,8 +49,12 @@ export interface AuthState {
   register: (username: string, email: string, password: string) => Promise<void>;
   /** Throws (and keeps the user) when this machine cannot reach its home. */
   logout: () => Promise<void>;
-  /** Throws (and keeps the user) when this machine cannot reach its home. */
-  logoutAll: () => Promise<void>;
+  /**
+   * Throws (and keeps the user) when this machine cannot reach its home. "here": this
+   * machine ended only its own sessions of the user (they signed in on it only while its
+   * home was away, so the home would not take it from it); the others stay.
+   */
+  logoutAll: () => Promise<"everywhere" | "here">;
   /** Probe the session again (the home is back: a session may hold). */
   refresh: () => Promise<void>;
   /** The required password change is done: lift the gate. */
@@ -147,14 +151,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
       },
       async logoutAll() {
+        let scope: "everywhere" | "here" = "everywhere";
         try {
-          await api.post("/api/auth/logout-all");
+          const ans = await api.post<{ signed_out?: string } | undefined>("/api/auth/logout-all");
+          if (ans?.signed_out === "here") scope = "here";
         } catch (e) {
           if (isHomeUnreachable(e) || isHomeTimeout(e)) throw e;
           console.warn("auth: logout-all call failed", e);
         }
         await purgeApiCacheOnLogout();
         setUser(null);
+        return scope;
       },
       async refresh() {
         await probe(() => true);

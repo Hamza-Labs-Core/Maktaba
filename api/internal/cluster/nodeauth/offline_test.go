@@ -984,31 +984,41 @@ func TestTheSignOutStoreIsCapped(t *testing.T) {
 }
 
 // A person signed in here only from the copy (no home session made through this
-// machine) asks to sign out everywhere: the home would not take it from this machine, so
-// it waits for the home (503, still signed in); a sign-out here still works.
-func TestALocalOnlySignOutEverywhereWaitsForTheHome(t *testing.T) {
+// machine) asks to sign out everywhere: the home would not take it from this machine,
+// so this machine ends every one of the person's sessions here and says only those
+// ended; nothing is handed to the home. So too once the home answers again (its grace
+// keeps a node-local session).
+func TestALocalOnlySignOutEverywhereEndsThisMachinesSessions(t *testing.T) {
 	g := newOfflineRig(t, true)
 	g.cp.set(func(c *fakeCopy) { c.localOnly = true })
 	g.goDown(time.Minute)
 	g.pastGrace()
 	_, id := g.signIn(t, "amal", "pw-amal")
-	if id == "" {
+	_, other := g.signIn(t, "amal", "pw-amal") // another browser
+	if id == "" || other == "" {
 		t.Fatal("no sign-in")
 	}
-	if a := g.do(http.MethodPost, LogoutAllPath, id); !a.refusedChange() || a.cleared() {
-		t.Fatalf("sign out everywhere: %+v, want 503 home_unreachable", a)
+	a := g.do(http.MethodPost, LogoutAllPath, id)
+	if a.code != http.StatusOK || !a.cleared() || a.body["signed_out"] != "here" || a.body["code"] != "signed_out_here_only" {
+		t.Fatalf("sign out everywhere: %+v, want 200 signed_out here", a)
 	}
-	if a := g.do(http.MethodGet, "/api/videos", id); a.code != http.StatusOK {
-		t.Fatalf("still signed in: %+v", a)
+	for _, sid := range []string{id, other} {
+		if a := g.do(http.MethodGet, "/api/videos", sid); a.code != http.StatusUnauthorized {
+			t.Fatalf("a session of the person here after it: %+v", a)
+		}
 	}
 	if g.r.SignOuts.Waiting() != 0 {
 		t.Fatal("kept a sign-out everywhere the home would refuse")
 	}
-	if a := g.do(http.MethodPost, LogoutPath, id); a.code != http.StatusNoContent || !a.cleared() {
-		t.Fatalf("a sign-out here: %+v", a)
+	// the home back: a node-local session within its grace, the same answer
+	_, again := g.signIn(t, "amal", "pw-amal")
+	g.home.setDown(false)
+	g.r.answered()
+	if a := g.do(http.MethodPost, LogoutAllPath, again); a.code != http.StatusOK || a.body["signed_out"] != "here" {
+		t.Fatalf("with the home back: %+v", a)
 	}
-	if a := g.do(http.MethodGet, "/api/videos", id); a.code != http.StatusUnauthorized {
-		t.Fatalf("after signing out here: %+v", a)
+	if a := g.do(http.MethodGet, "/api/videos", again); a.code == http.StatusOK {
+		t.Fatalf("the session after it, the home back: %+v", a)
 	}
 }
 

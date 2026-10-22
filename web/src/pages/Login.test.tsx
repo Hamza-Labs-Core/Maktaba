@@ -95,4 +95,23 @@ describe("Login next", () => {
     expect(await screen.findByTestId("where")).toHaveTextContent("/library");
     expect(assignLocation).not.toHaveBeenCalled();
   });
+
+  // Settings' "sign out everywhere" ended this machine's sessions only
+  it("says the other sessions stay after a sign-out everywhere made here only", () => {
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={[{ pathname: "/login", state: { signedOutHere: true } }]}>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>
+    );
+    expect(screen.getByRole("note")).toHaveTextContent("You're signed out on this machine");
+  });
+
+  it("says nothing of it on an ordinary sign-in", () => {
+    renderAt("/login");
+    expect(screen.queryByText(/You're signed out on this machine/)).not.toBeInTheDocument();
+  });
 });

@@ -112,7 +112,8 @@ don't append a line here; docs-only PRs are exempt.
   machine. A sign-out there is kept only for a session the machine knows, whole (a sign-out
   everywhere is kept with its session or not at all), handed over in batches the home takes, and
   the home ends only sessions made through that machine; a person signed in on the machine only
-  while the home was away is told that signing out everywhere waits for the home; the home's
+  while the home was away who signs out everywhere is signed out of every session on that
+  machine and told the others end through the home (which would not take it from it); the home's
   revocations survive a restart of the machine during an outage, and a person signed out
   everywhere can sign in there again once its copy has it.
 - **The desktop app's setup works end to end** (Epic 38, story 38.6; the Mac, Windows and Linux

@@ -548,7 +548,9 @@ applies on its own: what this home changed since is not known any more).
   only for a person who signed in through it. The revocations the home pushes are kept on the
   machine's disk while they matter. A sign-out everywhere is kept with its session or not at
   all; a person whose sessions on the machine are all node-local (the home cannot tell such a
-  sign-in from the machine's word) is told it waits for the home, and stays signed in.
+  sign-in from the machine's word) signing out everywhere is signed out of all of them, with the
+  home there or not, and told that the others end through the home (`signed_out: "here"`, code
+  `signed_out_here_only`; the sign-in page says so); nothing is handed to the home.
 - **Known limits.** A pipeline write of a job is guarded by its worker's claim, not by a claim
   generation: a machine stops its jobs before their lease lapses, so its worker never holds a job
   again while a run of it from before is alive. On an operator's own Postgres, the output
