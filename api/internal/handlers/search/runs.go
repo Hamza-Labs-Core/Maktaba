@@ -55,8 +55,9 @@ func writeExpired(w http.ResponseWriter, r *http.Request) {
 
 // saveRun keeps rn under a new search_id for userID. It also bounds the table:
 // every expired result is emptied, the user's older run of the same query,
-// mode and filters is replaced, and only the user's newest RecentLimit runs
-// stay.
+// mode and filters is replaced once its results expired (a live one stays: another
+// tab may be paging it; Recent searches shows the newest only), and only the
+// user's newest RecentLimit runs stay.
 func (h *Handler) saveRun(ctx context.Context, userID string, rn *run, rl Rules) error {
 	result, err := json.Marshal(rn.Set)
 	if err != nil {
@@ -80,7 +81,8 @@ func (h *Handler) saveRun(ctx context.Context, userID string, rn *run, rl Rules)
 		return err
 	}
 	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM search_runs WHERE user_id = $1 AND query = $2 AND mode = $3 AND filters = $4`,
+		`DELETE FROM search_runs WHERE user_id = $1 AND query = $2 AND mode = $3 AND filters = $4
+			AND result IS NULL`,
 		userID, rn.Q, rn.Mode, string(filters)); err != nil {
 		return err
 	}
@@ -355,7 +357,7 @@ func (h *Handler) Recent(w http.ResponseWriter, r *http.Request) {
 	}
 	rl := h.rules(r.Context())
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT id, query, mode, title_count, transcript_count, created_at_ms, last_used_at_ms,
+		SELECT id, query, mode, filters, title_count, transcript_count, created_at_ms, last_used_at_ms,
 		       expires_at_ms, result IS NOT NULL
 		FROM search_runs WHERE user_id = $1
 		ORDER BY created_at_ms DESC, id DESC LIMIT $2`, p.UserID, rl.RecentLimit)
@@ -365,11 +367,13 @@ func (h *Handler) Recent(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 	nowMs := h.now().UnixMilli()
+	seen := map[string]bool{}
 	for rows.Next() {
 		var it RecentSearch
 		var created, used, expires int64
 		var kept bool
-		if err := rows.Scan(&it.SearchID, &it.Q, &it.Mode, &it.TitleCount, &it.TranscriptCount,
+		var filters string
+		if err := rows.Scan(&it.SearchID, &it.Q, &it.Mode, &filters, &it.TitleCount, &it.TranscriptCount,
 			&created, &used, &expires, &kept); err != nil {
 			httperror.Write(w, r, httperror.Internal("recent searches: "+err.Error()))
 			return
@@ -378,7 +382,11 @@ func (h *Handler) Recent(w http.ResponseWriter, r *http.Request) {
 		it.LastUsedAt = time.UnixMilli(used).UTC()
 		it.ExpiresAt = time.UnixMilli(expires).UTC()
 		it.Live = kept && expires > nowMs
-		items = append(items, it)
+		// the same search run again in another tab: the newest only
+		if key := it.Q + "\x00" + it.Mode + "\x00" + filters; !seen[key] {
+			seen[key] = true
+			items = append(items, it)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		httperror.Write(w, r, httperror.Internal("recent searches: "+err.Error()))
@@ -400,7 +408,10 @@ func (h *Handler) DeleteRecent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := h.DB.ExecContext(r.Context(),
-		`DELETE FROM search_runs WHERE id = $1 AND user_id = $2`, id, p.UserID)
+		// the entry stands for every run of its query, mode and filters
+		`DELETE FROM search_runs WHERE user_id = $2 AND EXISTS (
+			SELECT 1 FROM search_runs o WHERE o.id = $1 AND o.user_id = $2 AND o.query = search_runs.query
+			AND o.mode = search_runs.mode AND o.filters = search_runs.filters)`, id, p.UserID)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("recent searches: "+err.Error()))
 		return

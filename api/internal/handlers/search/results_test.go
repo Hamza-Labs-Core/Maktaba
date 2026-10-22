@@ -582,6 +582,31 @@ func TestRecentSearches(t *testing.T) {
 	}
 }
 
+// The same search run again (another tab, or after an expiry) leaves the
+// first one's results readable while they are kept; Recent shows it once.
+func TestSearchID_SameSearchTwiceKeepsBoth(t *testing.T) {
+	db := searchDB(t)
+	c := &clock{t: time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)}
+	h := router(&Handler{DB: db, NowFunc: c.now})
+	first := decode[Response](t, call(t, h, admin, http.MethodPost, "/api/search", `{"q":"x","mode":"fts"}`), 200).SearchID
+	c.t = c.t.Add(time.Minute)
+	second := decode[Response](t, call(t, h, admin, http.MethodPost, "/api/search", `{"q":"x","mode":"fts"}`), 200).SearchID
+	for _, sid := range []string{first, second} {
+		decode[resultsPage](t, call(t, h, admin, http.MethodGet, "/api/search/results/"+sid+"?list=titles", ""), 200)
+	}
+	got := decode[recentList](t, call(t, h, admin, http.MethodGet, "/api/search/recent", ""), 200).Items
+	if len(got) != 1 || got[0].SearchID != second {
+		t.Fatalf("recent %+v", got)
+	}
+	// both expired, then the search again: the old rows go
+	c.t = c.t.Add(time.Hour)
+	decode[Response](t, call(t, h, admin, http.MethodPost, "/api/search", `{"q":"x","mode":"fts"}`), 200)
+	var n int
+	if err := db.QueryRow(`SELECT count(*) FROM search_runs`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("rows %d %v", n, err)
+	}
+}
+
 // The history keeps the newest rules.search.recent_limit searches.
 func TestRecentSearches_Bounded(t *testing.T) {
 	db := searchDB(t)
