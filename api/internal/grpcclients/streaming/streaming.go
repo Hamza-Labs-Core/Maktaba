@@ -36,6 +36,9 @@ type OpenSessionResponse struct {
 	ManifestURL string
 	DirectURL   string
 	ExpiresAt   time.Time
+	// StartSec is where in the video the stream starts (seconds): a
+	// transcode opened at a position starts there.
+	StartSec float64
 }
 
 // Capabilities is the AC-2 “GetCapabilities“ return.

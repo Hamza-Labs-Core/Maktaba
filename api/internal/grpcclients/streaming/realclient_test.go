@@ -80,6 +80,7 @@ func TestStreamingClient_OpenSession(t *testing.T) {
 				"manifest_path": "/stream/sess-1/manifest.m3u8",
 				"expires_at":    exp.Format(time.RFC3339),
 				"state":         "active",
+				"start_sec":     1213,
 			}
 		},
 	})
@@ -90,7 +91,7 @@ func TestStreamingClient_OpenSession(t *testing.T) {
 		t.Fatalf("OpenSession: %v", err)
 	}
 	if resp.SessionID != "sess-1" || resp.Mode != "transcode" ||
-		resp.ManifestURL != "/stream/sess-1/manifest.m3u8" || !resp.ExpiresAt.Equal(exp) {
+		resp.ManifestURL != "/stream/sess-1/manifest.m3u8" || !resp.ExpiresAt.Equal(exp) || resp.StartSec != 1213 {
 		t.Fatalf("bad response: %+v", resp)
 	}
 }

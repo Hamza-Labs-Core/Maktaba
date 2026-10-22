@@ -145,6 +145,7 @@ func (c *realClient) OpenSession(ctx context.Context, req OpenSessionRequest) (O
 		SessionID:   asString(resp["session_id"]),
 		Mode:        asString(resp["mode"]),
 		ManifestURL: asString(resp["manifest_path"]),
+		StartSec:    float64(asInt(resp["start_sec"])),
 	}
 	if ts := asString(resp["expires_at"]); ts != "" {
 		if t, err := time.Parse(time.RFC3339, ts); err == nil {

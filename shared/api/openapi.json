@@ -2885,6 +2885,16 @@
           "503": {
             "$ref": "#/components/responses/Unavailable"
           },
+          "507": {
+            "description": "Too little free on the streaming service's disk to prepare (transcode) the video (code `insufficient_storage`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "default": {
             "$ref": "#/components/responses/InternalError"
           },
@@ -7312,6 +7322,14 @@
           },
           "current_rendition": {
             "type": "string"
+          },
+          "duration_sec": {
+            "type": "number",
+            "description": "The video's length in the catalogue (absent when unknown)."
+          },
+          "start_sec": {
+            "type": "number",
+            "description": "Where in the video the stream starts, in seconds (a transcode opened at `start_sec` starts there; its times are the video's). Absent at 0."
           },
           "warnings": {
             "type": "array",

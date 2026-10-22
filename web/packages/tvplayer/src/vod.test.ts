@@ -78,6 +78,35 @@ describe("attachVod native path", () => {
     expect(kind === "auth" ? onAuthError : onFatal).toHaveBeenCalledTimes(1);
     h.detach();
   });
+  it.each([404, 410])(
+    "probes the manifest on a media error: %i is a stream gone",
+    async (status) => {
+      const v = nativeVideo();
+      Object.defineProperty(v, "currentTime", { value: 1234, configurable: true, writable: true });
+      const onGone = vi.fn();
+      const onFatal = vi.fn();
+      const probe = vi.fn(() => Promise.resolve(status));
+      const h = attachVod(v, M, { onGone, onFatal, isExpired: () => false, probe });
+      v.dispatchEvent(new Event("error"));
+      v.dispatchEvent(new Event("error"));
+      await vi.waitFor(() => expect(onGone).toHaveBeenCalledTimes(1));
+      expect(onGone).toHaveBeenCalledWith(1234, false);
+      expect(onFatal).not.toHaveBeenCalled();
+      h.detach();
+    }
+  );
+  it("without onGone, a stream gone is fatal", async () => {
+    const v = nativeVideo();
+    const onFatal = vi.fn();
+    const h = attachVod(v, M, {
+      onFatal,
+      isExpired: () => false,
+      probe: () => Promise.resolve(410),
+    });
+    v.dispatchEvent(new Event("error"));
+    await vi.waitFor(() => expect(onFatal).toHaveBeenCalledTimes(1));
+    h.detach();
+  });
   it("probes when native playback stalls and refreshes on 403", async () => {
     vi.useFakeTimers();
     try {

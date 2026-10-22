@@ -100,6 +100,7 @@ func New(deps Deps) http.Handler {
 		sub.Get("/manifest.mpd", manifestHandler.ServeMaster)
 		sub.Get("/{rendition}/index.m3u8", manifestHandler.ServeRenditionIndex)
 		sub.Get("/{rendition}/{segment}", manifestHandler.ServeSegment)
+		sub.Get("/{segment}", manifestHandler.ServeSegment) // DASH: init-*.m4s, chunk-*.m4s
 		// Story 8.11 — subtitles. auto.vtt streams transcript_segments;
 		// the sidecar path serves .srt/.vtt files sitting next to the
 		// source media. Both hang off the same handler so the wiring is

@@ -96,6 +96,72 @@ func TestExecRunner_FullGateEncodesInSoftware(t *testing.T) {
 	}
 }
 
+// How a transcode ended: one whose ffmpeg exits 0 is finished; one stopped
+// (a session's close, the reaper) is over but not finished; OnEnd runs once,
+// at the end (at once when it is over), for a test handle too.
+func TestHandleEnds(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a shell script stands in for ffmpeg")
+	}
+	script := func(body string) Binary {
+		p := filepath.Join(t.TempDir(), "ffmpeg")
+		if err := os.WriteFile(p, []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return Binary{FFmpeg: p}
+	}
+	job := func() Job {
+		return Job{SessionID: uuid.NewString(), InputPath: "/in.mp4", OutputDir: t.TempDir(), Ladder: DefaultLadder(0),
+			Format: "hls", SourceCodec: "h264"}
+	}
+	ended := make(chan struct{}, 2)
+	r := &execRunner{Bin: script("exit 0")}
+	h, err := r.Start(context.Background(), job())
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.OnEnd(func() { ended <- struct{}{} })
+	select {
+	case <-ended:
+	case <-time.After(10 * time.Second):
+		t.Fatal("OnEnd never ran for a transcode that finished")
+	}
+	if !h.Ended() || !h.Finished() || h.Active() {
+		t.Errorf("finished: ended %v, finished %v, active %v", h.Ended(), h.Finished(), h.Active())
+	}
+	h.OnEnd(func() { ended <- struct{}{} }) // over: at once
+	select {
+	case <-ended:
+	default:
+		t.Error("OnEnd after the end did not run")
+	}
+
+	r = &execRunner{Bin: script("exec sleep 30")}
+	if h, err = r.Start(context.Background(), job()); err != nil {
+		t.Fatal(err)
+	}
+	h.OnEnd(func() { ended <- struct{}{} })
+	if h.Ended() || h.Finished() {
+		t.Fatal("ended while running")
+	}
+	_ = h.Stop(context.Background())
+	select {
+	case <-ended:
+	case <-time.After(15 * time.Second):
+		t.Fatal("OnEnd never ran for a stopped transcode")
+	}
+	if !h.Ended() || h.Finished() {
+		t.Errorf("stopped: ended %v, finished %v", h.Ended(), h.Finished())
+	}
+
+	th := NewHandleForTest(func(context.Context) error { return nil }, func() int { return 1 }, func() bool { return true })
+	th.OnEnd(func() { ended <- struct{}{} })
+	_ = th.Stop(context.Background())
+	if len(ended) != 1 || !th.Ended() || th.Finished() {
+		t.Errorf("test handle: OnEnd ran %d, ended %v, finished %v", len(ended), th.Ended(), th.Finished())
+	}
+}
+
 // batchGate is a SessionBatch with no sessions to give that records whether
 // the transcode asked for them under a deadline.
 type batchGate struct {

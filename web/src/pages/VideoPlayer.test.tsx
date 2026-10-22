@@ -18,7 +18,7 @@ vi.mock("../lib/api", async () => {
   return { ...actual, api: { ...actual.api, post, get, delete: del } };
 });
 
-import { VideoPlayer } from "./VideoPlayer";
+import { VideoPlayer, nearEnd } from "./VideoPlayer";
 import { I18nProvider } from "../lib/i18n";
 
 function renderPlayer(videoId = "11111111-1111-1111-1111-111111111111") {
@@ -112,6 +112,44 @@ describe("VideoPlayer", () => {
       expect(progressCall![0]).toBe("/api/stream/sessions/sess-prog/progress");
       expect(progressCall![1]).toMatchObject({ position_sec: 30 });
     });
+  });
+
+  it.each([
+    [120, 3600, false],
+    [3500, 3600, false],
+    [3550, 3600, true],
+  ])(
+    "marks the video completed at its end only: ended at %i of %i is %s",
+    async (at, duration, completed) => {
+      post.mockResolvedValue({
+        session_id: "sess-end",
+        mode: "transcode",
+        manifest_url: "/stream/sess-end/manifest.m3u8",
+        direct_url: "",
+        expires_at: "2026-05-17T12:00:00Z",
+        duration_sec: duration,
+      });
+      renderPlayer();
+      const video = (await screen.findByTestId("mkt-video")) as HTMLVideoElement;
+      await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+      // a stream that stopped short reports its own (shorter) length
+      Object.defineProperty(video, "duration", { value: at, configurable: true });
+      Object.defineProperty(video, "currentTime", { value: at, configurable: true });
+      video.dispatchEvent(new Event("ended"));
+      await waitFor(() => {
+        const last = post.mock.calls.filter((c) => String(c[0]).endsWith("/progress")).pop();
+        expect(last?.[1]).toEqual({ position_sec: at, ...(completed ? { completed: true } : {}) });
+      });
+    }
+  );
+
+  it("knows the end of a video: within 2% of its length, 5 s at least", () => {
+    expect(nearEnd(3530, 3600)).toBe(true);
+    expect(nearEnd(3520, 3600)).toBe(false);
+    expect(nearEnd(56, 60)).toBe(true);
+    expect(nearEnd(54, 60)).toBe(false);
+    expect(nearEnd(10, NaN)).toBe(false);
+    expect(nearEnd(10, 0)).toBe(false);
   });
 
   it("closes the streaming session via DELETE on unmount", async () => {
