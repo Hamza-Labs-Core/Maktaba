@@ -3,9 +3,10 @@
 // move-an-install.md): it finds it (a scheduled task that runs maktaba-server
 // serve, directly, through Maktaba's own launcher or from a script; the node
 // installer's tasks; a server started by hand), stops it, carries its settings,
-// keys, node config and files into the app (an SQLite database is copied; a
-// Postgres stays where it is, its url carried), and once the app's server was
-// verified removes the old task. The old folder is kept, and the old task's XML
+// keys and files into the app (an SQLite database is copied; a Postgres stays
+// where it is, its url carried; a node's node.json stays where it is, the
+// machine's one, which the app reads: it is never copied), and once the app's
+// server was verified removes the old task. The old folder is kept, and the old task's XML
 // too: Undo brings it back.
 package adopt
 

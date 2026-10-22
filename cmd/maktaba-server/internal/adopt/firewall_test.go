@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -72,6 +73,10 @@ func TestThePlanCopiesTheOldInstallsFirewallRules(t *testing.T) {
 	}
 	if len(plan.Problems) != 0 || len(plan.Warnings) != 1 || plan.Warnings[0].Code != "firewall_prompt" || plan.Warnings[0].Params["count"] != 4 {
 		t.Errorf("problems %+v warnings %+v", plan.Problems, plan.Warnings)
+	}
+	// the rule of a program the app has none of is said, never dropped silently
+	if n := codedNotes(plan.NotCarried, "firewall_rule"); len(n) != 1 || n[0].Params["rule"] != "maktaba-tool" {
+		t.Errorf("not carried: %+v", plan.NotCarried)
 	}
 
 	// what the app has already is not asked again
@@ -146,6 +151,7 @@ func TestTheMoveMakesTheRulesBeforeTheStop(t *testing.T) {
 	// Verify: the server answers, but a rule turned off keeps the old task
 	procs := []supervisor.ChildStatus{{Role: supervisor.RoleAPI, Wanted: true, State: supervisor.StateRunning}}
 	cfg := fakeServer(t, &procs)
+	appServes(pc, "0.0.0.0")
 	for i := range pc.sys.rules {
 		if pc.sys.rules[i].Name == rec.Firewall[0].Name {
 			pc.sys.rules[i].Enabled = false
@@ -316,5 +322,116 @@ func TestALateRunFindsTheChangeWithdrawn(t *testing.T) {
 	}
 	if got := (&PromptTimeoutError{Wait: 150 * time.Second}).Minutes(); got != 3 {
 		t.Errorf("2.5 minutes are %d in the screen's words", got)
+	}
+}
+
+// codedNotes are the notes with code.
+func codedNotes(notes []Note, code string) []Note {
+	var out []Note
+	for _, n := range notes {
+		if n.Code == code {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// TestRulesOutsideTheFolderAreRead: the old install's programs outside its
+// folder (the server its script runs from elsewhere, a pipeline worker of a
+// venv elsewhere) have their rules read too: copied for the app's program of
+// the same name, and said not carried when the app has none.
+func TestRulesOutsideTheFolderAreRead(t *testing.T) {
+	pc := firewallPC(t)
+	srcs, _ := Find(pc.sys, pc.tgt.AppPayload)
+	src := srcs[0]
+	elsewhere := filepath.Join(filepath.Dir(pc.dir), "Maktaba Server")
+	src.Server = filepath.Join(elsewhere, "maktaba-server.exe")
+	python := filepath.Join(filepath.Dir(pc.dir), "venv", "Scripts", "python.exe")
+	pc.sys.procs = append(pc.sys.procs, Proc{PID: 150, Name: "python.exe", Exe: python, Cmdline: "python.exe -m pipeline"})
+	src.PIDs = append(src.PIDs, 150)
+	pc.sys.rules = append(pc.sys.rules,
+		FirewallRule{Name: "Outside{1}", Display: "maktaba-server (elsewhere)", Program: src.Server, Protocol: "TCP",
+			Ports: []string{"8780"}, Profiles: "Private", Enabled: true, Allow: true, Inbound: true},
+		FirewallRule{Name: "Python{1}", Display: "python", Program: python, Protocol: "TCP", Ports: []string{"9090"},
+			Profiles: "Private", Enabled: true, Allow: true, Inbound: true},
+		// another program in the server's folder: not the old install's
+		FirewallRule{Name: "Other{1}", Display: "other", Program: filepath.Join(elsewhere, "other.exe"), Protocol: "TCP",
+			Ports: []string{"1"}, Profiles: "Any", Enabled: true, Allow: true, Inbound: true})
+	plan, err := MakePlan(pc.sys, src, pc.tgt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var from []string
+	for _, r := range plan.Firewall {
+		from = append(from, r.From)
+	}
+	if !slices.Contains(from, "Outside{1}") || len(plan.Firewall) != 5 {
+		t.Errorf("copies from %q: the server's rule outside the folder is copied too", from)
+	}
+	var rules []any
+	for _, n := range codedNotes(plan.NotCarried, "firewall_rule") {
+		rules = append(rules, n.Params["rule"])
+	}
+	if !reflect.DeepEqual(rules, []any{"maktaba-tool", "python"}) {
+		t.Errorf("not carried %v: the rules of programs the app has none of", rules)
+	}
+}
+
+// TestABlockRuleOfTheAppsIsWarnedOf: a block rule on one of the app's programs
+// (Windows makes one when its prompt to allow a program is cancelled) beats the
+// copied allow rules, as a block applies before any allow: the plan warns of
+// it, and Verify does not pass while it is on where the copies apply.
+func TestABlockRuleOfTheAppsIsWarnedOf(t *testing.T) {
+	fastStop(t)
+	pc := firewallPC(t)
+	app := filepath.Join(pc.tgt.AppPayload, "bin", "maktaba-server.exe")
+	elsewhere := FirewallRule{Name: "TCP Query User{8}", Display: "maktaba-server (domain)", Program: app, Protocol: "TCP",
+		Ports: []string{"Any"}, Profiles: "Domain", Enabled: true, Inbound: true}
+	pc.sys.rules = append(pc.sys.rules, elsewhere)
+	srcs, _ := Find(pc.sys, pc.tgt.AppPayload)
+	if plan, _ := MakePlan(pc.sys, srcs[0], pc.tgt); len(codedNotes(plan.Warnings, "firewall_blocked")) != 0 {
+		t.Errorf("a block on a network the copies do not cover: %+v", plan.Warnings)
+	}
+	block := FirewallRule{Name: "TCP Query User{9}", Display: "maktaba-server", Program: app, Protocol: "TCP",
+		Ports: []string{"Any"}, Profiles: "Public", Enabled: true, Inbound: true}
+	pc.sys.rules = append(pc.sys.rules, block)
+	plan, _ := MakePlan(pc.sys, srcs[0], pc.tgt)
+	if n := codedNotes(plan.Warnings, "firewall_blocked"); len(n) != 1 || n[0].Params["rule"] != "maktaba-server" ||
+		n[0].Params["program"] != "maktaba-server.exe" {
+		t.Fatalf("warnings %+v", plan.Warnings)
+	}
+	if _, err := Move(context.Background(), pc.sys, plan, pc.tgt, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	procs := []supervisor.ChildStatus{{Role: supervisor.RoleAPI, Wanted: true, State: supervisor.StateRunning}}
+	cfg := fakeServer(t, &procs)
+	appServes(pc, "0.0.0.0")
+	pc.sys.profiles = []string{"Public"}
+	if err := Verify(context.Background(), pc.sys, pc.tgt, cfg, 0); err == nil || !strings.Contains(err.Error(), "blocks") {
+		t.Fatalf("a block on the network in use: %v", err)
+	}
+	pc.sys.profiles = []string{"Private"}
+	if err := Verify(context.Background(), pc.sys, pc.tgt, cfg, 0); err != nil {
+		t.Fatalf("the block is on another network: %v", err)
+	}
+}
+
+func TestRulesMeet(t *testing.T) {
+	for _, c := range []struct {
+		a, b []string
+		want bool
+	}{
+		{[]string{"Any"}, []string{"8780"}, true},
+		{[]string{"8700-8800"}, []string{"8780"}, true},
+		{[]string{"8000-8100"}, []string{"8780"}, false},
+		{[]string{"8781", "8782"}, []string{"8780"}, false},
+		{[]string{"RPC"}, []string{"8780"}, true},
+	} {
+		if got := portsMeet(c.a, c.b); got != c.want {
+			t.Errorf("ports %q and %q: %v", c.a, c.b, got)
+		}
+	}
+	if profilesMeet("Domain", "Private, Public") || !profilesMeet("Public", "Private, Public") || !profilesMeet("Any", "Domain") {
+		t.Error("profiles")
 	}
 }

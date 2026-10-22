@@ -86,6 +86,7 @@ func (f *adoptFakeSys) RemoveFirewallRules([]string) error                 { ret
 func (f *adoptFakeSys) ReadFile(path string) ([]byte, error)               { return os.ReadFile(path) }
 func (f *adoptFakeSys) Getenv(name string) string                          { return f.env[name] }
 func (f *adoptFakeSys) Listening(string) bool                              { return false }
+func (f *adoptFakeSys) Listeners(string) ([]adopt.Listener, error)         { return nil, nil }
 func (f *adoptFakeSys) StopAppServer() error                               { return nil }
 func (f *adoptFakeSys) User() (adopt.User, error) {
 	return adopt.User{SID: "S-1-5-21-1000-2000-3000-1001", Name: `PC\me`}, nil
@@ -265,7 +266,8 @@ func TestSetupAdopt(t *testing.T) {
 		t.Fatalf("status after an undo = %d %v", code, ev)
 	}
 	// and a fresh setup after the undo is refused as before the move: the old
-	// node runs again (the node config the move copied stays in the app's place)
+	// node runs again (with the machine's one node config, which the app reads
+	// too)
 	freshRefused(t, name)
 	if code, _, ev := runStep(t, "adopt", map[string]string{"action": "undo"}); code != 1 || ev["code"] != "adopt_no_move" {
 		t.Fatalf("undo twice = %d %v", code, ev)
@@ -294,5 +296,17 @@ func freshRefused(t *testing.T, source string) {
 	}
 	if code, _, ev := runStep(t, "finish", map[string]any{}); code != 1 || ev["code"] != "node_here" {
 		t.Fatalf("finish beside a node = %d %v", code, ev)
+	}
+}
+
+// TestTheMoveKnowsAnotherPCsNodeConfig: the app's side of a move carries the
+// roaming node config another PC claimed (the plan says the app is not that
+// node), as setup's check reads it.
+func TestTheMoveKnowsAnotherPCsNodeConfig(t *testing.T) {
+	foreignNodeConfig = func() (string, string) { return `C:\Users\me\AppData\Roaming\Maktaba\node.json`, "other-pc" }
+	t.Cleanup(func() { foreignNodeConfig = config.LocalForeignNodeConfig })
+	tgt := adoptTarget(config.Defaults())
+	if tgt.ForeignNode != `C:\Users\me\AppData\Roaming\Maktaba\node.json` || tgt.ForeignNodeOwner != "other-pc" {
+		t.Errorf("target %+v", tgt)
 	}
 }

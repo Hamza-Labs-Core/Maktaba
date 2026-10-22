@@ -29,6 +29,10 @@ type Target struct {
 	StateDir   string // the app's state root (moved/, chroma/, models/, cache/)
 	KeysDir    string
 	NodeConfig string // the node.json the app's roles read (config.LocalNodeConfigPath)
+	// ForeignNode is the node config in this PC's roaming profile when another
+	// PC claimed it (its machine_id, ForeignNodeOwner): the app's roles skip it
+	// (config.LocalForeignNodeConfig), so the app is not that node.
+	ForeignNode, ForeignNodeOwner string
 	// ModeFile is the app window's mode.json (the shell's mode.rs; on Windows
 	// %LOCALAPPDATA%\com.hamzalabs.maktaba): Undo takes its server mode out.
 	ModeFile string
@@ -198,6 +202,19 @@ func MakePlan(sys Sys, src Source, tgt Target) (Plan, error) {
 				"need_bytes", p.Need, "free_bytes", p.Free))
 		}
 	}
+	// the roaming profile's node config is another PC's: neither the app nor a
+	// worker of the app here is that node (a worker without one of its own has
+	// nothing to move: it is no node at all)
+	if tgt.ForeignNode != "" {
+		n := note("node_config_other_pc",
+			fmt.Sprintf("the node config %s in this PC's roaming profile belongs to another PC (%s): the app on this PC is not that node, and works for no home until this PC joins as its own machine (Help: Machines, Add a machine)",
+				tgt.ForeignNode, tgt.ForeignNodeOwner), "path", tgt.ForeignNode, "owner", tgt.ForeignNodeOwner)
+		if src.Kind == KindNodeWorker && src.Home == "" {
+			p.Problems = append(p.Problems, n)
+		} else {
+			p.Warnings = append(p.Warnings, n)
+		}
+	}
 	switch src.DB {
 	case DBNode:
 		if src.Kind == KindNodeWorker && src.Home == "" {
@@ -229,20 +246,37 @@ func MakePlan(sys Sys, src Source, tgt Target) (Plan, error) {
 }
 
 // planFirewall: the inbound rules that let other devices reach the old
-// install's programs (Windows asked when they first listened) are copied for
-// the app's own, or LAN devices and the home lose it while the move reports
-// success. Making them needs an administrator: the plan says the prompt is
-// coming, or refuses when this user cannot give it. The old rules are never
-// changed (they serve the old install again on Undo).
+// install's programs (Windows asked when they first listened), in its folder
+// or not, are copied for the app's own, or LAN devices and the home lose it
+// while the move reports success. Making them needs an administrator: the plan
+// says the prompt is coming, or refuses when this user cannot give it. A rule
+// of a program the app has none of is said not carried; an app's block rule
+// that would beat a copy (a block applies before any allow) is warned of. The
+// old rules are never changed (they serve the old install again on Undo).
 func planFirewall(sys Sys, p *Plan, tgt Target) {
 	if tgt.AppPayload == "" || p.Source.Dir == "" {
 		return
 	}
-	old, err := sys.FirewallRules(p.Source.Dir)
+	old, err := sourceFirewallRules(sys, p.Source)
+	var app []FirewallRule
 	if err == nil {
-		var app []FirewallRule
 		if app, err = sys.FirewallRules(filepath.Join(tgt.AppPayload, "bin")); err == nil {
 			p.Firewall = firewallCopies(old, app, tgt.AppPayload)
+		}
+	}
+	if err == nil {
+		for _, r := range old {
+			if _, ok := appProgram(r, tgt.AppPayload); r.serves() && !ok {
+				p.NotCarried = append(p.NotCarried, note("firewall_rule",
+					fmt.Sprintf("the firewall rule %s, which lets other devices reach %s (the app has no program of that name)", r.Display, r.Program),
+					"rule", r.Display, "program", r.Program))
+			}
+		}
+		for _, b := range firewallBlocks(app, firewallWanted(old, tgt.AppPayload)) {
+			p.Warnings = append(p.Warnings, note("firewall_blocked",
+				fmt.Sprintf("the firewall rule %s blocks the app's %s: Windows applies a block before any allow, so other devices do not reach the app while it is on",
+					b.Display, filepath.Base(b.Program)),
+				"rule", b.Display, "program", filepath.Base(b.Program)))
 		}
 	}
 	switch {
@@ -269,9 +303,10 @@ func (p Plan) ProblemsText() string {
 	return strings.Join(parts, "; ")
 }
 
-// moveItems are the files the app takes over: the keys and the node config
-// (never replaced when the app has a different one), the search index, the
-// streaming cache, the models, the Hugging Face sign-in and an SQLite database.
+// moveItems are the files the app takes over: the keys (never replaced when
+// the app has a different one), the search index, the streaming cache, the
+// models, the Hugging Face sign-in and an SQLite database. The node config is
+// never one: the app reads the machine's one where it is.
 func moveItems(src Source, old, cfg config.Config, tgt Target, getenv func(string) string) []Item {
 	type want struct {
 		code   string
@@ -343,7 +378,7 @@ func hfToken(getenv func(string) string) string {
 	return ""
 }
 
-// sameBytes: both files read and hold the same bytes (a key, a node config).
+// sameBytes: both files read and hold the same bytes (a key).
 func sameBytes(a, b string) bool {
 	x, err := os.ReadFile(a)
 	if err != nil {
@@ -936,6 +971,62 @@ func addFirewall(sys Sys, p Plan, rec *Record, tgt Target, progress Progress) er
 	}
 	rec.Firewall = append(rec.Firewall, add...)
 	return writeRecord(tgt.StateDir, *rec)
+}
+
+// sourceFirewallRules are the firewall rules of the old install's programs:
+// those in its folder, and those of its programs outside it (outsidePrograms),
+// each read from its own folder.
+func sourceFirewallRules(sys Sys, src Source) ([]FirewallRule, error) {
+	rules, err := sys.FirewallRules(src.Dir)
+	if err != nil {
+		return nil, err
+	}
+	outside, err := outsidePrograms(sys, src)
+	if err != nil {
+		return nil, err
+	}
+	read := map[string][]FirewallRule{}
+	for _, exe := range outside {
+		dir := filepath.Dir(exe)
+		key := strings.ToLower(dir)
+		if _, ok := read[key]; !ok {
+			if read[key], err = sys.FirewallRules(dir); err != nil {
+				return nil, err
+			}
+		}
+		for _, r := range read[key] {
+			if samePath(r.Program, exe) {
+				rules = append(rules, r)
+			}
+		}
+	}
+	return rules, nil
+}
+
+// outsidePrograms are the old install's programs outside its folder: the
+// server its script runs from elsewhere, and what of it runs from elsewhere
+// now (a node's pipeline workers).
+func outsidePrograms(sys Sys, src Source) ([]string, error) {
+	var out []string
+	add := func(exe string) {
+		if exe != "" && !within(exe, src.Dir) && !slices.ContainsFunc(out, func(o string) bool { return samePath(o, exe) }) {
+			out = append(out, exe)
+		}
+	}
+	add(src.Server)
+	if len(src.PIDs) == 0 {
+		return out, nil
+	}
+	procs, err := sys.Processes()
+	if err != nil {
+		return nil, fmt.Errorf("list the running programs: %w", err)
+	}
+	for _, pr := range procs {
+		if slices.Contains(src.PIDs, pr.PID) && !isConsole(pr) {
+			add(pr.Exe)
+		}
+	}
+	return out, nil
 }
 
 // sourceRuns reports whether a program of src runs (never the app's own, me).

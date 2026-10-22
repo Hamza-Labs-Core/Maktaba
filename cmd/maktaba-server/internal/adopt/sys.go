@@ -16,6 +16,13 @@ type Proc struct {
 	Cwd string `json:"-"`
 }
 
+// Listener is a listening TCP socket: the address it is bound to, and the
+// process that holds it.
+type Listener struct {
+	Addr string
+	PID  int
+}
+
 // Service is a Windows service that runs a Maktaba program.
 type Service struct {
 	Name     string `json:"Name"`
@@ -53,6 +60,9 @@ type Sys interface {
 	Getenv(name string) string
 	// Listening reports whether something listens on a loopback port.
 	Listening(port string) bool
+	// Listeners are the TCP sockets listening on port: the address each is
+	// bound to (0.0.0.0 and :: for every one) and its process.
+	Listeners(port string) ([]Listener, error)
 	// StopAppServer asks the app's server agent to stop (its stop event) and
 	// waits until it has exited; nil when none runs.
 	StopAppServer() error

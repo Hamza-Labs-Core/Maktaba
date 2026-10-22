@@ -28,6 +28,7 @@ func (otherSys) Services() ([]Service, error)                 { return nil, nil 
 func (otherSys) ReadFile(path string) ([]byte, error)         { return readFile(path) }
 func (otherSys) Getenv(name string) string                    { return os.Getenv(name) }
 func (otherSys) Listening(string) bool                        { return false }
+func (otherSys) Listeners(string) ([]Listener, error)         { return nil, ErrUnsupported }
 func (otherSys) StopAppServer() error                         { return ErrUnsupported }
 func (otherSys) User() (User, error)                          { return User{}, ErrUnsupported }
 func (otherSys) FirewallRules(string) ([]FirewallRule, error) { return nil, nil }

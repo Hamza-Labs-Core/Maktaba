@@ -50,9 +50,10 @@ type fakeSys struct {
 	tasks    []Task
 	xml      map[string][]byte
 	procs    []Proc
-	taskOf   map[int]string // pid → the task whose end stops it
-	stubborn map[int]bool   // pid → survives its task's end
-	ports    map[string]int // port → pid listening
+	taskOf   map[int]string    // pid → the task whose end stops it
+	stubborn map[int]bool      // pid → survives its task's end
+	ports    map[string]int    // port → pid listening
+	bind     map[string]string // port → the address it listens on (0.0.0.0 when not set)
 	env      map[string]string
 
 	ended, killed, deleted, run []string
@@ -292,6 +293,20 @@ func (f *fakeSys) Listening(port string) bool {
 	return ok
 }
 
+func (f *fakeSys) Listeners(port string) ([]Listener, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	pid, ok := f.ports[port]
+	if !ok {
+		return nil, nil
+	}
+	addr := f.bind[port]
+	if addr == "" {
+		addr = "0.0.0.0"
+	}
+	return []Listener{{Addr: addr, PID: pid}}, nil
+}
+
 func (f *fakeSys) StopAppServer() error {
 	f.appStopped++
 	return nil
@@ -382,6 +397,53 @@ func TestSplitArgs(t *testing.T) {
 		if got := SplitArgs(in); !reflect.DeepEqual(got, want) {
 			t.Errorf("SplitArgs(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// TestCmdLinesWithSpaces: a console's command line and a script's lines read
+// as cmd reads them: a quoted path with a space and arguments after it (cmd
+// keeps the two quotes), a line quoted again around it (cmd takes off the
+// outer two), /S (always the outer two), a cd /d into a folder with a space;
+// in a script, %~dp0 of a folder with a space, quoted, ending in a backslash.
+func TestCmdLinesWithSpaces(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "My Stuff")
+	script := filepath.Join(dir, "start.cmd")
+	for _, c := range []struct{ cmdline, want string }{
+		{`cmd /c "` + script + `" serve`, script},
+		{`cmd /c ""` + script + `" serve"`, script},
+		{`cmd.exe /c ""` + script + `" "a b" serve"`, script},
+		{`cmd /c "` + script + `"`, script},
+		{`C:\Windows\System32\conhost.exe --headless cmd.exe /c "` + script + `" serve`, script},
+		{`cmd /c "cd /d "` + dir + `" && start.cmd serve"`, script},
+		{`cmd /c call "` + script + `" serve`, script},
+		// /S: cmd takes off the outer quotes, and runs the path cut at its space
+		{`cmd /s /c "` + script + `" serve`, ""},
+		// a name that is no program's: the outer quotes come off too
+		{`cmd /c "` + filepath.Join(dir, "start") + `" x`, ""},
+	} {
+		if got := ConsoleScript(c.cmdline, ""); got != c.want {
+			t.Errorf("%s: %q, want %q", c.cmdline, got, c.want)
+		}
+	}
+	// a task that runs it, as Task Scheduler holds it
+	write(t, script, "@echo off\r\ncd /d \"%~dp0\"\r\n\"%~dp0bin\\maktaba-server.exe\" serve --bin-dir \"%~dp0bin\\\" --no-mdns > \"%~dp0maktaba.log\" 2>&1\r\n")
+	sys := newFakeSys(nil)
+	for _, args := range []string{`/c "` + script + `" serve`, `/c ""` + script + `" serve"`} {
+		s, ok := classify(sys, Task{Name: `\Maktaba`, Command: `C:\Windows\System32\cmd.exe`, Args: args, Enabled: true})
+		if !ok || s.Script != script {
+			t.Errorf("the task %s: %q (%v)", args, s.Script, ok)
+		}
+	}
+	s, ok := ParseScript(script, read(t, script), func(string) string { return "" })
+	// %~dp0 is the script's folder and its separator; the rest as written
+	if server := filepath.Clean(dir + string(filepath.Separator) + `bin\maktaba-server.exe`); !ok || s.Dir != dir || s.Server != server {
+		t.Fatalf("dir %q, server %q (%v), want %q", s.Dir, s.Server, ok, server)
+	}
+	if want := []string{"--bin-dir", dir + string(filepath.Separator) + "bin" + `\`, "--no-mdns"}; !reflect.DeepEqual(s.ServeArgs, want) {
+		t.Errorf("serve args %q, want %q", s.ServeArgs, want)
+	}
+	if want := filepath.Join(dir, "maktaba.log"); s.Log != want {
+		t.Errorf("log %q, want %q", s.Log, want)
 	}
 }
 
@@ -1039,6 +1101,17 @@ func TestVerifyFinishUndo(t *testing.T) {
 		t.Fatalf("finished before verified: %v %v", ok, err)
 	}
 	procs[1].State = supervisor.StateRunning
+	// the app's server answers on loopback, but other devices reached the old
+	// install on 0.0.0.0:8780: not yet, until the app listens there beyond
+	// loopback
+	if err := Verify(context.Background(), pc.sys, pc.tgt, cfg, 0); err == nil || !strings.Contains(err.Error(), "0.0.0.0:8780") {
+		t.Fatalf("nothing of the app's on the old address: %v", err)
+	}
+	appServes(pc, "127.0.0.1")
+	if err := Verify(context.Background(), pc.sys, pc.tgt, cfg, 0); err == nil || !strings.Contains(err.Error(), "0.0.0.0:8780") {
+		t.Fatalf("the app bound to loopback only: %v", err)
+	}
+	appServes(pc, "0.0.0.0")
 	if err := Verify(context.Background(), pc.sys, pc.tgt, cfg, 0); err != nil {
 		t.Fatal(err)
 	}
@@ -1092,6 +1165,28 @@ func TestVerifyFinishUndo(t *testing.T) {
 	}
 	if err := Undo(pc.sys, pc.tgt, nil); err == nil {
 		t.Error("undone twice")
+	}
+}
+
+// appServes is the app's server listening where other devices reached the old
+// install (its web and stream ports, 8780 and 8782), bound to addr.
+func appServes(pc *thisPC, addr string) {
+	pc.sys.mu.Lock()
+	defer pc.sys.mu.Unlock()
+	payload := pc.tgt.AppPayload
+	if payload == "" {
+		payload = filepath.Join(filepath.Dir(pc.tgt.StateDir), "Programs", "Maktaba", "server")
+	}
+	if pc.sys.bind == nil {
+		pc.sys.bind = map[string]string{}
+	}
+	for i, port := range []string{"8780", "8782"} {
+		pid := 900 + i
+		if !slices.ContainsFunc(pc.sys.procs, func(p Proc) bool { return p.PID == pid }) {
+			pc.sys.procs = append(pc.sys.procs, Proc{PID: pid, Name: exeName("maktaba-server"),
+				Exe: filepath.Join(payload, "bin", exeName("maktaba-server"))})
+		}
+		pc.sys.ports[port], pc.sys.bind[port] = pid, addr
 	}
 }
 
@@ -1293,5 +1388,32 @@ func TestMoveNodeWorkers(t *testing.T) {
 	}
 	if len(sys.created) != 2 || len(sys.run) != 2 || sys.created[`\Maktaba\maktaba-node@2`] != `<Task>\Maktaba\maktaba-node@2</Task>` {
 		t.Errorf("created %v run %q", sys.created, sys.run)
+	}
+}
+
+// TestThePlanSaysTheRoamingNodeConfigIsAnotherPCs: the node config in this
+// PC's roaming profile was claimed by another PC (its machine_id): the plan
+// says the app on this PC is not that node; a node installer's worker without
+// a node config of its own is no node at all, so it does not move.
+func TestThePlanSaysTheRoamingNodeConfigIsAnotherPCs(t *testing.T) {
+	pc := newThisPC(t)
+	pc.tgt.ForeignNode = filepath.Join(t.TempDir(), "Roaming", "Maktaba", "node.json")
+	pc.tgt.ForeignNodeOwner = "0f6c-the-other-pc"
+	srcs, _ := Find(pc.sys, "")
+	plan, err := MakePlan(pc.sys, srcs[0], pc.tgt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := codedNotes(plan.Warnings, "node_config_other_pc")
+	if len(n) != 1 || n[0].Params["path"] != pc.tgt.ForeignNode || n[0].Params["owner"] != pc.tgt.ForeignNodeOwner {
+		t.Fatalf("warnings %+v", plan.Warnings)
+	}
+	worker := Source{ID: `\maktaba-node@1`, Kind: KindNodeWorker, Task: `\maktaba-node@1`, Dir: t.TempDir(), DB: DBSQLite}
+	if p, _ := MakePlan(pc.sys, worker, pc.tgt); len(codedNotes(p.Problems, "node_config_other_pc")) != 1 {
+		t.Errorf("a worker of another PC's node config: problems %+v", p.Problems)
+	}
+	pc.tgt.ForeignNode = ""
+	if p, _ := MakePlan(pc.sys, srcs[0], pc.tgt); len(codedNotes(p.Warnings, "node_config_other_pc")) != 0 {
+		t.Errorf("no other PC's node config: %+v", p.Warnings)
 	}
 }

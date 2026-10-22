@@ -265,23 +265,24 @@ func classify(sys Sys, t Task) (Source, bool) {
 		s.Dir = t.WorkDir
 		return s, true
 	}
-	// a batch file: the command itself, or what cmd /c (under conhost or not) runs
+	// a batch file: the command itself, or what cmd /c (under conhost or not)
+	// runs, read with cmd's own rules as its console's command line is
+	// (runsScript), against the task's folder
 	script := ""
 	if isBatch(t.Command) {
 		script = t.Command
-	} else if base == "cmd.exe" || base == "conhost.exe" || base == "cmd" {
-		for _, a := range args {
-			if isBatch(a) {
-				script = a
-				break
-			}
+		if !filepath.IsAbs(script) && !isWinAbs(script) && t.WorkDir != "" {
+			script = filepath.Join(t.WorkDir, script)
 		}
+	} else if base == "cmd.exe" || base == "conhost.exe" || base == "cmd" {
+		line := t.Args
+		if base != "conhost.exe" {
+			line = "cmd.exe " + t.Args
+		}
+		script = ConsoleScript(line, t.WorkDir)
 	}
 	if script == "" {
 		return s, false
-	}
-	if !filepath.IsAbs(script) && !isWinAbs(script) && t.WorkDir != "" {
-		script = filepath.Join(t.WorkDir, script)
 	}
 	raw, err := sys.ReadFile(script)
 	if err != nil {

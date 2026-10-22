@@ -28,13 +28,16 @@ const adoptVerifyWait = 2 * time.Minute
 // window keeps mode.json in %LOCALAPPDATA%\<it> on Windows (mode.rs).
 const appIdentifier = "com.hamzalabs.maktaba"
 
-// adoptTarget is the app's side of a move: its server.toml, state root, keys
-// and node config (on Windows the new place, story 38.1, whatever an old
-// install still reads), its own install (the payload, never stopped as the old
-// install's), and on Windows the app window's mode.json.
+// adoptTarget is the app's side of a move: its server.toml, state root, keys,
+// the node config its roles read (the machine's one, where it is: on Windows
+// the roaming original while it is this PC's or no PC's, else the local one;
+// never copied, story 38.1) and a roaming one another PC claimed, its own
+// install (the payload, never stopped as the old install's), and on Windows the
+// app window's mode.json.
 func adoptTarget(cfg config.Config) adopt.Target {
 	tgt := adopt.Target{ConfigPath: config.Path(), StateDir: cfg.StateDir(), KeysDir: config.KeysDir(),
 		NodeConfig: config.LocalNodeConfigPath()}
+	tgt.ForeignNode, tgt.ForeignNodeOwner = foreignNodeConfig()
 	tgt.AppPayload, _ = setupPayload()
 	if runtime.GOOS == "windows" {
 		home, _ := os.UserHomeDir()
@@ -213,9 +216,9 @@ func adoptSource(sys adopt.Sys, payload string, tgt adopt.Target, id string) (ad
 
 // nodeHere is why a fresh setup cannot run on this machine: an install outside
 // the app (Find, its task enabled or not, running or not) is a node of a home.
-// The app would read the same node config (or the copy an undone move left in
-// %LOCALAPPDATA%) and run as a second copy of that node, so the node moves into
-// the app instead. The terminal setup of that very install (this maktaba-server
+// The app would read the same node config (the machine's one: it is never
+// copied) and run as a second copy of that node, so the node moves into the app
+// instead. The terminal setup of that very install (this maktaba-server
 // is its own, outside any app) is not a second copy. One that cannot be looked
 // for is not taken as none. Empty code: nothing stands in the way.
 func nodeHere() (code, message string, kv []any) {

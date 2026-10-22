@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -56,6 +58,72 @@ func (r FirewallRule) covers(p string) bool {
 	return false
 }
 
+// blocks reports whether r, an inbound block rule that is on, stops some of
+// what the allow rule a lets through: the same program, on a protocol, a port
+// and a profile of a's. Windows applies a block before any allow, so a's
+// devices would not reach the program.
+func (r FirewallRule) blocks(a FirewallRule) bool {
+	if !r.Enabled || r.Allow || !r.Inbound || !samePath(r.Program, a.Program) {
+		return false
+	}
+	if !anyValue(r.Protocol) && !anyValue(a.Protocol) && !strings.EqualFold(r.Protocol, a.Protocol) {
+		return false
+	}
+	return portsMeet(r.Ports, a.Ports) && profilesMeet(r.Profiles, a.Profiles)
+}
+
+// anyValue: a rule's field that holds every value ("Any", or none given).
+func anyValue(v string) bool {
+	v = strings.TrimSpace(v)
+	return v == "" || strings.EqualFold(v, "Any")
+}
+
+// portsMeet: two rules' local ports share one. A range ("5000-5010") holds
+// its ports; a keyword (RPC, PlayToDiscovery, …) is taken to meet any.
+func portsMeet(a, b []string) bool {
+	if len(a) == 0 || len(b) == 0 {
+		return true
+	}
+	for _, x := range a {
+		for _, y := range b {
+			xl, xh, okx := portRange(x)
+			yl, yh, oky := portRange(y)
+			if anyValue(x) || anyValue(y) || !okx || !oky || (xl <= yh && yl <= xh) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func portRange(p string) (lo, hi int, ok bool) {
+	from, to, isRange := strings.Cut(strings.TrimSpace(p), "-")
+	lo, err := strconv.Atoi(strings.TrimSpace(from))
+	if err != nil {
+		return 0, 0, false
+	}
+	hi = lo
+	if isRange {
+		if hi, err = strconv.Atoi(strings.TrimSpace(to)); err != nil {
+			return 0, 0, false
+		}
+	}
+	return lo, hi, true
+}
+
+// profilesMeet: two rules apply on a network profile in common.
+func profilesMeet(a, b string) bool {
+	if anyValue(a) || anyValue(b) {
+		return true
+	}
+	for _, p := range strings.Split(a, ",") {
+		if (FirewallRule{Profiles: b}).covers(strings.TrimSpace(p)) {
+			return true
+		}
+	}
+	return false
+}
+
 // same reports whether o lets the same program be reached the same way as r.
 func (r FirewallRule) same(o FirewallRule) bool {
 	return samePath(r.Program, o.Program) && strings.EqualFold(r.Protocol, o.Protocol) &&
@@ -65,24 +133,11 @@ func (r FirewallRule) same(o FirewallRule) bool {
 
 // firewallCopies are the rules the app's programs need so that other devices
 // reach them as they reached the old install's: one for each enabled inbound
-// allow rule of a program in the old install's folder whose program the app's
+// allow rule of one of the old install's programs whose program the app's
 // payload has (bin\<the same name>), none the app has already.
 func firewallCopies(old, app []FirewallRule, payload string) []FirewallRule {
 	var out []FirewallRule
-	for _, r := range old {
-		if !r.serves() {
-			continue
-		}
-		prog := filepath.Join(payload, "bin", filepath.Base(winSlash(r.Program)))
-		if payload == "" || !isFile(prog) {
-			continue
-		}
-		c := FirewallRule{Program: prog, Protocol: r.Protocol, Ports: r.Ports, Profiles: r.Profiles,
-			Enabled: true, Allow: true, Inbound: true, Group: firewallGroup, From: r.Name}
-		c.Name = firewallPrefix + ruleID(c)
-		c.Display = fmt.Sprintf("Maktaba: %s (%s)", strings.TrimSuffix(filepath.Base(prog), filepath.Ext(prog)), r.Protocol)
-		c.Description = "Lets other devices reach the Maktaba app's " + filepath.Base(prog) +
-			", as the rule " + r.Display + " let them reach the install it took over. Restore the old install removes it."
+	for _, c := range firewallWanted(old, payload) {
 		had := false
 		for _, a := range app {
 			had = had || (a.serves() && a.same(c))
@@ -92,6 +147,48 @@ func firewallCopies(old, app []FirewallRule, payload string) []FirewallRule {
 		}
 		if !had {
 			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// firewallWanted are the old install's serving rules as the app's programs'
+// (firewallCopies, before the ones the app has are left out).
+func firewallWanted(old []FirewallRule, payload string) []FirewallRule {
+	var out []FirewallRule
+	for _, r := range old {
+		prog, ok := appProgram(r, payload)
+		if !r.serves() || !ok {
+			continue
+		}
+		c := FirewallRule{Program: prog, Protocol: r.Protocol, Ports: r.Ports, Profiles: r.Profiles,
+			Enabled: true, Allow: true, Inbound: true, Group: firewallGroup, From: r.Name}
+		c.Name = firewallPrefix + ruleID(c)
+		c.Display = fmt.Sprintf("Maktaba: %s (%s)", strings.TrimSuffix(filepath.Base(prog), filepath.Ext(prog)), r.Protocol)
+		c.Description = "Lets other devices reach the Maktaba app's " + filepath.Base(prog) +
+			", as the rule " + r.Display + " let them reach the install it took over. Restore the old install removes it."
+		out = append(out, c)
+	}
+	return out
+}
+
+// appProgram is the app's program for the old rule r's (bin\<the same name>),
+// when the app's payload has one.
+func appProgram(r FirewallRule, payload string) (string, bool) {
+	prog := filepath.Join(payload, "bin", filepath.Base(winSlash(r.Program)))
+	return prog, payload != "" && isFile(prog)
+}
+
+// firewallBlocks are the app's block rules that beat a rule its programs need
+// (wanted): Windows applies a block before any allow, so other devices would
+// not reach the app while one is on.
+func firewallBlocks(app, wanted []FirewallRule) []FirewallRule {
+	var out []FirewallRule
+	for _, b := range app {
+		for _, w := range wanted {
+			if b.blocks(w) && !slices.ContainsFunc(out, func(o FirewallRule) bool { return o.Name == b.Name }) {
+				out = append(out, b)
+			}
 		}
 	}
 	return out
@@ -150,6 +247,12 @@ func checkFirewall(sys Sys, made []FirewallRule) error {
 		for _, p := range active {
 			if want.covers(p) && !got.covers(p) {
 				return fmt.Errorf("the firewall rule %s for %s no longer covers the %s network", want.Name, want.Program, p)
+			}
+			// a block applies before any allow
+			for _, b := range now {
+				if b.blocks(want) && want.covers(p) && b.covers(p) {
+					return fmt.Errorf("the firewall rule %s blocks %s on the %s network", b.Display, want.Program, p)
+				}
 			}
 		}
 	}

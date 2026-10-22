@@ -113,7 +113,7 @@ func ParseScript(path, text string, getenv func(string) string) (Script, bool) {
 			s.Env[name] = expand(m[2])
 			continue
 		}
-		args := SplitArgs(expand(line))
+		args := splitCmd(expand(line))
 		for i := 0; i+1 < len(args); i++ {
 			base := strings.ToLower(filepath.Base(strings.ReplaceAll(args[i], `\`, "/")))
 			if (base != "maktaba-server.exe" && base != "maktaba-server") || args[i+1] != "serve" {
@@ -144,7 +144,10 @@ func ParseScript(path, text string, getenv func(string) string) (Script, bool) {
 	return s, found
 }
 
-var cmdSwitch = regexp.MustCompile(`(?i)(?:^|\s)/[ck](?:\s+|$)`)
+var (
+	cmdSwitch = regexp.MustCompile(`(?i)(?:^|\s)/[ck](?:\s+|$)`)
+	sSwitch   = regexp.MustCompile(`(?i)(?:^|\s)/s(?:\s|$)`)
+)
 
 // ConsoleScript is the batch file a console's command line runs (cmd.exe /c
 // or /k, conhost.exe ... cmd.exe /c), as a whole path: a relative one against
@@ -157,11 +160,7 @@ func ConsoleScript(cmdline, cwd string) string {
 		return ""
 	}
 	rest := strings.TrimSpace(cmdline[loc[1]:])
-	// cmd's own rule: unless the line is exactly one quoted name (two quotes,
-	// no special character between them), a leading quote and the last one are
-	// taken off
-	one := strings.Count(rest, `"`) == 2 && strings.HasSuffix(rest, `"`) && !strings.ContainsAny(strings.Trim(rest, `"`), "&<>()@^|")
-	if strings.HasPrefix(rest, `"`) && !one {
+	if strings.HasPrefix(rest, `"`) && !keepsQuotes(rest, cmdline[:loc[0]]) {
 		rest = rest[1:]
 		if i := strings.LastIndexByte(rest, '"'); i >= 0 {
 			rest = rest[:i] + rest[i+1:]
@@ -180,7 +179,7 @@ func ConsoleScript(cmdline, cwd string) string {
 			}
 			continue
 		}
-		args := SplitArgs(part)
+		args := splitCmd(part)
 		if len(args) > 1 && strings.EqualFold(args[0], "call") {
 			args = args[1:]
 		}
@@ -200,6 +199,56 @@ func ConsoleScript(cmdline, cwd string) string {
 		return ""
 	}
 	return ""
+}
+
+// keepsQuotes is cmd's first rule for the line after /c or /k (cmd /?): with
+// no /S before the switch, exactly two quotes, none of &<>()@^| and some
+// whitespace between them, and the name of a program between them (here: a
+// program's extension), the quotes stay, as in `"C:\My Stuff\start.cmd" serve`.
+// Else cmd takes off the first quote and the last, keeping what follows the
+// last, as in `""C:\My Stuff\start.cmd" serve"`.
+func keepsQuotes(rest, before string) bool {
+	if sSwitch.MatchString(before) || strings.Count(rest, `"`) != 2 || !strings.HasPrefix(rest, `"`) {
+		return false
+	}
+	inner := rest[1 : 1+strings.IndexByte(rest[1:], '"')]
+	if !strings.ContainsAny(inner, " \t") || strings.ContainsAny(inner, "&<>()@^|") {
+		return false
+	}
+	switch strings.ToLower(filepath.Ext(inner)) {
+	case ".exe", ".com", ".bat", ".cmd":
+		return true
+	}
+	return false
+}
+
+// splitCmd splits a line the way cmd reads it: whitespace outside quotes
+// separates, quotes group (and are not kept), and a backslash is a plain
+// character: `"%~dp0"` is a folder ending in one, never an escaped quote (the
+// C runtime's rule, SplitArgs, is for a program's own arguments).
+func splitCmd(s string) []string {
+	var out []string
+	var cur strings.Builder
+	in, have := false, false
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '"':
+			in, have = !in, true
+		case (c == ' ' || c == '\t') && !in:
+			if have {
+				out = append(out, cur.String())
+				cur.Reset()
+				have = false
+			}
+		default:
+			cur.WriteByte(c)
+			have = true
+		}
+	}
+	if have {
+		out = append(out, cur.String())
+	}
+	return out
 }
 
 // splitCommands splits a cmd line at & and && (and ||) outside quotes.

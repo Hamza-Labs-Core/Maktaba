@@ -248,17 +248,23 @@ Instead of `check` … `finish` when the PC already runs Maktaba outside the app
   own text (the English `message` for a code the app does not know): `carried` as
   `setup.move.carry.<code>` (`section` `name`, `database_url`, `pipeline_instances` `count`, `env`
   `name`, `no_mdns`), `not_carried` as `setup.move.nocarry.<code>` (`pipeline_python`, `app_python`
-  `name`: the script's `MAKTABA_PYTHON`, `env` `name`, `serve_flag` `flag`), `problems` and
+  `name`: the script's `MAKTABA_PYTHON`, `env` `name`, `serve_flag` `flag`, `firewall_rule`
+  `rule`, `program`: a firewall rule of a program the app has none of), `problems` and
   `warnings` as `setup.move.note.<code>`: problems `space_low`
   (`need_bytes`, `free_bytes`), `worker_not_joined` (`path`), `postgres_down` (`where`),
   `key_differs` (`path`, `from`: the app holds another key there, which is never replaced; found
   in the plan, before anything is stopped), `node_config_elsewhere` (`path`, `app`: the node reads
   another node config than the one the app reads, so the app would not be that node),
   `service_install` (`name`: a Windows
-  service, run by the system's account), `firewall_needs_admin` (`count`), `firewall_unknown`;
-  warnings `postgres_stays` (`where`), `started_by_hand`, `firewall_prompt` (`count`). `firewall` is
-  the inbound rules the app's programs get: one copy of each enabled inbound allow rule bound to a
-  program in the old install's folder whose program the app's payload has (`bin\<the same name>`),
+  service, run by the system's account), `firewall_needs_admin` (`count`), `firewall_unknown`,
+  `node_config_other_pc` (`path`, `owner`) for a node installer's worker with no node config of its
+  own; warnings `postgres_stays` (`where`), `started_by_hand`, `firewall_prompt` (`count`),
+  `firewall_blocked` (`rule`, `program`: a block rule on an app's program beats the copies, as a
+  block applies before any allow), `node_config_other_pc` (`path`, `owner`: the roaming profile's
+  node config is another PC's, so the app on this PC is not that node). `firewall` is
+  the inbound rules the app's programs get: one copy of each enabled inbound allow rule bound to
+  one of the old install's programs (in its folder, or its server and running programs elsewhere)
+  whose program the app's payload has (`bin\<the same name>`),
   the same protocol, ports and profiles, none the app has already. Making them needs an
   administrator: the plan says Windows asks once (`firewall_prompt`), or refuses when this user
   cannot allow it (a standard user).
@@ -283,8 +289,11 @@ Instead of `check` … `finish` when the PC already runs Maktaba outside the app
   that stopped part way (the screen's "Restore the old install", beside Try again). A `firewall`
   progress event comes before Windows asks to remove the move's rules.
 - `{"action": "verify", "wait_sec": n}` → `{"move": <record>}`: the app's API answers and every
-  process runs, and the firewall rules the move made are there, on, inbound, allowing the app's
-  programs, on the network profile in use (a connection from this PC to its own LAN address never
+  process runs, a program of the app listens beyond loopback on each of the old install's web, API
+  and streaming addresses that other devices reached (`0.0.0.0:8780`, say: read from Windows' TCP
+  table), and the firewall rules the move made are there, on, inbound, allowing the app's
+  programs, on the network profile in use, with no block rule of those programs beating them
+  there (a connection from this PC to its own LAN address never
   passes the inbound filter, so the rules themselves are read); then the old task is removed. The
   server does the same by itself once every role ran healthy for three minutes, so the screens need
   not wait for it.
