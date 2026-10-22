@@ -98,7 +98,7 @@ func (outageCopy) SignIn(_ context.Context, name, pw string) (*delegation.Princi
 	p := outageUser
 	return &p, nil
 }
-func (outageCopy) Synced(context.Context) (time.Time, error) { return time.Now(), nil }
+func (outageCopy) Synced(context.Context) (time.Time, error)             { return time.Now(), nil }
 func (outageCopy) SignedInThrough(context.Context, string) (bool, error) { return true, nil }
 
 const outageSession = "6f1d2c3b-0000-4000-8000-000000000002"

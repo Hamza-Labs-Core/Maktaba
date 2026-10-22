@@ -23,7 +23,7 @@ func (beatCopy) Principal(context.Context, string) (*delegation.Principal, error
 func (beatCopy) SignIn(context.Context, string, string) (*delegation.Principal, error) {
 	return nil, nodeauth.ErrNotLive
 }
-func (c beatCopy) Synced(context.Context) (time.Time, error) { return c.synced, nil }
+func (c beatCopy) Synced(context.Context) (time.Time, error)           { return c.synced, nil }
 func (beatCopy) SignedInThrough(context.Context, string) (bool, error) { return false, nil }
 
 // #157: with the home there, the node reads from its copy only while the copy is within
