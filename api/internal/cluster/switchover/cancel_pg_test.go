@@ -48,6 +48,44 @@ func TestAnAdminCallsASwitchOffBeforeThePromotion(t *testing.T) {
 	if _, err := o.Cancel(ctx, id, false, ""); !errors.Is(err, ErrNoSwitch) {
 		t.Fatalf("a switch over called off again: %v", err)
 	}
+	// a switch called off is not under way: another may start
+	if o.active() != nil {
+		t.Fatalf("a cancelled switch is under way: %+v", o.active())
+	}
+	cs, err := o.Candidates(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cs {
+		for _, r := range c.Reasons {
+			if r == ReasonBusy {
+				t.Fatalf("%s busy after a cancelled switch: %v", c.Name, c.Reasons)
+			}
+		}
+	}
+}
+
+// A switch called off after its promotion was asked (the machine taking over not
+// answering) may have begun its term there: the next switch begins past it.
+func TestTheNextSwitchBeginsPastACancelledSwitchsTerm(t *testing.T) {
+	o, _, _, b, _ := setup(t)
+	ctx := context.Background()
+	if _, err := o.DB.ExecContext(ctx, `INSERT INTO cluster_switchovers (id, term, kind, to_node, to_name, from_name,
+	        state) VALUES (gen_random_uuid(), 7, 'planned', $1, 'b', 'a', 'cancelled')`, b); err != nil {
+		t.Fatal(err)
+	}
+	if term, err := LatestTerm(ctx, o.DB); err != nil || term != 7 {
+		t.Fatalf("the latest term: %d %v, want 7", term, err)
+	}
+	o.RetryEvery = time.Hour
+	id, err := o.Start(ctx, b, "system")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var term int64
+	if err := o.DB.QueryRowContext(ctx, `SELECT term FROM cluster_switchovers WHERE id = $1`, id).Scan(&term); err != nil || term != 8 {
+		t.Fatalf("the next switch's term: %d %v, want 8", term, err)
+	}
 }
 
 // After the promotion was asked, a call to stop goes to the machine taking over: one

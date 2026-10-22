@@ -855,7 +855,7 @@ func (s *switching) emergency(ctx context.Context, req homeRequest) (any, error)
 }
 
 // emergencyTerm is the term an emergency begins: the next after the newest this machine
-// knows of (its copy's, its kit's).
+// knows of (its copy's terms and switches', its kit's).
 func (s *switching) emergencyTerm(ctx context.Context, kit *switchover.Kit) (int64, error) {
 	db, err := s.copyDB()
 	if err != nil {
@@ -863,7 +863,10 @@ func (s *switching) emergencyTerm(ctx context.Context, kit *switchover.Kit) (int
 	}
 	defer db.Close()
 	var term int64
-	if err := db.QueryRowContext(ctx, `SELECT COALESCE(max(term), 1) FROM cluster_terms`).Scan(&term); err != nil {
+	// a switch called off after its promotion was asked may have begun its term on a
+	// machine that did not answer (api's switchover.LatestTerm)
+	if err := db.QueryRowContext(ctx, `SELECT GREATEST(COALESCE((SELECT max(term) FROM cluster_terms), 1),
+	    COALESCE((SELECT max(term) FROM cluster_switchovers), 1))`).Scan(&term); err != nil {
 		return 0, err
 	}
 	return max(term, kit.Term) + 1, nil

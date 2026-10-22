@@ -266,7 +266,7 @@ func (o *Orchestrator) active() *Progress {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	for _, p := range o.progress {
-		if p.State != "done" && p.State != "failed" && p.State != "handed_over" {
+		if p.State != "done" && p.State != "failed" && p.State != "handed_over" && p.State != "cancelled" {
 			cp := *p
 			return &cp
 		}
@@ -293,6 +293,17 @@ func (o *Orchestrator) Progress(id string) *Progress {
 // ErrNotReady: the machine cannot take over now (Candidate.Reasons say why).
 var ErrNotReady = errors.New("switchover: that machine cannot take over now")
 
+// LatestTerm is the newest term db knows of: its terms', and its switches' (one called
+// off after its promotion was asked, the machine taking over not answering, may have
+// begun its term there), so the next switch or an emergency begins past both and no two
+// homes have one term.
+func LatestTerm(ctx context.Context, db *sql.DB) (int64, error) {
+	var term int64
+	err := db.QueryRowContext(ctx, `SELECT GREATEST(COALESCE((SELECT max(term) FROM cluster_terms), 1),
+	    COALESCE((SELECT max(term) FROM cluster_switchovers), 1))`).Scan(&term)
+	return term, err
+}
+
 // Start starts a planned switch to node (by: who asked); its id. One switch at a time:
 // the check and the switch's row are one step here, and the database refuses a second
 // row under way (cluster_switchovers_one_open) when two start at once.
@@ -315,8 +326,8 @@ func (o *Orchestrator) Start(ctx context.Context, node, by string) (string, erro
 	if !target.Ready {
 		return "", fmt.Errorf("%w: %s", ErrNotReady, strings.Join(target.Reasons, ", "))
 	}
-	var term int64
-	if err := o.DB.QueryRowContext(ctx, `SELECT COALESCE(max(term), 1) FROM cluster_terms`).Scan(&term); err != nil {
+	term, err := LatestTerm(ctx, o.DB)
+	if err != nil {
 		return "", err
 	}
 	p := &Progress{ID: uuid.NewString(), Term: term + 1, Kind: "planned", ToNode: node, ToName: target.Name,
