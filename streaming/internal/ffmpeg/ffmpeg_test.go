@@ -139,6 +139,11 @@ func TestHLSArgs_HasLadderRungs(t *testing.T) {
 	if n := strings.Count(joined, "-map 0:a:0"); n != len(ladder) {
 		t.Errorf("audio mapped %d times, want once per rung", n)
 	}
+	// every segment listed and kept (an EVENT playlist, ended when done)
+	if argAfter(args, "-hls_playlist_type") != "event" || argAfter(args, "-hls_list_size") != "0" ||
+		strings.Contains(joined, "delete_segments") {
+		t.Errorf("not every segment kept: %s", joined)
+	}
 	// a source without audio maps none
 	silent := HLSArgs("/in.mp4", "/out", "master.m3u8", ladder, SoftwarePlan(len(ladder), false))
 	if got := argAfter(silent, "-var_stream_map"); got != "v:0 v:1 v:2" || strings.Contains(strings.Join(silent, " "), "0:a:0") {
@@ -162,6 +167,10 @@ func TestDASHArgs_OutputsMPD(t *testing.T) {
 	}
 	if !strings.Contains(joined, "manifest.mpd") {
 		t.Fatalf("missing mpd output: %s", joined)
+	}
+	// every segment listed and kept (no window)
+	if argAfter(args, "-window_size") != "0" || strings.Contains(joined, "-extra_window_size") {
+		t.Errorf("not every segment kept: %s", joined)
 	}
 }
 

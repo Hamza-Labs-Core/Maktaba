@@ -57,6 +57,36 @@ func TestLayout_PurgeSession(t *testing.T) {
 	}
 }
 
+// SessionDirs: the HLS tier's folders named by a session id (not a channel's,
+// not a file), each with when ffmpeg last added to it or a variant subfolder.
+func TestLayout_SessionDirs(t *testing.T) {
+	l := New(t.TempDir())
+	if dirs, err := l.SessionDirs(); err != nil || len(dirs) != 0 {
+		t.Fatalf("no tier: %v %v", dirs, err)
+	}
+	_ = l.EnsureTiers()
+	sess := "6f1c2a7e-3b4d-4c5e-8f90-a1b2c3d4e5f6"
+	v0 := filepath.Join(l.HLSDir(sess), "v0")
+	for _, d := range []string{v0, l.HLSDir("channel-" + sess), l.HLSDir("{" + sess + "}")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(l.HLSDir("0b9e7d6c-5a4b-4c3d-9e8f-7a6b5c4d3e2f"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old, recent := time.Now().Add(-time.Hour).Truncate(time.Second), time.Now().Add(-time.Minute).Truncate(time.Second)
+	_ = os.Chtimes(l.HLSDir(sess), old, old)
+	_ = os.Chtimes(v0, recent, recent)
+	dirs, err := l.SessionDirs()
+	if err != nil || len(dirs) != 1 || dirs[0].ID != sess {
+		t.Fatalf("%+v %v", dirs, err)
+	}
+	if !dirs[0].Changed.Equal(recent) {
+		t.Errorf("changed %v, want the variant folder's %v", dirs[0].Changed, recent)
+	}
+}
+
 // fillTier writes n files of size bytes each into tier under root.
 func fillTier(t *testing.T, l *Layout, tier string, n, size int) []string {
 	t.Helper()

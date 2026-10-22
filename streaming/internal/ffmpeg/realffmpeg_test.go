@@ -186,9 +186,24 @@ func TestTranscodeArgs_RealFFmpeg(t *testing.T) {
 				if format == "hls" {
 					for _, v := range []string{"v0", "v1", "v2"} {
 						want = append(want, filepath.Join(v, "index.m3u8"), filepath.Join(v, "seg-0.ts"))
+						// an EVENT playlist, ended, every segment it lists kept
+						pl, err := os.ReadFile(filepath.Join(dir, v, "index.m3u8"))
+						if err != nil {
+							continue
+						}
+						if s := string(pl); !strings.Contains(s, "#EXT-X-PLAYLIST-TYPE:EVENT") || !strings.HasSuffix(s, "#EXT-X-ENDLIST\n") {
+							t.Errorf("%q %s hls %s: playlist\n%s", hw, src.name, v, s)
+						}
+						for _, seg := range regexp.MustCompile(`(?m)^seg-\d+\.ts$`).FindAllString(string(pl), -1) {
+							want = append(want, filepath.Join(v, seg))
+						}
 					}
 				} else {
 					want = []string{"manifest.mpd"}
+					// finished: a static MPD
+					if mpd, err := os.ReadFile(filepath.Join(dir, "manifest.mpd")); err == nil && !strings.Contains(string(mpd), `type="static"`) {
+						t.Errorf("%q %s dash: not a static MPD\n%s", hw, src.name, mpd)
+					}
 				}
 				for _, f := range want {
 					if _, err := os.Stat(filepath.Join(dir, f)); err != nil {

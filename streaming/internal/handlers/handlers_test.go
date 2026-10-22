@@ -79,6 +79,53 @@ func TestManifestHandler_ServeMaster(t *testing.T) {
 	}
 }
 
+// A transcode's variant playlist (EVENT, every segment listed) is served
+// starting at its first segment, signed as before.
+func TestManifestHandler_ServeRenditionIndex_StartsAtTheBeginning(t *testing.T) {
+	layout := cache.New(t.TempDir())
+	_ = layout.EnsureTiers()
+	sessID := uuid.New()
+	v0 := filepath.Join(layout.HLSDir(sessID.String()), "v0")
+	_ = os.MkdirAll(v0, 0o755)
+	index := "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:EVENT\n" +
+		"#EXTINF:6.000000,\nseg-0.ts\n#EXTINF:6.000000,\nseg-1.ts\n"
+	if err := os.WriteFile(filepath.Join(v0, "index.m3u8"), []byte(index), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := &ManifestHandler{Sessions: &fakeSessionStore{}, Layout: layout}
+	r := chi.NewRouter()
+	r.With(injectSubject(sessID.String())).Get("/stream/{session_id}/{rendition}/index.m3u8", h.ServeRenditionIndex)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest("GET", "/stream/"+sessID.String()+"/v0/index.m3u8?sig=tok", nil))
+	body := rec.Body.String()
+	if rec.Code != 200 || !strings.HasPrefix(body, "#EXTM3U\n#EXT-X-START:TIME-OFFSET=0\n#EXT-X-VERSION:6\n") ||
+		!strings.Contains(body, "seg-1.ts?sig=tok\n") {
+		t.Fatalf("status=%d body=%s", rec.Code, body)
+	}
+}
+
+// startAtBeginning: only an EVENT playlist without a start of its own, in its
+// line endings.
+func TestStartAtBeginning(t *testing.T) {
+	const start = "#EXT-X-START:TIME-OFFSET=0\n"
+	for name, c := range map[string]struct{ in, want string }{
+		"event": {"#EXTM3U\n#EXT-X-PLAYLIST-TYPE:EVENT\nseg-0.ts\n", "#EXTM3U\n" + start + "#EXT-X-PLAYLIST-TYPE:EVENT\nseg-0.ts\n"},
+		"crlf": {"#EXTM3U\r\n#EXT-X-PLAYLIST-TYPE:EVENT\r\n",
+			"#EXTM3U\r\n#EXT-X-START:TIME-OFFSET=0\r\n#EXT-X-PLAYLIST-TYPE:EVENT\r\n"},
+		"ended": {"#EXTM3U\n#EXT-X-PLAYLIST-TYPE:EVENT\nseg-0.ts\n#EXT-X-ENDLIST\n",
+			"#EXTM3U\n" + start + "#EXT-X-PLAYLIST-TYPE:EVENT\nseg-0.ts\n#EXT-X-ENDLIST\n"},
+		"has one": {"#EXTM3U\n#EXT-X-START:TIME-OFFSET=10\n#EXT-X-PLAYLIST-TYPE:EVENT\n",
+			"#EXTM3U\n#EXT-X-START:TIME-OFFSET=10\n#EXT-X-PLAYLIST-TYPE:EVENT\n"},
+		"sliding":  {"#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:4\nseg-4.ts\n", "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:4\nseg-4.ts\n"},
+		"not hls":  {"<MPD/>", "<MPD/>"},
+		"one line": {"#EXTM3U #EXT-X-PLAYLIST-TYPE:EVENT", "#EXTM3U #EXT-X-PLAYLIST-TYPE:EVENT"},
+	} {
+		if got := string(startAtBeginning([]byte(c.in))); got != c.want {
+			t.Errorf("%s: %q, want %q", name, got, c.want)
+		}
+	}
+}
+
 func TestManifestHandler_ServeMaster_FormatMismatch(t *testing.T) {
 	dir := t.TempDir()
 	layout := cache.New(dir)

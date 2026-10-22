@@ -548,6 +548,15 @@ don't append a line here; docs-only PRs are exempt.
   reader, and a broken one a backup replaces is kept beside it (`node.json.broken-…`), never
   removed. A start that cannot make the lock (a folder it may not write, a full disk) leaves the
   leftovers and reads past them, as before.
+- **A transcoded video can be sought through and played to its end.** A video transcode's
+  playlist kept only its last six segments (DASH: ten) and deleted the rest, so a transcode
+  running ahead of the player deleted segments before they were played, and nothing outside the
+  window could be sought to. Its playlists now list every segment: HLS as an EVENT playlist that
+  ends with `#EXT-X-ENDLIST` when the transcode is done, which players start at its beginning
+  (`#EXT-X-START`) unless they resume elsewhere; DASH without a window, its MPD static once done.
+  The segments stay until the session closes (the player closes it, or nothing fetched a
+  segment for 90 s): its folder is removed then, and one a previous run left behind once it has
+  not changed for 90 s. Nothing removed those folders before.
 
 ## [0.2.0] - 2026-10-19
 

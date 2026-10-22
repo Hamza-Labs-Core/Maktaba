@@ -10,7 +10,8 @@
 //	{root}/probe/{hash[:2]}/{hash}.json    (Story 8.15 fallback)
 //
 // HLS sessions are excluded from the byte cap because they're purged
-// on session close (Story 8.9). The other tiers share one cap
+// on session close (Story 8.9: the streaming service's purgeVODSessions,
+// with SessionDirs and PurgeSession). The other tiers share one cap
 // (default 50 GiB) with soft floors so posters/sprites aren't
 // preferentially evicted (their regeneration requires Pipeline).
 package cache
@@ -25,6 +26,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Tier names — also used as subdirectories under root.
@@ -243,10 +246,49 @@ func (g *GC) LastSweep() time.Time {
 	return time.Unix(0, v)
 }
 
-// PurgeSession removes the entire HLS folder for a session — called
-// from session.Close so the cache cap excludes per-session HLS bytes.
+// PurgeSession removes the entire HLS folder for a session — once it is
+// closed, so the cache cap excludes per-session HLS bytes.
 func (l *Layout) PurgeSession(sessionID string) error {
 	return os.RemoveAll(l.HLSDir(sessionID))
+}
+
+// SessionDir is a VOD session's folder in the HLS tier.
+type SessionDir struct {
+	ID string // the session's id, the folder's name
+	// Changed is when a file was last added to it or renamed in it (the
+	// folder's or a variant subfolder's: a new segment, a rewritten playlist).
+	Changed time.Time
+}
+
+// SessionDirs lists the VOD sessions' folders in the HLS tier: those named by
+// a session id (a channel's, "channel-<id>", are not sessions').
+func (l *Layout) SessionDirs() ([]SessionDir, error) {
+	dir := filepath.Join(l.Root, TierHLS)
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []SessionDir
+	for _, e := range entries {
+		if id, err := uuid.Parse(e.Name()); !e.IsDir() || err != nil || id.String() != e.Name() {
+			continue
+		}
+		d := SessionDir{ID: e.Name()}
+		_ = filepath.WalkDir(filepath.Join(dir, e.Name()), func(path string, de fs.DirEntry, err error) error {
+			if err != nil || !de.IsDir() {
+				return nil
+			}
+			if info, err := de.Info(); err == nil && info.ModTime().After(d.Changed) {
+				d.Changed = info.ModTime()
+			}
+			return nil
+		})
+		out = append(out, d)
+	}
+	return out, nil
 }
 
 // Stat returns total bytes across all non-HLS tiers without sweeping.

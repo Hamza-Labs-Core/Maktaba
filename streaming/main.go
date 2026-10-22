@@ -505,8 +505,15 @@ func buildPublicHandler(bg *background, logger *slog.Logger, backend probe.Backe
 		})
 	})
 
-	reaper := session.NewReaper(store, session.ReaperConfig{IdleAfter: 90 * time.Second, Interval: 30 * time.Second})
+	reaper := session.NewReaper(store, session.ReaperConfig{IdleAfter: vodSessionIdle, Interval: vodSessionSweep})
 	bg.Go(reaper.Run)
+	// the closed sessions' folders, and a previous run's (at start, then with
+	// the reaper)
+	bg.Go(func(ctx context.Context) {
+		purge := func() { purgeVODSessions(ctx, layout, store, vodSessionIdle, time.Now(), logger) }
+		purge()
+		tick(ctx, vodSessionSweep, purge)
+	})
 
 	_ = allocator
 

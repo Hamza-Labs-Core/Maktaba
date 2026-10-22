@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -128,6 +129,7 @@ func (h *ManifestHandler) ServeRenditionIndex(w http.ResponseWriter, r *http.Req
 		httpx.Write(w, http.StatusNotFound, "rendition-not-found", "rendition index not on disk", err.Error())
 		return
 	}
+	data = startAtBeginning(data)
 	if sig := r.URL.Query().Get("sig"); sig != "" {
 		data = SignPlaylist(data, sig)
 	}
@@ -189,6 +191,30 @@ func (h *ManifestHandler) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
+}
+
+// startAtBeginning has an EVENT playlist (a transcode's, every segment listed)
+// start at its first segment: a player starts a playlist without
+// #EXT-X-ENDLIST near its end (hls.js three target durations before it),
+// which skips the video's start when the transcode runs ahead of the player.
+// A position the player is asked to start at (a resume) still wins.
+func startAtBeginning(data []byte) []byte {
+	if !bytes.HasPrefix(data, []byte("#EXTM3U")) || !bytes.Contains(data, []byte("#EXT-X-PLAYLIST-TYPE:EVENT")) ||
+		bytes.Contains(data, []byte("#EXT-X-START:")) {
+		return data
+	}
+	i := bytes.IndexByte(data, '\n')
+	if i < 0 {
+		return data
+	}
+	start := "#EXT-X-START:TIME-OFFSET=0\n"
+	if i > 0 && data[i-1] == '\r' {
+		start = "#EXT-X-START:TIME-OFFSET=0\r\n"
+	}
+	out := make([]byte, 0, len(data)+len(start))
+	out = append(out, data[:i+1]...)
+	out = append(out, start...)
+	return append(out, data[i+1:]...)
 }
 
 func manifestContentType(isDASH bool) string {
