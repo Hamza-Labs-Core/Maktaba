@@ -199,3 +199,31 @@ export function failureActionHelp(action: string): HelpRef {
 export function tileHealthHelp(what: "failing" | "waiting" | "needs_you"): HelpRef {
   return { topic: "failures", anchor: what === "needs_you" ? "needs-you" : `tile-${what}` };
 }
+
+/**
+ * The kinds of part the System health page shows (api
+ * handlers/systemstatus/types.go Kinds); each has its entry
+ * system-health#item-<kind>. An unknown kind links to the list of parts.
+ */
+export const SYSTEM_HEALTH_KINDS = [
+  "api",
+  "postgres",
+  "streaming",
+  "pipeline",
+  "process",
+  "workers",
+  "worker",
+  "streaming_host",
+  "dependency",
+  "plex_livetv",
+  "queues",
+  "tv_channels",
+  "tv_change",
+  "tv_slot",
+  "tv_tuner",
+] as const;
+
+export function systemHealthHelp(kind: string): HelpRef {
+  const known = (SYSTEM_HEALTH_KINDS as readonly string[]).includes(kind);
+  return { topic: "system-health", anchor: known ? `item-${codeAnchor(kind)}` : "items" };
+}

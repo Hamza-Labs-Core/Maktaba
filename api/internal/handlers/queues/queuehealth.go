@@ -305,3 +305,48 @@ func openBySignature(groups []FailureGroup) map[string]map[string]int {
 	}
 	return out
 }
+
+// HealthRollup is Epic 40's tile health over every stage, for the System
+// health page (api/internal/handlers/systemstatus): the stages that are
+// failing or waiting, and the items that need an admin.
+type HealthRollup struct {
+	Stages   int      `json:"stages"`
+	Failing  []string `json:"failing"`
+	Waiting  []string `json:"waiting"`
+	NeedsYou int      `json:"needs_you"`
+}
+
+// HealthRollup computes every stage's tile health the way BuildSnapshot does,
+// without the counts, pools and flows the tiles also show.
+func (h *Handler) HealthRollup(ctx context.Context) (HealthRollup, error) {
+	out := HealthRollup{Failing: []string{}, Waiting: []string{}}
+	now := h.now()
+	stages, err := h.loadStages(ctx)
+	if err != nil {
+		return out, err
+	}
+	groups, err := h.failureGroups(ctx, "", false, stages, now)
+	if err != nil {
+		return out, err
+	}
+	hd, err := h.loadStageHealth(ctx, now)
+	if err != nil {
+		return out, err
+	}
+	open := openBySignature(groups)
+	out.Stages = len(stages)
+	for _, st := range stages {
+		sh := stageHealth(healthInputs{
+			Failures: hd.failures[st.Stage], DoneWindow: hd.done[st.Stage], Waiting: hd.waiting[st.Stage],
+			FailedOpen: open[st.Stage], Ignored: hd.ignored[st.Stage],
+		}, hd.cfg)
+		switch sh.State {
+		case HealthFailing:
+			out.Failing = append(out.Failing, st.Stage)
+		case HealthWaiting:
+			out.Waiting = append(out.Waiting, st.Stage)
+		}
+		out.NeedsYou += sh.NeedsYou
+	}
+	return out, nil
+}
