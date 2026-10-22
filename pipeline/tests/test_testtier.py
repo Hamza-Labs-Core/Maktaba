@@ -47,3 +47,17 @@ def test_unit_softcap_warn_band_does_not_fail() -> None:
     across runtimes via ``maktaba_testtier.tiers``.
     """
     time.sleep(0.05)
+
+
+# --- Windows runners get scaled caps ------------------------------------
+
+
+@pytest.mark.unit
+def test_soft_cap_scales_on_windows_only() -> None:
+    """File-heavy unit tests run several times slower on Windows runners."""
+    from maktaba_testtier.softcap import _platform_scale
+    from maktaba_testtier.tiers import WINDOWS_SOFT_CAP_SCALE
+
+    assert _platform_scale("win32") == WINDOWS_SOFT_CAP_SCALE > 1
+    assert _platform_scale("linux") == 1.0
+    assert _platform_scale("darwin") == 1.0

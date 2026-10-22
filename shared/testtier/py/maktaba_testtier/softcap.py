@@ -17,16 +17,21 @@ The hook reads the test's ``call`` phase duration and:
 
 from __future__ import annotations
 
+import sys
 import warnings
 from typing import Any
 
-from .tiers import TIER_HARD_CAP_MULTIPLIER, TIER_SOFT_CAPS
+from .tiers import TIER_HARD_CAP_MULTIPLIER, TIER_SOFT_CAPS, WINDOWS_SOFT_CAP_SCALE
+
+
+def _platform_scale(platform: str = sys.platform) -> float:
+    return WINDOWS_SOFT_CAP_SCALE if platform == "win32" else 1.0
 
 
 def _cap_for_item(item: Any) -> float | None:
     for tier, cap in TIER_SOFT_CAPS.items():
         if item.get_closest_marker(tier) is not None:
-            return cap
+            return cap * _platform_scale()
     return None
 
 
