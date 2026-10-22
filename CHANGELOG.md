@@ -98,9 +98,9 @@ don't append a line here; docs-only PRs are exempt.
   systemd user manager, linger and a Maktaba service another install owns; where the second listen
   cannot run, no Hugging Face sign-in is asked. When the distribution's ffmpeg is missing or falls
   short, the terminal offers to run the command check names (sudo asks for the password), then
-  checks again; from an answers file it only shows it. A Plex code that expires (plex.tv out of reach is
-  asked again until then) or a Ctrl+C while it waits leaves Plex to Settings, and the setup goes
-  on. `--answers` (or `--answers-fd`) gives every answer without questions.
+  checks again; from an answers file it only shows it. A Plex code that expires (plex.tv out of
+  reach is asked again until then) or a Ctrl+C while it waits leaves Plex to Settings, and the
+  setup goes on. `--answers` (or `--answers-fd`) gives every answer without questions.
 - **The Linux app's downloads** (Epic 39, story 39.10). Each release builds the app as an
   AppImage, a `.deb` and an `.rpm` for x86_64 and aarch64, each with the whole server inside
   (its own Postgres, ffmpeg and Python), checked before anything is published; the `.deb` and
