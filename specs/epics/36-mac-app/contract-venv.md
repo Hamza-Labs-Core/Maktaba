@@ -390,6 +390,27 @@ transcribe job (a changed file, an operator's run), clears the video's tries. A 
 the second listen gives a relisten job back for 15 minutes (for a day at most) and lets an
 ordinary job's transcript stand.
 
+**The relisten's tries** (follow-up of #221, slot 0146). How many tries and how far apart are
+rules (`rules.transcription`: `relisten_tries` 6, `relisten_wait_hours` 1, doubling, at most
+`relisten_wait_max_hours` 24), and the wait counts from the end of the try (`ended_at`, the
+job's `finished_at`), not from its queueing; meanwhile `next_at` is the wait from the
+queueing, which a worker from before slot 0146 respects too. A stopped video gets its tries
+again (only stopped ones, once) when the home sees a second-listen model, or a capability, for
+the first time (`relisten_seen`, kinds `model` and `capability`). The capability is a key of
+the machine (a hash of Windows' MachineGuid, macOS' IOPlatformUUID or Linux's machine-id, else
+of the host name), its engine and processor, on Apple Silicon its memory, on an NVIDIA GPU that
+GPU (name, memory, compute capability, driver major), and the versions of mlx, mlx-audio,
+torch and transformers. A model or capability seen before resets nothing, so machines that
+name the model differently, or differ, do not reset each other. The operator's next
+`relisten_round` resets every video tried in an earlier round. A relisten job whose worker
+has no room for the second listen on its GPU (`cohere.NoRoom`) gives itself back, and a
+relisten job that ended without running (given back until a day old) is no try. The stop
+checks again that the video is out of tries and its last try over, so a reset in between
+stands. The sweep leaves deleted and missing videos alone (`deleted_at`,
+`missing_confirmed_at`, state `missing` or `superseded`) and deletes their records. The stop
+note gives the reason first (the failure's kind, then its message with a leading path moved
+to the end), so the cut to 200 characters keeps it on a long Windows path.
+
 **Where Whisper loads** (CTranslate2). With `MAKTABA_STT_DEVICE=auto` the GPU must have the
 memory free that the model and its batch need (NVML's count: 2.3 GB in float16, 1.2 in
 int8_float16, 0.14 a file, 0.25 to spare; another model in proportion to its `model.bin`),
