@@ -120,7 +120,7 @@ function AccountTab() {
       <Button
         variant="destructive"
         onClick={async () => {
-          let scope: "everywhere" | "here";
+          let scope: "everywhere" | "here" | "unchecked";
           try {
             scope = await logoutAll();
           } catch {
@@ -128,10 +128,11 @@ function AccountTab() {
             setSignOutRefused(true);
             return;
           }
-          // only this machine's sessions ended: the sign-in page says the others stay
+          // only this machine's sessions ended, or the others were not checked: the sign-in
+          // page says which
           nav("/login", {
             replace: true,
-            state: scope === "here" ? { signedOutHere: true } : undefined,
+            state: scope === "everywhere" ? undefined : { signedOut: scope },
           });
         }}
       >
