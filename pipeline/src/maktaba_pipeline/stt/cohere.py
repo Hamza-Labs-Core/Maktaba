@@ -154,7 +154,8 @@ def recogniser(
     """The process's recogniser for ``model_id``, loaded on first use: from Hugging Face,
     else from the copy on ``share`` (the share's models folder, :mod:`~.model_share`).
     Raises when the package is missing or neither has the model, and on CUDA when the GPU
-    has no room for it now (asked again next time). A Hugging Face load publishes the
+    has no room for it now. A failed load and a GPU without room alike are not tried again
+    until their backoff is over (:func:`load_failure`). A Hugging Face load publishes the
     snapshot to ``share`` (once per process, on a thread of its own). ``settings`` are
     Whisper's: on CUDA the second listen uses its GPU and leaves room for its batch."""
     cuda = engine.current() != engine.MLX
@@ -172,23 +173,32 @@ def recogniser(
             if cuda:
                 from . import cohere_cuda
 
-                full = cohere_cuda.room(model_id, settings or WhisperSettings())
-                if full is not None:  # not a failed load: asked again next file
+                # a GPU without room (one that also drives a desktop) stays so for a while:
+                # it waits out its backoff like a failed load, so that a worker does not
+                # make every transcript without its second listen meanwhile
+                try:
+                    full = cohere_cuda.room(model_id, settings or WhisperSettings())
+                except Exception as exc:  # noqa: BLE001 - the driver's answer: no room known
+                    full = f"the GPU's free memory could not be read: {type(exc).__name__}: {exc}"
+                if full is not None:
+                    _failed(model_id, full, "cohere.no_room")
                     raise RuntimeError(full)
             try:
                 rec = _REC[model_id] = _open(model_id, share, settings)
             except Exception as exc:
-                before = _FAILED.get(model_id)
-                f = _Failure(f"{type(exc).__name__}: {exc}"[:300], _clock(), 1)
-                if before is not None:
-                    f.tries = before.tries + 1
-                _FAILED[model_id] = f
-                _log.warning(
-                    "cohere.load_failed", model=model_id, error=f.message, retry_s=f.wait_s()
-                )
+                _failed(model_id, f"{type(exc).__name__}: {exc}", "cohere.load_failed")
                 raise
             _FAILED.pop(model_id, None)
         return rec
+
+
+def _failed(model_id: str, message: str, event: str) -> None:
+    """Remember that ``model_id`` did not load here (``message``), one more try than the
+    last time: :func:`load_failure` says so until its backoff is over."""
+    before = _FAILED.get(model_id)
+    f = _Failure(message[:300], _clock(), 1 if before is None else before.tries + 1)
+    _FAILED[model_id] = f
+    _log.warning(event, model=model_id, error=f.message, retry_s=f.wait_s())
 
 
 def load_failure(model_id: str) -> str | None:

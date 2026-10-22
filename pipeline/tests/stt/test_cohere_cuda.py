@@ -480,15 +480,18 @@ def test_the_recogniser_loads_once_from_hugging_face(
     assert fetched == [MODEL]
 
 
-def test_no_room_now_is_asked_again_next_time(
+def test_no_room_now_is_asked_again_after_its_wait(
     gpu: FakeCuda, transformers: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    clock = [1000.0]
+    monkeypatch.setattr(cohere, "_clock", lambda: clock[0])
     monkeypatch.setattr(cohere_cuda, "model_dir", lambda _m: tmp_path)
     gpu.free_gb = 2.0
     with pytest.raises(RuntimeError, match="too little free GPU memory"):
         cohere.recogniser(MODEL, None, WhisperSettings(max_batch=4))
     assert not cohere.loaded(MODEL) and transformers["loads"] == []
     gpu.free_gb = 10.0  # another program let go of the GPU
+    clock[0] += cohere.RETRY_AFTER_S + 1
     assert cohere.recogniser(MODEL, None, WhisperSettings(max_batch=4)).source == "hf"
 
 
@@ -539,13 +542,53 @@ def test_a_failed_load_is_not_tried_again_for_a_while(
     monkeypatch.setattr(cohere_cuda, "model_dir", lambda _m: tmp_path)  # the licence accepted
     assert cohere.recogniser(MODEL, None, settings).source == "hf"
     assert cohere.load_failure(MODEL) is None
-    # no room is no failed load: asked again at the next file
-    monkeypatch.setattr(cohere, "_REC", {})
+    assert min(cohere.RETRY_MAX_S, cohere.RETRY_AFTER_S * 2**10) == cohere.RETRY_MAX_S
+
+
+def test_a_gpu_without_room_waits_like_a_failed_load(
+    gpu: FakeCuda, transformers: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #209 (round 4): on a 10-11 GB card that also drives the desktop the room
+    check failed at every file, and the worker went on making transcripts without the
+    second listen. No room, or a room check that raises, now waits out its backoff."""
+    clock = [1000.0]
+    monkeypatch.setattr(cohere, "_clock", lambda: clock[0])
+    monkeypatch.setattr(cohere_cuda, "model_dir", lambda _m: tmp_path)
+    asked: list[float] = []
+    real_room = cohere_cuda.room
+
+    def room(model_id: str, settings: WhisperSettings) -> str | None:
+        asked.append(clock[0])
+        return real_room(model_id, settings)
+
+    monkeypatch.setattr(cohere_cuda, "room", room)
+    settings = WhisperSettings(max_batch=8)
     gpu.free_gb = 1.0
     with pytest.raises(RuntimeError, match="too little free GPU memory"):
         cohere.recogniser(MODEL, None, settings)
-    assert cohere.load_failure(MODEL) is None
-    assert min(cohere.RETRY_MAX_S, cohere.RETRY_AFTER_S * 2**10) == cohere.RETRY_MAX_S
+    with pytest.raises(RuntimeError, match="next try in 10 min"):
+        cohere.recogniser(MODEL, None, settings)  # not asked again yet
+    assert len(asked) == 1 and not stage.runs_second_listen()
+    assert "too little free GPU memory" in str(stage.waits_for_second_listen())
+
+    # the driver cannot say: the same, one try more
+    clock[0] += cohere.RETRY_AFTER_S + 1
+
+    def broken(model_id: str, settings: WhisperSettings) -> str | None:
+        asked.append(clock[0])
+        raise OSError("NVML: driver not loaded")
+
+    monkeypatch.setattr(cohere_cuda, "room", broken)
+    with pytest.raises(RuntimeError, match="could not be read: OSError: NVML"):
+        cohere.recogniser(MODEL, None, settings)
+    assert len(asked) == 2 and "next try in 20 min" in str(cohere.load_failure(MODEL))
+
+    # room again once the wait is over: it loads, and nothing is remembered
+    clock[0] += 2 * cohere.RETRY_AFTER_S + 1
+    monkeypatch.setattr(cohere_cuda, "room", room)
+    gpu.free_gb = 24.0
+    assert cohere.recogniser(MODEL, None, settings).source == "hf"
+    assert len(asked) == 3 and cohere.load_failure(MODEL) is None
 
 
 def test_cuda_that_does_not_work_fails_the_load(
