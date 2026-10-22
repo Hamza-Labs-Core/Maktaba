@@ -232,6 +232,11 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **The first video played right after Maktaba first starts is no longer refused.** The API makes
+  the machine's stream signing key as it starts, and the streaming role looked for it every two
+  seconds: a signed stream URL in between was refused ("bad signature"), and so was every one
+  after the key file was replaced. A URL naming a key the streaming role has not read yet now
+  reads the key file again at once (at most every 100 ms).
 - **`[server] role = "home"` (or `MAKTABA_ROLE=home`) runs no role as a node.** The supervisor
   only left the node's variables out, while streaming and the pipeline read the node config
   themselves: beside a joined `node.json` (on Windows another install's, through the roaming
