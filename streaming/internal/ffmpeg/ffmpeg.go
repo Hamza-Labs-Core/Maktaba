@@ -224,12 +224,57 @@ func RemuxArgs(input, output string) Args {
 }
 
 // EncodePlan is how a transcode encodes (PlanFor): the -hwaccel that decodes the
-// input ("" on the CPU), each rung's encoder, and whether the source has an
-// audio stream to carry.
+// input ("" on the CPU), each rung's encoder, whether the source has an audio
+// stream to carry, and ToneMap: the filters that bring an HDR source to SDR
+// BT.709 before the ladder (ToneMapFilters; "" for SDR, or an ffmpeg without
+// them).
 type EncodePlan struct {
 	Decode   string
 	Encoders []string
 	Audio    bool
+	ToneMap  string
+}
+
+// segmentSeconds is the HLS and DASH segment length; every rung has a key frame
+// at each multiple of it, so the rungs' segments start on the same frames.
+const segmentSeconds = 6
+
+// Colour is what a source's first frame says of its colour, in ffprobe's names
+// (sourceColour): a PQ (HDR10, Dolby Vision's base layer) or HLG one is HDR.
+type Colour struct {
+	Transfer, Matrix, Primaries, Range string
+}
+
+// HDR: the transfer is PQ or HLG.
+func (c Colour) HDR() bool { return c.Transfer == "smpte2084" || c.Transfer == "arib-std-b67" }
+
+// ToneMapFilters bring an HDR source to SDR BT.709, in the ladder's top rung's
+// size at most (maxW×maxH): first scaled down to it (tone-mapping 4K frames on
+// the CPU was slower than real time, 1080p is twice it), then linear light at
+// 100 nits from the source's own transfer, matrix and primaries (BT.2020 where
+// it names none), its output primaries named too (zscale finds no conversion
+// to or from an unspecified colour space),
+// Möbius' curve (Hable's left a 100-nit picture at two thirds of its
+// brightness), and BT.709 limited range 4:2:0. Without it an HDR source came
+// out washed out: its 10-bit samples only cut to 8 bits.
+func ToneMapFilters(c Colour, maxW, maxH int) string {
+	transfer := c.Transfer // "smpte2084" or "arib-std-b67": zscale's names too
+	matrix := map[string]string{"bt2020c": "2020_cl", "bt709": "709", "smpte170m": "170m", "bt470bg": "470bg"}[c.Matrix]
+	if matrix == "" {
+		matrix = "2020_ncl"
+	}
+	primaries := map[string]string{"bt709": "709", "smpte170m": "170m", "smpte431": "smpte431", "smpte432": "smpte432"}[c.Primaries]
+	if primaries == "" {
+		primaries = "2020"
+	}
+	rng := "limited"
+	if c.Range == "pc" || c.Range == "jpeg" {
+		rng = "full"
+	}
+	return fmt.Sprintf("scale=w=min(iw\\,%d):h=min(ih\\,%d):force_original_aspect_ratio=decrease:force_divisible_by=2,", maxW, maxH) +
+		"zscale=tin=" + transfer + ":min=" + matrix + ":pin=" + primaries + ":rin=" + rng + ":t=linear:npl=100:p=" + primaries + "," +
+		"format=gbrpf32le,zscale=p=709,tonemap=tonemap=mobius:param=0.3:desat=0," +
+		"zscale=t=709:m=709:r=limited,format=yuv420p"
 }
 
 // SoftwarePlan encodes every rung with libx264, decoding on the CPU.
@@ -265,19 +310,29 @@ func PlanFor(hwaccel string, hwRungs, rungs int, sourceCodec string, audio bool)
 
 // rungArgs are one ladder rung's video output options: its encoder, bitrate,
 // size, 8-bit 4:2:0 (a 10-bit or 4:2:2 source becomes what NVENC's H.264 and
-// browsers take: libx264 would otherwise keep High 10, which few play) and the
-// encoder's own preset.
-func rungArgs(i int, rung Rendition, enc string) Args {
+// browsers take: libx264 would otherwise keep High 10, which few play), the
+// encoder's own preset, and a key frame (IDR on NVENC) at every segment
+// boundary: the rungs' segments align, as the DASH manifest says they do
+// (libx264 alone cut at its scene changes, segments of 7 to 15 s).
+func rungArgs(i int, rung Rendition, enc string, p EncodePlan) Args {
 	n := itoa(i)
+	video := "0:v:0"
+	if p.ToneMap != "" {
+		video = "[v" + n + "]" // one of the tone-mapped split's outputs (videoGraph)
+	}
 	a := Args{
-		"-map", "0:v:0",
+		"-map", video,
 		"-c:v:" + n, enc,
 		"-b:v:" + n, itoa(rung.BitrateKbps) + "k",
 		"-s:v:" + n, fmt.Sprintf("%dx%d", rung.Width, rung.Height),
 		"-pix_fmt:v:" + n, "yuv420p",
+		"-force_key_frames:v:" + n, "expr:gte(t,n_forced*" + itoa(segmentSeconds) + ")",
 	}
 	if p := presetForEncoder(enc); p != "" {
 		a = append(a, "-preset:v:"+n, p)
+	}
+	if enc == "h264_nvenc" {
+		a = append(a, "-forced-idr:v:"+n, "1")
 	}
 	return a
 }
@@ -288,6 +343,19 @@ func inputArgs(input string, p EncodePlan) Args {
 		args = append(args, "-hwaccel", p.Decode)
 	}
 	return append(args, "-i", input)
+}
+
+// videoGraph is the HDR source's tone-mapping, once, split into one output a
+// rung ([v0], [v1], …): nothing for SDR.
+func videoGraph(rungs int, p EncodePlan) Args {
+	if p.ToneMap == "" || rungs == 0 {
+		return nil
+	}
+	outs := ""
+	for i := 0; i < rungs; i++ {
+		outs += "[v" + itoa(i) + "]"
+	}
+	return Args{"-filter_complex", "[0:v:0]" + p.ToneMap + ",split=" + itoa(rungs) + outs}
 }
 
 func encoderAt(p EncodePlan, i int) string {
@@ -302,10 +370,10 @@ func encoderAt(p EncodePlan, i int) string {
 // as the master playlist lists them), each with the source's audio when it
 // has one.
 func HLSArgs(input, outputDir, masterName string, ladder []Rendition, p EncodePlan) Args {
-	args := inputArgs(input, p)
+	args := append(inputArgs(input, p), videoGraph(len(ladder), p)...)
 	variants := make([]string, len(ladder))
 	for i, rung := range ladder {
-		args = append(args, rungArgs(i, rung, encoderAt(p, i))...)
+		args = append(args, rungArgs(i, rung, encoderAt(p, i), p)...)
 		variants[i] = "v:" + itoa(i)
 		if p.Audio {
 			variants[i] += ",a:" + itoa(i)
@@ -319,7 +387,7 @@ func HLSArgs(input, outputDir, masterName string, ladder []Rendition, p EncodePl
 	}
 	args = append(args,
 		"-f", "hls",
-		"-hls_time", "6",
+		"-hls_time", itoa(segmentSeconds),
 		"-hls_list_size", "6",
 		"-hls_flags", "delete_segments+independent_segments",
 		"-var_stream_map", strings.Join(variants, " "),
@@ -334,16 +402,21 @@ func HLSArgs(input, outputDir, masterName string, ladder []Rendition, p EncodePl
 // callout: emitting both HLS and DASH from one encode isn't supported,
 // so DASH is opt-in per session.
 func DASHArgs(input, outputDir string, ladder []Rendition, p EncodePlan) Args {
-	args := inputArgs(input, p)
+	args := append(inputArgs(input, p), videoGraph(len(ladder), p)...)
 	for i, rung := range ladder {
-		args = append(args, rungArgs(i, rung, encoderAt(p, i))...)
+		args = append(args, rungArgs(i, rung, encoderAt(p, i), p)...)
 	}
+	// the ladder is one AdaptationSet (a player switches between its
+	// Representations), the audio another; by default each stream was its own
+	sets := "id=0,streams=v"
 	if p.Audio {
 		args = append(args, "-map", "0:a:0", "-c:a", "aac", "-b:a", "128k")
+		sets += " id=1,streams=a"
 	}
 	args = append(args,
 		"-f", "dash",
-		"-seg_duration", "6",
+		"-adaptation_sets", sets,
+		"-seg_duration", itoa(segmentSeconds),
 		"-window_size", "10",
 		"-extra_window_size", "5",
 		"-init_seg_name", "init-$RepresentationID$.m4s",
