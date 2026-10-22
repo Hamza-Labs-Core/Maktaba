@@ -184,6 +184,17 @@ don't append a line here; docs-only PRs are exempt.
   now turns the bundled Postgres on inside any desktop app's payload, not only on a Mac (a
   `[database] url` or a SQLite database in use still wins). The app's roles find the payload's
   `ffmpeg.exe`. Loopback TCP only on Windows, the nightly dumps as on the Mac.
+- **Maktaba on a Linux machine without a desktop** (Epic 39, story 39.6). `install.sh --app`
+  verifies the release first (with the machine's cosign when it is 2.4.3 or newer, else a pinned
+  cosign it fetches), then `maktaba-server setup` asks the desktop app's questions in the terminal,
+  in English or Arabic: the server is copied into `~/.local/share/maktaba/runtime`, then runs as
+  the user's systemd service, started at boot through linger. The check also reports glibc, the
+  systemd user manager, linger and a Maktaba service another install owns; where the second listen
+  cannot run, no Hugging Face sign-in is asked. When the distribution's ffmpeg is missing or falls
+  short, the terminal offers to run the command check names (sudo asks for the password), then
+  checks again; from an answers file it only shows it. A Plex code that expires (plex.tv out of
+  reach is asked again until then) or a Ctrl+C while it waits leaves Plex to Settings, and the
+  setup goes on. `--answers` (or `--answers-fd`) gives every answer without questions.
 - **The Linux app's downloads** (Epic 39, story 39.10). Each release builds the app as an
   AppImage, a `.deb` and an `.rpm` for x86_64 and aarch64, each with the whole server inside
   (its own Postgres and Python; ffmpeg is the distribution's, which the `.deb` and the `.rpm`

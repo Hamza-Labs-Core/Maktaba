@@ -28,6 +28,9 @@ func newSetupCmd() *cobra.Command {
 	var nf nodeSetupFlags
 	var jsonMode bool
 	var step string
+	var answersFile string
+	var answersFD int
+	var lang string
 	cmd := &cobra.Command{
 		Use:   "setup",
 		Short: "Interactive first-run wizard",
@@ -49,6 +52,11 @@ func newSetupCmd() *cobra.Command {
 			if lf.active() {
 				return runLayoutSetup(lf)
 			}
+			// Epic 39 story 39.6: run from an app payload with no window (a Linux
+			// machine without a desktop), the app's setup steps in the terminal
+			if payloadOfThisBinary() != "" {
+				return runAppSetupCmd(answersFile, answersFD, lang)
+			}
 			return runSetup()
 		},
 	}
@@ -56,6 +64,9 @@ func newSetupCmd() *cobra.Command {
 	_ = cmd.Flags().MarkDeprecated("migrate", "setup always prepares the database now (the app's finish step)")
 	cmd.Flags().BoolVar(&jsonMode, "json", false, "run one --step for Maktaba.app (JSON on stdin, NDJSON on stdout)")
 	cmd.Flags().StringVar(&step, "step", "", "with --json: the step (status)")
+	cmd.Flags().StringVar(&answersFile, "answers", "", "from a payload: the steps' inputs from this JSON file ({\"admin\": {...}, ...}) instead of prompts")
+	cmd.Flags().IntVar(&answersFD, "answers-fd", 0, "from a payload: the same answers from this open file descriptor (secrets never on disk)")
+	cmd.Flags().StringVar(&lang, "lang", "", "from a payload: the questions' language, en or ar (default: from LC_ALL, LC_MESSAGES or LANG)")
 	lf.register(cmd)
 	nf.register(cmd)
 	return cmd
