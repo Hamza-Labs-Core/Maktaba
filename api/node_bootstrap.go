@@ -701,11 +701,17 @@ func mountHomeClusterAuth(r chi.Router, db *sql.DB, logger *slog.Logger) {
 	router.MountClusterAuth(r, router.ClusterAuthDeps{DB: db, WebURL: webURL, Logger: logger})
 	router.MountNodeLocal(r, router.NodeLocalDeps{Self: homeSelf(&cluster.PGStore{DB: db}, webURL,
 		func(ctx context.Context) int64 { return switchover.TermOf(ctx, db) }), Moved: switchover.MovedHandler(db)})
-	// the machines' copies of this database (Epic 37): the beat, the CA, the cap
+	// the machines' copies of this database (Epic 37): the beat, the CA, the cap, the
+	// slots guarded; on a database that is not Maktaba's own Postgres, none without the rule
+	// (read at each beat, its errors told apart: a rule not read ends no copy)
 	rules := nodemode.CachedRules(db, time.Minute)
 	go (&cluster.Copies{DB: db, CAFile: os.Getenv("MAKTABA_CLUSTER_PG_CA"), Logger: logger,
 		Bundled: os.Getenv("MAKTABA_CLUSTER_PG_PORT") != "",
-		KeepGB:  func() int { return rules().ReplicaWALKeepGB }}).Run(context.Background())
+		KeepGB:  func() int { return rules().ReplicaWALKeepGB },
+		OperatorPG: func(ctx context.Context) (bool, error) {
+			r, err := nodemode.LoadRules(ctx, db)
+			return r.CopiesOnOperatorPostgres, err
+		}}).Run(context.Background())
 }
 
 // mountNode opens the home's database with the node's role, and this machine's copy of

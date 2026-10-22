@@ -34,6 +34,9 @@ class ClusterMachinesConfig:
     #: the home keeps this much of its changes for a machine that fell behind; past it the
     #: machine copies the home's database anew
     replica_wal_keep_gb: int = 20
+    #: on a home whose database is not Maktaba's own Postgres the machines keep a copy of it
+    #: only with this on (such a server may have other decoding plugins than pgoutput)
+    copies_on_operator_postgres: bool = False
     #: a node's disk cache for the pictures it fetches from the home (posters, sprites)
     proxy_cache_mb: int = 2048
 
@@ -80,6 +83,16 @@ settings.register(ClusterMachinesConfig, {
         "(it was off, or away). A machine further behind copies the home's database anew, on "
         "its own.",
         minimum=1, maximum=1024),
+    "copies_on_operator_postgres": settings.Help(
+        _C, "Copies on a Postgres you run",
+        "Off (the default): when the home's database is a Postgres you run yourself, not the "
+        "one Maktaba installs, the machines keep no copy of it. On: they do, and a machine's "
+        "replication role may then make a slot with any decoding plugin that Postgres has "
+        "besides pgoutput (test_decoding, wal2json and the like), which reads every table, "
+        "past what is published to that machine: only the home's sweep guards against it, "
+        "dropping such a slot within 5 s (its database user needs pg_signal_backend and "
+        "REPLICATION for that). Remove those plugins from that Postgres first. Maktaba's own "
+        "Postgres has only pgoutput and needs no such rule: there this changes nothing."),
     "proxy_cache_mb": settings.Help(_C, "Picture cache per machine (MB)",
                                     "Posters and sprites a machine fetched from the home.",
                                     minimum=0, maximum=1_048_576),

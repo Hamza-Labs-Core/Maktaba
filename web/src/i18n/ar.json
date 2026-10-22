@@ -3229,6 +3229,8 @@
   "rules.enrich.search_usd.label": "سعر البحث الواحد ($)",
   "rules.enrich.llm_usd_per_1k_tokens.label": "سعر 1000 رمز من النموذج ($)",
   "rules.enrich.llm_usd_per_1k_tokens.help": "0 لنموذج محلي.",
+  "rules.cluster.copies_on_operator_postgres.label": "النسخ على Postgres تديره بنفسك",
+  "rules.cluster.copies_on_operator_postgres.help": "معطّل (الافتراضي): إذا كانت قاعدة بيانات الجهاز الرئيسي Postgres تديره بنفسك، لا الذي تثبّته مكتبة، فلا تحتفظ الأجهزة بنسخة منها. مفعّل: تحتفظ بها، وعندئذ يستطيع دور النسخ المتماثل (replication) لأي جهاز أن ينشئ فتحة نسخ (slot) بأي إضافة فكّ ترميز يملكها ذلك الـ Postgres غير pgoutput (مثل test_decoding وwal2json)، فتقرأ كل جدول متجاوزةً ما يُنشر لذلك الجهاز: ولا يحمي من ذلك إلا فحص الجهاز الرئيسي الذي يحذف مثل هذه الفتحة خلال 5 ثوانٍ (ويحتاج مستخدم قاعدة بياناته لذلك إلى pg_signal_backend وREPLICATION). أزل تلك الإضافات من ذلك الـ Postgres أولًا. أمّا Postgres الخاص بمكتبة فليس فيه سوى pgoutput ولا يحتاج إلى هذه القاعدة: لا يغيّر هذا الخيار شيئًا هناك.",
   "rules.transcription.title": "التفريغ النصي",
   "rules.transcription.what": "أيّ الأجهزة تفرّغ: ما دام الاستماع الثاني مفعّلًا فالأجهزة التي تشغّله، إلا إذا سُمح للأجهزة التي لا تشغّله أن تفرّغ أيضًا",
   "rules.group.Transcription": "التفريغ النصي",

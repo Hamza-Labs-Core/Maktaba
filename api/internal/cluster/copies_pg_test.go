@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/pbkdf2"
@@ -14,8 +15,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -30,8 +34,9 @@ import (
 // the schema, has run the migrations and was given, at the cluster bootstrap, the
 // right to make roles and slots and the replicas' group. A machine's own database role
 // asks for its copy: its role, its publication (every table but the secrets and other
-// machines' rows); revoking the machine ends it, removing it drops its role. The
-// server must run with wal_level=logical.
+// machines' rows); revoking the machine ends it, removing it drops its role. Taken as a
+// database that is not Maktaba's own Postgres, the home keeps copies only with the rule
+// (rules.cluster.copies_on_operator_postgres). The server must run with wal_level=logical.
 func TestAMachineGetsItsCopy(t *testing.T) {
 	base := os.Getenv("MAKTABA_TEST_PG_URL")
 	if base == "" {
@@ -71,7 +76,10 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 
 	exec(admin, `CREATE DATABASE `+dbName+` OWNER `+app)
 	t.Cleanup(func() {
-		_, _ = admin.Exec(`SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE slot_name LIKE 'maktaba\_copy\_%' AND NOT active`)
+		// this test's slots only: its database's, and its physical one (another test's
+		// slots on the same server are left alone)
+		_, _ = admin.Exec(`SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots
+		    WHERE (database = $1 OR slot_name = $2) AND NOT active`, dbName, "maktaba_test_physical_"+suffix)
 		_, _ = admin.Exec(`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1`, dbName)
 		if _, err := admin.Exec(`DROP DATABASE IF EXISTS ` + dbName); err != nil {
 			t.Logf("drop %s: %v", dbName, err)
@@ -263,7 +271,8 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	}
 	exec(home, `UPDATE cluster_replica_beat SET at = '2000-01-01'`)
 	exec(sup, `SELECT pg_create_logical_replication_slot('`+slot+`', 'pgoutput')`) // a machine follows
-	c := &Copies{DB: home, CAFile: ca, Logger: slog.Default()}
+	// not Bundled (an idle physical slot is checked both ways below): copies allowed by the rule
+	c := &Copies{DB: home, CAFile: ca, Logger: slog.Default(), OperatorPG: ruleOn}
 	c.beat(context.Background())
 	c.publishCA(context.Background())
 	var at time.Time
@@ -306,25 +315,29 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	c.holdCap(context.Background())
 	waitSetting("-1")
 
-	// the slots that are not Maktaba's are dropped; Maktaba's stay
+	// the slots that are not Maktaba's are dropped; Maktaba's stay. Slot names are the
+	// server's, not the database's: this test's are its own (its database's oid, its
+	// suffix), so another test's on the same server never meets them
 	nodeHex := strings.ReplaceAll(nodeID, "-", "")
 	strayHex := strings.ReplaceAll(uuid.NewString(), "-", "")
+	var dbOID int64
+	if err := home.QueryRow(`SELECT oid FROM pg_database WHERE datname = current_database()`).Scan(&dbOID); err != nil {
+		t.Fatal(err)
+	}
+	fork, tableSync := fmt.Sprintf("maktaba_fork_%d", dbOID), fmt.Sprintf("pg_%d_sync_16500_7301", dbOID)
+	stray, decoder, physical := "maktaba_test_stray_"+suffix, "maktaba_test_decoder_"+suffix, "maktaba_test_physical_"+suffix
 	logical := map[string]string{
 		"maktaba_copy_" + nodeHex:  "pgoutput",      // an approved full machine's: kept
 		"maktaba_copy_" + strayHex: "pgoutput",      // no such machine: dropped
-		"maktaba_fork_7":           "pgoutput",      // an emergency's fork: kept
-		"pg_16400_sync_16500_7301": "pgoutput",      // a table's first copy: kept
-		"maktaba_test_stray":       "pgoutput",      // not Maktaba's: dropped
-		"maktaba_test_decoder":     "test_decoding", // decodes every table: dropped
+		fork:                       "pgoutput",      // an emergency's fork: kept
+		tableSync:                  "pgoutput",      // a table's first copy: kept
+		stray:                      "pgoutput",      // not Maktaba's: dropped
+		decoder:                    "test_decoding", // decodes every table: dropped
 	}
 	for name, plugin := range logical {
 		exec(sup, `SELECT pg_create_logical_replication_slot($1, $2)`, name, plugin)
 	}
-	exec(sup, `SELECT pg_create_physical_replication_slot('maktaba_test_physical')`)
-	t.Cleanup(func() {
-		_, _ = admin.Exec(`SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots
-		    WHERE (slot_name LIKE 'maktaba\_%' OR slot_name LIKE 'pg\_16400\_%') AND NOT active`)
-	})
+	exec(sup, `SELECT pg_create_physical_replication_slot($1)`, physical)
 	slotsLeft := func() map[string]bool {
 		out := map[string]bool{}
 		rows, err := sup.Query(`SELECT slot_name FROM pg_replication_slots`)
@@ -342,8 +355,7 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	c.guardSlots(context.Background())
 	got := slotsLeft()
 	for name, keep := range map[string]bool{"maktaba_copy_" + nodeHex: true, "maktaba_copy_" + strayHex: false,
-		"maktaba_fork_7": true, "pg_16400_sync_16500_7301": true, "maktaba_test_stray": false,
-		"maktaba_test_decoder": false, "maktaba_test_physical": true} {
+		fork: true, tableSync: true, stray: false, decoder: false, physical: true} {
 		if got[name] != keep {
 			t.Fatalf("slot %s kept %v, want %v", name, got[name], keep)
 		}
@@ -351,10 +363,52 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	// on Maktaba's own Postgres an idle physical slot is no one's either
 	c.Bundled = true
 	c.guardSlots(context.Background())
-	if slotsLeft()["maktaba_test_physical"] {
+	if slotsLeft()[physical] {
 		t.Fatal("an idle physical slot was kept on Maktaba's own Postgres")
 	}
 	exec(sup, `SELECT pg_drop_replication_slot('maktaba_copy_`+nodeHex+`')`)
+
+	// on a database that is not Maktaba's own Postgres, without the rule: the machines may
+	// not ask for a copy (the grant is not theirs to call), and the copies they have end:
+	// their replication role, slot and publication, and a table's first copy; an
+	// emergency's fork stays. Each machine refused is logged once.
+	exec(sup, `SELECT pg_create_logical_replication_slot('`+slot+`', 'pgoutput')`)
+	var logs strings.Builder
+	off := &Copies{DB: home, Logger: slog.New(slog.NewTextHandler(&logs, nil))}
+	off.guardSlots(context.Background())
+	off.guardSlots(context.Background())
+	if _, err := ask(node, nodeID, pw, false); !isCode(err, "42501") || !strings.Contains(err.Error(), "cluster_node_replica_grant") {
+		t.Fatalf("a machine asks with copies refused: %v, want permission denied for the grant", err)
+	}
+	var roleLeft bool
+	var pubsLeft int
+	_ = home.QueryRow(`SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)`, copyRole).Scan(&roleLeft)
+	_ = home.QueryRow(`SELECT count(*) FROM pg_publication WHERE pubname = $1`, slot).Scan(&pubsLeft)
+	got = slotsLeft()
+	if roleLeft || pubsLeft != 0 || got[slot] || got[tableSync] || !got[fork] {
+		t.Fatalf("with copies refused: role %v, publications %d, slot %v, a table's first copy %v, the fork %v",
+			roleLeft, pubsLeft, got[slot], got[tableSync], got[fork])
+	}
+	if n := strings.Count(logs.String(), "event=cluster_copy_refused"); n != 2 || !strings.Contains(logs.String(), "event=cluster_copies_shut") {
+		t.Fatalf("refused (two full machines, each once; the door shut once):\n%s", logs.String())
+	}
+	// the admin allows copies on such a database: the machines may ask again (said once)
+	off.OperatorPG = ruleOn
+	off.guardSlots(context.Background())
+	off.guardSlots(context.Background())
+	if g, err := ask(node, nodeID, pw, false); err != nil || g.SlotExists {
+		t.Fatalf("a machine asks with the rule on: %+v %v", g, err)
+	}
+	if !strings.Contains(logs.String(), "event=cluster_copies_open") ||
+		strings.Count(logs.String(), "event=cluster_copies_operator_postgres") != 1 {
+		t.Fatalf("allowed (the door open, copies on an operator's Postgres said once):\n%s", logs.String())
+	}
+	// Maktaba's own Postgres needs no rule
+	off.OperatorPG, off.Bundled = nil, true
+	off.guardSlots(context.Background())
+	if _, err := ask(node, nodeID, pw, false); err != nil {
+		t.Fatalf("a machine asks on Maktaba's own Postgres without the rule: %v", err)
+	}
 
 	// revoked: the copy's role may not sign in, its slot and publication are gone;
 	// removed: its role too
@@ -378,6 +432,291 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	if left {
 		t.Fatal("the copy's role outlived the machine")
 	}
+}
+
+// On a database that is not Maktaba's own Postgres the machines keep no copy without the
+// rule: the grant is not the machines' group's to call, a copy a machine had ends (its
+// replication role, publication and slot) and each machine refused is logged once; with the
+// rule, or on Maktaba's own Postgres, they may ask again; a rule that could not be read
+// changes nothing. A home whose database user does not own the grant cannot shut it, and
+// says so once. On a migrated scratch database (the integration tier's server will do; its
+// slot only with wal_level=logical).
+func TestCopiesOnAnOperatorsPostgres(t *testing.T) {
+	db, dsn := clustertest.ScratchDB(t)
+	ctx := context.Background()
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.Exec(q, args...); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	nodeID := uuid.NewString()
+	role := RoleName(nodeID)
+	copyRole, slot, _ := CopyNames(role)
+	app := "app_" + strings.TrimPrefix(role, "maktaba_node_")[:12]
+	roles := &PGRoles{DB: db}
+	if err := roles.Create(ctx, role, "node-pass-x"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = roles.Drop(context.Background(), role)
+		_, _ = db.Exec(`DROP ROLE IF EXISTS ` + pq.QuoteIdentifier(copyRole))
+		_, _ = db.Exec(`DROP OWNED BY ` + pq.QuoteIdentifier(app))
+		_, _ = db.Exec(`DROP ROLE IF EXISTS ` + pq.QuoteIdentifier(app))
+	})
+	exec(`INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, db_role, approved_at, approved_by, full_node)
+	      VALUES ($1, 'studio', 'approved', 'linux', 'amd64', 'k', $2, now(), 'test', true)`, nodeID, role)
+	// the copy it has: its replication role, its publication, its slot (with logical decoding)
+	exec(`CREATE ROLE ` + copyRole + ` LOGIN REPLICATION`)
+	exec(`CREATE PUBLICATION ` + slot)
+	var level string
+	_ = db.QueryRow(`SHOW wal_level`).Scan(&level)
+	if level == "logical" {
+		exec(`SELECT pg_create_logical_replication_slot($1, 'pgoutput')`, slot)
+	}
+	node, err := sql.Open("postgres", clustertest.WithUser(t, dsn, role, "node-pass-x"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer node.Close()
+	verifier := scramVerifier(t, strings.Repeat("p", 40))
+	// denied: the grant is not this machine's to call (any other answer is the grant's own)
+	denied := func() error {
+		_, err := node.Exec(`SELECT cluster_node_replica_grant($1, $2, false)`, nodeID, verifier)
+		if isCode(err, "42501") && strings.Contains(err.Error(), "cluster_node_replica_grant") {
+			return nil
+		}
+		return fmt.Errorf("not denied: %v", err)
+	}
+	if denied() == nil {
+		t.Fatal("the machine may not ask for its copy before any rule was read")
+	}
+	hasCopy := func() bool {
+		var left bool
+		_ = db.QueryRow(`SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)
+		    OR EXISTS (SELECT 1 FROM pg_publication WHERE pubname = $2)
+		    OR EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = $2)`, copyRole, slot).Scan(&left)
+		return left
+	}
+	var logs strings.Builder
+	// a rule that could not be read changes nothing (no copy ends for a database that
+	// did not answer)
+	c := &Copies{DB: db, Logger: slog.New(slog.NewTextHandler(&logs, nil)),
+		OperatorPG: func(context.Context) (bool, error) { return false, errors.New("the rule could not be read") }}
+	c.guardSlots(ctx)
+	if denied() == nil || !hasCopy() || logs.Len() != 0 {
+		t.Fatalf("with the rule unread the door shut, or the copy ended:\n%s", logs.String())
+	}
+	c.OperatorPG = nil // off
+	c.guardSlots(ctx)
+	c.guardSlots(ctx)
+	if err := denied(); err != nil {
+		t.Fatalf("copies refused, the machine asks: %v", err)
+	}
+	if hasCopy() {
+		t.Fatal("the copy the machine had was kept (its replication role, publication or slot)")
+	}
+	if strings.Count(logs.String(), "event=cluster_copy_refused") != 1 || !strings.Contains(logs.String(), "had_copy=true") ||
+		strings.Count(logs.String(), "event=cluster_copies_shut") != 1 {
+		t.Fatalf("the machine refused once, the door shut once:\n%s", logs.String())
+	}
+	// the admin allows copies there: the machines may ask again; Maktaba's own needs no rule
+	c.OperatorPG = ruleOn
+	c.guardSlots(ctx)
+	if denied() == nil || !strings.Contains(logs.String(), "event=cluster_copies_open") ||
+		!strings.Contains(logs.String(), "event=cluster_copies_operator_postgres") {
+		t.Fatalf("with the rule the machine may ask:\n%s", logs.String())
+	}
+	door := func(c *Copies) {
+		why, _ := c.refusal(ctx)
+		c.holdDoor(ctx, why)
+	}
+	c.OperatorPG = nil
+	door(c)
+	c.Bundled = true // (the door alone: the sweep of idle physical slots is for a server of the home's own)
+	door(c)
+	if denied() == nil {
+		t.Fatal("on Maktaba's own Postgres the machine may not ask")
+	}
+	// a home whose database user does not own the grant cannot shut it: said once
+	exec(`CREATE ROLE ` + app + ` LOGIN PASSWORD 'app-pass'`)
+	exec(`GRANT SELECT ON cluster_nodes TO ` + app)
+	appDB, err := sql.Open("postgres", clustertest.WithUser(t, dsn, app, "app-pass"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer appDB.Close()
+	var notOwner strings.Builder
+	other := &Copies{DB: appDB, Logger: slog.New(slog.NewTextHandler(&notOwner, nil))}
+	door(other)
+	door(other)
+	if denied() == nil || strings.Count(notOwner.String(), "event=cluster_copies_door_failed") != 1 {
+		t.Fatalf("a home user that does not own the grant (said once):\n%s", notOwner.String())
+	}
+}
+
+// A slot that is not Maktaba's, in use by a stream that does not end on its own (a role
+// with REPLICATION decoding every table through test_decoding over the replication
+// protocol): the home ends the stream before it drops the slot, and says "dropped" only
+// once it did. A home whose database user may not end it (no pg_signal_backend, as on an
+// operator's own Postgres) says so once, with what to do, and drops it once it may. Needs
+// pg_recvlogical (MAKTABA_TEST_PG_BIN, or on PATH) and wal_level=logical; touches no
+// other database's slots.
+func TestAForeignStreamIsEndedBeforeItsSlotIsDropped(t *testing.T) {
+	base := os.Getenv("MAKTABA_TEST_PG_URL")
+	if base == "" {
+		t.Skip("MAKTABA_TEST_PG_URL unset")
+	}
+	recv := pgProgram("pg_recvlogical")
+	if recv == "" {
+		t.Skip("no pg_recvlogical (MAKTABA_TEST_PG_BIN, or on PATH)")
+	}
+	admin, err := sql.Open("postgres", base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Close() })
+	var level string
+	if err := admin.QueryRow(`SHOW wal_level`).Scan(&level); err != nil {
+		t.Skipf("scratch Postgres unreachable: %v", err)
+	}
+	if level != "logical" {
+		t.Skip("the server does not run with wal_level=logical")
+	}
+	suffix := strings.ReplaceAll(uuid.NewString()[:8], "-", "")
+	app, evil, dbName, slot := "app_"+suffix, "evil_"+suffix, "t_guard_"+suffix, "maktaba_test_evil_"+suffix
+	exec := func(db *sql.DB, q string, args ...any) {
+		t.Helper()
+		if _, err := db.Exec(q, args...); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	exec(admin, `CREATE ROLE `+app+` LOGIN REPLICATION PASSWORD 'app-pass'`)
+	exec(admin, `CREATE ROLE `+evil+` LOGIN REPLICATION PASSWORD 'evil-pass'`)
+	exec(admin, `CREATE DATABASE `+dbName+` OWNER `+app)
+	t.Cleanup(func() {
+		_, _ = admin.Exec(`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1`, dbName)
+		for i := 0; i < 20; i++ {
+			_, _ = admin.Exec(`SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots
+			    WHERE database = $1 AND NOT active`, dbName)
+			var left int
+			_ = admin.QueryRow(`SELECT count(*) FROM pg_replication_slots WHERE database = $1`, dbName).Scan(&left)
+			if left == 0 {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		if _, err := admin.Exec(`DROP DATABASE IF EXISTS ` + dbName); err != nil {
+			t.Logf("drop %s: %v", dbName, err)
+		}
+		for _, r := range []string{evil, app} {
+			if _, err := admin.Exec(`DROP ROLE IF EXISTS ` + r); err != nil {
+				t.Logf("drop role %s: %v", r, err)
+			}
+		}
+	})
+	home, err := sql.Open("postgres", clustertest.DSN(t, base, dbName, app, "app-pass"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer home.Close()
+	exec(home, `CREATE TABLE cluster_nodes (id uuid PRIMARY KEY, name text NOT NULL, state text NOT NULL,
+	    full_node boolean NOT NULL)`)
+	exec(home, `CREATE TABLE notes (id serial PRIMARY KEY, body text)`)
+
+	// a role with REPLICATION streams every table through test_decoding, for as long as it likes
+	var decoded, stderr syncBuffer
+	cmd := osexec.Command(recv, "-d", clustertest.DSN(t, base, dbName, evil, "evil-pass"), "--slot", slot,
+		"--plugin", "test_decoding", "--create-slot", "--start", "--no-loop", "-f", "-")
+	cmd.Stdout, cmd.Stderr = &decoded, &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	ended := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(ended)
+	}()
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		<-ended
+	})
+	active := func() (exists, active bool) {
+		err := home.QueryRow(`SELECT active FROM pg_replication_slots WHERE slot_name = $1`, slot).Scan(&active)
+		return err == nil, active
+	}
+	// streaming once a row written reaches it decoded (a slot still being made is in use
+	// too, and goes with its connection: the server's other transactions delay it)
+	for deadline := time.Now().Add(20 * time.Second); !strings.Contains(decoded.String(), "decoded past every publication"); {
+		if time.Now().After(deadline) {
+			t.Fatalf("pg_recvlogical never streamed: %s", stderr.String())
+		}
+		exec(home, `INSERT INTO notes (body) VALUES ('decoded past every publication')`)
+		time.Sleep(100 * time.Millisecond)
+	}
+	if _, on := active(); !on {
+		t.Fatal("the stream's slot is not in use")
+	}
+
+	var logs strings.Builder
+	c := &Copies{DB: home, Logger: slog.New(slog.NewTextHandler(&logs, nil)), OperatorPG: ruleOn}
+	c.guardSlots(context.Background())
+	c.guardSlots(context.Background())
+	if exists, on := active(); !exists || !on {
+		t.Fatalf("without pg_signal_backend the stream was ended (slot there %v, in use %v)", exists, on)
+	}
+	if strings.Count(logs.String(), "event=cluster_slot_foreign_failed") != 1 || !strings.Contains(logs.String(), "pg_signal_backend") ||
+		strings.Contains(logs.String(), "event=cluster_slot_foreign_dropped") {
+		t.Fatalf("a stream the home cannot end is said once, with what to do, and never as dropped:\n%s", logs.String())
+	}
+	exec(admin, `GRANT pg_signal_backend TO `+app)
+	c.guardSlots(context.Background())
+	if exists, _ := active(); exists {
+		t.Fatal("the slot was kept once its stream could be ended")
+	}
+	if !strings.Contains(logs.String(), "event=cluster_slot_foreign_dropped") || !strings.Contains(logs.String(), "stream_ended=true") {
+		t.Fatalf("the slot dropped, its stream ended first:\n%s", logs.String())
+	}
+	select {
+	case <-ended:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the foreign stream did not end")
+	}
+}
+
+// syncBuffer is a program's output, read while the program writes it.
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+// pgProgram is a Postgres program of MAKTABA_TEST_PG_BIN (an install: its bin), else on
+// PATH ("": none).
+func pgProgram(name string) string {
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	if dir := os.Getenv("MAKTABA_TEST_PG_BIN"); dir != "" {
+		for _, p := range []string{filepath.Join(dir, "bin", name), filepath.Join(dir, name)} {
+			if st, err := os.Stat(p); err == nil && !st.IsDir() {
+				return p
+			}
+		}
+	}
+	p, _ := osexec.LookPath(name)
+	return p
 }
 
 // scramVerifier is the SCRAM-SHA-256 verifier a machine sends for its copy's password

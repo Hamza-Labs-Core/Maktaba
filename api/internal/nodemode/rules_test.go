@@ -46,6 +46,16 @@ func TestLoadRules(t *testing.T) {
 		got.ReplicaWALKeepGB != d.ReplicaWALKeepGB {
 		t.Fatalf("0 minutes of grace and 24 h are values; 2 s of grace, a 0 lag and 4 TB are out of range: %+v %v", got, err)
 	}
+	// copies on a Postgres that is not Maktaba's own: off unless the admin turns them on
+	if DefaultRules().CopiesOnOperatorPostgres {
+		t.Fatal("copies on an operator's own Postgres are on by default")
+	}
+	for value, want := range map[string]bool{`{"copies_on_operator_postgres": true}`: true,
+		`{"sso": true, "copies_on_operator_postgres": null}`: false, `{"copies_on_operator_postgres": "yes"}`: false} {
+		if got, err := LoadRules(ctx, settingsDB(t, value)); err != nil || got.CopiesOnOperatorPostgres != want {
+			t.Fatalf("%s: %v %v, want %v", value, got.CopiesOnOperatorPostgres, err, want)
+		}
+	}
 	db := settingsDB(t, "")
 	_ = db.Close()
 	if got, err := LoadRules(ctx, db); err == nil || got != DefaultRules() {

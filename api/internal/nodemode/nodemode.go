@@ -185,7 +185,8 @@ func Unreachable(err error) bool {
 // home before it stops asking it per request, how current its copy of the home's
 // database must be to answer meanwhile (and to be read from while the home answers),
 // how long a sign-in made on it then lasts, how much the home keeps for a copy behind,
-// its picture cache.
+// whether the machines keep copies of a home's database that is not Maktaba's own
+// Postgres, its picture cache.
 type Rules struct {
 	SSO                        bool `json:"sso"`
 	GraceSeconds               int  `json:"delegate_unreachable_grace_seconds"`
@@ -194,6 +195,7 @@ type Rules struct {
 	OfflineSessionHours        int  `json:"offline_session_hours"`
 	OfflineSessionGraceMinutes int  `json:"offline_session_grace_minutes"`
 	ReplicaWALKeepGB           int  `json:"replica_wal_keep_gb"`
+	CopiesOnOperatorPostgres   bool `json:"copies_on_operator_postgres"`
 	ProxyCacheMB               int  `json:"proxy_cache_mb"`
 }
 
@@ -270,6 +272,10 @@ func LoadRules(ctx context.Context, db *sql.DB) (Rules, error) {
 	var b bool
 	if v, ok := m["sso"]; ok && json.Unmarshal(v, &b) == nil {
 		out.SSO = b
+	}
+	var on *bool
+	if v, ok := m["copies_on_operator_postgres"]; ok && json.Unmarshal(v, &on) == nil && on != nil {
+		out.CopiesOnOperatorPostgres = *on
 	}
 	var n int
 	if v, ok := m["delegate_unreachable_grace_seconds"]; ok && json.Unmarshal(v, &n) == nil && n >= 5 && n <= 600 {
