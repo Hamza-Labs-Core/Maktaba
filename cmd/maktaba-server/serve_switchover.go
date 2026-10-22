@@ -486,6 +486,19 @@ type newHome struct {
 	// TLSOff: its database has no TLS (its own [postgres] tls = "off").
 	CA     string `json:"ca_pem,omitempty"`
 	TLSOff bool   `json:"tls_off,omitempty"`
+	// Node is the machine the new home was (its machine id): of two homes of one term,
+	// the one whose id is lower gives way (sameTermWinner)
+	Node string `json:"node,omitempty"`
+}
+
+// sameTermWinner reports whether a notice of a home of the term this machine's home has
+// is one to follow: two standby homes cut off from each other may each have taken one
+// term, and the one whose machine id is lower gives way, as every machine and each of
+// the two decide alike. current is this machine's home's machine id ("": not known, then
+// nothing is decided).
+func sameTermWinner(notice movedNotice, term int64, current string) bool {
+	return notice.Term == term && notice.HomeNode != "" && current != "" && notice.HomeNode != current &&
+		current < notice.HomeNode
 }
 
 // database sets how n verifies this home's database: its CA, or no TLS.
@@ -1437,7 +1450,7 @@ func (s *switching) becomeHome(ctx context.Context, db *sql.DB, kit *switchover.
 	if err := os.Rename(path, aside); err != nil && (!os.IsNotExist(err) || !fileExists(aside)) {
 		return newHome{}, fmt.Errorf("node.json: %w", err)
 	}
-	home := newHome{APIURL: s.cfg.PublicAPIURL(), WebURL: s.cfg.PublicWebURL(), DBPort: db2.Port,
+	home := newHome{Node: n.NodeID, APIURL: s.cfg.PublicAPIURL(), WebURL: s.cfg.PublicWebURL(), DBPort: db2.Port,
 		SystemID: done.SystemID, InstanceID: n.Home.InstanceID, Name: n.Name}
 	if u, err := url.Parse(home.APIURL); err == nil {
 		home.DBHost = u.Hostname()
@@ -1595,8 +1608,12 @@ func (s *switching) checkMoved(ctx context.Context, client *http.Client) {
 			continue
 		}
 		var notice movedNotice
-		if json.Unmarshal(plain, &notice) != nil || notice.Term <= n.Home.Term || notice.Home.APIURL == "" {
+		if json.Unmarshal(plain, &notice) != nil || notice.Home.APIURL == "" ||
+			(notice.Term <= n.Home.Term && !sameTermWinner(notice, n.Home.Term, n.Home.Node)) {
 			continue
+		}
+		if notice.Home.Node == "" {
+			notice.Home.Node = notice.HomeNode
 		}
 		logf("the home moved to %s while this machine was away from it (term %d): following it", notice.Home.APIURL,
 			notice.Term)
@@ -1678,6 +1695,9 @@ func (s *switching) follow(ctx context.Context, id string, term int64, h newHome
 		}
 	}
 	n.Home.URL, n.Home.APIURL, n.Home.Name = h.APIURL, h.APIURL, h.Name
+	if h.Node != "" {
+		n.Home.Node = h.Node
+	}
 	if term > n.Home.Term {
 		n.Home.Term = term
 	}

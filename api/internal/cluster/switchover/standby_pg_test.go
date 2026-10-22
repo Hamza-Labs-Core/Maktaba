@@ -201,3 +201,51 @@ func TestTheOldHomesReportIsTakenSealedOnly(t *testing.T) {
 		t.Fatalf("the reports: %+v", rs)
 	}
 }
+
+// Two standby homes cut off from each other took the same emergency's term: the one that
+// gave way reports what it wrote to the other, which takes it from a standby of that term
+// that is not its home (and from no other machine).
+func TestTheReportOfAHomeThatGaveWayIsTaken(t *testing.T) {
+	o, _, _, _, _ := setup(t)
+	ctx := context.Background()
+	clusterPriv, clusterPub := newKey(t)
+	o.ClusterKeyFile = filepath.Join(t.TempDir(), "home-cluster.key")
+	if err := os.WriteFile(o.ClusterKeyFile, clusterPriv, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	winner, loser, plain := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	loserPriv, loserPub := newKey(t)
+	plainPriv, plainPub := newKey(t)
+	if _, err := o.DB.ExecContext(ctx, `INSERT INTO cluster_terms (term, home_name, home_node, reason, started_at)
+	    VALUES (3, 'w', $1, 'emergency', now() - interval '1 minute')`, winner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := o.DB.ExecContext(ctx, `INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, approved_at,
+	        approved_by, full_node, standby) VALUES
+	        ($1, 'w', 'approved', 'linux', 'amd64', $4, now() - interval '1 day', 'admin', true, true),
+	        ($2, 'l', 'approved', 'linux', 'amd64', $5, now() - interval '1 day', 'admin', true, true),
+	        ($3, 'p', 'approved', 'linux', 'amd64', $6, now() - interval '1 day', 'admin', true, false)`,
+		winner, loser, plain, base64.StdEncoding.EncodeToString(loserPub), base64.StdEncoding.EncodeToString(loserPub),
+		base64.StdEncoding.EncodeToString(plainPub)); err != nil {
+		t.Fatal(err)
+	}
+	post := func(node string, priv []byte) int {
+		report, _ := json.Marshal(map[string]any{"id": uuid.NewString(), "term": 3, "from_node": node, "from_name": "l",
+			"cut_lsn": "", "aside": map[string]any{"transactions": []any{}}, "counts": map[string]int{}})
+		body, _ := json.Marshal(map[string]any{"node_id": node, "term": 3,
+			"sealed": sealReport(t, priv, clusterPub, 3, report)})
+		rec := httptest.NewRecorder()
+		u := fmt.Sprintf("/api/cluster/kept-aside/report?node=%s&term=3", node)
+		o.postReport(rec, httptest.NewRequest(http.MethodPost, u, bytes.NewReader(body)))
+		return rec.Code
+	}
+	if code := post(loser, loserPriv); code != http.StatusOK {
+		t.Fatalf("the report of the standby home that gave way: %d", code)
+	}
+	if code := post(winner, loserPriv); code != http.StatusForbidden {
+		t.Fatalf("a report from the term's own home: %d", code)
+	}
+	if code := post(plain, plainPriv); code != http.StatusForbidden {
+		t.Fatalf("a report from a machine that is no standby: %d", code)
+	}
+}

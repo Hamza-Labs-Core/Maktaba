@@ -137,8 +137,11 @@ type HomeRef struct {
 	// empty in a config written before v2 (the machine must re-join, story 35.8 EC2).
 	ClusterPub string `json:"cluster_pub"`
 	// Term is the cluster's term this home began (Epic 37: a switch of the home starts
-	// the next); 0 before the first switch this machine followed.
-	Term int64 `json:"term,omitempty"`
+	// the next); 0 before the first switch this machine followed. Node is the machine the
+	// home was when it began it ("" for the first home): two standby homes cut off from
+	// each other may each begin one term, and the one whose machine id is lower gives way.
+	Term int64  `json:"term,omitempty"`
+	Node string `json:"node,omitempty"`
 }
 
 // HomeURL is the home's API URL (home.url, or the older home.api_url).

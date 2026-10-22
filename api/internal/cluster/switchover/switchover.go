@@ -118,6 +118,9 @@ type NewHome struct {
 	// TLSOff: its database has no TLS (its own [postgres] tls = "off").
 	CA     string `json:"ca_pem,omitempty"`
 	TLSOff bool   `json:"tls_off,omitempty"`
+	// Node is the machine the new home was (its machine id): the machines keep it with their
+	// home, to tell two homes of one term apart (the lower id gives way)
+	Node string `json:"node,omitempty"`
 }
 
 // Orchestrator runs switches on the home.

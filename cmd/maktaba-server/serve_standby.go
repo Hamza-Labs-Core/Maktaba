@@ -155,6 +155,23 @@ func (s *switching) homeIdentities() []oldHome {
 		out = append(out, me)
 	}
 	add(s.standbyIdentityPath())
+	// the machine this home was, before it took over (its node.json put aside): another
+	// home of the same term seals its notice to that identity
+	asides, _ := filepath.Glob(config.LocalNodeConfigPath() + ".was-node-*")
+	sort.Strings(asides)
+	for _, p := range asides {
+		var n config.NodeConfig
+		b, err := os.ReadFile(p)
+		if err != nil || json.Unmarshal(b, &n) != nil || n.NodeID == "" || seen[n.NodeID] {
+			continue
+		}
+		var pw string
+		if u, err := url.Parse(n.DatabaseURL); err == nil && u.User != nil {
+			pw, _ = u.User.Password()
+		}
+		seen[n.NodeID] = true
+		out = append(out, oldHome{NodeID: n.NodeID, PrivateKey: n.PrivateKey, RolePassword: pw, Name: n.Name})
+	}
 	planned, _ := filepath.Glob(filepath.Join(s.cfg.StateDir(), "switchover", "*", "old-home.json"))
 	sort.Strings(planned)
 	for _, p := range planned {
@@ -176,9 +193,11 @@ func (s *switching) checkTerm(ctx context.Context, client *http.Client) bool {
 		return false // no standby ever had this home's kit, nor did it run a switch
 	}
 	var term int64
+	var self string // the machine this home was when it began its term ("" for the first home)
 	var urls []string
 	err := s.withSuper(func(db *sql.DB) error {
-		if err := db.QueryRowContext(ctx, `SELECT COALESCE(max(term), 1) FROM cluster_terms`).Scan(&term); err != nil {
+		if err := db.QueryRowContext(ctx, `SELECT term, COALESCE(home_node::text, '') FROM cluster_terms
+		    ORDER BY term DESC LIMIT 1`).Scan(&term, &self); err != nil {
 			return err
 		}
 		// the standbys first (one of them took over), then every other machine: its copy of
@@ -226,7 +245,17 @@ func (s *switching) checkTerm(ctx context.Context, client *http.Client) bool {
 				continue
 			}
 			var notice movedNotice
-			if json.Unmarshal(plain, &notice) != nil || notice.Term <= term || notice.Home.APIURL == "" {
+			if json.Unmarshal(plain, &notice) != nil || notice.Home.APIURL == "" {
+				continue
+			}
+			switch {
+			case notice.Term > term:
+			case sameTermWinner(notice, term, self):
+				// another home of this term, which this one gives way to: what this home wrote
+				// since it took over is all in that home's slot here (made at this home's own
+				// promotion), the other's cut being in another database's WAL
+				notice.Cut = ""
+			default:
 				continue
 			}
 			if err := s.stepDown(ctx, me, m.ID, notice); err != nil {
@@ -329,7 +358,7 @@ func (s *switching) stepDown(ctx context.Context, me oldHome, id string, notice 
 		DatabaseURL: (&url.URL{Scheme: "postgres", User: url.UserPassword(role, me.RolePassword),
 			Host: net.JoinHostPort(h.DBHost, strconv.Itoa(h.DBPort)), Path: "/" + pgbundle.AppDatabase,
 			RawQuery: "sslmode=prefer&connect_timeout=10"}).String(),
-		Home: config.HomeRef{URL: h.APIURL, APIURL: h.APIURL, InstanceID: h.InstanceID, Name: h.Name,
+		Home: config.HomeRef{URL: h.APIURL, APIURL: h.APIURL, InstanceID: h.InstanceID, Name: h.Name, Node: notice.HomeNode,
 			ClusterPub: base64.StdEncoding.EncodeToString(clusterPub), Term: notice.Term}}
 	h.database(&n)
 	if err := writeNodeConfig(n); err != nil {

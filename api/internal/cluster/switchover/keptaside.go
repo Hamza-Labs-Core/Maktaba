@@ -109,12 +109,15 @@ func (o *Orchestrator) postReport(w http.ResponseWriter, r *http.Request) {
 	// the old home: registered by the switch that began term (with the term, in one
 	// transaction: an emergency, or a planned switch the old home called off without the
 	// new home's word), not by an earlier or a later one
+	// (or, for an emergency's term, another standby home that took the same term while cut
+	// off from this one, and gave way to it: what it wrote since it took over)
 	var pubB64, name string
 	err := o.DB.QueryRowContext(ctx, `SELECT n.node_pubkey, n.name FROM cluster_nodes n
 	    JOIN cluster_terms t ON t.term = $2 AND t.reason IN ('emergency', 'planned')
-	    WHERE n.id = $1 AND n.approved_by = 'switchover' AND n.state = 'approved'
-	      AND n.approved_at >= t.started_at
-	      AND n.approved_at < COALESCE((SELECT min(started_at) FROM cluster_terms WHERE term > t.term), 'infinity')`,
+	    WHERE n.id = $1 AND n.state = 'approved' AND (
+	      (n.approved_by = 'switchover' AND n.approved_at >= t.started_at
+	       AND n.approved_at < COALESCE((SELECT min(started_at) FROM cluster_terms WHERE term > t.term), 'infinity'))
+	      OR (n.standby AND t.reason = 'emergency' AND t.home_node IS DISTINCT FROM n.id))`,
 		node, term).Scan(&pubB64, &name)
 	if errors.Is(err, sql.ErrNoRows) {
 		httperror.Write(w, r, httperror.Forbidden("", "not an old home of this cluster"))

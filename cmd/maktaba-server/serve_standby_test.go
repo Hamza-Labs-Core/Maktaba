@@ -343,3 +343,90 @@ func TestAnEmergencyNeedsAWholeCurrentCopy(t *testing.T) {
 		t.Fatalf("an hour behind on the home's clock: %q", got)
 	}
 }
+
+// Two standby homes cut off from each other may each take one term: the one whose machine
+// id is lower gives way, as each machine decides alike, and nothing is decided without both
+// ids.
+func TestTwoHomesOfOneTermTheLowerIDGivesWay(t *testing.T) {
+	n := func(term int64, node string) movedNotice { return movedNotice{Term: term, HomeNode: node} }
+	for _, tc := range []struct {
+		notice  movedNotice
+		term    int64
+		current string
+		want    bool
+	}{
+		{n(3, "bbbb"), 3, "aaaa", true},  // the other's id is higher: it wins
+		{n(3, "aaaa"), 3, "bbbb", false}, // this home's is higher: it stays
+		{n(3, "aaaa"), 3, "aaaa", false}, // the same home
+		{n(3, "bbbb"), 3, "", false},     // this machine's home's id not known
+		{n(3, ""), 3, "aaaa", false},     // the notice's not known
+		{n(4, "bbbb"), 3, "aaaa", false}, // a newer term is followed anyway, not by this rule
+	} {
+		if got := sameTermWinner(tc.notice, tc.term, tc.current); got != tc.want {
+			t.Fatalf("%+v at term %d of %q: %v, want %v", tc.notice, tc.term, tc.current, got, tc.want)
+		}
+	}
+}
+
+// A machine of one home finds a notice of another home of the same term: it follows only
+// the one whose machine id is higher than its home's, and keeps that home's id.
+func TestAMachineFollowsTheHomeThatWinsTheTerm(t *testing.T) {
+	clusterPriv, clusterPub := x25519Pair(t)
+	nodePriv, nodePub := x25519Pair(t)
+	s, _ := standbyMachine(t, nodePriv, clusterPub, "http://127.0.0.1:1")
+	n := config.LocalNodeConfig()
+	n.Home.Term, n.Home.Node = 2, "5a5a5a5a-0000-4000-8000-000000000000"
+	if err := writeNodeConfig(n); err != nil {
+		t.Fatal(err)
+	}
+	notice := func(node, api string) string {
+		plain, _ := json.Marshal(movedNotice{Term: 2, HomeNode: node, Home: newHome{APIURL: api, DBHost: "x", DBPort: 54329, Name: "x"}})
+		sealed, err := switchover.SealNotice(clusterPriv, nodePub, "sw-t", plain)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return sealed
+	}
+	var answer string
+	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "sw-t", "term": 2, "notice": answer})
+	}))
+	defer peer.Close()
+	args, _ := json.Marshal(map[string]any{"urls": []string{}, "peers": []string{peer.URL}})
+	if _, ok, detail := s.command(t.Context(), "home.standbys", args); !ok {
+		t.Fatalf("the peers: %v", detail)
+	}
+	client := &http.Client{Timeout: 2 * time.Second}
+	answer = notice("0a0a0a0a-0000-4000-8000-000000000000", "http://lower:8082")
+	s.checkMoved(t.Context(), client)
+	if got := config.LocalNodeConfig().Home; got.APIURL == "http://lower:8082" {
+		t.Fatalf("followed the home that gives way: %+v", got)
+	}
+	answer = notice("fafafafa-0000-4000-8000-000000000000", "http://higher:8082")
+	s.checkMoved(t.Context(), client)
+	if got := config.LocalNodeConfig().Home; got.APIURL != "http://higher:8082" || got.Node != "fafafafa-0000-4000-8000-000000000000" {
+		t.Fatalf("did not follow the home that wins the term: %+v", got)
+	}
+	select {
+	case <-reloadCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the machine does not start again with its new home")
+	}
+}
+
+// A standby that took over looks for a notice under the machine it was too (its node.json
+// put aside), with its database role's password.
+func TestAPromotedStandbyKeepsItsMachineIdentityForTheTermWatch(t *testing.T) {
+	_, clusterPub := x25519Pair(t)
+	nodePriv, _ := x25519Pair(t)
+	s, _ := standbyMachine(t, nodePriv, clusterPub, "http://127.0.0.1:1")
+	n := config.LocalNodeConfig()
+	b, _ := json.Marshal(n)
+	if err := os.WriteFile(config.LocalNodeConfigPath()+".was-node-1", b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ids := s.homeIdentities()
+	if len(ids) != 1 || ids[0].NodeID != n.NodeID || ids[0].RolePassword != "p" || ids[0].PrivateKey != n.PrivateKey {
+		t.Fatalf("identities: %+v", ids)
+	}
+}
