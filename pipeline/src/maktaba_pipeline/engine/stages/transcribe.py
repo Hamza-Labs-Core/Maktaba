@@ -508,13 +508,16 @@ async def _settle_tries(db: Any, rules: TranscriptionConfig) -> int:
                 base=rules.relisten_wait_hours * 3600,
                 cap=max(rules.relisten_wait_hours, rules.relisten_wait_max_hours) * 3600,
             )
+        # the count as it is now, not as read above: a reset since then (another worker's,
+        # the operator's round) leaves it at 0, which this must not take below (CHECK >= 0)
         await db.execute(
-            "UPDATE relisten_attempts SET ended_at = $2, next_at = $3, attempts = attempts - $4"
+            "UPDATE relisten_attempts SET ended_at = $2, next_at = $3,"
+            " attempts = attempts - CASE WHEN attempts > 0 THEN $4 ELSE 0 END"
             " WHERE video_id = $1 AND ended_at IS NULL",
             uid(r["video_id"]),
             to_ts(db, ended),
             to_ts(db, ended + timedelta(seconds=float(wait))),
-            1 if r["outcome"] == "skipped_unchanged" and int(r["attempts"]) > 0 else 0,
+            1 if r["outcome"] == "skipped_unchanged" else 0,
         )
     return len(rows)
 

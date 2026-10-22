@@ -833,6 +833,48 @@ async def test_a_try_without_room_on_the_gpu_is_no_try(
     assert (await _tries(db, vid))["attempts"] == 0
 
 
+class _ReadBeforeAReset:
+    """The database as a worker's sweep saw it a moment ago: the tries it reads still say 1
+    (another worker has reset them to 0 since)."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._db, name)
+
+    async def fetch(self, sql: str, *args: Any) -> list[Any]:
+        rows = await self._db.fetch(sql, *args)
+        if "FROM relisten_attempts r" not in sql:
+            return rows
+        return [{**dict(zip(r.keys(), r, strict=True)), "attempts": 1} for r in rows]
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_a_try_that_was_no_try_never_takes_the_count_below_zero(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #228 (round 2): the uncounting of a try that never ran used the count read
+    earlier in the sweep; a reset in between made it -1, against the table's CHECK."""
+    rt = await core_runtime(db)
+    vid = await _skipped_transcript(db, rt, tmp_path, monkeypatch, hours_ago=3)
+    _here(monkeypatch)
+    assert await _sweep(db, monkeypatch) == 1  # a try, its job still to run
+    job = await _last_job(db, vid)
+    # it ended without running, and another worker reset the video's tries meanwhile
+    await db.execute(
+        "UPDATE processing_jobs SET state = 'done', outcome = 'skipped_unchanged',"
+        " finished_at = $2 WHERE id = $1",
+        job["id"],
+        to_ts(db, now()),
+    )
+    await db.execute("UPDATE relisten_attempts SET attempts = 0 WHERE video_id = $1", str(vid))
+    assert await tr._settle_tries(_ReadBeforeAReset(db), tr._RULES) == 1
+    tries = await _tries(db, vid)
+    assert tries["attempts"] == 0 and tries["ended_at"] is not None
+
+
 @pytest.mark.unit
 def test_the_capability_names_the_gpu_and_a_steady_machine(
     monkeypatch: pytest.MonkeyPatch,
