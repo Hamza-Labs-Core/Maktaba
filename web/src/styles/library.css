@@ -94,6 +94,27 @@ h2,
 }
 
 @media (max-width: 640px) {
+  /* the brand and four header buttons must fit a 360 px phone */
+  .mkt-shell__header {
+    padding: var(--space-2) var(--space-3);
+    gap: var(--space-2);
+  }
+  .mkt-shell__brand {
+    font-size: 1.3rem;
+  }
+  .mkt-shell__actions {
+    gap: var(--space-1);
+    min-width: 0;
+  }
+  .mkt-shell__actions .mkt-btn {
+    padding-inline: var(--space-2);
+  }
+  .mkt-shell__actions .mkt-btn:last-child {
+    max-width: 7rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .mkt-shell__body {
     padding: var(--space-2) var(--space-2) 0;
   }
