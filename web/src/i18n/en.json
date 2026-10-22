@@ -72,6 +72,7 @@
   "player.pip": "Picture in picture",
   "player.captions": "Captions",
   "player.subtitleSize": "Subtitle size",
+  "player.diskFull": "There isn't enough free disk space on the server to prepare this video. Free some space there and try again.",
   "player.shortcuts": "Keyboard shortcuts",
   "search.mode": "Mode",
   "search.mode.hybrid": "Hybrid",

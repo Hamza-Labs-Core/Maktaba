@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -227,23 +228,35 @@ func TestTranscodeArgs_RealFFmpeg(t *testing.T) {
 				if format == "hls" {
 					for _, v := range []string{"v0", "v1", "v2"} {
 						want = append(want, filepath.Join(v, "index.m3u8"), filepath.Join(v, "seg-0.ts"))
+						// an EVENT playlist, ended, every segment it lists kept
+						pl, err := os.ReadFile(filepath.Join(dir, v, "index.m3u8"))
+						if err != nil {
+							continue
+						}
+						if s := string(pl); !strings.Contains(s, "#EXT-X-PLAYLIST-TYPE:EVENT") || !strings.HasSuffix(s, "#EXT-X-ENDLIST\n") {
+							t.Errorf("%q %s hls %s: playlist\n%s", hw, src.name, v, s)
+						}
+						for _, seg := range regexp.MustCompile(`(?m)^seg-\d+\.ts$`).FindAllString(string(pl), -1) {
+							want = append(want, filepath.Join(v, seg))
+						}
 						if src.name != "h264" {
 							continue
 						}
 						// every rung cut on the same 6 s boundaries (its key frames)
-						if pl, err := os.ReadFile(filepath.Join(dir, v, "index.m3u8")); err == nil {
-							durs := regexp.MustCompile(`#EXTINF:([0-9.]+)`).FindAllStringSubmatch(string(pl), -1)
-							for i, d := range durs {
-								if i < len(durs)-1 && d[1] != "6.000000" {
-									t.Errorf("%q h264 hls %s: segment %d is %s s, want 6", hw, v, i, d[1])
-								}
+						durs := regexp.MustCompile(`#EXTINF:([0-9.]+)`).FindAllStringSubmatch(string(pl), -1)
+						for i, d := range durs {
+							if i < len(durs)-1 && d[1] != "6.000000" {
+								t.Errorf("%q h264 hls %s: segment %d is %s s, want 6", hw, v, i, d[1])
 							}
 						}
 					}
 				} else {
 					want = []string{"manifest.mpd"}
-					// the ladder is one AdaptationSet, the audio another
+					// finished: a static MPD; the ladder is one AdaptationSet, the audio another
 					if mpd, err := os.ReadFile(filepath.Join(dir, "manifest.mpd")); err == nil {
+						if !strings.Contains(string(mpd), `type="static"`) {
+							t.Errorf("%q %s dash: not a static MPD\n%s", hw, src.name, mpd)
+						}
 						sets := 1
 						if src.audio {
 							sets = 2
@@ -267,6 +280,47 @@ func TestTranscodeArgs_RealFFmpeg(t *testing.T) {
 				}
 			}
 		}
+	}
+
+	// opened 6 s into the 13 s source: the segments' timestamps are the
+	// source's (from 6 s, plus MPEG-TS's 1.4 s), the playlist the 7 s after
+	startTranscodeAt(ctx, t, sources[0].path, 6)
+}
+
+// startTranscodeAt runs an HLS transcode of input opened start seconds in and
+// checks where its stream starts.
+func startTranscodeAt(ctx context.Context, t *testing.T, input string, start int) {
+	t.Helper()
+	dir := t.TempDir()
+	h, err := DefaultOrchestrator(DefaultBinary(), nil, nil).Start(ctx, Job{SessionID: uuid.NewString(), InputPath: input,
+		OutputDir: dir, Ladder: DefaultLadder(0), Format: "hls", SourceCodec: "h264", StartSec: start})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(2 * time.Minute); h.Active() && time.Now().Before(deadline); {
+		time.Sleep(100 * time.Millisecond)
+	}
+	pl, err := os.ReadFile(filepath.Join(dir, "v0", "index.m3u8"))
+	if err != nil || !h.Finished() {
+		t.Fatalf("from %d s: finished %v, %v (ffmpeg: %s)", start, h.Finished(), err, lastLines(h.Stderr()))
+	}
+	total := 0.0
+	for _, m := range regexp.MustCompile(`#EXTINF:([0-9.]+)`).FindAllStringSubmatch(string(pl), -1) {
+		d, _ := strconv.ParseFloat(m[1], 64)
+		total += d
+	}
+	if total < 6.5 || total > 7.5 {
+		t.Errorf("from %d s: the playlist holds %.2f s, want 7", start, total)
+	}
+	out, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-select_streams", "v:0", "-read_intervals", "%+#1",
+		"-show_entries", "packet=pts_time", "-of", "csv=p=0", filepath.Join(dir, "v0", "seg-0.ts")).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := strings.Trim(strings.TrimSpace(strings.Split(string(out), "\n")[0]), ",")
+	if pts, err := strconv.ParseFloat(first, 64); err != nil ||
+		pts < float64(start) || pts > float64(start)+2 {
+		t.Errorf("from %d s: the first segment starts at %q", start, out)
 	}
 }
 

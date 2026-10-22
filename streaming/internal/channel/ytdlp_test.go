@@ -66,9 +66,12 @@ func TestYtDlp_HeightKeysTheLookup(t *testing.T) {
 }
 
 // TestYtDlp_ReuseFollowsRequest: a lookup is reused only while it is younger
-// than the request's Reuse.
+// than the request's Reuse. The clock is the test's: Windows' coarse clock can
+// read the same before and after a lookup, which is then 0 s old.
 func TestYtDlp_ReuseFollowsRequest(t *testing.T) {
 	y := NewYtDlp("yt")
+	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	y.now = func() time.Time { return now }
 	var calls atomic.Int32
 	y.run = func(context.Context, string, ...string) ([]byte, error) {
 		calls.Add(1)
@@ -76,11 +79,12 @@ func TestYtDlp_ReuseFollowsRequest(t *testing.T) {
 	}
 	ctx := context.Background()
 	_, _ = y.Resolve(ctx, LiveRequest{SourceURL: ytPage, Reuse: time.Hour})
+	now = now.Add(30 * time.Minute)
 	_, _ = y.Resolve(ctx, LiveRequest{SourceURL: ytPage, Reuse: time.Hour})
 	if calls.Load() != 1 {
 		t.Fatalf("within reuse: %d lookups", calls.Load())
 	}
-	_, _ = y.Resolve(ctx, LiveRequest{SourceURL: ytPage, Reuse: time.Nanosecond})
+	_, _ = y.Resolve(ctx, LiveRequest{SourceURL: ytPage, Reuse: 10 * time.Minute})
 	if calls.Load() != 2 {
 		t.Errorf("past reuse: %d lookups", calls.Load())
 	}
@@ -135,11 +139,14 @@ func TestYtDlp_ConcurrentChannelsShareOneLookup(t *testing.T) {
 func TestYtDlp_CallerCancelDoesNotFailOthers(t *testing.T) {
 	y := NewYtDlp("yt")
 	entered, release := make(chan struct{}), make(chan struct{})
+	var runs atomic.Int32
 	var runErr error
 	y.run = func(ctx context.Context, _ string, _ ...string) ([]byte, error) {
-		close(entered)
-		<-release
-		runErr = ctx.Err()
+		if runs.Add(1) == 1 { // a second run is counted, below
+			close(entered)
+			<-release
+			runErr = ctx.Err()
+		}
 		return []byte("https://cdn/x.m3u8\n"), nil
 	}
 	first, cancel := context.WithCancel(context.Background())
@@ -164,6 +171,60 @@ func TestYtDlp_CallerCancelDoesNotFailOthers(t *testing.T) {
 	}
 	if runErr != nil {
 		t.Errorf("the shared lookup was cancelled: %v", runErr)
+	}
+	if n := runs.Load(); n != 1 {
+		t.Errorf("yt-dlp ran %d times, want 1", n)
+	}
+}
+
+// TestYtDlp_CallerMissingTheEndOfARunDoesNotRunAgain: a caller that found
+// nothing cached while the shared run was going, and reaches DoChan only after
+// the run has ended and left the group, takes the URL the run cached: yt-dlp
+// does not run a second time. (CI caught this as the fake run above closing
+// its channel twice.)
+func TestYtDlp_CallerMissingTheEndOfARunDoesNotRunAgain(t *testing.T) {
+	y := NewYtDlp("yt")
+	var runs atomic.Int32
+	entered, release := make(chan struct{}), make(chan struct{})
+	y.run = func(context.Context, string, ...string) ([]byte, error) {
+		if runs.Add(1) == 1 {
+			close(entered)
+			<-release
+		}
+		return []byte("https://cdn/x.m3u8\n"), nil
+	}
+	var misses atomic.Int32
+	held, resume := make(chan struct{}), make(chan struct{})
+	y.beforeJoin = func() {
+		if misses.Add(1) == 2 { // the second caller, past its cache miss
+			close(held)
+			<-resume
+		}
+	}
+	req := LiveRequest{SourceURL: ytPage}
+	first := make(chan string, 1)
+	go func() {
+		u, _ := y.Resolve(context.Background(), req)
+		first <- u
+	}()
+	<-entered
+	second := make(chan string, 1)
+	go func() {
+		u, _ := y.Resolve(context.Background(), req)
+		second <- u
+	}()
+	<-held         // nothing cached yet: the run is still going
+	close(release) // the run caches its URL and ends
+	// singleflight takes the run out of the group before it answers its callers
+	if u := <-first; u != "https://cdn/x.m3u8" {
+		t.Errorf("first caller: %q", u)
+	}
+	close(resume)
+	if u := <-second; u != "https://cdn/x.m3u8" {
+		t.Errorf("second caller: %q", u)
+	}
+	if n := runs.Load(); n != 1 {
+		t.Errorf("yt-dlp ran %d times, want 1", n)
 	}
 }
 

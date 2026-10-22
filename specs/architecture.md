@@ -604,7 +604,7 @@ ffmpeg -ss {start_sec} -i {input} \
   -map 0:v:0 -filter:v "scale=-2:720"  -c:v libx264 -preset veryfast -crf 23 \
   -map 0:v:0 -filter:v "scale=-2:480"  -c:v libx264 -preset veryfast -crf 24 \
   -map 0:a:0 -c:a aac -b:a 128k -ac 2 \
-  -f hls -hls_time 4 -hls_list_size 6 -hls_flags independent_segments+delete_segments \
+  -f hls -hls_time 4 -hls_playlist_type event -hls_list_size 0 -hls_flags independent_segments \
   -hls_segment_filename "{session_dir}/v%v/seg-%d.ts" -master_pl_name index.m3u8 \
   -var_stream_map "v:0,a:0,name:1080p v:1,a:0,name:720p v:2,a:0,name:480p" \
   {session_dir}/v%v/index.m3u8

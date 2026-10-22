@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Builds the Linux app with the server payload inside (Epic 39 story 39.10): payload.sh,
-# then `tauri build` of the AppImage, the .deb and the .rpm with the overlay it writes
-# (the payload in usr/share/maktaba/server), then check-app.sh on the three.
+# then bundle.sh of the AppImage, the .deb and the .rpm at the payload's version with the
+# overlay it writes (the payload in usr/share/maktaba/server), then check-app.sh on the
+# three.
 # `make linux-app` runs it; so does CI's Linux app gate. desktop-release.yml runs the same
 # steps, then its publish job attaches what passed and writes the updater feed.
 #
@@ -20,8 +21,13 @@ BUILD="$REPO_ROOT/build/linux-app"
 cd "$REPO_ROOT/apps/desktop"
 [ -d node_modules ] || pnpm install --frozen-lockfile
 bundle="$REPO_ROOT/apps/desktop/src-tauri/target/release/bundle"
-rm -rf "$bundle/appimage" "$bundle/deb" "$bundle/rpm"
-pnpm exec tauri build --bundles appimage,deb,rpm --config "$BUILD/tauri.linux-app.conf.json"
+# the app at the payload's version when that is semver (a tag; CI's v0.0.0-ci.N, a
+# pre-release like a release candidate's), else at its own (a commit with no tag)
+version="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$BUILD/server/payload.json")"
+if ! "$SCRIPT_DIR/bundle.sh" --versions "$version" >/dev/null 2>&1; then
+    version="$(node -p 'require("./src-tauri/tauri.conf.json").version')"
+fi
+"$SCRIPT_DIR/bundle.sh" "$version" --config "$BUILD/tauri.linux-app.conf.json"
 
 "$SCRIPT_DIR/check-app.sh" "$bundle"/appimage/*.AppImage "$bundle"/deb/*.deb "$bundle"/rpm/*.rpm
 du -sh "$bundle"/appimage/*.AppImage "$bundle"/deb/*.deb "$bundle"/rpm/*.rpm

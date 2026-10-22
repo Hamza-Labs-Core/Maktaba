@@ -172,9 +172,12 @@ export function ts(s: number): string {
 }
 
 // Server emits only <mark>…</mark> wrappers; split on the literal tags
-// and keep every other run as a plain (escaped) text node.
-export function renderSnippet(snippet: string | null | undefined): ReactNode[] {
-  if (typeof snippet !== "string") return [];
+// and keep every other run as a plain (escaped) text node. The whole snippet
+// is one dir="auto" run: a dir="auto" span per text piece made each piece its
+// own bidi island, so in an LTR page an Arabic title lost the space between a
+// plain word and the marked one ("أقم <mark>الصلاة</mark>" read "الصلاةأقم").
+export function renderSnippet(snippet: string | null | undefined): ReactNode {
+  if (typeof snippet !== "string") return null;
   const parts = snippet.split(/(<mark>|<\/mark>)/);
   const nodes: ReactNode[] = [];
   let inMark = false;
@@ -189,17 +192,9 @@ export function renderSnippet(snippet: string | null | undefined): ReactNode[] {
       continue;
     }
     if (part === "") continue;
-    nodes.push(
-      inMark ? (
-        <mark key={key++}>{part}</mark>
-      ) : (
-        <span key={key++} dir="auto">
-          {part}
-        </span>
-      )
-    );
+    nodes.push(inMark ? <mark key={key++}>{part}</mark> : part);
   }
-  return nodes;
+  return <span dir="auto">{nodes}</span>;
 }
 
 /** "12 matches" (one match reads "1 match"). */

@@ -289,6 +289,7 @@ def test_windows_a_replace_another_process_holds_up_is_tried_again(
     """A ReplaceFileW that fails with a sharing violation (a reader has node.json open:
     nothing moved) is tried again for a moment: the claim is written, nothing is left
     over, and nothing is said."""
+    monkeypatch.setattr(config, "_BUSY_SLEEP", 0.0005)
     real = config._replace_file
     calls: list[int] = []
 
@@ -397,6 +398,30 @@ def _leftover(
 def _named(ext: str, *, age: float) -> str:
     """node.json's backup or temp file name of a write that started ``age`` seconds ago."""
     return f".node.json-{int(time.time() - age)}-4242-0badf00d{ext}"
+
+
+def _short_waits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A test that lets the readers' wait for a write under way run out: 2 ms, looking
+    again every 0.5 ms (2 s and 5 ms in production)."""
+    monkeypatch.setattr(config, "_READ_WAIT_SEC", 0.002)
+    monkeypatch.setattr(config, "_BUSY_SLEEP", 0.0005)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _first_load_paid_before_the_tests(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """The first load and write in a process pay one-time costs (the logger's first
+    warning; on Windows the first security and ReplaceFileW calls: 40 ms here, more on
+    CI): paid here, at the module's setup, never inside whichever test runs first (the
+    unit cap times each test's call). A temp folder; the fake machine id."""
+    folder = tmp_path_factory.mktemp("warm") / "Maktaba"
+    folder.mkdir()
+    path = folder / "node.json"
+    path.write_text(json.dumps(_JOINED), encoding="utf-8")
+    if os.name != "nt":
+        os.chmod(path, 0o644)  # made the user's alone at the load, and said
+    _leftover(folder, _named(".bak", age=120), json.dumps(_JOINED))  # recovered, and said
+    config.load(path)
+    config.save(NodeConfig(node_id="n1", name="pc", private_key="k1"), path)
 
 
 _NEW = {**_JOINED, "machine_id": "pc-a"}
@@ -546,7 +571,7 @@ def test_a_node_json_that_cannot_be_read_is_never_moved_or_read_past(
 
     monkeypatch.setattr(Path, "read_bytes", held)
     # on Windows EACCES may be a sharing violation, waited out for a moment
-    monkeypatch.setattr(config, "_READ_WAIT_SEC", 0.02)
+    _short_waits(monkeypatch)
     with pytest.raises(PermissionError):
         config.load(path)
     monkeypatch.setattr(Path, "read_bytes", read_bytes)
@@ -672,7 +697,7 @@ def test_windows_writes_of_one_node_config_run_one_at_a_time(
     leftovers to a later load. The lock file goes once nobody holds it."""
     roaming, warnings = _claim_seam(tmp_path, monkeypatch, config._replace_file)
     before = roaming.read_bytes()
-    monkeypatch.setattr(config, "_LOCK_WAIT_SEC", 0.01)
+    monkeypatch.setattr(config, "_LOCK_WAIT_SEC", 0.002)
     monkeypatch.setattr(config, "_RECOVER_WAIT_SEC", 0.0)
     stale = _leftover(roaming.parent, _named(".bak", age=120), json.dumps(_JOINED), age=3600)
     lock = roaming.with_name(".node.json.lock")
@@ -711,6 +736,7 @@ def test_a_load_that_cannot_take_the_lock_reads_past_the_leftovers(
 ) -> None:
     """A load whose recovery cannot take the lock moves nothing, still reads the node
     config from what a failed write left (the node stays joined) and says why once."""
+    monkeypatch.setattr(config, "_BUSY_SLEEP", 0.0005)
     if how == "a read-only lock file" and os.name != "nt":
         pytest.skip("the lock file is Windows'")
     from maktaba_pipeline import log
@@ -968,6 +994,7 @@ def test_the_roaming_config_is_not_lost_to_a_write_under_way(
     """The resolver never takes the local place for the roaming config while a write of
     it is under way (its lock held): a leftover it picked that is gone a moment later is
     looked for again."""
+    monkeypatch.setattr(config, "_BUSY_SLEEP", 0.0005)
     roaming = _windows_profile(tmp_path, monkeypatch, "pc-a")
     roaming.write_text(json.dumps({**_JOINED, "machine_id": "pc-a"}), encoding="utf-8")
     (roaming.parent / ".node.json.lock").write_text("", encoding="utf-8")
@@ -984,7 +1011,9 @@ def test_the_roaming_config_is_not_lost_to_a_write_under_way(
     assert config.config_path() == roaming and len(calls) == 2
 
 
-def test_a_load_waits_out_a_write_under_way(tmp_path: Path) -> None:
+def test_a_load_waits_out_a_write_under_way(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """node.json missing for a moment while a write holds its lock (ReplaceFileW between
     its renames) is not "not joined": the load waits for it."""
     import threading
@@ -999,7 +1028,8 @@ def test_a_load_waits_out_a_write_under_way(tmp_path: Path) -> None:
         path.write_text(json.dumps(_JOINED), encoding="utf-8")
         lock.unlink()
 
-    timer = threading.Timer(0.03, lands)
+    monkeypatch.setattr(config, "_BUSY_SLEEP", 0.0005)
+    timer = threading.Timer(0.005, lands)
     timer.start()
     try:
         cfg = config.load(path)
@@ -1014,8 +1044,12 @@ def test_the_claim_keeps_what_another_write_put_in_meanwhile(
     """The claim writes machine_id into node.json as it is with the lock held: a field
     another writer (maktaba-server: the home's database CA) put in after this load read
     the file is kept, and a config another PC claimed meanwhile is not claimed again."""
+    from maktaba_pipeline import log
+
     roaming = _windows_profile(tmp_path, monkeypatch, "pc-a")
     roaming.write_text(json.dumps(_JOINED), encoding="utf-8")
+    warnings = _Warnings()
+    monkeypatch.setattr(log, "get_logger", lambda: warnings)
     read = config._read_steady
 
     def then_another_write(path: Path) -> tuple[Path, str]:
@@ -1042,6 +1076,7 @@ def test_the_claim_keeps_what_another_write_put_in_meanwhile(
     cfg = config.load()
     assert cfg is not None and cfg.machine_id == "pc-b"
     assert json.loads(roaming.read_text(encoding="utf-8"))["machine_id"] == "pc-b"
+    assert warnings.events == []
 
 
 def test_a_write_that_does_not_end_is_an_error_never_not_joined(
@@ -1054,7 +1089,7 @@ def test_a_write_that_does_not_end_is_an_error_never_not_joined(
     import errno
 
     roaming = _windows_profile(tmp_path, monkeypatch, "pc-a")
-    monkeypatch.setattr(config, "_READ_WAIT_SEC", 0.02)
+    _short_waits(monkeypatch)
     lock = config._lock_path(roaming)
     lock.write_bytes(b"")
     assert config.config_path() == roaming
@@ -1075,7 +1110,7 @@ def test_windows_leftovers_held_open_are_never_not_joined(
     lock taken a moment ago, node.json missing. The path stays the roaming one and the
     load raises, never None."""
     roaming = _windows_profile(tmp_path, monkeypatch, "pc-a")
-    monkeypatch.setattr(config, "_READ_WAIT_SEC", 0.02)
+    _short_waits(monkeypatch)
     config._lock_path(roaming).write_bytes(b"")
     fds = []
     try:
@@ -1099,6 +1134,7 @@ def test_windows_a_read_held_up_by_another_program_is_waited_out(
     """open() reports a sharing violation (an antivirus or a backup tool holding
     node.json) as EACCES without a Windows error code: the load waits it out for a
     moment, with no lock or leftover beside it, rather than raise at once."""
+    monkeypatch.setattr(config, "_BUSY_SLEEP", 0.0005)
     import errno
 
     path = tmp_path / "Maktaba" / "node.json"
@@ -1128,7 +1164,7 @@ def test_windows_a_rejoin_waits_for_a_reader_holding_node_json(tmp_path: Path) -
     path.parent.mkdir()
     path.write_text(json.dumps(_JOINED), encoding="utf-8")
     reader = path.open("rb")
-    timer = threading.Timer(0.03, reader.close)
+    timer = threading.Timer(0.005, reader.close)
     timer.start()
     try:
         kept = config.set_aside(path)

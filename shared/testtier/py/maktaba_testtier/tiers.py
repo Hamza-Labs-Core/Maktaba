@@ -22,6 +22,17 @@ TIER_SOFT_CAPS: dict[str, float] = {
 
 TIER_HARD_CAP_MULTIPLIER = 3
 
+# Windows runners create and delete files several times slower than Linux
+# and macOS: file-heavy unit tests (cluster agent retention, node configs)
+# breached the hard cap there about one run in six, each time a different
+# test. The per-test caps scale by this on Windows only.
+WINDOWS_SOFT_CAP_SCALE = 3.0
+
+# Coverage measurement slows every test; under it (the lint job's coverage
+# gate) a 0.305 s run tripped the 0.3 s hard cap. The caps scale by this
+# while coverage is loaded.
+COVERAGE_SOFT_CAP_SCALE = 2.0
+
 # Per-tier wall-clock budgets (the tools/test-budget enforcer reads
 # these via the bash wrapper). Units: seconds.
 UNIT_TOTAL_BUDGET_S = 60

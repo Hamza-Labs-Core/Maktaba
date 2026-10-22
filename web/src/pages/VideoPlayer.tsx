@@ -23,7 +23,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
-import { api, ApiError, PROBLEM_VIDEO_UNAVAILABLE_OFFLINE } from "../lib/api";
+import {
+  api,
+  ApiError,
+  PROBLEM_INSUFFICIENT_STORAGE,
+  PROBLEM_VIDEO_UNAVAILABLE_OFFLINE,
+} from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { createWatchSession } from "../lib/watchSession";
 import { attachVod, carrySig } from "@maktaba/tvplayer";
@@ -34,6 +39,13 @@ interface OpenSessionResponse {
   manifest_url?: string;
   direct_url?: string;
   expires_at: string;
+  /** The video's length in the catalogue (absent when unknown). */
+  duration_sec?: number;
+  /**
+   * Where in the video the stream starts (absent: its start): a transcode
+   * opened at a position. Its times are the video's; before it, nothing plays.
+   */
+  start_sec?: number;
   /** Sidecar subtitle tracks, when the server lists them. */
   subtitles?: SubtitleTrack[];
 }
@@ -66,6 +78,16 @@ function shortcutKey(e: React.KeyboardEvent): string {
 function isControlTarget(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false;
   return Boolean(el.closest("input, select, textarea, button, a, [contenteditable='true']"));
+}
+
+/** Reopens of a stream gone within GONE_WINDOW_MS before the error screen. */
+const GONE_REOPENS = 3;
+const GONE_WINDOW_MS = 2 * 60_000;
+
+/** At the video's end: within 2% of its length, 5 s at least. */
+export function nearEnd(position: number, duration: number): boolean {
+  if (!Number.isFinite(duration) || duration <= 0) return false;
+  return position >= duration - Math.max(5, duration * 0.02);
 }
 
 export interface VideoPlayerProps {
@@ -107,6 +129,13 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
   // position playback had reached when a signed URL had to be refreshed.
   const resumeRef = useRef<{ at: number; play: boolean } | null>(null);
   const refreshingRef = useRef(false);
+  // When the stream went away and was opened again: past GONE_REOPENS within
+  // GONE_WINDOW_MS, the error screen instead of a reopen loop.
+  const goneRef = useRef<number[]>([]);
+  // A stream attached at a position, not yet playing: the element's time is
+  // not the viewer's yet, so no progress is posted (it would move the resume
+  // point back).
+  const startingRef = useRef(false);
 
   const tParam = Number(params.get("t"));
   const startAt = Number.isFinite(tParam) && tParam > 0 ? tParam : 0;
@@ -118,7 +147,9 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
             message:
               e.problem.type === PROBLEM_VIDEO_UNAVAILABLE_OFFLINE
                 ? t("homeOffline.video")
-                : e.problem.title,
+                : e.problem.type === PROBLEM_INSUFFICIENT_STORAGE
+                  ? t("player.diskFull")
+                  : e.problem.title,
             status: e.status,
           }
         : { message: t("common.error") },
@@ -134,7 +165,11 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
     setPlayError(false);
     setSession(null);
     api
-      .post<OpenSessionResponse>("/api/stream/sessions", { video_id: videoId })
+      .post<OpenSessionResponse>("/api/stream/sessions", {
+        video_id: videoId,
+        // a transcode starts there (?t=, the resume point)
+        ...(startAt > 0 ? { start_sec: Math.floor(startAt) } : {}),
+      })
       .then((s) => {
         if (cancelled) {
           // Left before the answer came: close the session it opened.
@@ -170,7 +205,7 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
         void api.delete(`/api/stream/sessions/${encodeURIComponent(id)}`).catch(() => {});
       }
     };
-  }, [videoId, t, failure, reload]);
+  }, [videoId, startAt, t, failure, reload]);
 
   // Chapter ticks for the scrubber.
   useEffect(() => {
@@ -193,6 +228,7 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
     if (!el || !session) return;
     let last = 0;
     const beat = (completed = false) => {
+      if (startingRef.current) return;
       void api
         .post(`/api/stream/sessions/${encodeURIComponent(session.session_id)}/progress`, {
           position_sec: Math.floor(el.currentTime),
@@ -207,7 +243,13 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
       beat();
     };
     const onPause = () => beat();
-    const onEnded = () => beat(true);
+    // Completed only at the video's real end (the catalogue's length): a stream
+    // that stopped short of it ends early. With no length known at all, the end
+    // of playback is all there is to go by.
+    const onEnded = () => {
+      const length = session.duration_sec || el.duration;
+      beat(!(length > 0) || nearEnd(el.currentTime, length));
+    };
     const onLoaded = () => {
       setDuration(el.duration || 0);
     };
@@ -232,12 +274,18 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
     resumeRef.current = null;
     const at = resume ? resume.at : startAt;
     el.playbackRate = speed;
+    startingRef.current = at > 0;
+    const onPlaying = () => {
+      startingRef.current = false;
+    };
+    el.addEventListener("playing", onPlaying);
     const resumePlay = () => {
       if (resume?.play) void el.play?.()?.catch?.(() => {});
     };
-    // A start past the end (?t=99999) lands just before the end instead.
+    // A start past the end (?t=99999) lands just before the end instead: the
+    // video's end (a transcode's playlist ends where it has got to).
     const clampStart = () => {
-      const d = el.duration;
+      const d = session.duration_sec || el.duration;
       if (Number.isFinite(d) && d > 0 && el.currentTime > d - 1)
         el.currentTime = Math.max(0, d - 1);
     };
@@ -254,16 +302,22 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
       return () => {
         el.removeEventListener("loadedmetadata", onMeta);
         el.removeEventListener("error", onError);
+        el.removeEventListener("playing", onPlaying);
       };
     }
     let cancelled = false;
     // Expired signed URL: reopen the session (the server hands back the same
-    // session with a freshly signed URL) and re-attach where we were.
+    // session with a freshly signed URL) and re-attach where we were. A stream
+    // gone (its transcode stopped short, its session cleaned up) the same way:
+    // the server opens a new one.
     const refresh = (position: number, wasPlaying: boolean) => {
       if (refreshingRef.current) return;
       refreshingRef.current = true;
       api
-        .post<OpenSessionResponse>("/api/stream/sessions", { video_id: videoId })
+        .post<OpenSessionResponse>("/api/stream/sessions", {
+          video_id: videoId,
+          start_sec: Math.floor(position),
+        })
         .then((s) => {
           if (cancelled) {
             // Unmounted / navigated away while reopening: close what we got.
@@ -287,10 +341,21 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
           refreshingRef.current = false;
         });
     };
+    const gone = (position: number, wasPlaying: boolean) => {
+      const now = Date.now();
+      const recent = goneRef.current.filter((t) => now - t < GONE_WINDOW_MS);
+      if (recent.length >= GONE_REOPENS) {
+        if (!cancelled) setPlayError(true);
+        return;
+      }
+      goneRef.current = [...recent, now];
+      refresh(position, wasPlaying);
+    };
     const expiresAt = Date.parse(session.expires_at);
     const h = attachVod(el, session.manifest_url, {
       startAt: at,
       onAuthError: refresh,
+      onGone: gone,
       onFatal: () => {
         if (!cancelled) setPlayError(true);
       },
@@ -298,10 +363,19 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
     });
     el.addEventListener("loadedmetadata", clampStart, { once: true });
     el.addEventListener("loadedmetadata", resumePlay, { once: true });
+    // A transcode opened at a position starts there: a seek before it opens the
+    // video again at the seek's position.
+    const streamStart = session.start_sec ?? 0;
+    const onSeeking = () => {
+      if (streamStart > 0 && el.currentTime < streamStart - 1) refresh(el.currentTime, !el.paused);
+    };
+    el.addEventListener("seeking", onSeeking);
     return () => {
       cancelled = true;
       el.removeEventListener("loadedmetadata", clampStart);
       el.removeEventListener("loadedmetadata", resumePlay);
+      el.removeEventListener("playing", onPlaying);
+      el.removeEventListener("seeking", onSeeking);
       h.detach();
     };
     // speed is applied on attach only; the controls set it live.

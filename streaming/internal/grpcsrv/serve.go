@@ -104,6 +104,7 @@ func (s *Server) handleOpenSession(ctx context.Context, m map[string]any) (map[s
 		"manifest_path": resp.ManifestPath,
 		"expires_at":    resp.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
 		"state":         resp.State,
+		"start_sec":     resp.StartSec,
 	}
 	ladder := make([]map[string]any, 0, len(resp.Ladder))
 	for _, r := range resp.Ladder {

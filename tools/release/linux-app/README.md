@@ -13,7 +13,9 @@ the payload for x86_64 or aarch64.
 | `check.sh` | smoke test of the payload. It needs only bash and coreutils, so CI also runs it in minimal containers |
 | `payload_tool.py` | the manifest (`files.sha256`), its verification, the ELF scan (glibc versions, libraries found), and Postgres's library closure. Standard library only: it runs with the payload's own Python |
 | `pins.env` | the third-party downloads per architecture: version, URL, SHA-256 |
-| `build-app.sh` | the app around the payload: `tauri build --bundles appimage,deb,rpm` with the overlay, then `check-app.sh` (story 39.10) |
+| `build-app.sh` | the app around the payload: `bundle.sh` at the payload's version with the overlay, then `check-app.sh` (story 39.10) |
+| `bundle.sh` | the AppImage, the .deb and the .rpm at a version (below); desktop-release.yml's Linux legs run it too |
+| `test_bundle.sh` | tests its package versions (their order under dpkg and rpm) and its .deb version rewrite |
 | `check-app.sh` | checks each AppImage, .deb and .rpm: the shell, the payload in `usr/share/maktaba/server` installed the way the app installs it, the packages' dependencies and their removal script |
 | `package-remove.sh` | the .deb's `prerm` and the .rpm's `%preun` (below) |
 | `test_package_remove.sh` | tests it in a user and mount namespace with fake user managers |
@@ -104,6 +106,25 @@ build machine's, Ubuntu 22.04, as the libraries beside Postgres come from it) an
 libgcc_s and libstdc++ (the ICU beside Postgres links it). That means Ubuntu 22.04+, Debian 12+,
 Fedora 36+ and RHEL 10. `payload.sh` refuses to write a payload that needs more,
 and `check.sh` repeats the scan wherever it runs.
+
+## The packages' versions
+
+The app carries its version as semver (its updater compares that with latest.json), and so does
+the AppImage's file name. A pre-release's packages carry their own forms, so that they install
+and sort before the release (`bundle.sh`):
+
+| Tag | App, AppImage | .deb `Version` | .rpm `Version`-`Release` |
+|---|---|---|---|
+| `v0.3.0` | `0.3.0` | `0.3.0` | `0.3.0-1` |
+| `v0.3.0-rc.1` | `0.3.0-rc.1` | `0.3.0~rc.1` | `0.3.0-0.1.rc.1` |
+
+`0.3.0-rc.1` would be a Debian revision (after `0.3.0`), and rpm takes no `-` in a version (the
+bundle fails). tauri takes only semver for a version, so the .rpm cannot have `0.3.0~rc.1`: the
+pre-release is in its release, before the release's `1` (Fedora's traditional pre-release form).
+So a pre-release takes two passes: `tauri build` of the AppImage and the .deb, then `tauri
+bundle` of the .rpm from the same binary with the release core and that release; the .deb's
+control file then gets its version, and with the updater's signing key both are signed again
+for the app's version.
 
 ## The packages: what they need, and removing them
 
