@@ -21,14 +21,17 @@ import (
 func fakeMachine(t *testing.T, apple bool, gb uint64) {
 	t.Helper()
 	prevA, prevM, prevC, prevW, prevS, prevL := appleSilicon, totalMemory, numCPU, cudaWhisper, sttInstalled, secondListenModel
+	prevT := venvTorch
 	t.Cleanup(func() {
 		appleSilicon, totalMemory, numCPU, cudaWhisper, sttInstalled, secondListenModel = prevA, prevM, prevC, prevW, prevS, prevL
+		venvTorch = prevT
 	})
 	appleSilicon = func() bool { return apple }
 	totalMemory = func() uint64 { return gb << 30 }
 	numCPU = func() int { return 8 }
 	cudaWhisper = func() bool { return !apple }
 	sttInstalled = func(string) bool { return true }
+	venvTorch = func(string) string { return torchCUDA }
 	secondListenModel = func(config.Config) bool { return true } // a token, or a copy here
 	fakeGPU(t, "", errors.New("nvidia-smi: not found"))
 	fakeRefineMin(t, 9.5)
@@ -274,6 +277,27 @@ func TestRefineThresholdIsThePipelines(t *testing.T) {
 	drv := regexp.MustCompile(`(?m)^MIN_DRIVER = (\d+)\r?$`).FindSubmatch(src)
 	if drv == nil || string(drv[1]) != strconv.Itoa(refineMinDriver) {
 		t.Errorf("stt/cohere_cuda.py MIN_DRIVER = %q, the supervisor's %d", drv, refineMinDriver)
+	}
+	// what each worker's second listen holds: WEIGHTS_GB + LOAD_EXTRA_GB + MIN_BATCH x STRETCH_GB
+	num := func(pattern string, group int) float64 {
+		t.Helper()
+		m := regexp.MustCompile(`(?m)` + pattern).FindSubmatch(src)
+		if m == nil {
+			t.Fatalf("stt/cohere_cuda.py: no %s", pattern)
+		}
+		v, err := strconv.ParseFloat(string(m[group]), 64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	extra := num(`^LOAD_EXTRA_GB = ([0-9.]+) if sys\.platform == "win32" else ([0-9.]+)\r?$`, 2)
+	if runtime.GOOS == "windows" {
+		extra = num(`^LOAD_EXTRA_GB = ([0-9.]+) if sys\.platform == "win32" else ([0-9.]+)\r?$`, 1)
+	}
+	cohere := num(`^WEIGHTS_GB = ([0-9.]+)\r?$`, 1) + extra + num(`^MIN_BATCH = (\d+)\r?$`, 1)*num(`^STRETCH_GB = ([0-9.]+)\r?$`, 1)
+	if math.Abs(cohereGB-cohere) > 1e-9 {
+		t.Errorf("cohereGB = %v on %s, the pipeline's %v", cohereGB, runtime.GOOS, cohere)
 	}
 	model, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "pipeline", "src", "maktaba_pipeline", "stt", "cohere.py"))
 	if err != nil {
@@ -741,28 +765,119 @@ func TestSTTProbe(t *testing.T) {
 		t.Skip("spawns child processes; runs without -short")
 	}
 	t.Cleanup(func() { sttProbes.Lock(); sttProbes.seen = nil; sttProbes.Unlock() })
-	if !probeSTT(filepath.Join(t.TempDir(), "no-python")) {
-		t.Error("an interpreter that cannot run is not an answer: the plan stands")
+	if a := probeSTT(filepath.Join(t.TempDir(), "no-python")); !a.installed || a.torch != "" {
+		t.Errorf("an interpreter that cannot run is not an answer: the plan stands (%+v)", a)
 	}
 	t.Setenv("MAKTABA_FAKE_CHILD", "crash")
 	for _, c := range []struct {
-		code string
-		want bool
-	}{{"3", false}, {"0", true}} {
+		code, out string
+		want      sttAnswer
+	}{
+		{"3", "", sttAnswer{}},
+		{"0", "", sttAnswer{installed: true}},
+		{"0", "torch cuda", sttAnswer{installed: true, torch: torchCUDA}},
+		{"0", "torch cpu", sttAnswer{installed: true, torch: torchCPU}},
+		{"3", "torch absent", sttAnswer{torch: torchAbsent}},
+		{"0", "torch unknown", sttAnswer{installed: true}},
+	} {
 		sttProbes.Lock()
 		sttProbes.seen = nil
 		sttProbes.Unlock()
 		t.Setenv("FAKE_CODE", c.code)
+		t.Setenv("FAKE_STDOUT", c.out)
 		if got := probeSTT(os.Args[0]); got != c.want {
-			t.Errorf("exit %s: %v, want %v", c.code, got, c.want)
+			t.Errorf("exit %s, %q: %+v, want %+v", c.code, c.out, got, c.want)
 		}
 		t.Setenv("FAKE_CODE", "3")
+		t.Setenv("FAKE_STDOUT", "torch cpu")
 		if got := probeSTT(os.Args[0]); got != c.want {
-			t.Errorf("asked again after exit %s: %v (the first answer stands)", c.code, got)
+			t.Errorf("asked again after exit %s: %+v (the first answer stands)", c.code, got)
 		}
 	}
 	if !strings.Contains(sttProbe, `"ctranslate2", "faster_whisper"`) || !strings.Contains(sttProbe, `"mlx_whisper"`) {
 		t.Errorf("the probe must look for each engine's modules: %s", sttProbe)
+	}
+}
+
+// Review of #209 (round 4): the venv's torch decides too. The default pin set
+// installs PyPI's CPU torch on Windows: there the second listen gets no tiers and no
+// workers, as nowhere else it cannot run. A probe that cannot say is not held
+// against the machine.
+func TestTheSecondListenNeedsTheVenvsCUDATorch(t *testing.T) {
+	noSTTEnv(t)
+	fakeMachine(t, false, 64)
+	fakeGPU(t, "NVIDIA GeForce RTX 3080 Ti, 12288, 8.6, 591.44\n", nil)
+	secondListen := secondListenRuns
+	t.Cleanup(func() { secondListenRuns = secondListen })
+	secondListenRuns = func(config.Config) bool { return true } // the GPU and the model can
+	cfg := config.Defaults()                                    // refine on
+	alone, _ := PlanForGPU(12)
+	beside, _ := PlanForGPUWithRefine(12)
+	for _, c := range []struct {
+		torch   string
+		workers int
+		batch   int
+	}{
+		{torchCUDA, beside.Workers, beside.Batch},
+		{"", beside.Workers, beside.Batch}, // the probe could not say
+		{torchCPU, 0, alone.Batch},         // Whisper's own batch, for the main worker
+		{torchAbsent, 0, alone.Batch},
+	} {
+		asked := ""
+		venvTorch = func(python string) string { asked = python; return c.torch }
+		cfg.Pipeline.Python = "/opt/maktaba/venv/bin/python"
+		if p := PlanFor(Options{Config: cfg}); p.Workers != c.workers || p.Batch != c.batch {
+			t.Errorf("torch %q: %+v, want %d workers of %d files", c.torch, p, c.workers, c.batch)
+		}
+		if asked != cfg.Pipeline.Python {
+			t.Errorf("torch %q: asked %q, want the pipeline's own Python", c.torch, asked)
+		}
+	}
+	// setup's view (no venv yet) and Apple Silicon (MLX) do not ask
+	venvTorch = func(string) string { t.Error("asked the venv's torch"); return torchCPU }
+	if p := PlanSTT(cfg); p.Workers != beside.Workers {
+		t.Errorf("without a venv to ask: %+v", p)
+	}
+	fakeMachine(t, true, 96)
+	venvTorch = func(string) string { t.Error("asked torch on Apple Silicon"); return torchCPU }
+	if p := PlanFor(Options{Config: config.Defaults()}); p.Workers != 2 {
+		t.Errorf("Apple Silicon: %+v", p)
+	}
+}
+
+// Review of #209 (round 4): more workers than the refine tier's each load Cohere too,
+// so they share what is left of the card once each has it, not the tiers' third.
+func TestMoreWorkersBesideTheSecondListenLeaveItsRoom(t *testing.T) {
+	noSTTEnv(t)
+	fakeMachine(t, false, 64)
+	prevC, prevL := cohereGB, processLossGB
+	t.Cleanup(func() { cohereGB, processLossGB = prevC, prevL })
+	cohereGB, processLossGB = 5.81, 1 // Windows' figures
+	secondListen := secondListenRuns
+	t.Cleanup(func() { secondListenRuns = secondListen })
+	secondListenRuns = func(config.Config) bool { return true }
+	fakeGPU(t, "NVIDIA GeForce RTX 4090, 24564, 8.9, 591.44\n", nil)
+	cfg := config.Defaults()
+	cfg.Transcription.Workers = 2
+	// (23 GiB / 2 - 5.81 - 2.3) / 0.14 = 24 files each, not the 32 a third of the card
+	// would give Whisper alone
+	if p := PlanSTT(cfg); p.Workers != 2 || p.Batch != 24 || p.ComputeType != "" {
+		t.Errorf("two workers on 24 GB beside the second listen = %+v, want 24 files each", p)
+	}
+	cfg.Transcription.Workers = 3 // 1.86 GiB each beside Cohere: int8_float16, 4 files
+	if p := PlanSTT(cfg); p.Batch != 4 || p.ComputeType != "int8_float16" {
+		t.Errorf("three workers = %+v", p)
+	}
+	fakeGPU(t, "NVIDIA GeForce RTX 3080 Ti, 12288, 8.6, 591.44\n", nil)
+	cfg.Transcription.Workers = 2 // not even a file each: one, and the pipeline's checks
+	if p := PlanSTT(cfg); p.Batch != 1 {
+		t.Errorf("two workers on 12 GB = %+v", p)
+	}
+	cfg = noRefine() // Whisper alone: the tiers' third of the card, as before
+	cfg.Transcription.Workers = 3
+	fakeGPU(t, "NVIDIA GeForce RTX 4090, 24564, 8.9, 591.44\n", nil)
+	if p := PlanSTT(cfg); p.Workers != 3 || p.Batch != 16 {
+		t.Errorf("three workers on 24 GB without the second listen = %+v", p)
 	}
 }
 
