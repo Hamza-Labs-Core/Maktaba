@@ -53,18 +53,33 @@ jobs:
         working-directory: api
         env:
           MAKTABA_TEST_PG_URL: postgres://postgres@127.0.0.1:55433/postgres?sslmode=disable
-        run: go test -count=1 -timeout 15m -run 'TestAMachineGetsItsCopy|TestWorkerGroupMadeLateGetsTheSamePrivileges' -v ./internal/cluster/
+        run: |
+          set -euo pipefail
+          go test -count=1 -timeout 15m -run 'TestAMachineGetsItsCopy|TestWorkerGroupMadeLateGetsTheSamePrivileges' -v ./internal/cluster/ | tee "$RUNNER_TEMP/api-untouched.out"
+          ../tools/ci/no-pg-skips.sh "$RUNNER_TEMP/api-untouched.out"
+          for t in TestAMachineGetsItsCopy TestWorkerGroupMadeLateGetsTheSamePrivileges; do
+            grep -q -- "--- PASS: $t " "$RUNNER_TEMP/api-untouched.out" || { echo "::error::$t did not run"; exit 1; }
+          done
 
       - name: The copies, the switch's database steps, the bundle (server)
         working-directory: cmd/maktaba-server
         run: |
-          go test -count=1 -timeout 30m ./internal/switchover/ ./internal/nodecopy/ ./internal/pgbundle/
+          set -euo pipefail
+          go test -count=1 -v -timeout 30m ./internal/switchover/ ./internal/nodecopy/ ./internal/pgbundle/ ./internal/dbfence/ | tee "$RUNNER_TEMP/server-pg.out"
           # the bundle's first start on Maktaba's Postgres major (the integration tier's runner has 14)
-          go test -count=1 -timeout 10m -tags integration -run 'TestReal' -v ./internal/pgbundle/
+          go test -count=1 -timeout 10m -tags integration -run 'TestReal' -v ./internal/pgbundle/ | tee -a "$RUNNER_TEMP/server-pg.out"
+          ../../tools/ci/no-pg-skips.sh "$RUNNER_TEMP/server-pg.out"
 
       - name: The switch's orchestration, the standby homes, a machine's sign-ins (api)
         working-directory: api
-        run: go test -count=1 -timeout 30m ./internal/cluster/switchover/ ./internal/cluster/nodeauth/ ./internal/cluster/agent/
+        # the rest of the cluster's Postgres tests too (the two above need a cluster of their own)
+        run: |
+          set -euo pipefail
+          go test -count=1 -v -timeout 30m ./internal/cluster/switchover/ ./internal/cluster/nodeauth/ ./internal/cluster/agent/ \
+            ./internal/handlers/clusterauth/ | tee "$RUNNER_TEMP/api-pg.out"
+          go test -count=1 -v -timeout 15m -skip 'TestAMachineGetsItsCopy|TestWorkerGroupMadeLateGetsTheSamePrivileges' \
+            ./internal/cluster/ | tee -a "$RUNNER_TEMP/api-pg.out"
+          ../tools/ci/no-pg-skips.sh "$RUNNER_TEMP/api-pg.out"
 
       - name: Switching the home, and an emergency, three machines (e2e)
         working-directory: api

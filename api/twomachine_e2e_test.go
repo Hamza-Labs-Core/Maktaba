@@ -41,6 +41,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
@@ -73,14 +74,14 @@ func TestMain(m *testing.M) {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte(`{"status":"online","slug":"e2e","attempts":0}`))
 			})
-			_ = http.ListenAndServe(addr, nil)
+			standInServe("the cloud relay agent", addr)
 		}
 		select {}
 	}
 	if os.Getenv("MAKTABA_E2E_SLEEPER") == "1" {
 		if addr := os.Getenv("MAKTABA_PIPELINE_LOGS_ADDR"); addr != "" {
 			http.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
-			_ = http.ListenAndServe(addr, nil)
+			standInServe("the pipeline", addr)
 		}
 		select {}
 	}
@@ -96,14 +97,43 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+// standInServe serves a stand-in's address, or says why it cannot and ends (its
+// supervisor starts it again, and the machine's log has the reason).
+func standInServe(what, addr string) {
+	err := http.ListenAndServe(addr, nil)
+	fmt.Fprintln(os.Stderr, "e2e stand-in for "+what+": "+addr+":", err)
+	os.Exit(1)
+}
+
+// handedPorts are the ports freePort handed out (each once).
+var handedPorts = struct {
+	sync.Mutex
+	m map[int]bool
+}{m: map[int]bool{}}
+
+// freePort is a free loopback port for a process a test starts, below the systems'
+// ephemeral ranges (Linux from 32768, Windows from 49152): a port the system picks for
+// :0 is in that range, where an outgoing connection of any process may take it before
+// the process binds it.
 func freePort(t *testing.T) int {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	handedPorts.Lock()
+	defer handedPorts.Unlock()
+	for range 500 {
+		p := 20000 + rand.IntN(12000)
+		if handedPorts.m[p] {
+			continue
+		}
+		l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(p)))
+		if err != nil {
+			continue
+		}
+		_ = l.Close()
+		handedPorts.m[p] = true
+		return p
 	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
+	t.Fatal("no free port below the ephemeral range")
+	return 0
 }
 
 func exeName(n string) string {
@@ -175,7 +205,9 @@ func startMachine(t *testing.T, name, bin string, env []string) *machine {
 	t.Helper()
 	m := &machine{name: name, log: &lockedBuf{}}
 	m.cmd = exec.Command(filepath.Join(bin, exeName("maktaba-server")), "serve", "--no-mdns", "--bin-dir", bin)
-	m.cmd.Env = append(os.Environ(), env...)
+	// the runs play several videos at once: room for them on any runner (the cap is a
+	// quarter of the CPUs: one on a 4-vCPU runner)
+	m.cmd.Env = append(append(os.Environ(), "MAKTABA_TRANSCODE_MAX_CONCURRENT=8"), env...)
 	m.cmd.Stdout, m.cmd.Stderr = m.log, m.log
 	if err := m.cmd.Start(); err != nil {
 		t.Fatal(err)
