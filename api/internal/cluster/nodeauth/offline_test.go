@@ -55,8 +55,10 @@ type fakeHome struct {
 	proxied  int
 	srv      *httptest.Server
 	signOuts []delegation.SignOutRequest // what the node handed over
-	jwks     []byte                      // nil: no keys
-	hang     bool                        // down as a machine switched off: nothing answers
+	// refuse, when set, is the home's answer to a hand-over it does not take
+	refuse func(delegation.SignOutRequest) error
+	jwks   []byte // nil: no keys
+	hang   bool   // down as a machine switched off: nothing answers
 	// asked, when set, holds an introspection until it is closed
 	asked chan struct{}
 	// what the last proxied request carried: its cookies and its delegated session
@@ -115,6 +117,11 @@ func (f *fakeHome) SignOut(_ context.Context, req delegation.SignOutRequest) (*d
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.refuse != nil {
+		if err := f.refuse(req); err != nil {
+			return nil, err
+		}
+	}
 	f.signOuts = append(f.signOuts, req)
 	return &delegation.SignOutAnswer{Revoked: len(req.SessionSHA256)}, nil
 }
@@ -148,13 +155,15 @@ func (f *fakeHome) seen() (cookie, delegated string) {
 
 func (f *fakeHome) proxiedCount() int { f.mu.Lock(); defer f.mu.Unlock(); return f.proxied }
 
-// fakeCopy is this machine's copy: the home's sessions and tokens as of its last beat,
-// two users, one of them waiting on a password change.
+// fakeCopy is this machine's copy: the home's sessions and tokens as of its last beat
+// (s1, and s3 the home made later), two users, one of them waiting on a password change.
 type fakeCopy struct {
 	mu      sync.Mutex
 	synced  time.Time
 	broken  bool
 	expires time.Time
+	// ended are the sessions the copy has as signed out (it applied the home's change)
+	ended map[string]bool
 }
 
 func (c *fakeCopy) set(f func(*fakeCopy)) { c.mu.Lock(); f(c); c.mu.Unlock() }
@@ -171,7 +180,8 @@ func (c *fakeCopy) Introspect(_ context.Context, req delegation.IntrospectReques
 		return nil, errors.New("copy: connection refused")
 	}
 	switch {
-	case req.Session == "s1":
+	case c.ended[req.Session]:
+	case req.Session == "s1", req.Session == "s3":
 		return &delegation.IntrospectAnswer{Principal: copyUsers["u1"], Source: "cookie", CSRFSHA256: s1CSRFHash,
 			ExpiresAt: c.expires}, nil
 	case req.PAT == "pat_1":
@@ -811,15 +821,30 @@ func TestSignOutOfAHomeSessionInAnOutage(t *testing.T) {
 	}
 }
 
-// A sign-out in an outage of a home session this machine's copy does not have (made at the
-// home after the copy's last change) is kept by its key all the same: the home is told.
-func TestSignOutOfASessionNewerThanTheCopy(t *testing.T) {
+// A sign-out in an outage is kept only for a session this machine knows: one its copy
+// has, or one the home answered for here (made at the home after the copy's last
+// change). Any other cookie is cleared and nothing is kept for it, so random cookies
+// cannot fill the store or hold up the real sign-outs on their way to the home.
+func TestASignOutIsKeptOnlyForASessionThisMachineKnows(t *testing.T) {
 	g := newOfflineRig(t, true)
-	g.goDown(time.Minute)
+	g.csrf["s9"] = s1CSRF // the fake home answers every session with s1's CSRF hash
+	if a := g.do(http.MethodGet, "/api/videos", "s9"); a.code != http.StatusOK {
+		t.Fatalf("s9 with the home up: %+v", a)
+	}
+	g.goDown(time.Second)
 	g.pastGrace()
-	g.csrf["s9"] = "csrf-of-s9"
+	for i := range 50 {
+		bogus := fmt.Sprintf("bogus-%d", i)
+		g.csrf[bogus] = "x"
+		if a := g.do(http.MethodPost, LogoutPath, bogus); a.code != http.StatusNoContent || !a.cleared() {
+			t.Fatalf("a sign-out of a cookie this machine does not know: %+v, want 204 with the cookies cleared", a)
+		}
+	}
+	if n := g.r.SignOuts.Waiting(); n != 0 || g.r.SignOuts.denied(SessionKey("bogus-0"), "") {
+		t.Fatalf("unknown cookies were kept: %d waiting", n)
+	}
 	if a := g.do(http.MethodPost, LogoutPath, "s9"); a.code != http.StatusNoContent || !a.cleared() {
-		t.Fatalf("a sign-out of a session the copy lacks: %+v", a)
+		t.Fatalf("a sign-out of a session the home answered for here: %+v", a)
 	}
 	if !g.r.SignOuts.denied(SessionKey("s9"), "") || g.r.SignOuts.Waiting() != 1 {
 		t.Fatalf("not kept (waiting %d)", g.r.SignOuts.Waiting())
@@ -827,8 +852,103 @@ func TestSignOutOfASessionNewerThanTheCopy(t *testing.T) {
 	g.home.setDown(false)
 	g.r.answered()
 	g.r.sendSignOuts(context.Background())
-	if len(g.home.signOuts) != 1 || g.home.signOuts[0].SessionSHA256[0] != SessionKey("s9") {
+	if len(g.home.signOuts) != 1 || len(g.home.signOuts[0].SessionSHA256) != 1 ||
+		g.home.signOuts[0].SessionSHA256[0] != SessionKey("s9") {
 		t.Fatalf("handed to the home: %+v", g.home.signOuts)
+	}
+}
+
+// The sign-outs are handed over in requests the home takes (at most 1000 sessions and
+// 64 KiB each); one the home refuses holds up none of the others and is tried again.
+func TestSignOutsAreHandedOverInBatchesTheHomeTakes(t *testing.T) {
+	g := newOfflineRig(t, true)
+	g.r.SignOuts = &SignOuts{Now: func() time.Time { return g.now }}
+	for i := range 2*signOutBatch + 3 {
+		if err := g.r.SignOuts.add(SessionKey(fmt.Sprintf("s-%d", i)), signOut{User: "u1", At: g.now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, u := range []string{"u1", "u2"} {
+		if err := g.r.SignOuts.add("u:"+u, signOut{User: u, All: true, At: g.now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reqs := g.r.SignOuts.pending()
+	if len(reqs) != 5 {
+		t.Fatalf("%d requests, want 3 of sessions and 2 of everywhere", len(reqs))
+	}
+	for _, req := range reqs {
+		b, _ := json.Marshal(req)
+		if len(req.SessionSHA256) > signOutBatch || len(b) > 64<<10 || (req.UserID != "" && len(req.SessionSHA256) > 0) {
+			t.Fatalf("a request the home would refuse: %d sessions, %d bytes", len(req.SessionSHA256), len(b))
+		}
+	}
+	first := reqs[0].SessionSHA256[0]
+	g.home.mu.Lock()
+	g.home.refuse = func(req delegation.SignOutRequest) error {
+		if len(req.SessionSHA256) > 0 && req.SessionSHA256[0] == first {
+			return errors.New("homelink: /api/cluster/delegate/signout answered 400")
+		}
+		return nil
+	}
+	g.home.mu.Unlock()
+	g.r.sendSignOuts(context.Background())
+	if n := g.r.SignOuts.Waiting(); n != signOutBatch || len(g.home.signOuts) != 4 {
+		t.Fatalf("after a refused request: %d waiting, %d taken; want the refused one waiting and the rest taken",
+			n, len(g.home.signOuts))
+	}
+	g.home.mu.Lock()
+	g.home.refuse = nil
+	g.home.mu.Unlock()
+	g.r.sendSignOuts(context.Background())
+	if n := g.r.SignOuts.Waiting(); n != 0 || len(g.home.signOuts) != 5 {
+		t.Fatalf("the next round: %d waiting, %d taken", n, len(g.home.signOuts))
+	}
+	// the home not answering stops a round: nothing is lost
+	if err := g.r.SignOuts.add(SessionKey("s-late"), signOut{User: "u1", At: g.now}); err != nil {
+		t.Fatal(err)
+	}
+	g.home.setDown(true)
+	g.r.sendSignOuts(context.Background())
+	if g.r.SignOuts.Waiting() != 1 {
+		t.Fatal("a sign-out the home did not take is not waiting")
+	}
+}
+
+// The store is capped: the ones the home took make room; past the cap a sign-out made
+// here waits for the home (503) rather than growing the store.
+func TestTheSignOutStoreIsCapped(t *testing.T) {
+	g := newOfflineRig(t, true)
+	g.r.SignOuts = &SignOuts{Now: func() time.Time { return g.now }}
+	s := g.r.SignOuts
+	s.byKey = map[string]signOut{}
+	for i := range maxSignOuts {
+		s.byKey[SessionKey(fmt.Sprintf("s-%d", i))] = signOut{User: "u1", At: g.now}
+	}
+	if err := s.add(SessionKey("one-more"), signOut{At: g.now}); !errors.Is(err, errSignOutsFull) {
+		t.Fatalf("past the cap: %v, want errSignOutsFull", err)
+	}
+	if err := s.add(SessionKey("s-7"), signOut{User: "u1", At: g.now}); err != nil {
+		t.Fatalf("one already kept, again: %v", err)
+	}
+	g.goDown(time.Second)
+	g.pastGrace()
+	if a := g.do(http.MethodPost, LogoutPath, "s1"); !a.refusedChange() {
+		t.Fatalf("a sign-out with the store full: %+v, want 503 home_unreachable", a)
+	}
+	// the home took some: they make room
+	s.mu.Lock()
+	for i := range 10 {
+		v := s.byKey[SessionKey(fmt.Sprintf("s-%d", i))]
+		v.Sent = g.now
+		s.byKey[SessionKey(fmt.Sprintf("s-%d", i))] = v
+	}
+	s.mu.Unlock()
+	if a := g.do(http.MethodPost, LogoutPath, "s1"); a.code != http.StatusNoContent || !s.denied(SessionKey("s1"), "u1") {
+		t.Fatalf("a sign-out once the home took some: %+v", a)
+	}
+	if len(s.byKey) > maxSignOuts {
+		t.Fatalf("the store grew past its cap: %d", len(s.byKey))
 	}
 }
 
@@ -1063,6 +1183,145 @@ func TestARevocationEndsTheNodeLocalSignIns(t *testing.T) {
 	copyUsers["u1"] = reset
 	if a := g.do(http.MethodGet, "/api/videos", id); a.code != http.StatusUnauthorized {
 		t.Fatalf("a node-local session of a person who must change their password: %+v, want 401", a)
+	}
+}
+
+// A person the home revoked (signed out everywhere, reset) is not locked out of this
+// machine afterwards: once the copy has the revocation, its own answer stands (the
+// sessions the home ended are ended there, one made since is live), and so a sign-in
+// here works. While the copy does not have it, nothing of the person is believed and a
+// sign-in waits for the home (the password the copy checks may be one just changed).
+func TestARevocationTheCopyHasLetsThePersonSignInAgain(t *testing.T) {
+	g := newOfflineRig(t, true)
+	g.r.OnEvent(homelink.Event{Kind: "revoked", Revoked: &delegation.Revoked{UserID: "u1", Reason: "revoked_all"}})
+	// the copy applies it (the home ended s1; s3 is a sign-in at the home made since),
+	// then the home goes away
+	g.cp.set(func(c *fakeCopy) { c.ended = map[string]bool{"s1": true} })
+	g.goDown(2 * time.Minute)
+	g.pastGrace()
+	if a := g.do(http.MethodGet, "/api/videos", "s1"); a.code != http.StatusUnauthorized {
+		t.Fatalf("a session the home ended: %+v, want 401", a)
+	}
+	if a := g.do(http.MethodGet, "/api/videos", "s3"); a.code != http.StatusOK {
+		t.Fatalf("a session made at the home since: %+v, want 200", a)
+	}
+	a, id := g.signIn(t, "amal", "pw-amal")
+	if a.code != http.StatusOK || id == "" {
+		t.Fatalf("a sign-in here after the revocation: %+v", a)
+	}
+	if a := g.do(http.MethodGet, "/api/videos", id); a.code != http.StatusOK {
+		t.Fatalf("the sign-in made since: %+v, want 200", a)
+	}
+	// a node-local sign-out everywhere ends this machine's sign-ins and holds up no
+	// sign-in again (it is no change of the person's at the home)
+	if a := g.do(http.MethodPost, LogoutAllPath, id); a.code != http.StatusNoContent {
+		t.Fatalf("sign out everywhere: %+v", a)
+	}
+	if a := g.do(http.MethodGet, "/api/videos", id); a.code != http.StatusUnauthorized {
+		t.Fatalf("after it: %+v", a)
+	}
+	if a, id := g.signIn(t, "amal", "pw-amal"); a.code != http.StatusOK || g.do(http.MethodGet, "/api/videos", id).code != http.StatusOK {
+		t.Fatalf("signed in again after signing out everywhere here: %+v", a)
+	}
+}
+
+func TestARevocationTheCopyDoesNotHaveHoldsThePerson(t *testing.T) {
+	g := newOfflineRig(t, true)
+	g.r.OnEvent(homelink.Event{Kind: "revoked", Revoked: &delegation.Revoked{UserID: "u1", Reason: "password_changed"}})
+	g.goDown(time.Second) // gone before the copy applied it
+	g.pastGrace()
+	for _, sid := range []string{"s1", "s3"} {
+		if a := g.do(http.MethodGet, "/api/videos", sid); a.code != http.StatusUnauthorized {
+			t.Fatalf("%s while the copy does not have the revocation: %+v, want 401", sid, a)
+		}
+	}
+	if a, id := g.signIn(t, "amal", "pw-amal"); !a.refusedChange() || id != "" {
+		t.Fatalf("a sign-in while the copy does not have it: %+v, want 503 home_unreachable", a)
+	}
+	// once it is let go (past the copy's allowed lag), as before
+	g.now = g.now.Add(g.r.revokedKeep() + time.Second)
+	if a, id := g.signIn(t, "amal", "pw-amal"); a.code != http.StatusOK || id == "" {
+		t.Fatalf("a sign-in once the revocation is let go: %+v", a)
+	}
+	// a node-local session made before a revocation is ended by it, even one the store
+	// did not end (EndUser), and the copy having it does not bring it back
+	_, id := g.signIn(t, "amal", "pw-amal")
+	g.r.Evict(delegation.Revoked{UserID: "u1"})
+	g.cp.set(func(c *fakeCopy) { c.synced = g.now.Add(time.Hour) })
+	if a := g.do(http.MethodGet, "/api/videos", id); a.code != http.StatusUnauthorized {
+		t.Fatalf("a node-local session made before the revocation: %+v, want 401", a)
+	}
+}
+
+// The revocations the home pushed are kept on the disk while they are honoured: a node
+// restarted in an outage (the home cannot push them again) still honours them.
+func TestARestartInAnOutageKeepsThePushedRevocations(t *testing.T) {
+	g := newOfflineRig(t, true)
+	path := filepath.Join(t.TempDir(), RevokedFile)
+	g.r.KeepRevoked(path)
+	g.r.Evict(delegation.Revoked{SessionSHA256: []string{SessionKey("s1")}, UserID: "u9"})
+	raw, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(raw), SessionKey("s1")) || !strings.Contains(string(raw), `"u:u9"`) ||
+		strings.Contains(string(raw), `"s1"`) {
+		t.Fatalf("kept: %s %v (a session's hash, never its id)", raw, err)
+	}
+	g.goDown(time.Second)
+	g.pastGrace()
+	restarted := func() *Resolver {
+		// when the home last answered is kept on the disk too (KeepHomeSeen)
+		return &Resolver{Link: g.home, Local: g.cp, Now: func() time.Time { return g.now }, lastOK: g.r.lastOK}
+	}
+	ctx := context.Background()
+	if a, said := restarted().copyAnswer(ctx, delegation.IntrospectRequest{Session: "s1"}); !said || a == nil {
+		t.Fatalf("the rig: a node that kept nothing believes the copy (%v %v)", a, said)
+	}
+	fresh := restarted()
+	fresh.KeepRevoked(path)
+	if a, said := fresh.copyAnswer(ctx, delegation.IntrospectRequest{Session: "s1"}); !said || a != nil {
+		t.Fatalf("a revoked session after a restart in the outage: %+v, want not live", a)
+	}
+	if !fresh.revokedLately(ctx, "", "u9") {
+		t.Fatal("a revoked person is forgotten after a restart")
+	}
+	// past the time they are honoured for, as before the restart
+	g.now = g.now.Add(fresh.revokedKeep() + time.Second)
+	g.cp.set(func(c *fakeCopy) { c.expires = g.now.Add(time.Hour) })
+	if a, _ := fresh.copyAnswer(ctx, delegation.IntrospectRequest{Session: "s1"}); a == nil {
+		t.Fatal("a revocation outlived the time it is honoured for")
+	}
+	// an unreadable file is none
+	if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	broken := restarted()
+	broken.KeepRevoked(path)
+	if len(broken.revoked) != 0 {
+		t.Fatalf("an unreadable file: %v", broken.revoked)
+	}
+}
+
+// "Sign out everywhere" on a node-local session is stamped on the home's clock, as a
+// sign-out of a home session: the home ends the sessions it opened before then.
+func TestALocalSignOutEverywhereIsOnTheHomesClock(t *testing.T) {
+	g := newOfflineRig(t, true)
+	const ahead = 90 * time.Minute
+	g.r.HomeOffset = func() time.Duration { return ahead }
+	g.goDown(time.Minute)
+	g.cp.set(func(c *fakeCopy) { c.synced = g.now.Add(ahead) }) // the copy's beat is the home's clock
+	g.pastGrace()
+	_, id := g.signIn(t, "amal", "pw-amal")
+	if id == "" {
+		t.Fatal("no sign-in")
+	}
+	at := g.now
+	if a := g.do(http.MethodPost, LogoutAllPath, id); a.code != http.StatusNoContent {
+		t.Fatalf("sign out everywhere: %+v", a)
+	}
+	g.home.setDown(false)
+	g.r.answered()
+	g.r.sendSignOuts(context.Background())
+	if len(g.home.signOuts) != 1 || g.home.signOuts[0].Before == nil || !g.home.signOuts[0].Before.Equal(at.Add(ahead)) {
+		t.Fatalf("handed to the home: %+v, want before %v (the home's clock)", g.home.signOuts, at.Add(ahead))
 	}
 }
 

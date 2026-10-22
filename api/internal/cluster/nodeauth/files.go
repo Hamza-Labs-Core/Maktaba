@@ -6,8 +6,9 @@ import (
 )
 
 // writeFile replaces a node state file with b: written beside it, flushed to the disk,
-// then renamed over it, so a crash or a power cut leaves the old file or the new one,
-// never a torn one.
+// then renamed over it (and the rename flushed too, where the system can: the streaming
+// ledger's way), so a crash or a power cut leaves the old file or the new one, never a
+// torn one.
 func writeFile(path string, b []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
@@ -28,5 +29,12 @@ func writeFile(path string, b []byte) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	if d, err := os.Open(filepath.Dir(path)); err == nil {
+		_ = d.Sync() // the rename itself (not on every system)
+		_ = d.Close()
+	}
+	return nil
 }

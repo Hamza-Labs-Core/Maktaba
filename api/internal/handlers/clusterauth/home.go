@@ -154,6 +154,13 @@ func (h *Home) Introspect(w http.ResponseWriter, r *http.Request) {
 // sessions are named by the SHA-256 of their id (the node keeps no id); a "sign out
 // everywhere" ends the user's sessions and refresh tokens made before it. Every node
 // drops them from its cache (the revocation hook).
+//
+// A machine ends only what was signed in through it: the sessions made through it
+// (origin_node_id: a sign-in on it, or its cluster sign-in; their cookies are its own
+// host's, so those are the sessions it serves), and "everywhere" only for a person who
+// signed in through it at least once. Every machine's copy holds every session's hash;
+// without this, any machine could sign everyone out. Anything else named is left as it
+// is (and answered as taken: asking again would not change it).
 func (h *Home) SignOut(w http.ResponseWriter, r *http.Request) {
 	node := delegation.NodeFrom(r.Context())
 	if node == "" {
@@ -169,27 +176,94 @@ func (h *Home) SignOut(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.BadRequest("at most 1000 sessions; a user with before"))
 		return
 	}
-	n, err := h.Sessions.RevokeByHash(r.Context(), req.SessionSHA256)
+	if _, err := uuid.Parse(req.UserID); req.UserID != "" && err != nil {
+		httperror.Write(w, r, httperror.BadRequest("user_id is not a user's id"))
+		return
+	}
+	ctx := r.Context()
+	ids, err := h.sessionsThrough(ctx, node, req.SessionSHA256)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("signout"))
 		return
 	}
+	n := 0
+	for _, id := range ids {
+		if err := h.Sessions.Revoke(ctx, id); err != nil {
+			httperror.Write(w, r, httperror.Internal("signout"))
+			return
+		}
+		n++
+	}
 	if req.UserID != "" && req.Before != nil {
-		m, err := h.Sessions.RevokeAllForUserBefore(r.Context(), req.UserID, *req.Before)
+		through, err := h.signedInThrough(ctx, node, req.UserID)
 		if err != nil {
 			httperror.Write(w, r, httperror.Internal("signout"))
 			return
 		}
-		n += int(m)
-		if _, err := h.DB.ExecContext(r.Context(), `UPDATE refresh_tokens SET revoked_at = now()
-		             WHERE user_id = $1 AND revoked_at IS NULL AND issued_at < $2`, req.UserID, *req.Before); err != nil {
-			httperror.Write(w, r, httperror.Internal("signout"))
-			return
+		if !through {
+			h.log().Warn("home: a machine asked to sign out everywhere a person who never signed in through it; refused",
+				"node_id", node, "user_id", req.UserID, "event", "cluster_node_signout_refused")
+		} else {
+			m, err := h.Sessions.RevokeAllForUserBefore(ctx, req.UserID, *req.Before)
+			if err != nil {
+				httperror.Write(w, r, httperror.Internal("signout"))
+				return
+			}
+			n += int(m)
+			if _, err := h.DB.ExecContext(ctx, `UPDATE refresh_tokens SET revoked_at = now()
+			             WHERE user_id = $1 AND revoked_at IS NULL AND issued_at < $2`, req.UserID, *req.Before); err != nil {
+				httperror.Write(w, r, httperror.Internal("signout"))
+				return
+			}
 		}
 	}
 	h.log().Info("home: sign-outs a machine made while this home did not answer", "node_id", node,
-		"sessions", len(req.SessionSHA256), "user_id", req.UserID, "revoked", n, "event", "cluster_node_signouts")
+		"sessions", len(req.SessionSHA256), "through_it", len(ids), "user_id", req.UserID, "revoked", n,
+		"event", "cluster_node_signouts")
 	common.WriteJSON(w, r, http.StatusOK, delegation.SignOutAnswer{Revoked: n})
+}
+
+// sessionsThrough is the ids of the live sessions made through node (origin_node_id)
+// whose id hashes (SHA-256, hex) to one of sha256Hex.
+func (h *Home) sessionsThrough(ctx context.Context, node string, sha256Hex []string) ([]string, error) {
+	nodeID, err := uuid.Parse(node)
+	if len(sha256Hex) == 0 || err != nil {
+		return nil, nil
+	}
+	want := make(map[string]bool, len(sha256Hex))
+	for _, s := range sha256Hex {
+		want[strings.ToLower(s)] = true
+	}
+	rows, err := h.DB.QueryContext(ctx, `SELECT CAST(id AS TEXT) FROM web_sessions
+	        WHERE origin_node_id = $1 AND revoked_at IS NULL`, nodeID.String())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		if want[hexSum(id)] {
+			ids = append(ids, id)
+		}
+	}
+	return ids, rows.Err()
+}
+
+// signedInThrough reports whether the user has a session made through node (live or
+// not: the one they signed out of there may have ended already).
+func (h *Home) signedInThrough(ctx context.Context, node, userID string) (bool, error) {
+	nodeID, err := uuid.Parse(node)
+	if err != nil {
+		return false, nil
+	}
+	var through bool
+	err = h.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM web_sessions
+	        WHERE user_id = $1 AND origin_node_id = $2)`, userID, nodeID.String()).Scan(&through)
+	return through, err
 }
 
 // Refusal: the credential is not a live one (Resolve); Reason says why.

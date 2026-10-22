@@ -282,6 +282,11 @@ func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *sl
 		logger.Warn("node: the sign-outs made here are unreadable; starting without them", "err", err,
 			"event", "node_sign_outs_unreadable")
 	}
+	// the revocations the home pushed, while they are honoured (a restart in an outage,
+	// when the home cannot push them again, does not forget them)
+	if p := inDir(nodeauth.RevokedFile); p != "" {
+		rt.resolver.KeepRevoked(p)
+	}
 	rt.link.Subscribe(rt.resolver.OnEvent)
 	if p := inDir(nodeauth.HomeSeenFile); p != "" {
 		rt.resolver.LoadHomeSeen(p)

@@ -22,7 +22,8 @@
 // made here is real: the session is denied here at once and the home is told when it
 // answers (signout.go). A bearer access token is held to the same rules (verified
 // here, its user checked on the copy). A revocation the home pushes is honoured on the
-// copy too until the copy has it (a copy is moments behind the home).
+// copy too until the copy has it (a copy is moments behind the home), kept on this
+// machine's disk meanwhile (revoked.go).
 //
 // The principal it attaches is the home's answer; the node then runs the same
 // middleware and handlers as the home (roles, admin checks, library ACLs, CSRF double
@@ -126,8 +127,13 @@ type Resolver struct {
 	// gen moves at every revocation: an answer asked for before it is not cached
 	gen uint64
 	// revoked: what the home's revocations named lately (a session's key, or "u:"+user),
-	// when; the copy's answers honour them until it has them too
+	// when they reached this machine; the copy's answers honour them until it has them
+	// too
 	revoked map[string]time.Time
+	// revokedPath is where they are kept ("": memory only; KeepRevoked); rvmu orders
+	// the writes
+	revokedPath string
+	rvmu        sync.Mutex
 
 	jmu      sync.Mutex
 	jwks     map[string]*rsa.PublicKey
@@ -288,14 +294,12 @@ func (r *Resolver) Watch(ctx context.Context) {
 	}
 }
 
-// Evict drops what a revocation names (story 35.9 AC4). An answer the home gave before
-// it and not cached yet is not cached (gen), and the copy's answers honour it until the
-// copy has it too (revoked).
+// Evict drops what a revocation the home pushed names (story 35.9 AC4). An answer the
+// home gave before it and not cached yet is not cached (gen), and the copy's answers
+// honour it until the copy has it too (revoked, kept on the disk: KeepRevoked).
 func (r *Resolver) Evict(rv delegation.Revoked) int {
 	keep := r.revokedKeep() // the rules are read outside the lock
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.gen++
 	now := r.now()
 	if r.revoked == nil {
 		r.revoked = map[string]time.Time{}
@@ -311,6 +315,24 @@ func (r *Resolver) Evict(rv delegation.Revoked) int {
 	if rv.UserID != "" {
 		r.revoked["u:"+rv.UserID] = now
 	}
+	n := r.dropLocked(rv)
+	r.mu.Unlock()
+	r.saveRevoked()
+	return n
+}
+
+// drop drops the cached answers a sign-out made on this machine names (SignOuts keeps
+// the sign-out itself; it is no revocation of the home's, which a sign-in here would
+// wait on).
+func (r *Resolver) drop(rv delegation.Revoked) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.dropLocked(rv)
+}
+
+// dropLocked drops the cached answers rv names (held lock): how many.
+func (r *Resolver) dropLocked(rv delegation.Revoked) int {
+	r.gen++
 	n := 0
 	for _, h := range rv.SessionSHA256 {
 		if _, ok := r.cache[h]; ok {
@@ -357,18 +379,59 @@ func (r *Resolver) revokedKeep() time.Duration {
 
 const minRevokedKeep = 5 * time.Minute
 
-// revokedLately reports whether a pushed revocation named the session (key) or its user
-// lately.
-func (r *Resolver) revokedLately(key, user string) bool {
+// revokedMargin: a pushed revocation is in the copy once the copy has applied the home's
+// changes from this long after the revocation reached this machine, on the home's clock
+// (HomeOffset; the margin is room for the offset's error). The home makes the change
+// before it pushes it, and the copy applies the home's changes in their order.
+const revokedMargin = time.Minute
+
+// pushedAt is when the latest revocation the home pushed lately that names the
+// credential (key) or its user reached this machine.
+func (r *Resolver) pushedAt(key, user string) (time.Time, bool) {
 	keep := r.revokedKeep()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	now := r.now()
-	if t, ok := r.revoked[key]; ok && now.Sub(t) <= keep {
-		return true
+	var at time.Time
+	if t, ok := r.revoked[key]; ok && key != "" && now.Sub(t) <= keep {
+		at = t
 	}
-	t, ok := r.revoked["u:"+user]
-	return ok && user != "" && now.Sub(t) <= keep
+	if t, ok := r.revoked["u:"+user]; ok && user != "" && now.Sub(t) <= keep && t.After(at) {
+		at = t
+	}
+	return at, !at.IsZero()
+}
+
+// copyHas reports whether the copy has applied the home's changes past a revocation
+// that reached this machine at at (revokedMargin); false when the copy cannot say.
+func (r *Resolver) copyHas(ctx context.Context, at time.Time) bool {
+	if r.Local == nil {
+		return false
+	}
+	lctx, cancel := context.WithTimeout(ctx, localTimeout)
+	defer cancel()
+	synced, err := r.Local.Synced(lctx)
+	if err != nil || synced.IsZero() {
+		return false
+	}
+	return !synced.Before(r.onHomeClock(at).Add(revokedMargin))
+}
+
+// revokedLately reports whether a revocation the home pushed lately names the credential
+// (key) or its user and the copy may not have it yet. Once the copy has it, the copy's
+// own answer stands: the sessions the home ended are ended there, and one made since (a
+// sign-in again) is live there.
+func (r *Resolver) revokedLately(ctx context.Context, key, user string) bool {
+	at, ok := r.pushedAt(key, user)
+	return ok && !r.copyHas(ctx, at)
+}
+
+// onHomeClock is a moment of this machine's clock on the home's (HomeOffset).
+func (r *Resolver) onHomeClock(t time.Time) time.Time {
+	if r.HomeOffset != nil {
+		return t.Add(r.HomeOffset())
+	}
+	return t
 }
 
 // cached is a credential's cached answer even past its lifetime (whose it was).

@@ -122,8 +122,8 @@ func (r *Resolver) copyAnswer(ctx context.Context, ireq delegation.IntrospectReq
 		return nil, false
 	case !a.ExpiresAt.IsZero() && !r.now().Before(a.ExpiresAt):
 		return nil, true
-	case ireq.Session != "" && r.revokedLately(SessionKey(ireq.Session), a.Principal.UserID),
-		ireq.PAT != "" && r.revokedLately(patKey(ireq.PAT), a.Principal.UserID):
+	case ireq.Session != "" && r.revokedLately(ctx, SessionKey(ireq.Session), a.Principal.UserID),
+		ireq.PAT != "" && r.revokedLately(ctx, patKey(ireq.PAT), a.Principal.UserID):
 		// the home pushed its revocation; the copy does not have it yet
 		return nil, true
 	}
@@ -145,7 +145,7 @@ func (r *Resolver) jwtFromCopy(ctx context.Context, p *principal.Principal) (*pr
 		return nil, true
 	case err != nil:
 		return nil, false
-	case r.revokedLately("", dp.UserID):
+	case r.revokedLately(ctx, "", dp.UserID):
 		return nil, true
 	}
 	out := toPrincipal(&delegation.IntrospectAnswer{Principal: *dp})
@@ -164,23 +164,34 @@ func (r *Resolver) fromCopy(ctx context.Context, ireq delegation.IntrospectReque
 
 // localPrincipal is a node-local session's user, from the copy, and its CSRF token
 // hash. The copy need not be current: the session was made against it, and the user's
-// rights are the copy's latest. A person the home revoked lately (signed out
-// everywhere, reset, locked), or who must change their password now, is not let in.
+// rights are the copy's latest. A person who must change their password now is not let
+// in, nor one the home revoked (signed out everywhere, reset, locked) since the session
+// was made (localRevoked).
 func (r *Resolver) localPrincipal(ctx context.Context, id string) (*delegation.Principal, string, bool) {
 	if r.Sessions == nil || r.Local == nil {
 		return nil, "", false
 	}
-	userID, csrf, ok := r.Sessions.Lookup(id)
+	s, ok := r.Sessions.session(id)
 	if !ok {
 		return nil, "", false
 	}
 	lctx, cancel := context.WithTimeout(ctx, localTimeout)
 	defer cancel()
-	dp, err := r.Local.Principal(lctx, userID)
-	if err != nil || dp.MustChangePassword || r.revokedLately("", userID) {
+	dp, err := r.Local.Principal(lctx, s.UserID)
+	if err != nil || dp.MustChangePassword || r.localRevoked(ctx, s.UserID, s.Created) {
 		return nil, "", false
 	}
-	return dp, csrf, true
+	return dp, s.CSRF, true
+}
+
+// localRevoked reports whether a revocation of the person the home pushed lately ends a
+// node-local session of theirs made at created: one that reached this machine after
+// the session was made (it ended the person's sign-ins here: OnEvent), or one the copy
+// does not have yet (the sign-in was checked against a copy that may not have what it
+// changed). A sign-in made after the copy has it is the person signing in again.
+func (r *Resolver) localRevoked(ctx context.Context, user string, created time.Time) bool {
+	at, ok := r.pushedAt("", user)
+	return ok && (!created.After(at) || !r.copyHas(ctx, at))
 }
 
 func (r *Resolver) localSession(ctx context.Context, id string) (*principal.Principal, string, bool) {
@@ -347,6 +358,16 @@ func (r *Resolver) SignIn(w http.ResponseWriter, req *http.Request) bool {
 		writeUnreachable(w, false)
 		return true
 	}
+	if r.revokedLately(req.Context(), "", dp.UserID) {
+		// the home revoked the person a moment before it went away and the copy does not
+		// have it yet: the password it checked may be one the home just changed
+		if r.Logger != nil {
+			r.Logger.Info("node: a sign-in waits for the home: it revoked the person lately and this machine's copy does not have it yet",
+				"user_id", dp.UserID, "event", "node_local_sign_in_waits")
+		}
+		writeUnreachable(w, true)
+		return true
+	}
 	r.signedIn(name)
 	if dp.MustChangePassword {
 		// the change it asks for is the home's: the sign-in page says so
@@ -400,8 +421,9 @@ func (r *Resolver) SignOut(w http.ResponseWriter, req *http.Request) bool {
 	if all && live {
 		err = r.Sessions.EndUser(user)
 		if err == nil && r.SignOuts != nil {
-			err = r.SignOuts.add("u:"+user, signOut{User: user, All: true, At: r.now()})
-			r.Evict(delegation.Revoked{UserID: user})
+			// on the home's clock, as a sign-out of a home session (SignOutHere)
+			err = r.SignOuts.add("u:"+user, signOut{User: user, All: true, At: r.homeNow()})
+			r.drop(delegation.Revoked{UserID: user})
 		}
 	} else {
 		err = r.Sessions.End(id)

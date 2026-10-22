@@ -131,16 +131,22 @@ func (s *LocalSessions) Create(userID, username string, ttl time.Duration) (id, 
 
 // Lookup is a live session's user and CSRF token hash.
 func (s *LocalSessions) Lookup(id string) (userID, csrfHash string, ok bool) {
+	v, ok := s.session(id)
+	return v.UserID, v.CSRF, ok
+}
+
+// session is a live session as the store keeps it (when it was made, too).
+func (s *LocalSessions) session(id string) (localSession, bool) {
 	if !strings.HasPrefix(id, LocalSessionPrefix) {
-		return "", "", false
+		return localSession{}, false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	v, found := s.byID[sum(id)]
 	if !found || !s.now().Before(v.Expires) {
-		return "", "", false
+		return localSession{}, false
 	}
-	return v.UserID, v.CSRF, true
+	return v, true
 }
 
 // End ends a session (sign-out on this machine).
