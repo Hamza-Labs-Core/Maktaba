@@ -545,6 +545,8 @@ def test_a_node_json_that_cannot_be_read_is_never_moved_or_read_past(
         return read_bytes(self)
 
     monkeypatch.setattr(Path, "read_bytes", held)
+    # on Windows EACCES may be a sharing violation, waited out for a moment
+    monkeypatch.setattr(config, "_READ_WAIT_SEC", 0.02)
     with pytest.raises(PermissionError):
         config.load(path)
     monkeypatch.setattr(Path, "read_bytes", read_bytes)
@@ -1040,3 +1042,148 @@ def test_the_claim_keeps_what_another_write_put_in_meanwhile(
     cfg = config.load()
     assert cfg is not None and cfg.machine_id == "pc-b"
     assert json.loads(roaming.read_text(encoding="utf-8"))["machine_id"] == "pc-b"
+
+
+def test_a_write_that_does_not_end_is_an_error_never_not_joined(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A write of the roaming node.json that does not end within the readers' wait (its
+    lock taken a moment ago, node.json missing) is never "not joined": the path stays the
+    roaming one and the load raises (EBUSY), never None. A lock a process that stopped
+    left long ago is no write under way: not joined."""
+    import errno
+
+    roaming = _windows_profile(tmp_path, monkeypatch, "pc-a")
+    monkeypatch.setattr(config, "_READ_WAIT_SEC", 0.02)
+    lock = config._lock_path(roaming)
+    lock.write_bytes(b"")
+    assert config.config_path() == roaming
+    with pytest.raises(OSError) as raised:
+        config.load(roaming)
+    assert not isinstance(raised.value, FileNotFoundError)
+    assert raised.value.errno == errno.EBUSY
+    then = time.time() - 120
+    os.utime(lock, (then, then))
+    assert config.load(roaming) is None
+
+
+@pytest.mark.skipif(os.name != "nt", reason="files held without sharing")
+def test_windows_leftovers_held_open_are_never_not_joined(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review's case: a write's backup and temp file held open without sharing, its
+    lock taken a moment ago, node.json missing. The path stays the roaming one and the
+    load raises, never None."""
+    roaming = _windows_profile(tmp_path, monkeypatch, "pc-a")
+    monkeypatch.setattr(config, "_READ_WAIT_SEC", 0.02)
+    config._lock_path(roaming).write_bytes(b"")
+    fds = []
+    try:
+        for ext in (".bak", ".tmp"):
+            fd = config._create_user_only(roaming.with_name(_named(ext, age=0)))
+            os.write(fd, json.dumps(_JOINED).encode())
+            fds.append(fd)
+        assert config.config_path() == roaming
+        with pytest.raises(OSError) as raised:
+            config.load(roaming)
+        assert not isinstance(raised.value, FileNotFoundError)
+    finally:
+        for fd in fds:
+            os.close(fd)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="a sharing violation")
+def test_windows_a_read_held_up_by_another_program_is_waited_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """open() reports a sharing violation (an antivirus or a backup tool holding
+    node.json) as EACCES without a Windows error code: the load waits it out for a
+    moment, with no lock or leftover beside it, rather than raise at once."""
+    import errno
+
+    path = tmp_path / "Maktaba" / "node.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps(_JOINED), encoding="utf-8")
+    text = config._text
+    held = {"left": 3}
+
+    def busy(p: Path) -> str:
+        if held["left"]:
+            held["left"] -= 1
+            raise PermissionError(errno.EACCES, "Permission denied", str(p))
+        return text(p)
+
+    monkeypatch.setattr(config, "_text", busy)
+    cfg = config.load(path)
+    assert cfg is not None and cfg.node_id == "n1" and held["left"] == 0
+
+
+@pytest.mark.skipif(os.name != "nt", reason="a reader holding the file open")
+def test_windows_a_rejoin_waits_for_a_reader_holding_node_json(tmp_path: Path) -> None:
+    """``join --rejoin`` while a reader has node.json open for a moment (a sharing
+    violation on the rename, as maktaba-server's renameWhenFree waits out): it waits."""
+    import threading
+
+    path = tmp_path / "Maktaba" / "node.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps(_JOINED), encoding="utf-8")
+    reader = path.open("rb")
+    timer = threading.Timer(0.03, reader.close)
+    timer.start()
+    try:
+        kept = config.set_aside(path)
+    finally:
+        timer.join()
+        reader.close()
+    assert kept.name == "node.json.bak" and not path.exists()
+    assert json.loads(kept.read_text(encoding="utf-8")) == _JOINED
+
+
+def test_a_broken_node_json_kept_aside_is_the_users(tmp_path: Path) -> None:
+    """A broken node.json a load keeps aside (``.broken-*``, kept for a while: it may hold
+    part of a credential) is the user's alone, whatever its folder lets others do."""
+    folder = tmp_path / "Maktaba"
+    folder.mkdir()
+    path = folder / "node.json"
+    path.write_text('{"node_id": "n1", "priv', encoding="utf-8")
+    if os.name != "nt":
+        os.chmod(path, 0o644)
+    assert not config._user_only_now(path)
+    _leftover(folder, _named(".bak", age=120), json.dumps(_JOINED))
+    cfg = config.load(path)
+    assert cfg is not None and cfg.node_id == "n1"
+    kept = list(folder.glob("node.json.broken-*"))
+    assert len(kept) == 1 and config._user_only_now(kept[0])
+
+
+def test_securing_at_load_says_nothing_of_a_file_replaced_meanwhile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The load's check that node.json is its user's alone races a write replacing it:
+    a failure for a file that is gone or the user's alone when looked at again says
+    nothing; one that stays wider is said once."""
+    from maktaba_pipeline import log
+
+    path = tmp_path / "Maktaba" / "node.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps(_JOINED), encoding="utf-8")
+    warnings = _Warnings(private=True)
+    monkeypatch.setattr(log, "get_logger", lambda: warnings)
+    monkeypatch.setattr(config, "_secure_failed", set())
+
+    def replaced(p: Path) -> bool:
+        raise FileNotFoundError(2, "replaced meanwhile", str(p))
+
+    monkeypatch.setattr(config, "_secure", replaced)
+    monkeypatch.setattr(config, "_user_only_now", lambda p: True)
+    config._secure_once(path)
+    assert warnings.events == []
+
+    def denied(p: Path) -> bool:
+        raise PermissionError(13, "access denied", str(p))
+
+    monkeypatch.setattr(config, "_secure", denied)
+    monkeypatch.setattr(config, "_user_only_now", lambda p: False)
+    config._secure_once(path)
+    config._secure_once(path)
+    assert warnings.events == ["node_config_not_private"]

@@ -446,7 +446,7 @@ def _write_under_way(path: Path, exc: OSError) -> bool:
     it (ReplaceFileW renames node.json aside before the new one takes its name; a stale
     leftover is no write under way). A reader waits that out rather than take
     "missing" for "not joined", as maktaba-server's and streaming's readers do."""
-    if getattr(exc, "winerror", None) == 32:
+    if getattr(exc, "winerror", None) == 32 or _held_open(exc):
         return True
     if isinstance(exc, (FileNotFoundError, PermissionError)):
         now = _now()
@@ -454,6 +454,19 @@ def _write_under_way(path: Path, exc: OSError) -> bool:
             _in_progress(path, p, now) for p in _leftovers(path)
         )
     return False
+
+
+def _held_open(exc: OSError) -> bool:
+    """Windows: ``open()`` failed with EACCES and no Windows error code, which is how the C
+    runtime reports a sharing violation (another program, an antivirus or a backup tool,
+    holds the file open without sharing it). A file this user may not read says the same:
+    the bounded wait (``_read_steady``) then ends in the PermissionError it would raise."""
+    return (
+        sys.platform == "win32"
+        and isinstance(exc, PermissionError)
+        and exc.errno == errno.EACCES
+        and getattr(exc, "winerror", None) is None
+    )
 
 
 def _locked_lately(path: Path, now: float) -> bool:
@@ -468,19 +481,28 @@ def _locked_lately(path: Path, now: float) -> bool:
 
 def _read_steady(path: Path) -> tuple[Path, str]:
     """The node config's text from the file that holds it (``_source``), waiting out a
-    write under way for a moment (``_write_under_way``); the file and its text. Raises the
-    last OSError (FileNotFoundError when there is none), ValueError for text that does
-    not decode."""
+    write under way (``_write_under_way``) for up to ``_READ_WAIT_SEC``; the file and its
+    text. Raises the last OSError (FileNotFoundError when there is none), ValueError for
+    text that does not decode. A write still under way at the end is an OSError that is
+    not FileNotFoundError (EBUSY): never "not joined"."""
     deadline = time.monotonic() + _READ_WAIT_SEC
     while True:
-        left = time.monotonic() < deadline
         src = _source(path)
         try:
             return src, _text(src)
         except OSError as exc:
             # a leftover it picked that is gone already: the write ended, look again
             vanished = src != path and isinstance(exc, (FileNotFoundError, PermissionError))
-            if not left or (not vanished and not _write_under_way(path, exc)):
+            if not vanished and not _write_under_way(path, exc):
+                raise
+            if time.monotonic() >= deadline:
+                if isinstance(exc, FileNotFoundError) or getattr(exc, "winerror", None) == 32:
+                    raise OSError(
+                        errno.EBUSY,
+                        f"being written (a write of it still under way after {_READ_WAIT_SEC} s):"
+                        f" {exc}",
+                        str(src),
+                    ) from exc
                 raise
         time.sleep(_BUSY_SLEEP)
 
@@ -488,16 +510,20 @@ def _read_steady(path: Path) -> tuple[Path, str]:
 def _held(path: Path) -> Path | None:
     """The file that holds the node config at ``path`` (``_source``) when there is one,
     waiting out a write under way (a leftover it picked can be gone a moment later, and
-    a resolver must not take the local place for it then); None when there is none."""
+    a resolver must not take the local place for it then) for up to ``_READ_WAIT_SEC``;
+    None when there is none. A write still under way at the end keeps ``path`` (its
+    reader then says it is being written)."""
     deadline = time.monotonic() + _READ_WAIT_SEC
     while True:
-        left = time.monotonic() < deadline
         held = _source(path)
         if held.is_file():
             return held
         # a leftover it picked that is gone already (the write ended): look again
-        if not left or (held == path and not _write_under_way(path, FileNotFoundError(str(held)))):
+        under_way = _write_under_way(path, FileNotFoundError(str(held)))
+        if held == path and not under_way:
             return None
+        if time.monotonic() >= deadline:
+            return path if under_way else None
         time.sleep(_BUSY_SLEEP)
 
 
@@ -508,18 +534,48 @@ _secure_failed: set[str] = set()
 def _secure_once(path: Path) -> None:
     """At load: node.json that is not its user's alone is made so (``_secure``; one that
     maktaba-server's writer of #178 left with its folder's ACL), and the warning says so;
-    one that cannot be is said once."""
+    one that cannot be is said once. It runs with the write lock, so a write replacing
+    the file meanwhile is no failure (a write running now leaves it the user's alone);
+    and before it says one, it looks again."""
     if not path.is_file():
         return
     from ..log import get_logger
 
     try:
-        if _secure(path):
-            get_logger().warning("node_config_made_private", path=str(path))
+        made = _secure_held(path)
     except OSError as exc:
+        if _user_only_now(path):
+            return  # replaced or gone meanwhile: nothing to say
         if str(path) not in _secure_failed:
             _secure_failed.add(str(path))
             get_logger().warning("node_config_not_private", path=str(path), error=str(exc))
+        return
+    if made:
+        get_logger().warning("node_config_made_private", path=str(path))
+
+
+def _secure_held(path: Path) -> bool:
+    """``_secure`` with the write lock held (``_one_at_a_time``, the recovery's wait):
+    False when another write holds it (that write leaves the file the user's alone), and
+    without the lock when there is none to be had (a folder this user may not write)."""
+    with contextlib.ExitStack() as stack:
+        try:
+            held = stack.enter_context(_one_at_a_time(path, wait=_RECOVER_WAIT_SEC))
+        except OSError:
+            held = True
+        return held and path.is_file() and _secure(path)
+
+
+def _user_only_now(path: Path) -> bool:
+    """The node config at ``path`` is gone, or its user's alone now (looked at again)."""
+    try:
+        if not path.exists():
+            return True
+        if sys.platform == "win32":
+            return _is_user_only(path)
+        return not path.stat().st_mode & 0o077
+    except OSError:
+        return False
 
 
 def _rename_no_replace(src: Path, dst: Path) -> None:
@@ -578,6 +634,10 @@ def _put_in_place(path: Path, leftover: Path) -> tuple[bool, Path | None]:
                 with contextlib.suppress(OSError):
                     _when_free(_rename_no_replace, kept, path)
                 return False, None
+            # it may hold part of a credential, and it stays for a while: the user's
+            # alone, whatever ACL it had (best effort: it is never read as a node config)
+            with contextlib.suppress(OSError):
+                _secure(kept)
     try:
         _when_free(_rename_no_replace, leftover, path)
     except FileExistsError:
@@ -1255,6 +1315,6 @@ def set_aside(path: Path) -> Path:
                     ) from exc
         if src != path and path.exists():
             _unlink_when_free(path)
-        os.replace(src, backup)
+        _when_free(os.replace, src, backup)
         _prune_broken(path, all_of_them=True)
     return backup

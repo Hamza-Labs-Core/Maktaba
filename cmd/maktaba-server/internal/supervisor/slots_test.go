@@ -69,7 +69,7 @@ func TestSupervisorStartsSlots(t *testing.T) {
 		}
 	}
 	// the streaming role is the front door: where the slots are, how to ask for them
-	m := envMap(ChildEnv(RoleStreaming, cfg))
+	m := envMap(childEnvOK(RoleStreaming, cfg))
 	if m["MAKTABA_TV_SLOTS"] != "blue=127.0.0.1:8791,green=127.0.0.1:8792,amber=127.0.0.1:8793" ||
 		m["MAKTABA_SUPERVISOR_URL"] != "http://127.0.0.1:9103" {
 		t.Fatalf("front door env: %v", m)
@@ -80,7 +80,7 @@ func TestSupervisorStartsSlots(t *testing.T) {
 	sqlite := cfg
 	sqlite.Database.URL = "sqlite:///var/lib/maktaba/db.sqlite"
 	for name, c := range map[string]config.Config{"off": off, "sqlite": sqlite} {
-		if SlotsEnabled(c) || envMap(ChildEnv(RoleStreaming, c))["MAKTABA_TV_SLOTS"] != "" {
+		if SlotsEnabled(c) || envMap(childEnvOK(RoleStreaming, c))["MAKTABA_TV_SLOTS"] != "" {
 			t.Errorf("%s: slots enabled", name)
 		}
 	}

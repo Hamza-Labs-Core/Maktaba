@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 )
@@ -103,6 +104,44 @@ func TestASwitchFolderStaysInTheSwitchoverFolder(t *testing.T) {
 	} {
 		if got := s.dir(id); got != filepath.Join(root, want) {
 			t.Errorf("dir(%q) = %s, want %s", id, got, filepath.Join(root, want))
+		}
+	}
+}
+
+// The temp files a write of a record left when its process stopped mid-write (they may
+// hold a secret) go with the next write of it; one made in the last minute may be
+// another write's, and stays, as does another record's.
+func TestPrivateWritesSweepTheirOldTempFiles(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "switchover", "sw-1")
+	path := filepath.Join(dir, "old-home.json")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * time.Minute)
+	files := map[string]bool{ // name: kept after the write
+		"old-home.json.4242-0badf00d.tmp":  false,
+		"old-home.json.tmp":                false, // the versions before
+		"old-home.json.4243-0badf00e.tmp":  true,  // a write of the last minute
+		"progress.json.4242-0badf00d.tmp":  true,  // another record's
+		"old-home.json.4242-0badf00d.tmpx": true,
+	}
+	for name := range files {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("secret"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if name != "old-home.json.4243-0badf00e.tmp" {
+			if err := os.Chtimes(p, old, old); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := writePrivate(path, []byte(`{"node_id":"n1"}`)); err != nil {
+		t.Fatal(err)
+	}
+	for name, kept := range files {
+		if _, err := os.Stat(filepath.Join(dir, name)); (err == nil) != kept {
+			t.Errorf("%s: there %v, want %v", name, err == nil, kept)
 		}
 	}
 }

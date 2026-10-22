@@ -240,3 +240,47 @@ func TestSetNodeConfigAsideFailsBeforeLeavingAWholeOne(t *testing.T) {
 		t.Fatalf("after: %v", names)
 	}
 }
+
+// holdUnshared creates the file at path with body and keeps it open without sharing (as
+// ReplaceFileW and an antivirus do): no one else can open it until release.
+func holdUnshared(t *testing.T, path, body string) (release func()) {
+	t.Helper()
+	writeAt(t, path, body)
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := windows.CreateFile(name, windows.GENERIC_READ, 0, nil, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return func() { _ = windows.CloseHandle(h) }
+}
+
+// The review's case: a write's backup and temp file held open without sharing, its lock
+// taken a moment ago, node.json not there. Past readWait the roaming path is still the
+// node config's and reading it is an error that is not "missing": never "not joined".
+func TestHeldLeftoversOfAWriteAreNeverNotJoined(t *testing.T) {
+	prev := readWait
+	readWait = 20 * time.Millisecond
+	t.Cleanup(func() { readWait = prev })
+	root := t.TempDir()
+	env := map[string]string{
+		"APPDATA":            filepath.Join(root, "Roaming"),
+		"LOCALAPPDATA":       filepath.Join(root, "Local"),
+		"MAKTABA_MACHINE_ID": "pc-a",
+	}
+	getenv := func(k string) string { return env[k] }
+	path := filepath.Join(root, "Roaming", "Maktaba", "node.json")
+	body := `{"node_id":"n1","private_key":"k","database_url":"postgres://h"}`
+	defer holdUnshared(t, nodeConfigLeftoverName(path, ".bak"), body)()
+	defer holdUnshared(t, nodeConfigLeftoverName(path, ".tmp"), body)()
+	writeAt(t, nodeConfigLockPath(path), "")
+	if got := NodeConfigPath(getenv, "windows", root); got != path {
+		t.Fatalf("NodeConfigPath = %s, want the roaming node config (%s)", got, path)
+	}
+	n := ReadNodeConfig(getenv, "windows", root, os.ReadFile)
+	if n.Err == nil || errors.Is(n.Err, os.ErrNotExist) || n.Joined() {
+		t.Fatalf("read: %+v (err %v), want an error that is not \"missing\"", n, n.Err)
+	}
+}

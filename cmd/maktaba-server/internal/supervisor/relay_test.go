@@ -53,7 +53,7 @@ func TestTheRelayRunsOnTheHomeWithItsCredentials(t *testing.T) {
 	}
 	// the API checks the agent's state once a switch made this machine the home
 	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
-	if m := envMap(ChildEnv(RoleAPI, cfg)); m["MAKTABA_CLOUDLINK_STATUS_URL"] != "http://127.0.0.1:8765/admin/cloud-link" {
+	if m := envMap(childEnvOK(RoleAPI, cfg)); m["MAKTABA_CLOUDLINK_STATUS_URL"] != "http://127.0.0.1:8765/admin/cloud-link" {
 		t.Fatalf("the API's relay status address: %q", m["MAKTABA_CLOUDLINK_STATUS_URL"])
 	}
 }

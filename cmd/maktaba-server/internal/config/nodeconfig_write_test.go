@@ -2,8 +2,11 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -250,6 +253,12 @@ func TestUpdateNodeConfigChangesOnlyItsFields(t *testing.T) {
 		t.Fatalf("home: %v", got["home"])
 	}
 
+	gone := filepath.Join(dir, "gone", "node.json")
+	err = UpdateNodeConfig(gone, "n1", func(n *NodeConfig) { n.DatabaseCA = "OLD" })
+	if err == nil || !strings.Contains(err.Error(), "no node config") || isFile(gone) {
+		t.Fatalf("a node config gone meanwhile: %v (written: %v)", err, isFile(gone))
+	}
+
 	rejoined := `{"node_id":"n2","private_key":"k2","database_url":"postgres://h2"}`
 	writeAt(t, path, rejoined)
 	err = UpdateNodeConfig(path, "n1", func(n *NodeConfig) { n.DatabaseCA = "OLD" })
@@ -267,7 +276,15 @@ func TestUpdateNodeConfigChangesOnlyItsFields(t *testing.T) {
 func TestSetNodeConfigAsideWithABrokenNodeJSON(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "Maktaba")
 	path, aside := filepath.Join(dir, "node.json"), filepath.Join(dir, "node.json.was-node-1")
-	writeAt(t, path, `{"node_id":"n1","priv`)
+	writeAt(t, path, "")
+	// saved by hand or by an older version: its folder's ACL (mode 0644 elsewhere)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"node_id":"n1","priv`), 0o644); err != nil { //nolint:gosec // the test's own
+		t.Fatal(err)
+	}
+	wider, _ := IsUserOnly(path)
 	writeAt(t, filepath.Join(dir, ".node.json-1792600000-4242-0badf00d.bak"), `{"node_id":"n1","private_key":"k"}`)
 	writeAt(t, filepath.Join(dir, ".node.json-1792600000-4242-0badf00e.tmp"), `{"node_id":"n0","private_key":"k"}`)
 	if err := SetNodeConfigAside(path, aside); err != nil {
@@ -282,6 +299,10 @@ func TestSetNodeConfigAsideWithABrokenNodeJSON(t *testing.T) {
 	}
 	if held := nodeConfigFile(path, os.ReadFile); isFile(held) {
 		t.Fatalf("%s is still read as the node config", held)
+	}
+	// the broken file kept aside may hold part of a credential: the user's alone
+	if ok, err := IsUserOnly(filepath.Join(dir, names[0])); err != nil || !ok {
+		t.Fatalf("the broken node.json kept aside is not the user's alone (it was before: %v): %v", wider, err)
 	}
 }
 
@@ -335,5 +356,70 @@ func TestNodeConfigPathWaitsOutAWrite(t *testing.T) {
 	close(stop)
 	if writes := <-done; elsewhere != 0 || writes == 0 {
 		t.Fatalf("%d of %d resolutions during %d writes were not the roaming node config", elsewhere, reads, writes)
+	}
+}
+
+// A write that does not end within readWait (its lock taken a moment ago, node.json
+// missing) is never "not joined": the roaming path stays the node config's, and reading
+// it is an error that is not fs.ErrNotExist (at a role's start, an error; never the home).
+func TestAWriteThatDoesNotEndIsNeverNotJoined(t *testing.T) {
+	prev := readWait
+	readWait = 20 * time.Millisecond
+	t.Cleanup(func() { readWait = prev })
+	root := t.TempDir()
+	env := map[string]string{
+		"APPDATA":            filepath.Join(root, "Roaming"),
+		"LOCALAPPDATA":       filepath.Join(root, "Local"),
+		"MAKTABA_MACHINE_ID": "pc-a",
+	}
+	getenv := func(k string) string { return env[k] }
+	path := filepath.Join(root, "Roaming", "Maktaba", "node.json")
+	writeAt(t, nodeConfigLockPath(path), "")
+	if got := NodeConfigPath(getenv, "windows", root); got != path {
+		t.Fatalf("NodeConfigPath = %s, want the roaming node config a write holds (%s)", got, path)
+	}
+	n := ReadNodeConfig(getenv, "windows", root, os.ReadFile)
+	if n.Err == nil || errors.Is(n.Err, fs.ErrNotExist) || n.Joined() {
+		t.Fatalf("read during a write that does not end: %+v (err %v), want an error that is not \"missing\"", n, n.Err)
+	}
+	// a lock a process that stopped left long ago is no write under way: not joined
+	old := time.Now().Add(-2 * time.Minute)
+	if err := os.Chtimes(nodeConfigLockPath(path), old, old); err != nil {
+		t.Fatal(err)
+	}
+	if n := ReadNodeConfig(getenv, "windows", root, os.ReadFile); n.Err != nil || n.Joined() {
+		t.Fatalf("beside a stale lock: %+v (err %v), want not joined", n, n.Err)
+	}
+}
+
+// The identities a home's switch set aside are found beside the roaming node.json and
+// beside the local one (once the roaming node.json is set aside, the node config's path
+// is the local place), and read in any encoding a reader reads.
+func TestSetAsideNodeConfigsAreFoundInEveryPlace(t *testing.T) {
+	root := t.TempDir()
+	env := map[string]string{
+		"APPDATA":            filepath.Join(root, "Roaming"),
+		"LOCALAPPDATA":       filepath.Join(root, "Local"),
+		"MAKTABA_MACHINE_ID": "pc-a",
+	}
+	getenv := func(k string) string { return env[k] }
+	roaming := filepath.Join(root, "Roaming", "Maktaba", "node.json.was-node-2")
+	local := filepath.Join(root, "Local", "Maktaba", "node.json.was-node-3")
+	writeAt(t, roaming, "\xef\xbb\xbf"+`{"node_id":"n2","private_key":"k2"}`)
+	writeAt(t, local, `{"node_id":"n3","private_key":"k3"}`)
+	writeAt(t, filepath.Join(root, "Local", "Maktaba", "node.json"), `{"node_id":"h","private_key":"k"}`)
+	got := SetAsideNodeConfigs(getenv, "windows", root)
+	want := []string{local, roaming}
+	if !slices.Equal(got, want) && !slices.Equal(got, []string{roaming, local}) {
+		t.Fatalf("set aside: %v, want %v", got, want)
+	}
+	for path, id := range map[string]string{roaming: "n2", local: "n3"} {
+		if n, err := ReadNodeConfigAt(path); err != nil || n.NodeID != id {
+			t.Errorf("%s: %+v %v", path, n, err)
+		}
+	}
+	env["MAKTABA_NODE_CONFIG"] = filepath.Join(root, "Local", "Maktaba", "node.json")
+	if got := SetAsideNodeConfigs(getenv, "windows", root); !slices.Equal(got, []string{local}) {
+		t.Fatalf("with MAKTABA_NODE_CONFIG: %v, want %v", got, []string{local})
 	}
 }

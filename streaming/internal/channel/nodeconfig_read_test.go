@@ -148,3 +148,42 @@ func TestNodeConfigPathWaitsOutAWrite(t *testing.T) {
 		t.Fatalf("%d of %d resolutions during writes were not the roaming node config", elsewhere, reads)
 	}
 }
+
+// A write that does not end within readWait (its lock taken a moment ago, node.json
+// missing) never makes this host the home: the roaming path stays the node config's,
+// and the role is an error. A lock a process that stopped left long ago is no write
+// under way: the host is the home.
+func TestAWriteThatDoesNotEndIsNeverTheHome(t *testing.T) {
+	prev := readWait
+	readWait = 20 * time.Millisecond
+	t.Cleanup(func() { readWait = prev })
+	root := t.TempDir()
+	env := map[string]string{
+		"APPDATA":            filepath.Join(root, "Roaming"),
+		"LOCALAPPDATA":       filepath.Join(root, "Local"),
+		"MAKTABA_MACHINE_ID": "pc-a",
+	}
+	getenv := func(k string) string { return env[k] }
+	dir := filepath.Join(root, "Roaming", "Maktaba")
+	path := filepath.Join(dir, "node.json")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(dir, ".node.json.lock")
+	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := NodeConfigPath(getenv, "windows", root); got != path {
+		t.Fatalf("NodeConfigPath = %s, want the roaming node config (%s)", got, path)
+	}
+	if role, id, err := DetectRole(getenv, "windows", root, os.ReadFile); err == nil || role == RoleHome {
+		t.Fatalf("DetectRole = %q %q %v, want an error, never the home", role, id, err)
+	}
+	old := time.Now().Add(-2 * time.Minute)
+	if err := os.Chtimes(lock, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if role, _, err := DetectRole(getenv, "windows", root, os.ReadFile); err != nil || role != RoleHome {
+		t.Fatalf("beside a stale lock: %q %v, want the home", role, err)
+	}
+}

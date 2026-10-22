@@ -29,7 +29,10 @@ func BuildPipelineInstances(opts Options) ([]Process, error) {
 	if n > MaxPipelineInstances {
 		return nil, fmt.Errorf("%d transcription workers ([pipeline] instances / [transcription] workers): at most %d", n, MaxPipelineInstances)
 	}
-	base := ChildEnv(RolePipeline, opts.Config)
+	base, err := ChildEnv(RolePipeline, opts.Config)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]Process, 0, n)
 	for i := 1; i <= n; i++ {
 		logs := "127.0.0.1:" + strconv.Itoa(9110+i)

@@ -283,19 +283,26 @@ func DetectRole(getenv func(string) string, goos, userHome string, readFile func
 }
 
 // ReadNodeConfigFile reads the node config at path from the file that holds it
-// (NodeConfigFile), waiting out a write under way for a moment (writeUnderWay):
-// a reader never takes a node.json that is being replaced for a missing one.
+// (NodeConfigFile), waiting out a write under way (writeUnderWay) for up to readWait:
+// a reader never takes a node.json that is being replaced for a missing one. A write
+// still under way at the end is an error that is not fs.ErrNotExist, so the node is
+// never taken for the home.
 func ReadNodeConfigFile(path string, readFile func(string) ([]byte, error)) ([]byte, error) {
 	deadline := time.Now().Add(readWait)
 	for {
-		last := !time.Now().Before(deadline)
 		held := NodeConfigFile(path, readFile)
 		b, err := readFile(held)
 		// a leftover it picked that is gone already, or going (denied while it is removed):
 		// the write ended, look again
 		vanished := held != path && (errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission))
-		if last || (!vanished && !writeUnderWay(path, err)) {
+		if !vanished && !writeUnderWay(path, err) {
 			return b, err
+		}
+		if !time.Now().Before(deadline) {
+			if errors.Is(err, fs.ErrNotExist) || isBusy(err) {
+				return nil, fmt.Errorf("%s is being written (a write of it still under way after %s): %v", held, readWait, err)
+			}
+			return nil, err
 		}
 		time.Sleep(busyWait)
 	}
@@ -303,11 +310,10 @@ func ReadNodeConfigFile(path string, readFile func(string) ([]byte, error)) ([]b
 
 // readWait and busyWait: how long a reader waits out a write of the node config
 // (maktaba-server's and the pipeline's, which hold its lock for all of it: milliseconds,
-// more on a busy machine), and how often it looks again.
-const (
-	readWait = 2 * time.Second
-	busyWait = 5 * time.Millisecond
-)
+// more on a busy machine; tests shorten it), and how often it looks again.
+var readWait = 2 * time.Second
+
+const busyWait = 5 * time.Millisecond
 
 // writeUnderWay: reading the node config at path failed with err while a write
 // of it may be under way: the file is held by another process (ReplaceFileW, a
@@ -364,7 +370,9 @@ func hasLeftovers(path string) bool {
 
 // heldNodeConfig is the file that holds the node config at path (NodeConfigFile)
 // when there is one, waiting out a write under way (a leftover it picked can be
-// gone a moment later); "" when there is none.
+// gone a moment later) for up to readWait; "" when there is none. A write still
+// under way at the end keeps path (its reader then says it is being written): a
+// resolver never takes the local place for it.
 func heldNodeConfig(path string) string {
 	deadline := time.Now().Add(readWait)
 	for {
@@ -372,7 +380,14 @@ func heldNodeConfig(path string) string {
 		if isFile(held) {
 			return held
 		}
-		if !time.Now().Before(deadline) || (held == path && !writeUnderWay(path, fs.ErrNotExist)) {
+		underWay := writeUnderWay(path, fs.ErrNotExist)
+		if held == path && !underWay {
+			return ""
+		}
+		if !time.Now().Before(deadline) {
+			if underWay {
+				return path
+			}
 			return ""
 		}
 		time.Sleep(busyWait)

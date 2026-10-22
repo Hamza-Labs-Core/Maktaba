@@ -64,7 +64,7 @@ jobs:
         shell: bash # stops at the first failing command (pwsh would report only the last)
         run: |
           go test -count=1 -v ./internal/config
-          go test -count=1 -v . -run "PrivateFilesAreTheUsersAlone|WriteNodeConfigKeepsThePipelinesFields|NodeConfigIsolated"
+          go test -count=1 -v . -run "PrivateFilesAreTheUsersAlone|PrivateWritesSweepTheirOldTempFiles|ASwitchFolderStaysInTheSwitchoverFolder|WriteNodeConfigKeepsThePipelinesFields|NodeConfigIsolated"
 
       # Epic 38 story 38.1: streaming's node config readers on the OS itself: which
       # node.json it reads (the roaming profile's, its leftovers, its encodings), and that
@@ -73,7 +73,7 @@ jobs:
         working-directory: streaming
         run: >-
           go test -count=1 -v ./internal/channel ./internal/cluster
-          -run "NodeConfig|DetectRole|NodeMode|AForcedHomeIsNeverANode"
+          -run "NodeConfig|DetectRole|NodeMode|AForcedHomeIsNeverANode|AWriteThatDoesNotEnd"
 
       # Epic 38 story 38.13: moving an install this PC runs (a scheduled task and its
       # script) into the app. On windows-latest a real task is registered, its server

@@ -1037,7 +1037,7 @@ func TestTheMainWorkerTranscribesOnTheCPU(t *testing.T) {
 	if m := envMap(mainProcess(t, cfg).Cmd.Env); m["MAKTABA_STT_CPU_THREADS"] != "12" {
 		t.Errorf("the operator's own MAKTABA_STT_CPU_THREADS must be kept: %q", m["MAKTABA_STT_CPU_THREADS"])
 	}
-	if api := envMap(ChildEnv(RoleAPI, cfg)); api["MAKTABA_STT_BATCH"] != "" {
+	if api := envMap(childEnvOK(RoleAPI, cfg)); api["MAKTABA_STT_BATCH"] != "" {
 		t.Error("the transcription knobs are the pipeline's only")
 	}
 }
@@ -1048,7 +1048,7 @@ func TestTranscriptionEnv(t *testing.T) {
 	}
 	cfg := config.Defaults()
 	cfg.Transcription.Model = "large-v3" // an old setup's short name: the pipeline's default
-	m := envMap(ChildEnv(RolePipeline, cfg))
+	m := envMap(childEnvOK(RolePipeline, cfg))
 	if _, ok := m["MAKTABA_STT_MODEL"]; ok {
 		t.Errorf("an old short model name must not reach the pipeline: %q", m["MAKTABA_STT_MODEL"])
 	}
@@ -1061,12 +1061,12 @@ func TestTranscriptionEnv(t *testing.T) {
 	cfg.Transcription.Refine = "off"
 	cfg.Transcription.RefineModel = "/Volumes/nas/models/cohere"
 	cfg.Media.PathMap = "/Volumes/Originals/=/Users/me/nas/"
-	m = envMap(ChildEnv(RolePipeline, cfg))
+	m = envMap(childEnvOK(RolePipeline, cfg))
 	if m["MAKTABA_STT_MODEL"] != cfg.Transcription.Model || m["MAKTABA_STT_REFINE"] != "0" ||
 		m["MAKTABA_STT_REFINE_MODEL"] != cfg.Transcription.RefineModel || m["MAKTABA_WORKER_PATH_MAP"] != cfg.Media.PathMap {
 		t.Errorf("pipeline env = %v", m)
 	}
-	if api := envMap(ChildEnv(RoleAPI, cfg)); api["MAKTABA_PATH_MAP"] != cfg.Media.PathMap || api["MAKTABA_STT_MODEL"] != "" {
+	if api := envMap(childEnvOK(RoleAPI, cfg)); api["MAKTABA_PATH_MAP"] != cfg.Media.PathMap || api["MAKTABA_STT_MODEL"] != "" {
 		t.Errorf("api env: path map %q, stt model %q", api["MAKTABA_PATH_MAP"], api["MAKTABA_STT_MODEL"])
 	}
 	if _, ok := m["MAKTABA_PATH_MAP"]; ok {
@@ -1074,7 +1074,7 @@ func TestTranscriptionEnv(t *testing.T) {
 	}
 	t.Setenv("MAKTABA_STT_MODEL", "own/model")
 	t.Setenv("MAKTABA_PATH_MAP", "/own=/x")
-	m = envMap(ChildEnv(RolePipeline, cfg))
+	m = envMap(childEnvOK(RolePipeline, cfg))
 	if _, ok := m["MAKTABA_STT_MODEL"]; ok {
 		t.Error("the operator's own MAKTABA_STT_MODEL must be kept")
 	}

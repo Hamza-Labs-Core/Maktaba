@@ -587,23 +587,30 @@ don't append a line here; docs-only PRs are exempt.
   the pipeline's first load in a process, `node.json` is its user's alone. One #178 left with its
   folder's ACL, or any wider one, gets a protected DACL that grants its user and no one else, and
   on Linux and macOS one others may read is set to mode 0600; a write that cannot make it so
-  fails rather than keep the wider ACL. A switch's records and the machine identity kept for it
-  are written the same way, and an identity an older version kept is made the user's alone when
-  it is read. And no reader (the pipeline's load, maktaba-server's, streaming's role and node
-  checks) takes a `node.json` that is being replaced, or that another process holds open for a
-  moment, for a missing one: while the write lock was taken in the last minute, or a write's
-  leftovers of the last minute are beside it, it waits up to 2 s for the write to end, and the
-  path is resolved again rather than falling back to `%LOCALAPPDATA%`. A node config it cannot
-  read or decode is an error, never "not joined" and never the home: streaming refuses to start
-  on one. A home's switch that moves `node.json` aside first removes every leftover of a write,
-  and fails before leaving a whole node config readable, so the machine that is now the home is
-  never read as a node again; a broken `node.json` there is kept aside as `node.json.broken-…`.
-  Every reader decodes alike: UTF-8 with or without a BOM, UTF-16 or UTF-32 with one (PowerShell
-  5.1's `Out-File` and `>`), and text that does not decode strictly (an ANSI file) is broken for
-  all of them. A broken `node.json` kept aside goes after 30 days and at a re-join (it may hold
-  part of a credential), the write lock and an identity a switch set aside are among the files
-  the uninstall script lists to forget the home, and a write tries again for a moment while a
-  reader has `node.json` open.
+  fails rather than keep the wider ACL. A broken `node.json` kept aside (`node.json.broken-…`) is
+  made the user's alone too. A switch's records and the machine identity kept for it are written
+  the same way, an identity an older version kept is made the user's alone when it is read, and
+  the temp files a write of them left when its process stopped go with the next write. And no
+  reader (the pipeline's load, maktaba-server's, streaming's role and node checks) takes a
+  `node.json` that is being replaced, or that another process holds open for a moment, for a
+  missing one: while the write lock was taken in the last minute, or a write's leftovers of the
+  last minute are beside it, it waits up to 2 s for the write to end, and a write still under way
+  after that is an error, as is a node config it cannot read or decode: never "not joined" and
+  never the home, and the path stays the roaming one rather than falling back to
+  `%LOCALAPPDATA%`. Streaming refuses to start on one, and the supervisor starts no role (the
+  api, streaming, the pipeline) on a node config it cannot read, rather than start it as the home
+  against this machine's own database. A file another program holds open for a moment (an
+  antivirus, a backup tool) is waited out the same way. A home's switch that moves `node.json`
+  aside first removes every leftover of a write, and fails before leaving a whole node config
+  readable, so the machine that is now the home is never read as a node again; a broken
+  `node.json` there is kept aside as `node.json.broken-…`. Every reader decodes alike: UTF-8 with
+  or without a BOM, UTF-16 or UTF-32 with one (PowerShell 5.1's `Out-File` and `>`), and text
+  that does not decode strictly (an ANSI file) is broken for all of them. A broken `node.json`
+  kept aside goes after 30 days and at a re-join (it may hold part of a credential), the write
+  lock and an identity a switch set aside are among the files the uninstall script lists to
+  forget the home, a write and a re-join try again for a moment while a reader has `node.json`
+  open, and the identity a switch set aside is found beside the roaming `node.json` as well as
+  the local one.
 
 ## [0.2.0] - 2026-10-19
 

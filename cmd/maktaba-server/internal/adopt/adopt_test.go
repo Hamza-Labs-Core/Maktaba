@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -708,7 +709,10 @@ func TestMoveThisPC(t *testing.T) {
 		cfg.Server.MDNSOn() || !reflect.DeepEqual(cfg.Media.Roots, []string{"Y:/", "O:/"}) || cfg.Transcription.Model != "large-v3" {
 		t.Errorf("settings not carried: %+v %+v", cfg.Server, cfg.Media)
 	}
-	if cfg.Server.DataDir == filepath.Join(pc.dir, "data") || strings.Contains(cfg.Database.URL, "5432") {
+	// the old install's Postgres by its port (a temp folder's name may hold "5432" too)
+	u, err := url.Parse(cfg.Database.URL)
+	oldPostgres := err == nil && strings.HasPrefix(u.Scheme, "postgres") && u.Port() == "5432"
+	if cfg.Server.DataDir == filepath.Join(pc.dir, "data") || oldPostgres {
 		t.Errorf("data_dir %q / database %q are the old install's", cfg.Server.DataDir, cfg.Database.URL)
 	}
 	// the old folder is kept as it was

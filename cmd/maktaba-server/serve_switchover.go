@@ -778,7 +778,28 @@ func writePrivate(path string, b []byte) error {
 		return err
 	}
 	syncDir(filepath.Dir(path))
+	sweepPrivateTemps(path)
 	return nil
+}
+
+// sweepPrivateTemps removes the temp files of writes of path (writePrivate's
+// <name>.<pid>-<hex>.tmp, and <name>.tmp of the versions before) that a process which
+// stopped mid-write left: they may hold a secret. One made in the last minute may be
+// another write's, and stays.
+func sweepPrivateTemps(path string) {
+	entries, err := os.ReadDir(filepath.Dir(path))
+	if err != nil {
+		return
+	}
+	temp := regexp.MustCompile(`^` + regexp.QuoteMeta(filepath.Base(path)) + `\.(?:[0-9]+-[0-9a-f]{8}\.)?tmp$`)
+	for _, e := range entries {
+		if e.IsDir() || !temp.MatchString(e.Name()) {
+			continue
+		}
+		if info, err := e.Info(); err == nil && time.Since(info.ModTime()) > time.Minute {
+			_ = os.Remove(filepath.Join(filepath.Dir(path), e.Name()))
+		}
+	}
 }
 
 // syncDir flushes a folder's entries (a rename in it) to disk. Windows cannot open a

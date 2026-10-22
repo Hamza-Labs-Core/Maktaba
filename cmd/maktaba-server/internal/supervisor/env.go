@@ -22,7 +22,19 @@ import (
 // Shared wiring (so api/streaming/pipeline agree on where each other
 // lives) is applied to every role; role-specific bind addresses are
 // only set for the role that owns them.
-func ChildEnv(role Role, cfg config.Config) []string {
+//
+// The node config is read once for it (nodeOf): one that cannot be read is an error, never
+// "not joined", which would start a node's role as the home's against this machine's own
+// database.
+func ChildEnv(role Role, cfg config.Config) ([]string, error) {
+	var n config.NodeConfig
+	switch role {
+	case RoleAPI, RoleStreaming, RolePipeline:
+		var err error
+		if n, err = nodeOf(cfg); err != nil {
+			return nil, err
+		}
+	}
 	env := []string{}
 	add := func(k, v string) {
 		if v != "" {
@@ -159,7 +171,7 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		// API runs a switch of the home: specs/epics/37-node-replica)
 		add("MAKTABA_SUPERVISOR_TOKEN_FILE", LocalTokenPath(cfg))
 		// the cloud relay agent's state (a switch checks it moved with the home)
-		if RelayWanted(cfg) {
+		if relayWanted(cfg, n) {
 			add("MAKTABA_CLOUDLINK_STATUS_URL", RelayStatusURL(cfg))
 		}
 		// the machines reach the bundled Postgres on its own port, verifying its CA
@@ -175,7 +187,7 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		add("MAKTABA_WEB_URL", cfg.PublicWebURL())
 		// Epic 35 story 35.8: a full node's api runs in node mode against the home's
 		// database with the node's own role; it never migrates.
-		if n := nodeConfig(); NodeMode(cfg, n) {
+		if NodeMode(cfg, n) {
 			env = setEnv(env, "DATABASE_URL", HomeDSN(n))
 			env = setEnv(env, "MAKTABA_DATABASE_URL", HomeDSN(n))
 			env = setEnv(env, "MAKTABA_AUTO_MIGRATE", "false")
@@ -217,7 +229,7 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		}
 		// A machine that joined a home (Epic 31) streams as a cluster node (Epic 32.1):
 		// the home's database through its own credential, its node id; no extra flag.
-		if n := nodeConfig(); n.Joined() && !forcedHome(cfg) {
+		if n.Joined() && !forcedHome(cfg) {
 			env = setEnv(env, "DATABASE_URL", HomeDSN(n))
 			env = setEnv(env, "MAKTABA_DATABASE_URL", HomeDSN(n))
 			add("MAKTABA_TV_HOST_ROLE", "node")
@@ -269,14 +281,29 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		// machine's node (node.json: its database role, node id). The pipeline only
 		// reads node.json without a database URL, so [database].url above would
 		// make it a home worker against this machine's own database.
-		if n := nodeConfig(); NodeMode(cfg, n) {
+		if NodeMode(cfg, n) {
 			env = setEnv(env, "DATABASE_URL", HomeDSN(n))
 			env = setEnv(env, "MAKTABA_DATABASE_URL", HomeDSN(n))
 			add("MAKTABA_NODE", "1")
 		}
 	}
 
-	return env
+	return env, nil
+}
+
+// nodeOf is this machine's node config as a role's environment is made from it: none for
+// a forced home ([server] role = "home"), and an error for one that cannot be read (a
+// write that does not end, a broken file, a file another program keeps locked), so the
+// role does not start rather than start as the home.
+func nodeOf(cfg config.Config) (config.NodeConfig, error) {
+	if forcedHome(cfg) {
+		return config.NodeConfig{}, nil
+	}
+	n := nodeConfig()
+	if n.Err != nil {
+		return n, fmt.Errorf("%w: the roles start once it can be read (as not joined they would run as the home)", n.Err)
+	}
+	return n, nil
 }
 
 // NodeStateDir is where a full node's roles keep their own state: the sign-ins made

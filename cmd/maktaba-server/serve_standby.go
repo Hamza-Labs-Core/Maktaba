@@ -159,14 +159,12 @@ func homeIdentitiesOf(cfg config.Config) []oldHome {
 		out = append(out, me)
 	}
 	add(filepath.Join(cfg.StateDir(), "switchover", "standby-identity.json"))
-	// the machine this home was, before it took over (its node.json put aside): another
-	// home of the same term seals its notice to that identity
-	asides, _ := filepath.Glob(config.LocalNodeConfigPath() + ".was-node-*")
-	sort.Strings(asides)
-	for _, p := range asides {
-		var n config.NodeConfig
-		b, err := os.ReadFile(p)
-		if err != nil || json.Unmarshal(b, &n) != nil || n.NodeID == "" || seen[n.NodeID] {
+	// the machine this home was, before it took over (its node.json put aside, beside the
+	// roaming node.json or the local one): another home of the same term seals its notice
+	// to that identity
+	for _, p := range config.LocalSetAsideNodeConfigs() {
+		n, err := config.ReadNodeConfigAt(p)
+		if err != nil || n.NodeID == "" || seen[n.NodeID] {
 			continue
 		}
 		var pw string

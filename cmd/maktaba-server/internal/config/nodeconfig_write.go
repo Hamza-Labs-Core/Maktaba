@@ -40,8 +40,9 @@ const (
 
 // readWait is how long a reader waits out a write under way (writeUnderWay): a write
 // holds the lock for all of it, which takes milliseconds, and more on a busy machine (the
-// pipeline's _READ_WAIT_SEC).
-const readWait = 2 * time.Second
+// pipeline's _READ_WAIT_SEC). A write still under way after it is an error for the
+// reader, never "missing" (tests shorten it).
+var readWait = 2 * time.Second
 
 // nodeConfigLeftoverName is a name beside path for one write's backup of the old file
 // (".bak") or temp file with the new one (".tmp"), as the pipeline names them
@@ -141,28 +142,43 @@ func leftoverOfAWriteUnderWay(path, name string) bool {
 }
 
 // readNodeConfigSteady reads the node config at path from the file that holds it
-// (nodeConfigFile), waiting out a write under way (writeUnderWay) for a moment: a reader
-// never takes a node.json that is being replaced for a missing one. What it read from,
-// the bytes, and the error of the last read.
+// (nodeConfigFile), waiting out a write under way (writeUnderWay) for up to readWait: a
+// reader never takes a node.json that is being replaced for a missing one. What it read
+// from, the bytes, and the error of the last read; a write still under way at the end is
+// an error that is not fs.ErrNotExist (errStillWritten), so it is never "not joined".
 func readNodeConfigSteady(path string, readFile func(string) ([]byte, error)) (string, []byte, error) {
 	deadline := time.Now().Add(readWait)
 	for {
-		last := !time.Now().Before(deadline)
 		held := nodeConfigFile(path, readFile)
 		b, err := readFile(held)
 		// a leftover it picked that is gone already, or going (denied while it is removed):
 		// the write ended, look again
 		vanished := held != path && (errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission))
-		if last || (!vanished && !writeUnderWay(path, err)) {
+		if !vanished && !writeUnderWay(path, err) {
 			return held, b, err
+		}
+		if !time.Now().Before(deadline) {
+			return held, nil, errStillWritten(held, err)
 		}
 		time.Sleep(busyWait)
 	}
 }
 
+// errStillWritten is the error of a read that waited readWait for a write under way:
+// what the last read said, but never fs.ErrNotExist (a reader would take that for "not
+// joined", and a node for the home).
+func errStillWritten(path string, err error) error {
+	if errors.Is(err, fs.ErrNotExist) || isBusy(err) {
+		return fmt.Errorf("%s is being written (a write of it still under way after %s): %v", path, readWait, err)
+	}
+	return err
+}
+
 // heldNodeConfig is the file that holds the node config at path (nodeConfigFile) when
 // there is one, waiting out a write under way (a leftover it picked can be gone a
-// moment later); "" when there is none.
+// moment later) for up to readWait; "" when there is none. A write still under way at
+// the end keeps path (its reader then says it is being written): a resolver never takes
+// the local place for it.
 func heldNodeConfig(path string) string {
 	deadline := time.Now().Add(readWait)
 	for {
@@ -170,8 +186,29 @@ func heldNodeConfig(path string) string {
 		if isFile(held) {
 			return held
 		}
-		if !time.Now().Before(deadline) || (held == path && !writeUnderWay(path, fs.ErrNotExist)) {
+		underWay := writeUnderWay(path, fs.ErrNotExist)
+		if held == path && !underWay {
 			return ""
+		}
+		if !time.Now().Before(deadline) {
+			if underWay {
+				return path
+			}
+			return ""
+		}
+		time.Sleep(busyWait)
+	}
+}
+
+// readNodeConfigLocked reads the node config at path from the file that holds it
+// (nodeConfigFile) with the write lock held: no write is under way (that lock is this
+// one's own), so only a reader holding the file open is waited out, for a moment.
+func readNodeConfigLocked(path string) (string, []byte, error) {
+	held := nodeConfigFile(path, os.ReadFile)
+	for left := busyTries - 1; ; left-- {
+		b, err := os.ReadFile(held) //nolint:gosec // this machine's node config
+		if err == nil || left == 0 || !isBusy(err) {
+			return held, b, err
 		}
 		time.Sleep(busyWait)
 	}
@@ -208,7 +245,7 @@ func WriteNodeConfig(path string, edit func(fields map[string]json.RawMessage) e
 	}
 	defer unlock()
 	fields := map[string]json.RawMessage{}
-	held, b, err := readNodeConfigSteady(path, os.ReadFile)
+	held, b, err := readNodeConfigLocked(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 	case err != nil:
@@ -244,6 +281,9 @@ func UpdateNodeConfig(path, nodeID string, edit func(*NodeConfig)) error {
 			return fmt.Errorf("node config %s: %w", path, err)
 		}
 		if got := strings.TrimSpace(cur.NodeID); got != strings.TrimSpace(nodeID) {
+			if got == "" {
+				return fmt.Errorf("no node config at %s now (node %q's is gone or broken): nothing written", path, nodeID)
+			}
 			return fmt.Errorf("node config %s is node %q now, not %q (joined again meanwhile): left as it is", path, got, nodeID)
 		}
 		before, err := nodeConfigFields(cur)
@@ -287,7 +327,7 @@ func nodeConfigFields(n NodeConfig) (map[string]json.RawMessage, error) {
 //   - every other leftover of it goes first (tried again while a reader has it open); one
 //     that is whole and stays is an error, and nothing has moved yet;
 //   - a broken node.json, when the config is in a leftover, is kept aside as
-//     node.json.broken-<time>-<hex> (never read as a node config);
+//     node.json.broken-<time>-<hex> (never read as a node config), the user's alone;
 //   - then the one file that holds the config takes the name aside.
 //
 // A node config already moved there is no error.
@@ -310,9 +350,13 @@ func SetNodeConfigAside(path, aside string) error {
 		}
 	}
 	if held != path && isFile(path) {
-		if err := renameNoReplace(path, nodeConfigBrokenName(path)); err != nil {
+		broken := nodeConfigBrokenName(path)
+		if err := renameNoReplace(path, broken); err != nil {
 			return fmt.Errorf("the broken %s: %w", path, err)
 		}
+		// it may hold part of a credential, and it stays for a while: the user's alone,
+		// whatever ACL it had (best effort: it is never read as a node config)
+		_ = MakeUserOnly(broken)
 	}
 	if err := renameWhenFree(held, aside); err != nil && (!errors.Is(err, fs.ErrNotExist) || !isFile(aside)) {
 		return err

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -467,6 +468,54 @@ func ReadNodeConfig(getenv func(string) string, goos, userHome string, readFile 
 	n.NodeID, n.DatabaseURL = strings.TrimSpace(n.NodeID), strings.TrimSpace(n.DatabaseURL)
 	n.PrivateKey = strings.TrimSpace(n.PrivateKey)
 	return n
+}
+
+// ReadNodeConfigAt reads the node config kept in the file at path (a set-aside identity,
+// SetAsideNodeConfigs), in any encoding a reader reads (withoutBOM).
+func ReadNodeConfigAt(path string) (NodeConfig, error) {
+	b, err := os.ReadFile(path) //nolint:gosec // this machine's node configs
+	if err != nil {
+		return NodeConfig{}, err
+	}
+	var n NodeConfig
+	if err := json.Unmarshal(withoutBOM(b), &n); err != nil {
+		return NodeConfig{}, fmt.Errorf("node config %s: %w", path, err)
+	}
+	n.NodeID, n.DatabaseURL = strings.TrimSpace(n.NodeID), strings.TrimSpace(n.DatabaseURL)
+	n.PrivateKey = strings.TrimSpace(n.PrivateKey)
+	return n, nil
+}
+
+// SetAsideNodeConfigs are the identities a home's switch set aside (SetNodeConfigAside:
+// <node config>.was-node-<term>) beside every place this machine's node config is or
+// was: on Windows the roaming profile's and the local one (once the roaming node.json is
+// set aside, NodeConfigPath is the local place, though the identity is beside the
+// roaming one), elsewhere beside NodeConfigPath. Sorted.
+func SetAsideNodeConfigs(getenv func(string) string, goos, userHome string) []string {
+	places := []string{NodeConfigPath(getenv, goos, userHome)}
+	if goos == "windows" && strings.TrimSpace(getenv("MAKTABA_NODE_CONFIG")) == "" {
+		places = []string{roamingNodeConfig(getenv, userHome), filepath.Join(WindowsRoot(getenv, userHome), "node.json")}
+	}
+	var out []string
+	for _, p := range places {
+		entries, err := os.ReadDir(filepath.Dir(p))
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasPrefix(e.Name(), filepath.Base(p)+".was-node-") {
+				out = append(out, filepath.Join(filepath.Dir(p), e.Name()))
+			}
+		}
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
+// LocalSetAsideNodeConfigs is SetAsideNodeConfigs for this process.
+func LocalSetAsideNodeConfigs() []string {
+	home, _ := os.UserHomeDir()
+	return SetAsideNodeConfigs(os.Getenv, runtime.GOOS, home)
 }
 
 // LocalNodeConfig is ReadNodeConfig for this process.
