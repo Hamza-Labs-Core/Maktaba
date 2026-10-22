@@ -36,6 +36,7 @@ struct SearchView: View {
                 }
             }
             .navigationTitle("Search")
+            .background(Theme.background.ignoresSafeArea())
         }
         .searchable(text: $query, prompt: "Search libraries")
         // Debounced by SwiftUI's submit; running on every keystroke on a

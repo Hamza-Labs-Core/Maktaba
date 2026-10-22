@@ -16,7 +16,7 @@ func TestChildEnvSetsStorageForAllRoles(t *testing.T) {
 	cfg.Database.URL = "sqlite:///var/lib/maktaba/maktaba.db"
 
 	for _, role := range []Role{RoleAPI, RoleStreaming, RolePipeline} {
-		env := ChildEnv(role, cfg)
+		env := childEnvOK(role, cfg)
 		if !hasKV(env, "DATABASE_URL", cfg.Database.URL) {
 			t.Errorf("role %s: DATABASE_URL not set", role)
 		}
@@ -29,11 +29,11 @@ func TestChildEnvSetsStorageForAllRoles(t *testing.T) {
 func TestChildEnvRoleSpecificBinds(t *testing.T) {
 	t.Parallel()
 	cfg := config.Defaults()
-	api := ChildEnv(RoleAPI, cfg)
+	api := childEnvOK(RoleAPI, cfg)
 	if !hasKV(api, "MAKTABA_HTTP_ADDR", cfg.Server.Listen) {
 		t.Error("api role missing MAKTABA_HTTP_ADDR")
 	}
-	pipeline := ChildEnv(RolePipeline, cfg)
+	pipeline := childEnvOK(RolePipeline, cfg)
 	if hasKey(pipeline, "MAKTABA_HTTP_ADDR") {
 		t.Error("pipeline role should not set MAKTABA_HTTP_ADDR")
 	}
@@ -89,19 +89,19 @@ func TestChildEnvLiveTVWiring(t *testing.T) {
 	cfg.Server.StreamAddr = "0.0.0.0:8782"
 	cfg.Server.PublicURL = "http://tv.lan:8782"
 
-	streaming := ChildEnv(RoleStreaming, cfg)
+	streaming := childEnvOK(RoleStreaming, cfg)
 	// The streaming binary binds MAKTABA_HTTP_ADDR, so stream_addr must
 	// land there (it used to be ignored and streaming sat on :8081).
 	if !hasKV(streaming, "MAKTABA_HTTP_ADDR", "0.0.0.0:8782") {
 		t.Error("streaming role must bind stream_addr via MAKTABA_HTTP_ADDR")
 	}
 	for _, role := range []Role{RoleAPI, RoleStreaming, RolePipeline} {
-		if !hasKV(ChildEnv(role, cfg), "MAKTABA_PUBLIC_BASE_URL", "http://tv.lan:8782") {
+		if !hasKV(childEnvOK(role, cfg), "MAKTABA_PUBLIC_BASE_URL", "http://tv.lan:8782") {
 			t.Errorf("role %s: MAKTABA_PUBLIC_BASE_URL not set from public_url", role)
 		}
 	}
 	// The api's streaming client speaks gRPC, not the HTTP stream port.
-	if !hasKV(ChildEnv(RoleAPI, cfg), "MAKTABA_STREAMING_ADDR", StreamingGRPCAddr) {
+	if !hasKV(childEnvOK(RoleAPI, cfg), "MAKTABA_STREAMING_ADDR", StreamingGRPCAddr) {
 		t.Error("api MAKTABA_STREAMING_ADDR must be the streaming gRPC address")
 	}
 }
@@ -115,12 +115,12 @@ func TestChildEnvSharesTheSecretsKey(t *testing.T) {
 	}
 	cfg := config.Defaults()
 	for _, role := range []Role{RoleAPI, RoleStreaming, RolePipeline} {
-		if !hasKV(ChildEnv(role, cfg), "MAKTABA_SECRETS_KEY", want) {
+		if !hasKV(childEnvOK(role, cfg), "MAKTABA_SECRETS_KEY", want) {
 			t.Errorf("role %s: MAKTABA_SECRETS_KEY not set", role)
 		}
 	}
 	t.Setenv("MAKTABA_SECRETS_KEY", "/own/secrets.key")
-	for _, kv := range ChildEnv(RoleAPI, cfg) {
+	for _, kv := range childEnvOK(RoleAPI, cfg) {
 		if strings.HasPrefix(kv, "MAKTABA_SECRETS_KEY=") {
 			t.Errorf("an operator's own key path must be kept: %s", kv)
 		}
@@ -134,10 +134,10 @@ func TestChildEnvHandsTheAPIAHandedOverJWTPair(t *testing.T) {
 	t.Setenv("MAKTABA_JWT_PUBLIC_KEY_PEM", "")
 	t.Setenv("MAKTABA_CONFIG", filepath.Join(t.TempDir(), "server.toml"))
 	cfg := config.Defaults()
-	if hasKV(ChildEnv(RoleAPI, cfg), "MAKTABA_JWT_PRIVATE_KEY_PEM", "") {
+	if hasKV(childEnvOK(RoleAPI, cfg), "MAKTABA_JWT_PRIVATE_KEY_PEM", "") {
 		t.Fatal("an empty JWT key set")
 	}
-	for _, kv := range ChildEnv(RoleAPI, cfg) {
+	for _, kv := range childEnvOK(RoleAPI, cfg) {
 		if strings.HasPrefix(kv, "MAKTABA_JWT_") {
 			t.Fatalf("a JWT key with none handed over: %s", kv)
 		}
@@ -149,18 +149,18 @@ func TestChildEnvHandsTheAPIAHandedOverJWTPair(t *testing.T) {
 	if err := os.WriteFile(pub, []byte("PUBLIC PEM"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	env := ChildEnv(RoleAPI, cfg)
+	env := childEnvOK(RoleAPI, cfg)
 	if !hasKV(env, "MAKTABA_JWT_PRIVATE_KEY_PEM", "PRIVATE PEM") || !hasKV(env, "MAKTABA_JWT_PUBLIC_KEY_PEM", "PUBLIC PEM") {
 		t.Fatal("the API does not get the handed-over JWT keys")
 	}
-	for _, kv := range ChildEnv(RolePipeline, cfg) {
+	for _, kv := range childEnvOK(RolePipeline, cfg) {
 		if strings.HasPrefix(kv, "MAKTABA_JWT_") {
 			t.Fatalf("the pipeline got a JWT key: %s", kv)
 		}
 	}
 	t.Setenv("MAKTABA_JWT_PRIVATE_KEY_PEM", "OWN")
 	t.Setenv("MAKTABA_JWT_PUBLIC_KEY_PEM", "OWN PUB")
-	for _, kv := range ChildEnv(RoleAPI, cfg) {
+	for _, kv := range childEnvOK(RoleAPI, cfg) {
 		if strings.HasPrefix(kv, "MAKTABA_JWT_") {
 			t.Errorf("an operator's own JWT keys must be kept: %s", kv)
 		}

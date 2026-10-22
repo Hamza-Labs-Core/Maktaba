@@ -35,7 +35,7 @@ struct SettingsView: View {
                         SecureField("Password", text: $password)
                             .textContentType(.password)
                         if let error {
-                            Text(error).foregroundStyle(.red)
+                            Text(error).foregroundStyle(Theme.goldText)
                         }
                         Button(working ? "Signing in…" : "Sign In") {
                             Task { await signIn() }
@@ -60,6 +60,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle(isOnboarding ? "Welcome to Maktaba" : "Settings")
+            .background(Theme.background.ignoresSafeArea())
         }
         .onAppear { serverText = settings.serverURL.absoluteString }
     }

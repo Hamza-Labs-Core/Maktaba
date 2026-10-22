@@ -69,23 +69,23 @@ func TestLLMURLHandOff(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	cfg := config.Defaults()
 	for _, r := range []Role{RoleAPI, RoleStreaming, RolePipeline} {
-		if v, ok := envMap(ChildEnv(r, cfg))["MAKTABA_OLLAMA_URL"]; ok {
+		if v, ok := envMap(childEnvOK(r, cfg))["MAKTABA_OLLAMA_URL"]; ok {
 			t.Fatalf("%s: MAKTABA_OLLAMA_URL = %q without a model server", r, v)
 		}
 	}
 	cfg.LLM.URL = "http://192.168.1.30:11434/"
-	if got := envMap(ChildEnv(RolePipeline, cfg))["MAKTABA_OLLAMA_URL"]; got != "http://192.168.1.30:11434" {
+	if got := envMap(childEnvOK(RolePipeline, cfg))["MAKTABA_OLLAMA_URL"]; got != "http://192.168.1.30:11434" {
 		t.Fatalf("[llm] url: %q", got)
 	}
 	cfg.LLM.URL = ""
 	cfg.LLM.RuntimeURL = "http://127.0.0.1:11533"
 	for _, r := range []Role{RoleAPI, RoleStreaming, RolePipeline, RoleTVSlot} {
-		if got := envMap(ChildEnv(r, cfg))["MAKTABA_OLLAMA_URL"]; got != "http://127.0.0.1:11533" {
+		if got := envMap(childEnvOK(r, cfg))["MAKTABA_OLLAMA_URL"]; got != "http://127.0.0.1:11533" {
 			t.Fatalf("%s: MAKTABA_OLLAMA_URL = %q", r, got)
 		}
 	}
 	t.Setenv("MAKTABA_OLLAMA_URL", "http://own:11434")
-	if _, ok := envMap(ChildEnv(RolePipeline, cfg))["MAKTABA_OLLAMA_URL"]; ok {
+	if _, ok := envMap(childEnvOK(RolePipeline, cfg))["MAKTABA_OLLAMA_URL"]; ok {
 		t.Fatal("the operator's own MAKTABA_OLLAMA_URL must be kept (not set again)")
 	}
 }

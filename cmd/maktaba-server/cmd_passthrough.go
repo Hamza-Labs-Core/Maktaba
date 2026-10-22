@@ -59,6 +59,10 @@ func runAPISub(sub string, args []string) error {
 	child.Stdout = os.Stdout
 	child.Stderr = os.Stderr
 	// Config env first, real env last so an explicit shell override wins.
-	child.Env = append(supervisor.ChildEnv(supervisor.RoleAPI, cfg), os.Environ()...)
+	env, err := supervisor.ChildEnv(supervisor.RoleAPI, cfg)
+	if err != nil {
+		return err
+	}
+	child.Env = append(env, os.Environ()...)
 	return child.Run()
 }

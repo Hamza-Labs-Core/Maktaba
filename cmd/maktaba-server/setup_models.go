@@ -267,8 +267,12 @@ func (s *setupRun) downloadModels() (any, error) {
 	if p.Models != nil && p.Models.Source == "nas" && p.Models.Path != "" {
 		args = append(args, "--share", p.Models.Path)
 	}
+	roleEnv, err := supervisor.ChildEnv(supervisor.RolePipeline, s.cfg)
+	if err != nil {
+		return nil, failStep("internal", "", "%v", err)
+	}
 	cmd := exec.CommandContext(s.ctx, py, args...)
-	cmd.Env = append(os.Environ(), supervisor.ChildEnv(supervisor.RolePipeline, s.cfg)...)
+	cmd.Env = append(os.Environ(), roleEnv...)
 	cmd.Stderr = s.log
 	stop := stopGently(cmd) // a stop asks the download, which keeps what it has for the next run
 	stdout, err := cmd.StdoutPipe()

@@ -18,20 +18,20 @@ func TestPipelinePythonEnvOnWindows(t *testing.T) {
 	cfg := config.Defaults()
 
 	onWindows = func() bool { return true }
-	m := envMap(ChildEnv(RolePipeline, cfg))
+	m := envMap(childEnvOK(RolePipeline, cfg))
 	if m["PYTHONUTF8"] != "1" || m["PYTHONIOENCODING"] != "utf-8" || m["PYTHONUNBUFFERED"] != "1" {
 		t.Fatalf("pipeline env on Windows: %v", m)
 	}
-	if _, ok := envMap(ChildEnv(RoleAPI, cfg))["PYTHONUTF8"]; ok {
+	if _, ok := envMap(childEnvOK(RoleAPI, cfg))["PYTHONUTF8"]; ok {
 		t.Error("only the pipeline runs Python")
 	}
 	t.Setenv("PYTHONIOENCODING", "utf-8:replace")
-	if _, ok := envMap(ChildEnv(RolePipeline, cfg))["PYTHONIOENCODING"]; ok {
+	if _, ok := envMap(childEnvOK(RolePipeline, cfg))["PYTHONIOENCODING"]; ok {
 		t.Error("the operator's own PYTHONIOENCODING must be kept (it is inherited, not overridden)")
 	}
 
 	onWindows = func() bool { return false }
-	if _, ok := envMap(ChildEnv(RolePipeline, cfg))["PYTHONUTF8"]; ok {
+	if _, ok := envMap(childEnvOK(RolePipeline, cfg))["PYTHONUTF8"]; ok {
 		t.Error("PYTHONUTF8 is for Windows only")
 	}
 }

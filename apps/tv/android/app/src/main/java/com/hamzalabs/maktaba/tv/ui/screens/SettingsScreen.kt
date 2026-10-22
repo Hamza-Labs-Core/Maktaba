@@ -17,13 +17,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Button
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.hamzalabs.maktaba.tv.data.SettingsStore
 import com.hamzalabs.maktaba.tv.data.repository.MediaRepository
+import com.hamzalabs.maktaba.tv.ui.components.MaktabaButton
+import com.hamzalabs.maktaba.tv.ui.components.SectionTitle
 import com.hamzalabs.maktaba.tv.ui.components.TvTextField
+import com.hamzalabs.maktaba.tv.ui.theme.MaktabaPalette
 import kotlinx.coroutines.launch
 
 /**
@@ -54,7 +56,7 @@ fun SettingsScreen(
         modifier = Modifier.fillMaxSize().padding(64.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        Text("Settings", style = MaterialTheme.typography.headlineMedium)
+        SectionTitle("Settings")
 
         TvTextField(
             value = server,
@@ -63,10 +65,10 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxWidth(0.6f),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
         )
-        Button(onClick = { applyServer() }) { Text("Save Server") }
+        MaktabaButton(onClick = { applyServer() }) { Text("Save Server") }
 
         if (!repository.isLoggedIn) {
-            Text("Sign In", style = MaterialTheme.typography.titleLarge)
+            Text("Sign In", style = MaterialTheme.typography.titleLarge, color = MaktabaPalette.Text)
             TvTextField(
                 value = username,
                 onValueChange = { username = it },
@@ -80,8 +82,8 @@ fun SettingsScreen(
                 visualTransformation = PasswordVisualTransformation(),
                 modifier = Modifier.fillMaxWidth(0.6f),
             )
-            status?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
-            Button(onClick = {
+            status?.let { Text(it, color = MaktabaPalette.Gold) }
+            MaktabaButton(onClick = {
                 applyServer()
                 scope.launch {
                     repository.login(username, password)
@@ -90,18 +92,18 @@ fun SettingsScreen(
                 }
             }) { Text("Sign In") }
         } else {
-            Button(onClick = { repository.logout() }) { Text("Sign Out") }
+            MaktabaButton(onClick = { repository.logout() }) { Text("Sign Out") }
         }
 
-        Text("Language", style = MaterialTheme.typography.titleLarge)
+        Text("Language", style = MaterialTheme.typography.titleLarge, color = MaktabaPalette.Text)
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Button(onClick = { language = "en"; settings.language = "en" }) { Text("English") }
-            Button(onClick = { language = "ar"; settings.language = "ar" }) { Text("العربية") }
+            MaktabaButton(onClick = { language = "en"; settings.language = "en" }) { Text("English") }
+            MaktabaButton(onClick = { language = "ar"; settings.language = "ar" }) { Text("العربية") }
         }
         Text(
             "Current: $language",
             style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            color = MaktabaPalette.Muted,
         )
     }
 }

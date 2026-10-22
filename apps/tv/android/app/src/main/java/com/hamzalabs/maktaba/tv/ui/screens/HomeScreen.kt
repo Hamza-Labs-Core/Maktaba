@@ -3,7 +3,10 @@ package com.hamzalabs.maktaba.tv.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -22,7 +25,11 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.hamzalabs.maktaba.tv.data.models.MediaRail
 import com.hamzalabs.maktaba.tv.data.repository.MediaRepository
+import com.hamzalabs.maktaba.tv.ui.components.CenteredPanel
 import com.hamzalabs.maktaba.tv.ui.components.MediaCard
+import com.hamzalabs.maktaba.tv.ui.components.ReadingPanel
+import com.hamzalabs.maktaba.tv.ui.components.SectionTitle
+import com.hamzalabs.maktaba.tv.ui.theme.MaktabaPalette
 
 /**
  * Landing screen: a vertical column of horizontally-scrolling rails
@@ -45,18 +52,40 @@ fun HomeScreen(
         loading = false
     }
 
-    when {
-        loading -> CenterMessage("Loading…")
-        error != null -> CenterMessage(error!!)
-        else -> TvLazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 48.dp),
-            verticalArrangement = Arrangement.spacedBy(36.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 32.dp),
+    // The library scene is drawn behind this screen by NavGraph. The
+    // headline sits on a reading panel in the calm middle of the art,
+    // below the lamp; the rails sit in the faded lower half.
+    Column(Modifier.fillMaxSize()) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(170.dp)
+                .padding(bottom = 12.dp),
+            contentAlignment = Alignment.BottomCenter,
         ) {
-            items(rails) { rail ->
-                RailRow(rail = rail, onPlay = onPlay)
+            ReadingPanel(contentPadding = 20.dp) {
+                SectionTitle("Your library")
+                Text(
+                    text = "Continue where you left off",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaktabaPalette.Muted,
+                )
+            }
+        }
+
+        when {
+            loading -> CenterMessage("Loading…")
+            error != null -> CenterMessage(error!!)
+            else -> TvLazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 48.dp),
+                verticalArrangement = Arrangement.spacedBy(36.dp),
+                contentPadding = PaddingValues(vertical = 24.dp),
+            ) {
+                items(rails) { rail ->
+                    RailRow(rail = rail, onPlay = onPlay)
+                }
             }
         }
     }
@@ -66,8 +95,12 @@ fun HomeScreen(
 @Composable
 private fun RailRow(rail: MediaRail, onPlay: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(text = rail.title, style = MaterialTheme.typography.headlineMedium)
-        TvLazyRow(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        SectionTitle(rail.title)
+        // Vertical padding leaves room for the focused card's scale + ring.
+        TvLazyRow(
+            horizontalArrangement = Arrangement.spacedBy(24.dp),
+            contentPadding = PaddingValues(vertical = 12.dp, horizontal = 8.dp),
+        ) {
             items(rail.items) { item ->
                 MediaCard(
                     title = item.title.ifEmpty { rail.title },
@@ -80,10 +113,14 @@ private fun RailRow(rail: MediaRail, onPlay: (String) -> Unit) {
     }
 }
 
+/**
+ * Centred status text (loading / error / empty). Always on a reading
+ * panel, so it stays legible whether or not the art is behind it.
+ */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun CenterMessage(text: String) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(text = text, style = MaterialTheme.typography.titleLarge)
+    CenteredPanel {
+        Text(text = text, style = MaterialTheme.typography.titleLarge, color = MaktabaPalette.Text)
     }
 }

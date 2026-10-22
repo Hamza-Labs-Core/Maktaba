@@ -91,11 +91,11 @@ func TestProbeURLsAndStateURL(t *testing.T) {
 	if got := ProbeURL(RolePipeline, cfg); got != "http://127.0.0.1:9102/healthz" {
 		t.Errorf("pipeline probe = %q", got)
 	}
-	if !hasKV(ChildEnv(RoleAPI, cfg), "MAKTABA_SUPERVISOR_URL", "http://127.0.0.1:9103") {
+	if !hasKV(childEnvOK(RoleAPI, cfg), "MAKTABA_SUPERVISOR_URL", "http://127.0.0.1:9103") {
 		t.Error("api role missing MAKTABA_SUPERVISOR_URL")
 	}
 	cfg.Supervisor.AdminAddr = "off"
-	if hasKey(ChildEnv(RoleAPI, cfg), "MAKTABA_SUPERVISOR_URL") {
+	if hasKey(childEnvOK(RoleAPI, cfg), "MAKTABA_SUPERVISOR_URL") {
 		t.Error("MAKTABA_SUPERVISOR_URL set with admin_addr = off")
 	}
 }

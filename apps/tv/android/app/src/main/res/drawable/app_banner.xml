@@ -7,13 +7,13 @@
     android:viewportWidth="320"
     android:viewportHeight="180">
     <path
-        android:fillColor="#0B0B0F"
+        android:fillColor="#0B111C"
         android:pathData="M0,0 H320 V180 H0 Z" />
     <!-- A simple stylized open book in the brand gold. -->
     <path
-        android:fillColor="#E8B04B"
+        android:fillColor="#E3B252"
         android:pathData="M96,72 L156,84 L156,128 L96,116 Z" />
     <path
-        android:fillColor="#E8B04B"
+        android:fillColor="#E3B252"
         android:pathData="M224,72 L164,84 L164,128 L224,116 Z" />
 </vector>
