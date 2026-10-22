@@ -813,6 +813,7 @@ func (o *Orchestrator) waitNewHome(ctx context.Context, id string, why error) (N
 		if c := o.cancelOf(id); c != nil && c.force {
 			o.end(ctx, id, StepPromote, errors.New("called off by an admin although the machine taking over did not "+
 				"answer: should it be the home after all, this home stops writing once it hears of it"), true, "cancelled")
+			go o.afterForcedCancel(context.Background(), id)
 			return NewHome{}, false
 		}
 		select {
@@ -820,6 +821,47 @@ func (o *Orchestrator) waitNewHome(ctx context.Context, id string, why error) (N
 			return NewHome{}, false
 		case <-o.wakeOf(id):
 		case <-time.After(o.retryEvery()):
+		}
+	}
+}
+
+// forcedFollowUp is how long afterForcedCancel goes on (this home's own watch for a
+// newer term goes on every minute after it).
+const forcedFollowUp = 24 * time.Hour
+
+// afterForcedCancel follows a switch called off without the word of the machine that was
+// to take over: that machine is asked again, every retryEvery, until it answers (it calls
+// the switch off, and drops the kit it was sent, if it has not promoted); meanwhile this
+// home looks for a newer term each time (the supervisor's check-term: should the machine
+// be the home after all, this home steps down at once, keeping aside what it took since).
+func (o *Orchestrator) afterForcedCancel(ctx context.Context, id string) {
+	p := o.Progress(id)
+	if p == nil {
+		return
+	}
+	end := time.Now().Add(forcedFollowUp)
+	for time.Now().Before(end) {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(o.retryEvery()):
+		}
+		if raw, err := o.command(ctx, p.ToNode, "switch.status", map[string]any{"id": id, "term": p.Term, "abort": true},
+			30*time.Second); err == nil {
+			var st struct {
+				State string `json:"state"`
+			}
+			if json.Unmarshal(raw, &st) == nil && st.State == "called_off" {
+				o.log().Info("switchover: the machine that was to take over called the switch off too", "id", id,
+					"event", "switchover_called_off_there")
+				return
+			}
+		}
+		var out struct {
+			SteppedDown bool `json:"stepped_down"`
+		}
+		if err := o.Supervisor.Call(ctx, "check-term", map[string]any{"id": id}, &out); err == nil && out.SteppedDown {
+			return
 		}
 	}
 }

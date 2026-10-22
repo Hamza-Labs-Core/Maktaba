@@ -147,6 +147,10 @@ type Promotion struct {
 	// Record is the switch's row, written with the term (an emergency's: a planned switch's
 	// row is the old home's, copied here); a switch the copy shows under way is cancelled.
 	Record *Record
+	// SwitchID is a planned switch's id: its row, as the copy has it from the old home when
+	// the subscription stops, must not say the old home called it off (an admin may have,
+	// the machine's word not reaching it).
+	SwitchID string
 }
 
 // Record is an emergency's switch row: its id, who asked, the old home's name.
@@ -340,6 +344,16 @@ func Promote(ctx context.Context, super *sql.DB, p Promotion) (out Promoted, err
 			if _, err := tx.ExecContext(ctx, q); err != nil {
 				return out, fmt.Errorf("switchover: end the subscription: %w", err)
 			}
+		}
+	}
+	if p.SwitchID != "" {
+		var state string
+		err := tx.QueryRowContext(ctx, `SELECT state FROM cluster_switchovers WHERE id = $1`, p.SwitchID).Scan(&state)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return out, err
+		}
+		if state == "cancelled" || state == "failed" {
+			return out, fmt.Errorf("switchover: the old home called this switch off (%s): it is not promoted", state)
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `ALTER DATABASE `+database+` RESET default_transaction_read_only`); err != nil {

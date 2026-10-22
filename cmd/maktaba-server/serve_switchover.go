@@ -121,6 +121,7 @@ func newSwitching(cfg config.Config) *switching {
 func (s *switching) set(pg *pgbundle.Bundle, cp *nodeCopy, stopCopy func(), token string,
 	want func(role supervisor.Role, on bool) error) {
 	s.pg, s.cp, s.stopCopy, s.token, s.want = pg, cp, stopCopy, token, want
+	s.sweepKits()
 	close(s.ready)
 }
 
@@ -256,6 +257,10 @@ func (s *switching) adminHandler(base http.Handler) http.Handler {
 			out, err = s.emergency(ctx, req)
 		case "term-claim":
 			out, err = s.termClaim(ctx, req)
+		case "check-term":
+			// a look for a newer home now, not at the watch's next minute (a switch called
+			// off without the word of the machine that was to take over)
+			out = map[string]any{"stepped_down": s.checkTerm(ctx, &http.Client{Timeout: 5 * time.Second})}
 		case "kept-plan":
 			out, err = s.keptPlan(ctx, req)
 		case "kept-apply":
@@ -1148,6 +1153,20 @@ func openSealed(path, id string, n config.NodeConfig) (*switchover.Kit, error) {
 func (s *switching) calledOff(id string) string   { return filepath.Join(s.dir(id), "called-off") }
 func (s *switching) newHomeFile(id string) string { return filepath.Join(s.dir(id), "new-home.json") }
 
+// sweepKits removes, at a start, the kits of switches over here: called off (this machine
+// was to take over, and told the old home it would not), or promoted and answered. A kit
+// whose switch this machine never heard more of is dropped when the old home asks again
+// (it does, after an admin called it off: switch.status).
+func (s *switching) sweepKits() {
+	kits, _ := filepath.Glob(filepath.Join(s.cfg.StateDir(), "switchover", "*", "kit.chunks"))
+	for _, k := range kits {
+		id := filepath.Base(filepath.Dir(k))
+		if fileExists(s.calledOff(id)) || fileExists(s.newHomeFile(id)) {
+			_ = wipeFile(k)
+		}
+	}
+}
+
 // promote makes this machine the home: its copy promoted with the kit, the home's key
 // files in place, its Postgres the bundled home's (on the LAN, TLS from the cluster's
 // CA), node.json moved aside; answered with its addresses, then it starts again as the
@@ -1204,7 +1223,7 @@ func (s *switching) promote(ctx context.Context, id string, term int64) (any, er
 		s.stopCopy()
 	}
 	done, err := switchover.Promote(ctx, db, switchover.Promotion{Self: n.NodeID, Name: n.Name, Term: term,
-		Reason: "planned", Kit: kit, OldHome: kit.OldHome})
+		Reason: "planned", Kit: kit, OldHome: kit.OldHome, SwitchID: id})
 	if err != nil {
 		return fail(err)
 	}
@@ -1214,6 +1233,11 @@ func (s *switching) promote(ctx context.Context, id string, term int64) (any, er
 // finishPromotion runs again the last steps of a promotion whose database went through
 // (becomeHome).
 func (s *switching) finishPromotion(ctx context.Context, id string, term int64) (newHome, error) {
+	if fileExists(s.calledOff(id)) {
+		// told the old home it called the switch off (it may take changes again): this
+		// machine never becomes the home of it, its database promoted or not
+		return newHome{}, errors.New("this switch was called off here: this machine does not finish its promotion")
+	}
 	if err := s.claim(id); err != nil {
 		return newHome{}, err
 	}
@@ -1268,24 +1292,42 @@ func (s *switching) status(ctx context.Context, id string, term int64, abort boo
 	if h, ok := s.promoted(id); ok {
 		return map[string]any{"state": "home", "home": h}, nil
 	}
-	if db, err := s.copyDB(); err == nil {
-		ok, _ := switchover.PromotedAt(ctx, db, supervisor.NodeConfig().NodeID, term)
-		_ = db.Close()
-		s.mu.Lock()
-		running := s.promoting == id
-		s.mu.Unlock()
-		switch {
-		case ok && running:
-			return map[string]any{"state": "promoting"}, nil
-		case ok:
-			// the database is the home's, but the promotion's last steps did not finish
-			// (its answer was not kept): they run again
-			h, err := s.finishPromotion(ctx, id, term)
-			if err != nil {
-				return nil, err
-			}
-			return map[string]any{"state": "home", "home": h}, nil
+	// whether this machine's database was promoted (its copy's, or its own as a home now):
+	// one that does not answer (starting, recovering) says nothing, and the switch is never
+	// called off on it (the old home asks again); a machine with no database could not
+	// have promoted
+	var ok bool
+	if s.cp != nil || s.pg != nil {
+		var db *sql.DB
+		var err error
+		if s.cp != nil {
+			db, err = s.copyDB()
+		} else {
+			db, err = superDB(*s.pg)
 		}
+		if err != nil {
+			return nil, fmt.Errorf("whether this machine promoted is not known: %w", err)
+		}
+		ok, err = switchover.PromotedAt(ctx, db, supervisor.NodeConfig().NodeID, term)
+		_ = db.Close()
+		if err != nil {
+			return nil, fmt.Errorf("whether this machine promoted is not known: %w", err)
+		}
+	}
+	s.mu.Lock()
+	running := s.promoting == id
+	s.mu.Unlock()
+	switch {
+	case ok && running:
+		return map[string]any{"state": "promoting"}, nil
+	case ok:
+		// the database is the home's, but the promotion's last steps did not finish
+		// (its answer was not kept): they run again
+		h, err := s.finishPromotion(ctx, id, term)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"state": "home", "home": h}, nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

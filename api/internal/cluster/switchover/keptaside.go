@@ -106,11 +106,12 @@ func (o *Orchestrator) postReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	// the old home: registered by the emergency that began term (with the term, in one
-	// transaction), not by an earlier or a later one
+	// the old home: registered by the switch that began term (with the term, in one
+	// transaction: an emergency, or a planned switch the old home called off without the
+	// new home's word), not by an earlier or a later one
 	var pubB64, name string
 	err := o.DB.QueryRowContext(ctx, `SELECT n.node_pubkey, n.name FROM cluster_nodes n
-	    JOIN cluster_terms t ON t.term = $2 AND t.reason = 'emergency'
+	    JOIN cluster_terms t ON t.term = $2 AND t.reason IN ('emergency', 'planned')
 	    WHERE n.id = $1 AND n.approved_by = 'switchover' AND n.state = 'approved'
 	      AND n.approved_at >= t.started_at
 	      AND n.approved_at < COALESCE((SELECT min(started_at) FROM cluster_terms WHERE term > t.term), 'infinity')`,

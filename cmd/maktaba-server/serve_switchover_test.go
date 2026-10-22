@@ -11,10 +11,13 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/nodecopy"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 )
 
 func testCAPEM(t *testing.T) string {
@@ -200,5 +203,86 @@ func TestTheOldHomeKeepsNoneOfTheHomesKeys(t *testing.T) {
 	}
 	if err := wipeFile(filepath.Join(dir, "none")); err != nil {
 		t.Fatalf("no file: %v", err)
+	}
+}
+
+// A machine whose database does not answer (starting, recovering) does not know whether
+// it promoted: it never calls the switch off then (the old home would take changes again
+// beside a machine that may be the home), and a switch it called off is never finished.
+func TestAnUnreadableCopyNeverCallsASwitchOff(t *testing.T) {
+	s, dir := homeDirs(t)
+	ctx := t.Context()
+	keys := filepath.Join(dir, "copy-keys")
+	if err := os.MkdirAll(keys, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(keys, "postgres-postgres.password"), []byte("pw"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s.cp = &nodeCopy{copy: nodecopy.Copy{DB: pgbundle.Bundle{Data: filepath.Join(dir, "copy"), Keys: keys, Port: 1}}}
+	id := "6e0b1c2d-3e4f-4a5b-8c6d-7e8f9a0b1c2d"
+	if out, err := s.status(ctx, id, 2, true); err == nil {
+		t.Fatalf("an unreadable copy answered %v", out)
+	}
+	if fileExists(s.calledOff(id)) {
+		t.Fatal("called off on a copy that does not answer")
+	}
+	if err := writePrivate(s.calledOff(id), nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.finishPromotion(ctx, id, 2); err == nil || !strings.Contains(err.Error(), "called off") {
+		t.Fatalf("a promotion called off here was finished: %v", err)
+	}
+}
+
+// A start drops the kits of switches over here (called off, or promoted and answered),
+// and keeps one whose switch may still need it.
+func TestAStartSweepsTheKitsOfSwitchesOver(t *testing.T) {
+	s, _ := homeDirs(t)
+	put := func(id string, markers ...string) string {
+		t.Helper()
+		kit := filepath.Join(s.dir(id), "kit.chunks")
+		for _, p := range append([]string{kit}, markers...) {
+			if err := writePrivate(p, []byte("x")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return kit
+	}
+	off := put("a1", s.calledOff("a1"))
+	done := put("a2", s.newHomeFile("a2"))
+	open := put("a3")
+	s.sweepKits()
+	if fileExists(off) || fileExists(done) || !fileExists(open) {
+		t.Fatalf("after the sweep: called off %v, done %v, open %v", fileExists(off), fileExists(done), fileExists(open))
+	}
+}
+
+// The term watch looks for a newer home under the standbys' identity and each planned
+// switch's whose promotion was asked (one undone before has no notice anywhere).
+func TestTheTermWatchLooksUnderEveryIdentity(t *testing.T) {
+	s, _ := homeDirs(t)
+	ident := func(path, id string) {
+		t.Helper()
+		b, _ := json.Marshal(oldHome{NodeID: id, PrivateKey: "AAAA", PublicKey: "AAAA"})
+		if err := writePrivate(path, b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ident(s.standbyIdentityPath(), "standby-id")
+	ident(filepath.Join(s.dir("asked"), "old-home.json"), "planned-asked")
+	if err := writePrivate(filepath.Join(s.dir("asked"), "progress.json"), []byte(`{"promote_sent": true}`)); err != nil {
+		t.Fatal(err)
+	}
+	ident(filepath.Join(s.dir("undone"), "old-home.json"), "planned-undone")
+	if err := writePrivate(filepath.Join(s.dir("undone"), "progress.json"), []byte(`{"state": "failed"}`)); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, me := range s.homeIdentities() {
+		got = append(got, me.NodeID)
+	}
+	if strings.Join(got, ",") != "standby-id,planned-asked" {
+		t.Fatalf("identities: %v", got)
 	}
 }

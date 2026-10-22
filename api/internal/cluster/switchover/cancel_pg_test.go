@@ -185,3 +185,44 @@ func TestAFailedThawIsAskedAgain(t *testing.T) {
 		t.Fatalf("thaws asked: %d", got)
 	}
 }
+
+// After a forced call-off the machine that was to take over is asked again until it
+// answers (it calls the switch off there, dropping the kit), and meanwhile this home
+// looks for a newer term each time (should that machine be the home after all).
+func TestAForcedCallOffKeepsAskingAndWatchesTheTerm(t *testing.T) {
+	o, h, s, b, _ := setup(t)
+	ctx := context.Background()
+	o.RetryEvery = 50 * time.Millisecond
+	var answers atomic.Bool
+	h.answers["switch.promote"] = func(json.RawMessage) (bool, any) { return false, "the channel closed" }
+	h.answers["switch.status"] = func(json.RawMessage) (bool, any) {
+		if answers.Load() {
+			return true, map[string]any{"state": "called_off"}
+		}
+		return false, "the machine's agent is not connected"
+	}
+	id, err := o.Start(ctx, b, "system")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitState(t, o, id, "waiting_new_home")
+	if _, err := o.Cancel(ctx, id, true, "b"); err != nil {
+		t.Fatal(err)
+	}
+	waitState(t, o, id, "cancelled")
+	checks := func() int { return strings.Count(strings.Join(s.called(), " "), "check-term") }
+	end := time.Now().Add(10 * time.Second)
+	for checks() < 2 {
+		if time.Now().After(end) {
+			t.Fatalf("no look for a newer term after the forced call-off: %v", s.called())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	answers.Store(true) // the machine is back: it calls the switch off too
+	time.Sleep(300 * time.Millisecond)
+	n := checks()
+	time.Sleep(300 * time.Millisecond)
+	if checks() != n {
+		t.Fatal("still asking after the machine answered")
+	}
+}

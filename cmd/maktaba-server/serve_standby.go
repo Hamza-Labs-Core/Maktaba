@@ -30,6 +30,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -109,11 +110,12 @@ func (s *switching) standbyKit(ctx context.Context, req homeRequest) (any, error
 	return map[string]any{"hash": hash, "path": path, "chunks": n, "term": k.Term, "made_at": k.MadeAt}, nil
 }
 
-// watchTerm is a home's watch for an emergency that took the home from it while it was
+// watchTerm is a home's watch for another machine that took the home from it while it was
 // cut off or off: every minute it asks each standby home it knows, then its other
-// machines (their copies have the notices too), for a notice sealed to it (its identity in
-// the standbys' kits); one of a newer term means another machine is the home now
-// (stepDown).
+// machines (their copies have the notices too), for a notice sealed to it under any
+// identity it has (the one in the standbys' kits, and the one each planned switch it ran
+// gave it: a switch it called off may have gone through after all); one of a newer term
+// means another machine is the home now (stepDown).
 func (s *switching) watchTerm(ctx context.Context) {
 	select {
 	case <-s.ready:
@@ -136,18 +138,46 @@ func (s *switching) watchTerm(ctx context.Context) {
 	}
 }
 
-func (s *switching) checkTerm(ctx context.Context, client *http.Client) {
-	b, err := os.ReadFile(s.standbyIdentityPath())
-	if err != nil {
-		return // no standby ever had this home's kit
+// homeIdentities are the identities a notice of a newer home may be sealed to this home
+// under: the standbys' kits' (standby-identity.json), and that of each planned switch it
+// ran whose promotion was asked (<id>/old-home.json, its record saying so; a switch
+// through, the identity is wiped with the home's keys; one undone before, no machine
+// sealed anything to).
+func (s *switching) homeIdentities() []oldHome {
+	var out []oldHome
+	seen := map[string]bool{}
+	add := func(path string) {
+		me, err := readIdentity(path)
+		if err != nil || seen[me.NodeID] {
+			return
+		}
+		seen[me.NodeID] = true
+		out = append(out, me)
 	}
-	var me oldHome
-	if json.Unmarshal(b, &me) != nil || me.NodeID == "" {
-		return
+	add(s.standbyIdentityPath())
+	planned, _ := filepath.Glob(filepath.Join(s.cfg.StateDir(), "switchover", "*", "old-home.json"))
+	sort.Strings(planned)
+	for _, p := range planned {
+		var rec struct {
+			PromoteSent bool `json:"promote_sent"`
+		}
+		if b, err := os.ReadFile(filepath.Join(filepath.Dir(p), "progress.json")); err == nil &&
+			json.Unmarshal(b, &rec) == nil && rec.PromoteSent {
+			add(p)
+		}
+	}
+	return out
+}
+
+// checkTerm is one look of watchTerm: whether this home stepped down.
+func (s *switching) checkTerm(ctx context.Context, client *http.Client) bool {
+	ids := s.homeIdentities()
+	if len(ids) == 0 {
+		return false // no standby ever had this home's kit, nor did it run a switch
 	}
 	var term int64
 	var urls []string
-	err = s.withSuper(func(db *sql.DB) error {
+	err := s.withSuper(func(db *sql.DB) error {
 		if err := db.QueryRowContext(ctx, `SELECT COALESCE(max(term), 1) FROM cluster_terms`).Scan(&term); err != nil {
 			return err
 		}
@@ -168,41 +198,45 @@ func (s *switching) checkTerm(ctx context.Context, client *http.Client) {
 		return rows.Err()
 	})
 	if err != nil || len(urls) == 0 {
-		return
+		return false
 	}
 	clusterPriv, err := os.ReadFile(clusterKeyPath())
 	if err != nil || len(clusterPriv) != 32 {
-		return
+		return false
 	}
 	clusterPub, err := curve25519.X25519(clusterPriv, curve25519.Basepoint)
 	if err != nil {
-		return
+		return false
 	}
-	priv, err := base64.StdEncoding.DecodeString(me.PrivateKey)
-	if err != nil {
-		return
-	}
-	for _, base := range urls {
-		var m struct {
-			ID     string `json:"id"`
-			Notice string `json:"notice"`
-		}
-		if getJSON(ctx, client, strings.TrimRight(base, "/")+"/api/cluster/moved/"+url.PathEscape(me.NodeID), &m) != nil {
-			continue
-		}
-		plain, err := switchover.OpenNotice(priv, clusterPub, m.ID, m.Notice)
+	for _, me := range ids {
+		priv, err := base64.StdEncoding.DecodeString(me.PrivateKey)
 		if err != nil {
 			continue
 		}
-		var notice movedNotice
-		if json.Unmarshal(plain, &notice) != nil || notice.Term <= term || notice.Home.APIURL == "" {
-			continue
+		for _, base := range urls {
+			var m struct {
+				ID     string `json:"id"`
+				Notice string `json:"notice"`
+			}
+			if getJSON(ctx, client, strings.TrimRight(base, "/")+"/api/cluster/moved/"+url.PathEscape(me.NodeID), &m) != nil {
+				continue
+			}
+			plain, err := switchover.OpenNotice(priv, clusterPub, m.ID, m.Notice)
+			if err != nil {
+				continue
+			}
+			var notice movedNotice
+			if json.Unmarshal(plain, &notice) != nil || notice.Term <= term || notice.Home.APIURL == "" {
+				continue
+			}
+			if err := s.stepDown(ctx, me, m.ID, notice); err != nil {
+				fmt.Fprintf(os.Stderr, "[switchover] giving the home up to %s: %v\n", notice.Home.APIURL, err)
+				return false
+			}
+			return true
 		}
-		if err := s.stepDown(ctx, me, m.ID, notice); err != nil {
-			fmt.Fprintf(os.Stderr, "[switchover] giving the home up to %s: %v\n", notice.Home.APIURL, err)
-		}
-		return
 	}
+	return false
 }
 
 // keptReport is what an old home wrote after an emergency's cut, as it reports it to the

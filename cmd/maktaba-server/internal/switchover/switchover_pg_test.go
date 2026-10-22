@@ -311,7 +311,19 @@ func TestAPlannedSwitchover(t *testing.T) {
 			t.Fatalf("after a failed promotion %s = %d, want %d", q, n, want)
 		}
 	}
-	done, err := Promote(ctx, bdb, Promotion{Self: b.id, Name: "b", Term: 2, Reason: "planned", Kit: got, OldHome: &a})
+	// the old home called the switch off (an admin, the machine's word not reaching it):
+	// the copy has it from the old home, and the promotion refuses (nothing promoted)
+	c.exec(bdb, `UPDATE cluster_switchovers SET state = 'cancelled' WHERE id = $1`, id)
+	if _, err := Promote(ctx, bdb, Promotion{Self: b.id, Name: "b", Term: 2, Reason: "planned", Kit: got, OldHome: &a,
+		SwitchID: id}); err == nil || !strings.Contains(err.Error(), "called this switch off") {
+		t.Fatalf("a switch the old home called off was promoted: %v", err)
+	}
+	if n := count(ctx, bdb, `SELECT count(*) FROM pg_subscription WHERE subname = 'maktaba_copy' AND subslotname <> ''`); n != 1 {
+		t.Fatal("a promotion refused left the copy without its subscription")
+	}
+	c.exec(bdb, `UPDATE cluster_switchovers SET state = 'frozen' WHERE id = $1`, id)
+	done, err := Promote(ctx, bdb, Promotion{Self: b.id, Name: "b", Term: 2, Reason: "planned", Kit: got, OldHome: &a,
+		SwitchID: id})
 	if err != nil {
 		t.Fatal(err)
 	}
