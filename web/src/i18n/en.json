@@ -822,6 +822,7 @@
   "nav.guide": "TV Guide",
   "nav.admin.channels": "Channels",
   "guide.title": "TV Guide",
+  "guide.watchChannel": "Watch channel {number}, {name}",
   "guide.toolbar": "Guide controls",
   "guide.category": "Category",
   "guide.allCategories": "All categories",

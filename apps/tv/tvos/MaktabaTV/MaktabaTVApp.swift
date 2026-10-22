@@ -10,6 +10,8 @@ struct MaktabaTVApp: App {
     private let api: APIClient
 
     init() {
+        Theme.registerFonts()
+
         let settings = AppSettings()
         let auth = AuthManager()
 
@@ -30,6 +32,10 @@ struct MaktabaTVApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                // Theme defaults: Plex body text, gold controls. The
+                // appearance follows the system (dark or light).
+                .font(Theme.body(29))
+                .tint(Theme.gold)
                 .environmentObject(auth)
                 .environmentObject(settings)
                 .environment(\.api, api)

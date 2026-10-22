@@ -3,7 +3,8 @@
 # exit 0 / 75 / crash, the boot-loop fallback, pointer atomicity, a power-loss
 # simulation that kills a process mid-switch), the Windows service for real on
 # windows-latest, and the .deb built with nfpm installed on a clean runner
-# (package layout and postinstall's move into bin/releases/<v>/).
+# (package layout and postinstall's move into bin/releases/<v>/), plus a
+# pre-release's .deb and .rpm versions and their order before the release.
 
 name: Launcher
 
@@ -195,3 +196,36 @@ jobs:
           sudo dpkg -i --force-depends --force-downgrade out/maktaba-server_1.2.2-1_amd64.deb
           want current 1.2.4
           /usr/bin/maktaba-launcher --version | grep -q 'v1.2.2'
+
+      # A pre-release tag's packages (release.yml runs this nfpm.yaml with VERSION
+      # 0.3.0-rc.1) carry nfpm's "~" form, 0.3.0~rc.1, which dpkg and rpm order before
+      # the release, so apt and dnf upgrade an rc install to it. release.yml writes "."
+      # for the "~" only in the files' names (GitHub would): 0.3.0.rc.1 as the version
+      # would order after 0.3.0.
+      - name: A pre-release's .deb and .rpm order before the release
+        run: |
+          set -euo pipefail
+          command -v rpm >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq rpm; }
+          rm -rf pkgroot out-pre && mkdir -p pkgroot out-pre
+          for b in maktaba-server maktaba-launcher maktaba-api maktaba-streaming; do
+            printf '#!/bin/sh\n' > "pkgroot/$b"
+          done
+          chmod 0755 pkgroot/*
+          debs=() rpms=()
+          for v in 1.2.4 1.2.5-beta.1 1.2.5-rc.1 1.2.5-rc.2 1.2.5-rc.10 1.2.5; do
+            rm -f out-pre/*
+            ARCH=amd64 VERSION="$v" nfpm package -f deploy/packaging/nfpm.yaml -p deb -t out-pre/ >/dev/null
+            ARCH=amd64 VERSION="$v" nfpm package -f deploy/packaging/nfpm.yaml -p rpm -t out-pre/ >/dev/null
+            debs+=("$(dpkg-deb -f out-pre/*.deb Version)")
+            rpms+=("$(rpm -qp --queryformat '%{VERSION}-%{RELEASE}' out-pre/*.rpm 2>/dev/null)")
+          done
+          echo ".deb: ${debs[*]}"
+          echo ".rpm: ${rpms[*]}"
+          [ "${debs[2]}" = '1.2.5~rc.1-1' ] || { echo "::error::the rc's .deb is ${debs[2]}, want 1.2.5~rc.1-1"; exit 1; }
+          [ "${rpms[2]}" = '1.2.5~rc.1-1' ] || { echo "::error::the rc's .rpm is ${rpms[2]}, want 1.2.5~rc.1-1"; exit 1; }
+          for ((i = 0; i + 1 < ${#debs[@]}; i++)); do
+            dpkg --compare-versions "${debs[i]}" lt "${debs[i + 1]}" ||
+              { echo "::error::dpkg orders ${debs[i]} after ${debs[i + 1]}"; exit 1; }
+            cmp="$(rpm --eval "%{lua: print(rpm.vercmp('${rpms[i]}', '${rpms[i + 1]}'))}")"
+            [ "$cmp" = -1 ] || { echo "::error::rpm orders ${rpms[i]} after ${rpms[i + 1]} ($cmp)"; exit 1; }
+          done

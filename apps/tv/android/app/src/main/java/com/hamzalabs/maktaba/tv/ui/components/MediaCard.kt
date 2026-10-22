@@ -21,18 +21,20 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Card
+import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
+import com.hamzalabs.maktaba.tv.ui.theme.MaktabaPalette
 
 /**
  * A focusable poster tile — the building block of every grid and rail.
  *
  * D-pad focus is driven by the TV focus engine. `tv-material`'s [Card]
- * applies the focused scale/border/glow itself (the standard "lift
- * toward the viewer" affordance); we only track focus to brighten the
- * title label underneath.
+ * applies the focused scale and border itself (the standard "lift
+ * toward the viewer" affordance); we give it the theme's 3dp gold ring
+ * and track focus to brighten the title label underneath.
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -52,6 +54,10 @@ fun MediaCard(
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
                 .onFocusChanged { focused = it.isFocused },
+            shape = CardDefaults.shape(CardCorner),
+            colors = maktabaCardColors(),
+            scale = CardDefaults.scale(focusedScale = 1.08f),
+            border = goldFocusBorder(),
         ) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomStart) {
                 AsyncImage(
@@ -65,13 +71,13 @@ fun MediaCard(
                         Modifier
                             .fillMaxWidth()
                             .height(6.dp)
-                            .background(MaterialTheme.colorScheme.surface),
+                            .background(MaktabaPalette.Raised),
                     ) {
                         Box(
                             Modifier
                                 .fillMaxHeight()
                                 .fillMaxWidth(progress.coerceIn(0f, 1f))
-                                .background(MaterialTheme.colorScheme.primary),
+                                .background(MaktabaPalette.Gold),
                         )
                     }
                 }
@@ -80,11 +86,7 @@ fun MediaCard(
         Text(
             text = title,
             style = MaterialTheme.typography.labelLarge,
-            color = if (focused) {
-                MaterialTheme.colorScheme.onSurface
-            } else {
-                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-            },
+            color = if (focused) MaktabaPalette.Text else MaktabaPalette.Muted,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 8.dp),
