@@ -348,7 +348,7 @@ func buildGRPCServer(logger *slog.Logger, backend probe.Backend, store session.S
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	hw, err := ffmpeg.Default().Detect(ctx)
+	hw, err := detectHWAccel(ctx, cfg)
 	if err != nil {
 		logger.Info("hwaccel probe failed; using software",
 			"err", err.Error(), "event", "hwaccel_software_fallback")
@@ -365,9 +365,24 @@ func buildGRPCServer(logger *slog.Logger, backend probe.Backend, store session.S
 	if lerr := layout.EnsureTiers(); lerr != nil {
 		logger.Warn("cache layout init failed", "err", lerr.Error(), "event", "cache_init_warn")
 	}
-	srv.Transcode = ffmpeg.DefaultOrchestrator(ffmpeg.DefaultBinary())
+	srv.Transcode = ffmpeg.DefaultOrchestrator(vodBinary(cfg))
 	srv.ResolveDir = layout.HLSDir
 	return srv
+}
+
+// vodBinary is the ffmpeg the transcodes and their hwaccel probe run: the
+// channels' own (MAKTABA_FFMPEG_BIN, the one the supervisor checked), not
+// whichever the PATH finds first.
+func vodBinary(cfg config.Config) ffmpeg.Binary {
+	return ffmpeg.Binary{FFmpeg: cfg.FFmpeg.Binary, FFprobe: cfg.FFmpeg.ProbeBinary}
+}
+
+// detectHWAccel picks the transcodes' encoder (Story 8.7), narrowed by
+// MAKTABA_HWACCEL_PREFER.
+func detectHWAccel(ctx context.Context, cfg config.Config) (ffmpeg.HWAccel, error) {
+	d := ffmpeg.Default(vodBinary(cfg))
+	d.Prefer = cfg.HWAccel.Prefer
+	return d.Detect(ctx)
 }
 
 // buildChecks assembles the readiness check set for streaming. The
@@ -441,7 +456,7 @@ func buildPublicHandler(bg *background, logger *slog.Logger, backend probe.Backe
 
 	// Hwaccel detection — non-fatal on failure; we fall through to
 	// software encoding (Story 8.7 AC-1 fallback path).
-	hw, err := ffmpeg.Default().Detect(ctx)
+	hw, err := detectHWAccel(ctx, cfg)
 	if err != nil {
 		logger.Info("hwaccel probe failed; using software", "err", err.Error(), "event", "hwaccel_software_fallback")
 	} else {

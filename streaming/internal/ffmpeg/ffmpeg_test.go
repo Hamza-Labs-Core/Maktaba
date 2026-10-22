@@ -172,54 +172,43 @@ func TestDefaultLadder_TooLowKeepsSmallest(t *testing.T) {
 	}
 }
 
-func TestDetector_DarwinPrefersVideoToolbox(t *testing.T) {
-	d := &Detector{
-		Bin:  DefaultBinary(),
-		GOOS: "darwin",
-		Encoders: func(_ context.Context, _ string) ([]string, error) {
-			return []string{"libx264", "h264_videotoolbox"}, nil
-		},
-		NVIDIASmiOK: func(_ context.Context) bool { return false },
-		QuickSyncOK: func(_ context.Context) bool { return false },
-	}
-	got, err := d.Detect(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != HWAccelVideoToolbox {
-		t.Fatalf("got %s want videotoolbox", got)
+// detector answers -encoders with encs and a test encode with works.
+func detector(goos string, encs []string, works map[string]bool) *Detector {
+	return &Detector{
+		Bin:      DefaultBinary(),
+		GOOS:     goos,
+		Encoders: func(context.Context, string) ([]string, error) { return encs, nil },
+		Works:    func(_ context.Context, _, enc string) bool { return works[enc] },
 	}
 }
 
-func TestDetector_LinuxNVIDIAPrefersNVENC(t *testing.T) {
-	d := &Detector{
-		Bin:  DefaultBinary(),
-		GOOS: "linux",
-		Encoders: func(_ context.Context, _ string) ([]string, error) {
-			return []string{"libx264", "h264_nvenc", "h264_qsv"}, nil
-		},
-		NVIDIASmiOK: func(_ context.Context) bool { return true },
-		QuickSyncOK: func(_ context.Context) bool { return true },
-	}
-	got, _ := d.Detect(context.Background())
-	if got != HWAccelNVENC {
-		t.Fatalf("got %s want nvenc", got)
-	}
-}
-
-func TestDetector_LinuxNoGPUFallsBackToSoftware(t *testing.T) {
-	d := &Detector{
-		Bin:  DefaultBinary(),
-		GOOS: "linux",
-		Encoders: func(_ context.Context, _ string) ([]string, error) {
-			return []string{"libx264"}, nil
-		},
-		NVIDIASmiOK: func(_ context.Context) bool { return false },
-		QuickSyncOK: func(_ context.Context) bool { return false },
-	}
-	got, _ := d.Detect(context.Background())
-	if got != HWAccelSoftware {
-		t.Fatalf("got %s want software", got)
+func TestDetector(t *testing.T) {
+	all := []string{"libx264", "h264_nvenc", "h264_qsv", "h264_videotoolbox"}
+	for _, c := range []struct {
+		name, goos, prefer string
+		encs               []string
+		works              map[string]bool
+		want               HWAccel
+	}{
+		{"a Mac", "darwin", "", all, map[string]bool{"h264_videotoolbox": true}, HWAccelVideoToolbox},
+		{"Linux with an NVIDIA GPU", "linux", "", all, map[string]bool{"h264_nvenc": true, "h264_qsv": true}, HWAccelNVENC},
+		// Windows' builds list h264_nvenc on any PC: the test encode decides
+		{"Windows with an NVIDIA GPU", "windows", "", all, map[string]bool{"h264_nvenc": true}, HWAccelNVENC},
+		{"Windows without one", "windows", "", all, map[string]bool{}, HWAccelSoftware},
+		{"Linux with an Intel GPU", "linux", "", all, map[string]bool{"h264_qsv": true}, HWAccelQSV},
+		{"listed but not built in", "linux", "", []string{"libx264"}, map[string]bool{"h264_nvenc": true}, HWAccelSoftware},
+		{"no GPU", "linux", "", []string{"libx264"}, nil, HWAccelSoftware},
+		{"prefer software", "linux", "software", all, map[string]bool{"h264_nvenc": true}, HWAccelSoftware},
+		{"prefer qsv", "linux", "qsv", all, map[string]bool{"h264_nvenc": true, "h264_qsv": true}, HWAccelQSV},
+		{"prefer one that does not work", "linux", "qsv", all, map[string]bool{"h264_nvenc": true}, HWAccelSoftware},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			d := detector(c.goos, c.encs, c.works)
+			d.Prefer = c.prefer
+			if got, err := d.Detect(context.Background()); err != nil || got != c.want {
+				t.Fatalf("got %q, %v; want %q", got, err, c.want)
+			}
+		})
 	}
 }
 
@@ -235,6 +224,46 @@ func TestDetector_NoFFmpegFallsBackToSoftware(t *testing.T) {
 	if got != HWAccelSoftware {
 		t.Fatalf("got %s want software fallback", got)
 	}
+}
+
+// Each verdict's arguments: FFmpeg has no "nvenc" hwaccel (NVENC decodes with
+// cuda), NVENC refuses libx264's "veryfast", VideoToolbox has no -preset.
+func TestTranscodeArgs_PerHWAccel(t *testing.T) {
+	for _, c := range []struct {
+		hw, decode, encoder, preset string
+	}{
+		{"", "", "libx264", "veryfast"},
+		{"nvenc", "cuda", "h264_nvenc", "p4"},
+		{"qsv", "", "h264_qsv", "veryfast"},
+		{"videotoolbox", "videotoolbox", "h264_videotoolbox", ""},
+	} {
+		for name, args := range map[string]Args{
+			"hls":  HLSArgs("/in.mp4", "/out", "master.m3u8", DefaultLadder(0), c.hw),
+			"dash": DASHArgs("/in.mp4", "/out", DefaultLadder(0), c.hw),
+		} {
+			joined := " " + strings.Join(args, " ") + " "
+			if got := argAfter(args, "-hwaccel"); got != c.decode {
+				t.Errorf("%s %q: -hwaccel %q, want %q", name, c.hw, got, c.decode)
+			}
+			if !strings.Contains(joined, " -c:v:0 "+c.encoder+" ") {
+				t.Errorf("%s %q: no %s: %s", name, c.hw, c.encoder, joined)
+			}
+			if name == "hls" {
+				if got := argAfter(args, "-preset:v:0"); got != c.preset {
+					t.Errorf("hls %q: preset %q, want %q", c.hw, got, c.preset)
+				}
+			}
+		}
+	}
+}
+
+func argAfter(args Args, flag string) string {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == flag {
+			return args[i+1]
+		}
+	}
+	return ""
 }
 
 var errReadable = readableError("ffmpeg not on PATH")

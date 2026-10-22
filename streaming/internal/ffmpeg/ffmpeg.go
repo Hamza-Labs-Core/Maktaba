@@ -217,20 +217,23 @@ func HLSArgs(input, outputDir, masterName string, ladder []Rendition, hwaccel st
 		"-hide_banner",
 		"-loglevel", "warning",
 	}
-	if hwaccel != "" {
-		args = append(args, "-hwaccel", hwaccel)
+	if dec := decodeHWAccel(hwaccel); dec != "" {
+		args = append(args, "-hwaccel", dec)
 	}
 	args = append(args, "-i", input)
 
 	// Map streams: one video output per ladder rung, one audio.
+	enc := encoderForHWAccel(hwaccel)
 	for i, rung := range ladder {
 		args = append(args,
 			"-map", "0:v:0",
-			"-c:v:"+itoa(i), encoderForHWAccel(hwaccel),
+			"-c:v:"+itoa(i), enc,
 			"-b:v:"+itoa(i), itoa(rung.BitrateKbps)+"k",
 			"-s:v:"+itoa(i), fmt.Sprintf("%dx%d", rung.Width, rung.Height),
-			"-preset:v:"+itoa(i), "veryfast",
 		)
+		if p := presetForEncoder(enc); p != "" {
+			args = append(args, "-preset:v:"+itoa(i), p)
+		}
 	}
 	args = append(args,
 		"-map", "0:a:0",
@@ -256,8 +259,8 @@ func DASHArgs(input, outputDir string, ladder []Rendition, hwaccel string) Args 
 		"-hide_banner",
 		"-loglevel", "warning",
 	}
-	if hwaccel != "" {
-		args = append(args, "-hwaccel", hwaccel)
+	if dec := decodeHWAccel(hwaccel); dec != "" {
+		args = append(args, "-hwaccel", dec)
 	}
 	args = append(args, "-i", input)
 
@@ -316,6 +319,37 @@ func DefaultLadder(maxBitrateKbps int) []Rendition {
 		out = append(out, full[len(full)-1])
 	}
 	return out
+}
+
+// decodeHWAccel is the -hwaccel that decodes the input for an encoder
+// verdict: CUDA (NVDEC) beside NVENC, VideoToolbox on a Mac. FFmpeg has no
+// "nvenc" hwaccel (that is the encoder): `-hwaccel nvenc` made every NVIDIA
+// transcode fail at once. None for QuickSync (its decoding wants the qsv
+// decoders and a device; the encoder takes frames from memory) or software.
+// The decoded frames come back to memory (no -hwaccel_output_format), so the
+// ladder's scaling works as in software, and an input the GPU cannot decode
+// falls back to the software decoder.
+func decodeHWAccel(hwaccel string) string {
+	switch strings.ToLower(hwaccel) {
+	case "videotoolbox":
+		return "videotoolbox"
+	case "nvenc":
+		return "cuda"
+	}
+	return ""
+}
+
+// presetForEncoder is the encoder's own speed preset: veryfast for libx264
+// and QuickSync, p4 for NVENC (its presets are p1..p7 since FFmpeg 4.3; it
+// refuses "veryfast"), none for VideoToolbox (it has no -preset).
+func presetForEncoder(encoder string) string {
+	switch encoder {
+	case "libx264", "h264_qsv":
+		return "veryfast"
+	case "h264_nvenc":
+		return "p4"
+	}
+	return ""
 }
 
 // encoderForHWAccel maps an hwaccel verdict to the right encoder name.

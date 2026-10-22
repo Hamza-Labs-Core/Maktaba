@@ -232,6 +232,15 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **Video transcodes work on an NVIDIA GPU (and are found on Windows).** The VOD transcodes
+  (HLS and DASH, Story 8.5) passed `-hwaccel nvenc`, which FFmpeg does not have (NVENC is an
+  encoder; NVIDIA decoding is `cuda`), and libx264's `-preset veryfast` to every encoder, which
+  NVENC refuses: on a machine with an NVIDIA GPU every transcode failed at once. They now decode
+  with `cuda` beside NVENC (VideoToolbox on a Mac, in software for QuickSync) and give each
+  encoder its own preset (`p4` for NVENC, none for VideoToolbox). The encoder is chosen by a short
+  test encode instead of `nvidia-smi` or `vainfo`, on Windows too (it was always software there),
+  `MAKTABA_HWACCEL_PREFER` (`auto`, `software`, `nvenc`, `qsv`, `videotoolbox`) narrows it, and
+  the transcodes run the ffmpeg the channels run (`MAKTABA_FFMPEG_BIN`), not the PATH's first.
 - **`[server] role = "home"` (or `MAKTABA_ROLE=home`) runs no role as a node.** The supervisor
   only left the node's variables out, while streaming and the pipeline read the node config
   themselves: beside a joined `node.json` (on Windows another install's, through the roaming
