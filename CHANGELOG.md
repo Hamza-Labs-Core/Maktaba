@@ -109,6 +109,17 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Changed
 
+- **The Linux app runs the distribution's ffmpeg** (Epic 39). The Linux server payload carries no
+  ffmpeg any more (the builds it pinned were configured `--enable-nonfree`), and `payload.sh` drops
+  every download `pins.env` no longer pins from its cache. The ffmpeg every role runs is
+  `[media] ffmpeg` / `ffprobe` in `server.toml` (new), else `MAKTABA_FFMPEG` / `MAKTABA_FFPROBE`,
+  else the Mac's or Windows' app's own, else the PATH's, and all roles get that one. Setup's check
+  (Linux), the new `maktaba-server ffmpeg` and the System health page say whether it does what
+  Maktaba needs (FFmpeg 4.4 or later with libx264, AAC and the filters and formats the TV and the
+  pipeline use, ffprobe beside it, and an H.264/AAC encode through `speechnorm` that works) and,
+  when not, the command that installs the right one for the distribution: apt, dnf with RPM
+  Fusion (Fedora's and EPEL's `ffmpeg-free` has no libx264), zypper with Packman, pacman. It also
+  warns when chromaprint (the audio fingerprints) or https:// sources are missing.
 - **Every role stops cleanly on Windows.** The supervisor starts each child in a process group of
   its own and asks it to stop with CTRL_BREAK (the Go roles drain on it as they do on SIGTERM, the
   pipeline on `SIGBREAK`); a child is killed with its process tree only once the shutdown grace

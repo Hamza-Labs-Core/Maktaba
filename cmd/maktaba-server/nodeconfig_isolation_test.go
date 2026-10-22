@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
 )
 
 // TestMain points MAKTABA_NODE_CONFIG at a file that never exists, so no test
@@ -29,6 +31,10 @@ func TestMain(m *testing.M) {
 	// on what this machine happens to run (Splunk on 8088 ...)
 	portProbe = func() config.PortProbe {
 		return config.PortProbe{Free: func(string) bool { return true }, Ours: func(int) bool { return false }}
+	}
+	// nor on whether this machine has an ffmpeg (setup_ffmpeg_test.go fakes its own)
+	ffmpegCheck = func(_ context.Context, t ffmpeg.Tools) ffmpeg.Report {
+		return ffmpeg.Report{Tools: t, Version: "6.1.2", OK: true}
 	}
 	code := m.Run()
 	_ = os.RemoveAll(dir)
