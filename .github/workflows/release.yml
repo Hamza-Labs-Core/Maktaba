@@ -508,6 +508,10 @@ jobs:
       - uses: actions/checkout@v6.0.2
 
       - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          # the constraints name PyTorch's index: uv export --emit-index-url needs uv 0.12+
+          # (build-release.sh checks), and one uv version writes them the same every run
+          version: "0.13.4"
 
       - name: Build the wheel, constraints and installer archives
         env:
@@ -889,7 +893,7 @@ jobs:
           - **Fedora/RHEL:** download the \`.rpm\` below, then \`sudo dnf install ./maktaba-server-*.rpm\`
           - **macOS (Homebrew):** \`maktaba.rb\` formula is attached (and pushed to the tap when configured)
           - **Windows / manual:** grab the matching \`.tar.gz\` / \`.zip\` archive
-          - **Linux, one installation that runs everything (Epic 39):** the \`Maktaba_*.AppImage\` (or its \`.deb\` / \`.rpm\`) from the desktop build; on a machine without a desktop, \`maktaba-linux-payload-*-<x86_64|aarch64>.tar.gz\`: the same server, Postgres, ffmpeg and Python, run as a systemd user service
+          - **Linux, one installation that runs everything (Epic 39):** the \`Maktaba_*.AppImage\` (or its \`.deb\` / \`.rpm\`) from the desktop build; on a machine without a desktop, \`maktaba-linux-payload-*-<x86_64|aarch64>.tar.gz\`: the same server, Postgres and Python (ffmpeg is the distribution's: setup names the command that installs it), run as a systemd user service
           - **Worker machine (join a home, no checkout):** unpack \`maktaba-node-*.tar.gz\` (macOS/Linux) or \`maktaba-node-*.zip\` (Windows) and run \`install-node.sh\` / \`windows\\install-node.ps1\`: it installs this release's \`maktaba_pipeline-*.whl\` (also attached, with its \`-constraints.txt\`). See docs/cluster/join-a-machine.md.
 
           Artifacts are signed with keyless cosign (Sigstore) by this

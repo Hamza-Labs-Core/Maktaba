@@ -153,11 +153,13 @@ if [ -n "$APP" ]; then
     fi
     # the launcher recognises the bundle: app-bundle mode, updates with the app
     run "launcher app-bundle mode" "$PAYLOAD/bin/maktaba-launcher" --root "$SCRATCH/state" --status
-    if "$PAYLOAD/bin/maktaba-launcher" --root "$SCRATCH/state" --status 2>/dev/null | grep -q 'updates:    with the app'; then
-        ok "launcher: updates come with the app"
-    else
-        fail "the launcher did not detect the app bundle"
-    fi
+    # the output first, then the match: grep -q ending the pipe early made the launcher
+    # die of SIGPIPE, which pipefail reported as no match
+    status="$("$PAYLOAD/bin/maktaba-launcher" --root "$SCRATCH/state" --status 2>/dev/null || true)"
+    case "$status" in
+        *'updates:    with the app'*) ok "launcher: updates come with the app" ;;
+        *) fail "the launcher did not detect the app bundle" ;;
+    esac
     if [ "$SIGNED" -eq 1 ]; then
         run "codesign --verify --deep --strict" codesign --verify --deep --strict "$APP"
     fi

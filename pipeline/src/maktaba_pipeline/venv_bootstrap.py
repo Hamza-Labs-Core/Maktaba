@@ -24,6 +24,14 @@ What it does, in order (the contract other parts of the app rely on is
 3. check that the wheel's requirements with the asked extras are all installed, then
    write the stamp as ``ready``.
 
+Which constraints (story 38.9): a payload may hold a second set,
+``*constraints-cuda.txt``, with torch's CUDA build for Windows (2.0 GB, from PyTorch's
+index) where the default set has PyPI's CPU build (124 MB). On Windows x86_64 the CUDA set
+is taken when the machine's NVIDIA GPU runs the second listen (:func:`torch_build`: the
+pipeline's own thresholds, asked of ``nvidia-smi``), else the default; ``--torch`` says
+otherwise. Elsewhere the default set always (Linux's PyPI torch has CUDA already). A GPU
+added later changes the choice, and so the constraints: the next run builds again.
+
 Progress goes to stdout as one JSON object per line (UTF-8) and to a status file
 (rewritten whole on every change) that a process that did not start this one can read.
 Two runs never build at once: the second waits on a lock, then finds nothing to do.
@@ -94,6 +102,17 @@ EXIT_INTERRUPTED = 130
 
 DEFAULT_EXTRAS = "stt,search"
 
+#: what the second listen needs of an NVIDIA GPU, as the pipeline checks it
+#: (stt/cohere_cuda.py: MIN_GPU_GB on Windows, MIN_COMPUTE, MIN_DRIVER; a test keeps them
+#: equal): this module runs before the venv exists and imports nothing of the pipeline.
+#: Torch's CUDA build is worth its 2 GB only where the second listen runs.
+SECOND_LISTEN_MIN_GIB = 9.5
+SECOND_LISTEN_MIN_COMPUTE = (7, 5)
+SECOND_LISTEN_MIN_DRIVER = 580
+TORCH_CHOICES = ("auto", "cpu", "cuda")
+#: nvidia-smi's answer, all it is asked (before R510 it knows no compute_cap)
+_SMI_QUERIES = ("name,memory.total,compute_cap,driver_version", "name,memory.total,driver_version")
+
 #: one requirement of a constraints file starts at the line's first column
 _REQ_LINE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)")
 
@@ -152,8 +171,9 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def find_payload(payload: Path) -> tuple[Path, Path]:
-    """The one ``maktaba_pipeline-*.whl`` and the one ``*constraints.txt`` in ``payload``."""
+def find_payload(payload: Path, torch: str = "cpu") -> tuple[Path, Path]:
+    """The one ``maktaba_pipeline-*.whl`` and the one ``*constraints.txt`` in ``payload``,
+    or with ``torch="cuda"`` its ``*constraints-cuda.txt`` (torch's CUDA build)."""
     wheels = sorted(payload.glob("maktaba_pipeline-*.whl"))
     cons = sorted(payload.glob("*constraints.txt"))
     if len(wheels) != 1 or len(cons) != 1:
@@ -161,7 +181,126 @@ def find_payload(payload: Path) -> tuple[Path, Path]:
             f"{payload} must hold one maktaba_pipeline wheel and one constraints file "
             f"(found {len(wheels)} and {len(cons)})"
         )
-    return wheels[0], cons[0]
+    if torch != "cuda":
+        return wheels[0], cons[0]
+    cuda = sorted(payload.glob("*constraints-cuda.txt"))
+    if len(cuda) != 1:
+        raise BootstrapError(
+            f"{payload} has no constraints-cuda.txt (torch's CUDA build): this payload"
+            " installs the CPU build only"
+        )
+    return wheels[0], cuda[0]
+
+
+@dataclass(frozen=True)
+class Gpu:
+    """The first NVIDIA GPU, as ``nvidia-smi`` reports it (None: it does not say)."""
+
+    name: str
+    memory_gib: float
+    compute: tuple[int, int] | None
+    driver: str | None
+
+    @property
+    def driver_major(self) -> int | None:
+        head = (self.driver or "").split(".", 1)[0]
+        return int(head) if head.isdigit() else None
+
+
+def _nvidia_smi() -> str | None:
+    found = shutil.which("nvidia-smi")
+    if found or sys.platform != "win32":
+        return found
+    # a service's PATH may lack it: where the driver puts it
+    for base in (os.environ.get("SYSTEMROOT"), os.environ.get("PROGRAMFILES")):
+        if not base:
+            continue
+        for p in (Path(base) / "System32", Path(base) / "NVIDIA Corporation" / "NVSMI"):
+            if (p / "nvidia-smi.exe").is_file():
+                return str(p / "nvidia-smi.exe")
+    return None
+
+
+def parse_gpu(line: str) -> Gpu | None:
+    """One line of :data:`_SMI_QUERIES`' answer ("NVIDIA GeForce RTX 3080 Ti, 12288, 8.6,
+    591.44", or the fallback's "name, MiB, driver"), or None."""
+    f = [x.strip() for x in line.split(",")]
+    if len(f) < 2 or not f[1].isdigit():
+        return None
+    compute = None
+    driver = f[-1] if len(f) >= 3 and f[-1] not in ("", "[N/A]") else None
+    if len(f) >= 4:
+        major, _, minor = f[2].partition(".")
+        if major.isdigit() and minor.isdigit():
+            compute = (int(major), int(minor))
+    return Gpu(f[0], int(f[1]) / 1024, compute, driver)
+
+
+def nvidia_gpu() -> Gpu | None:
+    """The first NVIDIA GPU (CUDA device 0), or None without one or its driver."""
+    exe = _nvidia_smi()
+    if exe is None:
+        return None
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    for query in _SMI_QUERIES:
+        try:
+            out = subprocess.run(
+                [exe, f"--query-gpu={query}", "--format=csv,noheader,nounits"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+                creationflags=flags,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if out.returncode == 0:
+            lines = out.stdout.strip().splitlines()
+            return parse_gpu(lines[0]) if lines else None
+    return None
+
+
+def second_listen_gpu(gpu: Gpu | None) -> str | None:
+    """Why this GPU does not run the second listen (so torch's CPU build is enough), or
+    None: its memory, compute capability and driver; one nvidia-smi does not report is
+    not held against it."""
+    if gpu is None:
+        return "no NVIDIA GPU"
+    if gpu.memory_gib < SECOND_LISTEN_MIN_GIB:
+        return f"{gpu.name} has {gpu.memory_gib:.1f} GiB, under {SECOND_LISTEN_MIN_GIB:g}"
+    if gpu.compute is not None and gpu.compute < SECOND_LISTEN_MIN_COMPUTE:
+        c, m = gpu.compute, SECOND_LISTEN_MIN_COMPUTE
+        return f"{gpu.name} is compute capability {c[0]}.{c[1]}, under {m[0]}.{m[1]}"
+    if gpu.driver_major is not None and gpu.driver_major < SECOND_LISTEN_MIN_DRIVER:
+        return f"the NVIDIA driver {gpu.driver} is older than R{SECOND_LISTEN_MIN_DRIVER}"
+    return None
+
+
+def torch_build(
+    want: str, payload: Path | None, probe: Callable[[], Gpu | None] = nvidia_gpu
+) -> tuple[str, str]:
+    """``(cpu | cuda, why)``: torch's build for this machine. ``want`` is ``--torch``:
+    ``cpu`` or ``cuda`` as asked; ``auto`` the CUDA build on Windows x86_64 when the payload
+    has it and the GPU runs the second listen, else the CPU build."""
+    if want in ("cpu", "cuda"):
+        return want, f"--torch {want}"
+    if not _windows_x86_64():
+        return "cpu", "PyPI's torch (torch's CUDA build is Windows' choice)"
+    if payload is None or not any(payload.glob("*constraints-cuda.txt")):
+        return "cpu", "the payload has no constraints-cuda.txt"
+    gpu = probe()
+    why = second_listen_gpu(gpu)
+    if why is not None:
+        return "cpu", f"no second listen here ({why})"
+    assert gpu is not None
+    return "cuda", f"{gpu.name} runs the second listen"
+
+
+def _windows_x86_64() -> bool:
+    """Windows on x86_64: where torch's CUDA build is a choice (PyPI's is the CPU one)."""
+    import platform
+
+    return sys.platform == "win32" and platform.machine() in ("AMD64", "x86_64")
 
 
 def count_requirements(constraints: Path) -> int:
@@ -819,6 +958,14 @@ def _parser() -> argparse.ArgumentParser:
         help=f"extras the venv must have complete (default: {DEFAULT_EXTRAS})",
     )
     p.add_argument(
+        "--torch",
+        choices=TORCH_CHOICES,
+        default=env("MAKTABA_PIPELINE_TORCH") or "auto",
+        help="with --payload, which constraints: auto (default: on Windows torch's CUDA build "
+        "when the NVIDIA GPU runs the second listen, else the CPU build), cpu or cuda "
+        "(default: $MAKTABA_PIPELINE_TORCH)",
+    )
+    p.add_argument(
         "--status-file",
         help="where the status JSON goes (default: venv-status.json beside the venv)",
     )
@@ -858,7 +1005,11 @@ def main(argv: list[str] | None = None) -> int:
                 raise BootstrapError("--wheel and --constraints go together")
             wheel, constraints = Path(args.wheel), Path(args.constraints)
         elif args.payload:
-            wheel, constraints = find_payload(Path(args.payload).expanduser())
+            payload = Path(args.payload).expanduser()
+            build, why = torch_build(args.torch, payload)
+            wheel, constraints = find_payload(payload, build)
+            rep.base["torch"] = build
+            rep.base["torch_why"] = why
         else:
             raise BootstrapError("give --payload, or --wheel and --constraints")
         target = make_target(Path(args.python).expanduser(), wheel, constraints, args.extras)

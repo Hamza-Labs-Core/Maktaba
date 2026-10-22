@@ -117,6 +117,8 @@ has "release archive: says which release" "Pipeline: release v9.8.7"
 has_cmd "release archive: venv with the release's Python" "uv venv --python 3.13"
 has_cmd "release archive: installs in hash-checking mode, constrained" \
     "pip install" "--require-hashes" "--constraint ./$(basename "$CONS")" "-r ./.maktaba-node-requirements.txt"
+has_cmd "release archive: each pin looked for on every index the constraints name" \
+    "uv pip install" "--require-hashes --index-strategy unsafe-best-match"
 req_has "release archive: the bundled wheel, by its SHA-256" "$BUNDLE" \
     "maktaba-pipeline @ file://$BUNDLE/$(basename "$WHEEL") --hash=sha256:$(sha256 "$WHEEL")"
 has_cmd "release archive: from the constraints' directory (uv splits a --constraint path at spaces)" \
@@ -155,6 +157,22 @@ has_cmd "bare release archive: downloads the constraints" \
     "curl" "https://github.com/example/Maktaba/releases/download/v9.8.7/$(basename "$CONS")"
 req_has "bare release archive: installs the download" "$T/home/.local/share/maktaba/node/dist" \
     "@ file://$T/home/.local/share/maktaba/node/dist/$(basename "$WHEEL") --hash=sha256:"
+
+# --- the stt and search extras: their pins with pip ------------------------------------------------
+# (PyTorch's index, which the constraints name, also matches their torch pins with other
+# files: pip takes the file each pin's hashes name, whichever index has it)
+for extras in stt search,mediaintel; do
+    run_installer "$BUNDLE" -- --extras "$extras"
+    expect_ok "--extras $extras"
+    has_cmd "--extras $extras: a venv with the release's Python" "uv venv --python 3.13"
+    has_cmd "--extras $extras: the venv's own pip" "-m ensurepip --default-pip"
+    has_cmd "--extras $extras: the pins, hash-checked, with pip" \
+        "-m pip install" "--require-hashes --no-deps -r ./$(basename "$CONS")"
+    has_cmd "--extras $extras: then the wheel, hash-checked" \
+        "-m pip install" "--require-hashes --no-deps --force-reinstall -r ./.maktaba-node-requirements.txt"
+    lacks "--extras $extras: uv installs nothing" "uv pip install"
+done
+req_has "--extras: the wheel with them" "$BUNDLE" "maktaba-pipeline[search,mediaintel] @ file://"
 
 # --- an archive unpacked under a path with a space -----------------------------------------------
 SPACED="$T/My Downloads/maktaba-node-9.8.7"
@@ -232,6 +250,7 @@ if command -v python3.12 >/dev/null 2>&1 || command -v python3.13 >/dev/null 2>&
     has_cmd "pip: then the wheel, hash-checked" "--require-hashes --no-deps --force-reinstall -r ./.maktaba-node-requirements.txt"
     lacks "pip: no unchecked pip upgrade" "--upgrade pip"
     lacks "pip: no uv" "uv venv"
+    has_cmd "pip: a venv of the Python found" "-m venv $T/home/.local/share/maktaba/node/venv"
 else
     printf 'skip  pip: no Python 3.12+ here\n'
 fi

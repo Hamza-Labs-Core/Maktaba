@@ -165,7 +165,7 @@ Decides how the machines of your cluster act as one Maktaba. **One sign-in for e
 
 ### Transcription {#transcription}
 
-Decides which machines transcribe. While the second listen is on, only the machines that run it (the Mac) transcribe, so every transcript has it. **Transcribe without the second listen** (off) lets a Windows or Linux machine transcribe too, with Whisper alone: faster, and a machine that runs the second listen gives those transcripts theirs later, a few at a time, after the new files. See [Transcription](/help/transcription#faq-windows).
+Decides which machines transcribe. While the second listen is on, only the machines that run it (the Mac, and a PC whose NVIDIA GPU holds it beside Whisper) transcribe, so every transcript has it. **Transcribe without the second listen** (off) lets the other Windows and Linux machines transcribe too, with Whisper alone: faster, and a machine that runs the second listen gives those transcripts theirs later, a few at a time, after the new files. See [Transcription](/help/transcription#faq-windows).
 
 ### Queue health {#queue-health}
 

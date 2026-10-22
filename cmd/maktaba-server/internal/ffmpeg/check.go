@@ -87,7 +87,9 @@ type Note struct {
 var run = func(ctx context.Context, name string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
+	cmd := exec.CommandContext(ctx, name, args...)
+	hideWindow(cmd)
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {

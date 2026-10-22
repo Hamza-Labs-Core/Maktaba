@@ -40,20 +40,26 @@ $files = Join-Path $T 'files'
 New-Item -ItemType Directory -Path $files | Out-Null
 $wheel = Join-Path $files 'maktaba_pipeline-9.8.7-py3-none-any.whl'
 $cons = Join-Path $files 'maktaba-pipeline-9.8.7-constraints.txt'
+$consCuda = Join-Path $files 'maktaba-pipeline-9.8.7-constraints-cuda.txt'
 [System.IO.File]::WriteAllText($wheel, "not really a wheel`n")
 [System.IO.File]::WriteAllText($cons, "structlog==25.1.0 \`n    --hash=sha256:$('a' * 64)`n")
+[System.IO.File]::WriteAllText($consCuda, "torch==2.14.1+cu130 \`n    --hash=sha256:$('b' * 64)`n")
 $checkout = Join-Path $T 'checkout\pipeline'
 $noConf = Join-Path $T 'none\install.conf'
 
-function New-Bundle([string]$Dir, [switch]$WithFiles) {
+function New-Bundle([string]$Dir, [switch]$WithFiles, [switch]$NoCuda) {
     New-Item -ItemType Directory -Force -Path $Dir | Out-Null
     if ($WithFiles) {
         Copy-Item -LiteralPath $wheel -Destination $Dir
         Copy-Item -LiteralPath $cons -Destination $Dir
+        Copy-Item -LiteralPath $consCuda -Destination $Dir
     }
     $conf = "TAG=v9.8.7`nVERSION=9.8.7`nREPO=example/Maktaba`nWHEEL=$(Split-Path -Leaf $wheel)`n" +
         "WHEEL_SHA256=$(Get-Sha256 $wheel)`nCONSTRAINTS=$(Split-Path -Leaf $cons)`n" +
         "CONSTRAINTS_SHA256=$(Get-Sha256 $cons)`nPYTHON=3.13`n"
+    if (-not $NoCuda) {
+        $conf += "CONSTRAINTS_CUDA=$(Split-Path -Leaf $consCuda)`nCONSTRAINTS_CUDA_SHA256=$(Get-Sha256 $consCuda)`n"
+    }
     [System.IO.File]::WriteAllText((Join-Path $Dir 'release.conf'), $conf)
 }
 $bundle = Join-Path $T 'bundle'
@@ -86,6 +92,31 @@ try {
     $o = Resolve-NodePipelineOrigin -BundleDir $bundle -Constraints $cons -CheckoutPipeline $checkout -InstallConf $noConf
     Assert-Equal $cons $o.Constraints 'release archive: -Constraints wins'
     Assert-Equal '' $o.ConstraintsSha256 'release archive: no digest for a given constraints file'
+
+    # --- torch's build (story 38.9): the cuda set where the GPU runs the second listen ---------------
+    $o = Resolve-NodePipelineOrigin -BundleDir $bundle -CudaTorch -CheckoutPipeline $checkout -InstallConf $noConf
+    Assert-Equal (Join-Path $bundle (Split-Path -Leaf $consCuda)) $o.Constraints 'release archive, -CudaTorch: the cuda set'
+    Assert-Equal (Get-Sha256 $consCuda) $o.ConstraintsSha256 'release archive, -CudaTorch: its digest'
+    $o = Resolve-NodePipelineOrigin -BundleDir $bare -CudaTorch -CheckoutPipeline $checkout -InstallConf $noConf
+    Assert-Equal 'https://github.com/example/Maktaba/releases/download/v9.8.7/maktaba-pipeline-9.8.7-constraints-cuda.txt' $o.Constraints 'bare archive, -CudaTorch: the release''s cuda set URL'
+    $older = Join-Path $T 'older'
+    New-Bundle $older -WithFiles -NoCuda
+    $o = Resolve-NodePipelineOrigin -BundleDir $older -CudaTorch -CheckoutPipeline $checkout -InstallConf $noConf
+    Assert-Equal (Join-Path $older (Split-Path -Leaf $cons)) $o.Constraints 'a release before the cuda set: its one set'
+    $o = Resolve-NodePipelineOrigin -BundleDir $bundle -Constraints $cons -CudaTorch -CheckoutPipeline $checkout -InstallConf $noConf
+    Assert-Equal $cons $o.Constraints '-Constraints wins over the cuda set'
+
+    $g = ConvertFrom-NodeNvidiaSmi 'NVIDIA GeForce RTX 3080 Ti, 12288, 8.6, 591.44'
+    Assert-Equal 12288 $g.MiB 'nvidia-smi: the memory'
+    Assert-Equal '8.6' $g.Compute 'nvidia-smi: the compute capability'
+    Assert-Equal '591.44' $g.Driver 'nvidia-smi: the driver'
+    Assert-Equal '' (Get-NodeSecondListenGap $g) 'a 12 GB Ampere card with R591 runs the second listen'
+    Assert-Equal '' (Get-NodeSecondListenGap (ConvertFrom-NodeNvidiaSmi 'NVIDIA RTX A4000, 16376, [N/A], [N/A]')) 'what nvidia-smi does not say is not held against it'
+    Assert-Equal $true ((Get-NodeSecondListenGap (ConvertFrom-NodeNvidiaSmi 'NVIDIA GeForce RTX 2080 SUPER, 8192, 7.5, 616.64')) -like '*8.0 GiB, under 9.5*') 'an 8 GB card: the CPU build'
+    Assert-Equal $true ((Get-NodeSecondListenGap (ConvertFrom-NodeNvidiaSmi 'NVIDIA GeForce GTX 1080 Ti, 11264, 6.1, 591.44')) -like '*compute capability 6.1*') 'Pascal: the CPU build'
+    Assert-Equal $true ((Get-NodeSecondListenGap (ConvertFrom-NodeNvidiaSmi 'NVIDIA GeForce GTX 1080 Ti, 11264, 472.12')) -like '*older than R580*') 'a driver before R580 (the fallback query): the CPU build'
+    Assert-Equal 'no NVIDIA GPU' (Get-NodeSecondListenGap $null) 'no GPU: the CPU build'
+    Assert-Equal $null (ConvertFrom-NodeNvidiaSmi 'No devices were found') 'nvidia-smi without a GPU'
 
     # --- -FromWheel ----------------------------------------------------------------------------------
     $o = Resolve-NodePipelineOrigin -FromWheel $wheel -BundleDir $bundle -CheckoutPipeline $checkout -InstallConf $noConf
