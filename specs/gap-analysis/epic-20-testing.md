@@ -22,7 +22,7 @@ Scope verified: read README, all 8 `story-*.md`, all 8 `plan-*.md`. Code verifie
 | AC1 three layers in `make test` order | partial | `Makefile:217-218,226-227` declares `test:` **twice** (second overrides → `make test` runs unit only, NOT integration+e2e). `test-unit/integration/e2e` targets exist (`Makefile:229-304`). |
 | AC2 runtime budgets (unit≤60s, int≤8m, e2e≤12m, PR≤20m) | partial | Budgets exist but **do not match spec**: `Makefile:23-39` `INTEGRATION_TIER_BUDGET=2m` (spec 8m), `E2E_TIER_BUDGET=5m` (spec 12m), unit is per-package 30s not 60s total. Per-test soft cap raised to `400ms` (`Makefile:36`), spec AC4 says 100ms. CI timeouts (`_unit.yml:14` 15m, `_e2e.yml:18` 25m) exceed spec tiers. |
 | AC3 unambiguous tags, CI runs tiers independently | complete | Go `-short`/`//go:build integration`, pytest markers (`pyproject.toml:36-39`), CI matrix `ci.yml:66-90` fans out unit/integration/e2e/perf-ci. (TS tags unused — no web tests.) |
-| AC4 per-test soft cap warn / 3× fail | complete | `shared/testtier/go/softcap.go:24-38` (warn at cap, fail at 3×); `tools/test-budget/main.go:53,77` enforces in JSON mode; Python `shared/testtier/py/maktaba_testtier/softcap.py:37-80`. Cap value diverges from spec (400ms vs 100ms) — documented tradeoff in `Makefile:24-36`. |
+| AC4 per-test soft cap warn / 3× fail | complete | `shared/testtier/go/softcap.go:24-38` (warn at cap, fail at 3×); `tools/test-budget/main.go:53,77` enforces in JSON mode; Python `shared/testtier/py/maktaba_testtier/softcap.py:37-80`. Cap value diverges from spec (400ms vs 100ms) — documented tradeoff in `Makefile:24-36`. A passing Go unit test past 3× is re-run once alone (`tools/test-budget/rerun.go`) and fails only if it repeats; one that does not is a `::warning::`. |
 | TC1 unit net-socket fails | complete | `shared/testtier/go/netguard.go:14,40-55` (`ErrUnitNetGuard`); Python `netguard.py:22-52`; tests `netguard_test.go`. |
 | TC2 runtime breach flagged | complete | `softcap_test.go` + `tools/test-budget/main_test.go:54-87` cover hard breach. |
 | TC3 CI parallelism, integration slowest | partial | Matrix runs in parallel (`ci.yml`), but integration is **not** the slowest tier in practice (only 1 trivial integration test; e2e is empty). |
@@ -102,7 +102,7 @@ Scope verified: read README, all 8 `story-*.md`, all 8 `plan-*.md`. Code verifie
 | AC1 flake registry with failure log | **missing** | No `tools/flakes/` dir, no `registry.json`, no `recorder.go`. |
 | AC2 ≥3 flakes/7d → auto-skip + P2 issue | missing | No `auto_quarantine.go`, no `quarantined.txt`, no `SkipIfQuarantined` helper. |
 | AC3 14-day SLA pages owner | missing | No `sla_check.go`, no `flake-sla.yml`. |
-| AC4 retry only at e2e tier; unit/int fail first | partial | Spirit holds: `make test-unit-go` uses `-count=1` (`test-budget.sh:56`), no rerun configured for unit/integration; but **no e2e retry** because no e2e/Playwright config exists. Not enforced as policy. |
+| AC4 retry only at e2e tier; unit/int fail first | partial | Spirit holds: `make test-unit-go` uses `-count=1` (`test-budget.sh:56`), no rerun of a failing test configured for unit/integration (the Go unit budget checker only re-times a passing test past the hard cap, alone); but **no e2e retry** because no e2e/Playwright config exists. Not enforced as policy. |
 | EC2 ban time-zone tests / EC3 randomized order | missing | No `ban_tz_test.go`; no `-shuffle=on` / `pytest-randomly` in runners. |
 
 ---

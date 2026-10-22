@@ -5,10 +5,19 @@
 # top-level entrypoints, picked by the first arg:
 #
 #   tools/test-budget.sh unit
-#       Re-runs `go test -short -race -count=1 -json ./...` for every
-#       Go module and pipes the JSON stream into the budget checker.
-#       Per-package budget = 30 s, per-test soft cap = 100 ms (Story
-#       20.1 AC4).
+#       Runs `go test -short -race -count=1 -json ./...` for every
+#       Go module and pipes the JSON stream into the budget checker:
+#       per-package budget UNIT_PACKAGE_BUDGET (30 s), per-test soft
+#       cap UNIT_PER_TEST_SOFT_CAP (the Makefile's 400 ms), and a test
+#       past 3x the soft cap (the hard cap, Story 20.1 AC4) fails.
+#       The module's packages run in parallel under -race, so a test's
+#       time is partly the runner's load: the checker re-runs a test
+#       past the hard cap once, alone (same flags, -p 1, -run anchored
+#       to exactly that test, in its package), and fails only if it is
+#       past the hard cap alone too, or fails. A breach that does not
+#       repeat is a ::warning:: with both timings. More than 10 tests
+#       to re-run in a module is a slowdown: they all fail, none is
+#       re-run. A failing test is not re-run (go test fails the build).
 #
 #   tools/test-budget.sh wall <tier> <budget> -- <cmd...>
 #       Times an arbitrary command and fails if its wall-clock
@@ -48,14 +57,18 @@ cmd_unit() {
   local rc=0
   local pkg_budget="${UNIT_PACKAGE_BUDGET:-30s}"
   local soft_cap="${UNIT_PER_TEST_SOFT_CAP:-100ms}"
+  # The unit tier's go test command, in one place: the checker re-runs
+  # a test past the hard cap with it (adding -p 1, -run and the package).
+  local go_test=(go test -short -race -count=1 -json)
   for mod in "${modules[@]}"; do
     echo "==> test-budget unit ($mod)"
     # `set +e` while we run the pipeline so a non-zero exit from
     # either side gets surfaced via PIPESTATUS instead of aborting.
     set +e
-    ( cd "$REPO_ROOT/$mod" && go test -short -race -count=1 -json ./... ) \
+    ( cd "$REPO_ROOT/$mod" && "${go_test[@]}" ./... ) \
       | "$bin" --mode=json --tier=unit \
-          --per-package-budget="$pkg_budget" --per-test-soft-cap="$soft_cap"
+          --per-package-budget="$pkg_budget" --per-test-soft-cap="$soft_cap" \
+          --rerun-dir="$REPO_ROOT/$mod" -- "${go_test[@]}"
     local pipe=("${PIPESTATUS[@]}")
     set -e
     if [[ "${pipe[0]}" != 0 ]]; then
