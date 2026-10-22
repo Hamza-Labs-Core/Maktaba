@@ -119,6 +119,22 @@ don't append a line here; docs-only PRs are exempt.
   machine and told the others end through the home (which would not take it from it); the home's
   revocations survive a restart of the machine during an outage, and a person signed out
   everywhere can sign in there again once its copy has it.
+- **System health answers "is everything OK, and if not, what is wrong and what do I do"**. The
+  page (`/admin/health`) reads the new admin-only `GET /api/admin/system/status`: every part of
+  Maktaba ok, degraded or down with a plain reason, when it was checked and "Learn more" into the
+  help. Services (the API with its version and uptime; Postgres with its latency, primary or
+  replica and its replicas; the streaming service at its HTTP and gRPC addresses with the channels
+  on air and encoder sessions; the pipeline's gRPC address; the supervised processes), Workers
+  (every worker with its machine, role, last heartbeat and what it runs, and every streaming
+  machine; a stale record of a machine that runs a newer worker is history, never a failure),
+  Dependencies (Epic 40's checks of the model, each share, the disk and shared memory),
+  Integrations (Plex Live TV: reachable, registered, channels in sync, last error) and Queues & TV
+  (Epic 40's failing / waiting / needs-you rollup, the channels on air, the TV change waiting for
+  approval, the live TV slot, the tuner). A banner says the overall state: Down only when the API,
+  the database, every worker, or streaming while channels are on air is down. Every check runs at
+  the same time under its own deadline and the answer is reused for a few seconds; the thresholds
+  are the new rules section `system_health`. A red state puts a dot on System health in the admin
+  menu. The public `/api/system/health` liveness probe is unchanged.
 - **The desktop app's setup works end to end** (Epic 38, story 38.6; the Mac, Windows and Linux
   alike). `maktaba-server setup --json` gains every step the setup screens run: `check` (what will
   run, memory and disk), `admin` (the password is hashed as it is typed, by the new

@@ -318,3 +318,35 @@ Notes for the implementer: mock `../../lib/api` `api.get` with a URL switch (as 
   1. Run `axeViolations(container)` (`src/test/axe`).
   2. Check heading order.
 - **Expected:** No axe violations. One h1, h2 "Services", h3 "Recent crashes" inside Processes. The status is conveyed by text, not only colour. Suggest `role="status"`/`aria-live="polite"` on the loading text and on the overall badge so a refresh that flips status is announced (currently none — nice-to-have).
+
+### HLT-26 — Status of every part: banner and grouped tiles
+
+- **Priority:** P1
+- **Category:** Happy path
+- **Covered by existing test?** Yes (`StatusOverview.test.tsx`)
+- **Preconditions / data:** `GET /api/admin/system/status` answers items in the five groups.
+- **Steps:**
+  1. Open `/admin/health`.
+- **Expected:** A banner "All systems OK" / "Degraded: …" / "Down: …" (only the critical parts) with each part's reason and "Learn more"; h2 Services, Workers, Dependencies, Integrations, Queues & TV, each tile coloured with its status word, reason, "checked … ago", "Open" when it has a page and "Learn more" to `/help/system-health#item-<kind>`.
+
+### HLT-27 — A replaced worker is history, not a failure
+
+- **Priority:** P1
+- **Category:** Edge case
+- **Covered by existing test?** Yes (`StatusOverview.test.tsx`, Go `TestStaleDuplicateIsHistoryNotFailure`)
+- **Preconditions / data:** a worker item with `history: true`.
+- **Expected:** It sits under "History (n)" with a grey "History" badge, never "Down", and the banner stays "All systems OK".
+
+### HLT-28 — No status: older server or no database
+
+- **Priority:** P2
+- **Category:** Error state
+- **Covered by existing test?** Yes (`StatusOverview.test.tsx`)
+- **Expected:** The status failing alone shows no banner and the page keeps its cards and its Services probes section; the status and `/api/system/health` both failing show a red banner "Cannot read the system status".
+
+### HLT-29 — Red dot on System health in the admin menu
+
+- **Priority:** P2
+- **Category:** Navigation
+- **Covered by existing test?** Yes (`AppShell.test.tsx`)
+- **Expected:** For an admin, a status of `down` puts a red dot on "System health" (sidebar and More menu) and on More in the phone tab bar, described as "System health: something is down"; degraded shows none; a viewer never asks for the status.

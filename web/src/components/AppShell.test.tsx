@@ -21,6 +21,7 @@ import { ToastProvider } from "@ds/components/Toast/Toast";
 import en from "../i18n/en.json";
 import type { SwUpdateDetail } from "../lib/pwa";
 import { resetUpdateStatusCache } from "../lib/updates";
+import { STATUS_PATH, resetStatusStore } from "../lib/systemStatus";
 
 function renderShell() {
   return render(
@@ -122,6 +123,52 @@ describe("AppShell transcription navigation", () => {
       "href",
       "/transcription"
     );
+  });
+});
+
+describe("AppShell System health badge", () => {
+  const admin = { user: { id: "u1", username: "root", is_admin: true, roles: [] } };
+  const viewer = { user: { id: "u2", username: "viewer", is_admin: false, roles: [] } };
+  beforeEach(() => {
+    resetUpdateStatusCache();
+    resetStatusStore();
+  });
+
+  function serve(user: unknown, status: string) {
+    get.mockImplementation((url: string) =>
+      url.startsWith(STATUS_PATH)
+        ? Promise.resolve({ status, items: [], checked_at: "", code: "", reason: "" })
+        : url.startsWith("/api/system/updates")
+          ? Promise.reject(new Error("off"))
+          : Promise.resolve(user)
+    );
+  }
+
+  it("shows a red dot on System health and More while the system is down", async () => {
+    serve(admin, "down");
+    renderShell();
+    const [sidebar, tabbar] = await screen.findAllByRole("navigation", { name: en["nav.primary"] });
+    const health = await within(sidebar).findByRole("link", { name: en["nav.admin.health"] });
+    await waitFor(() => expect(within(health).getByTestId("health-badge")).toBeInTheDocument());
+    expect(health).toHaveAccessibleDescription(en["health.navDown"]);
+    const more = within(tabbar).getByRole("link", { name: en["nav.more"] });
+    expect(within(more).getByTestId("health-badge")).toBeInTheDocument();
+  });
+
+  it("shows no dot when the system is only degraded, and never asks for a viewer", async () => {
+    serve(admin, "degraded");
+    const { unmount } = renderShell();
+    await screen.findByRole("link", { name: en["nav.admin.health"] });
+    await waitFor(() => expect(get).toHaveBeenCalledWith(STATUS_PATH));
+    expect(screen.queryByTestId("health-badge")).not.toBeInTheDocument();
+    unmount();
+    get.mockClear();
+    resetStatusStore();
+    serve(viewer, "down");
+    renderShell();
+    await screen.findAllByRole("link", { name: en["nav.transcription"] });
+    expect(screen.queryByTestId("health-badge")).not.toBeInTheDocument();
+    expect(get).not.toHaveBeenCalledWith(STATUS_PATH);
   });
 });
 

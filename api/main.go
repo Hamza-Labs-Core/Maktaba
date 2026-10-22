@@ -561,6 +561,13 @@ func runServe() error {
 			if mountRemote != nil {
 				mountRemote(r) // Epic 32 story 32.6: /api/tv/remote
 			}
+			// The System health page: every service, worker, dependency,
+			// integration, queue and TV part, ok / degraded / down (admin).
+			// The public /api/system/health liveness probe is unchanged.
+			router.MountStatus(r, router.StatusDeps{
+				DB: appDB, Version: version.Version, StartTime: processStart,
+				PipelineAddr: pipelineAddr, SupervisorURL: supervisorURL, Secrets: homeSecrets,
+			})
 			// Epic 33: TV changes (/api/tv/changes, releases, slots) and the change
 			// controller (staged -> verified -> approved -> swapped)
 			router.MountP33(r, router.P33Deps{DB: appDB, Logger: logger, RunController: true,

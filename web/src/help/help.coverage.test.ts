@@ -18,6 +18,8 @@ import {
   pageHelp,
   ruleHelp,
   stageHelp,
+  SYSTEM_HEALTH_KINDS,
+  systemHealthHelp,
   tileHealthHelp,
   waitingHelp,
   type HelpRef,
@@ -183,6 +185,16 @@ describe("help links from the app", () => {
       .filter((s): s is string => !!s);
     expect(stages.length).toBeGreaterThan(10);
     for (const s of stages) expectRef(stageHelp(s), `stage ${s}`);
+  });
+
+  it("every part of the System health page has its entry, and the API's kinds are all listed", () => {
+    for (const k of SYSTEM_HEALTH_KINDS) expectRef(systemHealthHelp(k), `system health ${k}`);
+    expect(systemHealthHelp("something_new")).toEqual({ topic: "system-health", anchor: "items" });
+    expectRef(systemHealthHelp("something_new"), "system health unknown kind");
+    const types = read("../api/internal/handlers/systemstatus/types.go");
+    const api = [...types.matchAll(/^\s+Kind\w+\s+=\s+"([a-z_]+)"$/gm)].map((m) => m[1]!);
+    expect(api.length).toBeGreaterThan(10);
+    expect([...SYSTEM_HEALTH_KINDS].sort()).toEqual([...api].sort());
   });
 
   it("the Live TV page's guide links point at entries that exist", () => {
