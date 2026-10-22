@@ -459,7 +459,12 @@ jobs:
           go-version-file: api/go.mod
           cache: false
 
+      # GOTOOLCHAIN=auto: nfpm needs a newer Go than the runner's, and setup-go sets
+      # GOTOOLCHAIN=local; a setup-go that left the runner's Go first on PATH (its
+      # download not installed) then failed this step. Go fetches what nfpm asks for.
       - name: Install nfpm
+        env:
+          GOTOOLCHAIN: auto
         run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.3
 
       - name: Download maktaba-server binaries
