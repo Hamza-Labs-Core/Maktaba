@@ -145,3 +145,43 @@ func TestAPromotionIsNotAskedWithoutItsRecord(t *testing.T) {
 		t.Fatalf("the supervisor's steps: %v", got)
 	}
 }
+
+// A thaw that fails is asked again until this home is writable, also by the process that
+// takes the switch up after a restart (the record says the thaw is still owed).
+func TestAFailedThawIsAskedAgain(t *testing.T) {
+	o, h, s, b, _ := setup(t)
+	ctx := context.Background()
+	o.RetryEvery = 50 * time.Millisecond
+	h.answers["switch.promote"] = func(json.RawMessage) (bool, any) { return false, "the kit does not open" }
+	h.answers["switch.status"] = func(json.RawMessage) (bool, any) { return true, map[string]any{"state": "called_off"} }
+	s.mu.Lock()
+	s.fail = "thaw"
+	s.mu.Unlock()
+	id, err := o.Start(ctx, b, "system")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := waitState(t, o, id, "failed", "handed_over")
+	if p.State != "failed" || !p.ThawPending {
+		t.Fatalf("the switch: %+v", p)
+	}
+	// the process ends; the next one takes the owed thaw up from the record
+	next := &Orchestrator{DB: o.DB, Hub: h, Supervisor: s, HomeName: "a", SchemaRev: 146, RetryEvery: 50 * time.Millisecond}
+	next.Resume(ctx)
+	s.mu.Lock()
+	s.fail = ""
+	s.mu.Unlock()
+	end := time.Now().Add(10 * time.Second)
+	for {
+		if q := next.Progress(id); q != nil && !q.ThawPending {
+			break
+		}
+		if time.Now().After(end) {
+			t.Fatalf("the thaw was not asked again: %+v", next.Progress(id))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if got := strings.Count(strings.Join(s.called(), " "), "thaw"); got < 2 {
+		t.Fatalf("thaws asked: %d", got)
+	}
+}

@@ -284,7 +284,7 @@ describe("Switching the home", () => {
             state: "done",
             integrations: {
               plex: { state: "needs_you", detail: "no_address" },
-              cf_webhook: { state: "needs_you", detail: "http://b:8080/api/tv/remote/webhook" },
+              cf_webhook: { state: "needs_you", detail: "/api/tv/remote/webhook" },
             },
           }),
         ],
@@ -295,7 +295,7 @@ describe("Switching the home", () => {
     const note = list.closest("[role='note']") as HTMLElement;
     expect(within(note).getByText(/Plex's address isn't set on this machine/)).toBeInTheDocument();
     const hook = within(note)
-      .getByText(/http:\/\/b:8080\/api\/tv\/remote\/webhook/)
+      .getByText(/this home's public address, path \/api\/tv\/remote\/webhook/)
       .closest("li") as HTMLElement;
     expect(within(hook).getByRole("link", { name: "Open remote TV" })).toHaveAttribute(
       "href",

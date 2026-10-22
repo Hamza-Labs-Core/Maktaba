@@ -159,10 +159,12 @@ func oldHomeHost(ctx context.Context, db *sql.DB) string {
 // (tvremote's handler keeps it).
 const WebhookSeen = "tv_remote.webhook_seen"
 
-// cfWebhook: Cloudflare sends its Live input notifications to the address set in its
-// dashboard: moved once one reached this home since the switch (Cloudflare's own test
-// notification will do); until then the address to set there (needs you).
-func cfWebhook(ctx context.Context, db *sql.DB, webURL string) Integration {
+// cfWebhook: Cloudflare sends its Live input notifications to the public address set in
+// its dashboard: moved once one reached this home since the switch (Cloudflare's own test
+// notification will do), or when that address is the cloud relay's, which moved with the
+// switch (relay: its check); else the path to set there at this home's public address
+// (needs you: the address that reaches this home is outside Maktaba).
+func cfWebhook(ctx context.Context, db *sql.DB, relay Integration) Integration {
 	var has bool
 	if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM home_secrets WHERE name = 'cf_webhook_secret')`).
 		Scan(&has); err != nil || !has {
@@ -174,5 +176,8 @@ func cfWebhook(ctx context.Context, db *sql.DB, webURL string) Integration {
 	if seen.Valid && (!since.Valid || seen.Time.After(since.Time)) {
 		return Integration{State: Moved}
 	}
-	return Integration{State: NeedsYou, Detail: strings.TrimRight(webURL, "/") + "/api/tv/remote/webhook"}
+	if relay.State == Moved {
+		return Integration{State: Moved, Detail: "through the cloud relay (" + relay.Detail + ")"}
+	}
+	return Integration{State: NeedsYou, Detail: "/api/tv/remote/webhook"}
 }

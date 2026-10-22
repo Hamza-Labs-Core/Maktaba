@@ -325,14 +325,19 @@ func (s *switching) recorded() (any, error) {
 			continue
 		}
 		var st struct {
-			State string `json:"state"`
+			State       string `json:"state"`
+			ThawPending bool   `json:"thaw_pending"`
 		}
 		if json.Unmarshal(b, &st) != nil {
 			continue
 		}
 		switch st.State {
-		case "handed_over", "done", "failed", "cancelled":
+		case "handed_over", "done":
 			continue
+		case "failed", "cancelled":
+			if !st.ThawPending { // over (one whose thaw failed is asked again)
+				continue
+			}
 		}
 		out = append(out, b)
 	}
@@ -855,11 +860,16 @@ func (s *switching) demote(req homeRequest) error {
 func (s *switching) homeKeyFiles() []string {
 	priv, pub := supervisor.JWTKeyPaths()
 	caKey := filepath.Join(config.KeysDir(), kitCAKey)
+	var serverTLS []string
 	if s.pg != nil {
 		caKey = filepath.Join(s.pg.Keys, kitCAKey)
+		// a certificate the home's CA signed passes as the home's database to its machines
+		serverTLS = s.pg.ServerTLSFiles()
 	}
-	return []string{secretsKeyPath(), clusterKeyPath(), caKey, priv, pub, supervisor.RelayCredPath(),
-		supervisor.RelayKeyPath()}
+	// the Hugging Face token stays: it is the person's own, for this machine's models
+	// (every machine keeps one of its own), not a key of the cluster's
+	return append([]string{secretsKeyPath(), clusterKeyPath(), caKey, priv, pub, supervisor.RelayCredPath(),
+		supervisor.RelayKeyPath()}, serverTLS...)
 }
 
 // wipeHomeKeys removes this machine's copies of the home's keys (overwritten first) and
@@ -1182,6 +1192,9 @@ func (s *switching) promote(ctx context.Context, id string, term int64) (any, er
 	if kit.Switchover != id || kit.Term != term {
 		return fail(errors.New("the kit is another switchover's"))
 	}
+	if err := s.kitCA(kit); err != nil {
+		return fail(err)
+	}
 	db, err := s.copyDB()
 	if err != nil {
 		return fail(err)
@@ -1303,6 +1316,28 @@ func fileExists(path string) bool {
 // Postgres the bundled home's (on the LAN, TLS from the cluster's CA), node.json moved
 // aside, every machine's notice of the new home sealed; answered with its addresses, then
 // it starts again as the home.
+// kitCA checks the database CA the machines will verify this home by, before the
+// promotion commits (a home they could not verify would have no machines): the kit's,
+// or this machine's own when the kit carries none; none needed when the database has no
+// TLS.
+func (s *switching) kitCA(kit *switchover.Kit) error {
+	if strings.EqualFold(strings.TrimSpace(s.cfg.Postgres.TLS), "off") {
+		return nil
+	}
+	ca, ok := kit.Files[kitCACert]
+	if !ok {
+		b, err := os.ReadFile(s.cp.copy.DB.CACert())
+		if err != nil {
+			return fmt.Errorf("the database CA the machines would verify this home by: %w", err)
+		}
+		ca = b
+	}
+	if err := config.CheckCA(string(ca)); err != nil {
+		return fmt.Errorf("the database CA the machines would verify this home by: %w", err)
+	}
+	return nil
+}
+
 func (s *switching) becomeHome(ctx context.Context, db *sql.DB, kit *switchover.Kit, id string, term int64,
 	n config.NodeConfig, done switchover.Promoted) (newHome, error) {
 	// the home's key files

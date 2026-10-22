@@ -83,6 +83,9 @@ type Progress struct {
 	// again but on the machine's word); ToURLs: where that machine answers as the home
 	PromoteSent bool     `json:"promote_sent,omitempty"`
 	ToURLs      []string `json:"to_urls,omitempty"`
+	// ThawPending: the switch was undone but this home could not be made writable again
+	// yet; it is asked again (retryThaw), after a restart too
+	ThawPending bool `json:"thaw_pending,omitempty"`
 }
 
 // Machine is a machine's part in a switch.
@@ -944,6 +947,11 @@ func (o *Orchestrator) Resume(ctx context.Context) {
 func (o *Orchestrator) resume(id string) {
 	ctx := context.Background()
 	p := o.Progress(id)
+	if p.ThawPending && (p.State == "failed" || p.State == "cancelled") {
+		// over, but this home not writable yet: only the thaw is asked again
+		o.retryThaw(ctx, id)
+		return
+	}
 	if !p.PromoteSent {
 		last := StepCheck
 		if n := len(p.Steps); n > 0 {
@@ -1002,11 +1010,12 @@ func (o *Orchestrator) waitHome(ctx context.Context, home NewHome) error {
 // every machine's drain as it was, the home's own jobs back.
 func (o *Orchestrator) undo(ctx context.Context, id string) {
 	if err := o.Supervisor.Call(ctx, "thaw", map[string]any{"id": id}, nil); err != nil {
-		// still frozen: said, and the switch failed all the same (it is thawed by hand, or
-		// by the next start's undo)
-		o.log().Error("switchover: this home could not be made writable again", "id", id, "err", err,
+		// still frozen: said, the switch ended all the same, and the thaw asked again until it
+		// goes through (also after a restart: the record says so)
+		o.log().Error("switchover: this home could not be made writable again; asking again", "id", id, "err", err,
 			"event", "switchover_thaw_failed")
-		o.update(id, func(p *Progress) { p.Detail = "this home stays read-only: " + err.Error() })
+		o.update(id, func(p *Progress) { p.Detail, p.ThawPending = "this home stays read-only: "+err.Error(), true })
+		go o.retryThaw(context.Background(), id)
 	}
 	_ = o.Supervisor.Call(ctx, "relay", map[string]any{"id": id, "on": true}, nil)
 	p := o.Progress(id)
@@ -1025,6 +1034,23 @@ func (o *Orchestrator) undo(ctx context.Context, id string) {
 	}
 	for _, sid := range o.Hub.HomeProcesses() {
 		_, _ = o.Hub.CommandWithin(ctx, sid, "undrain", json.RawMessage("{}"), "switchover", 10*time.Second)
+	}
+}
+
+// retryThaw asks this home's supervisor again, every retryEvery, to make it writable
+// after a switch that was undone (a thaw that failed) until it does.
+func (o *Orchestrator) retryThaw(ctx context.Context, id string) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(o.retryEvery()):
+		}
+		if err := o.Supervisor.Call(ctx, "thaw", map[string]any{"id": id}, nil); err == nil {
+			o.update(id, func(p *Progress) { p.ThawPending = false })
+			o.log().Info("switchover: this home is writable again", "id", id, "event", "switchover_thawed")
+			return
+		}
 	}
 }
 

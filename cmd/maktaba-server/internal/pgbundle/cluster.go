@@ -56,6 +56,12 @@ func (b Bundle) CACert() string { return filepath.Join(b.Keys, CACertFile) }
 func (b Bundle) serverCert() string { return filepath.Join(b.Keys, serverCertFile) }
 func (b Bundle) serverKey() string  { return filepath.Join(b.Keys, serverKeyFile) }
 
+// ServerTLSFiles are the server's certificate and key: signed by the database CA, which
+// the machines verify their home's database by (verify-ca: any certificate the CA signed
+// passes), so a machine that gives the home up keeps neither (Epic 37). A next start
+// with TLS makes them again.
+func (b Bundle) ServerTLSFiles() []string { return []string{b.serverCert(), b.serverKey()} }
+
 // TLSReady reports whether the server's certificate and key are in place.
 func (b Bundle) TLSReady() bool {
 	_, e1 := os.Stat(b.serverCert())

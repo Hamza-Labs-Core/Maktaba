@@ -3457,7 +3457,7 @@
   "machines.switch.needs.plex_no_address": "عنوان بلكس غير مضبوط على هذا الجهاز (كان المنزل القديم يأخذه من بيئته). اضبطه في إعدادات بلكس.",
   "machines.switch.needs.dizquetv": "لا يعمل dizqueTV من هذا الجهاز ({detail}). تحقّق من عنوانه في إعداداته.",
   "machines.switch.needs.dizquetv_no_address": "عنوان dizqueTV غير مضبوط على هذا الجهاز (كان المنزل القديم يأخذه من بيئته). اضبطه في إعداداته.",
-  "machines.switch.needs.cf_webhook": "يرسل Cloudflare إشعارات البث المباشر إلى العنوان المضبوط في لوحته. وجِّه ذلك الـ webhook إلى هذا المنزل ({detail}) وأرسِل إشعاره التجريبي: يُعلَّم هذا البند وحده حين يصل.",
+  "machines.switch.needs.cf_webhook": "يرسل Cloudflare إشعارات البث المباشر إلى العنوان العام المضبوط في لوحته. وجِّه ذلك الـ webhook إلى العنوان العام لهذا المنزل، على المسار {detail}، وأرسِل إشعاره التجريبي: يُعلَّم هذا البند وحده حين يصل.",
   "machines.checklist.action.youtube": "اختر المتصفح",
   "machines.checklist.action.llm": "اضبط خادم النماذج",
   "machines.checklist.action.hugging_face": "افتح النماذج",

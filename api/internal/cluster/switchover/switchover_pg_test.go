@@ -98,8 +98,12 @@ func (s *fakeSupervisor) Call(_ context.Context, step string, req, out any) erro
 		var open []json.RawMessage
 		for _, r := range s.records {
 			var p Progress
-			if json.Unmarshal(r, &p) == nil && p.State != "handed_over" && p.State != "failed" && p.State != "done" &&
-				p.State != "cancelled" {
+			if json.Unmarshal(r, &p) != nil {
+				continue
+			}
+			ended := p.State == "handed_over" || p.State == "done" ||
+				((p.State == "failed" || p.State == "cancelled") && !p.ThawPending)
+			if !ended {
 				open = append(open, r)
 			}
 		}

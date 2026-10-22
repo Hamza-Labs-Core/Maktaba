@@ -820,6 +820,9 @@ func (s *switching) promoteEmergency(ctx context.Context, id, by string, kit *sw
 	}
 	defer db.Close()
 	oldName := n.Home.Name
+	if err := s.kitCA(kit); err != nil {
+		return err
+	}
 	if s.stopCopy != nil {
 		s.stopCopy()
 	}

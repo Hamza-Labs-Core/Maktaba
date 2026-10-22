@@ -3452,7 +3452,7 @@
   "machines.switch.needs.plex_no_address": "Plex's address isn't set on this machine (the old home had it from its environment). Set it in Plex's settings.",
   "machines.switch.needs.dizquetv": "dizqueTV doesn't work from this machine ({detail}). Check its address in its settings.",
   "machines.switch.needs.dizquetv_no_address": "dizqueTV's address isn't set on this machine (the old home had it from its environment). Set it in its settings.",
-  "machines.switch.needs.cf_webhook": "Cloudflare sends its Live input notifications to the address set in its dashboard. Point that webhook at this home ({detail}) and send its test notification: this item ticks itself once one arrives.",
+  "machines.switch.needs.cf_webhook": "Cloudflare sends its Live input notifications to the public address set in its dashboard. Point that webhook at this home's public address, path {detail}, and send its test notification: this item ticks itself once one arrives.",
   "machines.checklist.action.youtube": "Choose the browser",
   "machines.checklist.action.llm": "Set the model server",
   "machines.checklist.action.hugging_face": "Open the models",

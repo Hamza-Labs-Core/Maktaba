@@ -50,7 +50,8 @@ type Secrets interface {
 //     machine's API has them;
 //   - youtube: a browser's YouTube cookies are that machine's: someone signs in on this
 //     machine's browser (needs you);
-//   - llm: a model runtime on the old home is not here unless this machine has one.
+//   - llm: a model runtime on the old home is not here unless this machine has one (not
+//     used: the library has no answer of a model's).
 func HomeIntegrations(db *sql.DB, store Secrets, hfToken string, publicStream func() string) Integrations {
 	return func(ctx context.Context) map[string]Integration {
 		out := map[string]Integration{}
@@ -102,7 +103,8 @@ func HomeIntegrations(db *sql.DB, store Secrets, hfToken string, publicStream fu
 		oldHost := oldHomeHost(ctx, db)
 		out["plex"] = checkService(ctx, db, store, plexService, oldHost)
 		out["dizquetv"] = checkService(ctx, db, store, dizquetvService, oldHost)
-		out["cf_webhook"] = cfWebhook(ctx, db, os.Getenv("MAKTABA_WEB_URL"))
+		out["relay"] = relayLink(ctx, os.Getenv("MAKTABA_CLOUDLINK_STATUS_URL"))
+		out["cf_webhook"] = cfWebhook(ctx, db, out["relay"])
 		out["plex_live_tv"] = liveTV(ctx, db, publicStream)
 		if hfToken != "" {
 			if _, err := os.Stat(hfToken); err == nil {
@@ -118,7 +120,6 @@ func HomeIntegrations(db *sql.DB, store Secrets, hfToken string, publicStream fu
 		}
 		out["youtube"] = youtube(ctx, db)
 		out["llm"] = llm(ctx, db)
-		out["relay"] = relayLink(ctx, os.Getenv("MAKTABA_CLOUDLINK_STATUS_URL"))
 		return out
 	}
 }
@@ -296,7 +297,7 @@ func youtube(ctx context.Context, db *sql.DB) Integration {
 
 // llm: a model runtime the old home ran on itself is not here unless this machine runs
 // one too.
-func llm(ctx context.Context, _ *sql.DB) Integration {
+func llm(ctx context.Context, db *sql.DB) Integration {
 	addr := strings.TrimPrefix(strings.TrimPrefix(os.Getenv("MAKTABA_OLLAMA_URL"), "http://"), "https://")
 	if addr == "" {
 		addr = "127.0.0.1:11434"
@@ -310,6 +311,12 @@ func llm(ctx context.Context, _ *sql.DB) Integration {
 	if err == nil {
 		_ = c.Close()
 		return Integration{State: Moved, Detail: addr}
+	}
+	// none here: needed only where the library used one (the model's answers it keeps)
+	var used bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM tag_checks) OR EXISTS (SELECT 1 FROM clip_checks)
+	    OR EXISTS (SELECT 1 FROM display_title_llm)`).Scan(&used); err == nil && !used {
+		return Integration{State: NotUsed}
 	}
 	return Integration{State: NeedsYou, Detail: "no model runtime answers on this machine (" + addr + ")"}
 }

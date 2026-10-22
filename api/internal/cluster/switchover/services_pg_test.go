@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
@@ -98,11 +99,13 @@ func TestTheHomesServicesAnswerFromTheNewHome(t *testing.T) {
 }
 
 // Cloudflare's notifications: not used without their secret; until one reaches this home
-// since the switch, the address to set; then moved.
+// since the switch, the path to set at its public address; then moved. Through the cloud
+// relay, which moved with the switch, they are moved at once.
 func TestCloudflaresNotificationsMoveWithTheHome(t *testing.T) {
 	db, _ := clustertest.ScratchDB(t)
 	ctx := context.Background()
-	if got := cfWebhook(ctx, db, "http://b:8080"); got.State != NotUsed {
+	noRelay := Integration{State: NotUsed}
+	if got := cfWebhook(ctx, db, noRelay); got.State != NotUsed {
 		t.Fatalf("no webhook: %+v", got)
 	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO home_secrets (name, key_id, nonce, ciphertext)
@@ -112,23 +115,47 @@ func TestCloudflaresNotificationsMoveWithTheHome(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `INSERT INTO cluster_terms (term, home_name, reason) VALUES (2, 'b', 'planned')`); err != nil {
 		t.Fatal(err)
 	}
-	got := cfWebhook(ctx, db, "http://b:8080/")
-	if got.State != NeedsYou || got.Detail != "http://b:8080/api/tv/remote/webhook" {
+	got := cfWebhook(ctx, db, noRelay)
+	if got.State != NeedsYou || got.Detail != "/api/tv/remote/webhook" {
 		t.Fatalf("not reached yet: %+v", got)
+	}
+	if got := cfWebhook(ctx, db, Integration{State: Moved, Detail: "library"}); got.State != Moved ||
+		!strings.Contains(got.Detail, "cloud relay (library)") {
+		t.Fatalf("through the relay: %+v", got)
+	}
+	if got := cfWebhook(ctx, db, Integration{State: Pending}); got.State != NeedsYou {
+		t.Fatalf("a relay not online yet: %+v", got)
 	}
 	// an event from before the switch does not count
 	if _, err := db.ExecContext(ctx, `INSERT INTO app_settings (key, value, updated_at)
 	    VALUES ($1, to_jsonb(now() - interval '1 day'), now())`, WebhookSeen); err != nil {
 		t.Fatal(err)
 	}
-	if got := cfWebhook(ctx, db, "http://b:8080"); got.State != NeedsYou {
+	if got := cfWebhook(ctx, db, noRelay); got.State != NeedsYou {
 		t.Fatalf("an old event: %+v", got)
 	}
 	if _, err := db.ExecContext(ctx, `UPDATE app_settings SET value = to_jsonb(now() + interval '1 second') WHERE key = $1`,
 		WebhookSeen); err != nil {
 		t.Fatal(err)
 	}
-	if got := cfWebhook(ctx, db, "http://b:8080"); got.State != Moved {
+	if got := cfWebhook(ctx, db, noRelay); got.State != Moved {
 		t.Fatalf("reached: %+v", got)
+	}
+}
+
+// No model runtime on the new home is not used while the library has no answer of a
+// model's, and needs a person once it has (the old home ran one).
+func TestAModelRuntimeIsNeededOnlyWhereTheLibraryUsedOne(t *testing.T) {
+	db, _ := clustertest.ScratchDB(t)
+	ctx := context.Background()
+	t.Setenv("MAKTABA_OLLAMA_URL", "http://127.0.0.1:1")
+	if got := llm(ctx, db); got.State != NotUsed {
+		t.Fatalf("a library without a model's answers: %+v", got)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO display_title_llm (input_hash, model, title) VALUES ('h', 'qwen', 't')`); err != nil {
+		t.Fatal(err)
+	}
+	if got := llm(ctx, db); got.State != NeedsYou {
+		t.Fatalf("a library that used one: %+v", got)
 	}
 }
