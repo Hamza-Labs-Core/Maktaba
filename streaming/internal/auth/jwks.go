@@ -57,9 +57,12 @@ type JWKSCache struct {
 	// NewKeyFileCache) when a token names a key it does not hold: the API
 	// makes the file as it starts, which may be after this process read it,
 	// and a first playback must not wait for the next look. At most every
-	// reloadEvery (lastReload).
+	// reloadEvery (reloadedAt, the last read, on the monotonic clock: a wall
+	// clock set back holds up no read); a request that finds a read under way
+	// waits for it (reloadMu), then looks again.
 	reload     func() bool
-	lastReload atomic.Int64
+	reloadMu   sync.Mutex
+	reloadedAt time.Time
 }
 
 // reloadEvery is the least time between two reloads of a static key set that
@@ -67,15 +70,31 @@ type JWKSCache struct {
 const reloadEvery = 100 * time.Millisecond
 
 // reloadOnMiss reads a static key set again, unless one was read less than
-// reloadEvery ago: whether it read one.
+// reloadEvery ago (maybe while this request waited for it): whether to look
+// again.
 func (c *JWKSCache) reloadOnMiss() bool {
 	if c.reload == nil {
 		return false
 	}
-	now, last := time.Now().UnixNano(), c.lastReload.Load()
-	if now-last < int64(reloadEvery) || !c.lastReload.CompareAndSwap(last, now) {
-		return false
+	c.reloadMu.Lock()
+	defer c.reloadMu.Unlock()
+	if !c.reloadedAt.IsZero() && time.Since(c.reloadedAt) < reloadEvery {
+		return true
 	}
+	return c.reloadLocked()
+}
+
+// readKeys reads a static key set again now (a look of its own, not a miss's),
+// noting it as reloadOnMiss's reads are.
+func (c *JWKSCache) readKeys() bool {
+	c.reloadMu.Lock()
+	defer c.reloadMu.Unlock()
+	return c.reloadLocked()
+}
+
+// reloadLocked reads the static key set (reloadMu held).
+func (c *JWKSCache) reloadLocked() bool {
+	c.reloadedAt = time.Now()
 	return c.reload()
 }
 
