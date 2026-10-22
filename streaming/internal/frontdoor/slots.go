@@ -1033,6 +1033,20 @@ func (s *Slots) ensureStandby(ctx context.Context, on bool, name string) {
 	}
 }
 
+// EncodersUsed is the hardware encoder sessions the slots held when they
+// last reported (VOD counts them against the channels' cap).
+func (s *Slots) EncodersUsed() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, h := range s.health {
+		if h != nil {
+			n += h.status.EncodersUsed
+		}
+	}
+	return n
+}
+
 func (s *Slots) remember(name string, st slot.Status) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

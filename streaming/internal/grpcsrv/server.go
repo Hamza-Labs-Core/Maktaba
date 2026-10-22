@@ -103,11 +103,11 @@ type TranscodeOrchestrator interface {
 // calls methods directly; production replaces it with a thin grpc
 // handler that delegates to the same struct.
 type Server struct {
-	Probe      *probe.Cache
-	Profiles   *capability.Registry
-	Sessions   session.Store
-	Allocator  *slots.Allocator
-	HWAccel    ffmpeg.HWAccel
+	Probe     *probe.Cache
+	Profiles  *capability.Registry
+	Sessions  session.Store
+	Allocator *slots.Allocator
+	HWAccel   ffmpeg.HWAccel
 	// HWAccelNow, when set, is the verdict now (ffmpeg.WatchChoice keeps it
 	// current) and wins over HWAccel.
 	HWAccelNow func() ffmpeg.HWAccel

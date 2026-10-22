@@ -358,10 +358,10 @@ func buildGRPCServer(bg *background, logger *slog.Logger, backend probe.Backend,
 	if lerr := layout.EnsureTiers(); lerr != nil {
 		logger.Warn("cache layout init failed", "err", lerr.Error(), "event", "cache_init_warn")
 	}
-	// VOD's GPU sessions count with the TV's playout here (channel.EncoderGate)
+	// VOD's GPU sessions count with the TV's channels' (vodGate)
 	srv.Transcode = ffmpeg.DefaultOrchestrator(vodBinary(cfg), map[ffmpeg.HWAccel]ffmpeg.SessionGate{
-		ffmpeg.HWAccelNVENC:        channel.DefaultEncoderGate(),
-		ffmpeg.HWAccelVideoToolbox: channel.DefaultVTGate(),
+		ffmpeg.HWAccelNVENC:        &vodGate{gate: channel.DefaultEncoderGate()},
+		ffmpeg.HWAccelVideoToolbox: &vodGate{gate: channel.DefaultVTGate()},
 	})
 	srv.ResolveDir = layout.HLSDir
 	return srv
