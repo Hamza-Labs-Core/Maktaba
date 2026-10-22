@@ -83,6 +83,13 @@ h2,
   box-shadow: var(--shadow-panel);
 }
 
+/* cards let the art through too; the panel's blur keeps their text calm */
+.mkt-card,
+.mk-card,
+[data-theme="dark"] .mk-card {
+  background-color: var(--color-card);
+}
+
 .mkt-nav-link.active {
   background: var(--color-accent-soft);
   color: var(--color-accent-text);
@@ -133,7 +140,9 @@ h2,
   .mkt-shell__nav,
   .mkt-shell__tabbar,
   .mkt-shell__main,
-  .mkt-login__form {
+  .mkt-login__form,
+  .mkt-card,
+  .mk-card {
     background: color-mix(in srgb, var(--color-bg) 94%, transparent);
   }
 }
@@ -142,7 +151,9 @@ h2,
   .mkt-shell__nav,
   .mkt-shell__tabbar,
   .mkt-shell__main,
-  .mkt-login__form {
+  .mkt-login__form,
+  .mkt-card,
+  .mk-card {
     background: var(--color-bg);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
