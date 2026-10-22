@@ -291,9 +291,16 @@ type Settings struct {
 	State *State
 }
 
-// Output implements channel.Settings.
+// Output implements channel.Settings. Until the front door's first budget
+// (a slot just started or restarted), the hardware caps are the share VOD can
+// never take (it holds at most half of them): the slot cannot know yet how
+// many a transcode holds.
 func (s Settings) Output(ctx context.Context) channel.OutputSettings {
 	out := s.Settings.Output(ctx)
+	if !s.State.Warmed() {
+		out.NVENCMax -= out.NVENCMax / 2
+		out.VTMax -= out.VTMax / 2
+	}
 	b := s.State.Budget()
 	if b.MaxActive > 0 {
 		out.MaxActive = b.MaxActive

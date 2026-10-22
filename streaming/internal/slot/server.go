@@ -44,6 +44,10 @@ type Server struct {
 	Logger   *slog.Logger
 	// EncodersUsed reports the hardware sessions in use (beat, status).
 	EncodersUsed func() int
+	// OnBudget applies a budget the front door sent to the encoder gates at once
+	// (nil: at each station's next start only): the front door lowers the NVENC
+	// budget by the sessions VOD takes before it takes them.
+	OnBudget func(ctx context.Context, b Budget)
 	// Now (tests).
 	Now func() time.Time
 	// Bind pins an unbound slot to a release (POST /internal/tv/slot/bind;
@@ -223,6 +227,9 @@ func (s *Server) warm(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.State.SetBudget(req.Budget)
+	if s.OnBudget != nil {
+		s.OnBudget(r.Context(), req.Budget)
+	}
 	ids := make([]uuid.UUID, 0, len(req.Channels))
 	want := map[uuid.UUID]bool{}
 	for _, c := range req.Channels {

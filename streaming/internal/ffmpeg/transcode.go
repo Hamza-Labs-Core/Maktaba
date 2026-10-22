@@ -2,9 +2,12 @@ package ffmpeg
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -36,6 +39,9 @@ type Job struct {
 	SourceCodec string
 	// NoAudio: the source has no audio stream (none is mapped).
 	NoAudio bool
+
+	// toneMap: the runner's tone-mapping for an HDR source (toneMapFor)
+	toneMap string
 }
 
 // Handle is the live transcode controller pinned to a session. It
@@ -184,9 +190,10 @@ type Orchestrator struct {
 
 // DefaultOrchestrator returns an Orchestrator backed by the real
 // ffmpeg-spawning Runner, its hardware encoders' sessions counted by gates
-// (nil: uncounted). main.go wires this; tests swap Runner.
-func DefaultOrchestrator(bin Binary, gates map[HWAccel]SessionGate) *Orchestrator {
-	return &Orchestrator{Runner: &execRunner{Bin: bin, Gates: gates}}
+// (nil: uncounted), logging to logger (nil: slog's default). main.go wires
+// this; tests swap Runner.
+func DefaultOrchestrator(bin Binary, gates map[HWAccel]SessionGate, logger *slog.Logger) *Orchestrator {
+	return &Orchestrator{Runner: &execRunner{Bin: bin, Gates: gates, Logger: logger}}
 }
 
 // SessionGate is a hardware encoder's session budget, shared with the TV's
@@ -194,6 +201,13 @@ func DefaultOrchestrator(bin Binary, gates map[HWAccel]SessionGate) *Orchestrato
 // few NVENC sessions, and every ladder rung on NVENC is one.
 type SessionGate interface {
 	Acquire(ctx context.Context, owner uuid.UUID, wait time.Duration) (release func(refused bool), ok bool)
+}
+
+// SessionBatch is a SessionGate that gives a transcode's rungs their sessions
+// in one go (up to n; the rest are libx264's): VOD's gate asks the TV's slots
+// once for them all.
+type SessionBatch interface {
+	AcquireN(ctx context.Context, owner uuid.UUID, n int) []func(refused bool)
 }
 
 // Start prepares the session HLS dir, writes the master playlist for
@@ -255,10 +269,15 @@ func BuildMasterPlaylistFor(ladder []Rendition) []byte {
 	return []byte(sb.String())
 }
 
-// fallbackWindow: a hardware run that fails this soon after it started is
-// run again in software (a source or a format the GPU will not take, a
-// session the driver would not open).
+// fallbackWindow: a run that fails this soon after it started is run again,
+// the next way down: a hardware run in software (a source or a format the GPU
+// will not take, a session the driver would not open), a tone-mapped software
+// run without the tone-mapping (a colour space zscale cannot convert).
 var fallbackWindow = 30 * time.Second
+
+// probeTimeout bounds the source's colour probe at a session's open (the API
+// gives the open 5 s in all).
+const probeTimeout = 3 * time.Second
 
 // execRunner is the production Runner: it builds the HLS/DASH arg list
 // and Spawns ffmpeg. The child writes variant playlists + segments into
@@ -268,11 +287,160 @@ var fallbackWindow = 30 * time.Second
 // not at all (the highest rungs first; the rungs it gets none for are
 // encoded by libx264), and gives them back when ffmpeg exits: VOD never
 // takes a session the TV's playout here counts on. A hardware run that
-// fails within fallbackWindow is run again in software; when the driver
-// refused the session, the gate pauses the hardware encoder for everyone.
+// fails within fallbackWindow is run again the next way down (fallbackWindow);
+// when the driver refused the session, the gate pauses the hardware encoder
+// for everyone.
 type execRunner struct {
-	Bin   Binary
-	Gates map[HWAccel]SessionGate
+	Bin    Binary
+	Gates  map[HWAccel]SessionGate
+	Logger *slog.Logger // nil: slog's default
+
+	// what tests replace: the source's colour, and the filters this ffmpeg has
+	colour  func(ctx context.Context, ffprobe, input string) (Colour, error)
+	filters func(ctx context.Context, ffmpeg string) (map[string]bool, error)
+	// toneMapMu guards canToneMap, known once a look at the filters succeeded
+	toneMapMu  sync.Mutex
+	toneKnown  bool
+	canToneMap bool
+}
+
+// toneMapFor is the tone-mapping an HDR source gets (ToneMapFilters, at most
+// the ladder's top rung), when this ffmpeg has zscale and tonemap; "" for SDR,
+// or without them (the 8-bit cut as before). A probe that failed counts the
+// source SDR, logged (the catalogue keeps no colour to fall back on).
+func (e *execRunner) toneMapFor(ctx context.Context, job Job) string {
+	colour := e.colour
+	if colour == nil {
+		colour = sourceColour
+	}
+	ffprobe := e.Bin.FFprobe
+	if ffprobe == "" {
+		ffprobe = "ffprobe"
+	}
+	c, err := colour(ctx, ffprobe, job.InputPath)
+	if err != nil {
+		e.logger().Warn("transcode: the source's colour probe failed, encoding it as SDR",
+			"session_id", job.SessionID, "input", job.InputPath, "err", err.Error(), "event", "vod_colour_probe_failed")
+	}
+	if !c.HDR() || len(job.Ladder) == 0 || !e.hasToneMap(ctx) {
+		return ""
+	}
+	top := job.Ladder[0]
+	for _, r := range job.Ladder[1:] {
+		if r.Width*r.Height > top.Width*top.Height {
+			top = r
+		}
+	}
+	return ToneMapFilters(c, top.Width, top.Height)
+}
+
+// hasToneMap: this ffmpeg has zscale and tonemap; asked again until a look at
+// its filters succeeds (one that failed does not turn tone-mapping off).
+func (e *execRunner) hasToneMap(ctx context.Context) bool {
+	e.toneMapMu.Lock()
+	defer e.toneMapMu.Unlock()
+	if !e.toneKnown {
+		list := e.filters
+		if list == nil {
+			list = listFilters
+		}
+		have, err := list(ctx, e.ffmpeg())
+		if err != nil {
+			e.logger().Warn("transcode: listing ffmpeg's filters failed, an HDR source is not tone-mapped",
+				"err", err.Error(), "event", "vod_filters_list_failed")
+			return false
+		}
+		e.toneKnown, e.canToneMap = true, have["zscale"] && have["tonemap"]
+	}
+	return e.canToneMap
+}
+
+func (e *execRunner) logger() *slog.Logger {
+	if e.Logger == nil {
+		return slog.Default()
+	}
+	return e.Logger
+}
+
+func (e *execRunner) ffmpeg() string {
+	if e.Bin.FFmpeg == "" {
+		return "ffmpeg"
+	}
+	return e.Bin.FFmpeg
+}
+
+// sourceColour is the colour of the source's first video frame as ffprobe
+// decodes it, the stream's where the frame names none: the frame's is there for
+// MPEG-TS (whose stream values ffprobe prints twice) and for an MKV whose
+// Colour element names only the matrix (FFmpeg 8.1 then reports the stream's
+// transfer as unknown). The error when ffprobe fails or takes over
+// probeTimeout.
+func sourceColour(ctx context.Context, ffprobe, input string) (Colour, error) {
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, ffprobe, "-v", "error", "-select_streams", "v:0", "-read_intervals", "%+#1",
+		"-show_entries", "frame=color_transfer,color_space,color_primaries,color_range:"+
+			"stream=color_transfer,color_space,color_primaries,color_range",
+		"-of", "json", input).Output()
+	if err != nil {
+		if ctx.Err() != nil {
+			return Colour{}, fmt.Errorf("ffprobe: %w", ctx.Err())
+		}
+		return Colour{}, fmt.Errorf("ffprobe: %w", err)
+	}
+	return parseColour(out), nil
+}
+
+func parseColour(out []byte) Colour {
+	type colour struct {
+		Transfer  string `json:"color_transfer"`
+		Matrix    string `json:"color_space"`
+		Primaries string `json:"color_primaries"`
+		Range     string `json:"color_range"`
+	}
+	var doc struct {
+		Frames  []colour `json:"frames"`
+		Streams []colour `json:"streams"`
+	}
+	if json.Unmarshal(out, &doc) != nil {
+		return Colour{}
+	}
+	pick := func(get func(colour) string) string {
+		for _, list := range [][]colour{doc.Frames, doc.Streams} {
+			for _, c := range list {
+				switch v := get(c); v {
+				case "", "unknown", "unspecified", "reserved":
+				default:
+					return v
+				}
+			}
+		}
+		return ""
+	}
+	return Colour{
+		Transfer:  pick(func(c colour) string { return c.Transfer }),
+		Matrix:    pick(func(c colour) string { return c.Matrix }),
+		Primaries: pick(func(c colour) string { return c.Primaries }),
+		Range:     pick(func(c colour) string { return c.Range }),
+	}
+}
+
+// listFilters is the filters `ffmpeg -filters` names.
+func listFilters(ctx context.Context, ffmpeg string) (map[string]bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, ffmpeg, "-hide_banner", "-filters").Output()
+	if err != nil {
+		return nil, err
+	}
+	have := map[string]bool{}
+	for _, l := range strings.Split(string(out), "\n") {
+		// " TS. zscale  V->V  Apply resizing, colorspace and bit depth conversion."
+		if f := strings.Fields(l); len(f) >= 3 && strings.Contains(f[2], "->") {
+			have[f[1]] = true
+		}
+	}
+	return have, nil
 }
 
 func (e *execRunner) Start(ctx context.Context, job Job) (*Handle, error) {
@@ -283,36 +451,42 @@ func (e *execRunner) Start(ctx context.Context, job Job) (*Handle, error) {
 	// or segments would ever be produced and the client would poll
 	// forever. The encoder's lifetime is owned by the Handle and torn
 	// down only via Handle.Stop (reaper / CloseSession / store Close).
-	// The request ctx is intentionally unused here (request-scoped
-	// validation happens upstream in Orchestrator.Start).
-	_ = ctx
+	// The request ctx bounds only what runs before the spawn (the source's
+	// HDR probe, the GPU sessions' sync with the TV's slots: their open
+	// stays within its deadline); request-scoped validation happens
+	// upstream in Orchestrator.Start.
 	h := &Handle{}
-	if err := e.run(h, job, job.HWAccel); err != nil {
+	job.toneMap = e.toneMapFor(ctx, job)
+	if err := e.run(ctx, h, job, job.HWAccel); err != nil {
 		return nil, err
 	}
 	return h, nil
 }
 
 // run spawns job's encoder for the verdict hw into h, under a session-scoped
-// context (see Start), and watches it: the gate's sessions go back when it
-// exits, and a hardware run that failed early is run again in software.
-func (e *execRunner) run(h *Handle, job Job, hw string) error {
+// context (see Start; ctx bounds only taking the gate's sessions), and watches
+// it: the gate's sessions go back when it exits, and a hardware run that failed
+// early is run again in software.
+func (e *execRunner) run(ctx context.Context, h *Handle, job Job, hw string) error {
 	rungs := len(job.Ladder)
 	hwRungs := 0
 	var releases []func(refused bool)
 	if hw != "" {
 		hwRungs = rungs
 		if g := e.Gates[HWAccel(hw)]; g != nil {
-			hwRungs = 0
 			owner := sessionOwner(job.SessionID)
-			for i := 0; i < rungs; i++ {
-				release, ok := g.Acquire(context.Background(), owner, 0)
-				if !ok {
-					break
+			if b, ok := g.(SessionBatch); ok {
+				releases = b.AcquireN(ctx, owner, rungs)
+			} else {
+				for i := 0; i < rungs; i++ {
+					release, ok := g.Acquire(ctx, owner, 0)
+					if !ok {
+						break
+					}
+					releases = append(releases, release)
 				}
-				releases = append(releases, release)
-				hwRungs++
 			}
+			hwRungs = len(releases)
 		}
 	}
 	giveBack := func(refused bool) {
@@ -321,6 +495,7 @@ func (e *execRunner) run(h *Handle, job Job, hw string) error {
 		}
 	}
 	plan := PlanFor(hw, hwRungs, rungs, job.SourceCodec, !job.NoAudio)
+	plan.ToneMap = job.toneMap
 	var args Args
 	if strings.EqualFold(job.Format, "dash") {
 		args = DASHArgs(job.InputPath, job.OutputDir, job.Ladder, plan)
@@ -344,10 +519,23 @@ func (e *execRunner) run(h *Handle, job Job, hw string) error {
 	go func() {
 		werr := proc.Wait()
 		giveBack(hwRungs > 0 && refusedSession(proc.stderrAfterExit(2*time.Second)))
-		if werr == nil || hwRungs == 0 || time.Since(started) >= fallbackWindow || !h.restart() {
+		if werr == nil || time.Since(started) >= fallbackWindow {
 			return
 		}
-		if err := e.run(h, job, ""); err != nil {
+		// the next way down: the GPU's run in software (tone-mapped as it was),
+		// a tone-mapped software run without the tone-mapping
+		next := job
+		switch {
+		case hwRungs > 0:
+		case job.toneMap != "":
+			next.toneMap = ""
+		default:
+			return
+		}
+		if !h.restart() {
+			return
+		}
+		if err := e.run(context.Background(), h, next, ""); err != nil {
 			h.mu.Lock()
 			h.restarting = false
 			h.mu.Unlock()
@@ -357,9 +545,11 @@ func (e *execRunner) run(h *Handle, job Job, hw string) error {
 }
 
 // refusedSession: ffmpeg's stderr says the driver would not open an NVENC
-// session (the card's sessions are all taken, here or by another program).
+// session for want of one (the card's sessions are all taken, here or by
+// another program); "unsupported device" is a card without NVENC.
 func refusedSession(stderr string) bool {
-	return strings.Contains(strings.ToLower(stderr), "openencodesessionex failed")
+	s := strings.ToLower(stderr)
+	return strings.Contains(s, "openencodesessionex failed") && !strings.Contains(s, "unsupported device")
 }
 
 // sessionOwner is the gate's owner for a session id (a UUID, else one made

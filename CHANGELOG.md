@@ -548,15 +548,47 @@ don't append a line here; docs-only PRs are exempt.
   reader, and a broken one a backup replaces is kept beside it (`node.json.broken-…`), never
   removed. A start that cannot make the lock (a folder it may not write, a full disk) leaves the
   leftovers and reads past them, as before.
+- **Video transcodes share the GPU with the TV, and HDR plays right** (follow-up of the NVIDIA
+  transcode fix). The TV comes first: a transcode takes NVENC sessions only beyond what the
+  channels need (two for each on air and each the hot standby keeps warm, and room for one more
+  channel to start, live and warm, with TV slots on or off, every channel engine in the process
+  counted), and at most half the channels' cap; the rest of its rungs are encoded by libx264. At
+  the default cap of 6 with TV slots on, a transcode therefore gets no NVENC session while a
+  channel is on air (two with none on air), and its rungs run on libx264: about twice real time
+  for 4K HDR on an i9, and a slower host may not keep up. A failover during a transcode is still
+  warm, and a channel started during one finds its sessions; beyond that, until the transcode
+  ends, a channel may run on libx264 and the standby keep fewer warm. With TV slots on, those
+  sessions are counted live: the front door lowers the slots' budgets by them before they are
+  taken and keeps them only when the live slot took its new budget and the slots' fresh reports
+  leave room, so VOD's sessions and the live slot's stay within the cap (the standby's warm
+  channels, and a release's staging slot during a swap, hold theirs on top, as without a
+  transcode); a slot that has just started holds to half its cap until it hears its budget. A
+  transcode's open keeps to its deadline (the sessions' sync gets the request's), and a source
+  whose colour probe fails is logged and encoded as SDR. VideoToolbox keeps to its own cap. A GPU
+  encoder that failed its test encode is detected again with growing waits (a busy one until it
+  works, one the machine does not have a few times). HDR (PQ or HLG, MPEG-TS too, and sources
+  that name only their transfer) is tone-mapped to SDR when ffmpeg has `zscale` and `tonemap`,
+  after scaling to the top rung (4K HDR transcodes at twice real time instead of below it), with
+  Möbius' curve, and a transcode whose tone-mapping fails plays untoned instead of not at all.
+  Every rung has a key frame on each 6 s boundary, so its segments align with the other rungs'
+  (DASH, one AdaptationSet, says so).
 - **A transcoded video can be sought through and played to its end.** A video transcode's
   playlist kept only its last six segments (DASH: ten) and deleted the rest, so a transcode
   running ahead of the player deleted segments before they were played, and nothing outside the
   window could be sought to. Its playlists now list every segment: HLS as an EVENT playlist that
   ends with `#EXT-X-ENDLIST` when the transcode is done, which players start at its beginning
-  (`#EXT-X-START`) unless they resume elsewhere; DASH without a window, its MPD static once done.
-  The segments stay until the session closes (the player closes it, or nothing fetched a
-  segment for 90 s): its folder is removed then, and one a previous run left behind once it has
-  not changed for 90 s. Nothing removed those folders before.
+  (`#EXT-X-START`) unless they resume elsewhere; DASH without a window, its MPD dynamic while the
+  transcode runs (players start at its first segment, not near its live edge) and static once
+  every segment is available, so dash.js plays to the end (from ffmpeg's own MPD, static as soon
+  as it was done, a player that had started stopped short: at 42 s of a 3 min video). DASH
+  sessions play at all: the router served none of their segments. A paused player keeps its
+  session (reloading the playlist counts as activity). The segments stay until the session closes
+  (the player closes it, or nothing was fetched for 90 s, and then 10 minutes more, so a viewer
+  back from a long pause plays on): its folder is removed then, and one a previous run left
+  behind once it has not changed for 90 s. Nothing removed those folders before. A transcode's
+  segments take about 4.8 GB an hour for the 1080p ladder on the cache's disk, outside the
+  cache's cap, so no transcode starts with less than `MAKTABA_TRANSCODE_MIN_FREE_GIB` (default
+  20) free there.
 
 ## [0.2.0] - 2026-10-19
 
