@@ -62,8 +62,6 @@ jobs:
             apps/desktop/pnpm-lock.yaml
 
       - name: Install web + desktop deps and the build tools
-        # a stalled apt mirror fails the step here, not at the job's limit
-        timeout-minutes: 30
         run: |
           pnpm -C web install --frozen-lockfile
           pnpm -C apps/desktop install --frozen-lockfile

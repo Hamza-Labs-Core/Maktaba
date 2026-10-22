@@ -590,8 +590,6 @@ jobs:
           cache-dependency-path: web/pnpm-lock.yaml
 
       - name: Install web deps and the build tools
-        # a stalled apt mirror fails the step here, not at the job's limit
-        timeout-minutes: 20
         run: |
           pnpm -C web install --frozen-lockfile
           sudo apt-get update -qq

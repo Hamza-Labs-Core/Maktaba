@@ -123,8 +123,6 @@ jobs:
       # rsvg, patchelf for AppImage). No-op on macOS/Windows.
       - name: Install Linux build deps
         if: runner.os == 'Linux'
-        # a stalled apt mirror fails the step here, not at the job's limit
-        timeout-minutes: 20
         run: |
           set -euo pipefail
           sudo apt-get update
