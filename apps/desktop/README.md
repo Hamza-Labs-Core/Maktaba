@@ -92,11 +92,15 @@ CI — so the workflow builds `web/dist` itself (install → design tokens →
 `--config {"build":{"beforeBuildCommand":""}}` so `tauri build` just
 bundles the already-built frontend.
 
-**Signing is deferred.** These bundles are unsigned. When certificates are
-provisioned, wire them into the `tauri build` step via the secrets documented at
-the top of the workflow (`APPLE_*` for Developer ID + notarisation,
-`WINDOWS_CERTIFICATE*` for Authenticode, `TAURI_SIGNING_PRIVATE_KEY*` for
-the auto-updater).
+**Updates are signed; the installers are not yet.** The updater key is
+set up: `TAURI_SIGNING_PRIVATE_KEY*` sign each updater bundle, and the
+public key, the repository variable `TAURI_UPDATER_PUBKEY`, is stamped
+into `tauri.conf.json` at build time (the committed file keeps the
+`REPLACE_WITH_PUBKEY` placeholder; [auto-update](../../docs/auto-update.md)).
+OS code signing is still deferred: when certificates are provisioned,
+wire them in via the secrets documented at the top of the workflow
+(`APPLE_*` for Developer ID + notarisation, `WINDOWS_CERTIFICATE*` for
+Authenticode).
 
 Build the same installers locally for the host OS with `make
 package-desktop` (= `scripts/build.sh`).
@@ -111,7 +115,7 @@ package-desktop` (= `scripts/build.sh`).
 | **Deep links** | `maktaba://watch/{id}` etc. — scheme registered in `tauri.conf.json`; the Rust `on_open_url` handler emits a `deep-link` event the web shell maps to an SPA route via the same `deepLinkToPath` parser the Capacitor shell uses |
 | **Single instance** | on Windows/Linux a `maktaba://` open spawns a new process; the single-instance plugin (with the `deep-link` feature) focuses the running window and forwards the URL |
 | **mDNS** | `discover_servers` browses `_maktaba._tcp.local.` for the server picker |
-| **Auto-update** | `updater` plugin checks `releases/latest/download/latest.json`; updates are signed with the Tauri updater key, whose public key `desktop-release.yml` stamps into `tauri.conf.json` at build time (the `TAURI_UPDATER_PUBKEY` variable; the repository keeps the placeholder) |
+| **Auto-update** | `updater` plugin checks `releases/latest/download/latest.json`; updates are signed with the Tauri updater key, whose public key `desktop-release.yml` stamps into `tauri.conf.json` at build time (the `TAURI_UPDATER_PUBKEY` variable; the repository keeps the placeholder; [auto-update](../../docs/auto-update.md)) |
 
 ## Maktaba.app runs the server (Epic 36)
 

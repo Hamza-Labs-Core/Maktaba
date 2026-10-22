@@ -113,6 +113,48 @@ troubleshooting, and pre-commit setup.
 
 ## Install the home server
 
+**Linux, one installation that runs everything** ([Epic 39](specs/epics/39-linux-app/README.md)).
+The server, its database (Postgres 16), Python and the transcription pipeline in one install,
+run as your systemd user service, with your distribution's ffmpeg. It starts at boot when linger
+is on (setup turns it on, which may ask for an administrator's password once), otherwise when you
+log in. x86_64 or aarch64, glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 or later; RHEL,
+Alma and Rocky 10 with EPEL for the desktop's tray library), and a systemd user manager. ffmpeg
+must be 4.4 or later with libx264: Debian's, Ubuntu's and Arch's are; on Fedora and RHEL it is RPM
+Fusion's (their own `ffmpeg-free` has no libx264), on openSUSE Packman's. Setup checks it and names
+the command that installs it for your distribution (the terminal setup offers to run it);
+`[media] ffmpeg` in `server.toml` names another.
+
+- **With a desktop:** download `Maktaba_<ver>_amd64.AppImage` (or the `.deb` / `.rpm`; `aarch64`
+  builds too) from the [latest release](https://github.com/Hamza-Labs-Core/Maktaba/releases/latest),
+  open it and follow the setup. The window is the web app; the tray shows the server's status.
+  The `.deb` depends on `ffmpeg` and the `.rpm` requires it; on Fedora and RHEL turn RPM Fusion on
+  first (`sudo dnf install https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm`),
+  or dnf finds no `ffmpeg` for it.
+  The app updates itself from the release's signed updates, installing one only when its signature
+  matches the key built into the app ([auto-update](docs/auto-update.md)), and moves the server to
+  the new version at its next start.
+- **Without a desktop** (a NAS, a mini PC, a VM): run the release's installer as the user the
+  server is for (not as root). It downloads the server, checks its Sigstore signature before
+  anything runs (with the machine's cosign when it is 2.4.3 or newer, else a pinned cosign it
+  fetches), and asks the same setup questions in the terminal, in English or Arabic:
+
+  ```sh
+  curl -fsSLO https://github.com/Hamza-Labs-Core/Maktaba/releases/latest/download/install.sh
+  bash install.sh --app
+  ```
+
+  The script is in the release's signed `checksums.txt` too, so it can be checked the same way
+  first ([how](deploy/packaging/README.md#linux-the-app-or-these-packages)). This machine
+  updates from the signed releases when an admin clicks Update now in the web app or runs
+  `maktaba-server update` (each installs the new version beside the running one and switches to
+  it); installing updates by itself, on a schedule, comes with story 39.9.
+- **Uninstall:** `~/.local/share/maktaba/runtime/current/bin/maktaba-server service uninstall`
+  stops and removes the service; removing the `.deb` / `.rpm` stops it too. Your library's data
+  stays in `~/.local/share/maktaba` and `~/.config/maktaba` until you delete them.
+
+On a Mac, Maktaba.app is the same one installation ([Epic 36](specs/epics/36-mac-app/README.md)).
+The packages below install the server alone, for operators who run it their own way.
+
 The home server ships as the single `maktaba-server` binary (with the API,
 streaming, and pipeline roles plus the web UI). Pick the method for your OS —
 every artifact is checksummed and signed with keyless cosign:
@@ -228,9 +270,10 @@ the workflows below.
 | Platform | Artifact(s) | Workflow |
 |---|---|---|
 | **Web** (self-host the SPA) | `maktaba-web-<version>.tar.gz` | [`release.yml`](.github/workflows/release.yml) (auto) · [`web-release.yml`](.github/workflows/web-release.yml) (on-demand rebuild) |
-| **Desktop — macOS** | `.dmg` (universal arm64 + x86_64) | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
+| **Desktop — macOS** | two `.dmg`s (built on macos-15): Apple Silicon with the whole server inside, Intel the client only | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
 | **Desktop — Windows** | NSIS `-setup.exe` with the server inside (current user, `%LOCALAPPDATA%\Maktaba`) + portable `.zip` of the client | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
-| **Desktop — Linux** | `.deb` + `.AppImage` | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
+| **Desktop — Linux** | `.AppImage` + `.deb` + `.rpm` (x86_64, aarch64), the whole server inside (ffmpeg is the distribution's) | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
+| **Server — Linux without a desktop** | `maktaba-linux-payload-<version>-<x86_64\|aarch64>.tar.gz` (`install.sh --app`) | [`release.yml`](.github/workflows/release.yml) |
 | **Mobile — Android** | `maktaba-<version>.apk` (sideload) + `.aab` (Play Store) | [`mobile-release.yml`](.github/workflows/mobile-release.yml) |
 | **Mobile — iOS** | `maktaba-<version>.ipa` *(signing deferred — see workflow)* | [`mobile-release.yml`](.github/workflows/mobile-release.yml) |
 | **TV — Android TV** | `maktaba-tv-<version>.apk` | [`tv-release.yml`](.github/workflows/tv-release.yml) |
@@ -242,7 +285,8 @@ Windows Authenticode) are wired in as documented TODOs in each workflow and
 land once provisioned. The desktop apps' **updates are signed** with the Tauri
 updater key: the release workflow signs them with the repository's secret and
 stamps the public key (the `TAURI_UPDATER_PUBKEY` variable) into
-`tauri.conf.json` at build time, so the apps take only updates signed with it. Android signs
+`tauri.conf.json` at build time, so the apps take only updates signed with it
+([auto-update](docs/auto-update.md)). Android signs
 automatically when the `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEY_ALIAS` /
 `ANDROID_KEY_PASSWORD` secrets are set. Without them the APKs are built
 unsigned, kept as workflow artifacts and not attached to the Release.
