@@ -508,6 +508,10 @@ jobs:
       - uses: actions/checkout@v6.0.2
 
       - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          # the constraints name PyTorch's index: uv export --emit-index-url needs uv 0.12+
+          # (build-release.sh checks), and one uv version writes them the same every run
+          version: "0.13.4"
 
       - name: Build the wheel, constraints and installer archives
         env:

@@ -54,7 +54,9 @@ model = "large-v3"
 # compute_type = "auto"
 # Transcription workers beside the main worker, and how many files each
 # decodes together per GPU pass: sized from the GPU's memory (an 8 GB card:
-# one worker, 8 files); without a GPU the main worker transcribes, 4 at a time.
+# one worker, 8 files; 4 files in int8_float16 beside the second listen, which
+# needs an NVIDIA GPU of 8 GB or more); without a GPU the main worker
+# transcribes, 4 at a time, and transcripts keep Whisper's words.
 # workers = 0
 # batch = 0
 # Threads on the CPU: half the logical CPUs (2 to 16).

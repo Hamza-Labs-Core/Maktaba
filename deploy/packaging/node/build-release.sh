@@ -4,9 +4,14 @@
 #
 #   maktaba_pipeline-<ver>-py3-none-any.whl     the pipeline, version-stamped
 #   maktaba-pipeline-<ver>-constraints.txt      its dependencies as uv.lock pins them
-#                                               (every extra but dev)
+#                                               (every extra but dev), from PyPI: on
+#                                               Windows torch's CPU build
+#   maktaba-pipeline-<ver>-constraints-cuda.txt the same with the cuda group: on Windows
+#                                               torch's CUDA build, from PyTorch's index
+#                                               (which the file names), for a machine
+#                                               whose NVIDIA GPU runs the second listen
 #   maktaba-node-<ver>.tar.gz / .zip            the node installer (this directory) with
-#                                               the wheel, the constraints and
+#                                               the wheel, both constraints and
 #                                               release.conf, which makes the installer
 #                                               default to that wheel
 #
@@ -40,6 +45,14 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$TAG" ] || die "--version is required"
 command -v uv >/dev/null 2>&1 || die "uv is required (https://docs.astral.sh/uv/)"
+# The cuda constraints name the index beside PyPI (torch's CUDA build for Windows comes from
+# PyTorch's): uv export writes it with --emit-index-url, new in uv 0.12. An older uv would
+# write a file without it, which cannot install torch's CUDA build.
+UV_MIN="0.12.0"
+uv_version="$(uv --version | awk '{print $2}')"
+if [ "$(printf '%s\n%s\n' "$UV_MIN" "$uv_version" | sort -t. -k1,1n -k2,2n -k3,3n | head -n1)" != "$UV_MIN" ]; then
+    die "uv $uv_version is too old: the constraints need uv $UV_MIN or later (uv export --emit-index-url). Update it with \`uv self update\` or from https://docs.astral.sh/uv/"
+fi
 case "$TAG" in v*) ;; *) TAG="v$TAG" ;; esac
 VERSION="${TAG#v}"
 
@@ -95,6 +108,7 @@ cp "$WORK/wheel/$WHEEL" "$OUT/$WHEEL"
 
 # --- the constraints: uv.lock's pins for the runtime and every extra but dev ------------------
 CONSTRAINTS="maktaba-pipeline-$PEP_VERSION-constraints.txt"
+CONSTRAINTS_CUDA="maktaba-pipeline-$PEP_VERSION-constraints-cuda.txt"
 extras=()
 # (a Windows Python prints CRLF: strip the CR, or uv rejects the extra's name)
 while IFS=$'\r' read -r e; do extras+=(--extra "$e"); done < <(
@@ -107,28 +121,64 @@ for name in project.get("optional-dependencies", {}):
         print(name)
 PY
 )
-# With the hashes uv.lock records: the installers install in hash-checking mode
-# (--require-hashes), so a dependency that PyPI serves differently is refused.
-uv export --project "$src" --frozen --no-dev --no-emit-project --quiet \
-    ${extras[@]+"${extras[@]}"} -o "$WORK/$CONSTRAINTS"
-# The export header names this script's temporary path: keep the file reproducible.
-grep -v '^#    uv export' "$WORK/$CONSTRAINTS" >"$OUT/$CONSTRAINTS"
-# every requirement carries a hash (the installers refuse the file otherwise)
-unhashed="$(awk '
-    /^[A-Za-z0-9]/ { if (req != "" && !h) bad = bad " " req; req = $1; h = ($0 ~ /--hash=sha256:/); next }
-    /--hash=sha256:/ { h = 1 }
-    END { if (req != "" && !h) bad = bad " " req; print bad }' "$OUT/$CONSTRAINTS")"
-[ -z "$unhashed" ] || die "$CONSTRAINTS has requirements without a hash:$unhashed"
-if grep -qE '^(-e |file:|\./)' "$OUT/$CONSTRAINTS"; then
-    die "$CONSTRAINTS has a local requirement, which a machine without the checkout cannot install"
+# the indexes of pyproject.toml beside PyPI ([[tool.uv.index]]: PyTorch's, the cuda group's)
+indexes=()
+while IFS=$'\r' read -r url; do [ -z "$url" ] || indexes+=("$url"); done < <(
+    uv run --no-project --quiet python - "$src/pyproject.toml" <<'PY'
+import sys, tomllib
+with open(sys.argv[1], "rb") as f:
+    for index in tomllib.load(f).get("tool", {}).get("uv", {}).get("index", []):
+        print(index["url"])
+PY
+)
+
+# export_pins FILE [uv export options]: the pins with the hashes uv.lock records (the
+# installers install in hash-checking mode, --require-hashes, so a dependency that an index
+# serves differently is refused) and the indexes they come from; a file that matches no
+# hash of its pin is never taken, whichever index serves it.
+export_pins() {
+    local file="$1" unhashed
+    shift
+    uv export --project "$src" --frozen --no-dev --no-emit-project --quiet --emit-index-url \
+        ${extras[@]+"${extras[@]}"} "$@" -o "$WORK/$file"
+    # The export header names this script's temporary path: keep the file reproducible.
+    grep -v '^#    uv export' "$WORK/$file" >"$OUT/$file"
+    # every requirement carries a hash (the installers refuse the file otherwise)
+    unhashed="$(awk '
+        /^[A-Za-z0-9]/ { if (req != "" && !h) bad = bad " " req; req = $1; h = ($0 ~ /--hash=sha256:/); next }
+        /--hash=sha256:/ { h = 1 }
+        END { if (req != "" && !h) bad = bad " " req; print bad }' "$OUT/$file")"
+    [ -z "$unhashed" ] || die "$file has requirements without a hash:$unhashed"
+    if grep -qE '^(-e |file:|\./)' "$OUT/$file"; then
+        die "$file has a local requirement, which a machine without the checkout cannot install"
+    fi
+}
+
+# the default set: PyPI's alone (torch's CPU build on Windows). uv names every index of
+# pyproject.toml in it; none of its pins comes from one, so it is left out: an installer
+# then never asks PyTorch's index for anything.
+export_pins "$CONSTRAINTS"
+grep -v '^--extra-index-url ' "$OUT/$CONSTRAINTS" >"$WORK/$CONSTRAINTS.pypi"
+mv "$WORK/$CONSTRAINTS.pypi" "$OUT/$CONSTRAINTS"
+if grep -qE '^torch==[^ ;]*\+cu' "$OUT/$CONSTRAINTS"; then
+    die "$CONSTRAINTS pins torch's CUDA build: it is the cuda group's (pyproject.toml)"
 fi
+# the cuda set (a machine whose NVIDIA GPU runs the second listen): torch's CUDA build on
+# Windows, from the index it names
+export_pins "$CONSTRAINTS_CUDA" --group cuda
+for url in ${indexes[@]+"${indexes[@]}"}; do
+    grep -qxF -- "--extra-index-url $url" "$OUT/$CONSTRAINTS_CUDA" \
+        || die "$CONSTRAINTS_CUDA does not name the index $url (uv export --emit-index-url)"
+done
+grep -qE "^torch==[^ ;]*\+cu[0-9]+ ;.*sys_platform == 'win32'" "$OUT/$CONSTRAINTS_CUDA" \
+    || die "$CONSTRAINTS_CUDA pins no CUDA build of torch for Windows (the cuda group)"
 
 # --- the installer bundle ------------------------------------------------------------------------
 BUNDLE="maktaba-node-$PEP_VERSION"
 stage="$WORK/$BUNDLE"
 mkdir -p "$stage"
 (cd "$SCRIPT_DIR" && tar --exclude=./tests --exclude=./build-release.sh -cf - .) | (cd "$stage" && tar -xf -)
-cp "$OUT/$WHEEL" "$OUT/$CONSTRAINTS" "$stage/"
+cp "$OUT/$WHEEL" "$OUT/$CONSTRAINTS" "$OUT/$CONSTRAINTS_CUDA" "$stage/"
 cat >"$stage/release.conf" <<EOF
 # Written by build-release.sh: install-node.sh / install-node.ps1 install this release's
 # pipeline when given neither --from-wheel nor --source. Not sourced; KEY=VALUE only.
@@ -139,6 +189,8 @@ WHEEL=$WHEEL
 WHEEL_SHA256=$(sha256 "$OUT/$WHEEL")
 CONSTRAINTS=$CONSTRAINTS
 CONSTRAINTS_SHA256=$(sha256 "$OUT/$CONSTRAINTS")
+CONSTRAINTS_CUDA=$CONSTRAINTS_CUDA
+CONSTRAINTS_CUDA_SHA256=$(sha256 "$OUT/$CONSTRAINTS_CUDA")
 PYTHON=$(tr -d '[:space:]' <"$PIPELINE/.python-version")
 EOF
 chmod 0755 "$stage/install-node.sh" "$stage/uninstall-node.sh" "$stage/launchd/maktaba-node-run"
@@ -171,4 +223,4 @@ PY
 }
 (cd "$WORK" && rm -f "$OUT/$BUNDLE.zip" && make_zip "$OUT/$BUNDLE.zip" "$BUNDLE")
 
-printf '%s\n' "$OUT/$WHEEL" "$OUT/$CONSTRAINTS" "$OUT/$BUNDLE.tar.gz" "$OUT/$BUNDLE.zip"
+printf '%s\n' "$OUT/$WHEEL" "$OUT/$CONSTRAINTS" "$OUT/$CONSTRAINTS_CUDA" "$OUT/$BUNDLE.tar.gz" "$OUT/$BUNDLE.zip"

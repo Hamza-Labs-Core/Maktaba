@@ -233,7 +233,7 @@ func Build(o Options) (*rv.Manifest, error) {
 	if err != nil {
 		return nil, err
 	}
-	var wheel, cons string
+	var wheel, cons, consCUDA string
 	for _, e := range entries {
 		name := e.Name()
 		switch {
@@ -261,6 +261,11 @@ func Build(o Options) (*rv.Manifest, error) {
 				return nil, fmt.Errorf("two constraints files: %s, %s", cons, name)
 			}
 			cons = name
+		case strings.HasPrefix(name, "maktaba-pipeline-") && strings.HasSuffix(name, "-constraints-cuda.txt"):
+			if consCUDA != "" {
+				return nil, fmt.Errorf("two cuda constraints files: %s, %s", consCUDA, name)
+			}
+			consCUDA = name
 		}
 	}
 	if len(m.Assets) == 0 {
@@ -268,6 +273,9 @@ func Build(o Options) (*rv.Manifest, error) {
 	}
 	if (wheel == "") != (cons == "") {
 		return nil, errors.New("pipeline wheel and constraints must ship together")
+	}
+	if consCUDA != "" && cons == "" {
+		return nil, errors.New("cuda constraints without the default constraints and wheel")
 	}
 	if wheel != "" {
 		wd, err := fileSHA(filepath.Join(o.Dist, wheel))
@@ -282,6 +290,16 @@ func Build(o Options) (*rv.Manifest, error) {
 			return nil, err
 		}
 		m.Pipeline = &rv.Pipeline{Wheel: wheel, WheelSHA256: wd, Constraints: cons, ConstraintsSHA256: hexSHA(cb), Python: facts.Python}
+		if consCUDA != "" {
+			ccb, err := os.ReadFile(filepath.Join(o.Dist, consCUDA))
+			if err != nil {
+				return nil, err
+			}
+			if err := rv.CheckConstraints(consCUDA, ccb); err != nil {
+				return nil, err
+			}
+			m.Pipeline.ConstraintsCUDA, m.Pipeline.ConstraintsCUDASHA256 = consCUDA, hexSHA(ccb)
+		}
 	}
 	return m, nil
 }

@@ -99,6 +99,36 @@ don't append a line here; docs-only PRs are exempt.
   more workers than planned share the GPU or the CPU; the Whisper download is pinned to a commit
   and its files' SHA-256; the free-memory floor works on Windows. On an RTX 2080 SUPER: 72x real
   time for eight files at once, 31x for one; 2-3x on the CPU.
+- **The second listen on Windows and Linux (story 38.9).** Cohere Transcribe Arabic corrects
+  Whisper's words there too, through transformers on torch's CUDA build on the NVIDIA GPU
+  Whisper uses, respelt with the CAMeL dictionary as on the Mac (camel-tools now installs on
+  Windows and Linux x86_64). It runs only where the GPU holds it beside Whisper (10 GB and up on
+  Windows, where the driver keeps more of the card back; 8 GB and up on Linux) and has the room
+  free when a file is done; else the transcript keeps Whisper's words and says why, as a Mac
+  without the model does, and `models download` neither fetches the gated model nor asks for a
+  Hugging Face sign-in for it. Never on the CPU. With it on, the supervisor gives Whisper a
+  smaller batch on such a GPU to leave it room. Transcripts record what heard them
+  (`metadata.refine.runtime`) and a missing dictionary (`dictionary: "unavailable"`). The
+  dictionary's data folder is now made before CAMeL Tools downloads into it (a fresh models
+  folder made it fail). It runs only where the GPU can (its memory, compute capability 7.5 and
+  driver R580, read from the driver without importing torch) and its model can be had (the
+  supervisor gives Whisper the smaller batch only then); its model is fetched at a pinned commit
+  and checked file by file; a load that fails is not tried again for 10 minutes, doubling to 6
+  hours.
+- **torch's CUDA build on Windows, where the GPU runs the second listen (story 38.9).** PyPI only
+  has a CPU torch for Windows (124 MB), which stays the default; the CUDA build
+  (`torch 2.14.1+cu130` from PyTorch's own index, 2.0 GB; the venv grows from 2.7 to 5.0 GB) comes
+  with a new `cuda` dependency group, only on a machine whose NVIDIA GPU runs the second listen
+  (9.5 GiB or more, compute capability 7.5 or more, driver R580 or later, as `nvidia-smi` says).
+  A release ships both pin sets, every pin hash-checked (`...-constraints.txt`, PyPI's alone, and
+  `...-constraints-cuda.txt`, which names PyTorch's index: `uv export --emit-index-url`, so
+  building a release needs uv 0.12 or later), named in `release.json` and `release.conf`; the
+  venv bootstrap (`--torch auto|cpu|cuda`), `setup --node` and `install-node.ps1` (`-Torch`) pick
+  one by the GPU; the Windows app's payload carries both (`pipeline\constraints-cuda.txt`). With the cuda set the node installers look for each pin on both indexes, and
+  with the `stt` or `search` extra install the pins with the venv's pip, which takes the file a
+  pin's hashes name from either index. Linux and macOS install the same packages as before. CI
+  exports with uv 0.13.4. The semantic-search embedder no longer goes on an NVIDIA GPU of its own
+  accord (`MAKTABA_EMBED_DEVICE=cuda` still puts it there): the GPU's sizing leaves it no room.
 - **The desktop app runs the server on Windows** (Epic 38, story 38.3). When setup finishes on
   a Windows PC, the app registers the user's own sign-in task `\Maktaba Server <SID>` (the
   user's session, so mapped NAS drives work; each user of the PC has their own). The task runs

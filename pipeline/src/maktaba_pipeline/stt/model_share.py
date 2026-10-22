@@ -426,15 +426,22 @@ def from_share(model_id: str, share: Path | None, root: Path | None = None) -> P
 
 
 def hf_snapshot(model_id: str) -> Path | None:
-    """The folder of ``model_id`` in this machine's Hugging Face cache (no network)."""
+    """The folder of ``model_id`` in this machine's Hugging Face cache (no network): at
+    its pinned commit when Maktaba fetches it at one (Windows, Linux: a download at a
+    commit makes no ``refs/main``), else the one ``main`` names (mlx-audio's, on a Mac)."""
     try:
         from huggingface_hub import snapshot_download
     except ImportError:
         return None
-    try:
-        return Path(snapshot_download(model_id, local_files_only=True))
-    except Exception:  # noqa: BLE001 - not cached here
-        return None
+    from .engine import pin_for
+
+    pin = pin_for(model_id)
+    for revision in dict.fromkeys([pin.revision if pin else None, None]):
+        try:
+            return Path(snapshot_download(model_id, revision=revision, local_files_only=True))
+        except Exception:  # noqa: BLE001 - not cached here
+            continue
+    return None
 
 
 def publish_from_cache(model_id: str, share: Path | None) -> Path | None:
