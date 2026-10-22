@@ -2,7 +2,7 @@
 // fake SetupApi that answers like `maktaba-server setup --json` would
 // (specs/epics/36-mac-app/contract-setup.md).
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "../../lib/i18n";
 import {
@@ -428,6 +428,389 @@ describe("SetupWizard", () => {
     expect(screen.getByText(/Maktaba runs in the tray \(beside the clock\)/)).toBeInTheDocument();
   });
 
+  describe("moving the Maktaba a PC runs into the app (Epic 38 story 38.13)", () => {
+    const THIS_PC = {
+      id: String.raw`\Maktaba node (maktaba-local)`,
+      kind: "script",
+      task: String.raw`\Maktaba node (maktaba-local)`,
+      task_enabled: true,
+      dir: String.raw`E:\tv\maktaba-local`,
+      config_found: true,
+      db: "node",
+      home: "Mahmouds-Mac-Studio",
+      ports: { web: "0.0.0.0:8780", api: "127.0.0.1:8781", stream: "0.0.0.0:8782" },
+      pids: [100, 101, 102],
+    };
+    const PLAN = {
+      source: THIS_PC,
+      items: [
+        {
+          code: "key",
+          params: { name: "stream-signing.key" },
+          what: "stream-signing.key",
+          from: "a",
+          to: "b",
+          size: 1704,
+          done: false,
+        },
+      ],
+      carried: [
+        { code: "section", params: { name: "[server]" }, message: "[server]" },
+        { code: "section", params: { name: "[media]" }, message: "[media]" },
+        { code: "no_mdns", message: 'en: --no-mdns as [server] mdns = "off"' },
+      ],
+      not_carried: [
+        { code: "env", params: { name: "MAKTABA_FANCY" }, message: "en: MAKTABA_FANCY" },
+      ],
+      problems: [],
+      warnings: [],
+      need: 1704,
+      free: 10 ** 12,
+    };
+    const URLS = { web_url: "http://127.0.0.1:8780", supervisor_url: "http://127.0.0.1:9103" };
+
+    function adoptStep(
+      plan: unknown = PLAN,
+      move: Handler = () => URLS,
+      find: Handler = () => ({ sources: [THIS_PC] })
+    ) {
+      return vi.fn((input: Record<string, unknown>, onProgress?: (p: StepProgress) => void) => {
+        if (input.action === "find") return find(input, onProgress);
+        if (input.action === "plan") return plan;
+        if (input.action === "undo") return { move: { stage: "undone", source: THIS_PC } };
+        return move(input, onProgress);
+      });
+    }
+
+    it("offers the move first, shows its plan, moves, downloads the models and starts the server", async () => {
+      const order: string[] = [];
+      let seen = "";
+      const adopt = adoptStep(PLAN, async (_, onProgress) => {
+        order.push("move");
+        onProgress?.({ stage: "stop", message: "en: Stopping the old install" });
+        // the line under the bar, while the move runs: the app's own words
+        await waitFor(() => {
+          seen = screen.getByText("Stopping the old install").textContent ?? "";
+        });
+        expect(screen.queryByText(/en: Stopping/)).not.toBeInTheDocument();
+        return URLS;
+      });
+      const models = vi.fn((input: Record<string, unknown>) => {
+        order.push(`models:${String(input.action)}`);
+        return {};
+      });
+      const api = fakeApi({ adopt, models }, { platform: "windows" });
+      renderWizard(api);
+      expect(
+        await screen.findByText("Move the Maktaba this PC runs into the app")
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Start fresh" })).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Move it" }));
+
+      expect(await screen.findByText("A node of the home Mahmouds-Mac-Studio")).toBeInTheDocument();
+      expect(screen.getByText(String.raw`E:\tv\maktaba-local`)).toBeInTheDocument();
+      expect(
+        screen.getByText("web 0.0.0.0:8780, api 127.0.0.1:8781, stream 0.0.0.0:8782")
+      ).toBeInTheDocument();
+      expect(screen.getByText(/Its key stream-signing\.key/)).toBeInTheDocument();
+      expect(screen.getByText("Copied into the app (1.7 KB)")).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          'Settings carried: [server], [media], no announcing on the network (--no-mdns, as [server] mdns = "off")'
+        )
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("Not carried: MAKTABA_FANCY from its script (no server.toml setting)")
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/en:/)).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Move" }));
+
+      expect(await screen.findByRole("heading", { name: "Starting Maktaba" })).toBeInTheDocument();
+      expect(order).toEqual(["move", "models:download"]);
+      // the step's English line became the app's own
+      expect(seen).toBe("Stopping the old install");
+      expect(adopt).toHaveBeenCalledWith(
+        { action: "move", source: THIS_PC.id },
+        expect.any(Function)
+      );
+      expect(api.finishSetup).toHaveBeenCalledWith(URLS.web_url, URLS.supervisor_url);
+    });
+
+    it("is not looked for on a Mac; Start fresh is the usual setup beside a home", async () => {
+      const adopt = adoptStep();
+      const { unmount } = renderWizard(fakeApi({ adopt }));
+      expect(await screen.findByRole("button", { name: "Set up this Mac" })).toBeInTheDocument();
+      expect(adopt).not.toHaveBeenCalled();
+      unmount();
+
+      const home = { ...THIS_PC, db: "sqlite", home: undefined };
+      const besideAHome = adoptStep(PLAN, undefined, () => ({ sources: [home] }));
+      renderWizard(fakeApi({ adopt: besideAHome, check: () => CHECK }, { platform: "windows" }));
+      await userEvent.click(await screen.findByRole("button", { name: "Start fresh" }));
+      expect(await screen.findByRole("heading", { name: "What will run" })).toBeInTheDocument();
+    });
+
+    it("beside a node of a home Start fresh is not offered: the app would be its second copy", async () => {
+      renderWizard(fakeApi({ adopt: adoptStep() }, { platform: "windows" }));
+      expect(
+        await screen.findByText(
+          "this PC runs a node of the home Mahmouds-Mac-Studio outside the app: a fresh setup would be a second copy of that node. Move it into the app instead."
+        )
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Start fresh" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Move it" })).toBeEnabled();
+    });
+
+    it("a find that fails is said, with Try again, and does not fall through to a fresh setup", async () => {
+      let fails = true;
+      const adopt = adoptStep(PLAN, undefined, () => {
+        if (fails) throw stepError("adopt_find", "en: schtasks failed");
+        return { sources: [] };
+      });
+      renderWizard(fakeApi({ adopt, check: () => CHECK }, { platform: "windows" }));
+      expect(
+        await screen.findByText("Maktaba could not look at what this PC runs.")
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Set up this PC" })).toBeDisabled();
+      fails = false;
+      await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Set up this PC" })).toBeEnabled()
+      );
+      expect(adopt).toHaveBeenCalledTimes(2);
+    });
+
+    it("a move recorded part way is offered to go on, or to restore the old install", async () => {
+      let stage = "stopped";
+      const adopt = adoptStep(PLAN, undefined, () => ({
+        sources: [{ ...THIS_PC, task_enabled: false }],
+        move: { stage, source: THIS_PC },
+      }));
+      adopt.mockImplementationOnce(() => ({
+        sources: [{ ...THIS_PC, task_enabled: false }],
+        move: { stage, source: THIS_PC },
+      }));
+      renderWizard(fakeApi({ adopt }, { platform: "windows" }));
+      expect(await screen.findByText("A move into the app stopped part way")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Go on with the move" })).toBeInTheDocument();
+      stage = "undone";
+      await userEvent.click(screen.getByRole("button", { name: "Restore the old install" }));
+      expect(adopt).toHaveBeenCalledWith({ action: "undo" }, undefined);
+      expect(
+        await screen.findByText("The old install runs again, as before the move.")
+      ).toBeInTheDocument();
+      // looked again: the old install is offered to move, as before
+      expect(await screen.findByRole("button", { name: "Move it" })).toBeInTheDocument();
+      expect(screen.queryByText("A move into the app stopped part way")).not.toBeInTheDocument();
+    });
+
+    it("a problem in the plan stops it before anything changes, each finding in the app's words", async () => {
+      const where = "127.0.0.1:5432";
+      const adopt = adoptStep({
+        ...PLAN,
+        source: { ...THIS_PC, db: "own-postgres", db_where: where },
+        problems: [{ code: "postgres_down", params: { where }, message: "en: not running" }],
+        warnings: [
+          { code: "postgres_stays", params: { where }, message: "en: stays" },
+          { code: "brand_new", message: "A finding this app has no text for." },
+        ],
+      });
+      renderWizard(fakeApi({ adopt }, { platform: "windows" }));
+      await userEvent.click(await screen.findByRole("button", { name: "Move it" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "Its library database, the Postgres at 127.0.0.1:5432, is not running: the move needs it running."
+      );
+      expect(
+        screen.getByText(
+          "The library database stays in the Postgres at 127.0.0.1:5432 on this PC, which keeps running as it does now."
+        )
+      ).toBeInTheDocument();
+      expect(screen.getByText("A finding this app has no text for.")).toBeInTheDocument();
+      expect(screen.queryByText(/^en:/)).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Move" })).toBeDisabled();
+    });
+
+    it("a move that stopped part way says why in the app's words and goes on when tried again", async () => {
+      let fail = true;
+      const english = "port 8782 is still in use after the old install stopped";
+      const move = vi.fn((): unknown => {
+        if (fail)
+          throw {
+            code: "adopt_port_busy",
+            params: { port: "8782" },
+            message: english,
+            details: ["adopt.log: stop: Stopping the old install"],
+          } satisfies StepError;
+        return URLS;
+      });
+      const api = fakeApi({ adopt: adoptStep(PLAN, move) }, { platform: "windows" });
+      renderWizard(api);
+      await userEvent.click(await screen.findByRole("button", { name: "Move it" }));
+      await userEvent.click(await screen.findByRole("button", { name: "Move" }));
+      const alert = await screen.findByRole("alert");
+      // the app's text with the port, alone; the step's English under Details
+      expect(alert.querySelector("p")?.textContent).toBe(
+        "The move stopped part way: port 8782 is still in use after the old install stopped. Try again goes on from there."
+      );
+      expect(within(alert).getByText("Details")).toBeInTheDocument();
+      expect(alert.querySelector("details pre")).toHaveTextContent(english);
+      expect(alert.querySelector("details pre")).toHaveTextContent("adopt.log: stop");
+      expect(api.finishSetup).not.toHaveBeenCalled();
+      fail = false;
+      await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+      expect(await screen.findByRole("heading", { name: "Starting Maktaba" })).toBeInTheDocument();
+      expect(move).toHaveBeenCalledTimes(2);
+    });
+
+    it("a move that failed can restore the old install from the screen", async () => {
+      const adopt = adoptStep(PLAN, () => {
+        throw stepError("adopt_key_differs", "en: differs");
+      });
+      const api = fakeApi({ adopt }, { platform: "windows" });
+      renderWizard(api);
+      await userEvent.click(await screen.findByRole("button", { name: "Move it" }));
+      await userEvent.click(await screen.findByRole("button", { name: "Move" }));
+      expect(await screen.findByRole("button", { name: "Try again" })).toBeInTheDocument();
+      expect(screen.getByText(/turns its task back on and runs it/)).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Restore the old install" }));
+      expect(adopt).toHaveBeenCalledWith({ action: "undo" }, undefined);
+      expect(
+        await screen.findByText("The old install runs again, as before the move.")
+      ).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Welcome to Maktaba" })).toBeInTheDocument();
+      expect(api.finishSetup).not.toHaveBeenCalled();
+    });
+
+    it("a move done can be undone from the welcome screen", async () => {
+      let stage = "finished";
+      const adopt = adoptStep(PLAN, undefined, () => ({
+        sources: [],
+        move: { stage, source: THIS_PC },
+      }));
+      renderWizard(fakeApi({ adopt }, { platform: "windows" }));
+      expect(await screen.findByText("The Maktaba this PC ran is in the app")).toBeInTheDocument();
+      stage = "undone";
+      await userEvent.click(screen.getByRole("button", { name: "Restore the old install" }));
+      expect(adopt).toHaveBeenCalledWith({ action: "undo" }, undefined);
+      expect(
+        await screen.findByText("The old install runs again, as before the move.")
+      ).toBeInTheDocument();
+      await waitFor(() =>
+        expect(screen.queryByText("The Maktaba this PC ran is in the app")).not.toBeInTheDocument()
+      );
+    });
+
+    it("a node config nothing runs: a fresh setup is a new home, and says so", async () => {
+      const adopt = adoptStep(PLAN, undefined, () => ({
+        sources: [],
+        leftover_node: {
+          home: "Mahmouds-Mac-Studio",
+          path: String.raw`C:\Users\me\AppData\Roaming\Maktaba\node.json`,
+        },
+      }));
+      renderWizard(fakeApi({ adopt, check: () => CHECK }, { platform: "windows" }));
+      expect(
+        await screen.findByText(
+          String.raw`this PC holds the node config of the home Mahmouds-Mac-Studio (C:\Users\me\AppData\Roaming\Maktaba\node.json), which nothing here runs: setting up fresh makes a new home and leaves that node config unused.`
+        )
+      ).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Set up this PC" }));
+      expect(await screen.findByRole("heading", { name: "What will run" })).toBeInTheDocument();
+    });
+
+    it("two findings of one code are two rows; the firewall prompt is said before the move", async () => {
+      const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+      const adopt = adoptStep({
+        ...PLAN,
+        problems: [
+          {
+            code: "key_differs",
+            params: { path: String.raw`C:\a\keys\secrets.key`, from: "x" },
+            message: "en: a",
+          },
+          {
+            code: "key_differs",
+            params: { path: String.raw`C:\a\node.json`, from: "y" },
+            message: "en: b",
+          },
+        ],
+        warnings: [{ code: "firewall_prompt", params: { count: 4 }, message: "en: firewall" }],
+      });
+      renderWizard(fakeApi({ adopt }, { platform: "windows" }));
+      await userEvent.click(await screen.findByRole("button", { name: "Move it" }));
+      expect(await screen.findAllByRole("alert")).toHaveLength(2);
+      expect(
+        screen.getByText(
+          "So that other devices still reach it, the move gives the app's programs the old install's 4 firewall rules: Windows asks you once to allow that."
+        )
+      ).toBeInTheDocument();
+      expect(errors.mock.calls.some((c) => String(c[0]).includes("same key"))).toBe(false);
+      errors.mockRestore();
+    });
+
+    it("a service install is named, and its plan refuses it in the app's words", async () => {
+      const svc = {
+        ...THIS_PC,
+        id: "service:Maktaba",
+        kind: "service",
+        task: undefined,
+        service: "Maktaba",
+        db: "",
+        dir: String.raw`C:\ProgramData\Maktaba`,
+        ports: null,
+      };
+      const adopt = adoptStep(
+        {
+          ...PLAN,
+          source: svc,
+          items: [],
+          carried: [],
+          not_carried: [],
+          problems: [
+            { code: "service_install", params: { name: "Maktaba" }, message: "en: a service" },
+          ],
+        },
+        undefined,
+        () => ({ sources: [svc] })
+      );
+      renderWizard(fakeApi({ adopt }, { platform: "windows" }));
+      expect(await screen.findByText("The Windows service Maktaba")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Move it" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "It runs as the Windows service Maktaba, under the system's account: only an administrator can stop it, so the app cannot move it."
+      );
+      expect(
+        screen.getByText("A Windows service (it runs under the system's account)")
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Move" })).toBeDisabled();
+    });
+
+    it("a gated model asks for the Hugging Face sign-in, then the move goes on", async () => {
+      let gated = true;
+      const models = vi.fn((input: Record<string, unknown>) => {
+        if (input.action === "download" && gated) throw stepError("hf_gated", "sign in first");
+        return {};
+      });
+      const move = vi.fn(() => URLS);
+      const api = fakeApi({ adopt: adoptStep(PLAN, move), models }, { platform: "windows" });
+      renderWizard(api);
+      await userEvent.click(await screen.findByRole("button", { name: "Move it" }));
+      await userEvent.click(await screen.findByRole("button", { name: "Move" }));
+      expect(
+        await screen.findByRole("heading", { name: "Transcription models" })
+      ).toBeInTheDocument();
+      gated = false;
+      await userEvent.type(screen.getByLabelText(/Hugging Face token/), "hf_tok");
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+      expect(await screen.findByRole("heading", { name: "Starting Maktaba" })).toBeInTheDocument();
+      expect(models).toHaveBeenCalledWith(
+        { source: "huggingface", hf_token: "hf_tok" },
+        expect.any(Function)
+      );
+      expect(move).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("install: a language model that cannot download now is left to the server", async () => {
     const llm = vi.fn(() => {
       throw { code: "llm_failed", message: "no network", details: [] };
@@ -565,8 +948,10 @@ describe("ServerStarting", () => {
     expect(api.openLocalServer).not.toHaveBeenCalled();
   });
 
-  it("says why a server that runs does not answer", async () => {
-    const api = fakeApi();
+  // what a starting server waits on: ServerStarting.test.tsx
+
+  it("says why a server that runs does not answer, in the tray's words on Windows", async () => {
+    const api = fakeApi({}, { platform: "windows" });
     api.serverStatus.mockResolvedValue({
       kind: "not_answering",
       reason: "another launcher runs this install",
@@ -579,6 +964,11 @@ describe("ServerStarting", () => {
     expect(await screen.findByText(/The server does not start\./)).toBeInTheDocument();
     // the log's own words, apart from the sentence (an Arabic screen keeps them as they are)
     expect(screen.getByText("another launcher runs this install").tagName).toBe("CODE");
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Open logs from the tray (beside the clock) to see more."
+      )
+    );
     expect(api.openLocalServer).not.toHaveBeenCalled();
   });
 

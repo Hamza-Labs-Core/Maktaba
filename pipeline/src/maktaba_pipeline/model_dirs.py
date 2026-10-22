@@ -24,7 +24,13 @@ import os
 from collections.abc import MutableMapping
 from pathlib import Path
 
-__all__ = ["ENV_MODEL_CACHE_DIR", "apply_env", "cache_dir", "share_copies_dir"]
+__all__ = [
+    "ENV_MODEL_CACHE_DIR",
+    "apply_env",
+    "cache_dir",
+    "ensure_camel_data",
+    "share_copies_dir",
+]
 
 ENV_MODEL_CACHE_DIR = "MAKTABA_MODEL_CACHE_DIR"
 
@@ -53,3 +59,13 @@ def apply_env(env: MutableMapping[str, str] | None = None) -> None:
         env["HF_HOME"] = str(root / "huggingface")
     if not (env.get("CAMELTOOLS_DATA") or "").strip():
         env["CAMELTOOLS_DATA"] = str(root / "camel_tools")
+
+
+def ensure_camel_data(env: MutableMapping[str, str] | None = None) -> None:
+    """Create ``CAMELTOOLS_DATA`` when it is set and missing: CAMeL Tools downloads its
+    catalogue into it the first time ``camel_tools.data`` is imported, and fails when the
+    folder is not there (a fresh models folder)."""
+    env = os.environ if env is None else env
+    raw = (env.get("CAMELTOOLS_DATA") or "").strip()
+    if raw:
+        Path(raw).expanduser().mkdir(parents=True, exist_ok=True)

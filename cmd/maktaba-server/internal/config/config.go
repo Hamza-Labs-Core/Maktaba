@@ -159,12 +159,26 @@ type ServerSection struct {
 	// Role is "auto" (default: a joined node config makes this machine a full node,
 	// Epic 35 story 35.8), "home" (never a node, even with a node config) or "node".
 	Role string `toml:"role"`
+	// MDNS: "on" (default) advertises this machine on the LAN over multicast DNS
+	// (Epic 35 story 35.11); "off" does not, as `serve --no-mdns` (an install moved
+	// into the app keeps its flag here, Epic 38 story 38.13).
+	MDNS string `toml:"mdns"`
 	// The intra-host ports of the roles (defaults 127.0.0.1:9050, :9101,
 	// 127.0.0.1:9090, 127.0.0.1:9102); set them to run two machines on one host.
 	StreamingGRPCAddr  string `toml:"streaming_grpc_addr"`
 	StreamingAdminAddr string `toml:"streaming_admin_addr"`
 	PipelineGRPCAddr   string `toml:"pipeline_grpc_addr"`
 	PipelineLogsAddr   string `toml:"pipeline_logs_addr"`
+}
+
+// MDNSOn reports whether the machine advertises itself (anything but
+// off/false/no/0).
+func (s ServerSection) MDNSOn() bool {
+	switch strings.ToLower(strings.TrimSpace(s.MDNS)) {
+	case "off", "false", "no", "0":
+		return false
+	}
+	return true
 }
 
 // DatabaseSection selects the storage backend via a single DSN. The
@@ -198,7 +212,11 @@ type TranscriptionSection struct {
 	// an MLX model is replaced by the CTranslate2 one, with a line in the log.
 	Model string `toml:"model"`
 	// Refine: "on" (default) lets a second listen correct Whisper's words
-	// (MAKTABA_STT_REFINE); "off" stores them as they are.
+	// (MAKTABA_STT_REFINE); "off" stores them as they are. On Windows and Linux it
+	// runs on the NVIDIA GPU beside Whisper (story 38.9), when the GPU holds both:
+	// 10 GB and up on Windows, 8 GB and up elsewhere, and only while it has the
+	// room free; the GPU's tiers then give Whisper a smaller batch to leave it that
+	// room. Without such a GPU a transcript keeps Whisper's words and says why.
 	Refine string `toml:"refine"`
 	// RefineModel is the second listen's model (MAKTABA_STT_REFINE_MODEL);
 	// empty: CohereLabs/cohere-transcribe-arabic-07-2026.
@@ -208,8 +226,9 @@ type TranscriptionSection struct {
 	// memory on a machine with an NVIDIA GPU of 4 GB or more, and runs none on a
 	// machine that transcribes on the CPU (the main worker does); -1 none.
 	// [pipeline] instances, when set, wins. While the second listen is on (refine),
-	// a machine that cannot run it (Windows, Linux) plans none: its main worker
-	// transcribes only when the home's rules let it (Settings, Transcription). More
+	// a machine that cannot run it (a Windows or Linux one without an NVIDIA GPU
+	// that does, or without its model) plans none: its main worker transcribes
+	// only when the home's rules let it (Settings, Transcription). More
 	// workers than planned share the plan's GPU memory, CPU threads and audio
 	// hours. None at all when the operator's environment excludes transcribe
 	// (MAKTABA_PIPELINE_EXCLUDE_STAGES) or the pipeline has no stt extra.
@@ -225,9 +244,10 @@ type TranscriptionSection struct {
 	GPUGB      float64 `toml:"gpu_gb"`
 	GPUCacheGB float64 `toml:"gpu_cache_gb"`
 	// Batch is how many files a worker decodes together, one 30 s window of each
-	// per GPU pass (MAKTABA_STT_BATCH); 0: sized from the NVIDIA GPU's memory, 4
-	// on the CPU, the pipeline's 32 on Apple Silicon. Larger batches are faster
-	// until the GPU's memory runs out.
+	// per GPU pass (MAKTABA_STT_BATCH); 0: sized from the NVIDIA GPU's memory (and
+	// smaller where the second listen shares the GPU), 4 on the CPU, the
+	// pipeline's 32 on Apple Silicon. Larger batches are faster until the GPU's
+	// memory runs out.
 	Batch int `toml:"batch"`
 	// Device is where Windows and Linux transcribe (MAKTABA_STT_DEVICE): "auto"
 	// (default: the NVIDIA GPU when CUDA works there, else the CPU), "cuda" (or
@@ -236,7 +256,8 @@ type TranscriptionSection struct {
 	Device string `toml:"device"`
 	// ComputeType is the precision CTranslate2 runs Whisper in on Windows and
 	// Linux (MAKTABA_STT_COMPUTE_TYPE): "auto" (default: float16 on the GPU,
-	// int8_float16 on a GPU under 7 GB, int8 on the CPU), or one of float16,
+	// int8_float16 on a GPU under 7 GB, or on an 8 GB one beside the second listen
+	// outside Windows, int8 on the CPU), or one of float16,
 	// int8_float16, int8, int8_float32, float32. One the device cannot run falls
 	// back to its default, with a line in the log.
 	ComputeType string `toml:"compute_type"`

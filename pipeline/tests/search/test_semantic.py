@@ -81,7 +81,9 @@ def test_search_available_finds_the_extra_without_importing_it(
     assert search_available() is False
 
 
-def test_device_prefers_cuda_then_apple_gpu_then_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_device_is_apple_s_gpu_else_the_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Not an NVIDIA GPU of its own accord (review of #209): Whisper and the second listen
+    are sized to fill it, without the embedder's 0.5-1 GB."""
     monkeypatch.delenv("MAKTABA_EMBED_DEVICE", raising=False)
 
     def fake_torch(cuda: bool, mps: bool) -> Any:
@@ -90,9 +92,11 @@ def test_device_prefers_cuda_then_apple_gpu_then_cpu(monkeypatch: pytest.MonkeyP
             backends=types.SimpleNamespace(mps=types.SimpleNamespace(is_available=lambda: mps)),
         )
 
-    assert pick_device(fake_torch(True, True)) == "cuda"
+    assert pick_device(fake_torch(True, False)) == "cpu"
     assert pick_device(fake_torch(False, True)) == "mps"
     assert pick_device(fake_torch(False, False)) == "cpu"
+    monkeypatch.setenv("MAKTABA_EMBED_DEVICE", "cuda")  # asked for: the operator's
+    assert pick_device(fake_torch(True, False)) == "cuda"
     monkeypatch.setenv("MAKTABA_EMBED_DEVICE", "cpu")
     assert pick_device(fake_torch(False, True)) == "cpu"
 

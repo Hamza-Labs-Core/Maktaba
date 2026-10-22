@@ -1,6 +1,6 @@
-"""transcribe on the CTranslate2 engine (story 38.8): the transcript names the engine, the
-second listen keeps Whisper's words and says why, and a PC does not transcribe again
-what a Mac did."""
+"""transcribe on the CTranslate2 engine (story 38.8): the transcript names the engine, a PC
+without a GPU for the second listen keeps Whisper's words and says why (story 38.9), and a
+PC does not transcribe again what a Mac did."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from maktaba_pipeline.engine.stages import transcribe as tr
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.stt import engine, model_share
 from maktaba_pipeline.stt.settings import Transcript
+from tests.conftest import NO_TEST_GPU
 from tests.stages.test_transcribe import FakeTranscriber, _one_video
 from tests.stages.world import core_runtime, drain_core
 
@@ -67,7 +68,8 @@ async def test_a_pc_s_transcript_names_its_engine_and_keeps_whisper_s_words(
     assert t is not None and t["backend"] == "ct2-batched" and t["backend_version"] == VERSION
     meta = t["metadata"] if isinstance(t["metadata"], dict) else loads(t["metadata"])
     refine = meta["refine"]
-    assert refine["source"] == "skipped" and "Apple Silicon (MLX) only" in refine["skipped"]
+    # no GPU here for the second listen (tests/stt/test_cohere_cuda.py: with one)
+    assert refine["source"] == "skipped" and NO_TEST_GPU in refine["skipped"]
 
 
 @pytest.mark.asyncio

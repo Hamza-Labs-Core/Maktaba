@@ -165,7 +165,7 @@ def _capable(monkeypatch: pytest.MonkeyPatch, here: bool) -> None:
     monkeypatch.setattr(tr, "runs_second_listen", lambda: here)
     monkeypatch.setattr(tr, "second_listen_problem", lambda: None if here else "not here")
 
-    def refine(result: Any, audio: Any, model: str, share: Any = None) -> dict[str, Any]:
+    def refine(result: Any, audio: Any, model: str, *_rest: Any) -> dict[str, Any]:
         if here:
             return {"model": model, "source": "hf", "changed": 0}
         return {"model": model, "source": "skipped", "skipped": "RuntimeError: not here"}

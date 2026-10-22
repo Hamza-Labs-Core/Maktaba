@@ -3,6 +3,7 @@ package channel
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -35,5 +36,19 @@ func TestEngineResponsive(t *testing.T) {
 			t.Fatal("engine never became responsive again after the lock was released")
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// A probe that answered has let go before it answers: the next one, right
+// after it, is never told an earlier probe is still waiting.
+func TestEngineResponsiveBackToBack(t *testing.T) {
+	e := NewEngine(nil, nil, nil, 1, nil)
+	for i := 0; i < 2000; i++ {
+		if err := e.Responsive(context.Background()); err != nil {
+			t.Fatalf("probe %d on an idle engine: %v", i, err)
+		}
+		if v, _ := lockProbes.Load(e); v.(*atomic.Bool).Load() {
+			t.Fatalf("probe %d answered while still marked pending", i)
+		}
 	}
 }
