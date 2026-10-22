@@ -371,7 +371,7 @@ fn sync_window_menu(app: &AppHandle, entries: &[Entry], status_line: &str) {
     {
         let _ = item.set_text(status_line);
     }
-    for (id, _, _) in tray::WINDOW_ITEMS.iter().flatten() {
+    for id in tray::WINDOW_ITEMS.iter().flatten() {
         let window_id = format!("{}{id}", tray::WINDOW_PREFIX);
         if let Some(item) = sub
             .get(window_id.as_str())
