@@ -30,8 +30,9 @@ type Target struct {
 	KeysDir    string
 	NodeConfig string // the node.json the app's roles read (config.LocalNodeConfigPath)
 	// ForeignNode is the node config in this PC's roaming profile when another
-	// PC claimed it (its machine_id, ForeignNodeOwner): the app's roles skip it
-	// (config.LocalForeignNodeConfig), so the app is not that node.
+	// PC claimed it (its machine_id, ForeignNodeOwner) and this PC has not
+	// joined as its own machine (config.LocalForeignNodeConfig, the one rule):
+	// the app's roles skip it, so the app is not that node.
 	ForeignNode, ForeignNodeOwner string
 	// ModeFile is the app window's mode.json (the shell's mode.rs; on Windows
 	// %LOCALAPPDATA%\com.hamzalabs.maktaba): Undo takes its server mode out.
