@@ -6,15 +6,25 @@ package main
 // limited role (it refuses one that could run DDL, and never migrates), no home-only
 // component (hub, updater, TV controller, publishers, secrets), sessions resolved by the
 // home, every route served by its placement class, VOD read from the NAS here.
+//
+// Epic 37 (specs/epics/37-node-replica): the node has its own live, read-only copy of
+// the home's database (MAKTABA_COPY_DATABASE_URL, its supervisor's): the node's reads go
+// to it, its writes to the home's (nodedb), and with the home away it signs people in
+// and answers them from it (nodeauth.Local), plays from it, and even starts so: a role
+// check the home's database cannot answer (it does not answer, starts up, has no
+// connection to spare, refuses for now) waits for it; only a role found able to run
+// DDL stops the API, at start or later.
 
 import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -27,8 +37,10 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homelink"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homeproxy"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/nodeauth"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/nodedb"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/placement"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/schemaguard"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/switchover"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/vodfallback"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
@@ -44,10 +56,52 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
 )
 
+// nodeDBs are a full node's databases: the pair its handlers use (reads on the copy,
+// writes on the home's), the home's alone (the role check) and the copy alone (sign-ins
+// from it; nil: no copy).
+type nodeDBs struct {
+	pair   *nodedb.Pair
+	app    *sql.DB
+	home   *sql.DB
+	copyDB *sql.DB
+}
+
+// openNodeDBs opens them from the home's DSN (the node role's) and the copy's ("": none).
+func openNodeDBs(homeDSN, copyDSN string, logger *slog.Logger) (nodeDBs, error) {
+	// the node's dsn says sslmode=prefer, which lib/pq does not take: pgdsn settles it;
+	// bounded: a home switched off leaves a statement hanging, cut when its request ends
+	homeConn, err := pgdsn.BoundedConnector(homeDSN)
+	if err != nil {
+		return nodeDBs{}, fmt.Errorf("node mode: the home's database: %w", err)
+	}
+	d := nodeDBs{pair: &nodedb.Pair{Home: &nodedb.Source{Name: "home", Conn: homeConn}, Logger: logger},
+		home: sql.OpenDB(homeConn)}
+	if copyDSN != "" {
+		copyConn, err := pgdsn.Connector(copyDSN)
+		if err != nil {
+			_ = d.home.Close()
+			return nodeDBs{}, fmt.Errorf("node mode: this machine's copy of the home's database: %w", err)
+		}
+		d.pair.Copy = &nodedb.Source{Name: "copy", Conn: copyConn}
+		d.copyDB = sql.OpenDB(copyConn)
+		d.copyDB.SetMaxOpenConns(4)
+	}
+	d.app = d.pair.Open(time.Minute)
+	return d, nil
+}
+
+func (d nodeDBs) close() {
+	for _, db := range []*sql.DB{d.app, d.home, d.copyDB} {
+		if db != nil {
+			_ = db.Close()
+		}
+	}
+}
+
 // nodeRuntime is what a full node's API runs besides its routes.
 type nodeRuntime struct {
 	cfg      nodemode.Config
-	db       *sql.DB
+	dbs      nodeDBs
 	link     *homelink.HTTPLink
 	feed     *homelink.AgentFeed
 	resolver *nodeauth.Resolver
@@ -57,6 +111,92 @@ type nodeRuntime struct {
 	proxy    http.Handler
 	rules    func() nodemode.Rules
 	logger   *slog.Logger
+	// recent: who changed something the copy may not have yet (their reads go to the
+	// home's); clock: the home's clock, which the copy's beat is stamped on
+	recent nodedb.Recent
+	clock  homeClock
+	// fresh: whether the copy is current enough to read from while the home answers
+	fresh copyFreshness
+	// fatal carries an error the API must stop for (a DDL-capable role found late)
+	fatal chan error
+	// bg is the work whose last save the API waits for at shutdown
+	bg sync.WaitGroup
+}
+
+// homeDownAfter is how long the home must not answer before a video this machine
+// cannot read is said to be unavailable (one unanswered probe is not an outage).
+const homeDownAfter = 2 * nodeauth.ProbeEvery
+
+// waitBG waits (at most d) for the background work's last save.
+func (rt *nodeRuntime) waitBG(d time.Duration) {
+	done := make(chan struct{})
+	go func() { rt.bg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(d):
+		rt.logger.Warn("node: the last save of this machine's state did not finish in time", "event", "node_state_save_late")
+	}
+}
+
+// nodeOffline is a full node's way to play with the home's database down
+// (streaming.Offline, vodfallback.Catalog): the copy answers for the videos.
+type nodeOffline struct{ dbs nodeDBs }
+
+func (o nodeOffline) DBDown() bool { return o.dbs.pair.Home.Down() }
+
+// LedgerPath keeps the sessions this machine opened, until the home's database has
+// them, in its state directory.
+func (o nodeOffline) LedgerPath() string {
+	if dir := nodeStateDir(); dir != "" {
+		return filepath.Join(dir, "stream-sessions.json")
+	}
+	return ""
+}
+func (o nodeOffline) DBFailed(error) { o.dbs.pair.Recheck() }
+
+// WhenDBBack calls fn each time the home's database answers again.
+func (o nodeOffline) WhenDBBack(fn func()) {
+	o.dbs.pair.WhenUp(func(s *nodedb.Source) {
+		if s == o.dbs.pair.Home {
+			fn()
+		}
+	})
+}
+
+func (o nodeOffline) Video(id string) (string, float64, bool) {
+	var lib string
+	var dur sql.NullFloat64
+	if !o.row(`SELECT library_id, duration_sec FROM videos WHERE id = $1`, id, &lib, &dur) {
+		return "", 0, false
+	}
+	return lib, dur.Float64, true
+}
+
+func (o nodeOffline) Path(id string) (string, bool) {
+	var p sql.NullString
+	return p.String, o.row(`SELECT path FROM videos WHERE id = $1`, id, &p) && p.String != ""
+}
+
+func (o nodeOffline) row(q, id string, dest ...any) bool {
+	if o.dbs.copyDB == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	return o.dbs.copyDB.QueryRowContext(ctx, q, id).Scan(dest...) == nil
+}
+
+// nodeStateDir is where a node keeps its own state (its node-local sign-ins, when the
+// home last answered): MAKTABA_NODE_STATE_DIR (its supervisor sets it), else
+// <MAKTABA_DATA_DIR>/node, else none (kept in memory only).
+func nodeStateDir() string {
+	if d := os.Getenv("MAKTABA_NODE_STATE_DIR"); d != "" {
+		return d
+	}
+	if d := os.Getenv("MAKTABA_DATA_DIR"); d != "" {
+		return filepath.Join(d, "node")
+	}
+	return ""
 }
 
 // checkNodeEnv refuses what a node never does (story 35.8 AC2): migrate.
@@ -82,38 +222,93 @@ func boundNodeDatabaseURL(cfg nodemode.Config) {
 }
 
 // startNode checks the node's database role and starts its background work.
-func startNode(ctx context.Context, cfg nodemode.Config, db *sql.DB, logger *slog.Logger) (*nodeRuntime, error) {
+func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *slog.Logger) (*nodeRuntime, error) {
 	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	if err := nodemode.CheckRole(cctx, db); err != nil {
-		return nil, err
+	rt := &nodeRuntime{cfg: cfg, dbs: dbs, logger: logger, fatal: make(chan error, 1)}
+	if dir := nodeStateDir(); dir != "" {
+		rt.clock.keepAt(filepath.Join(dir, "home-clock.json"))
 	}
-	rt := &nodeRuntime{cfg: cfg, db: db, logger: logger}
+	rt.recent.Now = rt.clock.Now
+	roleErr := nodemode.CheckRole(cctx, dbs.home)
+	checkLater := false
+	switch {
+	case roleErr == nil:
+	case errors.Is(roleErr, nodemode.ErrRoleCanDDL):
+		return nil, roleErr
+	default:
+		logger.Warn("node: the home's database cannot be asked yet; starting without it, on this machine's copy (the role is checked once it answers)",
+			"err", roleErr, "unreachable", nodemode.Unreachable(roleErr), "copy", dbs.copyDB != nil,
+			"event", "node_start_without_db")
+		dbs.pair.Recheck()
+		checkLater = true
+	}
+	dir := nodeStateDir()
+	if dir == "" {
+		logger.Warn("node: no state directory (MAKTABA_NODE_STATE_DIR): sign-ins made here are not kept across restarts",
+			"event", "node_state_memory_only")
+	}
+	inDir := func(name string) string {
+		if dir == "" {
+			return ""
+		}
+		return filepath.Join(dir, name)
+	}
 	rt.link = &homelink.HTTPLink{Home: cfg.HomeAPIURL, NodeID: cfg.NodeID, Logger: logger}
 	rt.home = &clusterauth.HomeInfoCache{Link: rt.link}
 
-	var (
-		rulesMu sync.Mutex
-		rules   = nodemode.DefaultRules()
-		rulesAt time.Time
-	)
-	rt.rules = func() nodemode.Rules {
-		rulesMu.Lock()
-		defer rulesMu.Unlock()
-		if time.Since(rulesAt) > time.Minute {
-			rctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			rules = nodemode.ReadRules(rctx, db)
-			cancel()
-			rulesAt = time.Now()
-		}
-		return rules
+	rt.rules = nodemode.CachedRules(dbs.app, time.Minute)
+	minutes := func(n int) time.Duration { return time.Duration(n) * time.Minute }
+	rt.resolver = &nodeauth.Resolver{Link: rt.link, Logger: logger, SecureCookies: cookiesSecure(),
+		Grace:             func() time.Duration { return time.Duration(rt.rules().GraceSeconds) * time.Second },
+		CopyMaxLag:        func() time.Duration { return minutes(rt.rules().OfflineCopyMaxLagMinutes) },
+		LocalSessionTTL:   func() time.Duration { return time.Duration(rt.rules().OfflineSessionHours) * time.Hour },
+		LocalSessionGrace: func() time.Duration { return minutes(rt.rules().OfflineSessionGraceMinutes) },
+		Sessions:          &nodeauth.LocalSessions{Path: inDir(nodeauth.LocalSessionsFile)},
+		SignOuts:          &nodeauth.SignOuts{Path: inDir(nodeauth.SignOutsFile)},
+		HomeOffset:        rt.clock.Offset,
 	}
-	rt.resolver = &nodeauth.Resolver{Link: rt.link, Logger: logger,
-		Grace: func() time.Duration { return time.Duration(rt.rules().GraceSeconds) * time.Second }}
+	if dbs.copyDB != nil {
+		rt.resolver.Local = clusterauth.NewCopy(dbs.copyDB, cfg.NodeID)
+	} else {
+		logger.Warn("node: no copy of the home's database (MAKTABA_COPY_DATABASE_URL); with the home away no one is signed in here",
+			"event", "node_no_copy")
+	}
+	if err := rt.resolver.Sessions.Load(); err != nil {
+		logger.Warn("node: the sign-ins made here are unreadable; starting without them", "err", err,
+			"event", "node_local_sessions_unreadable")
+	}
+	if err := rt.resolver.SignOuts.Load(); err != nil {
+		logger.Warn("node: the sign-outs made here are unreadable; starting without them", "err", err,
+			"event", "node_sign_outs_unreadable")
+	}
+	// the revocations the home pushed, while they are honoured (a restart in an outage,
+	// when the home cannot push them again, does not forget them)
+	if p := inDir(nodeauth.RevokedFile); p != "" {
+		rt.resolver.KeepRevoked(p)
+	}
 	rt.link.Subscribe(rt.resolver.OnEvent)
-	rt.guard = &schemaguard.Guard{DB: db, Logger: logger}
+	if p := inDir(nodeauth.HomeSeenFile); p != "" {
+		rt.resolver.LoadHomeSeen(p)
+		rt.bg.Add(1)
+		go func() { defer rt.bg.Done(); rt.resolver.KeepHomeSeen(ctx, p) }()
+	}
+	rt.guard = &schemaguard.Guard{DB: dbs.app, Logger: logger}
 	rt.guard.Check(cctx)
-	rt.proxy = homeproxy.New(rt.link, logger)
+	if checkLater {
+		go rt.checkRoleLater(ctx)
+	}
+	// the home's database answers again: its schema is read at once (it may have been
+	// updated meanwhile), not at the next round
+	dbs.pair.WhenUp(func(s *nodedb.Source) {
+		if s == dbs.pair.Home {
+			rt.guard.Nudge()
+		}
+	})
+	// a session probe or a sign-in the home does not answer is answered here, from the
+	// copy; a home not answering its probes is not waited on for long
+	rt.proxy = homeproxy.NewWith(rt.link, logger, homeproxy.Options{Fallback: rt.resolver.Fallback,
+		Failing: func() bool { return rt.resolver.DownFor(0) }})
 
 	if cfg.AgentURL != "" && cfg.AgentTokenFile != "" {
 		rt.feed = &homelink.AgentFeed{URL: cfg.AgentURL, TokenFile: cfg.AgentTokenFile, Link: rt.link, Logger: logger}
@@ -124,10 +319,14 @@ func startNode(ctx context.Context, cfg nodemode.Config, db *sql.DB, logger *slo
 	}
 	go rt.resolver.Watch(ctx)
 	go rt.guard.Run(ctx)
-	// media through this machine's own mounts (design §11.5)
-	sharepath.StartNode(ctx, db, cfg.NodeID, logger)
+	go dbs.pair.Watch(ctx, 5*time.Second)
+	// media through this machine's own mounts (design §11.5): the map from the copy
+	// while the home's database does not answer
+	sharepath.StartNode(ctx, dbs.app, cfg.NodeID, logger)
 	streamMap := vodfallback.PrefixMap(os.Getenv("MAKTABA_STREAM_PATH_MAP"))
-	rt.vod = &vodfallback.Fallback{DB: db, Home: rt.proxy, Logger: logger,
+	// what the home serves goes through the resolver's front (a node-local sign-in is
+	// answered here, never sent to the home, which would sign the person out)
+	rt.vod = &vodfallback.Fallback{DB: dbs.app, Home: rt.resolver.Home(rt.proxy), Logger: logger,
 		ToLocal: func(p string) string { return streamMap(sharepath.ToLocal(p)) },
 		HomeName: func() string {
 			if s, ok := rt.home.Get(context.Background()); ok {
@@ -135,12 +334,14 @@ func startNode(ctx context.Context, cfg nodemode.Config, db *sql.DB, logger *slo
 			}
 			return ""
 		},
+		HomeDown: func() bool { return rt.resolver.DownFor(homeDownAfter) },
+		Catalog:  rt.offline(),
 		OnChange: func(vodfallback.State) { go rt.report(context.Background()) },
 	}
 	system.SetMachine(system.Machine{Role: "node", NodeID: cfg.NodeID, WebURL: cfg.WebURL})
 	go rt.reportLoop(ctx)
 	logger.Info("node: full node mode", "node_id", cfg.NodeID, "home", cfg.HomeAPIURL, "web_url", cfg.WebURL,
-		"event", "node_mode_started")
+		"copy", dbs.copyDB != nil, "event", "node_mode_started")
 	return rt, nil
 }
 
@@ -151,12 +352,48 @@ func platform() string {
 	return runtime.GOOS + "-" + runtime.GOARCH
 }
 
+func (rt *nodeRuntime) offline() nodeOffline { return nodeOffline{dbs: rt.dbs} }
+
+// checkRoleLater runs the start's role check until the home's database answers it: a
+// role found able to run DDL stops the API then (rt.fatal), as it would have at start;
+// any other failure (it does not answer, starts up, refuses for now) is tried again,
+// and said once per kind.
+func (rt *nodeRuntime) checkRoleLater(ctx context.Context) {
+	t := time.NewTicker(5 * time.Second)
+	defer t.Stop()
+	said := ""
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		err := nodemode.CheckRole(cctx, rt.dbs.home)
+		cancel()
+		switch {
+		case err == nil:
+			rt.logger.Info("node: the home's database answers; this machine's role is checked", "event", "node_role_checked")
+			rt.guard.Nudge()
+			return
+		case errors.Is(err, nodemode.ErrRoleCanDDL):
+			rt.fatal <- err
+			return
+		case ctx.Err() != nil || nodemode.Unreachable(err):
+		case err.Error() != said:
+			said = err.Error()
+			rt.logger.Warn("node: the home's database refuses this machine's role for now; tried again", "err", err,
+				"event", "node_role_check_refused")
+		}
+	}
+}
+
 // report tells the home what this machine is (cluster_node_report_full, slot 0135).
 func (rt *nodeRuntime) report(ctx context.Context) {
 	vod, _ := json.Marshal(rt.vod.Current())
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if _, err := rt.db.ExecContext(cctx, `SELECT cluster_node_report_full($1, $2, $3, $4, true, $5::jsonb)`,
+	if _, err := rt.dbs.home.ExecContext(cctx, `SELECT cluster_node_report_full($1, $2, $3, $4, true, $5::jsonb)`,
 		rt.cfg.NodeID, version.Version, platform(), rt.cfg.WebURL, string(vod)); err != nil {
 		rt.logger.Debug("node: report to the home failed", "err", err, "event", "node_report_failed")
 	}
@@ -198,12 +435,42 @@ func (rt *nodeRuntime) self(ctx context.Context) clusterauth.SelfInfo {
 	if st := rt.vod.Current(); st.Fallback {
 		info.VOD = st
 	}
+	if dir := nodeStateDir(); dir != "" {
+		if b, err := os.ReadFile(filepath.Join(dir, copyStatusFile)); err == nil {
+			info.Copy = publicCopy(b)
+		}
+	}
 	return info
 }
 
+// publicCopy is the copy's status as /api/cluster/self (public) shows it: its state and
+// how far it has applied the home's changes; never its detail (errors name roles and
+// paths: the home's Machines page shows them to its admins).
+func publicCopy(raw []byte) json.RawMessage {
+	var s struct {
+		State     string     `json:"state"`
+		AppliedAt *time.Time `json:"applied_at,omitempty"`
+		LagMS     *int64     `json:"lag_ms,omitempty"`
+		Tables    int        `json:"tables,omitempty"`
+		Ready     int        `json:"ready,omitempty"`
+		Checked   *time.Time `json:"checked,omitempty"`
+	}
+	if json.Unmarshal(raw, &s) != nil || s.State == "" {
+		return nil
+	}
+	b, err := json.Marshal(s)
+	if err != nil {
+		return nil
+	}
+	return b
+}
+
+// copyStatusFile is the supervisor's status of this machine's copy (nodecopy.StatusFile).
+const copyStatusFile = "copy.json"
+
 // homeSelf is the home's GET /api/cluster/self: its identity, web address and the
 // machines' addresses (the apps learn the cluster from any machine, story 35.11 EC2).
-func homeSelf(store cluster.Store, webURL string) clusterauth.SelfFunc {
+func homeSelf(store cluster.Store, webURL string, term func(context.Context) int64) clusterauth.SelfFunc {
 	return func(ctx context.Context) clusterauth.SelfInfo {
 		info := clusterauth.SelfInfo{Role: "home", Version: version.Version, SchemaRev: schemaguard.SchemaRev,
 			WebURL: webURL, SSO: true}
@@ -212,6 +479,9 @@ func homeSelf(store cluster.Store, webURL string) clusterauth.SelfFunc {
 		}
 		cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
+		if term != nil {
+			info.Term = term(cctx)
+		}
 		if id, err := store.Identity(cctx); err == nil {
 			info.ID, info.Name, info.AcceptJoins = id.InstanceID, id.Name, id.AcceptJoins
 			info.Machines = append(info.Machines, clusterauth.SelfRow{Role: "home", ID: id.InstanceID, Name: id.Name, WebURL: webURL})
@@ -235,22 +505,37 @@ func homeSelf(store cluster.Store, webURL string) clusterauth.SelfFunc {
 // mountNodeRoutes mounts the node-only routes (/api/cluster/self, the sign-in's node
 // half).
 func (rt *nodeRuntime) mountNodeRoutes(r chi.Router) {
+	// a switch's notices of the new home: from the copy (it answers with the home away),
+	// else the home's database
+	movedDB := rt.dbs.copyDB
+	if movedDB == nil {
+		movedDB = rt.dbs.home
+	}
+	// a standby home taking over when its home is gone: its supervisor checks and does it
+	em := &switchover.Emergency{}
+	if sc := switchover.SupervisorFromEnv(); sc != nil {
+		em.Supervisor = sc
+	}
 	router.MountNodeLocal(r, router.NodeLocalDeps{Self: rt.self, Node: &clusterauth.Node{
 		Link: rt.link, NodeID: rt.cfg.NodeID, Self: rt.self, SecureCookies: cookiesSecure(), Logger: rt.logger,
 		SSOEnabled: func(context.Context) bool { return rt.rules().SSO },
-	}})
+	}, Moved: switchover.MovedHandler(movedDB), EmergencyStatus: em.Status, Emergency: em.Start, TermClaim: em.Claim})
 }
 
 // handler is the node's public handler: the placement dispatcher over the local
-// chain (home-resolved principal, the auth gate, CSRF per host, VOD) and the home proxy.
+// chain (the principal, the auth gate, CSRF per host, VOD, reads on the copy) and the
+// home proxy (with the sign-in this machine answers from its copy while the home is
+// away, rate-limited as the home's own).
 func (rt *nodeRuntime) handler(a *authState, r chi.Router, publicMux http.Handler) http.Handler {
-	local := rt.vod.Wrap(publicMux)
+	local := rt.dbDownReads(rt.vod.Wrap(publicMux))
 	local = nodeauth.CSRF(local)
 	local = middleware.RequireAuthExcept(middleware.DefaultPublicAllowlist())(local)
 	local = rt.resolver.Middleware(local)
 	local = middleware.AdminToken(a.adminToken)(local)
-	local = mw.AuthRouteRateLimit(mw.DefaultAuthRouteLimits())(local)
-	d := &placement.Dispatcher{Routes: r, Table: router.Placement, Local: local, Proxy: rt.proxy,
+	limit := mw.AuthRouteRateLimit(mw.DefaultAuthRouteLimits())
+	local = rt.copyReads(limit(local))
+	home := rt.copyReads(rt.limitOfflineSignIn(limit, rt.resolver.Home(rt.proxy)))
+	d := &placement.Dispatcher{Routes: r, Table: router.Placement, Local: local, Proxy: home,
 		Paused: rt.guard.Paused,
 		Fixed: map[string]placement.Class{"/healthz": placement.Local,
 			"/api/.well-known/jwks.json": placement.Home}}
@@ -258,6 +543,138 @@ func (rt *nodeRuntime) handler(a *authState, r chi.Router, publicMux http.Handle
 	h = httpsec.CORS(a.cors)(h)
 	h = httpsec.Headers(a.headers)(h)
 	return h
+}
+
+// copyReads sends a request's reads to this machine's copy (nodedb.CopyReads): a GET
+// or HEAD the node serves itself, unless its author changed something a moment ago
+// (their reads go to the home's database until the copy has the change), or the copy
+// is further behind the home than rules.cluster.copy_reads_max_lag_seconds (then every
+// read goes to the home's while it answers: a change of rights or a removal is not
+// read stale). Any other request is a change: its author's reads go to the home's for
+// a moment.
+func (rt *nodeRuntime) copyReads(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key := nodeauth.CredentialKey(r)
+		switch r.Method {
+		case http.MethodGet, http.MethodHead:
+			if rt.copyMayRead(r.Context()) && !rt.recent.Changed(key, rt.fresh.syncedAt()) {
+				r = r.WithContext(nodedb.CopyReads(r.Context()))
+			}
+		case http.MethodOptions:
+		default:
+			// as it starts (reads meanwhile go to the home), and once it is done: the
+			// copy has it once it holds a beat after that
+			rt.recent.Wrote(key)
+			next.ServeHTTP(w, r)
+			rt.recent.Wrote(key)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// copyMayRead reports whether a read may go to the copy: while the home answers, only
+// as long as the copy is current (copyFresh); while it does not (its API, or its
+// database), always: the copy falls behind in an outage, and the home cannot be read.
+func (rt *nodeRuntime) copyMayRead(ctx context.Context) bool {
+	if (rt.resolver != nil && rt.resolver.Down()) || (rt.dbs.pair != nil && rt.dbs.pair.Home.Down()) {
+		return true
+	}
+	return rt.copyFresh(ctx)
+}
+
+// copyFreshness is the last verdict on the copy's lag (read at most every
+// copyFreshEvery).
+type copyFreshness struct {
+	mu     sync.Mutex
+	at     time.Time
+	fresh  bool
+	lag    time.Duration
+	synced time.Time // the copy's beat, on the home's clock
+	said   bool      // the copy was said to be behind (logged once per spell)
+}
+
+// syncedAt is the copy's beat as last read (the home's clock).
+func (f *copyFreshness) syncedAt() time.Time {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.synced
+}
+
+const copyFreshEvery = 2 * time.Second
+
+// copyFresh reports whether the copy may answer the node's reads while the home
+// answers: it applied the home's changes up to no more than the rule's lag ago (the
+// home's beat, written every few seconds while a machine follows it, against the
+// home's clock).
+func (rt *nodeRuntime) copyFresh(ctx context.Context) bool {
+	f := &rt.fresh
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.at.IsZero() && time.Since(f.at) < copyFreshEvery {
+		return f.fresh
+	}
+	f.at = time.Now()
+	if rt.resolver == nil || rt.resolver.Local == nil {
+		f.fresh = false
+		return false
+	}
+	lctx, cancel := context.WithTimeout(ctx, time.Second)
+	synced, err := rt.resolver.Local.Synced(lctx)
+	cancel()
+	rt.clock.measure(ctx, rt.dbs.home)
+	limit := time.Duration(rt.rules().CopyReadsMaxLagSeconds) * time.Second
+	f.synced = synced
+	f.lag = rt.clock.Now().Sub(synced)
+	f.fresh = err == nil && !synced.IsZero() && f.lag <= limit
+	switch {
+	case !f.fresh && !f.said:
+		f.said = true
+		rt.logger.Warn("node: this machine's copy is behind the home; reads go to the home's database meanwhile",
+			"lag", f.lag.Round(time.Second).String(), "max", limit.String(), "err", err, "event", "node_copy_reads_off")
+	case f.fresh && f.said:
+		f.said = false
+		rt.logger.Info("node: this machine's copy has caught up; reads go to it again", "event", "node_copy_reads_on")
+	}
+	return f.fresh
+}
+
+// limitOfflineSignIn rate-limits every sign-in through this machine: the ones it answers
+// itself (the home away, in its grace, or the proxy's fallback when the home did not
+// answer) as the ones it sends on (which the home limits too).
+func (rt *nodeRuntime) limitOfflineSignIn(limit func(http.Handler) http.Handler, next http.Handler) http.Handler {
+	limited := limit(next)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == nodeauth.LoginPath {
+			limited.ServeHTTP(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// dbDownReads answers an `any` route (a read of the home's database) at once while that
+// database does not answer and this machine's copy cannot stand in (none, or it does
+// not answer either): 503 home_unreachable rather than a request that hangs on a dead
+// connection. The app keeps its notice (pages that read the database wait for it,
+// playback does not); `local` routes go on.
+func (rt *nodeRuntime) dbDownReads(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := rt.dbs.pair
+		if p == nil || !p.Home.Down() || (p.Copy != nil && !p.Copy.Down()) ||
+			placement.ClassFrom(r.Context()) != placement.Any {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set(nodeauth.HomeStateHeader, "unreachable")
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.Header().Set("Retry-After", "5")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{"type": "https://maktaba.dev/problems/home-unreachable",
+			"title": "the home's database is not reachable", "status": http.StatusServiceUnavailable,
+			"code":   "home_unreachable",
+			"detail": "this page reads the home's database, which does not answer; videos this machine can read still play"})
+	})
 }
 
 // warnUnclassified logs routes the placement table does not name (they are proxied to
@@ -277,25 +694,40 @@ func warnUnclassified(r chi.Router, logger *slog.Logger) {
 }
 
 // mountHomeClusterAuth mounts the home's delegation and cluster sign-in endpoints and
-// its /api/cluster/self (stories 35.9, 35.11).
+// its /api/cluster/self (stories 35.9, 35.11), and runs its side of the machines'
+// copies of its database (Epic 37).
 func mountHomeClusterAuth(r chi.Router, db *sql.DB, logger *slog.Logger) {
 	webURL := os.Getenv("MAKTABA_WEB_URL")
 	router.MountClusterAuth(r, router.ClusterAuthDeps{DB: db, WebURL: webURL, Logger: logger})
-	router.MountNodeLocal(r, router.NodeLocalDeps{Self: homeSelf(&cluster.PGStore{DB: db}, webURL)})
+	router.MountNodeLocal(r, router.NodeLocalDeps{Self: homeSelf(&cluster.PGStore{DB: db}, webURL,
+		func(ctx context.Context) int64 { return switchover.TermOf(ctx, db) }), Moved: switchover.MovedHandler(db)})
+	// the machines' copies of this database (Epic 37): the beat, the CA, the cap, the
+	// slots guarded; on a database that is not Maktaba's own Postgres, none without the rule
+	// (read at each beat, its errors told apart: a rule not read ends no copy)
+	rules := nodemode.CachedRules(db, time.Minute)
+	go (&cluster.Copies{DB: db, CAFile: os.Getenv("MAKTABA_CLUSTER_PG_CA"), Logger: logger,
+		Bundled: os.Getenv("MAKTABA_CLUSTER_PG_PORT") != "",
+		KeepGB:  func() int { return rules().ReplicaWALKeepGB },
+		OperatorPG: func(ctx context.Context) (bool, error) {
+			r, err := nodemode.LoadRules(ctx, db)
+			return r.CopiesOnOperatorPostgres, err
+		}}).Run(context.Background())
 }
 
-// mountNode opens the home's database with the node's role and mounts what a full
-// node serves itself: the library and queue reads (`any`), the guide reads, this
-// machine's routes (`local`); everything else is proxied to the home.
+// mountNode opens the home's database with the node's role, and this machine's copy of
+// it, and mounts what a full node serves itself: the library and queue reads (`any`),
+// the guide reads, this machine's routes (`local`); everything else is proxied to the
+// home.
 func mountNode(r chi.Router, cfg nodemode.Config, dataDir string, logger *slog.Logger) (*nodeRuntime, func(), error) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		return nil, nil, fmt.Errorf("node mode needs the home's database (DATABASE_URL, the node role's from node.json)")
 	}
-	appDB, err := pgdsn.Open(dsn)
+	dbs, err := openNodeDBs(dsn, os.Getenv("MAKTABA_COPY_DATABASE_URL"), logger)
 	if err != nil {
-		return nil, nil, fmt.Errorf("node mode: open the home's database: %w", err)
+		return nil, nil, err
 	}
+	appDB := dbs.app
 	poolCfg := perf.DefaultPoolConfig()
 	poolCfg.MaxOpen = envIntDefault("MAKTABA_DB_MAX_OPEN", 16)
 	poolCfg.MaxIdle = envIntDefault("MAKTABA_DB_MAX_IDLE", 4)
@@ -304,10 +736,10 @@ func mountNode(r chi.Router, cfg nodemode.Config, dataDir string, logger *slog.L
 		appDB.SetMaxIdleConns(poolCfg.MaxIdle)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	rt, err := startNode(ctx, cfg, appDB, logger)
+	rt, err := startNode(ctx, cfg, dbs, logger)
 	if err != nil {
 		cancel()
-		_ = appDB.Close()
+		dbs.close()
 		return nil, nil, err
 	}
 	var streamingClient grpcstreaming.Client
@@ -325,16 +757,20 @@ func mountNode(r chi.Router, cfg nodemode.Config, dataDir string, logger *slog.L
 	router.MountP6(r, router.P6Deps{
 		DB: appDB, PipelineClient: pipelineClient, StreamingClient: streamingClient,
 		// the event bus's pq.Listener takes a connection string (lib/pq has no
-		// connector-based listener), so its sslmode is settled once, here at startup,
-		// not per connection as appDB's is
+		// connector-based listener), so its sslmode is settled here at startup, and
+		// again when the listener cannot connect (the database down at startup leaves
+		// it at require), not per connection as appDB's is
 		BusCtx: ctx, BusDSN: pgdsn.ForLibPQ(ctx, dsn, pgdsn.Ping), PerfRegistry: perf.NewRegistry(),
+		BusResettle: func(ctx context.Context) string { return pgdsn.ForLibPQ(ctx, dsn, pgdsn.Ping) },
 		// this machine's own stream key: the node signs its own VOD sessions,
 		// which its own streaming role verifies (Story 10.8, design §11.5)
 		URLSigner: streamURLSigner(nil, logger),
+		// the home's database down: this machine's copy and session record
+		StreamOffline: rt.offline(),
 	})
 	router.MountP27(r, router.P27Deps{DB: appDB, PublicBaseURL: os.Getenv("MAKTABA_PUBLIC_BASE_URL"), DataDir: dataDir})
 	rt.mountNodeRoutes(r)
 	warnUnclassified(r, logger)
 	logger.Info("node: local and any routes mounted; the rest is proxied to the home", "event", "node_mounted")
-	return rt, func() { cancel(); _ = appDB.Close() }, nil
+	return rt, func() { cancel(); rt.waitBG(3 * time.Second); dbs.close() }, nil
 }

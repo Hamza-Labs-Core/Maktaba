@@ -29,6 +29,7 @@ func wireEventBus(d P6Deps, hub *ws.Hub, wsHandler *ws.Handler) *eventbus.Bus {
 		return nil
 	}
 	backend := eventbus.NewPostgresBackend(d.DB, d.BusDSN, slog.Default())
+	backend.Resettle = d.BusResettle
 	bus := eventbus.New(backend, hub, slog.Default())
 
 	go func() {

@@ -56,3 +56,18 @@ type Revoked struct {
 	UserID        string   `json:"user_id,omitempty"`
 	Reason        string   `json:"reason,omitempty"`
 }
+
+// SignOutRequest is a sign-out made on a node while the home did not answer
+// (POST /api/cluster/delegate/signout), sent once the home answers again: sessions by
+// the SHA-256 (hex) of their id, and/or every session of a user made before a moment
+// ("sign out everywhere").
+type SignOutRequest struct {
+	SessionSHA256 []string   `json:"session_sha256,omitempty"`
+	UserID        string     `json:"user_id,omitempty"`
+	Before        *time.Time `json:"before,omitempty"`
+}
+
+// SignOutAnswer is how many sessions the home ended.
+type SignOutAnswer struct {
+	Revoked int `json:"revoked"`
+}

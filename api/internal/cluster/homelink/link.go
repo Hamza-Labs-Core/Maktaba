@@ -58,6 +58,8 @@ type Link interface {
 	JWKS(ctx context.Context) ([]byte, error)
 	// Self is the home's GET /api/cluster/self (its name, web address, version).
 	Self(ctx context.Context) (json.RawMessage, error)
+	// SignOut hands the home a sign-out made on this node while it did not answer.
+	SignOut(ctx context.Context, req delegation.SignOutRequest) (*delegation.SignOutAnswer, error)
 	// Subscribe registers fn for pushed events; it is called from one goroutine.
 	Subscribe(fn func(Event))
 	// HasKey reports whether the node holds a delegation key yet.
@@ -228,6 +230,15 @@ func (l *HTTPLink) Self(ctx context.Context) (json.RawMessage, error) {
 	var b []byte
 	err := l.call(ctx, http.MethodGet, "/api/cluster/self", nil, &b)
 	return b, err
+}
+
+// SignOut implements Link.
+func (l *HTTPLink) SignOut(ctx context.Context, req delegation.SignOutRequest) (*delegation.SignOutAnswer, error) {
+	var a delegation.SignOutAnswer
+	if err := l.call(ctx, http.MethodPost, "/api/cluster/delegate/signout", req, &a); err != nil {
+		return nil, err
+	}
+	return &a, nil
 }
 
 // ---------- the machine agent's feed ----------

@@ -86,6 +86,9 @@ jobs:
           go build -trimpath \
             -ldflags "-buildid= -s -w -X main.Version=${ver} -X main.Commit=${sha}" \
             -o bin/maktaba-cloud ./cmd/maktaba-cloud
+          go build -trimpath \
+            -ldflags "-buildid= -s -w -X main.Version=${ver} -X main.Commit=${sha}" \
+            -o bin/maktaba-cloudlink ./cmd/maktaba-cloudlink
 
       - name: Build web bundle
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
@@ -99,6 +102,7 @@ jobs:
             api/bin/maktaba-api
             streaming/bin/maktaba-streaming
             cloud/bin/maktaba-cloud
+            cloud/bin/maktaba-cloudlink
           retention-days: 14
 
       - name: Upload web bundle

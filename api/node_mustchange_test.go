@@ -52,6 +52,9 @@ func (f *fakeHome) JWKS(context.Context) ([]byte, error)          { return []byt
 func (f *fakeHome) Self(context.Context) (json.RawMessage, error) { return json.RawMessage(`{}`), nil }
 func (f *fakeHome) Subscribe(func(homelink.Event))                {}
 func (f *fakeHome) HasKey() bool                                  { return true }
+func (f *fakeHome) SignOut(context.Context, delegation.SignOutRequest) (*delegation.SignOutAnswer, error) {
+	return &delegation.SignOutAnswer{}, nil
+}
 
 func TestNodeHoldsMustChangeSessionToPasswordForm(t *testing.T) {
 	home := &fakeHome{mustChange: true}

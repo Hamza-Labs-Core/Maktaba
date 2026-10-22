@@ -7,6 +7,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..db import claim_owner
 from ..db.jobs import Job
 from ..db.jobs_state import read_flags
 from .events import job_ref, log_event, publish
@@ -112,11 +113,15 @@ class StageContext:
         }
         if message:
             doc["message"] = message
+        # only while this worker holds the claim (a late write of a run the home gave to
+        # another machine changes nothing: claim_owner)
         await self.db.execute(
-            "UPDATE processing_jobs SET progress = $2, progress_updated_at = $3 WHERE id = $1",
+            "UPDATE processing_jobs SET progress = $2, progress_updated_at = $3"
+            f" WHERE id = $1 AND {claim_owner.guard(self.db, 4)}",
             self.job.id,
             dumps(doc),
             to_ts(self.db, now()),
+            claim_owner.current(),
         )
         ref = await job_ref(self.db, self.job.id)
         if ref is not None:

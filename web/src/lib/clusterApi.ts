@@ -143,7 +143,34 @@ export interface ClusterNode {
   vod?: NodeVod;
   /** Epic 35 (story 35.12): the update rollout's view of this machine */
   update_state?: Record<string, unknown>;
+  /** Epic 37: the machine's copy of this home's database; {} before it reported one */
+  copy?: NodeCopy;
 }
+
+/** A full machine's copy of its home's database (Epic 37), as its supervisor keeps it. */
+export interface NodeCopy {
+  state?: NodeCopyState;
+  detail?: string;
+  /** the home's time of the last change the copy applied */
+  applied_at?: string;
+  lag_ms?: number;
+  built?: string;
+  home_major?: string;
+  checked?: string;
+}
+
+export type NodeCopyState =
+  | "preparing"
+  | "waiting"
+  | "copying"
+  | "rebuilding"
+  | "following"
+  | "behind"
+  | "starting"
+  | "incompatible"
+  | "unavailable"
+  | "error"
+  | "revoked";
 
 /** A machine's VOD fallback (design §11.5); {} when it serves its own. */
 export interface NodeVod {
@@ -176,6 +203,8 @@ export interface ClusterSelf {
   sso: boolean;
   agent_connected?: boolean;
   vod?: NodeVod & { checked_at: string };
+  /** a full node's copy of its home's database (Epic 37) */
+  copy?: NodeCopy;
   machines?: { role: "home" | "node"; id: string; name: string; web_url?: string }[];
   accept_joins?: boolean;
   served_at: string;
@@ -219,7 +248,160 @@ export const clusterApi = {
   deleteServer: (name: string) => api.delete<void>(`/api/cluster/storage-servers/${q(name)}`),
   canonicalize: (action: CanonAction) =>
     api.post<CanonStatus>("/api/cluster/storage/canonicalize", { action }),
+  // Epic 37: switching the home to another machine
+  switchover: () => api.get<SwitchStatus>("/api/cluster/switchover"),
+  startSwitch: (to_node: string) =>
+    api.post<{ id: string }>("/api/cluster/switchover", { to_node }),
+  /** Calls a switch under way off; `force` with the machine's name typed when it does
+   * not answer (409 switchover-no-answer). */
+  cancelSwitch: (id: string, force = false, confirm = "") =>
+    api.post<{ state: "calling_off" | "called_off" }>(`/api/cluster/switchover/${q(id)}/cancel`, {
+      force,
+      confirm,
+    }),
+  setStandby: (node_id: string, standby: boolean) =>
+    api.put<{ standbys: StandbyHome[] }>("/api/cluster/switchover/standby", { node_id, standby }),
+  checklistDone: (id: string, item: string, done: boolean) =>
+    api.post<{ done: boolean }>(`/api/cluster/switchover/${q(id)}/checklist`, { item, done }),
+  keptPlan: (id: string) => api.get<KeptPlan>(`/api/cluster/kept-aside/${q(id)}/plan`),
+  keptApply: (id: string, plan: string) =>
+    api.post<{ plan: KeptPlan; changed: boolean }>(`/api/cluster/kept-aside/${q(id)}/apply`, {
+      plan,
+    }),
+  keptDismiss: (id: string) =>
+    api.post<{ dismissed: boolean }>(`/api/cluster/kept-aside/${q(id)}/dismiss`, {}),
+  keptDownloadUrl: (id: string) => `/api/cluster/kept-aside/${q(id)}/download`,
+  // a standby home taking over when its home is gone (this machine's own)
+  emergency: () => api.get<EmergencyState>("/api/cluster/emergency"),
+  startEmergency: (confirm: string) =>
+    api.post<{ accepted: boolean; id: string }>("/api/cluster/emergency", { confirm }),
 };
+
+/** One step of a switch of the home, as the old home runs it. */
+export interface SwitchStep {
+  name: string;
+  state: "running" | "done" | "failed";
+  detail?: string;
+  at: string;
+}
+
+/** A machine's part in a switch. */
+export interface SwitchMachine {
+  name: string;
+  state: string;
+  detail?: string;
+}
+
+/** An outside service after a switch: moved and checked, or what it needs (done:
+ * a person said they did it). */
+export interface SwitchIntegration {
+  state: "moved" | "pending" | "failed" | "needs_you" | "not_used";
+  detail?: string;
+  done?: boolean;
+}
+
+/** A switch of the home (GET /api/cluster/switchover). */
+export interface SwitchProgress {
+  id: string;
+  term: number;
+  kind: "planned" | "emergency";
+  to_node: string;
+  to_name: string;
+  from_name: string;
+  state: string;
+  detail?: string;
+  steps?: SwitchStep[] | null;
+  machines?: Record<string, SwitchMachine> | null;
+  integrations?: Record<string, SwitchIntegration> | null;
+  started?: string;
+  /** the promotion was asked: from then only the machine taking over can call it off */
+  promote_sent?: boolean;
+  /** where the new home answers, once it is the home */
+  new_home?: { api_url: string; web_url: string; name: string } | null;
+}
+
+/** A machine that could take over as the home, and why it cannot now. */
+export interface SwitchCandidate {
+  node_id: string;
+  name: string;
+  ready: boolean;
+  reasons?: string[] | null;
+  lag_ms?: number | null;
+}
+
+export interface SwitchStatus {
+  term: { term: number; home_name: string; reason: string; started_at: string } | null;
+  current: SwitchProgress | null;
+  recent: SwitchProgress[] | null;
+  candidates: SwitchCandidate[] | null;
+  standbys?: StandbyHome[] | null;
+  reports?: KeptReport[] | null;
+}
+
+/** A machine as a standby home: it may take over if the home is gone for good, and
+ * keeps the home's kit (its secrets and keys) sealed to it. */
+export interface StandbyHome {
+  node_id: string;
+  name: string;
+  standby: boolean;
+  /** an approved full machine: it may be one */
+  can: boolean;
+  /** when it last confirmed the kit it holds */
+  kit_at?: string | null;
+  kit_term?: number | null;
+}
+
+/** What an old home wrote after an emergency took the home from it, as it reported it. */
+export interface KeptReport {
+  id: string;
+  term: number;
+  from_name: string;
+  state: "reported" | "applied" | "dismissed";
+  lost: boolean;
+  received_at: string;
+  applied_at?: string | null;
+  changes: number;
+  transactions: number;
+  counts?: Record<string, number> | null;
+  applied_transactions?: number | null;
+  /** the old home wrote more than a report carries: `total` changes, `changes` of them here */
+  truncated?: boolean;
+  total?: number;
+}
+
+/** One of the old home's transactions: applied whole, or not, with why. */
+export interface KeptTransaction {
+  commit_lsn: string;
+  committed_at: string;
+  tables: string[];
+  changes: number;
+  apply: boolean;
+  reason?: string;
+  detail?: string;
+}
+
+/** What applying a report would do now. */
+export interface KeptPlan {
+  report: string;
+  hash: string;
+  transactions: KeptTransaction[] | null;
+  apply: number;
+  skip: number;
+  unknown?: boolean;
+}
+
+/** Whether this machine (a standby home) can take over as the home now. */
+export interface EmergencyState {
+  standby: boolean;
+  kit_term?: number;
+  kit_made_at?: string | null;
+  home: string;
+  home_url?: string;
+  home_answers?: boolean;
+  copy?: NodeCopy | null;
+  ready: boolean;
+  reasons?: string[] | null;
+}
 
 /** "123 456", "123-456" -> "123456"; anything else -> null. */
 export function normalizePairingCode(raw: string): string | null {

@@ -34,6 +34,7 @@ import { Toggle } from "@ds/components/Choice/Toggle";
 import { useToast } from "@ds/components/Toast/Toast";
 import { AdminGate } from "../../components/AdminGate";
 import { CanonicalizePanel } from "../../components/cluster/CanonicalizePanel";
+import { EmergencyCard } from "../../components/cluster/EmergencyCard";
 import { pausedOf, useClusterFmt } from "../../components/cluster/format";
 import { JobsPanel } from "../../components/cluster/JobsPanel";
 import { JobsSummary } from "../../components/cluster/JobsSummary";
@@ -52,6 +53,7 @@ import { queueLabeller } from "../../components/cluster/names";
 import { QueuesPanel } from "../../components/cluster/QueuesPanel";
 import { RelayDoorCard } from "../../components/cluster/RelayDoorCard";
 import { RelayPanel } from "../../components/cluster/RelayPanel";
+import { SwitchHomeCard } from "../../components/cluster/SwitchHomeCard";
 import { useClusterFiles } from "../../components/cluster/useClusterFiles";
 import { useFmt } from "../../components/queue/format";
 import { useClusterStream, type ClusterStream } from "../../lib/clusterStream";
@@ -64,6 +66,7 @@ import {
   type ClusterHome,
   type ClusterNode,
   type ClusterView,
+  type NodeCopy,
   type NodeStorage,
   type NodeUpdate,
   type StorageServer,
@@ -154,7 +157,13 @@ function MachinesPage() {
                 stream={stream}
                 queueLabel={queueLabel}
                 onOpenLogs={openLogs}
-                extra={<RelayDoorCard />}
+                extra={
+                  <>
+                    <EmergencyCard />
+                    <SwitchHomeCard />
+                    <RelayDoorCard />
+                  </>
+                }
               />
             ),
           },
@@ -805,6 +814,32 @@ function PausedNotice({ reason }: { reason: string }) {
   );
 }
 
+const COPY_STATES: ReadonlySet<string> = new Set([
+  "preparing",
+  "waiting",
+  "copying",
+  "rebuilding",
+  "following",
+  "behind",
+  "starting",
+  "incompatible",
+  "unavailable",
+  "error",
+]);
+const COPY_WARN: ReadonlySet<string> = new Set(["behind", "incompatible", "unavailable", "error"]);
+
+/** The line a full machine's copy of this home's database (Epic 37) gets on its card. */
+function useCopyNote(copy: NodeCopy | undefined): { text: string; warn: boolean } | null {
+  const { t } = useI18n();
+  const fmt = useFmt();
+  if (!copy?.state || !COPY_STATES.has(copy.state)) return null;
+  const ago = copy.applied_at ? fmt.ago(copy.applied_at) : t("machines.copy.never");
+  return {
+    text: t(`machines.copy.${copy.state}`, { ago, detail: copy.detail ?? "" }),
+    warn: COPY_WARN.has(copy.state),
+  };
+}
+
 const MachineCard = memo(function MachineCard({
   node,
   onChanged,
@@ -828,6 +863,7 @@ const MachineCard = memo(function MachineCard({
   const name = bidiIsolate(node.name);
   const version = versionChip(t, node);
   const vod = node.vod?.fallback ? node.vod : null;
+  const copyNote = useCopyNote(node.copy);
   const webUrl = safeHttpUrl(node.web_url);
 
   const run = (p: Promise<unknown>) => {
@@ -859,6 +895,11 @@ const MachineCard = memo(function MachineCard({
           {active && <JobsSummary host={node.id} count={jobs} name={node.name} />}
         </header>
         {paused && <PausedNotice reason={paused} />}
+        {active && copyNote && (
+          <p className={`mkt-mc-note${copyNote.warn ? " mkt-mc-note--warn" : ""}`} role="note">
+            {copyNote.text}
+          </p>
+        )}
         {vod && (
           <p className="mkt-mc-note" role="note">
             {t("machines.vod.fallback", {

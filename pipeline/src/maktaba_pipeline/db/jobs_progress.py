@@ -28,7 +28,9 @@ The split rule, in plain English (per plan-06-03 §1):
 Both UPDATEs gate on ``state IN ('claimed', 'running', 'resuming')`` so
 a stale tick from a worker that hasn't observed a force-pause yet does
 not bump ``last_heartbeat_at`` on a paused/terminal row (which would
-defeat the reaper's staleness check).
+defeat the reaper's staleness check), and on the worker's claim
+(:mod:`.claim_owner`): a machine back after losing the home past the
+claim lease does not keep alive, nor move, a job another one now runs.
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from . import claim_owner
 from .jobs import DBConn
 from .pubsub import JOBS_HEARTBEAT, JOBS_PROGRESS, get_bus
 
@@ -87,6 +90,7 @@ UPDATE processing_jobs
        last_heartbeat_at        = now()
  WHERE id = $1
    AND state IN ('claimed', 'running', 'resuming')
+   AND ($7::text IS NULL OR claimed_by = $7::text)
 RETURNING id, video_id, stage, state,
           last_segment_end_sec, processed_seconds,
           total_duration_seconds, segments_completed,
@@ -108,6 +112,7 @@ UPDATE processing_jobs
        last_heartbeat_at        = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
  WHERE id = ?
    AND state IN ('claimed', 'running', 'resuming')
+   AND (? IS NULL OR claimed_by = ?)
 RETURNING id, video_id, stage, state,
           last_segment_end_sec, processed_seconds,
           total_duration_seconds, segments_completed,
@@ -121,6 +126,7 @@ UPDATE processing_jobs
    SET last_heartbeat_at = now()
  WHERE id = $1
    AND state IN ('claimed', 'running', 'resuming')
+   AND ($2::text IS NULL OR claimed_by = $2::text)
 RETURNING id, stage, last_heartbeat_at
 """
 
@@ -129,6 +135,7 @@ UPDATE processing_jobs
    SET last_heartbeat_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
  WHERE id = ?
    AND state IN ('claimed', 'running', 'resuming')
+   AND (? IS NULL OR claimed_by = ?)
 RETURNING id, stage, last_heartbeat_at
 """
 
@@ -145,6 +152,7 @@ async def tick_progress(db: DBConn, t: ProgressTick) -> None:
     worker's per-segment cancel/pause check (Story 6.4) will see the
     transition on the next iteration.
     """
+    owner = claim_owner.current()
     if db.dialect == "postgres":
         sql = _PROGRESS_SQL_PG
         args: tuple[Any, ...] = (
@@ -154,6 +162,7 @@ async def tick_progress(db: DBConn, t: ProgressTick) -> None:
             t.last_segment_end_sec,
             t.realtime_factor,
             t.estimated_remaining_sec,
+            owner,
         )
     else:
         sql = _PROGRESS_SQL_SQLITE
@@ -164,6 +173,8 @@ async def tick_progress(db: DBConn, t: ProgressTick) -> None:
             t.realtime_factor,
             t.estimated_remaining_sec,
             t.job_id,
+            owner,
+            owner,
         )
 
     row = await db.fetchrow(sql, *args)
@@ -192,9 +203,11 @@ async def tick_heartbeat(db: DBConn, *, job_id: int) -> None:
     Fires ``jobs.heartbeat`` (consumed by the reaper, never the UI) and
     is a no-op on rows outside the live-claim states.
     """
-    sql = _HEARTBEAT_SQL_PG if db.dialect == "postgres" else _HEARTBEAT_SQL_SQLITE
-    arg = job_id if db.dialect == "postgres" else job_id
-    row = await db.fetchrow(sql, arg)
+    owner = claim_owner.current()
+    if db.dialect == "postgres":
+        row = await db.fetchrow(_HEARTBEAT_SQL_PG, job_id, owner)
+    else:
+        row = await db.fetchrow(_HEARTBEAT_SQL_SQLITE, job_id, owner, owner)
     if row is None:
         return
     if db.dialect == "sqlite":

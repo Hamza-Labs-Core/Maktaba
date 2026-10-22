@@ -21,7 +21,7 @@ import (
 
 // SchemaRev is the highest migration slot this code ships (shared/db/migrations); a
 // test fails when a migration is added without raising it.
-const SchemaRev = 146
+const SchemaRev = 147
 
 // MinNodeFunction is what a migration that breaks older nodes (re)defines.
 const MinNodeFunction = "maktaba_min_node_schema"
@@ -89,6 +89,25 @@ type Guard struct {
 	reason string
 	home   HomeSchema
 	at     time.Time
+	nudge  chan struct{}
+	once   sync.Once
+}
+
+func (g *Guard) nudges() chan struct{} {
+	g.once.Do(func() { g.nudge = make(chan struct{}, 1) })
+	return g.nudge
+}
+
+// Nudge has Run check now (the home's database answers again: it may have been
+// migrated meanwhile).
+func (g *Guard) Nudge() {
+	if g == nil {
+		return
+	}
+	select {
+	case g.nudges() <- struct{}{}:
+	default:
+	}
 }
 
 func (g *Guard) required() int {
@@ -142,7 +161,8 @@ func (g *Guard) Home() (HomeSchema, time.Time) {
 	return g.home, g.at
 }
 
-// Run checks at once, then every 5 minutes (every 30 s while paused), until ctx ends.
+// Run checks at once, then every 5 minutes (every 30 s while paused) and when nudged,
+// until ctx ends.
 func (g *Guard) Run(ctx context.Context) {
 	for {
 		every := CheckEvery
@@ -153,6 +173,7 @@ func (g *Guard) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-time.After(every):
+		case <-g.nudges():
 		}
 	}
 }

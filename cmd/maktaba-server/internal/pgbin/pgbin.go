@@ -8,6 +8,7 @@ package pgbin
 import (
 	"archive/tar"
 	"archive/zip"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -86,9 +87,10 @@ func Exe(name string) string {
 	return name
 }
 
-// Installed reports the install at home has the programs a copy needs.
+// Installed reports the install at home has the programs a copy needs (a logical
+// subscription: no pg_basebackup).
 func Installed(home string) bool {
-	for _, b := range []string{"postgres", "initdb", "pg_ctl", "pg_basebackup", "psql"} {
+	for _, b := range []string{"postgres", "initdb", "pg_ctl", "psql"} {
 		if info, err := os.Stat(filepath.Join(home, "bin", Exe(b))); err != nil || info.IsDir() {
 			return false
 		}
@@ -146,11 +148,79 @@ func (c *capped) Write(p []byte) (int, error) {
 	return n, err
 }
 
+// outputPluginMark is what every logical decoding output plugin exports (its entry
+// point), and strippedMark the file an install keeps once StripDecoders ran on it.
+const (
+	outputPluginMark = "_PG_output_plugin_init"
+	strippedMark     = ".maktaba-pgoutput-only"
+)
+
+// OutputPlugins are the logical decoding output plugins of the install at home but
+// pgoutput (its libraries' paths).
+func OutputPlugins(home string) ([]string, error) {
+	var out []string
+	err := filepath.WalkDir(filepath.Join(home, "lib"), func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		name := d.Name()
+		switch filepath.Ext(name) {
+		case ".so", ".dylib", ".dll":
+		default:
+			return nil
+		}
+		if strings.TrimSuffix(name, filepath.Ext(name)) == "pgoutput" {
+			return nil
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		if bytes.Contains(b, []byte(outputPluginMark)) {
+			out = append(out, p)
+		}
+		return nil
+	})
+	return out, err
+}
+
+// StripDecoders removes from the install at home every logical decoding output plugin
+// but pgoutput, a copy's (specs/epics/37-node-replica, "What a machine can read"): a
+// machine's replication role may make a slot with any plugin its home's server has, and
+// another one (test_decoding) decodes every table, past what is published to it. Done
+// once per install (strippedMark): the paths it removed.
+func StripDecoders(home string) ([]string, error) {
+	if _, err := os.Stat(filepath.Join(home, strippedMark)); err == nil {
+		return nil, nil
+	}
+	found, err := OutputPlugins(home)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range found {
+		if err := os.Remove(p); err != nil {
+			return nil, err
+		}
+	}
+	return found, os.WriteFile(filepath.Join(home, strippedMark), nil, 0o644)
+}
+
 // Ensure returns the install of pin under root, downloading, checking and unpacking
-// it when it is not there yet (a half-done unpack is never taken for an install).
+// it when it is not there yet (a half-done unpack is never taken for an install), with
+// no output plugin but pgoutput (StripDecoders: an install unpacked before that is
+// stripped now).
 func Ensure(ctx context.Context, root string, pin Pin, fetch Fetcher, log io.Writer) (string, error) {
 	home := filepath.Join(root, pin.Dir())
 	if Installed(home) {
+		if _, err := StripDecoders(home); err != nil {
+			return "", fmt.Errorf("PostgreSQL %s: its output plugins: %w", Version, err)
+		}
 		return home, nil
 	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
@@ -192,6 +262,9 @@ func Ensure(ctx context.Context, root string, pin Pin, fetch Fetcher, log io.Wri
 	got := filepath.Join(stage, pin.Dir())
 	if !Installed(got) {
 		return "", errors.New("unexpected PostgreSQL archive layout")
+	}
+	if _, err := StripDecoders(got); err != nil {
+		return "", fmt.Errorf("PostgreSQL %s: its output plugins: %w", Version, err)
 	}
 	if err := os.RemoveAll(home); err != nil {
 		return "", err

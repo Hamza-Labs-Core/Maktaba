@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -306,8 +307,8 @@ func TestServerArgsDropTheSocketOnALongPath(t *testing.T) {
 		t.Fatalf("args = %s", args)
 	}
 	b.Data = "/" + strings.Repeat("x", 100) + "/postgres"
-	if args := strings.Join(b.ServerArgs(), " "); !strings.HasSuffix(args, "unix_socket_directories=") {
-		t.Fatalf("a socket path past 103 bytes must be left out: %s", args)
+	if args := b.ServerArgs(); !slices.Contains(args, "unix_socket_directories=") {
+		t.Fatalf("a socket path past 103 bytes must be left out: %s", strings.Join(args, " "))
 	}
 }
 
@@ -406,6 +407,75 @@ func TestResolve(t *testing.T) {
 		if _, ok, _ := Resolve(cfg, exe); ok {
 			t.Error("a SQLite database in use must keep the install on SQLite")
 		}
+	}
+}
+
+// A cluster made before the machines could be served gets the provisioning grants at
+// its next start, once; and from then its pg_hba.conf and certificate are Maktaba's.
+func TestPrepareAnOlderClusterLetsTheAppRoleProvision(t *testing.T) {
+	b, logDir := fakeBundle(t)
+	b.LAN, b.TLS = true, true
+	ctx := context.Background()
+	if err := b.Prepare(ctx, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if sql := read(t, filepath.Join(logDir, "psql.sql")); !strings.Contains(sql, "CREATEROLE REPLICATION") ||
+		!strings.Contains(sql, "CREATE DATABASE maktaba") {
+		t.Fatalf("a first start: one session with both:\n%s", sql)
+	}
+	if hba := read(t, filepath.Join(b.Data, "pg_hba.conf")); strings.Contains(hba, "maktaba_replicas") {
+		t.Fatalf("no machine may connect yet, but pg_hba.conf lets them:\n%s", hba)
+	}
+	// a machine approved (WatchReach): the next start lets the machines in
+	if err := b.KeepReach(Reach{Open: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Prepare(ctx, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if hba := read(t, filepath.Join(b.Data, "pg_hba.conf")); !strings.Contains(hba, "hostssl maktaba      +maktaba_replicas") {
+		t.Fatalf("pg_hba.conf:\n%s", hba)
+	}
+	if !b.TLSReady() {
+		t.Fatal("no server certificate")
+	}
+
+	// an older cluster: only the app's bootstrap had run
+	if err := os.Remove(filepath.Join(b.Data, clusterMarker)); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Prepare(ctx, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	sql := read(t, filepath.Join(logDir, "psql.sql"))
+	if !strings.Contains(sql, "CREATEROLE REPLICATION") || strings.Contains(sql, "CREATE DATABASE") {
+		t.Fatalf("an older cluster: the provisioning grants only:\n%s", sql)
+	}
+	if err := b.Prepare(ctx, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if n := lines(t, filepath.Join(logDir, "psql.calls")); n != 2 {
+		t.Fatalf("the bootstrap ran %d times, want 2", n)
+	}
+
+	// a cluster an earlier release provisioned (its marker names no revision): once more,
+	// with the slot functions made the app role's alone
+	if err := os.WriteFile(filepath.Join(b.Data, clusterMarker), []byte("2026-10-01T00:00:00Z\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Prepare(ctx, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	sql = read(t, filepath.Join(logDir, "psql.sql"))
+	if !strings.Contains(sql, "REVOKE EXECUTE ON FUNCTION") || !strings.Contains(sql, "pg_logical_slot_get_changes") ||
+		strings.Contains(sql, "CREATE DATABASE") {
+		t.Fatalf("a cluster provisioned before: the provisioning again:\n%s", sql)
+	}
+	if err := b.Prepare(ctx, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if n := lines(t, filepath.Join(logDir, "psql.calls")); n != 3 {
+		t.Fatalf("the bootstrap ran %d times, want 3", n)
 	}
 }
 

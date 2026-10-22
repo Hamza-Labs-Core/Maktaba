@@ -3,7 +3,7 @@
 # 38.11), for Windows x86_64:
 #
 #   bin\       maktaba-server.exe (web UI embedded) maktaba-api.exe maktaba-streaming.exe
-#              maktaba-launcher.exe
+#              maktaba-launcher.exe maktaba-cloudlink.exe
 #   postgres\  bin\ lib\ share\           PostgreSQL 16: the programs, the DLLs they load and
 #                                         the Visual C++ runtime beside postgres.exe
 #   ffmpeg\    ffmpeg.exe ffprobe.exe     static
@@ -115,6 +115,8 @@ log "building the Go binaries for windows/amd64 ($VERSION)"
 cp "$REPO_ROOT/cmd/maktaba-server/bin/windows-amd64/maktaba-server" "$OUT/bin/maktaba-server.exe"
 cp "$REPO_ROOT/api/bin/windows-amd64/maktaba-api" "$OUT/bin/maktaba-api.exe"
 cp "$REPO_ROOT/streaming/bin/windows-amd64/maktaba-streaming" "$OUT/bin/maktaba-streaming.exe"
+# the cloud relay agent the home's supervisor runs (Epic 25; it moves with a switch of the home)
+cp "$REPO_ROOT/cloud/bin/windows-amd64/maktaba-cloudlink" "$OUT/bin/maktaba-cloudlink.exe"
 (cd "$REPO_ROOT/cmd/maktaba-launcher" && \
     GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
     go build -trimpath -ldflags "-buildid= -s -w -X main.Version=$VERSION" -o "$(win "$OUT/bin/maktaba-launcher.exe")" .)
@@ -197,6 +199,11 @@ done
 # the procedural languages whose runtime (Perl, a Python of its own, Tcl) is not here never load
 rm -f "$OUT"/postgres/lib/plperl.dll "$OUT"/postgres/lib/plpython3.dll "$OUT"/postgres/lib/pltcl.dll \
       "$OUT"/postgres/lib/*_plperl.dll "$OUT"/postgres/lib/*_plpython3.dll
+# no logical decoding output plugin but pgoutput (a full node's copy): a machine's replication
+# role may make a slot with any plugin the home's server has, and another one (test_decoding)
+# decodes every table, past what is published to it (specs/epics/37-node-replica)
+find "$OUT/postgres/lib" -type f ! -name 'pgoutput.*' -exec grep -l -a -F _PG_output_plugin_init {} + 2>/dev/null |
+    while IFS= read -r f; do rm -f "$f"; done || true
 # the DLLs the programs and the extensions load, found by reading their import tables:
 # OpenSSL, ICU, libxml2, zlib, ... from the archive's bin (not wxWidgets, StackBuilder's), and
 # the Visual C++ runtime

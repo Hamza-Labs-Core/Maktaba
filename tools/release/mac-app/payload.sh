@@ -79,7 +79,8 @@ make -C "$REPO_ROOT" --no-print-directory server build-go \
     GOOS=darwin GOARCH=arm64 VERSION="$VERSION" BIN_SUBDIR=darwin-arm64/ >/dev/null
 cp "$REPO_ROOT/cmd/maktaba-server/bin/darwin-arm64/maktaba-server" \
    "$REPO_ROOT/api/bin/darwin-arm64/maktaba-api" \
-   "$REPO_ROOT/streaming/bin/darwin-arm64/maktaba-streaming" "$OUT/bin/"
+   "$REPO_ROOT/streaming/bin/darwin-arm64/maktaba-streaming" \
+   "$REPO_ROOT/cloud/bin/darwin-arm64/maktaba-cloudlink" "$OUT/bin/"
 (cd "$REPO_ROOT/cmd/maktaba-launcher" && \
     GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 \
     go build -trimpath -ldflags "-buildid= -s -w -X main.Version=$VERSION" -o "$OUT/bin/maktaba-launcher" .)
@@ -91,14 +92,20 @@ tar -xzf "$pg_tgz" -C "$WORK"
 pg="$WORK/postgresql-$POSTGRES_VERSION-aarch64-apple-darwin"
 [ -x "$pg/bin/postgres" ] || die "unexpected PostgreSQL archive layout"
 mkdir -p "$OUT/postgres/bin"
-# what the supervisor runs (36.1) and what a backup, a restore, an upgrade or a person needs;
-# pg_basebackup: a Mac that joins another home makes its copy of that home's database with it
-for b in postgres initdb pg_ctl pg_dump pg_dumpall pg_restore psql pg_isready pg_upgrade pg_controldata pg_resetwal pg_basebackup; do
+# what the supervisor runs (36.1) and what a backup, a restore, an upgrade or a person needs
+# (a full node's copy of its home's database is a logical subscription: these, and pgoutput
+# and libpqwalreceiver from lib/)
+for b in postgres initdb pg_ctl pg_dump pg_dumpall pg_restore psql pg_isready pg_upgrade pg_controldata pg_resetwal; do
     cp "$pg/bin/$b" "$OUT/postgres/bin/"
 done
 # libraries (libpq, OpenSSL, the extensions) and share/ (catalogs, extensions, time zones),
 # without static libraries and build files
 (cd "$pg" && tar -cf - --exclude='*.a' --exclude=pgxs --exclude=pkgconfig lib share) | (cd "$OUT/postgres" && tar -xf -)
+# no logical decoding output plugin but pgoutput (a full node's copy): a machine's replication
+# role may make a slot with any plugin the home's server has, and another one (test_decoding)
+# decodes every table, past what is published to it (specs/epics/37-node-replica)
+find "$OUT/postgres/lib" -type f ! -name 'pgoutput.*' -exec grep -l -a -F _PG_output_plugin_init {} + 2>/dev/null |
+    while IFS= read -r f; do rm -f "$f"; done || true
 cp "$pg/COPYRIGHT" "$OUT/licenses/postgresql.txt"
 cp "$pg/LICENSE" "$OUT/licenses/postgresql-binaries.txt"
 

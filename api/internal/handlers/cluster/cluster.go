@@ -25,7 +25,9 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -67,6 +69,15 @@ type Handler struct {
 	// PGPort is the database port handed to machines
 	// (MAKTABA_CLUSTER_PG_PORT); 0 means 5432.
 	PGPort int
+	// PGBundled: the database is this home's bundled Postgres, whose CA is PGCA (the
+	// file; "" with its TLS off), sealed in a join's credentials.
+	PGBundled bool
+	PGCA      string
+	// PGPlain: the database is another one (an operator's own) and has no TLS at all
+	// (`ssl` off): the machines are told so, as for a bundled one with its TLS off. One
+	// with TLS has the operator's CA, which this home does not hold: the machines'
+	// copies wait for one.
+	PGPlain atomic.Bool
 	// JoinRatePerMin / PollRatePerMin cap the public endpoints per IP;
 	// 0 uses the defaults, negative disables the limiter (tests).
 	JoinRatePerMin int
@@ -132,6 +143,27 @@ func (h *Handler) log() *slog.Logger {
 		return h.Logger
 	}
 	return slog.Default()
+}
+
+// pgTLS is how a machine verifies this home's database (the join's credentials): the
+// bundled Postgres's CA, or "off" with its TLS off; for another database, "off" when it
+// has no TLS (PGPlain), else neither (its TLS is its own).
+func (h *Handler) pgTLS() (ca, tls string) {
+	switch {
+	case !h.PGBundled && h.PGPlain.Load():
+		return "", "off"
+	case !h.PGBundled:
+		return "", ""
+	case h.PGCA == "":
+		return "", "off"
+	}
+	b, err := os.ReadFile(h.PGCA)
+	if err != nil {
+		h.log().Warn("cluster: this home's database CA cannot be read for a join", "err", err,
+			"event", "cluster_database_ca_unreadable")
+		return "", ""
+	}
+	return string(b), ""
 }
 
 func (h *Handler) pgPort() int {
@@ -734,7 +766,10 @@ func (h *Handler) provision(ctx context.Context, r *http.Request, n cluster.Node
 		return nil, "", err
 	}
 	role := cluster.RoleName(n.ID)
+	dbCA, dbTLS := h.pgTLS()
 	payload, err := cluster.MarshalPayload(cluster.Payload{
+		DatabaseCA:  dbCA,
+		DatabaseTLS: dbTLS,
 		DatabaseURL: cluster.DatabaseURL(role, password, host, h.pgPort(), dbName),
 		Home:        cluster.PayloadHome{APIURL: apiURL, ClusterPub: h.ClusterPub, InstanceID: id.InstanceID, Name: id.Name},
 		NodeID:      n.ID,
@@ -795,10 +830,19 @@ func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if n.State != cluster.StateApproved {
+	if n.State != cluster.StateApproved && n.State != cluster.StateRevoked {
 		httperror.Write(w, r, problem(http.StatusConflict, "not_approved", "not approved",
 			"only an approved machine can be revoked").With("state", n.State))
 		return
+	}
+	// the state first: a copy's grant reads it under a lock (slot 0147), so one under way
+	// ends before and one after is refused; then its roles, which no grant re-enables now
+	// (a revoked one again: its roles, if disabling them failed the first time)
+	if n.State == cluster.StateApproved {
+		if err := h.Store.Revoke(ctx, n.ID, h.now()); err != nil {
+			errInternal(w, r, "revoke", err)
+			return
+		}
 	}
 	if n.DBRole != nil && *n.DBRole != "" {
 		ended, err := h.Roles.Disable(ctx, *n.DBRole)
@@ -807,10 +851,6 @@ func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.log().Info("cluster: machine revoked", "node_id", n.ID, "sessions_ended", ended, "event", "cluster_revoked")
-	}
-	if err := h.Store.Revoke(ctx, n.ID, h.now()); err != nil {
-		errInternal(w, r, "revoke", err)
-		return
 	}
 	if h.OnRevoke != nil {
 		h.OnRevoke(n.ID)

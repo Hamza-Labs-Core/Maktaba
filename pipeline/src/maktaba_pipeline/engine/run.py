@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..cluster.agent import jobs as job_events
+from ..db import claim_owner
 from ..db.jobs import Job
 from ..db.jobs_state import StageError, mark_cancelled, mark_failed_or_retry
 from ..log import get_logger
@@ -221,11 +222,13 @@ async def _defer(db: Any, job: Job, stage: StageDef, exc: JobDeferred) -> None:
     await db.execute(
         "UPDATE processing_jobs SET state = 'paused', paused_at = $2, paused_reason = $3,"
         " claimed_by = NULL, not_before = $4"
-        " WHERE id = $1 AND state IN ('claimed', 'running', 'resuming')",
+        " WHERE id = $1 AND state IN ('claimed', 'running', 'resuming')"
+        f" AND {claim_owner.guard(db, 5)}",
         job.id,
         to_ts(db, at),
         exc.reason,
         to_ts(db, at + timedelta(seconds=exc.retry_after_sec)),
+        claim_owner.current(),
     )
     await log_event(
         db,

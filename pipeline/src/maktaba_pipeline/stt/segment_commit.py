@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 from uuid import UUID
 
+from ..db import claim_owner
 from ..db.pubsub import get_bus
 from .protocol import Segment, Word
 
@@ -68,7 +69,9 @@ class CommitResult:
     words_committed: int = 0  # transcript_words rows persisted for this segment
 
 
-_PG_CALL_FN = "SELECT commit_segment($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) AS id"
+# the worker that holds the job (claim_owner): a segment from one that no longer does
+# writes nothing (slot 0145's commit_segment)
+_PG_CALL_FN = "SELECT commit_segment($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) AS id"
 
 _SQLITE_INSERT = """
 INSERT INTO transcript_segments
@@ -94,7 +97,7 @@ UPDATE processing_jobs
 _SQLITE_PREV_END = """
 SELECT last_segment_end_sec, COALESCE(realtime_factor, 0) AS realtime_factor
   FROM processing_jobs
- WHERE id = ?
+ WHERE id = ? AND (? IS NULL OR claimed_by = ?)
 """
 
 # Story 3.6-1.3 — optional per-word timing. Inserted in the SAME
@@ -156,6 +159,7 @@ async def commit_segment(
                 wall_sec_in_seg,
                 total_duration_sec,
                 ewma_alpha,
+                claim_owner.current(),
             )
             seg_id = int(row["id"]) if row is not None and row["id"] is not None else None
             # The PG fn returns NULL when ON CONFLICT swallowed the
@@ -177,8 +181,14 @@ async def commit_segment(
         )
 
     # SQLite path — replicate the function's body in Python.
+    owner = claim_owner.current()
     async with db.transaction():
-        prev = await db.fetchrow(_SQLITE_PREV_END, job_id)
+        prev = await db.fetchrow(_SQLITE_PREV_END, job_id, owner, owner)
+        if prev is None and owner is not None:
+            # the job is another worker's now: this segment writes nothing
+            return CommitResult(
+                segment_id=None, seq=segment.seq, end_sec=segment.end_sec, accepted=False
+            )
         prev_end = float(prev["last_segment_end_sec"]) if prev is not None else 0.0
         prev_factor = float(prev["realtime_factor"]) if prev is not None else 0.0
 

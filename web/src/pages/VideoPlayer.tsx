@@ -23,7 +23,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
-import { api, ApiError } from "../lib/api";
+import { api, ApiError, PROBLEM_VIDEO_UNAVAILABLE_OFFLINE } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { createWatchSession } from "../lib/watchSession";
 import { attachVod, carrySig } from "@maktaba/tvplayer";
@@ -96,7 +96,13 @@ export function VideoPlayer() {
   const failure = useCallback(
     (e: unknown) =>
       e instanceof ApiError
-        ? { message: e.problem.title, status: e.status }
+        ? {
+            message:
+              e.problem.type === PROBLEM_VIDEO_UNAVAILABLE_OFFLINE
+                ? t("homeOffline.video")
+                : e.problem.title,
+            status: e.status,
+          }
         : { message: t("common.error") },
     [t]
   );

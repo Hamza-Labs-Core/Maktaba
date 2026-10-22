@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from uuid import uuid4
 
+from maktaba_pipeline.db import claim_owner
 from maktaba_pipeline.stt.protocol import Segment, Word
 from maktaba_pipeline.stt.segment_commit import ReorderBuffer, commit_segment
 
@@ -61,6 +62,26 @@ def test_pg_commit_idempotent_on_replayed_seq() -> None:
     second = asyncio.run(_commit())
     assert second.accepted is False  # type: ignore[attr-defined]
     assert db.processing_jobs[job_id].segments_completed == 1
+
+
+def test_a_segment_from_a_worker_that_lost_the_job_writes_nothing() -> None:
+    # a machine whose home was away past the lease: the job is another worker's now
+    for dialect in ("postgres", "sqlite"):
+        db = FakeAudioDB(dialect=dialect)
+        job_id = _seed_job(db)
+        db.processing_jobs[job_id].claimed_by = "w-other"
+        seg = Segment(seq=0, start_sec=0.0, end_sec=30.0, text="late", audio_sec=30.0, wall_sec=1.0)
+
+        async def _late(db: FakeAudioDB = db, job_id: int = job_id, seg: Segment = seg) -> object:
+            with claim_owner.running_for("w-mine"):
+                return await commit_segment(
+                    db, transcript_id=uuid4(), job_id=job_id, segment=seg, total_duration_sec=600.0
+                )
+
+        result = asyncio.run(_late())
+        job = db.processing_jobs[job_id]
+        assert result.accepted is False, dialect  # type: ignore[attr-defined]
+        assert job.segments_completed == 0 and job.processed_seconds == 0, dialect
 
 
 def test_sqlite_commit_emits_segments_committed_notify() -> None:

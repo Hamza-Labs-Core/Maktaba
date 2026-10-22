@@ -40,11 +40,12 @@ type RestoreOptions struct {
 }
 
 // Restore replaces the app database with a pg_dump custom-format dump: a fresh
-// database owned by the app role, the extensions made by the superuser, then
-// every other object restored as the app role (so it owns them, as the
-// migrations would have made them). The cluster is prepared first when it is
-// not. After restoring, fn (when not nil) runs while the server is still up,
-// for the caller's checks.
+// database owned by the app role, the extensions and the cluster's own grants on
+// Postgres's functions (clusterSQL: a function's grant is its database's, so a fresh
+// database has none) made by the superuser, then every other object restored as the
+// app role (so it owns them, as the migrations would have made them). The cluster is
+// prepared first when it is not. After restoring, fn (when not nil) runs while the
+// server is still up, for the caller's checks.
 func (b Bundle) Restore(ctx context.Context, dump string, opts RestoreOptions, log io.Writer, fn func(q Querier) error) error {
 	if err := b.Prepare(ctx, log); err != nil {
 		return err
@@ -78,7 +79,7 @@ func (b Bundle) Restore(ctx context.Context, dump string, opts RestoreOptions, l
 // restoreInto makes the app database afresh on q's running server and restores
 // dump into it (Restore's work, and RestoreRunning's).
 func (b Bundle) restoreInto(ctx context.Context, q Querier, dump string, opts RestoreOptions, log io.Writer) error {
-	if err := q.Exec(ctx, "postgres", recreateSQL(opts)); err != nil {
+	if err := q.Exec(ctx, "postgres", recreateSQL(opts)+clusterSQL); err != nil {
 		return fmt.Errorf("make a fresh %s database: %w", AppDatabase, err)
 	}
 	list, err := b.restoreList(ctx, dump, q.pw)
@@ -133,7 +134,8 @@ func recreateSQL(opts RestoreOptions) string {
 }
 
 // restoreList writes the dump's table of contents without its extensions (and
-// their comments): those need the superuser, and the database has them already.
+// their comments) and its grants on Postgres's own objects (pg_catalog's: a bundled
+// source's clusterSQL): those need the superuser, and the database has them already.
 func (b Bundle) restoreList(ctx context.Context, dump, superPW string) (string, error) {
 	cmd := exec.CommandContext(ctx, b.Bin("pg_restore"), "-l", dump)
 	cmd.Env = append(os.Environ(), "PGPASSWORD="+superPW)
@@ -149,7 +151,8 @@ func (b Bundle) restoreList(ctx context.Context, dump, superPW string) (string, 
 	}
 	w := bufio.NewWriter(f)
 	for _, line := range strings.Split(string(out), "\n") {
-		if !strings.HasPrefix(line, ";") && (strings.Contains(line, " EXTENSION - ") || strings.Contains(line, " COMMENT - EXTENSION ")) {
+		if !strings.HasPrefix(line, ";") && (strings.Contains(line, " EXTENSION - ") || strings.Contains(line, " COMMENT - EXTENSION ") ||
+			strings.Contains(line, " ACL pg_catalog ")) {
 			line = ";" + line
 		}
 		_, _ = w.WriteString(line + "\n")

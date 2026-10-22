@@ -32,10 +32,11 @@ type Roles interface {
 	// Create makes (or re-enables) a LOGIN role in the worker group.
 	Create(ctx context.Context, role, password string) error
 	// Disable makes the role NOLOGIN, rotates its password and ends its
-	// sessions where the home's user may. It returns how many sessions
-	// were ended.
+	// sessions where the home's user may (and the machine's copy of the
+	// database stops following). It returns how many sessions were ended.
 	Disable(ctx context.Context, role string) (int, error)
-	// Drop removes the role (best effort, when a machine is removed).
+	// Drop removes the role and the machine's replication role (best
+	// effort, when a machine is removed).
 	Drop(ctx context.Context, role string) error
 }
 
@@ -139,6 +140,8 @@ func (p *PGRoles) Disable(ctx context.Context, role string) (int, error) {
 		`ALTER ROLE `+pq.QuoteIdentifier(role)+` NOLOGIN PASSWORD `+pq.QuoteLiteral(pw)); err != nil {
 		return 0, err
 	}
+	// its copy of this database stops following too (specs/epics/37-node-replica)
+	p.endCopy(ctx, role, false)
 	rows, err := p.DB.QueryContext(ctx, `SELECT pid FROM pg_stat_activity WHERE usename = $1`, role)
 	if err != nil {
 		return 0, nil // the role is off; the node notices at its next heartbeat
@@ -168,6 +171,7 @@ func (p *PGRoles) Drop(ctx context.Context, role string) error {
 	if !ValidRole(role) {
 		return fmt.Errorf("cluster: invalid role name %q", role)
 	}
+	p.endCopy(ctx, role, true)
 	_, err := p.DB.ExecContext(ctx, `DROP ROLE IF EXISTS `+pq.QuoteIdentifier(role))
 	return err
 }

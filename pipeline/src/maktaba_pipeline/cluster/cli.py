@@ -445,6 +445,7 @@ def status(out: TextIO | None = None) -> int:
             f" -> {st.get('url')}"
             + (f" session {st['session']}" if st.get("session") else "")
             + (f"\n    last error: {st['last_error']}" if st.get("last_error") else "")
+            + (f"\n    {st['paused']}" if st.get("paused") else "")
             + (f"\n    files: {where}{share_note}" if where else "")
             + f"\n    updated {st.get('updated_at')}\n"
         )

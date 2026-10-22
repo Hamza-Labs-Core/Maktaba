@@ -189,7 +189,9 @@ func runServe() error {
 	bg := newBackground(ctx)
 
 	backendCtx, backendCancel := context.WithTimeout(ctx, 10*time.Second)
-	probeBackend, transcripts, pool, closeStores := buildProbeStores(backendCtx, logger)
+	// a full node starts with the home's database down too (PR #145): its pool connects
+	// when the database answers, playback reads this machine's copy of it meanwhile
+	probeBackend, transcripts, pool, dbUp, closeStores := buildProbeStores(backendCtx, logger, fullNode)
 	backendCancel()
 	// deferred first, so it runs last: after the listeners shut down
 	defer func() {
@@ -209,6 +211,19 @@ func runServe() error {
 	} else {
 		startShareMap(bg, pool, logger)
 	}
+	var watch *dbWatch
+	// Epic 37: a full node's copy of its home's database
+	var copyPool *pgxpool.Pool
+	if fullNode {
+		copyPool = openCopy(bg, logger)
+	}
+	if pg, ok := probeBackend.(*probe.PGBackend); ok && fullNode && pool != nil {
+		watch = &dbWatch{ping: pool.Ping, logger: logger}
+		if !dbUp {
+			watch.Failed(errors.New("not answering at start"))
+		}
+		probeBackend = withCopy(bg, pg, copyPool, logger, node.NodeID, watch)
+	}
 
 	// One session store for both surfaces: the gRPC OpenSession the API calls
 	// inserts the row the public mux's manifest/segment routes then look up
@@ -225,9 +240,21 @@ func runServe() error {
 		cfg := config.Load()
 		layout := cache.New(cfg.Cache.Root)
 		_ = layout.EnsureTiers()
-		publicHandler = buildNodeTV(bg, logger, cfg, pool, layout, node)
+		if watch != nil && watch.Down() {
+			// the channels need the home's database: they start once it answers
+			sw := newSwapHandler(homeDBDownHandler())
+			bg.Go(func(ctx context.Context) {
+				if watch.wait(ctx) == nil {
+					sw.set(buildNodeTV(bg, logger, cfg, pool, layout, node))
+				}
+			})
+			publicHandler = sw
+		} else {
+			publicHandler = buildNodeTV(bg, logger, cfg, pool, layout, node)
+		}
 		if fullNode {
-			publicHandler = splitFullNode(publicHandler, buildVOD(bg, logger, probeBackend, transcripts, sessions))
+			publicHandler = splitFullNode(publicHandler, buildVOD(bg, logger, probeBackend, transcripts, sessions),
+				buildOfflineTV(bg, logger, cfg, copyPool))
 		}
 	} else {
 		publicHandler = buildPublicHandler(bg, logger, probeBackend, transcripts, pool, sessions)
@@ -539,20 +566,31 @@ func buildVerifierKeys(ctx context.Context, bg *background, logger *slog.Logger,
 // is no transcript streamer (auto.vtt is simply not wired). A pool that
 // fails to open/ping is fatal-soft: we log and fall back to the fake so
 // liveness still answers, matching the JWKS/hwaccel boot-warn pattern.
-func buildProbeStores(ctx context.Context, logger *slog.Logger) (probe.Backend, handlers.TranscriptStreamer, *pgxpool.Pool, func()) {
+// With lazy (a full node, PR #145) a database that does not answer keeps
+// the Postgres-backed stores on a pool that connects once it does (up
+// false); this machine's copy answers meanwhile.
+func buildProbeStores(ctx context.Context, logger *slog.Logger, lazy bool) (probe.Backend, handlers.TranscriptStreamer, *pgxpool.Pool, bool, func()) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		logger.Info("probe: DATABASE_URL unset; using in-memory FakeBackend",
 			"event", "probe_fake_backend")
-		return probe.NewFakeBackend(), nil, nil, func() {}
+		return probe.NewFakeBackend(), nil, nil, false, func() {}
 	}
+	up := true
 	backend, pool, err := probe.ConnectPG(ctx, dsn)
+	if err != nil && lazy {
+		if pool, err = pgxpool.New(context.Background(), dsn); err == nil {
+			logger.Warn("probe: the home's database does not answer; starting on this machine's copy of it",
+				"event", "probe_pg_down_at_start")
+			backend, up = probe.NewPGBackend(pool), false
+		}
+	}
 	if err != nil {
 		logger.Warn("probe: postgres connect failed; falling back to FakeBackend",
 			"err", err.Error(), "event", "probe_pg_connect_failed")
-		return probe.NewFakeBackend(), nil, nil, func() {}
+		return probe.NewFakeBackend(), nil, nil, false, func() {}
 	}
 	logger.Info("probe: Postgres-backed media_info reads wired", "event", "probe_pg_backend")
 	streamer := transcripts.NewPGStreamer(pool)
-	return backend, streamer, pool, func() { pool.Close() }
+	return backend, streamer, pool, up, func() { pool.Close() }
 }

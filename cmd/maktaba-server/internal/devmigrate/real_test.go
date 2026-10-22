@@ -259,6 +259,13 @@ INSERT INTO streaming_hosts (host_id, host, role) VALUES ('1e943eda-0064-42e9-86
 	if got := one("SELECT count(*) FROM video_titles"); got != "500" {
 		t.Fatalf("view = %s", got)
 	}
+	// the cluster's grants on Postgres's own functions, in the fresh database too: the
+	// slots' functions are the app role's alone
+	if got := one(`SELECT has_function_privilege('maktaba_worker', 'pg_catalog.pg_drop_replication_slot(name)', 'EXECUTE')::text
+		|| has_function_privilege('maktaba', 'pg_catalog.pg_drop_replication_slot(name)', 'EXECUTE')::text
+		|| has_function_privilege('maktaba', 'pg_catalog.pg_reload_conf()', 'EXECUTE')::text`); got != "falsetruetrue" {
+		t.Fatalf("function grants (worker slot, app slot, app reload) = %s", got)
+	}
 	// the app role can write (the API runs as it): the trigger fires
 	appQ := exec.Command(target.Bin("psql"), "-X", "-At", "-h", "127.0.0.1", "-p", strconv.Itoa(target.Port), "-U", "maktaba", "-d", "maktaba",
 		"-c", "UPDATE videos SET title = title WHERE id = 1 RETURNING updated_at IS NOT NULL")

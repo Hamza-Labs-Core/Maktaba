@@ -26,6 +26,11 @@ type PayloadHome struct {
 // Fields are declared in key order so the encoding matches the
 // sorted-keys JSON of shared/testdata/cluster/vectors.json byte for byte.
 type Payload struct {
+	// DatabaseCA is the home's database CA (PEM), which the machine verifies it with;
+	// DatabaseTLS is "off" when the home's database has no TLS. Neither for a database
+	// that is not the bundled one (its own TLS, which the home cannot vouch for).
+	DatabaseCA  string      `json:"database_ca,omitempty"`
+	DatabaseTLS string      `json:"database_tls,omitempty"`
 	DatabaseURL string      `json:"database_url"`
 	Home        PayloadHome `json:"home"`
 	NodeID      string      `json:"node_id"`

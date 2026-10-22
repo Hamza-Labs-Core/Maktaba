@@ -41,7 +41,7 @@ from .channels.pass_ import run_topup_loop
 from .cluster import exitcodes
 from .cluster.agent import enabled as cluster_agent_enabled
 from .cluster.capabilities import capabilities
-from .cluster.node import WorkerAgent
+from .cluster.node import WorkerAgent, home_unreachable, stop_jobs_after
 from .cluster.stages import StageSelector, refresh_stages, select_stages
 from .db.jobs import DBConn, Job, Stage
 from .db.jobs_state import StageError, mark_done, mark_failed_or_retry
@@ -449,6 +449,10 @@ async def run(
         semaphores=(None if cfg.engine else {s: asyncio.Semaphore(1) for s in cfg.stages}),
         shutdown_event=shutdown,
     )
+    if agent is not None:
+        # a node that loses the home stops these jobs before their claim lease lapses
+        agent.claims = claim_loop
+        agent.stop_jobs_after_sec = stop_jobs_after(cfg.stale_claim_sec, cfg.heartbeat_sec)
 
     def node_paused() -> bool:
         return agent is not None and agent.paused
@@ -630,6 +634,9 @@ async def _start_engine(
             lambda stop: run_topup_loop(database, stop, listeners=after_topup),
         ),
     ]
+    if is_node:
+        # a node stops its jobs before their claim lease lapses, however its beats hang
+        tasks.append(asyncio.create_task(agent.run_lease_watch(), name="claim-lease"))
     if not is_node:
         # Epic 40: the dependency watchers release jobs parked on the model, a share or
         # disk space; the home's mounts are the ones that matter (one worker probes)
@@ -729,13 +736,26 @@ async def _worker_heartbeat(
     register: Callable[[], Awaitable[None]] | None = None,
     node_beat: Callable[[], Awaitable[None]] | None = None,
 ) -> None:
+    lost = False
     while not stop.is_set():
         try:
-            if not await heartbeat_worker(database, worker_id, host) and register is not None:
+            # bounded: a powered-off home leaves the call hanging, and the node beat below
+            # is what notices the home gone
+            alive = await asyncio.wait_for(heartbeat_worker(database, worker_id, host), timeout=8.0)
+            if lost:
+                lost = False
+                _log.info("worker_heartbeat_recovered")
+            if not alive and register is not None:
                 _log.warning("worker_registered_again", worker_id=worker_id)
                 await register()
-        except Exception:  # noqa: BLE001 - the registry heartbeat must not kill the worker
-            _log.exception("worker_heartbeat_failed")
+        except Exception as exc:  # noqa: BLE001 - the registry heartbeat must not kill the worker
+            if not home_unreachable(exc):
+                _log.exception("worker_heartbeat_failed")
+            elif not lost:
+                # the database gone: one line, not a traceback each round (the node beat
+                # says the rest)
+                lost = True
+                _log.warning("worker_heartbeat_failed", error=f"{type(exc).__name__}: {exc}")
         if node_beat is not None:
             try:
                 await node_beat()

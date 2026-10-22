@@ -136,7 +136,8 @@ make -C "$REPO_ROOT" --no-print-directory server build-go \
     GOOS=linux GOARCH="$GOARCH" VERSION="$VERSION" BIN_SUBDIR="linux-$GOARCH/" >/dev/null
 cp "$REPO_ROOT/cmd/maktaba-server/bin/linux-$GOARCH/maktaba-server" \
    "$REPO_ROOT/api/bin/linux-$GOARCH/maktaba-api" \
-   "$REPO_ROOT/streaming/bin/linux-$GOARCH/maktaba-streaming" "$OUT/bin/"
+   "$REPO_ROOT/streaming/bin/linux-$GOARCH/maktaba-streaming" \
+   "$REPO_ROOT/cloud/bin/linux-$GOARCH/maktaba-cloudlink" "$OUT/bin/"
 (cd "$REPO_ROOT/cmd/maktaba-launcher" && \
     GOOS=linux GOARCH="$GOARCH" CGO_ENABLED=0 \
     go build -trimpath -ldflags "-buildid= -s -w -X main.Version=$VERSION" -o "$OUT/bin/maktaba-launcher" .)
@@ -148,9 +149,10 @@ tar -xzf "$pg_tgz" -C "$WORK"
 pg="$WORK/postgresql-$POSTGRES_VERSION-$ARCH-unknown-linux-gnu"
 [ -x "$pg/bin/postgres" ] || die "unexpected PostgreSQL archive layout"
 mkdir -p "$OUT/postgres/bin"
-# what the supervisor runs (36.1) and what a backup, a restore, an upgrade, a node's copy
-# (pg_basebackup, Epic 37) or a person needs
-for b in postgres initdb pg_ctl pg_dump pg_dumpall pg_restore psql pg_isready pg_upgrade pg_controldata pg_resetwal pg_basebackup; do
+# what the supervisor runs (36.1) and what a backup, a restore, an upgrade or a person needs
+# (a full node's copy of its home's database is a logical subscription: these, and pgoutput
+# and libpqwalreceiver from lib/)
+for b in postgres initdb pg_ctl pg_dump pg_dumpall pg_restore psql pg_isready pg_upgrade pg_controldata pg_resetwal; do
     cp "$pg/bin/$b" "$OUT/postgres/bin/"
 done
 # libraries (libpq, the extensions) and share/ (catalogs, extensions, time zones), without
@@ -161,6 +163,11 @@ done
 (cd "$pg" && tar -cf - --exclude='*.a' --exclude=pgxs --exclude=pkgconfig \
     --exclude='*plpython3*' --exclude='pgxml.so' --exclude='xml2--*' --exclude='xml2.control' \
     --exclude='uuid-ossp*' lib share) | (cd "$OUT/postgres" && tar -xf -)
+# no logical decoding output plugin but pgoutput (a full node's copy): a machine's replication
+# role may make a slot with any plugin the home's server has, and another one (test_decoding)
+# decodes every table, past what is published to it (specs/epics/37-node-replica)
+find "$OUT/postgres/lib" -type f ! -name 'pgoutput.*' -exec grep -l -a -F _PG_output_plugin_init {} + 2>/dev/null |
+    while IFS= read -r f; do rm -f "$f"; done || true
 cp "$pg/COPYRIGHT" "$OUT/licenses/postgresql.txt"
 cp "$pg/LICENSE" "$OUT/licenses/postgresql-binaries.txt"
 

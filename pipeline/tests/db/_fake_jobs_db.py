@@ -61,6 +61,11 @@ class _Row(dict[str, Any]):
 _LIVE = {"claimed", "running", "resuming"}
 
 
+def _holds(row: FakeJobRow, owner: Any) -> bool:
+    """The claim guard (``db/claim_owner.py``): no worker named, or the one holding it."""
+    return owner is None or row.claimed_by == owner
+
+
 @dataclass
 class FakeDB:
     """Stand-in for the future Story 1.5 connection wrapper."""
@@ -249,6 +254,7 @@ class FakeDB:
                 last_end,
                 rt_factor,
                 eta,
+                owner,
             ) = args
         else:
             (
@@ -258,9 +264,11 @@ class FakeDB:
                 rt_factor,
                 eta,
                 row_id,
+                owner,
+                _,
             ) = args
         row = self.rows.get(int(row_id))
-        if row is None or row.state not in _LIVE:
+        if row is None or row.state not in _LIVE or not _holds(row, owner):
             return None
         now = self._now()
         row.processed_seconds = float(processed_seconds)
@@ -291,7 +299,7 @@ class FakeDB:
 
     def _exec_heartbeat(self, args: tuple[Any, ...]) -> _Row | None:
         row = self.rows.get(int(args[0]))
-        if row is None or row.state not in _LIVE:
+        if row is None or row.state not in _LIVE or not _holds(row, args[1]):
             return None
         row.last_heartbeat_at = self._now()
         return _Row({"id": row.id, "stage": row.stage, "last_heartbeat_at": row.last_heartbeat_at})
@@ -306,11 +314,11 @@ class FakeDB:
 
     def _exec_mark_paused(self, args: tuple[Any, ...]) -> _Row | None:
         if self.dialect == "postgres":
-            row_id, at_sec, reason = args
+            row_id, at_sec, reason, owner = args
         else:
-            at_sec, reason, row_id = args
+            at_sec, reason, row_id, owner, _ = args
         row = self.rows.get(int(row_id))
-        if row is None or row.state not in _LIVE:
+        if row is None or row.state not in _LIVE or not _holds(row, owner):
             return None
         row.state = "paused"
         row.paused_at = self._now()
@@ -325,6 +333,8 @@ class FakeDB:
         allowed = {"claimed", "running", "resuming", "paused", "pending"}
         if row is None or row.state not in allowed:
             return None
+        if row.claimed_by is not None and not _holds(row, args[1]):
+            return None
         row.state = "cancelled"
         row.finished_at = self._now()
         row.claimed_by = None
@@ -333,7 +343,7 @@ class FakeDB:
 
     def _exec_mark_done(self, args: tuple[Any, ...]) -> _Row | None:
         row = self.rows.get(int(args[0]))
-        if row is None or row.state not in _LIVE:
+        if row is None or row.state not in _LIVE or not _holds(row, args[1]):
             return None
         row.state = "done"
         row.finished_at = self._now()
@@ -348,13 +358,13 @@ class FakeDB:
 
     def _exec_fail_or_retry(self, args: tuple[Any, ...]) -> _Row | None:
         if self.dialect == "postgres":
-            row_id, new_state, not_before, err_json, finished_at = args
+            row_id, new_state, not_before, err_json, finished_at, owner = args
         else:
-            new_state, not_before_iso, err_json, finished_iso, row_id = args
+            new_state, not_before_iso, err_json, finished_iso, row_id, owner, _ = args
             not_before = datetime.fromisoformat(not_before_iso) if not_before_iso else None
             finished_at = datetime.fromisoformat(finished_iso) if finished_iso else None
         row = self.rows.get(int(row_id))
-        if row is None or row.state not in _LIVE:
+        if row is None or row.state not in _LIVE or not _holds(row, owner):
             return None
         row.state = str(new_state)
         row.not_before = not_before

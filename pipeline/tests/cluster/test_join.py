@@ -21,6 +21,7 @@ from maktaba_pipeline.cluster.discover import Home
 from maktaba_pipeline.cluster.join import JoinError, join, pick_home
 
 DB_URL = "postgres://maktaba_node_x:s3cr3t@192.168.1.20:5432/maktaba?sslmode=prefer"
+DB_CA = "-----BEGIN CERTIFICATE-----\nTUFLVEFCQQ==\n-----END CERTIFICATE-----\n"
 CLUSTER_PUB = "RSujjNFA61v0BQ1NiOVfwb46U0QPe3dj8ve08aDH0V8="
 
 
@@ -47,6 +48,7 @@ class FakeHome:
             "v": 1,
             "node_id": node_id,
             "database_url": DB_URL,
+            "database_ca": DB_CA,
             "home": {
                 "instance_id": "0b9a",
                 "name": "home-mac",
@@ -153,6 +155,8 @@ def test_join_shows_the_code_waits_and_saves_the_credentials(
         "0b9a",
     )
     assert cfg.home.cluster_pub == CLUSTER_PUB  # the hub proves itself with it (agent v2)
+    # the home's database CA, sealed: the machine verifies its database with it
+    assert cfg.database_ca == DB_CA and cfg.database_tls == ""
     # the identity kept is the one whose public key was sent
     kp = crypto.keypair_from_private(crypto.b64d(cfg.private_key))
     assert kp.public_b64 == body["pubkey"]

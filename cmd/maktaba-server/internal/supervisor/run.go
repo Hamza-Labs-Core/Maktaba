@@ -296,6 +296,12 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 			cmd = cloneCmd(tpl)
 		}
 		first = false
+		if c.proc.Args != nil {
+			cmd.Args = append([]string{cmd.Args[0]}, c.proc.Args()...)
+		}
+		if c.proc.BeforeStart != nil {
+			c.proc.BeforeStart()
+		}
 
 		s.mu.Lock()
 		if s.stopping {
@@ -387,6 +393,12 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		if info.Reason == ReasonStopped && !stopping {
 			s.logf("%s stopped on request (pid %d)", c.proc.Name(), info.PID)
 			continue // waits until it is wanted again
+		}
+		if info.Reason == ReasonRestarted && !stopping {
+			// asked for: no backoff, and not an exit of a crash loop
+			s.logf("%s stopped to start again (pid %d)", c.proc.Name(), info.PID)
+			backoff = s.policy.BackoffInitial
+			continue
 		}
 		if stopping {
 			s.logf("%s stopped (pid %d, %s)", c.proc.Name(), info.PID, describeExit(info))
@@ -632,6 +644,45 @@ func describeExit(info ExitInfo) string {
 
 func uptime(info ExitInfo) string {
 	return time.Duration(info.UptimeSec * float64(time.Second)).Round(time.Millisecond).String()
+}
+
+// restartGrace is how long Restart waits for the instance to stop before it kills it:
+// the bundled postgres's fast shutdown ends its sessions and checkpoints first.
+const restartGrace = 30 * time.Second
+
+// Restart stops a running instance of a role and starts it again at once, with its
+// arguments read afresh (Process.Args). One that does not run now is left as it is: its
+// next start reads them anyway.
+func (s *Supervisor) Restart(role Role, instance string) error {
+	s.mu.Lock()
+	var c *child
+	for _, ch := range s.children {
+		if ch.proc.Role == role && ch.proc.Instance == instance {
+			c = ch
+		}
+	}
+	if c == nil {
+		s.mu.Unlock()
+		return fmt.Errorf("no %s process %q", role, instance)
+	}
+	cmd, tree := c.cmd, c.tree
+	if cmd == nil || cmd.Process == nil || s.stopping {
+		s.mu.Unlock()
+		return nil
+	}
+	c.killReason = ReasonRestarted
+	s.mu.Unlock()
+	s.logf("%s: starting it again (pid %d)", c.proc.Name(), cmd.Process.Pid)
+	if err := c.proc.askStop(cmd.Process, tree); err != nil {
+		s.cannotAsk(c.proc, err)
+		s.killRun(c, cmd)
+		return nil
+	}
+	go func() {
+		time.Sleep(restartGrace)
+		s.killRun(c, cmd)
+	}()
+	return nil
 }
 
 // Want starts (on) or stops an instance of a role (Epic 33: the TV front door

@@ -1,0 +1,118 @@
+# Reusable replica gate (Epic 37, specs/epics/37-node-replica): the machines' copies of
+# the home's database and switching the home, against real Postgres 16. These are the
+# tests the other tiers skip (they need servers made for them: logical replication, a
+# cluster no test has touched yet, the Postgres programs themselves) and the three
+# end-to-end runs (switching the home, an emergency, two machines with the home away).
+#
+# ubuntu-24.04 carries PostgreSQL 16 (/usr/lib/postgresql/16). Every server here is made
+# by this job or by the tests, on 127.0.0.1 only.
+
+name: Replica
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  replica:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      PG16: /usr/lib/postgresql/16
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: |
+            api/go.sum
+            streaming/go.sum
+            cmd/maktaba-server/go.sum
+
+      - name: Postgres 16 servers for the tests
+        # two clusters with logical replication: one no test has touched (the tests that
+        # make the cluster-wide roles themselves), one for the rest and the two-machine run
+        run: |
+          set -euo pipefail
+          test -x "$PG16/bin/postgres" || { echo "::error::no PostgreSQL 16 at $PG16"; exit 1; }
+          "$PG16/bin/postgres" --version
+          for p in 55432 55433; do
+            d="$RUNNER_TEMP/pg$p"
+            "$PG16/bin/initdb" -D "$d" -U postgres --auth=trust -E UTF8 --locale=C >/dev/null
+            "$PG16/bin/pg_ctl" -D "$d" -l "$RUNNER_TEMP/pg$p.log" -w -o "-p $p -k $RUNNER_TEMP \
+              -c listen_addresses=127.0.0.1 -c wal_level=logical -c max_replication_slots=40 \
+              -c max_wal_senders=40" start
+          done
+          echo "MAKTABA_TEST_PG_BIN=$PG16" >> "$GITHUB_ENV"
+          echo "MAKTABA_TEST_PG_URL=postgres://postgres@127.0.0.1:55432/postgres?sslmode=disable" >> "$GITHUB_ENV"
+
+      - name: The home's side of a copy, on an untouched cluster (api)
+        working-directory: api
+        env:
+          MAKTABA_TEST_PG_URL: postgres://postgres@127.0.0.1:55433/postgres?sslmode=disable
+        run: |
+          set -euo pipefail
+          go test -count=1 -timeout 15m -run 'TestAMachineGetsItsCopy|TestWorkerGroupMadeLateGetsTheSamePrivileges' -v ./internal/cluster/ | tee "$RUNNER_TEMP/api-untouched.out"
+          ../tools/ci/no-pg-skips.sh "$RUNNER_TEMP/api-untouched.out"
+          for t in TestAMachineGetsItsCopy TestWorkerGroupMadeLateGetsTheSamePrivileges; do
+            grep -q -- "--- PASS: $t " "$RUNNER_TEMP/api-untouched.out" || { echo "::error::$t did not run"; exit 1; }
+          done
+
+      - name: The copies, the switch's database steps, the bundle (server)
+        working-directory: cmd/maktaba-server
+        run: |
+          set -euo pipefail
+          go test -count=1 -v -timeout 30m ./internal/switchover/ ./internal/nodecopy/ ./internal/pgbundle/ ./internal/dbfence/ | tee "$RUNNER_TEMP/server-pg.out"
+          # the bundle's first start on Maktaba's Postgres major (the integration tier's runner has 14)
+          go test -count=1 -timeout 10m -tags integration -run 'TestReal' -v ./internal/pgbundle/ | tee -a "$RUNNER_TEMP/server-pg.out"
+          ../../tools/ci/no-pg-skips.sh "$RUNNER_TEMP/server-pg.out"
+
+      - name: The switch's orchestration, the standby homes, a machine's sign-ins (api)
+        working-directory: api
+        # the rest of the cluster's Postgres tests too (the two above need a cluster of their own);
+        # one package at a time: they share the cluster, whose roles are cluster-wide
+        run: |
+          set -euo pipefail
+          go test -count=1 -p 1 -v -timeout 30m ./internal/cluster/switchover/ ./internal/cluster/nodeauth/ ./internal/cluster/agent/ \
+            ./internal/handlers/clusterauth/ | tee "$RUNNER_TEMP/api-pg.out"
+          go test -count=1 -v -timeout 15m -skip 'TestAMachineGetsItsCopy|TestWorkerGroupMadeLateGetsTheSamePrivileges' \
+            ./internal/cluster/ | tee -a "$RUNNER_TEMP/api-pg.out"
+          ../tools/ci/no-pg-skips.sh "$RUNNER_TEMP/api-pg.out"
+
+      - name: Switching the home, and an emergency, three machines (e2e)
+        working-directory: api
+        env:
+          MAKTABA_E2E_SWITCHOVER: "1"
+          MAKTABA_E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs
+        # a skip is no pass here: each run must have run
+        run: |
+          set -euo pipefail
+          go test -count=1 -timeout 45m -run 'TestSwitchTheHome|TestAnEmergencyTakesTheHome' -v . | tee "$RUNNER_TEMP/e2e-switch.out"
+          for t in TestSwitchTheHome TestAnEmergencyTakesTheHome; do
+            grep -q -- "--- PASS: $t " "$RUNNER_TEMP/e2e-switch.out" || { echo "::error::$t did not run"; exit 1; }
+          done
+
+      - name: ffmpeg (the two-machine run plays a real fixture)
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update -qq
+          sudo apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends ffmpeg >/dev/null
+          ffmpeg -hide_banner -version | head -1
+
+      - name: Two machines with the home away (e2e)
+        working-directory: api
+        env:
+          MAKTABA_E2E_TWO_MACHINE: "1"
+          MAKTABA_E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs
+        run: |
+          set -euo pipefail
+          go test -count=1 -timeout 30m -run TestTwoMachinesOnePC -v . | tee "$RUNNER_TEMP/e2e-two.out"
+          grep -q -- "--- PASS: TestTwoMachinesOnePC " "$RUNNER_TEMP/e2e-two.out" || { echo "::error::TestTwoMachinesOnePC did not run"; exit 1; }
+
+      - name: The servers' logs (on failure)
+        if: failure()
+        run: |
+          for f in "$RUNNER_TEMP"/pg*.log; do echo "== $f"; tail -100 "$f"; done || true
+          ls -la "$RUNNER_TEMP/e2e-logs" 2>/dev/null || true

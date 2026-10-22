@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
@@ -126,6 +127,18 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		add("MAKTABA_STREAM_SIGNING_KEY", StreamKeyPath())
 	}
 
+	// The home's JWT keys (Story 10.6): an operator's MAKTABA_JWT_*_PEM, else the pair a
+	// switch of the home handed over (Epic 37), in the keys directory.
+	if role == RoleAPI && os.Getenv("MAKTABA_JWT_PRIVATE_KEY_PEM") == "" && os.Getenv("MAKTABA_JWT_PUBLIC_KEY_PEM") == "" {
+		privPath, pubPath := JWTKeyPaths()
+		priv, err1 := os.ReadFile(privPath)
+		pub, err2 := os.ReadFile(pubPath)
+		if err1 == nil && err2 == nil && len(priv) > 0 && len(pub) > 0 {
+			add("MAKTABA_JWT_PRIVATE_KEY_PEM", string(priv))
+			add("MAKTABA_JWT_PUBLIC_KEY_PEM", string(pub))
+		}
+	}
+
 	switch role {
 	case RoleAPI:
 		add("MAKTABA_HTTP_ADDR", cfg.Server.Listen)
@@ -142,6 +155,18 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		// supervisor's state to GET /api/system/processes and records
 		// crashes into health_samples.
 		add("MAKTABA_SUPERVISOR_URL", StateURL(cfg))
+		// the supervisor's switchover endpoints take its per-boot local token (the home's
+		// API runs a switch of the home: specs/epics/37-node-replica)
+		add("MAKTABA_SUPERVISOR_TOKEN_FILE", LocalTokenPath(cfg))
+		// the cloud relay agent's state (a switch checks it moved with the home)
+		if RelayWanted(cfg) {
+			add("MAKTABA_CLOUDLINK_STATUS_URL", RelayStatusURL(cfg))
+		}
+		// the machines reach the bundled Postgres on its own port, verifying its CA
+		if cfg.ClusterDB.Port > 0 {
+			add("MAKTABA_CLUSTER_PG_PORT", strconv.Itoa(cfg.ClusterDB.Port))
+			add("MAKTABA_CLUSTER_PG_CA", cfg.ClusterDB.CA)
+		}
 		// Maktaba TV across the cluster (Epic 32): the api forwards move/stop/drain to
 		// the home streaming service's loopback internal routes.
 		add("MAKTABA_STREAMING_HTTP_URL", "http://"+LocalAddr(cfg.Server.StreamAddr, "8081"))
@@ -151,8 +176,8 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		// Epic 35 story 35.8: a full node's api runs in node mode against the home's
 		// database with the node's own role; it never migrates.
 		if n := nodeConfig(); NodeMode(cfg, n) {
-			env = setEnv(env, "DATABASE_URL", n.DatabaseURL)
-			env = setEnv(env, "MAKTABA_DATABASE_URL", n.DatabaseURL)
+			env = setEnv(env, "DATABASE_URL", HomeDSN(n))
+			env = setEnv(env, "MAKTABA_DATABASE_URL", HomeDSN(n))
 			env = setEnv(env, "MAKTABA_AUTO_MIGRATE", "false")
 			add("MAKTABA_NODE_MODE", "1")
 			add("MAKTABA_NODE_ID", n.NodeID)
@@ -162,6 +187,12 @@ func ChildEnv(role Role, cfg config.Config) []string {
 			add("MAKTABA_NODE_WEB_URL", cfg.PublicWebURL())
 			add("MAKTABA_AGENT_URL", StateURL(cfg))
 			add("MAKTABA_AGENT_TOKEN_FILE", LocalTokenPath(cfg))
+			// its own state (the sign-ins made here, when the home last answered)
+			add("MAKTABA_NODE_STATE_DIR", NodeStateDir(cfg))
+			// its copy of the home's database (Epic 37)
+			if cfg.NodeCopy.DSN != "" {
+				add("MAKTABA_COPY_DATABASE_URL", cfg.NodeCopy.DSN)
+			}
 		}
 	case RoleStreaming:
 		// The streaming binary binds MAKTABA_HTTP_ADDR; the older
@@ -187,13 +218,18 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		// A machine that joined a home (Epic 31) streams as a cluster node (Epic 32.1):
 		// the home's database through its own credential, its node id; no extra flag.
 		if n := nodeConfig(); n.Joined() && !forcedHome(cfg) {
-			env = setEnv(env, "DATABASE_URL", n.DatabaseURL)
-			env = setEnv(env, "MAKTABA_DATABASE_URL", n.DatabaseURL)
+			env = setEnv(env, "DATABASE_URL", HomeDSN(n))
+			env = setEnv(env, "MAKTABA_DATABASE_URL", HomeDSN(n))
 			add("MAKTABA_TV_HOST_ROLE", "node")
 			add("MAKTABA_NODE_ID", n.NodeID)
-			// a full node's streaming role also serves its own VOD (Epic 35 story 35.8)
+			// a full node's streaming role also serves its own VOD (Epic 35 story 35.8),
+			// from this machine's copy of the home's database while that is down (Epic 37)
 			if NodeMode(cfg, n) {
 				add("MAKTABA_FULL_NODE", "1")
+				add("MAKTABA_NODE_STATE_DIR", NodeStateDir(cfg))
+				if cfg.NodeCopy.DSN != "" {
+					add("MAKTABA_COPY_DATABASE_URL", cfg.NodeCopy.DSN)
+				}
 			}
 		}
 	case RoleTVSlot:
@@ -234,8 +270,8 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		// reads node.json without a database URL, so [database].url above would
 		// make it a home worker against this machine's own database.
 		if n := nodeConfig(); NodeMode(cfg, n) {
-			env = setEnv(env, "DATABASE_URL", n.DatabaseURL)
-			env = setEnv(env, "MAKTABA_DATABASE_URL", n.DatabaseURL)
+			env = setEnv(env, "DATABASE_URL", HomeDSN(n))
+			env = setEnv(env, "MAKTABA_DATABASE_URL", HomeDSN(n))
 			add("MAKTABA_NODE", "1")
 		}
 	}
@@ -243,8 +279,23 @@ func ChildEnv(role Role, cfg config.Config) []string {
 	return env
 }
 
+// NodeStateDir is where a full node's roles keep their own state: the sign-ins made
+// on it while the home was away, when the home last answered, its copy's status.
+func NodeStateDir(cfg config.Config) string { return filepath.Join(cfg.Server.DataDir, "node") }
+
 // nodeConfig reads this machine's Epic 31 node config (tests replace it).
 var nodeConfig = config.LocalNodeConfig
+
+// HomeDSN is a node's connection to its home's database (config.NodeConfig.HomeDSN:
+// verifying the home's CA, pinned in the keys directory). A CA that cannot be pinned is
+// said: the connection still verifies, so it fails rather than trusts.
+func HomeDSN(n config.NodeConfig) string {
+	dsn, err := n.HomeDSN(config.KeysDir())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[supervisor] the home's database: %v\n", err)
+	}
+	return dsn
+}
 
 // onWindows reports a Windows host (tests replace it).
 var onWindows = func() bool { return runtime.GOOS == "windows" }
@@ -396,6 +447,12 @@ func SecretsKeyPath() string {
 // the keys directory (next to secrets.key).
 func StreamKeyPath() string {
 	return filepath.Join(config.KeysDir(), "stream-signing.key")
+}
+
+// JWTKeyPaths are the home's JWT key pair a switch of the home handed over:
+// jwt-private.pem and jwt-public.pem in the keys directory.
+func JWTKeyPaths() (private, public string) {
+	return filepath.Join(config.KeysDir(), "jwt-private.pem"), filepath.Join(config.KeysDir(), "jwt-public.pem")
 }
 
 // withStage adds stage to a comma-separated stage list (once).
