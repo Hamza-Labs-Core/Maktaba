@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -189,9 +190,10 @@ type Orchestrator struct {
 
 // DefaultOrchestrator returns an Orchestrator backed by the real
 // ffmpeg-spawning Runner, its hardware encoders' sessions counted by gates
-// (nil: uncounted). main.go wires this; tests swap Runner.
-func DefaultOrchestrator(bin Binary, gates map[HWAccel]SessionGate) *Orchestrator {
-	return &Orchestrator{Runner: &execRunner{Bin: bin, Gates: gates}}
+// (nil: uncounted), logging to logger (nil: slog's default). main.go wires
+// this; tests swap Runner.
+func DefaultOrchestrator(bin Binary, gates map[HWAccel]SessionGate, logger *slog.Logger) *Orchestrator {
+	return &Orchestrator{Runner: &execRunner{Bin: bin, Gates: gates, Logger: logger}}
 }
 
 // SessionGate is a hardware encoder's session budget, shared with the TV's
@@ -289,11 +291,12 @@ const probeTimeout = 3 * time.Second
 // when the driver refused the session, the gate pauses the hardware encoder
 // for everyone.
 type execRunner struct {
-	Bin   Binary
-	Gates map[HWAccel]SessionGate
+	Bin    Binary
+	Gates  map[HWAccel]SessionGate
+	Logger *slog.Logger // nil: slog's default
 
 	// what tests replace: the source's colour, and the filters this ffmpeg has
-	colour  func(ctx context.Context, ffprobe, input string) Colour
+	colour  func(ctx context.Context, ffprobe, input string) (Colour, error)
 	filters func(ctx context.Context, ffmpeg string) (map[string]bool, error)
 	// toneMapMu guards canToneMap, known once a look at the filters succeeded
 	toneMapMu  sync.Mutex
@@ -303,7 +306,8 @@ type execRunner struct {
 
 // toneMapFor is the tone-mapping an HDR source gets (ToneMapFilters, at most
 // the ladder's top rung), when this ffmpeg has zscale and tonemap; "" for SDR,
-// or without them (the 8-bit cut as before).
+// or without them (the 8-bit cut as before). A probe that failed counts the
+// source SDR, logged (the catalogue keeps no colour to fall back on).
 func (e *execRunner) toneMapFor(ctx context.Context, job Job) string {
 	colour := e.colour
 	if colour == nil {
@@ -313,7 +317,11 @@ func (e *execRunner) toneMapFor(ctx context.Context, job Job) string {
 	if ffprobe == "" {
 		ffprobe = "ffprobe"
 	}
-	c := colour(ctx, ffprobe, job.InputPath)
+	c, err := colour(ctx, ffprobe, job.InputPath)
+	if err != nil {
+		e.logger().Warn("transcode: the source's colour probe failed, encoding it as SDR",
+			"session_id", job.SessionID, "input", job.InputPath, "err", err.Error(), "event", "vod_colour_probe_failed")
+	}
 	if !c.HDR() || len(job.Ladder) == 0 || !e.hasToneMap(ctx) {
 		return ""
 	}
@@ -338,11 +346,20 @@ func (e *execRunner) hasToneMap(ctx context.Context) bool {
 		}
 		have, err := list(ctx, e.ffmpeg())
 		if err != nil {
+			e.logger().Warn("transcode: listing ffmpeg's filters failed, an HDR source is not tone-mapped",
+				"err", err.Error(), "event", "vod_filters_list_failed")
 			return false
 		}
 		e.toneKnown, e.canToneMap = true, have["zscale"] && have["tonemap"]
 	}
 	return e.canToneMap
+}
+
+func (e *execRunner) logger() *slog.Logger {
+	if e.Logger == nil {
+		return slog.Default()
+	}
+	return e.Logger
 }
 
 func (e *execRunner) ffmpeg() string {
@@ -356,9 +373,9 @@ func (e *execRunner) ffmpeg() string {
 // decodes it, the stream's where the frame names none: the frame's is there for
 // MPEG-TS (whose stream values ffprobe prints twice) and for an MKV whose
 // Colour element names only the matrix (FFmpeg 8.1 then reports the stream's
-// transfer as unknown). Nothing when ffprobe fails or takes over probeTimeout:
-// SDR.
-func sourceColour(ctx context.Context, ffprobe, input string) Colour {
+// transfer as unknown). The error when ffprobe fails or takes over
+// probeTimeout.
+func sourceColour(ctx context.Context, ffprobe, input string) (Colour, error) {
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, ffprobe, "-v", "error", "-select_streams", "v:0", "-read_intervals", "%+#1",
@@ -366,9 +383,12 @@ func sourceColour(ctx context.Context, ffprobe, input string) Colour {
 			"stream=color_transfer,color_space,color_primaries,color_range",
 		"-of", "json", input).Output()
 	if err != nil {
-		return Colour{}
+		if ctx.Err() != nil {
+			return Colour{}, fmt.Errorf("ffprobe: %w", ctx.Err())
+		}
+		return Colour{}, fmt.Errorf("ffprobe: %w", err)
 	}
-	return parseColour(out)
+	return parseColour(out), nil
 }
 
 func parseColour(out []byte) Colour {
@@ -432,20 +452,22 @@ func (e *execRunner) Start(ctx context.Context, job Job) (*Handle, error) {
 	// forever. The encoder's lifetime is owned by the Handle and torn
 	// down only via Handle.Stop (reaper / CloseSession / store Close).
 	// The request ctx bounds only what runs before the spawn (the source's
-	// HDR probe); request-scoped validation happens upstream in
-	// Orchestrator.Start.
+	// HDR probe, the GPU sessions' sync with the TV's slots: their open
+	// stays within its deadline); request-scoped validation happens
+	// upstream in Orchestrator.Start.
 	h := &Handle{}
 	job.toneMap = e.toneMapFor(ctx, job)
-	if err := e.run(h, job, job.HWAccel); err != nil {
+	if err := e.run(ctx, h, job, job.HWAccel); err != nil {
 		return nil, err
 	}
 	return h, nil
 }
 
 // run spawns job's encoder for the verdict hw into h, under a session-scoped
-// context (see Start), and watches it: the gate's sessions go back when it
-// exits, and a hardware run that failed early is run again in software.
-func (e *execRunner) run(h *Handle, job Job, hw string) error {
+// context (see Start; ctx bounds only taking the gate's sessions), and watches
+// it: the gate's sessions go back when it exits, and a hardware run that failed
+// early is run again in software.
+func (e *execRunner) run(ctx context.Context, h *Handle, job Job, hw string) error {
 	rungs := len(job.Ladder)
 	hwRungs := 0
 	var releases []func(refused bool)
@@ -454,10 +476,10 @@ func (e *execRunner) run(h *Handle, job Job, hw string) error {
 		if g := e.Gates[HWAccel(hw)]; g != nil {
 			owner := sessionOwner(job.SessionID)
 			if b, ok := g.(SessionBatch); ok {
-				releases = b.AcquireN(context.Background(), owner, rungs)
+				releases = b.AcquireN(ctx, owner, rungs)
 			} else {
 				for i := 0; i < rungs; i++ {
-					release, ok := g.Acquire(context.Background(), owner, 0)
+					release, ok := g.Acquire(ctx, owner, 0)
 					if !ok {
 						break
 					}
@@ -513,7 +535,7 @@ func (e *execRunner) run(h *Handle, job Job, hw string) error {
 		if !h.restart() {
 			return
 		}
-		if err := e.run(h, next, ""); err != nil {
+		if err := e.run(context.Background(), h, next, ""); err != nil {
 			h.mu.Lock()
 			h.restarting = false
 			h.mu.Unlock()

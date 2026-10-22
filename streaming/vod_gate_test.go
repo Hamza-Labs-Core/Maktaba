@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/google/uuid"
@@ -67,6 +68,15 @@ func withSlots(t *testing.T, link tvSlotsLink) {
 			tvSlots.Store(linkBox{})
 		}
 	})
+}
+
+// withLocalChannels sets the channels on air in this process (newEngine's
+// count) for the test.
+func withLocalChannels(t *testing.T, n *atomic.Int64) {
+	t.Helper()
+	prev, _ := tvLocalChannels.Load().(func() int)
+	tvLocalChannels.Store(func() int { return int(n.Load()) })
+	t.Cleanup(func() { tvLocalChannels.Store(prev) })
 }
 
 func giveAll(rs []func(bool)) {
@@ -156,9 +166,12 @@ func TestVODGateConcurrent(t *testing.T) {
 }
 
 // With TV slots off the channels run in this process: its gate counts them and
-// VOD together, VOD at most half of its cap.
+// VOD together, VOD at most half of its cap and never what the channels on air
+// here need (two each) or one more channel.
 func TestVODGateSharesTheProcessGate(t *testing.T) {
 	withSlots(t, nil)
+	var onAir atomic.Int64
+	withLocalChannels(t, &onAir)
 	gate := channel.NewEncoderGate(6)
 	g := &vodGate{gate: gate}
 	ch := uuid.New()
@@ -185,6 +198,18 @@ func TestVODGateSharesTheProcessGate(t *testing.T) {
 	} else {
 		r(false)
 	}
+	// a channel on air here: 2 for it and 2 for one more leave VOD 2 of 6; with
+	// two on air, none
+	onAir.Store(1)
+	if got = g.AcquireN(context.Background(), uuid.New(), 3); len(got) != 2 {
+		t.Errorf("one channel on air: VOD got %d, want 2", len(got))
+	}
+	giveAll(got)
+	onAir.Store(2)
+	if got = g.AcquireN(context.Background(), uuid.New(), 3); len(got) != 0 {
+		t.Errorf("two channels on air: VOD got %d, want none", len(got))
+	}
+	giveAll(got)
 	if gate.Active() != 0 || g.Held() != 0 {
 		t.Errorf("after the releases the gate holds %d, VOD %d", gate.Active(), g.Held())
 	}

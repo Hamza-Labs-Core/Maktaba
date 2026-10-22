@@ -468,8 +468,8 @@ func (s *Slots) syncRequests() chan chan bool {
 // SyncNow has Run send the slots their warm sets and budgets now and read their
 // reports back (EncodersUsed), and waits for it, at most wait: VOD's gate lowers
 // the slots' NVENC budget by the sessions it is taking before it takes them.
-// True only when the live slot, and the standby when it was sent its set, took
-// theirs; false too when Run did not serve it in time (not running yet, busy).
+// True only when the live slot took its set; false too when Run did not serve
+// it in time (not running yet, busy).
 func (s *Slots) SyncNow(ctx context.Context, wait time.Duration) bool {
 	t := time.NewTimer(wait)
 	defer t.Stop()
@@ -949,12 +949,12 @@ func (s *Slots) warmInputs(ctx context.Context) (StagingSettings, []ChannelDeman
 	return set, demands, remote
 }
 
-// ChannelsNeed is the hardware encoder sessions the TV's channels need to stay
-// as they are under these caps (the settings', not lowered for VOD): two for
-// each channel on the live slot and, with the hot standby on, for each one it
-// keeps warm (a block's pre-start holds two for a moment), as planWarm counts
-// them. VOD takes only sessions beyond it, so a transcode never leaves the
-// standby cold.
+// ChannelsNeed is the hardware encoder sessions the TV's channels need under
+// these caps (the settings', not lowered for VOD): two for each channel on the
+// live slot and, with the hot standby on, for each one it keeps warm (a block's
+// pre-start holds two for a moment), as planWarm counts them, and as much again
+// for one more channel to start warm while the host has room for one. VOD
+// takes only sessions beyond it.
 func (s *Slots) ChannelsNeed(ctx context.Context, capacity, nvencMax, vtMax int) (nvenc, vt int) {
 	s.mu.Lock()
 	liveOnAir := s.onAirLocked(s.live)
@@ -965,6 +965,12 @@ func (s *Slots) ChannelsNeed(ctx context.Context, capacity, nvencMax, vtMax int)
 	if set.HotStandby {
 		n += 2 * len(plan.standby)
 	}
+	if capacity <= 0 || len(liveOnAir) < capacity {
+		n += 2
+		if set.HotStandby {
+			n += 2
+		}
+	}
 	if nvencMax > 0 {
 		nvenc = n
 	}
@@ -974,8 +980,9 @@ func (s *Slots) ChannelsNeed(ctx context.Context, capacity, nvencMax, vtMax int)
 	return nvenc, vt
 }
 
-// syncWarm is SyncWarm; true when the live slot, and the standby when one was
-// sent its set, took theirs (VOD's gate counts on their budgets being in force).
+// syncWarm is SyncWarm; true when the live slot took its set (VOD's gate counts
+// on its budget being in force; a standby that is down is cold, and one that
+// starts holds to cap - cap/2 until its first budget).
 func (s *Slots) syncWarm(ctx context.Context) bool {
 	s.mu.Lock()
 	s.lastWarm = time.Now()
@@ -1011,8 +1018,6 @@ func (s *Slots) syncWarm(ctx context.Context) bool {
 		if st := s.sendWarm(ctx, standby, slot.WarmRequest{Role: slot.RoleStandby, Epoch: epoch,
 			Channels: ids(plan.standby), Budget: plan.stBudget, Exclusive: true}); st != nil {
 			s.remember(standby, *st)
-		} else {
-			acked = false
 		}
 	}
 	// story 33.7: a swap's (or rollback's) target warms the watched channels

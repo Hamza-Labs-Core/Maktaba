@@ -1,8 +1,11 @@
 package ffmpeg
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -409,6 +412,26 @@ func TestParseColour(t *testing.T) {
 	}
 }
 
+// toneMapFor: a colour probe that failed (timed out) counts the source SDR, and
+// says so in the log.
+func TestToneMapFor_ProbeFailureLogged(t *testing.T) {
+	var log bytes.Buffer
+	e := &execRunner{Logger: slog.New(slog.NewTextHandler(&log, nil)),
+		colour: func(context.Context, string, string) (Colour, error) {
+			return Colour{}, fmt.Errorf("ffprobe: %w", context.DeadlineExceeded)
+		},
+		filters: func(context.Context, string) (map[string]bool, error) {
+			return map[string]bool{"zscale": true, "tonemap": true}, nil
+		},
+	}
+	if got := e.toneMapFor(context.Background(), Job{SessionID: "s1", InputPath: "/in.mkv", Ladder: DefaultLadder(0)}); got != "" {
+		t.Errorf("tone-mapping %q after a failed probe", got)
+	}
+	if s := log.String(); !strings.Contains(s, "event=vod_colour_probe_failed") || !strings.Contains(s, "deadline exceeded") {
+		t.Errorf("log %q", s)
+	}
+}
+
 // toneMapFor: an HDR source, when this ffmpeg has zscale and tonemap, in the
 // ladder's top rung; SDR, or an ffmpeg without them, none. The filters are
 // listed until a look succeeds (a failed one does not turn tone-mapping off).
@@ -426,7 +449,7 @@ func TestToneMapFor(t *testing.T) {
 	} {
 		lists := 0
 		e := &execRunner{
-			colour: func(context.Context, string, string) Colour { return c.colour },
+			colour: func(context.Context, string, string) (Colour, error) { return c.colour, nil },
 			filters: func(context.Context, string) (map[string]bool, error) {
 				lists++
 				if lists == 1 {

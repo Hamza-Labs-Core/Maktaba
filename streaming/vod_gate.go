@@ -18,16 +18,22 @@ type tvSlotsLink interface {
 	// VOD encodes in software.
 	Ready() bool
 	// Room is the channels' cap of the kind (the settings' NVENCMax, or VTMax
-	// for VideoToolbox; 0: none), what the channels need of it to stay as they
-	// are (those on the live slot and those the hot standby keeps warm), and the
-	// sessions the slots hold (their last reports).
+	// for VideoToolbox; 0: none), what the channels need of it (those on the
+	// live slot, those the hot standby keeps warm, and one more channel to
+	// start warm: Slots.ChannelsNeed), and the sessions the slots hold (their
+	// last reports).
 	Room(ctx context.Context, vt bool) (limit, need, used int)
 	// Sync sends the slots their budgets now, the channels' caps less what VOD
 	// holds or is taking (vodGate.Held), and reads their reports back: a slot
-	// applies its budget to its gates as it gets it. True only when the live
-	// slot (and the standby, when it was sent its set) took theirs.
+	// applies its budget to its gates as it gets it. True when the live slot
+	// took its budget (a standby that is down is cold: a slot that starts holds
+	// to cap - cap/2 until its first budget).
 	Sync(ctx context.Context) bool
 }
+
+// tvLocalChannels counts the channels on air in this process (the channel
+// engine with TV slots off, on the home or a node; newEngine sets it).
+var tvLocalChannels atomic.Value // func() int
 
 // tvSlots holds the link once the slots are wired; with TV slots off there is
 // none: the channels run in this process and its gate counts them.
@@ -44,16 +50,20 @@ func slotsLink() tvSlotsLink {
 // (ffmpeg.SessionBatch). The TV's channels come first:
 //
 //   - VOD holds at most half the channels' cap, and never what the channels
-//     on the live slot and those the hot standby keeps warm need (two each): a
-//     transcode never turns the standby cold, and a channel that starts during
-//     one still finds a session.
+//     need: two sessions for each on air (a block's pre-start holds two for a
+//     moment), two for each the hot standby keeps warm, and room for one more
+//     channel to start warm. A transcode is decided at its open: a channel
+//     started during it finds its sessions; a second one may run its blocks on
+//     libx264, and the standby keep fewer warm, until the transcode ends.
 //   - With TV slots on (the channels in other processes, each with its own
 //     gate): a transcode's sessions are reserved, the slots' budgets drop by
-//     them (one Sync, every slot answering), and they are kept only as far as
-//     the slots' fresh reports leave room: VOD's sessions and the live and
-//     standby slots' then stay within the cap. A TV release's staging slot,
-//     during a swap, adds its own (two a staged channel) on top.
-//   - With TV slots off this process's gate counts the channels and VOD.
+//     them (one Sync; the live slot must answer), and they are kept only as far
+//     as the slots' fresh reports leave room. The bound that holds: VOD's
+//     sessions and the live slot's within the cap, the standby's warm ones (two
+//     each, its budget) on top, as without VOD, and during a TV release swap the
+//     staging or previous slot's (two a channel) too.
+//   - With TV slots off this process's gate counts the channels and VOD, and
+//     the channels' need is counted from the engine here (tvLocalChannels).
 //
 // What it cannot have is libx264's. A cap of 0 limits nothing (VideoToolbox's
 // default).
@@ -82,13 +92,15 @@ func (g *vodGate) AcquireN(ctx context.Context, owner uuid.UUID, n int) []func(r
 	if link != nil && !link.Ready() {
 		return nil
 	}
-	// reserve what the rules leave, under the lock: no two reservations look at
-	// the same room
-	g.mu.Lock()
+	// the room, read before the lock (its settings and demand reads take time),
+	// then reserved under it: no two reservations take the same room
 	limit, need := g.gate.Max(), 0
 	if link != nil {
 		limit, need, _ = link.Room(ctx, g.vt)
+	} else if f, _ := tvLocalChannels.Load().(func() int); f != nil && limit > 0 {
+		need = 2*f() + 2 // those on air here, and one more
 	}
+	g.mu.Lock()
 	k := n
 	if limit > 0 {
 		allowed := limit / 2

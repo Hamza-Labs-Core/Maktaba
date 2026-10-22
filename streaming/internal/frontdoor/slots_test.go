@@ -286,20 +286,32 @@ func TestSyncNowSendsTheBudget(t *testing.T) {
 		t.Errorf("EncodersUsed %d after the sync, want the slots' reports (2 each)", used)
 	}
 
-	// a slot that does not take its set (restarting): the sync is no success,
-	// whatever the others did, so VOD takes no session on stale reports
-	for _, f := range []*fakeSlot{g.blue, g.green} {
-		f.mu.Lock()
-		f.refuse = true
-		f.mu.Unlock()
+	// the standby down (restarting): it is cold, the live slot's budget is what
+	// VOD counts on
+	liveName, _ := g.slots.Live()
+	liveSlot, standby := g.blue, g.green
+	if liveName == "green" {
+		liveSlot, standby = g.green, g.blue
 	}
+	standby.mu.Lock()
+	standby.refuse = true
+	standby.mu.Unlock()
+	if !g.slots.SyncNow(ctx, 3*time.Second) {
+		t.Error("SyncNow failed although the live slot took its set (the standby refused)")
+	}
+	// the live slot does not take its set: the sync is no success, so VOD takes
+	// no session on stale reports
+	liveSlot.mu.Lock()
+	liveSlot.refuse = true
+	liveSlot.mu.Unlock()
 	if g.slots.SyncNow(ctx, 3*time.Second) {
-		t.Error("SyncNow succeeded although the slots refused their sets")
+		t.Error("SyncNow succeeded although the live slot refused its set")
 	}
 }
 
 // ChannelsNeed: two sessions for each channel on the live slot, and with the hot
-// standby on two for each it keeps warm (a channel with viewers): what VOD must
+// standby on two for each it keeps warm (a channel with viewers), and as much
+// again for one more channel while the host has room for one: what VOD must
 // leave them.
 func TestChannelsNeed(t *testing.T) {
 	g := newSlotRig(t)
@@ -313,13 +325,16 @@ func TestChannelsNeed(t *testing.T) {
 		return nil
 	}
 	go g.slots.Run(ctx)
-	if !waitFor(3*time.Second, func() bool { nv, _ := g.slots.ChannelsNeed(ctx, 8, 6, 0); return nv == 2 }) {
+	if !waitFor(3*time.Second, func() bool { nv, _ := g.slots.ChannelsNeed(ctx, 8, 6, 0); return nv == 6 }) {
 		nv, _ := g.slots.ChannelsNeed(ctx, 8, 6, 0)
-		t.Fatalf("one channel on air, nobody watching: need %d, want 2", nv)
+		t.Fatalf("one channel on air, nobody watching: need %d, want 6 (2, and 4 for one more live and warm)", nv)
+	}
+	if nv, _ := g.slots.ChannelsNeed(ctx, 1, 6, 0); nv != 2 {
+		t.Errorf("one on air on a host for one: need %d, want 2 (no room for another)", nv)
 	}
 	watched.Store(true)
-	if nv, vt := g.slots.ChannelsNeed(ctx, 8, 6, 0); nv != 4 || vt != 0 {
-		t.Errorf("watched, so warm on the standby too: need %d, %d; want 4, 0", nv, vt)
+	if nv, vt := g.slots.ChannelsNeed(ctx, 8, 6, 0); nv != 8 || vt != 0 {
+		t.Errorf("watched, so warm on the standby too: need %d, %d; want 8, 0", nv, vt)
 	}
 	if nv, _ := g.slots.ChannelsNeed(ctx, 8, 0, 0); nv != 0 {
 		t.Errorf("no NVENC cap: need %d", nv)

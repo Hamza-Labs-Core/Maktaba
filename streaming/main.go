@@ -388,7 +388,7 @@ func buildGRPCServer(bg *background, logger *slog.Logger, backend probe.Backend,
 	srv.Transcode = ffmpeg.DefaultOrchestrator(vodBinary(cfg), map[ffmpeg.HWAccel]ffmpeg.SessionGate{
 		ffmpeg.HWAccelNVENC:        vodNVENC,
 		ffmpeg.HWAccelVideoToolbox: vodVT,
-	})
+	}, logger)
 	srv.ResolveDir = layout.HLSDir
 	return srv
 }

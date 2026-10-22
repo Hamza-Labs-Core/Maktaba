@@ -172,8 +172,8 @@ func TestTranscodeArgs_RealFFmpeg(t *testing.T) {
 	}
 	for _, src := range sources {
 		isHDR := strings.HasPrefix(src.name, "hdr10")
-		if c := sourceColour(ctx, "ffprobe", src.path); c.HDR() != isHDR {
-			t.Errorf("%s: colour %+v", src.name, c)
+		if c, err := sourceColour(ctx, "ffprobe", src.path); err != nil || c.HDR() != isHDR {
+			t.Errorf("%s: colour %+v (%v)", src.name, c, err)
 		}
 		if isHDR {
 			got := (&execRunner{}).toneMapFor(ctx, Job{InputPath: src.path, Ladder: DefaultLadder(0)})
@@ -207,7 +207,7 @@ func TestTranscodeArgs_RealFFmpeg(t *testing.T) {
 		for _, src := range sources {
 			for _, format := range []string{"hls", "dash"} {
 				gate := &countGate{max: 2}
-				o := DefaultOrchestrator(DefaultBinary(), map[HWAccel]SessionGate{hw: gate})
+				o := DefaultOrchestrator(DefaultBinary(), map[HWAccel]SessionGate{hw: gate}, nil)
 				dir := t.TempDir()
 				job := Job{SessionID: uuid.NewString(), InputPath: src.path, OutputDir: dir, Ladder: DefaultLadder(0),
 					HWAccel: string(hw), Format: format, SourceCodec: src.codec, NoAudio: !src.audio}
