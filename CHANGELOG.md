@@ -633,6 +633,15 @@ don't append a line here; docs-only PRs are exempt.
   uninstall script lists to forget the home, a write and a re-join try again for a moment while a
   reader has `node.json` open, and the identity a switch set aside is found beside the roaming
   `node.json` as well as the local one.
+- **The Linux app builds for a pre-release tag.** `v0.3.0-rc.1`'s desktop release failed on both
+  Linux legs: rpm takes no `-` in a version. A pre-release's .deb is now `0.3.0~rc.1` and its
+  .rpm `0.3.0` release `0.1.rc.1`, both sorting before `0.3.0` (the .deb's `0.3.0-rc.1` would
+  have sorted after it, making the release a downgrade); the app and its AppImage keep
+  `0.3.0-rc.1`, the semver its updater compares with latest.json, and the .deb and the .rpm are
+  signed for it. CI's Linux app gate now builds a pre-release (`v0.0.0-ci.N`) on every run,
+  through the same script. The server's own .deb and .rpm (nfpm) already carried
+  `0.3.0~rc.1` inside, `.rc.1` only in the files' names, as GitHub names them; CI's launcher
+  gate now checks that form and its dpkg and rpm order before the release.
 
 ## [0.2.0] - 2026-10-19
 

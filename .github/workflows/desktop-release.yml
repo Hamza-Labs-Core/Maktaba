@@ -98,17 +98,19 @@ jobs:
             payload: win-app
             args: '--bundles nsis --config ../../build/win-app/tauri.win-app.conf.json'
           # Linux: the server payload rides in usr/share/maktaba/server (the overlay
-          # linux-app/payload.sh writes maps it into each bundle), Epic 39.
+          # linux-app/payload.sh writes maps it into each bundle), Epic 39. linux-app/bundle.sh
+          # makes the AppImage, the .deb and the .rpm (a pre-release's packages carry their
+          # own versions: two passes), so no --bundles here.
           - label: linux-x86_64
             os: ubuntu-22.04
             rust-targets: ''
             linux_payload: true
-            args: '--bundles appimage,deb,rpm --config ../../build/linux-app/tauri.linux-app.conf.json'
+            args: '--config ../../build/linux-app/tauri.linux-app.conf.json'
           - label: linux-aarch64
             os: ubuntu-22.04-arm
             rust-targets: ''
             linux_payload: true
-            args: '--bundles appimage,deb,rpm --config ../../build/linux-app/tauri.linux-app.conf.json'
+            args: '--config ../../build/linux-app/tauri.linux-app.conf.json'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     env:
@@ -265,7 +267,9 @@ jobs:
       # pre-release tag gives the MSI its numeric core (0.3.0). NSIS drops
       # the suffix itself. Windows Installer then treats the rc and the
       # final 0.3.0 MSI as the same version; Tauri's template allows that
-      # upgrade.
+      # upgrade. Linux's packages take their own forms of a pre-release
+      # (the .deb 0.3.0~rc.1, the .rpm 0.3.0 release 0.1.rc.1), in
+      # tools/release/linux-app/bundle.sh.
       # The updater (Epic 36 story 36.8, Epic 38/39): with the signing key
       # secret, the bundles get updater artifacts (.app.tar.gz, -setup.exe,
       # .AppImage, .deb, .rpm, each with its .sig), and the publish job writes
@@ -324,11 +328,18 @@ jobs:
           APPLE_PASSWORD: ${{ env.APPLE_NOTARIZE == 'true' && secrets.APPLE_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ env.APPLE_NOTARIZE == 'true' && secrets.APPLE_TEAM_ID || '' }}
           ARGS: ${{ matrix.args }}
+          TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           # ARGS is a list of words (the targets, the bundles, the payload overlay)
           read -r -a words <<<"$ARGS"
-          pnpm tauri build "${words[@]}"
+          if [ "$RUNNER_OS" = Linux ]; then
+            # the AppImage, the .deb and the .rpm at the tag's version (a pre-release's
+            # packages in their own forms, the app still the tag's semver)
+            ../../tools/release/linux-app/bundle.sh "$TAG" "${words[@]}"
+          else
+            pnpm tauri build "${words[@]}"
+          fi
 
       - name: Check the app bundle
         if: matrix.payload == 'mac-app'
