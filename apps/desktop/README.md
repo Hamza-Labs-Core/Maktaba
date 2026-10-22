@@ -55,7 +55,8 @@ cd apps/desktop
 pnpm install
 pnpm tauri dev                  # dev window pointed at the Vite dev server
 ./scripts/build.sh macos        # .app + .dmg          (on macOS)
-./scripts/build.sh windows      # .msi + NSIS .exe     (on Windows)
+./scripts/build.sh windows      # .msi + NSIS .exe     (on Windows; the client alone)
+make win-app                    # the Windows app with the server inside: NSIS only (tools/release/win-app)
 ./scripts/build.sh linux        # .deb + .AppImage     (on Linux)
 ./scripts/build.sh debug        # fast unsigned debug build
 ```
@@ -73,7 +74,7 @@ runners in parallel, attaching them to the GitHub Release for the tag:
 | Runner | Bundles |
 |---|---|
 | `macos-latest` | `.dmg` — **universal** (arm64 + x86_64 via `--target universal-apple-darwin`) |
-| `windows-latest` | `.msi` + NSIS `.exe`, plus a portable `.zip` of the raw `Maktaba.exe` |
+| `windows-latest` | the NSIS `-setup.exe` with the server inside (`tools/release/win-app/payload.sh`; current user, `%LOCALAPPDATA%\Maktaba`, no `.msi`), plus a portable `.zip` of the raw `Maktaba.exe` (the client) |
 | `ubuntu-22.04` | `.deb` + `.AppImage` (installs `libwebkit2gtk-4.1`, `libayatana-appindicator3`, `librsvg2`, `patchelf` first) |
 
 The build uses the official
@@ -104,7 +105,7 @@ package-desktop` (= `scripts/build.sh`).
 | **Deep links** | `maktaba://watch/{id}` etc. — scheme registered in `tauri.conf.json`; the Rust `on_open_url` handler emits a `deep-link` event the web shell maps to an SPA route via the same `deepLinkToPath` parser the Capacitor shell uses |
 | **Single instance** | on Windows/Linux a `maktaba://` open spawns a new process; the single-instance plugin (with the `deep-link` feature) focuses the running window and forwards the URL |
 | **mDNS** | `discover_servers` browses `_maktaba._tcp.local.` for the server picker |
-| **Auto-update** | `updater` plugin checks `releases/latest/download/latest.json`; signing key is a follow-up (`pubkey` placeholder in config) |
+| **Auto-update** | `updater` plugin checks `releases/latest/download/latest.json`; updates are signed with the Tauri updater key, whose public key `desktop-release.yml` stamps into `tauri.conf.json` at build time (the `TAURI_UPDATER_PUBKEY` variable; the repository keeps the placeholder) |
 
 ## Maktaba.app runs the server (Epic 36)
 
@@ -192,8 +193,6 @@ for the setup screens: `MAKTABA_SERVER_BIN=/path/to/maktaba-server pnpm tauri de
 - Bundle icons — generate via `pnpm exec tauri icon ./logo.png`
   (see [`src-tauri/icons/README.md`](src-tauri/icons/README.md))
 - Apple Developer ID / Microsoft EV cert / Linux signing
-- The updater private key (the `pubkey` in `tauri.conf.json` is a
-  placeholder until the signing key lands)
 
 ## Linux runs the server too (Epic 39)
 

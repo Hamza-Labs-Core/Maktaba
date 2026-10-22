@@ -141,6 +141,11 @@ don't append a line here; docs-only PRs are exempt.
   so once in its log; its children then open no console window on the desktop. A child is held
   still while it is asked, so the CTRL_BREAK never goes astray to `serve` itself; so are the
   venv bootstrap the server and setup start, and setup's model download, when they are asked.
+- **Windows installs point at the Maktaba app** (Epic 38, story 38.14). The README's install
+  section, the deployment page, the packaging and desktop READMEs describe the Windows app (one
+  NSIS `-setup.exe` with the server inside, for the current user; no `.msi`), and the node
+  installer (`install-node.ps1`) says in its help and its summary that the app runs a full node
+  and moves a joined worker in.
 - **Windows keeps everything in `%LOCALAPPDATA%\Maktaba`** (Epic 38, story 38.1), for a new install:
   `server.toml`, `keys\`, `data\`, `logs\` and the node's `node.json`, with the models, caches
   and the bundled Postgres beside `data\`. A new install puts nothing in the roaming profile.
