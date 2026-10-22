@@ -1,82 +1,103 @@
 # Search
 
-- **Route:** `/search`, optional `?q=<term>` (seeded by the header search box in `src/components/AppShell.tsx`, which navigates to `/search?q=<encoded term>`; also the global `/` shortcut focuses that box).
-- **Component:** `src/pages/Search.tsx` (inner `renderSnippet`, `YouTubeSection`); uses `@ds` `Button`, `Badge`, `EmptyState`, `ErrorState`, `useToast`.
+- **Routes:** `/search`, with `?q=<term>&mode=<hybrid|fts|semantic>&sid=<saved search>&vp=<In titles page>&tp=<In transcripts page>` (the header search box in `src/components/AppShell.tsx` navigates to `/search?q=<encoded term>`; the global `/` shortcut focuses that box). `/search/video/:videoId?q=&mode=&sid=&vp=&tp=[&t=]` is the matches page of one video (cases SRC-36 to SRC-43).
+- **Components:** `src/pages/Search.tsx` (`ResultSection`, `VideoResult`, `TranscriptResult`, `PassageList`, `RecentSearches`, `YouTubeSection`, `ImportModal`), `src/pages/SearchVideo.tsx` (reuses `VideoPlayer` with `markers`, `onVideoElement`, `hideBack`), shared `src/pages/searchShared.tsx` and `src/components/VideoViews.tsx` (`ViewToggle`, `VideoPoster`, also used by the Library); `@ds` `Button`, `Badge`, `Pagination`, `EmptyState`, `ErrorState`, `Modal`, `useToast`.
 - **API calls (all via `api` in `src/lib/api.ts`):**
-  - `POST /api/search { q, mode, limit: 50 }` → `{ hits: [{ segment_id, video_id, start_sec, end_sec, snippet, score }], videos?: [{ video_id, title, duration_sec? }], total }`.
+  - `POST /api/search { q, mode, view: "list" | "grid" }` → `{ search_id, expires_at, page_size, passages_page_size, videos: TitleVideo[] (In titles, page 1), videos_total, transcript_videos: TranscriptVideo[] (In transcripts, one per video, page 1), transcript_total }`. `TitleVideo = { video_id, title, title_snippet, duration_sec?, library_id, library_name, poster_url, score, in_transcripts }`; `TranscriptVideo = { …card, best_score, matches, passages: [{ segment_id, start_sec, end_sec, snippet, score }] (top 3), in_title }`. `search_id` is `""` for an admin token (nothing saved, nothing to page).
+  - `GET /api/search/results/{sid}?list=titles|transcripts&offset=&limit=` → `{ total, limit, items }` (later pages, Back / reload, a recent search).
+  - `GET /api/search/passages?sid=&video_id=&order=score|time&offset=&limit=[&include_times=1]` → `{ video, in_title, title_snippet, total, items, times? }` (Show all on the Search page: `order=score`; matches page: `order=time`, `include_times=1` on the first page).
+  - Any sid read can answer **410** with problem `type: "https://maktaba.dev/problems/search-expired"`: the page POSTs the search again with the same q and mode.
+  - `GET /api/search/recent` → `{ items: [{ search_id, q, mode, created_at, last_used_at, title_count, transcript_count, live, expires_at }] }` (on mount and after every search); `DELETE /api/search/recent/{sid}`; `DELETE /api/search/recent`.
   - `GET /api/search/youtube/status` (on mount) → `{ available }`: whether the server can run yt-dlp. False ⇒ no "Also search YouTube" toggle and no "From YouTube" section.
   - `GET /api/search/youtube?q=<encoded>` (after the local results, when the toggle is on) → `{ items: [{ youtube_id, title, channel, description_snippet, thumbnail, published_at?, duration_sec?, view_count?, match: { state: in_library | imported | importable, video_id? } }], reason? }` (yt-dlp search, no API key).
   - `GET /api/search/suggest?q=<encoded>` (200 ms debounce) → `{ suggestions: string[] }` → `<datalist id="mkt-suggest">`.
   - `GET /api/search/saved` → `{ items: [{ id, q, mode }] }` on mount and after save/delete.
   - `POST /api/search/save { q, mode }`; `DELETE /api/search/saved/{id}`.
   - `POST /api/videos/{target}/import-youtube { youtube_id, title, channel, description, thumbnail, published_at?, duration_sec? }` (the Import button, admins only; the target video is picked in a dialog). Stages an enrichment candidate; the results are then refetched.
-- **State in URL / storage:** `?q=` (written with `replace: true` on submit; read once on mount); mode in `localStorage["mkt:search:mode"]` (`hybrid` | `fts` | `semantic`, default `hybrid`). YouTube toggle is component state only.
-- **Access:** signed-in user (`RequireAuth`). Server scopes hits to libraries the user can access.
-- **Existing tests:** `src/pages/Search.test.tsx` — covers: submit POSTs `{ q, mode, limit }` and renders a `<mark>` snippet; empty hits show "No results"; Arabic title match renders as a link to `/videos/vid-9`. Gaps: `?q=` deep link, Back/Forward, errors, null fields, suggestions, saved searches, YouTube block, mode persistence, crash fallback, a11y.
+  - Matches page only: `POST /api/stream/sessions` and `GET /api/videos/{id}/chapters` (the player).
+- **State in URL / storage:** `q`, `mode`, `sid`, `vp`, `tp` in the URL. A submit pushes `?q&mode`, then the answer's sid replaces that entry; page changes push. Mode in `localStorage["mkt:search:mode"]` (`hybrid` | `fts` | `semantic`, default `hybrid`; a `mode` in the URL wins). List / Grid in `localStorage["mkt:search:view"]` (default `list`). Page sizes of each sid in `sessionStorage["mkt:search:sizes"]` (fallback 20 list / 24 grid, 20 passages). YouTube toggle is component state only.
+- **Access:** signed-in user (`RequireAuth`). Server scopes results to libraries the user can access; a sid belongs to its user (another user's sid answers 410).
+- **Existing tests:** `src/pages/Search.test.tsx` (SRC-01 to SRC-35), `src/pages/Search.youtube.test.tsx` (SRC-21, SRC-22), `src/pages/SearchVideo.test.tsx` (SRC-36 to SRC-43); the fake saved-search server is `src/test/searchServer.ts`.
 
 ## Summary
 
-| ID     | Title                                                        | Category      | Priority | Covered by existing test?                           |
-| ------ | ------------------------------------------------------------ | ------------- | -------- | --------------------------------------------------- |
-| SRC-01 | Submit runs search and renders passage hits with time links  | Happy path    | P1       | Yes (`Search.test.tsx`)                             |
-| SRC-02 | Title matches and passages show under their headings         | Happy path    | P1       | Yes (`Search.test.tsx`)                             |
-| SRC-03 | Deep link `/search?q=...` runs the search on load            | Navigation    | P1       | Yes (`Search.test.tsx`)                             |
-| SRC-04 | Header search while already on `/search` runs the new query  | Navigation    | P1       | Yes (`Search.test.tsx`)                             |
-| SRC-05 | Back/Forward restores the query and its results              | Navigation    | P1       | Yes (`Search.test.tsx`)                             |
-| SRC-06 | `hits` / `videos` null or missing render the empty state     | Empty state   | P1       | Yes (`Search.test.tsx`)                             |
-| SRC-07 | YouTube `items: null`, missing `match`, null `snippet`       | Empty state   | P1       | Yes (`Search.test.tsx`)                             |
-| SRC-08 | Saved `items: null` and suggest `suggestions: null`          | Empty state   | P1       | Yes (`Search.test.tsx`)                             |
-| SRC-09 | Render crash shows route error fallback; Back still works    | Error         | P1       | Yes (`Search.test.tsx`)                             |
-| SRC-10 | Signed-out user is sent to `/login` and keeps the query      | Permissions   | P1       | Yes (`Search.test.tsx`)                             |
-| SRC-11 | Results only from accessible libraries                       | Permissions   | P1       | No (e2e-only)                                       |
-| SRC-12 | Snippet markup is escaped; only `<mark>` is highlighted      | Validation    | P1       | Yes (`Search.test.tsx`)                             |
-| SRC-13 | No results shows "No results..." empty state                 | Empty state   | P2       | Yes (`Search.test.tsx`)                             |
-| SRC-14 | Blank / whitespace query does nothing; clearing removes `?q` | Validation    | P2       | Yes (`Search.test.tsx`)                             |
-| SRC-15 | Pending state: button loading, no duplicate submits          | Loading       | P2       | Yes (`Search.test.tsx`)                             |
-| SRC-16 | Search 500 / 400 / network / malformed JSON                  | Error         | P2       | Yes (`Search.test.tsx`)                             |
-| SRC-17 | Error clears on the next successful search                   | Error         | P2       | Yes (`Search.test.tsx`)                             |
-| SRC-18 | Mode select persists and is sent; change of mode             | Happy path    | P2       | Yes (`Search.test.tsx`)                             |
-| SRC-19 | Suggestions debounce, encode, and drop stale answers         | Happy path    | P2       | Yes (`Search.test.tsx`)                             |
-| SRC-20 | Save, run and delete saved searches                          | Happy path    | P2       | Yes (`Search.test.tsx`; it.todo: save confirmation) |
-| SRC-21 | YouTube block: results, in-library link, reason text         | Happy path    | P2       | Yes (`Search.test.tsx`)                             |
-| SRC-22 | YouTube import dialog: pick, look up, success, error         | Happy path    | P2       | Yes (`Search.youtube.test.tsx`)                     |
-| SRC-23 | Arabic query text, Arabic results and Arabic UI              | RTL           | P2       | Yes (`Search.test.tsx`)                             |
-| SRC-24 | Many hits: window cap and `total`                            | Happy path    | P3       | No                                                  |
-| SRC-25 | Keyboard and a11y: labels, saved delete name, status updates | Accessibility | P3       | No                                                  |
-| SRC-26 | Phone width: form wraps, saved list reachable                | Responsive    | P3       | No                                                  |
-| SRC-27 | Light/dark theme: `<mark>` and YouTube cards readable        | Theme         | P3       | No                                                  |
+| ID     | Title                                                                     | Category      | Priority | Covered by existing test?                           |
+| ------ | ------------------------------------------------------------------------- | ------------- | -------- | --------------------------------------------------- |
+| SRC-01 | Submit POSTs `{ q, mode, view }`; sid in URL; passages link to the player | Happy path    | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-02 | In titles / In transcripts under their headings; title opens matches page | Happy path    | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-03 | Deep link `/search?q=...` runs the search on load                         | Navigation    | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-04 | Header search while already on `/search` runs the new query               | Navigation    | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-05 | Back/Forward restores the query and its results (by sid)                  | Navigation    | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-06 | List fields null or missing render the empty state                        | Empty state   | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-07 | YouTube `items: null`, missing `match`, null `snippet`                    | Empty state   | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-08 | Saved `items: null` and suggest `suggestions: null`                       | Empty state   | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-09 | Render crash shows route error fallback; Back still works                 | Error         | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-10 | Signed-out user is sent to `/login` and keeps the query                   | Permissions   | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-11 | Results only from accessible libraries                                    | Permissions   | P1       | No (e2e-only)                                       |
+| SRC-12 | Snippet markup is escaped; only `<mark>` is highlighted                   | Validation    | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-13 | No results shows "No results..." empty state                              | Empty state   | P2       | Yes (`Search.test.tsx`)                             |
+| SRC-14 | Blank / whitespace query does nothing; clearing removes `?q`              | Validation    | P2       | Yes (`Search.test.tsx`)                             |
+| SRC-15 | Pending state: button loading, no duplicate submits                       | Loading       | P2       | Yes (`Search.test.tsx`)                             |
+| SRC-16 | Search 500 / 400 / network / malformed JSON                               | Error         | P2       | Yes (`Search.test.tsx`)                             |
+| SRC-17 | Error clears on the next successful search                                | Error         | P2       | Yes (`Search.test.tsx`)                             |
+| SRC-18 | Mode select persists and is sent; change of mode                          | Happy path    | P2       | Yes (`Search.test.tsx`)                             |
+| SRC-19 | Suggestions debounce, encode, and drop stale answers                      | Happy path    | P2       | Yes (`Search.test.tsx`)                             |
+| SRC-20 | Save, run and delete saved searches                                       | Happy path    | P2       | Yes (`Search.test.tsx`; it.todo: save confirmation) |
+| SRC-21 | YouTube block: results, in-library link, reason text                      | Happy path    | P2       | Yes (`Search.test.tsx`)                             |
+| SRC-22 | YouTube import dialog: pick, look up, success, error                      | Happy path    | P2       | Yes (`Search.youtube.test.tsx`)                     |
+| SRC-23 | Arabic query text, Arabic results and Arabic UI                           | RTL           | P2       | Yes (`Search.test.tsx`)                             |
+| SRC-24 | Many results: paged lists replace the window cap                          | Happy path    | P3       | Yes (`Search.test.tsx`: SRC-31)                     |
+| SRC-25 | Keyboard and a11y: labels, saved delete name, status updates              | Accessibility | P3       | No                                                  |
+| SRC-26 | Phone width: form wraps, saved list reachable                             | Responsive    | P3       | No                                                  |
+| SRC-27 | Light/dark theme: `<mark>` and YouTube cards readable                     | Theme         | P3       | No                                                  |
+| SRC-28 | In transcripts: one row per video, library, matches, also-in-title        | Happy path    | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-29 | Show all loads every passage of a video, paged; Show fewer                | Happy path    | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-30 | List / Grid toggle for both lists, sent as `view`, remembered             | Happy path    | P2       | Yes (`Search.test.tsx`)                             |
+| SRC-31 | Each list pages on its own: totals, page X of Y, URL vp / tp              | Navigation    | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-32 | Reload with sid and pages reads them by sid (no POST)                     | Navigation    | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-33 | Expired sid: re-run, pages kept and clamped, notice, no mixing            | Error         | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-34 | Expiry on a page change or Show all refreshes the results                 | Error         | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-35 | Recent searches: shown, open live by sid, re-run expired, remove, clear   | Happy path    | P1       | Yes (`Search.test.tsx`)                             |
+| SRC-36 | Matches page lists every match by time; back link keeps pages             | Happy path    | P1       | Yes (`SearchVideo.test.tsx`)                        |
+| SRC-37 | Clicking a match seeks the player and plays                               | Happy path    | P1       | Yes (`SearchVideo.test.tsx`)                        |
+| SRC-38 | Next / Previous match from the playback time                              | Happy path    | P1       | Yes (`SearchVideo.test.tsx`)                        |
+| SRC-39 | Every match marked on the progress bar                                    | Happy path    | P2       | Yes (`SearchVideo.test.tsx`)                        |
+| SRC-40 | Title-only match: highlighted title, no transcript matches                | Empty state   | P2       | Yes (`SearchVideo.test.tsx`)                        |
+| SRC-41 | Matches page with an expired or missing sid runs the search               | Error         | P1       | Yes (`SearchVideo.test.tsx`)                        |
+| SRC-42 | Matches page for a video not in the results                               | Error         | P2       | Yes (`SearchVideo.test.tsx`)                        |
+| SRC-43 | Matches page in Arabic; phone layouts of both pages                       | RTL           | P2       | Partial (`SearchVideo.test.tsx`: phone is e2e-only) |
 
 ## Cases
 
-### SRC-01 — Submit runs search and renders passage hits with time links
+### SRC-01 — Submit POSTs `{ q, mode, view }`; sid in URL; passages link to the player
 
 - **Priority:** P1
 - **Category:** Happy path
 - **Covered by existing test?** Yes (`Search.test.tsx`)
-- **Preconditions / data:** `GET /api/search/saved` → `{ "items": [] }`; `POST /api/search` → `{ "hits": [ { "segment_id": 42, "video_id": "vid-1", "start_sec": 72.5, "end_sec": 78.0, "snippet": "the <mark>quick</mark> brown fox", "score": 0.9 } ], "total": 1 }`.
+- **Preconditions / data:** `POST /api/search` → `search_id: "sid-1"`, no title matches, one transcript video `vid-1` with passage `{ segment_id: 42, start_sec: 72.5, end_sec: 78, snippet: "the <mark>quick</mark> brown fox" }`.
 - **Steps:**
   1. Open `/search`; type "quick" in the box named "Search" (role `combobox` because of `list=`); click button "Search".
-- **Expected:** body `{ q: "quick", mode: "hybrid", limit: 50 }` (no `include`); URL becomes `/search?q=quick` (replace); one result link `href="/videos/vid-1/watch?t=72"` showing "[1:12 → 1:18]" and the snippet with "quick" inside a `<mark>`. No "Videos"/"In transcripts" headings (no title matches).
+- **Expected:** body `{ q: "quick", mode: "hybrid", view: "list" }` (no `limit`, no `include`); URL `/search?q=quick&mode=hybrid&sid=sid-1` (the sid replaces the pushed entry); a passage link `href="/videos/vid-1/watch?t=72"` showing "[1:12 → 1:18]" with "quick" inside a `<mark>`. Heading "In transcripts"; no "In titles" heading (no title matches).
 
-### SRC-02 — Title matches and passages show under their headings
+### SRC-02 — In titles / In transcripts under their headings; title opens matches page
 
 - **Priority:** P1
 - **Category:** Happy path
 - **Covered by existing test?** Yes (`Search.test.tsx`)
-- **Preconditions / data:** search → `{ "hits": [ <one hit> ], "videos": [ { "video_id": "v9", "title": "Quick start", "duration_sec": 3725 }, { "video_id": "v8", "title": "No length" } ], "total": 1 }`.
+- **Preconditions / data:** titles `v9` "Quick start" (3725 s, library "Lectures") and `v8` "No length" (no duration); one transcript video.
 - **Steps:**
-  1. Search "quick".
-- **Expected:** h2 "Videos" with links `/videos/v9` ("Quick start · 62:05") and `/videos/v8` (no time); then h2 "In transcripts" with the passage list. No empty state.
+  1. Search "quick"; click "Quick start".
+- **Expected:** h2 "In titles" with a row per video: title link `/search/video/v9?q=quick&mode=hybrid&sid=…`, library "Lectures", duration "1:02:05" (none for `v8`); then h2 "In transcripts". No empty state. The click opens the matches page.
 
 ### SRC-03 — Deep link `/search?q=...` runs the search on load
 
 - **Priority:** P1
 - **Category:** Navigation
 - **Covered by existing test?** Yes (`Search.test.tsx`)
-- **Preconditions / data:** `localStorage["mkt:search:mode"] = "fts"`; search → one hit.
+- **Preconditions / data:** `localStorage["mkt:search:mode"] = "fts"`; search → one result.
 - **Steps:**
   1. Open `/search?q=%D8%A7%D9%84%D8%B3%D9%8A%D8%B1%D8%A9` (السيرة) directly.
-- **Expected:** input value "السيرة"; exactly one `POST /api/search` with `{ q: "السيرة", mode: "fts", limit: 50 }`; results render. No second POST on re-render (StrictMode included).
+- **Expected:** input value "السيرة"; exactly one `POST /api/search` with `{ q: "السيرة", mode: "fts", view: "list" }`; results render. No second POST on re-render (StrictMode included). A `mode` in the URL wins over the stored one.
 
 ### SRC-04 — Header search while already on `/search` runs the new query
 
@@ -88,27 +109,27 @@
   1. Type "beta" in the header search box (form `role="search"` in the shell) and press Enter.
 - **Expected:** URL `/search?q=beta`; wanted: page input shows "beta" and a new POST for "beta" runs, showing beta results. Today the seed effect is mount-only (`didSeed`), so the URL changes but the page keeps showing "alpha" — likely bug.
 
-### SRC-05 — Back/Forward restores the query and its results
+### SRC-05 — Back/Forward restores the query and its results (by sid)
 
 - **Priority:** P1
 - **Category:** Navigation
 - **Covered by existing test?** Yes (`Search.test.tsx`)
-- **Preconditions / data:** full routes; search for "one" and "two" return different hits; history: `/library` → `/search?q=one` (via header search) → `/search?q=two` (via header search).
+- **Preconditions / data:** searches "one" and "two" return different results.
 - **Steps:**
-  1. Press browser Back.
-  2. Press browser Forward.
-  3. From `/search?q=two`, click a result (goes to the player), then press Back.
-- **Expected:** step 1: URL `/search?q=one`, input "one", results for "one". Step 2: "two" again. Step 3: back on `/search?q=two` with input and results for "two" (re-run on mount). Today steps 1–2 change the URL but not the input or results (currently unhandled — likely bug). Also: submits inside the page use `replace: true`, so in-page searches never create history entries — wanted: push, so Back steps through queries.
+  1. Search "one", then "two" in the page.
+  2. Press Back.
+  3. Click a passage (goes to the player), then press Back.
+- **Expected:** step 2: URL `/search?q=one&mode=hybrid&sid=sid-1`, input "one", the same results in the same order, read with `GET /api/search/results/sid-1` (no new POST). Step 3: the same again. A `?q=` without a sid (header search, an old link) runs the search.
 
-### SRC-06 — `hits` / `videos` null or missing render the empty state
+### SRC-06 — List fields null or missing render the empty state
 
 - **Priority:** P1
 - **Category:** Empty state
 - **Covered by existing test?** Yes (`Search.test.tsx`)
-- **Preconditions / data:** search → (a) `{ "hits": null, "videos": null, "total": 0 }`, (b) `{ "total": 0 }`, (c) `{}`. List fields: `hits`, `videos`.
+- **Preconditions / data:** search → (a) `{ "videos": null, "transcript_videos": null }`, (b) `{ "total": 0 }`, (c) `{}`; (d) a transcript video with `passages: null`, `matches: 2` and `search_id: ""`. List fields: `videos`, `transcript_videos`, `passages`, `items`.
 - **Steps:**
   1. Search "x".
-- **Expected:** EmptyState "No results. Check spelling or try a different mode."; no crash.
+- **Expected:** (a)–(c) EmptyState "No results. Check spelling or try a different mode."; no crash. (d) the row shows "2 matches" with no passages, no "Show all" and no pager buttons (nothing saved to page).
 
 ### SRC-07 — YouTube `items: null`, missing `match`, null `snippet`
 
@@ -181,11 +202,11 @@
 
 - **Priority:** P2
 - **Category:** Empty state
-- **Covered by existing test?** Yes — `Search.test.tsx` "renders the empty state when the server returns no hits".
-- **Preconditions / data:** search → `{ "hits": [], "total": 0 }`.
+- **Covered by existing test?** Yes (`Search.test.tsx`: SRC-06)
+- **Preconditions / data:** search → `{ "videos": [], "videos_total": 0, "transcript_videos": [], "transcript_total": 0 }`.
 - **Steps:**
   1. Search "nothing".
-- **Expected:** EmptyState "No results. Check spelling or try a different mode."; it does not show before the first search (hits `null`).
+- **Expected:** EmptyState "No results. Check spelling or try a different mode."; it does not show before the first search; no list headings, no view toggle.
 
 ### SRC-14 — Blank / whitespace query does nothing; clearing removes `?q`
 
@@ -196,7 +217,7 @@
 - **Steps:**
   1. Clear the box; type three spaces; submit.
   2. Click "Save" with the box blank.
-- **Expected:** no `POST /api/search` and no `POST /api/search/save`; `q` removed from the URL. Wanted: results from "fox" are cleared too (today they stay on screen under an empty box). Leading/trailing spaces are trimmed in the URL and the request body.
+- **Expected:** no `POST /api/search` and no `POST /api/search/save`; the URL becomes `/search` (q, mode, sid and pages removed); the old results are cleared. Leading/trailing spaces are trimmed in the URL (`?q=fox&mode=hybrid`) and the request body.
 
 ### SRC-15 — Pending state: button loading, no duplicate submits
 
@@ -233,12 +254,13 @@
 - **Priority:** P2
 - **Category:** Happy path
 - **Covered by existing test?** Yes (`Search.test.tsx`)
-- **Preconditions / data:** `localStorage` empty; then `localStorage["mkt:search:mode"] = "bogus"`; then `localStorage` throwing.
+- **Preconditions / data:** `localStorage` empty; then `localStorage["mkt:search:mode"] = "bogus"`; then `localStorage` throwing; then `/search?q=x&mode=fts` with "semantic" stored.
 - **Steps:**
   1. Open `/search`; select "Semantic" in the select named "Mode"; search "x".
   2. Remount.
   3. Remount with "bogus" and with storage throwing.
-- **Expected:** options Hybrid, Keyword, Semantic. Step 1: body `mode: "semantic"`; storage `"semantic"`. Step 2: select shows Semantic. Step 3: falls back to Hybrid, no crash. Changing the mode alone does not re-run the search (by design); wanted: a hint or re-run when a query is present.
+  4. Open `/search?q=x&mode=fts`.
+- **Expected:** options Hybrid, Keyword, Semantic. Step 1: body `mode: "semantic"`, URL `?q=x&mode=semantic`; storage `"semantic"`. Step 2: select shows Semantic. Step 3: falls back to Hybrid, no crash. Step 4: the search runs with `fts` and the select shows Keyword. Changing the mode alone does not re-run the search (by design).
 
 ### SRC-19 — Suggestions debounce, encode, and drop stale answers
 
@@ -264,7 +286,7 @@
   2. Click saved "fox".
   3. Click the delete button next to "fox".
   4. Save with the POST failing.
-- **Expected:** step 1: body `{ q: "dog", mode: "hybrid" }`; saved list re-fetched and shows both. Step 2: box shows "fox", mode select "Keyword", POST `{ q: "fox", mode: "fts" }`. Wanted: the URL also becomes `?q=fox` (today it does not). Step 3: `DELETE /api/search/saved/s1`, list re-fetched. Step 4: wanted: an error toast (today silently ignored); also wanted a success confirmation on save. A saved item with an unknown `mode` must not put the select into an invalid value.
+- **Expected:** step 1: body `{ q: "dog", mode: "hybrid" }`; saved list re-fetched and shows both. Step 2: box shows "fox", mode select "Keyword", POST `{ q: "fox", mode: "fts", view: "list" }`, URL `?q=fox&mode=fts` (plus the sid once answered). Step 3: `DELETE /api/search/saved/s1`, list re-fetched. Step 4: an error toast; wanted also a success confirmation on save. A saved item with an unknown `mode` falls back to Hybrid. Saved searches stay a separate panel from Recent searches.
 
 ### SRC-21 — YouTube block: results, in-library link, reason text
 
@@ -286,27 +308,27 @@
   1. Click "Import" on the second card; Cancel.
   2. Import again, pick "Lesson", click "Import".
   3. Import again, type a title in "Find a video by title", Search, pick a result; the POST fails.
-- **Expected:** no `window.prompt`. Step 1: no request. Step 2: the dialog's Import is disabled until a video is picked; `POST /api/videos/v7/import-youtube` with the result's `youtube_id`, title, channel, description, thumbnail (and date/length when known); toast "Metadata staged for “Lesson”…"; the dialog closes and the search runs again, the card now showing "Imported →" linking to `/videos/v7`. Step 3: the lookup is `POST /api/search { q, mode: "fts", limit: 20 }`; error toast "video not found", the dialog stays open. Non-admin: no Import button (the server answers 403).
+- **Expected:** no `window.prompt`. Step 1: no request. Step 2: the dialog's Import is disabled until a video is picked; `POST /api/videos/v7/import-youtube` with the result's `youtube_id`, title, channel, description, thumbnail (and date/length when known); toast "Metadata staged for “Lesson”…"; the dialog closes and the search runs again, the card now showing "Imported →" linking to `/videos/v7`. Step 3: the lookup is `POST /api/search { q, mode: "fts", view: "list" }` (its `videos` are the choices); error toast "video not found", the dialog stays open. Non-admin: no Import button (the server answers 403).
 
 ### SRC-23 — Arabic query text, Arabic results and Arabic UI
 
 - **Priority:** P2
 - **Category:** RTL
 - **Covered by existing test?** Yes (`Search.test.tsx`)
-- **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`; search for "السيرة النبوية" → hit snippet `"من <mark>السيرة</mark> النبوية"` and video title "السيرة النبوية ( 18 )".
+- **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`; search for "السيرة النبوية" → title "السيرة النبوية ( 18 )" and a transcript video with one passage `"من <mark>السيرة</mark> النبوية"`.
 - **Steps:**
   1. Type the Arabic query and submit; then reload the URL.
-- **Expected:** `<html dir="rtl">`; placeholder, mode options, "Save", "Saved searches", "Videos", "In transcripts" from `ar.json`; body `q` is the exact Arabic string (no normalisation by the client); URL `?q=` is percent-encoded UTF-8 and reloading restores the same text; snippet and title runs have `dir="auto"`; the "[m:ss → m:ss]" arrow reads correctly in RTL (wanted: arrow mirrors to "←" in RTL).
+- **Expected:** `<html dir="rtl">`; headings «في العناوين» and «في التفريغات», «مطابقة واحدة», «الصفحة ١ من ١ · …», «عمليات البحث الأخيرة» from `ar.json`; body `q` is the exact Arabic string; URL `?q=` is percent-encoded UTF-8 and reloading restores the same text (by sid); snippet and title runs have `dir="auto"`; the time range arrow is "←" in RTL; library names have `dir="auto"`.
 
-### SRC-24 — Many hits: window cap and `total`
+### SRC-24 — Many results: paged lists replace the window cap
 
 - **Priority:** P3
 - **Category:** Happy path
-- **Covered by existing test?** No
-- **Preconditions / data:** search → 50 hits, `total: 480`; also hits with a duplicated `segment_id`.
+- **Covered by existing test?** Yes (`Search.test.tsx`: SRC-31)
+- **Preconditions / data:** 45 title matches and 25 transcript videos, `page_size: 20`.
 - **Steps:**
   1. Search "the".
-- **Expected:** 50 result items (limit 50, window 100). Wanted: "50 of 480" or a way to load more (today `total` is ignored). Duplicate `segment_id` must not cause a React key warning or a dropped row.
+- **Expected:** 20 rows per list, "Page 1 of 3 · 45 videos" and "Page 1 of 2 · 25 videos"; no video appears twice in a list (one row per video).
 
 ### SRC-25 — Keyboard and a11y: labels, saved delete name, status updates
 
@@ -316,17 +338,17 @@
 - **Preconditions / data:** saved → one item "fox"; a search with results.
 - **Steps:**
   1. Load `/search`; Tab through the form, results and saved list.
-- **Expected:** the box has focus on load (`autoFocus`) and accessible name "Search"; form `role="search"`; select named "Mode"; checkbox named "Also search YouTube"; aside named "Saved searches". The saved-delete "×" button: wanted an accessible name like "Delete saved search fox" — today it is "Close" (likely bug). Wanted: result count / errors announced in a live region (none today). Focus ring visible on every result link.
+- **Expected:** the box has focus on load (`autoFocus`) and accessible name "Search"; form `role="search"`; select named "Mode"; checkbox named "Also search YouTube"; asides named "Saved searches" and "Recent searches"; the view toggle is a radiogroup named "View"; each pager is a nav named after its list, with page buttons "Page N", "Previous page", "Next page"; the refreshed notice is `role="status"` with a "Dismiss" button; recent remove buttons are named "Remove <query>". The saved-delete "×" button: wanted an accessible name like "Delete saved search fox" — today it is "Close" (likely bug). Wanted: result count / errors announced in a live region (none today). Focus ring visible on every result link.
 
-### SRC-26 — Phone width: form wraps, saved list reachable
+### SRC-26 — Phone width: form wraps, lists stack, side panels reachable
 
 - **Priority:** P3
 - **Category:** Responsive
-- **Covered by existing test?** No
-- **Preconditions / data:** e2e 375x812; results with long Arabic and English snippets; 5 saved searches; YouTube results.
+- **Covered by existing test?** No (e2e-only)
+- **Preconditions / data:** e2e 375x812; results with long Arabic and English titles and snippets; 5 saved and 10 recent searches; YouTube results.
 - **Steps:**
-  1. Open `/search?q=fox`.
-- **Expected:** no horizontal page scroll; the form (box, mode, Search, Save, YouTube toggle) wraps; the saved aside stacks below results and is reachable; YouTube thumbnails scale down.
+  1. Open `/search?q=fox` in List and in Grid view.
+- **Expected:** no horizontal page scroll; the form wraps; under 600 px list rows stack (poster above the text) and the grid is one column; the pager wraps; the Saved and Recent panels stack below the results; YouTube thumbnails scale down.
 
 ### SRC-27 — Light/dark theme: `<mark>` and YouTube cards readable
 
@@ -337,3 +359,165 @@
 - **Steps:**
   1. Search in each theme.
 - **Expected:** `<mark>` text has AA contrast against its highlight in both themes (no default yellow-on-dark issue); YouTube section is visually distinct but readable; the empty and error states readable.
+
+### SRC-28 — In transcripts: one row per video, library, matches, also-in-title
+
+- **Priority:** P1
+- **Category:** Happy path
+- **Covered by existing test?** Yes (`Search.test.tsx`)
+- **Preconditions / data:** `v1` "Fox one" in both lists with 7 matching passages (`in_title: true`, top 3 sent), `v2` "Other talk" with 1.
+- **Steps:**
+  1. Search "fox" (List view).
+- **Expected:** exactly two rows under "In transcripts", in server order. `v1` row: poster `/api/videos/v1/poster`, title and poster linking to `/search/video/v1?…`, "Lectures", "1:02:05", "7 matches", "Also in title", three passage links `/videos/v1/watch?t=10|20|30`. `v2`: "1 match", no badge, no "Show all".
+
+### SRC-29 — Show all loads every passage of a video, paged; Show fewer
+
+- **Priority:** P1
+- **Category:** Happy path
+- **Covered by existing test?** Yes (`Search.test.tsx`)
+- **Preconditions / data:** one transcript video with 5 passages; `passages_page_size: 2`.
+- **Steps:**
+  1. Click "Show all 5"; click "Load more" twice; click "Show fewer".
+- **Expected:** `GET /api/search/passages?sid=sid-1&video_id=v1&order=score&offset=0&limit=2`, then offsets 2 and 4; 2, 4, then 5 passages, best first, no duplicates; "Load more" disappears at 5; "Show fewer" goes back to the top 3.
+
+### SRC-30 — List / Grid toggle for both lists, sent as `view`, remembered
+
+- **Priority:** P2
+- **Category:** Happy path
+- **Covered by existing test?** Yes (`Search.test.tsx`)
+- **Preconditions / data:** one title and one transcript video; also `localStorage` throwing.
+- **Steps:**
+  1. Search; switch "View" to "Grid"; on the transcript card click "Show passages".
+  2. Remount and search again.
+- **Expected:** default List (rows with library and passages). Grid: both lists become cards (poster, title, duration; transcript cards also "1 match"); passages are hidden until "Show passages" (`aria-expanded`), then link to the player; `localStorage["mkt:search:view"] = "grid"`. Step 2: Grid is selected and the POST body has `view: "grid"`. With storage throwing the page still works (List).
+
+### SRC-31 — Each list pages on its own: totals, page X of Y, URL vp / tp
+
+- **Priority:** P1
+- **Category:** Navigation
+- **Covered by existing test?** Yes (`Search.test.tsx`)
+- **Preconditions / data:** 45 titles, 25 transcript videos, `page_size: 20`.
+- **Steps:**
+  1. In "In titles" click "Page 2"; in "In transcripts" click "Next page"; in "In titles" click "Page 3"; press Back.
+- **Expected:** "Page 1 of 3 · 45 videos" / "Page 1 of 2 · 25 videos". Page 2 of titles is read with `GET /api/search/results/sid-1?list=titles&offset=20&limit=20` and shows "Title 21"…"Title 40" in order; the URL gets `vp=2` (pushed), the transcripts list keeps its page. Then `tp=2` shows "Talk 21"…"Talk 25"; links to the matches page carry `vp=2&tp=2`. Page 3 shows 5 rows and "Next page" is disabled. Back returns to `vp=2` with the same rows; no new POST.
+
+### SRC-32 — Reload with sid and pages reads them by sid (no POST)
+
+- **Priority:** P1
+- **Category:** Navigation
+- **Covered by existing test?** Yes (`Search.test.tsx`)
+- **Preconditions / data:** a live saved search `sid-old` (q "fox", mode fts, 45 titles).
+- **Steps:**
+  1. Open `/search?q=fox&mode=fts&sid=sid-old&vp=3`.
+- **Expected:** no `POST /api/search`; `GET …/sid-old?list=titles&offset=40&limit=20` and `…list=transcripts&offset=0…`; rows "Title 41"…"Title 45"; mode select Keyword; no notice. A page past the end shows the last page and fixes the URL.
+
+### SRC-33 — Expired sid: re-run, pages kept and clamped, notice, no mixing
+
+- **Priority:** P1
+- **Category:** Error
+- **Covered by existing test?** Yes (`Search.test.tsx`)
+- **Preconditions / data:** `sid=gone` answers 410 `search-expired`; the new run finds 30 titles (2 pages) and 45 transcript videos.
+- **Steps:**
+  1. Open `/search?q=fox&mode=hybrid&sid=gone&vp=4&tp=2`.
+  2. Click "Back to page 1" in the notice.
+- **Expected:** one `POST /api/search { q: "fox", mode: "hybrid", view }`; the URL is replaced with the new sid, `vp=2` (clamped), `tp=2`; both lists show pages of the new sid only (no reads of the old sid after the POST, never one list from each). Notice (`role="status"`): "These results were refreshed; the order may have changed." Step 2: pages 1, URL `?q=fox&mode=hybrid&sid=<new>`, the notice goes.
+
+### SRC-34 — Expiry on a page change or Show all refreshes the results
+
+- **Priority:** P1
+- **Category:** Error
+- **Covered by existing test?** Yes (`Search.test.tsx`)
+- **Preconditions / data:** a search on screen whose sid then expires.
+- **Steps:**
+  1. Click "Page 2" of "In titles". 2. (Another run) click "Show all 5".
+- **Expected:** the search is POSTed again; the new sid replaces the URL keeping `vp=2`; page 2 of the new sid is shown; the notice shows and "Dismiss" hides it. Show all: same refresh, the rows come back folded.
+
+### SRC-35 — Recent searches: shown, open live by sid, re-run expired, remove, clear
+
+- **Priority:** P1
+- **Category:** Happy path
+- **Covered by existing test?** Yes (`Search.test.tsx`)
+- **Preconditions / data:** recent → `kahf` (fts, 5 minutes ago, 2 / 0, live, its snapshot "Old A", "Old B") and `maryam` (semantic, 4 / 7, `live: false`); a third case where `kahf` is listed live but answers 410.
+- **Steps:**
+  1. Open `/search`; click "kahf"; click "maryam"; remove "kahf"; click "Clear all".
+- **Expected:** panel "Recent searches" (separate from "Saved searches") shows each query with its mode ("Keyword"), "5 minutes ago" (the full date as a tooltip), "2 in titles · 0 in transcripts", and "Results kept" / "Expired, runs again". "kahf" opens `/search?q=kahf&mode=fts&sid=sid-live` with "Old A", "Old B" in that order and no POST. "maryam" POSTs `{ q: "maryam", mode: "semantic", view }`. The list is re-read after each search. Remove → `DELETE /api/search/recent/sid-live`; Clear all → `DELETE /api/search/recent`, then "Nothing here yet.". A live entry that answers 410 runs again with the notice.
+
+### SRC-36 — Matches page lists every match by time; back link keeps pages
+
+- **Priority:** P1
+- **Category:** Happy path
+- **Covered by existing test?** Yes (`SearchVideo.test.tsx`)
+- **Preconditions / data:** `/search/video/v1?q=fox&mode=hybrid&sid=sid-a&vp=2&tp=3`; `v1` has matches at 300 s, 10 s, 120 s; `passages_page_size: 2`.
+- **Steps:**
+  1. Open the page; click "Load more"; click "Back to results".
+- **Expected:** `GET /api/search/passages?sid=sid-a&video_id=v1&order=time&offset=0&limit=2&include_times=1`; rows "[0:10] Transcript early fox", "[2:00] …" with `<mark>`; "3 matches"; the h1 is the title; "Matches for fox" where "fox" and "Back to results" link to `/search?q=fox&mode=hybrid&sid=sid-a&vp=2&tp=3`; library name shown. Load more reads `offset=2` and adds "[5:00]"; then no Load more.
+
+### SRC-37 — Clicking a match seeks the player and plays
+
+- **Priority:** P1
+- **Category:** Happy path
+- **Covered by existing test?** Yes (`SearchVideo.test.tsx`)
+- **Preconditions / data:** SRC-36; the player opened a direct-play session.
+- **Steps:**
+  1. Click the "[2:00]" row.
+- **Expected:** the video's `currentTime` is 120, `play()` is called, the row is marked current (`aria-current`).
+
+### SRC-38 — Next / Previous match from the playback time
+
+- **Priority:** P1
+- **Category:** Happy path
+- **Covered by existing test?** Yes (`SearchVideo.test.tsx`)
+- **Preconditions / data:** SRC-36 (only 2 of 3 rows loaded).
+- **Steps:**
+  1. Next, Next, Next, Previous; let playback reach 200 s; Previous.
+- **Expected:** Previous starts disabled; Next goes to 10, 120, then 300 (from `times`, not loaded yet) and is then disabled; Previous goes to 120; from 200 s Previous goes to 120. Each jump plays.
+
+### SRC-39 — Every match marked on the progress bar
+
+- **Priority:** P2
+- **Category:** Happy path
+- **Covered by existing test?** Yes (`SearchVideo.test.tsx`)
+- **Preconditions / data:** SRC-36; video duration 600 s.
+- **Steps:**
+  1. Let the metadata load.
+- **Expected:** three `.mkt-player__mark` at 1.67 %, 20 %, 50 % (`inset-inline-start`, so they mirror in RTL), next to the chapter ticks. The player without `markers` draws none (Video player cases unchanged).
+
+### SRC-40 — Title-only match: highlighted title, no transcript matches
+
+- **Priority:** P2
+- **Category:** Empty state
+- **Covered by existing test?** Yes (`SearchVideo.test.tsx`)
+- **Preconditions / data:** `v2` matches only by its title (`total: 0`, `items: []`, `in_title: true`).
+- **Steps:**
+  1. Open `/search/video/v2?q=fox&mode=hybrid&sid=sid-a`.
+- **Expected:** a "Title" row with the `title_snippet` marks; "No matches in the transcript"; "0 matches"; Next match disabled.
+
+### SRC-41 — Matches page with an expired or missing sid runs the search
+
+- **Priority:** P1
+- **Category:** Error
+- **Covered by existing test?** Yes (`SearchVideo.test.tsx`)
+- **Preconditions / data:** (a) `sid-a` answers 410; (b) no sid in the URL.
+- **Steps:**
+  1. Open `/search/video/v1?q=fox&mode=fts&sid=sid-a&vp=4&t=30`. 2. Open `/search/video/v1?q=fox&mode=hybrid`.
+- **Expected:** (a) `POST /api/search { q: "fox", mode: "fts", view }`; the URL keeps the video and `t`, gets the new sid (replace) and drops `vp` (clamped to the new single page); the matches load from the new sid; the notice shows; the back link uses the new sid. (b) the search runs, no notice.
+
+### SRC-42 — Matches page for a video not in the results
+
+- **Priority:** P2
+- **Category:** Error
+- **Covered by existing test?** Yes (`SearchVideo.test.tsx`)
+- **Preconditions / data:** `GET /api/search/passages` → 404.
+- **Steps:**
+  1. Open `/search/video/zz?q=fox&mode=hybrid&sid=sid-a`.
+- **Expected:** "This video is not in these search results." with a link back to the results; the player still loads.
+
+### SRC-43 — Matches page in Arabic; phone layouts of both pages
+
+- **Priority:** P2
+- **Category:** RTL
+- **Covered by existing test?** Partial (`SearchVideo.test.tsx`: phone is e2e-only)
+- **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`; SRC-36 data. e2e at 375x812 for the phone part.
+- **Steps:**
+  1. Open the matches page.
+- **Expected:** «العودة إلى النتائج» with "→", «المطابقة التالية», «عدد المطابقات: ٣»; snippets `dir="auto"`. At phone width the match rows wrap, the Next / Previous buttons wrap, nothing scrolls sideways.

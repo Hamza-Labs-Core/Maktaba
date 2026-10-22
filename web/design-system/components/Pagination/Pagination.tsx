@@ -14,6 +14,10 @@ export interface PaginationProps {
   /** Pages shown around the current one before collapsing to "…". */
   siblings?: number;
   className?: string;
+  /** Accessible names of the buttons (English by default). */
+  previousLabel?: string;
+  nextLabel?: string;
+  pageLabel?: (page: number) => string;
 }
 
 function range(start: number, end: number): number[] {
@@ -39,6 +43,9 @@ export function Pagination({
   label = "Pagination",
   siblings = 1,
   className,
+  previousLabel = "Previous page",
+  nextLabel = "Next page",
+  pageLabel = (p) => `Page ${p}`,
 }: PaginationProps) {
   if (pageCount <= 1) return null;
   const items = pages(page, pageCount, siblings);
@@ -47,7 +54,7 @@ export function Pagination({
       <button
         type="button"
         className="mk-pagination__btn"
-        aria-label="Previous page"
+        aria-label={previousLabel}
         disabled={page <= 1}
         onClick={() => onChange(page - 1)}
       >
@@ -64,7 +71,7 @@ export function Pagination({
             type="button"
             className={clsx("mk-pagination__btn", it === page && "mk-pagination__btn--active")}
             aria-current={it === page ? "page" : undefined}
-            aria-label={`Page ${it}`}
+            aria-label={pageLabel(it)}
             onClick={() => onChange(it)}
           >
             {it}
@@ -74,7 +81,7 @@ export function Pagination({
       <button
         type="button"
         className="mk-pagination__btn"
-        aria-label="Next page"
+        aria-label={nextLabel}
         disabled={page >= pageCount}
         onClick={() => onChange(page + 1)}
       >

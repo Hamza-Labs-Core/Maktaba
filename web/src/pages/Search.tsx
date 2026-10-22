@@ -1,7 +1,13 @@
-// Story 11.4 — Search interface.
+// Story 11.4 — Search interface (results redesign: two paged lists over a
+// saved search).
 //
 // Real server contract (api/internal/handlers/search):
-//   POST   /api/search          { q, mode, limit } -> { hits, total, ... }
+//   POST   /api/search          { q, mode, view } -> { search_id, page_size,
+//          videos (In titles, page 1), videos_total, transcript_videos
+//          (In transcripts, one row per video, page 1), transcript_total, ... }
+//   GET    /api/search/results/{sid}?list=titles|transcripts&offset=&limit=
+//   GET    /api/search/passages?sid=&video_id=&order=score&offset=&limit=
+//   GET    /api/search/recent   DELETE /api/search/recent[/{sid}]
 //   GET    /api/search/suggest?q=  -> { suggestions: string[] }
 //   POST   /api/search/save     { q, mode }
 //   GET    /api/search/saved    -> { items:[{ id, q, mode }] }
@@ -10,16 +16,19 @@
 //   GET    /api/search/youtube?q=     -> { items, reason? }
 //   POST   /api/videos/{id}/import-youtube  { youtube_id, title, channel, ... }
 //
-// `?q=` seeds the query from the header search box. Mode (hybrid/fts/
-// semantic) persists in localStorage. Suggestions debounce at 200ms.
-// Snippet `<mark>` runs are rendered as escaped React nodes (no raw
-// HTML). Deep-links use a formatted [mm:ss → mm:ss] range. The hit list
-// is window-capped (true virtualization deferred — see report).
+// URL state: /search?q=&mode=&sid=&vp=<titles page>&tp=<transcripts page>.
+// With a sid the pages are read from the saved search (Back / Forward /
+// reload keep the same order); without one the search is POSTed and its sid
+// replaces the URL. A sid read answering 410 search-expired runs the search
+// again, keeps the pages (clamped) and says the order may have changed —
+// pages of two sids are never shown together. Snippet `<mark>` runs are
+// rendered as escaped React nodes (no raw HTML).
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Modal } from "@ds/components/Modal/Modal";
+import { Pagination } from "@ds/components/Pagination/Pagination";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { useToast } from "@ds/components/Toast/Toast";
@@ -27,20 +36,47 @@ import { api, ApiError } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { useAuth } from "../lib/auth";
 import { PageHelp } from "../help/HelpLink";
+import {
+  type View,
+  VideoPoster,
+  ViewToggle,
+  formatDuration,
+  useStoredView,
+} from "../components/VideoViews";
+import {
+  DEFAULT_PASSAGES_PAGE_SIZE,
+  MODE_KEY,
+  type Mode,
+  type Passage,
+  type PassagesPage,
+  type ResultsPage,
+  type SearchResponse,
+  type SearchState,
+  type TitleVideo,
+  type TranscriptVideo,
+  type VideoCard,
+  asMode,
+  defaultPageSize,
+  isSearchExpired,
+  listOf,
+  matchesHref,
+  matchesLabel,
+  pageCount,
+  pageParam,
+  readMode,
+  recallSizes,
+  rememberSizes,
+  renderSnippet,
+  searchParamsOf,
+  ts,
+  urlMode,
+  watchHref,
+} from "./searchShared";
 
-type Mode = "hybrid" | "fts" | "semantic";
-const SEARCH_LIMIT = 50;
-const MODE_KEY = "mkt:search:mode";
-const RESULT_WINDOW = 100;
+const VIEW_KEY = "mkt:search:view";
 
-interface ServerHit {
-  segment_id: number;
-  video_id: string;
-  start_sec: number;
-  end_sec: number;
-  snippet: string;
-  score: number;
-}
+type ListKind = "titles" | "transcripts";
+
 interface YTItem {
   youtube_id: string;
   title: string;
@@ -56,86 +92,84 @@ interface YTBlock {
   items: YTItem[];
   reason?: string;
 }
-// A whole-video match on its title (a library has titles long before it has
-// transcripts).
-interface VideoHit {
-  video_id: string;
-  title: string;
-  duration_sec?: number;
-}
-interface SearchResponse {
-  hits: ServerHit[];
-  videos?: VideoHit[];
-  total: number;
-  youtube?: YTBlock;
-}
 interface SavedSearch {
   id: string;
   q: string;
   mode: string;
 }
+interface RecentSearch {
+  search_id: string;
+  q: string;
+  mode: string;
+  created_at: string;
+  last_used_at?: string;
+  title_count?: number;
+  transcript_count?: number;
+  live: boolean;
+  expires_at?: string;
+}
+/** The saved search on screen. */
+interface Snapshot {
+  sid: string;
+  q: string;
+  mode: Mode;
+  pageSize: number;
+  passagesPageSize: number;
+  titlesTotal: number;
+  transcriptsTotal: number;
+}
+/** One page of a list, and the saved search it came from. */
+interface Loaded<T> {
+  sid: string;
+  page: number;
+  items: T[];
+}
 
-const MODES: readonly string[] = ["hybrid", "fts", "semantic"];
-const asMode = (m: unknown): Mode => (MODES.includes(m as string) ? (m as Mode) : "hybrid");
 const YT_REASONS = new Set(["disabled", "rate_limited", "error"]);
+const runKey = (q: string, m: Mode, sid: string) => `${q}\n${m}\n${sid}`;
+const total = (v: unknown, atLeast: number) =>
+  typeof v === "number" && Number.isFinite(v) ? Math.max(v, atLeast) : atLeast;
 
-function readMode(): Mode {
-  try {
-    const m = localStorage.getItem(MODE_KEY);
-    if (m === "hybrid" || m === "fts" || m === "semantic") return m;
-  } catch {
-    /* ignored */
-  }
-  return "hybrid";
+function fetchPage<T>(list: ListKind, sid: string, page: number, size: number) {
+  return api.get<ResultsPage<T>>(
+    `/api/search/results/${encodeURIComponent(sid)}?list=${list}&offset=${(page - 1) * size}&limit=${size}`
+  );
 }
 
-function ts(s: number): string {
-  const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  return `${m}:${sec.toString().padStart(2, "0")}`;
-}
-
-// Server emits only <mark>…</mark> wrappers; split on the literal tags
-// and keep every other run as a plain (escaped) text node.
-function renderSnippet(snippet: string | null | undefined): ReactNode[] {
-  if (typeof snippet !== "string") return [];
-  const parts = snippet.split(/(<mark>|<\/mark>)/);
-  const nodes: ReactNode[] = [];
-  let inMark = false;
-  let key = 0;
-  for (const part of parts) {
-    if (part === "<mark>") {
-      inMark = true;
-      continue;
-    }
-    if (part === "</mark>") {
-      inMark = false;
-      continue;
-    }
-    if (part === "") continue;
-    nodes.push(
-      inMark ? (
-        <mark key={key++}>{part}</mark>
-      ) : (
-        <span key={key++} dir="auto">
-          {part}
-        </span>
-      )
-    );
-  }
-  return nodes;
+/** "5 minutes ago" in the active language. */
+function relativeTime(iso: string, locale: string, now = Date.now()): string {
+  const at = Date.parse(iso);
+  if (!Number.isFinite(at)) return "";
+  const diff = (at - now) / 1000;
+  const abs = Math.abs(diff);
+  const rtf = new Intl.RelativeTimeFormat(locale === "ar" ? "ar-EG" : "en", { numeric: "auto" });
+  if (abs < 60) return rtf.format(Math.round(diff), "second");
+  if (abs < 3600) return rtf.format(Math.round(diff / 60), "minute");
+  if (abs < 86400) return rtf.format(Math.round(diff / 3600), "hour");
+  return rtf.format(Math.round(diff / 86400), "day");
 }
 
 export function Search() {
-  const { t, dir } = useI18n();
+  const { t, n } = useI18n();
   const { user } = useAuth();
   const toast = useToast();
   const [params, setParams] = useSearchParams();
   const urlQ = (params.get("q") ?? "").trim();
+  const uMode = urlMode(params.get("mode"));
+  const sid = params.get("sid") ?? "";
+  const vp = pageParam(params.get("vp"));
+  const tp = pageParam(params.get("tp"));
   const [q, setQ] = useState(urlQ);
-  const [mode, setMode] = useState<Mode>(readMode);
-  const [hits, setHits] = useState<ServerHit[] | null>(null);
-  const [videos, setVideos] = useState<VideoHit[]>([]);
+  const [mode, setMode] = useState<Mode>(() => uMode ?? readMode());
+  const [view, setView] = useStoredView(VIEW_KEY, "list");
+  const [snap, setSnap] = useState<Snapshot | null>(null);
+  const [titles, setTitles] = useState<Loaded<TitleVideo> | null>(null);
+  const [transcripts, setTranscripts] = useState<Loaded<TranscriptVideo> | null>(null);
+  const [busy, setBusy] = useState<Record<ListKind, boolean>>({
+    titles: false,
+    transcripts: false,
+  });
+  const [notice, setNotice] = useState(false);
   const [youtube, setYoutube] = useState<YTBlock | null>(null);
   const [withYouTube, setWithYouTube] = useState(false);
   // Story 26.8: YouTube search runs through yt-dlp on the server; without
@@ -149,13 +183,28 @@ export function Search() {
   const [pending, setPending] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [saved, setSaved] = useState<SavedSearch[]>([]);
+  const [recent, setRecent] = useState<RecentSearch[]>([]);
   const suggestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Only the newest search / suggest answer may land.
-  const searchSeq = useRef(0);
+  // Only the newest search (or open-by-sid) may land; page loads of an older
+  // one are dropped too.
+  const gen = useRef(0);
+  const ytSeq = useRef(0);
   const suggestSeq = useRef(0);
-  // The latest mode and YouTube toggle, for searches started by the URL.
+  const snapRef = useRef<Snapshot | null>(null);
+  const titlesRef = useRef<Loaded<TitleVideo> | null>(null);
+  const transcriptsRef = useRef<Loaded<TranscriptVideo> | null>(null);
+  const inflight = useRef<Record<ListKind, string>>({ titles: "", transcripts: "" });
+  const alive = useRef(true);
+  // The query, mode and sid the URL effect last started.
+  const lastRun = useRef<string | null>(null);
+  // The pages the URL asks for, for a refresh started by an expired page.
+  const wantRef = useRef({ vp, tp });
+  wantRef.current = { vp, tp };
+  // The latest mode, view and YouTube toggle, for searches started by the URL.
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  const viewRef = useRef<View>(view);
+  viewRef.current = view;
   const ytRef = useRef(withYouTube);
   ytRef.current = withYouTube;
 
@@ -167,22 +216,33 @@ export function Search() {
     }
   }, [mode]);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
       if (suggestTimer.current) clearTimeout(suggestTimer.current);
-    },
-    []
-  );
+    };
+  }, []);
 
   const refreshSaved = () =>
     api
       .get<{ items: SavedSearch[] }>("/api/search/saved")
-      .then((r) => setSaved(Array.isArray(r?.items) ? r.items.filter((x) => x != null) : []))
+      .then((r) => setSaved(listOf(r?.items)))
       .catch(() => setSaved([]));
+
+  const refreshRecent = useCallback(
+    () =>
+      api
+        .get<{ items: RecentSearch[] }>("/api/search/recent")
+        .then((r) => setRecent(listOf(r?.items).filter((x) => typeof x.search_id === "string")))
+        .catch(() => setRecent([])),
+    []
+  );
 
   useEffect(() => {
     void refreshSaved();
-  }, []);
+    void refreshRecent();
+  }, [refreshRecent]);
 
   useEffect(() => {
     let cancelled = false;
@@ -201,100 +261,312 @@ export function Search() {
     };
   }, []);
 
+  /** Shows one saved search's pages (both lists from the same sid). */
+  const commit = useCallback(
+    (
+      s: Snapshot | null,
+      vPage: number,
+      vItems: TitleVideo[],
+      tPage: number,
+      tItems: TranscriptVideo[]
+    ) => {
+      snapRef.current = s;
+      setSnap(s);
+      const a = s ? { sid: s.sid, page: vPage, items: vItems } : null;
+      const b = s ? { sid: s.sid, page: tPage, items: tItems } : null;
+      titlesRef.current = a;
+      transcriptsRef.current = b;
+      setTitles(a);
+      setTranscripts(b);
+      inflight.current = { titles: "", transcripts: "" };
+      setBusy({ titles: false, transcripts: false });
+    },
+    []
+  );
+
   const clearResults = useCallback(() => {
-    searchSeq.current += 1;
-    setHits(null);
-    setVideos([]);
+    gen.current += 1;
+    ytSeq.current += 1;
+    commit(null, 1, [], 1, []);
     setYoutube(null);
+    setYtPending(false);
     setErr(null);
     setPending(false);
+    setNotice(false);
+  }, [commit]);
+
+  const runYouTube = useCallback(async (query: string) => {
+    const seq = ++ytSeq.current;
+    setYtPending(true);
+    try {
+      const block = await api.get<YTBlock>(`/api/search/youtube?q=${encodeURIComponent(query)}`);
+      if (seq === ytSeq.current) {
+        setYoutube({
+          reason: block?.reason,
+          items: listOf(block?.items).filter((it) => it.youtube_id),
+        });
+      }
+    } catch {
+      if (seq === ytSeq.current) setYoutube({ items: [], reason: "error" });
+    } finally {
+      if (seq === ytSeq.current) setYtPending(false);
+    }
   }, []);
 
-  const runSearch = useCallback(
-    async (term: string, m: Mode, includeYouTube: boolean) => {
-      const query = term.trim();
-      if (!query) return;
-      const seq = ++searchSeq.current;
-      const withYt = includeYouTube && ytAvailableRef.current;
-      lastSearch.current = { term: query, mode: m, yt: includeYouTube };
+  /** Shows the URL of a saved search; a replace unless `push`. */
+  const showUrl = useCallback(
+    (s: SearchState, push = false) => {
+      if (!alive.current) return;
+      setParams(searchParamsOf(s), { replace: !push });
+    },
+    [setParams]
+  );
+
+  /**
+   * POSTs the search and shows pages `want` of the new saved search
+   * (clamped to its last pages). `notice` says the results were refreshed;
+   * `youtube` (when set) also runs or clears the YouTube leg.
+   */
+  const postSearch = useCallback(
+    async (
+      query: string,
+      m: Mode,
+      want: { vp: number; tp: number },
+      opts: { notice?: boolean; youtube?: boolean } = {}
+    ) => {
+      const g = ++gen.current;
+      lastSearch.current = {
+        term: query,
+        mode: m,
+        yt: opts.youtube ?? lastSearch.current?.yt ?? false,
+      };
+      const withYt = opts.youtube === true && ytAvailableRef.current;
+      if (opts.youtube !== undefined && !withYt) {
+        ytSeq.current += 1;
+        setYoutube(null);
+        setYtPending(false);
+      }
       setPending(true);
       setErr(null);
-      if (!withYt) setYoutube(null);
-      const list = <T,>(v: T[] | null | undefined) =>
-        Array.isArray(v) ? v.filter((x): x is T => x != null) : [];
       try {
         const res = await api.post<SearchResponse>("/api/search", {
           q: query,
           mode: m,
-          limit: SEARCH_LIMIT,
+          view: viewRef.current,
         });
-        if (seq !== searchSeq.current) return;
-        setHits(list(res?.hits));
-        setVideos(list(res?.videos));
+        if (g !== gen.current) return;
+        let vItems = listOf(res?.videos);
+        let tItems = listOf(res?.transcript_videos);
+        const s: Snapshot = {
+          sid: typeof res?.search_id === "string" ? res.search_id : "",
+          q: query,
+          mode: m,
+          pageSize:
+            res?.page_size && res.page_size > 0 ? res.page_size : defaultPageSize(viewRef.current),
+          passagesPageSize:
+            res?.passages_page_size && res.passages_page_size > 0
+              ? res.passages_page_size
+              : DEFAULT_PASSAGES_PAGE_SIZE,
+          titlesTotal: total(res?.videos_total, vItems.length),
+          transcriptsTotal: total(res?.transcript_total, tItems.length),
+        };
+        // Without a sid (an admin token) there is nothing to page.
+        const vPage = s.sid ? Math.min(want.vp, pageCount(s.titlesTotal, s.pageSize)) : 1;
+        const tPage = s.sid ? Math.min(want.tp, pageCount(s.transcriptsTotal, s.pageSize)) : 1;
+        if (vPage > 1 || tPage > 1) {
+          const [a, b] = await Promise.all([
+            vPage > 1 ? fetchPage<TitleVideo>("titles", s.sid, vPage, s.pageSize) : null,
+            tPage > 1 ? fetchPage<TranscriptVideo>("transcripts", s.sid, tPage, s.pageSize) : null,
+          ]);
+          if (g !== gen.current) return;
+          if (a) vItems = listOf(a.items);
+          if (b) tItems = listOf(b.items);
+        }
+        rememberSizes(s.sid, s);
+        commit(s, vPage, vItems, tPage, tItems);
+        setNotice(Boolean(opts.notice));
+        if (s.sid) {
+          lastRun.current = runKey(query, m, s.sid);
+          showUrl({ q: query, mode: m, sid: s.sid, vp: vPage, tp: tPage });
+        }
+        void refreshRecent();
       } catch (e) {
-        if (seq !== searchSeq.current) return;
+        if (g !== gen.current) return;
         setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
-        setHits([]);
-        setVideos([]);
+        commit(null, 1, [], 1, []);
       } finally {
-        if (seq === searchSeq.current) setPending(false);
+        if (g === gen.current) setPending(false);
       }
       // Story 26.8: the YouTube leg runs after the local results are on
       // screen. A yt-dlp search takes seconds and must never hold them up.
-      if (!withYt) return;
-      setYtPending(true);
-      try {
-        const block = await api.get<YTBlock>(`/api/search/youtube?q=${encodeURIComponent(query)}`);
-        if (seq === searchSeq.current) {
-          setYoutube({
-            reason: block?.reason,
-            items: list(block?.items).filter((it) => it.youtube_id),
-          });
-        }
-      } catch {
-        if (seq === searchSeq.current) setYoutube({ items: [], reason: "error" });
-      } finally {
-        if (seq === searchSeq.current) setYtPending(false);
-      }
+      if (withYt && g === gen.current) void runYouTube(query);
     },
-    [t]
+    [commit, refreshRecent, runYouTube, showUrl, t]
   );
 
-  // `?q=` drives the search: a deep link, the header search box, Back /
-  // Forward and the form all land here. `lastRun` keeps a re-run of the
-  // same effect (StrictMode) from sending a second request.
-  const lastRun = useRef<string | null>(null);
+  /** Opens a saved search by its sid (a reload, Back, a recent search). */
+  const openBySid = useCallback(
+    async (query: string, m: Mode, s: string, want: { vp: number; tp: number }, yt: boolean) => {
+      const g = ++gen.current;
+      lastSearch.current = { term: query, mode: m, yt };
+      setPending(true);
+      setErr(null);
+      const sizes = recallSizes(s) ?? {
+        pageSize: defaultPageSize(viewRef.current),
+        passagesPageSize: DEFAULT_PASSAGES_PAGE_SIZE,
+      };
+      try {
+        let [a, b] = await Promise.all([
+          fetchPage<TitleVideo>("titles", s, want.vp, sizes.pageSize),
+          fetchPage<TranscriptVideo>("transcripts", s, want.tp, sizes.pageSize),
+        ]);
+        if (g !== gen.current) return;
+        const size = a?.limit && a.limit > 0 ? a.limit : sizes.pageSize;
+        const snapshot: Snapshot = {
+          sid: s,
+          q: query,
+          mode: m,
+          pageSize: size,
+          passagesPageSize: sizes.passagesPageSize,
+          titlesTotal: total(a?.total, 0),
+          transcriptsTotal: total(b?.total, 0),
+        };
+        // A page past the end (a hand-made link) shows the last page.
+        const vPage = Math.min(want.vp, pageCount(snapshot.titlesTotal, size));
+        const tPage = Math.min(want.tp, pageCount(snapshot.transcriptsTotal, size));
+        if (vPage !== want.vp || tPage !== want.tp) {
+          const [a2, b2] = await Promise.all([
+            vPage !== want.vp ? fetchPage<TitleVideo>("titles", s, vPage, size) : null,
+            tPage !== want.tp ? fetchPage<TranscriptVideo>("transcripts", s, tPage, size) : null,
+          ]);
+          if (g !== gen.current) return;
+          if (a2) a = a2;
+          if (b2) b = b2;
+          showUrl({ q: query, mode: m, sid: s, vp: vPage, tp: tPage });
+        }
+        commit(snapshot, vPage, listOf(a?.items), tPage, listOf(b?.items));
+        setNotice(false);
+        void refreshRecent();
+      } catch (e) {
+        if (g !== gen.current) return;
+        if (isSearchExpired(e)) {
+          void postSearch(query, m, want, { notice: true, youtube: yt });
+          return;
+        }
+        setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
+        commit(null, 1, [], 1, []);
+      } finally {
+        if (g === gen.current) setPending(false);
+      }
+      if (g !== gen.current) return;
+      if (yt && ytAvailableRef.current) void runYouTube(query);
+      else {
+        ytSeq.current += 1;
+        setYoutube(null);
+        setYtPending(false);
+      }
+    },
+    [commit, postSearch, refreshRecent, runYouTube, showUrl, t]
+  );
+
+  /** Loads one page of one list from the saved search on screen. */
+  const loadPage = useCallback(
+    async (list: ListKind, page: number) => {
+      const s = snapRef.current;
+      if (!s?.sid) return;
+      const key = `${s.sid}:${page}`;
+      if (inflight.current[list] === key) return;
+      inflight.current[list] = key;
+      const g = gen.current;
+      setBusy((b) => ({ ...b, [list]: true }));
+      try {
+        const r = await fetchPage<TitleVideo & TranscriptVideo>(list, s.sid, page, s.pageSize);
+        if (g !== gen.current || inflight.current[list] !== key) return;
+        const loaded = { sid: s.sid, page, items: listOf(r?.items) };
+        if (list === "titles") {
+          titlesRef.current = loaded;
+          setTitles(loaded);
+        } else {
+          transcriptsRef.current = loaded;
+          setTranscripts(loaded);
+        }
+      } catch (e) {
+        if (g !== gen.current || inflight.current[list] !== key) return;
+        if (isSearchExpired(e)) {
+          void postSearch(s.q, s.mode, wantRef.current, { notice: true });
+          return;
+        }
+        toast.show({
+          tone: "error",
+          message: e instanceof ApiError ? e.problem.title : t("common.error"),
+        });
+      } finally {
+        if (inflight.current[list] === key) {
+          inflight.current[list] = "";
+          setBusy((b) => ({ ...b, [list]: false }));
+        }
+      }
+    },
+    [postSearch, t, toast]
+  );
+
+  /** A passage list found its saved search expired: refresh, keep the pages. */
+  const onExpired = useCallback(() => {
+    const s = snapRef.current;
+    if (s) void postSearch(s.q, s.mode, wantRef.current, { notice: true });
+  }, [postSearch]);
+
+  // The URL drives the search: a deep link, the header search box, Back /
+  // Forward, a recent search and the form all land here. With the sid on
+  // screen only the pages change; `lastRun` keeps a re-run of the same
+  // effect (StrictMode) from sending a second request.
   useEffect(() => {
-    if (lastRun.current === urlQ) return;
-    lastRun.current = urlQ;
+    if (!urlQ) {
+      lastRun.current = "";
+      setQ("");
+      clearResults();
+      return;
+    }
+    const m = uMode ?? modeRef.current;
+    const s = snapRef.current;
+    if (sid && s && s.sid === sid) {
+      if (titlesRef.current?.page !== vp) void loadPage("titles", vp);
+      if (transcriptsRef.current?.page !== tp) void loadPage("transcripts", tp);
+      return;
+    }
+    const key = runKey(urlQ, m, sid);
+    if (lastRun.current === key) return;
+    lastRun.current = key;
     setQ(urlQ);
-    if (urlQ) void runSearch(urlQ, modeRef.current, ytRef.current);
-    else clearResults();
-  }, [urlQ, runSearch, clearResults]);
+    if (uMode) setMode(uMode);
+    if (sid) void openBySid(urlQ, m, sid, { vp, tp }, ytRef.current);
+    else void postSearch(urlQ, m, { vp: 1, tp: 1 }, { youtube: ytRef.current });
+  }, [urlQ, uMode, sid, vp, tp, clearResults, loadPage, openBySid, postSearch]);
 
   // Re-run the last search (after a YouTube import, so the result shows
   // its new state).
   const rerun = () => {
     const last = lastSearch.current;
-    if (last) void runSearch(last.term, last.mode, last.yt);
+    if (last) void postSearch(last.term, last.mode, wantRef.current, { youtube: last.yt });
   };
 
   /** Shows `term` in the URL (a history entry) and searches it. */
   function search(term: string, m: Mode) {
     const query = term.trim();
     setSuggestions([]);
-    if (query === urlQ) {
-      // Same query again (a new mode, a retry): the URL does not change.
-      if (query) void runSearch(query, m, withYouTube);
+    if (!query) {
+      if (urlQ) {
+        lastRun.current = "";
+        setParams(new URLSearchParams());
+      }
+      clearResults();
       return;
     }
-    const nextParams = new URLSearchParams(params);
-    if (query) nextParams.set("q", query);
-    else nextParams.delete("q");
-    lastRun.current = query;
-    setParams(nextParams);
-    if (query) void runSearch(query, m, withYouTube);
-    else clearResults();
+    // Same query and mode again (a retry): the URL entry is replaced.
+    const same = query === urlQ && m === (uMode ?? modeRef.current);
+    lastRun.current = runKey(query, m, "");
+    setParams(searchParamsOf({ q: query, mode: m }), { replace: same });
+    void postSearch(query, m, { vp: 1, tp: 1 }, { youtube: withYouTube });
   }
 
   function onChangeQuery(value: string) {
@@ -342,7 +614,62 @@ export function Search() {
       );
   }
 
-  const shown = hits ? hits.slice(0, RESULT_WINDOW) : null;
+  function goPage(list: ListKind, page: number) {
+    const s = snapRef.current;
+    if (!s?.sid) return;
+    showUrl(
+      {
+        q: s.q,
+        mode: s.mode,
+        sid: s.sid,
+        vp: list === "titles" ? page : vp,
+        tp: list === "transcripts" ? page : tp,
+      },
+      true
+    );
+  }
+
+  function backToFirst() {
+    const s = snapRef.current;
+    setNotice(false);
+    if (s?.sid) showUrl({ q: s.q, mode: s.mode, sid: s.sid }, true);
+  }
+
+  function openRecent(r: RecentSearch) {
+    const m = asMode(r.mode);
+    setQ(r.q);
+    setMode(m);
+    if (!r.live) {
+      search(r.q, m);
+      return;
+    }
+    setNotice(false);
+    showUrl({ q: r.q, mode: m, sid: r.search_id }, true);
+  }
+
+  const removeRecent = (id: string) =>
+    void api
+      .delete(`/api/search/recent/${encodeURIComponent(id)}`)
+      .then(refreshRecent)
+      .catch(() => {});
+  const clearRecent = () =>
+    void api
+      .delete("/api/search/recent")
+      .then(refreshRecent)
+      .catch(() => {});
+
+  // Links from the results carry the search and both pages, so the
+  // matches page can lead back to exactly this screen.
+  const here: SearchState | null = snap
+    ? {
+        q: snap.q,
+        mode: snap.mode,
+        sid: snap.sid,
+        vp: titles?.page ?? 1,
+        tp: transcripts?.page ?? 1,
+      }
+    : null;
+  const nothing = snap && !err && snap.titlesTotal === 0 && snap.transcriptsTotal === 0;
 
   return (
     <section className="mkt-page mkt-search">
@@ -391,50 +718,90 @@ export function Search() {
             )}
           </form>
 
+          {notice && (
+            <div className="mkt-search__notice" role="status">
+              <span>{t("search.refreshed")}</span>
+              <button type="button" className="mkt-link-btn" onClick={backToFirst}>
+                {t("search.backToFirst")}
+              </button>
+              <button
+                type="button"
+                className="mkt-icon-btn mkt-search__notice-close"
+                aria-label={t("common.dismiss")}
+                onClick={() => setNotice(false)}
+              >
+                ×
+              </button>
+            </div>
+          )}
+
           {err && <ErrorState kind="server" title={t("common.error")} description={err} />}
 
-          {shown && shown.length === 0 && videos.length === 0 && !err && (
-            <EmptyState kind="filtered_out" title={t("search.didYouMean")} />
+          {nothing && <EmptyState kind="filtered_out" title={t("search.didYouMean")} />}
+
+          {snap && here && !nothing && (
+            <div className="mkt-search__toolbar">
+              <ViewToggle view={view} onChange={setView} />
+            </div>
           )}
 
-          {videos.length > 0 && (
-            <>
-              <h2 className="mkt-results__heading">{t("search.videos")}</h2>
-              <ul className="mkt-results" data-testid="search-videos">
-                {videos.map((v) => (
-                  <li key={v.video_id} className="mkt-result">
-                    <Link to={`/videos/${v.video_id}`}>
-                      <span className="mkt-result__title" dir="auto">
-                        {v.title}
-                      </span>
-                      {v.duration_sec != null && (
-                        <span className="mkt-result__time"> · {ts(v.duration_sec)}</span>
-                      )}
-                    </Link>
-                  </li>
+          {snap && here && titles && snap.titlesTotal > 0 && (
+            <ResultSection
+              id="titles"
+              heading={t("search.videos")}
+              page={titles.page}
+              total={snap.titlesTotal}
+              pageSize={snap.pageSize}
+              canPage={Boolean(snap.sid)}
+              busy={busy.titles}
+              onPage={(p) => goPage("titles", p)}
+            >
+              <ul
+                className={`mkt-sresults mkt-sresults--${view}`}
+                data-testid="search-videos"
+                aria-label={t("search.videos")}
+              >
+                {titles.items.map((v) => (
+                  <VideoResult
+                    key={v.video_id}
+                    video={v}
+                    view={view}
+                    href={matchesHref(v.video_id, here)}
+                  />
                 ))}
               </ul>
-            </>
+            </ResultSection>
           )}
 
-          {shown && shown.length > 0 && (
-            <>
-              {videos.length > 0 && (
-                <h2 className="mkt-results__heading">{t("search.passages")}</h2>
-              )}
-              <ul className="mkt-results">
-                {shown.map((h) => (
-                  <li key={h.segment_id} className="mkt-result">
-                    <Link to={`/videos/${h.video_id}/watch?t=${Math.floor(h.start_sec)}`}>
-                      <span className="mkt-result__time">
-                        [{ts(h.start_sec)} {dir === "rtl" ? "←" : "→"} {ts(h.end_sec)}]
-                      </span>
-                      <span className="mkt-result__snippet">{renderSnippet(h.snippet)}</span>
-                    </Link>
-                  </li>
+          {snap && here && transcripts && snap.transcriptsTotal > 0 && (
+            <ResultSection
+              id="transcripts"
+              heading={t("search.passages")}
+              page={transcripts.page}
+              total={snap.transcriptsTotal}
+              pageSize={snap.pageSize}
+              canPage={Boolean(snap.sid)}
+              busy={busy.transcripts}
+              onPage={(p) => goPage("transcripts", p)}
+            >
+              <ul
+                className={`mkt-sresults mkt-sresults--${view}`}
+                data-testid="search-transcripts"
+                aria-label={t("search.passages")}
+              >
+                {transcripts.items.map((v) => (
+                  <TranscriptResult
+                    key={`${transcripts.sid}:${v.video_id}`}
+                    video={v}
+                    view={view}
+                    href={matchesHref(v.video_id, here)}
+                    sid={snap.sid}
+                    passagesPageSize={snap.passagesPageSize}
+                    onExpired={onExpired}
+                  />
                 ))}
               </ul>
-            </>
+            </ResultSection>
           )}
 
           {ytAvailable && withYouTube && (ytPending || youtube) && (
@@ -442,52 +809,386 @@ export function Search() {
               block={youtube}
               pending={ytPending}
               canImport={Boolean(user?.is_admin)}
-              localVideos={videos}
+              localVideos={titles?.items ?? []}
               onImported={rerun}
             />
           )}
         </div>
 
-        <aside className="mkt-search__side" aria-label={t("search.saved")}>
-          <h2>{t("search.saved")}</h2>
-          {saved.length === 0 ? (
-            <p className="mkt-muted">{t("common.empty")}</p>
-          ) : (
-            <ul className="mkt-list">
-              {saved.map((s) => (
-                <li key={s.id}>
-                  <button
-                    type="button"
-                    className="mkt-link-btn"
-                    onClick={() => {
-                      const m = asMode(s.mode);
-                      setQ(s.q);
-                      setMode(m);
-                      search(s.q, m);
-                    }}
-                  >
-                    {s.q}
-                  </button>
-                  <button
-                    type="button"
-                    className="mkt-icon-btn"
-                    aria-label={`${t("common.delete")} ${s.q}`}
-                    onClick={() =>
-                      void api
-                        .delete(`/api/search/saved/${encodeURIComponent(s.id)}`)
-                        .then(refreshSaved)
-                        .catch(() => {})
-                    }
-                  >
-                    ×
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </aside>
+        <div className="mkt-search__side">
+          <aside aria-label={t("search.saved")}>
+            <h2>{t("search.saved")}</h2>
+            {saved.length === 0 ? (
+              <p className="mkt-muted">{t("common.empty")}</p>
+            ) : (
+              <ul className="mkt-list">
+                {saved.map((s) => (
+                  <li key={s.id}>
+                    <button
+                      type="button"
+                      className="mkt-link-btn"
+                      onClick={() => {
+                        const m = asMode(s.mode);
+                        setQ(s.q);
+                        setMode(m);
+                        search(s.q, m);
+                      }}
+                    >
+                      {s.q}
+                    </button>
+                    <button
+                      type="button"
+                      className="mkt-icon-btn"
+                      aria-label={`${t("common.delete")} ${s.q}`}
+                      onClick={() =>
+                        void api
+                          .delete(`/api/search/saved/${encodeURIComponent(s.id)}`)
+                          .then(refreshSaved)
+                          .catch(() => {})
+                      }
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </aside>
+          <RecentSearches
+            items={recent}
+            onOpen={openRecent}
+            onRemove={removeRecent}
+            onClear={clearRecent}
+            n={n}
+          />
+        </div>
       </div>
     </section>
+  );
+}
+
+/** A list's heading, its rows and its pager ("Page 2 of 5 · 93 videos"). */
+function ResultSection({
+  id,
+  heading,
+  page,
+  total: count,
+  pageSize,
+  canPage,
+  busy,
+  onPage,
+  children,
+}: {
+  id: ListKind;
+  heading: string;
+  page: number;
+  total: number;
+  pageSize: number;
+  canPage: boolean;
+  busy: boolean;
+  onPage: (page: number) => void;
+  children: ReactNode;
+}) {
+  const { t, n } = useI18n();
+  const pages = pageCount(count, pageSize);
+  return (
+    <section
+      className="mkt-sresults-section"
+      aria-labelledby={`mkt-sr-${id}`}
+      aria-busy={busy}
+      data-testid={`section-${id}`}
+    >
+      <h2 id={`mkt-sr-${id}`} className="mkt-results__heading">
+        {heading}
+      </h2>
+      {children}
+      <div className="mkt-search__pager">
+        <span className="mkt-muted" data-testid={`pageinfo-${id}`}>
+          {t("search.pageOf", { page: n(page), pages: n(pages), total: n(count) })}
+        </span>
+        {canPage && (
+          <Pagination
+            page={page}
+            pageCount={pages}
+            onChange={onPage}
+            label={heading}
+            previousLabel={t("pagination.previous")}
+            nextLabel={t("pagination.next")}
+            pageLabel={(p) => t("pagination.page", { page: n(p) })}
+          />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function VideoTitle({ video }: { video: TitleVideo }) {
+  if (video.title_snippet) return <>{renderSnippet(video.title_snippet)}</>;
+  return <span dir="auto">{video.title}</span>;
+}
+
+/**
+ * One video in either list. List view: a row with poster, title, library
+ * and duration; grid view: a card. The poster and title open the video's
+ * matches page; `children` adds the list-specific parts.
+ */
+function VideoResult({
+  video,
+  view,
+  href,
+  badges,
+  children,
+}: {
+  video: TitleVideo;
+  view: View;
+  href: string;
+  badges?: ReactNode;
+  children?: ReactNode;
+}) {
+  const duration =
+    typeof video.duration_sec === "number" ? formatDuration(video.duration_sec) : null;
+  if (view === "grid") {
+    return (
+      <li className="mkt-card mkt-scard">
+        <Link to={href} className="mkt-scard__link">
+          <VideoPoster videoId={video.video_id} src={video.poster_url} />
+          <span className="mkt-card__title mkt-result__title">
+            <VideoTitle video={video} />
+          </span>
+          {duration && <span className="mkt-card__meta">{duration}</span>}
+        </Link>
+        {badges && <div className="mkt-svideo__badges">{badges}</div>}
+        {children}
+      </li>
+    );
+  }
+  return (
+    <li className="mkt-svideo">
+      <Link to={href} className="mkt-svideo__poster" tabIndex={-1} aria-hidden="true">
+        <VideoPoster videoId={video.video_id} src={video.poster_url} />
+      </Link>
+      <div className="mkt-svideo__body">
+        <Link to={href} className="mkt-svideo__title mkt-result__title">
+          <VideoTitle video={video} />
+        </Link>
+        <div className="mkt-svideo__meta mkt-muted">
+          {video.library_name && (
+            <span className="mkt-svideo__library" dir="auto">
+              {video.library_name}
+            </span>
+          )}
+          {duration && <span className="mkt-svideo__duration">{duration}</span>}
+        </div>
+        {badges && <div className="mkt-svideo__badges">{badges}</div>}
+        {children}
+      </div>
+    </li>
+  );
+}
+
+function TranscriptResult({
+  video,
+  view,
+  href,
+  sid,
+  passagesPageSize,
+  onExpired,
+}: {
+  video: TranscriptVideo;
+  view: View;
+  href: string;
+  sid: string;
+  passagesPageSize: number;
+  onExpired: () => void;
+}) {
+  const { t, n } = useI18n();
+  // Grid cards keep their passages folded until asked.
+  const [open, setOpen] = useState(false);
+  const badges = (
+    <>
+      <Badge tone="accent">{matchesLabel(t, n, video.matches)}</Badge>
+      {video.in_title && <Badge tone="success">{t("search.alsoInTitle")}</Badge>}
+    </>
+  );
+  const passages = (
+    <PassageList video={video} sid={sid} pageSize={passagesPageSize} onExpired={onExpired} />
+  );
+  return (
+    <VideoResult video={video} view={view} href={href} badges={badges}>
+      {view === "grid" ? (
+        <>
+          <Button size="sm" variant="ghost" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+            {open ? t("search.hidePassages") : t("search.showPassages")}
+          </Button>
+          {open && passages}
+        </>
+      ) : (
+        passages
+      )}
+    </VideoResult>
+  );
+}
+
+/**
+ * A video's passages: the top few from the results, then (Show all) every
+ * matching passage, best first, a page at a time. Each opens the player at
+ * its time.
+ */
+function PassageList({
+  video,
+  sid,
+  pageSize,
+  onExpired,
+}: {
+  video: TranscriptVideo;
+  sid: string;
+  pageSize: number;
+  onExpired: () => void;
+}) {
+  const { t, n, dir } = useI18n();
+  const toast = useToast();
+  const [all, setAll] = useState<{ items: Passage[]; total: number } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const top = listOf(video.passages);
+  const shown = all ? all.items : top;
+
+  async function load(offset: number) {
+    setLoading(true);
+    try {
+      const r = await api.get<PassagesPage>(
+        `/api/search/passages?sid=${encodeURIComponent(sid)}&video_id=${encodeURIComponent(
+          video.video_id
+        )}&order=score&offset=${offset}&limit=${pageSize}`
+      );
+      const items = listOf(r?.items);
+      setAll((prev) => {
+        const base = offset === 0 || !prev ? [] : prev.items;
+        const seen = new Set(base.map((p) => p.segment_id));
+        return {
+          items: [...base, ...items.filter((p) => !seen.has(p.segment_id))],
+          total: typeof r?.total === "number" ? r.total : video.matches,
+        };
+      });
+    } catch (e) {
+      if (isSearchExpired(e)) {
+        onExpired();
+        return;
+      }
+      toast.show({
+        tone: "error",
+        message: e instanceof ApiError ? e.problem.title : t("common.error"),
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="mkt-passages">
+      {shown.length > 0 && (
+        <ul className="mkt-results mkt-passages__list">
+          {shown.map((p) => (
+            <li key={p.segment_id} className="mkt-result">
+              <Link to={watchHref(video.video_id, p.start_sec)}>
+                <span className="mkt-result__time">
+                  [{ts(p.start_sec)} {dir === "rtl" ? "←" : "→"} {ts(p.end_sec)}]
+                </span>
+                <span className="mkt-result__snippet">{renderSnippet(p.snippet)}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mkt-passages__more">
+        {!all && sid && video.matches > top.length && (
+          <Button size="sm" variant="ghost" loading={loading} onClick={() => void load(0)}>
+            {t("search.showAll", { count: n(video.matches) })}
+          </Button>
+        )}
+        {all && all.items.length < all.total && (
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={loading}
+            onClick={() => void load(all.items.length)}
+          >
+            {t("common.loadMore")}
+          </Button>
+        )}
+        {all && (
+          <Button size="sm" variant="ghost" onClick={() => setAll(null)}>
+            {t("search.showFewer")}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The user's recent searches: open a live one by its sid, re-run an expired one. */
+function RecentSearches({
+  items,
+  onOpen,
+  onRemove,
+  onClear,
+  n,
+}: {
+  items: RecentSearch[];
+  onOpen: (r: RecentSearch) => void;
+  onRemove: (sid: string) => void;
+  onClear: () => void;
+  n: (v: number) => string;
+}) {
+  const { t, locale, formatDate } = useI18n();
+  return (
+    <aside aria-label={t("search.recent")} className="mkt-recent">
+      <div className="mkt-recent__head">
+        <h2>{t("search.recent")}</h2>
+        {items.length > 0 && (
+          <button type="button" className="mkt-link-btn" onClick={onClear}>
+            {t("search.recent.clear")}
+          </button>
+        )}
+      </div>
+      {items.length === 0 ? (
+        <p className="mkt-muted">{t("common.empty")}</p>
+      ) : (
+        <ul className="mkt-list">
+          {items.map((r) => (
+            <li key={r.search_id} className="mkt-recent__item">
+              <button type="button" className="mkt-recent__open" onClick={() => onOpen(r)}>
+                <span className="mkt-recent__q" dir="auto">
+                  {r.q}
+                </span>
+                <span className="mkt-recent__meta mkt-muted">
+                  {t(`search.mode.${asMode(r.mode)}`)} ·{" "}
+                  <time dateTime={r.created_at} title={formatDate(r.created_at)}>
+                    {relativeTime(r.created_at, locale)}
+                  </time>
+                </span>
+                <span className="mkt-recent__meta mkt-muted">
+                  {t("search.recent.counts", {
+                    titles: n(r.title_count ?? 0),
+                    transcripts: n(r.transcript_count ?? 0),
+                  })}
+                </span>
+                <Badge tone={r.live ? "success" : "neutral"}>
+                  {r.live ? t("search.recent.live") : t("search.recent.expired")}
+                </Badge>
+              </button>
+              <button
+                type="button"
+                className="mkt-icon-btn"
+                aria-label={t("search.recent.remove", { q: r.q })}
+                onClick={() => onRemove(r.search_id)}
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </aside>
   );
 }
 
@@ -508,7 +1209,7 @@ function YouTubeSection({
   pending: boolean;
   /** Importing is an editor (admin) write; the server refuses others. */
   canImport: boolean;
-  localVideos: VideoHit[];
+  localVideos: VideoCard[];
   onImported: () => void;
 }) {
   const { t, n } = useI18n();
@@ -613,16 +1314,16 @@ function ImportModal({
   onImported,
 }: {
   item: YTItem;
-  localVideos: VideoHit[];
+  localVideos: VideoCard[];
   onClose: () => void;
   onImported: () => void;
 }) {
   const { t } = useI18n();
   const toast = useToast();
   const [find, setFind] = useState("");
-  const [found, setFound] = useState<VideoHit[] | null>(null);
+  const [found, setFound] = useState<VideoCard[] | null>(null);
   const [finding, setFinding] = useState(false);
-  const [chosen, setChosen] = useState<VideoHit | null>(null);
+  const [chosen, setChosen] = useState<VideoCard | null>(null);
   const [busy, setBusy] = useState(false);
 
   const choices = found ?? localVideos;
@@ -636,8 +1337,8 @@ function ImportModal({
     }
     setFinding(true);
     try {
-      const res = await api.post<SearchResponse>("/api/search", { q, mode: "fts", limit: 20 });
-      setFound(res.videos ?? []);
+      const res = await api.post<SearchResponse>("/api/search", { q, mode: "fts", view: "list" });
+      setFound(listOf(res?.videos));
     } catch (err) {
       setFound([]);
       toast.show({

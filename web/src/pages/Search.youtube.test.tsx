@@ -47,13 +47,18 @@ function mockServer(opts: { available: boolean; ytItems?: unknown[]; imported?: 
   });
   post.mockImplementation((url: string, body: { q?: string }) => {
     if (url === "/api/search") {
+      // The saved-search shape; an admin-token search has no sid.
       return Promise.resolve({
-        hits: [],
-        total: 0,
+        search_id: "",
+        page_size: 20,
+        passages_page_size: 20,
         videos:
           body.q === "other"
             ? [{ video_id: "vid-2", title: "Another lesson" }]
             : [{ video_id: "vid-1", title: "kahf lesson one" }],
+        videos_total: 1,
+        transcript_videos: [],
+        transcript_total: 0,
       });
     }
     if (url.includes("/import-youtube")) {
@@ -168,6 +173,7 @@ describe("Search — From YouTube", () => {
     const dialog = await screen.findByRole("dialog");
     await user.type(within(dialog).getByRole("searchbox"), "other");
     await user.click(within(dialog).getByRole("button", { name: "Search" }));
+    expect(post).toHaveBeenLastCalledWith("/api/search", { q: "other", mode: "fts", view: "list" });
     await user.click(await within(dialog).findByLabelText(/Another lesson/));
     await user.click(within(dialog).getByRole("button", { name: "Import" }));
     await waitFor(() =>
