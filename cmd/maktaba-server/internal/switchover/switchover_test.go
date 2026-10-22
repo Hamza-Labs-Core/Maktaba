@@ -213,3 +213,42 @@ func TestANoticeOpensOnItsMachineOnly(t *testing.T) {
 		t.Fatal("two seals alike: the nonce is not random")
 	}
 }
+
+// A standby's kit is sealed again under the same kit key at every change: no two seals
+// share a key (the same chunk sealed twice differs past its salt), and a chunk of one
+// seal does not open among another's.
+func TestEachSealOfAKitHasItsOwnKey(t *testing.T) {
+	homePriv, _ := keypair(t)
+	_, nodePub := keypair(t)
+	key, _ := KitKey(homePriv, nodePub, "standby:n1")
+	seal := func() [][]byte {
+		var out [][]byte
+		s := NewSealer(key, "standby:n1", func(_ uint64, _ bool, sealed []byte) error {
+			out = append(out, append([]byte(nil), sealed...))
+			return nil
+		})
+		if _, err := s.Write(bytes.Repeat([]byte("k"), ChunkSize+10)); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	a, b := seal(), seal()
+	if len(a) != 2 || len(b) != 2 {
+		t.Fatalf("chunks: %d %d", len(a), len(b))
+	}
+	if bytes.Equal(a[0][:sealSaltSize], b[0][:sealSaltSize]) || bytes.Equal(a[0][sealSaltSize:], b[0][sealSaltSize:]) ||
+		bytes.Equal(a[1], b[1]) {
+		t.Fatal("two seals share a key")
+	}
+	var out bytes.Buffer
+	o := NewOpener(key, "standby:n1", &out)
+	if err := o.Chunk(0, false, a[0]); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Chunk(1, true, b[1]); err == nil {
+		t.Fatal("a chunk of another seal opens")
+	}
+}

@@ -19,12 +19,31 @@ import (
 // The kit travels sealed (specs/epics/37-node-replica, "Switching the home"): a key
 // both ends derive from the home's cluster key and the machine's own key (X25519, then
 // HKDF-SHA256 with the switchover's id), so only the machine taking over can open it and
-// only the holder of the cluster key can have made it; in chunks of ChunkSize, each
+// only the holder of the cluster key can have made it. Each seal of a kit draws a random
+// salt, which its first chunk carries, and seals under a key of its own derived from the
+// kit's key and that salt: a standby home's kit is sealed again under the same kit key at
+// every change, and no two seals may share a key and nonce. In chunks of ChunkSize, each
 // sealed with ChaCha20-Poly1305 under its index (nonce and associated data), the last one
 // marked, so a chunk cannot be dropped, moved or added unseen.
 
 // ChunkSize is how much of the kit one sealed chunk carries.
 const ChunkSize = 1 << 20
+
+// sealSaltSize is the size of a seal's salt, at the start of its first chunk.
+const sealSaltSize = 32
+
+// SealFormat is the seal's format: a kit's hash names it (Kit.StableHash), so a standby
+// holding a kit sealed otherwise is sent it again.
+const SealFormat = 2
+
+// sealAEAD is a seal's AEAD: key, the kit's, and salt, the seal's.
+func sealAEAD(key, salt []byte) (cipher.AEAD, error) {
+	k, err := hkdf.Key(sha256.New, key, salt, "maktaba-home-kit-seal", chacha20poly1305.KeySize)
+	if err != nil {
+		return nil, err
+	}
+	return chacha20poly1305.New(k)
+}
 
 // KitKey is the kit's key between priv (one end's X25519 private key) and peer (the
 // other end's public key) for switchover id.
@@ -154,6 +173,8 @@ type Sealer struct {
 	buf  []byte
 	n    uint64
 	err  error
+	// aead is this seal's (its salt drawn at the first chunk)
+	aead cipher.AEAD
 }
 
 // NewSealer seals for switchover id under key.
@@ -184,11 +205,19 @@ func (s *Sealer) Write(p []byte) (int, error) {
 }
 
 func (s *Sealer) flush(last bool) error {
-	a, err := chacha20poly1305.New(s.key)
-	if err != nil {
-		return err
+	var sealed []byte
+	if s.aead == nil {
+		salt := make([]byte, sealSaltSize)
+		if _, err := rand.Read(salt); err != nil {
+			return err
+		}
+		a, err := sealAEAD(s.key, salt)
+		if err != nil {
+			return err
+		}
+		s.aead, sealed = a, salt
 	}
-	sealed := a.Seal(nil, chunkNonce(s.n), s.buf, chunkAD(s.id, s.n, last))
+	sealed = s.aead.Seal(sealed, chunkNonce(s.n), s.buf, chunkAD(s.id, s.n, last))
 	if err := s.emit(s.n, last, sealed); err != nil {
 		return err
 	}
@@ -215,6 +244,8 @@ type Opener struct {
 	n    uint64
 	done bool
 	w    io.Writer
+	// aead is the seal's (its salt read from the first chunk)
+	aead cipher.AEAD
 }
 
 // NewOpener opens chunks of switchover id under key into w.
@@ -227,11 +258,17 @@ func (o *Opener) Chunk(i uint64, last bool, sealed []byte) error {
 	if o.done || i != o.n {
 		return fmt.Errorf("switchover: kit chunk %d out of order (want %d)", i, o.n)
 	}
-	a, err := chacha20poly1305.New(o.key)
-	if err != nil {
-		return err
+	if o.aead == nil {
+		if len(sealed) < sealSaltSize {
+			return fmt.Errorf("switchover: kit chunk %d does not open: no salt", i)
+		}
+		a, err := sealAEAD(o.key, sealed[:sealSaltSize])
+		if err != nil {
+			return err
+		}
+		o.aead, sealed = a, sealed[sealSaltSize:]
 	}
-	plain, err := a.Open(nil, chunkNonce(i), sealed, chunkAD(o.id, i, last))
+	plain, err := o.aead.Open(nil, chunkNonce(i), sealed, chunkAD(o.id, i, last))
 	if err != nil {
 		return fmt.Errorf("switchover: kit chunk %d does not open: %w", i, err)
 	}
@@ -276,7 +313,7 @@ func ReadChunks(r io.Reader, fn func(i uint64, last bool, sealed []byte) error) 
 			return err
 		}
 		size := binary.BigEndian.Uint32(h[9:])
-		if size > ChunkSize+chacha20poly1305.Overhead {
+		if size > ChunkSize+chacha20poly1305.Overhead+sealSaltSize {
 			return fmt.Errorf("switchover: a kit chunk of %d bytes", size)
 		}
 		sealed := make([]byte, size)

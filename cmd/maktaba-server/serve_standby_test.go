@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -117,6 +118,17 @@ func TestAStandbyTakesTheKitOverTheChannel(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(keys, nodecopy.StandbyKitFile)); err != nil {
 		t.Fatalf("the kit is not kept: %v", err)
+	}
+	// an older kit (an old seal sent again) never replaces it
+	older := *kit
+	older.MadeAt = kit.MadeAt.Add(-time.Hour)
+	oldSealed := filepath.Join(dir, "older.chunks")
+	if _, err := sealKit(&older, clusterPriv, nodePub, id, oldSealed); err != nil {
+		t.Fatal(err)
+	}
+	send(id, oldSealed)
+	if ok, detail := commit(); ok || !strings.Contains(fmt.Sprint(detail), "older") {
+		t.Fatalf("an older kit was taken: %v", detail)
 	}
 	st := s.emergencyStatus(ctx)
 	if !st.Standby || st.KitTerm != 2 || st.KitMadeAt == nil || st.HomeAnswers || st.Ready ||

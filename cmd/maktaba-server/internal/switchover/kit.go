@@ -182,6 +182,8 @@ SELECT r.rolname, COALESCE(r.rolpassword, ''), r.rolcanlogin, r.rolreplication,
 // for them.
 func (k *Kit) StableHash() string {
 	h := sha256.New()
+	// a kit sealed in an older format is another kit: the standby holding it gets it again
+	fmt.Fprintf(h, "seal %d\n", SealFormat)
 	fmt.Fprintf(h, "term %d\n", k.Term)
 	names := make([]string, 0, len(k.Files))
 	for n := range k.Files {

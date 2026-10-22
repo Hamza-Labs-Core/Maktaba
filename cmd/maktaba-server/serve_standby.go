@@ -548,6 +548,16 @@ func (s *switching) standbyCommit(id string, args json.RawMessage) (any, error) 
 		_ = os.Remove(part)
 		return nil, errors.New("the kit is another machine's")
 	}
+	// never an older kit for the one held (an old seal sent again): its term and when it
+	// was made, sealed in it, say which is newer
+	if b, err := os.ReadFile(standbyKitPath(nodecopy.StandbyKitMeta)); err == nil {
+		var held standbyMeta
+		if json.Unmarshal(b, &held) == nil && (k.Term < held.Term || (k.Term == held.Term && k.MadeAt.Before(held.MadeAt))) {
+			_ = os.Remove(part)
+			return nil, fmt.Errorf("the kit is older than the one this machine holds (term %d, made %s)", held.Term,
+				held.MadeAt.Format(time.RFC3339))
+		}
+	}
 	if err := os.Rename(part, standbyKitPath(nodecopy.StandbyKitFile)); err != nil {
 		return nil, err
 	}
