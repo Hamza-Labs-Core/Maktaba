@@ -656,6 +656,56 @@ def test_windows_writes_of_one_node_config_run_one_at_a_time(
     assert sorted(p.name for p in roaming.parent.iterdir()) == ["node.json"]
 
 
+class _NoLock:
+    """``_one_at_a_time`` where the lock file cannot be made: a folder this user may not
+    write, another user's lock file, a full disk."""
+
+    def __init__(self, path: Path, *, wait: float) -> None:
+        self.path = path
+
+    def __enter__(self) -> bool:
+        raise PermissionError(13, "Permission denied", str(self.path.with_name(".node.json.lock")))
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+
+@pytest.mark.parametrize("how", ["no lock file can be made", "a read-only lock file"])
+def test_a_load_that_cannot_take_the_lock_reads_past_the_leftovers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, how: str
+) -> None:
+    """A load whose recovery cannot take the lock moves nothing, still reads the node
+    config from what a failed write left (the node stays joined) and says why once."""
+    if how == "a read-only lock file" and os.name != "nt":
+        pytest.skip("the lock file is Windows'")
+    from maktaba_pipeline import log
+
+    folder = tmp_path / "Maktaba"
+    folder.mkdir()
+    path = folder / "node.json"
+    bak = _leftover(folder, _named(".bak", age=120), json.dumps(_JOINED), age=3600)
+    lock = folder / ".node.json.lock"
+    if how == "a read-only lock file":
+        lock.write_text("", encoding="utf-8")
+        os.chmod(lock, stat.S_IREAD)
+        monkeypatch.setattr(config, "_BUSY_TRIES", 2)  # its open is denied for good
+    else:
+        monkeypatch.setattr(config, "_one_at_a_time", _NoLock)
+    warnings = _Warnings()
+    monkeypatch.setattr(log, "get_logger", lambda: warnings)
+    monkeypatch.setattr(config, "_leftovers_said", set())
+    try:
+        for _ in range(2):
+            cfg = config.load(path)
+            assert cfg is not None and cfg.joined and cfg.node_id == "n1"
+        assert bak.exists() and not path.exists()
+        assert warnings.events == ["node_config_leftovers"]  # said once
+        assert warnings.fields[0]["left"] == [bak.name] and warnings.fields[0]["error"]
+    finally:
+        if lock.exists():
+            os.chmod(lock, stat.S_IREAD | stat.S_IWRITE)
+
+
 def test_a_node_json_saved_with_a_bom_is_whole(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -376,14 +376,10 @@ don't append a line here; docs-only PRs are exempt.
   the file: the old one is put back, or the new copy takes its place. What even that could not
   finish (the old file under a backup name, the new one as a temp file) is still the node
   config for every reader, so a roaming one stays this PC's and the node stays joined; the next
-  start puts it back without ever replacing a file a write or another start put there
-  meanwhile, and never an older backup while a newer one is busy; a broken `node.json` is kept
-  beside it (`node.json.broken-…`), never removed. Writes of one node config run one at a time
-  (a lock beside it, which recovery takes too): two ReplaceFileW calls at once could undo one
-  another. A `node.json` an editor saved with a UTF-8 BOM is read as the node config by every
-  reader. A re-join keeps it as `node.json.bak` and removes the rest, and the node's uninstall
-  script names it among the files to delete to forget the home. A claim that cannot be written
-  leaves the file as it was and says so once. The temp file a node config is written through is created the user's
+  start puts it back without ever replacing a file a write put there meanwhile. A re-join keeps
+  it as `node.json.bak` and removes the rest, and the node's uninstall script names it among
+  the files to delete to forget the home. A claim that cannot be written leaves the file as it
+  was and says so once. The temp file a node config is written through is created the user's
   alone, with no other handle open on it, and when that cannot be done the credential is never
   written. A PC it does not belong to skips it: it is no home's machine, and its own join
   writes `%LOCALAPPDATA%\Maktaba\node.json`, never the other PC's identity. `maktaba-server`
@@ -542,6 +538,16 @@ don't append a line here; docs-only PRs are exempt.
   sign-in page says those were not checked. And a thaw still owed by a switch that was called off
   or failed no longer makes the home writable while a later switch has it frozen: a thaw of a
   switch another came after changes nothing, and a freeze and a thaw run one at a time.
+- **Node config writes no longer undo one another on Windows, and a node.json an editor saved
+  is kept** (story 38.1, follow-up of #231). Writes of one node config, and the start that puts
+  back what a write that could not finish left, now run one at a time (a lock beside it,
+  `.node.json.lock`): two ReplaceFileW calls on one file at once could put an older node.json
+  back over a newer one. A start puts a backup back only without replacing a file there, only
+  after looking at `node.json` again, and never an older backup while a newer one is busy. A
+  `node.json` saved with a UTF-8 BOM (Notepad, PowerShell 5.1) is the node config for every
+  reader, and a broken one a backup replaces is kept beside it (`node.json.broken-…`), never
+  removed. A start that cannot make the lock (a folder it may not write, a full disk) leaves the
+  leftovers and reads past them, as before.
 
 ## [0.2.0] - 2026-10-19
 

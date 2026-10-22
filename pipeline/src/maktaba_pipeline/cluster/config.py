@@ -480,11 +480,18 @@ def _recover(path: Path) -> None:
     names them. A leftover a write may still be making (``_in_progress``) is left as it
     is and not named. It runs with the write lock (``_one_at_a_time``) or not at all: a
     write that runs settles its own files, and a later load looks again."""
-    if not _leftovers(path):
+    left = _leftovers(path)
+    if not left:
         return
-    with _one_at_a_time(path, wait=_RECOVER_WAIT_SEC) as held:
-        if held:
-            _recover_held(path)
+    try:
+        with _one_at_a_time(path, wait=_RECOVER_WAIT_SEC) as held:
+            if held:
+                _recover_held(path)
+    except OSError as exc:
+        # no lock to be had (a folder this user may not write, a read-only or another
+        # user's lock file, a full disk): nothing is moved, the load reads past the
+        # leftovers (_source) and the warning says why
+        _tell_leftovers(path, kept=[p.name for p in left], error=str(exc))
 
 
 def _recover_held(path: Path) -> None:
@@ -518,21 +525,42 @@ def _recover_held(path: Path) -> None:
                 with contextlib.suppress(OSError):
                     p.unlink()
                     removed.append(p.name)
-    kept = [p.name for p in left if p != used and p.name not in removed]
-    key = (str(path), *kept)
-    if not kept or key not in _leftovers_said:
-        _leftovers_said.add(key)
-        from ..log import get_logger
+    _tell_leftovers(
+        path,
+        restored=used.name if used is not None else "",
+        broken_kept=broken.name if broken is not None else "",
+        removed=removed,
+        kept=[p.name for p in left if p != used and p.name not in removed],
+        error=error,
+    )
 
-        get_logger().warning(
-            "node_config_leftovers",
-            path=str(path),
-            restored=used.name if used is not None else "",
-            broken_kept=broken.name if broken is not None else "",
-            removed=removed,
-            left=kept,
-            error=error,
-        )
+
+def _tell_leftovers(
+    path: Path,
+    *,
+    kept: list[str],
+    error: str,
+    restored: str = "",
+    broken_kept: str = "",
+    removed: list[str] | None = None,
+) -> None:
+    """The warning ``_recover`` gives: what it put back, kept aside, removed and left;
+    once per process for the same leftovers while they stay."""
+    key = (str(path), *kept)
+    if kept and key in _leftovers_said:
+        return
+    _leftovers_said.add(key)
+    from ..log import get_logger
+
+    get_logger().warning(
+        "node_config_leftovers",
+        path=str(path),
+        restored=restored,
+        broken_kept=broken_kept,
+        removed=removed or [],
+        left=kept,
+        error=error,
+    )
 
 
 def _restrict_to_user(path: Path) -> None:
