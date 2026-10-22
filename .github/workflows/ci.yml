@@ -131,6 +131,13 @@ jobs:
     if: needs.changes.outputs.docs_only != 'true'
     uses: ./.github/workflows/_integration.yml
 
+  replica:
+    # Epic 37: the machines' copies and switching the home against real Postgres 16,
+    # with the end-to-end runs (see _replica.yml)
+    needs: [changes]
+    if: needs.changes.outputs.docs_only != 'true'
+    uses: ./.github/workflows/_replica.yml
+
   e2e:
     needs: [changes, integration]
     # Fork PRs have no secrets, so e2e (which may need them) is skipped
@@ -269,6 +276,7 @@ jobs:
       - lint
       - unit
       - integration
+      - replica
       - e2e
       - media-e2e
       - perf-ci
@@ -295,7 +303,7 @@ jobs:
           changes=$(echo "$RESULTS" | jq -r '.changes.result // "missing"')
           echo "  changes: $changes"
           if [ "$changes" != success ]; then fail=1; fi
-          for gate in lint unit integration e2e media-e2e perf-ci build-artifacts node-packaging launcher mac-app win-app linux-app pr-body-check; do
+          for gate in lint unit integration replica e2e media-e2e perf-ci build-artifacts node-packaging launcher mac-app win-app linux-app pr-body-check; do
             result=$(echo "$RESULTS" | jq -r ".\"$gate\".result // \"skipped\"")
             echo "  $gate: $result"
             case "$result" in

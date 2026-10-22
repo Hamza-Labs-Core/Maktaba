@@ -34,6 +34,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/auth"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/cache"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/capability"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/channel"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/ffmpeg"
@@ -188,7 +189,9 @@ func runServe() error {
 	bg := newBackground(ctx)
 
 	backendCtx, backendCancel := context.WithTimeout(ctx, 10*time.Second)
-	probeBackend, transcripts, pool, closeStores := buildProbeStores(backendCtx, logger)
+	// a full node starts with the home's database down too (PR #145): its pool connects
+	// when the database answers, playback reads this machine's copy of it meanwhile
+	probeBackend, transcripts, pool, dbUp, closeStores := buildProbeStores(backendCtx, logger, fullNode)
 	backendCancel()
 	// deferred first, so it runs last: after the listeners shut down
 	defer func() {
@@ -208,6 +211,19 @@ func runServe() error {
 	} else {
 		startShareMap(bg, pool, logger)
 	}
+	var watch *dbWatch
+	// Epic 37: a full node's copy of its home's database
+	var copyPool *pgxpool.Pool
+	if fullNode {
+		copyPool = openCopy(bg, logger)
+	}
+	if pg, ok := probeBackend.(*probe.PGBackend); ok && fullNode && pool != nil {
+		watch = &dbWatch{ping: pool.Ping, logger: logger}
+		if !dbUp {
+			watch.Failed(errors.New("not answering at start"))
+		}
+		probeBackend = withCopy(bg, pg, copyPool, logger, node.NodeID, watch)
+	}
 
 	// One session store for both surfaces: the gRPC OpenSession the API calls
 	// inserts the row the public mux's manifest/segment routes then look up
@@ -224,9 +240,21 @@ func runServe() error {
 		cfg := config.Load()
 		layout := cache.New(cfg.Cache.Root)
 		_ = layout.EnsureTiers()
-		publicHandler = buildNodeTV(bg, logger, cfg, pool, layout, node)
+		if watch != nil && watch.Down() {
+			// the channels need the home's database: they start once it answers
+			sw := newSwapHandler(homeDBDownHandler())
+			bg.Go(func(ctx context.Context) {
+				if watch.wait(ctx) == nil {
+					sw.set(buildNodeTV(bg, logger, cfg, pool, layout, node))
+				}
+			})
+			publicHandler = sw
+		} else {
+			publicHandler = buildNodeTV(bg, logger, cfg, pool, layout, node)
+		}
 		if fullNode {
-			publicHandler = splitFullNode(publicHandler, buildVOD(bg, logger, probeBackend, transcripts, sessions))
+			publicHandler = splitFullNode(publicHandler, buildVOD(bg, logger, probeBackend, transcripts, sessions),
+				buildOfflineTV(bg, logger, cfg, copyPool))
 		}
 	} else {
 		publicHandler = buildPublicHandler(bg, logger, probeBackend, transcripts, pool, sessions)
@@ -262,7 +290,7 @@ func runServe() error {
 	var grpcLis net.Listener
 	grpcErr := errors.New("node mode")
 	if !nodeMode || fullNode {
-		grpcServer = grpcsrv.NewGRPCServer(buildGRPCServer(logger, probeBackend, sessions))
+		grpcServer = grpcsrv.NewGRPCServer(buildGRPCServer(bg, logger, probeBackend, sessions))
 		grpcLis, grpcErr = listenTCP("tcp", grpcAddr)
 	}
 	if nodeMode && !fullNode {
@@ -338,7 +366,7 @@ func serveOn(srv *http.Server) error {
 // on their own; until then sessions live in-process (lost on restart,
 // not shared across replicas), which is acceptable for the v1
 // single-replica deploy.
-func buildGRPCServer(logger *slog.Logger, backend probe.Backend, store session.Store) *grpcsrv.Server {
+func buildGRPCServer(bg *background, logger *slog.Logger, backend probe.Backend, store session.Store) *grpcsrv.Server {
 	cfg := config.Load()
 	allocator := slots.NewAllocator(slots.AllocatorConfig{
 		MaxTranscode: cfg.Transcode.MaxConcurrent,
@@ -346,16 +374,8 @@ func buildGRPCServer(logger *slog.Logger, backend probe.Backend, store session.S
 	})
 	probeCache := probe.NewCache(backend, 4096)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	hw, err := ffmpeg.Default().Detect(ctx)
-	if err != nil {
-		logger.Info("hwaccel probe failed; using software",
-			"err", err.Error(), "event", "hwaccel_software_fallback")
-	}
-
 	srv := grpcsrv.New(probeCache, store, allocator, capability.NewRegistry())
-	srv.HWAccel = hw
+	srv.HWAccelNow = watchHWAccel(bg, logger, cfg).Get
 
 	// HLB-328: wire the real ffmpeg-spawning orchestrator so
 	// OpenSession actually transcodes. The output dir must match the
@@ -365,9 +385,44 @@ func buildGRPCServer(logger *slog.Logger, backend probe.Backend, store session.S
 	if lerr := layout.EnsureTiers(); lerr != nil {
 		logger.Warn("cache layout init failed", "err", lerr.Error(), "event", "cache_init_warn")
 	}
-	srv.Transcode = ffmpeg.DefaultOrchestrator(ffmpeg.DefaultBinary())
+	// VOD's GPU sessions count with the TV's channels' (vodGate)
+	srv.Transcode = ffmpeg.DefaultOrchestrator(vodBinary(cfg), map[ffmpeg.HWAccel]ffmpeg.SessionGate{
+		ffmpeg.HWAccelNVENC:        &vodGate{gate: channel.DefaultEncoderGate()},
+		ffmpeg.HWAccelVideoToolbox: &vodGate{gate: channel.DefaultVTGate()},
+	})
 	srv.ResolveDir = layout.HLSDir
 	return srv
+}
+
+// vodBinary is the ffmpeg the transcodes and their hwaccel probe run: the
+// channels' own (MAKTABA_FFMPEG_BIN, the one the supervisor checked), not
+// whichever the PATH finds first.
+func vodBinary(cfg config.Config) ffmpeg.Binary {
+	return ffmpeg.Binary{FFmpeg: cfg.FFmpeg.Binary, FFprobe: cfg.FFmpeg.ProbeBinary}
+}
+
+// hwaccelRetry is how often the transcodes' encoder is detected again while
+// it is software although ffmpeg lists a GPU encoder (busy or not ready at
+// the last try).
+const hwaccelRetry = 5 * time.Minute
+
+// watchHWAccel picks the transcodes' encoder (Story 8.7), narrowed by
+// MAKTABA_HWACCEL_PREFER: once at start (within 10 s), then again while a
+// listed GPU encoder did not work, logging each verdict.
+func watchHWAccel(bg *background, logger *slog.Logger, cfg config.Config) *ffmpeg.Choice {
+	d := ffmpeg.Default(vodBinary(cfg))
+	d.Prefer = cfg.HWAccel.Prefer
+	return ffmpeg.WatchChoice(bg.ctx, d, 10*time.Second, hwaccelRetry, func(hw ffmpeg.HWAccel, err error) {
+		if err != nil {
+			logger.Warn("hwaccel: software", "err", err.Error(), "event", "hwaccel_software_fallback")
+			return
+		}
+		name := string(hw)
+		if name == "" {
+			name = "software"
+		}
+		logger.Info("hwaccel detected", "encoder", name, "event", "hwaccel_selected")
+	})
 }
 
 // buildChecks assembles the readiness check set for streaming. The
@@ -438,15 +493,6 @@ func buildPublicHandler(bg *background, logger *slog.Logger, backend probe.Backe
 	})
 
 	probeCache := probe.NewCache(backend, 4096)
-
-	// Hwaccel detection — non-fatal on failure; we fall through to
-	// software encoding (Story 8.7 AC-1 fallback path).
-	hw, err := ffmpeg.Default().Detect(ctx)
-	if err != nil {
-		logger.Info("hwaccel probe failed; using software", "err", err.Error(), "event", "hwaccel_software_fallback")
-	} else {
-		logger.Info("hwaccel detected", "encoder", string(hw), "event", "hwaccel_selected")
-	}
 
 	gc := cache.NewGC(layout, cache.GCConfig{
 		MaxBytes: cfg.CacheMaxBytes(), Interval: cfg.GCInterval(),
@@ -520,20 +566,31 @@ func buildVerifierKeys(ctx context.Context, bg *background, logger *slog.Logger,
 // is no transcript streamer (auto.vtt is simply not wired). A pool that
 // fails to open/ping is fatal-soft: we log and fall back to the fake so
 // liveness still answers, matching the JWKS/hwaccel boot-warn pattern.
-func buildProbeStores(ctx context.Context, logger *slog.Logger) (probe.Backend, handlers.TranscriptStreamer, *pgxpool.Pool, func()) {
+// With lazy (a full node, PR #145) a database that does not answer keeps
+// the Postgres-backed stores on a pool that connects once it does (up
+// false); this machine's copy answers meanwhile.
+func buildProbeStores(ctx context.Context, logger *slog.Logger, lazy bool) (probe.Backend, handlers.TranscriptStreamer, *pgxpool.Pool, bool, func()) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		logger.Info("probe: DATABASE_URL unset; using in-memory FakeBackend",
 			"event", "probe_fake_backend")
-		return probe.NewFakeBackend(), nil, nil, func() {}
+		return probe.NewFakeBackend(), nil, nil, false, func() {}
 	}
+	up := true
 	backend, pool, err := probe.ConnectPG(ctx, dsn)
+	if err != nil && lazy {
+		if pool, err = pgxpool.New(context.Background(), dsn); err == nil {
+			logger.Warn("probe: the home's database does not answer; starting on this machine's copy of it",
+				"event", "probe_pg_down_at_start")
+			backend, up = probe.NewPGBackend(pool), false
+		}
+	}
 	if err != nil {
 		logger.Warn("probe: postgres connect failed; falling back to FakeBackend",
 			"err", err.Error(), "event", "probe_pg_connect_failed")
-		return probe.NewFakeBackend(), nil, nil, func() {}
+		return probe.NewFakeBackend(), nil, nil, false, func() {}
 	}
 	logger.Info("probe: Postgres-backed media_info reads wired", "event", "probe_pg_backend")
 	streamer := transcripts.NewPGStreamer(pool)
-	return backend, streamer, pool, func() { pool.Close() }
+	return backend, streamer, pool, up, func() { pool.Close() }
 }

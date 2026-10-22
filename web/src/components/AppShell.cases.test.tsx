@@ -470,6 +470,41 @@ describe("AppShell (test-cases/app-shell.md)", () => {
     warn.mockRestore();
   });
 
+  it("SHL-14b: sign out refused with the home unreachable keeps the user and says so", async () => {
+    post.mockRejectedValue(
+      new ApiError({
+        type: "https://maktaba.dev/problems/home-unreachable",
+        title: "the home is not reachable",
+        status: 503,
+        code: "home_unreachable",
+      })
+    );
+    renderShell(["/library"]);
+    await screen.findByRole("heading", { name: "page /library" });
+    await userEvent.setup().click(screen.getByRole("button", { name: en["nav.signOut"] }));
+    expect(await screen.findByText(en["homeOffline.signOut"])).toBeInTheDocument();
+    expect(where()).toHaveTextContent(/^\/library$/);
+    expect(purge).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: en["nav.signOut"] })).toHaveTextContent("viewer");
+  });
+
+  it("SHL-14c: a sign-out the home did not answer in time keeps the user and says so", async () => {
+    post.mockRejectedValue(
+      new ApiError({
+        type: "https://maktaba.dev/problems/home-timeout",
+        title: "the home is slow to answer",
+        status: 504,
+        code: "home_timeout",
+      })
+    );
+    renderShell(["/library"]);
+    await screen.findByRole("heading", { name: "page /library" });
+    await userEvent.setup().click(screen.getByRole("button", { name: en["nav.signOut"] }));
+    expect(await screen.findByText(en["homeOffline.signOut"])).toBeInTheDocument();
+    expect(purge).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: en["nav.signOut"] })).toHaveTextContent("viewer");
+  });
+
   it("SHL-15: the theme button cycles light, dark, system", async () => {
     localStorage.setItem("mkt:theme", "light");
     renderShell(["/library"]);
@@ -889,6 +924,23 @@ describe("MoreMenu (test-cases/more-menu.md)", () => {
     expect(await screen.findByLabelText(en["login.username"])).toBeInTheDocument();
     expect(warn).toHaveBeenCalledWith("auth: logout call failed", expect.anything());
     warn.mockRestore();
+  });
+
+  it("MOR-08b: sign out refused with the home unreachable keeps the user and says so", async () => {
+    post.mockRejectedValue(
+      new ApiError({
+        type: "https://maktaba.dev/problems/home-unreachable",
+        title: "the home is not reachable",
+        status: 503,
+        code: "home_unreachable",
+      })
+    );
+    renderShell(["/more"]);
+    const m = await moreSection();
+    await userEvent.setup().click(within(m).getByRole("button", { name: en["nav.signOut"] }));
+    expect(await within(m).findByRole("alert")).toHaveTextContent(en["homeOffline.signOut"]);
+    expect(where()).toHaveTextContent(/^\/more$/);
+    expect(purge).not.toHaveBeenCalled();
   });
 
   it("MOR-10: a signed-out deep link to /more comes back after sign-in", async () => {

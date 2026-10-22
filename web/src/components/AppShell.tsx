@@ -15,6 +15,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import { LangToggle } from "./LangToggle";
 import { NotificationsBell } from "./NotificationsBell";
 import { updateAvailable, useUpdateStatus } from "../lib/updates";
+import { useSystemStatus } from "../lib/systemStatus";
 
 // Where the update badge sits (Story 28.6): Settings in the sidebar and
 // the More menu, and More in the phone tab bar (Settings lives behind it).
@@ -26,6 +27,16 @@ const BADGED: ReadonlySet<string> = new Set(["/settings", "/more"]);
 const UPDATE_DESC = "mkt-shell-update-badge";
 function UpdateDot() {
   return <span className="mkt-update-dot" aria-hidden="true" data-testid="update-badge" />;
+}
+
+// The red dot on "System health" (and on More, on the phone) while the
+// system status is down, for admins; HEALTH_DESC says so to a screen reader.
+const HEALTH_PATH = "/admin/health";
+const HEALTH_DESC = "mkt-shell-health-badge";
+function HealthDot() {
+  return (
+    <span className="mkt-update-dot mkt-health-dot" aria-hidden="true" data-testid="health-badge" />
+  );
 }
 
 const NAV = [
@@ -122,6 +133,7 @@ export function AppShell() {
   const searchRef = useRef<HTMLInputElement | null>(null);
   const hasUpdate = updateAvailable(useUpdateStatus());
   const badged = (to: string) => hasUpdate && BADGED.has(to);
+  const healthDown = useSystemStatus(!!user?.is_admin) === "down";
 
   useEffect(() => {
     focusSearchRef(searchRef.current);
@@ -192,7 +204,13 @@ export function AppShell() {
               type="button"
               className="mkt-btn mkt-btn--ghost"
               onClick={async () => {
-                await logout();
+                try {
+                  await logout();
+                } catch {
+                  // refused: this machine cannot reach its home (lib/auth)
+                  toast.show({ id: "sign-out", tone: "warn", message: t("homeOffline.signOut") });
+                  return;
+                }
                 nav("/login", { replace: true });
               }}
               aria-label={t("nav.signOut")}
@@ -246,9 +264,11 @@ export function AppShell() {
                   className="mkt-nav-link"
                   title={t(item.key)}
                   aria-label={t(item.key)}
+                  aria-describedby={healthDown && item.to === HEALTH_PATH ? HEALTH_DESC : undefined}
                 >
                   <span className="mkt-nav-link__icon" aria-hidden="true">
                     {item.icon}
+                    {healthDown && item.to === HEALTH_PATH && <HealthDot />}
                   </span>
                   <span className="mkt-nav-link__label">{t(item.key)}</span>
                 </NavLink>
@@ -267,17 +287,29 @@ export function AppShell() {
           {t("update.badge")}
         </span>
       )}
+      {healthDown && (
+        <span id={HEALTH_DESC} hidden>
+          {t("health.navDown")}
+        </span>
+      )}
       <nav className="mkt-shell__tabbar" aria-label={t("nav.primary")}>
         {TABS.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             className="mkt-tab"
-            aria-describedby={badged(item.to) ? UPDATE_DESC : undefined}
+            aria-describedby={
+              badged(item.to)
+                ? UPDATE_DESC
+                : healthDown && item.to === "/more"
+                  ? HEALTH_DESC
+                  : undefined
+            }
           >
             <span className="mkt-tab__icon" aria-hidden="true">
               {item.icon}
               {badged(item.to) && <UpdateDot />}
+              {healthDown && item.to === "/more" && !badged(item.to) && <HealthDot />}
             </span>
             <span className="mkt-tab__label">{t(item.key)}</span>
           </NavLink>
@@ -294,7 +326,9 @@ export function MoreMenu() {
   const { user, logout } = useAuth();
   const { t } = useI18n();
   const nav = useNavigate();
+  const [signOutRefused, setSignOutRefused] = useState(false);
   const hasUpdate = updateAvailable(useUpdateStatus());
+  const healthDown = useSystemStatus(!!user?.is_admin) === "down";
   const groups: Array<{
     title?: string;
     items: ReadonlyArray<{ to: string; key: string; icon: string }>;
@@ -309,6 +343,11 @@ export function MoreMenu() {
           {t("update.badge")}
         </span>
       )}
+      {healthDown && (
+        <span id="mkt-more-health-badge" hidden>
+          {t("health.navDown")}
+        </span>
+      )}
       {groups.map((g, i) => (
         <div key={i} className="mkt-more__group">
           {g.title && <h2>{g.title}</h2>}
@@ -319,12 +358,17 @@ export function MoreMenu() {
                   to={item.to}
                   className="mkt-more__link"
                   aria-describedby={
-                    hasUpdate && item.to === "/settings" ? "mkt-more-update-badge" : undefined
+                    hasUpdate && item.to === "/settings"
+                      ? "mkt-more-update-badge"
+                      : healthDown && item.to === HEALTH_PATH
+                        ? "mkt-more-health-badge"
+                        : undefined
                   }
                 >
                   <span className="mkt-nav-link__icon" aria-hidden="true">
                     {item.icon}
                     {hasUpdate && item.to === "/settings" && <UpdateDot />}
+                    {healthDown && item.to === HEALTH_PATH && <HealthDot />}
                   </span>
                   {t(item.key)}
                 </NavLink>
@@ -337,12 +381,23 @@ export function MoreMenu() {
         type="button"
         className="mkt-btn mkt-btn--ghost mkt-more__signout"
         onClick={async () => {
-          await logout();
+          try {
+            await logout();
+          } catch {
+            // refused: this machine cannot reach its home (lib/auth)
+            setSignOutRefused(true);
+            return;
+          }
           nav("/login", { replace: true });
         }}
       >
         {t("nav.signOut")}
       </button>
+      {signOutRefused && (
+        <p className="mkt-alert" role="alert">
+          {t("homeOffline.signOut")}
+        </p>
+      )}
     </section>
   );
 }

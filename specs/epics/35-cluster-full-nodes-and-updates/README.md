@@ -139,7 +139,8 @@ owner on 2026-10-19 (**accepted default**). The questions and their answers are 
   30 s, negative ones 5 s.
 - R2.3 A revocation (sign-out, password change, admin revoke, user disabled) reaches every node over
   the cluster channel and evicts its cache within 1 s while the channel is up; with the channel down
-  the cache TTL bounds it (30 s), after which the node fails closed for authenticated routes.
+  the cache TTL bounds it (30 s). With the home unreachable, a node serves reads, its own routes
+  (playback, TV) and sign-ins from its copy of the home's database (design §10.3, Epic 37).
 - R2.4 Signing in on a node creates the session on the home (tagged `origin_node_id`); the cookie is
   host-only for the node's address; CSRF double submit works per host.
 - R2.5 Cluster sign-in: a signed-in user who opens another machine is offered "Continue as …"; a
@@ -414,7 +415,10 @@ Epic 33 did for `tv_staging.enabled`.
 | `cluster.tls.cert_days` | `30` | Machine certificate lifetime; renewed when a third is left. |
 | `cluster.tls.web_https` | `false` | Also serve each machine's web UI over HTTPS (port 8443) with a cluster-CA certificate. |
 | `wheelhouse` | `true` | The home mirrors each release's pipeline dependencies per platform for its machines. |
-| `delegate_unreachable_grace_seconds` | `30` | After this long without an answer from the home, a node fails closed for authenticated routes (R2.3). |
+| `delegate_unreachable_grace_seconds` | `30` | After this long without an answer from the home, a node stops asking it per request and answers from its copy of the home's database (R2.3); changes are refused at once. |
+
+The copy's own rules (`offline_copy_max_lag_minutes`, `offline_session_hours`,
+`offline_session_grace_minutes`, `replica_wal_keep_gb`) are Epic 37's (`specs/epics/37-node-replica`).
 
 Cluster sign-in has its own switch, `rules.cluster.sso` (default `true`; off: each machine asks for its own sign-in, still against the home's sessions).
 

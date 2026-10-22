@@ -19,7 +19,10 @@ itself (which lives in :mod:`.jobs_claim`):
 Every UPDATE in this module gates by both ``id`` and an expected
 ``state`` predicate so a concurrent transition (force-pause from the
 API, reaper sweep) never silently clobbers a row in an unexpected
-state. Returning ``None`` from these helpers means "the row was not in
+state; the ones a worker runs on its own job also by its claim
+(:mod:`.claim_owner`), so a machine that lost the home past the claim
+lease does not end a job the home has since handed to another.
+Returning ``None`` from these helpers means "the row was not in
 the expected state" — the caller decides whether that's an error or
 a benign no-op.
 """
@@ -32,6 +35,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from . import claim_owner
 from .jobs import DBConn
 
 __all__ = [
@@ -139,6 +143,7 @@ UPDATE processing_jobs
        claimed_by       = NULL
  WHERE id = $1
    AND state IN ('claimed', 'running', 'resuming')
+   AND ($4::text IS NULL OR claimed_by = $4::text)
 RETURNING id, state, paused_at_sec
 """
 
@@ -152,6 +157,7 @@ UPDATE processing_jobs
        claimed_by       = NULL
  WHERE id = ?
    AND state IN ('claimed', 'running', 'resuming')
+   AND (? IS NULL OR claimed_by = ?)
 RETURNING id, state, paused_at_sec
 """
 
@@ -173,10 +179,11 @@ async def mark_paused(
     ``shutdown``, ``crash``, ``maintenance``) so observers can switch
     on it without surprise values.
     """
+    owner = claim_owner.current()
     if db.dialect == "postgres":
-        out = await db.fetchrow(_MARK_PAUSED_PG, job_id, at_sec, reason)
+        out = await db.fetchrow(_MARK_PAUSED_PG, job_id, at_sec, reason, owner)
     else:
-        out = await db.fetchrow(_MARK_PAUSED_SQLITE, at_sec, reason, job_id)
+        out = await db.fetchrow(_MARK_PAUSED_SQLITE, at_sec, reason, job_id, owner, owner)
     if out is not None and _hooked(db):
         from ..engine.hooks import on_paused
 
@@ -192,6 +199,7 @@ UPDATE processing_jobs
        cancel_requested = false
  WHERE id = $1
    AND state IN ('claimed', 'running', 'resuming', 'paused', 'pending')
+   AND ($2::text IS NULL OR claimed_by IS NULL OR claimed_by = $2::text)
 RETURNING id, state
 """
 
@@ -203,19 +211,23 @@ UPDATE processing_jobs
        cancel_requested = 0
  WHERE id = ?
    AND state IN ('claimed', 'running', 'resuming', 'paused', 'pending')
+   AND (? IS NULL OR claimed_by IS NULL OR claimed_by = ?)
 RETURNING id, state
 """
 
 
 async def mark_cancelled(db: DBConn, *, job_id: int) -> Any | None:
-    """Terminal cancel transition triggered by the worker."""
+    """Terminal cancel transition triggered by the worker (a job another worker now
+    holds is left to it)."""
     sql = _MARK_CANCELLED_PG if db.dialect == "postgres" else _MARK_CANCELLED_SQLITE
+    owner = claim_owner.current()
+    args = (job_id, owner) if db.dialect == "postgres" else (job_id, owner, owner)
     if not _hooked(db):
-        return await db.fetchrow(sql, job_id)
+        return await db.fetchrow(sql, *args)
     from ..engine.hooks import on_cancelled
 
     async with db.transaction():
-        out = await db.fetchrow(sql, job_id)
+        out = await db.fetchrow(sql, *args)
         if out is not None:
             await on_cancelled(db, job_id)
     return out
@@ -228,6 +240,7 @@ UPDATE processing_jobs
        claimed_by       = NULL
  WHERE id = $1
    AND state IN ('claimed', 'running', 'resuming')
+   AND ($2::text IS NULL OR claimed_by = $2::text)
 RETURNING id, state
 """
 
@@ -238,14 +251,17 @@ UPDATE processing_jobs
        claimed_by       = NULL
  WHERE id = ?
    AND state IN ('claimed', 'running', 'resuming')
+   AND (? IS NULL OR claimed_by = ?)
 RETURNING id, state
 """
 
 
 async def mark_done(db: DBConn, *, job_id: int) -> Any | None:
     """Terminal success transition."""
-    sql = _MARK_DONE_PG if db.dialect == "postgres" else _MARK_DONE_SQLITE
-    return await db.fetchrow(sql, job_id)
+    owner = claim_owner.current()
+    if db.dialect == "postgres":
+        return await db.fetchrow(_MARK_DONE_PG, job_id, owner)
+    return await db.fetchrow(_MARK_DONE_SQLITE, job_id, owner, owner)
 
 
 # ---------------------------------------------------------------------------
@@ -261,6 +277,7 @@ UPDATE processing_jobs
        finished_at   = $5
  WHERE id = $1
    AND state IN ('claimed', 'running', 'resuming')
+   AND ($6::text IS NULL OR claimed_by = $6::text)
 RETURNING id, state, not_before
 """
 
@@ -273,6 +290,7 @@ UPDATE processing_jobs
        finished_at   = ?
  WHERE id = ?
    AND state IN ('claimed', 'running', 'resuming')
+   AND (? IS NULL OR claimed_by = ?)
 RETURNING id, state, not_before
 """
 
@@ -342,6 +360,7 @@ UPDATE processing_jobs
        max_attempts  = COALESCE($9, max_attempts)
  WHERE id = $1
    AND state IN ('claimed', 'running', 'resuming')
+   AND {owner}
 RETURNING id, state, not_before
 """
 
@@ -389,7 +408,7 @@ async def _fail_or_retry_engine(
     )
     sql = _FAIL_ENGINE.replace(
         "{refund}", "GREATEST(attempts - 1, 0)" if pg else "MAX(attempts - 1, 0)"
-    )
+    ).replace("{owner}", claim_owner.guard(db, 10))
     out = await db.fetchrow(
         sql,
         job_id,
@@ -401,6 +420,7 @@ async def _fail_or_retry_engine(
         decision.parked_on,
         (decision.action == "park") if pg else int(decision.action == "park"),
         decision.max_attempts,
+        claim_owner.current(),
     )
     if out is None:
         return FailureOutcome(state="noop")
@@ -462,6 +482,7 @@ async def _fail_or_retry(
         finished_at = _now(now)
 
     sql = _FAIL_OR_RETRY_PG if db.dialect == "postgres" else _FAIL_OR_RETRY_SQLITE
+    owner = claim_owner.current()
     if db.dialect == "postgres":
         out = await db.fetchrow(
             sql,
@@ -470,6 +491,7 @@ async def _fail_or_retry(
             not_before_value,
             err_json,
             finished_at,
+            owner,
         )
     else:
         out = await db.fetchrow(
@@ -479,6 +501,8 @@ async def _fail_or_retry(
             err_json,
             _to_iso(finished_at),
             job_id,
+            owner,
+            owner,
         )
 
     if out is None:

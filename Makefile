@@ -416,7 +416,7 @@ test-coverage:  ## Coverage-floor gate (Story 20.3): fail if a module regresses 
 build: build-go build-web  ## Build every artifact for $$GOOS/$$GOARCH (reproducible).
 
 .PHONY: build-go
-build-go: build-go-api build-go-streaming  ## Build both Go binaries.
+build-go: build-go-api build-go-streaming build-go-cloudlink  ## Build the Go binaries.
 
 # Output layout:
 #   single-platform `make build`     -> {api,streaming}/bin/maktaba-{api,streaming}
@@ -442,6 +442,17 @@ build-go-streaming:
 		GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 \
 		go build $(GO_BUILD_FLAGS) -tags '$(STREAMING_TAGS)' -ldflags='$(streaming_ldflags)' \
 			-o bin/$(BIN_SUBDIR)maktaba-streaming .
+
+# The cloud relay agent (Epic 25): the home's supervisor runs it while [cloud] is
+# enabled (the cloud module, outside the api/streaming graph).
+.PHONY: build-go-cloudlink
+build-go-cloudlink:
+	@mkdir -p cloud/bin/$(BIN_SUBDIR)
+	@echo "==> building cloudlink for $(GOOS)/$(GOARCH) (version=$(VERSION))"
+	@cd cloud && \
+		GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 \
+		go build $(GO_BUILD_FLAGS) -ldflags='-X main.Version=$(VERSION)' \
+			-o bin/$(BIN_SUBDIR)maktaba-cloudlink ./cmd/maktaba-cloudlink
 
 .PHONY: server
 server: build-web  ## Build the unified maktaba-server binary with the embedded web UI.

@@ -81,21 +81,25 @@ func (s *PGStore) SetName(ctx context.Context, name string) (Identity, error) {
 const nodeCols = `id::text, name, state, os, arch, versions, capabilities, storage, path_map, path_map_source,
 	drain, node_pubkey, home_pubkey, home_privkey, code_attempts, expires_at, sealed, db_role, remote_addr,
 	api_url, created_at, approved_at, approved_by, revoked_at, last_seen_at, updated_at,
-	version, platform, web_url, full_node, vod, update_state`
+	version, platform, web_url, full_node, vod, update_state, replica, replica_reported_at`
 
 func scanNode(row interface{ Scan(...any) error }) (Node, error) {
 	var n Node
 	var os, arch, pms, hpub, hpriv, role, raddr, apiURL, by, ver, plat, web sql.NullString
-	var versions, caps, storage, pathMap, sealed, vod, upd []byte
-	var expires, approved, revoked, seen sql.NullTime
+	var versions, caps, storage, pathMap, sealed, vod, upd, copyState []byte
+	var expires, approved, revoked, seen, copyAt sql.NullTime
 	if err := row.Scan(&n.ID, &n.Name, &n.State, &os, &arch, &versions, &caps, &storage, &pathMap, &pms,
 		&n.Drain, &n.NodePubkey, &hpub, &hpriv, &n.CodeAttempts, &expires, &sealed, &role, &raddr,
 		&apiURL, &n.CreatedAt, &approved, &by, &revoked, &seen, &n.UpdatedAt,
-		&ver, &plat, &web, &n.FullNode, &vod, &upd); err != nil {
+		&ver, &plat, &web, &n.FullNode, &vod, &upd, &copyState, &copyAt); err != nil {
 		return Node{}, err
 	}
 	n.Version, n.Platform, n.WebURL = strPtr(ver), strPtr(plat), strPtr(web)
-	n.VOD, n.UpdateState = rawObj(vod), rawObj(upd)
+	n.VOD, n.UpdateState, n.Copy = rawObj(vod), rawObj(upd), rawObj(copyState)
+	if copyAt.Valid {
+		t := copyAt.Time
+		n.CopyReportedAt = &t
+	}
 	n.OS, n.Arch, n.PathMapSource = strPtr(os), strPtr(arch), strPtr(pms)
 	n.HomePubkey, n.HomePrivkey, n.DBRole = strPtr(hpub), strPtr(hpriv), strPtr(role)
 	n.RemoteAddr, n.APIURL, n.ApprovedBy = strPtr(raddr), strPtr(apiURL), strPtr(by)

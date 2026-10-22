@@ -12,6 +12,129 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Every full machine keeps a live copy of its home's database, and runs on it while the
+  home is away** (Epic 37, `specs/epics/37-node-replica`). Nothing to set up: a machine that
+  joins, or one joined before (at its first start on this version), makes its own Postgres
+  (the home's major version: one it has, or the pinned PostgreSQL 16.15 build, fetched and
+  checked once), migrates it and subscribes it, by logical replication over TLS that checks the
+  home's certificate, to the publication the home keeps for it: every table but the secrets,
+  other machines' rows and each database's own state. The home makes the machine's replication
+  role, publication and slot itself and drops the slot of a machine that falls too far behind
+  (`rules.cluster.replica_wal_keep_gb`, default 20 GB); the machine subscribes anew on its own
+  then, and when the home's database is another one, its own Maktaba was updated, or the
+  home's changes keep failing to apply, and it waits while the home's schema is ahead of its
+  own. Every bundled Postgres runs with `wal_level=logical`. The machine reads the library from
+  its copy while the copy is within `copy_reads_max_lag_seconds` (default 30) of the home. With
+  the home away (refusing, or switched off and leaving connections hanging) it keeps working
+  from that copy: pages read, the videos it can read play, its own TV channels play, a reload
+  keeps people signed in, **signing in works** (checked on the copy, valid on that machine only;
+  `offline_session_hours`, default 12, ending `offline_session_grace_minutes`, default 30, after
+  the home is back), and **signing out works** (the session ends there at once; the home is told
+  when it answers). Changes are refused until the home is back. A copy that had stopped
+  following long before the outage does not answer (`offline_copy_max_lag_minutes`, default
+  10). The copy's state shows on each machine's card on the Machines page and in the machine's
+  own outage notice. Revoking a machine ends its subscription and wipes its copy. The node's
+  pipeline stops claiming jobs while the home's database does not answer, stops the jobs in
+  flight before their claim lease lapses (from the last beat the home answered), and resumes on
+  its own; a job the home handed to another machine meanwhile is never ended by the first.
+  Migration 0147.
+- **The home can be switched to another machine** (Epic 37, "Switching the home"): "Make B the
+  home" on the Machines tab, then nothing to do by hand. The home pauses the jobs and its
+  database's changes, hands the machine what replication leaves out (the secrets and their key,
+  the machines and their database roles with their passwords, the cluster key, the database CA,
+  the Hugging Face token, an operator's JWT keys) sealed to that machine over the machines'
+  channel, and the machine takes over without copying the database again: every other machine
+  follows it from where its copy is, the old home becomes one of its machines, and a machine that
+  was off follows when it is back (any machine of the cluster hands it a notice sealed to it).
+  Two homes never write: once the promotion is asked the old home stays read-only until the new
+  home says it is the home or called the switch off, also when its answer is lost (its app's
+  database roles lose their rights to write its tables, which no session's own "read write"
+  overrides, nor may they change its schema or give those rights back, and the machines' roles
+  are kept out); that the promotion was asked is on disk
+  before it leaves; one switch runs at a time; a switch is taken up after a restart of the old
+  home, a thaw that failed is asked again, and a thaw ends the app's sessions opened while frozen
+  (they kept a read-only default, so writes failed for up to half an hour after an undone switch);
+  the promotion is one transaction (a failed one leaves
+  the copy following the old home), and takes only a copy that has every table; the old home
+  gives up its data only once it receives the new home's changes, and then keeps none of the
+  home's keys (nor its database's certificate). An admin can call a switch off from the tab:
+  before the promotion at once, after it only if the machine taking over has not promoted (or,
+  when it does not answer, with its name typed: the old home then keeps asking it, and watches for
+  its notice, and should it be the home after all, stops writing; a promotion called off is never
+  finished, and its kit is removed, also when the undo did not reach it; the next switch begins
+  past its term). Plex Live TV moves too (the tuner and its guide pointed at the
+  new home, Plex's DVR, its recording schedules and channels kept), Plex and dizqueTV are checked
+  from the new home (an address that was the old home's own is moved to its network address),
+  Cloudflare's notifications move with the cloud relay, and the tab shows each machine and each
+  outside service as moved, being moved, failed, or what a person must do (signing in to YouTube
+  in a browser on the new home; a model runtime there, where the library used one). A switch that cannot go through is undone. `GET
+  /api/cluster/self` carries the cluster's term.
+- **A standby home can take over when the home is gone for good** (Epic 37, "Emergency
+  promotion"). On the Machines tab the admin marks full machines as standby homes. Each one
+  keeps the home's secrets and keys sealed to it alone. The home sends them again within two
+  minutes of a change and removes them when the mark goes. With the home not answering, a
+  standby's admin makes it the home from that machine's own Machines page, after a warning and
+  the home's name typed to confirm: only from a whole copy that was within 10 minutes of the home
+  when the home last answered, and only once the standby has claimed the term at the other
+  machines, so two standbys never both take over (should two cut off from each other both take
+  the same term, the one whose machine id is lower gives way, as an old home does, and every
+  machine follows the other). The other machines find the new home at the
+  standbys by themselves and follow it. If the old home comes back, it stops writing within a minute and
+  becomes one of the new home's machines. What it wrote after the switch is kept aside and
+  reported to the new home, where the admin downloads it or reviews and applies what does not
+  conflict, in one transaction. Never applied automatically: a transaction touching a row the
+  new home changed since, the secrets or the cluster's own data, a credential (a session, a
+  token, a reset link, a pairing, a changed password), or one that would fail. A report carries
+  up to 100,000 changes (more stay in the old home's database, which it keeps aside). What was
+  applied is recorded. Each seal of a standby's kit has a key of its own. Migration 0147.
+- **The cloud relay agent moves with the home.** The home's supervisor runs `maktaba-cloudlink`
+  while `[cloud]` is enabled. A switch stops it on the old home, carries its credentials, and
+  starts it on the new one. It ships with the Mac and Linux apps.
+- **After a switch, a checklist on the new home**: what needs a person there (YouTube in a
+  browser, a model runtime where the library used one, a Live TV tuner set by hand, Cloudflare's
+  notification address on a home without the cloud relay) is one click from where it is done in
+  the control centre, and ticked off by hand, or by itself where Maktaba can tell (a model runtime
+  that answers, a notification that arrives).
+- **The machines reach only what they need of the home's database** (Epic 37). The bundled
+  Postgres listens beyond its own machine, and lets anyone in from off it, only while a machine
+  may connect (one is approved, or joins are open). It starts again by itself when that
+  changes. Even then it lets in only the machines' roles, from the networks the home is on and
+  each approved machine's own address (`[postgres] machines_from` can name networks instead),
+  and never as physical replication. Every machine verifies the home's database by its CA. The
+  CA comes with the join, over the machines' channel (for a machine joined earlier), or with a
+  switch; a machine without it does not connect its copy. A machine's replication password
+  never leaves it (the home gets its SCRAM verifier), only full machines get a copy, and a copy
+  holds web sessions by their hash only. A machine's replication role reads only what is
+  published to it: Maktaba's Postgres builds have no logical decoding plugin but `pgoutput`, the
+  slot functions are the home's alone, and the home ends and drops any slot that is not
+  Maktaba's within seconds (saying once what to do about one it cannot). A home on an operator's
+  own Postgres, which may carry other plugins, keeps no copies unless the admin turns on
+  `rules.cluster.copies_on_operator_postgres`; until then the machines are told why. A sign-in on
+  a machine while its home is away refuses a user who must change their password. The sessions it
+  opens are written to the home's history, with their closing, also after a restart of the
+  machine. A sign-out there is kept only for a session the machine knows, whole (a sign-out
+  everywhere is kept with its session or not at all), handed over in batches the home takes, and
+  the home ends only sessions made through that machine; a person signed in on the machine only
+  while the home was away who signs out everywhere is signed out of every session on that
+  machine and told the others end through the home (which would not take it from it); the home's
+  revocations survive a restart of the machine during an outage, and a person signed out
+  everywhere can sign in there again once its copy has it.
+- **System health answers "is everything OK, and if not, what is wrong and what do I do"**. The
+  page (`/admin/health`) reads the new admin-only `GET /api/admin/system/status`: every part of
+  Maktaba ok, degraded or down with a plain reason, when it was checked and "Learn more" into the
+  help. Services (the API with its version and uptime; Postgres with its latency, primary or
+  replica and its replicas; the streaming service at its HTTP and gRPC addresses with the channels
+  on air and encoder sessions; the pipeline's gRPC address; the supervised processes), Workers
+  (every worker with its machine, role, last heartbeat and what it runs, and every streaming
+  machine; a stale record of a machine that runs a newer worker is history, never a failure),
+  Dependencies (Epic 40's checks of the model, each share, the disk and shared memory),
+  Integrations (Plex Live TV: reachable, registered, channels in sync, last error) and Queues & TV
+  (Epic 40's failing / waiting / needs-you rollup, the channels on air, the TV change waiting for
+  approval, the live TV slot, the tuner). A banner says the overall state: Down only when the API,
+  the database, every worker, or streaming while channels are on air is down. Every check runs at
+  the same time under its own deadline and the answer is reused for a few seconds; the thresholds
+  are the new rules section `system_health`. A red state puts a dot on System health in the admin
+  menu. The public `/api/system/health` liveness probe is unchanged.
 - **The desktop app's setup works end to end** (Epic 38, story 38.6; the Mac, Windows and Linux
   alike). `maktaba-server setup --json` gains every step the setup screens run: `check` (what will
   run, memory and disk), `admin` (the password is hashed as it is typed, by the new
@@ -197,6 +320,13 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Changed
 
+- **A machine that loses its home stays usable** under a notice instead of the whole app being
+  swapped for the "cannot reach its home" page (that page stays for a machine whose code does
+  not fit the home's database, and for one with no usable copy). This replaces the home's last
+  sign-in answers a node used to keep for ten minutes: `rules.cluster.offline_read_minutes` is
+  gone.
+- The Postgres bundled with Maktaba.app keeps its TLS certificate and key in the keys folder
+  (never in the database folder a machine's copy is made of).
 - **The Linux app runs the distribution's ffmpeg** (Epic 39). The Linux server payload carries no
   ffmpeg any more (the builds it pinned were configured `--enable-nonfree`), and `payload.sh` drops
   every download `pins.env` no longer pins from its cache. The ffmpeg every role runs is
@@ -273,6 +403,30 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **The first video played right after Maktaba first starts is no longer refused.** The API makes
+  the machine's stream signing key as it starts, and the streaming role looked for it every two
+  seconds: a signed stream URL in between was refused ("bad signature"), and so was every one
+  after the key file was replaced. A URL naming a key the streaming role has not read yet now
+  reads the key file again at once (at most every 100 ms; a request that finds that read under
+  way waits for it), and the key a replaced file held still verifies the URLs it signed, for a
+  day.
+- **Video transcodes work on an NVIDIA GPU (and are found on Windows).** The VOD transcodes
+  (HLS and DASH, Story 8.5) passed `-hwaccel nvenc`, which FFmpeg does not have (NVENC is an
+  encoder; NVIDIA decoding is `cuda`), and libx264's `-preset veryfast` to every encoder, which
+  NVENC refuses: on a machine with an NVIDIA GPU every transcode failed at once. Now the GPU
+  decodes H.264 and HEVC sources (`cuda`, VideoToolbox on a Mac; AV1 and the rest on the CPU, as
+  a GPU without AV1 decode cannot fall back), every rung is 8-bit 4:2:0 (a 10-bit source too:
+  NVENC's H.264 refuses 10-bit, and browsers rarely play High 10), and each encoder gets its own
+  preset (`p4` for NVENC). NVENC sessions are counted with the TV's channels', one per rung:
+  together they stay within the channels' NVENC cap (with what the TV slots hold), VOD holds at
+  most half of it, and the rungs it gets none for are encoded by libx264. A hardware run that
+  fails within 30 s is run again in software. The encoder is chosen by a short test encode, on
+  Windows too (it was always software there), detected again every 5 minutes while a listed GPU
+  encoder failed, and `MAKTABA_HWACCEL_PREFER` (`auto`, `software`, `nvenc`, `qsv`,
+  `videotoolbox`) narrows it; the transcodes run the ffmpeg the channels run
+  (`MAKTABA_FFMPEG_BIN`). Each rung of an HLS transcode is now its own variant (`v1`, `v2` were
+  never written, so the master playlist's lower rungs 404'd), a source without audio transcodes,
+  and a session asking for software (`force_software`) gets it.
 - **The second listen's tries count from the end of each try, and a stopped transcript comes
   back (follow-up of #221).** The wait between tries counted from when the try was queued, so a
   job that waited hours used it up; it now counts from the end of the try. A transcript the
@@ -374,6 +528,11 @@ don't append a line here; docs-only PRs are exempt.
   indexer, or a program of the venv still exiting (WinError 5 / 32, Errno 13). Each is now tried
   again for up to 5 s, as the status file already was, and a read-only file is made writable
   before it is removed.
+- **A pre-release no longer moves the images' `:latest`.** A tag with a suffix (`v0.3.0-rc.1`)
+  pushed every server image, and the relay's, as `:latest` too, so a Docker install following
+  `:latest` would have taken a release candidate. `:latest` now moves only with a plain `vX.Y.Z`,
+  as the GitHub release's latest does, and a pre-release tag no longer rolls the relay out to the
+  VPS by itself (a dispatch with its tag still does).
 
 ## [0.2.0] - 2026-10-19
 

@@ -29,11 +29,20 @@ func buildVOD(bg *background, logger *slog.Logger, backend probe.Backend, transc
 }
 
 // splitFullNode sends the channel routes the front door forwards (signed), the
-// node's internal TV routes and the guide's image routes to the TV handler,
-// everything else to VOD.
-func splitFullNode(tv, vod http.Handler) http.Handler {
+// node's internal TV routes and the guide's image routes to the TV handler, this
+// machine's own channels while its home is away to the offline station (nil: none,
+// offline_tv.go), everything else to VOD.
+func splitFullNode(tv, vod, offline http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
+		if isOffline(p) {
+			if offline == nil {
+				http.Error(w, "this machine keeps no copy of its home's database", http.StatusServiceUnavailable)
+				return
+			}
+			offline.ServeHTTP(w, r)
+			return
+		}
 		if strings.HasPrefix(p, "/stream/channel/") || strings.HasPrefix(p, "/internal/") ||
 			strings.HasPrefix(p, "/channel/") || strings.HasPrefix(p, "/tv/art/") {
 			tv.ServeHTTP(w, r)

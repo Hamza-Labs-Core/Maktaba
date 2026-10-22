@@ -1,11 +1,13 @@
 # System health
 
-See at a glance whether Maktaba is working: its services, its processes, free disk space, the processing backlog, Live TV and the version you run. Only administrators see this page.
+See at a glance whether Maktaba is working, and if not, what is wrong and what to do: its services, workers, dependencies, Plex, queues and Live TV, its processes, free disk space and the version you run. Only administrators see this page.
 
 ## What it is {#what-it-is}
 
 [Administration → System health](/admin/health) collects the health of every part of Maktaba on one page. It refreshes by itself every 30 seconds (**Auto-refreshes every 30s**).
 
+- **The banner** at the top: **All systems OK**, **Degraded** or **Down**, with the reason. It is Down only when a core part is down: the API, the database, every worker, or streaming while channels are on air. Anything else that is not OK makes it Degraded. When it is Down, **System health** in the menu shows a red dot.
+- **Services**, **Workers**, **Dependencies**, **Integrations** and **Queues & TV**: one tile per part, green (OK), yellow (Degraded) or red (Down), with a one-line reason, when it was last checked and **Learn more**, which opens its entry below. See [Each part](#items).
 - **Overall status**: one word for the whole server.
 - **Disk free**: free space on the server's data disk.
 - **Queue depth**: how many jobs wait to be processed.
@@ -20,9 +22,18 @@ See at a glance whether Maktaba is working: its services, its processes, free di
 ### See what is down {#see-what-is-down}
 
 1. Open [Administration → System health](/admin/health).
-2. Look at **Overall status**. **Operational** means everything answers.
-3. If it says **Degraded** or **Down**, scroll to **Services** and find the card with the same badge. Its reason and its failing check say what is wrong.
-4. Check **Processes** for a process that is **Restarting**, **Failed** or in a crash loop.
+2. Read the banner. **All systems OK** means every part answers and is fine.
+3. If it says **Degraded** or **Down**, it names the parts that are not OK. Find their tiles: yellow or red, each with its reason.
+4. Press **Learn more** on a tile to read what that part is and what you can do.
+5. Check **Processes** for a process that is **Restarting**, **Failed** or in a crash loop.
+
+### Workers kept as history {#worker-history}
+
+A worker that restarted gets a new name; its old record stays behind. When a newer worker runs on the same machine, or the old one has been silent longer than **Forget a worker after (hours)**, the old record is listed under **History** in grey. It is never counted as a failure.
+
+### Change when a part turns yellow or red {#change-thresholds}
+
+The limits are rules: open [Settings → Rules → System health](/help/rules#system-health). **Heartbeat late after** and **Heartbeat gone after** decide when a worker or streaming machine is late or gone; **Database slow from** when the database is slow; **Dependency check stale after** when a dependency check is too old; **One check waits** how long the page waits for each part.
 
 ### Find the version you run {#find-the-version}
 
@@ -39,6 +50,7 @@ The page shows states, not logs. To see why something fails, open [Logs](/help/l
 - **Operational**: the service answers and its checks pass.
 - **Degraded**: it answers but a check fails, or its state is unknown. It may work partly.
 - **Down**: it does not answer, or a check failed hard. When the whole page cannot reach the server, **Overall status** shows **Down**.
+- **Did not answer in time**: the part did not answer within **One check waits** (2 seconds). It is shown yellow, or red for the database.
 
 ### Processes {#process-states}
 
@@ -50,6 +62,70 @@ The page shows states, not logs. To see why something fails, open [Logs](/help/l
 - **Stopped**: it was stopped on purpose.
 - **Crash loop**: it keeps exiting soon after it starts. The other processes keep running, and this one is retried slowly.
 - **Recent crashes** lists why each stop happened: **exited with code N**, **killed by …**, **stopped responding and was restarted**, or **could not start**.
+
+### Each part {#items}
+
+Each tile is one part of Maktaba. What each one checks, and what to do when it is not OK:
+
+### API {#item-api}
+
+The server this page talks to, with its version and how long it has run. If you can read the page, it is up.
+
+### Database {#item-postgres}
+
+Maktaba's Postgres database: does it answer, and how fast (**Database slow from**, 250 ms). It also says whether this server is the primary and how many replicas stream from it, when Postgres lets Maktaba see it. **Down** makes the whole page Down: nothing works without the database. Check that Postgres runs and that the disk is not full.
+
+### Streaming {#item-streaming}
+
+The streaming service that plays videos and airs the channels: does it answer at its address, how many channels are on air and how many encoder sessions run. Down while channels are on air makes the whole page Down: the channels are off the air. On the Mac, **Pause server** then **Resume server** restarts it.
+
+### Pipeline {#item-pipeline}
+
+The processing pipeline's search port, used for searching by meaning. When it does not answer, search still finds words. **Not configured** means this server was started without its address.
+
+### Process {#item-process}
+
+A process maktaba-server runs (the API, streaming, the pipeline): **Running**, restarting, failed or in a crash loop. See [Processes](#process-states).
+
+### Workers {#item-workers}
+
+All workers together: how many are online. **Down** when no worker runs: nothing is processed. Start the pipeline (or the Mac app) on at least one machine.
+
+### Worker {#item-worker}
+
+One worker on one machine: its role (**main** or **transcription**), when it last reported, and what it is running now. **Late** after **Heartbeat late after** (60 s), **Gone** after **Heartbeat gone after** (300 s). A gone worker's machine may be asleep, off or disconnected. See [Workers kept as history](#worker-history).
+
+### Streaming machine {#item-streaming-host}
+
+A machine that airs channels: online, draining, switched off, unable to take channels, or without a heartbeat. See [Machines](/help/machines).
+
+### Dependency {#item-dependency}
+
+Something jobs need that Maktaba checks every minute (Queue health): the language model at the Tag check address, each library share, the free disk space and the database's shared memory. **Down** while it is not available: jobs that need it wait instead of failing and start again by themselves when it is back. **Stale** when no check ran for a while: the worker that runs the checks may be stopped. See [Failure classes](/help/failures#classes).
+
+### Plex Live TV {#item-plex-livetv}
+
+Maktaba's tuner in Plex: Plex answers, the tuner is registered, the channels are in sync, and the last error. See [Plex](/help/plex).
+
+### Queues {#item-queues}
+
+The processing queues' health: how many are failing, how many wait on a dependency and how many items need you. **Learn more** on a failing queue: [Queue tile turns Failing](/help/failures#tile-failing); the items: [Failing items](/queue/failures).
+
+### Channels on air {#item-tv-channels}
+
+How many channels are on air, and any that stopped reporting. See [Live TV](/help/live-tv-admin).
+
+### TV change {#item-tv-change}
+
+The TV change that is open. **Waits for your approval** when it was checked and is ready: open it and approve it. See [TV changes](/help/tv-changes).
+
+### Live TV slot {#item-tv-slot}
+
+The slot that airs the channels now (staging, Epic 33): healthy while it reports every few seconds. **The TV runs in one process** when slots are off.
+
+### TV tuner {#item-tv-tuner}
+
+The tuner Plex and other apps use: on or off, and how many of its tuners are in use. **Every tuner is in use**: one more viewer is refused; raise the tuner count on the [Live TV](/help/live-tv-admin) page.
 
 ### TV line {#tv-line}
 

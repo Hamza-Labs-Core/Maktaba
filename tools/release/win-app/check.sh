@@ -342,6 +342,7 @@ echo "programs"
 for b in maktaba-server maktaba-api maktaba-streaming maktaba-launcher; do
     run "$b" "$PAYLOAD/bin/$b.exe" --version
 done
+run "maktaba-cloudlink" "$PAYLOAD/bin/maktaba-cloudlink.exe" version
 for b in postgres initdb pg_ctl pg_dump pg_dumpall pg_restore psql pg_isready pg_upgrade pg_controldata pg_resetwal pg_basebackup; do
     run "$b" "$PAYLOAD/postgres/bin/$b.exe" --version
 done
@@ -365,6 +366,10 @@ hwaccels="$("$PAYLOAD/ffmpeg/ffmpeg.exe" -hide_banner -hwaccels 2>/dev/null || t
 if grep -qw cuda <<<"$hwaccels"; then ok "-hwaccel cuda"; else fail "ffmpeg has no cuda hwaccel"; fi
 
 echo "PostgreSQL"
+# the only logical decoding output plugin is pgoutput: another one (test_decoding) would let a
+# machine's replication role decode every table, past what is published to it (Epic 37)
+plugins="$(find "$PAYLOAD/postgres/lib" -type f ! -name 'pgoutput.*' -exec grep -l -a -F _PG_output_plugin_init {} + 2>/dev/null || true)"
+if [ -z "$plugins" ]; then ok "no output plugin but pgoutput"; else fail "output plugins besides pgoutput: $(printf '%s\n' "$plugins" | tr '\n' ' ')"; fi
 pg="$PAYLOAD/postgres/bin"
 PG_CTL="$pg/pg_ctl.exe"
 # a free port on 127.0.0.1, from the system

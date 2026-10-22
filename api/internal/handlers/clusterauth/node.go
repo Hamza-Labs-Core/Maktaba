@@ -28,19 +28,25 @@ const CookieSSO = "mkt_sso"
 // SelfInfo is GET /api/cluster/self (local on every machine, public): this machine,
 // its home, and whether it can serve now. Never a library or user name.
 type SelfInfo struct {
-	Role      string    `json:"role"` // home | node
-	ID        string    `json:"id"`   // instance id (home) or node id (node)
-	Name      string    `json:"name,omitempty"`
-	Version   string    `json:"version"`
-	SchemaRev int       `json:"schema_rev"`
+	Role      string `json:"role"` // home | node
+	ID        string `json:"id"`   // instance id (home) or node id (node)
+	Name      string `json:"name,omitempty"`
+	Version   string `json:"version"`
+	SchemaRev int    `json:"schema_rev"`
+	// Term is the cluster's term on the home (Epic 37: each switch of the home begins
+	// the next).
+	Term      int64     `json:"term,omitempty"`
 	WebURL    string    `json:"web_url,omitempty"`
 	Home      *SelfHome `json:"home,omitempty"`
 	Paused    string    `json:"paused,omitempty"`
 	SSO       bool      `json:"sso"`
 	AgentLink *bool     `json:"agent_connected,omitempty"`
 	VOD       any       `json:"vod,omitempty"`
-	ServedAt  time.Time `json:"served_at"`
-	Machines  []SelfRow `json:"machines,omitempty"`
+	// Copy is a full node's copy of its home's database (Epic 37): its supervisor's
+	// status of it (state, lag, when it last applied the home's changes).
+	Copy     json.RawMessage `json:"copy,omitempty"`
+	ServedAt time.Time       `json:"served_at"`
+	Machines []SelfRow       `json:"machines,omitempty"`
 	// AcceptJoins: the home's "accept new machines" switch (its mDNS join=1).
 	AcceptJoins bool `json:"accept_joins,omitempty"`
 }
@@ -201,15 +207,35 @@ func (n *Node) Callback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, dest, http.StatusFound)
 }
 
-// HomeInfoCache keeps the home's /api/cluster/self for a node (30 s).
+// HomeInfoCache keeps the home's /api/cluster/self for a node (30 s). Only the first
+// read waits for the home (3 s at most); past it a stale answer is given at once and
+// read again in the background, so a home that does not answer never holds up the
+// machine's own /api/cluster/self.
 type HomeInfoCache struct {
 	Link homelink.Link
 	TTL  time.Duration
 
-	mu   sync.Mutex
-	at   time.Time
-	info SelfInfo
-	ok   bool
+	mu      sync.Mutex
+	at      time.Time
+	info    SelfInfo
+	ok      bool
+	reading bool
+}
+
+func (c *HomeInfoCache) read(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	raw, err := c.Link.Self(ctx)
+	cancel()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.reading = false
+	if err != nil {
+		return
+	}
+	var s SelfInfo
+	if json.Unmarshal(raw, &s) == nil {
+		c.info, c.ok, c.at = s, true, time.Now()
+	}
 }
 
 // Get returns the home's self (cached; stale on failure).
@@ -219,18 +245,17 @@ func (c *HomeInfoCache) Get(ctx context.Context) (SelfInfo, bool) {
 		ttl = 30 * time.Second
 	}
 	c.mu.Lock()
+	switch {
+	case c.ok && time.Since(c.at) < ttl, c.reading:
+	case c.ok:
+		c.reading = true
+		go c.read(context.WithoutCancel(ctx))
+	default:
+		c.reading = true
+		c.mu.Unlock()
+		c.read(ctx)
+		c.mu.Lock()
+	}
 	defer c.mu.Unlock()
-	if c.ok && time.Since(c.at) < ttl {
-		return c.info, true
-	}
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	raw, err := c.Link.Self(ctx)
-	if err == nil {
-		var s SelfInfo
-		if json.Unmarshal(raw, &s) == nil {
-			c.info, c.ok, c.at = s, true, time.Now()
-		}
-	}
 	return c.info, c.ok
 }

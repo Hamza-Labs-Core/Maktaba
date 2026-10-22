@@ -63,7 +63,10 @@ type P6Deps struct {
 	// semantic leg (zero → search.DefaultSemanticBudget).
 	SearchSemanticBudget time.Duration
 	URLSigner            streaming.URLSigner
-	EventHub             *ws.Hub
+	// StreamOffline lets a full node play with the home's database down (PR #145;
+	// nil on the home).
+	StreamOffline streaming.Offline
+	EventHub      *ws.Hub
 
 	// PerfRegistry, when set, receives the named hot-path caches MountP6
 	// instantiates (e.g. the search embedding cache, Story 18.2 AC2 /
@@ -82,6 +85,9 @@ type P6Deps struct {
 	// BusCtx so a graceful shutdown stops the loop.
 	BusCtx context.Context
 	BusDSN string
+	// BusResettle settles BusDSN's sslmode again (nil: never), for a listener that
+	// cannot connect with it (eventbus.PostgresBackend.Resettle).
+	BusResettle func(ctx context.Context) string
 	// Secrets is the home's sealed store (slot 0120, story 32.6): the
 	// extensions' secret settings live there. nil refuses secret writes.
 	Secrets secrets.Store
@@ -190,6 +196,7 @@ func MountP6(r chi.Router, d P6Deps) {
 		Service:  streamSvc,
 		Signer:   d.URLSigner,
 		Settings: runtimeSettings,
+		Offline:  d.StreamOffline,
 	}
 	streamHandler.Mount(r)
 

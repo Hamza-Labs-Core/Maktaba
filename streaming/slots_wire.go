@@ -74,6 +74,10 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 				ctl.KickAll()
 			}
 		}}
+	// VOD's GPU sessions count with the slots' (vodGate)
+	tvSessions.Store(func(ctx context.Context) (int, int) {
+		return slots.EncodersUsed(), b.settings.Output(ctx).NVENCMax
+	})
 	for {
 		err := slots.Bootstrap(ctx)
 		if err == nil {

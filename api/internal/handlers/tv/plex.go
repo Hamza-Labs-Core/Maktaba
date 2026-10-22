@@ -289,3 +289,15 @@ func (h *Handler) queuePlex(w http.ResponseWriter, r *http.Request, why string) 
 			"the Plex Live TV stage is not available ("+outcome+"): start a worker with the Plex extension on"))
 	}
 }
+
+// ReadPlexStatus is the GET /api/tv/plex body without the HTTP layer (the
+// System health page, api/internal/handlers/systemstatus).
+func (h *Handler) ReadPlexStatus(ctx context.Context) (PlexStatus, error) {
+	return h.plexStatus(ctx)
+}
+
+// ReadDevice is the emulated HDHomeRun tuner (hdhr_device) without
+// provisioning it; sql.ErrNoRows when no one opened the Live TV page yet.
+func (h *Handler) ReadDevice(ctx context.Context) (Device, error) {
+	return h.load(ctx)
+}

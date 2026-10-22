@@ -4,8 +4,10 @@ package main
 // a machine with a joined node config runs as a full node — the machine agent holds the
 // cluster channel and serves the delegation key and the revocations to the node's API
 // on the supervisor's loopback admin; the web port sends live TV, the guide and the
-// lineup to the home's front door, and VOD the home serves (the fallback) to the home's
-// streaming port; every machine advertises itself over mDNS.
+// lineup to the home's front door (with the home away, live TV to this machine's own
+// channels, from its copy of the home's database: Epic 37), and VOD the home serves
+// (the fallback) to the home's streaming port; every machine advertises itself over
+// mDNS.
 
 import (
 	"context"
@@ -17,6 +19,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
@@ -32,10 +35,62 @@ type nodeServices struct {
 	node  config.NodeConfig
 	agent *machineagent.Agent
 	token string
+	// homeAway: this machine's API says it cannot reach its home (watchHome)
+	homeAway atomic.Bool
+}
+
+// HomeAway reports whether this machine cannot reach its home now.
+func (ns *nodeServices) HomeAway() bool { return ns != nil && ns.homeAway.Load() }
+
+// watchHome follows the API's view of the home (/api/cluster/self, every 5 s): an API
+// that does not answer leaves the last view, and live TV moves only on two answers alike
+// in a row (one blip does not move every viewer).
+func (ns *nodeServices) watchHome(ctx context.Context, api *url.URL) {
+	if api == nil {
+		return
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	last, have := false, false
+	for {
+		if away, ok := homeAway(client, api); ok {
+			if have && away == last && ns.homeAway.Load() != away {
+				ns.homeAway.Store(away)
+				if away {
+					fmt.Fprintln(os.Stderr, "[serve] node: the home is away: live TV from this machine's own channels")
+				} else {
+					fmt.Fprintln(os.Stderr, "[serve] node: the home answers again: live TV from its front door")
+				}
+			}
+			last, have = away, true
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(5 * time.Second):
+		}
+	}
+}
+
+// homeAway asks the API whether the home is away (ok false: the API did not answer).
+func homeAway(client *http.Client, api *url.URL) (away, ok bool) {
+	resp, err := client.Get(api.String() + "/api/cluster/self")
+	if err != nil {
+		return false, false
+	}
+	defer resp.Body.Close()
+	var s struct {
+		Home *struct {
+			Reachable bool `json:"reachable"`
+		} `json:"home"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&s) != nil || s.Home == nil {
+		return false, false
+	}
+	return !s.Home.Reachable, true
 }
 
 // startNodeServices starts the machine agent when this machine is a full node.
-func startNodeServices(ctx context.Context, cfg config.Config) *nodeServices {
+func startNodeServices(ctx context.Context, cfg config.Config, commands machineagent.Command) *nodeServices {
 	n := supervisor.NodeConfig()
 	if !supervisor.NodeMode(cfg, n) {
 		return nil
@@ -58,8 +113,11 @@ func startNodeServices(ctx context.Context, cfg config.Config) *nodeServices {
 			return machineagent.UpdateState{Version: version.Version, Platform: runtime.GOOS + "-" + runtime.GOARCH,
 				Layout: layout}
 		},
+		// the home's switch to another machine (serve_switchover.go)
+		Commands: commands,
 	}
 	go ns.agent.Run(ctx)
+	go ns.watchHome(ctx, apiOrigin(cfg.Server.Listen))
 	fmt.Fprintf(os.Stderr, "[serve] full node of %s (node %s): api, web, pipeline, streaming\n", n.HomeURL(), n.Node8())
 	return ns
 }
@@ -105,14 +163,25 @@ func homeStreamProxy(target string) http.Handler {
 // viaHomePrefix is a VOD session the home serves (the fallback, design §11.5).
 const viaHomePrefix = "/stream/via-home/"
 
+// offlineChannels is this machine's own channels on its streaming port (streaming
+// offline_tv.go), for its viewers while the home is away.
+const offlineChannels = "/stream/offline"
+
 // nodeStreamRouter sends a node web port's /stream/ by kind (design §11.3): live TV
-// (channels) to the home's front door, a session the home serves (/stream/via-home/…)
-// to the home's streaming port, everything else (VOD) to this machine's streaming
-// role, which reads the NAS itself.
-func nodeStreamRouter(local, home http.Handler) http.Handler {
+// (channels) to the home's front door, or with the home away (homeAway) to this
+// machine's own channels; a session the home serves (/stream/via-home/…) to the home's
+// streaming port; everything else (VOD) to this machine's streaming role, which reads
+// the NAS itself.
+func nodeStreamRouter(local, home http.Handler, homeAway func() bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
 		switch {
+		case strings.HasPrefix(p, "/stream/channel/") && homeAway != nil && homeAway():
+			out := r.Clone(r.Context())
+			out.URL.Path = offlineChannels + p
+			out.URL.RawPath = ""
+			w.Header().Set("X-Maktaba-Stream", "local-offline")
+			local.ServeHTTP(w, out)
 		case strings.HasPrefix(p, "/stream/channel/"):
 			w.Header().Set("X-Maktaba-Stream", "home-front-door")
 			home.ServeHTTP(w, r)

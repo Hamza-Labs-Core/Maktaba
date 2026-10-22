@@ -279,6 +279,13 @@ def xmltv_lineup(xmltv_url: str, title: str) -> str:
     return f"{XMLTV_LINEUP_PREFIX}{quote(xmltv_url)}#{quote(title)}"
 
 
+def xmltv_url_of(lineup: str) -> str:
+    """The guide address of an XMLTV lineup id (:func:`xmltv_lineup`); "" for any other."""
+    if not lineup.startswith(XMLTV_LINEUP_PREFIX):
+        return ""
+    return urllib.parse.unquote(lineup[len(XMLTV_LINEUP_PREFIX) :].partition("#")[0])
+
+
 def channel_map_query(numbers: Sequence[int | str]) -> list[tuple[str, str]]:
     """The query of ``PUT /media/grabbers/devices/{key}/channelmap``, built exactly as
     dizqueTV's ``RefreshChannels`` builds it: ``channelsEnabled`` (the numbers, comma
@@ -573,6 +580,20 @@ class PlexClient:
     def delete_dvr(self, dvr_key: str) -> None:
         """``DELETE /livetv/dvrs/{key}``: the DVR goes; its tuners stay known to Plex."""
         self.send("DELETE", f"/livetv/dvrs/{quote(dvr_key)}")
+
+    def remove_dvr_lineup(self, dvr_key: str, lineup: str) -> None:
+        """``DELETE /livetv/dvrs/{key}/lineups?lineup=..``: the DVR no longer carries this
+        guide."""
+        self.send("DELETE", self._q(f"/livetv/dvrs/{quote(dvr_key)}/lineups", {"lineup": lineup}))
+
+    def remove_dvr_device(self, dvr_key: str, device_key: str) -> None:
+        """``DELETE /livetv/dvrs/{key}/devices/{device}``: the tuner is no longer one of the
+        DVR's channel sources (Plex still knows it)."""
+        self.send("DELETE", f"/livetv/dvrs/{quote(dvr_key)}/devices/{quote(device_key)}")
+
+    def delete_grabber_device(self, device_key: str) -> None:
+        """``DELETE /media/grabbers/devices/{key}``: Plex forgets the tuner."""
+        self.send("DELETE", f"/media/grabbers/devices/{quote(device_key)}")
 
     def set_device_title(self, device_key: str, title: str) -> None:
         """``PUT /media/grabbers/devices/{key}?title=..&enabled=1``: the name Plex shows for

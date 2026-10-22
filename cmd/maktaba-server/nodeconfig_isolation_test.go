@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/adopt"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
@@ -33,6 +34,8 @@ func TestMain(m *testing.M) {
 	portProbe = func() config.PortProbe {
 		return config.PortProbe{Free: func(string) bool { return true }, Ours: func(int) bool { return false }}
 	}
+	// a step that starts the machine again waits for no API here
+	answerFirst = 50 * time.Millisecond
 	// nor on whether this machine has an ffmpeg (cmd_ffmpeg_test.go fakes its own)
 	ffmpegCheck = func(_ context.Context, t ffmpeg.Tools) ffmpeg.Report {
 		return ffmpeg.Report{Tools: t, Version: "6.1.2", OK: true}

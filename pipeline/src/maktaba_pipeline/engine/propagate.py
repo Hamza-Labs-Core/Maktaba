@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
+from ..db import claim_owner
 from ..db.jobs import Job
 from .enqueue import EnqueueResult, enqueue_job
 from .events import job_ref, log_event, publish
@@ -161,11 +162,13 @@ async def finalize_success(
             final_outcome = outcome or ("changed" if changed else "unchanged")
         t = now()
         ts = to_ts(db, t)
+        # a job still running: only while this worker holds its claim (db/claim_owner.py)
         active = (
             "state = 'done' AND propagated_at IS NULL"
             if already_done
-            else ("state IN ('claimed','running','resuming')")
+            else f"state IN ('claimed','running','resuming') AND {claim_owner.guard(db, 8)}"
         )
+        owner: tuple[Any, ...] = () if already_done else (claim_owner.current(),)
         row = await db.fetchrow(
             "UPDATE processing_jobs SET state = 'done', finished_at = COALESCE(finished_at, $2),"
             " stage_version = $3, input_hash = $4, output_hash = $5, output_summary = $6,"
@@ -180,6 +183,7 @@ async def finalize_success(
             output_hash,
             None if summary is None else dumps(summary),
             final_outcome,
+            *owner,
         )
         if row is None:
             return None

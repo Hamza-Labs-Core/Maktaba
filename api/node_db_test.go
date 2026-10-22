@@ -6,7 +6,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net"
 	"os"
@@ -23,6 +22,11 @@ import (
 // before any listener bound, with no log line. The node's DATABASE_URL now carries a
 // connect_timeout.
 func TestNodeStartStalledHome(t *testing.T) {
+	// the start asks the stalled home a few times, a connect timeout (whole seconds) each:
+	// seconds, past the unit tier's cap; the integration tier runs it
+	if testing.Short() {
+		t.Skip("waits on a home that never answers")
+	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -44,15 +48,17 @@ func TestNodeStartStalledHome(t *testing.T) {
 	cfg := nodemode.Config{Enabled: true, NodeID: "1e943eda-0000-4000-8000-000000000001", HomeAPIURL: "http://home:8080"}
 	t.Setenv("DATABASE_URL", "postgres://node_1e943eda:pw@"+ln.Addr().String()+"/maktaba?sslmode=prefer")
 	boundNodeDatabaseURL(cfg)
-	db, err := pgdsn.Open(os.Getenv("DATABASE_URL"))
+	dbs, err := openNodeDBs(os.Getenv("DATABASE_URL"), "", noopLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer dbs.close()
 	// without the bound the role check blocks inside lib/pq for good: wait for it here
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		_, err := startNode(context.Background(), cfg, db, noopLogger())
+		_, err := startNode(ctx, cfg, dbs, noopLogger())
 		done <- err
 	}()
 	select {
@@ -60,8 +66,11 @@ func TestNodeStartStalledHome(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatalf("role check still blocked after 5 s against a home that never answers: the node's DATABASE_URL has no connect_timeout (pgdsn.ConnectTimeout %v)", pgdsn.ConnectTimeout)
 	}
-	if !errors.Is(err, nodemode.ErrDDLRole) {
-		t.Fatalf("startNode = %v, want the role check to fail closed", err)
+	// a home that never answers is a database down: the node starts without it, on its
+	// copy, and checks its role once it answers (Epic 37; a role that can run DDL then
+	// stops the API, TestNodeStartsWithTheHomeDatabaseDown's checkRoleLater)
+	if err != nil {
+		t.Fatalf("startNode = %v, want a start without the home's database", err)
 	}
 
 	// the home's own database is left as it is

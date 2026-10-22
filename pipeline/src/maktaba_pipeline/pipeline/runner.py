@@ -45,6 +45,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
+from ..db import claim_owner
 from ..db.jobs import Job, Stage
 from ..db.jobs_claim import claim_one
 from ..engine.claim import PoolConfig, claim_for_pool, load_pools
@@ -147,6 +148,9 @@ class ClaimLoop:
         self._pool_sems: dict[str, asyncio.Semaphore] = {}
         self._pool_sem_size: dict[str, int] = {}
         self._pool_inflight: dict[str, int] = {}
+        #: the jobs this loop dispatched that have not ended
+        self.in_flight: set[asyncio.Task[None]] = set()
+        self._drain_failed_logged = False
 
     def _default_wakeup(self) -> WakeupSource:
         dialect = getattr(self.db, "dialect", "sqlite")
@@ -168,13 +172,27 @@ class ClaimLoop:
             stages=[str(s) for s in self.cfg.supported_stages],
             poll_sec=self.cfg.claim_poll_sec,
         )
-        in_flight: set[asyncio.Task[None]] = set()
+        in_flight = self.in_flight
         backoff = self.cfg.claim_poll_sec
         try:
             async for _ in self._wakeup.signals():
                 if self.shutdown_event.is_set():
                     break
-                claimed = await self._drain(in_flight)
+                try:
+                    claimed = await self._drain(in_flight)
+                except Exception as exc:  # noqa: BLE001 - the database went away: next tick
+                    # a node's beat notices the home gone and closes the gate; until it
+                    # comes back each tick fails here, backing off like an empty one
+                    if not self._drain_failed_logged:
+                        self._drain_failed_logged = True
+                        _log.warning(
+                            "claim_loop_drain_failed", error=f"{type(exc).__name__}: {exc}"
+                        )
+                    claimed = 0
+                else:
+                    if self._drain_failed_logged:
+                        self._drain_failed_logged = False
+                        _log.info("claim_loop_drain_recovered")
                 if claimed:
                     backoff = self.cfg.claim_poll_sec
                 else:
@@ -190,6 +208,15 @@ class ClaimLoop:
                 )
                 await asyncio.gather(*in_flight, return_exceptions=True)
             _log.info("claim_loop_stopped", worker_id=self.cfg.worker_id)
+
+    def stop_in_flight(self) -> int:
+        """Cancel every job in flight (they end as interrupted, writing nothing); the
+        number cancelled. A node does it when the home has been gone close to the claim
+        lease: past it the home hands those jobs to another machine."""
+        tasks = [t for t in self.in_flight if not t.done()]
+        for task in tasks:
+            task.cancel()
+        return len(tasks)
 
     #: Pools are visited in a fixed order so a slow pool cannot starve the others.
     POOL_ORDER: tuple[str, ...] = (
@@ -277,7 +304,8 @@ class ClaimLoop:
 
     async def _dispatch_job(self, job: Job) -> None:
         try:
-            with bind_job_id(str(job.id)):
+            # the job's writes apply while this worker holds its claim (db/claim_owner.py)
+            with bind_job_id(str(job.id)), claim_owner.running_for(self.cfg.worker_id):
                 _log.info(
                     "job_dispatched",
                     job_id=job.id,
@@ -346,7 +374,7 @@ class ClaimLoop:
 
     async def _run_job(self, job: Job, sem: asyncio.Semaphore) -> None:
         try:
-            with bind_job_id(str(job.id)):
+            with bind_job_id(str(job.id)), claim_owner.running_for(self.cfg.worker_id):
                 _log.info(
                     "job_dispatched",
                     job_id=job.id,

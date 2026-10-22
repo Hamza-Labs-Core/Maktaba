@@ -82,6 +82,10 @@ type Node struct {
 	FullNode    bool
 	VOD         json.RawMessage
 	UpdateState json.RawMessage
+	// Copy is what a full node reports of its copy of this database (Epic 37, slot
+	// 0147: state, lag, when it last applied), and when it did.
+	Copy           json.RawMessage
+	CopyReportedAt *time.Time
 }
 
 // NodeWorker is a workers row that belongs to a node.

@@ -7,6 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 // HLB-328: until this file landed, FFmpeg was never spawned for the
@@ -27,6 +31,11 @@ type Job struct {
 	HWAccel    string // "" → software (libx264)
 	Format     string // "hls" | "dash"
 	MasterName string // master playlist filename (default master.m3u8)
+	// SourceCodec is the source's video codec (the probe's): the GPU decodes
+	// only H.264 and HEVC (PlanFor).
+	SourceCodec string
+	// NoAudio: the source has no audio stream (none is mapped).
+	NoAudio bool
 }
 
 // Handle is the live transcode controller pinned to a session. It
@@ -45,19 +54,56 @@ type Job struct {
 // all funnel through Handle.Stop). The request ctx is kept strictly for
 // request-scoped concerns (the Orchestrator's pre-spawn validation).
 type Handle struct {
+	mu         sync.Mutex
 	proc       *Process
 	procCancel context.CancelFunc // cancels the session-scoped encoder ctx
-	stopFn     func(context.Context) error
-	pidFn      func() int
-	actFn      func() bool
+	// stopped: Stop ran (no new encoder starts); restarting: the hardware
+	// run failed and its software run is starting (the session stays active)
+	stopped, restarting bool
+	stopFn              func(context.Context) error
+	pidFn               func() int
+	actFn               func() bool
+}
+
+// current is the encoder running now, and its context's cancel.
+func (h *Handle) current() (*Process, context.CancelFunc) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.proc, h.procCancel
+}
+
+// set makes proc the session's encoder; false when the session was stopped
+// meanwhile (the caller stops proc).
+func (h *Handle) set(proc *Process, cancel context.CancelFunc) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.stopped {
+		return false
+	}
+	h.proc, h.procCancel, h.restarting = proc, cancel, false
+	return true
+}
+
+// restart marks the session as getting its software run; false once stopped.
+func (h *Handle) restart() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.stopped {
+		return false
+	}
+	h.restarting = true
+	return true
 }
 
 // Stderr is the encoder's recent stderr (empty for a test handle).
 func (h *Handle) Stderr() string {
-	if h == nil || h.proc == nil {
+	if h == nil {
 		return ""
 	}
-	return h.proc.tail.String()
+	if proc, _ := h.current(); proc != nil {
+		return proc.tail.String()
+	}
+	return ""
 }
 
 // Stop terminates the underlying process. Idempotent.
@@ -72,11 +118,15 @@ func (h *Handle) Stop(ctx context.Context) error {
 	if h == nil {
 		return nil
 	}
-	if h.procCancel != nil {
-		h.procCancel()
+	h.mu.Lock()
+	h.stopped = true
+	proc, cancel := h.proc, h.procCancel
+	h.mu.Unlock()
+	if cancel != nil {
+		cancel()
 	}
-	if h.proc != nil {
-		return h.proc.Stop(ctx)
+	if proc != nil {
+		return proc.Stop(ctx)
 	}
 	if h.stopFn != nil {
 		return h.stopFn(ctx)
@@ -89,8 +139,8 @@ func (h *Handle) PID() int {
 	if h == nil {
 		return 0
 	}
-	if h.proc != nil {
-		return h.proc.PID()
+	if proc, _ := h.current(); proc != nil {
+		return proc.PID()
 	}
 	if h.pidFn != nil {
 		return h.pidFn()
@@ -103,8 +153,11 @@ func (h *Handle) Active() bool {
 	if h == nil {
 		return false
 	}
-	if h.proc != nil {
-		return h.proc.Active()
+	h.mu.Lock()
+	proc, restarting := h.proc, h.restarting
+	h.mu.Unlock()
+	if proc != nil {
+		return restarting || proc.Active()
 	}
 	if h.actFn != nil {
 		return h.actFn()
@@ -130,9 +183,17 @@ type Orchestrator struct {
 }
 
 // DefaultOrchestrator returns an Orchestrator backed by the real
-// ffmpeg-spawning Runner. main.go wires this; tests swap Runner.
-func DefaultOrchestrator(bin Binary) *Orchestrator {
-	return &Orchestrator{Runner: &execRunner{Bin: bin}}
+// ffmpeg-spawning Runner, its hardware encoders' sessions counted by gates
+// (nil: uncounted). main.go wires this; tests swap Runner.
+func DefaultOrchestrator(bin Binary, gates map[HWAccel]SessionGate) *Orchestrator {
+	return &Orchestrator{Runner: &execRunner{Bin: bin, Gates: gates}}
+}
+
+// SessionGate is a hardware encoder's session budget, shared with the TV's
+// playout in this process (channel.EncoderGate): a GeForce card opens only a
+// few NVENC sessions, and every ladder rung on NVENC is one.
+type SessionGate interface {
+	Acquire(ctx context.Context, owner uuid.UUID, wait time.Duration) (release func(refused bool), ok bool)
 }
 
 // Start prepares the session HLS dir, writes the master playlist for
@@ -194,18 +255,27 @@ func BuildMasterPlaylistFor(ladder []Rendition) []byte {
 	return []byte(sb.String())
 }
 
+// fallbackWindow: a hardware run that fails this soon after it started is
+// run again in software (a source or a format the GPU will not take, a
+// session the driver would not open).
+var fallbackWindow = 30 * time.Second
+
 // execRunner is the production Runner: it builds the HLS/DASH arg list
 // and Spawns ffmpeg. The child writes variant playlists + segments into
 // job.OutputDir; the reaper kills it on idle via the returned Handle.
-type execRunner struct{ Bin Binary }
+//
+// A hardware verdict takes one session per rung from its gate, at once or
+// not at all (the highest rungs first; the rungs it gets none for are
+// encoded by libx264), and gives them back when ffmpeg exits: VOD never
+// takes a session the TV's playout here counts on. A hardware run that
+// fails within fallbackWindow is run again in software; when the driver
+// refused the session, the gate pauses the hardware encoder for everyone.
+type execRunner struct {
+	Bin   Binary
+	Gates map[HWAccel]SessionGate
+}
 
 func (e *execRunner) Start(ctx context.Context, job Job) (*Handle, error) {
-	var args Args
-	if strings.EqualFold(job.Format, "dash") {
-		args = DASHArgs(job.InputPath, job.OutputDir, job.Ladder, job.HWAccel)
-	} else {
-		args = HLSArgs(job.InputPath, job.OutputDir, job.MasterName, job.Ladder, job.HWAccel)
-	}
 	// HLB-328 C1: derive a session-scoped context from Background, NOT
 	// from the inbound request ctx. grpc-go cancels the request ctx the
 	// instant OpenSession returns; if exec.CommandContext were parented
@@ -216,13 +286,89 @@ func (e *execRunner) Start(ctx context.Context, job Job) (*Handle, error) {
 	// The request ctx is intentionally unused here (request-scoped
 	// validation happens upstream in Orchestrator.Start).
 	_ = ctx
+	h := &Handle{}
+	if err := e.run(h, job, job.HWAccel); err != nil {
+		return nil, err
+	}
+	return h, nil
+}
+
+// run spawns job's encoder for the verdict hw into h, under a session-scoped
+// context (see Start), and watches it: the gate's sessions go back when it
+// exits, and a hardware run that failed early is run again in software.
+func (e *execRunner) run(h *Handle, job Job, hw string) error {
+	rungs := len(job.Ladder)
+	hwRungs := 0
+	var releases []func(refused bool)
+	if hw != "" {
+		hwRungs = rungs
+		if g := e.Gates[HWAccel(hw)]; g != nil {
+			hwRungs = 0
+			owner := sessionOwner(job.SessionID)
+			for i := 0; i < rungs; i++ {
+				release, ok := g.Acquire(context.Background(), owner, 0)
+				if !ok {
+					break
+				}
+				releases = append(releases, release)
+				hwRungs++
+			}
+		}
+	}
+	giveBack := func(refused bool) {
+		for _, r := range releases {
+			r(refused)
+		}
+	}
+	plan := PlanFor(hw, hwRungs, rungs, job.SourceCodec, !job.NoAudio)
+	var args Args
+	if strings.EqualFold(job.Format, "dash") {
+		args = DASHArgs(job.InputPath, job.OutputDir, job.Ladder, plan)
+	} else {
+		args = HLSArgs(job.InputPath, job.OutputDir, job.MasterName, job.Ladder, plan)
+	}
 	procCtx, procCancel := context.WithCancel(context.Background())
 	proc, err := Spawn(procCtx, e.Bin, args)
 	if err != nil {
 		procCancel()
-		return nil, err
+		giveBack(false)
+		return err
 	}
-	return &Handle{proc: proc, procCancel: procCancel}, nil
+	if !h.set(proc, procCancel) {
+		procCancel()
+		_ = proc.Stop(context.Background())
+		giveBack(false)
+		return nil
+	}
+	started := time.Now()
+	go func() {
+		werr := proc.Wait()
+		giveBack(hwRungs > 0 && refusedSession(proc.stderrAfterExit(2*time.Second)))
+		if werr == nil || hwRungs == 0 || time.Since(started) >= fallbackWindow || !h.restart() {
+			return
+		}
+		if err := e.run(h, job, ""); err != nil {
+			h.mu.Lock()
+			h.restarting = false
+			h.mu.Unlock()
+		}
+	}()
+	return nil
+}
+
+// refusedSession: ffmpeg's stderr says the driver would not open an NVENC
+// session (the card's sessions are all taken, here or by another program).
+func refusedSession(stderr string) bool {
+	return strings.Contains(strings.ToLower(stderr), "openencodesessionex failed")
+}
+
+// sessionOwner is the gate's owner for a session id (a UUID, else one made
+// from it).
+func sessionOwner(id string) uuid.UUID {
+	if u, err := uuid.Parse(id); err == nil {
+		return u
+	}
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(id))
 }
 
 // NewHandleForTest builds a Handle wired to caller-supplied closures —

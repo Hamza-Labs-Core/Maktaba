@@ -11,16 +11,30 @@ A node also checks the home's schema (:mod:`.schema`) at start and with every st
 check, at every refresh while paused: a home whose database lacks this code's migrations
 pauses the machine (every stage off, ``paused: ...``; no storage probe; the runtime's
 writers wait on :attr:`WorkerAgent.paused`) and it resumes by itself once the home caught up.
+
+The same pause holds while the home's database does not answer the node's beat
+(:meth:`WorkerAgent.beat`, :data:`HOME_LOST_AFTER` beats in a row): the node claims
+nothing; its jobs in flight finish, unless the outage nears the claim lease, when they are
+stopped, since the home would then hand them to another machine. That is measured from
+the last beat the home answered (:meth:`WorkerAgent.run_lease_watch`, every
+:data:`LEASE_CHECK_SEC`; :func:`stop_jobs_after` keeps a margin under the lease): a home
+that hangs rather than refuses leaves each beat waiting its timeout, and the beat loop
+comes round only every ~26 s then. Should a job's write still come late, it changes
+nothing once another worker holds the claim (``db/claim_owner.py``). At the first beat
+the home answers again the node releases what its ended jobs left claimed and claims
+again. The worker's status file (cluster agent) is rewritten at each pause and resume.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, Protocol
 
 from ..engine.graph import StageDef
 from ..engine.paths import PathMap, set_active_path_map
@@ -28,6 +42,7 @@ from ..engine.sql import is_pg, loads
 from ..engine.sync import stages_ahead
 from ..engine.workers import update_worker_stages
 from ..log import get_logger
+from ..pipeline.shutdown import release_claims
 from ..sharepath.servers import build_for_machine, load_servers
 from . import exitcodes, nodes_db
 from .schema import SCHEMA_REV, HomeSchema, pause_reason, read_home_schema
@@ -41,10 +56,72 @@ from .storage import (
     load_samples,
 )
 
-__all__ = ["STAGE_REFRESH_SEC", "STORAGE_CHECK_SEC", "WorkerAgent", "path_map_from_json"]
+__all__ = [
+    "BEAT_TIMEOUT_SEC",
+    "HOME_LOST_AFTER",
+    "STAGE_REFRESH_SEC",
+    "LEASE_CHECK_SEC",
+    "STOP_JOBS_AFTER_SEC",
+    "STOP_JOBS_MARGIN_SEC",
+    "STORAGE_CHECK_SEC",
+    "WorkerAgent",
+    "home_unreachable",
+    "path_map_from_json",
+    "stop_jobs_after",
+]
 
 STAGE_REFRESH_SEC = 30.0
 STORAGE_CHECK_SEC = 300.0
+#: a node beat the home's database has not answered by then counts as unanswered (a
+#: powered-off home leaves a call hanging rather than failing)
+BEAT_TIMEOUT_SEC = 8.0
+#: unanswered beats in a row (one each 10 s) before the node pauses: one lost beat is a blip
+HOME_LOST_AFTER = 2
+#: no beat answered for this long, a node stops its jobs in flight: the claim lease (90 s
+#: without a job heartbeat) lapses soon after, and the home then hands those jobs to
+#: another machine (the runtime sets it from the configured lease: :func:`stop_jobs_after`)
+STOP_JOBS_AFTER_SEC = 70.0
+#: kept under the lease: the last job heartbeat the home took may be one heartbeat older
+#: than the last beat it answered, the check runs every few seconds, cancelling takes a
+#: moment, and the home's clock is not this machine's
+STOP_JOBS_MARGIN_SEC = 15.0
+#: how often a node checks the lease while it runs jobs
+LEASE_CHECK_SEC = 2.0
+
+
+def stop_jobs_after(stale_claim_sec: float, heartbeat_sec: float) -> float:
+    """How long after the last beat the home answered a node stops its jobs in flight,
+    for a claim lease of ``stale_claim_sec`` and job heartbeats every ``heartbeat_sec``."""
+    return max(stale_claim_sec - heartbeat_sec - STOP_JOBS_MARGIN_SEC, stale_claim_sec / 2)
+
+
+#: asyncpg's errors for a connection that failed, closed or is refused for now (by name,
+#: as :mod:`.exitcodes` matches the login refusals): class 08 and 57P03
+_CONNECTION_ERRORS = (
+    "PostgresConnectionError",
+    "CannotConnectNowError",
+    "ConnectionDoesNotExistError",
+)
+
+
+def home_unreachable(exc: BaseException) -> bool:
+    """The home's database did not answer (as opposed to answering with an error)."""
+    if isinstance(exc, (OSError, TimeoutError, asyncio.TimeoutError)):  # noqa: UP041
+        return True
+    names = {c.__name__ for c in type(exc).__mro__}
+    if names.intersection(_CONNECTION_ERRORS):
+        return True
+    # asyncpg's "connection is closed" / "pool is closing"
+    return "InterfaceError" in names and "clos" in str(exc)
+
+
+class InFlight(Protocol):
+    """The claim loop, as a node's beat sees it."""
+
+    in_flight: set[asyncio.Task[None]]
+
+    def stop_in_flight(self) -> int: ...
+
 
 _log = get_logger()
 
@@ -96,6 +173,19 @@ class WorkerAgent:
     _schema_unknown_logged: bool = False
     #: a node's start finished (it waits while the machine starts paused)
     _node_ready: bool = False
+    #: the claim loop (the runtime sets it): its jobs in flight when the home goes away
+    claims: InFlight | None = None
+    beat_timeout_sec: float = BEAT_TIMEOUT_SEC
+    stop_jobs_after_sec: float = STOP_JOBS_AFTER_SEC
+    #: called when the pause changes (the cluster agent rewrites the status file)
+    pause_listeners: list[Callable[[], None]] = field(default_factory=list)
+    #: the last beat the home's database answered (monotonic; the start's counts)
+    _answered_at: float = field(default_factory=time.monotonic)
+    #: the current home outage: unanswered beats in a row, since when (monotonic), whether
+    #: its jobs were stopped
+    _beats_lost: int = 0
+    _lost_at: float | None = None
+    _jobs_stopped: bool = False
     _capabilities: dict[str, Any] = field(default_factory=dict)
     #: story 31.3: the home's own machine converts its stored paths by itself
     _auto_canon: bool = False
@@ -107,8 +197,9 @@ class WorkerAgent:
 
     @property
     def paused(self) -> bool:
-        """The home's schema does not fit this code: claim nothing, write nothing."""
-        return self.selector.paused is not None
+        """The home's schema does not fit this code, or a node cannot reach the home's
+        database: claim nothing, write nothing."""
+        return self.selector.paused is not None or self.selector.unreachable is not None
 
     @property
     def node8(self) -> str:
@@ -121,6 +212,7 @@ class WorkerAgent:
         reported), the storage check, the switches. Call before the first compute."""
         assert self.node_id is not None
         beat = await nodes_db.beat(self.db, self.node_id)
+        self._answered_at = time.monotonic()
         if beat is None:
             raise RuntimeError(
                 f"this machine ({self.node_id}) is not known to the home: join it again"
@@ -213,7 +305,15 @@ class WorkerAgent:
                 required=self.required_schema,
             )
         self.selector.paused = reason
+        self._pause_changed()
         return True
+
+    def _pause_changed(self) -> None:
+        for listener in list(self.pause_listeners):
+            try:
+                listener()
+            except Exception:  # noqa: BLE001 - a status file is not worth a beat
+                _log.debug("cluster_pause_listener_failed", exc_info=True)
 
     def _infer(self) -> dict[str, str]:
         paths = [p for lib in self.samples for p, _ in lib.videos]
@@ -340,6 +440,8 @@ class WorkerAgent:
 
     async def refresh(self) -> bool:
         """The 30 s re-evaluation."""
+        if self.selector.unreachable is not None:
+            return False  # its reads would fail: the beat brings the node back
         self.selector.ahead = await stages_ahead(self.db, self.graph)
         if not self.paused:
             await refresh_stages(self.db, self.graph, self.selector.served)
@@ -381,11 +483,14 @@ class WorkerAgent:
             _log.debug("enrich_sweep_failed", exc_info=True)
 
     async def beat(self) -> None:
-        """A node's heartbeat on its cluster row: revoked -> stop; drain -> claim nothing."""
+        """A node's heartbeat on its cluster row: revoked -> stop; drain -> claim nothing;
+        the home's database not answering -> claim nothing until it does again."""
         if self.node_id is None:
             return
         try:
-            beat = await nodes_db.beat(self.db, self.node_id)
+            beat = await asyncio.wait_for(
+                nodes_db.beat(self.db, self.node_id), timeout=self.beat_timeout_sec
+            )
         except Exception as exc:
             if exitcodes.login_revoked(exc):
                 _log.error("cluster_node_login_refused_stopping", error=str(exc))
@@ -396,7 +501,14 @@ class WorkerAgent:
                 # refused for another reason (pg_hba, ...): fixable on the home, so the
                 # worker keeps going and the next heartbeat tries again
                 _log.error("cluster_node_login_refused", error=str(exc))
+            elif home_unreachable(exc):
+                self._home_lost(exc)
+                return
+            else:
+                # an error the database answered: it is there (the lease is not at risk)
+                self._answered_at = time.monotonic()
             raise
+        await self._home_back()
         if beat is None or beat.state in ("revoked", "rejected"):
             _log.warning("cluster_node_revoked_stopping", state=None if beat else "removed")
             exitcodes.mark_refused(f"this machine is {beat.state if beat else 'removed'}")
@@ -415,6 +527,78 @@ class WorkerAgent:
             _log.info("cluster_path_map_set_by_admin", path_map=beat.path_map)
             self.admin_map = dict(beat.path_map)
             await asyncio.to_thread(self._rebuild)
+
+    def _home_lost(self, exc: BaseException) -> None:
+        """A beat the home's database did not answer (see the module doc)."""
+        now = time.monotonic()
+        self._beats_lost += 1
+        if self._lost_at is None:
+            self._lost_at = now
+        if self.selector.unreachable is None and self._beats_lost >= HOME_LOST_AFTER:
+            self._pause_unreachable(f"{type(exc).__name__}: {exc}")
+        self.check_lease(now)
+
+    def _pause_unreachable(self, error: str) -> None:
+        since = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
+        self.selector.unreachable = f"paused: the home's database does not answer (since {since})"
+        # compute, not apply: apply writes the set to the home
+        self.selector.compute()
+        _log.warning("cluster_node_paused_home_unreachable", error=error, since=since)
+        self._pause_changed()
+
+    def check_lease(self, now: float | None = None) -> None:
+        """No beat answered for :attr:`stop_jobs_after_sec`: stop the jobs in flight
+        (once per outage) and claim nothing, before the home hands them to another
+        machine."""
+        if self.node_id is None or self._jobs_stopped:
+            return
+        now = time.monotonic() if now is None else now
+        silent = now - self._answered_at
+        if silent < self.stop_jobs_after_sec:
+            return
+        self._jobs_stopped = True
+        if self.selector.unreachable is None:
+            self._pause_unreachable(f"no beat answered for {round(silent)} s")
+        stopped = self.claims.stop_in_flight() if self.claims is not None else 0
+        if stopped:
+            _log.warning(
+                "cluster_node_jobs_stopped_home_unreachable", jobs=stopped, silent_sec=round(silent)
+            )
+
+    async def run_lease_watch(self, interval: float = LEASE_CHECK_SEC) -> None:
+        """:meth:`check_lease` every ``interval``, whatever the beat loop waits on. It
+        starts with the claim loop: no job here is older than its start."""
+        self._answered_at = max(self._answered_at, time.monotonic())
+        while not self.shutdown.is_set():
+            with contextlib.suppress(TimeoutError, asyncio.TimeoutError):  # noqa: UP041
+                await asyncio.wait_for(self.shutdown.wait(), timeout=interval)
+                return
+            self.check_lease()
+
+    async def _home_back(self) -> None:
+        """A beat the home's database answered: a node paused for it releases what its
+        ended jobs left claimed (nothing in flight here then holds a claim) and resumes."""
+        lost_at = self._lost_at
+        self._beats_lost, self._lost_at = 0, None
+        self._answered_at = time.monotonic()
+        if self.selector.unreachable is None:
+            self._jobs_stopped = False
+            return
+        released: list[int] = []
+        if self.claims is not None and not any(not t.done() for t in self.claims.in_flight):
+            try:
+                released = await release_claims(self.db, self.worker_id)
+            except Exception:  # noqa: BLE001 - the claim lease releases them later
+                _log.warning("cluster_node_release_claims_failed", exc_info=True)
+        self.selector.unreachable = None
+        self._jobs_stopped = False
+        _log.info(
+            "cluster_node_resumed_home",
+            after_sec=None if lost_at is None else round(time.monotonic() - lost_at),
+            released=released,
+        )
+        self._pause_changed()
+        await self.apply()
 
     async def run_refresher(self, interval: float = STAGE_REFRESH_SEC) -> None:
         while not self.shutdown.is_set():

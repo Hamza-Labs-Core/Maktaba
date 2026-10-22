@@ -15,6 +15,24 @@ import { useClusterFmt } from "../components/cluster/format";
 
 export const PAUSED_POLL_MS = 15_000;
 
+/** How rarely a page that never saw the home away reloads on its own (per tab). */
+export const PAUSED_RELOAD_EVERY_MS = 2 * 60_000;
+const RELOADED_KEY = "mkt-paused-reloaded";
+
+// mayReloadUnseen: a page shown on a moment's answer (the home answered by the first
+// look) reloads, but at most every PAUSED_RELOAD_EVERY_MS: an answer that keeps sending
+// the app here never makes a reload loop.
+function mayReloadUnseen(now: number): boolean {
+  try {
+    const last = Number(sessionStorage.getItem(RELOADED_KEY) || 0);
+    if (now - last < PAUSED_RELOAD_EVERY_MS) return false;
+    sessionStorage.setItem(RELOADED_KEY, String(now));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Whether self still shows the condition (null: it does not say). */
 function holds(code: NodeUnavailableCode, self: ClusterSelf): boolean | null {
   if (self.paused) return true;
@@ -40,6 +58,7 @@ export function Paused({
   const [self, setSelf] = useState<ClusterSelf | null>(null);
   const version = useRef<string | null>(null);
   const seenHeld = useRef(false);
+  const notHeld = useRef(0);
   const reloaded = useRef(false);
 
   useEffect(() => {
@@ -58,10 +77,20 @@ export function Paused({
           if (version.current === null) version.current = s.version;
           else if (s.version !== version.current) return reload();
           const h = holds(code, s);
-          if (h) seenHeld.current = true;
-          // only once this machine has said it holds: an answer that never
-          // reflects it would otherwise reload the page every poll
-          else if (h === false && seenHeld.current) reload();
+          if (h) {
+            seenHeld.current = true;
+            notHeld.current = 0;
+          } else if (h === false) {
+            notHeld.current += 1;
+            // once this machine has said it holds; or, for the home away, when two
+            // looks in a row find it answering (the page came of a moment's blip),
+            // rarely: an answer that never reflects it must not reload every poll
+            if (
+              seenHeld.current ||
+              (code === "home_unreachable" && notHeld.current >= 2 && mayReloadUnseen(Date.now()))
+            )
+              reload();
+          }
         })
         .catch(() => {
           // the machine is restarting (an update?): look again later

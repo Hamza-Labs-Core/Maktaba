@@ -42,6 +42,7 @@ const (
 	ReasonStartFailed = "start_failed" // could not be started at all
 	ReasonShutdown    = "shutdown"     // stopped by the supervisor's shutdown
 	ReasonStopped     = "stopped"      // stopped on request (an on-demand process)
+	ReasonRestarted   = "restarted"    // stopped to start again at once (Supervisor.Restart)
 )
 
 // Event kinds.

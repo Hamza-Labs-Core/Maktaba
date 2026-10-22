@@ -51,6 +51,7 @@ from .schedule.tv_settings import (
 )
 from .sharepath.auto import StorageConfig
 from .stt.placement import TranscriptionConfig
+from .system_health_settings import SystemHealthConfig
 from .tvrelease.config import MaktabaTvStagingConfig
 from .updates_settings import UpdatesConfig
 
@@ -135,6 +136,9 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
     "transcription": (TranscriptionConfig, "Transcription", "which machines transcribe: "
                       "while the second listen is on, those that run it, unless machines "
                       "without it may too"),
+    "system_health": (SystemHealthConfig, "System health", "when the System health page "
+                      "calls a worker late or gone, the database slow, a dependency check "
+                      "stale, and how long one check may take"),
 }  # fmt: skip
 
 

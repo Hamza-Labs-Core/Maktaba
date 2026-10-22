@@ -247,11 +247,11 @@
 
 - **Priority:** P1
 - **Category:** Error
-- **Covered by existing test?** Yes — `NodeGuard.test.tsx` "shows the paused page when an API call answers 503 paused", "shows the home_unreachable page from the event", "ignores other 503s"; `Paused.test.tsx`.
+- **Covered by existing test?** Yes — `NodeGuard.test.tsx` "shows the paused page when an API call answers 503 paused", "swaps the app for the paused page when the node cannot serve even reads", "keeps the app readable under a notice when the home is unreachable", "ignores other 503s"; `Paused.test.tsx`; `Login.outage.test.tsx`.
 - **Preconditions / data:** any API → `503 { "code": "paused", "reason": "schema 134 > 130" }`; or `/api/cluster/self` → `{ "role": "node", "paused": "schema ...", ... }`.
 - **Steps:**
   1. Render the full App signed in.
-- **Expected:** "This machine is paused" page replaces shell and login (NodeGuard wraps AuthProvider). "Try again" button present. Other 503s leave the app alone.
+- **Expected:** "This machine is paused" page replaces shell and login (NodeGuard wraps AuthProvider). "Try again" button present. Other 503s leave the app alone. A `503 { "code": "home_unreachable" }`, or a read marked `X-Maktaba-Home: unreachable`, keeps the app under the "This machine can't reach its home." notice (every request is still sent: the node decides; a refused sign-out keeps the user signed in and says so; /login says signing in needs the home and probes the session again once it answers); `home_unreachable` with `"readable": false` shows the "This machine cannot reach its home" page instead.
 
 ### SHL-21 — Paused page with `home: null` / unsafe `web_url`
 

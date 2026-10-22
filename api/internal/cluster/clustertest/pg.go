@@ -48,7 +48,7 @@ func ScratchDB(t *testing.T) (*sql.DB, string) {
 	// one per test (every slot again took ~2 s a test and kept the integration
 	// tier near its budget)
 	var cerr error
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 300; i++ {
 		_, cerr = admin.Exec(`CREATE DATABASE ` + pq.QuoteIdentifier(name) + ` TEMPLATE ` + pq.QuoteIdentifier(tmpl))
 		if cerr == nil || !strings.Contains(cerr.Error(), "being accessed by other users") {
 			break
@@ -194,7 +194,11 @@ func migrationsDir(t *testing.T) string {
 
 // migrate applies every Postgres slot (slot 0000 is the bootstrap goose
 // cannot run; the SQLite twins are skipped) from a staged copy.
-func migrate(t *testing.T, db *sql.DB) {
+func migrate(t *testing.T, db *sql.DB) { MigrateTo(t, db, 0) }
+
+// MigrateTo applies the Postgres slots up to version (0: every one) to db, as db's
+// user.
+func MigrateTo(t *testing.T, db *sql.DB, version int64) {
 	t.Helper()
 	src := migrationsDir(t)
 	stage := t.TempDir()
@@ -217,9 +221,56 @@ func migrate(t *testing.T, db *sql.DB) {
 	goose.SetLogger(goose.NopLogger())
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	if err := goose.UpContext(ctx, db, stage); err != nil {
+	// one run at a time in the cluster: the migrations make cluster-wide roles
+	// (maktaba_worker and the rest), which two runs in two of its databases (the packages
+	// of a module test in parallel processes) would each try to create
+	if base := os.Getenv("MAKTABA_TEST_PG_URL"); base != "" {
+		defer lockCluster(ctx, t, base, "clustertest_migrate")()
+	}
+	if version > 0 {
+		err = goose.UpToContext(ctx, db, stage, version)
+	} else {
+		err = goose.UpContext(ctx, db, stage)
+	}
+	if err != nil {
 		t.Fatalf("goose up: %v", err)
 	}
+}
+
+// lockCluster takes the advisory lock key in base's database (an advisory lock is a
+// database's: every process of the tests reaches the cluster through base), and returns
+// its release.
+func lockCluster(ctx context.Context, t *testing.T, base, key string) func() {
+	t.Helper()
+	admin, err := sql.Open("postgres", base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := admin.Conn(ctx)
+	if err != nil {
+		_ = admin.Close()
+		t.Fatal(err)
+	}
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock(hashtext($1))`, key); err != nil {
+		_ = conn.Close()
+		_ = admin.Close()
+		t.Fatal(err)
+	}
+	return func() {
+		_, _ = conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock(hashtext($1))`, key)
+		_ = conn.Close()
+		_ = admin.Close()
+	}
+}
+
+// DSN is base's URL for database name as user (password pw; "" keeps base's user).
+func DSN(t *testing.T, base, name, user, pw string) string {
+	t.Helper()
+	dsn := dsnFor(t, base, name)
+	if user == "" {
+		return dsn
+	}
+	return WithUser(t, dsn, user, pw)
 }
 
 func copyFile(from, to string) error {

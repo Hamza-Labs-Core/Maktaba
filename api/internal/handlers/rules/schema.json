@@ -5675,10 +5675,68 @@
      "kind": "int",
      "group": "Machines",
      "label": "Home unreachable after (s)",
-     "help": "A machine that cannot reach the home this long refuses signed-in pages until it can again; its own status pages keep working.",
+     "help": "A machine that cannot reach the home this long stops asking it for every request: it answers from its own copy of the home's database instead (sign-in, reading, playback, TV), and changes wait for the home.",
      "default": 30,
      "minimum": 5,
      "maximum": 600
+    },
+    {
+     "name": "offline_copy_max_lag_minutes",
+     "kind": "int",
+     "group": "Machines",
+     "label": "Copy current enough to sign in (min)",
+     "help": "Every full machine keeps a live, read-only copy of the home's database and runs on it while the home is away. Its copy answers sign-ins only if it had followed the home up to this close to when the home was last heard: a copy further behind might not have a sign-out or a password change made since.",
+     "default": 10,
+     "minimum": 1,
+     "maximum": 1440
+    },
+    {
+     "name": "copy_reads_max_lag_seconds",
+     "kind": "int",
+     "group": "Machines",
+     "label": "Copy current enough to read from (s)",
+     "help": "A full machine reads the library from its own copy of the home's database. While its copy is further behind the home than this, it reads from the home's database instead (as long as the home answers), so a change of rights, a removal or a new video shows at once.",
+     "default": 30,
+     "minimum": 5,
+     "maximum": 3600
+    },
+    {
+     "name": "offline_session_hours",
+     "kind": "int",
+     "group": "Machines",
+     "label": "Sign-in without the home lasts (h)",
+     "help": "Signing in on a machine while the home is away checks the password against the machine's copy and is valid on that machine only, this long.",
+     "default": 12,
+     "minimum": 1,
+     "maximum": 720
+    },
+    {
+     "name": "offline_session_grace_minutes",
+     "kind": "int",
+     "group": "Machines",
+     "label": "Then ends after the home is back (min)",
+     "help": "Once the home answers again such a sign-in keeps reading and playing this long; a change asks for a sign-in with the home at once.",
+     "default": 30,
+     "minimum": 0,
+     "maximum": 1440
+    },
+    {
+     "name": "replica_wal_keep_gb",
+     "kind": "int",
+     "group": "Machines",
+     "label": "Changes kept for a machine behind (GB)",
+     "help": "The home keeps this much of its recent changes for a machine whose copy fell behind (it was off, or away). A machine further behind copies the home's database anew, on its own.",
+     "default": 20,
+     "minimum": 1,
+     "maximum": 1024
+    },
+    {
+     "name": "copies_on_operator_postgres",
+     "kind": "bool",
+     "group": "Machines",
+     "label": "Copies on a Postgres you run",
+     "help": "Off (the default): when the home's database is a Postgres you run yourself, not the one Maktaba installs, the machines keep no copy of it. On: they do, and a machine's replication role may then make a slot with any decoding plugin that Postgres has besides pgoutput (test_decoding, wal2json and the like), which reads every table, past what is published to that machine: only the home's sweep guards against it, dropping such a slot within 5 s (its database user needs pg_signal_backend and REPLICATION for that). Remove those plugins from that Postgres first. Maktaba's own Postgres has only pgoutput and needs no such rule: there this changes nothing.",
+     "default": false
     },
     {
      "name": "proxy_cache_mb",
@@ -5743,6 +5801,83 @@
      "help": "Raise this by one to give every transcript the second listen stopped on its tries again, for example once its share or its model is reachable again. A second-listen model, or a machine's GPU, driver or packages, the home has not seen before does the same for them by itself.",
      "default": 0,
      "minimum": 0
+    }
+   ]
+  },
+  {
+   "key": "system_health",
+   "title": "System health",
+   "what": "when the System health page calls a worker late or gone, the database slow, a dependency check stale, and how long one check may take",
+   "fields": [
+    {
+     "name": "heartbeat_late_seconds",
+     "kind": "int",
+     "group": "System health",
+     "label": "Heartbeat late after (seconds)",
+     "help": "A worker or a streaming machine reports every few seconds. Silent this long, it shows as late (yellow).",
+     "default": 60,
+     "minimum": 5,
+     "maximum": 3600
+    },
+    {
+     "name": "heartbeat_gone_seconds",
+     "kind": "int",
+     "group": "System health",
+     "label": "Heartbeat gone after (seconds)",
+     "help": "Silent this long, a worker or streaming machine shows as gone (red). When every worker is gone, the whole page is Down.",
+     "default": 300,
+     "minimum": 10,
+     "maximum": 86400
+    },
+    {
+     "name": "worker_forget_hours",
+     "kind": "float",
+     "group": "System health",
+     "label": "Forget a worker after (hours)",
+     "help": "A worker silent this long is kept as history, not shown as a failure: a machine that was switched off for good, or a worker that restarted under a new name. A worker replaced by a newer one on the same machine is history at once.",
+     "default": 24.0,
+     "minimum": 1,
+     "maximum": 8760
+    },
+    {
+     "name": "db_latency_ms",
+     "kind": "int",
+     "group": "System health",
+     "label": "Database slow from (ms)",
+     "help": "A database round trip slower than this shows the database as slow (yellow).",
+     "default": 250,
+     "minimum": 1,
+     "maximum": 60000
+    },
+    {
+     "name": "dependency_stale_seconds",
+     "kind": "int",
+     "group": "System health",
+     "label": "Dependency check stale after (seconds)",
+     "help": "The model, each share and the free disk space are checked every minute (Queue health). A check older than this shows as stale (yellow): the workers that check them may be stopped.",
+     "default": 600,
+     "minimum": 30,
+     "maximum": 86400
+    },
+    {
+     "name": "check_timeout_ms",
+     "kind": "int",
+     "group": "System health",
+     "label": "One check waits (ms)",
+     "help": "How long the page waits for one part to answer before it shows it as not answering. Every part is checked at the same time.",
+     "default": 2000,
+     "minimum": 100,
+     "maximum": 30000
+    },
+    {
+     "name": "cache_seconds",
+     "kind": "int",
+     "group": "System health",
+     "label": "Reuse an answer for (seconds)",
+     "help": "Answers are reused this long, so many open pages cost one round of checks.",
+     "default": 5,
+     "minimum": 0,
+     "maximum": 300
     }
    ]
   }

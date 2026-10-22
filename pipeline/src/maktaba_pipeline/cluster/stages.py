@@ -219,6 +219,8 @@ class StageSelector:
     lifted: frozenset[str] = frozenset()
     #: ``paused: <why>`` while the home's schema does not fit this code (:mod:`.schema`)
     paused: str | None = None
+    #: ``paused: <why>`` while a node cannot reach the home's database (``WorkerAgent.beat``)
+    unreachable: str | None = None
     served: tuple[str, ...] = ()
     stages_off: dict[str, str] = field(default_factory=dict)
     #: the text behind each ``unavailable`` code
@@ -239,7 +241,7 @@ class StageSelector:
             drain=self.drain or self.held,
             detail=detail,
             lifted=self.lifted,
-            paused=self.paused,
+            paused=self.paused or self.unreachable,
         )
         self.detail = detail
         changed = tuple(served) != self.served or off != self.stages_off

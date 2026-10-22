@@ -88,6 +88,7 @@ func (h *Home) log() *slog.Logger {
 // Mount wires the home's routes.
 func (h *Home) Mount(r chi.Router) {
 	r.Post("/api/cluster/delegate/introspect", h.Introspect)
+	r.Post("/api/cluster/delegate/signout", h.SignOut)
 	r.Get("/api/cluster/sso/authorize", h.Authorize)
 	r.Post("/api/cluster/sso/exchange", h.Exchange)
 }
@@ -131,23 +132,167 @@ func (h *Home) Introspect(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, e)
 		return
 	}
+	if req.Session == "" && req.PAT == "" {
+		httperror.Write(w, r, httperror.BadRequest("session or pat required"))
+		return
+	}
+	ans, err := h.Resolve(r.Context(), req)
+	if err != nil {
+		var no *Refusal
+		if errors.As(err, &no) {
+			unauthorized(w, r, no.Reason)
+			return
+		}
+		httperror.Write(w, r, httperror.Internal("introspect"))
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, ans)
+}
+
+// SignOut is POST /api/cluster/delegate/signout (node-signed): the sign-outs a node
+// made while this home did not answer (#145), handed over once it answers again. Its
+// sessions are named by the SHA-256 of their id (the node keeps no id); a "sign out
+// everywhere" ends the user's sessions and refresh tokens made before it. Every node
+// drops them from its cache (the revocation hook).
+//
+// A machine ends only what was signed in through it: the sessions made through it
+// (origin_node_id: a sign-in on it, or its cluster sign-in; their cookies are its own
+// host's, so those are the sessions it serves), and "everywhere" only for a person who
+// signed in through it at least once. Every machine's copy holds every session's hash;
+// without this, any machine could sign everyone out. Anything else named is left as it
+// is (and answered as taken: asking again would not change it).
+func (h *Home) SignOut(w http.ResponseWriter, r *http.Request) {
+	node := delegation.NodeFrom(r.Context())
+	if node == "" {
+		unauthorized(w, r, "only a machine of this cluster may ask")
+		return
+	}
+	var req delegation.SignOutRequest
+	if e := common.ReadJSON(r, &req, 64<<10); e != nil {
+		httperror.Write(w, r, e)
+		return
+	}
+	if len(req.SessionSHA256) > 1000 || (req.Before != nil && req.UserID == "") {
+		httperror.Write(w, r, httperror.BadRequest("at most 1000 sessions; a user with before"))
+		return
+	}
+	if _, err := uuid.Parse(req.UserID); req.UserID != "" && err != nil {
+		httperror.Write(w, r, httperror.BadRequest("user_id is not a user's id"))
+		return
+	}
 	ctx := r.Context()
+	ids, err := h.sessionsThrough(ctx, node, req.SessionSHA256)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("signout"))
+		return
+	}
+	n := 0
+	for _, id := range ids {
+		if err := h.Sessions.Revoke(ctx, id); err != nil {
+			httperror.Write(w, r, httperror.Internal("signout"))
+			return
+		}
+		n++
+	}
+	if req.UserID != "" && req.Before != nil {
+		through, err := h.signedInThrough(ctx, node, req.UserID)
+		if err != nil {
+			httperror.Write(w, r, httperror.Internal("signout"))
+			return
+		}
+		if !through {
+			h.log().Warn("home: a machine asked to sign out everywhere a person who never signed in through it; refused",
+				"node_id", node, "user_id", req.UserID, "event", "cluster_node_signout_refused")
+		} else {
+			m, err := h.Sessions.RevokeAllForUserBefore(ctx, req.UserID, *req.Before)
+			if err != nil {
+				httperror.Write(w, r, httperror.Internal("signout"))
+				return
+			}
+			n += int(m)
+			if _, err := h.DB.ExecContext(ctx, `UPDATE refresh_tokens SET revoked_at = now()
+			             WHERE user_id = $1 AND revoked_at IS NULL AND issued_at < $2`, req.UserID, *req.Before); err != nil {
+				httperror.Write(w, r, httperror.Internal("signout"))
+				return
+			}
+		}
+	}
+	h.log().Info("home: sign-outs a machine made while this home did not answer", "node_id", node,
+		"sessions", len(req.SessionSHA256), "through_it", len(ids), "user_id", req.UserID, "revoked", n,
+		"event", "cluster_node_signouts")
+	common.WriteJSON(w, r, http.StatusOK, delegation.SignOutAnswer{Revoked: n})
+}
+
+// sessionsThrough is the ids of the live sessions made through node (origin_node_id)
+// whose id hashes (SHA-256, hex) to one of sha256Hex.
+func (h *Home) sessionsThrough(ctx context.Context, node string, sha256Hex []string) ([]string, error) {
+	nodeID, err := uuid.Parse(node)
+	if len(sha256Hex) == 0 || err != nil {
+		return nil, nil
+	}
+	want := make(map[string]bool, len(sha256Hex))
+	for _, s := range sha256Hex {
+		want[strings.ToLower(s)] = true
+	}
+	rows, err := h.DB.QueryContext(ctx, `SELECT CAST(id AS TEXT) FROM web_sessions
+	        WHERE origin_node_id = $1 AND revoked_at IS NULL`, nodeID.String())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		if want[hexSum(id)] {
+			ids = append(ids, id)
+		}
+	}
+	return ids, rows.Err()
+}
+
+// signedInThrough reports whether the user has a session made through node (live or
+// not: the one they signed out of there may have ended already).
+func (h *Home) signedInThrough(ctx context.Context, node, userID string) (bool, error) {
+	nodeID, err := uuid.Parse(node)
+	if err != nil {
+		return false, nil
+	}
+	var through bool
+	err = h.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM web_sessions
+	        WHERE user_id = $1 AND origin_node_id = $2)`, userID, nodeID.String()).Scan(&through)
+	return through, err
+}
+
+// Refusal: the credential is not a live one (Resolve); Reason says why.
+type Refusal struct{ Reason string }
+
+func (e *Refusal) Error() string { return "clusterauth: " + e.Reason }
+
+// Resolve introspects one credential against h's database (the home's own, or a full
+// node's copy of it, read only: the last-seen and last-used marks are best-effort):
+// the principal, the CSRF token's hash and when the credential expires; a *Refusal
+// for anything that is not a live credential, another error when the database did not
+// say.
+func (h *Home) Resolve(ctx context.Context, req IntrospectRequest) (*IntrospectAnswer, error) {
 	var ans IntrospectAnswer
 	switch {
 	case req.Session != "":
 		if _, err := uuid.Parse(req.Session); err != nil {
-			unauthorized(w, r, "not a session")
-			return
+			return nil, &Refusal{Reason: "not a session"}
 		}
 		sess, err := h.Sessions.Lookup(ctx, req.Session)
-		if err != nil {
-			unauthorized(w, r, "session ended")
-			return
+		if errors.Is(err, sessions.ErrNotFound) {
+			return nil, &Refusal{Reason: "session ended"}
 		}
-		p, err := h.principalFor(ctx, sess.UserID)
 		if err != nil {
-			unauthorized(w, r, "user gone")
-			return
+			return nil, err
+		}
+		p, err := h.livePrincipal(ctx, sess.UserID)
+		if err != nil {
+			return nil, err
 		}
 		_ = h.Sessions.TouchLastSeen(ctx, sess.ID, h.now())
 		ans = IntrospectAnswer{Principal: p, Source: string(principal.SourceCookie),
@@ -157,18 +302,18 @@ func (h *Home) Introspect(w http.ResponseWriter, r *http.Request) {
 		}
 	case req.PAT != "":
 		if h.PAT == nil || !pat.IsPAT(req.PAT) {
-			unauthorized(w, r, "not a token")
-			return
+			return nil, &Refusal{Reason: "not a token"}
 		}
 		tok, err := h.PAT.Authenticate(ctx, req.PAT)
-		if err != nil {
-			unauthorized(w, r, "token not valid")
-			return
+		if errors.Is(err, pat.ErrNotFound) || errors.Is(err, pat.ErrMalformed) {
+			return nil, &Refusal{Reason: "token not valid"}
 		}
-		p, err := h.principalFor(ctx, tok.UserID)
 		if err != nil {
-			unauthorized(w, r, "user gone")
-			return
+			return nil, err
+		}
+		p, err := h.livePrincipal(ctx, tok.UserID)
+		if err != nil {
+			return nil, err
 		}
 		// the must-change gate is a web-session rule (the home's PAT path does
 		// not apply it either)
@@ -178,10 +323,19 @@ func (h *Home) Introspect(w http.ResponseWriter, r *http.Request) {
 			ans.ExpiresAt = *tok.ExpiresAt
 		}
 	default:
-		httperror.Write(w, r, httperror.BadRequest("session or pat required"))
-		return
+		return nil, &Refusal{Reason: "session or pat required"}
 	}
-	common.WriteJSON(w, r, http.StatusOK, ans)
+	return &ans, nil
+}
+
+// livePrincipal is principalFor with a user that is gone as a *Refusal (a database
+// that does not answer is an error: no one is signed out for it).
+func (h *Home) livePrincipal(ctx context.Context, userID string) (Principal, error) {
+	p, err := h.principalFor(ctx, userID)
+	if errors.Is(err, users.ErrNotFound) {
+		return Principal{}, &Refusal{Reason: "user gone"}
+	}
+	return p, err
 }
 
 // clientIP is the browser's address the node forwarded (first X-Forwarded-For entry),

@@ -80,11 +80,18 @@ type UpdateState struct {
 	Layout          string `json:"layout"` // side_by_side | flat
 }
 
+// Command runs a command the home sent this machine (nil: none but disconnect): its
+// result and detail, or handled false for a command it does not know. It runs in its
+// own goroutine: it may take its time (the switchover's promotion).
+type Command func(ctx context.Context, name string, args json.RawMessage) (handled, ok bool, detail any)
+
 // Agent is the machine agent.
 type Agent struct {
 	ID     Identity
 	State  func() UpdateState
 	Logger *slog.Logger
+	// Commands answers the home's commands besides disconnect (the switchover's).
+	Commands Command
 
 	mu        sync.Mutex
 	key       *Key
@@ -499,6 +506,22 @@ func (a *Agent) dispatch(pt []byte, send func(any)) {
 		if json.Unmarshal(pt, &f) == nil && f.ID != "" {
 			if f.Name == "disconnect" {
 				send(map[string]any{"t": "cmd.result", "id": f.ID, "ok": true, "detail": ""})
+				return
+			}
+			if a.Commands != nil {
+				var args struct {
+					Args json.RawMessage `json:"args"`
+				}
+				_ = json.Unmarshal(pt, &args)
+				go func() {
+					handled, ok, detail := a.Commands(context.Background(), f.Name, args.Args)
+					if handled {
+						send(map[string]any{"t": "cmd.result", "id": f.ID, "ok": ok, "detail": detail})
+						return
+					}
+					send(map[string]any{"t": "cmd.result", "id": f.ID, "ok": false,
+						"detail": "the machine agent does not run " + f.Name})
+				}()
 				return
 			}
 			// the update commands are story 35.12's; refused plainly until then

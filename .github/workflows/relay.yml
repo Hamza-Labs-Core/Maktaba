@@ -14,8 +14,8 @@
 #   build  cross-compile the relay binary for linux/{amd64,arm64}
 #   docker build cloud/Dockerfile + push to GHCR  (main + tags only)
 #   sign   keyless cosign over the pushed image digest  (tags only)
-#   deploy SSH to the VPS + roll the stack          (dispatch, or tags
-#          when vars.RELAY_DEPLOY == 'true')
+#   deploy SSH to the VPS + roll the stack          (dispatch, or plain
+#          vX.Y.Z tags when vars.RELAY_DEPLOY == 'true')
 #
 # The reusable `make relay-ci` target runs lint+test+build locally so a
 # developer reproduces this workflow's PR gates without GitHub.
@@ -214,7 +214,8 @@ jobs:
 
       # Tag policy:
       #   main push  -> :edge + :sha-<short>
-      #   v* tag      -> :vX.Y.Z + :latest
+      #   v* tag      -> :vX.Y.Z + :latest (a tag with a suffix, v0.3.0-rc.1,
+      #                  gets only its own name: :latest is a plain release's)
       - name: Derive image tags
         uses: docker/metadata-action@v5.7.0
         id: meta
@@ -224,7 +225,7 @@ jobs:
             type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
             type=sha,prefix=sha-,enable=${{ github.ref == 'refs/heads/main' }}
             type=ref,event=tag
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
 
       # The relay runs on whatever the operator's VPS is (x86 droplets,
       # arm64 Ampere/Graviton), so the image is multi-arch — unlike
@@ -280,7 +281,9 @@ jobs:
     # Manual rollout, or automatically once a tag's image is published,
     # but only in a repo that has a VPS: set the RELAY_DEPLOY repo
     # variable to 'true'. Without it a tag skips this job, so no
-    # deployment is recorded on `production`. `!cancelled()` lets a
+    # deployment is recorded on `production`. A pre-release tag
+    # (v0.3.0-rc.1) never deploys by itself; dispatch it with its tag
+    # to roll it out. `!cancelled()` lets a
     # workflow_dispatch run (where `docker` is skipped) reach deploy, but
     # not a cancelled run (`always()` would); a tag needs docker to have
     # succeeded, not been skipped because lint, test or build failed.
@@ -289,6 +292,7 @@ jobs:
       (
         (github.event_name == 'workflow_dispatch' && needs.docker.result == 'skipped') ||
         (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') &&
+          !contains(github.ref, '-') &&
           needs.docker.result == 'success' && vars.RELAY_DEPLOY == 'true')
       )
     runs-on: ubuntu-22.04

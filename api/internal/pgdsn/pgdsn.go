@@ -72,25 +72,39 @@ func ForLibPQ(ctx context.Context, dsn string, probe Probe) string {
 // answers that it has none (pq.ErrSSLNotSupported), then plain; sslmode=allow is plain.
 // Any other dsn opens as sql.Open("postgres", dsn) would, the context bounding the dial.
 func Open(dsn string) (*sql.DB, error) {
-	switch SSLMode(dsn) {
-	case "allow":
-		dsn = withSSLMode(dsn, "disable")
-	case "prefer":
-		secure, err := pq.NewConnector(withSSLMode(dsn, "require"))
-		if err != nil {
-			return nil, err
-		}
-		plain, err := pq.NewConnector(withSSLMode(dsn, "disable"))
-		if err != nil {
-			return nil, err
-		}
-		return sql.OpenDB(&preferConnector{secure: secure, plain: plain, key: dsn}), nil
-	}
-	c, err := pq.NewConnector(dsn)
+	c, err := Connector(dsn)
 	if err != nil {
 		return nil, err
 	}
 	return sql.OpenDB(c), nil
+}
+
+// Connector is Open's connector, for a caller that builds its own pool on it (a full
+// node's pair of databases, cluster/nodedb).
+func Connector(dsn string) (driver.Connector, error) {
+	return connector(dsn, false)
+}
+
+func connector(dsn string, bounded bool) (driver.Connector, error) {
+	open := func(dsn string) (driver.Connector, error) { return pq.NewConnector(dsn) }
+	if bounded {
+		open = boundedPQ
+	}
+	switch SSLMode(dsn) {
+	case "allow":
+		dsn = withSSLMode(dsn, "disable")
+	case "prefer":
+		secure, err := open(withSSLMode(dsn, "require"))
+		if err != nil {
+			return nil, err
+		}
+		plain, err := open(withSSLMode(dsn, "disable"))
+		if err != nil {
+			return nil, err
+		}
+		return &preferConnector{secure: secure, plain: plain, key: dsn}, nil
+	}
+	return open(dsn)
 }
 
 // preferConnector is sslmode=prefer for lib/pq: SSL first, plain when the server

@@ -36,6 +36,12 @@ func buildPlacement() placement.Table {
 		"/api/system/sbom",
 		// this machine's identity, its home, its web address (story 35.11)
 		"/api/cluster/self",
+		// a switch's notice of the new home, from this machine's copy (Epic 37)
+		"/api/cluster/moved/{node}",
+		// a standby home taking over when its home is gone, and another's claim on the
+		// term it would take (Epic 37)
+		"/api/cluster/emergency",
+		"/api/cluster/term-claim",
 		// the cluster sign-in's node half (story 35.9 AC6)
 		"/api/cluster/sso/start",
 		"/api/cluster/sso/callback",
@@ -109,6 +115,7 @@ func buildPlacement() placement.Table {
 		"/api/workers",
 		// story 35.9: the home's half of delegation and the cluster sign-in
 		"/api/cluster/delegate/introspect",
+		"/api/cluster/delegate/signout",
 		"/api/cluster/sso/authorize",
 		"/api/cluster/sso/exchange",
 	))
