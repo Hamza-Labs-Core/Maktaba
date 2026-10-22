@@ -40,8 +40,8 @@ UNIT_PER_TEST_SOFT_CAP  ?= 400ms
 # verification), which adds ~20s of compile/link to the tier's test
 # binaries, so 2m30s. Since then Epics 37-39 added real integration
 # tests (adopt, the Windows app, relisten on Postgres): main's last ten
-# runs (2026-10-22) took 1m42s-2m27s, the same tree differing by ~45s
-# with the runner alone (the tier is mostly compiling and linking the Go
+# runs (2026-10-22) took 1m42s-2m27s, two merges minutes apart differing
+# by ~45s with the runner (the tier is mostly compiling and linking the Go
 # modules one after another, then pytest). 2m30s failed PRs whose every
 # test passed (2m30.5s, 2m31.9s). 3m30s is the slowest of those runs plus
 # ~40%, for runner noise and the next tests; a test that hangs, or a
