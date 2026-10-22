@@ -184,6 +184,14 @@ don't append a line here; docs-only PRs are exempt.
   now turns the bundled Postgres on inside any desktop app's payload, not only on a Mac (a
   `[database] url` or a SQLite database in use still wins). The app's roles find the payload's
   `ffmpeg.exe`. Loopback TCP only on Windows, the nightly dumps as on the Mac.
+- **The Linux app's downloads** (Epic 39, story 39.10). Each release builds the app as an
+  AppImage, a `.deb` and an `.rpm` for x86_64 and aarch64, each with the whole server inside
+  (its own Postgres and Python; ffmpeg is the distribution's, which the `.deb` and the `.rpm`
+  depend on), checked before anything is published; the `.deb` and `.rpm` stop the app's server
+  when they are removed. For machines without a desktop the release carries the server payload
+  (`maktaba-linux-payload-<version>-<arch>.tar.gz`) and `install.sh` among its assets, both in the
+  signed `checksums.txt`: the notes say to verify the script and run it, no longer to pipe it from
+  a branch.
 - **The desktop app runs the server on Linux** (Epic 39, story 39.8). When setup finishes, the
   app copies its server into `~/.local/share/maktaba/runtime` and runs it as the user's systemd
   service, started at boot through linger; after an app update it moves the server to the new
@@ -260,6 +268,15 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **The second listen's tries count from the end of each try, and a stopped transcript comes
+  back (follow-up of #221).** The wait between tries counted from when the try was queued, so a
+  job that waited hours used it up; it now counts from the end of the try. A transcript the
+  second listen stopped on gets its tries again by itself, once, when the home sees a
+  second-listen model, or a machine's GPU, driver or packages, for the first time, and Settings,
+  Transcription has the number of tries, the waits and a round to raise to try them all again
+  (new table `relisten_seen` and columns on `relisten_attempts`, slot 0146). A try that found no
+  room on the GPU no longer counts (follow-up of story 38.9). Deleted and missing
+  videos are no longer tried, and the stop note keeps its reason on long Windows paths.
 - **The Linux runtime copy orders versions as everything else does.** It kept its own reading of
   `git describe` builds, so a dirty build of a tag ranked above the next commit's build and a dirty
   build equalled the clean one: it now uses the one order (`v0.2.0` < `v0.2.0-dirty` <
