@@ -3663,7 +3663,7 @@
   "setup.check.note.ram_low": "The memory of {machine} is {have_bytes}: Maktaba needs at least {need_bytes}.",
   "setup.check.note.ram_tight": "Less than {need_bytes} of memory: indexing and transcription will be slow.",
   "setup.check.note.transcribe_cpu": "No NVIDIA graphics card: {machine} transcribes on its processor, many times slower than on a graphics card.",
-  "setup.check.note.glibc_missing": "This Linux has no GNU C library (glibc), which the bundled Postgres, ffmpeg and Python need (Alpine and other musl systems cannot run them).",
+  "setup.check.note.glibc_missing": "This Linux has no GNU C library (glibc), which the bundled Postgres and Python need (Alpine and other musl systems cannot run them).",
   "setup.check.note.glibc_old": "This Linux has glibc {have}; Maktaba needs {need} or newer (Ubuntu 22.04, Debian 12, Fedora 36, RHEL 10 or later).",
   "setup.check.note.systemd_missing": "systemd does not run this system (a container, or WSL without systemd): the server runs as a systemd user service, so Maktaba needs a Linux that starts with systemd.",
   "setup.check.note.user_manager_missing": "The server runs as your systemd user service, which {machine} cannot start: {reason}. Log in as {user} directly (over SSH or at the console, not through sudo or su), or have an administrator run `loginctl enable-linger {user}`, then run the setup again.",

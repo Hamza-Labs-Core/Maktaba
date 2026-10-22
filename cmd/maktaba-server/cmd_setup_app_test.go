@@ -361,6 +361,7 @@ func TestAppSetupFFmpegNotInstalled(t *testing.T) {
 		yes     []bool
 		fail    error
 		answers map[string]json.RawMessage
+		other   bool
 		ran     int
 		says    string
 	}{
@@ -368,9 +369,17 @@ func TestAppSetupFFmpegNotInstalled(t *testing.T) {
 		{name: "failed", yes: []bool{true}, fail: errors.New("exit status 1"), ran: 1,
 			says: "The command did not finish (exit status 1): run it yourself, then run the setup again."},
 		{name: "an answers file", answers: map[string]json.RawMessage{"admin": json.RawMessage(`{}`)}},
+		// another problem blocks too: nothing is installed for a setup that ends anyway
+		{name: "not the only problem", other: true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			f := &fakeSteps{answers: map[string][]any{"check": {checkNoFFmpeg, checkOK}}}
+			check := checkNoFFmpeg
+			if c.other {
+				check = map[string]any{"ok": false, "warnings": []any{}, "problems": append([]map[string]any{
+					{"code": "glibc_old", "message": "glibc 2.31", "params": map[string]any{"have": "2.31", "need": "2.35"}}},
+					checkNoFFmpeg["problems"].([]map[string]any)...)}
+			}
+			f := &fakeSteps{answers: map[string][]any{"check": {check, checkOK}}}
 			var out bytes.Buffer
 			ran := 0
 			a := &appSetup{run: f.run, ask: &script{t: t, yes: c.yes}, out: &out, t: textsFor("en"), answers: c.answers,

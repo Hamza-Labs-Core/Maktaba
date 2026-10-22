@@ -85,7 +85,7 @@ func (l Linux) Check(ctx context.Context) Result {
 	var r Result
 	switch v := l.Glibc(ctx); {
 	case v == "":
-		r.problem("glibc_missing", "This Linux has no GNU C library (glibc), which the bundled Postgres, ffmpeg and Python "+
+		r.problem("glibc_missing", "This Linux has no GNU C library (glibc), which the bundled Postgres and Python "+
 			"need (Alpine and other musl systems cannot run them).")
 	case olderThan(v, MinGlibc):
 		r.problem("glibc_old", fmt.Sprintf("This Linux has glibc %s; Maktaba needs %s or newer (Ubuntu 22.04, Debian 12, "+
