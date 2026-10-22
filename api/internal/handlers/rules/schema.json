@@ -5706,6 +5706,83 @@
      "default": false
     }
    ]
+  },
+  {
+   "key": "system_health",
+   "title": "System health",
+   "what": "when the System health page calls a worker late or gone, the database slow, a dependency check stale, and how long one check may take",
+   "fields": [
+    {
+     "name": "heartbeat_late_seconds",
+     "kind": "int",
+     "group": "System health",
+     "label": "Heartbeat late after (seconds)",
+     "help": "A worker or a streaming machine reports every few seconds. Silent this long, it shows as late (yellow).",
+     "default": 60,
+     "minimum": 5,
+     "maximum": 3600
+    },
+    {
+     "name": "heartbeat_gone_seconds",
+     "kind": "int",
+     "group": "System health",
+     "label": "Heartbeat gone after (seconds)",
+     "help": "Silent this long, a worker or streaming machine shows as gone (red). When every worker is gone, the whole page is Down.",
+     "default": 300,
+     "minimum": 10,
+     "maximum": 86400
+    },
+    {
+     "name": "worker_forget_hours",
+     "kind": "float",
+     "group": "System health",
+     "label": "Forget a worker after (hours)",
+     "help": "A worker silent this long is kept as history, not shown as a failure: a machine that was switched off for good, or a worker that restarted under a new name. A worker replaced by a newer one on the same machine is history at once.",
+     "default": 24.0,
+     "minimum": 1,
+     "maximum": 8760
+    },
+    {
+     "name": "db_latency_ms",
+     "kind": "int",
+     "group": "System health",
+     "label": "Database slow from (ms)",
+     "help": "A database round trip slower than this shows the database as slow (yellow).",
+     "default": 250,
+     "minimum": 1,
+     "maximum": 60000
+    },
+    {
+     "name": "dependency_stale_seconds",
+     "kind": "int",
+     "group": "System health",
+     "label": "Dependency check stale after (seconds)",
+     "help": "The model, each share and the free disk space are checked every minute (Queue health). A check older than this shows as stale (yellow): the workers that check them may be stopped.",
+     "default": 600,
+     "minimum": 30,
+     "maximum": 86400
+    },
+    {
+     "name": "check_timeout_ms",
+     "kind": "int",
+     "group": "System health",
+     "label": "One check waits (ms)",
+     "help": "How long the page waits for one part to answer before it shows it as not answering. Every part is checked at the same time.",
+     "default": 2000,
+     "minimum": 100,
+     "maximum": 30000
+    },
+    {
+     "name": "cache_seconds",
+     "kind": "int",
+     "group": "System health",
+     "label": "Reuse an answer for (seconds)",
+     "help": "Answers are reused this long, so many open pages cost one round of checks.",
+     "default": 5,
+     "minimum": 0,
+     "maximum": 300
+    }
+   ]
   }
  ]
 }

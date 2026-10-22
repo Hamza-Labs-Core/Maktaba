@@ -177,6 +177,16 @@ Decides how often a failure is tried, what waits instead of failing, and when a 
 - **Look back (hours)** (6), **Failures that stay neutral (share)** (0.02) and **Red from (jobs)** (10) decide when Maktaba counts a queue as failing: only when many recent jobs fail the same new way. A queue tile turns **Failing** only then; a few failed items show as a small count instead. See [Queue tile turns Failing](/help/failures#tile-failing).
 - **Failure classes**: rows of a signature (the start of a failure's cause code, for example `nas_timeout` or `model_unavailable`) and a class (transient, item_permanent, unknown, dependency:… or resource:…). They are checked before the built-in classes.
 
+### System health {#system-health}
+
+Decides when the [System health](/help/system-health) page turns a part yellow or red.
+
+- **Heartbeat late after (seconds)** (60) and **Heartbeat gone after (seconds)** (300): a worker or streaming machine silent this long is late (yellow), then gone (red). When every worker is gone the whole page is Down.
+- **Forget a worker after (hours)** (24): a worker silent this long is kept as history, never a failure. A worker replaced by a newer one on the same machine is history at once.
+- **Database slow from (ms)** (250): a database round trip slower than this shows the database as slow.
+- **Dependency check stale after (seconds)** (600): a check of the model, a share or the disk older than this shows as stale.
+- **One check waits (ms)** (2000) and **Reuse an answer for (seconds)** (5): how long the page waits for each part, and how long an answer is reused.
+
 ## What the states and messages mean {#states}
 
 - **changed**: the saved value differs from the built-in default.

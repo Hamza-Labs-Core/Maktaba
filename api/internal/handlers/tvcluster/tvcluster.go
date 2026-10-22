@@ -756,3 +756,9 @@ func (d dbTime) ptr() *time.Time {
 	t := d.t.UTC()
 	return &t
 }
+
+// Read is the GET /api/tv/cluster body without the HTTP layer (the System
+// health page, api/internal/handlers/systemstatus).
+func (h *Handler) Read(ctx context.Context) (Response, error) {
+	return h.read(ctx)
+}

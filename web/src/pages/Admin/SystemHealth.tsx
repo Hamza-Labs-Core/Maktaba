@@ -1,7 +1,11 @@
 // System health dashboard (Story 21.4 aggregator + 7.20 version + perf
-// admin surface).
+// admin surface), answering "is everything OK, and if not, what is wrong and
+// what do I do" through the status of every part (StatusOverview.tsx).
 //
 // Real contracts:
+//   GET /api/admin/system/status (admin) { status, items: [StatusItem], ... }
+//                             (lib/systemStatus.ts; absent on an older server or
+//                             one without a database: the page keeps its other cards)
 //   GET /api/system/health  { status, services:{name:{status,checks?,reason?}},
 //                             disk_free_bytes?, queue_depth?, transcribe_budget_usd_left? }
 //   GET /api/system/version { version, build_sha, build_time, go_version, schema_revision }
@@ -25,6 +29,8 @@ import { ProcessesCard } from "./Processes";
 import { tvClusterApi, type TvClusterView } from "../../lib/tvClusterApi";
 import { tvRemoteApi } from "../../lib/tvRemoteApi";
 import { TitleRow } from "../../help/HelpLink";
+import { fetchStatus, type StatusReport } from "../../lib/systemStatus";
+import { StatusBanner, StatusGrid } from "./StatusOverview";
 
 interface ServiceSnapshot {
   status: string;
@@ -65,8 +71,11 @@ function HealthInner() {
   const [budgets, setBudgets] = useState<Record<string, unknown> | null>(null);
   const [tv, setTv] = useState<TvClusterView | null>(null);
   const [remote, setRemote] = useState<string | null>(null);
+  const [status, setStatus] = useState<StatusReport | null>(null);
 
   const refresh = useCallback(() => {
+    // every part of Maktaba; shared with the nav's red dot
+    void fetchStatus().then(setStatus);
     api
       .get<Health>("/api/system/health")
       .then((h) => {
@@ -124,11 +133,16 @@ function HealthInner() {
         <span className="mkt-muted">{t("health.autoRefresh")}</span>
       </header>
 
+      <StatusBanner report={status} unreachable={healthErr} />
+      {status && <StatusGrid report={status} />}
+
       {/* Overall + key stats */}
       <div className="mkt-stage-cards">
         <Card className="mkt-stat">
           <strong>{t("health.overall")}</strong>
-          {healthErr ? (
+          {status ? (
+            <StatusBadge status={status.status} t={t} />
+          ) : healthErr ? (
             <StatusBadge status="down" t={t} />
           ) : (
             <StatusBadge status={health?.status ?? "unknown"} t={t} />
@@ -163,9 +177,12 @@ function HealthInner() {
         </p>
       )}
 
-      {/* Per-service cards */}
-      <h2>{t("health.services")}</h2>
-      {healthErr ? (
+      {/* Per-service /readyz probes (MAKTABA_HEALTH_PEERS): the whole section
+          before the status answers, then only when peers are configured */}
+      {(!status || Object.keys(health?.services ?? {}).length > 0) && (
+        <h2>{status ? t("health.peers") : t("health.services")}</h2>
+      )}
+      {status && Object.keys(health?.services ?? {}).length === 0 ? null : healthErr ? (
         <p className="mkt-muted">{t("health.section.error")}</p>
       ) : !health ? (
         <p className="mkt-loading">{t("common.loading")}</p>
