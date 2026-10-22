@@ -75,7 +75,7 @@ func TestNodeConfigClaimedByAnotherPC(t *testing.T) {
 		}
 	}
 	// another PC's: this PC is not that node
-	if role, id := DetectRole(getenv, "windows", base, os.ReadFile); role != RoleHome || id != "" {
+	if role, id, _ := DetectRole(getenv, "windows", base, os.ReadFile); role != RoleHome || id != "" {
 		t.Fatalf("another PC's node config: %s %s", role, id)
 	}
 }
@@ -111,7 +111,7 @@ func TestNodeConfigLeftByAFailedClaim(t *testing.T) {
 	if got := NodeConfigFile(oldPath, os.ReadFile); got != bak {
 		t.Fatalf("read from %s, want the backup %s (the old file first)", got, bak)
 	}
-	if role, id := DetectRole(getenv, "windows", base, os.ReadFile); role != RoleNode || id != "n1" {
+	if role, id, _ := DetectRole(getenv, "windows", base, os.ReadFile); role != RoleNode || id != "n1" {
 		t.Fatalf("still a node: %s %s", role, id)
 	}
 	if err := os.Remove(filepath.Join(dir, ".node.json-1792600000-4242-0badf00d.tmp")); err != nil {
@@ -121,7 +121,7 @@ func TestNodeConfigLeftByAFailedClaim(t *testing.T) {
 	if got := NodeConfigPath(getenv, "windows", base); got != newPath {
 		t.Fatalf("another PC's leftovers: %s, want %s", got, newPath)
 	}
-	if role, _ := DetectRole(getenv, "windows", base, os.ReadFile); role != RoleHome {
+	if role, _, _ := DetectRole(getenv, "windows", base, os.ReadFile); role != RoleHome {
 		t.Fatalf("another PC's leftovers: %s", role)
 	}
 }
@@ -153,7 +153,7 @@ func TestNodeConfigWithABOMAndAKeptBrokenOne(t *testing.T) {
 	if got := NodeConfigFile(oldPath, os.ReadFile); got != oldPath {
 		t.Fatalf("a BOM'd node.json is whole: read from %s", got)
 	}
-	if role, id := DetectRole(getenv, "windows", base, os.ReadFile); role != RoleNode || id != "n2" {
+	if role, id, _ := DetectRole(getenv, "windows", base, os.ReadFile); role != RoleNode || id != "n2" {
 		t.Fatalf("a BOM'd node.json: %s %s", role, id)
 	}
 	// PowerShell 5.1's Out-File and > save UTF-16 (little-endian, with its BOM)
@@ -162,7 +162,7 @@ func TestNodeConfigWithABOMAndAKeptBrokenOne(t *testing.T) {
 		utf16le += string([]byte{byte(c), 0})
 	}
 	write(oldPath, utf16le)
-	if role, id := DetectRole(getenv, "windows", base, os.ReadFile); role != RoleNode || id != "n3" {
+	if role, id, _ := DetectRole(getenv, "windows", base, os.ReadFile); role != RoleNode || id != "n3" {
 		t.Fatalf("a UTF-16 node.json: %s %s", role, id)
 	}
 	write(oldPath, bom+`{"node_id":"n2","private_key":"k","database_url":"postgres://two","machine_id":"other-pc"}`)
@@ -178,7 +178,7 @@ func TestNodeConfigWithABOMAndAKeptBrokenOne(t *testing.T) {
 	if got := NodeConfigPath(getenv, "windows", base); got != newPath {
 		t.Fatalf("a kept broken node.json is no node config: %s, want %s", got, newPath)
 	}
-	if role, _ := DetectRole(getenv, "windows", base, os.ReadFile); role != RoleHome {
+	if role, _, _ := DetectRole(getenv, "windows", base, os.ReadFile); role != RoleHome {
 		t.Fatalf("a kept broken node.json is no node config: %s", role)
 	}
 }

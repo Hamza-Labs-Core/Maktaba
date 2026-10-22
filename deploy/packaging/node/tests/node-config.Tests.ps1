@@ -101,6 +101,27 @@ try {
     Set-Content -LiteralPath $bak -Value '{"node_id":"n1","private_key":"k","database_url":"postgres://one"}'
     Assert-Equal 255 ([System.IO.File]::ReadAllBytes($old)[0]) 'the test''s node.json is UTF-16 (FF FE)'
     Assert-Equal $old (Get-NodeConfigSource -Path $old) 'a UTF-16 node.json is the node config, not a backup beside it'
+
+    # text that does not decode strictly is broken here as for the pipeline and Go: an
+    # ANSI file with a byte that is not UTF-8 (PowerShell 5.1's Set-Content, a name with an
+    # e acute), a UTF-16 lone surrogate; the whole backup beside it is the node config
+    $ansi = [System.Text.Encoding]::ASCII.GetBytes('{"node_id":"n5","name":"H') + [byte[]](0xE9) +
+        [System.Text.Encoding]::ASCII.GetBytes('lene","private_key":"k","database_url":"postgres://five"}')
+    [System.IO.File]::WriteAllBytes($old, $ansi)
+    Assert-Equal $bak (Get-NodeConfigSource -Path $old) 'an ANSI node.json is broken: the backup beside it is read'
+    $lone = [byte[]](0xFF, 0xFE, 0x7B, 0x00, 0x00, 0xD8, 0x7D, 0x00)
+    [System.IO.File]::WriteAllBytes($old, $lone)
+    Assert-Equal $bak (Get-NodeConfigSource -Path $old) 'a UTF-16 lone surrogate is broken: the backup beside it is read'
+
+    # the identity a home's switch set aside goes with the rest to forget the home, unless
+    # it is another PC's
+    Remove-Item -LiteralPath $bak -Force
+    Set-Content -LiteralPath $old -Value '{"node_id":"n1","private_key":"k","machine_id":"pc-a"}'
+    $was = Join-Path $roaming 'Maktaba\node.json.was-node-2'
+    Set-Content -LiteralPath $was -Value '{"node_id":"n0","private_key":"k","machine_id":"pc-a"}'
+    Assert-Equal "$was;$old" ((@(Get-NodeConfigFiles)) -join ';') 'to forget the home, a set-aside identity goes too'
+    Set-Content -LiteralPath $was -Value '{"node_id":"n0","private_key":"k","machine_id":"pc-b"}'
+    Assert-Equal $old ((@(Get-NodeConfigFiles)) -join ';') 'another PC''s set-aside identity is never one to forget here'
 } finally {
     Remove-Item -LiteralPath $T -Recurse -Force -ErrorAction SilentlyContinue
 }

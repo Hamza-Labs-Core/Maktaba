@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -238,18 +239,21 @@ func (b *tvBase) beatInfo(ctx context.Context, role string, onAir func() []uuid.
 
 // buildHomeTV wires the channel engine, HDHomeRun, the guide and — with slot 0123 —
 // the placement service, the front door and the home's heartbeat.
-func buildHomeTV(bg *background, logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, layout *cache.Layout) []func(chi.Router) {
+func buildHomeTV(bg *background, logger *slog.Logger, cfg config.Config, pool *pgxpool.Pool, layout *cache.Layout) ([]func(chi.Router), error) {
 	b := newTVBase(bg, logger, cfg, pool, layout)
 	ctx := bg.ctx
 	publicBase := os.Getenv("MAKTABA_PUBLIC_BASE_URL")
-	ident := channel.LocalIdentity(ctx, pool, b.hostname, publicBase)
+	ident, err := channel.LocalIdentity(ctx, pool, b.hostname, publicBase)
+	if err != nil {
+		return nil, fmt.Errorf("this host's identity: %w", err)
+	}
 	chRepo := channel.NewPGRepo(pool, b.hostname)
 	chRepo.HostID = ident.ID
 	// Epic 33 story 33.1: with TV slots (the supervisor sets MAKTABA_TV_SLOTS) this
 	// process is the front door only; the channel engine runs in the slots.
 	if addrs := slot.ParseAddrs(os.Getenv(slot.EnvSlots)); len(addrs) > 0 {
 		if clusterSchema(ctx, pool, 60*time.Second) && slotSchema(ctx, pool, 60*time.Second) {
-			return b.buildHomeSlots(ctx, addrs, ident, chRepo, publicBase)
+			return b.buildHomeSlots(ctx, addrs, ident, chRepo, publicBase), nil
 		}
 		logger.Warn("tv: the TV slot schema (slots 0123, 0129) is missing; channels encode in this process",
 			"event", "tv_slot_schema_missing")
@@ -285,7 +289,7 @@ func buildHomeTV(bg *background, logger *slog.Logger, cfg config.Config, pool *p
 	ssdp := &hdhr.SSDPController{Repo: hdhrRepo, Logger: logger, LocationBase: publicBase,
 		HTTPAddr: os.Getenv("MAKTABA_HTTP_ADDR")}
 	bg.Go(ssdp.Run)
-	return mounts
+	return mounts, nil
 }
 
 func (b *tvBase) wireHomeCluster(ctx context.Context, engine *channel.Engine, local *channel.HTTPHandler,

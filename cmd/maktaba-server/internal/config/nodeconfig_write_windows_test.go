@@ -55,8 +55,8 @@ func grantAuthenticatedUsers(t *testing.T, dir string) {
 // The node config's temp file is the user's alone from the moment it exists, before a
 // byte of the secret is in it, even in a folder that grants Authenticated Users (a second
 // drive), and no other handle can be opened on it while it is written; a new node.json
-// keeps that ACL. One already there keeps its own (ReplaceFileW), as the pipeline's claim
-// keeps it.
+// keeps that ACL. One already there is the user's alone after the write too, whatever it
+// had: the folder's inherited ACL (what #178's writer left), or a wider one set by hand.
 func TestNodeConfigWriteIsTheUsersAlone(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "Maktaba")
 	grantAuthenticatedUsers(t, dir)
@@ -88,18 +88,35 @@ func TestNodeConfigWriteIsTheUsersAlone(t *testing.T) {
 		t.Fatalf("a new node.json: %q", aces)
 	}
 
+	// what #178's writer left: node.json renamed into place with the folder's ACL
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	writeAt(t, path, `{"node_id":"n1","private_key":"k","database_url":"postgres://h","joined_at":"then"}`)
+	if aces := icaclsEntries(t, path); usersOnly(aces) || !strings.Contains(strings.Join(aces, "|"), "Authenticated Users:(I)(M)") {
+		t.Fatalf("the test's node.json has the folder's ACL: %q", aces)
+	}
+	if err := WriteNodeConfig(path, addCA); err != nil {
+		t.Fatal(err)
+	}
+	if aces := icaclsEntries(t, path); !usersOnly(aces) {
+		t.Fatalf("a node.json with the folder's ACL after a write: %q", aces)
+	}
+	if got := readFields(t, path); got["joined_at"] != "then" || got["database_ca"] != "PEM" {
+		t.Fatalf("its fields: %v", got)
+	}
+
 	user := os.Getenv("USERNAME")
 	for _, args := range [][]string{{"/inheritance:r", "/grant:r", user + ":F"}, {"/grant", "*S-1-5-32-545:(R)"}} {
 		if out, err := exec.Command("icacls", append([]string{path}, args...)...).CombinedOutput(); err != nil { //nolint:gosec // the test's temp file
 			t.Fatalf("icacls: %v %s", err, out)
 		}
 	}
-	before := icaclsEntries(t, path)
 	if err := WriteNodeConfig(path, addCA); err != nil {
 		t.Fatal(err)
 	}
-	if after := icaclsEntries(t, path); strings.Join(after, "|") != strings.Join(before, "|") {
-		t.Fatalf("the replaced node.json's ACL: %q, was %q", after, before)
+	if aces := icaclsEntries(t, path); !usersOnly(aces) {
+		t.Fatalf("a node.json with a wider ACL set by hand, after a write: %q", aces)
 	}
 	if names := dirNames(t, dir); strings.Join(names, ",") != "node.json" {
 		t.Fatalf("left beside it: %v", names)
@@ -189,5 +206,37 @@ func TestNodeConfigReplaceFailuresAreSettled(t *testing.T) {
 				t.Fatalf("left beside it: %v", names)
 			}
 		})
+	}
+}
+
+// A home's switch sets node.json aside only once no other whole node config is left to
+// read: a stale backup a reader holds open is tried again for a moment, and while it
+// stays the set-aside fails before anything moves (every reader would take that backup
+// as the node config, and the pipeline would put it back). Once it can go, the switch
+// sets node.json aside and nothing is read as a node config after it.
+func TestSetNodeConfigAsideFailsBeforeLeavingAWholeOne(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "Maktaba")
+	path, aside := filepath.Join(dir, "node.json"), filepath.Join(dir, "node.json.was-node-1")
+	writeAt(t, path, `{"node_id":"n1","private_key":"k","database_url":"postgres://h"}`)
+	stale := filepath.Join(dir, ".node.json-1792600000-4242-0badf00d.bak")
+	writeAt(t, stale, `{"node_id":"n0","private_key":"k","database_url":"postgres://h"}`)
+	held, err := os.Open(stale) //nolint:gosec // the test's temp file: a reader holding it
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SetNodeConfigAside(path, aside); err == nil {
+		_ = held.Close()
+		t.Fatal("set aside with a whole backup left to read")
+	}
+	if got := readFields(t, path); got["node_id"] != "n1" || exists(aside) {
+		_ = held.Close()
+		t.Fatalf("something moved: node.json %v, aside there %v", got, exists(aside))
+	}
+	_ = held.Close()
+	if err := SetNodeConfigAside(path, aside); err != nil {
+		t.Fatal(err)
+	}
+	if names := dirNames(t, dir); strings.Join(names, ",") != "node.json.was-node-1" {
+		t.Fatalf("after: %v", names)
 	}
 }

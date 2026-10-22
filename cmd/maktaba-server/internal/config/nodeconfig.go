@@ -212,7 +212,7 @@ func NodeConfigPath(getenv func(string) string, goos, userHome string) string {
 		return filepath.Join(userHome, "Library", "Application Support", "Maktaba", "node.json")
 	case "windows":
 		old := roamingNodeConfig(getenv, userHome)
-		if held := nodeConfigFile(old, os.ReadFile); isFile(held) && !claimedElsewhere(held, thisMachine(getenv)) {
+		if held := heldNodeConfig(old); held != "" && !claimedElsewhere(held, thisMachine(getenv)) {
 			return old
 		}
 		return filepath.Join(WindowsRoot(getenv, userHome), "node.json")
@@ -305,11 +305,12 @@ func isNodeConfigLeftover(base, name string) bool {
 // pipeline's _text, the installer's Get-Content): a node.json an editor saved with a byte
 // order mark is read in that encoding (Notepad and PowerShell 5.1's Set-Content -Encoding
 // UTF8 write UTF-8 with one, its Out-File and > UTF-16; UTF-32 too), and one without is
-// UTF-8. A UTF-16 or UTF-32 one that does not decode gives no bytes (broken).
+// UTF-8. Text that does not decode strictly gives no bytes (broken), the same for every
+// reader: a UTF-16 lone surrogate, an ANSI file with a byte that is not UTF-8.
 func withoutBOM(b []byte) []byte {
 	switch {
 	case bytes.HasPrefix(b, []byte("\xef\xbb\xbf")):
-		return b[3:]
+		b = b[3:]
 	case bytes.HasPrefix(b, []byte("\xff\xfe\x00\x00")):
 		return decodeUTF32(b[4:], binary.LittleEndian)
 	case bytes.HasPrefix(b, []byte("\x00\x00\xfe\xff")):
@@ -318,6 +319,9 @@ func withoutBOM(b []byte) []byte {
 		return decodeUTF16(b[2:], binary.LittleEndian)
 	case bytes.HasPrefix(b, []byte("\xfe\xff")):
 		return decodeUTF16(b[2:], binary.BigEndian)
+	}
+	if !utf8.Valid(b) {
+		return nil // not UTF-8 (an ANSI file with a non-ASCII byte): broken for every reader
 	}
 	return b
 }
@@ -416,8 +420,8 @@ func ForeignNodeConfig(getenv func(string) string, goos, userHome string) (path,
 	if goos != "windows" || strings.TrimSpace(getenv("MAKTABA_NODE_CONFIG")) != "" {
 		return "", ""
 	}
-	held := nodeConfigFile(roamingNodeConfig(getenv, userHome), os.ReadFile)
-	if !isFile(held) || !claimedElsewhere(held, thisMachine(getenv)) {
+	held := heldNodeConfig(roamingNodeConfig(getenv, userHome))
+	if held == "" || !claimedElsewhere(held, thisMachine(getenv)) {
 		return "", ""
 	}
 	if ReadNodeConfig(getenv, goos, userHome, os.ReadFile).Joined() {
@@ -450,8 +454,7 @@ func isFile(p string) bool {
 // or broken).
 func ReadNodeConfig(getenv func(string) string, goos, userHome string, readFile func(string) ([]byte, error)) NodeConfig {
 	var n NodeConfig
-	path := nodeConfigFile(NodeConfigPath(getenv, goos, userHome), readFile)
-	b, err := readFile(path)
+	path, b, err := readNodeConfigSteady(NodeConfigPath(getenv, goos, userHome), readFile)
 	if errors.Is(err, fs.ErrNotExist) {
 		return n
 	}

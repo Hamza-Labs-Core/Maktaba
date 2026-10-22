@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf16"
 )
 
@@ -145,12 +146,16 @@ func TestSetNodeConfigAsideTakesItsLeftovers(t *testing.T) {
 	}
 }
 
-// A UTF-16 or UTF-32 node.json that does not decode is broken, as for the pipeline.
+// Text that does not decode strictly is broken, as for the pipeline and PowerShell: a
+// cut or lone-surrogate UTF-16 file, UTF-32 out of range, an ANSI file with a byte that
+// is not UTF-8 (PowerShell 5.1's Set-Content with a name like Hélène).
 func TestWithoutBOMRefusesWhatDoesNotDecode(t *testing.T) {
 	for name, b := range map[string][]byte{
 		"odd UTF-16":          []byte("\xff\xfe{\x00\""),
 		"a lone surrogate":    []byte("\xff\xfe\x00\xd8{\x00"),
 		"UTF-32 out of range": []byte("\xff\xfe\x00\x00\x00\x00\x11\x00"),
+		"ANSI":                []byte("{\"name\":\"H\xe9l\xe8ne\"}"),
+		"ANSI after a BOM":    []byte("\xef\xbb\xbf{\"name\":\"H\xe9l\xe8ne\"}"),
 	} {
 		if got := withoutBOM(b); got != nil {
 			t.Errorf("%s: %q, want none", name, got)
@@ -172,4 +177,110 @@ func dirNames(t *testing.T, dir string) []string {
 		names = append(names, e.Name())
 	}
 	return names
+}
+
+// While maktaba-server writes node.json over and over (ReplaceFileW renames it aside for
+// a moment on Windows), a reader waits every write out: in many reads, none is "not
+// joined" (which at serve's start means starting as the home) and none is an error.
+func TestReadNodeConfigWaitsOutWrites(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "Maktaba")
+	path := filepath.Join(dir, "node.json")
+	writeAt(t, path, `{"node_id":"n1","private_key":"k","database_url":"postgres://h"}`)
+	getenv := func(k string) string {
+		if k == "MAKTABA_NODE_CONFIG" {
+			return path
+		}
+		return ""
+	}
+	stop := make(chan struct{})
+	done := make(chan int)
+	go func() {
+		writes := 0
+		for {
+			select {
+			case <-stop:
+				done <- writes
+				return
+			default:
+			}
+			if WriteNodeConfig(path, addCA) == nil {
+				writes++
+			}
+		}
+	}()
+	end := time.Now().Add(time.Second)
+	reads, notJoined, failed := 0, 0, 0
+	for time.Now().Before(end) {
+		reads++
+		switch n := ReadNodeConfig(getenv, "windows", "", os.ReadFile); {
+		case n.Err != nil:
+			failed++
+			t.Logf("read %d: %v", reads, n.Err)
+		case !n.Joined():
+			notJoined++
+		}
+	}
+	close(stop)
+	writes := <-done
+	if notJoined != 0 || failed != 0 || writes == 0 {
+		t.Fatalf("%d reads during %d writes: %d not joined, %d errors", reads, writes, notJoined, failed)
+	}
+}
+
+// A field update changes only the fields it is about, on node.json as it is when the
+// lock is held: every other field stays as the file has it, and a node config that is
+// another node's now (a re-join between the read and the write) is left as it is.
+func TestUpdateNodeConfigChangesOnlyItsFields(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "Maktaba")
+	path := filepath.Join(dir, "node.json")
+	writeAt(t, path, `{"node_id":"n1","private_key":"k","database_url":"postgres://h","joined_at":"then",`+
+		`"home":{"url":"http://home:8080","term":2},"later":{"kept":true},"peers":["http://p:8080"]}`)
+	err := UpdateNodeConfig(path, "n1", func(n *NodeConfig) {
+		n.DatabaseCA = "PEM"
+		n.Peers = nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := readFields(t, path)
+	if got["database_ca"] != "PEM" || got["joined_at"] != "then" || got["later"] == nil || got["peers"] != nil {
+		t.Fatalf("after the update: %v", got)
+	}
+	if home, _ := got["home"].(map[string]any); home["url"] != "http://home:8080" || home["term"] != float64(2) {
+		t.Fatalf("home: %v", got["home"])
+	}
+
+	rejoined := `{"node_id":"n2","private_key":"k2","database_url":"postgres://h2"}`
+	writeAt(t, path, rejoined)
+	err = UpdateNodeConfig(path, "n1", func(n *NodeConfig) { n.DatabaseCA = "OLD" })
+	if err == nil || !strings.Contains(err.Error(), `"n2"`) {
+		t.Fatalf("a node config re-joined meanwhile: %v", err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != rejoined { //nolint:gosec // the test's temp file
+		t.Fatalf("the re-joined node config was written: %s", b)
+	}
+}
+
+// Set aside with node.json broken and the config in a write's leftover: the broken file
+// is kept aside (never read as a node config), the leftover is what is moved, and no
+// whole node config is left to read after it.
+func TestSetNodeConfigAsideWithABrokenNodeJSON(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "Maktaba")
+	path, aside := filepath.Join(dir, "node.json"), filepath.Join(dir, "node.json.was-node-1")
+	writeAt(t, path, `{"node_id":"n1","priv`)
+	writeAt(t, filepath.Join(dir, ".node.json-1792600000-4242-0badf00d.bak"), `{"node_id":"n1","private_key":"k"}`)
+	writeAt(t, filepath.Join(dir, ".node.json-1792600000-4242-0badf00e.tmp"), `{"node_id":"n0","private_key":"k"}`)
+	if err := SetNodeConfigAside(path, aside); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFields(t, aside); got["node_id"] != "n1" {
+		t.Fatalf("moved aside: %v", got)
+	}
+	names := dirNames(t, dir)
+	if len(names) != 2 || names[0] != "node.json.broken-"+names[0][len("node.json.broken-"):] || names[1] != "node.json.was-node-1" {
+		t.Fatalf("after: %v", names)
+	}
+	if held := nodeConfigFile(path, os.ReadFile); isFile(held) {
+		t.Fatalf("%s is still read as the node config", held)
+	}
 }

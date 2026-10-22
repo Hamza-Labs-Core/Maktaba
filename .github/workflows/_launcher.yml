@@ -54,10 +54,26 @@ jobs:
       # Epic 38 story 38.1: where an install keeps its files on each OS, how an older
       # layout comes in (Windows copies its config and keys out of the roaming profile
       # and keeps the originals; a Mac moves its XDG paths), the state root and the
-      # node config's path, on the OS itself.
+      # node config's path, on the OS itself; and node.json's one Go writer, whose
+      # Windows tests (the user-only temp file and ACL, the lock the pipeline shares,
+      # ReplaceFileW's settling, a reader waiting out writes) run here only, as do a
+      # switch's records and identity kept the user's alone. Verbose, so the log shows
+      # each one ran.
       - name: maktaba-server (paths per OS)
         working-directory: cmd/maktaba-server
-        run: go test -count=1 ./internal/config
+        shell: bash # stops at the first failing command (pwsh would report only the last)
+        run: |
+          go test -count=1 -v ./internal/config
+          go test -count=1 -v . -run "PrivateFilesAreTheUsersAlone|WriteNodeConfigKeepsThePipelinesFields|NodeConfigIsolated"
+
+      # Epic 38 story 38.1: streaming's node config readers on the OS itself: which
+      # node.json it reads (the roaming profile's, its leftovers, its encodings), and that
+      # a node config it cannot read, or one being written, is never taken for the home.
+      - name: streaming (the node config's readers)
+        working-directory: streaming
+        run: >-
+          go test -count=1 -v ./internal/channel ./internal/cluster
+          -run "NodeConfig|DetectRole|NodeMode|AForcedHomeIsNeverANode"
 
       # Epic 38 story 38.13: moving an install this PC runs (a scheduled task and its
       # script) into the app. On windows-latest a real task is registered, its server

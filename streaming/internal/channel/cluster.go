@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -76,7 +77,7 @@ func NodeConfigPath(getenv func(string) string, goos, userHome string) string {
 			roaming = filepath.Join(userHome, "AppData", "Roaming")
 		}
 		old := filepath.Join(roaming, "Maktaba", "node.json")
-		if held := NodeConfigFile(old, os.ReadFile); isFile(held) && !claimedElsewhere(held, getenv) {
+		if held := heldNodeConfig(old); held != "" && !claimedElsewhere(held, getenv) {
 			return old
 		}
 		local := getenv("LOCALAPPDATA")
@@ -156,12 +157,13 @@ func isNodeConfigLeftover(base, name string) bool {
 // pipeline's _text, maktaba-server's withoutBOM, the installer's Get-Content): a
 // node.json an editor saved with a byte order mark is read in that encoding (Notepad and
 // PowerShell 5.1's Set-Content -Encoding UTF8 write UTF-8 with one, its Out-File and >
-// UTF-16; UTF-32 too), and one without is UTF-8. A UTF-16 or UTF-32 one that does not
-// decode gives no bytes (broken).
+// UTF-16; UTF-32 too), and one without is UTF-8. Text that does not decode strictly
+// gives no bytes (broken), the same for every reader: a UTF-16 lone surrogate, an ANSI
+// file with a byte that is not UTF-8.
 func WithoutBOM(b []byte) []byte {
 	switch {
 	case bytes.HasPrefix(b, []byte("\xef\xbb\xbf")):
-		return b[3:]
+		b = b[3:]
 	case bytes.HasPrefix(b, []byte("\xff\xfe\x00\x00")):
 		return decodeUTF32(b[4:], binary.LittleEndian)
 	case bytes.HasPrefix(b, []byte("\x00\x00\xfe\xff")):
@@ -170,6 +172,9 @@ func WithoutBOM(b []byte) []byte {
 		return decodeUTF16(b[2:], binary.LittleEndian)
 	case bytes.HasPrefix(b, []byte("\xfe\xff")):
 		return decodeUTF16(b[2:], binary.BigEndian)
+	}
+	if !utf8.Valid(b) {
+		return nil // not UTF-8 (an ANSI file with a byte that is not): broken for every reader
 	}
 	return b
 }
@@ -249,36 +254,141 @@ func claimedElsewhere(path string, getenv func(string) string) bool {
 
 // DetectRole decides home or node the way the pipeline does: a machine
 // whose node config holds a database credential joined a home and is a
-// node; anything else is the home. MAKTABA_CLUSTER_ROLE (home|node)
-// overrides. Returns the role and, for a node, its node_id.
-func DetectRole(getenv func(string) string, goos, userHome string, readFile func(string) ([]byte, error)) (string, string) {
-	nodeID := ""
-	joined := false
-	if b, err := readFile(NodeConfigFile(NodeConfigPath(getenv, goos, userHome), readFile)); err == nil {
-		var nc nodeConfig
-		if json.Unmarshal(WithoutBOM(b), &nc) == nil {
-			nodeID = strings.TrimSpace(nc.NodeID)
-			joined = strings.TrimSpace(nc.DatabaseURL) != ""
+// node; one with none, or one that never joined, is the home.
+// MAKTABA_CLUSTER_ROLE (home|node) overrides. Returns the role and, for a
+// node, its node_id. A node config that is there but cannot be read (held by
+// another process past a write's moment, ReadNodeConfigFile) or is broken is
+// an error, never the home: a node taken for the home would start as a second
+// home.
+func DetectRole(getenv func(string) string, goos, userHome string, readFile func(string) ([]byte, error)) (string, string, error) {
+	override := strings.ToLower(strings.TrimSpace(getenv("MAKTABA_CLUSTER_ROLE")))
+	if override == RoleHome {
+		return RoleHome, "", nil
+	}
+	path := NodeConfigPath(getenv, goos, userHome)
+	b, err := ReadNodeConfigFile(path, readFile)
+	var nc nodeConfig
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
+		return "", "", fmt.Errorf("node config %s: %w", path, err)
+	case json.Unmarshal(WithoutBOM(b), &nc) != nil:
+		return "", "", fmt.Errorf("node config %s: not a node config", path)
+	}
+	nodeID := strings.TrimSpace(nc.NodeID)
+	if override == RoleNode || strings.TrimSpace(nc.DatabaseURL) != "" {
+		return RoleNode, nodeID, nil
+	}
+	return RoleHome, "", nil
+}
+
+// ReadNodeConfigFile reads the node config at path from the file that holds it
+// (NodeConfigFile), waiting out a write under way for a moment (writeUnderWay):
+// a reader never takes a node.json that is being replaced for a missing one.
+func ReadNodeConfigFile(path string, readFile func(string) ([]byte, error)) ([]byte, error) {
+	deadline := time.Now().Add(readWait)
+	for {
+		last := !time.Now().Before(deadline)
+		held := NodeConfigFile(path, readFile)
+		b, err := readFile(held)
+		// a leftover it picked that is gone already, or going (denied while it is removed):
+		// the write ended, look again
+		vanished := held != path && (errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission))
+		if last || (!vanished && !writeUnderWay(path, err)) {
+			return b, err
+		}
+		time.Sleep(busyWait)
+	}
+}
+
+// readWait and busyWait: how long a reader waits out a write of the node config
+// (maktaba-server's and the pipeline's, which hold its lock for all of it: milliseconds,
+// more on a busy machine), and how often it looks again.
+const (
+	readWait = 2 * time.Second
+	busyWait = 5 * time.Millisecond
+)
+
+// writeUnderWay: reading the node config at path failed with err while a write
+// of it may be under way: the file is held by another process (ReplaceFileW, a
+// rename), or it is missing, or denied for a moment (a backup being removed),
+// while its lock is held (made in the last minute) or a write's leftovers are beside
+// it (ReplaceFileW renames node.json aside before the new one takes its name).
+func writeUnderWay(path string, err error) bool {
+	switch {
+	case err == nil:
+		return false
+	case isBusy(err):
+		return true
+	case errors.Is(err, fs.ErrNotExist), errors.Is(err, fs.ErrPermission):
+		return lockedLately(filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".lock")) || hasLeftovers(path)
+	}
+	return false
+}
+
+// lockedLately: the lock file at lock is there and was made in the last minute (a
+// write removes it when it is done; one a process that stopped mid-write left, long
+// ago, is no write under way; the pipeline's _locked_lately).
+func lockedLately(lock string) bool {
+	fi, err := os.Stat(lock)
+	if err != nil {
+		return false
+	}
+	age := time.Since(fi.ModTime())
+	return age > -time.Minute && age < time.Minute
+}
+
+// hasLeftovers: a write under way left something beside the node config at path:
+// a leftover named in the last minute (the time in its name; the pipeline's
+// _in_progress). A stale one, from a write that could not finish long ago, is no
+// write under way.
+func hasLeftovers(path string) bool {
+	entries, err := os.ReadDir(filepath.Dir(path))
+	if err != nil {
+		return false
+	}
+	prefix := "." + filepath.Base(path) + "-"
+	for _, e := range entries {
+		if e.IsDir() || !isNodeConfigLeftover(filepath.Base(path), e.Name()) || !strings.HasPrefix(e.Name(), prefix) {
+			continue
+		}
+		stamp, _, ok := strings.Cut(strings.TrimPrefix(e.Name(), prefix), "-")
+		if started, err := strconv.ParseInt(stamp, 10, 64); ok && err == nil {
+			if age := time.Since(time.Unix(started, 0)); age > -time.Minute && age < time.Minute {
+				return true
+			}
 		}
 	}
-	switch strings.ToLower(strings.TrimSpace(getenv("MAKTABA_CLUSTER_ROLE"))) {
-	case RoleHome:
-		return RoleHome, ""
-	case RoleNode:
-		return RoleNode, nodeID
+	return false
+}
+
+// heldNodeConfig is the file that holds the node config at path (NodeConfigFile)
+// when there is one, waiting out a write under way (a leftover it picked can be
+// gone a moment later); "" when there is none.
+func heldNodeConfig(path string) string {
+	deadline := time.Now().Add(readWait)
+	for {
+		held := NodeConfigFile(path, os.ReadFile)
+		if isFile(held) {
+			return held
+		}
+		if !time.Now().Before(deadline) || (held == path && !writeUnderWay(path, fs.ErrNotExist)) {
+			return ""
+		}
+		time.Sleep(busyWait)
 	}
-	if joined {
-		return RoleNode, nodeID
-	}
-	return RoleHome, ""
 }
 
 // LocalIdentity builds this host's identity: role from DetectRole, id from
 // the node config (node) or the instance_identity row (home; the host name
-// when the table is absent).
-func LocalIdentity(ctx context.Context, pool *pgxpool.Pool, hostname, streamBase string) HostIdentity {
+// when the table is absent). A node config that cannot be read is an error
+// (DetectRole): never the home's identity.
+func LocalIdentity(ctx context.Context, pool *pgxpool.Pool, hostname, streamBase string) (HostIdentity, error) {
 	home, _ := os.UserHomeDir()
-	role, nodeID := DetectRole(os.Getenv, runtime.GOOS, home, os.ReadFile)
+	role, nodeID, err := DetectRole(os.Getenv, runtime.GOOS, home, os.ReadFile)
+	if err != nil {
+		return HostIdentity{}, err
+	}
 	id := nodeID
 	if role == RoleHome || id == "" {
 		id = "home-" + hostname
@@ -294,7 +404,7 @@ func LocalIdentity(ctx context.Context, pool *pgxpool.Pool, hostname, streamBase
 			id = "node-" + hostname
 		}
 	}
-	return HostIdentity{ID: id, Host: hostname, Role: role, StreamBaseURL: strings.TrimRight(strings.TrimSpace(streamBase), "/")}
+	return HostIdentity{ID: id, Host: hostname, Role: role, StreamBaseURL: strings.TrimRight(strings.TrimSpace(streamBase), "/")}, nil
 }
 
 // ErrRunningElsewhere is returned when a channel already encodes on

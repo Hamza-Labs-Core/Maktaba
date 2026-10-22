@@ -8,6 +8,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -55,40 +57,69 @@ func lockNodeConfig(path string, wait time.Duration) (release func(), err error)
 // written (the pipeline's _create_user_only). Its folder's ACL (Authenticated Users on a
 // second drive) is never the file's.
 func newNodeConfigTemp(path string) (*os.File, string, error) {
-	user, err := windows.GetCurrentProcessToken().GetTokenUser()
-	if err != nil {
-		return nil, "", err
-	}
-	sd, err := windows.SecurityDescriptorFromString("D:P(A;;FA;;;" + user.User.Sid.String() + ")")
-	if err != nil {
-		return nil, "", err
-	}
-	sa := &windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), SecurityDescriptor: sd}
 	for range 8 {
 		tmp := nodeConfigLeftoverName(path, ".tmp")
-		name, err := windows.UTF16PtrFromString(tmp)
-		if err != nil {
-			return nil, "", err
-		}
-		h, err := windows.CreateFile(name, windows.GENERIC_WRITE, 0, sa, windows.CREATE_NEW, windows.FILE_ATTRIBUTE_NORMAL, 0)
-		if errors.Is(err, windows.ERROR_FILE_EXISTS) {
+		f, err := CreateUserOnly(tmp)
+		if errors.Is(err, fs.ErrExist) {
 			continue
 		}
 		if err != nil {
-			return nil, "", &os.PathError{Op: "create", Path: tmp, Err: err}
+			return nil, "", err
 		}
-		return os.NewFile(uintptr(h), tmp), tmp, nil
+		return f, tmp, nil
 	}
 	return nil, "", fmt.Errorf("no free temp file name beside %s", path)
 }
 
+// CreateUserOnly creates the file at path for writing, which must not be there yet (an
+// error matching fs.ErrExist when it is), the user's alone from the moment it exists:
+// CreateFileW with a protected DACL that grants this process's user, by its SID, full
+// control and no one else, and no sharing. Its folder's ACL (Authenticated Users on a
+// second drive) is never the file's. A secret the server keeps (the node config, a
+// switch's records and identity) is written to one and renamed into place.
+func CreateUserOnly(path string) (*os.File, error) {
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		return nil, err
+	}
+	sd, err := windows.SecurityDescriptorFromString("D:P(A;;FA;;;" + user.User.Sid.String() + ")")
+	if err != nil {
+		return nil, err
+	}
+	sa := &windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), SecurityDescriptor: sd}
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return nil, err
+	}
+	h, err := windows.CreateFile(name, windows.GENERIC_WRITE, 0, sa, windows.CREATE_NEW, windows.FILE_ATTRIBUTE_NORMAL, 0)
+	if err != nil {
+		return nil, &os.PathError{Op: "create", Path: path, Err: err}
+	}
+	return os.NewFile(uintptr(h), path), nil
+}
+
+// MakeUserOnly makes the file at path the user's alone when it is not
+// (secureNodeConfig): a secret an older version wrote with its folder's ACL keeps none of
+// it.
+func MakeUserOnly(path string) error { return secureNodeConfig(path) }
+
+// IsUserOnly: the file at path is this user's alone (a protected DACL that grants this
+// process's user full control and no one anything, nodeConfigIsUsers).
+func IsUserOnly(path string) (bool, error) { return nodeConfigIsUsers(path) }
+
 // replaceNodeConfig puts body in place of the node config at path (the lock held): a new
-// file takes the name with its user-only DACL; one already there is replaced with
-// ReplaceFileW, which keeps that file's ACL (replaceKeepingACL). The temp file goes
-// unless it is the only copy left (a node config that was there and is gone): then it
-// stays for the pipeline's next load.
+// file takes the name with its user-only DACL; one already there is made the user's
+// alone first when it is not (secureNodeConfig: #178's writer left node.json with its
+// folder's ACL) and replaced with ReplaceFileW, which keeps that ACL
+// (replaceKeepingACL). The temp file goes unless it is the only copy left (a node config
+// that was there and is gone): then it stays for the pipeline's next load.
 func replaceNodeConfig(path string, body []byte) error {
 	existed := isFile(path)
+	if existed {
+		if err := secureNodeConfig(path); err != nil {
+			return fmt.Errorf("%s is not the user's alone, and cannot be made so: %w", path, err)
+		}
+	}
 	f, tmp, err := newNodeConfigTemp(path)
 	if err != nil {
 		return err
@@ -106,6 +137,50 @@ func replaceNodeConfig(path string, body []byte) error {
 		_ = os.Remove(tmp)
 	}
 	return err
+}
+
+// userOnlyDACL matches a DACL (as SDDL) that is protected and grants one SID full
+// control and no one anything else: what newNodeConfigTemp gives a node config and the
+// pipeline's _set_user_only_dacl sets.
+var userOnlyDACL = regexp.MustCompile(`^D:([A-Z]*)\(A;;(FA|GA|0x1f01ff);;;([^)]+)\)$`)
+
+// nodeConfigIsUsers: the node config at path is this user's alone (userOnlyDACL with
+// this process's user).
+func nodeConfigIsUsers(path string) (bool, error) {
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return false, err
+	}
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		return false, err
+	}
+	m := userOnlyDACL.FindStringSubmatch(sd.String())
+	return m != nil && strings.Contains(m[1], "P") && strings.EqualFold(m[3], user.User.Sid.String()), nil
+}
+
+// secureNodeConfig makes the node config at path the user's alone when it is not (a
+// protected DACL that grants this process's user full control and no one else, as the
+// pipeline's _set_user_only_dacl): a node.json #178's writer left with its folder's ACL
+// (Authenticated Users may change it, on a second drive) keeps none of that.
+func secureNodeConfig(path string) error {
+	if ok, err := nodeConfigIsUsers(path); err == nil && ok {
+		return nil
+	}
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		return err
+	}
+	sd, err := windows.SecurityDescriptorFromString("D:P(A;;FA;;;" + user.User.Sid.String() + ")")
+	if err != nil {
+		return err
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		return err
+	}
+	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil)
 }
 
 // replaceFile is ReplaceFileW: tmp takes the place (and the ACL) of path, whose old file
@@ -150,7 +225,9 @@ func replaceKeepingACL(path, tmp string) error {
 		time.Sleep(busyWait)
 	}
 	if err == nil {
-		_ = os.Remove(backup)
+		// the old file under its backup name: a reader may have it open for a moment, and
+		// one left whole would be read as the node config were node.json ever missing
+		_ = removeWhenFree(backup)
 		return nil
 	}
 	settled, serr := settleNodeConfig(path, tmp, backup)
@@ -176,12 +253,12 @@ func settleNodeConfig(path, tmp, backup string) (bool, error) {
 		if err := os.Rename(tmp, path); err != nil {
 			return false, err
 		}
-		_ = os.Remove(backup)
+		_ = removeWhenFree(backup)
 		return true, nil
 	}
 	if isFile(path) {
-		_ = os.Remove(tmp)
-		_ = os.Remove(backup)
+		_ = removeWhenFree(tmp)
+		_ = removeWhenFree(backup)
 	}
 	return false, nil
 }

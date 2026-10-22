@@ -548,20 +548,38 @@ don't append a line here; docs-only PRs are exempt.
   reader, and a broken one a backup replaces is kept beside it (`node.json.broken-…`), never
   removed. A start that cannot make the lock (a folder it may not write, a full disk) leaves the
   leftovers and reads past them, as before.
-- **maktaba-server writes node.json the way the pipeline does** (story 38.1, follow-up of #178
-  and #239). Its own writes of the node config (a switch of the home, a standby taking over, the
-  home's database CA) gave the file its folder's ACL, so on a second drive every signed-in user
-  could read and change the node's private key; they ignored the pipeline's write lock, so the
-  two could undo each other; and a `node.json` saved with a BOM lost what only the pipeline
+- **maktaba-server writes node.json the way the pipeline does, every node.json is its user's
+  alone, and no reader takes a write under way for "not joined"** (story 38.1, follow-up of #178
+  and #239). maktaba-server's own writes of the node config (a switch of the home, a standby
+  taking over, the home's database CA) gave the file its folder's ACL, so on a second drive every
+  signed-in user could read and change the node's private key; they ignored the pipeline's write
+  lock, so the two could undo each other; they wrote back a whole copy read earlier, undoing what
+  another write put in meanwhile; and a `node.json` saved with a BOM lost what only the pipeline
   writes (when the machine joined). They now go through one writer that follows the pipeline's:
-  its lock, a temp file the user's alone from the moment it exists, ReplaceFileW keeping the
-  file's ACL, and its names for what a write that could not finish leaves. A home's switch that
-  moves `node.json` aside takes those with it, so the machine that is now the home is never read
-  as a node again. Every reader reads a `node.json` saved as UTF-16 or UTF-32 with a byte order
-  mark (PowerShell 5.1's `Out-File` and `>`) the same way. A broken `node.json` kept aside goes
-  after 30 days and at a re-join (it may hold part of a credential), the write lock is among the
-  files the uninstall script lists to forget the home, and a write tries again for a moment while
-  a reader has `node.json` open.
+  its lock, a fresh read under it that changes only the fields the write is about (and stops,
+  leaving the file as it is, when the machine joined again meanwhile), a temp file the user's
+  alone from the moment it exists, ReplaceFileW, and the pipeline's names for what a write that
+  could not finish leaves. What is guaranteed now: after any write by either writer, and after
+  the pipeline's first load in a process, `node.json` is its user's alone. One #178 left with its
+  folder's ACL, or any wider one, gets a protected DACL that grants its user and no one else, and
+  on Linux and macOS one others may read is set to mode 0600; a write that cannot make it so
+  fails rather than keep the wider ACL. A switch's records and the machine identity kept for it
+  are written the same way, and an identity an older version kept is made the user's alone when
+  it is read. And no reader (the pipeline's load, maktaba-server's, streaming's role and node
+  checks) takes a `node.json` that is being replaced, or that another process holds open for a
+  moment, for a missing one: while the write lock was taken in the last minute, or a write's
+  leftovers of the last minute are beside it, it waits up to 2 s for the write to end, and the
+  path is resolved again rather than falling back to `%LOCALAPPDATA%`. A node config it cannot
+  read or decode is an error, never "not joined" and never the home: streaming refuses to start
+  on one. A home's switch that moves `node.json` aside first removes every leftover of a write,
+  and fails before leaving a whole node config readable, so the machine that is now the home is
+  never read as a node again; a broken `node.json` there is kept aside as `node.json.broken-…`.
+  Every reader decodes alike: UTF-8 with or without a BOM, UTF-16 or UTF-32 with one (PowerShell
+  5.1's `Out-File` and `>`), and text that does not decode strictly (an ANSI file) is broken for
+  all of them. A broken `node.json` kept aside goes after 30 days and at a re-join (it may hold
+  part of a credential), the write lock and an identity a switch set aside are among the files
+  the uninstall script lists to forget the home, and a write tries again for a moment while a
+  reader has `node.json` open.
 
 ## [0.2.0] - 2026-10-19
 

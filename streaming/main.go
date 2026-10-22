@@ -168,7 +168,12 @@ func runServe() error {
 	// across the public and gRPC surfaces and closed on shutdown.
 	// Node mode (Epic 32.1): a joined machine streams from its Epic 31 node config;
 	// its database credential is the one it got when it joined.
-	node, nodeMode := cluster.NodeModeFromOS(runtime.GOOS)
+	node, nodeMode, err := cluster.NodeModeFromOS(runtime.GOOS)
+	if err != nil {
+		// never started as the home on a node config it cannot read: the supervisor
+		// starts it again, by when a write of it is over
+		return fmt.Errorf("the node config: %w", err)
+	}
 	if nodeMode && os.Getenv("DATABASE_URL") == "" && node.DatabaseURL != "" {
 		_ = os.Setenv("DATABASE_URL", node.DatabaseURL)
 	}
@@ -257,7 +262,9 @@ func runServe() error {
 				buildOfflineTV(bg, logger, cfg, copyPool))
 		}
 	} else {
-		publicHandler = buildPublicHandler(bg, logger, probeBackend, transcripts, pool, sessions)
+		if publicHandler, err = buildPublicHandler(bg, logger, probeBackend, transcripts, pool, sessions); err != nil {
+			return err
+		}
 	}
 
 	publicSrv := &http.Server{
@@ -475,7 +482,7 @@ func warmPeriod() time.Duration {
 // local `serve`. The session store is still in-memory (see
 // buildGRPCServer's note); Postgres-backed sessions are a tracked
 // follow-up.
-func buildPublicHandler(bg *background, logger *slog.Logger, backend probe.Backend, transcripts handlers.TranscriptStreamer, pool *pgxpool.Pool, store session.Store) http.Handler {
+func buildPublicHandler(bg *background, logger *slog.Logger, backend probe.Backend, transcripts handlers.TranscriptStreamer, pool *pgxpool.Pool, store session.Store) (http.Handler, error) {
 	cfg := config.Load()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -515,7 +522,10 @@ func buildPublicHandler(bg *background, logger *slog.Logger, backend probe.Backe
 	// channel_programs); the no-DB local `serve` skips them entirely.
 	var extraMounts []func(chi.Router)
 	if pool != nil {
-		extraMounts = buildHomeTV(bg, logger, cfg, pool, layout)
+		var err error
+		if extraMounts, err = buildHomeTV(bg, logger, cfg, pool, layout); err != nil {
+			return nil, err
+		}
 	}
 
 	return server.New(server.Deps{
@@ -529,7 +539,7 @@ func buildPublicHandler(bg *background, logger *slog.Logger, backend probe.Backe
 		Transcripts: transcripts,
 		Now:         time.Now,
 		ExtraMounts: extraMounts,
-	})
+	}), nil
 }
 
 // buildVerifierKeys is the key set the signed-URL middleware verifies against:

@@ -31,22 +31,22 @@ func TestAForcedHomeIsNeverANode(t *testing.T) {
 	getenv := func(k string) string { return env[k] }
 
 	// the gap: nothing said, the roaming node config makes it a node
-	if _, ok := NodeMode(getenv, "windows", home, os.ReadFile); !ok {
+	if _, ok, _ := NodeMode(getenv, "windows", home, os.ReadFile); !ok {
 		t.Fatal("the roaming fallback is not read: the test proves nothing")
 	}
 	// a forced home's supervisor's word
 	env["MAKTABA_CLUSTER_ROLE"], env["MAKTABA_TV_HOST_ROLE"] = "home", "home"
 	env["MAKTABA_NODE_CONFIG"] = filepath.Join(home, "state", "home-has-no-node-config.json")
-	if ns, ok := NodeMode(getenv, "windows", home, os.ReadFile); ok {
+	if ns, ok, _ := NodeMode(getenv, "windows", home, os.ReadFile); ok {
 		t.Errorf("a forced home streams as a node: %+v", ns)
 	}
-	if role, id := channel.DetectRole(getenv, "windows", home, os.ReadFile); role != channel.RoleHome || id != "" {
+	if role, id, _ := channel.DetectRole(getenv, "windows", home, os.ReadFile); role != channel.RoleHome || id != "" {
 		t.Errorf("DetectRole = %s %q, want the home", role, id)
 	}
 	// each word holds on its own
 	for _, k := range []string{"MAKTABA_CLUSTER_ROLE", "MAKTABA_TV_HOST_ROLE", "MAKTABA_NODE_CONFIG"} {
 		one := map[string]string{"APPDATA": env["APPDATA"], "LOCALAPPDATA": env["LOCALAPPDATA"], k: env[k]}
-		if _, ok := NodeMode(func(k string) string { return one[k] }, "windows", home, os.ReadFile); ok {
+		if _, ok, _ := NodeMode(func(k string) string { return one[k] }, "windows", home, os.ReadFile); ok {
 			t.Errorf("%s alone: still a node", k)
 		}
 	}

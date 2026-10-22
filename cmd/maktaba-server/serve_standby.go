@@ -505,6 +505,7 @@ func readIdentity(path string) (oldHome, error) {
 	if err := json.Unmarshal(b, &me); err != nil || me.NodeID == "" {
 		return me, fmt.Errorf("%s: not an identity", path)
 	}
+	_ = config.MakeUserOnly(path) // one an older version kept with its folder's ACL
 	return me, nil
 }
 
@@ -715,8 +716,7 @@ func (s *switching) homeStandbys(args json.RawMessage) (bool, any) {
 	if strings.Join(keep, " ") == strings.Join(n.StandbyHomes, " ") && strings.Join(peers, " ") == strings.Join(n.Peers, " ") {
 		return true, map[string]any{"changed": false}
 	}
-	n.StandbyHomes, n.Peers = keep, peers
-	if err := writeNodeConfig(n); err != nil {
+	if err := updateNodeConfig(n.NodeID, func(n *config.NodeConfig) { n.StandbyHomes, n.Peers = keep, peers }); err != nil {
 		return false, err.Error()
 	}
 	return true, map[string]any{"changed": true}

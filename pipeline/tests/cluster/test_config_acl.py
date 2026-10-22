@@ -34,19 +34,51 @@ def _users_only(aces: list[str]) -> bool:
     )
 
 
-def test_windows_claim_keeps_the_files_acl(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The claim replaces the file with ReplaceFileW, which keeps its ACL as it was."""
+def _grant_signed_in_users(folder: Path) -> None:
+    """A second drive's inheritance: every signed-in user may change, Users may read."""
+    subprocess.run(
+        ["icacls", str(folder), "/grant", "*S-1-5-11:(OI)(CI)(M)", "*S-1-5-32-545:(OI)(CI)(RX)"],
+        check=True,
+        capture_output=True,
+    )
+
+
+@pytest.mark.parametrize("shape", ["the folder's ACL", "a wider ACL set by hand"])
+def test_windows_a_node_json_others_may_read_is_made_the_users(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, shape: str
+) -> None:
+    """A node.json others may read or change (the folder's inherited ACL #178's writer
+    left: Authenticated Users:(M), Users:(RX); or a wider ACL set by hand) is the user's
+    alone after a claim and after a load, and the warning says so; one that is already
+    the user's is left as it is (nothing said)."""
+    from maktaba_pipeline import log
+    from tests.cluster.test_config import _Warnings
+
     roaming = _windows_profile(tmp_path, monkeypatch, "pc-a")
+    _grant_signed_in_users(roaming.parent)
     roaming.write_text(json.dumps(_JOINED), encoding="utf-8")
-    user = os.environ["USERNAME"]
-    for args in (["/inheritance:r", "/grant:r", f"{user}:F"], ["/grant", "*S-1-5-32-545:(R)"]):
-        subprocess.run(["icacls", str(roaming), *args], check=True, capture_output=True)
-    before = _icacls(roaming)
-    cfg = config.load()
+    if shape == "a wider ACL set by hand":
+        user = os.environ["USERNAME"]
+        for args in (["/inheritance:r", "/grant:r", f"{user}:F"], ["/grant", "*S-1-5-32-545:(R)"]):
+            subprocess.run(["icacls", str(roaming), *args], check=True, capture_output=True)
+    assert not _users_only(_icacls(roaming))
+    warnings = _Warnings(private=True)
+    monkeypatch.setattr(log, "get_logger", lambda: warnings)
+    cfg = config.load()  # the claim
     assert cfg is not None and cfg.machine_id == "pc-a"
-    assert _icacls(roaming) == before
+    assert _users_only(_icacls(roaming)), _icacls(roaming)
+    assert warnings.events == ["node_config_made_private"]
     # the old file ReplaceFileW kept under its backup name is gone with the success
     assert sorted(p.name for p in roaming.parent.iterdir()) == ["node.json"]
+
+    # claimed already: a load alone makes it the user's again
+    _grant_signed_in_users(roaming.parent)
+    subprocess.run(["icacls", str(roaming), "/reset"], check=True, capture_output=True)
+    assert not _users_only(_icacls(roaming))
+    assert config.load() is not None
+    assert _users_only(_icacls(roaming))
+    assert config.load() is not None  # already the user's: nothing more said
+    assert warnings.events == ["node_config_made_private", "node_config_made_private"]
 
 
 def test_windows_the_temp_file_is_the_users_before_the_secret_is_in_it(

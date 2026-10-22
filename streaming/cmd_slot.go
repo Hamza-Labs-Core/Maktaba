@@ -92,7 +92,10 @@ func runSlot(args []string) error {
 	_ = layout.EnsureTiers()
 	b := newTVBase(bg, logger, cfg, pool, layout)
 	publicBase := os.Getenv("MAKTABA_PUBLIC_BASE_URL")
-	ident := channel.LocalIdentity(ctx, pool, b.hostname, publicBase)
+	ident, err := channel.LocalIdentity(ctx, pool, b.hostname, publicBase)
+	if err != nil {
+		return fmt.Errorf("this host's identity: %w", err)
+	}
 	state := slot.NewState(*name, os.Getenv("MAKTABA_TV_RELEASE"))
 	// the role first: a standby that restarts must not clear the live slot's rows
 	readRole(ctx, pool, ident.ID, state)
