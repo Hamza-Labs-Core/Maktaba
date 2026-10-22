@@ -342,7 +342,11 @@ B the machine taking over, C the other machines.
    (`switch.status`) and its supervisor looks every minute for a notice of a newer term
    (`check-term`) under each identity one may be sealed to, its planned switches' old-home
    identity among them once their promotion was asked. The switch ends `cancelled`. A machine
-   starting with no switch open removes the kit chunks of one called off or done.
+   removes the kit chunks of a switch called off or done here (at its start), and of one its copy
+   shows failed, called off or done at the old home (every minute: an undo it did not answer
+   never reached it), letting go the claim it held. The next switch, and an emergency, begin
+   past every switch's term too: one called off after its promotion was asked may have begun its
+   term on a machine that did not answer.
 6. **Move the machines.** A waits for B to answer as the home, then tells each machine where it
    is, with B's CA: a copy holding the marker follows B from its slot (nothing copied), one
    without it copies anew; one told again follows already. A machine that was off asks its home
@@ -366,9 +370,11 @@ B the machine taking over, C the other machines.
    moving (or after an hour) gives the machines their jobs back and calls the switch done.
 
 A switch that fails before the promotion is asked is undone: A writable, the drains as they
-were, the home's jobs back, B told to call it off and drop the kit, the reason on the tab. A thaw
-that fails is asked again until A is writable, also after a restart (the record says it is
-owed). Past it nothing goes back but on B's word; the
+were, the home's jobs back, B told to call it off and drop the kit, the reason on the tab. The
+thaw gives the rights back, resets the database's read-only default and ends the app's sessions:
+one opened while A was frozen keeps that default for its life, and an app's pool reconnects
+read-write. A thaw that fails is asked again until A is writable, also after a restart (the
+record says it is owed). Past it nothing goes back but on B's word; the
 old home and the machines keep trying to follow B until it answers. **A restart of A's API or
 supervisor mid-switch** takes it up: A's steps are recorded through its supervisor at each one
 (`<state>/switchover/<id>/progress.json`, and the switch's row while A writes it); at the next
@@ -628,7 +634,8 @@ applies on its own: what this home changed since is not known any more).
   machine following without copying again, the sequences past the old home's, the secrets and
   roles on the new home, the old home writing nothing of its own until it starts as a machine),
   an emergency promotion's database steps (the fence, the changes kept aside), and a thaw from a
-  session opened after the freeze, a promotion that fails leaving the copy as it was (its
+  session opened after the freeze (an app's pool from the freeze writing again after it), a
+  promotion that fails leaving the copy as it was (its
   subscription, no machines' rows, slots or publications of it), the old home giving up nothing
   before it receives the new home's changes, the fork published the copy's tables only.
   `api/internal/cluster/switchover`: the steps in order, the undo, the refusals, two starts at

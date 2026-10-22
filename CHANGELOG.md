@@ -52,14 +52,17 @@ don't append a line here; docs-only PRs are exempt.
   overrides, nor may they change its schema or give those rights back, and the machines' roles
   are kept out); that the promotion was asked is on disk
   before it leaves; one switch runs at a time; a switch is taken up after a restart of the old
-  home, a thaw that failed is asked again; the promotion is one transaction (a failed one leaves
+  home, a thaw that failed is asked again, and a thaw ends the app's sessions opened while frozen
+  (they kept a read-only default, so writes failed for up to half an hour after an undone switch);
+  the promotion is one transaction (a failed one leaves
   the copy following the old home), and takes only a copy that has every table; the old home
   gives up its data only once it receives the new home's changes, and then keeps none of the
   home's keys (nor its database's certificate). An admin can call a switch off from the tab:
   before the promotion at once, after it only if the machine taking over has not promoted (or,
   when it does not answer, with its name typed: the old home then keeps asking it, and watches for
   its notice, and should it be the home after all, stops writing; a promotion called off is never
-  finished, and its kit is removed when the machine next starts). Plex Live TV moves too (the tuner and its guide pointed at the
+  finished, and its kit is removed, also when the undo did not reach it; the next switch begins
+  past its term). Plex Live TV moves too (the tuner and its guide pointed at the
   new home, Plex's DVR, its recording schedules and channels kept), Plex and dizqueTV are checked
   from the new home (an address that was the old home's own is moved to its network address),
   Cloudflare's notifications move with the cloud relay, and the tab shows each machine and each
