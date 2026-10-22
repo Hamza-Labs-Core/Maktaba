@@ -271,7 +271,7 @@ func TestSwapRollbackEndToEnd(t *testing.T) {
 	// every change here waits for approve(): phase 4 needs a schedule change that
 	// stays unapproved through a crash, and a small one goes on the air by default
 	mustExec(`INSERT INTO app_settings (key, value, updated_at) VALUES ('rules.tv_staging', '{"auto_promote_schedule":"approval"}'::jsonb, now())`)
-	start :=time.Now().Add(-2 * time.Minute).Truncate(block)
+	start := time.Now().Add(-2 * time.Minute).Truncate(block)
 	for _, c := range []string{ch, ch2} {
 		for gen := 0; gen <= 1; gen++ {
 			for i := 0; i < 360; i++ {
