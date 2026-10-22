@@ -23,11 +23,25 @@ pub const STEPS: &[&str] = &[
     "plex",
     "venv",
     "llm",
+    "adopt",
     "finish",
 ];
 
 /// How many stderr lines are kept for the "details" box of an error.
 const STDERR_TAIL: usize = 50;
+
+/// The app's main window, for a step (Windows, Epic 38 story 38.13): a move
+/// that asks Windows for an administrator's consent (the firewall rules of the
+/// app's programs) gives it this window as its owner, so the prompt opens in
+/// front of the app instead of waiting in the taskbar. The shell passes it in a
+/// step's `envs` (owner_env); without it (the CLI) a step runs as it always did.
+pub const OWNER_WINDOW_ENV: &str = "MAKTABA_SETUP_HWND";
+
+/// The `envs` entry that hands `owner` (the main window's handle, as a number)
+/// to a step; none without a window.
+pub fn owner_env(owner: Option<isize>) -> Option<(String, String)> {
+    owner.map(|hwnd| (OWNER_WINDOW_ENV.to_string(), hwnd.to_string()))
+}
 
 /// One NDJSON line from a step.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -153,6 +167,12 @@ pub fn run_ndjson(
         })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    // the owner of a consent prompt is only ever this app's own window (in
+    // envs): never one the app itself was started with
+    let owner = envs.iter().any(|(k, _)| k == OWNER_WINDOW_ENV);
+    if !owner {
+        cmd.env_remove(OWNER_WINDOW_ENV);
+    }
     // Windows (Epic 38): maktaba-server is a console program; started from
     // the GUI shell without this, each step would flash a console window.
     #[cfg(windows)]
@@ -166,6 +186,16 @@ pub fn run_ndjson(
             format!("cannot run {}: {e}", bin.display()),
         )
     })?;
+    // the app is in front (its screen started the step): the step may bring
+    // what it opens (the consent prompt) to the front too
+    #[cfg(windows)]
+    if owner {
+        // SAFETY: a plain call with a process id; a refusal only leaves the
+        // prompt in the taskbar
+        unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow(child.id());
+        }
+    }
 
     // stdin: the input, then EOF. A step that exits without reading it
     // closes the pipe; the exit code and events tell what happened.
@@ -345,6 +375,23 @@ echo {"type":"result","data":{"argv":"%*","input":%input%}}"#,
             json!({"username": "admin", "password": "s3cret"})
         );
         assert_eq!(seen, ["one"]);
+    }
+
+    #[test]
+    fn the_app_window_reaches_the_step_only_when_given() {
+        let tmp = tempfile::tempdir().unwrap();
+        // the step reads the owner of a consent prompt from its environment
+        let bin = stub(
+            tmp.path(),
+            r#"printf '{"type":"result","data":{"owner":"%s"}}\n' "$MAKTABA_SETUP_HWND""#,
+            r#"echo {"type":"result","data":{"owner":"%MAKTABA_SETUP_HWND%"}}"#,
+        );
+        let envs: Vec<_> = owner_env(Some(4242)).into_iter().collect();
+        let out = run_step(&bin, &envs, "adopt", &json!({"action": "move"}), |_| {}).unwrap();
+        assert_eq!(out["owner"], "4242");
+        assert_eq!(owner_env(None), None);
+        let out = run_step(&bin, &[], "adopt", &json!({"action": "move"}), |_| {}).unwrap();
+        assert_eq!(out["owner"], "");
     }
 
     #[test]

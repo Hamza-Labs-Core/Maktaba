@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/adopt"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 )
 
@@ -30,6 +31,10 @@ func TestMain(m *testing.M) {
 	portProbe = func() config.PortProbe {
 		return config.PortProbe{Free: func(string) bool { return true }, Ours: func(int) bool { return false }}
 	}
+	// nor its scheduled tasks and processes: setup's check and finish look for an
+	// install outside the app (Epic 38 story 38.13); here there is none unless a
+	// test gives its own
+	adoptSys = func() adopt.Sys { return &adoptFakeSys{} }
 	code := m.Run()
 	_ = os.RemoveAll(dir)
 	os.Exit(code)

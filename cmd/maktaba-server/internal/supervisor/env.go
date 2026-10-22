@@ -89,6 +89,18 @@ func ChildEnv(role Role, cfg config.Config) []string {
 	// advertiser of the machine, Epic 35 story 35.11)
 	add("MAKTABA_SUPERVISED", "1")
 
+	// [server] role = "home" (or MAKTABA_ROLE=home): no role runs as a node. Not
+	// adding the node's variables is not enough: streaming (channel.DetectRole,
+	// cluster.NodeMode) and the pipeline read the node config themselves, and on
+	// Windows that may be a joined %APPDATA%\Maktaba\node.json of another install
+	// (the roaming fallback). So every role is told the role, and pointed at a
+	// node config that is never written.
+	if forcedHome(cfg) {
+		env = setEnv(env, "MAKTABA_CLUSTER_ROLE", "home")
+		env = setEnv(env, "MAKTABA_TV_HOST_ROLE", "home")
+		env = setEnv(env, "MAKTABA_NODE_CONFIG", NoNodeConfigPath(cfg))
+	}
+
 	// Where other devices reach the TV: streaming advertises it (SSDP,
 	// discover.json, XMLTV/M3U links) and the api reports it to the web
 	// app (/api/tv/info).
@@ -265,6 +277,18 @@ func CheckNodeConfig(cfg config.Config) error {
 	}
 	return nil
 }
+
+// NoNodeConfigPath is the node config a forced home's roles are pointed at:
+// a path in the install's state that nothing writes, so none reads a node
+// config.
+func NoNodeConfigPath(cfg config.Config) string {
+	return filepath.Join(cfg.StateDir(), "state", "home-has-no-node-config.json")
+}
+
+// NodeJoined reports whether this machine counts as a joined node: a joined
+// node config, unless [server] role = "home" (or MAKTABA_ROLE=home) says it is
+// the home whatever the node config holds.
+func NodeJoined(cfg config.Config) bool { return !forcedHome(cfg) && nodeConfig().Joined() }
 
 // forcedHome: [server] role = "home" or MAKTABA_ROLE=home.
 func forcedHome(cfg config.Config) bool {

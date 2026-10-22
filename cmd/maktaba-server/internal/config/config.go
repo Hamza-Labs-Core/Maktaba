@@ -159,12 +159,26 @@ type ServerSection struct {
 	// Role is "auto" (default: a joined node config makes this machine a full node,
 	// Epic 35 story 35.8), "home" (never a node, even with a node config) or "node".
 	Role string `toml:"role"`
+	// MDNS: "on" (default) advertises this machine on the LAN over multicast DNS
+	// (Epic 35 story 35.11); "off" does not, as `serve --no-mdns` (an install moved
+	// into the app keeps its flag here, Epic 38 story 38.13).
+	MDNS string `toml:"mdns"`
 	// The intra-host ports of the roles (defaults 127.0.0.1:9050, :9101,
 	// 127.0.0.1:9090, 127.0.0.1:9102); set them to run two machines on one host.
 	StreamingGRPCAddr  string `toml:"streaming_grpc_addr"`
 	StreamingAdminAddr string `toml:"streaming_admin_addr"`
 	PipelineGRPCAddr   string `toml:"pipeline_grpc_addr"`
 	PipelineLogsAddr   string `toml:"pipeline_logs_addr"`
+}
+
+// MDNSOn reports whether the machine advertises itself (anything but
+// off/false/no/0).
+func (s ServerSection) MDNSOn() bool {
+	switch strings.ToLower(strings.TrimSpace(s.MDNS)) {
+	case "off", "false", "no", "0":
+		return false
+	}
+	return true
 }
 
 // DatabaseSection selects the storage backend via a single DSN. The

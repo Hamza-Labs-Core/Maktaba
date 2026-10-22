@@ -15,11 +15,18 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/adopt"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
 )
 
 func main() {
+	// the elevated run a move into the Windows app makes to give the app's
+	// programs their firewall rules (Epic 38 story 38.13): before anything
+	// else, as nothing else is this run's to do
+	if len(os.Args) > 1 && os.Args[1] == adopt.FirewallHelperArg {
+		os.Exit(adopt.FirewallHelper(os.Args[2:]))
+	}
 	if err := newRootCmd().Execute(); err != nil {
 		// Cobra already prints the error; exit non-zero for scripts.
 		os.Exit(1)
@@ -66,6 +73,7 @@ func newRootCmd() *cobra.Command {
 		newAddUserCmd(),
 		newKeysCmd(),
 		newMigrateFromDevCmd(),
+		newAdoptCmd(),
 		newServiceCmd(),
 		newRuntimeCmd(),
 	)
@@ -83,6 +91,7 @@ const rootLong = `maktaba-server runs all of Maktaba from a single binary.
   maktaba-server adduser   Seed the first admin user
   maktaba-server keys      Generate or rotate JWT signing keys
   maktaba-server migrate-from-dev  Move the developer stack into Maktaba.app
+  maktaba-server adopt     The Maktaba this PC runs outside the app (its move, undo)
   maktaba-server service   The systemd user service of the Linux app
   maktaba-server runtime   The Linux app's runtime copy of the server payload
 

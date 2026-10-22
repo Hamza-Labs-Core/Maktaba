@@ -689,6 +689,19 @@ pub fn app_state(app: AppHandle) -> AppState {
     }
 }
 
+/// The main window's handle, the owner of a consent prompt a step raises
+/// (Windows; setup::OWNER_WINDOW_ENV). None elsewhere, or with no window.
+#[cfg(windows)]
+fn owner_window(app: &AppHandle) -> Option<isize> {
+    let hwnd = app.get_webview_window("main")?.hwnd().ok()?;
+    Some(hwnd.0 as isize)
+}
+
+#[cfg(not(windows))]
+fn owner_window(_: &AppHandle) -> Option<isize> {
+    None
+}
+
 /// Run one `maktaba-server setup --json` step. Progress lines go to
 /// `on_progress`; the input (which may hold a password or token) is
 /// passed on stdin and never logged.
@@ -706,6 +719,7 @@ pub async fn setup_step(
         params: None,
         details: Vec::new(),
     })?;
+    let owner = setup::owner_env(owner_window(&app));
     tauri::async_runtime::spawn_blocking(move || {
         let send = |p: Progress| {
             let _ = on_progress.send(p);
@@ -715,9 +729,11 @@ pub async fn setup_step(
         // copy (the venv must not be built against this app's AppImage mount
         // or package files)
         #[cfg(target_os = "linux")]
-        let (bin, envs) = agent::linux::setup_server(&step, &bin, send)?;
+        let (bin, mut envs) = agent::linux::setup_server(&step, &bin, send)?;
         #[cfg(not(target_os = "linux"))]
-        let envs: Vec<(String, String)> = Vec::new();
+        let mut envs: Vec<(String, String)> = Vec::new();
+        // the owner of a consent prompt the step raises (Windows)
+        envs.extend(owner);
         let result = setup::run_step(&bin, &envs, &step, &input, send)?;
         #[cfg(target_os = "linux")]
         agent::linux::after_step(&step, &result, send)?;

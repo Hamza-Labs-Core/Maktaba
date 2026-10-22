@@ -51,6 +51,39 @@ don't append a line here; docs-only PRs are exempt.
 - **The API refuses a database a newer Maktaba migrated**, on every install: `maktaba-api
   migrate up` exits 3 instead of finding nothing to apply, and `serve` does not start on it.
   `migrate --timeout 0` runs with no time limit.
+- **The Windows app moves in the Maktaba a PC already runs** (Epic 38, story 38.13). Setup finds
+  it (a scheduled task that runs `maktaba-server serve` directly, through Maktaba's launcher or
+  from a script; the node installer's workers; a server started by hand; a Windows service, which
+  it names but cannot move) and offers to move it in: the plan shows what is carried and copied,
+  and refuses, before anything stops, a key the app holds already and different, or a node whose
+  node config is not the one the app reads; it says so when the roaming profile's node config is
+  another PC's (the app on this PC is not that node).
+  The move builds the venv while the old install still runs, keeps its task's definition, stops it
+  (its script's restart loop too, and nothing of it may come back for longer than the loop's delay;
+  never the app's own programs, wherever the old folder is) and disables its task, and carries its
+  settings (addresses, media, path map, transcription, the script's `MAKTABA_*` settings), keys,
+  search index, caches, models and an SQLite database into the app; a node's `node.json` stays
+  where it is, the machine's one, which the app reads (it is never copied). The firewall
+  rules that let other devices reach the old install's programs, in its folder or not, are copied
+  for the app's own (Windows asks once, before anything stops; the plan says so; the prompt opens
+  in front of the app's window, and one not answered within three minutes changes nothing); the
+  plan names a rule of a program the app has none of, and warns of a block rule on an app's
+  program (a block wins over an allow). The old task goes only once the app's server listens
+  beyond loopback where other devices reached the old install (`0.0.0.0:8780`, say) and the rules
+  are in place on the network in use. A move that stops part way can go on, or restore the old
+  install from the screen, as can one done (the welcome screen). The app's server removes the old
+  task once it ran healthy; the old folder is kept, and `maktaba-server adopt --undo` runs the old
+  install again (the app's per-user task, and this user's of the old shared name, turned off; the
+  move's firewall rules removed, the old ones never touched; the app opens its setup, which offers
+  the move again, and never starts its server over the old install). Beside a node of a home a
+  fresh setup is refused (check and finish say why): the app would be a second copy of that node;
+  beside a node config nothing runs it is a new home (`[server] role = "home"`). An install on the
+  default paths from before Epic 38 is one install whether its config and keys are still only in
+  `%APPDATA%\Maktaba` or were copied into the app's place, and its state is read where it keeps
+  it (its default data folder). Everything the plan and the move say comes with codes, so
+  the screens say it in English or Arabic. `maktaba-server adopt` lists what it finds and `--plan
+  <id>` what a move does. `[server] mdns = "off"` is new (as `serve --no-mdns`), so a moved install
+  keeps that flag.
 - **Transcription on Windows and Linux (story 38.8).** The transcribe stage runs Whisper on
   CTranslate2 there (faster-whisper's `dropbox-dash/faster-whisper-large-v3-turbo`), batched
   across files as the Mac's MLX engine does: on an NVIDIA GPU when CUDA works (cuBLAS 12 comes
@@ -148,6 +181,13 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **`[server] role = "home"` (or `MAKTABA_ROLE=home`) runs no role as a node.** The supervisor
+  only left the node's variables out, while streaming and the pipeline read the node config
+  themselves: beside a joined `node.json` (on Windows another install's, through the roaming
+  profile's fallback) streaming ran as that node. Every role is now told it is the home
+  (`MAKTABA_CLUSTER_ROLE`, `MAKTABA_TV_HOST_ROLE`) and pointed at a node config that is never
+  written, and the forced home runs its own bundled Postgres and TV slots whatever `node.json`
+  holds.
 - **The second listen's retries back off and stop (follow-up of story 38.8).** A machine that
   runs the second listen queued the same 20 oldest transcripts made without it every 10 minutes,
   forever, when it could not give them theirs (a file it cannot read, a model that does not load),

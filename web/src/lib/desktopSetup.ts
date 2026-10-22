@@ -63,7 +63,8 @@ export interface StepError {
   details: string[];
 }
 
-/** One finding of the check step: setup.check.note.<code> with its params. */
+/** One finding of the check step (setup.check.note.<code>) or of a move's
+ * plan (setup.move.note.<code>), with its params and its English. */
 export interface CheckNote {
   code: string;
   params?: Record<string, unknown>;
@@ -83,7 +84,67 @@ export type StepName =
   | "plex"
   | "venv"
   | "llm"
-  | "finish";
+  | "finish"
+  | "adopt";
+
+/** A Maktaba this PC runs outside the app (the adopt step, Epic 38 story 38.13). */
+export interface AdoptSource {
+  id: string;
+  /** service: a Windows service install (setup --service --system), which the app cannot move */
+  kind: "launcher" | "script" | "node-worker" | "process" | "service";
+  task?: string;
+  task_enabled: boolean;
+  /** the Windows service's name */
+  service?: string;
+  script?: string;
+  dir: string;
+  config?: string;
+  config_found: boolean;
+  node_config?: string;
+  /** a node's home (its name or address) */
+  home?: string;
+  /** empty for a service (its settings are the system's) */
+  db: "own-postgres" | "postgres" | "sqlite" | "node" | "";
+  /** host:port of its Postgres */
+  db_where?: string;
+  ports: Record<string, string> | null;
+  keys?: string[];
+  pids?: number[];
+}
+
+/** A file or folder the move copies into the app: setup.move.item.<code>. */
+export interface AdoptItem {
+  code: string;
+  params?: Record<string, unknown>;
+  what: string;
+  from: string;
+  to: string;
+  size: number;
+  /** already in the app, the same (left as it is) */
+  done: boolean;
+}
+
+/** What moving a source does (adopt "plan"); problems stop it. Each finding
+ * is setup.move.note.<code> with its params; the settings carried and not
+ * carried are setup.move.carry.<code> and setup.move.nocarry.<code>. */
+export interface AdoptPlan {
+  source: AdoptSource;
+  items: AdoptItem[];
+  carried: CheckNote[];
+  not_carried: CheckNote[];
+  problems: CheckNote[];
+  warnings: CheckNote[];
+  need: number;
+  free: number;
+}
+
+/** The move recorded on this PC (moved/move.json). found / stopped: under
+ * way (a run that failed goes on, or is undone); undone: the old install runs
+ * again. */
+export interface AdoptRecord {
+  stage: "found" | "stopped" | "moved" | "verified" | "finished" | "undone";
+  source: AdoptSource;
+}
 
 export interface SetupApi {
   appState(): Promise<AppState>;
