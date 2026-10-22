@@ -64,8 +64,16 @@ function renderPlayer(
   });
 }
 
+/**
+ * The player's <video> once the page has attached the stream to it. React
+ * commits the element first and runs the effects that set its src and add its
+ * listeners as a later scheduler task: on a busy runner findByTestId can
+ * resolve in between, and an event fired then has no listener.
+ */
 async function video(): Promise<HTMLVideoElement> {
-  return (await screen.findByTestId("mkt-video")) as HTMLVideoElement;
+  const el = (await screen.findByTestId("mkt-video")) as HTMLVideoElement;
+  await waitFor(() => expect(el).toHaveAttribute("src"));
+  return el;
 }
 
 function setDuration(el: HTMLVideoElement, d: number) {
