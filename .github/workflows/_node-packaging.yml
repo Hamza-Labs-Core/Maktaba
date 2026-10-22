@@ -373,6 +373,13 @@ jobs:
       - name: node-origin tests (PowerShell 7)
         shell: pwsh
         run: .\deploy\packaging\node\tests\node-origin.Tests.ps1
+      # Epic 38 story 38.1: which node.json the scripts read (this PC's, never another's)
+      - name: node-config tests (Windows PowerShell 5.1)
+        shell: powershell
+        run: .\deploy\packaging\node\tests\node-config.Tests.ps1
+      - name: node-config tests (PowerShell 7)
+        shell: pwsh
+        run: .\deploy\packaging\node\tests\node-config.Tests.ps1
       - uses: actions/download-artifact@v8.0.1
         with:
           name: node-release

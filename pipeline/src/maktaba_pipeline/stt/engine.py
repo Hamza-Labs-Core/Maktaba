@@ -169,7 +169,8 @@ class PinMismatch(RuntimeError):
 def verify(folder: Path, pin: Pin) -> None:
     """Check the files of a snapshot of ``pin``'s commit against their SHA-256, once (a
     marker remembers it). A missing or different file is removed (the next download
-    fetches it again) and raises :class:`PinMismatch`."""
+    fetches it again) and raises :class:`PinMismatch`, which names each file and both
+    hashes before the folder."""
     marker = folder / VERIFIED
     try:
         if marker.read_text(encoding="utf-8").strip() == pin.revision:
@@ -191,7 +192,9 @@ def verify(folder: Path, pin: Pin) -> None:
             for p in {path.resolve(), path}:  # the cache's blob and the snapshot's link
                 p.unlink(missing_ok=True)
     if bad:
-        raise PinMismatch(f"{folder}: " + "; ".join(bad) + " (removed: it is fetched again)")
+        # the files and their hashes first, the folder last: a caller that cuts the message
+        # (a model's state, a log line) keeps the hashes, and a long Windows path goes
+        raise PinMismatch("; ".join(bad) + f" (removed: it is fetched again), in {folder}")
     marker.write_text(pin.revision + "\n", encoding="utf-8")
 
 

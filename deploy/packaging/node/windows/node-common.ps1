@@ -14,18 +14,54 @@ $script:NodeCli = Join-Path $script:NodeVenv 'Scripts\maktaba-pipeline.exe'
 $script:NodeInstallConf = Join-Path $script:NodeDir 'install.conf'
 $script:WindowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 
-# Get-NodeConfigPath: this machine's node config, where the pipeline reads it
-# (cluster/config.py config_path): MAKTABA_NODE_CONFIG, else
-# %LOCALAPPDATA%\Maktaba\node.json (Epic 38: never in the roaming profile), else the
-# %APPDATA%\Maktaba\node.json of a machine that joined before, while there is none in
-# the new place.
+# Get-MachineId: this PC's id, which a node config records as machine_id
+# (cluster/config.py machine_id): MAKTABA_MACHINE_ID, else Windows' MachineGuid (the
+# 64-bit view); '' when it cannot be read.
+function Get-MachineId {
+    if ($env:MAKTABA_MACHINE_ID) { return $env:MAKTABA_MACHINE_ID.Trim() }
+    try {
+        $hklm = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,
+            [Microsoft.Win32.RegistryView]::Registry64)
+        $key = $hklm.OpenSubKey('SOFTWARE\Microsoft\Cryptography')
+        if ($key) { return ([string]$key.GetValue('MachineGuid')).Trim() }
+    } catch { }
+    return ''
+}
+
+# Test-NodeConfigOfAnotherPC: the node config at Path records another PC (its
+# machine_id) than this one. One no PC has claimed, one that cannot be read, or a PC
+# whose id cannot be known is never another PC's.
+function Test-NodeConfigOfAnotherPC {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    try {
+        $config = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    } catch { return $false }
+    $field = $config.PSObject.Properties['machine_id']
+    $owner = if ($field) { ([string]$field.Value).Trim() } else { '' }
+    if (-not $owner) { return $false }
+    $this = Get-MachineId
+    return [bool]$this -and ($owner -ine $this)
+}
+
+# Get-NodeConfigPath: this machine's one node config, where the pipeline reads it
+# (cluster/config.py config_path): MAKTABA_NODE_CONFIG, else the
+# %APPDATA%\Maktaba\node.json of a machine that joined before Epic 38 (it stays where
+# it is) while it is this PC's or no PC's yet, else %LOCALAPPDATA%\Maktaba\node.json,
+# where a new join writes. Another PC's roaming config is not this PC's.
 function Get-NodeConfigPath {
     if ($env:MAKTABA_NODE_CONFIG) { return $env:MAKTABA_NODE_CONFIG }
-    $cur = Join-Path $env:LOCALAPPDATA 'Maktaba\node.json'
-    if (Test-Path -LiteralPath $cur -PathType Leaf) { return $cur }
     $old = Join-Path $script:NodeConfDir 'node.json'
-    if (Test-Path -LiteralPath $old -PathType Leaf) { return $old }
-    return $cur
+    if ((Test-Path -LiteralPath $old -PathType Leaf) -and -not (Test-NodeConfigOfAnotherPC -Path $old)) { return $old }
+    return (Join-Path $env:LOCALAPPDATA 'Maktaba\node.json')
+}
+
+# Get-NodeConfigFiles: every node.json that is this PC's (both places on Windows, or
+# MAKTABA_NODE_CONFIG; never another PC's roaming one): to forget the home, all of them
+# go, or the second would take the first one's place.
+function Get-NodeConfigFiles {
+    if ($env:MAKTABA_NODE_CONFIG) { return @($env:MAKTABA_NODE_CONFIG) }
+    @((Join-Path $script:NodeConfDir 'node.json'), (Join-Path $env:LOCALAPPDATA 'Maktaba\node.json')) |
+        Where-Object { (Test-Path -LiteralPath $_ -PathType Leaf) -and -not (Test-NodeConfigOfAnotherPC -Path $_) }
 }
 
 function Write-NodeStep {

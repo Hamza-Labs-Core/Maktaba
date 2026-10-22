@@ -51,17 +51,32 @@ jobs:
           go test -count=1 . ./internal/service ./internal/selfmanaged
           ./internal/supervisor -run "ReleaseDir|ReleaseBinRoot|Launcher|StopFile|HealthyFor|Render|Plan|Deploy|Install|SelfManaged|Package|Convert|Homebrew"
 
-      # Epic 38 story 38.1: where an install keeps its files on each OS, the one-time
-      # move of an older layout (the Windows roaming profile, the Mac's XDG paths),
-      # and the node config's path, on the OS itself.
+      # Epic 38 story 38.1: where an install keeps its files on each OS, how an older
+      # layout comes in (Windows copies its config and keys out of the roaming profile
+      # and keeps the originals; a Mac moves its XDG paths), the state root and the
+      # node config's path, on the OS itself.
       - name: maktaba-server (paths per OS)
         working-directory: cmd/maktaba-server
         run: go test -count=1 ./internal/config
 
+      # Epic 38 story 38.5 on Windows itself: every role, the venv bootstrap and
+      # a setup step are asked to stop with CTRL_BREAK, each held from the check
+      # that it still runs to the send (internal/ctrlbreak), so the event never
+      # reaches the whole console. These start processes, which the unit tier
+      # (-short) skips.
+      - name: maktaba-server (clean stop on Windows)
+        if: runner.os == 'Windows'
+        working-directory: cmd/maktaba-server
+        shell: bash # stops at the first failing command (pwsh would report only the last)
+        run: |
+          go test -count=1 -v ./internal/ctrlbreak ./internal/supervisor ./internal/appvenv
+          go test -count=1 -v . -run "StopGently|SetupVenvStopsGently"
+
       # The bundled Postgres on Windows, against the pinned build pgbin fetches (kept
       # between runs): postgres.exe under a restricted token (the runner is an
       # administrator, which postgres refuses), initdb, the app role, a dump and
-      # pg_ctl's fast stop.
+      # pg_ctl's fast stop; the supervisor holding it under that token; and (Epic 38
+      # story 38.10) "auto" inside an app payload and the payload's ffmpeg.exe.
       - name: Postgres download (Windows)
         if: runner.os == 'Windows'
         uses: actions/cache@v4
@@ -69,14 +84,14 @@ jobs:
           path: ${{ runner.temp }}/pgbin
           key: pgbin-windows-${{ hashFiles('cmd/maktaba-server/internal/pgbin/pgbin.go') }}
 
-      - name: maktaba-server (Postgres on Windows)
+      - name: maktaba-server (Postgres on Windows, and in the Windows app)
         if: runner.os == 'Windows'
         working-directory: cmd/maktaba-server
         env:
           MAKTABA_TEST_PG_DOWNLOAD: ${{ runner.temp }}/pgbin
         run: >-
-          go test -count=1 -v ./internal/pgbundle
-          -run "TestPostgresToken|TestRealPostgresOnWindows"
+          go test -count=1 -v ./internal/pgbundle ./internal/supervisor
+          -run "TestPostgresToken|TestTheSupervisorHoldsARestrictedPostgres|TestRealPostgresOnWindows|TestResolveAutoInsideAnAppPayload|TestAppBundleFFmpegOnWindows"
 
   package:
     name: .deb layout + postinstall

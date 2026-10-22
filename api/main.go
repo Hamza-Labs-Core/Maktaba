@@ -78,6 +78,9 @@ func main() {
 		case "migrate":
 			if err := runMigrate(os.Args[2:]); err != nil {
 				fmt.Fprintf(os.Stderr, "migrate: %v\n", err)
+				if errors.Is(err, errSchemaAhead) {
+					os.Exit(exitSchemaAhead)
+				}
 				os.Exit(1)
 			}
 			return
@@ -90,6 +93,21 @@ func main() {
 		case "adduser":
 			if err := runAddUser(os.Args[2:]); err != nil {
 				fmt.Fprintf(os.Stderr, "adduser: %v\n", err)
+				if errors.Is(err, errUserExists) {
+					os.Exit(3)
+				}
+				os.Exit(1)
+			}
+			return
+		case "hash-password":
+			if err := runHashPassword(os.Stdin, os.Stdout); err != nil {
+				fmt.Fprintf(os.Stderr, "hash-password: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "plex-link":
+			if err := runPlexLink(os.Args[2:], os.Stdout); err != nil {
+				fmt.Fprintf(os.Stderr, "plex-link: %v\n", err)
 				os.Exit(1)
 			}
 			return
@@ -149,6 +167,11 @@ Commands:
   serve      Run the HTTP server (chi router + admin port + /metrics)
   migrate    Run database migrations (see "migrate --help")
   adduser    Seed the first admin user (Story 10.1 AC-4)
+  hash-password
+             Hash a password (stdin) for adduser --password-hash-file
+             (the desktop app's first-run setup)
+  plex-link  Store the Plex server an account token reaches (the desktop
+             app's first-run setup; see "plex-link --help")
   keys       Generate or rotate RS256 JWT keys (Story 10.6)
   cloudflare spike
              Run the Cloudflare Stream spike against a real account
@@ -197,6 +220,13 @@ func runServe() error {
 			return fmt.Errorf("auto-migrate: %w", err)
 		}
 		logger.Info("auto_migrate_complete", "event", "auto_migrate_complete")
+	}
+	// Epic 38 story 38.12: never serve on a schema a newer Maktaba migrated (a
+	// node's database is the home's, which its schema guard judges)
+	if !nodeCfg.Enabled {
+		if err := checkSchemaNotAhead(logger, os.Getenv("DATABASE_URL"), schemaguard.SchemaRev); err != nil {
+			return err
+		}
 	}
 
 	publicAddr := os.Getenv("MAKTABA_HTTP_ADDR")
@@ -811,10 +841,7 @@ func buildUpdater(logger *slog.Logger) *system.Updater {
 	// 35.1): embedded in the binary, refreshed daily through TUF into
 	// <data_dir>/sigstore. Expiry fails verification closed; the critical
 	// notification for it lands with story 35.13 — until then it is logged.
-	dataDir := os.Getenv("MAKTABA_DATA_DIR")
-	if dataDir == "" {
-		dataDir = "/var/lib/maktaba"
-	}
+	dataDir := dataDirFromEnv()
 	roots := &releaseverify.RootStore{
 		Dir: filepath.Join(dataDir, "sigstore"),
 		OnExpired: func(err error) {
@@ -899,6 +926,35 @@ func buildChecks(logger *slog.Logger) []health.Check {
 	return checks
 }
 
+// dataDirFromEnv is the API's data volume (the Sigstore root it refreshes,
+// uploaded channel art, the free space the health page shows):
+// MAKTABA_DATA_DIR, which maktaba-server sets to its data_dir, else
+// defaultDataDir for this process.
+func dataDirFromEnv() string {
+	if v := strings.TrimSpace(os.Getenv("MAKTABA_DATA_DIR")); v != "" {
+		return v
+	}
+	home, _ := os.UserHomeDir()
+	return defaultDataDir(os.Geteuid(), os.Getenv("XDG_DATA_HOME"), home)
+}
+
+// defaultDataDir is /var/lib/maktaba for a system service (root: the
+// canonical data volume of the deploy configs, the server.toml, the systemd
+// units, the Prometheus disk alert), else the user's own XDG data dir
+// ($XDG_DATA_HOME/maktaba, ~/.local/share/maktaba): a user's API cannot
+// write /var/lib.
+func defaultDataDir(euid int, xdgDataHome, home string) string {
+	switch {
+	case euid == 0:
+		return "/var/lib/maktaba"
+	case filepath.IsAbs(xdgDataHome):
+		return filepath.Join(xdgDataHome, "maktaba")
+	case home != "":
+		return filepath.Join(home, ".local", "share", "maktaba")
+	}
+	return "/var/lib/maktaba"
+}
+
 // buildAggregatorStats resolves the inputs for the /api/system/health
 // stats block: the data volume whose free space the UI shows and a
 // dedicated small Postgres pool for the live queue-depth count. The
@@ -907,12 +963,7 @@ func buildChecks(logger *slog.Logger) []health.Check {
 // caller defers. When DATABASE_URL is unset the DB is nil and the
 // queue-depth stat is simply omitted (zero).
 func buildAggregatorStats(logger *slog.Logger) (string, *sql.DB, func()) {
-	dataDir := os.Getenv("MAKTABA_DATA_DIR")
-	if dataDir == "" {
-		// The canonical data volume across the deploy configs
-		// (server.toml, systemd units, Prometheus disk alert).
-		dataDir = "/var/lib/maktaba"
-	}
+	dataDir := dataDirFromEnv()
 
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {

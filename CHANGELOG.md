@@ -12,6 +12,45 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **The desktop app's setup works end to end** (Epic 38, story 38.6; the Mac, Windows and Linux
+  alike). `maktaba-server setup --json` gains every step the setup screens run: `check` (what will
+  run, memory and disk), `admin` (the password is hashed as it is typed, by the new
+  `maktaba-api hash-password`; only the hash waits), `libraries` (folders and the NAS path map,
+  drive letters and UNC paths too), `models` (the Hugging Face token checked against the gated
+  second-listen model, or the NAS copy found; the download after the venv, with progress),
+  `plex` (the plex.tv PIN sign-in), `venv` (the pipeline's environment, with progress) and `finish`
+  (server.toml, the database created and migrated, the admin seeded with the new
+  `adduser --password-hash-file`, the Plex server stored with the new `maktaba-api plex-link`).
+  The screens say "this PC" and "the tray" on Windows, and turn a disabled sign-in task back on.
+  Every finding and refusal comes with a code and its values, so the screens say it in English or
+  Arabic (never the step's English beside it); `check` separates what blocks from what is worth
+  knowing and says when Windows or Linux will transcribe on the processor (no NVIDIA GPU). Library
+  folders and both sides of the path map must be whole paths (a bare `Y:` is the drive's root), a
+  password cannot hold a line break, and two spellings of one folder are one root only where the
+  disk ignores case. A stop asks the venv build and the models download to stop instead of killing
+  them under pip.
+- **`maktaba-server setup` in a terminal runs the app's setup steps** (Epic 38, story 38.6): the
+  same checks, admin rules, folders, path map, Plex sign-in and finish, plus where the data goes and
+  the database (SQLite, which `finish` now creates, or a Postgres url). Its separate wizard is gone,
+  with its admin token, which nothing ever accepted; `--migrate` is accepted and ignored (setup
+  always prepares the database).
+- **The desktop app's server takes care of an update at its next start** (Epic 38, story 38.12;
+  the Mac, Windows and Linux alike). Before any role runs, the server reads the record of the
+  release whose migrations the database holds (`state/database.json`) and refuses an older
+  release; with another one (or no record yet) it dumps the database
+  (`backups/pre-<old>-to-<new>.dump`, the newest `[postgres] update_dumps` kept, default 3),
+  records the update, runs the migrations once for every role and records them done. When they
+  fail it puts the dump back and keeps every role stopped, saying what happened and what to
+  install. The pipeline's workers then wait for the venv bootstrap (not when `MAKTABA_PYTHON` or
+  `[pipeline] python` names their Python), run with an environment of its own and stopped
+  gently (SIGTERM, CTRL_BREAK on Windows) so a stop never leaves pip behind. A Postgres of
+  another major than the database's is refused. What a process waits on shows as its `detail`
+  in `/processes`.
+  Each such detail also has a `detail_code` from a fixed list and its `detail_params`, for the
+  app's screens to say it in their own language.
+- **The API refuses a database a newer Maktaba migrated**, on every install: `maktaba-api
+  migrate up` exits 3 instead of finding nothing to apply, and `serve` does not start on it.
+  `migrate --timeout 0` runs with no time limit.
 - **Transcription on Windows and Linux (story 38.8).** The transcribe stage runs Whisper on
   CTranslate2 there (faster-whisper's `dropbox-dash/faster-whisper-large-v3-turbo`), batched
   across files as the Mac's MLX engine does: on an NVIDIA GPU when CUDA works (cuBLAS 12 comes
@@ -77,36 +116,124 @@ don't append a line here; docs-only PRs are exempt.
   the server runs as an administrator, as the Windows service does: Postgres refuses
   administrative rights). Groundwork for the Windows and Linux apps and for full nodes' copies of
   the home's database (#178).
+- **The Windows app runs its own Postgres** (Epic 38, story 38.10). `[postgres] enabled = "auto"`
+  now turns the bundled Postgres on inside any desktop app's payload, not only on a Mac (a
+  `[database] url` or a SQLite database in use still wins). The app's roles find the payload's
+  `ffmpeg.exe`. Loopback TCP only on Windows, the nightly dumps as on the Mac.
+- **The desktop app runs the server on Linux** (Epic 39, story 39.8). When setup finishes, the
+  app copies its server into `~/.local/share/maktaba/runtime` and runs it as the user's systemd
+  service, started at boot through linger; after an app update it moves the server to the new
+  version at its next start (an app older than the server leaves it alone and says so). Pause,
+  Resume and Stop server work from the tray, or from the window's Server menu where the desktop
+  shows no tray; the tray starts at login when it can be shown. The tray, the Server menu and the
+  app's dialogs follow the session's language (English or Arabic).
 
 ### Changed
 
-- **Windows keeps everything in `%LOCALAPPDATA%\Maktaba`** (Epic 38, story 38.1): `server.toml`,
-  `keys\`, `data\`, `logs\` and the node's `node.json`, with the models, caches and the bundled
-  Postgres beside `data\`. Nothing is in the roaming profile any more, so the keys and a node's
-  identity never follow the user to another PC. An install from before moves at its next
-  `maktaba-server` command, with or without a `server.toml`:
-  `server.toml`, the keys and `node.json` out of `%APPDATA%\Maktaba`, and `models\`, `chroma\`,
-  `cache\`, `postgres\` and `backups\` out of `data\` to beside it (when `data_dir` is the
-  default, `MAKTABA_CONFIG` or not). Each piece moves on its own and only while its new place is
-  empty: nothing is replaced and no two folders are merged, and a piece that finds something
-  there stays put and says so once. Across drives (a roaming profile on another drive or on a
-  server) a file is copied, flushed to disk and compared before the old one is removed, a folder
-  file by file, and a move cut short is finished by the next command, so no key is lost. One
-  command at a time moves (a lock in `%LOCALAPPDATA%\Maktaba`; a second one waits for it). A
-  `maktaba-server` inside the desktop app's payload, on Windows or a Mac, never moves an older
-  install: that comes into the app only through the app's own move, which copies it and keeps
-  the old one for going back. The node installer's `node.env` stays where
-  its scripts read it, and a machine that joined before reads its old `node.json` until it has
-  moved; the api and the pipeline, run on their own, read `keys\secrets.key` the same way. On
-  Windows the pipeline also writes its logs in UTF-8 (`PYTHONUTF8`), so an Arabic title can no
+- **Every role stops cleanly on Windows.** The supervisor starts each child in a process group of
+  its own and asks it to stop with CTRL_BREAK (the Go roles drain on it as they do on SIGTERM, the
+  pipeline on `SIGBREAK`); a child is killed with its process tree only once the shutdown grace
+  is over. Postgres keeps its `pg_ctl` fast shutdown. A `serve` with no console (started detached
+  by a program that has none) cannot send CTRL_BREAK, so it kills its children as before and says
+  so once in its log; its children then open no console window on the desktop. A child is held
+  still while it is asked, so the CTRL_BREAK never goes astray to `serve` itself; so are the
+  venv bootstrap the server and setup start, and setup's model download, when they are asked.
+- **Windows keeps everything in `%LOCALAPPDATA%\Maktaba`** (Epic 38, story 38.1), for a new install:
+  `server.toml`, `keys\`, `data\`, `logs\` and the node's `node.json`, with the models, caches
+  and the bundled Postgres beside `data\`. A new install puts nothing in the roaming profile.
+- **An install from before keeps its originals.** Its next `maktaba-server` command copies
+  `server.toml` and the keys there from `%APPDATA%\Maktaba` (with or without a `server.toml`;
+  nothing with `MAKTABA_CONFIG` set), and the copies are used from then on.
+  - The originals stay in `%APPDATA%\Maktaba`, which roams with a roaming profile: older
+    versions of the install, a node's pipeline run from a checkout and the node installer still
+    read them. `uninstall --purge` removes them with their copies.
+  - The copied keys and passwords are limited to the user, as `node.json` is.
+  - A copy is never replaced. One that differs from its original stays, and the command says so
+    once.
+  - Each copy is written beside its new name, flushed, compared and put in place without
+    replacing anything, so a roaming profile on another drive or on a server works, and a copy
+    cut short is made again by the next command.
+  - One command at a time copies: a lock in `%LOCALAPPDATA%\Maktaba`, and a second command
+    waits for it.
+- **`node.json` is never copied.** A machine has one node config: one that joined before keeps
+  it in `%APPDATA%\Maktaba`, where every reader (Maktaba, streaming, the pipeline, the node
+  installer) and a re-join use it. That profile can roam, so the file records the PC it belongs
+  to (`machine_id`, Windows' MachineGuid). The first new Maktaba that runs with it on a PC claims
+  it, keeping its ACL; the pipeline is its one writer. A PC it does not belong to skips it: it
+  is no home's machine, and its own join writes `%LOCALAPPDATA%\Maktaba\node.json`, never the
+  other PC's identity. `maktaba-server` says so once at its start, and the app's setup check
+  shows it (`node_config_other_pc`).
+- **The large state stays where it is.** The install's models, caches and Postgres stay in
+  `data\`. It is decided once whether `data\` or the folder beside it is the state root, and the
+  answer is kept (`state-root.json`), so a folder an older version makes later never moves it.
+  Nothing moves or copies a folder that a running Postgres or an older version may hold.
+- **Inside the desktop app nothing is copied or moved.** A `maktaba-server` inside the app's
+  payload, on Windows or a Mac, never copies or moves an older install: that comes into the app
+  only through the app's own move, which copies it and keeps the old one for going back.
+- The node installer's `node.env` stays where its scripts read it.
+- The api and the pipeline, run on their own, read `keys\secrets.key`, or the old one until it has
+  been copied.
+- On Windows the pipeline writes its logs in UTF-8 (`PYTHONUTF8`), so an Arabic title can no
   longer raise `UnicodeEncodeError`.
 
 ### Fixed
 
+- **The second listen's retries back off and stop (follow-up of story 38.8).** A machine that
+  runs the second listen queued the same 20 oldest transcripts made without it every 10 minutes,
+  forever, when it could not give them theirs (a file it cannot read, a model that does not load),
+  so newer ones never got their turn. Each video's tries are now recorded (new table
+  `relisten_attempts`, slot 0145): after a try it waits 1 hour, doubling up to a day, the untried
+  videos go first, and after 6 tries it stops and says so once, as a warning in Processing,
+  Activity. A transcript with the second listen, or a new transcribe run, starts over. The
+  model download's hash mismatch names the hashes before the folder, so a long Windows path no
+  longer cuts them off. The Settings page shows the Transcription rules in Arabic, and a check
+  keeps every rules section in Arabic but those not yet translated.
+- **`maktaba-server setup` (the CLI wizard) seeds the admin again.** It called `adduser` with
+  `--username`/`--password` flags the api does not have; it now passes the username and a
+  password file.
+- **Setup asks for a Hugging Face sign-in only where the second listen runs.** It asked whenever
+  the second listen was on, so a PC without an NVIDIA GPU, with one too small or too old, or with
+  a driver before R580 was made to create a token and accept a gated model's licence for a model
+  that never runs there. `check` now says whether this machine can run it (and why not, in the
+  app's words), the models step no longer asks for the token there (the NAS copy can still be
+  chosen, any model the home published), and the download takes only Whisper and the search model. The
+  graphics card's compute capability and driver version come with its name and memory.
+- **The terminal setup's Plex sign-in can be skipped, and survives a moment without plex.tv.**
+  Ctrl+C while it waits for the code skipped nothing: it stopped the whole setup before `finish`,
+  as did a single poll plex.tv did not answer. Ctrl+C now skips the sign-in and the setup goes on;
+  plex.tv not answering is said once and asked again until the code expires; a second Ctrl+C
+  elsewhere ends the setup even at a question. Every code a setup step fails with now has its
+  words in English and Arabic (a test keeps it so): the language model's, a bad request's, an
+  unknown step's, unreadable settings', an unexpected failure's.
+- **After the app's setup the server runs on the bundled Postgres, with its transcription
+  workers.** Saving `server.toml` wrote every default, so setup's `finish` left `[database] url`
+  set to the default SQLite file: the next start never ran the bundled Postgres (the database setup
+  had made sat unused, and the pipeline could not open the SQLite one), and
+  `[pipeline] instances = 0` turned the workers off. A save now writes the url only when one was
+  chosen and the count only when it was set (`setup --node --instances 0` included).
+- **A user's server keeps its update verification current.** `maktaba-server` gave the api and
+  streaming no data directory, so they used `/var/lib/maktaba`: in the desktop apps and every
+  per-user install the daily refresh of the Sigstore trusted root failed (permission denied), and
+  once the root built into the binary expired, Update now could no longer verify a release.
+  Uploaded channel art had the same problem. The supervisor now passes its `data_dir`
+  (`MAKTABA_DATA_DIR`), and an api or streaming server run on its own uses `/var/lib/maktaba`
+  only as root, else the user's `$XDG_DATA_HOME/maktaba`.
+- **A build made from a checkout is never "older" than the release it was built from.** A
+  `git describe` version (`v0.2.0-12-gabc1234`, the version of a build off a tag) ranked before
+  `v0.2.0`, as a prerelease does: `maktaba-server update`, the API's "update available", the
+  Updates page and the scheduler offered `v0.2.0` as an update to it, the verifier refused
+  updating from it as a downgrade, and the self-managed layout's watermark and setup's conversion
+  took it for a downgrade. It now ranks after its tag (by its number of commits, a dirty tree
+  after a clean one: `v0.2.0` < `v0.2.0-dirty` < `v0.2.0-1-g…`) and before the next release, and
+  is not a prerelease when its tag is not. One order everywhere: the release verifier's, which
+  the update catalog, the API's update check and the self-managed layout follow, and the Updates
+  page's pin check matches.
 - **The launcher never sends CTRL_BREAK to a server that has exited** (Windows, Epic 38 story
   38.2). It holds a handle to the server until it is reaped and asks it to stop only while it
-  still runs: a CTRL_BREAK naming a pid that leads no process group (a server that exited as the
-  launcher was stopping, its pid reused) goes astray and can end the launcher itself.
+  still runs, holding the server suspended from that check to the send so it cannot exit in
+  between: a CTRL_BREAK naming a pid that leads no process group (a server that exited as the
+  launcher was stopping, or as it rolled back a release that timed out) goes to the whole console
+  and can end the launcher itself.
 
 - **Release builds for desktop, Android and Android TV.** The desktop app ships a
   (placeholder) icon set (#152), which the macOS and Windows bundles failed on. The Linux build

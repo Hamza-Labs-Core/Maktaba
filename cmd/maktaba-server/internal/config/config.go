@@ -9,13 +9,14 @@
 //	Linux   : $XDG_CONFIG_HOME/maktaba/server.toml
 //	          (fallback ~/.config/maktaba/server.toml)
 //	Windows : %LOCALAPPDATA%\Maktaba\server.toml (Epic 38; before it %APPDATA%,
-//	          moved once by MigrateWindowsDirs)
+//	          copied by MigrateWindowsDirs, the original kept)
 //
 // $MAKTABA_CONFIG overrides the resolved path everywhere (tests, custom
 // installs, container bind-mounts).
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -39,26 +40,47 @@ type Config struct {
 	Postgres      PostgresSection      `toml:"postgres"`
 	LLM           LLMSection           `toml:"llm"`
 
-	// DatabaseURLSet: server.toml sets [database] url (Load). Unset, a Mac with
-	// the bundled Postgres uses it (Epic 36 story 36.1).
+	// DatabaseURLSet: server.toml sets [database] url (Load), or a caller chose
+	// one to keep (setup); Save writes the url only then. Unset, a Mac with the
+	// bundled Postgres uses it (Epic 36 story 36.1).
 	DatabaseURLSet bool `toml:"-"`
-	// PipelineInstancesSet: server.toml sets [pipeline] instances (0 there means
-	// no transcription workers, even on Apple Silicon).
+	// PipelineInstancesSet: server.toml sets [pipeline] instances, or a caller
+	// chose a count to keep (setup --node); Save writes a 0 only then (0 there
+	// means no transcription workers, even on Apple Silicon).
 	PipelineInstancesSet bool `toml:"-"`
 }
 
 // PostgresSection is the [postgres] table (Epic 36 story 36.1): the Postgres
 // bundled with Maktaba.app, run by the supervisor as the postgres role.
 type PostgresSection struct {
-	// Enabled: "auto" (default: on a Mac whose payload carries Postgres, or on
-	// any system when the server runs from an app's payload, when [database]
-	// url is not set and no SQLite database is in use), "on" or "off".
+	// Enabled: "auto" (default: on a Mac whose payload carries Postgres, and on
+	// any system when the server runs from a desktop app's payload: the Windows
+	// app (Epic 38 story 38.10), the Linux app (Epic 39 story 39.4); when
+	// [database] url is not set and no SQLite database is in use), "on" or "off".
 	Enabled string `toml:"enabled"`
 	// Home is the Postgres install (bin/postgres, bin/initdb, …); empty:
 	// $MAKTABA_POSTGRES_HOME, else the payload's postgres/ beside bin/.
 	Home string `toml:"home"`
 	// Port is its loopback port (default 54329).
 	Port int `toml:"port"`
+	// UpdateDumps is how many dumps taken before an update's migrations
+	// (backups/pre-<old>-to-<new>.dump, Epic 38 story 38.12) stay in backups/:
+	// the newest ones, the last update's always; 0 (default): 3. The nightly
+	// dumps are kept apart (the newest 7).
+	UpdateDumps int `toml:"update_dumps"`
+}
+
+// DefaultUpdateDumps is how many pre-update dumps stay when [postgres]
+// update_dumps is not set: the way back from each of the last three updates.
+const DefaultUpdateDumps = 3
+
+// KeepUpdateDumps is [postgres] update_dumps, DefaultUpdateDumps when it is not
+// set (or not above 0).
+func (p PostgresSection) KeepUpdateDumps() int {
+	if p.UpdateDumps > 0 {
+		return p.UpdateDumps
+	}
+	return DefaultUpdateDumps
 }
 
 // LLMSection is the [llm] table: the local language model server every LLM stage
@@ -309,6 +331,10 @@ func (c Config) Save() error {
 // SaveTo writes cfg to an explicit path, atomically (write-temp +
 // rename) so a crash mid-write can't truncate a live config.
 func (c Config) SaveTo(path string) error {
+	body, err := c.fileTOML()
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
@@ -318,10 +344,9 @@ func (c Config) SaveTo(path string) error {
 	}
 	defer func() { _ = os.Remove(tmp.Name()) }()
 
-	enc := toml.NewEncoder(tmp)
-	if err := enc.Encode(c); err != nil {
+	if _, err := tmp.Write(body); err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("encode toml: %w", err)
+		return fmt.Errorf("write temp: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temp: %w", err)
@@ -334,6 +359,42 @@ func (c Config) SaveTo(path string) error {
 		return fmt.Errorf("rename into place: %w", err)
 	}
 	return nil
+}
+
+// fileTOML is c as server.toml, without the settings Load tells apart by
+// whether the file sets them: [database] url unless DatabaseURLSet, and
+// [pipeline] instances while 0 and not PipelineInstancesSet. Written, the
+// next Load would take the default as set (a default SQLite url keeps the
+// app's bundled Postgres from running; instances = 0 means no transcription
+// workers).
+func (c Config) fileTOML() ([]byte, error) {
+	var buf bytes.Buffer
+	if err := toml.NewEncoder(&buf).Encode(c); err != nil {
+		return nil, fmt.Errorf("encode toml: %w", err)
+	}
+	var file map[string]any
+	if _, err := toml.Decode(buf.String(), &file); err != nil {
+		return nil, fmt.Errorf("encode toml: %w", err)
+	}
+	unset := func(table, key string) {
+		if t, ok := file[table].(map[string]any); ok {
+			delete(t, key)
+			if len(t) == 0 {
+				delete(file, table)
+			}
+		}
+	}
+	if !c.DatabaseURLSet || strings.TrimSpace(c.Database.URL) == "" {
+		unset("database", "url")
+	}
+	if !c.PipelineInstancesSet && c.Pipeline.Instances == 0 {
+		unset("pipeline", "instances")
+	}
+	buf.Reset()
+	if err := toml.NewEncoder(&buf).Encode(file); err != nil {
+		return nil, fmt.Errorf("encode toml: %w", err)
+	}
+	return buf.Bytes(), nil
 }
 
 // configDir resolves the platform config directory (parent of

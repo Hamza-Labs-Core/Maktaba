@@ -13,7 +13,8 @@ import (
 	"time"
 )
 
-// KeepBackups is how many nightly dumps stay in backups/.
+// KeepBackups is how many nightly dumps stay in backups/ (the pre-update dumps
+// are kept apart: [postgres] update_dumps, upgrade.go).
 const KeepBackups = 7
 
 const (
@@ -26,26 +27,33 @@ const (
 // backups/ (maktaba-<local time>.dump, written beside and renamed into place)
 // and keeps the newest KeepBackups. It returns the dump's path.
 func (b Bundle) Backup(ctx context.Context, now time.Time) (string, error) {
+	path := filepath.Join(b.Backups, backupPrefix+now.Format(backupStamp)+backupSuffix)
+	if err := b.dumpTo(ctx, path); err != nil {
+		return "", err
+	}
+	return path, b.prune()
+}
+
+// dumpTo writes a pg_dump custom-format dump of the app database to path
+// (written beside, path.partial, and renamed into place: a dump cut short is
+// never taken for one).
+func (b Bundle) dumpTo(ctx context.Context, path string) error {
 	superPW, err := readPassword(b.passwordFile(SuperUser))
 	if err != nil {
-		return "", err
+		return err
 	}
-	if err := os.MkdirAll(b.Backups, 0o700); err != nil {
-		return "", err
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
 	}
-	path := filepath.Join(b.Backups, backupPrefix+now.Format(backupStamp)+backupSuffix)
 	part := path + ".partial"
 	cmd := exec.CommandContext(ctx, b.Bin("pg_dump"), "-Fc", "-h", "127.0.0.1", "-p", strconv.Itoa(b.Port),
 		"-U", SuperUser, "-f", part, AppDatabase)
 	cmd.Env = append(os.Environ(), "PGPASSWORD="+superPW)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		_ = os.Remove(part)
-		return "", fmt.Errorf("pg_dump: %w: %s", err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("pg_dump: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	if err := os.Rename(part, path); err != nil {
-		return "", err
-	}
-	return path, b.prune()
+	return os.Rename(part, path)
 }
 
 // backups lists the finished dumps, oldest first.

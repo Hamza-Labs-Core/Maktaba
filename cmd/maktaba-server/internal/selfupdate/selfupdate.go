@@ -301,3 +301,87 @@ func (c *Client) Stage(ctx context.Context, rel *Release, l layout.Layout) (*ins
 	return install.Stage(ctx, l, releaseverify.HTTPDownloader(c.o.HTTP),
 		releaseverify.Input{Tag: rel.Tag, Identity: c.o.Identity, TrustedMaterial: tm}, rel.Assets, c.o.Platform)
 }
+
+// maxAsset bounds a release asset FetchAsset writes to disk (the Linux
+// payload tarball is a few hundred MB).
+const maxAsset = 2 << 30
+
+// FetchAsset verifies rel (the Sigstore bundle over checksums.txt from the
+// release workflow of exactly that tag, its Rekor inclusion proof,
+// release.json) and downloads its asset name into dir, checked against
+// checksums.txt. It returns the file and what the verification proved; a
+// file that fails the check is removed.
+func (c *Client) FetchAsset(ctx context.Context, rel *Release, name, dir string) (string, *releaseverify.Result, error) {
+	tm, err := c.o.Trusted(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	get := releaseverify.HTTPDownloader(c.o.HTTP)
+	small := func(n string) ([]byte, error) {
+		u, ok := rel.Assets[n]
+		if !ok {
+			return nil, nil
+		}
+		b, err := get(ctx, u, 4<<20)
+		if err != nil {
+			return nil, fmt.Errorf("download %s: %w", n, err)
+		}
+		return b, nil
+	}
+	in := releaseverify.Input{Tag: rel.Tag, Identity: c.o.Identity, TrustedMaterial: tm}
+	if in.Checksums, err = small(releaseverify.ChecksumsFile); err != nil {
+		return "", nil, err
+	}
+	if in.Bundle, err = small(releaseverify.BundleFile); err != nil {
+		return "", nil, err
+	}
+	if in.Manifest, err = small(releaseverify.ManifestFile); err != nil {
+		return "", nil, err
+	}
+	res, err := releaseverify.Verify(in)
+	if err != nil {
+		return "", nil, err
+	}
+	u, ok := rel.Assets[name]
+	if !ok {
+		return "", nil, fmt.Errorf("%w: %s has no %s", releaseverify.ErrNotFound, rel.Tag, name)
+	}
+	path := filepath.Join(dir, name)
+	if err := c.download(ctx, u, path); err != nil {
+		_ = os.Remove(path)
+		return "", nil, fmt.Errorf("download %s: %w", name, err)
+	}
+	if err := res.VerifyArtifact(releaseverify.Artifact{Name: name, Path: path}); err != nil {
+		_ = os.Remove(path)
+		return "", nil, err
+	}
+	return path, res, nil
+}
+
+// download streams url into a new file at path.
+func (c *Client) download(ctx context.Context, url, path string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.o.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("GET %s: HTTP %d", url, resp.StatusCode)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	n, err := io.Copy(f, io.LimitReader(resp.Body, maxAsset+1))
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil && n > maxAsset {
+		err = fmt.Errorf("GET %s: larger than %d bytes", url, int64(maxAsset))
+	}
+	return err
+}

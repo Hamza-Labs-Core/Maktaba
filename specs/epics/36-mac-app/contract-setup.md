@@ -1,9 +1,9 @@
 # Contract — `maktaba-server setup --json` (Epic 36, story 36.6)
 
-> **Owner of this contract:** track C (the app shell asks for it). **Implements it:** track A
-> (`cmd/maktaba-server`). **Consumer:** `apps/desktop/src-tauri/src/setup.rs`, which runs it and
-> relays it to the setup screens in `web/src/pages/Setup/`. Until track A lands it, the app's tests
-> run a stub script that speaks this contract.
+> **Owner of this contract:** track C (the app shell asks for it). **Implements it:**
+> `cmd/maktaba-server` (`cmd_setup_json.go`, `setup_*.go`; every step since Epic 38 story 38.6,
+> for the Mac, Windows and Linux alike). **Consumer:** `apps/desktop/src-tauri/src/setup.rs`, which
+> runs it and relays it to the setup screens in `web/src/pages/Setup/`.
 
 The CLI wizard and the app's setup screens share one implementation: every screen calls one
 **step**. A step is one process run:
@@ -19,7 +19,11 @@ The CLI wizard and the app's setup screens share one implementation: every scree
   lines for the "details" box and never parses it.
 - **Exit code:** 0 with a `result`, 1 with an `error`, 2 for usage (unknown step, bad JSON).
 - **Idempotent:** running a step again with the same input is safe (the user may go back a screen).
-  Each step saves what it collected in the pending setup state; `finish` applies it.
+  Each step saves what it collected in the pending setup state (`<state>/state/setup.json`, 0600);
+  `finish` applies it and removes it. The pending state holds no secret in the clear: the admin's
+  password only as its argon2id hash, the Hugging Face token where the pipeline reads it
+  (`<models>/huggingface/token`, 0600), the Plex account token in `keys/plex-setup.token` (0600)
+  until `finish` hands it over and deletes it.
 - **Never echo secrets** in any line on stdout or stderr, including in `error.message`.
 
 ### Events
@@ -27,7 +31,7 @@ The CLI wizard and the app's setup screens share one implementation: every scree
 ```jsonc
 {"type":"progress","stage":"download","message":"Downloading whisper-large-v3-turbo","done":123,"total":456}
 {"type":"result","data":{ /* step-specific */ }}
-{"type":"error","code":"hf_gated","message":"Accept the model's terms on huggingface.co first","field":"hf_token"}
+{"type":"error","code":"root_missing","message":"Y:\\Lectures is not a folder on this machine.","field":"roots","params":{"path":"Y:\\Lectures"}}
 ```
 
 | Field | Meaning |
@@ -35,8 +39,13 @@ The CLI wizard and the app's setup screens share one implementation: every scree
 | `progress.stage` | short machine name of the current phase (`download`, `verify`, `venv`, …) |
 | `progress.message` | one plain-English line for the screen |
 | `progress.done` / `progress.total` | optional; bytes or items; `total` 0/absent → indeterminate bar |
-| `error.code` | machine code; the app maps known codes to help text and shows `message` otherwise |
+| `error.code` | machine code; the screens show their own text for it (`setup.error.<code>` in English and Arabic, web/src/i18n), and `message` only for a code they do not know |
+| `error.message` | English (a log, the terminal setup, an app older than the code); the screens put it under Details, never beside their own text |
+| `error.params` | optional; the values the code's text takes (`path`, `line`, `min`, `max`, `model`, …); a size is in bytes under a `*_bytes` name |
 | `error.field` | optional; the input field the error belongs to (the screen highlights it) |
+
+The codes are a contract: the app's screens and the terminal setup (Epic 39 story 39.6) key their
+texts on them, so a code keeps its meaning and its params once shipped (a new reason is a new code).
 
 ## Steps (in screen order)
 
@@ -57,20 +66,48 @@ Input `{}`.
   "data_dir": "/Users/me/Library/Application Support/Maktaba",
   "need": {"ram_bytes": 17179869184, "disk_bytes": 21474836480},
   "ok": true,
-  "warnings": ["Less than 32 GB of RAM: one transcription worker will run."],
+  "problems": [],
+  "warnings": [{"code": "transcribe_cpu", "message": "No NVIDIA GPU: transcription runs on the processor, many times slower than on a GPU."}],
+  "gpus": [],
+  "second_listen": {"runs": true},
   "runs": [
     {"role": "postgres", "what": "The library database (private to Maktaba)"},
     {"role": "api", "what": "The server the app and your devices talk to"},
     {"role": "streaming", "what": "Playback and Live TV"},
-    {"role": "pipeline", "what": "Indexing, transcription (2 workers) and search"}
+    {"role": "pipeline", "what": "Indexing, transcription (2 workers) and search", "params": {"workers": 2}}
   ]
 }
 ```
-`ok: false` (not Apple Silicon, too little disk) blocks the Next button; `warnings` do not.
+Each finding is `{"code", "params"?, "message"}`, shown as `setup.check.note.<code>` (the English
+`message` for a code the app does not know). `problems` block the Next button (`ok` is false while
+there is one): `platform_intel_mac`, `platform_unsupported` (`os`, `arch`), `disk_low` (`free_bytes`,
+`need_bytes`, `dir`), `ram_low` (`have_bytes`, `need_bytes`). `warnings` do not: `disk_tight`
+(`free_bytes`, `comfortable_bytes`), `ram_tight` (`need_bytes`), `transcribe_cpu` (Windows and Linux
+without an NVIDIA GPU: transcription runs on the processor), `node_config_other_pc` (`path`, `owner`;
+Windows: the roaming profile's node settings belong to another PC, so this machine is no home's
+machine until it is added as its own, Epic 38 story 38.1). `gpus` lists the NVIDIA GPUs
+(`nvidia-smi`; `name`, `memory_mb`, and where nvidia-smi says them `compute_cap` and `driver`), and
+the pipeline's run line names the one it transcribes on (`params.gpu`).
+
+With the second listen on, `second_listen` says whether this machine can run it: Apple Silicon (MLX),
+or an NVIDIA GPU with 9.5 GiB on Windows (7.5 GiB elsewhere), a compute capability of 7.5 (Turing) or
+more and an R580 driver or newer, which the pipeline's room check and the supervisor's tiers use
+too. Where it cannot, `{"runs": false, "code", "params"}` names why, and the same finding is among
+the `warnings`: `second_listen_no_gpu`, `second_listen_gpu_small` (`gpu`, `have_bytes`,
+`need_bytes`), `second_listen_gpu_old` (`gpu`, `compute`), `second_listen_driver_old` (`gpu`,
+`driver`, `need`), `second_listen_intel_mac`. A value nvidia-smi does not report is not held against
+the GPU. The models step then asks for no Hugging Face sign-in (for a model that would never run),
+though the NAS copy can still be chosen there, and Whisper's words are kept. `runs` lines are `setup.check.run.<role>` (the pipeline by its `workers`: `pipeline`,
+`pipelineOne`, `pipelineWorkers`, then `onGpu`). A platform adds its own findings through
+`platformChecks` (setup_steps.go; Linux's glibc, systemd user manager and linger come with Epic 39).
 
 ### `admin` — the first account
-Input `{"username": "admin", "password": "…"}`. Errors: `weak_password`, `bad_username` (with `field`).
-Result `{"username": "admin"}`.
+Input `{"username": "admin", "password": "…"}`. Errors, with `field`: `password_short` (`min`: 8),
+`password_long` (`max`: 256 bytes), `password_newline` (the api reads the password as one line),
+`username_length` (`max`: 64), `username_space` (no leading or trailing space), `username_control`
+(no control character).
+Result `{"username": "admin"}`. The password is hashed at once by `maktaba-api hash-password` (on
+its stdin; the api's own argon2id), and only the hash waits for `finish`.
 
 ### `libraries` — library folders and the NAS path map
 Input:
@@ -78,9 +115,17 @@ Input:
 {"roots": ["/Volumes/Media/Lectures"],
  "path_map": [{"from": "/mnt/media", "to": "/Volumes/Media"}]}
 ```
-`path_map` rewrites paths other machines report (`MAKTABA_PATH_MAP`); it may be empty.
+`path_map` rewrites paths other machines report (`MAKTABA_PATH_MAP`); it may be empty. It is saved
+in the map's JSON form (`{"/mnt/media": "/Volumes/Media"}`), which no path's characters break (a
+Windows drive letter, a UNC path). A root must be a whole path of this machine (a bare drive `Y:` is
+`Y:\`; a relative one would resolve against wherever the server runs); roots are cleaned (`Y:/`
+becomes `Y:` plus a backslash on Windows) and kept once each, two spellings being one folder where
+the disk ignores case (Windows, the Mac) and two on Linux. Both sides of a path-map line are whole
+paths: the left one in its machine's form (`/…`, `X:…`, `\\…`), the right one this machine's.
 Result: `{"roots": [{"path": "/Volumes/Media/Lectures", "exists": true, "readable": true}]}`.
-Error `root_missing` / `root_unreadable` with `field: "roots"` and the path in `message`.
+Errors, with `field: "roots"`: `root_missing` / `root_unreadable` / `root_relative` (`path`),
+`roots_none`; with `field: "path_map"`: `bad_path_map` (`line`: a line without both paths),
+`path_map_relative` (`line`, `path`).
 
 ### `models` — transcription models
 Input, one of:
@@ -88,25 +133,43 @@ Input, one of:
 {"source": "huggingface", "hf_token": "hf_…"}
 {"source": "nas", "path": "/Volumes/Models/huggingface"}
 ```
-The Cohere second-listen model is gated: with `huggingface` the token is checked, saved under
-`keys/` (mode 0600) and the models are downloaded, streaming `progress` with `stage: "download"`,
-byte `done`/`total`. With `nas` the copy at `path` is verified and used in place. Errors:
-`hf_token_invalid`, `hf_gated` (the user must accept the model's terms on huggingface.co),
-`nas_missing`, `disk_full`. Result `{"models": [{"name": "…", "path": "…"}]}`.
+The Cohere second-listen model is gated: with `huggingface` the token is checked (Hugging Face's
+`whoami-v2`, then a `HEAD` of the model's `config.json` with it) and saved where the pipeline's
+Hugging Face client reads it (`<models>/huggingface/token`, mode 0600). With `nas` the home's
+published copy is found (`<path>/<org>__<name>/<revision>/manifest.json`, `path` being the share's
+`maktaba/models` folder or the share itself). Errors: `hf_token_invalid`, `hf_gated` (the user must
+accept the model's terms on huggingface.co; `model`), `hf_token_empty`, `nas_path_empty`,
+`nas_missing` (`path`, `model`), `network`. With the second listen off
+(`[transcription] refine = "off"`), or on a machine that cannot run it (`check`'s `second_listen`), no
+token is needed and the gated model is not checked (a NAS copy is any model the home published
+there); the download then takes only Whisper and the search embedder (`--only whisper,embedder`).
+
+The download itself needs the venv, so it is a second call, made by the install screen after the
+`venv` step: input `{"action": "download"}` runs the venv's `maktaba-pipeline models download
+--json` (with `--share <path>` for the NAS source), streaming `progress` with `stage: "download"`,
+byte `done`/`total`. Result `{"models": {"whisper": "ready", …}}`. Errors: `venv_missing`,
+`hf_gated` (exit 3 of the download), `download_failed`, `interrupted` (it resumes next time).
 
 ### `plex` — optional Plex sign-in (PIN flow; the Plex password never reaches Maktaba)
-Input `{"action": "skip"}` → result `{"linked": false}`.
-Input `{"action": "pin"}` → result `{"pin_id": 123, "code": "ABCD", "link_url": "https://plex.tv/link"}`;
-the screen shows the code and opens `link_url` in the browser.
-Input `{"action": "poll", "pin_id": 123}` → result `{"linked": true}` once the user entered the code
-(the server stores the Plex token in `keys/`), `{"linked": false}` while waiting; error `pin_expired`.
+Input `{"action": "skip"}` → result `{"linked": false}` (a sign-in made before is forgotten).
+Input `{"action": "pin"}` → result `{"pin_id": 123, "code": "ABCD", "link_url": "https://app.plex.tv/auth#?clientID=…&code=ABCD…"}`;
+the screen shows the code and opens `link_url` in the browser (the code is filled in there). The
+plex.tv client id is this install's, kept for every later sign-in.
+Input `{"action": "poll", "pin_id": 123}` → result `{"linked": true}` once the user signed in (the
+account token is saved in `keys/plex-setup.token`), `{"linked": false}` while waiting; errors
+`pin_expired`, `network`. `finish` hands the token to `maktaba-api plex-link`, which stores the Plex
+server the account reaches (the one on this network first) as the Settings sign-in does, and
+deletes it.
 
 ### `venv` — the pipeline's Python environment (story 36.3)
-Input `{}`. Builds (or checks) the pipeline venv and streams its progress as `progress` events with
-`stage` from track B's bootstrap (see `contract-venv.md`), `done`/`total` when known. Result
-`{"python": "3.12.x", "pipeline": "<version>", "reused": false}`. Error `venv_failed` (the message
-names the package that failed; the full log is in `~/Library/Logs/Maktaba/venv.log`).
-Track A relays track B's bootstrap here, so the app depends on this one contract only.
+Input `{}`. Builds (or checks: `--check` first, an up-to-date venv is `reused`) the pipeline venv
+with the payload's Python and wheel (`MAKTABA_APP_BUNDLE`, else the payload holding this
+`maktaba-server`) and streams its progress as `progress` events, `stage: "venv"`, `done` out of
+`total: 1000` (the bootstrap's overall share, never going back). Result
+`{"python": "3.12.x", "pipeline": "<version>", "reused": false}`. Errors: `venv_failed` (the message
+has the failing step's last lines and the full log, `<logs>/venv.log`), `server_missing` (not run
+from the app), `interrupted`. Track A relays track B's bootstrap here, so the app depends on this
+one contract only.
 
 ### `llm` — the language model of the LLM stages
 Input `{}`, or `{"models": ["qwen2.5:7b"], "check_only": true}`. `models` defaults to `[llm] models`
@@ -130,9 +193,41 @@ much is needed and free; the app stops setup), `llm_unavailable` (no bundled Oll
 background (`[llm] pull = "auto"`). `maktaba-server models llm` is the same for a terminal.
 
 ### `finish`
-Input `{}`. Writes `server.toml`, creates the database, runs migrations, seeds the admin account,
-and returns `{"web_url": "http://127.0.0.1:8088"}`. After it the app registers the login item
-(which starts the server), waits for `/processes` to show every role running, and opens `web_url`.
+Input `{}`. Writes `server.toml` (the libraries and the path map; ports another program holds move
+to the fallback range), creates the database (the bundled Postgres: initdb on a first run, a
+short-lived server of its own; a Postgres `[database] url`; or, outside the app, the SQLite file,
+its folder made), runs the migrations
+(`maktaba-api migrate up`), seeds the admin account from its hash (`maktaba-api adduser
+--password-hash-file`, through a 0600 file removed after; an admin already there, exit 3, is not an
+error), and, after a Plex sign-in, stores the Plex server (`maktaba-api plex-link`). Result
+`{"web_url": "http://127.0.0.1:8088", "supervisor_url": "…", "plex": {"linked": true, "server":
+"…"}}` (Plex is optional: a failure there is in the result, not an error). Errors: `admin_missing`,
+`database_failed`, `database_unsupported` (`scheme`), `migrate_failed`, `admin_failed`. After it the
+app registers the login item (which starts the server), waits for `/processes` to show every role
+running, and opens `web_url`.
+
+### Stopping a step
+
+A stop (the app quitting) cancels the step, which asks the program it runs to stop: the venv
+bootstrap and the models download get SIGTERM (Windows: CTRL_BREAK to the process group each starts
+in, which the bootstrap takes as SIGBREAK) and up to 45 s before they are killed, so the bootstrap
+stops pip and records where it was. The step then ends with `interrupted`, and the next run goes on.
+
+### The terminal
+
+`maktaba-server setup` (an install outside the desktop app: a release, a package) asks the same
+steps in the terminal, in this process: `check`, `admin`, `libraries`, `plex`, `finish`, with only
+two questions of its own before them (where the data goes, and the database: SQLite or a Postgres
+url; the app runs its own Postgres). A refused answer is asked again with the step's message.
+Epic 39's terminal setup (story 39.6) does the same from an app payload, in English or Arabic, by
+the codes above.
+
+## The screens' words
+
+The shell's `app_state` says the platform (`"macos"`, `"windows"`, `"linux"`); the screens say "this
+Mac" / "this PC" / "this computer" and "the menu bar" / "the tray" from it (Epic 38 story 38.6).
+On Windows a turned-off login item is the sign-in task disabled in Task Scheduler: the screen's one
+button turns it back on (the app does it), where a Mac's user does it in System Settings.
 
 ## Not in the contract
 
