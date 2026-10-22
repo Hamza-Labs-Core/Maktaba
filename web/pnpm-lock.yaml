@@ -8,6 +8,12 @@ importers:
 
   .:
     dependencies:
+      '@fontsource/amiri':
+        specifier: 5.2.8
+        version: 5.2.8
+      '@fontsource/ibm-plex-sans-arabic':
+        specifier: 5.2.8
+        version: 5.2.8
       '@tauri-apps/api':
         specifier: ^2.1.1
         version: 2.11.0
@@ -400,6 +406,12 @@ packages:
   '@eslint/plugin-kit@0.2.8':
     resolution: {integrity: sha512-ZAoA40rNMPwSm+AeHpCq8STiNAwzWLJuP8Xv4CHIc9wv/PSuExjMrmjfYNj682vW0OOiZ1HKxzvjQr9XZIisQA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+
+  '@fontsource/amiri@5.2.8':
+    resolution: {integrity: sha512-HT/wBlEC/ummjXWg5yH+V0Tzw1vITtI9UM8mwxhwOkNZWD2zuie5vXpAVSCZORArT/LUQ4NP0fRcjiElUwI/8A==}
+
+  '@fontsource/ibm-plex-sans-arabic@5.2.8':
+    resolution: {integrity: sha512-zqBKzZt6WTnCEUlgnRMQ7arRjd0t59gEWWIcIgQIQNThsHMp36i9/4X5YvpmTZs33oJO6hQvLSTkh001XsgzoQ==}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -1894,6 +1906,10 @@ snapshots:
     dependencies:
       '@eslint/core': 0.13.0
       levn: 0.4.1
+
+  '@fontsource/amiri@5.2.8': {}
+
+  '@fontsource/ibm-plex-sans-arabic@5.2.8': {}
 
   '@humanfs/core@0.19.2':
     dependencies:

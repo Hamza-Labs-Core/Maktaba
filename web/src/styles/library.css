@@ -1,0 +1,129 @@
+/*
+ * The Islamic library theme: the library art sits behind the app, and text
+ * never sits on it. The header, side nav and tab bar are frosted glass; the
+ * page content is a denser reading panel. tokens.css picks the art and the
+ * glass for the light and dark themes (--art-wide, --art-tall, --color-glass,
+ * --color-panel); phones and portrait tablets get the tall art.
+ */
+body {
+  background-color: var(--color-bg);
+}
+
+h1,
+h2,
+.mkt-shell__brand {
+  font-family: var(--font-heading);
+}
+.mkt-shell__brand {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.mkt-shell,
+.mkt-login {
+  position: relative;
+  isolation: isolate;
+}
+/* fixed on its own layer: background-attachment: fixed is ignored on iOS */
+.mkt-shell::before,
+.mkt-login::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: var(--color-bg) var(--art-wide) center / cover no-repeat;
+  pointer-events: none;
+}
+@media (max-width: 768px), (orientation: portrait) and (max-width: 1024px) {
+  .mkt-shell::before,
+  .mkt-login::before {
+    background-image: var(--art-tall);
+    background-position: center top;
+  }
+}
+
+.mkt-shell__header,
+.mkt-shell__nav,
+.mkt-shell__tabbar {
+  background: var(--color-glass);
+  -webkit-backdrop-filter: var(--blur-glass);
+  backdrop-filter: var(--blur-glass);
+}
+.mkt-shell__header {
+  border-bottom-color: var(--color-panel-line);
+}
+
+.mkt-shell__body {
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+.mkt-shell__nav,
+[dir="rtl"] .mkt-shell__nav {
+  border: 1px solid var(--color-panel-line);
+  border-radius: 18px;
+  align-self: flex-start;
+  position: sticky;
+  top: calc(var(--space-4) + 64px);
+  max-height: calc(100vh - 64px - 2 * var(--space-4));
+}
+.mkt-login__form {
+  background: var(--color-panel);
+  -webkit-backdrop-filter: var(--blur-panel);
+  backdrop-filter: var(--blur-panel);
+  border-color: var(--color-panel-line);
+  box-shadow: var(--shadow-panel);
+}
+.mkt-shell__main {
+  min-width: 0;
+  background: var(--color-panel);
+  -webkit-backdrop-filter: var(--blur-panel);
+  backdrop-filter: var(--blur-panel);
+  border: 1px solid var(--color-panel-line);
+  border-radius: 20px;
+  box-shadow: var(--shadow-panel);
+}
+
+.mkt-nav-link.active {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-text);
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--color-accent);
+}
+[dir="rtl"] .mkt-nav-link.active {
+  box-shadow: inset -3px 0 0 var(--color-accent);
+}
+
+@media (max-width: 640px) {
+  .mkt-shell__body {
+    padding: var(--space-2) var(--space-2) 0;
+  }
+  .mkt-shell__main {
+    border-radius: 20px 20px 0 0;
+    border-bottom: 0;
+  }
+  .mkt-shell__tabbar {
+    border-top: 1px solid var(--color-panel-line);
+  }
+}
+
+/* no blur, or the viewer asked for less transparency: near-solid surfaces */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .mkt-shell__header,
+  .mkt-shell__nav,
+  .mkt-shell__tabbar,
+  .mkt-shell__main,
+  .mkt-login__form {
+    background: color-mix(in srgb, var(--color-bg) 94%, transparent);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .mkt-shell__header,
+  .mkt-shell__nav,
+  .mkt-shell__tabbar,
+  .mkt-shell__main,
+  .mkt-login__form {
+    background: var(--color-bg);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}

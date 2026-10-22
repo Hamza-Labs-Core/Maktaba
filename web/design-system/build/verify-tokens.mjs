@@ -64,7 +64,7 @@ const cssChecks = [
   /:root\s*\{/,
   /\[data-theme="dark"\]\s*\{/,
   /\[data-theme="high-contrast"\]\s*\{/,
-  /--color-brand-500:\s*#1E5AD8;/,
+  /--color-brand-500:\s*#E3B252;/,
   // semantic reference → var(--…)
   /--color-semantic-bg:\s*var\(--color-neutral-\d+\);/,
 ];
@@ -80,10 +80,10 @@ const data = JSON.parse(await readFile(join(distDir, "tokens.json"), "utf8"));
 if (!data.tokens || !data.themes) {
   fail("tokens.json missing top-level tokens/themes keys");
 }
-// Reference resolution: color.semantic.bg → color.neutral.50 → "#FAFAFA".
+// Reference resolution: color.semantic.bg → color.neutral.0 → "#FFFFFF".
 const resolvedBg = data.tokens.color?.semantic?.bg;
-if (resolvedBg !== "#FAFAFA") {
-  fail(`color.semantic.bg should resolve to #FAFAFA, got ${JSON.stringify(resolvedBg)}`);
+if (resolvedBg !== "#FFFFFF") {
+  fail(`color.semantic.bg should resolve to #FFFFFF, got ${JSON.stringify(resolvedBg)}`);
 }
 // Theme overrides surface in `themes`.
 if (data.themes.dark?.color?.semantic?.bg !== "#18181B") {
@@ -101,7 +101,7 @@ const ts = await readFile(join(distDir, "tokens.ts"), "utf8");
 // exports parse, not the type metadata.
 const jsBody = ts.replace(/ as const;/g, ";").replace(/^export type .*$/gm, "");
 const mod = await import(`data:text/javascript;base64,${Buffer.from(jsBody).toString("base64")}`);
-if (!mod.tokens || mod.tokens.color?.brand?.["500"] !== "#1E5AD8") {
+if (!mod.tokens || mod.tokens.color?.brand?.["500"] !== "#E3B252") {
   fail(`tokens.ts didn't import correctly or missing color.brand.500`);
 }
 if (mod.themes?.dark?.color?.semantic?.bg !== "#18181B") {

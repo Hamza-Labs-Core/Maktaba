@@ -29,7 +29,7 @@
 }
 
 .mk-btn:focus-visible {
-  outline: 2px solid var(--color-semantic-accent, #1e5ad8);
+  outline: 2px solid var(--color-semantic-accent-text, var(--color-semantic-accent, #1e5ad8));
   outline-offset: 2px;
 }
 
@@ -58,7 +58,7 @@
  * and high-contrast themes Just Work via the data-theme switch. */
 .mk-btn--primary {
   background-color: var(--color-semantic-accent, #1e5ad8);
-  color: var(--color-neutral-0, #ffffff);
+  color: var(--color-semantic-accent-fg, var(--color-neutral-0, #ffffff));
 }
 .mk-btn--primary:hover:not([disabled]) {
   background-color: var(--color-brand-600, #1748b0);
@@ -91,7 +91,7 @@
 
 .mk-btn--link {
   background-color: transparent;
-  color: var(--color-semantic-accent, #1e5ad8);
+  color: var(--color-semantic-accent-text, var(--color-semantic-accent, #1e5ad8));
   padding: 0;
   text-decoration: underline;
 }

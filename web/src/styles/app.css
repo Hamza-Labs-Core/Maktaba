@@ -18,7 +18,7 @@ body,
 }
 
 a {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   text-decoration: none;
 }
 a:hover {
@@ -150,7 +150,7 @@ input[type="search"] {
 .mkt-field input:focus,
 select:focus,
 input[type="search"]:focus {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-accent-text);
   outline-offset: 1px;
 }
 
@@ -528,7 +528,7 @@ html {
 
 /* Story 11.11 — visible focus ring on keyboard nav only */
 :focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-accent-text);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
@@ -612,7 +612,7 @@ html {
   font-size: var(--font-size-sm);
 }
 .mkt-tab.active {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 .mkt-tab__icon {
   font-size: var(--font-size-lg);
@@ -642,7 +642,7 @@ html {
   font: inherit;
 }
 .mkt-link-btn {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   text-decoration: underline;
 }
 
@@ -670,7 +670,7 @@ img.mkt-card__poster {
 .mkt-transcript__time {
   font-variant-numeric: tabular-nums;
   margin-inline-end: var(--space-2);
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 .mkt-muted {
   color: var(--color-muted);
@@ -975,7 +975,7 @@ mark {
   flex-wrap: wrap;
 }
 .mkt-login__link {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   font-size: var(--font-size-sm);
   text-decoration: none;
 }
@@ -1126,7 +1126,7 @@ mark {
   white-space: nowrap;
 }
 .mkt-logs__service {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   white-space: nowrap;
 }
 .mkt-logs__msg {
@@ -1587,7 +1587,7 @@ mark {
 }
 .mkt-won__cta {
   font-weight: 600;
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 /* 27.8 — channel admin */
@@ -1685,7 +1685,7 @@ mark {
 }
 .mkt-art__corner--on {
   border-color: var(--color-accent);
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   font-weight: 600;
 }
 .mkt-form {
@@ -2182,7 +2182,7 @@ mark {
 .mkt-chart {
   width: 100%;
   height: auto;
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 .mkt-chart__tick,
 .mkt-chart__empty {
@@ -2860,7 +2860,7 @@ mark {
 }
 .mkt-setup__link {
   padding: 0;
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   text-decoration: underline;
   background: none;
   border: 0;

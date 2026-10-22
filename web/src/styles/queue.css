@@ -46,7 +46,7 @@
   list-style: none;
 }
 .mkt-q a {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 .mkt-q-muted {
   color: var(--color-muted);
@@ -108,7 +108,7 @@
 .mkt-q input:focus-visible,
 .mkt-q select:focus-visible,
 .mkt-q summary:focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-accent-text);
   outline-offset: 2px;
 }
 
@@ -402,7 +402,7 @@ summary.mkt-q-lane__title {
   outline: none;
 }
 .mkt-q-card:has(.mkt-q-card__link:focus-visible) {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-accent-text);
   outline-offset: 2px;
 }
 .mkt-q-card__body {
@@ -1215,7 +1215,7 @@ summary.mkt-q-lane__title {
   padding: 0 var(--space-2);
   border: 1px solid var(--color-accent);
   border-radius: 9999px;
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   font-size: 12px;
   font-weight: 600;
 }

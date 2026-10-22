@@ -17,7 +17,7 @@
 }
 .mk-badge--accent {
   background-color: color-mix(in srgb, var(--color-semantic-accent, #1e5ad8) 16%, transparent);
-  color: var(--color-semantic-accent, #1e5ad8);
+  color: var(--color-semantic-accent-text, var(--color-semantic-accent, #1e5ad8));
 }
 .mk-badge--success {
   background-color: color-mix(in srgb, var(--color-semantic-success, #0e8c4f) 16%, transparent);

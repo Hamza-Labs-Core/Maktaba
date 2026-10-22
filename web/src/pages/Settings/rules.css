@@ -57,7 +57,7 @@
 }
 .mkt-rules__input:focus-visible,
 .mkt-rules__cell:focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-accent-text);
   outline-offset: 1px;
 }
 .mkt-rules__input[readonly],
@@ -144,7 +144,7 @@
 }
 .mkt-rules__fold:focus-visible,
 .mkt-rules__day:focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-accent-text);
   outline-offset: 1px;
 }
 .mkt-rules__chev {
@@ -236,7 +236,7 @@
   color: var(--color-warn);
 }
 .mkt-rules__unsaved {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 .mkt-rules__editor {
   display: grid;
