@@ -204,7 +204,7 @@ func TestAFailedThawIsAskedAgain(t *testing.T) {
 		t.Fatalf("the switch: %+v", p)
 	}
 	// the process ends; the next one takes the owed thaw up from the record
-	next := &Orchestrator{DB: o.DB, Hub: h, Supervisor: s, HomeName: "a", SchemaRev: 147, RetryEvery: 50 * time.Millisecond}
+	next := &Orchestrator{DB: o.DB, Hub: h, Supervisor: s, HomeName: "a", SchemaRev: 148, RetryEvery: 50 * time.Millisecond}
 	next.Resume(ctx)
 	s.mu.Lock()
 	s.fail = ""

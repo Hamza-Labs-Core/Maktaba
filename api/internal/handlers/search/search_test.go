@@ -160,6 +160,19 @@ func TestHighlightSnippet_ArabicMatchExactlyWrapped(t *testing.T) {
 	}
 }
 
+// Each word of a query of several words is marked; a one-letter word of a
+// longer query is not marked on its own.
+func TestHighlightSnippet_EveryWord(t *testing.T) {
+	got := highlightSnippet("Patience and Gratitude in hardship", "gratitude patience a", 240)
+	want := "<mark>Patience</mark> and <mark>Gratitude</mark> in hardship"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if got := highlightSnippet("الصبر و الشكر", "الصبر و", 240); got != "<mark>الصبر</mark> و الشكر" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestNormaliseSuggestQuery_LowercasesAndStripsMarks(t *testing.T) {
 	got := normaliseSuggestQuery("Café")
 	if got != "cafe" && got != "café" {

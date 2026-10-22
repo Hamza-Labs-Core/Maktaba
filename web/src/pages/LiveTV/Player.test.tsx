@@ -182,10 +182,18 @@ const active = () => screen.getByTestId("live-video") as HTMLVideoElement;
 const standby = () => screen.getByTestId("live-video-standby") as HTMLVideoElement;
 const stage = () => screen.getByTestId("live-player");
 
-/** The first frame arrived on the element (the pipeline then swaps). */
-function firstFrame(el: HTMLVideoElement) {
-  act(() => {
+/**
+ * The first frame arrived on the element, and the page has taken it in. The
+ * switcher swaps on a promise continuation after the event, so the act scope
+ * covers that continuation: a synchronous act ends before it, and the swap's
+ * updates (the URL rewrite is a router transition, the new channel's effects
+ * after them) are left to React's scheduler, which a busy runner can delay
+ * past the next assertion.
+ */
+async function firstFrame(el: HTMLVideoElement) {
+  await act(async () => {
     fireEvent.playing(el);
+    await flushMicrotasks();
   });
 }
 
@@ -197,7 +205,7 @@ async function flushMicrotasks() {
 async function startOn(num = "1") {
   renderPlayer(num);
   await waitFor(() => expect(active().getAttribute("src")).toMatch(/m3u8/));
-  firstFrame(active());
+  await firstFrame(active());
   await screen.findByTestId("tune-banner");
 }
 
@@ -267,7 +275,7 @@ describe("Player (live channel)", () => {
     expect(card).toHaveTextContent("Movies");
     expect(card).toHaveTextContent("Now on One");
     await waitFor(() => expect(active().getAttribute("src")).toBeTruthy());
-    firstFrame(active());
+    await firstFrame(active());
     const banner = await screen.findByTestId("tune-banner");
     expect(banner.querySelector("img")?.getAttribute("src")).toBe("/api/channels/c1/logo");
     expect(screen.queryByTestId("tuning-card")).toBeNull();
@@ -314,7 +322,7 @@ describe("Player (live channel)", () => {
     expect(hlsInstances[0].attachMedia).toHaveBeenCalledWith(video);
     expect(hlsInstances[0].loadSource).toHaveBeenCalledWith("/stream/channel/c1/index.m3u8");
     expect(video.getAttribute("src")).toBeNull();
-    firstFrame(video);
+    await firstFrame(video);
     // A fatal network error shows the reconnecting indicator.
     act(() => hlsInstances[0].emit("hlsError", { fatal: true, type: "networkError" }));
     expect(await screen.findByTestId("live-reconnecting")).toHaveTextContent(/reconnecting/i);
@@ -378,7 +386,7 @@ describe("Player (live channel)", () => {
     );
     expect(oldEl.getAttribute("src")).toBe("/stream/channel/c1/index.m3u8");
     expect(active()).toBe(oldEl);
-    firstFrame(standby());
+    await firstFrame(standby());
     await waitFor(() => expect(active().getAttribute("src")).toBe("/stream/channel/c2/index.m3u8"));
     expect(oldEl.getAttribute("src")).toBeNull();
     // the URL follows in onSettled, a tick after the swap
@@ -417,7 +425,7 @@ describe("Player (live channel)", () => {
     await waitFor(() =>
       expect(standby().getAttribute("src")).toBe("/stream/channel/c3/index.m3u8")
     );
-    firstFrame(standby());
+    await firstFrame(standby());
     await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/live/3"));
     fireEvent.keyDown(stage(), { key: "l" });
     expect(screen.getByTestId("tuning-card")).toHaveTextContent("Movies");
@@ -516,11 +524,11 @@ describe("Player (live channel)", () => {
         expect.objectContaining({ channel_id: "c1" })
       );
       expect(screen.getByTestId("live-player").dataset.path).toBe("remote");
-      firstFrame(active());
+      await firstFrame(active());
       fireEvent.keyDown(stage(), { key: "ArrowUp" });
       await waitFor(() => expect(standby().getAttribute("src")).toBe(HLS("tok2")));
       expect(del).not.toHaveBeenCalled(); // channel 1 plays until channel 2 can
-      firstFrame(standby());
+      await firstFrame(standby());
       await waitFor(() => expect(del).toHaveBeenCalledWith("/api/tv/remote/sessions/s1"));
       // remote neighbours are never prefetched (each would need a tune)
       expect(fetch).not.toHaveBeenCalled();

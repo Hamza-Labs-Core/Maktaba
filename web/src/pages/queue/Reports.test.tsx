@@ -77,10 +77,9 @@ describe("Reports", () => {
 
   it("groups the reports by kind, plan first, and names a review page after its library", async () => {
     setup();
+    // the list is there (Loading…) before the reports answer: wait for its groups
     const nav = await screen.findByRole("navigation", { name: "Report pages" });
-    const headings = within(nav)
-      .getAllByRole("heading")
-      .map((h) => h.textContent);
+    const headings = (await within(nav).findAllByRole("heading")).map((h) => h.textContent);
     expect(headings).toEqual([
       "Channel plan",
       "Plan preview",
