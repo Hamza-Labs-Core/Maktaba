@@ -3469,6 +3469,8 @@
   "emergency.copy": "Its copy of the library was last updated {ago}.",
   "emergency.reason.home_answers": "{home} is answering, so switch the home from {home}'s own Machines page instead.",
   "emergency.reason.no_copy": "This machine doesn't have a copy of the library yet.",
+  "emergency.reason.copy_incomplete": "This machine's copy of the library isn't complete yet: it can take over once every table is copied.",
+  "emergency.reason.copy_behind": "This machine's copy was more than 10 minutes behind {home} when {home} last answered, so taking over from it would lose those changes.",
   "emergency.reason.busy": "A switch is already under way.",
   "emergency.reason.no_supervisor": "This machine doesn't run under Maktaba's own service, so it can't take over.",
   "emergency.go": "Make this machine the home…",

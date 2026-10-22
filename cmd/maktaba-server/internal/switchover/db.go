@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dbfence"
 )
 
 // The database's name, its app role (pgbundle.AppRole), and the copy's subscription
@@ -21,17 +23,15 @@ const (
 )
 
 // Freeze stops the old home's writes for switchover id: its database read-only for every
-// session from now (default_transaction_read_only), the sessions open now ended (they
-// connect again, read-only), and as its last write the switchover's row set to "frozen":
+// session from now (default_transaction_read_only), the app's roles' rights to write its
+// tables taken (dbfence: a session's own BEGIN READ WRITE overrides the default), the
+// sessions open now ended once those are gone (a transaction that wrote before cannot
+// commit after the marker), and as its last write the switchover's row set to "frozen":
 // the marker a copy holds once it has everything the old home wrote. super is the old
 // home's superuser.
 func Freeze(ctx context.Context, super *sql.DB, id string) error {
-	if _, err := super.ExecContext(ctx, `ALTER DATABASE `+database+` SET default_transaction_read_only = on`); err != nil {
+	if err := stopWrites(ctx, super); err != nil {
 		return fmt.Errorf("switchover: freeze: %w", err)
-	}
-	if _, err := super.ExecContext(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
-	    WHERE datname = current_database() AND pid <> pg_backend_pid() AND backend_type = 'client backend'`); err != nil {
-		return fmt.Errorf("switchover: freeze: end the open sessions: %w", err)
 	}
 	tx, err := super.BeginTx(ctx, &sql.TxOptions{ReadOnly: false})
 	if err != nil {
@@ -52,10 +52,43 @@ func Freeze(ctx context.Context, super *sql.DB, id string) error {
 	return tx.Commit()
 }
 
-// Thaw lets the old home write again (a switchover that did not go through).
+// Thaw lets the old home write again (a switchover that did not go through): the rights
+// a freeze took given back, the database's default read-write.
 func Thaw(ctx context.Context, super *sql.DB) error {
+	if err := dbfence.Release(ctx, super); err != nil {
+		return fmt.Errorf("switchover: thaw: the app's rights: %w", err)
+	}
 	_, err := super.ExecContext(ctx, `ALTER DATABASE `+database+` RESET default_transaction_read_only`)
 	return err
+}
+
+// stopWrites stops the app's roles writing (Freeze, Fence): the database read-only by
+// default, their rights taken (in a transaction of its own: a role may not reconnect
+// and write between the two), then every session of the app's ended, waiting for each
+// to go so nothing it wrote commits later.
+func stopWrites(ctx context.Context, super *sql.DB) error {
+	if _, err := super.ExecContext(ctx, `ALTER DATABASE `+database+` SET default_transaction_read_only = on`); err != nil {
+		return err
+	}
+	tx, err := super.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SET TRANSACTION READ WRITE`); err != nil {
+		return err
+	}
+	if err := dbfence.Take(ctx, tx); err != nil {
+		return fmt.Errorf("the app's rights to write: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if _, err := super.ExecContext(ctx, `SELECT pg_terminate_backend(pid, 5000) FROM pg_stat_activity
+	    WHERE datname = current_database() AND pid <> pg_backend_pid() AND backend_type = 'client backend'`); err != nil {
+		return fmt.Errorf("end the open sessions: %w", err)
+	}
+	return nil
 }
 
 // HasMarker reports whether a copy holds switchover id's marker: everything the old home
@@ -172,6 +205,19 @@ func Promote(ctx context.Context, super *sql.DB, p Promotion) (out Promoted, err
 	_ = conn.QueryRowContext(ctx, `SELECT COALESCE(s.remote_lsn::text, '')
 	    FROM pg_replication_origin_status s JOIN pg_replication_origin o ON o.roident = s.local_id
 	    JOIN pg_subscription sub ON o.roname = 'pg_' || sub.oid WHERE sub.subname = $1`, subscription).Scan(&out.CutLSN)
+	// the copy whole: a table whose first copy is not done holds part of the home's rows,
+	// which would become the library (one promoted already has no subscription left)
+	var subscribed bool
+	var tables, ready int
+	if err := conn.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_subscription WHERE subname = $1),
+	        (SELECT count(*) FROM pg_subscription_rel r JOIN pg_subscription s ON s.oid = r.srsubid WHERE s.subname = $1),
+	        (SELECT count(*) FROM pg_subscription_rel r JOIN pg_subscription s ON s.oid = r.srsubid
+	          WHERE s.subname = $1 AND r.srsubstate = 'r')`, subscription).Scan(&subscribed, &tables, &ready); err != nil {
+		return out, err
+	}
+	if subscribed && (tables == 0 || ready < tables) {
+		return out, fmt.Errorf("switchover: the copy is not whole (%d of %d tables copied): it cannot become the home", ready, tables)
+	}
 
 	// what this promotion made, dropped again when it fails
 	var madeSlots, madePubs []string

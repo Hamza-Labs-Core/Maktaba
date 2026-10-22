@@ -12,14 +12,13 @@ import (
 
 // Fence stops an old home that learned of a newer term from writing: it may have been
 // cut off rather than gone, and two homes must never both write. Its database becomes
-// read-only for every session, and the sessions open now end.
+// read-only for every session, the app's roles lose their rights to write its tables
+// (dbfence), and the sessions open now end.
 func Fence(ctx context.Context, super *sql.DB) error {
-	if _, err := super.ExecContext(ctx, `ALTER DATABASE `+database+` SET default_transaction_read_only = on`); err != nil {
+	if err := stopWrites(ctx, super); err != nil {
 		return fmt.Errorf("switchover: fence: %w", err)
 	}
-	_, err := super.ExecContext(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
-	    WHERE datname = current_database() AND pid <> pg_backend_pid() AND backend_type = 'client backend'`)
-	return err
+	return nil
 }
 
 // Change is one row an old home wrote after the new home's cut.

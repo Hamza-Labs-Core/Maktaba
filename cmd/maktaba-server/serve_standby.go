@@ -612,7 +612,52 @@ const (
 	emergencyHomeAnswers = "home_answers"
 	emergencyNoCopy      = "no_copy"
 	emergencyBusy        = "busy"
+	// the copy is not whole (a table's first copy not done), or was behind the home when
+	// the home was last heard
+	emergencyCopyIncomplete = "copy_incomplete"
+	emergencyCopyBehind     = "copy_behind"
 )
+
+// emergencyCopyLag is how far behind the home a copy may have been when the home was
+// last heard, to take over from it: the default of the rule a copy answers on with its
+// home away by (rules.cluster.offline_copy_max_lag_minutes).
+const emergencyCopyLag = 10 * time.Minute
+
+// copyCurrent is why this machine's copy may not become the home ("": it may): every
+// table's first copy done, and its last change from the home no older than
+// emergencyCopyLag when the home last answered this machine (both on the home's clock:
+// the offset this machine keeps; none measured, none).
+func copyCurrent(obs nodecopy.Status, stateDir string) string {
+	if obs.Tables == 0 || obs.Ready < obs.Tables {
+		return emergencyCopyIncomplete
+	}
+	seen, ok := homeLastAnswered(stateDir)
+	if obs.AppliedAt == nil || !ok || seen.Sub(*obs.AppliedAt) > emergencyCopyLag {
+		return emergencyCopyBehind
+	}
+	return ""
+}
+
+// homeLastAnswered is when the home last answered this machine, on the home's clock: the
+// moment the API keeps (nodeauth.HomeSeenFile), moved by the home's offset it keeps
+// (home-clock.json).
+func homeLastAnswered(stateDir string) (time.Time, bool) {
+	raw, err := os.ReadFile(filepath.Join(stateDir, "home-last-answered"))
+	if err != nil {
+		return time.Time{}, false
+	}
+	seen, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(string(raw)))
+	if err != nil {
+		return time.Time{}, false
+	}
+	var clock struct {
+		OffsetNS int64 `json:"offset_ns"`
+	}
+	if b, err := os.ReadFile(filepath.Join(stateDir, "home-clock.json")); err == nil && json.Unmarshal(b, &clock) == nil {
+		seen = seen.Add(time.Duration(clock.OffsetNS))
+	}
+	return seen, true
+}
 
 // emergencyState is whether this machine can take over as the home now.
 type emergencyState struct {
@@ -662,6 +707,8 @@ func (s *switching) emergencyStatus(ctx context.Context) emergencyState {
 	}
 	if st.Copy == nil {
 		st.Reasons = append(st.Reasons, emergencyNoCopy)
+	} else if why := copyCurrent(*st.Copy, supervisor.NodeStateDir(s.cfg)); why != "" {
+		st.Reasons = append(st.Reasons, why)
 	}
 	s.mu.Lock()
 	if s.busy != "" {

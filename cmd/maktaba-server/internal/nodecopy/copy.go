@@ -34,6 +34,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dbfence"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 )
 
@@ -414,7 +415,8 @@ func (c Copy) super() (*sql.DB, error) {
 
 // EnsureReader makes the read-only role this machine's programs read the copy as, and
 // ends a switch's freeze: a machine that was the home kept its database frozen until it
-// started as a machine (its copy is written by the subscription and its migrations).
+// started as a machine (its copy is written by the subscription and its migrations), the
+// app's rights to write it given back as a freeze took them (dbfence).
 func (c Copy) EnsureReader(ctx context.Context) error {
 	pw, err := c.ReaderPassword()
 	if err != nil {
@@ -437,7 +439,25 @@ func (c Copy) EnsureReader(ctx context.Context) error {
 			return fmt.Errorf("nodecopy: the copy's read-only role: %w", err)
 		}
 	}
+	if err := dbfence.Release(ctx, db); err != nil {
+		return fmt.Errorf("nodecopy: the app's rights to write the copy: %w", err)
+	}
 	return nil
+}
+
+// applyAsOwner is the subscription's option that applies the home's changes as its own
+// owner, the superuser, where the server has it (Postgres 16; 15 applies so always):
+// otherwise it applies as each table's owner, the app role, whose rights to write a
+// machine that was the home has given up until it starts as a machine (dbfence).
+func applyAsOwner(ctx context.Context, db *sql.DB) (string, error) {
+	var v int
+	if err := db.QueryRowContext(ctx, `SELECT current_setting('server_version_num')::int`).Scan(&v); err != nil {
+		return "", err
+	}
+	if v >= 160000 {
+		return ", run_as_owner = true", nil
+	}
+	return "", nil
 }
 
 // ForgetSessions empties the copy's web_sessions: a copy holds no session id (a live
@@ -565,9 +585,13 @@ func (c Copy) Subscribe(ctx context.Context, g Grant) error {
 	if err != nil {
 		return err
 	}
+	owner, err := applyAsOwner(ctx, db)
+	if err != nil {
+		return err
+	}
 	q := fmt.Sprintf(`CREATE SUBSCRIPTION %s CONNECTION %s PUBLICATION %s
-	  WITH (slot_name = %s, create_slot = true, copy_data = true, streaming = on, disable_on_error = false)`,
-		pq.QuoteIdentifier(Subscription), pq.QuoteLiteral(conn), pq.QuoteIdentifier(g.Publication), pq.QuoteLiteral(g.Slot))
+	  WITH (slot_name = %s, create_slot = true, copy_data = true, streaming = on, disable_on_error = false%s)`,
+		pq.QuoteIdentifier(Subscription), pq.QuoteLiteral(conn), pq.QuoteIdentifier(g.Publication), pq.QuoteLiteral(g.Slot), owner)
 	if _, err := db.ExecContext(ctx, q); err != nil {
 		return fmt.Errorf("nodecopy: subscribing: %w", err)
 	}
@@ -610,9 +634,13 @@ func (c Copy) Handover(ctx context.Context, g Grant, local int64) error {
 	if err != nil {
 		return err
 	}
+	owner, err := applyAsOwner(ctx, db)
+	if err != nil {
+		return err
+	}
 	q := fmt.Sprintf(`CREATE SUBSCRIPTION %s CONNECTION %s PUBLICATION %s
-	  WITH (slot_name = %s, create_slot = false, copy_data = false, streaming = on, disable_on_error = false)`,
-		pq.QuoteIdentifier(Subscription), pq.QuoteLiteral(conn), pq.QuoteIdentifier(g.Publication), pq.QuoteLiteral(g.Slot))
+	  WITH (slot_name = %s, create_slot = false, copy_data = false, streaming = on, disable_on_error = false%s)`,
+		pq.QuoteIdentifier(Subscription), pq.QuoteLiteral(conn), pq.QuoteIdentifier(g.Publication), pq.QuoteLiteral(g.Slot), owner)
 	if _, err := db.ExecContext(ctx, q); err != nil {
 		return fmt.Errorf("nodecopy: following the new home: %w", err)
 	}

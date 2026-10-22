@@ -241,6 +241,9 @@ func TestAPlannedSwitchover(t *testing.T) {
 	if _, err := c.app.ExecContext(ctx, `UPDATE app_settings SET value = '"frozen"' WHERE key = 'test.switch'`); err == nil {
 		t.Fatal("the frozen home took a write")
 	}
+	if err := writeTx(ctx, t, c.app, `UPDATE app_settings SET value = '"frozen"' WHERE key = 'test.switch'`); err == nil {
+		t.Fatal("the frozen home took a write in a READ WRITE transaction")
+	}
 	for _, db := range []*sql.DB{bdb, cdb} {
 		pgtest.WaitFor(t, "the marker on a copy", time.Minute, func() bool { ok, _ := HasMarker(ctx, db, id); return ok })
 	}
@@ -468,6 +471,9 @@ func TestAFrozenHomeThaws(t *testing.T) {
 	if _, err := open(t, appURL).ExecContext(ctx, write); err == nil {
 		t.Fatal("the frozen home took a write")
 	}
+	if err := writeTx(ctx, t, open(t, appURL), write); err == nil {
+		t.Fatal("the frozen home took a write in a READ WRITE transaction")
+	}
 	if ok, err := HasMarker(ctx, super(t, c.home), id); !ok || err != nil {
 		t.Fatalf("no marker on the frozen home: %v", err)
 	}
@@ -477,6 +483,24 @@ func TestAFrozenHomeThaws(t *testing.T) {
 	if _, err := open(t, appURL).ExecContext(ctx, write); err != nil {
 		t.Fatalf("the thawed home refuses writes: %v", err)
 	}
+	if err := writeTx(ctx, t, open(t, appURL), write); err != nil {
+		t.Fatalf("the thawed home refuses a transaction's write: %v", err)
+	}
+}
+
+// writeTx writes in a transaction begun as the app's code begins one: lib/pq says BEGIN
+// READ WRITE, which overrides the database's default_transaction_read_only.
+func writeTx(ctx context.Context, t *testing.T, db *sql.DB, q string) error {
+	t.Helper()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, q); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func TestAnEmergencyPromotion(t *testing.T) {
@@ -576,6 +600,9 @@ func TestAnEmergencyPromotion(t *testing.T) {
 	appAgain := open(t, func() string { u, _ := c.home.URL(); return u }())
 	if _, err := appAgain.ExecContext(ctx, `UPDATE app_settings SET value = '"x"' WHERE key = 'test.lost'`); err == nil {
 		t.Fatal("the fenced old home took a write")
+	}
+	if err := writeTx(ctx, t, appAgain, `UPDATE app_settings SET value = '"x"' WHERE key = 'test.lost'`); err == nil {
+		t.Fatal("the fenced old home took a write in a READ WRITE transaction")
 	}
 	slot := Machine{ID: b.id}.Slot()
 	aside, err := KeptAside(ctx, adb, slot, slot, done.CutLSN)

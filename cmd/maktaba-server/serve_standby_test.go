@@ -290,3 +290,44 @@ func TestTheOldHomeReportsWhatItKeptAside(t *testing.T) {
 		t.Fatalf("a sent report was sent again: %v", err)
 	}
 }
+
+// A standby takes over only from a whole copy that was current when the home was last
+// heard (on the home's clock): not one still copying, nor one long behind.
+func TestAnEmergencyNeedsAWholeCurrentCopy(t *testing.T) {
+	dir := t.TempDir()
+	seen := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	at := func(d time.Duration) *time.Time { v := seen.Add(d); return &v }
+	whole := nodecopy.Status{Tables: 140, Ready: 140, AppliedAt: at(-time.Minute)}
+	if got := copyCurrent(whole, dir); got != emergencyCopyBehind {
+		t.Fatalf("the home never heard: %q", got)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "home-last-answered"), []byte(seen.Format(time.RFC3339Nano)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		obs  nodecopy.Status
+		want string
+	}{
+		{whole, ""},
+		{nodecopy.Status{Tables: 140, Ready: 139, AppliedAt: at(0)}, emergencyCopyIncomplete},
+		{nodecopy.Status{}, emergencyCopyIncomplete},
+		{nodecopy.Status{Tables: 140, Ready: 140}, emergencyCopyBehind},
+		{nodecopy.Status{Tables: 140, Ready: 140, AppliedAt: at(-11 * time.Minute)}, emergencyCopyBehind},
+		{nodecopy.Status{Tables: 140, Ready: 140, AppliedAt: at(30 * time.Second)}, ""},
+	} {
+		if got := copyCurrent(tc.obs, dir); got != tc.want {
+			t.Fatalf("%+v: %q, want %q", tc.obs, got, tc.want)
+		}
+	}
+	// the home's clock is an hour ahead of this machine's: a change it stamped 50 minutes
+	// past this machine's moment was 10 minutes before the home's
+	if err := os.WriteFile(filepath.Join(dir, "home-clock.json"), []byte(`{"offset_ns": 3600000000000}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := copyCurrent(nodecopy.Status{Tables: 1, Ready: 1, AppliedAt: at(50 * time.Minute)}, dir); got != "" {
+		t.Fatalf("with the home's clock: %q", got)
+	}
+	if got := copyCurrent(nodecopy.Status{Tables: 1, Ready: 1, AppliedAt: at(-time.Minute)}, dir); got != emergencyCopyBehind {
+		t.Fatalf("an hour behind on the home's clock: %q", got)
+	}
+}
