@@ -639,7 +639,9 @@ don't append a line here; docs-only PRs are exempt.
   have sorted after it, making the release a downgrade); the app and its AppImage keep
   `0.3.0-rc.1`, the semver its updater compares with latest.json, and the .deb and the .rpm are
   signed for it. CI's Linux app gate now builds a pre-release (`v0.0.0-ci.N`) on every run,
-  through the same script.
+  through the same script. The server's own .deb and .rpm (nfpm) already carried
+  `0.3.0~rc.1` inside, `.rc.1` only in the files' names, as GitHub names them; CI's launcher
+  gate now checks that form and its dpkg and rpm order before the release.
 
 ## [0.2.0] - 2026-10-19
 
