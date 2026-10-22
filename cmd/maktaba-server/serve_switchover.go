@@ -1367,10 +1367,6 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-// becomeHome finishes a promotion: the home's key files in place, this machine's
-// Postgres the bundled home's (on the LAN, TLS from the cluster's CA), node.json moved
-// aside, every machine's notice of the new home sealed; answered with its addresses, then
-// it starts again as the home.
 // kitCA checks the database CA the machines will verify this home by, before the
 // promotion commits (a home they could not verify would have no machines): the kit's,
 // or this machine's own when the kit carries none; none needed when the database has no
@@ -1393,6 +1389,10 @@ func (s *switching) kitCA(kit *switchover.Kit) error {
 	return nil
 }
 
+// becomeHome finishes a promotion: the home's key files in place, this machine's
+// Postgres the bundled home's (on the LAN, TLS from the cluster's CA), node.json moved
+// aside, every machine's notice of the new home sealed; answered with its addresses, then
+// it starts again as the home.
 func (s *switching) becomeHome(ctx context.Context, db *sql.DB, kit *switchover.Kit, id string, term int64,
 	n config.NodeConfig, done switchover.Promoted) (newHome, error) {
 	// the home's key files
