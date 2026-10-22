@@ -32,6 +32,7 @@ h2,
   inset: 0;
   z-index: -1;
   background: var(--color-bg) var(--art-wide) center / cover no-repeat;
+  filter: var(--art-filter);
   pointer-events: none;
 }
 @media (max-width: 768px), (orientation: portrait) and (max-width: 1024px) {
