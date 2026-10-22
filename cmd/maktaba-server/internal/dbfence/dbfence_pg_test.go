@@ -13,8 +13,10 @@ import (
 )
 
 // A fenced database refuses the app's roles' writes, the ones made in a transaction that
-// says READ WRITE (lib/pq's) too, and gives every right back exactly as it was: the
-// owner's, a group's, one a migration took from that group, a table's grant option.
+// says READ WRITE (lib/pq's) too, and the tables' owner's DDL and grants (it may not give
+// its rights back to itself, nor a migration change the schema); then it gives every right
+// back exactly as it was: the owner's, a group's, one a migration took from that group, a
+// table's grant option.
 //
 // Opt-in: MAKTABA_TEST_PG_BIN, a Postgres 16 install.
 func TestAFencedDatabaseRefusesTheAppsWrites(t *testing.T) {
@@ -81,6 +83,22 @@ func TestAFencedDatabaseRefusesTheAppsWrites(t *testing.T) {
 			t.Fatalf("%s went through", q)
 		}
 	}
+	// the owner may not take its rights back, nor change the schema, in a transaction or not
+	for _, q := range []string{`GRANT INSERT ON videos TO CURRENT_USER`, `GRANT ALL ON ALL TABLES IN SCHEMA public TO maktaba_worker`,
+		`ALTER TABLE videos ADD COLUMN extra int`, `CREATE TABLE later (id int)`, `DROP TABLE users`,
+		`ALTER DEFAULT PRIVILEGES GRANT INSERT ON TABLES TO maktaba_worker`} {
+		if _, err := app.ExecContext(ctx, q); err == nil || !strings.Contains(err.Error(), "fenced") {
+			t.Fatalf("%s while fenced: %v", q, err)
+		}
+	}
+	tx, err = app.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.ExecContext(ctx, `GRANT INSERT ON videos TO CURRENT_USER`); err == nil {
+		t.Fatal("the owner gave itself its right back in a transaction")
+	}
+	_ = tx.Rollback()
 	var n int
 	if err := app.QueryRowContext(ctx, `SELECT count(*) FROM videos`).Scan(&n); err != nil {
 		t.Fatalf("the app role cannot read: %v", err)
@@ -88,8 +106,11 @@ func TestAFencedDatabaseRefusesTheAppsWrites(t *testing.T) {
 	if _, err := app.ExecContext(ctx, `SELECT count(*) FROM maktaba_fence.writes`); err == nil {
 		t.Fatal("the app role reads the fence's record")
 	}
-	// the superuser writes (a switch's own steps, a subscription's apply)
+	// the superuser writes (a switch's own steps, a subscription's apply), and changes the
+	// schema (a subscription's refresh)
 	exec(super, `INSERT INTO videos (title) VALUES ('kept')`)
+	exec(super, `CREATE TABLE super_made (id int)`)
+	exec(super, `DROP TABLE super_made`)
 
 	if err := Release(ctx, super); err != nil {
 		t.Fatal(err)
@@ -101,6 +122,7 @@ func TestAFencedDatabaseRefusesTheAppsWrites(t *testing.T) {
 		t.Fatalf("still taken: %v %v", taken, err)
 	}
 	exec(app, `INSERT INTO videos (title) VALUES ('again')`)
+	exec(app, `CREATE TABLE later (id int)`)
 	if err := Release(ctx, super); err != nil { // nothing taken: nothing to do
 		t.Fatal(err)
 	}
