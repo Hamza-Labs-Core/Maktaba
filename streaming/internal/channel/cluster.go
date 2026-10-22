@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -52,7 +54,8 @@ type nodeConfig struct {
 // %APPDATA%\Maktaba\node.json of a machine that joined before Epic 38, while it is
 // this PC's (its machine_id is this PC's MachineGuid) or no PC's yet; else
 // %LOCALAPPDATA%\Maktaba\node.json. One another PC claimed is skipped: this PC is not
-// that machine (the same rule as maktaba-server and the pipeline).
+// that machine (the same rule as maktaba-server and the pipeline). What a write that
+// could not finish left of the roaming node.json counts as it (NodeConfigFile).
 func NodeConfigPath(getenv func(string) string, goos, userHome string) string {
 	if p := strings.TrimSpace(getenv("MAKTABA_NODE_CONFIG")); p != "" {
 		if strings.HasPrefix(p, "~") {
@@ -68,7 +71,8 @@ func NodeConfigPath(getenv func(string) string, goos, userHome string) string {
 		if roaming == "" {
 			roaming = filepath.Join(userHome, "AppData", "Roaming")
 		}
-		if old := filepath.Join(roaming, "Maktaba", "node.json"); isFile(old) && !claimedElsewhere(old, getenv) {
+		old := filepath.Join(roaming, "Maktaba", "node.json")
+		if held := NodeConfigFile(old, os.ReadFile); isFile(held) && !claimedElsewhere(held, getenv) {
 			return old
 		}
 		local := getenv("LOCALAPPDATA")
@@ -87,6 +91,70 @@ func NodeConfigPath(getenv func(string) string, goos, userHome string) string {
 func isFile(p string) bool {
 	info, err := os.Stat(p)
 	return err == nil && !info.IsDir()
+}
+
+// legacyNodeLeftover matches node.json's leftovers as they were named before they
+// carried the file's name (cluster/config.py _LEGACY_LEFTOVER).
+var legacyNodeLeftover = regexp.MustCompile(`^\.node-(\d+-[0-9a-f]{8}\.bak|[a-z0-9_]{8}\.tmp)$`)
+
+// NodeConfigFile is the file that holds the node config at path, as the pipeline, its
+// one writer, reads it (cluster/config.py _source; maktaba-server's nodeConfigFile):
+// path, unless it is missing or holds no whole node config (a node id and a private
+// key; one that cannot be read is read as it is). Then what the pipeline's next load
+// puts in its place: a write that could not finish (ReplaceFileW failing half way)
+// leaves the old file under a backup name and the new one as a temp file beside it
+// (.<name>-<time>-<pid>-<hex>.bak and .tmp), and the newest whole backup is taken, else
+// the newest whole temp file. Else path.
+func NodeConfigFile(path string, readFile func(string) ([]byte, error)) string {
+	if b, err := readFile(path); (err == nil && wholeNodeConfig(b)) || (err != nil && !errors.Is(err, fs.ErrNotExist)) {
+		return path
+	}
+	dir, base := filepath.Dir(path), filepath.Base(path)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return path
+	}
+	for _, ext := range []string{".bak", ".tmp"} {
+		best, newest := "", time.Time{}
+		for _, e := range entries {
+			if filepath.Ext(e.Name()) != ext || !isNodeConfigLeftover(base, e.Name()) {
+				continue
+			}
+			p := filepath.Join(dir, e.Name())
+			info, err := e.Info()
+			if err != nil {
+				continue
+			}
+			if b, err := readFile(p); err != nil || !wholeNodeConfig(b) {
+				continue
+			}
+			if best == "" || info.ModTime().After(newest) {
+				best, newest = p, info.ModTime()
+			}
+		}
+		if best != "" {
+			return best
+		}
+	}
+	return path
+}
+
+// isNodeConfigLeftover: name is what a write of the node config base left beside it
+// (cluster/config.py _leftovers).
+func isNodeConfigLeftover(base, name string) bool {
+	if strings.HasPrefix(name, "."+base+"-") && (strings.HasSuffix(name, ".bak") || strings.HasSuffix(name, ".tmp")) {
+		return true
+	}
+	return base == "node.json" && legacyNodeLeftover.MatchString(name)
+}
+
+// wholeNodeConfig: b is a node config with its identity (not a cut file).
+func wholeNodeConfig(b []byte) bool {
+	var v struct {
+		NodeID     string `json:"node_id"`
+		PrivateKey string `json:"private_key"`
+	}
+	return json.Unmarshal(b, &v) == nil && strings.TrimSpace(v.NodeID) != "" && strings.TrimSpace(v.PrivateKey) != ""
 }
 
 // claimedElsewhere: the node config at path records another PC (its machine_id)
@@ -117,7 +185,7 @@ func claimedElsewhere(path string, getenv func(string) string) bool {
 func DetectRole(getenv func(string) string, goos, userHome string, readFile func(string) ([]byte, error)) (string, string) {
 	nodeID := ""
 	joined := false
-	if b, err := readFile(NodeConfigPath(getenv, goos, userHome)); err == nil {
+	if b, err := readFile(NodeConfigFile(NodeConfigPath(getenv, goos, userHome), readFile)); err == nil {
 		var nc nodeConfig
 		if json.Unmarshal(b, &nc) == nil {
 			nodeID = strings.TrimSpace(nc.NodeID)

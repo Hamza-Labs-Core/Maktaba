@@ -52,6 +52,50 @@ type JWKSCache struct {
 	// requests during a refresh window only fire one HTTP fetch
 	// (Story 8.1 AC-2 / test 5.2).
 	inflight sync.Mutex
+
+	// reload reads a static key set again (the machine's stream key file:
+	// NewKeyFileCache) when a token names a key it does not hold: the API
+	// makes the file as it starts, which may be after this process read it,
+	// and a first playback must not wait for the next look. At most every
+	// reloadEvery (reloadedAt, the last read, on the monotonic clock: a wall
+	// clock set back holds up no read); a request that finds a read under way
+	// waits for it (reloadMu), then looks again.
+	reload     func() bool
+	reloadMu   sync.Mutex
+	reloadedAt time.Time
+}
+
+// reloadEvery is the least time between two reloads of a static key set that
+// tokens naming an unknown key ask for.
+const reloadEvery = 100 * time.Millisecond
+
+// reloadOnMiss reads a static key set again, unless one was read less than
+// reloadEvery ago (maybe while this request waited for it): whether to look
+// again.
+func (c *JWKSCache) reloadOnMiss() bool {
+	if c.reload == nil {
+		return false
+	}
+	c.reloadMu.Lock()
+	defer c.reloadMu.Unlock()
+	if !c.reloadedAt.IsZero() && time.Since(c.reloadedAt) < reloadEvery {
+		return true
+	}
+	return c.reloadLocked()
+}
+
+// readKeys reads a static key set again now (a look of its own, not a miss's),
+// noting it as reloadOnMiss's reads are.
+func (c *JWKSCache) readKeys() bool {
+	c.reloadMu.Lock()
+	defer c.reloadMu.Unlock()
+	return c.reloadLocked()
+}
+
+// reloadLocked reads the static key set (reloadMu held).
+func (c *JWKSCache) reloadLocked() bool {
+	c.reloadedAt = time.Now()
+	return c.reload()
 }
 
 // NewJWKSCache builds a cache and immediately performs one fetch.
@@ -98,6 +142,12 @@ func (c *JWKSCache) Lookup(kid string) *rsa.PublicKey {
 	c.keysMu.RLock()
 	k := c.keys[kid]
 	c.keysMu.RUnlock()
+	if k == nil && c.reloadOnMiss() {
+		c.keysMu.RLock()
+		k = c.keys[kid]
+		c.keysMu.RUnlock()
+		return k
+	}
 	if k == nil {
 		go func() { _ = c.tryRefresh(context.Background()) }()
 	}
@@ -106,6 +156,13 @@ func (c *JWKSCache) Lookup(kid string) *rsa.PublicKey {
 
 // AnyKey is used in tests where the kid header is omitted.
 func (c *JWKSCache) AnyKey() *rsa.PublicKey {
+	if k := c.anyKey(); k != nil || !c.reloadOnMiss() {
+		return k
+	}
+	return c.anyKey()
+}
+
+func (c *JWKSCache) anyKey() *rsa.PublicKey {
 	c.keysMu.RLock()
 	defer c.keysMu.RUnlock()
 	for _, k := range c.keys {

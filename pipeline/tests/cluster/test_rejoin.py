@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import io
+import os
+import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -44,6 +46,27 @@ def test_rejoin_starts_over_after_a_confirmation(
     # --yes skips the question
     third = _join(url, path, io.StringIO(), rejoin=True, assume_yes=True)
     assert third.node_id not in (first.node_id, again.node_id)
+
+
+def test_rejoin_forgets_what_a_failed_write_left(
+    fake: tuple[FakeHome, str],  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    """A re-join starts over even beside what a write that could not finish left of the
+    old identity (a load would put it back): it goes with node.json, and the old config
+    is kept as node.json.bak from the file that held it."""
+    _, url = fake
+    path = tmp_path / "node.json"
+    first = _join(url, path, io.StringIO())
+    stamp = f"{int(time.time()) - 5}-4242-0badf00d"
+    stale = path.with_name(f".node.json-{stamp}.bak")
+    os.replace(path, stale)  # node.json under a backup name, a write still in its minute
+    path.with_name(f".node.json-{stamp}.tmp").write_text(stale.read_text())
+    again = _join(url, path, io.StringIO(), rejoin=True, assume_yes=True)
+    assert again.node_id != first.node_id
+    assert node_config.load(path.with_name("node.json.bak")) == first
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["node.json", "node.json.bak"]
+    assert node_config.load(path) == again
 
 
 def test_a_config_without_the_cluster_key_points_at_rejoin(

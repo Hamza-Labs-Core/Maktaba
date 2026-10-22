@@ -70,28 +70,56 @@ func ReadKeyFile(path string) (string, *rsa.PublicKey, error) {
 	return hex.EncodeToString(sum[:])[:16], pub, nil
 }
 
+// replacedKeyKeep is how long the key a replaced stream key file held still
+// verifies: the URLs it signed live that long at most (the API caps them at a
+// day, signedurl.DefaultMaxTTL). A variable for the tests.
+var replacedKeyKeep = 24 * time.Hour
+
 // NewKeyFileCache is a key cache holding the machine's stream key. The API
-// creates the file on its first start, which may come after this process
-// starts: until the file reads, every signed URL is refused and the file is
-// retried every interval (until ctx ends).
+// creates the file as it starts, which may come after this process starts: a
+// signed URL naming a key not read yet reads the file again at once (at most
+// every reloadEvery), so the first playback after a start is not refused, and
+// until the file reads it is also retried every interval (until ctx ends). A
+// file replaced since holds a new key: the one it held before verifies the URLs
+// it signed for replacedKeyKeep more, then is dropped.
 func NewKeyFileCache(ctx context.Context, path string, interval time.Duration, onLoad func(kid string)) *JWKSCache {
 	c := &JWKSCache{keys: map[string]*rsa.PublicKey{}, refresh: interval}
 	if interval <= 0 {
 		interval = 2 * time.Second
 	}
+	type held struct {
+		kid string
+		pub *rsa.PublicKey
+	}
+	// the key read last, and the one the file held before it, until when (the
+	// reads are under the cache's reloadMu: one at a time)
+	var cur, before held
+	var beforeUntil time.Time
 	load := func() bool {
 		kid, pub, err := ReadKeyFile(path)
 		if err != nil {
 			c.failures.Add(1)
 			return false
 		}
-		c.Set(map[string]*rsa.PublicKey{kid: pub})
-		if onLoad != nil {
+		if cur.kid != "" && cur.kid != kid {
+			before, beforeUntil = cur, time.Now().Add(replacedKeyKeep)
+			// read again once it is past: that read drops it
+			time.AfterFunc(replacedKeyKeep, func() { c.readKeys() })
+		}
+		keys := map[string]*rsa.PublicKey{kid: pub}
+		if before.kid != "" && before.kid != kid && time.Now().Before(beforeUntil) {
+			keys[before.kid] = before.pub
+		}
+		c.Set(keys)
+		if cur.kid != kid && onLoad != nil {
 			onLoad(kid)
 		}
+		cur = held{kid: kid, pub: pub}
 		return true
 	}
-	if load() {
+	// a token naming a key not read yet reads the file again at once (Lookup)
+	c.reload = load
+	if c.readKeys() {
 		return c
 	}
 	go func() {
@@ -102,7 +130,7 @@ func NewKeyFileCache(ctx context.Context, path string, interval time.Duration, o
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				if load() {
+				if c.readKeys() {
 					return
 				}
 			}

@@ -49,21 +49,23 @@ suffix ⇒ `beta`), overridable with `MAKTABA_UPDATE_CHANNEL`. Switching
 
 ## Desktop updater signing (one-time)
 
-Tauri's updater requires a key pair. The **public** key is committed in
-`apps/desktop/src-tauri/tauri.conf.json`; the **private** key lives only
-as CI secrets.
+Tauri's updater requires a key pair. Both halves live in the repository
+settings, never in a commit: the **private** key and its passphrase are
+the secrets `TAURI_SIGNING_PRIVATE_KEY` and
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, the **public** key is the variable
+`TAURI_UPDATER_PUBKEY`. `desktop-release.yml` stamps the variable into
+`plugins.updater.pubkey` at build time, so the committed
+`apps/desktop/src-tauri/tauri.conf.json` keeps the placeholder
+`REPLACE_WITH_PUBKEY`.
 
 ```bash
 # On a trusted machine, generate the key pair:
 cd apps/desktop
 pnpm exec tauri signer generate -w ~/.tauri/maktaba.key
 
-#  → prints a PUBLIC key   → paste into tauri.conf.json:
-#       plugins.updater.pubkey   (replace REPLACE_WITH_PUBKEY)
-#  → writes the PRIVATE key → add as the repo secret:
-#       TAURI_SIGNING_PRIVATE_KEY
-#    and its passphrase as:
-#       TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+#  → prints the PUBLIC key  → repository variable TAURI_UPDATER_PUBKEY
+#  → writes the PRIVATE key → repository secret TAURI_SIGNING_PRIVATE_KEY
+#    and its passphrase as:   TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 ```
 
 `desktop-release.yml` reads those secrets so `tauri build` signs each
@@ -73,9 +75,18 @@ and checks, attaches the bundles that passed to the Release and writes
 them. A fork **without** the secrets still produces unsigned installers
 and no `latest.json` — the build stays green.
 
-**Key rotation:** ship one release signed by both the old and new keys
-before swapping the committed `pubkey`, so already-installed apps can
-still verify the transition release.
+The private key without the variable fails the build, since no app could
+verify its updates. An app checks each update against the public key it
+was built with. So apps update themselves from the first tagged release
+built with the key on; an app installed from an earlier release carries
+the placeholder, can verify no update, and moves to a signed release by
+one download by hand.
+
+**Key rotation:** build one release with the new public key in
+`TAURI_UPDATER_PUBKEY` while the secrets still hold the old private key.
+Installed apps verify that release with the old key, and once installed
+it verifies the next ones with the new key. Then put the new private key
+in the secrets.
 
 > Note: the updater signature is independent of OS code-signing
 > (Apple notarisation / Windows Authenticode), which remains the deferred
