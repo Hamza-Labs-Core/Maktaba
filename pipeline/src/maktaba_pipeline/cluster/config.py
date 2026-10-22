@@ -235,22 +235,114 @@ _claim_failed: set[str] = set()
 
 def _restrict_to_user(path: Path) -> None:
     """Windows: the file holds the home's database password; chmod means nothing there,
-    so its ACL is cut to the current user (inheritance off). Best effort: a failure is
-    logged, the file stays where the OS put it (the profile directory is per user)."""
-    import subprocess
-
-    user = os.environ.get("USERNAME")
-    if not user:
+    so its DACL is set to the user this process runs as and nothing else, inheritance
+    off (as maktaba-server's restrictToUser sets the keys'). The whole DACL is replaced:
+    removing inherited entries is not enough, since Python can create a temp file with
+    explicit ones (SYSTEM, Administrators). Best effort: a failure is logged, the file
+    stays where the OS put it (the profile directory is per user)."""
+    if sys.platform != "win32":
         return
     try:
-        subprocess.run(
-            ["icacls", str(path), "/inheritance:r", "/grant:r", f"{user}:F"],
-            check=True, capture_output=True, timeout=15,
-        )  # fmt: skip
-    except (OSError, subprocess.SubprocessError) as exc:
+        _set_user_only_dacl(str(path))
+    except OSError as exc:
         from ..log import get_logger
 
         get_logger().warning("node_config_acl_failed", path=str(path), error=str(exc))
+
+
+def _set_user_only_dacl(path: str) -> None:
+    """SetNamedSecurityInfoW with a protected DACL that grants the process's user, by
+    its SID, full control, and no one else."""
+    if sys.platform != "win32":
+        raise OSError("a Windows call")
+    import ctypes
+    from ctypes import wintypes
+
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
+    advapi32.OpenProcessToken.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.HANDLE),
+    ]
+    advapi32.GetTokenInformation.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    advapi32.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
+    advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.c_void_p,
+    ]
+    advapi32.GetSecurityDescriptorDacl.argtypes = [
+        ctypes.c_void_p,
+        ctypes.POINTER(wintypes.BOOL),
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(wintypes.BOOL),
+    ]
+    advapi32.SetNamedSecurityInfoW.argtypes = [
+        wintypes.LPWSTR,
+        ctypes.c_int,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+    ]
+    advapi32.SetNamedSecurityInfoW.restype = wintypes.DWORD
+
+    def failed() -> OSError:
+        return ctypes.WinError(ctypes.get_last_error())
+
+    token_query, token_user = 0x0008, 1
+    token = wintypes.HANDLE()
+    if not advapi32.OpenProcessToken(
+        kernel32.GetCurrentProcess(), token_query, ctypes.byref(token)
+    ):
+        raise failed()
+    try:
+        size = wintypes.DWORD()
+        advapi32.GetTokenInformation(token, token_user, None, 0, ctypes.byref(size))
+        info = ctypes.create_string_buffer(size.value)
+        if not advapi32.GetTokenInformation(token, token_user, info, size, ctypes.byref(size)):
+            raise failed()
+        user_sid = ctypes.cast(info, ctypes.POINTER(ctypes.c_void_p))[0]  # TOKEN_USER.User.Sid
+        sid_text = wintypes.LPWSTR()
+        if not advapi32.ConvertSidToStringSidW(user_sid, ctypes.byref(sid_text)):
+            raise failed()
+        sid = sid_text.value
+        kernel32.LocalFree(sid_text)
+    finally:
+        kernel32.CloseHandle(token)
+
+    descriptor = ctypes.c_void_p()
+    if not advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+        f"D:P(A;;FA;;;{sid})", 1, ctypes.byref(descriptor), None
+    ):
+        raise failed()
+    try:
+        present, defaulted, dacl = wintypes.BOOL(), wintypes.BOOL(), ctypes.c_void_p()
+        if not advapi32.GetSecurityDescriptorDacl(
+            descriptor, ctypes.byref(present), ctypes.byref(dacl), ctypes.byref(defaulted)
+        ):
+            raise failed()
+        se_file_object, dacl_info, protected_dacl_info = 1, 0x00000004, 0x80000000
+        err = advapi32.SetNamedSecurityInfoW(
+            path, se_file_object, dacl_info | protected_dacl_info, None, None, dacl, None
+        )
+        if err:
+            raise ctypes.WinError(err)
+    finally:
+        kernel32.LocalFree(descriptor)
 
 
 def _replace_file(path: Path, tmp: Path, backup: Path) -> None:

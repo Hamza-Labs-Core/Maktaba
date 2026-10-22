@@ -225,7 +225,11 @@ def test_windows_claim_survives_replacement_not_moved(
     assert json.loads(roaming.read_text(encoding="utf-8")) == {**_JOINED, "machine_id": "pc-a"}
     aces = _icacls(roaming)
     user = os.environ.get("USERNAME", "")
-    assert len(aces) == 1 and user and user.lower() in aces[0].lower(), (aces, user, warnings.events)
+    assert len(aces) == 1 and user and user.lower() in aces[0].lower(), (
+        aces,
+        user,
+        warnings.events,
+    )
     assert sorted(p.name for p in roaming.parent.iterdir()) == ["node.json"]
     assert warnings.events == []
 
