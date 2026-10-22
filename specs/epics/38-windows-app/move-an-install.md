@@ -32,7 +32,8 @@ process are never counted as another install's, wherever that install's folder i
 An install on the default paths from before Epic 38 is one install whether or not a newer command
 copied its `server.toml` and keys from `%APPDATA%\Maktaba` into `%LOCALAPPDATA%\Maktaba` (story
 38.1): the copy is read when there is one, the original otherwise. Its node config is the machine's
-one file, which the app reads where it is. Its large state is read where it keeps it
+one file, which the app reads where it is, unless another PC has claimed it (a roaming profile,
+38.1's `machine_id`): this PC is then not that node, and the plan says so. Its large state is read where it keeps it
 (`Config.StateDirOutsideApp`).
 
 ## The setup screen
