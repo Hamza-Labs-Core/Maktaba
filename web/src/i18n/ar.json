@@ -72,6 +72,7 @@
   "player.pip": "صورة داخل صورة",
   "player.captions": "الترجمات",
   "player.subtitleSize": "حجم الترجمة",
+  "player.diskFull": "لا توجد مساحة كافية على قرص الخادم لتجهيز هذا الفيديو. أفرغ بعض المساحة هناك ثم أعد المحاولة.",
   "player.shortcuts": "اختصارات لوحة المفاتيح",
   "search.mode": "الوضع",
   "search.mode.hybrid": "هجين",

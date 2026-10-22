@@ -206,6 +206,12 @@ func ChildEnv(role Role, cfg config.Config) []string {
 			add("MAKTABA_CACHE_ROOT", filepath.Join(cfg.CacheDir(), "streaming"))
 		}
 		add("MAKTABA_STREAMING_HTTP_ADDR", cfg.Server.StreamAddr)
+		// [media] transcode_min_free_gib: what the video transcodes leave free on
+		// that disk (0: the streaming role's automatic floor; an operator's own
+		// is kept)
+		if cfg.Media.TranscodeMinFreeGiB != 0 && os.Getenv("MAKTABA_TRANSCODE_MIN_FREE_GIB") == "" {
+			add("MAKTABA_TRANSCODE_MIN_FREE_GIB", strconv.Itoa(cfg.Media.TranscodeMinFreeGiB))
+		}
 		add("MAKTABA_ADMIN_ADDR", streamingAdmin(cfg))
 		add("MAKTABA_STREAMING_GRPC_ADDR", streamingGRPC(cfg))
 		// Epic 33 story 33.1: the streaming role is the front door of the TV

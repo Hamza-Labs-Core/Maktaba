@@ -160,6 +160,35 @@ func TestStreamingCacheUnderDataDir(t *testing.T) {
 	}
 }
 
+// TestStreamingTranscodeFloor: server.toml's [media] transcode_min_free_gib reaches the
+// streaming role (only it); 0 leaves its automatic floor, and an operator's own
+// environment is kept.
+func TestStreamingTranscodeFloor(t *testing.T) {
+	prev := nodeConfig
+	t.Cleanup(func() { nodeConfig = prev })
+	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
+	var cfg config.Config
+	cfg.Server.DataDir = t.TempDir()
+	if v, ok := envMap(ChildEnv(RoleStreaming, cfg))["MAKTABA_TRANSCODE_MIN_FREE_GIB"]; ok {
+		t.Fatalf("unset: %q", v)
+	}
+	cfg.Media.TranscodeMinFreeGiB = 8
+	if v := envMap(ChildEnv(RoleStreaming, cfg))["MAKTABA_TRANSCODE_MIN_FREE_GIB"]; v != "8" {
+		t.Fatalf("8 GiB: %q", v)
+	}
+	if _, ok := envMap(ChildEnv(RoleAPI, cfg))["MAKTABA_TRANSCODE_MIN_FREE_GIB"]; ok {
+		t.Fatal("only streaming gets the transcode floor")
+	}
+	cfg.Media.TranscodeMinFreeGiB = -1
+	if v := envMap(ChildEnv(RoleStreaming, cfg))["MAKTABA_TRANSCODE_MIN_FREE_GIB"]; v != "-1" {
+		t.Fatalf("none: %q", v)
+	}
+	t.Setenv("MAKTABA_TRANSCODE_MIN_FREE_GIB", "50")
+	if v, ok := envMap(ChildEnv(RoleStreaming, cfg))["MAKTABA_TRANSCODE_MIN_FREE_GIB"]; ok {
+		t.Fatalf("overrode the operator's floor with %q", v)
+	}
+}
+
 // TestChildEnvStateDirs (Epic 36 story 36.2): models, the semantic-search index and
 // the streaming cache sit in the install's state root; on a Mac that is the parent of
 // data_dir (~/Library/Application Support/Maktaba), elsewhere data_dir itself.

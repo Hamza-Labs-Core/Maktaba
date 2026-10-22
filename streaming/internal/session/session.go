@@ -60,6 +60,9 @@ const (
 	ReasonAdminEvict        CloseReason = "admin-evict"
 	ReasonHWFailedSWFailed  CloseReason = "hw_failed_software_failed"
 	ReasonStoreInsertFailed CloseReason = "store-insert-failed"
+	// ReasonTranscodeFailed: its transcode ended short of the video's end
+	// while it was open; the player's reopen gets a new one.
+	ReasonTranscodeFailed CloseReason = "transcode-failed"
 )
 
 // Row is the in-memory shape mirroring the streaming_sessions row.
@@ -82,6 +85,32 @@ type Row struct {
 	// Nil for direct/remux sessions. Owned by the session store —
 	// the reaper kills it on idle.
 	Transcoder Transcoder
+
+	// SlotHold is the transcode slot the session holds ("": none), given
+	// back when its transcode ends or it closes.
+	SlotHold string
+}
+
+// Ender is a Transcoder that tells how its transcode ended (the ffmpeg
+// package's).
+type Ender interface {
+	Ended() bool    // over: no encoder runs, or will
+	Finished() bool // over, having encoded the whole source
+}
+
+// TranscodeFinished reports whether the session's transcode encoded the whole
+// source (its playlist reaches the video's end).
+func (r *Row) TranscodeFinished() bool {
+	e, ok := r.Transcoder.(Ender)
+	return ok && e.Finished()
+}
+
+// TranscodeCut reports whether the session's transcode is over short of the
+// video's end: stopped (the session closed, or the reaper) or failed. Its
+// playlist stops there, whatever ffmpeg wrote at its end.
+func (r *Row) TranscodeCut() bool {
+	e, ok := r.Transcoder.(Ender)
+	return ok && e.Ended() && !e.Finished()
 }
 
 // Transcoder is the small surface the reaper needs to terminate an

@@ -142,7 +142,7 @@ func TestOpenSession_SpawnFailureAborts(t *testing.T) {
 }
 
 // Too little free on the cache's disk: no transcode starts, no slot or
-// session is held.
+// session is held, and the API hears why (not "busy").
 func TestOpenSession_NoRoomRefusesTranscode(t *testing.T) {
 	srv, row, _ := transcodeSetup(t)
 	orch := &fakeOrchestrator{}
@@ -152,8 +152,8 @@ func TestOpenSession_NoRoomRefusesTranscode(t *testing.T) {
 		_, err := srv.OpenSession(context.Background(), OpenSessionRequest{
 			VideoID: row.VideoID.String(), UserID: uuid.New().String(), ClientProfile: "generic",
 		})
-		if !errors.Is(err, ErrResourceExhausted) {
-			t.Fatalf("err=%v want ErrResourceExhausted", err)
+		if !errors.Is(err, ErrNoDiskSpace) {
+			t.Fatalf("err=%v want ErrNoDiskSpace", err)
 		}
 	}
 	if all, _ := srv.Sessions.List(context.Background()); len(all) != 0 || orch.lastJob.SessionID != "" {
@@ -165,6 +165,90 @@ func TestOpenSession_NoRoomRefusesTranscode(t *testing.T) {
 		VideoID: row.VideoID.String(), UserID: uuid.New().String(), ClientProfile: "generic",
 	}); err != nil || orch.lastJob.SessionID == "" {
 		t.Fatalf("with room: %v, job %+v", err, orch.lastJob)
+	}
+}
+
+// A transcode slot comes back when its session closes (the API's close, the
+// reaper's), and when the open fails after taking it: more sessions than
+// slots, opened and closed one after another, all transcode.
+func TestOpenSession_SlotsComeBack(t *testing.T) {
+	ctx := context.Background()
+	srv, row, _ := transcodeSetup(t)
+	slotCount := srv.Allocator.MaxConcurrent()
+	orch := &fakeOrchestrator{}
+	srv.Transcode = orch
+	open := func() OpenSessionResponse {
+		t.Helper()
+		resp, err := srv.OpenSession(ctx, OpenSessionRequest{VideoID: row.VideoID.String(), UserID: uuid.New().String(),
+			ClientProfile: "generic"})
+		if err != nil || resp.Mode != string(session.ModeTranscode) {
+			t.Fatalf("open: %v, mode %q (slots used %d of %d)", err, resp.Mode, srv.Allocator.Used(), slotCount)
+		}
+		return resp
+	}
+	for i := 0; i < 3*slotCount; i++ {
+		if err := srv.CloseSession(ctx, open().SessionID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if used := srv.Allocator.Used(); used != 0 {
+		t.Fatalf("after %d closed sessions %d slots are held", 3*slotCount, used)
+	}
+	// the reaper: an idle session's close stops its transcode, which gives
+	// the slot back
+	reaper := session.NewReaper(srv.Sessions, session.ReaperConfig{IdleAfter: time.Minute})
+	reaper.SetClock(func() time.Time { return time.Now().Add(time.Hour) })
+	for i := 0; i < slotCount; i++ {
+		open()
+	}
+	if err := reaper.Sweep(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if used := srv.Allocator.Used(); used != 0 {
+		t.Fatalf("after the reaper %d slots are held", used)
+	}
+	// a spawn that fails gives back the slot it took
+	orch.failErr = errors.New("ffmpeg: no such encoder")
+	for i := 0; i < 3*slotCount; i++ {
+		if _, err := srv.OpenSession(ctx, OpenSessionRequest{VideoID: row.VideoID.String(), UserID: uuid.New().String(),
+			ClientProfile: "generic"}); !errors.Is(err, ErrFailedPrecondition) {
+			t.Fatalf("failed spawn: %v", err)
+		}
+	}
+	if used := srv.Allocator.Used(); used != 0 {
+		t.Fatalf("after failed spawns %d slots are held", used)
+	}
+}
+
+// A player opening the video again because its transcode died (its playlist
+// answered 410) gets a new session and transcode, not the dead one; while the
+// transcode runs, the same session.
+func TestOpenSession_ReopenAfterADeadTranscode(t *testing.T) {
+	ctx := context.Background()
+	srv, row, _ := transcodeSetup(t)
+	orch := &fakeOrchestrator{}
+	srv.Transcode = orch
+	user := uuid.New().String()
+	req := OpenSessionRequest{VideoID: row.VideoID.String(), UserID: user, ClientProfile: "generic", StartSec: 600}
+	first, err := srv.OpenSession(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again, err := srv.OpenSession(ctx, req); err != nil || again.SessionID != first.SessionID {
+		t.Fatalf("while it runs: %v, %s, want %s", err, again.SessionID, first.SessionID)
+	}
+	id, _ := uuid.Parse(first.SessionID)
+	old, _, _ := srv.Sessions.Get(ctx, id)
+	_ = old.Transcoder.Stop(ctx) // dies: over short of the end, the session still open
+	again, err := srv.OpenSession(ctx, req)
+	if err != nil || again.SessionID == first.SessionID {
+		t.Fatalf("after its transcode died: %v, %s", err, again.SessionID)
+	}
+	if old, _, _ = srv.Sessions.Get(ctx, id); old.ClosedAt == nil || old.ClosedReason != session.ReasonTranscodeFailed {
+		t.Errorf("the dead session: closed %v, %q", old.ClosedAt, old.ClosedReason)
+	}
+	if orch.calls != 2 {
+		t.Errorf("transcodes started %d, want 2", orch.calls)
 	}
 }
 

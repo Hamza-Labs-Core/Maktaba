@@ -92,7 +92,9 @@ func TestManifestHandler_ServeRenditionIndex_StartsAtTheBeginning(t *testing.T) 
 	if err := os.WriteFile(filepath.Join(v0, "index.m3u8"), []byte(index), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	h := &ManifestHandler{Sessions: &fakeSessionStore{}, Layout: layout}
+	h := &ManifestHandler{Sessions: &fakeSessionStore{rows: map[uuid.UUID]*session.Row{
+		sessID: {ID: sessID, Format: session.FormatHLS, Mode: session.ModeTranscode},
+	}}, Layout: layout}
 	r := chi.NewRouter()
 	r.With(injectSubject(sessID.String())).Get("/stream/{session_id}/{rendition}/index.m3u8", h.ServeRenditionIndex)
 	rec := httptest.NewRecorder()
@@ -101,6 +103,62 @@ func TestManifestHandler_ServeRenditionIndex_StartsAtTheBeginning(t *testing.T) 
 	if rec.Code != 200 || !strings.HasPrefix(body, "#EXTM3U\n#EXT-X-START:TIME-OFFSET=0\n#EXT-X-VERSION:6\n") ||
 		!strings.Contains(body, "seg-1.ts?sig=tok\n") {
 		t.Fatalf("status=%d body=%s", rec.Code, body)
+	}
+}
+
+// fakeTranscode is a session's transcode in one of its states.
+type fakeTranscode struct{ active, ended, finished bool }
+
+func (f fakeTranscode) Stop(context.Context) error { return nil }
+func (f fakeTranscode) PID() int                   { return 0 }
+func (f fakeTranscode) Active() bool               { return f.active }
+func (f fakeTranscode) Ended() bool                { return f.ended }
+func (f fakeTranscode) Finished() bool             { return f.finished }
+
+// A playlist or MPD reload: activity while the transcode runs (a paused
+// player keeps its session), not once it is over; a transcode over short of
+// the end (stopped, failed) answers 410 so the player opens the video again,
+// never a playlist ending there; a finished one's is served.
+func TestManifestHandler_PlaylistReloads(t *testing.T) {
+	layout := cache.New(t.TempDir())
+	_ = layout.EnsureTiers()
+	for name, c := range map[string]struct {
+		tr      fakeTranscode
+		code    int
+		touched bool
+	}{
+		"running":  {fakeTranscode{active: true}, 200, true},
+		"finished": {fakeTranscode{ended: true, finished: true}, 200, false},
+		"stopped":  {fakeTranscode{ended: true}, 410, false},
+	} {
+		for _, format := range []session.Format{session.FormatHLS, session.FormatDASH} {
+			id := uuid.New()
+			dir := layout.HLSDir(id.String())
+			_ = os.MkdirAll(filepath.Join(dir, "v0"), 0o755)
+			_ = os.WriteFile(filepath.Join(dir, "v0", "index.m3u8"), []byte("#EXTM3U\n#EXT-X-PLAYLIST-TYPE:EVENT\nseg-0.ts\n#EXT-X-ENDLIST\n"), 0o644)
+			_ = os.WriteFile(filepath.Join(dir, "master.m3u8"), []byte("#EXTM3U\nv0/index.m3u8\n"), 0o644)
+			_ = os.WriteFile(filepath.Join(dir, "manifest.mpd"), []byte(`<MPD type="static"></MPD>`), 0o644)
+			store := &fakeSessionStore{rows: map[uuid.UUID]*session.Row{
+				id: {ID: id, Format: format, Mode: session.ModeTranscode, Transcoder: c.tr},
+			}}
+			h := &ManifestHandler{Sessions: store, Layout: layout}
+			r := chi.NewRouter()
+			r.With(injectSubject(id.String())).Get("/stream/{session_id}/manifest.m3u8", h.ServeMaster)
+			r.With(injectSubject(id.String())).Get("/stream/{session_id}/manifest.mpd", h.ServeMaster)
+			r.With(injectSubject(id.String())).Get("/stream/{session_id}/{rendition}/index.m3u8", h.ServeRenditionIndex)
+			paths := []string{"/manifest.mpd"}
+			if format == session.FormatHLS {
+				paths = []string{"/manifest.m3u8", "/v0/index.m3u8"}
+			}
+			for _, p := range paths {
+				store.touched = nil
+				rec := httptest.NewRecorder()
+				r.ServeHTTP(rec, httptest.NewRequest("GET", "/stream/"+id.String()+p, nil))
+				if rec.Code != c.code || (store.touched[id] != time.Time{}) != c.touched {
+					t.Errorf("%s %s: %d, touched %v; want %d, %v", name, p, rec.Code, store.touched, c.code, c.touched)
+				}
+			}
+		}
 	}
 }
 

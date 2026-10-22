@@ -23,7 +23,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
-import { api, ApiError, PROBLEM_VIDEO_UNAVAILABLE_OFFLINE } from "../lib/api";
+import {
+  api,
+  ApiError,
+  PROBLEM_INSUFFICIENT_STORAGE,
+  PROBLEM_VIDEO_UNAVAILABLE_OFFLINE,
+} from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { createWatchSession } from "../lib/watchSession";
 import { attachVod, carrySig } from "@maktaba/tvplayer";
@@ -34,6 +39,8 @@ interface OpenSessionResponse {
   manifest_url?: string;
   direct_url?: string;
   expires_at: string;
+  /** The video's length in the catalogue (absent when unknown). */
+  duration_sec?: number;
   /** Sidecar subtitle tracks, when the server lists them. */
   subtitles?: SubtitleTrack[];
 }
@@ -68,6 +75,16 @@ function isControlTarget(el: EventTarget | null): boolean {
   return Boolean(el.closest("input, select, textarea, button, a, [contenteditable='true']"));
 }
 
+/** Reopens of a stream gone within GONE_WINDOW_MS before the error screen. */
+const GONE_REOPENS = 3;
+const GONE_WINDOW_MS = 2 * 60_000;
+
+/** At the video's end: within 2% of its length, 5 s at least. */
+export function nearEnd(position: number, duration: number): boolean {
+  if (!Number.isFinite(duration) || duration <= 0) return false;
+  return position >= duration - Math.max(5, duration * 0.02);
+}
+
 export function VideoPlayer() {
   const { videoId } = useParams();
   const [params] = useSearchParams();
@@ -89,6 +106,9 @@ export function VideoPlayer() {
   // position playback had reached when a signed URL had to be refreshed.
   const resumeRef = useRef<{ at: number; play: boolean } | null>(null);
   const refreshingRef = useRef(false);
+  // When the stream went away and was opened again: past GONE_REOPENS within
+  // GONE_WINDOW_MS, the error screen instead of a reopen loop.
+  const goneRef = useRef<number[]>([]);
 
   const tParam = Number(params.get("t"));
   const startAt = Number.isFinite(tParam) && tParam > 0 ? tParam : 0;
@@ -100,7 +120,9 @@ export function VideoPlayer() {
             message:
               e.problem.type === PROBLEM_VIDEO_UNAVAILABLE_OFFLINE
                 ? t("homeOffline.video")
-                : e.problem.title,
+                : e.problem.type === PROBLEM_INSUFFICIENT_STORAGE
+                  ? t("player.diskFull")
+                  : e.problem.title,
             status: e.status,
           }
         : { message: t("common.error") },
@@ -189,7 +211,13 @@ export function VideoPlayer() {
       beat();
     };
     const onPause = () => beat();
-    const onEnded = () => beat(true);
+    // Completed only at the video's real end (the catalogue's length): a stream
+    // that stopped short of it ends early. With no length known at all, the end
+    // of playback is all there is to go by.
+    const onEnded = () => {
+      const length = session.duration_sec || el.duration;
+      beat(!(length > 0) || nearEnd(el.currentTime, length));
+    };
     const onLoaded = () => {
       setDuration(el.duration || 0);
     };
@@ -240,12 +268,17 @@ export function VideoPlayer() {
     }
     let cancelled = false;
     // Expired signed URL: reopen the session (the server hands back the same
-    // session with a freshly signed URL) and re-attach where we were.
+    // session with a freshly signed URL) and re-attach where we were. A stream
+    // gone (its transcode stopped short, its session cleaned up) the same way:
+    // the server opens a new one.
     const refresh = (position: number, wasPlaying: boolean) => {
       if (refreshingRef.current) return;
       refreshingRef.current = true;
       api
-        .post<OpenSessionResponse>("/api/stream/sessions", { video_id: videoId })
+        .post<OpenSessionResponse>("/api/stream/sessions", {
+          video_id: videoId,
+          start_sec: Math.floor(position),
+        })
         .then((s) => {
           if (cancelled) {
             // Unmounted / navigated away while reopening: close what we got.
@@ -269,10 +302,21 @@ export function VideoPlayer() {
           refreshingRef.current = false;
         });
     };
+    const gone = (position: number, wasPlaying: boolean) => {
+      const now = Date.now();
+      const recent = goneRef.current.filter((t) => now - t < GONE_WINDOW_MS);
+      if (recent.length >= GONE_REOPENS) {
+        if (!cancelled) setPlayError(true);
+        return;
+      }
+      goneRef.current = [...recent, now];
+      refresh(position, wasPlaying);
+    };
     const expiresAt = Date.parse(session.expires_at);
     const h = attachVod(el, session.manifest_url, {
       startAt: at,
       onAuthError: refresh,
+      onGone: gone,
       onFatal: () => {
         if (!cancelled) setPlayError(true);
       },

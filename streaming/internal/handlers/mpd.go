@@ -21,9 +21,9 @@ const availabilityFile = ".availability-start"
 // starts).
 const startMargin = time.Minute
 
-// finalUpdates is the margin before a finished transcode's MPD turns static:
-// a player updating it every minimumUpdatePeriod has had the whole timeline
-// (and, by its clock, every segment is available).
+// finalUpdates is how long a finished transcode's MPD stays dynamic before it
+// turns static: a player updating it every minimumUpdatePeriod has had the
+// whole timeline, every segment available.
 const finalUpdates = 15 * time.Second
 
 // mpdTimeFormat is the MPD's xs:dateTime as ffmpeg writes it.
@@ -47,17 +47,18 @@ var (
 //   - While ffmpeg runs, its MPD is dynamic, and a player starts its
 //     suggestedPresentationDelay before the live edge (no earlier than the
 //     first segment): the served delay reaches back past the transcode's
-//     start. Its availabilityStartTime is kept beside it (availabilityFile).
+//     start. Its availabilityStartTime is kept beside it (availabilityFile; a
+//     rerun's own replaces it).
 //   - When ffmpeg is done, its MPD turns static. A player that had it dynamic
 //     ends when it turns static (dash.js: DASH-IF IOP 4.6.4), after the
 //     segments of the timeline it last had that are available by then (its
 //     start plus each one's end): straight from ffmpeg's last dynamic MPD, or
 //     while the transcode is ahead of the clock, it would stop short. So once
-//     a player may have had it dynamic (the kept start), it stays dynamic (the
-//     kept start, the static MPD's timeline and mediaPresentationDuration,
-//     still updated) until every segment is available and the whole timeline
-//     has been out for finalUpdates. Then, and for an MPD nobody had dynamic,
-//     it is served static.
+//     a player may have had it dynamic (the kept start), it stays dynamic for
+//     finalUpdates, still updated, with the static MPD's whole timeline and
+//     mediaPresentationDuration and a start moved back so that every segment
+//     is available (the last one by the finish). Then, and for an MPD nobody
+//     had dynamic, it is served static: seeks anywhere, from the finish on.
 func transcodeMPD(data []byte, dir string, written, now time.Time) []byte {
 	loc := mpdTag.FindIndex(data)
 	if loc == nil {
@@ -89,10 +90,13 @@ func transcodeMPD(data []byte, dir string, written, now time.Time) []byte {
 		return data
 	}
 	if dynamic {
-		if _, err := os.Stat(keep); err != nil {
+		if kept, err := os.ReadFile(keep); err != nil || strings.TrimSpace(string(kept)) != ast {
 			keepAvailability(keep, ast)
 		}
 	} else {
+		if !now.Before(written.Add(finalUpdates)) {
+			return data
+		}
 		d := mpdDuration.FindStringSubmatch(tag)
 		if d == nil {
 			return data
@@ -101,12 +105,9 @@ func transcodeMPD(data []byte, dir string, written, now time.Time) []byte {
 		if !ok {
 			return data
 		}
-		end := start.Add(duration) // the last segment available
-		if written.After(end) {
-			end = written
-		}
-		if !now.Before(end.Add(finalUpdates)) {
-			return data
+		if moved := written.Add(-duration); moved.Before(start) {
+			start = moved // the last segment available by the finish
+			ast = start.UTC().Format(mpdTimeFormat)
 		}
 		// still updated: the switch to static is what ends a player
 		update := "PT6S"

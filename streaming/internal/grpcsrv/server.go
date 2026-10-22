@@ -88,7 +88,10 @@ type Status struct {
 var (
 	ErrFailedPrecondition = errors.New("failed-precondition")
 	ErrResourceExhausted  = errors.New("resource-exhausted")
-	ErrNotFound           = errors.New("not-found")
+	// ErrNoDiskSpace: too little free on the cache's disk to start a
+	// transcode (TranscodeRoom); the API says so, not "busy".
+	ErrNoDiskSpace = errors.New("insufficient-storage")
+	ErrNotFound    = errors.New("not-found")
 )
 
 // TranscodeOrchestrator is the seam grpcsrv.OpenSession uses to spawn
@@ -172,9 +175,15 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 		return OpenSessionResponse{}, ErrNotFound
 	}
 
-	// Dedupe: existing open session for the same (user, video).
+	// Dedupe: existing open session for the same (user, video). One whose
+	// transcode ended short of the end (it failed) is closed instead: the
+	// player opening the video again (its playlist answered 410) gets a new
+	// transcode, not the same dead one.
 	if existing, ok, _ := s.Sessions.ActiveByUserVideo(ctx, userUUID, videoUUID); ok && existing != nil {
-		return s.respFor(existing, ladderFor(row, req)), nil
+		if !existing.TranscodeCut() {
+			return s.respFor(existing, ladderFor(row, req)), nil
+		}
+		_ = s.Sessions.Close(ctx, existing.ID, session.ReasonTranscodeFailed, s.Now().UTC())
 	}
 
 	profile, _ := s.Profiles.Get(req.ClientProfile)
@@ -191,12 +200,21 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 	mode := session.Mode(verdict.Mode)
 	state := session.StateActive
 
+	// the transcode slot taken (""; none), given back when the transcode
+	// ends, the session closes, or the open fails
+	holdID := ""
+	release := func() {
+		if holdID != "" {
+			_ = s.Allocator.Release(holdID)
+		}
+	}
 	if mode == session.ModeTranscode {
 		// before a slot is taken: a refused open holds none
 		if s.TranscodeRoom != nil && s.TranscodeRoom() != nil {
-			return OpenSessionResponse{}, ErrResourceExhausted
+			return OpenSessionResponse{}, ErrNoDiskSpace
 		}
-		decision, _ := s.Allocator.Decide(slots.Request{
+		var decision slots.Decision
+		decision, holdID = s.Allocator.Decide(slots.Request{
 			CanDirectCap: row.Height >= 720 && verdict.Mode == capability.ModeTranscode,
 			AcceptQueue:  req.AcceptQueue,
 		})
@@ -255,8 +273,10 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 			NoAudio:     row.AudioCodec == "" && row.AudioChannels == 0,
 		})
 		if terr != nil {
+			release()
 			return OpenSessionResponse{}, ErrFailedPrecondition
 		}
+		handle.OnEnd(release) // the slot is the encoder's, not the viewer's
 		transcoder = handle
 		pid = handle.PID()
 	}
@@ -274,6 +294,7 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 		LastSegmentAt: s.Now().UTC(),
 		State:         state,
 		Transcoder:    transcoder,
+		SlotHold:      holdID,
 	}
 	if err := s.Sessions.Insert(ctx, sessRow); err != nil {
 		// Don't leak the FFmpeg child if the row can't be stored.
@@ -288,6 +309,7 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 			_ = transcoder.Stop(stopCtx)
 			cancel()
 		}
+		release()
 		return OpenSessionResponse{}, err
 	}
 
@@ -348,7 +370,13 @@ func (s *Server) CloseSession(ctx context.Context, sessionID string) error {
 	if row.ClosedAt != nil {
 		return nil
 	}
-	return s.Sessions.Close(ctx, id, session.ReasonAPI, s.Now().UTC())
+	err = s.Sessions.Close(ctx, id, session.ReasonAPI, s.Now().UTC())
+	if row.SlotHold != "" {
+		// its transcode's end gives it back too (closing stops it); a session
+		// without one (no orchestrator) only here
+		_ = s.Allocator.Release(row.SlotHold)
+	}
+	return err
 }
 
 // EvictHashCache (AC-3) drops probe-cache entries for a content hash.

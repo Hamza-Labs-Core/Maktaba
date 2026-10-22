@@ -97,12 +97,12 @@ func TestLayout_SessionDirs(t *testing.T) {
 	}
 }
 
-func TestFreeBytes(t *testing.T) {
-	if free, err := FreeBytes(t.TempDir()); err != nil || free == 0 {
-		t.Fatalf("free %d, %v", free, err)
+func TestDiskSpace(t *testing.T) {
+	if free, total, err := DiskSpace(t.TempDir()); err != nil || free == 0 || total < free {
+		t.Fatalf("free %d of %d, %v", free, total, err)
 	}
-	if _, err := FreeBytes(filepath.Join(t.TempDir(), "missing")); err == nil {
-		t.Error("a missing folder's free space")
+	if _, _, err := DiskSpace(filepath.Join(t.TempDir(), "missing")); err == nil {
+		t.Error("a missing folder's space")
 	}
 }
 

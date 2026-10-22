@@ -86,8 +86,9 @@ func (h *ManifestHandler) ServeMaster(w http.ResponseWriter, r *http.Request) {
 		httpx.Write(w, http.StatusInternalServerError, "read-failed", "manifest read failed", err.Error())
 		return
 	}
-	// a player reloading it is still there, paused or not (the reaper)
-	_ = h.Sessions.Touch(r.Context(), id, h.now())
+	if !h.reloaded(w, r, row) {
+		return
+	}
 	if wantDASH {
 		written := h.now()
 		if info, err := os.Stat(path); err == nil {
@@ -138,10 +139,18 @@ func (h *ManifestHandler) ServeRenditionIndex(w http.ResponseWriter, r *http.Req
 		httpx.Write(w, http.StatusNotFound, "rendition-not-found", "rendition index not on disk", err.Error())
 		return
 	}
-	// a paused player reloads the playlist of a transcode still running: the
-	// session stays (the reaper)
-	if id, err := uuid.Parse(sub); err == nil {
-		_ = h.Sessions.Touch(r.Context(), id, h.now())
+	id, err := uuid.Parse(sub)
+	if err != nil {
+		httpx.Write(w, http.StatusBadRequest, "bad-session-id", "session id not a UUID", err.Error())
+		return
+	}
+	row, ok, err := h.Sessions.Get(r.Context(), id)
+	if err != nil || !ok {
+		httpx.Write(w, http.StatusNotFound, "session-not-found", "session not found", "")
+		return
+	}
+	if !h.reloaded(w, r, row) {
+		return
 	}
 	data = startAtBeginning(data)
 	if sig := r.URL.Query().Get("sig"); sig != "" {
@@ -236,6 +245,24 @@ func startAtBeginning(data []byte) []byte {
 	out = append(out, data[:i+1]...)
 	out = append(out, start...)
 	return append(out, data[i+1:]...)
+}
+
+// reloaded handles a player's (re)load of a session's playlist or MPD: a
+// transcode over short of the video's end (stopped by a close or the reaper,
+// or failed) answers 410, so the player opens the video again where it is
+// instead of ending there or waiting for segments that never come; while the
+// transcode runs, the reload is activity (a paused player keeps its session).
+// False when it answered.
+func (h *ManifestHandler) reloaded(w http.ResponseWriter, r *http.Request, row *session.Row) bool {
+	if row.TranscodeCut() {
+		httpx.Write(w, http.StatusGone, "transcode-stopped", "the transcode stopped before the end",
+			"open the session again at the position reached")
+		return false
+	}
+	if row.Transcoder != nil && row.Transcoder.Active() {
+		_ = h.Sessions.Touch(r.Context(), row.ID, h.now())
+	}
+	return true
 }
 
 func (h *ManifestHandler) now() time.Time {

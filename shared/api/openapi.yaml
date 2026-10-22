@@ -1839,6 +1839,13 @@ paths:
           $ref: '#/components/responses/NotFound'
         '503':
           $ref: '#/components/responses/Unavailable'
+        '507':
+          description: Too little free on the streaming service's disk to prepare (transcode)
+            the video (code `insufficient_storage`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         default:
           $ref: '#/components/responses/InternalError'
         '429':
@@ -4534,6 +4541,9 @@ components:
             $ref: '#/components/schemas/Rung'
         current_rendition:
           type: string
+        duration_sec:
+          type: number
+          description: The video's length in the catalogue (absent when unknown).
         warnings:
           type: array
           items:

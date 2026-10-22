@@ -392,8 +392,8 @@ func buildGRPCServer(bg *background, logger *slog.Logger, backend probe.Backend,
 	srv.ResolveDir = layout.HLSDir
 	// a transcode keeps every segment until its session closes: none starts
 	// with less than the floor free on the cache's disk
-	minFree := cfg.TranscodeMinFreeBytes()
-	srv.TranscodeRoom = func() error { return transcodeRoom(layout.Root, minFree, logger) }
+	disk := vodDisk{root: layout.Root, minFreeGiB: cfg.Transcode.MinFreeGiB}
+	srv.TranscodeRoom = func() error { return transcodeRoom(disk, logger) }
 	return srv
 }
 
@@ -508,12 +508,14 @@ func buildPublicHandler(bg *background, logger *slog.Logger, backend probe.Backe
 		})
 	})
 
-	reaper := session.NewReaper(store, session.ReaperConfig{IdleAfter: vodSessionIdle, Interval: vodSessionSweep})
+	reaper := session.NewReaper(store, session.ReaperConfig{IdleAfter: vodSessionIdle, ActiveIdleAfter: vodActiveIdle,
+		Interval: vodSessionSweep})
 	bg.Go(reaper.Run)
 	// the closed sessions' folders, and a previous run's (at start, then with
 	// the reaper)
 	bg.Go(func(ctx context.Context) {
-		purge := func() { purgeVODSessions(ctx, layout, store, time.Now(), logger) }
+		disk := vodDisk{root: layout.Root, minFreeGiB: cfg.Transcode.MinFreeGiB}
+		purge := func() { purgeVODSessions(ctx, layout, store, disk, time.Now(), logger) }
 		purge()
 		tick(ctx, vodSessionSweep, purge)
 	})

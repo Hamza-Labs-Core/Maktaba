@@ -125,6 +125,64 @@ func TestReaper_ClosesIdleSessions(t *testing.T) {
 	}
 }
 
+// While its transcode runs, a session is reaped only after ActiveIdleAfter
+// without a fetch (a background tab comes back to it going on); one whose
+// transcode is over, after IdleAfter.
+func TestReaper_ActiveTranscodeWaitsLonger(t *testing.T) {
+	s := NewMemoryStore(time.Second)
+	now := time.Now().UTC()
+	rows := map[string]*Row{}
+	for name, quiet := range map[string]time.Duration{"active 5 min": 5 * time.Minute, "active 11 min": 11 * time.Minute,
+		"over 2 min": 2 * time.Minute} {
+		tc := &fakeTranscoder{}
+		if name == "over 2 min" {
+			tc.stopped.Store(true)
+		}
+		rows[name] = &Row{Mode: ModeTranscode, Format: FormatHLS, Transcoder: tc, LastSegmentAt: now.Add(-quiet),
+			StartedAt: now.Add(-time.Hour)}
+		_ = s.Insert(context.Background(), rows[name])
+	}
+	r := NewReaper(s, ReaperConfig{IdleAfter: 90 * time.Second, ActiveIdleAfter: 10 * time.Minute})
+	r.SetClock(func() time.Time { return now })
+	if err := r.Sweep(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for name, closed := range map[string]bool{"active 5 min": false, "active 11 min": true, "over 2 min": true} {
+		got, _, _ := s.Get(context.Background(), rows[name].ID)
+		if (got.ClosedAt != nil) != closed {
+			t.Errorf("%s: closed %v, want %v", name, got.ClosedAt != nil, closed)
+		}
+	}
+}
+
+// How a transcode ended, as the row tells it: cut short only once it is over
+// without having encoded the whole source.
+func TestRow_TranscodeEnd(t *testing.T) {
+	for name, c := range map[string]struct {
+		tr            Transcoder
+		finished, cut bool
+	}{
+		"none":     {nil, false, false},
+		"no ender": {&fakeTranscoder{}, false, false},
+		"running":  {&enderTranscoder{}, false, false},
+		"finished": {&enderTranscoder{ended: true, finished: true}, true, false},
+		"stopped":  {&enderTranscoder{ended: true}, false, true},
+	} {
+		r := &Row{Transcoder: c.tr}
+		if r.TranscodeFinished() != c.finished || r.TranscodeCut() != c.cut {
+			t.Errorf("%s: finished %v, cut %v", name, r.TranscodeFinished(), r.TranscodeCut())
+		}
+	}
+}
+
+type enderTranscoder struct {
+	fakeTranscoder
+	ended, finished bool
+}
+
+func (e *enderTranscoder) Ended() bool    { return e.ended }
+func (e *enderTranscoder) Finished() bool { return e.finished }
+
 type reapSeenMu struct {
 	rows []*Row
 }

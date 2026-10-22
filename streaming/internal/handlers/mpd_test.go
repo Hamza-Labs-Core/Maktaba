@@ -59,10 +59,11 @@ func mpdAttrs(t *testing.T, mpd []byte) string {
 }
 
 // A transcode's MPD: dynamic while ffmpeg runs, a player starting at its first
-// segment (the delay reaches past the start) and its start kept; once ffmpeg is
-// done, when a player may have had it dynamic, dynamic with the whole timeline
-// until every segment is available and the timeline has been out for
-// finalUpdates, then static; static from the start when none had it.
+// segment (the delay reaches past the start) and its start kept (a rerun's
+// replacing it); once ffmpeg is done, when a player may have had it dynamic,
+// dynamic for finalUpdates with the whole timeline and a start that makes
+// every segment available, then static; static from the start when none had
+// it.
 func TestTranscodeMPD(t *testing.T) {
 	dir := t.TempDir()
 	ast, _ := time.Parse(time.RFC3339Nano, "2026-10-22T13:14:42.366Z")
@@ -88,14 +89,14 @@ func TestTranscodeMPD(t *testing.T) {
 		t.Fatalf("kept start %q %v", kept, err)
 	}
 
-	// done at 98 s, ahead of the clock: dynamic, the kept start, the whole
-	// timeline, until its last segment (3 min) is available, and finalUpdates
+	// done at 98 s, ahead of the clock: for finalUpdates dynamic, the whole
+	// timeline, the start moved back 82 s so the last segment (3 min) is
+	// available by the finish; then static
 	done := ast.Add(98 * time.Second)
-	last := ast.Add(3*time.Minute + finalUpdates)
-	now = last.Add(-time.Second)
+	now = done.Add(10 * time.Second)
 	got = mpdAttrs(t, transcodeMPD([]byte(staticMPD), dir, done, now))
-	for _, want := range []string{`type="dynamic"`, `availabilityStartTime="2026-10-22T13:14:42.366Z"`,
-		`mediaPresentationDuration="PT3M0.0S"`, `minimumUpdatePeriod="PT6.0S"`, `suggestedPresentationDelay="PT254S"`,
+	for _, want := range []string{`type="dynamic"`, `availabilityStartTime="2026-10-22T13:13:20.366Z"`,
+		`mediaPresentationDuration="PT3M0.0S"`, `minimumUpdatePeriod="PT6.0S"`, `suggestedPresentationDelay="PT250S"`,
 		`publishTime="` + now.UTC().Format(mpdTimeFormat) + `"`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("final updates: no %s in %s", want, got)
@@ -104,17 +105,24 @@ func TestTranscodeMPD(t *testing.T) {
 	if strings.Contains(got, `type="static"`) {
 		t.Errorf("final updates: %s", got)
 	}
-	if got := transcodeMPD([]byte(staticMPD), dir, done, last); string(got) != staticMPD {
-		t.Errorf("every segment available:\n%s", got)
+	if got := transcodeMPD([]byte(staticMPD), dir, done, done.Add(finalUpdates)); string(got) != staticMPD {
+		t.Errorf("after the final updates:\n%s", got)
 	}
-	// done behind the clock (at 4 min): the whole timeline is out for
-	// finalUpdates first
+	// done behind the clock (at 4 min): every segment is available already, the
+	// kept start stays
 	slow := ast.Add(4 * time.Minute)
-	if got := mpdAttrs(t, transcodeMPD([]byte(staticMPD), dir, slow, slow.Add(finalUpdates-time.Second))); !strings.Contains(got, `type="dynamic"`) {
+	if got := mpdAttrs(t, transcodeMPD([]byte(staticMPD), dir, slow, slow.Add(finalUpdates-time.Second))); !strings.Contains(got, `type="dynamic"`) ||
+		!strings.Contains(got, `availabilityStartTime="2026-10-22T13:14:42.366Z"`) {
 		t.Errorf("a slow transcode's final updates: %s", got)
 	}
 	if got := transcodeMPD([]byte(staticMPD), dir, slow, slow.Add(finalUpdates)); string(got) != staticMPD {
 		t.Errorf("a slow transcode, after the final updates:\n%s", got)
+	}
+	// a rerun (the 30 s fallback) writes its own start: kept instead
+	rerun := strings.Replace(dynamicMPD, "2026-10-22T13:14:42.366Z", "2026-10-22T13:15:01.002Z", 1)
+	transcodeMPD([]byte(rerun), dir, now, now)
+	if kept, err := os.ReadFile(filepath.Join(dir, availabilityFile)); err != nil || string(kept) != "2026-10-22T13:15:01.002Z" {
+		t.Errorf("a rerun's start not kept: %q %v", kept, err)
 	}
 	// a static MPD without a duration it reads: static
 	if got := transcodeMPD([]byte(strings.Replace(staticMPD, "PT3M0.0S", "P1D", 1)), dir, done, now); strings.Contains(string(got), `type="dynamic"`) {
