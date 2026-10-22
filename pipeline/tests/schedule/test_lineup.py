@@ -111,10 +111,12 @@ def test_the_kids_hour_takes_kids_shows_and_never_adults() -> None:
 
 def test_a_slot_belongs_to_a_presenter_his_next_show_follows() -> None:
     fiqh = ThemeSpec("fiqh", "Fiqh", "الفقه", 111, ("fiqh",))
-    # many shows of two sheikhs, more than the grid has slots: the rest queue behind
-    lib = [season(f"{p}{i}", f"{p} {i}", presenter=p, n=40, minutes=60)
-           for p in ("أ", "ب") for i in range(40)]  # fmt: skip
+    # many shows of two sheikhs, more than the grid has slots: the rest queue behind. Two-hour
+    # episodes keep the grid small (80 one-hour shows no longer overflowed it)
+    lib = [season(f"{p}{i}", f"{p} {i}", presenter=p, n=8, minutes=120)
+           for p in ("أ", "ب") for i in range(30)]  # fmt: skip
     p = plan(lib, themes=(fiqh,), mix_channel=False, presenter_channels=False)
+    assert any(len(p.lanes[k].units) > 1 for k in p.channels[0].lanes)  # a queue formed
     for k in p.channels[0].lanes:
         ln = p.lanes[k]
         assert len({u.presenter for u in ln.units}) == 1, ln.name  # one sheikh per slot

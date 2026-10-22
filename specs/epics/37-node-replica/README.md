@@ -374,7 +374,9 @@ were, the home's jobs back, B told to call it off and drop the kit, the reason o
 thaw gives the rights back, resets the database's read-only default and ends the app's sessions:
 one opened while A was frozen keeps that default for its life, and an app's pool reconnects
 read-write. A thaw that fails is asked again until A is writable, also after a restart (the
-record says it is owed). Past it nothing goes back but on B's word; the
+record says it is owed); one owed by a switch another came after (a later row in A's
+database) changes nothing, since the freeze is the later switch's now, and a freeze and a thaw
+run one at a time on A's supervisor. Past it nothing goes back but on B's word; the
 old home and the machines keep trying to follow B until it answers. **A restart of A's API or
 supervisor mid-switch** takes it up: A's steps are recorded through its supervisor at each one
 (`<state>/switchover/<id>/progress.json`, and the switch's row while A writes it); at the next
@@ -556,7 +558,11 @@ applies on its own: what this home changed since is not known any more).
   all; a person whose sessions on the machine are all node-local (the home cannot tell such a
   sign-in from the machine's word) signing out everywhere is signed out of all of them, with the
   home there or not, and told that the others end through the home (`signed_out: "here"`, code
-  `signed_out_here_only`; the sign-in page says so); nothing is handed to the home.
+  `signed_out_here_only`; the sign-in page says so); nothing is handed to the home. When the copy
+  cannot tell (it does not answer in time), the machine's sessions end, the sign-out is handed
+  to the home all the same (it takes it if the person signed in through that machine), and the
+  answer says the rest was not checked (code `signed_out_home_unchecked`; the sign-in page says
+  so).
 - **Known limits.** A pipeline write of a job is guarded by its worker's claim, not by a claim
   generation: a machine stops its jobs before their lease lapses, so its worker never holds a job
   again while a run of it from before is alive. On an operator's own Postgres, the output

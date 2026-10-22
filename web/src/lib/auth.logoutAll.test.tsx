@@ -56,6 +56,15 @@ describe("logoutAll", () => {
     expect(post).toHaveBeenCalledWith("/api/auth/logout-all");
   });
 
+  it("says when the home's sessions could not be checked", async () => {
+    post.mockResolvedValue({ signed_out: "here", code: "signed_out_home_unchecked" });
+    renderIt();
+    expect(await screen.findByText("signed in")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "everywhere" }));
+    expect(await screen.findByText("signed out")).toBeInTheDocument();
+    expect(screen.getByTestId("scope")).toHaveTextContent("unchecked");
+  });
+
   it("is everywhere on the home's answer (no body)", async () => {
     post.mockResolvedValue(undefined);
     renderIt();

@@ -9,6 +9,7 @@ no version churn) — instead we add the parent directory to
 
 from __future__ import annotations
 
+import gc
 import sys
 from pathlib import Path
 
@@ -27,6 +28,15 @@ from maktaba_testtier.netguard import unit_netguard  # noqa: F401,E402
 from maktaba_testtier.softcap import (  # noqa: F401,E402
     pytest_runtest_makereport,
 )
+
+
+def pytest_collection_finish(session: pytest.Session) -> None:
+    """Freeze what collection left alive (every imported module, every collected test).
+    A full GC pass otherwise walks all of it inside whichever test happens to trip it:
+    60-85 ms here, more on CI, enough to push a fast test past the unit soft cap (Story
+    20.1 AC4). Objects the tests make are still collected as usual."""
+    gc.collect()
+    gc.freeze()
 
 
 @pytest.fixture(autouse=True)

@@ -167,6 +167,8 @@ type fakeCopy struct {
 	// localOnly: no user has a home session made through this machine (they signed in
 	// here from the copy only)
 	localOnly bool
+	// throughFails: the copy does not answer whether one has (the rest answers)
+	throughFails bool
 }
 
 func (c *fakeCopy) set(f func(*fakeCopy)) { c.mu.Lock(); f(c); c.mu.Unlock() }
@@ -223,7 +225,7 @@ func (c *fakeCopy) SignIn(_ context.Context, username, password string) (*delega
 func (c *fakeCopy) SignedInThrough(_ context.Context, userID string) (bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.broken {
+	if c.broken || c.throughFails {
 		return false, errors.New("copy: connection refused")
 	}
 	return userID == "u1" && !c.localOnly, nil
@@ -980,6 +982,39 @@ func TestTheSignOutStoreIsCapped(t *testing.T) {
 	}
 	if s.denied(SessionKey("s3"), "") || s.anyAll() {
 		t.Fatal("half of a sign-out everywhere was kept")
+	}
+}
+
+// The copy does not answer whether the person signed in through this machine at the
+// home: this machine's sessions of theirs end, the sign-out is handed to the home all the
+// same (it takes it if they did), and the answer says the rest was not checked.
+func TestALocalSignOutEverywhereTheCopyCannotCheck(t *testing.T) {
+	g := newOfflineRig(t, true)
+	g.goDown(time.Minute)
+	g.pastGrace()
+	_, id := g.signIn(t, "amal", "pw-amal")
+	_, other := g.signIn(t, "amal", "pw-amal")
+	if id == "" || other == "" {
+		t.Fatal("no sign-in")
+	}
+	g.cp.set(func(c *fakeCopy) { c.throughFails = true })
+	a := g.do(http.MethodPost, LogoutAllPath, id)
+	if a.code != http.StatusOK || !a.cleared() || a.body["signed_out"] != "here" || a.body["code"] != "signed_out_home_unchecked" {
+		t.Fatalf("sign out everywhere: %+v, want 200 signed_out_home_unchecked", a)
+	}
+	for _, sid := range []string{id, other} {
+		if a := g.do(http.MethodGet, "/api/videos", sid); a.code != http.StatusUnauthorized {
+			t.Fatalf("a session of the person here after it: %+v", a)
+		}
+	}
+	if !g.r.SignOuts.denied(SessionKey("a-home-session-of-u1"), "u1") {
+		t.Fatal("the person's home sessions are not denied here until the home took it")
+	}
+	g.home.setDown(false)
+	g.r.answered()
+	g.r.sendSignOuts(context.Background())
+	if len(g.home.signOuts) != 1 || g.home.signOuts[0].UserID != "u1" || g.home.signOuts[0].Before == nil {
+		t.Fatalf("handed to the home: %+v", g.home.signOuts)
 	}
 }
 

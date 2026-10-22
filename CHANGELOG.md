@@ -533,6 +533,15 @@ don't append a line here; docs-only PRs are exempt.
   `:latest` would have taken a release candidate. `:latest` now moves only with a plain `vX.Y.Z`,
   as the GitHub release's latest does, and a pre-release tag no longer rolls the relay out to the
   VPS by itself (a dispatch with its tag still does).
+- **Signing out everywhere on a machine whose copy does not answer, and a late thaw** (Epic 37,
+  follow-up of #178). A person signed in on a machine only while its home was away who signed
+  out everywhere, at a moment the machine's copy could not say whether they had signed in
+  through it at the home, was treated as signed in there only: the home was never told and the
+  sign-in page said so wrongly. The machine's sessions end as before, the sign-out goes to the
+  home all the same (it ends the other sessions if they signed in through that machine), and the
+  sign-in page says those were not checked. And a thaw still owed by a switch that was called off
+  or failed no longer makes the home writable while a later switch has it frozen: a thaw of a
+  switch another came after changes nothing, and a freeze and a thaw run one at a time.
 
 ## [0.2.0] - 2026-10-19
 

@@ -12,6 +12,7 @@ from typing import Any
 
 import huggingface_hub.errors  # noqa: F401 - imported once here, not inside a timed test
 import pytest
+from tqdm.std import tqdm  # type: ignore[import-untyped,unused-ignore]
 
 from maktaba_pipeline import __main__ as cli
 from maktaba_pipeline import model_dirs
@@ -25,6 +26,10 @@ pytestmark = pytest.mark.unit
 # once here (half a second), not inside a timed test
 with contextlib.suppress(ImportError):
     importlib.import_module("mlx_audio.utils")
+
+# the download progress bar is a tqdm: its import, and the multiprocessing lock its first
+# bar creates, took a third of a second inside the timed bar test on a cold CI runner
+tqdm.get_lock()
 
 COHERE = "CohereLabs/cohere-transcribe-arabic-07-2026"
 

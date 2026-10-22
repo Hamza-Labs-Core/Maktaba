@@ -73,6 +73,24 @@ func Thaw(ctx context.Context, super *sql.DB) error {
 	return nil
 }
 
+// ThawUnlessSuperseded thaws the old home for switchover id (Thaw) unless another switch
+// came after it here (its row newer: a later term, or the same term asked later): one
+// called off or failed whose thaw was owed, asked again while the next one runs, must not
+// undo that one's freeze. later is that switch ("": none, thawed). A switch this home has
+// no row of thaws as before.
+func ThawUnlessSuperseded(ctx context.Context, super *sql.DB, id string) (later string, err error) {
+	err = super.QueryRowContext(ctx, `SELECT l.id::text FROM cluster_switchovers s
+	    JOIN cluster_switchovers l ON l.id <> s.id AND (l.term, l.requested_at) > (s.term, s.requested_at)
+	    WHERE s.id::text = $1 ORDER BY l.term DESC, l.requested_at DESC LIMIT 1`, id).Scan(&later)
+	switch {
+	case err == nil:
+		return later, nil
+	case !errors.Is(err, sql.ErrNoRows):
+		return "", fmt.Errorf("switchover: thaw: the switches after it: %w", err)
+	}
+	return "", Thaw(ctx, super)
+}
+
 // stopWrites stops the app's roles writing (Freeze, Fence): the database read-only by
 // default, their rights taken (in a transaction of its own: a role may not reconnect
 // and write between the two), then every session of the app's ended, waiting for each
