@@ -31,8 +31,8 @@ const appIdentifier = "com.hamzalabs.maktaba"
 // adoptTarget is the app's side of a move: its server.toml, state root, keys,
 // the node config its roles read (the machine's one, where it is: on Windows
 // the roaming original while it is this PC's or no PC's, else the local one;
-// never copied, story 38.1) and a roaming one another PC claimed, its own
-// install (the payload, never stopped as the old install's), and on Windows the
+// never copied, story 38.1) and a roaming one another PC claimed while this PC
+// has not joined as its own (config.LocalForeignNodeConfig), its own install (the payload, never stopped as the old install's), and on Windows the
 // app window's mode.json.
 func adoptTarget(cfg config.Config) adopt.Target {
 	tgt := adopt.Target{ConfigPath: config.Path(), StateDir: cfg.StateDir(), KeysDir: config.KeysDir(),
@@ -285,7 +285,7 @@ func movedIn() string {
 
 // nodeLeftover is a joined node config where the app's roles would read it
 // (config.LocalNodeConfigPath) that no install here runs (nodeHere found
-// none): left by an install removed, or by a move undone. A fresh setup is a
+// none): left by an install removed. A fresh setup is a
 // new home beside it, pinned role = "home" (finish), never that node: a fresh
 // setup asks for a home's admin and libraries, and the node it was belongs to
 // another home. ok false when there is none.

@@ -311,15 +311,21 @@ for anything else, `adopt_verify`, `adopt_no_move` and `adopt_undo` (undo), and 
 
 `check` (a problem: Next is blocked) and `finish` (an error, before anything is written) refuse a
 fresh setup beside a node: `node_here` (`home`, `source`) when an install outside the app is a node
-of a home, its task enabled or not, running or not (the app would read the same node config, or the
-copy an undone move left, and run as a second copy of that node), `install_unknown` when what runs
-cannot be looked at. The terminal setup of that very install (its own `maktaba-server`) is not a
-second copy. The welcome screen does not offer Start fresh there, and says why. A joined node
-config at the place the app's roles read it (`%LOCALAPPDATA%\Maktaba\node.json`, else the roaming
-one) that no install here runs, left by an install removed or a move undone, is not in the way:
-`check` warns `node_config_unused` (`home`, `path`), the welcome screen says a fresh setup makes a
-new home and leaves it unused, and `finish` writes `[server] role = "home"`, so no role of the app
-ever runs as that node.
+of a home, its task enabled or not, running or not (the app would read the same node config, the
+machine's one, which is never copied, and run as a second copy of that node), `install_unknown`
+when what runs cannot be looked at. The terminal setup of that very install (its own
+`maktaba-server`) is not a second copy. The welcome screen does not offer Start fresh there, and
+says why. The app's roles read the machine's one node config where it is (story 38.1): the roaming
+original `%APPDATA%\Maktaba\node.json` while it is this PC's or no PC's (its `machine_id`), else
+`%LOCALAPPDATA%\Maktaba\node.json`, where this PC's own join writes. A joined one there that no
+install here runs (an install removed left it) is not in the way: `check` warns
+`node_config_unused` (`home`, `path`), the welcome screen says a fresh setup makes a new home and
+leaves it unused, and `finish` writes `[server] role = "home"`, so no role of the app ever runs as
+that node. A roaming original another PC claimed is skipped: while this PC has not joined as its
+own machine, `check` warns `node_config_other_pc` (`path`, `owner`), and so does the move's plan
+for an install that moves; for a node installer's worker with no node config of its own the plan
+refuses it with the same code (a problem: that worker is no node at all, so nothing moves). Once
+this PC has joined (a joined local node config), neither says so.
 
 Undo (the step's `undo`, or `maktaba-server adopt --undo` in a terminal) runs the old install again:
 the pause flag, the app's server stopped, this user's app tasks disabled (`\Maktaba Server <SID>`,

@@ -259,8 +259,10 @@ def need_gb(weights: float, whisper_batch: int) -> float:
 
 def room(model: str, settings: WhisperSettings) -> str | None:
     """Why the model cannot load beside Whisper right now, or None: the GPU's free memory
-    (``torch.cuda.mem_get_info``) must hold :func:`need_gb`. Asked again before each file
-    until it is loaded: the memory other programs hold comes and goes."""
+    (``torch.cuda.mem_get_info``) must hold :func:`need_gb`. Asked before the model loads;
+    no room is remembered like a failed load (``cohere.recogniser``: not asked again until
+    its backoff is over, 10 min doubling to 6 h), and a relisten job that meets it gives
+    itself back, its video's try unspent."""
     index = device_index(settings.device) or 0
     import torch
 

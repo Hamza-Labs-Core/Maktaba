@@ -413,6 +413,11 @@ func TestNodeConfigClaimedByAnotherPC(t *testing.T) {
 	if n := ReadNodeConfig(getenv, "windows", base, os.ReadFile); n.NodeID != "n2" {
 		t.Fatalf("after this PC's join: %+v", n)
 	}
+	// joined as its own machine, the other PC's original is nothing to this PC:
+	// nothing says it runs unjoined because of it (serve, check, the move's plan)
+	if p, owner := ForeignNodeConfig(getenv, "windows", base); p != "" || owner != "" {
+		t.Fatalf("joined locally, still another PC's: %q %q", p, owner)
+	}
 	if readAt(t, original) != theirs {
 		t.Fatal("the other PC's node config must stay as it was")
 	}

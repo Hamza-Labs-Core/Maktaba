@@ -11,7 +11,10 @@ permissions:
 jobs:
   unit:
     runs-on: ubuntu-22.04
-    timeout-minutes: 15
+    # 5.5-11.6 min on main (2026-10-22), plus "Set up pnpm", whose
+    # self-installer has stalled for up to 7 min (the lint gate's note):
+    # 25 keeps a stalled run from being cancelled.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6.0.2
 
