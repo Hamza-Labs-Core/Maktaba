@@ -3678,6 +3678,7 @@
   "setup.check.note.ffprobe_missing": "ffmpeg is here ({path}), but not ffprobe, which Maktaba reads the media with.",
   "setup.check.note.ffmpeg_install": "On {distro}, this installs the ffmpeg Maktaba needs: {command}",
   "setup.check.note.ffmpeg_install_other": "Install your distribution's ffmpeg: FFmpeg {need} or later with the libx264 encoder (some distributions keep it in an extra repository), or name one in server.toml ([media] ffmpeg).",
+  "setup.check.note.ffmpeg_old_distro": "{distro} packages an ffmpeg older than {need}, so installing it again does not help: upgrade the distribution, or name a newer ffmpeg in server.toml ([media] ffmpeg).",
   "setup.check.note.ffmpeg_no_chromaprint": "{path} has no chromaprint: the audio fingerprints, which find the same recording twice, are not made.",
   "setup.check.note.ffmpeg_no_https": "{path} cannot open https:// addresses: a channel's live sources on the web do not play.",
   "setup.error.username_length": "A username is 1 to {max} characters.",

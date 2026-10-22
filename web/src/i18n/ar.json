@@ -3683,6 +3683,7 @@
   "setup.check.note.ffprobe_missing": "ffmpeg موجود ({path})، لكن ffprobe الذي تقرأ به مكتبة الوسائط غير موجود.",
   "setup.check.note.ffmpeg_install": "على {distro} يثبّت هذا الأمر ffmpeg الذي تحتاج إليه مكتبة: {command}",
   "setup.check.note.ffmpeg_install_other": "ثبّت ffmpeg من توزيعتك: FFmpeg {need} أو أحدث مع المرمّز libx264 (تضعه بعض التوزيعات في مستودع إضافي)، أو حدّد واحدًا في server.toml ‏([media] ffmpeg).",
+  "setup.check.note.ffmpeg_old_distro": "تحزم {distro} إصدارًا من ffmpeg أقدم من {need}، فلا تفيد إعادة تثبيته: رقِّ التوزيعة، أو حدّد ffmpeg أحدث في server.toml ‏([media] ffmpeg).",
   "setup.check.note.ffmpeg_no_chromaprint": "لا يحوي {path} ‏chromaprint: فلا تُصنع البصمات الصوتية التي تكشف التسجيل المكرّر.",
   "setup.check.note.ffmpeg_no_https": "لا يستطيع {path} فتح عناوين https://، فلا تُعرض مصادر القنوات المباشرة من الويب.",
   "setup.error.username_length": "اسم المستخدم من حرف واحد إلى {max} حرفًا.",
