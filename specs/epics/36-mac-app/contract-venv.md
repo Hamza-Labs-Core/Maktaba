@@ -288,6 +288,19 @@ transcribe job (a changed file, an operator's run), clears the video's tries. A 
 the second listen gives a relisten job back for 15 minutes (for a day at most) and lets an
 ordinary job's transcript stand.
 
+**The relisten's tries** (follow-up of #221, slot 0146). How many tries and how far apart are
+rules (`rules.transcription`: `relisten_tries` 6, `relisten_wait_hours` 1, doubling, at most
+`relisten_wait_max_hours` 24), and the wait counts from the end of the try (`ended_at`, the
+job's `finished_at`), not from its queueing. A stopped video gets its tries again with a new
+second-listen model (`model`), a machine whose second listen runs with a capability the home
+has not seen (`relisten_capabilities`: host, machine id, engine, processor, memory, the
+versions of mlx, mlx-audio, torch and transformers), or the operator's next
+`relisten_round`; a capability seen before does not reset anything, so two machines do not
+reset each other's stops. The sweep leaves deleted and missing videos alone (`deleted_at`,
+`missing_confirmed_at`, state `missing` or `superseded`) and deletes their records. The stop
+note gives the reason first (the failure's kind, then its message with a leading path moved
+to the end), so the cut to 200 characters keeps it on a long Windows path.
+
 **Where Whisper loads** (CTranslate2). With `MAKTABA_STT_DEVICE=auto` the GPU must have the
 memory free that the model and its batch need (NVML's count: 2.3 GB in float16, 1.2 in
 int8_float16, 0.14 a file, 0.25 to spare; another model in proportion to its `model.bin`),

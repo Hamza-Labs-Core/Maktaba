@@ -148,6 +148,14 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **The second listen's tries count from the end of each try, and a stopped transcript comes
+  back (follow-up of #221).** The wait between tries counted from when the try was queued, so a
+  job that waited hours used it up; it now counts from the end of the try. A transcript the
+  second listen stopped on gets its tries again by itself with a new second-listen model, or when
+  a machine runs it with a new GPU or new packages, and Settings, Transcription has the number of
+  tries, the waits and a round to raise to try them all again (new table
+  `relisten_capabilities` and columns on `relisten_attempts`, slot 0146). Deleted and missing
+  videos are no longer tried, and the stop note keeps its reason on long Windows paths.
 - **The second listen's retries back off and stop (follow-up of story 38.8).** A machine that
   runs the second listen queued the same 20 oldest transcripts made without it every 10 minutes,
   forever, when it could not give them theirs (a file it cannot read, a model that does not load),
