@@ -69,8 +69,9 @@ describe("VideoPlayer", () => {
     // Never hits the old, unmounted route.
     expect(get).not.toHaveBeenCalledWith(expect.stringContaining("/api/videos/vid-uuid-1/stream"));
 
+    // the src is set by an effect that runs after the element is committed
     const video = await screen.findByTestId("mkt-video");
-    expect(video).toHaveAttribute("src", "/stream/sess-abc/manifest.m3u8");
+    await waitFor(() => expect(video).toHaveAttribute("src", "/stream/sess-abc/manifest.m3u8"));
   });
 
   it("uses direct_url when the server picks direct mode", async () => {
@@ -84,7 +85,7 @@ describe("VideoPlayer", () => {
 
     renderPlayer();
     const video = await screen.findByTestId("mkt-video");
-    expect(video).toHaveAttribute("src", "/files/original.mp4");
+    await waitFor(() => expect(video).toHaveAttribute("src", "/files/original.mp4"));
   });
 
   it("posts progress to /api/stream/sessions/{id}/progress", async () => {
@@ -98,6 +99,8 @@ describe("VideoPlayer", () => {
 
     renderPlayer();
     const video = (await screen.findByTestId("mkt-video")) as HTMLVideoElement;
+    // The progress listeners are added by the same effects that set the src.
+    await waitFor(() => expect(video).toHaveAttribute("src", "/stream/sess-prog/manifest.m3u8"));
 
     // Simulate playback time advancing.
     Object.defineProperty(video, "currentTime", { value: 30, configurable: true });

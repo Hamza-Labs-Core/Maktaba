@@ -106,11 +106,24 @@ func (f *fixture) video(id, lib, title string, dur float64) {
 // transcript adds a transcript of video with one segment per text, 10 s apart.
 func (f *fixture) transcript(id, video string, active bool, texts ...string) {
 	f.exec(`INSERT INTO transcripts (id, video_id, is_active) VALUES ($1, $2, $3)`, id, video, active)
+	if len(texts) == 0 {
+		return
+	}
+	// one statement for every segment: a row per round trip put the paging
+	// tests past the unit tier's per-test budget under -race
+	var q strings.Builder
+	q.WriteString(`INSERT INTO transcript_segments (transcript_id, seq, start_sec, end_sec, text) VALUES `)
+	args := make([]any, 0, 5*len(texts))
 	for i, text := range texts {
 		f.seq++
-		f.exec(`INSERT INTO transcript_segments (transcript_id, seq, start_sec, end_sec, text) VALUES ($1, $2, $3, $4, $5)`,
-			id, i, float64(i*10), float64(i*10+9), text)
+		if i > 0 {
+			q.WriteString(", ")
+		}
+		n := len(args)
+		fmt.Fprintf(&q, "($%d, $%d, $%d, $%d, $%d)", n+1, n+2, n+3, n+4, n+5)
+		args = append(args, id, i, float64(i*10), float64(i*10+9), text)
 	}
+	f.exec(q.String(), args...)
 }
 
 func repeat(text string, n int) []string {

@@ -716,7 +716,9 @@ describe("QueueOverview (test-cases/queue-overview.md)", () => {
     expect(await screen.findByText("item page")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "go back" }));
     expect(await pageReady()).toBeInTheDocument();
-    expect(screen.queryByText("Loading…")).toBeNull();
+    // not stuck on Loading…: the activity log mounts again with the page and
+    // shows Loading… until its own fetch answers
+    await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
   });
 
   it("QOV-25: libraries table: no match, select all, re-queue selected / one", async () => {
