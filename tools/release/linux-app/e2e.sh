@@ -18,7 +18,9 @@
 #      installed and activated (`runtime install --activate`, what the app runs after its
 #      updater). The next start dumps the database before the new version's migrations
 #      (backups/pre-<old>-to-<new>.dump), runs them and records it (state/database.json:
-#      migrated, from the old version), and keeps the venv when the constraints are the same
+#      migrated, from the old version), and keeps the venv when the constraints are the same;
+#      the updated server takes the distribution's ffmpeg (no ffmpeg in the payload): the
+#      supervisor's check of it says ok, from the PATH
 #
 # Hermetic: XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_STATE_HOME and XDG_CACHE_HOME point into a
 # scratch directory (the unit pins them), so this user's own Maktaba files are never read or
@@ -370,5 +372,20 @@ rs="$(cli runtime status --json)"
 [ "$(printf '%s' "$rs" | json_field previous)" = "$first" ] || die "previous is not $first: $rs"
 curl -fsS --max-time 10 http://127.0.0.1:8080/healthz >/dev/null || die "the API does not answer after the update"
 log "updated to $NEXT_VERSION (previous: $first); migrations ran and the API answers"
+
+# the distribution's ffmpeg (the payload carries none): the supervisor checks it at start
+deadline=$((SECONDS + 120)) ff=""
+while [ "$SECONDS" -lt "$deadline" ]; do
+    ff="$(curl -fsS --max-time 5 "http://$SUPERVISOR/processes" 2>/dev/null | "$PY" -I -c 'import json, sys
+f = json.load(sys.stdin).get("ffmpeg") or {}
+p = f.get("problem") or {}
+print("ok" if f.get("ok") else "problem " + p.get("code", "none yet"), f.get("source", ""), f.get("ffmpeg", ""), f.get("version", ""))' 2>/dev/null || true)"
+    case "$ff" in "ok "* | "problem ffmpeg"* | "problem ffprobe"*) break ;; esac
+    sleep 2
+done
+case "$ff" in
+    "ok path /"*) log "ffmpeg: the distribution's (${ff#ok path })" ;;
+    *) die "the supervisor's check of ffmpeg: ${ff:-no answer}" ;;
+esac
 
 log "all end-to-end steps passed"
