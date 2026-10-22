@@ -357,6 +357,46 @@ func TestConstraintsWithoutHashes(t *testing.T) {
 	}
 }
 
+// Story 38.9: the cuda pin set (torch's CUDA build for Windows) is checked as the
+// default one is: listed in checksums.txt with its digest, every pin hashed.
+func TestTheCUDAConstraintsAreCheckedToo(t *testing.T) {
+	cuda := "maktaba-pipeline-1.5.0-constraints-cuda.txt"
+	hashed := []byte("--extra-index-url https://download.pytorch.org/whl/cu130\ntorch==2.14.1+cu130 ; sys_platform == 'win32' \\\n    --hash=sha256:" + strings.Repeat("ab", 32) + "\n")
+	f := newFixture(t)
+	f.rel.Files[cuda] = hashed
+	in := editManifest(t, f, func(m map[string]any) {
+		p := m["pipeline"].(map[string]any)
+		p["constraints_cuda"], p["constraints_cuda_sha256"] = cuda, sha(hashed)
+	})
+	in.Artifacts = append(in.Artifacts, rv.Artifact{Name: cuda, Data: hashed})
+	res, err := rv.Verify(in)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if res.Manifest.Pipeline.ConstraintsCUDA != cuda || !res.Manifest.Pipeline.IsConstraints(cuda) {
+		t.Fatalf("pipeline = %+v", res.Manifest.Pipeline)
+	}
+
+	f = newFixture(t)
+	unhashed := []byte("torch==2.14.1+cu130\n")
+	f.rel.Files[cuda] = unhashed
+	in = editManifest(t, f, func(m map[string]any) {
+		p := m["pipeline"].(map[string]any)
+		p["constraints_cuda"], p["constraints_cuda_sha256"] = cuda, sha(unhashed)
+	})
+	in.Artifacts = append(in.Artifacts, rv.Artifact{Name: cuda, Data: unhashed})
+	_, err = rv.Verify(in)
+	wantKind(t, err, rv.ErrNoHashes)
+
+	f = newFixture(t)
+	f.rel.Files[cuda] = hashed
+	_, err = rv.Verify(editManifest(t, f, func(m map[string]any) {
+		p := m["pipeline"].(map[string]any)
+		p["constraints_cuda"], p["constraints_cuda_sha256"] = cuda, strings.Repeat("1", 64)
+	}))
+	wantKind(t, err, rv.ErrManifest)
+}
+
 func TestCheckConstraints(t *testing.T) {
 	ok := "# header\n--index-url https://pypi.org/simple\nfoo==1 --hash=sha256:" + strings.Repeat("a", 64) + "\n\nbar==2 \\\n  --hash=sha256:" + strings.Repeat("b", 64) + "  # via foo\n"
 	if err := rv.CheckConstraints("c.txt", []byte(ok)); err != nil {

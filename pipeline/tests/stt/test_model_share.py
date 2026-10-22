@@ -297,4 +297,4 @@ def test_the_stage_records_the_source(
     monkeypatch.setattr(cohere, "dictionary", lambda: None)
     monkeypatch.setattr(rf, "refine", lambda *_a, **_k: Stats())
     out = stage._refine(Any, None, MODEL, share)  # type: ignore[arg-type]
-    assert out == {"model": MODEL, "stretches": 1, "source": "share"}
+    assert out == {"model": MODEL, "stretches": 1, "source": "share", "dictionary": "unavailable"}

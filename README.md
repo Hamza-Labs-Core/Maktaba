@@ -173,7 +173,22 @@ sudo dnf install ./maktaba-server-<ver>-1.x86_64.rpm
 brew install hamza-labs-core/tap/maktaba
 ```
 
-Windows and manual installs: download the matching `.tar.gz` / `.zip` from the
+**Windows: the Maktaba app.** Install `Maktaba_<ver>_x64-setup.exe` from the
+[latest release](https://github.com/Hamza-Labs-Core/Maktaba/releases/latest). It
+installs for the current user into `%LOCALAPPDATA%\Maktaba` (no administrator) and
+carries the whole server: `maktaba-server`, PostgreSQL 16, ffmpeg (NVENC) and Python
+3.12. Its setup screens do the rest (the admin, the libraries and the NAS path map,
+the models, Plex), and the first start builds the pipeline's Python environment.
+From then on the server starts at every
+sign-in with no console window, the tray shows how it is doing, and the app updates
+itself through signed updates (the Tauri updater), starting with the first tagged release
+that includes it. A PC that already runs Maktaba (`maktaba-server setup --service`, the
+node installer, a script of its own) is found by the setup, which offers to move it
+into the app: its keys, settings, node identity and firewall rules come along (Windows asks
+once to allow the firewall rules), and the old folder is kept for going back. See
+[Epic 38](specs/epics/38-windows-app/README.md).
+
+Manual installs: download the matching `.tar.gz` / `.zip` from the
 [latest release](https://github.com/Hamza-Labs-Core/Maktaba/releases/latest).
 After installing, run `maktaba-server setup` (or edit
 `/etc/maktaba/server.toml`), then `sudo systemctl start maktaba-server` — the
@@ -255,9 +270,9 @@ the workflows below.
 | Platform | Artifact(s) | Workflow |
 |---|---|---|
 | **Web** (self-host the SPA) | `maktaba-web-<version>.tar.gz` | [`release.yml`](.github/workflows/release.yml) (auto) · [`web-release.yml`](.github/workflows/web-release.yml) (on-demand rebuild) |
-| **Desktop — macOS** | `.dmg` (universal arm64 + x86_64) | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
-| **Desktop — Windows** | NSIS `-setup.exe` (the whole server inside, a per-user install) + portable `.zip` of the client | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
-| **Desktop — Linux** | `.AppImage` + `.deb` + `.rpm` (x86_64, aarch64), the whole server inside | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
+| **Desktop — macOS** | two `.dmg`s (built on macos-15): Apple Silicon with the whole server inside, Intel the client only | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
+| **Desktop — Windows** | NSIS `-setup.exe` with the server inside (current user, `%LOCALAPPDATA%\Maktaba`) + portable `.zip` of the client | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
+| **Desktop — Linux** | `.AppImage` + `.deb` + `.rpm` (x86_64, aarch64), the whole server inside (ffmpeg is the distribution's) | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
 | **Server — Linux without a desktop** | `maktaba-linux-payload-<version>-<x86_64\|aarch64>.tar.gz` (`install.sh --app`) | [`release.yml`](.github/workflows/release.yml) |
 | **Mobile — Android** | `maktaba-<version>.apk` (sideload) + `.aab` (Play Store) | [`mobile-release.yml`](.github/workflows/mobile-release.yml) |
 | **Mobile — iOS** | `maktaba-<version>.ipa` *(signing deferred — see workflow)* | [`mobile-release.yml`](.github/workflows/mobile-release.yml) |
@@ -266,9 +281,12 @@ the workflows below.
 
 **Signing status.** Desktop installers and the iOS/tvOS builds are
 currently **unsigned** — code-signing certificates (Apple Developer ID,
-Windows Authenticode) are wired in as documented TODOs in each workflow
-and land once provisioned. The desktop apps' own updates are signed with
-the Tauri updater key ([auto-update](docs/auto-update.md)). Android signs
+Windows Authenticode) are wired in as documented TODOs in each workflow and
+land once provisioned. The desktop apps' **updates are signed** with the Tauri
+updater key: the release workflow signs them with the repository's secret and
+stamps the public key (the `TAURI_UPDATER_PUBKEY` variable) into
+`tauri.conf.json` at build time, so the apps take only updates signed with it
+([auto-update](docs/auto-update.md)). Android signs
 automatically when the `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEY_ALIAS` /
 `ANDROID_KEY_PASSWORD` secrets are set. Without them the APKs are built
 unsigned, kept as workflow artifacts and not attached to the Release.

@@ -10,10 +10,10 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/adopt"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
@@ -98,6 +98,7 @@ var setupSteps = map[string]setupStepFunc{
 	"plex":      stepPlex,
 	"venv":      stepVenv,
 	"llm":       stepLLM,
+	"adopt":     stepAdopt,
 	"finish":    stepFinish,
 }
 
@@ -159,13 +160,7 @@ func stepLLM(s *setupRun, in json.RawMessage) (any, error) {
 }
 
 // openLLMLog appends to the model server's log in the logs directory.
-func openLLMLog() (*os.File, error) {
-	p := filepath.Join(config.LogsDir(), llmserver.LogName)
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return nil, err
-	}
-	return os.OpenFile(p, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-}
+func openLLMLog() (*os.File, error) { return config.OpenLog(llmserver.LogName) }
 
 // runSetupJSON runs one step and returns the exit code.
 func runSetupJSON(step string, in io.Reader, out io.Writer) int {
@@ -211,14 +206,25 @@ func runSetupJSON(step string, in io.Reader, out io.Writer) int {
 
 // setupStatus: this machine is configured when server.toml exists and its
 // database does (the bundled Postgres's cluster, a [database] url, or the
-// SQLite file).
+// SQLite file), or it is a node (a joined node config: the home's database;
+// an install moved into the app, story 38.13). Not after the move into the
+// app was undone (adopt --undo): the old install runs this machine's Maktaba
+// again, and the app must not register its server over it.
 func setupStatus() (map[string]any, error) {
 	cfg, found, err := config.Load()
 	if err != nil {
 		return nil, err
 	}
+	node := supervisor.NodeJoined(cfg)
+	configured := found && (node || databaseExists(cfg)) && !adopt.UndoneHere(cfg.StateDir())
+	// a server.toml and node config in the app's place that are an install's
+	// outside the app (copied there by a newer command, story 38.1): not the
+	// app's own while that install is here (installHere)
+	if configured && installHere() {
+		configured = false
+	}
 	return map[string]any{
-		"configured":     found && databaseExists(cfg),
+		"configured":     configured,
 		"web_url":        "http://" + supervisor.LocalAddr(cfg.Server.WebListen, "8088"),
 		"supervisor_url": supervisor.StateURL(cfg),
 	}, nil

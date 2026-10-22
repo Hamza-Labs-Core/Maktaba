@@ -38,6 +38,29 @@ def _mlx_engine(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(engine, "current", lambda: engine.MLX)
 
 
+#: what the machine checks of the second listen say in the tests (stt/cohere_cuda.py)
+NO_TEST_GPU = "no CUDA device (the tests never ask this machine's GPU)"
+
+
+@pytest.fixture(autouse=True)
+def _no_gpu_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test imports torch to ask this machine's GPU whether the second listen fits (on
+    the CTranslate2 engine): the GPU is absent unless a test stands in for one
+    (tests/stt/test_cohere_cuda.py)."""
+    from maktaba_pipeline.stt import cohere_cuda
+
+    monkeypatch.setattr(cohere_cuda, "_gpu_problem", lambda _index: NO_TEST_GPU)
+
+
+@pytest.fixture(autouse=True)
+def _no_remembered_load_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed load of the second listen's model is remembered for the process
+    (stt/cohere.py, with a backoff): each test starts with none."""
+    from maktaba_pipeline.stt import cohere
+
+    monkeypatch.setattr(cohere, "_FAILED", {})
+
+
 @pytest.fixture(autouse=True)
 def _no_model_or_encyclopedia_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     """No test reaches the language model server or the encyclopedia: the stages that ask

@@ -47,7 +47,7 @@ and each `error` in the screens' words (by its code), and asks for the input fie
 
 | Step | In the terminal |
 |---|---|
-| `check` | from the payload: what will run, the disk, RAM and GPU, the problems and the warnings (on Linux also glibc, the systemd user manager, linger and a `maktaba-server.service` another install owns: see below); stops when `ok` is false, before anything is copied |
+| `check` | from the payload: what will run, the disk, RAM and GPU, the distribution's ffmpeg, the problems and the warnings (on Linux also glibc, the systemd user manager, linger and a `maktaba-server.service` another install owns: see below); stops when `ok` is false, before anything is copied. When the ffmpeg is all that blocks, check names the command that installs it (`ffmpeg_install`) and the terminal offers to run it (sudo asks for the password there; never from an answers file), then runs check again |
 | *the runtime* | `runtime install --owner headless` copies the payload into the runtime (the first runtime becomes `current` by itself); every step after this runs from `runtime/current` with `MAKTABA_APP_BUNDLE` pointing there, so the venv is built against the runtime's Python |
 | `admin` | user name and password (asked twice, not echoed) |
 | `libraries` | library folders, then the NAS path map (`/mnt/media => /srv/media`), each checked |

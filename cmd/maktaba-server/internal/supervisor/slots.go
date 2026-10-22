@@ -65,7 +65,7 @@ func SlotsEnabled(cfg config.Config) bool {
 	if !cfg.TV.SlotsOn() {
 		return false
 	}
-	if nodeConfig().Joined() {
+	if NodeJoined(cfg) {
 		return false
 	}
 	u := strings.ToLower(strings.TrimSpace(cfg.Database.URL))

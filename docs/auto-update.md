@@ -68,10 +68,12 @@ pnpm exec tauri signer generate -w ~/.tauri/maktaba.key
 #    and its passphrase as:   TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 ```
 
-`desktop-release.yml` reads those secrets so `tauri-action` signs each
-bundle and emits `latest.json` (the updater feed) onto the Release. A
-fork **without** the secrets still produces unsigned installers and skips
-`latest.json` — the build stays green.
+`desktop-release.yml` reads those secrets so `tauri build` signs each
+updater bundle (`.sig`). Its `publish` job, after every platform's build
+and checks, attaches the bundles that passed to the Release and writes
+`latest.json` (the updater feed, `tools/release/cmd/updater-feed`) over
+them. A fork **without** the secrets still produces unsigned installers
+and no `latest.json` — the build stays green.
 
 The private key without the variable fails the build, since no app could
 verify its updates. An app checks each update against the public key it

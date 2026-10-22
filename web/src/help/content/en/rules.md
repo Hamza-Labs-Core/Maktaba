@@ -165,7 +165,9 @@ Decides how the machines of your cluster act as one Maktaba. **One sign-in for e
 
 ### Transcription {#transcription}
 
-Decides which machines transcribe. While the second listen is on, only the machines that run it (the Mac) transcribe, so every transcript has it. **Transcribe without the second listen** (off) lets a Windows or Linux machine transcribe too, with Whisper alone: faster, and a machine that runs the second listen gives those transcripts theirs later, a few at a time, after the new files. See [Transcription](/help/transcription#faq-windows).
+Decides which machines transcribe. While the second listen is on, only the machines that run it (the Mac, and a PC whose NVIDIA GPU holds it beside Whisper) transcribe, so every transcript has it. **Transcribe without the second listen** (off) lets the other Windows and Linux machines transcribe too, with Whisper alone: faster, and a machine that runs the second listen gives those transcripts theirs later, a few at a time, after the new files. See [Transcription](/help/transcription#faq-windows).
+
+**Second-listen tries per transcript** (6), **Wait after a try (hours)** (1) and **Longest wait between tries (hours)** (24) decide how a machine that runs the second listen gives a transcript made without it another go when it cannot give it its own: the wait counts from the end of each try and doubles after each, and after the last try the transcript is left as it is. It gets its tries again by itself with a second-listen model the home has not used before, or when a machine runs the second listen on a GPU, driver or packages the home has not seen; a try that found no room on the GPU does not count. Raise **Try the stopped transcripts again (round)** (0) by one to give them all their tries again yourself. Deleted and missing videos are not tried.
 
 ### Queue health {#queue-health}
 

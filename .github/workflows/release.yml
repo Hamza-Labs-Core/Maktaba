@@ -508,6 +508,10 @@ jobs:
       - uses: actions/checkout@v6.0.2
 
       - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          # the constraints name PyTorch's index: uv export --emit-index-url needs uv 0.12+
+          # (build-release.sh checks), and one uv version writes them the same every run
+          version: "0.13.4"
 
       - name: Build the wheel, constraints and installer archives
         env:
@@ -535,6 +539,9 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:
+      # one architecture failing must not cancel the other: the release ships
+      # the payloads that built (sign-and-release names a missing one)
+      fail-fast: false
       matrix:
         include:
           - { arch: x86_64, runner: ubuntu-22.04 }
@@ -583,8 +590,10 @@ jobs:
           ver="${TAG#v}"
           sde="$(git log -1 --pretty=%ct)"
           mkdir -p out
-          # deterministic: sorted names, pinned mtime, no uid/gid
-          tar --sort=name --mtime="@${sde}" --owner=0 --group=0 --numeric-owner \
+          # deterministic: sorted names, pinned mtime, no uid/gid; hard links
+          # stored as the files they are (the runtime's unpack takes files,
+          # directories and symlinks only, and check.sh refuses hard links)
+          tar --sort=name --mtime="@${sde}" --owner=0 --group=0 --numeric-owner --hard-dereference \
             -C build/linux-app -czf "out/maktaba-linux-payload-${ver}-${ARCH}.tar.gz" server
           ls -l out
 
@@ -595,9 +604,16 @@ jobs:
           path: out/*
           retention-days: 7
 
+  # The Linux payloads do not hold the release back: a leg that failed leaves its
+  # architecture out (the notes say so), the rest is published. Every other job must pass.
   sign-and-release:
     name: sign + publish release
     needs: [build-artifacts, build-server, build-images, package-archives, package-nfpm, package-node, package-linux-payload]
+    if: >-
+      !cancelled() &&
+      needs.build-artifacts.result == 'success' && needs.build-server.result == 'success' &&
+      needs.build-images.result == 'success' && needs.package-archives.result == 'success' &&
+      needs.package-nfpm.result == 'success' && needs.package-node.result == 'success'
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     permissions:
@@ -646,7 +662,10 @@ jobs:
           name: release-node
           path: staged/node
 
+      # none when both legs failed
       - name: Download the Linux payloads
+        if: needs.package-linux-payload.result != 'skipped'
+        continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
           pattern: release-linux-payload-*
@@ -674,8 +693,20 @@ jobs:
           cp staged/archives/* dist/
           cp staged/packages/* dist/
           # The Linux server payloads (Epic 39): a machine without a desktop
-          # installs and updates from these.
-          cp staged/linux-payload/* dist/
+          # installs and updates from these. An architecture whose leg failed is
+          # left out, and the notes say so (LINUX_PAYLOAD_MISSING).
+          ver="${TAG#v}"
+          missing=""
+          for arch in x86_64 aarch64; do
+            f="staged/linux-payload/maktaba-linux-payload-${ver}-${arch}.tar.gz"
+            if [ -f "$f" ]; then cp "$f" dist/; else missing="${missing:+$missing }$arch"; fi
+          done
+          echo "LINUX_PAYLOAD_MISSING=${missing}" >>"$GITHUB_ENV"
+          [ -z "$missing" ] || echo "::warning::no Linux payload for ${missing}: published without it"
+          # The installer itself, listed in checksums.txt and so signed with the rest:
+          # a machine fetches it from the release and verifies it like the payload
+          # (specs/epics/39-linux-app/headless.md) before running it.
+          cp deploy/packaging/install.sh dist/install.sh
           # The node's wheel, constraints and installer archives (a worker
           # machine joins a home with these; no checkout).
           cp staged/node/* dist/
@@ -884,12 +915,12 @@ jobs:
 
           ### Install
 
-          - **Linux/macOS (script):** \`curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPOSITORY:-Hamza-Labs-Core/Maktaba}/${TAG}/deploy/packaging/install.sh | bash\`
+          - **Linux/macOS (script):** download \`install.sh\` below with \`checksums.txt\` and \`checksums.txt.sigstore.json\`, verify them (below), then \`bash install.sh\`; on Linux, \`bash install.sh --app\` installs the whole server for a machine without a desktop
           - **Debian/Ubuntu:** download the \`.deb\` below, then \`sudo apt install ./maktaba-server_*.deb\`
           - **Fedora/RHEL:** download the \`.rpm\` below, then \`sudo dnf install ./maktaba-server-*.rpm\`
           - **macOS (Homebrew):** \`maktaba.rb\` formula is attached (and pushed to the tap when configured)
           - **Windows / manual:** grab the matching \`.tar.gz\` / \`.zip\` archive
-          - **Linux, one installation that runs everything (Epic 39):** the \`Maktaba_*.AppImage\` (or its \`.deb\` / \`.rpm\`) from the desktop build; on a machine without a desktop, \`maktaba-linux-payload-*-<x86_64|aarch64>.tar.gz\`: the same server, Postgres, ffmpeg and Python, run as a systemd user service
+          - **Linux, one installation that runs everything (Epic 39):** the \`Maktaba_*.AppImage\` (or its \`.deb\` / \`.rpm\`) from the desktop build; on a machine without a desktop, \`maktaba-linux-payload-*-<x86_64|aarch64>.tar.gz\`: the same server, Postgres and Python (ffmpeg is the distribution's: setup names the command that installs it), run as a systemd user service
           - **Worker machine (join a home, no checkout):** unpack \`maktaba-node-*.tar.gz\` (macOS/Linux) or \`maktaba-node-*.zip\` (Windows) and run \`install-node.sh\` / \`windows\\install-node.ps1\`: it installs this release's \`maktaba_pipeline-*.whl\` (also attached, with its \`-constraints.txt\`). See docs/cluster/join-a-machine.md.
 
           Artifacts are signed with keyless cosign (Sigstore) by this
@@ -913,6 +944,11 @@ jobs:
           \`cosign verify <image>@<digest>\` and
           \`--certificate-identity https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${TAG}\`
           \`--certificate-oidc-issuer https://token.actions.githubusercontent.com\`."
+          if [ -n "${LINUX_PAYLOAD_MISSING:-}" ]; then
+            notes="${notes}
+
+          **Not in this release:** the Linux payload for ${LINUX_PAYLOAD_MISSING} (its build failed). Machines on that architecture keep the version they run until the next release."
+          fi
           # A tag with a suffix (v0.1.0-rc.1) is a pre-release, never the
           # latest; a plain vX.Y.Z is published as the latest release. The
           # client workflows (desktop, mobile, tv) may have created the

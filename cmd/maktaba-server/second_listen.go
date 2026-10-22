@@ -33,10 +33,13 @@ type secondListen struct {
 }
 
 // secondListenOn: on Apple Silicon it runs on MLX (Epic 36); on Windows and Linux
-// on an NVIDIA GPU that has the memory beside Whisper, a compute capability of
-// 7.5 or more and an R580 driver or newer. A value nvidia-smi does not report is
-// not held against the GPU. Of several GPUs, one that can is enough; when none
-// can, the reason is the largest one's.
+// x86_64 on the NVIDIA GPU transcription uses, the first nvidia-smi lists (the
+// supervisor's tiers read that one, and the pipeline's cuda:0 is it), when it has the
+// memory beside Whisper, a compute capability of 7.5 or more and an R580 driver or
+// newer. A value nvidia-smi does not report is not held against the GPU. On arm64
+// (Linux, Windows) neither CTranslate2's CUDA build nor torch's runs, so there is no
+// second listen and no Hugging Face sign-in to ask for. The supervisor's
+// SecondListenGPU gives the same answer (TestSetupAndTheSupervisorAgreeOnTheGPU).
 func secondListenOn(goos, arch string, gpus []hostinfo.GPU) secondListen {
 	if goos == "darwin" {
 		if arch == "arm64" {
@@ -44,6 +47,10 @@ func secondListenOn(goos, arch string, gpus []hostinfo.GPU) secondListen {
 		}
 		return secondListen{Code: "second_listen_intel_mac",
 			Message: "This Mac has an Intel processor: the second listen runs on Apple Silicon."}
+	}
+	if arch != "amd64" {
+		return secondListen{Code: "second_listen_arch", Params: map[string]any{"arch": arch},
+			Message: fmt.Sprintf("The second listen runs on Apple Silicon, or on an x86-64 PC with an NVIDIA GPU: not on this %s machine, so Whisper's words are kept.", arch)}
 	}
 	if len(gpus) == 0 {
 		return secondListen{Code: "second_listen_no_gpu",
@@ -53,18 +60,10 @@ func secondListenOn(goos, arch string, gpus []hostinfo.GPU) secondListen {
 	if goos == "windows" {
 		need = secondListenMinMiBWindows
 	}
-	var largest *secondListen
-	var largestMiB uint64
-	for _, g := range gpus {
-		why := secondListenGPU(g, need)
-		if why == nil {
-			return secondListen{Runs: true}
-		}
-		if largest == nil || g.MemoryMB > largestMiB {
-			largest, largestMiB = why, g.MemoryMB
-		}
+	if why := secondListenGPU(gpus[0], need); why != nil {
+		return *why
 	}
-	return *largest
+	return secondListen{Runs: true}
 }
 
 // secondListenGPU is why g cannot run the second listen, or nil.

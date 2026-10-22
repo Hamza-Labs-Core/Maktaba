@@ -76,9 +76,10 @@ func InstallCommand(r OSRelease) string {
 		return "sudo apt install ffmpeg"
 	case has("arch"):
 		return "sudo pacman -S --needed ffmpeg"
-	// Fedora and its derivatives number their releases from 1 up past 30; RHEL's
-	// clones say "fedora" too, with the RHEL release (8, 9, 10)
-	case has("fedora") && release >= 30:
+	// Fedora and its derivatives number their releases from 30 up (40, 43); RHEL's
+	// clones say "fedora" too, with the RHEL release (8, 9, 10); Amazon Linux too,
+	// with its year (2023), for which RPM Fusion has nothing
+	case has("fedora") && release >= 30 && release < 1000:
 		return fmt.Sprintf("sudo dnf install https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-%d.noarch.rpm"+
 			" && sudo dnf install --allowerasing ffmpeg", release)
 	case has("rhel", "centos", "rocky", "almalinux", "ol") && release >= 8:
@@ -107,8 +108,11 @@ func InstallCommand(r OSRelease) string {
 
 // installNote is how to get the ffmpeg Maktaba needs, after a problem: on Linux the
 // distribution's command (ffmpeg_install), or what to look for on one this does not
-// know (ffmpeg_install_other). Nothing off Linux (the app carries its ffmpeg there) or
-// when a setting names a program that is not there (the setting is what to fix).
+// know (ffmpeg_install_other). An ffmpeg too old where the distribution's own package
+// is the one installed (apt, pacman) is not fixed by installing it again: then a newer
+// distribution or another ffmpeg (ffmpeg_old_distro). Nothing off Linux (the app
+// carries its ffmpeg there) or when a setting names a program that is not there (the
+// setting is what to fix).
 func installNote(r OSRelease, problem string) *Note {
 	if goos != "linux" || problem == "ffmpeg_not_found" {
 		return nil
@@ -118,7 +122,12 @@ func installNote(r OSRelease, problem string) *Note {
 	if distro == "" {
 		distro = r.ID
 	}
-	if cmd := InstallCommand(r); cmd != "" {
+	cmd := InstallCommand(r)
+	if problem == "ffmpeg_old" && (strings.HasPrefix(cmd, "sudo apt ") || strings.HasPrefix(cmd, "sudo pacman ")) {
+		return note("ffmpeg_old_distro", fmt.Sprintf("%s packages an ffmpeg older than %s, so installing it again does not help: "+
+			"upgrade the distribution, or name a newer ffmpeg in server.toml ([media] ffmpeg).", distro, need), "distro", distro, "need", need)
+	}
+	if cmd != "" {
 		return note("ffmpeg_install", fmt.Sprintf("On %s, this installs the ffmpeg Maktaba needs: %s", distro, cmd),
 			"distro", distro, "command", cmd)
 	}

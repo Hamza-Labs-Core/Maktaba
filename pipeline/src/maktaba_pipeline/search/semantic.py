@@ -143,7 +143,13 @@ class Embedder(Protocol):
 
 
 def pick_device(torch: Any | None = None) -> str:
-    """``MAKTABA_EMBED_DEVICE`` when set, else CUDA, else Apple's GPU (MPS), else CPU."""
+    """``MAKTABA_EMBED_DEVICE`` when set, else Apple's GPU (MPS), else the CPU.
+
+    Not an NVIDIA GPU of its own accord (story 38.9): it is Whisper's and the second
+    listen's, and their sizes (the supervisor's GPU tiers, the second listen's room check)
+    leave nothing for the e5 model and its CUDA context (0.5-1 GB). e5-small embeds a
+    transcript's chunks in moments on the CPU; ``MAKTABA_EMBED_DEVICE=cuda`` puts it on
+    the GPU all the same."""
     forced = os.getenv(DEVICE_ENV, "").strip()
     if forced:
         return forced
@@ -153,8 +159,6 @@ def pick_device(torch: Any | None = None) -> str:
         except ImportError:
             return "cpu"
     try:
-        if torch.cuda.is_available():
-            return "cuda"
         mps = getattr(torch.backends, "mps", None)
         if mps is not None and mps.is_available():
             return "mps"

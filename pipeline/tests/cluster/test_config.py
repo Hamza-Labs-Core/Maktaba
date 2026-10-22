@@ -7,6 +7,7 @@ import os
 import platform
 import stat
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -159,6 +160,137 @@ def test_windows_claim_keeps_the_files_acl(tmp_path: Path, monkeypatch: pytest.M
     cfg = config.load()
     assert cfg is not None and cfg.machine_id == "pc-a"
     assert acl() == before
+    # the old file ReplaceFileW kept under its backup name is gone with the success
+    assert sorted(p.name for p in roaming.parent.iterdir()) == ["node.json"]
+
+
+def _icacls(path: Path) -> list[str]:
+    """The ACEs icacls lists for path, one per line."""
+    import subprocess
+
+    out = subprocess.run(["icacls", str(path)], check=True, capture_output=True, text=True).stdout
+    aces: list[str] = []
+    for line in out.splitlines():
+        if line.startswith("Successfully processed"):
+            break
+        line = line.replace(str(path), "", 1).strip()
+        if line:
+            aces.append(line)
+    return aces
+
+
+class _Warnings:
+    """A logger that keeps what it was told to warn."""
+
+    def __init__(self) -> None:
+        self.events: list[str] = []
+
+    def warning(self, event: str, **_: object) -> None:
+        self.events.append(event)
+
+
+def _claim_seam(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, replace_file: Any
+) -> tuple[Path, _Warnings]:
+    """A roaming node config to claim, ReplaceFileW replaced, warnings caught."""
+    from maktaba_pipeline import log
+
+    roaming = _windows_profile(tmp_path, monkeypatch, "pc-a")
+    roaming.write_text(json.dumps(_JOINED), encoding="utf-8")
+    monkeypatch.setattr(config, "_replace_file", replace_file)
+    monkeypatch.setattr(config, "_claim_failed", set())
+    warnings = _Warnings()
+    monkeypatch.setattr(log, "get_logger", lambda: warnings)
+    return roaming, warnings
+
+
+def _windows_error(code: int) -> OSError:
+    return OSError(0, f"ReplaceFileW failed ({code})", None, code)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="ReplaceFileW")
+def test_windows_claim_survives_replacement_not_moved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ERROR_UNABLE_TO_MOVE_REPLACEMENT (1176) with the old file gone: the new copy is the
+    only one, so it takes the name, limited to the user first; nothing is left over."""
+
+    def gone(path: Path, tmp: Path, backup: Path) -> None:
+        path.unlink()
+        raise _windows_error(1176)
+
+    roaming, warnings = _claim_seam(tmp_path, monkeypatch, gone)
+    cfg = config.load()
+    assert cfg is not None and cfg.machine_id == "pc-a"
+    assert json.loads(roaming.read_text(encoding="utf-8")) == {**_JOINED, "machine_id": "pc-a"}
+    aces = _icacls(roaming)
+    user = os.environ.get("USERNAME", "")
+    assert len(aces) == 1 and user and user.lower() in aces[0].lower(), (
+        aces,
+        user,
+        warnings.events,
+    )
+    assert sorted(p.name for p in roaming.parent.iterdir()) == ["node.json"]
+    assert warnings.events == []
+
+
+@pytest.mark.skipif(os.name != "nt", reason="ReplaceFileW")
+def test_windows_claim_failing_with_both_files_kept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """1176 with a backup name (both files keep their names): the old file stays exactly
+    as it was, the node runs on unclaimed, and it is said once."""
+
+    def kept(path: Path, tmp: Path, backup: Path) -> None:
+        raise _windows_error(1176)
+
+    roaming, warnings = _claim_seam(tmp_path, monkeypatch, kept)
+    before = roaming.read_bytes()
+    for _ in range(2):
+        cfg = config.load()
+        assert cfg is not None and cfg.joined and cfg.machine_id == ""
+    assert roaming.read_bytes() == before
+    assert sorted(p.name for p in roaming.parent.iterdir()) == ["node.json"]
+    assert warnings.events == ["node_config_claim_failed"]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="ReplaceFileW")
+def test_windows_claim_failing_with_the_old_file_moved_aside(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ERROR_UNABLE_TO_MOVE_REPLACEMENT_2 (1177): the old file is under the backup name;
+    it is put back, the same file with the same ACL, and nothing is left over."""
+
+    def aside(path: Path, tmp: Path, backup: Path) -> None:
+        os.replace(path, backup)
+        raise _windows_error(1177)
+
+    roaming, warnings = _claim_seam(tmp_path, monkeypatch, aside)
+    before, acl = roaming.read_bytes(), _icacls(roaming)
+    cfg = config.load()
+    assert cfg is not None and cfg.joined
+    assert roaming.read_bytes() == before and _icacls(roaming) == acl
+    assert sorted(p.name for p in roaming.parent.iterdir()) == ["node.json"]
+    assert warnings.events == ["node_config_claim_failed"]
+
+
+def test_windows_claim_failing_before_the_replace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A claim whose new copy cannot even be written leaves the file byte-identical and
+    no temp file, and the node runs on."""
+
+    def unflushable(fd: int) -> None:
+        raise OSError("the disk is full")
+
+    roaming, warnings = _claim_seam(tmp_path, monkeypatch, None)
+    before = roaming.read_bytes()
+    monkeypatch.setattr(os, "fsync", unflushable)
+    cfg = config.load()
+    assert cfg is not None and cfg.joined
+    assert roaming.read_bytes() == before
+    assert sorted(p.name for p in roaming.parent.iterdir()) == ["node.json"]
+    assert warnings.events == ["node_config_claim_failed"]
 
 
 def test_the_override_wins_on_every_os() -> None:
