@@ -21,13 +21,17 @@ def test_defaults_every_kind_needs_approval() -> None:
     cfg = MaktabaTvStagingConfig()
     assert cfg.enabled is True  # owner decision: staging on by default
     assert cfg.swap_wait == "boundary" and cfg.hot_standby is True
+    # owner decisions: every kind waits for an admin but a (small) schedule change
     for kind in CHANGE_KINDS:
-        assert getattr(cfg, f"auto_promote_{kind}") == "approval"
+        want = "immediate" if kind == "schedule" else "approval"
+        assert getattr(cfg, f"auto_promote_{kind}") == want
+    assert cfg.auto_max_channels == 3
+    assert auto_rule(cfg, ["schedule"]) == "immediate"
     assert auto_rule(cfg, ["lineup", "schedule"]) == "approval"
     loose = MaktabaTvStagingConfig(auto_promote_lineup="immediate", auto_promote_art="quiet_window")
     assert auto_rule(loose, ["lineup"]) == "immediate"
     assert auto_rule(loose, ["lineup", "art"]) == "quiet_window"  # the strictest wins
-    assert auto_rule(loose, ["lineup", "schedule"]) == "approval"
+    assert auto_rule(loose, ["lineup", "settings"]) == "approval"
     assert "tv_staging" in {s["key"] for s in rules.schema()["sections"]}
 
 

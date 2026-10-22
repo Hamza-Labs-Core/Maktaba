@@ -1,7 +1,8 @@
 """The ``tv_staging`` rules (Epic 33, README "Settings"): every TV change goes through
 staging and waits for an admin's approval (owner decisions). The defaults are the owner's
 decisions, not "the current behaviour": staging is on, every kind of change needs an
-approval, a watched channel switches at its programme boundary, the hot standby is on.
+approval except a small schedule change (it goes on the air once verified), a watched
+channel switches at its programme boundary, the hot standby is on.
 
 The README lists ``auto_promote`` as one map; here it is one setting per kind
 (``auto_promote_<kind>``) so the settings page shows each with its choices."""
@@ -34,13 +35,17 @@ class MaktabaTvStagingConfig:
     auto_promote_settings: str = "approval"
     auto_promote_live_slots: str = "approval"
     auto_promote_art: str = "approval"
-    auto_promote_schedule: str = "approval"
+    #: the planner's daily schedule refreshes go on the air by themselves (owner, Oct 2026)
+    auto_promote_schedule: str = "immediate"
     auto_promote_binary: str = "approval"
     auto_promote_rollback: str = "approval"
     #: local window ("HH:MM-HH:MM") for an auto-promote rule switched on (and front-door
     #: restarts)
     quiet_window: str = "03:00-05:00"
     quiet_max_viewers: int = 0
+    #: a change an auto rule would put on the air waits for an admin when it touches
+    #: more channels than this (or the planner left conflicts out); 0: no limit
+    auto_max_channels: int = 3
     #: boundary: a watched channel switches at its next programme boundary; immediate
     swap_wait: str = "boundary"
     boundary_max_wait_minutes: int = 30
@@ -97,6 +102,14 @@ register(
         ),
         "quiet_max_viewers": Help(
             TSA, "Viewers at most in the quiet window", minimum=0, maximum=1000
+        ),
+        "auto_max_channels": Help(
+            TSA,
+            "Changed channels at most for an automatic change",
+            "A change a rule above would put on the air by itself waits for an admin when it "
+            "touches more channels than this, or the planner left a conflict out. 0: no limit.",
+            minimum=0,
+            maximum=1000,
         ),
         "require_second_admin": Help(
             TSA, "A second admin approves", "The approver must not be the change's author."
