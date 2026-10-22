@@ -57,7 +57,8 @@ don't append a line here; docs-only PRs are exempt.
   it names but cannot move) and offers to move it in: the plan shows what is carried and copied,
   and refuses, before anything stops, a key the app holds already and different, or a node whose
   node config is not the one the app reads; it says so when the roaming profile's node config is
-  another PC's (the app on this PC is not that node).
+  another PC's and this PC has not joined as its own machine (the app on this PC is not that
+  node), the one rule serve and setup's check follow too.
   The move builds the venv while the old install still runs, keeps its task's definition, stops it
   (its script's restart loop too, and nothing of it may come back for longer than the loop's delay;
   never the app's own programs, wherever the old folder is) and disables its task, and carries its
