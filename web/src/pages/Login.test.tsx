@@ -100,7 +100,7 @@ describe("Login next", () => {
   it("says the other sessions stay after a sign-out everywhere made here only", () => {
     render(
       <I18nProvider>
-        <MemoryRouter initialEntries={[{ pathname: "/login", state: { signedOutHere: true } }]}>
+        <MemoryRouter initialEntries={[{ pathname: "/login", state: { signedOut: "here" } }]}>
           <Routes>
             <Route path="/login" element={<Login />} />
           </Routes>
@@ -108,6 +108,19 @@ describe("Login next", () => {
       </I18nProvider>
     );
     expect(screen.getByRole("note")).toHaveTextContent("You're signed out on this machine");
+  });
+
+  it("says the other sessions were not checked when the machine could not tell", () => {
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={[{ pathname: "/login", state: { signedOut: "unchecked" } }]}>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>
+    );
+    expect(screen.getByRole("note")).toHaveTextContent("It couldn't check your sessions elsewhere");
   });
 
   it("says nothing of it on an ordinary sign-in", () => {

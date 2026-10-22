@@ -411,7 +411,11 @@ func (r *Resolver) SignIn(w http.ResponseWriter, req *http.Request) bool {
 // here are all node-local, this machine ends those, which are all it can end, and says
 // so (200, signed_out "here", code signed_out_here_only: their sessions elsewhere stay,
 // to be ended through the home), whether the home answers or not; nothing is handed to
-// the home, which would refuse it. False: the request is another one.
+// the home, which would refuse it. When the copy cannot tell (it does not answer in
+// time), this machine's sessions end, the sign-out is handed to the home all the same
+// (it takes it if the person signed in through this machine), and the answer says the
+// rest was not checked (200, signed_out "here", code signed_out_home_unchecked). False:
+// the request is another one.
 func (r *Resolver) SignOut(w http.ResponseWriter, req *http.Request) bool {
 	all := req.URL.Path == LogoutAllPath
 	if (req.URL.Path != LogoutPath && !all) || req.Method != http.MethodPost || r.Sessions == nil {
@@ -426,7 +430,11 @@ func (r *Resolver) SignOut(w http.ResponseWriter, req *http.Request) bool {
 		writeProblem(w, http.StatusForbidden, "https://maktaba.dev/problems/csrf-mismatch", "csrf token mismatch", "")
 		return true
 	}
-	if all && live && !r.homeTakesEverywhere(req.Context(), user) {
+	through, known := false, false
+	if all && live {
+		through, known = r.homeTakesEverywhere(req.Context(), user)
+	}
+	if all && live && known && !through {
 		if err := r.Sessions.EndUser(user); err != nil && r.Logger != nil {
 			r.Logger.Warn("node: a node-local sign-out was not saved", "err", err, "event", "node_local_sessions_failed")
 		}
@@ -457,6 +465,18 @@ func (r *Resolver) SignOut(w http.ResponseWriter, req *http.Request) bool {
 		r.Logger.Warn("node: a node-local sign-out was not saved", "err", err, "event", "node_local_sessions_failed")
 	}
 	r.setCookies(w, "", "", time.Time{})
+	if all && live && !known {
+		if r.Logger != nil {
+			r.Logger.Warn("node: signed out everywhere on this machine; whether the home takes it was not known (the copy "+
+				"did not answer): handed to it all the same", "user_id", user, "event", "node_local_sign_out_all_unchecked")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{"signed_out": "here", "code": "signed_out_home_unchecked",
+			"detail": "signed out on this machine; the home is told, and ends your other sessions if you signed in through this machine"})
+		return true
+	}
 	w.WriteHeader(http.StatusNoContent)
 	return true
 }
@@ -492,14 +512,14 @@ func writeProblem(w http.ResponseWriter, status int, typ, title, detail string) 
 }
 
 // homeTakesEverywhere reports whether the home would take a "sign out everywhere" of
-// user from this machine (the user has a home session made through it, on the copy);
-// not known, it would not.
-func (r *Resolver) homeTakesEverywhere(ctx context.Context, user string) bool {
+// user from this machine (the user has a home session made through it, on the copy),
+// and whether that is known (no copy, or one that does not answer in time: not).
+func (r *Resolver) homeTakesEverywhere(ctx context.Context, user string) (through, known bool) {
 	if r.Local == nil {
-		return false
+		return false, false
 	}
 	lctx, cancel := context.WithTimeout(ctx, localTimeout)
 	defer cancel()
 	through, err := r.Local.SignedInThrough(lctx, user)
-	return err == nil && through
+	return through, err == nil
 }

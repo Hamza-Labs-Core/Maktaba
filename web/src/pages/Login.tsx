@@ -23,8 +23,11 @@ import { SSO_AUTHORIZE_PATH, assignLocation, safeRelativePath } from "../lib/nav
 
 interface LocationState {
   from?: string;
-  /** a sign-out everywhere ended this machine's sessions only (Settings) */
-  signedOutHere?: boolean;
+  /**
+   * a sign-out everywhere ended this machine's sessions only ("here"), or those and the
+   * home was told without its sessions checked ("unchecked") (Settings)
+   */
+  signedOut?: "here" | "unchecked";
 }
 
 export function Login() {
@@ -48,7 +51,7 @@ export function Login() {
     (toAuthorize ? null : next) ??
     safeRelativePath((location.state as LocationState | null)?.from) ??
     "/library";
-  const signedOutHere = (location.state as LocationState | null)?.signedOutHere === true;
+  const signedOut = (location.state as LocationState | null)?.signedOut;
 
   const leave = useCallback(() => {
     if (left.current) return;
@@ -117,9 +120,14 @@ export function Login() {
             {t("homeOffline.signInHere")}
           </p>
         )}
-        {signedOutHere && (
+        {signedOut === "here" && (
           <p className="mkt-login__hint" role="note">
             {t("login.signedOutHere")}
+          </p>
+        )}
+        {signedOut === "unchecked" && (
+          <p className="mkt-login__hint" role="note">
+            {t("login.signedOutUnchecked")}
           </p>
         )}
         {!homeOut && signInAgain && (
