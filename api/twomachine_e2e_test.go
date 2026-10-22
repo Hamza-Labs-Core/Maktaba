@@ -337,8 +337,10 @@ func TestTwoMachinesOnePC(t *testing.T) {
 	       VALUES ($1, 'mp4', 'h264', 640, 360, 1000), ($2, 'mp4', 'h264', 640, 360, 1000), ($3, 'mp4', 'h264', 640, 360, 1000)`, v1, v2, v3)
 	// v3 is plain h264/aac mp4: a browser plays it directly (aud=streaming-direct)
 	exec1(`INSERT INTO audio_tracks (video_id, track_index, codec, channels, is_default) VALUES ($1, 0, 'aac', 2, true)`, v3)
-	// a short grace so the home-gone check is quick (rules.cluster)
-	exec1(`INSERT INTO app_settings (key, value, updated_at) VALUES ('rules.cluster', '{"delegate_unreachable_grace_seconds": 5}', now())`)
+	// a short grace so the home-gone check is quick (rules.cluster); this home runs on the
+	// test's own Postgres, not Maktaba's, which keeps copies only with the admin's rule
+	exec1(`INSERT INTO app_settings (key, value, updated_at) VALUES ('rules.cluster',
+	       '{"delegate_unreachable_grace_seconds": 5, "copies_on_operator_postgres": true}', now())`)
 
 	homePriv, homePub, _ := cluster.GenerateKey()
 	nodePriv, nodePub, _ := cluster.GenerateKey()
