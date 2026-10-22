@@ -124,29 +124,46 @@ func (s *SignOuts) saveLocked() error {
 
 // add records a sign-out (saved before it returns); errSignOutsFull when the store
 // holds maxSignOuts the home has not taken.
-func (s *SignOuts) add(key string, v signOut) error {
+func (s *SignOuts) add(key string, v signOut) error { return s.put(map[string]signOut{key: v}) }
+
+// put records sign-outs all or none (saved before it returns): errSignOutsFull, and none
+// of them kept, when the store has no room for every new one beside the ones the home
+// has not taken (a sign-out everywhere is its session's and the user's: half of it
+// would end the session and leave the rest).
+func (s *SignOuts) put(entries map[string]signOut) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.byKey == nil {
 		s.byKey = map[string]signOut{}
 	}
-	if _, ok := s.byKey[key]; !ok && len(s.byKey) >= maxSignOuts {
+	fresh := func() int {
+		n := 0
+		for k := range entries {
+			if _, ok := s.byKey[k]; !ok {
+				n++
+			}
+		}
+		return n
+	}
+	if n := fresh(); n > 0 && len(s.byKey)+n > maxSignOuts {
 		s.pruneLocked()
 		for k, was := range s.byKey {
 			// the home has these: its own revocation, pushed to every machine, holds
 			// them on this machine's copy
-			if len(s.byKey) < maxSignOuts {
+			if len(s.byKey)+fresh() <= maxSignOuts {
 				break
 			}
-			if !was.Sent.IsZero() {
+			if _, mine := entries[k]; !was.Sent.IsZero() && !mine {
 				delete(s.byKey, k)
 			}
 		}
-		if len(s.byKey) >= maxSignOuts {
+		if len(s.byKey)+fresh() > maxSignOuts {
 			return errSignOutsFull
 		}
 	}
-	s.byKey[key] = v
+	for k, v := range entries {
+		s.byKey[k] = v
+	}
 	return s.saveLocked()
 }
 
@@ -301,10 +318,11 @@ func (r *Resolver) SignOutHere(w http.ResponseWriter, req *http.Request) bool {
 	}
 	// on the home's clock (the sessions it ends are the ones it opened before then)
 	now := r.homeNow()
-	err = r.SignOuts.add(key, signOut{User: user, At: now})
-	if err == nil && all {
-		err = r.SignOuts.add("u:"+user, signOut{User: user, All: true, At: now})
+	entries := map[string]signOut{key: {User: user, At: now}}
+	if all {
+		entries["u:"+user] = signOut{User: user, All: true, At: now}
 	}
+	err = r.SignOuts.put(entries)
 	switch {
 	case errors.Is(err, errSignOutsFull):
 		if r.Logger != nil {

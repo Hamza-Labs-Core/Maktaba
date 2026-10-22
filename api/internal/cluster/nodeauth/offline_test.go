@@ -164,6 +164,9 @@ type fakeCopy struct {
 	expires time.Time
 	// ended are the sessions the copy has as signed out (it applied the home's change)
 	ended map[string]bool
+	// localOnly: no user has a home session made through this machine (they signed in
+	// here from the copy only)
+	localOnly bool
 }
 
 func (c *fakeCopy) set(f func(*fakeCopy)) { c.mu.Lock(); f(c); c.mu.Unlock() }
@@ -215,6 +218,15 @@ func (c *fakeCopy) SignIn(_ context.Context, username, password string) (*delega
 		}
 	}
 	return nil, ErrNotLive
+}
+
+func (c *fakeCopy) SignedInThrough(_ context.Context, userID string) (bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.broken {
+		return false, errors.New("copy: connection refused")
+	}
+	return userID == "u1" && !c.localOnly, nil
 }
 
 func (c *fakeCopy) Synced(context.Context) (time.Time, error) {
@@ -949,6 +961,54 @@ func TestTheSignOutStoreIsCapped(t *testing.T) {
 	}
 	if len(s.byKey) > maxSignOuts {
 		t.Fatalf("the store grew past its cap: %d", len(s.byKey))
+	}
+	// room for one only: a sign-out everywhere (its session and the user) is kept whole
+	// or not at all
+	s.mu.Lock()
+	for k, v := range s.byKey {
+		if !v.Sent.IsZero() {
+			delete(s.byKey, k)
+		}
+	}
+	for i := 0; len(s.byKey) < maxSignOuts-1; i++ {
+		s.byKey[SessionKey(fmt.Sprintf("fill-%d", i))] = signOut{User: "u9", At: g.now}
+	}
+	s.mu.Unlock()
+	g.csrf["s3"] = s1CSRF
+	if a := g.do(http.MethodPost, LogoutAllPath, "s3"); !a.refusedChange() {
+		t.Fatalf("a sign-out everywhere with room for half of it: %+v, want 503 home_unreachable", a)
+	}
+	if s.denied(SessionKey("s3"), "") || s.anyAll() {
+		t.Fatal("half of a sign-out everywhere was kept")
+	}
+}
+
+// A person signed in here only from the copy (no home session made through this
+// machine) asks to sign out everywhere: the home would not take it from this machine, so
+// it waits for the home (503, still signed in); a sign-out here still works.
+func TestALocalOnlySignOutEverywhereWaitsForTheHome(t *testing.T) {
+	g := newOfflineRig(t, true)
+	g.cp.set(func(c *fakeCopy) { c.localOnly = true })
+	g.goDown(time.Minute)
+	g.pastGrace()
+	_, id := g.signIn(t, "amal", "pw-amal")
+	if id == "" {
+		t.Fatal("no sign-in")
+	}
+	if a := g.do(http.MethodPost, LogoutAllPath, id); !a.refusedChange() || a.cleared() {
+		t.Fatalf("sign out everywhere: %+v, want 503 home_unreachable", a)
+	}
+	if a := g.do(http.MethodGet, "/api/videos", id); a.code != http.StatusOK {
+		t.Fatalf("still signed in: %+v", a)
+	}
+	if g.r.SignOuts.Waiting() != 0 {
+		t.Fatal("kept a sign-out everywhere the home would refuse")
+	}
+	if a := g.do(http.MethodPost, LogoutPath, id); a.code != http.StatusNoContent || !a.cleared() {
+		t.Fatalf("a sign-out here: %+v", a)
+	}
+	if a := g.do(http.MethodGet, "/api/videos", id); a.code != http.StatusUnauthorized {
+		t.Fatalf("after signing out here: %+v", a)
 	}
 }
 

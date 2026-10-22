@@ -119,6 +119,15 @@ func TestAMachineSignsOutOnlyWhatWasSignedInThroughIt(t *testing.T) {
 		live(onA.ID) || !live(onB.ID) || !live(atHome.ID) {
 		t.Fatalf("by hash: %+v (on A %v, on B %v, at home %v)", a, live(onA.ID), live(onB.ID), live(atHome.ID))
 	}
+	// a machine tells the same from its copy, before it hands one over (nodeauth)
+	for _, c := range []struct {
+		node, user string
+		want       bool
+	}{{nodeA, amal.ID, true}, {nodeB, amal.ID, true}, {nodeA, badr.ID, false}} {
+		if got, err := NewCopy(db, c.node).SignedInThrough(ctx, c.user); err != nil || got != c.want {
+			t.Fatalf("signed in through %s, from the copy: %v %v, want %v", c.node, got, err, c.want)
+		}
+	}
 	// badr never signed in through A: A cannot sign him out everywhere
 	before := time.Now().Add(time.Minute)
 	if a := call(nodeA, delegation.SignOutRequest{UserID: badr.ID, Before: &before}); a.Revoked != 0 || !live(badrAtHome.ID) {

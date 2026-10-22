@@ -24,6 +24,7 @@ func (beatCopy) SignIn(context.Context, string, string) (*delegation.Principal, 
 	return nil, nodeauth.ErrNotLive
 }
 func (c beatCopy) Synced(context.Context) (time.Time, error) { return c.synced, nil }
+func (beatCopy) SignedInThrough(context.Context, string) (bool, error) { return false, nil }
 
 // #157: with the home there, the node reads from its copy only while the copy is within
 // rules.cluster.copy_reads_max_lag_seconds of it; further behind, its reads go to the

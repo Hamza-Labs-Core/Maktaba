@@ -24,6 +24,8 @@ import (
 // failed sign-in is counted by the node, not in the copy).
 type Copy struct {
 	Home *Home
+	// NodeID is this machine's id (SignedInThrough).
+	NodeID string
 }
 
 var _ nodeauth.Local = Copy{}
@@ -125,8 +127,14 @@ func (c Copy) Synced(ctx context.Context) (time.Time, error) {
 	return at, err
 }
 
-// NewCopy is a Copy over a node's copy of the home's database.
-func NewCopy(db *sql.DB) Copy {
-	return Copy{Home: &Home{DB: db, Sessions: sessions.New(db), Users: users.New(db),
+// SignedInThrough implements nodeauth.Local: the home's own check of a sign-out
+// everywhere a machine hands it (Home.SignOut), on the copy.
+func (c Copy) SignedInThrough(ctx context.Context, userID string) (bool, error) {
+	return c.Home.signedInThrough(ctx, c.NodeID, userID)
+}
+
+// NewCopy is a Copy over node's copy of the home's database.
+func NewCopy(db *sql.DB, node string) Copy {
+	return Copy{NodeID: node, Home: &Home{DB: db, Sessions: sessions.New(db), Users: users.New(db),
 		ACL: &authz.ACLStore{DB: db}, PAT: pat.New(db)}}
 }

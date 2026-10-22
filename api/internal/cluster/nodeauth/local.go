@@ -31,6 +31,10 @@ type Local interface {
 	// Synced is the home's time of the last change the copy applied (the home's beat,
 	// written every few seconds while a machine follows it).
 	Synced(ctx context.Context) (time.Time, error)
+	// SignedInThrough reports whether the user has a home session made through this
+	// machine (live or not): the home takes a "sign out everywhere" this machine hands
+	// it only for such a person.
+	SignedInThrough(ctx context.Context, userID string) (bool, error)
 }
 
 // ErrNotLive: the copy says the credential is not a live one (signed out, expired,
@@ -402,7 +406,12 @@ func (r *Resolver) SignIn(w http.ResponseWriter, req *http.Request) bool {
 // nothing of it, so this machine answers whether the home is there or not). "Sign out
 // everywhere" (/api/auth/logout-all) ends every node-local session of the user and,
 // through the home once it answers, their home sessions made before it (signout.go).
-// False: the request is another one.
+// The home takes that only from a machine the person signed in through at the home (it
+// cannot tell a node-local sign-in from a machine's word): for a person whose sessions
+// here are all node-local, it waits for the home (503 home_unreachable, still signed
+// in, as a sign-out everywhere this machine cannot place: SignOutHere), rather than end
+// this machine's sessions alone and have the home refuse the rest later. False: the
+// request is another one.
 func (r *Resolver) SignOut(w http.ResponseWriter, req *http.Request) bool {
 	all := req.URL.Path == LogoutAllPath
 	if (req.URL.Path != LogoutPath && !all) || req.Method != http.MethodPost || r.Sessions == nil {
@@ -415,6 +424,14 @@ func (r *Resolver) SignOut(w http.ResponseWriter, req *http.Request) bool {
 	user, csrf, live := r.Sessions.Lookup(id)
 	if live && !csrfOK(req, csrf) {
 		writeProblem(w, http.StatusForbidden, "https://maktaba.dev/problems/csrf-mismatch", "csrf token mismatch", "")
+		return true
+	}
+	if all && live && !r.homeTakesEverywhere(req.Context(), user) {
+		if r.Logger != nil {
+			r.Logger.Info("node: a sign-out everywhere of a person signed in here only from the copy waits for the home",
+				"user_id", user, "event", "node_local_sign_out_all_waits")
+		}
+		writeUnreachable(w, true)
 		return true
 	}
 	var err error
@@ -464,4 +481,17 @@ func writeProblem(w http.ResponseWriter, status int, typ, title, detail string) 
 		body["detail"] = detail
 	}
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+// homeTakesEverywhere reports whether the home would take a "sign out everywhere" of
+// user from this machine (the user has a home session made through it, on the copy);
+// not known, it would not.
+func (r *Resolver) homeTakesEverywhere(ctx context.Context, user string) bool {
+	if r.Local == nil {
+		return false
+	}
+	lctx, cancel := context.WithTimeout(ctx, localTimeout)
+	defer cancel()
+	through, err := r.Local.SignedInThrough(lctx, user)
+	return err == nil && through
 }

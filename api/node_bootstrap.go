@@ -269,7 +269,7 @@ func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *sl
 		HomeOffset:        rt.clock.Offset,
 	}
 	if dbs.copyDB != nil {
-		rt.resolver.Local = clusterauth.NewCopy(dbs.copyDB)
+		rt.resolver.Local = clusterauth.NewCopy(dbs.copyDB, cfg.NodeID)
 	} else {
 		logger.Warn("node: no copy of the home's database (MAKTABA_COPY_DATABASE_URL); with the home away no one is signed in here",
 			"event", "node_no_copy")
