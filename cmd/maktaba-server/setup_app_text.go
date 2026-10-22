@@ -26,6 +26,8 @@ var terminalTexts = map[string][2]string{
 	"terminal.note":          {"Note: {text}", "ملاحظة: {text}"},
 	"terminal.blocked":       {"Maktaba cannot run its server on this computer:", "لا تستطيع مكتبة تشغيل خادمها على هذا الحاسوب:"},
 	"terminal.blockedEnd":    {"this computer cannot run the server (see above)", "هذا الحاسوب لا يستطيع تشغيل الخادم (انظر أعلاه)"},
+	"terminal.installRun":    {"Run that command now (sudo asks for your password)", "تشغيل هذا الأمر الآن (سيطلب sudo كلمة مرورك)"},
+	"terminal.installFailed": {"The command did not finish ({err}): run it yourself, then run the setup again.", "لم يكتمل الأمر ({err}): شغّله بنفسك، ثم شغّل الإعداد من جديد."},
 	"terminal.passwordEmpty": {"The password is empty.", "كلمة المرور فارغة."},
 	"terminal.roots":         {"Library folders (separate them with commas)", "مجلدات المكتبة (افصل بينها بفواصل)"},
 	"terminal.map":           {"NAS path map (separate entries with commas; empty: none)", "تحويل مسارات الـNAS (افصل بين الأسطر بفواصل؛ فارغ: لا شيء)"},

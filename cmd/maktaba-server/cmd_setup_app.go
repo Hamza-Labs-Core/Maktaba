@@ -252,6 +252,10 @@ type appSetup struct {
 	// ending the setup: skipped closes on one, stop ends the wait's claim
 	// (nil: nothing skips it).
 	skipWait func() (skipped <-chan struct{}, stop func())
+	// install runs a command check names to fix this computer (the
+	// distribution's ffmpeg, Epic 39) in the terminal, sudo asking for the
+	// password there (nil: the command is only shown).
+	install func(ctx context.Context, command string) error
 }
 
 func (a *appSetup) printf(format string, args ...any) { fmt.Fprintf(a.out, format, args...) }
@@ -347,7 +351,14 @@ func (a *appSetup) Run(ctx context.Context) error {
 	}
 	ok, signIn := a.showCheck(res)
 	if !ok {
-		return errors.New(a.t.get("terminal.blockedEnd"))
+		// the distribution's ffmpeg: check names the command that installs it,
+		// and the terminal offers to run it (once), then checks again
+		if res, err = a.installAndCheck(ctx, res); err != nil {
+			return err
+		}
+		if ok, signIn = a.showCheck(res); !ok {
+			return errors.New(a.t.get("terminal.blockedEnd"))
+		}
 	}
 	if err := a.toRuntime(ctx); err != nil {
 		return err
@@ -522,6 +533,41 @@ func (a *appSetup) askModelsNoSignIn(string) (any, error) {
 		return map[string]any{"source": "huggingface"}, nil
 	}
 	return map[string]any{"source": "nas", "path": path}, nil
+}
+
+// installAndCheck offers to run the install command check named
+// (ffmpeg_install's), asked in the terminal (never from an answers file), and
+// runs check again after it. The setup ends when there is no command, it is
+// declined, or it fails.
+func (a *appSetup) installAndCheck(ctx context.Context, res json.RawMessage) (json.RawMessage, error) {
+	blocked := errors.New(a.t.get("terminal.blockedEnd"))
+	var c struct {
+		Problems []checkNote `json:"problems"`
+	}
+	command := ""
+	if json.Unmarshal(res, &c) == nil {
+		for _, p := range c.Problems {
+			if s, ok := p.Params["command"].(string); p.Code == "ffmpeg_install" && ok {
+				command = s
+			}
+		}
+	}
+	if command == "" || a.install == nil || len(a.answers) > 0 {
+		return nil, blocked
+	}
+	run, err := a.ask.yesNo(a.t.get("terminal.installRun"), true)
+	if err != nil {
+		return nil, err
+	}
+	if !run {
+		return nil, blocked
+	}
+	if err := a.install(ctx, command); err != nil {
+		a.say("terminal.installFailed", "err", err.Error())
+		return nil, blocked
+	}
+	a.printf("\n")
+	return a.fixed(ctx, "check", map[string]any{})
 }
 
 // showCheck prints what will run, the problems and the warnings
@@ -722,8 +768,17 @@ func runAppSetupCmd(answersFile string, answersFD int, lang string) error {
 	if runtimeGOOS == "linux" {
 		a.runtime = func(ctx context.Context) (stepRunner, error) { return headlessRuntime(ctx, t, os.Stdout) }
 		a.afterFinish = func(ctx context.Context) error { return headlessService(ctx, t, os.Stdout) }
+		a.install = runInTerminal
 	}
 	return endError(t, a.Run(context.Background()))
+}
+
+// runInTerminal runs a shell command with this terminal (sudo asks for the
+// password in it).
+func runInTerminal(ctx context.Context, command string) error {
+	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	return cmd.Run()
 }
 
 // skipGrace is how long a failed poll waits for the Ctrl+C that may have ended it

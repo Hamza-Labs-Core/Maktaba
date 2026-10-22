@@ -318,6 +318,78 @@ func TestAppSetupStopsWhenTheComputerCannotRunIt(t *testing.T) {
 	}
 }
 
+// checkNoFFmpeg is check on a Fedora with its ffmpeg-free: the problem, and the
+// command that installs the ffmpeg Maktaba needs.
+var checkNoFFmpeg = map[string]any{"ok": false, "warnings": []any{}, "problems": []map[string]any{
+	{"code": "ffmpeg_lacks", "message": "lacks libx264",
+		"params": map[string]any{"path": "/usr/bin/ffmpeg", "have": "6.1.2", "missing": "encoder libx264"}},
+	{"code": "ffmpeg_install", "message": "On Fedora Linux 40, this installs ...",
+		"params": map[string]any{"distro": "Fedora Linux 40", "command": "sudo dnf install --allowerasing ffmpeg"}}}}
+
+// Epic 39: check names the command that installs the distribution's ffmpeg; the
+// terminal offers to run it, then checks again and goes on.
+func TestAppSetupInstallsFFmpeg(t *testing.T) {
+	f := &fakeSteps{answers: map[string][]any{"check": {checkNoFFmpeg, checkOK}}}
+	var out bytes.Buffer
+	var ran []string
+	a := &appSetup{run: f.run, ask: &script{t: t, yes: []bool{true}, eof: true}, out: &out, t: textsFor("en"),
+		runtime: func(context.Context) (stepRunner, error) { f.calls = append(f.calls, "[runtime]"); return f.run, nil },
+		install: func(_ context.Context, command string) error { ran = append(ran, command); return nil }}
+	if err := a.Run(context.Background()); !errors.Is(err, errCancelled) {
+		t.Fatalf("err %v\n%s", err, out.String())
+	}
+	if strings.Join(ran, ";") != "sudo dnf install --allowerasing ffmpeg" {
+		t.Errorf("ran %q", ran)
+	}
+	// on to the admin question (the script ends there)
+	if got := strings.Join(f.calls, " "); got != "status check check [runtime]" {
+		t.Errorf("steps %s", got)
+	}
+	for _, want := range []string{"/usr/bin/ffmpeg (FFmpeg 6.1.2) lacks what Maktaba uses: encoder libx264.",
+		"On Fedora Linux 40, this installs the ffmpeg Maktaba needs: sudo dnf install --allowerasing ffmpeg"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("no %q in\n%s", want, out.String())
+		}
+	}
+}
+
+// Declined, failed, or from an answers file (never a sudo there): the setup ends
+// with the command shown.
+func TestAppSetupFFmpegNotInstalled(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		yes     []bool
+		fail    error
+		answers map[string]json.RawMessage
+		ran     int
+		says    string
+	}{
+		{name: "declined", yes: []bool{false}},
+		{name: "failed", yes: []bool{true}, fail: errors.New("exit status 1"), ran: 1,
+			says: "The command did not finish (exit status 1): run it yourself, then run the setup again."},
+		{name: "an answers file", answers: map[string]json.RawMessage{"admin": json.RawMessage(`{}`)}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := &fakeSteps{answers: map[string][]any{"check": {checkNoFFmpeg, checkOK}}}
+			var out bytes.Buffer
+			ran := 0
+			a := &appSetup{run: f.run, ask: &script{t: t, yes: c.yes}, out: &out, t: textsFor("en"), answers: c.answers,
+				runtime: func(context.Context) (stepRunner, error) { t.Fatal("runtime copied"); return nil, nil },
+				install: func(context.Context, string) error { ran++; return c.fail }}
+			err := a.Run(context.Background())
+			if err == nil || err.Error() != a.t.get("terminal.blockedEnd") {
+				t.Fatalf("err %v", err)
+			}
+			if ran != c.ran || strings.Count(strings.Join(f.calls, " "), "check") != 1 {
+				t.Errorf("ran %d, steps %v", ran, f.calls)
+			}
+			if !strings.Contains(out.String(), "sudo dnf install --allowerasing ffmpeg") || !strings.Contains(out.String(), c.says) {
+				t.Errorf("output\n%s", out.String())
+			}
+		})
+	}
+}
+
 func TestAppSetupOnAConfiguredComputerReinstallsTheService(t *testing.T) {
 	f := &fakeSteps{answers: map[string][]any{"status": {map[string]any{"configured": true, "web_url": "http://127.0.0.1:8088"}}}}
 	var order []string
