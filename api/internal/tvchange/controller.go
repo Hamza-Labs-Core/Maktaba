@@ -329,6 +329,9 @@ func (c *Controller) ready(ctx context.Context, cfg Config, ch *Change) error {
 		loc = time.Local
 	}
 	warn, _ := ch.VerifyReport["warnings"].(float64)
+	if AutoBlocked(cfg, ch) != "" {
+		return nil
+	}
 	if AutoPromote(cfg, ch.Kinds, c.now().In(loc), c.viewers(ctx), warn > 0, ch.SwapAt) {
 		return c.startSwap(ctx, ch, ActionAutoPromote, map[string]any{"rule": StrictestRule(cfg, ch.Kinds)})
 	}
