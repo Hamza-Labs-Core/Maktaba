@@ -1,10 +1,12 @@
 # Reusable Linux app payload gate (Epic 39, story 39.2): on an x86_64 and an aarch64
-# runner, build the server payload (Go binaries with the web UI, pinned Postgres / ffmpeg /
-# Python checked against tools/release/linux-app/pins.env, Postgres's library closure from
-# the runner, the pipeline wheel + constraints) and smoke-test it with
+# runner, build the server payload (Go binaries with the web UI, pinned Postgres / Python
+# checked against tools/release/linux-app/pins.env, Postgres's library closure from the
+# runner, the pipeline wheel + constraints) and smoke-test it with
 # tools/release/linux-app/check.sh: on the runner, and in minimal containers of the
 # distributions the app supports (the payload mounted read-only, an ordinary user), so a
-# library the payload assumes but a system lacks fails here.
+# library the payload assumes but a system lacks fails here. ffmpeg is the distribution's:
+# each container installs its own, and `maktaba-server ffmpeg` must take Ubuntu's and
+# Debian's and refuse Fedora's ffmpeg-free (no libx264) with the RPM Fusion command.
 
 name: Linux app
 
@@ -57,7 +59,7 @@ jobs:
         run: |
           pnpm -C web install --frozen-lockfile
           sudo apt-get update -qq
-          sudo apt-get install -y -qq patchelf zip shellcheck
+          sudo apt-get install -y -qq patchelf zip shellcheck ffmpeg
 
       # the pinned third-party downloads (~150 MB), keyed on their checksums
       # an earlier pins.env's cache too: payload.sh checks every file against its pinned
@@ -81,18 +83,26 @@ jobs:
 
       # an ordinary user with a passwd entry (initdb looks the user up), the
       # runner's uid so the read-only checkout is theirs; coreutils' chroot
-      # --userspec drops root in every image (minimal Ubuntu has no runuser)
+      # --userspec drops root in every image (minimal Ubuntu has no runuser).
+      # Each image installs its distribution's ffmpeg first, and check.sh is told
+      # what the server must say of it.
       - name: Check it in minimal containers
         run: |
           set -euo pipefail
-          for image in ubuntu:22.04 debian:12-slim fedora:40; do
-            echo "::group::$image"
-            docker run --rm -v "$PWD:$PWD:ro" -w "$PWD" -e UID_GID="$(id -u):$(id -g)" "$image" bash -c '
+          for spec in "ubuntu:22.04 ok" "debian:12-slim ok" "fedora:40 lacks"; do
+            image="${spec% *}" want="${spec#* }"
+            echo "::group::$image (its ffmpeg: $want)"
+            docker run --rm -v "$PWD:$PWD:ro" -w "$PWD" -e UID_GID="$(id -u):$(id -g)" -e WANT="$want" "$image" bash -c '
               set -e
+              if command -v apt-get >/dev/null; then
+                apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends ffmpeg >/dev/null
+              else
+                dnf install -y -q ffmpeg-free >/dev/null
+              fi
               groupadd -g "${UID_GID#*:}" ci 2>/dev/null || true
               useradd -m -u "${UID_GID%%:*}" -g "${UID_GID#*:}" ci
               exec chroot --skip-chdir --userspec="$UID_GID" / env HOME=/home/ci USER=ci \
-                bash tools/release/linux-app/check.sh --payload build/linux-app/server'
+                bash tools/release/linux-app/check.sh --payload build/linux-app/server --ffmpeg "$WANT"'
             echo "::endgroup::"
           done
 

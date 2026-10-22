@@ -1,0 +1,20 @@
+File formats:
+ D. = Demuxing supported
+ .E = Muxing supported
+ --
+ D  3dostr          3DO STR
+  E 3g2             3GP2 (3GPP2 file format)
+  E chromaprint     Chromaprint
+ DE dash            DASH Muxer
+ DE gif             CompuServe Graphics Interchange Format (GIF)
+ DE hls             Apple HTTP Live Streaming
+ DE image2          image2 sequence
+ DE image2pipe      piped image2 sequence
+ D  lavfi           Libavfilter virtual input device
+  E matroska        Matroska
+ D  matroska,webm   Matroska / WebM
+ D  mov,mp4,m4a,3gp,3g2,mj2 QuickTime / MOV
+ DE mpegts          MPEG-TS (MPEG-2 Transport Stream)
+  E null            raw null video
+ DE rawvideo        raw video
+ DE s16le           PCM signed 16-bit little-endian

@@ -14,9 +14,9 @@ The owner's decision (2026-10-20): *"also need the same one app setup on windows
 another for linux"*.
 
 1. **One Linux installation runs everything**: the API, streaming (Live TV), the pipeline workers
-   *including transcription and the second listen*, semantic search, the web app, the database and
-   ffmpeg. It starts at boot and restarts anything that stops. No Docker, no distro Postgres, no
-   terminal steps.
+   *including transcription and the second listen*, semantic search, the web app and the database,
+   with the distribution's ffmpeg (below). It starts at boot and restarts anything that stops. No
+   Docker, no distro Postgres, no terminal steps.
 2. **It is a desktop app where there is a desktop**: install the AppImage (or the .deb / .rpm), open
    it and follow the same short setup as on the Mac. The window is the web app. Closing it leaves the
    server running, and the tray icon shows the server's status.
@@ -52,7 +52,6 @@ Maktaba_<v>_amd64.AppImage  ·  maktaba_<v>_amd64.deb  ·  maktaba-<v>-1.x86_64.
     postgres/  bin/ lib/ share/   theseus-rs 16.15.0 <arch>-unknown-linux-gnu, plus the libraries it
                                   links that a minimal system can lack (OpenSSL 3, libxml2, lz4, zstd,
                                   krb5), with an $ORIGIN rpath
-    ffmpeg/    ffmpeg ffprobe     ffmpeg.martin-riedl.de 8.1.2 (the Mac's source), linux amd64/arm64
     python/    CPython 3.12.15    python-build-standalone <arch>-unknown-linux-gnu
     pipeline/  maktaba_pipeline-<v>-py3-none-any.whl  constraints.txt
     licenses/
@@ -62,6 +61,15 @@ Maktaba_<v>_amd64.AppImage  ·  maktaba_<v>_amd64.deb  ·  maktaba-<v>-1.x86_64.
 
 maktaba-linux-payload-<v>-<arch>.tar.gz    the same server/ tree, for a machine without a desktop
 ```
+
+**ffmpeg is the distribution's** (the owner's decision, 2026-10-21: the ffmpeg.martin-riedl.de
+Linux builds pinned before are configured with `--enable-nonfree`, which FFmpeg says makes them
+unredistributable, so none is bundled). The .deb `Depends: ffmpeg`, the
+.rpm `Requires: ffmpeg` (RPM Fusion's on Fedora and RHEL: their own `ffmpeg-free` lacks libx264 and
+provides only `ffmpeg-free`; Packman's on openSUSE). What Maktaba needs, and how setup, `maktaba-server
+ffmpeg` and the System health page check it and name the distribution's install command:
+[tools/release/linux-app/README.md](../../../tools/release/linux-app/README.md#ffmpeg-the-distributions).
+`[media] ffmpeg` / `ffprobe` in `server.toml` name another.
 
 Per-user state, XDG throughout (`config.DirsFor` already resolves these on Linux):
 
@@ -94,7 +102,8 @@ Per-user state, XDG throughout (`config.DirsFor` already resolves these on Linux
   update with the same Python minor version needs no rebuild.
 - **Supported systems:** x86_64 and aarch64, glibc ≥ 2.35, with a systemd user manager: Ubuntu 22.04+,
   Debian 12+, Fedora 36+, RHEL/Alma/Rocky 10, Linux Mint 21+, Pop!_OS 22.04+. The baseline is set by
-  the ffmpeg and Tauri builds (glibc 2.35, libstdc++ of GCC 12). The bundled Postgres needs 2.34.
+  the build machine (Ubuntu 22.04, glibc 2.35: the libraries beside Postgres come from it) and the
+  Tauri builds. The bundled Postgres needs 2.34.
   `check` refuses lower (story 39.6). The desktop packages' tray library
   (`libayatana-appindicator`) comes from EPEL on RHEL/Alma/Rocky 10 (tauri makes it a hard
   dependency, and the shell needs it to start); a machine without a desktop needs nothing extra.
@@ -157,7 +166,7 @@ architectures.
 | # | Story | Scope |
 |---|---|---|
 | 39.1 | **This spec** | this README, [contract-runtime.md](contract-runtime.md), [contract-stt-linux.md](contract-stt-linux.md), [headless.md](headless.md) |
-| 39.2 | **The Linux payload** | `tools/release/linux-app/` (beside `mac-app/` and Epic 38's `win-app/`): `pins.env` per architecture (the Postgres URLs and SHA-256s are the ones `pgbin` pins; once `pgbin` is on main (Epic 37, PR #196), the test that keeps the Mac's pins equal to it covers these too), `payload.sh` (Go binaries for linux/amd64 or arm64, Postgres plus its library closure from the build host with an `$ORIGIN` rpath, ffmpeg, Python, the wheel and constraints; `files.sha256` with every file's mode, size and SHA-256 and every symlink, and payload.json naming it by its SHA-256, with `min_glibc`), and `check.sh`. `check.sh` scans every ELF for its newest GLIBC symbol, runs `initdb`, starts and queries a cluster, and runs `ffprobe`, the bundled Python and `venv_bootstrap --check`. `make linux-app-payload`. CI `_linux-app.yml` on ubuntu-22.04 and ubuntu-22.04-arm builds the payload and runs `check.sh` inside `ubuntu:22.04`, `debian:12-slim` and `fedora:40` |
+| 39.2 | **The Linux payload** | `tools/release/linux-app/` (beside `mac-app/` and Epic 38's `win-app/`): `pins.env` per architecture (the Postgres URLs and SHA-256s are the ones `pgbin` pins; once `pgbin` is on main (Epic 37, PR #196), the test that keeps the Mac's pins equal to it covers these too), `payload.sh` (Go binaries for linux/amd64 or arm64, Postgres plus its library closure from the build host with an `$ORIGIN` rpath, Python (no ffmpeg: the distribution's), the wheel and constraints; `files.sha256` with every file's mode, size and SHA-256 and every symlink, and payload.json naming it by its SHA-256, with `min_glibc`), and `check.sh`. `check.sh` scans every ELF for its newest GLIBC symbol, runs `initdb`, starts and queries a cluster, and runs `ffprobe`, the bundled Python and `venv_bootstrap --check`. `make linux-app-payload`. CI `_linux-app.yml` on ubuntu-22.04 and ubuntu-22.04-arm builds the payload and runs `check.sh` inside `ubuntu:22.04`, `debian:12-slim` and `fedora:40` |
 | 39.3 | **Runtime copy** | `maktaba-server runtime install --from <payload> \| activate \| status \| prune` ([contract-runtime.md](contract-runtime.md)): copy into `runtime/.staging-*`, verify against `files.sha256`, rename; the first runtime becomes `current`; flip `current` while the unit is stopped, record `previous`, refuse a downgrade below the watermark, prune the rest, all under a lock. On top of 38.2's payload detection in the launcher: `MAKTABA_APP_BUNDLE` is the unresolved `runtime/current`, the state root is `$XDG_DATA_HOME/maktaba`, and `owner` decides whether the app or the machine updates it: with `headless`, `maktaba-server update` installs the release's verified payload tarball as a new runtime, and the API's Update now runs it as a transient user unit |
 | 39.4 | **Linux paths in app-bundle mode** | `MAKTABA_CACHE_ROOT` and pip's cache under `$XDG_CACHE_HOME/maktaba`; the venv's log under the logs dir. The bundled Postgres's `enabled = "auto"` inside any payload is 38.10's |
 | 39.5 | **The systemd user service** | `internal/service`: the app's user unit (the `runtime/current` launcher, `--log-file`), and `maktaba-server service install \| uninstall \| status \| start \| stop \| restart \| linger` (`--json`). The shell and the headless setup both call it, so neither writes units itself. Linger: polkit allows it without a password from an active desktop session; over SSH, `loginctl` asks in the terminal. `status` reports a missing user manager (no systemd as PID 1, e.g. WSL) as `unsupported` with the reason |

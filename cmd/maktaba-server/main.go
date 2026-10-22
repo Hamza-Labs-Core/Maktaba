@@ -68,6 +68,7 @@ func newRootCmd() *cobra.Command {
 		newMigrateFromDevCmd(),
 		newServiceCmd(),
 		newRuntimeCmd(),
+		newFFmpegCmd(),
 	)
 	return root
 }
@@ -85,5 +86,6 @@ const rootLong = `maktaba-server runs all of Maktaba from a single binary.
   maktaba-server migrate-from-dev  Move the developer stack into Maktaba.app
   maktaba-server service   The systemd user service of the Linux app
   maktaba-server runtime   The Linux app's runtime copy of the server payload
+  maktaba-server ffmpeg    Check the ffmpeg every role runs (on Linux, the distribution's)
 
 Configuration lives in server.toml (see 'maktaba-server setup').`

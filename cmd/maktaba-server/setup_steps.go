@@ -241,6 +241,10 @@ func stepCheck(s *setupRun, _ json.RawMessage) (any, error) {
 	for _, check := range platformChecks {
 		check(s.ctx, &res)
 	}
+	// Epic 39: on Linux the distribution's ffmpeg (the app carries none there)
+	if ffmpegInCheck {
+		checkFFmpeg(s.ctx, s.cfg, &res)
+	}
 	// Epic 38 story 38.1: the roaming profile's node settings are another PC's (their
 	// machine_id), so this machine runs as no home's machine until it joins as its own
 	if p, owner := foreignNodeConfig(); p != "" && !config.LocalNodeConfig().Joined() {
