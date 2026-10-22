@@ -246,10 +246,14 @@ don't append a line here; docs-only PRs are exempt.
   the file: the old one is put back, or the new copy takes its place. What even that could not
   finish (the old file under a backup name, the new one as a temp file) is still the node
   config for every reader, so a roaming one stays this PC's and the node stays joined; the next
-  start puts it back without ever replacing a file a write put there meanwhile. A re-join keeps
-  it as `node.json.bak` and removes the rest, and the node's uninstall script names it among
-  the files to delete to forget the home. A claim that cannot be written leaves the file as it
-  was and says so once. The temp file a node config is written through is created the user's
+  start puts it back without ever replacing a file a write or another start put there
+  meanwhile, and never an older backup while a newer one is busy; a broken `node.json` is kept
+  beside it (`node.json.broken-…`), never removed. Writes of one node config run one at a time
+  (a lock beside it, which recovery takes too): two ReplaceFileW calls at once could undo one
+  another. A `node.json` an editor saved with a UTF-8 BOM is read as the node config by every
+  reader. A re-join keeps it as `node.json.bak` and removes the rest, and the node's uninstall
+  script names it among the files to delete to forget the home. A claim that cannot be written
+  leaves the file as it was and says so once. The temp file a node config is written through is created the user's
   alone, with no other handle open on it, and when that cannot be done the credential is never
   written. A PC it does not belong to skips it: it is no home's machine, and its own join
   writes `%LOCALAPPDATA%\Maktaba\node.json`, never the other PC's identity. `maktaba-server`

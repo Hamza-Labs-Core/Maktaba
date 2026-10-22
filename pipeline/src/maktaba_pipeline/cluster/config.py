@@ -29,7 +29,11 @@ beside the node config (``.node.json-<time>-<pid>-<hex>.bak`` / ``.tmp``). While
 node.json is missing or broken, every reader takes the newest whole backup, else the
 newest whole temp file, as the node config (``_source``; Go's ``nodeConfigFile``, the
 installer's ``Get-NodeConfigSource``): a roaming config left that way is still this
-PC's, and the node stays joined. The next load puts it back (``_recover``).
+PC's, and the node stays joined. The next load puts it back (``_recover``), never
+over a whole file, and keeps a broken node.json beside it
+(``node.json.broken-<time>-<hex>``). On Windows writes and recoveries of one node
+config run one at a time (``_one_at_a_time``): two ReplaceFileW calls at once can undo
+each other.
 """
 
 from __future__ import annotations
@@ -188,7 +192,7 @@ def _owner(path: Path) -> str:
     """The machine_id a node config records: "" when it has none or cannot be read (a
     broken file is never skipped: ``load`` says what is wrong with it)."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return ""
     return str(data.get("machine_id") or "").strip() if isinstance(data, dict) else ""
@@ -224,7 +228,7 @@ def load(path: Path | None = None) -> NodeConfig | None:
     _recover(path)
     src = _source(path)
     try:
-        data = json.loads(src.read_text(encoding="utf-8"))
+        data = json.loads(src.read_text(encoding="utf-8-sig"))
     except FileNotFoundError:
         return None
     except ValueError as exc:
@@ -314,37 +318,39 @@ def _in_progress(path: Path, leftover: Path, now: float) -> bool:
     return abs(now - started) < _LEFTOVER_GRACE_SEC
 
 
-def _whole(path: Path) -> bool:
-    """``path`` holds a node config with its identity (a whole file, not a cut one)."""
+def _whole_state(path: Path) -> bool | None:
+    """True when ``path`` holds a node config with its identity (a whole file, not a cut
+    one); False when it is gone, or not one (not JSON, cut, without its identity); None
+    when it cannot be read now (another process holds it: a rename, ReplaceFileW). A UTF-8
+    BOM (Notepad, PowerShell 5.1's ``-Encoding UTF8``) is read past, as every node config
+    read here does (``utf-8-sig``), and as maktaba-server, streaming and the node
+    installer do."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            return False
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return None
+    except ValueError:
+        return False
+    if not isinstance(data, dict):
+        return False
+    try:
         NodeConfig.from_json(data)
-    except (OSError, ValueError):
+    except ValueError:
         return False
     return True
 
 
+def _whole(path: Path) -> bool:
+    """``path`` holds a node config with its identity (``_whole_state``)."""
+    return _whole_state(path) is True
+
+
 def _gone_or_broken(path: Path) -> bool:
-    """There is no node config at ``path``, or what is there is not one (not JSON, cut,
-    without its identity). One that cannot be read is neither: it is never moved or read
-    past, and its reader says why."""
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return True
-    except OSError:
-        return False
-    except ValueError:
-        return True
-    if not isinstance(data, dict):
-        return True
-    try:
-        NodeConfig.from_json(data)
-    except ValueError:
-        return True
-    return False
+    """There is no node config at ``path``, or what is there is not one. One that cannot
+    be read is neither: it is never moved or read past, and its reader says why."""
+    return _whole_state(path) is False
 
 
 def _mtime(path: Path) -> float:
@@ -354,11 +360,22 @@ def _mtime(path: Path) -> float:
         return 0.0
 
 
-def _candidate(left: list[Path]) -> Path | None:
+def _candidate(left: list[Path], *, sure: bool = False) -> Path | None:
     """The leftover that stands for node.json, as ``_settle`` decides: the old file (the
-    newest whole backup), else the new one (the newest whole temp file)."""
+    newest whole backup), else the new one (the newest whole temp file). ``sure``: None
+    while one of them cannot be read (another process holds it): it may be the newest,
+    and putting an older one back would undo a write (``_recover``; a reader takes the
+    newest it can read)."""
     for ext in (".bak", ".tmp"):
-        whole = [p for p in left if p.suffix == ext and _whole(p)]
+        whole: list[Path] = []
+        for p in left:
+            if p.suffix != ext:
+                continue
+            state = _whole_state(p)
+            if state is None and sure:
+                return None
+            if state:
+                whole.append(p)
         if whole:
             return max(whole, key=_mtime)
     return None
@@ -386,50 +403,105 @@ def _rename_no_replace(src: Path, dst: Path) -> None:
     os.unlink(src)
 
 
-def _put_in_place(path: Path, leftover: Path) -> bool:
-    """``leftover`` takes the name ``path``, never over a file a write put there: a broken
-    ``path`` is moved aside first (and back, unless what was moved is still broken: a
-    write landed in between), then ``leftover`` is renamed without replacing. True when
-    it took the name; False when a write's file holds it."""
-    aside: Path | None = None
+def _broken_name(path: Path) -> Path:
+    """Where a broken node config is kept when a leftover takes its name: beside it,
+    ``<name>.broken-<time>-<4 hex>`` (no leftover's name: it is never put back, and never
+    removed; a person may want what is in it)."""
+    return path.with_name(f"{path.name}.broken-{int(_now())}-{os.urandom(2).hex()}")
+
+
+def _put_in_place(path: Path, leftover: Path) -> tuple[bool, Path | None]:
+    """``leftover`` takes the name ``path``, never over a whole file there (one another
+    load put back a moment ago, or a write's). A broken ``path``, looked at again just
+    before, is kept aside (``_broken_name``; moved back when what was moved is not broken
+    after all: a write landed in between), then ``leftover`` is renamed without
+    replacing. Returns whether it took the name, and the broken file kept aside."""
+    kept: Path | None = None
     if path.exists():
-        aside = _leftover_name(path, ".bak")
-        os.rename(path, aside)  # a new name: nothing is replaced
-        if not _gone_or_broken(aside):
-            with contextlib.suppress(OSError):
-                _rename_no_replace(aside, path)
-            return False
+        if not _gone_or_broken(path):
+            return False, None  # whole again (another load, a write), or unreadable
+        kept = _broken_name(path)
+        try:
+            _when_free(_rename_no_replace, path, kept)
+        except FileNotFoundError:
+            kept = None  # gone meanwhile: nothing to keep
+        else:
+            if not _gone_or_broken(kept):
+                with contextlib.suppress(OSError):
+                    _when_free(_rename_no_replace, kept, path)
+                return False, None
     try:
-        _rename_no_replace(leftover, path)
+        _when_free(_rename_no_replace, leftover, path)
     except FileExistsError:
-        return False
-    finally:
-        if aside is not None and path.exists():
-            with contextlib.suppress(OSError):
-                aside.unlink()  # the broken file
-    return True
+        return False, kept
+    return True, kept
+
+
+#: a file another process has open (a reader: Python, Go, PowerShell) cannot be renamed or
+#: read for a moment (ERROR_SHARING_VIOLATION): a recovery tries again this often
+_BUSY_TRIES, _BUSY_SLEEP = 20, 0.005
+
+
+def _when_free(move: Any, src: Path, dst: Path) -> None:
+    """``move(src, dst)``, tried again while one of them is open in another process."""
+    for left in range(_BUSY_TRIES - 1, -1, -1):
+        try:
+            move(src, dst)
+            return
+        except PermissionError as exc:
+            if getattr(exc, "winerror", None) != 32 or not left:
+                raise
+        time.sleep(_BUSY_SLEEP)
+
+
+def _readable_candidate(left: list[Path]) -> Path | None:
+    """``_candidate`` with every leftover read (``sure``), tried again for a moment while
+    one is open in another process; None when none stands for node.json, or one stays
+    unreadable."""
+    for _ in range(_BUSY_TRIES):
+        if all(_whole_state(p) is not None for p in left):
+            return _candidate(left, sure=True)
+        time.sleep(_BUSY_SLEEP)
+    return None
 
 
 def _recover(path: Path) -> None:
     """At load: a write whose ReplaceFileW failed and whose settling (``_settle``) failed
     too can leave node.json's old file under its backup name, the new one as a temp file,
     or both. When node.json is missing or broken, the right one takes its place as
-    ``_settle`` decides (``_candidate``), without replacing anything; once node.json is
-    whole, the rest go. A warning names them. A leftover a write may still be making
-    (``_in_progress``) is left as it is and not named."""
+    ``_settle`` decides (``_candidate``), without replacing anything (a broken node.json
+    is kept aside, ``_put_in_place``); once node.json is whole, the rest go. A warning
+    names them. A leftover a write may still be making (``_in_progress``) is left as it
+    is and not named. It runs with the write lock (``_one_at_a_time``) or not at all: a
+    write that runs settles its own files, and a later load looks again."""
+    if not _leftovers(path):
+        return
+    with _one_at_a_time(path, wait=_RECOVER_WAIT_SEC) as held:
+        if held:
+            _recover_held(path)
+
+
+def _recover_held(path: Path) -> None:
+    """``_recover`` with the lock held."""
     now = _now()
+    # node.json first, the leftovers after: a backup that took its name a moment ago (a
+    # write's ReplaceFileW failing half way) is then among them, and an older one is
+    # never put back in its place
+    gone = _gone_or_broken(path)
     left = [p for p in _leftovers(path) if not _in_progress(path, p, now)]
     if not left:
         return
     used: Path | None = None
+    broken: Path | None = None
     error = ""
-    if _gone_or_broken(path):
-        candidate = _candidate(left)
+    if gone:
+        candidate = _readable_candidate(left)
         if candidate is not None:
             try:
                 if candidate.suffix == ".tmp":
                     _restrict_to_user(candidate)
-                if _put_in_place(path, candidate):
+                placed, broken = _put_in_place(path, candidate)
+                if placed:
                     used = candidate
             except OSError as exc:
                 error = str(exc)
@@ -450,6 +522,7 @@ def _recover(path: Path) -> None:
             "node_config_leftovers",
             path=str(path),
             restored=used.name if used is not None else "",
+            broken_kept=broken.name if broken is not None else "",
             removed=removed,
             left=kept,
             error=error,
@@ -705,10 +778,12 @@ def _settle(path: Path, tmp: Path, backup: Path) -> bool:
     """After a failed ReplaceFileW: ``path`` holds the old file (put back from ``backup``
     when the call left it there) or, when the old file is gone, the new one (``tmp``, the
     user's alone from its creation). What is left over goes only once ``path`` holds a
-    whole file. True when the new file took the name."""
+    whole file. True when the new file took the name. The old file is put back without
+    replacing: another write that found node.json gone meanwhile and put its new one
+    there keeps it (this write then fails)."""
     if not path.exists() and backup.exists():
         with contextlib.suppress(OSError):
-            os.replace(backup, path)
+            _rename_no_replace(backup, path)
     if not path.exists() and tmp.exists():
         os.replace(tmp, path)
         with contextlib.suppress(OSError):
@@ -721,19 +796,79 @@ def _settle(path: Path, tmp: Path, backup: Path) -> bool:
     return False
 
 
+#: how long a write waits for another process's write of the same node config, and a
+#: load's recovery for a write or another recovery (then it leaves it to a later load)
+_LOCK_WAIT_SEC, _RECOVER_WAIT_SEC = 10.0, 0.5
+
+
+@contextlib.contextmanager
+def _one_at_a_time(path: Path, *, wait: float) -> Iterator[bool]:
+    """Windows: hold the lock of the node config at ``path`` (a byte-range lock on
+    ``.<name>.lock`` beside it; the OS lets it go when the process ends), waiting up to
+    ``wait`` seconds for another process's write or recovery; yields whether it is held.
+    Two writes at once can undo each other inside ReplaceFileW (one that fails puts back
+    the file it had opened, over the other's new one), and a recovery in the middle of a
+    write can put an older file back, so every write and recovery holds it. The lock file
+    goes when no other process has it open. POSIX: always held (``os.replace`` is atomic:
+    the last write wins, and nothing is put back)."""
+    if sys.platform != "win32":
+        yield True
+        return
+    import msvcrt
+
+    lock = path.with_name(f".{path.name}.lock")
+    for left in range(_BUSY_TRIES - 1, -1, -1):
+        try:  # access is denied for a moment while another process removes it
+            fd = os.open(lock, os.O_RDWR | os.O_CREAT | os.O_BINARY | os.O_NOINHERIT, 0o600)
+            break
+        except PermissionError:
+            if not left:
+                raise
+            time.sleep(_BUSY_SLEEP)
+    held = False
+    try:
+        deadline = time.monotonic() + wait
+        while not held:
+            try:
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                held = True
+            except OSError:
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(0.005)
+        yield held
+    finally:
+        if held:
+            with contextlib.suppress(OSError):
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        os.close(fd)
+        with contextlib.suppress(OSError):
+            lock.unlink()  # fails while another process has it open: then it stays theirs
+
+
 def _write(path: Path, data: Mapping[str, Any]) -> Path:
     """The one writer of a node config (``save``, and ``load``'s claim): atomically (a
-    temp file in the same directory, flushed, then put in place). The temp file is the
-    user's alone from the moment it exists (``_new_temp``; the folder's ACL may let others
-    read, ``Authenticated Users`` on a second drive); when it cannot be, nothing is
-    written and the error is raised (a claim then fails as any failed claim: the file
-    stays as it was). On Windows a file already there is replaced with ReplaceFileW,
-    which keeps that file's ACL."""
+    temp file in the same directory, flushed, then put in place), one write at a time
+    (``_one_at_a_time``; one that waits too long fails as a write that cannot finish).
+    The temp file is the user's alone from the moment it exists (``_new_temp``; the
+    folder's ACL may let others read, ``Authenticated Users`` on a second drive); when it
+    cannot be, nothing is written and the error is raised (a claim then fails as any
+    failed claim: the file stays as it was). On Windows a file already there is replaced
+    with ReplaceFileW, which keeps that file's ACL."""
     path.parent.mkdir(parents=True, exist_ok=True)
     if os.name != "nt":
         with contextlib.suppress(OSError):
             os.chmod(path.parent, 0o700)
     body = json.dumps(dict(data), indent=2, sort_keys=True) + "\n"
+    with _one_at_a_time(path, wait=_LOCK_WAIT_SEC) as held:
+        if not held:
+            raise TimeoutError(errno.ETIMEDOUT, "another write of the node config runs", str(path))
+        return _write_held(path, body)
+
+
+def _write_held(path: Path, body: str) -> Path:
+    """``_write`` with the lock held."""
     existed = path.exists()
     fd, tmp = _new_temp(path)
     try:
@@ -765,8 +900,11 @@ def set_aside(path: Path) -> Path:
     is kept as ``<name>.bak`` and forgotten, with everything a write that could not finish
     left of it: the next load would put that back. Returns the kept file."""
     backup = path.with_name(path.name + ".bak")
-    os.replace(_source(path), backup)
-    for p in _leftovers(path):
-        with contextlib.suppress(OSError):
-            p.unlink()
+    with _one_at_a_time(path, wait=_LOCK_WAIT_SEC) as held:
+        if not held:
+            raise TimeoutError(errno.ETIMEDOUT, "another write of the node config runs", str(path))
+        os.replace(_source(path), backup)
+        for p in _leftovers(path):
+            with contextlib.suppress(OSError):
+                p.unlink()
     return backup

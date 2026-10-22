@@ -210,7 +210,7 @@ func NodeMode(getenv func(string) string, goos, userHome string, readFile func(s
 	path := channel.NodeConfigPath(getenv, goos, userHome)
 	var nf nodeFile
 	if b, err := readFile(channel.NodeConfigFile(path, readFile)); err == nil {
-		_ = json.Unmarshal(b, &nf)
+		_ = json.Unmarshal(channel.WithoutBOM(b), &nf)
 	}
 	role := strings.ToLower(strings.TrimSpace(getenv("MAKTABA_TV_HOST_ROLE")))
 	if role == "" {
