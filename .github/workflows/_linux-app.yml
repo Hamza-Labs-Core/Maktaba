@@ -63,7 +63,11 @@ jobs:
 
       # apt-install.sh: a stalled mirror fails fast and is tried again
       - name: Install web + desktop deps and the build tools
-        timeout-minutes: 20
+        # WebKitGTK's dev packages are a few hundred MB: a slow mirror that still moves gets 15
+        # minutes (apt itself gives up on a silent one after 30 s), and one more try
+        timeout-minutes: 40
+        env:
+          APT_NET_TIMEOUT: "900"
         run: |
           pnpm -C web install --frozen-lockfile
           pnpm -C apps/desktop install --frozen-lockfile
