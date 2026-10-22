@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -25,6 +26,10 @@ type adoptFakeSys struct {
 	env     map[string]string
 	deleted []string
 	removed []adopt.Task // what DeleteTask took: CreateTask (from its XML) brings it back
+	// app is the app's server once it runs: one program, listening on every
+	// address of the PC on each port in listens
+	app     *adopt.Proc
+	listens []string
 }
 
 func (f *adoptFakeSys) Tasks() ([]adopt.Task, error) { return f.tasks, nil }
@@ -73,8 +78,13 @@ func (f *adoptFakeSys) CreateTask(name, _ string) error {
 	f.tasks = append(f.tasks, back)
 	return nil
 }
-func (f *adoptFakeSys) RunTask(string) error                               { return nil }
-func (f *adoptFakeSys) Processes() ([]adopt.Proc, error)                   { return nil, nil }
+func (f *adoptFakeSys) RunTask(string) error { return nil }
+func (f *adoptFakeSys) Processes() ([]adopt.Proc, error) {
+	if f.app == nil {
+		return nil, nil
+	}
+	return []adopt.Proc{*f.app}, nil
+}
 func (f *adoptFakeSys) Kill(int) error                                     { return nil }
 func (f *adoptFakeSys) EndProcess(int) error                               { return nil }
 func (f *adoptFakeSys) Services() ([]adopt.Service, error)                 { return nil, nil }
@@ -86,8 +96,13 @@ func (f *adoptFakeSys) RemoveFirewallRules([]string) error                 { ret
 func (f *adoptFakeSys) ReadFile(path string) ([]byte, error)               { return os.ReadFile(path) }
 func (f *adoptFakeSys) Getenv(name string) string                          { return f.env[name] }
 func (f *adoptFakeSys) Listening(string) bool                              { return false }
-func (f *adoptFakeSys) Listeners(string) ([]adopt.Listener, error)         { return nil, nil }
-func (f *adoptFakeSys) StopAppServer() error                               { return nil }
+func (f *adoptFakeSys) Listeners(port string) ([]adopt.Listener, error) {
+	if f.app == nil || !slices.Contains(f.listens, port) {
+		return nil, nil
+	}
+	return []adopt.Listener{{Addr: "0.0.0.0", PID: f.app.PID}}, nil
+}
+func (f *adoptFakeSys) StopAppServer() error { return nil }
 func (f *adoptFakeSys) User() (adopt.User, error) {
 	return adopt.User{SID: "S-1-5-21-1000-2000-3000-1001", Name: `PC\me`}, nil
 }
@@ -225,6 +240,18 @@ func TestSetupAdopt(t *testing.T) {
 		t.Fatalf("a second move = %d %v", code, ev)
 	}
 
+	// verify: not while the app's server does not listen where other devices
+	// reached the old install (its web_listen 0.0.0.0:8780)
+	code, _, ev = runStep(t, "adopt", map[string]any{"action": "verify", "wait_sec": 1})
+	if code != 1 || ev["code"] != "adopt_verify" || !strings.Contains(ev["message"].(string), "0.0.0.0:8780") {
+		t.Fatalf("verify before the app listens = %d %v", code, ev)
+	}
+	payload, _ := setupPayload() // the app's programs are in its payload
+	if payload == "" {
+		payload = filepath.Join(t.TempDir(), "server")
+	}
+	sys.app = &adopt.Proc{PID: 4242, Name: "maktaba-server.exe", Exe: filepath.Join(payload, "bin", "maktaba-server.exe")}
+	sys.listens = []string{"8780", "8081"} // its web_listen, and stream_addr's default :8081
 	code, _, ev = runStep(t, "adopt", map[string]any{"action": "verify", "wait_sec": 1})
 	if code != 0 {
 		t.Fatalf("verify = %d %v", code, ev)
