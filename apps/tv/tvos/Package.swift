@@ -20,6 +20,13 @@ let package = Package(
             exclude: [
                 "Info.plist",
                 "Resources/Assets.xcassets",
+            ],
+            // Theme assets (see MaktabaTV/Theme/Theme.swift): the bundled
+            // OFL fonts + their licence texts, and the library background
+            // art. `.copy` keeps the Fonts/ and Art/ subdirectories.
+            resources: [
+                .copy("Resources/Fonts"),
+                .copy("Resources/Art"),
             ]
         )
     ]

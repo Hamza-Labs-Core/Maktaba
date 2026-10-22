@@ -22,16 +22,25 @@ tvos/
     │   ├── APIClient.swift         # async REST client, 401→refresh→retry
     │   └── AuthManager.swift       # JWT tokens in the Keychain
     ├── Models/                     # Codable: User, Library, Media, SearchResult
+    ├── Theme/Theme.swift           # palette, fonts, library backdrop, reading panel, focus ring
     ├── Resources/Assets.xcassets/  # AppIcon.brandassets (layered tvOS icon)
+    ├── Resources/Fonts/            # Amiri-Bold + IBM Plex Sans Arabic (OFL, licences alongside)
+    ├── Resources/Art/              # library-dark.jpg / library-light.jpg (Home background)
     └── Info.plist                  # bundle id com.hamzalabs.maktaba.tv
 ```
 
 ## Design notes
 
+- **Theme.** `Theme/Theme.swift` is the only place colours, fonts and
+  art come from. It follows the system appearance: dark "Ink & Brass" or
+  light "gold on white" (gold as *text* is the deeper `#8A6212` there).
+  Fonts are registered from the SwiftPM resource bundle at launch. Home
+  shows the library scene behind everything; text goes on
+  `.readingPanel()` (material + tint), never straight on the art.
 - **Focus engine.** D-pad navigation is handled by SwiftUI's focus
-  engine. Cards are `.focusable()` and respond to `@FocusState` with a
-  scale-up + ring + shadow ("lift toward the viewer"). Lazy stacks have
-  padding so the grown card isn't clipped.
+  engine. Cards are `.focusable()` and respond to `@FocusState` with
+  `.goldFocus(_:)`: a 3pt gold ring, scale-up and gold glow. Lazy stacks
+  have padding so the grown card isn't clipped.
 - **Safe area.** Screens use ~80 px horizontal gutters for TV overscan.
 - **Auth.** Access/refresh JWTs live in the Keychain
   (`kSecAttrAccessibleAfterFirstUnlock`) — the only storage tvOS won't
