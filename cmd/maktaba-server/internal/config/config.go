@@ -239,6 +239,13 @@ type MediaSection struct {
 	// ffmpeg` and the System health page say whether they do what Maktaba needs.
 	FFmpeg  string `toml:"ffmpeg"`
 	FFprobe string `toml:"ffprobe"`
+	// TranscodeMinFreeGiB is the free space on the streaming cache's disk below
+	// which no video transcode starts (a transcode keeps its segments until its
+	// session closes) and the transcodes kept for closed sessions' viewers go,
+	// the longest unwatched first: that many GiB; 0 (default): the smaller of
+	// 20 GiB and a tenth of the disk, at least 3 GiB; below 0: none. The
+	// streaming role's MAKTABA_TRANSCODE_MIN_FREE_GIB.
+	TranscodeMinFreeGiB int `toml:"transcode_min_free_gib"`
 }
 
 // TranscriptionSection is the [transcription] table: what the pipeline's

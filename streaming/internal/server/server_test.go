@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -79,6 +81,61 @@ func TestServer_DirectPlay_HappyPath(t *testing.T) {
 	}
 	if rec.Body.String() != "BYTES" {
 		t.Fatalf("body=%s", rec.Body.String())
+	}
+}
+
+// A DASH session through the router: its MPD names its init and chunks in
+// the session's folder itself, signed, and those URLs are served (only
+// segments there); without the signature, none.
+func TestServer_DASHSessionSegments(t *testing.T) {
+	priv, _ := rsa.GenerateKey(rand.Reader, 2048)
+	jwks, _ := auth.NewJWKSCache(context.Background(), "", time.Minute)
+	jwks.Set(map[string]*rsa.PublicKey{"k1": &priv.PublicKey})
+	libID := uuid.New()
+	row := &probe.Row{VideoID: uuid.New(), LibraryID: libID, Path: "/v/x.mkv", Container: "mkv",
+		VideoCodec: "hevc", AudioCodec: "aac", Height: 1080, BitrateKbps: 8000, Probed: true}
+	pb := probe.NewFakeBackend()
+	pb.Set(row)
+	layout := cache.New(t.TempDir())
+	_ = layout.EnsureTiers()
+	store := session.NewMemoryStore(time.Second)
+	sess := &session.Row{ID: uuid.New(), VideoID: row.VideoID, UserID: uuid.New(), Mode: session.ModeTranscode,
+		Format: session.FormatDASH}
+	if err := store.Insert(context.Background(), sess); err != nil {
+		t.Fatal(err)
+	}
+	dir := layout.HLSDir(sess.ID.String())
+	_ = os.MkdirAll(dir, 0o755)
+	mpd := `<MPD type="dynamic"><Period><AdaptationSet><Representation id="0"><SegmentTemplate ` +
+		`initialization="init-$RepresentationID$.m4s" media="chunk-$RepresentationID$-$Number$.m4s"/>` +
+		`</Representation></AdaptationSet></Period></MPD>`
+	for f, body := range map[string]string{"manifest.mpd": mpd, "init-0.m4s": "INIT", "chunk-0-1.m4s": "CHUNK", "notes.txt": "x"} {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := New(Deps{Cfg: config.Load(), JWKS: jwks, Probe: probe.NewCache(pb, 16), Profiles: capability.NewRegistry(),
+		Sessions: store, Layout: layout, Files: &fakeOpener{}, Now: time.Now})
+	tok := mintToken(t, priv, auth.Claims{Aud: "streaming", Sub: sess.ID.String(), Lib: []string{libID.String()}})
+	get := func(path string) (int, string) {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest("GET", "/stream/"+sess.ID.String()+path, nil))
+		return rec.Code, rec.Body.String()
+	}
+	code, body := get("/manifest.mpd?sig=" + tok)
+	if code != 200 || !strings.Contains(body, `initialization="init-$RepresentationID$.m4s?sig=`+tok+`"`) {
+		t.Fatalf("mpd %d %s", code, body)
+	}
+	for path, want := range map[string]string{"/init-0.m4s": "INIT", "/chunk-0-1.m4s": "CHUNK"} {
+		if code, body := get(path + "?sig=" + tok); code != 200 || body != want {
+			t.Errorf("%s: %d %q", path, code, body)
+		}
+		if code, _ := get(path); code != 401 {
+			t.Errorf("%s unsigned: %d", path, code)
+		}
+	}
+	if code, _ := get("/notes.txt?sig=" + tok); code != 404 {
+		t.Errorf("a file that is not a segment: %d", code)
 	}
 }
 

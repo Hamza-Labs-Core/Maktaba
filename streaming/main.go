@@ -397,6 +397,10 @@ func buildGRPCServer(bg *background, logger *slog.Logger, backend probe.Backend,
 		ffmpeg.HWAccelVideoToolbox: vodVT,
 	}, logger)
 	srv.ResolveDir = layout.HLSDir
+	// a transcode keeps every segment until its session closes: none starts
+	// with less than the floor free on the cache's disk
+	disk := vodDisk{root: layout.Root, minFreeGiB: cfg.Transcode.MinFreeGiB}
+	srv.TranscodeRoom = func() error { return transcodeRoom(disk, logger) }
 	return srv
 }
 
@@ -511,8 +515,17 @@ func buildPublicHandler(bg *background, logger *slog.Logger, backend probe.Backe
 		})
 	})
 
-	reaper := session.NewReaper(store, session.ReaperConfig{IdleAfter: 90 * time.Second, Interval: 30 * time.Second})
+	reaper := session.NewReaper(store, session.ReaperConfig{IdleAfter: vodSessionIdle, ActiveIdleAfter: vodActiveIdle,
+		Interval: vodSessionSweep})
 	bg.Go(reaper.Run)
+	// the closed sessions' folders, and a previous run's (at start, then with
+	// the reaper)
+	bg.Go(func(ctx context.Context) {
+		disk := vodDisk{root: layout.Root, minFreeGiB: cfg.Transcode.MinFreeGiB}
+		purge := func() { purgeVODSessions(ctx, layout, store, disk, time.Now(), logger) }
+		purge()
+		tick(ctx, vodSessionSweep, purge)
+	})
 
 	_ = allocator
 

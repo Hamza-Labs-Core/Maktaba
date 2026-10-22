@@ -39,6 +39,9 @@ type Job struct {
 	SourceCodec string
 	// NoAudio: the source has no audio stream (none is mapped).
 	NoAudio bool
+	// StartSec is where in the source the transcode starts (seconds; HLS
+	// only, EncodePlan.Start).
+	StartSec int
 
 	// toneMap: the runner's tone-mapping for an HDR source (toneMapFor)
 	toneMap string
@@ -66,9 +69,13 @@ type Handle struct {
 	// stopped: Stop ran (no new encoder starts); restarting: the hardware
 	// run failed and its software run is starting (the session stays active)
 	stopped, restarting bool
-	stopFn              func(context.Context) error
-	pidFn               func() int
-	actFn               func() bool
+	// ended: the transcode is over (no encoder runs, or will); finished: it
+	// encoded the whole source (its last encoder exited 0, not stopped)
+	ended, finished bool
+	onEnd           []func()
+	stopFn          func(context.Context) error
+	pidFn           func() int
+	actFn           func() bool
 }
 
 // current is the encoder running now, and its context's cancel.
@@ -99,6 +106,57 @@ func (h *Handle) restart() bool {
 	}
 	h.restarting = true
 	return true
+}
+
+// exited records the transcode's end (err: its last encoder's); the OnEnd
+// functions run once.
+func (h *Handle) exited(err error) {
+	h.mu.Lock()
+	if h.ended {
+		h.mu.Unlock()
+		return
+	}
+	h.ended, h.finished = true, err == nil && !h.stopped
+	fns := h.onEnd
+	h.onEnd = nil
+	h.mu.Unlock()
+	for _, f := range fns {
+		f()
+	}
+}
+
+// Ended reports whether the transcode is over, finished or not.
+func (h *Handle) Ended() bool {
+	if h == nil {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.ended
+}
+
+// Finished reports whether the transcode encoded the whole source: its
+// playlist ends at the video's end. Not when it was stopped or failed.
+func (h *Handle) Finished() bool {
+	if h == nil {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.finished
+}
+
+// OnEnd runs f once the transcode is over, finished or not (at once when it
+// is).
+func (h *Handle) OnEnd(f func()) {
+	h.mu.Lock()
+	if !h.ended {
+		h.onEnd = append(h.onEnd, f)
+		h.mu.Unlock()
+		return
+	}
+	h.mu.Unlock()
+	f()
 }
 
 // Stderr is the encoder's recent stderr (empty for a test handle).
@@ -134,11 +192,16 @@ func (h *Handle) Stop(ctx context.Context) error {
 	if proc != nil {
 		return proc.Stop(ctx)
 	}
+	var err error
 	if h.stopFn != nil {
-		return h.stopFn(ctx)
+		err = h.stopFn(ctx)
 	}
-	return nil
+	h.exited(errStopped) // a test handle: no encoder's watch ends it
+	return err
 }
+
+// errStopped ends a transcode stopped before an encoder of it ran.
+var errStopped = errors.New("ffmpeg: transcode stopped")
 
 // PID returns the OS pid (0 for the fake runner / once stopped).
 func (h *Handle) PID() int {
@@ -496,6 +559,7 @@ func (e *execRunner) run(ctx context.Context, h *Handle, job Job, hw string) err
 	}
 	plan := PlanFor(hw, hwRungs, rungs, job.SourceCodec, !job.NoAudio)
 	plan.ToneMap = job.toneMap
+	plan.Start = job.StartSec
 	var args Args
 	if strings.EqualFold(job.Format, "dash") {
 		args = DASHArgs(job.InputPath, job.OutputDir, job.Ladder, plan)
@@ -513,6 +577,7 @@ func (e *execRunner) run(ctx context.Context, h *Handle, job Job, hw string) err
 		procCancel()
 		_ = proc.Stop(context.Background())
 		giveBack(false)
+		h.exited(errStopped)
 		return nil
 	}
 	started := time.Now()
@@ -520,6 +585,7 @@ func (e *execRunner) run(ctx context.Context, h *Handle, job Job, hw string) err
 		werr := proc.Wait()
 		giveBack(hwRungs > 0 && refusedSession(proc.stderrAfterExit(2*time.Second)))
 		if werr == nil || time.Since(started) >= fallbackWindow {
+			h.exited(werr)
 			return
 		}
 		// the next way down: the GPU's run in software (tone-mapped as it was),
@@ -530,15 +596,18 @@ func (e *execRunner) run(ctx context.Context, h *Handle, job Job, hw string) err
 		case job.toneMap != "":
 			next.toneMap = ""
 		default:
+			h.exited(werr)
 			return
 		}
 		if !h.restart() {
+			h.exited(werr)
 			return
 		}
 		if err := e.run(context.Background(), h, next, ""); err != nil {
 			h.mu.Lock()
 			h.restarting = false
 			h.mu.Unlock()
+			h.exited(err)
 		}
 	}()
 	return nil
