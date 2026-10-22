@@ -29,6 +29,7 @@ apps/desktop/
         ├── shell.rs        ← Epic 36: menu-bar item, status poller, setup commands
         ├── status.rs       ←   supervisor /processes → running/starting/…
         ├── tray.rs         ←   the menu-bar menu as data
+        ├── lang.rs         ←   the tray's words, English or Arabic
         ├── agent.rs        ←   login item (SMAppService), launchctl, --server-agent
         ├── agent_windows.rs ←  Epic 38: the sign-in task, the Windows agent, the stop event
         ├── setup.rs        ←   `maktaba-server setup --json` step runner
@@ -174,6 +175,22 @@ and the tray menu are the Mac's; what differs is how the server starts:
 - **Status.** As on the Mac, plus: while the agent runs but the supervisor has not answered
   for 3 minutes, the tray says "Maktaba has a problem: …" with the reason from `server.log`
   (another launcher holds this install, a port in use…), or "the server does not answer".
+- **The tray icon** (story 38.4) carries a status badge drawn at run time on the app icon
+  (`tray::badge`: red a problem or a server that does not answer, else violet an update ready,
+  else green running, amber starting, grey paused or stopped; the Mac's menu-bar item stays
+  plain). A left click opens the window, the right button the menu. While the server starts,
+  the status line and the tooltip (up to Windows' 127 characters) show what the server reports
+  a process waits on, or why it cannot start: its `detail` in `/processes`, which the server
+  fills from story 38.12 (#194) on, a failing process's first. The window's starting screen
+  says it in its own language from the detail's `detail_code` and `detail_params`
+  (`setup.starting.detail.<code>` in `web/src/i18n`, one for each code of
+  `cmd/maktaba-server/detail_codes.json`, the list the server embeds and the web test reads),
+  with the `error`, `restore_error` and `log` values and the English under Details.
+- **The tray's words and the error dialogs'** (`lang.rs`) are English or Arabic, from the
+  system's UI language when the app starts (Windows' display language, the Mac's preferred
+  languages, `LANGUAGE` / `LC_ALL` / `LC_MESSAGES` / `LANG` on Linux). An Arabic tray leaves the
+  server's English detail out; a line of `server.log` that says why the server does not answer,
+  and a program's own error under a dialog's sentence, are shown as they are.
 - **mode.json** is in `%LOCALAPPDATA%\com.hamzalabs.maktaba\` (not the roaming profile, which
   would carry this PC's server mode to another PC); one in the roaming folder is moved once.
 - Every program the shell starts (`schtasks`, the setup steps) is created without a window.
@@ -232,6 +249,8 @@ the tray menu are the Mac's. What differs is where the server runs and how it st
   (`--hidden`). The entry is written once: removed by the user, it stays removed. It follows the
   AppImage if it moves (never to an older app), keeps the user's on/off, and has `TryExec`, so the
   desktop skips it once the app is gone.
-- **Language.** The shell's own dialogs follow the session's locale (Arabic when `LC_ALL`,
-  `LC_MESSAGES` or `LANG` says so); the autostart entry carries both languages.
+- **Language.** The shell's own words (the tray, its dialogs, the window's *Server* menu) come
+  from `lang.rs`, as on Windows and the Mac: Arabic when gettext's order says so (`LANGUAGE`,
+  then the first of `LC_ALL`, `LC_MESSAGES` and `LANG` that is set), else English. The
+  autostart entry carries both languages.
 - **Logs** are in `~/.local/state/maktaba/logs` (*Open logs* uses `xdg-open`).

@@ -33,12 +33,22 @@ export type AppState = AppTarget & {
   reset?: boolean;
 };
 
-export type ServerStatus =
+/** The server's status, with what it reports it waits on while it starts (the
+ * venv being built, the backup before an update) or why that failed. */
+export type ServerStatus = (
   | { kind: "setup_needed" | "paused" | "stopped" | "starting" | "running" }
   | { kind: "problem"; roles: string[] }
   /** its agent runs but the server has not answered for minutes: why, from its log
    * (NO_ANSWER when the log says nothing) */
-  | { kind: "not_answering"; reason: string };
+  | { kind: "not_answering"; reason: string }
+) & {
+  /** in the server's English: shown only under "Details" */
+  detail?: string;
+  /** the same as a code (`setup.starting.detail.<code>`) and its values, which
+   * the screen says in its language; absent from a server that sends none */
+  detail_code?: string;
+  detail_params?: Record<string, unknown>;
+};
 
 /** The reason a not_answering status gives when server.log names none: the shell's
  * `status::NO_ANSWER` (apps/desktop/src-tauri/src/status.rs). Any other reason is a line

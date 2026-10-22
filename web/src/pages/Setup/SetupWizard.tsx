@@ -41,6 +41,7 @@ import {
   type StepProgress,
 } from "../../lib/desktopSetup";
 import { ServerStarting } from "./ServerStarting";
+import { codedText, type Translate } from "./codedText";
 import { platformWords } from "./platform";
 
 export const PLEX_POLL_MS = 3000;
@@ -94,29 +95,6 @@ interface CheckResult {
 
 /** The platform's words ({machine}, {tray}) for every coded text. */
 const WordsContext = createContext<Record<string, string>>({});
-
-type Translate = (key: string, vars?: Record<string, string | number>) => string;
-
-/** The text of a step's code (`${prefix}.${code}`), its params in it (sizes
- * formatted) with the platform's words; the step's English when the app has
- * no text for the code. */
-export function codedText(
-  t: Translate,
-  prefix: string,
-  code: string,
-  params: Record<string, unknown> | undefined,
-  words: Record<string, string>,
-  english: string
-): string {
-  const key = `${prefix}.${code}`;
-  const vars: Record<string, string | number> = { ...words };
-  for (const [k, v] of Object.entries(params ?? {})) {
-    if (typeof v === "number") vars[k] = k.endsWith("_bytes") ? formatBytes(v) : v;
-    else if (v !== null && v !== undefined) vars[k] = String(v);
-  }
-  const text = t(key, vars);
-  return text === key ? english : text;
-}
 
 /** What will run, in the app's words: the pipeline by its number of
  * transcription workers and the GPU it transcribes on. */

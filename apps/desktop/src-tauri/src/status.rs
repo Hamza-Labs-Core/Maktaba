@@ -11,6 +11,9 @@ use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
+
+use crate::lang::{fill, Words};
 
 /// The supervisor's default admin address (config.SupervisorDefaults).
 pub const DEFAULT_SUPERVISOR_ADDR: &str = "127.0.0.1:9103";
@@ -70,31 +73,34 @@ pub struct LlmModel {
     pub total: u64,
 }
 
-/// The menu bar's line about the language model, when the server has one.
-pub fn model_line(llm: Option<&Llm>) -> Option<String> {
+/// The menu bar's line about the language model, when the server has one, in
+/// the tray's words.
+pub fn model_line(llm: Option<&Llm>, words: &Words) -> Option<String> {
     let llm = llm?;
     if let Some(m) = llm.models.iter().find(|m| m.state == "downloading") {
         if m.total == 0 {
-            return Some(format!("Language model: downloading {}", m.name));
+            return Some(fill(words.model_downloading, &[("name", &m.name)]));
         }
-        let pct = m.done.min(m.total) * 100 / m.total;
-        let line = format!("Language model: downloading {} ({pct}%)", m.name);
+        let pct = (m.done.min(m.total) * 100 / m.total).to_string();
+        let line = fill(
+            words.model_downloading_pct,
+            &[("name", &m.name), ("pct", &pct)],
+        );
         return Some(line);
     }
     if llm.ready {
-        return Some("Language model: ready".into());
+        return Some(words.model_ready.into());
     }
     if !llm.up {
-        return Some("Language model: starting…".into());
+        return Some(words.model_starting.into());
     }
     if let Some(m) = llm.models.iter().find(|m| m.state == "failed") {
-        let line = format!("Language model: {} did not download (retrying)", m.name);
-        return Some(line);
+        return Some(fill(words.model_failed, &[("name", &m.name)]));
     }
     if let Some(m) = llm.models.iter().find(|m| m.state != "ready") {
-        return Some(format!("Language model: {} not downloaded", m.name));
+        return Some(fill(words.model_missing, &[("name", &m.name)]));
     }
-    Some("Language model: ready".into())
+    Some(words.model_ready.into())
 }
 
 /// One supervised process (supervisor.ChildStatus).
@@ -109,9 +115,54 @@ pub struct Child {
     pub state: String,
     #[serde(default)]
     pub crash_loop: bool,
+    /// What it waits on before it starts (its Prepare: the venv being built,
+    /// the backup before an update) or why that failed, in the server's
+    /// English: the logs' words (Epic 38 story 38.12).
+    #[serde(default)]
+    pub detail: String,
+    /// The same as a code and its values (`detail_params`, an object), which
+    /// the window says in its own language; empty from a server that sends
+    /// none.
+    #[serde(default)]
+    pub detail_code: String,
+    #[serde(default)]
+    pub detail_params: Option<Value>,
+    /// How it last exited (supervisor.ExitInfo), once it has: in backoff with
+    /// an exit, it is restarting after a failure.
+    #[serde(default)]
+    pub last_exit: Option<Value>,
 }
 
 impl Child {
+    /// Failing rather than only on its way: failed (its Prepare failed, or
+    /// it gave up), unhealthy, in a crash loop, in a state the app does not
+    /// know, or in backoff after an exit.
+    fn failing(&self) -> bool {
+        match self.state.as_str() {
+            _ if self.crash_loop => true,
+            "backoff" => self.last_exit.is_some(),
+            "running" | "starting" | "exited" | "stopped" => false,
+            _ => true,
+        }
+    }
+
+    /// What it says it waits on, or why it cannot start.
+    fn detail(&self) -> Option<Detail> {
+        let text = self.detail.trim();
+        let code = self.detail_code.trim();
+        if text.is_empty() && code.is_empty() {
+            return None;
+        }
+        Some(Detail {
+            text: text.to_string(),
+            code: (!code.is_empty()).then(|| code.to_string()),
+            params: match &self.detail_params {
+                Some(Value::Object(m)) => Some(m.clone()),
+                _ => None,
+            },
+        })
+    }
+
     fn label(&self) -> String {
         if self.instance.is_empty() {
             self.role.clone()
@@ -142,6 +193,33 @@ pub enum ServerStatus {
     /// NO_ANSWER_LIMIT: the launcher keeps failing, a port is taken, another
     /// install holds the launcher's lock…
     NotAnswering { reason: String },
+}
+
+/// What the server waits on while it starts, or why a process cannot start,
+/// as the server reports it (each process's detail in /processes).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Detail {
+    /// In the server's English: the English tray's line, the window's
+    /// "Details".
+    #[serde(rename = "detail")]
+    pub text: String,
+    /// Its code (`setup.starting.detail.<code>` in the window) and values;
+    /// None from a server that sends none.
+    #[serde(rename = "detail_code", skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    #[serde(rename = "detail_params", skip_serializing_if = "Option::is_none")]
+    pub params: Option<Map<String, Value>>,
+}
+
+/// The status as the window's starting screen reads it (`server_status`):
+/// the status, and what the server waits on while it starts ({"kind":
+/// "starting", "detail": "…", "detail_code": "…", "detail_params": {…}}).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StatusView {
+    #[serde(flatten)]
+    pub status: ServerStatus,
+    #[serde(flatten)]
+    pub detail: Option<Detail>,
 }
 
 /// The result of asking the supervisor.
@@ -251,6 +329,27 @@ pub fn derive(setup_done: bool, paused: bool, waiting: &Waiting, probe: &Probe) 
     } else {
         ServerStatus::Running
     }
+}
+
+/// What the server waits on (the venv being built, the backup before an
+/// update) or why a process cannot start. A failing process's own reason
+/// comes first; while one fails, what the others only wait on is not shown,
+/// since the status names the failing ones: a crash loop with no detail of
+/// its own "keeps stopping", it does not wait on another's install. Else the
+/// first process that is not running and says what it waits on. None when
+/// every process is up or none says.
+pub fn waiting_on(probe: &Probe) -> Option<Detail> {
+    let Probe::Snapshot(s) = probe else {
+        return None;
+    };
+    let failing: Vec<&Child> = s.processes.iter().filter(|c| c.failing()).collect();
+    if !failing.is_empty() {
+        return failing.into_iter().find_map(Child::detail);
+    }
+    s.processes
+        .iter()
+        .filter(|c| c.state != "running")
+        .find_map(Child::detail)
 }
 
 /// Parse a raw HTTP/1.x response carrying the /processes JSON.
@@ -390,6 +489,18 @@ mod tests {
             wanted: false,
             state: state.into(),
             crash_loop: false,
+            detail: String::new(),
+            detail_code: String::new(),
+            detail_params: None,
+            last_exit: None,
+        }
+    }
+
+    fn text(s: &str) -> Detail {
+        Detail {
+            text: s.into(),
+            code: None,
+            params: None,
         }
     }
 
@@ -418,7 +529,7 @@ mod tests {
         let raw = format!("HTTP/1.1 200 OK\r\n\r\n{body}");
         let s = parse_response(raw.as_bytes()).expect("parsed");
         assert_eq!(
-            model_line(s.llm.as_ref()).as_deref(),
+            model_line(s.llm.as_ref(), &crate::lang::EN).as_deref(),
             Some("Language model: downloading qwen2.5:7b (49%)")
         );
         // the model server is one more process: it does not hold the status
@@ -430,37 +541,52 @@ mod tests {
 
     #[test]
     fn model_lines() {
-        assert_eq!(model_line(None), None);
+        let en = &crate::lang::EN;
+        assert_eq!(model_line(None, en), None);
         let mut llm = Llm {
             up: true,
             ready: true,
             models: vec![model("qwen2.5:7b", "ready", 0, 0)],
         };
         assert_eq!(
-            model_line(Some(&llm)).as_deref(),
+            model_line(Some(&llm), en).as_deref(),
             Some("Language model: ready")
         );
         llm.ready = false;
         llm.models = vec![model("qwen2.5:7b", "downloading", 0, 0)];
         assert_eq!(
-            model_line(Some(&llm)).as_deref(),
+            model_line(Some(&llm), en).as_deref(),
             Some("Language model: downloading qwen2.5:7b")
         );
         llm.models = vec![model("qwen2.5:7b", "failed", 0, 0)];
         assert_eq!(
-            model_line(Some(&llm)).as_deref(),
+            model_line(Some(&llm), en).as_deref(),
             Some("Language model: qwen2.5:7b did not download (retrying)")
         );
         llm.models = vec![model("qwen2.5:7b", "missing", 0, 0)];
         assert_eq!(
-            model_line(Some(&llm)).as_deref(),
+            model_line(Some(&llm), en).as_deref(),
             Some("Language model: qwen2.5:7b not downloaded")
         );
         llm.up = false;
         llm.models = vec![model("qwen2.5:7b", "unknown", 0, 0)];
         assert_eq!(
-            model_line(Some(&llm)).as_deref(),
+            model_line(Some(&llm), en).as_deref(),
             Some("Language model: starting…")
+        );
+        // the Arabic tray's words, the model's name as it is
+        let ar = &crate::lang::AR;
+        llm.up = true;
+        llm.models = vec![model("qwen2.5:7b", "downloading", 1, 4)];
+        assert_eq!(
+            model_line(Some(&llm), ar).as_deref(),
+            Some("النموذج اللغوي: جارٍ تنزيل qwen2.5:7b (25%)")
+        );
+        llm.ready = true;
+        llm.models = vec![model("qwen2.5:7b", "ready", 0, 0)];
+        assert_eq!(
+            model_line(Some(&llm), ar).as_deref(),
+            Some("النموذج اللغوي: جاهز")
         );
     }
 
@@ -733,6 +859,180 @@ mod tests {
                 &snap(vec![child("api", "running"), idle, asked])
             ),
             ServerStatus::Starting
+        );
+    }
+
+    #[test]
+    fn waiting_on_is_the_first_detail_of_a_process_not_up() {
+        let mut venv = child("pipeline", "starting");
+        venv.detail = "Installing the transcription tools (40%)".into();
+        let mut done = child("streaming", "running");
+        done.detail = "stale".into();
+        let mut db = child("postgres", "starting");
+        db.detail = "Preparing the database".into();
+        assert_eq!(
+            waiting_on(&snap(vec![done.clone(), venv.clone(), db])),
+            Some(text("Installing the transcription tools (40%)"))
+        );
+        assert_eq!(
+            waiting_on(&snap(vec![done, child("api", "starting")])),
+            None
+        );
+        assert_eq!(waiting_on(&Probe::Unreachable), None);
+        // the detail rides in /processes beside the state
+        let body = r#"{"processes":[{"role":"pipeline","state":"starting","detail":"Building"}]}"#;
+        let raw = format!("HTTP/1.1 200 OK\r\n\r\n{body}");
+        let s = parse_response(raw.as_bytes()).expect("parsed");
+        assert_eq!(waiting_on(&Probe::Snapshot(s)), Some(text("Building")));
+    }
+
+    #[test]
+    fn a_failing_process_gives_its_own_reason_before_what_others_wait_on() {
+        let mut venv = child("pipeline", "starting");
+        venv.detail = "Installing the transcription tools (40%)".into();
+        // a failed Prepare's reason wins over an install in progress
+        let mut backup = child("api", "failed");
+        backup.detail = "the backup before the update failed: disk full".into();
+        assert_eq!(
+            waiting_on(&snap(vec![venv.clone(), backup.clone()])),
+            Some(text("the backup before the update failed: disk full"))
+        );
+        // a crash-looping role with no reason of its own does not borrow the
+        // install's: the tray says it keeps stopping
+        let mut streaming = child("streaming", "backoff");
+        streaming.crash_loop = true;
+        streaming.last_exit = Some(serde_json::json!({"code": 1, "reason": "exit"}));
+        let s = snap(vec![venv.clone(), streaming.clone()]);
+        assert_eq!(
+            derive(true, false, &Waiting::Stopped, &s),
+            ServerStatus::Problem {
+                roles: vec!["streaming".into()]
+            }
+        );
+        assert_eq!(waiting_on(&s), None);
+        // nor does one restarting after an exit, before its crash loop
+        streaming.crash_loop = false;
+        assert_eq!(
+            waiting_on(&snap(vec![venv.clone(), streaming.clone()])),
+            None
+        );
+        // the failing one's reason, wherever it sits
+        assert_eq!(
+            waiting_on(&snap(vec![venv.clone(), streaming, backup])),
+            Some(text("the backup before the update failed: disk full"))
+        );
+        // a backoff with no exit yet is only on its way
+        let first = child("streaming", "backoff");
+        assert_eq!(
+            waiting_on(&snap(vec![first, venv])),
+            Some(text("Installing the transcription tools (40%)"))
+        );
+    }
+
+    #[test]
+    fn the_detail_carries_its_code_and_values() {
+        let body = r#"{"processes":[
+            {"role":"pipeline","state":"starting","detail":"Installing the transcription tools (40%)",
+             "detail_code":"venv_install","detail_params":{"pct":40}},
+            {"role":"api","state":"starting","detail":"old server","detail_params":"not an object"}]}"#;
+        let raw = format!("HTTP/1.1 200 OK\r\n\r\n{body}");
+        let s = parse_response(raw.as_bytes()).expect("parsed");
+        let mut params = Map::new();
+        params.insert("pct".into(), serde_json::json!(40));
+        assert_eq!(
+            waiting_on(&Probe::Snapshot(s.clone())),
+            Some(Detail {
+                text: "Installing the transcription tools (40%)".into(),
+                code: Some("venv_install".into()),
+                params: Some(params),
+            })
+        );
+        // an older server's detail has no code; values that are not an object are dropped
+        let old = Snapshot {
+            processes: s.processes[1..].to_vec(),
+            llm: None,
+        };
+        assert_eq!(waiting_on(&Probe::Snapshot(old)), Some(text("old server")));
+        // a code with no English is still a detail
+        let mut coded = child("pipeline", "starting");
+        coded.detail_code = "venv_install".into();
+        assert_eq!(
+            waiting_on(&snap(vec![coded])),
+            Some(Detail {
+                text: String::new(),
+                code: Some("venv_install".into()),
+                params: None,
+            })
+        );
+    }
+
+    #[test]
+    fn the_starting_screen_reads_the_status_with_its_detail() {
+        let v = StatusView {
+            status: ServerStatus::Starting,
+            detail: Some(text("Installing")),
+        };
+        assert_eq!(
+            serde_json::to_value(&v).unwrap(),
+            serde_json::json!({"kind": "starting", "detail": "Installing"})
+        );
+        // with its code and values, for the window's own words
+        let mut params = Map::new();
+        params.insert("pct".into(), serde_json::json!(40));
+        let v = StatusView {
+            status: ServerStatus::Starting,
+            detail: Some(Detail {
+                text: "Installing (40%)".into(),
+                code: Some("venv_install".into()),
+                params: Some(params),
+            }),
+        };
+        assert_eq!(
+            serde_json::to_value(&v).unwrap(),
+            serde_json::json!({
+                "kind": "starting",
+                "detail": "Installing (40%)",
+                "detail_code": "venv_install",
+                "detail_params": {"pct": 40}
+            })
+        );
+        let v = StatusView {
+            status: ServerStatus::Problem {
+                roles: vec!["api".into()],
+            },
+            detail: None,
+        };
+        assert_eq!(
+            serde_json::to_value(&v).unwrap(),
+            serde_json::json!({"kind": "problem", "roles": ["api"]})
+        );
+        let v = StatusView {
+            status: ServerStatus::Problem {
+                roles: vec!["api".into()],
+            },
+            detail: Some(text("the backup before the update failed")),
+        };
+        assert_eq!(
+            serde_json::to_value(&v).unwrap(),
+            serde_json::json!({
+                "kind": "problem",
+                "roles": ["api"],
+                "detail": "the backup before the update failed"
+            })
+        );
+        // a server that does not answer carries its reason beside the kind
+        let v = StatusView {
+            status: ServerStatus::NotAnswering {
+                reason: "another launcher runs this install".into(),
+            },
+            detail: None,
+        };
+        assert_eq!(
+            serde_json::to_value(&v).unwrap(),
+            serde_json::json!({
+                "kind": "not_answering",
+                "reason": "another launcher runs this install"
+            })
         );
     }
 

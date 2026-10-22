@@ -948,8 +948,10 @@ describe("ServerStarting", () => {
     expect(api.openLocalServer).not.toHaveBeenCalled();
   });
 
-  it("says why a server that runs does not answer", async () => {
-    const api = fakeApi();
+  // what a starting server waits on: ServerStarting.test.tsx
+
+  it("says why a server that runs does not answer, in the tray's words on Windows", async () => {
+    const api = fakeApi({}, { platform: "windows" });
     api.serverStatus.mockResolvedValue({
       kind: "not_answering",
       reason: "another launcher runs this install",
@@ -962,6 +964,11 @@ describe("ServerStarting", () => {
     expect(await screen.findByText(/The server does not start\./)).toBeInTheDocument();
     // the log's own words, apart from the sentence (an Arabic screen keeps them as they are)
     expect(screen.getByText("another launcher runs this install").tagName).toBe("CODE");
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Open logs from the tray (beside the clock) to see more."
+      )
+    );
     expect(api.openLocalServer).not.toHaveBeenCalled();
   });
 

@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{
+    image::Image,
     ipc::Channel,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
@@ -21,10 +22,10 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 use tauri_plugin_updater::UpdaterExt;
 
 use crate::agent::{self, Action, BundlePaths, LoginItem};
-use crate::lang::t;
+use crate::lang::{self, Lang};
 use crate::mode::{self, AppMode, Target};
 use crate::setup::{self, Progress, StepError};
-use crate::status::{self, Probe, Quiet, ServerStatus};
+use crate::status::{self, Probe, Quiet, ServerStatus, StatusView};
 use crate::tray::{self, Entry};
 
 const TRAY_ID: &str = "main";
@@ -59,10 +60,16 @@ pub struct Shell {
     /// Since when the server has not answered (status::Quiet).
     quiet: Mutex<Quiet>,
     update_ready: AtomicBool,
-    status: Mutex<ServerStatus>,
+    status: Mutex<StatusView>,
     menu: Mutex<Vec<Entry>>,
+    /// The badge the tray icon shows now (tray::badge_color), and the plain
+    /// icon it is drawn on (RGBA, width, height). Not on a Mac.
+    badge: Mutex<Option<[u8; 3]>>,
+    plain_icon: Mutex<Option<(Vec<u8>, u32, u32)>>,
     /// "Connect to another Maktaba…" was chosen: show setup until a mode is saved.
     force_setup: AtomicBool,
+    /// The tray's language: the system's UI language when the app started.
+    lang: Lang,
     /// One refresh at a time, so tray menus are queued in the order computed.
     refresh_lock: Mutex<()>,
 }
@@ -88,10 +95,16 @@ impl Shell {
             started_at: Mutex::new(Instant::now()),
             quiet: Mutex::new(Quiet::new(Instant::now())),
             update_ready: AtomicBool::new(false),
-            status: Mutex::new(ServerStatus::Starting),
+            status: Mutex::new(StatusView {
+                status: ServerStatus::Starting,
+                detail: None,
+            }),
             menu: Mutex::new(Vec::new()),
+            badge: Mutex::new(None),
+            plain_icon: Mutex::new(None),
             force_setup: AtomicBool::new(false),
             refresh_lock: Mutex::new(()),
+            lang: Lang::system(),
         }
     }
 
@@ -152,17 +165,21 @@ impl Shell {
         agent::set_paused_flag(true);
     }
 
-    /// The server's status, and the language model's line when the
-    /// supervisor runs a model server.
-    fn compute_status(&self) -> (ServerStatus, Option<String>) {
+    /// The server's status with what it waits on, and the language model's
+    /// line when the supervisor runs a model server.
+    fn compute_status(&self) -> (StatusView, Option<String>) {
         let Some(AppMode::Server { supervisor_url, .. }) = self.mode() else {
-            return (ServerStatus::SetupNeeded, None);
+            let view = StatusView {
+                status: ServerStatus::SetupNeeded,
+                detail: None,
+            };
+            return (view, None);
         };
         let addr = status::addr_of(&supervisor_url)
             .unwrap_or_else(|| status::DEFAULT_SUPERVISOR_ADDR.into());
         let probe = status::probe(&addr);
         let model = match &probe {
-            Probe::Snapshot(s) => status::model_line(s.llm.as_ref()),
+            Probe::Snapshot(s) => status::model_line(s.llm.as_ref(), self.lang.words()),
             Probe::Unreachable => None,
         };
         // a live agent (Windows, Linux) whose supervisor does not answer is
@@ -180,8 +197,14 @@ impl Shell {
             agent::server_log_tail().and_then(|t| status::failure_in_log(&t))
         });
         let paused = self.paused.load(Ordering::SeqCst);
-        let st = status::derive(true, paused, &waiting, &probe);
-        (st, model)
+        let status = status::derive(true, paused, &waiting, &probe);
+        // what a starting or failing process waits on; a server that does not
+        // answer carries its reason in the status itself
+        let detail = match status {
+            ServerStatus::Starting | ServerStatus::Problem { .. } => status::waiting_on(&probe),
+            _ => None,
+        };
+        (StatusView { status, detail }, model)
     }
 }
 
@@ -217,10 +240,13 @@ fn bundled_url(app: &AppHandle) -> String {
     }
 }
 
-fn show_error(app: &AppHandle, msg: impl Into<String>) {
+/// An error dialog in the tray's language: `sentence`, then the programs' own
+/// errors as they are (lang::error_message).
+fn show_error(app: &AppHandle, sentence: &str, errors: &[&str]) {
+    let lang = shell(app).lang;
     app.dialog()
-        .message(msg)
-        .title(t("Maktaba", "مكتبة"))
+        .message(lang::error_message(sentence, errors))
+        .title(lang.words().brand)
         .kind(MessageDialogKind::Error)
         .show(|_| {});
 }
@@ -229,7 +255,7 @@ fn show_error(app: &AppHandle, msg: impl Into<String>) {
 fn show_info(app: &AppHandle, msg: impl Into<String>) {
     app.dialog()
         .message(msg)
-        .title(t("Maktaba", "مكتبة"))
+        .title(shell(app).lang.words().brand)
         .kind(MessageDialogKind::Info)
         .show(|_| {});
 }
@@ -254,31 +280,61 @@ fn refresh(app: &AppHandle) {
     // a tray click) must reach the main thread in the order they computed.
     let _one_at_a_time = sh.refresh_lock.lock().unwrap();
     let server = sh.server_side();
-    let (status, model) = if server {
+    let (view, model) = if server {
         sh.compute_status()
     } else {
-        (ServerStatus::SetupNeeded, None)
+        let view = StatusView {
+            status: ServerStatus::SetupNeeded,
+            detail: None,
+        };
+        (view, None)
     };
     let update_ready = sh.update_ready.load(Ordering::SeqCst);
-    let entries = tray::entries_with_model(server, &status, update_ready, model.as_deref());
-    *sh.status.lock().unwrap() = status.clone();
+    // the server's English detail, for a tray that shows it (lang.rs)
+    let detail = view
+        .detail
+        .as_ref()
+        .map(|d| d.text.as_str())
+        .filter(|t| !t.is_empty());
+    let (status, lang) = (&view.status, sh.lang);
+    let entries =
+        tray::entries_with_model(lang, server, status, update_ready, model.as_deref(), detail);
+    let badge = if server && cfg!(not(target_os = "macos")) {
+        tray::badge_color(status, update_ready)
+    } else {
+        None
+    };
+    let tooltip = if server {
+        tray::tooltip(&tray::status_line(lang, status, detail))
+    } else {
+        lang.words().brand.into()
+    };
+    *sh.status.lock().unwrap() = view.clone();
     let mut last = sh.menu.lock().unwrap();
-    if *last == entries {
+    let mut last_badge = sh.badge.lock().unwrap();
+    let new_badge = *last_badge != badge;
+    if *last == entries && !new_badge {
         return;
     }
     *last = entries.clone();
-    drop(last);
-    let tooltip = if server {
-        tray::status_line(&status)
+    *last_badge = badge;
+    drop((last, last_badge));
+    // the icon with this badge (the plain icon without one)
+    let icon = if new_badge {
+        let plain = sh.plain_icon.lock().unwrap();
+        plain.as_ref().map(|(rgba, w, h)| match badge {
+            Some(c) => Image::new_owned(tray::badge(rgba, *w, *h, c), *w, *h),
+            None => Image::new_owned(rgba.clone(), *w, *h),
+        })
     } else {
-        "Maktaba".into()
+        None
     };
-    // the window's Server menu speaks the session's language (Linux)
+    // the window's Server menu says what the tray says (Linux)
     #[cfg(target_os = "linux")]
     let window_line = if server {
-        tray::window_status_line(&status)
+        tray::status_line(lang, status, detail)
     } else {
-        t("Maktaba", "مكتبة")
+        lang.words().brand.to_string()
     };
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
@@ -290,6 +346,9 @@ fn refresh(app: &AppHandle) {
         ) {
             let _ = t.set_menu(Some(menu));
             let _ = t.set_tooltip(Some(tooltip));
+            if let Some(icon) = icon {
+                let _ = t.set_icon(Some(icon));
+            }
         }
     });
 }
@@ -312,7 +371,7 @@ fn sync_window_menu(app: &AppHandle, entries: &[Entry], status_line: &str) {
     {
         let _ = item.set_text(status_line);
     }
-    for (id, _, _) in tray::WINDOW_ITEMS.iter().flatten() {
+    for id in tray::WINDOW_ITEMS.iter().flatten() {
         let window_id = format!("{}{id}", tray::WINDOW_PREFIX);
         if let Some(item) = sub
             .get(window_id.as_str())
@@ -388,30 +447,9 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
         _ => Ok(()),
     };
     if let Err(e) = result {
-        show_error(app, tray_error(id, &e));
+        show_error(app, tray::action_failed(sh.lang, id), &[&e]);
     }
     refresh(app);
-}
-
-/// A tray (or Server menu) action's failure, in the session's language: what
-/// failed, then the server's own words.
-fn tray_error(id: &str, e: &str) -> String {
-    let (en, ar) = match id {
-        "server-pause" | "stop-and-quit" => {
-            ("The Maktaba server could not stop", "تعذّر إيقاف خادم مكتبة")
-        }
-        "server-resume" => (
-            "The Maktaba server could not start",
-            "تعذّر تشغيل خادم مكتبة",
-        ),
-        "open-logs" => ("The logs could not be opened", "تعذّر فتح السجلات"),
-        "change-server" => (
-            "Maktaba could not go back to choosing a server",
-            "تعذّر على مكتبة العودة إلى اختيار الخادم",
-        ),
-        _ => ("Maktaba could not do that", "تعذّر على مكتبة تنفيذ ذلك"),
-    };
-    t(&format!("{en}: {e}"), &format!("{ar}: {e}"))
 }
 
 /// Story 36.8 replaces the whole app (shell + server payload): install,
@@ -426,20 +464,21 @@ fn install_update(app: AppHandle) {
         // the server was asked to stop for the install
         #[cfg(windows)]
         let stopped = AtomicBool::new(false);
+        let failed = |e: String| (false, e);
         let run = async {
             let update = app
                 .updater()
-                .map_err(|e| e.to_string())?
+                .map_err(|e| failed(e.to_string()))?
                 .check()
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| failed(e.to_string()))?;
             let Some(update) = update else {
                 return Ok(false);
             };
             let bytes = update
                 .download(|_, _| {}, || {})
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| failed(e.to_string()))?;
             #[cfg(windows)]
             if matches!(shell(&app).mode(), Some(AppMode::Server { .. })) {
                 // stop the server and wait for it (the install hold keeps the
@@ -448,12 +487,13 @@ fn install_update(app: AppHandle) {
                 stopped.store(true, Ordering::SeqCst);
                 tauri::async_runtime::spawn_blocking(agent::stop_for_install)
                     .await
-                    .map_err(|e| e.to_string())?
-                    .map_err(|e| format!("the server must stop first: {e}"))?;
+                    .map_err(|e| (true, e.to_string()))?
+                    .map_err(|e| (true, e))?;
             }
             // Windows: this runs the installer and exits the app
-            update.install(bytes).map_err(|e| e.to_string())?;
-            Ok::<bool, String>(true)
+            update.install(bytes).map_err(|e| failed(e.to_string()))?;
+            // the error: whether the server would not stop for it, and why
+            Ok::<bool, (bool, String)>(true)
         };
         match run.await {
             Ok(true) => {
@@ -470,41 +510,45 @@ fn install_update(app: AppHandle) {
                 app.restart();
             }
             Ok(false) => shell(&app).update_ready.store(false, Ordering::SeqCst),
-            Err(e) => {
-                let msg = t(
-                    &format!("The update could not be installed: {e}"),
-                    &format!("تعذّر تثبيت التحديث: {e}"),
-                );
+            Err((at_stop, e)) => {
+                let w = shell(&app).lang.words();
+                let sentence = if at_stop {
+                    w.update_stop_failed
+                } else {
+                    w.update_failed
+                };
                 #[cfg(windows)]
-                let msg = if stopped.load(Ordering::SeqCst) {
+                if stopped.load(Ordering::SeqCst) {
                     let handle = app.clone();
-                    let again = tauri::async_runtime::spawn_blocking(move || {
+                    let (again, why) = tauri::async_runtime::spawn_blocking(move || {
                         start_after_failed_update(&handle)
                     })
                     .await
-                    .unwrap_or_else(|e| format!(" The server could not start again: {e}"));
-                    format!("{msg}{again}")
-                } else {
-                    msg
-                };
-                show_error(&app, msg)
+                    .unwrap_or_else(|e| (w.update_start_failed, Some(e.to_string())));
+                    let sentence = format!("{sentence} {again}");
+                    let why = why.unwrap_or_default();
+                    return show_error(&app, &sentence, &[&e, &why]);
+                }
+                show_error(&app, sentence, &[&e])
             }
         }
     });
 }
 
 /// After an update that failed once the server was asked to stop (Windows):
-/// start it again unless it was paused. The sentence for the message.
+/// start it again unless it was paused. The sentence for the message, and the
+/// error when it could not start.
 #[cfg(windows)]
-fn start_after_failed_update(app: &AppHandle) -> String {
+fn start_after_failed_update(app: &AppHandle) -> (&'static str, Option<String>) {
     let sh = shell(app);
+    let w = sh.lang.words();
     if sh.paused.load(Ordering::SeqCst) {
-        return " The server stays paused.".into();
+        return (w.update_stays_paused, None);
     }
     sh.mark_started();
     match agent::control(Action::Resume) {
-        Ok(()) => " The server is starting again.".into(),
-        Err(e) => format!(" The server could not start again: {e}"),
+        Ok(()) => (w.update_starting_again, None),
+        Err(e) => (w.update_start_failed, Some(e)),
     }
 }
 
@@ -514,25 +558,39 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     app.manage(Shell::new(app));
 
     let sh = shell(app);
-    let entries = tray::entries(sh.server_side(), &ServerStatus::Starting, false);
+    let entries = tray::entries(sh.lang, sh.server_side(), &ServerStatus::Starting, false);
     let mut tray = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&build_tray_menu(app, &entries)?)
-        .tooltip("Maktaba")
+        .tooltip(sh.lang.words().brand)
         .on_menu_event(|app, event| on_tray_event(app, event.id().as_ref()));
     if let Some(icon) = app.default_window_icon() {
+        *sh.plain_icon.lock().unwrap() = Some((icon.rgba().to_vec(), icon.width(), icon.height()));
         tray = tray.icon(icon.clone());
+    }
+    // Windows: a left click opens the window (the menu is on the right
+    // button), as Windows tray icons do
+    #[cfg(windows)]
+    {
+        use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
+        tray = tray
+            .show_menu_on_left_click(false)
+            .on_tray_icon_event(|tray, event| {
+                if let TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } = event
+                {
+                    focus_main(tray.app_handle());
+                }
+            });
     }
     tray.build(app)?;
 
     if let Target::Remote(url) = sh.target() {
         if let Err(e) = navigate_main(app, &url) {
-            show_error(
-                app,
-                t(
-                    &format!("Cannot open {url}: {e}"),
-                    &format!("تعذّر فتح {url}: {e}"),
-                ),
-            );
+            let sentence = lang::fill(sh.lang.words().open_failed, &[("url", &url)]);
+            show_error(app, &sentence, &[&e]);
         }
     }
 
@@ -551,10 +609,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
                 return;
             }
             if let Err(e) = agent::replace_old_task() {
-                show_error(
-                    &handle,
-                    format!("Maktaba could not move its sign-in task to this user's name: {e}"),
-                );
+                show_error(&handle, sh.lang.words().task_move_failed, &[&e]);
             }
             if !sh.paused.load(Ordering::SeqCst)
                 && agent::agent_alive() == Some(false)
@@ -562,7 +617,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
             {
                 sh.mark_started();
                 if let Err(e) = agent::control(Action::Resume) {
-                    show_error(&handle, format!("The Maktaba server could not start: {e}"));
+                    show_error(&handle, sh.lang.words().server_start_failed, &[&e]);
                 }
             }
         });
@@ -606,13 +661,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
                     Some(true)
                 }
                 Err(e) => {
-                    show_error(
-                        &handle,
-                        t(
-                            &format!("Maktaba could not switch the server to this version: {e}"),
-                            &format!("تعذّر على مكتبة نقل الخادم إلى هذا الإصدار: {e}"),
-                        ),
-                    );
+                    show_error(&handle, sh.lang.words().switch_failed, &[&e]);
                     None
                 }
             };
@@ -622,13 +671,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
             {
                 sh.mark_started();
                 if let Err(e) = agent::control(Action::Resume) {
-                    show_error(
-                        &handle,
-                        t(
-                            &format!("The Maktaba server could not start: {e}"),
-                            &format!("تعذّر تشغيل خادم مكتبة: {e}"),
-                        ),
-                    );
+                    show_error(&handle, sh.lang.words().server_start_failed, &[&e]);
                 }
             }
             if let Some(older) = known {
@@ -789,7 +832,7 @@ pub fn open_login_items(app: AppHandle) {
 }
 
 #[tauri::command(async)]
-pub fn server_status(app: AppHandle) -> ServerStatus {
+pub fn server_status(app: AppHandle) -> StatusView {
     shell(&app).status.lock().unwrap().clone()
 }
 

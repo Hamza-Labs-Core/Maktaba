@@ -112,6 +112,20 @@ don't append a line here; docs-only PRs are exempt.
   The app's mode is kept per PC (`%LOCALAPPDATA%`), not in the roaming profile. Setup steps and
   `schtasks` start without a console window, and the installer's hooks get `--server-start`,
   `--server-stop` and `--server-remove`.
+- **The tray says what the server waits on** (Epic 38, story 38.4). While the server starts, the
+  tray's status line and tooltip, and the window's starting screen, show what the server reports a
+  process waits on or why it cannot start: each process's `detail` in `/processes`, which the
+  server fills from story 38.12 (#194) on; a failing process's own reason comes first. The
+  starting screen says it in English or Arabic from the code and values the server sends with the
+  detail (every code of story 38.12's list: the database step, Postgres, the transcription tools),
+  with the programs' own error messages, the log's path and the server's English under Details,
+  and says only that the server is starting when the app has no words for the code or the server
+  sends none. The tray and the app's error dialogs speak the system's UI language, English or
+  Arabic; the tray shows the server's English detail only in English. On Windows and Linux the
+  tray icon carries a status badge (red a problem or a server that does not answer, else violet an
+  update ready, else green running, amber starting, grey paused or stopped; each 3:1 or more on a
+  light and a dark taskbar), and on Windows a left click opens the window (the menu is on the
+  right button).
 - **Postgres programs for every platform, and Postgres on Windows.** Maktaba can fetch the pinned
   Postgres 16.15 build of the machine's platform (theseus-rs; size and SHA-256 pinned, unpacked
   with path checks), and the supervisor runs Postgres on Windows (its `.exe` programs, a fast
