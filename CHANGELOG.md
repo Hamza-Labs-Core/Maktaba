@@ -589,6 +589,10 @@ don't append a line here; docs-only PRs are exempt.
   Möbius' curve, and a transcode whose tone-mapping fails plays untoned instead of not at all.
   Every rung has a key frame on each 6 s boundary, so its segments align with the other rungs'
   (DASH, one AdaptationSet, says so).
+- **A live page's yt-dlp lookup runs once for the channels that share it.** A channel that found
+  no URL cached just as the shared lookup ended started yt-dlp again for the same page; it now
+  takes the URL that lookup cached. (CI saw it as the test's fake yt-dlp running twice and
+  closing its channel twice.)
 
 ## [0.2.0] - 2026-10-19
 
