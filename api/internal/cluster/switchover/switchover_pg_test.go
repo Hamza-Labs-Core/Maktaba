@@ -180,7 +180,7 @@ func setup(t *testing.T) (*Orchestrator, *fakeHub, *fakeSupervisor, string, stri
 		if _, err := db.ExecContext(ctx, `INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, approved_at,
 		        approved_by, full_node, replica, replica_reported_at)
 		    VALUES ($1, $2, 'approved', 'windows', 'amd64', 'cHVi', now(), 'test', true,
-		        '{"state": "following", "local_schema": 147}'::jsonb, now())`, n.id, n.name); err != nil {
+		        '{"state": "following", "local_schema": 148}'::jsonb, now())`, n.id, n.name); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -202,7 +202,7 @@ func setup(t *testing.T) (*Orchestrator, *fakeHub, *fakeSupervisor, string, stri
 		"home.moved": func(json.RawMessage) (bool, any) { return true, map[string]any{"copy_kept": true} },
 	}}
 	s := &fakeSupervisor{kit: kit}
-	o := &Orchestrator{DB: db, Hub: h, Supervisor: s, HomeName: "a", SchemaRev: 147, JobsWait: time.Second,
+	o := &Orchestrator{DB: db, Hub: h, Supervisor: s, HomeName: "a", SchemaRev: 148, JobsWait: time.Second,
 		RetryEvery: 50 * time.Millisecond}
 	return o, h, s, b, c
 }

@@ -49,6 +49,7 @@ from .schedule.tv_settings import (
     RepairConfig,
     TvStripConfig,
 )
+from .search_settings import SearchConfig
 from .sharepath.auto import StorageConfig
 from .stt.placement import TranscriptionConfig
 from .system_health_settings import SystemHealthConfig
@@ -139,6 +140,9 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
     "system_health": (SystemHealthConfig, "System health", "when the System health page "
                       "calls a worker late or gone, the database slow, a dependency check "
                       "stale, and how long one check may take"),
+    "search": (SearchConfig, "Search", "how search results are grouped per video, how many "
+               "show on a page, how long a search's results are kept and how many recent "
+               "searches each user keeps"),
 }  # fmt: skip
 
 

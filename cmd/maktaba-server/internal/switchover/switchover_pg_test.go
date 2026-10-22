@@ -350,7 +350,7 @@ func TestAPlannedSwitchover(t *testing.T) {
 		return nodecopy.Grant{Role: Machine{ID: id}.CopyRole(), Slot: slot, SlotExists: true, Publication: slot,
 			SystemID: done.SystemID, Database: pgbundle.AppDatabase, CA: &ca}
 	}
-	local := int64(147)
+	local := int64(148)
 	// the old home serves its machines no more, then follows the new one; only once its
 	// database receives the new home's changes does it give up what was the home's (the
 	// supervisor opens its sessions after the freeze: so do these)

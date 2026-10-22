@@ -23,6 +23,7 @@ import { AdminEnrichment } from "./pages/Admin/Enrichment";
 import { VideoDetail } from "./pages/VideoDetail";
 import { VideoPlayer } from "./pages/VideoPlayer";
 import { Search } from "./pages/Search";
+import { SearchVideo } from "./pages/SearchVideo";
 import { QueueOverview } from "./pages/queue/QueueOverview";
 import { QueueDetail } from "./pages/queue/QueueDetail";
 import { ItemHistory } from "./pages/queue/ItemHistory";
@@ -114,6 +115,7 @@ export function App() {
                         <Route path="/videos/:videoId" element={<VideoDetail />} />
                         <Route path="/videos/:videoId/watch" element={<VideoPlayer />} />
                         <Route path="/search" element={<Search />} />
+                        <Route path="/search/video/:videoId" element={<SearchVideo />} />
                         <Route path="/guide" element={<Guide />} />
                         <Route path="/live/:number" element={<Player />} />
                         <Route path="/queue" element={<QueueOverview />} />

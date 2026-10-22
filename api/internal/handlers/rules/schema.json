@@ -5890,6 +5890,93 @@
      "maximum": 300
     }
    ]
+  },
+  {
+   "key": "search",
+   "title": "Search",
+   "what": "how search results are grouped per video, how many show on a page, how long a search's results are kept and how many recent searches each user keeps",
+   "fields": [
+    {
+     "name": "passages_per_video",
+     "kind": "int",
+     "group": "Search results",
+     "label": "Passages under each video",
+     "help": "How many of a video's best passages the \"In transcripts\" list shows under it. \"Show all\" lists the rest.",
+     "default": 3,
+     "minimum": 1,
+     "maximum": 10
+    },
+    {
+     "name": "page_size_grid",
+     "kind": "int",
+     "group": "Search results",
+     "label": "Videos per page (grid)",
+     "help": "How many videos one page of \"In titles\" or \"In transcripts\" shows in the grid view.",
+     "default": 24,
+     "minimum": 4,
+     "maximum": 100
+    },
+    {
+     "name": "page_size_list",
+     "kind": "int",
+     "group": "Search results",
+     "label": "Videos per page (list)",
+     "help": "How many videos one page of \"In titles\" or \"In transcripts\" shows in the list view.",
+     "default": 20,
+     "minimum": 4,
+     "maximum": 100
+    },
+    {
+     "name": "passages_page_size",
+     "kind": "int",
+     "group": "Search results",
+     "label": "Passages per page",
+     "help": "How many passages \"Show all\" and a video's matches page load at a time.",
+     "default": 20,
+     "minimum": 5,
+     "maximum": 200
+    },
+    {
+     "name": "max_videos",
+     "kind": "int",
+     "group": "Search results",
+     "label": "Most videos per list",
+     "help": "A search keeps at most this many videos in each list, the best matches first. The match counts of the videos it keeps are always complete.",
+     "default": 500,
+     "minimum": 50,
+     "maximum": 5000
+    },
+    {
+     "name": "semantic_top_k",
+     "kind": "int",
+     "group": "Search results",
+     "label": "Passages a meaning search finds",
+     "help": "How many passages the meaning (semantic) search asks the index for before they are grouped per video. More finds more videos and is slower.",
+     "default": 200,
+     "minimum": 10,
+     "maximum": 200
+    },
+    {
+     "name": "result_minutes",
+     "kind": "int",
+     "group": "Search history",
+     "label": "Keep results for (minutes)",
+     "help": "A search's results are kept for this many minutes after their last use, so their order stays the same while you page through them or come back from a video. Every page you open starts the time again; after that the search runs again.",
+     "default": 15,
+     "minimum": 1,
+     "maximum": 1440
+    },
+    {
+     "name": "recent_limit",
+     "kind": "int",
+     "group": "Search history",
+     "label": "Recent searches kept",
+     "help": "How many of each user's searches the Recent searches list keeps. The query stays after its results are no longer kept; opening it searches again.",
+     "default": 20,
+     "minimum": 1,
+     "maximum": 200
+    }
+   ]
   }
  ]
 }

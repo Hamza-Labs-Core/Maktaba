@@ -18,7 +18,7 @@ func TestRunTitles_MatchesTitlesLiterally(t *testing.T) {
 	}
 	defer db.Close()
 	if _, err := db.Exec(`CREATE TABLE videos (
-		id TEXT PRIMARY KEY, library_id TEXT, title TEXT, duration_sec REAL,
+		id TEXT PRIMARY KEY, library_id TEXT, title TEXT, filename TEXT, duration_sec REAL,
 		detected_language TEXT, deleted_at TEXT)`); err != nil {
 		t.Fatal(err)
 	}
@@ -43,22 +43,21 @@ func TestRunTitles_MatchesTitlesLiterally(t *testing.T) {
 	}
 	ids := map[string]bool{}
 	for _, v := range got {
-		ids[v.VideoID] = true
+		ids[v.V] = true
 	}
 	if len(got) != 2 || !ids["v1"] || !ids["v2"] {
 		t.Fatalf("want v1, v2 (lib-a, not deleted), got %+v", got)
 	}
-	for _, v := range got {
-		if v.VideoID == "v2" && v.DurationSec != nil {
-			t.Fatalf("NULL duration must stay nil, got %v", *v.DurationSec)
-		}
+	// most similar first (SQLite: the shorter title)
+	if got[0].V != "v2" || got[0].S <= got[1].S {
+		t.Fatalf("want v2 first with the higher score, got %+v", got)
 	}
 
 	pct, err := h.runTitles(ctx, "0%", 10, Filters{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(pct) != 1 || pct[0].VideoID != "v5" {
+	if len(pct) != 1 || pct[0].V != "v5" {
 		t.Fatalf("%% must match literally, got %+v", pct)
 	}
 	none, err := h.runTitles(ctx, "_", 10, Filters{})
