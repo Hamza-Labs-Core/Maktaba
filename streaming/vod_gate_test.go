@@ -2,12 +2,17 @@ package main
 
 import (
 	"context"
+	"io"
+	"log/slog"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/cache"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/channel"
 )
 
@@ -70,13 +75,96 @@ func withSlots(t *testing.T, link tvSlotsLink) {
 	})
 }
 
-// withLocalChannels sets the channels on air in this process (newEngine's
-// count) for the test.
-func withLocalChannels(t *testing.T, n *atomic.Int64) {
+// withLocalChannels sets this process's channel engines (their counts of the
+// channels on air, as newEngine adds them) for the test.
+func withLocalChannels(t *testing.T, counts ...func() int) {
 	t.Helper()
-	prev, _ := tvLocalChannels.Load().(func() int)
-	tvLocalChannels.Store(func() int { return int(n.Load()) })
-	t.Cleanup(func() { tvLocalChannels.Store(prev) })
+	tvLocal.mu.Lock()
+	prev := tvLocal.counts
+	tvLocal.counts = counts
+	tvLocal.mu.Unlock()
+	t.Cleanup(func() {
+		tvLocal.mu.Lock()
+		tvLocal.counts = prev
+		tvLocal.mu.Unlock()
+	})
+}
+
+// onAirPipe is a channel's station that is on air until stopped.
+type onAirPipe struct {
+	once sync.Once
+	done chan struct{}
+}
+
+func startOnAir(context.Context, uuid.UUID, string) (channel.Pipeline, error) {
+	return &onAirPipe{done: make(chan struct{})}, nil
+}
+
+func (p *onAirPipe) Subscribe() (<-chan []byte, func()) { return make(chan []byte), func() {} }
+func (p *onAirPipe) WaitReady(context.Context) error    { return nil }
+func (p *onAirPipe) Done() <-chan struct{}              { return p.done }
+func (p *onAirPipe) Stop()                              { p.once.Do(func() { close(p.done) }) }
+func (p *onAirPipe) PID() int                           { return 0 }
+func (p *onAirPipe) Dir() string                        { return "" }
+func (p *onAirPipe) Alive() bool {
+	select {
+	case <-p.done:
+		return false
+	default:
+		return true
+	}
+}
+
+// lookRepo is a channel database where every channel is there and enabled.
+type lookRepo struct{}
+
+func (lookRepo) ProgramsFrom(context.Context, uuid.UUID, time.Time, int) ([]channel.ProgramBlock, error) {
+	return nil, nil
+}
+func (lookRepo) Look(context.Context, uuid.UUID) (channel.Look, error) { return channel.Look{}, nil }
+func (lookRepo) SetRuntime(context.Context, channel.Runtime) error     { return nil }
+func (lookRepo) ClearRuntime(context.Context, uuid.UUID) error         { return nil }
+
+// A full node with an Epic 37 copy runs two channel engines on this process's
+// gates (the node's, and the copy's offline one, built after it): VOD leaves
+// the channels of both their sessions, not the last engine's only.
+func TestVODGateCountsEveryLocalEngine(t *testing.T) {
+	withSlots(t, nil)
+	withLocalChannels(t) // none: newEngine adds them
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	b := &tvBase{logger: logger, layout: cache.New(t.TempDir()), hostname: "node", readOnly: true,
+		settings: channel.NewPGSettings(nil, logger),
+		encoders: &channel.EncoderResolver{FFmpeg: filepath.Join(t.TempDir(), "no-ffmpeg")}}
+	ident := channel.HostIdentity{Host: "node", Role: channel.RoleNode}
+	node := b.newEngine(nil, startOnAir, ident)
+	offline := b.newEngine(nil, startOnAir, ident)
+	for _, e := range []*channel.Engine{node, offline} {
+		e.Repo = lookRepo{}
+		t.Cleanup(e.StopAll)
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := node.Ensure(ctx, uuid.New()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if on, ok := tvLocal.onAir(); !ok || on != 2 {
+		t.Fatalf("on air %d (%v), want the node engine's 2", on, ok)
+	}
+	// cap 6: 2 each and 2 for one more leave VOD none
+	g := &vodGate{gate: channel.NewEncoderGate(6)}
+	if got := g.AcquireN(ctx, uuid.New(), 3); len(got) != 0 {
+		giveAll(got)
+		t.Errorf("two channels on the node's engine, none on the offline one: VOD got %d, want none", len(got))
+	}
+	// one on air: 2 of 6
+	node.StopAll()
+	if _, err := offline.Ensure(ctx, uuid.New()); err != nil {
+		t.Fatal(err)
+	}
+	if got := g.AcquireN(ctx, uuid.New(), 3); len(got) != 2 {
+		t.Errorf("one channel on the offline engine: VOD got %d, want 2", len(got))
+	}
 }
 
 func giveAll(rs []func(bool)) {
@@ -171,7 +259,7 @@ func TestVODGateConcurrent(t *testing.T) {
 func TestVODGateSharesTheProcessGate(t *testing.T) {
 	withSlots(t, nil)
 	var onAir atomic.Int64
-	withLocalChannels(t, &onAir)
+	withLocalChannels(t, func() int { return int(onAir.Load()) })
 	gate := channel.NewEncoderGate(6)
 	g := &vodGate{gate: gate}
 	ch := uuid.New()

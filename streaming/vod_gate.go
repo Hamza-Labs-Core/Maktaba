@@ -31,9 +31,33 @@ type tvSlotsLink interface {
 	Sync(ctx context.Context) bool
 }
 
-// tvLocalChannels counts the channels on air in this process (the channel
-// engine with TV slots off, on the home or a node; newEngine sets it).
-var tvLocalChannels atomic.Value // func() int
+// tvLocal counts the channels on air in this process's channel engines (TV
+// slots off; newEngine adds each: a node's, and beside it an Epic 37 copy's
+// offline one), all on this process's gates.
+var tvLocal localChannels
+
+type localChannels struct {
+	mu     sync.Mutex
+	counts []func() int
+}
+
+func (l *localChannels) add(count func() int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.counts = append(l.counts, count)
+}
+
+// onAir is the engines' channels on air, all together; false with no engine.
+func (l *localChannels) onAir() (int, bool) {
+	l.mu.Lock()
+	counts := append([]func() int(nil), l.counts...)
+	l.mu.Unlock()
+	n := 0
+	for _, count := range counts {
+		n += count() // outside the lock: an engine takes its own
+	}
+	return n, len(counts) > 0
+}
 
 // tvSlots holds the link once the slots are wired; with TV slots off there is
 // none: the channels run in this process and its gate counts them.
@@ -63,7 +87,7 @@ func slotsLink() tvSlotsLink {
 //     each, its budget) on top, as without VOD, and during a TV release swap the
 //     staging or previous slot's (two a channel) too.
 //   - With TV slots off this process's gate counts the channels and VOD, and
-//     the channels' need is counted from the engine here (tvLocalChannels).
+//     the channels' need is counted from the engines here (tvLocal).
 //
 // What it cannot have is libx264's. A cap of 0 limits nothing (VideoToolbox's
 // default).
@@ -97,8 +121,8 @@ func (g *vodGate) AcquireN(ctx context.Context, owner uuid.UUID, n int) []func(r
 	limit, need := g.gate.Max(), 0
 	if link != nil {
 		limit, need, _ = link.Room(ctx, g.vt)
-	} else if f, _ := tvLocalChannels.Load().(func() int); f != nil && limit > 0 {
-		need = 2*f() + 2 // those on air here, and one more
+	} else if on, ok := tvLocal.onAir(); ok && limit > 0 {
+		need = 2*on + 2 // those on air here, and one more
 	}
 	g.mu.Lock()
 	k := n

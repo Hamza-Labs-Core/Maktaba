@@ -551,24 +551,27 @@ don't append a line here; docs-only PRs are exempt.
 - **Video transcodes share the GPU with the TV, and HDR plays right** (follow-up of the NVIDIA
   transcode fix). The TV comes first: a transcode takes NVENC sessions only beyond what the
   channels need (two for each on air and each the hot standby keeps warm, and room for one more
-  channel to start, live and warm, with TV slots on or off), and at most half the channels' cap;
-  the rest of its rungs are encoded by libx264. A failover during a transcode is still warm, and a
-  channel started during one finds its sessions; beyond that, until the transcode ends, a channel
-  may run on libx264 and the standby keep fewer warm. With TV slots on, those sessions are counted
-  live: the front door lowers the slots' budgets by them before they are taken and keeps them only
-  when the live slot took its new budget and the slots' fresh reports leave room, so VOD's
-  sessions and the live slot's stay within the cap (the standby's warm channels, and a release's
-  staging slot during a swap, hold theirs on top, as without a transcode); a slot that has just
-  started holds to half its cap until it hears its budget. A transcode's open keeps to its
-  deadline (the sessions' sync gets the request's), and a source whose colour probe fails is
-  logged and encoded as SDR. VideoToolbox keeps to its own cap. A GPU encoder that failed its
-  test encode is detected again with growing waits (a busy one until it works, one the machine
-  does not have a few times). HDR (PQ or HLG, MPEG-TS too, and sources that name only their
-  transfer) is tone-mapped to SDR when ffmpeg has `zscale` and `tonemap`, after scaling to the top
-  rung (4K HDR transcodes at twice real time instead of below it), with Möbius' curve, and a
-  transcode whose tone-mapping fails plays untoned instead of not at all. Every rung has a key
-  frame on each 6 s boundary, so its segments align with the other rungs' (DASH, one
-  AdaptationSet, says so).
+  channel to start, live and warm, with TV slots on or off, every channel engine in the process
+  counted), and at most half the channels' cap; the rest of its rungs are encoded by libx264. At
+  the default cap of 6 with TV slots on, a transcode therefore gets no NVENC session while a
+  channel is on air (two with none on air), and its rungs run on libx264: about twice real time
+  for 4K HDR on an i9, and a slower host may not keep up. A failover during a transcode is still
+  warm, and a channel started during one finds its sessions; beyond that, until the transcode
+  ends, a channel may run on libx264 and the standby keep fewer warm. With TV slots on, those
+  sessions are counted live: the front door lowers the slots' budgets by them before they are
+  taken and keeps them only when the live slot took its new budget and the slots' fresh reports
+  leave room, so VOD's sessions and the live slot's stay within the cap (the standby's warm
+  channels, and a release's staging slot during a swap, hold theirs on top, as without a
+  transcode); a slot that has just started holds to half its cap until it hears its budget. A
+  transcode's open keeps to its deadline (the sessions' sync gets the request's), and a source
+  whose colour probe fails is logged and encoded as SDR. VideoToolbox keeps to its own cap. A GPU
+  encoder that failed its test encode is detected again with growing waits (a busy one until it
+  works, one the machine does not have a few times). HDR (PQ or HLG, MPEG-TS too, and sources
+  that name only their transfer) is tone-mapped to SDR when ffmpeg has `zscale` and `tonemap`,
+  after scaling to the top rung (4K HDR transcodes at twice real time instead of below it), with
+  Möbius' curve, and a transcode whose tone-mapping fails plays untoned instead of not at all.
+  Every rung has a key frame on each 6 s boundary, so its segments align with the other rungs'
+  (DASH, one AdaptationSet, says so).
 
 ## [0.2.0] - 2026-10-19
 
