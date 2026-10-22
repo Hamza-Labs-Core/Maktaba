@@ -129,7 +129,9 @@ don't append a line here; docs-only PRs are exempt.
   it in `%APPDATA%\Maktaba`, where every reader (Maktaba, streaming, the pipeline, the node
   installer) and a re-join use it. That profile can roam, so the file records the PC it belongs
   to (`machine_id`, Windows' MachineGuid). The first new Maktaba that runs with it on a PC claims
-  it, keeping its ACL; the pipeline is its one writer. A PC it does not belong to skips it: it
+  it, keeping its ACL; the pipeline is its one writer. A replace that fails half way never loses
+  the file: the old one is put back, or the new copy takes its place, and a claim that cannot be
+  written leaves the file as it was and says so once. A PC it does not belong to skips it: it
   is no home's machine, and its own join writes `%LOCALAPPDATA%\Maktaba\node.json`, never the
   other PC's identity. `maktaba-server` says so once at its start, and the app's setup check
   shows it (`node_config_other_pc`).
