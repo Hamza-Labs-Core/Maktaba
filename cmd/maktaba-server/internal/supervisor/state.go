@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
 )
 
@@ -137,6 +138,9 @@ type Snapshot struct {
 	// LLM is the language model server's state (Maktaba.app's bundled Ollama,
 	// or [llm] url): is it up, is every configured model there or downloading.
 	LLM *llmserver.Status `json:"llm,omitempty"`
+	// FFmpeg is the check of the ffmpeg every role runs (WithFFmpeg): on Linux
+	// the distribution's, with the command that installs the one Maktaba needs.
+	FFmpeg *ffmpeg.Report `json:"ffmpeg,omitempty"`
 }
 
 // snapshotEvents is how many recent events a Snapshot carries.
@@ -148,6 +152,10 @@ func (s *Supervisor) Snapshot() Snapshot {
 	if s.llm != nil {
 		st := s.llm()
 		llm = &st
+	}
+	var ff *ffmpeg.Report
+	if s.ffmpeg != nil {
+		ff = s.ffmpeg()
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -166,6 +174,7 @@ func (s *Supervisor) Snapshot() Snapshot {
 		},
 		Processes: make([]ChildStatus, 0, len(s.children)),
 		LLM:       llm,
+		FFmpeg:    ff,
 	}
 	for _, c := range s.children {
 		st := c.status

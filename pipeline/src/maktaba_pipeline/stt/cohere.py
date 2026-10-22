@@ -115,11 +115,19 @@ RETRY_AFTER_S = 600.0
 RETRY_MAX_S = 6 * 3600.0
 
 
+class NoRoom(RuntimeError):
+    """The GPU has no room for the second listen now (other programs hold its memory):
+    waited out like a failed load, but a relisten job that meets it gives itself back
+    instead of spending one of its video's tries."""
+
+
 @dataclass
 class _Failure:
     message: str
     at: float
     tries: int
+    #: no room on the GPU, not a load that failed
+    no_room: bool = False
 
     def wait_s(self) -> float:
         return min(RETRY_MAX_S, RETRY_AFTER_S * 2.0 ** (self.tries - 1))
@@ -169,7 +177,7 @@ def recogniser(
         if rec is None:
             failed = load_failure(model_id)
             if failed is not None:
-                raise RuntimeError(failed)
+                raise (NoRoom if _FAILED[model_id].no_room else RuntimeError)(failed)
             if cuda:
                 from . import cohere_cuda
 
@@ -181,8 +189,8 @@ def recogniser(
                 except Exception as exc:  # noqa: BLE001 - the driver's answer: no room known
                     full = f"the GPU's free memory could not be read: {type(exc).__name__}: {exc}"
                 if full is not None:
-                    _failed(model_id, full, "cohere.no_room")
-                    raise RuntimeError(full)
+                    _failed(model_id, full, "cohere.no_room", no_room=True)
+                    raise NoRoom(full)
             try:
                 rec = _REC[model_id] = _open(model_id, share, settings)
             except Exception as exc:
@@ -192,11 +200,12 @@ def recogniser(
         return rec
 
 
-def _failed(model_id: str, message: str, event: str) -> None:
-    """Remember that ``model_id`` did not load here (``message``), one more try than the
-    last time: :func:`load_failure` says so until its backoff is over."""
+def _failed(model_id: str, message: str, event: str, no_room: bool = False) -> None:
+    """Remember that ``model_id`` did not load here (``message``; ``no_room``: the GPU had
+    no room for it), one more try than the last time: :func:`load_failure` says so until
+    its backoff is over."""
     before = _FAILED.get(model_id)
-    f = _Failure(message[:300], _clock(), 1 if before is None else before.tries + 1)
+    f = _Failure(message[:300], _clock(), 1 if before is None else before.tries + 1, no_room)
     _FAILED[model_id] = f
     _log.warning(event, model=model_id, error=f.message, retry_s=f.wait_s())
 

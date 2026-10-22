@@ -1,0 +1,29 @@
+Filters:
+  T.. = Timeline support
+  .S. = Slice threading
+  ..C = Command support
+  A = Audio input/output
+  V = Video input/output
+  N = Dynamic number and/or type of input/output
+  | = Source or sink filter
+ ... aformat           A->A       Convert the input audio to one of the specified formats.
+ ... aresample         A->A       Resample audio data.
+ TSC dynaudnorm        A->A       Dynamic Audio Normalizer.
+ ... loudnorm          A->A       EBU R128 loudness normalization
+ T.C speechnorm        A->A       Speech Normalizer.
+ ... anullsrc          |->A       Null audio source, return empty audio frames.
+ ..C crop              V->V       Crop the input video.
+ T.C drawtext          V->V       Draw text on top of video frames using libfreetype library.
+ ... format            V->V       Convert the input video to one of the specified pixel formats.
+ ... fps               V->V       Force constant framerate.
+ T.. metadata          V->V       Manipulate video frame metadata.
+ T.C overlay           VV->V      Overlay a video source on top of the input.
+ ... pad               V->V       Pad the input video.
+ ..C scale             V->V       Scale the input video size and/or convert the image format.
+ ... scdet             V->V       Detect video scene change
+ ... setpts            V->V       Set PTS for the output video frame.
+ ... setsar            V->V       Set the pixel sample aspect ratio.
+ .S. signalstats       V->V       Generate statistics from video analysis.
+ ... split             V->N       Pass on the input to N video outputs.
+ ... tile              V->V       Tile several successive frames together.
+ ..C color             |->V       Provide an uniformly colored input.

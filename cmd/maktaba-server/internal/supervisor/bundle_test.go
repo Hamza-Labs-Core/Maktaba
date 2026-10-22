@@ -35,6 +35,7 @@ func TestAppBundleFFmpegAndVenv(t *testing.T) {
 	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("PATH", t.TempDir()) // no ffmpeg of this machine's
 	p := payload(t, "ffmpeg/ffmpeg", "ffmpeg/ffprobe")
 	t.Setenv("MAKTABA_APP_BUNDLE", p)
 	cfg := config.Defaults()
@@ -47,10 +48,20 @@ func TestAppBundleFFmpegAndVenv(t *testing.T) {
 			t.Errorf("%s: ffmpeg env = %v", role, m)
 		}
 	}
-	t.Setenv("MAKTABA_FFMPEG", "/own/ffmpeg")
-	if _, ok := envMap(ChildEnv(RolePipeline, cfg))["MAKTABA_FFMPEG"]; ok {
-		t.Error("the operator's own MAKTABA_FFMPEG must be kept")
+	// the operator's own wins over the app's, and every role gets it
+	own := payload(t, "opt/ffmpeg", "opt/ffprobe")
+	t.Setenv("MAKTABA_FFMPEG", filepath.Join(own, "opt", "ffmpeg"))
+	if m := envMap(ChildEnv(RoleStreaming, cfg)); m["MAKTABA_FFMPEG_BIN"] != filepath.Join(own, "opt", "ffmpeg") ||
+		m["MAKTABA_FFPROBE_BIN"] != filepath.Join(own, "opt", "ffprobe") {
+		t.Errorf("the operator's MAKTABA_FFMPEG: %v", m)
 	}
+	// [media] ffmpeg wins over both
+	withSetting := cfg
+	withSetting.Media.FFmpeg = filepath.Join(p, "ffmpeg", "ffmpeg")
+	if m := envMap(ChildEnv(RoleAPI, withSetting)); m["MAKTABA_FFMPEG"] != withSetting.Media.FFmpeg {
+		t.Errorf("[media] ffmpeg: %v", m)
+	}
+	t.Setenv("MAKTABA_FFMPEG", "")
 
 	// always the app's venv, also before it exists (the pipeline's Prepare builds
 	// it before the first start, Epic 38 story 38.12)
@@ -70,9 +81,18 @@ func TestAppBundleFFmpegAndVenv(t *testing.T) {
 
 	t.Setenv("MAKTABA_APP_BUNDLE", "")
 	if m := envMap(ChildEnv(RoleAPI, cfg)); m["MAKTABA_FFMPEG_BIN"] != "" || m["PATH"] != "" {
-		t.Errorf("outside the app nothing changes: %v", m)
+		t.Errorf("outside the app, without an ffmpeg on the PATH, nothing changes: %v", m)
 	}
 	if py := pythonFor(Options{Config: cfg}); py != "python3" {
 		t.Errorf("outside the app python = %s", py)
+	}
+
+	// on Linux the app carries none: the PATH's (the distribution's), the PATH as it is
+	sys := payload(t, "bin/ffmpeg", "bin/ffprobe")
+	t.Setenv("PATH", filepath.Join(sys, "bin"))
+	t.Setenv("MAKTABA_APP_BUNDLE", payload(t, "bin/maktaba-server"))
+	if m := envMap(ChildEnv(RolePipeline, cfg)); m["MAKTABA_FFMPEG"] != filepath.Join(sys, "bin", "ffmpeg") ||
+		m["MAKTABA_FFPROBE"] != filepath.Join(sys, "bin", "ffprobe") || m["PATH"] != "" {
+		t.Errorf("the PATH's ffmpeg: %v", m)
 	}
 }

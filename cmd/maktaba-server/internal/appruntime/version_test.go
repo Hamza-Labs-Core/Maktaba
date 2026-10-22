@@ -12,7 +12,11 @@ func TestCompareVersions(t *testing.T) {
 		{"v0.2.0-12-gabc1234", "v0.2.0", 1},
 		{"v0.2.0", "v0.2.0-12-gabc1234", -1},
 		{"v0.2.0-12-gabc1234", "v0.2.0-3-g9f8e7d6", 1},
-		{"v0.2.0-12-gabc1234-dirty", "v0.2.0-12-gdeadbee", 0},
+		{"v0.2.0-12-gabc1234", "v0.2.0-12-gdeadbee", 0},
+		// a dirty tree after the clean build of the same commit, before the next commit
+		{"v0.2.0-12-gabc1234-dirty", "v0.2.0-12-gdeadbee", 1},
+		{"v0.2.0-dirty", "v0.2.0", 1},
+		{"v0.2.0-dirty", "v0.2.0-1-gabc1234", -1},
 		{"v0.2.0-12-gabc1234", "v0.2.1", -1},
 		{"v0.3.0-rc.1", "v0.2.0-40-gabc1234", 1},
 		{"v1.0.0-rc.1-3-g1a2b3c4d", "v1.0.0-rc.1", 1},
