@@ -24,7 +24,13 @@ not a pointer. That single constraint shapes both apps identically:
     built in) inside `androidx.tv:tv-foundation` `TvLazyRow` / grids.
 - **Big type + safe-area gutters.** Larger base font sizes and ~48–80 px
   edge gutters to clear TV overscan.
-- **Dark theme.** Living-room friendly; reduces glare and burn-in.
+- **"Islamic library" theme.** Dark "Ink & Brass" (background
+  `#0B111C`, gold `#E3B252`) by default; Amiri Bold headings and IBM Plex
+  Sans Arabic body text (SIL OFL, bundled with their licences). Home draws
+  a library scene full-screen; text always sits on translucent reading
+  panels or a gradient fade, never on the art. Focused cards get a 3px
+  gold ring + scale. tvOS follows the system light/dark setting (light =
+  "gold on white"); Android TV is dark-only.
 
 ## Shared shape across both apps
 

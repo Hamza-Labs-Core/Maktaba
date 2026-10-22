@@ -65,7 +65,7 @@ func TestAFreshSetupBesideALeftoverNodeConfig(t *testing.T) {
 	if supervisor.NodeJoined(cfg) {
 		t.Error("the new home counts as that node")
 	}
-	if m := envOf(supervisor.ChildEnv(supervisor.RoleStreaming, cfg)); m["MAKTABA_CLUSTER_ROLE"] != "home" || m["MAKTABA_NODE_ID"] != "" {
+	if m := envOf(mustChildEnv(t, supervisor.RoleStreaming, cfg)); m["MAKTABA_CLUSTER_ROLE"] != "home" || m["MAKTABA_NODE_ID"] != "" {
 		t.Errorf("its streaming role: %v", m)
 	}
 }
@@ -78,4 +78,14 @@ func envOf(env []string) map[string]string {
 		}
 	}
 	return m
+}
+
+// mustChildEnv is supervisor.ChildEnv for a test whose node config can be read.
+func mustChildEnv(t *testing.T, role supervisor.Role, cfg config.Config) []string {
+	t.Helper()
+	env, err := supervisor.ChildEnv(role, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return env
 }

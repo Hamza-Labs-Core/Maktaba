@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"crypto/x509"
+	"encoding/binary"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -13,8 +14,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
+	"unicode/utf16"
+	"unicode/utf8"
 )
 
 // NodeConfig is the part of a joined machine's Epic 31 node config (node.json, written
@@ -209,7 +213,7 @@ func NodeConfigPath(getenv func(string) string, goos, userHome string) string {
 		return filepath.Join(userHome, "Library", "Application Support", "Maktaba", "node.json")
 	case "windows":
 		old := roamingNodeConfig(getenv, userHome)
-		if held := nodeConfigFile(old, os.ReadFile); isFile(held) && !claimedElsewhere(held, thisMachine(getenv)) {
+		if held := heldNodeConfig(old); held != "" && !claimedElsewhere(held, thisMachine(getenv)) {
 			return old
 		}
 		return filepath.Join(WindowsRoot(getenv, userHome), "node.json")
@@ -298,12 +302,73 @@ func isNodeConfigLeftover(base, name string) bool {
 	return base == "node.json" && legacyNodeLeftover.MatchString(name)
 }
 
-// utf8BOM is what a node.json saved by an editor can start with (Notepad, PowerShell 5.1's
-// Set-Content -Encoding UTF8): every reader reads past it, as the pipeline does (utf-8-sig).
-var utf8BOM = []byte("\xef\xbb\xbf")
+// withoutBOM is a node config's bytes as UTF-8, the way every reader reads them (the
+// pipeline's _text, the installer's Get-Content): a node.json an editor saved with a byte
+// order mark is read in that encoding (Notepad and PowerShell 5.1's Set-Content -Encoding
+// UTF8 write UTF-8 with one, its Out-File and > UTF-16; UTF-32 too), and one without is
+// UTF-8. Text that does not decode strictly gives no bytes (broken), the same for every
+// reader: a UTF-16 lone surrogate, an ANSI file with a byte that is not UTF-8.
+func withoutBOM(b []byte) []byte {
+	switch {
+	case bytes.HasPrefix(b, []byte("\xef\xbb\xbf")):
+		b = b[3:]
+	case bytes.HasPrefix(b, []byte("\xff\xfe\x00\x00")):
+		return decodeUTF32(b[4:], binary.LittleEndian)
+	case bytes.HasPrefix(b, []byte("\x00\x00\xfe\xff")):
+		return decodeUTF32(b[4:], binary.BigEndian)
+	case bytes.HasPrefix(b, []byte("\xff\xfe")):
+		return decodeUTF16(b[2:], binary.LittleEndian)
+	case bytes.HasPrefix(b, []byte("\xfe\xff")):
+		return decodeUTF16(b[2:], binary.BigEndian)
+	}
+	if !utf8.Valid(b) {
+		return nil // not UTF-8 (an ANSI file with a non-ASCII byte): broken for every reader
+	}
+	return b
+}
 
-// withoutBOM is b without a leading UTF-8 BOM.
-func withoutBOM(b []byte) []byte { return bytes.TrimPrefix(b, utf8BOM) }
+// decodeUTF16 is UTF-16 text (after its BOM) as UTF-8; nil when it is not whole.
+func decodeUTF16(b []byte, order binary.ByteOrder) []byte {
+	if len(b)%2 != 0 {
+		return nil
+	}
+	units := make([]uint16, len(b)/2)
+	for i := range units {
+		units[i] = order.Uint16(b[2*i:])
+	}
+	var out []byte
+	for i := 0; i < len(units); i++ {
+		r := rune(units[i])
+		switch {
+		case utf16.IsSurrogate(r) && i+1 < len(units):
+			r = utf16.DecodeRune(r, rune(units[i+1]))
+			i++
+			if r == utf8.RuneError {
+				return nil
+			}
+		case utf16.IsSurrogate(r):
+			return nil
+		}
+		out = utf8.AppendRune(out, r)
+	}
+	return out
+}
+
+// decodeUTF32 is UTF-32 text (after its BOM) as UTF-8; nil when it is not whole.
+func decodeUTF32(b []byte, order binary.ByteOrder) []byte {
+	if len(b)%4 != 0 {
+		return nil
+	}
+	var out []byte
+	for i := 0; i < len(b); i += 4 {
+		r := rune(order.Uint32(b[i:]))
+		if !utf8.ValidRune(r) {
+			return nil
+		}
+		out = utf8.AppendRune(out, r)
+	}
+	return out
+}
 
 // wholeNodeConfig: b is a node config with its identity (not a cut file).
 func wholeNodeConfig(b []byte) bool {
@@ -356,8 +421,8 @@ func ForeignNodeConfig(getenv func(string) string, goos, userHome string) (path,
 	if goos != "windows" || strings.TrimSpace(getenv("MAKTABA_NODE_CONFIG")) != "" {
 		return "", ""
 	}
-	held := nodeConfigFile(roamingNodeConfig(getenv, userHome), os.ReadFile)
-	if !isFile(held) || !claimedElsewhere(held, thisMachine(getenv)) {
+	held := heldNodeConfig(roamingNodeConfig(getenv, userHome))
+	if held == "" || !claimedElsewhere(held, thisMachine(getenv)) {
 		return "", ""
 	}
 	if ReadNodeConfig(getenv, goos, userHome, os.ReadFile).Joined() {
@@ -390,8 +455,7 @@ func isFile(p string) bool {
 // or broken).
 func ReadNodeConfig(getenv func(string) string, goos, userHome string, readFile func(string) ([]byte, error)) NodeConfig {
 	var n NodeConfig
-	path := nodeConfigFile(NodeConfigPath(getenv, goos, userHome), readFile)
-	b, err := readFile(path)
+	path, b, err := readNodeConfigSteady(NodeConfigPath(getenv, goos, userHome), readFile)
 	if errors.Is(err, fs.ErrNotExist) {
 		return n
 	}
@@ -404,6 +468,56 @@ func ReadNodeConfig(getenv func(string) string, goos, userHome string, readFile 
 	n.NodeID, n.DatabaseURL = strings.TrimSpace(n.NodeID), strings.TrimSpace(n.DatabaseURL)
 	n.PrivateKey = strings.TrimSpace(n.PrivateKey)
 	return n
+}
+
+// ReadNodeConfigAt reads the node config kept in the file at path (a set-aside identity,
+// SetAsideNodeConfigs), in any encoding a reader reads (withoutBOM); one an older version
+// kept with a wider ACL is made the user's alone (MakeUserOnly, best effort).
+func ReadNodeConfigAt(path string) (NodeConfig, error) {
+	b, err := os.ReadFile(path) //nolint:gosec // this machine's node configs
+	if err != nil {
+		return NodeConfig{}, err
+	}
+	_ = MakeUserOnly(path)
+	var n NodeConfig
+	if err := json.Unmarshal(withoutBOM(b), &n); err != nil {
+		return NodeConfig{}, fmt.Errorf("node config %s: %w", path, err)
+	}
+	n.NodeID, n.DatabaseURL = strings.TrimSpace(n.NodeID), strings.TrimSpace(n.DatabaseURL)
+	n.PrivateKey = strings.TrimSpace(n.PrivateKey)
+	return n, nil
+}
+
+// SetAsideNodeConfigs are the identities a home's switch set aside (SetNodeConfigAside:
+// <node config>.was-node-<term>) beside every place this machine's node config is or
+// was: on Windows the roaming profile's and the local one (once the roaming node.json is
+// set aside, NodeConfigPath is the local place, though the identity is beside the
+// roaming one), elsewhere beside NodeConfigPath. Sorted.
+func SetAsideNodeConfigs(getenv func(string) string, goos, userHome string) []string {
+	places := []string{NodeConfigPath(getenv, goos, userHome)}
+	if goos == "windows" && strings.TrimSpace(getenv("MAKTABA_NODE_CONFIG")) == "" {
+		places = []string{roamingNodeConfig(getenv, userHome), filepath.Join(WindowsRoot(getenv, userHome), "node.json")}
+	}
+	var out []string
+	for _, p := range places {
+		entries, err := os.ReadDir(filepath.Dir(p))
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasPrefix(e.Name(), filepath.Base(p)+".was-node-") {
+				out = append(out, filepath.Join(filepath.Dir(p), e.Name()))
+			}
+		}
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
+// LocalSetAsideNodeConfigs is SetAsideNodeConfigs for this process.
+func LocalSetAsideNodeConfigs() []string {
+	home, _ := os.UserHomeDir()
+	return SetAsideNodeConfigs(os.Getenv, runtime.GOOS, home)
 }
 
 // LocalNodeConfig is ReadNodeConfig for this process.

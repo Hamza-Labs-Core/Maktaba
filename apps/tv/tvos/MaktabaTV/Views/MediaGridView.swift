@@ -34,6 +34,7 @@ struct MediaGridView: View {
             }
         }
         .navigationTitle(title)
+        .background(Theme.background.ignoresSafeArea())
         .task { await load() }
     }
 
@@ -53,9 +54,9 @@ struct MediaGridView: View {
 }
 
 /// The focusable poster primitive. The focus engine flips `isFocused`
-/// as the user moves the D-pad; we respond with the tvOS-standard
-/// "lift": a scale-up, a brighter ring, and a drop shadow so the
-/// focused card reads clearly from across the room.
+/// as the user moves the D-pad; we respond with the theme's focus
+/// treatment (`goldFocus`): a 3pt gold ring, a scale-up and a gold glow
+/// so the focused card reads clearly from across the room.
 struct PosterCard: View {
     let title: String
     var posterURL: String?
@@ -70,25 +71,19 @@ struct PosterCard: View {
                 poster
                 if progress > 0 {
                     ProgressView(value: progress)
-                        .tint(.white)
+                        .tint(Theme.gold)
                         .padding(8)
                 }
             }
             .frame(width: 300, height: 450)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(.white, lineWidth: isFocused ? 6 : 0)
-            )
-            .shadow(radius: isFocused ? 24 : 0)
-            .scaleEffect(isFocused ? 1.12 : 1.0)
-            .animation(.easeOut(duration: 0.18), value: isFocused)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous))
+            .goldFocus(isFocused, scale: 1.1)
 
             Text(title)
-                .font(.headline)
+                .font(Theme.body(31, weight: .medium, relativeTo: .headline))
+                .foregroundStyle(isFocused ? Theme.text : Theme.muted)
                 .lineLimit(1)
                 .frame(width: 300, alignment: .leading)
-                .opacity(isFocused ? 1 : 0.7)
         }
         .focusable()
         .focused($isFocused)
@@ -109,10 +104,10 @@ struct PosterCard: View {
 
     private var placeholder: some View {
         ZStack {
-            Rectangle().fill(.gray.opacity(0.3))
+            Rectangle().fill(Theme.raised)
             Image(systemName: "film")
                 .font(.system(size: 64))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.faint)
         }
     }
 }

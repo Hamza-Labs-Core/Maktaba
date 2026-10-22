@@ -443,7 +443,7 @@ export function Player() {
       data-testid="live-player"
       data-path={path ?? ""}
     >
-      <div className="mkt-live__stage">
+      <div className="mkt-live__stage" onClick={player.mutedByPolicy ? unmute : undefined}>
         {[0, 1].map((i) => (
           <video
             key={i}
@@ -482,6 +482,19 @@ export function Player() {
               </Button>
             )}
           </div>
+        )}
+        {player.mutedByPolicy && !degraded && (
+          <button
+            type="button"
+            className="mkt-live__unmute"
+            onClick={(e) => {
+              e.stopPropagation();
+              unmute();
+            }}
+            data-testid="live-unmute-overlay"
+          >
+            <span aria-hidden="true">🔇</span> {t("live.tapForSound")}
+          </button>
         )}
         {/* swipes and taps over the picture, above the native controls bar */}
         <div className="mkt-live__touch" ref={player.gestureRef} aria-hidden="true" />
