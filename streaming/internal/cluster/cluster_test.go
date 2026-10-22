@@ -142,17 +142,17 @@ func TestNodeModeConfigFromNodeJSON(t *testing.T) {
 	}
 	env := map[string]string{"MAKTABA_NODE_CONFIG": p}
 	getenv := func(k string) string { return env[k] }
-	ns, ok := NodeMode(getenv, "windows", dir, os.ReadFile)
+	ns, ok, _ := NodeMode(getenv, "windows", dir, os.ReadFile)
 	if !ok || ns.NodeID != cfg["node_id"] || ns.DatabaseURL != cfg["database_url"] {
 		t.Fatalf("node mode = %+v %v", ns, ok)
 	}
 	env["MAKTABA_NODE_ID"], env["DATABASE_URL"] = "n2", "postgresql://other"
-	if ns, _ := NodeMode(getenv, "windows", dir, os.ReadFile); ns.NodeID != "n2" || ns.DatabaseURL != "postgresql://other" {
+	if ns, _, _ := NodeMode(getenv, "windows", dir, os.ReadFile); ns.NodeID != "n2" || ns.DatabaseURL != "postgresql://other" {
 		t.Errorf("overrides: %+v", ns)
 	}
 	// no node config: the home
 	empty := func(string) string { return "" }
-	if _, ok := NodeMode(empty, "linux", t.TempDir(), os.ReadFile); ok {
+	if _, ok, _ := NodeMode(empty, "linux", t.TempDir(), os.ReadFile); ok {
 		t.Error("a machine without a node config is not a node")
 	}
 	// the roaming node.json under its backup name (a claim's ReplaceFileW failed with
@@ -166,7 +166,7 @@ func TestNodeModeConfigFromNodeJSON(t *testing.T) {
 	}
 	winEnv := map[string]string{"APPDATA": filepath.Join(dir, "Roaming"), "LOCALAPPDATA": filepath.Join(dir, "Local"),
 		"MAKTABA_MACHINE_ID": "this-pc"}
-	ns, ok = NodeMode(func(k string) string { return winEnv[k] }, "windows", dir, os.ReadFile)
+	ns, ok, _ = NodeMode(func(k string) string { return winEnv[k] }, "windows", dir, os.ReadFile)
 	if !ok || ns.NodeID != cfg["node_id"] || ns.DatabaseURL != cfg["database_url"] ||
 		ns.ConfigPath != filepath.Join(roaming, "node.json") {
 		t.Fatalf("node mode from the roaming config's backup = %+v %v", ns, ok)
@@ -177,7 +177,7 @@ func TestNodeModeConfigFromNodeJSON(t *testing.T) {
 	}
 	delete(env, "MAKTABA_NODE_ID")
 	delete(env, "DATABASE_URL")
-	if ns, ok := NodeMode(getenv, "windows", dir, os.ReadFile); !ok || ns.NodeID != cfg["node_id"] || ns.DatabaseURL != cfg["database_url"] {
+	if ns, ok, _ := NodeMode(getenv, "windows", dir, os.ReadFile); !ok || ns.NodeID != cfg["node_id"] || ns.DatabaseURL != cfg["database_url"] {
 		t.Fatalf("node mode from a BOM'd node.json = %+v %v", ns, ok)
 	}
 	pm, err := pathmap.FromJSON([]byte(`{"Y:/": "/Volumes/Y/"}`))

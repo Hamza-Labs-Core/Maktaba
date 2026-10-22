@@ -1426,6 +1426,13 @@ mark {
   inset-inline-start: 0;
   background: var(--color-bg);
   z-index: 1;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+a.mkt-guide__chanhead:hover {
+  background: var(--color-subtle);
+  text-decoration: none;
 }
 .mkt-guide__channum {
   display: inline-flex;
@@ -1461,6 +1468,7 @@ mark {
 }
 .mkt-guide__cell--airing {
   border-color: var(--color-accent);
+  /* the accent over this theme's background: light in light mode, dark in dark */
   background: color-mix(in srgb, var(--color-accent) 18%, var(--color-bg));
 }
 .mkt-guide__cell--filler {
@@ -1569,6 +1577,30 @@ mark {
   inset-block-start: 0;
   height: 75%;
   touch-action: pan-x;
+}
+/* a mouse or trackpad goes straight to the video: its controls show wherever the
+   pointer is over the picture (the layer is for swipes and taps on touch screens) */
+@media (hover: hover) and (pointer: fine) {
+  .mkt-live__touch {
+    pointer-events: none;
+  }
+}
+.mkt-live__unmute {
+  position: absolute;
+  inset-block-start: var(--space-4);
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+[dir="rtl"] .mkt-live__unmute {
+  transform: translateX(50%);
 }
 .mkt-live__card {
   position: absolute;

@@ -6,6 +6,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"strings"
@@ -205,19 +207,31 @@ type nodeFile struct {
 // NodeMode reports whether this streaming process runs as a cluster node and with
 // what (AC2): MAKTABA_TV_HOST_ROLE=node, or a joined node config (channel.DetectRole).
 // The database URL and node id come from the node config; DATABASE_URL and
-// MAKTABA_NODE_ID override them (two nodes on one machine, tests).
-func NodeMode(getenv func(string) string, goos, userHome string, readFile func(string) ([]byte, error)) (NodeSettings, bool) {
+// MAKTABA_NODE_ID override them (two nodes on one machine, tests). A node config that
+// is there but cannot be read (past a write's moment, channel.ReadNodeConfigFile) or is
+// broken is an error: this process starts as neither, never as the home.
+func NodeMode(getenv func(string) string, goos, userHome string, readFile func(string) ([]byte, error)) (NodeSettings, bool, error) {
+	role := strings.ToLower(strings.TrimSpace(getenv("MAKTABA_TV_HOST_ROLE")))
+	if role != "" && role != channel.RoleNode {
+		return NodeSettings{}, false, nil
+	}
 	path := channel.NodeConfigPath(getenv, goos, userHome)
 	var nf nodeFile
-	if b, err := readFile(channel.NodeConfigFile(path, readFile)); err == nil {
-		_ = json.Unmarshal(channel.WithoutBOM(b), &nf)
+	b, err := channel.ReadNodeConfigFile(path, readFile)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
+		return NodeSettings{}, false, fmt.Errorf("node config %s: %w", path, err)
+	case json.Unmarshal(channel.WithoutBOM(b), &nf) != nil:
+		return NodeSettings{}, false, fmt.Errorf("node config %s: not a node config", path)
 	}
-	role := strings.ToLower(strings.TrimSpace(getenv("MAKTABA_TV_HOST_ROLE")))
 	if role == "" {
-		role, _ = channel.DetectRole(getenv, goos, userHome, readFile)
+		if role, _, err = channel.DetectRole(getenv, goos, userHome, readFile); err != nil {
+			return NodeSettings{}, false, err
+		}
 	}
 	if role != channel.RoleNode {
-		return NodeSettings{}, false
+		return NodeSettings{}, false, nil
 	}
 	ns := NodeSettings{NodeID: strings.TrimSpace(nf.NodeID), Name: strings.TrimSpace(nf.Name),
 		DatabaseURL: strings.TrimSpace(nf.DatabaseURL), ConfigPath: path}
@@ -227,11 +241,11 @@ func NodeMode(getenv func(string) string, goos, userHome string, readFile func(s
 	if v := strings.TrimSpace(getenv("DATABASE_URL")); v != "" {
 		ns.DatabaseURL = v
 	}
-	return ns, true
+	return ns, true, nil
 }
 
 // NodeModeFromOS is NodeMode for this process.
-func NodeModeFromOS(goos string) (NodeSettings, bool) {
+func NodeModeFromOS(goos string) (NodeSettings, bool, error) {
 	home, _ := os.UserHomeDir()
 	return NodeMode(os.Getenv, goos, home, os.ReadFile)
 }

@@ -19,11 +19,16 @@ import androidx.tv.foundation.lazy.grid.TvGridCells
 import androidx.tv.foundation.lazy.grid.TvLazyVerticalGrid
 import androidx.tv.foundation.lazy.grid.items
 import androidx.tv.material3.Card
+import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.hamzalabs.maktaba.tv.data.models.Library
 import com.hamzalabs.maktaba.tv.data.repository.MediaRepository
+import com.hamzalabs.maktaba.tv.ui.components.CardCorner
+import com.hamzalabs.maktaba.tv.ui.components.goldFocusBorder
+import com.hamzalabs.maktaba.tv.ui.components.maktabaCardColors
+import com.hamzalabs.maktaba.tv.ui.theme.MaktabaPalette
 
 /** Grid of libraries; selecting one opens its media grid. */
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -63,7 +68,14 @@ fun LibraryScreen(
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun LibraryCard(library: Library, onClick: () -> Unit) {
-    Card(onClick = onClick, modifier = Modifier.height(180.dp)) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.height(180.dp),
+        shape = CardDefaults.shape(CardCorner),
+        colors = maktabaCardColors(),
+        scale = CardDefaults.scale(focusedScale = 1.06f),
+        border = goldFocusBorder(),
+    ) {
         Column(
             Modifier.fillMaxSize().padding(24.dp),
             verticalArrangement = Arrangement.Center,
@@ -74,7 +86,7 @@ private fun LibraryCard(library: Library, onClick: () -> Unit) {
                 Text(
                     text = "$it items",
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    color = MaktabaPalette.Muted,
                 )
             }
         }

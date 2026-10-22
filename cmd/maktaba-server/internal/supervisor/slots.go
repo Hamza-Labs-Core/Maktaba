@@ -81,7 +81,11 @@ func BuildSlot(name string, opts Options) (Process, error) {
 	if err != nil {
 		return Process{}, err
 	}
-	env := append(os.Environ(), ChildEnv(RoleTVSlot, opts.Config)...)
+	slotEnv, err := ChildEnv(RoleTVSlot, opts.Config)
+	if err != nil {
+		return Process{}, err
+	}
+	env := append(os.Environ(), slotEnv...)
 	env = append(env, "MAKTABA_TV_SLOT="+name, "MAKTABA_HTTP_ADDR="+SlotAddr(name),
 		"MAKTABA_ADMIN_ADDR="+SlotAdminAddr(name))
 	cmd := exec.Command(bin, "slot", "--slot", name)

@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.tv.ui.navigation
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -14,6 +15,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.hamzalabs.maktaba.tv.data.SettingsStore
 import com.hamzalabs.maktaba.tv.data.repository.MediaRepository
+import com.hamzalabs.maktaba.tv.ui.components.LibraryBackdrop
 import com.hamzalabs.maktaba.tv.ui.components.TopBar
 import com.hamzalabs.maktaba.tv.ui.screens.HomeScreen
 import com.hamzalabs.maktaba.tv.ui.screens.LibraryScreen
@@ -55,63 +57,68 @@ fun NavGraph(
 
     // Hide the tab bar in immersive contexts (the player).
     val showBar = currentRoute != Routes.PLAYER
+    // Home draws the library scene full-screen, behind the tab bar too.
+    val showArt = currentRoute == Routes.HOME
 
-    Column(Modifier.fillMaxSize()) {
-        if (showBar) {
-            TopBar(
-                tabs = TABS.map { it.second },
-                selectedIndex = selectedTab,
-                onSelect = { index ->
-                    val route = TABS[index].first
-                    if (route != currentRoute) {
-                        navController.navigate(route) {
-                            popUpTo(Routes.HOME) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
+    Box(Modifier.fillMaxSize()) {
+        if (showArt) LibraryBackdrop()
+        Column(Modifier.fillMaxSize()) {
+            if (showBar) {
+                TopBar(
+                    tabs = TABS.map { it.second },
+                    selectedIndex = selectedTab,
+                    onSelect = { index ->
+                        val route = TABS[index].first
+                        if (route != currentRoute) {
+                            navController.navigate(route) {
+                                popUpTo(Routes.HOME) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                    },
+                )
+            }
+
+            NavHost(navController = navController, startDestination = startDestination) {
+                composable(Routes.HOME) {
+                    HomeScreen(repository) { videoId ->
+                        navController.navigate(Routes.player(videoId))
+                    }
+                }
+                composable(Routes.LIBRARIES) {
+                    LibraryScreen(repository) { id, _ ->
+                        navController.navigate(Routes.mediaGrid(id))
+                    }
+                }
+                composable(Routes.SEARCH) {
+                    SearchScreen(repository) { videoId ->
+                        navController.navigate(Routes.player(videoId))
+                    }
+                }
+                composable(Routes.SETTINGS) {
+                    SettingsScreen(repository, settings) {
+                        navController.navigate(Routes.HOME) {
+                            popUpTo(Routes.SETTINGS) { inclusive = true }
                         }
                     }
-                },
-            )
-        }
-
-        NavHost(navController = navController, startDestination = startDestination) {
-            composable(Routes.HOME) {
-                HomeScreen(repository) { videoId ->
-                    navController.navigate(Routes.player(videoId))
                 }
-            }
-            composable(Routes.LIBRARIES) {
-                LibraryScreen(repository) { id, _ ->
-                    navController.navigate(Routes.mediaGrid(id))
-                }
-            }
-            composable(Routes.SEARCH) {
-                SearchScreen(repository) { videoId ->
-                    navController.navigate(Routes.player(videoId))
-                }
-            }
-            composable(Routes.SETTINGS) {
-                SettingsScreen(repository, settings) {
-                    navController.navigate(Routes.HOME) {
-                        popUpTo(Routes.SETTINGS) { inclusive = true }
+                composable(
+                    Routes.MEDIA_GRID,
+                    arguments = listOf(navArgument("libraryId") { type = NavType.StringType }),
+                ) { entry ->
+                    val libraryId = entry.arguments?.getString("libraryId").orEmpty()
+                    MediaGridScreen(repository, libraryId) { videoId ->
+                        navController.navigate(Routes.player(videoId))
                     }
                 }
-            }
-            composable(
-                Routes.MEDIA_GRID,
-                arguments = listOf(navArgument("libraryId") { type = NavType.StringType }),
-            ) { entry ->
-                val libraryId = entry.arguments?.getString("libraryId").orEmpty()
-                MediaGridScreen(repository, libraryId) { videoId ->
-                    navController.navigate(Routes.player(videoId))
+                composable(
+                    Routes.PLAYER,
+                    arguments = listOf(navArgument("videoId") { type = NavType.StringType }),
+                ) { entry ->
+                    val videoId = entry.arguments?.getString("videoId").orEmpty()
+                    PlayerScreen(repository, videoId)
                 }
-            }
-            composable(
-                Routes.PLAYER,
-                arguments = listOf(navArgument("videoId") { type = NavType.StringType }),
-            ) { entry ->
-                val videoId = entry.arguments?.getString("videoId").orEmpty()
-                PlayerScreen(repository, videoId)
             }
         }
     }

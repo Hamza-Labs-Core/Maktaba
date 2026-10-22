@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -132,9 +133,21 @@ func (s *switching) set(pg *pgbundle.Bundle, cp *nodeCopy, stopCopy func(), toke
 	close(s.ready)
 }
 
+// dir is switchover id's folder, named by the id's last element alone (a uuid): one that
+// is not a plain name of letters, digits, ".", "_" and "-" starting with a letter or
+// digit, or names no folder of its own there ("..", a reserved name on Windows), gets
+// "_", which no switch is called. An id from a request never reaches past the switchover
+// folder.
 func (s *switching) dir(id string) string {
-	return filepath.Join(s.cfg.StateDir(), "switchover", filepath.Base(id))
+	name := "_"
+	if b := filepath.Base(id); switchFolderName.MatchString(b) && filepath.IsLocal(b) {
+		name = b
+	}
+	return filepath.Join(s.cfg.StateDir(), "switchover", name)
 }
+
+// switchFolderName is a switch's folder name (dir): a plain name, never "." or "..".
+var switchFolderName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 func superDB(b pgbundle.Bundle) (*sql.DB, error) {
 	dsn, err := b.SuperURL()
@@ -683,10 +696,12 @@ func (s *switching) oldHome(dir string) (oldHome, error) {
 	return identityAt(filepath.Join(dir, "old-home.json"))
 }
 
-// identityAt is a machine identity kept at path, made there the first time.
+// identityAt is a machine identity kept at path, made there the first time (one an
+// older version kept with its folder's ACL is made the user's alone, config.MakeUserOnly).
 func identityAt(path string) (oldHome, error) {
 	var me oldHome
 	if b, err := os.ReadFile(path); err == nil && json.Unmarshal(b, &me) == nil && me.NodeID != "" {
+		_ = config.MakeUserOnly(path)
 		return me, nil
 	}
 	priv := make([]byte, 32)
@@ -727,12 +742,18 @@ func handover(ctx context.Context, c nodecopy.Copy, g nodecopy.Grant, local int6
 	}
 }
 
+// writePrivate puts b in the file at path, a secret or a record of this machine's (an
+// identity, a switch's progress, the term claims, the standby kit's description): a
+// temp file of its own beside it, the user's alone from the moment it exists
+// (config.CreateUserOnly: on Windows a protected DACL, so a state folder on a second
+// drive never gives it its ACL, Authenticated Users with it), renamed over path, whose
+// old file and ACL go with it.
 func writePrivate(path string, b []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	tmp := fmt.Sprintf("%s.%d-%s.tmp", path, os.Getpid(), uuid.NewString()[:8])
+	f, err := config.CreateUserOnly(tmp)
 	if err != nil {
 		return err
 	}
@@ -740,20 +761,45 @@ func writePrivate(path string, b []byte) error {
 	// system allows it): a switch's record must outlive a power cut that follows its answer
 	if _, err := f.Write(b); err != nil {
 		_ = f.Close()
+		_ = os.Remove(tmp)
 		return err
 	}
 	if err := f.Sync(); err != nil {
 		_ = f.Close()
+		_ = os.Remove(tmp)
 		return err
 	}
 	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
 	syncDir(filepath.Dir(path))
+	sweepPrivateTemps(path)
 	return nil
+}
+
+// sweepPrivateTemps removes the temp files of writes of path (writePrivate's
+// <name>.<pid>-<hex>.tmp, and <name>.tmp of the versions before) that a process which
+// stopped mid-write left: they may hold a secret. One made in the last minute may be
+// another write's, and stays.
+func sweepPrivateTemps(path string) {
+	entries, err := os.ReadDir(filepath.Dir(path))
+	if err != nil {
+		return
+	}
+	temp := regexp.MustCompile(`^` + regexp.QuoteMeta(filepath.Base(path)) + `\.(?:[0-9]+-[0-9a-f]{8}\.)?tmp$`)
+	for _, e := range entries {
+		if e.IsDir() || !temp.MatchString(e.Name()) {
+			continue
+		}
+		if info, err := e.Info(); err == nil && time.Since(info.ModTime()) > time.Minute {
+			_ = os.Remove(filepath.Join(filepath.Dir(path), e.Name()))
+		}
+	}
 }
 
 // syncDir flushes a folder's entries (a rename in it) to disk. Windows cannot open a
@@ -965,14 +1011,19 @@ func editConfig(fn func(*config.Config)) error {
 	return c.Save()
 }
 
-// writeNodeConfig writes node.json with n's fields, keeping the others the file has
-// (the pipeline's own, such as when the machine joined).
+// updateNodeConfig changes the fields of node.json that edit is about, on node.json as it
+// is when the write lock is held (config.UpdateNodeConfig): never a copy read earlier, so
+// a re-join meanwhile is never undone (node nodeID's config is left as it is when it is
+// another node's now).
+func updateNodeConfig(nodeID string, edit func(*config.NodeConfig)) error {
+	return config.UpdateNodeConfig(config.LocalNodeConfigPath(), nodeID, edit)
+}
+
+// writeNodeConfig writes node.json as this machine's new identity n (a home that becomes
+// a machine of another home: its standby takeover, its demotion), keeping the fields the
+// file has that n does not (the pipeline's own), the way the pipeline writes it
+// (config.WriteNodeConfig: its lock, a temp file the user's alone, ReplaceFileW).
 func writeNodeConfig(n config.NodeConfig) error {
-	path := config.LocalNodeConfigPath()
-	merged := map[string]json.RawMessage{}
-	if b, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(b, &merged)
-	}
 	fields, err := json.Marshal(n)
 	if err != nil {
 		return err
@@ -981,19 +1032,17 @@ func writeNodeConfig(n config.NodeConfig) error {
 	if err := json.Unmarshal(fields, &ours); err != nil {
 		return err
 	}
-	for k, v := range ours {
-		merged[k] = v
-	}
-	for _, k := range []string{"database_ca", "database_tls", "standby_homes", "peers"} {
-		if _, set := ours[k]; !set {
-			delete(merged, k) // omitted: none now
+	return config.WriteNodeConfig(config.LocalNodeConfigPath(), func(merged map[string]json.RawMessage) error {
+		for k, v := range ours {
+			merged[k] = v
 		}
-	}
-	b, err := json.MarshalIndent(merged, "", "  ")
-	if err != nil {
-		return err
-	}
-	return writePrivate(path, b)
+		for _, k := range []string{"database_ca", "database_tls", "standby_homes", "peers"} {
+			if _, set := ours[k]; !set {
+				delete(merged, k) // omitted: none now
+			}
+		}
+		return nil
+	})
 }
 
 // homeDatabase takes the home's database CA (or its word that the database has no
@@ -1019,11 +1068,12 @@ func (s *switching) homeDatabase(args json.RawMessage) (ok bool, detail any) {
 		return false, "this machine has not joined a home"
 	}
 	ca, tls := n.DatabaseCA, n.DatabaseTLS
-	newHome{CA: a.CA, TLSOff: a.TLSOff}.database(&n)
+	h := newHome{CA: a.CA, TLSOff: a.TLSOff}
+	h.database(&n)
 	if n.DatabaseCA == ca && n.DatabaseTLS == tls {
 		return true, map[string]any{"changed": false}
 	}
-	if err := writeNodeConfig(n); err != nil {
+	if err := updateNodeConfig(n.NodeID, h.database); err != nil {
 		return false, err.Error()
 	}
 	fmt.Fprintln(os.Stderr, "[serve] node: the home's database certificate came over the machine channel: starting again with it")
@@ -1510,7 +1560,7 @@ func (s *switching) becomeHome(ctx context.Context, db *sql.DB, kit *switchover.
 	}
 	path := config.LocalNodeConfigPath()
 	aside := path + ".was-node-" + strconv.FormatInt(term-1, 10)
-	if err := os.Rename(path, aside); err != nil && (!os.IsNotExist(err) || !fileExists(aside)) {
+	if err := config.SetNodeConfigAside(path, aside); err != nil {
 		return newHome{}, fmt.Errorf("node.json: %w", err)
 	}
 	home := newHome{Node: n.NodeID, APIURL: s.cfg.PublicAPIURL(), WebURL: s.cfg.PublicWebURL(), DBPort: db2.Port,
@@ -1758,14 +1808,22 @@ func (s *switching) follow(ctx context.Context, id string, term int64, h newHome
 			fmt.Fprintf(os.Stderr, "[switchover] pausing the copy of the old home: %v\n", err)
 		}
 	}
-	n.Home.URL, n.Home.APIURL, n.Home.Name = h.APIURL, h.APIURL, h.Name
-	if h.Node != "" {
-		n.Home.Node = h.Node
-	}
-	if term > n.Home.Term {
-		n.Home.Term = term
-	}
-	if err := writeNodeConfig(n); err != nil {
+	if err := updateNodeConfig(n.NodeID, func(n *config.NodeConfig) {
+		// the new home's database (its host, verified with the CA it handed over) and the
+		// new home, changed in node.json as it is now
+		if u, err := url.Parse(n.DatabaseURL); err == nil {
+			u.Host = net.JoinHostPort(h.DBHost, strconv.Itoa(h.DBPort))
+			n.DatabaseURL = u.String()
+		}
+		h.database(n)
+		n.Home.URL, n.Home.APIURL, n.Home.Name = h.APIURL, h.APIURL, h.Name
+		if h.Node != "" {
+			n.Home.Node = h.Node
+		}
+		if term > n.Home.Term {
+			n.Home.Term = term
+		}
+	}); err != nil {
 		return nil, err
 	}
 	fmt.Fprintf(os.Stderr, "[switchover] the home is %s now (copy kept: %v): starting again\n", h.APIURL, moved)
