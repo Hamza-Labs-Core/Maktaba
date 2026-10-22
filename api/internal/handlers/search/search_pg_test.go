@@ -35,7 +35,8 @@ func pgSearchDB(t *testing.T) *sql.DB {
 func pgVideo(t *testing.T, db *sql.DB, id, lib, title string) int64 {
 	t.Helper()
 	if _, err := db.Exec(`INSERT INTO videos (id, library_id, path, filename, content_hash, size_bytes, mtime, state, title, duration_sec)
-		VALUES ($1, $2, $3, $3, md5($1), 1, now(), 'ready', $4, 600)`, id, lib, "/m/"+id+".mp4", title); err != nil {
+		VALUES ($1, $2, $3, $3, encode(sha256(convert_to($5, 'UTF8')), 'hex'), 1, now(), 'ready', $4, 600)`,
+		id, lib, "/m/"+id+".mp4", title, "hash-"+id); err != nil {
 		t.Fatal(err)
 	}
 	var track int64
@@ -143,7 +144,7 @@ func TestSearch_PostgresPerf(t *testing.T) {
 	}
 	exec(`DROP INDEX IF EXISTS transcript_segments_search_tsv_idx`)
 	exec(`INSERT INTO videos (id, library_id, path, filename, content_hash, size_bytes, mtime, state, title, duration_sec)
-		SELECT gen_random_uuid(), $1, '/m/' || g || '.mp4', g || '.mp4', md5(g::text), 1, now(), 'ready', 'Lesson ' || g, 7000
+		SELECT gen_random_uuid(), $1, '/m/' || g || '.mp4', g || '.mp4', encode(sha256(convert_to(g::text, 'UTF8')), 'hex'), 1, now(), 'ready', 'Lesson ' || g, 7000
 		FROM generate_series(1, $2) g`, libA, videos)
 	exec(`INSERT INTO audio_tracks (video_id, track_index, codec, channels, language, is_default)
 		SELECT id, 0, 'aac', 2, 'ara', true FROM videos`)
