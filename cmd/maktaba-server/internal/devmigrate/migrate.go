@@ -481,8 +481,7 @@ func (m *Migration) restoreLogPath() string {
 }
 
 func (m *Migration) restoreLog() (io.Writer, func()) {
-	_ = os.MkdirAll(config.LogsDir(), 0o755)
-	f, err := os.OpenFile(m.restoreLogPath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	f, err := config.OpenLog(filepath.Base(m.restoreLogPath()))
 	if err != nil {
 		return io.Discard, func() {}
 	}

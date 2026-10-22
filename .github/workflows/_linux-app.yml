@@ -8,8 +8,9 @@
 # payload mounted read-only, an ordinary user), so a library the payload assumes but a
 # system lacks fails here. ffmpeg is the distribution's: the runner and each container
 # install their own, and `maktaba-server ffmpeg` must take Ubuntu's and Debian's and refuse
-# Fedora's ffmpeg-free (no libx264) with the RPM Fusion command. Unsigned: the updater
-# signature comes with desktop-release.yml.
+# Fedora's ffmpeg-free (no libx264) with the RPM Fusion command. Then e2e.sh runs the server
+# the way the app installs it, as the runner's systemd user unit, on the runner's ffmpeg.
+# Unsigned: the updater signature comes with desktop-release.yml.
 
 name: Linux app
 
@@ -23,7 +24,7 @@ jobs:
   payload:
     name: Linux app (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    timeout-minutes: 110 # the build, the checks, then up to 45 minutes of end to end
     strategy:
       fail-fast: false
       matrix:
@@ -126,6 +127,18 @@ jobs:
                 bash tools/release/linux-app/check.sh --payload build/linux-app/server --ffmpeg "$WANT"'
             echo "::endgroup::"
           done
+
+      # Epic 39 story 39.11: `setup --answers` as `install.sh --app` runs it (runtime copy,
+      # venv, models, finish, the systemd user unit), every role on 127.0.0.1, back from a
+      # restart, a SIGKILL of the launcher and a pause, then an update (a dump before the
+      # migrations, the venv kept) from the latest release's payload when it has one. e2e.sh
+      # turns linger on for the runner's user manager and off again, in a scratch XDG home it
+      # removes. The token only reads the latest release.
+      - name: End to end on systemd
+        timeout-minutes: 45
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: tools/release/linux-app/e2e.sh --payload build/linux-app/server
 
       - name: Sizes
         if: always()

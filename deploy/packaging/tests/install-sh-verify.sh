@@ -106,6 +106,72 @@ for bad in 'latest' '1.5.0' 'v1.5' 'v1.5.0/../../x' 'v1.5.0;id' 'v1.5.0 x'; do
     expect fail "bad tag '${bad}' refused" valid_tag "${bad}"
 done
 
+# --app (Epic 39): the Linux payload's asset name per CPU
+expect ok   "payload name for amd64" test "$(payload_archive 1.5.0 amd64)" = maktaba-linux-payload-1.5.0-x86_64.tar.gz
+expect ok   "payload name for arm64" test "$(payload_archive 1.5.0 arm64)" = maktaba-linux-payload-1.5.0-aarch64.tar.gz
+expect fail "no payload for another CPU" payload_archive 1.5.0 riscv64
+fresh_release
+pa="$(payload_archive 1.5.0 amd64)"
+printf 'payload bytes\n' > "${work}/release/${pa}"
+cp "${work}/release/${pa}" "${work}/dl/${pa}"
+printf '%s  ./%s\n' "$(sha "${work}/release/${pa}")" "${pa}" >> "${work}/release/checksums.txt"
+expect ok   "the payload verifies against checksums.txt" without_cosign verify_release "${work}/dl" https://example.invalid/r v1.5.0 "${pa}"
+
+# --app's verifier: the PATH's cosign, else cosign's release build checked
+# against its pinned SHA-256 before it runs.
+printf '#!/bin/sh\nexit 0\n' > "${work}/release/cosign-linux-amd64"
+pinned_cosign() { # pinned_cosign <sha>: ensure_cosign without a cosign on PATH, pin <sha>
+    COSIGN_SHA256_AMD64="$1" PATH="${nocosign_path}" ensure_cosign "${work}/cosigndl" amd64 && [ -x "${COSIGN}" ] &&
+        [ "${COSIGN}" = "${work}/cosigndl/cosign/cosign" ]
+}
+expect ok   "the fetched cosign is used when it is the pinned build" pinned_cosign "$(sha "${work}/release/cosign-linux-amd64")"
+expect fail "a fetched cosign that is not the pinned build is refused" pinned_cosign "$(printf 'x' | { sha256sum 2>/dev/null || shasum -a 256; } | awk '{print $1}')"
+ensure_cosign_other_cpu() { PATH="${nocosign_path}" ensure_cosign "${work}/cosigndl" riscv64; }
+expect fail "no pinned cosign for another CPU" ensure_cosign_other_cpu
+
+# a cosign on the PATH: used when it is COSIGN_MIN or newer, else the pinned build
+fake_cosign() { # fake_cosign <dir> <version>: a cosign whose `version` says <version>
+    mkdir -p "$1"
+    cat > "$1/cosign" <<EOF
+#!/bin/sh
+[ "\$1" = version ] && printf '  GitVersion:    %s\nGitCommit:     abc\n' "$2"
+exit 0
+EOF
+    chmod +x "$1/cosign"
+}
+fake_cosign "${work}/newcosign" v2.6.0
+fake_cosign "${work}/oldcosign" v2.2.4
+path_cosign() { # path_cosign <dir> <pin>: COSIGN after ensure_cosign with <dir>'s cosign on PATH
+    env PATH="$1:${nocosign_path}" bash -c "MAKTABA_INSTALL_LIB=1 . '${here}/../install.sh'; $(declare -f fetch); COSIGN_SHA256_AMD64='$2'; ensure_cosign '${work}/pathdl' amd64 >/dev/null 2>&1; printf '%s' \"\${COSIGN}\""
+}
+pin="$(sha "${work}/release/cosign-linux-amd64")"
+expect ok   "a cosign on the PATH that is new enough is used" test "$(path_cosign "${work}/newcosign" "${pin}")" = cosign
+expect ok   "an older cosign on the PATH is passed over for the pinned build" \
+    test "$(path_cosign "${work}/oldcosign" "${pin}")" = "${work}/pathdl/cosign/cosign"
+expect ok   "a cosign that does not say its version is passed over" \
+    test "$(path_cosign "${work}/badcosign" "${pin}")" = "${work}/pathdl/cosign/cosign"
+for v in "2.4.3 2.4.3" "v2.6.5 2.4.3" "2.10.0 2.4.3" "3.0.0 2.4.3" "2.4.3-rc.1 2.4.3"; do
+    # shellcheck disable=SC2086 # two words on purpose
+    expect ok "version_at_least ${v}" version_at_least ${v}
+done
+for v in "2.4.2 2.4.3" "v2.2.4 2.4.3" "1.13.0 2.4.3"; do
+    # shellcheck disable=SC2086
+    expect fail "version_at_least ${v}" version_at_least ${v}
+done
+
+# --app runs as the user it installs for, and never unverified
+app_as() { # app_as <uid> [env...]: main_app on a Linux whose `id -u` is <uid>
+    local uid="$1"
+    shift
+    env "$@" bash -c "MAKTABA_INSTALL_LIB=1 . '${here}/../install.sh'; detect_os() { echo linux; }; id() { echo ${uid}; }; resolve_version() { exit 3; }; main_app"
+}
+expect fail "--app as root is refused" app_as 0
+expect fail "--app with MAKTABA_NO_VERIFY=1 is refused" app_as 1000 MAKTABA_NO_VERIFY=1
+root_msg="$(app_as 0 2>&1)"
+case "${root_msg}" in *"without sudo"*) echo "ok   the root refusal names the fix" ;; *) echo "FAIL root refusal: ${root_msg}"; fails=$((fails + 1)) ;; esac
+nv_msg="$(app_as 1000 MAKTABA_NO_VERIFY=1 2>&1)"
+case "${nv_msg}" in *"never runs a payload"*) echo "ok   the MAKTABA_NO_VERIFY refusal says why" ;; *) echo "FAIL no-verify refusal: ${nv_msg}"; fails=$((fails + 1)) ;; esac
+
 if [ "${fails}" -ne 0 ]; then
     echo "${fails} case(s) failed" >&2
     exit 1
