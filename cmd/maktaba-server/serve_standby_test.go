@@ -388,7 +388,7 @@ func TestAMachineFollowsTheHomeThatWinsTheTerm(t *testing.T) {
 		return sealed
 	}
 	var answer string
-	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"id": "sw-t", "term": 2, "notice": answer})
 	}))
 	defer peer.Close()
