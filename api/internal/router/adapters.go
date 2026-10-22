@@ -124,6 +124,7 @@ func (a streamingServiceAdapter) Open(ctx context.Context, req streaming.OpenSes
 		ManifestURL: resp.ManifestURL,
 		DirectURL:   resp.DirectURL,
 		ExpiresAt:   resp.ExpiresAt,
+		StartSec:    resp.StartSec,
 	}, nil
 }
 

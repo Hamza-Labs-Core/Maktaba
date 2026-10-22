@@ -68,6 +68,8 @@ export const HOME_STATE_HEADER = "X-Maktaba-Home";
 /** A video the node cannot read while the home, which could play it, does not answer. */
 export const PROBLEM_VIDEO_UNAVAILABLE_OFFLINE =
   "https://maktaba.dev/problems/video-unavailable-offline";
+/** Too little free on the streaming server's disk to prepare (transcode) a video. */
+export const PROBLEM_INSUFFICIENT_STORAGE = "https://maktaba.dev/problems/insufficient-storage";
 
 export type NodeUnavailableCode = "paused" | "home_unreachable";
 

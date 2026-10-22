@@ -11,8 +11,13 @@ import (
 // touch is older than this. Interval is the loop period.
 type ReaperConfig struct {
 	IdleAfter time.Duration // 90 s default per Story 8.9 AC-3
-	Interval  time.Duration // 30 s default
-	OnReap    func(*Row)
+	// ActiveIdleAfter, when longer, is the horizon while the session's
+	// transcode runs: a player in a background tab or on a locked phone
+	// fetches nothing for a while, and coming back finds its transcode
+	// going on.
+	ActiveIdleAfter time.Duration
+	Interval        time.Duration // 30 s default
+	OnReap          func(*Row)
 }
 
 // Reaper sweeps idle sessions on Interval and closes them.
@@ -60,6 +65,10 @@ func (r *Reaper) Sweep(ctx context.Context) error {
 		return err
 	}
 	for _, row := range idle {
+		if row.Transcoder != nil && row.Transcoder.Active() && r.cfg.ActiveIdleAfter > r.cfg.IdleAfter &&
+			row.LastSegmentAt.After(r.now().UTC().Add(-r.cfg.ActiveIdleAfter)) {
+			continue
+		}
 		if row.Transcoder != nil {
 			_ = row.Transcoder.Stop(ctx)
 		}

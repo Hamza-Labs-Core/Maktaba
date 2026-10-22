@@ -144,6 +144,11 @@ func TestHLSArgs_HasLadderRungs(t *testing.T) {
 	if n := strings.Count(joined, "-map 0:a:0"); n != len(ladder) {
 		t.Errorf("audio mapped %d times, want once per rung", n)
 	}
+	// every segment listed and kept (an EVENT playlist, ended when done)
+	if argAfter(args, "-hls_playlist_type") != "event" || argAfter(args, "-hls_list_size") != "0" ||
+		strings.Contains(joined, "delete_segments") {
+		t.Errorf("not every segment kept: %s", joined)
+	}
 	// a source without audio maps none
 	silent := HLSArgs("/in.mp4", "/out", "master.m3u8", ladder, SoftwarePlan(len(ladder), false))
 	if got := argAfter(silent, "-var_stream_map"); got != "v:0 v:1 v:2" || strings.Contains(strings.Join(silent, " "), "0:a:0") {
@@ -159,6 +164,27 @@ func TestHLSArgs_HWAccelEncoder(t *testing.T) {
 	}
 }
 
+// A transcode opened at a position: an accurate seek before the input, and
+// the HLS output's timestamps the source's; a DASH transcode starts at 0.
+func TestTranscodeArgs_Start(t *testing.T) {
+	plan := SoftwarePlan(3, true)
+	plan.Start = 1213
+	args := HLSArgs("/in.mp4", "/out", "master.m3u8", DefaultLadder(0), plan)
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "-ss 1213 -i /in.mp4") || argAfter(args, "-output_ts_offset") != "1213" {
+		t.Errorf("hls from 1213 s: %s", joined)
+	}
+	dash := strings.Join(DASHArgs("/in.mp4", "/out", DefaultLadder(0), plan), " ")
+	if strings.Contains(dash, "-ss ") || strings.Contains(dash, "-output_ts_offset") {
+		t.Errorf("dash: %s", dash)
+	}
+	plan.Start = 0
+	if joined := strings.Join(HLSArgs("/in.mp4", "/out", "master.m3u8", DefaultLadder(0), plan), " "); strings.Contains(joined, "-ss ") ||
+		strings.Contains(joined, "-output_ts_offset") {
+		t.Errorf("from the start: %s", joined)
+	}
+}
+
 func TestDASHArgs_OutputsMPD(t *testing.T) {
 	args := DASHArgs("/in.mp4", "/out", DefaultLadder(0), SoftwarePlan(3, true))
 	joined := strings.Join(args, " ")
@@ -167,6 +193,10 @@ func TestDASHArgs_OutputsMPD(t *testing.T) {
 	}
 	if !strings.Contains(joined, "manifest.mpd") {
 		t.Fatalf("missing mpd output: %s", joined)
+	}
+	// every segment listed and kept (no window)
+	if argAfter(args, "-window_size") != "0" || strings.Contains(joined, "-extra_window_size") {
+		t.Errorf("not every segment kept: %s", joined)
 	}
 }
 

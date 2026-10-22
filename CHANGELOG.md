@@ -642,6 +642,38 @@ don't append a line here; docs-only PRs are exempt.
   through the same script. The server's own .deb and .rpm (nfpm) already carried
   `0.3.0~rc.1` inside, `.rc.1` only in the files' names, as GitHub names them; CI's launcher
   gate now checks that form and its dpkg and rpm order before the release.
+- **A transcoded video can be sought through and played to its end.** A video transcode's
+  playlist kept only its last six segments (DASH: ten) and deleted the rest, so a transcode
+  running ahead of the player deleted segments before they were played, and nothing outside the
+  window could be sought to. Its playlists now list every segment: HLS as an EVENT playlist that
+  ends with `#EXT-X-ENDLIST` when the transcode is done, which players start at its beginning
+  (`#EXT-X-START`) unless they resume elsewhere; DASH without a window, its MPD dynamic while the
+  transcode runs (players start at its first segment, not near its live edge) and static from
+  just after it is done, every segment available, so dash.js plays to the end and seeks anywhere
+  (from ffmpeg's own MPD a player that had started stopped short: at 42 s of a 3 min video). DASH
+  sessions play at all: the router served none of their segments. A paused player keeps its
+  session (reloading the playlist counts while the transcode runs), and a player that fetches
+  nothing for a while (a background tab, a locked phone) keeps a running transcode for 10
+  minutes. A finished transcode stays for 4 hours after its viewer's last fetch, so a long pause
+  plays on; one cut short (the session reaped, ffmpeg failed) never ends the video there: its
+  playlist answers 410 and the web player opens the video again where it was, as it also does
+  when its stream is gone for good (404 after the retries), instead of the error screen, and
+  marks a video watched only near its real end. A transcode opened at a position (a resume, such
+  a reopen) starts there: ffmpeg seeks to it, and its playlist lists the part before as gaps, so
+  the player's times, seek bar, progress and resume point stay the video's, and a seek before it
+  opens the video again there (it started at 0 before, and the player jumped back). A session's
+  folder is removed when its player closes it, and one a previous run left behind once it has not
+  changed for 90 s; nothing removed those folders before. A transcode's segments take about 4.8
+  GB an hour for the 1080p ladder on the cache's disk, outside the cache's cap: no transcode
+  starts with less free there than `[media] transcode_min_free_gib` in server.toml (default: a
+  tenth of the disk, between 3 and 20 GiB), and below it the transcodes kept for closed sessions
+  go, the longest unwatched first. A refused video says "not enough disk space to prepare this
+  video" (507), not that the server is busy.
+- **Video transcodes give their slot back.** A transcode slot was taken at each session's open
+  and never returned, so once a process had run as many transcodes as it has slots (a quarter of
+  its CPUs by default), every 720p-and-up video played direct, whatever the player could decode,
+  and anything smaller was refused. A slot now comes back when its transcode ends, when its
+  session closes or is reaped, and when the open fails after taking it.
 
 ## [0.2.0] - 2026-10-19
 

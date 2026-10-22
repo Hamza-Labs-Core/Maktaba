@@ -1,12 +1,15 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -85,6 +88,16 @@ func (h *ManifestHandler) ServeMaster(w http.ResponseWriter, r *http.Request) {
 		httpx.Write(w, http.StatusInternalServerError, "read-failed", "manifest read failed", err.Error())
 		return
 	}
+	if !h.reloaded(w, r, row) {
+		return
+	}
+	if wantDASH {
+		written := h.now()
+		if info, err := os.Stat(path); err == nil {
+			written = info.ModTime()
+		}
+		data = transcodeMPD(data, dir, written, h.now())
+	}
 	if sig := r.URL.Query().Get("sig"); sig != "" {
 		if wantDASH {
 			data = SignMPD(data, sig)
@@ -128,6 +141,25 @@ func (h *ManifestHandler) ServeRenditionIndex(w http.ResponseWriter, r *http.Req
 		httpx.Write(w, http.StatusNotFound, "rendition-not-found", "rendition index not on disk", err.Error())
 		return
 	}
+	id, err := uuid.Parse(sub)
+	if err != nil {
+		httpx.Write(w, http.StatusBadRequest, "bad-session-id", "session id not a UUID", err.Error())
+		return
+	}
+	row, ok, err := h.Sessions.Get(r.Context(), id)
+	if err != nil || !ok {
+		httpx.Write(w, http.StatusNotFound, "session-not-found", "session not found", "")
+		return
+	}
+	if !h.reloaded(w, r, row) {
+		return
+	}
+	if !row.TranscodeFinished() {
+		// ffmpeg writes it on SIGTERM too: until its end is recorded (then a
+		// 410), a reload must not end the video at the cut
+		data = withoutEndlist(data)
+	}
+	data = startAt(gapsBefore(data, row.StartSec), row.StartSec)
 	if sig := r.URL.Query().Get("sig"); sig != "" {
 		data = SignPlaylist(data, sig)
 	}
@@ -137,8 +169,10 @@ func (h *ManifestHandler) ServeRenditionIndex(w http.ResponseWriter, r *http.Req
 	_, _ = w.Write(data)
 }
 
-// ServeSegment handles /stream/{session_id}/{rendition}/seg-{n}.ts and
-// updates the session heartbeat (Story 8.9 AC-2).
+// ServeSegment handles /stream/{session_id}/{rendition}/seg-{n}.ts, and a
+// DASH session's /stream/{session_id}/{segment}.m4s (its init and chunks sit in
+// the session's folder itself), and updates the session heartbeat (Story 8.9
+// AC-2).
 func (h *ManifestHandler) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	sub := auth.SubjectFromContext(r.Context())
 	id, err := uuid.Parse(sub)
@@ -148,15 +182,24 @@ func (h *ManifestHandler) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	}
 	rendition := chiURLParam(r, "rendition")
 	segment := chiURLParam(r, "segment")
-	if rendition == "" || segment == "" {
+	if segment == "" {
 		httpx.Write(w, http.StatusBadRequest, "missing-segment", "segment path incomplete", "")
 		return
+	}
+	parts := []string{rendition, segment}
+	if rendition == "" {
+		// the session's folder itself: a DASH segment only
+		if !strings.HasSuffix(segment, ".m4s") {
+			httpx.Write(w, http.StatusNotFound, "segment-not-found", "not a segment", "")
+			return
+		}
+		parts = []string{segment}
 	}
 
 	// Story 23.5 AC-2: rendition + segment are untrusted URL segments
 	// — canonicalize before touching disk.
 	base := h.Layout.HLSDir(sub)
-	path, err := httpx.CanonicalUnder(base, rendition, segment)
+	path, err := httpx.CanonicalUnder(base, parts...)
 	if err != nil {
 		httpx.Write(w, http.StatusNotFound, "segment-not-found",
 			"segment not yet written by FFmpeg", "")
@@ -179,16 +222,120 @@ func (h *ManifestHandler) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := time.Now().UTC()
-	if h.Now != nil {
-		now = h.Now()
-	}
-	_ = h.Sessions.Touch(r.Context(), id, now)
+	_ = h.Sessions.Touch(r.Context(), id, h.now())
 
 	w.Header().Set("Content-Type", segmentContentType(segment))
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
+}
+
+// startAt has an EVENT playlist (a transcode's, every segment listed) start at
+// its stream's first segment, offset seconds in (after the gaps before it): a
+// player starts a playlist without #EXT-X-ENDLIST near its end (hls.js three
+// target durations before it), which skips the stream's start when the
+// transcode runs ahead of the player. A position the player is asked to start
+// at (a resume) still wins.
+func startAt(data []byte, offset int) []byte {
+	if !bytes.HasPrefix(data, []byte("#EXTM3U")) || !bytes.Contains(data, []byte("#EXT-X-PLAYLIST-TYPE:EVENT")) ||
+		bytes.Contains(data, []byte("#EXT-X-START:")) {
+		return data
+	}
+	i := bytes.IndexByte(data, '\n')
+	if i < 0 {
+		return data
+	}
+	start := "#EXT-X-START:TIME-OFFSET=" + strconv.Itoa(offset) + lineEnd(data, i)
+	out := make([]byte, 0, len(data)+len(start))
+	out = append(out, data[:i+1]...)
+	out = append(out, start...)
+	return append(out, data[i+1:]...)
+}
+
+// lineEnd is the playlist's line ending, as its line ending at i has it.
+func lineEnd(data []byte, i int) string {
+	if i > 0 && data[i-1] == '\r' {
+		return "\r\n"
+	}
+	return "\n"
+}
+
+// gapsBefore lists the part of the video before a stream that starts start
+// seconds in as gaps (#EXT-X-GAP: segments no player loads, gap-<n>.ts, none
+// longer than the target duration): the playlist's times are then the
+// video's, and its segments' timestamps (-output_ts_offset), so the seek bar,
+// the position (progress, the resume point), chapters and subtitles keep to
+// the video. A seek into the gaps is the player's to answer (the web opens the
+// video again there).
+func gapsBefore(data []byte, start int) []byte {
+	if start <= 0 {
+		return data
+	}
+	first := bytes.Index(data, []byte("#EXTINF:"))
+	if first < 0 {
+		return data
+	}
+	target := segmentTarget
+	if m := targetDuration.FindSubmatch(data); m != nil {
+		if t, err := strconv.Atoi(string(m[1])); err == nil && t > 0 {
+			target = t
+		}
+	}
+	nl := lineEnd(data, bytes.IndexByte(data, '\n'))
+	var gaps bytes.Buffer
+	for n, left := 0, start; left > 0; n++ {
+		d := min(left, target)
+		fmt.Fprintf(&gaps, "#EXTINF:%d.000000,%s#EXT-X-GAP%sgap-%d.ts%s", d, nl, nl, n, nl)
+		left -= d
+	}
+	out := make([]byte, 0, len(data)+gaps.Len())
+	out = append(out, data[:first]...)
+	out = append(out, gaps.Bytes()...)
+	return append(out, data[first:]...)
+}
+
+// segmentTarget is the target duration when a playlist names none (ffmpeg's
+// segments are 6 s).
+const segmentTarget = 6
+
+var targetDuration = regexp.MustCompile(`#EXT-X-TARGETDURATION:(\d+)`)
+
+// withoutEndlist drops a playlist's #EXT-X-ENDLIST.
+func withoutEndlist(data []byte) []byte {
+	i := bytes.Index(data, []byte("#EXT-X-ENDLIST"))
+	if i < 0 {
+		return data
+	}
+	end := i + len("#EXT-X-ENDLIST")
+	for end < len(data) && (data[end] == '\r' || data[end] == '\n') {
+		end++
+	}
+	return append(append([]byte{}, data[:i]...), data[end:]...)
+}
+
+// reloaded handles a player's (re)load of a session's playlist or MPD: a
+// transcode over short of the video's end (stopped by a close or the reaper,
+// or failed) answers 410, so the player opens the video again where it is
+// instead of ending there or waiting for segments that never come; while the
+// transcode runs, the reload is activity (a paused player keeps its session).
+// False when it answered.
+func (h *ManifestHandler) reloaded(w http.ResponseWriter, r *http.Request, row *session.Row) bool {
+	if row.TranscodeCut() {
+		httpx.Write(w, http.StatusGone, "transcode-stopped", "the transcode stopped before the end",
+			"open the session again at the position reached")
+		return false
+	}
+	if row.Transcoder != nil && row.Transcoder.Active() {
+		_ = h.Sessions.Touch(r.Context(), row.ID, h.now())
+	}
+	return true
+}
+
+func (h *ManifestHandler) now() time.Time {
+	if h.Now != nil {
+		return h.Now()
+	}
+	return time.Now().UTC()
 }
 
 func manifestContentType(isDASH bool) string {

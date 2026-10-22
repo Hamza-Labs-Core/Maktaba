@@ -133,6 +133,64 @@ describe("VideoPlayer — hls.js (no native HLS)", () => {
     renderPlayer("/videos/vid-1/watch?t=42");
     const hls = await hlsReady();
     expect(hls.config.startPosition).toBe(42);
+    // the transcode starts there too
+    expect(opens()[0][1]).toEqual({ video_id: "vid-1", start_sec: 42 });
+  });
+
+  it("opens the video again at a seek before its stream's start", async () => {
+    post
+      .mockResolvedValueOnce(session({ start_sec: 1200 }))
+      .mockResolvedValueOnce(
+        session({ session_id: "sess-new", manifest_url: "/stream/sess-new/manifest.m3u8?sig=n" })
+      );
+    renderPlayer("/videos/vid-1/watch?t=1213");
+    const first = await hlsReady();
+    const video = screen.getByTestId("mkt-video") as HTMLVideoElement;
+    // a seek within the stream stays
+    Object.defineProperty(video, "currentTime", {
+      value: 1500,
+      configurable: true,
+      writable: true,
+    });
+    act(() => {
+      video.dispatchEvent(new Event("seeking"));
+    });
+    expect(opens()).toHaveLength(1);
+    // before its start: a new stream from there
+    video.currentTime = 90;
+    act(() => {
+      video.dispatchEvent(new Event("seeking"));
+    });
+    const second = await hlsReady(2);
+    expect(opens()[1][1]).toEqual({ video_id: "vid-1", start_sec: 90 });
+    expect(second.config.startPosition).toBe(90);
+    expect(first.destroy).toHaveBeenCalled();
+  });
+
+  it("posts no progress from a stream attached at a position until it plays", async () => {
+    post.mockImplementation((url: string) =>
+      url === "/api/stream/sessions"
+        ? Promise.resolve(session({ start_sec: 1213 }))
+        : Promise.resolve(undefined)
+    );
+    renderPlayer("/videos/vid-1/watch?t=1213");
+    await hlsReady();
+    const video = screen.getByTestId("mkt-video") as HTMLVideoElement;
+    const progress = () => post.mock.calls.filter((c) => String(c[0]).endsWith("/progress"));
+    // not at its start yet (the element at 0): nothing that would move the
+    // resume point back
+    Object.defineProperty(video, "currentTime", { value: 0, configurable: true, writable: true });
+    act(() => {
+      video.dispatchEvent(new Event("timeupdate"));
+      video.dispatchEvent(new Event("pause"));
+    });
+    expect(progress()).toHaveLength(0);
+    video.currentTime = 1213;
+    act(() => {
+      video.dispatchEvent(new Event("playing"));
+      video.dispatchEvent(new Event("pause"));
+    });
+    await waitFor(() => expect(progress().at(-1)?.[1]).toEqual({ position_sec: 1213 }));
   });
 
   it("requests child URIs exactly as given and carries the sig only onto bare same-session ones", async () => {
@@ -243,6 +301,79 @@ describe("VideoPlayer — hls.js (no native HLS)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("opens the video again where it was when the stream is gone (410)", async () => {
+    post
+      .mockResolvedValueOnce(session())
+      .mockResolvedValueOnce(
+        session({ session_id: "sess-new", manifest_url: "/stream/sess-new/manifest.m3u8?sig=n" })
+      );
+    renderPlayer();
+    const first = await hlsReady();
+    const video = screen.getByTestId("mkt-video") as HTMLVideoElement;
+    Object.defineProperty(video, "currentTime", { value: 1234.5, configurable: true });
+    act(() => {
+      first.emit("hlsError", {
+        type: "networkError",
+        details: "levelLoadError",
+        fatal: false,
+        response: { code: 410 },
+      });
+    });
+    const second = await hlsReady(2);
+    expect(opens()[1][1]).toEqual({ video_id: "vid-1", start_sec: 1234 });
+    expect(second.config.startPosition).toBe(1234.5);
+    await waitFor(() => expect(del).toHaveBeenCalledWith(`/api/stream/sessions/${SID}`));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("opens the video again when its loads still fail after the retries (404)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      post.mockImplementation(() => Promise.resolve(session()));
+      renderPlayer();
+      const hls = await hlsReady();
+      const fail = () =>
+        act(() => {
+          hls.emit("hlsError", {
+            type: "networkError",
+            details: "fragLoadError",
+            fatal: true,
+            response: { code: 404 },
+          });
+        });
+      // the network retries first (a playlist 404s until its first segment)
+      for (let i = 0; i < 3; i++) {
+        fail();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(8000);
+        });
+      }
+      expect(hls.startLoad).toHaveBeenCalledTimes(3);
+      expect(opens()).toHaveLength(1);
+      fail();
+      await hlsReady(2);
+      expect(opens()).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows the error instead of opening the video again and again", async () => {
+    post.mockImplementation(() => Promise.resolve(session()));
+    renderPlayer();
+    for (let n = 1; n <= 4; n++) {
+      const hls = await hlsReady(n);
+      act(() => {
+        hls.emit("hlsError", { type: "networkError", fatal: true, response: { code: 410 } });
+      });
+      if (n < 4) await hlsReady(n + 1);
+    }
+    // three reopens, then the error screen instead of a fourth
+    await screen.findByRole("alert");
+    expect(opens()).toHaveLength(4);
+    expect(instances.length).toBe(4);
   });
 
   it("renders sidecar subtitle tracks with the session sig", async () => {
