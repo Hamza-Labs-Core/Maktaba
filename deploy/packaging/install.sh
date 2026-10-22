@@ -15,10 +15,11 @@
 #
 # With --app (Linux, Epic 39): the whole server instead, for a machine without a
 # desktop: the release's maktaba-linux-payload-<ver>-<arch>.tar.gz (the server,
-# Postgres, ffmpeg and Python the Linux app carries), unpacked in
-# ~/.cache/maktaba/install, then its `maktaba-server setup` asks the app's setup
-# questions in this terminal, copies the server into your data directory and
-# runs it as your systemd user service. Arguments after --app go to setup
+# Postgres and Python the Linux app carries; ffmpeg is the distribution's), unpacked
+# in ~/.cache/maktaba/install, then its `maktaba-server setup` asks the app's setup
+# questions in this terminal (and, when the distribution's ffmpeg is missing or
+# falls short, offers to run the command that installs it), copies the server into
+# your data directory and runs it as your systemd user service. Arguments after --app go to setup
 # (--answers FILE). --app never runs a payload whose signature it has not
 # checked: without cosign on the PATH it fetches cosign's own release build,
 # pinned by its SHA-256 below, and MAKTABA_NO_VERIFY does not apply. It installs
