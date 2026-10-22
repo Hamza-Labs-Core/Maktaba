@@ -165,6 +165,26 @@ describe("VideoPlayer (test-cases/video-player.md)", () => {
     }
   );
 
+  it("VPL-07c: a server without the disk space to prepare the video says so (507)", async () => {
+    servePost(() =>
+      Promise.reject(
+        new ApiError({
+          type: "https://maktaba.dev/problems/insufficient-storage",
+          title: "not enough disk space to prepare this video",
+          status: 507,
+          code: "insufficient_storage",
+        })
+      )
+    );
+    renderPlayer("/videos/vid-1/watch", { history: ["/library"] });
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "There isn't enough free disk space on the server to prepare this video."
+    );
+    expect(screen.queryByTestId("mkt-video")).toBeNull();
+    expect(within(alert).getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+
   it("VPL-07b: a video this machine cannot read while the home is unreachable says so", async () => {
     servePost(() =>
       Promise.reject(

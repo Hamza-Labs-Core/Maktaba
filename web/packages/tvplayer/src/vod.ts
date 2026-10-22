@@ -15,8 +15,11 @@
 // An expired / revoked token surfaces as HTTP 401/403 on a playlist or
 // segment: hls.js does not retry 4xx, so `onAuthError(position, playing)` tells the
 // owner to reopen the session for a fresh signed URL and re-attach at that
-// position. Other fatal errors get bounded network retries and media-error
-// recovery before `onFatal`.
+// position. A stream that is gone — 410 (its transcode stopped short of the
+// end), or loads that still fail after the network retries (a 404 once the
+// session was cleaned up) — tells it `onGone(position, playing)`: open the
+// video again there. Other fatal errors get bounded network retries and
+// media-error recovery before `onFatal`.
 import type HlsType from "hls.js";
 import { hasNativeHls } from "./live";
 
@@ -44,6 +47,12 @@ export interface VodOptions {
   onMode?: (mode: VodMode) => void;
   /** HTTP 401/403 on a playlist or segment: the signed URL expired. */
   onAuthError?: (position: number, playing: boolean) => void;
+  /**
+   * The stream is gone (410: its transcode stopped short of the end; or its
+   * loads keep failing, a 404 once the session was cleaned up): open the video
+   * again at that position. Without it, the error is fatal.
+   */
+  onGone?: (position: number, playing: boolean) => void;
   /** The stream cannot be recovered. */
   onFatal?: () => void;
   /**
@@ -167,6 +176,17 @@ export function attachVod(video: HTMLVideoElement, src: string, opts: VodOptions
     clearNet();
     opts.onAuthError?.(at, playing);
   };
+  // reported once, like an auth error: the owner re-attaches a new stream
+  const gone = (at = position(), playing = !video.paused) => {
+    if (authReported || disposed) return;
+    if (!opts.onGone) {
+      opts.onFatal?.();
+      return;
+    }
+    authReported = true;
+    clearNet();
+    opts.onGone(at, playing);
+  };
 
   // Native path: a start offset is applied once the metadata is known.
   const onNativeMeta = () => {
@@ -205,6 +225,7 @@ export function attachVod(video: HTMLVideoElement, src: string, opts: VodOptions
       .then((status) => {
         if (disposed) return;
         if (status === 401 || status === 403) authError(at, playing);
+        else if (status === 404 || status === 410) gone(at, playing);
         else onOther?.();
       })
       .catch(() => {
@@ -262,6 +283,10 @@ export function attachVod(video: HTMLVideoElement, src: string, opts: VodOptions
         authError();
         return;
       }
+      if (status === 410) {
+        gone();
+        return;
+      }
       if (!data.fatal) return;
       if (data.type === Hls.ErrorTypes.NETWORK_ERROR && netRetries < VOD_NET_RETRIES) {
         const delay = VOD_NET_RETRY_BASE_MS * 2 ** netRetries;
@@ -275,6 +300,11 @@ export function attachVod(video: HTMLVideoElement, src: string, opts: VodOptions
       if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < VOD_MEDIA_RECOVERIES) {
         mediaRecoveries += 1;
         inst.recoverMediaError();
+        return;
+      }
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+        // the loads still fail: the stream is gone (cleaned up, stopped)
+        gone();
         return;
       }
       clearNet();

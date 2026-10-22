@@ -233,6 +233,10 @@ type EncodePlan struct {
 	Encoders []string
 	Audio    bool
 	ToneMap  string
+	// Start is where in the source the transcode starts (seconds; 0: its
+	// start): -ss before -i (an accurate seek, the output starting there), the
+	// output's timestamps the source's (HLS; a DASH transcode starts at 0).
+	Start int
 }
 
 // segmentSeconds is the HLS and DASH segment length; every rung has a key frame
@@ -342,6 +346,9 @@ func inputArgs(input string, p EncodePlan) Args {
 	if p.Decode != "" {
 		args = append(args, "-hwaccel", p.Decode)
 	}
+	if p.Start > 0 {
+		args = append(args, "-ss", itoa(p.Start))
+	}
 	return append(args, "-i", input)
 }
 
@@ -368,7 +375,11 @@ func encoderAt(p EncodePlan, i int) string {
 // HLSArgs builds the FFmpeg ladder for Story 8.5: one variant per rung
 // (-var_stream_map: <out>/v0, v1, … each with its index.m3u8 and segments,
 // as the master playlist lists them), each with the source's audio when it
-// has one.
+// has one. Each index is an EVENT playlist listing every segment, ended with
+// #EXT-X-ENDLIST when the transcode is done: the viewer seeks anywhere already
+// transcoded, and a transcode running ahead of playback drops nothing the
+// player has yet to fetch. The segments stay until the session's folder goes
+// (the session closed: purgeVODSessions).
 func HLSArgs(input, outputDir, masterName string, ladder []Rendition, p EncodePlan) Args {
 	args := append(inputArgs(input, p), videoGraph(len(ladder), p)...)
 	variants := make([]string, len(ladder))
@@ -385,11 +396,17 @@ func HLSArgs(input, outputDir, masterName string, ladder []Rendition, p EncodePl
 		}
 		args = append(args, "-c:a", "aac", "-b:a", "128k")
 	}
+	if p.Start > 0 {
+		// the segments' timestamps the source's, as the served playlist's times
+		// are (gaps before the start, handlers.gapsBefore)
+		args = append(args, "-output_ts_offset", itoa(p.Start))
+	}
 	args = append(args,
 		"-f", "hls",
 		"-hls_time", itoa(segmentSeconds),
-		"-hls_list_size", "6",
-		"-hls_flags", "delete_segments+independent_segments",
+		"-hls_playlist_type", "event",
+		"-hls_list_size", "0",
+		"-hls_flags", "independent_segments",
 		"-var_stream_map", strings.Join(variants, " "),
 		"-hls_segment_filename", outputDir+"/v%v/seg-%d.ts",
 		"-master_pl_name", masterName,
@@ -400,8 +417,10 @@ func HLSArgs(input, outputDir, masterName string, ladder []Rendition, p EncodePl
 
 // DASHArgs builds Story 8.6's DASH-only invocation. Note the §4.3
 // callout: emitting both HLS and DASH from one encode isn't supported,
-// so DASH is opt-in per session.
+// so DASH is opt-in per session. The MPD lists every segment (no window):
+// dynamic while the transcode runs, static once it is done.
 func DASHArgs(input, outputDir string, ladder []Rendition, p EncodePlan) Args {
+	p.Start = 0 // a DASH transcode starts at the source's start
 	args := append(inputArgs(input, p), videoGraph(len(ladder), p)...)
 	for i, rung := range ladder {
 		args = append(args, rungArgs(i, rung, encoderAt(p, i), p)...)
@@ -417,8 +436,7 @@ func DASHArgs(input, outputDir string, ladder []Rendition, p EncodePlan) Args {
 		"-f", "dash",
 		"-adaptation_sets", sets,
 		"-seg_duration", itoa(segmentSeconds),
-		"-window_size", "10",
-		"-extra_window_size", "5",
+		"-window_size", "0",
 		"-init_seg_name", "init-$RepresentationID$.m4s",
 		"-media_seg_name", "chunk-$RepresentationID$-$Number$.m4s",
 		outputDir+"/manifest.mpd",

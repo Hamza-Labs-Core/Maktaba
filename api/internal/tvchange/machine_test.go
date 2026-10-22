@@ -134,7 +134,8 @@ func TestAutoPromoteRules(t *testing.T) {
 }
 
 // TestDefaultsAllApproval: the shipped rules (schema.json, from the pipeline's
-// MaktabaTvStagingConfig) put every kind behind an admin's approval (owner decision).
+// MaktabaTvStagingConfig) put every kind behind an admin's approval except a schedule
+// change, which goes on the air once verified when it is small (owner decisions).
 func TestDefaultsAllApproval(t *testing.T) {
 	c, err := LoadConfig(t.Context(), nil)
 	if err != nil {
@@ -144,9 +145,44 @@ func TestDefaultsAllApproval(t *testing.T) {
 		t.Fatalf("defaults %+v", c)
 	}
 	for _, k := range Kinds {
-		if c.AutoPromote[k] != RuleApproval {
+		want := RuleApproval
+		if k == "schedule" {
+			want = RuleImmediate
+		}
+		if c.AutoPromote[k] != want {
 			t.Errorf("%s: %s", k, c.AutoPromote[k])
 		}
+	}
+	if c.AutoMaxChannels != DefaultAutoMaxChannels {
+		t.Errorf("auto_max_channels %d", c.AutoMaxChannels)
+	}
+}
+
+// A change an auto rule would put on the air waits for an admin when it touches more
+// than auto_max_channels channels or the planner left conflicts out.
+func TestAutoBlocked(t *testing.T) {
+	c := defaultConfig()
+	c.AutoMaxChannels = 2
+	row := func(id string) any { return map[string]any{"id": id} }
+	ch := func(lineup map[string]any, set string) *Change {
+		return &Change{Diff: map[string]any{"lineup": lineup}, ChangeSet: []byte(set)}
+	}
+	if r := AutoBlocked(c, ch(map[string]any{"changed": []any{row("a")}}, `{"meta":{"conflicts":[],"user_edited":[{"key":"q"}]}}`)); r != "" {
+		t.Errorf("one channel, hand-edited ones left alone: %q", r)
+	}
+	// a channel renamed and changed counts once
+	if r := AutoBlocked(c, ch(map[string]any{"changed": []any{row("a"), row("b")}, "renamed": []any{row("a")}}, ``)); r != "" {
+		t.Errorf("two channels: %q", r)
+	}
+	if r := AutoBlocked(c, ch(map[string]any{"changed": []any{row("a"), row("b")}, "added": []any{row("c")}}, ``)); r != "too_many_channels" {
+		t.Errorf("three channels: %q", r)
+	}
+	if r := AutoBlocked(c, ch(nil, `{"meta":{"conflicts":[{"key":"x"}]}}`)); r != "conflicts" {
+		t.Errorf("conflicts: %q", r)
+	}
+	c.AutoMaxChannels = 0
+	if r := AutoBlocked(c, ch(map[string]any{"changed": []any{row("a"), row("b"), row("c")}}, ``)); r != "" {
+		t.Errorf("0 is no limit: %q", r)
 	}
 }
 

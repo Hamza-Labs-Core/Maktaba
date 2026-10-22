@@ -85,6 +85,13 @@ type OpenSessionResponse struct {
 	ExpiresAt        time.Time   `json:"expires_at"`
 	Ladder           []Rendition `json:"ladder,omitempty"`
 	CurrentRendition *Rendition  `json:"current_rendition,omitempty"`
+	// DurationSec is the video's length in the catalogue (0: unknown): a
+	// player knows the real end of a stream that may stop short of it.
+	DurationSec float64 `json:"duration_sec,omitempty"`
+	// StartSec is where in the video the stream starts (seconds; 0: its
+	// start): a transcode opened at a position (start_sec) starts there, its
+	// times the video's, the part before it gaps a player cannot play.
+	StartSec float64 `json:"start_sec,omitempty"`
 }
 
 // Rendition is a single ABR ladder rung.
@@ -188,6 +195,16 @@ func (h *Handler) failed(ctx context.Context, err error) bool {
 // video (it answers "not-found" in band).
 func streamingNotFound(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "not-found")
+}
+
+// ProblemInsufficientStorage: the streaming service has too little free on its
+// cache's disk to prepare (transcode) the video.
+const ProblemInsufficientStorage = "https://maktaba.dev/problems/insufficient-storage"
+
+// streamingNoDiskSpace reports whether the streaming service refused a transcode
+// for want of disk space (it answers "insufficient-storage" in band).
+func streamingNoDiskSpace(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "insufficient-storage")
 }
 
 // Reconcile writes what the database lacks of the sessions this node opened while the
@@ -371,14 +388,21 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 			writeUnavailableOffline(w, r)
 			return
 		}
+		if streamingNoDiskSpace(err) {
+			e := &httperror.Error{Type: ProblemInsufficientStorage, Status: http.StatusInsufficientStorage,
+				Title:  "not enough disk space to prepare this video",
+				Detail: "the server that streams it has too little free on its disk to transcode it"}
+			httperror.Write(w, r, e.With("code", "insufficient_storage"))
+			return
+		}
 		if err != nil {
+			w.Header().Set("Retry-After", "5")
 			httperror.Write(w, r, &httperror.Error{
 				Type:   "https://maktaba.dev/problems/streaming-unavailable",
 				Title:  "streaming unavailable",
 				Status: http.StatusServiceUnavailable,
 				Detail: err.Error(),
 			})
-			w.Header().Set("Retry-After", "5")
 			return
 		}
 	} else {
@@ -460,6 +484,9 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 
 	if clampedHeader != "" {
 		w.Header().Set("Maktaba-Warning", clampedHeader)
+	}
+	if duration.Valid {
+		resp.DurationSec = duration.Float64
 	}
 	common.WriteJSON(w, r, http.StatusCreated, resp)
 }

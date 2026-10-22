@@ -61,8 +61,13 @@ type fakeService struct {
 }
 
 func (s *fakeService) Open(_ context.Context, req OpenSessionRequest) (OpenSessionResponse, error) {
-	if req.VideoID == vNoProbe {
+	switch req.VideoID {
+	case vNoProbe:
 		return OpenSessionResponse{}, errors.New("streaming: not-found")
+	case vNoDisk:
+		return OpenSessionResponse{}, errors.New("streaming: insufficient-storage")
+	case vBusy:
+		return OpenSessionResponse{}, errors.New("streaming: resource-exhausted")
 	}
 	return OpenSessionResponse{SessionID: uuid.NewString(), Mode: "direct", DirectURL: "/stream/direct/" + req.VideoID}, nil
 }
@@ -80,6 +85,9 @@ const (
 	vGone = "22222222-0000-4000-8000-000000000009"
 	// in the catalog, unknown to this machine's streaming role
 	vNoProbe = "22222222-0000-4000-8000-000000000003"
+	// the streaming role's disk too full to transcode it; every slot busy
+	vNoDisk = "22222222-0000-4000-8000-000000000004"
+	vBusy   = "22222222-0000-4000-8000-000000000005"
 )
 
 // deadDB is a database that does not answer: every connection is refused.
@@ -111,6 +119,7 @@ func offlineRig(t *testing.T, down bool) (http.Handler, *fakeOffline, *fakeServi
 	t.Helper()
 	off := &fakeOffline{down: down, videos: map[string]catalogVideo{
 		vHere: {lib: "lib1", dur: 1800}, vLib2: {lib: "lib2", dur: 60}, vNoProbe: {lib: "lib1", dur: 60},
+		vNoDisk: {lib: "lib1", dur: 60}, vBusy: {lib: "lib1", dur: 60},
 	}}
 	svc := &fakeService{}
 	h := &Handler{DB: deadDB(), Service: svc, Offline: off}
@@ -305,6 +314,30 @@ func TestOfflineAVideoTheStreamingRoleLacksIsUnavailable(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &p)
 	if rec.Code != http.StatusServiceUnavailable || p.Code != "video_unavailable_offline" {
 		t.Fatalf("a video the streaming role does not know, offline: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// The streaming role's refusals: too little disk to prepare the video is said
+// as such (507, its own code), not as busy; busy is 503 with its Retry-After
+// sent. An opened session carries the video's catalogue length.
+func TestOpenSessionRefusalsAndLength(t *testing.T) {
+	h, _, _ := offlineRig(t, true)
+	_, rec := open(t, h, as("u-amal", "lib1"), vNoDisk)
+	var p struct{ Type, Title, Code string }
+	_ = json.Unmarshal(rec.Body.Bytes(), &p)
+	if rec.Code != http.StatusInsufficientStorage || p.Code != "insufficient_storage" || p.Type != ProblemInsufficientStorage ||
+		p.Title != "not enough disk space to prepare this video" {
+		t.Errorf("no disk: %d %s", rec.Code, rec.Body.String())
+	}
+	_, rec = open(t, h, as("u-amal", "lib1"), vBusy)
+	if rec.Code != http.StatusServiceUnavailable || rec.Result().Header.Get("Retry-After") != "5" {
+		t.Errorf("busy: %d, Retry-After %q", rec.Code, rec.Result().Header.Get("Retry-After"))
+	}
+	_, rec = open(t, h, as("u-amal", "lib1"), vHere)
+	var s OpenSessionResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &s)
+	if rec.Code != http.StatusCreated || s.DurationSec != 1800 {
+		t.Errorf("opened: %d, duration %v", rec.Code, s.DurationSec)
 	}
 }
 

@@ -4062,7 +4062,7 @@
      "group": "TV staging approval",
      "label": "Schedule changes",
      "help": "approval: an admin approves it; quiet_window: put on the air in the quiet window with no warnings; immediate: as soon as it is verified with no warnings.",
-     "default": "approval",
+     "default": "immediate",
      "choices": [
       "approval",
       "quiet_window",
@@ -4110,6 +4110,16 @@
      "label": "Viewers at most in the quiet window",
      "help": "",
      "default": 0,
+     "minimum": 0,
+     "maximum": 1000
+    },
+    {
+     "name": "auto_max_channels",
+     "kind": "int",
+     "group": "TV staging approval",
+     "label": "Changed channels at most for an automatic change",
+     "help": "A change a rule above would put on the air by itself waits for an admin when it touches more channels than this, or the planner left a conflict out. 0: no limit.",
+     "default": 3,
      "minimum": 0,
      "maximum": 1000
     },
