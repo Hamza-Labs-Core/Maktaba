@@ -55,8 +55,8 @@ jobs:
             api/go.sum
             streaming/go.sum
 
-      # a stalled mirror fails in minutes and is tried again (apt-install.sh), not
-      # the job's whole limit
+      # apt-install.sh: apt once more if it fails; timeout-minutes cuts a stalled mirror off
+      # in minutes, not at the job's whole limit
       - name: Install ffmpeg and an Arabic font
         timeout-minutes: 12
         run: |

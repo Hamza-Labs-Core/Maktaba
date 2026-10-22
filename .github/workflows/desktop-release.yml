@@ -121,14 +121,10 @@ jobs:
 
       # Linux GUI build deps for Tauri 2 (webkit2gtk 4.1, appindicator,
       # rsvg, patchelf for AppImage). No-op on macOS/Windows.
-      # apt-install.sh: a stalled mirror fails fast and is tried again
-      # (WebKitGTK's dev packages are a few hundred MB: a slow mirror that still moves gets 15
-      # minutes, apt itself giving up on a silent one after 30 s)
+      # apt-install.sh: apt once more if it fails; timeout-minutes cuts off a stalled mirror
       - name: Install Linux build deps
         if: runner.os == 'Linux'
         timeout-minutes: 35
-        env:
-          APT_NET_TIMEOUT: "900"
         run: |
           set -euo pipefail
           tools/ci/apt-install.sh --no-install-recommends \

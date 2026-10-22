@@ -589,7 +589,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
 
-      # apt-install.sh: a stalled mirror fails fast and is tried again
+      # apt-install.sh: apt once more if it fails; timeout-minutes cuts off a stalled mirror
       - name: Install web deps and the build tools
         timeout-minutes: 15
         run: |

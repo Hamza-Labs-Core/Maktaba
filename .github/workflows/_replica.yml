@@ -96,7 +96,7 @@ jobs:
           done
 
       - name: ffmpeg (the two-machine run plays a real fixture)
-        timeout-minutes: 12 # a stalled mirror fails fast and is tried again (apt-install.sh)
+        timeout-minutes: 12 # a stalled mirror is cut off here; apt-install.sh tries apt once more if it fails
         run: |
           tools/ci/apt-install.sh --no-install-recommends ffmpeg >/dev/null
           ffmpeg -hide_banner -version | head -1
