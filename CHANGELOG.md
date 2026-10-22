@@ -674,6 +674,10 @@ don't append a line here; docs-only PRs are exempt.
   its CPUs by default), every 720p-and-up video played direct, whatever the player could decode,
   and anything smaller was refused. A slot now comes back when its transcode ends, when its
   session closes or is reaped, and when the open fails after taking it.
+- **A live page's yt-dlp lookup runs once for the channels that share it.** A channel that found
+  no URL cached just as the shared lookup ended started yt-dlp again for the same page; it now
+  takes the URL that lookup cached. (CI saw it as the test's fake yt-dlp running twice and
+  closing its channel twice.)
 
 ## [0.2.0] - 2026-10-19
 

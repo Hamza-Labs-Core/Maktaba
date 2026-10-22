@@ -49,6 +49,12 @@ type YtDlp struct {
 	Bin string
 	// run executes yt-dlp; tests substitute it.
 	run func(ctx context.Context, bin string, args ...string) ([]byte, error)
+	// now reads the clock a resolution's age is measured on; tests
+	// substitute it.
+	now func() time.Time
+	// beforeJoin, when set, runs between a caller's cache miss and its
+	// joining the shared lookup; tests hold a caller there.
+	beforeJoin func()
 
 	mu       sync.Mutex
 	cache    map[ytKey]ytEntry
@@ -70,7 +76,7 @@ func NewYtDlp(bin string) *YtDlp {
 	if bin == "" {
 		bin = "yt-dlp"
 	}
-	return &YtDlp{Bin: bin, cache: map[ytKey]ytEntry{}, run: runOutput}
+	return &YtDlp{Bin: bin, cache: map[ytKey]ytEntry{}, run: runOutput, now: time.Now}
 }
 
 func runOutput(ctx context.Context, bin string, args ...string) ([]byte, error) {
@@ -125,17 +131,22 @@ func (y *YtDlp) Resolve(ctx context.Context, req LiveRequest) (string, error) {
 		reuse = DefaultLiveLookupReuse
 	}
 	key := ytKey{url: sourceURL, height: height}
-	y.mu.Lock()
-	if e, ok := y.cache[key]; ok && time.Since(e.at) < reuse {
-		y.mu.Unlock()
-		return e.url, nil
+	if u, ok := y.cached(key, reuse); ok {
+		return u, nil
 	}
-	y.mu.Unlock()
+	if y.beforeJoin != nil {
+		y.beforeJoin()
+	}
 
 	// Channels asking at once share the one run. It is not tied to the
 	// first caller's ctx (one station stopping must not fail the others);
 	// each caller stops waiting when its own ctx ends.
 	ch := y.inflight.DoChan(strconv.Itoa(height)+" "+sourceURL, func() (any, error) {
+		// A run that ended between this caller's cache miss and DoChan has
+		// left the group already, its URL cached: yt-dlp is not run again.
+		if u, ok := y.cached(key, reuse); ok {
+			return u, nil
+		}
 		lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), liveLookupTimeout)
 		defer cancel()
 		resolved, err := y.lookup(lctx, sourceURL, height)
@@ -143,7 +154,7 @@ func (y *YtDlp) Resolve(ctx context.Context, req LiveRequest) (string, error) {
 			return "", err
 		}
 		y.mu.Lock()
-		y.cache[key] = ytEntry{url: resolved, at: time.Now()}
+		y.cache[key] = ytEntry{url: resolved, at: y.now()}
 		y.mu.Unlock()
 		return resolved, nil
 	})
@@ -156,6 +167,17 @@ func (y *YtDlp) Resolve(ctx context.Context, req LiveRequest) (string, error) {
 	case <-ctx.Done():
 		return "", ctx.Err()
 	}
+}
+
+// cached returns key's resolution while it is younger than reuse.
+func (y *YtDlp) cached(key ytKey, reuse time.Duration) (string, bool) {
+	y.mu.Lock()
+	defer y.mu.Unlock()
+	e, ok := y.cache[key]
+	if !ok || y.now().Sub(e.at) >= reuse {
+		return "", false
+	}
+	return e.url, true
 }
 
 // lookup runs yt-dlp for the best rendition no taller than height. Like
