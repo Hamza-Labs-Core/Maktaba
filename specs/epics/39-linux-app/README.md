@@ -119,7 +119,8 @@ Per-user state, XDG throughout (`config.DirsFor` already resolves these on Linux
 - **One updater, the app's**, as on the Mac and Windows. tauri-plugin-updater 2.10+ (we lock 2.14.0)
   updates all three Linux formats: it replaces the AppImage in place, and installs a .deb/.rpm through
   the system's admin prompt. The feed is the same `latest.json` on the GitHub release, signed with
-  the same updater key.
+  the same updater key (its public half is the repository variable `TAURI_UPDATER_PUBKEY`, stamped
+  into each build).
 - **Not an apt/dnf repository.** It would be a second updater with a second trust root (a GPG repo
   key to create, host, rotate and publish). It would need hosting for the repository metadata, and
   root for every update. Updates would also land whenever the user runs `apt upgrade`, not when
@@ -170,7 +171,7 @@ architectures.
 | 39.3 | **Runtime copy** | `maktaba-server runtime install --from <payload> \| activate \| status \| prune` ([contract-runtime.md](contract-runtime.md)): copy into `runtime/.staging-*`, verify against `files.sha256`, rename; the first runtime becomes `current`; flip `current` while the unit is stopped, record `previous`, refuse a downgrade below the watermark, prune the rest, all under a lock. On top of 38.2's payload detection in the launcher: `MAKTABA_APP_BUNDLE` is the unresolved `runtime/current`, the state root is `$XDG_DATA_HOME/maktaba`, and `owner` decides whether the app or the machine updates it: with `headless`, `maktaba-server update` installs the release's verified payload tarball as a new runtime, and the API's Update now runs it as a transient user unit |
 | 39.4 | **Linux paths in app-bundle mode** | `MAKTABA_CACHE_ROOT` and pip's cache under `$XDG_CACHE_HOME/maktaba`; the venv's log under the logs dir. The bundled Postgres's `enabled = "auto"` inside any payload is 38.10's |
 | 39.5 | **The systemd user service** | `internal/service`: the app's user unit (the `runtime/current` launcher, `--log-file`), and `maktaba-server service install \| uninstall \| status \| start \| stop \| restart \| linger` (`--json`). The shell and the headless setup both call it, so neither writes units itself. Linger: polkit allows it without a password from an active desktop session; over SSH, `loginctl` asks in the terminal. `status` reports a missing user manager (no systemd as PID 1, e.g. WSL) as `unsupported` with the reason |
-| 39.6 | **Setup on Linux** | the Linux part of 38.6's `check` (architecture, glibc ≥ 2.35, the systemd user manager and linger, a self-managed install that owns the unit already, disk, RAM). The `venv` step installs the runtime first (`stage: runtime`), and `finish` installs the service. `maktaba-server setup` on a machine with a payload and no window runs the same steps in the terminal ([headless.md](headless.md)), with `--answers` for automation |
+| 39.6 | **Setup on Linux** | the Linux part of 38.6's `check` (glibc ≥ 2.35, the systemd user manager and linger, a `maktaba-server.service` another install owns, user or system-wide; through 38.6's `platformChecks`, with codes the screens translate). The runtime is copied right after `check` allows it (the desktop app and the terminal alike), and every later step runs from `runtime/current`; after `venv` come the models' download and `llm`, as on the desktop, and `finish` installs the service. `maktaba-server setup` on a machine with a payload and no window runs the same steps in the terminal, in English or Arabic ([headless.md](headless.md)), with `--answers` for automation |
 | 39.7 | **Transcription on Linux** | per [contract-stt-linux.md](contract-stt-linux.md), on 38.8/38.9: NVIDIA detection on Linux, the driver checks, `LD_LIBRARY_PATH` to the venv's CUDA wheels, `CUDA_VISIBLE_DEVICES` per worker, aarch64 as CPU, and the Linux CI of the engine |
 | 39.8 | **The desktop shell on Linux** | `apps/desktop`: the payload at `<prefix>/share/maktaba/server` (`/usr` in a package, `$APPDIR/usr` in the AppImage; mapped by each bundle's `files`, since linuxdeploy rewrites the ELF files under `usr/lib`), a linux server-service module (beside macOS's and Windows') that drives `maktaba-server service`, and a runtime install on start when the bundled payload differs from `runtime/current`. The tray uses StatusNotifier/AppIndicator (libayatana-appindicator). Where no `org.kde.StatusNotifierWatcher` exists (GNOME without the extension), closing the window quits the shell (the server keeps running) and the window's menu carries the tray's items. Plus the autostart entry for the tray, `xdg-open` for logs and links, and setup's Linux examples |
 | 39.9 | **Updates on Linux** | on 38.12's next start: the Linux updater artifacts (`createUpdaterArtifacts`, the `linux-*` keys of `latest.json` for AppImage/deb/rpm, assembled once after every leg). After an update, the new shell runs `runtime install --activate`. Headless (the update path itself is 39.3's): the Epic 35 rollout runs `maktaba-server update` once 35.4's orchestrator installs by itself, and a new runtime that starts but never confirms (Epic 35's 3-minute confirmation) is switched back to `previous` |
@@ -202,9 +203,6 @@ Each story ships as its own PR with tests, through the usual flow (CI green, rev
 
 ## Owner decisions still open
 
-- **The Tauri updater key pair** (as for the Mac and Windows): `plugins.updater.pubkey` is still
-  `REPLACE_WITH_PUBKEY`. Without it no Linux build can update itself, and every update is a new
-  download.
 - **GNOME without the AppIndicator extension** shows no tray icon (Ubuntu ships the extension; Fedora
   Workstation does not). The app still works there (the window's menu has the same items). Should
   setup offer to open the extension's page?

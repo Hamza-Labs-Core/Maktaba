@@ -58,7 +58,8 @@ pnpm tauri dev                  # dev window pointed at the Vite dev server
 ./scripts/build.sh macos        # .app + .dmg          (on macOS)
 ./scripts/build.sh windows      # .msi + NSIS .exe     (on Windows; the client alone)
 make win-app                    # the Windows app with the server inside: NSIS only (tools/release/win-app)
-./scripts/build.sh linux        # .deb + .AppImage     (on Linux)
+./scripts/build.sh linux        # .AppImage + .deb + .rpm, the shell only (on Linux;
+                                #   `make linux-app` builds them with the server inside)
 ./scripts/build.sh debug        # fast unsigned debug build
 ```
 
@@ -74,12 +75,16 @@ runners in parallel, attaching them to the GitHub Release for the tag:
 
 | Runner | Bundles |
 |---|---|
-| `macos-latest` | `.dmg` — **universal** (arm64 + x86_64 via `--target universal-apple-darwin`) |
+| `macos-15` (arm64) | `.dmg` of Maktaba.app **with the server inside** (`--target aarch64-apple-darwin`, `tools/release/mac-app/payload.sh`) |
+| `macos-15` (x86_64) | `.dmg` of the client alone (`--target x86_64-apple-darwin`) |
 | `windows-latest` | the NSIS `-setup.exe` with the server inside (`tools/release/win-app/payload.sh`; current user, `%LOCALAPPDATA%\Maktaba`, no `.msi`), plus a portable `.zip` of the raw `Maktaba.exe` (the client) |
-| `ubuntu-22.04` | `.deb` + `.AppImage` (installs `libwebkit2gtk-4.1`, `libayatana-appindicator3`, `librsvg2`, `patchelf` first) |
+| `ubuntu-22.04`, `ubuntu-22.04-arm` | `.AppImage` + `.deb` + `.rpm` with the server inside (Epic 39; no ffmpeg: the `.deb` and `.rpm` depend on the distribution's; installs `libwebkit2gtk-4.1`, `libayatana-appindicator3`, `librsvg2`, `patchelf`, `rpm`, and `ffmpeg` for the payload's check, first) |
 
-The build uses the official
-[`tauri-apps/tauri-action@v0`](https://github.com/tauri-apps/tauri-action).
+Each runner builds with `tauri build` and checks its bundles; nothing is
+published from there. The workflow's `publish` job, after every runner,
+attaches the checked bundles to the release and then writes `latest.json`
+(the updater feed, `tools/release/cmd/updater-feed`) over all of them, so
+an updater is never pointed at a bundle that failed its checks.
 Because the repo has **no pnpm workspace**, the config's
 `beforeBuildCommand` (`pnpm --filter maktaba-web build`) can't resolve in
 CI — so the workflow builds `web/dist` itself (install → design tokens →
@@ -87,11 +92,15 @@ CI — so the workflow builds `web/dist` itself (install → design tokens →
 `--config {"build":{"beforeBuildCommand":""}}` so `tauri build` just
 bundles the already-built frontend.
 
-**Signing is deferred.** These bundles are unsigned. When certificates are
-provisioned, wire them into `tauri-action` via the secrets documented at
-the top of the workflow (`APPLE_*` for Developer ID + notarisation,
-`WINDOWS_CERTIFICATE*` for Authenticode, `TAURI_SIGNING_PRIVATE_KEY*` for
-the auto-updater).
+**Updates are signed; the installers are not yet.** The updater key is
+set up: `TAURI_SIGNING_PRIVATE_KEY*` sign each updater bundle, and the
+public key, the repository variable `TAURI_UPDATER_PUBKEY`, is stamped
+into `tauri.conf.json` at build time (the committed file keeps the
+`REPLACE_WITH_PUBKEY` placeholder; [auto-update](../../docs/auto-update.md)).
+OS code signing is still deferred: when certificates are provisioned,
+wire them in via the secrets documented at the top of the workflow
+(`APPLE_*` for Developer ID + notarisation, `WINDOWS_CERTIFICATE*` for
+Authenticode).
 
 Build the same installers locally for the host OS with `make
 package-desktop` (= `scripts/build.sh`).
@@ -106,7 +115,7 @@ package-desktop` (= `scripts/build.sh`).
 | **Deep links** | `maktaba://watch/{id}` etc. — scheme registered in `tauri.conf.json`; the Rust `on_open_url` handler emits a `deep-link` event the web shell maps to an SPA route via the same `deepLinkToPath` parser the Capacitor shell uses |
 | **Single instance** | on Windows/Linux a `maktaba://` open spawns a new process; the single-instance plugin (with the `deep-link` feature) focuses the running window and forwards the URL |
 | **mDNS** | `discover_servers` browses `_maktaba._tcp.local.` for the server picker |
-| **Auto-update** | `updater` plugin checks `releases/latest/download/latest.json`; updates are signed with the Tauri updater key, whose public key `desktop-release.yml` stamps into `tauri.conf.json` at build time (the `TAURI_UPDATER_PUBKEY` variable; the repository keeps the placeholder) |
+| **Auto-update** | `updater` plugin checks `releases/latest/download/latest.json`; updates are signed with the Tauri updater key, whose public key `desktop-release.yml` stamps into `tauri.conf.json` at build time (the `TAURI_UPDATER_PUBKEY` variable; the repository keeps the placeholder; [auto-update](../../docs/auto-update.md)) |
 
 ## Maktaba.app runs the server (Epic 36)
 

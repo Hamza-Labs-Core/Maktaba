@@ -8,6 +8,7 @@
 #                                        minimal system can lack, all on an $ORIGIN rpath
 #   python/    CPython 3.12              python-build-standalone, stdlib precompiled
 #   pipeline/  maktaba_pipeline-<v>-py3-none-any.whl constraints.txt
+#   migrations/  the database's schema (shared/db/migrations): maktaba-api finds them beside bin/
 #   licenses/  the third-party licences and where their sources are
 #   files.sha256                         every file and symlink, with mode, size, SHA-256
 #   payload.json                         what is inside: versions, checksums, min glibc
@@ -237,11 +238,26 @@ if [ "${#whl[@]}" -ne 1 ] || [ ! -f "${whl[0]}" ]; then die "expected one pipeli
 cp "${whl[0]}" "$OUT/pipeline/"
 cp "${cons[0]}" "$OUT/pipeline/constraints.txt"
 
+# --- the database's migrations: setup's finish and the api's auto-migrate run from the user's
+# data directory, never a checkout, so the payload carries them (maktaba-api: beside bin/) -------
+log "database migrations"
+cp -R "$REPO_ROOT/shared/db/migrations" "$OUT/migrations"
+
+# --- no hard links: each file stands alone (the runtime copy makes files and symlinks, and
+# the release tarball would store a link its unpack refuses) --------------------------------
+while IFS= read -r -d '' f; do
+    cp -p "$f" "$f.unlinked" && mv -f "$f.unlinked" "$f"
+done < <(find "$OUT" -type f -links +1 -print0)
+
 # --- the files and payload.json ------------------------------------------------------------------
 log "checking every ELF file against the glibc $MAX_GLIBC baseline"
 elf="$(tool elf "$OUT" --max-glibc "$MAX_GLIBC")" || { printf '%s\n' "$elf" >&2; die "the payload needs more than its baseline"; }
 min_glibc="$("$PY" -I -c 'import json,sys; print(json.loads(sys.argv[1].splitlines()[-1])["min_glibc"])' "$elf")"
 rm -rf "$WORK"
+# Installed by a .deb or .rpm the tree is root's, and each user's setup copies it: every
+# file readable by others, every folder open to them, every executable runnable by them,
+# whatever mode an archive or this machine's umask gave it. The manifest records these.
+chmod -R go-w,a+rX "$OUT"
 manifest="$(tool manifest "$OUT")"
 WHEEL_NAME="$(basename "${whl[0]}")"
 # every value goes in through the environment, never into the program's text
@@ -274,6 +290,8 @@ EOF
 # resources in <prefix>/lib/Maktaba: linuxdeploy (the AppImage) rewrites the rpath of, and
 # strips, the ELF files it finds under usr/lib, which would no longer match files.sha256. The
 # runtime copy (39.3) checks every file, and makes again the links the .rpm copies as files.
+# The .deb and .rpm stop and disable each user's server unit when the package is removed
+# (package-remove.sh: prerm / %preun, never on an upgrade).
 # web/dist is built above (make server), so tauri does not rebuild it.
 cat >"$BUILD/tauri.linux-app.conf.json" <<EOF
 {
@@ -281,8 +299,10 @@ cat >"$BUILD/tauri.linux-app.conf.json" <<EOF
   "bundle": {
     "linux": {
       "appimage": {"files": {"/usr/share/maktaba/server": "$OUT"}},
-      "deb": {"files": {"/usr/share/maktaba/server": "$OUT"}},
-      "rpm": {"files": {"/usr/share/maktaba/server": "$OUT"}}
+      "deb": {"files": {"/usr/share/maktaba/server": "$OUT"},
+              "preRemoveScript": "$SCRIPT_DIR/package-remove.sh"},
+      "rpm": {"files": {"/usr/share/maktaba/server": "$OUT"},
+              "preRemoveScript": "$SCRIPT_DIR/package-remove.sh"}
     }
   }
 }

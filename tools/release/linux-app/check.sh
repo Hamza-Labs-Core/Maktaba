@@ -3,12 +3,13 @@
 # machine but bash and coreutils, so CI runs it in minimal containers (ubuntu:22.04,
 # debian:12-slim, fedora:40) as well as on the build machine:
 #
-#   files.sha256 matches the tree, every ELF file needs no glibc above the payload's limit
-#   and finds each library it links (in the payload or the baseline), every binary starts
-#   (--version), Postgres initdb + start + the extensions Maktaba creates + pg_dump, the
-#   bundled Python makes a venv with pip offline, the pipeline's wheel and hashed
-#   constraints are there (and no torch), the venv bootstrap plans a build from them, and
-#   nothing the checks run writes into the payload.
+#   files.sha256 matches the tree (and no file is a hard link), every ELF file needs no glibc
+#   above the payload's limit and finds each library it links (in the payload or the
+#   baseline), every binary starts (--version), Postgres initdb + start + the extensions
+#   Maktaba creates + the payload's own migrations (maktaba-api migrate up from outside any
+#   checkout) + pg_dump, the bundled Python makes a venv with pip offline, the pipeline's
+#   wheel and hashed constraints are there (and no torch), the venv bootstrap plans a build
+#   from them, and nothing the checks run writes into the payload.
 #
 #   ffmpeg is not in the payload (on Linux Maktaba runs the distribution's): no ffmpeg or
 #   ffprobe may be in it, and `maktaba-server ffmpeg` gives the verdict --ffmpeg expects
@@ -66,6 +67,10 @@ tool() { "$PY" -I "$SCRIPT_DIR/payload_tool.py" "$@"; }
 echo "payload: $PAYLOAD ($(sed -n 's/^PRETTY_NAME=//p' /etc/os-release 2>/dev/null | tr -d '"'), $(uname -m))"
 echo "files"
 run "files.sha256" "$PY" -I "$SCRIPT_DIR/payload_tool.py" verify "$PAYLOAD"
+# a hard link would be one entry the runtime copy cannot make again (it copies files and
+# symlinks), and the release tarball stores it as a link the unpack refuses
+linked="$(find "$PAYLOAD" -type f -links +1 -print 2>/dev/null | head -5)"
+if [ -z "$linked" ]; then ok "no hard links"; else fail "hard links in the payload: $linked"; fi
 max_glibc="$("$PY" -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["min_glibc"])' "$PAYLOAD/payload.json" 2>/dev/null || echo "")"
 if [ -n "$max_glibc" ]; then
     if out="$(tool elf "$PAYLOAD" --max-glibc "$max_glibc" 2>&1)"; then
@@ -105,6 +110,12 @@ if "$pg/initdb" -D "$SCRATCH/pgdata" -U maktaba --auth=trust -E UTF8 --locale=C 
                    || unaccent('Mak' || chr(233)) || ') on ' || version();"
     run "TLS (OpenSSL in the server)" "$pg/psql" -h 127.0.0.1 -p "$port" -U maktaba -d postgres -Atq \
         -c "SELECT 'ssl library: ' || current_setting('ssl_library');"
+    # the schema from the payload alone: maktaba-api finds payload/migrations beside its bin/,
+    # run from a directory that is no checkout and without MAKTABA_MIGRATIONS_DIR
+    run "createdb" "$pg/psql" -h 127.0.0.1 -p "$port" -U maktaba -d postgres -Atq -c "CREATE DATABASE maktaba_check;"
+    run "migrations (maktaba-api migrate up)" env -C "$SCRATCH" -u MAKTABA_MIGRATIONS_DIR \
+        DATABASE_URL="postgres://maktaba@127.0.0.1:$port/maktaba_check?sslmode=disable" \
+        "$PAYLOAD/bin/maktaba-api" migrate up
     run "pg_dump" "$pg/pg_dump" -h 127.0.0.1 -p "$port" -U maktaba -Fc -f "$SCRATCH/dump" postgres
     run "pg_restore --list" "$pg/pg_restore" --list "$SCRATCH/dump"
     "$pg/pg_ctl" -D "$SCRATCH/pgdata" -m fast -w stop >/dev/null 2>&1 || fail "pg_ctl stop"
