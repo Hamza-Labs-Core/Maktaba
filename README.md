@@ -114,15 +114,22 @@ troubleshooting, and pre-commit setup.
 ## Install the home server
 
 **Linux, one installation that runs everything** ([Epic 39](specs/epics/39-linux-app/README.md)).
-The server, its database (Postgres 16), ffmpeg, Python and the transcription pipeline in one
-install, run as your systemd user service. It starts at boot when linger is on (setup turns it on,
-which may ask for an administrator's password once), otherwise when you log in. x86_64 or aarch64,
-glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 or later; RHEL, Alma and Rocky 10 with
-EPEL for the desktop's tray library), and a systemd user manager.
+The server, its database (Postgres 16), Python and the transcription pipeline in one install,
+run as your systemd user service, with your distribution's ffmpeg. It starts at boot when linger
+is on (setup turns it on, which may ask for an administrator's password once), otherwise when you
+log in. x86_64 or aarch64, glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 or later; RHEL,
+Alma and Rocky 10 with EPEL for the desktop's tray library), and a systemd user manager. ffmpeg
+must be 4.4 or later with libx264: Debian's, Ubuntu's and Arch's are; on Fedora and RHEL it is RPM
+Fusion's (their own `ffmpeg-free` has no libx264), on openSUSE Packman's. Setup checks it and names
+the command that installs it for your distribution (the terminal setup offers to run it);
+`[media] ffmpeg` in `server.toml` names another.
 
 - **With a desktop:** download `Maktaba_<ver>_amd64.AppImage` (or the `.deb` / `.rpm`; `aarch64`
   builds too) from the [latest release](https://github.com/Hamza-Labs-Core/Maktaba/releases/latest),
   open it and follow the setup. The window is the web app; the tray shows the server's status.
+  The `.deb` depends on `ffmpeg` and the `.rpm` requires it; on Fedora and RHEL turn RPM Fusion on
+  first (`sudo dnf install https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm`),
+  or dnf finds no `ffmpeg` for it.
   The app updates itself from the release's signed updates, installing one only when its signature
   matches the key built into the app ([auto-update](docs/auto-update.md)), and moves the server to
   the new version at its next start.

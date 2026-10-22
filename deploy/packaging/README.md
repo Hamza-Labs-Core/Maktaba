@@ -19,7 +19,7 @@ The [`release.yml`](../../.github/workflows/release.yml) workflow runs on a
 | `maktaba.rb` (Homebrew formula) | `sign-and-release` | macOS arm64 + amd64 |
 | `maktaba-cloud-<os>-<arch>` (relay) | `build-artifacts` | linux/{amd64,arm64} |
 | `maktaba-web-<tag>.tar.gz` (web bundle) | `build-artifacts` | n/a |
-| `maktaba-linux-payload-<ver>-<x86_64\|aarch64>.tar.gz` | `package-linux-payload` ([`tools/release/linux-app`](../../tools/release/linux-app/README.md)) | the Linux app's server payload (Go binaries, Postgres 16 with its libraries, ffmpeg, Python, the pipeline wheel) for a machine without a desktop: `install.sh --app` ([Epic 39](../../specs/epics/39-linux-app/headless.md)) |
+| `maktaba-linux-payload-<ver>-<x86_64\|aarch64>.tar.gz` | `package-linux-payload` ([`tools/release/linux-app`](../../tools/release/linux-app/README.md)) | the Linux app's server payload (Go binaries, Postgres 16 with its libraries, Python, the pipeline wheel; ffmpeg is the distribution's) for a machine without a desktop: `install.sh --app` ([Epic 39](../../specs/epics/39-linux-app/headless.md)) |
 | `maktaba-node-<ver>.tar.gz` / `.zip` (node installer + wheel) | `package-node` | macOS + Linux / Windows; see [`node/README.md`](node/README.md#getting-the-installer) |
 | `maktaba_pipeline-<ver>-py3-none-any.whl` + `maktaba-pipeline-<ver>-constraints.txt` | `package-node` | any (pure Python, 3.12+) |
 | `release.json` | `sign-and-release` (`tools/release/cmd/gen-release-json`) | version, schema revisions, protocol numbers, per-platform archive + binary digests ([Epic 35 design §3.1](../../specs/epics/35-cluster-full-nodes-and-updates/design.md)); listed in `checksums.txt` |
@@ -37,10 +37,13 @@ The **Linux app** ([Epic 39](../../specs/epics/39-linux-app/README.md)) is the o
 that runs everything for a person: the AppImage / `.deb` / `.rpm` from
 [`desktop-release.yml`](../../.github/workflows/desktop-release.yml), or `install.sh --app` on a
 machine without a desktop. It runs as the user's systemd **user** service from a copy of the payload
-in `~/.local/share/maktaba/runtime`, with its own Postgres, ffmpeg and Python. It starts at boot
-when linger is on: setup turns it on, and polkit may ask for an administrator's password for that
-(over SSH, in the terminal); without it the service runs while the user is logged in. Nothing else
-needs root.
+in `~/.local/share/maktaba/runtime`, with its own Postgres and Python and the distribution's
+ffmpeg (the `.deb` depends on `ffmpeg`, the `.rpm` requires it: RPM Fusion's on Fedora and RHEL,
+whose `ffmpeg-free` has no libx264; setup checks the one found and names the command that installs
+the right one, see [ffmpeg](../../tools/release/linux-app/README.md#ffmpeg-the-distributions)). It
+starts at boot when linger is on: setup turns it on, and polkit may ask for an administrator's
+password for that (over SSH, in the terminal); without it the service runs while the user is
+logged in. Nothing else needs root but installing that ffmpeg when the system has none.
 
 - **Updates.** With a desktop, the app's updater installs each release's signed update (the
   AppImage in place, a `.deb` / `.rpm` through the system's admin prompt) once its signature
@@ -81,7 +84,8 @@ needs root.
   `~/.cache/maktaba` until they are deleted.
 - **Systems.** x86_64 or aarch64 with glibc 2.35 or newer and a systemd user manager. The desktop
   packages' tray library (`libayatana-appindicator`) comes from EPEL on RHEL, Alma and Rocky 10;
-  the payload for a machine without a desktop needs nothing extra.
+  the payload for a machine without a desktop needs nothing else but the distribution's ffmpeg,
+  which its setup checks and offers to install.
 
 The `maktaba-server` `.deb` / `.rpm` and archives here install the server binaries alone, as a
 **system** service (`User=maktaba`, `/var/lib/maktaba`), for operators who bring their own
