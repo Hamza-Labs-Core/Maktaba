@@ -572,8 +572,10 @@ jobs:
         run: |
           pnpm -C web install --frozen-lockfile
           sudo apt-get update -qq
-          sudo apt-get install -y -qq patchelf zip
+          sudo apt-get install -y -qq patchelf zip ffmpeg
 
+      # check.sh: no ffmpeg in the payload, and the server takes the runner's
+      # (Ubuntu 22.04's, as the app's users get theirs from their distribution)
       - name: Build the payload, check it, pack it
         env:
           TAG: ${{ github.ref_name }}
@@ -581,7 +583,7 @@ jobs:
         run: |
           set -euo pipefail
           tools/release/linux-app/payload.sh --version "${TAG}"
-          tools/release/linux-app/check.sh
+          tools/release/linux-app/check.sh --ffmpeg ok
           ver="${TAG#v}"
           sde="$(git log -1 --pretty=%ct)"
           mkdir -p out
@@ -891,7 +893,7 @@ jobs:
           - **Fedora/RHEL:** download the \`.rpm\` below, then \`sudo dnf install ./maktaba-server-*.rpm\`
           - **macOS (Homebrew):** \`maktaba.rb\` formula is attached (and pushed to the tap when configured)
           - **Windows / manual:** grab the matching \`.tar.gz\` / \`.zip\` archive
-          - **Linux, one installation that runs everything (Epic 39):** the \`Maktaba_*.AppImage\` (or its \`.deb\` / \`.rpm\`) from the desktop build; on a machine without a desktop, \`maktaba-linux-payload-*-<x86_64|aarch64>.tar.gz\`: the same server, Postgres, ffmpeg and Python, run as a systemd user service
+          - **Linux, one installation that runs everything (Epic 39):** the \`Maktaba_*.AppImage\` (or its \`.deb\` / \`.rpm\`) from the desktop build; on a machine without a desktop, \`maktaba-linux-payload-*-<x86_64|aarch64>.tar.gz\`: the same server, Postgres and Python (ffmpeg is the distribution's: setup names the command that installs it), run as a systemd user service
           - **Worker machine (join a home, no checkout):** unpack \`maktaba-node-*.tar.gz\` (macOS/Linux) or \`maktaba-node-*.zip\` (Windows) and run \`install-node.sh\` / \`windows\\install-node.ps1\`: it installs this release's \`maktaba_pipeline-*.whl\` (also attached, with its \`-constraints.txt\`). See docs/cluster/join-a-machine.md.
 
           Artifacts are signed with keyless cosign (Sigstore) by this

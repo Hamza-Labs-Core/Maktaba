@@ -85,6 +85,64 @@ describe("ProcessesCard", () => {
     expect(screen.queryByText(/API —/)).not.toBeInTheDocument();
   });
 
+  it("shows the ffmpeg the processes run, and on Linux how to install the one they need", async () => {
+    get.mockResolvedValue({
+      ...doc,
+      ffmpeg: {
+        ffmpeg: "/usr/bin/ffmpeg",
+        ffprobe: "/usr/bin/ffprobe",
+        source: "path",
+        version: "6.1.2",
+        ok: false,
+        problem: {
+          code: "ffmpeg_lacks",
+          params: { path: "/usr/bin/ffmpeg", have: "6.1.2", missing: "encoder libx264" },
+          message: "English fallback",
+        },
+        install: {
+          code: "ffmpeg_install",
+          params: { distro: "Fedora Linux 40", command: "sudo dnf install --allowerasing ffmpeg" },
+          message: "English fallback",
+        },
+      },
+    });
+    renderCard();
+    await waitFor(() => expect(screen.getByTestId("process-ffmpeg")).toBeInTheDocument());
+    const ff = within(screen.getByTestId("process-ffmpeg"));
+    expect(ff.getByText("Needs attention")).toBeInTheDocument();
+    expect(ff.getByText("FFmpeg 6.1.2, /usr/bin/ffmpeg")).toBeInTheDocument();
+    expect(
+      ff.getByText("/usr/bin/ffmpeg (FFmpeg 6.1.2) lacks what Maktaba uses: encoder libx264.")
+    ).toBeInTheDocument();
+    expect(
+      ff.getByText(
+        "On Fedora Linux 40, this installs the ffmpeg Maktaba needs: sudo dnf install --allowerasing ffmpeg"
+      )
+    ).toBeInTheDocument();
+  });
+
+  it("says when ffmpeg works, with its GPU encoders", async () => {
+    get.mockResolvedValue({
+      ...doc,
+      ffmpeg: {
+        ffmpeg: "/usr/bin/ffmpeg",
+        ffprobe: "/usr/bin/ffprobe",
+        source: "path",
+        version: "4.4.2-0ubuntu0.22.04.1",
+        ok: true,
+        hw_encoders: ["h264_nvenc", "h264_vaapi"],
+        warnings: [{ code: "ffmpeg_no_unknown_code", message: "An English warning." }],
+      },
+    });
+    renderCard();
+    await waitFor(() => expect(screen.getByTestId("process-ffmpeg")).toBeInTheDocument());
+    const ff = within(screen.getByTestId("process-ffmpeg"));
+    expect(ff.getByText("Works")).toBeInTheDocument();
+    expect(ff.getByText("GPU encoders: h264_nvenc, h264_vaapi")).toBeInTheDocument();
+    // a code the app has no words for falls back to its English
+    expect(ff.getByText("An English warning.")).toBeInTheDocument();
+  });
+
   it("explains when the supervisor is not available", async () => {
     get.mockResolvedValue({ available: false, reason: "x", processes: [], events: [] });
     renderCard();
