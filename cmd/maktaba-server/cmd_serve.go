@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/mdns"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/webui"
@@ -236,6 +237,11 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	if llmOpt != nil {
 		supOpts = append(supOpts, llmOpt)
 	}
+	// the ffmpeg every role runs, checked now and every ten minutes: the System
+	// health page shows the verdict (Epic 39: on Linux the distribution's)
+	exe, _ := os.Executable()
+	supOpts = append(supOpts, supervisor.WithFFmpeg(ffmpeg.Watch(ctx,
+		func() ffmpeg.Tools { return ffmpeg.Find(cfg.Media, config.AppPayload(exe)) }, ffmpeg.WatchInterval, os.Stderr)))
 	sup := supervisor.New(procs, policy, supOpts...)
 	if adminSrv := startSupervisorAdmin(policy.AdminAddr, node.adminHandler(sup.Handler())); adminSrv != nil {
 		defer func() { _ = shutdownWeb(adminSrv) }()

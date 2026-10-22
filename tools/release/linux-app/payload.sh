@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Builds the Linux server payload (Epic 39, story 39.2) for this machine's architecture
-# (x86_64 or aarch64): the same tree Maktaba.app carries in Contents/Resources/server.
+# (x86_64 or aarch64): the tree Maktaba.app carries in Contents/Resources/server, but for
+# ffmpeg.
 #
 #   bin/       maktaba-server (web UI embedded) maktaba-api maktaba-streaming maktaba-launcher
 #   postgres/  bin/ lib/ share/          PostgreSQL 16, with the libraries it links that a
 #                                        minimal system can lack, all on an $ORIGIN rpath
-#   ffmpeg/    ffmpeg ffprobe
 #   python/    CPython 3.12              python-build-standalone, stdlib precompiled
 #   pipeline/  maktaba_pipeline-<v>-py3-none-any.whl constraints.txt
 #   migrations/  the database's schema (shared/db/migrations): maktaba-api finds them beside bin/
@@ -15,6 +15,9 @@
 #
 # Third-party pieces come from pins.env and are checked against its SHA-256s. The wheels
 # the venv needs (torch, …) and the models are not here: the first run downloads them.
+# Neither is ffmpeg: on Linux Maktaba runs the distribution's (the .deb and the .rpm
+# depend on it; setup's check and the server's status say what to install when it is
+# missing, too old or lacks an encoder or filter Maktaba uses).
 #
 # It must run on the architecture it builds for, on a glibc system no newer than the
 # payload's baseline (CI: ubuntu-22.04 and ubuntu-22.04-arm): the libraries copied in
@@ -104,17 +107,19 @@ fetch() {
     die "$3: no download from $url had the SHA-256 pins.env names ($want)"
 }
 
+PG_FILE="postgresql-$POSTGRES_VERSION-$ARCH.tar.gz"
+PY_FILE="cpython-$PYTHON_VERSION-$ARCH.tar.gz"
+# an earlier pins.env's files (a cache restored by its prefix) are not kept, so a piece
+# no longer pinned (the ffmpeg builds of before) never goes into the payload or the cache
+# saved after this run
+for f in "$CACHE"/*; do
+    [ -e "$f" ] || continue
+    case "${f##*/}" in "$PG_FILE"|"$PY_FILE") ;; *) rm -rf "$f" ;; esac
+done
+
 if [ "$FETCH_ONLY" = 1 ]; then
-    names=("postgresql-$POSTGRES_VERSION-$ARCH.tar.gz" "cpython-$PYTHON_VERSION-$ARCH.tar.gz"
-        "ffmpeg-$FFMPEG_VERSION-$ARCH.zip" "ffprobe-$FFMPEG_VERSION-$ARCH.zip")
-    fetch "$(pin POSTGRES_URL)" "$(pin POSTGRES_SHA256)" "${names[0]}" >/dev/null
-    fetch "$(pin PYTHON_URL)" "$(pin PYTHON_SHA256)" "${names[1]}" >/dev/null
-    fetch "$(pin FFMPEG_URL)" "$(pin FFMPEG_SHA256)" "${names[2]}" >/dev/null
-    fetch "$(pin FFPROBE_URL)" "$(pin FFPROBE_SHA256)" "${names[3]}" >/dev/null
-    # an earlier pins.env's files (from a cache restored by its prefix) are not kept
-    for f in "$CACHE"/*; do
-        case " ${names[*]} " in *" ${f##*/} "*) ;; *) rm -f "$f" ;; esac
-    done
+    fetch "$(pin POSTGRES_URL)" "$(pin POSTGRES_SHA256)" "$PG_FILE" >/dev/null
+    fetch "$(pin PYTHON_URL)" "$(pin PYTHON_SHA256)" "$PY_FILE" >/dev/null
     log "the pinned downloads for $ARCH are in $CACHE"
     exit 0
 fi
@@ -122,7 +127,7 @@ fi
 OUT="$BUILD/server"
 WORK="$BUILD/work"
 rm -rf "$OUT" "$WORK"
-mkdir -p "$OUT"/{bin,postgres,ffmpeg,pipeline,licenses} "$WORK"
+mkdir -p "$OUT"/{bin,postgres,pipeline,licenses} "$WORK"
 
 
 # --- Go binaries (the release envelope: -trimpath, stamped, web UI embedded) -----------------
@@ -138,7 +143,7 @@ cp "$REPO_ROOT/cmd/maktaba-server/bin/linux-$GOARCH/maktaba-server" \
 
 # --- PostgreSQL ----------------------------------------------------------------------------------
 log "PostgreSQL $POSTGRES_VERSION"
-pg_tgz="$(fetch "$(pin POSTGRES_URL)" "$(pin POSTGRES_SHA256)" "postgresql-$POSTGRES_VERSION-$ARCH.tar.gz")"
+pg_tgz="$(fetch "$(pin POSTGRES_URL)" "$(pin POSTGRES_SHA256)" "$PG_FILE")"
 tar -xzf "$pg_tgz" -C "$WORK"
 pg="$WORK/postgresql-$POSTGRES_VERSION-$ARCH-unknown-linux-gnu"
 [ -x "$pg/bin/postgres" ] || die "unexpected PostgreSQL archive layout"
@@ -161,7 +166,7 @@ cp "$pg/LICENSE" "$OUT/licenses/postgresql-binaries.txt"
 
 # --- Python (first: the payload's own tools run with it) ------------------------------------
 log "Python $PYTHON_VERSION"
-tar -xzf "$(fetch "$(pin PYTHON_URL)" "$(pin PYTHON_SHA256)" "cpython-$PYTHON_VERSION-$ARCH.tar.gz")" -C "$WORK"
+tar -xzf "$(fetch "$(pin PYTHON_URL)" "$(pin PYTHON_SHA256)" "$PY_FILE")" -C "$WORK"
 py="$WORK/python"
 [ -x "$py/bin/python3" ] || die "unexpected python-build-standalone layout"
 # Tk, IDLE and the Tcl runtime are never used by the pipeline (~10 MB).
@@ -177,9 +182,6 @@ cp "$py/lib/python3.12/LICENSE.txt" "$OUT/licenses/python.txt"
 mv "$py" "$OUT/python"
 PY="$OUT/python/bin/python3"
 tool() { "$PY" -I "$SCRIPT_DIR/payload_tool.py" "$@"; }
-# unzip_to ZIP DIR: Python's zipfile (a build machine may have no unzip); the executables'
-# modes are set by the caller.
-unzip_to() { "$PY" -I -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' "$1" "$2"; }
 
 # --- Postgres's libraries ----------------------------------------------------------------------
 # The theseus-rs build links the system's OpenSSL 3, libxml2, lz4, zstd and krb5 (and what
@@ -211,24 +213,6 @@ MIT Kerberos: MIT; ICU: Unicode). Their sources are the distribution's source pa
 same versions.
 
 $(for s in "${closure[@]}"; do printf '%s\n' "$s"; done)
-EOF
-
-# --- ffmpeg --------------------------------------------------------------------------------------
-log "ffmpeg $FFMPEG_VERSION"
-unzip_to "$(fetch "$(pin FFMPEG_URL)" "$(pin FFMPEG_SHA256)" "ffmpeg-$FFMPEG_VERSION-$ARCH.zip")" "$OUT/ffmpeg"
-unzip_to "$(fetch "$(pin FFPROBE_URL)" "$(pin FFPROBE_SHA256)" "ffprobe-$FFMPEG_VERSION-$ARCH.zip")" "$OUT/ffmpeg"
-chmod 0755 "$OUT/ffmpeg/ffmpeg" "$OUT/ffmpeg/ffprobe"
-cat >"$OUT/licenses/ffmpeg.txt" <<EOF
-ffmpeg and ffprobe $FFMPEG_VERSION, built by Martin Riedl (https://ffmpeg.martin-riedl.de),
-configured with --enable-gpl --enable-version3: licensed under the GNU General Public
-License version 3 (https://www.gnu.org/licenses/gpl-3.0.html).
-
-Binaries: $(pin FFMPEG_URL)
-          $(pin FFPROBE_URL)
-Source:   https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz
-Build scripts and the versions of every library linked in:
-          https://git.martin-riedl.de/ffmpeg/build-script
-          $(dirname "$(pin FFMPEG_URL)")/versions.txt
 EOF
 
 # --- the pipeline: the same wheel and constraints a node release ships ---------------------------
@@ -272,8 +256,6 @@ WHEEL_NAME="$(basename "${whl[0]}")"
 # every value goes in through the environment, never into the program's text
 P_VERSION="$VERSION" P_PLATFORM="linux-$ARCH" P_MIN_GLIBC="$min_glibc" P_MANIFEST="$manifest" \
 P_PG_VERSION="$POSTGRES_VERSION" P_PG_URL="$(pin POSTGRES_URL)" P_PG_SHA="$(pin POSTGRES_SHA256)" \
-P_FF_VERSION="$FFMPEG_VERSION" P_FF_URL="$(pin FFMPEG_URL)" P_FF_SHA="$(pin FFMPEG_SHA256)" \
-P_FP_URL="$(pin FFPROBE_URL)" P_FP_SHA="$(pin FFPROBE_SHA256)" \
 P_PY_VERSION="$PYTHON_VERSION" P_PY_URL="$(pin PYTHON_URL)" P_PY_SHA="$(pin PYTHON_SHA256)" \
 P_WHEEL="$WHEEL_NAME" P_WHEEL_SHA="$(sha256 "$OUT/pipeline/$WHEEL_NAME")" \
 P_CONS_SHA="$(sha256 "$OUT/pipeline/constraints.txt")" \
@@ -287,8 +269,6 @@ doc = {
     "min_glibc": e["P_MIN_GLIBC"],
     "postgres": {"version": e["P_PG_VERSION"], "source": e["P_PG_URL"], "sha256": e["P_PG_SHA"],
                  "libraries": sys.argv[2:]},
-    "ffmpeg": {"version": e["P_FF_VERSION"], "source": e["P_FF_URL"], "sha256": e["P_FF_SHA"],
-               "ffprobe_source": e["P_FP_URL"], "ffprobe_sha256": e["P_FP_SHA"]},
     "python": {"version": e["P_PY_VERSION"], "source": e["P_PY_URL"], "sha256": e["P_PY_SHA"]},
     "pipeline": {"wheel": e["P_WHEEL"], "sha256": e["P_WHEEL_SHA"], "constraints_sha256": e["P_CONS_SHA"]},
     "files": {"manifest": "files.sha256", **json.loads(e["P_MANIFEST"])},

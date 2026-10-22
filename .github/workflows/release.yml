@@ -571,8 +571,10 @@ jobs:
         run: |
           pnpm -C web install --frozen-lockfile
           sudo apt-get update -qq
-          sudo apt-get install -y -qq patchelf zip
+          sudo apt-get install -y -qq patchelf zip ffmpeg
 
+      # check.sh: no ffmpeg in the payload, and the server takes the runner's
+      # (Ubuntu 22.04's, as the app's users get theirs from their distribution)
       - name: Build the payload, check it, pack it
         env:
           TAG: ${{ github.ref_name }}
@@ -580,7 +582,7 @@ jobs:
         run: |
           set -euo pipefail
           tools/release/linux-app/payload.sh --version "${TAG}"
-          tools/release/linux-app/check.sh
+          tools/release/linux-app/check.sh --ffmpeg ok
           ver="${TAG#v}"
           sde="$(git log -1 --pretty=%ct)"
           mkdir -p out

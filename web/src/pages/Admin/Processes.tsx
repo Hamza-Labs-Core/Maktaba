@@ -2,13 +2,15 @@
 //
 // Real contract:
 //   GET /api/system/processes (admin)
-//     { available, reason?, host?, processes: [ProcessStatus], events: [ProcessEvent] }
+//     { available, reason?, host?, processes: [ProcessStatus], events: [ProcessEvent],
+//       ffmpeg?: FFmpegReport }
 //
 // maktaba-server's supervisor restarts the api, streaming (live TV) and
 // pipeline processes on their own; this card shows each one's state,
 // how often it has been restarted and why it last went down. Without the
 // supervisor (compose, a single --role) the API answers available=false
-// and the card says so.
+// and the card says so. Beside them, the ffmpeg every process runs: whether it
+// does what Maktaba needs, and on Linux the command that installs it (Epic 39).
 import { useCallback, useEffect, useState } from "react";
 import { Card } from "@ds/components/Card/Card";
 import { Badge } from "@ds/components/Badge/Badge";
@@ -48,11 +50,32 @@ export interface ProcessEvent {
   message?: string;
 }
 
+/** A finding about ffmpeg: setup.check.note.<code> with its params, and its English. */
+export interface FFmpegNote {
+  code: string;
+  params?: Record<string, unknown>;
+  message: string;
+}
+
+/** The supervisor's check of the ffmpeg the processes run. */
+export interface FFmpegReport {
+  ffmpeg: string;
+  ffprobe: string;
+  source: string;
+  version?: string;
+  ok: boolean;
+  problem?: FFmpegNote;
+  install?: FFmpegNote;
+  warnings?: FFmpegNote[];
+  hw_encoders?: string[];
+}
+
 export interface ProcessesDoc {
   available: boolean;
   reason?: string;
   processes: ProcessStatus[];
   events: ProcessEvent[];
+  ffmpeg?: FFmpegReport;
 }
 
 const REFRESH_MS = 15_000;
@@ -112,6 +135,7 @@ export function ProcessesCard() {
             {(doc.processes ?? []).map((p) => (
               <ProcessRow key={p.role} p={p} />
             ))}
+            {doc.ffmpeg && <FFmpegRow r={doc.ffmpeg} />}
           </div>
           <h3>{t("health.processes.recent")}</h3>
           {crashes.length === 0 ? (
@@ -179,6 +203,55 @@ function ProcessRow({ p }: { p: ProcessStatus }) {
         )}
       </ul>
       {p.crash_loop && <p className="mkt-muted">{t("health.processes.crashLoop")}</p>}
+    </Card>
+  );
+}
+
+/** A note in the app's words (setup.check.note.<code>), else its English. */
+function noteText(
+  t: (k: string, v?: Record<string, string | number>) => string,
+  note: FFmpegNote
+): string {
+  const key = `setup.check.note.${note.code}`;
+  const vars: Record<string, string | number> = {};
+  for (const [k, v] of Object.entries(note.params ?? {})) {
+    if (v !== null && v !== undefined) vars[k] = typeof v === "number" ? v : String(v);
+  }
+  const text = t(key, vars);
+  return text === key ? note.message : text;
+}
+
+function FFmpegRow({ r }: { r: FFmpegReport }) {
+  const { t } = useI18n();
+  return (
+    <Card className="mkt-service-card" data-testid="process-ffmpeg">
+      <div className="mkt-service-card__head">
+        <strong>{t("health.processes.ffmpeg")}</strong>
+        <Badge tone={r.ok ? "success" : "error"}>
+          {t(r.ok ? "health.processes.ffmpeg.ok" : "health.processes.ffmpeg.problem")}
+        </Badge>
+      </div>
+      {r.version && (
+        <p className="mkt-muted">
+          {t("health.processes.ffmpeg.version", { version: r.version, path: r.ffmpeg })}
+        </p>
+      )}
+      {r.problem && <p>{noteText(t, r.problem)}</p>}
+      {r.install && (
+        <p>
+          <code>{noteText(t, r.install)}</code>
+        </p>
+      )}
+      {(r.warnings ?? []).map((w) => (
+        <p key={w.code} className="mkt-muted">
+          {noteText(t, w)}
+        </p>
+      ))}
+      {r.ok && (r.hw_encoders ?? []).length > 0 && (
+        <p className="mkt-muted">
+          {t("health.processes.ffmpeg.gpu", { list: (r.hw_encoders ?? []).join(", ") })}
+        </p>
+      )}
     </Card>
   );
 }
